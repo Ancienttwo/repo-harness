@@ -479,35 +479,40 @@ describe("Bootstrap Script Contracts", () => {
     expect(workflowState).toContain("workflow_hook_cli_json");
   });
 
-  test("cross-review skills should include dirty working tree scope", () => {
-    const claudeReview = read("assets/skills/claude-review/SKILL.md");
-    const codexReview = read("assets/skills/codex-review/SKILL.md");
+  // SSD-06 migration: the two live shell-embedded provider skills
+  // (assets/skills/{claude-review,codex-review}) are deleted; their
+  // deterministic scope-capture mechanics (branch/staged/unstaged/untracked
+  // diff, exact-base binding) moved to code
+  // (src/effects/review/cross-review-runner.ts#captureCrossReviewScope,
+  // reused via diff-fingerprint.ts's buildReviewSubject) and are covered by
+  // tests/cli/cross-review.test.ts, not by scanning Skill Markdown for
+  // embedded shell variable assignments. This test now checks the one
+  // canonical repo-harness-cross-review package's own prose properties:
+  // read-only provider boundaries, model/timeout budgets, transcript
+  // recovery, and the no-merge-gate guarantee.
+  test("repo-harness-cross-review documents read-only scope, timeouts, transcript recovery, and no-merge-gate boundaries", () => {
+    const claudeMode = read("assets/skills/repo-harness-cross-review/references/claude-mode.md");
+    const codexMode = read("assets/skills/repo-harness-cross-review/references/codex-mode.md");
 
-    expect(claudeReview).toContain("BRANCH_DIFF=$(git diff");
-    expect(claudeReview).toContain("STAGED_DIFF=$(git diff --cached");
-    expect(claudeReview).toContain("UNSTAGED_DIFF=$(git diff");
-    expect(claudeReview).toContain("git ls-files --others --exclude-standard -z");
-    expect(claudeReview).toContain("git diff --no-index -- /dev/null");
-    expect(claudeReview).toContain("BASE=origin/main");
-    expect(claudeReview).toContain("else BASE=HEAD");
-    expect(claudeReview).toContain("Review the combined branch, staged, unstaged, and untracked changes");
-    expect(claudeReview).toContain("run_with_optional_timeout claude -p");
-    expect(claudeReview).toContain("recover_claude_review_from_transcript");
-    expect(claudeReview).toContain("~/.claude/projects/<project>/<session-id>.jsonl");
-    expect(claudeReview).toContain("CLAUDE_CONFIG_DIR");
-    expect(claudeReview).toContain("stdout was empty; output above was recovered from the session transcript");
-    expect(claudeReview).toContain("intentionally does not pass `--no-session-persistence`");
-    expect(claudeReview).not.toContain("${TO:+$TO 330}");
+    expect(claudeMode).toContain("read-only reviewer");
+    expect(claudeMode).toContain("no `Bash`/`Edit`/`Write`");
+    expect(claudeMode).toContain("Pinned to the `fable` alias");
+    expect(claudeMode).toContain("retries exactly once on `opus`");
+    expect(claudeMode).toContain("330 seconds");
+    expect(claudeMode).toContain("~/.claude/projects/<project>/<session-id>.jsonl");
+    expect(claudeMode).toContain("malformed_transcript");
+    expect(claudeMode).toContain("repo-harness cross-review --provider claude");
+    expect(claudeMode).toContain("No merge-gate");
+    expect(claudeMode).toContain("silently retried against Codex");
 
-    expect(codexReview).toContain("committed branch diff");
-    expect(codexReview).toContain("git diff --cached");
-    expect(codexReview).toContain("unstaged tracked changes");
-    expect(codexReview).toContain("git ls-files --others --exclude-standard");
-    expect(codexReview).toContain("git diff --no-index -- /dev/null <file>");
-    expect(codexReview).toContain("BASE=origin/main");
-    expect(codexReview).toContain("else BASE=HEAD");
-    expect(codexReview).toContain("run_with_optional_timeout codex exec");
-    expect(codexReview).not.toContain("${TO:+$TO 330}");
+    expect(codexMode).toContain("read-only reviewer");
+    expect(codexMode).toContain("read-only Bash access");
+    expect(codexMode).toContain("resolved commit SHA");
+    expect(codexMode).toContain('model_reasoning_effort="high"');
+    expect(codexMode).toContain("1800 seconds");
+    expect(codexMode).toContain("repo-harness cross-review --provider codex");
+    expect(codexMode).toContain("No merge-gate");
+    expect(codexMode).toContain("retried against Claude");
   });
 
   test("setup script should delegate to the typed global init path", () => {

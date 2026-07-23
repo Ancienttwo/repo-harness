@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync, readdirSync } from "fs";
+import { readFileSync } from "fs";
 import { spawnSync } from "child_process";
 import { join } from "path";
 import {
@@ -128,27 +128,54 @@ describe("discovery-baseline.json (evals/skill-routing/discovery-baseline.json)"
     }
   });
 
-  test("source_inventory has exactly 25 entries and every recorded path exists on disk", () => {
+  // SSD-06 migration (per plan Ruling R5): discovery-baseline.json is
+  // untouchable historical pre-cutover evidence -- its source_inventory
+  // records the PRE-cutover 25-source/19-facade world by design, and the
+  // atomic public cutover deletes 15 of those facade directories plus the
+  // two provider-skill dirs and two static ChatGPT dirs. Comparing this
+  // frozen snapshot against the LIVE filesystem would therefore fail by
+  // design (that is the whole point of the cutover). These two tests no
+  // longer touch the live filesystem at all: the first checks
+  // source_inventory's own shape is well-formed data (still exactly 25
+  // historical entries), the second checks internal consistency between two
+  // independent substructures recorded inside baseline.json itself -- the
+  // full 19-name command-facade inventory and the (smaller) subset of names
+  // current_discovered_sets.command_facade_matrix recorded as actually
+  // selected by at least one profile at capture time. That subset relation
+  // is a real invariant of the frozen snapshot, checkable without reading
+  // any live path. The live post-cutover target state is separately pinned
+  // in tests/skill-surface/catalog.test.ts's "target post-cutover discovery
+  // matrix" describe block (manifest-derived, not baseline-derived).
+  test("source_inventory has exactly 25 well-formed historical entries", () => {
     expect(baseline.source_inventory.length).toBe(25);
+    const seen = new Set<string>();
     for (const entry of baseline.source_inventory) {
       expect(typeof entry.name).toBe("string");
+      expect(entry.name.length).toBeGreaterThan(0);
       expect(typeof entry.kind).toBe("string");
-      expect(existsSync(join(ROOT, entry.path))).toBe(true);
+      expect(typeof entry.path).toBe("string");
+      expect(entry.path.length).toBeGreaterThan(0);
+      expect(seen.has(entry.name)).toBe(false);
+      seen.add(entry.name);
     }
   });
 
-  test("the 19 command-facade entries match the actual assets/skill-commands/ directory listing", () => {
-    const facadeDir = join(ROOT, "assets", "skill-commands");
-    const actualFacades = readdirSync(facadeDir, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && entry.name.startsWith("repo-harness-"))
-      .map((entry) => entry.name)
-      .sort();
+  test("the 19 recorded command-facade entries are internally consistent with command_facade_matrix's selected subset", () => {
     const recordedFacades = baseline.source_inventory
       .filter((entry) => entry.kind === "command-facade")
       .map((entry) => entry.name)
       .sort();
-    expect(recordedFacades).toEqual(actualFacades);
     expect(recordedFacades.length).toBe(19);
+    expect(new Set(recordedFacades).size).toBe(19);
+
+    const matrix = (baseline as unknown as {
+      current_discovered_sets: { command_facade_matrix: Record<string, string[]> };
+    }).current_discovered_sets.command_facade_matrix;
+    const selectedFacades = new Set(Object.values(matrix).flat());
+    expect(selectedFacades.size).toBeGreaterThan(0);
+    for (const name of selectedFacades) {
+      expect(recordedFacades).toContain(name);
+    }
   });
 
   test("corpus_sha256 equals a freshly computed sha256 of routing-corpus.json's exact bytes", () => {

@@ -407,14 +407,14 @@ Acceptance:
 
 ### SSD-06 — Perform the atomic public cutover, retirement and documentation migration
 
-- [ ] Update root routing, final manifest projection and profile selections to the target discovery matrix.
-- [ ] Activate canonical packages and remove old authoring directories in the same integration slice.
-- [ ] Retire pristine owner-marked installed copies transactionally; preserve and fail closed on modified or unowned copies.
-- [ ] Remove `repo-harness-autoplan`, provider-name Skills, GPT Pro facades, handoff/deploy facades, and all other replaced public entrypoints without generated aliases.
-- [ ] Migrate all live references, routing evals, action-command tests, profile/install tests, README x5, reference docs plus asset mirror, architecture modules, prompt-guard recommendations, and package/runtime probes.
-- [ ] Keep root `SKILL.md` at or below 2,048 bytes and keep specialized detail progressively loaded.
-- [ ] Verify adapter/runtime refresh preserves the recorded profile on the pinned post-EPC baseline and confirm the removed stale deferred-ledger claim does not regress.
-- [ ] Record retired-name -> replacement/mode mappings for migration diagnostics only; mark them non-routeable.
+- [x] Update root routing, final manifest projection and profile selections to the target discovery matrix.
+- [x] Activate canonical packages and remove old authoring directories in the same integration slice.
+- [x] Retire pristine owner-marked installed copies transactionally; preserve and fail closed on modified or unowned copies.
+- [x] Remove `repo-harness-autoplan`, provider-name Skills, GPT Pro facades, handoff/deploy facades, and all other replaced public entrypoints without generated aliases.
+- [x] Migrate all live references, routing evals, action-command tests, profile/install tests, README x5, reference docs plus asset mirror, architecture modules, prompt-guard recommendations, and package/runtime probes.
+- [x] Keep root `SKILL.md` at or below 2,048 bytes and keep specialized detail progressively loaded.
+- [x] Verify adapter/runtime refresh preserves the recorded profile on the pinned post-EPC baseline and confirm the removed stale deferred-ledger claim does not regress.
+- [x] Record retired-name -> replacement/mode mappings for migration diagnostics only; mark them non-routeable.
 
 Acceptance:
 

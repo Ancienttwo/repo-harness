@@ -168,7 +168,7 @@ rather than inferring those values from turns, tool names, or timestamps.
 
 - Do not infer agent context boundaries from physical layout globs such as `apps/*`, `packages/*`, or `services/*`.
 - Declare capabilities in `.ai/context/capabilities.json`; each capability owns prefixes, paired contract files, an architecture module, a workstream directory, and local verification hints.
-- Add selected capabilities with `repo-harness-capability` or `repo-harness run capability-config add --prefix <path>` when the harness already exists and a full init/migrate/upgrade pass would be too broad.
+- Add selected capabilities with `repo-harness-setup` (capability mode) or `repo-harness run capability-config add --prefix <path>` when the harness already exists and a full init/migrate/upgrade pass would be too broad.
 - Resolve edited paths through `repo-harness run capability-resolver match --path <path>`; longest prefix wins and equal-length ambiguity fails.
 - Treat `.ai/context/agent-context-blocks.txt`, `REPO_HARNESS_CONTEXT_BLOCKS`, and existing nested `CLAUDE.md`/`AGENTS.md` files as migration inputs or compatibility fallbacks only.
 - Selected capabilities receive paired `CLAUDE.md` and `AGENTS.md` files so Claude Code and Codex share the same local contract.

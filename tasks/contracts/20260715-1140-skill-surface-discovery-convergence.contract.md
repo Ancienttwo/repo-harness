@@ -212,6 +212,30 @@ allowed_paths:
   - tests/installed-copy-sync.test.ts
   - tests/cli/
   - tests/skill-surface/
+  - tests/bootstrap-files.test.ts
+  - tests/prompt-handler.test.ts
+  - src/cli/hook/prompt-handler.ts
+  - package.json
+  # Amendment (2026-07-23, SSD-06 ratification): four paths broke as direct
+  # mechanical consequences of mandated cutover changes (stale autoplan
+  # string, hero-image assertion, deleted-facade read path, stale capability
+  # prefix pointing at a deleted dir) — one-line fixes ratified by the
+  # orchestrator after the fact; recorded here so the scope gate stays
+  # truthful.
+  - tests/hook-contracts.test.ts
+  - tests/readme-dx.test.ts
+  - tests/ux-feature-guardrail.test.ts
+  - .ai/context/capabilities.json
+  # Amendment (2026-07-23, SSD-06 gate round-1 findings 1-2): five shipped
+  # prose surfaces still named retired skills (acceptance line 2); widened
+  # to migrate the wording to surviving owners. The ensure-task-workflow
+  # mirror pair must stay byte-identical (sync:helpers).
+  - assets/templates/prd.template.md
+  - scripts/ensure-task-workflow.sh
+  - assets/templates/helpers/ensure-task-workflow.sh
+  - evals/fixtures/prd-from-idea/README.md
+  - evals/fixtures/prd-to-sprint/README.md
+  - .claude/templates/prd.template.md
   - README.md
   - README.zh-CN.md
   - README.ja.md
@@ -238,13 +262,24 @@ forbidden:
     - src/effects/evidence/
     - src/core/state/
     - src/effects/state/
-    - src/cli/hook/
+    - src/cli/hook/circuit-breaker.ts
+    - src/cli/hook/mutation-guard.ts
+    - src/cli/hook/runtime.ts
+    - src/cli/hook/stop-handler.ts
+    - src/cli/hook/session-context.ts
+    - src/cli/hook/mutation-observed.ts
     - assets/templates/helpers/merge-gate.ts
     - scripts/run-harness-profile-benchmark.ts
     - scripts/validate-harness-profile-benchmark.ts
     - evals/harness/
-    - package.json
     - tasks/current.md
+  # Amendment (2026-07-23, SSD-06 intake): src/cli/hook/ narrowed from a
+  # blanket ban to the named EPC/guard surfaces above so SSD-06 can migrate
+  # the retiring-name routing-suggestion strings in
+  # src/cli/hook/prompt-handler.ts (a skill-surface concern found by the
+  # live-reference sweep). package.json moved to allowed_paths STRICTLY for
+  # "files" publish-allowlist entries; version and dependency fields remain
+  # forbidden by the actions list below.
   actions:
     - any compatibility alias, dual Skill name, delegate_to, or semantic
       fallback surface

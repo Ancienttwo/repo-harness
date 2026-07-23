@@ -77,7 +77,7 @@ describe("UX feature pre-implementation guard", () => {
   });
 
   test("keeps PRD and prompt guidance short and points both at the canonical guard", () => {
-    const prd = read("assets/skill-commands/repo-harness-prd/SKILL.md");
+    const prd = read("assets/skills/repo-harness-product/references/prd.md");
     const promptHandler = read("src/cli/hook/prompt-handler.ts");
 
     expect(prd).toContain("first read `repo-harness docs show ux-feature-guard`");

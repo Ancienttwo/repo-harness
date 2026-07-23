@@ -6,37 +6,45 @@
 
 ## P1 Map
 
-Command facades are on-demand skill wrappers stored under
-`assets/skill-commands/`. They remain a CLI/documentation catalog, while the
-default installed discovery surface is the root router plus at most
-`repo-harness-plan`, `repo-harness-check`, and `repo-harness-handoff`. The implementation authority remains in the `repo-harness` CLI,
-scripts, hooks, and contract files:
+Canonical rule-owner packages live under `assets/skills/` (activated
+canonical packages) and `assets/skill-commands/` (survivors evolving in
+place); `assets/skill-commands/manifest.json` v2 is the runtime discovery
+authority for package classification and host/profile projection. They
+remain an on-demand catalog while the default installed discovery surface is
+the root router plus the profile-selected subset of `repo-harness-plan`,
+`repo-harness-check`, `repo-harness-product` (product-planning only), and
+`repo-harness-ship` (strict only). The implementation authority remains in
+the `repo-harness` CLI, scripts, hooks, and contract files:
 
-- `repo-harness-plan`
-- `repo-harness-review`
-- `repo-harness-autoplan`
-- `repo-harness-ship`
-- `repo-harness-init`
-- `repo-harness-scaffold`
-- `repo-harness-migrate`
-- `repo-harness-upgrade`
-- `repo-harness-capability`
-- `repo-harness-architecture`
-- `repo-harness-handoff`
-- `repo-harness-deploy`
-- `repo-harness-repair`
-- `repo-harness-check`
-- `repo-harness-prd`
-- `repo-harness-sprint`
-- `repo-harness-goal`
-- `repo-harness-gptpro-setup`
-- `repo-harness-gptpro`
+- `repo-harness` (router; synced unconditionally to every profile)
+- `repo-harness-setup` (adopt/init, migrate, upgrade, repair, scaffold,
+  capability-configuration modes; router-only, never auto-discovered)
+- `repo-harness-plan` (create/review modes; standard/product-planning/strict)
+- `repo-harness-product` (PRD/Sprint/Goal modes; product-planning only)
+- `repo-harness-check` (workflow/release checks plus deploy-readiness
+  reference; standard/product-planning/strict)
+- `repo-harness-ship` (strict only)
+- `repo-harness-architecture` (router-only or explicit install)
+- `repo-harness-cross-review` (host-aware Claude/Codex provider modes;
+  installed on both hosts for strict)
+- `merge-gate` (classification-only row in the strict discovery matrix;
+  repo-harness ships no merge-gate Skill)
+- `repo-harness-chatgpt` (explicit ChatGPT setup only; never implied by
+  product-planning or any other profile)
 
 The manifest at `assets/skill-commands/manifest.json` is the on-demand facade
-catalog. `scripts/sync-codex-installed-copies.sh` owns profile selection and
-removes only exact package-target symlinks, content-hash-verified owned copies,
-or byte-identical package copies. Unknown and modified surfaces fail closed
-before the transaction mutates any managed destination.
+catalog. `scripts/sync-codex-installed-copies.sh` owns profile selection
+(driven by `scripts/skill-surface-select.ts`'s manifest-derived name/source
+pairs, not a fixed physical parent directory) and removes only exact
+package-target symlinks, content-hash-verified owned copies, or byte-identical
+package copies. Unknown and modified surfaces fail closed before the
+transaction mutates any managed destination. Retired package names (the
+pre-cutover `repo-harness-init`, `-migrate`, `-upgrade`, `-repair`,
+`-scaffold`, `-capability`, `-review`, `-prd`, `-sprint`, `-goal`, `-handoff`,
+`-deploy`, `-autoplan`, `-gptpro`, `-gptpro-setup`, plus `codex-review` and
+`claude-review`) are recorded as migration diagnostics only in the manifest's
+`retiredPackages` array, each pointing at its live replacement or `null` when
+fully retired (autoplan).
 
 ## P2 Trace
 
@@ -53,26 +61,27 @@ instead of mutating the repo.
 
 Command shape is prose plus exact commands. Ownership crosses from public
 command docs into repo-local scripts only when the command protocol calls the
-engine. Planning/review/goal are non-mutating by default; autoplan/ship/init/
-scaffold/migrate/upgrade/repair are mutating by design after explicit command
-invocation.
+engine. Planning/review/goal modes are non-mutating by default; ship/setup's
+adopt-init/scaffold/migrate/upgrade/repair modes are mutating by design after
+explicit invocation.
 
 Error paths:
 
-- A command may route to another command when inspection shows a different mode.
+- A command may route to another mode when inspection shows a different mode.
 - Advisory tooling hangs or skipped checks must be reported, not hidden.
 - Legacy compatibility directories must not expose duplicate command facades.
 
 ## P3 Decision
 
-The facade model exists to keep users choosing intent rather than implementation
-steps while the CLI+hooks path owns execution. It preserves the invariant that
-`hooks-init`, `docs-init`, and `create-project-dirs` are internal steps, not
-public commands.
+The canonical-package model exists to keep users choosing intent rather than
+implementation steps while the CLI+hooks path owns execution. It preserves
+the invariant that `hooks-init`, `docs-init`, and `create-project-dirs` are
+internal steps, not public commands.
 
 At 10x commands, the first failure is discovery and routing duplication. The
-catalog may grow, but default installation remains bounded and specialized
-commands are loaded only after an explicit action.
+catalog may grow, but default installation remains bounded by the manifest's
+profile projection and specialized commands are loaded only after an explicit
+action or an active profile selects them.
 
 ## Optimization Backlog
 

@@ -103,10 +103,6 @@ The design has three layers:
 3. **Host adapters**: user-level `~/.claude/settings.json` and
    `~/.codex/hooks.json` route Claude/Codex events into `repo-harness-hook`.
 
-<p align="center">
-  <img src="docs/images/repo-harness-gptpro.png" alt="repo-harness architecture and ChatGPT Pro local planner workflow diagram" width="960">
-</p>
-
 The hook entrypoint exits silently for non-opt-in repos. For opted-in repos,
 the route registry binds the public event tuple to exactly one packaged typed
 handler. `.ai/hooks/` contains operator-helper projection only; it is never a
@@ -351,7 +347,7 @@ Run the dry run from the target repository root. It reports the specs, task
 state, helper runtime, hook adapter target, and verification files that would be
 created or refreshed. It should not create an application stack; existing repos
 use `repo-harness adopt`, while new projects or modules use
-`repo-harness-scaffold`.
+`repo-harness-setup`'s scaffold mode.
 
 ### 4. Apply, then prove the workflow
 
@@ -366,8 +362,8 @@ tool-specific chat setup. Agents should be able to find the stable intent in
 `docs/spec.md`, execution state in `plans/` and `tasks/`, and resume state in
 `.ai/harness/handoff/`.
 
-For a new project or module, use the branch command `repo-harness-scaffold`
-instead of `adopt`; it installs or refreshes the harness without creating an
+For a new project or module, use `repo-harness-setup`'s scaffold mode instead
+of `adopt`; it installs or refreshes the harness without creating an
 application stack. Maintainers editing the package itself need a source checkout
 — see [Maintainer Reference](#maintainer-reference).
 
@@ -676,53 +672,76 @@ policy.
 
 ## Action Command Skills
 
-Source-owned command facades live in `assets/skill-commands/`. They keep host
-skill discovery compatible while the CLI and hooks own execution:
+Canonical rule-owner packages live under `assets/skills/` (activated
+canonical packages) and `assets/skill-commands/` (survivors evolving in
+place). They keep host skill discovery bounded while the CLI and hooks own
+execution:
 
-- Planning and review: `repo-harness-plan`, `repo-harness-review`, `repo-harness-autoplan`
-- Product planning layer: `repo-harness-prd` (activates `$geju`, then uses Claude-first `claude -p --model opus` drafting with Codex fallback to write upper-layer PRDs in `plans/prds/`)
-- Sprint program layer: `repo-harness-sprint` (ordered sprint backlogs in `plans/sprints/`, each row expanded with `$think` before the contract flow)
-- Goal session layer: `repo-harness-goal` / `repo-harness:goal` (prepares Codex/Claude `/goal` prompts from detailed PRD or Sprint artifacts and asks for those docs when missing)
-- GPT Pro local setup layer: `repo-harness-gptpro-setup` / `repo-harness:gptpro_setup` (guides `gptpro_browser` browser/session setup and `gptpro_mcp` ChatGPT Connector MCP setup while keeping ChatGPT Pro separate from API quota)
-- GPT Pro consult layer: `repo-harness-gptpro` / `repo-harness:gptpro` (uses `gptpro consult/read/continue/open` language while mapping to the local ChatGPT Web browser session engine)
-- Repo workflow actions: `repo-harness-ship`, `repo-harness-init`, `repo-harness-migrate`, `repo-harness-upgrade`, `repo-harness-capability`, `repo-harness-architecture`, `repo-harness-handoff`, `repo-harness-deploy`, `repo-harness-repair`, `repo-harness-check`
-- Branch project creation command: `repo-harness-scaffold`
+- Router: `repo-harness` (root Skill, synced unconditionally to every profile)
+- Setup layer: `repo-harness-setup` (adopt/init, migrate, upgrade, repair,
+  scaffold, and capability-configuration modes; router-only, never
+  auto-discovered by a profile)
+- Planning: `repo-harness-plan` (create a decision-complete plan, or review an
+  existing one)
+- Product planning layer: `repo-harness-product` (PRD, Sprint, and Goal
+  modes; PRD activates `$geju`, then uses Claude-first `claude -p --model
+  opus` drafting with Codex fallback to write upper-layer PRDs in
+  `plans/prds/`; Sprint plans ordered backlogs in `plans/sprints/`, each row
+  expanded with `$think` before the contract flow; Goal prepares Codex/Claude
+  `/goal` prompts from detailed PRD or Sprint artifacts and asks for those
+  docs when missing)
+- Verification: `repo-harness-check` (workflow/release checks plus a
+  deploy-readiness reference)
+- Release: `repo-harness-ship`
+- Architecture: `repo-harness-architecture`
+- Cross-model review: `repo-harness-cross-review` (host-aware Claude/Codex
+  provider modes; installed on both hosts for the strict profile)
+- Exact-candidate final gate: `merge-gate` (classification-only row in the
+  strict-profile discovery matrix; repo-harness ships no merge-gate Skill —
+  see [external tooling](docs/reference-configs/external-tooling.md))
+- ChatGPT integration: `repo-harness-chatgpt` (Oracle browser/GPT Pro consult
+  and continuation, MCP Connector setup, bridge handoff, and read-back
+  evidence; explicit setup only, never implied by product planning)
 
 The planning chain is intentionally layered:
 
 ```text
-idea -> repo-harness-prd -> repo-harness-sprint from-prd -> repo-harness-goal
+idea -> repo-harness-product (PRD mode) -> repo-harness-product (Sprint mode, from-prd) -> repo-harness-product (Goal mode)
 ```
 
-Use `repo-harness-prd` when the source is still a product idea; it first runs a
-`$geju` direction pass, then asks Claude via `claude -p --model opus` to draft the PRD, with
-Codex only as fallback. Use
-`repo-harness-sprint from-prd <plans/prds/*.prd.md>` to turn an approved PRD into
-an ordered Sprint backlog with machine-checkable acceptance lines. Use
-`repo-harness-goal` only after a detailed PRD or Sprint artifact exists; it
-prepares a bounded Codex/Claude `/goal` prompt and keeps the PRD/Sprint as the
-source of truth. If that document is missing, the goal command must ask for it
-instead of starting implementation from chat context.
+Use `repo-harness-product`'s PRD mode when the source is still a product idea;
+it first runs a `$geju` direction pass, then asks Claude via `claude -p
+--model opus` to draft the PRD, with Codex only as fallback. Use its Sprint
+mode (`from-prd <plans/prds/*.prd.md>`) to turn an approved PRD into an
+ordered Sprint backlog with machine-checkable acceptance lines. Use its Goal
+mode only after a detailed PRD or Sprint artifact exists; it prepares a
+bounded Codex/Claude `/goal` prompt and keeps the PRD/Sprint as the source of
+truth. If that document is missing, Goal mode must ask for it instead of
+starting implementation from chat context.
 
-`repo-harness adopt` is for an existing repo; `repo-harness-scaffold` creates a
-new project or module scaffold as a side command. `hooks-init`, `docs-init`, and
-`create-project-dirs` are internal steps, not public commands.
+`repo-harness adopt` is for an existing repo; `repo-harness-setup`'s scaffold
+mode creates a new project or module scaffold as a side mode. `hooks-init`,
+`docs-init`, and `create-project-dirs` are internal steps, not public
+commands.
 
-`repo-harness-scaffold` keeps the A-K plan catalog as the project-type authority
-and layers optional overlays on top: an `ai_native_profile` overlay (default
-`none`) for AI-native app structure, and a separate webapp-rendering overlay
-(client-only Vite as Plan B, or TanStack Start + Vite on a Cloudflare Worker as
-Plan C). Overlays never install model providers or force a language default.
+`repo-harness-setup`'s scaffold mode keeps the A-K plan catalog as the
+project-type authority and layers optional overlays on top: an
+`ai_native_profile` overlay (default `none`) for AI-native app structure, and
+a separate webapp-rendering overlay (client-only Vite as Plan B, or TanStack
+Start + Vite on a Cloudflare Worker as Plan C). Overlays never install model
+providers or force a language default.
 
-Use `repo-harness-capability` when the harness already exists and only selected
-capability boundaries should be added. It updates `.ai/context/capabilities.json`,
-syncs the requested local `AGENTS.md` / `CLAUDE.md` contract files, and validates
-the registry without running a full init, migrate, or upgrade pass.
+Use `repo-harness-setup`'s capability mode when the harness already exists
+and only selected capability boundaries should be added. It updates
+`.ai/context/capabilities.json`, syncs the requested local `AGENTS.md` /
+`CLAUDE.md` contract files, and validates the registry without running a full
+init, migrate, or upgrade pass.
 
-Use `repo-harness-architecture`, `repo-harness-handoff`, and `repo-harness-deploy`
-for focused architecture documentation, rollover, and deploy/ops readiness
-passes. These commands call existing repo-local helpers and keep their scope
-narrow instead of refreshing the full harness.
+Use `repo-harness-architecture`, the root Skill's handoff action, and
+`repo-harness-check`'s deploy-readiness reference for focused architecture
+documentation, rollover, and deploy/ops readiness passes. These call existing
+repo-local helpers and keep their scope narrow instead of refreshing the full
+harness.
 
 ## Maintainer Reference
 

@@ -39,30 +39,24 @@ describe("Skill eval assets", () => {
     expect(prompts).toContain("Audit this AI-assisted coding setup");
   });
 
+  // SSD-06 migration: the pre-cutover 19-name facade list collapses into 8
+  // canonical packages this eval asset actually exercises (repo-harness
+  // itself, plus setup/plan/product/check/ship/architecture/chatgpt).
+  // repo-harness-cross-review and merge-gate were never covered by this
+  // day-to-day workflow eval asset either before or after the cutover.
   test("eval asset covers the public repo-harness action commands", () => {
     const combined = evals.evals
       .flatMap((entry) => [entry.prompt, entry.expected_output, ...entry.expectations])
       .join("\n");
     for (const command of [
+      "repo-harness",
+      "repo-harness-setup",
       "repo-harness-plan",
-      "repo-harness-review",
-      "repo-harness-autoplan",
-      "repo-harness-ship",
-      "repo-harness-init",
-      "repo-harness-scaffold",
-      "repo-harness-migrate",
-      "repo-harness-upgrade",
-      "repo-harness-capability",
-      "repo-harness-architecture",
-      "repo-harness-handoff",
-      "repo-harness-deploy",
-      "repo-harness-repair",
+      "repo-harness-product",
       "repo-harness-check",
-      "repo-harness-prd",
-      "repo-harness-sprint",
-      "repo-harness-goal",
-      "repo-harness-gptpro-setup",
-      "repo-harness-gptpro",
+      "repo-harness-ship",
+      "repo-harness-architecture",
+      "repo-harness-chatgpt",
     ]) {
       expect(combined).toContain(command);
     }

@@ -26,8 +26,9 @@ import {
   type RecoveryCandidateFile,
 } from "../../core/review/cross-review";
 
-// Matches the two source skills' own budgets (claude-review: "330s";
-// codex-review: "default 1800s, override with CODEX_REVIEW_TIMEOUT_SECS").
+// Matches repo-harness-cross-review's two source-provider budgets that
+// preceded this extraction (claude-mode: "330s"; codex-mode: "default 1800s,
+// override with CODEX_REVIEW_TIMEOUT_SECS").
 const DEFAULT_TIMEOUT_MS: Record<CrossReviewProviderMode, number> = {
   claude: 330_000,
   codex: 1_800_000,
@@ -60,9 +61,10 @@ function refExists(repoRoot: string, ref: string): boolean {
 }
 
 /**
- * Mirrors claude-review/codex-review Step 1's identical fallback chain:
- * origin/HEAD symbolic ref, then origin/main, origin/master, main, master,
- * else HEAD. Only used when the caller does not supply an explicit base.
+ * Mirrors repo-harness-cross-review's claude-mode/codex-mode Step 1's
+ * identical fallback chain: origin/HEAD symbolic ref, then origin/main,
+ * origin/master, main, master, else HEAD. Only used when the caller does not
+ * supply an explicit base.
  */
 export function resolveDefaultReviewBase(repoRoot: string): string {
   const symbolic = gitText(repoRoot, ["symbolic-ref", "refs/remotes/origin/HEAD"]).trim();
@@ -312,8 +314,8 @@ export function runCrossReview(input: RunCrossReviewInput): CrossReviewResult {
 
   // claude-mode-only retry: exactly one attempt on opus when the fable route
   // failed with a nonzero, non-timeout exit and no stdout (mirrors
-  // claude-review Step 2's own fable->opus fallback). Never a loop, never a
-  // fallback to the other provider.
+  // repo-harness-cross-review's claude-mode Step 2 fable->opus fallback).
+  // Never a loop, never a fallback to the other provider.
   if (
     input.provider === "claude" &&
     !invocation.timedOut &&
@@ -329,8 +331,8 @@ export function runCrossReview(input: RunCrossReviewInput): CrossReviewResult {
     });
   }
 
-  // Transcript recovery is claude-mode-only (codex-review's own source skill
-  // has no recovery step), and only attempted when stdout is empty.
+  // Transcript recovery is claude-mode-only (repo-harness-cross-review's
+  // codex-mode has no recovery step), and only attempted when stdout is empty.
   const recovery = input.provider === "claude" && invocation.stdout.trim() === ""
     ? recoverClaudeTranscript(input.repoRoot, {
       claudeConfigDir: input.claudeConfigDir ?? process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"),

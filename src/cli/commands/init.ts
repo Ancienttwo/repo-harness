@@ -1,10 +1,11 @@
 /**
  * Existing-repo harness bootstrap/update implementation.
  *
- * This backs the public `repo-harness adopt` command and the legacy
- * `repo-harness-init` skill facade: default the target repo to cwd,
- * install/refresh the machine runtime pieces, apply the repo-local workflow
- * migration, then verify the installed harness.
+ * This backs the public `repo-harness adopt` command and
+ * `repo-harness-setup`'s adopt-init mode (SSD-06: the former standalone
+ * `repo-harness-init` skill facade retired into this mode): default the
+ * target repo to cwd, install/refresh the machine runtime pieces, apply the
+ * repo-local workflow migration, then verify the installed harness.
  */
 
 import { createInterface } from "readline/promises";
@@ -62,8 +63,8 @@ export interface GlobalContextOptions {
 
 /**
  * Host-scoped skills bundled under `assets/skills/<skill>`. Cross-model skills
- * (review second opinions plus the claude-plan external-brain plan consult)
- * install on the opposite host.
+ * (repo-harness-cross-review's opposite-provider review, plus the claude-plan
+ * external-brain plan consult) install on the opposite host.
  */
 type BundledHostSkill = { skill: string; host: "claude" | "codex"; step: string };
 type BundledHostAgent = { source: string; agent: string; host: "claude" | "codex"; step: string };
@@ -91,11 +92,12 @@ function loadSkillSurfaceCatalog(sourceRoot: string): SkillSurfaceCatalog {
 
 /**
  * The unconditional (no installed-profile concept in this adopt flow)
- * cross-review/external-brain bundle: codex-review on claude, claude-review
- * and claude-plan on codex. Step-name prefix mirrors the catalog's
- * cross-model-acceptance vs. adaptive-workflow component split (the same
- * split that separates "cross-review skill" from "external-brain skill"
- * naming below).
+ * cross-review/external-brain bundle: repo-harness-cross-review on both
+ * claude and codex (host-aware provider mode selection lives inside the
+ * package), plus claude-plan on codex only. Step-name prefix mirrors the
+ * catalog's cross-model-acceptance vs. adaptive-workflow component split
+ * (the same split that separates "cross-review skill" from "external-brain
+ * skill" naming below).
  */
 function crossReviewSkillsFromCatalog(catalog: SkillSurfaceCatalog): ReadonlyArray<BundledHostSkill> {
   const crossModel = new Set(catalogProbeExpectations(catalog).crossModel);

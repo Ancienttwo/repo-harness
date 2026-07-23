@@ -8,10 +8,7 @@ when_to_use: "repo-harness-plan, plan repo-local agentic workflow work, design r
 
 Canonical rule owner for plan creation and plan review. Router-only: shared
 preflight, mode selection, and cross-mode boundaries. Mode protocol lives
-under `references/`. Staged under the directory `repo-harness-plan-canonical`
-during this slice; SSD-06 renames the directory and repoints the manifest to
-this public name (see this package's frontmatter `name`, already set to the
-eventual public name).
+under `references/`.
 
 ## Shared Preflight
 

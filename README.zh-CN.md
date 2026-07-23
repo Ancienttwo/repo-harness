@@ -1,9 +1,5 @@
 # repo-harness
 
-<p align="center">
-  <img src="docs/images/repo-harness-gptpro-cn.png" alt="repo-harness x GPT Pro 本地 Planner Agent 推广图" width="960">
-</p>
-
 `repo-harness` 把 Claude/Codex 的 AI 编程会话变成可复用、可恢复、可检查的
 repo-local workflow。它提供 CLI 和 skill/runtime hooks，把上下文、计划、
 handoff、检查结果和 review evidence 写回项目文件，让下一个 agent 会话可以从文件继续，
@@ -282,7 +278,7 @@ repo-harness adopt --dry-run
 
 在目标仓库根目录运行 dry-run。它会报告将要创建或刷新的 spec、task state、
 helper runtime、hook adapter target 和 verification files。它不会创建应用技术栈；
-已有仓库走 `repo-harness adopt`，新项目或新模块走 `repo-harness-scaffold`。
+已有仓库走 `repo-harness adopt`，新项目或新模块走 `repo-harness-setup` 的 scaffold mode。
 
 ### 4. 应用后验证 workflow
 
@@ -296,7 +292,7 @@ bun test
 聊天配置。agent 应该能在 `docs/spec.md` 找到稳定意图，在 `plans/` 和 `tasks/`
 找到执行状态，在 `.ai/harness/handoff/` 找到可恢复状态。
 
-新项目或新模块用支线 command `repo-harness-scaffold` 代替 `adopt`；它会安装或
+新项目或新模块用 `repo-harness-setup` 的 scaffold mode 代替 `adopt`；它会安装或
 刷新 harness，不会创建应用技术栈。维护者编辑 package 源码需要 source checkout
 —— 见 [Maintainer Reference](#maintainer-reference)。
 
@@ -487,37 +483,47 @@ Co-authored-by: codex <codex@openai.com>
 
 ## Action Command Skills
 
-公共 command facades 在 `assets/skill-commands/`；它们保留 host skill discovery
-兼容性，真正执行由 CLI 和 hooks 负责：
+canonical rule-owner package 分布在 `assets/skills/`（已激活的 canonical package）
+和 `assets/skill-commands/`（原地演进的幸存者）；它们保留 host skill discovery
+的边界，真正执行由 CLI 和 hooks 负责：
 
-- Planning / review：`repo-harness-plan`、`repo-harness-review`、`repo-harness-autoplan`
-- Product planning layer：`repo-harness-prd`（先激活 `$geju` 做格局判断，再优先用 Claude `claude -p --model opus` 起草 PRD；Codex 只做 fallback）
-- Sprint program layer：`repo-harness-sprint`（把 PRD 拆成 `plans/sprints/` 里的有序 backlog）
-- Goal session layer：`repo-harness-goal` / `repo-harness:goal`（从详细 PRD 或 Sprint 文档准备 Codex/Claude `/goal` prompt；缺文档时先要求补文档）
-- Repo workflow actions：`repo-harness-ship`、`repo-harness-init`、`repo-harness-migrate`、`repo-harness-upgrade`、`repo-harness-capability`、`repo-harness-architecture`、`repo-harness-handoff`、`repo-harness-deploy`、`repo-harness-repair`、`repo-harness-check`
-- 支线项目创建 command：`repo-harness-scaffold`
+- Router：`repo-harness`（root Skill，无条件同步到每个 profile）
+- Setup layer：`repo-harness-setup`（adopt/init、migrate、upgrade、repair、
+  scaffold、capability-configuration 各 mode；仅 router-only，不被任何 profile
+  自动发现）
+- Planning：`repo-harness-plan`（创建 decision-complete plan，或 review 已有 plan）
+- Product planning layer：`repo-harness-product`（PRD / Sprint / Goal 三种
+  mode；PRD mode 先激活 `$geju` 做格局判断，再优先用 Claude `claude -p --model
+  opus` 起草 PRD，Codex 只做 fallback；Sprint mode 把 PRD 拆成 `plans/sprints/`
+  里的有序 backlog，每行先用 `$think` 展开再进 contract 流程；Goal mode 从详细
+  PRD 或 Sprint 文档准备 Codex/Claude `/goal` prompt，缺文档时先要求补文档）
+- Verification：`repo-harness-check`（workflow/release 检查，附带
+  deploy-readiness reference）
+- Release：`repo-harness-ship`
+- Architecture：`repo-harness-architecture`
+- Cross-model review：`repo-harness-cross-review`（host-aware，strict profile
+  下两个 host 都会安装）
+- ChatGPT 集成：`repo-harness-chatgpt`（Oracle browser / GPT Pro consult 与
+  continuation、MCP Connector setup、bridge handoff、read-back evidence；仅限
+  explicit setup，product planning 从不隐式安装）
 
 规划链路按层推进：
 
 ```text
-idea -> repo-harness-prd -> repo-harness-sprint from-prd -> repo-harness-goal
+idea -> repo-harness-product（PRD mode） -> repo-harness-product（Sprint mode，from-prd） -> repo-harness-product（Goal mode）
 ```
 
-`repo-harness-prd` 处理产品想法：先跑 `$geju` direction pass，再用 Claude `claude -p --model opus`
-起草 PRD，Codex 只在 Claude 不可用或失败时 fallback。`repo-harness-sprint from-prd <plans/prds/*.prd.md>`
-把已批准 PRD 拆成带 machine-checkable acceptance 的 Sprint backlog；
-`repo-harness-goal` 只在已有详细 PRD 或 Sprint artifact 后使用，用它生成有边界的
-Codex/Claude `/goal` prompt，并把 PRD/Sprint 保持为 source of truth。缺少这份文档时，
-goal command 必须先要求补文档，而不是从聊天上下文直接开工。
+`repo-harness-product` 的 PRD mode 处理产品想法：先跑 `$geju` direction pass，
+再用 Claude `claude -p --model opus` 起草 PRD，Codex 只在 Claude 不可用或失败时
+fallback。用它的 Sprint mode（`from-prd <plans/prds/*.prd.md>`）把已批准 PRD 拆成
+带 machine-checkable acceptance 的 Sprint backlog；Goal mode 只在已有详细 PRD 或
+Sprint artifact 后使用，用它生成有边界的 Codex/Claude `/goal` prompt，并把
+PRD/Sprint 保持为 source of truth。缺少这份文档时，Goal mode 必须先要求补文档，
+而不是从聊天上下文直接开工。
 
-`repo-harness adopt` 用于已有仓库；`repo-harness-scaffold` 作为支线 command 创建新项目或模块。
-`hooks-init`、`docs-init` 和 `create-project-dirs` 是内部步骤，不是公共 commands。
-
-`repo-harness-scaffold` 保持 A-K plan catalog 作为项目类型 authority，并叠加可选
-overlay：`ai_native_profile` overlay（默认 `none`）用于 AI-native 应用结构，独立的
-webapp-rendering overlay 提供 Plan B（client-only Vite）或 Plan C（部署在
-Cloudflare Worker 上的 TanStack Start + Vite）。overlay 从不安装 model provider，
-也不强制某个语言默认。
+`repo-harness adopt` 用于已有仓库；`repo-harness-setup` 的 scaffold mode 创建新
+项目或模块。`hooks-init`、`docs-init` 和 `create-project-dirs` 是内部步骤，不是
+公共 commands。
 
 ## Maintainer Reference
 

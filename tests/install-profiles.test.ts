@@ -64,16 +64,14 @@ function writeManagedHostSurfaces(
     'src/cli/commands/state.ts',
     'src/cli/hook/mutation-guard.ts',
     'scripts/contract-worktree.sh',
-    'assets/skill-commands/repo-harness-handoff/SKILL.md',
+    'references/handoff.md',
   ]) writePath(join(source, relative), '# managed\n');
   if (profile !== 'minimal') {
     writePath(join(source, 'src/core/workflow/profile.ts'), '// managed\n');
     writePath(join(source, 'src/cli/tools/codegraph.ts'), '// managed\n');
   }
   if (profile === 'product-planning') {
-    for (const command of ['prd', 'sprint', 'goal']) {
-      writePath(join(source, `assets/skill-commands/repo-harness-${command}/SKILL.md`), '# managed\n');
-    }
+    writePath(join(source, 'assets/skills/repo-harness-product/SKILL.md'), '# managed\n');
     for (const skill of ['think', 'hunt', 'check', 'health', 'mermaid']) {
       writePath(join(home, '.codex', 'skills', skill, 'SKILL.md'), '# external\n');
     }
@@ -86,7 +84,7 @@ function writeManagedHostSurfaces(
     for (const agent of ['explorer', 'deep-reasoner', 'fast-worker', 'gatekeeper', 'root-cause-prover', 'harness-evaluator']) {
       writePath(join(home, '.codex', 'agents', `${agent}.toml`), '# managed\n');
     }
-    writePath(join(home, '.codex', 'skills', 'claude-review', 'SKILL.md'), '# external\n');
+    writePath(join(home, '.codex', 'skills', 'repo-harness-cross-review', 'SKILL.md'), '# external\n');
   }
   writePath(join(home, '.bun', 'bin', 'repo-harness'), '#!/bin/sh\n');
   symlinkSync(source, canonical);
@@ -177,9 +175,9 @@ describe('install profiles', () => {
     const codexSkills = join(env.HOME!, '.codex', 'skills');
 
     // Canonical control: repo-harness-plan is still shipped by the package
-    // (source gets it here), so it keeps the existing adaptive-workflow
-    // bucket.
-    writePath(join(source, 'assets', 'skill-commands', 'repo-harness-plan', 'SKILL.md'), '# managed\n');
+    // (source gets it here, at its post-cutover assets/skills/ location), so
+    // it keeps the existing adaptive-workflow bucket.
+    writePath(join(source, 'assets', 'skills', 'repo-harness-plan', 'SKILL.md'), '# managed\n');
     writeMarkedFacade(join(codexSkills, 'repo-harness-plan'), '# managed\n');
 
     // Retired: physically present on host (e.g. left over from a broader
@@ -298,10 +296,10 @@ describe('install profiles', () => {
     expect(status.drift.missing_components).toContain('planning-integrations');
   }));
 
-  test('mutation-path rollback coverage includes all four command facades on both hosts', () => withHome((env) => {
+  test('mutation-path rollback coverage includes all four profile-gated facades on both hosts', () => withHome((env) => {
     const paths = installProfileHostMutationPaths(env);
     for (const host of ['.codex', '.claude']) {
-      for (const facade of ['repo-harness-plan', 'repo-harness-check', 'repo-harness-handoff', 'repo-harness-gptpro']) {
+      for (const facade of ['repo-harness-plan', 'repo-harness-check', 'repo-harness-product', 'repo-harness-ship']) {
         expect(paths).toContain(join(env.HOME!, host, 'skills', facade));
       }
     }
@@ -371,9 +369,9 @@ describe('install profiles', () => {
     const codexConfig = join(env.HOME!, '.codex', 'config.toml');
     writePath(codexConfig, 'default_mode_request_user_input = true\n\n[mcp_servers.codegraph]\ncommand = "codegraph"\nargs = ["mcp"]\n');
     const lock = join(env.HOME!, '.agents', '.skill-lock.json');
-    writePath(join(env.HOME!, '.agents', 'skills', 'claude-review', 'SKILL.md'), '# owned staging skill\n');
+    writePath(join(env.HOME!, '.agents', 'skills', 'repo-harness-cross-review', 'SKILL.md'), '# owned staging skill\n');
     writePath(lock, `${JSON.stringify({ version: 3, skills: {
-      'claude-review': { source: 'repo-harness' },
+      'repo-harness-cross-review': { source: 'repo-harness' },
       'user-skill': { source: 'user/repo' },
     } }, null, 2)}\n`);
     const strict = applyInstallProfile('strict', env, new Date('2026-01-01T00:00:00Z'), first);
@@ -391,11 +389,11 @@ describe('install profiles', () => {
     commitInstallHostTransaction(second);
 
     expect(existsSync(join(env.HOME!, '.codex', 'agents', 'explorer.toml'))).toBe(false);
-    expect(existsSync(join(env.HOME!, '.codex', 'skills', 'claude-review'))).toBe(false);
+    expect(existsSync(join(env.HOME!, '.codex', 'skills', 'repo-harness-cross-review'))).toBe(false);
     expect(readFileSync(codexConfig, 'utf-8')).toContain('default_mode_request_user_input = true');
     expect(readFileSync(codexConfig, 'utf-8')).not.toContain('[mcp_servers.codegraph]');
     const lockState = JSON.parse(readFileSync(lock, 'utf-8'));
-    expect(lockState.skills['claude-review']).toBeUndefined();
+    expect(lockState.skills['repo-harness-cross-review']).toBeUndefined();
     expect(lockState.skills['user-skill']).toEqual({ source: 'user/repo' });
     expect(installedProfileStatus(minimal.state, env).drift.status).toBe('consistent');
   }));
@@ -457,9 +455,7 @@ describe('install profiles', () => {
 
   test('downgrade preserves a user-owned staging skill registry when only host links are transaction-owned', () => withHome((env) => {
     const { source } = writeManagedHostSurfaces(env, 'standard');
-    for (const command of ['prd', 'sprint', 'goal']) {
-      writePath(join(source, `assets/skill-commands/repo-harness-${command}/SKILL.md`), '# planning\n');
-    }
+    writePath(join(source, 'assets/skills/repo-harness-product/SKILL.md'), '# planning\n');
     const names = ['think', 'hunt', 'check', 'health', 'mermaid'];
     for (const name of names) writePath(join(env.HOME!, '.agents', 'skills', name, 'SKILL.md'), `# ${name}\n`);
     const lock = join(env.HOME!, '.agents', '.skill-lock.json');

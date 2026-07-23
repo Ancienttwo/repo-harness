@@ -364,9 +364,18 @@ function captureOwnedPath(
  * discoverManagedSurfaces below instead of being folded into the generic
  * adaptive-workflow/planning-integrations bucket, so the ownership manifest
  * stops representing a retired facade as a profile-desired surface.
+ *
+ * Resolves the expected source path from the manifest-derived catalog
+ * (facade-kind packages no longer all live under one fixed
+ * assets/skill-commands/<name> parent -- e.g. repo-harness-plan sources from
+ * assets/skills/repo-harness-plan) rather than assuming a fixed parent
+ * directory. A name absent from the catalog's facade-kind packages (a fully
+ * retired name, e.g. a stale repo-harness-handoff left over from an older
+ * install) is never canonical.
  */
-function facadeIsCanonical(root: string, name: string): boolean {
-  return existsSync(join(root, 'repo-harness', 'assets', 'skill-commands', name, 'SKILL.md'));
+function facadeIsCanonical(root: string, name: string, catalog: SkillSurfaceCatalog): boolean {
+  const source = catalog.packages.find((pkg) => pkg.kind === 'facade' && pkg.name === name)?.source;
+  return typeof source === 'string' && existsSync(join(root, 'repo-harness', source, 'SKILL.md'));
 }
 
 function discoverManagedSurfaces(
@@ -375,6 +384,7 @@ function discoverManagedSurfaces(
 ): readonly ManagedInstallSurface[] {
   const home = env.HOME ?? homedir();
   const desired = PROFILE_COMPONENTS[profile];
+  const catalog = loadSkillSurfaceCatalog();
   const runtimeComponents = desired.filter((component) => [
     'effective-state',
     'scope-worktree-check-guards',
@@ -389,11 +399,18 @@ function discoverManagedSurfaces(
     if (canonical) surfaces.push(canonical);
     if (!existsSync(root)) continue;
     for (const name of readdirSync(root).filter((entry) => entry.startsWith('repo-harness-')).sort()) {
-      const facadeComponents = name === 'repo-harness-handoff'
-        ? desired.filter((component) => component === 'handoff')
-        : name === 'repo-harness-check'
-          ? desired.filter((component) => component === 'scope-worktree-check-guards' || component === 'verifier')
-          : facadeIsCanonical(root, name)
+      // repo-harness-handoff retired as a facade (SSD-06): 'handoff' is now
+      // fulfilled by the root router's own references/handoff.md rather than
+      // a separately discoverable Skill. A stale repo-harness-handoff dir
+      // left over from an older install falls through to the generic
+      // canonical check below, which correctly reports it uncanonical (its
+      // assets/skill-commands/repo-harness-handoff source no longer exists)
+      // and empties its component set.
+      const facadeComponents = name === 'repo-harness-check'
+        ? desired.filter((component) => component === 'scope-worktree-check-guards' || component === 'verifier')
+        : name === 'repo-harness-ship'
+          ? desired.filter((component) => component === 'release-deployment-gates')
+          : facadeIsCanonical(root, name, catalog)
             ? desired.filter((component) => component === 'adaptive-workflow' || component === 'planning-integrations')
             : [];
       const facade = captureDirectoryOrLink(join(root, name), facadeComponents);
@@ -807,13 +824,13 @@ function probeInstalledComponents(
   // this cutover and stays.
   const guardPaths = ['src/cli/hook/mutation-guard.ts', 'scripts/contract-worktree.sh'];
   const guardEvidence = canonicalEvidence(home, guardPaths);
-  const handoffEvidence = [
-    ...existing([
-      join(home, '.codex', 'skills', 'repo-harness-handoff', 'SKILL.md'),
-      join(home, '.claude', 'skills', 'repo-harness-handoff', 'SKILL.md'),
-    ]),
-    ...canonicalEvidence(home, ['assets/skill-commands/repo-harness-handoff/SKILL.md']),
-  ];
+  // SSD-06: repo-harness-handoff retired as a standalone facade. 'handoff' is
+  // now fulfilled by the root router's own progressive reference
+  // (references/handoff.md), bundled into the canonical repo-harness skill
+  // copy itself, so its evidence is that reference file's presence there --
+  // same canonicalEvidence idiom as effectiveStateEvidence/adaptiveEvidence
+  // below, not a separate host-installed Skill directory.
+  const handoffEvidence = canonicalEvidence(home, ['references/handoff.md']);
   const adaptiveEvidence = canonicalEvidence(home, ['src/core/workflow/profile.ts']);
   const codegraphEvidence = state.profile === 'strict'
     ? executableEvidence('codegraph', env)

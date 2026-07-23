@@ -13,7 +13,7 @@ export type SkillSurfaceHost = (typeof SKILL_SURFACE_HOSTS)[number];
 export const SKILL_SURFACE_PROFILES = ["minimal", "standard", "product-planning", "strict"] as const;
 export type SkillSurfaceProfile = (typeof SKILL_SURFACE_PROFILES)[number];
 
-export const SKILL_SURFACE_KINDS = ["router", "facade", "provider-skill", "integration", "external"] as const;
+export const SKILL_SURFACE_KINDS = ["router", "facade", "provider-skill", "integration", "external", "judge"] as const;
 export type SkillSurfaceKind = (typeof SKILL_SURFACE_KINDS)[number];
 
 export const SKILL_SURFACE_DISCOVERABILITIES = [
@@ -27,6 +27,21 @@ export const SKILL_SURFACE_DISCOVERABILITIES = [
 export type SkillSurfaceDiscoverability = (typeof SKILL_SURFACE_DISCOVERABILITIES)[number];
 
 export interface SkillSurfaceRetirementCandidate {
+  readonly replacement: string | null;
+  readonly note: string;
+}
+
+/**
+ * Migration-diagnostics-only record for a package name that has been fully
+ * deleted from `packages[]` (source directory removed, no longer
+ * installable/discoverable). Distinct from `retirementCandidate` (which
+ * annotates a still-live package that is a *future* consolidation target):
+ * every entry here names a package that is already gone. `replacement`, when
+ * non-null, must reference a live `packages[].name`; `null` means fully
+ * retired with no successor (e.g. autoplan).
+ */
+export interface SkillSurfaceRetiredPackage {
+  readonly name: string;
   readonly replacement: string | null;
   readonly note: string;
 }
@@ -66,6 +81,7 @@ export interface SkillSurfaceCatalog {
   readonly packages: readonly SkillSurfacePackage[];
   readonly expectedProjections: SkillSurfaceExpectedProjections;
   readonly nonPublicInternalSteps: readonly string[];
+  readonly retiredPackages: readonly SkillSurfaceRetiredPackage[];
 }
 
 export type SkillSurfaceCatalogDiagnosticCode =
@@ -88,7 +104,9 @@ export type SkillSurfaceCatalogDiagnosticCode =
   | "RETIREMENT_REPLACEMENT_RETIRING"
   | "SOURCE_MISSING"
   | "EXPECTED_PROJECTIONS_REQUIRED"
-  | "PROJECTION_MISMATCH";
+  | "PROJECTION_MISMATCH"
+  | "RETIRED_PACKAGES_NOT_ARRAY"
+  | "RETIRED_PACKAGE_NOT_OBJECT";
 
 export interface SkillSurfaceCatalogDiagnostic {
   readonly code: SkillSurfaceCatalogDiagnosticCode;
@@ -411,6 +429,55 @@ function validateExpectedProjections(
   };
 }
 
+function validateRetiredPackages(
+  raw: unknown,
+  liveNames: ReadonlySet<string>,
+  diagnostics: SkillSurfaceCatalogDiagnostic[],
+): readonly SkillSurfaceRetiredPackage[] {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) {
+    diagnostics.push(diagnostic("RETIRED_PACKAGES_NOT_ARRAY", "retiredPackages", "retiredPackages must be an array"));
+    return [];
+  }
+  const entries: SkillSurfaceRetiredPackage[] = [];
+  for (const [index, rawEntry] of raw.entries()) {
+    const basePath = `retiredPackages[${index}]`;
+    if (!isRecord(rawEntry)) {
+      diagnostics.push(diagnostic("RETIRED_PACKAGE_NOT_OBJECT", basePath, `${basePath} must be an object`));
+      continue;
+    }
+    const name = typeof rawEntry.name === "string" && rawEntry.name.trim() ? rawEntry.name.trim() : "";
+    if (!name) {
+      diagnostics.push(diagnostic("FIELD_REQUIRED", `${basePath}.name`, `${basePath}: name is required`));
+      continue;
+    }
+    const replacement = rawEntry.replacement;
+    if (replacement !== null && typeof replacement !== "string") {
+      diagnostics.push(diagnostic(
+        "FIELD_REQUIRED",
+        `${basePath}.replacement`,
+        `${name}: replacement must be a string or null`,
+      ));
+      continue;
+    }
+    const note = rawEntry.note;
+    if (typeof note !== "string" || note.trim() === "") {
+      diagnostics.push(diagnostic("FIELD_REQUIRED", `${basePath}.note`, `${name}: note is required`));
+      continue;
+    }
+    if (replacement !== null && !liveNames.has(replacement)) {
+      diagnostics.push(diagnostic(
+        "RETIREMENT_REPLACEMENT_UNKNOWN",
+        `${basePath}.replacement`,
+        `${name}: retiredPackages replacement "${replacement}" is not a live package in this catalog`,
+      ));
+      continue;
+    }
+    entries.push({ name, replacement: replacement as string | null, note });
+  }
+  return entries;
+}
+
 export function validateSkillSurfaceCatalogValue(
   value: unknown,
   options: SkillSurfaceCatalogOptions = {},
@@ -522,6 +589,8 @@ export function validateSkillSurfaceCatalogValue(
     }
   }
 
+  const retiredPackages = validateRetiredPackages(value.retiredPackages, new Set(names.keys()), diagnostics);
+
   const expectedProjections = validateExpectedProjections(value.expectedProjections, packages, diagnostics);
 
   if (expectedProjections) {
@@ -580,6 +649,7 @@ export function validateSkillSurfaceCatalogValue(
       packages,
       expectedProjections: expectedProjections as SkillSurfaceExpectedProjections,
       nonPublicInternalSteps,
+      retiredPackages,
     }),
     diagnostics: [],
   };

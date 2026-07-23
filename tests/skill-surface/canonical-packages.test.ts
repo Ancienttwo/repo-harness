@@ -13,23 +13,22 @@ import {
 } from "../../src/core/skill-surface/catalog";
 import { PROFILE_COMPONENTS } from "../../src/cli/installer/install-profile";
 
-// SSD-03: focused content tests for the canonical setup/product/plan
-// packages staged under assets/skills/**. These packages are pure content —
-// inactive until SSD-06 repoints the manifest at them (see plan
-// "File ownership by slice", SSD-03 row: "no activation or deletion").
+// SSD-03 staged these packages as pure content, inactive until SSD-06
+// repointed the manifest at them. SSD-06 has now performed that activation
+// (plan "File ownership by slice", SSD-06 row: "Activate canonical packages
+// and remove old authoring directories in the same integration slice"), so
+// this file's content-quality describe blocks are unchanged in spirit but
+// the former "inertness proof" flips to an "activation proof": these
+// packages now DO appear in manifest.json packages[] and in the selector
+// outputs their target profiles require.
 
 const ROOT = join(import.meta.dir, "..", "..");
 const SKILLS_ROOT = join(ROOT, "assets", "skills");
 const MANIFEST_PATH = join(ROOT, "assets", "skill-commands", "manifest.json");
 
-/** The three staged packages that carry a routable SKILL.md (D1-D3). */
-const STAGED_PACKAGES: ReadonlyArray<{
+/** The three canonical packages that carry a routable SKILL.md. */
+const CANONICAL_PACKAGES: ReadonlyArray<{
   readonly dir: string;
-  /** Expected frontmatter `name:` value. repo-harness-plan-canonical is staged
-   * under a disambiguating directory name but its frontmatter already carries
-   * the eventual public name `repo-harness-plan` (see its SKILL.md and the
-   * SSD-03 notes: SSD-06 renames the directory when it repoints the
-   * manifest). */
   readonly frontmatterName: string;
   readonly references: readonly string[];
 }> = [
@@ -51,27 +50,31 @@ const STAGED_PACKAGES: ReadonlyArray<{
     references: ["prd.md", "sprint.md", "goal.md"],
   },
   {
-    dir: "repo-harness-plan-canonical",
+    // SSD-03 staged this directory as "repo-harness-plan-canonical" (its
+    // frontmatter already carried the eventual public name) to avoid
+    // colliding with the then-live assets/skill-commands/repo-harness-plan
+    // facade. SSD-06 renamed the directory to its final public name
+    // (`git mv`) and deleted the retiring facade in the same slice.
+    dir: "repo-harness-plan",
     frontmatterName: "repo-harness-plan",
     references: ["create.md", "review.md"],
   },
 ];
 
-/** D4 staged reference bundles: content-only, no owning SKILL.md yet (their
- * eventual consumer is the root router / repo-harness-check SKILL.md, both
- * untouched in this slice per the hard constraints). */
-const STAGED_REFERENCE_BUNDLES = [
-  "repo-harness-root-references",
-  "repo-harness-check-references",
-] as const;
-
-/** Every staged directory name, used for the inertness proof below. Distinct
- * from every real manifest package name/source (verified in that describe
- * block), so a plain substring/equality check cannot false-positive against
- * legitimate existing content. */
-const ALL_STAGED_DIR_NAMES = [
-  ...STAGED_PACKAGES.map((p) => p.dir),
-  ...STAGED_REFERENCE_BUNDLES,
+/**
+ * SSD-03 also staged two reference-only bundle directories with no owning
+ * SKILL.md of their own (`repo-harness-root-references`,
+ * `repo-harness-check-references`). SSD-06 dissolved both: their content
+ * moved to its final canonical home (a root `references/` file for the
+ * router, or a `references/` file under the surviving
+ * `repo-harness-check` facade) and the bundle directories were deleted.
+ * These are the same content-quality gates the bundle dirs used to receive,
+ * now pointed at the files' new homes.
+ */
+const DISSOLVED_REFERENCE_FILES = [
+  join(ROOT, "references", "handoff.md"),
+  join(ROOT, "references", "workflow-packaging-rubric.md"),
+  join(ROOT, "assets", "skill-commands", "repo-harness-check", "references", "deploy-readiness.md"),
 ];
 
 const ROUTER_BODY_BYTE_LIMIT = 2048;
@@ -97,10 +100,13 @@ function allFilesUnder(dir: string): string[] {
     });
 }
 
-const ALL_STAGED_FILES = ALL_STAGED_DIR_NAMES.flatMap((dir) => allFilesUnder(join(SKILLS_ROOT, dir)));
+const ALL_CANONICAL_FILES = [
+  ...CANONICAL_PACKAGES.flatMap((pkg) => allFilesUnder(join(SKILLS_ROOT, pkg.dir))),
+  ...DISSOLVED_REFERENCE_FILES,
+];
 
-describe("canonical packages (SSD-03): SKILL.md frontmatter and router size", () => {
-  for (const pkg of STAGED_PACKAGES) {
+describe("canonical packages: SKILL.md frontmatter and router size", () => {
+  for (const pkg of CANONICAL_PACKAGES) {
     test(`${pkg.dir}/SKILL.md parses with valid frontmatter and matches its expected name`, () => {
       const body = readSkill(pkg.dir);
       const frontmatter = frontmatterOf(body);
@@ -128,8 +134,8 @@ describe("canonical packages (SSD-03): SKILL.md frontmatter and router size", ()
   }
 });
 
-describe("canonical packages (SSD-03): every reference file is reachable from its SKILL.md", () => {
-  for (const pkg of STAGED_PACKAGES) {
+describe("canonical packages: every reference file is reachable from its SKILL.md", () => {
+  for (const pkg of CANONICAL_PACKAGES) {
     test(`${pkg.dir}: each declared reference file exists and is linked by explicit relative path`, () => {
       const body = readSkill(pkg.dir);
       for (const reference of pkg.references) {
@@ -147,10 +153,9 @@ describe("canonical packages (SSD-03): every reference file is reachable from it
   }
 });
 
-describe("canonical packages (SSD-03): no imported stale/retired guidance", () => {
-  // Concrete patterns this slice was explicitly told not to import (D1: "do
-  // not copy stale agentic-dev-*, fallback, or compatibility-shim guidance"),
-  // plus this repo's own existing retired-term vocabulary
+describe("canonical packages: no imported stale/retired guidance", () => {
+  // Concrete patterns SSD-03 was explicitly told not to import, plus this
+  // repo's own existing retired-term vocabulary
   // (tests/retired-planning-provider.test.ts's RETIRED_TERMS), checked again
   // here defensively because assets/ is one of that test's own scanned
   // surfaces and any hit here would fail it too.
@@ -167,8 +172,8 @@ describe("canonical packages (SSD-03): no imported stale/retired guidance", () =
     "delegate_to",
   ];
 
-  test("no staged file contains any excluded stale pattern", () => {
-    const violations = ALL_STAGED_FILES.flatMap((file) => {
+  test("no canonical package or dissolved-reference file contains any excluded stale pattern", () => {
+    const violations = ALL_CANONICAL_FILES.flatMap((file) => {
       const content = readFileSync(file, "utf-8").toLowerCase();
       return STALE_PATTERNS
         .filter((pattern) => content.includes(pattern))
@@ -178,7 +183,7 @@ describe("canonical packages (SSD-03): no imported stale/retired guidance", () =
   });
 });
 
-describe("canonical packages (SSD-03): no reimplemented CLI/Core state transitions", () => {
+describe("canonical packages: no reimplemented CLI/Core state transitions", () => {
   // Mechanical proxy: a canonical package should route to deterministic
   // CLI/Core commands, not carry its own multi-line shell workflow. A single
   // illustrative command (the norm throughout these packages) is fine; a
@@ -210,8 +215,8 @@ describe("canonical packages (SSD-03): no reimplemented CLI/Core state transitio
     return counts;
   }
 
-  test(`no staged file has a shell fenced block over ${MAX_SHELL_BLOCK_LINES} lines`, () => {
-    const violations = ALL_STAGED_FILES.flatMap((file) =>
+  test(`no canonical package or dissolved-reference file has a shell fenced block over ${MAX_SHELL_BLOCK_LINES} lines`, () => {
+    const violations = ALL_CANONICAL_FILES.flatMap((file) =>
       shellBlockLineCounts(file)
         .filter((lineCount) => lineCount > MAX_SHELL_BLOCK_LINES)
         .map((lineCount) => `${file.slice(ROOT.length + 1)}: ${lineCount} lines`));
@@ -219,7 +224,7 @@ describe("canonical packages (SSD-03): no reimplemented CLI/Core state transitio
   });
 });
 
-describe("canonical packages (SSD-03): inertness proof — absent from manifest v2 and every selector output", () => {
+describe("canonical packages: activation proof — present in manifest v2 and correctly discovered", () => {
   const source = readFileSync(MANIFEST_PATH, "utf-8");
   const resolution = parseSkillSurfaceCatalog(source, {
     declared: true,
@@ -231,26 +236,40 @@ describe("canonical packages (SSD-03): inertness proof — absent from manifest 
   }
   const catalog = resolution.catalog;
 
-  test("manifest v2 packages[] declares zero entries under any staged directory (name or source)", () => {
-    const violations = catalog.packages.flatMap((pkg) => {
-      const hits: string[] = [];
-      for (const dirName of ALL_STAGED_DIR_NAMES) {
-        if (pkg.name === dirName) hits.push(`${pkg.name}: name equals staged dir "${dirName}"`);
-        if (pkg.source !== null && pkg.source.includes(dirName)) {
-          hits.push(`${pkg.name}: source "${pkg.source}" references staged dir "${dirName}"`);
-        }
-      }
-      return hits;
-    });
-    expect(violations).toEqual([]);
+  test("manifest v2 packages[] declares exactly one live entry per canonical package, sourced at its final directory", () => {
+    for (const pkg of CANONICAL_PACKAGES) {
+      const entry = catalog.packages.find((p) => p.name === pkg.frontmatterName);
+      expect(entry).toBeDefined();
+      expect(entry?.source).toBe(`assets/skills/${pkg.dir}`);
+      expect(entry?.retirementCandidate).toBeNull();
+    }
   });
 
-  test("no selector output names a staged directory, on any profile (including the unconditional bundle)", () => {
+  test("repo-harness-setup is discovered by no profile (router-only progressive load)", () => {
+    for (const profile of SKILL_SURFACE_PROFILES) {
+      expect(facadesForProfile(catalog, profile)).not.toContain("repo-harness-setup");
+    }
+  });
+
+  test("repo-harness-plan is discovered by standard, product-planning, and strict, not minimal", () => {
+    expect(facadesForProfile(catalog, "minimal")).not.toContain("repo-harness-plan");
+    for (const profile of ["standard", "product-planning", "strict"] as const) {
+      expect(facadesForProfile(catalog, profile)).toContain("repo-harness-plan");
+    }
+  });
+
+  test("repo-harness-product is discovered only by product-planning", () => {
+    expect(facadesForProfile(catalog, "product-planning")).toContain("repo-harness-product");
+    for (const profile of ["minimal", "standard", "strict"] as const) {
+      expect(facadesForProfile(catalog, profile)).not.toContain("repo-harness-product");
+    }
+  });
+
+  test("no selector output still names the old disambiguating staging directory repo-harness-plan-canonical", () => {
     const profilesToCheck: Array<(typeof SKILL_SURFACE_PROFILES)[number] | undefined> = [
       ...SKILL_SURFACE_PROFILES,
       undefined,
     ];
-
     const allSelectorNames: string[] = [];
     for (const profile of profilesToCheck) {
       if (profile !== undefined) {
@@ -262,7 +281,6 @@ describe("canonical packages (SSD-03): inertness proof — absent from manifest 
       const placements = hostSkillPlacements(catalog, profile);
       allSelectorNames.push(...placements.claude, ...placements.codex);
     }
-
     const { repoHarnessSkills, externalSkills } = mutationPathSkillNames(catalog);
     allSelectorNames.push(...repoHarnessSkills, ...externalSkills);
     allSelectorNames.push(...profileOwnedSkillNames(catalog));
@@ -272,9 +290,7 @@ describe("canonical packages (SSD-03): inertness proof — absent from manifest 
       ...expectations.planningCapabilityPaths,
       ...expectations.crossModel,
     );
-
-    const violations = ALL_STAGED_DIR_NAMES.filter((dirName) =>
-      allSelectorNames.some((name) => name.includes(dirName)));
-    expect(violations).toEqual([]);
+    expect(allSelectorNames.some((name) => name.includes("repo-harness-plan-canonical"))).toBe(false);
+    expect(existsSync(join(SKILLS_ROOT, "repo-harness-plan-canonical"))).toBe(false);
   });
 });

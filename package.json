@@ -9,7 +9,6 @@
   },
   "type": "module",
   "files": [
-    ".agents/skills/repo-harness-chatgpt-browser/",
     "agents/",
     "assets/",
     "docs/images/",
@@ -17,6 +16,8 @@
     "install.sh",
     "install.ps1",
     "interfaces/",
+    "references/handoff.md",
+    "references/workflow-packaging-rubric.md",
     "scripts/",
     "src/",
     "AGENTS.md",

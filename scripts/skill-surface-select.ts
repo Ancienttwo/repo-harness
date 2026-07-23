@@ -68,6 +68,21 @@ function main(argv: readonly string[]): void {
     for (const name of facadesForProfile(catalog, profileFlag)) console.log(name);
     return;
   }
+  if (subcommand === "facade-sources") {
+    // Unconditional (no --profile): every facade-kind package's name/source
+    // pair, regardless of which profile(s) select it. This is the single
+    // manifest-derived authority the shell sync script uses both to resolve
+    // each selected facade's real source directory (which no longer lives
+    // under one fixed assets/skill-commands/<name> parent -- e.g.
+    // repo-harness-plan now sources from assets/skills/repo-harness-plan) and
+    // to preflight/retire whatever repo-harness-* names it finds already
+    // installed on a host, selected or not.
+    for (const pkg of catalog.packages) {
+      if (pkg.kind !== "facade") continue;
+      console.log(`${pkg.name}\t${pkg.source ?? ""}`);
+    }
+    return;
+  }
   if (subcommand === "external-skills") {
     if (profileFlag !== undefined && !isProfile(profileFlag)) {
       fail(`--profile must be one of ${SKILL_SURFACE_PROFILES.join("|")}`);
@@ -84,7 +99,7 @@ function main(argv: readonly string[]): void {
     for (const name of placements.codex) console.log(`codex ${name}`);
     return;
   }
-  fail(`unknown or missing subcommand "${subcommand ?? ""}"; expected facades|external-skills|host-placements`);
+  fail(`unknown or missing subcommand "${subcommand ?? ""}"; expected facades|facade-sources|external-skills|host-placements`);
 }
 
 main(process.argv.slice(2));

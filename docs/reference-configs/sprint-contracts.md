@@ -13,7 +13,7 @@ The word "sprint" historically named a single execution slice in this harness. T
 | **Sprint** | Program execution backlog | `plans/sprints/<stamp>-<slug>.sprint.md` (Source PRD + Architecture Notes + ordered Backlog + Execution Log) | PM + architect planning |
 | **Task Contract** | Execution slice | `tasks/contracts/<plan-stem>.contract.md` plus its review/notes trio | One plan, one worktree |
 
-- A PRD decomposes `docs/spec.md` intent into product direction, users, success criteria, acceptance scenarios, module behavior, data model, performance targets, and developer handoff. `repo-harness-prd` writes PRDs with compact/standard tiers and evidence rules for `[UNKNOWN]` / `[UNVERIFIED]` facts.
+- A PRD decomposes `docs/spec.md` intent into product direction, users, success criteria, acceptance scenarios, module behavior, data model, performance targets, and developer handoff. `repo-harness-product`'s PRD mode writes PRDs with compact/standard tiers and evidence rules for `[UNKNOWN]` / `[UNVERIFIED]` facts.
 - A Sprint decomposes a PRD or `docs/spec.md` into an ordered backlog; each backlog task executes as one task-contract slice through the existing plan -> contract -> worktree -> verify flow.
 - `tasks/todos.md` stays the deferred-goal ledger; it never carries the sprint backlog or any active checklist.
 - Backlog row mode is a granularity decision. `contract` rows are allowed to become a top-level plan plus task contract only when they are captured as `Artifact Level: work-package` and pass the plan Promotion Gate. `inline` and `checklist-row` work stays inside the sprint backlog or active plan `## Task Breakdown` and must not generate contract/review/notes artifacts.

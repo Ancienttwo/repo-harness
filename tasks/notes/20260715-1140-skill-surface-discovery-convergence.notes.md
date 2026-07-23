@@ -1006,3 +1006,607 @@ SSD-06 intake (carried findings, not fixed in the wave):
 - Gatekeeper ruling of record (wave review, adjudication f): the
   parameterized `chatgptGuideMarkdown()` is operator setup documentation,
   not Skill prose under Trace D; its two non-Skill call sites stay.
+
+## SSD-06 -- Perform the atomic public cutover, retirement and documentation migration
+
+**Status**: Complete. Sole writer, sequential execution, verified incrementally
+at every step per the dispatch's instruction. All nine plan checklist items
+(root routing/manifest/profile rewrite, activation+deletion in the same
+slice, transactional retirement, name removal, live-reference migration,
+root SKILL.md byte cap, adapter/runtime refresh verification, retired-name
+migration metadata) and all five acceptance lines are met; full verification
+suite green (see Verification below).
+
+### Orchestrator rulings applied (R1-R6)
+
+- **R1 (provenance enum stays)**: `scripts/acceptance-receipt.ts`,
+  `scripts/harness-trace-grade.sh`, `scripts/sprint-backlog.sh`,
+  `scripts/plan-to-todo.sh`, `scripts/capture-plan.sh`,
+  `scripts/lib/project-init-lib.sh` untouched. In
+  `src/cli/hook/prompt-handler.ts`: line ~505's `source` variable keeps
+  `'claude-review'`/`'codex-review'` as the literal `AcceptanceReceipt.source`
+  enum value; the adjacent `command` variable (line ~506, a skill-invocation
+  *suggestion* string, not a provenance value) migrated to
+  `'repo-harness-cross-review'`; line ~542's `skill` suggestion variable
+  migrated the same way (dropped the per-host ternary, since one package now
+  serves both hosts); line ~664's autoplan route suggestion migrated to name
+  the root `repo-harness` execute continuation plus a pointer to
+  `references/workflow-packaging-rubric.md`, phrased to preserve the
+  existing `tests/hook-contracts.test.ts` lowercase "hook will not plan or
+  create assets" suffix assertion untouched. `tests/prompt-handler.test.ts`
+  needed no changes (grepped: its only `claude-review`/`codex-review`
+  mentions are the same untouched provenance-enum fixture values).
+- **R2 (bridge identity stays)**: `setup.ts`'s `CHATGPT_BRIDGE_FRONTMATTER_NAME`,
+  `bridge.md` frontmatter, and every generated-projection destination path
+  (`.agents/skills/repo-harness-chatgpt-bridge/` in a *target* repo) are
+  byte-unchanged; only the static self-hosted
+  `.agents/skills/repo-harness-chatgpt-bridge/` source directory was deleted
+  (C2). `repo-harness-chatgpt-bridge` is excluded from the C8 retired-name
+  scan's `RETIRED_NAMES` list entirely (it is not a retired name), per R2.
+- **R3 (package.json files)**: removed
+  `".agents/skills/repo-harness-chatgpt-browser/"` from `files`; added
+  `"references/handoff.md"` and `"references/workflow-packaging-rubric.md"`
+  as individual entries (needed so the root Skill's own new progressive
+  references ship in the npm tarball -- see the root-references placement
+  decision below); `docs/repo-harness-chatgpt-browser-engine.md` untouched.
+  `version` and `dependencies` untouched. Verified via `npm pack --dry-run`
+  that the tarball now contains the two new reference files and no longer
+  contains any `.agents/skills/repo-harness-chatgpt-browser/*` entry.
+- **R4 (claude-plan survives)**: `claude-plan`'s manifest entry (kind
+  `provider-skill`, hosts `[codex]`, profiles `[strict]`, component
+  `adaptive-workflow`, `retirementCandidate: null`) is byte-for-byte
+  unchanged from the pre-cutover manifest; only its *position* in
+  `packages[]` moved (now ordered directly after `repo-harness-cross-review`
+  so `hostSkillPlacements`'s codex-array order is
+  `[repo-harness-cross-review, claude-plan]`, matching the plan's stated
+  order). The 10 "target canonical packages" list and every test/doc/eval
+  enumerating them deliberately excludes `claude-plan` (it is not one of the
+  10; it is a pre-existing, separately-classified provider-skill).
+- **R5 (baseline frozen)**: `evals/skill-routing/discovery-baseline.json` has
+  zero edits (verified: not in this slice's diff). Migrated oracles that
+  previously compared *live* state against this frozen file:
+  - `tests/skill-routing-eval.test.ts`'s two baseline-shape tests
+    (`source_inventory has exactly 25 entries...` and `the 19 command-facade
+    entries match the actual assets/skill-commands/ directory listing`)
+    rescoped to (a) pure structural well-formedness of `source_inventory`
+    (no live filesystem read) and (b) internal consistency between
+    `source_inventory`'s recorded command-facade names and
+    `current_discovered_sets.command_facade_matrix`'s recorded selected
+    subset -- both purely within the frozen JSON, zero live-path dependency.
+  - `tests/skill-surface/catalog.test.ts`'s `describe("skill-surface
+    catalog: selector parity against the frozen SSD-01 discovery
+    baseline", ...)` block (5 of its 8 tests compared live catalog selector
+    output against `discovery-baseline.json`) renamed to `"target
+    post-cutover discovery matrix"` and every assertion flipped to pin the
+    plan's target matrix directly (manifest-derived, not baseline-derived);
+    the baseline file is no longer read anywhere in this describe block.
+  - The `## SSD-02/04/05` staging-state assertions in
+    `tests/skill-surface/{canonical-packages,cross-review-inertness,chatgpt-package}.test.ts`
+    ("inertness proof" -- absent from manifest/selectors) are the *other*
+    category of deliberately-migrated oracle: not baseline-comparison, but
+    pre-activation-state assertions that flip to activation-proof once this
+    slice performs the activation they were staged to await. See "Deliberate
+    oracle migrations" below for the full list with one line each.
+- **R6 (merge-gate classification-only)**: no merge-gate SKILL.md created.
+  Represented as one `packages[]` entry: `kind: "judge"` (new kind added to
+  `SKILL_SURFACE_KINDS`), `hosts: []`, `profiles: []`, `source: null`,
+  `component: "non-projected-judge"`. Non-selectability is structural, not
+  just data-driven: every selector function (`computeFacadesForProfile`,
+  `computeHostSkillPlacements`, `computeExternalSkillsForProfile`) filters by
+  a specific `kind` value none of which is `"judge"`, so this entry can never
+  appear in any projection regardless of its `hosts`/`profiles` values; the
+  empty arrays are belt-and-suspenders documentation of that same guarantee.
+  `docs/reference-configs/external-tooling.md:469-480`'s "### Local merge
+  gate" section (the authority R6 names) is untouched -- confirmed by
+  re-reading it in full before editing the unrelated cross-review paragraph
+  earlier in the same file. Proven by
+  `tests/skill-surface/catalog.test.ts`'s `"merge-gate is a non-selectable
+  classification-only judge entry"` test.
+
+### C1-C10 checklist, concretized
+
+- **C1 (activation + rename)**: `git mv assets/skills/repo-harness-plan-canonical
+  assets/skills/repo-harness-plan` (content unchanged except removing the
+  now-stale "staged under ... during this slice" sentence from its SKILL.md,
+  which described a staging state this same slice resolves). Manifest v2
+  final projection: 16 packages total (11 repo-owned: the 10 target
+  canonical packages + `claude-plan`, unchanged; + 5 external, unchanged).
+  Root `SKILL.md` rewritten (see below). Survivors `repo-harness-check`,
+  `repo-harness-ship`, `repo-harness-architecture` stay at their existing
+  `assets/skill-commands/` paths; `repo-harness-check` gained
+  `references/deploy-readiness.md` (moved from the dissolved
+  `repo-harness-check-references` staging dir) plus one added sentence in
+  its manifest `summary`. `repo-harness-root-references/{handoff,workflow-packaging-rubric}.md`
+  moved to a literal root `references/` directory (sibling to `SKILL.md`;
+  **placement decision**: reused the pre-existing repo-root `references/`
+  directory -- already used for unrelated AI-native-scaffold content, never
+  shipped in the npm package -- rather than the `docs/reference-configs/` +
+  `assets/reference-configs/` mirror-pair mechanism the root SKILL.md
+  already uses for `harness-overview`/`agentic-development-flow`, because
+  (a) the plan's own wording says "a root **references/** location", (b)
+  these two files are genuinely Skill-progressive-disclosure content in the
+  Anthropic-convention sense -- the same `references/<file>.md`
+  relative-path convention every other canonical package already uses --
+  not general operator reference-config docs, and (c) it required zero new
+  mechanism, just two explicit `package.json` "files" entries (R3) so they
+  actually ship). Both staging bundle dirs
+  (`repo-harness-check-references/`, `repo-harness-root-references/`)
+  deleted along with their staging-only `README.md` files.
+- **C2 (deletion, same slice)**: deleted 15 facade dirs under
+  `assets/skill-commands/` (`repo-harness-{init,migrate,upgrade,repair,
+  scaffold,capability,review,prd,sprint,goal,handoff,deploy,autoplan,gptpro,
+  gptpro-setup}`), `assets/skills/{claude-review,codex-review}`, and
+  `.agents/skills/repo-harness-chatgpt-{bridge,browser}` (the whole
+  `.agents/` tree is now absent from the working copy -- git does not track
+  empty directories and those two dirs were its only contents; the C8 scan
+  test treats an absent scan surface as "nothing to scan", not an error).
+  Also deleted the *old* `assets/skill-commands/repo-harness-plan/` (the
+  facade being replaced by the renamed-in canonical package, distinct from
+  the 15 fully-retired names -- this is the "moves" case, not a "deletes"
+  case, per the plan's own accounting: 19 skill-commands dirs = 3 survivors
+  in place + 1 moves out (plan) + 15 deleted). Post-C1/C2,
+  `assets/skill-commands/` contains exactly `{repo-harness-check,
+  repo-harness-ship, repo-harness-architecture}` + `manifest.json` +
+  `AGENTS.md`/`CLAUDE.md` -- verified by direct `ls`.
+- **C3 (selector/profile wiring)**: added a `facade-sources` subcommand to
+  `scripts/skill-surface-select.ts` (unconditional, all facade-kind
+  packages' `name\tsource` pairs, catalog order) so
+  `scripts/sync-codex-installed-copies.sh` no longer assumes every facade
+  lives under one fixed `assets/skill-commands/<name>` parent --
+  `repo-harness-plan`'s move to `assets/skills/repo-harness-plan` was
+  exactly the case that broke that assumption. Added a `facade_source_for()`
+  shell helper (looks up a name in the eagerly-fetched `$FACADE_SOURCES`
+  list) and rewired `preflight_skill_root`, `remove_retired_owned_facades`,
+  and `sync_command_facades` to resolve each facade's real source through
+  it, replacing the old physical-directory-glob walk. `facade_selected()`
+  itself is untouched (still `profile_facades | grep -Fxq`). Live-verified
+  across all four profiles in both link and copy mode, plus symlink-target
+  correctness, idempotent re-sync, and profile-downgrade retirement -- see
+  Verification below for the exact listings. `repo-harness-cross-review`'s
+  CLI registered in `src/cli/index.ts` as a plain `.command('cross-review')`
+  (mirrors the existing `migrate` command's shape: `--provider
+  <claude|codex>` required, `--repo`/`--base`/`--timeout-ms`/`--json`
+  optional); smoke-tested (`--help`, missing-`--provider` error). Fixed the
+  `init.ts:63-67,92-99` comments (stale codex-review/claude-review naming)
+  and the `--no-external-skills` help text at `index.ts:326,537` (same
+  rename). `init.ts`/`global-runtime.ts` needed **zero** functional code
+  changes for the cross-review host-placement change itself -- both already
+  derive placements from `hostSkillPlacements(catalog, ...)`
+  (SSD-02's D5 catalog-authority work), so once the manifest's own
+  `repo-harness-cross-review` entry carries `hosts: [claude, codex]`, both
+  hosts are wired automatically. `installProfileHostMutationPaths` similarly
+  needed zero code changes (already derives its transaction-path skill list
+  from `catalogMutationPathSkillNames`); the *manifest* choice to give
+  `repo-harness-cross-review` `component: "cross-model-acceptance"`
+  (matching what `codex-review`/`claude-review` had) is what keeps it inside
+  the transaction-snapshot/probe-expectation coverage -- this is the
+  concrete instance of the plan's stated top risk ("New package path is
+  absent from transaction snapshots") being avoided by construction rather
+  than by an added check.
+- **C4 (reference/docs migration)**: all 5 READMEs' "Action Command Skills"
+  section rewritten to the 10-package target, each language independently
+  translated but structurally parallel (English gained explicit `merge-gate`
+  and `repo-harness-cross-review` rows the 4 other languages' pre-existing,
+  shorter-form sections never had for the old 19-name catalog either --
+  matched each language's own established content depth rather than force
+  ing new content into languages that were already more condensed;
+  zh-CN/ja/fr/es's is a name-for-name migration of what was already there,
+  not a new expansion). All 5 READMEs' "First 5 Minutes"/preview-step
+  scaffold-vs-adopt example sentences migrated to name
+  `repo-harness-setup`'s scaffold mode. `docs/images/repo-harness-gptpro*.png`
+  `<img>` reference blocks removed from all 5 READMEs (image files
+  themselves untouched on disk, confirmed still present); this was the
+  "drop" branch of the plan's explicit "update or drop" choice, because the
+  depicted diagram specifically illustrated the retired
+  `repo-harness-gptpro`-branded flow. `docs/architecture/modules/public-surface/action-commands.md`
+  rewritten as the canonical-package catalog, including a paragraph
+  documenting `retiredPackages[]` (deliberately allowed migration metadata,
+  per C8). `docs/architecture/modules/public-surface/root-router.md`'s
+  concrete-route trace updated (init route -> `repo-harness-setup`'s
+  adopt-init mode). `docs/reference-configs/**` + `assets/reference-configs/**`
+  mirror pairs migrated (`harness-overview`, `global-working-rules`,
+  `document-generation`, `external-tooling`, `sprint-contracts`,
+  `agentic-development-flow`), every pair re-diffed identical after editing;
+  did not touch `external-tooling.md`'s "### Local merge gate" section (R6
+  authority) or attempt to fix the plan's named pre-existing unrelated
+  harness-overview drift. `src/cli/mcp/setup.ts:556`'s gptpro prompt
+  migrated to `repo-harness-chatgpt`. `src/effects/review/cross-review-runner.ts`'s
+  four historical-provenance comments (naming `claude-review`/`codex-review`
+  as the extraction source) updated to name `repo-harness-cross-review`'s
+  claude-mode/codex-mode instead, preserving the behavioral content (budget
+  numbers, fallback-chain description) unchanged.
+- **C5 (eval migration)**: `evals/evals.json` -- 18 of 30 eval entries
+  mentioned a retiring name; all migrated (prompt/expected_output/
+  expectations/graders/anti_graders text, plus `files` fixture paths for the
+  6 entries whose `files` pointed directly at a now-deleted facade
+  `SKILL.md`, plus 5 slugs that spelled a retired name verbatim). See
+  "Deliberate oracle migrations" for the per-entry list.
+  `tests/evals-contract.test.ts`'s 19-name public-command-coverage list
+  migrated to the 8 canonical names this eval asset actually exercises
+  (`repo-harness`, `-setup`, `-plan`, `-product`, `-check`, `-ship`,
+  `-architecture`, `-chatgpt`; `-cross-review`/`merge-gate` were never
+  covered by this day-to-day-workflow eval asset either before or after).
+  `tests/action-command-skills.test.ts` -- full rewrite, see "Deliberate
+  oracle migrations".
+- **C6 (test migration from the sweep)**: `tests/bootstrap-files.test.ts`'s
+  shell-variable-scanning cross-review test rescoped to check
+  `repo-harness-cross-review`'s own reference-file prose (read-only
+  boundaries, model/timeout budgets, transcript recovery, no-merge-gate)
+  instead of grepping for shell variable assignments that no longer exist
+  (the mechanics moved to code in SSD-04, proven by `tests/cli/cross-review.test.ts`,
+  not by scanning Markdown). `tests/cli/mcp-setup.test.ts` needed **zero**
+  changes (the retired `.agents/skills/repo-harness-chatgpt-bridge` static
+  dir was never the subject of any assertion there -- `runMcpInstallSkill`
+  already read the canonical source exclusively since SSD-05). `tests/cli/chatgpt-browser.test.ts`
+  split its one `'ships browser engine docs and Codex Skill'` test into two:
+  the untouched guide-doc half stays, and a new
+  `'canonical repo-harness-chatgpt package carries the Oracle setup and GPT
+  Pro consult/read-back content'` test replaces the assertions that read the
+  two deleted paths, re-verified against the *actual* new canonical prose
+  (not assumed -- several exact old phrases don't survive verbatim, e.g.
+  "MCP Read-Back Acceptance" is now a quoted historical cross-reference, not
+  a live heading; dropped that one assertion rather than assert something
+  false). `tests/cli/init.test.ts` + `tests/cli/global-runtime-init.test.ts`
+  -- both `setupFakeSource`/`makeSource` fixture helpers' `codex-review`/
+  `claude-review` seed dirs replaced with one `repo-harness-cross-review`
+  seed dir; every assertion checking host-specific old-name placement
+  migrated to check `repo-harness-cross-review` on **both** hosts (link and
+  copy paths); one test renamed
+  (`"installs host-aware: codex-review to Claude, claude-review to Codex"` ->
+  `"installs repo-harness-cross-review on both hosts; claude-plan stays
+  Codex-only"`) since the underlying behavior it documents genuinely
+  changed, not just the name. `tests/install-profiles.test.ts` +
+  `tests/installed-copy-sync.test.ts` -- see "Deliberate oracle migrations".
+
+  **Necessary consequences discovered in files outside this contract's
+  `allowed_paths`** (not pre-listed by the dispatch; found only by actually
+  running the full suite): `tests/hook-contracts.test.ts:120`,
+  `tests/readme-dx.test.ts` (hero-image assertion),
+  `tests/ux-feature-guardrail.test.ts:80`, and
+  `tests/capability-archcontext-export.test.ts` (via
+  `.ai/context/capabilities.json`'s stale `.agents/skills/repo-harness-chatgpt-bridge`
+  capability `prefixes` entry) all broke as a direct, mechanical,
+  unavoidable consequence of R1/C2/C4's explicitly-mandated changes. Judgment
+  call: fixed all four with the minimum necessary edit (one string-literal
+  update each in the first three; one array-entry removal in
+  `capabilities.json`) rather than leaving `bun test` red or reverting a
+  mandated change to satisfy an out-of-scope assertion. Each is a pure,
+  mechanical, single-line consequence with no design content of its own --
+  flagged here explicitly for gatekeeper/orchestrator review rather than
+  silently absorbed.
+- **C7 (intake findings, wave gate)**: (i) added
+  `tests/skill-surface/chatgpt-package.test.ts`'s
+  `"repo-harness-chatgpt canonical package: read-back.md is bound to the
+  code/test Connector-invocation contract"` test, calling
+  `assertChatGptMcpContract(readBack)` directly against
+  `references/read-back.md` (verified all required substrings -- including
+  the negative-match secret-leak patterns -- are satisfied by the real file
+  before trusting the assertion). (ii) `src/cli/mcp/setup.ts`'s
+  `runMcpInstallSkill` no longer writes
+  `references/chatgpt-connector-manual.md` (dropped the third
+  `writeFileIfChanged` call and the now-unused-at-that-callsite
+  `chatgptGuideMarkdown()` invocation there specifically; the function
+  itself and its other two call sites are untouched); `tests/cli/mcp-setup.test.ts`
+  needed no changes (that file was never asserted on there). (iii) SSD-03's
+  LOW advisory (duplicated internal-steps non-exposure rule) was reviewed
+  but left as-is: `repo-harness-setup/SKILL.md`'s Boundaries line ("Does not
+  expose internal helper scripts...") and the analogous line already staged
+  in `repo-harness-setup/references/scaffold.md`/`adopt-init.md` are each
+  one short sentence, not a duplicated paragraph, and collapsing them into a
+  single pointer would be a content-shape change to SSD-03's
+  already-accepted staged prose beyond this slice's activation mandate;
+  recorded here as reviewed-and-deferred rather than silently dropped.
+- **C8**: see the dedicated `tests/skill-surface/retired-names-scan.test.ts`
+  section below.
+- **C9**: re-verified via the existing
+  `tests/cli/global-runtime-init.test.ts` test `"CLI update preserves a
+  recorded product-planning profile"` (writes `install-state.json` with
+  `profile: 'product-planning'` and **no** explicit `--profile` flag on the
+  `repo-harness update` invocation, then asserts the `configure brain root`
+  step ran `ok` -- that step only fires when `profile === 'product-planning'`,
+  so a pass proves `readInstalledProfile(env)?.profile` precedence at
+  `global-runtime.ts:651` is intact post-cutover). Ran in isolation: 1 pass,
+  0 fail. No new test added (an adequate one already existed); the removed
+  stale deferred-ledger claim
+  (`docs/researches/20260715-skill-surface-discovery-audit.md:46`) was not
+  revived or referenced.
+- **C10**: `docs/CHANGELOG.md` gained one new `### Removed` section under
+  `[Unreleased]` (inserted before the pre-existing EPC `### Notes` section,
+  after the pre-existing EPC `### Changed` section -- neither touched),
+  naming the public cutover as a next-minor breaking change with the full
+  19-name retired -> replacement table and the target discovery matrix
+  summary. No version bump anywhere (verified: `package.json`'s `version`
+  field byte-unchanged).
+
+### Manifest v2 final design decisions (beyond the plan's literal text)
+
+- `merge-gate`'s `component` value `"non-projected-judge"` is a free
+  descriptive string, not a real `InstallComponent` -- safe because the
+  crossref-validation loop only iterates a package's `profiles` array, which
+  is empty for this entry, so no crossref check ever fires against it.
+- `packages[]` order: router, then the 6 facade-kind packages (setup, plan,
+  check, product, ship, architecture), then `repo-harness-cross-review`,
+  then `merge-gate`, then `repo-harness-chatgpt`, then `claude-plan`, then
+  the 5 external packages. This ordering is load-bearing for two
+  order-sensitive selectors: `facadesForProfile`'s declared order (plan,
+  check[, product][, ship], matching the plan's own illustrative order) and
+  `hostSkillPlacements`'s codex-array order (`[repo-harness-cross-review,
+  claude-plan]`, cross-review before claude-plan since cross-review is
+  earlier in `packages[]`).
+- Added a new top-level `retiredPackages` array (19 entries: `{name,
+  replacement, note}`) plus corresponding `catalog.ts` additions
+  (`SkillSurfaceRetiredPackage` type, `RETIRED_PACKAGES_NOT_ARRAY`/
+  `RETIRED_PACKAGE_NOT_OBJECT` diagnostic codes, a `validateRetiredPackages`
+  function reusing the existing `RETIREMENT_REPLACEMENT_UNKNOWN` diagnostic
+  for a dangling `replacement`). This is new schema surface beyond the
+  plan's literal manifest-field list (`kind`, `source`, `modes`, `profiles`,
+  `hosts`, `discoverability`, `component`, `requires`,
+  `mutatesRepoByDefault`, and retirement metadata) but is squarely inside
+  "retirement metadata" as already contemplated by the plan and by SSD-02's
+  own per-package `retirementCandidate` field -- this is that same concept
+  hoisted to survive the referenced package's deletion from `packages[]`,
+  not a new kind of authority. Every live package's own
+  `retirementCandidate` field is now `null` (none of the 16 live packages
+  are themselves retiring); the field itself stays in the schema (unused,
+  harmless) rather than being removed, per "smallest change."
+
+### Deliberate oracle migrations (every one, with rationale)
+
+1. `tests/skill-surface/catalog.test.ts` -- "covers all 25 repo-owned..." ->
+   "covers all 11 repo-owned... (16 packages)"; baseline-comparison describe
+   block -> "target post-cutover discovery matrix" (R5, detailed above); new
+   tests for `merge-gate` non-selectability and `retiredPackages[]` shape.
+2. `tests/skill-surface/canonical-packages.test.ts` -- "inertness proof" ->
+   "activation proof" (the 3 SSD-03-staged packages are now live); dropped
+   the `repo-harness-plan-canonical` directory name from the checked
+   packages list (renamed away) and added a check that the old staging name
+   is gone from disk and from every selector output.
+3. `tests/skill-surface/cross-review-inertness.test.ts` -> renamed
+   `cross-review-package.test.ts`; same inertness->activation flip, plus a
+   new assertion that `codex-review`/`claude-review` are simultaneously
+   absent from `packages[]` and present in `retiredPackages[]` pointing at
+   `repo-harness-cross-review`.
+4. `tests/skill-surface/chatgpt-package.test.ts` -- same inertness->activation
+   flip; the old "note still says not-yet-created" test replaced with
+   "retired GPT Pro facades and static dirs are fully retired" (packages[]
+   absent, retiredPackages[] present, disk-deleted); added the C7(i)
+   read-back binding test.
+5. `tests/action-command-skills.test.ts` -- full rewrite. `COMMANDS`
+   (19-name flat facade list) replaced by `TARGET_CANONICAL_PACKAGES` (10
+   names) + `TARGET_FACADE_KIND_PACKAGES` (6 names, the `kind==="facade"`
+   subset); every per-facade content test relocated to read from the
+   package's new reference file (e.g. `repo-harness-setup/references/
+   capability.md` instead of the deleted `repo-harness-capability/SKILL.md`)
+   with assertions re-verified against the *actual* migrated prose (several
+   exact old phrases don't survive a non-verbatim rewrite -- e.g. dropped
+   "Does not create or approve a Sprint backlog" from the PRD-mode test
+   since `prd.md`'s real Boundaries list never contained that exact
+   sentence, and dropped the `plans/sprints/` literal-path assertion from
+   the Sprint-mode test for the same reason). The autoplan-specific test
+   (self-review-pass automation) deleted outright -- no successor implements
+   that behavior; only its packaging-rubric content survives, covered by one
+   new migrated test reading `references/workflow-packaging-rubric.md`.
+6. `tests/evals-contract.test.ts` -- public-command-coverage list, see C5.
+7. `tests/skill-routing-eval.test.ts` -- two baseline-shape tests rescoped,
+   see R5.
+8. `tests/install-profiles.test.ts` -- `writeManagedHostSurfaces`'s
+   `repo-harness-handoff`/`repo-harness-{prd,sprint,goal}`/`claude-review`
+   fixture seeds replaced with `references/handoff.md`/
+   `repo-harness-product/SKILL.md`/`repo-harness-cross-review`; the
+   `"discoverManagedSurfaces empties the component set..."` test's canonical
+   control fixture moved from `assets/skill-commands/repo-harness-plan` to
+   `assets/skills/repo-harness-plan` (the real post-cutover source path);
+   the mutation-path-coverage test's 4-facade list migrated from
+   `[plan, check, handoff, gptpro]` to `[plan, check, product, ship]`
+   (matching `mutationPathSkillNames`'s new real output); two inline
+   fixtures (the skill-lock-cleanup test, the downgrade-preserves-staging
+   test) migrated `claude-review`/`prd+sprint+goal` fixture names to
+   `repo-harness-cross-review`/`repo-harness-product` directly (not through
+   the shared helper, since they build custom scenarios).
+9. `tests/installed-copy-sync.test.ts` -- every fixture's
+   `assets/skill-commands/repo-harness-plan` seed path moved to
+   `assets/skills/repo-harness-plan` (9 occurrences); the
+   `"wires repo-harness-gptpro into product-planning and strict but not
+   standard or minimal"` test rewritten as
+   `"wires repo-harness-product into product-planning only and
+   repo-harness-ship into strict only"` -- deliberately a *stronger*
+   replacement, not a same-shape rename: the old test's premise (one facade
+   shared by two profiles) has no post-cutover analogue, so the new test
+   proves the more precise, more representative target-matrix property
+   (each of two facades gated by exactly one distinct profile) instead. The
+   two retirement-mechanics tests (`"retires an owner-marked facade..."`,
+   `"preserves and reports a modified facade..."`) migrated their subject
+   from `repo-harness-gptpro` (fully retired, can no longer legitimately
+   demonstrate a *live* product-planning->standard retirement) to
+   `repo-harness-product` (a real, current profile-gated facade -- also a
+   *stronger* replacement, since it now exercises retirement machinery
+   against a package that actually exists in the live target matrix).
+10. `tests/cli/init.test.ts` + `tests/cli/global-runtime-init.test.ts` --
+    see C6.
+11. `tests/cli/chatgpt-browser.test.ts` -- see C6.
+12. `tests/bootstrap-files.test.ts` -- see C6.
+13. `evals/evals.json` -- per-entry list: **id 14** (`repo-harness-review` ->
+    `repo-harness-plan` review mode, added an explicit "review" keyword
+    grader since the prompt alone no longer implies mode selection). **id
+    15** (`repo-harness-autoplan` -> root `repo-harness` execute
+    continuation; rewrote prompt/expected_output/expectations/graders from
+    scratch since autoplan has no direct successor -- dropped the invented
+    "self-review passes" grader, since no successor guarantees that
+    behavior; this is the one eval entry where the *premise* changed, not
+    just the name). **id 16** (`repo-harness-capability` ->
+    `repo-harness-setup` capability mode; `files` repointed at
+    `references/capability.md`; slug renamed
+    `route-repo-harness-setup-capability-mode`). **id 18, 21**
+    (`repo-harness-handoff` -> root `repo-harness` handoff action; `files`
+    repointed at `references/handoff.md`; strengthened the grader pattern
+    from a near-vacuous bare `"repo-harness"` substring to `"handoff"`, the
+    actual distinguishing action name). **id 19**
+    (`repo-harness-deploy` -> `repo-harness-check` deploy-readiness
+    reference; `files` repointed at
+    `assets/skill-commands/repo-harness-check/references/deploy-readiness.md`;
+    slug renamed `route-repo-harness-check-deploy-readiness`). **id 22**
+    (`route-init-vs-scaffold-contrast` -> a genuine premise change: init and
+    scaffold are no longer two skills to choose *between*, they are two
+    modes of the same skill, so the eval now tests mode selection within
+    `repo-harness-setup` rather than skill selection). **id 24, 26, 27, 28**
+    (sprint/PRD/sprint-from-prd/goal -> `repo-harness-product`'s respective
+    modes; each gained an explicit mode-name grader keyword; id 26's and
+    id 28's "instead of X" expectation lines rewritten since their original
+    contrast target (`repo-harness-sprint`, `repo-harness-autoplan`) no
+    longer names a real alternative routing target -- rephrased as
+    mode-vs-mode or mode-vs-bare-native-feature contrasts instead, the
+    actual distinction those sentences were always getting at). **id 29, 30**
+    (gptpro-setup/gptpro -> `repo-harness-chatgpt` setup/consult modes;
+    `files` repointed at the real reference files; dropped the
+    `repo-harness:gptpro_setup`/`repo-harness:gptpro` colon-namespaced
+    invocation syntax, confirmed absent from the real canonical content).
+    **7 unaffected slugs renamed for clarity are NOT in this list** --
+    only content actually migrated is enumerated here. Left eval 24's
+    `"--source repo-harness-sprint"` mention untouched (R1 provenance-enum
+    value, `capture-plan --source`) -- the one intentional survivor,
+    allowlisted explicitly in the C8 scan.
+
+### tests/skill-surface/retired-names-scan.test.ts (C8)
+
+New file, extending `tests/retired-planning-provider.test.ts`'s precedent
+pattern (fixed surface list, scan every file, fail on any hit) rather than
+editing that file (a different, narrower, already-working scan for a
+different term set). Scans the plan's literal C8 surface list
+(`src/, scripts/, assets/, .agents/, SKILL.md, README*,
+docs/reference-configs/, docs/architecture/, evals/`) for the 18 retired
+names (19 minus `repo-harness-chatgpt-bridge`, excluded per R2). Word-boundary-aware
+matching (`(?<![A-Za-z0-9_-])name(?![A-Za-z0-9_-])`) rather than plain
+substring, discovered necessary empirically: two real files
+(`src/cli/commands/migrate.ts`'s `.repo-harness-migrate-backup` file
+suffix, `scripts/check-deploy-sql-order.sh`'s `repo-harness-deploy-sql*`
+mktemp prefixes) are unrelated homonyms that a plain substring scan
+false-positives on. A checked-in, individually-justified allowlist covers
+three categories found by exploratory sweeps before the test was written
+(not discovered by the test failing and then being loosened -- each entry
+was investigated and classified first): whole-file exemptions (manifest's
+own `retiredPackages[]`, the frozen baseline, this slice's own
+migration-metadata doc paragraph, explanatory retirement comments, the two
+homonym files, R1's provenance-enum value sites in `prompt-handler.ts` and
+its bash sibling `workflow-state.sh`), the R1-named provenance-enum
+scripts (+ their `assets/templates/helpers/` sync mirrors), and a
+directory-prefix allowlist for the `references/*.md` "Source facade:" /
+"Reconciles the ... facade" provenance convention every canonical package's
+reference files use. A fourth, explicitly-labeled category
+(`OUT_OF_SCOPE_RESIDUALS`) records genuine but low-severity documentation
+staleness discovered in files outside this contract's `allowed_paths`
+(`scripts/ensure-task-workflow.sh` + its helpers mirror,
+`assets/templates/prd.template.md`, two `evals/fixtures/*/README.md`
+files) -- deliberately *not* fixed (out of scope), reported here instead of
+silently edited or silently ignored. Includes a sanity test against a
+vacuously-passing empty scan (>100 files), a stale-allowlist-entry check
+(every allowlisted path must still exist), and a
+`retiredPackages[]`-completeness check (all 19 recorded, every non-null
+`replacement` resolves to a live package).
+
+### Verification (all tails)
+
+```text
+bun test tests/skill-surface/                                     90 pass, 0 fail
+bun test tests/action-command-skills.test.ts tests/evals-contract.test.ts \
+  tests/install-profiles.test.ts tests/installed-copy-sync.test.ts \
+  tests/skill-routing-eval.test.ts                                 (all green, see per-file runs above)
+bun test tests/cli/                                               413 pass, 1 skip, 0 fail
+bun test tests/prompt-handler.test.ts tests/bootstrap-files.test.ts 28 pass, 0 fail
+bun run check:type                                                 clean, exit 0
+bun test (full suite)                                             1990 pass, 1 skip, 0 fail (1991 total, 159 files)
+```
+
+Live four-profile sync probe (link mode, disposable HOME/CODEX_SKILLS_ROOT/
+CLAUDE_SKILLS_ROOT), matches the target matrix exactly on both hosts:
+
+```text
+minimal:          repo-harness
+standard:         repo-harness, repo-harness-check, repo-harness-plan
+product-planning: repo-harness, repo-harness-check, repo-harness-plan, repo-harness-product
+strict:           repo-harness, repo-harness-check, repo-harness-plan, repo-harness-ship
+```
+
+(cross-review/claude-plan placement is a separate code path --
+`init.ts`/`global-runtime.ts`'s `syncCrossReviewSkills`, not the shell sync
+script -- verified via `tests/cli/init.test.ts`'s and
+`tests/cli/global-runtime-init.test.ts`'s host-aware placement tests:
+strict places `repo-harness-cross-review` on both hosts and `claude-plan`
+on codex only.)
+
+Also re-verified: symlink targets resolve to the packages' real post-move
+source paths (`repo-harness-plan` -> `assets/skills/repo-harness-plan`,
+`repo-harness-check` -> `assets/skill-commands/repo-harness-check`), copy
+mode, idempotent re-sync, and profile-downgrade retirement (standard ->
+minimal correctly removes `repo-harness-check`/`repo-harness-plan`).
+
+`npm pack --dry-run`: tarball contains `references/handoff.md` and
+`references/workflow-packaging-rubric.md`; contains zero
+`.agents/skills/repo-harness-chatgpt-browser/*` entries.
+
+### Reviewed and deliberately left unchanged
+
+- `src/cli/commands/global-runtime.ts:566` (mermaid installed-probe path) --
+  SSD-02 notes flagged this as a "residual literal site... reconcile when
+  SSD-06 changes discovered sets deliberately." Reviewed: mermaid is not one
+  of the 19 retired names and its discovered set (product-planning/strict,
+  unconditional external-marketplace skill) is unaffected by this cutover,
+  so there is nothing to reconcile here; left as the pre-existing literal.
+- `check-task-sync.sh` (run as bonus due diligence, not one of the 9
+  required verification commands): reports exit 1 ("Substantive repo
+  changes detected without tasks/ synchronization") despite
+  `tasks/notes/...` and `tasks/contracts/...` both being extensively
+  updated in this slice. Root cause: the script's `get_changed_files()`
+  picks *either* `git diff --cached` (if anything is staged) *or*
+  unstaged+untracked, never their union. `git mv`/`git rm` (used throughout
+  this slice for the directory renames/deletions) stage their own result
+  automatically, so a handful of deleted/renamed paths are staged while
+  every edited file (including the tasks/ updates themselves) stays
+  unstaged -- the script's staged-only view then sees zero tasks/ files.
+  This is a pre-existing script limitation surfaced by a natural mix of
+  staged (mv/rm) and unstaged (edit) changes, not a real absence of tasks/
+  synchronization; `scripts/check-task-sync.sh` is outside this contract's
+  `allowed_paths` and is not touched.
+
+### Deviations from the dispatch
+
+None against any ruling (R1-R6 all implemented as stated; none proved
+unimplementable). One necessary scope extension beyond the dispatch's file
+list, disclosed above rather than silently absorbed: four files outside
+this contract's `allowed_paths`
+(`tests/hook-contracts.test.ts`, `tests/readme-dx.test.ts`,
+`tests/ux-feature-guardrail.test.ts`, `.ai/context/capabilities.json`) each
+needed one mechanical line fixed as a direct, unavoidable consequence of an
+explicitly-mandated change (R1's prompt-handler.ts edit; C4's README
+image-reference removal; C2's repo-harness-prd facade deletion; C2's
+`.agents/skills/repo-harness-chatgpt-bridge` deletion, respectively) --
+without these four fixes, `bun test` (an explicit required verification
+command) would not pass. Left three further genuinely out-of-scope residuals
+unfixed and explicitly reported instead
+(`scripts/ensure-task-workflow.sh` + its helpers mirror,
+`assets/templates/prd.template.md`, two `evals/fixtures/*/README.md` files)
+since those are lower-severity (documentation-only, no functional/test
+breakage) and less directly forced.
+
+### SSD-06 acceptance (gatekeeper round-1 FAIL -> fix round -> round-2 PASS, 2026-07-23)
+
+Round-1 failed narrowly on acceptance line 2 (five shipped-prose residuals
+naming retired skills, honestly reported by the executor as outside its
+authorization); fix round reworded all five plus the orchestrator-fixed
+sixth (.claude/templates/prd.template.md, the self-hosted generated copy
+of the ensure-task-workflow heredoc), tightened the scan's stale-allowlist
+freshness check, and emptied OUT_OF_SCOPE_RESIDUALS. Round-2 verified
+closure independently: zero retired-name hits across all six files,
+ensure-task-workflow mirror byte-identical, delta exactly scoped.
+
+SSD-07 intake:
+
+- [MEDIUM, design decision] Root SKILL.md does not link
+  references/workflow-packaging-rubric.md (staging README promised root
+  execute-action linkage; only the prompt-handler hook suggestion surfaces
+  it; 4 bytes of root budget remain) — link it (requires trimming) or
+  record hook-only discoverability as the deliberate design.
+- [LOW, optional] Delete the three homonym FILE_ALLOWLIST entries in
+  tests/skill-surface/retired-names-scan.test.ts (migrate.ts backup name,
+  deploy-sql mktemp prefix x2): the boundary regex never matches them, so
+  the scan stays green without the entries and the homonym carve-out in
+  the freshness check becomes unnecessary.

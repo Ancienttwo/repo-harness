@@ -18,7 +18,6 @@ import { PROFILE_COMPONENTS } from "../../src/cli/installer/install-profile";
 
 const ROOT = join(import.meta.dir, "..", "..");
 const MANIFEST_PATH = join(ROOT, "assets", "skill-commands", "manifest.json");
-const BASELINE_PATH = join(ROOT, "evals", "skill-routing", "discovery-baseline.json");
 
 function codes(value: ReturnType<typeof validateSkillSurfaceCatalogValue>): string[] {
   return value.diagnostics.map((d) => d.code);
@@ -254,13 +253,54 @@ describe("skill-surface catalog: the real manifest.json on disk", () => {
     expect(resolution.diagnostics).toEqual([]);
   });
 
-  test("covers all 25 repo-owned sources plus the 5 external skills (30 packages)", () => {
+  // SSD-06 migration: the pre-cutover manifest had 30 packages (25 repo-owned
+  // + 5 external). The atomic public cutover deletes 15 retired facades plus
+  // codex-review/claude-review (replaced by one repo-harness-cross-review),
+  // leaving 11 repo-owned canonical/provider/judge/router entries (repo-harness,
+  // repo-harness-setup, repo-harness-plan, repo-harness-check, repo-harness-product,
+  // repo-harness-ship, repo-harness-architecture, repo-harness-cross-review,
+  // merge-gate, repo-harness-chatgpt, claude-plan) + 5 unaffected external
+  // skills = 16 total. See tasks/notes/20260715-1140-skill-surface-discovery-convergence.notes.md#SSD-06.
+  test("covers all 11 repo-owned sources plus the 5 external skills (16 packages)", () => {
     if (resolution.status !== "valid") throw new Error("expected valid catalog");
-    expect(resolution.catalog.packages.length).toBe(30);
+    expect(resolution.catalog.packages.length).toBe(16);
     const repoOwned = resolution.catalog.packages.filter((p) => p.kind !== "external");
-    expect(repoOwned.length).toBe(25);
+    expect(repoOwned.length).toBe(11);
     const external = resolution.catalog.packages.filter((p) => p.kind === "external");
     expect(external.map((p) => p.name).sort()).toEqual(["check", "health", "hunt", "mermaid", "think"]);
+  });
+
+  test("merge-gate is a non-selectable classification-only judge entry", () => {
+    if (resolution.status !== "valid") throw new Error("expected valid catalog");
+    const mergeGate = resolution.catalog.packages.find((p) => p.name === "merge-gate");
+    expect(mergeGate).toBeDefined();
+    expect(mergeGate?.kind).toBe("judge");
+    expect(mergeGate?.hosts).toEqual([]);
+    expect(mergeGate?.profiles).toEqual([]);
+    expect(mergeGate?.source).toBeNull();
+    // Non-selectable: a judge-kind package never matches any selector's kind filter.
+    for (const profile of SKILL_SURFACE_PROFILES) {
+      expect(facadesForProfile(resolution.catalog, profile)).not.toContain("merge-gate");
+      expect(externalSkillsForProfile(resolution.catalog, profile)).not.toContain("merge-gate");
+      const placements = hostSkillPlacements(resolution.catalog, profile);
+      expect(placements.claude).not.toContain("merge-gate");
+      expect(placements.codex).not.toContain("merge-gate");
+    }
+  });
+
+  test("retiredPackages records all 19 retired names with a live or null replacement", () => {
+    if (resolution.status !== "valid") throw new Error("expected valid catalog");
+    const catalog = resolution.catalog;
+    expect(catalog.retiredPackages.length).toBe(19);
+    const liveNames = new Set(catalog.packages.map((p) => p.name));
+    for (const entry of catalog.retiredPackages) {
+      expect(entry.note.length).toBeGreaterThan(0);
+      if (entry.replacement !== null) expect(liveNames.has(entry.replacement)).toBe(true);
+    }
+    expect(catalog.retiredPackages.find((e) => e.name === "repo-harness-autoplan")?.replacement).toBeNull();
+    expect(catalog.retiredPackages.find((e) => e.name === "codex-review")?.replacement).toBe("repo-harness-cross-review");
+    expect(catalog.retiredPackages.find((e) => e.name === "claude-review")?.replacement).toBe("repo-harness-cross-review");
+    expect(catalog.retiredPackages.find((e) => e.name === "repo-harness-handoff")?.replacement).toBe("repo-harness");
   });
 
   test("declared expectedProjections are self-consistent with packages[] (independent recomputation)", () => {
@@ -278,80 +318,99 @@ describe("skill-surface catalog: the real manifest.json on disk", () => {
   });
 });
 
-describe("skill-surface catalog: selector parity against the frozen SSD-01 discovery baseline", () => {
+// SSD-06 migration note (per plan Ruling R5): evals/skill-routing/discovery-baseline.json
+// is untouchable historical pre-cutover evidence -- it intentionally continues
+// to describe the PRE-cutover 19-facade/2-provider-skill world. The live
+// manifest.json now describes the POST-cutover target world, so comparing
+// live selector output against that frozen baseline would fail by design
+// (the whole point of the cutover is that they diverge). This describe block
+// therefore no longer reads discovery-baseline.json at all; every assertion
+// below pins the plan's target discovery matrix directly
+// (plans/plan-20260715-1140-skill-surface-discovery-convergence.md, "Target
+// discovery matrix"). discovery-baseline.json's own historical parity is
+// separately preserved as an internal-consistency check in
+// tests/skill-routing-eval.test.ts (baseline vs. its own recorded inventory,
+// not the live filesystem).
+describe("skill-surface catalog: target post-cutover discovery matrix", () => {
   const catalogSource = readFileSync(MANIFEST_PATH, "utf-8");
   const resolution = parseSkillSurfaceCatalog(catalogSource, { declared: true, profileComponents: PROFILE_COMPONENTS });
   if (resolution.status !== "valid") throw new Error("expected the real manifest to be a valid catalog");
   const catalog = resolution.catalog;
-  const baseline = JSON.parse(readFileSync(BASELINE_PATH, "utf-8")) as {
-    current_discovered_sets: {
-      command_facade_matrix: Record<string, string[]>;
-      cross_review_matrix: Record<string, Record<string, string[]>>;
-    };
-  };
 
-  test("facadesForProfile matches discovery-baseline.json's command_facade_matrix for every profile (set comparison)", () => {
-    for (const profile of SKILL_SURFACE_PROFILES) {
-      const computed = [...facadesForProfile(catalog, profile)].sort();
-      const expected = [...baseline.current_discovered_sets.command_facade_matrix[profile]].sort();
-      expect({ profile, computed }).toEqual({ profile, computed: expected });
-    }
-  });
-
-  test("facadesForProfile's own declared order matches the brief's illustrative order (plan, check, handoff[, gptpro])", () => {
-    expect(facadesForProfile(catalog, "standard")).toEqual(["repo-harness-plan", "repo-harness-check", "repo-harness-handoff"]);
+  test("facadesForProfile matches the target discovery matrix for every profile", () => {
+    expect(facadesForProfile(catalog, "minimal")).toEqual([]);
+    expect(facadesForProfile(catalog, "standard")).toEqual(["repo-harness-plan", "repo-harness-check"]);
     expect(facadesForProfile(catalog, "product-planning")).toEqual([
-      "repo-harness-plan", "repo-harness-check", "repo-harness-handoff", "repo-harness-gptpro",
+      "repo-harness-plan", "repo-harness-check", "repo-harness-product",
     ]);
     expect(facadesForProfile(catalog, "strict")).toEqual([
-      "repo-harness-plan", "repo-harness-check", "repo-harness-handoff", "repo-harness-gptpro",
+      "repo-harness-plan", "repo-harness-check", "repo-harness-ship",
     ]);
-    expect(facadesForProfile(catalog, "minimal")).toEqual([]);
   });
 
-  test("hostSkillPlacements matches discovery-baseline.json's cross_review_matrix for every profile", () => {
+  test("strict does not silently add product planning; product planning does not install ship", () => {
+    expect(facadesForProfile(catalog, "strict")).not.toContain("repo-harness-product");
+    expect(facadesForProfile(catalog, "product-planning")).not.toContain("repo-harness-ship");
+  });
+
+  test("repo-harness-setup and repo-harness-architecture are router-only progressive load, never auto-discovered", () => {
     for (const profile of SKILL_SURFACE_PROFILES) {
-      const computed = hostSkillPlacements(catalog, profile);
-      const expected = baseline.current_discovered_sets.cross_review_matrix[profile];
-      expect([...computed.claude].sort()).toEqual([...(expected.claude ?? [])].sort());
-      expect([...computed.codex].sort()).toEqual([...(expected.codex ?? [])].sort());
+      expect(facadesForProfile(catalog, profile)).not.toContain("repo-harness-setup");
+      expect(facadesForProfile(catalog, profile)).not.toContain("repo-harness-architecture");
     }
+  });
+
+  test("hostSkillPlacements: strict places repo-harness-cross-review on both hosts and claude-plan on codex only; other profiles are empty", () => {
+    expect(hostSkillPlacements(catalog, "minimal")).toEqual({ claude: [], codex: [] });
+    expect(hostSkillPlacements(catalog, "standard")).toEqual({ claude: [], codex: [] });
+    expect(hostSkillPlacements(catalog, "product-planning")).toEqual({ claude: [], codex: [] });
+    expect(hostSkillPlacements(catalog, "strict")).toEqual({
+      claude: ["repo-harness-cross-review"],
+      codex: ["repo-harness-cross-review", "claude-plan"],
+    });
   });
 
   test("hostSkillPlacements without a profile (init.ts's adopt flow) is the unconditional strict-tier bundle", () => {
     const unconditional = hostSkillPlacements(catalog);
-    expect(unconditional).toEqual({ claude: ["codex-review"], codex: ["claude-review", "claude-plan"] });
+    expect(unconditional).toEqual({ claude: ["repo-harness-cross-review"], codex: ["repo-harness-cross-review", "claude-plan"] });
   });
 
-  test("externalSkillsForProfile: product-planning and strict get the 5 Waza+mermaid names; minimal/standard get none", () => {
+  test("explicit ChatGPT setup is never implied by product-planning or any profile", () => {
+    for (const profile of SKILL_SURFACE_PROFILES) {
+      expect(facadesForProfile(catalog, profile)).not.toContain("repo-harness-chatgpt");
+    }
+    const chatgpt = catalog.packages.find((p) => p.name === "repo-harness-chatgpt");
+    expect(chatgpt?.discoverability).toBe("explicit-setup");
+    expect(chatgpt?.profiles).toEqual([]);
+  });
+
+  test("externalSkillsForProfile: product-planning and strict get the 5 Waza+mermaid names; minimal/standard get none (unaffected by this cutover)", () => {
     expect(externalSkillsForProfile(catalog, "minimal")).toEqual([]);
     expect(externalSkillsForProfile(catalog, "standard")).toEqual([]);
     expect(externalSkillsForProfile(catalog, "product-planning")).toEqual(["think", "hunt", "check", "health", "mermaid"]);
     expect(externalSkillsForProfile(catalog, "strict")).toEqual(["think", "hunt", "check", "health", "mermaid"]);
   });
 
-  test("mutationPathSkillNames matches installProfileHostMutationPaths's current literals", () => {
+  test("mutationPathSkillNames covers every package path that can be host-synced post-cutover", () => {
     const { repoHarnessSkills, externalSkills } = mutationPathSkillNames(catalog);
     expect(repoHarnessSkills).toEqual([
-      "repo-harness", "repo-harness-plan", "repo-harness-check", "repo-harness-handoff", "repo-harness-gptpro",
+      "repo-harness", "repo-harness-plan", "repo-harness-check", "repo-harness-product", "repo-harness-ship",
     ]);
-    expect(externalSkills).toEqual(["think", "hunt", "check", "health", "mermaid", "codex-review", "claude-review"]);
+    expect(externalSkills).toEqual(["repo-harness-cross-review", "think", "hunt", "check", "health", "mermaid"]);
   });
 
-  test("profileOwnedSkillNames matches PROFILE_OWNED_SKILLS's current literal", () => {
+  test("profileOwnedSkillNames matches the post-cutover cross-model-acceptance + external set", () => {
     expect([...profileOwnedSkillNames(catalog)].sort()).toEqual(
-      ["think", "hunt", "check", "health", "mermaid", "codex-review", "claude-review"].sort(),
+      ["think", "hunt", "check", "health", "mermaid", "repo-harness-cross-review"].sort(),
     );
   });
 
-  test("probeExpectations matches planningSkillNames/planningCapabilityPaths/crossModel's current literals", () => {
+  test("probeExpectations matches the post-cutover planningSkillNames/planningCapabilityPaths/crossModel sets", () => {
     const expectations = probeExpectations(catalog);
     expect(expectations.planningSkillNames).toEqual(["think", "hunt", "check", "health", "mermaid"]);
     expect(expectations.planningCapabilityPaths).toEqual([
-      "assets/skill-commands/repo-harness-prd/SKILL.md",
-      "assets/skill-commands/repo-harness-sprint/SKILL.md",
-      "assets/skill-commands/repo-harness-goal/SKILL.md",
+      "assets/skills/repo-harness-product/SKILL.md",
     ]);
-    expect(expectations.crossModel).toEqual(["codex-review", "claude-review"]);
+    expect(expectations.crossModel).toEqual(["repo-harness-cross-review"]);
   });
 });

@@ -85,7 +85,7 @@ When a task requires broad research, repo archaeology, multi-source synthesis, o
 
 ## Review Trigger Discipline
 
-- Cross-model consult skills (such as `claude-review` and `claude-plan`) run only on explicit invocation by name or an unambiguous review request. Casual phrasing about checking or improving code is not a dispatch authorization.
+- Cross-model consult skills (such as `repo-harness-cross-review` and `claude-plan`) run only on explicit invocation by name or an unambiguous review request. Casual phrasing about checking or improving code is not a dispatch authorization.
 - One review per boundary: a diff that already passed a gate gets no second pass unless explicitly requested.
 - Planning known before a task starts goes through a planning session and a file-backed plan; a mid-run plan consult is for genuine design forks only.
 ```

@@ -19,6 +19,8 @@ import { CLI_VERSION, formatStatus, runStatus } from './commands/status';
 import { formatDoctor, runDoctor } from './commands/doctor';
 import { buildInitHookCommand, buildSetupCommand, formatInitHook, runInitHook } from './commands/init-hook';
 import { formatMigratePlan, runMigrate } from './commands/migrate';
+import { formatCrossReviewResult, runCrossReviewCommand } from './commands/cross-review';
+import { CROSS_REVIEW_PROVIDER_MODES, type CrossReviewProviderMode } from '../core/review/cross-review';
 import { buildToolsCommand } from './commands/tools';
 import { buildBrainCommand } from './commands/brain';
 import { buildCapabilityContextCommand } from './commands/capability-context';
@@ -321,7 +323,7 @@ export function buildProgram(): Command {
     .option('--no-cli', 'Skip installing the repo-harness CLI globally')
     .option('--no-sync-skill', 'Skip refreshing repo-harness skill aliases under host skill roots')
     .option('--no-hooks', 'Skip global hook adapter installation')
-    .option('--no-external-skills', 'Skip Waza, Mermaid, and cross-review (codex-review/claude-review) skill bootstrap')
+    .option('--no-external-skills', 'Skip Waza, Mermaid, and cross-review (repo-harness-cross-review/claude-plan) skill bootstrap')
     .option('--no-codegraph', 'Skip CodeGraph CLI/MCP configuration')
     .option('--brain-root <path>', 'Brain vault root to persist for repo-harness brain commands')
     .option('--refresh', 'Compatibility no-op; init already refreshes the idempotent user-level runtime')
@@ -532,7 +534,7 @@ export function buildProgram(): Command {
     .option('--no-cli', 'Skip installing the repo-harness CLI globally')
     .option('--no-sync-skill', 'Skip refreshing repo-harness skill aliases under host skill roots')
     .option('--no-hooks', 'Skip global hook adapter installation during full runtime install')
-    .option('--no-external-skills', 'Skip Waza, Mermaid, and cross-review (codex-review/claude-review) skill bootstrap')
+    .option('--no-external-skills', 'Skip Waza, Mermaid, and cross-review (repo-harness-cross-review/claude-plan) skill bootstrap')
     .option('--no-codegraph', 'Skip CodeGraph CLI/MCP configuration')
     .option('--brain-root <path>', 'Brain vault root to persist for repo-harness brain commands')
     .option('--json', 'Output JSON instead of human-readable text')
@@ -649,6 +651,30 @@ export function buildProgram(): Command {
       const plan = runMigrate({ apply: rawOpts.apply === true });
       console.log(formatMigratePlan(plan, rawOpts.json === true));
       process.exit(0);
+    });
+
+  program
+    .command('cross-review')
+    .description('Deterministic opposite-provider review of the current review scope (repo-harness-cross-review)')
+    .requiredOption('--provider <mode>', `Provider to run: ${CROSS_REVIEW_PROVIDER_MODES.join('|')}`)
+    .option('--repo <path>', 'Target repo root (defaults to cwd)')
+    .option('--base <revision>', 'Base revision to diff against (defaults to the review-subject default base)')
+    .option('--timeout-ms <ms>', 'Provider process timeout in milliseconds')
+    .option('--json', 'Output JSON result')
+    .action((rawOpts: { provider: string; repo?: string; base?: string; timeoutMs?: string; json?: boolean }) => {
+      if (!(CROSS_REVIEW_PROVIDER_MODES as readonly string[]).includes(rawOpts.provider)) {
+        console.error(`cross-review: --provider must be one of ${CROSS_REVIEW_PROVIDER_MODES.join('|')}`);
+        process.exit(2);
+      }
+      const result = runCrossReviewCommand({
+        repoRoot: rawOpts.repo,
+        provider: rawOpts.provider as CrossReviewProviderMode,
+        baseRevision: rawOpts.base,
+        timeoutMs: rawOpts.timeoutMs !== undefined ? Number(rawOpts.timeoutMs) : undefined,
+        json: rawOpts.json === true,
+      });
+      console.log(result.output);
+      process.exit(result.exitCode);
     });
 
   const security = program

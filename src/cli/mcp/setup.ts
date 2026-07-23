@@ -553,7 +553,7 @@ Outcome labels:
 - \`surface_blocked\`: schema is current, but the current model surface did not call MCP.
 - \`bundle_fallback\`: Pro is reviewing a local evidence bundle and did not read through MCP.
 
-When Pro is \`surface_blocked\`, use \`repo-harness-gptpro\` to send a bounded
+When Pro is \`surface_blocked\`, use \`repo-harness-chatgpt\` to send a bounded
 local evidence bundle through the existing Oracle/browser handoff. The bundle
 must say it was produced locally, list included and omitted/truncated material,
 and include:
@@ -905,7 +905,10 @@ export function runMcpInstallSkill(opts: { repo?: string; overwrite?: boolean; d
   }
   writeFileIfChanged(join(skillRoot, 'SKILL.md'), canonicalSkillMd, changed);
   writeFileIfChanged(join(skillRoot, 'references', 'workflow.md'), canonicalSkillMd, changed);
-  writeFileIfChanged(join(skillRoot, 'references', 'chatgpt-connector-manual.md'), chatgptGuideMarkdown(), changed);
+  // SSD-06 (C7(ii) intake finding): the inline-generated
+  // references/chatgpt-connector-manual.md is dropped from install-skill; it
+  // duplicated docs/repo-harness-chatgpt-mcp-setup.md, which the canonical
+  // bridge.md reference already points readers to.
   return {
     status: 'ok',
     repoRoot,

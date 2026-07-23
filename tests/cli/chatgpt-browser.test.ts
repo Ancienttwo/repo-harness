@@ -1140,10 +1140,11 @@ describe('chatgpt browser command', () => {
     });
   });
 
-  test('ships browser engine docs and Codex Skill', () => {
+  test('ships browser engine docs', () => {
+    // SSD-06 migration: docs/repo-harness-chatgpt-browser-engine.md documents
+    // the SURVIVING src/cli/chatgpt-browser CLI engine (R3) and stays
+    // byte-unchanged by this cutover; this half of the test is untouched.
     const guide = join(ROOT, 'docs/repo-harness-chatgpt-browser-engine.md');
-    const skill = join(ROOT, '.agents/skills/repo-harness-chatgpt-browser/SKILL.md');
-    const gptproSkill = join(ROOT, 'assets/skill-commands/repo-harness-gptpro/SKILL.md');
     expect(readFileSync(guide, 'utf-8')).toContain('repo-harness chatgpt browser-consult');
     expect(readFileSync(guide, 'utf-8')).toContain('--provider native');
     expect(readFileSync(guide, 'utf-8')).not.toContain('--provider bridge');
@@ -1156,29 +1157,39 @@ describe('chatgpt browser command', () => {
     expect(readFileSync(guide, 'utf-8')).toContain('agent_actions');
     expect(readFileSync(guide, 'utf-8')).toContain('chatgpt-oracle-install-pinned');
     expect(readFileSync(guide, 'utf-8')).toContain('--chatgpt-app <serverName>');
-    const browserSkillText = readFileSync(skill, 'utf-8');
-    expect(browserSkillText).toContain('repo-harness-chatgpt-browser');
-    expect(browserSkillText).toContain('--provider oracle --json');
-    expect(browserSkillText).toContain('node >=24');
-    expect(browserSkillText).toContain('chatgpt-oracle-install-pinned');
-    expect(browserSkillText).toContain('default repo-harness install');
-    const gptproSkillText = readFileSync(gptproSkill, 'utf-8');
-    expect(gptproSkillText).toContain('date -u +%Y%m%dT%H%M%SZ');
-    expect(gptproSkillText).toContain('mkdir -p .ai/harness/handoff/gptpro');
-    expect(gptproSkillText).toContain('.ai/harness/handoff/gptpro/gptpro-${stamp}-${slug}.md');
-    expect(gptproSkillText).toContain('--model gpt-5.5-pro');
-    expect(gptproSkillText).toContain('MCP Read-Back Acceptance');
-    expect(gptproSkillText).toContain('chatgpt.serverName');
-    expect(gptproSkillText).toContain('--chatgpt-app "$serverName"');
-    expect(gptproSkillText).toContain('.repo-harness/mcp.local.json');
-    expect(gptproSkillText).toContain('MCP Read Evidence');
-    expect(gptproSkillText).toContain('right-side process pane');
-    expect(gptproSkillText).toContain('Called tool');
-    expect(gptproSkillText).toContain('sandbox/process flow');
-    expect(gptproSkillText).toContain('15 minutes or more');
-    expect(gptproSkillText).toContain('Do not treat elapsed time as failure');
-    expect(gptproSkillText).toContain('no thinking status detected yet');
-    expect(gptproSkillText).not.toContain('gptpro-consult.md');
-    assertChatGptMcpContract(gptproSkillText);
+  });
+
+  // SSD-06 migration: the static .agents/skills/repo-harness-chatgpt-browser/
+  // source dir and the assets/skill-commands/repo-harness-gptpro facade are
+  // both deleted. Their content reconciled into the one canonical
+  // repo-harness-chatgpt package (SSD-05); these path-specific assertions
+  // migrate to that package's setup/consult/read-back references.
+  test('canonical repo-harness-chatgpt package carries the Oracle setup and GPT Pro consult/read-back content', () => {
+    const setup = readFileSync(join(ROOT, 'assets/skills/repo-harness-chatgpt/references/setup.md'), 'utf-8');
+    expect(setup).toContain('--provider oracle --json');
+    expect(setup).toContain('node >=24');
+    expect(setup).toContain('chatgpt-oracle-install-pinned');
+    expect(setup).toContain('default repo-harness install');
+
+    const consult = readFileSync(join(ROOT, 'assets/skills/repo-harness-chatgpt/references/consult.md'), 'utf-8');
+    expect(consult).toContain('date -u +%Y%m%dT%H%M%SZ');
+    expect(consult).toContain('.ai/harness/handoff/gptpro/gptpro-${stamp}-<slug>.md');
+    expect(consult).toContain('--model gpt-5.5-pro');
+    expect(consult).toContain('commonly take 15');
+    expect(consult).toContain('minutes or more');
+    expect(consult).toContain('Do not treat elapsed time as failure');
+    expect(consult).toContain('no thinking status detected yet');
+    expect(consult).not.toContain('gptpro-consult.md');
+
+    const readBack = readFileSync(join(ROOT, 'assets/skills/repo-harness-chatgpt/references/read-back.md'), 'utf-8');
+    expect(readBack).toContain('chatgpt.serverName');
+    expect(readBack).toContain('MCP Read Evidence');
+    expect(readBack).toContain('right-side process pane');
+    expect(readBack).toContain('Called tool');
+    expect(readBack).toContain('sandbox/process flow');
+    assertChatGptMcpContract(readBack);
+
+    const bridge = readFileSync(join(ROOT, 'assets/skills/repo-harness-chatgpt/references/bridge.md'), 'utf-8');
+    expect(bridge).toContain('.repo-harness/mcp.local.json');
   });
 });

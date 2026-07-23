@@ -296,7 +296,7 @@
       "id": 7,
       "slug": "route-existing-repo-init",
       "prompt": "Initialize this existing repo with the repo-harness workflow. Do not create a new Vite or app scaffold; just add the repo-local harness, hooks, docs/spec.md, tasks, plans, .ai/context, and .ai/harness.",
-      "expected_output": "Routes the request to repo-harness-init, inspects the existing repo first, applies the canonical repo-harness adopt transaction, and explicitly avoids app scaffolding.",
+      "expected_output": "Routes the request to repo-harness-setup, inspects the existing repo first, applies the canonical repo-harness adopt transaction, and explicitly avoids app scaffolding.",
       "files": [
         "evals/fixtures/new-project-empty"
       ],
@@ -307,7 +307,7 @@
         "files_contain": [
           {
             "path": "final-response.md",
-            "pattern": "repo-harness-init"
+            "pattern": "repo-harness-setup"
           },
           {
             "path": "final-response.md",
@@ -333,7 +333,7 @@
       },
       "expectations": [
         "Treats init as existing-repo adoption, not product scaffold creation.",
-        "Names repo-harness-init as the public command.",
+        "Names repo-harness-setup as the public command (adopt/init mode).",
         "Keeps hook and docs initialization behind the migration engine."
       ]
     },
@@ -341,7 +341,7 @@
       "id": 8,
       "slug": "route-new-project-scaffold",
       "prompt": "Scaffold a new Vite + TanStack Router internal tool with the repo-harness workflow attached from the beginning.",
-      "expected_output": "Routes the request to repo-harness-scaffold, selects the Vite/TanStack plan catalog entry, creates the new project scaffold, and attaches the tasks-first harness.",
+      "expected_output": "Routes the request to repo-harness-setup's scaffold mode, selects the Vite/TanStack plan catalog entry, creates the new project scaffold, and attaches the tasks-first harness.",
       "files": [
         "evals/fixtures/new-project-empty"
       ],
@@ -352,7 +352,11 @@
         "files_contain": [
           {
             "path": "final-response.md",
-            "pattern": "repo-harness-scaffold"
+            "pattern": "repo-harness-setup"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "scaffold"
           },
           {
             "path": "final-response.md",
@@ -368,7 +372,7 @@
         "files_not_contain": [
           {
             "path": "final-response.md",
-            "pattern": "repo-harness-init.*existing repo only"
+            "pattern": "adopt.*existing repo only"
           },
           {
             "path": "final-response.md",
@@ -386,7 +390,7 @@
       "id": 9,
       "slug": "route-legacy-migrate",
       "prompt": "This older Claude repo has docs/TODO.md, docs/PROGRESS.md, and old .claude hook shims. Migrate it to the current repo-harness harness without deleting my notes.",
-      "expected_output": "Routes the request to repo-harness-migrate, archives or preserves legacy docs, removes only known_generated stale shims, and verifies the tasks-first harness.",
+      "expected_output": "Routes the request to repo-harness-setup's migrate mode, archives or preserves legacy docs, removes only known_generated stale shims, and verifies the tasks-first harness.",
       "files": [
         "evals/fixtures/migrate-legacy"
       ],
@@ -397,7 +401,11 @@
         "files_contain": [
           {
             "path": "final-response.md",
-            "pattern": "repo-harness-migrate"
+            "pattern": "repo-harness-setup"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "migrat"
           },
           {
             "path": "final-response.md",
@@ -427,7 +435,7 @@
       "id": 10,
       "slug": "route-current-upgrade",
       "prompt": "This repo already has the tasks-first harness. Upgrade it to the latest repo-harness contract and refresh managed helper files, but preserve _ref, _ops, custom hooks, and local env.",
-      "expected_output": "Routes the request to repo-harness-upgrade, reads the inspector upgrade_plan, applies manifest-owned upgrade actions only, and preserves user-local/private surfaces.",
+      "expected_output": "Routes the request to repo-harness-setup's upgrade mode, reads the inspector upgrade_plan, applies manifest-owned upgrade actions only, and preserves user-local/private surfaces.",
       "files": [
         "evals/fixtures/audit-drift"
       ],
@@ -438,7 +446,11 @@
         "files_contain": [
           {
             "path": "final-response.md",
-            "pattern": "repo-harness-upgrade"
+            "pattern": "repo-harness-setup"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "upgrad"
           },
           {
             "path": "final-response.md",
@@ -468,7 +480,7 @@
       "id": 11,
       "slug": "route-harness-repair",
       "prompt": "The agentic workflow is already installed, but task sync and hook routing are broken. Repair the current harness without migrating legacy docs or scaffolding a new app.",
-      "expected_output": "Routes the request to repo-harness-repair, reproduces the failing path, fixes task sync or hook routing minimally, and reruns the relevant workflow gate.",
+      "expected_output": "Routes the request to repo-harness-setup's repair mode, reproduces the failing path, fixes task sync or hook routing minimally, and reruns the relevant workflow gate.",
       "files": [
         "evals/fixtures/fix-agents"
       ],
@@ -479,7 +491,11 @@
         "files_contain": [
           {
             "path": "final-response.md",
-            "pattern": "repo-harness-repair"
+            "pattern": "repo-harness-setup"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "repair"
           },
           {
             "path": "final-response.md",
@@ -495,7 +511,7 @@
         "files_not_contain": [
           {
             "path": "final-response.md",
-            "pattern": "repo-harness-scaffold"
+            "pattern": "scaffold"
           }
         ]
       },
@@ -581,9 +597,9 @@
     },
     {
       "id": 14,
-      "slug": "route-repo-harness-review",
+      "slug": "route-repo-harness-plan-review-mode",
       "prompt": "Review this existing repo-harness plan for product, engineering, design, and DevEx issues before implementation.",
-      "expected_output": "Routes the request to repo-harness-review, reads the plan, selects review dimensions, reports blocking issues first, and does not implement by default.",
+      "expected_output": "Routes the request to repo-harness-plan's review mode, reads the plan, selects review dimensions, reports blocking issues first, and does not implement by default.",
       "files": [
         "evals/fixtures/audit-drift"
       ],
@@ -594,7 +610,11 @@
         "files_contain": [
           {
             "path": "final-response.md",
-            "pattern": "repo-harness-review"
+            "pattern": "repo-harness-plan"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "review"
           },
           {
             "path": "final-response.md",
@@ -607,16 +627,16 @@
         ]
       },
       "expectations": [
-        "Treats review as plan-stage critique.",
+        "Treats review as plan-stage critique within repo-harness-plan, not a separate skill.",
         "Covers product, engineering, design, and DevEx when relevant.",
         "Keeps implementation separate from review."
       ]
     },
     {
       "id": 15,
-      "slug": "route-repo-harness-autoplan",
-      "prompt": "Autoplan the repo-harness command change: read the repo, make the planning decisions for me, run the workflow automatically, and ship through the default PR closeout.",
-      "expected_output": "Routes the request to repo-harness-autoplan, runs plan then two self-review passes, executes the approved plan, runs check gates, and delegates PR closeout to repo-harness-ship.",
+      "slug": "route-repo-harness-execute-continuation",
+      "prompt": "Run the full repo-harness workflow automatically for this command change: read the repo, make the planning decisions for me, execute against the resolved profile, and ship through the default PR closeout.",
+      "expected_output": "Routes the request to the root repo-harness router's execute action, which continues the active task through Effective State via the existing plan -> contract -> worktree -> verify chain, and delegates PR closeout to repo-harness-ship. Does not invent a separate automatic workflow-run engine.",
       "files": [
         "evals/fixtures/audit-drift"
       ],
@@ -627,11 +647,11 @@
         "files_contain": [
           {
             "path": "final-response.md",
-            "pattern": "repo-harness-autoplan"
+            "pattern": "repo-harness"
           },
           {
             "path": "final-response.md",
-            "pattern": "self-review|self review"
+            "pattern": "Effective State"
           },
           {
             "path": "final-response.md",
@@ -640,18 +660,18 @@
         ]
       },
       "expectations": [
-        "Runs the full planning, self-review, execution, check, and ship sequence automatically.",
-        "Surfaces only material final decision gates.",
-        "Does not redirect into long interactive review unless automatic workflow execution is unsafe."
+        "Treats 'run everything automatically' as continuing the resolved Effective State workflow, not a separate autoplan engine.",
+        "Follows the existing plan -> contract -> worktree -> verify -> ship chain.",
+        "Delegates PR closeout to repo-harness-ship rather than reinventing ship logic."
       ]
     },
     {
       "id": 16,
-      "slug": "route-repo-harness-capability",
+      "slug": "route-repo-harness-setup-capability-mode",
       "prompt": "This repo already has repo-harness. Add only a docs/payments capability boundary with local AGENTS.md and CLAUDE.md files; do not run full init.",
-      "expected_output": "Routes the request to repo-harness-capability, uses capability-config add for explicit prefixes, validates with capability-resolver, and avoids full init, migrate, or upgrade.",
+      "expected_output": "Routes the request to repo-harness-setup's capability mode, uses capability-config add for explicit prefixes, validates with capability-resolver, and avoids full init, migrate, or upgrade.",
       "files": [
-        "assets/skill-commands/repo-harness-capability/SKILL.md"
+        "assets/skills/repo-harness-setup/references/capability.md"
       ],
       "graders": {
         "files_exist": [
@@ -660,7 +680,7 @@
         "files_contain": [
           {
             "path": "final-response.md",
-            "pattern": "repo-harness-capability"
+            "pattern": "repo-harness-setup"
           },
           {
             "path": "final-response.md",
@@ -683,7 +703,7 @@
       "expectations": [
         "Uses explicit prefixes instead of inferring broad directory globs.",
         "Creates only requested local AGENTS.md and CLAUDE.md contract files.",
-        "Does not run the full repo-harness-init path."
+        "Does not run the full repo-harness-setup adopt-init path."
       ]
     },
     {
@@ -729,11 +749,11 @@
     },
     {
       "id": 18,
-      "slug": "route-repo-harness-handoff",
+      "slug": "route-repo-harness-root-handoff-action",
       "prompt": "Prepare a Codex handoff for this long task and print the resume prompt. Do not run the full workflow check.",
-      "expected_output": "Routes the request to repo-harness-handoff, runs prepare-codex-handoff or codex-handoff-resume as appropriate, verifies current.md and resume.md, and reports the exact next step without running /check by default.",
+      "expected_output": "Routes the request to the root repo-harness router's handoff action, runs prepare-codex-handoff or codex-handoff-resume as appropriate, verifies current.md and resume.md, and reports the exact next step without running /check by default.",
       "files": [
-        "assets/skill-commands/repo-harness-handoff/SKILL.md"
+        "references/handoff.md"
       ],
       "graders": {
         "files_exist": [
@@ -742,7 +762,7 @@
         "files_contain": [
           {
             "path": "final-response.md",
-            "pattern": "repo-harness-handoff"
+            "pattern": "handoff"
           },
           {
             "path": "final-response.md",
@@ -770,11 +790,11 @@
     },
     {
       "id": 19,
-      "slug": "route-repo-harness-deploy",
+      "slug": "route-repo-harness-check-deploy-readiness",
       "prompt": "Check whether our deploy folder and private _ops setup are ready. Do not deploy anything.",
-      "expected_output": "Routes the request to repo-harness-deploy, reads the operations policy, checks deploy/ and _ops/ boundaries, runs check-deploy-sql-order, and reports readiness gaps without publishing or deploying.",
+      "expected_output": "Routes the request to repo-harness-check's deploy-readiness reference, reads the operations policy, checks deploy/ and _ops/ boundaries, runs check-deploy-sql-order, and reports readiness gaps without publishing or deploying.",
       "files": [
-        "assets/skill-commands/repo-harness-deploy/SKILL.md"
+        "assets/skill-commands/repo-harness-check/references/deploy-readiness.md"
       ],
       "graders": {
         "files_exist": [
@@ -783,7 +803,7 @@
         "files_contain": [
           {
             "path": "final-response.md",
-            "pattern": "repo-harness-deploy"
+            "pattern": "repo-harness-check"
           },
           {
             "path": "final-response.md",
@@ -869,9 +889,9 @@
       "id": 21,
       "slug": "handoff-no-active-plan-resume",
       "prompt": "The repo has no active plan but still has old plan files. Refresh the Codex handoff and make sure the resume packet does not point a fresh session at old work.",
-      "expected_output": "Routes to repo-harness-handoff, runs prepare-codex-handoff or codex-handoff-resume, and reports that plan, contract, and notes are none when there is no active marker.",
+      "expected_output": "Routes to the root repo-harness router's handoff action, runs prepare-codex-handoff or codex-handoff-resume, and reports that plan, contract, and notes are none when there is no active marker.",
       "files": [
-        "assets/skill-commands/repo-harness-handoff/SKILL.md"
+        "references/handoff.md"
       ],
       "graders": {
         "files_exist": [
@@ -880,7 +900,7 @@
         "files_contain": [
           {
             "path": "final-response.md",
-            "pattern": "repo-harness-handoff"
+            "pattern": "handoff"
           },
           {
             "path": "final-response.md",
@@ -909,8 +929,8 @@
     {
       "id": 22,
       "slug": "route-init-vs-scaffold-contrast",
-      "prompt": "Decide whether this request should use repo-harness-init or repo-harness-scaffold: I have an existing repo and only want hooks, docs/spec.md, tasks, plans, .ai/context, and .ai/harness added.",
-      "expected_output": "Routes to repo-harness-init, names scaffold as the new-project path only, and avoids creating a Vite or other app scaffold.",
+      "prompt": "Decide whether this request should use repo-harness-setup's adopt/init mode or its scaffold mode: I have an existing repo and only want hooks, docs/spec.md, tasks, plans, .ai/context, and .ai/harness added.",
+      "expected_output": "Routes to repo-harness-setup's adopt/init mode, names scaffold as the new-project mode only, and avoids creating a Vite or other app scaffold.",
       "files": [
         "evals/fixtures/new-project-empty"
       ],
@@ -921,7 +941,7 @@
         "files_contain": [
           {
             "path": "final-response.md",
-            "pattern": "repo-harness-init"
+            "pattern": "repo-harness-setup"
           },
           {
             "path": "final-response.md",
@@ -929,7 +949,7 @@
           },
           {
             "path": "final-response.md",
-            "pattern": "repo-harness-scaffold"
+            "pattern": "scaffold"
           }
         ]
       },
@@ -942,8 +962,8 @@
         ]
       },
       "expectations": [
-        "Keeps existing-repo adoption separate from app scaffolding.",
-        "Names scaffold only as the out-of-scope route.",
+        "Keeps existing-repo adoption separate from app scaffolding, as two modes of the same skill.",
+        "Names scaffold only as the out-of-scope mode.",
         "Uses inspector or migration engine before applying changes."
       ]
     },
@@ -987,8 +1007,8 @@
     {
       "id": 24,
       "slug": "plan-sprint-program-backlog",
-      "prompt": "This repo already has the harness installed. Use repo-harness-sprint to plan a program-level sprint for a notification feature: discuss the PRD, decompose it into an ordered backlog under plans/sprints/ linking the upper-layer PRD in plans/prds/ when present, and explain how each backlog task will execute and be tracked.",
-      "expected_output": "Routes to repo-harness-sprint: PM+architect PRD discussion, sprint-backlog.sh init, an ordered backlog table with concrete acceptance per row, user approval before Approved status, then per-task execution through capture-plan (--source repo-harness-sprint) into the plan -> contract -> worktree flow with warn-only finish back-fill; tasks/todos.md stays the deferred-goal ledger.",
+      "prompt": "This repo already has the harness installed. Use repo-harness-product's sprint mode to plan a program-level sprint for a notification feature: discuss the PRD, decompose it into an ordered backlog under plans/sprints/ linking the upper-layer PRD in plans/prds/ when present, and explain how each backlog task will execute and be tracked.",
+      "expected_output": "Routes to repo-harness-product's sprint mode: PM+architect PRD discussion, sprint-backlog.sh init, an ordered backlog table with concrete acceptance per row, user approval before Approved status, then per-task execution through capture-plan (--source repo-harness-sprint) into the plan -> contract -> worktree flow with warn-only finish back-fill; tasks/todos.md stays the deferred-goal ledger.",
       "files": [
         "evals/fixtures/fix-agents"
       ],
@@ -999,7 +1019,11 @@
         "files_contain": [
           {
             "path": "final-response.md",
-            "pattern": "repo-harness-sprint"
+            "pattern": "repo-harness-product"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "sprint"
           },
           {
             "path": "final-response.md",
@@ -1020,7 +1044,7 @@
         ]
       },
       "expectations": [
-        "Routes the request to repo-harness-sprint instead of plain repo-harness-plan.",
+        "Routes the request to repo-harness-product's sprint mode instead of its PRD or Goal modes, or the separate repo-harness-plan skill.",
         "Keeps tasks/todos.md as the deferred-goal ledger and places the backlog in plans/sprints/.",
         "Requires a concrete acceptance line per backlog row before Approved status.",
         "Executes each backlog task through the existing plan -> contract -> worktree gates."
@@ -1104,8 +1128,8 @@
     {
       "id": 26,
       "slug": "generate-prd-from-idea",
-      "prompt": "Use repo-harness-prd to generate a PRD from this product idea: notification preferences for a small SaaS app. Keep it compact, save it under plans/prds/, and summarize only the AI Quick-Read Card in the final response.",
-      "expected_output": "Routes to repo-harness-prd, activates $geju for a direction pass, uses Claude-first claude -p --model opus drafting with Codex only as fallback, and writes a compact PRD under plans/prds/ with an AI Quick-Read Card, evidence-marked unknowns, acceptance scenarios, module behavior, data model, performance targets, and a developer handoff. The final response gives the Quick-Read Card, geju thesis, drafting path, and file path only.",
+      "prompt": "Use repo-harness-product's PRD mode to generate a PRD from this product idea: notification preferences for a small SaaS app. Keep it compact, save it under plans/prds/, and summarize only the AI Quick-Read Card in the final response.",
+      "expected_output": "Routes to repo-harness-product's PRD mode, activates $geju for a direction pass, uses Claude-first claude -p --model opus drafting with Codex only as fallback, and writes a compact PRD under plans/prds/ with an AI Quick-Read Card, evidence-marked unknowns, acceptance scenarios, module behavior, data model, performance targets, and a developer handoff. The final response gives the Quick-Read Card, geju thesis, drafting path, and file path only.",
       "files": [
         "evals/fixtures/prd-from-idea"
       ],
@@ -1116,7 +1140,11 @@
         "files_contain": [
           {
             "path": "final-response.md",
-            "pattern": "repo-harness-prd"
+            "pattern": "repo-harness-product"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "PRD"
           },
           {
             "path": "final-response.md",
@@ -1149,7 +1177,7 @@
         ]
       },
       "expectations": [
-        "Routes the request to repo-harness-prd instead of repo-harness-sprint.",
+        "Routes the request to repo-harness-product's PRD mode instead of its Sprint mode.",
         "Runs a geju direction pass before PRD drafting.",
         "Uses Claude-first claude -p --model opus drafting and keeps Codex as fallback only.",
         "Writes the PRD under plans/prds/ and does not create a sprint backlog.",
@@ -1160,8 +1188,8 @@
     {
       "id": 27,
       "slug": "sprint-from-existing-prd",
-      "prompt": "Use repo-harness-sprint from-prd plans/prds/20260101-0000-sample-feature.prd.md to create a sprint backlog. Preserve the PRD as Source PRD, put the backlog under plans/sprints/, and do not write tasks/todos.md.",
-      "expected_output": "Routes to repo-harness-sprint from-prd, reads the sample PRD, sets Source PRD, writes or describes an ordered sprint backlog under plans/sprints/ with machine-checkable acceptance lines traceable to the PRD, and keeps tasks/todos.md as the deferred-goal ledger.",
+      "prompt": "Use repo-harness-product's sprint mode (from-prd) on plans/prds/20260101-0000-sample-feature.prd.md to create a sprint backlog. Preserve the PRD as Source PRD, put the backlog under plans/sprints/, and do not write tasks/todos.md.",
+      "expected_output": "Routes to repo-harness-product's sprint mode (from-prd), reads the sample PRD, sets Source PRD, writes or describes an ordered sprint backlog under plans/sprints/ with machine-checkable acceptance lines traceable to the PRD, and keeps tasks/todos.md as the deferred-goal ledger.",
       "files": [
         "evals/fixtures/prd-to-sprint"
       ],
@@ -1173,7 +1201,11 @@
         "files_contain": [
           {
             "path": "final-response.md",
-            "pattern": "repo-harness-sprint"
+            "pattern": "repo-harness-product"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "sprint"
           },
           {
             "path": "final-response.md",
@@ -1198,7 +1230,7 @@
         ]
       },
       "expectations": [
-        "Routes the request to repo-harness-sprint from-prd.",
+        "Routes the request to repo-harness-product's sprint mode (from-prd).",
         "Keeps the PRD in plans/prds/ and places the backlog in plans/sprints/.",
         "Backlog acceptance lines are machine-checkable and traceable to PRD scenarios.",
         "Does not use tasks/todos.md as an execution backlog."
@@ -1207,8 +1239,8 @@
     {
       "id": 28,
       "slug": "goal-from-prd-or-sprint",
-      "prompt": "Use repo-harness:goal to prepare a Codex or Claude /goal session for plans/prds/20260101-0000-sample-feature.prd.md. Require the detailed PRD or Sprint document as source of truth, produce the bounded /goal prompt, and do not start implementation if the source document is missing.",
-      "expected_output": "Routes to repo-harness-goal / repo-harness:goal, requires a detailed PRD or Sprint artifact before native /goal continuation, prepares a bounded Codex/Claude /goal prompt with source of truth, scope, non-goals, acceptance checks, stop condition, and repo-harness workflow gates, and stops to request the PRD/Sprint document when missing.",
+      "prompt": "Use repo-harness-product's Goal mode to prepare a Codex or Claude /goal session for plans/prds/20260101-0000-sample-feature.prd.md. Require the detailed PRD or Sprint document as source of truth, produce the bounded /goal prompt, and do not start implementation if the source document is missing.",
+      "expected_output": "Routes to repo-harness-product's Goal mode, requires a detailed PRD or Sprint artifact before native /goal continuation, prepares a bounded Codex/Claude /goal prompt with source of truth, scope, non-goals, acceptance checks, stop condition, and repo-harness workflow gates, and stops to request the PRD/Sprint document when missing.",
       "files": [
         "evals/fixtures/prd-to-sprint"
       ],
@@ -1220,7 +1252,7 @@
         "files_contain": [
           {
             "path": "final-response.md",
-            "pattern": "repo-harness-goal|repo-harness:goal"
+            "pattern": "repo-harness-product"
           },
           {
             "path": "final-response.md",
@@ -1249,7 +1281,7 @@
         ]
       },
       "expectations": [
-        "Routes the request to repo-harness-goal instead of repo-harness-autoplan.",
+        "Routes the request to repo-harness-product's Goal mode instead of attempting a bare native /goal invocation without the required PRD/Sprint context.",
         "Requires a detailed PRD or Sprint artifact as the goal source of truth.",
         "Produces a host-native /goal prompt with bounded scope, non-goals, acceptance checks, and stop condition.",
         "Does not start implementation when the source PRD/Sprint document is missing."
@@ -1258,10 +1290,10 @@
     {
       "id": 29,
       "slug": "gptpro-browser-mcp-setup",
-      "prompt": "Use repo-harness:gptpro_setup to guide setup for both gptpro_browser and gptpro_mcp. The user has ChatGPT Pro in the browser and wants local repo-harness to use browser/session consults while ChatGPT can also connect back to the local repo through MCP.",
-      "expected_output": "Routes to repo-harness-gptpro-setup / repo-harness:gptpro_setup, separates gptpro_browser local ChatGPT Web browser/session consults from gptpro_mcp ChatGPT Connector -> local MCP sidecar setup, runs or names browser-setup/browser-doctor and mcp setup/doctor, requires HTTPS tunnel/manual ChatGPT Connector steps, redacts local auth files, and states ChatGPT Pro is not OpenAI API quota.",
+      "prompt": "Use repo-harness-chatgpt's setup mode to guide setup for both gptpro_browser and gptpro_mcp. The user has ChatGPT Pro in the browser and wants local repo-harness to use browser/session consults while ChatGPT can also connect back to the local repo through MCP.",
+      "expected_output": "Routes to repo-harness-chatgpt's setup mode, separates gptpro_browser local ChatGPT Web browser/session consults from gptpro_mcp ChatGPT Connector -> local MCP sidecar setup, runs or names browser-setup/browser-doctor and mcp setup/doctor, requires HTTPS tunnel/manual ChatGPT Connector configuration, and keeps ChatGPT Pro Web access separate from OpenAI API quota or keys.",
       "files": [
-        "assets/skill-commands/repo-harness-gptpro-setup/SKILL.md"
+        "assets/skills/repo-harness-chatgpt/references/setup.md"
       ],
       "graders": {
         "files_exist": [
@@ -1270,7 +1302,7 @@
         "files_contain": [
           {
             "path": "final-response.md",
-            "pattern": "repo-harness-gptpro-setup|repo-harness:gptpro_setup"
+            "pattern": "repo-harness-chatgpt"
           },
           {
             "path": "final-response.md",
@@ -1307,7 +1339,7 @@
         ]
       },
       "expectations": [
-        "Routes the request to repo-harness-gptpro-setup.",
+        "Routes the request to repo-harness-chatgpt's setup mode.",
         "Keeps gptpro_browser and gptpro_mcp as separate setup lanes with different directions.",
         "Requires browser doctor and MCP doctor verification before claiming success.",
         "Keeps ChatGPT Pro Web access separate from OpenAI API quota or API keys.",
@@ -1317,10 +1349,10 @@
     {
       "id": 30,
       "slug": "gptpro-browser-session-consult",
-      "prompt": "Use repo-harness:gptpro to ask GPT Pro for architecture feedback on the current plan. If there is an existing GPT Pro session, continue it; otherwise start a new browser-session consult and write the result into the repo handoff area.",
-      "expected_output": "Routes to repo-harness-gptpro / repo-harness:gptpro, speaks in gptpro consult/read/continue/open language, maps the actual work to browser-doctor plus browser-consult or browser-followup, can read/open existing saved sessions with browser-session/browser-open, writes or names .ai/harness/handoff/gptpro-consult.md, and routes setup or gptpro_mcp requests back to repo-harness:gptpro_setup.",
+      "prompt": "Use repo-harness-chatgpt to ask GPT Pro for architecture feedback on the current plan. If there is an existing GPT Pro session, continue it; otherwise start a new browser-session consult and write the result into the repo handoff area.",
+      "expected_output": "Routes to repo-harness-chatgpt's consult mode, speaks in gptpro consult/read/continue/open language, maps the actual work to browser-doctor plus browser-consult or browser-followup, can read/open existing saved sessions with browser-session/browser-open, writes or names a repo-local handoff artifact under .ai/harness/handoff/gptpro/, and routes setup/MCP work back to repo-harness-chatgpt's setup mode.",
       "files": [
-        "assets/skill-commands/repo-harness-gptpro/SKILL.md"
+        "assets/skills/repo-harness-chatgpt/references/consult.md"
       ],
       "graders": {
         "files_exist": [
@@ -1329,7 +1361,7 @@
         "files_contain": [
           {
             "path": "final-response.md",
-            "pattern": "repo-harness-gptpro|repo-harness:gptpro"
+            "pattern": "repo-harness-chatgpt"
           },
           {
             "path": "final-response.md",
@@ -1349,7 +1381,7 @@
           },
           {
             "path": "final-response.md",
-            "pattern": "repo-harness:gptpro_setup|setup"
+            "pattern": "repo-harness-chatgpt.*setup|setup mode"
           }
         ]
       },
@@ -1362,11 +1394,11 @@
         ]
       },
       "expectations": [
-        "Routes the request to repo-harness-gptpro.",
+        "Routes the request to repo-harness-chatgpt's consult mode.",
         "Uses GPT Pro wording for the user while keeping browser-* as the implementation engine.",
         "Supports both new consults and continuing existing saved GPT Pro sessions.",
         "Writes or names a repo-local handoff artifact for the GPT Pro result.",
-        "Routes setup and gptpro_mcp work back to repo-harness-gptpro-setup."
+        "Routes setup and gptpro_mcp work back to repo-harness-chatgpt's setup mode."
       ]
     }
   ]

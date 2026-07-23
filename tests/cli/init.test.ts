@@ -74,15 +74,10 @@ function setupFakeSource(root: string): void {
     join(root, "scripts", "inspect-project-state.ts"),
     "console.log('mode: initialize')\n",
   );
-  mkdirSync(join(root, "assets", "skills", "codex-review"), { recursive: true });
+  mkdirSync(join(root, "assets", "skills", "repo-harness-cross-review"), { recursive: true });
   writeFileSync(
-    join(root, "assets", "skills", "codex-review", "SKILL.md"),
-    "---\nname: codex-review\n---\n",
-  );
-  mkdirSync(join(root, "assets", "skills", "claude-review"), { recursive: true });
-  writeFileSync(
-    join(root, "assets", "skills", "claude-review", "SKILL.md"),
-    "---\nname: claude-review\n---\n",
+    join(root, "assets", "skills", "repo-harness-cross-review", "SKILL.md"),
+    "---\nname: repo-harness-cross-review\n---\n",
   );
   mkdirSync(join(root, "assets", "skills", "claude-plan"), { recursive: true });
   writeFileSync(
@@ -264,13 +259,15 @@ describe("init command", () => {
       expect(readFileSync(bunxLog, "utf-8")).toContain(
         "skills add BfdCampos/dotfiles -g -a claude-code codex -s mermaid -y",
       );
-      // Cross-model skills install host-aware: codex-review on Claude; claude-review and claude-plan on Codex.
-      expect(existsSync(join(home, ".claude", "skills", "codex-review", "SKILL.md"))).toBe(true);
-      expect(existsSync(join(home, ".codex", "skills", "claude-review", "SKILL.md"))).toBe(true);
+      // SSD-06: repo-harness-cross-review installs on both hosts (host-aware
+      // provider mode selection lives inside the package); claude-plan stays
+      // Codex-only (unchanged, R4).
+      expect(existsSync(join(home, ".claude", "skills", "repo-harness-cross-review", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(home, ".codex", "skills", "repo-harness-cross-review", "SKILL.md"))).toBe(true);
       expect(existsSync(join(home, ".codex", "skills", "claude-plan", "SKILL.md"))).toBe(true);
-      expect(existsSync(join(home, ".codex", "skills", "codex-review", "SKILL.md"))).toBe(false);
-      expect(existsSync(join(home, ".claude", "skills", "claude-review", "SKILL.md"))).toBe(false);
       expect(existsSync(join(home, ".claude", "skills", "claude-plan", "SKILL.md"))).toBe(false);
+      expect(existsSync(join(home, ".claude", "skills", "codex-review", "SKILL.md"))).toBe(false);
+      expect(existsSync(join(home, ".codex", "skills", "claude-review", "SKILL.md"))).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -819,15 +816,10 @@ describe("bundled host runtimes", () => {
       join(ROOT, "assets", "skill-commands", "manifest.json"),
       join(root, "assets", "skill-commands", "manifest.json"),
     );
-    mkdirSync(join(root, "assets", "skills", "codex-review"), { recursive: true });
+    mkdirSync(join(root, "assets", "skills", "repo-harness-cross-review"), { recursive: true });
     writeFileSync(
-      join(root, "assets", "skills", "codex-review", "SKILL.md"),
-      "---\nname: codex-review\n---\n",
-    );
-    mkdirSync(join(root, "assets", "skills", "claude-review"), { recursive: true });
-    writeFileSync(
-      join(root, "assets", "skills", "claude-review", "SKILL.md"),
-      "---\nname: claude-review\n---\n",
+      join(root, "assets", "skills", "repo-harness-cross-review", "SKILL.md"),
+      "---\nname: repo-harness-cross-review\n---\n",
     );
     mkdirSync(join(root, "assets", "skills", "claude-plan"), { recursive: true });
     writeFileSync(
@@ -836,7 +828,7 @@ describe("bundled host runtimes", () => {
     );
   }
 
-  test("installs host-aware: codex-review to Claude, claude-review to Codex", () => {
+  test("installs repo-harness-cross-review on both hosts; claude-plan stays Codex-only", () => {
     const tmp = join(tmpdir(), `cross-review-both-${Date.now()}`);
     const source = join(tmp, "source");
     const home = join(tmp, "home");
@@ -848,11 +840,9 @@ describe("bundled host runtimes", () => {
       const steps = syncCrossReviewSkills(source, "both", { ...process.env, HOME: home });
 
       expect(steps.every((s) => s.status === "ok")).toBe(true);
-      expect(existsSync(join(home, ".claude", "skills", "codex-review", "SKILL.md"))).toBe(true);
-      expect(existsSync(join(home, ".codex", "skills", "claude-review", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(home, ".claude", "skills", "repo-harness-cross-review", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(home, ".codex", "skills", "repo-harness-cross-review", "SKILL.md"))).toBe(true);
       expect(existsSync(join(home, ".codex", "skills", "claude-plan", "SKILL.md"))).toBe(true);
-      expect(existsSync(join(home, ".codex", "skills", "codex-review", "SKILL.md"))).toBe(false);
-      expect(existsSync(join(home, ".claude", "skills", "claude-review", "SKILL.md"))).toBe(false);
       expect(existsSync(join(home, ".claude", "skills", "claude-plan", "SKILL.md"))).toBe(false);
       expect(existsSync(join(home, ".claude", "skills", "merge-gate", "SKILL.md"))).toBe(false);
 
@@ -875,7 +865,7 @@ describe("bundled host runtimes", () => {
     }
   });
 
-  test("respects target=claude (only codex-review) and target=codex (only claude-review)", () => {
+  test("respects target=claude (repo-harness-cross-review only) and target=codex (repo-harness-cross-review + claude-plan)", () => {
     const tmp = join(tmpdir(), `cross-review-target-${Date.now()}`);
     const source = join(tmp, "source");
     const claudeHome = join(tmp, "home-claude");
@@ -887,15 +877,15 @@ describe("bundled host runtimes", () => {
       makeSource(source);
 
       syncCrossReviewSkills(source, "claude", { ...process.env, HOME: claudeHome });
-      expect(existsSync(join(claudeHome, ".claude", "skills", "codex-review", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(claudeHome, ".claude", "skills", "repo-harness-cross-review", "SKILL.md"))).toBe(true);
       expect(existsSync(join(claudeHome, ".claude", "skills", "merge-gate", "SKILL.md"))).toBe(false);
-      expect(existsSync(join(claudeHome, ".codex", "skills", "claude-review", "SKILL.md"))).toBe(false);
+      expect(existsSync(join(claudeHome, ".codex", "skills", "repo-harness-cross-review", "SKILL.md"))).toBe(false);
       expect(existsSync(join(claudeHome, ".codex", "skills", "claude-plan", "SKILL.md"))).toBe(false);
 
       syncCrossReviewSkills(source, "codex", { ...process.env, HOME: codexHome });
-      expect(existsSync(join(codexHome, ".codex", "skills", "claude-review", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(codexHome, ".codex", "skills", "repo-harness-cross-review", "SKILL.md"))).toBe(true);
       expect(existsSync(join(codexHome, ".codex", "skills", "claude-plan", "SKILL.md"))).toBe(true);
-      expect(existsSync(join(codexHome, ".claude", "skills", "codex-review", "SKILL.md"))).toBe(false);
+      expect(existsSync(join(codexHome, ".claude", "skills", "repo-harness-cross-review", "SKILL.md"))).toBe(false);
       expect(existsSync(join(codexHome, ".codex", "skills", "merge-gate", "SKILL.md"))).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
