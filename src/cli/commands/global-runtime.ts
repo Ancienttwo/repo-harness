@@ -11,7 +11,8 @@ import { runInstall, type InstallTargetSpec } from "./install";
 import { compareVersions, readLatestPackageVersion } from "./doctor";
 import { configureCodegraph } from "../tools/codegraph";
 import { runProcess as runBoundedProcess } from "../../effects/process-runner";
-import { readInstalledProfile, type InstallProfile } from "../installer/install-profile";
+import { PROFILE_COMPONENTS, readInstalledProfile, type InstallProfile } from "../installer/install-profile";
+import { parseSkillSurfaceCatalog, type SkillSurfaceCatalog } from "../../core/skill-surface/catalog";
 
 export interface GlobalRuntimeOptions {
   sourceRoot?: string;
@@ -48,8 +49,38 @@ export interface GlobalRuntimeResult {
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const MIN_BUN_VERSION = "1.1.35";
 const CODEGRAPH_PACKAGE = "@colbymchenry/codegraph@latest";
-const WAZA_SKILLS = ["think", "hunt", "check", "health"] as const;
 const WAZA_SHARED_RULES = ["anti-patterns.md", "chinese.md", "durable-context.md", "english.md"] as const;
+
+/**
+ * Reads and parses sourceRoot's skill-surface manifest. Parameterized by
+ * sourceRoot (mirrors init.ts's identically-purposed helper; duplicated
+ * rather than shared, matching this file's existing pattern of keeping its
+ * own small local copies of init.ts-shaped helpers like hostAgents/hostIds/
+ * homeDir/withProcessEnv). Does not pass an `exists` callback (pre-catalog
+ * behavior here never checked package source paths on disk either).
+ */
+function loadSkillSurfaceCatalog(sourceRoot: string): SkillSurfaceCatalog {
+  const manifestPath = join(sourceRoot, "assets", "skill-commands", "manifest.json");
+  const source = existsSync(manifestPath) ? readFileSync(manifestPath, "utf-8") : null;
+  const resolution = parseSkillSurfaceCatalog(source, { declared: true, profileComponents: PROFILE_COMPONENTS });
+  if (resolution.status !== "valid") {
+    const detail = resolution.diagnostics.map((d) => `${d.code} ${d.path}: ${d.message}`).join("; ");
+    throw new Error(`invalid skill-surface catalog at ${manifestPath}: ${detail}`);
+  }
+  return resolution.catalog;
+}
+
+/** Groups kind:"external" catalog packages by upstream provider, preserving manifest declaration order. */
+function externalSkillGroupsFromCatalog(catalog: SkillSurfaceCatalog): ReadonlyMap<string, readonly string[]> {
+  const groups = new Map<string, string[]>();
+  for (const pkg of catalog.packages) {
+    if (pkg.kind !== "external" || pkg.provider === null) continue;
+    const list = groups.get(pkg.provider) ?? [];
+    list.push(pkg.name);
+    groups.set(pkg.provider, list);
+  }
+  return groups;
+}
 
 function defaultSourceRoot(): string {
   return join(SCRIPT_DIR, "..", "..", "..");
@@ -429,8 +460,9 @@ function installAgentFleet(sourceRoot: string, env?: NodeJS.ProcessEnv): GlobalR
 
 function installWazaSkills(sourceRoot: string, target: InstallTargetSpec, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
   const agents = hostAgents(target);
+  const wazaSkills = externalSkillGroupsFromCatalog(loadSkillSurfaceCatalog(sourceRoot)).get("tw93/Waza") ?? [];
   const skillsRoot = join(homeDir(env), '.agents', 'skills');
-  const missing = WAZA_SKILLS.filter((skill) => !existsSync(join(skillsRoot, skill, 'SKILL.md')));
+  const missing = wazaSkills.filter((skill) => !existsSync(join(skillsRoot, skill, 'SKILL.md')));
   if (missing.length > 0) {
     const step = runProcess(
       "bunx",
@@ -452,7 +484,7 @@ function installWazaSkills(sourceRoot: string, target: InstallTargetSpec, env?: 
       return withStepName(step, "configure Waza skills", `target=${target}; missing=${missing.join(',')}`);
     }
   }
-  return projectStagedSkills(WAZA_SKILLS, target, env, 'configure Waza skills');
+  return projectStagedSkills(wazaSkills, target, env, 'configure Waza skills');
 }
 
 function projectStagedSkills(
@@ -530,6 +562,7 @@ function syncWazaSharedRules(target: InstallTargetSpec, env?: NodeJS.ProcessEnv)
 }
 
 function installMermaidSkill(sourceRoot: string, target: InstallTargetSpec, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
+  const mermaidSkills = externalSkillGroupsFromCatalog(loadSkillSurfaceCatalog(sourceRoot)).get("BfdCampos/dotfiles") ?? [];
   const installed = join(homeDir(env), '.agents', 'skills', 'mermaid', 'SKILL.md');
   if (!existsSync(installed)) {
     const agents = hostAgents(target);
@@ -543,7 +576,7 @@ function installMermaidSkill(sourceRoot: string, target: InstallTargetSpec, env?
         "-a",
         ...agents,
         "-s",
-        "mermaid",
+        ...mermaidSkills,
         "-y",
       ],
       sourceRoot,
@@ -551,7 +584,7 @@ function installMermaidSkill(sourceRoot: string, target: InstallTargetSpec, env?
     );
     if (step.status === 'failed') return withStepName(step, "configure Mermaid skill", `target=${target}`);
   }
-  return projectStagedSkills(['mermaid'], target, env, 'configure Mermaid skill');
+  return projectStagedSkills(mermaidSkills, target, env, 'configure Mermaid skill');
 }
 
 function configureBrain(root: string | undefined, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {

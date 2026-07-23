@@ -40,7 +40,7 @@ handoff, and adapters -> `--dry-run` lists install/skip/remove -> apply persists
 their explicit optional surfaces.
 
 Concrete route: user asks for an existing repo install -> root `SKILL.md`
-selects `repo-harness-init` semantics -> that action routes to
+selects the setup action -> `repo-harness-setup` (adopt/init mode) routes to
 `repo-harness adopt --repo <repo>` ->
 the command runs `inspect-project-state.ts --repo <repo> --format text` -> if no
 legacy state is found, `repo-harness adopt --repo <repo>`

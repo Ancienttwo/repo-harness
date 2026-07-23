@@ -15,41 +15,60 @@ import {
 import { homedir } from 'os';
 import { delimiter, dirname, join } from 'path';
 import { spawnSync } from 'child_process';
+import { fileURLToPath } from 'url';
 import { buildManagedHooks, isManagedEntry, type HookHost, type HooksByEvent } from './managed-entries';
+import {
+  mutationPathSkillNames as catalogMutationPathSkillNames,
+  parseSkillSurfaceCatalog,
+  probeExpectations as catalogProbeExpectations,
+  profileOwnedSkillNames as catalogProfileOwnedSkillNames,
+  type SkillSurfaceCatalog,
+} from '../../core/skill-surface/catalog';
+import { PROFILE_COMPONENTS, type InstallComponent } from '../../core/skill-surface/profile-components';
+
+const SKILL_SURFACE_MANIFEST_PATH = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '..', '..', '..',
+  'assets', 'skill-commands', 'manifest.json',
+);
+
+/**
+ * Reads and parses this package's own bundled skill-surface manifest. Not
+ * parameterized by env/sourceRoot: install-profile.ts manages installed
+ * state at the user's HOME, not a foreign source tree, so its manifest is
+ * always the currently-running package's own file, resolved relative to this
+ * module's own location. Fails closed before any caller mutates host state.
+ * Deliberately does not pass an `exists` callback for package sources (this
+ * call site's pre-catalog behavior never checked package source paths on
+ * disk either), so behavior stays byte-identical to the literals it
+ * replaces. Called lazily (never at module load) so importing this module
+ * never has a filesystem side effect on its own.
+ */
+function loadSkillSurfaceCatalog(): SkillSurfaceCatalog {
+  const source = existsSync(SKILL_SURFACE_MANIFEST_PATH)
+    ? readFileSync(SKILL_SURFACE_MANIFEST_PATH, 'utf-8')
+    : null;
+  const resolution = parseSkillSurfaceCatalog(source, {
+    declared: true,
+    profileComponents: PROFILE_COMPONENTS,
+  });
+  if (resolution.status !== 'valid') {
+    const detail = resolution.diagnostics.map((d) => `${d.code} ${d.path}: ${d.message}`).join('; ');
+    throw new Error(`invalid skill-surface catalog at ${SKILL_SURFACE_MANIFEST_PATH}: ${detail}`);
+  }
+  return resolution.catalog;
+}
 
 export const INSTALL_PROFILES = ['minimal', 'standard', 'product-planning', 'strict'] as const;
 export type InstallProfile = (typeof INSTALL_PROFILES)[number];
 
-export type InstallComponent =
-  | 'cli'
-  | 'effective-state'
-  | 'scope-worktree-check-guards'
-  | 'handoff'
-  | 'host-adapters'
-  | 'adaptive-workflow'
-  | 'codegraph-conditional'
-  | 'planning-integrations'
-  | 'agent-fleet'
-  | 'verifier'
-  | 'cross-model-acceptance'
-  | 'release-deployment-gates';
-
-const PROFILE_COMPONENTS: Readonly<Record<InstallProfile, readonly InstallComponent[]>> = Object.freeze({
-  minimal: ['cli', 'effective-state', 'scope-worktree-check-guards', 'handoff', 'host-adapters'],
-  standard: [
-    'cli', 'effective-state', 'scope-worktree-check-guards', 'handoff', 'host-adapters',
-    'adaptive-workflow', 'codegraph-conditional',
-  ],
-  'product-planning': [
-    'cli', 'effective-state', 'scope-worktree-check-guards', 'handoff', 'host-adapters',
-    'adaptive-workflow', 'codegraph-conditional', 'planning-integrations',
-  ],
-  strict: [
-    'cli', 'effective-state', 'scope-worktree-check-guards', 'handoff', 'host-adapters',
-    'adaptive-workflow', 'codegraph-conditional', 'agent-fleet', 'verifier',
-    'cross-model-acceptance', 'release-deployment-gates',
-  ],
-});
+// InstallComponent and PROFILE_COMPONENTS now live in
+// src/core/skill-surface/profile-components.ts (the pure catalog core owns
+// the single source of truth for the crossref mapping); re-exported here
+// unchanged, at their former definition site, so every existing
+// `from '../installer/install-profile'` import keeps working.
+export type { InstallComponent };
+export { PROFILE_COMPONENTS };
 
 export interface InstalledProfileState {
   readonly protocol: 1;
@@ -345,9 +364,18 @@ function captureOwnedPath(
  * discoverManagedSurfaces below instead of being folded into the generic
  * adaptive-workflow/planning-integrations bucket, so the ownership manifest
  * stops representing a retired facade as a profile-desired surface.
+ *
+ * Resolves the expected source path from the manifest-derived catalog
+ * (facade-kind packages no longer all live under one fixed
+ * assets/skill-commands/<name> parent -- e.g. repo-harness-plan sources from
+ * assets/skills/repo-harness-plan) rather than assuming a fixed parent
+ * directory. A name absent from the catalog's facade-kind packages (a fully
+ * retired name, e.g. a stale repo-harness-handoff left over from an older
+ * install) is never canonical.
  */
-function facadeIsCanonical(root: string, name: string): boolean {
-  return existsSync(join(root, 'repo-harness', 'assets', 'skill-commands', name, 'SKILL.md'));
+function facadeIsCanonical(root: string, name: string, catalog: SkillSurfaceCatalog): boolean {
+  const source = catalog.packages.find((pkg) => pkg.kind === 'facade' && pkg.name === name)?.source;
+  return typeof source === 'string' && existsSync(join(root, 'repo-harness', source, 'SKILL.md'));
 }
 
 function discoverManagedSurfaces(
@@ -356,6 +384,7 @@ function discoverManagedSurfaces(
 ): readonly ManagedInstallSurface[] {
   const home = env.HOME ?? homedir();
   const desired = PROFILE_COMPONENTS[profile];
+  const catalog = loadSkillSurfaceCatalog();
   const runtimeComponents = desired.filter((component) => [
     'effective-state',
     'scope-worktree-check-guards',
@@ -370,11 +399,18 @@ function discoverManagedSurfaces(
     if (canonical) surfaces.push(canonical);
     if (!existsSync(root)) continue;
     for (const name of readdirSync(root).filter((entry) => entry.startsWith('repo-harness-')).sort()) {
-      const facadeComponents = name === 'repo-harness-handoff'
-        ? desired.filter((component) => component === 'handoff')
-        : name === 'repo-harness-check'
-          ? desired.filter((component) => component === 'scope-worktree-check-guards' || component === 'verifier')
-          : facadeIsCanonical(root, name)
+      // repo-harness-handoff retired as a facade (SSD-06): 'handoff' is now
+      // fulfilled by the root router's own references/handoff.md rather than
+      // a separately discoverable Skill. A stale repo-harness-handoff dir
+      // left over from an older install falls through to the generic
+      // canonical check below, which correctly reports it uncanonical (its
+      // assets/skill-commands/repo-harness-handoff source no longer exists)
+      // and empties its component set.
+      const facadeComponents = name === 'repo-harness-check'
+        ? desired.filter((component) => component === 'scope-worktree-check-guards' || component === 'verifier')
+        : name === 'repo-harness-ship'
+          ? desired.filter((component) => component === 'release-deployment-gates')
+          : facadeIsCanonical(root, name, catalog)
             ? desired.filter((component) => component === 'adaptive-workflow' || component === 'planning-integrations')
             : [];
       const facade = captureDirectoryOrLink(join(root, name), facadeComponents);
@@ -433,8 +469,7 @@ export function installProfileStatePath(env: NodeJS.ProcessEnv = process.env): s
 export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process.env): readonly string[] {
   const home = env.HOME ?? homedir();
   const bunRoot = env.BUN_INSTALL ?? join(home, '.bun');
-  const skills = ['repo-harness', 'repo-harness-plan', 'repo-harness-check', 'repo-harness-handoff', 'repo-harness-gptpro'];
-  const externalSkills = ['think', 'hunt', 'check', 'health', 'mermaid', 'codex-review', 'claude-review'];
+  const { repoHarnessSkills: skills, externalSkills } = catalogMutationPathSkillNames(loadSkillSurfaceCatalog());
   const agents = ['explorer', 'deep-reasoner', 'fast-worker', 'gatekeeper', 'root-cause-prover', 'harness-evaluator'];
   const paths = [
     join(bunRoot, 'bin', 'repo-harness'),
@@ -527,15 +562,18 @@ export function commitInstallHostTransaction(transaction: InstallHostTransaction
   rmSync(transaction.backup_root, { recursive: true, force: true });
 }
 
-const PROFILE_OWNED_SKILLS = new Set([
-  'think', 'hunt', 'check', 'health', 'mermaid', 'codex-review', 'claude-review',
-]);
+/** Lazy (never evaluated at module load) so importing this module has no filesystem side effect. */
+function profileOwnedSkillsSet(): ReadonlySet<string> {
+  return new Set(catalogProfileOwnedSkillNames(loadSkillSurfaceCatalog()));
+}
 
 function componentsForTransactionPath(path: string): readonly InstallComponent[] {
   const normalized = path.replaceAll('\\', '/');
   const name = normalized.split('/').at(-1) ?? '';
-  if (PROFILE_OWNED_SKILLS.has(name) && normalized.includes('/skills/')) {
-    return name === 'codex-review' || name === 'claude-review'
+  const ownedSkills = profileOwnedSkillsSet();
+  if (ownedSkills.has(name) && normalized.includes('/skills/')) {
+    const crossModelSkills = catalogProbeExpectations(loadSkillSurfaceCatalog()).crossModel;
+    return crossModelSkills.includes(name)
       ? ['cross-model-acceptance']
       : ['planning-integrations'];
   }
@@ -623,7 +661,7 @@ export function prepareInstallProfileSwitch(
   for (const surface of unique) {
     const normalized = surface.path.replaceAll('\\', '/');
     const name = normalized.split('/').at(-1) ?? '';
-    if (PROFILE_OWNED_SKILLS.has(name) && normalized.includes('/.agents/skills/')) removedSkills.add(name);
+    if (profileOwnedSkillsSet().has(name) && normalized.includes('/.agents/skills/')) removedSkills.add(name);
     if (surface.managed_marker === CODEGRAPH_CONFIG_MARKER) removeCodegraphProjection(surface.path);
     else rmSync(surface.path, { recursive: true, force: true });
   }
@@ -786,24 +824,21 @@ function probeInstalledComponents(
   // this cutover and stays.
   const guardPaths = ['src/cli/hook/mutation-guard.ts', 'scripts/contract-worktree.sh'];
   const guardEvidence = canonicalEvidence(home, guardPaths);
-  const handoffEvidence = [
-    ...existing([
-      join(home, '.codex', 'skills', 'repo-harness-handoff', 'SKILL.md'),
-      join(home, '.claude', 'skills', 'repo-harness-handoff', 'SKILL.md'),
-    ]),
-    ...canonicalEvidence(home, ['assets/skill-commands/repo-harness-handoff/SKILL.md']),
-  ];
+  // SSD-06: repo-harness-handoff retired as a standalone facade. 'handoff' is
+  // now fulfilled by the root router's own progressive reference
+  // (references/handoff.md), bundled into the canonical repo-harness skill
+  // copy itself, so its evidence is that reference file's presence there --
+  // same canonicalEvidence idiom as effectiveStateEvidence/adaptiveEvidence
+  // below, not a separate host-installed Skill directory.
+  const handoffEvidence = canonicalEvidence(home, ['references/handoff.md']);
   const adaptiveEvidence = canonicalEvidence(home, ['src/core/workflow/profile.ts']);
   const codegraphEvidence = state.profile === 'strict'
     ? executableEvidence('codegraph', env)
     : canonicalEvidence(home, ['src/cli/tools/codegraph.ts']);
-  const planningSkillNames = ['think', 'hunt', 'check', 'health', 'mermaid'];
+  const probeExpectations = catalogProbeExpectations(loadSkillSurfaceCatalog());
+  const planningSkillNames = probeExpectations.planningSkillNames;
   const planningSkills = completeHostSkillSetEvidence(home, planningSkillNames);
-  const planningCapabilityPaths = [
-    'assets/skill-commands/repo-harness-prd/SKILL.md',
-    'assets/skill-commands/repo-harness-sprint/SKILL.md',
-    'assets/skill-commands/repo-harness-goal/SKILL.md',
-  ];
+  const planningCapabilityPaths = probeExpectations.planningCapabilityPaths;
   const planningCapabilities = canonicalEvidence(home, planningCapabilityPaths);
   const planningEvidence = planningSkills.length === planningSkillNames.length
     && planningCapabilityPaths.every((relative) => planningCapabilities.some((path) => path.endsWith(relative)))
@@ -813,7 +848,7 @@ function probeInstalledComponents(
   const verifierEvidence = fleetEvidence.some((path) => /\/gatekeeper\.(?:toml|md)$/.test(path))
     ? canonicalEvidence(home, ['scripts/contract-run.ts'])
     : [];
-  const crossModelEvidence = skillEvidence(home, ['codex-review', 'claude-review']);
+  const crossModelEvidence = skillEvidence(home, probeExpectations.crossModel);
   const releasePaths = ['scripts/verify-sprint.sh', 'scripts/ship-worktrees.sh'];
   const releaseEvidence = canonicalEvidence(home, releasePaths);
   const evidence: Record<InstallComponent, readonly string[]> = {

@@ -1,9 +1,5 @@
 # repo-harness
 
-<p align="center">
-  <img src="docs/images/repo-harness-gptpro.png" alt="repo-harness architecture and ChatGPT Pro local planner workflow diagram" width="960">
-</p>
-
 `repo-harness` は、Claude/Codex のコーディング session を、繰り返し使える
 repo-local workflow に変えます。CLI と skill/runtime hooks によって、context、plan、
 handoff、check、review evidence をプロジェクト内のファイルへ書き戻し、次の agent session が
@@ -227,7 +223,7 @@ dry-run のレポートが正しいことを確認してから適用します。
 repo-harness adopt
 ```
 
-新しいプロジェクトやモジュールには支線 command `repo-harness-scaffold` を使います。既存リポジトリには
+新しいプロジェクトやモジュールには `repo-harness-setup` の scaffold mode を使います。既存リポジトリには
 `repo-harness adopt` を使います。これは harness をインストールまたはリフレッシュするもので、アプリケーション
 スタックは作成しません。
 
@@ -426,32 +422,51 @@ Co-authored-by: codex <codex@openai.com>
 
 ## Action Command Skills
 
-公開 command facades は `assets/skill-commands/` にあります。host skill discovery との互換性を残しつつ、実行は CLI と hooks が担います。
+canonical rule-owner package は `assets/skills/`（activate 済みの canonical
+package）と `assets/skill-commands/`（その場で進化する survivor）にあります。
+host skill discovery の範囲を保ちつつ、実行は CLI と hooks が担います。
 
-- Planning / review：`repo-harness-plan`、`repo-harness-review`、`repo-harness-autoplan`
-- Product planning layer：`repo-harness-prd`（先に `$geju` を有効化し、Claude-first の `claude -p --model opus` で PRD を起草する。Codex は fallback のみ）
-- Sprint program layer：`repo-harness-sprint`（PRD を `plans/sprints/` の順序付き backlog に分解する）
-- Goal session layer：`repo-harness-goal` / `repo-harness:goal`（詳細な PRD または Sprint artifact から Codex/Claude の `/goal` prompt を準備する。文書がなければ先に要求する）
-- Repo workflow actions：`repo-harness-ship`、`repo-harness-init`、`repo-harness-migrate`、`repo-harness-upgrade`、`repo-harness-capability`、`repo-harness-architecture`、`repo-harness-handoff`、`repo-harness-deploy`、`repo-harness-repair`、`repo-harness-check`
-- Branch project creation：`repo-harness-scaffold`
+- Router：`repo-harness`（root Skill。すべての profile に無条件で同期される）
+- Setup layer：`repo-harness-setup`（adopt/init、migrate、upgrade、repair、
+  scaffold、capability-configuration の各 mode。router-only で、どの profile
+  からも自動発見されない）
+- Planning：`repo-harness-plan`（decision-complete plan を作成、または既存
+  plan を review する）
+- Product planning layer：`repo-harness-product`（PRD / Sprint / Goal の
+  3 mode。PRD mode はまず `$geju` を有効化し、Claude-first の `claude -p
+  --model opus` で PRD を起草する。Codex は fallback のみ。Sprint mode は PRD
+  を `plans/sprints/` の順序付き backlog に分解し、各行を `$think` で展開して
+  から contract flow へ進む。Goal mode は詳細な PRD または Sprint artifact か
+  ら Codex/Claude の `/goal` prompt を準備し、文書がなければ先に要求する）
+- Verification：`repo-harness-check`（workflow/release チェックと
+  deploy-readiness reference）
+- Release：`repo-harness-ship`
+- Architecture：`repo-harness-architecture`
+- Cross-model review：`repo-harness-cross-review`（host-aware。strict profile
+  では両方の host にインストールされる）
+- ChatGPT 連携：`repo-harness-chatgpt`（Oracle browser / GPT Pro consult と
+  continuation、MCP Connector setup、bridge handoff、read-back evidence。
+  explicit setup 限定で、product planning から暗黙にインストールされることは
+  ない）
 
 planning chain は意図的に層を分けています。
 
 ```text
-idea -> repo-harness-prd -> repo-harness-sprint from-prd -> repo-harness-goal
+idea -> repo-harness-product（PRD mode） -> repo-harness-product（Sprint mode、from-prd） -> repo-harness-product（Goal mode）
 ```
 
-入力がまだプロダクトアイデアなら `repo-harness-prd` を使います。まず `$geju` の
-direction pass を行い、その後 Claude に `claude -p --model opus` で PRD を起草させます。Codex は
-Claude が使えない、または失敗した場合だけ fallback です。承認済み PRD を
-machine-checkable acceptance line 付きの順序付き Sprint backlog にするには
-`repo-harness-sprint from-prd <plans/prds/*.prd.md>` を使います。
-`repo-harness-goal` は詳細な PRD または Sprint artifact がある場合だけ使い、
-Codex/Claude 向けの bounded `/goal` prompt を準備し、PRD/Sprint を source of truth
-として維持します。その文書がない場合、goal command はチャット文脈から実装を始めず、
-先に文書を要求しなければなりません。
+入力がまだプロダクトアイデアなら `repo-harness-product` の PRD mode を使います。
+まず `$geju` の direction pass を行い、その後 Claude に `claude -p --model
+opus` で PRD を起草させます。Codex は Claude が使えない、または失敗した場合だ
+け fallback です。承認済み PRD を machine-checkable acceptance line 付きの順
+序付き Sprint backlog にするには、その Sprint mode（`from-prd
+<plans/prds/*.prd.md>`）を使います。Goal mode は詳細な PRD または Sprint
+artifact がある場合だけ使い、Codex/Claude 向けの bounded `/goal` prompt を準
+備し、PRD/Sprint を source of truth として維持します。その文書がない場合、
+Goal mode はチャット文脈から実装を始めず、先に文書を要求しなければなりません。
 
-`repo-harness adopt` は既存リポジトリ向け、`repo-harness-scaffold` は支線 command として新しいプロジェクトやモジュールを作成します。
+`repo-harness adopt` は既存リポジトリ向け、`repo-harness-setup` の scaffold
+mode は新しいプロジェクトやモジュールを作成します。
 `hooks-init`、`docs-init`、`create-project-dirs` は内部ステップであり、公開 commands ではありません。
 
 ## Maintainer Reference

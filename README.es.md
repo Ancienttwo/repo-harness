@@ -1,9 +1,5 @@
 # repo-harness
 
-<p align="center">
-  <img src="docs/images/repo-harness-gptpro.png" alt="repo-harness architecture and ChatGPT Pro local planner workflow diagram" width="960">
-</p>
-
 `repo-harness` convierte las sesiones de programación con Claude/Codex en un
 workflow repo-local repetible. Incluye un CLI y hooks de skill/runtime que
 escriben contexto, planes, handoffs, checks y evidencias de review dentro del
@@ -248,7 +244,7 @@ Aplica solo después de que el reporte del dry-run sea correcto:
 repo-harness adopt
 ```
 
-Para un proyecto o módulo nuevo, usa la branch command `repo-harness-scaffold`.
+Para un proyecto o módulo nuevo, usa el modo scaffold de `repo-harness-setup`.
 Para un repositorio existente, usa `repo-harness adopt`; este instala o refresca
 el harness y no crea el stack tecnológico de la aplicación.
 
@@ -452,35 +448,53 @@ Mantén esta atribución opt-in y visible por commit. No la incorpores en script
 
 ## Action Command Skills
 
-Los command facades públicos están en `assets/skill-commands/`; preservan la
-compatibilidad de discovery por skills, mientras el CLI y los hooks ejecutan:
+Los packages canónicos están en `assets/skills/` (packages canónicos
+activados) y en `assets/skill-commands/` (sobrevivientes que evolucionan en su
+sitio); preservan el alcance de discovery por skills, mientras el CLI y los
+hooks ejecutan:
 
-- Planning / review: `repo-harness-plan`, `repo-harness-review`, `repo-harness-autoplan`
-- Product planning layer: `repo-harness-prd` (activa `$geju`, luego usa drafting Claude-first con `claude -p --model opus`; Codex queda solo como fallback)
-- Sprint program layer: `repo-harness-sprint` (convierte un PRD en un backlog ordenado bajo `plans/sprints/`)
-- Goal session layer: `repo-harness-goal` / `repo-harness:goal` (prepara prompts `/goal` de Codex/Claude desde un PRD o Sprint detallado; si falta el documento, lo pide primero)
-- Repo workflow actions: `repo-harness-ship`, `repo-harness-init`, `repo-harness-migrate`, `repo-harness-upgrade`, `repo-harness-capability`, `repo-harness-architecture`, `repo-harness-handoff`, `repo-harness-deploy`, `repo-harness-repair`, `repo-harness-check`
-- Branch project creation: `repo-harness-scaffold`
+- Router: `repo-harness` (Skill raíz, sincronizado sin condición en cada
+  profile)
+- Capa setup: `repo-harness-setup` (modos adopt/init, migrate, upgrade,
+  repair, scaffold, y capability-configuration; router-only, nunca
+  descubierto automáticamente por un profile)
+- Planning: `repo-harness-plan` (crea un plan decision-complete, o revisa uno
+  existente)
+- Capa product planning: `repo-harness-product` (modos PRD, Sprint, y Goal; el
+  modo PRD activa `$geju`, luego usa drafting Claude-first con `claude -p
+  --model opus`, Codex queda solo como fallback; el modo Sprint convierte un
+  PRD en un backlog ordenado bajo `plans/sprints/`, cada fila se expande con
+  `$think` antes del contract flow; el modo Goal prepara prompts `/goal` de
+  Codex/Claude desde un PRD o Sprint detallado y lo pide primero si falta)
+- Verificación: `repo-harness-check` (checks de workflow/release más una
+  referencia deploy-readiness)
+- Release: `repo-harness-ship`
+- Architecture: `repo-harness-architecture`
+- Cross-model review: `repo-harness-cross-review` (host-aware; se instala en
+  ambos hosts para el profile strict)
+- Integración ChatGPT: `repo-harness-chatgpt` (consult/continuation de Oracle
+  browser/GPT Pro, setup de MCP Connector, bridge handoff, y read-back
+  evidence; solo setup explícito, nunca implicado por product planning)
 
 La cadena de planning está separada por capas:
 
 ```text
-idea -> repo-harness-prd -> repo-harness-sprint from-prd -> repo-harness-goal
+idea -> repo-harness-product (modo PRD) -> repo-harness-product (modo Sprint, from-prd) -> repo-harness-product (modo Goal)
 ```
 
-Usa `repo-harness-prd` cuando la fuente todavía es una idea de producto: primero
-ejecuta un direction pass con `$geju`, luego pide a Claude vía `claude -p --model opus` que
-redacte el PRD, con Codex solo como fallback. Usa
-`repo-harness-sprint from-prd <plans/prds/*.prd.md>` para convertir un PRD
-aprobado en un Sprint backlog ordenado con acceptance lines verificables por
-máquina. Usa `repo-harness-goal` solo cuando ya exista un PRD o Sprint detallado;
-prepara un prompt `/goal` acotado para Codex/Claude y mantiene el PRD/Sprint como
-source of truth. Si falta ese documento, el goal command debe pedirlo antes de
-empezar implementación desde el chat.
+Usa el modo PRD de `repo-harness-product` cuando la fuente todavía es una idea
+de producto: primero ejecuta un direction pass con `$geju`, luego pide a
+Claude vía `claude -p --model opus` que redacte el PRD, con Codex solo como
+fallback. Usa su modo Sprint (`from-prd <plans/prds/*.prd.md>`) para convertir
+un PRD aprobado en un Sprint backlog ordenado con acceptance lines
+verificables por máquina. Usa su modo Goal solo cuando ya exista un PRD o
+Sprint detallado; prepara un prompt `/goal` acotado para Codex/Claude y
+mantiene el PRD/Sprint como source of truth. Si falta ese documento, el modo
+Goal debe pedirlo antes de empezar implementación desde el chat.
 
-`repo-harness adopt` se usa para repositorios existentes; `repo-harness-scaffold`
-queda como branch command para crear proyectos o módulos nuevos. `hooks-init`, `docs-init` y
-`create-project-dirs` son pasos internos, no commands públicos.
+`repo-harness adopt` se usa para repositorios existentes; el modo scaffold de
+`repo-harness-setup` queda para crear proyectos o módulos nuevos. `hooks-init`,
+`docs-init` y `create-project-dirs` son pasos internos, no commands públicos.
 
 ## Maintainer Reference
 

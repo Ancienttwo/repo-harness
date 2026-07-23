@@ -39,6 +39,50 @@ All notable changes to this skill are documented here.
   `external_attested`/`human_acceptance` trust classes respectively),
   feeding the materializers above under the frozen D4 trust matrix.
 
+### Removed
+
+- **Skill surface discovery convergence (public cutover, next-minor breaking
+  change).** `assets/skill-commands/manifest.json` v2 is now the runtime
+  discovery authority for Skill package classification and host/profile
+  projection. Rule owners converge from 25 Skill-like sources to 10 canonical
+  packages (`repo-harness`, `repo-harness-setup`, `repo-harness-plan`,
+  `repo-harness-product`, `repo-harness-check`, `repo-harness-ship`,
+  `repo-harness-architecture`, `repo-harness-cross-review`, `merge-gate`
+  classification-only, `repo-harness-chatgpt`); the 19 retired names below are
+  deleted (no directories, no generated aliases, no compatibility shims) and
+  recorded only as migration metadata in the manifest's `retiredPackages`
+  array:
+
+  | Retired name | Replacement |
+  |---|---|
+  | `repo-harness-init` | `repo-harness-setup` (adopt-init mode) |
+  | `repo-harness-migrate` | `repo-harness-setup` (migrate mode) |
+  | `repo-harness-upgrade` | `repo-harness-setup` (upgrade mode) |
+  | `repo-harness-repair` | `repo-harness-setup` (repair mode) |
+  | `repo-harness-scaffold` | `repo-harness-setup` (scaffold mode) |
+  | `repo-harness-capability` | `repo-harness-setup` (capability mode) |
+  | `repo-harness-review` | `repo-harness-plan` (review mode) |
+  | `repo-harness-prd` | `repo-harness-product` (PRD mode) |
+  | `repo-harness-sprint` | `repo-harness-product` (Sprint mode) |
+  | `repo-harness-goal` | `repo-harness-product` (Goal mode) |
+  | `repo-harness-handoff` | root `repo-harness` (handoff action + `references/handoff.md`) |
+  | `repo-harness-deploy` | `repo-harness-check` (deploy-readiness reference) |
+  | `repo-harness-autoplan` | retired, no successor; root `execute` already follows Effective State through the existing plan -> contract -> worktree -> verify -> ship chain. Its Reusable Workflow Packaging Rubric survives alone as `references/workflow-packaging-rubric.md` |
+  | `repo-harness-gptpro` | `repo-harness-chatgpt` (consult/continue modes) |
+  | `repo-harness-gptpro-setup` | `repo-harness-chatgpt` (setup mode) |
+  | `codex-review` | `repo-harness-cross-review` (Codex provider mode) |
+  | `claude-review` | `repo-harness-cross-review` (Claude provider mode) |
+  | `repo-harness-chatgpt-bridge` (static `.agents/skills/` copy) | `repo-harness-chatgpt` (bridge reference); the generated runtime projection identity `repo-harness-chatgpt-bridge` is unchanged |
+  | `repo-harness-chatgpt-browser` (static `.agents/skills/` copy) | `repo-harness-chatgpt` (continue reference); the underlying `src/cli/chatgpt-browser` CLI engine is unaffected |
+
+  Target discovery matrix: `minimal` -> `repo-harness` only; `standard` ->
+  adds `repo-harness-plan` and `repo-harness-check`; `product-planning` ->
+  adds `repo-harness-product`; `strict` -> `repo-harness-plan`,
+  `repo-harness-check`, `repo-harness-ship`, host-aware
+  `repo-harness-cross-review` on both hosts, and `merge-gate` only on its
+  gatekeeper host. `repo-harness-chatgpt` is explicit-setup only and never
+  implied by `product-planning` or any other profile.
+
 ### Notes (accepted intermediate states -- operator guidance)
 
 - Downstream adopters that installed via the packaged CLI (not this source

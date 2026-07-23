@@ -21,7 +21,7 @@ Create these only when the agent has concrete repo evidence or the user asks:
 - Mermaid fenced blocks in `docs/architecture/modules/**.md` or `docs/architecture/snapshots/*.md`: semantic diagram source for agents and review diffs.
 - `docs/architecture/diagrams/*.html`: optional human-readable `mermaid` renderings produced when a visual is clearer than prose.
 - `docs/packages.md`: package inventory for real multi-package repos.
-- `plans/prds/*.prd.md`: upper-layer PRDs generated through `repo-harness-prd` from `.claude/templates/prd.template.md`; keep Sprint backlogs in `plans/sprints/`.
+- `plans/prds/*.prd.md`: upper-layer PRDs generated through `repo-harness-product`'s PRD mode from `.claude/templates/prd.template.md`; keep Sprint backlogs in `plans/sprints/`.
 
 ## Rules
 

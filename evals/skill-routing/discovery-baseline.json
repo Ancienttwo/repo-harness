@@ -1,0 +1,329 @@
+{
+  "version": 1,
+  "slice": "SSD-01",
+  "captured_at": "2026-07-23",
+  "pins": {
+    "post_esa_program_pin": {
+      "sha": "3b33cea2422b1aa1e5be9080be54f731c4f2015d",
+      "note": "PR #79"
+    },
+    "post_epc_sha": {
+      "sha": "555524c1aff9ff8195dd744ea209fb8cc673d817",
+      "note": "pinned 2026-07-23, SSD execution baseline"
+    },
+    "worktree_base": {
+      "sha": "314ee1a7b630e9016b4e184030129fbc9e00a9ef",
+      "note": "codex/skill-surface-discovery-convergence worktree base commit (docs(plan): activate SSD)"
+    },
+    "discovery_audit_baseline": {
+      "sha": "af6d5216c2cd5adf2f672636a8308a309f0f5adb",
+      "note": "docs/researches/20260715-skill-surface-discovery-audit.md capture baseline"
+    }
+  },
+  "source_inventory": [
+    {
+      "name": "repo-harness",
+      "path": "SKILL.md",
+      "kind": "root-router"
+    },
+    {
+      "name": "repo-harness-architecture",
+      "path": "assets/skill-commands/repo-harness-architecture",
+      "kind": "command-facade"
+    },
+    {
+      "name": "repo-harness-autoplan",
+      "path": "assets/skill-commands/repo-harness-autoplan",
+      "kind": "command-facade"
+    },
+    {
+      "name": "repo-harness-capability",
+      "path": "assets/skill-commands/repo-harness-capability",
+      "kind": "command-facade"
+    },
+    {
+      "name": "repo-harness-check",
+      "path": "assets/skill-commands/repo-harness-check",
+      "kind": "command-facade"
+    },
+    {
+      "name": "repo-harness-deploy",
+      "path": "assets/skill-commands/repo-harness-deploy",
+      "kind": "command-facade"
+    },
+    {
+      "name": "repo-harness-goal",
+      "path": "assets/skill-commands/repo-harness-goal",
+      "kind": "command-facade"
+    },
+    {
+      "name": "repo-harness-gptpro",
+      "path": "assets/skill-commands/repo-harness-gptpro",
+      "kind": "command-facade"
+    },
+    {
+      "name": "repo-harness-gptpro-setup",
+      "path": "assets/skill-commands/repo-harness-gptpro-setup",
+      "kind": "command-facade"
+    },
+    {
+      "name": "repo-harness-handoff",
+      "path": "assets/skill-commands/repo-harness-handoff",
+      "kind": "command-facade"
+    },
+    {
+      "name": "repo-harness-init",
+      "path": "assets/skill-commands/repo-harness-init",
+      "kind": "command-facade"
+    },
+    {
+      "name": "repo-harness-migrate",
+      "path": "assets/skill-commands/repo-harness-migrate",
+      "kind": "command-facade"
+    },
+    {
+      "name": "repo-harness-plan",
+      "path": "assets/skill-commands/repo-harness-plan",
+      "kind": "command-facade"
+    },
+    {
+      "name": "repo-harness-prd",
+      "path": "assets/skill-commands/repo-harness-prd",
+      "kind": "command-facade"
+    },
+    {
+      "name": "repo-harness-repair",
+      "path": "assets/skill-commands/repo-harness-repair",
+      "kind": "command-facade"
+    },
+    {
+      "name": "repo-harness-review",
+      "path": "assets/skill-commands/repo-harness-review",
+      "kind": "command-facade"
+    },
+    {
+      "name": "repo-harness-scaffold",
+      "path": "assets/skill-commands/repo-harness-scaffold",
+      "kind": "command-facade"
+    },
+    {
+      "name": "repo-harness-ship",
+      "path": "assets/skill-commands/repo-harness-ship",
+      "kind": "command-facade"
+    },
+    {
+      "name": "repo-harness-sprint",
+      "path": "assets/skill-commands/repo-harness-sprint",
+      "kind": "command-facade"
+    },
+    {
+      "name": "repo-harness-upgrade",
+      "path": "assets/skill-commands/repo-harness-upgrade",
+      "kind": "command-facade"
+    },
+    {
+      "name": "claude-plan",
+      "path": "assets/skills/claude-plan",
+      "kind": "provider-skill"
+    },
+    {
+      "name": "claude-review",
+      "path": "assets/skills/claude-review",
+      "kind": "provider-skill"
+    },
+    {
+      "name": "codex-review",
+      "path": "assets/skills/codex-review",
+      "kind": "provider-skill"
+    },
+    {
+      "name": "repo-harness-chatgpt-bridge",
+      "path": ".agents/skills/repo-harness-chatgpt-bridge",
+      "kind": "chatgpt-package"
+    },
+    {
+      "name": "repo-harness-chatgpt-browser",
+      "path": ".agents/skills/repo-harness-chatgpt-browser",
+      "kind": "chatgpt-package"
+    }
+  ],
+  "shadow_prose_owners": [
+    {
+      "name": "src/cli/mcp/setup.ts#SKILL_MD",
+      "path": "src/cli/mcp/setup.ts",
+      "kind": "inline-prose-template",
+      "duplicates": "repo-harness-chatgpt-bridge",
+      "note": "Inline `const SKILL_MD = ...` template literal at src/cli/mcp/setup.ts:835 duplicates repo-harness-chatgpt-bridge SKILL.md prose; recorded as an additional prose owner outside the 25-entry source_inventory count."
+    }
+  ],
+  "current_discovered_sets": {
+    "profiles": [
+      "minimal",
+      "standard",
+      "product-planning",
+      "strict"
+    ],
+    "hosts": [
+      "codex",
+      "claude"
+    ],
+    "command_facade_matrix": {
+      "minimal": [],
+      "standard": [
+        "repo-harness-check",
+        "repo-harness-handoff",
+        "repo-harness-plan"
+      ],
+      "product-planning": [
+        "repo-harness-check",
+        "repo-harness-gptpro",
+        "repo-harness-handoff",
+        "repo-harness-plan"
+      ],
+      "strict": [
+        "repo-harness-check",
+        "repo-harness-gptpro",
+        "repo-harness-handoff",
+        "repo-harness-plan"
+      ]
+    },
+    "command_facade_matrix_note": "Identical set for both codex and claude hosts: scripts/sync-codex-installed-copies.sh selects facades once via facade_selected()/profile_facades() and calls sync_command_facades() for each host root without host-specific branching (source: scripts/sync-codex-installed-copies.sh:253-263,313-343). The other 15 of 19 facades (including repo-harness-prd, repo-harness-sprint, repo-harness-goal, repo-harness-gptpro-setup) are never synced by any profile.",
+    "root_router_projection_note": "The repo-harness canonical Skill is synced unconditionally to both CODEX_SKILLS_ROOT and CLAUDE_SKILLS_ROOT regardless of profile (source: scripts/sync-codex-installed-copies.sh:348-367).",
+    "cross_review_matrix": {
+      "minimal": {},
+      "standard": {},
+      "product-planning": {},
+      "strict": {
+        "claude": [
+          "codex-review"
+        ],
+        "codex": [
+          "claude-review",
+          "claude-plan"
+        ]
+      }
+    },
+    "cross_review_note": "This matrix reflects runGlobalRuntimeSetup()'s profile-gated path (profile === 'strict' only; source: src/cli/commands/global-runtime.ts:658-662). The separate repo-harness adopt path (src/cli/commands/init.ts installExternalSkills(), which has no profile concept) syncs the same three cross-review/external-brain skills whenever externalSkills is left enabled (default true), independent of any profile.",
+    "merge_gate_note": "merge-gate is never included in any profile/host Skill matrix; see facts[4] (merge-gate-not-a-skill).",
+    "facts": [
+      {
+        "id": "profile-facades-selection",
+        "claim": "profile_facades() selects: minimal -> none; standard -> repo-harness-plan, repo-harness-check, repo-harness-handoff; product-planning and strict -> those three plus repo-harness-gptpro.",
+        "source": "scripts/sync-codex-installed-copies.sh:253-263"
+      },
+      {
+        "id": "init-ts-waza-and-cross-review",
+        "claim": "src/cli/commands/init.ts declares WAZA_SKILLS = [\"think\",\"hunt\",\"check\",\"health\"] and CROSS_REVIEW_SKILLS mapping codex-review -> claude host, claude-review -> codex host, claude-plan -> codex host.",
+        "source": "src/cli/commands/init.ts:43 (WAZA_SKILLS), src/cli/commands/init.ts:65-69 (CROSS_REVIEW_SKILLS)"
+      },
+      {
+        "id": "global-runtime-ts-gating",
+        "claim": "src/cli/commands/global-runtime.ts independently redeclares the WAZA_SKILLS literal. Its runGlobalRuntimeSetup() installs Waza+mermaid only when opts.externalSkills === true, a flag callers derive from profileEnablesExternalSkills(profile) (true only for product-planning and strict); it installs the three CROSS_REVIEW_SKILLS only when profile === 'strict'.",
+        "source": "src/cli/commands/global-runtime.ts:51 (WAZA_SKILLS), src/cli/commands/global-runtime.ts:646-656 (externalSkills gate), src/cli/commands/global-runtime.ts:658-662 (strict-only cross-review gate), src/cli/installer/install-profile.ts:975-977 (profileEnablesExternalSkills)"
+      },
+      {
+        "id": "copy-link-projection-default",
+        "claim": "AGENTIC_DEV_LINK_INSTALLED_COPIES controls copy vs link projection mode; when unset and CODEX_SKILLS_ROOT was not explicitly overridden, LINK_INSTALLED_COPIES defaults to 1 (link mode).",
+        "source": "scripts/sync-codex-installed-copies.sh:33-44"
+      },
+      {
+        "id": "merge-gate-not-a-skill",
+        "claim": "merge-gate is listed in PROTECTED_HELPERS as a protected CLI helper name; it is not projected as a discoverable Skill directory on any host or profile today.",
+        "source": "src/cli/runtime/helper-runner.ts:12"
+      }
+    ]
+  },
+  "known_disagreements": [
+    {
+      "id": "manifest-vs-facade-sync-product-planning",
+      "statement": "assets/skill-commands/manifest.json does not itself carry a \"product-planning\" classification for repo-harness-prd/-sprint/-goal/-gptpro-setup: only repo-harness-prd's `class` field is literally \"product-planning\" (repo-harness-sprint is \"sprint-orchestration\", repo-harness-goal is \"goal-session\", repo-harness-gptpro-setup is \"gptpro-local-setup\"). The actual product-planning claim lives in docs/reference-configs/install-profiles.md:13 (\"standard plus PRD/Sprint/Goal and planning integrations\"), yet scripts/sync-codex-installed-copies.sh#profile_facades() never syncs any of those four names for any profile, including product-planning.",
+      "evidence": [
+        "assets/skill-commands/manifest.json:106-139",
+        "docs/reference-configs/install-profiles.md:13",
+        "scripts/sync-codex-installed-copies.sh:253-263"
+      ]
+    },
+    {
+      "id": "manifest-vs-installer-dual-selection",
+      "statement": "discoverManagedSurfaces (src/cli/installer/install-profile.ts:353-389) and profile_facades() (scripts/sync-codex-installed-copies.sh:253-263) are two independently maintained package/component selection mechanisms; discoverManagedSurfaces snapshots host Skill directories for transaction/rollback purposes while profile_facades() drives what gets synced in the first place, and neither reads assets/skill-commands/manifest.json.",
+      "evidence": [
+        "src/cli/installer/install-profile.ts:353-389",
+        "scripts/sync-codex-installed-copies.sh:253-263"
+      ]
+    },
+    {
+      "id": "waza-skills-literal-duplicated",
+      "statement": "The WAZA_SKILLS = [\"think\",\"hunt\",\"check\",\"health\"] literal is independently declared in src/cli/commands/init.ts:43 and src/cli/commands/global-runtime.ts:51; a change to one does not propagate to the other.",
+      "evidence": [
+        "src/cli/commands/init.ts:43",
+        "src/cli/commands/global-runtime.ts:51"
+      ]
+    },
+    {
+      "id": "manifest-read-by-tests-only",
+      "statement": "assets/skill-commands/manifest.json is read at test time by tests/action-command-skills.test.ts only; no runtime selection path (profile_facades(), discoverManagedSurfaces, init.ts, global-runtime.ts) reads it. Other manifest.json files exist in this repo (workflow-contract/brain/capability manifests read by src/core/adoption/standard-plan.ts, src/cli/commands/brain.ts, scripts/contract-run.ts, and others), but none of those are assets/skill-commands/manifest.json.",
+      "evidence": [
+        "tests/action-command-skills.test.ts:47",
+        "assets/skill-commands/manifest.json"
+      ]
+    }
+  ],
+  "target_discovered_sets": {
+    "canonical_routes": [
+      "repo-harness",
+      "repo-harness-setup",
+      "repo-harness-plan",
+      "repo-harness-product",
+      "repo-harness-check",
+      "repo-harness-ship",
+      "repo-harness-architecture",
+      "repo-harness-cross-review",
+      "merge-gate",
+      "repo-harness-chatgpt"
+    ],
+    "matrix": {
+      "minimal": [
+        "repo-harness"
+      ],
+      "standard": [
+        "repo-harness",
+        "repo-harness-plan",
+        "repo-harness-check"
+      ],
+      "product-planning": [
+        "repo-harness",
+        "repo-harness-plan",
+        "repo-harness-check",
+        "repo-harness-product"
+      ],
+      "strict": [
+        "repo-harness",
+        "repo-harness-plan",
+        "repo-harness-check",
+        "repo-harness-ship",
+        "repo-harness-cross-review",
+        "merge-gate"
+      ],
+      "explicit_chatgpt_setup": [
+        "repo-harness-chatgpt"
+      ],
+      "architecture": [
+        "repo-harness-architecture"
+      ]
+    },
+    "notes": {
+      "strict": "repo-harness-cross-review is host-aware (its Claude and Codex provider modes each activate for the opposite provider); merge-gate is projected only on its gatekeeper host, not on every strict host.",
+      "explicit_chatgpt_setup": "Never implied by product-planning or any other profile; repo-harness-chatgpt is additive only after an explicit ChatGPT setup action.",
+      "architecture": "Never implied by a profile; available only through the root router's progressive load or an explicit operator install."
+    },
+    "source": "plans/plan-20260715-1140-skill-surface-discovery-convergence.md (\"Target discovery matrix\" and \"Target canonical packages\" sections)"
+  },
+  "historical_evidence_ruling": {
+    "source": "docs/researches/20260715-skill-surface-discovery-audit.md:60",
+    "recorded_claim": "A read-only focused baseline covered six relevant test files and reported 110 passing tests, zero failures, in 25.91 seconds.",
+    "reusable_as_cached_evidence": false,
+    "reason": "The line records neither the six file names nor a pinned subject SHA, so the result cannot be bound to a reproducible subject.",
+    "disposition": "SSD relies on fresh deterministic gates (this slice's own tests plus the required-checks list) rather than reusing this cached number."
+  },
+  "corpus_sha256": "17a8a2feba0d1dd309f318eab9eb3b95c6ed1d3acf4da75df136c6eedff051f9"
+}

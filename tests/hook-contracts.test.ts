@@ -117,7 +117,7 @@ describe("Hook contracts", () => {
     expect(script).toContain("Waza /health");
     expect(script).toContain("Waza /think");
     expect(script).toContain("[AgenticDevRoute]");
-    expect(script).toContain("repo-harness-autoplan after user authorization");
+    expect(script).toContain("execute continuation via Effective State after user authorization");
     expect(script).toContain("hook will not plan or create assets");
     expect(script).not.toContain("Waza /hunt");
     expect(script).not.toContain("Waza /learn");

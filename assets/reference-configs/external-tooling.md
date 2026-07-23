@@ -43,16 +43,19 @@ run with an explicit opt-in such as `--with-external-skills` or
 `repo-harness adopt`; `setup check --check-updates` reports an Agent action when
 the current adopted repo's dry-run adoption plan has pending operations.
 
-The cross-review skills are **harness-owned and self-contained** — their source
-lives in `assets/skills/<skill>/` and they wrap the peer CLI (`codex exec` /
-`claude -p`) in a read-only sandbox with no external planning-provider runtime, so installing them
-is a workflow-owned runtime concern, not an unrelated toolchain. They install
-host-aware during `repo-harness install`/`init` and explicit external-skill refreshes:
-`codex-review` only into `~/.claude/skills` (a Claude session asking
-Codex for an independent review), and `claude-review` plus `claude-plan` only
-into `~/.codex/skills` (a Codex session asking Claude for a review or, via
-Claude's headless plan mode, for a plan consult on a mid-execution design
-fork). The harness skills are the self-contained
+The cross-review skill is **harness-owned and self-contained** — its source
+lives in `assets/skills/repo-harness-cross-review/` and it wraps the peer CLI
+(`codex exec` / `claude -p`) in a read-only sandbox with no external
+planning-provider runtime, so installing it is a workflow-owned runtime
+concern, not an unrelated toolchain. `repo-harness-cross-review` installs
+host-aware during `repo-harness install`/`init` and explicit external-skill
+refreshes: it installs into **both** `~/.claude/skills` (a Claude session
+asking Codex for an independent review, via its Codex provider mode) and
+`~/.codex/skills` (a Codex session asking Claude for a review, via its Claude
+provider mode) for the strict profile. `claude-plan` installs only into
+`~/.codex/skills` (a Codex session using Claude's headless plan mode for a
+plan consult on a mid-execution design fork) and is unaffected by this
+package's host-aware installation. The harness skills are the self-contained
 baseline that always ships with `init` and the peer acceptance gate surface for
 the typed `AcceptanceReceipt`; its review section is projection only.
 

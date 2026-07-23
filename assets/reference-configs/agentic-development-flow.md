@@ -31,34 +31,38 @@ root prompt concise; this file owns the detailed routing.
 
 ## repo-harness Command Surface
 
-Use these CLI-backed command facades when the work is about installing,
-migrating, repairing, or verifying this repo-local harness:
+Use these canonical packages when the work is about installing, migrating,
+repairing, planning, or verifying this repo-local harness. `assets/skill-commands/manifest.json`
+is the runtime discovery authority for which profile installs which package;
+see [external tooling](external-tooling.md) for the strict-profile
+cross-review/merge-gate rows.
 
 | Work type | Command | Boundary |
 |-----------|---------|----------|
-| Decision-complete harness plan | `repo-harness-plan` | Plans only; no repo mutation by default |
-| Review an existing harness plan | `repo-harness-review` | Product, engineering, design, and DevEx review dimensions |
-| Automatic workflow pipeline | `repo-harness-autoplan` | Plan -> two self-review passes -> implementation -> `/check` -> `repo-harness-ship` |
+| Decision-complete harness plan | `repo-harness-plan` (create mode) | Plans only; no repo mutation by default |
+| Review an existing harness plan | `repo-harness-plan` (review mode) | Product, engineering, design, and DevEx review dimensions |
+| Continue the active task automatically | root `repo-harness` (execute action) | Follows Effective State through the existing plan -> contract -> worktree -> verify chain; no invented workflow-run engine |
 | Ship finished work | `repo-harness-ship` | Validates finished worktrees, pushes branches, and creates PRs by default |
-| Add harness to an existing repo | `repo-harness-init` | Uses inspector and migration engine; does not create an app stack |
-| Create a new app or module scaffold | `repo-harness-scaffold` | Uses plan catalog A-K, then attaches the harness |
-| Convert legacy workflow surfaces | `repo-harness-migrate` | Archives or preserves user-authored legacy docs |
-| Refresh an installed harness | `repo-harness-upgrade` | Runs manifest-owned upgrade actions only |
-| Add selected capability boundaries | `repo-harness-capability` | Updates capability registry and local contracts without full init/migrate/upgrade |
+| Add harness to an existing repo | `repo-harness-setup` (adopt-init mode) | Uses inspector and migration engine; does not create an app stack |
+| Create a new app or module scaffold | `repo-harness-setup` (scaffold mode) | Uses plan catalog A-K, then attaches the harness |
+| Convert legacy workflow surfaces | `repo-harness-setup` (migrate mode) | Archives or preserves user-authored legacy docs |
+| Refresh an installed harness | `repo-harness-setup` (upgrade mode) | Runs manifest-owned upgrade actions only |
+| Add selected capability boundaries | `repo-harness-setup` (capability mode) | Updates capability registry and local contracts without full init/migrate/upgrade |
 | Resolve architecture docs or diagrams | `repo-harness-architecture` | Handles architecture drift requests without full harness refresh |
-| Prepare or resume handoff | `repo-harness-handoff` | Refreshes Codex handoff packets without running full checks |
-| Check deploy and ops config | `repo-harness-deploy` | Read-only deploy/_ops readiness check without publishing |
-| Fix broken current harness behavior | `repo-harness-repair` | Task sync, hook routing, handoff, context, policy, or helper drift |
+| Prepare or resume handoff | root `repo-harness` (handoff action) | Refreshes Codex handoff packets without running full checks |
+| Check deploy and ops config | `repo-harness-check` (deploy-readiness reference) | Read-only deploy/_ops readiness check without publishing |
+| Fix broken current harness behavior | `repo-harness-setup` (repair mode) | Task sync, hook routing, handoff, context, policy, or helper drift |
 | Verify readiness | `repo-harness-check` | Workflow gates, task sync, inspector, migration dry-run, and readiness yellow flags |
-| Generate an upper-layer PRD | `repo-harness-prd` | `$geju` direction pass, Claude-first `claude -p --model opus` drafting, Codex fallback only when needed, PRD in `plans/prds/*.prd.md`; geju thesis/falsifier are pre-contract only and freeze into a delegated contract's `## Why`/`## Falsifier` |
-| Plan and run a program-level sprint | `repo-harness-sprint` | Upper-layer PRD in `plans/prds/`, sprint backlog in `plans/sprints/`; each row expands through `$think` before plan -> contract -> worktree |
-| Prepare a bounded native goal session | `repo-harness-goal` / `repo-harness:goal` | Codex/Claude `/goal` prompt from detailed PRD or Sprint artifacts; stops to request those documents when missing |
-| Configure GPT Pro local provider | `repo-harness-gptpro-setup` / `repo-harness:gptpro_setup` | Separates `gptpro_browser` local ChatGPT Web browser/session consults from `gptpro_mcp` ChatGPT Connector MCP sidecar setup; preserves auth, tunnel, and API-billing boundaries |
-| Consult GPT Pro through browser session | `repo-harness-gptpro` / `repo-harness:gptpro` | Uses `gptpro consult/read/continue/open` wording while mapping to `browser-consult`, `browser-session`, `browser-followup`, and `browser-open` engine commands |
+| Independent cross-model review | `repo-harness-cross-review` | Host-aware Claude/Codex provider modes; installed on both hosts for strict; never produces a merge-gate receipt |
+| Generate an upper-layer PRD | `repo-harness-product` (PRD mode) | `$geju` direction pass, Claude-first `claude -p --model opus` drafting, Codex fallback only when needed, PRD in `plans/prds/*.prd.md`; geju thesis/falsifier are pre-contract only and freeze into a delegated contract's `## Why`/`## Falsifier` |
+| Plan and run a program-level sprint | `repo-harness-product` (Sprint mode) | Upper-layer PRD in `plans/prds/`, sprint backlog in `plans/sprints/`; each row expands through `$think` before plan -> contract -> worktree |
+| Prepare a bounded native goal session | `repo-harness-product` (Goal mode) | Codex/Claude `/goal` prompt from detailed PRD or Sprint artifacts; stops to request those documents when missing |
+| Configure ChatGPT Oracle browser/MCP provider | `repo-harness-chatgpt` (setup mode) | Separates `gptpro_browser` local ChatGPT Web browser/session consults from `gptpro_mcp` ChatGPT Connector MCP sidecar setup; preserves auth, tunnel, and API-billing boundaries; explicit setup only, never implied by product planning |
+| Consult GPT Pro through browser session | `repo-harness-chatgpt` (consult/continue modes) | Uses `gptpro consult/read/continue/open` wording while mapping to `browser-consult`, `browser-session`, `browser-followup`, and `browser-open` engine commands |
 
 `hooks-init`, `docs-init`, and `create-project-dirs` are not public commands.
-They are implementation steps behind `init`, `scaffold`, `migrate`, and
-`upgrade`.
+They are implementation steps behind setup's adopt-init, scaffold, migrate,
+and upgrade modes.
 
 ## Due Diligence Levels
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
@@ -17,11 +17,18 @@ function writeExecutable(filePath: string, content: string): void {
 
 function setupFakeSource(root: string): void {
   mkdirSync(join(root, 'scripts'), { recursive: true });
-  mkdirSync(join(root, 'assets', 'skills', 'codex-review'), { recursive: true });
-  mkdirSync(join(root, 'assets', 'skills', 'claude-review'), { recursive: true });
+  mkdirSync(join(root, 'assets', 'skills', 'repo-harness-cross-review'), { recursive: true });
+  // installWazaSkills()/installMermaidSkill()/syncCrossReviewSkills() now read
+  // sourceRoot's skill-surface manifest (see loadSkillSurfaceCatalog in
+  // global-runtime.ts); a real copy keeps this synthetic package tree
+  // loadable exactly like the real repo.
+  mkdirSync(join(root, 'assets', 'skill-commands'), { recursive: true });
+  copyFileSync(
+    join(ROOT, 'assets', 'skill-commands', 'manifest.json'),
+    join(root, 'assets', 'skill-commands', 'manifest.json'),
+  );
   writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '9.9.9' }, null, 2));
-  writeFileSync(join(root, 'assets', 'skills', 'codex-review', 'SKILL.md'), 'codex-review\n');
-  writeFileSync(join(root, 'assets', 'skills', 'claude-review', 'SKILL.md'), 'claude-review\n');
+  writeFileSync(join(root, 'assets', 'skills', 'repo-harness-cross-review', 'SKILL.md'), 'repo-harness-cross-review\n');
   writeExecutable(
     join(root, 'scripts', 'sync-codex-installed-copies.sh'),
     '#!/bin/bash\nset -euo pipefail\necho "sync runtime link=${AGENTIC_DEV_LINK_INSTALLED_COPIES:-unset}"\n',
@@ -259,8 +266,8 @@ describe('init command global runtime bootstrap', () => {
       expect(readFileSync(bunxLog, 'utf-8')).toContain(
         'skills add BfdCampos/dotfiles -g -a codex -s mermaid -y',
       );
-      expect(existsSync(join(home, '.codex', 'skills', 'claude-review', 'SKILL.md'))).toBe(true);
-      expect(existsSync(join(home, '.claude', 'skills', 'codex-review', 'SKILL.md'))).toBe(false);
+      expect(existsSync(join(home, '.codex', 'skills', 'repo-harness-cross-review', 'SKILL.md'))).toBe(true);
+      expect(existsSync(join(home, '.claude', 'skills', 'repo-harness-cross-review', 'SKILL.md'))).toBe(false);
       expect(readFileSync(bunxLog, 'utf-8')).not.toContain('feature-dev');
       expect(JSON.parse(readFileSync(join(home, '.repo-harness', 'config.json'), 'utf-8')).brainRoot).toBe(
         join(home, 'brain'),
@@ -379,8 +386,8 @@ describe('init command global runtime bootstrap', () => {
 
       expect(result.exitCode).toBe(0);
       expect(result.steps.find((step) => step.step === 'configure Waza skills')?.status).toBe('skipped');
-      expect(result.steps.find((step) => step.step === 'cross-review skill codex-review')?.status).toBe('ok');
-      expect(existsSync(join(home, '.claude', 'skills', 'codex-review', 'SKILL.md'))).toBe(true);
+      expect(result.steps.find((step) => step.step === 'cross-review skill repo-harness-cross-review')?.status).toBe('ok');
+      expect(existsSync(join(home, '.claude', 'skills', 'repo-harness-cross-review', 'SKILL.md'))).toBe(true);
       expect(existsSync(join(home, '.claude', 'skills', 'merge-gate', 'SKILL.md'))).toBe(false);
       expect(existsSync(join(home, '.agents', 'skills', 'think'))).toBe(false);
     } finally {
@@ -436,7 +443,7 @@ exit 0
       });
       expect(existsSync(join(home, '.claude', 'skills', 'think', 'SKILL.md'))).toBe(true);
       expect(existsSync(join(home, '.claude', 'skills', 'mermaid', 'SKILL.md'))).toBe(true);
-      expect(existsSync(join(home, '.claude', 'skills', 'codex-review'))).toBe(false);
+      expect(existsSync(join(home, '.claude', 'skills', 'repo-harness-cross-review'))).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

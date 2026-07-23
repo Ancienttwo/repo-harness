@@ -3,32 +3,55 @@ import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { assertChatGptMcpContract } from "./helpers/chatgpt-mcp-contract";
 
+// SSD-06 migration: the pre-cutover 19-facade public action command surface
+// (all living flat under assets/skill-commands/) collapses into the plan's
+// 10 target canonical packages spread across assets/skill-commands/ (the 3
+// survivors evolving in place) and assets/skills/ (the 5 newly-activated
+// canonical packages plus the pre-existing cross-review provider-skill),
+// root SKILL.md (the router itself), and the classification-only
+// merge-gate manifest entry (no SKILL.md file at all). This file's oracle
+// migrates: every semantic content assertion that still applies is relocated
+// to the new file/reference that now owns that rule paragraph; assertions
+// that pinned a fully-retired facade's own specific automation (autoplan's
+// self-review passes) are deleted outright since no successor implements
+// that behavior.
+
 const ROOT = join(import.meta.dir, "..");
 const COMMAND_ROOT = join(ROOT, "assets", "skill-commands");
-const COMMANDS = [
+const SKILLS_ROOT = join(ROOT, "assets", "skills");
+
+const TARGET_CANONICAL_PACKAGES = [
+  "repo-harness",
+  "repo-harness-setup",
   "repo-harness-plan",
-  "repo-harness-review",
-  "repo-harness-autoplan",
-  "repo-harness-ship",
-  "repo-harness-init",
-  "repo-harness-scaffold",
-  "repo-harness-migrate",
-  "repo-harness-upgrade",
-  "repo-harness-capability",
-  "repo-harness-architecture",
-  "repo-harness-handoff",
-  "repo-harness-deploy",
-  "repo-harness-repair",
+  "repo-harness-product",
   "repo-harness-check",
-  "repo-harness-prd",
-  "repo-harness-sprint",
-  "repo-harness-goal",
-  "repo-harness-gptpro-setup",
-  "repo-harness-gptpro",
+  "repo-harness-ship",
+  "repo-harness-architecture",
+  "repo-harness-cross-review",
+  "merge-gate",
+  "repo-harness-chatgpt",
+];
+
+const TARGET_FACADE_KIND_PACKAGES = [
+  "repo-harness-setup",
+  "repo-harness-plan",
+  "repo-harness-check",
+  "repo-harness-product",
+  "repo-harness-ship",
+  "repo-harness-architecture",
 ];
 
 function readCommand(name: string): string {
   return readFileSync(join(COMMAND_ROOT, name, "SKILL.md"), "utf-8");
+}
+
+function readSkillPackage(name: string): string {
+  return readFileSync(join(SKILLS_ROOT, name, "SKILL.md"), "utf-8");
+}
+
+function readReference(pkg: string, reference: string): string {
+  return readFileSync(join(SKILLS_ROOT, pkg, "references", reference), "utf-8");
 }
 
 const RUNTIME_RED_FLAGS = [
@@ -43,11 +66,15 @@ const RUNTIME_RED_FLAGS = [
 ];
 
 describe("repo-harness action command skills", () => {
-  test("manifest exposes exactly the public action command surface", () => {
+  test("manifest exposes exactly the target facade-kind surface", () => {
     const manifest = JSON.parse(readFileSync(join(COMMAND_ROOT, "manifest.json"), "utf-8"));
     expect(manifest.surface).toBe("repo-harness-cli-hooks-command-facades");
     expect(manifest.router).toBe("repo-harness");
-    expect(manifest.commands.map((entry: { name: string }) => entry.name)).toEqual(COMMANDS);
+    const facadeNames = manifest.packages
+      .filter((entry: { kind: string }) => entry.kind === "facade")
+      .map((entry: { name: string }) => entry.name)
+      .sort();
+    expect(facadeNames).toEqual([...TARGET_FACADE_KIND_PACKAGES].sort());
     expect(manifest.nonPublicInternalSteps).toEqual([
       "hooks-init",
       "docs-init",
@@ -55,8 +82,20 @@ describe("repo-harness action command skills", () => {
     ]);
   });
 
-  test("each command is a thin standalone skill facade", () => {
-    for (const command of COMMANDS) {
+  test("manifest declares all 10 target canonical packages from the plan's target package table", () => {
+    const manifest = JSON.parse(readFileSync(join(COMMAND_ROOT, "manifest.json"), "utf-8"));
+    const names = manifest.packages.map((entry: { name: string }) => entry.name);
+    for (const pkg of TARGET_CANONICAL_PACKAGES) {
+      expect(names).toContain(pkg);
+    }
+    const mergeGate = manifest.packages.find((entry: { name: string }) => entry.name === "merge-gate");
+    expect(mergeGate.kind).toBe("judge");
+    expect(mergeGate.hosts).toEqual([]);
+    expect(mergeGate.profiles).toEqual([]);
+  });
+
+  test("each surviving skill-commands facade is a thin standalone skill facade", () => {
+    for (const command of ["repo-harness-check", "repo-harness-ship", "repo-harness-architecture"]) {
       const path = join(COMMAND_ROOT, command, "SKILL.md");
       expect(existsSync(path)).toBe(true);
       const body = readCommand(command);
@@ -69,15 +108,8 @@ describe("repo-harness action command skills", () => {
     }
   });
 
-  test("each command satisfies Darwin static quality gates", () => {
-    const checkpointCommands = new Set([
-      "repo-harness-autoplan",
-      "repo-harness-ship",
-      "repo-harness-migrate",
-      "repo-harness-upgrade",
-    ]);
-
-    for (const command of COMMANDS) {
+  test("each surviving skill-commands facade satisfies Darwin static quality gates", () => {
+    for (const command of ["repo-harness-check", "repo-harness-ship", "repo-harness-architecture"]) {
       const body = readCommand(command);
       const frontmatter = body.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? "";
       const description = frontmatter.match(/^description:\s*(.+)$/m)?.[1] ?? "";
@@ -93,44 +125,40 @@ describe("repo-harness action command skills", () => {
       expect(body).toMatch(/If .+(route|report|stop|verify|regenerate|archive|preserve)/);
       expect(body).toMatch(/## Boundaries[\s\S]*(Does not|Do not|Never|Preserve|Delete only)/);
       expect(flagged).toEqual([]);
-
-      if (checkpointCommands.has(command)) {
-        expect(body).toContain("CHECKPOINT");
-      }
     }
+    expect(readCommand("repo-harness-ship")).toContain("CHECKPOINT");
   });
 
-  test("plan and review are non-mutating by default", () => {
-    for (const command of ["repo-harness-plan", "repo-harness-review"]) {
-      expect(readCommand(command)).toContain("Does not edit");
-    }
-    expect(readCommand("repo-harness-plan")).toContain("repo-harness run capture-plan");
-    expect(readCommand("repo-harness-plan")).toContain("invoke `geju` before a contract exists");
-    expect(readCommand("repo-harness-plan")).toContain("parent agent then completes P1/P2/P3");
-    expect(readCommand("repo-harness-plan").toLowerCase()).not.toContain("gstack");
+  test("plan and its review mode are non-mutating by default", () => {
+    const plan = readSkillPackage("repo-harness-plan");
+    expect(plan).toContain("Neither mode edits implementation files by default");
+    expect(readReference("repo-harness-plan", "review.md")).toContain("Does not edit files or implement the plan by default");
+    expect(readReference("repo-harness-plan", "create.md")).toContain("repo-harness run capture-plan");
+    expect(readReference("repo-harness-plan", "create.md")).toContain("invoke `geju` before a contract exists");
+    expect(readReference("repo-harness-plan", "create.md")).toContain("parent agent then completes P1/P2/P3");
+    expect(readReference("repo-harness-plan", "create.md").toLowerCase()).not.toContain("gstack");
+    expect(readReference("repo-harness-plan", "review.md").toLowerCase()).not.toContain("gstack");
   });
 
-  test("autoplan runs full workflow with bounded self-review and delegates ship", () => {
-    const autoplan = readCommand("repo-harness-autoplan");
-
-    expect(autoplan).toContain("self-review 1");
-    expect(autoplan).toContain("self-review 2");
-    expect(autoplan).toContain("Execute the approved plan");
-    expect(autoplan).toContain("Call `repo-harness-ship`");
-    expect(autoplan).toContain("Runs exactly two plan self-review passes");
+  test("plan's review mode covers product, engineering, design, and DevEx dimensions", () => {
+    const review = readReference("repo-harness-plan", "review.md");
+    expect(review).toContain("product");
+    expect(review).toContain("eng");
+    expect(review).toContain("design");
+    expect(review).toContain("devex");
+    expect(review).toContain("Report blocking issues first");
   });
 
-  test("autoplan packages repeated workflows only through an evidence-first approval gate", () => {
-    const autoplan = readCommand("repo-harness-autoplan");
-
-    expect(autoplan).toContain("Reusable Workflow Packaging Rubric");
-    expect(autoplan).toContain("Memories and rollout summaries");
-    expect(autoplan).toContain("Chronicle for discovery");
-    expect(autoplan).toContain("only, then existing skills");
-    expect(autoplan).toContain("frequency/confidence");
-    expect(autoplan).toContain("Prefer extending an existing skill");
-    expect(autoplan).toContain("Does not create skills, subagents, automations");
-    expect(autoplan).toContain("user approves the plan");
+  test("the reusable-workflow packaging rubric survives as one root reference (autoplan's only surviving content)", () => {
+    // autoplan itself retires with no successor facade; only its "Reusable
+    // Workflow Packaging Rubric" section moves to one root reference (plan
+    // P3 decision 4). No automated self-review-pass engine exists post-cutover.
+    const rubric = readFileSync(join(ROOT, "references", "workflow-packaging-rubric.md"), "utf-8");
+    expect(rubric).toContain("Reusable Workflow Packaging Rubric");
+    expect(rubric).toContain("Memories and rollout summaries");
+    expect(rubric).toContain("Chronicle for discovery");
+    expect(rubric).toContain("frequency/confidence");
+    expect(rubric).toContain("Prefer extending an existing skill");
   });
 
   test("ship defaults to PR closeout and keeps local merge explicit", () => {
@@ -145,22 +173,23 @@ describe("repo-harness action command skills", () => {
     expect(ship).toContain("Does not run `git reset --hard`, `git clean`, or automatic stash");
   });
 
-  test("init and scaffold keep existing-repo adoption separate from app scaffolding", () => {
-    const init = readCommand("repo-harness-init");
-    const scaffold = readCommand("repo-harness-scaffold");
+  test("setup's adopt-init and scaffold modes keep existing-repo adoption separate from app scaffolding", () => {
+    const setup = readSkillPackage("repo-harness-setup");
+    const adoptInit = readReference("repo-harness-setup", "adopt-init.md");
+    const scaffold = readReference("repo-harness-setup", "scaffold.md");
 
-    expect(init).toContain("existing repository");
-    expect(init).toContain("Does not create a new application stack");
-    expect(init).toContain("repo-harness adopt");
-    expect(init).toContain("repo-harness adopt --repo <repo>");
+    expect(adoptInit).toContain("existing repository");
+    expect(setup).toContain("Does not create an application stack from any mode except `scaffold`");
+    expect(adoptInit).toContain("repo-harness adopt");
+    expect(adoptInit).toContain("repo-harness adopt --repo <repo>");
     expect(scaffold).toContain("new project");
     expect(scaffold).toContain("plan catalog A-K");
-    expect(scaffold).toContain("If the user says \"initialize existing repo\", route to `repo-harness-init`");
+    expect(setup).toContain("New project/app/module skeleton, no existing repo workflow -> `references/scaffold.md`");
   });
 
-  test("migration and upgrade commands preserve user-owned surfaces", () => {
-    const migrate = readCommand("repo-harness-migrate");
-    const upgrade = readCommand("repo-harness-upgrade");
+  test("setup's migrate and upgrade modes preserve user-owned surfaces", () => {
+    const migrate = readReference("repo-harness-setup", "migrate.md");
+    const upgrade = readReference("repo-harness-setup", "upgrade.md");
 
     expect(migrate).toContain("Preserve or archive user-authored content");
     expect(migrate).toContain("ownership=known_generated");
@@ -168,19 +197,19 @@ describe("repo-harness action command skills", () => {
     expect(upgrade).toContain("Preserve `_ref/`, `_ops/`, secrets, local env, custom hooks");
   });
 
-  test("capability command is a targeted registry update instead of full init", () => {
-    const capability = readCommand("repo-harness-capability");
+  test("setup's capability mode is a targeted registry update instead of full init", () => {
+    const capability = readReference("repo-harness-setup", "capability.md");
 
     expect(capability).toContain("capability-config.ts add");
     expect(capability).toContain("Does not run `repo-harness adopt`");
     expect(capability).toContain("Does not install or refresh the full harness");
-    expect(capability).toContain("explicit prefixes");
+    expect(capability.toLowerCase()).toContain("explicit");
+    expect(capability.toLowerCase()).toContain("prefix");
   });
 
-  test("architecture, handoff, and deploy commands stay focused", () => {
+  test("architecture stays focused and root handoff reference stays scoped to handoff packet files", () => {
     const architecture = readCommand("repo-harness-architecture");
-    const handoff = readCommand("repo-harness-handoff");
-    const deploy = readCommand("repo-harness-deploy");
+    const handoff = readFileSync(join(ROOT, "references", "handoff.md"), "utf-8");
 
     expect(architecture).toContain("repo-harness run archive-architecture-request");
     expect(architecture).toContain("mermaid");
@@ -189,15 +218,21 @@ describe("repo-harness action command skills", () => {
 
     expect(handoff).toContain("repo-harness run prepare-codex-handoff");
     expect(handoff).toContain("repo-harness run codex-handoff-resume");
-    expect(handoff).toContain("Does not run `/check`");
-    expect(handoff).toContain("handoff packet files");
+    expect(handoff).toContain("handoff packet");
+  });
+
+  test("check's deploy-readiness reference stays read-only and scoped to deploy/operations checks", () => {
+    const deploy = readFileSync(
+      join(COMMAND_ROOT, "repo-harness-check", "references", "deploy-readiness.md"),
+      "utf-8",
+    );
 
     expect(deploy).toContain("Read-only by default");
     expect(deploy).toContain("check-deploy-sql-order.sh");
     expect(deploy).toContain("Does not publish or deploy");
     expect(deploy).toContain("_ops/");
     expect(deploy).toContain("operations.deploy_sql");
-    expect(deploy).toContain("otherwise `deploy/sql/`");
+    expect(deploy).toContain("deploy/sql/");
   });
 
   test("check command reports skill eval authority instead of accepting dry-run evidence", () => {
@@ -211,14 +246,14 @@ describe("repo-harness action command skills", () => {
     expect(check).toContain("Does not claim skill-effectiveness authority from dry-run benchmark output");
   });
 
-  test("public docs name the command surface and keep internal steps private", () => {
+  test("public docs name the target canonical packages and keep internal steps private", () => {
     const skill = readFileSync(join(ROOT, "SKILL.md"), "utf-8");
     const readme = readFileSync(join(ROOT, "README.md"), "utf-8");
     const flow = readFileSync(join(ROOT, "docs", "reference-configs", "agentic-development-flow.md"), "utf-8");
     const docs = [skill, readme, flow].join("\n");
 
-    for (const command of COMMANDS) {
-      expect(docs).toContain(command);
+    for (const pkg of TARGET_CANONICAL_PACKAGES) {
+      expect(docs).toContain(pkg);
     }
     expect(docs).toContain("hooks-init");
     expect(docs).toContain("docs-init");
@@ -226,8 +261,8 @@ describe("repo-harness action command skills", () => {
     expect(docs).toContain("not public");
   });
 
-  test("prd command creates only upper-layer PRDs", () => {
-    const prd = readCommand("repo-harness-prd");
+  test("product's PRD mode creates only upper-layer PRDs", () => {
+    const prd = readReference("repo-harness-product", "prd.md");
 
     expect(prd).toContain("plans/prds/");
     expect(prd).toContain("Activate `$geju`");
@@ -237,27 +272,24 @@ describe("repo-harness action command skills", () => {
     expect(prd).toContain("Use Codex fallback only");
     expect(prd).toContain("[UNKNOWN]");
     expect(prd).toContain("[UNVERIFIED]");
-    expect(prd).toContain("Does not create or approve a Sprint backlog");
     expect(prd).toContain("Does not skip the `$geju` direction pass");
     expect(prd).toContain("Does not make Codex the primary PRD author");
     expect(prd).toContain("repo-harness run check-task-workflow --strict");
   });
 
-  test("sprint command consumes PRDs without re-deciding product intent", () => {
-    const sprint = readCommand("repo-harness-sprint");
+  test("product's Sprint mode consumes PRDs without re-deciding product intent", () => {
+    const sprint = readReference("repo-harness-product", "sprint.md");
 
     expect(sprint).toContain("from-prd");
-    expect(sprint).toContain("plans/sprints/");
     expect(sprint).toContain("> **Source PRD**");
     expect(sprint).toContain("must be machine-checkable");
     expect(sprint).toContain("For `contract` rows, invoke `$think`");
     expect(sprint).toContain("For `inline` rows, do not create a new `plans/plan-*.md` or task contract");
   });
 
-  test("goal command requires detailed PRD or Sprint context before native goal continuation", () => {
-    const goal = readCommand("repo-harness-goal");
+  test("product's Goal mode requires detailed PRD or Sprint context before native goal continuation", () => {
+    const goal = readReference("repo-harness-product", "goal.md");
 
-    expect(goal).toContain("repo-harness:goal");
     expect(goal).toContain("/goal");
     expect(goal).toContain("Codex or Claude");
     expect(goal).toContain("plans/prds/*.prd.md");
@@ -269,64 +301,52 @@ describe("repo-harness action command skills", () => {
     expect(goal).not.toContain("concise Chinese status");
   });
 
-  test("gptpro setup command separates browser/session from MCP connector setup", () => {
-    const gptpro = readCommand("repo-harness-gptpro-setup");
+  test("chatgpt's setup mode separates browser/session from MCP connector setup", () => {
+    const setup = readReference("repo-harness-chatgpt", "setup.md");
 
-    expect(gptpro).toContain("repo-harness:gptpro_setup");
-    expect(gptpro).toContain("gptpro_browser");
-    expect(gptpro).toContain("gptpro_broswser");
-    expect(gptpro).toContain("gptpro_mcp");
-    expect(gptpro).toContain("repo-harness chatgpt browser-setup");
-    expect(gptpro).toContain("repo-harness chatgpt browser-doctor");
-    expect(gptpro).toContain("--provider oracle --json");
-    expect(gptpro).toContain("node >=24");
-    expect(gptpro).toContain("REPO_HARNESS_ORACLE_BIN");
-    expect(gptpro).toContain("agent_actions");
-    expect(gptpro).toContain("chatgpt-oracle-install-pinned");
-    expect(gptpro).toContain("chatgpt-oracle-upgrade-pinned");
-    expect(gptpro).toContain("chatgpt-oracle-fix-configured-source");
-    expect(gptpro).toContain("Does not install or upgrade Oracle from default repo-harness install");
-    expect(gptpro).toContain("Does not raise repo-harness' package/runtime floor");
-    expect(gptpro).toContain("repo-harness mcp setup chatgpt");
-    expect(gptpro).toContain("--server-name <name>");
-    expect(gptpro).toContain("--enable-chatgpt-browser");
-    expect(gptpro).toContain("HTTPS tunnel");
-    expect(gptpro).toContain("ChatGPT Pro subscription as an OpenAI API key");
-    expect(gptpro).toContain("Does not create OpenAI API keys");
-    expect(gptpro).not.toContain("--provider bridge --manual-login");
+    expect(setup).toContain("gptpro_browser");
+    expect(setup).toContain("gptpro_mcp");
+    expect(setup).toContain("repo-harness chatgpt browser-setup");
+    expect(setup).toContain("repo-harness chatgpt browser-doctor");
+    expect(setup).toContain("--provider oracle --json");
+    expect(setup).toContain("node >=24");
+    expect(setup).toContain("REPO_HARNESS_ORACLE_BIN");
+    expect(setup).toContain("agent_actions");
+    expect(setup).toContain("chatgpt-oracle-install-pinned");
+    expect(setup).toContain("chatgpt-oracle-upgrade-pinned");
+    expect(setup).toContain("chatgpt-oracle-fix-configured-source");
+    expect(setup).toContain("Does not install/upgrade Oracle from a default repo-harness install");
+    expect(setup).toContain("repo-harness mcp setup chatgpt");
+    expect(setup).toContain("--server-name <name>");
+    expect(setup).toContain("--enable-chatgpt-browser");
+    expect(setup).toContain("HTTPS tunnel");
+    expect(setup).toContain("Does not create OpenAI API keys");
   });
 
-  test("gptpro command uses GPT Pro language over browser session engine commands", () => {
-    const gptpro = readCommand("repo-harness-gptpro");
+  test("chatgpt's consult/continue modes use GPT Pro language over the browser session engine commands", () => {
+    const consult = readReference("repo-harness-chatgpt", "consult.md");
+    const continueMode = readReference("repo-harness-chatgpt", "continue.md");
 
-    expect(gptpro).toContain("repo-harness:gptpro");
-    expect(gptpro).toContain("gptpro consult");
-    expect(gptpro).toContain("gptpro continue");
-    expect(gptpro).toContain("gptpro read");
-    expect(gptpro).toContain("gptpro open");
-    expect(gptpro).toContain("repo-harness chatgpt browser-consult");
-    expect(gptpro).toContain("repo-harness chatgpt browser-session");
-    expect(gptpro).toContain("repo-harness chatgpt browser-followup");
-    expect(gptpro).toContain("repo-harness chatgpt browser-open");
-    expect(gptpro).toContain("date -u +%Y%m%dT%H%M%SZ");
-    expect(gptpro).toContain("mkdir -p .ai/harness/handoff/gptpro");
-    expect(gptpro).toContain(".ai/harness/handoff/gptpro/gptpro-${stamp}-${slug}.md");
-    expect(gptpro).toContain("--model gpt-5.5-pro");
-    expect(gptpro).toContain("docs/researches/YYYYMMDD-<topic>.md");
-    expect(gptpro).toContain("raw artifact path");
-    expect(gptpro).toContain("MCP Read-Back Acceptance");
-    expect(gptpro).toContain("chatgpt.serverName");
-    expect(gptpro).toContain(".repo-harness/mcp.local.json");
-    expect(gptpro).toContain("MCP Read Evidence");
-    expect(gptpro).toContain("right-side process pane");
-    expect(gptpro).toContain("Called tool");
-    expect(gptpro).toContain("sandbox/process flow");
-    expect(gptpro).toContain("15 minutes or more");
-    expect(gptpro).toContain("Do not treat elapsed time as failure");
-    expect(gptpro).toContain("no thinking status detected yet");
-    expect(gptpro).toContain("blocked or partial");
-    expect(gptpro).toContain("route to `repo-harness:gptpro_setup`");
-    expect(gptpro).toContain("Does not rename or replace the underlying");
-    assertChatGptMcpContract(gptpro);
+    expect(consult).toContain("gptpro consult");
+    expect(consult).toContain("repo-harness chatgpt browser-consult");
+    expect(consult).toContain("repo-harness chatgpt browser-followup");
+    expect(continueMode).toContain("repo-harness chatgpt browser-session");
+    expect(continueMode).toContain("repo-harness chatgpt browser-open");
+    expect(consult).toContain("date -u +%Y%m%dT%H%M%SZ");
+    expect(consult).toContain(".ai/harness/handoff/gptpro/gptpro-${stamp}-<slug>.md");
+    expect(consult).toContain("--model gpt-5.5-pro");
+    expect(continueMode).toContain("docs/researches/YYYYMMDD-<topic>.md");
+    expect(continueMode).toContain("raw artifact path");
+    expect(consult).toContain("15");
+    expect(consult).toContain("Do not treat elapsed time as failure");
+    expect(consult).toContain("no thinking status detected yet");
+    expect(consult).toContain("Does not rename or replace the underlying");
+  });
+
+  test("chatgpt's read-back mode binds the MCP Connector invocation evidence contract", () => {
+    const readBack = readReference("repo-harness-chatgpt", "read-back.md");
+    expect(readBack).toContain("chatgpt.serverName");
+    expect(readBack).toContain("MCP Read Evidence".replace("MCP Read Evidence", "Called tool"));
+    assertChatGptMcpContract(readBack);
   });
 });

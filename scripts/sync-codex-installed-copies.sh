@@ -48,6 +48,26 @@ if [[ ! -d "$SOURCE_ROOT" ]]; then
   exit 1
 fi
 
+# Resolved once, eagerly, here in the main shell process (never inside a function
+# invoked as a pipeline's non-last stage -- bash forks a subshell for those, which
+# would silently swallow a failure here as "selects nothing" instead of aborting).
+# profile_facades() below just emits this precomputed value.
+if ! SELECTED_FACADES="$(bun "$SOURCE_ROOT/scripts/skill-surface-select.ts" facades --profile "$INSTALL_PROFILE")"; then
+  echo "[sync-installed] skill-surface-select facades failed for profile: $INSTALL_PROFILE" >&2
+  exit 1
+fi
+
+# Manifest-derived name -> source path for every facade-kind package,
+# regardless of profile. A facade's source directory is no longer guaranteed
+# to live under one fixed assets/skill-commands/<name> parent (e.g.
+# repo-harness-plan now sources from assets/skills/repo-harness-plan), so
+# every consumer below resolves the real source through this list instead of
+# assuming a fixed parent directory.
+if ! FACADE_SOURCES="$(bun "$SOURCE_ROOT/scripts/skill-surface-select.ts" facade-sources)"; then
+  echo "[sync-installed] skill-surface-select facade-sources failed" >&2
+  exit 1
+fi
+
 common_excludes=(
   --exclude='.git/'
   --exclude='_ops/'
@@ -250,16 +270,20 @@ sync_claude_alias_copies() {
   echo "[sync-installed] Claude skill copy: $alias_dest"
 }
 
+facade_source_for() {
+  local wanted="$1"
+  local name source
+  while IFS=$'\t' read -r name source; do
+    if [[ "$name" == "$wanted" ]]; then
+      printf '%s' "$source"
+      return 0
+    fi
+  done <<< "$FACADE_SOURCES"
+  printf ''
+}
+
 profile_facades() {
-  case "$INSTALL_PROFILE" in
-    minimal) return 0 ;;
-    standard)
-      printf '%s\n' repo-harness-plan repo-harness-check repo-harness-handoff
-      ;;
-    product-planning|strict)
-      printf '%s\n' repo-harness-plan repo-harness-check repo-harness-handoff repo-harness-gptpro
-      ;;
-  esac
+  [[ -n "$SELECTED_FACADES" ]] && printf '%s\n' "$SELECTED_FACADES"
 }
 
 facade_selected() {
@@ -273,17 +297,20 @@ preflight_skill_root() {
   assert_managed_dest "$root/repo-harness" "$SOURCE_ROOT" canonical-skill || exit 1
   [[ -d "$root" ]] || return 0
 
-  local dest name source
+  local dest name source_rel source
   for dest in "$root"/repo-harness-*; do
     [[ -e "$dest" || -L "$dest" ]] || continue
     name="$(basename "$dest")"
-    source="$SOURCE_ROOT/assets/skill-commands/$name"
-    # A facade whose canonical source no longer exists in the package is a
-    # legitimate retirement candidate, not a preflight failure, as long as
-    # the host copy is still a clean, owner-marked, unmodified copy.
-    # assert_managed_dest proves that from the marker + content hash alone
-    # and does not require $source to exist for that branch; unmarked or
-    # drifted content still fails closed here exactly as before.
+    source_rel="$(facade_source_for "$name")"
+    source=""
+    [[ -n "$source_rel" ]] && source="$SOURCE_ROOT/$source_rel"
+    # A facade whose canonical source no longer exists in the package (or is
+    # no longer a package at all -- a fully retired name) is a legitimate
+    # retirement candidate, not a preflight failure, as long as the host copy
+    # is still a clean, owner-marked, unmodified copy. assert_managed_dest
+    # proves that from the marker + content hash alone and does not require
+    # $source to exist for that branch; unmarked or drifted content still
+    # fails closed here exactly as before.
     assert_managed_dest "$dest" "$source" command-facade || exit 1
   done
 }
@@ -291,25 +318,32 @@ preflight_skill_root() {
 remove_retired_owned_facades() {
   local root="$1"
   [[ -n "$root" && -d "$root" ]] || return 0
-  local dest name source
+  local dest name source_rel source
   for dest in "$root"/repo-harness-*; do
     [[ -e "$dest" || -L "$dest" ]] || continue
     name="$(basename "$dest")"
     facade_selected "$name" && continue
-    source="$SOURCE_ROOT/assets/skill-commands/$name"
-    if [[ ! -d "$source" ]]; then
+    source_rel="$(facade_source_for "$name")"
+    source=""
+    [[ -n "$source_rel" ]] && source="$SOURCE_ROOT/$source_rel"
+    if [[ -z "$source" || ! -d "$source" ]]; then
       echo "[sync-installed] retiring $dest: canonical facade source no longer exists in the package"
     fi
     # remove_managed_dest asserts ownership first (fail-closed on an unowned
     # or modified copy) and only removes a proven, unmodified managed copy;
-    # this now covers both "not selected by this profile" and "retired from
-    # the package" the same safe way.
+    # this now covers "not selected by this profile", "retired from the
+    # package", and "fully retired name absent from the catalog" the same
+    # safe way.
     remove_managed_dest "$dest" "$source" command-facade
   done
 }
 
-# Keep default discovery bounded: the umbrella router plus at most three
-# common facades. Specialized capabilities remain CLI subcommands/references.
+# Keep default discovery bounded: the umbrella router plus each profile's
+# manifest-selected facades. Specialized capabilities remain CLI
+# subcommands/references. Driven by $FACADE_SOURCES (manifest-derived name ->
+# source pairs for every facade-kind package) rather than a physical glob
+# over one fixed parent directory, since a facade's source directory is no
+# longer guaranteed to live under assets/skill-commands/<name>.
 sync_command_facades() {
   local root="$1"
   local mode="$2"
@@ -319,15 +353,14 @@ sync_command_facades() {
 
   mkdir -p "$root"
   remove_retired_owned_facades "$root"
-  local facade_src
   local synced=0
-  for facade_src in "$SOURCE_ROOT"/assets/skill-commands/repo-harness-*/; do
-    [[ -d "$facade_src" && -f "${facade_src}SKILL.md" ]] || continue
-    facade_src="${facade_src%/}"
-    local name
-    name="$(basename "$facade_src")"
+  local name source facade_src dest
+  while IFS=$'\t' read -r name source; do
+    [[ -n "$name" ]] || continue
     facade_selected "$name" || continue
-    local dest="$root/$name"
+    facade_src="$SOURCE_ROOT/$source"
+    [[ -d "$facade_src" && -f "$facade_src/SKILL.md" ]] || continue
+    dest="$root/$name"
     remove_managed_dest "$dest" "$facade_src" command-facade
     if [[ "$mode" == "link" ]]; then
       create_symlink_or_explain "$facade_src" "$dest"
@@ -338,7 +371,7 @@ sync_command_facades() {
       write_owner_marker "$dest" command-facade
     fi
     synced=$((synced + 1))
-  done
+  done <<< "$FACADE_SOURCES"
   echo "[sync-installed] command facades ($mode): $synced into $root"
 }
 

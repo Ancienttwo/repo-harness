@@ -1,6 +1,6 @@
 # Plan: Skill Surface & Discovery Convergence
 
-> **Status**: Approved
+> **Status**: Executing
 > **Direction Approval**: Approved
 > **Activation Gate**: Promote machine status to `Approved` only after LSC, HRD, and EPC are independently merged/pushed and the exact post-EPC `origin/main` SHA is pinned — satisfied 2026-07-23: EPC closed 13/13 (PR #125), fresh fetch verified `origin/main == main == 555524c1`, no active EPC writer anywhere, cross-package projection-drift closeout re-verified green (21/21)
 > **Created**: 20260715-1140
@@ -18,9 +18,9 @@
 > **Rollback Surface**: Revert this work-package and reinstall the prior package/profile; never remove unowned or modified host Skill content.
 > **Spec**: `docs/spec.md`
 > **Research**: `docs/researches/20260715-archi-research.md`, `docs/researches/20260715-skill-surface-discovery-audit.md`, plus the Source Ref above
-> **Task Contract**: `tasks/contracts/20260715-1140-skill-surface-discovery-convergence.contract.md` (reserved; create only after EPC is merged/pushed and SSD activates)
-> **Task Review**: `tasks/reviews/20260715-1140-skill-surface-discovery-convergence.review.md` (reserved; create only after EPC is merged/pushed and SSD activates)
-> **Implementation Notes**: `tasks/notes/20260715-1140-skill-surface-discovery-convergence.notes.md` (reserved; create only after EPC is merged/pushed and SSD activates)
+> **Task Contract**: `tasks/contracts/20260715-1140-skill-surface-discovery-convergence.contract.md`
+> **Task Review**: `tasks/reviews/20260715-1140-skill-surface-discovery-convergence.review.md`
+> **Implementation Notes**: `tasks/notes/20260715-1140-skill-surface-discovery-convergence.notes.md`
 > **Release Boundary**: The next minor release after independent LSC, HRD, and EPC closeout. Do not present public Skill-name removal as a `0.10.x` patch.
 
 This work-package converges Skill classification, rule ownership, profile discovery, provider adapters, and retirement safety. It does not optimize for the smallest possible directory count. It optimizes for one rule owner per workflow and a bounded, testable host discovery surface.
@@ -329,12 +329,12 @@ Historical/archive files are not rewritten. Any retired-name scan uses an explic
 
 ### SSD-01 — Freeze inventory, classification and routing baseline
 
-- [ ] Re-audit from the exact post-EPC `origin/main` SHA; record both the post-ESA Program pin and the post-EPC SSD execution pin plus the current 25-source inventory.
-- [ ] Add a schema-validated bilingual Skill-routing corpus covering setup, plan/review, product, check/deploy readiness, ship, handoff, architecture, cross-review, exact-candidate merge-gate, ChatGPT, capability-as-reference, and ordinary discussion.
-- [ ] Include positive, ambiguous, quoted-name, negated, hypothetical, status-only, and ordinary-QA cases.
-- [ ] Record exact current and target discovered sets for four profiles, two hosts, copy/link projection, and gatekeeper-host exceptions.
-- [ ] Add deterministic corpus validation and dry-run selection tests; do not run the full provider matrix yet.
-- [ ] Treat the existing six-file result (110 pass, 0 fail, 25.91 seconds) as historical cached evidence; validate its subject and affected surfaces before deciding whether any portion remains reusable.
+- [x] Re-audit from the exact post-EPC `origin/main` SHA; record both the post-ESA Program pin and the post-EPC SSD execution pin plus the current 25-source inventory.
+- [x] Add a schema-validated bilingual Skill-routing corpus covering setup, plan/review, product, check/deploy readiness, ship, handoff, architecture, cross-review, exact-candidate merge-gate, ChatGPT, capability-as-reference, and ordinary discussion.
+- [x] Include positive, ambiguous, quoted-name, negated, hypothetical, status-only, and ordinary-QA cases.
+- [x] Record exact current and target discovered sets for four profiles, two hosts, copy/link projection, and gatekeeper-host exceptions.
+- [x] Add deterministic corpus validation and dry-run selection tests; do not run the full provider matrix yet.
+- [x] Treat the existing six-file result (110 pass, 0 fail, 25.91 seconds) as historical cached evidence; validate its subject and affected surfaces before deciding whether any portion remains reusable.
 
 Acceptance:
 
@@ -345,12 +345,12 @@ Acceptance:
 
 ### SSD-02 — Make manifest v2 the runtime discovery authority without behavior change
 
-- [ ] Add the pure typed catalog loader/validator/selector.
-- [ ] Upgrade the manifest to classify every current source, host, profile, component, discoverability mode, and retirement candidate.
-- [ ] Derive shell-selected facades, host provider/judge sets, install probes, managed surfaces, transaction mutation paths, and static test inventory from the catalog.
-- [ ] Keep the pre-cutover four-profile/two-host discovered sets byte-for-byte equivalent.
-- [ ] Fail before mutation on malformed catalog, missing source, invalid component/profile relation, or uncovered transaction path.
-- [ ] Add failure injection proving every actual Skill mutation path is snapshotted and compensatable.
+- [x] Add the pure typed catalog loader/validator/selector.
+- [x] Upgrade the manifest to classify every current source, host, profile, component, discoverability mode, and retirement candidate.
+- [x] Derive shell-selected facades, host provider/judge sets, install probes, managed surfaces, transaction mutation paths, and static test inventory from the catalog.
+- [x] Keep the pre-cutover four-profile/two-host discovered sets byte-for-byte equivalent.
+- [x] Fail before mutation on malformed catalog, missing source, invalid component/profile relation, or uncovered transaction path.
+- [x] Add failure injection proving every actual Skill mutation path is snapshotted and compensatable.
 
 Acceptance:
 
@@ -361,13 +361,13 @@ Acceptance:
 
 ### SSD-03 — Build canonical setup, product and plan rule owners
 
-- [ ] Create `repo-harness-setup` with progressive references for adopt/init, migrate, upgrade, repair, scaffold, and capability configuration.
-- [ ] Create `repo-harness-product` with PRD, Sprint, and Goal references.
-- [ ] Fold plan review into `repo-harness-plan` as a mode reference.
-- [ ] Move handoff guidance into a root reference and deploy readiness into a check reference.
-- [ ] Move the reusable-workflow packaging rubric out of autoplan into one reference document.
-- [ ] Rewrite the relevant migration reference; do not copy stale `agentic-dev-*`, fallback, or compatibility-shim guidance from `references/migration-guide.md`.
-- [ ] Add focused content/progressive-loading tests. These new packages stay inactive until SSD-06.
+- [x] Create `repo-harness-setup` with progressive references for adopt/init, migrate, upgrade, repair, scaffold, and capability configuration.
+- [x] Create `repo-harness-product` with PRD, Sprint, and Goal references.
+- [x] Fold plan review into `repo-harness-plan` as a mode reference.
+- [x] Move handoff guidance into a root reference and deploy readiness into a check reference.
+- [x] Move the reusable-workflow packaging rubric out of autoplan into one reference document.
+- [x] Rewrite the relevant migration reference; do not copy stale `agentic-dev-*`, fallback, or compatibility-shim guidance from `references/migration-guide.md`.
+- [x] Add focused content/progressive-loading tests. These new packages stay inactive until SSD-06.
 
 Acceptance:
 
@@ -377,12 +377,12 @@ Acceptance:
 
 ### SSD-04 — Extract deterministic cross-review and preserve merge-gate isolation
 
-- [ ] Reuse/extract normalized review-subject and diff-fingerprint logic instead of adding a third Git scope parser.
-- [ ] Add deterministic branch/staged/unstaged/untracked scope capture bound to one base revision.
-- [ ] Move timeout, provider process invocation, transcript recovery, output normalization, and error codes into Core/Effects/CLI.
-- [ ] Create one host-aware `repo-harness-cross-review` package with explicit Claude and Codex provider modes.
-- [ ] Cover clean, staged, unstaged, untracked, timeout, empty, malformed, auth/nonzero, degraded scope, and exact-base cases.
-- [ ] Leave `merge-gate` source, output schema, no-tool execution, receipt binding, and ship enforcement unchanged.
+- [x] Reuse/extract normalized review-subject and diff-fingerprint logic instead of adding a third Git scope parser.
+- [x] Add deterministic branch/staged/unstaged/untracked scope capture bound to one base revision.
+- [x] Move timeout, provider process invocation, transcript recovery, output normalization, and error codes into Core/Effects/CLI.
+- [x] Create one host-aware `repo-harness-cross-review` package with explicit Claude and Codex provider modes.
+- [x] Cover clean, staged, unstaged, untracked, timeout, empty, malformed, auth/nonzero, degraded scope, and exact-base cases.
+- [x] Leave `merge-gate` source, output schema, no-tool execution, receipt binding, and ship enforcement unchanged.
 
 Acceptance:
 
@@ -392,12 +392,12 @@ Acceptance:
 
 ### SSD-05 — Establish one ChatGPT package source
 
-- [ ] Create one file-backed `repo-harness-chatgpt` package with setup, consult, continue, read-back, and bridge references.
-- [ ] Remove the inline `SKILL_MD` prose owner from `src/cli/mcp/setup.ts`; project canonical files instead.
-- [ ] Reconcile browser, GPT Pro, MCP Connector, coding-profile, PTY, session, login, cookie/token, and remote-control boundaries.
-- [ ] Make product planning independent from ChatGPT. ChatGPT discovery occurs only after explicit ChatGPT setup.
-- [ ] Add byte-parity tests between canonical source and installed/generated bridge/browser projections.
-- [ ] Keep browser/MCP CLI behavior and public tool names unchanged.
+- [x] Create one file-backed `repo-harness-chatgpt` package with setup, consult, continue, read-back, and bridge references.
+- [x] Remove the inline `SKILL_MD` prose owner from `src/cli/mcp/setup.ts`; project canonical files instead.
+- [x] Reconcile browser, GPT Pro, MCP Connector, coding-profile, PTY, session, login, cookie/token, and remote-control boundaries.
+- [x] Make product planning independent from ChatGPT. ChatGPT discovery occurs only after explicit ChatGPT setup.
+- [x] Add byte-parity tests between canonical source and installed/generated bridge/browser projections.
+- [x] Keep browser/MCP CLI behavior and public tool names unchanged.
 
 Acceptance:
 
@@ -407,14 +407,14 @@ Acceptance:
 
 ### SSD-06 — Perform the atomic public cutover, retirement and documentation migration
 
-- [ ] Update root routing, final manifest projection and profile selections to the target discovery matrix.
-- [ ] Activate canonical packages and remove old authoring directories in the same integration slice.
-- [ ] Retire pristine owner-marked installed copies transactionally; preserve and fail closed on modified or unowned copies.
-- [ ] Remove `repo-harness-autoplan`, provider-name Skills, GPT Pro facades, handoff/deploy facades, and all other replaced public entrypoints without generated aliases.
-- [ ] Migrate all live references, routing evals, action-command tests, profile/install tests, README x5, reference docs plus asset mirror, architecture modules, prompt-guard recommendations, and package/runtime probes.
-- [ ] Keep root `SKILL.md` at or below 2,048 bytes and keep specialized detail progressively loaded.
-- [ ] Verify adapter/runtime refresh preserves the recorded profile on the pinned post-EPC baseline and confirm the removed stale deferred-ledger claim does not regress.
-- [ ] Record retired-name -> replacement/mode mappings for migration diagnostics only; mark them non-routeable.
+- [x] Update root routing, final manifest projection and profile selections to the target discovery matrix.
+- [x] Activate canonical packages and remove old authoring directories in the same integration slice.
+- [x] Retire pristine owner-marked installed copies transactionally; preserve and fail closed on modified or unowned copies.
+- [x] Remove `repo-harness-autoplan`, provider-name Skills, GPT Pro facades, handoff/deploy facades, and all other replaced public entrypoints without generated aliases.
+- [x] Migrate all live references, routing evals, action-command tests, profile/install tests, README x5, reference docs plus asset mirror, architecture modules, prompt-guard recommendations, and package/runtime probes.
+- [x] Keep root `SKILL.md` at or below 2,048 bytes and keep specialized detail progressively loaded.
+- [x] Verify adapter/runtime refresh preserves the recorded profile on the pinned post-EPC baseline and confirm the removed stale deferred-ledger claim does not regress.
+- [x] Record retired-name -> replacement/mode mappings for migration diagnostics only; mark them non-routeable.
 
 Acceptance:
 
@@ -426,20 +426,28 @@ Acceptance:
 
 ### SSD-07 — Freeze the subject and produce final evidence once
 
-- [ ] Freeze head SHA, manifest/projection hash, corpus hash, package bytes, and changed-file list before expensive evidence.
-- [ ] Run deterministic focused suites during development; run the real host/provider routing matrix exactly once after freeze.
-- [ ] Before a >10-minute provider run, report case count, provider calls, expected wall time, and why cached evidence is invalid or insufficient.
-- [ ] Measure canonical top-1 accuracy >=95%, double-trigger/ambiguous activation <=2%, ordinary-QA false activation <=1%, and per-route recall >=90%.
-- [ ] If the negative sample is below 100, require zero false activations and report it as a small-sample result rather than claiming statistical <=1% confidence.
-- [ ] Exercise disposable `HOME`/`BUN_INSTALL` across all profiles, both hosts, copy/link, fresh/reinstall/upgrade/downgrade/rollback, pristine/modified/unowned ownership, and injected failures.
-- [ ] Run packed-tarball install smoke, all required repo checks, independent review, exact-subject merge gate, and workflow closeout.
+- [x] Freeze head SHA, manifest/projection hash, corpus hash, package bytes, and changed-file list before expensive evidence.
+- [x] Run deterministic focused suites during development; run the real host/provider routing matrix exactly once after freeze — attempted; see Phase B below, frozen fallback applied.
+- [x] Before a >10-minute provider run, report case count, provider calls, expected wall time, and why cached evidence is invalid or insufficient.
+- [ ] Measure canonical top-1 accuracy >=95%, double-trigger/ambiguous activation <=2%, ordinary-QA false activation <=1%, and per-route recall >=90% — NOT satisfied; see Phase B, frozen fallback ruling.
+- [ ] If the negative sample is below 100, require zero false activations and report it as a small-sample result rather than claiming statistical <=1% confidence — moot: see Phase B, the underlying measurement never validly ran.
+- [x] Exercise disposable `HOME`/`BUN_INSTALL` across all profiles, both hosts, copy/link, fresh/reinstall/upgrade/downgrade/rollback, pristine/modified/unowned ownership, and injected failures.
+- [x] Run packed-tarball install smoke, all required repo checks, independent review, exact-subject merge gate, and workflow closeout.
 
 Acceptance:
 
-- Evidence is bound to the frozen head and exact manifest/corpus hashes.
-- Every canonical route meets its floor; aggregate accuracy cannot hide a zero-recall route.
-- Rollback restores original bytes at every injected failure point.
-- Review recommends pass and all required checks are current.
+- Evidence is bound to the frozen head and exact manifest/corpus hashes. **Met** for every dimension except routing quality (below).
+- Every canonical route meets its floor; aggregate accuracy cannot hide a zero-recall route. **Not measured as designed** — see Phase B frozen fallback; the routing-quality dimension is recorded as an open methodology defect, not a passing or failing product measurement.
+- Rollback restores original bytes at every injected failure point. **Met.**
+- Review recommends pass and all required checks are current. **Met** (package-level review, below).
+
+### SSD-07 Phase B — routing-quality measurement: methodology failure and frozen fallback (2026-07-23)
+
+One authoritative matched-provider run was attempted per the Phase A pre-report: 136 real Claude invocations (`--profile strict --host claude --provider claude` and `--profile product-planning --host claude --provider claude`, 68 cases each), followed by `aggregate` over both reports. Reports are preserved byte-exact and immutable at `evals/skill-routing/routing-report-{strict,product-planning}-claude.json` and `evals/skill-routing/routing-aggregate.json` (+ `.sha256` sidecars); the attempt's outcome ruling is recorded separately at `evals/skill-routing/phase-b-attempt-outcome.json` so the raw reports are never mutated.
+
+**Outcome: `contaminated_invalid_evidence`, not `accepted`.** Post-hoc diagnosis (manual single-case reproductions using the exact `mkdtemp` + `materializeDiscoveredSurface` mechanism the runner uses) proved the measurement apparatus never exercised its intended subject: `claude -p`'s non-interactive invocation does not scan a per-case isolated workspace's `.claude/skills/` symlinks for available Skills at all. Every case's `system.init` transcript event instead reports the invoking **operator's own ambient, cached, user-level** Claude Code skill registry (`~/.claude/skills/`) — confirmed decisively two ways: (1) the reported skill list contains the operator's unrelated personal skills (e.g. `asc-ppp-pricing`, `cloudbase`, `threejs-shaders`) that this eval never materialized; (2) the operator's own `~/.claude/skills/repo-harness-plan` is a symlink to a **stale pre-SSD-06-cutover** globally-installed package path, not this eval's per-case symlink to the post-cutover canonical package — so even a correctly-named `Skill` tool call would have resolved against unrelated stale content. A secondary, independent implementation defect was found along the way in `scripts/run-skill-routing-eval.ts`'s `aggregate` case-sourcing tie-break (first-by-lexicographic-report-path, no correctness preference), which silently discarded at least two correct `strict`-run records in favor of incorrect `product-planning`-run records for the same case ids — recorded for the same follow-up but not the deciding factor, since both single-run reports independently show near-zero recall on package-specific routes regardless of aggregation.
+
+**Ruling (orchestrator, 2026-07-23):** per this Program's own frozen-attempt discipline (no automatic rerun, no `--regrade-existing`, no narrowed `--profile` backfill), this attempt is not rerun. The routing-quality acceptance line is recorded as **not independently measured by a real-provider run in this Program** — a harness/methodology gap, not a proven SSD-06 product regression, since the actual production discovery mechanism (`sync-codex-installed-copies.sh`, the real installer) was already independently verified against the target matrix by disposable-`HOME` disk probes across all four profiles and both hosts, gatekeeper-reviewed twice (SSD-06 rounds 1-2). SSD-07's other eight checklist items are unaffected and independently passed. A new approved run-decision is required before any re-attempt, contingent on fixing the Skill-injection mechanism (deferred to `tasks/todos.md`).
 
 ## Dependency Order
 

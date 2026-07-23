@@ -188,12 +188,11 @@ describe("README DX contract", () => {
   test("localized READMEs track the current English release surface", () => {
     for (const file of LOCALIZED_READMES) {
       const localized = read(file);
-      const expectedHeroImage =
-        file === "README.zh-CN.md"
-          ? "docs/images/repo-harness-gptpro-cn.png"
-          : "docs/images/repo-harness-gptpro.png";
 
-      expect(localized).toContain(expectedHeroImage);
+      // SSD-06: the GPT Pro hero image reference is dropped from every
+      // README (the image file itself stays on disk, undeleted, per the
+      // plan's explicit "update or drop the image reference" choice); the
+      // diagram depicted the retired repo-harness-gptpro-branded flow.
       expect(localized).toContain(PACKAGE_VERSION);
       expect(localized).toContain(`repo-harness@${PACKAGE_VERSION}`);
       expect(localized).toContain(`repo-harness@${PACKAGE_VERSION}+template@${PACKAGE_VERSION}`);

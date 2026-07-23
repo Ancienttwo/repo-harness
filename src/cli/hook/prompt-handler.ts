@@ -502,8 +502,14 @@ function emitReviewHints(
       const contract = text(fsApi, repoRoot, state.contractFile) ?? '';
       try {
         const policy = parseAcceptancePolicy(contract);
+        // source stays the acceptance-receipt AcceptanceReceipt.source
+        // provenance enum value (permanent data-schema vocabulary, R1;
+        // scripts/acceptance-receipt.ts owns the type). command is a
+        // skill-invocation suggestion, not a provenance value, and migrates
+        // to the one host-aware repo-harness-cross-review package (its
+        // Claude/Codex provider modes select automatically).
         const source = policy.reviewer === 'Claude' ? 'claude-review' : 'codex-review';
-        const command = policy.reviewer === 'Claude' ? '/claude-review' : 'codex-review';
+        const command = 'repo-harness-cross-review';
         out.push('[ExternalAcceptance] Review/release intent detected. Start peer acceptance in parallel with local /check.\n');
         out.push(`[ExternalAcceptance] Current active plan: ${state.activePlan ?? '(none)'}\n`);
         out.push(`[ExternalAcceptance] Current contract: ${state.contractFile}\n`);
@@ -539,7 +545,7 @@ function emitReviewHints(
     strongBoundary: false,
   }, recordCircuit, err)) return;
   const peer = env.HOOK_HOST === 'codex' ? 'Claude' : 'Codex';
-  const skill = env.HOOK_HOST === 'codex' ? 'claude-review' : 'codex-review';
+  const skill = 'repo-harness-cross-review';
   out.push(`[CrossReview] Pre-merge moment — consider an independent ${peer} review of the diff via ${skill}: a different training distribution has non-overlapping blind spots. Skip if the change is trivial.\n`);
 }
 
@@ -661,7 +667,7 @@ export function runPromptHandler(opts: PromptHandlerInput): PromptHandlerResult 
   const command = deps.runCommand ?? commandRunner(opts.repoRoot, env);
 
   if (isAgenticPackagingIntent(context)) {
-    out.push('[AgenticDevRoute] Reusable workflow packaging intent detected.\n[AgenticDevRoute] Suggested route: repo-harness-autoplan after user authorization; hook will not plan or create assets.\n');
+    out.push('[AgenticDevRoute] Reusable workflow packaging intent detected.\n[AgenticDevRoute] Suggested route: repo-harness (root router) execute continuation via Effective State after user authorization, per references/workflow-packaging-rubric.md; hook will not plan or create assets.\n');
   }
   if (!isAgenticPackagingIntent(context)) {
     if (isThinkPlanStartIntent(context)) out.push('[WazaRoute] Planning intent detected. Default route: Waza /think.\n');
