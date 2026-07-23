@@ -1,6 +1,6 @@
 # Plan: Converge workflow status and historical archive authority
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260724-0324
 > **Slug**: workflow-status-archive-authority
 > **Planning Source**: codex-plan

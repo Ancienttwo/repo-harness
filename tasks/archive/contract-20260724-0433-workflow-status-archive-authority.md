@@ -1,6 +1,12 @@
+> **Archived**: 2026-07-24 04:33
+> **Related Plan**: plans/archive/plan-20260724-0324-workflow-status-archive-authority.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260724-0433
+
 # Task Contract: workflow-status-archive-authority
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260724-0324-workflow-status-archive-authority.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
