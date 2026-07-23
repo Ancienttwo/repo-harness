@@ -61,20 +61,18 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: Sol Max review is advisory and is not a Claude AcceptanceReceipt
-> **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Disposition**: user_waiver
+> **Reviewer**: User
+> **Source**: user-waiver
+> **Actor**: kito
+> **Reviewed Subject SHA256**: sha256:e475f44aef03cd1c441ce1d4fec7f092c1384fb7cef99154a6f9abd2cdb16b48
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 71a52dde5e8476308bf74f8ada8bdf752b7cbe7b
+> **Verification Evidence SHA256**: sha256:7dba45b1730ec3c0287897879ffbc8d0e39d9afb05d2d438282f6c68a1a779e0
+> **Issued At**: 2026-07-23T22:28:08.261Z
 
-- Summary: No typed AcceptanceReceipt has been recorded; this review does not
-  impersonate the contract's configured Claude reviewer.
-- Findings: none; Sol Max's two blocking rounds were corrected before its
-  final PASS.
+- Summary: 批准为 codex-native-profile-aware-status 记录 user waiver 并完成合并推送
+- Findings: none
 
 ## Behavior Diff Notes
 
