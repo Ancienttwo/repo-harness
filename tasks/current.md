@@ -1,26 +1,26 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-23T15:21:01+0800 -->
+<!-- updated_at: 2026-07-23T17:08:44+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Active
-> **Updated At**: 2026-07-23T15:21:01+0800
-> **Source Branch**: main
-> **Source Commit**: 02d037b9
+> **Status**: Idle
+> **Updated At**: 2026-07-23T17:08:44+0800
+> **Source Branch**: worktree-agent-a7d0f1ef1d49f6e15
+> **Source Commit**: dc4c7656
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: manual
+> **Reason**: release-candidate
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Active
+- Status: Idle
 - Active Plan: (none)
 - Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
+- Next Task: (none)
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,8 +31,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/kito/Projects/repo-harness-wt-skill-surface-discovery-convergence: plans/plan-20260715-1140-skill-surface-discovery-convergence.md
-- /Users/kito/Projects/repo-harness-wt-skill-surface-discovery-convergence: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-skill-surface-discovery-convergence
+- (none)
 ## Active Sprint
 
 - Sprint: (none)
@@ -51,19 +50,25 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
+- status=(none), source=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 6 changed/untracked path(s)
+- Summary: 12 changed/untracked path(s)
 
 ```
- M assets/reference-configs/global-working-rules.md
- M docs/reference-configs/global-working-rules.md
- M plans/plan-20260715-1140-skill-surface-discovery-convergence.md
- M tasks/contracts/20260715-1140-skill-surface-discovery-convergence.contract.md
- M tasks/lessons.md
- M tests/global-working-rules-distribution.test.ts
+ M .claude/.skill-version
+ M README.es.md
+ M README.fr.md
+ M README.ja.md
+ M README.md
+ M README.zh-CN.md
+ M assets/skill-version.json
+ M docs/CHANGELOG.md
+ M package.json
+ M scripts/session-context-packet-panel.ts
+ M tests/session-context.test.ts
+?? deploy/release-checklists/260723-repo-harness-0.11.0.md
 ```
 
 ## Source Artifacts

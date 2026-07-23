@@ -319,8 +319,14 @@ export interface PanelSampleRun {
 
 function runSessionStartOnce(repoRoot: string, fixtureCwd: string): PanelSampleRun {
   const hookEntry = join(repoRoot, "src/cli/hook-entry.ts");
+  const isolatedHome = join(fixtureCwd, ".panel-home");
+  mkdirSync(isolatedHome, { recursive: true });
   const env = {
     ...process.env,
+    // The panel must not inherit host Claude/Codex settings: those settings
+    // are outside the fixture and would make the security section vary by
+    // machine rather than by authority/profile state.
+    HOME: isolatedHome,
     // Deterministic panel content: never let the tooling-advisory section
     // spawn a detached background populate or vary by ambient tool state.
     REPO_HARNESS_TOOLING_ADVISORY: "0",

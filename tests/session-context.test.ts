@@ -551,8 +551,11 @@ describe("sessionStartMainSection — actionable header detection", () => {
 describe("buildSessionStartSections — composition order and shape", () => {
   test("empty repo -> zero sections", () => {
     withTmpRepo("build-empty", (repoRoot) => {
-      const sections = buildSessionStartSections(freshCollector(repoRoot), process.env, Date.now());
-      expect(sections).toEqual([]);
+      withTmpHome((home) => {
+        const env = { ...process.env, HOME: home };
+        const sections = buildSessionStartSections(freshCollector(repoRoot), env, Date.now());
+        expect(sections).toEqual([]);
+      });
     });
   });
 

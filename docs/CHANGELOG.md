@@ -4,6 +4,8 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-07-23
+
 ### Changed
 
 - `checks/latest.json` is now materialized exclusively from the
