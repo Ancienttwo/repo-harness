@@ -1,6 +1,6 @@
 # Task Contract: hook-guard-stability
 
-> **Status**: Active
+> **Status**: Done
 > **Plan**: plans/plan-20260723-0620-hook-guard-stability.md
 > **Task Profile**: bugfix
 > **Owner**: kito

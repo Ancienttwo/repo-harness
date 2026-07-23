@@ -171,21 +171,21 @@ handling, without weakening real-blocker enforcement:
 
 ## Task Breakdown
 
-- [ ] Add the regression guard red-first: deterministic instability
+- [x] Add the regression guard red-first: deterministic instability
   injection into the stability loop; capture the pre-fix failure
   artifact with PRE_FIX_EXIT recorded.
-- [ ] Partition `source_hashes`: stability-abort set restricted to
+- [x] Partition `source_hashes`: stability-abort set restricted to
   workflow-authority surfaces; non-authority surfaces still read and
   reported (subject/evidence revisions in the output remain), but their
   churn cannot exhaust the stability loop.
-- [ ] Type the hook wrapper's resolution outcome; bounded retry (2-3
+- [x] Type the hook wrapper's resolution outcome; bounded retry (2-3
   attempts) on unstable/contended; distinct fail-closed diagnostic for
   residual instability naming the mechanism and the retry; identical
   behavior and message for genuine blockers and unsupported profiles.
-- [ ] Cover the state-lock-timeout throw with the same typed handling.
-- [ ] Copy the diagnosis probe artifacts into the package's run
+- [x] Cover the state-lock-timeout throw with the same typed handling.
+- [x] Copy the diagnosis probe artifacts into the package's run
   snapshots; record design decisions in the notes file.
-- [ ] Full verification: new regression guard green post-fix, real-
+- [x] Full verification: new regression guard green post-fix, real-
   blocker regression (Occurrence-A shape) green, focused state/hook
   suites, check:type, full bun test.
 
@@ -217,9 +217,9 @@ are migrated.
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] Add the regression guard red-first: deterministic instability
-- [ ] Partition `source_hashes`: stability-abort set restricted to
-- [ ] Type the hook wrapper's resolution outcome; bounded retry (2-3
-- [ ] Cover the state-lock-timeout throw with the same typed handling.
-- [ ] Copy the diagnosis probe artifacts into the package's run
-- [ ] Full verification: new regression guard green post-fix, real-
+- [x] Add the regression guard red-first: deterministic instability
+- [x] Partition `source_hashes`: stability-abort set restricted to
+- [x] Type the hook wrapper's resolution outcome; bounded retry (2-3
+- [x] Cover the state-lock-timeout throw with the same typed handling.
+- [x] Copy the diagnosis probe artifacts into the package's run
+- [x] Full verification: new regression guard green post-fix, real-
