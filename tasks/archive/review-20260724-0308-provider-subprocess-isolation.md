@@ -1,3 +1,9 @@
+> **Archived**: 2026-07-24 03:08
+> **Related Plan**: plans/archive/plan-20260724-0300-provider-subprocess-isolation.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260724-0308
+
 # Task Review: provider-subprocess-isolation
 
 > **Status**: Reviewed

@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-24T02:48:05+0800 -->
+<!-- updated_at: 2026-07-24T03:08:39+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-07-24T02:48:05+0800
-> **Source Branch**: codex/state-concurrency-counter-barrier
-> **Source Commit**: 43fdeede
+> **Updated At**: 2026-07-24T03:08:39+0800
+> **Source Branch**: codex/provider-subprocess-isolation
+> **Source Commit**: 76719fa9
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -57,16 +57,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260724-0232-state-concurrency-counter-barrier.md
- D tasks/contracts/20260724-0232-state-concurrency-counter-barrier.contract.md
- D tasks/notes/20260724-0232-state-concurrency-counter-barrier.notes.md
- D tasks/reviews/20260724-0232-state-concurrency-counter-barrier.review.md
+ D plans/plan-20260724-0300-provider-subprocess-isolation.md
+ D tasks/contracts/20260724-0300-provider-subprocess-isolation.contract.md
+ D tasks/notes/20260724-0300-provider-subprocess-isolation.notes.md
+ D tasks/reviews/20260724-0300-provider-subprocess-isolation.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260724-0232-state-concurrency-counter-barrier.md
-?? tasks/archive/contract-20260724-0247-state-concurrency-counter-barrier.md
-?? tasks/archive/notes-20260724-0247-state-concurrency-counter-barrier.md
-?? tasks/archive/review-20260724-0247-state-concurrency-counter-barrier.md
-?? tasks/archive/todo-20260724-0247-state-concurrency-counter-barrier.md
+?? plans/archive/plan-20260724-0300-provider-subprocess-isolation.md
+?? tasks/archive/contract-20260724-0308-provider-subprocess-isolation.md
+?? tasks/archive/notes-20260724-0308-provider-subprocess-isolation.md
+?? tasks/archive/review-20260724-0308-provider-subprocess-isolation.md
+?? tasks/archive/todo-20260724-0308-provider-subprocess-isolation.md
 ```
 
 ## Source Artifacts

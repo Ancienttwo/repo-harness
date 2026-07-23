@@ -1,6 +1,6 @@
 # Plan: Make provider subprocess isolation authoritative
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260724-0300
 > **Slug**: provider-subprocess-isolation
 > **Planning Source**: codex-plan
