@@ -83,6 +83,7 @@ describe("canonical adoption plan", () => {
       expect(JSON.parse(readFileSync(join(repo, "package.json"), "utf-8")).scripts["check:task-workflow"]).toBe(
         "repo-harness run check-task-workflow --strict",
       );
+      expect(readFileSync(join(repo, ".gitignore"), "utf-8")).toContain(".ai/harness/evidence/");
       expect(readFileSync(join(repo, apply.transactionManifestPath!), "utf-8")).toContain('"command": "adopt"');
     } finally {
       cleanup(repo);

@@ -564,7 +564,7 @@ ship_primary_pr() {
     [[ -n "$branch" && -n "$path" ]] || continue
     [[ "$(cd "$path" && pwd -P)" != "$(pwd -P)" ]] || continue
     echo "[Ship] Shipping linked worktree $branch at $path with PR mode"
-    (cd "$path" && REPO_HARNESS_TARGET_REPO_ROOT="$path" bash "$helper_dir/ship-worktrees.sh" --target "$TARGET_BRANCH" --remote "$REMOTE_NAME" "${child_args[@]}")
+    (cd "$path" && REPO_HARNESS_TARGET_REPO_ROOT="$path" bash "$helper_dir/ship-worktrees.sh" --target "$TARGET_BRANCH" --remote "$REMOTE_NAME" ${child_args[@]+"${child_args[@]}"})
     shipped=1
   done < <(list_contract_worktrees "$BRANCH_PREFIX")
 
@@ -584,7 +584,7 @@ ship_primary_local_merge() {
     [[ "$(cd "$path" && pwd -P)" != "$(pwd -P)" ]] || continue
     slug="${branch#${BRANCH_PREFIX}}"
     echo "[Ship] Shipping linked worktree $branch at $path with local merge mode"
-    (cd "$path" && REPO_HARNESS_TARGET_REPO_ROOT="$path" bash "$helper_dir/ship-worktrees.sh" --local-merge --target "$TARGET_BRANCH" "${child_args[@]}")
+    (cd "$path" && REPO_HARNESS_TARGET_REPO_ROOT="$path" bash "$helper_dir/ship-worktrees.sh" --local-merge --target "$TARGET_BRANCH" ${child_args[@]+"${child_args[@]}"})
     run_cmd bash "$helper_dir/contract-worktree.sh" cleanup --slug "$slug" --target "$TARGET_BRANCH"
     shipped=1
   done < <(list_contract_worktrees "$BRANCH_PREFIX")

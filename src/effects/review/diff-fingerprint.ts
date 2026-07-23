@@ -375,6 +375,7 @@ function isOperationalReviewPath(path: string): boolean {
     path === '.ai/harness/events.jsonl' ||
     path.startsWith('.ai/harness/capability-context/') ||
     path.startsWith('.ai/harness/checks/') ||
+    path.startsWith('.ai/harness/evidence/') ||
     path.startsWith('.ai/harness/failures/') ||
     path.startsWith('.ai/harness/handoff/') ||
     path.startsWith('.ai/harness/planning/') ||

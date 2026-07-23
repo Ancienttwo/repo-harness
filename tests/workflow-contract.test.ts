@@ -277,6 +277,7 @@ describe("workflow contract manifest", () => {
     const contract = loadWorkflowContract(join(ROOT, "assets/workflow-contract.v1.json"));
     const runtimeFiles = contract.artifacts.runtimeFiles ?? [];
     expect(runtimeFiles).toContain(".ai/harness/checks/latest.json");
+    expect(runtimeFiles).toContain(".ai/harness/evidence/");
     expect(runtimeFiles).toContain(".ai/harness/active-plan");
     expect(runtimeFiles).toContain(".ai/harness/active-worktree");
     expect(runtimeFiles).toContain(".ai/harness/archive/");
@@ -305,6 +306,7 @@ describe("workflow contract manifest", () => {
     expect(gitignore).toContain("tasks/.current.md.tmp.*");
     expect(gitignore).toContain(".claude/.plan-state/");
     expect(gitignore).toContain(".ai/harness/checks/latest.json");
+    expect(gitignore).toContain(".ai/harness/evidence/");
     expect(gitignore).toContain(".ai/harness/state/");
     expect(gitignore).toContain(".ai/harness/checks/*.latest.json");
     expect(gitignore).toContain(".ai/harness/checks/*.latest.md");

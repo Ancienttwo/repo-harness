@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-24T06:28:50+0800 -->
+<!-- updated_at: 2026-07-24T07:40:51+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-07-24T06:28:50+0800
-> **Source Branch**: codex/codex-native-profile-aware-status
-> **Source Commit**: 0f773aa7
+> **Updated At**: 2026-07-24T07:40:51+0800
+> **Source Branch**: codex/release-0-11-1
+> **Source Commit**: 5620794d
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -46,7 +46,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=`plans/archive/plan-20260712-2215-agent-fleet-specialists.md`
 ## Handoff
 
-- Exact Next Step: Stage the completed module diff first; then run /check and let canonical workflow gates determine whether review, external acceptance, verification, or worktree finish is next. Command: /check
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Record review/acceptance and close the release worktree into main.
 
 ## Checks
 
@@ -54,18 +54,19 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 9 changed/untracked path(s)
+- Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260724-0427-codex-native-profile-aware-status.md
- D tasks/contracts/20260724-0427-codex-native-profile-aware-status.contract.md
- D tasks/notes/20260724-0427-codex-native-profile-aware-status.notes.md
- D tasks/reviews/20260724-0427-codex-native-profile-aware-status.review.md
-?? plans/archive/plan-20260724-0427-codex-native-profile-aware-status.md
-?? tasks/archive/contract-20260724-0628-codex-native-profile-aware-status.md
-?? tasks/archive/notes-20260724-0628-codex-native-profile-aware-status.md
-?? tasks/archive/review-20260724-0628-codex-native-profile-aware-status.md
-?? tasks/archive/todo-20260724-0628-codex-native-profile-aware-status.md
+ D plans/plan-20260724-0633-release-0-11-1.md
+ D tasks/contracts/20260724-0633-release-0-11-1.contract.md
+ D tasks/notes/20260724-0633-release-0-11-1.notes.md
+ D tasks/reviews/20260724-0633-release-0-11-1.review.md
+ M tasks/todos.md
+?? plans/archive/plan-20260724-0633-release-0-11-1.md
+?? tasks/archive/contract-20260724-0740-release-0-11-1.md
+?? tasks/archive/notes-20260724-0740-release-0-11-1.md
+?? tasks/archive/review-20260724-0740-release-0-11-1.md
+?? tasks/archive/todo-20260724-0740-release-0-11-1.md
 ```
 
 ## Source Artifacts

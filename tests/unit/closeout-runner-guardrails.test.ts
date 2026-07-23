@@ -597,6 +597,23 @@ describe('closeout runner guardrails', () => {
     expect(packaged.equals(source)).toBe(true);
   });
 
+  test('ship forwards empty and non-empty child arguments under the system Bash', () => {
+    const ship = readFileSync(join(ROOT, 'scripts/ship-worktrees.sh'), 'utf-8');
+    expect(ship.match(/\$\{child_args\[@\]\+"\$\{child_args\[@\]\}"\}/g) ?? []).toHaveLength(2);
+
+    const emptyProbe = spawnSync('/bin/bash', [
+      '-uc',
+      'child_args=(); set -- ${child_args[@]+"${child_args[@]}"}; test "$#" -eq 0',
+    ], { encoding: 'utf-8' });
+    expect(emptyProbe.status).toBe(0);
+
+    const nonEmptyProbe = spawnSync('/bin/bash', [
+      '-uc',
+      'child_args=(--ready "two words"); set -- ${child_args[@]+"${child_args[@]}"}; test "$#" -eq 2 && test "$1" = --ready && test "$2" = "two words"',
+    ], { encoding: 'utf-8' });
+    expect(nonEmptyProbe.status).toBe(0);
+  });
+
   test('the fixed source retains the ordinary default without making it closeout authority', () => {
     const processRunner = readFileSync(join(ROOT, 'src/effects/process-runner.ts'), 'utf-8');
     const helperRunner = readFileSync(join(ROOT, 'src/cli/runtime/helper-runner.ts'), 'utf-8');

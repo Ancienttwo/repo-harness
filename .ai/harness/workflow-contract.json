@@ -282,6 +282,7 @@
       ".ai/harness/active-worktree",
       ".ai/harness/sprint/",
       ".ai/harness/worktrees/",
+      ".ai/harness/evidence/",
       ".ai/harness/runs/.gitkeep",
       ".ai/harness/triage/.gitkeep",
       ".ai/harness/triage/inbox.md"

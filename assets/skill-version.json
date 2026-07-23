@@ -1,6 +1,6 @@
 {
-  "version": "0.11.0",
-  "templateVersion": "0.11.0",
+  "version": "0.11.1",
+  "templateVersion": "0.11.1",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "compatibility": {
@@ -211,6 +211,10 @@
     {
       "version": "0.11.0",
       "description": "Converges evidence-ledger projections, recovery views, and SessionStart context composition on canonical materializers and runtime authorities, with deterministic skill-surface discovery and packet-budget verification"
+    },
+    {
+      "version": "0.11.1",
+      "description": "Replaces host install profiles with minimal and full, defaults fresh installs to full with 7 or 11 Codex hooks, requires explicit protocol-1 migration, fixes empty child-argument forwarding under macOS Bash 3.2, and keeps evidence-ledger writes outside the review subject"
     }
   ],
   "generatedProjectStamp": {
