@@ -1,3 +1,9 @@
+> **Archived**: 2026-07-24 01:52
+> **Related Plan**: plans/archive/plan-20260724-0129-verify-contract-qa-score-normalization.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260724-0152
+
 # Task Review: verify-contract-qa-score-normalization
 
 > **Status**: Reviewed

@@ -1,7 +1,13 @@
+> **Archived**: 2026-07-24 01:52
+> **Related Plan**: plans/archive/plan-20260724-0129-verify-contract-qa-score-normalization.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260724-0152
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-07-24 01:29
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

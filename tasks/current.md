@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-24T00:32:52+0800 -->
+<!-- updated_at: 2026-07-24T01:52:16+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-07-24T00:32:52+0800
-> **Source Branch**: codex/evidence-ledger-genesis-authority
-> **Source Commit**: 56599042
+> **Updated At**: 2026-07-24T01:52:16+0800
+> **Source Branch**: codex/verify-contract-qa-score-normalization
+> **Source Commit**: c2c1cd20
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -46,7 +46,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=`plans/archive/plan-20260712-2215-agent-fleet-specialists.md`
 ## Handoff
 
-- Exact Next Step: (none)
+- Exact Next Step: Stage the completed module diff first; then run /check and let canonical workflow gates determine whether review, external acceptance, verification, or worktree finish is next. Command: /check
 
 ## Checks
 
@@ -57,16 +57,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260723-2258-evidence-ledger-genesis-authority.md
- D tasks/contracts/20260723-2258-evidence-ledger-genesis-authority.contract.md
- D tasks/notes/20260723-2258-evidence-ledger-genesis-authority.notes.md
- D tasks/reviews/20260723-2258-evidence-ledger-genesis-authority.review.md
+ D plans/plan-20260724-0129-verify-contract-qa-score-normalization.md
+ D tasks/contracts/20260724-0129-verify-contract-qa-score-normalization.contract.md
+ D tasks/notes/20260724-0129-verify-contract-qa-score-normalization.notes.md
+ D tasks/reviews/20260724-0129-verify-contract-qa-score-normalization.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260723-2258-evidence-ledger-genesis-authority.md
-?? tasks/archive/contract-20260724-0032-evidence-ledger-genesis-authority.md
-?? tasks/archive/notes-20260724-0032-evidence-ledger-genesis-authority.md
-?? tasks/archive/review-20260724-0032-evidence-ledger-genesis-authority.md
-?? tasks/archive/todo-20260724-0032-evidence-ledger-genesis-authority.md
+?? plans/archive/plan-20260724-0129-verify-contract-qa-score-normalization.md
+?? tasks/archive/contract-20260724-0152-verify-contract-qa-score-normalization.md
+?? tasks/archive/notes-20260724-0152-verify-contract-qa-score-normalization.md
+?? tasks/archive/review-20260724-0152-verify-contract-qa-score-normalization.md
+?? tasks/archive/todo-20260724-0152-verify-contract-qa-score-normalization.md
 ```
 
 ## Source Artifacts

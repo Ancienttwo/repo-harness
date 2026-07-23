@@ -1,6 +1,12 @@
+> **Archived**: 2026-07-24 01:52
+> **Related Plan**: plans/archive/plan-20260724-0129-verify-contract-qa-score-normalization.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260724-0152
+
 # Task Contract: verify-contract-qa-score-normalization
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260724-0129-verify-contract-qa-score-normalization.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
