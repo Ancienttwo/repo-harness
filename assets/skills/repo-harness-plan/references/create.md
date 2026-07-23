@@ -30,4 +30,4 @@ When this plan traces back to a `$geju`/格局 pass, freeze its thesis and high-
 - Does not edit implementation files or run `repo-harness run plan-to-todo` by default.
 - May save a plan artifact with `repo-harness run capture-plan`; do not generate contracts, reviews, todos, or worktrees until the user approves implementation.
 - Do not optimize for a planning harness by removing approval, review, or contract scope gates. If an automated run stalls on approval, fix the test harness or capture route, not the approval boundary.
-- Do not expose `hooks-init`, `docs-init`, or `create-project-dirs` as public commands; they are internal implementation steps.
+- Internal implementation steps (`hooks-init`, `docs-init`, `create-project-dirs`) are `repo-harness-setup`'s non-public boundary, not this mode's own; see its `SKILL.md` Boundaries.

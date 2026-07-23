@@ -903,9 +903,12 @@ export interface RoutingRunReport {
 // single run (no profile/host discovers all 10 routes). This consumes 2+
 // single-run reports, verifies they are comparable (identical corpus/manifest
 // sha256, fail closed otherwise), for each corpus case picks a record from a
-// run where its expected route was reachable (deterministic first-by-
-// lexicographic-report-path tie-break when reachable in more than one), fails
-// closed if any canonical route is unreachable in EVERY input, and reuses
+// run where its expected route was reachable (deterministic tie-break when
+// reachable in more than one: the OPERATOR'S GIVEN INPUT ORDER on the
+// command line -- never a re-sort by file path; SSD-07 Phase B found the
+// original path-sort tie-break silently discarded correct records purely
+// because of file-naming accidents), fails closed if any canonical route is
+// unreachable in EVERY input, and reuses
 // computeRoutingMetrics/evaluateThresholds VERBATIM over the union so the
 // four plan floors are applied identically to a single run -- just with zero
 // excluded_unreachable records left (every route reachable somewhere).
@@ -965,7 +968,19 @@ export function buildAggregateReport(
     throw new CliError(`aggregate: requires at least 2 input reports, got ${inputs.length}`);
   }
 
-  const sorted = [...inputs].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  // Precedence for a case reachable in more than one input is the ORDER THE
+  // OPERATOR GAVE THE REPORTS ON THE COMMAND LINE -- an explicit, visible,
+  // operator-chosen tie-break, never a re-sort by file path. An earlier
+  // version sorted inputs lexicographically by path, which silently
+  // discarded correct records whenever a report's path happened to sort
+  // after another report covering the same case (found during SSD-07 Phase
+  // B: "routing-report-product-planning-claude.json" < "...-strict-....json"
+  // meant every case reachable under both profiles was always sourced from
+  // product-planning, even when strict's own record was correct and
+  // product-planning's was not). Preserving input order makes the
+  // precedence a deliberate choice the operator states on the command line,
+  // not an accident of file naming.
+  const sorted = inputs;
   const first = sorted[0];
 
   for (const entry of sorted) {

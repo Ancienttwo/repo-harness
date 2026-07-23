@@ -678,8 +678,8 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       const corpus = loadCorpus();
       const { strict, planning, strictPath, planningPath } = runTwoReports();
 
-      // Deliberately out of lexicographic order on input -- the deterministic
-      // tie-break sorts by path internally, not by input array order.
+      // Deliberately in non-lexicographic order -- the tie-break is now the
+      // OPERATOR'S GIVEN ORDER (planningPath first), not a re-sort by path.
       const aggregate = buildAggregateReport(
         [
           { path: planningPath, report: planning },
@@ -720,8 +720,8 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       const shipSource = aggregate.case_sources.find((cs) => cs.id === shipRecord?.id);
       expect(shipSource?.source_report).toBe(strictPath);
 
-      // inputs are sorted lexicographically by path regardless of input array order
-      expect(aggregate.inputs.map((i) => i.path)).toEqual([strictPath, planningPath].sort());
+      // inputs preserve the operator's given order (planningPath first, as passed above), never re-sorted by path
+      expect(aggregate.inputs.map((i) => i.path)).toEqual([planningPath, strictPath]);
     });
 
     test("fails closed on mismatched corpus_sha256 across inputs", () => {
@@ -791,8 +791,8 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       // Deliberately wrong for 2 of repo-harness-check's 4 positives, chosen
       // BY CASE ID (not a shared mutable run-order-dependent counter) so both
       // runs are identically flawed for these specific ids -- the aggregate's
-      // deterministic tie-break (first-by-lexicographic-report-path) picks
-      // between two byte-identical-for-these-ids records, so the union's
+      // tie-break (operator-given input order) picks between two
+      // byte-identical-for-these-ids records, so the union's
       // repo-harness-check recall is genuinely 50% (2/4) regardless of which
       // report supplies each case, not masked by pick order.
       const corpus = loadCorpus();

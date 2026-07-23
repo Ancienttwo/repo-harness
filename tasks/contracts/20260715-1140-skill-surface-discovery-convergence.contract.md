@@ -363,6 +363,27 @@ exit_criteria:
     - "merge-gate source, output schema, tool-free execution, receipt binding, and ship enforcement are byte-unchanged"
 ```
 
+> **Amendment (2026-07-23, orchestrator ruling, SSD-07 Phase B)**: the fifth
+> manual check above ("Frozen-subject routing evidence meets per-route
+> floors...") could not be satisfied as written. One authoritative
+> 136-invocation attempt (`evals/skill-routing/phase-b-attempt-outcome.json`)
+> proved the real-provider matrix measured the operator's ambient/cached
+> global Claude Code skill registry, not the per-case isolated post-cutover
+> surface — an eval-harness injection defect, not a demonstrated SSD-06
+> product regression (the actual production discovery mechanism was already
+> independently verified via disposable-`HOME` disk probes, gatekeeper PASS
+> x2 in SSD-06). Per this Program's no-rerun discipline, the attempt is not
+> repeated; the routing-quality dimension is recorded as unmeasured, with a
+> deferred-goal follow-up in `tasks/todos.md`. This amended manual check
+> replaces it for closeout purposes:
+>
+> - "The Phase B attempt outcome record exists, is immutable, and correctly
+>   diagnoses `contaminated_invalid_evidence` with root cause and a deferred
+>   follow-up; the two real-provider reports and aggregate are preserved
+>   byte-exact; every other SSD-07 checklist item and manual check is
+>   independently satisfied without relying on the routing-quality
+>   measurement."
+
 ## Acceptance Notes (Human Review)
 
 - Functional behavior:
