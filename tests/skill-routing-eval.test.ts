@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "fs";
-import { mkdtempSync } from "fs";
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { spawnSync } from "child_process";
 import { join } from "path";
@@ -23,6 +22,7 @@ import {
   extractToolInvokedRoutes,
   extractMergeGateTextualSignal,
   computeRoutingMetrics,
+  createProcessProvider,
   evaluateThresholds,
   runProviderEval,
   perfectEchoRouteFor,
@@ -330,6 +330,53 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       expect(extractMergeGateTextualSignal("Running MERGE-GATE now.")).toBe(true);
       expect(extractMergeGateTextualSignal("Nothing relevant here.")).toBe(false);
     });
+  });
+
+  test("Claude process provider restricts setting sources to the case project", () => {
+    const workspacePath = mkdtempSync(join(tmpdir(), "repo-harness-routing-provider-test-"));
+    const fakeClaude = join(workspacePath, "fake-claude");
+    writeFileSync(fakeClaude, [
+      "#!/bin/sh",
+      "project_only=0",
+      "while [ \"$#\" -gt 0 ]; do",
+      "  if [ \"$1\" = \"--setting-sources\" ] && [ \"${2:-}\" = \"project\" ]; then",
+      "    project_only=1",
+      "    shift 2",
+      "    continue",
+      "  fi",
+      "  shift",
+      "done",
+      "if [ \"$project_only\" -ne 1 ]; then",
+      "  echo \"missing project-only setting source\" >&2",
+      "  exit 42",
+      "fi",
+      "printf '%s\\n' '{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"name\":\"Skill\",\"input\":{\"skill\":\"repo-harness-plan\"}}]}}'",
+      "printf '%s\\n' '{\"type\":\"result\",\"result\":\"PLAN_SKILL_SEEN\"}'",
+      "",
+    ].join("\n"));
+    chmodSync(fakeClaude, 0o755);
+
+    const provider = createProcessProvider("claude", { claudeCommand: fakeClaude });
+    const discovered: DiscoveredSkillSurfaceEntry[] = [
+      { name: "repo-harness-plan", sourcePath: "/fixture/repo-harness-plan", reason: "profile-facade" },
+    ];
+    const result = provider.invoke({
+      routingCase: {
+        id: "project-only-setting-source",
+        lang: "en",
+        kind: "positive",
+        prompt: "Use repo-harness-plan.",
+        expected_route: "repo-harness-plan",
+      },
+      workspacePath,
+      host: "claude",
+      discovered,
+      referenceOnly: [],
+    });
+
+    expect(result.outcome).toBe("routed");
+    expect(result.routes).toEqual(["repo-harness-plan"]);
+    expect(result.rawExitCode).toBe(0);
   });
 
   describe("computeRoutingMetrics / evaluateThresholds (pure, synthetic records — proves both the small-sample and large-sample branches)", () => {

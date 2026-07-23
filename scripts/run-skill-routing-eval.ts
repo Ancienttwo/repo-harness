@@ -516,6 +516,8 @@ function buildClaudeRoutingCommand(prompt: string, opts: ProcessProviderOptions)
     args: [
       ...(opts.claudeArgs ?? []),
       "-p",
+      "--setting-sources",
+      "project",
       "--output-format",
       "stream-json",
       "--verbose",
