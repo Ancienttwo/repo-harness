@@ -140,7 +140,7 @@ See captured planning output.
 - [x] Make genesis the sole worktree identity authority in checks materialization.
 - [x] Enforce active-contract isolation with the existing exact contract hash
   and contract-path pair.
-- [ ] Verify focused and workflow gates, record review and receipt, then close the worktree.
+- [x] Verify focused and workflow gates, record review and receipt, then close the worktree.
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
@@ -150,4 +150,4 @@ See captured planning output.
 - [x] Make genesis the sole worktree identity authority in checks materialization.
 - [x] Enforce active-contract isolation with the existing exact contract hash
   and contract-path pair.
-- [ ] Verify focused and workflow gates, record review and receipt, then close the worktree.
+- [x] Verify focused and workflow gates, record review and receipt, then close the worktree.

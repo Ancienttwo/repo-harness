@@ -64,17 +64,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Codex
+> **Source**: codex-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:85abb268d1880304c5d108965995c055788a696661a9b2af4e30cb0d998b8198
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 7c5b3554062fd98f897ae2433ca60b8697b14e65
+> **Verification Evidence SHA256**: sha256:15825298b1942281315d5dbe3f29b1e634039fe19470c4774aca485a56d5a1a8
+> **Issued At**: 2026-07-23T15:25:37.208Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: Red-first regression, Waza standard review, targeted architecture re-review, focused checks, typecheck, and full bun test all passed.
 - Findings: none
 
 ## Behavior Diff Notes
