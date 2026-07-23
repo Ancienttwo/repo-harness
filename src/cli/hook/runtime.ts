@@ -243,21 +243,52 @@ function effectiveStateSessionSection(
   }
 }
 
+const PRE_EDIT_RESOLUTION_MAX_ATTEMPTS = 3;
+const STABILITY_UNSTABLE_MESSAGE = 'workflow authority changed repeatedly while resolving effective state';
+const LOCK_TIMEOUT_MESSAGE_PREFIX = 'timed out waiting for exclusive lock ';
+
+/**
+ * The two known transient-instability throw signatures resolveEffectiveState
+ * can raise: the stability contract's re-read exhaustion (partitioned to
+ * authority sources only in resolve-effective-state.ts, but still reachable
+ * under sustained AUTHORITY churn) and the exclusive state-lock timeout
+ * (src/effects/locking/exclusive-directory-lock.ts). Both are concurrent-
+ * write contention, not a genuinely unresolvable workflow profile -- the
+ * bounded retry below gives ordinary contention a chance to clear before
+ * falling back to a distinct, truthful fail-closed diagnostic in
+ * mutation-guard.ts. Any other throw keeps today's exact behavior: caught
+ * immediately below, reported as `null` with zero retries.
+ */
+function isTransientResolutionInstability(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.message === STABILITY_UNSTABLE_MESSAGE
+    || error.message.startsWith(LOCK_TIMEOUT_MESSAGE_PREFIX);
+}
+
 function resolvePreEditEffectiveState(
   repoRoot: string,
   targetPaths: readonly string[],
   env: NodeJS.ProcessEnv,
 ): EffectiveState | null {
   const explicitOverride = env.REPO_HARNESS_WORKFLOW_PROFILE as WorkflowProfile | undefined;
-  try {
-    return resolveEffectiveState(repoRoot, Date.now(), {
-      targetPaths,
-      operationKind: 'edit',
-      explicitOverride,
-    });
-  } catch {
-    return null;
+  let lastInstability: unknown = null;
+  for (let attempt = 1; attempt <= PRE_EDIT_RESOLUTION_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return resolveEffectiveState(repoRoot, Date.now(), {
+        targetPaths,
+        operationKind: 'edit',
+        explicitOverride,
+      });
+    } catch (error) {
+      if (!isTransientResolutionInstability(error)) return null;
+      lastInstability = error;
+    }
   }
+  // Bounded retry exhausted: residual instability. Re-throw the original
+  // error (message unchanged) instead of collapsing to null, so
+  // mutation-guard.ts can render a distinct fail-closed diagnostic rather
+  // than the misleading generic "resolution failed" banner.
+  throw lastInstability;
 }
 
 function resolveStopEffectiveState(repoRoot: string, env: NodeJS.ProcessEnv): EffectiveState | null {

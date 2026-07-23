@@ -213,6 +213,37 @@ const RESUME_PATH = '.ai/harness/handoff/resume.md';
 const CURRENT_SNAPSHOT_PATH = 'tasks/current.md';
 const CHECKS_PATH = '.ai/harness/checks/latest.json';
 
+/**
+ * `source_hashes` keys the stability contract's re-read comparison ignores:
+ * high-churn, non-authority surfaces whose instability must not abort
+ * resolution (root-cause-prover diagnosis, 2026-07-23 -- see
+ * .ai/harness/runs/hook-guard-stability/). These sources are still read
+ * once per unlocked resolution and reported in `source_hashes` exactly as
+ * before; only their participation in the stability-abort DECISION changes.
+ * Workflow-authority surfaces (active-plan/active-worktree/active-sprint
+ * markers, the plan, contract, review, policy, capability registry, and the
+ * derived authority_revision) keep the full stability contract unchanged.
+ */
+const NON_AUTHORITY_SOURCE_HASH_KEYS: ReadonlySet<string> = new Set([
+  'review_subject',
+  CHECKS_PATH,
+  CURRENT_SNAPSHOT_PATH,
+  HANDOFF_PATH,
+  RESUME_PATH,
+]);
+
+/** Projects `sourceHashes` onto the workflow-authority subset the stability
+ * contract's re-read comparison uses to decide whether to retry or throw. */
+function authoritySourceHashes(
+  sourceHashes: Readonly<Record<string, string>>,
+): Readonly<Record<string, string>> {
+  const authority: Record<string, string> = {};
+  for (const key of Object.keys(sourceHashes)) {
+    if (!NON_AUTHORITY_SOURCE_HASH_KEYS.has(key)) authority[key] = sourceHashes[key];
+  }
+  return authority;
+}
+
 export type CapabilityRegistryStatus = 'valid' | 'absent' | 'invalid';
 
 export interface CapabilityResolution {
@@ -573,7 +604,8 @@ function resolveAndCommitEffectiveState(
     return publication;
   }, publicationEffects?.version, () => {
     const recheck = resolveEffectiveStateUnlocked(cwd, nowMs, { risk });
-    return JSON.stringify(recheck.source_hashes) === JSON.stringify(confirmed.source_hashes);
+    return JSON.stringify(authoritySourceHashes(recheck.source_hashes))
+      === JSON.stringify(authoritySourceHashes(confirmed.source_hashes));
   });
   if (finalized === null) throw new Error('effective-state publication did not produce a final state');
   return finalized;
@@ -625,7 +657,8 @@ function resolveStableEffectiveState(
   let state = resolveEffectiveStateUnlocked(cwd, nowMs, { risk });
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const confirmed = resolveEffectiveStateUnlocked(cwd, nowMs, { risk });
-    if (JSON.stringify(state.source_hashes) === JSON.stringify(confirmed.source_hashes)) {
+    if (JSON.stringify(authoritySourceHashes(state.source_hashes))
+      === JSON.stringify(authoritySourceHashes(confirmed.source_hashes))) {
       return confirmed;
     }
     state = confirmed;

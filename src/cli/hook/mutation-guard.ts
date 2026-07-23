@@ -269,7 +269,24 @@ function runPerPathGuards(
   }
 
   // ---- resolve_effective_state: the ONE Effective State resolution -------
-  const effective = ctx.collector.getPreEditEffectiveState(allTargetPaths);
+  let effective: EffectiveState | null;
+  try {
+    effective = ctx.collector.getPreEditEffectiveState(allTargetPaths);
+  } catch {
+    // Residual instability after the wrapper's bounded retry (runtime.ts):
+    // concurrent workflow-state writes never settled. Distinct fail-closed
+    // diagnostic, never the collapsed "resolution failed" banner below --
+    // still fails closed, no fail-open path.
+    out(ctx, `[WorkflowResolutionUnstableGuard] Workflow resolution stayed unstable for ${filePath} after bounded retries.`);
+    structuredError(
+      ctx,
+      'WorkflowResolutionUnstableGuard',
+      `Concurrent workflow-state writes kept resolution unstable for ${filePath}; bounded retries were exhausted.`,
+      'Retry the edit once concurrent workflow-state writes settle.',
+      'state_violation',
+    );
+    exit(2);
+  }
   ctx.resolvedProfileHint = effective?.workflow_profile ?? ctx.resolvedProfileHint;
   const workflowProfile = workflowProfileOrNull(effective);
   if (!workflowProfile) {
