@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260724-0427-codex-native-profile-aware-status.md
 > **Contract**: tasks/contracts/20260724-0427-codex-native-profile-aware-status.contract.md
 > **Review**: tasks/reviews/20260724-0427-codex-native-profile-aware-status.review.md
-> **Last Updated**: 2026-07-24 06:08
+> **Last Updated**: 2026-07-24 06:24
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -106,8 +106,11 @@
 - Main advanced after the worktree fork and overlaps only
   `tests/skill-surface/retired-names-scan.test.ts`: main adds two provenance
   allowlist entries while this slice raises the scan timeout. Git closeout
-  must preserve both changes; no merge/rebase was performed without explicit
-  user authorization.
+  preserved both changes and the combined test passes 5/5. After merging
+  `main@71a52dde`, the contract rollback checkpoint was advanced from the
+  original fork point `96c908f7` to that frozen target revision so
+  allowed-path verification compares only this package rather than
+  reclassifying already-landed mainline changes.
 
 ## Promotion Filter
 

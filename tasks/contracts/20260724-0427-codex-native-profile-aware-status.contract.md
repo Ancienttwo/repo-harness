@@ -6,7 +6,7 @@
 > **Workflow Profile**: strict
 > **Owner**: kito
 > **Capability ID**: root
-> **Last Updated**: 2026-07-24 06:08
+> **Last Updated**: 2026-07-24 06:24
 > **Review File**: `tasks/reviews/20260724-0427-codex-native-profile-aware-status.review.md`
 > **Notes File**: `tasks/notes/20260724-0427-codex-native-profile-aware-status.notes.md`
 
@@ -213,6 +213,6 @@ exit_criteria:
 
 ## Rollback Point
 
-- Commit / checkpoint: `96c908f7`
+- Commit / checkpoint: `71a52dde`
 - Revert strategy: revert the entire protocol/profile migration as one unit;
   do not partially restore old names under protocol 2.
