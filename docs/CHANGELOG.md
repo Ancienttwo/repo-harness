@@ -4,6 +4,8 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-07-24
+
 ### Changed
 
 - Host install profiles are now exactly `minimal` and `full`: minimal projects
@@ -13,6 +15,30 @@ All notable changes to this skill are documented here.
   state is protocol 2; protocol-1 state fails closed on normal reads and moves
   only through `repo-harness install --migrate-profile-state --profile
   minimal|full`, with transaction-owned removal and compensation.
+- Workflow status and archive closeout now converge on the same typed acceptance
+  authority: historical terminal classification requires a fulfilled contract,
+  passing review projection, and typed receipt, while archive prediction binds
+  the scratch candidate before attaching acceptance dependencies.
+
+### Fixed
+
+- User-managed agent-fleet installs can now be explicitly accepted without
+  overwriting local role definitions; the acceptance stays bound to validated
+  role identity and exact installed bytes.
+- Evidence materialization now honors immutable genesis authority instead of
+  allowing a later projection to substitute a new ledger origin.
+- Contract verification canonicalizes human scorecard labels to the machine
+  criterion keys, preventing valid QA evidence from failing on display names.
+- Effective State concurrency tests now publish mutator readiness only after
+  counter initialization, closing the pre-initialization observation race.
+- Claude skill-routing provider subprocesses now isolate setting sources to the
+  case project instead of inheriting unrelated host configuration.
+- Primary-worktree shipping now forwards an empty optional child-argument list
+  without triggering `unbound variable` under macOS system Bash 3.2, while
+  preserving exact `--dry-run` and `--ready` argument values.
+- Newly adopted repos now ignore `.ai/harness/evidence/`, and review-subject
+  normalization classifies the ledger as operational state, so authoritative
+  evidence emission cannot make its own acceptance subject stale.
 
 ## [0.11.0] - 2026-07-23
 

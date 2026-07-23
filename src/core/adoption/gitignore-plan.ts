@@ -72,6 +72,7 @@ export const GITIGNORE_MANAGED_BLOCK_CONTENT = [
   ".ai/harness/active-worktree",
   ".ai/harness/sprint/",
   ".ai/harness/worktrees/",
+  ".ai/harness/evidence/",
   ".ai/harness/runs/",
   ".ai/harness/state/",
   ".ai/harness/chatgpt/browser-lock.json",

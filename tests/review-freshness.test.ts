@@ -75,12 +75,14 @@ describe('review subject', () => {
 
       mkdirSync(join(cwd, 'tasks/reviews'), { recursive: true });
       mkdirSync(join(cwd, '.ai/harness/checks'), { recursive: true });
+      mkdirSync(join(cwd, '.ai/harness/evidence/events'), { recursive: true });
       mkdirSync(join(cwd, '.ai/harness/failures'), { recursive: true });
       mkdirSync(join(cwd, '.ai/harness/handoff'), { recursive: true });
       mkdirSync(join(cwd, '.ai/harness/state'), { recursive: true });
       writeFileSync(join(cwd, 'tasks/reviews/demo.review.md'), '> **Recommendation**: pass\n');
       writeFileSync(join(cwd, '.ai/harness/active-plan'), 'plans/plan-demo.md\n');
       writeFileSync(join(cwd, '.ai/harness/checks/latest.json'), '{"status":"pass"}\n');
+      writeFileSync(join(cwd, '.ai/harness/evidence/events/log.jsonl'), '{"type":"evidence_event"}\n');
       writeFileSync(join(cwd, '.ai/harness/failures/latest.jsonl'), '{"guard":"demo"}\n');
       writeFileSync(join(cwd, '.ai/harness/handoff/current.md'), '# Handoff\n');
       writeFileSync(join(cwd, '.ai/harness/state/effective.json'), '{}\n');
@@ -89,6 +91,7 @@ describe('review subject', () => {
       expect(operationalOnly.excluded_paths).toEqual([
         '.ai/harness/active-plan',
         '.ai/harness/checks/latest.json',
+        '.ai/harness/evidence/events/log.jsonl',
         '.ai/harness/failures/latest.jsonl',
         '.ai/harness/handoff/current.md',
         '.ai/harness/state/effective.json',
