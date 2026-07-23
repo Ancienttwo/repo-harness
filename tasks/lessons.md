@@ -13,6 +13,12 @@
 ## Active Lessons
 
 - Date: 2026-07-23
+- Triggered by correction: a scope-runaway incident (a branch-cleanup task self-expanded into fixing every CI fault on `main`) exposed that the live `~/.codex/AGENTS.md` had gained a whole `## Sufficiency and Stop Boundaries` section through direct edits while `assets/reference-configs/global-working-rules.md` — the source `repo-harness init` actually distributes — never received it, so freshly initialized machines shipped without any stop-boundary discipline.
+- Mistake pattern: patching the installed copy of a distributed artifact and never back-porting to the template that init ships, leaving the authoring surface and the distribution surface with divergent authority.
+- Prevention rule: behavioral-rule changes to global working rules land in `assets/reference-configs/global-working-rules.md` first (with the byte-identical `docs/` mirror and the distribution test), then get re-applied to the live installed copy; treat `~/.codex/AGENTS.md` as an installation target, not an authoring surface.
+- Where to apply next time: any edit to global working rules content, reference-config templates under `assets/reference-configs/`, and other init-distributed assets that have live installed copies (hooks, skills, agent definitions).
+
+- Date: 2026-07-23
 - Triggered by correction: the `verify-sprint` metadata test launched three runs inside one second, then selected the "latest" snapshot using only second-resolution `generated_at`; GitHub CI intermittently read an earlier run and failed even though the behavior under test was correct.
 - Mistake pattern: generating multiple uniquely named evidence artifacts but asserting through a timestamp scan instead of binding each assertion to the producer's explicit run ID.
 - Prevention rule: tests that create more than one run/evidence artifact must assign deterministic run IDs and read the exact named artifact; do not use timestamp ordering as evidence authority.

@@ -39,6 +39,13 @@ describe("global working rules distribution", () => {
     expect(fence).toContain("Generality: These are general working rules.");
   });
 
+  test("assets template fence carries the sufficiency and stop boundaries", () => {
+    const fence = extractFence(readFileSync(ASSETS_TEMPLATE, "utf-8"));
+    expect(fence).toContain("## Sufficiency and Stop Boundaries");
+    expect(fence).toContain("Cap fail -> fix -> reverify loops at three rounds per issue");
+    expect(fence).toContain("A second out-of-scope discovery is a hard stop");
+  });
+
   test("assets template fence carries the code optimization authority rules", () => {
     const fence = extractFence(readFileSync(ASSETS_TEMPLATE, "utf-8"));
     expect(fence).toContain("## Code Optimization Principles");
