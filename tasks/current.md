@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-23T22:52:58+0800 -->
+<!-- updated_at: 2026-07-24T00:32:52+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-07-23T22:52:58+0800
-> **Source Branch**: main
-> **Source Commit**: d913cbba
+> **Updated At**: 2026-07-24T00:32:52+0800
+> **Source Branch**: codex/evidence-ledger-genesis-authority
+> **Source Commit**: 56599042
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: workflow-ledger-truth-sync
+> **Reason**: archive-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -50,28 +50,23 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 15 changed/untracked path(s)
+- Summary: 10 changed/untracked path(s)
 
 ```
- M AGENTS.md
- M CLAUDE.md
- M assets/AGENTS.md
- M assets/CLAUDE.md
- M scripts/AGENTS.md
- M scripts/CLAUDE.md
- M tasks/current.md
+ D plans/plan-20260723-2258-evidence-ledger-genesis-authority.md
+ D tasks/contracts/20260723-2258-evidence-ledger-genesis-authority.contract.md
+ D tasks/notes/20260723-2258-evidence-ledger-genesis-authority.notes.md
+ D tasks/reviews/20260723-2258-evidence-ledger-genesis-authority.review.md
  M tasks/todos.md
- M tasks/workstreams/workflow-engine/contract-assets/20260712-contract-assets.md
- M tasks/workstreams/workflow-engine/contract-assets/20260714-merge-gate-enforcement.md
- M tasks/workstreams/workflow-engine/contract-assets/agent-fleet-specialists.md
- M tasks/workstreams/workflow-engine/contract-assets/cleanup-script-policy.md
- M tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md
- M tasks/workstreams/workflow-engine/inspection-migration/20260712-inspection-migration.md
- M tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md
+?? plans/archive/plan-20260723-2258-evidence-ledger-genesis-authority.md
+?? tasks/archive/contract-20260724-0032-evidence-ledger-genesis-authority.md
+?? tasks/archive/notes-20260724-0032-evidence-ledger-genesis-authority.md
+?? tasks/archive/review-20260724-0032-evidence-ledger-genesis-authority.md
+?? tasks/archive/todo-20260724-0032-evidence-ledger-genesis-authority.md
 ```
 
 ## Source Artifacts

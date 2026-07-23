@@ -1,6 +1,6 @@
 # Plan: 修复 checks/latest 的 genesis worktree authority
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260723-2258
 > **Slug**: evidence-ledger-genesis-authority
 > **Planning Source**: codex-plan

@@ -1,7 +1,13 @@
+> **Archived**: 2026-07-24 00:32
+> **Related Plan**: plans/archive/plan-20260723-2258-evidence-ledger-genesis-authority.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260724-0032
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-07-23 22:58
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

@@ -1,3 +1,9 @@
+> **Archived**: 2026-07-24 00:32
+> **Related Plan**: plans/archive/plan-20260723-2258-evidence-ledger-genesis-authority.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260724-0032
+
 # Task Contract: evidence-ledger-genesis-authority
 
 > **Status**: Fulfilled
