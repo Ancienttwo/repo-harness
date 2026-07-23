@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-23T17:08:44+0800 -->
+<!-- updated_at: 2026-07-23T17:38:47+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-07-23T17:08:44+0800
-> **Source Branch**: worktree-agent-a7d0f1ef1d49f6e15
-> **Source Commit**: dc4c7656
+> **Updated At**: 2026-07-23T17:38:47+0800
+> **Source Branch**: main
+> **Source Commit**: 7ef98272
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: release-candidate
@@ -50,25 +50,14 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=(none), source=(none), file=.ai/harness/checks/latest.json
+- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 12 changed/untracked path(s)
+- Summary: clean
 
 ```
- M .claude/.skill-version
- M README.es.md
- M README.fr.md
- M README.ja.md
- M README.md
- M README.zh-CN.md
- M assets/skill-version.json
- M docs/CHANGELOG.md
- M package.json
- M scripts/session-context-packet-panel.ts
- M tests/session-context.test.ts
-?? deploy/release-checklists/260723-repo-harness-0.11.0.md
+(none)
 ```
 
 ## Source Artifacts
