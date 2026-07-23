@@ -63,18 +63,24 @@ exec "$RUNTIME_BIN" - "$@" <<'NODE_EOF'
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const crypto = require("crypto");
 
 const argv = process.argv.slice(2);
 let force = false;
+let acceptUserManaged = false;
 
 function usage() {
-  console.log("Usage: scripts/install-agent-fleet.sh [--force]");
+  console.log("Usage: scripts/install-agent-fleet.sh [--force|--accept-user-managed]");
 }
 
 for (let index = 0; index < argv.length; index += 1) {
   const arg = argv[index];
   if (arg === "--force") {
     force = true;
+    continue;
+  }
+  if (arg === "--accept-user-managed") {
+    acceptUserManaged = true;
     continue;
   }
   if (arg === "--help" || arg === "-h") {
@@ -85,12 +91,18 @@ for (let index = 0; index < argv.length; index += 1) {
   usage();
   process.exit(1);
 }
+if (force && acceptUserManaged) {
+  console.error("--force and --accept-user-managed are mutually exclusive");
+  usage();
+  process.exit(1);
+}
 
 const HOME = os.homedir();
 const MANAGED_AGENTS = ["explorer", "deep-reasoner", "fast-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
 const WRITABLE_AGENTS = new Set(["fast-worker", "root-cause-prover", "harness-evaluator"]);
 const CLAUDE_TARGET_DIR = path.join(HOME, ".claude", "agents");
 const CODEX_TARGET_DIR = path.join(HOME, ".codex", "agents");
+const USER_MANAGED_RECEIPT_PATH = path.join(HOME, ".repo-harness", "agent-fleet-user-managed.json");
 const SOURCE_DIR = process.env.REPO_HARNESS_AGENT_FLEET_SOURCE_DIR;
 
 // Canonical anti-extras clause. Must stay byte-identical to the EXECUTION_BOUNDARY
@@ -236,7 +248,97 @@ function generateToml(agent, parsed, mapped) {
   return `${lines.join("\n")}\n`;
 }
 
-function compareAndWrite(targetPath, content) {
+function sha256(content) {
+  return `sha256:${crypto.createHash("sha256").update(content).digest("hex")}`;
+}
+
+function readRegularFile(targetPath) {
+  try {
+    const stat = fs.lstatSync(targetPath);
+    if (stat.isSymbolicLink() || !stat.isFile()) return { ok: false, text: "" };
+    return { ok: true, text: fs.readFileSync(targetPath, "utf8") };
+  } catch (_error) {
+    return { ok: false, text: "" };
+  }
+}
+
+function validateUserManagedClaude(agent, content) {
+  const parsed = parseFrontmatter(content);
+  const model = parseRoleNameScalar(parsed?.model);
+  const effort = parseRoleNameScalar(parsed?.effort);
+  return Boolean(
+    parsed
+    && parsed.name === agent
+    && parsed.description
+    && model
+    && effort
+    && EFFORT_LEVELS.includes(effort)
+    && parsed.body.trim(),
+  );
+}
+
+function validateUserManagedCodex(agent, content) {
+  try {
+    const parsed = Bun.TOML.parse(content);
+    if (parsed.name !== undefined && parsed.name !== agent) return false;
+    if (typeof parsed.model !== "string" || !parsed.model.trim()) return false;
+    if (
+      typeof parsed.model_reasoning_effort !== "string"
+      || !EFFORT_LEVELS.includes(parsed.model_reasoning_effort)
+    ) return false;
+    if (typeof parsed.developer_instructions !== "string" || !parsed.developer_instructions.trim()) return false;
+    if (
+      parsed.sandbox_mode !== undefined
+      && parsed.sandbox_mode !== "read-only"
+      && parsed.sandbox_mode !== "workspace-write"
+    ) return false;
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function loadUserManagedReceipt(allowedPaths) {
+  if (!fs.existsSync(USER_MANAGED_RECEIPT_PATH)) return { ok: true, hashes: new Map() };
+  try {
+    const parsed = JSON.parse(fs.readFileSync(USER_MANAGED_RECEIPT_PATH, "utf8"));
+    if (
+      parsed?.protocol !== 1
+      || parsed?.authority !== "user-managed-agent-fleet"
+      || !Array.isArray(parsed.files)
+    ) return { ok: false, hashes: new Map() };
+    const hashes = new Map();
+    for (const entry of parsed.files) {
+      if (
+        !entry
+        || typeof entry.path !== "string"
+        || !allowedPaths.has(entry.path)
+        || typeof entry.sha256 !== "string"
+        || !/^sha256:[a-f0-9]{64}$/.test(entry.sha256)
+        || hashes.has(entry.path)
+      ) return { ok: false, hashes: new Map() };
+      hashes.set(entry.path, entry.sha256);
+    }
+    return { ok: true, hashes };
+  } catch (_error) {
+    return { ok: false, hashes: new Map() };
+  }
+}
+
+function writeUserManagedReceipt(files) {
+  fs.mkdirSync(path.dirname(USER_MANAGED_RECEIPT_PATH), { recursive: true });
+  const receipt = {
+    protocol: 1,
+    authority: "user-managed-agent-fleet",
+    accepted_at: new Date().toISOString(),
+    files,
+  };
+  const temp = `${USER_MANAGED_RECEIPT_PATH}.tmp-${process.pid}-${Date.now()}`;
+  fs.writeFileSync(temp, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });
+  fs.renameSync(temp, USER_MANAGED_RECEIPT_PATH);
+}
+
+function compareAndWrite(targetPath, content, acceptedHash) {
   let existing = null;
   try {
     existing = fs.readFileSync(targetPath, "utf8");
@@ -256,6 +358,8 @@ function compareAndWrite(targetPath, content) {
     fs.writeFileSync(targetPath, content);
     return "installed";
   }
+
+  if (acceptedHash === sha256(existing)) return "user-managed";
 
   return "drift";
 }
@@ -287,16 +391,75 @@ if (prepared.length !== MANAGED_AGENTS.length) {
   process.exit(1);
 }
 
-for (const { agent, source, parsed, mapped } of prepared) {
-  const claudeTarget = path.join(CLAUDE_TARGET_DIR, `${agent}.md`);
-  const codexTarget = path.join(CODEX_TARGET_DIR, `${agent}.toml`);
-  const claudeStatus = compareAndWrite(claudeTarget, source);
-  results.push({ host: "claude", file: `${agent}.md`, status: claudeStatus });
-
+const targets = prepared.flatMap(({ agent, source, parsed, mapped }) => {
   const tomlContent = generateToml(agent, parsed, mapped);
   Bun.TOML.parse(tomlContent);
-  const codexStatus = compareAndWrite(codexTarget, tomlContent);
-  results.push({ host: "codex", file: `${agent}.toml`, status: codexStatus });
+  return [
+    {
+      agent,
+      host: "claude",
+      file: `${agent}.md`,
+      path: path.join(CLAUDE_TARGET_DIR, `${agent}.md`),
+      content: source,
+    },
+    {
+      agent,
+      host: "codex",
+      file: `${agent}.toml`,
+      path: path.join(CODEX_TARGET_DIR, `${agent}.toml`),
+      content: tomlContent,
+    },
+  ];
+});
+const allowedTargetPaths = new Set(targets.map((target) => target.path));
+
+if (acceptUserManaged) {
+  const acceptedFiles = [];
+  let invalid = false;
+  for (const target of targets) {
+    const existing = readRegularFile(target.path);
+    if (!existing.ok) {
+      results.push({ host: target.host, file: target.file, status: "user-managed-invalid" });
+      invalid = true;
+      continue;
+    }
+    if (existing.text === target.content) {
+      results.push({ host: target.host, file: target.file, status: "up-to-date" });
+      continue;
+    }
+    const valid = target.host === "claude"
+      ? validateUserManagedClaude(target.agent, existing.text)
+      : validateUserManagedCodex(target.agent, existing.text);
+    if (!valid) {
+      results.push({ host: target.host, file: target.file, status: "user-managed-invalid" });
+      invalid = true;
+      continue;
+    }
+    acceptedFiles.push({ path: target.path, sha256: sha256(existing.text) });
+    results.push({ host: target.host, file: target.file, status: "user-managed" });
+  }
+  for (const entry of results) console.log(`[fleet] ${entry.host}/${entry.file}: ${entry.status}`);
+  if (invalid) process.exit(1);
+  writeUserManagedReceipt(acceptedFiles);
+  console.log(`[fleet] user-managed receipt: accepted ${acceptedFiles.length} files`);
+  process.exit(0);
+}
+
+const receipt = force
+  ? { ok: true, hashes: new Map() }
+  : loadUserManagedReceipt(allowedTargetPaths);
+if (!receipt.ok) {
+  console.log("[fleet] user-managed receipt: invalid");
+  process.exit(1);
+}
+
+for (const target of targets) {
+  const status = compareAndWrite(target.path, target.content, receipt.hashes.get(target.path));
+  results.push({ host: target.host, file: target.file, status });
+}
+
+if (force && fs.existsSync(USER_MANAGED_RECEIPT_PATH)) {
+  fs.rmSync(USER_MANAGED_RECEIPT_PATH, { force: true });
 }
 
 for (const entry of results) {

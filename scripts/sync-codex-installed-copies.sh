@@ -51,11 +51,21 @@ fi
 # Resolved once, eagerly, here in the main shell process (never inside a function
 # invoked as a pipeline's non-last stage -- bash forks a subshell for those, which
 # would silently swallow a failure here as "selects nothing" instead of aborting).
-# profile_facades() below just emits this precomputed value.
-if ! SELECTED_FACADES="$(bun "$SOURCE_ROOT/scripts/skill-surface-select.ts" facades --profile "$INSTALL_PROFILE")"; then
-  echo "[sync-installed] skill-surface-select facades failed for profile: $INSTALL_PROFILE" >&2
+# One adapter call returns both facade selection and separately-managed provider
+# placements so adding the ownership boundary does not add another Bun startup to
+# every sync.
+if ! PROFILE_PROJECTION="$(bun "$SOURCE_ROOT/scripts/skill-surface-select.ts" profile-projection --profile "$INSTALL_PROFILE")"; then
+  echo "[sync-installed] skill-surface-select profile-projection failed for profile: $INSTALL_PROFILE" >&2
   exit 1
 fi
+SELECTED_FACADES=""
+HOST_PLACEMENTS=""
+while IFS=$'\t' read -r projection_kind projection_value; do
+  case "$projection_kind" in
+    facade) SELECTED_FACADES+="${SELECTED_FACADES:+$'\n'}$projection_value" ;;
+    host) HOST_PLACEMENTS+="${HOST_PLACEMENTS:+$'\n'}$projection_value" ;;
+  esac
+done <<< "$PROFILE_PROJECTION"
 
 # Manifest-derived name -> source path for every facade-kind package,
 # regardless of profile. A facade's source directory is no longer guaranteed
@@ -67,7 +77,6 @@ if ! FACADE_SOURCES="$(bun "$SOURCE_ROOT/scripts/skill-surface-select.ts" facade
   echo "[sync-installed] skill-surface-select facade-sources failed" >&2
   exit 1
 fi
-
 common_excludes=(
   --exclude='.git/'
   --exclude='_ops/'
@@ -291,6 +300,18 @@ facade_selected() {
   profile_facades | grep -Fxq "$wanted"
 }
 
+provider_skill_selected_for_root() {
+  local root="$1"
+  local wanted="$2"
+  local host=""
+  if [[ "$root" == "$CODEX_SKILLS_ROOT" ]]; then
+    host="codex"
+  elif [[ -n "$CLAUDE_SKILLS_ROOT" && "$root" == "$CLAUDE_SKILLS_ROOT" ]]; then
+    host="claude"
+  fi
+  [[ -n "$host" ]] && grep -Fxq "$host $wanted" <<< "$HOST_PLACEMENTS"
+}
+
 preflight_skill_root() {
   local root="$1"
   [[ -n "$root" ]] || return 0
@@ -301,6 +322,11 @@ preflight_skill_root() {
   for dest in "$root"/repo-harness-*; do
     [[ -e "$dest" || -L "$dest" ]] || continue
     name="$(basename "$dest")"
+    # Provider Skills (for example repo-harness-cross-review) are installed by
+    # their own profile component after this facade sync. They are not command
+    # facades, so this loop must neither require a command-facade owner marker
+    # nor retire them while their host placement is selected.
+    provider_skill_selected_for_root "$root" "$name" && continue
     source_rel="$(facade_source_for "$name")"
     source=""
     [[ -n "$source_rel" ]] && source="$SOURCE_ROOT/$source_rel"
@@ -322,6 +348,7 @@ remove_retired_owned_facades() {
   for dest in "$root"/repo-harness-*; do
     [[ -e "$dest" || -L "$dest" ]] || continue
     name="$(basename "$dest")"
+    provider_skill_selected_for_root "$root" "$name" && continue
     facade_selected "$name" && continue
     source_rel="$(facade_source_for "$name")"
     source=""
