@@ -69,18 +69,18 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: pending
-> **Reviewer**: pending
-> **Source**: pending
-> **Actor**: pending
+> **Disposition**: external_pass
+> **Reviewer**: Codex
+> **Source**: codex-review
+> **Actor**: not-applicable
 > **Reviewed Subject SHA256**: sha256:b3f3463dd2f84b0759a15ab730d467d076e304abfce68d7032fbef76084c328f
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: 7c5b3554062fd98f897ae2433ca60b8697b14e65
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Verification Evidence SHA256**: sha256:a4df9ac8ac1062e458a93156b486b569d7ad97cb73bd2789e42a9ca60423123f
+> **Issued At**: 2026-07-23T16:13:31.610Z
 
-- Summary: pending final AcceptanceReceipt record.
-- Findings: pending
+- Summary: PostBash-first genesis and root-bound archive prediction regressions fixed; Deep security and architecture reviews plus focused, type, full-suite, and workflow gates passed.
+- Findings: none
 
 ## Behavior Diff Notes
 
