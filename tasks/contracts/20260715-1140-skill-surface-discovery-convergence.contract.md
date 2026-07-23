@@ -1,6 +1,6 @@
 # Task Contract: skill-surface-discovery-convergence
 
-> **Status**: Active
+> **Status**: Done
 > **Plan**: plans/plan-20260715-1140-skill-surface-discovery-convergence.md
 > **Task Profile**: code-change
 > **Owner**: kito

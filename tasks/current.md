@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-23T13:19:09+0800 -->
+<!-- updated_at: 2026-07-23T15:21:01+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-23T13:19:09+0800
+> **Updated At**: 2026-07-23T15:21:01+0800
 > **Source Branch**: main
-> **Source Commit**: e7d206d3
+> **Source Commit**: 02d037b9
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: manual
@@ -31,8 +31,6 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/kito/Projects/repo-harness-wt-hook-guard-stability: plans/plan-20260723-0620-hook-guard-stability.md
-- /Users/kito/Projects/repo-harness-wt-hook-guard-stability: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-hook-guard-stability
 - /Users/kito/Projects/repo-harness-wt-skill-surface-discovery-convergence: plans/plan-20260715-1140-skill-surface-discovery-convergence.md
 - /Users/kito/Projects/repo-harness-wt-skill-surface-discovery-convergence: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-skill-surface-discovery-convergence
 ## Active Sprint
@@ -62,8 +60,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 ```
  M assets/reference-configs/global-working-rules.md
  M docs/reference-configs/global-working-rules.md
- M plans/plan-20260723-0620-hook-guard-stability.md
- M tasks/contracts/20260723-0620-hook-guard-stability.contract.md
+ M plans/plan-20260715-1140-skill-surface-discovery-convergence.md
+ M tasks/contracts/20260715-1140-skill-surface-discovery-convergence.contract.md
  M tasks/lessons.md
  M tests/global-working-rules-distribution.test.ts
 ```
