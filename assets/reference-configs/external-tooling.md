@@ -582,8 +582,29 @@ stale managed target can be deactivated.
 
 The installer is **never-clobber by default**: an existing target file that
 differs from the newly resolved content is reported as `drift` and left
-untouched. Pass `--force` to overwrite drifted files. Re-running with no
-packaged-source changes reports every file as `up-to-date`.
+untouched. Pass `--force` to overwrite drifted files.
+
+An operator who intentionally owns a customized, complete fleet can acknowledge
+the current bytes once:
+
+```bash
+repo-harness run install-agent-fleet --accept-user-managed
+```
+
+The acknowledgement validates all twelve target files before writing
+`~/.repo-harness/agent-fleet-user-managed.json`. Claude files must have
+well-formed frontmatter with the target role identity, model, effort, and body;
+Codex files must be valid TOML with a pinned model, supported reasoning effort,
+and developer instructions. Symlinks, missing files, malformed files, or
+role-name mismatches fail closed without changing the receipt.
+
+Only customized files are recorded, by absolute path and SHA-256. Later
+installer and strict-profile runs report those exact bytes as `user-managed`
+and do not claim transaction ownership over them. Any subsequent byte change
+invalidates the acknowledgement and returns to `drift` until the operator
+reviews and accepts the new content. `--force` restores packaged content and
+removes the user-managed receipt. Re-running with no packaged-source changes
+reports packaged files as `up-to-date`.
 
 ### Readiness
 
@@ -596,7 +617,7 @@ the deterministic generation.
 
 ### Uninstall
 
-There is no uninstall command. Removing the fleet means deleting the eight
+There is no uninstall command. Removing the fleet means deleting the twelve
 managed files by hand:
 
 ```text
@@ -604,10 +625,14 @@ managed files by hand:
 ~/.claude/agents/deep-reasoner.md
 ~/.claude/agents/fast-worker.md
 ~/.claude/agents/gatekeeper.md
+~/.claude/agents/root-cause-prover.md
+~/.claude/agents/harness-evaluator.md
 ~/.codex/agents/explorer.toml
 ~/.codex/agents/deep-reasoner.toml
 ~/.codex/agents/fast-worker.toml
 ~/.codex/agents/gatekeeper.toml
+~/.codex/agents/root-cause-prover.toml
+~/.codex/agents/harness-evaluator.toml
 ```
 
 ## Manual Brain Vault Export

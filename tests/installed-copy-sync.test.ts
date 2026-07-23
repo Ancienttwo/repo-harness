@@ -149,6 +149,50 @@ describe("Codex installed copy sync", () => {
     }
   });
 
+  test("strict sync leaves separately managed provider skills untouched", () => {
+    const tmp = join(tmpdir(), `repo-harness-installed-provider-skill-${Date.now()}`);
+    const source = join(tmp, "source");
+    const codexSkills = join(tmp, "codex-skills");
+    const claudeSkills = join(tmp, "claude-skills");
+    const providerSkill = "repo-harness-cross-review";
+    const customContent = "---\nname: repo-harness-cross-review\n---\ntransaction-owned provider skill\n";
+
+    try {
+      seedSkillSurfaceRuntime(source);
+      mkdirSync(codexSkills, { recursive: true });
+      mkdirSync(claudeSkills, { recursive: true });
+      writeFileSync(join(source, "SKILL.md"), "---\nname: repo-harness\n---\n");
+      for (const root of [codexSkills, claudeSkills]) {
+        const installed = join(root, providerSkill);
+        mkdirSync(installed, { recursive: true });
+        writeFileSync(join(installed, "SKILL.md"), customContent);
+      }
+
+      const result = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          AGENTIC_DEV_SOURCE_ROOT: source,
+          AGENTIC_DEV_LINK_INSTALLED_COPIES: "1",
+          REPO_HARNESS_INSTALL_PROFILE: "strict",
+          CODEX_SKILLS_ROOT: codexSkills,
+          CLAUDE_SKILLS_ROOT: claudeSkills,
+        },
+      });
+
+      expect(result.status).toBe(0);
+      for (const root of [codexSkills, claudeSkills]) {
+        const installed = join(root, providerSkill);
+        expect(readFileSync(join(installed, "SKILL.md"), "utf-8")).toBe(customContent);
+        expect(lstatSync(installed).isDirectory()).toBe(true);
+        expect(existsSync(join(installed, ".repo-harness-owner.json"))).toBe(false);
+      }
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   test("minimal profile removes an exact package-owned command facade", () => {
     const tmp = join(tmpdir(), `repo-harness-installed-minimal-${Date.now()}`);
     const source = join(tmp, "source");

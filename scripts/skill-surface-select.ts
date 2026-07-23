@@ -68,6 +68,16 @@ function main(argv: readonly string[]): void {
     for (const name of facadesForProfile(catalog, profileFlag)) console.log(name);
     return;
   }
+  if (subcommand === "profile-projection") {
+    if (!isProfile(profileFlag)) {
+      fail(`profile-projection requires --profile <${SKILL_SURFACE_PROFILES.join("|")}>`);
+    }
+    for (const name of facadesForProfile(catalog, profileFlag)) console.log(`facade\t${name}`);
+    const placements = hostSkillPlacements(catalog, profileFlag);
+    for (const name of placements.claude) console.log(`host\tclaude ${name}`);
+    for (const name of placements.codex) console.log(`host\tcodex ${name}`);
+    return;
+  }
   if (subcommand === "facade-sources") {
     // Unconditional (no --profile): every facade-kind package's name/source
     // pair, regardless of which profile(s) select it. This is the single
@@ -99,7 +109,7 @@ function main(argv: readonly string[]): void {
     for (const name of placements.codex) console.log(`codex ${name}`);
     return;
   }
-  fail(`unknown or missing subcommand "${subcommand ?? ""}"; expected facades|facade-sources|external-skills|host-placements`);
+  fail(`unknown or missing subcommand "${subcommand ?? ""}"; expected facades|profile-projection|facade-sources|external-skills|host-placements`);
 }
 
 main(process.argv.slice(2));

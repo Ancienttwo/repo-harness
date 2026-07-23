@@ -209,6 +209,81 @@ describe("install-agent-fleet", () => {
     }
   });
 
+  test("an explicitly accepted user-managed fleet remains idempotent until an accepted file changes", () => {
+    const { root, home } = setupFakeHome("install-agent-fleet-user-managed");
+    try {
+      expect(runInstaller(home, FLEET_SOURCE_DIR).status).toBe(0);
+      const claudeTarget = join(home, ".claude/agents/deep-reasoner.md");
+      const codexTarget = join(home, ".codex/agents/explorer.toml");
+      const customClaude = readFileSync(claudeTarget, "utf-8")
+        .replaceAll("Opus at xhigh effort", "Opus at max effort")
+        .replace("effort: xhigh", "effort: max");
+      const customCodex = readFileSync(codexTarget, "utf-8")
+        .replace('model = "gpt-5.6-luna"', 'model = "gpt-5.6-terra"');
+      writeFileSync(claudeTarget, customClaude);
+      writeFileSync(codexTarget, customCodex);
+
+      const accepted = runInstaller(home, FLEET_SOURCE_DIR, ["--accept-user-managed"]);
+      expect(accepted.status).toBe(0);
+      expect(accepted.stdout).toContain("[fleet] user-managed receipt: accepted 2 files");
+      expect(readFileSync(claudeTarget, "utf-8")).toBe(customClaude);
+      expect(readFileSync(codexTarget, "utf-8")).toBe(customCodex);
+
+      const receiptPath = join(home, ".repo-harness/agent-fleet-user-managed.json");
+      const receipt = JSON.parse(readFileSync(receiptPath, "utf-8")) as {
+        protocol: number;
+        authority: string;
+        files: Array<{ path: string; sha256: string }>;
+      };
+      expect(receipt.protocol).toBe(1);
+      expect(receipt.authority).toBe("user-managed-agent-fleet");
+      expect(receipt.files.map((entry) => entry.path).sort()).toEqual([claudeTarget, codexTarget].sort());
+      expect(receipt.files.every((entry) => /^sha256:[a-f0-9]{64}$/.test(entry.sha256))).toBe(true);
+
+      const repeated = runInstaller(home, FLEET_SOURCE_DIR);
+      expect(repeated.status).toBe(0);
+      expect(repeated.stdout).toContain("[fleet] claude/deep-reasoner.md: user-managed");
+      expect(repeated.stdout).toContain("[fleet] codex/explorer.toml: user-managed");
+      expect(readFileSync(claudeTarget, "utf-8")).toBe(customClaude);
+      expect(readFileSync(codexTarget, "utf-8")).toBe(customCodex);
+
+      const changedAfterAcceptance = `${customCodex}# changed after acceptance\n`;
+      writeFileSync(codexTarget, changedAfterAcceptance);
+      const staleReceipt = runInstaller(home, FLEET_SOURCE_DIR);
+      expect(staleReceipt.status).not.toBe(0);
+      expect(staleReceipt.stdout).toContain("[fleet] codex/explorer.toml: drift");
+      expect(readFileSync(codexTarget, "utf-8")).toBe(changedAfterAcceptance);
+
+      const forced = runInstaller(home, FLEET_SOURCE_DIR, ["--force"]);
+      expect(forced.status).toBe(0);
+      expect(existsSync(receiptPath)).toBe(false);
+      expect(readFileSync(codexTarget, "utf-8")).toBe(
+        readFileSync(join(GOLDEN_CODEX_DIR, "explorer.toml"), "utf-8"),
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("--accept-user-managed rejects malformed or role-mismatched files without writing a receipt", () => {
+    const { root, home } = setupFakeHome("install-agent-fleet-user-managed-invalid");
+    try {
+      expect(runInstaller(home, FLEET_SOURCE_DIR).status).toBe(0);
+      const target = join(home, ".claude/agents/gatekeeper.md");
+      writeFileSync(
+        target,
+        readFileSync(target, "utf-8").replace("name: gatekeeper", "name: fast-worker"),
+      );
+
+      const accepted = runInstaller(home, FLEET_SOURCE_DIR, ["--accept-user-managed"]);
+      expect(accepted.status).not.toBe(0);
+      expect(accepted.stdout).toContain("[fleet] claude/gatekeeper.md: user-managed-invalid");
+      expect(existsSync(join(home, ".repo-harness/agent-fleet-user-managed.json"))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test("--force overwrites a drifted target back to generated content", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-force");
     try {

@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-23T17:38:47+0800 -->
+<!-- updated_at: 2026-07-23T19:42:27+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-07-23T17:38:47+0800
-> **Source Branch**: main
-> **Source Commit**: 7ef98272
+> **Updated At**: 2026-07-23T19:42:27+0800
+> **Source Branch**: codex/user-managed-agent-fleet
+> **Source Commit**: 8ab74bd0
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: release-candidate
+> **Reason**: user-managed-agent-fleet-fix
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -54,10 +54,18 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: clean
+- Summary: 9 changed/untracked path(s)
 
 ```
-(none)
+ M assets/reference-configs/external-tooling.md
+ M assets/templates/helpers/install-agent-fleet.sh
+ M docs/reference-configs/external-tooling.md
+ M scripts/install-agent-fleet.sh
+ M scripts/skill-surface-select.ts
+ M scripts/sync-codex-installed-copies.sh
+ M tasks/current.md
+ M tests/install-agent-fleet.test.ts
+ M tests/installed-copy-sync.test.ts
 ```
 
 ## Source Artifacts
