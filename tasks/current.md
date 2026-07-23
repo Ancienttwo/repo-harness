@@ -1,26 +1,26 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-24T07:15:48+0800 -->
+<!-- updated_at: 2026-07-24T07:40:51+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Active
-> **Updated At**: 2026-07-24T07:15:48+0800
+> **Status**: Idle
+> **Updated At**: 2026-07-24T07:40:51+0800
 > **Source Branch**: codex/release-0-11-1
-> **Source Commit**: 5bc3cc30
+> **Source Commit**: 5620794d
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: release-0-11-1-reviewed-candidate
+> **Reason**: archive-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Active
-- Active Plan: plans/plan-20260724-0633-release-0-11-1.md
-- Plan Status: Executing
-- Next Task: Record review/acceptance and close the release worktree into main.
+- Status: Idle
+- Active Plan: (none)
+- Plan Status: (none)
+- Next Task: (none)
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,8 +31,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- .: plans/plan-20260724-0633-release-0-11-1.md
-- .: active-worktree owner -> /Users/kito/Projects/repo-harness
+- (none)
 ## Active Sprint
 
 - Sprint: (none)
@@ -47,42 +46,27 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=`plans/archive/plan-20260712-2215-agent-fleet-specialists.md`
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Run targeted tests, required root checks, and bun run check:release on the frozen subject.
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Record review/acceptance and close the release worktree into main.
 
 ## Checks
 
-- status=(none), source=(none), file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 25 changed/untracked path(s)
+- Summary: 10 changed/untracked path(s)
 
 ```
- M .ai/harness/workflow-contract.json
- M .claude/.skill-version
- M README.es.md
- M README.fr.md
- M README.ja.md
- M README.md
- M README.zh-CN.md
- M assets/skill-version.json
- M assets/templates/helpers/ship-worktrees.sh
- M assets/workflow-contract.v1.json
- M docs/CHANGELOG.md
- M package.json
- M plans/plan-20260724-0633-release-0-11-1.md
- M scripts/lib/project-init-lib.sh
- M scripts/ship-worktrees.sh
- M src/core/adoption/gitignore-plan.ts
- M src/effects/review/diff-fingerprint.ts
- M tasks/contracts/20260724-0633-release-0-11-1.contract.md
- M tasks/current.md
- M tasks/notes/20260724-0633-release-0-11-1.notes.md
- M tests/cli/adoption-plan.test.ts
- M tests/review-freshness.test.ts
- M tests/unit/closeout-runner-guardrails.test.ts
- M tests/workflow-contract.test.ts
-?? deploy/release-checklists/260724-repo-harness-0.11.1.md
+ D plans/plan-20260724-0633-release-0-11-1.md
+ D tasks/contracts/20260724-0633-release-0-11-1.contract.md
+ D tasks/notes/20260724-0633-release-0-11-1.notes.md
+ D tasks/reviews/20260724-0633-release-0-11-1.review.md
+ M tasks/todos.md
+?? plans/archive/plan-20260724-0633-release-0-11-1.md
+?? tasks/archive/contract-20260724-0740-release-0-11-1.md
+?? tasks/archive/notes-20260724-0740-release-0-11-1.md
+?? tasks/archive/review-20260724-0740-release-0-11-1.md
+?? tasks/archive/todo-20260724-0740-release-0-11-1.md
 ```
 
 ## Source Artifacts
