@@ -15,9 +15,7 @@
       ],
       "profiles": [
         "minimal",
-        "standard",
-        "product-planning",
-        "strict"
+        "full"
       ],
       "discoverability": "always",
       "component": "cli",
@@ -53,9 +51,8 @@
         "codex"
       ],
       "profiles": [
-        "standard",
-        "product-planning",
-        "strict"
+        "minimal",
+        "full"
       ],
       "discoverability": "profile-facade",
       "component": "adaptive-workflow",
@@ -74,9 +71,8 @@
         "codex"
       ],
       "profiles": [
-        "standard",
-        "product-planning",
-        "strict"
+        "minimal",
+        "full"
       ],
       "discoverability": "profile-facade",
       "component": "scope-worktree-check-guards",
@@ -95,7 +91,7 @@
         "codex"
       ],
       "profiles": [
-        "product-planning"
+        "full"
       ],
       "discoverability": "profile-facade",
       "component": "planning-integrations",
@@ -114,7 +110,7 @@
         "codex"
       ],
       "profiles": [
-        "strict"
+        "full"
       ],
       "discoverability": "profile-facade",
       "component": "release-deployment-gates",
@@ -150,13 +146,13 @@
         "codex"
       ],
       "profiles": [
-        "strict"
+        "full"
       ],
       "discoverability": "cross-model",
       "component": "cross-model-acceptance",
       "requires": [],
       "mutatesRepoByDefault": false,
-      "summary": "Host-aware opposite-provider review skill: deterministic scope capture, provider invocation, timeout, and transcript recovery live in Core/Effects/CLI; the Skill owns mode selection (Claude vs. Codex) and finding interpretation only. Installed on both hosts for strict.",
+      "summary": "Host-aware opposite-provider review skill: deterministic scope capture, provider invocation, timeout, and transcript recovery live in Core/Effects/CLI; the Skill owns mode selection (Claude vs. Codex) and finding interpretation only. Installed on both hosts for full.",
       "retirementCandidate": null
     },
     {
@@ -170,7 +166,7 @@
       "component": "non-projected-judge",
       "requires": [],
       "mutatesRepoByDefault": false,
-      "summary": "Classification-only entry for the strict-profile discovery matrix's 'merge-gate on gatekeeper host' row. repo-harness ships no merge-gate SKILL.md and ships no runtime projection for it; empty hosts/profiles keep this entry non-selectable by every catalog selector. See docs/reference-configs/external-tooling.md for the authoritative statement that runtime setup installs no merge-gate skill.",
+      "summary": "Classification-only entry for the full-profile discovery matrix's 'merge-gate on gatekeeper host' row. repo-harness ships no merge-gate SKILL.md and ships no runtime projection for it; empty hosts/profiles keep this entry non-selectable by every catalog selector. See docs/reference-configs/external-tooling.md for the authoritative statement that runtime setup installs no merge-gate skill.",
       "retirementCandidate": null
     },
     {
@@ -187,7 +183,7 @@
       "component": "host-adapters",
       "requires": [],
       "mutatesRepoByDefault": true,
-      "summary": "Canonical rule owner for repo-harness ChatGPT integration: Oracle-first browser/GPT Pro consult and continuation, MCP Connector setup, MCP bridge planning handoff, and Connector invocation read-back evidence. Additive only after an explicit ChatGPT setup action; never implied by product-planning or any other profile.",
+      "summary": "Canonical rule owner for repo-harness ChatGPT integration: Oracle-first browser/GPT Pro consult and continuation, MCP Connector setup, MCP bridge planning handoff, and Connector invocation read-back evidence. Additive only after an explicit ChatGPT setup action; never implied by either install profile.",
       "retirementCandidate": null
     },
     {
@@ -199,7 +195,7 @@
         "codex"
       ],
       "profiles": [
-        "strict"
+        "full"
       ],
       "discoverability": "cross-model",
       "component": "adaptive-workflow",
@@ -218,8 +214,7 @@
         "codex"
       ],
       "profiles": [
-        "product-planning",
-        "strict"
+        "full"
       ],
       "discoverability": "external-marketplace",
       "component": "adaptive-workflow",
@@ -238,8 +233,7 @@
         "codex"
       ],
       "profiles": [
-        "product-planning",
-        "strict"
+        "full"
       ],
       "discoverability": "external-marketplace",
       "component": "adaptive-workflow",
@@ -258,8 +252,7 @@
         "codex"
       ],
       "profiles": [
-        "product-planning",
-        "strict"
+        "full"
       ],
       "discoverability": "external-marketplace",
       "component": "adaptive-workflow",
@@ -278,8 +271,7 @@
         "codex"
       ],
       "profiles": [
-        "product-planning",
-        "strict"
+        "full"
       ],
       "discoverability": "external-marketplace",
       "component": "adaptive-workflow",
@@ -298,8 +290,7 @@
         "codex"
       ],
       "profiles": [
-        "product-planning",
-        "strict"
+        "full"
       ],
       "discoverability": "external-marketplace",
       "component": "adaptive-workflow",
@@ -311,33 +302,20 @@
   ],
   "expectedProjections": {
     "facadesByProfile": {
-      "minimal": [],
-      "standard": [
+      "minimal": [
         "repo-harness-plan",
         "repo-harness-check"
       ],
-      "product-planning": [
+      "full": [
         "repo-harness-plan",
         "repo-harness-check",
-        "repo-harness-product"
-      ],
-      "strict": [
-        "repo-harness-plan",
-        "repo-harness-check",
+        "repo-harness-product",
         "repo-harness-ship"
       ]
     },
     "externalSkillsByProfile": {
       "minimal": [],
-      "standard": [],
-      "product-planning": [
-        "think",
-        "hunt",
-        "check",
-        "health",
-        "mermaid"
-      ],
-      "strict": [
+      "full": [
         "think",
         "hunt",
         "check",
@@ -350,15 +328,7 @@
         "claude": [],
         "codex": []
       },
-      "standard": {
-        "claude": [],
-        "codex": []
-      },
-      "product-planning": {
-        "claude": [],
-        "codex": []
-      },
-      "strict": {
+      "full": {
         "claude": [
           "repo-harness-cross-review"
         ],

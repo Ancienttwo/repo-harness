@@ -34,7 +34,7 @@ root prompt concise; this file owns the detailed routing.
 Use these canonical packages when the work is about installing, migrating,
 repairing, planning, or verifying this repo-local harness. `assets/skill-commands/manifest.json`
 is the runtime discovery authority for which profile installs which package;
-see [external tooling](external-tooling.md) for the strict-profile
+see [external tooling](external-tooling.md) for the full-profile
 cross-review/merge-gate rows.
 
 | Work type | Command | Boundary |
@@ -53,7 +53,7 @@ cross-review/merge-gate rows.
 | Check deploy and ops config | `repo-harness-check` (deploy-readiness reference) | Read-only deploy/_ops readiness check without publishing |
 | Fix broken current harness behavior | `repo-harness-setup` (repair mode) | Task sync, hook routing, handoff, context, policy, or helper drift |
 | Verify readiness | `repo-harness-check` | Workflow gates, task sync, inspector, migration dry-run, and readiness yellow flags |
-| Independent cross-model review | `repo-harness-cross-review` | Host-aware Claude/Codex provider modes; installed on both hosts for strict; never produces a merge-gate receipt |
+| Independent cross-model review | `repo-harness-cross-review` | Host-aware Claude/Codex provider modes; installed on both hosts for full; never produces a merge-gate receipt |
 | Generate an upper-layer PRD | `repo-harness-product` (PRD mode) | `$geju` direction pass, Claude-first `claude -p --model opus` drafting, Codex fallback only when needed, PRD in `plans/prds/*.prd.md`; geju thesis/falsifier are pre-contract only and freeze into a delegated contract's `## Why`/`## Falsifier` |
 | Plan and run a program-level sprint | `repo-harness-product` (Sprint mode) | Upper-layer PRD in `plans/prds/`, sprint backlog in `plans/sprints/`; each row expands through `$think` before plan -> contract -> worktree |
 | Prepare a bounded native goal session | `repo-harness-product` (Goal mode) | Codex/Claude `/goal` prompt from detailed PRD or Sprint artifacts; stops to request those documents when missing |

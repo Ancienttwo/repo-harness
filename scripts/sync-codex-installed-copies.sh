@@ -31,9 +31,9 @@ if [[ -n "$CLAUDE_SKILLS_ROOT" ]]; then
   CLAUDE_SKILLS_ROOT="${CLAUDE_SKILLS_ROOT%/}"
 fi
 LINK_INSTALLED_COPIES="${AGENTIC_DEV_LINK_INSTALLED_COPIES:-}"
-INSTALL_PROFILE="${REPO_HARNESS_INSTALL_PROFILE:-minimal}"
+INSTALL_PROFILE="${REPO_HARNESS_INSTALL_PROFILE:-full}"
 case "$INSTALL_PROFILE" in
-  minimal|standard|product-planning|strict) ;;
+  minimal|full) ;;
   *)
     echo "[sync-installed] invalid REPO_HARNESS_INSTALL_PROFILE: $INSTALL_PROFILE" >&2
     exit 2

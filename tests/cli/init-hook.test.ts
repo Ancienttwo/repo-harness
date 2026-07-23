@@ -197,6 +197,94 @@ describe('init-hook command', () => {
     });
   });
 
+  test('accepts a complete profile-relative adapter count', () => {
+    withTempHome((home, repo) => {
+      mkdirSync(join(home, '.codex'), { recursive: true });
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+
+      const report = runInitHook({
+        cwd: repo,
+        target: 'codex',
+        env: { ...process.env, HOME: home },
+        statusReport: baseStatusReport({
+          managedEntryCount: 7,
+          expectedEntryCount: 7,
+        }),
+        doctorReport: baseDoctorReport(),
+        toolingReport: baseToolingReport(),
+      });
+
+      const adapter = report.checks.find((entry) => entry.id === 'status.adapter.codex');
+      const action = report.agent_actions.find((entry) => entry.id === 'adapter.codex.install');
+      expect(adapter?.status).toBe('ok');
+      expect(adapter?.detail).toContain('7/7 managed entries');
+      expect(action).toBeUndefined();
+    });
+  });
+
+  test('invalid installed profile state requires migration even when adapter count is complete', () => {
+    withTempHome((home, repo) => {
+      mkdirSync(join(home, '.codex'), { recursive: true });
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+      const statusReport = baseStatusReport();
+      statusReport.installedProfile = {
+        recorded: 'invalid',
+        kind: 'legacy_protocol',
+        error: 'legacy installed profile state requires explicit migration',
+        path: join(home, '.repo-harness', 'install-state.json'),
+      };
+
+      const report = runInitHook({
+        cwd: repo,
+        target: 'codex',
+        env: { ...process.env, HOME: home },
+        statusReport,
+        doctorReport: baseDoctorReport(),
+        toolingReport: baseToolingReport(),
+      });
+
+      const adapter = report.checks.find((entry) => entry.id === 'status.adapter.codex');
+      const migration = report.agent_actions.find((entry) => entry.id === 'install-profile.migrate');
+      expect(adapter?.status).toBe('needs_agent');
+      expect(adapter?.detail).toContain('legacy installed profile state');
+      expect(migration?.command).toBe(
+        'repo-harness install --migrate-profile-state --profile full --target codex',
+      );
+      expect(migration?.targets).toEqual([join(home, '.repo-harness', 'install-state.json')]);
+      expect(report.agent_actions.find((entry) => entry.id === 'adapter.codex.install')).toBeUndefined();
+    });
+  });
+
+  test('corrupt installed profile state requires manual repair without an inapplicable command', () => {
+    withTempHome((home, repo) => {
+      mkdirSync(join(home, '.codex'), { recursive: true });
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+      const statusReport = baseStatusReport();
+      statusReport.installedProfile = {
+        recorded: 'invalid',
+        kind: 'corrupt_current',
+        error: 'invalid installed profile state',
+        path: join(home, '.repo-harness', 'install-state.json'),
+      };
+
+      const report = runInitHook({
+        cwd: repo,
+        target: 'codex',
+        env: { ...process.env, HOME: home },
+        statusReport,
+        doctorReport: baseDoctorReport(),
+        toolingReport: baseToolingReport(),
+      });
+
+      expect(report.checks.find((entry) => entry.id === 'status.adapter.codex')?.status).toBe('needs_agent');
+      const repair = report.agent_actions.find((entry) => entry.id === 'install-profile.repair');
+      expect(repair?.command).toBeUndefined();
+      expect(repair?.targets).toEqual([join(home, '.repo-harness', 'install-state.json')]);
+      expect(report.agent_actions.find((entry) => entry.id === 'install-profile.migrate')).toBeUndefined();
+      expect(report.agent_actions.find((entry) => entry.id === 'adapter.codex.install')).toBeUndefined();
+    });
+  });
+
   test('turns stale CLI advisory into an Agent update action', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });

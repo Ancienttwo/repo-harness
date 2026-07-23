@@ -92,6 +92,7 @@ describe('init command global runtime bootstrap', () => {
 
       const result = runGlobalRuntimeSetup({
         cwd: repo,
+        profile: 'minimal',
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
@@ -241,7 +242,7 @@ describe('init command global runtime bootstrap', () => {
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
-        profile: 'strict',
+        profile: 'full',
         externalSkills: true,
         codegraph: true,
         brainRoot: join(home, 'brain'),
@@ -363,8 +364,8 @@ describe('init command global runtime bootstrap', () => {
     }
   });
 
-  test('strict installs bundled cross-review capability when external marketplace skills are disabled', () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-strict-cross-review-'));
+  test('full installs bundled cross-review capability when external marketplace skills are disabled', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-full-cross-review-'));
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
     try {
@@ -375,7 +376,7 @@ describe('init command global runtime bootstrap', () => {
         sourceRoot: ROOT,
         cwd: repo,
         target: 'claude',
-        profile: 'strict',
+        profile: 'full',
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
@@ -395,8 +396,8 @@ describe('init command global runtime bootstrap', () => {
     }
   });
 
-  test('product-planning marketplace skills do not install the Strict-only cross-review capability', () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-planning-no-cross-review-'));
+  test('minimal can install explicitly requested marketplace skills without adding full-only cross-review', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-minimal-no-cross-review-'));
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
     const fakeBin = join(tmp, 'bin');
@@ -426,7 +427,7 @@ exit 0
         sourceRoot: ROOT,
         cwd: repo,
         target: 'claude',
-        profile: 'product-planning',
+        profile: 'minimal',
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
@@ -449,7 +450,7 @@ exit 0
     }
   });
 
-  test('product-planning refuses a partial unowned host skill projection', () => {
+  test('full refuses a partial unowned host skill projection', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-partial-skill-'));
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
@@ -470,7 +471,7 @@ exit 0
         sourceRoot: ROOT,
         cwd: repo,
         target: 'codex',
-        profile: 'product-planning',
+        profile: 'full',
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
@@ -740,14 +741,14 @@ exit 0
       mkdirSync(fakeBin, { recursive: true });
       mkdirSync(join(home, '.repo-harness'), { recursive: true });
       writeFileSync(join(home, '.repo-harness', 'install-state.json'), `${JSON.stringify({
-        protocol: 1,
-        profile: 'strict',
+        protocol: 2,
+        profile: 'full',
         components: [
           'cli', 'effective-state', 'scope-worktree-check-guards', 'handoff', 'host-adapters',
-          'adaptive-workflow', 'codegraph-conditional', 'agent-fleet', 'verifier',
-          'cross-model-acceptance', 'release-deployment-gates',
+          'adaptive-workflow', 'codegraph-conditional', 'planning-integrations',
+          'agent-fleet', 'verifier', 'cross-model-acceptance', 'release-deployment-gates',
         ],
-        transaction_id: 'existing-strict-install',
+        transaction_id: 'existing-full-install',
         applied_at: '2026-07-14T00:00:00.000Z',
         ownership_manifest: [],
         previous: null,
@@ -781,8 +782,8 @@ exit 0
       const result = JSON.parse(res.stdout);
       expect(readFileSync(bunLog, 'utf-8')).toContain('add -g repo-harness@latest');
       expect(result.steps.find((step: { step: string }) => step.step === 'install agent fleet')?.status).toBe('ok');
-      expect(result.steps.find((step: { step: string }) => step.step === 'configure brain root')?.status).toBe('skipped');
-      expect(existsSync(join(home, '.repo-harness', 'config.json'))).toBe(false);
+      expect(result.steps.find((step: { step: string }) => step.step === 'configure brain root')?.status).toBe('ok');
+      expect(existsSync(join(home, '.repo-harness', 'config.json'))).toBe(true);
       expect(existsSync(join(repo, '.ai'))).toBe(false);
       expect(existsSync(join(repo, 'tasks'))).toBe(false);
       expect(existsSync(join(repo, 'plans'))).toBe(false);
@@ -838,8 +839,8 @@ exit 0
     }
   });
 
-  test('CLI update preserves a recorded product-planning profile', () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-update-planning-profile-'));
+  test('CLI update rejects protocol-1 state until explicit migration', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-update-legacy-profile-'));
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
     const fakeBin = join(tmp, 'bin');
@@ -881,10 +882,9 @@ exit 0
         },
       });
 
-      expect(res.status).toBe(0);
-      const result = JSON.parse(res.stdout);
-      expect(result.steps.find((step: { step: string }) => step.step === 'configure brain root')?.status).toBe('ok');
-      expect(existsSync(join(home, '.repo-harness', 'config.json'))).toBe(true);
+      expect(res.status).not.toBe(0);
+      expect(res.stderr).toContain('--migrate-profile-state');
+      expect(existsSync(join(home, '.repo-harness', 'config.json'))).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -945,7 +945,7 @@ exit 0
     expect(res.stdout).toContain('Deprecated: use repo-harness adopt --repo <path>');
   });
 
-  test('CLI install defaults non-interactively to the minimal profile without optional ecosystems', () => {
+  test('CLI install defaults non-interactively to full with its selected optional ecosystems', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-install-non-tty-'));
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
@@ -958,8 +958,24 @@ exit 0
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       writeFakeCodegraph(fakeBin, codegraphLog);
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nif [[ " $* " == *" add -g "* ]]; then mkdir -p "$HOME/.bun/bin"; printf '#!/bin/sh\\n' > "$HOME/.bun/bin/repo-harness"; chmod +x "$HOME/.bun/bin/repo-harness"; fi\nexit 0\n`);
-      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nif [[ "\${1:-}" == "-" ]]; then exec "${process.execPath}" "$@"; fi\nif [[ " $* " == *" add -g "* ]]; then mkdir -p "$HOME/.bun/bin"; printf '#!/bin/sh\\n' > "$HOME/.bun/bin/repo-harness"; chmod +x "$HOME/.bun/bin/repo-harness"; fi\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash
+printf '%s\\n' "$*" >> "${bunxLog}"
+if [[ "\${1:-}" == "skills" && "\${2:-}" == "add" ]]; then
+  if [[ " $* " == *" tw93/Waza "* ]]; then
+    names='think hunt check health'
+    mkdir -p "$HOME/.agents/rules"
+    for rule in anti-patterns.md chinese.md durable-context.md english.md; do printf '# rule\\n' > "$HOME/.agents/rules/$rule"; done
+  else
+    names='mermaid'
+  fi
+  for skill in $names; do
+    mkdir -p "$HOME/.agents/skills/$skill"
+    printf '# %s\\n' "$skill" > "$HOME/.agents/skills/$skill/SKILL.md"
+  done
+fi
+exit 0
+`);
 
       // spawnSync's stdio pipes are never a TTY (isTTY is undefined), so this
       // exercises the non-interactive branch of runGlobalRuntimeBootstrap.
@@ -988,9 +1004,11 @@ exit 0
       );
 
       expect(res.status).toBe(0);
+      expect(res.stdout).toContain('[profile] full');
       expect(res.stdout).toContain('install repo-harness CLI');
-      expect(existsSync(bunxLog)).toBe(false);
-      expect(existsSync(codegraphLog)).toBe(false);
+      expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add tw93/Waza');
+      expect(readFileSync(codegraphLog, 'utf-8')).toContain('codegraph install');
+      expect(JSON.parse(readFileSync(join(home, '.repo-harness', 'install-state.json'), 'utf-8')).profile).toBe('full');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

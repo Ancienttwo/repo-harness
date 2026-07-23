@@ -12,7 +12,12 @@ import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { ALL_TARGETS } from '../installer/targets/registry';
 import { ROUTES, routesForHost } from '../hook/route-registry';
-import { isManagedEntry, type HooksByEvent } from '../installer/managed-entries';
+import {
+  buildManagedHooks,
+  isManagedEntry,
+  type HookHost,
+  type HooksByEvent,
+} from '../installer/managed-entries';
 import { readJsonOrEmpty } from '../installer/shared';
 import type { Location } from '../installer/types';
 import {
@@ -20,6 +25,7 @@ import {
   readInstalledProfile,
   type InstallComponent,
   type InstallProfile,
+  readLegacyInstalledProfileForMigration,
 } from '../installer/install-profile';
 
 function packageVersion(): string {
@@ -59,12 +65,16 @@ export interface StatusReport {
   installedProfile:
     | { recorded: true; profile: InstallProfile; components: readonly InstallComponent[] }
     | { recorded: false }
-    // install-state.json exists but fails validation (readInstalledProfile's
-    // own protocol/profile/ownership checks, or a components field that is
-    // missing/not an array) -- a genuinely corrupt install, which must stay
-    // distinguishable from "never installed" (recorded: false) for a status
-    // command whose purpose is diagnosing install state.
-    | { recorded: 'invalid'; error: string; path: string };
+    // install-state.json exists but normal protocol-2 validation rejected it.
+    // A valid protocol-1 file is explicitly migratable; malformed legacy or
+    // current state is not, and must not receive a migration command that is
+    // guaranteed to fail.
+    | {
+        recorded: 'invalid';
+        kind: 'legacy_protocol' | 'corrupt_current';
+        error: string;
+        path: string;
+      };
 }
 
 function resolveRepoRoot(cwd: string): string | null {
@@ -93,6 +103,15 @@ function countManagedEntries(filePath: string): number {
   }
 }
 
+function expectedManagedEntryCount(
+  host: HookHost,
+  installedProfile: StatusReport['installedProfile'],
+): number {
+  if (installedProfile.recorded !== true) return routesForHost(host).length;
+  return Object.values(buildManagedHooks(host, installedProfile.profile))
+    .reduce((count, entries) => count + entries.length, 0);
+}
+
 function readInstalledProfileForStatus(): StatusReport['installedProfile'] {
   const statePath = installProfileStatePath();
   try {
@@ -101,18 +120,22 @@ function readInstalledProfileForStatus(): StatusReport['installedProfile'] {
     if (!Array.isArray(state.components)) {
       return {
         recorded: 'invalid',
+        kind: 'corrupt_current',
         error: `installed profile state has a malformed components field (expected an array): ${statePath}`,
         path: statePath,
       };
     }
     return { recorded: true, profile: state.profile, components: state.components };
   } catch (error) {
-    // install-state.json exists but readInstalledProfile's own validation
-    // (protocol, profile enum, ownership_manifest shape) rejected it: a
-    // genuinely corrupt install, not "never installed" -- report it as such
-    // rather than crashing or silently conflating the two on a read-only
-    // status command.
-    return { recorded: 'invalid', error: (error as Error).message, path: statePath };
+    let kind: 'legacy_protocol' | 'corrupt_current' = 'corrupt_current';
+    try {
+      readLegacyInstalledProfileForMigration();
+      kind = 'legacy_protocol';
+    } catch {
+      // Only a fully valid protocol-1 state is migratable. Malformed JSON,
+      // malformed legacy state, and invalid protocol-2 state stay diagnostic.
+    }
+    return { recorded: 'invalid', kind, error: (error as Error).message, path: statePath };
   }
 }
 
@@ -122,10 +145,11 @@ export function runStatus(cwd: string = process.cwd()): StatusReport {
     byEvent[r.event] = (byEvent[r.event] ?? 0) + 1;
   }
 
+  const installedProfile = readInstalledProfileForStatus();
   const targets: StatusReport['targets'] = [];
   for (const target of ALL_TARGETS) {
     if (!target.supportsLocation('global')) continue;
-    const expectedEntryCount = routesForHost(target.id).length;
+    const expectedEntryCount = expectedManagedEntryCount(target.id, installedProfile);
     const det = target.detect('global');
     const managedEntryCount = det.configPath ? countManagedEntries(det.configPath) : 0;
     targets.push({
@@ -156,7 +180,7 @@ export function runStatus(cwd: string = process.cwd()): StatusReport {
     targets,
     repo,
     routes: { total: ROUTES.length, byEvent },
-    installedProfile: readInstalledProfileForStatus(),
+    installedProfile,
   };
 }
 

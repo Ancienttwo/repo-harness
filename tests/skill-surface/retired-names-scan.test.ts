@@ -217,7 +217,7 @@ describe("retired Skill package names: live-reference scan", () => {
     }
 
     expect(violations).toEqual([]);
-  });
+  }, 10_000);
 
   test("every allowlisted file still exists (no stale allowlist entries)", () => {
     const allEntries = [

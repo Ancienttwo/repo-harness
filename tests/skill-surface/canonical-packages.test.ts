@@ -251,18 +251,15 @@ describe("canonical packages: activation proof — present in manifest v2 and co
     }
   });
 
-  test("repo-harness-plan is discovered by standard, product-planning, and strict, not minimal", () => {
-    expect(facadesForProfile(catalog, "minimal")).not.toContain("repo-harness-plan");
-    for (const profile of ["standard", "product-planning", "strict"] as const) {
+  test("repo-harness-plan is discovered by both profiles", () => {
+    for (const profile of SKILL_SURFACE_PROFILES) {
       expect(facadesForProfile(catalog, profile)).toContain("repo-harness-plan");
     }
   });
 
-  test("repo-harness-product is discovered only by product-planning", () => {
-    expect(facadesForProfile(catalog, "product-planning")).toContain("repo-harness-product");
-    for (const profile of ["minimal", "standard", "strict"] as const) {
-      expect(facadesForProfile(catalog, profile)).not.toContain("repo-harness-product");
-    }
+  test("repo-harness-product is discovered only by full", () => {
+    expect(facadesForProfile(catalog, "full")).toContain("repo-harness-product");
+    expect(facadesForProfile(catalog, "minimal")).not.toContain("repo-harness-product");
   });
 
   test("no selector output still names the old disambiguating staging directory repo-harness-plan-canonical", () => {

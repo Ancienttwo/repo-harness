@@ -71,9 +71,9 @@ describe("repo-harness-chatgpt canonical package: router frontmatter and size", 
     expect(body).not.toMatch(/^## Protocol$/m);
   });
 
-  test("router states product-planning independence as a content rule", () => {
+  test("router states install-profile independence as a content rule", () => {
     const body = readSkill().toLowerCase();
-    expect(body).toContain("product planning never implies");
+    expect(body).toContain("never implied by either install profile");
   });
 });
 
@@ -136,9 +136,10 @@ describe("repo-harness-chatgpt canonical package: activation proof -- live in ma
     }
   });
 
-  test("product-planning does not install ChatGPT (independence proven against the live catalog, not just router prose)", () => {
-    expect(facadesForProfile(catalog, "product-planning")).not.toContain(PACKAGE_DIR);
-    expect(hostSkillPlacements(catalog, "product-planning")).toEqual({ claude: [], codex: [] });
+  test("full does not install ChatGPT (independence proven against the live catalog, not just router prose)", () => {
+    expect(facadesForProfile(catalog, "full")).not.toContain(PACKAGE_DIR);
+    expect(hostSkillPlacements(catalog, "full").claude).not.toContain(PACKAGE_DIR);
+    expect(hostSkillPlacements(catalog, "full").codex).not.toContain(PACKAGE_DIR);
   });
 
   test("the retired GPT Pro facades and static ChatGPT source dirs are fully retired: absent from packages[], recorded in retiredPackages, and deleted from disk", () => {

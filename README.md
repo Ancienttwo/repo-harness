@@ -279,18 +279,21 @@ npx -y repo-harness@latest install
 ### 2. Bootstrap the host runtime once
 
 ```bash
-repo-harness install --profile minimal
+repo-harness install
 ```
 
 `install` is the first-run global bootstrap path. It installs the current npm
 package as the global CLI, refreshes repo-harness skill aliases, installs
-user-level hook adapters, and records an explicit install profile. `minimal`
-is the interactive and non-interactive default; it does not install Waza,
-cross-review skills, a brain root, or CodeGraph. Use `standard`,
-`product-planning`, or `strict` only when those surfaces are wanted. The command
-is idempotent. `--dry-run --json` lists components to install, skip, and remove;
-`--state --json` reads the effective installed state; `--rollback` restores the
-previous profile transaction. See
+user-level hook adapters, and records an explicit install profile. The profile
+vocabulary is exactly `minimal|full`: `full` is the default and projects all 11
+Codex routes plus planning, agent-fleet, verifier, cross-model, and release
+surfaces; explicit `--profile minimal` projects the bounded 7-route baseline.
+The retired 5-route tier is not available. The command is idempotent.
+`--dry-run --json` lists components to install, skip, and remove; `--state
+--json` reads the effective installed state; `--rollback` restores the previous
+protocol-2 profile transaction. A protocol-1 state must be replaced explicitly
+with `--migrate-profile-state --profile minimal|full`; normal reads never
+reinterpret its old `minimal` meaning. See
 [`docs/reference-configs/install-profiles.md`](docs/reference-configs/install-profiles.md).
 
 It does not apply repo-local workflow files to the current directory.
@@ -695,13 +698,13 @@ execution:
 - Release: `repo-harness-ship`
 - Architecture: `repo-harness-architecture`
 - Cross-model review: `repo-harness-cross-review` (host-aware Claude/Codex
-  provider modes; installed on both hosts for the strict profile)
+  provider modes; installed on both hosts for the full profile)
 - Exact-candidate final gate: `merge-gate` (classification-only row in the
-  strict-profile discovery matrix; repo-harness ships no merge-gate Skill —
+  full-profile discovery matrix; repo-harness ships no merge-gate Skill —
   see [external tooling](docs/reference-configs/external-tooling.md))
 - ChatGPT integration: `repo-harness-chatgpt` (Oracle browser/GPT Pro consult
   and continuation, MCP Connector setup, bridge handoff, and read-back
-  evidence; explicit setup only, never implied by product planning)
+  evidence; explicit setup only, never implied by either install profile)
 
 The planning chain is intentionally layered:
 

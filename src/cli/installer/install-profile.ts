@@ -59,8 +59,10 @@ function loadSkillSurfaceCatalog(): SkillSurfaceCatalog {
   return resolution.catalog;
 }
 
-export const INSTALL_PROFILES = ['minimal', 'standard', 'product-planning', 'strict'] as const;
+export const INSTALL_PROFILES = ['minimal', 'full'] as const;
 export type InstallProfile = (typeof INSTALL_PROFILES)[number];
+export const LEGACY_INSTALL_PROFILES = ['minimal', 'standard', 'product-planning', 'strict'] as const;
+export type LegacyInstallProfile = (typeof LEGACY_INSTALL_PROFILES)[number];
 
 // InstallComponent and PROFILE_COMPONENTS now live in
 // src/core/skill-surface/profile-components.ts (the pure catalog core owns
@@ -71,13 +73,23 @@ export type { InstallComponent };
 export { PROFILE_COMPONENTS };
 
 export interface InstalledProfileState {
-  readonly protocol: 1;
+  readonly protocol: 2;
   readonly profile: InstallProfile;
   readonly components: readonly InstallComponent[];
   readonly transaction_id: string;
   readonly applied_at: string;
   readonly ownership_manifest: readonly ManagedInstallSurface[];
   readonly previous: Omit<InstalledProfileState, 'previous'> | null;
+}
+
+export interface LegacyInstalledProfileState {
+  readonly protocol: 1;
+  readonly profile: LegacyInstallProfile;
+  readonly components: readonly InstallComponent[];
+  readonly transaction_id: string;
+  readonly applied_at: string;
+  readonly ownership_manifest: readonly ManagedInstallSurface[];
+  readonly previous: Omit<LegacyInstalledProfileState, 'previous'> | null;
 }
 
 export interface ManagedInstallSurface {
@@ -118,7 +130,7 @@ export interface InstallHostTransaction {
 }
 
 export interface InstallProfilePlan {
-  readonly protocol: 1;
+  readonly protocol: 2;
   readonly requested_profile: InstallProfile;
   readonly current_profile: InstallProfile | null;
   readonly install: readonly InstallComponent[];
@@ -127,7 +139,32 @@ export interface InstallProfilePlan {
   readonly state_path: string;
 }
 
+export interface InstallProfileMigrationPlan extends InstallProfilePlan {
+  readonly migration: {
+    readonly from_protocol: 1;
+    readonly from_profile: LegacyInstallProfile;
+    readonly to_protocol: 2;
+    readonly to_profile: InstallProfile;
+  };
+}
+
 const ALL_COMPONENTS = [...new Set(Object.values(PROFILE_COMPONENTS).flat())] as InstallComponent[];
+const LEGACY_PROFILE_COMPONENTS: Readonly<Record<LegacyInstallProfile, readonly InstallComponent[]>> = Object.freeze({
+  minimal: ['cli', 'effective-state', 'scope-worktree-check-guards', 'handoff', 'host-adapters'],
+  standard: [
+    'cli', 'effective-state', 'scope-worktree-check-guards', 'handoff', 'host-adapters',
+    'adaptive-workflow', 'codegraph-conditional',
+  ],
+  'product-planning': [
+    'cli', 'effective-state', 'scope-worktree-check-guards', 'handoff', 'host-adapters',
+    'adaptive-workflow', 'codegraph-conditional', 'planning-integrations',
+  ],
+  strict: [
+    'cli', 'effective-state', 'scope-worktree-check-guards', 'handoff', 'host-adapters',
+    'adaptive-workflow', 'codegraph-conditional', 'agent-fleet', 'verifier',
+    'cross-model-acceptance', 'release-deployment-gates',
+  ],
+});
 const OWNER_MARKER = '.repo-harness-owner.json';
 const MANAGED_HOOK_MARKER = 'repo-harness-managed-hook-v1';
 const MANAGED_HOOK_PREFIX = `: ${MANAGED_HOOK_MARKER}; `;
@@ -641,12 +678,11 @@ function removeOwnedSkillLockEntries(home: string, skillNames: ReadonlySet<strin
   renameSync(temp, lockPath);
 }
 
-export function prepareInstallProfileSwitch(
+function removeRetiredOwnedSurfaces(
   profile: InstallProfile,
-  env: NodeJS.ProcessEnv = process.env,
+  current: Pick<InstalledProfileState, 'ownership_manifest'> | Pick<LegacyInstalledProfileState, 'ownership_manifest'>,
+  env: NodeJS.ProcessEnv,
 ): readonly string[] {
-  const current = readInstalledProfile(env);
-  if (!current || current.profile === profile) return [];
   const desired = new Set(PROFILE_COMPONENTS[profile]);
   const retired = current.ownership_manifest.filter((surface) => (
     surface.components.length > 0 && surface.components.every((component) => !desired.has(component))
@@ -669,93 +705,198 @@ export function prepareInstallProfileSwitch(
   return unique.map(({ path }) => path);
 }
 
+export function prepareInstallProfileSwitch(
+  profile: InstallProfile,
+  env: NodeJS.ProcessEnv = process.env,
+): readonly string[] {
+  const current = readInstalledProfile(env);
+  if (!current || current.profile === profile) return [];
+  return removeRetiredOwnedSurfaces(profile, current, env);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function componentsMatch(
+  actual: readonly unknown[],
+  expected: readonly InstallComponent[],
+): boolean {
+  return actual.length === expected.length
+    && actual.every((component, index) => component === expected[index]);
+}
+
+function validateManagedSurface(
+  raw: unknown,
+  env: NodeJS.ProcessEnv,
+): raw is ManagedInstallSurface {
+  if (!isRecord(raw) || !Array.isArray(raw.components)) return false;
+  const allowedPaths = new Set(installProfileHostMutationPaths(env));
+  return (
+    raw.components.every((component) => ALL_COMPONENTS.includes(component as InstallComponent))
+    && raw.authority === 'repo-harness-install-transaction'
+    && raw.removal === 'managed-surfaces-only'
+    && typeof raw.path === 'string'
+    && allowedPaths.has(raw.path)
+    && ['directory-copy', 'symlink', 'managed-file'].includes(String(raw.type))
+    && (raw.content_hash === null || typeof raw.content_hash === 'string')
+    && (raw.managed_marker === null || typeof raw.managed_marker === 'string')
+    && (raw.symlink_target === null || typeof raw.symlink_target === 'string')
+    && (raw.type === 'symlink'
+      ? raw.symlink_target !== null && raw.content_hash === null && raw.managed_marker === null
+      : raw.symlink_target === null && typeof raw.content_hash === 'string' && typeof raw.managed_marker === 'string')
+  );
+}
+
+function parseCurrentStateBase(
+  raw: unknown,
+  path: string,
+  env: NodeJS.ProcessEnv,
+  label: string,
+): Omit<InstalledProfileState, 'previous'> {
+  if (!isRecord(raw) || raw.protocol !== 2 || !INSTALL_PROFILES.includes(raw.profile as InstallProfile)) {
+    throw new Error(`${label}: ${path}`);
+  }
+  const profile = raw.profile as InstallProfile;
+  if (!Array.isArray(raw.components) || !componentsMatch(raw.components, PROFILE_COMPONENTS[profile])) {
+    throw new Error(`installed profile state components do not match profile ${profile}: ${path}`);
+  }
+  if (!Array.isArray(raw.ownership_manifest) || raw.ownership_manifest.some((surface) => !validateManagedSurface(surface, env))) {
+    throw new Error(`installed profile state has an invalid ownership surface; rerun repo-harness install --profile <minimal|full>: ${path}`);
+  }
+  if (typeof raw.transaction_id !== 'string' || typeof raw.applied_at !== 'string') {
+    throw new Error(`installed profile state has invalid metadata; rerun repo-harness install --profile <minimal|full>: ${path}`);
+  }
+  return {
+    protocol: 2,
+    profile,
+    components: PROFILE_COMPONENTS[profile],
+    transaction_id: raw.transaction_id,
+    applied_at: raw.applied_at,
+    ownership_manifest: raw.ownership_manifest,
+  };
+}
+
+function parseLegacyStateBase(
+  raw: unknown,
+  path: string,
+  env: NodeJS.ProcessEnv,
+  label: string,
+): Omit<LegacyInstalledProfileState, 'previous'> {
+  if (!isRecord(raw) || raw.protocol !== 1 || !LEGACY_INSTALL_PROFILES.includes(raw.profile as LegacyInstallProfile)) {
+    throw new Error(`${label}: ${path}`);
+  }
+  const profile = raw.profile as LegacyInstallProfile;
+  if (!Array.isArray(raw.components) || !componentsMatch(raw.components, LEGACY_PROFILE_COMPONENTS[profile])) {
+    throw new Error(`legacy installed profile state components do not match profile ${profile}: ${path}`);
+  }
+  if (!Array.isArray(raw.ownership_manifest) || raw.ownership_manifest.some((surface) => !validateManagedSurface(surface, env))) {
+    throw new Error(`legacy installed profile state has an invalid ownership surface: ${path}`);
+  }
+  if (typeof raw.transaction_id !== 'string' || typeof raw.applied_at !== 'string') {
+    throw new Error(`legacy installed profile state has invalid metadata: ${path}`);
+  }
+  return {
+    protocol: 1,
+    profile,
+    components: LEGACY_PROFILE_COMPONENTS[profile],
+    transaction_id: raw.transaction_id,
+    applied_at: raw.applied_at,
+    ownership_manifest: raw.ownership_manifest,
+  };
+}
+
 export function readInstalledProfile(env: NodeJS.ProcessEnv = process.env): InstalledProfileState | null {
   const path = installProfileStatePath(env);
   if (!existsSync(path)) return null;
-  const parsed = JSON.parse(readFileSync(path, 'utf-8')) as InstalledProfileState;
-  if (parsed.protocol !== 1 || !INSTALL_PROFILES.includes(parsed.profile)) {
-    throw new Error(`invalid installed profile state: ${path}`);
-  }
-  if (!Array.isArray(parsed.ownership_manifest)) {
-    throw new Error(`installed profile state has no ownership manifest; rerun repo-harness install --profile <profile>: ${path}`);
-  }
-  if (!Array.isArray(parsed.components)) {
-    throw new Error(`installed profile state has invalid components; rerun repo-harness install --profile <profile>: ${path}`);
-  }
-  if (typeof parsed.transaction_id !== 'string' || typeof parsed.applied_at !== 'string') {
-    throw new Error(`installed profile state has invalid metadata; rerun repo-harness install --profile <profile>: ${path}`);
-  }
-  const isLegacyManifest = (manifest: readonly unknown[]): boolean => manifest.length > 0 && manifest.every((rawEntry) => {
-    const entry = rawEntry as Record<string, unknown>;
-    return (
-    typeof entry.component === 'string'
-    && entry.authority === 'repo-harness-install-transaction'
-    && entry.removal === 'managed-surfaces-only'
-    && entry.path === undefined
+  const raw = JSON.parse(readFileSync(path, 'utf-8')) as unknown;
+  if (isRecord(raw) && raw.protocol === 1) {
+    throw new Error(
+      `legacy installed profile state requires explicit migration; run repo-harness install --migrate-profile-state --profile <minimal|full>: ${path}`,
     );
-  });
-  const invalidComponents = (profile: InstallProfile, components: readonly InstallComponent[]): boolean => {
-    const expected = PROFILE_COMPONENTS[profile];
-    return components.length !== expected.length
-      || components.some((component, index) => component !== expected[index]);
-  };
-  const allowedPaths = new Set(installProfileHostMutationPaths(env));
-  const invalidSurface = (surface: ManagedInstallSurface): boolean => (
-    !Array.isArray(surface.components)
-    || surface.components.some((component: unknown) => !ALL_COMPONENTS.includes(component as InstallComponent))
-    || surface.authority !== 'repo-harness-install-transaction'
-    || surface.removal !== 'managed-surfaces-only'
-    || typeof surface.path !== 'string'
-    || !allowedPaths.has(surface.path)
-    || !['directory-copy', 'symlink', 'managed-file'].includes(surface.type)
-    || (surface.content_hash !== null && typeof surface.content_hash !== 'string')
-    || (surface.managed_marker !== null && typeof surface.managed_marker !== 'string')
-    || (surface.symlink_target !== null && typeof surface.symlink_target !== 'string')
-    || (surface.type === 'symlink'
-      ? surface.symlink_target === null || surface.content_hash !== null || surface.managed_marker !== null
-      : surface.symlink_target !== null || surface.content_hash === null || surface.managed_marker === null)
-  );
-  const normalizedPrevious = (() => {
-    if (parsed.previous === null) return null;
-    const previous = parsed.previous;
-    if (
-      typeof previous !== 'object'
-      || Array.isArray(previous)
-      || previous.protocol !== 1
-      || !INSTALL_PROFILES.includes(previous.profile)
-      || !Array.isArray(previous.components)
-      || typeof previous.transaction_id !== 'string'
-      || typeof previous.applied_at !== 'string'
-      || !Array.isArray(previous.ownership_manifest)
-    ) {
-      throw new Error(`installed profile state has invalid previous state; rerun repo-harness install --profile <profile>: ${path}`);
-    }
-    if (isLegacyManifest(previous.ownership_manifest)) {
-      return { ...previous, components: PROFILE_COMPONENTS[previous.profile], ownership_manifest: [] };
-    }
-    if (invalidComponents(previous.profile, previous.components) || previous.ownership_manifest.some(invalidSurface)) {
-      throw new Error(`installed profile state has invalid previous state; rerun repo-harness install --profile <profile>: ${path}`);
-    }
-    return previous;
-  })();
-  if (isLegacyManifest(parsed.ownership_manifest)) {
-    // One-shot migration: old component labels never proved filesystem
-    // ownership. Preserve the validated profile history but claim no managed
-    // surface; the next successful sync writes concrete ownership proofs.
+  }
+  const current = parseCurrentStateBase(raw, path, env, 'invalid installed profile state');
+  const previousRaw = isRecord(raw) ? raw.previous : undefined;
+  if (previousRaw !== null && previousRaw !== undefined) {
     return {
-      ...parsed,
-      components: PROFILE_COMPONENTS[parsed.profile],
-      ownership_manifest: [],
-      previous: normalizedPrevious,
+      ...current,
+      previous: parseCurrentStateBase(
+        previousRaw,
+        path,
+        env,
+        'installed profile state has invalid previous state',
+      ),
     };
   }
-  if (invalidComponents(parsed.profile, parsed.components)) {
-    throw new Error(`installed profile state components do not match profile ${parsed.profile}: ${path}`);
+  if (previousRaw !== null) {
+    throw new Error(`installed profile state has invalid previous state: ${path}`);
   }
-  if (parsed.ownership_manifest.some(invalidSurface)) {
-    throw new Error(`installed profile state has an invalid ownership surface; rerun repo-harness install --profile <profile>: ${path}`);
+  return { ...current, previous: null };
+}
+
+export function readLegacyInstalledProfileForMigration(
+  env: NodeJS.ProcessEnv = process.env,
+): LegacyInstalledProfileState {
+  const path = installProfileStatePath(env);
+  if (!existsSync(path)) {
+    throw new Error(`no legacy installed profile state to migrate: ${path}`);
   }
-  return { ...parsed, previous: normalizedPrevious };
+  const raw = JSON.parse(readFileSync(path, 'utf-8')) as unknown;
+  if (isRecord(raw) && raw.protocol === 2) {
+    throw new Error(`installed profile state is already protocol 2; --migrate-profile-state is not applicable: ${path}`);
+  }
+  const current = parseLegacyStateBase(raw, path, env, 'invalid legacy installed profile state');
+  const previousRaw = isRecord(raw) ? raw.previous : undefined;
+  if (previousRaw !== null && previousRaw !== undefined) {
+    return {
+      ...current,
+      previous: parseLegacyStateBase(
+        previousRaw,
+        path,
+        env,
+        'legacy installed profile state has invalid previous state',
+      ),
+    };
+  }
+  if (previousRaw !== null) {
+    throw new Error(`legacy installed profile state has invalid previous state: ${path}`);
+  }
+  return { ...current, previous: null };
+}
+
+export function planLegacyInstallProfileMigration(
+  profile: InstallProfile,
+  env: NodeJS.ProcessEnv = process.env,
+): InstallProfileMigrationPlan {
+  const legacy = readLegacyInstalledProfileForMigration(env);
+  const desired = PROFILE_COMPONENTS[profile];
+  const installed = new Set(legacy.components);
+  const desiredSet = new Set(desired);
+  return {
+    protocol: 2,
+    requested_profile: profile,
+    current_profile: null,
+    install: desired.filter((component) => !installed.has(component)),
+    skip: desired.filter((component) => installed.has(component)),
+    remove: ALL_COMPONENTS.filter((component) => installed.has(component) && !desiredSet.has(component)),
+    state_path: installProfileStatePath(env),
+    migration: {
+      from_protocol: 1,
+      from_profile: legacy.profile,
+      to_protocol: 2,
+      to_profile: profile,
+    },
+  };
+}
+
+export function prepareLegacyInstallProfileMigration(
+  profile: InstallProfile,
+  env: NodeJS.ProcessEnv = process.env,
+): LegacyInstalledProfileState {
+  const legacy = readLegacyInstalledProfileForMigration(env);
+  removeRetiredOwnedSurfaces(profile, legacy, env);
+  rmSync(installProfileStatePath(env), { force: false });
+  return legacy;
 }
 
 function existing(paths: readonly string[]): string[] {
@@ -832,7 +973,7 @@ function probeInstalledComponents(
   // below, not a separate host-installed Skill directory.
   const handoffEvidence = canonicalEvidence(home, ['references/handoff.md']);
   const adaptiveEvidence = canonicalEvidence(home, ['src/core/workflow/profile.ts']);
-  const codegraphEvidence = state.profile === 'strict'
+  const codegraphEvidence = state.profile === 'full'
     ? executableEvidence('codegraph', env)
     : canonicalEvidence(home, ['src/cli/tools/codegraph.ts']);
   const probeExpectations = catalogProbeExpectations(loadSkillSurfaceCatalog());
@@ -911,7 +1052,7 @@ export function planInstallProfile(
   const installed = new Set(current?.components ?? []);
   const desiredSet = new Set(desired);
   return {
-    protocol: 1,
+    protocol: 2,
     requested_profile: profile,
     current_profile: current?.profile ?? null,
     install: desired.filter((component) => !installed.has(component)),
@@ -934,15 +1075,19 @@ export function applyInstallProfile(
   env: NodeJS.ProcessEnv = process.env,
   now = new Date(),
   transaction?: InstallHostTransaction,
+  migrationSource?: LegacyInstalledProfileState,
 ): { readonly plan: InstallProfilePlan; readonly state: InstalledProfileState } {
   const current = readInstalledProfile(env);
   const plan = planInstallProfile(profile, current, env);
   const desired = new Set(PROFILE_COMPONENTS[profile]);
   const discovered = discoverManagedSurfaces(profile, env);
-  const preserved = (current?.ownership_manifest ?? []).filter((surface) => (
+  const previousOwnership = migrationSource?.ownership_manifest ?? current?.ownership_manifest ?? [];
+  const preserved = previousOwnership.filter((surface) => (
     surface.components.every((component) => desired.has(component)) && surfaceIsCurrent(surface)
   ));
-  const transactionOwned = transaction ? transactionOwnedSurfaces(transaction, current) : [];
+  const transactionOwned = transaction
+    ? transactionOwnedSurfaces(transaction, migrationSource ?? current)
+    : [];
   const ownershipManifest = [...new Map(
     [...discovered, ...preserved, ...transactionOwned].map((surface) => [
       `${surface.path}\0${surface.managed_marker ?? surface.type}`,
@@ -952,7 +1097,7 @@ export function applyInstallProfile(
   const sameOwnership = current !== null
     && JSON.stringify(current.ownership_manifest) === JSON.stringify(ownershipManifest);
   const state: InstalledProfileState = {
-    protocol: 1,
+    protocol: 2,
     profile,
     components: PROFILE_COMPONENTS[profile],
     transaction_id: current?.profile === profile && plan.install.length === 0 && plan.remove.length === 0 && sameOwnership
@@ -962,7 +1107,7 @@ export function applyInstallProfile(
       ? current.applied_at
       : now.toISOString(),
     ownership_manifest: ownershipManifest,
-    previous: current ? {
+    previous: current && migrationSource === undefined ? {
       protocol: current.protocol,
       profile: current.profile,
       components: current.components,
@@ -1008,12 +1153,11 @@ export function rollbackInstallProfile(
 }
 
 export function profileEnablesExternalSkills(profile: InstallProfile): boolean {
-  return profile === 'product-planning' || profile === 'strict';
+  return profile === 'full';
 }
 
 export function profileEnablesCodegraph(profile: InstallProfile, cwd = process.cwd()): boolean {
-  if (profile === 'strict') return true;
-  if (profile === 'minimal') return false;
+  if (profile === 'full') return true;
   try {
     const policy = JSON.parse(readFileSync(join(cwd, '.ai/harness/policy.json'), 'utf-8')) as {
       tooling?: { codegraph?: { enabled?: unknown } };

@@ -249,26 +249,30 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
   }
 
   describe("buildDiscoveredSkillSurface (pure discovery-surface projection)", () => {
-    test("minimal profile discovers only the always-on router plus explicit-setup chatgpt", () => {
+    test("minimal discovers router, plan/check facades, and explicit-setup chatgpt", () => {
       const names = buildDiscoveredSkillSurface(catalog, "minimal", "claude").map((e) => e.name).sort();
-      expect(names).toEqual(["repo-harness", "repo-harness-chatgpt"]);
+      expect(names).toEqual(["repo-harness", "repo-harness-chatgpt", "repo-harness-check", "repo-harness-plan"]);
     });
 
-    test("strict profile is host-aware: codex additionally gets claude-plan", () => {
-      const claudeNames = buildDiscoveredSkillSurface(catalog, "strict", "claude").map((e) => e.name).sort();
-      const codexNames = buildDiscoveredSkillSurface(catalog, "strict", "codex").map((e) => e.name).sort();
+    test("full is host-aware: codex additionally gets claude-plan", () => {
+      const claudeNames = buildDiscoveredSkillSurface(catalog, "full", "claude").map((e) => e.name).sort();
+      const codexNames = buildDiscoveredSkillSurface(catalog, "full", "codex").map((e) => e.name).sort();
       expect(claudeNames).not.toContain("claude-plan");
       expect(codexNames).toContain("claude-plan");
       expect(codexNames.filter((n) => n !== "claude-plan").sort()).toEqual(claudeNames.sort());
     });
 
-    test("product-planning discovers repo-harness-product; strict does not", () => {
-      expect(buildDiscoveredSkillSurface(catalog, "product-planning", "claude").map((e) => e.name)).toContain("repo-harness-product");
-      expect(buildDiscoveredSkillSurface(catalog, "strict", "claude").map((e) => e.name)).not.toContain("repo-harness-product");
+    test("full discovers both product and ship while minimal discovers neither", () => {
+      const full = buildDiscoveredSkillSurface(catalog, "full", "claude").map((e) => e.name);
+      const minimal = buildDiscoveredSkillSurface(catalog, "minimal", "claude").map((e) => e.name);
+      expect(full).toContain("repo-harness-product");
+      expect(full).toContain("repo-harness-ship");
+      expect(minimal).not.toContain("repo-harness-product");
+      expect(minimal).not.toContain("repo-harness-ship");
     });
 
     test("merge-gate is never in the discovered surface (no source; kind:judge)", () => {
-      for (const profile of ["minimal", "standard", "product-planning", "strict"] as const) {
+      for (const profile of ["minimal", "full"] as const) {
         expect(buildDiscoveredSkillSurface(catalog, profile, "claude").map((e) => e.name)).not.toContain("merge-gate");
       }
     });
@@ -482,70 +486,52 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
   });
 
   describe("runProviderEval against the real frozen corpus (perfect-echo stub)", () => {
-    test("strict/claude: 9 of 10 routes reach ceiling recall; repo-harness-product is correctly unreachable (not a bug — strict never discovers it)", () => {
-      const reportPath = tmpReportPath("strict-perfect");
+    test("full/claude reaches ceiling recall for all 10 canonical routes", () => {
+      const reportPath = tmpReportPath("full-perfect");
       const report = runProviderEval({
-        profile: "strict",
+        profile: "full",
         host: "claude",
         provider: "stub",
         reportPath,
         dryRun: false,
         stubOptions: { routeFor: perfectEchoRouteFor },
       });
-      // ADJUSTED (HIGH finding fix): the 4 repo-harness-product positives are
-      // structurally unreachable under strict (excluded_unreachable), so they
-      // are removed from the denominator (38 = 42 - 4) instead of mechanically
-      // scored as a miss. Before the fix this was pinned at {38, 42, 38/42 ~=
-      // 90.5%} -- a ceiling that can never clear the 95% floor no matter how
-      // good the provider is. A flawless-within-reachable-scope provider must
-      // read 100%, not be capped by cases it structurally cannot win.
-      expect(report.metrics.top1_accuracy).toEqual({ numerator: 38, denominator: 38, rate: 1 });
+      expect(report.metrics.top1_accuracy).toEqual({ numerator: 42, denominator: 42, rate: 1 });
       for (const route of canonicalRoutes) {
-        if (route === "repo-harness-product") {
-          // ADJUSTED: denominator/rate change from {4, 0} (scored a 0% miss)
-          // to {0, null} (excluded, not gated) plus the new reachable flag.
-          expect(report.metrics.per_route_recall[route]).toEqual({ numerator: 0, denominator: 0, rate: null, reachable: false });
-        } else {
-          expect(report.metrics.per_route_recall[route].rate).toBe(1);
-          expect(report.metrics.per_route_recall[route].reachable).toBe(true);
-        }
+        expect(report.metrics.per_route_recall[route].rate).toBe(1);
+        expect(report.metrics.per_route_recall[route].reachable).toBe(true);
       }
-      expect(report.metrics.excluded_unreachable_count).toBe(4);
+      expect(report.metrics.excluded_unreachable_count).toBe(0);
       expect(report.metrics.double_trigger).toEqual({ count: 0, denominator: 68, rate: 0 });
       expect(report.metrics.provider_error_count).toBe(0);
       expect(report.discovered_surface.map((d) => d.name).sort()).toEqual(
-        ["repo-harness", "repo-harness-check", "repo-harness-chatgpt", "repo-harness-cross-review", "repo-harness-plan", "repo-harness-ship"].sort(),
+        ["repo-harness", "repo-harness-check", "repo-harness-chatgpt", "repo-harness-cross-review", "repo-harness-plan", "repo-harness-product", "repo-harness-ship"].sort(),
       );
     });
 
-    test("product-planning/claude: repo-harness-product reaches ceiling; repo-harness-ship and repo-harness-cross-review are correctly unreachable", () => {
-      const reportPath = tmpReportPath("planning-perfect");
+    test("minimal/claude excludes product, ship, and cross-review from scoring", () => {
+      const reportPath = tmpReportPath("minimal-perfect");
       const report = runProviderEval({
-        profile: "product-planning",
+        profile: "minimal",
         host: "claude",
         provider: "stub",
         reportPath,
         dryRun: false,
         stubOptions: { routeFor: perfectEchoRouteFor },
       });
-      // ADJUSTED (HIGH finding fix): reachable: true now included in the shape.
-      expect(report.metrics.per_route_recall["repo-harness-product"]).toEqual({ numerator: 4, denominator: 4, rate: 1, reachable: true });
-      // ADJUSTED: repo-harness-ship / repo-harness-cross-review are
-      // structurally unreachable under product-planning -- {denominator: 0,
-      // rate: null, reachable: false} (excluded), not the old {4, 0} (scored
-      // a 0% miss).
+      expect(report.metrics.per_route_recall["repo-harness-product"]).toEqual({ numerator: 0, denominator: 0, rate: null, reachable: false });
       expect(report.metrics.per_route_recall["repo-harness-ship"]).toEqual({ numerator: 0, denominator: 0, rate: null, reachable: false });
       expect(report.metrics.per_route_recall["repo-harness-cross-review"]).toEqual({ numerator: 0, denominator: 0, rate: null, reachable: false });
-      expect(report.metrics.excluded_unreachable_count).toBe(8);
+      expect(report.metrics.excluded_unreachable_count).toBe(12);
     });
 
-    test("host-awareness changes nothing about route SCORING for strict (claude-plan is not one of the 10 canonical routes)", () => {
+    test("host-awareness changes nothing about route scoring for full (claude-plan is not canonical)", () => {
       const claudeReport = runProviderEval({
-        profile: "strict", host: "claude", provider: "stub", reportPath: tmpReportPath("host-claude"), dryRun: false,
+        profile: "full", host: "claude", provider: "stub", reportPath: tmpReportPath("host-claude"), dryRun: false,
         stubOptions: { routeFor: perfectEchoRouteFor },
       });
       const codexReport = runProviderEval({
-        profile: "strict", host: "codex", provider: "stub", reportPath: tmpReportPath("host-codex"), dryRun: false,
+        profile: "full", host: "codex", provider: "stub", reportPath: tmpReportPath("host-codex"), dryRun: false,
         stubOptions: { routeFor: perfectEchoRouteFor },
       });
       expect(codexReport.metrics.top1_accuracy).toEqual(claudeReport.metrics.top1_accuracy);
@@ -577,8 +563,8 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
     test("re-running with an identical stub produces byte-identical report JSON except generated_at", () => {
       const pathA = tmpReportPath("repeat-a");
       const pathB = tmpReportPath("repeat-b");
-      const reportA = runProviderEval({ profile: "standard", host: "claude", provider: "stub", reportPath: pathA, dryRun: false, stubOptions: { routeFor: perfectEchoRouteFor } });
-      const reportB = runProviderEval({ profile: "standard", host: "claude", provider: "stub", reportPath: pathB, dryRun: false, stubOptions: { routeFor: perfectEchoRouteFor } });
+      const reportA = runProviderEval({ profile: "minimal", host: "claude", provider: "stub", reportPath: pathA, dryRun: false, stubOptions: { routeFor: perfectEchoRouteFor } });
+      const reportB = runProviderEval({ profile: "minimal", host: "claude", provider: "stub", reportPath: pathB, dryRun: false, stubOptions: { routeFor: perfectEchoRouteFor } });
       const stripGeneratedAt = (r: unknown) => JSON.parse(JSON.stringify(r).replace(/"generated_at":"[^"]*"/, '"generated_at":""'));
       expect(stripGeneratedAt(reportA)).toEqual(stripGeneratedAt(reportB));
     });
@@ -591,7 +577,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
 
     test("--dry-run with the default fixed-route stub produces a well-formed, all-metrics-computed, non-passing report", () => {
       const reportPath = tmpReportPath("cli-dry-run");
-      const result = runCliRun(["--profile", "strict", "--host", "claude", "--report", reportPath, "--dry-run"]);
+      const result = runCliRun(["--profile", "full", "--host", "claude", "--report", reportPath, "--dry-run"]);
       expect(result.status).toBe(0);
       expect(result.stdout).toContain("run OK");
       expect(result.stdout).toContain("overall_pass=false");
@@ -636,9 +622,9 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
 
   describe("structural reachability exclusion (SSD-07 phase A HIGH-finding fix, layer 1)", () => {
     test("excluded_unreachable is stamped per-record, counted, and labeled PARTIAL evidence -- with a perfect echo, overall_pass now reflects the reachable subset (a structural impossibility before this fix)", () => {
-      const reportPath = tmpReportPath("reach-strict");
+      const reportPath = tmpReportPath("reach-minimal");
       const report = runProviderEval({
-        profile: "strict",
+        profile: "minimal",
         host: "claude",
         provider: "stub",
         reportPath,
@@ -649,8 +635,8 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       const productRecords = report.records.filter((r) => r.expected_route === "repo-harness-product");
       expect(productRecords).toHaveLength(4);
       expect(productRecords.every((r) => r.excluded_unreachable === true)).toBe(true);
-      expect(report.records.filter((r) => r.excluded_unreachable === true)).toHaveLength(4);
-      expect(report.metrics.excluded_unreachable_count).toBe(4);
+      expect(report.records.filter((r) => r.excluded_unreachable === true)).toHaveLength(12);
+      expect(report.metrics.excluded_unreachable_count).toBe(12);
 
       expect(report.thresholds.per_route_recall["repo-harness-product"]).toEqual({
         floor: 0.9,
@@ -680,13 +666,13 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
     test("a genuinely bad REACHABLE route still fails its own floor and overall_pass end to end (exclusion does not neuter real failures)", () => {
       const reportPath = tmpReportPath("reach-bad-reachable");
       const report = runProviderEval({
-        profile: "strict",
+        profile: "minimal",
         host: "claude",
         provider: "stub",
         reportPath,
         dryRun: false,
         stubOptions: {
-          // repo-harness is reachable under strict (discoverability:"always");
+          // repo-harness is reachable under minimal (discoverability:"always");
           // never returning it is a genuine 0% recall, not a structural
           // unreachability artifact -- the per-route gate must still fire.
           routeFor: (c) => (c.expected_route === "repo-harness" ? [] : perfectEchoRouteFor(c)),
@@ -700,37 +686,36 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
 
   describe("buildAggregateReport / aggregate subcommand (SSD-07 phase A HIGH-finding fix, layer 2)", () => {
     function runTwoReports(routeFor: typeof perfectEchoRouteFor = perfectEchoRouteFor) {
-      const strictPath = tmpReportPath("agg-strict");
-      const planningPath = tmpReportPath("agg-planning");
-      const strict = runProviderEval({
-        profile: "strict",
+      const claudePath = tmpReportPath("agg-full-claude");
+      const codexPath = tmpReportPath("agg-full-codex");
+      const claude = runProviderEval({
+        profile: "full",
         host: "claude",
         provider: "stub",
-        reportPath: strictPath,
+        reportPath: claudePath,
         dryRun: false,
         stubOptions: { routeFor },
       });
-      const planning = runProviderEval({
-        profile: "product-planning",
-        host: "claude",
+      const codex = runProviderEval({
+        profile: "full",
+        host: "codex",
         provider: "stub",
-        reportPath: planningPath,
+        reportPath: codexPath,
         dryRun: false,
         stubOptions: { routeFor },
       });
-      return { strict, planning, strictPath, planningPath };
+      return { claude, codex, claudePath, codexPath };
     }
 
-    test("aggregate over strict + product-planning (perfect echo) covers all 10 canonical routes, passes overall_pass, and records which run supplied each case", () => {
+    test("aggregate over full Claude + full Codex covers all 10 canonical routes and passes", () => {
       const corpus = loadCorpus();
-      const { strict, planning, strictPath, planningPath } = runTwoReports();
+      const { claude, codex, claudePath, codexPath } = runTwoReports();
 
-      // Deliberately in non-lexicographic order -- the tie-break is now the
-      // OPERATOR'S GIVEN ORDER (planningPath first), not a re-sort by path.
+      // The tie-break remains the operator's given order, not a path sort.
       const aggregate = buildAggregateReport(
         [
-          { path: planningPath, report: planning },
-          { path: strictPath, report: strict },
+          { path: codexPath, report: codex },
+          { path: claudePath, report: claude },
         ],
         canonicalRoutes,
       );
@@ -756,29 +741,27 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       expect(aggregate.metrics.top1_accuracy).toEqual({ numerator: totalPositives, denominator: totalPositives, rate: 1 });
       expect(aggregate.thresholds.overall_pass).toBe(true);
 
-      // repo-harness-product is unreachable under strict -> must be sourced
-      // from planning; repo-harness-ship is unreachable under
-      // product-planning -> must be sourced from strict.
+      // Both full runs reach every route, so operator-first Codex supplies
+      // both product and ship cases.
       const productRecord = aggregate.records.find((r) => r.expected_route === "repo-harness-product");
       const productSource = aggregate.case_sources.find((cs) => cs.id === productRecord?.id);
-      expect(productSource?.source_report).toBe(planningPath);
+      expect(productSource?.source_report).toBe(codexPath);
 
       const shipRecord = aggregate.records.find((r) => r.expected_route === "repo-harness-ship");
       const shipSource = aggregate.case_sources.find((cs) => cs.id === shipRecord?.id);
-      expect(shipSource?.source_report).toBe(strictPath);
+      expect(shipSource?.source_report).toBe(codexPath);
 
-      // inputs preserve the operator's given order (planningPath first, as passed above), never re-sorted by path
-      expect(aggregate.inputs.map((i) => i.path)).toEqual([planningPath, strictPath]);
+      expect(aggregate.inputs.map((i) => i.path)).toEqual([codexPath, claudePath]);
     });
 
     test("fails closed on mismatched corpus_sha256 across inputs", () => {
-      const { strict, planning, strictPath, planningPath } = runTwoReports();
-      const tampered: RoutingRunReport = { ...planning, corpus_sha256: "0".repeat(64) };
+      const { claude, codex, claudePath, codexPath } = runTwoReports();
+      const tampered: RoutingRunReport = { ...codex, corpus_sha256: "0".repeat(64) };
       expect(() =>
         buildAggregateReport(
           [
-            { path: strictPath, report: strict },
-            { path: planningPath, report: tampered },
+            { path: claudePath, report: claude },
+            { path: codexPath, report: tampered },
           ],
           canonicalRoutes,
         ),
@@ -786,24 +769,24 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
     });
 
     test("fails closed on mismatched manifest_sha256 across inputs", () => {
-      const { strict, planning, strictPath, planningPath } = runTwoReports();
-      const tampered: RoutingRunReport = { ...planning, manifest_sha256: "0".repeat(64) };
+      const { claude, codex, claudePath, codexPath } = runTwoReports();
+      const tampered: RoutingRunReport = { ...codex, manifest_sha256: "0".repeat(64) };
       expect(() =>
         buildAggregateReport(
           [
-            { path: strictPath, report: strict },
-            { path: planningPath, report: tampered },
+            { path: claudePath, report: claude },
+            { path: codexPath, report: tampered },
           ],
           canonicalRoutes,
         ),
       ).toThrow(/manifest_sha256 mismatch/);
     });
 
-    test("fails closed when a canonical route is unreachable in every input (two runs of the same profile)", () => {
+    test("fails closed when a canonical route is unreachable in every input (two minimal runs)", () => {
       const pathA = tmpReportPath("agg-dup-a");
       const pathB = tmpReportPath("agg-dup-b");
       const reportA = runProviderEval({
-        profile: "strict",
+        profile: "minimal",
         host: "claude",
         provider: "stub",
         reportPath: pathA,
@@ -811,7 +794,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
         stubOptions: { routeFor: perfectEchoRouteFor },
       });
       const reportB = runProviderEval({
-        profile: "strict",
+        profile: "minimal",
         host: "claude",
         provider: "stub",
         reportPath: pathB,
@@ -830,8 +813,8 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
     });
 
     test("fewer than 2 inputs is rejected", () => {
-      const { strict, strictPath } = runTwoReports();
-      expect(() => buildAggregateReport([{ path: strictPath, report: strict }], canonicalRoutes)).toThrow(/at least 2/);
+      const { claude, claudePath } = runTwoReports();
+      expect(() => buildAggregateReport([{ path: claudePath, report: claude }], canonicalRoutes)).toThrow(/at least 2/);
     });
 
     test("a real floor violation in the union surfaces as overall_pass=false, not a thrown error (fail closed on the RESULT, not an exception)", () => {
@@ -851,11 +834,11 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       const missIds = new Set(checkCaseIds.slice(0, 2));
       const flawedRouteFor: typeof perfectEchoRouteFor = (c) => (missIds.has(c.id) ? [] : perfectEchoRouteFor(c));
 
-      const { strict, planning, strictPath, planningPath } = runTwoReports(flawedRouteFor);
+      const { claude, codex, claudePath, codexPath } = runTwoReports(flawedRouteFor);
       const aggregate = buildAggregateReport(
         [
-          { path: strictPath, report: strict },
-          { path: planningPath, report: planning },
+          { path: claudePath, report: claude },
+          { path: codexPath, report: codex },
         ],
         canonicalRoutes,
       );
@@ -869,27 +852,27 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       expect(aggregate.thresholds.overall_pass).toBe(false);
     });
 
-    test("aggregate CLI subcommand: --dry-run runs for both profiles, then aggregate, produce a well-formed, byte-bound report end to end", () => {
-      const strictReportPath = tmpReportPath("agg-cli-strict");
-      const planningReportPath = tmpReportPath("agg-cli-planning");
+    test("aggregate CLI subcommand: --dry-run runs full for both hosts and produces a byte-bound report", () => {
+      const claudeReportPath = tmpReportPath("agg-cli-full-claude");
+      const codexReportPath = tmpReportPath("agg-cli-full-codex");
       const aggregateReportPath = tmpReportPath("agg-cli-out");
 
-      const runStrict = spawnSync(
+      const runClaude = spawnSync(
         "bun",
-        ["scripts/run-skill-routing-eval.ts", "run", "--profile", "strict", "--host", "claude", "--report", strictReportPath, "--dry-run"],
+        ["scripts/run-skill-routing-eval.ts", "run", "--profile", "full", "--host", "claude", "--report", claudeReportPath, "--dry-run"],
         { cwd: ROOT, encoding: "utf-8" },
       );
-      expect(runStrict.status).toBe(0);
-      const runPlanning = spawnSync(
+      expect(runClaude.status).toBe(0);
+      const runCodex = spawnSync(
         "bun",
-        ["scripts/run-skill-routing-eval.ts", "run", "--profile", "product-planning", "--host", "claude", "--report", planningReportPath, "--dry-run"],
+        ["scripts/run-skill-routing-eval.ts", "run", "--profile", "full", "--host", "codex", "--report", codexReportPath, "--dry-run"],
         { cwd: ROOT, encoding: "utf-8" },
       );
-      expect(runPlanning.status).toBe(0);
+      expect(runCodex.status).toBe(0);
 
       const agg = spawnSync(
         "bun",
-        ["scripts/run-skill-routing-eval.ts", "aggregate", "--report", aggregateReportPath, strictReportPath, planningReportPath],
+        ["scripts/run-skill-routing-eval.ts", "aggregate", "--report", aggregateReportPath, claudeReportPath, codexReportPath],
         { cwd: ROOT, encoding: "utf-8" },
       );
       expect(agg.status).toBe(0);

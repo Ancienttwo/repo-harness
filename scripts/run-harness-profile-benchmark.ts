@@ -728,7 +728,7 @@ function projectHarnessBase(
   assertPathOutsideRoot(realpathSync(installedCli), ROOT, 'installed benchmark CLI target');
   assertBenchmarkRuntimeArtifactUnchanged(runtimeArtifact);
   run(installedCli, ['adopt', '--repo', workspace, '--no-codegraph', '--mode', 'standard'], workspace, env);
-  const installProfile = profile === 'adaptive-lite' ? 'standard' : 'strict';
+  const installProfile = profile === 'adaptive-lite' ? 'minimal' : 'full';
   assertBenchmarkRuntimeArtifactUnchanged(runtimeArtifact);
   run(installedCli, [
     'install', '--profile', installProfile, '--target', provider,

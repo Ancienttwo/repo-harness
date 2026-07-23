@@ -27,18 +27,13 @@ export type InstallComponent =
   | "release-deployment-gates";
 
 export const PROFILE_COMPONENTS: Readonly<Record<SkillSurfaceProfile, readonly InstallComponent[]>> = Object.freeze({
-  minimal: ["cli", "effective-state", "scope-worktree-check-guards", "handoff", "host-adapters"],
-  standard: [
+  minimal: [
     "cli", "effective-state", "scope-worktree-check-guards", "handoff", "host-adapters",
     "adaptive-workflow", "codegraph-conditional",
   ],
-  "product-planning": [
+  full: [
     "cli", "effective-state", "scope-worktree-check-guards", "handoff", "host-adapters",
-    "adaptive-workflow", "codegraph-conditional", "planning-integrations",
-  ],
-  strict: [
-    "cli", "effective-state", "scope-worktree-check-guards", "handoff", "host-adapters",
-    "adaptive-workflow", "codegraph-conditional", "agent-fleet", "verifier",
-    "cross-model-acceptance", "release-deployment-gates",
+    "adaptive-workflow", "codegraph-conditional", "planning-integrations", "agent-fleet",
+    "verifier", "cross-model-acceptance", "release-deployment-gates",
   ],
 });

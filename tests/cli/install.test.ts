@@ -30,19 +30,66 @@ describe('install command (Phase 1B)', () => {
     withTempHome((home) => {
       runInstall({ target: 'codex', location: 'global', profile: 'minimal' });
       let hooks = JSON.parse(fs.readFileSync(path.join(home, '.codex/hooks.json'), 'utf-8')).hooks;
-      expect(Object.values(hooks as Record<string, unknown[]>).flat()).toHaveLength(5);
-      expect(hooks.UserPromptSubmit).toBeUndefined();
-      expect(hooks.SubagentStart).toBeUndefined();
-
-      runInstall({ target: 'codex', location: 'global', profile: 'standard' });
-      hooks = JSON.parse(fs.readFileSync(path.join(home, '.codex/hooks.json'), 'utf-8')).hooks;
       expect(Object.values(hooks as Record<string, unknown[]>).flat()).toHaveLength(7);
       expect(hooks.UserPromptSubmit).toHaveLength(1);
+      expect(hooks.SubagentStart).toBeUndefined();
 
-      runInstall({ target: 'codex', location: 'global', profile: 'strict' });
+      runInstall({ target: 'codex', location: 'global', profile: 'full' as never });
       hooks = JSON.parse(fs.readFileSync(path.join(home, '.codex/hooks.json'), 'utf-8')).hooks;
       expect(Object.values(hooks as Record<string, unknown[]>).flat()).toHaveLength(11);
       expect(hooks.SubagentStart).toHaveLength(1);
+    });
+  });
+
+  test('adapter-only install rejects protocol-1 state before mutating host config', () => {
+    withTempHome((home) => {
+      const statePath = path.join(home, '.repo-harness', 'install-state.json');
+      const hooksPath = path.join(home, '.codex', 'hooks.json');
+      fs.mkdirSync(path.dirname(statePath), { recursive: true });
+      fs.mkdirSync(path.dirname(hooksPath), { recursive: true });
+      fs.writeFileSync(statePath, `${JSON.stringify({
+        protocol: 1,
+        profile: 'standard',
+        components: [
+          'cli',
+          'effective-state',
+          'scope-worktree-check-guards',
+          'handoff',
+          'host-adapters',
+          'adaptive-workflow',
+          'codegraph-conditional',
+        ],
+        transaction_id: 'legacy-standard',
+        applied_at: '2026-07-14T00:00:00.000Z',
+        ownership_manifest: [],
+        previous: null,
+      }, null, 2)}\n`);
+      fs.writeFileSync(hooksPath, `${JSON.stringify({
+        theme: 'user-owned',
+        hooks: {
+          PreToolUse: [{ hooks: [{ type: 'command', command: 'user hook' }] }],
+        },
+      }, null, 2)}\n`);
+      const stateBefore = fs.readFileSync(statePath);
+      const hooksBefore = fs.readFileSync(hooksPath);
+
+      const result = spawnSync(process.execPath, [
+        CLI,
+        'install',
+        '--target',
+        'codex',
+        '--location',
+        'global',
+      ], {
+        cwd: ROOT,
+        env: { ...process.env, HOME: home, BUN_INSTALL: path.join(home, '.bun') },
+        encoding: 'utf-8',
+      });
+
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}\n${result.stderr}`).toContain('--migrate-profile-state');
+      expect(fs.readFileSync(statePath)).toEqual(stateBefore);
+      expect(fs.readFileSync(hooksPath)).toEqual(hooksBefore);
     });
   });
 

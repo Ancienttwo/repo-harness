@@ -30,7 +30,7 @@ const ROUTER = {
   source: ".",
   provider: null,
   hosts: ["claude", "codex"],
-  profiles: ["minimal", "standard"],
+  profiles: ["minimal", "full"],
   discoverability: "always",
   component: "cli",
   requires: [],
@@ -45,7 +45,7 @@ const FACADE = {
   source: "assets/skill-commands/repo-harness-plan",
   provider: null,
   hosts: ["claude", "codex"],
-  profiles: ["standard"],
+  profiles: ["minimal"],
   discoverability: "profile-facade",
   component: "adaptive-workflow",
   requires: [],
@@ -89,6 +89,10 @@ function catalogValue(packages: unknown[], overrides: Record<string, unknown> = 
 const VALID_BASE = catalogValue([ROUTER, FACADE]);
 
 describe("skill-surface catalog: absence vs. declared-missing", () => {
+  test("steady-state catalog exposes only minimal and full profiles", () => {
+    expect(SKILL_SURFACE_PROFILES).toEqual(["minimal", "full"]);
+  });
+
   test("distinguishes an undeclared absence from a declared missing manifest", () => {
     expect(parseSkillSurfaceCatalog(null)).toEqual({ status: "absent", catalog: null, diagnostics: [] });
     const declared = parseSkillSurfaceCatalog(null, { declared: true });
@@ -140,7 +144,7 @@ describe("skill-surface catalog: every validation rejection, proven on a bad fix
   test("FIELD_REQUIRED: hosts/profiles/requires must be string arrays; mutatesRepoByDefault must be boolean", () => {
     expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, { ...FACADE, hosts: "claude" }]))))
       .toContain("FIELD_REQUIRED");
-    expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, { ...FACADE, profiles: "standard" }]))))
+    expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, { ...FACADE, profiles: "minimal" }]))))
       .toContain("FIELD_REQUIRED");
     expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, { ...FACADE, requires: "none" }]))))
       .toContain("FIELD_REQUIRED");
@@ -163,8 +167,8 @@ describe("skill-surface catalog: every validation rejection, proven on a bad fix
     expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, broken])))).toContain("INVALID_HOST");
   });
 
-  test("INVALID_PROFILE: a profile outside the four known profiles", () => {
-    const broken = { ...FACADE, profiles: ["standard", "bogus"] };
+  test("INVALID_PROFILE: a profile outside the two known profiles", () => {
+    const broken = { ...FACADE, profiles: ["minimal", "bogus"] };
     expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, broken])))).toContain("INVALID_PROFILE");
   });
 
@@ -180,7 +184,7 @@ describe("skill-surface catalog: every validation rejection, proven on a bad fix
   });
 
   test("COMPONENT_NOT_IN_PROFILE: a profile-discovered package whose component is absent from that profile's component set", () => {
-    const broken = { ...FACADE, component: "cross-model-acceptance" }; // standard's set doesn't include this
+    const broken = { ...FACADE, component: "cross-model-acceptance" }; // minimal's set doesn't include this
     const result = validateSkillSurfaceCatalogValue(catalogValue([ROUTER, broken]), {
       profileComponents: PROFILE_COMPONENTS,
     });
@@ -224,7 +228,7 @@ describe("skill-surface catalog: every validation rejection, proven on a bad fix
     const projections = computeExpectedProjections([ROUTER, FACADE]) as { facadesByProfile: Record<string, string[]> };
     const wrong = {
       ...projections,
-      facadesByProfile: { ...projections.facadesByProfile, standard: ["repo-harness-not-actually-selected"] },
+      facadesByProfile: { ...projections.facadesByProfile, minimal: ["repo-harness-not-actually-selected"] },
     };
     const result = validateSkillSurfaceCatalogValue(catalogValue([ROUTER, FACADE], { expectedProjections: wrong }));
     expect(codes(result)).toContain("PROJECTION_MISMATCH");
@@ -338,19 +342,19 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
   const catalog = resolution.catalog;
 
   test("facadesForProfile matches the target discovery matrix for every profile", () => {
-    expect(facadesForProfile(catalog, "minimal")).toEqual([]);
-    expect(facadesForProfile(catalog, "standard")).toEqual(["repo-harness-plan", "repo-harness-check"]);
-    expect(facadesForProfile(catalog, "product-planning")).toEqual([
-      "repo-harness-plan", "repo-harness-check", "repo-harness-product",
+    expect(facadesForProfile(catalog, "minimal")).toEqual([
+      "repo-harness-plan", "repo-harness-check",
     ]);
-    expect(facadesForProfile(catalog, "strict")).toEqual([
-      "repo-harness-plan", "repo-harness-check", "repo-harness-ship",
+    expect(facadesForProfile(catalog, "full")).toEqual([
+      "repo-harness-plan", "repo-harness-check", "repo-harness-product", "repo-harness-ship",
     ]);
   });
 
-  test("strict does not silently add product planning; product planning does not install ship", () => {
-    expect(facadesForProfile(catalog, "strict")).not.toContain("repo-harness-product");
-    expect(facadesForProfile(catalog, "product-planning")).not.toContain("repo-harness-ship");
+  test("full is the explicit union while minimal excludes product and ship", () => {
+    expect(facadesForProfile(catalog, "full")).toContain("repo-harness-product");
+    expect(facadesForProfile(catalog, "full")).toContain("repo-harness-ship");
+    expect(facadesForProfile(catalog, "minimal")).not.toContain("repo-harness-product");
+    expect(facadesForProfile(catalog, "minimal")).not.toContain("repo-harness-ship");
   });
 
   test("repo-harness-setup and repo-harness-architecture are router-only progressive load, never auto-discovered", () => {
@@ -360,22 +364,20 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     }
   });
 
-  test("hostSkillPlacements: strict places repo-harness-cross-review on both hosts and claude-plan on codex only; other profiles are empty", () => {
+  test("hostSkillPlacements: full places repo-harness-cross-review on both hosts and claude-plan on codex only", () => {
     expect(hostSkillPlacements(catalog, "minimal")).toEqual({ claude: [], codex: [] });
-    expect(hostSkillPlacements(catalog, "standard")).toEqual({ claude: [], codex: [] });
-    expect(hostSkillPlacements(catalog, "product-planning")).toEqual({ claude: [], codex: [] });
-    expect(hostSkillPlacements(catalog, "strict")).toEqual({
+    expect(hostSkillPlacements(catalog, "full")).toEqual({
       claude: ["repo-harness-cross-review"],
       codex: ["repo-harness-cross-review", "claude-plan"],
     });
   });
 
-  test("hostSkillPlacements without a profile (init.ts's adopt flow) is the unconditional strict-tier bundle", () => {
+  test("hostSkillPlacements without a profile (init.ts's adopt flow) is the unconditional full-tier bundle", () => {
     const unconditional = hostSkillPlacements(catalog);
     expect(unconditional).toEqual({ claude: ["repo-harness-cross-review"], codex: ["repo-harness-cross-review", "claude-plan"] });
   });
 
-  test("explicit ChatGPT setup is never implied by product-planning or any profile", () => {
+  test("explicit ChatGPT setup is never implied by either install profile", () => {
     for (const profile of SKILL_SURFACE_PROFILES) {
       expect(facadesForProfile(catalog, profile)).not.toContain("repo-harness-chatgpt");
     }
@@ -384,11 +386,9 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     expect(chatgpt?.profiles).toEqual([]);
   });
 
-  test("externalSkillsForProfile: product-planning and strict get the 5 Waza+mermaid names; minimal/standard get none (unaffected by this cutover)", () => {
+  test("externalSkillsForProfile: full gets the 5 Waza+mermaid names and minimal gets none", () => {
     expect(externalSkillsForProfile(catalog, "minimal")).toEqual([]);
-    expect(externalSkillsForProfile(catalog, "standard")).toEqual([]);
-    expect(externalSkillsForProfile(catalog, "product-planning")).toEqual(["think", "hunt", "check", "health", "mermaid"]);
-    expect(externalSkillsForProfile(catalog, "strict")).toEqual(["think", "hunt", "check", "health", "mermaid"]);
+    expect(externalSkillsForProfile(catalog, "full")).toEqual(["think", "hunt", "check", "health", "mermaid"]);
   });
 
   test("mutationPathSkillNames covers every package path that can be host-synced post-cutover", () => {

@@ -12,25 +12,25 @@ place); `assets/skill-commands/manifest.json` v2 is the runtime discovery
 authority for package classification and host/profile projection. They
 remain an on-demand catalog while the default installed discovery surface is
 the root router plus the profile-selected subset of `repo-harness-plan`,
-`repo-harness-check`, `repo-harness-product` (product-planning only), and
-`repo-harness-ship` (strict only). The implementation authority remains in
+`repo-harness-check`, `repo-harness-product` (full only), and
+`repo-harness-ship` (full only). The implementation authority remains in
 the `repo-harness` CLI, scripts, hooks, and contract files:
 
 - `repo-harness` (router; synced unconditionally to every profile)
 - `repo-harness-setup` (adopt/init, migrate, upgrade, repair, scaffold,
   capability-configuration modes; router-only, never auto-discovered)
-- `repo-harness-plan` (create/review modes; standard/product-planning/strict)
-- `repo-harness-product` (PRD/Sprint/Goal modes; product-planning only)
+- `repo-harness-plan` (create/review modes; minimal/full)
+- `repo-harness-product` (PRD/Sprint/Goal modes; full only)
 - `repo-harness-check` (workflow/release checks plus deploy-readiness
-  reference; standard/product-planning/strict)
-- `repo-harness-ship` (strict only)
+  reference; minimal/full)
+- `repo-harness-ship` (full only)
 - `repo-harness-architecture` (router-only or explicit install)
 - `repo-harness-cross-review` (host-aware Claude/Codex provider modes;
-  installed on both hosts for strict)
-- `merge-gate` (classification-only row in the strict discovery matrix;
+  installed on both hosts for full)
+- `merge-gate` (classification-only row in the full discovery matrix;
   repo-harness ships no merge-gate Skill)
 - `repo-harness-chatgpt` (explicit ChatGPT setup only; never implied by
-  product-planning or any other profile)
+  either install profile)
 
 The manifest at `assets/skill-commands/manifest.json` is the on-demand facade
 catalog. `scripts/sync-codex-installed-copies.sh` owns profile selection
@@ -80,8 +80,9 @@ internal steps, not public commands.
 
 At 10x commands, the first failure is discovery and routing duplication. The
 catalog may grow, but default installation remains bounded by the manifest's
-profile projection and specialized commands are loaded only after an explicit
-action or an active profile selects them.
+two-profile projection. Full is the default 11-hook surface; explicit minimal
+keeps the 7-hook baseline. Specialized commands are loaded only after an
+explicit action or the selected profile includes them.
 
 ## Optimization Backlog
 

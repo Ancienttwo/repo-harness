@@ -4,6 +4,16 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Host install profiles are now exactly `minimal` and `full`: minimal projects
+  7 Codex hooks, full projects all 11 and is the default for fresh and
+  adapter-only installs. The former 5-hook tier and the steady-state
+  `standard`/`product-planning`/`strict` install names are retired. Installed
+  state is protocol 2; protocol-1 state fails closed on normal reads and moves
+  only through `repo-harness install --migrate-profile-state --profile
+  minimal|full`, with transaction-owned removal and compensation.
+
 ## [0.11.0] - 2026-07-23
 
 ### Changed

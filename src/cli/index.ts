@@ -38,15 +38,18 @@ import {
   installProfileHostMutationPaths,
   installedProfileStatus,
   assertInstallProfile,
+  planLegacyInstallProfileMigration,
   planInstallProfile,
   profileEnablesCodegraph,
   profileEnablesExternalSkills,
+  prepareLegacyInstallProfileMigration,
   prepareInstallProfileSwitch,
   readInstalledProfile,
   rollbackInstallHostTransaction,
   rollbackInstallProfile,
   type InstalledProfileState,
   type InstallProfile,
+  type LegacyInstalledProfileState,
 } from './installer/install-profile';
 import { runPromptGuardDecideCli } from './commands/prompt-guard-decision';
 import { routePromptExplicitFirst } from './hook/prompt-router';
@@ -104,6 +107,7 @@ interface GlobalRuntimeCommandOptions {
   json?: boolean;
   profile?: string;
   dryRun?: boolean;
+  migrateProfileState?: boolean;
 }
 
 /** Minimal duck-typed slice of `Command` so tests can fake option-value sourcing without constructing a real commander `Command`. */
@@ -219,12 +223,20 @@ export async function resolveDelegationMode(
 function runTransactionalProfileProjection(
   profile: InstallProfile,
   options: GlobalRuntimeOptions,
-  commitState: (transaction: ReturnType<typeof beginInstallHostTransaction>) => InstalledProfileState,
+  commitState: (
+    transaction: ReturnType<typeof beginInstallHostTransaction>,
+    migrationSource: LegacyInstalledProfileState | null,
+  ) => InstalledProfileState,
+  prepareProjection: () => LegacyInstalledProfileState | null = () => {
+    prepareInstallProfileSwitch(profile, options.env);
+    return null;
+  },
 ): { result: GlobalRuntimeResult; state: InstalledProfileState | null } {
   const transaction = beginInstallHostTransaction(installProfileHostMutationPaths(options.env), options.env);
+  let migrationSource: LegacyInstalledProfileState | null;
   let result: GlobalRuntimeResult;
   try {
-    prepareInstallProfileSwitch(profile, options.env);
+    migrationSource = prepareProjection();
     result = runGlobalRuntimeSetup(options);
   } catch (error) {
     rollbackInstallHostTransaction(transaction);
@@ -235,7 +247,7 @@ function runTransactionalProfileProjection(
     return { result, state: null };
   }
   try {
-    const state = commitState(transaction);
+    const state = commitState(transaction, migrationSource);
     commitInstallHostTransaction(transaction);
     return { result, state };
   } catch (error) {
@@ -254,9 +266,12 @@ async function runGlobalRuntimeBootstrap(
   cmd?: OptionSourceLookup,
 ): Promise<never> {
   const target = assertTarget(rawOpts.target, commandName);
-  const profile = assertInstallProfile(rawOpts.profile ?? 'minimal');
-  const currentProfile = readInstalledProfile();
-  const profilePlan = planInstallProfile(profile, currentProfile);
+  const profile = assertInstallProfile(rawOpts.profile ?? 'full');
+  const migrationRequested = rawOpts.migrateProfileState === true;
+  const currentProfile = migrationRequested ? null : readInstalledProfile();
+  const profilePlan = migrationRequested
+    ? planLegacyInstallProfileMigration(profile)
+    : planInstallProfile(profile, currentProfile);
   if (rawOpts.dryRun === true) {
     if (rawOpts.json === true) console.log(JSON.stringify(profilePlan, null, 2));
     else {
@@ -296,7 +311,17 @@ async function runGlobalRuntimeBootstrap(
     codegraph,
     brainRoot: rawOpts.brainRoot,
     profile,
-  }, (transaction) => applyInstallProfile(profile, process.env, new Date(), transaction).state);
+  }, (transaction, migrationSource) => (
+    applyInstallProfile(
+      profile,
+      process.env,
+      new Date(),
+      transaction,
+      migrationSource ?? undefined,
+    ).state
+  ), migrationRequested
+    ? () => prepareLegacyInstallProfileMigration(profile)
+    : undefined);
   const result = transaction.result;
   const installed = transaction.state;
   if (rawOpts.json === true) {
@@ -320,6 +345,7 @@ export function buildProgram(): Command {
     .command('init')
     .description('Install the repo-harness CLI, global hook adapters, and required runtime dependencies')
     .option('--target <target>', `Host target for adapters and runtime skills: ${TARGET_HELP}`, 'both')
+    .option('--profile <profile>', 'Install profile: minimal|full', 'full')
     .option('--no-cli', 'Skip installing the repo-harness CLI globally')
     .option('--no-sync-skill', 'Skip refreshing repo-harness skill aliases under host skill roots')
     .option('--no-hooks', 'Skip global hook adapter installation')
@@ -522,7 +548,8 @@ export function buildProgram(): Command {
     .command('install')
     .description('Install the repo-harness global runtime; with --location, install only hook adapters')
     .option('--target <target>', `Target host: ${TARGET_HELP}`, 'both')
-    .option('--profile <profile>', 'Install profile: minimal|standard|product-planning|strict', 'minimal')
+    .option('--profile <profile>', 'Install profile: minimal|full', 'full')
+    .option('--migrate-profile-state', 'Explicitly replace legacy protocol-1 profile state with protocol 2')
     .option('--dry-run', 'Print install/skip/remove plan without writing')
     .option('--state', 'Print effective installed profile state without writing')
     .option('--rollback', 'Restore the previous installed profile state')
@@ -540,6 +567,12 @@ export function buildProgram(): Command {
     .option('--json', 'Output JSON instead of human-readable text')
     .action(async (rawOpts: GlobalRuntimeCommandOptions & { location?: string; delegationMode?: string; state?: boolean; rollback?: boolean }, cmd: Command) => {
       const target = assertTarget(rawOpts.target, 'install');
+      if (
+        rawOpts.migrateProfileState === true
+        && (rawOpts.state === true || rawOpts.rollback === true || rawOpts.location !== undefined)
+      ) {
+        throw new Error('--migrate-profile-state cannot be combined with --state, --rollback, or --location');
+      }
       if (rawOpts.state === true) {
         const state = readInstalledProfile();
         console.log(JSON.stringify(state ? installedProfileStatus(state) : null, null, 2));
@@ -572,6 +605,10 @@ export function buildProgram(): Command {
         await runGlobalRuntimeBootstrap('install', rawOpts, cmd);
         return;
       }
+      // Adapter-only installs still mutate a profile-owned host surface. Validate
+      // the installed-state protocol before touching it so legacy protocol-1
+      // state cannot be mixed with a new protocol-2 route projection.
+      readInstalledProfile();
       const location = assertLocation(rawOpts.location!, 'install');
       const interactive = process.stdin.isTTY === true && process.stdout.isTTY === true && rawOpts.json !== true;
       const delegationMode = await resolveDelegationMode(
@@ -584,7 +621,7 @@ export function buildProgram(): Command {
         target,
         location,
         delegationMode,
-        profile: assertInstallProfile(rawOpts.profile ?? 'minimal'),
+        profile: assertInstallProfile(rawOpts.profile ?? 'full'),
       });
       for (const line of result.lines) console.log(line);
       process.exit(result.exitCode);

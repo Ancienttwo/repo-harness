@@ -1,38 +1,53 @@
 # Install Profiles
 
-`repo-harness install --profile <profile>` is the host-runtime authority.
-`--dry-run --json` lists components to install, skip, and remove. `--state
---json` reads `~/.repo-harness/install-state.json` together with drift status;
-`--rollback` first reprojects the previous profile's managed Skills and host
-routes, then commits the restored state only if that runtime transaction passes.
+`repo-harness install --profile <profile>` is the host-runtime authority. The
+closed vocabulary is exactly `minimal|full`, and omitting `--profile` selects
+`full`. `--dry-run --json` lists components to install, skip, and remove.
+`--state --json` reads `~/.repo-harness/install-state.json` together with drift
+status; `--rollback` first reprojects the previous protocol-2 profile's managed
+Skills and host routes, then commits the restored state only if that runtime
+transaction passes.
 
-| Profile | Components |
-|---|---|
-| `minimal` | CLI, effective state, scope/worktree/check guards, handoff, host adapters |
-| `standard` | minimal plus adaptive Lite/Standard workflow; CodeGraph remains conditional |
-| `product-planning` | standard plus PRD/Sprint/Goal and planning integrations |
-| `strict` | standard plus agent fleet, verifier, risk-triggered cross-model acceptance, release/deployment gates |
+| Profile | Codex hooks | Components and discovery |
+|---|---:|---|
+| `minimal` | 7 | CLI, effective state, scope/worktree/check guards, handoff, adaptive workflow, conditional CodeGraph support, host adapters, root router, `repo-harness-plan`, and `repo-harness-check` |
+| `full` | 11 | Everything in minimal plus PRD/Sprint/Goal planning integrations, agent fleet, verifier, cross-model acceptance, release/deployment gates, `repo-harness-product`, `repo-harness-ship`, host-aware `repo-harness-cross-review`, Codex-side `claude-plan`, Waza, and Mermaid |
 
-Non-interactive and blank interactive choices default to `minimal`; external
-skills and CodeGraph are not implicitly installed. Profile switching removes
-only package-owned surfaces. Unknown or modified canonical/facade directories
-fail closed before mutation; user-authored content is preserved.
+Fresh global installs and adapter-only installs both default to `full`.
+`minimal` is the explicit bounded choice; there is no 5-hook profile.
+Profile switching removes only package-owned surfaces. Unknown or modified
+canonical/facade directories fail closed before mutation; user-authored
+content is preserved. ChatGPT remains an explicit setup surface and is not
+implied by either profile.
 
-Adapter-only refreshes (`repo-harness install --location global`) also default
-to `minimal`, and `repo-harness update` refreshes host adapters with no profile
-flag; neither reads the recorded profile back from `install-state.json`. On a
-`standard` or higher install, pass `--profile <recorded>` explicitly when
-refreshing adapters (check with `--state`), otherwise the refresh rewrites the
-adapters at `minimal` and silently drops the extra routes.
+`repo-harness update` reads the recorded protocol-2 profile and refreshes that
+projection; when no state exists, its fallback is `full`. Adapter-only refresh
+validates any recorded state before mutation but does not inherit its profile,
+so pass `--profile minimal` explicitly when refreshing a deliberately minimal
+host.
 
-Strict always projects the package-bundled cross-review Skill required by its
-acceptance component. `--no-external-skills` disables marketplace Waza and
-Mermaid installation, but does not disable this bundled strict capability.
+Full always projects the package-bundled cross-review and `claude-plan` Skills
+required by its provider surfaces. Marketplace Waza and Mermaid are selected
+by full as well; minimal does not select them.
 
-Migration from the old broad discovery surface is one-shot and fail closed:
-the sync removes only an exact package-target symlink, a content-hash-verified
-ownership-marked copy, or a byte-identical package directory. There is no runtime
-fallback to the old install default.
+Installed profile state is protocol 2. Protocol-1 state is never reinterpreted
+in normal reads because its `minimal` name meant the retired 5-hook projection.
+Normal `install`, `update`, `--state`, and status paths fail closed with an
+explicit migration instruction. The only migration entrypoint is:
+
+```bash
+repo-harness install --migrate-profile-state --profile minimal
+# or
+repo-harness install --migrate-profile-state --profile full
+```
+
+Add `--dry-run --json` to inspect the one-shot mapping without mutation. The
+operator invokes migration explicitly; omitting `--profile` selects `full`,
+while `minimal` remains an explicit bounded target. No legacy profile name
+remains as a steady-state alias. Migration validates the legacy component list
+and ownership manifest, snapshots every host mutation path, removes only retired
+transaction-owned surfaces, compensates on failure, and writes protocol 2 with
+`previous: null`. Legacy rollback history is deliberately not imported.
 
 The state file records each real managed surface with its absolute path, surface
 type, content hash, explicit managed marker, and symlink target where relevant.
@@ -57,8 +72,9 @@ fails closed.
 
 CodeGraph configuration is tracked as a projected host-config surface with its
 owned-entry hash. Reinstall refreshes that ownership only when the entry is new
-or was already package-owned; switching profiles removes only the owned
-projection and never treats an unrelated pre-existing MCP entry as managed.
+or was already package-owned. Minimal keeps CodeGraph conditional; full requires
+the executable projection. Neither profile treats an unrelated pre-existing MCP
+entry as package-owned.
 
 Install and benchmark transactions must also bind `BUN_INSTALL` to the selected
 host home. Setting `HOME` alone does not isolate Bun global installation when a

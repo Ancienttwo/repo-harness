@@ -141,11 +141,22 @@ Source: `evals/harness/reports/profile-comparison.md:1-18`. The record schema do
 
 Start effort calibration with fast-worker `max → high`, then explorer `high → medium`; keep judgment roles at their current baseline until data exists. Change one role at a time and require actual applied model/effort evidence.
 
-#### P1 — target state is not the live host state
+#### P1 — adapter status used the wrong profile authority
 
-The source registry defines 11 managed routes, but `repo-harness setup check --target codex --json` found only 7/11 in `~/.codex/hooks.json`. The missing routes are the subagent guard, delegation advisor, SubagentStart context, and SubagentStop quality path. Therefore the source-level composed-path audit describes the intended managed stack, while this machine does not currently exercise the full lifecycle.
+The source registry defines 11 managed Codex routes. The operator machine still
+records a protocol-1 `standard` install with 7 routes; this research slice did
+not mutate that user-level state. Current protocol-2 source exposes only
+`minimal` (7 routes) and `full` (11, default). Normal readers reject the legacy
+record instead of reinterpreting it, and status reports it as invalid against
+the full fallback baseline until an explicit migration selects a new profile.
+The omitted subagent guard, delegation advisor, SubagentStart context, and
+SubagentStop quality routes are full-only lifecycle surface.
 
-This stale adapter incidentally avoids some duplicated SubagentStart text, but that is not an optimization. Repairing user-level host configuration is an external mutation and was not authorized by this research task. After explicit authorization, require 11/11 readback and rerun the composed-path canary.
+Do not repair user-level host configuration merely to reach 11/11. The
+operator must explicitly run protocol migration and choose the target:
+`minimal` must then read back 7/7, while `full` must read back 11/11 and rerun
+the composed-path canary. Until that action, source capability and live host
+behavior remain separate claims.
 
 The same setup check also reports Waza missing and only 1/3 required Codex automation skills. Those are environment readiness gaps, not evidence that prompt guidance is wrong, and they remain outside this research change.
 
@@ -171,7 +182,7 @@ Use the existing program rather than creating a parallel rewrite:
 | 3 | Contract prompt migration | Make the contract the single execution brief; keep a short role/evidence/stop delta, make Notes conditional, and pass the worker report path to the verifier. Change only this prompt group. | Representative worker prefix shrinks materially; real worker→verifier handoff passes with unchanged safety/quality. |
 | 4 | EPC-08 | Make SessionStart consume the canonical recovery Context Packet rather than parallel projections. | SessionStart stays ≤1,500 estimated tokens and only actionable state is injected. |
 | 5 | SSD | Project only task-relevant skills and expand bilingual positive/negative activation evals. | Exact per-profile skill set and false-activation corpus pass; no keyword authority is added. |
-| 6 | Post-baseline prompt/effort migration | One-shot global managed-block decision, role-by-role effort A/B, and separate event-triggered commentary experiment. | One authority per rule, live adapter 11/11 after explicit authorization, actual model/effort recorded, quality non-regression with measured token/latency change. |
+| 6 | Post-baseline prompt/effort migration | One-shot global managed-block decision, role-by-role effort A/B, and separate event-triggered commentary experiment. | One authority per rule, live adapter matches the explicitly selected protocol-2 profile after any authorized migration (`minimal` = 7/7; `full` = 11/11), actual model/effort recorded, quality non-regression with measured token/latency change. |
 
 The first three observable savings are bounded and independently testable:
 
@@ -190,7 +201,7 @@ Do not use OpenAI's internal 10–15% quality, 41–66% token, or 33–67% cost 
 | No active-stack duplication | Contract-bound writable child: one `EXECUTION_BOUNDARY`; read-only/no-contract child: zero implementation boundary. |
 | Context is measured | Every run records component hashes, bytes/tokens, applied model/effort, cache usage, duration, block/repair, and quality verdict. |
 | Effort change is attributable | Same task, same grader, same prompt group, current effort versus one lower setting; one role per package. |
-| Host truth is explicit | Source target and live adapter are reported separately; lifecycle claims require 11/11 readback and a live canary. |
+| Host truth is explicit | Registry coverage, recorded install profile, and live adapter are reported separately; lifecycle claims require protocol-2 profile-relative readback and a live canary (`minimal` = 7/7; `full` = 11/11). |
 | Migration is surgical | One prompt group per independently reviewable package; no steady-state compatibility or dual authority. |
 | Quality is not traded away | Existing routing, context-budget, contract, workflow, security, and representative task evals remain green. |
 
@@ -230,7 +241,9 @@ Observed results:
 - Prompt decision p95: 32.76 ms, within 250 ms.
 - State snapshot p95: 771.02 ms, outside 250 ms.
 - Synthetic idle SessionStart: 0 tokens, within the 1,500-token cap; this does not prove an active-session bound.
-- Live Codex adapter: 7/11 managed routes; source target and live host do not yet match.
+- Live Codex adapter: 7 managed routes under an unmigrated protocol-1
+  `standard` record. Current source intentionally reports that state invalid
+  until explicit migration; no protocol-2 host readback is claimed here.
 - Isolated remediation closeout: final full suite **1599 pass / 1 skip / 0 fail** with 14,333 assertions; Claude returned no P1/P2 findings; direct source `verify-sprint` passed with benchmark status `not_applicable` and empty hashes.
 - CLI/runtime budget falsifier: `repo-harness run verify-sprint` timed out at the global 120-second wrapper limit, while the same source helper completed successfully and its nested contract verifier recorded 531,312 ms. This is the concrete acceptance fixture for the helper-aware budget proposal above.
 

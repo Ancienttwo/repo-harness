@@ -976,10 +976,10 @@ export function buildAggregateReport(
   // version sorted inputs lexicographically by path, which silently
   // discarded correct records whenever a report's path happened to sort
   // after another report covering the same case (found during SSD-07 Phase
-  // B: "routing-report-product-planning-claude.json" < "...-strict-....json"
-  // meant every case reachable under both profiles was always sourced from
-  // product-planning, even when strict's own record was correct and
-  // product-planning's was not). Preserving input order makes the
+  // B: "routing-report-full-claude.json" < "...-full-codex.json" meant every
+  // case reachable on both hosts was always sourced from Claude, even when
+  // Codex's own record was correct and Claude's was not). Preserving input
+  // order makes the
   // precedence a deliberate choice the operator states on the command line,
   // not an accident of file naming.
   const sorted = inputs;

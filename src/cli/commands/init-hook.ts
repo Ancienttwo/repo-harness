@@ -175,6 +175,31 @@ function statusChecks(
   actions: InitHookAction[],
 ): InitHookCheck[] {
   const checks: InitHookCheck[] = [];
+  const invalidProfile = report.installedProfile.recorded === 'invalid'
+    ? report.installedProfile
+    : null;
+  if (invalidProfile?.kind === 'legacy_protocol') {
+    addAction(actions, {
+      id: 'install-profile.migrate',
+      status: 'needs_agent',
+      reason: `Installed profile state is invalid: ${invalidProfile.error}`,
+      requires_agent: true,
+      risk: 'Reprojects package-owned user-level runtime surfaces under protocol 2; unmanaged host entries are preserved and the transaction compensates on failure.',
+      command: `repo-harness install --migrate-profile-state --profile full --target ${target}`,
+      targets: [invalidProfile.path],
+      verification: verificationCommand(target, checkUpdates),
+    });
+  } else if (invalidProfile) {
+    addAction(actions, {
+      id: 'install-profile.repair',
+      status: 'needs_agent',
+      reason: `Installed profile state is corrupt and cannot be migrated automatically: ${invalidProfile.error}`,
+      requires_agent: true,
+      risk: 'Requires operator inspection of the user-level state authority; do not overwrite or delete it until the intended profile and ownership manifest are established.',
+      targets: [invalidProfile.path],
+      verification: verificationCommand(target, checkUpdates),
+    });
+  }
   for (const id of selectedTargets(target)) {
     const entry = report.targets.find((candidate) => candidate.id === id);
     if (!entry) {
@@ -199,18 +224,22 @@ function statusChecks(
       continue;
     }
 
-    const configured = entry.alreadyConfigured && entry.managedEntryCount === entry.expectedEntryCount;
+    const configured = invalidProfile === null
+      && entry.alreadyConfigured
+      && entry.managedEntryCount === entry.expectedEntryCount;
     checks.push({
       id: `status.adapter.${id}`,
       title: `${targetLabel(id)} global hook adapter`,
       status: configured ? 'ok' : 'needs_agent',
       source: 'status',
-      detail: configured
+      detail: invalidProfile
+        ? `installed profile state is invalid: ${invalidProfile.error}`
+        : configured
         ? `${entry.managedEntryCount}/${entry.expectedEntryCount} managed entries at ${entry.configPath}`
         : `${entry.managedEntryCount}/${entry.expectedEntryCount} managed entries at ${entry.configPath ?? '(unknown config path)'}`,
     });
 
-    if (!configured) {
+    if (!configured && invalidProfile === null) {
       addAction(actions, {
         id: `adapter.${id}.install`,
         status: 'needs_agent',

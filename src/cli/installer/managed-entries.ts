@@ -56,19 +56,21 @@ export function isManagedEntry(entry: HookEntry): boolean {
 }
 
 function routeInProfile(route: Route, profile: InstallProfile): boolean {
-  if (profile === 'strict') return true;
+  if (profile === 'full') return true;
   const key = `${route.event}.${route.routeId}`;
   const minimal = new Set([
-    'SessionStart.default', 'PreToolUse.edit', 'PostToolUse.edit', 'PostToolUse.bash', 'Stop.default',
+    'SessionStart.default',
+    'UserPromptSubmit.default',
+    'PreToolUse.edit',
+    'PostToolUse.edit',
+    'PostToolUse.bash',
+    'PostToolUse.always',
+    'Stop.default',
   ]);
-  if (minimal.has(key)) return true;
-  if (profile === 'standard' || profile === 'product-planning') {
-    return key === 'UserPromptSubmit.default' || key === 'PostToolUse.always';
-  }
-  return false;
+  return minimal.has(key);
 }
 
-export function buildManagedHooks(host: HookHost, profile: InstallProfile = 'strict'): HooksByEvent {
+export function buildManagedHooks(host: HookHost, profile: InstallProfile = 'full'): HooksByEvent {
   const out: HooksByEvent = {};
   for (const route of routesForHost(host).filter((candidate) => routeInProfile(candidate, profile))) {
     if (!out[route.event]) out[route.event] = [];

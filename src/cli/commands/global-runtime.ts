@@ -648,7 +648,7 @@ export function runGlobalRuntimeSetup(
   const target = opts.target ?? "both";
   const bunExecutable = resolveBunExecutable(opts.env);
   const env = bindBunRuntimeEnv(commandEnv(sourceRoot, opts.env), bunExecutable);
-  const profile = opts.profile ?? readInstalledProfile(env)?.profile ?? "minimal";
+  const profile = opts.profile ?? readInstalledProfile(env)?.profile ?? "full";
   const steps: GlobalRuntimeStep[] = [];
 
   const bunRuntime = ensureSupportedBunRuntime(cwd, env, bunExecutable);
@@ -673,7 +673,7 @@ export function runGlobalRuntimeSetup(
   if (opts.hostAdapters !== false) steps.push(installHostAdapters(target, profile, env));
   else steps.push({ step: "install host adapters", status: "skipped", detail: "disabled" });
 
-  if (profile === 'strict') steps.push(installAgentFleet(sourceRoot, env));
+  if (profile === 'full') steps.push(installAgentFleet(sourceRoot, env));
   else steps.push({ step: 'install agent fleet', status: 'skipped', detail: 'disabled by install profile' });
 
   if (opts.externalSkills === true) {
@@ -688,13 +688,13 @@ export function runGlobalRuntimeSetup(
     steps.push({ step: "configure Mermaid skill", status: "skipped", detail: "disabled" });
   }
 
-  if (profile === 'strict') {
+  if (profile === 'full') {
     steps.push(...syncCrossReviewSkills(sourceRoot, target, env));
   } else {
     steps.push({ step: "cross-review skills", status: "skipped", detail: "disabled by install profile" });
   }
 
-  if (opts.brainRoot || profile === 'product-planning') steps.push(configureBrain(opts.brainRoot, env));
+  if (opts.brainRoot || profile === 'full') steps.push(configureBrain(opts.brainRoot, env));
   else steps.push({ step: "configure brain root", status: "skipped", detail: "disabled by install profile" });
 
   if (opts.codegraph === true) {

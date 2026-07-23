@@ -367,7 +367,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       "const installedCli = join(env.BUN_INSTALL ?? join(hostRoot, '.bun'), 'bin', 'repo-harness');",
     );
     const installProfile = block.indexOf(
-      "const installProfile = profile === 'adaptive-lite' ? 'standard' : 'strict';",
+      "const installProfile = profile === 'adaptive-lite' ? 'minimal' : 'full';",
     );
 
     expect(noHarness).toBeGreaterThanOrEqual(0);

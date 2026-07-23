@@ -5,7 +5,11 @@ import * as os from 'os';
 import { execSync } from 'child_process';
 import { runStatus, formatStatus } from '../../src/cli/commands/status';
 import { runInstall } from '../../src/cli/commands/install';
-import { installProfileStatePath } from '../../src/cli/installer/install-profile';
+import {
+  installProfileStatePath,
+  PROFILE_COMPONENTS,
+  type InstallProfile,
+} from '../../src/cli/installer/install-profile';
 
 function withTempHome(fn: (home: string) => void): void {
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-status-')));
@@ -18,6 +22,20 @@ function withTempHome(fn: (home: string) => void): void {
     else process.env.HOME = prev;
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+}
+
+function writeInstalledProfileFixture(profile: InstallProfile): void {
+  const statePath = installProfileStatePath(process.env);
+  fs.mkdirSync(path.dirname(statePath), { recursive: true });
+  fs.writeFileSync(statePath, JSON.stringify({
+    protocol: 2,
+    profile,
+    components: PROFILE_COMPONENTS[profile],
+    transaction_id: `test-${profile}`,
+    applied_at: '2026-01-01T00:00:00.000Z',
+    ownership_manifest: [],
+    previous: null,
+  }));
 }
 
 describe('status command (Phase 1C)', () => {
@@ -59,6 +77,26 @@ describe('status command (Phase 1C)', () => {
       expect(claude.managedEntryCount).toBe(claude.expectedEntryCount);
       expect(claude.managedEntryCount).toBe(8);
     });
+  });
+
+  test('uses the recorded install profile for expected managed entry count', () => {
+    const cases: ReadonlyArray<readonly [InstallProfile, number]> = [
+      ['minimal', 7],
+      ['full', 11],
+    ];
+
+    for (const [profile, expectedCount] of cases) {
+      withTempHome(() => {
+        runInstall({ target: 'codex', location: 'global', profile });
+        writeInstalledProfileFixture(profile);
+
+        const report = runStatus();
+        const codex = report.targets.find((target) => target.id === 'codex')!;
+        expect(codex.managedEntryCount).toBe(expectedCount);
+        expect(codex.expectedEntryCount).toBe(expectedCount);
+        expect(report.installedProfile).toMatchObject({ recorded: true, profile });
+      });
+    }
   });
 
   test('detects opt-in repo via .ai/harness/workflow-contract.json marker', () => {
@@ -117,6 +155,7 @@ describe('status command (Phase 1C)', () => {
     withTempHome(() => {
       const r = runStatus();
       expect(r.installedProfile).toEqual({ recorded: false });
+      expect(r.targets.find((target) => target.id === 'codex')?.expectedEntryCount).toBe(11);
       const text = formatStatus(r, false);
       expect(text).toContain('Installed profile:');
       expect(text).toContain('(not recorded)');
@@ -125,44 +164,18 @@ describe('status command (Phase 1C)', () => {
 
   test('installedProfile reads back profile + components from install-state.json', () => {
     withTempHome(() => {
-      const statePath = installProfileStatePath(process.env);
-      fs.mkdirSync(path.dirname(statePath), { recursive: true });
-      fs.writeFileSync(statePath, JSON.stringify({
-        protocol: 1,
-        profile: 'standard',
-        components: [
-          'cli',
-          'effective-state',
-          'scope-worktree-check-guards',
-          'handoff',
-          'host-adapters',
-          'adaptive-workflow',
-          'codegraph-conditional',
-        ],
-        transaction_id: 'test-txn',
-        applied_at: '2026-01-01T00:00:00.000Z',
-        ownership_manifest: [],
-        previous: null,
-      }));
+      writeInstalledProfileFixture('minimal');
 
       const r = runStatus();
       expect(r.installedProfile).toEqual({
         recorded: true,
-        profile: 'standard',
-        components: [
-          'cli',
-          'effective-state',
-          'scope-worktree-check-guards',
-          'handoff',
-          'host-adapters',
-          'adaptive-workflow',
-          'codegraph-conditional',
-        ],
+        profile: 'minimal',
+        components: PROFILE_COMPONENTS.minimal,
       });
 
       const text = formatStatus(r, false);
-      expect(text).toContain('profile: standard');
-      expect(text).toContain('components: cli, effective-state, scope-worktree-check-guards, handoff, host-adapters, adaptive-workflow, codegraph-conditional');
+      expect(text).toContain('profile: minimal');
+      expect(text).toContain(`components: ${PROFILE_COMPONENTS.minimal.join(', ')}`);
     });
   });
 
@@ -178,7 +191,9 @@ describe('status command (Phase 1C)', () => {
 
       const r = runStatus();
       expect(r.installedProfile.recorded).toBe('invalid');
+      expect(r.installedProfile).toMatchObject({ kind: 'corrupt_current' });
       expect(r.installedProfile).not.toEqual({ recorded: false });
+      expect(r.targets.find((target) => target.id === 'codex')?.expectedEntryCount).toBe(11);
       const text = formatStatus(r, false);
       expect(text).toContain('(invalid)');
       expect(text).not.toContain('(not recorded)');
@@ -190,7 +205,7 @@ describe('status command (Phase 1C)', () => {
       const statePath = installProfileStatePath(process.env);
       fs.mkdirSync(path.dirname(statePath), { recursive: true });
       fs.writeFileSync(statePath, JSON.stringify({
-        protocol: 1,
+        protocol: 2,
         profile: 'not-a-real-profile',
         components: [],
         transaction_id: 'test-txn',
@@ -201,19 +216,49 @@ describe('status command (Phase 1C)', () => {
 
       const r = runStatus();
       expect(r.installedProfile.recorded).toBe('invalid');
+      expect(r.installedProfile).toMatchObject({ kind: 'corrupt_current' });
     });
   });
 
-  test('installedProfile reports invalid instead of crashing when a syntactically valid install-state.json is missing components', () => {
-    // readInstalledProfile validates protocol/profile/ownership_manifest but
-    // not components -- formatStatus's `.components.join(', ')` used to throw
-    // a TypeError on this input instead of reporting a diagnosable state.
+  test('installedProfile distinguishes a valid protocol-1 state as explicitly migratable', () => {
     withTempHome(() => {
       const statePath = installProfileStatePath(process.env);
       fs.mkdirSync(path.dirname(statePath), { recursive: true });
       fs.writeFileSync(statePath, JSON.stringify({
         protocol: 1,
         profile: 'standard',
+        components: [
+          'cli',
+          'effective-state',
+          'scope-worktree-check-guards',
+          'handoff',
+          'host-adapters',
+          'adaptive-workflow',
+          'codegraph-conditional',
+        ],
+        transaction_id: 'legacy-standard',
+        applied_at: '2026-07-14T00:00:00.000Z',
+        ownership_manifest: [],
+        previous: null,
+      }));
+
+      const r = runStatus();
+      expect(r.installedProfile).toMatchObject({
+        recorded: 'invalid',
+        kind: 'legacy_protocol',
+      });
+    });
+  });
+
+  test('installedProfile reports invalid instead of crashing when a syntactically valid install-state.json is missing components', () => {
+    // A syntactically valid state with missing components must remain
+    // diagnosable instead of reaching formatStatus's `.components.join()`.
+    withTempHome(() => {
+      const statePath = installProfileStatePath(process.env);
+      fs.mkdirSync(path.dirname(statePath), { recursive: true });
+      fs.writeFileSync(statePath, JSON.stringify({
+        protocol: 2,
+        profile: 'minimal',
         transaction_id: 'test-txn',
         applied_at: '2026-01-01T00:00:00.000Z',
         ownership_manifest: [],
@@ -234,8 +279,8 @@ describe('status command (Phase 1C)', () => {
       const statePath = installProfileStatePath(process.env);
       fs.mkdirSync(path.dirname(statePath), { recursive: true });
       fs.writeFileSync(statePath, JSON.stringify({
-        protocol: 1,
-        profile: 'standard',
+        protocol: 2,
+        profile: 'minimal',
         components: 'cli,effective-state',
         transaction_id: 'test-txn',
         applied_at: '2026-01-01T00:00:00.000Z',

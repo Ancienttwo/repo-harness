@@ -10,7 +10,7 @@ export const SKILL_SURFACE_CATALOG_VERSION = 2 as const;
 export const SKILL_SURFACE_HOSTS = ["claude", "codex"] as const;
 export type SkillSurfaceHost = (typeof SKILL_SURFACE_HOSTS)[number];
 
-export const SKILL_SURFACE_PROFILES = ["minimal", "standard", "product-planning", "strict"] as const;
+export const SKILL_SURFACE_PROFILES = ["minimal", "full"] as const;
 export type SkillSurfaceProfile = (typeof SKILL_SURFACE_PROFILES)[number];
 
 export const SKILL_SURFACE_KINDS = ["router", "facade", "provider-skill", "integration", "external", "judge"] as const;
@@ -692,7 +692,7 @@ export function facadesForProfile(catalog: SkillSurfaceCatalog, profile: SkillSu
 
 /**
  * Cross-review provider-skill host placement. Pass `profile` to get the
- * profile-gated projection (global-runtime.ts's `profile === 'strict'` gate);
+ * profile-gated projection (global-runtime.ts's `profile === 'full'` gate);
  * omit it to get the unconditional bundle (init.ts's `repo-harness adopt`
  * flow, which has no installed-profile concept and always syncs the same
  * three packages when externalSkills stays enabled).

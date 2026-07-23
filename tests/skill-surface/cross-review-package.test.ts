@@ -175,18 +175,16 @@ describe("repo-harness-cross-review package: activation proof -- live in manifes
     expect(entry?.source).toBe(`assets/skills/${PACKAGE_DIR}`);
     expect(entry?.component).toBe("cross-model-acceptance");
     expect([...(entry?.hosts ?? [])].sort()).toEqual(["claude", "codex"]);
-    expect(entry?.profiles).toEqual(["strict"]);
+    expect(entry?.profiles).toEqual(["full"]);
   });
 
-  test("hostSkillPlacements installs this package on both hosts for strict, and no other profile", () => {
-    for (const profile of ["minimal", "standard", "product-planning"] as const) {
-      const placements = hostSkillPlacements(catalog, profile);
-      expect(placements.claude).not.toContain(PACKAGE_DIR);
-      expect(placements.codex).not.toContain(PACKAGE_DIR);
-    }
-    const strict = hostSkillPlacements(catalog, "strict");
-    expect(strict.claude).toContain(PACKAGE_DIR);
-    expect(strict.codex).toContain(PACKAGE_DIR);
+  test("hostSkillPlacements installs this package on both hosts for full only", () => {
+    const minimal = hostSkillPlacements(catalog, "minimal");
+    expect(minimal.claude).not.toContain(PACKAGE_DIR);
+    expect(minimal.codex).not.toContain(PACKAGE_DIR);
+    const full = hostSkillPlacements(catalog, "full");
+    expect(full.claude).toContain(PACKAGE_DIR);
+    expect(full.codex).toContain(PACKAGE_DIR);
   });
 
   test("this package is included in the transaction mutation-path and probe-expectation crossModel sets", () => {

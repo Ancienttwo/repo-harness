@@ -4,6 +4,10 @@
 > **Discovery Baseline**: `main@af6d5216c2cd5adf2f672636a8308a309f0f5adb`
 > **Post-ESA Program Baseline**: `origin/main@3b33cea2422b1aa1e5be9080be54f731c4f2015d` (PR #79)
 > **Purpose**: Ground the Skill Surface & Discovery Convergence plan in current source and runtime evidence.
+> **Superseded profile note (2026-07-24)**: The profile names and defaults below
+> are historical evidence for the captured baseline. Current protocol-2 source
+> exposes only `minimal` (7 Codex hooks) and `full` (11, default); protocol-1
+> state requires explicit migration and is not accepted as a runtime alias.
 
 ## Conclusion
 

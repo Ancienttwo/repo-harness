@@ -52,12 +52,12 @@ host-aware during `repo-harness install`/`init` and explicit external-skill
 refreshes: it installs into **both** `~/.claude/skills` (a Claude session
 asking Codex for an independent review, via its Codex provider mode) and
 `~/.codex/skills` (a Codex session asking Claude for a review, via its Claude
-provider mode) for the strict profile. `claude-plan` installs only into
+provider mode) for the full profile. `claude-plan` installs only into
 `~/.codex/skills` (a Codex session using Claude's headless plan mode for a
 plan consult on a mid-execution design fork) and is unaffected by this
-package's host-aware installation. The harness skills are the self-contained
-baseline that always ships with `init` and the peer acceptance gate surface for
-the typed `AcceptanceReceipt`; its review section is projection only.
+package's host-aware installation. These harness skills ship with the full
+profile (the default for `init`) and provide the peer acceptance gate surface
+for the typed `AcceptanceReceipt`; the review section is projection only.
 
 The review scope is the current reviewable diff, not just committed branch
 history: branch diff against the default base, staged changes, unstaged tracked
@@ -599,7 +599,7 @@ and developer instructions. Symlinks, missing files, malformed files, or
 role-name mismatches fail closed without changing the receipt.
 
 Only customized files are recorded, by absolute path and SHA-256. Later
-installer and strict-profile runs report those exact bytes as `user-managed`
+installer and full-profile runs report those exact bytes as `user-managed`
 and do not claim transaction ownership over them. Any subsequent byte change
 invalidates the acknowledgement and returns to `drift` until the operator
 reviews and accepts the new content. `--force` restores packaged content and
