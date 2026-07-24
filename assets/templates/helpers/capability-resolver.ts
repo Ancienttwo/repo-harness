@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// @generated-from src/core/capabilities/registry.ts sha256:c9d580a3eff168b763f309dc0cbec15b1c6c478aa7bdf7bcd17015044a02830d
+// @generated-from src/core/capabilities/registry.ts sha256:2d0a2e802983d792e988db7e5ad8b1cd1b67353fbfc91db924d921bfb26cb3fe
 // Standalone typed Bun projection. Regenerate from scripts/capability-resolver.ts; do not edit by hand.
 export const CAPABILITY_REGISTRY_VERSION = 1 as const;
 
@@ -143,6 +143,22 @@ export function normalizeCapabilityPath(value: string, repoRoot = ""): string {
     throw new Error(`path must not contain traversal: ${value}`);
   }
   return parts.join("/");
+}
+
+/**
+ * True when the path is absolute and not under repoRoot. Such paths can never
+ * be governed by the repo-relative capability registry (prefixes are
+ * repo-relative), so callers keep them out of prefix matching -- where
+ * normalizeCapabilityPath would otherwise fail the whole resolution -- and
+ * account for them separately. Mirrors normalizeCapabilityPath's
+ * outside-repo branch exactly.
+ */
+export function isCapabilityPathOutsideRepo(value: string, repoRoot = ""): boolean {
+  if (typeof value !== "string") return false;
+  const next = value.trim().replace(/^file:\/\//, "").replaceAll("\\", "/");
+  const normalizedRoot = repoRoot.trim().replaceAll("\\", "/").replace(/\/+$/, "");
+  if (normalizedRoot && next.startsWith(`${normalizedRoot}/`)) return false;
+  return next.startsWith("/") || /^[A-Za-z]:\//.test(next);
 }
 
 function validatePathField(

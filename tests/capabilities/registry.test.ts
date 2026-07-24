@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  isCapabilityPathOutsideRepo,
   matchCapabilityPath,
   normalizeCapabilityPath,
   parseCapabilityRegistry,
@@ -8,6 +9,26 @@ import {
   type Capability,
   type CapabilityRegistry,
 } from "../../src/core/capabilities/registry";
+
+describe("isCapabilityPathOutsideRepo", () => {
+  const repoRoot = "/repo/root";
+
+  test("flags absolute paths outside the repo root", () => {
+    expect(isCapabilityPathOutsideRepo("/home/user/.pi/agent/bridge.ts", repoRoot)).toBe(true);
+    expect(isCapabilityPathOutsideRepo("C:/Users/user/config.ts", repoRoot)).toBe(true);
+  });
+
+  test("keeps repo-internal and relative paths inside jurisdiction", () => {
+    expect(isCapabilityPathOutsideRepo("/repo/root/src/a.ts", repoRoot)).toBe(false);
+    expect(isCapabilityPathOutsideRepo("src/a.ts", repoRoot)).toBe(false);
+    expect(isCapabilityPathOutsideRepo("../escape.ts", repoRoot)).toBe(false);
+  });
+
+  test("mirrors normalizeCapabilityPath's outside-repo branch exactly", () => {
+    expect(() => normalizeCapabilityPath("/home/user/.pi/agent/bridge.ts", repoRoot)).toThrow(/outside repo/);
+    expect(normalizeCapabilityPath("/repo/root/src/a.ts", repoRoot)).toBe("src/a.ts");
+  });
+});
 
 const web: Capability = {
   id: "apps-web",

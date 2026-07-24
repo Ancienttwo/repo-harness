@@ -380,6 +380,12 @@ function runPerPathGuards(
   }
 
   // ---- TDD/BDD reminder ------------------------------------------------------
+  // Out-of-repo absolute paths (normalizeFilePath's documented fallthrough)
+  // are exempt like every other repo-scoped gate above: their test siblings
+  // would be read through collect-state-inputs' repoPath sandbox, which
+  // throws "unsafe state source path escapes repository" and crashed the
+  // whole hook for a mere advisory reminder.
+  if (!isRepoScopedPath(filePath)) return;
   if (!/\.(ts|tsx|js|jsx|py)$/.test(filePath)) return;
   if (TDD_EXCLUSION_PATTERNS.some((pattern) => pattern.test(filePath))) return;
   if (/(^|\/)index\.(ts|tsx|js|jsx)$/.test(filePath) && isPureBarrelFile(ctx.repoRoot, filePath)) return;

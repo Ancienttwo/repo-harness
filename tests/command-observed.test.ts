@@ -40,7 +40,7 @@ describe('runCommandObserved', () => {
       });
       expect(result.exitCode).toBe(0);
       expect(result.reason).toBe('ok');
-      expect(result.stdout).toContain('[ChecksFile] Updated .ai/harness/checks/post-bash-latest.json');
+      expect(result.stdout).toBe('');
       const checks = JSON.parse(readFileSync(join(repoRoot, '.ai/harness/checks/post-bash-latest.json'), 'utf8')) as Record<string, unknown>;
       expect(checks).toMatchObject({
         source: 'post-bash',
@@ -98,7 +98,7 @@ describe('runCommandObserved', () => {
       });
 
       expect(result).toMatchObject({ exitCode: 0, reason: 'ok' });
-      expect(result.stdout).toBe('[ChecksFile] Preserved .ai/harness/checks/latest.json; updated .ai/harness/checks/post-bash-latest.json.\n');
+      expect(result.stdout).toBe('');
       expect(JSON.parse(readFileSync(join(repoRoot, '.ai/harness/checks/latest.json'), 'utf8'))).toEqual(existing);
       expect(checks(repoRoot)).toMatchObject({
         source: 'post-bash',
