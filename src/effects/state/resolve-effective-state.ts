@@ -3,6 +3,7 @@ import { posix, win32 } from 'path';
 import { buildReviewSubject, isImplementationSurfacePath } from '../review/diff-fingerprint';
 import { resolveWorkflowProfile, type WorkflowProfile } from '../../core/workflow/profile';
 import {
+  isCapabilityPathOutsideRepo,
   parseCapabilityRegistry,
   resolveCapabilityPaths,
 } from '../../core/capabilities/registry';
@@ -251,6 +252,7 @@ export interface CapabilityResolution {
   readonly registryStatus: CapabilityRegistryStatus;
   readonly unmappedPaths: readonly string[];
   readonly malformedEntryCount: number;
+  readonly outOfRepoPathCount: number;
 }
 
 // Deterministic "declared" signal for a missing registry file: a repo commits
@@ -279,13 +281,21 @@ function capabilityIdsForPaths(
   paths: readonly string[],
   policy: WorkflowPolicy,
 ): CapabilityResolution {
+  // Absolute paths outside the repo (user-level config such as ~/.pi/agent/*)
+  // are outside the registry's jurisdiction: prefixes are repo-relative, so
+  // they can never match, and feeding them into prefix matching used to fail
+  // the ENTIRE resolution as capability_registry:invalid even though the
+  // registry itself was valid. Partition them out and report them via their
+  // own capability:out-of-repo:<n> reason instead.
+  const inRepoPaths = paths.filter((path) => !isCapabilityPathOutsideRepo(path, cwd));
+  const outOfRepoPathCount = paths.length - inRepoPaths.length;
   const text = readText(cwd, CAPABILITY_REGISTRY_PATH);
   const registry = parseCapabilityRegistry(text && text.length > 0 ? text : null, {
     declared: policyDeclaresCapabilityRegistry(policy),
     repoRoot: cwd,
   });
   if (registry.status === 'absent') {
-    return { ids: [], registryStatus: 'absent', unmappedPaths: [], malformedEntryCount: 0 };
+    return { ids: [], registryStatus: 'absent', unmappedPaths: [], malformedEntryCount: 0, outOfRepoPathCount };
   }
   if (registry.status === 'invalid') {
     const malformedEntries = new Set(
@@ -298,14 +308,16 @@ function capabilityIdsForPaths(
       registryStatus: 'invalid',
       unmappedPaths: [...paths],
       malformedEntryCount: malformedEntries.size,
+      outOfRepoPathCount,
     };
   }
-  const resolution = resolveCapabilityPaths(registry.registry, paths, { repoRoot: cwd });
+  const resolution = resolveCapabilityPaths(registry.registry, inRepoPaths, { repoRoot: cwd });
   return {
     ids: resolution.capabilityIds,
     registryStatus: resolution.status,
     unmappedPaths: resolution.unmappedPaths,
     malformedEntryCount: 0,
+    outOfRepoPathCount,
   };
 }
 
@@ -410,12 +422,13 @@ function resolveEffectiveStateUnlocked(
   // from the implementation-surface path set (capabilityIdsForPaths' contract
   // is stated in terms of "implementation paths").
   const capabilityResolution: CapabilityResolution | null = options.risk?.capabilityIds
-    ? { ids: options.risk.capabilityIds, registryStatus: 'valid', unmappedPaths: [], malformedEntryCount: 0 }
+    ? { ids: options.risk.capabilityIds, registryStatus: 'valid', unmappedPaths: [], malformedEntryCount: 0, outOfRepoPathCount: 0 }
     : hasRawTargetPaths
       ? capabilityIdsForPaths(cwd, implementationTargetPaths, policy)
       : null;
   const observedCapabilityIds = capabilityResolution?.ids;
   const unmappedCapabilityCount = capabilityResolution?.unmappedPaths.length ?? 0;
+  const outOfRepoPathCount = capabilityResolution?.outOfRepoPathCount ?? 0;
   // capabilityCount is always an explicit number (never left undefined) once
   // there are any raw target paths, so an all-workflow-surface batch (whose
   // implementationTargetPaths is empty) resolves the deterministic "known,
@@ -425,7 +438,9 @@ function resolveEffectiveStateUnlocked(
   // which stays untouched below.
   const declaredCapabilityCount = options.risk?.capabilityCount ?? (
     hasRawTargetPaths
-      ? (observedCapabilityIds?.length ?? 0) + (unmappedCapabilityCount > 0 ? 1 : 0)
+      ? (observedCapabilityIds?.length ?? 0)
+        + (unmappedCapabilityCount > 0 ? 1 : 0)
+        + (outOfRepoPathCount > 0 ? 1 : 0)
       : undefined
   );
 
@@ -462,6 +477,9 @@ function resolveEffectiveStateUnlocked(
   }
   if (unmappedCapabilityCount > 0) {
     capabilityReasons.push(`capability:unmapped:${unmappedCapabilityCount}`);
+  }
+  if (outOfRepoPathCount > 0) {
+    capabilityReasons.push(`capability:out-of-repo:${outOfRepoPathCount}`);
   }
 
   const reviewPath = planPath ? deriveReviewPath(planPath, planText, contractText) : null;

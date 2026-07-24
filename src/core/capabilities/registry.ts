@@ -142,6 +142,22 @@ export function normalizeCapabilityPath(value: string, repoRoot = ""): string {
   return parts.join("/");
 }
 
+/**
+ * True when the path is absolute and not under repoRoot. Such paths can never
+ * be governed by the repo-relative capability registry (prefixes are
+ * repo-relative), so callers keep them out of prefix matching -- where
+ * normalizeCapabilityPath would otherwise fail the whole resolution -- and
+ * account for them separately. Mirrors normalizeCapabilityPath's
+ * outside-repo branch exactly.
+ */
+export function isCapabilityPathOutsideRepo(value: string, repoRoot = ""): boolean {
+  if (typeof value !== "string") return false;
+  const next = value.trim().replace(/^file:\/\//, "").replaceAll("\\", "/");
+  const normalizedRoot = repoRoot.trim().replaceAll("\\", "/").replace(/\/+$/, "");
+  if (normalizedRoot && next.startsWith(`${normalizedRoot}/`)) return false;
+  return next.startsWith("/") || /^[A-Za-z]:\//.test(next);
+}
+
 function validatePathField(
   value: unknown,
   path: string,
