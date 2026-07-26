@@ -593,6 +593,49 @@ describe("buildSessionStartSections — composition order and shape", () => {
   });
 });
 
+describe("sessionStartMainContent — provider diagnostics", () => {
+  test("one provider throw is omitted with bounded evidence while later siblings survive", () => {
+    withTmpRepo("provider-diagnostic", (repoRoot) => {
+      mkdirSync(join(repoRoot, ".ai/harness/planning"), { recursive: true });
+      writeFileSync(
+        join(repoRoot, ".ai/harness/planning/pending.json"),
+        JSON.stringify({ kind: "host-plan", host: "codex", prompt_slug: "fixture" }),
+      );
+      mkdirSync(join(repoRoot, "plans/sprints"), { recursive: true });
+      mkdirSync(join(repoRoot, ".ai/harness/sprint"), { recursive: true });
+      writeFileSync(
+        join(repoRoot, "plans/sprints/fixture.sprint.md"),
+        "# Sprint: Fixture\n\n> **Status**: Approved\n\n## Backlog\n\n| # | Status | Task |\n|---|--------|------|\n| 1 | [ ] | surviving sibling |\n",
+      );
+      writeFileSync(join(repoRoot, ".ai/harness/sprint/active-sprint"), "plans/sprints/fixture.sprint.md\n");
+      const diagnostics: Array<Record<string, unknown>> = [];
+      const collector: SessionContextCollector = {
+        getRepoRoot: () => repoRoot,
+        getWorktreeOwnership: () => {
+          throw new Error(`injected provider failure ${repoRoot}/private`);
+        },
+        getActivePlanMarker: () => null,
+      };
+      const content = sessionStartMainContent(
+        collector,
+        process.env,
+        Date.now(),
+        (diagnostic) => diagnostics.push(diagnostic as unknown as Record<string, unknown>),
+      );
+      expect(content).toContain("# Active Sprint");
+      expect(content).toContain("surviving sibling");
+      expect(content).not.toContain("# Pending Plan Capture");
+      expect(diagnostics).toEqual([expect.objectContaining({
+        provider_id: "pending-plan-capture",
+        reason_code: "provider_threw",
+        error_hash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+      })]);
+      expect(JSON.stringify(diagnostics)).not.toContain(repoRoot);
+      expect(JSON.stringify(diagnostics)).not.toContain("injected provider failure");
+    });
+  });
+});
+
 describe("budgetSessionContext integration — dedupe and mandatory-overflow fail-closed", () => {
   test("identical content + same session id on the second call dedupes to empty", () => {
     withTmpRepo("budget-dedupe", (repoRoot) => {

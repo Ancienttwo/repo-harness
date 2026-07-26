@@ -1,0 +1,28 @@
+{
+  "protocol": 1,
+  "fixture_root": "(temporary)",
+  "context": "[HarnessState] {\"task_id\":\"20260726-0000-baseline\",\"phase\":\"blocked\",\"state_version\":1,\"state_revision\":\"sha256:2ea3be8e62300e2c32936463f15e20b7b8448a6b5b0ebfeb210ce38a73d62358\",\"workflow_profile\":null,\"next_action\":\"resolve blockers\",\"guidance\":null,\"blockers\":[\"workflow_profile:invalid_risk_input\"],\"allowed_paths\":[\"src/baseline.ts\"],\"checks\":{\"path\":\".ai/harness/checks/latest.json\",\"freshness\":\"missing\",\"status\":null},\"references\":{\"plan\":\"plans/plan-20260726-0000-baseline.md\",\"contract\":\"tasks/contracts/20260726-0000-baseline.contract.md\",\"sprint\":null,\"handoff\":\".ai/harness/handoff/current.md\",\"resume\":\".ai/harness/handoff/resume.md\"}}",
+  "output_bytes": 648,
+  "estimated_tokens": 162,
+  "evidence": {
+    "protocol": 1,
+    "budget_tokens": 1500,
+    "estimated_tokens": 162,
+    "output_bytes": 648,
+    "content_hash": "sha256:320f9612d6951dda334d3d4a9f3aca1aa04412bbfb385b3bd606a626a099a7ba",
+    "session_id": "session-state-authority-baseline",
+    "deduped": false,
+    "actionable": true,
+    "included_sections": [
+      "effective-state"
+    ],
+    "dropped_sections": [],
+    "mandatory_overflows": [],
+    "within_budget": true
+  },
+  "telemetry": {
+    "child_processes": 0,
+    "state_resolutions": 1,
+    "runtime_entries": 1
+  }
+}

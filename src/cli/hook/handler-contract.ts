@@ -1,6 +1,6 @@
 import type { EffectiveState } from '../../core/state/types';
 import type { StateInputCollector } from '../../effects/loop/state-input-collector';
-import type { SessionContextSection } from './session-context-budget';
+import type { SessionContextProviderDiagnostic, SessionContextSection } from './session-context-budget';
 import type { HookEvent, HookHandlerId, RouteId } from './route-registry';
 
 /** Result returned by every typed hook handler before host output shaping. */
@@ -18,6 +18,7 @@ export interface HookHandlerDependencies {
   readonly observeJournalWrite?: (path: string) => void;
   readonly observeProjectionWrite?: (target: { readonly path: string }) => void;
   readonly observeProjectionTransaction?: () => void;
+  readonly observeSessionContextDiagnostic?: (diagnostic: SessionContextProviderDiagnostic) => void;
 }
 
 /** The single context boundary shared by all route handlers. */

@@ -22,7 +22,12 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
       if (stateSection) sections.push(stateSection);
       const pending = pendingPostEditJournalSection(context.repoRoot);
       if (pending) sections.push(pending);
-      sections.push(...buildSessionStartSections(context.collector, context.env, context.now.getTime()));
+      sections.push(...buildSessionStartSections(
+        context.collector,
+        context.env,
+        context.now.getTime(),
+        context.dependencies.observeSessionContextDiagnostic,
+      ));
       return { exitCode: 0, stdout: '', stderr: '', sessionContexts: sections };
     },
   },
