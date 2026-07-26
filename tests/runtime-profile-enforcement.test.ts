@@ -130,6 +130,22 @@ describe('risk-based runtime profile enforcement', () => {
     }
   });
 
+  test('Win32 absolute .ts paths outside the repo skip repo-scoped TDD probes', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-oor-win32-')));
+    try {
+      initRepo(cwd);
+      for (const target of [
+        'C:/Users/user/.pi/agent/extensions/bridge.ts',
+        'C:\\Users\\user\\.pi\\agent\\extensions\\bridge.ts',
+      ]) {
+        const result = preEdit(cwd, target);
+        expect(result.status).toBe(0);
+        expect(`${result.stdout}${result.stderr}`).not.toContain('unsafe state source path');
+        expect(result.stdout).not.toContain('TDD Guard');
+      }
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
+
   test('Standard requires a plan but not the Strict contract/worktree chain', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-standard-')));
     try {

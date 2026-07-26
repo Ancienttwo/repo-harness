@@ -24,9 +24,12 @@ describe("isCapabilityPathOutsideRepo", () => {
     expect(isCapabilityPathOutsideRepo("../escape.ts", repoRoot)).toBe(false);
   });
 
-  test("mirrors normalizeCapabilityPath's outside-repo branch exactly", () => {
+  test("partitions only validation-safe paths outside the repo", () => {
     expect(() => normalizeCapabilityPath("/home/user/.pi/agent/bridge.ts", repoRoot)).toThrow(/outside repo/);
     expect(normalizeCapabilityPath("/repo/root/src/a.ts", repoRoot)).toBe("src/a.ts");
+    const invalid = "/home/user/.pi/agent/bri\0dge.ts";
+    expect(isCapabilityPathOutsideRepo(invalid, repoRoot)).toBe(false);
+    expect(() => normalizeCapabilityPath(invalid, repoRoot)).toThrow(/NUL/);
   });
 });
 

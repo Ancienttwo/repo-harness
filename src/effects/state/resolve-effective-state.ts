@@ -306,7 +306,7 @@ function capabilityIdsForPaths(
     return {
       ids: [],
       registryStatus: 'invalid',
-      unmappedPaths: [...paths],
+      unmappedPaths: [...inRepoPaths],
       malformedEntryCount: malformedEntries.size,
       outOfRepoPathCount,
     };
@@ -436,11 +436,12 @@ function resolveEffectiveStateUnlocked(
   // resolveWorkflowProfile's signals-unavailable fail-closed branch -- that
   // branch exists for the genuinely unknown case (no target paths at all),
   // which stays untouched below.
+  // Out-of-repo paths remain diagnostic-only: they are not capabilities
+  // governed by this repo and therefore never contribute to capabilityCount.
   const declaredCapabilityCount = options.risk?.capabilityCount ?? (
     hasRawTargetPaths
       ? (observedCapabilityIds?.length ?? 0)
         + (unmappedCapabilityCount > 0 ? 1 : 0)
-        + (outOfRepoPathCount > 0 ? 1 : 0)
       : undefined
   );
 

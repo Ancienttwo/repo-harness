@@ -353,6 +353,53 @@ describe('effective state resolver', () => {
         expect(state.blockers).not.toContain('capability_registry:invalid');
         expect(state.profile_reasons).toContain('capability:unmapped:1');
         expect(state.profile_reasons).toContain('capability:out-of-repo:1');
+        expect(state.profile_signals?.capabilityCount).toBe(1);
+        expect(state.profile_signals?.crossCapability).toBe(false);
+        expect(state.risk_floor).toBe('lite');
+      });
+    });
+
+    test('a mapped repo capability plus an out-of-repo path stays one capability', () => {
+      withRepo((cwd) => {
+        write(cwd, '.ai/context/capabilities.json', JSON.stringify({
+          version: 1,
+          capabilities: [capability('feature-cap', ['src/feature'])],
+        }));
+        const state = resolveFixtureState(cwd, Date.now(), {
+          targetPaths: ['src/feature/index.ts', '/home/user/.pi/agent/extensions/bridge.ts'],
+          operationKind: 'edit',
+        });
+        expect(state.profile_reasons).toContain('capability:out-of-repo:1');
+        expect(state.profile_reasons).not.toContain('capability:unmapped:1');
+        expect(state.profile_signals?.capabilityCount).toBe(1);
+        expect(state.profile_signals?.crossCapability).toBe(false);
+        expect(state.risk_floor).toBe('lite');
+      });
+    });
+
+    test('a NUL-bearing absolute path fails canonical validation instead of bypassing it', () => {
+      withRepo((cwd) => {
+        write(cwd, '.ai/context/capabilities.json', JSON.stringify({ version: 1, capabilities: [] }));
+        const state = resolveFixtureState(cwd, Date.now(), {
+          targetPaths: ['/home/user/.pi/agent/bri\0dge.ts'],
+          operationKind: 'edit',
+        });
+        expect(state.blockers).toContain('capability_registry:invalid');
+        expect(state.profile_reasons).toContain('capability:registry:invalid');
+        expect(state.profile_reasons).not.toContain('capability:out-of-repo:1');
+      });
+    });
+
+    test('an invalid registry does not also count out-of-repo paths as unmapped', () => {
+      withRepo((cwd) => {
+        write(cwd, '.ai/context/capabilities.json', '{not json');
+        const state = resolveFixtureState(cwd, Date.now(), {
+          targetPaths: ['/home/user/.pi/agent/extensions/bridge.ts'],
+          operationKind: 'edit',
+        });
+        expect(state.blockers).toContain('capability_registry:invalid');
+        expect(state.profile_reasons).toContain('capability:out-of-repo:1');
+        expect(state.profile_reasons).not.toContain('capability:unmapped:1');
       });
     });
 
