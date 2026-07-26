@@ -1,3 +1,9 @@
+> **Archived**: 2026-07-26 13:32
+> **Related Plan**: plans/archive/plan-20260725-2254-session-state-authority-inprocess.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260726-1332
+
 # Task Contract: session-state-authority-inprocess
 
 > **Status**: Fulfilled

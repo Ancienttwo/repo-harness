@@ -1,6 +1,6 @@
 # Plan: Make SessionStart Effective State authority in-process and observable
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260725-2254
 > **Slug**: session-state-authority-inprocess
 > **Planning Source**: repo-harness-plan
