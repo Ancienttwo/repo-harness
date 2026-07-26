@@ -5,6 +5,31 @@ import { dirname, join } from 'path';
 export const SESSION_CONTEXT_TOKEN_BUDGET = 1_500;
 const EVIDENCE_PATH = '.ai/harness/state/session-context-budget.json';
 
+export const SESSION_CONTEXT_PROVIDER_IDS = [
+  'effective-state',
+  'resume',
+  'capability-context-pending',
+  'architecture-queue-pending',
+  'pending-plan-capture',
+  'current-status-snapshot',
+  'active-sprint',
+  'tooling-update-advisory',
+  'codex-delegation-auto',
+] as const;
+
+export type SessionContextProviderId = typeof SESSION_CONTEXT_PROVIDER_IDS[number];
+export type SessionContextDiagnosticReason =
+  | 'state_resolution_unstable'
+  | 'state_resolution_failed'
+  | 'provider_threw';
+
+export interface SessionContextProviderDiagnostic {
+  readonly provider_id: SessionContextProviderId;
+  readonly reason_code: SessionContextDiagnosticReason;
+  readonly error_hash: string;
+  readonly required_action?: string;
+}
+
 export interface SessionContextSection {
   readonly id: string;
   readonly priority: 1 | 2 | 3 | 4 | 5 | 6;
@@ -30,6 +55,7 @@ export interface SessionContextBudgetEvidence {
   }[];
   readonly mandatory_overflows: readonly MandatoryOverflowEvidence[];
   readonly within_budget: boolean;
+  readonly provider_diagnostics?: readonly SessionContextProviderDiagnostic[];
 }
 
 export interface MandatoryOverflowEvidence {
@@ -47,6 +73,35 @@ export interface SessionContextBudgetResult {
 
 function hash(value: string): string {
   return `sha256:${createHash('sha256').update(value).digest('hex')}`;
+}
+
+export function createSessionContextProviderDiagnostic(
+  providerId: SessionContextProviderId,
+  reasonCode: SessionContextDiagnosticReason,
+  error: unknown,
+  requiredAction?: string,
+): SessionContextProviderDiagnostic {
+  const errorName = error instanceof Error ? error.name : typeof error;
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  return {
+    provider_id: providerId,
+    reason_code: reasonCode,
+    error_hash: hash(`${errorName}\0${errorMessage}`),
+    ...(requiredAction ? { required_action: requiredAction } : {}),
+  };
+}
+
+function normalizeProviderDiagnostics(
+  diagnostics: readonly SessionContextProviderDiagnostic[],
+): readonly SessionContextProviderDiagnostic[] {
+  const byProvider = new Map<SessionContextProviderId, SessionContextProviderDiagnostic>();
+  for (const diagnostic of diagnostics) {
+    if (!byProvider.has(diagnostic.provider_id)) byProvider.set(diagnostic.provider_id, diagnostic);
+  }
+  return SESSION_CONTEXT_PROVIDER_IDS.flatMap((providerId) => {
+    const diagnostic = byProvider.get(providerId);
+    return diagnostic ? [diagnostic] : [];
+  });
 }
 
 function estimatedTokens(value: string): number {
@@ -79,7 +134,9 @@ function result(
   included: readonly string[],
   dropped: SessionContextBudgetEvidence['dropped_sections'],
   mandatoryOverflows: readonly MandatoryOverflowEvidence[] = [],
+  providerDiagnostics: readonly SessionContextProviderDiagnostic[] = [],
 ): SessionContextBudgetResult {
+  const normalizedDiagnostics = normalizeProviderDiagnostics(providerDiagnostics);
   const evidence: SessionContextBudgetEvidence = {
     protocol: 1,
     budget_tokens: SESSION_CONTEXT_TOKEN_BUDGET,
@@ -93,6 +150,7 @@ function result(
     dropped_sections: dropped,
     mandatory_overflows: mandatoryOverflows,
     within_budget: estimatedTokens(context) <= SESSION_CONTEXT_TOKEN_BUDGET,
+    ...(normalizedDiagnostics.length > 0 ? { provider_diagnostics: normalizedDiagnostics } : {}),
   };
   writeEvidence(repoRoot, evidence);
   return { context, evidence };
@@ -248,6 +306,7 @@ export function budgetSessionContext(
   repoRoot: string,
   sections: readonly SessionContextSection[],
   sessionId: string | null,
+  providerDiagnostics: readonly SessionContextProviderDiagnostic[] = [],
 ): SessionContextBudgetResult {
   const normalized = sections
     .map((section) => ({ ...section, content: section.content.trim() }))
@@ -272,12 +331,14 @@ export function budgetSessionContext(
       false,
       [],
       normalized.map(({ id }) => ({ id, reason: 'no-actionable-state' as const })),
+      [],
+      providerDiagnostics,
     );
   }
 
   const previous = sessionId ? readPrevious(repoRoot) : null;
   if (sessionId && previous?.session_id === sessionId && previous.content_hash === contentHash) {
-    return result(repoRoot, '', sessionId, contentHash, true, true, [], []);
+    return result(repoRoot, '', sessionId, contentHash, true, true, [], [], [], providerDiagnostics);
   }
 
   const included: string[] = [];
@@ -353,6 +414,7 @@ export function budgetSessionContext(
         reason: mandatory ? 'mandatory-overflow' as const : 'budget' as const,
       })),
       overflowEvidence,
+      providerDiagnostics,
     );
   }
 
@@ -393,5 +455,6 @@ export function budgetSessionContext(
     included,
     dropped,
     mandatoryOverflows,
+    providerDiagnostics,
   );
 }

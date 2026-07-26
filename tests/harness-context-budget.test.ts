@@ -2,7 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { budgetSessionContext, SESSION_CONTEXT_TOKEN_BUDGET } from '../src/cli/hook/session-context-budget';
+import {
+  budgetSessionContext,
+  createSessionContextProviderDiagnostic,
+  SESSION_CONTEXT_TOKEN_BUDGET,
+} from '../src/cli/hook/session-context-budget';
 
 function withRepo(run: (cwd: string) => void): void {
   const cwd = mkdtempSync(join(tmpdir(), 'repo-harness-context-budget-'));
@@ -16,6 +20,45 @@ describe('global SessionStart context budget', () => {
     }], 'session-1');
     expect(result.context).toBe('');
     expect(result.evidence.estimated_tokens).toBe(0);
+    expect(result.evidence.provider_diagnostics).toBeUndefined();
+  }));
+
+  test('persists bounded ordered diagnostics even when every provider yields zero sections', () => withRepo((cwd) => {
+    const diagnostics = [
+      createSessionContextProviderDiagnostic('codex-delegation-auto', 'provider_threw', new Error('later /private/path')),
+      createSessionContextProviderDiagnostic('resume', 'provider_threw', new Error('first /private/path')),
+      createSessionContextProviderDiagnostic('resume', 'provider_threw', new Error('duplicate must be ignored')),
+      createSessionContextProviderDiagnostic('effective-state', 'state_resolution_failed', new Error('authority /private/path')),
+    ];
+    const result = budgetSessionContext(cwd, [], 'diagnostic-only', diagnostics);
+    expect(result.context).toBe('');
+    expect(result.evidence.estimated_tokens).toBe(0);
+    expect(result.evidence.provider_diagnostics?.map(({ provider_id }) => provider_id)).toEqual([
+      'effective-state',
+      'resume',
+      'codex-delegation-auto',
+    ]);
+    expect(result.evidence.provider_diagnostics).toHaveLength(3);
+    expect(JSON.stringify(result.evidence.provider_diagnostics)).not.toContain('/private/path');
+    const persisted = JSON.parse(readFileSync(join(cwd, '.ai/harness/state/session-context-budget.json'), 'utf-8'));
+    expect(persisted.provider_diagnostics).toEqual(result.evidence.provider_diagnostics);
+  }));
+
+  test('keeps diagnostics outside content identity and healthy evidence shape', () => withRepo((cwd) => {
+    const sections = [{
+      id: 'task', priority: 2 as const, content: 'task=one', mandatory: true, actionable: true,
+    }];
+    const first = budgetSessionContext(cwd, sections, 'diagnostic-dedupe');
+    const diagnostic = createSessionContextProviderDiagnostic(
+      'active-sprint',
+      'provider_threw',
+      new Error('failed /private/path'),
+    );
+    const second = budgetSessionContext(cwd, sections, 'diagnostic-dedupe', [diagnostic]);
+    expect(first.evidence.provider_diagnostics).toBeUndefined();
+    expect(second.evidence.content_hash).toBe(first.evidence.content_hash);
+    expect(second.evidence.deduped).toBe(true);
+    expect(second.evidence.provider_diagnostics).toEqual([diagnostic]);
   }));
 
   test('dedupes unchanged content within the same session only', () => withRepo((cwd) => {
