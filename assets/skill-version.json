@@ -1,6 +1,6 @@
 {
-  "version": "0.11.1",
-  "templateVersion": "0.11.1",
+  "version": "0.11.2",
+  "templateVersion": "0.11.2",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "compatibility": {
@@ -215,6 +215,10 @@
     {
       "version": "0.11.1",
       "description": "Replaces host install profiles with minimal and full, defaults fresh installs to full with 7 or 11 Codex hooks, requires explicit protocol-1 migration, fixes empty child-argument forwarding under macOS Bash 3.2, and keeps evidence-ledger writes outside the review subject"
+    },
+    {
+      "version": "0.11.2",
+      "description": "Removes per-command ChecksFile context noise, keeps out-of-repo paths outside capability jurisdiction without weakening path validation, and resolves SessionStart Effective State in process with bounded retries and redaction-safe unavailable diagnostics"
     }
   ],
   "generatedProjectStamp": {

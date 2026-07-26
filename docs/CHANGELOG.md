@@ -4,6 +4,20 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-07-26
+
+### Fixed
+
+- Hook command context no longer emits a per-call `[ChecksFile]` line, removing
+  repeated static noise while retaining the canonical checks artifact as
+  queryable workflow state.
+- Capability and TDD jurisdiction now classify paths outside the repository as
+  out of scope without weakening traversal, NUL-byte, or Win32 path validation.
+- `SessionStart` now resolves Effective State in process instead of spawning the
+  repo's own CLI. The shared bounded transient retry path preserves host-hook
+  liveness, distinguishes resolved blockers from unavailable authority, and
+  persists only normalized, redaction-safe unavailable diagnostics.
+
 ## [0.11.1] - 2026-07-24
 
 ### Changed
