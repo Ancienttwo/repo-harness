@@ -1,20 +1,23 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { execFileSync, spawnSync } from 'child_process';
-import { fileURLToPath } from 'url';
+import { execFileSync } from 'child_process';
 import { getRoute, type HookEvent, type HookHandlerId, type RouteId } from './route-registry';
 import { getHandlerForRoute } from './handler-registry';
-import { budgetSessionContext } from './session-context-budget';
+import {
+  budgetSessionContext,
+  createSessionContextProviderDiagnostic,
+  type SessionContextProviderDiagnostic,
+  type SessionContextSection,
+} from './session-context-budget';
 import { writeAllSync } from '../runtime/write-all-sync';
 import { createStateInputCollector } from '../../effects/loop/state-input-collector';
 import { createHookEventTelemetry } from './event-telemetry';
 import { resolveEffectiveState } from '../../effects/state/resolve-effective-state';
-import type { EffectiveState } from '../../core/state/types';
+import type { EffectiveState, EffectiveStateRiskInput } from '../../core/state/types';
 import type { WorkflowProfile } from '../../core/workflow/profile';
 import type { HookHandlerResult } from './handler-contract';
 
 const OPT_IN_MARKER = '.ai/harness/workflow-contract.json';
-const PACKAGE_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
 export interface RunHookOptions {
   readonly event: HookEvent;
@@ -86,6 +89,7 @@ function hostOutput(
   opts: RunHookOptions,
   result: HookHandlerResult,
   repoRoot: string,
+  providerDiagnostics: readonly SessionContextProviderDiagnostic[],
 ): void {
   const env = opts.env ?? process.env;
   const mode = opts.stdio;
@@ -96,9 +100,9 @@ function hostOutput(
   if (isDefaultSessionCapture) {
     if (result.stderr) writeText(2, result.stderr);
     const sections = result.sessionContexts ?? [];
-    if (sections.length === 0) return;
+    if (sections.length === 0 && providerDiagnostics.length === 0) return;
     const sessionId = env.HOOK_SESSION_ID ?? env.CODEX_SESSION_ID ?? env.CLAUDE_SESSION_ID ?? null;
-    const budgeted = budgetSessionContext(repoRoot, sections, sessionId);
+    const budgeted = budgetSessionContext(repoRoot, sections, sessionId, providerDiagnostics);
     if (!budgeted.context) return;
     writeText(1, `${JSON.stringify({
       hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: budgeted.context },
@@ -176,74 +180,101 @@ export function isOptIn(repoRoot: string): boolean {
   return fs.existsSync(path.join(repoRoot, OPT_IN_MARKER));
 }
 
-function effectiveStateSessionSection(
+export type SessionStateResolution =
+  | { readonly kind: 'resolved_actionable'; readonly state: EffectiveState }
+  | { readonly kind: 'resolved_non_actionable'; readonly state: EffectiveState }
+  | { readonly kind: 'unavailable'; readonly diagnostic: SessionContextProviderDiagnostic };
+
+type EffectiveStateResolver = (
   repoRoot: string,
-  env: NodeJS.ProcessEnv,
-): import('./session-context-budget').SessionContextSection | null {
-  const cli = path.join(PACKAGE_ROOT, 'src', 'cli', 'index.ts');
-  if (!fs.existsSync(cli)) return null;
-  const resolved = spawnSync(process.execPath, [cli, 'state', 'resolve', '--json'], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'ignore'],
-    env: { ...env, HOOK_REPO_ROOT: repoRoot },
-  });
-  if (!resolved.stdout?.trim()) return null;
+  nowMs: number,
+  risk?: EffectiveStateRiskInput,
+) => EffectiveState;
+
+function effectiveStateIsActionable(state: EffectiveState): boolean {
+  return state.task_id !== null || state.blockers.length > 0 ||
+    Boolean(state.active_sprint.path && state.active_sprint.freshness === 'fresh');
+}
+
+export function projectEffectiveStateSessionSection(
+  state: EffectiveState,
+): SessionContextSection | null {
+  if (!effectiveStateIsActionable(state)) return null;
+  const compact = {
+    task_id: state.task_id,
+    phase: state.phase,
+    state_version: state.state_version,
+    state_revision: state.state_revision,
+    workflow_profile: state.workflow_profile,
+    next_action: state.next_action,
+    guidance: state.guidance,
+    blockers: state.blockers,
+    allowed_paths: state.allowed_paths,
+    checks: state.checks,
+    references: {
+      plan: state.authoritative_plan?.path ?? null,
+      contract: state.contract?.path ?? null,
+      sprint: state.active_sprint.path,
+      handoff: state.handoff.path,
+      resume: state.resume.path,
+    },
+  };
+  return {
+    id: 'effective-state',
+    priority: 2,
+    content: `[HarnessState] ${JSON.stringify(compact)}`,
+    mandatory: true,
+    actionable: true,
+    reference: 'repo-harness state resolve --json',
+  };
+}
+
+export function projectUnavailableStateSessionSection(
+  diagnostic: SessionContextProviderDiagnostic,
+): SessionContextSection {
+  const content = `[HarnessStateUnavailable] ${JSON.stringify({
+    fail_closed: true,
+    reason_code: diagnostic.reason_code,
+    error_hash: diagnostic.error_hash,
+    guidance: 'Do not infer task, scope, or edit permission.',
+    required_action: 'repo-harness state resolve --json',
+  })}`;
+  return {
+    id: 'effective-state',
+    priority: 2,
+    content,
+    mandatory: true,
+    actionable: true,
+    reference: 'repo-harness state resolve --json',
+  };
+}
+
+export function resolveSessionEffectiveState(
+  repoRoot: string,
+  nowMs: number,
+  resolve: EffectiveStateResolver = resolveEffectiveState,
+): SessionStateResolution {
   try {
-    const state = JSON.parse(resolved.stdout) as {
-      task_id?: unknown;
-      phase?: unknown;
-      state_version?: unknown;
-      state_revision?: unknown;
-      workflow_profile?: unknown;
-      next_action?: unknown;
-      guidance?: unknown;
-      blockers?: unknown;
-      allowed_paths?: unknown;
-      checks?: unknown;
-      authoritative_plan?: { path?: unknown } | null;
-      contract?: { path?: unknown } | null;
-      active_sprint?: { path?: unknown; freshness?: unknown } | null;
-      handoff?: { path?: unknown; freshness?: unknown } | null;
-      resume?: { path?: unknown; freshness?: unknown } | null;
-    };
-    const blockers = Array.isArray(state.blockers) ? state.blockers : [];
-    const actionable = typeof state.task_id === 'string' || blockers.length > 0 ||
-      Boolean(state.active_sprint?.path && state.active_sprint.freshness === 'fresh');
-    if (!actionable) return null;
-    const compact = {
-      task_id: state.task_id ?? null,
-      phase: state.phase ?? 'unknown',
-      state_version: state.state_version ?? null,
-      state_revision: state.state_revision ?? null,
-      workflow_profile: state.workflow_profile ?? null,
-      next_action: state.next_action ?? null,
-      guidance: state.guidance ?? null,
-      blockers,
-      allowed_paths: Array.isArray(state.allowed_paths) ? state.allowed_paths : [],
-      checks: state.checks ?? null,
-      references: {
-        plan: state.authoritative_plan?.path ?? null,
-        contract: state.contract?.path ?? null,
-        sprint: state.active_sprint?.path ?? null,
-        handoff: state.handoff?.path ?? null,
-        resume: state.resume?.path ?? null,
-      },
-    };
+    // Match `repo-harness state resolve --json` exactly: that command passes
+    // no operation/profile override, even when hook-only env vars are set.
+    const state = resolveEffectiveStateWithTransientRetry(() => resolve(repoRoot, nowMs, {}));
+    return effectiveStateIsActionable(state)
+      ? { kind: 'resolved_actionable', state }
+      : { kind: 'resolved_non_actionable', state };
+  } catch (error) {
     return {
-      id: 'effective-state',
-      priority: 2,
-      content: `[HarnessState] ${JSON.stringify(compact)}`,
-      mandatory: true,
-      actionable: true,
-      reference: 'repo-harness state resolve --json',
+      kind: 'unavailable',
+      diagnostic: createSessionContextProviderDiagnostic(
+        'effective-state',
+        isTransientResolutionInstability(error) ? 'state_resolution_unstable' : 'state_resolution_failed',
+        error,
+        'repo-harness state resolve --json',
+      ),
     };
-  } catch {
-    return null;
   }
 }
 
-const PRE_EDIT_RESOLUTION_MAX_ATTEMPTS = 3;
+const EFFECTIVE_STATE_RESOLUTION_MAX_ATTEMPTS = 3;
 const STABILITY_UNSTABLE_MESSAGE = 'workflow authority changed repeatedly while resolving effective state';
 const LOCK_TIMEOUT_MESSAGE_PREFIX = 'timed out waiting for exclusive lock ';
 
@@ -254,15 +285,29 @@ const LOCK_TIMEOUT_MESSAGE_PREFIX = 'timed out waiting for exclusive lock ';
  * under sustained AUTHORITY churn) and the exclusive state-lock timeout
  * (src/effects/locking/exclusive-directory-lock.ts). Both are concurrent-
  * write contention, not a genuinely unresolvable workflow profile -- the
- * bounded retry below gives ordinary contention a chance to clear before
- * falling back to a distinct, truthful fail-closed diagnostic in
- * mutation-guard.ts. Any other throw keeps today's exact behavior: caught
- * immediately below, reported as `null` with zero retries.
+ * bounded retry below gives ordinary contention a chance to clear. Each
+ * adapter owns the final mapping: PreEdit preserves its existing null versus
+ * re-throw partition, while SessionStart emits bounded unavailable evidence.
  */
 function isTransientResolutionInstability(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   return error.message === STABILITY_UNSTABLE_MESSAGE
     || error.message.startsWith(LOCK_TIMEOUT_MESSAGE_PREFIX);
+}
+
+function resolveEffectiveStateWithTransientRetry(
+  resolveAttempt: () => EffectiveState,
+): EffectiveState {
+  let lastInstability: unknown = null;
+  for (let attempt = 1; attempt <= EFFECTIVE_STATE_RESOLUTION_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return resolveAttempt();
+    } catch (error) {
+      if (!isTransientResolutionInstability(error)) throw error;
+      lastInstability = error;
+    }
+  }
+  throw lastInstability;
 }
 
 function resolvePreEditEffectiveState(
@@ -271,24 +316,16 @@ function resolvePreEditEffectiveState(
   env: NodeJS.ProcessEnv,
 ): EffectiveState | null {
   const explicitOverride = env.REPO_HARNESS_WORKFLOW_PROFILE as WorkflowProfile | undefined;
-  let lastInstability: unknown = null;
-  for (let attempt = 1; attempt <= PRE_EDIT_RESOLUTION_MAX_ATTEMPTS; attempt += 1) {
-    try {
-      return resolveEffectiveState(repoRoot, Date.now(), {
-        targetPaths,
-        operationKind: 'edit',
-        explicitOverride,
-      });
-    } catch (error) {
-      if (!isTransientResolutionInstability(error)) return null;
-      lastInstability = error;
-    }
+  try {
+    return resolveEffectiveStateWithTransientRetry(() => resolveEffectiveState(repoRoot, Date.now(), {
+      targetPaths,
+      operationKind: 'edit',
+      explicitOverride,
+    }));
+  } catch (error) {
+    if (!isTransientResolutionInstability(error)) return null;
+    throw error;
   }
-  // Bounded retry exhausted: residual instability. Re-throw the original
-  // error (message unchanged) instead of collapsing to null, so
-  // mutation-guard.ts can render a distinct fail-closed diagnostic rather
-  // than the misleading generic "resolution failed" banner.
-  throw lastInstability;
 }
 
 function resolveStopEffectiveState(repoRoot: string, env: NodeJS.ProcessEnv): EffectiveState | null {
@@ -325,13 +362,23 @@ export function runHook(opts: RunHookOptions): RunHookResult {
   }
 
   const telemetry = createHookEventTelemetry({ repoRoot, event: opts.event, routeId: opts.routeId, input: opts.input, env });
+  const providerDiagnostics: SessionContextProviderDiagnostic[] = [];
+  const observeSessionContextDiagnostic = (diagnostic: SessionContextProviderDiagnostic): void => {
+    providerDiagnostics.push(diagnostic);
+  };
   const collector = createStateInputCollector({
     event: opts.event,
     repoRoot,
     resolveSessionEffectiveState: () => {
       telemetry.recordStateResolution();
       telemetry.markMetricsComplete(['state_resolutions']);
-      return effectiveStateSessionSection(repoRoot, env);
+      const outcome = resolveSessionEffectiveState(repoRoot, Date.now());
+      if (outcome.kind === 'unavailable') {
+        observeSessionContextDiagnostic(outcome.diagnostic);
+        return projectUnavailableStateSessionSection(outcome.diagnostic);
+      }
+      if (outcome.kind === 'resolved_non_actionable') return null;
+      return projectEffectiveStateSessionSection(outcome.state);
     },
     resolvePreEditEffectiveState: (targetPaths) => {
       telemetry.recordStateResolution();
@@ -364,6 +411,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
         },
         observeProjectionWrite: (target) => telemetry.recordDurableWrite(target.path),
         observeProjectionTransaction: () => telemetry.recordWriteTransaction(),
+        observeSessionContextDiagnostic,
       },
       collectSessionStdout: opts.event === 'SessionStart' && opts.stdio === undefined,
     });
@@ -411,7 +459,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
       'write_transactions',
     ]);
   }
-  hostOutput(opts, handlerResult, repoRoot);
+  hostOutput(opts, handlerResult, repoRoot, providerDiagnostics);
   const exitCode = handlerResult.exitCode;
   const publicReason: RunHookResult['reason'] = exitCode === 0 ? 'ok' : 'handler-failed';
   // Handler-specific detail is retained only in the event telemetry record;

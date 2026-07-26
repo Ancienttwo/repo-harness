@@ -26,7 +26,12 @@ import {
 } from 'fs';
 import { fileURLToPath } from 'url';
 import { basename, dirname, join } from 'path';
-import type { SessionContextSection } from './session-context-budget';
+import {
+  createSessionContextProviderDiagnostic,
+  type SessionContextProviderDiagnostic,
+  type SessionContextProviderId,
+  type SessionContextSection,
+} from './session-context-budget';
 import { loadMinimalChangePolicy } from './minimal-change-policy';
 import { renderMinimalChangeSessionContext } from './minimal-change-context';
 import { runSecurityScan, type SecurityScanReport } from '../commands/security';
@@ -1301,10 +1306,15 @@ function appendBlock(context: string, block: string | null): string {
  * bash's pervasive `|| true` fail-open style: one section's bug must never
  * take down the rest of SessionStart).
  */
-function safely(fn: () => string | null): string | null {
+function safely(
+  providerId: SessionContextProviderId,
+  observeDiagnostic: ((diagnostic: SessionContextProviderDiagnostic) => void) | undefined,
+  fn: () => string | null,
+): string | null {
   try {
     return fn();
-  } catch {
+  } catch (error) {
+    observeDiagnostic?.(createSessionContextProviderDiagnostic(providerId, 'provider_threw', error));
     return null;
   }
 }
@@ -1321,6 +1331,7 @@ export function sessionStartMainContent(
   collector: SessionContextCollector,
   env: NodeJS.ProcessEnv,
   nowMs: number,
+  observeDiagnostic?: (diagnostic: SessionContextProviderDiagnostic) => void,
 ): string | null {
   const repoRoot = collector.getRepoRoot();
 
@@ -1329,14 +1340,14 @@ export function sessionStartMainContent(
   // otherwise. Produces no session content.
   rotateSessionStartEventLogs(repoRoot);
 
-  let context = safely(() => resumeBlock(repoRoot, collector) || null) ?? '';
-  context = appendBlock(context, safely(() => capabilityContextPendingContext(repoRoot)));
-  context = appendBlock(context, safely(() => architectureQueuePendingContext(repoRoot, nowMs)));
-  context = appendBlock(context, safely(() => pendingPlanCaptureContext(repoRoot, collector, nowMs)));
-  context = appendBlock(context, safely(() => currentStatusSnapshotContext(repoRoot)));
-  context = appendBlock(context, safely(() => activeSprintContext(repoRoot)));
-  context = appendBlock(context, safely(() => toolingUpdateAdvisoryContext(repoRoot, env, nowMs)));
-  context = appendBlock(context, safely(() => codexDelegationAutoContext(repoRoot, env)));
+  let context = safely('resume', observeDiagnostic, () => resumeBlock(repoRoot, collector) || null) ?? '';
+  context = appendBlock(context, safely('capability-context-pending', observeDiagnostic, () => capabilityContextPendingContext(repoRoot)));
+  context = appendBlock(context, safely('architecture-queue-pending', observeDiagnostic, () => architectureQueuePendingContext(repoRoot, nowMs)));
+  context = appendBlock(context, safely('pending-plan-capture', observeDiagnostic, () => pendingPlanCaptureContext(repoRoot, collector, nowMs)));
+  context = appendBlock(context, safely('current-status-snapshot', observeDiagnostic, () => currentStatusSnapshotContext(repoRoot)));
+  context = appendBlock(context, safely('active-sprint', observeDiagnostic, () => activeSprintContext(repoRoot)));
+  context = appendBlock(context, safely('tooling-update-advisory', observeDiagnostic, () => toolingUpdateAdvisoryContext(repoRoot, env, nowMs)));
+  context = appendBlock(context, safely('codex-delegation-auto', observeDiagnostic, () => codexDelegationAutoContext(repoRoot, env)));
 
   if (!context) return null;
   return `${INPUT_PRIORITY_CONTEXT}\n${context}`;
@@ -1350,8 +1361,9 @@ export function sessionStartMainSection(
   collector: SessionContextCollector,
   env: NodeJS.ProcessEnv,
   nowMs: number,
+  observeDiagnostic?: (diagnostic: SessionContextProviderDiagnostic) => void,
 ): SessionContextSection | null {
-  const content = sessionStartMainContent(collector, env, nowMs);
+  const content = sessionStartMainContent(collector, env, nowMs, observeDiagnostic);
   if (!content) return null;
   return {
     id: 'session-start-context.sh',
@@ -1379,9 +1391,10 @@ export function buildSessionStartSections(
   collector: SessionContextCollector,
   env: NodeJS.ProcessEnv,
   nowMs: number,
+  observeDiagnostic?: (diagnostic: SessionContextProviderDiagnostic) => void,
 ): SessionContextSection[] {
   const sections: SessionContextSection[] = [];
-  const main = sessionStartMainSection(collector, env, nowMs);
+  const main = sessionStartMainSection(collector, env, nowMs, observeDiagnostic);
   if (main) sections.push(main);
   const minimalChange = minimalChangeSessionSection(collector.getRepoRoot());
   if (minimalChange) sections.push(minimalChange);

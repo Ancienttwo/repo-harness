@@ -85,6 +85,11 @@ describe('HRD-09 typed runtime characterization', () => {
         expect(record.metrics).toMatchObject({ child_processes: 0 });
         expect(record.measurement).toMatchObject({ opaque_steps: [] });
       }
+      const sessionStart = records.find((record) => record.event === 'SessionStart');
+      expect(sessionStart?.metrics).toMatchObject({
+        state_resolutions: 1,
+        child_processes: 0,
+      });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
