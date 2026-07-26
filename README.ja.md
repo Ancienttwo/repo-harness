@@ -71,7 +71,7 @@ review、checks、handoff と食い違う場合は、source artifacts を優先�
 ## What's New
 
 リリースノートは [`docs/CHANGELOG.md`](docs/CHANGELOG.md) にあります。現在の
-ラインは `0.11.1` です。
+ラインは `0.11.2` です。
 
 ## 仕組み
 
@@ -389,8 +389,8 @@ hook がブロックしたときは、まず terminal の構造化された出�
 
 ## 現在の Release
 
-- npm package：`repo-harness@0.11.1`
-- Generated workflow stamp：`repo-harness@0.11.1+template@0.11.1`
+- npm package：`repo-harness@0.11.2`
+- Generated workflow stamp：`repo-harness@0.11.2+template@0.11.2`
 - GitHub repository：`Ancienttwo/repo-harness`
 - Release history：[`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 
