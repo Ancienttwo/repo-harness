@@ -12,6 +12,12 @@
 
 ## Active Lessons
 
+- Date: 2026-07-26
+- Triggered by correction: PR #132 review found that a repo-external target was reported correctly but also counted as an anonymous capability, while NUL-bearing paths and Win32 absolute hook paths diverged from the intended fail-closed and repo-scope boundaries.
+- Mistake pattern: using one partition predicate as both reporting classification and validation authority, then treating every non-POSIX-absolute path as repo-relative.
+- Prevention rule: partition valid repo-external paths out of capability matching without adding them to `capabilityCount`; leave malformed paths for canonical validation; classify hook paths with both POSIX and Win32 grammars before any repo-scoped filesystem probe.
+- Where to apply next time: Effective State target-risk resolution, capability registry adapters, mutation hooks, and cross-platform path tests.
+
 - Date: 2026-07-23
 - Triggered by correction: a scope-runaway incident (a branch-cleanup task self-expanded into fixing every CI fault on `main`) exposed that the live `~/.codex/AGENTS.md` had gained a whole `## Sufficiency and Stop Boundaries` section through direct edits while `assets/reference-configs/global-working-rules.md` — the source `repo-harness init` actually distributes — never received it, so freshly initialized machines shipped without any stop-boundary discipline.
 - Mistake pattern: patching the installed copy of a distributed artifact and never back-porting to the template that init ships, leaving the authoring surface and the distribution surface with divergent authority.

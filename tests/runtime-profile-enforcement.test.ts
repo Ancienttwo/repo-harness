@@ -112,6 +112,40 @@ describe('risk-based runtime profile enforcement', () => {
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   });
 
+  test('editing a .ts file outside the repo skips the TDD reminder instead of crashing the sandbox', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-oor-')));
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), 'profile-oor-home-')));
+    try {
+      initRepo(cwd);
+      mkdirSync(join(outside, 'extensions'), { recursive: true });
+      const target = join(outside, 'extensions', 'bridge.ts');
+      writeFileSync(target, 'export const x = 1;\n');
+      const result = preEdit(cwd, target);
+      expect(result.status).toBe(0);
+      expect(`${result.stdout}${result.stderr}`).not.toContain('unsafe state source path');
+      expect(result.stdout).not.toContain('TDD Guard');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  test('Win32 absolute .ts paths outside the repo skip repo-scoped TDD probes', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-oor-win32-')));
+    try {
+      initRepo(cwd);
+      for (const target of [
+        'C:/Users/user/.pi/agent/extensions/bridge.ts',
+        'C:\\Users\\user\\.pi\\agent\\extensions\\bridge.ts',
+      ]) {
+        const result = preEdit(cwd, target);
+        expect(result.status).toBe(0);
+        expect(`${result.stdout}${result.stderr}`).not.toContain('unsafe state source path');
+        expect(result.stdout).not.toContain('TDD Guard');
+      }
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
+
   test('Standard requires a plan but not the Strict contract/worktree chain', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-standard-')));
     try {

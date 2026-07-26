@@ -205,9 +205,7 @@ export function runCommandObserved(opts: CommandObservedInput): CommandObservedR
       stdout += '[PostBash] Tests failed. Reminder: failure = rewrite module, not patching.\n';
     }
 
-    const checksRelative = '.ai/harness/checks/latest.json';
     const postBashRelative = '.ai/harness/checks/post-bash-latest.json';
-    const checksPath = join(opts.repoRoot, checksRelative);
     fsApi.mkdirSync(dirname(join(opts.repoRoot, postBashRelative)), { recursive: true });
     const record = {
       source: 'post-bash',
@@ -227,11 +225,10 @@ export function runCommandObserved(opts: CommandObservedInput): CommandObservedR
       generated_at: offsetTimestamp(now),
     };
     fsApi.writeFileSync(join(opts.repoRoot, postBashRelative), `${JSON.stringify(record, null, 2)}\n`);
-    if (fsApi.existsSync(checksPath)) {
-      stdout += `[ChecksFile] Preserved ${checksRelative}; updated ${postBashRelative}.\n`;
-    } else {
-      stdout += `[ChecksFile] Updated ${postBashRelative}; ${checksRelative} remains reserved for repo-harness-run-trace.v1.\n`;
-    }
+    // No [ChecksFile] stdout notice here: hosts forward hook stdout into agent
+    // context, so a fixed per-command status line is pure token noise. The
+    // checks files are contract-documented state; consumers read the paths
+    // from .ai/harness/policy.json, not from per-call output.
 
     // Additive ledger import (EPC-03): one `observed` EvidenceEvent per
     // observation, after the post-bash-latest.json write above. Failure

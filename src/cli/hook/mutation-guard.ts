@@ -19,7 +19,7 @@
 
 import { execFileSync } from 'child_process';
 import { appendFileSync, mkdirSync, realpathSync } from 'fs';
-import { basename, dirname, join } from 'path';
+import { basename, dirname, isAbsolute, join, posix, win32 } from 'path';
 import type { EffectiveState } from '../../core/state/types';
 import type { WorkflowProfile } from '../../core/workflow/profile';
 import { recordCircuitAttempt, type CircuitAttempt } from './circuit-breaker';
@@ -380,6 +380,12 @@ function runPerPathGuards(
   }
 
   // ---- TDD/BDD reminder ------------------------------------------------------
+  // Out-of-repo absolute paths (normalizeFilePath's documented fallthrough)
+  // are exempt like every other repo-scoped gate above: their test siblings
+  // would be read through collect-state-inputs' repoPath sandbox, which
+  // throws "unsafe state source path escapes repository" and crashed the
+  // whole hook for a mere advisory reminder.
+  if (!isRepoScopedPath(filePath)) return;
   if (!/\.(ts|tsx|js|jsx|py)$/.test(filePath)) return;
   if (TDD_EXCLUSION_PATTERNS.some((pattern) => pattern.test(filePath))) return;
   if (/(^|\/)index\.(ts|tsx|js|jsx)$/.test(filePath) && isPureBarrelFile(ctx.repoRoot, filePath)) return;
@@ -748,7 +754,35 @@ function tddCandidateExists(repoRoot: string, filePath: string): boolean {
 // ---------------------------------------------------------------------------
 
 function isRepoScopedPath(filePath: string): boolean {
-  return filePath.length > 0 && !filePath.startsWith('/');
+  return filePath.length > 0 && !isAbsolutePathInAnyGrammar(filePath);
+}
+
+function isAbsolutePathInAnyGrammar(filePath: string): boolean {
+  return posix.isAbsolute(filePath)
+    || win32.isAbsolute(filePath)
+    || /^[A-Za-z]:/.test(filePath);
+}
+
+function normalizePathSeparators(filePath: string): string {
+  const normalized = filePath.replaceAll('\\', '/');
+  if (normalized === '/' || /^[A-Za-z]:\/$/.test(normalized)) return normalized;
+  return normalized.replace(/\/+$/, '');
+}
+
+function pathComparisonKey(filePath: string): string {
+  return /^[A-Za-z]:\//.test(filePath) || filePath.startsWith('//')
+    ? filePath.toLowerCase()
+    : filePath;
+}
+
+function stripRepoPrefix(repoRoot: string, candidate: string): string | null {
+  const normalizedRoot = normalizePathSeparators(repoRoot);
+  const normalizedCandidate = normalizePathSeparators(candidate);
+  const rootKey = pathComparisonKey(normalizedRoot);
+  const candidateKey = pathComparisonKey(normalizedCandidate);
+  if (candidateKey === rootKey) return '';
+  if (!candidateKey.startsWith(`${rootKey}/`)) return null;
+  return normalizedCandidate.slice(normalizedRoot.length + 1);
 }
 
 /**
@@ -762,12 +796,19 @@ function isRepoScopedPath(filePath: string): boolean {
  * symlink to `/private/var/...`.
  */
 function normalizeFilePath(repoRoot: string, raw: string): string {
-  if (!raw || !raw.startsWith('/')) return raw;
-  if (raw === repoRoot || raw.startsWith(`${repoRoot}/`)) return raw.slice(repoRoot.length + 1);
+  if (!raw || !isAbsolutePathInAnyGrammar(raw)) return raw;
+  const direct = stripRepoPrefix(repoRoot, raw);
+  if (direct !== null) return direct;
+
+  // A path expressed in another platform's grammar is still absolute and
+  // outside this repo, but native realpath/dirname must not reinterpret it as
+  // a relative local path (for example C:\\... on a POSIX host).
+  if (!isAbsolute(raw)) return raw;
 
   const repoReal = tryRealpath(repoRoot);
-  if (repoReal && (raw === repoReal || raw.startsWith(`${repoReal}/`))) {
-    return raw.slice(repoReal.length + 1);
+  if (repoReal) {
+    const canonical = stripRepoPrefix(repoReal, raw);
+    if (canonical !== null) return canonical;
   }
 
   // Last resort: resolve the raw path's own parent directory (the file
@@ -775,13 +816,13 @@ function normalizeFilePath(repoRoot: string, raw: string): string {
   // roots.
   const rawParentReal = tryRealpath(dirname(raw));
   if (rawParentReal) {
-    const rawReal = `${rawParentReal}/${basename(raw)}`;
-    if (repoReal && (rawReal === repoReal || rawReal.startsWith(`${repoReal}/`))) {
-      return rawReal.slice(repoReal.length + 1);
+    const rawReal = join(rawParentReal, basename(raw));
+    if (repoReal) {
+      const canonical = stripRepoPrefix(repoReal, rawReal);
+      if (canonical !== null) return canonical;
     }
-    if (rawReal === repoRoot || rawReal.startsWith(`${repoRoot}/`)) {
-      return rawReal.slice(repoRoot.length + 1);
-    }
+    const lexical = stripRepoPrefix(repoRoot, rawReal);
+    if (lexical !== null) return lexical;
   }
 
   return raw;
