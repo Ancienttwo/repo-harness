@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260725-2254-session-state-authority-inprocess.md
 > **Contract**: tasks/contracts/20260725-2254-session-state-authority-inprocess.contract.md
 > **Review**: tasks/reviews/20260725-2254-session-state-authority-inprocess.review.md
-> **Last Updated**: 2026-07-26 10:18
+> **Last Updated**: 2026-07-26 13:18
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -55,6 +55,15 @@
 - The full verification also passed `bun run check:type`, deploy SQL ordering, architecture sync
   (advisory with zero blocking drift), task sync, strict workflow validation, project-state
   inspection, adopt dry-run with zero operations, and `git diff --check`.
+- Claude Code returned no verdict in three bounded 330-second attempts: full worktree scope,
+  canonical ten-path review subject, and tool-free static review subject. The contract owner then
+  explicitly granted the policy-allowed `user_waiver`; the receipt records reviewer `User`, source
+  `user-waiver`, actor `ancienttwo`, and never represents the missing Claude verdict as external pass.
+- Acceptance preparation must use the checkout-local `scripts/verify-sprint.sh` when self-hosting.
+  Invoking the global helper lacked `emit-verify-evidence.ts`; exporting `REPO_HARNESS_SOURCE_ROOT`
+  fixed lookup but leaked that override into `bun test`, changing tests that explicitly cover the
+  source-root environment contract. Direct local-script execution resolved the local emitter
+  without contaminating contract command environments and produced fresh 35/35 passing evidence.
 
 ## Evidence Links
 

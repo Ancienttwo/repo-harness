@@ -5,12 +5,12 @@
 > **Contract**: tasks/contracts/20260725-2254-session-state-authority-inprocess.contract.md
 > **Notes File**: tasks/notes/20260725-2254-session-state-authority-inprocess.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-26 10:20
+> **Last Updated**: 2026-07-26 13:18
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: sha256:78fbe9a2d7f0a9da0079bb23dcd320b98fa2adea5b2e03e498978cf2aa358b90
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: 998cb5192fb49179ca61c22365412392aae0a9d7
+> **Reviewed Target Revision**: f29a61cc907c0c847799a561ea2d66210b38ef96
 
 ## Human Review Card
 
@@ -18,9 +18,9 @@
 - Change type: bugfix
 - Intended files changed: five hook/runtime source files, five focused test/fixture surfaces, and this package's four workflow artifacts; no telemetry, mutation-observed, prompt-handler, root-context, current-status, or todo surface
 - Actual files changed: exactly the intended 14 paths; `review-subject` reports ten production/test subject paths, four excluded workflow artifacts, and zero target-overlap paths against `main` at `998cb519`
-- Commands passed: focused 70-test matrix (70 pass / 0 fail), full `bun test` (2078 pass / 1 skip / 0 fail), `bun run check:type`, strict contract verification (35/35, status `Fulfilled`), deploy SQL, architecture sync (zero blocking drift), task sync, strict workflow validation, project-state inspection, adopt dry-run (zero operations), and `git diff --check`
-- Residual risks: external Claude AcceptanceReceipt is not recorded, so `contract-worktree finish` remains correctly gated; two earlier verifier runs emitted only an unattributed aggregate `bun test` exit 1, while independent, exact bounded-runner, and final preserved-log exact-sequence runs all passed
-- Reviewer action required: external Claude acceptance against the bound subject, then receipt recording; no local implementation correction is pending
+- Commands passed: focused 70-test matrix (70 pass / 0 fail), full `bun test` (2078 pass / 1 skip / 0 fail), fresh strict acceptance verification (35/35; full suite 570214 ms), `bun run check:type`, deploy SQL, architecture sync (zero blocking drift), task sync, strict workflow validation, project-state inspection, adopt dry-run (zero operations), and `git diff --check`
+- Residual risks: Claude Code produced no verdict in three independent 330-second attempts (full scope, canonical subject, and tool-free static subject); the contract owner explicitly accepted that bounded reviewer-unavailability risk through the recorded `user_waiver`
+- Reviewer action required: none; the valid user-waiver AcceptanceReceipt and fresh passing evidence are recorded
 - Rollback: revert/discard this single work-package diff; no migration, persisted schema bump, or compatibility state exists
 
 ## Mode Evidence
@@ -49,17 +49,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
-> **Actor**: not-applicable
+> **Disposition**: user_waiver
+> **Reviewer**: User
+> **Source**: user-waiver
+> **Actor**: ancienttwo
 > **Reviewed Subject SHA256**: sha256:78fbe9a2d7f0a9da0079bb23dcd320b98fa2adea5b2e03e498978cf2aa358b90
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: 998cb5192fb49179ca61c22365412392aae0a9d7
-> **Verification Evidence SHA256**: unavailable
-> **Issued At**: pending
+> **Reviewed Target Revision**: f29a61cc907c0c847799a561ea2d66210b38ef96
+> **Verification Evidence SHA256**: sha256:1735181d24186c7badc6995a363f86817a8836eb979f574988a79a835cc0d77c
+> **Issued At**: 2026-07-26T05:15:20.755Z
 
-- Summary: Local review passed and the subject is bound, but no external AcceptanceReceipt has been recorded.
+- Summary: Accepted bounded closeout risk after three Claude Code review attempts produced no verdict within the 330-second gate; local contract verification is 35/35 and the normalized subject is sha256:78fbe9a2d7f0a9da0079bb23dcd320b98fa2adea5b2e03e498978cf2aa358b90.
 - Findings: none
 
 ## Behavior Diff Notes
@@ -71,7 +71,7 @@
 
 ## Residual Risks / Follow-ups
 
-- External Claude acceptance is still required by the contract's frozen policy before finish/merge.
+- Claude external acceptance was unavailable after three bounded attempts; the contract's explicitly allowed `user_waiver` path is recorded and verified, without representing the unavailable review as an external pass.
 - Provider diagnostics deliberately persist only provider id, reason code, and an error hash; operators must rerun the named `required_action` to obtain live raw diagnostics.
 - Two verifier runs lost the underlying full-suite log and returned aggregate exit 1. The independent full suite, exact detached bounded runner, and final preserved-log exact verifier sequence all passed; this remains a verifier observability concern, not a reproduced product defect.
 
@@ -86,7 +86,7 @@
 
 ## Failing Items
 
-- none in the 35 contract criteria; external acceptance is pending rather than locally failing
+- none
 
 ## Retest Steps
 
@@ -95,4 +95,4 @@
 
 ## Summary
 
-- Pass locally. SessionStart now uses the existing Effective State authority in-process, preserves healthy output bytes, gives resolver unavailability a bounded fail-closed representation, records privacy-safe diagnostics even when no section survives, and leaves PreEdit/Stop plus HRD metric semantics intact. The contract is `Fulfilled`; external Claude acceptance remains the only closeout gate.
+- Pass. SessionStart now uses the existing Effective State authority in-process, preserves healthy output bytes, gives resolver unavailability a bounded fail-closed representation, records privacy-safe diagnostics even when no section survives, and leaves PreEdit/Stop plus HRD metric semantics intact. The contract is `Fulfilled`; fresh acceptance evidence and a truthful user-waiver receipt close the unavailable Claude-review gate.
