@@ -61,6 +61,7 @@ tasks/.current.md.tmp.*
 .ai/harness/chatgpt/oracle-home/
 .ai/harness/chatgpt/tmp/
 .ai/harness/chatgpt/sessions/
+.ai/harness/chatgpt/delegations/
 .ai/harness/handoff/gptpro/*
 !.ai/harness/handoff/gptpro/.gitkeep
 .ai/harness/mcp/*
