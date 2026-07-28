@@ -1,6 +1,6 @@
 # Plan: ChatGPT delegate mode: repo-owned dual-agent GPT Pro collaboration protocol
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260729-0106
 > **Slug**: chatgpt-delegate-mode
 > **Planning Source**: repo-harness-plan

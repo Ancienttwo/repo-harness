@@ -1,7 +1,13 @@
+> **Archived**: 2026-07-29 02:01
+> **Related Plan**: plans/archive/plan-20260729-0106-chatgpt-delegate-mode.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260729-0201
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-07-29 01:06
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-26T14:43:22+0800 -->
+<!-- updated_at: 2026-07-29T02:01:10+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-07-26T14:43:22+0800
-> **Source Branch**: codex/release-0-11-2
-> **Source Commit**: d300dcb5
+> **Updated At**: 2026-07-29T02:01:10+0800
+> **Source Branch**: codex/chatgpt-delegate-mode
+> **Source Commit**: 873420c8
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -46,7 +46,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=`plans/archive/plan-20260712-2215-agent-fleet-specialists.md`
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Verify the frozen release candidate and contract artifacts.
+- Exact Next Step: (none)
 
 ## Checks
 
@@ -54,18 +54,19 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 9 changed/untracked path(s)
+- Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260726-1414-release-0-11-2.md
- D tasks/contracts/20260726-1414-release-0-11-2.contract.md
- D tasks/notes/20260726-1414-release-0-11-2.notes.md
- D tasks/reviews/20260726-1414-release-0-11-2.review.md
-?? plans/archive/plan-20260726-1414-release-0-11-2.md
-?? tasks/archive/contract-20260726-1443-release-0-11-2.md
-?? tasks/archive/notes-20260726-1443-release-0-11-2.md
-?? tasks/archive/review-20260726-1443-release-0-11-2.md
-?? tasks/archive/todo-20260726-1443-release-0-11-2.md
+ D plans/plan-20260729-0106-chatgpt-delegate-mode.md
+ D tasks/contracts/20260729-0106-chatgpt-delegate-mode.contract.md
+ D tasks/notes/20260729-0106-chatgpt-delegate-mode.notes.md
+ D tasks/reviews/20260729-0106-chatgpt-delegate-mode.review.md
+ M tasks/todos.md
+?? plans/archive/plan-20260729-0106-chatgpt-delegate-mode.md
+?? tasks/archive/contract-20260729-0201-chatgpt-delegate-mode.md
+?? tasks/archive/notes-20260729-0201-chatgpt-delegate-mode.md
+?? tasks/archive/review-20260729-0201-chatgpt-delegate-mode.md
+?? tasks/archive/todo-20260729-0201-chatgpt-delegate-mode.md
 ```
 
 ## Source Artifacts
