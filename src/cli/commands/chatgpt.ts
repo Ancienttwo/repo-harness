@@ -11,9 +11,16 @@ import {
   runBrowserSetup,
 } from '../chatgpt-browser/engine';
 import type { BrowserProviderName, BrowserSessionStatus, NativeBrowserChannel, ThinkingLevel } from '../chatgpt-browser/types';
+import { runChatgptSkillProjection } from '../chatgpt-skill/installer';
+import type { ChatgptSkillTarget } from '../chatgpt-skill/installer';
 
 interface BrowserCommonOptions {
   repo?: string;
+}
+
+interface ChatgptSkillProjectionOptions {
+  target?: string;
+  dryRun?: boolean;
 }
 
 interface BrowserSetupOptions extends BrowserCommonOptions {
@@ -56,6 +63,8 @@ interface BrowserConsultOptions extends BrowserCommonOptions {
   maxInlineChars?: string;
   manualLogin?: boolean;
   oracleBin?: string;
+  gitleaksBin?: string;
+  secretScan?: boolean;
   profileDir?: string;
   profileDirectory?: string;
   browserChannel?: string;
@@ -84,12 +93,20 @@ interface BrowserFollowupOptions extends BrowserCommonOptions {
   keepBrowser?: boolean;
   headless?: boolean;
   oracleBin?: string;
+  gitleaksBin?: string;
+  secretScan?: boolean;
 }
 
 function parseProvider(value?: string): BrowserProviderName {
   if (value === undefined || value === 'oracle') return 'oracle';
   if (value === 'native') return 'native';
   throw new Error(`invalid --provider "${value}" (expected: oracle, native)`);
+}
+
+function parseSkillTarget(value?: string): ChatgptSkillTarget {
+  if (value === undefined || value === 'both') return 'both';
+  if (value === 'codex' || value === 'claude') return value;
+  throw new Error(`invalid --target "${value}" (expected: codex, claude, both)`);
 }
 
 function parseThinking(value?: string): ThinkingLevel | undefined {
@@ -135,6 +152,38 @@ async function runChatgptAction(action: () => void | Promise<void>): Promise<voi
 
 export function buildChatgptCommand(): Command {
   const chatgpt = new Command('chatgpt').description('Use a local ChatGPT Web browser session for repo-harness planning and review workflows');
+
+  chatgpt
+    .command('install-skill')
+    .description('Project the canonical repo-harness-chatgpt Skill into explicit Codex and/or Claude host roots')
+    .option('--target <target>', 'Target host: codex|claude|both', 'both')
+    .option('--dry-run', 'Print the projection plan without writing host roots')
+    .action((rawOpts: ChatgptSkillProjectionOptions) => {
+      void runChatgptAction(() => {
+        const result = runChatgptSkillProjection({
+          action: 'install',
+          target: parseSkillTarget(rawOpts.target),
+          dryRun: rawOpts.dryRun === true,
+        });
+        console.log(result.lines.join('\n'));
+      });
+    });
+
+  chatgpt
+    .command('uninstall-skill')
+    .description('Remove only owned repo-harness-chatgpt host projections')
+    .option('--target <target>', 'Target host: codex|claude|both', 'both')
+    .option('--dry-run', 'Print the projection removal plan without writing host roots')
+    .action((rawOpts: ChatgptSkillProjectionOptions) => {
+      void runChatgptAction(() => {
+        const result = runChatgptSkillProjection({
+          action: 'uninstall',
+          target: parseSkillTarget(rawOpts.target),
+          dryRun: rawOpts.dryRun === true,
+        });
+        console.log(result.lines.join('\n'));
+      });
+    });
 
   chatgpt
     .command('browser-setup')
@@ -214,6 +263,8 @@ export function buildChatgptCommand(): Command {
     .option('--keep-browser', 'Native provider leaves the browser open after the run')
     .option('--headless', 'Native provider runs the selected Chrome channel headless')
     .option('--oracle-bin <path>', 'Explicit oracle binary path (overrides REPO_HARNESS_ORACLE_BIN / node_modules / PATH)')
+    .option('--secret-scan', 'Require a fail-closed Gitleaks scan of the exact prompt bundle before session/provider activity')
+    .option('--gitleaks-bin <path>', 'Explicit trusted Gitleaks binary (requires --secret-scan)')
     .option('--dry-run', 'Resolve prompt/files and save a dry-run session without opening a browser')
     .action((rawOpts: BrowserConsultOptions) => {
       void runChatgptAction(async () => {
@@ -243,6 +294,8 @@ export function buildChatgptCommand(): Command {
           keepBrowser: rawOpts.keepBrowser === true,
           headless: rawOpts.headless === true,
           oracleBin: rawOpts.oracleBin,
+          gitleaksBin: rawOpts.gitleaksBin,
+          requireSecretScan: rawOpts.secretScan === true,
         });
         console.log(JSON.stringify({
           sessionId: result.sessionId,
@@ -290,6 +343,8 @@ export function buildChatgptCommand(): Command {
     .option('--keep-browser', 'Native provider leaves the browser open after the run')
     .option('--headless', 'Native provider runs the selected Chrome channel headless')
     .option('--oracle-bin <path>', 'Explicit oracle binary path (overrides REPO_HARNESS_ORACLE_BIN / node_modules / PATH)')
+    .option('--secret-scan', 'Require Gitleaks scanning; inherited automatically from a scan-bound source session')
+    .option('--gitleaks-bin <path>', 'Explicit trusted Gitleaks binary for this scan-bound follow-up')
     .option('--dry-run', 'Resolve prompt/session and save a dry-run follow-up without opening a browser')
     .action((rawOpts: BrowserFollowupOptions) => {
       void runChatgptAction(async () => {
@@ -316,6 +371,8 @@ export function buildChatgptCommand(): Command {
           keepBrowser: rawOpts.keepBrowser === true,
           headless: rawOpts.headless === true,
           oracleBin: rawOpts.oracleBin,
+          gitleaksBin: rawOpts.gitleaksBin,
+          requireSecretScan: rawOpts.secretScan === true ? true : undefined,
         });
         console.log(JSON.stringify({
           sourceSessionId: rawOpts.session,

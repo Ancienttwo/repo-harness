@@ -33,9 +33,14 @@ const PACKAGE_DIR = "repo-harness-chatgpt";
 const SKILLS_ROOT = join(ROOT, "assets", "skills");
 const PACKAGE_ROOT = join(SKILLS_ROOT, PACKAGE_DIR);
 const MANIFEST_PATH = join(ROOT, "assets", "skill-commands", "manifest.json");
-const ROUTER_BODY_BYTE_LIMIT = 2048;
+// Raised from 2048 when the 6th mode (delegate, references/delegate.md) added
+// one Mode Selection line, one when_to_use trigger clause, and one Boundaries
+// note to the router body (chatgpt-delegate-mode). Kept as a small, deliberate
+// step rather than a round jump so the router stays a compact link list, not
+// a place to inline protocol.
+const ROUTER_BODY_BYTE_LIMIT = 2560;
 
-const REFERENCES = ["setup.md", "consult.md", "continue.md", "read-back.md", "bridge.md"] as const;
+const REFERENCES = ["setup.md", "consult.md", "continue.md", "read-back.md", "bridge.md", "delegate.md"] as const;
 
 function readSkill(): string {
   return readFileSync(join(PACKAGE_ROOT, "SKILL.md"), "utf-8");

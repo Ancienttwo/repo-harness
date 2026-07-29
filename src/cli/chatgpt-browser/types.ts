@@ -21,6 +21,8 @@ export interface BrowserConsultInput {
   providerSessionId?: string;
   parentProviderSessionId?: string;
   oracleBin?: string;
+  gitleaksBin?: string;
+  requireSecretScan?: boolean;
   files?: BrowserFileInput[];
   followups?: string[];
   model?: string;
@@ -66,6 +68,19 @@ export interface PromptBundle {
   files: PromptBundleFile[];
   followups: string[];
   totalChars: number;
+}
+
+export interface PromptSecretScanReceipt {
+  scanner: 'gitleaks';
+  version: string;
+  source: '--gitleaks-bin' | 'REPO_HARNESS_GITLEAKS_BIN' | 'PATH';
+  status: 'passed';
+  payloads: Array<{
+    kind: 'prompt' | 'followup';
+    index: number;
+    bytes: number;
+    sha256: string;
+  }>;
 }
 
 export interface BrowserSessionPaths {
@@ -118,6 +133,9 @@ export interface BrowserSessionMeta {
     reattachable: boolean;
     lastCaptureAt: string;
   };
+  security?: {
+    promptSecretScan: PromptSecretScanReceipt;
+  };
   sourceSessionId?: string;
   providerSessionId?: string;
   parentProviderSessionId?: string;
@@ -164,6 +182,7 @@ export interface BrowserConsultResult {
     totalChars: number;
     files: Array<{ path: string; size: number; chars: number; sha256: string }>;
     command?: string[];
+    secretScan?: PromptSecretScanReceipt;
   };
   error?: {
     code: string;
