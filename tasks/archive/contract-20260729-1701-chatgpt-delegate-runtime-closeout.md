@@ -1,6 +1,12 @@
+> **Archived**: 2026-07-29 17:01
+> **Related Plan**: plans/archive/plan-20260729-0810-chatgpt-delegate-runtime-closeout.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260729-1701
+
 # Task Contract: chatgpt-delegate-runtime-closeout
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260729-0810-chatgpt-delegate-runtime-closeout.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->

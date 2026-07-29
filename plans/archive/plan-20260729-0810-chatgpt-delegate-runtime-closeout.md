@@ -1,6 +1,6 @@
 # Plan: ChatGPT delegate runtime closeout
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260729-0810
 > **Slug**: chatgpt-delegate-runtime-closeout
 > **Planning Source**: codex-plan

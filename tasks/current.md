@@ -1,26 +1,26 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-29T09:26:12+0800 -->
+<!-- updated_at: 2026-07-29T17:01:40+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Active
-> **Updated At**: 2026-07-29T09:26:12+0800
+> **Status**: Idle
+> **Updated At**: 2026-07-29T17:01:40+0800
 > **Source Branch**: codex/chatgpt-delegate-mode
-> **Source Commit**: efef17c9
+> **Source Commit**: 9e4950d9
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: chatgpt-delegate-runtime-closeout
+> **Reason**: archive-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Active
-- Active Plan: plans/plan-20260729-0810-chatgpt-delegate-runtime-closeout.md
-- Plan Status: Executing
-- Next Task: Run targeted tests, typecheck, full repository gates, corrected Canary B, and PR readback.
+- Status: Idle
+- Active Plan: (none)
+- Plan Status: (none)
+- Next Task: (none)
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,8 +31,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- .: plans/plan-20260729-0810-chatgpt-delegate-runtime-closeout.md
-- .: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-chatgpt-delegate-mode
+- (none)
 ## Active Sprint
 
 - Sprint: (none)
@@ -47,34 +46,27 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=`plans/archive/plan-20260712-2215-agent-fleet-specialists.md`
 ## Handoff
 
-- Exact Next Step: (none)
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Run targeted tests, typecheck, full repository gates, corrected Canary B, and PR readback.
 
 ## Checks
 
-- status=(none), source=(none), file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 17 changed/untracked path(s)
+- Summary: 10 changed/untracked path(s)
 
 ```
- M assets/skills/repo-harness-chatgpt/references/delegate.md
- M assets/skills/repo-harness-chatgpt/references/setup.md
- M docs/repo-harness-chatgpt-browser-engine.md
- M src/cli/chatgpt-browser/engine.ts
- M src/cli/chatgpt-browser/oracle-provider.ts
- M src/cli/chatgpt-browser/session-store.ts
- M src/cli/chatgpt-browser/types.ts
- M src/cli/commands/chatgpt.ts
- M src/cli/mcp/setup.ts
+ D plans/plan-20260729-0810-chatgpt-delegate-runtime-closeout.md
+ D tasks/contracts/20260729-0810-chatgpt-delegate-runtime-closeout.contract.md
+ D tasks/notes/20260729-0810-chatgpt-delegate-runtime-closeout.notes.md
+ D tasks/reviews/20260729-0810-chatgpt-delegate-runtime-closeout.review.md
  M tasks/todos.md
- M tests/cli/chatgpt-browser.test.ts
-?? plans/plan-20260729-0810-chatgpt-delegate-runtime-closeout.md
-?? src/cli/chatgpt-browser/secret-scan.ts
-?? src/cli/chatgpt-skill/
-?? tasks/contracts/20260729-0810-chatgpt-delegate-runtime-closeout.contract.md
-?? tasks/notes/20260729-0810-chatgpt-delegate-runtime-closeout.notes.md
-?? tasks/reviews/20260729-0810-chatgpt-delegate-runtime-closeout.review.md
+?? plans/archive/plan-20260729-0810-chatgpt-delegate-runtime-closeout.md
+?? tasks/archive/contract-20260729-1701-chatgpt-delegate-runtime-closeout.md
+?? tasks/archive/notes-20260729-1701-chatgpt-delegate-runtime-closeout.md
+?? tasks/archive/review-20260729-1701-chatgpt-delegate-runtime-closeout.md
+?? tasks/archive/todo-20260729-1701-chatgpt-delegate-runtime-closeout.md
 ```
 
 ## Source Artifacts
