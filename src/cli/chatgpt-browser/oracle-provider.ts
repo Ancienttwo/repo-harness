@@ -1,7 +1,8 @@
 import { spawn, spawnSync } from 'child_process';
-import { accessSync, constants, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'fs';
+import { createHash } from 'crypto';
+import { accessSync, constants, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { isAbsolute, join, resolve } from 'path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import type { BrowserConsultInput, BrowserImportedArtifact, PromptBundle } from './types';
 
 export interface OracleProviderResult {
@@ -211,6 +212,35 @@ function resolveOracleFilePath(input: BrowserConsultInput, filePath: string): st
   return isAbsolute(filePath) ? filePath : join(input.repoRoot, filePath);
 }
 
+function stageScanBoundOracleFiles(input: BrowserConsultInput, bundle: PromptBundle): {
+  root: string;
+  files: NonNullable<BrowserConsultInput['files']>;
+} | undefined {
+  if (input.requireSecretScan !== true || bundle.files.length === 0) return undefined;
+  const root = mkdtempSync(join(tmpdir(), 'repo-harness-oracle-egress-'));
+  try {
+    const files = bundle.files.map((file) => {
+      const target = resolve(root, file.path);
+      const relativeTarget = relative(root, target);
+      if (!relativeTarget || relativeTarget === '..' || relativeTarget.startsWith(`..${sep}`) || isAbsolute(relativeTarget)) {
+        throw new Error(`PROMPT_BUNDLE_STAGING_FAILED: invalid scan-bound file path ${file.path}`);
+      }
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, file.content, 'utf-8');
+      const stagedBytes = readFileSync(target);
+      const stagedHash = createHash('sha256').update(stagedBytes).digest('hex');
+      if (stagedHash !== file.sha256) {
+        throw new Error(`PROMPT_BUNDLE_STAGING_FAILED: staged bytes do not match the scanned bundle for ${file.path}`);
+      }
+      return { path: target, delivery: 'inline' as const };
+    });
+    return { root, files };
+  } catch (error) {
+    rmSync(root, { recursive: true, force: true });
+    throw error;
+  }
+}
+
 export function resolveOracleCookiePath(input: Pick<BrowserConsultInput, 'profileDir' | 'profileDirectory'>): string | undefined {
   if (!input.profileDir) return undefined;
   const selectedProfilePath = input.profileDirectory
@@ -312,7 +342,7 @@ function runOracleProcess(
   });
 }
 
-export async function runOracleProvider(input: BrowserConsultInput, _bundle: PromptBundle): Promise<OracleProviderResult> {
+export async function runOracleProvider(input: BrowserConsultInput, bundle: PromptBundle): Promise<OracleProviderResult> {
   const resolution = resolveOracleBin(input);
   if (input.sourceSessionId && !input.providerSessionId) {
     return {
@@ -374,12 +404,23 @@ export async function runOracleProvider(input: BrowserConsultInput, _bundle: Pro
   }
   const answerDir = mkdtempSync(join(tmpdir(), 'repo-harness-oracle-answer-'));
   const runCwd = mkdtempSync(join(tmpdir(), 'repo-harness-oracle-cwd-'));
-  const oracleHomeDir = resolveOracleHomeDir(input);
-  mkdirSync(oracleHomeDir, { recursive: true });
-  const answerPath = join(answerDir, 'answer.md');
-  const args = buildOracleCommand(input, answerPath);
-  const command = [resolution.binary, ...args];
+  let egressRoot: string | undefined;
   try {
+    const staged = stageScanBoundOracleFiles(input, bundle);
+    egressRoot = staged?.root;
+    const providerInput = input.requireSecretScan === true
+      ? {
+        ...input,
+        prompt: bundle.prompt,
+        followups: bundle.followups,
+        files: staged?.files ?? [],
+      }
+      : input;
+    const oracleHomeDir = resolveOracleHomeDir(input);
+    mkdirSync(oracleHomeDir, { recursive: true });
+    const answerPath = join(answerDir, 'answer.md');
+    const args = buildOracleCommand(providerInput, answerPath);
+    const command = [resolution.binary, ...args];
     const result = await runOracleProcess(resolution.binary, args, {
       cwd: runCwd,
       env: buildOracleEnv(oracleHomeDir),
@@ -455,5 +496,6 @@ export async function runOracleProvider(input: BrowserConsultInput, _bundle: Pro
   } finally {
     rmSync(answerDir, { recursive: true, force: true });
     rmSync(runCwd, { recursive: true, force: true });
+    if (egressRoot) rmSync(egressRoot, { recursive: true, force: true });
   }
 }

@@ -12,6 +12,7 @@ import { resolveBrowserOutputPath } from './file-policy';
 import { checkNativeChatgptSession, nativeDebuggingBlockedByDefaultProfile, nativeProviderAvailable, runNativeProvider } from './native-provider';
 import { buildOracleCommand, probeOracle, resolveOracleBin, runOracleProvider, supportsBrowserAppPreselect } from './oracle-provider';
 import { assemblePromptBundle } from './prompt-assembler';
+import { scanPromptBundle } from './secret-scan';
 import {
   cleanupBrowserSessions,
   ensureBrowserSessionRoot,
@@ -412,6 +413,12 @@ export async function runBrowserConsult(input: BrowserConsultInput): Promise<Bro
   const effectiveInput = withBrowserBinding(input, provider);
   assertOutputTarget(effectiveInput);
   const bundle = assemblePromptBundle(effectiveInput);
+  if (effectiveInput.gitleaksBin && effectiveInput.requireSecretScan !== true) {
+    throw new Error('--gitleaks-bin requires --secret-scan');
+  }
+  const secretScan = effectiveInput.requireSecretScan === true
+    ? scanPromptBundle(effectiveInput, bundle)
+    : undefined;
   if (effectiveInput.chatgptApp && provider !== 'oracle') {
     return writeBrowserSession({
       input: effectiveInput,
@@ -424,6 +431,7 @@ export async function runBrowserConsult(input: BrowserConsultInput): Promise<Bro
         message: `ChatGPT app preselection is not supported by provider "${provider}"`,
         recovery: 'Use --provider oracle with an Oracle binary that supports --browser-app, or omit --chatgpt-app and select the app manually.',
       },
+      secretScan,
     });
   }
   if (effectiveInput.dryRun !== true) {
@@ -445,6 +453,7 @@ export async function runBrowserConsult(input: BrowserConsultInput): Promise<Bro
         },
         artifacts: oracle.artifacts,
         command: oracle.command,
+        secretScan,
       });
     }
     const native = await runNativeProvider(effectiveInput, bundle);
@@ -456,6 +465,7 @@ export async function runBrowserConsult(input: BrowserConsultInput): Promise<Bro
       output: native.output,
       conversationUrl: native.conversationUrl,
       error: native.error,
+      secretScan,
     });
   }
   const command = provider === 'oracle' ? ['oracle', ...buildOracleCommand(effectiveInput)] : undefined;
@@ -466,6 +476,7 @@ export async function runBrowserConsult(input: BrowserConsultInput): Promise<Bro
     bundle,
     output: providerOutput(provider, command),
     command,
+    secretScan,
   });
 }
 
@@ -492,6 +503,7 @@ export async function runBrowserFollowup(input: Omit<BrowserConsultInput, 'sourc
     ...input,
     title: input.title ?? `followup ${input.sessionId}`,
     sourceSessionId: input.sessionId,
+    requireSecretScan: input.requireSecretScan === true || Boolean(existing.meta.security?.promptSecretScan),
     providerSessionId: input.providerSessionId ?? existing.meta.providerSessionId,
     parentProviderSessionId: existing.meta.providerSessionId,
     model: input.model ?? existing.meta.model.requested,

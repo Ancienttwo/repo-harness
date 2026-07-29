@@ -2,8 +2,7 @@ import { createHash, randomBytes } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'fs';
 import { isIP } from 'net';
 import { homedir } from 'os';
-import { dirname, isAbsolute, join, relative, resolve } from 'path';
-import { fileURLToPath } from 'url';
+import { dirname, join, relative, resolve } from 'path';
 import {
   applyRepoHarnessRegistryBatch,
   readRegisteredRepoHarnessRepos,
@@ -25,6 +24,7 @@ import { parseMcpProfile } from './policy';
 import { buildCodingToolDefinitions } from './coding-tools';
 import { isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
 import { repoHarnessPackageVersion } from './version';
+import { readCanonicalChatgptReference } from '../chatgpt-skill/source';
 
 export interface McpSetupResult {
   status: 'ok';
@@ -53,39 +53,20 @@ const SERVER_NAME_ERROR = 'expected a ChatGPT MCP server name using 1-80 letters
 // assets/skills/repo-harness-chatgpt/references/bridge.md instead of an
 // inline template string, so setup/consult/bridge modes stay reconciled to
 // one byte source (see docs/researches for the SSD-05 drift reconciliation).
-const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const PACKAGE_ROOT = resolve(SCRIPT_DIR, '..', '..', '..');
-const CHATGPT_CANONICAL_SKILL_DIR_NAME = 'repo-harness-chatgpt';
 const CHATGPT_BRIDGE_FRONTMATTER_NAME = 'repo-harness-chatgpt-bridge';
 
-function chatgptCanonicalSkillRoot(): string {
-  const sourceRoot = process.env.REPO_HARNESS_SOURCE_ROOT?.trim();
-  if (sourceRoot) {
-    if (!isAbsolute(sourceRoot)) throw new Error('REPO_HARNESS_SOURCE_ROOT must be an absolute path');
-    return join(sourceRoot, 'assets', 'skills', CHATGPT_CANONICAL_SKILL_DIR_NAME);
-  }
-  return join(PACKAGE_ROOT, 'assets', 'skills', CHATGPT_CANONICAL_SKILL_DIR_NAME);
-}
-
 function readCanonicalChatgptBridgeSkill(): string {
-  const path = join(chatgptCanonicalSkillRoot(), 'references', 'bridge.md');
-  if (!existsSync(path)) {
-    throw new Error(
-      `repo-harness mcp install-skill requires the canonical ChatGPT Skill source at ${path}; ` +
-      'reinstall repo-harness or restore assets/skills/repo-harness-chatgpt/references/bridge.md',
-    );
-  }
   let bytes: string;
   try {
-    bytes = readFileSync(path, 'utf-8');
+    bytes = readCanonicalChatgptReference('bridge.md');
   } catch (error) {
-    throw new Error(`repo-harness mcp install-skill could not read the canonical ChatGPT Skill source at ${path}: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`repo-harness mcp install-skill could not read the canonical ChatGPT Skill source: ${error instanceof Error ? error.message : String(error)}`);
   }
   const frontmatter = bytes.match(/^---\n([\s\S]*?)\n---\n/)?.[1] ?? '';
   const nameOk = new RegExp(`^name:\\s*${CHATGPT_BRIDGE_FRONTMATTER_NAME}$`, 'm').test(frontmatter);
   const descriptionOk = /^description:\s*.+$/m.test(frontmatter);
   if (!frontmatter || !nameOk || !descriptionOk) {
-    throw new Error(`canonical ChatGPT Skill source is malformed: ${path} (expected frontmatter with name: ${CHATGPT_BRIDGE_FRONTMATTER_NAME} and a description)`);
+    throw new Error(`canonical ChatGPT Skill source is malformed: bridge.md (expected frontmatter with name: ${CHATGPT_BRIDGE_FRONTMATTER_NAME} and a description)`);
   }
   return bytes;
 }

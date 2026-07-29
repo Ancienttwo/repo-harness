@@ -31,11 +31,10 @@ access by using this mode.
    README, and the capability contract or gate commands that apply to the
    target path. Check the current branch and git baseline before doing
    anything else, and never overwrite existing dirty worktree state.
-2. Pack the upstream context through the engine's inline PromptBundle
-   (`repo-harness chatgpt browser-consult --file <path>`, repeatable; every
-   included file is hashed with SHA-256). The engine's `--dry-run` gate is a
-   **path allow/deny policy, not a content-based secret scanner** -- there is
-   no secret-pattern content scan anywhere in this chain:
+2. Pack the upstream context through the engine's inline PromptBundle and
+   require its content-level egress gate
+   (`repo-harness chatgpt browser-consult --secret-scan --file <path>`,
+   repeatable; every included file is hashed with SHA-256):
    1. Allowed read paths: `AGENTS.md`, `CLAUDE.md`, `README.md`,
       `README.*.md`, `package.json`, `docs/**`, `plans/**`, `tasks/**`,
       `.ai/context/**`, `.ai/harness/**`. Denied read paths: `.env`,
@@ -59,18 +58,32 @@ access by using this mode.
       denied`) at its staged location. Do not rename a file to dodge a
       deny-shaped match, and do not bypass the bundle by pasting source
       file contents directly into the prompt text instead of attaching them
-      -- both defeat the one real control this chain has.
-   4. Because there is no scanner, the local agent is the secret check:
-      before running the real (non-dry-run) consult, manually review every
-      staged file's actual content for secrets, tokens, or credentials --
-      not just whether its path shape is denied. This is a manual review
-      obligation, not a tool; never claim an automated scan happened.
+      -- both evade the declared bundle boundary and invalidate acceptance.
+   4. `--secret-scan` runs Gitleaks >= 8.19 over the exact rendered prompt
+      and every follow-up before a session directory is created or a provider
+      is invoked. Binary resolution is fail-closed and ordered:
+      `--gitleaks-bin`, `REPO_HARNESS_GITLEAKS_BIN`, then `PATH`. The scanner
+      runs in an isolated temporary directory, ignores repo-controlled
+      Gitleaks config and allow comments, and redacts its captured findings.
+      For Oracle, scan-bound attachments are then written from the captured
+      PromptBundle bytes into a private per-run staging directory and their
+      hashes are rechecked; Oracle never rereads the mutable repo source path
+      after the scan.
+      Missing/incompatible Gitleaks, any finding, timeout, or scanner error
+      stops the delegation with `PROMPT_SECRET_SCAN_UNAVAILABLE` or
+      `PROMPT_SECRET_SCAN_FAILED`; never retry without the gate.
+   5. Manual content review remains useful defense in depth, but it is not a
+      substitute for `--secret-scan` and is never reported as the automated
+      scan. Do not attach, paste, or upload any additional context after the
+      scanned PromptBundle was generated.
 
-   Record the dry-run's file manifest and hashes as the bundle's evidence.
-   A gap in the path policy itself (an actual secret-shaped path that
-   should be denied but isn't, or a needed path that should be allowed) is
-   an engine gap to report, not a gap to patch over with a second,
-   locally-invented scanner.
+   Dry-run first and record its file manifest plus
+   `meta.security.promptSecretScan`. The receipt records the scanner version,
+   resolution source, byte count, and SHA-256 of every exact payload; its
+   prompt payload hash is the bundle SHA-256 used by this protocol. Verify the
+   saved `prompt.md` against that hash before transport. A path-policy or scan
+   failure is an engine gap/evidence item to report, never a reason to invent
+   a second scanner or bypass the canonical gate.
 3. Snapshot the baseline before sending anything upstream: the base commit,
    the full tracked-file diff against that commit (including uncommitted
    work-in-progress), and a manifest of untracked files with a content hash
@@ -236,12 +249,12 @@ consult/continue commands -- it does not introduce a new provider path.
   run -- if it reports incompatible, upgrade Oracle and rerun `doctor`; do
   not silently retry against the old binary and do not fall back to native
   to work around it.
-- When the brief has attachments, dry-run first so the Protocol item 2 gate
-  runs before any real conversation:
-  `repo-harness chatgpt browser-consult --repo <repo> --provider oracle --file <path> --prompt "<brief>" --dry-run`.
+- Dry-run every delegation first so the Protocol item 2 path and content gates
+  run before any real conversation:
+  `repo-harness chatgpt browser-consult --repo <repo> --provider oracle --secret-scan --file <path> --prompt "<brief>" --dry-run`.
 - Start the real delegation with a timestamped, non-reused `--write-output`,
   the same convention `consult.md` uses:
-  `stamp="$(date -u +%Y%m%dT%H%M%SZ)"; repo-harness chatgpt browser-consult --repo <repo> --provider oracle --model <label> --heartbeat 59 --file <path> --prompt "<brief>" --write-output ".ai/harness/handoff/gptpro/gptpro-${stamp}-<slug>.md"`.
+  `stamp="$(date -u +%Y%m%dT%H%M%SZ)"; repo-harness chatgpt browser-consult --repo <repo> --provider oracle --secret-scan --model <label> --heartbeat 59 --file <path> --prompt "<brief>" --write-output ".ai/harness/handoff/gptpro/gptpro-${stamp}-<slug>.md"`.
 - Before trusting a `--write-output` file as the answer authority, check
   that session's own status first (`repo-harness chatgpt browser-session
   --repo <repo> <sessionId>`, per `continue.md`). A failed or incomplete
@@ -263,7 +276,10 @@ consult/continue commands -- it does not introduce a new provider path.
   while the process is alive -> act only once capture fails or the process
   ends -> report BLOCKED only for a genuine no-progress stall.
 - Correction rounds (Protocol item 11) reuse `browser-followup` against the
-  same provider session, per `continue.md`. A follow-up round does not
+  same provider session, per `continue.md`. A scan-bound source session makes
+  every follow-up scan-bound too; Gitleaks must remain resolvable and the
+  follow-up fails before a new session/provider call if scanning fails. A
+  follow-up round does not
   re-verify the model: Oracle skips model selection on `browser-followup`
   and continues the existing conversation on whatever model it is already
   on. Treat the initial consult's transport-native
@@ -299,7 +315,13 @@ does not go through the Oracle CLI.
 - Open a new conversation per Protocol item 6. Record which Pro model label
   the page actually shows as selected, and verify it visually -- never
   hardcode an exact model name as an assumption.
-- Send the bundle and the brief, then confirm the conversation handle (a
+- Before opening the conversation, generate the canonical dry-run with
+  `browser-consult --dry-run --secret-scan`, verify the saved `prompt.md`
+  SHA-256 equals the receipt's prompt payload SHA-256, and use that exact
+  `prompt.md` as the IAB message/attachment. Do not reconstruct the brief in
+  the composer and do not add any unscanned attachment, pasted source, or
+  follow-up context.
+- Send that exact scanned bundle, then confirm the conversation handle (a
   `conversationUrl` or the host's equivalent) actually appeared before
   writing it to `delegation.json` and entering the wait.
 - Completion authority is the visible generation-complete state in the page
@@ -337,6 +359,11 @@ does not go through the Oracle CLI.
 - The `--dry-run` gate rejects a denied path, a secret-shaped file, a
   symlink escape, or an oversized file: preserve the dry-run evidence and do
   not run the real delegation.
+- `PROMPT_SECRET_SCAN_UNAVAILABLE` or `PROMPT_SECRET_SCAN_FAILED`: preserve
+  the generic error and local receipt state, fix the Gitleaks prerequisite or
+  remove the detected secret from the source context, then rebuild and rescan
+  the entire bundle. Never disable the scan, print the finding, or reuse the
+  previous prompt.
 - Login, captcha, passkey, 2FA, or workspace picker required: stop, report
   BLOCKED, and hand back to the user without touching credentials.
 - Bundle exceeds the current host transport's inline limit: BLOCKED; narrow

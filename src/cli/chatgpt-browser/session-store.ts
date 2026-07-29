@@ -10,6 +10,7 @@ import type {
   BrowserSessionPaths,
   BrowserSessionStatus,
   PromptBundle,
+  PromptSecretScanReceipt,
   StoredBrowserSession,
   StoredBrowserSessionSummary,
 } from './types';
@@ -133,6 +134,7 @@ export function writeBrowserSession(opts: {
   oracle?: { binary?: string; version?: string; captureStatus?: 'completed' | 'recoverable' };
   artifacts?: BrowserImportedArtifact[];
   command?: string[];
+  secretScan?: PromptSecretScanReceipt;
 }): BrowserConsultResult {
   const outputTarget = opts.input.writeOutput
     ? resolveBrowserOutputPath(opts.input.repoRoot, opts.input.writeOutput, {
@@ -192,6 +194,7 @@ export function writeBrowserSession(opts: {
       reattachable: opts.status === 'incomplete_capture' || opts.status === 'recoverable',
       lastCaptureAt: now,
     },
+    security: opts.secretScan ? { promptSecretScan: opts.secretScan } : undefined,
     sourceSessionId: opts.input.sourceSessionId,
     providerSessionId: opts.providerSessionId,
     parentProviderSessionId: opts.parentProviderSessionId ?? opts.input.parentProviderSessionId,
@@ -219,6 +222,7 @@ export function writeBrowserSession(opts: {
       totalChars: opts.bundle.totalChars,
       files: opts.bundle.files.map((file) => ({ path: file.path, size: file.size, chars: file.chars, sha256: file.sha256 })),
       command: opts.command,
+      secretScan: opts.secretScan,
     } : undefined,
     error: opts.error,
     artifacts: opts.artifacts,

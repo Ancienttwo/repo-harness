@@ -13,6 +13,40 @@ source.
 - ChatGPT Pro Web access is not OpenAI API quota or an API key substitute;
   never create API keys or billing projects from a ChatGPT Pro subscription.
 
+## Host Skill Projection
+
+The canonical package remains under
+`assets/skills/repo-harness-chatgpt/`; default minimal/full install profiles do
+not expose it. Project that one byte source explicitly into the host discovery
+roots:
+
+```bash
+repo-harness chatgpt install-skill --target both
+```
+
+Use `--target codex` or `--target claude` for one host. The command validates
+the complete canonical package and creates an owned symlink named
+`repo-harness-chatgpt` under each selected host's `~/.codex/skills/` or
+`~/.claude/skills/`. It is idempotent and refuses a directory, broken symlink,
+or symlink owned by another source instead of overwriting it. Remove only an
+owned projection with `repo-harness chatgpt uninstall-skill --target <target>`.
+Both commands support `--dry-run`; neither changes an install profile.
+
+Delegate mode also requires a trusted Gitleaks CLI >= 8.19. Install it through
+the operator's normal package-management policy and verify `gitleaks version`;
+repo-harness never downloads or upgrades it automatically. The delegate
+dry-run with `--secret-scan` is the authoritative readiness check.
+
+The projected symlink binds to the CLI checkout that ran `install-skill`,
+not a fixed install location. If that checkout is a contract worktree,
+merge-time worktree cleanup leaves the symlink dangling: the host silently
+loses skill discovery, and the installer's broken-symlink fail-closed check
+then refuses a direct reinstall. Recover by removing the two dangling
+symlinks under each host's skills root, then rerunning `install-skill` from
+a durable checkout (the primary clone or an already-installed package).
+Run the real projection only from a durable checkout; treat a worktree run
+as verification-only and re-project from the durable checkout afterward.
+
 ## Oracle Browser Provider
 
 1. Oracle's published CLI requires `node >=24`; satisfy that inside the pinned
@@ -76,6 +110,11 @@ source.
 - Any command that would print `.repo-harness/mcp.tokens.json`,
   `.repo-harness/mcp.oauth.json`, browser profile secrets, or cookies: redact
   the value and report only the file class.
+- `PROMPT_SECRET_SCAN_UNAVAILABLE`: Gitleaks is missing, explicitly
+  misconfigured, or older than 8.19; fix the selected binary and rerun the
+  delegate dry-run without sending the prior bundle.
+- Host projection finds an unowned or broken destination: preserve it and
+  stop; never overwrite or unlink a user-owned Skill to make setup pass.
 
 ## Boundaries
 
@@ -83,6 +122,8 @@ source.
   ChatGPT Pro subscription.
 - Does not install/upgrade Oracle from a default repo-harness install; Oracle
   bootstrap is explicit GPT Pro setup/repair only.
+- Does not install/upgrade Gitleaks or project the ChatGPT Skill from a default
+  install profile; both are explicit delegate setup operations.
 - Does not bypass ChatGPT Web rate limits, login checks, manual verification,
   or plan restrictions.
 - Does not expose a local MCP server to the public internet without explicit

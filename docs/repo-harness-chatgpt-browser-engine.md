@@ -5,6 +5,8 @@
 ## What It Does
 
 - Builds a policy-checked prompt bundle from explicit repo files.
+- Can require a fail-closed Gitleaks scan over the exact rendered prompt and
+  follow-ups before any session/provider side effect.
 - Saves repo-local session records under `.ai/harness/chatgpt/sessions/<sessionId>/`.
 - Supports dry-run preview without opening a browser.
 - Supports an Oracle provider wrapper for `oracle --engine browser` (the default, recommended main path).
@@ -35,6 +37,24 @@ repo-harness remains a Bun-first CLI package. The Oracle CLI package currently r
 When Oracle is missing, too old, or selected through a broken explicit source, the same doctor JSON includes explicit source-aware `agent_actions` such as `chatgpt-oracle-install-pinned`, `chatgpt-oracle-upgrade-pinned`, or `chatgpt-oracle-fix-configured-source`. These actions are for the opt-in GPT Pro setup/repair lane only. Default `repo-harness install`, ordinary setup checks, and dry-run consults still do not install, upgrade, or re-point Oracle automatically.
 
 ## First-Time Setup
+
+The canonical ChatGPT Skill is explicit-setup-only and is not part of the
+minimal or full install profiles. Project the canonical package into both host
+discovery roots with one owned symlink per host:
+
+```bash
+repo-harness chatgpt install-skill --target both
+```
+
+Use `--dry-run` to inspect the lifecycle or `--target codex|claude` to select
+one host. `repo-harness chatgpt uninstall-skill --target <target>` removes only
+an exact symlink to the canonical package. Existing directories, broken
+symlinks, and symlinks to another source fail closed and are never overwritten.
+These commands do not mutate either default install profile.
+
+Projections created from a contract worktree can leave the host symlink
+dangling after worktree cleanup; see "Host Skill Projection" in
+`assets/skills/repo-harness-chatgpt/references/setup.md` for the recovery steps.
 
 ```bash
 repo-harness chatgpt browser-setup --repo .
@@ -82,6 +102,45 @@ repo-harness chatgpt browser-consult \
 ```
 
 Dry run validates the prompt, file policy, inline size, and session write path. It saves a `dry_run` session and does not open ChatGPT.
+
+### Delegate Secret Gate
+
+Code-delivery delegations must add `--secret-scan` to both dry-run and real
+`browser-consult` calls:
+
+```bash
+repo-harness chatgpt browser-consult \
+  --repo . \
+  --dry-run \
+  --secret-scan \
+  --prompt "Review this bounded implementation brief." \
+  --file .ai/harness/chatgpt/delegations/example/bundle/src/example.ts
+```
+
+The gate resolves a trusted Gitleaks >= 8.19 in this order:
+`--gitleaks-bin`, `REPO_HARNESS_GITLEAKS_BIN`, then `PATH`. It scans the exact
+rendered `prompt.md` and every follow-up through `gitleaks stdin` before a
+session directory is allocated or a provider is invoked. The scan runs from an
+isolated temporary directory, clears inherited Gitleaks config overrides,
+ignores repo-controlled allow comments, and captures only a generic redacted
+failure. A missing/incompatible scanner, finding, timeout, or scanner error
+returns `PROMPT_SECRET_SCAN_UNAVAILABLE` or `PROMPT_SECRET_SCAN_FAILED` and
+creates no session.
+
+On the Oracle path, scan-bound attachments are rebuilt from the already
+captured PromptBundle bytes in a private per-run temporary directory and each
+staged file is rechecked against its original SHA-256. Oracle receives only
+those immutable staged paths, so a repository file changed after the scan
+cannot alter what is sent. The staging directory is removed when the provider
+run ends.
+
+Successful sessions persist `meta.security.promptSecretScan` and expose the
+same receipt in dry-run JSON. The receipt binds scanner version/source plus the
+byte count and SHA-256 for every scanned payload. Compare the prompt receipt to
+the saved `prompt.md` before transporting it through Codex's built-in browser.
+`--gitleaks-bin` is accepted only with `--secret-scan`. Ordinary planning and
+review consults retain the path gate without silently enabling this delegate
+contract.
 
 ## Oracle Provider
 
@@ -182,7 +241,7 @@ repo-harness chatgpt browser-followup \
   --prompt "Turn that review into a Codex-ready goal."
 ```
 
-Follow-up sessions are linked with `sourceSessionId` in `meta.json`. The Oracle provider receives `providerSessionId` from the source session as upstream provider context; it does not pass the repo-harness local `chgpt_...` session ID as an Oracle session. Dry-run follow-ups still write a linked local session without opening a browser.
+Follow-up sessions are linked with `sourceSessionId` in `meta.json`. The Oracle provider receives `providerSessionId` from the source session as upstream provider context; it does not pass the repo-harness local `chgpt_...` session ID as an Oracle session. Dry-run follow-ups still write a linked local session without opening a browser. A source session carrying `meta.security.promptSecretScan` makes every follow-up scan-bound automatically; Gitleaks must remain resolvable, and scan failure occurs before the linked session or provider call.
 
 ## Cleanup
 
@@ -240,12 +299,16 @@ Denied by default:
 
 The engine rejects denied files before browser/provider execution.
 Allowed-path symlinks that resolve outside the repository are rejected.
+For delegate mode, path policy is only the first gate: `--secret-scan` also
+scans the fully rendered allowed content. Path acceptance alone is not evidence
+that a file is safe to send.
 
 ## Security Notes
 
 - Keep browser profiles and local config uncommitted.
 - Prefer product-session binding over copying cookies or launching an unrelated fresh profile.
 - Do not expose Chrome remote debugging outside localhost without an explicit tunnel/security plan.
-- Use dry-run before sending large or sensitive context.
+- Use `--dry-run --secret-scan` before sending any delegate context; transport
+  the exact saved and hash-verified `prompt.md`, without later additions.
 - Prefer narrow files over whole-repo dumps.
 - Treat generated ChatGPT output as review input, not authoritative code truth.
