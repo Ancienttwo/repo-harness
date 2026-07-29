@@ -8,9 +8,9 @@
 > **Last Updated**: 2026-07-29 15:20
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:3bd472e9ed4496696c7d20abbdd2f562c483c9acfe9e810b913ee284bb13d9f2
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
+> **Reviewed Target Revision**: 142d4ccb6f35ab4c74490b3330b17e5d41a3438c
 
 ## Human Review Card
 
@@ -52,17 +52,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:3bd472e9ed4496696c7d20abbdd2f562c483c9acfe9e810b913ee284bb13d9f2
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 142d4ccb6f35ab4c74490b3330b17e5d41a3438c
+> **Verification Evidence SHA256**: sha256:697490a6768c4a936a7eb142cfcbf9b893a1c53f4c72e01f4417971a1deaa2cb
+> **Issued At**: 2026-07-29T09:00:51.962Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: Gatekeeper reviewed Codex's runtime closeout against the contract: all changed paths mapped to the goal manifest with out-of-scope items untouched; mandatory egress secret scan verified inside the single engine gate (scan-before-side-effect ordering, exact rendered-payload scanning, followup inheritance without opt-out, staging sha256 TOCTOU binding, four fail-closed states proven with a live gitleaks 8.30.1 synthetic-PAT fixture leaving no session dir and no token in output); explicit opt-in host skill projection validated (realpath-owned symlinks, idempotent reinstall, unowned-path refusal, default profiles unchanged); focused tests 72 pass/0 fail, full suite green in the clean-environment gate run, four contract manual checks recorded with concrete evidence.
 - Findings: none
 
 ## Behavior Diff Notes
