@@ -4,6 +4,34 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.11.3] - 2026-07-29
+
+### Added
+
+- Adds ChatGPT delegate mode: a repo-owned, transport-agnostic dual-agent GPT
+  Pro protocol (task brief with `EXECUTION_BOUNDARY`, a sentinel envelope
+  bound to baseline/bundle SHA-256, a baseline snapshot including WIP diff,
+  isolated-worktree acceptance with no 3-way merge rescue, and bounded
+  2-round escalation) over two explicit host transports: Claude through the
+  existing Oracle consult/continue chain, and Codex through its built-in
+  browser with visible-completion and sentinel authority.
+
+### Fixed
+
+- The ChatGPT delegate engine now runs a mandatory Gitleaks scan over the
+  exact rendered PromptBundle bytes (prompt, inline files, and followups)
+  before any session-store write or provider spawn, failing closed on a
+  missing binary, an incompatible version, unparsable output, or findings;
+  followup consults inherit the scan requirement from session metadata and
+  cannot opt out.
+- Added explicit, opt-in `install-skill`/`uninstall-skill` host projection
+  commands for the previously undiscoverable `repo-harness-chatgpt` package,
+  using realpath-validated symlinks that fail closed on unowned destinations
+  and roll back idempotently.
+- Updated the skill-surface pin to cover the new `references/delegate.md`
+  reference (6 references total) and raised the router byte limit from 2048
+  to 2560.
+
 ## [0.11.2] - 2026-07-26
 
 ### Fixed
