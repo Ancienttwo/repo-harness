@@ -1,6 +1,6 @@
 {
-  "version": "0.11.2",
-  "templateVersion": "0.11.2",
+  "version": "0.11.3",
+  "templateVersion": "0.11.3",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "compatibility": {
@@ -219,6 +219,10 @@
     {
       "version": "0.11.2",
       "description": "Removes per-command ChecksFile context noise, keeps out-of-repo paths outside capability jurisdiction without weakening path validation, and resolves SessionStart Effective State in process with bounded retries and redaction-safe unavailable diagnostics"
+    },
+    {
+      "version": "0.11.3",
+      "description": "Adds ChatGPT delegate mode with a repo-owned dual-agent GPT Pro protocol and Claude/Codex host transports, enforces a mandatory pre-spawn Gitleaks scan over the rendered PromptBundle, and adds explicit host skill projection commands for the repo-harness-chatgpt package"
     }
   ],
   "generatedProjectStamp": {
