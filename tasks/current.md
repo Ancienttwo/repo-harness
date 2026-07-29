@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-29T17:01:40+0800 -->
+<!-- updated_at: 2026-07-29T17:53:29+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-07-29T17:01:40+0800
-> **Source Branch**: codex/chatgpt-delegate-mode
-> **Source Commit**: 9e4950d9
+> **Updated At**: 2026-07-29T17:53:29+0800
+> **Source Branch**: codex/release-0-11-3
+> **Source Commit**: 8e38a667
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -46,7 +46,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=`plans/archive/plan-20260712-2215-agent-fleet-specialists.md`
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Run targeted tests, typecheck, full repository gates, corrected Canary B, and PR readback.
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: T1 版本升級：package.json → 0.11.3、`.claude/.skill-version`、`assets/skill-version.json`、五份 README 版本字串（照 142d4ccb 的 diff 形狀）
 
 ## Checks
 
@@ -57,16 +57,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260729-0810-chatgpt-delegate-runtime-closeout.md
- D tasks/contracts/20260729-0810-chatgpt-delegate-runtime-closeout.contract.md
- D tasks/notes/20260729-0810-chatgpt-delegate-runtime-closeout.notes.md
- D tasks/reviews/20260729-0810-chatgpt-delegate-runtime-closeout.review.md
+ D plans/plan-20260729-1707-release-0-11-3.md
+ D tasks/contracts/20260729-1707-release-0-11-3.contract.md
+ D tasks/notes/20260729-1707-release-0-11-3.notes.md
+ D tasks/reviews/20260729-1707-release-0-11-3.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260729-0810-chatgpt-delegate-runtime-closeout.md
-?? tasks/archive/contract-20260729-1701-chatgpt-delegate-runtime-closeout.md
-?? tasks/archive/notes-20260729-1701-chatgpt-delegate-runtime-closeout.md
-?? tasks/archive/review-20260729-1701-chatgpt-delegate-runtime-closeout.md
-?? tasks/archive/todo-20260729-1701-chatgpt-delegate-runtime-closeout.md
+?? plans/archive/plan-20260729-1707-release-0-11-3.md
+?? tasks/archive/contract-20260729-1753-release-0-11-3.md
+?? tasks/archive/notes-20260729-1753-release-0-11-3.md
+?? tasks/archive/review-20260729-1753-release-0-11-3.md
+?? tasks/archive/todo-20260729-1753-release-0-11-3.md
 ```
 
 ## Source Artifacts
