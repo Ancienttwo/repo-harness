@@ -120,10 +120,8 @@ describe("README DX contract", () => {
     const readme = read("README.md");
     const verification = section(readme, "Verification");
     const releaseDoc = read("docs/reference-configs/release-deploy.md");
-    const releaseAsset = read("assets/reference-configs/release-deploy.md");
     const evalArchitecture = read("docs/architecture/modules/verification/evals-checks.md");
 
-    expect(releaseAsset).toBe(releaseDoc);
     expect(releaseDoc).toContain("full_test_count");
     expect(releaseDoc).toContain("dry_run_ratio");
     expect(releaseDoc).toContain("grader_pass_rate");

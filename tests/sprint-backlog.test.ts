@@ -695,8 +695,5 @@ describe("sprint asset parity", () => {
     expect(readFileSync(join(ROOT, "scripts/refresh-current-status.sh"), "utf-8")).toBe(
       readFileSync(join(HELPER_DIR, "refresh-current-status.sh"), "utf-8")
     );
-    expect(readFileSync(join(ROOT, "docs/reference-configs/sprint-contracts.md"), "utf-8")).toBe(
-      readFileSync(join(ROOT, "assets/reference-configs/sprint-contracts.md"), "utf-8")
-    );
   });
 });

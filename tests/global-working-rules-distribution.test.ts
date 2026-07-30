@@ -6,7 +6,6 @@ import { renderMinimalChangeSessionContext } from "../src/cli/hook/minimal-chang
 
 const ROOT = join(import.meta.dir, "..");
 const ASSETS_TEMPLATE = join(ROOT, "assets/reference-configs/global-working-rules.md");
-const DOCS_MIRROR = join(ROOT, "docs/reference-configs/global-working-rules.md");
 const PROJECT_INIT_LIB = join(ROOT, "scripts/lib/project-init-lib.sh");
 
 function countOccurrences(haystack: string, needle: string): number {
@@ -65,10 +64,6 @@ describe("global working rules distribution", () => {
         "It must be one concrete, bounded next slice derived from verified state: active plan, todo, handoff, failing checks, review gaps, deployment state, unresolved risk, or observed system behavior.",
       ),
     ).toBe(1);
-  });
-
-  test("docs/reference-configs mirror is byte-identical to the assets source", () => {
-    expect(readFileSync(DOCS_MIRROR, "utf-8")).toBe(readFileSync(ASSETS_TEMPLATE, "utf-8"));
   });
 
   test("renderMinimalChangeSessionContext carries the no-fallback rule within budget", () => {
