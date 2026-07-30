@@ -66,7 +66,7 @@ function writeFakeCodegraph(fakeBin: string, logFile: string): void {
   );
 }
 
-describe('init command global runtime bootstrap', () => {
+describe('install command global runtime bootstrap', () => {
   test('upgrades an old Bun runtime before any global install or update steps', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-init-bun-floor-'));
     const home = join(tmp, 'home');
@@ -713,17 +713,16 @@ exit 0
     }
   });
 
-  test('CLI exposes init help for npx users without legacy plugin options', () => {
-    const res = spawnSync('bun', [CLI, 'init', '--help'], {
+  test('CLI exposes install help for npx users without legacy plugin options', () => {
+    const res = spawnSync('bun', [CLI, 'install', '--help'], {
       cwd: ROOT,
       encoding: 'utf-8',
     });
     expect(res.status).toBe(0);
-    expect(res.stdout).toContain('Usage: repo-harness init');
+    expect(res.stdout).toContain('Usage: repo-harness install');
     expect(res.stdout).toContain('--target <target>');
     expect(res.stdout).toContain('--no-cli');
     expect(res.stdout).toContain('--brain-root <path>');
-    expect(res.stdout).toContain('--refresh');
     expect(res.stdout).not.toContain('--with-optional');
     expect(res.stdout).not.toContain('--project-type');
     expect(res.stdout).not.toContain('setup-plugins');
@@ -942,7 +941,7 @@ exit 0
     expect(res.stdout).toContain('--with-external-skills');
     expect(res.stdout).toContain('--configure-codegraph');
     expect(res.stdout).toContain('--no-cli');
-    expect(res.stdout).toContain('Deprecated: use repo-harness adopt --repo <path>');
+    expect(res.stdout).toContain('Deprecated: use repo-harness init --repo <path>');
   });
 
   test('CLI install defaults non-interactively to full with its selected optional ecosystems', () => {

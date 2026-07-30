@@ -36,7 +36,7 @@ const CANONICAL_PACKAGES: ReadonlyArray<{
     dir: "repo-harness-setup",
     frontmatterName: "repo-harness-setup",
     references: [
-      "adopt-init.md",
+      "init.md",
       "migrate.md",
       "upgrade.md",
       "repair.md",

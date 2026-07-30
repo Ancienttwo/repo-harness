@@ -101,7 +101,7 @@ const FILE_ALLOWLIST: Record<string, string> = {
   // Explanatory docstring: names the retired predecessor facade this file
   // used to back, alongside its current owner (repo-harness-setup).
   "src/cli/commands/init.ts":
-    "docstring naming the retired predecessor of repo-harness-setup's adopt-init mode",
+    "docstring naming the retired predecessor of repo-harness-setup's init mode",
   // R1 provenance-enum value used in eval 24's expected_output prose
   // ("--source repo-harness-sprint"), the same permanent capture-plan
   // --source vocabulary R1 protects in scripts/capture-plan.sh etc.

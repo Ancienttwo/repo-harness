@@ -372,7 +372,7 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     });
   });
 
-  test("hostSkillPlacements without a profile (init.ts's adopt flow) is the unconditional full-tier bundle", () => {
+  test("hostSkillPlacements without a profile (init.ts's init flow) is the unconditional full-tier bundle", () => {
     const unconditional = hostSkillPlacements(catalog);
     expect(unconditional).toEqual({ claude: ["repo-harness-cross-review"], codex: ["repo-harness-cross-review", "claude-plan"] });
   });

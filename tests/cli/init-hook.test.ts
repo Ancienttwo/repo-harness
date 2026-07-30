@@ -366,10 +366,10 @@ describe('init-hook command', () => {
         toolingReport: baseToolingReport(),
       });
 
-      const check = report.checks.find((entry) => entry.id === 'repo.adopt-refresh');
+      const check = report.checks.find((entry) => entry.id === 'repo.init-refresh');
       expect(check?.status).toBe('na');
       expect(check?.detail).toContain('disabled');
-      expect(report.agent_actions.find((entry) => entry.id === 'repo.adopt-refresh')).toBeUndefined();
+      expect(report.agent_actions.find((entry) => entry.id === 'repo.init-refresh')).toBeUndefined();
     });
   });
 
@@ -390,11 +390,11 @@ describe('init-hook command', () => {
         toolingReport: baseToolingReport(),
       });
 
-      const check = report.checks.find((entry) => entry.id === 'repo.adopt-refresh');
-      const action = report.agent_actions.find((entry) => entry.id === 'repo.adopt-refresh');
+      const check = report.checks.find((entry) => entry.id === 'repo.init-refresh');
+      const action = report.agent_actions.find((entry) => entry.id === 'repo.init-refresh');
       expect(check?.status).toBe('needs_agent');
       expect(check?.detail).toContain('planned=');
-      expect(action?.command).toBe(`repo-harness adopt --repo ${shellQuoted(repo)}`);
+      expect(action?.command).toBe(`repo-harness init --repo ${shellQuoted(repo)}`);
       expect(action?.verification).toBe('repo-harness setup check --target codex --check-updates --json');
       expect(existsSync(join(repo, 'docs', 'spec.md'))).toBe(false);
     });
@@ -417,14 +417,14 @@ describe('init-hook command', () => {
         toolingReport: baseToolingReport(),
       });
 
-      const check = report.checks.find((entry) => entry.id === 'repo.adopt-refresh');
+      const check = report.checks.find((entry) => entry.id === 'repo.init-refresh');
       expect(check?.status).toBe('ok');
       expect(check?.detail).toContain('up-to-date');
-      expect(report.agent_actions.find((entry) => entry.id === 'repo.adopt-refresh')).toBeUndefined();
+      expect(report.agent_actions.find((entry) => entry.id === 'repo.init-refresh')).toBeUndefined();
     });
   });
 
-  test('does not recommend downstream adopt refresh for the repo-harness source checkout', () => {
+  test('does not recommend downstream init refresh for the repo-harness source checkout', () => {
     withTempHome((home) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
       writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
@@ -440,10 +440,10 @@ describe('init-hook command', () => {
         toolingReport: baseToolingReport(),
       });
 
-      const check = report.checks.find((entry) => entry.id === 'repo.adopt-refresh');
+      const check = report.checks.find((entry) => entry.id === 'repo.init-refresh');
       expect(check?.status).toBe('na');
       expect(check?.detail).toContain('self-host source checkout');
-      expect(report.agent_actions.find((entry) => entry.id === 'repo.adopt-refresh')).toBeUndefined();
+      expect(report.agent_actions.find((entry) => entry.id === 'repo.init-refresh')).toBeUndefined();
     });
   });
 
@@ -462,10 +462,10 @@ describe('init-hook command', () => {
         toolingReport: baseToolingReport(),
       });
 
-      const check = report.checks.find((entry) => entry.id === 'repo.adopt-refresh');
+      const check = report.checks.find((entry) => entry.id === 'repo.init-refresh');
       expect(check?.status).toBe('na');
       expect(check?.detail).toContain('not repo-harness adopted');
-      expect(report.agent_actions.find((entry) => entry.id === 'repo.adopt-refresh')).toBeUndefined();
+      expect(report.agent_actions.find((entry) => entry.id === 'repo.init-refresh')).toBeUndefined();
     });
   });
 

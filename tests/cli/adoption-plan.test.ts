@@ -51,7 +51,7 @@ describe("canonical adoption plan", () => {
     expect(plan.warnings).toEqual([
       {
         code: "self-host-source-noop",
-        message: "The repo-harness source checkout owns its workflow surfaces; downstream adopt is not applicable.",
+        message: "The repo-harness source checkout owns its workflow surfaces; downstream init is not applicable.",
         risk: "low",
       },
     ]);
@@ -483,11 +483,11 @@ describe("canonical adoption plan", () => {
   });
 });
 
-describe("adopt command cutover", () => {
+describe("init command cutover", () => {
   test("dry-run is structured and leaves the target untouched", () => {
     const repo = tempRepo();
     try {
-      const result = spawnSync("bun", [CLI, "adopt", "--repo", repo, "--dry-run", "--json"], { cwd: ROOT, encoding: "utf-8" });
+      const result = spawnSync("bun", [CLI, "init", "--repo", repo, "--dry-run", "--json"], { cwd: ROOT, encoding: "utf-8" });
       expect(result.status).toBe(0);
       const payload = JSON.parse(result.stdout) as { apply: boolean; operations: unknown[] };
       expect(payload.apply).toBe(false);
@@ -502,14 +502,14 @@ describe("adopt command cutover", () => {
     const repo = tempRepo();
     const home = tempRepo();
     try {
-      const apply = spawnSync("bun", [CLI, "adopt", "--repo", repo, "--mode", "minimal", "--no-verify", "--no-codegraph", "--json"], {
+      const apply = spawnSync("bun", [CLI, "init", "--repo", repo, "--mode", "minimal", "--no-verify", "--no-codegraph", "--json"], {
         cwd: ROOT,
         encoding: "utf-8",
         env: { ...process.env, REPO_HARNESS_HOME: home },
       });
       expect(apply.status).toBe(0);
       expect(existsSync(join(repo, ".ai", "harness", "workflow-contract.json"))).toBe(true);
-      const retired = spawnSync("bun", [CLI, "adopt", "--experimental-ts-apply"], { cwd: ROOT, encoding: "utf-8" });
+      const retired = spawnSync("bun", [CLI, "init", "--experimental-ts-apply"], { cwd: ROOT, encoding: "utf-8" });
       expect(retired.status).toBe(1);
       expect(retired.stderr).toContain("unknown option");
     } finally {
@@ -521,10 +521,10 @@ describe("adopt command cutover", () => {
   test("retired reclaim and compact flags have no compatibility CLI surface", () => {
     const repo = tempRepo();
     try {
-      const result = spawnSync("bun", [CLI, "adopt", "--repo", repo, "--reclaim-runtime"], { cwd: ROOT, encoding: "utf-8" });
+      const result = spawnSync("bun", [CLI, "init", "--repo", repo, "--reclaim-runtime"], { cwd: ROOT, encoding: "utf-8" });
       expect(result.status).toBe(1);
       expect(result.stderr).toContain("unknown option '--reclaim-runtime'");
-      const compact = spawnSync("bun", [CLI, "adopt", "--repo", repo, "--compact"], { cwd: ROOT, encoding: "utf-8" });
+      const compact = spawnSync("bun", [CLI, "init", "--repo", repo, "--compact"], { cwd: ROOT, encoding: "utf-8" });
       expect(compact.status).toBe(1);
       expect(compact.stderr).toContain("unknown option '--compact'");
       expect(existsSync(join(repo, ".ai"))).toBe(false);
@@ -533,10 +533,22 @@ describe("adopt command cutover", () => {
     }
   });
 
-  test("interactive adopt is rejected before it can configure user-level runtime state", () => {
+  test("retired adopt command is fail-closed with no alias or stub", () => {
     const repo = tempRepo();
     try {
-      const result = spawnSync("bun", [CLI, "adopt", "--repo", repo, "--interactive"], { cwd: ROOT, encoding: "utf-8" });
+      const result = spawnSync("bun", [CLI, "adopt", "--repo", repo, "--dry-run"], { cwd: ROOT, encoding: "utf-8" });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("unknown command 'adopt'");
+      expect(existsSync(join(repo, ".ai"))).toBe(false);
+    } finally {
+      cleanup(repo);
+    }
+  });
+
+  test("interactive init is rejected before it can configure user-level runtime state", () => {
+    const repo = tempRepo();
+    try {
+      const result = spawnSync("bun", [CLI, "init", "--repo", repo, "--interactive"], { cwd: ROOT, encoding: "utf-8" });
       expect(result.status).toBe(2);
       expect(result.stderr).toContain("user-level runtime state");
       expect(existsSync(join(repo, ".ai"))).toBe(false);

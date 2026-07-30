@@ -234,7 +234,7 @@ describe('mcp tools', () => {
         writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
         writeFileSync(join(repoRoot, '.ai/harness/handoff/resume.md'), '# Resume\n\nready\n');
         writeFileSync(join(repoRoot, 'tasks/current.md'), 'status=Active\n');
-        registerRepoHarnessRepo(repoRoot, 'adopt');
+        registerRepoHarnessRepo(repoRoot, 'init');
         const canonicalRepoRoot = realpathSync(repoRoot);
 
         const policy = getMcpPolicy('planner', { enableReader: true });
