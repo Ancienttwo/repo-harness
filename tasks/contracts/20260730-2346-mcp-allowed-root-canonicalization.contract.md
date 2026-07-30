@@ -22,6 +22,7 @@ Platform canonicalization prefixes (`/private/var`, `/private/tmp`) are stripped
 ## Scope
 
 - In scope: `src/cli/mcp/policy.ts` (`partsContainDeniedRoot` + `sensitiveAllowedRootReason`); new `tests/cli/mcp-allowed-root-canonicalization.test.ts` (guard text frozen in the source plan appendix, RED-first with pre-fix artifact); one deferred-goal row in `tasks/todos.md` for the separate `helper-runner.ts:76` TMPDIR pinning decision; notes file.
+- In scope (co-packaged): `scripts/ensure-task-workflow.sh` plus its `assets/templates/helpers/` mirror — bootstrap writes the resume packet after `tasks/current.md` so the `check-task-workflow.sh` freshness invariant (`resume >= current`) holds by construction instead of by whole-second mtime luck. Co-packaged because of a circular gate dependency: this contract's exit criteria bind full `bun test`, which the ordering defect fails under load; a standalone package for the ordering fix would pin `TMPDIR=/tmp` in its own gate and be blocked by the un-merged `policy.ts` fix here. The two are each other's verification precondition, so they share one verification boundary. Retires the helper-scripts full-suite flake row in `tasks/todos.md`.
 - Out of scope: `src/cli/runtime/helper-runner.ts` (not the root cause; separate decision); `workspaces.ts` / `reader-tools.ts` (fix surface is policy.ts only); ROOT_DENIED reason-exposure improvement; both pending ship packages (`codex/cli-init-rename`, `codex/reference-configs-projection`).
 - Taste constraints: <!-- advisory only, no run gate; default style/taste lives in AGENTS.md and the minimal-change policy, use this to record a per-task override -->
 
@@ -73,6 +74,8 @@ allowed_paths:
   - .ai/context/capabilities.json
   - .claude/templates/
   - src/cli/mcp/policy.ts
+  - scripts/ensure-task-workflow.sh
+  - assets/templates/helpers/ensure-task-workflow.sh
   - tests/
 ```
 
