@@ -126,8 +126,9 @@ describe("residue scan: direct re-assertion of each named retired surface", () =
     const text = readFileSync(join(REPO_ROOT, "scripts/verify-sprint.sh"), "utf-8");
     expect(text).not.toMatch(/cp\s+"\$checks_report"\s+"\$checks_file"/);
     expect(text).not.toMatch(/cp\s+"\$finalized_checks"\s+"\$checks_file"/);
-    const mirror = readFileSync(join(REPO_ROOT, "assets/templates/helpers/verify-sprint.sh"), "utf-8");
-    expect(mirror).toBe(text);
+    // The packaged assets/templates/helpers/verify-sprint.sh mirror is covered by
+    // the helper parity loop in tests/helper-scripts.test.ts, which walks the whole
+    // contract helper inventory; re-asserting it here only duplicated that loop.
   });
 
   test("workflow-state.sh no longer bootstraps checks/latest.json with {} (EPC-05)", () => {

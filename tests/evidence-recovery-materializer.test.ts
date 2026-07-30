@@ -315,11 +315,9 @@ describe("no-independent-authoring: the retired writers carry zero content assem
     }
   });
 
-  test("scripts/recovery-view-cli.ts and its packaged mirror stay byte-identical", () => {
-    const canonical = readFileSync(join(REPO_ROOT, "scripts/recovery-view-cli.ts"), "utf-8");
-    const mirrored = readFileSync(join(REPO_ROOT, "assets/templates/helpers/recovery-view-cli.ts"), "utf-8");
-    expect(mirrored).toBe(canonical);
-  });
+  // recovery-view-cli.ts is in the contract helper inventory and outside
+  // INTENTIONALLY_DIVERGENT, so the helper parity loop in
+  // tests/helper-scripts.test.ts already asserts its byte-identical mirror.
 
   test("workflow_ensure_harness_surface no longer bootstraps handoff/resume placeholder content", () => {
     const text = readFileSync(join(REPO_ROOT, "assets/hooks/lib/workflow-state.sh"), "utf-8");

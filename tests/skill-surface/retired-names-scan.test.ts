@@ -14,33 +14,30 @@ import { join, relative, sep } from "path";
 
 const ROOT = join(import.meta.dir, "..", "..");
 
-// The 19 retired names minus `repo-harness-chatgpt-bridge`: R2 rules that
-// name is the permanent, generated bridge.md-frontmatter-driven runtime
-// projection identity (setup.ts's CHATGPT_BRIDGE_FRONTMATTER_NAME, bridge.md
-// frontmatter, and every install-skill destination path), not a retired
-// name -- only the static self-hosted `.agents/skills/repo-harness-chatgpt-bridge/`
-// *directory* retired, and its non-existence is proven directly by
+const MANIFEST = JSON.parse(
+  readFileSync(join(ROOT, "assets/skill-commands/manifest.json"), "utf-8"),
+) as {
+  packages: Array<{ name: string }>;
+  retiredPackages: Array<{ name: string; replacement: string | null; note: string }>;
+};
+
+// R2: `repo-harness-chatgpt-bridge` is a retiredPackages[] entry but is NOT a
+// scannable retired name -- it is the permanent, generated
+// bridge.md-frontmatter-driven runtime projection identity (setup.ts's
+// CHATGPT_BRIDGE_FRONTMATTER_NAME, bridge.md frontmatter, and every
+// install-skill destination path). Only the static self-hosted
+// `.agents/skills/repo-harness-chatgpt-bridge/` *directory* retired, and its
+// non-existence is proven directly by
 // tests/skill-surface/chatgpt-package.test.ts instead of a name-string scan.
-const RETIRED_NAMES = [
-  "repo-harness-init",
-  "repo-harness-migrate",
-  "repo-harness-upgrade",
-  "repo-harness-repair",
-  "repo-harness-scaffold",
-  "repo-harness-capability",
-  "repo-harness-review",
-  "repo-harness-prd",
-  "repo-harness-sprint",
-  "repo-harness-goal",
-  "repo-harness-handoff",
-  "repo-harness-deploy",
-  "repo-harness-autoplan",
-  "repo-harness-gptpro-setup",
-  "repo-harness-gptpro",
-  "codex-review",
-  "claude-review",
-  "repo-harness-chatgpt-browser",
-] as const;
+const SCAN_EXEMPT_RETIRED_NAMES = new Set(["repo-harness-chatgpt-bridge"]);
+
+// Derived from the manifest rather than hand-listed: retiredPackages[] is
+// already the migration record of record, so a second hardcoded copy here
+// would be a competing authority that silently goes stale when a package
+// retires.
+const RETIRED_NAMES = MANIFEST.retiredPackages
+  .map((entry) => entry.name)
+  .filter((name) => !SCAN_EXEMPT_RETIRED_NAMES.has(name));
 
 // Plan C8: "src/, scripts/, assets/, .agents/, SKILL.md, README*,
 // docs/reference-configs/, docs/architecture/, evals/".
@@ -206,9 +203,16 @@ describe("retired Skill package names: live-reference scan", () => {
 
       let content: string;
       try {
-        content = readFileSync(absolute, "utf-8");
+        const bytes = readFileSync(absolute);
+        // Probe for a NUL byte before decoding. readFileSync(_, "utf-8") never
+        // throws on binary input -- it produces replacement characters -- so the
+        // catch below never fired for the checked-in PNGs and every one of them
+        // was fully UTF-8 decoded on each run. A retired name cannot live in a
+        // NUL-bearing file as a text reference, so skipping is not a coverage loss.
+        if (bytes.subarray(0, 8192).includes(0)) continue;
+        content = bytes.toString("utf-8");
       } catch {
-        continue; // binary or unreadable; not a text reference by construction
+        continue; // unreadable; not a text reference by construction
       }
 
       for (const name of RETIRED_NAMES) {
@@ -264,24 +268,19 @@ describe("retired Skill package names: live-reference scan", () => {
     expect(sawAtLeastOneProvenanceLine).toBe(true);
   });
 
-  test("retiredPackages[] in the manifest records all 19 retired names with a live-or-null replacement", () => {
-    const manifest = JSON.parse(readFileSync(join(ROOT, "assets/skill-commands/manifest.json"), "utf-8")) as {
-      packages: Array<{ name: string }>;
-      retiredPackages: Array<{ name: string; replacement: string | null; note: string }>;
-    };
-    const liveNames = new Set(manifest.packages.map((p) => p.name));
-    const recordedNames = new Set(manifest.retiredPackages.map((r) => r.name));
+  test("retiredPackages[] records every retired name with a live-or-null replacement", () => {
+    const liveNames = new Set(MANIFEST.packages.map((p) => p.name));
+    const recordedNames = new Set(MANIFEST.retiredPackages.map((r) => r.name));
 
-    // repo-harness-chatgpt-bridge is deliberately excluded from
-    // RETIRED_NAMES (R2) but IS one of the 19 retiredPackages[] entries
-    // (only its static directory retired, not its generated identity), so
-    // check the manifest's own 19-entry count directly here.
-    expect(manifest.retiredPackages.length).toBe(19);
-    for (const name of RETIRED_NAMES) {
+    // Sanity check against a vacuous scan: RETIRED_NAMES is derived from the
+    // manifest, so an emptied retiredPackages[] would make the scan above pass
+    // trivially. The exact count is deliberately not pinned here — the manifest
+    // is the single authority for it.
+    expect(RETIRED_NAMES.length).toBeGreaterThan(0);
+    for (const name of SCAN_EXEMPT_RETIRED_NAMES) {
       expect(recordedNames.has(name)).toBe(true);
     }
-    expect(recordedNames.has("repo-harness-chatgpt-bridge")).toBe(true);
-    for (const entry of manifest.retiredPackages) {
+    for (const entry of MANIFEST.retiredPackages) {
       if (entry.replacement !== null) expect(liveNames.has(entry.replacement)).toBe(true);
     }
   });

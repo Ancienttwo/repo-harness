@@ -679,21 +679,16 @@ describe("sprint projection", () => {
 });
 
 describe("sprint asset parity", () => {
-  test("self-host scripts match the distributed template helpers", () => {
-    expect(readFileSync(join(ROOT, "scripts/sprint-backlog.sh"), "utf-8")).toBe(
-      readFileSync(join(HELPER_DIR, "sprint-backlog.sh"), "utf-8")
-    );
+  // sprint-backlog.sh, check-task-workflow.sh, and refresh-current-status.sh are all
+  // in the contract helper inventory and outside INTENTIONALLY_DIVERGENT, so the
+  // helper parity loop in tests/helper-scripts.test.ts already covers them. The two
+  // template copies below have no helpers/ mirror, so this is their only guard.
+  test("self-host templates match the distributed template assets", () => {
     expect(readFileSync(join(ROOT, ".claude/templates/sprint.template.md"), "utf-8")).toBe(
       readFileSync(join(ROOT, "assets/templates/sprint.template.md"), "utf-8")
     );
     expect(readFileSync(join(ROOT, ".claude/templates/prd.template.md"), "utf-8")).toBe(
       readFileSync(join(ROOT, "assets/templates/prd.template.md"), "utf-8")
-    );
-    expect(readFileSync(join(ROOT, "scripts/check-task-workflow.sh"), "utf-8")).toBe(
-      readFileSync(join(HELPER_DIR, "check-task-workflow.sh"), "utf-8")
-    );
-    expect(readFileSync(join(ROOT, "scripts/refresh-current-status.sh"), "utf-8")).toBe(
-      readFileSync(join(HELPER_DIR, "refresh-current-status.sh"), "utf-8")
     );
   });
 });
