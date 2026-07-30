@@ -31,27 +31,27 @@ Owns the workflow-engine-contract-assets capability boundary declared in .ai/con
 <!-- BEGIN ARCHITECTURE CONTRACT -->
 ## Architecture Contract
 
-- Functional block: `assets/workflow-contract.v1.json`
+- Functional block: `.ai/harness/policy.json`
 - Capability ID: `workflow-engine-contract-assets`
-- Matched prefix: `assets/workflow-contract.v1.json`
+- Matched prefix: `.ai/harness/policy.json`
 - Architecture domain: `workflow-engine`
 - Architecture capability: `contract-assets`
 - Architecture module: `docs/architecture/modules/workflow-engine/contract-assets.md`
-- Last architecture event: 2026-07-14T21:32:26+0800
-- Last changed path: `assets/workflow-contract.v1.json`
+- Last architecture event: 2026-07-30T20:51:16+0800
+- Last changed path: `.ai/harness/policy.json`
 - Severity: high
 - Change type: workflow-surface
 - Module responsibility: Keep this block aligned with the local boundary described by surrounding human-owned context.
-- Entrypoints: `assets/workflow-contract.v1.json`
+- Entrypoints: `.ai/harness/policy.json`
 - Allowed dependencies: Follow root `AGENTS.md` / `CLAUDE.md` and this local contract.
 - Forbidden dependencies: Do not cross sibling app/service/package boundaries without an architecture snapshot or explicit plan.
-- Runtime path: `assets/workflow-contract.v1.json`
+- Runtime path: `.ai/harness/policy.json`
 - LSP/tooling profile: `typescript-lsp`
 - Verification: Use root required checks plus local commands recorded in this capability contract.
 - Latest snapshot: `(none yet)`
 - Semantic diagram source: `docs/architecture/modules/workflow-engine/contract-assets.md`
 - Latest human diagram: `(none yet)`
-- Pending architecture request: `(none)`
+- Pending architecture request: `docs/architecture/requests/workflow-engine-contract-assets.md`
 
 ## Active Workstreams
 

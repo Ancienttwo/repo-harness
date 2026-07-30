@@ -374,6 +374,7 @@
         "explorer",
         "deep-reasoner",
         "fast-worker",
+        "deep-worker",
         "gatekeeper",
         "root-cause-prover",
         "harness-evaluator"

@@ -18,7 +18,7 @@ const ROOT = join(import.meta.dir, "..");
 const SCRIPT = join(ROOT, "scripts/check-agent-tooling.sh");
 const WAZA_SKILLS = ["think", "hunt", "check", "health"];
 const WAZA_RULES = ["anti-patterns.md", "chinese.md", "durable-context.md", "english.md"];
-const MANAGED_AGENTS = ["explorer", "deep-reasoner", "fast-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
+const MANAGED_AGENTS = ["explorer", "deep-reasoner", "fast-worker", "deep-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
 const FLEET_SOURCE_DIR = join(ROOT, "agents/fleet");
 
 function sha256File(filePath: string) {
@@ -756,6 +756,7 @@ describe("check-agent-tooling", () => {
       expect(report.tools.agent_fleet.hosts.claude.installed_agents).toEqual(["deep-reasoner", "fast-worker"]);
       expect(report.tools.agent_fleet.hosts.claude.missing_agents).toEqual([
         "explorer",
+        "deep-worker",
         "gatekeeper",
         "root-cause-prover",
         "harness-evaluator",
@@ -860,8 +861,8 @@ describe("check-agent-tooling", () => {
             agent_id: "agent-a",
             turn_id: "turn-a",
             agent_type: semanticStatus === "unavailable" ? "default" : "fast-worker",
-            observed_model: semanticStatus === "mismatch" ? "gpt-5.6-terra" : "gpt-5.6-sol",
-            configured_model: semanticStatus === "unavailable" ? null : "gpt-5.6-sol",
+            observed_model: semanticStatus === "mismatch" ? "gpt-5.6-sol" : "gpt-5.6-terra",
+            configured_model: semanticStatus === "unavailable" ? null : "gpt-5.6-terra",
             config_path: testCase.evidenceStatus === "malformed-verified"
               ? null
               : semanticStatus === "unavailable"
@@ -1013,6 +1014,7 @@ describe("check-agent-tooling", () => {
       expect(claude.synced_agents).toEqual([
         "explorer",
         "deep-reasoner",
+        "deep-worker",
         "gatekeeper",
         "root-cause-prover",
         "harness-evaluator",
