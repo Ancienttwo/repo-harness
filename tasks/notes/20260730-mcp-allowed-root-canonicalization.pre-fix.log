@@ -1,0 +1,36 @@
+bun test v1.3.14 (0d9b296a)
+
+tests/cli/mcp-allowed-root-canonicalization.test.ts:
+ 7 | describe('MCP allowed-root canonicalization', () => {
+ 8 |   test('system canonicalization prefixes are not treated as a sensitive "private" root', () => {
+ 9 |     // realpath of a macOS per-user temp dir; already carved out today.
+10 |     expect(sensitiveAllowedRootReason('/private/var/folders/ab/T/repo-harness-guard')).toBeUndefined();
+11 |     // realpath of /tmp on macOS; a filesystem artifact, not a user-owned "private" directory.
+12 |     expect(sensitiveAllowedRootReason('/private/tmp/repo-harness-guard')).toBeUndefined();
+                                                                               ^
+error: expect(received).toBeUndefined()
+
+Received: "private/**"
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-mcp-allowed-root-canonicalization/tests/cli/mcp-allowed-root-canonicalization.test.ts:12:75)
+(fail) MCP allowed-root canonicalization > system canonicalization prefixes are not treated as a sensitive "private" root [2.39ms]
+25 |     const repoRoot = mkdtempSync(join('/tmp', 'repo-harness-allowed-root-guard-'));
+26 |     try {
+27 |       const policy = getMcpPolicy('planner', { enableReader: true, allowedRoots: [repoRoot] });
+28 |       const roots = new WorkspaceManager({ allowedRoots: [repoRoot], policy }).listAllowedRoots();
+29 |       expect(roots).toHaveLength(1);
+30 |       expect(roots[0].readable).toBe(true);
+                                     ^
+error: expect(received).toBe(expected)
+
+Expected: true
+Received: false
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-mcp-allowed-root-canonicalization/tests/cli/mcp-allowed-root-canonicalization.test.ts:30:33)
+(fail) MCP allowed-root canonicalization > a workspace root under a symlinked system temp dir stays readable and counted [0.93ms]
+
+ 1 pass
+ 2 fail
+ 7 expect() calls
+Ran 3 tests across 1 file. [22.00ms]
+PRE_FIX_EXIT=1
