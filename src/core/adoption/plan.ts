@@ -26,7 +26,7 @@ export function planAdoption(opts: PlanAdoptionOptions): AdoptionPlan {
     const operations: AdoptionPlan["operations"] = [];
     return {
       protocol: 1,
-      command: "adopt",
+      command: "init",
       repoRoot,
       mode,
       apply: opts.apply === true,
@@ -34,7 +34,7 @@ export function planAdoption(opts: PlanAdoptionOptions): AdoptionPlan {
       summary: summarizeOperations(operations),
       warnings: [{
         code: "self-host-source-noop",
-        message: "The repo-harness source checkout owns its workflow surfaces; downstream adopt is not applicable.",
+        message: "The repo-harness source checkout owns its workflow surfaces; downstream init is not applicable.",
         risk: "low",
       }],
     };
@@ -44,7 +44,7 @@ export function planAdoption(opts: PlanAdoptionOptions): AdoptionPlan {
 
   return {
     protocol: 1,
-    command: "adopt",
+    command: "init",
     repoRoot,
     mode,
     apply: opts.apply === true,

@@ -219,8 +219,8 @@ export function chatgptGuideMarkdown(endpoint = CHATGPT_MCP_ENDPOINT_PLACEHOLDER
 
 ## Prerequisites
 
-- At least one repo-harness adopted repository. New \`repo-harness adopt\`,
-  \`repo-harness init\`, and user-scope ChatGPT setup register adopted repos in
+- At least one repo-harness adopted repository. New \`repo-harness init\`
+  and user-scope ChatGPT setup register adopted repos in
   \`~/.repo-harness/registered-repos.json\`.
 - A local \`repo-harness\` CLI on PATH.
 - ChatGPT workspace access to Developer Mode and custom MCP Connectors.
@@ -236,7 +236,7 @@ repo-harness mcp serve --repo . --transport http --host 127.0.0.1 --port 8765 --
 
 The ChatGPT Connector registers the HTTPS endpoint, not a per-repo URL. The
 server discovers target repos from the global registry, so any repo registered by
-\`repo-harness adopt\`, \`repo-harness init\`, or user-scope MCP setup can be
+\`repo-harness init\` or user-scope MCP setup can be
 selected by passing \`repo_path\` to workflow tools. The \`--repo\` value is only
 the default repo/bootstrap context, not the only usable project.
 

@@ -21,7 +21,7 @@ export interface RunAdoptionPlanResult {
 
 export interface AdoptionApplyReport {
   readonly protocol: 1;
-  readonly command: "adopt";
+  readonly command: "init";
   readonly repoRoot: string;
   readonly mode: AdoptionMode;
   readonly ok: boolean;
@@ -51,7 +51,7 @@ function errorOutput(
       exitCode: 2,
       output: `${JSON.stringify({
         protocol: 1,
-        command: "adopt",
+        command: "init",
         ok: false,
         repoRoot,
         mode,
@@ -61,7 +61,7 @@ function errorOutput(
       }, null, 2)}\n`,
     };
   }
-  return { exitCode: 2, output: `[adopt] failed: ${message}\n` };
+  return { exitCode: 2, output: `[init] failed: ${message}\n` };
 }
 
 function createPlan(opts: RunAdoptionPlanOptions) {
@@ -97,24 +97,24 @@ export function runAdoptionPlan(opts: RunAdoptionPlanOptions): RunAdoptionPlanRe
 function renderApplyReport(report: AdoptionApplyReport, json = false): string {
   if (json) return `${JSON.stringify(report, null, 2)}\n`;
   const lines = [
-    `[adopt] repo: ${report.repoRoot}`,
-    `[adopt] mode: ${report.mode}`,
-    `[adopt] ok: ${report.ok ? "yes" : "no"}`,
+    `[init] repo: ${report.repoRoot}`,
+    `[init] mode: ${report.mode}`,
+    `[init] ok: ${report.ok ? "yes" : "no"}`,
   ];
-  for (const error of report.errors ?? []) lines.push(`[adopt] failed: ${error.code} - ${error.message}`);
+  for (const error of report.errors ?? []) lines.push(`[init] failed: ${error.code} - ${error.message}`);
   if (report.apply) {
     const counts = report.apply.results.reduce<Record<string, number>>((acc, result) => {
       acc[result.status] = (acc[result.status] ?? 0) + 1;
       return acc;
     }, {});
-    for (const [status, count] of Object.entries(counts).sort()) lines.push(`[adopt] ${status}: ${count}`);
-    if (report.apply.transactionManifestPath) lines.push(`[adopt] transaction: ${report.apply.transactionManifestPath}`);
+    for (const [status, count] of Object.entries(counts).sort()) lines.push(`[init] ${status}: ${count}`);
+    if (report.apply.transactionManifestPath) lines.push(`[init] transaction: ${report.apply.transactionManifestPath}`);
     for (const result of report.apply.results.filter((entry) => entry.status === "failed")) {
-      lines.push(`[adopt] failed operation: ${result.id}${result.error ? ` - ${result.error}` : ""}`);
+      lines.push(`[init] failed operation: ${result.id}${result.error ? ` - ${result.error}` : ""}`);
     }
   }
   if (report.registration) {
-    lines.push(`[adopt] registry: ${report.registration.registered ? "registered" : "skipped"}${report.registration.reason ? ` - ${report.registration.reason}` : ""}`);
+    lines.push(`[init] registry: ${report.registration.registered ? "registered" : "skipped"}${report.registration.reason ? ` - ${report.registration.reason}` : ""}`);
   }
   return `${lines.join("\n")}\n`;
 }
@@ -125,7 +125,7 @@ export function runAdoptionApply(opts: RunAdoptionPlanOptions): RunAdoptionApply
   if (created.error) {
     const report: AdoptionApplyReport = {
       protocol: 1,
-      command: "adopt",
+      command: "init",
       repoRoot: created.repoRoot,
       mode: opts.mode,
       ok: false,
@@ -138,7 +138,7 @@ export function runAdoptionApply(opts: RunAdoptionPlanOptions): RunAdoptionApply
   if (opts.mode === "self-host") {
     const report: AdoptionApplyReport = {
       protocol: 1,
-      command: "adopt",
+      command: "init",
       repoRoot: created.repoRoot,
       mode: opts.mode,
       ok: false,
@@ -148,11 +148,11 @@ export function runAdoptionApply(opts: RunAdoptionPlanOptions): RunAdoptionApply
     return { exitCode: 2, output: renderApplyReport(report, opts.json === true), report };
   }
   const apply = applyAdoptionPlan({ ...plan, apply: true });
-  const registration = apply.ok ? registerRepoHarnessRepo(created.repoRoot, "adopt", { env: opts.env }) : undefined;
+  const registration = apply.ok ? registerRepoHarnessRepo(created.repoRoot, "init", { env: opts.env }) : undefined;
   const ok = apply.ok && (registration === undefined || registration.registered || registration.reason === "already registered");
   const report: AdoptionApplyReport = {
     protocol: 1,
-    command: "adopt",
+    command: "init",
     repoRoot: created.repoRoot,
     mode: opts.mode,
     ok,

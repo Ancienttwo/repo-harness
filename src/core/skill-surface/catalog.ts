@@ -693,7 +693,7 @@ export function facadesForProfile(catalog: SkillSurfaceCatalog, profile: SkillSu
 /**
  * Cross-review provider-skill host placement. Pass `profile` to get the
  * profile-gated projection (global-runtime.ts's `profile === 'full'` gate);
- * omit it to get the unconditional bundle (init.ts's `repo-harness adopt`
+ * omit it to get the unconditional bundle (init.ts's `repo-harness init`
  * flow, which has no installed-profile concept and always syncs the same
  * three packages when externalSkills stays enabled).
  */
@@ -706,7 +706,7 @@ export function hostSkillPlacements(
 
 /**
  * External marketplace skill names. Pass `profile` for the profile-gated
- * projection; omit it for the unconditional bundle (init.ts's adopt flow).
+ * projection; omit it for the unconditional bundle (init.ts's init flow).
  */
 export function externalSkillsForProfile(
   catalog: SkillSurfaceCatalog,
