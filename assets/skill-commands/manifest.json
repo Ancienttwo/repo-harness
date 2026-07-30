@@ -348,7 +348,7 @@
     {
       "name": "repo-harness-init",
       "replacement": "repo-harness-setup",
-      "note": "Consolidated into repo-harness-setup's adopt/init reference."
+      "note": "Consolidated into repo-harness-setup's init reference."
     },
     {
       "name": "repo-harness-migrate",

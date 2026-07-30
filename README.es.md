@@ -91,7 +91,7 @@ En conjunto hay tres capas y un único runtime typed para host events:
 1. **Capa del paquete fuente**: este repositorio mantiene la CLI, los command
    skill facades, los templates, los hook assets, el workflow contract, los tests
    y el release gate.
-2. **Capa del contract del repositorio objetivo**: `repo-harness adopt` o la
+2. **Capa del contract del repositorio objetivo**: `repo-harness init` o la
    migración escribe `docs/spec.md`, `plans/`, `tasks/`, `.ai/context/`,
    `.ai/harness/` y helper scripts. `.ai/hooks/lib/workflow-state.sh` es solo
    una proyección de operator helper.
@@ -225,7 +225,7 @@ repo-harness install
 ```
 
 `repo-harness install` es el bootstrap global, `repo-harness update` es el refresco
-user-level y `repo-harness adopt` es el refresco repo-local. `repo-harness install`
+user-level y `repo-harness init` es el refresco repo-local. `repo-harness install`
 configura el CLI, los hook adapters de nivel usuario, Waza, Mermaid, el brain
 root y CodeGraph MCP; el viejo camino Claude plugin `scripts/setup-plugins.sh`
 queda retirado.
@@ -235,17 +235,17 @@ queda retirado.
 En un repositorio existente, ejecuta desde el repo root:
 
 ```bash
-repo-harness adopt --dry-run
+repo-harness init --dry-run
 ```
 
 Aplica solo después de que el reporte del dry-run sea correcto:
 
 ```bash
-repo-harness adopt
+repo-harness init
 ```
 
 Para un proyecto o módulo nuevo, usa el modo scaffold de `repo-harness-setup`.
-Para un repositorio existente, usa `repo-harness adopt`; este instala o refresca
+Para un repositorio existente, usa `repo-harness init`; este instala o refresca
 el harness y no crea el stack tecnológico de la aplicación.
 
 ### Cómo se ve el éxito
@@ -455,7 +455,7 @@ hooks ejecutan:
 
 - Router: `repo-harness` (Skill raíz, sincronizado sin condición en cada
   profile)
-- Capa setup: `repo-harness-setup` (modos adopt/init, migrate, upgrade,
+- Capa setup: `repo-harness-setup` (modos init, migrate, upgrade,
   repair, scaffold, y capability-configuration; router-only, nunca
   descubierto automáticamente por un profile)
 - Planning: `repo-harness-plan` (crea un plan decision-complete, o revisa uno
@@ -492,7 +492,7 @@ Sprint detallado; prepara un prompt `/goal` acotado para Codex/Claude y
 mantiene el PRD/Sprint como source of truth. Si falta ese documento, el modo
 Goal debe pedirlo antes de empezar implementación desde el chat.
 
-`repo-harness adopt` se usa para repositorios existentes; el modo scaffold de
+`repo-harness init` se usa para repositorios existentes; el modo scaffold de
 `repo-harness-setup` queda para crear proyectos o módulos nuevos. `hooks-init`,
 `docs-init` y `create-project-dirs` son pasos internos, no commands públicos.
 
@@ -553,7 +553,7 @@ bun test
 bash scripts/check-task-sync.sh
 bash scripts/check-task-workflow.sh --strict
 bun scripts/inspect-project-state.ts --repo . --format text
-bun src/cli/index.ts adopt --repo . --dry-run
+bun src/cli/index.ts init --repo . --dry-run
 bash scripts/check-agent-tooling.sh --host both --check-updates
 bun run benchmark:skills --eval route-workflow-check
 ```
@@ -628,7 +628,7 @@ bash scripts/check-architecture-sync.sh
 bash scripts/check-task-sync.sh
 bash scripts/check-task-workflow.sh --strict
 bun scripts/inspect-project-state.ts --repo . --format text
-bun src/cli/index.ts adopt --repo . --dry-run
+bun src/cli/index.ts init --repo . --dry-run
 bash scripts/check-agent-tooling.sh --host both --check-updates
 bun run benchmark:skills --eval route-workflow-check
 ```

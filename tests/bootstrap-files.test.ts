@@ -516,10 +516,10 @@ describe("Bootstrap Script Contracts", () => {
     expect(codexMode).toContain("retried against Claude");
   });
 
-  test("setup script should delegate to the typed global init path", () => {
+  test("setup script should delegate to the typed global install path", () => {
     const setup = read("scripts/setup-plugins.sh");
-    expect(setup).toContain("repo-harness init");
-    expect(setup).toContain('bun "$ROOT_DIR/src/cli/index.ts" init');
+    expect(setup).toContain("repo-harness install");
+    expect(setup).toContain('bun "$ROOT_DIR/src/cli/index.ts" install');
     expect(setup).not.toContain("ESSENTIAL_PLUGINS");
     expect(setup).not.toContain("feature-dev");
   });

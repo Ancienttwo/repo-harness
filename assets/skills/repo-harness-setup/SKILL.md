@@ -6,7 +6,7 @@ when_to_use: "repo-harness-setup, initialize existing repo, migrate legacy repo,
 
 # repo-harness-setup
 
-Canonical rule owner for adopt/init, migrate, upgrade, repair, scaffold, and
+Canonical rule owner for init, migrate, upgrade, repair, scaffold, and
 capability configuration. Router-only: shared preflight, mode selection, and
 cross-mode boundaries. Mode protocol lives under `references/`.
 
@@ -17,7 +17,7 @@ cross-mode boundaries. Mode protocol lives under `references/`.
 
 ## Mode Selection
 
-- No harness yet, or refreshing an existing install -> `references/adopt-init.md`.
+- No harness yet, or refreshing an existing install -> `references/init.md`.
 - Inspector reports legacy docs or stale harness artifacts -> `references/migrate.md`.
 - Harness present, needs latest contract/helpers/templates -> `references/upgrade.md`.
 - A specific workflow surface is broken -> `references/repair.md`.

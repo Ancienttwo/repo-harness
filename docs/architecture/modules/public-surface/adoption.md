@@ -1,7 +1,7 @@
 # Architecture Module: public-surface/adoption
 
 > **Capability ID**: `public-surface-adoption`
-> **Matched Prefixes**: `src/cli/commands/adopt-plan.ts`, `src/core/adoption`, `src/effects/fs-transaction.ts`, `src/effects/path-safety.ts`, `tests/cli/adoption-plan.test.ts`, `tests/fixtures/adoption`
+> **Matched Prefixes**: `src/cli/commands/adoption-plan.ts`, `src/core/adoption`, `src/effects/fs-transaction.ts`, `src/effects/path-safety.ts`, `tests/cli/adoption-plan.test.ts`, `tests/fixtures/adoption`
 > **Local Contracts**: `AGENTS.md`, `CLAUDE.md`
 
 ## P1 Map
@@ -9,7 +9,7 @@
 The adoption capability plans and applies repo-harness changes to an existing repository.
 
 - `src/core/adoption/` owns pure operation types, planning, rendering, rollback descriptions, and workflow-contract projections.
-- `src/cli/commands/adopt-plan.ts` owns both the CLI-facing plan boundary and the canonical transaction result.
+- `src/cli/commands/adoption-plan.ts` owns both the CLI-facing plan boundary and the canonical transaction result.
 - `src/effects/fs-transaction.ts` and `src/effects/path-safety.ts` own atomic filesystem mutation and containment checks.
 - `docs/architecture/transactional-adoption-planner.md` is the detailed human design source.
 

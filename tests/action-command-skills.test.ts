@@ -173,15 +173,15 @@ describe("repo-harness action command skills", () => {
     expect(ship).toContain("Does not run `git reset --hard`, `git clean`, or automatic stash");
   });
 
-  test("setup's adopt-init and scaffold modes keep existing-repo adoption separate from app scaffolding", () => {
+  test("setup's init and scaffold modes keep existing-repo adoption separate from app scaffolding", () => {
     const setup = readSkillPackage("repo-harness-setup");
-    const adoptInit = readReference("repo-harness-setup", "adopt-init.md");
+    const initMode = readReference("repo-harness-setup", "init.md");
     const scaffold = readReference("repo-harness-setup", "scaffold.md");
 
-    expect(adoptInit).toContain("existing repository");
+    expect(initMode).toContain("existing repository");
     expect(setup).toContain("Does not create an application stack from any mode except `scaffold`");
-    expect(adoptInit).toContain("repo-harness adopt");
-    expect(adoptInit).toContain("repo-harness adopt --repo <repo>");
+    expect(initMode).toContain("repo-harness init");
+    expect(initMode).toContain("repo-harness init --repo <repo>");
     expect(scaffold).toContain("new project");
     expect(scaffold).toContain("plan catalog A-K");
     expect(setup).toContain("New project/app/module skeleton, no existing repo workflow -> `references/scaffold.md`");
@@ -201,7 +201,7 @@ describe("repo-harness action command skills", () => {
     const capability = readReference("repo-harness-setup", "capability.md");
 
     expect(capability).toContain("capability-config.ts add");
-    expect(capability).toContain("Does not run `repo-harness adopt`");
+    expect(capability).toContain("Does not run `repo-harness init`");
     expect(capability).toContain("Does not install or refresh the full harness");
     expect(capability.toLowerCase()).toContain("explicit");
     expect(capability.toLowerCase()).toContain("prefix");
@@ -213,7 +213,7 @@ describe("repo-harness action command skills", () => {
 
     expect(architecture).toContain("repo-harness run archive-architecture-request");
     expect(architecture).toContain("mermaid");
-    expect(architecture).toContain("Does not run `repo-harness adopt`");
+    expect(architecture).toContain("Does not run `repo-harness init`");
     expect(architecture).toContain("hooks only record drift requests");
 
     expect(handoff).toContain("repo-harness run prepare-codex-handoff");

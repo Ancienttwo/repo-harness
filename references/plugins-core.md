@@ -6,7 +6,7 @@ This file is kept only to document the retired compatibility boundary.
 part of first-run setup. The active setup path is:
 
 ```bash
-npx -y repo-harness init
+npx -y repo-harness install
 ```
 
 That command bootstraps the global CLI, user-level hook adapters, repo-harness
@@ -16,11 +16,11 @@ configuration, and CodeGraph CLI/MCP readiness.
 Existing repositories should use:
 
 ```bash
-npx -y repo-harness adopt
+npx -y repo-harness init
 ```
 
 The retired `scripts/setup-plugins.sh` path remains a compatibility shim that
-delegates to `repo-harness init`. It must not reinstall Claude marketplace
+delegates to `repo-harness install`. It must not reinstall Claude marketplace
 plugins, Superpowers, `feature-dev`, `frontend-design`, `code-simplifier`,
 `hookify`, or LSP plugin bundles.
 

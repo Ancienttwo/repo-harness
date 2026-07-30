@@ -176,7 +176,7 @@ describe("init command", () => {
       expect(result.steps.find((step) => step.step === "register repo harness repo")?.status).toBe("ok");
       const registry = JSON.parse(readFileSync(join(home, ".repo-harness", "registered-repos.json"), "utf-8"));
       expect(registry.repos).toEqual([
-        expect.objectContaining({ source: "adopt", path: realpathSync(repo) }),
+        expect.objectContaining({ source: "init", path: realpathSync(repo) }),
       ]);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -206,7 +206,7 @@ describe("init command", () => {
       expect(result.exitCode).toBe(0);
       expect(result.steps.find((step) => step.step === "refresh handoff packet")?.status).toBe("ok");
       expect(result.steps.find((step) => step.step === "verify repo harness")?.status).toBe("ok");
-      expect(readFileSync(join(repo, ".ai", "harness", "handoff", "current.md"), "utf-8")).toContain("repo-harness-adopt-verify");
+      expect(readFileSync(join(repo, ".ai", "harness", "handoff", "current.md"), "utf-8")).toContain("repo-harness-init-verify");
       expect(readFileSync(join(repo, ".ai", "harness", "handoff", "resume.md"), "utf-8")).toContain("Codex Resume Packet");
     } finally {
       process.chdir(previousCwd);
@@ -331,7 +331,7 @@ describe("init command", () => {
     }
   });
 
-  test("CLI adopt --dry-run --json returns the adoption planner protocol", () => {
+  test("CLI init --dry-run --json returns the adoption planner protocol", () => {
     const tmp = join(tmpdir(), `repo-harness-init-cli-codegraph-${Date.now()}`);
     try {
       mkdirSync(tmp, { recursive: true });
@@ -339,7 +339,7 @@ describe("init command", () => {
         "bun",
         [
           CLI,
-          "adopt",
+          "init",
           "--repo",
           tmp,
           "--dry-run",
@@ -356,7 +356,7 @@ describe("init command", () => {
       expect(res.status).toBe(0);
       const result = JSON.parse(res.stdout);
       expect(result.protocol).toBe(1);
-      expect(result.command).toBe("adopt");
+      expect(result.command).toBe("init");
       expect(result.apply).toBe(false);
       expect(result.summary.byKind.mkdir).toBeGreaterThan(0);
       expect(result.steps).toBeUndefined();
@@ -365,21 +365,21 @@ describe("init command", () => {
     }
   }, 30000);
 
-  test("CLI exposes adopt help for repo-local refresh", () => {
-    const res = spawnSync("bun", [CLI, "adopt", "--help"], {
+  test("CLI exposes init help for repo-local refresh", () => {
+    const res = spawnSync("bun", [CLI, "init", "--help"], {
       cwd: ROOT,
       encoding: "utf-8",
     });
 
     expect(res.status).toBe(0);
-    expect(res.stdout).toContain("Usage: repo-harness adopt");
+    expect(res.stdout).toContain("Usage: repo-harness init");
     expect(res.stdout).toContain("--repo <path>");
     expect(res.stdout).toContain("--dry-run");
     expect(res.stdout).not.toContain("--experimental-ts-apply");
     expect(res.stdout).toContain("--no-codegraph");
   });
 
-  test("CLI update rejects repo refresh flags with an adopt hint", () => {
+  test("CLI update rejects repo refresh flags with an init hint", () => {
     const res = spawnSync("bun", [CLI, "update", "--repo", ".", "--json"], {
       cwd: ROOT,
       encoding: "utf-8",
@@ -387,14 +387,14 @@ describe("init command", () => {
 
     expect(res.status).toBe(2);
     expect(res.stderr).toContain("repo-harness update no longer refreshes repositories");
-    expect(res.stderr).toContain("repo-harness adopt --repo <path>");
+    expect(res.stderr).toContain("repo-harness init --repo <path>");
   });
 
-  test("CLI adopt rejects user-level brain configuration flags", () => {
-    const tmp = join(tmpdir(), `repo-harness-adopt-brain-${Date.now()}`);
+  test("CLI init rejects user-level brain configuration flags", () => {
+    const tmp = join(tmpdir(), `repo-harness-init-brain-${Date.now()}`);
     try {
       mkdirSync(tmp, { recursive: true });
-      const res = spawnSync("bun", [CLI, "adopt", "--repo", tmp, "--brain-mode", "manifest-only", "--json"], {
+      const res = spawnSync("bun", [CLI, "init", "--repo", tmp, "--brain-mode", "manifest-only", "--json"], {
         cwd: ROOT,
         encoding: "utf-8",
       });
@@ -407,8 +407,8 @@ describe("init command", () => {
     }
   });
 
-  test("adopt refuses HOME before running migration or host bootstrap", () => {
-    const tmp = join(tmpdir(), `repo-harness-adopt-home-${Date.now()}`);
+  test("init refuses HOME before running migration or host bootstrap", () => {
+    const tmp = join(tmpdir(), `repo-harness-init-home-${Date.now()}`);
     const home = join(tmp, "home");
     try {
       mkdirSync(home, { recursive: true });
@@ -416,7 +416,7 @@ describe("init command", () => {
         "bun",
         [
           CLI,
-          "adopt",
+          "init",
           "--dry-run",
           "--no-verify",
           "--no-codegraph",
@@ -432,7 +432,7 @@ describe("init command", () => {
       expect(res.status).toBe(2);
       const result = JSON.parse(res.stdout);
       expect(result.protocol).toBe(1);
-      expect(result.command).toBe("adopt");
+      expect(result.command).toBe("init");
       expect(result.ok).toBe(false);
       expect(result.errors[0]).toEqual(
         expect.objectContaining({
@@ -498,7 +498,7 @@ describe("init command", () => {
     }
   }, CODEGRAPH_INIT_TIMEOUT_MS);
 
-  test("adopt reports CodeGraph readiness exceptions as a structured failed step", () => {
+  test("init reports CodeGraph readiness exceptions as a structured failed step", () => {
     const tmp = join(tmpdir(), `repo-harness-init-codegraph-failure-${Date.now()}`);
     const source = join(tmp, "source");
     const repo = join(tmp, "repo");

@@ -10,8 +10,8 @@ Run the shared preflight in `../SKILL.md` first.
 
 ## Protocol
 
-1. Dry-run the canonical transaction with `repo-harness adopt --repo <repo> --dry-run` when legacy docs exist.
-2. Apply with `repo-harness adopt --repo <repo>`; it archives legacy docs and removes only ownership-proven generated files.
+1. Dry-run the canonical transaction with `repo-harness init --repo <repo> --dry-run` when legacy docs exist.
+2. Apply with `repo-harness init --repo <repo>`; it archives legacy docs and removes only ownership-proven generated files.
 3. Verify task workflow, transaction manifest, and archived legacy content.
 
 ## Checkpoints

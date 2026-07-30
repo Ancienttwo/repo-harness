@@ -17,7 +17,7 @@ Authoritative checks:
 - `bash scripts/check-task-workflow.sh --strict`
 - External brain-vault drift is intentionally outside verification; operators may run the manual manifest/export commands separately.
 - `bun scripts/inspect-project-state.ts --repo . --format text`
-- `repo-harness adopt --repo . --dry-run`
+- `repo-harness init --repo . --dry-run`
 - non-dry-run `bun run benchmark:skills --eval <slug>` runs when release or
   readiness evidence depends on skill effectiveness.
 - `bun scripts/run-harness-profile-benchmark.ts --execute --provider

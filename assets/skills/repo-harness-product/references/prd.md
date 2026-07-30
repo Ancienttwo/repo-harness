@@ -31,7 +31,7 @@ Codex.
 
 ## Failure Modes
 
-- If `plans/prds/` is missing, report the missing catalog and route to `repo-harness-setup` (`adopt-init` or `repair` mode).
+- If `plans/prds/` is missing, report the missing catalog and route to `repo-harness-setup` (`init` or `repair` mode).
 - If the idea is a single ambiguous word with no product category, ask for one clarifying sentence before writing.
 - If `$geju` is unavailable, still perform the same compact geju-style direction pass in the current agent and report the missing skill as a fallback condition.
 - If `claude -p --model opus` fails or hangs, retry at most once with a smaller prompt; then fall back to Codex and report the fallback reason.

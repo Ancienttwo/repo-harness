@@ -53,18 +53,18 @@ export function renderAdoptionPlanJson(plan: AdoptionPlan): string {
 
 export function renderAdoptionPlanText(plan: AdoptionPlan): string {
   const lines = [
-    `[adopt-plan] repo: ${plan.repoRoot}`,
-    `[adopt-plan] mode: ${plan.mode}`,
-    `[adopt-plan] apply: ${plan.apply ? "yes" : "no"}`,
-    `[adopt-plan] operations: ${plan.summary.total} total, ${plan.summary.plannedTotal} planned, ${plan.summary.skippedTotal} skipped${
+    `[init-plan] repo: ${plan.repoRoot}`,
+    `[init-plan] mode: ${plan.mode}`,
+    `[init-plan] apply: ${plan.apply ? "yes" : "no"}`,
+    `[init-plan] operations: ${plan.summary.total} total, ${plan.summary.plannedTotal} planned, ${plan.summary.skippedTotal} skipped${
       plan.summary.failedTotal > 0 ? `, ${plan.summary.failedTotal} failed` : ""
     }`,
   ];
   for (const [kind, count] of Object.entries(plan.summary.byKind).sort()) {
-    lines.push(`[adopt-plan] ${kind}: ${count}`);
+    lines.push(`[init-plan] ${kind}: ${count}`);
   }
   for (const warning of plan.warnings) {
-    lines.push(`[adopt-plan] warning(${warning.risk}): ${warning.message}`);
+    lines.push(`[init-plan] warning(${warning.risk}): ${warning.message}`);
   }
   return `${lines.join("\n")}\n`;
 }

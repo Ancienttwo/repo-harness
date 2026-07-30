@@ -79,7 +79,7 @@ review、checks、handoff と食い違う場合は、source artifacts を優先�
 
 1. **ソースパッケージ層**：本リポジトリが CLI、CLI-backed command facades、templates、hook assets、
    workflow contract、tests、release gate を所有します。
-2. **対象リポジトリ contract 層**：`repo-harness adopt` または migration が、`docs/spec.md`、
+2. **対象リポジトリ contract 層**：`repo-harness init` または migration が、`docs/spec.md`、
    `plans/`、`tasks/`、`.ai/context/`、`.ai/harness/`、helper scripts を書き込みます。
    `.ai/hooks/lib/workflow-state.sh` は operator helper projection だけです。
 3. **Host adapter 層**：user-level の `~/.claude/settings.json` と `~/.codex/hooks.json` が
@@ -203,7 +203,7 @@ repo-harness install
 ```
 
 `repo-harness install` は global bootstrap、`repo-harness update` は
-user-level refresh、`repo-harness adopt` は repo-local refresh です。`repo-harness install` は CLI、user-level hook adapters、Waza、Mermaid、
+user-level refresh、`repo-harness init` は repo-local refresh です。`repo-harness install` は CLI、user-level hook adapters、Waza、Mermaid、
 brain root、CodeGraph MCP を設定し、退役した `scripts/setup-plugins.sh` の Claude plugin path は使いません。
 
 package 本体を編集する maintainer はソースの checkout が必要です
@@ -214,17 +214,17 @@ package 本体を編集する maintainer はソースの checkout が必要で�
 既存リポジトリでは repo root から実行します。
 
 ```bash
-repo-harness adopt --dry-run
+repo-harness init --dry-run
 ```
 
 dry-run のレポートが正しいことを確認してから適用します。
 
 ```bash
-repo-harness adopt
+repo-harness init
 ```
 
 新しいプロジェクトやモジュールには `repo-harness-setup` の scaffold mode を使います。既存リポジトリには
-`repo-harness adopt` を使います。これは harness をインストールまたはリフレッシュするもので、アプリケーション
+`repo-harness init` を使います。これは harness をインストールまたはリフレッシュするもので、アプリケーション
 スタックは作成しません。
 
 ### 成功した状態
@@ -427,7 +427,7 @@ package）と `assets/skill-commands/`（その場で進化する survivor）に
 host skill discovery の範囲を保ちつつ、実行は CLI と hooks が担います。
 
 - Router：`repo-harness`（root Skill。すべての profile に無条件で同期される）
-- Setup layer：`repo-harness-setup`（adopt/init、migrate、upgrade、repair、
+- Setup layer：`repo-harness-setup`（init、migrate、upgrade、repair、
   scaffold、capability-configuration の各 mode。router-only で、どの profile
   からも自動発見されない）
 - Planning：`repo-harness-plan`（decision-complete plan を作成、または既存
@@ -465,7 +465,7 @@ artifact がある場合だけ使い、Codex/Claude 向けの bounded `/goal` pr
 備し、PRD/Sprint を source of truth として維持します。その文書がない場合、
 Goal mode はチャット文脈から実装を始めず、先に文書を要求しなければなりません。
 
-`repo-harness adopt` は既存リポジトリ向け、`repo-harness-setup` の scaffold
+`repo-harness init` は既存リポジトリ向け、`repo-harness-setup` の scaffold
 mode は新しいプロジェクトやモジュールを作成します。
 `hooks-init`、`docs-init`、`create-project-dirs` は内部ステップであり、公開 commands ではありません。
 
@@ -525,7 +525,7 @@ bun test
 bash scripts/check-task-sync.sh
 bash scripts/check-task-workflow.sh --strict
 bun scripts/inspect-project-state.ts --repo . --format text
-bun src/cli/index.ts adopt --repo . --dry-run
+bun src/cli/index.ts init --repo . --dry-run
 bash scripts/check-agent-tooling.sh --host both --check-updates
 bun run benchmark:skills --eval route-workflow-check
 ```
@@ -600,7 +600,7 @@ bash scripts/check-architecture-sync.sh
 bash scripts/check-task-sync.sh
 bash scripts/check-task-workflow.sh --strict
 bun scripts/inspect-project-state.ts --repo . --format text
-bun src/cli/index.ts adopt --repo . --dry-run
+bun src/cli/index.ts init --repo . --dry-run
 bash scripts/check-agent-tooling.sh --host both --check-updates
 bun run benchmark:skills --eval route-workflow-check
 ```

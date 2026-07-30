@@ -94,7 +94,7 @@ verify_repo_harness
 log ""
 log "Next:"
 log "  repo-harness install"
-log "  repo-harness adopt --dry-run"
+log "  repo-harness init --dry-run"
 
 case ":$ORIGINAL_PATH:" in
   *":$BUN_INSTALL_DIR/bin:"*) ;;

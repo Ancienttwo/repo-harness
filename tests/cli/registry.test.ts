@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import {
@@ -297,4 +297,40 @@ describe('repo registration persistence', () => {
       rmSync(fixtureRoot, { recursive: true, force: true });
     }
   }, 30_000);
+
+  test('reads legacy "adopt" source registry entries without error or data loss', () => {
+    // The "adopt" CLI command is retired and no longer writes this source value, but
+    // registries already on disk from before the rename still hold entries with it.
+    // normalizeSource() must keep accepting and round-tripping it read-only.
+    const fixtureRoot = mkdtempSync(join(tmpdir(), 'repo-harness-registry-legacy-source-'));
+    const home = join(fixtureRoot, 'home');
+    const env = { ...process.env, REPO_HARNESS_HOME: home };
+    const legacyRepo = join(fixtureRoot, 'legacy-repo');
+    try {
+      mkdirSync(join(legacyRepo, '.ai', 'harness'), { recursive: true });
+      writeFileSync(join(legacyRepo, '.ai', 'harness', 'policy.json'), '{}\n');
+      mkdirSync(home, { recursive: true });
+      writeFileSync(join(home, 'registered-repos.json'), JSON.stringify({
+        version: 1,
+        authorizationRevision: 0,
+        repos: [
+          {
+            id: 'repo_legacy0000000',
+            path: legacyRepo,
+            accessMode: 'read_only',
+            source: 'adopt',
+            registeredAt: '2026-01-01T00:00:00.000Z',
+            lastSeenAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+      }, null, 2));
+
+      const repos = readRegisteredRepoHarnessRepos({ env });
+      expect(repos).toHaveLength(1);
+      expect(repos[0].source).toBe('adopt');
+      expect(repos[0].path).toBe(realpathSync(legacyRepo));
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  });
 });

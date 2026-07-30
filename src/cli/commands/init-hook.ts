@@ -261,7 +261,7 @@ function adoptionRefreshCheck(
   checkUpdates: boolean,
   actions: InitHookAction[],
 ): InitHookCheck {
-  const id = 'repo.adopt-refresh';
+  const id = 'repo.init-refresh';
   const title = 'Repo-local adoption refresh';
   if (!checkUpdates) {
     return {
@@ -269,7 +269,7 @@ function adoptionRefreshCheck(
       title,
       status: 'na',
       source: 'status',
-      detail: 'disabled; run setup check with --check-updates to evaluate repo-local adopt refresh',
+      detail: 'disabled; run setup check with --check-updates to evaluate repo-local init refresh',
     };
   }
 
@@ -299,7 +299,7 @@ function adoptionRefreshCheck(
       title,
       status: 'na',
       source: 'status',
-      detail: 'self-host source checkout owns its workflow surfaces; downstream adopt refresh is not applicable',
+      detail: 'self-host source checkout owns its workflow surfaces; downstream init refresh is not applicable',
     };
   }
 
@@ -314,13 +314,13 @@ function adoptionRefreshCheck(
     };
   }
 
-  const command = `repo-harness adopt --repo ${shellQuoteArg(report.repo.repoRoot)}`;
+  const command = `repo-harness init --repo ${shellQuoteArg(report.repo.repoRoot)}`;
   addAction(actions, {
-    id: 'repo.adopt-refresh',
+    id: 'repo.init-refresh',
     status: 'needs_agent',
     reason: 'The current adopted repo has pending repo-harness adoption plan operations.',
     requires_agent: true,
-    risk: 'Updates repo-local workflow files; review the adopt dry-run first and preserve user-owned content.',
+    risk: 'Updates repo-local workflow files; review the init dry-run first and preserve user-owned content.',
     command,
     targets: [report.repo.repoRoot],
     verification: verificationCommand(target, checkUpdates),

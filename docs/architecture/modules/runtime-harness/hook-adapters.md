@@ -73,7 +73,7 @@ state contract, but no host event is dispatched by that library.
 ### Migration to the typed authority
 
 ```text
-repo-harness adopt / runInit
+repo-harness init / runInit
   -> standard-plan (pure operation list)
   -> exact-hash retired-file checks + managed adapter stripping
   -> one FsTransaction apply + manifest

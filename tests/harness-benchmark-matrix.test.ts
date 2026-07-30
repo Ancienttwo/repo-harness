@@ -375,7 +375,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     expect(installedCli).toBeGreaterThan(artifactInstall);
     expect(installProfile).toBeGreaterThan(installedCli);
     expect(block).toContain("assertPathOutsideRoot(installedCli, ROOT, 'installed benchmark CLI')");
-    expect(block).toContain("run(installedCli, ['adopt'");
+    expect(block).toContain("run(installedCli, ['init'");
     expect(block).toContain("'install', '--profile', installProfile");
     expect(block).toContain("'--no-cli'");
     expect(block).not.toContain("join(ROOT, 'src/cli/index.ts')");

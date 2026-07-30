@@ -4,6 +4,19 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Breaking: `repo-harness adopt` is removed with no alias or compatibility
+  stub (`repo-harness adopt` now fails closed with commander's
+  `unknown command 'adopt'`). `repo-harness init` takes over repo-local
+  adoption byte-for-byte (same flags and rollback positional). The former
+  duplicate global-bootstrap `repo-harness init` block, including its
+  `--refresh` compatibility no-op, is removed; `repo-harness install` is now
+  the sole global/host-level bootstrap entrypoint. Pre-cutover transaction
+  manifests keep rolling back unmodified: their frozen protocol-1
+  `"command": "adopt"` literal is unchanged on disk, so
+  `repo-harness init rollback --transaction <path>` still accepts them.
+
 ## [0.11.3] - 2026-07-29
 
 ### Added

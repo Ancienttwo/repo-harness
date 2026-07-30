@@ -66,6 +66,9 @@ export interface FsTransactionManifestOperation {
 
 export interface FsTransactionManifest {
   readonly protocol: 1;
+  // protocol-1 frozen: this discriminator is at-rest manifest data, not a CLI command
+  // name. Downstream repos already hold manifests with this literal; readTransactionManifest
+  // below rejects anything else. Do not rename to "init" even though the CLI verb changed.
   readonly command: "adopt";
   readonly createdAt: string;
   readonly repoRoot: string;
@@ -87,7 +90,7 @@ export interface RollbackOperationResult {
 
 export interface RollbackAdoptionTransactionResult {
   readonly protocol: 1;
-  readonly command: "adopt rollback";
+  readonly command: "init rollback";
   readonly repoRoot: string;
   readonly transactionManifestPath: string;
   readonly ok: boolean;
@@ -460,6 +463,7 @@ function writeTransactionManifest(plan: AdoptionPlan, transactionDir: string, re
   const manifestPath = `${transactionDir}/manifest.json`;
   const manifest: FsTransactionManifest = {
     protocol: 1,
+    // protocol-1 frozen literal (see FsTransactionManifest.command); not the CLI verb.
     command: "adopt",
     createdAt: new Date().toISOString(),
     repoRoot: plan.repoRoot,
@@ -479,7 +483,7 @@ function writeTransactionManifest(plan: AdoptionPlan, transactionDir: string, re
       };
     }),
     rollback: {
-      command: `repo-harness adopt rollback --transaction ${manifestPath}`,
+      command: `repo-harness init rollback --transaction ${manifestPath}`,
     },
   };
   atomicWriteFile(plan.repoRoot, manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
@@ -817,6 +821,7 @@ function readTransactionManifest(repoRoot: string, transaction: string): { manif
     const transactionDir = resolved.rel.replace(/\/manifest\.json$/, "");
     if (
       manifest.protocol !== 1 ||
+      // protocol-1 frozen literal (see FsTransactionManifest.command); not the CLI verb.
       manifest.command !== "adopt" ||
       !Array.isArray(manifest.operations) ||
       !manifest.operations.every((operation) => isValidManifestOperation(operation, transactionDir))
@@ -835,7 +840,7 @@ export function rollbackAdoptionTransaction(opts: { readonly repoRoot: string; r
   if (!loaded.manifest || !loaded.rel) {
     return {
       protocol: 1,
-      command: "adopt rollback",
+      command: "init rollback",
       repoRoot,
       transactionManifestPath: opts.transaction,
       ok: false,
@@ -873,7 +878,7 @@ export function rollbackAdoptionTransaction(opts: { readonly repoRoot: string; r
 
   return {
     protocol: 1,
-    command: "adopt rollback",
+    command: "init rollback",
     repoRoot,
     transactionManifestPath: loaded.rel,
     ok: results.every((result) => result.status !== "failed"),

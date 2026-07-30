@@ -100,7 +100,7 @@ export interface AdoptionWarning {
 
 export interface AdoptionPlan {
   readonly protocol: 1;
-  readonly command: "adopt";
+  readonly command: "init";
   readonly repoRoot: string;
   readonly mode: AdoptionMode;
   readonly apply: boolean;

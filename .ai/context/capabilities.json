@@ -21,7 +21,7 @@
       "lsp_profile": "typescript-lsp",
       "verification_hints": [
         "bun scripts/inspect-project-state.ts --repo . --format text",
-        "bun src/cli/index.ts adopt --repo . --dry-run"
+        "bun src/cli/index.ts init --repo . --dry-run"
       ]
     },
     {
@@ -48,7 +48,7 @@
       "domain": "public-surface",
       "name": "adoption",
       "prefixes": [
-        "src/cli/commands/adopt-plan.ts",
+        "src/cli/commands/adoption-plan.ts",
         "src/core/adoption",
         "src/effects/fs-transaction.ts",
         "src/effects/path-safety.ts",
@@ -86,7 +86,7 @@
       "lsp_profile": "typescript-lsp",
       "verification_hints": [
         "bun test tests/migration-script.test.ts tests/create-project-dirs.runtime.test.ts tests/workflow-contract.test.ts",
-        "bun src/cli/index.ts adopt --repo . --dry-run"
+        "bun src/cli/index.ts init --repo . --dry-run"
       ]
     },
     {

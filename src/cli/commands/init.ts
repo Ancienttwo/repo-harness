@@ -1,8 +1,8 @@
 /**
  * Existing-repo harness bootstrap/update implementation.
  *
- * This backs the public `repo-harness adopt` command and
- * `repo-harness-setup`'s adopt-init mode (SSD-06: the former standalone
+ * This backs the public `repo-harness init` command and
+ * `repo-harness-setup`'s init mode (SSD-06: the former standalone
  * `repo-harness-init` skill facade retired into this mode): default the
  * target repo to cwd, install/refresh the machine runtime pieces, apply the
  * repo-local workflow migration, then verify the installed harness.
@@ -43,7 +43,7 @@ import { configureCodegraph, ensureCodegraph } from "../tools/codegraph";
 import { runProcess as runBoundedProcess } from "../../effects/process-runner";
 import { askConfirm, writeLine } from "../tty-prompt";
 import { validateRepoAdoptionTarget } from "../repo-adoption/target";
-import { runAdoptionApply, runAdoptionPlan } from "./adopt-plan";
+import { runAdoptionApply, runAdoptionPlan } from "./adoption-plan";
 import type { AdoptionMode } from "../../core/adoption/modes";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -72,7 +72,7 @@ type BundledHostAgent = { source: string; agent: string; host: "claude" | "codex
 /**
  * Reads and parses sourceRoot's skill-surface manifest. Parameterized by
  * sourceRoot (not a fixed path) because this command backs `repo-harness
- * adopt`, which can target a package tree other than the currently-running
+ * init`, which can target a package tree other than the currently-running
  * code (npx cache extraction, a different installed copy); tests routinely
  * override sourceRoot to a synthetic fixture tree for hermetic runs. Does
  * not pass an `exists` callback (pre-catalog behavior here never checked
@@ -91,7 +91,7 @@ function loadSkillSurfaceCatalog(sourceRoot: string): SkillSurfaceCatalog {
 }
 
 /**
- * The unconditional (no installed-profile concept in this adopt flow)
+ * The unconditional (no installed-profile concept in this init flow)
  * cross-review/external-brain bundle: repo-harness-cross-review on both
  * claude and codex (host-aware provider mode selection lives inside the
  * package), plus claude-plan on codex only. Step-name prefix mirrors the
@@ -772,7 +772,7 @@ export function runInit(
     if (migrate.status === "ok") {
       const handoff = runProcess(
         "bun",
-        [join(REPO_ROOT, "src/cli/index.ts"), "run", "prepare-codex-handoff", "--reason", "repo-harness-adopt-verify"],
+        [join(REPO_ROOT, "src/cli/index.ts"), "run", "prepare-codex-handoff", "--reason", "repo-harness-init-verify"],
         repoRoot,
         verifyEnv,
       );
@@ -780,7 +780,7 @@ export function runInit(
         withStepName(
           handoff,
           "refresh handoff packet",
-          "repo-harness run prepare-codex-handoff --reason repo-harness-adopt-verify",
+          "repo-harness run prepare-codex-handoff --reason repo-harness-init-verify",
         ),
       );
     }

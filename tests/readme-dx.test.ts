@@ -62,16 +62,19 @@ describe("README DX contract", () => {
     expect(firstFive).toContain("npx fallback");
     expect(firstFive).toContain("npx -y repo-harness@latest install");
     expect(firstFive).toContain("repo-harness install");
-    expect(firstFive).toContain("repo-harness adopt --dry-run");
-    expect(firstFive).toContain("repo-harness adopt");
+    expect(firstFive).toContain("repo-harness init --dry-run");
+    expect(firstFive).toContain("repo-harness init");
     expect(firstFive).toContain("first-run global bootstrap path");
-    expect(firstFive.match(/repo-harness adopt --dry-run/g)?.length).toBe(1);
+    expect(firstFive.match(/repo-harness init --dry-run/g)?.length).toBe(1);
     expect(firstFive).not.toContain("npm install -g repo-harness");
-    expect(firstFive).not.toContain("npx -y repo-harness adopt");
+    expect(firstFive).not.toContain("npx -y repo-harness init");
     expect(firstFive).not.toContain("npx -y repo-harness setup");
     expect(firstFive).not.toContain("npx -y repo-harness init");
     expect(firstFive).not.toContain("repo-harness install --dry-run");
-    expect(firstFive).not.toContain("repo-harness init --dry-run");
+    // Pre-rename this asserted the doc omits the (removed) duplicate global
+    // `init` bootstrap's dry-run form; post-rename `init --dry-run` IS the
+    // canonical repo-local command shown above, so the polarity flips to positive.
+    expect(firstFive).toContain("repo-harness init --dry-run");
     expect(firstFive).not.toContain("bun scripts/assemble-template.ts");
     expect(firstFive).toContain("=== Migration Report ===");
     expect(firstFive).toContain("Project hooks synced from:");
@@ -197,7 +200,7 @@ describe("README DX contract", () => {
       expect(localized).toContain(`repo-harness@${PACKAGE_VERSION}`);
       expect(localized).toContain(`repo-harness@${PACKAGE_VERSION}+template@${PACKAGE_VERSION}`);
       expect(localized).toContain("repo-harness update");
-      expect(localized).toContain("repo-harness adopt");
+      expect(localized).toContain("repo-harness init");
       expect(localized).toContain("repo-harness docs list");
       expect(localized).toContain("SessionStart.default");
       expect(localized).toContain("PostToolUse.always");
@@ -216,14 +219,14 @@ describe("README DX contract", () => {
     const repo = mkdtempSync(join(tmpdir(), "repo-harness-readme-dx-"));
     try {
       writeFileSync(join(repo, "package.json"), JSON.stringify({ name: "readme-dx-fixture", private: true }));
-      const res = spawnSync("bun", ["src/cli/index.ts", "adopt", "--repo", repo, "--dry-run"], {
+      const res = spawnSync("bun", ["src/cli/index.ts", "init", "--repo", repo, "--dry-run"], {
         cwd: ROOT,
         encoding: "utf-8",
       });
 
       expect(res.status).toBe(0);
-      expect(res.stdout).toContain(`[adopt-plan] repo: ${repo}`);
-      expect(res.stdout).toContain("[adopt-plan] operations:");
+      expect(res.stdout).toContain(`[init-plan] repo: ${repo}`);
+      expect(res.stdout).toContain("[init-plan] operations:");
       expect(res.stdout).toContain("writeFile:");
     } finally {
       rmSync(repo, { recursive: true, force: true });

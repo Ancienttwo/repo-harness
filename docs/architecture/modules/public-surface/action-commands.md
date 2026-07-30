@@ -17,7 +17,7 @@ the root router plus the profile-selected subset of `repo-harness-plan`,
 the `repo-harness` CLI, scripts, hooks, and contract files:
 
 - `repo-harness` (router; synced unconditionally to every profile)
-- `repo-harness-setup` (adopt/init, migrate, upgrade, repair, scaffold,
+- `repo-harness-setup` (init, migrate, upgrade, repair, scaffold,
   capability-configuration modes; router-only, never auto-discovered)
 - `repo-harness-plan` (create/review modes; minimal/full)
 - `repo-harness-product` (PRD/Sprint/Goal modes; full only)
@@ -62,7 +62,7 @@ instead of mutating the repo.
 Command shape is prose plus exact commands. Ownership crosses from public
 command docs into repo-local scripts only when the command protocol calls the
 engine. Planning/review/goal modes are non-mutating by default; ship/setup's
-adopt-init/scaffold/migrate/upgrade/repair modes are mutating by design after
+init/scaffold/migrate/upgrade/repair modes are mutating by design after
 explicit invocation.
 
 Error paths:

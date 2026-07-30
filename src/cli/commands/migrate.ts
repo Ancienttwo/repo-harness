@@ -8,7 +8,7 @@
  *   - <repo>/.claude/settings.json   (Phase 0 / pre-CLI Claude adapter, hooks segment)
  *
  * Identification is owned by core/adoption/managed-hook-config.ts and shared
- * with install and adopt. User-authored sibling hooks (for example
+ * with install and init. User-authored sibling hooks (for example
  * `rtk hook claude`) do not match and survive migration.
  *
  * Safety:

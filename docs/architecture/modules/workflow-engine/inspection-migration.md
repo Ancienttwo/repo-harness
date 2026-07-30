@@ -26,7 +26,7 @@ inventory, `scripts/` owns implementation bytes and modes, and
 
 ## P2 Trace
 
-Concrete route: `repo-harness adopt --repo . --dry-run` starts with target
+Concrete route: `repo-harness init --repo . --dry-run` starts with target
 validation and `inspect-project-state.ts` -> produces the complete ordered TS
 plan. Apply preflights every operation, then creates plans, tasks, docs,
 harness dirs, deploy dirs, ignored runtime state, templates, hook libraries,

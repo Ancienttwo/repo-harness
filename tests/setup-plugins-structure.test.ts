@@ -21,10 +21,10 @@ describe("setup-plugins compatibility shim", () => {
     expect(res.stderr).toBe("");
   });
 
-  test("delegates to the modern repo-harness init path", () => {
+  test("delegates to the modern repo-harness install path", () => {
     const setup = readSetup();
-    expect(setup).toContain("repo-harness init");
-    expect(setup).toContain('bun "$ROOT_DIR/src/cli/index.ts" init');
+    expect(setup).toContain("repo-harness install");
+    expect(setup).toContain('bun "$ROOT_DIR/src/cli/index.ts" install');
   });
 
   test("does not retain old Claude plugin installer content", () => {

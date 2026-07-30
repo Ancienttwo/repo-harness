@@ -20,7 +20,7 @@ capability-specific addition to that preflight).
 
 ## Boundaries
 
-- Does not run `repo-harness adopt`.
+- Does not run `repo-harness init`.
 - Does not install or refresh the full harness.
 - Does not create an application stack.
 - Creates local `AGENTS.md` and `CLAUDE.md` contract files only for requested capabilities.

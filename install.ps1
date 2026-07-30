@@ -67,7 +67,7 @@ Write-Host "repo-harness $Version installed."
 Write-Host ""
 Write-Host "Next:"
 Write-Host "  repo-harness install"
-Write-Host "  repo-harness adopt --dry-run"
+Write-Host "  repo-harness init --dry-run"
 
 $PathSep = [System.IO.Path]::PathSeparator
 if ("$PathSep$OriginalPath$PathSep" -notlike "*$PathSep$BunBin$PathSep*") {

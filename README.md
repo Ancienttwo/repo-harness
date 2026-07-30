@@ -97,7 +97,7 @@ The design has three layers:
 1. **Source package**: this repository owns the CLI, CLI-backed command facades,
    templates, typed hook handlers, the operator-helper asset, workflow contract,
    tests, and release gate.
-2. **Target repo contract**: `repo-harness adopt` or migration writes repo-local
+2. **Target repo contract**: `repo-harness init` or migration writes repo-local
    files such as `docs/spec.md`, `plans/`, `tasks/`, `.ai/context/`,
    `.ai/harness/`, helper scripts, and `.ai/hooks/`.
 3. **Host adapters**: user-level `~/.claude/settings.json` and
@@ -301,7 +301,7 @@ It does not apply repo-local workflow files to the current directory.
 For an Agent-owned, read-only bootstrap audit, run `repo-harness setup check
 --json` or add `--check-updates` for version and adopted-repo refresh
 advisories. `setup check` is not a runtime hook: it does not write user-level
-files, install updates, run `adopt`, or register adapters. It emits
+files, install updates, run `init`, or register adapters. It emits
 `agent_actions` with the reason, risk, target files, optional command, and
 verification surface for the Agent to execute deliberately.
 `repo-harness init-hook` remains a compatibility alias.
@@ -322,7 +322,7 @@ repo-harness install --target both --location global
 repo-harness update --check
 
 # Refresh repo-local workflow files in an adopted repository.
-repo-harness adopt --repo /path/to/repo
+repo-harness init --repo /path/to/repo
 ```
 
 `repo-harness install --target codex|both --location global` also resolves and
@@ -343,19 +343,19 @@ it never writes a silent default.
 ### 3. Preview the repo-local contract
 
 ```bash
-repo-harness adopt --dry-run
+repo-harness init --dry-run
 ```
 
 Run the dry run from the target repository root. It reports the specs, task
 state, helper runtime, hook adapter target, and verification files that would be
 created or refreshed. It should not create an application stack; existing repos
-use `repo-harness adopt`, while new projects or modules use
+use `repo-harness init`, while new projects or modules use
 `repo-harness-setup`'s scaffold mode.
 
 ### 4. Apply, then prove the workflow
 
 ```bash
-repo-harness adopt
+repo-harness init
 bash scripts/check-task-workflow.sh --strict
 bun test
 ```
@@ -366,7 +366,7 @@ tool-specific chat setup. Agents should be able to find the stable intent in
 `.ai/harness/handoff/`.
 
 For a new project or module, use `repo-harness-setup`'s scaffold mode instead
-of `adopt`; it installs or refreshes the harness without creating an
+of `init`; it installs or refreshes the harness without creating an
 application stack. Maintainers editing the package itself need a source checkout
 — see [Maintainer Reference](#maintainer-reference).
 
@@ -470,7 +470,7 @@ Sprint.
 
 The ChatGPT Connector registers one endpoint URL, not one repository per URL.
 Adopted repos are discovered from `~/.repo-harness/registered-repos.json`, which
-is updated by `repo-harness adopt`, `repo-harness init`, and user-scope ChatGPT
+is updated by `repo-harness init` and user-scope ChatGPT
 setup. Stale registry entries are ignored unless the live repo still has
 repo-harness adoption markers.
 
@@ -681,7 +681,7 @@ place). They keep host skill discovery bounded while the CLI and hooks own
 execution:
 
 - Router: `repo-harness` (root Skill, synced unconditionally to every profile)
-- Setup layer: `repo-harness-setup` (adopt/init, migrate, upgrade, repair,
+- Setup layer: `repo-harness-setup` (init, migrate, upgrade, repair,
   scaffold, and capability-configuration modes; router-only, never
   auto-discovered by a profile)
 - Planning: `repo-harness-plan` (create a decision-complete plan, or review an
@@ -722,7 +722,7 @@ bounded Codex/Claude `/goal` prompt and keeps the PRD/Sprint as the source of
 truth. If that document is missing, Goal mode must ask for it instead of
 starting implementation from chat context.
 
-`repo-harness adopt` is for an existing repo; `repo-harness-setup`'s scaffold
+`repo-harness init` is for an existing repo; `repo-harness-setup`'s scaffold
 mode creates a new project or module scaffold as a side mode. `hooks-init`,
 `docs-init`, and `create-project-dirs` are internal steps, not public
 commands.
@@ -866,7 +866,7 @@ bash scripts/check-architecture-sync.sh
 bash scripts/check-task-sync.sh
 bash scripts/check-task-workflow.sh --strict
 bun scripts/inspect-project-state.ts --repo . --format text
-bun src/cli/index.ts adopt --repo . --dry-run
+bun src/cli/index.ts init --repo . --dry-run
 bash scripts/check-agent-tooling.sh --host both --check-updates
 bun run benchmark:skills --eval route-workflow-check
 ```

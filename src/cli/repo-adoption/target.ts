@@ -27,8 +27,9 @@ function isGitWorkTree(repoRoot: string, env?: NodeJS.ProcessEnv): boolean {
 }
 
 /**
- * The public `adopt` command and `init` share this boundary. Keeping it here
- * prevents either entrypoint from silently gaining a different target policy.
+ * The public `init` command's dry-run and apply paths share this boundary.
+ * Keeping it here prevents either entrypoint from silently gaining a
+ * different target policy.
  */
 export function validateRepoAdoptionTarget(
   repoRoot: string,
@@ -41,7 +42,7 @@ export function validateRepoAdoptionTarget(
       step: "validate repo target",
       status: "failed",
       detail:
-        `refusing to apply repo harness to HOME (${repoRoot}); run repo-harness adopt --repo <git-repo> from an intended project`,
+        `refusing to apply repo harness to HOME (${repoRoot}); run repo-harness init --repo <git-repo> from an intended project`,
     };
   }
 

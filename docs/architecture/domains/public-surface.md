@@ -27,4 +27,4 @@ compatibility router, README, root agent docs, the `repo-harness` CLI, and thin
 
 - `bun test tests/action-command-skills.test.ts`
 - `bun scripts/inspect-project-state.ts --repo . --format text`
-- `repo-harness adopt --repo . --dry-run`
+- `repo-harness init --repo . --dry-run`

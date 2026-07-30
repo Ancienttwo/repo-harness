@@ -495,7 +495,7 @@ describe("run-skill-evals execution", () => {
     );
     writeFileSync(
       join(repo, "src", "cli", "index.ts"),
-      `import { writeFileSync } from "fs";\nwriteFileSync("adopt-proof.json", JSON.stringify({ home: process.env.HOME, sourceRoot: process.env.REPO_HARNESS_SOURCE_ROOT ?? null, args: process.argv.slice(2) }));\nconsole.log("adopt-ok");\n`,
+      `import { writeFileSync } from "fs";\nwriteFileSync("init-proof.json", JSON.stringify({ home: process.env.HOME, sourceRoot: process.env.REPO_HARNESS_SOURCE_ROOT ?? null, args: process.argv.slice(2) }));\nconsole.log("init-ok");\n`,
       "utf-8",
     );
 
@@ -506,12 +506,12 @@ describe("run-skill-evals execution", () => {
       const canonicalRepo = realpathSync(repo);
       const canonicalHome = realpathSync(home);
       const inspector = JSON.parse(readFileSync(join(repo, "inspector-proof.json"), "utf-8"));
-      const adopt = JSON.parse(readFileSync(join(repo, "adopt-proof.json"), "utf-8"));
+      const init = JSON.parse(readFileSync(join(repo, "init-proof.json"), "utf-8"));
 
       expect(report.repoRoot).toBe(canonicalRepo);
       expect(report.home).toBe(canonicalHome);
       expect(inspector).toEqual({ home: canonicalHome, sourceRoot: null, args: ["--repo", canonicalRepo, "--format", "json"] });
-      expect(adopt).toEqual({ home: canonicalHome, sourceRoot: null, args: ["adopt", "--repo", canonicalRepo, "--dry-run", "--json"] });
+      expect(init).toEqual({ home: canonicalHome, sourceRoot: null, args: ["init", "--repo", canonicalRepo, "--dry-run", "--json"] });
     } finally {
       if (originalSourceRoot === undefined) delete process.env.REPO_HARNESS_SOURCE_ROOT;
       else process.env.REPO_HARNESS_SOURCE_ROOT = originalSourceRoot;

@@ -78,7 +78,7 @@ export interface AdoptionProfileReport {
   repoRoot: string;
   home: string;
   inspector: { stdout: string; stderr: string };
-  adoptDryRun: { stdout: string; stderr: string };
+  initDryRun: { stdout: string; stderr: string };
 }
 
 export interface RunMetadata {
@@ -588,8 +588,8 @@ export function runDisposableAdoptionProfile(params: {
       args: [join(boundary.repoRoot, "scripts", "inspect-project-state.ts"), "--repo", boundary.repoRoot, "--format", "json"],
     },
     {
-      label: "adopt dry-run",
-      args: [join(boundary.repoRoot, "src", "cli", "index.ts"), "adopt", "--repo", boundary.repoRoot, "--dry-run", "--json"],
+      label: "init dry-run",
+      args: [join(boundary.repoRoot, "src", "cli", "index.ts"), "init", "--repo", boundary.repoRoot, "--dry-run", "--json"],
     },
   ] as const;
   const results = commands.map((command) => {
@@ -603,7 +603,7 @@ export function runDisposableAdoptionProfile(params: {
     repoRoot: boundary.repoRoot,
     home: boundary.home,
     inspector: { stdout: results[0].stdout, stderr: results[0].stderr },
-    adoptDryRun: { stdout: results[1].stdout, stderr: results[1].stderr },
+    initDryRun: { stdout: results[1].stdout, stderr: results[1].stderr },
   };
 }
 

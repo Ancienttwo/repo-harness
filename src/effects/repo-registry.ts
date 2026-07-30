@@ -3,7 +3,7 @@ import { closeSync, existsSync, mkdirSync, openSync, readFileSync, realpathSync,
 import { homedir } from "os";
 import { dirname, join, resolve } from "path";
 
-export type RepoHarnessRegistrySource = "adopt" | "init" | "mcp-setup" | "manual" | "discovery";
+export type RepoHarnessRegistrySource = "adopt" | "init" | "mcp-setup" | "manual" | "discovery"; // "adopt": legacy-read-only, no current writers
 export type RepoHarnessAccessMode = "read_only" | "read_write";
 
 export interface RepoHarnessRegisteredRepo {
@@ -85,7 +85,7 @@ export function isRepoHarnessAdoptedPath(repoRoot: string): boolean {
 }
 
 function normalizeSource(value: unknown): RepoHarnessRegistrySource {
-  return value === "adopt" || value === "init" || value === "mcp-setup" || value === "manual" || value === "discovery"
+  return value === "adopt" || value === "init" || value === "mcp-setup" || value === "manual" || value === "discovery" // "adopt" read-only; see RepoHarnessRegistrySource
     ? value
     : "manual";
 }

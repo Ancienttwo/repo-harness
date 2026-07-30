@@ -57,7 +57,7 @@ import { recordCircuitAttempt, type CircuitAttempt } from './hook/circuit-breake
 import { runMinimalChangeCli } from './hook/minimal-change-cli';
 import { runReviewRubricCli } from './hook/review-rubric';
 import { runReviewSubjectCli } from './hook/review-subject';
-import { runAdoptionPlan } from './commands/adopt-plan';
+import { runAdoptionPlan } from './commands/adoption-plan';
 import { rollbackAdoptionTransaction } from '../effects/fs-transaction';
 import {
   assertTarget,
@@ -80,7 +80,6 @@ export const SUBCOMMANDS = [
   'migrate',
   'security',
   'update',
-  'adopt',
   'run',
   'setup',
   'tools',
@@ -261,11 +260,10 @@ function runTransactionalProfileProjection(
 }
 
 async function runGlobalRuntimeBootstrap(
-  commandName: 'init' | 'install',
   rawOpts: GlobalRuntimeCommandOptions,
   cmd?: OptionSourceLookup,
 ): Promise<never> {
-  const target = assertTarget(rawOpts.target, commandName);
+  const target = assertTarget(rawOpts.target, 'install');
   const profile = assertInstallProfile(rawOpts.profile ?? 'full');
   const migrationRequested = rawOpts.migrateProfileState === true;
   const currentProfile = migrationRequested ? null : readInstalledProfile();
@@ -342,209 +340,6 @@ export function buildProgram(): Command {
     .exitOverride();
 
   program
-    .command('init')
-    .description('Install the repo-harness CLI, global hook adapters, and required runtime dependencies')
-    .option('--target <target>', `Host target for adapters and runtime skills: ${TARGET_HELP}`, 'both')
-    .option('--profile <profile>', 'Install profile: minimal|full', 'full')
-    .option('--no-cli', 'Skip installing the repo-harness CLI globally')
-    .option('--no-sync-skill', 'Skip refreshing repo-harness skill aliases under host skill roots')
-    .option('--no-hooks', 'Skip global hook adapter installation')
-    .option('--no-external-skills', 'Skip Waza, Mermaid, and cross-review (repo-harness-cross-review/claude-plan) skill bootstrap')
-    .option('--no-codegraph', 'Skip CodeGraph CLI/MCP configuration')
-    .option('--brain-root <path>', 'Brain vault root to persist for repo-harness brain commands')
-    .option('--refresh', 'Compatibility no-op; init already refreshes the idempotent user-level runtime')
-    .option('--json', 'Output JSON instead of human-readable text')
-    .action(async (rawOpts: GlobalRuntimeCommandOptions & { refresh?: boolean }, cmd: Command) => {
-      await runGlobalRuntimeBootstrap('init', rawOpts, cmd);
-    });
-
-  program
-    .command('update')
-    .description('Update the global repo-harness CLI and user-level managed runtime')
-    .option('--target <target>', `Host target for adapters and runtime skills: ${TARGET_HELP}`, 'both')
-    .option('--version <version>', 'Install a specific repo-harness package version')
-    .option('--channel <channel>', 'Install package channel: latest|next')
-    .option('--check', 'Run the read-only setup check without refreshing runtime')
-    .option('--check-updates', 'Include network-backed version update advisories in setup check output')
-    .option('--no-runtime-refresh', 'Skip runtime refresh and run the read-only setup check only')
-    .option('--no-cli', 'Skip installing the repo-harness CLI globally')
-    .option('--no-sync-skill', 'Skip refreshing repo-harness skill aliases under host skill roots')
-    .option('--no-hooks', 'Skip global hook adapter installation')
-    .option('--with-external-skills', 'Also bootstrap third-party Waza, Mermaid, and cross-review skills')
-    .option('--no-external-skills', 'Compatibility no-op; update no longer bootstraps third-party skills by default')
-    .option('--configure-codegraph', 'Also configure CodeGraph CLI/MCP during runtime refresh')
-    .option('--no-codegraph', 'Compatibility no-op; update no longer configures CodeGraph by default')
-    .option('--brain-root <path>', 'Brain vault root for manifest sync')
-    .option('--repo <path>', 'Deprecated: use repo-harness adopt --repo <path>')
-    .option('--dry-run', 'Deprecated: use repo-harness adopt --dry-run for repo-level planning')
-    .option('--interactive', 'Deprecated: use repo-harness adopt --interactive for repo-level planning')
-    .option('--json', 'Output JSON instead of human-readable text')
-    .action((rawOpts: {
-      repo?: string;
-      dryRun?: boolean;
-      target: string;
-      version?: string;
-      channel?: string;
-      check?: boolean;
-      checkUpdates?: boolean;
-      runtimeRefresh?: boolean;
-      cli?: boolean;
-      syncSkill?: boolean;
-      hooks?: string | false;
-      withExternalSkills?: boolean;
-      externalSkills?: boolean;
-      codegraph?: boolean;
-      configureCodegraph?: boolean;
-      brainRoot?: string;
-      interactive?: boolean;
-      json?: boolean;
-    }) => {
-      const target = assertTarget(rawOpts.target, 'update');
-      if (rawOpts.channel !== undefined && !['latest', 'next'].includes(rawOpts.channel)) {
-        console.error('repo-harness update: invalid --channel (expected: latest, next)');
-        process.exit(2);
-      }
-      if (rawOpts.repo || rawOpts.dryRun || rawOpts.interactive) {
-        console.error(
-          'repo-harness update no longer refreshes repositories. For repo-level refresh, run: repo-harness adopt --repo <path>',
-        );
-        process.exit(2);
-      }
-      if (rawOpts.check === true || rawOpts.runtimeRefresh === false) {
-        const report = runInitHook({
-          target,
-          checkUpdates: rawOpts.checkUpdates === true,
-        });
-        console.log(formatInitHook(report, rawOpts.json === true));
-        process.exit(report.status === 'blocked' ? 1 : 0);
-      }
-      const installSpec = rawOpts.version
-        ? `repo-harness@${rawOpts.version}`
-        : rawOpts.channel
-          ? `repo-harness@${rawOpts.channel}`
-          : 'repo-harness@latest';
-      const result = runGlobalRuntimeSetup({
-        target,
-        installCli: rawOpts.cli !== false,
-        installSpec,
-        syncSkill: rawOpts.syncSkill !== false,
-        hostAdapters: rawOpts.hooks !== false,
-        externalSkills: rawOpts.withExternalSkills === true,
-        codegraph: rawOpts.configureCodegraph === true,
-        brainRoot: rawOpts.brainRoot,
-      });
-      if (rawOpts.json === true) {
-        console.log(JSON.stringify(result, null, 2));
-      } else {
-        for (const line of result.lines) console.log(line);
-      }
-      process.exit(result.exitCode);
-    });
-
-  program
-    .command('adopt')
-    .description('Install or refresh the repo-local harness workflow in an existing repo')
-    .argument('[action]', 'Optional action: rollback')
-    .option('--repo <path>', 'Target repository path (defaults to cwd)')
-    .option('--transaction <path>', 'Adoption transaction manifest to restore when action is rollback')
-    .option('--dry-run', 'Plan repo harness changes without applying them')
-    .option('--target <target>', `Host target for readiness checks and optional global bootstrap: ${TARGET_HELP}`, 'both')
-    .option('--no-verify', 'Skip repo workflow verification after apply')
-    .option('--no-codegraph', 'Skip building the CodeGraph index and MCP readiness check')
-    .option('--mode <mode>', 'Adoption mode: minimal|standard|self-host', 'standard')
-    .option('--configure-codegraph', 'Deprecated: user-level MCP config belongs to repo-harness update/setup')
-    .option('--sync-codegraph', 'Sync the CodeGraph index after ensure')
-    .option('--brain-root <path>', 'Deprecated: user-level brain config belongs to repo-harness update/setup')
-    .option('--brain-mode <mode>', 'Deprecated: adopt does not perform user-level brain sync', 'skip')
-    .option('--interactive', 'Rejected: public adopt is repo-local and does not configure user-level runtime state')
-    .option('--json', 'Output JSON instead of human-readable text')
-    .action(async (action: string | undefined, rawOpts: {
-      repo?: string;
-      transaction?: string;
-      dryRun?: boolean;
-      target: string;
-      verify?: boolean;
-      codegraph?: boolean;
-      mode?: string;
-      configureCodegraph?: boolean;
-      syncCodegraph?: boolean;
-      brainRoot?: string;
-      brainMode?: string;
-      interactive?: boolean;
-      json?: boolean;
-    }) => {
-      if (action) {
-        if (action !== 'rollback') {
-          console.error(`repo-harness adopt: unknown action "${action}"`);
-          process.exit(2);
-        }
-        if (rawOpts.transaction) {
-          const rollback = rollbackAdoptionTransaction({ repoRoot: rawOpts.repo ?? process.cwd(), transaction: rawOpts.transaction });
-          if (rawOpts.json === true) {
-            console.log(JSON.stringify(rollback, null, 2));
-          } else {
-            console.log(`[adopt] ${rollback.ok ? 'ok' : 'failed'}: rollback transaction ${rollback.transactionManifestPath}`);
-            for (const result of rollback.results) {
-              const target = result.path ? ` ${result.path}` : '';
-              const detail = result.error ? ` - ${result.error}` : '';
-              console.log(`[adopt] ${result.status}: ${result.action}${target}${detail}`);
-            }
-          }
-          process.exit(rollback.ok ? 0 : 1);
-        }
-        console.error('repo-harness adopt rollback: --transaction is required');
-        process.exit(2);
-      }
-      const target = assertTarget(rawOpts.target, 'adopt');
-      assertBrainMode(rawOpts.brainMode ?? 'skip', 'adopt');
-      const mode = assertAdoptionMode(rawOpts.mode ?? 'standard', 'adopt');
-      if (rawOpts.configureCodegraph === true) {
-        console.error('repo-harness adopt: --configure-codegraph writes user-level MCP config; run repo-harness update instead');
-        process.exit(2);
-      }
-      if (rawOpts.brainRoot || rawOpts.brainMode !== 'skip') {
-        console.error('repo-harness adopt: brain configuration writes user-level state; run repo-harness update instead');
-        process.exit(2);
-      }
-      if (rawOpts.interactive === true) {
-        console.error('repo-harness adopt: --interactive can configure user-level runtime state; use repo-harness install or setup instead');
-        process.exit(2);
-      }
-      if (rawOpts.dryRun === true) {
-        const plan = runAdoptionPlan({
-          repo: rawOpts.repo,
-          mode,
-          json: rawOpts.json === true,
-          explicitRepo: rawOpts.repo !== undefined,
-        });
-        writeAllSync(1, plan.output);
-        process.exit(plan.exitCode);
-      }
-      const common = {
-        repo: rawOpts.repo,
-        apply: true,
-        target,
-        syncSkill: false,
-        hostAdapters: false,
-        externalSkills: false,
-        verify: rawOpts.verify !== false,
-        codegraph: rawOpts.codegraph !== false,
-        configureCodegraphMcp: false,
-        syncCodegraph: rawOpts.syncCodegraph === true,
-        mode,
-        brainRoot: rawOpts.brainRoot,
-        brainMode: rawOpts.brainMode as InitBrainMode,
-      };
-      const result = runInit(common);
-      if (rawOpts.json === true) {
-        console.log(JSON.stringify(result, null, 2));
-      } else {
-        for (const line of result.lines) console.log(line);
-      }
-      process.exit(result.exitCode);
-    });
-
-  program
     .command('install')
     .description('Install the repo-harness global runtime; with --location, install only hook adapters')
     .option('--target <target>', `Target host: ${TARGET_HELP}`, 'both')
@@ -602,7 +397,7 @@ export function buildProgram(): Command {
         process.exit(result.exitCode);
       }
       if (rawOpts.location === undefined) {
-        await runGlobalRuntimeBootstrap('install', rawOpts, cmd);
+        await runGlobalRuntimeBootstrap(rawOpts, cmd);
         return;
       }
       // Adapter-only installs still mutate a profile-owned host surface. Validate
@@ -624,6 +419,192 @@ export function buildProgram(): Command {
         profile: assertInstallProfile(rawOpts.profile ?? 'full'),
       });
       for (const line of result.lines) console.log(line);
+      process.exit(result.exitCode);
+    });
+
+  program
+    .command('init')
+    .description('Install or refresh the repo-local harness workflow in an existing repo')
+    .argument('[action]', 'Optional action: rollback')
+    .option('--repo <path>', 'Target repository path (defaults to cwd)')
+    .option('--transaction <path>', 'Adoption transaction manifest to restore when action is rollback')
+    .option('--dry-run', 'Plan repo harness changes without applying them')
+    .option('--target <target>', `Host target for readiness checks and optional global bootstrap: ${TARGET_HELP}`, 'both')
+    .option('--no-verify', 'Skip repo workflow verification after apply')
+    .option('--no-codegraph', 'Skip building the CodeGraph index and MCP readiness check')
+    .option('--mode <mode>', 'Adoption mode: minimal|standard|self-host', 'standard')
+    .option('--configure-codegraph', 'Deprecated: user-level MCP config belongs to repo-harness update/setup')
+    .option('--sync-codegraph', 'Sync the CodeGraph index after ensure')
+    .option('--brain-root <path>', 'Deprecated: user-level brain config belongs to repo-harness update/setup')
+    .option('--brain-mode <mode>', 'Deprecated: init does not perform user-level brain sync', 'skip')
+    .option('--interactive', 'Rejected: public init is repo-local and does not configure user-level runtime state')
+    .option('--json', 'Output JSON instead of human-readable text')
+    .action(async (action: string | undefined, rawOpts: {
+      repo?: string;
+      transaction?: string;
+      dryRun?: boolean;
+      target: string;
+      verify?: boolean;
+      codegraph?: boolean;
+      mode?: string;
+      configureCodegraph?: boolean;
+      syncCodegraph?: boolean;
+      brainRoot?: string;
+      brainMode?: string;
+      interactive?: boolean;
+      json?: boolean;
+    }) => {
+      if (action) {
+        if (action !== 'rollback') {
+          console.error(`repo-harness init: unknown action "${action}"`);
+          process.exit(2);
+        }
+        if (rawOpts.transaction) {
+          const rollback = rollbackAdoptionTransaction({ repoRoot: rawOpts.repo ?? process.cwd(), transaction: rawOpts.transaction });
+          if (rawOpts.json === true) {
+            console.log(JSON.stringify(rollback, null, 2));
+          } else {
+            console.log(`[init] ${rollback.ok ? 'ok' : 'failed'}: rollback transaction ${rollback.transactionManifestPath}`);
+            for (const result of rollback.results) {
+              const target = result.path ? ` ${result.path}` : '';
+              const detail = result.error ? ` - ${result.error}` : '';
+              console.log(`[init] ${result.status}: ${result.action}${target}${detail}`);
+            }
+          }
+          process.exit(rollback.ok ? 0 : 1);
+        }
+        console.error('repo-harness init rollback: --transaction is required');
+        process.exit(2);
+      }
+      const target = assertTarget(rawOpts.target, 'init');
+      assertBrainMode(rawOpts.brainMode ?? 'skip', 'init');
+      const mode = assertAdoptionMode(rawOpts.mode ?? 'standard', 'init');
+      if (rawOpts.configureCodegraph === true) {
+        console.error('repo-harness init: --configure-codegraph writes user-level MCP config; run repo-harness update instead');
+        process.exit(2);
+      }
+      if (rawOpts.brainRoot || rawOpts.brainMode !== 'skip') {
+        console.error('repo-harness init: brain configuration writes user-level state; run repo-harness update instead');
+        process.exit(2);
+      }
+      if (rawOpts.interactive === true) {
+        console.error('repo-harness init: --interactive can configure user-level runtime state; use repo-harness install or setup instead');
+        process.exit(2);
+      }
+      if (rawOpts.dryRun === true) {
+        const plan = runAdoptionPlan({
+          repo: rawOpts.repo,
+          mode,
+          json: rawOpts.json === true,
+          explicitRepo: rawOpts.repo !== undefined,
+        });
+        writeAllSync(1, plan.output);
+        process.exit(plan.exitCode);
+      }
+      const common = {
+        repo: rawOpts.repo,
+        apply: true,
+        target,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        verify: rawOpts.verify !== false,
+        codegraph: rawOpts.codegraph !== false,
+        configureCodegraphMcp: false,
+        syncCodegraph: rawOpts.syncCodegraph === true,
+        mode,
+        brainRoot: rawOpts.brainRoot,
+        brainMode: rawOpts.brainMode as InitBrainMode,
+      };
+      const result = runInit(common);
+      if (rawOpts.json === true) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        for (const line of result.lines) console.log(line);
+      }
+      process.exit(result.exitCode);
+    });
+
+  program
+    .command('update')
+    .description('Update the global repo-harness CLI and user-level managed runtime')
+    .option('--target <target>', `Host target for adapters and runtime skills: ${TARGET_HELP}`, 'both')
+    .option('--version <version>', 'Install a specific repo-harness package version')
+    .option('--channel <channel>', 'Install package channel: latest|next')
+    .option('--check', 'Run the read-only setup check without refreshing runtime')
+    .option('--check-updates', 'Include network-backed version update advisories in setup check output')
+    .option('--no-runtime-refresh', 'Skip runtime refresh and run the read-only setup check only')
+    .option('--no-cli', 'Skip installing the repo-harness CLI globally')
+    .option('--no-sync-skill', 'Skip refreshing repo-harness skill aliases under host skill roots')
+    .option('--no-hooks', 'Skip global hook adapter installation')
+    .option('--with-external-skills', 'Also bootstrap third-party Waza, Mermaid, and cross-review skills')
+    .option('--no-external-skills', 'Compatibility no-op; update no longer bootstraps third-party skills by default')
+    .option('--configure-codegraph', 'Also configure CodeGraph CLI/MCP during runtime refresh')
+    .option('--no-codegraph', 'Compatibility no-op; update no longer configures CodeGraph by default')
+    .option('--brain-root <path>', 'Brain vault root for manifest sync')
+    .option('--repo <path>', 'Deprecated: use repo-harness init --repo <path>')
+    .option('--dry-run', 'Deprecated: use repo-harness init --dry-run for repo-level planning')
+    .option('--interactive', 'Deprecated: use repo-harness init --interactive for repo-level planning')
+    .option('--json', 'Output JSON instead of human-readable text')
+    .action((rawOpts: {
+      repo?: string;
+      dryRun?: boolean;
+      target: string;
+      version?: string;
+      channel?: string;
+      check?: boolean;
+      checkUpdates?: boolean;
+      runtimeRefresh?: boolean;
+      cli?: boolean;
+      syncSkill?: boolean;
+      hooks?: string | false;
+      withExternalSkills?: boolean;
+      externalSkills?: boolean;
+      codegraph?: boolean;
+      configureCodegraph?: boolean;
+      brainRoot?: string;
+      interactive?: boolean;
+      json?: boolean;
+    }) => {
+      const target = assertTarget(rawOpts.target, 'update');
+      if (rawOpts.channel !== undefined && !['latest', 'next'].includes(rawOpts.channel)) {
+        console.error('repo-harness update: invalid --channel (expected: latest, next)');
+        process.exit(2);
+      }
+      if (rawOpts.repo || rawOpts.dryRun || rawOpts.interactive) {
+        console.error(
+          'repo-harness update no longer refreshes repositories. For repo-level refresh, run: repo-harness init --repo <path>',
+        );
+        process.exit(2);
+      }
+      if (rawOpts.check === true || rawOpts.runtimeRefresh === false) {
+        const report = runInitHook({
+          target,
+          checkUpdates: rawOpts.checkUpdates === true,
+        });
+        console.log(formatInitHook(report, rawOpts.json === true));
+        process.exit(report.status === 'blocked' ? 1 : 0);
+      }
+      const installSpec = rawOpts.version
+        ? `repo-harness@${rawOpts.version}`
+        : rawOpts.channel
+          ? `repo-harness@${rawOpts.channel}`
+          : 'repo-harness@latest';
+      const result = runGlobalRuntimeSetup({
+        target,
+        installCli: rawOpts.cli !== false,
+        installSpec,
+        syncSkill: rawOpts.syncSkill !== false,
+        hostAdapters: rawOpts.hooks !== false,
+        externalSkills: rawOpts.withExternalSkills === true,
+        codegraph: rawOpts.configureCodegraph === true,
+        brainRoot: rawOpts.brainRoot,
+      });
+      if (rawOpts.json === true) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        for (const line of result.lines) console.log(line);
+      }
       process.exit(result.exitCode);
     });
 

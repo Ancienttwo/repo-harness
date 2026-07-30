@@ -166,17 +166,17 @@ if (
 }
 JS_EOF
 
-"$CLI" adopt --repo "$TARGET_REPO" --dry-run --json >"$TMP_DIR/adopt-plan.json"
-bun - "$TMP_DIR/adopt-plan.json" <<'JS_EOF'
+"$CLI" init --repo "$TARGET_REPO" --dry-run --json >"$TMP_DIR/init-plan.json"
+bun - "$TMP_DIR/init-plan.json" <<'JS_EOF'
 const [, , path] = process.argv;
 const plan = await Bun.file(path).json();
-if (plan.protocol !== 1 || plan.command !== "adopt" || plan.apply !== false) {
-  console.error("[tarball-smoke] ERROR: packaged adopt dry-run did not return protocol v1 plan JSON");
+if (plan.protocol !== 1 || plan.command !== "init" || plan.apply !== false) {
+  console.error("[tarball-smoke] ERROR: packaged init dry-run did not return protocol v1 plan JSON");
   process.exit(1);
 }
 JS_EOF
 
-"$CLI" adopt --repo "$TARGET_REPO" --no-verify --no-codegraph --json >"$TMP_DIR/adopt-apply.json"
+"$CLI" init --repo "$TARGET_REPO" --no-verify --no-codegraph --json >"$TMP_DIR/init-apply.json"
 
 if ! "$CLI" run check-task-workflow --help >/dev/null; then
   echo "[tarball-smoke] ERROR: packaged 'repo-harness run check-task-workflow --help' failed (run dispatcher / helper lookup / bin startup broken)" >&2
