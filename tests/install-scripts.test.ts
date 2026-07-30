@@ -43,7 +43,10 @@ describe("install script contracts", () => {
     expect(script).not.toMatch(/\bnode\b/i);
   });
 
-  test("README front-loads the no-Node installer and Bun package-manager fallback", () => {
+  // Scope: the shell-installer surface only. The bunx / bun add -g / npx command
+  // pins live in tests/readme-dx.test.ts against the First 5 Minutes section;
+  // repeating them here at whole-README scope added no coverage.
+  test("README documents the no-Node installer and its Bun version floor", () => {
     const readme = read("README.md");
     const zhReadme = read("README.zh-CN.md");
     const pkg = JSON.parse(read("package.json"));
@@ -51,10 +54,6 @@ describe("install script contracts", () => {
     expect(readme).toContain("curl -fsSL https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.sh | sh");
     expect(readme).toContain("irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 | iex");
     expect(readme).toContain("If Bun >= 1.1.35 is already on PATH, you can skip the shell installer.");
-    expect(readme).toContain("Bun >= 1.1.35");
-    expect(readme).toContain("bunx repo-harness@latest install");
-    expect(readme).toContain("bun add -g repo-harness");
-    expect(readme).toContain("npx -y repo-harness@latest install");
     expect(readme).not.toContain("npm install -g repo-harness");
     expect(zhReadme).toContain("curl -fsSL https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.sh | sh");
     expect(zhReadme).toContain("irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 | iex");
