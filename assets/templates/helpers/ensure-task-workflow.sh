@@ -854,6 +854,23 @@ CURRENT_STATUS_EOF
   fi
 }
 
+# The resume packet must be the last handoff artifact bootstrap writes:
+# check-task-workflow.sh treats a resume packet older than either
+# .ai/harness/handoff/current.md or tasks/current.md as stale. Both of those
+# are written earlier in the bootstrap sequence, so creating the resume packet
+# here keeps that invariant true by construction instead of by whole-second
+# mtime luck.
+ensure_resume_packet() {
+  mkdir -p .ai/harness/handoff
+  if [[ ! -f ".ai/harness/handoff/resume.md" ]]; then
+    cat > ".ai/harness/handoff/resume.md" <<'RESUME_EOF'
+# Codex Resume Packet
+
+> **Reason**: bootstrap
+RESUME_EOF
+  fi
+}
+
 ensure_auxiliary_files() {
   mkdir -p plans plans/archive plans/prds plans/sprints tasks/archive tasks/contracts tasks/reviews tasks/notes tasks/workstreams docs/architecture/domains docs/architecture/modules docs/architecture/requests docs/architecture/snapshots docs/architecture/diagrams .ai/context .ai/harness/checks .ai/harness/handoff .ai/harness/failures .ai/harness/security .ai/harness/planning .ai/harness/delegation .ai/harness/architecture .ai/harness/worktrees .ai/harness/runs
 
@@ -905,14 +922,6 @@ RESEARCH_README_EOF
 
 > **Reason**: bootstrap
 HANDOFF_EOF
-  fi
-
-  if [[ ! -f ".ai/harness/handoff/resume.md" ]]; then
-    cat > ".ai/harness/handoff/resume.md" <<'RESUME_EOF'
-# Codex Resume Packet
-
-> **Reason**: bootstrap
-RESUME_EOF
   fi
 
   if [[ ! -f ".ai/harness/events.jsonl" ]]; then
@@ -1444,6 +1453,7 @@ ensure_templates
 ensure_auxiliary_files
 ensure_idle_todo
 ensure_current_status_snapshot
+ensure_resume_packet
 
 active_plan="$(get_active_plan || true)"
 if [[ -n "$active_plan" && "$new_plan" -eq 0 ]]; then

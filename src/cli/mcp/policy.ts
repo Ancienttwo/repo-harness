@@ -31,11 +31,19 @@ function directoryDenyGlobParts(pattern: string): string[] | undefined {
   return directoryPattern.split('/').filter(Boolean).map((part) => part.toLowerCase());
 }
 
+function stripPlatformCanonicalizationPrefix(parts: string[]): string[] {
+  // realpathSync resolves OS-managed temp roots through /private on macOS
+  // (e.g. /tmp -> /private/tmp, per-user tmp -> /private/var/folders/...).
+  // That is a filesystem canonicalization artifact, not a user-owned
+  // "private" directory, so strip it once before deny-glob matching runs.
+  if (parts[0] === 'private' && (parts[1] === 'var' || parts[1] === 'tmp')) {
+    return parts.slice(2);
+  }
+  return parts;
+}
+
 function partsContainDeniedRoot(parts: string[], deniedParts: string[]): boolean {
   for (let index = 0; index <= parts.length - deniedParts.length; index += 1) {
-    if (deniedParts.length === 1 && deniedParts[0] === 'private' && index === 0 && parts[1] === 'var') {
-      continue;
-    }
     const matches = deniedParts.every((part, offset) => parts[index + offset] === part);
     if (matches) return true;
   }
@@ -45,7 +53,7 @@ function partsContainDeniedRoot(parts: string[], deniedParts: string[]): boolean
 export function sensitiveAllowedRootReason(canonicalPath: string, denyGlobs = COMMON_DENY_GLOBS, rawPath?: string): string | undefined {
   const candidateParts = Array.from(new Set([rawPath, canonicalPath]
     .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-    .map((value) => pathParts(value))));
+    .map((value) => stripPlatformCanonicalizationPrefix(pathParts(value)))));
 
   for (const pattern of denyGlobs) {
     const deniedParts = directoryDenyGlobParts(pattern);
