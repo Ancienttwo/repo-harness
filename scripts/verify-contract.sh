@@ -514,7 +514,9 @@ is_evidence_producer_command() {
   case "$cmd" in
     *benchmark:harness*|*run-harness-profile-benchmark*|*" codex exec "*|codex\ exec\ *|*" claude -p "*|claude\ -p\ *) return 0 ;;
   esac
-  if [[ "$cmd" =~ (^|[[:space:]])adopt([[:space:]]|$) ]]; then return 0; fi
+  # Anchored to this CLI's own `init` subcommand (repo-harness init / bun .../index.ts init)
+  # so a bare word match doesn't misfire on git init, npm init, or codegraph init.
+  if [[ "$cmd" =~ (^|[[:space:]])(repo-harness|([^[:space:]]*/)?index\.ts)[[:space:]]+init([[:space:]]|$) && "$cmd" != *"--dry-run"* ]]; then return 0; fi
   if [[ "$cmd" =~ (^|[[:space:]])install([[:space:]]|$) && "$cmd" != *"--dry-run"* ]]; then return 0; fi
   return 1
 }

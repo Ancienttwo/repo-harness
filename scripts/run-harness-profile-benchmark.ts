@@ -727,7 +727,7 @@ function projectHarnessBase(
   if (!existsSync(installedCli)) throw new Error(`installed benchmark CLI missing: ${installedCli}`);
   assertPathOutsideRoot(realpathSync(installedCli), ROOT, 'installed benchmark CLI target');
   assertBenchmarkRuntimeArtifactUnchanged(runtimeArtifact);
-  run(installedCli, ['adopt', '--repo', workspace, '--no-codegraph', '--mode', 'standard'], workspace, env);
+  run(installedCli, ['init', '--repo', workspace, '--no-codegraph', '--mode', 'standard'], workspace, env);
   const installProfile = profile === 'adaptive-lite' ? 'minimal' : 'full';
   assertBenchmarkRuntimeArtifactUnchanged(runtimeArtifact);
   run(installedCli, [
