@@ -1,6 +1,6 @@
 # Task Contract: mcp-allowed-root-canonicalization
 
-> **Status**: Active
+> **Status**: Partial
 > **Plan**: plans/plan-20260730-2346-mcp-allowed-root-canonicalization.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
@@ -69,6 +69,7 @@ allowed_paths:
   - tasks/contracts/20260730-2346-mcp-allowed-root-canonicalization.contract.md
   - tasks/reviews/20260730-2346-mcp-allowed-root-canonicalization.review.md
   - tasks/notes/20260730-2346-mcp-allowed-root-canonicalization.notes.md
+  - tasks/notes/20260730-mcp-allowed-root-canonicalization.pre-fix.log
   - .ai/context/capabilities.json
   - .claude/templates/
   - src/cli/mcp/policy.ts
