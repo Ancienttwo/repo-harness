@@ -73,6 +73,7 @@ allowed_paths:
   - .ai/context/capabilities.json
   - .claude/templates/
   - scripts/acceptance-receipt.ts
+  - assets/templates/helpers/acceptance-receipt.ts
   - tests/
 ```
 

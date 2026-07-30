@@ -31,7 +31,7 @@
 
 ## Open Questions
 
-- Should `assets/templates/helpers/acceptance-receipt.ts` be added to this contract's `allowed_paths` (and `bun run sync:helpers` run) so the one-line fix can ship without a full-suite regression, or should the helper-template sync be handled as a separate, immediately-following step/package? Either resolution is mechanical once decided; the open question is scope authority, not implementation.
+- **Decided (coordinator, 2026-07-31).** `assets/templates/helpers/acceptance-receipt.ts` is added to this contract's `allowed_paths` and mirrored via `bun run sync:helpers`, folded into this same package rather than split out: it is a mechanical projection of the one-line fix already approved for `scripts/acceptance-receipt.ts`, so a separate package would carry no independent decision. Widened under the contract's own self-amend mechanism (Workflow Inventory: "update this contract before widening scope").
 
 ## Evidence Links
 
