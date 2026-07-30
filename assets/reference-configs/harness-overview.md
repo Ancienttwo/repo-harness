@@ -62,7 +62,10 @@ with the project.
 - Externalized reference docs may be indexed by `.ai/harness/brain-manifest.json`. Validation and export through `repo-harness run check-brain-manifest` / `sync-brain-docs` are explicit operator actions and never part of hook or workflow correctness.
 - Contract-level execution should run in an isolated `codex/<task-slug>` worktree. Merge back only after the contract is fulfilled, `tasks/reviews/<plan-stem>.review.md` recommends pass, and the target worktree is clean.
 - Architecture-sensitive work also runs `repo-harness run check-architecture-sync`: the check keeps the request index derived from `docs/architecture/requests/` and, when policy is strict, blocks finish if the current diff touches a capability with a pending architecture request at or above `architecture.gate_min_severity`.
-- Migration cleans legacy root `scripts/<repo-harness-helper>` files only when content is identifiable as generated repo-harness runtime; ambiguous app-owned root scripts are reported and preserved.
+- Adoption retires legacy hook/runtime assets only inside the canonical
+  `FsTransaction`: declared paths require an exact SHA-256 match, while
+  mismatches, ambiguous app-owned files, and custom adapter siblings are
+  preserved and reported.
 
 ## Documentation Profile
 
@@ -100,18 +103,30 @@ Required v1 fields:
 
 Harness cost reports separate measured values from unavailable telemetry. A
 metric is authoritative only when its named source exposes that value directly;
-missing values stay `null` with an unavailable authority marker. Reports must
-not derive model calls from turns, subagents from tool-name text, billing tokens
-from byte counts, or live hook latency from host tool duration.
+missing or incomplete event metrics keep `runtime_evidence.available: false`.
+Reports must not derive model calls from turns, subagents from tool-name text,
+billing tokens from byte counts, or hidden legacy-script I/O from local
+heuristics.
 
 The two current evidence owners are:
 
-- `scripts/hook-dispatch-diet-report.ts` for static route topology and
-  synthetic subprocess probes. Probe distributions include sample count, total,
-  p50, p95, p99, and max latency. The SessionStart probe also records UTF-8
-  output/context bytes. Its context token value is an estimate labeled
-  `utf8_bytes_div_4`; it is a context-budget indicator, not provider billing
-  usage.
+- `.ai/harness/runs/hook-events.jsonl` is the sole hook runtime telemetry
+  authority. `src/cli/hook/runtime.ts` appends exactly one
+  `loop-engine-hook-event/v1` record per eligible handled host event. Typed
+  dispatch evidence contains one `in_process` handler step, direct
+  `child_processes: 0`, and no opaque steps. File/write metrics are only
+  authoritative at explicit observer boundaries; consumers inspect
+  `complete_metrics` and `incomplete_metrics` instead of treating zero as
+  proof of complete filesystem coverage. The telemetry append itself is
+  excluded from write amplification metrics and is non-authoritative: append
+  failure never changes hook safety.
+- `scripts/hook-dispatch-diet-report.ts` combines that event authority with
+  static route topology and synthetic subprocess probes. Runtime distributions
+  and route coverage include sample count, p50, and p95; missing, malformed,
+  mixed-protocol, duplicate, or target-incomplete records fail closed. Synthetic
+  probe distributions retain total, p50, p95, p99, and max latency. The
+  SessionStart token estimate remains labeled `utf8_bytes_div_4`; it is a
+  context-budget indicator, not provider billing usage.
 - `scripts/run-skill-evals.ts` for end-to-end benchmark duration, changed-file
   evidence, graders, and provider-structured usage. Claude single-result JSON
   and Codex JSONL are parsed independently. Raw output remains an artifact, and
@@ -120,6 +135,15 @@ The two current evidence owners are:
 
 Current SLOs:
 
+- Runtime entry: exactly one per eligible host event.
+- Direct runtime-dispatch child processes: at most one per event. This does not
+  claim to count internal `git`/`bun` plumbing or OS process syscalls.
+- Effective State resolution: exactly one for the measured PreEdit and Stop
+  target routes.
+- PreEdit event p95: target at most 150 ms, initial hard budget 250 ms.
+- PostEdit: zero full recovery-projection writes and at most one journal event
+  write.
+- Stop: at most one recovery-projection write transaction.
 - Synthetic hook phase p95: at most 250 ms per probe.
 - Estimated actionable SessionStart context: at most 1,500 tokens using the
   explicitly labeled byte heuristic.
@@ -170,7 +194,9 @@ rather than inferring those values from turns, tool names, or timestamps.
 - Declare capabilities in `.ai/context/capabilities.json`; each capability owns prefixes, paired contract files, an architecture module, a workstream directory, and local verification hints.
 - Add selected capabilities with `repo-harness-setup` (capability mode) or `repo-harness run capability-config add --prefix <path>` when the harness already exists and a full init/migrate/upgrade pass would be too broad.
 - Resolve edited paths through `repo-harness run capability-resolver match --path <path>`; longest prefix wins and equal-length ambiguity fails.
-- Treat `.ai/context/agent-context-blocks.txt`, `REPO_HARNESS_CONTEXT_BLOCKS`, and existing nested `CLAUDE.md`/`AGENTS.md` files as migration inputs or compatibility fallbacks only.
+- Treat `.ai/context/agent-context-blocks.txt`,
+  `REPO_HARNESS_CONTEXT_BLOCKS`, and existing nested `CLAUDE.md`/`AGENTS.md`
+  files as migration inputs only; the capability registry is runtime authority.
 - Selected capabilities receive paired `CLAUDE.md` and `AGENTS.md` files so Claude Code and Codex share the same local contract.
 - Use `repo-harness capability-context status|request|sync` to keep paired local context files aligned with the registry. The command writes only the controlled `CAPABILITY CONTEXT` block and preserves hand-authored content plus the separate architecture contract block.
 - `.ai/context/capability-source-map.json` is the optional human-edited source-map manifest for capability positioning and source pointers. Missing entries fall back to registry/architecture/workstream metadata; `--auto-fill-positioning` writes deterministic draft entries explicitly, not from hooks.
@@ -188,6 +214,10 @@ Maintainer-facing detail on how the initializer and runtime defaults are wired.
 - Question-pack source of truth: `assets/initializer-question-pack.v4.json`.
 - Generated repos default to the repo-local harness flow: `docs/spec.md -> plans/ -> tasks/contracts/ -> tasks/reviews/ -> .ai/context/context-map.json -> .ai/harness/*`.
 - Generated and self-hosted repos install `.ai/harness/workflow-contract.json` and `.ai/harness/policy.json`.
+- Host events use the user-level managed adapter projection, the 11-tuple
+  `route-registry.ts`, and exactly one typed in-process handler per tuple.
+  `.ai/hooks/lib/workflow-state.sh` is an operator helper projection, not a
+  second host-event runtime.
 - Generated and migrated repos keep discovery and complex/design planning in the parent agent: `geju` opens the pre-contract frame, then the parent completes P1/P2/P3 and freezes the accepted direction. Daily small/medium work uses Waza with Codex-first runtime copies in `~/.codex/skills`; durable knowledge stays in repo-authored research and lessons.
 - `repo-harness install` bootstraps the Codex/Claude runtime pieces for the default workflow: refreshes `repo-harness` skill aliases, installs global Codex/Claude hook adapters, installs Waza skills (`think`, `hunt`, `check`, `health`) and Mermaid through the skills CLI, persists the brain root in `~/.repo-harness/config.json`, and configures CodeGraph MCP for selected host agents. `repo-harness init` remains a compatibility alias for existing automation.
 - Other external tooling stays advisory-only: `repo-harness run check-agent-tooling --host both --check-updates`; Waza update checks compare upstream `tw93/Waza` `SKILL.md` hashes without running `npx skills check`; no automatic CodeGraph daemon or provider setup.
