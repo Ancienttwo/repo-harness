@@ -143,7 +143,6 @@ describe("README DX contract", () => {
     const spec = read("docs/spec.md");
     const flow = read("docs/reference-configs/agentic-development-flow.md");
     const externalTooling = read("docs/reference-configs/external-tooling.md");
-    const externalToolingAsset = read("assets/reference-configs/external-tooling.md");
 
     expect(spec).toContain("## Product Outcome");
     expect(spec).toContain("## Core Invariants");
@@ -163,7 +162,6 @@ describe("README DX contract", () => {
     expect(zhReadme).toContain("external verification manifest");
     expect(zhReadme).toContain("手动约定");
     expect(zhReadme).toContain("`repo-harness check` 已经会自动发现或 gate");
-    expect(externalToolingAsset).toBe(externalTooling);
     expect(externalTooling).toContain("## External Verification Evidence");
     expect(externalTooling).toContain("convention only");
     expect(externalTooling).toContain("does not automatically discover");

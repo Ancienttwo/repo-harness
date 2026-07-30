@@ -98,6 +98,15 @@ never deletion candidates.
 
 ## Deviations From Plan Or Spec
 
+- **Phase 2 initially deleted 5 of the 6 scattered equalities, not 6.** The
+  `external-tooling.md` mirror equality in `tests/readme-dx.test.ts` was missed: that file holds
+  two of the six (release-deploy.md and external-tooling.md, read in two different tests), and
+  only the release-deploy one was cut. Found by the acceptance gate, not by the test suite —
+  the residual assertion still passed, so nothing failed to signal it. Removed afterwards in a
+  follow-up commit; the loop test covers external-tooling.md like every other pair, so the
+  residual was pure redundancy. The docs-side content assertions on `externalTooling` in the
+  same test were left untouched.
+
 - **S3 dedup narrowed to genuine within-test duplicates.** The plan counted
   `cat > tasks/todos.md` / `tasks/lessons.md` / `not.toContain("docs/TODO.md")` as a group
   appearing twice, and `.ai/harness/policy.json` / `.ai/context/context-map.json` as appearing
