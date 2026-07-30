@@ -23,9 +23,17 @@ which was never this worktree's real fork point. `contract-worktree start` recor
 stack on it, and the metadata did not follow. The true fork point is `a43c4abe`, so the field was
 corrected to that commit at ship time. Without the correction `verify-sprint` diffs against
 `095dcb06` and charges all of `cli-init-rename`'s files to this contract's `allowed_paths` scope.
-The file is gitignored (`.gitignore:56`), so this is a local-only fix recorded here rather than a
-committed change. The general gap — `verify-sprint` silently trusting a `base_commit` that is no
-longer an ancestor of `HEAD` — is already logged as a deferred row in `tasks/todos.md`.
+
+The parent package then merged into `main` as a squash commit, which rewrote its history and left
+this stacked branch with no common ancestor to three-way merge from; comparing it to `main`
+un-rebased reported three phantom conflicts that were an artifact of that missing ancestry, not
+real overlaps. Replaying this branch's own commits with
+`git rebase --onto origin/main a43c4abe` resolved them with zero conflicts, and `base_commit` was
+corrected a second time to the post-rebase fork point `8b506da4`.
+
+The metadata file is gitignored (`.gitignore:56`), so both corrections are local-only and recorded
+here rather than committed. The general gap — `verify-sprint` silently trusting a `base_commit`
+that is no longer an ancestor of `HEAD` — is already logged as a deferred row in `tasks/todos.md`.
 
 ### harness-overview.md re-unification (plan decision 2)
 

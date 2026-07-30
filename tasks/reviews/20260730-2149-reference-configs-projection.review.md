@@ -44,13 +44,13 @@
 > **Reviewer**: Claude
 > **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: sha256:afd10285a2799abf481c590c11d0c95671e2c4ad8ac3ee0b27b098b8df514369
+> **Reviewed Subject SHA256**: sha256:36dccfdb7f122ef2e897c312a93a04edb316b65272c07769829e7943fe3ff408
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: 8b506da48fac02cb1a9e7134037cabd506636212
-> **Verification Evidence SHA256**: sha256:b17d614ce0b4668c78ba9cc39ef6e782fe94b947ab84e4729b6ac0fe67e09c9f
-> **Issued At**: 2026-07-30T21:22:07.045Z
+> **Verification Evidence SHA256**: sha256:0aeb8daa00caa1541154ab77ec939fb06fe3f29db33e570b400b7085be9a8ab3
+> **Issued At**: 2026-07-30T21:58:02.312Z
 
-- Summary: gatekeeper PASS after one repair round. assets/reference-configs/ is now the declared source and docs/reference-configs/ its byte-identical generated projection, enforced by scripts/sync-reference-configs.ts (--check/--write, modeled on sync-helper-sources.ts) wired into check-ci; the six scattered mirror-equality assertions are replaced by a single loop that covers all 23 projected pairs green, and negative verification confirmed the loop fails closed on an induced drift rather than silently passing. harness-overview.md was re-unified taking the docs side as truth, justified by the assets side still carrying retired compatibility-fallback wording. The audited LOW-risk test simplifications S1-S5 landed as specified. This run recorded 14/14 exit criteria green with allowed_paths clean at 19 files against the corrected fork point a43c4abe, plus full suite 2097 pass 0 fail and check:reference-configs green.
+- Summary: gatekeeper PASS after one repair round. assets/reference-configs/ is now the declared source and docs/reference-configs/ its byte-identical generated projection, enforced by scripts/sync-reference-configs.ts (--check/--write, modeled on sync-helper-sources.ts) wired into check-ci; the six scattered mirror-equality assertions are replaced by a single loop covering all 23 projected pairs green, and negative verification confirmed the loop fails closed on induced drift rather than silently passing. harness-overview.md was re-unified taking the docs side as truth, justified by the assets side still carrying retired compatibility-fallback wording. The audited LOW-risk test simplifications S1-S5 landed as specified. Verified after replaying this branch onto the squash-merged parent: 14/14 exit criteria green, allowed_paths clean at 19 files against fork point 8b506da4, full suite 2099 pass 0 fail, and check:reference-configs green.
 - Findings: none
 
 ## Behavior Diff Notes
