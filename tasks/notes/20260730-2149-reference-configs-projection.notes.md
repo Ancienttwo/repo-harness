@@ -15,6 +15,18 @@ Branch is stacked on `codex/cli-init-rename`. At execution start `origin/codex/c
 was still at `a43c4abe`, identical to the merge-base, so no rebase was needed. Plan line numbers
 come from `main@095dcb06`; every edit site was located by content instead.
 
+### Worktree `base_commit` accounting correction (ship time)
+
+`.ai/harness/worktrees/reference-configs-projection.json` recorded `base_commit` as `095dcb06`,
+which was never this worktree's real fork point. `contract-worktree start` records the source
+`HEAD` at creation, but this worktree was then manually reset onto the `cli-init-rename` tip to
+stack on it, and the metadata did not follow. The true fork point is `a43c4abe`, so the field was
+corrected to that commit at ship time. Without the correction `verify-sprint` diffs against
+`095dcb06` and charges all of `cli-init-rename`'s files to this contract's `allowed_paths` scope.
+The file is gitignored (`.gitignore:56`), so this is a local-only fix recorded here rather than a
+committed change. The general gap — `verify-sprint` silently trusting a `base_commit` that is no
+longer an ancestor of `HEAD` — is already logged as a deferred row in `tasks/todos.md`.
+
 ### harness-overview.md re-unification (plan decision 2)
 
 Divergence confirmed before the copy: docs side 224 lines, assets side 194. The decisive evidence
