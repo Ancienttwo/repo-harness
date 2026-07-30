@@ -256,19 +256,19 @@ describe('typed subagent hook handlers', () => {
     const cases = [
       {
         name: 'verified',
-        config: 'name = "fast-worker"\ndescription = "Bounded worker"\ndeveloper_instructions = "Stay in scope."\nmodel = "gpt-5.6-sol"\n',
+        config: 'name = "fast-worker"\ndescription = "Bounded worker"\ndeveloper_instructions = "Stay in scope."\nmodel = "gpt-5.6-terra"\n',
         agentType: 'fast-worker',
-        observedModel: 'gpt-5.6-sol',
+        observedModel: 'gpt-5.6-terra',
         expectedStatus: 'verified',
-        configuredModel: 'gpt-5.6-sol',
+        configuredModel: 'gpt-5.6-terra',
       },
       {
         name: 'mismatch',
-        config: 'name = "fast-worker"\ndescription = "Bounded worker"\ndeveloper_instructions = "Stay in scope."\nmodel = "gpt-5.6-sol"\n',
+        config: 'name = "fast-worker"\ndescription = "Bounded worker"\ndeveloper_instructions = "Stay in scope."\nmodel = "gpt-5.6-terra"\n',
         agentType: 'fast-worker',
-        observedModel: 'gpt-5.6-terra',
+        observedModel: 'gpt-5.6-sol',
         expectedStatus: 'mismatch',
-        configuredModel: 'gpt-5.6-sol',
+        configuredModel: 'gpt-5.6-terra',
       },
       {
         name: 'malformed-profile',

@@ -8,7 +8,7 @@ const ROOT = join(import.meta.dir, "..");
 const SCRIPT = join(ROOT, "scripts/install-agent-fleet.sh");
 const FLEET_SOURCE_DIR = join(ROOT, "agents/fleet");
 const GOLDEN_CODEX_DIR = join(ROOT, ".codex/agents");
-const AGENTS = ["explorer", "deep-reasoner", "fast-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
+const AGENTS = ["explorer", "deep-reasoner", "fast-worker", "deep-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
 const CODEX_EXPECTATIONS: Record<
   string,
   { model: string; effort: string; descriptionLabel: string; sourceDescription: string; sandboxMode: string }
@@ -21,9 +21,9 @@ const CODEX_EXPECTATIONS: Record<
     sandboxMode: "read-only",
   },
   "deep-reasoner": {
-    model: "gpt-5.6-sol",
+    model: "gpt-5.6-terra",
     effort: "xhigh",
-    descriptionLabel: "GPT-5.6 Sol at xhigh reasoning",
+    descriptionLabel: "GPT-5.6 Terra at xhigh reasoning",
     sourceDescription: "Opus at xhigh effort",
     sandboxMode: "read-only",
   },
@@ -31,7 +31,14 @@ const CODEX_EXPECTATIONS: Record<
     model: "gpt-5.6-luna",
     effort: "max",
     descriptionLabel: "GPT-5.6 Luna at max reasoning",
-    sourceDescription: "Sonnet at max effort",
+    sourceDescription: "Opus at medium effort",
+    sandboxMode: "workspace-write",
+  },
+  "deep-worker": {
+    model: "gpt-5.6-terra",
+    effort: "xhigh",
+    descriptionLabel: "GPT-5.6 Terra at xhigh reasoning",
+    sourceDescription: "Opus at high effort",
     sandboxMode: "workspace-write",
   },
   gatekeeper: {
@@ -42,16 +49,16 @@ const CODEX_EXPECTATIONS: Record<
     sandboxMode: "read-only",
   },
   "root-cause-prover": {
-    model: "gpt-5.6-sol",
+    model: "gpt-5.6-terra",
     effort: "high",
-    descriptionLabel: "GPT-5.6 Sol at high reasoning",
+    descriptionLabel: "GPT-5.6 Terra at high reasoning",
     sourceDescription: "Opus at high effort",
     sandboxMode: "workspace-write",
   },
   "harness-evaluator": {
-    model: "gpt-5.6-sol",
+    model: "gpt-5.6-terra",
     effort: "high",
-    descriptionLabel: "GPT-5.6 Sol at high reasoning",
+    descriptionLabel: "GPT-5.6 Terra at high reasoning",
     sourceDescription: "Opus at high effort",
     sandboxMode: "workspace-write",
   },
@@ -308,7 +315,7 @@ describe("install-agent-fleet", () => {
       for (const agent of AGENTS) {
         cpSync(join(FLEET_SOURCE_DIR, `${agent}.md`), join(badSourceDir, `${agent}.md`));
       }
-      const corrupted = readFileSync(join(badSourceDir, "fast-worker.md"), "utf-8").replace("effort: max", "effort: min");
+      const corrupted = readFileSync(join(badSourceDir, "fast-worker.md"), "utf-8").replace("effort: medium", "effort: min");
       writeFileSync(join(badSourceDir, "fast-worker.md"), corrupted);
 
       const res = runInstaller(home, badSourceDir);
@@ -462,7 +469,7 @@ describe("install-agent-fleet", () => {
         cpSync(join(FLEET_SOURCE_DIR, `${agent}.md`), join(badSourceDir, `${agent}.md`));
       }
       const mismatched = readFileSync(join(badSourceDir, "fast-worker.md"), "utf-8").replace(
-        "Sonnet at max effort",
+        "Opus at medium effort",
         "an unspecified model",
       );
       writeFileSync(join(badSourceDir, "fast-worker.md"), mismatched);
@@ -595,7 +602,7 @@ describe("install-agent-fleet", () => {
     expect(source).toContain('AGENT_FLEET_SOURCE_DIR="$package_root/agents/fleet"');
     expect(source).not.toContain("REPO_HARNESS_FLEET_SOURCE_DIR");
     expect(source).not.toContain('spawnSync("curl"');
-    expect(source).toContain('const WRITABLE_AGENTS = new Set(["fast-worker", "root-cause-prover", "harness-evaluator"]);');
+    expect(source).toContain('const WRITABLE_AGENTS = new Set(["fast-worker", "deep-worker", "root-cause-prover", "harness-evaluator"]);');
     expect(source).toContain("if (WRITABLE_AGENTS.has(agent))");
   });
 

@@ -421,7 +421,7 @@ bun add -g @colbymchenry/codegraph@latest && codegraph sync . && codegraph statu
 `check-agent-tooling.sh`. The single authored source is
 `package:agents/fleet`; it ships inside the npm package and never requires a
 network fetch. The managed list is `explorer`, `deep-reasoner`, `fast-worker`,
-`gatekeeper`, `root-cause-prover`, and `harness-evaluator`.
+`deep-worker`, `gatekeeper`, `root-cause-prover`, and `harness-evaluator`.
 
 ### Two targets, one source
 
@@ -439,15 +439,24 @@ mapping.
 
 | Source `model` | Codex `model` | Source `effort` | Codex `model_reasoning_effort` |
 |---|---|---|---|
-| `opus` | `gpt-5.6-sol` | `low`, `medium`, `high`, `xhigh`, `max` | same string, unchanged |
+| `opus` | `gpt-5.6-terra` | `low`, `medium`, `high`, `xhigh`, `max` | same string, unchanged |
 | `sonnet`, `haiku` | `gpt-5.6-luna` | `low`, `medium`, `high`, `xhigh`, `max` | same string, unchanged |
+| `fable` | `gpt-5.6-sol` | `low`, `medium`, `high`, `xhigh`, `max` | same string, unchanged |
 
-`fast-worker`, `root-cause-prover`, and `harness-evaluator` receive
-`sandbox_mode = "workspace-write"`; every other role receives
+Two per-agent target overrides are applied after tuple validation, on top of
+the family row above, and are the only effort remaps in the generator:
+`fast-worker` (`opus`/`medium`) targets `gpt-5.6-luna` at `max` reasoning
+instead of the opus family's `gpt-5.6-terra`/`medium`; `deep-worker`
+(`opus`/`high`) keeps the opus family's `gpt-5.6-terra` model but bumps
+reasoning to `xhigh` instead of `high`. Every other agent's Codex model and
+effort follow the family row unchanged.
+
+`fast-worker`, `deep-worker`, `root-cause-prover`, and `harness-evaluator`
+receive `sandbox_mode = "workspace-write"`; every other role receives
 `sandbox_mode = "read-only"`. Current assignments are explorer
-(`sonnet/high`), deep-reasoner (`opus/max`), fast-worker (`sonnet/max`),
-gatekeeper (`opus/high`), root-cause-prover (`opus/high`), and
-harness-evaluator (`opus/high`). Root-cause-prover's prompt further limits
+(`sonnet/high`), deep-reasoner (`opus/xhigh`), fast-worker (`opus/medium`),
+deep-worker (`opus/high`), gatekeeper (`fable/xhigh`), root-cause-prover
+(`opus/high`), and harness-evaluator (`opus/high`). Root-cause-prover's prompt further limits
 writes to bugfix evidence inside the active contract's allowed paths;
 harness-evaluator runs existing skill/adoption surfaces only when both repo and
 HOME pass the runner's disposable boundary: skills uses `--require-disposable`,
@@ -456,8 +465,10 @@ validated repo/HOME into inspector and adopt dry-run. Guarded skills overrides
 the ordinary sibling workspace default with a repo-internal workspace, and both
 profiles scrub inherited repo-harness source/helper overrides. The guard rejects source
 checkout and real HOME in either argument position; the role returns BLOCKED
-when the guard fails and must not access the independent `evals/bdd2/**` authority. There is no
-Terra route and no implicit effort remap.
+when the guard fails and must not access the independent `evals/bdd2/**` authority. The opus
+family projects to Terra by default with effort carried through unchanged; the only effort
+remaps are the two explicit per-agent overrides above, and any unmapped model/effort
+combination remains a hard error.
 
 The Codex generator also rewrites the exact upstream provider label in the
 description (for example, `Opus at max effort` or `Sonnet at high effort`) to the

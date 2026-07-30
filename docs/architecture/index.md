@@ -130,7 +130,7 @@ Project
 
 
 <!-- BEGIN ARCHITECTURE PENDING REQUESTS -->
-- (none)
+- [ ] 2026-07-30T20:51:16+0800 [high] `.ai/harness/policy.json` -> [workflow-engine-contract-assets](requests/workflow-engine-contract-assets.md)
 <!-- END ARCHITECTURE PENDING REQUESTS -->
 
 

@@ -98,8 +98,8 @@ if (force && acceptUserManaged) {
 }
 
 const HOME = os.homedir();
-const MANAGED_AGENTS = ["explorer", "deep-reasoner", "fast-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
-const WRITABLE_AGENTS = new Set(["fast-worker", "root-cause-prover", "harness-evaluator"]);
+const MANAGED_AGENTS = ["explorer", "deep-reasoner", "fast-worker", "deep-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
+const WRITABLE_AGENTS = new Set(["fast-worker", "deep-worker", "root-cause-prover", "harness-evaluator"]);
 const CLAUDE_TARGET_DIR = path.join(HOME, ".claude", "agents");
 const CODEX_TARGET_DIR = path.join(HOME, ".codex", "agents");
 const USER_MANAGED_RECEIPT_PATH = path.join(HOME, ".repo-harness", "agent-fleet-user-managed.json");
@@ -137,10 +137,18 @@ function buildFamilyEffortMap(sourceLabel, targetModel, targetLabel) {
 }
 
 const MODEL_EFFORT_MAP = {
-  opus: buildFamilyEffortMap("Opus", "gpt-5.6-sol", "GPT-5.6 Sol"),
+  opus: buildFamilyEffortMap("Opus", "gpt-5.6-terra", "GPT-5.6 Terra"),
   sonnet: buildFamilyEffortMap("Sonnet", "gpt-5.6-luna", "GPT-5.6 Luna"),
   haiku: buildFamilyEffortMap("Haiku", "gpt-5.6-luna", "GPT-5.6 Luna"),
   fable: buildFamilyEffortMap("Fable", "gpt-5.6-sol", "GPT-5.6 Sol"),
+};
+
+// Per-agent Codex target overrides — the only effort remaps in the fleet.
+// fast-worker trades the opus/terra default down to Luna at max; deep-worker
+// bumps terra effort to xhigh. Everything else follows the family default.
+const AGENT_TARGET_OVERRIDES = {
+  "fast-worker": { model: "gpt-5.6-luna", effort: "max", targetDescription: "GPT-5.6 Luna at max reasoning" },
+  "deep-worker": { model: "gpt-5.6-terra", effort: "xhigh", targetDescription: "GPT-5.6 Terra at xhigh reasoning" },
 };
 
 function readSource(agent) {
@@ -383,7 +391,8 @@ for (const agent of MANAGED_AGENTS) {
     continue;
   }
 
-  prepared.push({ agent, source: source.text, parsed, mapped: validation.mapped });
+  const mapped = { ...validation.mapped, ...(AGENT_TARGET_OVERRIDES[agent] ?? {}) };
+  prepared.push({ agent, source: source.text, parsed, mapped });
 }
 
 if (prepared.length !== MANAGED_AGENTS.length) {

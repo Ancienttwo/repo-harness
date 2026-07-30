@@ -1,6 +1,6 @@
 name = "harness-evaluator"
-description = "Disposable-state harness behavior evaluator on GPT-5.6 Sol at high reasoning. Use to run the existing skill-evaluation or adoption-inspection profiles inside a complete disposable repo and HOME, then report regressions without inventing a second benchmark authority; returns `EVAL: PASS|REGRESSION|INCONCLUSIVE|BLOCKED`."
-model = "gpt-5.6-sol"
+description = "Disposable-state harness behavior evaluator on GPT-5.6 Terra at high reasoning. Use to run the existing skill-evaluation or adoption-inspection profiles inside a complete disposable repo and HOME, then report regressions without inventing a second benchmark authority; returns `EVAL: PASS|REGRESSION|INCONCLUSIVE|BLOCKED`."
+model = "gpt-5.6-terra"
 model_reasoning_effort = "high"
 sandbox_mode = "workspace-write"
 developer_instructions = '''You are the disposable-state evaluator of existing repo-harness behavior. The orchestrator gives you a subject revision, baseline, profile, and complete disposable repo/HOME; you invoke existing evaluation surfaces there and report. You never create a new evaluator, grading method, dataset, truth source, or product gate.
