@@ -296,7 +296,7 @@
       "id": 7,
       "slug": "route-existing-repo-init",
       "prompt": "Initialize this existing repo with the repo-harness workflow. Do not create a new Vite or app scaffold; just add the repo-local harness, hooks, docs/spec.md, tasks, plans, .ai/context, and .ai/harness.",
-      "expected_output": "Routes the request to repo-harness-setup, inspects the existing repo first, applies the canonical repo-harness adopt transaction, and explicitly avoids app scaffolding.",
+      "expected_output": "Routes the request to repo-harness-setup, inspects the existing repo first, applies the canonical repo-harness init transaction, and explicitly avoids app scaffolding.",
       "files": [
         "evals/fixtures/new-project-empty"
       ],
@@ -315,7 +315,7 @@
           },
           {
             "path": "final-response.md",
-            "pattern": "repo-harness adopt"
+            "pattern": "repo-harness init"
           }
         ]
       },
@@ -333,7 +333,7 @@
       },
       "expectations": [
         "Treats init as existing-repo adoption, not product scaffold creation.",
-        "Names repo-harness-setup as the public command (adopt/init mode).",
+        "Names repo-harness-setup as the public command (init mode).",
         "Keeps hook and docs initialization behind the migration engine."
       ]
     },
@@ -372,7 +372,7 @@
         "files_not_contain": [
           {
             "path": "final-response.md",
-            "pattern": "adopt.*existing repo only"
+            "pattern": "init.*existing repo only"
           },
           {
             "path": "final-response.md",
@@ -544,7 +544,7 @@
           },
           {
             "path": "final-response.md",
-            "pattern": "repo-harness adopt.*dry-run"
+            "pattern": "repo-harness init.*dry-run"
           }
         ]
       },
@@ -696,14 +696,14 @@
         "files_not_contain": [
           {
             "path": "final-response.md",
-            "pattern": "repo-harness adopt.*--apply"
+            "pattern": "repo-harness init.*--apply"
           }
         ]
       },
       "expectations": [
         "Uses explicit prefixes instead of inferring broad directory globs.",
         "Creates only requested local AGENTS.md and CLAUDE.md contract files.",
-        "Does not run the full repo-harness-setup adopt-init path."
+        "Does not run the full repo-harness-setup init path."
       ]
     },
     {
@@ -737,7 +737,7 @@
         "files_not_contain": [
           {
             "path": "final-response.md",
-            "pattern": "repo-harness adopt.*--apply"
+            "pattern": "repo-harness init.*--apply"
           }
         ]
       },
@@ -929,8 +929,8 @@
     {
       "id": 22,
       "slug": "route-init-vs-scaffold-contrast",
-      "prompt": "Decide whether this request should use repo-harness-setup's adopt/init mode or its scaffold mode: I have an existing repo and only want hooks, docs/spec.md, tasks, plans, .ai/context, and .ai/harness added.",
-      "expected_output": "Routes to repo-harness-setup's adopt/init mode, names scaffold as the new-project mode only, and avoids creating a Vite or other app scaffold.",
+      "prompt": "Decide whether this request should use repo-harness-setup's init mode or its scaffold mode: I have an existing repo and only want hooks, docs/spec.md, tasks, plans, .ai/context, and .ai/harness added.",
+      "expected_output": "Routes to repo-harness-setup's init mode, names scaffold as the new-project mode only, and avoids creating a Vite or other app scaffold.",
       "files": [
         "evals/fixtures/new-project-empty"
       ],

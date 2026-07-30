@@ -43,7 +43,7 @@ cross-review/merge-gate rows.
 | Review an existing harness plan | `repo-harness-plan` (review mode) | Product, engineering, design, and DevEx review dimensions |
 | Continue the active task automatically | root `repo-harness` (execute action) | Follows Effective State through the existing plan -> contract -> worktree -> verify chain; no invented workflow-run engine |
 | Ship finished work | `repo-harness-ship` | Validates finished worktrees, pushes branches, and creates PRs by default |
-| Add harness to an existing repo | `repo-harness-setup` (adopt-init mode) | Uses inspector and migration engine; does not create an app stack |
+| Add harness to an existing repo | `repo-harness-setup` (init mode) | Uses inspector and migration engine; does not create an app stack |
 | Create a new app or module scaffold | `repo-harness-setup` (scaffold mode) | Uses plan catalog A-K, then attaches the harness |
 | Convert legacy workflow surfaces | `repo-harness-setup` (migrate mode) | Archives or preserves user-authored legacy docs |
 | Refresh an installed harness | `repo-harness-setup` (upgrade mode) | Runs manifest-owned upgrade actions only |
@@ -61,7 +61,7 @@ cross-review/merge-gate rows.
 | Consult GPT Pro through browser session | `repo-harness-chatgpt` (consult/continue modes) | Uses `gptpro consult/read/continue/open` wording while mapping to `browser-consult`, `browser-session`, `browser-followup`, and `browser-open` engine commands |
 
 `hooks-init`, `docs-init`, and `create-project-dirs` are not public commands.
-They are implementation steps behind setup's adopt-init, scaffold, migrate,
+They are implementation steps behind setup's init, scaffold, migrate,
 and upgrade modes.
 
 ## Due Diligence Levels

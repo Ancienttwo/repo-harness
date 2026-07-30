@@ -73,7 +73,7 @@ allowed_paths:
   - tasks/reviews/20260730-1855-cli-init-rename.review.md
   - tasks/notes/20260730-1855-cli-init-rename.notes.md
   - tasks/notes/init-update-cli-semantics.notes.md
-  - tasks/archive/notes/
+  - tasks/archive/
   - .ai/context/capabilities.json
   - .claude/templates/
   - .claude/agents/harness-evaluator.md

@@ -23,7 +23,7 @@ Weak dependencies:
 - `repo-harness install --profile <profile>` owns first-run global bootstrap;
   the closed vocabulary is `minimal|full`, and full is the default.
 - `repo-harness uninstall` removes repo-harness managed host adapters without deleting sibling hooks or third-party tools.
-- `repo-harness adopt` owns repo-local harness adoption and refresh.
+- `repo-harness init` owns repo-local harness adoption and refresh.
 - `geju` is a pre-contract framing skill; repo-harness has no external knowledge-CLI runtime or readiness dependency. This self-host repo vendors CodeGraph as a dev dependency while downstream generated repos keep global MCP setup explicit unless policy opts in.
 
 Out of scope:
@@ -43,10 +43,10 @@ persists protocol-2 `~/.repo-harness/install-state.json`. Explicit
 protocol-1 state is rejected outside `--migrate-profile-state`.
 
 Concrete route: user asks for an existing repo install -> root `SKILL.md`
-selects the setup action -> `repo-harness-setup` (adopt/init mode) routes to
-`repo-harness adopt --repo <repo>` ->
+selects the setup action -> `repo-harness-setup` (init mode) routes to
+`repo-harness init --repo <repo>` ->
 the command runs `inspect-project-state.ts --repo <repo> --format text` -> if no
-legacy state is found, `repo-harness adopt --repo <repo>`
+legacy state is found, `repo-harness init --repo <repo>`
 installs or refreshes the workflow -> repo-local checks verify the target repo.
 
 Concrete route: user asks for product discovery or a complex/design architecture

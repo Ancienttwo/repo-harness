@@ -30,7 +30,7 @@ the mutation executes only when the selected registered repo has
 ## Repo Administration
 
 Adopted repos are registered in `~/.repo-harness/registered-repos.json` by
-`repo-harness adopt`, `repo-harness init`, or user-scope ChatGPT MCP setup.
+`repo-harness init` or user-scope ChatGPT MCP setup.
 Use `discover_harness_repos` from the Connector to discover the registered
 `repo_id` before calling general repo tools. `list_allowed_roots` is only for
 the separate session-local workspace capability.

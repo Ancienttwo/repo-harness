@@ -1,7 +1,7 @@
 # Migration Guide (current repo-harness contract)
 
 This guide upgrades an existing repository to the current `repo-harness`
-tasks-first contract. The canonical public entrypoint is `repo-harness adopt`.
+tasks-first contract. The canonical public entrypoint is `repo-harness init`.
 
 ## Current Contract Surface
 
@@ -30,7 +30,7 @@ tasks-first contract. The canonical public entrypoint is `repo-harness adopt`.
 - Helper commands are installed from `assets/workflow-contract.v1.json`,
   including plan, sprint, contract-worktree, handoff, verification, capability,
   and architecture helpers.
-- External Waza/CodeGraph tooling is advisory and never auto-installed by adopt.
+- External Waza/CodeGraph tooling is advisory and never auto-installed by init.
 - `_ref/` and `_ops/` remain local surfaces; migration does not vendor, rewrite,
   or delete them.
 
@@ -38,10 +38,10 @@ tasks-first contract. The canonical public entrypoint is `repo-harness adopt`.
 
 ```bash
 # Preview only
-repo-harness adopt --repo /path/to/project --dry-run
+repo-harness init --repo /path/to/project --dry-run
 
 # Apply migration
-repo-harness adopt --repo /path/to/project
+repo-harness init --repo /path/to/project
 ```
 
 ## What the Transaction Does

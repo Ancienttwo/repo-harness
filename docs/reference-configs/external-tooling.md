@@ -40,7 +40,7 @@ runtime by default. Third-party tooling and CodeGraph registration stay
 readiness findings from `repo-harness setup check` unless the update command is
 run with an explicit opt-in such as `--with-external-skills` or
 `--configure-codegraph`. Repo-local workflow refresh stays on
-`repo-harness adopt`; `setup check --check-updates` reports an Agent action when
+`repo-harness init`; `setup check --check-updates` reports an Agent action when
 the current adopted repo's dry-run adoption plan has pending operations.
 
 The cross-review skill is **harness-owned and self-contained** — its source
@@ -177,7 +177,7 @@ command directly unless local policy explicitly opts into vendoring.
 
 `repo-harness setup check --target <host> --check-updates --json` reports the
 execution base as separate `runtime.*` checks and reports repo-local adoption
-refresh as `repo.adopt-refresh` when the current repo has opted in. Keep the
+refresh as `repo.init-refresh` when the current repo has opted in. Keep the
 boundary explicit:
 
 | Capability | Owner | Required for |
@@ -452,7 +452,7 @@ writes to bugfix evidence inside the active contract's allowed paths;
 harness-evaluator runs existing skill/adoption surfaces only when both repo and
 HOME pass the runner's disposable boundary: skills uses `--require-disposable`,
 while adoption uses one `--run-adoption-profile` invocation that injects the
-validated repo/HOME into inspector and adopt dry-run. Guarded skills overrides
+validated repo/HOME into inspector and init dry-run. Guarded skills overrides
 the ordinary sibling workspace default with a repo-internal workspace, and both
 profiles scrub inherited repo-harness source/helper overrides. The guard rejects source
 checkout and real HOME in either argument position; the role returns BLOCKED

@@ -91,7 +91,7 @@ L'ensemble se découpe en trois couches, avec un seul runtime typed pour les hos
 1. **Couche package source** : ce dépôt maintient le CLI, les command skill
    facades, les templates, les hook assets, le workflow contract, les tests et le
    release gate.
-2. **Couche contrat du dépôt cible** : `repo-harness adopt` ou une migration écrit
+2. **Couche contrat du dépôt cible** : `repo-harness init` ou une migration écrit
    `docs/spec.md`, `plans/`, `tasks/`, `.ai/context/`, `.ai/harness/` et les helper
    scripts. `.ai/hooks/lib/workflow-state.sh` n'est qu'une projection d'operator helper.
 3. **Couche host adapter** : les `~/.claude/settings.json` et `~/.codex/hooks.json`
@@ -225,7 +225,7 @@ repo-harness install
 ```
 
 `repo-harness install` sert au bootstrap global, `repo-harness update` au
-rafraîchissement user-level, et `repo-harness adopt` au rafraîchissement
+rafraîchissement user-level, et `repo-harness init` au rafraîchissement
 repo-local. `repo-harness install` configure le CLI, les hook adapters de niveau
 utilisateur, Waza, Mermaid, le brain root et CodeGraph MCP ; l'ancien chemin
 Claude plugin `scripts/setup-plugins.sh` est retiré.
@@ -233,26 +233,26 @@ Claude plugin `scripts/setup-plugins.sh` est retiré.
 ### 3. Prévisualiser le contrat repo-local
 
 ```bash
-repo-harness adopt --dry-run
+repo-harness init --dry-run
 ```
 
 Lancez le dry-run depuis le repo root. Il rapporte les specs, l'état des tasks,
 le helper runtime, la cible des hook adapters et les fichiers de vérification qui
 seraient créés ou rafraîchis. Il ne doit pas créer de stack applicatif : un dépôt
-existant utilise `repo-harness adopt`, un nouveau projet ou module utilise le
+existant utilise `repo-harness init`, un nouveau projet ou module utilise le
 mode scaffold de `repo-harness-setup`.
 
 ### 4. Appliquer, puis prouver le workflow
 
 ```bash
-repo-harness adopt
+repo-harness init
 bash scripts/check-task-workflow.sh --strict
 bun test
 ```
 
 Après application, le dépôt doit avoir un contract file-backed auditable plutôt
 qu'une configuration de chat propre à un outil. Pour un nouveau projet ou module,
-utilisez le mode scaffold de `repo-harness-setup` au lieu de `adopt`. Les maintainers éditant le
+utilisez le mode scaffold de `repo-harness-setup` au lieu de `init`. Les maintainers éditant le
 package lui-même ont besoin d'un source checkout — voir
 [Maintainer Reference](#maintainer-reference).
 
@@ -456,7 +456,7 @@ appartient au CLI et aux hooks :
 
 - Router : `repo-harness` (Skill racine, synchronisé sans condition sur chaque
   profile)
-- Couche setup : `repo-harness-setup` (modes adopt/init, migrate, upgrade,
+- Couche setup : `repo-harness-setup` (modes init, migrate, upgrade,
   repair, scaffold, et capability-configuration ; router-only, jamais
   découvert automatiquement par un profile)
 - Planning : `repo-harness-plan` (crée un plan decision-complete, ou revoit un
@@ -496,7 +496,7 @@ Codex/Claude et garde le PRD/Sprint comme source of truth. Si ce document
 manque, le mode Goal doit le demander avant de lancer une implémentation depuis
 le chat.
 
-`repo-harness adopt` sert aux dépôts existants ; le mode scaffold de
+`repo-harness init` sert aux dépôts existants ; le mode scaffold de
 `repo-harness-setup` sert à créer un nouveau projet ou module. `hooks-init`,
 `docs-init` et `create-project-dirs` sont des étapes internes, pas des
 commands publiques.
@@ -558,7 +558,7 @@ bun test
 bash scripts/check-task-sync.sh
 bash scripts/check-task-workflow.sh --strict
 bun scripts/inspect-project-state.ts --repo . --format text
-bun src/cli/index.ts adopt --repo . --dry-run
+bun src/cli/index.ts init --repo . --dry-run
 bash scripts/check-agent-tooling.sh --host both --check-updates
 bun run benchmark:skills --eval route-workflow-check
 ```
@@ -633,7 +633,7 @@ bash scripts/check-architecture-sync.sh
 bash scripts/check-task-sync.sh
 bash scripts/check-task-workflow.sh --strict
 bun scripts/inspect-project-state.ts --repo . --format text
-bun src/cli/index.ts adopt --repo . --dry-run
+bun src/cli/index.ts init --repo . --dry-run
 bash scripts/check-agent-tooling.sh --host both --check-updates
 bun run benchmark:skills --eval route-workflow-check
 ```

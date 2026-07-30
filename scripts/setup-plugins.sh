@@ -32,12 +32,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 if command -v repo-harness >/dev/null 2>&1; then
-  exec repo-harness init "${args[@]}"
+  exec repo-harness install "${args[@]}"
 fi
 
 if command -v bun >/dev/null 2>&1; then
-  exec bun "$ROOT_DIR/src/cli/index.ts" init "${args[@]}"
+  exec bun "$ROOT_DIR/src/cli/index.ts" install "${args[@]}"
 fi
 
-echo "[setup-plugins] repo-harness or bun is required to run the modern init path." >&2
+echo "[setup-plugins] repo-harness or bun is required to run the modern install path." >&2
 exit 1

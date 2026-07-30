@@ -46,7 +46,7 @@ This repository self-hosts the `repo-harness` contract; the former `repo-harness
 - Treat `.ai/harness/brain-manifest.json` and `repo-harness run sync-brain-docs` as explicit operator-invoked export surfaces only; hooks and workflow checks must not read, write, or gate on external brain-vault state.
 - Treat Waza as Codex-first: `~/.codex/skills` is the Codex runtime source; `~/.agents/skills` is skills CLI staging/cache only. Update by staging upstream Waza, copying the eight managed `SKILL.md` files into Codex, and verifying with `cmp`.
 - Use `docs/reference-configs/external-tooling.md` and `bash scripts/check-agent-tooling.sh --host both --check-updates` for environment checks; this self-host repo vendors CodeGraph as a dev dependency while generated downstream repos keep the global MCP default unless local policy opts in.
-- When changing adoption planner or transaction code, verify `repo-harness adopt --repo . --dry-run` and a fixture apply use the same TS operation model.
+- When changing adoption planner or transaction code, verify `repo-harness init --repo . --dry-run` and a fixture apply use the same TS operation model.
 - Treat repo-local `.claude/settings.json` and `.codex/hooks.json` hook adapters as retired legacy config; migration may back them up locally, but they are not product deliverables.
 
 ## Code Optimization Principles
@@ -65,7 +65,7 @@ bash scripts/check-architecture-sync.sh
 bash scripts/check-task-sync.sh
 repo-harness run check-task-workflow --strict
 bun scripts/inspect-project-state.ts --repo . --format text
-bun src/cli/index.ts adopt --repo . --dry-run
+bun src/cli/index.ts init --repo . --dry-run
 ```
 
 <!-- BEGIN ARCHITECTURE CONTRACT -->

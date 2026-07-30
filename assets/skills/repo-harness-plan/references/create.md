@@ -10,7 +10,7 @@ work. Run the shared preflight in `../SKILL.md` first.
 1. Read repo-local `AGENTS.md`, `CLAUDE.md`, `tasks/todos.md`, and `.ai/harness/policy.json` when present.
 2. For product discovery and complex/design or architecture planning, invoke `geju` before a contract exists to establish the thesis, direction, falsifier, and cheapest proof point. The parent agent then completes P1/P2/P3 with its own repo/runtime capabilities; no external planning provider owns or blocks this lifecycle.
 3. Before recommending implementation, write a workflow inventory: active plan path, expected contract/review/notes files, `tasks/todos.md`, `.ai/harness/checks/latest.json`, `.ai/harness/runs/`, allowed-path owner, and the plan switching or worktree isolation rule.
-4. Produce one recommended plan and name the next action: `repo-harness-setup` (selecting its adopt-init, scaffold, migrate, upgrade, or repair mode) or `repo-harness-check`.
+4. Produce one recommended plan and name the next action: `repo-harness-setup` (selecting its init, scaffold, migrate, upgrade, or repair mode) or `repo-harness-check`.
 5. When the plan is decision-complete, capture it with `repo-harness run capture-plan --slug <slug> --title <title>` so the repo has a file-backed `plans/plan-*.md` artifact.
 
 ## Delegation Brief

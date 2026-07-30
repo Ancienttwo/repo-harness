@@ -1,7 +1,7 @@
 # Hooks Configuration Guide
 
 This guide describes the typed host-event runtime and the operator-helper
-projection installed by `repo-harness adopt`.
+projection installed by `repo-harness init`.
 
 ## Runtime Source of Truth
 
@@ -73,10 +73,10 @@ the route tuple and typed handler registry unchanged.
 
 ## Operator Helpers and Migration
 
-`repo-harness adopt` projects the declared helper library into
+`repo-harness init` projects the declared helper library into
 `.ai/hooks/lib/`, including `workflow-state.sh`, and removes retired generated
 entry scripts by manifest ownership. It does not install a repo-local dispatcher.
-Run `repo-harness adopt --repo <repo> --dry-run` before applying a migration.
+Run `repo-harness init --repo <repo> --dry-run` before applying a migration.
 
 Generated `.claude/hooks/` shims are legacy cleanup targets. Custom
 `.claude/hooks/custom-*.sh` files are user-owned and remain outside the typed

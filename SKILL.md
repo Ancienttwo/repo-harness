@@ -18,7 +18,7 @@ Treat that JSON as the state authority; read Plan, Contract, checks, handoff, or
 
 ## Actions
 
-1. **setup** — install, adopt, migrate, repair, or scaffold the harness. Use `repo-harness-setup`; inspect first with `repo-harness adopt --repo . --dry-run`, or run `repo-harness docs show harness-overview` when detail is needed.
+1. **setup** — install, init, migrate, repair, or scaffold the harness. Use `repo-harness-setup`; inspect first with `repo-harness init --repo . --dry-run`, or run `repo-harness docs show harness-overview` when detail is needed.
 2. **plan** — create or capture a decision-complete plan. Use `repo-harness-plan`; run `repo-harness docs show agentic-development-flow` for promotion boundaries.
 3. **execute** — continue the active task via its resolved profile and allowed paths: Lite (brief → edit → test), Standard (plan → edit → verify → one review), Strict (Contract/worktree/checks/external-acceptance).
 4. **verify** — run targeted tests and the profile-required gates. Use `repo-harness-check`; never infer provider-owned evidence.

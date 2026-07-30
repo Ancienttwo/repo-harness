@@ -55,7 +55,7 @@ deterministic and never spawn an LLM or a long-running worker.
 
 ## Host and Adoption Operations
 
-`repo-harness adopt` installs the user-level adapters, writes the workflow
+`repo-harness init` installs the user-level adapters, writes the workflow
 contract, and projects only the declared operator helpers into `.ai/hooks/lib/`.
 It removes retired generated hook entry scripts by exact manifest ownership and
 does not create a repo-local dispatcher. Project-level `.claude/settings.json`
@@ -106,7 +106,7 @@ such as `scripts/contract-run.ts`.
 `assets/hooks/` is the package asset source; the self-hosted `.ai/hooks/` tree
 contains the generated operator-helper projection. Keep the two declared asset
 manifests aligned with `bun run sync:hooks`, and validate the typed route
-registry with `bun test` and `repo-harness adopt --repo . --dry-run`.
+registry with `bun test` and `repo-harness init --repo . --dry-run`.
 
 ## Verification Checklist
 
@@ -116,5 +116,5 @@ After handler or workflow-contract changes, run:
 bun test
 repo-harness run check-task-sync
 repo-harness run check-task-workflow --strict
-repo-harness adopt --repo . --dry-run
+repo-harness init --repo . --dry-run
 ```

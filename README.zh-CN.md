@@ -79,7 +79,7 @@ Release notes 见 [`docs/CHANGELOG.md`](docs/CHANGELOG.md)，当前版本线是 
 
 1. **源码包层**：本仓库维护 CLI、CLI-backed command facades、templates、hook assets、
    workflow contract、tests 和 release gate。
-2. **目标仓库合约层**：`repo-harness adopt` 或 migration 会写入 `docs/spec.md`、
+2. **目标仓库合约层**：`repo-harness init` 或 migration 会写入 `docs/spec.md`、
    `plans/`、`tasks/`、`.ai/context/`、`.ai/harness/` 和 helper scripts；
    `.ai/hooks/lib/workflow-state.sh` 只作为 operator helper projection。
 3. **Host adapter 层**：user-level `~/.claude/settings.json` 和 `~/.codex/hooks.json`
@@ -242,11 +242,10 @@ skill aliases，安装 user-level hook adapters，配置 Waza runtime skills，�
 root 持久化到 `~/.repo-harness/config.json`，并配置 CodeGraph MCP。这个命令是
 幂等的：如果 CLI 已经来自 Bun global package source，它会跳过 CLI 重装，但仍继续
 刷新 host runtime pieces。它不会把当前目录默认迁移成 repo-local workflow。
-`repo-harness init` 保留为兼容 alias，给已有脚本用。
 
 如果要让 Agent 做只读 bootstrap audit，运行 `repo-harness setup check
 --json`；需要版本和已接入仓库刷新提示时加 `--check-updates`。`setup check`
-不是 runtime hook：它不会写 user-level files、安装更新、执行 `adopt` 或注册
+不是 runtime hook：它不会写 user-level files、安装更新、执行 `init` 或注册
 adapters，只输出带 reason、risk、targets、可选 command 和 verification 的
 `agent_actions`，由 Agent 再显式执行。
 `repo-harness init-hook` 保留为兼容 alias。
@@ -267,23 +266,23 @@ repo-harness install --target both --location global
 repo-harness update --check
 
 # 刷新已接入仓库里的 repo-local workflow 文件。
-repo-harness adopt --repo /path/to/repo
+repo-harness init --repo /path/to/repo
 ```
 
 ### 3. 预览 repo-local contract
 
 ```bash
-repo-harness adopt --dry-run
+repo-harness init --dry-run
 ```
 
 在目标仓库根目录运行 dry-run。它会报告将要创建或刷新的 spec、task state、
 helper runtime、hook adapter target 和 verification files。它不会创建应用技术栈；
-已有仓库走 `repo-harness adopt`，新项目或新模块走 `repo-harness-setup` 的 scaffold mode。
+已有仓库走 `repo-harness init`，新项目或新模块走 `repo-harness-setup` 的 scaffold mode。
 
 ### 4. 应用后验证 workflow
 
 ```bash
-repo-harness adopt
+repo-harness init
 bash scripts/check-task-workflow.sh --strict
 bun test
 ```
@@ -292,7 +291,7 @@ bun test
 聊天配置。agent 应该能在 `docs/spec.md` 找到稳定意图，在 `plans/` 和 `tasks/`
 找到执行状态，在 `.ai/harness/handoff/` 找到可恢复状态。
 
-新项目或新模块用 `repo-harness-setup` 的 scaffold mode 代替 `adopt`；它会安装或
+新项目或新模块用 `repo-harness-setup` 的 scaffold mode 代替 `init`；它会安装或
 刷新 harness，不会创建应用技术栈。维护者编辑 package 源码需要 source checkout
 —— 见 [Maintainer Reference](#maintainer-reference)。
 
@@ -488,7 +487,7 @@ canonical rule-owner package 分布在 `assets/skills/`（已激活的 canonical
 的边界，真正执行由 CLI 和 hooks 负责：
 
 - Router：`repo-harness`（root Skill，无条件同步到每个 profile）
-- Setup layer：`repo-harness-setup`（adopt/init、migrate、upgrade、repair、
+- Setup layer：`repo-harness-setup`（init、migrate、upgrade、repair、
   scaffold、capability-configuration 各 mode；仅 router-only，不被任何 profile
   自动发现）
 - Planning：`repo-harness-plan`（创建 decision-complete plan，或 review 已有 plan）
@@ -521,7 +520,7 @@ Sprint artifact 后使用，用它生成有边界的 Codex/Claude `/goal` prompt
 PRD/Sprint 保持为 source of truth。缺少这份文档时，Goal mode 必须先要求补文档，
 而不是从聊天上下文直接开工。
 
-`repo-harness adopt` 用于已有仓库；`repo-harness-setup` 的 scaffold mode 创建新
+`repo-harness init` 用于已有仓库；`repo-harness-setup` 的 scaffold mode 创建新
 项目或模块。`hooks-init`、`docs-init` 和 `create-project-dirs` 是内部步骤，不是
 公共 commands。
 
@@ -590,7 +589,7 @@ bash scripts/check-architecture-sync.sh
 bash scripts/check-task-sync.sh
 bash scripts/check-task-workflow.sh --strict
 bun scripts/inspect-project-state.ts --repo . --format text
-bun src/cli/index.ts adopt --repo . --dry-run
+bun src/cli/index.ts init --repo . --dry-run
 bash scripts/check-agent-tooling.sh --host both --check-updates
 bun run benchmark:skills --eval route-workflow-check
 ```
@@ -665,7 +664,7 @@ bash scripts/check-architecture-sync.sh
 bash scripts/check-task-sync.sh
 bash scripts/check-task-workflow.sh --strict
 bun scripts/inspect-project-state.ts --repo . --format text
-bun src/cli/index.ts adopt --repo . --dry-run
+bun src/cli/index.ts init --repo . --dry-run
 bash scripts/check-agent-tooling.sh --host both --check-updates
 bun run benchmark:skills --eval route-workflow-check
 ```
