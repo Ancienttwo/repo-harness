@@ -186,4 +186,114 @@ describe("contract-worktree cleanup squash-merge absorption", () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 15000);
+
+  // Regression guard for the branch-deletion half of the fix: the merge
+  // gate above already proves absorption/ancestry -- the deletion step must
+  // consume that predicate instead of re-deriving it via git's own
+  // ancestry-based `-d` safety check, which is a guaranteed false positive
+  // for every squash-absorbed branch. See:
+  //   plans/plan-20260731-1056-contract-worktree-branch-delete.md
+  //   tasks/contracts/20260731-1056-contract-worktree-branch-delete.contract.md
+  test("cleanup deletes a squash-merged branch end to end on a real (non-dry-run) run", () => {
+    const cwd = tmpWorkspace("helper-cleanup-squash-real");
+    const worktreePath = `${cwd}-wt-squash-real`;
+    try {
+      copyHelpers(cwd);
+      initGitRepo(cwd);
+      writeFileSync(join(cwd, "README.md"), "# demo\n");
+      commitAll(cwd, "init squash real cleanup");
+
+      expect(run("git", ["worktree", "add", worktreePath, "-b", "codex/squash-real"], cwd).status).toBe(0);
+      writeFileSync(join(worktreePath, "feature.txt"), "squash feature\n");
+      commitAll(worktreePath, "add squash feature");
+
+      expect(run("git", ["merge", "--squash", "codex/squash-real"], cwd).status).toBe(0);
+      commitAll(cwd, "squash-merge codex/squash-real");
+      expect(
+        run("git", ["merge-base", "--is-ancestor", "codex/squash-real", "main"], cwd).status,
+      ).not.toBe(0);
+
+      mkdirSync(join(cwd, ".ai/harness/worktrees"), { recursive: true });
+      writeFileSync(join(cwd, ".ai/harness/worktrees/squash-real.json"), '{"slug":"squash-real"}\n');
+
+      const result = run(
+        "bash",
+        ["scripts/contract-worktree.sh", "cleanup", "--slug", "squash-real"],
+        cwd,
+      );
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("absorbed into main (squash-equivalent tree)");
+      expect(result.stdout).toContain("Deleted branch: codex/squash-real (-D, absorbed)");
+
+      // The real assertion this test exists for: cleanup must finish in one
+      // pass -- worktree, branch, AND metadata all gone, exit 0. Pre-fix,
+      // `git branch -d` refuses (not fully merged) and `set -euo pipefail`
+      // kills the script before metadata removal, leaving the branch (and
+      // possibly the metadata) behind with a non-zero exit.
+      expect(existsSync(worktreePath)).toBe(false);
+      expect(
+        run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/squash-real"], cwd).status,
+      ).not.toBe(0);
+      expect(existsSync(join(cwd, ".ai/harness/worktrees/squash-real.json"))).toBe(false);
+    } finally {
+      run("git", ["worktree", "remove", "--force", worktreePath], cwd);
+      rmSync(worktreePath, { recursive: true, force: true });
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 15000);
+
+  test("cleanup deletes a plain-merged (ancestor) branch via -d on a real run", () => {
+    const cwd = tmpWorkspace("helper-cleanup-ancestor-real");
+    const worktreePath = `${cwd}-wt-ancestor-real`;
+    try {
+      copyHelpers(cwd);
+      initGitRepo(cwd);
+      writeFileSync(join(cwd, "README.md"), "# demo\n");
+      commitAll(cwd, "init ancestor real cleanup");
+
+      expect(run("git", ["worktree", "add", worktreePath, "-b", "codex/ancestor-real"], cwd).status).toBe(0);
+      writeFileSync(join(worktreePath, "feature.txt"), "ancestor feature\n");
+      commitAll(worktreePath, "add ancestor feature");
+
+      // Diverge main so the merge cannot fast-forward -- forces a real merge
+      // commit, proving the ancestor predicate (not the absorption
+      // fallback) is what fires here, and that the double-insurance -d path
+      // still works after the deletion step starts branching on merge_mode.
+      writeFileSync(join(cwd, "main-only.txt"), "main-only change\n");
+      commitAll(cwd, "diverge main");
+
+      expect(
+        run(
+          "git",
+          ["merge", "--no-ff", "-m", "merge codex/ancestor-real", "codex/ancestor-real"],
+          cwd,
+        ).status,
+      ).toBe(0);
+      expect(
+        run("git", ["merge-base", "--is-ancestor", "codex/ancestor-real", "main"], cwd).status,
+      ).toBe(0);
+
+      mkdirSync(join(cwd, ".ai/harness/worktrees"), { recursive: true });
+      writeFileSync(join(cwd, ".ai/harness/worktrees/ancestor-real.json"), '{"slug":"ancestor-real"}\n');
+
+      const result = run(
+        "bash",
+        ["scripts/contract-worktree.sh", "cleanup", "--slug", "ancestor-real"],
+        cwd,
+      );
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("ancestor of main");
+      expect(result.stdout).toContain("Deleted branch: codex/ancestor-real (-d, ancestor)");
+
+      expect(existsSync(worktreePath)).toBe(false);
+      expect(
+        run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/ancestor-real"], cwd).status,
+      ).not.toBe(0);
+      expect(existsSync(join(cwd, ".ai/harness/worktrees/ancestor-real.json"))).toBe(false);
+    } finally {
+      run("git", ["worktree", "remove", "--force", worktreePath], cwd);
+      rmSync(worktreePath, { recursive: true, force: true });
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 15000);
 });
