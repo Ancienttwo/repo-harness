@@ -46,11 +46,11 @@
 > **Actor**: not-applicable
 > **Reviewed Subject SHA256**: sha256:36dccfdb7f122ef2e897c312a93a04edb316b65272c07769829e7943fe3ff408
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: 8b506da48fac02cb1a9e7134037cabd506636212
-> **Verification Evidence SHA256**: sha256:0aeb8daa00caa1541154ab77ec939fb06fe3f29db33e570b400b7085be9a8ab3
-> **Issued At**: 2026-07-30T21:58:02.312Z
+> **Reviewed Target Revision**: 3c991466b6bdddbcd606f2888d33f2660eb7df64
+> **Verification Evidence SHA256**: sha256:572cf40cdbeaf333f16de2ef086c2717d96ef28e5674f6c4db16b2557e876308
+> **Issued At**: 2026-07-31T01:22:09.163Z
 
-- Summary: gatekeeper PASS after one repair round. assets/reference-configs/ is now the declared source and docs/reference-configs/ its byte-identical generated projection, enforced by scripts/sync-reference-configs.ts (--check/--write, modeled on sync-helper-sources.ts) wired into check-ci; the six scattered mirror-equality assertions are replaced by a single loop covering all 23 projected pairs green, and negative verification confirmed the loop fails closed on induced drift rather than silently passing. harness-overview.md was re-unified taking the docs side as truth, justified by the assets side still carrying retired compatibility-fallback wording. The audited LOW-risk test simplifications S1-S5 landed as specified. Verified after replaying this branch onto the squash-merged parent: 14/14 exit criteria green, allowed_paths clean at 19 files against fork point 8b506da4, full suite 2099 pass 0 fail, and check:reference-configs green.
+- Summary: gatekeeper PASS after one repair round. assets/reference-configs/ is now the declared source and docs/reference-configs/ its byte-identical generated projection, enforced by scripts/sync-reference-configs.ts (--check/--write, modeled on sync-helper-sources.ts) wired into check-ci; the six scattered mirror-equality assertions are replaced by a single loop covering all 23 projected pairs green, and negative verification confirmed the loop fails closed on induced drift rather than silently passing. harness-overview.md was re-unified taking the docs side as truth, justified by the assets side still carrying retired compatibility-fallback wording. The audited LOW-risk test simplifications S1-S5 landed as specified. Verified after replaying onto the merged fingerprint fix 3c991466: 14/14 exit criteria green, allowed_paths clean at 19 files, full suite green, and check:reference-configs green. This receipt was re-recorded under the fixed key-order-invariant fingerprint; the original was unverifiable under the old algorithm.
 - Findings: none
 
 ## Behavior Diff Notes
