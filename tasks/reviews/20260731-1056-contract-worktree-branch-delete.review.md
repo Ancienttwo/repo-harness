@@ -40,17 +40,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:80bc2f28eaba1dde5b268d28c8ed86a0a61e14cac20d7fe170ac51f8b82f4b90
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: a37c16e4393c374877b9472bd3d771c0862fab12
+> **Verification Evidence SHA256**: sha256:06f5d71d65690f15b38b1ecdaf09b12f8fc743fbf099fd5c2bb920699ce48524
+> **Issued At**: 2026-07-31T08:08:07.426Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: Gatekeeper PASS: force-boundary verified (merge_mode flag scope + unreachable-state analysis), adversarial cases green, full suite 2105/0
 - Findings: none
 
 ## Behavior Diff Notes
