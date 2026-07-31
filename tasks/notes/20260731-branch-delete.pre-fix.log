@@ -1,0 +1,37 @@
+bun test v1.3.14 (0d9b296a)
+
+tests/contract-worktree-squash-cleanup.test.ts:
+219 |       const result = run(
+220 |         "bash",
+221 |         ["scripts/contract-worktree.sh", "cleanup", "--slug", "squash-real"],
+222 |         cwd,
+223 |       );
+224 |       expect(result.status).toBe(0);
+                                  ^
+error: expect(received).toBe(expected)
+
+Expected: 0
+Received: 1
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-contract-worktree-branch-delete/tests/contract-worktree-squash-cleanup.test.ts:224:29)
+(fail) contract-worktree cleanup squash-merge absorption > cleanup deletes a squash-merged branch end to end on a real (non-dry-run) run [370.28ms]
+281 |         ["scripts/contract-worktree.sh", "cleanup", "--slug", "ancestor-real"],
+282 |         cwd,
+283 |       );
+284 |       expect(result.status).toBe(0);
+285 |       expect(result.stdout).toContain("ancestor of main");
+286 |       expect(result.stdout).toContain("Deleted branch: codex/ancestor-real (-d, ancestor)");
+                                  ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "Deleted branch: codex/ancestor-real (-d, ancestor)"
+Received: "[ContractWorktree] Merge check for codex/ancestor-real: ancestor of main\n[ContractWorktree] Removed worktree: /private/var/folders/_6/dkz7p7251y1gqntnk0ll5n380000gn/T/helper-cleanup-ancestor-real-3i1n0A-wt-ancestor-real\nDeleted branch codex/ancestor-real (was c831a78).\n[ContractWorktree] Deleted branch: codex/ancestor-real\n[ContractWorktree] Removed metadata: .ai/harness/worktrees/ancestor-real.json\n"
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-contract-worktree-branch-delete/tests/contract-worktree-squash-cleanup.test.ts:286:29)
+(fail) contract-worktree cleanup squash-merge absorption > cleanup deletes a plain-merged (ancestor) branch via -d on a real run [413.34ms]
+
+ 2 pass
+ 2 fail
+ 78 expect() calls
+Ran 4 tests across 1 file. [1.56s]
+PRE_FIX_EXIT=1

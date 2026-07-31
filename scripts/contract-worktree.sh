@@ -1001,7 +1001,7 @@ cleanup_worktree() {
   fi
 
   local target_worktree current_root branch_prefix branch_name worktree_path metadata_file
-  local worktree_status repair_needed=0
+  local worktree_status repair_needed=0 merge_mode=""
   branch_prefix="$(policy_get '.worktree_strategy.branch_prefix' 'codex/')"
   branch_name="${branch_prefix}${slug}"
   metadata_file=".ai/harness/worktrees/${slug}.json"
@@ -1029,6 +1029,7 @@ cleanup_worktree() {
   if git show-ref --verify --quiet "refs/heads/$branch_name"; then
     if git merge-base --is-ancestor "$branch_name" "$target_branch" >/dev/null 2>&1; then
       echo "[ContractWorktree] Merge check for $branch_name: ancestor of $target_branch"
+      merge_mode="ancestor"
     else
       # Squash-merge (this repo's house ship flow) never makes the branch
       # tip an ancestor of the target. Fall back to an absorption check:
@@ -1043,6 +1044,7 @@ cleanup_worktree() {
       fi
       if [[ "$absorbed" -eq 1 ]]; then
         echo "[ContractWorktree] Merge check for $branch_name: absorbed into $target_branch (squash-equivalent tree)"
+        merge_mode="absorbed"
       else
         echo "contract-worktree: branch $branch_name is not fully merged into $target_branch; refusing cleanup" >&2
         exit 1
@@ -1088,8 +1090,21 @@ cleanup_worktree() {
   fi
 
   if git show-ref --verify --quiet "refs/heads/$branch_name"; then
-    git branch -d "$branch_name"
-    echo "[ContractWorktree] Deleted branch: $branch_name"
+    if [[ "$merge_mode" == "absorbed" ]]; then
+      # The absorption check above already proved this branch's tree is
+      # identical to target's -- git's own ancestry-based `-d` safety check
+      # is a guaranteed false positive here (squash-merge never makes the
+      # branch tip an ancestor of target), so force delete on this
+      # predicate only. Every other path (ancestor, or merge_mode unset
+      # because the branch was already absent at gate time -- which can't
+      # reach here since show-ref above would then be false) keeps the
+      # safer `-d`.
+      git branch -D "$branch_name"
+      echo "[ContractWorktree] Deleted branch: $branch_name (-D, absorbed)"
+    else
+      git branch -d "$branch_name"
+      echo "[ContractWorktree] Deleted branch: $branch_name (-d, ancestor)"
+    fi
   fi
 
   if [[ -e "$metadata_file" ]]; then
