@@ -20,11 +20,9 @@ function designBriefProjection(script: string): string {
 }
 
 describe("UX feature pre-implementation guard", () => {
-  test("ships one canonical runtime convention with a byte-identical self-host mirror", () => {
+  test("ships one canonical runtime convention", () => {
     const asset = read("assets/reference-configs/ux-feature-guard.md");
-    const mirror = read("docs/reference-configs/ux-feature-guard.md");
 
-    expect(mirror).toBe(asset);
     expect(asset).toContain("Instruction and payload are never interchangeable");
     expect(asset).toContain("design-brief template owns the exact Guard Card field schema");
     expect(asset).toContain("Do not change gameplay");
@@ -38,9 +36,7 @@ describe("UX feature pre-implementation guard", () => {
 
   test("routes UX feature creation through the guard before the existing brief and BDD flow", () => {
     const assetFlow = read("assets/reference-configs/agentic-development-flow.md");
-    const repoFlow = read("docs/reference-configs/agentic-development-flow.md");
 
-    expect(repoFlow).toBe(assetFlow);
     expect(assetFlow).toContain("repo-harness docs show ux-feature-guard");
     expect(assetFlow).toContain("then the existing design brief and BDD scenarios");
 

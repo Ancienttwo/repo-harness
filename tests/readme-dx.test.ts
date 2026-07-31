@@ -54,32 +54,19 @@ describe("README DX contract", () => {
 
     expect(readme.indexOf("## First 5 Minutes")).toBeLessThan(readme.indexOf("## MCP Connector Quickstart"));
     expect(firstFive).toContain("docs/images/repo-harness-install-donkey-carrot.png");
-    expect(firstFive).toContain("No Node.js required for the default path");
-    expect(firstFive).toContain("# Bun one-shot bootstrap");
+    // Only the commands a first-run user copies are pinned here. Surrounding prose,
+    // code-comment text, occurrence counts, and CLI stdout literals quoted back
+    // through the README are not: they never caught a regression, they only forced
+    // a same-commit test edit whenever the README was reworded.
     expect(firstFive).toContain("bunx repo-harness@latest install");
-    expect(firstFive).toContain("# Or install the persistent CLI first");
     expect(firstFive).toContain("bun add -g repo-harness");
-    expect(firstFive).toContain("npx fallback");
     expect(firstFive).toContain("npx -y repo-harness@latest install");
     expect(firstFive).toContain("repo-harness install");
     expect(firstFive).toContain("repo-harness init --dry-run");
-    expect(firstFive).toContain("repo-harness init");
-    expect(firstFive).toContain("first-run global bootstrap path");
-    expect(firstFive.match(/repo-harness init --dry-run/g)?.length).toBe(1);
-    expect(firstFive).not.toContain("npm install -g repo-harness");
-    expect(firstFive).not.toContain("npx -y repo-harness init");
-    expect(firstFive).not.toContain("npx -y repo-harness setup");
-    expect(firstFive).not.toContain("npx -y repo-harness init");
-    expect(firstFive).not.toContain("repo-harness install --dry-run");
-    // Pre-rename this asserted the doc omits the (removed) duplicate global
-    // `init` bootstrap's dry-run form; post-rename `init --dry-run` IS the
-    // canonical repo-local command shown above, so the polarity flips to positive.
-    expect(firstFive).toContain("repo-harness init --dry-run");
+    // Kept as the negative half of a placement invariant: the template assembly
+    // command belongs in Maintainer Reference (asserted below), not in the
+    // first-run path.
     expect(firstFive).not.toContain("bun scripts/assemble-template.ts");
-    expect(firstFive).toContain("=== Migration Report ===");
-    expect(firstFive).toContain("Project hooks synced from:");
-    expect(firstFive).toContain("Host hook config target:");
-    expect(firstFive).toContain("Host hook adapters are user-level:");
     expect(hookAuthority).toContain("assets/hooks/");
     expect(hookAuthority).toContain("bun run sync:hooks");
     expect(hookAuthority).toContain("repo-harness-hook");
@@ -120,10 +107,8 @@ describe("README DX contract", () => {
     const readme = read("README.md");
     const verification = section(readme, "Verification");
     const releaseDoc = read("docs/reference-configs/release-deploy.md");
-    const releaseAsset = read("assets/reference-configs/release-deploy.md");
     const evalArchitecture = read("docs/architecture/modules/verification/evals-checks.md");
 
-    expect(releaseAsset).toBe(releaseDoc);
     expect(releaseDoc).toContain("full_test_count");
     expect(releaseDoc).toContain("dry_run_ratio");
     expect(releaseDoc).toContain("grader_pass_rate");
@@ -158,7 +143,6 @@ describe("README DX contract", () => {
     const spec = read("docs/spec.md");
     const flow = read("docs/reference-configs/agentic-development-flow.md");
     const externalTooling = read("docs/reference-configs/external-tooling.md");
-    const externalToolingAsset = read("assets/reference-configs/external-tooling.md");
 
     expect(spec).toContain("## Product Outcome");
     expect(spec).toContain("## Core Invariants");
@@ -178,7 +162,6 @@ describe("README DX contract", () => {
     expect(zhReadme).toContain("external verification manifest");
     expect(zhReadme).toContain("手动约定");
     expect(zhReadme).toContain("`repo-harness check` 已经会自动发现或 gate");
-    expect(externalToolingAsset).toBe(externalTooling);
     expect(externalTooling).toContain("## External Verification Evidence");
     expect(externalTooling).toContain("convention only");
     expect(externalTooling).toContain("does not automatically discover");

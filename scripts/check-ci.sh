@@ -55,6 +55,9 @@ bun run check:hooks
 echo "[ci] helper projection"
 bun run check:helpers
 
+echo "[ci] reference-configs projection"
+bun run check:reference-configs
+
 echo "[ci] tests"
 run_bun_tests
 

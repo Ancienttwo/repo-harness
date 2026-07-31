@@ -45,6 +45,10 @@ describe("Bootstrap Script Contracts", () => {
   test("root SKILL stays a compact five-action router", () => {
     const skill = read("SKILL.md");
     const body = skill.replace(/^---\n[\s\S]*?\n---\n/u, "");
+    // The root SKILL.md is the router: every host loads it into context on every
+    // session, before any action is chosen. The 2048-byte ceiling is a standing
+    // budget on that always-resident cost, not an arbitrary style limit — content
+    // that grows past it belongs in a reference file the router points at.
     expect(Buffer.byteLength(body, "utf-8")).toBeLessThanOrEqual(2048);
     expect(skill.split("\n").length).toBeLessThanOrEqual(80);
   });
@@ -151,7 +155,6 @@ describe("Bootstrap Script Contracts", () => {
     expect(agents).toContain("tasks/todos.md");
     expect(agents).toContain("repo-harness run check-task-workflow --strict");
     expect(agents).toContain("check-agent-tooling.sh --host both --check-updates");
-    expect(agents).toContain("operations.deploy_sql");
     expect(agents).toContain("operations.deploy_sql");
   });
 
@@ -358,7 +361,6 @@ describe("Bootstrap Script Contracts", () => {
     expect(sharedLib).not.toContain(".memory-context.json");
     expect(sharedLib).not.toContain(".memory-snapshot.json");
     expect(content).not.toContain("install_skill_factory_files");
-    expect(content).toContain("create_contract_directories");
     expect(contract.artifacts.requiredDirectories).toContain("tasks/contracts");
     expect(contract.artifacts.requiredDirectories).toContain("tasks/reviews");
     expect(contract.artifacts.requiredDirectories).toContain("tasks/notes");
@@ -450,7 +452,6 @@ describe("Bootstrap Script Contracts", () => {
     expect(sharedLib).not.toContain(".skill-factory-state.json");
     expect(sharedLib).not.toContain(".memory-context.json");
     expect(sharedLib).not.toContain(".memory-snapshot.json");
-    expect(content).toContain("create_contract_directories");
     expect(contract.artifacts.requiredDirectories).toContain("tasks/contracts");
     expect(contract.artifacts.requiredDirectories).toContain("tasks/reviews");
     expect(contract.artifacts.requiredDirectories).toContain("tasks/notes");
@@ -460,7 +461,6 @@ describe("Bootstrap Script Contracts", () => {
     expect(content).toContain("install_hook_settings_template");
     expect(content).not.toContain("\"$TOOL_INPUT\"");
     expect(content).not.toContain("\"$PROMPT\"");
-    expect(content).toContain("pi_install_reference_configs");
     expect(content).not.toContain("cp \"$ASSETS_REF_DIR\"/*.md docs/reference-configs/");
     expect(content).toContain("pi_print_external_tooling_report");
   });

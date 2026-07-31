@@ -43,6 +43,8 @@
     "check:hooks": "bun scripts/sync-hook-sources.ts --check",
     "sync:helpers": "bun scripts/sync-helper-sources.ts --write",
     "check:helpers": "bun scripts/sync-helper-sources.ts --check",
+    "sync:reference-configs": "bun scripts/sync-reference-configs.ts --write",
+    "check:reference-configs": "bun scripts/sync-reference-configs.ts --check",
     "check:state-boundaries": "bun scripts/check-state-boundaries.ts",
     "check:ci": "bash scripts/check-ci.sh",
     "check:release": "bash scripts/check-npm-release.sh",

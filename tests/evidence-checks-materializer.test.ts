@@ -743,9 +743,9 @@ describe("checks-materializer: no-independent-authoring", () => {
 
     const workflowState = readFileSync(join(REPO_ROOT, ".ai/hooks/lib/workflow-state.sh"), "utf-8");
     expect(workflowState).not.toMatch(/printf "\{\}\\n" > "\$\(workflow_checks_file\)"/);
-
-    const mirror = readFileSync(join(REPO_ROOT, "assets/templates/helpers/verify-sprint.sh"), "utf-8");
-    expect(mirror).toBe(verifySprint);
+    // verify-sprint.sh's packaged mirror is covered by the helper parity loop in
+    // tests/helper-scripts.test.ts (whole contract helper inventory, content plus
+    // exec bit), so the local byte-equality restatement is gone.
   });
 
   // Residual finding 2b (orchestrator ruling): mutation-observed.ts's own
