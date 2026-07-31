@@ -71,7 +71,7 @@ review、checks 或 handoff 冲突，以 source artifacts 为准。
 
 ## What's New
 
-Release notes 见 [`docs/CHANGELOG.md`](docs/CHANGELOG.md)，当前版本线是 `0.11.3`。
+Release notes 见 [`docs/CHANGELOG.md`](docs/CHANGELOG.md)，当前版本线是 `0.12.0`。
 
 ## 工作原理
 
@@ -448,8 +448,8 @@ hook block 工作时，先看 terminal 里的结构化输出。核心字段是
 
 ## 当前 Release
 
-- npm package：`repo-harness@0.11.3`
-- Generated workflow stamp：`repo-harness@0.11.3+template@0.11.3`
+- npm package：`repo-harness@0.12.0`
+- Generated workflow stamp：`repo-harness@0.12.0+template@0.12.0`
 - GitHub repository：`Ancienttwo/repo-harness`
 - Release history：[`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 
