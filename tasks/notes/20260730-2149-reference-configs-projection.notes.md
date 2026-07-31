@@ -31,6 +31,12 @@ real overlaps. Replaying this branch's own commits with
 `git rebase --onto origin/main a43c4abe` resolved them with zero conflicts, and `base_commit` was
 corrected a second time to the post-rebase fork point `8b506da4`.
 
+A third replay followed once the sibling `receipt-fingerprint-normalization` package landed as
+`3c991466`: this branch's original AcceptanceReceipt was recorded under the old key-order-sensitive
+fingerprint and was already unverifiable, so it had to be re-recorded under the fixed algorithm
+anyway. `git rebase origin/main` replayed all 8 commits with zero conflicts, and `base_commit` was
+corrected to `3c991466`.
+
 The metadata file is gitignored (`.gitignore:56`), so both corrections are local-only and recorded
 here rather than committed. The general gap — `verify-sprint` silently trusting a `base_commit`
 that is no longer an ancestor of `HEAD` — is already logged as a deferred row in `tasks/todos.md`.
