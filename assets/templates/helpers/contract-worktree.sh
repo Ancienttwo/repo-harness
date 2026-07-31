@@ -1027,9 +1027,26 @@ cleanup_worktree() {
   fi
 
   if git show-ref --verify --quiet "refs/heads/$branch_name"; then
-    if ! git merge-base --is-ancestor "$branch_name" "$target_branch" >/dev/null 2>&1; then
-      echo "contract-worktree: branch $branch_name is not fully merged into $target_branch; refusing cleanup" >&2
-      exit 1
+    if git merge-base --is-ancestor "$branch_name" "$target_branch" >/dev/null 2>&1; then
+      echo "[ContractWorktree] Merge check for $branch_name: ancestor of $target_branch"
+    else
+      # Squash-merge (this repo's house ship flow) never makes the branch
+      # tip an ancestor of the target. Fall back to an absorption check:
+      # a conflict-free `git merge-tree --write-tree` whose resulting tree
+      # exactly equals the target's tree proves the branch adds nothing
+      # target doesn't already have. Any other outcome (conflict, command
+      # failure, differing tree) keeps refusing -- fail-closed, no widening.
+      local target_tree merge_tree_output absorbed=0
+      target_tree="$(git rev-parse "$target_branch^{tree}")"
+      if merge_tree_output="$(git merge-tree --write-tree "$target_branch" "$branch_name" 2>/dev/null)"; then
+        [[ "$merge_tree_output" == "$target_tree" ]] && absorbed=1
+      fi
+      if [[ "$absorbed" -eq 1 ]]; then
+        echo "[ContractWorktree] Merge check for $branch_name: absorbed into $target_branch (squash-equivalent tree)"
+      else
+        echo "contract-worktree: branch $branch_name is not fully merged into $target_branch; refusing cleanup" >&2
+        exit 1
+      fi
     fi
   else
     echo "[ContractWorktree] Branch already absent, skipping: $branch_name"
