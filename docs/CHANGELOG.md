@@ -4,6 +4,15 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-07-31
+
+### Added
+
+- Adds `deep-worker` to the managed agent fleet (`.claude/agents/`,
+  `.codex/agents/`, `agents/fleet/`): an Opus/high-effort heavy execution
+  worker for cross-module refactors, tricky concurrency or state fixes, and
+  other hard changes that must land right in one pass.
+
 ### Changed
 
 - Breaking: `repo-harness adopt` is removed with no alias or compatibility
@@ -16,6 +25,41 @@ All notable changes to this skill are documented here.
   manifests keep rolling back unmodified: their frozen protocol-1
   `"command": "adopt"` literal is unchanged on disk, so
   `repo-harness init rollback --transaction <path>` still accepts them.
+- `fast-worker` moves from Sonnet at max effort to Opus at medium effort
+  with an explicit max-target override; the default Codex model projection
+  for the `opus` family is respecified accordingly, and pinned model
+  versions are dropped in favor of the effort-tier projection.
+- `docs/reference-configs/` is now a generated projection of the shipped
+  `assets/reference-configs/` source. `scripts/sync-reference-configs.ts
+  --check/--write` keeps all 23 mirrored pairs in sync and is wired into
+  `check-ci`; the README and reference-config test suites also drop
+  scattered duplicate assertions that never caught a regression, in favor
+  of one inventory-driven projection guard.
+
+### Fixed
+
+- MCP allowed-root policy no longer denies roots under an OS realpath
+  canonicalization prefix such as `/private/tmp` on macOS; only that
+  prefix is stripped before the `private/**` deny glob runs, so a genuine
+  `private`/`secrets`/`node_modules` segment elsewhere in the path still
+  denies.
+- `ensure-task-workflow`'s bootstrap now writes the resume packet after the
+  current-status snapshot instead of before, closing a same-second
+  write-order race that made `check-task-workflow --strict`'s whole-second
+  mtime comparison fail nondeterministically (1 of 12 idle runs before the
+  fix).
+- `acceptance-receipt`'s verification-evidence fingerprint now hashes
+  through the existing `stableJson()` canonicalizer instead of raw
+  `JSON.stringify`, so a semantics-preserving key-order difference between
+  the evidence ledger's inline (under the 8192-byte cap) and blob storage
+  paths for `checks/latest.json` no longer flips
+  `verification_evidence_sha256` and fails acceptance closed as stale.
+- `contract-worktree` cleanup now recognizes a squash-merged branch as
+  absorbed via an exact `git merge-tree` tree-equality fallback instead of
+  ancestry alone, and deletes absorbed branches with `git branch -D` while
+  still using `-d` for plain ancestor merges — closing the half-completed
+  cleanup (worktree removed, branch left behind) that unconditional `-d`
+  caused on every squash-absorbed package.
 
 ## [0.11.3] - 2026-07-29
 

@@ -1,6 +1,6 @@
 {
-  "version": "0.11.3",
-  "templateVersion": "0.11.3",
+  "version": "0.12.0",
+  "templateVersion": "0.12.0",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "compatibility": {
@@ -223,6 +223,10 @@
     {
       "version": "0.11.3",
       "description": "Adds ChatGPT delegate mode with a repo-owned dual-agent GPT Pro protocol and Claude/Codex host transports, enforces a mandatory pre-spawn Gitleaks scan over the rendered PromptBundle, and adds explicit host skill projection commands for the repo-harness-chatgpt package"
+    },
+    {
+      "version": "0.12.0",
+      "description": "Removes repo-harness adopt in favor of init as the sole repo-local adoption command, adds the deep-worker fleet agent, converges docs/reference-configs on a generated assets projection, and fixes MCP allowed-root canonicalization, an acceptance-receipt fingerprint defect, and contract-worktree squash-merge cleanup"
     }
   ],
   "generatedProjectStamp": {
