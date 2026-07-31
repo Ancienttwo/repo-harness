@@ -48,6 +48,17 @@ for done/review prompts. Markdown review cards are deterministic projections and
 are never parsed as a second authority. A missing or malformed receipt blocks
 closeout; the runtime does not guess or downgrade the contract.
 
+Unicode-aware intent classification lives in `src/cli/hook/prompt-intents.ts`.
+There is no shell classifier, secondary dispatcher, or fallback decision table.
+The handler owns filesystem authority, side effects, classification, and the
+`intent x plan state` table; it also renders the Waza route hint, where an
+explicit think/planning intent is matched first and routed to `/think`.
+
+The `SessionStart` builder assembles one bounded context from four sources
+before work begins: the prior handoff/resume packet, sprint status, advice-only
+minimal-change guidance, and a read-only fingerprint-gated security config scan.
+They are emitted together as `additionalContext`.
+
 Plan/spec/contract hints in `UserPromptSubmit` are advisory. Hard edit enforcement
 lives in `PreToolUse.edit` and the `mutation-guard` handler. The policy can select
 `enforce`, `advice`, or `off` for that guard. Stop and observer handlers remain

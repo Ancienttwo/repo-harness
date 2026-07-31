@@ -80,3 +80,61 @@ Install and benchmark transactions must also bind `BUN_INSTALL` to the selected
 host home. Setting `HOME` alone does not isolate Bun global installation when a
 caller already exports `BUN_INSTALL`; an inherited real path would mutate the
 operator's global package instead of the disposable profile runtime.
+
+## Install Surfaces and Refresh Commands
+
+`repo-harness install` is the first-run global bootstrap: it installs the current
+npm package as the global CLI, refreshes repo-harness Skill aliases, installs the
+user-level hook adapters, and records the explicit install profile. It never
+applies repo-local workflow files to the current directory; that stays on
+`repo-harness init`.
+
+```bash
+# Refresh the user-level CLI and runtime pieces after a package update.
+repo-harness update
+
+# Read-only repair guidance, no writes.
+repo-harness update --check
+
+# Remove managed host adapters without touching sibling or third-party hooks.
+repo-harness uninstall
+
+# Install only the host hook adapters (adapter-only surface).
+repo-harness install --target both --location global
+
+# Refresh repo-local workflow files in an adopted repository.
+repo-harness init --repo /path/to/repo
+```
+
+## Read-Only Bootstrap Audit
+
+`repo-harness setup check --json` is the Agent-owned, read-only bootstrap audit;
+add `--check-updates` for version and adopted-repo refresh advisories. It is not
+a runtime hook: it does not write user-level files, install updates, run `init`,
+or register adapters. It emits `agent_actions` entries carrying the reason, risk,
+target files, an optional command, and the verification surface, so the Agent
+executes each one deliberately. `repo-harness init-hook` remains a compatibility
+alias for the adapter-only install path.
+
+## Codex Delegation Mode
+
+`repo-harness install --target codex|both --location global` also resolves and
+persists the Codex delegation mode read by the delegation-advisor hook. Pass
+`--delegation-mode auto|explicit` for non-interactive use, or answer the one-line
+interactive prompt shown in a TTY; Enter keeps the current choice and defaults to
+`explicit` when nothing is configured yet.
+
+The chosen mode is written to `delegation.mode` in
+`~/.repo-harness/config.json`, merged with existing keys such as `brainRoot`.
+This global value takes precedence over a repo's `.ai/harness/policy.json`
+`delegation.mode`.
+
+At runtime:
+
+- `auto` injects one standing bounded-delegation authorization block per session
+  at `SessionStart`.
+- The typed `subagent` handler injects on `UserPromptSubmit` only for explicit
+  triggers (`/delegate`, `/parallel`, ...), in both `auto` and `explicit` modes.
+
+The step never fires for `--target claude`. With no flag and no TTY it leaves the
+file untouched; it never writes a silent default.

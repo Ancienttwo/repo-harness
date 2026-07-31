@@ -53,7 +53,12 @@ describe("install script contracts", () => {
 
     expect(readme).toContain("curl -fsSL https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.sh | sh");
     expect(readme).toContain("irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 | iex");
-    expect(readme).toContain("If Bun >= 1.1.35 is already on PATH, you can skip the shell installer.");
+    // SSD-xx: the README's Bun-floor sentence reworded from "If Bun >= 1.1.35
+    // is already on PATH, you can skip the shell installer." to "With Bun >=
+    // 1.1.35 already on PATH, skip the shell installer." Pin the version
+    // string shared with install.sh's MIN_BUN_VERSION invariant, not the
+    // exact prose.
+    expect(readme).toContain("1.1.35");
     expect(readme).not.toContain("npm install -g repo-harness");
     expect(zhReadme).toContain("curl -fsSL https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.sh | sh");
     expect(zhReadme).toContain("irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 | iex");

@@ -1,210 +1,49 @@
+<div align="center">
+
 # repo-harness
 
-`repo-harness` 把 Claude/Codex 的 AI 编程会话变成可复用、可恢复、可检查的
-repo-local workflow。它提供 CLI 和 skill/runtime hooks，把上下文、计划、
-handoff、检查结果和 review evidence 写回项目文件，让下一个 agent 会话可以从文件继续，
-而不是依赖聊天记录。
+### 面向 Claude 与 Codex 编程会话的 file-backed 可复现 workflow
 
-它主要解决三件事：
+<img src="docs/images/repo-harness-hook-carrot.png" alt="repo-harness hooks 借助 repo-local workflow state，引导 Codex 与 Claude 向前推进" width="900">
 
-- 用 tasks-first agent contract 快速接入已有仓库。
-- 让 Claude 和 Codex 共享同一套计划、检查、handoff 和上下文边界。
-- 用 CodeGraph 和渐进式 context loading 减少重复摸仓库结构的 token 消耗。
-
-你只需要把完整 PRD/Sprint 发给 Agent；之后的工作就是 review and `next`，
-或者启动 `/goal` 后 AFK。
+[![npm version](https://img.shields.io/npm/v/repo-harness.svg)](https://www.npmjs.com/package/repo-harness)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Runtime: Bun](https://img.shields.io/badge/runtime-Bun%20%E2%89%A5%201.1.35-black.svg)](https://bun.sh)
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Français](README.fr.md) | [Español](README.es.md)
 
-仓库地址：`https://github.com/Ancienttwo/repo-harness`
+**把完整的 PRD 或 Sprint 交给 agent；之后你的循环只剩 review 和 `next`，或者启动 `/goal` 然后 AFK。**
 
-## 为什么用 repo-harness
+</div>
 
-- **会话状态落在文件里，不在聊天记录里。** 不同 agent 会话——Claude、Codex、现在或之后——
-  靠仓库而不是聊天线程保持同步。新会话启动时进程内的 session-context builder（`src/cli/hook/session-context.ts`）注入上一会话的
-  resume packet（`.ai/harness/handoff/resume.md`、`tasks/current.md`）；会话结束和每次编辑后，
-  `session-context`、`stop` 和 `mutation-observed` typed handlers 把下一份 handoff 写回。任务可以中途断开，下一个会话
-  直接接上准确的下一步、阻塞点和改动文件，不用重新推断。
-- **天生省 token。** 不靠每个会话重扫一遍仓库的 grep+read 循环，harness 用预建的 CodeGraph 索引做
-  结构化查询（谁调用、调用谁、定义在哪），再用 `.ai/context/context-map.json` 和 `capabilities.json`
-  做渐进式上下文加载：一份小而稳定的 root context（约 12KB），加上只在改到对应文件时才加载的
-  capability 块。agent 读一份 1KB 的 capability 合约或查索引，而不是花上千 token 重新摸清结构。
+`repo-harness` 提供一套 CLI 加 skill/runtime hooks，把 context、plan、handoff、
+checks 和 review evidence 写回项目文件，让下一个 agent 会话从文件而不是聊天
+记忆里继续。它用 tasks-first agent contract 接入已有仓库，让 Claude 和 Codex
+保持一致。
 
-接入后的仓库只需要理解几个 surface：
+## 目录
 
-| Surface | 作用 |
-| --- | --- |
-| `docs/spec.md` 和 `docs/reference-configs/` | 共享标准和稳定产品意图，每个 agent 会话都能读取。 |
-| `plans/`、`plans/prds/`、`plans/sprints/` | 实现前先沉淀 decision-complete work package。 |
-| `tasks/contracts/`、`tasks/reviews/`、`.ai/harness/checks/` | 证明完成所需的 scope、verification 和 review evidence。 |
-| `.ai/harness/handoff/` 和 `tasks/current.md` | session journal 与可恢复状态，从 workflow artifacts 派生，而不是依赖聊天记忆。 |
+- [快速开始](#快速开始)
+- [为什么用 repo-harness](#为什么用-repo-harness)
+- [核心特性](#核心特性)
+- [工作原理](#工作原理)
+- [任务 Workflow](#任务-workflow)
+- [Hooks](#hooks)
+- [MCP Connector](#mcp-connector)
+- [审查产出](#审查产出)
+- [Skills](#skills)
+- [Maintainer Reference](#maintainer-reference)
+- [致谢](#致谢)
+- [当前 Release](#当前-release)
+- [许可证](#许可证)
 
-## Human Review Path
-
-先读 `tasks/reviews/<task>.review.md`。`## Human Review Card` 是一屏决策面：
-verdict、change type、预期/实际改动文件、已通过命令、external acceptance、
-残余风险、reviewer action 和 rollback。然后检查 active contract、
-`.ai/harness/checks/latest.json` 里的 latest trace，以及实际 diff。只有当 review
-recommend pass、card verdict 为 pass，且 external acceptance 为 pass、not_required
-或明确 manual override 时，才进入 closeout。
-
-Unity、浏览器 E2E、mobile simulator、硬件测试和 staging smoke test 这类
-运行时重验证器，可以把 external verification manifest 写到被忽略的 run-evidence
-surface。当前这只是手动约定，不是 `repo-harness check` 已经会自动发现或 gate
-的能力。详见
-[`docs/reference-configs/external-tooling.md`](docs/reference-configs/external-tooling.md#external-verification-evidence)。
-
-## Agent Tracking Path
-
-Agent 先读 source artifacts，再读派生摘要：
-
-| Agent reads first | Human reviews first |
-| --- | --- |
-| 当前用户 prompt 和引用文件 | `tasks/reviews/<task>.review.md` 的 Human Review Card |
-| `AGENTS.md` / `CLAUDE.md` | changed files 和 diff |
-| `.ai/harness/active-plan` 指向的 active plan | active contract 的 allowed paths 和 exit criteria |
-| `tasks/contracts/` 下的 active contract | `.ai/harness/checks/latest.json` 和 run trace |
-| `.ai/harness/handoff/` 下的 latest handoff | 残余风险和 rollback |
-
-`tasks/current.md` 只是 orientation snapshot。如果它和 active plan、contract、
-review、checks 或 handoff 冲突，以 source artifacts 为准。
-
-## What's New
-
-Release notes 见 [`docs/CHANGELOG.md`](docs/CHANGELOG.md)，当前版本线是 `0.12.0`。
-
-## 工作原理
-
-整体分三层，host-event 只有一条 typed runtime 路径：
-
-1. **源码包层**：本仓库维护 CLI、CLI-backed command facades、templates、hook assets、
-   workflow contract、tests 和 release gate。
-2. **目标仓库合约层**：`repo-harness init` 或 migration 会写入 `docs/spec.md`、
-   `plans/`、`tasks/`、`.ai/context/`、`.ai/harness/` 和 helper scripts；
-   `.ai/hooks/lib/workflow-state.sh` 只作为 operator helper projection。
-3. **Host adapter 层**：user-level `~/.claude/settings.json` 和 `~/.codex/hooks.json`
-   把 Claude/Codex events 路由到 `repo-harness-hook`。runtime 先检查当前 repo 是否存在
-   `.ai/harness/workflow-contract.json`；opt in 后由 route registry 按
-   `event + routeId + matcher` 调用 exactly one typed handler。
-
-minimal-change hooks 复用同一套路由 surface，不新增公开 adapter route。`SessionStart`
-和允许执行的 prompt 只在 policy opt in 时打印 advisory context；只有显式启用
-`post_edit_observer:true` 时，`PostToolUse.edit` 才会把有界改动信号写到
-`.ai/harness/checks/minimal-change.latest.json`，`Stop` 把最新 review 摘要写进 handoff。
-缺失或损坏的 policy 默认 off；即使配置 `mode: "enforce"` 也会归一化为 advisory 行为，
-真正的 enforcement boundary 仍然是 tests、contracts 和 human review。
-
-所有事件都通过同一条 `host adapter -> repo-harness-hook -> route registry ->
-typed handler` 路径。`UserPromptSubmit.default` 由 `prompt` handler 负责 intent、
-workflow state、quality gate 和 host-safe 输出；`PostToolUse.edit`、`PostToolUse.bash`
-和 `Stop` 分别由 `mutation-observed`、`command-observed` 和 `stop` 处理。没有第二个
-shell dispatcher，也不根据 host provider 选择另一套语义实现。
-
-核心不变量：持久事实在仓库里，不在聊天窗口里。Typed handlers 只是加速器和 guardrail；
-真正的 authority 是 plan、contract、review、checks 和 handoff 这些文件。
-
-## 任务 Workflow：从 Plan 到 Closeout
-
-下面这张图假设目标仓库已经安装 harness。它展示的是从 program sprint backlog
-到单个 contract task 的正常闭环：先选择或形成任务，再投射到执行文件，需要时
-checkout 隔离 worktree，在 hooks 保护下实现，然后验证、review、external acceptance，
-必要时标记 sprint task 完成，最后 closeout。0.4.x 的 loop-system surface
-新增 heartbeat 定时发现、state-snapshot/eval 证据、architecture queue freshness，
-以及可选的 contract-run 委派，但 source of truth 仍然是 repo 内文件合约。
-
-```mermaid
-flowchart TD
-  Program["Program goal 或 release theme"] --> Sprint{"需要 sprint layer?"}
-  Sprint -->|是| SprintDoc["Sprint PRD + backlog<br/>plans/prds/*.prd.md"]
-  SprintDoc --> NextTask["选择下一个 sprint task<br/>sprint-backlog.sh next"]
-  Sprint -->|否| UserTask["用户任务或 planning prompt"]
-  Heartbeat["Heartbeat triage<br/>scripts/heartbeat-triage.sh<br/>.ai/harness/triage/"] --> UserTask
-  NextTask --> UserTask
-
-  UserTask --> Discovery["前置调查<br/>P1 map, P2 trace, P3 decision"]
-  Discovery --> LoopEvidence["路由变更时的 loop evidence<br/>state-snapshot --json<br/>route-nl-vs-ts / cutover gate"]
-  LoopEvidence --> PlanDraft["Draft plan<br/>plans/plan-*.md"]
-  PlanDraft --> PlanReview{"Plan 是否可执行?"}
-  PlanReview -->|否| Refine["收敛 scope 和 evidence contract"]
-  Refine --> PlanDraft
-  PlanReview -->|是| Approve["Approved plan<br/>Status: Approved"]
-
-  Approve --> Project["投射到执行面<br/>capture-plan.sh --execute<br/>或 plan-to-todo.sh --plan"]
-  Project --> Active["Active markers<br/>.ai/harness/active-plan<br/>.ai/harness/active-worktree"]
-  Project --> SprintActive["Sprint projection<br/>active-sprint marker<br/>tasks/current.md"]
-  Project --> Contract["Sprint contract<br/>tasks/contracts/YYYYMMDD-HHMM-task-slug.contract.md"]
-  Project --> ReviewFile["Review file<br/>tasks/reviews/YYYYMMDD-HHMM-task-slug.review.md"]
-  Project --> Notes["Task notes<br/>tasks/notes/YYYYMMDD-HHMM-task-slug.notes.md"]
-
-  Contract --> Delegation["Delegation contract<br/>budget / permission_scope / roles"]
-  Delegation --> Delegate{"是否使用 contract-run 委派?"}
-  Delegate -->|是| ContractRun["Worker/verifier child run<br/>scripts/contract-run.ts"]
-  Delegate -->|否| WorktreePolicy{"是否需要 contract worktree?"}
-  WorktreePolicy -->|是| Checkout["Checkout 隔离 worktree<br/>contract-worktree.sh start --plan<br/>branch codex/task-slug"]
-  WorktreePolicy -->|否| CurrentTree["使用当前 worktree<br/>小任务或明确允许的 slice"]
-  Checkout --> Implement
-  CurrentTree --> Implement
-  ContractRun --> Changes
-
-  Implement["编辑和运行命令"] --> PreHooks["Pre-edit guards<br/>PlanStatusGuard, ContractScopeGuard, WorktreeGuard"]
-  PreHooks -->|blocked| ScopeFix["修正 plan、contract、worktree 或 scope"]
-  ScopeFix --> Implement
-  PreHooks -->|allowed| Changes["代码、文档、测试或配置改动"]
-  Changes --> PostHooks["Post-edit / post-bash hooks<br/>trace, drift request, handoff, check evidence"]
-  PostHooks --> ArchQueue["Architecture queue<br/>architecture-queue.sh record/reindex<br/>check-architecture-sync.sh"]
-  ArchQueue --> Verify["运行验证<br/>tests plus repo workflow checks"]
-
-  Verify --> Checks["结构化 evidence<br/>.ai/harness/checks/latest.json<br/>.ai/harness/runs/*.json"]
-  Checks --> CheckReview["Evaluator review<br/>Waza /check -> review file"]
-  CheckReview --> External["External acceptance advice<br/>或明确 manual override"]
-  External --> DoneGate{"Contract、checks、review、acceptance 是否通过?"}
-  DoneGate -->|否| Repair["修复失败 evidence 或实现"]
-  Repair --> Implement
-  DoneGate -->|是| SprintComplete{"存在 active sprint task?"}
-  SprintComplete -->|是| MarkSprint["标记 backlog item 完成<br/>sprint-backlog.sh complete-task"]
-  SprintComplete -->|否| Closeout["Closeout<br/>scripts/contract-worktree.sh finish"]
-  MarkSprint --> Closeout
-
-  Closeout --> Commit["提交 contract branch"]
-  Commit --> Merge["Fast-forward target branch"]
-  Merge --> Archive["归档 plan/todo 并刷新 handoff"]
-  Archive --> Cleanup["清理已合并 worktree<br/>contract-worktree.sh cleanup"]
-  Cleanup --> Done["可审查的已完成任务"]
-```
-
-## 长周期产品 Loop
-
-Greenfield 和 Brownfield 工作先由 parent agent 完成 discovery 和工程计划判断，
-不要直接让 Codex 从原始聊天长期滚动：
-
-1. contract 产生前，parent agent 先调用 `geju` 打开格局，再用自身的 repo/runtime
-   能力完成 P1/P2/P3，并把确认后的产品意图、架构、风险、falsifier 和 evidence
-   contract 冻结进开发文档。
-2. 把这些文档转成 `plans/prds/` 下的 PRD Sprint，并为每个 execution
-   slice 写清有序 backlog 和详细 sub-plan。
-3. 创建 Codex Goal，目标指向该 sprint 文件。repo-harness 之后就可以按既有
-   plan -> contract -> worktree -> verification flow 逐项投射和执行。
-
-这个交接让长周期 loop 更精准：parent agent 负责前置判断，PRD Sprint 是 durable
-source of truth，Codex Goal mode 只围绕具体 sprint 恢复和推进，而不是反复重新解释原始聊天。
-
-## 前 5 分钟
-
-<p align="center">
-  <img src="docs/images/repo-harness-install-donkey-carrot.png" alt="repo-harness 安装引导的 pixel art 驴和萝卜 banner" width="900">
-</p>
-
-这是评估一个真实仓库是否适合接入该 workflow 的最快路径。它把机器级 runtime
-bootstrap 和 repo-local contract install 分开，所以 dry-run 能先展示会改什么，
-再决定是否应用。
-
-前置条件：Git working tree、`bash`、`bun`（用于后续验证和 template assembly）。
-`jq` 可选；做 `--dry-run` 时推荐，应用 settings merge 时更有用。
+## 快速开始
 
 ### 1. 安装 CLI
 
-默认路径不需要 Node.js：installer 使用 Bun >= 1.1.35 作为 runtime。如果机器上
-没有 Bun 或版本更旧，它会先安装或升级 Bun，再安装 `repo-harness` CLI。
+前置条件：一个 Git working tree、`bash` 和 `bun`；`jq` 可选。不需要
+Node.js——installer 使用 Bun >= 1.1.35 作为 runtime，需要时会先安装或升级
+Bun。
 
 ```bash
 # macOS / Linux
@@ -214,60 +53,29 @@ curl -fsSL https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/instal
 irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 | iex
 ```
 
-如果 Bun >= 1.1.35 已经在 `PATH` 上，可以跳过 shell installer。旧的 self-managed
-Bun 从这些 direct path 启动时，`repo-harness install` 会先升级同一个 binary 再继续；
-如果 Bun 由 package manager 管理，则 fail closed 并提示对应的升级命令（例如
-`brew upgrade bun` 或 `scoop update bun`），不会覆盖 package-manager-owned 文件：
+如果 Bun >= 1.1.35 已经在 PATH 上，可以跳过 shell installer。由包管理器
+安装的 Bun 会 fail closed，并提示对应的升级命令（如 `brew upgrade bun`），
+而不是覆盖包管理器管理的文件。
 
 ```bash
-# Bun 一步 bootstrap
-bunx repo-harness@latest install
-
-# 或者先安装持久化 CLI
-bun add -g repo-harness
+bunx repo-harness@latest install     # Bun one-shot bootstrap
+bun add -g repo-harness              # or install the persistent CLI first
 repo-harness install
-
-# npx 备选；仍要求 Bun 已在 PATH 上，因为 CLI runtime 是 Bun
-npx -y repo-harness@latest install
+npx -y repo-harness@latest install   # npx fallback; the CLI still runs on Bun
 ```
 
-### 2. 先做一次 host runtime bootstrap
+### 2. 引导 host runtime
 
 ```bash
 repo-harness install
 ```
 
-`install` 是首次全局引导入口。它把当前 npm 包安装成全局 CLI，刷新 repo-harness
-skill aliases，安装 user-level hook adapters，配置 Waza runtime skills，把 brain
-root 持久化到 `~/.repo-harness/config.json`，并配置 CodeGraph MCP。这个命令是
-幂等的：如果 CLI 已经来自 Bun global package source，它会跳过 CLI 重装，但仍继续
-刷新 host runtime pieces。它不会把当前目录默认迁移成 repo-local workflow。
-
-如果要让 Agent 做只读 bootstrap audit，运行 `repo-harness setup check
---json`；需要版本和已接入仓库刷新提示时加 `--check-updates`。`setup check`
-不是 runtime hook：它不会写 user-level files、安装更新、执行 `init` 或注册
-adapters，只输出带 reason、risk、targets、可选 command 和 verification 的
-`agent_actions`，由 Agent 再显式执行。
-`repo-harness init-hook` 保留为兼容 alias。
-
-### 安装和刷新例子
-
-```bash
-# 包更新后刷新 user-level CLI/runtime。
-repo-harness update
-
-# 移除管理的 host adapters，不动 sibling 或第三方 hooks。
-repo-harness uninstall
-
-# 只安装 host hook adapters（旧版 adapter-only surface）。
-repo-harness install --target both --location global
-
-# 只读修复建议，不写文件。
-repo-harness update --check
-
-# 刷新已接入仓库里的 repo-local workflow 文件。
-repo-harness init --repo /path/to/repo
-```
+这个全局 bootstrap 会把 npm 包安装成全局 CLI，刷新 repo-harness 的 skill
+aliases，安装 user-level hook adapters，并记录一份明确的 install profile。
+它是幂等的，不会把 repo-local workflow 文件应用到当前目录。`--dry-run
+--json` 会先列出将要安装、跳过和移除的组件。Profile、delegation mode、
+刷新命令，以及只读的 `setup check` audit，见
+[`install-profiles.md`](docs/reference-configs/install-profiles.md)。
 
 ### 3. 预览 repo-local contract
 
@@ -275,11 +83,12 @@ repo-harness init --repo /path/to/repo
 repo-harness init --dry-run
 ```
 
-在目标仓库根目录运行 dry-run。它会报告将要创建或刷新的 spec、task state、
-helper runtime、hook adapter target 和 verification files。它不会创建应用技术栈；
-已有仓库走 `repo-harness init`，新项目或新模块走 `repo-harness-setup` 的 scaffold mode。
+在目标仓库根目录运行这条命令。它会报告将要创建或刷新的 specs、task
+state、helper runtime、hook adapter target 和 verification files。它从不
+创建 application stack；新项目和新模块改用 `repo-harness-setup` 的
+scaffold mode。
 
-### 4. 应用后验证 workflow
+### 4. 应用并验证
 
 ```bash
 repo-harness init
@@ -287,384 +96,363 @@ bash scripts/check-task-workflow.sh --strict
 bun test
 ```
 
-应用后，目标仓库应该得到一套可审查的 file-backed contract，而不是 tool-specific
-聊天配置。agent 应该能在 `docs/spec.md` 找到稳定意图，在 `plans/` 和 `tasks/`
-找到执行状态，在 `.ai/harness/handoff/` 找到可恢复状态。
+### 成功之后是这样
 
-新项目或新模块用 `repo-harness-setup` 的 scaffold mode 代替 `init`；它会安装或
-刷新 harness，不会创建应用技术栈。维护者编辑 package 源码需要 source checkout
-—— 见 [Maintainer Reference](#maintainer-reference)。
+应用命令最后会输出 `=== Migration Report ===`，说明生成的 hook 行为来自
+哪里、user-level `~/.claude/settings.json` 与 `~/.codex/hooks.json` 的
+adapter target、被创建或刷新的 repo-local surfaces、
+`.ai/harness/scripts/*` helper runtime，以及一段 `--- External Tooling
+---` readiness block。此后，稳定意图落在 `docs/spec.md`，执行状态落在
+`plans/` 和 `tasks/`，resume 状态落在 `.ai/harness/handoff/`。如果 dry
+run 结果看起来不对，先停下来读
+[`hook-operations.md`](docs/reference-configs/hook-operations.md)。
 
-### 成功长什么样
+### 更新与移除
 
-命令最后应该输出 `=== Migration Report ===`，并包含：
+```bash
+repo-harness update          # refresh user-level CLI and runtime pieces
+repo-harness update --check  # read-only repair guidance, no writes
+repo-harness uninstall       # remove managed host adapters only
+```
 
-- `Project hooks synced from:`：生成的 hook 行为来自哪里
-- `Host hook config target: user-level ~/.claude/settings.json and ~/.codex/hooks.json`：adapter 层在哪里
-- `Host hook adapters are user-level:`：提醒安装 global adapters，并信任 `~/.codex/hooks.json`
-- `Workflow migration:`：repo-local harness surfaces 的创建或刷新计划
-- `Helper runtime:`：应用后会得到的操作工具链
-- `--- External Tooling ---`：parent/Geju planning 指引，以及 Waza 和 CodeGraph readiness 与 advisory 安装/更新提示
+## 为什么用 repo-harness
 
-如果 dry-run 输出不对，先停在这里，阅读
+- **会话状态落在文件里，而不是聊天记忆里。** 不同的 Claude 和 Codex 会话
+  靠仓库保持协调。`SessionStart` 注入上一个会话的 resume packet，`Stop`
+  写下 handoff，每次 edit 都记一条小的 journal event。一个会话可以在任务
+  中途结束，下一个会话直接接上准确的下一步、blocker 和改动过的文件，不
+  需要重新推导。
+- **天生省 token。** Harness 不靠每个会话重新扫一遍仓库的 grep-and-read
+  循环，而是靠预建的 CodeGraph 索引做结构化查询，配合渐进式 context
+  loading：一份稳定的约 12KB root context，加上只在你改到的文件需要时才
+  加载的 capability 块。Agent 读一份约 1KB 的 capability contract，而
+  不是重新摸索结构。
+- **自带 review-ready 的证据。** 每个任务都会留下一份 contract、结构化的
+  check 证据和一张 review card。人工决策面就是一屏——verdict、intended
+  vs actual files、commands passed、residual risk、rollback——而不是
+  靠还原 agent 自称做过什么来判断。
+
+在接入后的仓库里，surface 刻意保持精简：
+
+| Surface | 作用 |
+| --- | --- |
+| `docs/spec.md` 和 `docs/reference-configs/` | 每个 agent 会话都能读到的共享标准和稳定产品意图。 |
+| `plans/`、`plans/prds/`、`plans/sprints/` | 开工前就已 decision-complete 的 work package。 |
+| `tasks/contracts/`、`tasks/reviews/`、`.ai/harness/checks/` | 证明工作完成所需的 scope、verification 和 review evidence。 |
+| `.ai/harness/handoff/` 和 `tasks/current.md` | session journal 和可恢复状态，从 workflow artifact 派生，而不是依赖聊天记忆。 |
+
+## 核心特性
+
+| | |
+| --- | --- |
+| **会话状态落在文件里** | Plan、contract、check 和 handoff 都留在仓库里，新会话从 artifact 而不是聊天线程恢复 |
+| **Typed hook runtime** | 八条共享 managed route 加三条 Codex-only delegation route，每条都绑定唯一一个 typed in-process handler，在 edit boundary 上做 fail-closed guard |
+| **Plan → Contract → Review** | 从 approved plan 到 projected contract、隔离 worktree、结构化证据，再到可审查 closeout 的完整生命周期 |
+| **渐进式 context loading** | 约 12KB 的稳定 root context，加上只为实际改动文件加载的约 1KB capability contract |
+| **CodeGraph 集成** | 用预建索引回答调用者、被调用者、定义位置这类结构化查询，取代反复的 grep-and-read |
+| **MCP planner sidecar** | ChatGPT 读取真实仓库状态并写出 PRD/Sprint/Goal artifact；Codex 负责执行，默认没有源码写入权限 |
+| **Claude + Codex 对齐** | 一份 user-level adapter contract、一份 workflow contract，以及两个 host 共用的一套 repo-local artifact |
+
+## 工作原理
+
+1. **源码包层**：本仓库负责 CLI、command facade、template、typed hook
+   handler、operator-helper asset、workflow contract、test 和 release
+   gate。
+2. **目标仓库 contract 层**：`repo-harness init` 或 migration 会写入
+   repo-local 文件，例如 `docs/spec.md`、`plans/`、`tasks/`、
+   `.ai/context/`、`.ai/harness/`、helper script 和 `.ai/hooks/`。
+3. **Host adapter 层**：user-level 的 `~/.claude/settings.json` 和
+   `~/.codex/hooks.json` 把 Claude/Codex 的事件路由进 `repo-harness-hook`。
+
+对于没有 opt-in 的仓库，hook entrypoint 会静默退出。对于已经 opt-in 的
+仓库，route registry 会把公开的 event tuple 绑定到唯一一个打包好的
+typed handler。`.ai/hooks/` 只保存 operator-helper projection，从来不是
+host-event dispatcher。
+
+核心不变量是：持久事实活在仓库里，而不是聊天线程里。Hook 只是
+accelerator 和 guardrail；真正的 authority 是 file-backed 的 plan、
+contract、review、checks 和 handoff artifact。Prompt 层面的
+plan/spec/contract gate 只是 advisory routing；硬性 enforcement 落在
+edit boundary 上。Handler 内部实现、minimal-change surface 和 policy
+mode，见 [`hook-operations.md`](docs/reference-configs/hook-operations.md)
+和
+[`minimal-change-hooks.md`](docs/reference-configs/minimal-change-hooks.md)。
+
+## 任务 Workflow
+
+这张图假设 harness 已经安装好。它展示的是从 program sprint backlog 到
+单个 contract task 的正常生命周期：选择任务，把它投射成执行文件，在
+policy 要求时 checkout contract worktree，在 hook 保护下实现，然后
+验证、review、closeout。
+
+```mermaid
+flowchart TD
+  Program["Program goal or release theme"] --> Sprint{"Sprint layer needed?"}
+  Sprint -->|yes| PRD["Upper-layer PRD<br/>plans/prds/*.prd.md"]
+  PRD --> SprintDoc["Sprint backlog<br/>plans/sprints/*.sprint.md"]
+  SprintDoc --> NextTask["Select next sprint task<br/>sprint-backlog.sh next"]
+  Sprint -->|no| UserTask["User task or planning prompt"]
+  Heartbeat["Heartbeat triage<br/>scripts/heartbeat-triage.sh<br/>.ai/harness/triage/"] --> UserTask
+  NextTask --> UserTask
+
+  UserTask --> Discovery["Due diligence<br/>P1 map, P2 trace, P3 decision"]
+  Discovery --> LoopEvidence["Loop evidence when routing changes<br/>state-snapshot --json<br/>route-nl-vs-ts / cutover gate"]
+  LoopEvidence --> PlanDraft["Draft plan<br/>plans/plan-*.md"]
+  PlanDraft --> PlanReview{"Plan ready for execution?"}
+  PlanReview -->|no| Refine["Refine plan, scope, evidence contract"]
+  Refine --> PlanDraft
+  PlanReview -->|yes| Approve["Approved plan<br/>Status: Approved"]
+
+  Approve --> Project["Project plan into execution<br/>capture-plan.sh --execute<br/>or plan-to-todo.sh --plan"]
+  Project --> Active["Active markers<br/>.ai/harness/active-plan<br/>.ai/harness/active-worktree"]
+  Project --> SprintActive["Sprint projection<br/>active-sprint marker<br/>tasks/current.md"]
+  Project --> Contract["Sprint contract<br/>tasks/contracts/YYYYMMDD-HHMM-task-slug.contract.md"]
+  Project --> ReviewFile["Review file<br/>tasks/reviews/YYYYMMDD-HHMM-task-slug.review.md"]
+  Project --> Notes["Task notes<br/>tasks/notes/YYYYMMDD-HHMM-task-slug.notes.md"]
+
+  Contract --> Delegation["Delegation contract<br/>budget / permission_scope / roles"]
+  Delegation --> Delegate{"Use contract-run delegation?"}
+  Delegate -->|yes| ContractRun["Worker/verifier child run<br/>scripts/contract-run.ts"]
+  Delegate -->|no| WorktreePolicy{"Contract worktree required?"}
+  WorktreePolicy -->|yes| Checkout["Checkout isolated worktree<br/>contract-worktree.sh start --plan<br/>branch codex/task-slug"]
+  WorktreePolicy -->|no| CurrentTree["Use current worktree<br/>small or explicitly allowed slice"]
+  Checkout --> Implement
+  CurrentTree --> Implement
+  ContractRun --> Changes
+
+  Implement["Edit and run commands"] --> PreHooks["Pre-edit guards<br/>PlanStatusGuard, ContractScopeGuard, WorktreeGuard"]
+  PreHooks -->|blocked| ScopeFix["Fix plan, contract, worktree, or scope"]
+  ScopeFix --> Implement
+  PreHooks -->|allowed| Changes["Code, docs, tests, or config changes"]
+  Changes --> PostHooks["Post-edit and post-bash hooks<br/>trace, drift request, handoff, check evidence"]
+  PostHooks --> ArchQueue["Architecture queue<br/>architecture-queue.sh record/reindex<br/>check-architecture-sync.sh"]
+  ArchQueue --> Verify["Run verification<br/>tests plus repo workflow checks"]
+
+  Verify --> Checks["Structured evidence<br/>.ai/harness/checks/latest.json<br/>.ai/harness/runs/*.json"]
+  Checks --> CheckReview["Evaluator review<br/>Waza /check -> review file"]
+  CheckReview --> External["External acceptance advice<br/>or explicit manual override"]
+  External --> DoneGate{"Contract, checks, review, and acceptance pass?"}
+  DoneGate -->|no| Repair["Repair failing evidence or implementation"]
+  Repair --> Implement
+  DoneGate -->|yes| SprintComplete{"Sprint task active?"}
+  SprintComplete -->|yes| MarkSprint["Mark backlog item complete<br/>sprint-backlog.sh complete-task"]
+  SprintComplete -->|no| Closeout["Closeout<br/>scripts/contract-worktree.sh finish"]
+  MarkSprint --> Closeout
+
+  Closeout --> Commit["Commit contract branch"]
+  Commit --> Merge["Fast-forward target branch"]
+  Merge --> Archive["Archive plan/todo and refresh handoff"]
+  Archive --> Cleanup["Cleanup merged worktree<br/>contract-worktree.sh cleanup"]
+  Cleanup --> Done["Reviewable completed task"]
+```
+
+面向长周期的产品 loop，在 Codex 开始循环执行之前，先把 discovery 和
+工程 plan 判断留给 parent agent：`geju` 打开 pre-contract frame，parent
+agent 完成 P1/P2/P3，把确认的方向冻结进 `plans/prds/` 下的上层 PRD，
+以及 `plans/sprints/` 下的有序 sprint backlog，然后用 Codex Goal 指向
+那份 sprint 文件。PRD 保持为上层 source of truth，backlog 是持久的
+执行队列，这样 resume 之后的 Goal 会话就不需要重新解释原始聊天。见
+[`agentic-development-flow.md`](docs/reference-configs/agentic-development-flow.md)
+和
+[`workflow-orchestration.md`](docs/reference-configs/workflow-orchestration.md)。
+
+## Hooks
+
+安装好的 adapter 拥有八条共享的 managed hook route。Route tuple
+`event + routeId + matcher` 是稳定的 contract；每个 tuple 绑定唯一一个
+typed in-process handler。
+
+| Route | Matcher | Handler | Function |
+| --- | --- | --- | --- |
+| `SessionStart.default` | all sessions | `src/cli/hook/session-context.ts` (in-process builder) | 在开工前注入之前的 handoff、sprint 状态、minimal-change 指引，以及只读的 config-security 发现项。 |
+| `PreToolUse.edit` | `Edit\|Write` | `src/cli/hook/mutation-guard.ts` (in-process handler) | 在实现性 edit 之前，强制执行 worktree policy 和 plan/contract 就绪检查。 |
+| `PreToolUse.subagent` | `Task\|Agent\|SendUserMessage` | `src/cli/hook/subagent-handler.ts` | 让 delegated 工作始终经由 parent session 回流，避免泄漏未经确认的 completion 声明。 |
+| `PostToolUse.edit` | `Edit\|Write` | `src/cli/hook/mutation-observed.ts` (in-process handler) | 每次符合条件的 edit 最多写一条带 dirty bits 的小 journal event；contract verification、architecture/context/capability sync 和 minimal-change 证据都延后到 Stop 才跑，而不是每次 edit 都跑。 |
+| `PostToolUse.bash` | `Bash` | `src/cli/hook/command-observed.ts` | 观察命令结果并捕获 verification 证据，不替代命令本身的 runner。 |
+| `PostToolUse.always` | all tools | `src/cli/hook/trace-observer.ts` | 提供低噪音、常驻的 trace 和 runtime observation。 |
+| `UserPromptSubmit.default` | all prompts | `src/cli/hook/prompt-handler.ts` | 对 prompt intent 分类，路由 planning/check 提示，并渲染 host-safe 的 workflow 指引。 |
+| `Stop.default` | session stop | `src/cli/hook/stop-handler.ts` (in-process handler) | 收尾 handoff，并防止在 draft-plan 未解决或 completion 证据有缺口时结束会话。 |
+
+Codex 还会额外安装三条 Codex-only 的 bounded-delegation route——
+`UserPromptSubmit.delegation`、`SubagentStart.context` 和
+`SubagentStop.quality`，全部绑定到 `src/cli/hook/subagent-handler.ts`；
+Claude 只保留共享的 `PreToolUse.subagent` return-channel route。
+
+`repo-harness-hook` 和它的 typed handler registry 是 host-event
+runtime；`~/.claude/settings.json` 和 `~/.codex/hooks.json` 是
+user-level adapter，Codex 必须先在 Settings 里把这个文件标记为
+trusted，这些 hook 才会运行。Repo-local 的 `.claude/settings.json` 和
+`.codex/hooks.json` 是需要退休的 legacy config。按顺序 debug：adapter
+config -> `repo-harness-hook` -> route registry -> typed handler。
+
+当某个 hook 挡住工作时，先读 terminal 里结构化输出的 `guard`、
+`reason`、`fix`、`failure_class` 和 `run_id`。持久记录在
+`.ai/harness/failures/latest.jsonl`，相关 tool activity 在
+`.claude/.trace.jsonl`。常见的 guard 有 `PlanStatusGuard`（没有 active
+或可执行的 plan）、`ContractGuard`（缺少 contract scaffold，或者在
+contract 通过之前就声称完成）和 `WorktreeGuard`（从错误的 worktree
+写入）。完整 playbook 见
 [`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md)。
 
-## MCP Connector Quickstart
+## MCP Connector
 
-作为可选 sidecar，`repo-harness mcp` 只把 workflow artifacts 暴露给 MCP 客户端。
-ChatGPT 充当读取状态、把想法推过 PRD、checklist Sprint 和 Codex goal handoff 的
-planner/reviewer —— 没有源码写入权限、没有任意 shell 执行、也没有默认 Codex
-runner。Codex 仍然是执行者。
-
-这个 sidecar 假设 CLI 已经按上面「前 5 分钟」装好。当你想让 ChatGPT
-对着真实仓库状态做规划、由 Codex 执行生成的 file-backed Sprint 时用它。
+作为可选 sidecar，`repo-harness mcp` 通过默认的 `planner` profile 把
+workflow artifact 暴露给 MCP client。ChatGPT 读取真实仓库状态，把一个
+想法推进过 PRD、checklist Sprint 和 Codex goal handoff artifact——默认
+没有源码写入权限、没有任意 shell 执行，也没有默认 runner。Codex 仍然是
+执行者。
 
 ```bash
 repo-harness mcp setup chatgpt --repo .
 repo-harness mcp serve --repo . --transport http --host 127.0.0.1 --port 8765 --profile planner
 ```
 
-把这个本地 server 通过 HTTPS tunnel 暴露出去，再用 `/mcp` URL 创建一个
-ChatGPT Connector。生成的指南写到：
+把这个本地 server 通过 HTTPS tunnel 暴露出去，注册 `/mcp` URL，human
+workflow 就是：
+
+1. ChatGPT 通过 MCP 读取 repo-harness 的 workflow 文件。
+2. ChatGPT 用 `write_prd_from_idea` 写一份 PRD。
+3. ChatGPT 用 `write_checklist_sprint` 写一份 checklist Sprint。
+4. ChatGPT 用 `prepare_codex_goal_from_sprint` 准备好
+   `.ai/harness/handoff/codex-goal.md`。
+5. Codex 运行 host-native 的 `/goal` prompt，逐个 stage 已完成的 Sprint
+   phase。
+
+通用的 repo reader/writer 工具、snapshot 与 index 一致性、server
+profile，以及 opt-in 的 dev runner，见
+[`general-repo-mcp.md`](docs/reference-configs/general-repo-mcp.md)。
+Direct-coding profile 见
+[`chatgpt-coding-mcp.md`](docs/reference-configs/chatgpt-coding-mcp.md)。
+Index-stale、CodeGraph-down 和 rollback 操作见
+[`general-repo-mcp-codegraph.md`](deploy/runbooks/general-repo-mcp-codegraph.md)。
+
+## 审查产出
+
+先看 `tasks/reviews/<task>.review.md`。它的 `## Human Review Card` 是
+一屏决策面：verdict、change type、intended vs actual files、commands
+passed、external acceptance、residual risk、reviewer action、
+rollback。然后再检查 active contract、`.ai/harness/checks/latest.json`
+里的最新 trace，以及实际改动的文件。只有当 review 建议 pass、card 的
+verdict 是 pass，且 external acceptance 是 pass、`not_required` 或
+明确的 override 时，才能接受这次交付。
+
+Agent 会先读 source artifact，再读派生出来的摘要：
+
+| Agent 先读 | Human 先看 |
+| --- | --- |
+| 当前用户 prompt 和引用的文件 | `tasks/reviews/<task>.review.md` 的 Human Review Card |
+| `AGENTS.md` / `CLAUDE.md` | 改动的文件和 diff |
+| `.ai/harness/active-plan` 里的 active plan | Active contract 的 allowed paths 和 exit criteria |
+| `tasks/contracts/` 里的 active contract | `.ai/harness/checks/latest.json` 和 run trace |
+| `.ai/harness/handoff/` 里的最新 handoff | 残余风险和 rollback |
+
+`tasks/current.md` 只是一份 orientation snapshot。如果它和 active
+plan、contract、review、checks 或 handoff 有分歧，以 source artifact
+为准。
+
+Runtime 较重的 validator（Unity、浏览器 E2E、mobile simulator、硬件
+rig、staging smoke test）可以把 external verification manifest 发布到
+被忽略的 run-evidence surface——目前这只是人工约定，还不是
+`repo-harness check` 会自动执行的 gate。见
+[external tooling](docs/reference-configs/external-tooling.md#external-verification-evidence)。
+
+## Skills
+
+Canonical 的 rule-owner package 放在 `assets/skills/` 和
+`assets/skill-commands/` 下，让 host skill discovery 保持在有限范围
+内，真正的 execution 仍由 CLI 和 hooks 负责。
+
+| Skill | 作用 |
+| --- | --- |
+| `repo-harness` | 根路由 Skill，无条件同步到每个 profile |
+| `repo-harness-setup` | Init、migrate、upgrade、repair、scaffold 和 capability-configuration 各 mode；仅 router-only |
+| `repo-harness-plan` | 创建一份 decision-complete plan，或者 review 已有的 plan |
+| `repo-harness-product` | 面向上层产品规划的 PRD、Sprint 和 Goal mode |
+| `repo-harness-check` | Workflow 和 release check，附带 deploy-readiness reference |
+| `repo-harness-ship` | 校验完成的 worktree，push 分支并开 PR |
+| `repo-harness-architecture` | Architecture 文档、drift request 和图表，不需要完整刷新 harness |
+| `repo-harness-cross-review` | Host-aware 的 Claude/Codex 独立 cross-model review |
+| `claude-plan` | Codex 端 provider skill：面向设计分叉或高风险决策的独立 Claude plan mode consult；不是用户直呼入口 |
+| `repo-harness-chatgpt` | Oracle browser/GPT Pro consult、MCP Connector setup 和 bridge handoff；仅限显式 setup |
+| `merge-gate`（外部） | Exact-candidate 的 final gate；repo-harness 本身不附带 merge-gate Skill——见 [external tooling](docs/reference-configs/external-tooling.md) |
+
+规划链路刻意分层：
 
 ```text
-docs/repo-harness-chatgpt-mcp-setup.md
+idea -> PRD mode -> Sprint mode -> Goal mode
 ```
 
-human workflow 是：
+`repo-harness init` 面向已有仓库；`repo-harness-setup` 的 scaffold
+mode 创建新项目或新模块。`hooks-init`、`docs-init` 和
+`create-project-dirs` 是内部步骤，不是公开命令。各 mode 的路由边界见
+[`agentic-development-flow.md`](docs/reference-configs/agentic-development-flow.md)
+和 `repo-harness docs show harness-overview`。
 
-1. ChatGPT 通过 MCP 读取 repo-harness workflow 文件。
-2. ChatGPT 用 `write_prd_from_idea` 写 PRD。
-3. ChatGPT 用 `write_checklist_sprint` 写 checklist Sprint。
-4. ChatGPT 用 `prepare_codex_goal_from_sprint` 准备 `.ai/harness/handoff/codex-goal.md`。
-5. Codex 运行 host-native `/goal` prompt，逐个 stage 完成的 Sprint phase。
+## Maintainer Reference
 
-最后一步 handoff 的本地兜底：
+修改 package 本身需要一份 source checkout：
 
 ```bash
-repo-harness mcp prepare-goal --repo . --prd plans/prds/<feature>.prd.md --sprint plans/sprints/<feature>.sprint.md
+git clone https://github.com/Ancienttwo/repo-harness.git ~/Projects/repo-harness
+cd ~/Projects/repo-harness && bun src/cli/index.ts update
 ```
 
-面向 agent 的 Skill 安装在：
+这份 checkout 是唯一可编辑的 source of truth；本地 Claude/Codex 的
+skill 路径是 symlink-backed 的 runtime entrypoint，由
+`scripts/sync-codex-installed-copies.sh` 重建。
+
+`bun run check:ci` 是唯一的 CI-equivalent gate；`bun run
+check:release` 只是在委托给它之前，多加一步 npm unpublished-version
+preflight。
+
+```bash
+bun run check:ci                    # the whole gate
+repo-harness docs list              # runtime reference docs, resolved from the package
+repo-harness docs show harness-overview
+bun scripts/assemble-template.ts --plan C --name "MyProject"
+```
+
+Hook 变更只更新一次 canonical 的 `assets/hooks/`，然后跑 `bun run
+sync:hooks`，并在验证里包含 `bun run check:hooks`。Reference doc 的
+canonical 版本在 `assets/reference-configs/` 下，并投射到
+`docs/reference-configs/`；`bun run check:reference-configs` 用来
+验证这次投射。
+
+## 致谢
+
+`repo-harness` 是围绕一小组外部 skill、仓库和 agent runtime 搭建起来
+的，它们塑造了这套 workflow contract。它们不是普通的 bundled
+dependency。
+
+| 工具或仓库 | 用途 | 依赖形态 |
+| --- | --- | --- |
+| [Hylarucoder](https://x.com/hylarucoder) / Geju | P1/P2/P3 due-diligence 方法和 Geju 实践，塑造了这套 workflow 里 planning、tracing 和 decision-rationale 的纪律 | 方法论贡献和致谢；不是 bundled dependency |
+| [TW93](https://x.com/HiTw93) 的 Waza，包括 `think`、`hunt`、`check` 和 `health` | 日常 planning、bug hunt、verification、health check，以及 Codex-first 的 skill sync | 通过 skills CLI 安装进 host skill root |
+| `mermaid` | 当 Mermaid 不够用时，提供人类可读的 architecture 和 system-flow 图 | Runtime-referenced 的 skill，不会 vendor 进生成的仓库 |
+| CodeGraph（`@colbymchenry/codegraph`） | 为这个 self-host 仓库提供 symbol-aware 导航、impact tracing 和 readiness check | 本仓库的 dev dependency；生成的仓库默认保持 global-MCP-first，除非 policy 显式开启 |
+| [Peter Steinberger](https://x.com/steipete) 的 [Oracle](https://github.com/steipete/oracle)（`@steipete/oracle`，MIT） | `chatgpt-browser` 的 Oracle provider 为 `gptpro` consult 默认 shell 出去调用的 GPT Pro / ChatGPT Web 浏览器 consult 引擎 | 外部解析的 binary（`--oracle-bin`、`REPO_HARNESS_ORACLE_BIN`、`node_modules/.bin` 或 `PATH`）；从不自动下载，缺失 binary 会硬失败 `ORACLE_NOT_INSTALLED` |
+| OpenAI Codex | repo-local 实现和验证的主要执行 agent；commit 实质包含 Codex 产出内容时，也承担 GitHub contributor attribution | 外部 agent runtime；attribution 是显式的 commit trailer，不是隐藏的 hook automation |
+
+### GitHub 贡献者署名
+
+当 Codex 对某次 commit 有实质贡献时，在 message 末尾用 GitHub 标准的
+co-author trailer：
 
 ```text
-.agents/skills/repo-harness-chatgpt-bridge/SKILL.md
+Co-authored-by: codex <codex@openai.com>
 ```
 
-这个 Skill 告诉 Codex 如何消费 ChatGPT 产出的 PRD/Sprint/Goal artifacts，
-而不给 ChatGPT 源码写入或 shell 执行权限。
-
-Dev Mode 可以选择通过 MCP 开启本地 agent 执行，默认关闭。当用户启用
-`orchestrator` profile 并打开 dev runner 设置后，ChatGPT 可以调用
-`run_agent_goal`，它只读取 `.ai/harness/handoff/codex-goal.md`，并通过
-`codex exec` 或 `claude -p` 这类被允许的本地 CLI 运行这段固定 handoff。
-
-```bash
-repo-harness mcp serve --repo . --transport http --profile orchestrator --enable-dev-runner --dev-runner-agents codex
-```
-
-这个设置只面向本地 Developer Mode，有超时上限、有审计，不是任意 shell。
-
-## Hook Authority Map
-
-`repo-harness-hook` 是唯一 host-event runtime。user-level adapter 只负责送入事件，
-route registry 按稳定的 `event + routeId + matcher` tuple 调用 exactly one typed handler。
-`assets/hooks/lib/workflow-state.sh` 与 `.ai/hooks/lib/workflow-state.sh` 仅供 operator
-helpers 检查 workflow state，不是 dispatcher。
-
-- `~/.claude/settings.json`：user-level Claude adapter。
-- `~/.codex/hooks.json`：user-level Codex adapter；必须在 Codex Settings 中信任。
-- Repo-local `.claude/settings.json` / `.codex/hooks.json`：迁移时退休的 legacy 输入。
-- 产品 handler 变更在 `src/cli/hook/`；asset projection 用 `bun run sync:hooks` 同步。
-
-The installed adapter owns the managed hook routes. Each route invokes one typed
-handler; 不存在第二套 shell runtime，也不存在 provider-specific runtime。
-
-| Route | Matcher | Typed handler | Function |
-| --- | --- | --- | --- |
-| `SessionStart.default` | all sessions | `src/cli/hook/session-context.ts` (in-process builder) | Injects prior handoff, sprint status, and read-only config-security findings before work starts. |
-| `PreToolUse.edit` | `Edit|Write` | `src/cli/hook/mutation-guard.ts` (in-process handler) | Enforces worktree policy and plan/contract readiness before implementation edits. |
-| `PreToolUse.subagent` | `Task|Agent|SendUserMessage` | `subagent` | Keeps delegated work returning through the parent session instead of leaking completion claims. |
-| `PostToolUse.edit` | `Edit|Write` | `mutation-observed` | Records the edit journal and controlled-file observations. |
-| `PostToolUse.bash` | `Bash` | `command-observed` | Observes command results and captures verification evidence without replacing the command runner. |
-| `PostToolUse.always` | all tools | `trace-observer` | Provides low-noise always-on trace and runtime observation. |
-| `UserPromptSubmit.default` | all prompts | `prompt` | Classifies prompt intent, routes planning/check/hunt hints, and renders host-safe workflow guidance. |
-| `Stop.default` | session stop | `src/cli/hook/stop-handler.ts` (in-process handler) | Finalizes handoff and guards against ending with unresolved draft-plan or completion evidence gaps. |
-
-`SessionStart` 运行进程内的 session-context builder，一次性组装出上下文：
-
-```mermaid
-flowchart LR
-  SessionStart["Claude/Codex SessionStart"] --> Adapter["user-level adapter"]
-  Adapter --> Entry["repo-harness-hook SessionStart --route default"]
-  Entry --> Ctx["session-context.ts<br/>in-process builder"]
-  Ctx --> Resume["恢复 + sprint + handoff 上下文"]
-  Ctx --> Sec["security scan<br/>只读配置扫描，按指纹门控"]
-  Resume --> SSOut["SessionStart additionalContext<br/>上次会话状态 + SecurityConfig 发现项"]
-  Sec --> SSOut
-```
-
-Prompt guard 多一个内部步骤：
-
-```mermaid
-flowchart LR
-  Host["Claude/Codex UserPromptSubmit"] --> Adapter["user-level adapter"]
-  Adapter --> CLI["repo-harness-hook UserPromptSubmit --route default"]
-  CLI --> Route["route registry"]
-  Route --> Handler["prompt handler<br/>typed decision table"]
-  Handler --> RouteHint["Waza 路由提示<br/>显式 think/规划优先匹配 → /think"]
-  Handler --> HostOutput["host-safe allow, advice, block, or done gate output"]
-```
-
-Typed handler 拥有该 route 的输入解析、文件状态读取和声明的副作用；runtime 只负责
-统一 host 输出 shaping。AcceptanceReceipt 是 closeout authority，review Markdown 只是投影。
-
-## Hook Failure Playbook
-
-hook block 工作时，先看 terminal 里的结构化输出。核心字段是
-`guard`、`reason`、`fix`、`failure_class` 和 `run_id`。
-
-- Failure log：`.ai/harness/failures/latest.jsonl`
-- Trace log：`.claude/.trace.jsonl`
-- 深入指南：[`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md)
-
-常见 guards：
-
-- `PlanStatusGuard`：没有 active plan，或 plan 还不能执行
-- `ContractGuard`：approved execution 还没有生成 contract/review/notes scaffold
-- `ContractGuard`：任务还没通过 contract verification 就声称完成
-- `WorktreeGuard`：在强制 linked worktree 策略下，从 primary worktree 写入
-
-## Repo Workflow
-
-- Root routing docs：`CLAUDE.md`、`AGENTS.md`
-- Typed hook runtime：`src/cli/hook/`（通过 `repo-harness-hook` 运行）
-- Operator helper projection：`.ai/hooks/lib/workflow-state.sh`
-- User-level adapter layer：`~/.claude/settings.json`、`~/.codex/hooks.json`
-- Active execution surface：`tasks/`
-- Plan source of truth：`plans/`
-- Durable progress：`tasks/workstreams/`
-- Release history：`docs/CHANGELOG.md`
+保持这条 trailer 逐 commit 显式添加、可见；不要把它固化进下游
+repo-harness 的 commit script 或 hook，除非目标仓库采用同样的
+policy。
 
 ## 当前 Release
 
 - npm package：`repo-harness@0.12.0`
 - Generated workflow stamp：`repo-harness@0.12.0+template@0.12.0`
 - GitHub repository：`Ancienttwo/repo-harness`
-- Release history：[`docs/CHANGELOG.md`](docs/CHANGELOG.md)
+- Release notes 和 history：[`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 
-## 致谢
+## 许可证
 
-感谢 [Hylarucoder](https://x.com/hylarucoder) 的方法论贡献。`repo-harness`
-里的 P1/P2/P3 due-diligence 方法，以及 Geju 实践对 planning、trace 和
-decision rationale 的要求，来自他的贡献与启发。
-
-感谢 [TW93](https://x.com/HiTw93) 创作 Waza；`think`、`hunt`、`check`
-和 `health` 这些核心 skill 构成了 `repo-harness` 的日常 planning、bug hunt
-和 verification 节奏。
-
-感谢 [Peter Steinberger](https://x.com/steipete) 创作 Oracle（`@steipete/oracle`，MIT）；它是
-`chatgpt-browser` 默认的 GPT Pro / ChatGPT Web 浏览器 consult 引擎，Oracle provider
-通过 spawn 外部 oracle 二进制完成 `gptpro` consult，从不自动下载，缺失即硬失败。
-
-感谢 OpenAI Codex 作为本仓库主要执行 agent 参与实现、验证和收口。
-
-### GitHub Contributor Attribution
-
-Codex 对某个 commit 有实质贡献时，GitHub contributor 署名使用显式 trailer：
-
-```text
-Co-authored-by: codex <codex@openai.com>
-```
-
-这条署名保持逐 commit 显式添加，不把它藏进下游 `repo-harness` commit 脚本或 hook
-里，除非目标仓库自己采用同样策略。
-
-## Action Command Skills
-
-canonical rule-owner package 分布在 `assets/skills/`（已激活的 canonical package）
-和 `assets/skill-commands/`（原地演进的幸存者）；它们保留 host skill discovery
-的边界，真正执行由 CLI 和 hooks 负责：
-
-- Router：`repo-harness`（root Skill，无条件同步到每个 profile）
-- Setup layer：`repo-harness-setup`（init、migrate、upgrade、repair、
-  scaffold、capability-configuration 各 mode；仅 router-only，不被任何 profile
-  自动发现）
-- Planning：`repo-harness-plan`（创建 decision-complete plan，或 review 已有 plan）
-- Product planning layer：`repo-harness-product`（PRD / Sprint / Goal 三种
-  mode；PRD mode 先激活 `$geju` 做格局判断，再优先用 Claude `claude -p --model
-  opus` 起草 PRD，Codex 只做 fallback；Sprint mode 把 PRD 拆成 `plans/sprints/`
-  里的有序 backlog，每行先用 `$think` 展开再进 contract 流程；Goal mode 从详细
-  PRD 或 Sprint 文档准备 Codex/Claude `/goal` prompt，缺文档时先要求补文档）
-- Verification：`repo-harness-check`（workflow/release 检查，附带
-  deploy-readiness reference）
-- Release：`repo-harness-ship`
-- Architecture：`repo-harness-architecture`
-- Cross-model review：`repo-harness-cross-review`（host-aware，strict profile
-  下两个 host 都会安装）
-- ChatGPT 集成：`repo-harness-chatgpt`（Oracle browser / GPT Pro consult 与
-  continuation、MCP Connector setup、bridge handoff、read-back evidence；仅限
-  explicit setup，product planning 从不隐式安装）
-
-规划链路按层推进：
-
-```text
-idea -> repo-harness-product（PRD mode） -> repo-harness-product（Sprint mode，from-prd） -> repo-harness-product（Goal mode）
-```
-
-`repo-harness-product` 的 PRD mode 处理产品想法：先跑 `$geju` direction pass，
-再用 Claude `claude -p --model opus` 起草 PRD，Codex 只在 Claude 不可用或失败时
-fallback。用它的 Sprint mode（`from-prd <plans/prds/*.prd.md>`）把已批准 PRD 拆成
-带 machine-checkable acceptance 的 Sprint backlog；Goal mode 只在已有详细 PRD 或
-Sprint artifact 后使用，用它生成有边界的 Codex/Claude `/goal` prompt，并把
-PRD/Sprint 保持为 source of truth。缺少这份文档时，Goal mode 必须先要求补文档，
-而不是从聊天上下文直接开工。
-
-`repo-harness init` 用于已有仓库；`repo-harness-setup` 的 scaffold mode 创建新
-项目或模块。`hooks-init`、`docs-init` 和 `create-project-dirs` 是内部步骤，不是
-公共 commands。
-
-## Maintainer Reference
-
-维护者编辑 package 源码需要 source checkout：
-
-```bash
-git clone https://github.com/Ancienttwo/repo-harness.git ~/Projects/repo-harness
-cd ~/Projects/repo-harness
-bun src/cli/index.ts update
-```
-
-`~/Projects/repo-harness` 是唯一可编辑 source of truth；本地 Claude/Codex 路径
-（`~/.claude/skills/repo-harness`、`~/.codex/skills/repo-harness`）是 symlink-backed
-runtime entrypoints。只有 `~/.codex/skills/repo-harness` 暴露 `SKILL.md` 和
-`assets/skill-commands/`；`scripts/sync-codex-installed-copies.sh` 重建这些 alias
-并清理退休的 `repo-harness-skill` / `project-initializer` 目录。脚本默认把 runtime
-路径链回源码仓库；设 `AGENTIC_DEV_LINK_INSTALLED_COPIES=0` 走 copy-based staging，
-或用 `CODEX_SKILLS_ROOT` / `CLAUDE_SKILLS_ROOT` 指定其他 root。
-
-### 检查本仓库 workflow contract
-
-跑 [Verification](#verification) 里的完整 gate；`bun run check:ci` 是单条
-CI-equivalent 命令。
-
-### Runtime reference docs
-
-Generic repo-harness runtime/reference docs live in the installed package under
-`assets/reference-configs/` and are resolved through the CLI:
-
-```bash
-repo-harness docs list
-repo-harness docs path harness-overview
-repo-harness docs show harness-overview
-```
-
-Initializer 和 runtime 默认（question flow、plan menu、template vars、外部工具
-路由）记录在 `harness-overview.md` 的 **Initializer and Runtime Model** 一节。
-Generated and migrated repos still keep `docs/reference-configs/*.md`, but
-those files are deterministic pointer stubs. Repo-local workflow state,
-policy, checks, runs, handoff packets, context maps, and helper snapshots stay
-under `.ai/`.
-
-### Template assembly
-
-```bash
-bun scripts/assemble-template.ts --plan C --name "MyProject"
-bun scripts/assemble-template.ts --target agents --plan C --name "MyProject"
-```
-
-### Verification
-
-发布前 review 使用唯一 CI-equivalent gate：
-
-```bash
-bun run check:ci
-```
-
-这个 gate 展开为下面这些 repo-owned checks；`bun run check:release` 只是在委托同一个 gate 前增加 npm 版本未发布检查。
-
-```bash
-bun test
-bash scripts/check-deploy-sql-order.sh
-bash scripts/check-architecture-sync.sh
-bash scripts/check-task-sync.sh
-bash scripts/check-task-workflow.sh --strict
-bun scripts/inspect-project-state.ts --repo . --format text
-bun src/cli/index.ts init --repo . --dry-run
-bash scripts/check-agent-tooling.sh --host both --check-updates
-bun run benchmark:skills --eval route-workflow-check
-```
-
-
-### Local benchmark skeleton
-
-```bash
-bun run benchmark:skills --eval route-workflow-check
-```
-
-Eval output is the release/readiness evidence path; dry-run benchmark wiring is only a smoke and is not skill-effectiveness evidence.
-
-
-### Run one eval across both Claude and Codex
-
-```bash
-bun run benchmark:skills --eval repair-agents-task-sync
-```
-
-## Key Files
-
-- Skill spec：`SKILL.md`
-- Root routing docs：`CLAUDE.md`、`AGENTS.md`
-- Plan mapping：`assets/plan-map.json`
-- Question-pack：`assets/initializer-question-pack.v4.json`
-- Shared hooks：`assets/hooks/`
-- Runtime reference docs: `assets/reference-configs/` via `repo-harness docs`
-- Workflow contract：`assets/workflow-contract.v1.json`
-- Hook operations reference：`docs/reference-configs/hook-operations.md`
-- Template assembler：`scripts/assemble-template.ts`
-- State inspector：`scripts/inspect-project-state.ts`
-- External tooling detector: `scripts/check-agent-tooling.sh`
-- Scaffolding scripts:
-  - `scripts/init-project.sh`
-  - `scripts/create-project-dirs.sh`
-- Canonical adoption planner: `src/core/adoption/standard-plan.ts`
-
-## Generated vs Self-Hosted Hook Projection
-
-- 下游 hook 行为由 `assets/hooks/` 和 `assets/reference-configs/` 定义。
-- 本仓库通过 `.ai/hooks/` dogfood 同一套 hook runtime，但这棵树由 `assets/hooks/projection.json` 生成。
-- 每个 hook 变更只应更新 canonical `assets/hooks/`，运行 `bun run sync:hooks`，并在验证里包含 `bun run check:hooks`。
-
-## Package Manager Defaults
-
-- 通用默认优先级：`bun > pnpm > npm`
-- **Plan G/H**（Python-centric）默认以 **`uv`** 作为 primary package manager。
-
-## Runtime Profiles
-
-- `Plan-only (recommended)`（默认）
-- `Plan + Permissionless`
-- `Standard (ask before each action)`
-
-配置在 `assets/initializer-question-pack.v4.json`，由 `scripts/initializer-question-pack.ts` 消费。
-
-## Verification
-
-发布 review 使用唯一 CI-equivalent gate：
-
-```bash
-bun run check:ci
-```
-
-这个 gate 展开为下面这些 repo-owned checks；`bun run check:release` 只是在委托同一个 gate 前增加 npm unpublished-version preflight。
-
-```bash
-bun test
-bash scripts/check-deploy-sql-order.sh
-bash scripts/check-architecture-sync.sh
-bash scripts/check-task-sync.sh
-bash scripts/check-task-workflow.sh --strict
-bun scripts/inspect-project-state.ts --repo . --format text
-bun src/cli/index.ts init --repo . --dry-run
-bash scripts/check-agent-tooling.sh --host both --check-updates
-bun run benchmark:skills --eval route-workflow-check
-```
+MIT——见 [`LICENSE`](LICENSE)。

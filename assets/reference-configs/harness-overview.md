@@ -222,3 +222,40 @@ Maintainer-facing detail on how the initializer and runtime defaults are wired.
 - `repo-harness install` bootstraps the Codex/Claude runtime pieces for the default workflow: refreshes `repo-harness` skill aliases, installs global Codex/Claude hook adapters, installs Waza skills (`think`, `hunt`, `check`, `health`) and Mermaid through the skills CLI, persists the brain root in `~/.repo-harness/config.json`, and configures CodeGraph MCP for selected host agents. `repo-harness init` remains a compatibility alias for existing automation.
 - Other external tooling stays advisory-only: `repo-harness run check-agent-tooling --host both --check-updates`; Waza update checks compare upstream `tw93/Waza` `SKILL.md` hashes without running `npx skills check`; no automatic CodeGraph daemon or provider setup.
 - Manual distillation stays repo-local: repeated corrections -> `tasks/lessons.md`; deep findings and hidden contracts -> topic-scoped `docs/researches/*.md`; sprint verification evidence -> `tasks/reviews/*.review.md`; durable capability progress -> `tasks/workstreams/`; release history -> `docs/CHANGELOG.md`.
+
+### Package Manager Defaults
+
+- General default priority: `bun > pnpm > npm`.
+- **Plan G/H** (Python-centric) default to **`uv`** as the primary package manager.
+
+### Runtime Profiles
+
+The initializer offers exactly three runtime profiles:
+
+- `Plan-only (recommended)` (default)
+- `Plan + Permissionless`
+- `Standard (ask before each action)`
+
+They are configured in `assets/initializer-question-pack.v4.json` and consumed by
+`scripts/initializer-question-pack.ts`.
+
+### Package Authority Files
+
+Maintainer-facing map of which package file owns which contract:
+
+| File | Owns |
+|---|---|
+| `SKILL.md` | Root Skill spec |
+| `CLAUDE.md`, `AGENTS.md` | Root routing docs |
+| `assets/plan-map.json` | Plan catalog mapping |
+| `assets/initializer-question-pack.v4.json` | Question pack |
+| `assets/hooks/` | Canonical hook asset source |
+| `assets/reference-configs/` | Runtime reference docs, resolved through `repo-harness docs` |
+| `assets/workflow-contract.v1.json` | Workflow contract manifest |
+| `docs/reference-configs/*.md` | Source-repo projection of the runtime reference docs |
+| `scripts/assemble-template.ts` | Explicit template assembly |
+| `scripts/initializer-question-pack.ts` | Question inference helper |
+| `scripts/inspect-project-state.ts` | State inspector |
+| `src/core/adoption/standard-plan.ts` | Canonical adoption planner |
+| `scripts/check-agent-tooling.sh` | External tooling detector |
+| `scripts/init-project.sh`, `scripts/create-project-dirs.sh` | Scaffolding steps |
