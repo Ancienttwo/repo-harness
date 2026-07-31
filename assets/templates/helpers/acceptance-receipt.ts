@@ -241,7 +241,7 @@ function normalizedVerificationEvidence(content: string, subjectSha256: string):
     benchmark_evidence: value.benchmark_evidence,
     commands: value.commands,
   };
-  return { fingerprint: sha256(JSON.stringify(canonical)), benchmark };
+  return { fingerprint: sha256(stableJson(canonical)), benchmark };
 }
 
 function stateRoot(authorityHome: string): string {
