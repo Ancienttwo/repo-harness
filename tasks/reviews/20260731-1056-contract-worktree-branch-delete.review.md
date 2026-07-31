@@ -48,9 +48,9 @@
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: a37c16e4393c374877b9472bd3d771c0862fab12
 > **Verification Evidence SHA256**: sha256:06f5d71d65690f15b38b1ecdaf09b12f8fc743fbf099fd5c2bb920699ce48524
-> **Issued At**: 2026-07-31T08:08:07.426Z
+> **Issued At**: 2026-07-31T08:12:14.356Z
 
-- Summary: Gatekeeper PASS: force-boundary verified (merge_mode flag scope + unreachable-state analysis), adversarial cases green, full suite 2105/0
+- Summary: gatekeeper PASS. The sibling squash-cleanup package taught the merge check to accept absorbed branches, but the deletion step still called git branch -d, which is itself ancestry-based, so cleanup half-completed on every squash-merged worktree: the worktree and metadata were removed and the branch was left orphaned, forcing a manual git branch -D that trains the operator to bypass the safety gate. The fix keeps -d for genuine ancestors and uses -D only on the branches the merge check already proved absorbed, so force is scoped to the case where safety was independently established rather than applied blanket. Force-boundary verified: an unmerged branch still takes -d and is still refused. Two adversarial cases were exercised, and the flag-unreachable analysis confirms no path reaches -D without a prior absorbed determination. This run recorded 17/17 exit criteria green including the full Root Cause Evidence gate, allowed_paths clean at 9 files, and full suite green.
 - Findings: none
 
 ## Behavior Diff Notes
