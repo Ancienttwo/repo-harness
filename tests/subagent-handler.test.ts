@@ -161,7 +161,12 @@ describe('typed subagent hook handlers', () => {
       mkdirSync(join(repoRoot, 'plans'), { recursive: true });
       mkdirSync(join(repoRoot, 'tasks/contracts'), { recursive: true });
       writeFileSync(join(repoRoot, '.ai/harness/policy.json'), JSON.stringify({
-        delegation: { max_agents: 4, max_depth: 2, preferred_runners: ['subagent', 'codex'], fallback_runner: 'main-thread' },
+        delegation: {
+          max_agents: 4,
+          max_depth: 2,
+          preferred_runners: ['subagent', 'codex-app-thread', 'codex-exec', 'main-thread'],
+          fallback_runner: 'main-thread',
+        },
       }));
       writeFileSync(join(repoRoot, '.ai/harness/active-plan'), 'plans/plan-test.md\n');
       writeFileSync(join(repoRoot, 'plans/plan-test.md'), '# plan\n');
@@ -179,13 +184,32 @@ describe('typed subagent hook handlers', () => {
       expect(context).toContain('[repo-harness:delegation]');
       expect(context).toContain('Spawn no more than 2 agents.');
       expect(context).toContain('active task contract (tasks/contracts/test.contract.md)');
+      expect(context).toContain('Codex App Thread dispatch (codex_app__create_thread) is the preferred parallelism accelerator');
+      expect(context).toContain('read from the installed ~/.codex/agents/<role>.toml');
+      expect(context).toContain(
+        'Native spawn_agent is a declared fallback only when the App Thread tools are unavailable AND the live spawn schema accepts the exact model and reasoning effort of that role',
+      );
+      expect(context).toContain('MUST NOT fall back to native spawn, because native spawn silently inherits the parent model');
+      expect(context).toContain('Otherwise degrade to codex-exec, then sequential main-thread, on the SAME contract via contract-run.');
+      expect(context).toContain('Runner preference (policy delegation.preferred_runners): subagent, codex-app-thread, codex-exec, main-thread.');
+      expect(context).toContain('- A pendingWorktreeId is not a thread id: confirm the thread materialized with an official thread read before counting the worker as running.');
+      expect(context).toContain('- Adopt a thread worker result only after reading the final turn of that thread.');
+      expect(context).toContain('- Archive completed threads one at a time.');
+      expect(context).toContain('- Thread workers must not create further threads, agents, or background tasks.');
+      expect(context).toContain(
+        'If the live create_thread schema cannot carry that exact model and reasoning effort, the resulting thread is inherited-model and MUST NOT be adopted as a role-routed worker.',
+      );
+      expect(context).toContain(
+        "- Treat a thread as inherited-model whenever the live create_thread surface cannot carry that role's exact model and reasoning effort; such a thread MUST NOT be adopted as a role-routed worker.",
+      );
+      expect(context).toContain('- On the native spawn_agent fallback path, pass fork_turns="none"');
       expect(context).toContain('Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief.');
       const state = JSON.parse(readFileSync(join(repoRoot, '.ai/harness/delegation/latest.json'), 'utf8')) as Record<string, unknown>;
       expect(state.scope_id).toBe('session-session-1');
       expect(state.state_file).toBe('turns/session-session-1.json');
       expect(state.max_agents).toBe(2);
       expect(state.max_depth).toBe(2);
-      expect(state.preferred_runners).toEqual(['subagent', 'codex']);
+      expect(state.preferred_runners).toEqual(['subagent', 'codex-app-thread', 'codex-exec', 'main-thread']);
 
       const silent = runSubagentHandler({
         event: 'UserPromptSubmit',
