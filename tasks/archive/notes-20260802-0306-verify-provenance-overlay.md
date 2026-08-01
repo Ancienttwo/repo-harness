@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-02 03:06
+> **Related Plan**: plans/archive/plan-20260801-2124-verify-provenance-overlay.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260802-0306
+
 # Implementation Notes: verify-provenance-overlay
 
 > **Status**: Active

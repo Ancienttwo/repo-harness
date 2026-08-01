@@ -1,6 +1,6 @@
 # Plan: Strip materializer-owned provenance from the verify-sprint finalize overlay
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260801-2124
 > **Slug**: verify-provenance-overlay
 > **Planning Source**: waza-think

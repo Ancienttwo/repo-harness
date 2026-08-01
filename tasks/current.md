@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-01T22:18:34+0800 -->
+<!-- updated_at: 2026-08-02T03:06:37+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-08-01T22:18:34+0800
-> **Source Branch**: codex/verify-provenance-overlay
-> **Source Commit**: ce6f36b8
+> **Updated At**: 2026-08-02T03:06:37+0800
+> **Source Branch**: codex/final-closeout
+> **Source Commit**: 823e6186
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -46,7 +46,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=`plans/archive/plan-20260712-2215-agent-fleet-specialists.md`
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Scrub `REPO_HARNESS_*` from the child env in
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Strip `.provenance` from the finalize overlay in `scripts/verify-sprint.sh` and mirror to `assets/templates/helpers/verify-sprint.sh`.
 
 ## Checks
 
@@ -57,16 +57,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260801-2012-helper-runner-env-scrub.md
- D tasks/contracts/20260801-2012-helper-runner-env-scrub.contract.md
- D tasks/notes/20260801-2012-helper-runner-env-scrub.notes.md
- M tasks/notes/20260801-env-scrub.pre-fix.log
+ D plans/plan-20260801-2124-verify-provenance-overlay.md
+ D tasks/contracts/20260801-2124-verify-provenance-overlay.contract.md
+ D tasks/notes/20260801-2124-verify-provenance-overlay.notes.md
+ D tasks/reviews/20260801-2124-verify-provenance-overlay.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260801-2012-helper-runner-env-scrub.md
-?? tasks/archive/contract-20260801-2218-helper-runner-env-scrub.md
-?? tasks/archive/notes-20260801-2218-helper-runner-env-scrub.md
-?? tasks/archive/review-20260801-2218-helper-runner-env-scrub.md
-?? tasks/archive/todo-20260801-2218-helper-runner-env-scrub.md
+?? plans/archive/plan-20260801-2124-verify-provenance-overlay.md
+?? tasks/archive/contract-20260802-0306-verify-provenance-overlay.md
+?? tasks/archive/notes-20260802-0306-verify-provenance-overlay.md
+?? tasks/archive/review-20260802-0306-verify-provenance-overlay.md
+?? tasks/archive/todo-20260802-0306-verify-provenance-overlay.md
 ```
 
 ## Source Artifacts
