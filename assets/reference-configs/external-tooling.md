@@ -621,10 +621,16 @@ reports packaged files as `up-to-date`.
 
 `repo-harness run check-agent-tooling --host both --strict-readiness` reports
 `agent_fleet` alongside `codegraph`. With `--check-updates`, it compares each
-installed Claude-side `.md` against the packaged source hash and reports
-`drift`/`synced` per agent without network access. The Codex `.toml` side is a
-generated artifact and is checked for presence; installer golden tests prove
-the deterministic generation.
+installed Claude-side `.md` against the packaged source hash without network
+access. When a file differs from that source, it consults the
+`--accept-user-managed` receipt (`~/.repo-harness/agent-fleet-user-managed.json`):
+an entry whose SHA-256 still matches the file's current installed content
+reports `user-managed` on its own report line instead of drift, while a
+missing or malformed receipt, an absent entry for that path, or a stale hash
+still reports `drift`, fail-closed. The per-host rollup is `up-to-date` once
+nothing is left in drift. The Codex `.toml` side is a generated artifact and
+is checked for presence; installer golden tests prove the deterministic
+generation.
 
 ### Uninstall
 
