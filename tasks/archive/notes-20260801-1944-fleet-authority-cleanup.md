@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-01 19:44
+> **Related Plan**: plans/archive/plan-20260801-1625-fleet-authority-cleanup.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260801-1944
+
 # Notes: fleet authority cleanup
 
 Plan: `plans/plan-20260801-1625-fleet-authority-cleanup.md`
