@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-31T22:57:08+0800 -->
+<!-- updated_at: 2026-08-01T13:05:41+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Idle
-> **Updated At**: 2026-07-31T22:57:08+0800
-> **Source Branch**: main
-> **Source Commit**: 01c821d1
+> **Status**: ManualClearedWithActiveWork
+> **Updated At**: 2026-08-01T13:05:41+0800
+> **Source Branch**: codex/tooling-receipt-awareness
+> **Source Commit**: 4089376b
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: codegraph-update
+> **Reason**: ensure-task-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Idle
-- Active Plan: (none)
-- Plan Status: (none)
-- Next Task: (none)
-- Clear Note: (none)
+- Status: ManualClearedWithActiveWork
+- Active Plan: plans/plan-20260801-1255-tooling-receipt-awareness.md
+- Plan Status: Approved
+- Next Task: Add characterization tests in `tests/check-agent-tooling.test.ts` for: valid receipt exemption, receipt hash mismatch still drift, malformed receipt fails closed (exempts nothing even when a hash would otherwise match), and unchanged behavior with no receipt present.
+- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
 
 ## Mainline Snapshot Reading
 
@@ -31,7 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- (none)
+- .: plans/plan-20260801-1255-tooling-receipt-awareness.md
+- .: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness
 ## Active Sprint
 
 - Sprint: (none)
@@ -54,11 +55,14 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 2 changed/untracked path(s)
+- Summary: 5 changed/untracked path(s)
 
 ```
- M bun.lock
- M package.json
+ M assets/templates/helpers/check-agent-tooling.sh
+ M scripts/check-agent-tooling.sh
+ M tests/check-agent-tooling.test.ts
+?? plans/plan-20260801-1255-tooling-receipt-awareness.md
+?? tasks/notes/20260801-1255-tooling-receipt-awareness.notes.md
 ```
 
 ## Source Artifacts

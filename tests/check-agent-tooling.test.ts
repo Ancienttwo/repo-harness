@@ -25,6 +25,27 @@ function sha256File(filePath: string) {
   return createHash("sha256").update(readFileSync(filePath)).digest("hex");
 }
 
+function sha256Text(content: string) {
+  return `sha256:${createHash("sha256").update(content).digest("hex")}`;
+}
+
+function writeAgentFleetReceipt(home: string, files: Array<{ path: string; sha256: string }>, authority = "user-managed-agent-fleet") {
+  mkdirSync(join(home, ".repo-harness"), { recursive: true });
+  writeFileSync(
+    join(home, ".repo-harness", "agent-fleet-user-managed.json"),
+    JSON.stringify(
+      {
+        protocol: 1,
+        authority,
+        accepted_at: "2026-07-30T00:00:00.000Z",
+        files,
+      },
+      null,
+      2
+    )
+  );
+}
+
 function writeExecutable(filePath: string, content: string) {
   writeFileSync(filePath, content);
   chmodSync(filePath, 0o755);
@@ -1020,13 +1041,202 @@ describe("check-agent-tooling", () => {
         "harness-evaluator",
       ]);
       expect(claude.source_missing_agents).toEqual([]);
+      expect(claude.user_managed_agents).toEqual([]);
       const codex = report.tools.agent_fleet.hosts.codex;
       expect(codex.update_status).toBe("not-applicable");
       expect(codex.drift_agents).toEqual([]);
       expect(codex.synced_agents).toEqual([]);
+      expect(codex.user_managed_agents).toEqual([]);
 
       expect(readFileSync(SCRIPT, "utf-8")).not.toContain("Fable-agents");
       expect(readFileSync(SCRIPT, "utf-8")).not.toContain("fetchAgentFleetUpstream");
+    } finally {
+      rmSync(envRoot.root, { recursive: true, force: true });
+    }
+  }, 15000);
+
+  test("exempts files covered by a valid user-managed receipt from drift and reports up-to-date", () => {
+    const envRoot = setupFakeEnvironment("check-agent-tooling-fleet-receipt-valid");
+    try {
+      const localContent: Record<string, string> = {};
+      for (const agent of MANAGED_AGENTS) {
+        localContent[agent] = readFileSync(join(FLEET_SOURCE_DIR, `${agent}.md`), "utf-8");
+      }
+      localContent["deep-reasoner"] += "\n# user-managed customization\n";
+      localContent["gatekeeper"] += "\n# user-managed customization\n";
+
+      mkdirSync(join(envRoot.home, ".claude", "agents"), { recursive: true });
+      mkdirSync(join(envRoot.home, ".codex", "agents"), { recursive: true });
+      for (const agent of MANAGED_AGENTS) {
+        writeFileSync(join(envRoot.home, ".claude", "agents", `${agent}.md`), localContent[agent]);
+        writeFileSync(join(envRoot.home, ".codex", "agents", `${agent}.toml`), `name = "${agent}"\n`);
+      }
+
+      writeAgentFleetReceipt(envRoot.home, [
+        {
+          path: join(envRoot.home, ".claude", "agents", "deep-reasoner.md"),
+          sha256: sha256Text(localContent["deep-reasoner"]),
+        },
+        {
+          path: join(envRoot.home, ".claude", "agents", "gatekeeper.md"),
+          sha256: sha256Text(localContent["gatekeeper"]),
+        },
+      ]);
+
+      writeFakeBunx(envRoot.fakeBin);
+      writeFakeCodeGraph(envRoot.fakeBin);
+      writeFakeNpm(envRoot.fakeBin, "0.9.6");
+
+      const res = spawnSync("bash", [SCRIPT, "--json", "--check-updates", "--host", "both"], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: envRoot.home,
+          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
+        },
+      });
+
+      expect(res.status).toBe(0);
+      const report = JSON.parse(res.stdout);
+      const claude = report.tools.agent_fleet.hosts.claude;
+      expect(claude.update_status).toBe("up-to-date");
+      expect(claude.drift_agents).toEqual([]);
+      expect(claude.user_managed_agents).toEqual(["deep-reasoner", "gatekeeper"]);
+      expect(claude.synced_agents).toEqual([
+        "explorer",
+        "fast-worker",
+        "deep-worker",
+        "root-cause-prover",
+        "harness-evaluator",
+      ]);
+      expect(claude.source_missing_agents).toEqual([]);
+      expect(claude.update_reason).toContain("deep-reasoner, gatekeeper");
+      const codex = report.tools.agent_fleet.hosts.codex;
+      expect(codex.user_managed_agents).toEqual([]);
+
+      const textRes = spawnSync("bash", [SCRIPT, "--check-updates", "--host", "both"], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: envRoot.home,
+          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
+        },
+      });
+      expect(textRes.status).toBe(0);
+      expect(textRes.stdout).toContain("user-managed (receipt): deep-reasoner, gatekeeper");
+      expect(textRes.stdout).not.toContain("updates: drift");
+    } finally {
+      rmSync(envRoot.root, { recursive: true, force: true });
+    }
+  }, 15000);
+
+  test("keeps drift when a receipt entry's sha256 no longer matches the installed file", () => {
+    const envRoot = setupFakeEnvironment("check-agent-tooling-fleet-receipt-stale-hash");
+    try {
+      const localContent: Record<string, string> = {};
+      for (const agent of MANAGED_AGENTS) {
+        localContent[agent] = readFileSync(join(FLEET_SOURCE_DIR, `${agent}.md`), "utf-8");
+      }
+      const acceptedContent = `${localContent["fast-worker"]}\n# accepted customization\n`;
+      localContent["fast-worker"] = `${acceptedContent}\n# edited again after acceptance\n`;
+
+      mkdirSync(join(envRoot.home, ".claude", "agents"), { recursive: true });
+      mkdirSync(join(envRoot.home, ".codex", "agents"), { recursive: true });
+      for (const agent of MANAGED_AGENTS) {
+        writeFileSync(join(envRoot.home, ".claude", "agents", `${agent}.md`), localContent[agent]);
+        writeFileSync(join(envRoot.home, ".codex", "agents", `${agent}.toml`), `name = "${agent}"\n`);
+      }
+
+      // The receipt records the hash of the previously accepted bytes, not the
+      // file's current (further-edited) content, so it must not exempt it.
+      writeAgentFleetReceipt(envRoot.home, [
+        {
+          path: join(envRoot.home, ".claude", "agents", "fast-worker.md"),
+          sha256: sha256Text(acceptedContent),
+        },
+      ]);
+
+      writeFakeBunx(envRoot.fakeBin);
+      writeFakeCodeGraph(envRoot.fakeBin);
+      writeFakeNpm(envRoot.fakeBin, "0.9.6");
+
+      const res = spawnSync("bash", [SCRIPT, "--json", "--check-updates", "--host", "both"], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: envRoot.home,
+          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
+        },
+      });
+
+      expect(res.status).toBe(0);
+      const report = JSON.parse(res.stdout);
+      const claude = report.tools.agent_fleet.hosts.claude;
+      expect(claude.update_status).toBe("drift");
+      expect(claude.drift_agents).toEqual(["fast-worker"]);
+      expect(claude.user_managed_agents).toEqual([]);
+    } finally {
+      rmSync(envRoot.root, { recursive: true, force: true });
+    }
+  }, 15000);
+
+  test("fails closed on a malformed receipt and exempts nothing even if a hash would otherwise match", () => {
+    const envRoot = setupFakeEnvironment("check-agent-tooling-fleet-receipt-invalid");
+    try {
+      const localContent: Record<string, string> = {};
+      for (const agent of MANAGED_AGENTS) {
+        localContent[agent] = readFileSync(join(FLEET_SOURCE_DIR, `${agent}.md`), "utf-8");
+      }
+      localContent["deep-reasoner"] += "\n# user-managed customization\n";
+
+      mkdirSync(join(envRoot.home, ".claude", "agents"), { recursive: true });
+      mkdirSync(join(envRoot.home, ".codex", "agents"), { recursive: true });
+      for (const agent of MANAGED_AGENTS) {
+        writeFileSync(join(envRoot.home, ".claude", "agents", `${agent}.md`), localContent[agent]);
+        writeFileSync(join(envRoot.home, ".codex", "agents", `${agent}.toml`), `name = "${agent}"\n`);
+      }
+
+      // The hash entry matches the current file exactly, but the receipt's
+      // authority tag is wrong: the whole receipt must be rejected rather than
+      // exempting the one entry that "would" match.
+      writeAgentFleetReceipt(
+        envRoot.home,
+        [
+          {
+            path: join(envRoot.home, ".claude", "agents", "deep-reasoner.md"),
+            sha256: sha256Text(localContent["deep-reasoner"]),
+          },
+        ],
+        "not-the-expected-authority"
+      );
+
+      writeFakeBunx(envRoot.fakeBin);
+      writeFakeCodeGraph(envRoot.fakeBin);
+      writeFakeNpm(envRoot.fakeBin, "0.9.6");
+
+      const res = spawnSync("bash", [SCRIPT, "--json", "--check-updates", "--host", "both"], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: envRoot.home,
+          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
+        },
+      });
+
+      expect(res.status).toBe(0);
+      const report = JSON.parse(res.stdout);
+      const claude = report.tools.agent_fleet.hosts.claude;
+      expect(claude.update_status).toBe("drift");
+      expect(claude.drift_agents).toEqual(["deep-reasoner"]);
+      expect(claude.user_managed_agents).toEqual([]);
     } finally {
       rmSync(envRoot.root, { recursive: true, force: true });
     }

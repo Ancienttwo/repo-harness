@@ -105,6 +105,7 @@ const AGENT_FLEET_SOURCE_DIR = process.env.REPO_HARNESS_AGENT_FLEET_SOURCE_DIR;
 const AGENT_FLEET_SOURCE_LABEL = "package:agents/fleet";
 const AGENT_FLEET_DEFAULT_MANAGED = ["explorer", "deep-reasoner", "fast-worker", "deep-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
 const AGENT_FLEET_INSTALL_COMMAND = "repo-harness run install-agent-fleet";
+const AGENT_FLEET_USER_MANAGED_RECEIPT_PATH = path.join(HOME, ".repo-harness", "agent-fleet-user-managed.json");
 const CODEGRAPH_PACKAGE = "@colbymchenry/codegraph";
 const CODEGRAPH_GLOBAL_INSTALL_COMMAND = `bun add -g ${CODEGRAPH_PACKAGE} && repo-harness tools configure codegraph --target codex --location global`;
 const CODEGRAPH_MCP_CONFIGURE_COMMAND = "repo-harness tools configure codegraph --target <codex|claude|both> --location global";
@@ -246,6 +247,10 @@ function sha1(text) {
 
 function sha1Buffer(buffer) {
   return crypto.createHash("sha1").update(buffer).digest("hex");
+}
+
+function sha256Buffer(buffer) {
+  return `sha256:${crypto.createHash("sha256").update(buffer).digest("hex")}`;
 }
 
 function parseSkillVersion(text) {
@@ -872,6 +877,37 @@ function readAgentFleetSource(agent) {
   return { status: "read", path: sourcePath, hash: source.hash };
 }
 
+// Read-only mirror of install-agent-fleet.sh's loadUserManagedReceipt(): this
+// checker never writes ~/.repo-harness/agent-fleet-user-managed.json, it only
+// consults it so an operator-accepted customized file is not misreported as
+// drift. Any malformation invalidates the whole receipt (fail-closed) rather
+// than exempting individual entries.
+function loadAgentFleetUserManagedReceipt() {
+  if (!fs.existsSync(AGENT_FLEET_USER_MANAGED_RECEIPT_PATH)) return { ok: true, hashes: new Map() };
+  try {
+    const parsed = JSON.parse(fs.readFileSync(AGENT_FLEET_USER_MANAGED_RECEIPT_PATH, "utf8"));
+    if (
+      parsed?.protocol !== 1
+      || parsed?.authority !== "user-managed-agent-fleet"
+      || !Array.isArray(parsed.files)
+    ) return { ok: false, hashes: new Map() };
+    const hashes = new Map();
+    for (const entry of parsed.files) {
+      if (
+        !entry
+        || typeof entry.path !== "string"
+        || typeof entry.sha256 !== "string"
+        || !/^sha256:[a-f0-9]{64}$/.test(entry.sha256)
+        || hashes.has(entry.path)
+      ) return { ok: false, hashes: new Map() };
+      hashes.set(entry.path, entry.sha256);
+    }
+    return { ok: true, hashes };
+  } catch (_error) {
+    return { ok: false, hashes: new Map() };
+  }
+}
+
 function detectAgentFleetHost(host, managedAgents) {
   const meta = HOSTS[host];
   const files = managedAgents.map((agent) => inspectAgentFleetFile(host, agent));
@@ -884,9 +920,11 @@ function detectAgentFleetHost(host, managedAgents) {
   const driftAgents = [];
   const syncedAgents = [];
   const sourceMissingAgents = [];
+  const userManagedAgents = [];
 
   if (checkUpdates) {
     if (host === "claude") {
+      const receipt = loadAgentFleetUserManagedReceipt();
       for (const entry of files) {
         if (!entry.present) continue;
         const source = readAgentFleetSource(entry.name);
@@ -896,9 +934,25 @@ function detectAgentFleetHost(host, managedAgents) {
         }
         if (source.hash === entry.hash) {
           syncedAgents.push(entry.name);
-        } else {
-          driftAgents.push(entry.name);
+          continue;
         }
+        // Differs from the packaged source: only a valid receipt entry whose
+        // sha256 matches the file's *current* installed content exempts it.
+        // A missing/invalid receipt, a path with no entry, or a hash mismatch
+        // (edited again after acceptance) all fall through to drift.
+        if (receipt.ok && receipt.hashes.get(entry.path) !== undefined) {
+          let installedHash = null;
+          try {
+            installedHash = sha256Buffer(fs.readFileSync(entry.path));
+          } catch (_error) {
+            installedHash = null;
+          }
+          if (installedHash === receipt.hashes.get(entry.path)) {
+            userManagedAgents.push(entry.name);
+            continue;
+          }
+        }
+        driftAgents.push(entry.name);
       }
 
       if (driftAgents.length > 0) {
@@ -907,9 +961,11 @@ function detectAgentFleetHost(host, managedAgents) {
       } else if (sourceMissingAgents.length > 0) {
         updateStatus = "unknown";
         updateReason = `Packaged repo-harness fleet source is missing files for: ${sourceMissingAgents.join(", ")}.`;
-      } else if (syncedAgents.length > 0) {
-        updateStatus = "synced";
-        updateReason = "Installed Claude agent definitions match the packaged repo-harness fleet source.";
+      } else if (syncedAgents.length > 0 || userManagedAgents.length > 0) {
+        updateStatus = "up-to-date";
+        updateReason = userManagedAgents.length > 0
+          ? `Installed Claude agent definitions match the packaged repo-harness fleet source, with user-managed exemptions accepted via receipt for: ${userManagedAgents.join(", ")}.`
+          : "Installed Claude agent definitions match the packaged repo-harness fleet source.";
       } else {
         updateStatus = "not-checked";
         updateReason = "No installed Claude agent definitions to compare.";
@@ -931,6 +987,7 @@ function detectAgentFleetHost(host, managedAgents) {
     drift_agents: driftAgents,
     synced_agents: syncedAgents,
     source_missing_agents: sourceMissingAgents,
+    user_managed_agents: userManagedAgents,
   };
 }
 
@@ -1630,6 +1687,9 @@ function printText(result) {
     }
     if (entry.update_status !== "not-checked") {
       console.log(`    updates: ${entry.update_status} (${entry.update_reason})`);
+    }
+    if (entry.user_managed_agents.length) {
+      console.log(`    user-managed (receipt): ${entry.user_managed_agents.join(", ")}`);
     }
   }
   console.log(`  - Install: ${agentFleet.install_command}`);
