@@ -755,7 +755,7 @@ describe("check-agent-tooling", () => {
 
       mkdirSync(join(envRoot.home, ".claude", "agents"), { recursive: true });
       for (const agent of ["deep-reasoner", "fast-worker"]) {
-        copyFileSync(join(ROOT, ".claude", "agents", `${agent}.md`), join(envRoot.home, ".claude", "agents", `${agent}.md`));
+        copyFileSync(join(FLEET_SOURCE_DIR, `${agent}.md`), join(envRoot.home, ".claude", "agents", `${agent}.md`));
       }
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude", "--strict-readiness"], {
@@ -798,7 +798,7 @@ describe("check-agent-tooling", () => {
       mkdirSync(join(envRoot.home, ".claude", "agents"), { recursive: true });
       mkdirSync(join(envRoot.home, ".codex", "agents"), { recursive: true });
       for (const agent of MANAGED_AGENTS) {
-        copyFileSync(join(ROOT, ".claude", "agents", `${agent}.md`), join(envRoot.home, ".claude", "agents", `${agent}.md`));
+        copyFileSync(join(FLEET_SOURCE_DIR, `${agent}.md`), join(envRoot.home, ".claude", "agents", `${agent}.md`));
         copyFileSync(join(ROOT, ".codex", "agents", `${agent}.toml`), join(envRoot.home, ".codex", "agents", `${agent}.toml`));
       }
       writeFakeBunx(envRoot.fakeBin);
