@@ -1,49 +1,137 @@
+<div align="center">
+
 # repo-harness
 
-<p align="center">
-  <img src="docs/images/repo-harness-hook-carrot.png" alt="repo-harness hooks leading Codex and Claude forward with repo-local workflow state" width="900">
-</p>
+### A file-backed, repeatable workflow for Claude and Codex coding sessions
 
-`repo-harness` turns Claude/Codex coding sessions into a repeatable repo-local
-workflow. It ships a CLI plus skill/runtime hooks that write context, plans,
-handoffs, checks, and review evidence back into the project, so the next agent
-session can continue from files instead of chat memory.
+<img src="docs/images/repo-harness-hook-carrot.png" alt="repo-harness hooks leading Codex and Claude forward with repo-local workflow state" width="900">
 
-Use it to:
-
-- adopt an existing repo with a tasks-first agent contract
-- keep Claude and Codex aligned on the same plans, checks, handoffs, and context
-  boundaries
-- spend fewer tokens rediscovering structure by using CodeGraph and progressive
-  context loading
-
-Give the agent a complete PRD or Sprint; after that, your loop is just review
-and `next`, or start `/goal` and go AFK.
-
-Repository: `https://github.com/Ancienttwo/repo-harness`
+[![npm version](https://img.shields.io/npm/v/repo-harness.svg)](https://www.npmjs.com/package/repo-harness)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Runtime: Bun](https://img.shields.io/badge/runtime-Bun%20%E2%89%A5%201.1.35-black.svg)](https://bun.sh)
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Français](README.fr.md) | [Español](README.es.md)
 
+**Give the agent a complete PRD or Sprint; after that, your loop is just review and `next`, or start `/goal` and go AFK.**
+
+</div>
+
+`repo-harness` ships a CLI plus skill/runtime hooks that write context, plans,
+handoffs, checks, and review evidence back into the project, so the next agent
+session continues from files instead of chat memory. It adopts an existing repo
+with a tasks-first agent contract that keeps Claude and Codex aligned.
+
+## Contents
+
+- [Get Started](#get-started)
+- [Why repo-harness](#why-repo-harness)
+- [Key Features](#key-features)
+- [How It Works](#how-it-works)
+- [Task Workflow](#task-workflow)
+- [Hooks](#hooks)
+- [MCP Connector](#mcp-connector)
+- [Reviewing Work](#reviewing-work)
+- [Skills](#skills)
+- [Maintainer Reference](#maintainer-reference)
+- [Acknowledgements](#acknowledgements)
+- [Current Release](#current-release)
+- [License](#license)
+
+## Get Started
+
+### 1. Install the CLI
+
+Prerequisites: a Git working tree, `bash`, and `bun`; `jq` is optional. No
+Node.js required — the installer uses Bun >= 1.1.35 as the runtime, installing or
+upgrading Bun first when needed.
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.sh | sh
+
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 | iex
+```
+
+With Bun >= 1.1.35 already on PATH, skip the shell installer. Package-manager-owned
+Bun installs fail closed with the matching upgrade command (`brew upgrade bun`)
+instead of overwriting manager-owned files.
+
+```bash
+bunx repo-harness@latest install     # Bun one-shot bootstrap
+bun add -g repo-harness              # or install the persistent CLI first
+repo-harness install
+npx -y repo-harness@latest install   # npx fallback; the CLI still runs on Bun
+```
+
+### 2. Bootstrap the host runtime
+
+```bash
+repo-harness install
+```
+
+The global bootstrap: installs the npm package as the global CLI, refreshes
+repo-harness skill aliases, installs user-level hook adapters, and records an
+explicit install profile. It is idempotent and does not apply repo-local workflow
+files to the current directory. `--dry-run --json` lists components to install,
+skip, and remove first. Profiles, delegation mode, refresh commands, and the
+read-only `setup check` audit:
+[`install-profiles.md`](docs/reference-configs/install-profiles.md).
+
+### 3. Preview the repo-local contract
+
+```bash
+repo-harness init --dry-run
+```
+
+Run this from the target repository root. It reports the specs, task state,
+helper runtime, hook adapter target, and verification files that would be created
+or refreshed. It never creates an application stack; new projects and modules use
+`repo-harness-setup`'s scaffold mode instead.
+
+### 4. Apply and verify
+
+```bash
+repo-harness init
+bash scripts/check-task-workflow.sh --strict
+bun test
+```
+
+### Success looks like this
+
+Apply ends with `=== Migration Report ===`, naming where generated hook behavior
+comes from, the user-level `~/.claude/settings.json` and `~/.codex/hooks.json`
+adapter target, the repo-local surfaces created or refreshed, the
+`.ai/harness/scripts/*` helper runtime, and an `--- External Tooling ---`
+readiness block. Stable intent then lives in `docs/spec.md`, execution state in
+`plans/` and `tasks/`, resume state in `.ai/harness/handoff/`. If the dry run
+looks wrong, stop and read
+[`hook-operations.md`](docs/reference-configs/hook-operations.md) first.
+
+### Update and remove
+
+```bash
+repo-harness update          # refresh user-level CLI and runtime pieces
+repo-harness update --check  # read-only repair guidance, no writes
+repo-harness uninstall       # remove managed host adapters only
+```
+
 ## Why repo-harness
 
-- **File-backed sessions, not chat memory.** Separate agent sessions — Claude and
-  Codex, now and later — stay coordinated through the repo, not a thread.
-  The in-process session-context builder (`src/cli/hook/session-context.ts`)
-  injects the prior session's resume packet
-  (`.ai/harness/handoff/resume.md`, `tasks/current.md`) when a new session starts;
-  the in-process Stop handler (`src/cli/hook/stop-handler.ts`) writes the stop handoff, while the in-process
-  mutation-observed journal handler (`src/cli/hook/mutation-observed.ts`)
-  records a small dirty-bit event per edit and defers maintenance work (contract
-  verification, architecture/context/capability sync, minimal-change signals) to
-  Stop. A session can end mid-task and the next one resumes the exact next
-  step, blockers, and changed files without re-deriving them.
-- **Token-lean by design.** Instead of grep-and-read loops that re-scan the repo every
-  session, the harness leans on a pre-built CodeGraph index for structural queries
-  (callers, callees, definitions) and on progressive context loading via
-  `.ai/context/context-map.json` and `capabilities.json`: a small, stable root context
-  (~12KB) plus capability blocks loaded only when the files you touch need them. Agents
-  read a 1KB capability contract or query the index instead of spending thousands of
-  tokens rediscovering structure.
+- **File-backed sessions, not chat memory.** Separate Claude and Codex sessions
+  stay coordinated through the repo. `SessionStart` injects the prior session's
+  resume packet, `Stop` writes the handoff, and each edit records a small journal
+  event. A session can end mid-task and the next one resumes the exact next step,
+  blockers, and changed files without re-deriving them.
+- **Token-lean by design.** Instead of grep-and-read loops that re-scan the repo
+  every session, the harness leans on a pre-built CodeGraph index for structural
+  queries and on progressive context loading: a stable ~12KB root context plus
+  capability blocks loaded only when the files you touch need them. Agents read a
+  ~1KB capability contract instead of rediscovering structure.
+- **Review-ready evidence.** Every task leaves a contract, structured check
+  evidence, and a review card behind. The human decision surface is one screen —
+  verdict, intended vs actual files, commands passed, residual risk, rollback —
+  rather than a reconstruction of what the agent claims it did.
 
 In an adopted repo, the surface area is intentionally small:
 
@@ -54,98 +142,48 @@ In an adopted repo, the surface area is intentionally small:
 | `tasks/contracts/`, `tasks/reviews/`, and `.ai/harness/checks/` | Scope, verification, and review evidence for proving the work is done. |
 | `.ai/harness/handoff/` and `tasks/current.md` | Session journal and resumable status, derived from workflow artifacts instead of chat memory. |
 
-## Human Review Path
+## Key Features
 
-Start with `tasks/reviews/<task>.review.md`. The `## Human Review Card` is the
-one-screen decision surface: verdict, change type, intended vs actual files,
-commands passed, external acceptance, residual risk, reviewer action, and
-rollback. Then inspect the active contract, latest trace in
-`.ai/harness/checks/latest.json`, and the changed files. Accept only when the
-review recommends pass, the card verdict is pass, and external acceptance is
-pass, `not_required`, or an explicit manual override.
-
-Runtime-heavy validators such as Unity, browser E2E, mobile simulators, hardware
-rigs, or staging smoke tests can publish external verification manifests under
-the ignored run-evidence surface. This is a manual convention today, not an
-automatic `repo-harness check` discovery or gate. See
-[`docs/reference-configs/external-tooling.md`](docs/reference-configs/external-tooling.md#external-verification-evidence).
-
-## Agent Tracking Path
-
-Agents read source artifacts before derived summaries:
-
-| Agent reads first | Human reviews first |
+| | |
 | --- | --- |
-| Current user prompt and referenced files | `tasks/reviews/<task>.review.md` Human Review Card |
-| `AGENTS.md` / `CLAUDE.md` | Changed files and diff |
-| Active plan in `.ai/harness/active-plan` | Active contract allowed paths and exit criteria |
-| Active contract in `tasks/contracts/` | `.ai/harness/checks/latest.json` and run trace |
-| Latest handoff in `.ai/harness/handoff/` | Residual risks and rollback |
-
-`tasks/current.md` is only an orientation snapshot. If it disagrees with the
-active plan, contract, review, checks, or handoff, the source artifacts win.
-
-## What's New
-
-Release notes live in [`docs/CHANGELOG.md`](docs/CHANGELOG.md). The current line
-is `0.12.0`.
+| **File-backed sessions** | Plans, contracts, checks, and handoffs live in the repo, so a new session resumes from artifacts instead of a chat thread |
+| **Typed hook runtime** | Eight shared managed routes plus three Codex-only delegation routes, each bound to exactly one typed in-process handler, with fail-closed guards at the edit boundary |
+| **Plan → Contract → Review** | One lifecycle from approved plan to projected contract, isolated worktree, structured evidence, and a reviewable closeout |
+| **Progressive context loading** | A ~12KB stable root context plus ~1KB capability contracts loaded only for the files actually being touched |
+| **CodeGraph integration** | Structural queries (callers, callees, definitions) answered from a pre-built index instead of repeated grep-and-read passes |
+| **MCP planner sidecar** | ChatGPT reads real repo state and writes PRD/Sprint/Goal artifacts; Codex executes them, with no default source-code write access |
+| **Claude + Codex alignment** | One user-level adapter contract, one workflow contract, and one set of repo-local artifacts shared by both hosts |
 
 ## How It Works
 
-The design has three layers:
-
-1. **Source package**: this repository owns the CLI, CLI-backed command facades,
-   templates, typed hook handlers, the operator-helper asset, workflow contract,
-   tests, and release gate.
+1. **Source package**: this repository owns the CLI, command facades, templates,
+   typed hook handlers, the operator-helper asset, workflow contract, tests, and
+   release gate.
 2. **Target repo contract**: `repo-harness init` or migration writes repo-local
    files such as `docs/spec.md`, `plans/`, `tasks/`, `.ai/context/`,
    `.ai/harness/`, helper scripts, and `.ai/hooks/`.
 3. **Host adapters**: user-level `~/.claude/settings.json` and
    `~/.codex/hooks.json` route Claude/Codex events into `repo-harness-hook`.
 
-The hook entrypoint exits silently for non-opt-in repos. For opted-in repos,
-the route registry binds the public event tuple to exactly one packaged typed
-handler. `.ai/hooks/` contains operator-helper projection only; it is never a
+The hook entrypoint exits silently for non-opt-in repos. For opted-in repos, the
+route registry binds the public event tuple to exactly one packaged typed
+handler. `.ai/hooks/` holds operator-helper projection only; it is never a
 host-event dispatcher.
 
-Minimal-change hooks sit inside that same route surface without adding a public
-adapter route. `SessionStart` and allowed execution prompts print advisory
-context when policy opts in, `PostToolUse.edit` can write bounded change signals
-to `.ai/harness/checks/minimal-change.latest.json` when
-`post_edit_observer:true` is explicitly enabled, and `Stop` records the latest
-review summary in the handoff. Missing or malformed policy defaults to off; even
-`mode: "enforce"` is normalized to advisory behavior so tests, contracts, and
-human review stay the enforcement boundary.
+The core invariant is that durable truth lives in the repo, not a chat thread.
+Hooks are accelerators and guardrails; authority remains the file-backed plan,
+contract, review, checks, and handoff artifacts. Prompt-layer plan/spec/contract
+gates are advisory routing; hard enforcement lives at the edit boundary. Handler
+internals, the minimal-change surface, and policy modes:
+[`hook-operations.md`](docs/reference-configs/hook-operations.md) and
+[`minimal-change-hooks.md`](docs/reference-configs/minimal-change-hooks.md).
 
-For `UserPromptSubmit`, the public adapter contract stays
-`repo-harness-hook UserPromptSubmit --route default`. The CLI route registry
-dispatches that route to `src/cli/hook/prompt-handler.ts`. That handler parses
-host JSON once, reads workflow files, performs capture side effects, verifies
-the typed `AcceptanceReceipt`, and returns host-neutral output. Unicode-aware
-intent classification lives in `src/cli/hook/prompt-intents.ts`; there is no
-shell classifier, secondary dispatcher, or fallback decision table.
+## Task Workflow
 
-Prompt-layer plan/spec/contract gates are advisory routing. Hard enforcement
-lives at the edit boundary: the in-process mutation-guard handler
-(`src/cli/hook/mutation-guard.ts`) blocks implementation edits
-unless the active plan is Approved/Executing (policy
-`.guards.edit_plan_gate`: enforce | advice | off). Done-claim gates keep
-blocking because they verify file-backed completion evidence, not language.
-
-The core invariant is that durable truth lives in the repo, not in a chat
-thread. Hooks are accelerators and guardrails; the authority remains the
-file-backed plan, contract, review, checks, and handoff artifacts.
-
-## Task Workflow: Plan to Closeout
-
-The diagram below assumes the harness is already installed in the repo. It shows
-the normal lifecycle from a program sprint backlog down to one contract task:
-draft or select the task, project it into execution files, check out the
-contract worktree when policy requires it, implement under hooks, verify, review,
-complete the sprint task when applicable, and close out. The 0.4.x loop-system
-surfaces add scheduled heartbeat discovery, state-snapshot/eval evidence for
-routing changes, architecture queue freshness, and optional contract-run
-delegation without changing the file-backed authority model.
+The diagram assumes the harness is installed. It shows the normal lifecycle from
+a program sprint backlog down to one contract task: select the task, project it
+into execution files, check out the contract worktree when policy requires it,
+implement under hooks, verify, review, and close out.
 
 ```mermaid
 flowchart TD
@@ -208,304 +246,69 @@ flowchart TD
   Cleanup --> Done["Reviewable completed task"]
 ```
 
-## Long-Running Product Loops
+For long-running product loops, keep discovery and engineering-plan judgment with
+the parent agent before Codex loops on execution: `geju` opens the pre-contract
+frame, the parent completes P1/P2/P3 and freezes the accepted direction into an
+upper-layer PRD under `plans/prds/` and an ordered sprint backlog under
+`plans/sprints/`, then a Codex Goal points at that sprint file. The PRD stays the
+upper source of truth and the backlog is the durable execution queue, so a
+resumed Goal session never reinterprets the original chat. See
+[`agentic-development-flow.md`](docs/reference-configs/agentic-development-flow.md)
+and [`workflow-orchestration.md`](docs/reference-configs/workflow-orchestration.md).
 
-For Greenfield and Brownfield work, keep discovery and engineering-plan
-judgment with the parent agent before asking Codex to loop on execution:
+## Hooks
 
-1. Before a contract exists, the parent agent invokes `geju` to open the frame,
-   then completes P1/P2/P3 with its own repo/runtime capabilities. It freezes the
-   accepted product intent, architecture, risks, falsifier, and evidence contract
-   into the development documents.
-2. Turn those documents into an upper-layer PRD under `plans/prds/`, then into
-   an ordered sprint backlog under `plans/sprints/` with detailed sub-plans for
-   each execution slice.
-3. In Codex, create a Goal that points at that sprint file. The harness can then
-   project each sprint item through the normal plan -> contract -> worktree ->
-   verification flow.
+The installed adapter owns eight shared managed hook routes. The route tuple
+`event + routeId + matcher` is the stable contract; each tuple binds exactly
+one typed in-process handler.
 
-That handoff keeps long-running loops precise: the parent agent owns the broad
-front-loaded judgment, the PRD remains the upper source of truth, the sprint
-backlog is the durable execution queue, and Codex Goal mode resumes against a
-concrete sprint instead of reinterpreting the original chat.
+| Route | Matcher | Handler | Function |
+| --- | --- | --- | --- |
+| `SessionStart.default` | all sessions | `src/cli/hook/session-context.ts` (in-process builder) | Injects prior handoff, sprint status, minimal-change guidance, and read-only config-security findings before work starts. |
+| `PreToolUse.edit` | `Edit\|Write` | `src/cli/hook/mutation-guard.ts` (in-process handler) | Enforces worktree policy and plan/contract readiness before implementation edits. |
+| `PreToolUse.subagent` | `Task\|Agent\|SendUserMessage` | `src/cli/hook/subagent-handler.ts` | Keeps delegated work returning through the parent session instead of leaking completion claims. |
+| `PostToolUse.edit` | `Edit\|Write` | `src/cli/hook/mutation-observed.ts` (in-process handler) | Writes at most one small journal event with dirty bits per qualifying edit; contract verification, architecture/context/capability sync, and minimal-change evidence are deferred to Stop instead of run per edit. |
+| `PostToolUse.bash` | `Bash` | `src/cli/hook/command-observed.ts` | Observes command results and captures verification evidence without replacing the command runner. |
+| `PostToolUse.always` | all tools | `src/cli/hook/trace-observer.ts` | Provides low-noise always-on trace and runtime observation. |
+| `UserPromptSubmit.default` | all prompts | `src/cli/hook/prompt-handler.ts` | Classifies prompt intent, routes planning/check hints, and renders host-safe workflow guidance. |
+| `Stop.default` | session stop | `src/cli/hook/stop-handler.ts` (in-process handler) | Finalizes handoff and guards against ending with unresolved draft-plan or completion evidence gaps. |
 
-## First 5 Minutes
+Codex also installs three Codex-only bounded-delegation routes —
+`UserPromptSubmit.delegation`, `SubagentStart.context`, and `SubagentStop.quality`,
+all bound to `src/cli/hook/subagent-handler.ts`; Claude keeps only the shared
+`PreToolUse.subagent` return-channel route.
 
-<p align="center">
-  <img src="docs/images/repo-harness-install-donkey-carrot.png" alt="Pixel art donkey following a carrot for repo-harness installation" width="900">
-</p>
+`repo-harness-hook` and its typed handler registry are the host-event runtime;
+`~/.claude/settings.json` and `~/.codex/hooks.json` are the user-level adapters,
+and Codex must mark its file as trusted in Settings before those hooks run.
+Repo-local `.claude/settings.json` and `.codex/hooks.json` are legacy config to
+retire. Debug in order: adapter config -> `repo-harness-hook` -> route registry
+-> typed handler.
 
-This is the fastest path for an AI tooling owner evaluating whether the workflow is
-safe to adopt in a real repo. It separates the machine-level runtime bootstrap
-from the repo-local contract install, so a dry run can show exactly what will
-change before anything is applied.
+When a hook blocks work, read the structured terminal output first: `guard`,
+`reason`, `fix`, `failure_class`, and `run_id`. Durable records live in
+`.ai/harness/failures/latest.jsonl`, with surrounding tool activity in
+`.claude/.trace.jsonl`. The common guards are `PlanStatusGuard` (no active or
+executable plan), `ContractGuard` (missing contract scaffold, or completion
+claimed before the contract passed), and `WorktreeGuard` (writes from the wrong
+worktree). Full playbook:
+[`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md).
 
-Prerequisites: a Git working tree, `bash`, and `bun` (for follow-up verification
-and template assembly). `jq` is optional for `--dry-run`, but recommended when
-applying settings merges.
-
-### 1. Install the CLI
-
-No Node.js required for the default path: the installer uses Bun >= 1.1.35 as
-the runtime. If Bun is missing or older, it installs or upgrades Bun first, then
-installs the `repo-harness` CLI.
-
-```bash
-# macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.sh | sh
-
-# Windows (PowerShell)
-irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 | iex
-```
-
-If Bun >= 1.1.35 is already on PATH, you can skip the shell installer. When an
-older self-managed Bun launches one of these direct paths, `repo-harness install`
-upgrades that same binary before continuing. Package-manager-owned Bun installs
-fail closed with the matching upgrade command (for example, `brew upgrade bun`
-or `scoop update bun`) instead of overwriting manager-owned files:
-
-```bash
-# Bun one-shot bootstrap
-bunx repo-harness@latest install
-
-# Or install the persistent CLI first
-bun add -g repo-harness
-repo-harness install
-
-# npx fallback, with Bun already on PATH because the CLI runs on Bun
-npx -y repo-harness@latest install
-```
-
-### 2. Bootstrap the host runtime once
-
-```bash
-repo-harness install
-```
-
-`install` is the first-run global bootstrap path. It installs the current npm
-package as the global CLI, refreshes repo-harness skill aliases, installs
-user-level hook adapters, and records an explicit install profile. The profile
-vocabulary is exactly `minimal|full`: `full` is the default and projects all 11
-Codex routes plus planning, agent-fleet, verifier, cross-model, and release
-surfaces; explicit `--profile minimal` projects the bounded 7-route baseline.
-The retired 5-route tier is not available. The command is idempotent.
-`--dry-run --json` lists components to install, skip, and remove; `--state
---json` reads the effective installed state; `--rollback` restores the previous
-protocol-2 profile transaction. A protocol-1 state must be replaced explicitly
-with `--migrate-profile-state --profile minimal|full`; normal reads never
-reinterpret its old `minimal` meaning. See
-[`docs/reference-configs/install-profiles.md`](docs/reference-configs/install-profiles.md).
-
-It does not apply repo-local workflow files to the current directory.
-
-For an Agent-owned, read-only bootstrap audit, run `repo-harness setup check
---json` or add `--check-updates` for version and adopted-repo refresh
-advisories. `setup check` is not a runtime hook: it does not write user-level
-files, install updates, run `init`, or register adapters. It emits
-`agent_actions` with the reason, risk, target files, optional command, and
-verification surface for the Agent to execute deliberately.
-`repo-harness init-hook` remains a compatibility alias.
-
-### Install and refresh examples
-
-```bash
-# Refresh user-level CLI/runtime pieces after a package update.
-repo-harness update
-
-# Remove managed host adapters without touching sibling or third-party hooks.
-repo-harness uninstall
-
-# Install only the host hook adapters (older adapter-only surface).
-repo-harness install --target both --location global
-
-# Read-only repair guidance, no writes.
-repo-harness update --check
-
-# Refresh repo-local workflow files in an adopted repository.
-repo-harness init --repo /path/to/repo
-```
-
-`repo-harness install --target codex|both --location global` also resolves and
-persists the Codex delegation mode read by the delegation-advisor hook: pass
-`--delegation-mode auto|explicit` for non-interactive use, or answer the
-one-line interactive prompt shown in a TTY (Enter keeps the current choice,
-defaulting to `explicit` when nothing is configured yet). The chosen mode is
-written to `delegation.mode` in `~/.repo-harness/config.json`, merged with
-existing keys such as `brainRoot`; this global value takes precedence over a
-repo's `.ai/harness/policy.json` `delegation.mode`. At runtime, `auto` injects
-one standing bounded-delegation authorization block per session at
-`SessionStart`; the typed `subagent` handler injects on
-`UserPromptSubmit` only for explicit triggers (`/delegate`, `/parallel`, ...)
-in both `auto` and `explicit` modes. The step never fires for
-`--target claude`, and with no flag and no TTY it leaves the file untouched —
-it never writes a silent default.
-
-### 3. Preview the repo-local contract
-
-```bash
-repo-harness init --dry-run
-```
-
-Run the dry run from the target repository root. It reports the specs, task
-state, helper runtime, hook adapter target, and verification files that would be
-created or refreshed. It should not create an application stack; existing repos
-use `repo-harness init`, while new projects or modules use
-`repo-harness-setup`'s scaffold mode.
-
-### 4. Apply, then prove the workflow
-
-```bash
-repo-harness init
-bash scripts/check-task-workflow.sh --strict
-bun test
-```
-
-After apply, the repo should have a reviewable file-backed contract rather than
-tool-specific chat setup. Agents should be able to find the stable intent in
-`docs/spec.md`, execution state in `plans/` and `tasks/`, and resume state in
-`.ai/harness/handoff/`.
-
-For a new project or module, use `repo-harness-setup`'s scaffold mode instead
-of `init`; it installs or refreshes the harness without creating an
-application stack. Maintainers editing the package itself need a source checkout
-— see [Maintainer Reference](#maintainer-reference).
-
-### Success looks like this
-
-The command should end with `=== Migration Report ===` and summarize:
-
-- `Project hooks synced from:` to show where generated hook behavior comes from
-- `Host hook config target: user-level ~/.claude/settings.json and ~/.codex/hooks.json` to show the adapter layer
-- `Host hook adapters are user-level:` to remind the user to install global adapters and trust `~/.codex/hooks.json`
-- `Workflow migration:` to show the repo-local harness surfaces it will create or refresh
-- `Helper runtime:` to show `.ai/harness/scripts/*` implementations and `scripts/*` compatibility wrappers after apply
-- `--- External Tooling ---` to show parent/Geju planning guidance plus Waza and CodeGraph readiness and advisory install/update hints
-
-If the dry-run output looks wrong, stop there and inspect
-[`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md)
-before applying anything.
-
-## MCP Connector Quickstart
+## MCP Connector
 
 As an optional sidecar, `repo-harness mcp` exposes workflow artifacts to MCP
-clients through the default `planner` profile. ChatGPT acts as a
-planner/reviewer that reads state and moves an idea through PRD, checklist
-Sprint, and Codex goal handoff artifacts — with no default source-code write access,
-arbitrary shell execution, or default Codex runner. Codex remains the executor.
-
-The same `planner` Connector also exposes general repo tools for
-registered adopted repos. Use `discover_harness_repos` first, then call
-`list_allowed_roots` to get the stable `repo_id`. General repo reads use
-`repo_manifest`, `list_tree`, `stat_file`, `read_file`, `read_files`, and
-`search_text`. The write surface currently exposes `write_file`, `apply_patch`,
-`move_path`, `delete_path`, and `refresh_repo_index`, all rejected unless that
-registered repo is explicitly configured as `read_write`.
-`write_file` creates only with `must_not_exist: true`, replaces only with
-`expected_sha256`, and reports `before`, `after`, `diff`, `mutation_id`, and
-`index_state` after an atomic same-directory rename. `apply_patch` operates only
-on existing text files, requires `expected_sha256`, and accepts either structured
-`old_text`/`new_text` edits or guarded unified diff hunks. Patch precondition
-misses and stale hashes return `REVISION_CONFLICT` without writing. Successful
-file moves require a source `expected_sha256` plus `must_not_exist: true` for the
-target. Deletes require `expected_sha256`; v1 deletes regular files only and
-rejects directory or recursive deletes. Successful writes leave the index
-pending and append an index invalidation event under
-`.ai/harness/mcp/index-events.jsonl`; `refresh_repo_index` runs CodeGraph sync
-for the repo, invalidates reader snapshots, records refresh success or
-dead-letter failure in that same event log, and returns the new `snapshot_id`,
-`index_revision`, `index_state`, refresh strategy, and optional mutation lag when
-called with `mutation_id`. The CLI adapter reports `path_refresh_supported:false`
-when it must use repo-level sync for requested paths. The MCP audit log records
-actor/profile, repo id, operation, relative paths, hash summary, result, error
-code, duration, and mutation/index event ids without storing file bodies or
-patch text. The repo whitelist is the authorization boundary, `.ignore` is the
-only content exclusion source, paths are repo-relative, and authorized file
-content is not implicitly redacted. External non-repo local roots require
-explicit `--allow-root` authorization.
-
-When CodeGraph is initialized for a registered repo, the general reader merges
-CodeGraph indexed-file metadata into manifest/stat/read/search responses while
-keeping the filesystem walker as the complete manifest source of truth. Responses
-carry `snapshot_id`, `index_revision`, `ignore_digest`, and `indexed` metadata;
-stale client snapshots return `SNAPSHOT_STALE` instead of silently mixing
-versions. Responses also expose `snapshot_state`, snapshot TTL/expiry, and a
-bounded in-process snapshot cache marker. The public `snapshot_cache.key` is
-scoped by tool and repo-relative path set, while `snapshot_cache.snapshot_key`
-identifies the underlying repo snapshot. Entry metadata is cached separately by
-repo, registry revision, `.ignore` digest, relative path, and current stat
-signature, so unchanged warm manifest/stat/read calls avoid repeated file hash
-and binary probes without hiding file, registry, or `.ignore` changes. Explicit
-`snapshot_id` stat/read calls can reuse the cached snapshot and validate the
-requested file hash instead of rebuilding the full repo snapshot. If CodeGraph
-reports a now-missing indexed path or metadata that no longer matches the
-filesystem, the snapshot becomes `index_lagging` while authorized read/stat
-fallback stays available. Full-text search still falls back to the guarded
-filesystem path when CodeGraph cannot provide complete repo-text search.
-For large manifests, `repo_manifest` streams the visible tree and keeps only the
-requested page of entries in memory. Returned page entries include exact content
-hashes; non-page file content metadata is deferred and reported as
-`counts.content_deferred` until a later manifest page, `stat_file`, `read_file`,
-or `search_text` actually returns that content.
-
-For large-repo reader baselines, run:
-
-```bash
-bun run benchmark:mcp-reader -- --entries 10000 --json
-```
-
-Use `--entries all` for the full 10k/100k/500k fixture sequence when the local
-machine can spend the filesystem time.
-
-For the full tool reference, JSON examples, repo administrator guidance,
-privacy notes, migration guide, rollout flags, and known limits, see
-[`docs/reference-configs/general-repo-mcp.md`](docs/reference-configs/general-repo-mcp.md).
-For index stale, CodeGraph down, manifest incomplete, mutation conflict,
-reindex dead-letter, and rollback operations, see
-[`deploy/runbooks/general-repo-mcp-codegraph.md`](deploy/runbooks/general-repo-mcp-codegraph.md).
-
-This sidecar assumes the CLI is already installed from
-[First 5 Minutes](#first-5-minutes). Use it when you want ChatGPT to plan
-against the real repo state and Codex to execute the resulting file-backed
-Sprint.
-
-The ChatGPT Connector registers one endpoint URL, not one repository per URL.
-Adopted repos are discovered from `~/.repo-harness/registered-repos.json`, which
-is updated by `repo-harness init` and user-scope ChatGPT
-setup. Stale registry entries are ignored unless the live repo still has
-repo-harness adoption markers.
+clients through the default `planner` profile. ChatGPT reads real repo state and
+moves an idea through PRD, checklist Sprint, and Codex goal handoff artifacts —
+with no default source-code write access, arbitrary shell execution, or default
+runner. Codex remains the executor.
 
 ```bash
 repo-harness mcp setup chatgpt --repo .
 repo-harness mcp serve --repo . --transport http --host 127.0.0.1 --port 8765 --profile planner
 ```
 
-User-scope global Connector setup:
-
-```bash
-repo-harness mcp setup chatgpt --scope user --repo . --endpoint <https-url>/mcp
-repo-harness mcp serve --repo . --transport http --host 127.0.0.1 --port 8765 --profile planner
-```
-
-Optional external reader roots:
-
-```bash
-repo-harness mcp setup chatgpt \
-  --scope user \
-  --repo . \
-  --enable-reader \
-  --allow-root "$HOME/Documents" \
-  --allow-root "$HOME/Projects" \
-  --endpoint <https-url>/mcp
-```
-
-Expose that local server through an HTTPS tunnel and create a ChatGPT Connector
-with the `/mcp` URL. The generated guide is written to:
-
-```text
-docs/repo-harness-chatgpt-mcp-setup.md
-```
-
-The human workflow is:
+Expose that local server through an HTTPS tunnel, register the `/mcp` URL, and
+the human workflow is:
 
 1. ChatGPT reads repo-harness workflow files through MCP.
 2. ChatGPT writes a PRD with `write_prd_from_idea`.
@@ -513,143 +316,107 @@ The human workflow is:
 4. ChatGPT prepares `.ai/harness/handoff/codex-goal.md` with `prepare_codex_goal_from_sprint`.
 5. Codex runs the host-native `/goal` prompt and stages each completed Sprint phase.
 
-Local fallback for the last handoff step:
+General repo reader/writer tools, snapshot and index consistency, server
+profiles, and the opt-in dev runner:
+[`general-repo-mcp.md`](docs/reference-configs/general-repo-mcp.md). Direct-coding
+profile: [`chatgpt-coding-mcp.md`](docs/reference-configs/chatgpt-coding-mcp.md).
+Index-stale, CodeGraph-down, and rollback operations:
+[`general-repo-mcp-codegraph.md`](deploy/runbooks/general-repo-mcp-codegraph.md).
 
-```bash
-repo-harness mcp prepare-goal --repo . --prd plans/prds/<feature>.prd.md --sprint plans/sprints/<feature>.sprint.md
-```
+## Reviewing Work
 
-The agent-facing Skill is installed at:
+Start with `tasks/reviews/<task>.review.md`. Its `## Human Review Card` is the
+one-screen decision surface: verdict, change type, intended vs actual files,
+commands passed, external acceptance, residual risk, reviewer action, and
+rollback. Then inspect the active contract, the latest trace in
+`.ai/harness/checks/latest.json`, and the changed files. Accept only when the
+review recommends pass, the card verdict is pass, and external acceptance is
+pass, `not_required`, or an explicit override.
+
+Agents read source artifacts before derived summaries:
+
+| Agent reads first | Human reviews first |
+| --- | --- |
+| Current user prompt and referenced files | `tasks/reviews/<task>.review.md` Human Review Card |
+| `AGENTS.md` / `CLAUDE.md` | Changed files and diff |
+| Active plan in `.ai/harness/active-plan` | Active contract allowed paths and exit criteria |
+| Active contract in `tasks/contracts/` | `.ai/harness/checks/latest.json` and run trace |
+| Latest handoff in `.ai/harness/handoff/` | Residual risks and rollback |
+
+`tasks/current.md` is only an orientation snapshot. If it disagrees with the
+active plan, contract, review, checks, or handoff, the source artifacts win.
+
+Runtime-heavy validators (Unity, browser E2E, mobile simulators, hardware rigs,
+staging smoke tests) can publish external verification manifests under the
+ignored run-evidence surface — a manual convention today, not an automatic
+`repo-harness check` gate. See
+[external tooling](docs/reference-configs/external-tooling.md#external-verification-evidence).
+
+## Skills
+
+Canonical rule-owner packages live under `assets/skills/` and
+`assets/skill-commands/`, keeping host skill discovery bounded while the CLI and
+hooks own execution.
+
+| Skill | Purpose |
+| --- | --- |
+| `repo-harness` | Root router Skill, synced unconditionally to every profile |
+| `repo-harness-setup` | Init, migrate, upgrade, repair, scaffold, and capability-configuration modes; router-only |
+| `repo-harness-plan` | Create a decision-complete plan, or review an existing one |
+| `repo-harness-product` | PRD, Sprint, and Goal modes for upper-layer product planning |
+| `repo-harness-check` | Workflow and release checks plus a deploy-readiness reference |
+| `repo-harness-ship` | Validate finished worktrees, push branches, and open PRs |
+| `repo-harness-architecture` | Architecture docs, drift requests, and diagrams without a full harness refresh |
+| `repo-harness-cross-review` | Host-aware Claude/Codex independent cross-model review |
+| `claude-plan` | Codex-side provider skill: independent Claude plan-mode consult for a design fork or high-stakes decision; not a direct user entrypoint |
+| `repo-harness-chatgpt` | Oracle browser/GPT Pro consults, MCP Connector setup, and bridge handoff; explicit setup only |
+| `merge-gate` (external) | Exact-candidate final gate; repo-harness ships no merge-gate Skill — see [external tooling](docs/reference-configs/external-tooling.md) |
+
+The planning chain is intentionally layered:
 
 ```text
-.agents/skills/repo-harness-chatgpt-bridge/SKILL.md
+idea -> PRD mode -> Sprint mode -> Goal mode
 ```
 
-That Skill tells Codex how to consume ChatGPT-produced PRD/Sprint/Goal artifacts
-without granting ChatGPT source-code writes or shell execution.
+`repo-harness init` is for an existing repo; `repo-harness-setup`'s scaffold mode
+creates a new project or module. `hooks-init`, `docs-init`, and
+`create-project-dirs` are internal steps, not public commands. Per-mode routing
+boundaries: [`agentic-development-flow.md`](docs/reference-configs/agentic-development-flow.md)
+and `repo-harness docs show harness-overview`.
 
-Dev Mode can opt into local agent execution through MCP. This is off by default.
-When the user enables the `orchestrator` profile with the dev runner setting,
-ChatGPT can call `run_agent_goal`, which reads only
-`.ai/harness/handoff/codex-goal.md` and runs the fixed handoff through an
-allowed local CLI such as `codex exec` or `claude -p`.
+## Maintainer Reference
+
+Editing the package itself needs a source checkout:
 
 ```bash
-repo-harness mcp serve --repo . --transport http --profile orchestrator --enable-dev-runner --dev-runner-agents codex
+git clone https://github.com/Ancienttwo/repo-harness.git ~/Projects/repo-harness
+cd ~/Projects/repo-harness && bun src/cli/index.ts update
 ```
 
-This setting is for local Developer Mode only. It is timeout-bounded, audited,
-and not arbitrary shell.
+That checkout is the only editable source of truth; local Claude/Codex skill
+paths are symlink-backed runtime entrypoints rebuilt by
+`scripts/sync-codex-installed-copies.sh`.
 
-## Hook Authority Map
+`bun run check:ci` is the single CI-equivalent gate; `bun run check:release` only
+adds the npm unpublished-version preflight before delegating to it.
 
-- `repo-harness-hook` and its typed handler registry are the host-event runtime. `assets/hooks/lib/workflow-state.sh` is retained only for operator helpers; `.ai/hooks/` is a checked-in helper projection, not a dispatcher.
-- `~/.claude/settings.json` is the user-level Claude adapter that dispatches into opted-in repos.
-- `~/.codex/hooks.json` is the user-level Codex adapter that dispatches into the same runner.
-- Repo-local `.claude/settings.json` and `.codex/hooks.json` hook adapters are legacy project-level config and should be retired during migration.
-- Codex must mark `~/.codex/hooks.json` as trusted in Codex Settings before those hooks run.
-- Debug in this order: user-level adapter config -> `repo-harness-hook` -> route registry -> typed handler.
-- For host-event behavior, edit `src/cli/hook/` and its focused tests. `assets/hooks/lib/workflow-state.sh` is an operator-helper source; `bun run sync:hooks` verifies its helper projection.
-
-The installed adapter owns eight shared managed hook routes. Codex also installs
-three Codex-only bounded-delegation routes. The route tuple
-`event + routeId + matcher` is the stable contract; each tuple binds exactly
-one typed in-process handler.
-
-| Route | Matcher | Handler | Function |
-| --- | --- | --- | --- |
-| `SessionStart.default` | all sessions | `src/cli/hook/session-context.ts` (in-process builder) | Injects prior handoff, sprint status, minimal-change guidance, and read-only config-security findings before work starts. |
-| `PreToolUse.edit` | `Edit|Write` | `src/cli/hook/mutation-guard.ts` (in-process handler) | Enforces worktree policy and plan/contract readiness before implementation edits. |
-| `PreToolUse.subagent` | `Task|Agent|SendUserMessage` | `src/cli/hook/subagent-handler.ts` | Keeps delegated work returning through the parent session instead of leaking completion claims. |
-| `PostToolUse.edit` | `Edit|Write` | `src/cli/hook/mutation-observed.ts` (in-process handler) | Writes at most one small journal event with dirty bits per qualifying edit; contract verification, architecture/context/capability sync, and minimal-change evidence are deferred to Stop instead of run per edit. |
-| `PostToolUse.bash` | `Bash` | `src/cli/hook/command-observed.ts` | Observes command results and captures verification evidence without replacing the command runner. |
-| `PostToolUse.always` | all tools | `src/cli/hook/trace-observer.ts` | Provides low-noise always-on trace and runtime observation. |
-| `UserPromptSubmit.default` | all prompts | `src/cli/hook/prompt-handler.ts` | Classifies prompt intent, routes planning/check hints, and renders host-safe workflow guidance. |
-| `Stop.default` | session stop | `src/cli/hook/stop-handler.ts` (in-process handler) | Finalizes handoff and guards against ending with unresolved draft-plan or completion evidence gaps. |
-
-Codex-only routes are `UserPromptSubmit.delegation`,
-`SubagentStart.context`, and `SubagentStop.quality`. Claude keeps the shared
-`PreToolUse.subagent` return-channel route and does not install those Codex
-delegation lifecycle entries.
-
-`SessionStart` resolves the in-process session-context builder, which
-assembles resume, sprint, minimal-change, and security-scan sections into one
-context before work begins:
-
-```mermaid
-flowchart LR
-  SessionStart["Claude/Codex SessionStart"] --> Adapter["user-level adapter"]
-  Adapter --> Entry["repo-harness-hook SessionStart --route default"]
-  Entry --> Ctx["session-context.ts<br/>in-process builder"]
-  Ctx --> Resume["resume + sprint + handoff context"]
-  Ctx --> Min["minimal-change guidance<br/>advice-only scope pressure"]
-  Ctx --> Sec["security scan<br/>read-only config scan, fingerprint-gated"]
-  Resume --> SSOut["SessionStart additionalContext<br/>prior-session state + SecurityConfig findings"]
-  Min --> SSOut
-  Sec --> SSOut
+```bash
+bun run check:ci                    # the whole gate
+repo-harness docs list              # runtime reference docs, resolved from the package
+repo-harness docs show harness-overview
+bun scripts/assemble-template.ts --plan C --name "MyProject"
 ```
 
-No host route resolves repo-local scripts. A missing typed handler binding is a
-runtime contract failure; guard routes remain fail closed.
+Hook changes update canonical `assets/hooks/` once, then run `bun run sync:hooks`
+with `bun run check:hooks` in verification. Reference docs are canonical under
+`assets/reference-configs/` and projected into `docs/reference-configs/`;
+`bun run check:reference-configs` verifies that projection.
 
-Prompt guard has one extra internal step:
-
-```mermaid
-flowchart LR
-  Host["Claude/Codex UserPromptSubmit"] --> Adapter["user-level adapter"]
-  Adapter --> CLI["repo-harness-hook UserPromptSubmit --route default"]
-  CLI --> Route["route registry"]
-  Route --> Handler["prompt-handler.ts<br/>single typed authority"]
-  Handler --> Decision["Unicode intent classifiers<br/>+ state decision table"]
-  Decision --> RouteHint["Waza route hint<br/>explicit think/planning matched first → /think"]
-  Handler --> Receipt["contract + checks + AcceptanceReceipt"]
-  Handler --> HostOutput["host-safe advice, done gate, or capture output"]
-```
-
-The typed handler owns filesystem authority, side effects, classification, and
-the `intent x plan state` decision table. Plan-state hard blocks still render at
-the PreToolUse edit layer.
-
-## Hook Failure Playbook
-
-When a hook blocks work, start with the structured output in the terminal. The core
-fields are `guard`, `reason`, `fix`, `failure_class`, and `run_id`.
-
-- Failure log: `.ai/harness/failures/latest.jsonl`
-- Trace log: `.claude/.trace.jsonl`
-- Deep guide: [`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md)
-
-Most common guards:
-
-- `PlanStatusGuard` (edit layer): an implementation edit was attempted with no active plan, or the plan is not ready to execute; the prompt layer emits the same guard name as advisory guidance
-- `ContractGuard`: approved execution has not yet produced the contract/review/notes scaffold
-- `ContractGuard`: completion was claimed before the task contract passed
-- `WorktreeGuard`: writes were attempted in the primary worktree while linked worktrees are enforced
-
-## Repo Workflow
-
-- Root routing docs: `CLAUDE.md`, `AGENTS.md`
-- Shared hook layer: `.ai/hooks/`
-- User-level adapter layer: `~/.claude/settings.json`, `~/.codex/hooks.json`
-- Active execution surface: `tasks/`
-- Plan source of truth: `plans/`
-- Durable progress: `tasks/workstreams/`
-- Release history: `docs/CHANGELOG.md`
-
-## Current Release
-
-- npm package: `repo-harness@0.12.0`
-- Generated workflow stamp: `repo-harness@0.12.0+template@0.12.0`
-- GitHub repository: `Ancienttwo/repo-harness`
-- Release history: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
-
-## Acknowledgements and Workflow Influences
+## Acknowledgements
 
 `repo-harness` is built around a small set of external skills, repos, and agent
-runtimes that
-proved useful while this project was being designed, debugged, and released.
-They are acknowledged here because they shaped the workflow contract, but they
-are not ordinary bundled product dependencies.
+runtimes that shaped the workflow contract. They are not ordinary bundled
+dependencies.
 
 | Tool or repo | Used for | Dependency shape |
 | --- | --- | --- |
@@ -663,210 +430,22 @@ are not ordinary bundled product dependencies.
 ### GitHub Contributor Attribution
 
 When Codex materially contributes to a commit, use GitHub's standard co-author
-trailer format at the end of the commit message:
+trailer at the end of the message:
 
 ```text
 Co-authored-by: codex <codex@openai.com>
 ```
 
 Keep this opt-in and visible per commit. Do not bake it into downstream
-repo-harness commit scripts or hooks unless that repo explicitly adopts the same
-policy.
+repo-harness commit scripts or hooks unless that repo adopts the same policy.
 
-## Action Command Skills
+## Current Release
 
-Canonical rule-owner packages live under `assets/skills/` (activated
-canonical packages) and `assets/skill-commands/` (survivors evolving in
-place). They keep host skill discovery bounded while the CLI and hooks own
-execution:
+- npm package: `repo-harness@0.12.0`
+- Generated workflow stamp: `repo-harness@0.12.0+template@0.12.0`
+- GitHub repository: `Ancienttwo/repo-harness`
+- Release notes and history: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 
-- Router: `repo-harness` (root Skill, synced unconditionally to every profile)
-- Setup layer: `repo-harness-setup` (init, migrate, upgrade, repair,
-  scaffold, and capability-configuration modes; router-only, never
-  auto-discovered by a profile)
-- Planning: `repo-harness-plan` (create a decision-complete plan, or review an
-  existing one)
-- Product planning layer: `repo-harness-product` (PRD, Sprint, and Goal
-  modes; PRD activates `$geju`, then uses Claude-first `claude -p --model
-  opus` drafting with Codex fallback to write upper-layer PRDs in
-  `plans/prds/`; Sprint plans ordered backlogs in `plans/sprints/`, each row
-  expanded with `$think` before the contract flow; Goal prepares Codex/Claude
-  `/goal` prompts from detailed PRD or Sprint artifacts and asks for those
-  docs when missing)
-- Verification: `repo-harness-check` (workflow/release checks plus a
-  deploy-readiness reference)
-- Release: `repo-harness-ship`
-- Architecture: `repo-harness-architecture`
-- Cross-model review: `repo-harness-cross-review` (host-aware Claude/Codex
-  provider modes; installed on both hosts for the full profile)
-- Exact-candidate final gate: `merge-gate` (classification-only row in the
-  full-profile discovery matrix; repo-harness ships no merge-gate Skill —
-  see [external tooling](docs/reference-configs/external-tooling.md))
-- ChatGPT integration: `repo-harness-chatgpt` (Oracle browser/GPT Pro consult
-  and continuation, MCP Connector setup, bridge handoff, and read-back
-  evidence; explicit setup only, never implied by either install profile)
+## License
 
-The planning chain is intentionally layered:
-
-```text
-idea -> repo-harness-product (PRD mode) -> repo-harness-product (Sprint mode, from-prd) -> repo-harness-product (Goal mode)
-```
-
-Use `repo-harness-product`'s PRD mode when the source is still a product idea;
-it first runs a `$geju` direction pass, then asks Claude via `claude -p
---model opus` to draft the PRD, with Codex only as fallback. Use its Sprint
-mode (`from-prd <plans/prds/*.prd.md>`) to turn an approved PRD into an
-ordered Sprint backlog with machine-checkable acceptance lines. Use its Goal
-mode only after a detailed PRD or Sprint artifact exists; it prepares a
-bounded Codex/Claude `/goal` prompt and keeps the PRD/Sprint as the source of
-truth. If that document is missing, Goal mode must ask for it instead of
-starting implementation from chat context.
-
-`repo-harness init` is for an existing repo; `repo-harness-setup`'s scaffold
-mode creates a new project or module scaffold as a side mode. `hooks-init`,
-`docs-init`, and `create-project-dirs` are internal steps, not public
-commands.
-
-`repo-harness-setup`'s scaffold mode keeps the A-K plan catalog as the
-project-type authority and layers optional overlays on top: an
-`ai_native_profile` overlay (default `none`) for AI-native app structure, and
-a separate webapp-rendering overlay (client-only Vite as Plan B, or TanStack
-Start + Vite on a Cloudflare Worker as Plan C). Overlays never install model
-providers or force a language default.
-
-Use `repo-harness-setup`'s capability mode when the harness already exists
-and only selected capability boundaries should be added. It updates
-`.ai/context/capabilities.json`, syncs the requested local `AGENTS.md` /
-`CLAUDE.md` contract files, and validates the registry without running a full
-init, migrate, or upgrade pass.
-
-Use `repo-harness-architecture`, the root Skill's handoff action, and
-`repo-harness-check`'s deploy-readiness reference for focused architecture
-documentation, rollover, and deploy/ops readiness passes. These call existing
-repo-local helpers and keep their scope narrow instead of refreshing the full
-harness.
-
-## Maintainer Reference
-
-Maintainers editing the package itself need a source checkout:
-
-```bash
-git clone https://github.com/Ancienttwo/repo-harness.git ~/Projects/repo-harness
-cd ~/Projects/repo-harness
-bun src/cli/index.ts update
-```
-
-The `~/Projects/repo-harness` repo is the only editable source of truth; local
-Claude/Codex paths (`~/.claude/skills/repo-harness`,
-`~/.codex/skills/repo-harness`) are symlink-backed runtime entrypoints. Only
-`~/.codex/skills/repo-harness` exposes `SKILL.md` and `assets/skill-commands/`;
-`scripts/sync-codex-installed-copies.sh` rebuilds these aliases and removes the
-retired `repo-harness-skill` / `project-initializer` directories. The script
-links runtime paths back to the source repo by default; set
-`AGENTIC_DEV_LINK_INSTALLED_COPIES=0` for copy-based staging, or
-`CODEX_SKILLS_ROOT` / `CLAUDE_SKILLS_ROOT` to stage under alternate roots.
-
-### Self-check this repository's workflow contract
-
-Run the full gate in [Verification](#verification); `bun run check:ci` is the
-single CI-equivalent command.
-
-### Runtime reference docs
-
-Generic repo-harness runtime/reference docs live in the installed package under
-`assets/reference-configs/` and are resolved through the CLI:
-
-```bash
-repo-harness docs list
-repo-harness docs path harness-overview
-repo-harness docs show harness-overview
-```
-
-Initializer and runtime defaults (question flow, plan menu, template vars,
-external-tooling routing) are documented in `harness-overview.md` under
-**Initializer and Runtime Model**. Generated and migrated repos still keep
-`docs/reference-configs/*.md`, but those files are deterministic pointer stubs.
-Repo-local workflow state, policy, checks, runs, handoff packets, context maps,
-and helper snapshots stay under `.ai/`.
-
-### Explicit template assembly
-
-```bash
-bun scripts/assemble-template.ts --plan C --name "MyProject"
-bun scripts/assemble-template.ts --target agents --plan C --name "MyProject"
-```
-
-### Local benchmark skeleton
-
-```bash
-bun run benchmark:skills --dry-run
-```
-
-Dry-run benchmark output is a wiring smoke only. Release or readiness evidence
-needs a non-dry-run eval with grader output.
-
-### Run one eval across both Claude and Codex
-
-```bash
-bun run benchmark:skills --eval repair-agents-task-sync
-```
-
-## Key Files
-
-- Skill spec: `SKILL.md`
-- Root routing docs: `CLAUDE.md`, `AGENTS.md`
-- Plan mapping: `assets/plan-map.json`
-- Question-pack: `assets/initializer-question-pack.v4.json`
-- Shared hooks: `assets/hooks/`
-- Runtime reference docs: `assets/reference-configs/` via `repo-harness docs`
-- Workflow contract: `assets/workflow-contract.v1.json`
-- Source repo reference docs: `docs/reference-configs/*.md`
-- Template assembler: `scripts/assemble-template.ts`
-- Question inference helper: `scripts/initializer-question-pack.ts`
-- State inspector: `scripts/inspect-project-state.ts`
-- Canonical adoption planner: `src/core/adoption/standard-plan.ts`
-- External tooling detector: `scripts/check-agent-tooling.sh`
-- Scaffolding scripts:
-  - `scripts/init-project.sh`
-  - `scripts/create-project-dirs.sh`
-
-## Generated vs Self-Hosted Hook Projection
-
-- Downstream hook behavior is defined by `assets/hooks/` plus `assets/reference-configs/`.
-- This repo dogfoods the same hook runtime through `.ai/hooks/`, but that tree is generated from `assets/hooks/projection.json`.
-- Every hook change should update canonical `assets/hooks/` once, run `bun run sync:hooks`, and include `bun run check:hooks` in verification.
-
-## Package Manager Defaults
-
-- General default priority: `bun > pnpm > npm`
-- **Plan G/H** (Python-centric) default to **`uv`** as primary package manager.
-
-## Runtime Profiles
-
-- `Plan-only (recommended)` (default)
-- `Plan + Permissionless`
-- `Standard (ask before each action)`
-
-Configured in `assets/initializer-question-pack.v4.json` and consumed by `scripts/initializer-question-pack.ts`.
-
-## Verification
-
-Use the single CI-equivalent gate for release review:
-
-```bash
-bun run check:ci
-```
-
-The gate expands to the owned checks below; `bun run check:release` adds only the npm unpublished-version preflight before delegating to the same gate.
-
-```bash
-bun test
-bash scripts/check-deploy-sql-order.sh
-bash scripts/check-architecture-sync.sh
-bash scripts/check-task-sync.sh
-bash scripts/check-task-workflow.sh --strict
-bun scripts/inspect-project-state.ts --repo . --format text
-bun src/cli/index.ts init --repo . --dry-run
-bash scripts/check-agent-tooling.sh --host both --check-updates
-bun run benchmark:skills --eval route-workflow-check
-```
+MIT — see [`LICENSE`](LICENSE).

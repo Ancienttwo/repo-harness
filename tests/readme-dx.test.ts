@@ -48,36 +48,40 @@ function isAllowedRuntimeReference(file: string, line: string): boolean {
 describe("README DX contract", () => {
   test("front-loads a single first-run path and hook authority guidance", () => {
     const readme = read("README.md");
-    const firstFive = section(readme, "First 5 Minutes");
-    const hookAuthority = section(readme, "Hook Authority Map");
+    const getStarted = section(readme, "Get Started");
+    const hooksSection = section(readme, "Hooks");
     const maintainer = section(readme, "Maintainer Reference");
 
-    expect(readme.indexOf("## First 5 Minutes")).toBeLessThan(readme.indexOf("## MCP Connector Quickstart"));
-    expect(firstFive).toContain("docs/images/repo-harness-install-donkey-carrot.png");
+    expect(readme.indexOf("## Get Started")).toBeLessThan(readme.indexOf("## MCP Connector"));
+    expect(readme).toContain("docs/images/repo-harness-hook-carrot.png");
     // Only the commands a first-run user copies are pinned here. Surrounding prose,
     // code-comment text, occurrence counts, and CLI stdout literals quoted back
     // through the README are not: they never caught a regression, they only forced
     // a same-commit test edit whenever the README was reworded.
-    expect(firstFive).toContain("bunx repo-harness@latest install");
-    expect(firstFive).toContain("bun add -g repo-harness");
-    expect(firstFive).toContain("npx -y repo-harness@latest install");
-    expect(firstFive).toContain("repo-harness install");
-    expect(firstFive).toContain("repo-harness init --dry-run");
+    expect(getStarted).toContain("bunx repo-harness@latest install");
+    expect(getStarted).toContain("bun add -g repo-harness");
+    expect(getStarted).toContain("npx -y repo-harness@latest install");
+    expect(getStarted).toContain("repo-harness install");
+    expect(getStarted).toContain("repo-harness init --dry-run");
     // Kept as the negative half of a placement invariant: the template assembly
     // command belongs in Maintainer Reference (asserted below), not in the
     // first-run path.
-    expect(firstFive).not.toContain("bun scripts/assemble-template.ts");
-    expect(hookAuthority).toContain("assets/hooks/");
-    expect(hookAuthority).toContain("bun run sync:hooks");
-    expect(hookAuthority).toContain("repo-harness-hook");
-    expect(hookAuthority).toContain("route registry");
+    expect(getStarted).not.toContain("bun scripts/assemble-template.ts");
+    expect(maintainer).toContain("assets/hooks/");
+    expect(maintainer).toContain("bun run sync:hooks");
+    expect(hooksSection).toContain("repo-harness-hook");
+    expect(hooksSection).toContain("route registry");
     // HRD-04 retired minimal-change-context.sh (folded into the in-process
     // session-context builder). HRD-05 retired post-edit-guard.sh and
     // minimal-change-observer.sh (folded into the in-process
-    // mutation-observed journal handler).
-    expect(hookAuthority).toContain("session-context.ts");
-    expect(hookAuthority).toContain("mutation-observed.ts");
-    expect(hookAuthority).toContain("stop-handler.ts");
+    // mutation-observed journal handler). The 14-section rewrite folded the
+    // former "Hook Authority Map" section into "Hooks" and "Maintainer
+    // Reference"; the handler filenames are the placement invariant that
+    // replaces it.
+    expect(hooksSection).toContain("session-context.ts");
+    expect(hooksSection).toContain("mutation-guard.ts");
+    expect(hooksSection).toContain("mutation-observed.ts");
+    expect(hooksSection).toContain("stop-handler.ts");
     expect(readme).not.toContain("finalize-handoff.sh");
     expect(readme).not.toContain("session-start-context.sh");
     expect(readme).not.toContain("post-edit-guard.sh");
@@ -90,7 +94,11 @@ describe("README DX contract", () => {
     const hookOps = read("docs/reference-configs/hook-operations.md");
 
     expect(readme).toContain("docs/reference-configs/hook-operations.md");
-    expect(readme).toContain("Generated vs Self-Hosted Hook Projection");
+    // SSD-xx: the README's own "Generated vs Self-Hosted Hook Projection"
+    // heading retired in the 14-section rewrite; the projection contract now
+    // lives solely in hook-operations.md, so pin its phrasing there instead
+    // of duplicating it back into the README.
+    expect(hookOps).toContain("generated operator-helper projection");
     expect(hookOps).toContain("## Hook Authority Map");
     expect(hookOps).toContain("## Hook Failure Playbook");
     expect(hookOps).toContain("PlanStatusGuard");
@@ -105,7 +113,7 @@ describe("README DX contract", () => {
 
   test("release and verification docs require authoritative skill eval evidence", () => {
     const readme = read("README.md");
-    const verification = section(readme, "Verification");
+    const maintainer = section(readme, "Maintainer Reference");
     const releaseDoc = read("docs/reference-configs/release-deploy.md");
     const evalArchitecture = read("docs/architecture/modules/verification/evals-checks.md");
 
@@ -122,8 +130,11 @@ describe("README DX contract", () => {
     expect(evalArchitecture).toContain("full_test_count");
     expect(evalArchitecture).toContain("effectiveness_authority");
 
-    expect(verification).toContain("bun run benchmark:skills --eval route-workflow-check");
-    expect(verification).not.toContain("bun run benchmark:skills --dry-run");
+    // SSD-xx: the README's dedicated "## Verification" section folded into
+    // Maintainer Reference; the authoritative non-dry-run eval-evidence
+    // requirement now lives solely in evals-checks.md (asserted above)
+    // instead of a copy-pasted eval command example in the README.
+    expect(maintainer).toContain("bun run check:ci");
   });
 
   test("documents explicit Codex GitHub contributor attribution", () => {
@@ -148,20 +159,21 @@ describe("README DX contract", () => {
     expect(spec).toContain("## Core Invariants");
     expect(spec).toContain("## Human Review Expectations");
     expect(spec).toContain("## Acceptance Scenarios");
-    expect(readme).toContain("## Human Review Path");
-    expect(readme).toContain("## Agent Tracking Path");
+    // SSD-xx: Human Review Path and Agent Tracking Path merged into one
+    // Reviewing Work section; the agent-reads-first/human-reviews-first
+    // table header is the structural invariant that survives the merge.
+    expect(readme).toContain("## Reviewing Work");
     expect(readme).toContain("Agent reads first");
     expect(readme).toContain("Human reviews first");
-    expect(zhReadme).toContain("## Human Review Path");
-    expect(zhReadme).toContain("## Agent Tracking Path");
+    expect(zhReadme).toContain("## 审查产出");
     expect(flow).toContain("Agent reads first");
     expect(flow).toContain("Human reviews first");
     expect(readme).toContain("external verification manifests");
     expect(readme).toContain("manual convention today");
-    expect(readme).toContain("automatic `repo-harness check` discovery or gate");
+    expect(readme).toMatch(/not an automatic\s+`repo-harness check` gate/);
     expect(zhReadme).toContain("external verification manifest");
-    expect(zhReadme).toContain("手动约定");
-    expect(zhReadme).toContain("`repo-harness check` 已经会自动发现或 gate");
+    expect(zhReadme).toContain("人工约定");
+    expect(zhReadme).toContain("`repo-harness check` 会自动执行的 gate");
     expect(externalTooling).toContain("## External Verification Evidence");
     expect(externalTooling).toContain("convention only");
     expect(externalTooling).toContain("does not automatically discover");
@@ -172,6 +184,9 @@ describe("README DX contract", () => {
   });
 
   test("localized READMEs track the current English release surface", () => {
+    const languageSwitcher =
+      "[English](README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Français](README.fr.md) | [Español](README.es.md)";
+
     for (const file of LOCALIZED_READMES) {
       const localized = read(file);
 
@@ -187,13 +202,19 @@ describe("README DX contract", () => {
       expect(localized).toContain("repo-harness docs list");
       expect(localized).toContain("SessionStart.default");
       expect(localized).toContain("PostToolUse.always");
-      expect(localized).toContain("Generated vs Self-Hosted Hook Projection");
-      expect(localized).toContain("Package Manager Defaults");
-      expect(localized).toContain("Runtime Profiles");
-      expect(localized).toContain("bun run benchmark:skills --eval route-workflow-check");
+      // SSD-xx: "Generated vs Self-Hosted Hook Projection", "Package Manager
+      // Defaults", "Runtime Profiles", and the benchmark:skills eval command
+      // example all moved into docs/reference-configs (harness-overview.md,
+      // evals-checks.md) per the approved README slim-down; they are no
+      // longer README content to pin. Pin the install commands and the
+      // five-language switcher instead, since every locale must keep them.
+      expect(localized).toContain(languageSwitcher);
+      expect(localized).toContain(
+        "curl -fsSL https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.sh | sh",
+      );
+      expect(localized).toContain("bunx repo-harness@latest install");
       expect(localized).not.toContain("0.5.0");
       expect(localized).not.toContain("0.2.1");
-      expect(localized).not.toContain("bun run benchmark:skills --dry-run");
       expect(localized.toLowerCase()).not.toContain("gstack");
     }
   });

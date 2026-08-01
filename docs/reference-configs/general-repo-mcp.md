@@ -35,6 +35,12 @@ Use `discover_harness_repos` from the Connector to discover the registered
 `repo_id` before calling general repo tools. `list_allowed_roots` is only for
 the separate session-local workspace capability.
 
+The ChatGPT Connector registers one endpoint URL, not one repository per URL.
+Stale registry entries are ignored unless the live repo still carries
+repo-harness adoption markers. External non-repo local roots are outside the
+adopted-repo boundary and require explicit `--allow-root` authorization at setup
+time.
+
 Read/write access is an operator decision in the registry. Do not grant
 `read_write` for routine planning. Mutation calls retain revision preconditions
 and are denied for every `read_only` repo.
@@ -224,6 +230,69 @@ flow:
 6. Use write tools only after explicit operator approval and only with revision
    preconditions.
 7. Call `refresh_repo_index` after successful writes.
+
+## Snapshot Consistency and Cache
+
+Reader responses carry `snapshot_id`, `index_revision`, `ignore_digest`, and
+`indexed` metadata. A stale client snapshot returns `SNAPSHOT_STALE` instead of
+silently mixing versions. Responses also expose `snapshot_state`, the snapshot
+TTL/expiry, and a bounded in-process snapshot cache marker.
+
+- `snapshot_cache.key` is scoped by tool and repo-relative path set;
+  `snapshot_cache.snapshot_key` identifies the underlying repo snapshot.
+- Entry metadata is cached separately by repo, registry revision, `.ignore`
+  digest, relative path, and current stat signature, so warm unchanged
+  manifest/stat/read calls skip repeated hash and binary probes without hiding
+  file, registry, or `.ignore` changes.
+- An explicit `snapshot_id` on `stat_file`/`read_file` reuses the cached snapshot
+  and validates only the requested file hash instead of rebuilding the full repo
+  snapshot.
+- When CodeGraph reports a now-missing indexed path, or metadata that no longer
+  matches the filesystem, the snapshot becomes `index_lagging` while authorized
+  read/stat fallback stays available.
+- For large manifests, `repo_manifest` streams the visible tree and keeps only
+  the requested page in memory. Page entries carry exact content hashes;
+  off-page content metadata is deferred and reported as
+  `counts.content_deferred` until a later manifest page, `stat_file`,
+  `read_file`, or `search_text` returns it.
+
+Successful writes leave the index pending and append an invalidation event to
+`.ai/harness/mcp/index-events.jsonl`. `refresh_repo_index` runs CodeGraph sync
+for the repo, invalidates reader snapshots, records refresh success or
+dead-letter failure in that same event log, and returns the new `snapshot_id`,
+`index_revision`, `index_state`, refresh strategy, and optional mutation lag when
+called with `mutation_id`.
+
+For large-repo reader baselines:
+
+```bash
+bun run benchmark:mcp-reader -- --entries 10000 --json
+```
+
+Use `--entries all` for the full 10k/100k/500k fixture sequence when the local
+machine can spend the filesystem time. Recorded results live in
+`docs/researches/20260623-general-repo-reader-performance-baseline.md`.
+
+## Server Profiles and Dev Runner
+
+`repo-harness mcp serve --profile <profile>` selects the tool surface. The
+default `planner` profile is read-and-plan only: ChatGPT reads workflow and repo
+state, writes PRD/Sprint/Goal handoff artifacts, and holds no source-code write
+access, arbitrary shell execution, or agent runner. Codex remains the executor.
+
+Dev Mode can opt into local agent execution through MCP. This is off by default.
+When the operator enables the `orchestrator` profile with the dev runner
+setting, ChatGPT can call `run_agent_goal`, which reads only
+`.ai/harness/handoff/codex-goal.md` and runs that fixed handoff through an
+allowed local CLI such as `codex exec` or `claude -p`:
+
+```bash
+repo-harness mcp serve --repo . --transport http --profile orchestrator --enable-dev-runner --dev-runner-agents codex
+```
+
+This setting is for local Developer Mode only. It is timeout-bounded, audited,
+and not arbitrary shell. The direct-coding `coding` profile is a separate opt-in
+surface documented in [`chatgpt-coding-mcp.md`](chatgpt-coding-mcp.md).
 
 ## Known Limits
 
