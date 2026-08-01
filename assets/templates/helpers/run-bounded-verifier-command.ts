@@ -39,6 +39,23 @@ if (!Number.isFinite(deadlineMs)) usage();
 // process group) outlive this wrapper undetected.
 const FORCED_TERMINATION_CONFIRM_MS = 500;
 
+// A verification command must observe the project's real behaviour in a clean
+// environment. The package-dispatched helper mechanism injects `REPO_HARNESS_*`
+// wiring (helper source path, target repo root, trusted tool binaries) into its
+// child, and that set inherits all the way down verify-sprint -> verify-contract
+// -> a nested test run, where it can silently override a fixture's own repo
+// root or tool resolution. Strip the whole prefix -- not a curated subset --
+// so harness-internal wiring never reaches the command under verification.
+// This runner reads no `REPO_HARNESS_*` variable itself.
+function scrubHarnessEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const scrubbed: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (key.startsWith('REPO_HARNESS_')) continue;
+    scrubbed[key] = value;
+  }
+  return scrubbed;
+}
+
 const startedAt = Date.now();
 let timedOut = false;
 let terminating = false;
@@ -49,6 +66,7 @@ const logFd = openSync(logPath, 'w');
 const child = spawn(command, args, {
   detached: process.platform !== 'win32',
   stdio: ['ignore', logFd, logFd],
+  env: scrubHarnessEnv(process.env),
 });
 
 function terminate(signal: NodeJS.Signals): void {

@@ -58,6 +58,66 @@ describe('verifier evidence lifecycle cutover', () => {
     }
   });
 
+  test('bounded runner strips REPO_HARNESS_* wiring from the verified command', () => {
+    if (process.platform === 'win32') return;
+    const cwd = mkdtempSync(join(tmpdir(), 'repo-harness-bounded-env-scrub-'));
+    try {
+      const logPath = join(cwd, 'command.log');
+      const result = spawnSync('bun', [
+        join(ROOT, 'scripts/run-bounded-verifier-command.ts'),
+        '--deadline-ms', String(Date.now() + 30_000),
+        '--log', logPath,
+        '--result', join(cwd, 'result.json'),
+        '--', 'bash', '-c', 'env',
+      ], {
+        cwd,
+        encoding: 'utf-8',
+        env: {
+          ...process.env,
+          REPO_HARNESS_HELPER_SOURCE_PATH: join(ROOT, 'scripts/verify-contract.sh'),
+          REPO_HARNESS_TARGET_REPO_ROOT: ROOT,
+          REPO_HARNESS_BASH_BIN: '/bin/bash',
+          REPO_HARNESS_GIT_BIN: '/usr/bin/git',
+          REPO_HARNESS_BUN_BIN: process.execPath,
+          REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, '.ai/hooks/lib/workflow-state.sh'),
+          REPO_HARNESS_GH_BIN: '/usr/bin/gh',
+          REPO_HARNESS_ENV_SCRUB_PROBE: 'probe',
+        },
+      });
+      expect(result.status).toBe(0);
+      const childEnv = readFileSync(logPath, 'utf-8').split('\n');
+      expect(childEnv.filter((line) => line.startsWith('REPO_HARNESS_'))).toEqual([]);
+      // Everything outside the harness prefix still reaches the command.
+      expect(childEnv.some((line) => line.startsWith('PATH='))).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('bounded runner passes non-harness environment through unchanged', () => {
+    if (process.platform === 'win32') return;
+    const cwd = mkdtempSync(join(tmpdir(), 'repo-harness-bounded-env-passthrough-'));
+    try {
+      const logPath = join(cwd, 'command.log');
+      const result = spawnSync('bun', [
+        join(ROOT, 'scripts/run-bounded-verifier-command.ts'),
+        '--deadline-ms', String(Date.now() + 30_000),
+        '--log', logPath,
+        '--result', join(cwd, 'result.json'),
+        '--', 'bash', '-c', 'env',
+      ], {
+        cwd,
+        encoding: 'utf-8',
+        env: { ...process.env, BOUNDED_VERIFIER_PASSTHROUGH_PROBE: 'kept' },
+      });
+      expect(result.status).toBe(0);
+      const childEnv = readFileSync(logPath, 'utf-8').split('\n');
+      expect(childEnv).toContain('BOUNDED_VERIFIER_PASSTHROUGH_PROBE=kept');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test('strict verifier has a fixed budget and records timing evidence', () => {
     const source = readFileSync(join(ROOT, 'scripts/verify-contract.sh'), 'utf-8');
     expect(source).toContain('VERIFICATION_BUDGET_MS=600000');
