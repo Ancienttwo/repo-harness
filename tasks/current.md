@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-29T17:53:29+0800 -->
+<!-- updated_at: 2026-07-31T22:57:08+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-07-29T17:53:29+0800
-> **Source Branch**: codex/release-0-11-3
-> **Source Commit**: 8e38a667
+> **Updated At**: 2026-07-31T22:57:08+0800
+> **Source Branch**: main
+> **Source Commit**: 01c821d1
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive-workflow
+> **Reason**: codegraph-update
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -46,27 +46,19 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=`plans/archive/plan-20260712-2215-agent-fleet-specialists.md`
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: T1 版本升級：package.json → 0.11.3、`.claude/.skill-version`、`assets/skill-version.json`、五份 README 版本字串（照 142d4ccb 的 diff 形狀）
+- Exact Next Step: (none)
 
 ## Checks
 
-- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
+- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: 2 changed/untracked path(s)
 
 ```
- D plans/plan-20260729-1707-release-0-11-3.md
- D tasks/contracts/20260729-1707-release-0-11-3.contract.md
- D tasks/notes/20260729-1707-release-0-11-3.notes.md
- D tasks/reviews/20260729-1707-release-0-11-3.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260729-1707-release-0-11-3.md
-?? tasks/archive/contract-20260729-1753-release-0-11-3.md
-?? tasks/archive/notes-20260729-1753-release-0-11-3.md
-?? tasks/archive/review-20260729-1753-release-0-11-3.md
-?? tasks/archive/todo-20260729-1753-release-0-11-3.md
+ M bun.lock
+ M package.json
 ```
 
 ## Source Artifacts
