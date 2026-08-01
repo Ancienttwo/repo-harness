@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-01 19:44
+> **Related Plan**: plans/archive/plan-20260801-1625-fleet-authority-cleanup.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260801-1944
+
 # Task Contract: fleet-authority-cleanup
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260801-1625-fleet-authority-cleanup.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->

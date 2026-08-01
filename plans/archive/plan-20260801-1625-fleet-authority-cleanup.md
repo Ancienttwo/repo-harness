@@ -1,6 +1,6 @@
 # Plan: Fleet authority cleanup: gatekeeper respec, repo-level agent removal, doc closeout
 
-> **Status**: Approved
+> **Status**: Archived
 > **Created**: 20260801-1625
 > **Slug**: fleet-authority-cleanup
 > **Planning Source**: codex-plan-or-waza-think
