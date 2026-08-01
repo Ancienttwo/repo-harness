@@ -1,0 +1,22 @@
+bun test v1.3.14 (0d9b296a)
+
+tests/evidence-recovery-materializer.test.ts:
+215 | 
+216 |       const first = run("bun", [join(REPO_ROOT, "scripts/recovery-view-cli.ts"), "--cwd", cwd, "--reason", "first-run"], cwd);
+217 |       expect(first.status).toBe(0);
+218 |       const handoffPath = join(cwd, ".ai/harness/handoff/current.md");
+219 |       const resumePath = join(cwd, ".ai/harness/handoff/resume.md");
+220 |       expect(existsSync(handoffPath)).toBe(true);
+                                            ^
+error: expect(received).toBe(expected)
+
+Expected: true
+Received: false
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness/tests/evidence-recovery-materializer.test.ts:220:39)
+(fail) recovery-view-cli.ts: standalone end-to-end > materializes handoff and resume, and a hand edit is fully overwritten by the next run [213.49ms]
+
+ 12 pass
+ 1 fail
+ 72 expect() calls
+Ran 13 tests across 1 file. [1137.00ms]
