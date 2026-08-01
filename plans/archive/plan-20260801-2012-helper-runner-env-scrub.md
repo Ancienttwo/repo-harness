@@ -1,6 +1,6 @@
 # Plan: Scrub REPO_HARNESS_* env from bounded verifier child commands
 
-> **Status**: Approved
+> **Status**: Archived
 > **Created**: 20260801-2012
 > **Slug**: helper-runner-env-scrub
 > **Planning Source**: codex-plan-or-waza-think

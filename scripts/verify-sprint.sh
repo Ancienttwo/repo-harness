@@ -545,13 +545,25 @@ finalize_prepared_acceptance() {
     --contract "$contract_file" --verification "$checks_file" --review "$review_file" >/dev/null
 
   finalized_checks="$(mktemp)"
+  # `$checks_file` is a materialized projection, not a run trace: the
+  # materializer (src/effects/evidence/checks-materializer.ts) appends its own
+  # `provenance` block to whatever run trace it projects. Re-emitting that
+  # block as payload would make the next materialization record
+  # `content_hash = sha256(run_trace including the previous provenance)` while
+  # publishing a file whose consumer-facing content excludes it, so the
+  # published projection could no longer be recomputed from its own bytes
+  # (tests/evidence-projection-drift.test.ts's live self-consistency check).
+  # `provenance` is materializer-owned derived metadata; strip it here so the
+  # emitted run trace is a run trace again and the next projection is
+  # self-consistent by construction -- no second hash implementation.
   jq \
     --arg reviewer "$acceptance_reviewer" \
     --arg source "$acceptance_source" \
     --arg disposition "$acceptance_disposition" \
     --arg message "$acceptance_message" \
     '
-      .acceptance_receipt = {
+      del(.provenance)
+      | .acceptance_receipt = {
         status: "pass",
         disposition: $disposition,
         reviewer: $reviewer,

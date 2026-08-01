@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-01 22:18
+> **Related Plan**: plans/archive/plan-20260801-2012-helper-runner-env-scrub.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260801-2218
+
 # Notes: helper-runner-env-scrub
 
 ## Where the fix landed, and why not at the injection site

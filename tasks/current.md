@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-01T19:44:29+0800 -->
+<!-- updated_at: 2026-08-01T22:18:34+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-08-01T19:44:29+0800
-> **Source Branch**: codex/workflow-archive-closeout
-> **Source Commit**: 19f137d3
+> **Updated At**: 2026-08-01T22:18:34+0800
+> **Source Branch**: codex/verify-provenance-overlay
+> **Source Commit**: ce6f36b8
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -46,7 +46,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=`plans/archive/plan-20260712-2215-agent-fleet-specialists.md`
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Rewrite the `### Readiness` paragraph in `assets/reference-configs/external-tooling.md` and re-sync the `docs/` projection.
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Scrub `REPO_HARNESS_*` from the child env in
 
 ## Checks
 
@@ -57,16 +57,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260801-1625-fleet-authority-cleanup.md
- D tasks/contracts/20260801-1625-fleet-authority-cleanup.contract.md
- D tasks/notes/20260801-1625-fleet-authority-cleanup.notes.md
- D tasks/reviews/20260801-1625-fleet-authority-cleanup.review.md
+ D plans/plan-20260801-2012-helper-runner-env-scrub.md
+ D tasks/contracts/20260801-2012-helper-runner-env-scrub.contract.md
+ D tasks/notes/20260801-2012-helper-runner-env-scrub.notes.md
+ M tasks/notes/20260801-env-scrub.pre-fix.log
  M tasks/todos.md
-?? plans/archive/plan-20260801-1625-fleet-authority-cleanup.md
-?? tasks/archive/contract-20260801-1944-fleet-authority-cleanup.md
-?? tasks/archive/notes-20260801-1944-fleet-authority-cleanup.md
-?? tasks/archive/review-20260801-1944-fleet-authority-cleanup.md
-?? tasks/archive/todo-20260801-1944-fleet-authority-cleanup.md
+?? plans/archive/plan-20260801-2012-helper-runner-env-scrub.md
+?? tasks/archive/contract-20260801-2218-helper-runner-env-scrub.md
+?? tasks/archive/notes-20260801-2218-helper-runner-env-scrub.md
+?? tasks/archive/review-20260801-2218-helper-runner-env-scrub.md
+?? tasks/archive/todo-20260801-2218-helper-runner-env-scrub.md
 ```
 
 ## Source Artifacts
