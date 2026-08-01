@@ -38,6 +38,38 @@ import { runSecurityScan, type SecurityScanReport } from '../commands/security';
 import { fileExists, readText } from '../../effects/state/collect-state-inputs';
 import type { WorktreeOwnership } from '../../effects/loop/state-input-collector';
 import { resolveRecoveryEvidence } from '../../effects/evidence/recovery-materializer';
+import { parseHookInput } from './hook-input';
+import { mintOrAdoptSessionRunIdentity } from './run-identity';
+
+// ---------------------------------------------------------------------------
+// run-identity threading -- SessionStart's single mint/adopt point
+// ---------------------------------------------------------------------------
+
+/**
+ * SessionStart's single run-identity mint/adopt point (design freeze: run
+ * identity threading slice). Parses `.session_id`/`.run_id` from the raw
+ * hook payload via the same `parseHookInput` every other typed handler uses,
+ * then delegates to `mintOrAdoptSessionRunIdentity` for the actual
+ * mint-vs-adopt-vs-reuse decision. The return value is intentionally
+ * unused by the caller -- later hook invocations (including this
+ * SessionStart event's own telemetry record) resolve it through
+ * `resolveRunIdentity`'s session-state fallback tier, not through this
+ * function's return.
+ */
+export function ensureSessionRunIdentity(
+  repoRoot: string,
+  input: string | Buffer | undefined,
+  env: NodeJS.ProcessEnv,
+  now: Date,
+): void {
+  const hookInput = parseHookInput(input, { env, repoRoot });
+  mintOrAdoptSessionRunIdentity(
+    repoRoot,
+    { session_id: hookInput.get('.session_id'), run_id: hookInput.get('.run_id') },
+    env,
+    now,
+  );
+}
 
 // ---------------------------------------------------------------------------
 // minimal-change-context.sh port (16 lines)

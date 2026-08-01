@@ -11,6 +11,8 @@ import {
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { runCommandObserved, type CommandObservedFs } from '../src/cli/hook/command-observed';
+import { mintOrAdoptSessionRunIdentity } from '../src/cli/hook/run-identity';
+import { readAcceptedEvents } from '../src/effects/evidence/event-log';
 
 function workspace(prefix: string): string {
   return realpathSync(mkdtempSync(join(tmpdir(), `${prefix}-`)));
@@ -317,6 +319,62 @@ describe('runCommandObserved', () => {
       expect(result.exitCode).toBe(0);
       expect(result.stderr).toContain('[HookInput] WARN');
       expect(checks(repoRoot)).toMatchObject({ command: '', status: 'pass', exit_code: 0 });
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('threads an env-resolved run identity into the evidence ledger correlation_run_id instead of self-minting', () => {
+    const repoRoot = workspace('command-observed-run-identity-threaded');
+    try {
+      const result = runCommandObserved({
+        repoRoot,
+        input: commandInput('echo hello', 'hello\n', 0),
+        env: { PATH: '', HOOK_SESSION_ID: 'cmd-observed-session', HOOK_RUN_ID: 'cmd-observed-run-77' },
+        dependencies: { hasExecutable: () => false },
+      });
+      expect(result.exitCode).toBe(0);
+      const ledger = readAcceptedEvents(repoRoot);
+      const observed = ledger.accepted.find((event) => event.event_type === 'post_bash.command_observed');
+      expect(observed?.correlation_run_id).toBe('cmd-observed-run-77');
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('threads a session-state-derived run identity (minted during SessionStart) into the evidence ledger', () => {
+    const repoRoot = workspace('command-observed-run-identity-session-state');
+    try {
+      const minted = mintOrAdoptSessionRunIdentity(repoRoot, { session_id: 'cmd-observed-state-session' }, {});
+      expect(minted).not.toBeNull();
+      const result = runCommandObserved({
+        repoRoot,
+        input: commandInput('echo hello', 'hello\n', 0),
+        env: { PATH: '', HOOK_SESSION_ID: 'cmd-observed-state-session' },
+        dependencies: { hasExecutable: () => false },
+      });
+      expect(result.exitCode).toBe(0);
+      const ledger = readAcceptedEvents(repoRoot);
+      const observed = ledger.accepted.find((event) => event.event_type === 'post_bash.command_observed');
+      expect(observed?.correlation_run_id).toBe(minted as string);
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('falls back to the writer own self-minted id when no run identity is resolvable at all (unchanged fallback)', () => {
+    const repoRoot = workspace('command-observed-run-identity-unresolved');
+    try {
+      const result = runCommandObserved({
+        repoRoot,
+        input: commandInput('echo hello', 'hello\n', 0),
+        env: { PATH: '' },
+        dependencies: { hasExecutable: () => false },
+      });
+      expect(result.exitCode).toBe(0);
+      const ledger = readAcceptedEvents(repoRoot);
+      const observed = ledger.accepted.find((event) => event.event_type === 'post_bash.command_observed');
+      expect(observed?.correlation_run_id).toMatch(/^run-\d+$/);
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
     }

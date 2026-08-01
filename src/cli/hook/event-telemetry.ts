@@ -8,6 +8,7 @@ import type {
   HookEventTelemetryStep,
 } from '../../core/loop/loop-event-protocol';
 import type { HookEvent, RouteHost, RouteId } from './route-registry';
+import { resolveRunIdentity } from './run-identity';
 
 export const HOOK_EVENT_TELEMETRY_PROTOCOL = 'loop-engine-hook-event/v1' as const;
 export const HOOK_EVENT_TELEMETRY_PATH = '.ai/harness/runs/hook-events.jsonl';
@@ -192,6 +193,12 @@ export function createHookEventTelemetry(
       const completedAt = new Date();
       const elapsedMs = roundMs(performance.now() - startedMonotonic);
       const incompleteMetrics = METRICS.filter((metric) => !completeMetrics.has(metric));
+      // Unified resolution order (payload.run_id -> HOOK_RUN_ID -> CODEX_RUN_ID
+      // -> CLAUDE_RUN_ID -> session-state lookup by session_id -> null) lives
+      // once in run-identity.ts; every consumption point calls it rather than
+      // maintaining its own copy of the chain. session_id's own chain is
+      // unchanged -- resolveRunIdentity computes it identically.
+      const runIdentity = resolveRunIdentity(options.repoRoot, payload, env);
       const unsigned = {
         protocol: HOOK_EVENT_TELEMETRY_PROTOCOL,
         kind: 'hook_event' as const,
@@ -199,13 +206,8 @@ export function createHookEventTelemetry(
         started_at: startedAt.toISOString(),
         completed_at: completedAt.toISOString(),
         host: hostFromEnv(env),
-        session_id: firstString(
-          payload.session_id,
-          env.HOOK_SESSION_ID,
-          env.CODEX_SESSION_ID,
-          env.CLAUDE_SESSION_ID,
-        ),
-        run_id: firstString(payload.run_id, env.HOOK_RUN_ID, env.CODEX_RUN_ID, env.CLAUDE_RUN_ID),
+        session_id: runIdentity.sessionId,
+        run_id: runIdentity.runId,
         turn_id: firstString(payload.turn_id, env.HOOK_TURN_ID, env.CODEX_TURN_ID, env.CLAUDE_TURN_ID),
         event: options.event,
         route_id: options.routeId,
