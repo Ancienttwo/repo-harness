@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-01 19:03
+> **Related Plan**: plans/archive/plan-20260801-1255-tooling-receipt-awareness.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260801-1903
+
 # Notes: tooling receipt awareness
 
 Plan: `plans/plan-20260801-1255-tooling-receipt-awareness.md`

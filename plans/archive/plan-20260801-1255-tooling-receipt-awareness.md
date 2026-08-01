@@ -1,6 +1,6 @@
 # Plan: check-agent-tooling receipt-aware agent fleet drift
 
-> **Status**: Approved
+> **Status**: Archived
 > **Created**: 20260801-1255
 > **Slug**: tooling-receipt-awareness
 > **Planning Source**: repo-harness-plan
