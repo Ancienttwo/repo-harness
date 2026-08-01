@@ -168,24 +168,24 @@ Rejected alternative: porting the skill's RoutePlan/ledger Python validators —
 
 ## Task Breakdown
 
-- [ ] Update `.ai/harness/policy.json#delegation` runner list and runner_rule/rule prose.
-- [ ] Rewrite the delegation advisor runner-path and sharedRules thread-lifecycle wording in `src/cli/hook/subagent-handler.ts`.
-- [ ] Rewrite the standing-authorization block in `src/cli/hook/session-context.ts`.
-- [ ] Update `docs/reference-configs/external-tooling.md` and sync `assets/reference-configs/external-tooling.md` byte-identically.
-- [ ] Update/extend `tests/subagent-handler.test.ts` and `tests/session-context.test.ts`.
-- [ ] Round 2: sync downstream delegation seeds (project-init-lib.sh + ensure-task-workflow.sh + assets mirror) and update tests/create-project-dirs.runtime.test.ts pins.
-- [ ] Round 2: add the symmetric thread-path fail-closed clause to subagent-handler.ts and session-context.ts.
-- [ ] Run full verification suite and report output as-is.
+- [x] Update `.ai/harness/policy.json#delegation` runner list and runner_rule/rule prose.
+- [x] Rewrite the delegation advisor runner-path and sharedRules thread-lifecycle wording in `src/cli/hook/subagent-handler.ts`.
+- [x] Rewrite the standing-authorization block in `src/cli/hook/session-context.ts`.
+- [x] Update `docs/reference-configs/external-tooling.md` and sync `assets/reference-configs/external-tooling.md` byte-identically.
+- [x] Update/extend `tests/subagent-handler.test.ts` and `tests/session-context.test.ts`.
+- [x] Round 2: sync downstream delegation seeds (project-init-lib.sh + ensure-task-workflow.sh + assets mirror) and update tests/create-project-dirs.runtime.test.ts pins.
+- [x] Round 2: add the symmetric thread-path fail-closed clause to subagent-handler.ts and session-context.ts.
+- [x] Run full verification suite and report output as-is.
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] Update `.ai/harness/policy.json#delegation` runner list and runner_rule/rule prose.
-- [ ] Rewrite the delegation advisor runner-path and sharedRules thread-lifecycle wording in `src/cli/hook/subagent-handler.ts`.
-- [ ] Rewrite the standing-authorization block in `src/cli/hook/session-context.ts`.
-- [ ] Update `docs/reference-configs/external-tooling.md` and sync `assets/reference-configs/external-tooling.md` byte-identically.
-- [ ] Update/extend `tests/subagent-handler.test.ts` and `tests/session-context.test.ts`.
-- [ ] Round 2: sync downstream delegation seeds (project-init-lib.sh + ensure-task-workflow.sh + assets mirror) and update tests/create-project-dirs.runtime.test.ts pins.
-- [ ] Round 2: add the symmetric thread-path fail-closed clause to subagent-handler.ts and session-context.ts.
-- [ ] Run full verification suite and report output as-is.
+- [x] Update `.ai/harness/policy.json#delegation` runner list and runner_rule/rule prose.
+- [x] Rewrite the delegation advisor runner-path and sharedRules thread-lifecycle wording in `src/cli/hook/subagent-handler.ts`.
+- [x] Rewrite the standing-authorization block in `src/cli/hook/session-context.ts`.
+- [x] Update `docs/reference-configs/external-tooling.md` and sync `assets/reference-configs/external-tooling.md` byte-identically.
+- [x] Update/extend `tests/subagent-handler.test.ts` and `tests/session-context.test.ts`.
+- [x] Round 2: sync downstream delegation seeds (project-init-lib.sh + ensure-task-workflow.sh + assets mirror) and update tests/create-project-dirs.runtime.test.ts pins.
+- [x] Round 2: add the symmetric thread-path fail-closed clause to subagent-handler.ts and session-context.ts.
+- [x] Run full verification suite and report output as-is.
