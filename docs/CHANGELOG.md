@@ -4,6 +4,31 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-08-01
+
+### Changed
+
+- Restructures the five-language README suite into a get-started-first
+  layout (centered header, TOC, Get Started section, key-features table),
+  cutting the English `README.md` from 872 to 451 lines; deep-dive content
+  (install profiles, General Repo MCP, harness overview, hook operations)
+  moves into `docs/reference-configs` before deletion so nothing is lost,
+  and the four translations (zh-CN, ja, fr, es) are rewritten against the
+  new section structure.
+- Bumps the `@colbymchenry/codegraph` dev dependency from `1.4.1` to
+  `1.5.0`.
+
+### Fixed
+
+- `hook-events.jsonl`'s `run_id` was always empty and each evidence writer
+  minted its own `run-${Date.now()}` on demand, so hook telemetry never
+  joined evidence `correlation_run_id`. A new `run-identity.ts` module is
+  now the single SessionStart-only mint and resolution authority (payload
+  -> `HOOK_RUN_ID` -> `CODEX_RUN_ID` -> `CLAUDE_RUN_ID` -> session-state
+  lookup -> null), storing one bounded `session-run-identity.json` slot;
+  `event-telemetry.ts` and `command-observed.ts` now wire to this unified
+  resolver instead of independent chains or self-minted fallbacks.
+
 ## [0.12.0] - 2026-07-31
 
 ### Added
