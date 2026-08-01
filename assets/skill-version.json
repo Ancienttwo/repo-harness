@@ -1,6 +1,6 @@
 {
-  "version": "0.12.0",
-  "templateVersion": "0.12.0",
+  "version": "0.12.1",
+  "templateVersion": "0.12.1",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "compatibility": {
@@ -227,6 +227,10 @@
     {
       "version": "0.12.0",
       "description": "Removes repo-harness adopt in favor of init as the sole repo-local adoption command, adds the deep-worker fleet agent, converges docs/reference-configs on a generated assets projection, and fixes MCP allowed-root canonicalization, an acceptance-receipt fingerprint defect, and contract-worktree squash-merge cleanup"
+    },
+    {
+      "version": "0.12.1",
+      "description": "Threads a single SessionStart-minted run identity through hook telemetry and evidence correlation, restructures the five-language README into a get-started-first layout, and refreshes the CodeGraph dev dependency line to latest"
     }
   ],
   "generatedProjectStamp": {
