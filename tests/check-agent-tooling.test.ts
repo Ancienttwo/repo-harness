@@ -218,6 +218,9 @@ function writeFakeNpm(fakeBin: string, version: string, logFile?: string) {
   );
 }
 
+// Every test that spawns the script with `--check-updates` must stub curl with
+// this helper: without it the run reaches the real network for upstream Waza
+// sources, which makes the test slow and non-deterministic.
 function writeFakeCurl(fakeBin: string, version: string, logFile?: string) {
   writeExecutable(
     join(fakeBin, "curl"),
@@ -1015,6 +1018,7 @@ describe("check-agent-tooling", () => {
       writeFakeBunx(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
       writeFakeNpm(envRoot.fakeBin, "0.9.6");
+      writeFakeCurl(envRoot.fakeBin, "3.0.0");
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--check-updates", "--host", "both"], {
         cwd: ROOT,
@@ -1086,6 +1090,7 @@ describe("check-agent-tooling", () => {
       writeFakeBunx(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
       writeFakeNpm(envRoot.fakeBin, "0.9.6");
+      writeFakeCurl(envRoot.fakeBin, "3.0.0");
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--check-updates", "--host", "both"], {
         cwd: ROOT,
@@ -1163,6 +1168,7 @@ describe("check-agent-tooling", () => {
       writeFakeBunx(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
       writeFakeNpm(envRoot.fakeBin, "0.9.6");
+      writeFakeCurl(envRoot.fakeBin, "3.0.0");
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--check-updates", "--host", "both"], {
         cwd: ROOT,
@@ -1219,6 +1225,7 @@ describe("check-agent-tooling", () => {
       writeFakeBunx(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
       writeFakeNpm(envRoot.fakeBin, "0.9.6");
+      writeFakeCurl(envRoot.fakeBin, "3.0.0");
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--check-updates", "--host", "both"], {
         cwd: ROOT,
