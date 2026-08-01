@@ -1,4 +1,4 @@
-import { buildSessionStartSections } from './session-context';
+import { buildSessionStartSections, ensureSessionRunIdentity } from './session-context';
 import { pendingPostEditJournalSection, runMutationObserved } from './mutation-observed';
 import { runMutationGuard } from './mutation-guard';
 import { runStopHandler } from './stop-handler';
@@ -17,6 +17,7 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
   'session-context': {
     id: 'session-context',
     run(context: HookHandlerContext): HookHandlerResult {
+      ensureSessionRunIdentity(context.repoRoot, context.input, context.env, context.now);
       const sections = [];
       const stateSection = context.collector.getSessionEffectiveState();
       if (stateSection) sections.push(stateSection);

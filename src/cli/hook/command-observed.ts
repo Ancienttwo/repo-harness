@@ -12,6 +12,7 @@ import { join, dirname } from 'path';
 import { recordCircuitAttempt, type CircuitDecision } from './circuit-breaker';
 import { parseHookInput, type HookInputFs } from './hook-input';
 import { importPostBashObservation } from '../../effects/evidence/post-bash-importer';
+import { resolveRunIdentity } from './run-identity';
 
 export interface CommandObservedFs extends HookInputFs {
   mkdirSync(path: string, options?: { readonly recursive?: boolean }): void;
@@ -237,12 +238,24 @@ export function runCommandObserved(opts: CommandObservedInput): CommandObservedR
     // same exitCode 1 / reason 'write-failed' envelope as any other
     // failure in this try block; no new fallback, no new severity.
     const durationMs = numberValue(parsed.get('.duration_ms', parsed.get('.tool_response.duration_ms', env.HOOK_DURATION_MS ?? '0')), 0);
+    // Unified run-identity resolution (payload -> HOOK_RUN_ID -> CODEX_RUN_ID
+    // -> CLAUDE_RUN_ID -> session-state lookup by session_id -> null). When a
+    // session-scoped run identity is resolvable, it is threaded through so
+    // this hook-path write never relies on the writer's own
+    // `run-${Date.now()}` self-mint; only a fully unresolvable case (no
+    // session ever started) reaches that pre-existing fallback.
+    const runIdentity = resolveRunIdentity(
+      opts.repoRoot,
+      { session_id: parsed.get('.session_id'), run_id: parsed.get('.run_id') },
+      env,
+    );
     const importResult = importPostBashObservation({
       repoRoot: opts.repoRoot,
       command,
       exitCode,
       durationMs,
       rawOutputPath: rawPath,
+      correlationRunId: runIdentity.runId ?? undefined,
     });
     if (!importResult.ok) {
       throw new Error(`ledger import failed (${importResult.reason}): ${importResult.message}`);
