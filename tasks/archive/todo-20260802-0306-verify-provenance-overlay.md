@@ -1,7 +1,13 @@
+> **Archived**: 2026-08-02 03:06
+> **Related Plan**: plans/archive/plan-20260801-2124-verify-provenance-overlay.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260802-0306
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: 2026-08-02 03:06
+> **Updated**: 2026-08-02 00:20
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-02 03:06
+> **Related Plan**: plans/archive/plan-20260801-2124-verify-provenance-overlay.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260802-0306
+
 # Task Review: verify-provenance-overlay
 
 > **Status**: Pending
@@ -49,17 +55,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:8a48a87d4183098e73ae4f89c74fed8f1767410bd1f5272e245d4ec977b74183
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 5e89f6c857cf5ce6c4eed5e2da3ef5bc057d0e5b
+> **Verification Evidence SHA256**: sha256:fbfc974f3d81cb4a86f4492ca26c7631e745ad952c25a7b65926102bcbf572af
+> **Issued At**: 2026-08-01T19:05:29.377Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: PR #153 merged at 5e89f6c8: the verify-sprint finalize overlay strips the materializer-owned provenance block before re-emission, so checks/latest.json is provenance.content_hash self-consistent by construction. Red-before-green re-proven by direct execution -- the shipped test file fails 2 script-bound assertions on baseline 62daea2e and is 9/0 on 5e89f6c8. The dogfood finalize produced a recorded content_hash equal to the hash recomputed from the published consumer-facing bytes. Packaged mirror byte-identical by cmp, the three out-of-scope materializer-family files carry zero changes, full suite 2127/1/0. This closeout run: contract exit criteria 16/0 Fulfilled, allowed_paths clean at 2 files.
 - Findings: none
 
 ## Behavior Diff Notes

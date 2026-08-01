@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-02 03:06
+> **Related Plan**: plans/archive/plan-20260801-2124-verify-provenance-overlay.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260802-0306
+
 # Task Contract: verify-provenance-overlay
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260801-2124-verify-provenance-overlay.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
