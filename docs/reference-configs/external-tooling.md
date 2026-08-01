@@ -475,10 +475,17 @@ description (for example, `Opus at max effort` or `Sonnet at high effort`) to th
 mapped GPT-5.6 model and reasoning level. A missing label fails closed so the
 installed metadata cannot claim a different model from the TOML settings.
 
-These files define the desired installed role configuration. They do not by
-themselves prove that every native MultiAgentV2 spawn surface selects a named
-role instead of inheriting the parent model; keep runtime selection claims
-behind a real subagent canary.
+These files define the desired installed role configuration and feed both Codex
+dispatch surfaces: native MultiAgentV2 `agent_type` selection, and Codex App
+Thread dispatch, where `model` and `model_reasoning_effort` are read back out of
+the installed TOML and passed explicitly to `codex_app__create_thread`. App
+Thread dispatch is the default Codex path because the flat native spawn schema
+carries only a task name, a message, and `fork_turns`: it cannot select a model
+per role, so a `gpt-5.6-luna` role dispatched natively silently inherits the
+parent model. These files do not by themselves prove that either surface honored
+the configured model; keep runtime selection claims behind a real canary — a
+SubagentStart observation on the native path, an official thread read on the
+thread path.
 
 ### Local merge gate
 
@@ -539,6 +546,15 @@ readiness separate:
 
 SubagentStart does not expose `model_reasoning_effort`, so repo-harness never
 claims that per-role reasoning effort is verified from this gate.
+
+`native_role_routing` evidence stays scoped to the native fallback path; it says
+nothing about App Thread dispatch, and an absent native canary is not a failure
+of the default thread path. Thread-path model evidence comes from official
+thread reads instead: the requested `model`/`thinking` passed to
+`codex_app__create_thread` and the model observed on the materialized thread are
+recorded separately, and a thread whose runtime model was never read back stays
+unverified. This slice ships the routing wording only; a live `create_thread`
+canary on the user's Codex host remains a runtime-readiness follow-up.
 
 `developer_instructions` is the packaged `.md` body plus the canonical
 EXECUTION_BOUNDARY anti-extras clause, kept byte-identical to the

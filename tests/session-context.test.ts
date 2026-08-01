@@ -481,6 +481,13 @@ describe("sessionStartMainContent — codex delegation auto-authorization", () =
         const content = sessionStartMainContent(freshCollector(repoRoot), env, Date.now());
         expect(content).toContain("# Delegation Standing Authorization");
         expect(content).toContain("spawn no more than 3");
+        expect(content).toContain("one codex_app__create_thread per");
+        expect(content).toContain("installed ~/.codex/agents/<role>.toml");
+        expect(content).toContain(
+          "Native spawn_agent is a declared fallback only when the App Thread tools are",
+        );
+        expect(content).toContain("accept must not fall back to native spawn, because native spawn silently");
+        expect(content).toContain("a pendingWorktreeId is not a thread id");
       });
     });
   });
