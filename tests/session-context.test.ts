@@ -488,6 +488,12 @@ describe("sessionStartMainContent — codex delegation auto-authorization", () =
         );
         expect(content).toContain("accept must not fall back to native spawn, because native spawn silently");
         expect(content).toContain("a pendingWorktreeId is not a thread id");
+        expect(content).toContain(
+          "If the live create_thread surface cannot carry that exact model and",
+        );
+        expect(content).toContain(
+          "role-routed worker; degrade to codex-exec, then the sequential main thread,",
+        );
       });
     });
   });

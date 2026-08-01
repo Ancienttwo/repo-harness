@@ -30,6 +30,11 @@
 | Add a `thread-lifecycle` sub-block to the advisor vs. flat bullets in `sharedRules` | Flat bullets | Plan says "compact"; a sub-block would fork the advisor's single rule-list shape for one path |
 | Edit `docs/` then mirror by copy vs. edit `assets/` then run the sync script | Sync script | `scripts/sync-reference-configs.ts` treats `assets/` as canonical and `docs/` as projection |
 
+## Round 2 (gate findings)
+
+- Downstream seed skew: `pi_write_harness_policy` (`scripts/lib/project-init-lib.sh`) and the `ensure-task-workflow.sh` pair still seeded the old native-first `preferred_runners`/`runner_rule` into generated repos, so downstream policy contradicted this repo's. Fixed by copying both values verbatim out of `.ai/harness/policy.json` with a one-shot script (no re-paraphrase), then projecting `scripts/` -> `assets/templates/helpers/` through the sanctioned `bun scripts/sync-helper-sources.ts --write` rather than hand-editing the mirror. `project-init-lib.sh` is a separate seed copy, not a projection, so it is edited directly; its `rule` string legitimately differs from the helper's and was left alone.
+- Symmetric thread-path fail-closed: the original wording only covered "App Thread tools unavailable", leaving the worse case open — `create_thread` exists but its live schema cannot carry the role's exact model/effort, so a literal orchestrator would create the thread anyway and silently inherit the parent model (the exact failure this slice exists to kill). Added the symmetric clause in both hook surfaces: such a thread is inherited-model, MUST NOT be adopted as a role-routed worker, degrade to codex-exec then sequential main-thread on the SAME contract with the degradation recorded. Placed as a `sharedRules` bullet (so it reaches both the permission and contract envelopes) plus one clause in the contract runner-preference sentence, and as one paragraph in the standing-authorization block — deliberately short, since both strings are injected context.
+
 ## Open Questions
 
 - None. Live `codex_app__create_thread` model acceptance stays a post-merge runtime canary per the plan's Out of scope.

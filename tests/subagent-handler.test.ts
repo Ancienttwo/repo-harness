@@ -196,6 +196,12 @@ describe('typed subagent hook handlers', () => {
       expect(context).toContain('- Adopt a thread worker result only after reading the final turn of that thread.');
       expect(context).toContain('- Archive completed threads one at a time.');
       expect(context).toContain('- Thread workers must not create further threads, agents, or background tasks.');
+      expect(context).toContain(
+        'If the live create_thread schema cannot carry that exact model and reasoning effort, the resulting thread is inherited-model and MUST NOT be adopted as a role-routed worker.',
+      );
+      expect(context).toContain(
+        "- Treat a thread as inherited-model whenever the live create_thread surface cannot carry that role's exact model and reasoning effort; such a thread MUST NOT be adopted as a role-routed worker.",
+      );
       expect(context).toContain('- On the native spawn_agent fallback path, pass fork_turns="none"');
       expect(context).toContain('Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief.');
       const state = JSON.parse(readFileSync(join(repoRoot, '.ai/harness/delegation/latest.json'), 'utf8')) as Record<string, unknown>;

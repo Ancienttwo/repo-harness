@@ -107,7 +107,7 @@ External reference: `zjp1997720/zhijian-skills` skill `codex-model-routing-team`
 
 ## P1 map
 
-- `.ai/harness/policy.json#delegation` (lines ~212-225): `preferred_runners`, `runner_rule`, `rule` — the machine-readable runner authority (self-hosted hand-authored; no assets seed, `defaultPolicy()` in `src/core/adoption/standard-plan.ts` has no delegation key).
+- `.ai/harness/policy.json#delegation` (lines ~212-225): `preferred_runners`, `runner_rule`, `rule` — the machine-readable runner authority. AMENDED after gate review: the original claim "no assets seed" was false for the shell path — `defaultPolicy()` in `src/core/adoption/standard-plan.ts` has no delegation key, but `pi_write_harness_policy` in `scripts/lib/project-init-lib.sh:1862,1865` (mirrored in `scripts/ensure-task-workflow.sh:1174,1177` and `assets/templates/helpers/ensure-task-workflow.sh:1174,1177`, pinned by `tests/create-project-dirs.runtime.test.ts:457-466`) seeds the delegation block for downstream generated repos and must carry the same new `preferred_runners`/`runner_rule` values.
 - `src/cli/hook/subagent-handler.ts`: `runDelegationAdvisor()` (:247-371) — `sharedRules` (:316-332) with the `fork_turns="none" on spawn_agent` rule (:325) and the runner-preference sentence naming `spawn_agent` (:351). `SubagentStart` evidence path (:456-636) is runner-agnostic and stays untouched.
 - `src/cli/hook/session-context.ts`: `codexDelegationAutoContext()` (:1307-1322) — duplicate standing-authorization copy of the `fork_turns="none" on spawn_agent` wording.
 - `docs/reference-configs/external-tooling.md` + `assets/reference-configs/external-tooling.md` (byte-identical pair): `.md -> .toml` mapping section (:433-481) and the configuration-readiness vs runtime-routing-readiness split (:518-538).
@@ -145,6 +145,9 @@ Rejected alternative: porting the skill's RoutePlan/ledger Python validators —
 - `docs/reference-configs/external-tooling.md` + `assets/reference-configs/external-tooling.md` (kept byte-identical): update the `.md -> .toml` mapping runtime-claims paragraph and the readiness-split section — role TOMLs now feed BOTH surfaces (native `agent_type` selection and App Thread dispatch projection); native MultiAgentV2 cannot carry Luna; App Thread is the default Codex dispatch path; `native_role_routing` evidence stays scoped to the native fallback; thread-path model evidence comes from official thread reads.
 - Tests: update `tests/subagent-handler.test.ts` and `tests/session-context.test.ts` assertions/fixtures that break; add assertions pinning the new runner-preference sentence (substring on `codex_app__create_thread` and the fail-closed native-fallback condition) and the new `preferred_runners` passthrough.
 
+- AMENDED after gate review (round 2 scope): downstream delegation seeds — sync the seeded `preferred_runners` + `runner_rule` in `scripts/lib/project-init-lib.sh`, `scripts/ensure-task-workflow.sh`, and `assets/templates/helpers/ensure-task-workflow.sh` to the exact new `.ai/harness/policy.json` values, keeping the existing mirror parity (cmp) between the scripts/ and assets/ copies, and update the pinned assertions in `tests/create-project-dirs.runtime.test.ts`.
+- AMENDED after gate review (round 2 scope): symmetric thread-path fail-closed clause in `src/cli/hook/subagent-handler.ts` and `src/cli/hook/session-context.ts` — when `codex_app__create_thread` exists but its live schema cannot carry the role's exact `model`/`thinking`, the thread must NOT be adopted as a role-routed worker (it would silently inherit the parent model, same failure as native flat spawn); degrade to codex-exec, then main-thread, on the SAME contract, degradation recorded; a thread created without the role's exact model/effort is treated as inherited-model.
+
 ## Out of scope
 
 - Any new hook route, CLI helper, or evidence field for thread-path routing (no `thread_role_routing` machinery this slice).
@@ -158,6 +161,7 @@ Rejected alternative: porting the skill's RoutePlan/ledger Python validators —
 - `bun test tests/subagent-handler.test.ts tests/session-context.test.ts` passes.
 - `bun test` (full suite) passes.
 - `cmp docs/reference-configs/external-tooling.md assets/reference-configs/external-tooling.md` reports no difference.
+- `cmp scripts/ensure-task-workflow.sh assets/templates/helpers/ensure-task-workflow.sh` reports no difference.
 - `rg -n "gpt-5.6" src/` still returns zero hits (no model-ID literals under src/).
 - `repo-harness run check-task-workflow --strict` passes; `bash scripts/check-task-sync.sh` and `bash scripts/check-architecture-sync.sh` run and their output is reported as-is.
 - `bun src/cli/index.ts init --repo . --dry-run` succeeds.
@@ -169,6 +173,8 @@ Rejected alternative: porting the skill's RoutePlan/ledger Python validators —
 - [ ] Rewrite the standing-authorization block in `src/cli/hook/session-context.ts`.
 - [ ] Update `docs/reference-configs/external-tooling.md` and sync `assets/reference-configs/external-tooling.md` byte-identically.
 - [ ] Update/extend `tests/subagent-handler.test.ts` and `tests/session-context.test.ts`.
+- [ ] Round 2: sync downstream delegation seeds (project-init-lib.sh + ensure-task-workflow.sh + assets mirror) and update tests/create-project-dirs.runtime.test.ts pins.
+- [ ] Round 2: add the symmetric thread-path fail-closed clause to subagent-handler.ts and session-context.ts.
 - [ ] Run full verification suite and report output as-is.
 
 ## Annotations
@@ -180,4 +186,6 @@ Rejected alternative: porting the skill's RoutePlan/ledger Python validators —
 - [ ] Rewrite the standing-authorization block in `src/cli/hook/session-context.ts`.
 - [ ] Update `docs/reference-configs/external-tooling.md` and sync `assets/reference-configs/external-tooling.md` byte-identically.
 - [ ] Update/extend `tests/subagent-handler.test.ts` and `tests/session-context.test.ts`.
+- [ ] Round 2: sync downstream delegation seeds (project-init-lib.sh + ensure-task-workflow.sh + assets mirror) and update tests/create-project-dirs.runtime.test.ts pins.
+- [ ] Round 2: add the symmetric thread-path fail-closed clause to subagent-handler.ts and session-context.ts.
 - [ ] Run full verification suite and report output as-is.

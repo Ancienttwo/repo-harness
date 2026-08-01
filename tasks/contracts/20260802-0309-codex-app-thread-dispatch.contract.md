@@ -21,7 +21,7 @@ Re-point the Codex-side delegated-runner preference from native `spawn_agent` to
 
 ## Scope
 
-- In scope: `.ai/harness/policy.json#delegation` (preferred_runners + runner_rule/rule prose); `src/cli/hook/subagent-handler.ts` `runDelegationAdvisor` sharedRules + runner-preference sentence; `src/cli/hook/session-context.ts` `codexDelegationAutoContext` standing-authorization block; `docs/reference-configs/external-tooling.md` + `assets/reference-configs/external-tooling.md` (byte-identical pair); `tests/subagent-handler.test.ts`, `tests/session-context.test.ts`.
+- In scope: `.ai/harness/policy.json#delegation` (preferred_runners + runner_rule/rule prose); `src/cli/hook/subagent-handler.ts` `runDelegationAdvisor` sharedRules + runner-preference sentence; `src/cli/hook/session-context.ts` `codexDelegationAutoContext` standing-authorization block; `docs/reference-configs/external-tooling.md` + `assets/reference-configs/external-tooling.md` (byte-identical pair); `tests/subagent-handler.test.ts`, `tests/session-context.test.ts`. Round 2 (gate findings): downstream delegation seeds in `scripts/lib/project-init-lib.sh` + `scripts/ensure-task-workflow.sh` + `assets/templates/helpers/ensure-task-workflow.sh` synced to the new policy values with `tests/create-project-dirs.runtime.test.ts` pins updated; symmetric thread-path fail-closed clause in both hook files.
 - Out of scope: any new hook route/CLI helper/evidence field for thread routing; the reference skill's RoutePlan/ledger Python tooling; `scripts/install-agent-fleet.sh` + assets mirror; `.codex/agents/*.toml` fixtures; `scripts/check-agent-tooling.sh`; cap changes; anything under real `~/.claude/` or `~/.codex/`; live create_thread canary.
 - Taste constraints: no model-ID literals under `src/` (reference the role's installed TOML instead); keep the `# Delegation Standing Authorization` header and `spawn no more than ${maxAgents}` phrasing; do not disturb EXECUTION_BOUNDARY byte parity.
 
@@ -77,6 +77,10 @@ allowed_paths:
   - assets/reference-configs/external-tooling.md
   - tests/subagent-handler.test.ts
   - tests/session-context.test.ts
+  - scripts/lib/project-init-lib.sh
+  - scripts/ensure-task-workflow.sh
+  - assets/templates/helpers/ensure-task-workflow.sh
+  - tests/create-project-dirs.runtime.test.ts
 ```
 
 ## Evidence Requirements
