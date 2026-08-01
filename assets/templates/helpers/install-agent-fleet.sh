@@ -145,10 +145,12 @@ const MODEL_EFFORT_MAP = {
 
 // Per-agent Codex target overrides — the only effort remaps in the fleet.
 // fast-worker trades the opus/terra default down to Luna at max; deep-worker
-// bumps terra effort to xhigh. Everything else follows the family default.
+// and gatekeeper bump terra effort to xhigh. Everything else follows the
+// family default.
 const AGENT_TARGET_OVERRIDES = {
   "fast-worker": { model: "gpt-5.6-luna", effort: "max", targetDescription: "GPT-5.6 Luna at max reasoning" },
   "deep-worker": { model: "gpt-5.6-terra", effort: "xhigh", targetDescription: "GPT-5.6 Terra at xhigh reasoning" },
+  gatekeeper: { model: "gpt-5.6-terra", effort: "xhigh", targetDescription: "GPT-5.6 Terra at xhigh reasoning" },
 };
 
 function readSource(agent) {

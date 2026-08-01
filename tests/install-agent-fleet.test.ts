@@ -42,10 +42,10 @@ const CODEX_EXPECTATIONS: Record<
     sandboxMode: "workspace-write",
   },
   gatekeeper: {
-    model: "gpt-5.6-sol",
+    model: "gpt-5.6-terra",
     effort: "xhigh",
-    descriptionLabel: "GPT-5.6 Sol at xhigh reasoning",
-    sourceDescription: "Fable at xhigh effort",
+    descriptionLabel: "GPT-5.6 Terra at xhigh reasoning",
+    sourceDescription: "Opus at high effort",
     sandboxMode: "read-only",
   },
   "root-cause-prover": {
@@ -441,7 +441,7 @@ describe("install-agent-fleet", () => {
       }
       writeFileSync(
         join(badSourceDir, "gatekeeper.md"),
-        readFileSync(join(badSourceDir, "gatekeeper.md"), "utf-8").replace("effort: xhigh", "effort: min"),
+        readFileSync(join(badSourceDir, "gatekeeper.md"), "utf-8").replace("effort: high", "effort: min"),
       );
       const installedCodexDir = join(home, ".codex/agents");
       mkdirSync(installedCodexDir, { recursive: true });
