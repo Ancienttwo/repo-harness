@@ -553,8 +553,27 @@ of the default thread path. Thread-path model evidence comes from official
 thread reads instead: the requested `model`/`thinking` passed to
 `codex_app__create_thread` and the model observed on the materialized thread are
 recorded separately, and a thread whose runtime model was never read back stays
-unverified. This slice ships the routing wording only; a live `create_thread`
-canary on the user's Codex host remains a runtime-readiness follow-up.
+unverified. A post-merge live canary on 2026-08-02 requested
+`gpt-5.6-luna`/`max`, materialized a worktree thread, and completed a bounded
+read-only task at the shipped main SHA. The host-owned rollout `turn_context`
+observed `model = gpt-5.6-luna` and `effort = max`, which proves the host-local
+execution matched the request. It does not close the orchestrator contract: the
+current `codex_app__read_thread` response omitted model and effort fields, so
+portable runtime readiness remains unverified and must not be inferred from
+create-call acceptance or private rollout parsing.
+
+The readback contract is version-bound and fail-closed. On Codex CLI
+`0.146.0-alpha.9.2`, `codex app-server generate-json-schema` shows that
+`ThreadReadResponse` contains only `thread`, while its `Thread` object exposes
+`modelProvider` but neither `model` nor `reasoningEffort`. The same generated
+schema exposes `model` and nullable `reasoningEffort` on `ThreadStartResponse`
+and `ThreadResumeResponse`, but the App Thread tools do not propagate those
+fields across the pending-worktree materialization path. Runtime readiness is
+closed only when a public App Thread response exposes the materialized thread's
+observed `model` and reasoning effort separately from the requested tuple. A
+missing or mismatched observed tuple keeps the role-routed result unverified and
+selects the declared fallback; repo-harness must not scrape rollout JSONL or
+SQLite as a compatibility path.
 
 `developer_instructions` is the packaged `.md` body plus the canonical
 EXECUTION_BOUNDARY anti-extras clause, kept byte-identical to the

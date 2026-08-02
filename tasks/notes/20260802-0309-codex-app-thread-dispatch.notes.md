@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260802-0309-codex-app-thread-dispatch.md
 > **Contract**: tasks/contracts/20260802-0309-codex-app-thread-dispatch.contract.md
 > **Review**: tasks/reviews/20260802-0309-codex-app-thread-dispatch.review.md
-> **Last Updated**: 2026-08-02 03:09
+> **Last Updated**: 2026-08-02 09:39
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -37,7 +37,60 @@
 
 ## Open Questions
 
-- None. Live `codex_app__create_thread` model acceptance stays a post-merge runtime canary per the plan's Out of scope.
+- Public readback observability remains incomplete: this Codex host's
+  `codex_app__read_thread` result did not expose model or effort even though the
+  host-owned rollout recorded both. Host-local execution matched the requested
+  tuple, but portable requested-vs-observed comparison through the public thread
+  tool is still unavailable and runtime readiness remains unverified at the
+  orchestrator contract.
+
+## Post-merge live App Thread canary
+
+- Requested role tuple from `~/.codex/agents/fast-worker.toml`:
+  `model = gpt-5.6-luna`, `model_reasoning_effort = max`; passed to
+  `codex_app__create_thread` as `model = gpt-5.6-luna`, `thinking = max`.
+- Creation first returned pending worktree id
+  `client-new-thread:1ca3d825-82b8-4263-9e15-9182e3a5b498`, then materialized
+  thread `019fc01e-05fa-7db1-a012-b4a499e4896f` in detached worktree
+  `/Users/ancienttwo/.codex/worktrees/f6db/repo-harness`.
+- The bounded read-only worker completed `RESULT: DONE`; its literal readback was
+  `git rev-parse HEAD` -> `1c64c507e5f535be6e800672dadd2db8fb90ac7d`
+  and `git status --short --branch` -> `## HEAD (no branch)`.
+- Official `codex_app__read_thread` confirmed the materialized thread and final
+  turn but returned no model/effort fields. The host-owned rollout
+  `/Users/ancienttwo/.codex/archived_sessions/rollout-2026-08-02T09-37-00-019fc01e-05fa-7db1-a012-b4a499e4896f.jsonl`
+  supplied the observed runtime tuple in its `turn_context`:
+  `model = gpt-5.6-luna`, `effort = max` (and the same values in collaboration
+  settings). Requested and observed tuples match.
+- Verdict: the live host accepts and honors per-thread model/thinking for the
+  fast-worker tuple, so the create/execute half of the plan's falsifier did not
+  fire. Public readback remains unverified; the completed canary thread was
+  archived through the App Thread lifecycle surface.
+
+## Public readback contract closure
+
+- Official Codex manual: `thread/read` returns the persisted `Thread` plus
+  runtime `status`; it does not document selected model or reasoning effort as
+  fields of that object. The manual also states generated schemas are specific
+  to the Codex version that produced them.
+- Versioned local proof on Codex CLI `0.146.0-alpha.9.2`:
+  `codex app-server generate-json-schema --out <temp-dir>` generated a
+  `ThreadReadResponse` whose only property is `thread`; the referenced `Thread`
+  has `modelProvider` but no `model` or `reasoningEffort`. In contrast,
+  `ThreadStartResponse` and `ThreadResumeResponse` require `model` and expose
+  nullable `reasoningEffort`.
+- Concrete pressure point: `codex_app__create_thread` returned only a pending
+  worktree id before materialization, and `codex_app__read_thread` later returned
+  the materialized thread/final turn without the start/resume model fields. The
+  public App Thread tool chain therefore loses the selected tuple exactly across
+  the async worktree boundary.
+- Closure criterion: after materialization, a public App Thread response must
+  expose observed `model` and reasoning effort separately from the requested
+  values. Missing or mismatched observed values keep the result unverified and
+  select the declared runner fallback.
+- Rejected compatibility path: repo-harness will not parse private rollout JSONL
+  or SQLite to synthesize public readback. Those files remain host-local
+  diagnostic evidence, not an orchestrator API contract.
 
 ## Evidence Links
 
