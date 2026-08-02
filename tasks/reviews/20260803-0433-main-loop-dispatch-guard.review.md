@@ -40,17 +40,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:ee32c669e3354719d67deabee0898ea15301780b2ccd24e4d4ed1132f9bdc083
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 2b266f389ddea447931a6aaad7e437b0135716b2
+> **Verification Evidence SHA256**: sha256:e25d664666a94dadb73d2a38440174810c60726c19e62a6c9645c177fc87d482
+> **Issued At**: 2026-08-02T21:56:34.406Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: Boundary /check review clean: MainLoopDispatchGuard on target, no drift, no hard stops; 9/9 contract checks PASS; armed full-suite failing set byte-identical to baseline (zero new flips machine-wide)
 - Findings: none
 
 ## Behavior Diff Notes
