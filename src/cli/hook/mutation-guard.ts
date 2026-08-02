@@ -167,6 +167,63 @@ function exit(code: number): never {
 }
 
 // ---------------------------------------------------------------------------
+// MainLoopDispatchGuard: opt-in orchestrator/subagent edit split (Claude host)
+// ---------------------------------------------------------------------------
+
+/**
+ * Source-file extensions the orchestrator must not hand-edit while the guard
+ * is armed. Markdown/JSON/YAML/TOML/text and anything else stays writable so
+ * plans, docs, and config remain a main-loop surface.
+ */
+const MAIN_LOOP_CODE_EXTENSIONS = new Set([
+  'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'cts', 'mts',
+  'py', 'rb', 'go', 'rs', 'java', 'kt', 'kts', 'swift',
+  'c', 'h', 'm', 'mm', 'cc', 'cpp', 'cxx', 'hpp', 'cs',
+  'sh', 'bash', 'zsh', 'fish', 'ps1', 'psm1',
+  'sql', 'vue', 'svelte', 'astro', 'php', 'lua', 'zig',
+  'scala', 'groovy', 'pl', 'css', 'scss', 'less', 'sass', 'html', 'htm',
+]);
+
+function isMainLoopCodePath(filePath: string): boolean {
+  const name = basename(filePath);
+  const dot = name.lastIndexOf('.');
+  if (dot <= 0) return false;
+  return MAIN_LOOP_CODE_EXTENSIONS.has(name.slice(dot + 1).toLowerCase());
+}
+
+/**
+ * Opt-in only: armed by `REPO_HARNESS_MAIN_LOOP_EDIT_GUARD=1|true` on the
+ * Claude host. Claude Code stamps `agent_id` (and for `--agent` sessions
+ * `agent_type`) onto the PreToolUse payload only when the tool call fires
+ * inside a subagent, so an absent pair identifies the orchestrator thread.
+ * Deliberately independent of plan state, spec presence, and workflow-profile
+ * resolution: the dispatch instruction must land before any plan advisory.
+ */
+function mainLoopDispatchGuard(ctx: Ctx, filePath: string): void {
+  const flag = ctx.env.REPO_HARNESS_MAIN_LOOP_EDIT_GUARD;
+  if (flag !== '1' && flag !== 'true') return;
+  if (ctx.env.HOOK_HOST !== 'claude') return;
+
+  const subagent = firstNonEmpty([
+    stringAt(ctx.payload, ['agent_id']),
+    stringAt(ctx.payload, ['agent_type']),
+  ]);
+  if (subagent) return;
+
+  if (!isMainLoopCodePath(filePath)) return;
+
+  out(ctx, `[MainLoopDispatchGuard] Main-loop source edit blocked: ${filePath}`);
+  structuredError(
+    ctx,
+    'MainLoopDispatchGuard',
+    `Main-loop source edit blocked: ${filePath}. The orchestrator does not hand-edit code files.`,
+    'Dispatch this implementation to an execution subagent (fast-worker / deep-worker); diagnosis stays in the main loop. Operator off-switch: unset REPO_HARNESS_MAIN_LOOP_EDIT_GUARD.',
+    'state_violation',
+  );
+  exit(2);
+}
+
+// ---------------------------------------------------------------------------
 // worktree-guard.sh port
 // ---------------------------------------------------------------------------
 
@@ -267,6 +324,8 @@ function runPerPathGuards(
     out(ctx, '  deploy/ is trackable for runbooks, submission materials, release checklists, scripts, ordered SQL, and env examples.');
     out(ctx, '  Follow operations.deploy_sql in .ai/harness/policy.json when configured; otherwise keep SQL directly under deploy/sql/ with 4-digit ascending prefixes.');
   }
+
+  mainLoopDispatchGuard(ctx, filePath);
 
   // ---- resolve_effective_state: the ONE Effective State resolution -------
   let effective: EffectiveState | null;
@@ -912,6 +971,7 @@ const STRONG_BOUNDARY_GUARDS = new Set([
   'OpsPrivateGuard',
   'ExternalReferenceGuard',
   'StrictWorktreeGuard',
+  'MainLoopDispatchGuard',
 ]);
 
 const DEFAULT_FAILURE_LOG_FILE = '.ai/harness/failures/latest.jsonl';

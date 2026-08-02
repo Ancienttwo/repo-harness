@@ -190,6 +190,11 @@ function isolatedEnv(cwd: string, extra: NodeJS.ProcessEnv = {}): NodeJS.Process
       || key === 'REPO_HARNESS_WORKFLOW_STATE_LIB'
       || key === 'REPO_HARNESS_BUN_BIN'
       || key === 'REPO_HARNESS_HOOK_CLI'
+      // MainLoopDispatchGuard is armed purely from the environment and these
+      // cells pin HOOK_HOST=claude, so an operator shell that exported it
+      // would turn the lite.edit cell's frozen `allow` into a block --
+      // the same operator-machine leakage the PATH filter below prevents.
+      || key === 'REPO_HARNESS_MAIN_LOOP_EDIT_GUARD'
       || key.startsWith('CONTRACT_RUN_')
     ) {
       delete env[key];

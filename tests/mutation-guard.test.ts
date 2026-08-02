@@ -390,6 +390,115 @@ describe('HRD-03 guard-by-guard parity: previously-uncovered decision branches',
   });
 });
 
+describe('MainLoopDispatchGuard: opt-in orchestrator/subagent edit split', () => {
+  const armed = { REPO_HARNESS_MAIN_LOOP_EDIT_GUARD: '1', HOOK_HOST: 'claude' } as const;
+
+  test('armed, no agent_id/agent_type, code path -> exit 2 with the dispatch instruction', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-main-loop-block-')));
+    try {
+      initRepo(cwd);
+      writePolicy(cwd);
+      const result = invoke(cwd, { tool_input: { file_path: 'src/feature.ts' } }, {
+        profile: 'lite',
+        env: { ...armed },
+      });
+      expect(result.exitCode).toBe(2);
+      expect(result.stdout).toContain('[MainLoopDispatchGuard]');
+      expect(result.stdout).toContain('"guard":"MainLoopDispatchGuard"');
+      expect(result.stdout).toContain('"failure_class":"state_violation"');
+      expect(result.stderr).toContain('The orchestrator does not hand-edit code files.');
+      expect(result.stderr).toContain('Operator off-switch: unset REPO_HARNESS_MAIN_LOOP_EDIT_GUARD.');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('armed, agent_id present -> subagent edit passes this guard', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-main-loop-subagent-')));
+    try {
+      initRepo(cwd);
+      writePolicy(cwd);
+      const result = invoke(cwd, { agent_id: 'agent_01abc', tool_input: { file_path: 'src/feature.ts' } }, {
+        profile: 'lite',
+        env: { ...armed },
+      });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).not.toContain('MainLoopDispatchGuard');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('env unset -> guard is inert, existing behavior unchanged', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-main-loop-unset-')));
+    try {
+      initRepo(cwd);
+      writePolicy(cwd);
+      const result = edit(cwd, 'src/feature.ts', { profile: 'lite' });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).not.toContain('MainLoopDispatchGuard');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('armed, markdown path -> not blocked (plans and docs stay a main-loop surface)', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-main-loop-md-')));
+    try {
+      initRepo(cwd);
+      writePolicy(cwd);
+      const result = invoke(cwd, { tool_input: { file_path: 'docs/notes.md' } }, {
+        profile: 'lite',
+        env: { ...armed },
+      });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).not.toContain('MainLoopDispatchGuard');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('armed but HOOK_HOST=codex -> guard is inert', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-main-loop-codex-')));
+    try {
+      initRepo(cwd);
+      writePolicy(cwd);
+      const result = invoke(cwd, { tool_input: { file_path: 'src/feature.ts' } }, {
+        profile: 'lite',
+        env: { REPO_HARNESS_MAIN_LOOP_EDIT_GUARD: '1', HOOK_HOST: 'codex' },
+      });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).not.toContain('MainLoopDispatchGuard');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('armed, apply_patch expanding to a code file, no agent_id -> blocked on that path', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-main-loop-apply-patch-')));
+    try {
+      initRepo(cwd);
+      writePolicy(cwd);
+      const patch = [
+        '*** Begin Patch',
+        '*** Add File: docs/notes.md',
+        '+notes',
+        '*** Add File: src/alpha.ts',
+        '+export const alpha = true;',
+        '*** End Patch',
+      ].join('\n');
+      const result = invoke(cwd, { tool_name: 'apply_patch', tool_input: { command: patch } }, {
+        profile: 'lite',
+        env: { ...armed },
+      });
+      expect(result.exitCode).toBe(2);
+      expect(result.stdout).toContain('[MainLoopDispatchGuard] Main-loop source edit blocked: src/alpha.ts');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('gate round-1 parity closure: restored input-normalization fallbacks', () => {
   test('CLAUDE_FILE_PATH env fallback: no JSON file_path field resolves, env var supplies the target path', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-claude-file-path-')));
