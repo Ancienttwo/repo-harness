@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-03 05:59
+> **Related Plan**: plans/archive/plan-20260803-0433-main-loop-dispatch-guard.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260803-0559
+
 # Task Contract: main-loop-dispatch-guard
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260803-0433-main-loop-dispatch-guard.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->

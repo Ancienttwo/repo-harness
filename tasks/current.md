@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-02T16:33:15+0800 -->
+<!-- updated_at: 2026-08-03T05:59:38+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-08-02T16:33:15+0800
-> **Source Branch**: codex/release-0-12-2
-> **Source Commit**: 7c93c914
+> **Updated At**: 2026-08-03T05:59:38+0800
+> **Source Branch**: codex/main-loop-dispatch-guard
+> **Source Commit**: 36fa86df
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: release-0.12.2-prep
+> **Reason**: archive-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -57,16 +57,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- M .claude/.skill-version
- M README.es.md
- M README.fr.md
- M README.ja.md
- M README.md
- M README.zh-CN.md
- M assets/skill-version.json
- M docs/CHANGELOG.md
- M package.json
-?? deploy/release-checklists/260802-repo-harness-0.12.2.md
+ D plans/plan-20260803-0433-main-loop-dispatch-guard.md
+ D tasks/contracts/20260803-0433-main-loop-dispatch-guard.contract.md
+ D tasks/notes/20260803-0433-main-loop-dispatch-guard.notes.md
+ D tasks/reviews/20260803-0433-main-loop-dispatch-guard.review.md
+ M tasks/todos.md
+?? plans/archive/plan-20260803-0433-main-loop-dispatch-guard.md
+?? tasks/archive/contract-20260803-0559-main-loop-dispatch-guard.md
+?? tasks/archive/notes-20260803-0559-main-loop-dispatch-guard.md
+?? tasks/archive/review-20260803-0559-main-loop-dispatch-guard.md
+?? tasks/archive/todo-20260803-0559-main-loop-dispatch-guard.md
 ```
 
 ## Source Artifacts

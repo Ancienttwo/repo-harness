@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-03 05:59
+> **Related Plan**: plans/archive/plan-20260803-0433-main-loop-dispatch-guard.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260803-0559
+
 # Implementation Notes: main-loop-dispatch-guard
 
 > **Status**: Active

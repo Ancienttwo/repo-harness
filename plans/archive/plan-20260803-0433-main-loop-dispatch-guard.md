@@ -1,6 +1,6 @@
 # Plan: Main-loop dispatch guard (Claude host)
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260803-0433
 > **Slug**: main-loop-dispatch-guard
 > **Planning Source**: repo-harness-plan
