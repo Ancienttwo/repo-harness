@@ -4,6 +4,41 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.12.2] - 2026-08-02
+
+### Changed
+
+- Makes Codex App Threads the preferred delegation runner. The orchestrator
+  reads each role's exact model and reasoning effort from the installed
+  `~/.codex/agents/<role>.toml`; native `spawn_agent` is now a fail-closed
+  fallback only when its live schema can carry the same tuple. The canonical
+  policy, hook advice, standing authorization, downstream initializer seeds,
+  and helper mirror all carry the same routing contract.
+- Converges packaged fleet authorship on `agents/fleet/`: tracked repo-level
+  Claude agent copies are removed, Codex TOMLs remain generated installer
+  fixtures, and gatekeeper maps to the Terra/xhigh Codex profile through the
+  existing role mapping authority.
+- Records the live App Thread canary and its version-bound readiness limit:
+  Codex CLI `0.146.0-alpha.9.2` honored the requested fast-worker tuple, while
+  the public materialized-thread readback still omits model and effort. That
+  result remains unverified at the portable orchestrator contract and selects
+  the declared fallback instead of inferring readiness from private host data.
+
+### Fixed
+
+- Agent-fleet health checks now honor hash-bound user-managed receipts, so an
+  accepted local role override reports as user-managed instead of permanent
+  drift; absent, malformed, or stale receipts still fail closed.
+- Receipt update-check tests now stub their upstream fetches, removing eight
+  real network calls per affected path and the resulting deterministic timeout
+  on slower networks.
+- Bounded verifier children now remove every inherited
+  `REPO_HARNESS_*` variable at the spawn boundary, preventing helper routing
+  metadata from overriding fixture isolation inside nested test commands.
+- Acceptance finalization strips materializer-owned `provenance` before
+  re-emitting its run trace, so the published checks projection's recorded
+  content hash is self-consistent with its own bytes.
+
 ## [0.12.1] - 2026-08-01
 
 ### Changed

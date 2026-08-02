@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-02T03:06:37+0800 -->
+<!-- updated_at: 2026-08-02T16:33:15+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-08-02T03:06:37+0800
-> **Source Branch**: codex/final-closeout
-> **Source Commit**: 823e6186
+> **Updated At**: 2026-08-02T16:33:15+0800
+> **Source Branch**: codex/release-0-12-2
+> **Source Commit**: 7c93c914
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive-workflow
+> **Reason**: release-0.12.2-prep
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -46,7 +46,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=`plans/archive/plan-20260712-2215-agent-fleet-specialists.md`
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Strip `.provenance` from the finalize overlay in `scripts/verify-sprint.sh` and mirror to `assets/templates/helpers/verify-sprint.sh`.
+- Exact Next Step: (none)
 
 ## Checks
 
@@ -57,16 +57,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260801-2124-verify-provenance-overlay.md
- D tasks/contracts/20260801-2124-verify-provenance-overlay.contract.md
- D tasks/notes/20260801-2124-verify-provenance-overlay.notes.md
- D tasks/reviews/20260801-2124-verify-provenance-overlay.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260801-2124-verify-provenance-overlay.md
-?? tasks/archive/contract-20260802-0306-verify-provenance-overlay.md
-?? tasks/archive/notes-20260802-0306-verify-provenance-overlay.md
-?? tasks/archive/review-20260802-0306-verify-provenance-overlay.md
-?? tasks/archive/todo-20260802-0306-verify-provenance-overlay.md
+ M .claude/.skill-version
+ M README.es.md
+ M README.fr.md
+ M README.ja.md
+ M README.md
+ M README.zh-CN.md
+ M assets/skill-version.json
+ M docs/CHANGELOG.md
+ M package.json
+?? deploy/release-checklists/260802-repo-harness-0.12.2.md
 ```
 
 ## Source Artifacts
