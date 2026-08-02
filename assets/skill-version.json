@@ -1,6 +1,6 @@
 {
-  "version": "0.12.1",
-  "templateVersion": "0.12.1",
+  "version": "0.12.2",
+  "templateVersion": "0.12.2",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "compatibility": {
@@ -231,6 +231,10 @@
     {
       "version": "0.12.1",
       "description": "Threads a single SessionStart-minted run identity through hook telemetry and evidence correlation, restructures the five-language README into a get-started-first layout, and refreshes the CodeGraph dev dependency line to latest"
+    },
+    {
+      "version": "0.12.2",
+      "description": "Makes agent-fleet drift checks receipt-aware, hardens verifier environment and provenance boundaries, and routes Codex delegation through model-pinned App Threads with fail-closed fallbacks"
     }
   ],
   "generatedProjectStamp": {
