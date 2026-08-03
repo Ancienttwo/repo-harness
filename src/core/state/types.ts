@@ -156,6 +156,35 @@ export interface ContinuationEnvelopeV1 {
   readonly reason: string;
 }
 
+/**
+ * The three outcomes a continuation attempt may end in. `completed` and
+ * `halted` are what the loop host observed; `resumed` is the explicit user
+ * resume that clears a stall count.
+ */
+export type AttemptOutcome = 'completed' | 'halted' | 'resumed';
+
+/**
+ * One recorded continuation attempt, appended verbatim as a single JSONL line
+ * to the ignored runtime ledger. It is evidence, never authority: nothing in
+ * this document may enter `EffectiveState` resolution, `state_revision`, or the
+ * `progress_token` recipe. The only thing a sequence of receipts can do is flip
+ * an otherwise-actionable continuation envelope to `halt`.
+ *
+ * `before_progress_token`/`after_progress_token` are the envelope-scoped
+ * `progress_token` values the recorder was handed. They are null only for an
+ * explicit `resumed` receipt, which carries no token claim at all.
+ */
+export interface AttemptReceiptV1 {
+  readonly protocol: 1;
+  readonly kind: 'repo-harness-attempt-receipt';
+  readonly unit_ref: string;
+  readonly before_progress_token: string | null;
+  readonly after_progress_token: string | null;
+  readonly outcome: AttemptOutcome;
+  /** Ledger-only timestamp; never projected into envelope output. */
+  readonly recorded_at: string;
+}
+
 export interface EffectiveStateRiskInput {
   readonly targetPaths?: readonly string[];
   readonly capabilityIds?: readonly string[];

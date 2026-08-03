@@ -1,5 +1,6 @@
 import { projectContinuationEnvelope } from '../../core/state/project-continuation-envelope';
 import type { ContinuationEnvelopeV1 } from '../../core/state/types';
+import { readAttemptLedger } from './attempt-ledger-store';
 import { readText } from './collect-state-inputs';
 import { resolveEffectiveStateReadOnly } from './resolve-effective-state';
 
@@ -14,6 +15,10 @@ import { resolveEffectiveStateReadOnly } from './resolve-effective-state';
  *
  * The active sprint file is read here and nowhere else; `readText` keeps the
  * marker's path confined to the repository exactly as the resolver does.
+ *
+ * The attempt ledger is read the same way -- read-only, absent-tolerant, and
+ * outside every state input bundle -- so it feeds the circuit breaker without
+ * entering `EffectiveState` resolution or this command's zero-write contract.
  */
 export function resolveContinuationEnvelope(
   cwd = process.cwd(),
@@ -29,5 +34,6 @@ export function resolveContinuationEnvelope(
     sprintText: sprintPath && state.active_sprint.freshness === 'fresh'
       ? readText(cwd, sprintPath)
       : null,
+    attemptLedger: readAttemptLedger(cwd),
   });
 }

@@ -29,7 +29,17 @@
  * `verify_or_finish` (row 5) reuses the requirement-key vocabulary
  * `complete_approved_work_package` as its reason: the effective-state
  * projector already derives that exact evidence fact from the same condition.
+ *
+ * One post-pass runs after that table: the no-progress circuit breaker. When
+ * (and only when) the table above yields an actionable route, the attempt
+ * ledger's verdict may convert it to `halt` with reason `no_progress` or
+ * `attempt_ledger_unreadable`. A `halt`, `complete`, or `idle` answer already
+ * stops the loop, so the breaker never runs there, and an absent ledger leaves
+ * every route byte-identical to the pre-breaker projection. Receipts influence
+ * nothing else: they are not an input to `EffectiveState`, `state_revision`, or
+ * `progress_token`, and `recorded_at` never reaches this document.
  */
+import { evaluateAttemptStall, type AttemptLedgerRead } from './attempt-ledger';
 import { markdownHeader } from './artifact-parsers';
 import type {
   ContinuationEnvelopeV1,
@@ -46,10 +56,19 @@ const EXECUTABLE_PLAN_STATUS: ReadonlySet<string> = new Set(['approved', 'execut
 const EXECUTABLE_SPRINT_STATUS: ReadonlySet<string> = new Set(['Approved', 'Executing']);
 const PENDING_ROW = '[ ]';
 
+/** Routes that hand the caller work to do, and so can be circuit-broken. */
+const ACTIONABLE_ROUTES: ReadonlySet<ContinuationRoute> = new Set<ContinuationRoute>([
+  'continue_active_plan',
+  'advance_sprint',
+  'verify_or_finish',
+]);
+
 export interface ContinuationEnvelopeInputs {
   readonly state: EffectiveState;
   /** The active sprint file's text, or null when it is absent or unreadable. */
   readonly sprintText: string | null;
+  /** The attempt ledger's own parsed bytes; evidence only, never authority. */
+  readonly attemptLedger: AttemptLedgerRead;
 }
 
 /**
@@ -78,8 +97,8 @@ export function backlogRowStatuses(sprintText: string): string[] {
   return statuses;
 }
 
-/** Deterministic projection: no time, PID, locale, or filesystem input. */
-export function projectContinuationEnvelope(
+/** The route table above, before the circuit breaker's post-pass. */
+function projectRoutedEnvelope(
   input: ContinuationEnvelopeInputs,
 ): ContinuationEnvelopeV1 {
   const { state, sprintText } = input;
@@ -148,4 +167,25 @@ export function projectContinuationEnvelope(
     return envelope('halt', sprintPath, null, 'sprint_backlog:unknown_row_status');
   }
   return envelope('complete', sprintPath, null, 'sprint_backlog:complete');
+}
+
+/**
+ * Deterministic projection: no time, PID, locale, or filesystem input. Given
+ * identical effective state, identical sprint text, and identical ledger bytes,
+ * the output is byte-identical.
+ */
+export function projectContinuationEnvelope(
+  input: ContinuationEnvelopeInputs,
+): ContinuationEnvelopeV1 {
+  const routed = projectRoutedEnvelope(input);
+  if (!ACTIONABLE_ROUTES.has(routed.route)) return routed;
+
+  const verdict = evaluateAttemptStall(
+    input.attemptLedger,
+    routed.unit_ref,
+    routed.progress_token,
+  );
+  if (verdict === 'none') return routed;
+  // Key order is preserved: only `route`, `command`, and `reason` are replaced.
+  return { ...routed, route: 'halt', command: null, reason: verdict };
 }

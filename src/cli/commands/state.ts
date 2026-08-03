@@ -1,10 +1,16 @@
 import { Command } from 'commander';
+import {
+  ATTEMPT_OUTCOME_VALUES,
+  buildAttemptReceipt,
+} from '../../core/state/attempt-ledger';
 import type {
+  AttemptReceiptV1,
   ContinuationEnvelopeV1,
   EffectiveState,
   EffectiveStateRiskInput,
 } from '../../core/state/types';
 import type { WorkflowOperationKind, WorkflowProfile } from '../../core/workflow/profile';
+import { appendAttemptReceipt } from '../../effects/state/attempt-ledger-store';
 import { resolveContinuationEnvelope } from '../../effects/state/resolve-continuation-envelope';
 import { resolveEffectiveState } from '../../effects/state/resolve-effective-state';
 import { migrateLegacyActivePlan } from '../hook/legacy-active-plan-migration';
@@ -108,6 +114,48 @@ export function nextStateCommand(deps: ContinuationCommandDependencies): Command
   return { exitCode: 0, stdout: `${JSON.stringify(envelope, null, 2)}\n`, stderr: '' };
 }
 
+export interface AttemptCommandOptions {
+  readonly unitRef?: string;
+  readonly outcome?: string;
+  readonly beforeProgressToken?: string;
+  readonly afterProgressToken?: string;
+}
+
+export type AppendAttemptReceipt = (repoRoot: string, receipt: AttemptReceiptV1) => void;
+
+export interface AttemptCommandDependencies {
+  readonly repoRoot: string;
+  readonly nowMs: number;
+  readonly append: AppendAttemptReceipt;
+}
+
+/**
+ * Pure command projection for `state attempt`. The recorder is dumb on
+ * purpose: it validates the caller's claim, stamps `recorded_at`, and appends
+ * one line. It resolves no state, derives no token, and writes no tracked file,
+ * so a receipt can never become an authority for the state it describes.
+ */
+export function attemptStateCommand(
+  options: AttemptCommandOptions,
+  deps: AttemptCommandDependencies,
+): CommandOutcome {
+  const built = buildAttemptReceipt({
+    unitRef: options.unitRef ?? '',
+    outcome: options.outcome ?? '',
+    beforeProgressToken: options.beforeProgressToken,
+    afterProgressToken: options.afterProgressToken,
+    recordedAt: new Date(deps.nowMs).toISOString(),
+  });
+  if (!built.ok) return { exitCode: 2, stdout: '', stderr: `${built.error}\n` };
+
+  try {
+    deps.append(deps.repoRoot, built.receipt);
+  } catch (error) {
+    return operationalFailure(error);
+  }
+  return { exitCode: 0, stdout: `${JSON.stringify(built.receipt, null, 2)}\n`, stderr: '' };
+}
+
 function writeOutcome(outcome: CommandOutcome): void {
   if (outcome.stdout) process.stdout.write(outcome.stdout);
   if (outcome.stderr) process.stderr.write(outcome.stderr);
@@ -145,6 +193,28 @@ export function buildStateCommand(): Command {
         repoRoot: process.cwd(),
         nowMs: Date.now(),
         resolveEnvelope: resolveContinuationEnvelope,
+      }));
+    });
+
+  state
+    .command('attempt')
+    .description('Append one continuation attempt receipt to the ignored runtime ledger')
+    .requiredOption('--json', 'Output the appended receipt as JSON')
+    .requiredOption('--unit-ref <path>', 'Repo-relative plan or sprint path the attempt ran against')
+    .requiredOption('--outcome <outcome>', `One of: ${ATTEMPT_OUTCOME_VALUES.join(', ')}`)
+    .option(
+      '--before-progress-token <token>',
+      'Envelope progress_token observed before the attempt; required unless --outcome resumed',
+    )
+    .option(
+      '--after-progress-token <token>',
+      'Envelope progress_token observed after the attempt; required unless --outcome resumed',
+    )
+    .action((opts: AttemptCommandOptions) => {
+      writeOutcome(attemptStateCommand(opts, {
+        repoRoot: process.cwd(),
+        nowMs: Date.now(),
+        append: appendAttemptReceipt,
       }));
     });
 
