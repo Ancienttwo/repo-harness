@@ -39,6 +39,7 @@ Usage:
   scripts/ship-worktrees.sh [--target <branch>] [--remote <name>] [--slug <slug>] [--ready] [--dry-run]
   scripts/ship-worktrees.sh --local-merge [--target <branch>] [--slug <slug>] [--dry-run]
   scripts/ship-worktrees.sh --cleanup-merged [--target <branch>] [--slug <slug>] [--discard-scaffold-only] [--dry-run]
+  scripts/ship-worktrees.sh --recover <inspect|abort|reconcile> [--key <transaction-key>]
 
 Default mode validates finished contract worktrees, commits them through
 contract-worktree finish --no-merge, pushes their codex/* branches, and opens
@@ -114,6 +115,252 @@ fail() {
   exit 1
 }
 
+# --- CloseoutJournalV1 -------------------------------------------------------
+# A closeout mutates plans/, tasks/, three .ai/harness pointers, .claude/.plan-state
+# and HEAD, and (for ship) pushes before the PR exists. Before this journal the
+# pre-closeout snapshot lived in `mktemp -d` and the original HEAD only in a shell
+# variable, recoverable solely from an EXIT trap -- so SIGKILL, power loss, or a
+# closed terminal left a half-applied closeout with no discoverable, verifiable
+# recovery entry. The journal keeps both under the git common dir: outside every
+# working tree, surviving worktree removal, and structurally unreadable as
+# workflow state. It records operation progress only -- Effective State and its
+# collectors must never read it.
+#
+# Phases: prepared -> implementation_committed -> gate_sealed -> lifecycle_applied
+#      -> lifecycle_committed -> merged|pushed -> pr_observed -> complete
+# Each phase is persisted via temp file + fsync + atomic rename before the caller
+# may treat that phase's effect as committed. There is no auto-resume: re-entry
+# fails closed and recovery is the explicit `recover inspect|abort|reconcile`
+# surface.
+closeout_journal_operation=""
+closeout_journal_key_value=""
+closeout_journal_dir=""
+closeout_journal_conflict_dir=""
+closeout_journal_worktree="$(cd "$REPO_ROOT" && pwd -P)"
+
+closeout_journal_root() {
+  local common_dir
+  common_dir="$(git rev-parse --git-common-dir 2>/dev/null)" || return 1
+  common_dir="$(cd "$common_dir" 2>/dev/null && pwd -P)" || return 1
+  printf '%s/repo-harness/transactions' "$common_dir"
+}
+
+# Deterministic transaction key over repo identity, worktree, operation,
+# plan/contract, original HEAD, and the frozen target/base SHA. git is the only
+# binary these helpers already hard-require and validate, so deriving the key
+# with its content digest keeps the derivation dependency-free and reproducible
+# from a fresh recovery process.
+closeout_journal_derive_key() {
+  printf '%s\n' "$@" | git hash-object --stdin
+}
+
+# temp file + fsync + atomic rename. Content arrives on stdin.
+closeout_journal_write() {
+  local target="$1"
+  local tmp="${target}.tmp"
+  dd of="$tmp" conv=fsync 2>/dev/null
+  mv -f "$tmp" "$target"
+}
+
+closeout_journal_field() {
+  local file="$1" name="$2"
+  [[ -f "$file" ]] || return 1
+  sed -n "s/^  \"${name}\": \"\(.*\)\",\{0,1\}\$/\1/p" "$file" | head -1
+}
+
+closeout_journal_status() {
+  closeout_journal_field "$1/status.json" "status"
+}
+
+closeout_journal_last_phase() {
+  local file="$1/status.json"
+  [[ -f "$file" ]] || return 1
+  sed -n 's/^    {"phase": "\([^"]*\)".*$/\1/p' "$file" | tail -1
+}
+
+closeout_journal_has_phase() {
+  local file="$1/status.json" name="$2"
+  [[ -f "$file" ]] || return 1
+  grep -q "^    {\"phase\": \"${name}\", " "$file"
+}
+
+closeout_journal_phase_ref() {
+  local file="$1/status.json" name="$2"
+  [[ -f "$file" ]] || return 1
+  sed -n "s/^    {\"phase\": \"${name}\", \"at\": \"[^\"]*\", \"ref\": \"\([^\"]*\)\"}.*\$/\1/p" "$file" | tail -1
+}
+
+# Rewrites the whole status document so the phase list has exactly one authority
+# and lands in one atomic rename. An empty phase name only flips the status.
+closeout_journal_record() {
+  local dir="$1" status_value="$2" name="$3" ref="${4:-}"
+  local file="$dir/status.json"
+  local -a lines=()
+  local line stamp index
+  if [[ -f "$file" ]]; then
+    while IFS= read -r line; do
+      [[ -n "$line" ]] || continue
+      lines+=("${line%,}")
+    done < <(sed -n 's/^    \({"phase": .*\)$/\1/p' "$file")
+  fi
+  stamp="$(date '+%Y-%m-%dT%H:%M:%S%z')"
+  if [[ -n "$name" ]]; then
+    lines+=("{\"phase\": \"$(json_escape "$name")\", \"at\": \"$stamp\", \"ref\": \"$(json_escape "$ref")\"}")
+  fi
+  {
+    printf '{\n'
+    printf '  "version": 1,\n'
+    printf '  "operation": "%s",\n' "$(json_escape "$closeout_journal_operation")"
+    printf '  "key": "%s",\n' "$(json_escape "$closeout_journal_key_value")"
+    printf '  "status": "%s",\n' "$(json_escape "$status_value")"
+    printf '  "updated_at": "%s",\n' "$stamp"
+    printf '  "phases": [\n'
+    for ((index = 0; index < ${#lines[@]}; index++)); do
+      if (( index + 1 < ${#lines[@]} )); then
+        printf '    %s,\n' "${lines[$index]}"
+      else
+        printf '    %s\n' "${lines[$index]}"
+      fi
+    done
+    printf '  ]\n'
+    printf '}\n'
+  } | closeout_journal_write "$file"
+}
+
+closeout_journal_list() {
+  local operation="$1" want_status="$2"
+  local root candidate
+  root="$(closeout_journal_root)" || return 1
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] || continue
+    [[ -f "$candidate/status.json" ]] || continue
+    [[ -z "$want_status" || "$(closeout_journal_status "$candidate")" == "$want_status" ]] || continue
+    [[ "$(closeout_journal_field "$candidate/meta.json" worktree)" == "$closeout_journal_worktree" ]] || continue
+    printf '%s\n' "$candidate"
+  done < <(find "$root/$operation" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
+}
+
+# Early re-entry guard. A crashed closeout can leave the repo unable to resolve
+# its own contract/plan (the lifecycle step already archived them), so the
+# operator must hit this message rather than a confusing downstream failure.
+# Key-scoped checks belong in closeout_journal_begin; this one is worktree-wide
+# because the key binds the original HEAD and a crashed run that already
+# committed can never reproduce its own key.
+closeout_journal_guard_reentry() {
+  local operation="$1" conflict
+  conflict="$(closeout_journal_list "$operation" "in_progress" | head -1)"
+  [[ -n "$conflict" ]] || return 0
+  closeout_journal_conflict_dir="$conflict"
+  return 1
+}
+
+# 0 started, 2 no-op replay of an already-complete transaction, 3 blocked by an
+# unfinished closeout (dir in closeout_journal_conflict_dir), 1 unusable journal.
+closeout_journal_begin() {
+  local operation="$1" key="$2"
+  shift 2
+  local root dir status conflict pair name value stamp
+  root="$(closeout_journal_root)" || return 1
+  dir="$root/$operation/$key"
+  closeout_journal_operation="$operation"
+  closeout_journal_key_value="$key"
+  closeout_journal_conflict_dir=""
+
+  if [[ -f "$dir/status.json" ]]; then
+    status="$(closeout_journal_status "$dir")"
+    if [[ "$status" == "complete" ]]; then
+      # A replay is only a no-op while the completed effect is still in place.
+      # If HEAD has moved off the recorded completion the transaction was undone
+      # afterwards (an outer rollback), so the same key must start fresh instead
+      # of reporting success for work that no longer exists.
+      if [[ "$(git rev-parse HEAD)" == "$(closeout_journal_phase_ref "$dir" complete)" ]]; then
+        closeout_journal_dir="$dir"
+        return 2
+      fi
+      rm -rf "$dir"
+    fi
+    # An aborted transaction already restored the pre-closeout state, so the
+    # identical key is a legitimate retry rather than a blocked re-entry.
+    [[ "$status" != "aborted" ]] || rm -rf "$dir"
+  fi
+
+  # Fail closed on any unfinished closeout of this operation for this worktree.
+  # The key binds the original HEAD, so a crashed run that already committed can
+  # never reproduce its own key on retry -- scoping the guard to the worktree is
+  # what makes it cover the interrupt it exists for. Journals belonging to other
+  # worktrees are ignored.
+  conflict="$(closeout_journal_list "$operation" "in_progress" | head -1)"
+  if [[ -n "$conflict" ]]; then
+    closeout_journal_conflict_dir="$conflict"
+    return 3
+  fi
+
+  mkdir -p "$dir/snapshot"
+  closeout_journal_dir="$dir"
+  stamp="$(date '+%Y-%m-%dT%H:%M:%S%z')"
+  {
+    printf '{\n'
+    printf '  "version": 1,\n'
+    printf '  "operation": "%s",\n' "$(json_escape "$operation")"
+    printf '  "key": "%s",\n' "$(json_escape "$key")"
+    printf '  "repo": "%s",\n' "$(json_escape "$root")"
+    printf '  "worktree": "%s",\n' "$(json_escape "$closeout_journal_worktree")"
+    for pair in "$@"; do
+      name="${pair%%=*}"
+      value="${pair#*=}"
+      printf '  "%s": "%s",\n' "$(json_escape "$name")" "$(json_escape "$value")"
+    done
+    printf '  "started_at": "%s"\n' "$stamp"
+    printf '}\n'
+  } | closeout_journal_write "$dir/meta.json"
+  return 0
+}
+
+closeout_journal_report() {
+  local dir="$1" label="$2"
+  printf '%s journal: %s\n' "$label" "$dir"
+  printf '%s status: %s\n' "$label" "$(closeout_journal_status "$dir")"
+  printf '%s last phase: %s\n' "$label" "$(closeout_journal_last_phase "$dir")"
+  printf '%s original HEAD: %s\n' "$label" "$(closeout_journal_field "$dir/meta.json" original_head)"
+  printf '%s snapshot: %s\n' "$label" "$dir/snapshot"
+  printf '%s snapshot present: %s\n' "$label" "$([[ -f "$dir/snapshot/paths.tsv" ]] && printf 'yes' || printf 'no')"
+  printf '%s plan: %s\n' "$label" "$(closeout_journal_field "$dir/meta.json" plan)"
+  printf '%s contract: %s\n' "$label" "$(closeout_journal_field "$dir/meta.json" contract)"
+  printf '%s branch: %s\n' "$label" "$(closeout_journal_field "$dir/meta.json" branch)"
+  printf '%s base: %s %s\n' "$label" "$(closeout_journal_field "$dir/meta.json" base_ref)" "$(closeout_journal_field "$dir/meta.json" base_sha)"
+  sed -n 's/^    {"phase": "\([^"]*\)", "at": "\([^"]*\)", "ref": "\([^"]*\)".*$/'"$label"' phase: \1 \2 \3/p' "$dir/status.json"
+}
+
+# Restores the pre-closeout snapshot recorded in the journal. Safe from a fresh
+# process: the path index and the original HEAD both live on disk.
+closeout_journal_restore_snapshot() {
+  local dir="$1"
+  local index_file="$dir/snapshot/paths.tsv"
+  local -a rows=()
+  local row index path existed original_head count
+  [[ -f "$index_file" ]] || return 1
+  while IFS= read -r row; do
+    [[ -n "$row" ]] || continue
+    rows+=("$row")
+  done < "$index_file"
+  for ((count = ${#rows[@]} - 1; count >= 0; count--)); do
+    row="${rows[$count]}"
+    index="${row%%$'\t'*}"
+    path="${row#*$'\t'}"
+    existed="${path#*$'\t'}"
+    path="${path%%$'\t'*}"
+    rm -rf "$path"
+    if [[ "$existed" == "1" ]]; then
+      mkdir -p "$(dirname "$path")"
+      cp -Rp "$dir/snapshot/$index/value" "$path"
+    fi
+  done
+  original_head="$(closeout_journal_field "$dir/meta.json" original_head)"
+  if [[ -n "$original_head" ]] && [[ "$(git rev-parse HEAD)" != "$original_head" ]]; then
+    git reset --mixed "$original_head"
+  fi
+}
+
 ship_transaction_dir=""
 ship_transaction_active=0
 ship_transaction_original_head=""
@@ -133,11 +380,69 @@ ship_transaction_snapshot() {
   fi
 }
 
+# The snapshot path index is persisted next to the copies so a fresh recovery
+# process can restore without the in-memory arrays that died with the crash.
+ship_transaction_write_index() {
+  local index
+  {
+    for ((index = 0; index < ${#ship_transaction_paths[@]}; index++)); do
+      printf '%s\t%s\t%s\n' "$index" "${ship_transaction_paths[$index]}" "${ship_transaction_existed[$index]}"
+    done
+  } | closeout_journal_write "$ship_transaction_dir/paths.tsv"
+}
+
+ship_active_contract_or_empty() {
+  if declare -F workflow_active_contract >/dev/null 2>&1; then
+    workflow_active_contract 2>/dev/null || true
+  fi
+}
+
 ship_transaction_begin() {
   [[ "$DRY_RUN" -eq 0 ]] || return 0
-  ship_transaction_dir="$(mktemp -d)"
+  local branch gate_base_ref base_sha original_head plan contract key begin_status=0
+  branch="$(current_branch)"
+  gate_base_ref="refs/remotes/$REMOTE_NAME/$TARGET_BRANCH"
+  base_sha="$(git rev-parse "$gate_base_ref^{commit}")"
+  original_head="$(git rev-parse HEAD)"
+  plan="$(active_plan_or_empty)"
+  contract="$(ship_active_contract_or_empty)"
+  key="$(closeout_journal_derive_key \
+    "repo=$(closeout_journal_root)" \
+    "worktree=$closeout_journal_worktree" \
+    "operation=ship" \
+    "plan=$plan" \
+    "contract=$contract" \
+    "original_head=$original_head" \
+    "target_branch=$TARGET_BRANCH" \
+    "base_sha=$base_sha")"
+  closeout_journal_begin "ship" "$key" \
+    "branch=$branch" \
+    "plan=$plan" \
+    "contract=$contract" \
+    "original_head=$original_head" \
+    "target_branch=$TARGET_BRANCH" \
+    "base_ref=$gate_base_ref" \
+    "base_sha=$base_sha" \
+    "remote=$REMOTE_NAME" || begin_status=$?
+  case "$begin_status" in
+    0) ;;
+    2)
+      echo "[Ship] Ship transaction already complete; replay is a no-op: $closeout_journal_dir"
+      return 2
+      ;;
+    3)
+      echo "ship-worktrees: an unfinished ship journal blocks this ship: $closeout_journal_conflict_dir" >&2
+      fail "run 'ship-worktrees --recover inspect', then '--recover abort' or '--recover reconcile'"
+      ;;
+    *)
+      fail "cannot open the ship transaction journal"
+      ;;
+  esac
+
+  ship_transaction_dir="$closeout_journal_dir/snapshot"
+  mkdir -p "$ship_transaction_dir"
   ship_transaction_active=1
-  ship_transaction_original_head="$(git rev-parse HEAD)"
+  ship_transaction_original_head="$original_head"
   ship_transaction_paths=()
   ship_transaction_existed=()
   trap ship_transaction_on_exit EXIT
@@ -147,6 +452,22 @@ ship_transaction_begin() {
   ship_transaction_snapshot ".ai/harness/active-worktree"
   ship_transaction_snapshot ".ai/harness/sprint"
   ship_transaction_snapshot ".claude/.plan-state"
+  ship_transaction_write_index
+  closeout_journal_record "$closeout_journal_dir" in_progress prepared "$original_head"
+}
+
+# Guarded on the journal handle rather than the transaction flag: `pr_observed`
+# and `complete` are recorded after ship_transaction_commit released the local
+# rollback, because by then the push is already an external effect.
+ship_transaction_phase() {
+  [[ -n "$closeout_journal_dir" ]] || return 0
+  closeout_journal_record "$closeout_journal_dir" in_progress "$1" "${2:-}"
+}
+
+ship_transaction_complete() {
+  [[ -n "$closeout_journal_dir" ]] || return 0
+  closeout_journal_record "$closeout_journal_dir" complete complete "${1:-}"
+  closeout_journal_dir=""
 }
 
 ship_transaction_abort() {
@@ -163,11 +484,15 @@ ship_transaction_abort() {
       cp -Rp "$ship_transaction_dir/$index/value" "$path"
     fi
   done
-  rm -rf "$ship_transaction_dir"
-  ship_transaction_dir=""
   ship_transaction_active=0
   ship_transaction_original_head=""
   trap - EXIT
+  # Status first, payload second: a crash between the two must leave a journal
+  # that still has its snapshot, never one that claims progress it cannot undo.
+  closeout_journal_record "$closeout_journal_dir" aborted "" ""
+  rm -rf "$ship_transaction_dir"
+  ship_transaction_dir=""
+  closeout_journal_dir=""
   echo "ship-worktrees: ship failed; restored live workflow artifacts and the pre-ship branch" >&2
 }
 
@@ -500,14 +825,20 @@ ship_linked_pr() {
 
   refresh_target_base
   gate_base_ref="refs/remotes/$REMOTE_NAME/$TARGET_BRANCH"
-  ship_transaction_begin
+  local begin_status=0
+  ship_transaction_begin || begin_status=$?
+  [[ "$begin_status" -ne 2 ]] || return 0
   finish_contract_worktree "pr" "$gate_base_ref"
   refresh_target_base
   verified_sha="$(seal_merge_gate_before_ship "$gate_base_ref")"
   verified_sha="$(verify_merge_gate_before_ship "$gate_base_ref")"
+  ship_transaction_phase gate_sealed "$verified_sha"
   push_branch "$branch" "$verified_sha"
+  ship_transaction_phase pushed "$verified_sha"
   ship_transaction_commit
   create_or_report_pr "$branch"
+  ship_transaction_phase pr_observed "$verified_sha"
+  ship_transaction_complete "$verified_sha"
 }
 
 ship_linked_local_merge() {
@@ -633,7 +964,107 @@ cleanup_merged() {
   fi
 }
 
+# True once ship's external effect -- the branch push -- is observable, whether
+# or not the `pushed` phase was reached before the interrupt. `--recover abort`
+# refuses on true, `--recover reconcile` refuses on false, so the window between
+# the push and its phase record cannot defeat either rule.
+closeout_ship_effect_landed() {
+  local dir="$1" verified remote branch
+  closeout_journal_has_phase "$dir" pushed && return 0
+  verified="$(closeout_journal_phase_ref "$dir" gate_sealed)"
+  [[ -n "$verified" ]] || return 1
+  remote="$(closeout_journal_field "$dir/meta.json" remote)"
+  branch="$(closeout_journal_field "$dir/meta.json" branch)"
+  [[ -n "$remote" && -n "$branch" ]] || return 1
+  [[ "$(git ls-remote "$remote" "refs/heads/$branch" 2>/dev/null | awk 'NR==1{print $1}')" == "$verified" ]]
+}
+
+closeout_ship_select() {
+  local key="$1" dir
+  local -a found=()
+  if [[ -n "$key" ]]; then
+    dir="$(closeout_journal_root)/ship/$key"
+    [[ -f "$dir/status.json" ]] || fail "no ship journal for key: $key"
+    printf '%s' "$dir"
+    return 0
+  fi
+  while IFS= read -r dir; do
+    [[ -n "$dir" ]] || continue
+    found+=("$dir")
+  done < <(closeout_journal_list "ship" "in_progress")
+  [[ "${#found[@]}" -ne 0 ]] || fail "no unfinished ship journal for this worktree"
+  if [[ "${#found[@]}" -gt 1 ]]; then
+    printf '%s\n' "${found[@]}" >&2
+    fail "multiple unfinished ship journals; pass --key"
+  fi
+  printf '%s' "${found[0]}"
+}
+
+recover_ship() {
+  local action="$RECOVER_ACTION" key="$RECOVER_KEY" dir status last_phase branch verified reported=0
+
+  case "$action" in
+    inspect|abort|reconcile) ;;
+    *) fail "--recover requires inspect, abort, or reconcile" ;;
+  esac
+
+  if [[ "$action" == "inspect" && -z "$key" ]]; then
+    while IFS= read -r dir; do
+      [[ -n "$dir" ]] || continue
+      closeout_journal_report "$dir" "[Ship]"
+      reported=1
+    done < <(closeout_journal_list "ship" "in_progress")
+    if [[ "$reported" -eq 0 ]]; then
+      echo "[Ship] No unfinished ship journal for this worktree."
+    fi
+    return 0
+  fi
+
+  dir="$(closeout_ship_select "$key")"
+  [[ "$(closeout_journal_field "$dir/meta.json" worktree)" == "$closeout_journal_worktree" ]] \
+    || fail "ship journal belongs to another worktree: $(closeout_journal_field "$dir/meta.json" worktree)"
+  closeout_journal_operation="ship"
+  closeout_journal_key_value="$(closeout_journal_field "$dir/meta.json" key)"
+  status="$(closeout_journal_status "$dir")"
+  last_phase="$(closeout_journal_last_phase "$dir")"
+  branch="$(closeout_journal_field "$dir/meta.json" branch)"
+
+  case "$action" in
+    inspect)
+      closeout_journal_report "$dir" "[Ship]"
+      ;;
+    abort)
+      [[ "$status" == "in_progress" ]] || fail "refusing abort of a $status ship journal: $dir"
+      ! closeout_ship_effect_landed "$dir" \
+        || fail "refusing abort after the push landed; run '--recover reconcile' instead: $dir"
+      closeout_journal_restore_snapshot "$dir" || fail "ship journal has no restorable snapshot: $dir"
+      closeout_journal_record "$dir" aborted "" ""
+      rm -rf "$dir/snapshot"
+      echo "[Ship] Aborted ship transaction and restored the pre-ship state: $dir"
+      ;;
+    reconcile)
+      [[ "$status" == "in_progress" ]] || fail "refusing reconcile of a $status ship journal: $dir"
+      # Reconcile exists for an already-landed external effect. Without one the
+      # correct recovery is a local rollback, so it refuses instead of guessing
+      # -- and it never rolls the remote back.
+      closeout_ship_effect_landed "$dir" \
+        || fail "no landed push to reconcile (last phase: $last_phase); run '--recover abort' instead"
+      verified="$(closeout_journal_phase_ref "$dir" gate_sealed)"
+      closeout_journal_has_phase "$dir" pushed || closeout_journal_record "$dir" in_progress pushed "$verified"
+      if ! closeout_journal_has_phase "$dir" pr_observed; then
+        create_or_report_pr "$branch"
+        closeout_journal_record "$dir" in_progress pr_observed "$verified"
+      fi
+      closeout_journal_record "$dir" complete complete "$verified"
+      rm -rf "$dir/snapshot"
+      echo "[Ship] Reconciled ship transaction; the push was already applied: $dir"
+      ;;
+  esac
+}
+
 MODE="pr"
+RECOVER_ACTION=""
+RECOVER_KEY=""
 TARGET_BRANCH=""
 REMOTE_NAME="origin"
 SLUG_OVERRIDE=""
@@ -678,6 +1109,17 @@ while [[ $# -gt 0 ]]; do
       MODE="cleanup-merged"
       shift
       ;;
+    --recover)
+      [[ -n "${2:-}" ]] || fail "--recover requires inspect, abort, or reconcile"
+      MODE="recover"
+      RECOVER_ACTION="$2"
+      shift 2
+      ;;
+    --key)
+      [[ -n "${2:-}" ]] || fail "--key requires a value"
+      RECOVER_KEY="$2"
+      shift 2
+      ;;
     --discard-scaffold-only)
       DISCARD_SCAFFOLD_ONLY=1
       shift
@@ -713,6 +1155,9 @@ case "$MODE" in
     ;;
   cleanup-merged)
     cleanup_merged
+    ;;
+  recover)
+    recover_ship
     ;;
   *)
     fail "unsupported mode: $MODE"

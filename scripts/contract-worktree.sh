@@ -40,6 +40,7 @@ Usage:
   repo-harness run contract-worktree finish [--merge|--no-merge] [--target <branch>] [--gate-base <ref>] [--message <commit-message>]
   repo-harness run contract-worktree cleanup --slug <slug> [--target <branch>] [--dry-run]
   repo-harness run contract-worktree status
+  repo-harness run contract-worktree recover <inspect|abort|reconcile> [--key <transaction-key>]
 USAGE_EOF
 }
 
@@ -437,6 +438,252 @@ clean_local_runtime_markers() {
   rm -f .ai/harness/active-plan .ai/harness/active-worktree
 }
 
+# --- CloseoutJournalV1 -------------------------------------------------------
+# A closeout mutates plans/, tasks/, three .ai/harness pointers, .claude/.plan-state
+# and HEAD, and (for ship) pushes before the PR exists. Before this journal the
+# pre-closeout snapshot lived in `mktemp -d` and the original HEAD only in a shell
+# variable, recoverable solely from an EXIT trap -- so SIGKILL, power loss, or a
+# closed terminal left a half-applied closeout with no discoverable, verifiable
+# recovery entry. The journal keeps both under the git common dir: outside every
+# working tree, surviving worktree removal, and structurally unreadable as
+# workflow state. It records operation progress only -- Effective State and its
+# collectors must never read it.
+#
+# Phases: prepared -> implementation_committed -> gate_sealed -> lifecycle_applied
+#      -> lifecycle_committed -> merged|pushed -> pr_observed -> complete
+# Each phase is persisted via temp file + fsync + atomic rename before the caller
+# may treat that phase's effect as committed. There is no auto-resume: re-entry
+# fails closed and recovery is the explicit `recover inspect|abort|reconcile`
+# surface.
+closeout_journal_operation=""
+closeout_journal_key_value=""
+closeout_journal_dir=""
+closeout_journal_conflict_dir=""
+closeout_journal_worktree="$(cd "$REPO_ROOT" && pwd -P)"
+
+closeout_journal_root() {
+  local common_dir
+  common_dir="$(git rev-parse --git-common-dir 2>/dev/null)" || return 1
+  common_dir="$(cd "$common_dir" 2>/dev/null && pwd -P)" || return 1
+  printf '%s/repo-harness/transactions' "$common_dir"
+}
+
+# Deterministic transaction key over repo identity, worktree, operation,
+# plan/contract, original HEAD, and the frozen target/base SHA. git is the only
+# binary these helpers already hard-require and validate, so deriving the key
+# with its content digest keeps the derivation dependency-free and reproducible
+# from a fresh recovery process.
+closeout_journal_derive_key() {
+  printf '%s\n' "$@" | git hash-object --stdin
+}
+
+# temp file + fsync + atomic rename. Content arrives on stdin.
+closeout_journal_write() {
+  local target="$1"
+  local tmp="${target}.tmp"
+  dd of="$tmp" conv=fsync 2>/dev/null
+  mv -f "$tmp" "$target"
+}
+
+closeout_journal_field() {
+  local file="$1" name="$2"
+  [[ -f "$file" ]] || return 1
+  sed -n "s/^  \"${name}\": \"\(.*\)\",\{0,1\}\$/\1/p" "$file" | head -1
+}
+
+closeout_journal_status() {
+  closeout_journal_field "$1/status.json" "status"
+}
+
+closeout_journal_last_phase() {
+  local file="$1/status.json"
+  [[ -f "$file" ]] || return 1
+  sed -n 's/^    {"phase": "\([^"]*\)".*$/\1/p' "$file" | tail -1
+}
+
+closeout_journal_has_phase() {
+  local file="$1/status.json" name="$2"
+  [[ -f "$file" ]] || return 1
+  grep -q "^    {\"phase\": \"${name}\", " "$file"
+}
+
+closeout_journal_phase_ref() {
+  local file="$1/status.json" name="$2"
+  [[ -f "$file" ]] || return 1
+  sed -n "s/^    {\"phase\": \"${name}\", \"at\": \"[^\"]*\", \"ref\": \"\([^\"]*\)\"}.*\$/\1/p" "$file" | tail -1
+}
+
+# Rewrites the whole status document so the phase list has exactly one authority
+# and lands in one atomic rename. An empty phase name only flips the status.
+closeout_journal_record() {
+  local dir="$1" status_value="$2" name="$3" ref="${4:-}"
+  local file="$dir/status.json"
+  local -a lines=()
+  local line stamp index
+  if [[ -f "$file" ]]; then
+    while IFS= read -r line; do
+      [[ -n "$line" ]] || continue
+      lines+=("${line%,}")
+    done < <(sed -n 's/^    \({"phase": .*\)$/\1/p' "$file")
+  fi
+  stamp="$(date '+%Y-%m-%dT%H:%M:%S%z')"
+  if [[ -n "$name" ]]; then
+    lines+=("{\"phase\": \"$(json_escape "$name")\", \"at\": \"$stamp\", \"ref\": \"$(json_escape "$ref")\"}")
+  fi
+  {
+    printf '{\n'
+    printf '  "version": 1,\n'
+    printf '  "operation": "%s",\n' "$(json_escape "$closeout_journal_operation")"
+    printf '  "key": "%s",\n' "$(json_escape "$closeout_journal_key_value")"
+    printf '  "status": "%s",\n' "$(json_escape "$status_value")"
+    printf '  "updated_at": "%s",\n' "$stamp"
+    printf '  "phases": [\n'
+    for ((index = 0; index < ${#lines[@]}; index++)); do
+      if (( index + 1 < ${#lines[@]} )); then
+        printf '    %s,\n' "${lines[$index]}"
+      else
+        printf '    %s\n' "${lines[$index]}"
+      fi
+    done
+    printf '  ]\n'
+    printf '}\n'
+  } | closeout_journal_write "$file"
+}
+
+closeout_journal_list() {
+  local operation="$1" want_status="$2"
+  local root candidate
+  root="$(closeout_journal_root)" || return 1
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] || continue
+    [[ -f "$candidate/status.json" ]] || continue
+    [[ -z "$want_status" || "$(closeout_journal_status "$candidate")" == "$want_status" ]] || continue
+    [[ "$(closeout_journal_field "$candidate/meta.json" worktree)" == "$closeout_journal_worktree" ]] || continue
+    printf '%s\n' "$candidate"
+  done < <(find "$root/$operation" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
+}
+
+# Early re-entry guard. A crashed closeout can leave the repo unable to resolve
+# its own contract/plan (the lifecycle step already archived them), so the
+# operator must hit this message rather than a confusing downstream failure.
+# Key-scoped checks belong in closeout_journal_begin; this one is worktree-wide
+# because the key binds the original HEAD and a crashed run that already
+# committed can never reproduce its own key.
+closeout_journal_guard_reentry() {
+  local operation="$1" conflict
+  conflict="$(closeout_journal_list "$operation" "in_progress" | head -1)"
+  [[ -n "$conflict" ]] || return 0
+  closeout_journal_conflict_dir="$conflict"
+  return 1
+}
+
+# 0 started, 2 no-op replay of an already-complete transaction, 3 blocked by an
+# unfinished closeout (dir in closeout_journal_conflict_dir), 1 unusable journal.
+closeout_journal_begin() {
+  local operation="$1" key="$2"
+  shift 2
+  local root dir status conflict pair name value stamp
+  root="$(closeout_journal_root)" || return 1
+  dir="$root/$operation/$key"
+  closeout_journal_operation="$operation"
+  closeout_journal_key_value="$key"
+  closeout_journal_conflict_dir=""
+
+  if [[ -f "$dir/status.json" ]]; then
+    status="$(closeout_journal_status "$dir")"
+    if [[ "$status" == "complete" ]]; then
+      # A replay is only a no-op while the completed effect is still in place.
+      # If HEAD has moved off the recorded completion the transaction was undone
+      # afterwards (an outer rollback), so the same key must start fresh instead
+      # of reporting success for work that no longer exists.
+      if [[ "$(git rev-parse HEAD)" == "$(closeout_journal_phase_ref "$dir" complete)" ]]; then
+        closeout_journal_dir="$dir"
+        return 2
+      fi
+      rm -rf "$dir"
+    fi
+    # An aborted transaction already restored the pre-closeout state, so the
+    # identical key is a legitimate retry rather than a blocked re-entry.
+    [[ "$status" != "aborted" ]] || rm -rf "$dir"
+  fi
+
+  # Fail closed on any unfinished closeout of this operation for this worktree.
+  # The key binds the original HEAD, so a crashed run that already committed can
+  # never reproduce its own key on retry -- scoping the guard to the worktree is
+  # what makes it cover the interrupt it exists for. Journals belonging to other
+  # worktrees are ignored.
+  conflict="$(closeout_journal_list "$operation" "in_progress" | head -1)"
+  if [[ -n "$conflict" ]]; then
+    closeout_journal_conflict_dir="$conflict"
+    return 3
+  fi
+
+  mkdir -p "$dir/snapshot"
+  closeout_journal_dir="$dir"
+  stamp="$(date '+%Y-%m-%dT%H:%M:%S%z')"
+  {
+    printf '{\n'
+    printf '  "version": 1,\n'
+    printf '  "operation": "%s",\n' "$(json_escape "$operation")"
+    printf '  "key": "%s",\n' "$(json_escape "$key")"
+    printf '  "repo": "%s",\n' "$(json_escape "$root")"
+    printf '  "worktree": "%s",\n' "$(json_escape "$closeout_journal_worktree")"
+    for pair in "$@"; do
+      name="${pair%%=*}"
+      value="${pair#*=}"
+      printf '  "%s": "%s",\n' "$(json_escape "$name")" "$(json_escape "$value")"
+    done
+    printf '  "started_at": "%s"\n' "$stamp"
+    printf '}\n'
+  } | closeout_journal_write "$dir/meta.json"
+  return 0
+}
+
+closeout_journal_report() {
+  local dir="$1" label="$2"
+  printf '%s journal: %s\n' "$label" "$dir"
+  printf '%s status: %s\n' "$label" "$(closeout_journal_status "$dir")"
+  printf '%s last phase: %s\n' "$label" "$(closeout_journal_last_phase "$dir")"
+  printf '%s original HEAD: %s\n' "$label" "$(closeout_journal_field "$dir/meta.json" original_head)"
+  printf '%s snapshot: %s\n' "$label" "$dir/snapshot"
+  printf '%s snapshot present: %s\n' "$label" "$([[ -f "$dir/snapshot/paths.tsv" ]] && printf 'yes' || printf 'no')"
+  printf '%s plan: %s\n' "$label" "$(closeout_journal_field "$dir/meta.json" plan)"
+  printf '%s contract: %s\n' "$label" "$(closeout_journal_field "$dir/meta.json" contract)"
+  printf '%s branch: %s\n' "$label" "$(closeout_journal_field "$dir/meta.json" branch)"
+  printf '%s base: %s %s\n' "$label" "$(closeout_journal_field "$dir/meta.json" base_ref)" "$(closeout_journal_field "$dir/meta.json" base_sha)"
+  sed -n 's/^    {"phase": "\([^"]*\)", "at": "\([^"]*\)", "ref": "\([^"]*\)".*$/'"$label"' phase: \1 \2 \3/p' "$dir/status.json"
+}
+
+# Restores the pre-closeout snapshot recorded in the journal. Safe from a fresh
+# process: the path index and the original HEAD both live on disk.
+closeout_journal_restore_snapshot() {
+  local dir="$1"
+  local index_file="$dir/snapshot/paths.tsv"
+  local -a rows=()
+  local row index path existed original_head count
+  [[ -f "$index_file" ]] || return 1
+  while IFS= read -r row; do
+    [[ -n "$row" ]] || continue
+    rows+=("$row")
+  done < "$index_file"
+  for ((count = ${#rows[@]} - 1; count >= 0; count--)); do
+    row="${rows[$count]}"
+    index="${row%%$'\t'*}"
+    path="${row#*$'\t'}"
+    existed="${path#*$'\t'}"
+    path="${path%%$'\t'*}"
+    rm -rf "$path"
+    if [[ "$existed" == "1" ]]; then
+      mkdir -p "$(dirname "$path")"
+      cp -Rp "$dir/snapshot/$index/value" "$path"
+    fi
+  done
+  original_head="$(closeout_journal_field "$dir/meta.json" original_head)"
+  if [[ -n "$original_head" ]] && [[ "$(git rev-parse HEAD)" != "$original_head" ]]; then
+    git reset --mixed "$original_head"
+  fi
+}
+
 finish_transaction_dir=""
 finish_transaction_active=0
 finish_transaction_original_head=""
@@ -456,8 +703,23 @@ finish_transaction_snapshot() {
   fi
 }
 
+# The snapshot path index is persisted next to the copies so a fresh recovery
+# process can restore without the in-memory arrays that died with the crash.
+finish_transaction_write_index() {
+  local index
+  {
+    for ((index = 0; index < ${#finish_transaction_paths[@]}; index++)); do
+      printf '%s\t%s\t%s\n' "$index" "${finish_transaction_paths[$index]}" "${finish_transaction_existed[$index]}"
+    done
+  } | closeout_journal_write "$finish_transaction_dir/paths.tsv"
+}
+
+# Requires an open journal (closeout_journal_begin). The snapshot lands inside
+# the journal directory and `prepared` is only recorded once both the copies and
+# their index are durable.
 finish_transaction_begin() {
-  finish_transaction_dir="$(mktemp -d)"
+  finish_transaction_dir="$closeout_journal_dir/snapshot"
+  mkdir -p "$finish_transaction_dir"
   finish_transaction_active=1
   finish_transaction_original_head="$(git rev-parse HEAD)"
   finish_transaction_paths=()
@@ -469,6 +731,13 @@ finish_transaction_begin() {
   finish_transaction_snapshot ".ai/harness/active-worktree"
   finish_transaction_snapshot ".ai/harness/sprint"
   finish_transaction_snapshot ".claude/.plan-state"
+  finish_transaction_write_index
+  closeout_journal_record "$closeout_journal_dir" in_progress prepared "$finish_transaction_original_head"
+}
+
+finish_transaction_phase() {
+  [[ "$finish_transaction_active" -eq 1 ]] || return 0
+  closeout_journal_record "$closeout_journal_dir" in_progress "$1" "${2:-}"
 }
 
 finish_transaction_abort() {
@@ -484,17 +753,23 @@ finish_transaction_abort() {
       cp -Rp "$finish_transaction_dir/$index/value" "$path"
     fi
   done
-  rm -rf "$finish_transaction_dir"
-  finish_transaction_dir=""
   finish_transaction_active=0
   finish_transaction_original_head=""
   trap - EXIT
+  # Status first, payload second: a crash between the two must leave a journal
+  # that still has its snapshot, never one that claims progress it cannot undo.
+  closeout_journal_record "$closeout_journal_dir" aborted "" ""
+  rm -rf "$finish_transaction_dir"
+  finish_transaction_dir=""
   echo "contract-worktree: finish failed; restored live workflow artifacts and the pre-finish branch" >&2
 }
 
 finish_transaction_commit() {
+  local head
+  head="$(git rev-parse HEAD)"
   finish_transaction_active=0
   trap - EXIT
+  closeout_journal_record "$closeout_journal_dir" complete complete "$head"
   rm -rf "$finish_transaction_dir"
   finish_transaction_dir=""
   finish_transaction_original_head=""
@@ -507,6 +782,150 @@ finish_transaction_on_exit() {
     finish_transaction_abort || status=1
   fi
   exit "$status"
+}
+
+# True once finish's only external effect -- the fast-forward of the target
+# branch -- is observable, whether or not the `merged` phase was reached before
+# the interrupt. `abort` refuses on true, `reconcile` refuses on false, so the
+# window between the merge and its phase record cannot defeat either rule.
+closeout_finish_effect_landed() {
+  local dir="$1" head target_branch base_sha
+  closeout_journal_has_phase "$dir" merged && return 0
+  [[ "$(closeout_journal_field "$dir/meta.json" merge_back)" == "1" ]] || return 1
+  head="$(closeout_journal_phase_ref "$dir" lifecycle_committed)"
+  [[ -n "$head" ]] || head="$(closeout_journal_phase_ref "$dir" implementation_committed)"
+  [[ -n "$head" ]] || return 1
+  base_sha="$(closeout_journal_field "$dir/meta.json" base_sha)"
+  [[ "$head" != "$base_sha" ]] || return 1
+  target_branch="$(closeout_journal_field "$dir/meta.json" target_branch)"
+  [[ -n "$target_branch" ]] || return 1
+  git show-ref --verify --quiet "refs/heads/$target_branch" || return 1
+  git merge-base --is-ancestor "$head" "refs/heads/$target_branch" >/dev/null 2>&1
+}
+
+closeout_recover_select() {
+  local key="$1" dir
+  local -a found=()
+  if [[ -n "$key" ]]; then
+    dir="$(closeout_journal_root)/finish/$key"
+    [[ -f "$dir/status.json" ]] || { echo "contract-worktree: no closeout journal for key: $key" >&2; return 1; }
+    printf '%s' "$dir"
+    return 0
+  fi
+  while IFS= read -r dir; do
+    [[ -n "$dir" ]] || continue
+    found+=("$dir")
+  done < <(closeout_journal_list "finish" "in_progress")
+  if [[ "${#found[@]}" -eq 0 ]]; then
+    echo "contract-worktree: no unfinished closeout journal for this worktree" >&2
+    return 1
+  fi
+  if [[ "${#found[@]}" -gt 1 ]]; then
+    echo "contract-worktree: multiple unfinished closeout journals; pass --key" >&2
+    printf '%s\n' "${found[@]}" >&2
+    return 1
+  fi
+  printf '%s' "${found[0]}"
+}
+
+recover_worktree() {
+  local action="${1:-}" key="" dir status last_phase head
+  shift || true
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --key)
+        [[ -n "${2:-}" ]] || { echo "contract-worktree: --key requires a value" >&2; exit 2; }
+        key="$2"
+        shift 2
+        ;;
+      --help|-h)
+        usage
+        exit 0
+        ;;
+      *)
+        echo "contract-worktree: unknown recover argument: $1" >&2
+        usage
+        exit 2
+        ;;
+    esac
+  done
+
+  case "$action" in
+    inspect|abort|reconcile) ;;
+    *)
+      echo "contract-worktree: recover requires inspect, abort, or reconcile" >&2
+      usage
+      exit 2
+      ;;
+  esac
+
+  if [[ "$action" == "inspect" && -z "$key" ]]; then
+    local reported=0
+    while IFS= read -r dir; do
+      [[ -n "$dir" ]] || continue
+      closeout_journal_report "$dir" "[ContractWorktree]"
+      reported=1
+    done < <(closeout_journal_list "finish" "in_progress")
+    if [[ "$reported" -eq 0 ]]; then
+      echo "[ContractWorktree] No unfinished closeout journal for this worktree."
+    fi
+    return 0
+  fi
+
+  dir="$(closeout_recover_select "$key")" || return 1
+  [[ "$(closeout_journal_field "$dir/meta.json" worktree)" == "$closeout_journal_worktree" ]] || {
+    echo "contract-worktree: closeout journal belongs to another worktree: $(closeout_journal_field "$dir/meta.json" worktree)" >&2
+    return 1
+  }
+  closeout_journal_operation="finish"
+  closeout_journal_key_value="$(closeout_journal_field "$dir/meta.json" key)"
+  status="$(closeout_journal_status "$dir")"
+  last_phase="$(closeout_journal_last_phase "$dir")"
+
+  case "$action" in
+    inspect)
+      closeout_journal_report "$dir" "[ContractWorktree]"
+      return 0
+      ;;
+    abort)
+      [[ "$status" == "in_progress" ]] || {
+        echo "contract-worktree: refusing abort of a $status closeout journal: $dir" >&2
+        return 1
+      }
+      if closeout_finish_effect_landed "$dir"; then
+        echo "contract-worktree: refusing abort after the merge landed; run 'recover reconcile' instead: $dir" >&2
+        return 1
+      fi
+      closeout_journal_restore_snapshot "$dir" || {
+        echo "contract-worktree: closeout journal has no restorable snapshot: $dir" >&2
+        return 1
+      }
+      closeout_journal_record "$dir" aborted "" ""
+      rm -rf "$dir/snapshot"
+      echo "[ContractWorktree] Aborted closeout transaction and restored the pre-closeout state: $dir"
+      return 0
+      ;;
+    reconcile)
+      [[ "$status" == "in_progress" ]] || {
+        echo "contract-worktree: refusing reconcile of a $status closeout journal: $dir" >&2
+        return 1
+      }
+      # Reconcile exists for an already-landed external effect. Without one the
+      # correct recovery is a local rollback, so it refuses instead of guessing
+      # -- and it never rolls anything back itself.
+      closeout_finish_effect_landed "$dir" || {
+        echo "contract-worktree: no landed merge to reconcile (last phase: $last_phase); run 'recover abort' instead" >&2
+        return 1
+      }
+      head="$(closeout_journal_phase_ref "$dir" lifecycle_committed)"
+      [[ -n "$head" ]] || head="$(closeout_journal_phase_ref "$dir" implementation_committed)"
+      closeout_journal_has_phase "$dir" merged || closeout_journal_record "$dir" in_progress merged "$head"
+      closeout_journal_record "$dir" complete complete "$head"
+      rm -rf "$dir/snapshot"
+      echo "[ContractWorktree] Reconciled closeout transaction; the merge was already applied: $dir"
+      return 0
+      ;;
+  esac
 }
 
 latest_plan_for_slug() {
@@ -730,6 +1149,12 @@ finish_worktree() {
     exit 1
   fi
 
+  if ! closeout_journal_guard_reentry "finish"; then
+    echo "contract-worktree: an unfinished closeout journal blocks this finish: $closeout_journal_conflict_dir" >&2
+    echo "contract-worktree: run 'repo-harness run contract-worktree recover inspect', then 'recover abort' or 'recover reconcile'" >&2
+    return 1
+  fi
+
   local current_branch slug active_plan contract_file review_file target_worktree artifact_stem
   local frozen_base_sha
   current_branch="$(git branch --show-current)"
@@ -786,6 +1211,42 @@ finish_worktree() {
       exit 1
     fi
   fi
+  local closeout_key closeout_original_head closeout_begin_status=0
+  closeout_original_head="$(git rev-parse HEAD)"
+  closeout_key="$(closeout_journal_derive_key \
+    "repo=$(closeout_journal_root)" \
+    "worktree=$closeout_journal_worktree" \
+    "operation=finish" \
+    "plan=${active_plan:-}" \
+    "contract=$contract_file" \
+    "original_head=$closeout_original_head" \
+    "target_branch=$target_branch" \
+    "base_sha=$frozen_base_sha")"
+  closeout_journal_begin "finish" "$closeout_key" \
+    "branch=$current_branch" \
+    "plan=${active_plan:-}" \
+    "contract=$contract_file" \
+    "original_head=$closeout_original_head" \
+    "target_branch=$target_branch" \
+    "base_ref=$gate_base_ref" \
+    "base_sha=$frozen_base_sha" \
+    "merge_back=$merge_back" || closeout_begin_status=$?
+  case "$closeout_begin_status" in
+    0) ;;
+    2)
+      echo "[ContractWorktree] Closeout transaction already complete; replay is a no-op: $closeout_journal_dir"
+      return 0
+      ;;
+    3)
+      echo "contract-worktree: an unfinished closeout journal blocks this finish: $closeout_journal_conflict_dir" >&2
+      echo "contract-worktree: run 'repo-harness run contract-worktree recover inspect', then 'recover abort' or 'recover reconcile'" >&2
+      return 1
+      ;;
+    *)
+      echo "contract-worktree: cannot open the closeout transaction journal" >&2
+      return 1
+      ;;
+  esac
   finish_transaction_begin
 
   # Step 1/2: freeze the implementation candidate F before any lifecycle mutation
@@ -797,6 +1258,7 @@ finish_worktree() {
   else
     echo "[ContractWorktree] No tracked changes to commit."
   fi
+  finish_transaction_phase implementation_committed "$(git rev-parse HEAD)"
 
   local run_gate=0
   if [[ "$merge_back" -eq 1 || "$gate_base_explicit" -eq 1 ]]; then
@@ -841,6 +1303,7 @@ finish_worktree() {
       finish_transaction_abort
       return 1
     fi
+    finish_transaction_phase gate_sealed "$verified_sha"
   fi
 
   # Step 4: lifecycle mutation now that the gate (if any) has already reviewed F.
@@ -856,6 +1319,7 @@ finish_worktree() {
     finish_transaction_abort
     return 1
   fi
+  finish_transaction_phase lifecycle_applied "$(git rev-parse HEAD)"
 
   # Step 5: lifecycle changes land as a separate, deterministic commit L. If
   # archiving produced no tracked change, L is simply F.
@@ -865,6 +1329,7 @@ finish_worktree() {
   else
     echo "[ContractWorktree] No lifecycle changes to commit."
   fi
+  finish_transaction_phase lifecycle_committed "$(git rev-parse HEAD)"
 
   # Step 6: no gate ran at all (plain --no-merge) -- nothing further to verify.
   if [[ "$run_gate" -eq 0 ]]; then
@@ -905,6 +1370,7 @@ finish_worktree() {
   current_head="$(git rev-parse "$current_branch^{commit}")"
   [[ "$verified_sha" == "$current_head" ]] || { echo "contract-worktree: branch moved after merge-gate review" >&2; exit 1; }
   git -C "$target_worktree" merge --ff-only "$verified_sha"
+  finish_transaction_phase merged "$verified_sha"
   finish_transaction_commit
   echo "[ContractWorktree] Merged $current_branch into $target_branch at $target_worktree"
 }
@@ -1127,6 +1593,9 @@ case "$command_name" in
     ;;
   cleanup)
     cleanup_worktree "$@"
+    ;;
+  recover)
+    recover_worktree "$@"
     ;;
   status)
     status_worktree
