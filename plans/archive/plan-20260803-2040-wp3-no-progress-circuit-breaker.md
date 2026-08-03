@@ -1,6 +1,6 @@
 # Plan: Sprint task: WP3 no-progress circuit breaker
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260803-2040
 > **Slug**: wp3-no-progress-circuit-breaker
 > **Planning Source**: repo-harness-sprint

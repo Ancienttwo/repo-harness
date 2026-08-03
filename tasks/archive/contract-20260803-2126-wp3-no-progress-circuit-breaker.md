@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-03 21:26
+> **Related Plan**: plans/archive/plan-20260803-2040-wp3-no-progress-circuit-breaker.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260803-2126
+
 # Task Contract: wp3-no-progress-circuit-breaker
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260803-2040-wp3-no-progress-circuit-breaker.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->

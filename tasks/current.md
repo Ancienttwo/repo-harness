@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-03T20:34:37+0800 -->
+<!-- updated_at: 2026-08-03T21:26:26+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-08-03T20:34:37+0800
-> **Source Branch**: codex/wp2-canonical-continuation-envelope
-> **Source Commit**: adfc5b84
+> **Updated At**: 2026-08-03T21:26:26+0800
+> **Source Branch**: codex/wp3-no-progress-circuit-breaker
+> **Source Commit**: 1660d9ec
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -57,16 +57,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260803-1949-wp2-canonical-continuation-envelope.md
- D tasks/contracts/20260803-1949-wp2-canonical-continuation-envelope.contract.md
- D tasks/notes/20260803-1949-wp2-canonical-continuation-envelope.notes.md
- D tasks/reviews/20260803-1949-wp2-canonical-continuation-envelope.review.md
+ D plans/plan-20260803-2040-wp3-no-progress-circuit-breaker.md
+ D tasks/contracts/20260803-2040-wp3-no-progress-circuit-breaker.contract.md
+ D tasks/notes/20260803-2040-wp3-no-progress-circuit-breaker.notes.md
+ D tasks/reviews/20260803-2040-wp3-no-progress-circuit-breaker.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260803-1949-wp2-canonical-continuation-envelope.md
-?? tasks/archive/contract-20260803-2034-wp2-canonical-continuation-envelope.md
-?? tasks/archive/notes-20260803-2034-wp2-canonical-continuation-envelope.md
-?? tasks/archive/review-20260803-2034-wp2-canonical-continuation-envelope.md
-?? tasks/archive/todo-20260803-2034-wp2-canonical-continuation-envelope.md
+?? plans/archive/plan-20260803-2040-wp3-no-progress-circuit-breaker.md
+?? tasks/archive/contract-20260803-2126-wp3-no-progress-circuit-breaker.md
+?? tasks/archive/notes-20260803-2126-wp3-no-progress-circuit-breaker.md
+?? tasks/archive/review-20260803-2126-wp3-no-progress-circuit-breaker.md
+?? tasks/archive/todo-20260803-2126-wp3-no-progress-circuit-breaker.md
 ```
 
 ## Source Artifacts
