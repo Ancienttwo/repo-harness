@@ -6,7 +6,7 @@
 >
 > **Repo baseline**: `5d6a9e411390ffc971acfb4097d70abc80ef3156` (`main`)
 >
-> **Status**: research synthesis only; no product code or policy change. The adopted slices are projected into `plans/sprints/20260803-1810-long-run-anti-drift.sprint.md` (Draft, pending approval).
+> **Status**: research synthesis; the adopted slices ran as `plans/sprints/20260803-1810-long-run-anti-drift.sprint.md` (Done 2026-08-03, WP1–WP4 on `main` at `3ab8fe29..75f8b34b` — see the closeout addendum at the end of this document).
 
 ## Conclusion
 
@@ -108,7 +108,7 @@ Codex's four proposed slices vs the blind track: agreement on read-only projecti
 
 `assets/templates/helpers/contract-worktree.sh:459-509`: `finish_transaction_begin()` snapshots `plans`, `tasks`, `.ai/harness/active-plan`, `.ai/harness/active-worktree`, `.ai/harness/sprint`, `.claude/.plan-state` into `mktemp -d`, records `original_head` in a shell variable, and rolls back only from an EXIT trap. SIGKILL / power loss / closed terminal mid-finish leaves the repo half-mutated with no on-disk pointer to the snapshot or original HEAD. `ship-worktrees.sh:123-191` has the identical shape; ship additionally pushes before creating the PR (`ship_linked_pr`, `ship-worktrees.sh:491`), so an interrupt between push and PR leaves an external effect with no phase receipt saying "only PR creation remains". `src/effects/evidence/recovery-materializer.ts` does not cover this: it renders handoff/resume views from the last published checkpoint — it restores reading context, not a half-applied finish.
 
-Claim precision (round-2 adjudication): what is *proven* is the absence of any discoverable, verifiable recovery entry. The mktemp directory and git objects/commits typically survive the process, so a forensic human recovery is usually possible; "permanent data loss" is unproven and per-phase SIGKILL fault injection has not yet been run. The blind spot, not the loss, is the verified defect.
+Claim precision (round-2 adjudication): what is *proven* is the absence of any discoverable, verifiable recovery entry. The mktemp directory and git objects/commits typically survive the process, so a forensic human recovery is usually possible; "permanent data loss" is unproven and per-phase SIGKILL fault injection has not yet been run. The blind spot, not the loss, is the verified defect. (Closed by WP1/WP4: fault injection has since run at every journal phase and passed — see the closeout addendum.)
 
 Fix shape (adopted into the sprint, WP1): journal the closeout transaction under the git common dir — `<git-common-dir>/repo-harness/transactions/<operation>/<transaction-key>/` — which survives worktree removal, lives outside every working tree, and can never be confused with tracked workflow state. Deterministic transaction key over (repo identity, worktree, operation, plan/contract, original HEAD, target/base SHA); granular phases (`prepared → implementation_committed → gate_sealed → lifecycle_applied → lifecycle_committed → merged|pushed → pr_observed → complete`) each persisted via temp file + fsync + atomic rename; fail closed on re-entry; explicit `recover inspect|abort|reconcile` where abort is allowed only before merge/push and reconcile after an external effect verifies and completes, never rolling back the remote. Hard guard: `resolve-effective-state.ts` and `collect-state-inputs.ts` must never read the journal — the journal records operation progress, never workflow state; violating that reproduces §3.1 locally.
 
@@ -150,6 +150,14 @@ A second Codex pass reviewed this document and the draft sprint. Full convergenc
 - **Scope fences**: action-budget and `evals/` cleanup stay out of this program (independent maintainability work); first WPs avoid `.ai/harness/policy.json` while its pending architecture request is open.
 
 Divergence retained after adjudication: the program PRD stays inline in the sprint file (single source; a separate `plans/prds/` copy would be a second place for the same contract to drift). Sprint rows renamed LRD-* → WP1..WP4 to match the round-2 shape.
+
+## Addendum — program closeout (2026-08-03)
+
+The adopted sprint ran to completion the same day: WP1–WP4 landed on `main` across `3ab8fe29..75f8b34b` — closeout journal + explicit `recover` (WP1), `repo-harness state next --json` continuation envelope (WP2), no-progress circuit breaker (WP3), host conformance doc `docs/reference-configs/long-run-continuation.md` plus `tests/continuation-conformance.test.ts` (WP4).
+
+§7.1's blind spot is closed, by proof rather than assumption: per-phase SIGKILL fault injection ran at every journal phase including between push and PR — the journal is discoverable, rerun fails closed, explicit recover completes without duplicating push or merge. The disposable-repo end-to-end scenario passed driven only by envelope output (decision inputs were the envelope and the stdout of commands it named), and surfaced no WP1–3 defects.
+
+Residuals are ledgered in `tasks/todos.md` with revisit triggers: closeout journal GC, per-goal quota budget, action/help budget (borrow #3), merge-gate leak-pattern scan (borrow #4), and the `evals/` verification-tier ownership finding (§7.2). WP4's final gate returned one manual, record-only finding (LOW-4) on the placement of the receipt-invisibility disjunction binding test; the test remains in the conformance suite (`tests/continuation-conformance.test.ts:101`), and no action is required unless a later work-package touches that surface.
 
 ## Provenance
 
