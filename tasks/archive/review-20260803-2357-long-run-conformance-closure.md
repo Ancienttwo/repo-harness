@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-03 23:57
+> **Related Plan**: plans/archive/plan-20260803-2235-long-run-conformance-closure.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260803-2357
+
 # Task Review: long-run-conformance-closure
 
 > **Status**: Reviewed

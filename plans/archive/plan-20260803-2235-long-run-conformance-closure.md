@@ -1,6 +1,6 @@
 # Plan: Long-run conformance closure
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260803-2235
 > **Slug**: long-run-conformance-closure
 > **Planning Source**: repo-harness-plan

@@ -1,7 +1,13 @@
+> **Archived**: 2026-08-03 23:57
+> **Related Plan**: plans/archive/plan-20260803-2235-long-run-conformance-closure.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260803-2357
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-08-03 22:35
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.
