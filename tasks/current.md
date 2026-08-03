@@ -1,26 +1,26 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-03T10:59:52+0800 -->
+<!-- updated_at: 2026-08-03T11:30:05+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Active
-> **Updated At**: 2026-08-03T10:59:52+0800
+> **Status**: Idle
+> **Updated At**: 2026-08-03T11:30:05+0800
 > **Source Branch**: codex/release-0-12-3
-> **Source Commit**: c8ffee7b
+> **Source Commit**: 12a15182
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: release-0.12.3-prep
+> **Reason**: archive-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Active
-- Active Plan: plans/plan-20260803-1053-release-0-12-3.md
-- Plan Status: Executing
-- Next Task: Release surfaces bumped to 0.12.3 exactly per the 2b266f38 (0.12.2) template: package.json, .claude/.skill-version, assets/skill-version.json (version + templateVersion + history entry), five README variants, docs/CHANGELOG.md entry, deploy/release-checklists/260803-repo-harness-0.12.3.md filing, tasks/current.md refreshed via `refresh-current-status` with reason release-0.12.3-prep
+- Status: Idle
+- Active Plan: (none)
+- Plan Status: (none)
+- Next Task: (none)
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,8 +31,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- .: plans/plan-20260803-1053-release-0-12-3.md
-- .: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-release-0-12-3
+- (none)
 ## Active Sprint
 
 - Sprint: (none)
@@ -47,32 +46,27 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=`plans/archive/plan-20260712-2215-agent-fleet-specialists.md`
 ## Handoff
 
-- Exact Next Step: (none)
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Release surfaces bumped to 0.12.3 exactly per the 2b266f38 (0.12.2) template: package.json, .claude/.skill-version, assets/skill-version.json (version + templateVersion + history entry), five README variants, docs/CHANGELOG.md entry, deploy/release-checklists/260803-repo-harness-0.12.3.md filing, tasks/current.md refreshed via `refresh-current-status` with reason release-0.12.3-prep
 
 ## Checks
 
-- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 15 changed/untracked path(s)
+- Summary: 10 changed/untracked path(s)
 
 ```
- M .claude/.skill-version
- M README.es.md
- M README.fr.md
- M README.ja.md
- M README.md
- M README.zh-CN.md
- M assets/skill-version.json
- M docs/CHANGELOG.md
- M package.json
+ D plans/plan-20260803-1053-release-0-12-3.md
+ D tasks/contracts/20260803-1053-release-0-12-3.contract.md
+ D tasks/notes/20260803-1053-release-0-12-3.notes.md
+ D tasks/reviews/20260803-1053-release-0-12-3.review.md
  M tasks/todos.md
-?? deploy/release-checklists/260803-repo-harness-0.12.3.md
-?? plans/plan-20260803-1053-release-0-12-3.md
-?? tasks/contracts/20260803-1053-release-0-12-3.contract.md
-?? tasks/notes/20260803-1053-release-0-12-3.notes.md
-?? tasks/reviews/20260803-1053-release-0-12-3.review.md
+?? plans/archive/plan-20260803-1053-release-0-12-3.md
+?? tasks/archive/contract-20260803-1129-release-0-12-3.md
+?? tasks/archive/notes-20260803-1129-release-0-12-3.md
+?? tasks/archive/review-20260803-1129-release-0-12-3.md
+?? tasks/archive/todo-20260803-1129-release-0-12-3.md
 ```
 
 ## Source Artifacts
