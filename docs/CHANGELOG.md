@@ -4,6 +4,71 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-08-04
+
+### Added
+
+- Adds the long-run continuation protocol, which moves "what runs next" out of
+  chat context and into durable repository state. `repo-harness state next
+  --json` emits a `ContinuationEnvelopeV1` carrying one of six routes —
+  `continue_active_plan`, `advance_sprint`, `verify_or_finish`, `halt`,
+  `complete`, `idle` — plus the command the host should run and a
+  `progress_token`. The command is read-only and deterministic: identical
+  repository bytes and identical receipt-ledger bytes yield byte-identical
+  JSON, and it never creates a plan, contract, or worktree, never advances the
+  sprint, and never authorizes more than one bounded unit or one halt per call.
+  Row selection stays with `sprint-backlog`; the envelope only names the
+  command. `halt` reuses the existing Effective State and sprint vocabularies
+  rather than inventing its own, and there is no `ask` or `wait` route — a
+  needs-user state is a halt whose reason points at the blocker.
+- Adds `repo-harness state attempt`, which records one `AttemptReceiptV1` per
+  bounded turn — `unit_ref`, outcome, and the before/after envelope
+  `progress_token` pair — to the ignored ledger at
+  `.ai/harness/runs/continuation/attempts.jsonl`. Receipts are liveness
+  evidence, never authority: they answer only "did this turn move anything".
+  Two consecutive `completed` receipts on the same `unit_ref` with an unchanged
+  token trip a no-progress circuit breaker, so the next envelope returns
+  `halt:no_progress`; a token change clears it, and `--outcome resumed` is the
+  operator's only explicit override. An unreadable ledger fails closed as
+  `halt:attempt_ledger_unreadable` instead of being treated as an empty
+  history. Two independent mechanisms — the gitignore rule and
+  `isOperationalReviewPath`'s `.ai/harness/runs/` prefix — keep the ledger out
+  of `progress_token`, and either alone suffices, so writing a receipt can
+  never look like the progress that would clear the breaker.
+- Makes contract closeout crash-durable. `contract-worktree finish` and
+  `ship-worktrees` now run as an exclusively owned, journalled transaction:
+  before any journal, lifecycle write, commit, push, or PR, the caller
+  atomically creates a worktree-scoped claim directory under
+  `<git-common-dir>/repo-harness/transactions/claims/`, so simultaneous callers
+  contend on `mkdir` and every loser fails closed before the first side effect.
+  The owner then writes a `CloseoutJournalV1` with one fsync'd record per phase
+  (`prepared` through `complete`) via temp file plus atomic rename, and
+  releases its claim only on a terminal status. Claims and journals live under
+  the git common dir, outside every working tree, so they survive worktree
+  removal. An interrupted closeout fails closed — a plain rerun refuses while
+  an `in_progress` journal or a claim exists — and recovery is explicit:
+  `recover inspect` reports the claim, owner PID liveness, and recorded phases;
+  `recover abort` restores the pre-closeout snapshot and is the only way to
+  clear a dead pre-journal orphan claim; `recover reconcile` completes the
+  missing steps after an external effect landed, never re-merging, re-pushing,
+  or duplicating a PR. A mutating recovery first proves the recorded owner PID
+  is dead, then takes the claim's nested `recovery.lock` lane; it never steals
+  from a live owner, and nothing reclaims a stale claim automatically.
+  Per-phase `SIGKILL` fault injection and concurrent double-start race tests
+  cover the transaction.
+- Publishes the host conformance contract at
+  `docs/reference-configs/long-run-continuation.md`: the seven-step tick, the
+  per-route host action table, the halt vocabulary, the crash-recovery
+  semantics, and the operator remedy for each halt reason. A conformance suite
+  runs the whole tick — opening envelope, one bounded unit, closing envelope,
+  attempt receipt, post-receipt envelope — inside a disposable repository,
+  selecting routes and commands only from the envelope it just read, and binds
+  both arms of the receipt-invisibility invariant.
+- Adds a sprint-backlog grammar drift check that binds the TypeScript backlog
+  reader to `sprint-backlog.sh` over shared fixtures covering statuses, row
+  shapes, section bounds, and CRLF input, so the two readers cannot diverge on
+  the grammar they both parse.
+
 ## [0.12.3] - 2026-08-03
 
 ### Added

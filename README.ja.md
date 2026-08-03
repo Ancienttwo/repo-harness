@@ -469,8 +469,8 @@ commit script や hooks に組み込まないでください。
 
 ## 現在の Release
 
-- npm package：`repo-harness@0.12.3`
-- Generated workflow stamp：`repo-harness@0.12.3+template@0.12.3`
+- npm package：`repo-harness@0.13.0`
+- Generated workflow stamp：`repo-harness@0.13.0+template@0.13.0`
 - GitHub repository：`Ancienttwo/repo-harness`
 - Release notes and history：[`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

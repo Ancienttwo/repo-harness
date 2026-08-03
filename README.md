@@ -441,8 +441,8 @@ repo-harness commit scripts or hooks unless that repo adopts the same policy.
 
 ## Current Release
 
-- npm package: `repo-harness@0.12.3`
-- Generated workflow stamp: `repo-harness@0.12.3+template@0.12.3`
+- npm package: `repo-harness@0.13.0`
+- Generated workflow stamp: `repo-harness@0.13.0+template@0.13.0`
 - GitHub repository: `Ancienttwo/repo-harness`
 - Release notes and history: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

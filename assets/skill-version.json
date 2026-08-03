@@ -1,6 +1,6 @@
 {
-  "version": "0.12.3",
-  "templateVersion": "0.12.3",
+  "version": "0.13.0",
+  "templateVersion": "0.13.0",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "compatibility": {
@@ -239,6 +239,10 @@
     {
       "version": "0.12.3",
       "description": "Adds an opt-in Claude-host main-loop dispatch guard that denies orchestrator code edits with a dispatch-to-subagent instruction, and makes Claude-host hook fixtures hermetic against that guard's environment key"
+    },
+    {
+      "version": "0.13.0",
+      "description": "Adds the long-run continuation protocol with a read-only ContinuationEnvelopeV1 from state next, AttemptReceiptV1 liveness receipts, and a no-progress circuit breaker; makes contract-worktree and ship-worktrees closeout a crash-durable, exclusively owned CloseoutJournalV1 transaction with explicit recover inspect|abort|reconcile; and publishes the host conformance contract with a sprint-backlog grammar drift check"
     }
   ],
   "generatedProjectStamp": {
