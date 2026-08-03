@@ -70,14 +70,14 @@
 
 ## Required Release Sequence
 
-- [ ] Merge the release-candidate changes to `main` without unrelated files.
-- [ ] Confirm all GitHub CI jobs are green for the merged source commit.
-- [ ] Run `bun run check:release` on that exact merged commit.
-- [ ] Publish `repo-harness@0.13.0` to the official npm registry with `latest`.
-- [ ] Create and push annotated tag `v0.13.0` at the published source commit.
-- [ ] Create stable GitHub Release `repo-harness 0.13.0` from `v0.13.0` with no
+- [x] Merge the release-candidate changes to `main` without unrelated files.
+- [x] Confirm all GitHub CI jobs are green for the merged source commit.
+- [x] Run `bun run check:release` on that exact merged commit.
+- [x] Publish `repo-harness@0.13.0` to the official npm registry with `latest`.
+- [x] Create and push annotated tag `v0.13.0` at the published source commit.
+- [x] Create stable GitHub Release `repo-harness 0.13.0` from `v0.13.0` with no
       attached asset, matching the established release convention.
-- [ ] Run `bash scripts/check-release-published.sh 0.13.0` and verify registry,
+- [x] Run `bash scripts/check-release-published.sh 0.13.0` and verify registry,
       dist-tag, tarball integrity, source tag, GitHub Release, and clean-room CLI.
 
 ## Candidate Verification Record
