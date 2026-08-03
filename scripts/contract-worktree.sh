@@ -1361,6 +1361,7 @@ finish_worktree() {
   fi
   if ! closeout_claim_acquire "finish"; then
     echo "contract-worktree: closeout already owned for this worktree and operation: $closeout_claim_conflict_dir" >&2
+    echo "contract-worktree: run 'repo-harness run contract-worktree recover inspect', then 'recover abort' or 'recover reconcile'; 'recover abort' also clears a claim with no recorded journal phase" >&2
     return 1
   fi
 

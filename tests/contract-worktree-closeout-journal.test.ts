@@ -416,6 +416,11 @@ describe("contract-worktree finish closeout journal", () => {
         runHelperAsync("scripts/contract-worktree.sh", ["finish", "--no-merge"], fixture.linked, env),
       ]);
 
+      // The rendezvous actually happened: both callers reached the claim path
+      // and registered an arrival file. Without this, a renamed claim path would
+      // silently stop matching the shim and downgrade the race to timing luck.
+      expect(readdirSync(barrierDir).length).toBeGreaterThanOrEqual(2);
+
       expect(results.filter((result) => result.status === 0)).toHaveLength(1);
       const loser = results.find((result) => result.status !== 0);
       expect(loser).toBeDefined();
@@ -757,6 +762,10 @@ describe("ship-worktrees closeout journal", () => {
         runHelperAsync("scripts/ship-worktrees.sh", ["--target", "main", "--remote", "origin"], fixture.linked, env),
         runHelperAsync("scripts/ship-worktrees.sh", ["--target", "main", "--remote", "origin"], fixture.linked, env),
       ]);
+
+      // Same rendezvous proof as the finish race: both callers arrived at the
+      // claim path rather than merely overlapping in time.
+      expect(readdirSync(barrierDir).length).toBeGreaterThanOrEqual(2);
 
       expect(results.filter((result) => result.status === 0)).toHaveLength(1);
       const loser = results.find((result) => result.status !== 0);

@@ -65,7 +65,7 @@ repos.
 | Surface | Owner | Purpose |
 |---|---|---|
 | `repo-harness run <helper>` | Package runtime | Canonical workflow helper execution |
-| `repo-harness state next --json` | Package runtime | Canonical pull-based continuation entry: a read-only projection returning one unit or one halt per tick, byte-identical for identical repo bytes |
+| `repo-harness state next --json` | Package runtime | Canonical pull-based continuation entry: a read-only projection returning one unit or one halt per tick, byte-identical for identical repo bytes and identical attempt-ledger bytes |
 | `docs/spec.md` | Maintainers | Stable product intent and safety boundary |
 | `plans/prds/`, `plans/sprints/`, `plans/plan-*.md` | Planner | Decision-complete work packages |
 | `tasks/contracts/*.contract.md` | Implementer | Allowed paths, delegation, and exit criteria |

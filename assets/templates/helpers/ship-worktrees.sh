@@ -574,7 +574,8 @@ ship_transaction_begin() {
     fail "run 'ship-worktrees --recover inspect', then '--recover abort' or '--recover reconcile'"
   fi
   if ! closeout_claim_acquire "ship"; then
-    fail "closeout already owned for this worktree and operation: $closeout_claim_conflict_dir"
+    echo "ship-worktrees: closeout already owned for this worktree and operation: $closeout_claim_conflict_dir" >&2
+    fail "run 'ship-worktrees --recover inspect', then '--recover abort' or '--recover reconcile'; '--recover abort' also clears a claim with no recorded journal phase"
   fi
   branch="$(current_branch)"
   gate_base_ref="refs/remotes/$REMOTE_NAME/$TARGET_BRANCH"

@@ -64,11 +64,12 @@ The owner releases its claim only after a terminal journal status. An interrupte
 
 A journal owned by another worktree never blocks this one, and a `complete` journal is neither replayed nor reported as recoverable.
 
+A closeout ownership conflict is a helper-level refusal, not an envelope halt reason, so it never appears in `state next`. When `finish` or `ship` reports one, run `recover inspect`. If the recorded PID is live, wait for that owner or stop it deliberately; never start a parallel closeout. If it is dead, run `recover abort` before merge/push or `recover reconcile` after the external effect. A dead pre-journal claim also requires explicit `recover abort`.
+
 ## Operator Remedies
 
 | Halt reason | Remedy |
 |---|---|
-| closeout ownership conflict | Run `recover inspect`. If the recorded PID is live, wait for that owner or stop it deliberately; never start a parallel closeout. If it is dead, run `recover abort` before merge/push or `recover reconcile` after the external effect. A dead pre-journal claim also requires explicit `recover abort` |
 | `no_progress` | Investigate why the unit stopped moving. Then either make real progress (a token change clears the breaker by itself), or, if the turns were legitimately non-material, record `repo-harness state attempt --unit-ref <unit> --outcome resumed` to override explicitly |
 | `attempt_ledger_unreadable` | Inspect `.ai/harness/runs/continuation/attempts.jsonl`, then truncate it. The ledger is liveness evidence, not authority: resetting it loses nothing durable and the loop resumes from the same envelope |
 | `blockers:*`, `plan_status:*`, `sprint_status:*`, `sprint_backlog:*`, `active_sprint:stale`, `stale:active_plan_marker` | Fix the named authority artifact. These are the existing Effective State and sprint vocabularies; the envelope does not add remedies of its own |

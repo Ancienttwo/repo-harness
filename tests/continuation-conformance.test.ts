@@ -743,6 +743,30 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
         HOST_COMMAND.finishMerge,
       ]);
 
+      // The gate stubs record what the driver actually invoked, independent of
+      // the driver's own log: every completion gate ran prepare -> record ->
+      // verify in that order, once per closeout.
+      // Timestamped artifact stems are fixture-generated; the gate identity that
+      // matters is the row, so normalize the stem prefix away.
+      const gateCalls = readFileSync(fixture.gateLog, 'utf-8')
+        .trim()
+        .split('\n')
+        .map((line) => line.replace(/\d{8}-\d{4}-/g, ''));
+      const closeoutGate = (row: string): string[] => [
+        'verify-sprint --prepare-acceptance',
+        'acceptance-receipt record',
+        'verify-sprint ',
+        `acceptance-receipt verify --contract tasks/contracts/${row}.contract.md --verification .ai/harness/checks/latest.json`,
+        'verify-sprint ',
+        `acceptance-receipt verify --contract tasks/contracts/${row}.contract.md --verification .ai/harness/checks/latest.json`,
+        `acceptance-receipt verify --contract tasks/contracts/${row}.contract.md --verification .ai/harness/checks/latest.json`,
+      ];
+      expect(gateCalls).toEqual([
+        ...closeoutGate('row-one'), // the SIGKILLed closeout
+        ...closeoutGate('row-one'), // the recovered rerun re-ran the same gate
+        ...closeoutGate('row-two'),
+      ]);
+
       // The attempt ledger stayed ignored runtime evidence throughout: it never
       // entered the tracked tree of either worktree.
       expect(existsSync(join(worktreeTwo, LEDGER))).toBe(true);
