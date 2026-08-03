@@ -56,7 +56,7 @@
     "check:architecture-sync": "repo-harness run check-architecture-sync",
     "check:task-sync": "repo-harness run check-task-sync",
     "check:task-workflow": "repo-harness run check-task-workflow --strict",
-    "prepublishOnly": "bash scripts/check-npm-release.sh",
+    "prepublishOnly": "bash scripts/check-npm-release.sh --prepublish",
     "sync:brain-docs": "repo-harness run sync-brain-docs --all",
     "sync:codex-installed": "bash scripts/sync-codex-installed-copies.sh"
   },
