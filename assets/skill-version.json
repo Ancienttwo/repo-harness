@@ -1,6 +1,6 @@
 {
-  "version": "0.12.2",
-  "templateVersion": "0.12.2",
+  "version": "0.12.3",
+  "templateVersion": "0.12.3",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "compatibility": {
@@ -235,6 +235,10 @@
     {
       "version": "0.12.2",
       "description": "Makes agent-fleet drift checks receipt-aware, hardens verifier environment and provenance boundaries, and routes Codex delegation through model-pinned App Threads with fail-closed fallbacks"
+    },
+    {
+      "version": "0.12.3",
+      "description": "Adds an opt-in Claude-host main-loop dispatch guard that denies orchestrator code edits with a dispatch-to-subagent instruction, and makes Claude-host hook fixtures hermetic against that guard's environment key"
     }
   ],
   "generatedProjectStamp": {

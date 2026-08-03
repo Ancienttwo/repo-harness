@@ -4,6 +4,30 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.12.3] - 2026-08-03
+
+### Added
+
+- Adds `MainLoopDispatchGuard`, an opt-in Claude-host edit boundary that
+  separates orchestrator edits from subagent edits. Armed only by
+  `REPO_HARNESS_MAIN_LOOP_EDIT_GUARD=1|true` together with
+  `HOOK_HOST=claude`, it denies main-loop `Edit`/`Write` on code-extension
+  files and returns a dispatch-to-subagent instruction; Claude Code stamps
+  `agent_id`/`agent_type` onto the payload only inside a subagent, so an
+  absent pair identifies the orchestrator thread. Subagent edits and
+  non-code paths such as plans, docs, and config pass through unchanged.
+  The check is a strong boundary, evaluated per path and independent of
+  plan state, spec presence, and workflow-profile resolution, so the
+  dispatch instruction lands before any plan advisory. The product default
+  is off; unsetting the variable is the operator off-switch.
+
+### Fixed
+
+- Hook fixtures that pin `HOOK_HOST=claude` now strip or neutralize
+  `REPO_HARNESS_MAIN_LOOP_EDIT_GUARD` at the fixture boundary, so an armed
+  operator shell can no longer arm the new guard inside frozen
+  characterization runs and flip their recorded goldens.
+
 ## [0.12.2] - 2026-08-02
 
 ### Changed

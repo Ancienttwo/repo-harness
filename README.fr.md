@@ -461,8 +461,8 @@ adopte la même policy.
 
 ## Release actuelle
 
-- Package npm : `repo-harness@0.12.2`
-- Generated workflow stamp : `repo-harness@0.12.2+template@0.12.2`
+- Package npm : `repo-harness@0.12.3`
+- Generated workflow stamp : `repo-harness@0.12.3+template@0.12.3`
 - Dépôt GitHub : `Ancienttwo/repo-harness`
 - Notes et historique de release : [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 
