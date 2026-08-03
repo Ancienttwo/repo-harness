@@ -40,17 +40,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:f36826ed54548eadd465fa14f86e59f4154b0a70a6a0eac0dd4c1fe9290c22bd
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: cee331d19ce77211776623db58f6c9c711fa4842
+> **Verification Evidence SHA256**: sha256:c6fc2365629644efaf0894806bc2c7d33a09854d9a07dd2a2860fe6be3a8d49d
+> **Issued At**: 2026-08-03T15:57:00.281Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: Adopted branch of the dual-track WP5 implementation, re-attested after merging origin/main cee331d1 (todos.md conflict resolved: main round-3 rows kept, PID-reuse deferred row appended). Independent gatekeeper review PASS with reverted-helper falsification (4/4 RED unfixed, GREEN fixed, finish+ship races); claim lifecycle traced; doc implementable; driver consumes state resolve stdout; six post-review findings fixed in-worktree. Codex program findings 1-3 closed; finding 4 (release cutover) separate.
 - Findings: none
 
 ## Behavior Diff Notes
