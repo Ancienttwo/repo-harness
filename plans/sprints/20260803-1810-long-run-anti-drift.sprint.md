@@ -1,9 +1,9 @@
 # Sprint: Long-Run Anti-Drift Loop
 
-> **Status**: Executing
+> **Status**: Done
 > **Slug**: long-run-anti-drift
 > **Created**: 2026-08-03 18:10
-> **Updated**: 2026-08-03 22:00
+> **Updated**: 2026-08-03 23:58
 > **Source Research**: `docs/researches/20260803-loopx-comparative-analysis.md` (dual-track LoopX comparison + round-2 convergence; the PRD of record for this program is the section below — deliberately not duplicated into `plans/prds/`)
 > **Source Spec**: `docs/spec.md`
 > **Goal Mode**: incremental
@@ -216,7 +216,7 @@ execution for small tasks. Every row needs a concrete acceptance line.
 | 2 | [x] | WP2 canonical continuation envelope | contract | `state next --json` byte-identical, one unit or halt per call, read-only, routes derive from Effective State (WP2 spec) | `plans/archive/plan-20260803-1949-wp2-canonical-continuation-envelope.md` |
 | 3 | [x] | WP3 no-progress circuit breaker | contract | Two no-progress turns yield halt:no_progress; receipts stay in ignored runs/ outside Effective State (WP3 spec) | `plans/archive/plan-20260803-2040-wp3-no-progress-circuit-breaker.md` |
 | 4 | [x] | WP4 host Goal conformance | inline | Conformance doc lands; disposable-repo scenario passes without reading prior chat (WP4 spec) | (pending) |
-| 5 | [ ] | WP5 long-run conformance closure | contract | Doc tick order implementable as written; conformance driver executes envelope commands with claims matched to evidence; closeout journal has an atomic single-owner claim with a concurrent double-start test (WP5 spec) | (pending) |
+| 5 | [x] | WP5 long-run conformance closure | contract | Doc tick order implementable as written; conformance driver executes envelope commands with claims matched to evidence; closeout journal has an atomic single-owner claim with a concurrent double-start test (WP5 spec) | `plans/archive/plan-20260803-2235-long-run-conformance-closure.md` |
 
 ## Execution Log
 
@@ -228,3 +228,4 @@ Keep this section last; `repo-harness run sprint-backlog complete-task` appends 
 | 2026-08-03 20:34 | WP2 canonical continuation envelope | `plans/archive/plan-20260803-1949-wp2-canonical-continuation-envelope.md` | done |
 | 2026-08-03 21:26 | WP3 no-progress circuit breaker | `plans/archive/plan-20260803-2040-wp3-no-progress-circuit-breaker.md` | done |
 | 2026-08-03 22:00 | WP4 host Goal conformance | (pending) | done |
+| 2026-08-03 23:58 | WP5 long-run conformance closure | `plans/archive/plan-20260803-2235-long-run-conformance-closure.md` | done |
