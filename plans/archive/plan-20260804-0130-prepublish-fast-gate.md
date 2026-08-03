@@ -1,6 +1,6 @@
 # Plan: check-npm-release --prepublish fast mode
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260804-0130
 > **Slug**: prepublish-fast-gate
 > **Planning Source**: codex-plan-or-waza-think

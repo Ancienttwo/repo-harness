@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-03T23:57:36+0800 -->
+<!-- updated_at: 2026-08-04T01:34:15+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-03T23:57:36+0800
-> **Source Branch**: codex/long-run-conformance-closure
-> **Source Commit**: c0bb834e
+> **Status**: Idle
+> **Updated At**: 2026-08-04T01:34:15+0800
+> **Source Branch**: codex/prepublish-fast-gate
+> **Source Commit**: ef8b56a6
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -17,11 +17,11 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
+- Status: Idle
 - Active Plan: (none)
 - Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Next Task: (none)
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -31,8 +31,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/kito/Projects/repo-harness-wt-wp5-long-run-conformance-closure: plans/plan-20260803-2235-wp5-long-run-conformance-closure.md
-- /Users/kito/Projects/repo-harness-wt-wp5-long-run-conformance-closure: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-wp5-long-run-conformance-closure
+- (none)
 ## Active Sprint
 
 - Sprint: (none)
@@ -58,16 +57,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260803-2235-long-run-conformance-closure.md
- D tasks/contracts/20260803-2235-long-run-conformance-closure.contract.md
- D tasks/notes/20260803-2235-long-run-conformance-closure.notes.md
- D tasks/reviews/20260803-2235-long-run-conformance-closure.review.md
+ D plans/plan-20260804-0130-prepublish-fast-gate.md
+ D tasks/contracts/20260804-0130-prepublish-fast-gate.contract.md
+ D tasks/notes/20260804-0130-prepublish-fast-gate.notes.md
+ D tasks/reviews/20260804-0130-prepublish-fast-gate.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260803-2235-long-run-conformance-closure.md
-?? tasks/archive/contract-20260803-2357-long-run-conformance-closure.md
-?? tasks/archive/notes-20260803-2357-long-run-conformance-closure.md
-?? tasks/archive/review-20260803-2357-long-run-conformance-closure.md
-?? tasks/archive/todo-20260803-2357-long-run-conformance-closure.md
+?? plans/archive/plan-20260804-0130-prepublish-fast-gate.md
+?? tasks/archive/contract-20260804-0134-prepublish-fast-gate.md
+?? tasks/archive/notes-20260804-0134-prepublish-fast-gate.md
+?? tasks/archive/review-20260804-0134-prepublish-fast-gate.md
+?? tasks/archive/todo-20260804-0134-prepublish-fast-gate.md
 ```
 
 ## Source Artifacts

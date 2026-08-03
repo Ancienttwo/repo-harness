@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-04 01:34
+> **Related Plan**: plans/archive/plan-20260804-0130-prepublish-fast-gate.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260804-0134
+
 # Task Contract: prepublish-fast-gate
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260804-0130-prepublish-fast-gate.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
