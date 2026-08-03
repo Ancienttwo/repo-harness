@@ -124,6 +124,9 @@ allowed_paths:
   - tasks/contracts/20260803-1824-wp1-crash-durable-closeout-transaction.contract.md
   - tasks/reviews/20260803-1824-wp1-crash-durable-closeout-transaction.review.md
   - tasks/notes/20260803-1824-wp1-crash-durable-closeout-transaction.notes.md
+  # tasks/todos.md: sprint start-task machinery stamps it and closeout adds the
+  # gatekeeper-recommended GC deferred-goal row; ledger writes are sanctioned.
+  - tasks/todos.md
 ```
 
 ## Evidence Requirements
