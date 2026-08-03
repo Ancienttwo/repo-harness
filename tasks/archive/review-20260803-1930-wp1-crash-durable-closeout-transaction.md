@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-03 19:30
+> **Related Plan**: plans/archive/plan-20260803-1824-wp1-crash-durable-closeout-transaction.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260803-1930
+
 # Task Review: wp1-crash-durable-closeout-transaction
 
 > **Status**: Reviewed

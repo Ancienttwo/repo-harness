@@ -3,7 +3,7 @@
 > **Status**: Approved
 > **Slug**: long-run-anti-drift
 > **Created**: 2026-08-03 18:10
-> **Updated**: 2026-08-03 (round-2 adjudication incorporated; user approved execution 2026-08-03)
+> **Updated**: 2026-08-03 19:30
 > **Source Research**: `docs/researches/20260803-loopx-comparative-analysis.md` (dual-track LoopX comparison + round-2 convergence; the PRD of record for this program is the section below — deliberately not duplicated into `plans/prds/`)
 > **Source Spec**: `docs/spec.md`
 > **Goal Mode**: incremental
@@ -195,7 +195,7 @@ execution for small tasks. Every row needs a concrete acceptance line.
 
 | # | Status | Task | Mode | Acceptance | Plan |
 |---|--------|------|------|------------|------|
-| 1 | [ ] | WP1 crash-durable closeout transaction | contract | Per-phase SIGKILL injection passes; no duplicate push/merge on rerun; state resolvers never read the journal (WP1 spec) | (pending) |
+| 1 | [x] | WP1 crash-durable closeout transaction | contract | Per-phase SIGKILL injection passes; no duplicate push/merge on rerun; state resolvers never read the journal (WP1 spec) | `plans/archive/plan-20260803-1824-wp1-crash-durable-closeout-transaction.md` |
 | 2 | [ ] | WP2 canonical continuation envelope | contract | `state next --json` byte-identical, one unit or halt per call, read-only, routes derive from Effective State (WP2 spec) | (pending) |
 | 3 | [ ] | WP3 no-progress circuit breaker | contract | Two no-progress turns yield halt:no_progress; receipts stay in ignored runs/ outside Effective State (WP3 spec) | (pending) |
 | 4 | [ ] | WP4 host Goal conformance | inline | Conformance doc lands; disposable-repo scenario passes without reading prior chat (WP4 spec) | (pending) |
@@ -206,3 +206,4 @@ Keep this section last; `repo-harness run sprint-backlog complete-task` appends 
 
 | When | Task | Plan | Result |
 |------|------|------|--------|
+| 2026-08-03 19:30 | WP1 crash-durable closeout transaction | `plans/archive/plan-20260803-1824-wp1-crash-durable-closeout-transaction.md` | done |

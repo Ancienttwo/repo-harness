@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-03T11:30:05+0800 -->
+<!-- updated_at: 2026-08-03T19:30:28+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-08-03T11:30:05+0800
-> **Source Branch**: codex/release-0-12-3
-> **Source Commit**: 12a15182
+> **Updated At**: 2026-08-03T19:30:28+0800
+> **Source Branch**: codex/wp1-crash-durable-closeout-transaction
+> **Source Commit**: 1577c6a0
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -46,7 +46,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=`plans/archive/plan-20260712-2215-agent-fleet-specialists.md`
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Release surfaces bumped to 0.12.3 exactly per the 2b266f38 (0.12.2) template: package.json, .claude/.skill-version, assets/skill-version.json (version + templateVersion + history entry), five README variants, docs/CHANGELOG.md entry, deploy/release-checklists/260803-repo-harness-0.12.3.md filing, tasks/current.md refreshed via `refresh-current-status` with reason release-0.12.3-prep
+- Exact Next Step: (none)
 
 ## Checks
 
@@ -57,16 +57,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260803-1053-release-0-12-3.md
- D tasks/contracts/20260803-1053-release-0-12-3.contract.md
- D tasks/notes/20260803-1053-release-0-12-3.notes.md
- D tasks/reviews/20260803-1053-release-0-12-3.review.md
+ D plans/plan-20260803-1824-wp1-crash-durable-closeout-transaction.md
+ D tasks/contracts/20260803-1824-wp1-crash-durable-closeout-transaction.contract.md
+ D tasks/notes/20260803-1824-wp1-crash-durable-closeout-transaction.notes.md
+ D tasks/reviews/20260803-1824-wp1-crash-durable-closeout-transaction.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260803-1053-release-0-12-3.md
-?? tasks/archive/contract-20260803-1129-release-0-12-3.md
-?? tasks/archive/notes-20260803-1129-release-0-12-3.md
-?? tasks/archive/review-20260803-1129-release-0-12-3.md
-?? tasks/archive/todo-20260803-1129-release-0-12-3.md
+?? plans/archive/plan-20260803-1824-wp1-crash-durable-closeout-transaction.md
+?? tasks/archive/contract-20260803-1930-wp1-crash-durable-closeout-transaction.md
+?? tasks/archive/notes-20260803-1930-wp1-crash-durable-closeout-transaction.md
+?? tasks/archive/review-20260803-1930-wp1-crash-durable-closeout-transaction.md
+?? tasks/archive/todo-20260803-1930-wp1-crash-durable-closeout-transaction.md
 ```
 
 ## Source Artifacts

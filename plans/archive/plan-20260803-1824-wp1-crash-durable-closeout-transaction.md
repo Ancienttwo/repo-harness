@@ -1,6 +1,6 @@
 # Plan: Sprint task: WP1 crash-durable closeout transaction
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260803-1824
 > **Slug**: wp1-crash-durable-closeout-transaction
 > **Planning Source**: repo-harness-sprint

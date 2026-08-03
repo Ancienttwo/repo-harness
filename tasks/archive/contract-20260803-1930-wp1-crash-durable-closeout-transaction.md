@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-03 19:30
+> **Related Plan**: plans/archive/plan-20260803-1824-wp1-crash-durable-closeout-transaction.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260803-1930
+
 # Task Contract: wp1-crash-durable-closeout-transaction
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260803-1824-wp1-crash-durable-closeout-transaction.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->

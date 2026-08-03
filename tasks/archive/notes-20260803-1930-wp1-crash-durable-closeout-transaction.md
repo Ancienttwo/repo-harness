@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-03 19:30
+> **Related Plan**: plans/archive/plan-20260803-1824-wp1-crash-durable-closeout-transaction.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260803-1930
+
 # Implementation Notes: wp1-crash-durable-closeout-transaction
 
 > **Status**: Active

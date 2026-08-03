@@ -1,7 +1,13 @@
+> **Archived**: 2026-08-03 19:30
+> **Related Plan**: plans/archive/plan-20260803-1824-wp1-crash-durable-closeout-transaction.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260803-1930
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-08-03 18:24
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.
