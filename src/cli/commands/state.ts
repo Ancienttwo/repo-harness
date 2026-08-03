@@ -1,6 +1,11 @@
 import { Command } from 'commander';
-import type { EffectiveState, EffectiveStateRiskInput } from '../../core/state/types';
+import type {
+  ContinuationEnvelopeV1,
+  EffectiveState,
+  EffectiveStateRiskInput,
+} from '../../core/state/types';
 import type { WorkflowOperationKind, WorkflowProfile } from '../../core/workflow/profile';
+import { resolveContinuationEnvelope } from '../../effects/state/resolve-continuation-envelope';
 import { resolveEffectiveState } from '../../effects/state/resolve-effective-state';
 import { migrateLegacyActivePlan } from '../hook/legacy-active-plan-migration';
 
@@ -77,6 +82,32 @@ export function resolveStateCommand(
   };
 }
 
+export type ResolveContinuationEnvelope = (
+  repoRoot: string,
+  nowMs: number,
+) => ContinuationEnvelopeV1;
+
+export interface ContinuationCommandDependencies {
+  readonly repoRoot: string;
+  readonly nowMs: number;
+  readonly resolveEnvelope: ResolveContinuationEnvelope;
+}
+
+/**
+ * Pure command projection for `state next`. A well-formed envelope always
+ * exits 0 -- `halt` is an answer, not a command failure -- so only an
+ * operational resolution error produces a non-zero exit.
+ */
+export function nextStateCommand(deps: ContinuationCommandDependencies): CommandOutcome {
+  let envelope: ContinuationEnvelopeV1;
+  try {
+    envelope = deps.resolveEnvelope(deps.repoRoot, deps.nowMs);
+  } catch (error) {
+    return operationalFailure(error);
+  }
+  return { exitCode: 0, stdout: `${JSON.stringify(envelope, null, 2)}\n`, stderr: '' };
+}
+
 function writeOutcome(outcome: CommandOutcome): void {
   if (outcome.stdout) process.stdout.write(outcome.stdout);
   if (outcome.stderr) process.stderr.write(outcome.stderr);
@@ -102,6 +133,18 @@ export function buildStateCommand(): Command {
         repoRoot: process.cwd(),
         nowMs: Date.now(),
         resolve: resolveEffectiveState,
+      }));
+    });
+
+  state
+    .command('next')
+    .description('Project the read-only continuation envelope for the next unit of work')
+    .requiredOption('--json', 'Output the continuation envelope as JSON')
+    .action(() => {
+      writeOutcome(nextStateCommand({
+        repoRoot: process.cwd(),
+        nowMs: Date.now(),
+        resolveEnvelope: resolveContinuationEnvelope,
       }));
     });
 

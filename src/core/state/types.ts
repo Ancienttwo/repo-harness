@@ -122,6 +122,40 @@ export interface EffectiveStateV1 {
 
 export type EffectiveState = EffectiveStateV1;
 
+/**
+ * The six continuation routes. There is deliberately no `ask`/`wait` member:
+ * blocked and needs-user states collapse into `halt`, whose `reason` carries
+ * the existing blocker/plan-status/sprint-status vocabulary.
+ */
+export type ContinuationRoute =
+  | 'continue_active_plan'
+  | 'advance_sprint'
+  | 'verify_or_finish'
+  | 'halt'
+  | 'complete'
+  | 'idle';
+
+/**
+ * One deterministic per-turn answer to "what is next", projected from the
+ * effective state plus the active sprint's own file. It is a read model, never
+ * an authority: `command` names the existing command that owns the action (row
+ * selection stays in `sprint-backlog`), and one call yields exactly one unit or
+ * one halt. Identical repo bytes yield byte-identical JSON -- no time, PID,
+ * locale, or absolute path enters this document.
+ */
+export interface ContinuationEnvelopeV1 {
+  readonly protocol: 1;
+  readonly kind: 'repo-harness-continuation-envelope';
+  readonly route: ContinuationRoute;
+  /** Repo-relative plan or sprint path identifying the unit; null only for `idle`. */
+  readonly unit_ref: string | null;
+  readonly authority_revision: string;
+  readonly progress_token: string;
+  /** Exact existing command for actionable routes; null for `halt`/`complete`/`idle`. */
+  readonly command: string | null;
+  readonly reason: string;
+}
+
 export interface EffectiveStateRiskInput {
   readonly targetPaths?: readonly string[];
   readonly capabilityIds?: readonly string[];
