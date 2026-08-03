@@ -1,9 +1,9 @@
 # Sprint: Long-Run Anti-Drift Loop
 
-> **Status**: Approved
+> **Status**: Done
 > **Slug**: long-run-anti-drift
 > **Created**: 2026-08-03 18:10
-> **Updated**: 2026-08-03 21:26
+> **Updated**: 2026-08-03 22:00
 > **Source Research**: `docs/researches/20260803-loopx-comparative-analysis.md` (dual-track LoopX comparison + round-2 convergence; the PRD of record for this program is the section below — deliberately not duplicated into `plans/prds/`)
 > **Source Spec**: `docs/spec.md`
 > **Goal Mode**: incremental
@@ -198,7 +198,7 @@ execution for small tasks. Every row needs a concrete acceptance line.
 | 1 | [x] | WP1 crash-durable closeout transaction | contract | Per-phase SIGKILL injection passes; no duplicate push/merge on rerun; state resolvers never read the journal (WP1 spec) | `plans/archive/plan-20260803-1824-wp1-crash-durable-closeout-transaction.md` |
 | 2 | [x] | WP2 canonical continuation envelope | contract | `state next --json` byte-identical, one unit or halt per call, read-only, routes derive from Effective State (WP2 spec) | `plans/archive/plan-20260803-1949-wp2-canonical-continuation-envelope.md` |
 | 3 | [x] | WP3 no-progress circuit breaker | contract | Two no-progress turns yield halt:no_progress; receipts stay in ignored runs/ outside Effective State (WP3 spec) | `plans/archive/plan-20260803-2040-wp3-no-progress-circuit-breaker.md` |
-| 4 | [ ] | WP4 host Goal conformance | inline | Conformance doc lands; disposable-repo scenario passes without reading prior chat (WP4 spec) | (pending) |
+| 4 | [x] | WP4 host Goal conformance | inline | Conformance doc lands; disposable-repo scenario passes without reading prior chat (WP4 spec) | (pending) |
 
 ## Execution Log
 
@@ -209,3 +209,4 @@ Keep this section last; `repo-harness run sprint-backlog complete-task` appends 
 | 2026-08-03 19:30 | WP1 crash-durable closeout transaction | `plans/archive/plan-20260803-1824-wp1-crash-durable-closeout-transaction.md` | done |
 | 2026-08-03 20:34 | WP2 canonical continuation envelope | `plans/archive/plan-20260803-1949-wp2-canonical-continuation-envelope.md` | done |
 | 2026-08-03 21:26 | WP3 no-progress circuit breaker | `plans/archive/plan-20260803-2040-wp3-no-progress-circuit-breaker.md` | done |
+| 2026-08-03 22:00 | WP4 host Goal conformance | (pending) | done |
