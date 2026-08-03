@@ -1,6 +1,6 @@
 # Sprint: Long-Run Anti-Drift Loop
 
-> **Status**: Done
+> **Status**: Executing
 > **Slug**: long-run-anti-drift
 > **Created**: 2026-08-03 18:10
 > **Updated**: 2026-08-03 22:00
@@ -179,6 +179,23 @@ the goal. The durable frontier already exists (PRD → sprint → plan → contr
   `halt:no_progress`; token-change and user-resume fixtures assert reset; a
   test proves receipts never enter Effective State revision or
   `progress_token`.
+- **WP5 long-run conformance closure** — closes the three acceptance gaps
+  from the external (Codex) program review of 2026-08-03: (1) fix
+  `docs/reference-configs/long-run-continuation.md`'s tick list to the
+  implementable order `opening envelope -> bounded unit -> closing envelope ->
+  attempt receipt -> next envelope`, noting the closing envelope supplies
+  `after_progress_token` and the next fetch is where the new receipt joins
+  stall adjudication; (2) strengthen `tests/continuation-conformance.test.ts`
+  so the driver actually executes the envelope-named read-only command
+  (`state resolve --json`) and consumes its stdout as the brief, and temper
+  the file-header claim to the evidence level (loop-shape conformance with
+  gate internals stubbed, each internal owned by its own suite); (3) add an
+  atomic single-owner claim to `CloseoutJournalV1` begin in both
+  `scripts/contract-worktree.sh` and `scripts/ship-worktrees.sh` (atomic
+  mkdir/O_EXCL claim closing the guard_reentry->begin TOCTOU window) plus a
+  concurrent double-start test proving exactly one of two racing finishes
+  proceeds and the loser fails closed. Release/install cutover is explicitly
+  out of this row (separate user-approved release).
 - **WP4 host Goal conformance** — reference doc in `docs/reference-configs/`
   for the tick shape (`state next` → at most one bounded unit → targeted
   checks/gatekeeper → finish or record halt → attempt receipt → `state
@@ -199,6 +216,7 @@ execution for small tasks. Every row needs a concrete acceptance line.
 | 2 | [x] | WP2 canonical continuation envelope | contract | `state next --json` byte-identical, one unit or halt per call, read-only, routes derive from Effective State (WP2 spec) | `plans/archive/plan-20260803-1949-wp2-canonical-continuation-envelope.md` |
 | 3 | [x] | WP3 no-progress circuit breaker | contract | Two no-progress turns yield halt:no_progress; receipts stay in ignored runs/ outside Effective State (WP3 spec) | `plans/archive/plan-20260803-2040-wp3-no-progress-circuit-breaker.md` |
 | 4 | [x] | WP4 host Goal conformance | inline | Conformance doc lands; disposable-repo scenario passes without reading prior chat (WP4 spec) | (pending) |
+| 5 | [ ] | WP5 long-run conformance closure | contract | Doc tick order implementable as written; conformance driver executes envelope commands with claims matched to evidence; closeout journal has an atomic single-owner claim with a concurrent double-start test (WP5 spec) | (pending) |
 
 ## Execution Log
 
