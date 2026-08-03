@@ -8,16 +8,17 @@ repo-harness ships no scheduler, no daemon, no timer, and no quota or token ledg
 
 One tick, in order:
 
-1. `repo-harness state next --json` — read the `ContinuationEnvelopeV1`.
+1. `repo-harness state next --json` — read the opening `ContinuationEnvelopeV1` and retain its `progress_token` as `$BEFORE`.
 2. Execute **at most one bounded unit**, per the envelope's route (table below).
 3. Run the targeted checks or the acceptance gate that the unit requires.
 4. Finish the unit, or record the halt.
-5. `repo-harness state attempt` — record the turn's `AttemptReceiptV1`.
-6. `repo-harness state next --json` again, and stop or continue on the new route.
+5. `repo-harness state next --json` — read the closing envelope and retain its `progress_token` as `$AFTER`.
+6. `repo-harness state attempt` — record the turn's `AttemptReceiptV1` from `$BEFORE` to `$AFTER`.
+7. `repo-harness state next --json` once more. This post-receipt envelope applies the no-progress breaker and is the only envelope from which the host may stop or open the next tick.
 
 Rules that make the tick safe to repeat:
 
-- `state next` is read-only and deterministic. Identical repo bytes yield byte-identical JSON; it never creates a plan, contract, or worktree, and never advances the sprint. Row selection stays with `sprint-backlog`; the envelope only names the command to run.
+- `state next` is read-only and deterministic. Identical repo bytes and identical receipt ledger bytes yield byte-identical JSON; it never creates a plan, contract, or worktree, and never advances the sprint. Row selection stays with `sprint-backlog`; the envelope only names the command to run. The closing envelope is sampled before its turn receipt exists; only the post-receipt envelope can observe that receipt and trip the breaker.
 - One tick executes one unit or one halt — never two units, never a unit plus a "while I am here" extra.
 - The tick's working directory is the unit's own worktree. `advance_sprint` on a contract row starts a linked `codex/<slug>` worktree and moves the active-plan marker into it; every following tick for that unit runs there. `.ai/harness/active-worktree` is per-tree runtime state, so running `state next` in the primary tree describes the primary tree, not the in-flight contract.
 
@@ -51,15 +52,15 @@ repo-harness state attempt --unit-ref "$UNIT" \
 
 ## Crash Recovery
 
-Closeout is a journalled transaction. `contract-worktree finish` and `ship-worktrees` write a `CloseoutJournalV1` under `<git-common-dir>/repo-harness/transactions/<operation>/<transaction-key>/`, one durable record per phase (`prepared → implementation_committed → gate_sealed → lifecycle_applied → lifecycle_committed → merged|pushed → pr_observed → complete`), each via temp file + fsync + atomic rename. The git common dir keeps the journal outside every working tree, so it survives worktree removal and is structurally unreadable as workflow state.
+Closeout is an exclusively owned, journalled transaction. Before either command writes a journal, lifecycle state, commit, push, or PR, `contract-worktree finish` and `ship-worktrees` atomically create a worktree-scoped claim at `<git-common-dir>/repo-harness/transactions/claims/<operation>/<worktree-hash>.lock/`. Simultaneous callers contend on that directory: exactly one becomes owner, and every loser fails closed before any closeout side effect. The owner then writes a `CloseoutJournalV1` under `<git-common-dir>/repo-harness/transactions/<operation>/<transaction-key>/`, one durable record per phase (`prepared → implementation_committed → gate_sealed → lifecycle_applied → lifecycle_committed → merged|pushed → pr_observed → complete`), each via temp file + fsync + atomic rename. The git common dir keeps claims and journals outside every working tree, so they survive worktree removal and are structurally unreadable as workflow state.
 
-An interrupted closeout **fails closed**: a plain rerun of `finish` or `ship` refuses while an `in_progress` journal owns that worktree and points at `recover`. There is no auto-resume anywhere in the protocol.
+The owner releases its claim only after a terminal journal status. An interrupted closeout **fails closed**: a plain rerun of `finish` or `ship` refuses while either an `in_progress` journal or an ownership claim exists and points at `recover`. A mutating recovery first proves the recorded owner PID is no longer live, then atomically acquires the claim's recovery lane; it never steals from a live owner. A SIGKILL before journal preparation therefore leaves an orphan claim rather than an invisible gap, and explicit `recover abort` is the only operation that clears it. There is no auto-resume or automatic stale-claim reclamation anywhere in the protocol.
 
 | Command | Semantics |
 |---|---|
-| `recover inspect` | Prints the journal directory, status, last phase, original HEAD, snapshot presence, plan/contract/branch/base, and every recorded phase. Read-only |
-| `recover abort` | Restores the pre-closeout state from the snapshot. Allowed **only before** the merge or push landed; refused afterwards |
-| `recover reconcile` | Completes the missing steps after an external effect landed. Never rolls back the remote: no second merge, no second push, no duplicate PR — a post-push interrupt completes only `pr_observed` |
+| `recover inspect` | Prints the ownership claim, recorded owner PID/liveness, and, when prepared, the journal directory, status, last phase, original HEAD, snapshot presence, plan/contract/branch/base, and every recorded phase. Read-only |
+| `recover abort` | After taking recovery ownership, restores the pre-closeout state from the snapshot. Allowed **only before** the merge or push landed; refused afterwards. If the dead owner was interrupted before journal preparation, this explicitly clears the orphan claim |
+| `recover reconcile` | After taking recovery ownership, completes the missing steps after an external effect landed. Never rolls back the remote: no second merge, no second push, no duplicate PR — a post-push interrupt completes only `pr_observed` |
 
 A journal owned by another worktree never blocks this one, and a `complete` journal is neither replayed nor reported as recoverable.
 
@@ -67,6 +68,7 @@ A journal owned by another worktree never blocks this one, and a `complete` jour
 
 | Halt reason | Remedy |
 |---|---|
+| closeout ownership conflict | Run `recover inspect`. If the recorded PID is live, wait for that owner or stop it deliberately; never start a parallel closeout. If it is dead, run `recover abort` before merge/push or `recover reconcile` after the external effect. A dead pre-journal claim also requires explicit `recover abort` |
 | `no_progress` | Investigate why the unit stopped moving. Then either make real progress (a token change clears the breaker by itself), or, if the turns were legitimately non-material, record `repo-harness state attempt --unit-ref <unit> --outcome resumed` to override explicitly |
 | `attempt_ledger_unreadable` | Inspect `.ai/harness/runs/continuation/attempts.jsonl`, then truncate it. The ledger is liveness evidence, not authority: resetting it loses nothing durable and the loop resumes from the same envelope |
 | `blockers:*`, `plan_status:*`, `sprint_status:*`, `sprint_backlog:*`, `active_sprint:stale`, `stale:active_plan_marker` | Fix the named authority artifact. These are the existing Effective State and sprint vocabularies; the envelope does not add remedies of its own |

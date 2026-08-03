@@ -13,7 +13,7 @@ import {
 } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { spawnSync } from "child_process";
+import { spawn, spawnSync } from "child_process";
 import { withRepo, resolveFixtureState } from "./state/effective-state-fixture";
 
 // Regression guard for CloseoutJournalV1: the crash-durable closeout
@@ -62,6 +62,24 @@ function runHelper(script: string, args: string[], cwd: string, env: NodeJS.Proc
   });
 }
 
+function runHelperAsync(script: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = {}) {
+  return new Promise<{ status: number; stdout: string; stderr: string }>((resolve) => {
+    const child = spawn("bash", [script, ...args], {
+      cwd,
+      env: fixtureEnv({
+        REPO_HARNESS_BUN_BIN: process.execPath,
+        REPO_HARNESS_WORKFLOW_STATE_LIB: join(cwd, ".ai/hooks/lib/workflow-state.sh"),
+        ...env,
+      }),
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
+    child.on("close", (status) => resolve({ status: status ?? 1, stdout, stderr }));
+  });
+}
+
 // Runs a helper under a launcher that publishes its own PID before exec'ing, so
 // the injected fault can SIGKILL the exact helper process (not the test runner)
 // the moment the journal reaches a named phase.
@@ -95,6 +113,45 @@ function withTempRepo(prefix: string, fn: (cwd: string) => void): void {
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
+}
+
+async function withTempRepoAsync(prefix: string, fn: (cwd: string) => Promise<void>): Promise<void> {
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), `${prefix}-`)));
+  try {
+    await fn(cwd);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
+function installCloseoutBarrier(container: string, operation: "finish" | "ship") {
+  const barrierDir = join(container, `${operation}-closeout-barrier`);
+  const shimDir = join(container, `${operation}-mkdir-shim`);
+  mkdirSync(barrierDir, { recursive: true });
+  mkdirSync(shimDir, { recursive: true });
+  writeExecutable(
+    join(shimDir, "mkdir"),
+    [
+      "#!/bin/bash",
+      'target=""',
+      'for arg in "$@"; do target="$arg"; done',
+      'case "$target" in',
+      `  */repo-harness/transactions/${operation}/*/snapshot|*/repo-harness/transactions/claims/${operation}/*.lock)`,
+      '    touch "$CLOSEOUT_BARRIER_DIR/$PPID"',
+      '    count=0',
+      '    for _ in $(seq 1 500); do',
+      '      count="$(find "$CLOSEOUT_BARRIER_DIR" -type f | wc -l | tr -d " ")"',
+      '      [[ "$count" -ge 2 ]] && break',
+      '      sleep 0.01',
+      '    done',
+      '    [[ "$count" -ge 2 ]] || exit 70',
+      '    ;;',
+      'esac',
+      'exec /bin/mkdir "$@"',
+      "",
+    ].join("\n"),
+  );
+  return { barrierDir, shimDir };
 }
 
 // A trusted-git shim: passes every call through to real git, except that it
@@ -345,6 +402,83 @@ function onlyJournal(fixture: Fixture, operation: string): string {
 }
 
 describe("contract-worktree finish closeout journal", () => {
+  test("simultaneous finish calls elect exactly one closeout owner before journal writes", async () => {
+    await withTempRepoAsync("closeout-journal-concurrent", async (container) => {
+      const fixture = installFixture(container);
+      const { barrierDir, shimDir } = installCloseoutBarrier(container, "finish");
+
+      const env = {
+        PATH: `${shimDir}:${process.env.PATH ?? ""}`,
+        CLOSEOUT_BARRIER_DIR: barrierDir,
+      };
+      const results = await Promise.all([
+        runHelperAsync("scripts/contract-worktree.sh", ["finish", "--no-merge"], fixture.linked, env),
+        runHelperAsync("scripts/contract-worktree.sh", ["finish", "--no-merge"], fixture.linked, env),
+      ]);
+
+      expect(results.filter((result) => result.status === 0)).toHaveLength(1);
+      const loser = results.find((result) => result.status !== 0);
+      expect(loser).toBeDefined();
+      expect(loser!.stderr).toContain("closeout already owned for this worktree and operation");
+      expect(journalDirs(fixture, "finish")).toHaveLength(1);
+      expect(readJournal(onlyJournal(fixture, "finish")).status).toBe("complete");
+    });
+  });
+
+  test("explicit recover abort clears a dead owner claimed before journal preparation", () => {
+    withTempRepo("closeout-journal-orphan-claim", (container) => {
+      const fixture = installFixture(container);
+      const claimKey = spawnSync("/usr/bin/git", ["hash-object", "--stdin"], {
+        cwd: fixture.linked,
+        encoding: "utf-8",
+        input: `operation=finish\nworktree=${fixture.linked}\n`,
+      }).stdout.trim();
+      const claim = join(fixture.journalRoot, "claims", "finish", `${claimKey}.lock`);
+      mkdirSync(claim, { recursive: true });
+      writeFileSync(
+        join(claim, "owner.json"),
+        `${JSON.stringify({
+          version: 1,
+          operation: "finish",
+          worktree: fixture.linked,
+          pid: String(process.pid),
+          journal_key: "",
+        }, null, 2)}\n`,
+      );
+
+      const inspect = runHelper("scripts/contract-worktree.sh", ["recover", "inspect"], fixture.linked);
+      expect(inspect.status, `${inspect.stdout}\n${inspect.stderr}`).toBe(0);
+      expect(inspect.stdout).toContain(`ownership claim: ${claim}`);
+      expect(inspect.stdout).toContain(`owner pid: ${process.pid} (live)`);
+
+      const refused = runHelper("scripts/contract-worktree.sh", ["recover", "abort"], fixture.linked);
+      expect(refused.status).not.toBe(0);
+      expect(refused.stderr).toContain("closeout is still owned by a live process");
+      expect(existsSync(claim)).toBe(true);
+
+      writeFileSync(
+        join(claim, "owner.json"),
+        `${JSON.stringify({
+          version: 1,
+          operation: "finish",
+          worktree: fixture.linked,
+          pid: "999999",
+          journal_key: "",
+        }, null, 2)}\n`,
+      );
+      const deadInspect = runHelper("scripts/contract-worktree.sh", ["recover", "inspect"], fixture.linked);
+      expect(deadInspect.status, `${deadInspect.stdout}\n${deadInspect.stderr}`).toBe(0);
+      expect(deadInspect.stdout).toContain(`ownership claim: ${claim}`);
+      expect(deadInspect.stdout).toContain("owner pid: 999999 (not_live)");
+
+      const abort = runHelper("scripts/contract-worktree.sh", ["recover", "abort"], fixture.linked);
+      expect(abort.status, `${abort.stdout}\n${abort.stderr}`).toBe(0);
+      expect(abort.stdout).toContain("Aborted orphan closeout ownership claim");
+      expect(existsSync(claim)).toBe(false);
+      expect(journalDirs(fixture, "finish")).toHaveLength(0);
+    });
+  });
+
   test("an uninterrupted finish journals every phase and clears its snapshot on completion", () => {
     withTempRepo("closeout-journal-happy", (container) => {
       const fixture = installFixture(container);
@@ -608,6 +742,35 @@ describe("ship-worktrees closeout journal", () => {
     writeFileSync(ghLog, "");
     return { ...fixture, remote, ghBin, ghLog };
   }
+
+  test("simultaneous ship calls elect exactly one owner before push or PR", async () => {
+    await withTempRepoAsync("closeout-journal-concurrent-ship", async (container) => {
+      const fixture = installShipFixture(container);
+      const { barrierDir, shimDir } = installCloseoutBarrier(container, "ship");
+      const env = {
+        PATH: `${shimDir}:${process.env.PATH ?? ""}`,
+        CLOSEOUT_BARRIER_DIR: barrierDir,
+        REPO_HARNESS_GH_BIN: fixture.ghBin,
+        GH_LOG: fixture.ghLog,
+      };
+      const results = await Promise.all([
+        runHelperAsync("scripts/ship-worktrees.sh", ["--target", "main", "--remote", "origin"], fixture.linked, env),
+        runHelperAsync("scripts/ship-worktrees.sh", ["--target", "main", "--remote", "origin"], fixture.linked, env),
+      ]);
+
+      expect(results.filter((result) => result.status === 0)).toHaveLength(1);
+      const loser = results.find((result) => result.status !== 0);
+      expect(loser).toBeDefined();
+      expect(loser!.stderr).toContain("closeout already owned for this worktree and operation");
+      expect(journalDirs(fixture, "ship")).toHaveLength(1);
+      expect(readJournal(onlyJournal(fixture, "ship")).status).toBe("complete");
+      const prCreates = readFileSync(fixture.ghLog, "utf-8")
+        .split("\n")
+        .filter((line) => line.startsWith("pr create"));
+      expect(prCreates).toHaveLength(1);
+      expect(runProcess("git", ["rev-parse", "refs/heads/codex/demo"], fixture.remote).status).toBe(0);
+    });
+  });
 
   test("SIGKILL right after the prepared phase rolls back with nothing pushed", () => {
     withTempRepo("closeout-journal-ship-prepared", (container) => {

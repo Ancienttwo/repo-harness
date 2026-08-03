@@ -9,12 +9,12 @@
  *    suffices. `tests/continuation-attempt.test.ts` states that in a comment;
  *    here both arms are bound to assertions so neither can be dropped silently.
  *
- * 2. The tick itself, end to end, in a disposable repository: `state next` ->
- *    one bounded unit -> gate -> finish -> attempt receipt -> `state next`. The
- *    driver decides every step *only* from the envelope it just read (plus the
- *    stdout of the command that envelope named). It never inspects the sprint
- *    file, the plan, the worktree registry, or any prior state to learn what to
- *    do next -- that is the "no chat memory" property under test.
+ * 2. The tick itself, end to end, in a disposable repository: opening envelope
+ *    -> one bounded unit -> closing envelope -> attempt receipt -> post-receipt
+ *    envelope. The driver selects routes and public commands only from the
+ *    envelope it just read plus the stdout of the command it named. The bounded
+ *    worker still reads the plan path explicitly returned by state resolution;
+ *    no prior chat or hidden driver state selects the next unit.
  *
  * See: docs/reference-configs/long-run-continuation.md
  *      plans/sprints/20260803-1810-long-run-anti-drift.sprint.md (WP4)
@@ -22,6 +22,7 @@
  */
 import { describe, expect, test, setDefaultTimeout } from 'bun:test';
 import {
+  appendFileSync,
   chmodSync,
   copyFileSync,
   existsSync,
@@ -150,10 +151,14 @@ interface Fixture {
   readonly journalRoot: string;
   readonly fakeGit: string;
   readonly pidFile: string;
+  readonly driverLog: string;
+  readonly gateLog: string;
 }
 
 const VERIFY_SPRINT_STUB = [
   '#!/bin/bash',
+  '[[ -z "${CONFORMANCE_GATE_LOG:-}" ]] || printf \'verify-sprint %s\\n\' "$*" >> "$CONFORMANCE_GATE_LOG"',
+  '[[ "${1:-}" != "--prepare-acceptance" ]] || exit 0',
   'contract="$(ls tasks/contracts/*.contract.md 2>/dev/null | head -1)"',
   'review="$(ls tasks/reviews/*.review.md 2>/dev/null | head -1)"',
   'mkdir -p .ai/harness/checks',
@@ -221,6 +226,7 @@ function installFixture(container: string): Fixture {
     'scripts',
     '.ai/hooks/lib',
     '.ai/harness/checks',
+    '.ai/harness/runs',
     '.ai/harness/sprint',
     'plans/sprints',
     'plans/archive',
@@ -246,7 +252,17 @@ function installFixture(container: string): Fixture {
     join(primary, '.ai/hooks/lib/workflow-state.sh'),
   );
 
-  writeFileSync(join(primary, 'scripts/acceptance-receipt.ts'), 'process.exit(0);\n');
+  writeFileSync(
+    join(primary, 'scripts/acceptance-receipt.ts'),
+    [
+      'import { appendFileSync } from "fs";',
+      'const log = process.env.CONFORMANCE_GATE_LOG;',
+      'if (!log) process.exit(2);',
+      'appendFileSync(log, `acceptance-receipt ${process.argv.slice(2).join(" ")}\\n`);',
+      'process.exit(0);',
+      '',
+    ].join('\n'),
+  );
   writeFileSync(
     join(primary, 'scripts/merge-gate.ts'),
     [
@@ -318,6 +334,10 @@ function installFixture(container: string): Fixture {
 
   const fakeGit = join(container, 'fake-git.sh');
   writeExecutable(fakeGit, FAKE_GIT);
+  const driverLog = join(primary, '.ai/harness/runs/conformance-driver.log');
+  const gateLog = join(primary, '.ai/harness/runs/conformance-gate.log');
+  writeFileSync(driverLog, '');
+  writeFileSync(gateLog, '');
 
   return {
     container,
@@ -325,6 +345,8 @@ function installFixture(container: string): Fixture {
     journalRoot: join(primary, '.git/repo-harness/transactions'),
     fakeGit,
     pidFile: join(container, 'fault.pid'),
+    driverLog,
+    gateLog,
   };
 }
 
@@ -404,8 +426,66 @@ function helperWithFault(
       FAULT_PID_FILE: fixture.pidFile,
       FAULT_AFTER_PHASE: phase,
       FAULT_JOURNAL_DIR: join(fixture.journalRoot, 'finish'),
+      CONFORMANCE_GATE_LOG: fixture.gateLog,
     },
   );
+}
+
+const HOST_COMMAND = {
+  advanceSprint: 'repo-harness run sprint-backlog start-task --execute',
+  resolveState: 'repo-harness state resolve --json',
+  prepareAcceptance: 'repo-harness run verify-sprint --prepare-acceptance',
+  recordAcceptance: 'repo-harness run acceptance-receipt record',
+  verifySprint: 'repo-harness run verify-sprint',
+  finishMerge: 'repo-harness run contract-worktree finish --merge',
+} as const;
+
+function recordDriverCommand(fixture: Fixture, command: string): void {
+  appendFileSync(fixture.driverLog, `${command}\n`);
+}
+
+/** Execute the public command named by an envelope or by the protocol table. */
+function executeHostCommand(fixture: Fixture, cwd: string, command: string): Run {
+  recordDriverCommand(fixture, command);
+  const gateEnv = { CONFORMANCE_GATE_LOG: fixture.gateLog };
+  switch (command) {
+    case HOST_COMMAND.advanceSprint:
+      return helper(cwd, 'scripts/sprint-backlog.sh', ['start-task', '--execute'], gateEnv);
+    case HOST_COMMAND.resolveState:
+      return run(process.execPath, [CLI, 'state', 'resolve', '--json'], cwd);
+    case HOST_COMMAND.prepareAcceptance:
+      return helper(cwd, 'scripts/verify-sprint.sh', ['--prepare-acceptance'], gateEnv);
+    case HOST_COMMAND.recordAcceptance:
+      return run(process.execPath, ['scripts/acceptance-receipt.ts', 'record'], cwd, gateEnv);
+    case HOST_COMMAND.verifySprint:
+      return helper(cwd, 'scripts/verify-sprint.sh', [], gateEnv);
+    case HOST_COMMAND.finishMerge:
+      return helper(cwd, 'scripts/contract-worktree.sh', ['finish', '--merge'], gateEnv);
+    default:
+      throw new Error(`unsupported conformance host command: ${command}`);
+  }
+}
+
+function planFromResolvedState(result: Run): string {
+  // `state resolve` returns exit 1 when its edit-scoped brief carries blockers,
+  // while still emitting the complete structured state on stdout. Routing stays
+  // with the inspect-scoped envelope; this command supplies the bounded brief.
+  expect(result.status === 0 || result.status === 1, `${result.stdout}\n${result.stderr}`).toBe(true);
+  const resolved = JSON.parse(result.stdout) as { authoritative_plan?: { path?: string } };
+  expect(resolved.authoritative_plan?.path).toBeDefined();
+  return resolved.authoritative_plan!.path!;
+}
+
+function runCompletionGate(fixture: Fixture, cwd: string, envelope: ContinuationEnvelopeV1): void {
+  expect(envelope.command).toBe(HOST_COMMAND.verifySprint);
+  for (const command of [
+    HOST_COMMAND.prepareAcceptance,
+    HOST_COMMAND.recordAcceptance,
+    envelope.command!,
+  ]) {
+    const result = executeHostCommand(fixture, cwd, command);
+    expect(result.status, `${command}\n${result.stdout}\n${result.stderr}`).toBe(0);
+  }
 }
 
 function journalDirs(fixture: Fixture): string[] {
@@ -457,7 +537,7 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
       expect(start.unit_ref).toBe(SPRINT);
       expect(start.command).toBe('repo-harness run sprint-backlog start-task --execute');
 
-      const advance = helper(primary, 'scripts/sprint-backlog.sh', ['start-task', '--execute']);
+      const advance = executeHostCommand(fixture, primary, start.command!);
       expect(advance.status, `${advance.stdout}\n${advance.stderr}`).toBe(0);
       const worktreeOne = createdWorktree(advance.stdout);
 
@@ -466,7 +546,9 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
       expect(openPlan.route).toBe('continue_active_plan');
       expect(openPlan.command).toBe('repo-harness state resolve --json');
       expect(openPlan.reason.startsWith('next_action:')).toBe(true);
-      const planOne = openPlan.unit_ref!;
+      const resolvedOne = executeHostCommand(fixture, worktreeOne, openPlan.command!);
+      const planOne = planFromResolvedState(resolvedOne);
+      expect(planOne).toBe(openPlan.unit_ref!);
       expect(planOne).toMatch(/^plans\/plan-\d{8}-\d{4}-row-one\.md$/);
 
       completeBoundedUnit(worktreeOne, planOne, 'row-one');
@@ -481,16 +563,18 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
         token: openPlan.progress_token,
         afterToken: readyOne.progress_token,
       });
-      expect(readyOne.route).toBe('verify_or_finish');
-      expect(readyOne.unit_ref).toBe(planOne);
-      expect(readyOne.command).toBe('repo-harness run verify-sprint');
       // The bounded unit was real work, so the breaker never arms.
       expect(readyOne.progress_token).not.toBe(openPlan.progress_token);
+      const actionableOne = tick(worktreeOne);
+      expect(actionableOne.route).toBe('verify_or_finish');
+      expect(actionableOne.unit_ref).toBe(planOne);
+      expect(actionableOne.command).toBe(HOST_COMMAND.verifySprint);
 
       // Completion gate, then closeout -- and the closeout is SIGKILLed the
       // moment the journal durably records `lifecycle_applied`.
       const mainBeforeCrash = git(primary, ['rev-parse', 'main']).stdout.trim();
-      expect(helper(worktreeOne, 'scripts/verify-sprint.sh', []).status).toBe(0);
+      runCompletionGate(fixture, worktreeOne, actionableOne);
+      recordDriverCommand(fixture, HOST_COMMAND.finishMerge);
       const crashed = helperWithFault(
         fixture,
         worktreeOne,
@@ -537,8 +621,8 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
       expect(afterAbort.route).toBe('verify_or_finish');
       expect(afterAbort.unit_ref).toBe(planOne);
 
-      expect(helper(worktreeOne, 'scripts/verify-sprint.sh', []).status).toBe(0);
-      const retry = helper(worktreeOne, 'scripts/contract-worktree.sh', ['finish', '--merge']);
+      runCompletionGate(fixture, worktreeOne, afterAbort);
+      const retry = executeHostCommand(fixture, worktreeOne, HOST_COMMAND.finishMerge);
       expect(retry.status, `${retry.stdout}\n${retry.stderr}`).toBe(0);
       expect(retry.stdout).toContain('Merged codex/row-one into main');
       // The retry derives the same transaction key (same worktree, plan,
@@ -553,25 +637,44 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
       expect(secondRow.route).toBe('advance_sprint');
       expect(secondRow.unit_ref).toBe(SPRINT);
 
-      const advanceTwo = helper(primary, 'scripts/sprint-backlog.sh', ['start-task', '--execute']);
+      const advanceTwo = executeHostCommand(fixture, primary, secondRow.command!);
       expect(advanceTwo.status, `${advanceTwo.stdout}\n${advanceTwo.stderr}`).toBe(0);
       const worktreeTwo = createdWorktree(advanceTwo.stdout);
 
       const openPlanTwo = tick(worktreeTwo);
       expect(openPlanTwo.route).toBe('continue_active_plan');
-      const planTwo = openPlanTwo.unit_ref!;
+      const resolvedTwo = executeHostCommand(fixture, worktreeTwo, openPlanTwo.command!);
+      const planTwo = planFromResolvedState(resolvedTwo);
+      expect(planTwo).toBe(openPlanTwo.unit_ref!);
       expect(planTwo).toMatch(/^plans\/plan-\d{8}-\d{4}-row-two\.md$/);
 
       // --- The stall: two completed turns that moved nothing. --------------
-      recordAttempt(worktreeTwo, { unitRef: planTwo, outcome: 'completed', token: openPlanTwo.progress_token });
-      expect(tick(worktreeTwo).route).toBe('continue_active_plan');
-      recordAttempt(worktreeTwo, { unitRef: planTwo, outcome: 'completed', token: openPlanTwo.progress_token });
+      let stallOpening = openPlanTwo;
+      let halted: ContinuationEnvelopeV1 | null = null;
+      for (let turn = 0; turn < 2; turn += 1) {
+        const resolved = executeHostCommand(fixture, worktreeTwo, stallOpening.command!);
+        expect(planFromResolvedState(resolved)).toBe(planTwo);
+        const closing = tick(worktreeTwo);
+        recordAttempt(worktreeTwo, {
+          unitRef: planTwo,
+          outcome: 'completed',
+          token: stallOpening.progress_token,
+          afterToken: closing.progress_token,
+        });
+        const postReceipt = tick(worktreeTwo);
+        if (turn === 0) {
+          expect(postReceipt.route).toBe('continue_active_plan');
+          stallOpening = postReceipt;
+        } else {
+          halted = postReceipt;
+        }
+      }
 
-      const halted = tick(worktreeTwo);
-      expect(halted.route).toBe('halt');
-      expect(halted.reason).toBe('no_progress');
-      expect(halted.unit_ref).toBe(planTwo);
-      expect(halted.command).toBeNull();
+      expect(halted).not.toBeNull();
+      expect(halted!.route).toBe('halt');
+      expect(halted!.reason).toBe('no_progress');
+      expect(halted!.unit_ref).toBe(planTwo);
+      expect(halted!.command).toBeNull();
       // A halt is stable: retrying without a state change reproduces it byte
       // for byte, which is what makes "never retry a halt" enforceable.
       expect(rawTick(worktreeTwo)).toBe(rawTick(worktreeTwo));
@@ -583,7 +686,8 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
       expect(resumed.progress_token).toBe(openPlanTwo.progress_token);
 
       // --- Row 2 completes uninterrupted. ----------------------------------
-      completeBoundedUnit(worktreeTwo, planTwo, 'row-two');
+      const resumedResolution = executeHostCommand(fixture, worktreeTwo, resumed.command!);
+      completeBoundedUnit(worktreeTwo, planFromResolvedState(resumedResolution), 'row-two');
 
       const readyTwo = tick(worktreeTwo);
       recordAttempt(worktreeTwo, {
@@ -592,11 +696,12 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
         token: resumed.progress_token,
         afterToken: readyTwo.progress_token,
       });
-      expect(readyTwo.route).toBe('verify_or_finish');
-      expect(readyTwo.unit_ref).toBe(planTwo);
+      const actionableTwo = tick(worktreeTwo);
+      expect(actionableTwo.route).toBe('verify_or_finish');
+      expect(actionableTwo.unit_ref).toBe(planTwo);
 
-      expect(helper(worktreeTwo, 'scripts/verify-sprint.sh', []).status).toBe(0);
-      const finishTwo = helper(worktreeTwo, 'scripts/contract-worktree.sh', ['finish', '--merge']);
+      runCompletionGate(fixture, worktreeTwo, actionableTwo);
+      const finishTwo = executeHostCommand(fixture, worktreeTwo, HOST_COMMAND.finishMerge);
       expect(finishTwo.status, `${finishTwo.stdout}\n${finishTwo.stderr}`).toBe(0);
       expect(finishTwo.stdout).toContain('Merged codex/row-two into main');
 
@@ -614,6 +719,29 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
       expect(sprint).toMatch(/\| 2 \| \[x\] \| row-two \|/);
       expect(existsSync(join(primary, 'src/row-one.ts'))).toBe(true);
       expect(existsSync(join(primary, 'src/row-two.ts'))).toBe(true);
+
+      const driverCommands = readFileSync(fixture.driverLog, 'utf-8').trim().split('\n');
+      expect(driverCommands).toEqual([
+        HOST_COMMAND.advanceSprint,
+        HOST_COMMAND.resolveState,
+        HOST_COMMAND.prepareAcceptance,
+        HOST_COMMAND.recordAcceptance,
+        HOST_COMMAND.verifySprint,
+        HOST_COMMAND.finishMerge,
+        HOST_COMMAND.prepareAcceptance,
+        HOST_COMMAND.recordAcceptance,
+        HOST_COMMAND.verifySprint,
+        HOST_COMMAND.finishMerge,
+        HOST_COMMAND.advanceSprint,
+        HOST_COMMAND.resolveState,
+        HOST_COMMAND.resolveState,
+        HOST_COMMAND.resolveState,
+        HOST_COMMAND.resolveState,
+        HOST_COMMAND.prepareAcceptance,
+        HOST_COMMAND.recordAcceptance,
+        HOST_COMMAND.verifySprint,
+        HOST_COMMAND.finishMerge,
+      ]);
 
       // The attempt ledger stayed ignored runtime evidence throughout: it never
       // entered the tracked tree of either worktree.

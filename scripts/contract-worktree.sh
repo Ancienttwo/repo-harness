@@ -460,6 +460,10 @@ closeout_journal_key_value=""
 closeout_journal_dir=""
 closeout_journal_conflict_dir=""
 closeout_journal_worktree="$(cd "$REPO_ROOT" && pwd -P)"
+closeout_claim_dir=""
+closeout_claim_mode=""
+closeout_claim_operation=""
+closeout_claim_conflict_dir=""
 
 closeout_journal_root() {
   local common_dir
@@ -475,6 +479,171 @@ closeout_journal_root() {
 # from a fresh recovery process.
 closeout_journal_derive_key() {
   printf '%s\n' "$@" | git hash-object --stdin
+}
+
+# One worktree may have at most one live closeout for a given operation. The
+# stable claim directory is elected with one atomic mkdir before any journal
+# temp file, lifecycle mutation, merge, or push. Its owner record is operation
+# evidence only and lives beside (never inside) workflow state.
+closeout_claim_path() {
+  local operation="$1" root key
+  root="$(closeout_journal_root)" || return 1
+  key="$(closeout_journal_derive_key "operation=$operation" "worktree=$closeout_journal_worktree")"
+  printf '%s/claims/%s/%s.lock' "$root" "$operation" "$key"
+}
+
+closeout_claim_write_owner() {
+  local target="$1" operation="$2" journal_key="${3:-}"
+  {
+    printf '{\n'
+    printf '  "version": 1,\n'
+    printf '  "operation": "%s",\n' "$(json_escape "$operation")"
+    printf '  "worktree": "%s",\n' "$(json_escape "$closeout_journal_worktree")"
+    printf '  "pid": "%s",\n' "$$"
+    printf '  "journal_key": "%s"\n' "$(json_escape "$journal_key")"
+    printf '}\n'
+  } | closeout_journal_write "$target"
+}
+
+closeout_claim_acquire() {
+  local operation="$1" claim
+  claim="$(closeout_claim_path "$operation")" || return 1
+  mkdir -p "$(dirname "$claim")"
+  if ! mkdir "$claim" 2>/dev/null; then
+    closeout_claim_conflict_dir="$claim"
+    return 1
+  fi
+  closeout_claim_dir="$claim"
+  closeout_claim_mode="normal"
+  closeout_claim_operation="$operation"
+  if ! closeout_claim_write_owner "$claim/owner.json" "$operation"; then
+    rm -rf "$claim"
+    closeout_claim_dir=""
+    closeout_claim_mode=""
+    closeout_claim_operation=""
+    return 1
+  fi
+  trap closeout_claim_on_exit EXIT
+}
+
+closeout_claim_bind_journal() {
+  local key="$1"
+  [[ "$closeout_claim_mode" == "normal" && -n "$closeout_claim_dir" ]] || return 1
+  closeout_claim_write_owner "$closeout_claim_dir/owner.json" "$closeout_claim_operation" "$key"
+}
+
+closeout_claim_owner_live() {
+  local owner_file="$1" owner_pid
+  owner_pid="$(closeout_journal_field "$owner_file" pid)"
+  [[ "$owner_pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$owner_pid" 2>/dev/null
+}
+
+closeout_claim_release() {
+  local owner_file owner_pid
+  [[ -n "$closeout_claim_dir" && -d "$closeout_claim_dir" ]] || return 1
+  if [[ "$closeout_claim_mode" == "recovery" ]]; then
+    owner_file="$closeout_claim_dir/recovery.lock/owner.json"
+  else
+    owner_file="$closeout_claim_dir/owner.json"
+  fi
+  owner_pid="$(closeout_journal_field "$owner_file" pid)"
+  [[ "$owner_pid" == "$$" ]] || return 1
+  rm -rf "$closeout_claim_dir"
+  closeout_claim_dir=""
+  closeout_claim_mode=""
+  closeout_claim_operation=""
+  trap - EXIT
+}
+
+closeout_claim_on_exit() {
+  local exit_code=$?
+  trap - EXIT
+  closeout_claim_release || exit_code=1
+  exit "$exit_code"
+}
+
+# Recovery is explicit, never automatic. A mutating recover first proves the
+# recorded closeout owner is gone, then atomically owns a nested recovery lane.
+# A killed recovery lane may be reclaimed only by another explicit recover call
+# after its own recorded PID is also gone.
+closeout_claim_takeover_for_recovery() {
+  local operation="$1" claim recovery owner_pid
+  claim="$(closeout_claim_path "$operation")" || return 1
+  [[ -d "$claim" ]] || return 1
+  closeout_claim_owner_live "$claim/owner.json" && return 2
+  recovery="$claim/recovery.lock"
+  if [[ -d "$recovery" ]]; then
+    if closeout_claim_owner_live "$recovery/owner.json"; then
+      return 3
+    fi
+    rm -rf "$recovery"
+  fi
+  mkdir "$recovery" 2>/dev/null || return 3
+  closeout_claim_dir="$claim"
+  closeout_claim_mode="recovery"
+  closeout_claim_operation="$operation"
+  if ! closeout_claim_write_owner "$recovery/owner.json" "$operation"; then
+    rm -rf "$recovery"
+    closeout_claim_dir=""
+    closeout_claim_mode=""
+    closeout_claim_operation=""
+    return 1
+  fi
+  trap closeout_claim_recovery_on_exit EXIT
+}
+
+closeout_claim_cancel_recovery() {
+  local owner_file owner_pid
+  [[ "$closeout_claim_mode" == "recovery" && -n "$closeout_claim_dir" ]] || return 0
+  owner_file="$closeout_claim_dir/recovery.lock/owner.json"
+  owner_pid="$(closeout_journal_field "$owner_file" pid)"
+  if [[ "$owner_pid" == "$$" ]]; then
+    rm -rf "$closeout_claim_dir/recovery.lock"
+  fi
+  closeout_claim_dir=""
+  closeout_claim_mode=""
+  closeout_claim_operation=""
+  trap - EXIT
+}
+
+closeout_claim_recovery_on_exit() {
+  local exit_code=$?
+  trap - EXIT
+  closeout_claim_cancel_recovery || exit_code=1
+  exit "$exit_code"
+}
+
+closeout_claim_report() {
+  local operation="$1" label="$2" claim owner_pid journal_key owner_state="unknown"
+  claim="$(closeout_claim_path "$operation")" || return 1
+  [[ -d "$claim" ]] || return 1
+  owner_pid="$(closeout_journal_field "$claim/owner.json" pid)"
+  journal_key="$(closeout_journal_field "$claim/owner.json" journal_key)"
+  if closeout_claim_owner_live "$claim/owner.json"; then owner_state="live"; else owner_state="not_live"; fi
+  printf '%s ownership claim: %s\n' "$label" "$claim"
+  printf '%s owner pid: %s (%s)\n' "$label" "${owner_pid:-unknown}" "$owner_state"
+  printf '%s journal key: %s\n' "$label" "${journal_key:-none}"
+}
+
+# A process can die after the atomic owner claim but before `prepared` exists.
+# No closeout effect is possible in that window, so explicit `recover abort`
+# may remove only that orphan claim and any status-less journal directory.
+closeout_claim_abort_orphan() {
+  local operation="$1" claim journal_key journal_dir takeover_result=0
+  claim="$(closeout_claim_path "$operation")" || return 1
+  [[ -d "$claim" ]] || return 1
+  journal_key="$(closeout_journal_field "$claim/owner.json" journal_key)"
+  if [[ -n "$journal_key" ]]; then
+    journal_dir="$(closeout_journal_root)/$operation/$journal_key"
+    [[ ! -f "$journal_dir/status.json" ]] || return 4
+  fi
+  closeout_claim_takeover_for_recovery "$operation" || takeover_result=$?
+  [[ "$takeover_result" -eq 0 ]] || return "$takeover_result"
+  if [[ -n "${journal_dir:-}" && -d "$journal_dir" ]]; then
+    rm -rf "$journal_dir"
+  fi
+  closeout_claim_release
 }
 
 # temp file + fsync + atomic rename. Content arrives on stdin.
@@ -761,6 +930,7 @@ finish_transaction_abort() {
   closeout_journal_record "$closeout_journal_dir" aborted "" ""
   rm -rf "$finish_transaction_dir"
   finish_transaction_dir=""
+  closeout_claim_release
   echo "contract-worktree: finish failed; restored live workflow artifacts and the pre-finish branch" >&2
 }
 
@@ -773,6 +943,7 @@ finish_transaction_commit() {
   rm -rf "$finish_transaction_dir"
   finish_transaction_dir=""
   finish_transaction_original_head=""
+  closeout_claim_release
 }
 
 finish_transaction_on_exit() {
@@ -829,7 +1000,7 @@ closeout_recover_select() {
 }
 
 recover_worktree() {
-  local action="${1:-}" key="" dir status last_phase head
+  local action="${1:-}" key="" dir status last_phase head claim claim_result=0
   shift || true
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -866,10 +1037,26 @@ recover_worktree() {
       closeout_journal_report "$dir" "[ContractWorktree]"
       reported=1
     done < <(closeout_journal_list "finish" "in_progress")
+    if closeout_claim_report "finish" "[ContractWorktree]"; then
+      reported=1
+    fi
     if [[ "$reported" -eq 0 ]]; then
       echo "[ContractWorktree] No unfinished closeout journal for this worktree."
     fi
     return 0
+  fi
+
+  if [[ "$action" == "abort" && -z "$key" ]]; then
+    claim="$(closeout_claim_path "finish")" || return 1
+    if [[ -d "$claim" && -z "$(closeout_journal_list "finish" "in_progress" | head -1)" ]]; then
+      closeout_claim_abort_orphan "finish" || claim_result=$?
+      case "$claim_result" in
+        0) echo "[ContractWorktree] Aborted orphan closeout ownership claim before journal preparation: $claim"; return 0 ;;
+        2) echo "contract-worktree: closeout is still owned by a live process" >&2; return 1 ;;
+        3) echo "contract-worktree: another recovery already owns this closeout" >&2; return 1 ;;
+        *) echo "contract-worktree: ownership claim is not an abortable pre-journal orphan" >&2; return 1 ;;
+      esac
+    fi
   fi
 
   dir="$(closeout_recover_select "$key")" || return 1
@@ -892,6 +1079,14 @@ recover_worktree() {
         echo "contract-worktree: refusing abort of a $status closeout journal: $dir" >&2
         return 1
       }
+      claim_result=0
+      closeout_claim_takeover_for_recovery "finish" || claim_result=$?
+      case "$claim_result" in
+        0) ;;
+        2) echo "contract-worktree: closeout is still owned by a live process" >&2; return 1 ;;
+        3) echo "contract-worktree: another recovery already owns this closeout" >&2; return 1 ;;
+        *) echo "contract-worktree: closeout ownership claim is missing or unreadable" >&2; return 1 ;;
+      esac
       if closeout_finish_effect_landed "$dir"; then
         echo "contract-worktree: refusing abort after the merge landed; run 'recover reconcile' instead: $dir" >&2
         return 1
@@ -902,6 +1097,7 @@ recover_worktree() {
       }
       closeout_journal_record "$dir" aborted "" ""
       rm -rf "$dir/snapshot"
+      closeout_claim_release
       echo "[ContractWorktree] Aborted closeout transaction and restored the pre-closeout state: $dir"
       return 0
       ;;
@@ -910,6 +1106,14 @@ recover_worktree() {
         echo "contract-worktree: refusing reconcile of a $status closeout journal: $dir" >&2
         return 1
       }
+      claim_result=0
+      closeout_claim_takeover_for_recovery "finish" || claim_result=$?
+      case "$claim_result" in
+        0) ;;
+        2) echo "contract-worktree: closeout is still owned by a live process" >&2; return 1 ;;
+        3) echo "contract-worktree: another recovery already owns this closeout" >&2; return 1 ;;
+        *) echo "contract-worktree: closeout ownership claim is missing or unreadable" >&2; return 1 ;;
+      esac
       # Reconcile exists for an already-landed external effect. Without one the
       # correct recovery is a local rollback, so it refuses instead of guessing
       # -- and it never rolls anything back itself.
@@ -922,6 +1126,7 @@ recover_worktree() {
       closeout_journal_has_phase "$dir" merged || closeout_journal_record "$dir" in_progress merged "$head"
       closeout_journal_record "$dir" complete complete "$head"
       rm -rf "$dir/snapshot"
+      closeout_claim_release
       echo "[ContractWorktree] Reconciled closeout transaction; the merge was already applied: $dir"
       return 0
       ;;
@@ -1154,6 +1359,10 @@ finish_worktree() {
     echo "contract-worktree: run 'repo-harness run contract-worktree recover inspect', then 'recover abort' or 'recover reconcile'" >&2
     return 1
   fi
+  if ! closeout_claim_acquire "finish"; then
+    echo "contract-worktree: closeout already owned for this worktree and operation: $closeout_claim_conflict_dir" >&2
+    return 1
+  fi
 
   local current_branch slug active_plan contract_file review_file target_worktree artifact_stem
   local frozen_base_sha
@@ -1222,6 +1431,7 @@ finish_worktree() {
     "original_head=$closeout_original_head" \
     "target_branch=$target_branch" \
     "base_sha=$frozen_base_sha")"
+  closeout_claim_bind_journal "$closeout_key"
   closeout_journal_begin "finish" "$closeout_key" \
     "branch=$current_branch" \
     "plan=${active_plan:-}" \
@@ -1235,11 +1445,13 @@ finish_worktree() {
     0) ;;
     2)
       echo "[ContractWorktree] Closeout transaction already complete; replay is a no-op: $closeout_journal_dir"
+      closeout_claim_release
       return 0
       ;;
     3)
       echo "contract-worktree: an unfinished closeout journal blocks this finish: $closeout_journal_conflict_dir" >&2
       echo "contract-worktree: run 'repo-harness run contract-worktree recover inspect', then 'recover abort' or 'recover reconcile'" >&2
+      closeout_claim_release
       return 1
       ;;
     *)
