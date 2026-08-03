@@ -120,7 +120,9 @@ allowed_paths:
   - scripts/ship-worktrees.sh
   - assets/templates/helpers/
   - tests/
-  - plans/plan-20260803-1824-wp1-crash-durable-closeout-transaction.md
+  # plans/ directory scope (scaffold default restored): finish machinery moves
+  # the plan into plans/archive/ and back-fills the sprint backlog row.
+  - plans/
   - tasks/contracts/20260803-1824-wp1-crash-durable-closeout-transaction.contract.md
   - tasks/reviews/20260803-1824-wp1-crash-durable-closeout-transaction.review.md
   - tasks/notes/20260803-1824-wp1-crash-durable-closeout-transaction.notes.md
