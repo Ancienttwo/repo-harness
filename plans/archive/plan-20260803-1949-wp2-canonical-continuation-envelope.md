@@ -1,6 +1,6 @@
 # Plan: Sprint task: WP2 canonical continuation envelope
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260803-1949
 > **Slug**: wp2-canonical-continuation-envelope
 > **Planning Source**: repo-harness-sprint

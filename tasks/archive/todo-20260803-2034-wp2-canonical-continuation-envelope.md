@@ -1,7 +1,13 @@
+> **Archived**: 2026-08-03 20:34
+> **Related Plan**: plans/archive/plan-20260803-1949-wp2-canonical-continuation-envelope.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260803-2034
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-08-03 19:49
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

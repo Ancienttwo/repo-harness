@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-03 20:34
+> **Related Plan**: plans/archive/plan-20260803-1949-wp2-canonical-continuation-envelope.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260803-2034
+
 # Task Review: wp2-canonical-continuation-envelope
 
 > **Status**: Reviewed

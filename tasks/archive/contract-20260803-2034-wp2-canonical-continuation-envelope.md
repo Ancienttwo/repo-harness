@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-03 20:34
+> **Related Plan**: plans/archive/plan-20260803-1949-wp2-canonical-continuation-envelope.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260803-2034
+
 # Task Contract: wp2-canonical-continuation-envelope
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260803-1949-wp2-canonical-continuation-envelope.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
