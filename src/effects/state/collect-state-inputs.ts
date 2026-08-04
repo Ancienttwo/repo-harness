@@ -1,11 +1,62 @@
 import { createHash } from 'crypto';
 import { readFileSync, realpathSync, statSync } from 'fs';
-import { dirname, isAbsolute, posix, relative, resolve, sep, win32 } from 'path';
+import { basename, dirname, isAbsolute, posix, relative, resolve, sep, win32 } from 'path';
 import { stripWrappingQuotes } from '../../core/state/artifact-parsers';
 
 export interface CollectedStateInputs {
   readonly sourceHashes: Readonly<Record<string, string>>;
   readonly stateRevision: string;
+}
+
+function canonicalTarget(cwd: string, candidate: string): { root: string; target: string } | null {
+  if (
+    !candidate
+    || candidate.includes('\0')
+    || candidate.includes('\n')
+    || candidate.includes('\r')
+    || candidate.replaceAll('\\', '/').split('/').includes('..')
+    || (win32.isAbsolute(candidate) && !isAbsolute(candidate))
+  ) return null;
+
+  const root = realpathSync(resolve(cwd));
+  const lexicalTarget = isAbsolute(candidate) ? resolve(candidate) : resolve(root, candidate);
+  try {
+    return { root, target: realpathSync(lexicalTarget) };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return null;
+  }
+
+  const missingSegments: string[] = [];
+  let ancestor = lexicalTarget;
+  while (true) {
+    try {
+      const target = resolve(realpathSync(ancestor), ...missingSegments);
+      return { root, target };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return null;
+      const parent = dirname(ancestor);
+      if (parent === ancestor) return null;
+      missingSegments.unshift(basename(ancestor));
+      ancestor = parent;
+    }
+  }
+}
+
+function containedRelativePath(root: string, target: string): string | null {
+  const candidate = relative(root, target);
+  if (
+    !candidate
+    || candidate === '..'
+    || candidate.startsWith(`..${sep}`)
+    || isAbsolute(candidate)
+  ) return null;
+  return candidate.split(sep).join('/');
+}
+
+/** Canonical repo-relative target for edit authorization; null means fail closed. */
+export function canonicalRepoRelativePath(cwd: string, candidate: string): string | null {
+  const resolved = canonicalTarget(cwd, candidate);
+  return resolved ? containedRelativePath(resolved.root, resolved.target) : null;
 }
 
 export function repoPath(cwd: string, relPath: string): string {
@@ -27,36 +78,11 @@ export function repoPath(cwd: string, relPath: string): string {
     throw new Error(`unsafe state source path escapes repository: ${relPath}`);
   }
 
-  const canonicalRoot = realpathSync(resolve(cwd));
-  const lexicalTarget = resolve(canonicalRoot, relPath);
-  let canonicalTarget: string;
-  let targetExists = true;
-  try {
-    canonicalTarget = realpathSync(lexicalTarget);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    targetExists = false;
-    let existingAncestor = dirname(lexicalTarget);
-    while (true) {
-      try {
-        canonicalTarget = realpathSync(existingAncestor);
-        break;
-      } catch (ancestorError) {
-        if ((ancestorError as NodeJS.ErrnoException).code !== 'ENOENT') throw ancestorError;
-        existingAncestor = dirname(existingAncestor);
-      }
-    }
-  }
-  const canonicalRelative = relative(canonicalRoot, canonicalTarget);
-  if (
-    (targetExists && !canonicalRelative)
-    || canonicalRelative === '..'
-    || canonicalRelative.startsWith(`..${sep}`)
-    || isAbsolute(canonicalRelative)
-  ) {
+  const canonical = canonicalTarget(cwd, relPath);
+  if (!canonical || containedRelativePath(canonical.root, canonical.target) === null) {
     throw new Error(`unsafe state source path escapes repository: ${relPath}`);
   }
-  return targetExists ? canonicalTarget : lexicalTarget;
+  return canonical.target;
 }
 
 export function readText(cwd: string, relPath: string | null): string | null {

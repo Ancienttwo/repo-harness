@@ -6,6 +6,7 @@ import { spawnSync } from 'child_process';
 import { runMutationGuard, type MutationGuardCollector } from '../src/cli/hook/mutation-guard';
 import { createStateInputCollector } from '../src/effects/loop/state-input-collector';
 import { resolveEffectiveState } from '../src/effects/state/resolve-effective-state';
+import { buildReviewSubject } from '../src/effects/review/diff-fingerprint';
 import type { EffectiveState } from '../src/core/state/types';
 import type { WorkflowProfile } from '../src/core/workflow/profile';
 
@@ -283,6 +284,113 @@ describe('HRD-03 event-level cost proof: at most one Effective State resolution 
 });
 
 describe('HRD-03 guard-by-guard parity: previously-uncovered decision branches', () => {
+  test('checks_failed permits only contract-authorized repo repair paths', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-checks-repair-')));
+    const escapedRoot = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-escaped-target-')));
+    try {
+      initRepo(cwd);
+      writePolicy(cwd);
+      const plan = writeActivePlan(cwd, 'Executing');
+      const contract = 'tasks/contracts/20260720-0000-mutation-guard-fixture.contract.md';
+      const review = 'tasks/reviews/20260720-0000-mutation-guard-fixture.review.md';
+      mkdirSync(join(cwd, 'tasks/contracts'), { recursive: true });
+      mkdirSync(join(cwd, 'tasks/reviews'), { recursive: true });
+      writeFileSync(
+        join(cwd, contract),
+        ['# Contract', '', '> **Status**: Active', `> **Plan**: ${plan}`, '', '## Allowed Paths', '', '```yaml', 'allowed_paths:', `  - ${review}`, '```', ''].join('\n'),
+      );
+      git(cwd, ['add', '.']);
+      git(cwd, ['commit', '-m', 'active repair contract']);
+
+      const subject = buildReviewSubject(cwd, { targetRef: 'main' });
+      expect(subject.status).toBe('ok');
+      mkdirSync(join(cwd, '.ai/harness/checks'), { recursive: true });
+      writeFileSync(join(cwd, '.ai/harness/checks/latest.json'), `${JSON.stringify({
+        schema: 'repo-harness-run-trace.v1',
+        source: 'verify-sprint',
+        status: 'fail',
+        active_plan: plan,
+        review_subject_sha256: subject.review_subject_sha256,
+      }, null, 2)}\n`);
+
+      const failedState = resolveEffectiveState(cwd, Date.now(), {
+        targetPaths: [review],
+        operationKind: 'edit',
+        explicitOverride: 'standard',
+      });
+      expect(failedState.blockers).toEqual(['checks_failed']);
+      expect(failedState.allowed_paths).toEqual([review]);
+      expect(failedState.readiness?.ok).toBe(true);
+      if (failedState.readiness?.ok) {
+        expect(failedState.readiness.allowedToEdit).toEqual({ decision: 'allow' });
+        expect(failedState.readiness.allowedToStop.decision).toBe('block');
+        expect(failedState.readiness.readyToShip.decision).toBe('block');
+      }
+
+      const allowed = edit(cwd, review, { profile: 'standard' });
+      expect(allowed.exitCode, `${allowed.stdout}\n${allowed.stderr}`).toBe(0);
+      expect(allowed.stdout).not.toContain('[WorkflowProfileGuard]');
+
+      const outsideContract = edit(cwd, 'tasks/reviews/other.review.md', { profile: 'standard' });
+      expect(outsideContract.exitCode).toBe(2);
+
+      const outsideRepo = edit(cwd, join(tmpdir(), 'outside-repair.review.md'), { profile: 'standard' });
+      expect(outsideRepo.exitCode).toBe(2);
+
+      const traversal = edit(cwd, 'tasks/reviews/../../../outside.review.md', { profile: 'standard' });
+      expect(traversal.exitCode).toBe(2);
+      expect(traversal.stdout).toContain('[RepoScopeGuard]');
+
+      symlinkSync(escapedRoot, join(cwd, 'tasks/reviews/escape'));
+      const symlinkEscape = edit(cwd, 'tasks/reviews/escape/outside.review.md', { profile: 'standard' });
+      expect(symlinkEscape.exitCode).toBe(2);
+      expect(symlinkEscape.stdout).toContain('[RepoScopeGuard]');
+
+      const traversalPatch = [
+        '*** Begin Patch',
+        `*** Update File: ${review}`,
+        '@@',
+        '-old',
+        '+new',
+        '*** Add File: tasks/reviews/../../../outside.patch.md',
+        '+escape',
+        '*** End Patch',
+      ].join('\n');
+      const patchedTraversal = invoke(
+        cwd,
+        { tool_input: { command: traversalPatch } },
+        { profile: 'standard' },
+      );
+      expect(patchedTraversal.exitCode).toBe(2);
+
+      const symlinkPatch = [
+        '*** Begin Patch',
+        `*** Update File: ${review}`,
+        '@@',
+        '-old',
+        '+new',
+        '*** Add File: tasks/reviews/escape/outside.patch.md',
+        '+escape',
+        '*** End Patch',
+      ].join('\n');
+      const patchedSymlink = invoke(
+        cwd,
+        { tool_input: { command: symlinkPatch } },
+        { profile: 'standard' },
+      );
+      expect(patchedSymlink.exitCode).toBe(2);
+
+      const contractText = readFileSync(join(cwd, contract), 'utf-8');
+      writeFileSync(join(cwd, contract), contractText.replace(`> **Plan**: ${plan}`, '> **Plan**: plans/plan-conflict.md'));
+      const withAuthorityConflict = edit(cwd, review, { profile: 'standard' });
+      expect(withAuthorityConflict.exitCode).toBe(2);
+      expect(withAuthorityConflict.stdout).toContain('[WorkflowProfileGuard]');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      rmSync(escapedRoot, { recursive: true, force: true });
+    }
+  });
+
   test('ContractScopeGuard: an edit outside the active contract allowed_paths blocks', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-scope-')));
     try {

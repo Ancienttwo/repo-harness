@@ -74,6 +74,28 @@ export function parseAllowedPaths(contractText: string | null): string[] {
   return paths;
 }
 
+function globMatch(text: string, pattern: string): boolean {
+  let regexSource = '';
+  for (const ch of pattern) {
+    if (ch === '*') regexSource += '.*';
+    else if (ch === '?') regexSource += '.';
+    else regexSource += ch.replace(/[.*+^${}()|[\]\\]/g, '\\$&');
+  }
+  return new RegExp(`^${regexSource}$`).test(text);
+}
+
+/** Pure contract-scope decision over canonical repo-relative paths. */
+export function contractAllowsPath(
+  contractPath: string,
+  allowedPaths: readonly string[],
+  targetPath: string,
+): boolean {
+  if (targetPath === contractPath) return true;
+  return allowedPaths.some((pattern) => (
+    pattern.endsWith('/') ? targetPath.startsWith(pattern) : globMatch(targetPath, pattern)
+  ));
+}
+
 export function firstOpenTask(planText: string | null): string | null {
   if (!planText) return null;
   const match = planText.match(/^\s*- \[ \]\s+(.+?)\s*$/m);

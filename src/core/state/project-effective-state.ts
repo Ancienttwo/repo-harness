@@ -9,6 +9,7 @@ import {
 } from '../workflow/artifact-requirement-policy';
 import { evaluateReadiness, type EvaluateReadinessResult } from '../workflow/operation-readiness';
 import {
+  contractAllowsPath,
   firstOpenTask,
   markdownBullet,
   markdownHeader,
@@ -42,6 +43,8 @@ export interface EffectiveStateInputs {
   readonly planText: string | null;
   readonly contractPath: string | null;
   readonly contractText: string | null;
+  readonly editTargetPaths: readonly string[];
+  readonly unsafeEditTargetPathCount: number;
   readonly riskResolution: WorkflowProfileResult;
   readonly contractOverride: string | null;
   readonly capabilityReasons: readonly string[];
@@ -94,6 +97,15 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
   const staleSources = [...input.staleSources];
   const conflictingSources = [...input.conflictingSources];
   const allowedPaths = parseAllowedPaths(input.contractText);
+  const checksFailedRepairAuthorized = Boolean(
+    input.contractPath
+      && input.contractText
+      && input.editTargetPaths.length > 0
+      && input.unsafeEditTargetPathCount === 0
+      && input.editTargetPaths.every((targetPath) => (
+        contractAllowsPath(input.contractPath!, allowedPaths, targetPath)
+      )),
+  );
 
   const recommendation = input.reviewText
     ? markdownHeader(input.reviewText, 'Recommendation')
@@ -332,7 +344,11 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
             stop: resolveArtifactRequirement({ profile: workflowProfile, operation: 'stop' }),
             ship: resolveArtifactRequirement({ profile: workflowProfile, operation: 'ship' }),
           },
-          evidence: { satisfiedRequirements, hardBlockers: blockers },
+          evidence: {
+            satisfiedRequirements,
+            hardBlockers: blockers,
+            checksFailedRepairAuthorized,
+          },
         });
       })()
     : null;

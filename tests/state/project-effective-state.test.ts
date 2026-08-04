@@ -35,6 +35,8 @@ function input(overrides: Partial<EffectiveStateInputs> = {}): EffectiveStateInp
       '  - src/',
       '```',
     ].join('\n'),
+    editTargetPaths: [],
+    unsafeEditTargetPathCount: 0,
     riskResolution: {
       ok: true,
       profile: 'standard',

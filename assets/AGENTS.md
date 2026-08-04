@@ -31,27 +31,27 @@ Owns the workflow-engine-contract-assets capability boundary declared in .ai/con
 <!-- BEGIN ARCHITECTURE CONTRACT -->
 ## Architecture Contract
 
-- Functional block: `.ai/harness/policy.json`
+- Functional block: `assets/templates`
 - Capability ID: `workflow-engine-contract-assets`
-- Matched prefix: `.ai/harness/policy.json`
+- Matched prefix: `assets/templates`
 - Architecture domain: `workflow-engine`
 - Architecture capability: `contract-assets`
 - Architecture module: `docs/architecture/modules/workflow-engine/contract-assets.md`
-- Last architecture event: 2026-07-30T20:51:16+0800
-- Last changed path: `.ai/harness/policy.json`
-- Severity: high
-- Change type: workflow-surface
+- Last architecture event: 2026-08-05T00:46:13+0800
+- Last changed path: `tasks/workstreams/workflow-engine/contract-assets/github-issues-158-159.md`
+- Severity: medium
+- Change type: workstream-sync
 - Module responsibility: Keep this block aligned with the local boundary described by surrounding human-owned context.
-- Entrypoints: `.ai/harness/policy.json`
+- Entrypoints: `assets/templates`
 - Allowed dependencies: Follow root `AGENTS.md` / `CLAUDE.md` and this local contract.
 - Forbidden dependencies: Do not cross sibling app/service/package boundaries without an architecture snapshot or explicit plan.
-- Runtime path: `.ai/harness/policy.json`
+- Runtime path: `assets/templates`
 - LSP/tooling profile: `typescript-lsp`
 - Verification: Use root required checks plus local commands recorded in this capability contract.
 - Latest snapshot: `(none yet)`
 - Semantic diagram source: `docs/architecture/modules/workflow-engine/contract-assets.md`
 - Latest human diagram: `(none yet)`
-- Pending architecture request: `docs/architecture/requests/workflow-engine-contract-assets.md`
+- Pending architecture request: `(none)`
 
 ## Active Workstreams
 
@@ -71,6 +71,10 @@ Owns the workflow-engine-contract-assets capability boundary declared in .ai/con
   - status: completed
   - current_slice: completed-20260529-cleanup-script-policy
   - source_plan: (none)
+- `tasks/workstreams/workflow-engine/contract-assets/github-issues-158-159.md`
+  - status: completed
+  - current_slice: completed-20260805-packaged-helper-projection
+  - source_plan: plans/plan-20260805-0001-github-issues-158-159.md
 
 ## Current Session Projection
 

@@ -79,6 +79,12 @@ At 10x generated repos, the first failure would be self-host behavior diverging
 from generated output. The smallest coherent guard is parity tests plus
 self-migration dry-run.
 
+The packaged `verify-sprint.sh` projection and its source copy stay
+byte-identical. They resolve the authoritative evidence emitter from the
+published package's `scripts/` directory rather than duplicating the emitter
+under `assets/templates/helpers/`; package layout is therefore a deterministic
+projection of one authority, not a second implementation surface.
+
 The install profile remains one datum with one authored authority: `profile`.
 `components` is a deterministic drift-checked projection, while ownership is a
 separate concrete filesystem proof. This prevents contract/runtime updates from
@@ -326,3 +332,5 @@ authority.
 - `tasks/workstreams/workflow-engine/contract-assets/agent-fleet-specialists.md`
 
 - `tasks/workstreams/workflow-engine/contract-assets/20260714-merge-gate-enforcement.md`
+
+- `tasks/workstreams/workflow-engine/contract-assets/github-issues-158-159.md`

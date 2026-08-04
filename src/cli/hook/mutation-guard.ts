@@ -18,19 +18,20 @@
  */
 
 import { execFileSync } from 'child_process';
-import { appendFileSync, mkdirSync, realpathSync } from 'fs';
-import { basename, dirname, isAbsolute, join, posix, win32 } from 'path';
+import { appendFileSync, mkdirSync } from 'fs';
+import { basename, dirname, join, posix, win32 } from 'path';
 import type { EffectiveState } from '../../core/state/types';
 import type { WorkflowProfile } from '../../core/workflow/profile';
 import { recordCircuitAttempt, type CircuitAttempt } from './circuit-breaker';
 import { isWorkflowSurfacePath } from '../../effects/review/diff-fingerprint';
-import { fileExists, readText } from '../../effects/state/collect-state-inputs';
+import {
+  canonicalRepoRelativePath,
+  fileExists,
+  readText,
+} from '../../effects/state/collect-state-inputs';
 import type { WorktreeOwnership } from '../../effects/loop/state-input-collector';
 import {
-  artifactStemFromPlan,
-  markdownHeader,
-  parseAllowedPaths,
-  planSlugFromPath,
+  contractAllowsPath,
 } from '../../core/state/artifact-parsers';
 
 // ---------------------------------------------------------------------------
@@ -295,6 +296,18 @@ function runPerPathGuards(
   allTargetPaths: readonly string[],
   writePayload: string,
 ): void {
+  if (isRepoScopedPath(filePath) && canonicalRepoRelativePath(ctx.repoRoot, filePath) !== filePath) {
+    out(ctx, `[RepoScopeGuard] Unsafe or out-of-repository target: ${filePath}`);
+    structuredError(
+      ctx,
+      'RepoScopeGuard',
+      `${filePath} is not a canonical path contained by the current repository.`,
+      'Use a canonical repository-relative path without traversal or symlink escape.',
+      'state_violation',
+    );
+    exit(2);
+  }
+
   if (filePath.startsWith('_ref/')) {
     out(ctx, `[ExternalReferenceGuard] ${filePath} is under _ref/.`);
     structuredError(
@@ -347,6 +360,16 @@ function runPerPathGuards(
     exit(2);
   }
   ctx.resolvedProfileHint = effective?.workflow_profile ?? ctx.resolvedProfileHint;
+
+  // Effective State owns both the contract snapshot and the operation-
+  // readiness decision. The guard consumes those resolved values without a
+  // second filesystem read that could disagree under concurrent edits.
+  const activeContract = effective?.contract?.path ?? null;
+  const contractAuthorizesTarget = Boolean(
+    activeContract
+      && effective
+      && contractAllowsPath(activeContract, effective.allowed_paths, filePath),
+  );
   const workflowProfile = workflowProfileOrNull(effective);
   if (!workflowProfile) {
     out(ctx, `[WorkflowProfileGuard] Unable to resolve a deterministic workflow profile for ${filePath}`);
@@ -361,9 +384,8 @@ function runPerPathGuards(
   }
 
   // ---- contract_scope: active contract + allowed-paths gate --------------
-  const activeContract = getActiveContractPath(ctx);
-  if (isRepoScopedPath(filePath) && activeContract && fileExists(ctx.repoRoot, activeContract)) {
-    if (!contractAllowsPath(ctx.repoRoot, activeContract, filePath)) {
+  if (isRepoScopedPath(filePath) && activeContract) {
+    if (!contractAuthorizesTarget) {
       out(ctx, `[ContractScopeGuard] ${filePath} is outside the active sprint contract: ${activeContract}`);
       structuredError(
         ctx,
@@ -482,7 +504,12 @@ function workflowProfileOrNull(effective: EffectiveState | null): WorkflowProfil
   // A blocked resolution's field value is not trustworthy: callers must key
   // off blockers, not a possibly-still-populated value (mirrors state.ts's
   // `--field` projection, which suppresses stdout whenever blockers exist).
-  if (effective.blockers.length > 0) return null;
+  // Effective State's shared readiness projection owns the sole repair
+  // exception; the hook never re-derives contract or blocker semantics.
+  if (effective.blockers.length > 0) {
+    const readiness = effective.readiness;
+    if (!readiness?.ok || readiness.allowedToEdit.decision !== 'allow') return null;
+  }
   const profile = effective.workflow_profile;
   return profile === 'lite' || profile === 'standard' || profile === 'strict' ? profile : null;
 }
@@ -668,51 +695,6 @@ function getActivePlan(ctx: Ctx): string | null {
   return fileExists(ctx.repoRoot, marker) ? marker : null;
 }
 
-/** workflow_active_contract() / derive_contract_path(): explicit declared path, else stem/legacy-slug fallback. */
-function getActiveContractPath(ctx: Ctx): string | null {
-  const activePlan = getActivePlan(ctx);
-  if (!activePlan) return null;
-  const planText = readText(ctx.repoRoot, activePlan);
-
-  const explicit = (planText && (
-    markdownHeader(planText, 'Task Contract') ?? markdownHeader(planText, 'Sprint Contract')
-  )) || null;
-  if (explicit) return explicit;
-
-  const stem = artifactStemFromPlan(activePlan, planText);
-  const slug = planSlugFromPath(activePlan);
-  if (!stem || !slug) return null;
-
-  const preferred = `tasks/contracts/${stem}.contract.md`;
-  const legacy = `tasks/contracts/${slug}.contract.md`;
-  return (fileExists(ctx.repoRoot, preferred) || !fileExists(ctx.repoRoot, legacy)) ? preferred : legacy;
-}
-
-/** workflow_contract_allows_path(): allowed_paths entries are exact matches, glob patterns, or trailing-slash prefixes. */
-function contractAllowsPath(repoRoot: string, contractFile: string, filePath: string): boolean {
-  if (filePath === contractFile) return true;
-  const contractText = readText(repoRoot, contractFile);
-  if (!contractText) return false;
-  for (const pattern of parseAllowedPaths(contractText)) {
-    if (pattern.endsWith('/')) {
-      if (filePath.startsWith(pattern)) return true;
-    } else if (globMatch(filePath, pattern)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function globMatch(text: string, pattern: string): boolean {
-  let regexSource = '';
-  for (const ch of pattern) {
-    if (ch === '*') regexSource += '.*';
-    else if (ch === '?') regexSource += '.';
-    else regexSource += ch.replace(/[.*+^${}()|[\]\\]/g, '\\$&');
-  }
-  return new RegExp(`^${regexSource}$`).test(text);
-}
-
 /** workflow_is_linked_worktree(): git's own worktree structure, independent of the repo-harness active-worktree marker. */
 function isLinkedWorktree(repoRoot: string): boolean {
   return resolveGitDir(repoRoot).includes('.git/worktrees/');
@@ -822,77 +804,8 @@ function isAbsolutePathInAnyGrammar(filePath: string): boolean {
     || /^[A-Za-z]:/.test(filePath);
 }
 
-function normalizePathSeparators(filePath: string): string {
-  const normalized = filePath.replaceAll('\\', '/');
-  if (normalized === '/' || /^[A-Za-z]:\/$/.test(normalized)) return normalized;
-  return normalized.replace(/\/+$/, '');
-}
-
-function pathComparisonKey(filePath: string): string {
-  return /^[A-Za-z]:\//.test(filePath) || filePath.startsWith('//')
-    ? filePath.toLowerCase()
-    : filePath;
-}
-
-function stripRepoPrefix(repoRoot: string, candidate: string): string | null {
-  const normalizedRoot = normalizePathSeparators(repoRoot);
-  const normalizedCandidate = normalizePathSeparators(candidate);
-  const rootKey = pathComparisonKey(normalizedRoot);
-  const candidateKey = pathComparisonKey(normalizedCandidate);
-  if (candidateKey === rootKey) return '';
-  if (!candidateKey.startsWith(`${rootKey}/`)) return null;
-  return normalizedCandidate.slice(normalizedRoot.length + 1);
-}
-
-/**
- * `hook_normalize_file_path()` port. The plain prefix strip above handles
- * the common case; these two fallbacks (gate round-1 parity closure) port
- * bash's symlink-canonicalization tiers verbatim (`git show
- * c6504231:assets/hooks/hook-input.sh` lines 174-220) for hosts where
- * `repoRoot` and the reported absolute path disagree on a symlinked
- * ancestor's spelling even though they name the same directory -- the
- * canonical example being macOS temp dirs, where `/var/...` is itself a
- * symlink to `/private/var/...`.
- */
 function normalizeFilePath(repoRoot: string, raw: string): string {
-  if (!raw || !isAbsolutePathInAnyGrammar(raw)) return raw;
-  const direct = stripRepoPrefix(repoRoot, raw);
-  if (direct !== null) return direct;
-
-  // A path expressed in another platform's grammar is still absolute and
-  // outside this repo, but native realpath/dirname must not reinterpret it as
-  // a relative local path (for example C:\\... on a POSIX host).
-  if (!isAbsolute(raw)) return raw;
-
-  const repoReal = tryRealpath(repoRoot);
-  if (repoReal) {
-    const canonical = stripRepoPrefix(repoReal, raw);
-    if (canonical !== null) return canonical;
-  }
-
-  // Last resort: resolve the raw path's own parent directory (the file
-  // itself may not exist yet on a PreToolUse event) and retry against both
-  // roots.
-  const rawParentReal = tryRealpath(dirname(raw));
-  if (rawParentReal) {
-    const rawReal = join(rawParentReal, basename(raw));
-    if (repoReal) {
-      const canonical = stripRepoPrefix(repoReal, rawReal);
-      if (canonical !== null) return canonical;
-    }
-    const lexical = stripRepoPrefix(repoRoot, rawReal);
-    if (lexical !== null) return lexical;
-  }
-
-  return raw;
-}
-
-function tryRealpath(path: string): string | null {
-  try {
-    return realpathSync(path);
-  } catch {
-    return null;
-  }
+  return canonicalRepoRelativePath(repoRoot, raw) ?? raw;
 }
 
 // ---------------------------------------------------------------------------

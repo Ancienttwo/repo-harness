@@ -37,6 +37,7 @@ import {
 } from './state-cache';
 import { withStateLock } from './state-lock';
 import {
+  canonicalRepoRelativePath,
   collectStateInputs,
   contentRevision,
   fileExists,
@@ -400,6 +401,11 @@ function resolveEffectiveStateUnlocked(
   );
   const reviewSubject = buildReviewSubject(cwd, { targetRef: targetBranch });
   const explicitTargetPaths = options.risk?.targetPaths ?? [];
+  const canonicalEditTargetPaths = options.risk?.operationKind === 'edit'
+    ? explicitTargetPaths.map((targetPath) => canonicalRepoRelativePath(cwd, targetPath))
+    : [];
+  const editTargetPaths = canonicalEditTargetPaths.filter((targetPath): targetPath is string => targetPath !== null);
+  const unsafeEditTargetPathCount = canonicalEditTargetPaths.length - editTargetPaths.length;
   const implementationDiffPaths = reviewSubject.status === 'ok' ? reviewSubject.paths : [];
   const rawTargetPaths = Array.from(new Set([...explicitTargetPaths, ...implementationDiffPaths])).sort();
   const hasRawTargetPaths = rawTargetPaths.length > 0;
@@ -558,6 +564,8 @@ function resolveEffectiveStateUnlocked(
     planText,
     contractPath,
     contractText,
+    editTargetPaths,
+    unsafeEditTargetPathCount,
     riskResolution,
     contractOverride,
     capabilityReasons,

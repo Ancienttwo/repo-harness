@@ -71,46 +71,38 @@ bun src/cli/index.ts init --repo . --dry-run
 <!-- BEGIN ARCHITECTURE CONTRACT -->
 ## Architecture Contract
 
-- Functional block: `scripts/inspect-project-state.ts`
-- Capability ID: `workflow-engine-inspection-migration`
-- Matched prefix: `scripts/inspect-project-state.ts`
-- Architecture domain: `workflow-engine`
-- Architecture capability: `inspection-migration`
-- Architecture module: `docs/architecture/modules/workflow-engine/inspection-migration.md`
-- Last architecture event: 2026-07-03T14:07:48+0800
-- Last changed path: `scripts/inspect-project-state.ts`
-- Severity: high
-- Change type: workflow-surface
+- Functional block: `scripts/verify-sprint.sh`
+- Capability ID: `verification-evals-checks`
+- Matched prefix: `scripts/verify-sprint.sh`
+- Architecture domain: `verification`
+- Architecture capability: `evals-checks`
+- Architecture module: `docs/architecture/modules/verification/evals-checks.md`
+- Last architecture event: 2026-08-05T00:46:11+0800
+- Last changed path: `tasks/workstreams/verification/evals-checks/github-issues-158-159.md`
+- Severity: medium
+- Change type: workstream-sync
 - Module responsibility: Keep this block aligned with the local boundary described by surrounding human-owned context.
-- Entrypoints: `scripts/inspect-project-state.ts`
+- Entrypoints: `scripts/verify-sprint.sh`
 - Allowed dependencies: Follow root `AGENTS.md` / `CLAUDE.md` and this local contract.
 - Forbidden dependencies: Do not cross sibling app/service/package boundaries without an architecture snapshot or explicit plan.
-- Runtime path: `scripts/inspect-project-state.ts`
+- Runtime path: `scripts/verify-sprint.sh`
 - LSP/tooling profile: `typescript-lsp`
 - Verification: Use root required checks plus local commands recorded in this capability contract.
 - Latest snapshot: `(none yet)`
-- Semantic diagram source: `docs/architecture/modules/workflow-engine/inspection-migration.md`
+- Semantic diagram source: `docs/architecture/modules/verification/evals-checks.md`
 - Latest human diagram: `(none yet)`
 - Pending architecture request: `(none)`
 
 ## Active Workstreams
 
-- `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`
+- `tasks/workstreams/verification/evals-checks/github-issues-158-159.md`
   - status: completed
-  - current_slice: completed-20260703-architecture-closeout
-  - source_plan: (none)
-- `tasks/workstreams/workflow-engine/inspection-migration/20260712-inspection-migration.md`
-  - status: completed
-  - current_slice: completed-20260712-repo-owned-agent-fleet
-  - source_plan: `plans/archive/plan-20260712-2053-repo-owned-agent-fleet.md`
-- `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`
-  - status: completed
-  - current_slice: completed-20260713-policy-seed
-  - source_plan: `plans/archive/plan-20260712-2215-agent-fleet-specialists.md`
+  - current_slice: completed-20260805-deployed-emitter-binding
+  - source_plan: plans/plan-20260805-0001-github-issues-158-159.md
 
 ## Current Session Projection
 
-- Durable progress lives under `tasks/workstreams/workflow-engine/inspection-migration`.
+- Durable progress lives under `tasks/workstreams/verification/evals-checks`.
 - `tasks/current.md` is the tracked derived status snapshot; it is not a live lock or task source.
 - `tasks/todos.md` is the deferred-goal ledger; current execution slices stay in the active plan's `## Task Breakdown`.
 <!-- END ARCHITECTURE CONTRACT -->
