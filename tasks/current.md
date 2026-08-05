@@ -1,25 +1,25 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-05T00:51:14+0800 -->
+<!-- updated_at: 2026-08-05T11:09:48+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Active
-> **Updated At**: 2026-08-05T00:51:14+0800
+> **Status**: Idle
+> **Updated At**: 2026-08-05T11:09:48+0800
 > **Source Branch**: codex/github-issues-158-159
-> **Source Commit**: d74e1775
+> **Source Commit**: b1bb8528
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: github-issues-158-159-verified
+> **Reason**: archive-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Active
-- Active Plan: plans/plan-20260805-0001-github-issues-158-159.md
-- Plan Status: Executing
+- Status: Idle
+- Active Plan: (none)
+- Plan Status: (none)
 - Next Task: (none)
 - Clear Note: (none)
 
@@ -31,8 +31,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- .: plans/plan-20260805-0001-github-issues-158-159.md
-- .: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-github-issues-158-159
+- (none)
 ## Active Sprint
 
 - Sprint: (none)
@@ -52,47 +51,23 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 34 changed/untracked path(s)
+- Summary: 10 changed/untracked path(s)
 
 ```
- M .ai/hooks/.projection.json
- M .ai/hooks/AGENTS.md
- M .ai/hooks/CLAUDE.md
- M AGENTS.md
- M CLAUDE.md
- M assets/AGENTS.md
- M assets/CLAUDE.md
- M assets/hooks/AGENTS.md
- M assets/hooks/CLAUDE.md
- M assets/templates/helpers/verify-sprint.sh
- M docs/architecture/modules/runtime-harness/hook-adapters.md
- M docs/architecture/modules/verification/evals-checks.md
- M docs/architecture/modules/workflow-engine/contract-assets.md
- M scripts/verify-sprint.sh
- M src/cli/hook/mutation-guard.ts
- M src/core/state/artifact-parsers.ts
- M src/core/state/project-effective-state.ts
- M src/core/workflow/operation-readiness.ts
- M src/effects/state/collect-state-inputs.ts
- M src/effects/state/resolve-effective-state.ts
+ D plans/plan-20260805-0001-github-issues-158-159.md
+ D tasks/contracts/20260805-0001-github-issues-158-159.contract.md
+ D tasks/notes/20260805-0001-github-issues-158-159.notes.md
+ D tasks/reviews/20260805-0001-github-issues-158-159.review.md
  M tasks/todos.md
- M tests/helper-scripts.test.ts
- M tests/mutation-guard.test.ts
- M tests/state/loop-semantics-characterization.test.ts
- M tests/state/operation-readiness.test.ts
- M tests/state/project-effective-state.test.ts
-?? docs/architecture/requests/archive/2026/20260805-001621-runtime-harness-hook-adapters.md
-?? plans/plan-20260805-0001-github-issues-158-159.md
-?? tasks/contracts/20260805-0001-github-issues-158-159.contract.md
-?? tasks/notes/20260805-0001-github-issues-158-159.notes.md
-?? tasks/reviews/20260805-0001-github-issues-158-159.review.md
-?? tasks/workstreams/runtime-harness/
-?? tasks/workstreams/verification/
-?? tasks/workstreams/workflow-engine/contract-assets/github-issues-158-159.md
+?? plans/archive/plan-20260805-0001-github-issues-158-159.md
+?? tasks/archive/contract-20260805-1109-github-issues-158-159.md
+?? tasks/archive/notes-20260805-1109-github-issues-158-159.md
+?? tasks/archive/review-20260805-1109-github-issues-158-159.md
+?? tasks/archive/todo-20260805-1109-github-issues-158-159.md
 ```
 
 ## Source Artifacts

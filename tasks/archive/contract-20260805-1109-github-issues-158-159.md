@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-05 11:09
+> **Related Plan**: plans/archive/plan-20260805-0001-github-issues-158-159.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260805-1109
+
 # Task Contract: github-issues-158-159
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260805-0001-github-issues-158-159.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
