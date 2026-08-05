@@ -1,7 +1,13 @@
+> **Archived**: 2026-08-05 20:10
+> **Related Plan**: plans/archive/plan-20260805-1950-verify-budget-1200s.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260805-2010
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-08-05 19:50
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

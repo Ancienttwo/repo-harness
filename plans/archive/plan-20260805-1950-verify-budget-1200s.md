@@ -1,6 +1,6 @@
 # Plan: Raise whole-round verification budget to fit grown test suite
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260805-1950
 > **Slug**: verify-budget-1200s
 > **Planning Source**: repo-harness-plan
