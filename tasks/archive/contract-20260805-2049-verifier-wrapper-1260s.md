@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-05 20:49
+> **Related Plan**: plans/archive/plan-20260805-2041-verifier-wrapper-1260s.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260805-2049
+
 # Task Contract: verifier-wrapper-1260s
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260805-2041-verifier-wrapper-1260s.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->

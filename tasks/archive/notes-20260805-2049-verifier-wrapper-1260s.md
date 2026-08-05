@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-05 20:49
+> **Related Plan**: plans/archive/plan-20260805-2041-verifier-wrapper-1260s.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260805-2049
+
 # Implementation Notes: verifier-wrapper-1260s
 
 > **Status**: Active

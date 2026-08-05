@@ -1,6 +1,6 @@
 # Plan: Raise verifier helper wrapper timeout above the whole-round budget
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260805-2041
 > **Slug**: verifier-wrapper-1260s
 > **Planning Source**: repo-harness-plan

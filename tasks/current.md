@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-05T20:10:50+0800 -->
+<!-- updated_at: 2026-08-05T20:49:54+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-05T20:10:50+0800
-> **Source Branch**: codex/verify-budget-1200s
-> **Source Commit**: 24e980c4
+> **Updated At**: 2026-08-05T20:49:54+0800
+> **Source Branch**: codex/verifier-wrapper-1260s
+> **Source Commit**: ef1b399e
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -59,16 +59,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260805-1950-verify-budget-1200s.md
- D tasks/contracts/20260805-1950-verify-budget-1200s.contract.md
- D tasks/notes/20260805-1950-verify-budget-1200s.notes.md
- D tasks/reviews/20260805-1950-verify-budget-1200s.review.md
+ D plans/plan-20260805-2041-verifier-wrapper-1260s.md
+ D tasks/contracts/20260805-2041-verifier-wrapper-1260s.contract.md
+ D tasks/notes/20260805-2041-verifier-wrapper-1260s.notes.md
+ D tasks/reviews/20260805-2041-verifier-wrapper-1260s.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260805-1950-verify-budget-1200s.md
-?? tasks/archive/contract-20260805-2010-verify-budget-1200s.md
-?? tasks/archive/notes-20260805-2010-verify-budget-1200s.md
-?? tasks/archive/review-20260805-2010-verify-budget-1200s.md
-?? tasks/archive/todo-20260805-2010-verify-budget-1200s.md
+?? plans/archive/plan-20260805-2041-verifier-wrapper-1260s.md
+?? tasks/archive/contract-20260805-2049-verifier-wrapper-1260s.md
+?? tasks/archive/notes-20260805-2049-verifier-wrapper-1260s.md
+?? tasks/archive/review-20260805-2049-verifier-wrapper-1260s.md
+?? tasks/archive/todo-20260805-2049-verifier-wrapper-1260s.md
 ```
 
 ## Source Artifacts
