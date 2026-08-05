@@ -120,7 +120,7 @@ describe('verifier evidence lifecycle cutover', () => {
 
   test('strict verifier has a fixed budget and records timing evidence', () => {
     const source = readFileSync(join(ROOT, 'scripts/verify-contract.sh'), 'utf-8');
-    expect(source).toContain('VERIFICATION_BUDGET_MS=600000');
+    expect(source).toContain('VERIFICATION_BUDGET_MS=1200000');
     expect(source).not.toContain('REPO_HARNESS_VERIFICATION_BUDGET');
     expect(source).toContain('"budget_ms"');
     expect(source).toContain('"total_duration_ms"');
