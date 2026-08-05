@@ -1106,8 +1106,17 @@ function toolingUpdateSyncPopulateAndRender(
 /** `evt-` lock's own crashed-holder threshold (`workflow_with_lock`'s 60s) reused for the tooling-advisory lock -- see `acquireToolingAdvisoryLock`'s doc comment for why this exists even though bash's own async branch had no such handling. */
 const TOOLING_ADVISORY_LOCK_STALE_SECONDS = 60;
 
-/** Marks a `bun session-context.ts <flag> <repoRoot> <target> <reportFile> <lockDir>` standalone invocation -- see the `import.meta.main` bootstrap at the bottom of this file. */
-const DETACHED_TOOLING_POPULATE_FLAG = '--detached-tooling-populate';
+/**
+ * Marks a `<entrypoint> <flag> <repoRoot> <target> <reportFile> <lockDir>`
+ * standalone invocation. Two dispatch surfaces receive it and both delegate to
+ * the single `runDetachedToolingPopulate` authority below: the `import.meta.main`
+ * bootstrap at the bottom of this file (unbundled -- `import.meta.url` in
+ * `triggerDetachedToolingPopulate` resolves to this module), and the branch in
+ * `src/cli/hook-entry.ts` (bundled -- `bun build` folds this file's
+ * `import.meta.main` to `false` and eliminates the bootstrap, while
+ * `import.meta.url` resolves to the bundle).
+ */
+export const DETACHED_TOOLING_POPULATE_FLAG = '--detached-tooling-populate';
 
 /**
  * Gatekeeper MEDIUM (adjudicated fix): restores the cross-session TTL

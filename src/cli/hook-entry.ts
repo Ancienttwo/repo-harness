@@ -9,6 +9,7 @@
 
 import { runHook as runHookRuntime, type RunHookOptions, type RunHookResult } from './hook/runtime';
 import type { HookEvent, RouteId } from './hook/route-registry';
+import { DETACHED_TOOLING_POPULATE_FLAG, runDetachedToolingPopulate } from './hook/session-context';
 import { writeAllSync } from './runtime/write-all-sync';
 
 export type RunHookEntryOptions = RunHookOptions;
@@ -98,6 +99,17 @@ if (import.meta.main) {
     if (result.stdout) writeAllSync(1, result.stdout);
     if (result.stderr) writeAllSync(2, result.stderr);
     process.exit(result.exitCode);
+  }
+
+  // Bundled dispatch surface for the detached tooling populate. The unbundled
+  // receiver is session-context.ts's own `import.meta.main` bootstrap; `bun
+  // build` folds that to `false` and eliminates it, and redirects
+  // `triggerDetachedToolingPopulate`'s `import.meta.url` respawn at this
+  // bundle. Same argv shape, same exported function, no second authority.
+  if (argv[0] === DETACHED_TOOLING_POPULATE_FLAG) {
+    const [, repoRootArg, targetArg, reportFileArg, lockDirArg] = argv;
+    runDetachedToolingPopulate(repoRootArg, process.env, targetArg, reportFileArg, lockDirArg);
+    process.exit(0);
   }
 
   const parsed = parseCliArgs(argv);

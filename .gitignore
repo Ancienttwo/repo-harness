@@ -4,6 +4,9 @@ node_modules/
 # Test coverage
 coverage/
 
+# Prepack-built single-file hook bundle (projection of src/cli/hook-entry.ts)
+dist/
+
 # Bun
 bun.lockb
 

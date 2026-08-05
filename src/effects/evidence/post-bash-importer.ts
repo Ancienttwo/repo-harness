@@ -178,8 +178,24 @@ function resolveReviewBaseRef(repoRoot: string): string {
   }
 }
 
+/**
+ * Build-time version literal. `bun build --define` (see package.json's
+ * `prepack`) substitutes this identifier in the single-file hook bundle,
+ * where `PACKAGE_ROOT`'s `import.meta.url` depth no longer holds. Undeclared
+ * -- hence `typeof`-guarded -- in every unbundled run, which keeps reading
+ * package.json below. The prepack build asserts the substitution landed, so a
+ * bundle without it is a build failure, not a runtime fallback.
+ */
+declare const REPO_HARNESS_BUNDLED_CLI_VERSION: string | undefined;
+
+const BUNDLED_CLI_VERSION: string | null =
+  typeof REPO_HARNESS_BUNDLED_CLI_VERSION === "string" && REPO_HARNESS_BUNDLED_CLI_VERSION.length > 0
+    ? REPO_HARNESS_BUNDLED_CLI_VERSION
+    : null;
+
 /** This module's own `package.json` version -- the repo-harness tool's version, independent of whichever `repoRoot` the observation came from. */
 function providerCliVersion(): string {
+  if (BUNDLED_CLI_VERSION !== null) return BUNDLED_CLI_VERSION;
   try {
     const pkg = JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf-8")) as { readonly version?: unknown };
     return typeof pkg.version === "string" && pkg.version.length > 0 ? pkg.version : "0.0.0";

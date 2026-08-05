@@ -165,7 +165,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(pkg.version).toMatch(/^\d+\.\d+\.\d+$/);
     expect(pkg.private).toBeUndefined();
     expect(pkg.bin["repo-harness"]).toBe("src/cli/index.ts");
-    expect(pkg.bin["repo-harness-hook"]).toBe("src/cli/hook-entry.ts");
+    expect(pkg.bin["repo-harness-hook"]).toBe("dist/hook-entry.js");
     expect(pkg.files).toContain("assets/");
     expect(pkg.files).not.toContain("docs/reference-configs/");
     expect(cliEntry).toContain("CLI_VERSION");
