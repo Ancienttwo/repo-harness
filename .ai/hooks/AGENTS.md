@@ -49,10 +49,10 @@ Owns the runtime-harness-hook-adapters capability boundary declared in .ai/conte
 - Architecture domain: `runtime-harness`
 - Architecture capability: `hook-adapters`
 - Architecture module: `docs/architecture/modules/runtime-harness/hook-adapters.md`
-- Last architecture event: 2026-07-21T21:39:22+0800
-- Last changed path: `src/cli/hook/prompt-intents.ts`
-- Severity: high
-- Change type: workflow-surface
+- Last architecture event: 2026-08-05T00:46:12+0800
+- Last changed path: `tasks/workstreams/runtime-harness/hook-adapters/github-issues-158-159.md`
+- Severity: medium
+- Change type: workstream-sync
 - Module responsibility: Keep this block aligned with the local boundary described by surrounding human-owned context.
 - Entrypoints: `src/cli/hook`
 - Allowed dependencies: Follow root `AGENTS.md` / `CLAUDE.md` and this local contract.
@@ -67,7 +67,10 @@ Owns the runtime-harness-hook-adapters capability boundary declared in .ai/conte
 
 ## Active Workstreams
 
-- (none yet)
+- `tasks/workstreams/runtime-harness/hook-adapters/github-issues-158-159.md`
+  - status: completed
+  - current_slice: completed-20260805-contract-scoped-check-repair
+  - source_plan: plans/plan-20260805-0001-github-issues-158-159.md
 
 ## Current Session Projection
 

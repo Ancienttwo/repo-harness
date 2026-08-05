@@ -123,4 +123,36 @@ describe('evaluateReadiness fixture-driven matrix', () => {
       });
     }
   });
+
+  test('contract-authorized checks_failed repair opens edit only', () => {
+    const requirements = {
+      edit: resolve({ profile: 'standard', operation: 'edit' }),
+      stop: resolve({ profile: 'standard', operation: 'stop' }),
+      ship: resolve({ profile: 'standard', operation: 'ship' }),
+    } as const;
+    const satisfiedRequirements: ArtifactRequirementKey[] = [];
+    for (const result of Object.values(requirements)) {
+      if (result.ok) {
+        for (const requirement of result.requirements) satisfiedRequirements.push(requirement.key);
+      }
+    }
+
+    const result = evaluateReadiness({
+      profile: 'standard',
+      operation: 'edit',
+      requirements,
+      evidence: {
+        satisfiedRequirements,
+        hardBlockers: ['checks_failed'],
+        checksFailedRepairAuthorized: true,
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.allowedToEdit).toEqual({ decision: 'allow' });
+      expect(result.allowedToStop).toEqual({ decision: 'block', reasons: ['hard_blocker_present'] });
+      expect(result.readyToShip).toEqual({ decision: 'block', reasons: ['hard_blocker_present'] });
+    }
+  });
 });

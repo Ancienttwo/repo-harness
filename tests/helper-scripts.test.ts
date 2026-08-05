@@ -3456,7 +3456,7 @@ describe("Workflow helper scripts", () => {
     }
   });
 
-  test("verify-sprint should write passing structured checks for the active sprint", () => {
+  test("bundled verify-sprint binds the package-owned evidence emitter without a source-root override", () => {
     const cwd = tmpWorkspace("helper-verify-sprint-pass");
     try {
       mkdirSync(join(cwd, ".ai/hooks/lib"), { recursive: true });
@@ -3468,6 +3468,10 @@ describe("Workflow helper scripts", () => {
       copyFileSync(
         join(ROOT, "assets/hooks/lib/workflow-state.sh"),
         join(cwd, ".ai/hooks/lib/workflow-state.sh")
+      );
+      writeFileSync(
+        join(cwd, ".ai/harness/policy.json"),
+        `${JSON.stringify({ worktree_strategy: { review_base: "main" } }, null, 2)}\n`,
       );
 
       writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
@@ -3497,21 +3501,23 @@ describe("Workflow helper scripts", () => {
           "",
         ].join("\n")
       );
+      initGitRepo(cwd);
+      commitAll(cwd, "package helper baseline");
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n\nPackage helper change.\n");
       writeFileSync(
         join(cwd, "tasks/reviews/demo.review.md"),
         ["# Task Review: demo", "", "> **Recommendation**: pass", reviewSubjectMetadata(cwd), "", humanReviewCard(), "", externalAcceptanceAdvice("Codex", "codex-review", cwd), ""].join("\n")
       );
 
-      const res = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd, {
+      const res = run("bash", [join(HELPER_DIR, "verify-sprint.sh"), "--prepare-acceptance"], cwd, {
+        REPO_HARNESS_TARGET_REPO_ROOT: cwd,
         HOOK_HOST: "claude",
         REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
       });
       expect(res.status, `${res.stdout}\n${res.stderr}`).toBe(0);
       expect(res.stdout).toContain("Sprint verification passed");
-      // EPC-05: emission cannot-binds in this non-git, no-source-root
-      // fixture (see latestRunSnapshot's doc comment), so checks/latest.json
-      // is never (re)written by the materializer -- genuinely absent.
-      expectChecksLatestAbsent(cwd);
+      expect(res.stderr).not.toContain("evidence emission cannot bind");
+      expect(existsSync(join(cwd, ".ai/harness/checks/latest.json"))).toBe(true);
       const { path: runFilePath, content: checks } = latestRunSnapshot(cwd);
       expect(checks.schema).toBe("repo-harness-run-trace.v1");
       expect(checks.status).toBe("pass");

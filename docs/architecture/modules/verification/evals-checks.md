@@ -72,6 +72,19 @@ installable copies must not drift silently.
 At 10x repo size, the first failure would be full-test cost. The current split
 lets small slices run focused tests while release/pre-merge runs the full gate.
 
+## 2026-08-05 Deployed-helper evidence binding
+
+- `scripts/emit-verify-evidence.ts` remains the single evidence-emitter
+  authority. It is already included by the package's declared `scripts/`
+  publication surface.
+- The installed helper executes from `assets/templates/helpers/` and resolves
+  that package-owned emitter through the deterministic package layout before
+  the explicit source-checkout override. Direct source-helper execution still
+  resolves the emitter as a sibling.
+- Missing sibling, package, and explicit source-root locations remain a
+  fail-closed cannot-bind result; no emitter copy or synthesized evidence path
+  was added.
+
 ## 2026-07-14 Verifier Evidence Lifecycle Cutover
 
 - `verify-contract.sh` is a bounded evidence consumer: one fixed 600-second
@@ -161,3 +174,5 @@ lets small slices run focused tests while release/pre-merge runs the full gate.
   69 model calls, and 68 s of hooks versus Strict at 391 s, 55 calls, and 60 s
   of hooks. Optimize cold hook execution and Standard/Strict promotion cost
   before claiming a performance win; do not lower deterministic risk floors.
+
+- `tasks/workstreams/verification/evals-checks/github-issues-158-159.md`

@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-04T01:34:15+0800 -->
+<!-- updated_at: 2026-08-05T11:09:48+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-08-04T01:34:15+0800
-> **Source Branch**: codex/prepublish-fast-gate
-> **Source Commit**: ef8b56a6
+> **Updated At**: 2026-08-05T11:09:48+0800
+> **Source Branch**: codex/github-issues-158-159
+> **Source Commit**: b1bb8528
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -37,13 +37,14 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Sprint: (none)
 ## Workstreams
 
+- `tasks/workstreams/runtime-harness/hook-adapters/github-issues-158-159.md`: status=completed, current_slice=completed-20260805-contract-scoped-check-repair, source_plan=plans/plan-20260805-0001-github-issues-158-159.md
+- `tasks/workstreams/verification/evals-checks/github-issues-158-159.md`: status=completed, current_slice=completed-20260805-deployed-emitter-binding, source_plan=plans/plan-20260805-0001-github-issues-158-159.md
 - `tasks/workstreams/workflow-engine/contract-assets/20260712-contract-assets.md`: status=completed, current_slice=completed-20260712-repo-owned-agent-fleet, source_plan=`plans/archive/plan-20260712-2053-repo-owned-agent-fleet.md`
 - `tasks/workstreams/workflow-engine/contract-assets/20260714-merge-gate-enforcement.md`: status=completed, current_slice=completed-20260715-merge-gate-enforcement, source_plan=`plans/archive/plan-20260714-1713-merge-gate-enforcement.md`
 - `tasks/workstreams/workflow-engine/contract-assets/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-specialist-roles, source_plan=`plans/archive/plan-20260712-2215-agent-fleet-specialists.md`
 - `tasks/workstreams/workflow-engine/contract-assets/cleanup-script-policy.md`: status=completed, current_slice=completed-20260529-cleanup-script-policy, source_plan=(none)
+- `tasks/workstreams/workflow-engine/contract-assets/github-issues-158-159.md`: status=completed, current_slice=completed-20260805-packaged-helper-projection, source_plan=plans/plan-20260805-0001-github-issues-158-159.md
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=completed, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
-- `tasks/workstreams/workflow-engine/inspection-migration/20260712-inspection-migration.md`: status=completed, current_slice=completed-20260712-repo-owned-agent-fleet, source_plan=`plans/archive/plan-20260712-2053-repo-owned-agent-fleet.md`
-- `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=`plans/archive/plan-20260712-2215-agent-fleet-specialists.md`
 ## Handoff
 
 - Exact Next Step: (none)
@@ -57,16 +58,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260804-0130-prepublish-fast-gate.md
- D tasks/contracts/20260804-0130-prepublish-fast-gate.contract.md
- D tasks/notes/20260804-0130-prepublish-fast-gate.notes.md
- D tasks/reviews/20260804-0130-prepublish-fast-gate.review.md
+ D plans/plan-20260805-0001-github-issues-158-159.md
+ D tasks/contracts/20260805-0001-github-issues-158-159.contract.md
+ D tasks/notes/20260805-0001-github-issues-158-159.notes.md
+ D tasks/reviews/20260805-0001-github-issues-158-159.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260804-0130-prepublish-fast-gate.md
-?? tasks/archive/contract-20260804-0134-prepublish-fast-gate.md
-?? tasks/archive/notes-20260804-0134-prepublish-fast-gate.md
-?? tasks/archive/review-20260804-0134-prepublish-fast-gate.md
-?? tasks/archive/todo-20260804-0134-prepublish-fast-gate.md
+?? plans/archive/plan-20260805-0001-github-issues-158-159.md
+?? tasks/archive/contract-20260805-1109-github-issues-158-159.md
+?? tasks/archive/notes-20260805-1109-github-issues-158-159.md
+?? tasks/archive/review-20260805-1109-github-issues-158-159.md
+?? tasks/archive/todo-20260805-1109-github-issues-158-159.md
 ```
 
 ## Source Artifacts

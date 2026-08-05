@@ -150,6 +150,12 @@ export interface OperationReadinessEvidence {
   readonly satisfiedRequirements: readonly ArtifactRequirementKey[];
   /** Non-empty forces `block` on every gate (edit/stop/ship alike). */
   readonly hardBlockers?: readonly string[];
+  /**
+   * A failed candidate may be repaired only when Effective State has already
+   * proved that every requested edit target is canonically repo-contained and
+   * allowed by the active contract. Stop and ship remain hard-blocked.
+   */
+  readonly checksFailedRepairAuthorized?: boolean;
 }
 
 /** The three already-resolved per-operation requirement decisions this evaluator consumes. */
@@ -282,13 +288,17 @@ export function evaluateReadiness(input: EvaluateReadinessInput): EvaluateReadin
   if (!ship.ok) return ship;
 
   const satisfied = new Set(input.evidence.satisfiedRequirements);
-  const hardBlocked = (input.evidence.hardBlockers?.length ?? 0) > 0;
+  const hardBlockers = input.evidence.hardBlockers ?? [];
+  const hardBlocked = hardBlockers.length > 0;
+  const editHardBlocked = hardBlockers.some((blocker) => (
+    blocker !== 'checks_failed' || input.evidence.checksFailedRepairAuthorized !== true
+  ));
 
   const editStatuses = statusesFor(edit.requirements, satisfied);
   const stopStatuses = statusesFor(stop.requirements, satisfied);
   const shipStatuses = statusesFor(ship.requirements, satisfied);
 
-  const allowedToEdit = decisionFor(editStatuses, hardBlocked);
+  const allowedToEdit = decisionFor(editStatuses, editHardBlocked);
   const allowedToStop = decisionFor(stopStatuses, hardBlocked);
   const readyToShip = decisionFor(shipStatuses, hardBlocked);
 
