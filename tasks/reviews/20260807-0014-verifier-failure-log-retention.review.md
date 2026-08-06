@@ -94,3 +94,19 @@ the next edit.
 ## Summary
 
 PASS. The diff is exactly the contract Goal: a bounded slug helper, a diagnostic retention helper, and two call sites on the existing failure arm, mirrored into a byte-identical projection - `git hash-object` gives both copies the same blob `c836ff42…`, and the bounded runner is untouched. I verified the three properties that inspection alone cannot settle: retention fires only on nonzero criterion exit, `${run_id}` is bound before both call sites so `set -u` cannot abort a failing round, and `log_check` has no counter side effects. The one deliberate non-fail-closed branch was probed directly by making the retention target unwritable: the round warned once, still recorded the criterion failed with exit 7, and still exited 1 - so it can lose a diagnostic but cannot mask a failure, which is the correct direction for an exception. The test's choice to assert the recorded criterion rather than the round exit is likewise the stricter reading, since a bare fixture cwd exits nonzero regardless. Recommendation: pass.
+
+## Acceptance Receipt Projection
+
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
+> **Actor**: not-applicable
+> **Reviewed Subject SHA256**: sha256:b1fe961516d4c6f91b6a7e673e2845ac2c977e96f4abd4c8607fd5c292272710
+> **Reviewed Subject Scope**: normalized-final-content
+> **Reviewed Target Revision**: dbf0a397d6f44c282e621dd19b22f14b63e4f3e7
+> **Verification Evidence SHA256**: sha256:9d1e63a84664e4572f561f57b3231d47ca15fa3ec43aa70db24d9402b6fbdf06
+> **Issued At**: 2026-08-06T16:45:06.691Z
+
+- Summary: Gatekeeper PASS. Diff is exactly the contract Goal: bounded criterion_slug helper, diagnostic retain_failure_log, two call sites on the existing failure arm, mirrored into the projection. Projection parity proven at blob level: git hash-object returns c836ff42b5c9cdc8f1bde3fd8c553ebd65bb7d2e for both scripts/verify-contract.sh and assets/templates/helpers/verify-contract.sh; scripts/run-bounded-verifier-command.ts untouched. Retention fires only on nonzero criterion exit (else arm of bounded_exit -eq 0, after record_timed_result has already recorded the failure). Two static risks checked and clear: run_id is bound at :618 before both call sites so set -u cannot abort a failing round, and log_check is a quiet-gated echo with no effect on the total/failed counters. The declared non-fail-closed retention branch was probed destructively rather than reasoned about: with .ai/harness/runs made a regular file so mkdir -p fails, the round emitted exactly one WARN, still recorded the criterion passed:false exit_code:7, and still exited 1 under --strict, so it can lose a diagnostic but cannot mask a failure. The test's choice to assert the recorded criterion rather than round exit is the stricter reading, since a bare fixture cwd exits nonzero regardless (reproduced independently: failed_count=2 for a single declared criterion). Exit criteria: check:type 0, cmp 0, check-task-sync 0, 7 pass/0 fail across both test files; verify round total=10 failed=0 Fulfilled.
+- Findings: none
+
