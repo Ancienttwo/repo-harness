@@ -204,9 +204,13 @@ describe('closeout runner guardrails', () => {
     });
 
     expect(result.ok).toBe(false);
+    // `timedOut === false` is what proves the failure was detected at spawn
+    // rather than by consuming the 1s bound above; the duration below only has
+    // to separate "returned" from "hung on pipe close", which is unbounded.
+    // A tighter wall-clock number measures machine load, not the guarantee.
     expect(result.timedOut).toBe(false);
     expect(result.error).not.toBe('');
-    expect(Date.now() - startedAt).toBeLessThan(500);
+    expect(Date.now() - startedAt).toBeLessThan(5_000);
   });
 
   test('the launcher barrier preserves inherited target stdin and stdout', async () => {
@@ -573,8 +577,21 @@ describe('closeout runner guardrails', () => {
       cwd: ROOT, stdout: 'pipe', stderr: 'pipe',
     });
     await waitForPath(contenderAttempting);
-    await Bun.sleep(100);
-    expect(existsSync(contenderEntered)).toBe(false);
+    // The token is released inside the signal cleanup, after
+    // terminateActiveProviderGroups() drains the leaderless group and
+    // immediately before the producer exits (installProducerSignalCleanup in
+    // scripts/run-harness-profile-benchmark.ts). So "retained until drained"
+    // is observable as an ordering: the contender cannot enter before the
+    // producer is gone. Racing the two events tests that ordering directly.
+    // A fixed sleep here tested only that the drain was slower than the sleep,
+    // which is a property of machine load rather than of the guarantee.
+    const contenderWon = await Promise.race([
+      // .catch keeps the losing waiter from surfacing as an unhandled
+      // rejection once the race has already settled.
+      waitForPath(contenderEntered, 5_000).then(() => true).catch(() => false),
+      producer.exited.then(() => false),
+    ]);
+    expect(contenderWon).toBe(false);
 
     expect(await producer.exited).toBe(143);
     expect(await contender.exited).toBe(0);

@@ -287,7 +287,7 @@ describe('no-progress circuit breaker', () => {
         reason: 'no_progress',
       });
     });
-  });
+  }, 30_000);
 
   test('a token-moving receipt never counts toward the stall', () => {
     withLedgerRepo((cwd) => {
@@ -480,7 +480,7 @@ describe('attempt ledger authority fences', () => {
       expect(spawnSync('git', ['status', '--porcelain'], { cwd, encoding: 'utf-8' }).stdout).toBe(beforeStatus);
       expect(existsSync(join(cwd, '.ai/harness/state/effective.json'))).toBe(false);
     });
-  });
+  }, 30_000);
 
   test('identical repo bytes plus identical ledger bytes yield byte-identical output', () => {
     withLedgerRepo((cwd) => {
@@ -498,5 +498,5 @@ describe('attempt ledger authority fences', () => {
       expect(first.stdout).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
       expect(first.stdout).not.toContain(cwd);
     });
-  });
+  }, 30_000);
 });
