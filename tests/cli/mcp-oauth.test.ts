@@ -180,4 +180,46 @@ describe('mcp oauth provider', () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  test('dynamic client and refresh token survive server restart (issue #161)', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-oauth-restart-'));
+    try {
+      const tokensPath = join(root, 'tokens.json');
+      const storeA = new McpOAuthTokenStore(tokensPath);
+      const providerA = createMcpOAuthProvider(storeA);
+      const client = storeA.registerClient({
+        redirect_uris: ['https://chatgpt.com/connector/callback'],
+        token_endpoint_auth_method: 'none',
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code'],
+        client_name: 'chatgpt-connector',
+      });
+
+      const redirect = redirectRecorder();
+      await providerA.authorize(client, {
+        scopes: ['repo-harness', 'offline_access'],
+        redirectUri: client.redirect_uris[0]!,
+        codeChallenge: 'restart-challenge',
+      }, redirect.response as never);
+      const code = new URL(redirect.state.url).searchParams.get('code') ?? '';
+      const tokens = await providerA.exchangeAuthorizationCode(client, code, 'verifier', client.redirect_uris[0]);
+      expect(tokens.access_token).toBeTruthy();
+      expect(tokens.refresh_token).toBeTruthy();
+
+      const storeB = new McpOAuthTokenStore(tokensPath);
+      storeB.load();
+      const providerB = createMcpOAuthProvider(storeB);
+      const reloadedClient = storeB.getClient(client.client_id);
+      expect(reloadedClient).toBeTruthy();
+
+      const refreshed = await providerB.exchangeRefreshToken(reloadedClient!, tokens.refresh_token ?? '');
+      expect(refreshed.access_token).not.toBe(tokens.access_token);
+      expect(refreshed.refresh_token).not.toBe(tokens.refresh_token);
+      expect(await providerB.verifyAccessToken(refreshed.access_token)).toMatchObject({ clientId: client.client_id });
+      await expect(providerB.exchangeRefreshToken(reloadedClient!, tokens.refresh_token ?? ''))
+        .rejects.toBeInstanceOf(InvalidGrantError);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
