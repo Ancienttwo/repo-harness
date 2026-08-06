@@ -40,17 +40,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:6811e5dedfd3659e2879e45debe1152362388b710e121557e10043ef674761d4
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: c94a5d41355424eae2a55254957aa81d9bf88280
+> **Verification Evidence SHA256**: sha256:4ce4725333e1eabc8b5ddef3d2870c6759ff683f440b22e7d873a343e2896bda
+> **Issued At**: 2026-08-06T17:46:58.594Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: cross-restart oauth regression test verified
 - Findings: none
 
 ## Behavior Diff Notes
