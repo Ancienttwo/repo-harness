@@ -1,6 +1,6 @@
 # Plan: Cross-restart OAuth refresh regression test (issue #161)
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260806-2319
 > **Slug**: issue-161-oauth-restart-regression
 > **Planning Source**: codex-plan-or-waza-think

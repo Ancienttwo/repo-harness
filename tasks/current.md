@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-07T00:45:35+0800 -->
+<!-- updated_at: 2026-08-07T01:51:11+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-07T00:45:35+0800
-> **Source Branch**: codex/verifier-failure-log-retention
-> **Source Commit**: e77fa68a
+> **Updated At**: 2026-08-07T01:51:11+0800
+> **Source Branch**: codex/issue-161-oauth-restart-regression
+> **Source Commit**: 6c1ab954
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -33,8 +33,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 - /Users/ancienttwo/Projects/repo-harness-wt-hook-entry-single-file-bundle: plans/plan-20260805-1745-hook-entry-single-file-bundle.md
 - /Users/ancienttwo/Projects/repo-harness-wt-hook-entry-single-file-bundle: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-hook-entry-single-file-bundle
-- /Users/ancienttwo/Projects/repo-harness-wt-issue-161-oauth-restart-regression: plans/plan-20260806-2319-issue-161-oauth-restart-regression.md
-- /Users/ancienttwo/Projects/repo-harness-wt-issue-161-oauth-restart-regression: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-issue-161-oauth-restart-regression
+- /Users/ancienttwo/Projects/repo-harness-wt-timing-tests-load-robustness: plans/plan-20260807-0104-timing-tests-load-robustness.md
+- /Users/ancienttwo/Projects/repo-harness-wt-timing-tests-load-robustness: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-timing-tests-load-robustness
 ## Active Sprint
 
 - Sprint: (none)
@@ -61,16 +61,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260807-0014-verifier-failure-log-retention.md
- D tasks/contracts/20260807-0014-verifier-failure-log-retention.contract.md
- D tasks/notes/20260807-0014-verifier-failure-log-retention.notes.md
- D tasks/reviews/20260807-0014-verifier-failure-log-retention.review.md
+ D plans/plan-20260806-2319-issue-161-oauth-restart-regression.md
+ D tasks/contracts/20260806-2319-issue-161-oauth-restart-regression.contract.md
+ D tasks/notes/20260806-2319-issue-161-oauth-restart-regression.notes.md
+ D tasks/reviews/20260806-2319-issue-161-oauth-restart-regression.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260807-0014-verifier-failure-log-retention.md
-?? tasks/archive/contract-20260807-0045-verifier-failure-log-retention.md
-?? tasks/archive/notes-20260807-0045-verifier-failure-log-retention.md
-?? tasks/archive/review-20260807-0045-verifier-failure-log-retention.md
-?? tasks/archive/todo-20260807-0045-verifier-failure-log-retention.md
+?? plans/archive/plan-20260806-2319-issue-161-oauth-restart-regression.md
+?? tasks/archive/contract-20260807-0151-issue-161-oauth-restart-regression.md
+?? tasks/archive/notes-20260807-0151-issue-161-oauth-restart-regression.md
+?? tasks/archive/review-20260807-0151-issue-161-oauth-restart-regression.md
+?? tasks/archive/todo-20260807-0151-issue-161-oauth-restart-regression.md
 ```
 
 ## Source Artifacts

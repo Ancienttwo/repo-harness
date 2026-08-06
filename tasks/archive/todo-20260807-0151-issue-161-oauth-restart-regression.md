@@ -1,7 +1,13 @@
+> **Archived**: 2026-08-07 01:51
+> **Related Plan**: plans/archive/plan-20260806-2319-issue-161-oauth-restart-regression.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260807-0151
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-08-06 23:19
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

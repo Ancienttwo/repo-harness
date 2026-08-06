@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-07 01:51
+> **Related Plan**: plans/archive/plan-20260806-2319-issue-161-oauth-restart-regression.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260807-0151
+
 # Task Contract: issue-161-oauth-restart-regression
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260806-2319-issue-161-oauth-restart-regression.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
