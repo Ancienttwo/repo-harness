@@ -1,6 +1,6 @@
 # Plan: Retain failing verifier command output beyond the round
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260807-0014
 > **Slug**: verifier-failure-log-retention
 > **Planning Source**: repo-harness-plan
