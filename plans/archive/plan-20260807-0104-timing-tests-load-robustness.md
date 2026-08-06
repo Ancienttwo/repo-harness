@@ -1,6 +1,6 @@
 # Plan: Make five load-sensitive tests robust under concurrent machine load
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260807-0104
 > **Slug**: timing-tests-load-robustness
 > **Planning Source**: repo-harness-plan
