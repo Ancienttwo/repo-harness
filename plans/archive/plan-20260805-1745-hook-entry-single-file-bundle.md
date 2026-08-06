@@ -1,6 +1,6 @@
 # Plan: Ship repo-harness-hook bin as prepack single-file bundle
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260805-1745
 > **Slug**: hook-entry-single-file-bundle
 > **Planning Source**: repo-harness-plan

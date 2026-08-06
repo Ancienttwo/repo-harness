@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-07 02:34
+> **Related Plan**: plans/archive/plan-20260805-1745-hook-entry-single-file-bundle.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260807-0234
+
 # Implementation Notes: hook-entry-single-file-bundle
 
 > **Status**: Active
