@@ -521,6 +521,38 @@ is_evidence_producer_command() {
   return 1
 }
 
+# Bounded runner logs live in the round's mktemp dir, which the EXIT trap
+# destroys, so a failing criterion leaves only its exit_code in the report and
+# nothing that names WHICH test or command failed. Retain the log of a failing
+# criterion next to the run snapshot that shares this round's run id. Passing
+# criteria retain nothing: green rounds would otherwise fill runs/ with
+# multi-MB logs nobody reads.
+FAILURE_LOG_DIR=".ai/harness/runs"
+
+# Deterministic, filesystem-safe slug for a criterion (a test path or a whole
+# shell command), bounded in length so a long command line cannot produce an
+# unusable filename.
+criterion_slug() {
+  local slug
+  slug="$(printf '%s' "$1" | tr -C 'A-Za-z0-9._-' '-' | sed -E 's/-+/-/g; s/^-//; s/-$//')"
+  slug="${slug:-criterion}"
+  printf '%s' "${slug:0:80}"
+}
+
+# Diagnostic only: a retention failure is reported but never changes the
+# round's verdict, since losing a log must not turn a passing round red.
+retain_failure_log() {
+  local log_path="$1" criterion="$2" retained
+
+  [[ -f "$log_path" ]] || return 0
+  retained="$FAILURE_LOG_DIR/${run_id}-$(criterion_slug "$criterion").log"
+  if ! mkdir -p "$FAILURE_LOG_DIR" 2>/dev/null || ! cp "$log_path" "$retained" 2>/dev/null; then
+    echo "[ContractVerify] WARN: could not retain failure log for: $criterion" >&2
+    return 0
+  fi
+  log_check "LOG" "retained failure log: $retained"
+}
+
 run_bounded() {
   local log_path="$1" result_path="$2"
   shift 2
@@ -950,6 +982,7 @@ if ((${#tests_pass[@]})); then
       record_timed_result "tests_pass" "$path" true "tests_pass: $path (${bounded_duration}ms)" "$bounded_duration" false 0 "$bounded_signal"
     else
       record_timed_result "tests_pass" "$path" false "tests_pass: $path (${bounded_duration}ms, exit=$bounded_exit)" "$bounded_duration" "$bounded_timed_out" "$bounded_exit" "$bounded_signal"
+      retain_failure_log "$log_path" "$path"
     fi
     test_index=$((test_index + 1))
     if [[ "$bounded_timed_out" == "true" ]]; then
@@ -987,6 +1020,7 @@ if ((${#commands_succeed[@]})) && [[ "$verification_budget_exhausted" -eq 0 ]]; 
       record_timed_result "commands_succeed" "$cmd" true "commands_succeed: $cmd (${bounded_duration}ms)" "$bounded_duration" false 0 "$bounded_signal"
     else
       record_timed_result "commands_succeed" "$cmd" false "commands_succeed: $cmd (${bounded_duration}ms, exit=$bounded_exit)" "$bounded_duration" "$bounded_timed_out" "$bounded_exit" "$bounded_signal"
+      retain_failure_log "$log_path" "$cmd"
     fi
     command_index=$((command_index + 1))
     if [[ "$bounded_timed_out" == "true" ]]; then
