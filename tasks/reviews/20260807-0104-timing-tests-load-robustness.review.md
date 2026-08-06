@@ -76,3 +76,19 @@ are written into the Acceptance Receipt Projection below by the receipt tooling.
 ## Summary
 
 PASS. The diff addresses each of the five named failures at its actual mechanism rather than by blanket-raising numbers: three subprocess-heavy tests get explicit `30_000` timeouts matching an idiom already used 100 times in this suite, keeping hang detection while removing the 5000ms cliff they were dying on; the bounded-error ceiling widens to 5s with its `timedOut === false` fence untouched, which is the assertion that actually proves spawn-time detection; and the sleep race becomes an event race on the drain-then-release ordering I confirmed in `scripts/run-harness-profile-benchmark.ts:293-313`, gaining a vacuity guard at `:597` that the old version never had. Assertion counts are unchanged on both files, so nothing was quietly dropped. Across 17 runs the pair was green 16 times, including 3 under deliberately induced CPU load; the single unattributed failure in run 2 did not involve any of the five and did not reproduce, and is now covered by the retained-log mechanism if it ever recurs in a round. Recommendation: pass.
+
+## Acceptance Receipt Projection
+
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
+> **Actor**: not-applicable
+> **Reviewed Subject SHA256**: sha256:96171ef7879cfc2e9aa8c6364b344d4fbd39dd7c0d139363844675e435623a36
+> **Reviewed Subject Scope**: normalized-final-content
+> **Reviewed Target Revision**: 987aba3e1a77fac4ff941729804f63c87b1d6c29
+> **Verification Evidence SHA256**: sha256:bb9242f297794a90971d771cd30eca0dd9ceb73ac5040199d3701ee96f1a7cdd
+> **Issued At**: 2026-08-06T17:57:30.474Z
+
+- Summary: Gatekeeper PASS. Each of the five tests named by retained log run-20260807T004613-2770-bun-test.log is addressed at its actual mechanism. Three subprocess-heavy continuation-attempt tests get explicit 30_000 timeouts, an idiom already used 100 times across tests/ including exactly 30_000 in hook-dispatch-diet-report.test.ts:210 and harness-circuit-breakers.test.ts:282. Test 4 ceiling widens 500ms to 5s while the untouched timedOut false fence still proves spawn-time detection: a regression consuming the 1s bound fails that fence before the duration assertion is reached, and a pipe-close hang is unbounded. Test 5 sleep race becomes an event race on the production ordering verified directly at scripts/run-harness-profile-benchmark.ts:293-313 (drain, then release, then exit), strictly stronger than what it replaced because existsSync(contenderEntered) true at :597 is a vacuity guard the sleep version lacked. No assertion deleted: expect counts unchanged (78 to 78, 75 to 75). Evidence: 17 runs of the pair, 16 green at 45 pass/0 fail including 3 under induced CPU load (load average 9.18 to 13.60); none of the five reappeared in any logged run. Residual recorded: run 2 reported 44 pass/1 fail with the name lost to a tail pipe and did not reproduce in 15 subsequent runs; if it recurs in a round the retention shipped in c94a5d41 will name it. Recorded back-to-back with its prepare round after a first attempt failed closed on a moving origin/main pushed by a concurrent party between prepare and record.
+- Findings: none
+
