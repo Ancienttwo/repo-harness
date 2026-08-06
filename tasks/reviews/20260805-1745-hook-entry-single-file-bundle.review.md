@@ -70,17 +70,17 @@ would invalidate the recorded subject hash.
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:b46dda178a3786a1db74009fa20ea9b636e866f570c8eaf974e82552057de945
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 987aba3e1a77fac4ff941729804f63c87b1d6c29
+> **Verification Evidence SHA256**: sha256:8bb90f7ca0cefded229069cfab884c55e87056bbc77803883c8c748b6e482fd3
+> **Issued At**: 2026-08-06T18:18:02.086Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: Gatekeeper PASS. repo-harness-hook ships as a prepack-built single-file bundle dist/hook-entry.js; the detached tooling populate survives bundling via one explicit hook-entry dispatch branch sharing the exported runDetachedToolingPopulate authority, and the bundled provider version is injected at build time so the bundled path never emits the invented 0.0.0. Managed adapter command strings, timeout 30, and the repo-harness main bin mapping are byte-identical; src/cli/installer/managed-entries.ts is absent from the diff and resolves the hook by command name, so the bin retarget is transparent. Verified directly: bundle shebang, grep -c runDetachedToolingPopulate = 2 (definition plus hook-entry call, the DCE-eliminated bootstrap gone), injected version 0.13.0 in the bundle, UserPromptSubmit probe exit 0, and the contract falsifier - 25 hook probes during 40 atomic rename swaps of the bundle, 0 failures, 0 probes over 3s - plus hot-path latency parity 0.13-0.18s bundle vs 0.13-0.15s source. Self-host detector deviation at src/core/adoption/source-checkout.ts:40 assessed correct for both sides: init --repo . --dry-run still emits self-host-source-noop, and downstream repos short-circuit on name mismatch before the bin check. Patch-id stable across the full rebase chain 699bc70c to dbf0a397 to c94a5d41 to 9330fd43: 595a998c0852f75943b83759240e9143652b72b3 at every step, so this PASS review carries over unchanged. Round history: D3 round total=9 failed=0 Fulfilled; standalone bun test 2206 pass/1 skip/0 fail; three intervening rounds failed on five load-sensitive tests unrelated to this diff, named by the retained log shipped in c94a5d41 and remediated in 9330fd43. This round: total=9 failed=0 Fulfilled with bun test green at 584835ms and the tarball smoke passing.
 - Findings: none
 
 ## Behavior Diff Notes
