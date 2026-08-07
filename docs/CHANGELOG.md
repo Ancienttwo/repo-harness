@@ -4,6 +4,65 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-08-07
+
+### Changed
+
+- Ships the `repo-harness-hook` bin as a prepack-built single-file bundle
+  `dist/hook-entry.js` instead of the live multi-file TypeScript tree. A
+  registry reinstall now replaces one file atomically, so a hook firing inside
+  the reinstall window can no longer resolve a half-replaced import graph and
+  hang until the host's 30s adapter timeout. Two bounded source changes keep
+  the bundle behavior-preserving: `src/cli/hook-entry.ts` gains an explicit
+  `--detached-tooling-populate` dispatch branch, because `bun build` folds
+  `session-context.ts`'s own `import.meta.main` bootstrap to `false` while
+  `import.meta.url` retargets the respawn at the bundle, and both surfaces call
+  the same exported `runDetachedToolingPopulate`; and
+  `src/effects/evidence/post-bash-importer.ts` reads a build-time version
+  literal injected by `bun build --define`, so the bundled provider id never
+  emits the invented `0.0.0` that its `import.meta.url` path walk would produce
+  once bundled. Managed adapter command strings, `timeout: 30`, and the
+  `repo-harness` main bin mapping are byte-identical. Local symlink installs
+  (`bun link`, `bun install -g <dir>`) bypass the packed bundle and need
+  `bun run build:hook-bundle` once in the checkout; registry installs are the
+  covered path.
+
+### Fixed
+
+- Keeps dynamic MCP OAuth clients alive past the absolute 30-day TTL while
+  they still hold an unexpired access or refresh token (#161, #162). The
+  cleanup predicate previously used registration time alone, so an actively
+  refreshing ChatGPT connector was deleted at day 30 and its next refresh
+  failed with `invalid_client`, forcing periodic re-authorization even under
+  continuous use. Liveness is derived from existing token state — no new
+  persisted field — so spam registrations that never completed authorization
+  are still cleaned at 30 days, and a connector idle past 30 days still
+  expires end to end.
+- Raises the whole-round verification budget in `scripts/verify-contract.sh`
+  from 600s to 1200s. The repo's own required `bun test` had outgrown the
+  budget, so any contract listing it under `commands_succeed` deadlocked at the
+  gate. The constant stays a fixed policy line; no environment override was
+  added.
+- Raises `VERIFIER_HELPER_TIMEOUT_MS` in `src/cli/runtime/helper-runner.ts`
+  from 720s to 1260s so the outer process wrapper sits strictly above the inner
+  whole-round budget plus a 60s margin. Previously a 720-1200s round died as a
+  mute process kill with no run snapshot and no `budget_ms`, which made the
+  evidence-emitting inner gate unreachable for long rounds.
+- Retains a failing criterion's runner log at
+  `.ai/harness/runs/<run-id>-<criterion-slug>.log` instead of destroying it
+  with the round's temp directory. Run reports previously recorded only
+  `exit_code`, so a failing `bun test` criterion could not be attributed to a
+  test at all. Passing criteria retain nothing, and a retention failure warns
+  without changing the round's verdict.
+- Makes five load-sensitive tests robust under machine load. Three
+  subprocess-heavy `tests/continuation-attempt.test.ts` cases now carry
+  explicit 30s timeouts instead of dying at bun's default 5000ms; the bounded
+  spawn-error ceiling in `tests/unit/closeout-runner-guardrails.test.ts` widens
+  to 5s with its `timedOut === false` fence unchanged; and a `Bun.sleep(100)`
+  race there becomes an event race on the production drain-then-release
+  ordering, which also gains a vacuity guard the sleep version lacked.
+
+
 ## [0.13.0] - 2026-08-04
 
 ### Added
