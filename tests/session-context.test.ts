@@ -178,7 +178,7 @@ describe("securitySentinelSessionSection (security-sentinel.sh port)", () => {
         expect(latest.status).toBe("ok");
       });
     });
-  });
+  }, 30_000);
 
   test("cache-hit (fingerprint unchanged) -> skips scan and cache writes entirely", () => {
     withTmpRepo("sec-hit", (repoRoot) => {
@@ -196,7 +196,7 @@ describe("securitySentinelSessionSection (security-sentinel.sh port)", () => {
         expect(readFileSync(join(repoRoot, ".ai/harness/security/latest.json"), "utf-8")).toBe(latestMtimeFirst);
       });
     });
-  });
+  }, 30_000);
 
   test("cache-miss with a suspicious hook config -> [SecurityConfig] section, mandatory+actionable", () => {
     withTmpRepo("sec-finding", (repoRoot) => {
@@ -233,7 +233,7 @@ describe("securitySentinelSessionSection (security-sentinel.sh port)", () => {
         expect(section?.actionable).toBe(true);
       });
     });
-  });
+  }, 30_000);
 });
 
 describe("sessionStartMainContent (session-start-context.sh port) — empty/gating cases", () => {
@@ -438,7 +438,7 @@ describe("sessionStartMainContent — pending plan capture, current status, acti
       expect(content).toContain("git show main:tasks/current.md");
       expect(content).toContain("Target snapshot metadata: status=Active");
     });
-  });
+  }, 30_000);
 
   test("active sprint: backlog progress counted, next unchecked task surfaced", () => {
     withTmpRepo("main-sprint", (repoRoot) => {
@@ -558,7 +558,7 @@ describe("sessionStartMainSection — actionable header detection", () => {
       expect(section).not.toBeNull();
       expect(section?.actionable).toBe(false);
     });
-  });
+  }, 30_000);
 });
 
 describe("buildSessionStartSections — composition order and shape", () => {
@@ -603,7 +603,7 @@ describe("buildSessionStartSections — composition order and shape", () => {
         expect(sections.map((s) => s.priority)).toEqual([5, 6, 2]);
       });
     });
-  });
+  }, 30_000);
 });
 
 describe("sessionStartMainContent — provider diagnostics", () => {

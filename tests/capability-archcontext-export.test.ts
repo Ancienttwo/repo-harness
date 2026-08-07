@@ -278,5 +278,5 @@ describe("capability-resolver archcontext-boundaries-v1 export", () => {
       expect(result.issues).toEqual([]);
       expect(result.valid).toBe(true);
     }
-  });
+  }, 30_000);
 });

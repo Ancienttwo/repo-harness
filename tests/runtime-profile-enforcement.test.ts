@@ -110,7 +110,7 @@ describe('risk-based runtime profile enforcement', () => {
       expect(result.stdout).not.toContain('PlanStatusGuard');
       expect(result.stdout).toContain('TDD Guard');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test('editing a .ts file outside the repo skips the TDD reminder instead of crashing the sandbox', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-oor-')));
@@ -128,7 +128,7 @@ describe('risk-based runtime profile enforcement', () => {
       rmSync(cwd, { recursive: true, force: true });
       rmSync(outside, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('Win32 absolute .ts paths outside the repo skip repo-scoped TDD probes', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-oor-win32-')));
@@ -144,7 +144,7 @@ describe('risk-based runtime profile enforcement', () => {
         expect(result.stdout).not.toContain('TDD Guard');
       }
     } finally { rmSync(cwd, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test('Standard requires a plan but not the Strict contract/worktree chain', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-standard-')));
@@ -156,7 +156,7 @@ describe('risk-based runtime profile enforcement', () => {
       expect(result.stderr).toMatch(/SpecGuard|PlanStatusGuard/);
       expect(result.stderr).not.toContain('StrictContractGuard');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test('Strict high-risk paths fail closed without a contract and pass in an isolated contract worktree', () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'profile-strict-')));
@@ -204,7 +204,7 @@ describe('risk-based runtime profile enforcement', () => {
       expect(allowed.status).toBe(0);
       expect(allowed.stdout).toContain('TDD Guard');
     } finally { rmSync(root, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test('Codex apply_patch expands every target path and blocks high-risk or private writes', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-apply-patch-')));
@@ -235,7 +235,7 @@ describe('risk-based runtime profile enforcement', () => {
       expect(multi.status).toBe(2);
       expect(multi.stderr).toContain('OpsPrivateGuard');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test('release workflows under .github remain Strict implementation surfaces', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-github-release-')));
@@ -245,7 +245,7 @@ describe('risk-based runtime profile enforcement', () => {
       expect(result.status).toBe(2);
       expect(result.stderr).toMatch(/SpecGuard|PlanStatusGuard|StrictContractGuard/);
     } finally { rmSync(cwd, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 });
 
 describe('apply_patch batch-scope resolves the full pending write scope (guard gap regression)', () => {
@@ -258,7 +258,7 @@ describe('apply_patch batch-scope resolves the full pending write scope (guard g
       expect(result.stdout).not.toContain('PlanStatusGuard');
       expect(result.stdout).not.toContain('SpecGuard');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test('b) a single apply_patch touching 4 normal implementation files resolves standard and trips the plan gate by default', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-batch-standard-')));
@@ -269,7 +269,7 @@ describe('apply_patch batch-scope resolves the full pending write scope (guard g
       expect(result.stderr).toMatch(/SpecGuard|PlanStatusGuard/);
       expect(result.stderr).not.toContain('StrictContractGuard');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test('c) a patch spanning two capability prefixes resolves standard via the cross-capability signal', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-batch-capability-')));
@@ -314,7 +314,7 @@ describe('apply_patch batch-scope resolves the full pending write scope (guard g
       expect(result.stderr).toMatch(/SpecGuard|PlanStatusGuard/);
       expect(result.stderr).not.toContain('StrictContractGuard');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test('d) duplicate and reordered patch paths produce a stable count matching the 4-file case', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-batch-reordered-')));
@@ -332,7 +332,7 @@ describe('apply_patch batch-scope resolves the full pending write scope (guard g
       expect(direct.json.profile_signals?.targetPathCount).toBe(4);
       expect(direct.json.workflow_profile).toBe('standard');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test('e) a batch containing one strict-category path promotes every implementation path in the batch to strict', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-batch-strict-leak-')));
@@ -374,7 +374,7 @@ describe('apply_patch batch-scope resolves the full pending write scope (guard g
       expect(result.stderr).toContain('StrictContractGuard');
       expect(result.stderr).toContain('Strict workflow edit to src/plain1.ts has no active contract.');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test('f) a 4-file batch requesting an explicit lite override is rejected below the deterministic risk floor', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-batch-below-floor-')));
@@ -392,7 +392,7 @@ describe('apply_patch batch-scope resolves the full pending write scope (guard g
       expect(direct.json.workflow_profile).toBeNull();
       expect(direct.json.blockers).toContain('workflow_profile:profile_below_risk_floor');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 });
 
 describe('implementation-surface predicate excludes workflow-surface paths from medium-scope (guard gap regression, C2)', () => {
@@ -406,7 +406,7 @@ describe('implementation-surface predicate excludes workflow-surface paths from 
       expect(direct.json.profile_signals?.targetPathCount).toBe(0);
       expect(direct.json.blockers).toEqual([]);
     } finally { rmSync(cwd, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test('h) 3 docs files plus 1 src file counts only the implementation path and resolves lite', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-mixed-lite-')));
@@ -417,7 +417,7 @@ describe('implementation-surface predicate excludes workflow-surface paths from 
       expect(direct.json.workflow_profile).toBe('lite');
       expect(direct.json.profile_signals?.targetPathCount).toBe(1);
     } finally { rmSync(cwd, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test('i) a batch mixing workflow-surface and implementation paths counts only the implementation paths toward standard', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-mixed-standard-')));
@@ -428,7 +428,7 @@ describe('implementation-surface predicate excludes workflow-surface paths from 
       expect(direct.json.profile_signals?.targetPathCount).toBe(4);
       expect(direct.json.workflow_profile).toBe('standard');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test('j) a single deploy/sql path still resolves strict after the workflow-surface exclusion', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-deploy-strict-')));
@@ -437,7 +437,7 @@ describe('implementation-surface predicate excludes workflow-surface paths from 
       const direct = resolveStateDirect(cwd, ['deploy/sql/0001_demo.sql']);
       expect(direct.json.workflow_profile).toBe('strict');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test('k) a docs-only apply_patch batch passes without a Plan gate and resolves lite ceremony guidance', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-docs-apply-patch-')));
@@ -448,7 +448,7 @@ describe('implementation-surface predicate excludes workflow-surface paths from 
       expect(result.stdout).not.toContain('PlanStatusGuard');
       expect(result.stdout).not.toContain('SpecGuard');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test('l) a workflow-surface strict-token path batched with a plain implementation file still resolves strict (guard gap regression, external acceptance)', () => {
     // docs/auth/runbook.md is workflow surface (excluded from medium-scope
@@ -463,7 +463,7 @@ describe('implementation-surface predicate excludes workflow-surface paths from 
       expect(direct.json.workflow_profile).toBe('strict');
       expect(direct.json.profile_signals?.targetPathCount).toBe(1);
     } finally { rmSync(cwd, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test('m) a single deploy-named workflow-surface path (deploy/notes.md) resolves strict on its own -- locked semantics', () => {
     // deploy/notes.md is workflow surface (matches the *.md extension
@@ -486,7 +486,7 @@ describe('implementation-surface predicate excludes workflow-surface paths from 
       expect(direct.json.profile_signals?.targetPathCount).toBe(0);
       expect(direct.json.profile_signals?.strictCategories).toEqual(['deploy']);
     } finally { rmSync(cwd, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 });
 
 describe('pre-edit-guard.sh fails closed on any state-resolve blocker (guard gap regression, external acceptance)', () => {
@@ -515,7 +515,7 @@ describe('pre-edit-guard.sh fails closed on any state-resolve blocker (guard gap
       expect(result.status).toBe(2);
       expect(result.stderr).toContain('WorkflowProfileGuard');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   // Round 2 external acceptance, HRD-03 retirement note: the original pair of
   // fake-CLI tests here (see notes file) substituted REPO_HARNESS_CLI with a

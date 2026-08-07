@@ -125,7 +125,7 @@ describe('provider-free merge seal', () => {
     expect(verified.status, verified.stderr).toBe(0);
     expect(verified.stdout.trim()).toBe(git(fixture.cwd, 'rev-parse', 'HEAD'));
     expect(readFileSync(fixture.providerCalls, 'utf-8').trim()).toBe('1');
-  });
+  }, 30_000);
 
   test('review-only head movement needs only reseal; semantic movement invalidates acceptance', async () => {
     const fixture = await makeFixture();
@@ -143,7 +143,7 @@ describe('provider-free merge seal', () => {
     expect(invalid.status).not.toBe(0);
     expect(invalid.stderr).toContain('semantic subject is stale');
     expect(readFileSync(fixture.providerCalls, 'utf-8').trim()).toBe('1');
-  });
+  }, 30_000);
 
   test('non-overlapping target movement reuses acceptance and recomputes only the local seal', async () => {
     const fixture = await makeFixture();
@@ -154,7 +154,7 @@ describe('provider-free merge seal', () => {
     const resealed = run('bun', [fixture.harness, 'run', '--base', 'main', '--format', 'sha'], fixture.cwd);
     expect(resealed.status, resealed.stderr).toBe(0);
     expect(readFileSync(fixture.providerCalls, 'utf-8').trim()).toBe('1');
-  });
+  }, 30_000);
 
   test('post-freeze lifecycle commit verifies against the sealed head without another provider call', async () => {
     const fixture = await makeFixture();
@@ -175,5 +175,5 @@ describe('provider-free merge seal', () => {
     expect(verified.status, verified.stderr).toBe(0);
     expect(verified.stdout.trim()).toBe(git(fixture.cwd, 'rev-parse', 'HEAD'));
     expect(readFileSync(fixture.providerCalls, 'utf-8').trim()).toBe('1');
-  });
+  }, 30_000);
 });

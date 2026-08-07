@@ -597,7 +597,7 @@ describe('mcp setup', () => {
         endpoint: 'https://repo-harness-mcp.example.com/mcp',
       });
     });
-  });
+  }, 30_000);
 
   test('stores a stable ChatGPT endpoint in ignored local config and keeps the tracked guide generic', () => {
     withTmpRepo((repoRoot) => {

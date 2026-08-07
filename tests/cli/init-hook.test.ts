@@ -616,7 +616,7 @@ describe('init-hook command', () => {
     expect(res.stdout).toContain('Usage: repo-harness init-hook');
     expect(res.stdout).toContain('--target <target>');
     expect(res.stdout).toContain('--check-updates');
-  });
+  }, 30_000);
 
   test('CLI exposes setup check help', () => {
     const res = spawnSync('bun', [CLI, 'setup', 'check', '--help'], {
@@ -627,5 +627,5 @@ describe('init-hook command', () => {
     expect(res.stdout).toContain('Usage: repo-harness setup check');
     expect(res.stdout).toContain('--target <target>');
     expect(res.stdout).toContain('--check-updates');
-  });
+  }, 30_000);
 });

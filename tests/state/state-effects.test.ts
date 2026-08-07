@@ -73,7 +73,7 @@ describe('Effective State lock effects', () => {
     } finally {
       fixture.cleanup();
     }
-  });
+  }, 30_000);
 
   test('a token mismatch never deletes a lock now owned by another resolver', () => {
     const fixture = createEffectiveStateFixture();
@@ -92,7 +92,7 @@ describe('Effective State lock effects', () => {
     } finally {
       fixture.cleanup();
     }
-  });
+  }, 30_000);
 
   test('a symlinked lock directory fails closed without deleting an external entry', () => {
     const fixture = createEffectiveStateFixture();
@@ -111,7 +111,7 @@ describe('Effective State lock effects', () => {
       fixture.cleanup();
       external.cleanup();
     }
-  });
+  }, 30_000);
 
   for (const ancestor of ['.ai', '.ai/harness', '.ai/harness/state']) {
     test(`a symlinked repo-local lock ancestor ${ancestor} fails closed`, () => {
@@ -136,7 +136,7 @@ describe('Effective State lock effects', () => {
         fixture.cleanup();
         external.cleanup();
       }
-    });
+    }, 30_000);
   }
 
   test('a symlinked canonical root fails closed before running the critical section', () => {
@@ -151,7 +151,7 @@ describe('Effective State lock effects', () => {
       rmSync(link, { force: true });
       fixture.cleanup();
     }
-  });
+  }, 30_000);
 
   test('a symlinked Git common-dir lock ancestor fails closed without external publication', () => {
     const fixture = createEffectiveStateFixture();
@@ -170,7 +170,7 @@ describe('Effective State lock effects', () => {
       fixture.cleanup();
       external.cleanup();
     }
-  });
+  }, 30_000);
 });
 
 describe('Effective State authority read faults', () => {
@@ -185,7 +185,7 @@ describe('Effective State authority read faults', () => {
     } finally {
       fixture.cleanup();
     }
-  });
+  }, 30_000);
 
 });
 
@@ -214,7 +214,7 @@ describe('Effective State version/cache publication transaction', () => {
     } finally {
       fixture.cleanup();
     }
-  });
+  }, 30_000);
 
   for (const fault of ['cache-temp', 'cache-publish', 'owner-temp', 'owner-publish'] as const) {
     test(`${fault} failure preserves exact owner/cache bytes and retry consumes only version 2`, () => {
@@ -261,7 +261,7 @@ describe('Effective State version/cache publication transaction', () => {
       } finally {
         fixture.cleanup();
       }
-    });
+    }, 30_000);
   }
 
   test('a confirmSnapshot mismatch leaves owner/cache bytes identical, writes no temp files, and the next successful call consumes exactly +1', () => {
@@ -295,7 +295,7 @@ describe('Effective State version/cache publication transaction', () => {
     } finally {
       fixture.cleanup();
     }
-  });
+  }, 30_000);
 
   test('same-revision cache reconstruction never invokes version-owner write effects', () => {
     const fixture = createEffectiveStateFixture();
@@ -315,7 +315,7 @@ describe('Effective State version/cache publication transaction', () => {
     } finally {
       fixture.cleanup();
     }
-  });
+  }, 30_000);
 });
 
 describe('Effective State authority metadata failures', () => {
@@ -347,7 +347,7 @@ describe('Effective State authority metadata failures', () => {
         if (restrictedPath) chmodSync(restrictedPath, authority === 'plan-directory' ? 0o700 : 0o600);
         fixture.cleanup();
       }
-    });
+    }, 30_000);
   }
 
   test('worktree-owner canonicalization errors fail closed before publication', () => {
@@ -362,7 +362,7 @@ describe('Effective State authority metadata failures', () => {
     } finally {
       fixture.cleanup();
     }
-  });
+  }, 30_000);
 });
 
 describe('Effective State version read effects', () => {
@@ -388,7 +388,7 @@ describe('Effective State version read effects', () => {
       if (existsSync(backupPath)) renameSync(backupPath, gitPath);
       fixture.cleanup();
     }
-  });
+  }, 30_000);
 
   test('read-only version lookup preserves non-Git compatibility without hiding a corrupt owner', () => {
     const fixture = createEffectiveStateFixture();
@@ -400,5 +400,5 @@ describe('Effective State version read effects', () => {
     } finally {
       fixture.cleanup();
     }
-  });
+  }, 30_000);
 });

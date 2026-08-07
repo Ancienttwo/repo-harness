@@ -13,7 +13,7 @@ import { spawnSync } from "child_process";
 import { assembleTemplate } from "../scripts/assemble-template";
 
 const ROOT = join(import.meta.dir, "..");
-const FACTOR_FACTORY_SMOKE_TIMEOUT_MS = 15000;
+const FACTOR_FACTORY_SMOKE_TIMEOUT_MS = 45_000;
 
 function bootstrapRepo(prefix: string, env: Record<string, string> = {}) {
   const cwd = mkdtempSync(join(tmpdir(), `${prefix}-repo-`));

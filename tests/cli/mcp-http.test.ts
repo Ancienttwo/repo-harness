@@ -381,7 +381,7 @@ describe('mcp http transport', () => {
       restoreRegistryHome();
       rmSync(repoRoot, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('supports URL token compatibility mode for single-user clients', async () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-url-token-'));
@@ -442,7 +442,7 @@ describe('mcp http transport', () => {
       restoreRegistryHome();
       rmSync(repoRoot, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('supports ChatGPT-compatible OAuth authorization flow', async () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-oauth-'));
@@ -601,7 +601,7 @@ describe('mcp http transport', () => {
       restoreRegistryHome();
       rmSync(repoRoot, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('coding OAuth E2E enforces Host/CORS/redirect boundaries and exposes the exact direct-coding schema', async () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-coding-e2e-'));

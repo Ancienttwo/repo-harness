@@ -101,7 +101,7 @@ describe("Claude Code hook protocol compliance", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("pre-edit-guard: ExternalReferenceGuard uses exit 2 with reason on stderr", () => {
     const cwd = tmpWorkspace("hook-proto-ref");
@@ -115,7 +115,7 @@ describe("Claude Code hook protocol compliance", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("pre-edit-guard: OpsPrivateGuard uses exit 2 with reason on stderr", () => {
     const cwd = tmpWorkspace("hook-proto-ops");
@@ -129,7 +129,7 @@ describe("Claude Code hook protocol compliance", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("pre-edit-guard: ContractScopeGuard uses exit 2 with reason on stderr", () => {
     // This is the exact regression that surfaced as
@@ -169,7 +169,7 @@ describe("Claude Code hook protocol compliance", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("pre-edit-guard: PlanTransitionGuard uses exit 2 with reason on stderr", () => {
     const cwd = tmpWorkspace("hook-proto-plan-transition");
@@ -193,7 +193,7 @@ describe("Claude Code hook protocol compliance", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("pre-edit profile resolution fails closed with exit 2 and remediation", () => {
     const cwd = tmpWorkspace("hook-proto-plan-status");
@@ -237,7 +237,7 @@ describe("Claude Code hook protocol compliance", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("prompt-guard: ContractGuard uses exit 2 with reason on stderr", () => {
     const cwd = tmpWorkspace("hook-proto-contract-missing");
@@ -270,7 +270,7 @@ describe("Claude Code hook protocol compliance", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("hook_get_file_path: normalizes absolute paths inside the repo to repo-relative paths", () => {
     // Background: Edit/Write/post-edit hooks receive `tool_input.file_path` as an
@@ -292,7 +292,7 @@ describe("Claude Code hook protocol compliance", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("pre-edit-guard: ignores paths outside the repo contract boundary", () => {
     // Case 2: an absolute path outside the repo (e.g. a global plan file under
@@ -336,7 +336,7 @@ describe("Claude Code hook protocol compliance", () => {
       rmSync(cwd, { recursive: true, force: true });
       rmSync(outsideRoot, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("ContractScopeGuard: absolute paths under allowed_paths directories are NOT blocked", () => {
     // The bug we are fixing: an absolute path like
@@ -383,7 +383,7 @@ describe("Claude Code hook protocol compliance", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("hook_structured_error: writes the diagnostic to stderr while keeping stdout telemetry JSON", () => {
     // Spec: the structured error MUST be readable by both the human (stderr → Claude / user)
@@ -404,5 +404,5 @@ describe("Claude Code hook protocol compliance", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });

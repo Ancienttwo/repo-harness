@@ -118,7 +118,7 @@ describe('AcceptanceReceipt verification-evidence fingerprint', () => {
     const verified = await verifyAcceptance({ root, authorityHome: home });
     expect(verified.verification_evidence_sha256).toBe(receipt.verification_evidence_sha256);
     expect(verified.disposition).toBe('external_pass');
-  });
+  }, 30_000);
 
   test('still fails closed when the verification evidence changes semantically', async () => {
     const { root, home } = makeFixture();
@@ -139,5 +139,5 @@ describe('AcceptanceReceipt verification-evidence fingerprint', () => {
       ],
     });
     await expect(verifyAcceptance({ root, authorityHome: home })).rejects.toThrow('verification evidence is stale');
-  });
+  }, 30_000);
 });

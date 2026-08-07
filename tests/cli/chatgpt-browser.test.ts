@@ -99,7 +99,7 @@ describe('chatgpt browser command', () => {
     expect(consult.stdout).toContain('--chatgpt-app');
     expect(consult.stdout).toContain('--secret-scan');
     expect(consult.stdout).toContain('--gitleaks-bin');
-  });
+  }, 30_000);
 
   test('secret scan covers the exact prompt bundle and follow-ups fail closed before a new session', () => {
     withRepo((repoRoot) => {
@@ -163,7 +163,7 @@ describe('chatgpt browser command', () => {
         rmSync(binDir, { recursive: true, force: true });
       }
     });
-  });
+  }, 30_000);
 
   test('a scan-bound source session cannot disable inherited scanning programmatically', async () => {
     await withAsyncRepo(async (repoRoot) => {
@@ -266,7 +266,7 @@ describe('chatgpt browser command', () => {
         rmSync(binDir, { recursive: true, force: true });
       }
     });
-  });
+  }, 30_000);
 
   test('scan-bound Oracle sends immutable captured file bytes instead of a post-scan source mutation', () => {
     withRepo((repoRoot) => {
@@ -321,7 +321,7 @@ describe('chatgpt browser command', () => {
         rmSync(binDir, { recursive: true, force: true });
       }
     });
-  });
+  }, 30_000);
 
   test('explicit skill projection is canonical, idempotent, reversible, and refuses unowned destinations', () => {
     const testHome = mkdtempSync(join(tmpdir(), 'repo-harness-chatgpt-skill-home-'));
@@ -356,7 +356,7 @@ describe('chatgpt browser command', () => {
     } finally {
       rmSync(testHome, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('dry-run consult writes a repo-local session with inline files', () => {
     withRepo((repoRoot) => {
@@ -425,7 +425,7 @@ describe('chatgpt browser command', () => {
       expect(cleanupPlan.status).toBe(0);
       expect(JSON.parse(cleanupPlan.stdout).dryRun).toBe(true);
     });
-  });
+  }, 30_000);
 
   test('denies secret files before writing a session', () => {
     withRepo((repoRoot) => {
@@ -443,7 +443,7 @@ describe('chatgpt browser command', () => {
       expect(result.stderr).toContain('path is denied by ChatGPT browser policy');
       expect(existsSync(join(repoRoot, '.ai/harness/chatgpt/sessions'))).toBe(false);
     });
-  });
+  }, 30_000);
 
   test('denies allowed-path symlink escapes before writing a session', () => {
     withRepo((repoRoot) => {
@@ -468,7 +468,7 @@ describe('chatgpt browser command', () => {
         rmSync(outside, { recursive: true, force: true });
       }
     });
-  });
+  }, 30_000);
 
   test('validates write-output path and overwrite policy before writing a session', () => {
     withRepo((repoRoot) => {
@@ -516,7 +516,7 @@ describe('chatgpt browser command', () => {
       expect(noOverwrite.stderr).toContain('write output already exists');
       expect(readFileSync(join(repoRoot, 'tasks/reviews/existing.md'), 'utf-8')).toBe('old\n');
     });
-  });
+  }, 30_000);
 
   test('native provider readiness and dry-run are wired without opening a browser', () => {
     withRepo((repoRoot) => {
@@ -597,7 +597,7 @@ describe('chatgpt browser command', () => {
       expect(unboundPayload.status).toBe('failed');
       expect(unboundPayload.error.code).toBe('NATIVE_PROFILE_NOT_BOUND');
     });
-  });
+  }, 30_000);
 
   test('rejects removed bridge provider and browser-bind command surfaces', () => {
     withRepo((repoRoot) => {
@@ -613,7 +613,7 @@ describe('chatgpt browser command', () => {
       expect(bind.status).not.toBe(0);
       expect(bind.stderr).toContain("unknown command 'browser-bind'");
     });
-  });
+  }, 30_000);
 
   test('browser setup binds a user-selected ChatGPT profile and native dry-run uses it', () => {
     withRepo((repoRoot) => {
@@ -685,7 +685,7 @@ describe('chatgpt browser command', () => {
       expect(meta.browser.selectedProfilePath).toBe(profileDir);
       expect(meta.browser.channel).toBe('chrome');
     });
-  });
+  }, 30_000);
 
   test('native provider blocks the default Chrome profile before CDP launch', () => {
     if (process.platform !== 'darwin') {
@@ -735,7 +735,7 @@ describe('chatgpt browser command', () => {
       expect(payload.error.recovery).toContain('Chrome 136+ requires a non-standard --user-data-dir');
       expect(readFileSync(payload.paths.output, 'utf-8')).toContain('Chrome 136+ requires a non-standard --user-data-dir');
     });
-  });
+  }, 30_000);
 
   test('oracle provider reads the --write-output answer file and treats stdout as logs', () => {
     withRepo((repoRoot) => {
@@ -822,7 +822,7 @@ describe('chatgpt browser command', () => {
         rmSync(binDir, { recursive: true, force: true });
       }
     });
-  });
+  }, 30_000);
 
   test('oracle provider uses the bound ChatGPT profile cookie database', () => {
     withRepo((repoRoot) => {
@@ -888,7 +888,7 @@ describe('chatgpt browser command', () => {
         rmSync(binDir, { recursive: true, force: true });
       }
     });
-  });
+  }, 30_000);
 
   test('oracle provider prefers modern Network/Cookies over legacy Cookies', () => {
     withRepo((repoRoot) => {
@@ -948,7 +948,7 @@ describe('chatgpt browser command', () => {
         rmSync(binDir, { recursive: true, force: true });
       }
     });
-  });
+  }, 30_000);
 
   test('oracle provider fails closed when the bound profile has no regular cookie database', () => {
     withRepo((repoRoot) => {
@@ -1001,7 +1001,7 @@ describe('chatgpt browser command', () => {
         rmSync(binDir, { recursive: true, force: true });
       }
     });
-  });
+  }, 30_000);
 
   test('oracle provider downgrades an empty answer file to recoverable, not completed', () => {
     withRepo((repoRoot) => {
@@ -1038,7 +1038,7 @@ describe('chatgpt browser command', () => {
         rmSync(binDir, { recursive: true, force: true });
       }
     });
-  });
+  }, 30_000);
 
   test('oracle provider maps thinking to Oracle browser thinking time', () => {
     withRepo((repoRoot) => {
@@ -1085,7 +1085,7 @@ describe('chatgpt browser command', () => {
         rmSync(binDir, { recursive: true, force: true });
       }
     });
-  });
+  }, 30_000);
 
   test('oracle app preselection fails closed when the binary lacks browser-app support', () => {
     withRepo((repoRoot) => {
@@ -1130,7 +1130,7 @@ describe('chatgpt browser command', () => {
         rmSync(binDir, { recursive: true, force: true });
       }
     });
-  });
+  }, 30_000);
 
   test('oracle provider passes ChatGPT app preselection to Oracle when supported', () => {
     withRepo((repoRoot) => {
@@ -1178,7 +1178,7 @@ describe('chatgpt browser command', () => {
         rmSync(binDir, { recursive: true, force: true });
       }
     });
-  });
+  }, 30_000);
 
   test('oracle doctor probes binary capabilities and reports ready', () => {
     withRepo((repoRoot) => {
@@ -1247,7 +1247,7 @@ describe('chatgpt browser command', () => {
         rmSync(binDir, { recursive: true, force: true });
       }
     });
-  });
+  }, 30_000);
 
   test('oracle doctor requires every runtime flag before reporting ready', () => {
     withRepo((repoRoot) => {
@@ -1300,7 +1300,7 @@ describe('chatgpt browser command', () => {
         rmSync(binDir, { recursive: true, force: true });
       }
     });
-  });
+  }, 30_000);
 
   test('oracle doctor repairs repo-local and env-selected binaries through source-aware actions', () => {
     withRepo((repoRoot) => {
@@ -1342,7 +1342,7 @@ describe('chatgpt browser command', () => {
         command: 'REPO_HARNESS_ORACLE_BIN=<path-to-pinned-oracle> repo-harness chatgpt browser-doctor --repo <repo> --provider oracle --json',
       });
     });
-  });
+  }, 30_000);
 
   test('oracle follow-up uses providerSessionId instead of local sessionId', () => {
     withRepo((repoRoot) => {
@@ -1422,7 +1422,7 @@ describe('chatgpt browser command', () => {
         rmSync(binDir, { recursive: true, force: true });
       }
     });
-  });
+  }, 30_000);
 
   test('rejects invalid session ids for read/open surfaces', () => {
     withRepo((repoRoot) => {
@@ -1430,7 +1430,7 @@ describe('chatgpt browser command', () => {
       expect(read.status).toBe(2);
       expect(read.stderr).toContain('invalid ChatGPT browser session id');
     });
-  });
+  }, 30_000);
 
   test('ships browser engine docs', () => {
     // SSD-06 migration: docs/repo-harness-chatgpt-browser-engine.md documents

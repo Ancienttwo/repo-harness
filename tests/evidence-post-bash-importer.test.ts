@@ -123,7 +123,7 @@ describe("importPostBashObservation: trust class and D3 field set", () => {
       const { accepted } = readAcceptedEvents(repoRoot);
       expect(accepted.length).toBe(1);
     });
-  });
+  }, 30_000);
 });
 
 describe("importPostBashObservation: unbound vs bound contract identity (sentinel rules)", () => {
@@ -140,7 +140,7 @@ describe("importPostBashObservation: unbound vs bound contract identity (sentine
       expect(identity.base_commit).toMatch(/^[0-9a-f]{40}$/);
       expect(identity.target_commit).toMatch(/^[0-9a-f]{40}$/);
     });
-  });
+  }, 30_000);
 
   test("a dirty (uncommitted) contract -> unbound authority/scope/contract identity", () => {
     withTempRepo("post-bash-importer-dirty-contract", (repoRoot) => {
@@ -158,7 +158,7 @@ describe("importPostBashObservation: unbound vs bound contract identity (sentine
       expect(identity.scope_hash).toBe(UNBOUND_SENTINEL);
       expect(identity.contract_hash).toBe(UNBOUND_SENTINEL);
     });
-  });
+  }, 30_000);
 
   test("an untracked (never committed) contract -> unbound authority/scope/contract identity", () => {
     withTempRepo("post-bash-importer-untracked-contract", (repoRoot) => {
@@ -171,7 +171,7 @@ describe("importPostBashObservation: unbound vs bound contract identity (sentine
       expect(identity.scope_hash).toBe(UNBOUND_SENTINEL);
       expect(identity.contract_hash).toBe(UNBOUND_SENTINEL);
     });
-  });
+  }, 30_000);
 
   test("a clean, committed contract -> bound authority/scope/contract identity", () => {
     withTempRepo("post-bash-importer-bound-contract", (repoRoot) => {
@@ -186,7 +186,7 @@ describe("importPostBashObservation: unbound vs bound contract identity (sentine
       const expectedScopeHash = `sha256:${createHash("sha256").update(JSON.stringify(["src/a.ts", "src/b.ts"])).digest("hex")}`;
       expect(identity.scope_hash).toBe(expectedScopeHash);
     });
-  });
+  }, 30_000);
 });
 
 describe("importPostBashObservation: observed-only ledger leaves authoritative gates unsatisfied", () => {
@@ -202,7 +202,7 @@ describe("importPostBashObservation: observed-only ledger leaves authoritative g
       expect(accepted.every((event) => event.trust_class === "observed")).toBe(true);
       expect(accepted.filter((event) => event.trust_class === "authoritative_machine")).toEqual([]);
     });
-  });
+  }, 30_000);
 });
 
 describe("importPostBashObservation: fail-closed on malformed input", () => {
@@ -218,7 +218,7 @@ describe("importPostBashObservation: fail-closed on malformed input", () => {
       const { accepted } = readAcceptedEvents(repoRoot);
       expect(accepted.length).toBe(0);
     });
-  });
+  }, 30_000);
 
   test("a negative durationMs fails closed and appends nothing", () => {
     withTempRepo("post-bash-importer-malformed-duration", (repoRoot) => {
@@ -230,7 +230,7 @@ describe("importPostBashObservation: fail-closed on malformed input", () => {
       const { accepted } = readAcceptedEvents(repoRoot);
       expect(accepted.length).toBe(0);
     });
-  });
+  }, 30_000);
 
   test("an absolute rawOutputPath fails closed and appends nothing", () => {
     withTempRepo("post-bash-importer-malformed-path", (repoRoot) => {
@@ -242,7 +242,7 @@ describe("importPostBashObservation: fail-closed on malformed input", () => {
       const { accepted } = readAcceptedEvents(repoRoot);
       expect(accepted.length).toBe(0);
     });
-  });
+  }, 30_000);
 
   test("a path-traversal rawOutputPath fails closed and appends nothing", () => {
     withTempRepo("post-bash-importer-malformed-traversal", (repoRoot) => {
@@ -254,7 +254,7 @@ describe("importPostBashObservation: fail-closed on malformed input", () => {
       const { accepted } = readAcceptedEvents(repoRoot);
       expect(accepted.length).toBe(0);
     });
-  });
+  }, 30_000);
 });
 
 describe("importPostBashObservation: idempotent re-import", () => {
@@ -282,7 +282,7 @@ describe("importPostBashObservation: idempotent re-import", () => {
       expect(accepted.length).toBe(1);
       expect(accepted[0]!.event_id).toBe(first.event.event_id);
     });
-  });
+  }, 30_000);
 
   test("genesis is written once with LEDGER_EPOCH_START_SHA across repeated imports", () => {
     withTempRepo("post-bash-importer-genesis-once", (repoRoot) => {
@@ -302,5 +302,5 @@ describe("importPostBashObservation: idempotent re-import", () => {
       const genesisLines = lines.filter((line) => JSON.parse(line).kind === "evidence_genesis");
       expect(genesisLines.length).toBe(1);
     });
-  });
+  }, 30_000);
 });

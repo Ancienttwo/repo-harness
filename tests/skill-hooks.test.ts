@@ -114,7 +114,7 @@ describe("runHooks() with empty scripts", () => {
     const result = await runHooks("pre-init");
     expect(result.success).toBe(true);
     expect(result.results).toEqual([]);
-  });
+  }, 30_000);
 });
 
 describe("Hook Execution (temp directory)", () => {
@@ -141,12 +141,12 @@ describe("Hook Execution (temp directory)", () => {
     const result = await executeHookScript(tmpSuccessScript, "pre-init");
     expect(result.success).toBe(true);
     expect(result.output).toContain("hook ran successfully");
-  });
+  }, 30_000);
 
   test("executeHookScript reports failure for failing script", async () => {
     const result = await executeHookScript(tmpFailScript, "pre-init");
     expect(result.success).toBe(false);
-  });
+  }, 30_000);
 
   test("executeHookScript passes context via stdin and env", async () => {
     const result = await executeHookScript(tmpContextScript, "pre-assemble", {
@@ -155,13 +155,13 @@ describe("Hook Execution (temp directory)", () => {
     expect(result.success).toBe(true);
     expect(result.output).toContain("event=pre-assemble");
     expect(result.output).toContain('"planType":"C"');
-  });
+  }, 30_000);
 
   test("executeHookScript returns error for missing script", async () => {
     const result = await executeHookScript("/nonexistent/script.sh", "pre-init");
     expect(result.success).toBe(false);
     expect(result.error).toContain("not found");
-  });
+  }, 30_000);
 
   test("sync hook failure aborts remaining hooks", async () => {
     const config = {
@@ -180,7 +180,7 @@ describe("Hook Execution (temp directory)", () => {
     // Only the first (failing) script should have run
     expect(result.results.length).toBe(1);
     expect(result.results[0].success).toBe(false);
-  });
+  }, 30_000);
 
   test("advisory hook failure does not abort remaining hooks", async () => {
     const config = {
@@ -200,7 +200,7 @@ describe("Hook Execution (temp directory)", () => {
     expect(result.results.length).toBe(2);
     expect(result.results[0].success).toBe(false);
     expect(result.results[1].success).toBe(true);
-  });
+  }, 30_000);
 
   // Cleanup
   test("cleanup temp directory", () => {

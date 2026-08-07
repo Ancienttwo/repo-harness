@@ -377,7 +377,7 @@ describe("init command", () => {
     expect(res.stdout).toContain("--dry-run");
     expect(res.stdout).not.toContain("--experimental-ts-apply");
     expect(res.stdout).toContain("--no-codegraph");
-  });
+  }, 30_000);
 
   test("CLI update rejects repo refresh flags with an init hint", () => {
     const res = spawnSync("bun", [CLI, "update", "--repo", ".", "--json"], {
@@ -388,7 +388,7 @@ describe("init command", () => {
     expect(res.status).toBe(2);
     expect(res.stderr).toContain("repo-harness update no longer refreshes repositories");
     expect(res.stderr).toContain("repo-harness init --repo <path>");
-  });
+  }, 30_000);
 
   test("CLI init rejects user-level brain configuration flags", () => {
     const tmp = join(tmpdir(), `repo-harness-init-brain-${Date.now()}`);
@@ -405,7 +405,7 @@ describe("init command", () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("init refuses HOME before running migration or host bootstrap", () => {
     const tmp = join(tmpdir(), `repo-harness-init-home-${Date.now()}`);

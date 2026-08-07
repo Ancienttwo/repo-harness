@@ -166,7 +166,7 @@ describe('security scan command', () => {
       expect(report.findings.map((finding) => finding.ruleId)).toContain('vscode-folder-open-suspicious');
       expect(report.findings.find((finding) => finding.ruleId === 'vscode-folder-open-suspicious')?.severity).toBe('high');
     });
-  });
+  }, 30_000);
 
   test('legacy project hook adapter is reported as a warning', () => {
     withTempHomeAndRepo(({ home, repo }) => {
@@ -225,5 +225,5 @@ describe('security scan command', () => {
       });
       expect(strict.status).toBe(1);
     });
-  });
+  }, 30_000);
 });

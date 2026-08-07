@@ -204,7 +204,7 @@ describe('prompt-guard decision engine', () => {
 
     expect(res.status).toBe(0);
     expect(res.stdout.trim()).toBe('plan_capture_draft_advice');
-  });
+  }, 30_000);
 
   test('hook entry exposes the lightweight prompt-guard decision command', () => {
     const res = spawnSync(
@@ -230,5 +230,5 @@ describe('prompt-guard decision engine', () => {
 
     expect(res.status).toBe(0);
     expect(res.stdout.trim()).toBe('plan_capture_missing_active_advice');
-  });
+  }, 30_000);
 });

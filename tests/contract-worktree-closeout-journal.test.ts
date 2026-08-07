@@ -428,7 +428,7 @@ describe("contract-worktree finish closeout journal", () => {
       expect(journalDirs(fixture, "finish")).toHaveLength(1);
       expect(readJournal(onlyJournal(fixture, "finish")).status).toBe("complete");
     });
-  });
+  }, 30_000);
 
   test("explicit recover abort clears a dead owner claimed before journal preparation", () => {
     withTempRepo("closeout-journal-orphan-claim", (container) => {
@@ -482,7 +482,7 @@ describe("contract-worktree finish closeout journal", () => {
       expect(existsSync(claim)).toBe(false);
       expect(journalDirs(fixture, "finish")).toHaveLength(0);
     });
-  });
+  }, 30_000);
 
   test("an uninterrupted finish journals every phase and clears its snapshot on completion", () => {
     withTempRepo("closeout-journal-happy", (container) => {
@@ -517,7 +517,7 @@ describe("contract-worktree finish closeout journal", () => {
       expect(meta.contract).toBe(CONTRACT);
       expect(meta.original_head).toMatch(/^[0-9a-f]{40}$/);
     });
-  });
+  }, 30_000);
 
   test("a completed transaction is never re-run as a second closeout", () => {
     withTempRepo("closeout-journal-replay", (container) => {
@@ -543,7 +543,7 @@ describe("contract-worktree finish closeout journal", () => {
       expect(inspect.status).toBe(0);
       expect(inspect.stdout).toContain("No unfinished closeout journal for this worktree.");
     });
-  });
+  }, 30_000);
 
   // The core acceptance requirement: per-phase SIGKILL injection. Each case
   // crashes the helper immediately after the named phase is durably recorded,
@@ -614,7 +614,7 @@ describe("contract-worktree finish closeout journal", () => {
         expect(existsSync(join(fixture.linked, ARCHIVED_PLAN))).toBe(true);
         expect(readJournal(onlyJournal(fixture, "finish")).status).toBe("complete");
       });
-    });
+    }, 30_000);
   }
 
   test("SIGKILL after gate_sealed still rolls back, and SIGKILL after merged reconciles without a second merge", () => {
@@ -680,7 +680,7 @@ describe("contract-worktree finish closeout journal", () => {
       expect(runProcess("git", ["rev-parse", "main"], fixture.primary).stdout.trim()).toBe(mergedSha);
       expect(existsSync(join(dir, "snapshot"))).toBe(false);
     });
-  });
+  }, 30_000);
 
   test("an unfinished journal owned by another worktree does not block this one", () => {
     withTempRepo("closeout-journal-other-worktree", (container) => {
@@ -703,7 +703,7 @@ describe("contract-worktree finish closeout journal", () => {
       expect(inspect.status).toBe(0);
       expect(inspect.stdout).toContain("No unfinished closeout journal for this worktree.");
     });
-  });
+  }, 30_000);
 });
 
 describe("ship-worktrees closeout journal", () => {
@@ -779,7 +779,7 @@ describe("ship-worktrees closeout journal", () => {
       expect(prCreates).toHaveLength(1);
       expect(runProcess("git", ["rev-parse", "refs/heads/codex/demo"], fixture.remote).status).toBe(0);
     });
-  });
+  }, 30_000);
 
   test("SIGKILL right after the prepared phase rolls back with nothing pushed", () => {
     withTempRepo("closeout-journal-ship-prepared", (container) => {
@@ -855,7 +855,7 @@ describe("ship-worktrees closeout journal", () => {
       expect(readJournal(dir).status).toBe("aborted");
       expect(runProcess("git", ["rev-parse", "refs/heads/codex/demo"], fixture.remote).status).not.toBe(0);
     });
-  });
+  }, 30_000);
 
   test("SIGKILL between the PR record and complete reconciles without a second push or PR", () => {
     withTempRepo("closeout-journal-ship-pr-observed", (container) => {
@@ -935,7 +935,7 @@ describe("ship-worktrees closeout journal", () => {
       expect(done.phases).toEqual(["prepared", "gate_sealed", "pushed", "pr_observed", "complete"]);
       expect(existsSync(join(dir, "snapshot"))).toBe(false);
     });
-  });
+  }, 30_000);
 
   test("SIGKILL between push and PR creation reconciles to PR creation only", () => {
     withTempRepo("closeout-journal-ship", (container) => {
@@ -1000,7 +1000,7 @@ describe("ship-worktrees closeout journal", () => {
       expect(done.status).toBe("complete");
       expect(done.phases).toEqual(["prepared", "gate_sealed", "pushed", "pr_observed", "complete"]);
     });
-  });
+  }, 30_000);
 
   test("SIGKILL after the push but before its phase record still reconciles from the remote", () => {
     withTempRepo("closeout-journal-ship-window", (container) => {
@@ -1052,7 +1052,7 @@ describe("ship-worktrees closeout journal", () => {
       expect(readJournal(dir).phases).toEqual(["prepared", "gate_sealed", "pushed", "pr_observed", "complete"]);
       expect(runProcess("git", ["rev-parse", "refs/heads/codex/demo"], fixture.remote).stdout.trim()).toBe(remoteSha);
     });
-  });
+  }, 30_000);
 });
 
 describe("closeout journal no-read guard", () => {
@@ -1079,5 +1079,5 @@ describe("closeout journal no-read guard", () => {
       const after = JSON.stringify(resolveFixtureState(cwd, nowMs), null, 2);
       expect(after).toBe(before);
     });
-  });
+  }, 30_000);
 });

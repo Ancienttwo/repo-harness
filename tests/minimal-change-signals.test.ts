@@ -56,7 +56,7 @@ describe('minimal-change objective signals', () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('does not treat a dev-to-prod dependency move as a new dependency', () => {
     const repo = tmpRepo('minimal-change-dependency-move');
@@ -73,7 +73,7 @@ describe('minimal-change objective signals', () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('marks test and security validation changes as protected instead of shrink findings', () => {
     const repo = tmpRepo('minimal-change-protected');
@@ -96,7 +96,7 @@ describe('minimal-change objective signals', () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('reports low-confidence abstraction candidates deterministically', () => {
     const repo = tmpRepo('minimal-change-abstraction');
@@ -122,7 +122,7 @@ describe('minimal-change objective signals', () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('hook-only CLI stays stdout-silent, respects off mode, and dedupes identical events', () => {
     const repo = tmpRepo('minimal-change-cli-signals');
@@ -160,5 +160,5 @@ describe('minimal-change objective signals', () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });

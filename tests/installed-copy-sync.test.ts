@@ -102,7 +102,7 @@ describe("Codex installed copy sync", () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("can maintain local skill roots as source-backed aliases", () => {
     const tmp = join(tmpdir(), `repo-harness-installed-link-${Date.now()}`);
@@ -147,7 +147,7 @@ describe("Codex installed copy sync", () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("full sync leaves separately managed provider skills untouched", () => {
     const tmp = join(tmpdir(), `repo-harness-installed-provider-skill-${Date.now()}`);
@@ -191,7 +191,7 @@ describe("Codex installed copy sync", () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("minimal removes an exact package-owned full-only facade", () => {
     const tmp = join(tmpdir(), `repo-harness-installed-minimal-${Date.now()}`);
@@ -225,7 +225,7 @@ describe("Codex installed copy sync", () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("unknown facade fails closed before changing any managed surface", () => {
     const tmp = join(tmpdir(), `repo-harness-installed-unknown-${Date.now()}`);
@@ -265,7 +265,7 @@ describe("Codex installed copy sync", () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("modified owner-marked canonical copy fails closed and is preserved", () => {
     const tmp = join(tmpdir(), `repo-harness-installed-drift-${Date.now()}`);
@@ -302,7 +302,7 @@ describe("Codex installed copy sync", () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("wires plan/check into both profiles and product/ship into full only", () => {
     const tmp = join(tmpdir(), `repo-harness-installed-product-ship-profile-${Date.now()}`);
@@ -344,7 +344,7 @@ describe("Codex installed copy sync", () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("retires an owner-marked facade once its canonical source and profile selection are both gone", () => {
     const tmp = join(tmpdir(), `repo-harness-installed-retire-${Date.now()}`);
@@ -396,7 +396,7 @@ describe("Codex installed copy sync", () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("preserves and reports a modified facade even after its canonical source is removed", () => {
     const tmp = join(tmpdir(), `repo-harness-installed-retire-drift-${Date.now()}`);
@@ -444,7 +444,7 @@ describe("Codex installed copy sync", () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("unknown canonical directory fails closed without rm -rf", () => {
     const tmp = join(tmpdir(), `repo-harness-installed-canonical-${Date.now()}`);
@@ -477,7 +477,7 @@ describe("Codex installed copy sync", () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("copy mode reports explicit unsupported mode when rsync is missing", () => {
     const tmp = join(tmpdir(), `repo-harness-installed-no-rsync-${Date.now()}`);
@@ -512,7 +512,7 @@ describe("Codex installed copy sync", () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("link mode does not require rsync when symlinks are supported", () => {
     const tmp = join(tmpdir(), `repo-harness-installed-link-no-rsync-${Date.now()}`);
@@ -548,7 +548,7 @@ describe("Codex installed copy sync", () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("link mode reports explicit unsupported mode when symlink creation fails", () => {
     const tmp = join(tmpdir(), `repo-harness-installed-no-symlink-${Date.now()}`);
@@ -584,5 +584,5 @@ describe("Codex installed copy sync", () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });

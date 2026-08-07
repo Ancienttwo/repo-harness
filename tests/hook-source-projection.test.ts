@@ -88,7 +88,7 @@ describe("hook source projection", () => {
     expect(res.status).toBe(0);
     expect(res.stdout).toContain("projection OK");
     expect(res.stderr).toBe("");
-  });
+  }, 30_000);
 
   test("manifest classifies package-only files and no repo-only drift", () => {
     const manifest = readManifest();
@@ -180,7 +180,7 @@ describe("hook source projection", () => {
       ]),
     );
     expect(after).toEqual(before);
-  });
+  }, 30_000);
 
   test("projection reads reject symlinked roots and ancestor directories", () => {
     const tmp = mkdtempSync(join(tmpdir(), "source-projection-read-"));

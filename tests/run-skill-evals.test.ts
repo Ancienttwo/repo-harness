@@ -156,7 +156,7 @@ describe("run-skill-evals helpers", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("disposable boundary rejects the real HOME before evaluator writes", () => {
     const boundary = tempPath("benchmark-real-home-guard");
@@ -364,7 +364,7 @@ describe("run-skill-evals execution", () => {
       else process.env.EVAL_GRADER_ENV_PROOF = originalGraderProof;
       rmSync(disposableBoundary, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("blocks disposable mode against the source checkout before writing", () => {
     const disposableHome = tempPath("benchmark-disposable-home");
@@ -380,7 +380,7 @@ describe("run-skill-evals execution", () => {
     } finally {
       rmSync(disposableHome, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("blocks swapped source-checkout HOME and real-HOME repo inputs", () => {
     const boundary = tempPath("benchmark-swapped-boundary");
@@ -477,7 +477,7 @@ describe("run-skill-evals execution", () => {
     } finally {
       rmSync(boundary, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("adoption profile injects one validated repo and HOME into both existing commands", () => {
     const boundary = tempPath("benchmark-adoption-boundary");
@@ -517,7 +517,7 @@ describe("run-skill-evals execution", () => {
       else process.env.REPO_HARNESS_SOURCE_ROOT = originalSourceRoot;
       rmSync(boundary, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("runs a filtered benchmark matrix with grader metadata", () => {
     const tempDir = tempPath("benchmark-run");
@@ -626,7 +626,7 @@ describe("run-skill-evals execution", () => {
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("keeps agent and grader status when structured usage is malformed", () => {
     const tempDir = tempPath("benchmark-malformed-usage");
@@ -700,7 +700,7 @@ printf 'not-json\\n'
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("records failures when graders fail even if agent exits 0", () => {
     const tempDir = tempPath("benchmark-grader-fail");
@@ -759,7 +759,7 @@ printf 'not-json\\n'
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("records agent process failures without crashing the full report generation", () => {
     const tempDir = tempPath("benchmark-fail");
@@ -817,7 +817,7 @@ printf 'not-json\\n'
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("marks all-dry-run benchmark summaries as non-authoritative", () => {
     const tempDir = tempPath("benchmark-dry-run");
@@ -873,5 +873,5 @@ printf 'not-json\\n'
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });

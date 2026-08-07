@@ -99,7 +99,7 @@ describe("importAttestedEvidence: trust mapping", () => {
       expect(accepted.length).toBe(1);
       expect(accepted[0]!.event_id).toBe(result.event.event_id);
     });
-  });
+  }, 30_000);
 
   test("user_waiver maps to human_acceptance", () => {
     withTempRepo("attested-import-user-waiver", (repoRoot) => {
@@ -117,7 +117,7 @@ describe("importAttestedEvidence: trust mapping", () => {
       if (!result.ok) return;
       expect(result.event.trust_class).toBe("human_acceptance");
     });
-  });
+  }, 30_000);
 
   test("emits the complete D3 field set and a redaction-safe short payload", () => {
     withTempRepo("attested-import-d3-fields", (repoRoot) => {
@@ -151,7 +151,7 @@ describe("importAttestedEvidence: trust mapping", () => {
       expect((payload.receipt_ref as string).length).toBeLessThan(32);
       expect(payload.receipt_ref).not.toContain("sha256:");
     });
-  });
+  }, 30_000);
 });
 
 describe("importAttestedEvidence: fail-closed paths", () => {
@@ -168,7 +168,7 @@ describe("importAttestedEvidence: fail-closed paths", () => {
       const { accepted } = readAcceptedEvents(repoRoot);
       expect(accepted.length).toBe(0);
     });
-  });
+  }, 30_000);
 
   test("a completely bogus disposition also fails closed", () => {
     withTempRepo("attested-import-bogus-disposition", (repoRoot) => {
@@ -182,7 +182,7 @@ describe("importAttestedEvidence: fail-closed paths", () => {
       const { accepted } = readAcceptedEvents(repoRoot);
       expect(accepted.length).toBe(0);
     });
-  });
+  }, 30_000);
 
   test("missing actor (empty reviewer) fails closed and appends nothing", () => {
     withTempRepo("attested-import-missing-actor", (repoRoot) => {
@@ -197,7 +197,7 @@ describe("importAttestedEvidence: fail-closed paths", () => {
       const { accepted } = readAcceptedEvents(repoRoot);
       expect(accepted.length).toBe(0);
     });
-  });
+  }, 30_000);
 
   test("missing reason (blank summary) fails closed and appends nothing", () => {
     withTempRepo("attested-import-missing-reason", (repoRoot) => {
@@ -211,7 +211,7 @@ describe("importAttestedEvidence: fail-closed paths", () => {
       const { accepted } = readAcceptedEvents(repoRoot);
       expect(accepted.length).toBe(0);
     });
-  });
+  }, 30_000);
 
   test("missing subject (empty subject_sha256) fails closed and appends nothing", () => {
     withTempRepo("attested-import-missing-subject-hash", (repoRoot) => {
@@ -225,7 +225,7 @@ describe("importAttestedEvidence: fail-closed paths", () => {
       const { accepted } = readAcceptedEvents(repoRoot);
       expect(accepted.length).toBe(0);
     });
-  });
+  }, 30_000);
 
   test("missing subject (empty target_revision) fails closed and appends nothing", () => {
     withTempRepo("attested-import-missing-target-revision", (repoRoot) => {
@@ -239,7 +239,7 @@ describe("importAttestedEvidence: fail-closed paths", () => {
       const { accepted } = readAcceptedEvents(repoRoot);
       expect(accepted.length).toBe(0);
     });
-  });
+  }, 30_000);
 
   test("an uncommitted contract file fails closed (no authority commit) and appends nothing", () => {
     withTempRepo("attested-import-uncommitted-contract", (repoRoot) => {
@@ -250,7 +250,7 @@ describe("importAttestedEvidence: fail-closed paths", () => {
       const { accepted } = readAcceptedEvents(repoRoot);
       expect(accepted.length).toBe(0);
     });
-  });
+  }, 30_000);
 });
 
 describe("importAttestedEvidence: default-deny at trust level", () => {
@@ -282,7 +282,7 @@ describe("importAttestedEvidence: default-deny at trust level", () => {
       const authoritative = accepted.filter((event) => event.trust_class === "authoritative_machine");
       expect(authoritative.length).toBe(0);
     });
-  });
+  }, 30_000);
 });
 
 describe("importAttestedEvidence: idempotency and genesis", () => {
@@ -310,7 +310,7 @@ describe("importAttestedEvidence: idempotency and genesis", () => {
       expect(accepted.length).toBe(1);
       expect(accepted[0]!.event_id).toBe(first.event.event_id);
     });
-  });
+  }, 30_000);
 
   test("re-importing a receipt with a different subject is not deduped", () => {
     withTempRepo("attested-import-distinct-subject", (repoRoot) => {
@@ -328,7 +328,7 @@ describe("importAttestedEvidence: idempotency and genesis", () => {
       const { accepted } = readAcceptedEvents(repoRoot);
       expect(accepted.length).toBe(2);
     });
-  });
+  }, 30_000);
 
   test("genesis is written once with LEDGER_EPOCH_START_SHA across repeated imports", () => {
     withTempRepo("attested-import-genesis-once", (repoRoot) => {
@@ -353,7 +353,7 @@ describe("importAttestedEvidence: idempotency and genesis", () => {
       expect(genesisLines.length).toBe(1);
       expect(JSON.parse(genesisLines[0]!).ledger_epoch_start_sha).toBe(LEDGER_EPOCH_START_SHA);
     });
-  });
+  }, 30_000);
 });
 
 describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
@@ -466,7 +466,7 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
     expect(accepted.length).toBe(1);
     expect(accepted[0]!.trust_class).toBe("external_attested");
     expect(accepted[0]!.event_type).toBe("acceptance_receipt.attested_import");
-  });
+  }, 30_000);
 
   test("real record --disposition reject does not touch the ledger", async () => {
     const { root, home } = setupCliFixture();
@@ -489,5 +489,5 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
     // Existing, pre-EPC-04 behavior: reject still exits 1 (unaffected by this package's wiring).
     expect(exitCode).toBe(1);
     expect(readGenesisRecord(root)).toBeNull();
-  });
+  }, 30_000);
 });

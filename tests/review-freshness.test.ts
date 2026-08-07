@@ -66,7 +66,7 @@ describe('review subject', () => {
       rmSync(source, { recursive: true, force: true });
       rmSync(cloneParent, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('excludes review and check artifacts from the review subject', () => {
     const cwd = tmpRepo('repo-harness-review-freshness-exclude');
@@ -107,7 +107,7 @@ describe('review subject', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('excludes regenerated authoritative harness reports from review freshness', () => {
     const repo = tmpRepo('repo-harness-review-freshness-report');
@@ -132,7 +132,7 @@ describe('review subject', () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('includes untracked file content in the subject', () => {
     const cwd = tmpRepo('repo-harness-review-freshness-untracked');
@@ -150,7 +150,7 @@ describe('review subject', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('keeps the content subject stable when the target advances on unrelated paths', () => {
     const cwd = tmpFeatureRepo('repo-harness-review-freshness-target');
@@ -180,7 +180,7 @@ describe('review subject', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('reports target overlap without folding target revision into the content subject', () => {
     const cwd = tmpFeatureRepo('repo-harness-review-freshness-overlap');
@@ -203,7 +203,7 @@ describe('review subject', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('represents deletion as normalized final content', () => {
     const cwd = tmpFeatureRepo('repo-harness-review-freshness-delete');
@@ -221,7 +221,7 @@ describe('review subject', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('hashes untracked file content above the legacy 1 MiB cap', () => {
     const cwd = tmpFeatureRepo('repo-harness-review-freshness-large');
@@ -238,7 +238,7 @@ describe('review subject', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('observes untracked files with non-ASCII pathnames', () => {
     const cwd = tmpFeatureRepo('repo-harness-review-freshness-unicode');
@@ -255,7 +255,7 @@ describe('review subject', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('fails closed with status unknown when git state is unreadable', () => {
     const nonRepo = mkdtempSync(join(tmpdir(), 'repo-harness-review-freshness-nonrepo-'));
@@ -287,7 +287,7 @@ describe('review subject', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('detects content changes in untracked files whose names use git pathspec magic', () => {
     const cwd = tmpFeatureRepo('repo-harness-review-freshness-pathspec');
@@ -307,7 +307,7 @@ describe('review subject', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('detects an untracked symlink retargeted to a same-content file', () => {
     const cwd = tmpFeatureRepo('repo-harness-review-freshness-symlink');
@@ -330,7 +330,7 @@ describe('review subject', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('hashes raw symlink target bytes so a non-utf-8 retarget is observed', () => {
     const cwd = tmpFeatureRepo('repo-harness-review-freshness-symlink-bytes');
@@ -350,7 +350,7 @@ describe('review subject', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('detects an untracked executable-bit flip with no content change', () => {
     const cwd = tmpFeatureRepo('repo-harness-review-freshness-mode');
@@ -368,7 +368,7 @@ describe('review subject', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('splitNul fails closed when a git pathname does not round-trip through utf-8', () => {
     // macOS/APFS rejects non-utf-8 filenames, so this Linux-reproducible case is

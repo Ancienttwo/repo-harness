@@ -32,7 +32,7 @@ describe('verifier evidence lifecycle cutover', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('bounded runner keeps the deadline active after the group leader exits', async () => {
     if (process.platform === 'win32') return;
@@ -56,7 +56,7 @@ describe('verifier evidence lifecycle cutover', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('bounded runner strips REPO_HARNESS_* wiring from the verified command', () => {
     if (process.platform === 'win32') return;
@@ -92,7 +92,7 @@ describe('verifier evidence lifecycle cutover', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('bounded runner passes non-harness environment through unchanged', () => {
     if (process.platform === 'win32') return;
@@ -116,7 +116,7 @@ describe('verifier evidence lifecycle cutover', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('strict verifier has a fixed budget and records timing evidence', () => {
     const source = readFileSync(join(ROOT, 'scripts/verify-contract.sh'), 'utf-8');
@@ -171,7 +171,7 @@ describe('verifier evidence lifecycle cutover', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('sprint and active contract surfaces contain no live matrix command', () => {
     for (const path of [

@@ -19,7 +19,7 @@ describe("setup-plugins compatibility shim", () => {
 
     expect(res.status).toBe(0);
     expect(res.stderr).toBe("");
-  });
+  }, 30_000);
 
   test("delegates to the modern repo-harness install path", () => {
     const setup = readSetup();

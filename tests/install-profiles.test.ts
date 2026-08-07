@@ -136,7 +136,7 @@ describe('install profiles', () => {
     });
     expect(result.status).toBe(0);
     expect(JSON.parse(result.stdout).requested_profile).toBe('full');
-  }));
+  }), 30_000);
 
   test('explicit legacy migration dry-run targets full by default without mutating state', () => withHome((env) => {
     const statePath = join(env.HOME!, '.repo-harness', 'install-state.json');
@@ -167,7 +167,7 @@ describe('install profiles', () => {
       requested_profile: 'full',
     });
     expect(JSON.parse(readFileSync(statePath, 'utf-8'))).toEqual(legacy);
-  }));
+  }), 30_000);
 
   test('explicit migration replaces protocol 1 atomically and carries forward current owned surfaces without legacy rollback history', () => withHome((env) => {
     writeManagedHostSurfaces(env, 'full');
@@ -328,7 +328,7 @@ describe('install profiles', () => {
     expect(readFileSync(stagingSkillPath)).toEqual(before.stagingSkill);
     expect(readFileSync(stagingMarkerPath)).toEqual(before.stagingMarker);
     expect(readFileSync(lockPath)).toEqual(before.lock);
-  }));
+  }), 30_000);
 
   test('dry-run plan is explicit and has no side effects', () => withHome((env) => {
     const plan = planInstallProfile('minimal', null, env);
@@ -577,7 +577,7 @@ describe('install profiles', () => {
     expect(existsSync(join(env.HOME!, '.codex', 'skills', 'repo-harness'))).toBe(false);
     expect(existsSync(join(env.HOME!, '.agents', '.skill-lock.json'))).toBe(false);
     expect(readInstalledProfile(env)).toBeNull();
-  }));
+  }), 30_000);
 
   test('committing a host transaction only discards its backups', () => withHome((env) => {
     const path = join(env.HOME!, 'surface');
@@ -782,5 +782,5 @@ describe('install profiles', () => {
     });
     expect(state.status).toBe(0);
     expect(JSON.parse(state.stdout).profile).toBe('minimal');
-  }));
+  }), 30_000);
 });

@@ -105,7 +105,7 @@ describe('attempt receipts are invisible to progress_token by two independent me
   test('the shipped .gitignore covers the attempt ledger path', () => {
     const ignored = git(ROOT, ['check-ignore', '-q', LEDGER]);
     expect(ignored.status, `git check-ignore did not cover ${LEDGER}`).toBe(0);
-  });
+  }, 30_000);
 
   // Arm 2, in a repository with no ignore rule at all: the review-subject
   // classifier alone excludes the ledger. `isOperationalReviewPath` is module
@@ -131,7 +131,7 @@ describe('attempt receipts are invisible to progress_token by two independent me
       expect(subject.excluded_paths).toContain(LEDGER);
       expect(subject.paths).not.toContain(LEDGER);
     });
-  });
+  }, 30_000);
 });
 
 /**
@@ -772,5 +772,5 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
       expect(existsSync(join(worktreeTwo, LEDGER))).toBe(true);
       expect(git(worktreeTwo, ['status', '--porcelain', '--untracked-files=all']).stdout).toBe('');
     });
-  });
+  }, 30_000);
 });

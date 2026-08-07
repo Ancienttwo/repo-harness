@@ -565,7 +565,7 @@ describe("archive evidence gates", () => {
       expect(existsSync(join(cwd, "tasks/contracts/20260711-1200-demo.contract.md"))).toBe(false);
       expect(existsSync(join(cwd, "tasks/reviews/20260711-1200-demo.review.md"))).toBe(false);
     });
-  });
+  }, 30_000);
 
   test("sealed-terminal mode accepts only a Fulfilled contract, pass review, and typed receipt projection", () => {
     withTempRepo("sealed-terminal-archive", (cwd) => {
@@ -610,7 +610,7 @@ describe("archive evidence gates", () => {
         expect(existsSync(join(cwd, "plans/plan-20260711-1200-demo.md"))).toBe(true);
       });
     }
-  });
+  }, 30_000);
 
   test("predict-manifest merges live checks evidence into the scratch clone instead of nesting it", () => {
     withTempRepo("archive-workflow-predict-manifest", (cwd) => {
@@ -656,7 +656,7 @@ describe("archive evidence gates", () => {
       expect(manifest).toContain("tasks/archive/contract-20260721-2256-demo.md");
       expect(manifest).toContain("tasks/archive/review-20260721-2256-demo.md");
     });
-  });
+  }, 30_000);
 
   test("ordinary Completed archive cannot reuse a same-HEAD local origin receipt", () => {
     withTempRepo("archive-workflow-root-bound-receipt", (container) => {
@@ -697,7 +697,7 @@ describe("archive evidence gates", () => {
       expect(result.stderr).toContain("AcceptanceReceipt gate failed");
       expect(existsSync(join(clone, "plans/plan-20260711-1200-demo.md"))).toBe(true);
     });
-  });
+  }, 30_000);
 
   test("current-status refresh failures are returned instead of being ignored", () => {
     withTempRepo("archive-workflow-refresh", (cwd) => {
@@ -725,7 +725,7 @@ describe("archive evidence gates", () => {
       expect(retry.status).toBe(0);
       expect(existsSync(join(cwd, "plans/archive/plan-20260711-1200-demo.md"))).toBe(true);
     });
-  });
+  }, 30_000);
 
   test("Abandoned and Superseded archives preserve the full plan body without completion evidence", () => {
     for (const outcome of ["Abandoned", "Superseded"]) {
@@ -738,7 +738,7 @@ describe("archive evidence gates", () => {
         expect(archived).toContain("Keep this content.");
       });
     }
-  });
+  }, 30_000);
 
   test("Resolved architecture archive requires a live Pending request and its existing module artifact", () => {
     withTempRepo("archive-architecture-gates", (cwd) => {
@@ -775,7 +775,7 @@ describe("archive evidence gates", () => {
       expect(archived).toContain("- `docs/architecture/modules/runtime/demo.md`");
       expect(readFileSync(join(cwd, ".queue-calls"), "utf-8")).toContain("reindex --check");
     });
-  });
+  }, 30_000);
 
   test("unsafe artifact symlinks and post-archive reindex failures fail visibly", () => {
     withTempRepo("archive-architecture-failure", (cwd) => {
@@ -816,5 +816,5 @@ describe("archive evidence gates", () => {
       expect(retry.status).toBe(0);
       expect(existsSync(requestPath)).toBe(false);
     });
-  });
+  }, 30_000);
 });

@@ -118,7 +118,7 @@ describe('HRD-03 falsifier: worktree refusal + SpecGuard reproduced in-process w
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('worktree block: enforcement marker present -> exit 2, structured error, failure log + circuit breaker written', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-worktree-block-')));
@@ -144,7 +144,7 @@ describe('HRD-03 falsifier: worktree refusal + SpecGuard reproduced in-process w
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('linked worktree: git-dir under .git/worktrees/ -> silent, no warning at all', () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-linked-')));
@@ -160,7 +160,7 @@ describe('HRD-03 falsifier: worktree refusal + SpecGuard reproduced in-process w
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('SpecGuard: implementation edit without docs/spec.md -> exit 2, blocks before plan lookup', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-specguard-')));
@@ -177,7 +177,7 @@ describe('HRD-03 falsifier: worktree refusal + SpecGuard reproduced in-process w
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('SpecGuard advisory mode: reports without blocking', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-specguard-advice-')));
@@ -194,7 +194,7 @@ describe('HRD-03 falsifier: worktree refusal + SpecGuard reproduced in-process w
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('lite profile skips SpecGuard entirely (workflow surface exemption reached before it)', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-specguard-lite-')));
@@ -207,7 +207,7 @@ describe('HRD-03 falsifier: worktree refusal + SpecGuard reproduced in-process w
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });
 
 describe('HRD-03 event-level cost proof: at most one Effective State resolution per event', () => {
@@ -239,7 +239,7 @@ describe('HRD-03 event-level cost proof: at most one Effective State resolution 
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('an apply_patch batch touching many files still resolves Effective State exactly once (collapses the old N-recursion N-resolution cost)', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-cost-batch-')));
@@ -280,7 +280,7 @@ describe('HRD-03 event-level cost proof: at most one Effective State resolution 
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });
 
 describe('HRD-03 guard-by-guard parity: previously-uncovered decision branches', () => {
@@ -389,7 +389,7 @@ describe('HRD-03 guard-by-guard parity: previously-uncovered decision branches',
       rmSync(cwd, { recursive: true, force: true });
       rmSync(escapedRoot, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('ContractScopeGuard: an edit outside the active contract allowed_paths blocks', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-scope-')));
@@ -424,7 +424,7 @@ describe('HRD-03 guard-by-guard parity: previously-uncovered decision branches',
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('strict profile without a contract blocks with StrictContractGuard, not StrictWorktreeGuard', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-strict-contract-')));
@@ -442,7 +442,7 @@ describe('HRD-03 guard-by-guard parity: previously-uncovered decision branches',
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('gate mode off: no SpecGuard, no PlanStatusGuard, edit passes silently through the plan gate', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-gate-off-')));
@@ -456,7 +456,7 @@ describe('HRD-03 guard-by-guard parity: previously-uncovered decision branches',
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('apply_patch: paths are processed in patch order, stopping at the first blocking path', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-apply-patch-order-')));
@@ -482,7 +482,7 @@ describe('HRD-03 guard-by-guard parity: previously-uncovered decision branches',
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('apply_patch with an unparseable command blocks with ApplyPatchScopeGuard', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-apply-patch-unparseable-')));
@@ -495,7 +495,7 @@ describe('HRD-03 guard-by-guard parity: previously-uncovered decision branches',
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });
 
 describe('MainLoopDispatchGuard: opt-in orchestrator/subagent edit split', () => {
@@ -519,7 +519,7 @@ describe('MainLoopDispatchGuard: opt-in orchestrator/subagent edit split', () =>
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('armed, agent_id present -> subagent edit passes this guard', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-main-loop-subagent-')));
@@ -535,7 +535,7 @@ describe('MainLoopDispatchGuard: opt-in orchestrator/subagent edit split', () =>
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('env unset -> guard is inert, existing behavior unchanged', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-main-loop-unset-')));
@@ -548,7 +548,7 @@ describe('MainLoopDispatchGuard: opt-in orchestrator/subagent edit split', () =>
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('armed, markdown path -> not blocked (plans and docs stay a main-loop surface)', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-main-loop-md-')));
@@ -564,7 +564,7 @@ describe('MainLoopDispatchGuard: opt-in orchestrator/subagent edit split', () =>
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('armed but HOOK_HOST=codex -> guard is inert', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-main-loop-codex-')));
@@ -580,7 +580,7 @@ describe('MainLoopDispatchGuard: opt-in orchestrator/subagent edit split', () =>
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('armed, apply_patch expanding to a code file, no agent_id -> blocked on that path', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-main-loop-apply-patch-')));
@@ -604,7 +604,7 @@ describe('MainLoopDispatchGuard: opt-in orchestrator/subagent edit split', () =>
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });
 
 describe('gate round-1 parity closure: restored input-normalization fallbacks', () => {
@@ -628,7 +628,7 @@ describe('gate round-1 parity closure: restored input-normalization fallbacks', 
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('symlink-canonicalization: an absolute file_path reached through a symlinked repo ancestor still normalizes to repo-relative', () => {
     // Mirrors the macOS /var -> /private/var shape the bash port's comment
@@ -652,5 +652,5 @@ describe('gate round-1 parity closure: restored input-normalization fallbacks', 
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });

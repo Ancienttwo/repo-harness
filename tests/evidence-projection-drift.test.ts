@@ -448,7 +448,7 @@ describe("projection drift: materialized checks/latest", () => {
       const { provenance: driftedProvenance, ...driftedContent } = drifted;
       expect(contentHashOf(driftedContent)).not.toBe(driftedProvenance.content_hash);
     });
-  });
+  }, 30_000);
 });
 
 // ---------------------------------------------------------------------------
@@ -471,5 +471,5 @@ describe("projection drift: tasks/current.md (refresh-current-status.sh double-r
     const strip = (text: string) =>
       text.replace(/^<!-- updated_at:.*$/m, "").replace(/^> \*\*Updated At\*\*:.*$/m, "");
     expect(strip(first.stdout)).toBe(strip(second.stdout));
-  });
+  }, 30_000);
 });

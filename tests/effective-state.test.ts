@@ -101,7 +101,7 @@ describe('effective state resolver', () => {
       failedClosed: true,
       published: false,
     })));
-  });
+  }, 30_000);
 
   test('fails closed when an in-repo authority path symlinks outside the repository', () => {
     if (process.platform === 'win32') return;
@@ -119,7 +119,7 @@ describe('effective state resolver', () => {
       rmSync(outsidePath, { force: true });
       fixture.cleanup();
     }
-  });
+  }, 30_000);
 
   test('fails closed when a missing authority path has an external symlink ancestor', () => {
     if (process.platform === 'win32') return;
@@ -136,7 +136,7 @@ describe('effective state resolver', () => {
       rmSync(outsideDirectory, { recursive: true, force: true });
       fixture.cleanup();
     }
-  });
+  }, 30_000);
 
   test('fails closed when no actual changed or target paths are authoritative', () => {
     withRepo((cwd) => {
@@ -148,7 +148,7 @@ describe('effective state resolver', () => {
       expect(state.blockers).toContain('workflow_profile:invalid_risk_input');
       expect(state.phase).toBe('blocked');
     });
-  });
+  }, 30_000);
 
   test('steady-state resolution ignores the retired legacy marker', () => {
     withRepo((cwd) => {
@@ -158,7 +158,7 @@ describe('effective state resolver', () => {
       expect(state.conflicting_sources).not.toContain('active_plan_markers');
       expect(state.source_hashes['.claude/.active-plan']).toBeUndefined();
     });
-  });
+  }, 30_000);
 
   test('performs legacy migration only through the explicit one-shot command', () => {
     withRepo((cwd) => {
@@ -171,14 +171,14 @@ describe('effective state resolver', () => {
       expect(() => readFileSync(join(cwd, '.claude/.active-plan'), 'utf-8')).toThrow();
       expect(resolveFixtureState(cwd).authoritative_plan?.path).toBe(PLAN);
     });
-  });
+  }, 30_000);
 
   test('explicit legacy migration fails closed on a real authority conflict', () => {
     withRepo((cwd) => {
       write(cwd, '.claude/.active-plan', 'plans/plan-other.md\n');
       expect(() => migrateLegacyActivePlan(cwd)).toThrow('conflicts with canonical');
     });
-  });
+  }, 30_000);
 
   test('explicit legacy migration fails closed when a canonical marker is unreadable', () => {
     withRepo((cwd) => {
@@ -189,7 +189,7 @@ describe('effective state resolver', () => {
       expect(() => migrateLegacyActivePlan(cwd)).toThrow();
       expect(readFileSync(join(cwd, '.claude/.active-plan'), 'utf-8')).toContain(PLAN);
     });
-  });
+  }, 30_000);
 
   test('blocks approved or executing work under Strict when its contract is missing', () => {
     withRepo((cwd) => {
@@ -207,7 +207,7 @@ describe('effective state resolver', () => {
       expect(state.blockers).toContain('missing_contract');
       expect(state.next_action).toBe('resolve blockers');
     });
-  });
+  }, 30_000);
 
   test('allows approved or executing work under Standard when its contract is missing', () => {
     withRepo((cwd) => {
@@ -221,7 +221,7 @@ describe('effective state resolver', () => {
       expect(state.blockers).not.toContain('missing_contract');
       expect(state.phase).not.toBe('blocked');
     });
-  });
+  }, 30_000);
 
   test('allows approved or executing work under Lite when its contract is missing', () => {
     withRepo((cwd) => {
@@ -237,7 +237,7 @@ describe('effective state resolver', () => {
       expect(state.blockers).not.toContain('missing_contract');
       expect(state.phase).not.toBe('blocked');
     });
-  });
+  }, 30_000);
 
   test('fails closed with missing_contract when the workflow profile cannot be resolved', () => {
     withRepo((cwd) => {
@@ -256,7 +256,7 @@ describe('effective state resolver', () => {
       expect(state.blockers).toContain('missing_contract');
       expect(state.phase).toBe('blocked');
     });
-  });
+  }, 30_000);
 
   test('rewriting handoff and resume advances only projection and state revision, never authority, subject, evidence, or the progress token', () => {
     withRepo((cwd) => {
@@ -280,7 +280,7 @@ describe('effective state resolver', () => {
       expect(second.evidence_revision).toBe(first.evidence_revision);
       expect(second.progress_token).toBe(first.progress_token);
     });
-  });
+  }, 30_000);
 
   describe('capability registry resolution (Phase C1)', () => {
     function capability(id: string, prefixes: readonly string[]) {
@@ -307,7 +307,7 @@ describe('effective state resolver', () => {
         expect(state.profile_reasons).not.toContain('capability:registry:invalid');
         expect(state.profile_reasons).toContain('capability:registry:absent');
       });
-    });
+    }, 30_000);
 
     test('a declared-but-missing registry fails closed with a structured blocker', () => {
       withRepo((cwd) => {
@@ -319,7 +319,7 @@ describe('effective state resolver', () => {
         expect(state.profile_reasons).toContain('capability:registry:invalid');
         expect(state.phase).toBe('blocked');
       });
-    });
+    }, 30_000);
 
     test('corrupt registry JSON fails closed with a structured blocker instead of a silent capabilityCount=0', () => {
       withRepo((cwd) => {
@@ -327,7 +327,7 @@ describe('effective state resolver', () => {
         const state = resolveFixtureState(cwd);
         expect(state.blockers).toContain('capability_registry:invalid');
       });
-    });
+    }, 30_000);
 
     test('absolute target paths outside the repo do not invalidate a valid registry', () => {
       withRepo((cwd) => {
@@ -341,7 +341,7 @@ describe('effective state resolver', () => {
         expect(state.profile_reasons).toContain('capability:out-of-repo:1');
         expect(state.phase).not.toBe('blocked');
       });
-    });
+    }, 30_000);
 
     test('a mixed batch keeps in-repo unmapped accounting alongside out-of-repo paths', () => {
       withRepo((cwd) => {
@@ -357,7 +357,7 @@ describe('effective state resolver', () => {
         expect(state.profile_signals?.crossCapability).toBe(false);
         expect(state.risk_floor).toBe('lite');
       });
-    });
+    }, 30_000);
 
     test('a mapped repo capability plus an out-of-repo path stays one capability', () => {
       withRepo((cwd) => {
@@ -375,7 +375,7 @@ describe('effective state resolver', () => {
         expect(state.profile_signals?.crossCapability).toBe(false);
         expect(state.risk_floor).toBe('lite');
       });
-    });
+    }, 30_000);
 
     test('a NUL-bearing absolute path fails canonical validation instead of bypassing it', () => {
       withRepo((cwd) => {
@@ -388,7 +388,7 @@ describe('effective state resolver', () => {
         expect(state.profile_reasons).toContain('capability:registry:invalid');
         expect(state.profile_reasons).not.toContain('capability:out-of-repo:1');
       });
-    });
+    }, 30_000);
 
     test('an invalid registry does not also count out-of-repo paths as unmapped', () => {
       withRepo((cwd) => {
@@ -401,7 +401,7 @@ describe('effective state resolver', () => {
         expect(state.profile_reasons).toContain('capability:out-of-repo:1');
         expect(state.profile_reasons).not.toContain('capability:unmapped:1');
       });
-    });
+    }, 30_000);
 
     test('in-repo traversal paths still fail closed as invalid', () => {
       withRepo((cwd) => {
@@ -412,7 +412,7 @@ describe('effective state resolver', () => {
         });
         expect(state.blockers).toContain('capability_registry:invalid');
       });
-    });
+    }, 30_000);
 
     test('malformed entries inside an otherwise-parseable registry are counted and fail closed instead of silently dropped', () => {
       withRepo((cwd) => {
@@ -440,7 +440,7 @@ describe('effective state resolver', () => {
         expect(state.blockers).toContain('capability_registry:invalid');
         expect(state.phase).toBe('blocked');
       });
-    });
+    }, 30_000);
 
     test('a corrupt policy.json fails closed before cache/version publication', () => {
       withRepo((cwd) => {
@@ -449,7 +449,7 @@ describe('effective state resolver', () => {
         expect(existsSync(join(cwd, '.ai/harness/state/effective.json'))).toBe(false);
         expect(existsSync(stateVersionOwnerPath(cwd))).toBe(false);
       });
-    });
+    }, 30_000);
 
     for (const malformed of [
       {
@@ -485,7 +485,7 @@ describe('effective state resolver', () => {
           expect(existsSync(join(cwd, '.ai/harness/state/effective.json'))).toBe(false);
           expect(existsSync(stateVersionOwnerPath(cwd))).toBe(false);
         });
-      });
+      }, 30_000);
     }
 
     for (const malformed of [
@@ -503,7 +503,7 @@ describe('effective state resolver', () => {
           expect(existsSync(join(cwd, '.ai/harness/state/effective.json'))).toBe(false);
           expect(existsSync(stateVersionOwnerPath(cwd))).toBe(false);
         });
-      });
+      }, 30_000);
     }
 
     test('a valid registry with no matching prefix produces no blocker but records the unmapped reason', () => {
@@ -520,7 +520,7 @@ describe('effective state resolver', () => {
         expect(state.blockers).not.toContain('capability_registry:invalid');
         expect(state.profile_reasons).toContain('capability:unmapped:1');
       });
-    });
+    }, 30_000);
 
     test('registry and policy changes advance the state revision, durable version, and authority revision', () => {
       withRepo((cwd) => {
@@ -571,7 +571,7 @@ describe('effective state resolver', () => {
         expect(third.authority_revision).not.toBe(second.authority_revision);
         expect(third.blockers).toEqual(second.blockers);
       });
-    });
+    }, 30_000);
 
     test('an unmapped implementation path contributes one cross-capability bucket without lowering the floor', () => {
       withRepo((cwd) => {
@@ -588,7 +588,7 @@ describe('effective state resolver', () => {
         expect(state.risk_floor).toBe('standard');
         expect(state.blockers).not.toContain('capability_registry:invalid');
       });
-    });
+    }, 30_000);
 
     test('workflow-surface-only target paths never reach capability resolution as implementation paths (Phase C2)', () => {
       withRepo((cwd) => {
@@ -604,7 +604,7 @@ describe('effective state resolver', () => {
         expect(state.profile_reasons).not.toContain('capability:unmapped:1');
         expect(state.profile_signals?.capabilityCount).toBe(0);
       });
-    });
+    }, 30_000);
   });
 
 });

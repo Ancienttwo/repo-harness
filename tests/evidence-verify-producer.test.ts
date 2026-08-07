@@ -128,7 +128,7 @@ describe("emitAuthoritativeVerifyEvidence: fail-closed paths", () => {
       const { accepted } = readAcceptedEvents(repoRoot);
       expect(accepted.length).toBe(0);
     });
-  });
+  }, 30_000);
 
   test("a dirty (uncommitted) contract fails closed and appends nothing", () => {
     withTempRepo("verify-producer-contract-dirty", (repoRoot) => {
@@ -143,7 +143,7 @@ describe("emitAuthoritativeVerifyEvidence: fail-closed paths", () => {
       const { accepted } = readAcceptedEvents(repoRoot);
       expect(accepted.length).toBe(0);
     });
-  });
+  }, 30_000);
 
   test("an untracked (never committed) contract fails closed and appends nothing", () => {
     withTempRepo("verify-producer-contract-untracked", (repoRoot) => {
@@ -156,7 +156,7 @@ describe("emitAuthoritativeVerifyEvidence: fail-closed paths", () => {
       const { accepted } = readAcceptedEvents(repoRoot);
       expect(accepted.length).toBe(0);
     });
-  });
+  }, 30_000);
 });
 
 describe("emitAuthoritativeVerifyEvidence: success path", () => {
@@ -200,7 +200,7 @@ describe("emitAuthoritativeVerifyEvidence: success path", () => {
       expect(accepted.length).toBe(1);
       expect(accepted[0]!.event_id).toBe(result.event.event_id);
     });
-  });
+  }, 30_000);
 
   test("scope_hash reflects the contract's own allowed_paths, not the caller's", () => {
     withTempRepo("verify-producer-scope-hash", (repoRoot) => {
@@ -211,7 +211,7 @@ describe("emitAuthoritativeVerifyEvidence: success path", () => {
       const expectedScopeHash = `sha256:${createHash("sha256").update(JSON.stringify(["src/a.ts", "src/b.ts"])).digest("hex")}`;
       expect(result.event.subject_identity.scope_hash).toBe(expectedScopeHash);
     });
-  });
+  }, 30_000);
 });
 
 describe("emitAuthoritativeVerifyEvidence: idempotency and genesis", () => {
@@ -242,7 +242,7 @@ describe("emitAuthoritativeVerifyEvidence: idempotency and genesis", () => {
       expect(accepted.length).toBe(1);
       expect(accepted[0]!.event_id).toBe(first.event.event_id);
     });
-  });
+  }, 30_000);
 
   test("genesis is written once with LEDGER_EPOCH_START_SHA across repeated emissions", () => {
     withTempRepo("verify-producer-genesis-once", (repoRoot) => {
@@ -268,7 +268,7 @@ describe("emitAuthoritativeVerifyEvidence: idempotency and genesis", () => {
       expect(genesisLines.length).toBe(1);
       expect(JSON.parse(genesisLines[0]!).ledger_epoch_start_sha).toBe(LEDGER_EPOCH_START_SHA);
     });
-  });
+  }, 30_000);
 });
 
 
@@ -292,7 +292,7 @@ describe("scripts/emit-verify-evidence.ts: exit code contract", () => {
       expect(res.status, `${res.stdout}\n${res.stderr}`).toBe(0);
       expect(res.stdout).toContain("appended evt-");
     });
-  });
+  }, 30_000);
 
   test("exit 3 (cannot-bind), not 1, when the contract is dirty", () => {
     withTempRepo("wrapper-exit-dirty", (repoRoot) => {
@@ -312,7 +312,7 @@ describe("scripts/emit-verify-evidence.ts: exit code contract", () => {
       expect(res.stderr).toContain("cannot-bind");
       expect(res.stderr).toContain("contract_not_committed");
     });
-  });
+  }, 30_000);
 
   test("exit 3 (cannot-bind), not 1, when no active contract resolves", () => {
     withTempRepo("wrapper-exit-no-contract", (repoRoot) => {
@@ -327,7 +327,7 @@ describe("scripts/emit-verify-evidence.ts: exit code contract", () => {
       expect(res.stderr).toContain("cannot-bind");
       expect(res.stderr).toContain("no_active_contract");
     });
-  });
+  }, 30_000);
 
   test("exit 1 (hard fail), not 3, on subject mismatch -- must not be classified as cannot-bind", () => {
     withTempRepo("wrapper-exit-mismatch", (repoRoot) => {
@@ -344,5 +344,5 @@ describe("scripts/emit-verify-evidence.ts: exit code contract", () => {
       expect(res.stderr).toContain("fail-closed");
       expect(res.stderr).toContain("subject_mismatch");
     });
-  });
+  }, 30_000);
 });

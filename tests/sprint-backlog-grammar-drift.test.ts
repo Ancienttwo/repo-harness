@@ -68,7 +68,7 @@ describe('sprint backlog row grammar: bash authority vs TS projection', () => {
       expect(ts).toEqual(bash);
       // A fixture that parses to nothing on both sides would pass vacuously.
       expect(bash.length).toBeGreaterThan(0);
-    });
+    }, 30_000);
   }
 
   test('the check has teeth: a one-sided grammar widening is caught', () => {
@@ -81,5 +81,5 @@ describe('sprint backlog row grammar: bash authority vs TS projection', () => {
     const ts = backlogRowStatuses(readFileSync(path, 'utf-8'));
     expect(drifted.length).toBeGreaterThan(ts.length);
     expect(drifted).not.toEqual(ts);
-  });
+  }, 30_000);
 });

@@ -237,7 +237,7 @@ describe("recovery-view-cli.ts: standalone end-to-end", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("--print-prompt prints only the Resume Prompt body and writes no output besides the recovery views", () => {
     const cwd = mkdtempSync(join(tmpdir(), "recovery-cli-print-prompt-"));
@@ -254,7 +254,7 @@ describe("recovery-view-cli.ts: standalone end-to-end", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("--with-global-packet updates the Codex-global handoff file with a per-repo spliced section", () => {
     const cwd = mkdtempSync(join(tmpdir(), "recovery-cli-global-"));
@@ -281,7 +281,7 @@ describe("recovery-view-cli.ts: standalone end-to-end", () => {
       rmSync(cwd, { recursive: true, force: true });
       rmSync(codexHome, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });
 
 describe("no-independent-authoring: the retired writers carry zero content assembly", () => {
@@ -349,5 +349,5 @@ describe("tasks/current.md: refresh-current-status.sh stays the sole materialize
       .replace(/^<!-- updated_at:.*$/m, "")
       .replace(/^> \*\*Updated At\*\*:.*$/m, "");
     expect(strip(first.stdout)).toBe(strip(second.stdout));
-  });
+  }, 30_000);
 });

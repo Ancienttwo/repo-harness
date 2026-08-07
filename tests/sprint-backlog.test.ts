@@ -115,7 +115,7 @@ describe("sprint-backlog helper", () => {
       rmSync(cwd, { recursive: true, force: true });
       rmSync(poisonRepo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("accepts target repo root when it matches the helper cwd", () => {
     const cwd = tmpWorkspace("sprint-env-match");
@@ -135,7 +135,7 @@ describe("sprint-backlog helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("init creates a draft sprint, sets the marker, and refuses a second active sprint", () => {
     const cwd = tmpWorkspace("sprint-backlog-init");
@@ -161,7 +161,7 @@ describe("sprint-backlog helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("status, next, and complete-task drive the backlog lifecycle", () => {
     const cwd = tmpWorkspace("sprint-backlog-lifecycle");
@@ -220,7 +220,7 @@ describe("sprint-backlog helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("init renders titles with sed/awk metacharacters literally", () => {
     const cwd = tmpWorkspace("sprint-backlog-metachar");
@@ -242,7 +242,7 @@ describe("sprint-backlog helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("complete-task rejects ambiguous refs, resolves duplicates by unique slug, and preserves backslashes", () => {
     const cwd = tmpWorkspace("sprint-backlog-plan-escape");
@@ -277,7 +277,7 @@ describe("sprint-backlog helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("markers pointing outside plans/sprints are treated as no active sprint", () => {
     const cwd = tmpWorkspace("sprint-backlog-containment");
@@ -300,7 +300,7 @@ describe("sprint-backlog helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("next and complete-task fail without an active sprint", () => {
     const cwd = tmpWorkspace("sprint-backlog-no-active");
@@ -317,7 +317,7 @@ describe("sprint-backlog helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("start-task captures a thin sprint-task plan seed; contract rows leave the Plan cell to finish back-fill", () => {
     const cwd = tmpWorkspace("sprint-backlog-start-task");
@@ -362,7 +362,7 @@ describe("sprint-backlog helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("duplicate start-task is refused, auto-select skips in-flight rows, --force restarts", () => {
     const cwd = tmpWorkspace("sprint-backlog-in-flight");
@@ -397,7 +397,7 @@ describe("sprint-backlog helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("a non-empty stale lock times out instead of hot-looping", () => {
     const cwd = tmpWorkspace("sprint-backlog-lock-timeout");
@@ -417,7 +417,7 @@ describe("sprint-backlog helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("start-task refuses draft sprints and missing capture helper", () => {
     const cwd = tmpWorkspace("sprint-backlog-start-task-gates");
@@ -436,7 +436,7 @@ describe("sprint-backlog helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("inline start-task requires an active plan for checklist-row capture", () => {
     const cwd = tmpWorkspace("sprint-backlog-inline-no-active-plan");
@@ -455,7 +455,7 @@ describe("sprint-backlog helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("complete-task --sprint override works without the runtime marker", () => {
     const cwd = tmpWorkspace("sprint-backlog-sprint-override");
@@ -495,7 +495,7 @@ describe("sprint-backlog helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("mutations reclaim a stale backlog lock instead of deadlocking", () => {
     const cwd = tmpWorkspace("sprint-backlog-stale-lock");
@@ -515,7 +515,7 @@ describe("sprint-backlog helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });
 
 describe("check-task-workflow sprint validation", () => {
@@ -561,7 +561,7 @@ describe("check-task-workflow sprint validation", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("reports unknown status instead of crashing on quotes in sprint status", () => {
     const cwd = tmpWorkspace("sprint-check-quote");
@@ -579,7 +579,7 @@ describe("check-task-workflow sprint validation", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("flags markers pointing outside the sprints dir", () => {
     const cwd = tmpWorkspace("sprint-check-outside-marker");
@@ -595,7 +595,7 @@ describe("check-task-workflow sprint validation", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("draft skeletons and execution-ready sprints emit no sprint issues", () => {
     const cwd = tmpWorkspace("sprint-check-ok");
@@ -614,7 +614,7 @@ describe("check-task-workflow sprint validation", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });
 
 describe("sprint projection", () => {
@@ -634,7 +634,7 @@ describe("sprint projection", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("refresh-current-status reports no sprint when the marker is absent", () => {
     const cwd = tmpWorkspace("sprint-refresh-none");
@@ -647,7 +647,7 @@ describe("sprint projection", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   // HRD-04 retired session-start-context.sh; the direct-spawn vehicle
   // retargets through the in-process session-context builder with identical

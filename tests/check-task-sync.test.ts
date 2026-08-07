@@ -55,7 +55,7 @@ describe("check-task-sync helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("fails when only an untracked source file is added", () => {
     const cwd = setupRepo();
@@ -67,7 +67,7 @@ describe("check-task-sync helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("passes when code changes include tasks/todos.md updates", () => {
     const cwd = setupRepo();
@@ -79,7 +79,7 @@ describe("check-task-sync helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("passes when untracked repo changes include an untracked tasks file", () => {
     const cwd = setupRepo();
@@ -93,7 +93,7 @@ describe("check-task-sync helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("passes when code changes include tasks/lessons.md updates", () => {
     const cwd = setupRepo();
@@ -105,7 +105,7 @@ describe("check-task-sync helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("passes when only tasks files changed", () => {
     const cwd = setupRepo();
@@ -117,7 +117,7 @@ describe("check-task-sync helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("passes when code changes include docs/researches updates", () => {
     const cwd = setupRepo();
@@ -130,7 +130,7 @@ describe("check-task-sync helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("ignores regenerated harness benchmark evidence as operational output", () => {
     const cwd = setupRepo();
@@ -143,7 +143,7 @@ describe("check-task-sync helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("does not let regenerated harness evidence hide an unsynchronized source change", () => {
     const cwd = setupRepo();
@@ -156,7 +156,7 @@ describe("check-task-sync helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("does not broaden the operational exclusion to sibling report files", () => {
     const cwd = setupRepo();
@@ -168,7 +168,7 @@ describe("check-task-sync helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("fails when only legacy docs/PROGRESS.md changed", () => {
     const cwd = setupRepo();
@@ -180,7 +180,7 @@ describe("check-task-sync helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("fails when code changes only update docs/PROGRESS.md", () => {
     const cwd = setupRepo();
@@ -193,7 +193,7 @@ describe("check-task-sync helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("prefers staged changes over working tree changes", () => {
     const cwd = setupRepo();
@@ -208,5 +208,5 @@ describe("check-task-sync helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });

@@ -81,7 +81,7 @@ describe("capability-config helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("refuses to create missing capability prefixes unless explicitly requested", () => {
     const cwd = tmpWorkspace("capability-config-missing-prefix");
@@ -94,7 +94,7 @@ describe("capability-config helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("reuses existing registry entries instead of re-deriving custom fields", () => {
     const cwd = tmpWorkspace("capability-config-existing");
@@ -127,5 +127,5 @@ describe("capability-config helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });

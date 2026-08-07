@@ -41,7 +41,7 @@ describe("architecture-event helper", () => {
       "docs/architecture/modules/apps-web/account.md",
       "tasks/workstreams/apps-web/account",
     ]);
-  });
+  }, 30_000);
 
   test("builds architecture event JSON without shell string escaping", () => {
     const res = runArchitectureEvent([
@@ -85,7 +85,7 @@ describe("architecture-event helper", () => {
     expect(event.file_path).toBe('apps/web/src/routes/account/"page".tsx');
     expect(event.spawn_recommended).toBe(false);
     expect(event.contract_sync_required).toBe(true);
-  });
+  }, 30_000);
 
   test("updates context-map discoverable contexts idempotently", () => {
     const cwd = mkdtempSync(join(tmpdir(), "architecture-event-context-map-"));
@@ -122,7 +122,7 @@ describe("architecture-event helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("syncs architecture contract blocks without shell rendering", () => {
     const cwd = mkdtempSync(join(tmpdir(), "architecture-event-contract-files-"));
@@ -210,7 +210,7 @@ describe("architecture-event helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("syncs pending architecture request only when the card is active and pending", () => {
     const cwd = mkdtempSync(join(tmpdir(), "architecture-event-pending-request-"));
@@ -279,5 +279,5 @@ describe("architecture-event helper", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });

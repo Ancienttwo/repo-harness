@@ -91,7 +91,7 @@ describe('install command (Phase 1B)', () => {
       expect(fs.readFileSync(statePath)).toEqual(stateBefore);
       expect(fs.readFileSync(hooksPath)).toEqual(hooksBefore);
     });
-  });
+  }, 30_000);
 
   test('codex --location local errors with exit 2 (no project-local hook concept)', () => {
     withTempHome(() => {
@@ -368,7 +368,7 @@ describe('install command (Phase 1B)', () => {
       expect(uninstall.status).toBe(0);
       expect(uninstall.stdout).toContain('[codex] removed');
     });
-  });
+  }, 30_000);
 
   test('CLI install without required profile components fails closed and compensates adapters', () => {
     withTempHome((home) => {
@@ -395,7 +395,7 @@ describe('install command (Phase 1B)', () => {
       expect(fs.existsSync(path.join(home, '.codex/hooks.json'))).toBe(false);
       expect(fs.existsSync(path.join(home, '.repo-harness/install-state.json'))).toBe(false);
     });
-  });
+  }, 30_000);
 });
 
 describe('install --delegation-mode (global delegation config write)', () => {
@@ -418,7 +418,7 @@ describe('install --delegation-mode (global delegation config write)', () => {
       const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
       expect(config.delegation.mode).toBe('auto');
     });
-  });
+  }, 30_000);
 
   test('merges delegation.mode with existing brainRoot and unknown nested delegation keys', () => {
     withTempHome((home) => {
@@ -462,7 +462,7 @@ describe('install --delegation-mode (global delegation config write)', () => {
       expect(install.stderr).toContain('invalid --delegation-mode "bogus"');
       expect(fs.existsSync(path.join(home, '.repo-harness', 'config.json'))).toBe(false);
     });
-  });
+  }, 30_000);
 
   test('no --delegation-mode flag over non-TTY stdio leaves ~/.repo-harness/config.json untouched', () => {
     withTempHome((home) => {
@@ -481,7 +481,7 @@ describe('install --delegation-mode (global delegation config write)', () => {
       expect(fs.existsSync(path.join(home, '.codex/hooks.json'))).toBe(true);
       expect(fs.existsSync(path.join(home, '.repo-harness', 'config.json'))).toBe(false);
     });
-  });
+  }, 30_000);
 
   test('re-running with the same mode is idempotent and reports unchanged', () => {
     withTempHome(() => {

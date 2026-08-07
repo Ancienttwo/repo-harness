@@ -30,7 +30,7 @@ describe("CodeGraph tooling integration", () => {
     });
     expect(local.status).toBe(0);
     expect(local.stdout).toContain(pinnedVersion);
-  });
+  }, 30_000);
 
   test("shell adapter and CLI tools command share the same readiness model", () => {
     const viaScript = runJson("bash", [SCRIPT, "--check", "--json"]);

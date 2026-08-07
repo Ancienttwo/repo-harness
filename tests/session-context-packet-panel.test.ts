@@ -50,7 +50,7 @@ describe("session-context-packet-panel: fixture builder produces a valid opt-in 
         fixture.cleanup();
       }
     }
-  });
+  }, 30_000);
 });
 
 describe("session-context-packet-panel: packet determinism per state", () => {

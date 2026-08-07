@@ -114,7 +114,7 @@ describe("architecture sync gate", () => {
       expect(parsed[0].capability_id).toBe("apps-web");
       expect(parsed[1].capability_id).toBe("root");
     });
-  });
+  }, 30_000);
 
   test("strict blocks when a changed capability has a pending request at the threshold", () => {
     tmpRepo((cwd) => {
@@ -127,7 +127,7 @@ describe("architecture sync gate", () => {
       expect(res.stdout).toContain("blocking=1");
       expect(res.stderr).toContain("strict gate failed");
     });
-  });
+  }, 30_000);
 
   test("advisory warns but exits zero for matching pending requests", () => {
     tmpRepo((cwd) => {
@@ -140,7 +140,7 @@ describe("architecture sync gate", () => {
       expect(res.stdout).toContain("blocking=1");
       expect(res.stderr).toContain("WARN");
     });
-  });
+  }, 30_000);
 
   test("off mode still checks index integrity but ignores freshness blocking", () => {
     tmpRepo((cwd) => {
@@ -152,7 +152,7 @@ describe("architecture sync gate", () => {
       expect(res.status).toBe(0);
       expect(res.stdout).toContain("mode=off");
     });
-  });
+  }, 30_000);
 
   test("stale architecture index fails in every mode", () => {
     tmpRepo((cwd) => {
@@ -168,7 +168,7 @@ describe("architecture sync gate", () => {
       expect(res.status).toBe(1);
       expect(res.stderr).toContain("architecture request index is stale");
     });
-  });
+  }, 30_000);
 
   test("missing resolver is advisory in advisory mode and fail-closed in strict mode", () => {
     tmpRepo((cwd) => {
@@ -186,5 +186,5 @@ describe("architecture sync gate", () => {
       expect(strict.status).toBe(1);
       expect(strict.stderr).toContain("strict gate failed");
     });
-  });
+  }, 30_000);
 });

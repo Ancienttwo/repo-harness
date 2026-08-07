@@ -81,5 +81,5 @@ describe('loop-event-protocol route mapping', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });

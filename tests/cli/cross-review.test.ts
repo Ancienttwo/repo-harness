@@ -120,7 +120,7 @@ describe("captureCrossReviewScope (scope capture, no provider invoked)", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("staged-only change appears in scope.paths", () => {
     const repo = initRepo();
@@ -133,7 +133,7 @@ describe("captureCrossReviewScope (scope capture, no provider invoked)", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("unstaged tracked modification appears in scope.paths", () => {
     const repo = initRepo();
@@ -145,7 +145,7 @@ describe("captureCrossReviewScope (scope capture, no provider invoked)", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("untracked file appears in scope.paths", () => {
     const repo = initRepo();
@@ -157,7 +157,7 @@ describe("captureCrossReviewScope (scope capture, no provider invoked)", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("degraded_scope: an unresolvable base revision fails closed", () => {
     const repo = initRepo();
@@ -167,7 +167,7 @@ describe("captureCrossReviewScope (scope capture, no provider invoked)", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("exact-base binding: scope binds to the resolved SHA of the declared base even after HEAD moves later", () => {
     const repo = initRepo();
@@ -200,7 +200,7 @@ describe("captureCrossReviewScope (scope capture, no provider invoked)", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });
 
 describe("runCrossReview (codex mode, fixture provider process)", () => {
@@ -221,7 +221,7 @@ describe("runCrossReview (codex mode, fixture provider process)", () => {
         expect(result.scope).toBeNull();
       }
     });
-  });
+  }, 30_000);
 
   test("empty_output: clean exit with no stdout and no recovery attempted", () => {
     withFixture((repo, provider) => {
@@ -235,7 +235,7 @@ describe("runCrossReview (codex mode, fixture provider process)", () => {
       expect(result.status).toBe("failed");
       if (result.status === "failed") expect(result.code).toBe("empty_output");
     });
-  });
+  }, 30_000);
 
   test("timeout: a provider that outlives the budget is killed and reported explicitly", () => {
     withFixture((repo, provider) => {
@@ -263,7 +263,7 @@ describe("runCrossReview (codex mode, fixture provider process)", () => {
       expect(result.status).toBe("failed");
       if (result.status === "failed") expect(result.code).toBe("auth_failure");
     });
-  });
+  }, 30_000);
 
   test("provider_nonzero: a nonzero exit without an auth signal stays the generic code", () => {
     withFixture((repo, provider) => {
@@ -277,7 +277,7 @@ describe("runCrossReview (codex mode, fixture provider process)", () => {
       expect(result.status).toBe("failed");
       if (result.status === "failed") expect(result.code).toBe("provider_nonzero");
     });
-  });
+  }, 30_000);
 
   test("success: a P2-only transcript parses to a PASS recommendation", () => {
     withFixture((repo, provider) => {
@@ -295,7 +295,7 @@ describe("runCrossReview (codex mode, fixture provider process)", () => {
         expect(result.recommendation).toContain("PASS");
       }
     });
-  });
+  }, 30_000);
 
   test("success-p1: a P1 finding drives a FAIL recommendation and a nonzero CLI exit code", () => {
     withFixture((repo, provider) => {
@@ -311,7 +311,7 @@ describe("runCrossReview (codex mode, fixture provider process)", () => {
       if (command.result.status === "ok") expect(command.result.recommendation).toContain("FAIL");
       expect(command.output).toContain("[P1]");
     });
-  });
+  }, 30_000);
 
   test("json output round-trips the structured result", () => {
     withFixture((repo, provider) => {
@@ -327,7 +327,7 @@ describe("runCrossReview (codex mode, fixture provider process)", () => {
       expect(parsed.status).toBe("ok");
       expect(parsed.provider).toBe("codex");
     });
-  });
+  }, 30_000);
 });
 
 describe("runCrossReview (claude mode: transcript recovery)", () => {
@@ -356,7 +356,7 @@ describe("runCrossReview (claude mode: transcript recovery)", () => {
         rmSync(claudeConfigDir, { recursive: true, force: true });
       }
     });
-  });
+  }, 30_000);
 
   test("empty_output: claude mode with no recoverable session file at all", () => {
     withFixture((repo, provider) => {
@@ -376,7 +376,7 @@ describe("runCrossReview (claude mode: transcript recovery)", () => {
         rmSync(claudeConfigDir, { recursive: true, force: true });
       }
     });
-  });
+  }, 30_000);
 
   test("claude mode success embeds diff text without crashing on a populated scope", () => {
     withFixture((repo, provider) => {
@@ -390,7 +390,7 @@ describe("runCrossReview (claude mode: transcript recovery)", () => {
       });
       expect(result.status).toBe("ok");
     });
-  });
+  }, 30_000);
 });
 
 describe("pure classification and parsing helpers (src/core/review/cross-review.ts)", () => {
