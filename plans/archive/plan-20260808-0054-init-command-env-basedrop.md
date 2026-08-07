@@ -1,6 +1,6 @@
 # Plan: Fix initCommandEnv dropping process.env on the npx-cache path
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260808-0054
 > **Slug**: init-command-env-basedrop
 > **Planning Source**: repo-harness-plan

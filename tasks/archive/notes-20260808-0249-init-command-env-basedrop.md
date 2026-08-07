@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-08 02:49
+> **Related Plan**: plans/archive/plan-20260808-0054-init-command-env-basedrop.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260808-0249
+
 # Implementation Notes: init-command-env-basedrop
 
 > **Status**: Active

@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-08T00:26:58+0800 -->
+<!-- updated_at: 2026-08-08T02:49:57+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-08T00:26:58+0800
+> **Updated At**: 2026-08-08T02:49:57+0800
 > **Source Branch**: main
-> **Source Commit**: 00496660
+> **Source Commit**: 68577fce
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -31,6 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
+- /Users/ancienttwo/Projects/repo-harness-wt-archctx-stage0-capability-source: plans/plan-20260808-0216-archctx-stage0-capability-source.md
+- /Users/ancienttwo/Projects/repo-harness-wt-archctx-stage0-capability-source: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-archctx-stage0-capability-source
 - /Users/ancienttwo/Projects/repo-harness-wt-untrack-cursor-dir: plans/plan-20260807-0847-untrack-cursor-dir.md
 - /Users/ancienttwo/Projects/repo-harness-wt-untrack-cursor-dir: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-untrack-cursor-dir
 ## Active Sprint
@@ -59,16 +61,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260807-2321-test-home-isolation.md
- D tasks/contracts/20260807-2321-test-home-isolation.contract.md
- D tasks/notes/20260807-2321-test-home-isolation.notes.md
- D tasks/reviews/20260807-2321-test-home-isolation.review.md
+ D plans/plan-20260808-0054-init-command-env-basedrop.md
+ D tasks/contracts/20260808-0054-init-command-env-basedrop.contract.md
+ D tasks/notes/20260808-0054-init-command-env-basedrop.notes.md
+ D tasks/reviews/20260808-0054-init-command-env-basedrop.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260807-2321-test-home-isolation.md
-?? tasks/archive/contract-20260808-0026-test-home-isolation.md
-?? tasks/archive/notes-20260808-0026-test-home-isolation.md
-?? tasks/archive/review-20260808-0026-test-home-isolation.md
-?? tasks/archive/todo-20260808-0026-test-home-isolation.md
+?? plans/archive/plan-20260808-0054-init-command-env-basedrop.md
+?? tasks/archive/contract-20260808-0249-init-command-env-basedrop.md
+?? tasks/archive/notes-20260808-0249-init-command-env-basedrop.md
+?? tasks/archive/review-20260808-0249-init-command-env-basedrop.md
+?? tasks/archive/todo-20260808-0249-init-command-env-basedrop.md
 ```
 
 ## Source Artifacts
