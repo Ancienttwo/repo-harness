@@ -313,6 +313,22 @@ describe("init command", () => {
       mkdirSync(repo, { recursive: true });
       setupFakeSource(source);
 
+      // Explicit env is required here, not decorative: for an npx cache source
+      // initCommandEnv() (src/cli/commands/init.ts) builds `{ ...(env ?? {}),
+      // AGENTIC_DEV_LINK_INSTALLED_COPIES: "0" }`, so passing no env yields a
+      // command env holding only that key. REPO_HARNESS_HOME and HOME are both
+      // dropped and the registry write falls back to homedir() — the operator's
+      // real ~/.repo-harness. Spreading process.env keeps the isolated home
+      // installed by tests/preload-home-isolation.ts.
+      //
+      // The delete keeps this test deterministic: initCommandEnv() only forces
+      // the flag to "0" when it is undefined, so an ambient
+      // AGENTIC_DEV_LINK_INSTALLED_COPIES in the operator's shell would be passed
+      // straight through and the `sync link=0` assertion below would fail for a
+      // reason that has nothing to do with the code under test.
+      const childEnv = { ...process.env };
+      delete childEnv.AGENTIC_DEV_LINK_INSTALLED_COPIES;
+
       const result = runInit({
         repo,
         sourceRoot: source,
@@ -320,6 +336,7 @@ describe("init command", () => {
         externalSkills: false,
         verify: false,
         codegraph: false,
+        env: childEnv,
       });
 
       expect(result.exitCode).toBe(0);
