@@ -348,6 +348,68 @@ describe("init command", () => {
     }
   });
 
+  test("npx cache sources keep process.env as the constructed command env base", () => {
+    // Regression guard for initCommandEnv() (src/cli/commands/init.ts): for an
+    // npx cache source with no caller env it used to return
+    // `{ ...(env ?? {}), AGENTIC_DEV_LINK_INSTALLED_COPIES: "0" }` — a child env
+    // holding exactly one key, with the whole process environment discarded.
+    // commandEnv is not only spawned with (runProcess re-merges process.env), it
+    // is also read as an environment record: runAdoptionApply threads it into
+    // registerRepoHarnessRepo, and repoHarnessHome (src/effects/repo-registry.ts:60)
+    // resolves REPO_HARNESS_HOME ?? HOME ?? homedir() off that record. Dropping
+    // the base therefore silently redirects the registry write to the operator's
+    // real home — the one hole tests/preload-home-isolation.ts cannot defend.
+    const tmp = join(tmpdir(), `repo-harness-init-npx-env-base-${Date.now()}`);
+    const source = join(tmp, "_npx", "abc123", "node_modules", "repo-harness");
+    const repo = join(tmp, "repo");
+    const home = join(tmp, "home");
+    const harnessHome = join(tmp, "harness-home");
+    // This test drives the no-env path on purpose, so the marker has to live in
+    // process.env itself: REPO_HARNESS_HOME points at harnessHome, and the guard
+    // asserts the registry write lands there. Measured, not assumed: Bun caches
+    // os.homedir() at process start, so setting process.env.HOME mid-run does
+    // NOT redirect the homedir() fallback — on unfixed code this test writes to
+    // the operator's real ~/.repo-harness, which is precisely the leak under
+    // guard here. HOME is still set for the env.HOME readers inside runInit.
+    const previous = {
+      HOME: process.env.HOME,
+      REPO_HARNESS_HOME: process.env.REPO_HARNESS_HOME,
+      AGENTIC_DEV_LINK_INSTALLED_COPIES: process.env.AGENTIC_DEV_LINK_INSTALLED_COPIES,
+    };
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(home, { recursive: true });
+      setupFakeSource(source);
+      process.env.HOME = home;
+      process.env.REPO_HARNESS_HOME = harnessHome;
+      delete process.env.AGENTIC_DEV_LINK_INSTALLED_COPIES;
+
+      const result = runInit({
+        repo,
+        sourceRoot: source,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        verify: false,
+        codegraph: false,
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.steps.find((step) => step.step === "register repo harness repo")?.status).toBe("ok");
+      const registry = JSON.parse(readFileSync(join(harnessHome, "registered-repos.json"), "utf-8"));
+      expect(registry.repos).toEqual([
+        expect.objectContaining({ source: "init", path: realpathSync(repo) }),
+      ]);
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   test("CLI init --dry-run --json returns the adoption planner protocol", () => {
     const tmp = join(tmpdir(), `repo-harness-init-cli-codegraph-${Date.now()}`);
     try {

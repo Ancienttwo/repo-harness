@@ -1,0 +1,19 @@
+bun test v1.3.14 (0d9b296a)
+
+tests/cli/init.test.ts:
+394 |       });
+395 | 
+396 |       expect(result.exitCode).toBe(0);
+397 |       expect(result.steps.find((step) => step.step === "register repo harness repo")?.status).toBe("ok");
+398 |       expect(existsSync(join(home, ".repo-harness", "registered-repos.json"))).toBe(false);
+399 |       const registry = JSON.parse(readFileSync(join(harnessHome, "registered-repos.json"), "utf-8"));
+                                        ^
+error: ENOENT: no such file or directory, open '/var/folders/_6/dkz7p7251y1gqntnk0ll5n380000gn/T/repo-harness-init-npx-env-base-1786121901258/harness-home/registered-repos.json'
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-init-command-env-basedrop/tests/cli/init.test.ts:399:35)
+(fail) init command > npx cache sources keep process.env as the constructed command env base [225.70ms]
+
+ 24 pass
+ 1 fail
+ 127 expect() calls
+Ran 25 tests across 1 file. [13.88s]
+PRE_FIX_EXIT=1

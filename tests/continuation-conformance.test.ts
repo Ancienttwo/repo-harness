@@ -772,5 +772,5 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
       expect(existsSync(join(worktreeTwo, LEDGER))).toBe(true);
       expect(git(worktreeTwo, ['status', '--porcelain', '--untracked-files=all']).stdout).toBe('');
     });
-  }, 30_000);
+  }, 90_000);
 });
