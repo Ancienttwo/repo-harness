@@ -78,12 +78,30 @@ export class McpOAuthTokenStore implements OAuthRegisteredClientsStore {
     this.clock = clock;
   }
 
+  private hasActiveTokens(clientId: string, now: number): boolean {
+    for (const info of this.accessTokens.values()) {
+      if (info.clientId !== clientId) continue;
+      if (!info.expiresAt || info.expiresAt > now) return true;
+    }
+    for (const record of this.refreshTokens.values()) {
+      if (record.expiresAt !== undefined && record.expiresAt <= now) continue;
+      if (this.accessTokens.get(record.accessToken)?.clientId === clientId) return true;
+    }
+    return false;
+  }
+
+  private isRemovableClient(clientId: string, client: OAuthClientInformationFull, now: number): boolean {
+    const issuedAt = client.client_id_issued_at;
+    if (typeof issuedAt !== 'number' || !Number.isInteger(issuedAt) || issuedAt <= 0 || issuedAt > now) return true;
+    if (issuedAt + this.dynamicClientTtlSeconds > now) return false;
+    return !this.hasActiveTokens(clientId, now);
+  }
+
   private cleanupExpiredClients(flush = true): void {
     const now = this.clock();
     let changed = false;
     for (const [clientId, client] of this.clients) {
-      const issuedAt = client.client_id_issued_at;
-      if (typeof issuedAt !== 'number' || !Number.isInteger(issuedAt) || issuedAt <= 0 || issuedAt > now || issuedAt + this.dynamicClientTtlSeconds <= now) {
+      if (this.isRemovableClient(clientId, client, now)) {
         this.clients.delete(clientId);
         changed = true;
       }
@@ -108,8 +126,7 @@ export class McpOAuthTokenStore implements OAuthRegisteredClientsStore {
       const persistedClientCount = clients.size;
       const now = this.clock();
       for (const [clientId, client] of clients) {
-        const issuedAt = client.client_id_issued_at;
-        if (typeof issuedAt !== 'number' || !Number.isInteger(issuedAt) || issuedAt <= 0 || issuedAt > now || issuedAt + this.dynamicClientTtlSeconds <= now) {
+        if (this.isRemovableClient(clientId, client, now)) {
           clients.delete(clientId);
         }
       }

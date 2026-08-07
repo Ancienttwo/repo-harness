@@ -222,4 +222,124 @@ describe('mcp oauth provider', () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  test('dynamic client past its absolute TTL survives while a refresh token keeps it active (issue #161)', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-oauth-client-ttl-active-'));
+    try {
+      const day = 24 * 60 * 60;
+      let now = 1_000_000;
+      const store = new McpOAuthTokenStore(join(root, 'tokens.json'));
+      const provider = createMcpOAuthProvider(store, {
+        nowSeconds: () => now,
+        accessTokenTtlSeconds: 60 * 60,
+        refreshTokenTtlSeconds: 30 * day,
+      });
+      const client = store.registerClient({
+        redirect_uris: ['https://chatgpt.com/connector/callback'],
+        token_endpoint_auth_method: 'none',
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code'],
+        client_name: 'chatgpt-connector',
+      });
+
+      const redirect = redirectRecorder();
+      await provider.authorize(client, {
+        scopes: ['repo-harness', 'offline_access'],
+        redirectUri: client.redirect_uris[0]!,
+        codeChallenge: 'client-ttl-challenge',
+      }, redirect.response as never);
+      const code = new URL(redirect.state.url).searchParams.get('code') ?? '';
+      const tokens = await provider.exchangeAuthorizationCode(client, code, 'verifier', client.redirect_uris[0]);
+
+      // Day 20: continued use slides the refresh token out to day 50.
+      now += 20 * day;
+      const rotated = await provider.exchangeRefreshToken(client, tokens.refresh_token ?? '');
+
+      // Day 31: the client is past its absolute registration TTL and the rotated
+      // access token expired on day 20, but the refresh token is still valid.
+      now += 11 * day;
+      expect(store.getClient(client.client_id)).toBeTruthy();
+
+      const refreshedAfterTtl = await provider.exchangeRefreshToken(client, rotated.refresh_token ?? '');
+      expect(refreshedAfterTtl.access_token).not.toBe(rotated.access_token);
+      expect(await provider.verifyAccessToken(refreshedAfterTtl.access_token))
+        .toMatchObject({ clientId: client.client_id });
+      expect(store.getClient(client.client_id)).toBeTruthy();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('dynamic client past its absolute TTL is removed without tokens and with only zombie tokens', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-oauth-client-ttl-expired-'));
+    try {
+      const day = 24 * 60 * 60;
+      let now = 2_000_000;
+      const store = new McpOAuthTokenStore(join(root, 'tokens.json'), { nowSeconds: () => now });
+      const registration = {
+        redirect_uris: ['https://chatgpt.com/connector/callback'],
+        token_endpoint_auth_method: 'none',
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code'],
+      };
+      const idle = store.registerClient({ ...registration, client_name: 'never-used' });
+      const zombie = store.registerClient({ ...registration, client_name: 'zombie-tokens' });
+
+      // Zombie state: access token expired, and the refresh token pointing at it
+      // expired too; both linger only because cleanup is lazy.
+      store.setAccessToken('zombie-access', {
+        token: 'zombie-access',
+        clientId: zombie.client_id,
+        scopes: ['repo-harness', 'offline_access'],
+        expiresAt: now + 60 * 60,
+      });
+      store.setRefreshToken('zombie-refresh', 'zombie-access', now + 2 * 60 * 60);
+
+      expect(store.getClient(idle.client_id)).toBeTruthy();
+      expect(store.getClient(zombie.client_id)).toBeTruthy();
+
+      now += 31 * day;
+      expect(store.getClient(idle.client_id)).toBeUndefined();
+      expect(store.getClient(zombie.client_id)).toBeUndefined();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('load() applies the same active-token exemption to expired dynamic clients', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-oauth-client-ttl-load-'));
+    try {
+      const tokensPath = join(root, 'tokens.json');
+      const day = 24 * 60 * 60;
+      const registeredAt = 3_000_000;
+      const storeA = new McpOAuthTokenStore(tokensPath, { nowSeconds: () => registeredAt });
+      const registration = {
+        redirect_uris: ['https://chatgpt.com/connector/callback'],
+        token_endpoint_auth_method: 'none',
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code'],
+      };
+      const active = storeA.registerClient({ ...registration, client_name: 'active-client' });
+      const idle = storeA.registerClient({ ...registration, client_name: 'idle-client' });
+      storeA.setAccessToken('active-access', {
+        token: 'active-access',
+        clientId: active.client_id,
+        scopes: ['repo-harness', 'offline_access'],
+        expiresAt: registeredAt + 60 * 60,
+      });
+      storeA.setRefreshToken('active-refresh', 'active-access', registeredAt + 50 * day);
+
+      const storeB = new McpOAuthTokenStore(tokensPath, { nowSeconds: () => registeredAt + 31 * day });
+      storeB.load();
+      expect(storeB.getClient(active.client_id)).toBeTruthy();
+      expect(storeB.getClient(idle.client_id)).toBeUndefined();
+
+      const storeC = new McpOAuthTokenStore(tokensPath, { nowSeconds: () => registeredAt + 31 * day });
+      storeC.load();
+      expect(storeC.getClient(active.client_id)).toBeTruthy();
+      expect(storeC.getClient(idle.client_id)).toBeUndefined();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

@@ -1,0 +1,35 @@
+bun test v1.3.14 (0d9b296a)
+
+tests/cli/mcp-oauth.test.ts:
+256 |       const rotated = await provider.exchangeRefreshToken(client, tokens.refresh_token ?? '');
+257 | 
+258 |       // Day 31: the client is past its absolute registration TTL and the rotated
+259 |       // access token expired on day 20, but the refresh token is still valid.
+260 |       now += 11 * day;
+261 |       expect(store.getClient(client.client_id)).toBeTruthy();
+                                                      ^
+error: expect(received).toBeTruthy()
+
+Received: undefined
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-mcp-oauth-client-ttl-active-token/tests/cli/mcp-oauth.test.ts:261:49)
+(fail) mcp oauth provider > dynamic client past its absolute TTL survives while a refresh token keeps it active (issue #161) [3.02ms]
+329 |       });
+330 |       storeA.setRefreshToken('active-refresh', 'active-access', registeredAt + 50 * day);
+331 | 
+332 |       const storeB = new McpOAuthTokenStore(tokensPath, { nowSeconds: () => registeredAt + 31 * day });
+333 |       storeB.load();
+334 |       expect(storeB.getClient(active.client_id)).toBeTruthy();
+                                                       ^
+error: expect(received).toBeTruthy()
+
+Received: undefined
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-mcp-oauth-client-ttl-active-token/tests/cli/mcp-oauth.test.ts:334:50)
+(fail) mcp oauth provider > load() applies the same active-token exemption to expired dynamic clients [1.70ms]
+
+ 4 pass
+ 2 fail
+ 42 expect() calls
+Ran 6 tests across 1 file. [41.00ms]
+PRE_FIX_EXIT=1
