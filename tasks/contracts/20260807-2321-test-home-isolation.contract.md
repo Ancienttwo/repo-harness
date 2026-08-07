@@ -1,12 +1,12 @@
 # Task Contract: test-home-isolation
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260807-2321-test-home-isolation.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
-> **Last Updated**: 2026-08-07 23:21
+> **Last Updated**: 2026-08-08 00:14
 > **Review File**: `tasks/reviews/20260807-2321-test-home-isolation.review.md`
 > **Notes File**: `tasks/notes/20260807-2321-test-home-isolation.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
