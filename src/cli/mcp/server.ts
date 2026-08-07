@@ -8,7 +8,7 @@ import {
   registeredRepoHarnessRoots,
   repoHarnessAuthorizationRevision,
 } from '../../effects/repo-registry';
-import { loadMcpLocalConfig } from './auth';
+import { assertNoLegacyRepoScopeMcpConfig, loadMcpLocalConfig } from './auth';
 import { recordCodingProcessCompletion } from './coding-tools';
 import { createCodeGraphCliAdapter } from './codegraph-adapter';
 import { CodingWorkspaceManager } from './coding-workspaces';
@@ -170,7 +170,7 @@ export function createMcpCodingRuntime(opts: McpServerOptions, ownerId: string):
   if (!ownerId.trim()) throw new Error('coding MCP runtime owner is required');
   const ctx = createMcpToolContext({ ...opts, codingRuntime: null });
   if (ctx.policy.profile !== 'coding') throw new Error('coding MCP runtime requires the coding profile');
-  const config = loadMcpLocalConfig(ctx.repoRoot);
+  const config = loadMcpLocalConfig();
   const runtime = buildCodingRuntime(ctx.repoRoot, ctx.policy, config, ownerId);
   activeCodingRuntimes.add(runtime);
   return runtime;
@@ -178,18 +178,19 @@ export function createMcpCodingRuntime(opts: McpServerOptions, ownerId: string):
 
 export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
   const repoRoot = resolveMcpRepoRoot(opts.repo ?? '.');
-  const config = loadMcpLocalConfig(repoRoot);
+  assertNoLegacyRepoScopeMcpConfig(repoRoot);
+  const config = loadMcpLocalConfig();
   const requestedProfile = opts.profile ?? config?.profile ?? 'planner';
   const profile = parseMcpProfile(requestedProfile === 'reader' ? 'planner' : requestedProfile);
   if (profile === 'coding') {
-    if (config?.version !== 3 || config.scope !== 'user' || config.profile !== 'coding' || config.coding?.enabled !== true) {
-      throw new Error('coding MCP is disabled; run user-scoped setup with profile coding and an explicit read-write grant');
+    if (config?.version !== 3 || config.profile !== 'coding' || config.coding?.enabled !== true) {
+      throw new Error('coding MCP is disabled; run setup with profile coding and an explicit read-write grant');
     }
     if (!readRegisteredRepoHarnessRepos({ adoptedOnly: true }).some((repo) => repo.accessMode === 'read_write')) {
       throw new Error('coding MCP requires at least one adopted repo with an explicit read_write grant');
     }
     if (config.authorizationRevision !== repoHarnessAuthorizationRevision()) {
-      throw new Error('coding MCP authorization revision is stale; rerun user-scoped coding setup');
+      throw new Error('coding MCP authorization revision is stale; rerun coding setup');
     }
   }
   const envDevRunner = parseBooleanSetting(process.env.REPO_HARNESS_MCP_DEV_RUNNER);

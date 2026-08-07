@@ -267,7 +267,7 @@ describe('mcp http transport', () => {
       mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
       writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
       runMcpSetupChatgpt({ repo: repoRoot, port: String(port) });
-      const token = (await Bun.file(join(repoRoot, '.repo-harness/mcp.tokens.json')).json()).bearerToken;
+      const token = (await Bun.file(join(process.env.REPO_HARNESS_HOME!, 'mcp.tokens.json')).json()).bearerToken;
 
       proc = Bun.spawn(
         [
@@ -392,7 +392,7 @@ describe('mcp http transport', () => {
       mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
       writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
       runMcpSetupChatgpt({ repo: repoRoot, port: String(port) });
-      const token = (await Bun.file(join(repoRoot, '.repo-harness/mcp.tokens.json')).json()).bearerToken;
+      const token = (await Bun.file(join(process.env.REPO_HARNESS_HOME!, 'mcp.tokens.json')).json()).bearerToken;
 
       proc = Bun.spawn(
         [
@@ -453,7 +453,7 @@ describe('mcp http transport', () => {
       mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
       writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
       runMcpSetupChatgpt({ repo: repoRoot, port: String(port) });
-      const passphrase = (await Bun.file(join(repoRoot, '.repo-harness/mcp.oauth.json')).json()).passphrase;
+      const passphrase = (await Bun.file(join(process.env.REPO_HARNESS_HOME!, 'mcp.oauth.json')).json()).passphrase;
 
       proc = Bun.spawn(
         [
@@ -625,7 +625,6 @@ describe('mcp http transport', () => {
       runGit('commit', '-m', 'fixture');
       runMcpSetupChatgpt({
         repo: repoRoot,
-        scope: 'user',
         profile: 'coding',
         grantReadWrite: [repoRoot],
         endpoint: 'https://coding.test/mcp',

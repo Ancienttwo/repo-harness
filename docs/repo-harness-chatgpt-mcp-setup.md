@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - At least one repo-harness adopted repository. New `repo-harness init`
-  and user-scope ChatGPT setup register adopted repos in
+  and ChatGPT setup register adopted repos in
   `~/.repo-harness/registered-repos.json`.
 - A local `repo-harness` CLI on PATH.
 - ChatGPT workspace access to Developer Mode and custom MCP Connectors.
@@ -19,16 +19,17 @@ repo-harness mcp serve --repo . --transport http --host 127.0.0.1 --port 8765 --
 
 The ChatGPT Connector registers the HTTPS endpoint, not a per-repo URL. The
 server discovers target repos from the global registry, so any repo registered by
-`repo-harness init` or user-scope MCP setup can be
+`repo-harness init` or MCP setup can be
 selected by passing `repo_path` to workflow tools. The `--repo` value is only
 the default repo/bootstrap context, not the only usable project.
 
-Developer Mode should normally be configured at OS user level. This stores MCP
-config, auth, and the registered repo index under `~/.repo-harness/`. Extra
-non-repo document roots are optional and require explicit `--allow-root`:
+MCP config, auth, and the registered repo index have one storage authority:
+`~/.repo-harness/` (override the root with `REPO_HARNESS_HOME`). Nothing is
+written into a repo working tree. Extra non-repo document roots are optional and
+require explicit `--allow-root`:
 
 ```bash
-repo-harness mcp setup chatgpt --scope user --repo . --endpoint <https-url>/mcp
+repo-harness mcp setup chatgpt --repo . --endpoint <https-url>/mcp
 repo-harness mcp serve --repo . --transport http --host 127.0.0.1 --port 8765 --profile planner
 ```
 
@@ -37,7 +38,6 @@ explicitly authorized:
 
 ```bash
 repo-harness mcp setup chatgpt \
-  --scope user \
   --repo . \
   --enable-reader \
   --allow-root "$HOME/Documents" \
@@ -45,21 +45,35 @@ repo-harness mcp setup chatgpt \
   --endpoint <https-url>/mcp
 ```
 
-Direct coding is a separate, default-off profile. It requires user scope and an
-explicit read-write repo grant:
+Direct coding is a separate, default-off profile. It requires an explicit
+read-write repo grant:
 
 ```bash
-repo-harness mcp setup chatgpt --scope user --profile coding --grant-read-write "$HOME/Projects/my-repo" --endpoint https://mcp.example.com/mcp
+repo-harness mcp setup chatgpt --profile coding --grant-read-write "$HOME/Projects/my-repo" --endpoint https://mcp.example.com/mcp
 repo-harness mcp serve --repo "$HOME/Projects/my-repo" --transport http --host 127.0.0.1 --port 8765 --profile coding
 ```
 
-It retains the 19 workflow/status tools and adds `open_workspace`, `read`,
-`apply_patch`, `exec_command`, and `write_stdin`, for 24 tools total. Bash has
-local-user authority and is not a filesystem sandbox.
+It exposes `open_workspace`, `read`, `apply_patch`, `exec_command`, and
+`write_stdin`. Bash has local-user authority and is not a filesystem sandbox.
 The repo grant selects which workspace can be opened; shell commands can access
 anything the local OS user can access on the machine, including outside that repo.
 It does not call local Codex or consume Codex quota. Read
 `docs/reference-configs/chatgpt-coding-mcp.md` before enabling it.
+
+## Migrate From Retired Repo-Scope Storage
+
+Older repo-harness versions could store MCP config and credentials in
+`<repo>/.repo-harness/`. That scope is retired. MCP commands fail closed while
+`<repo>/.repo-harness/mcp.local.json` still exists. Migrate once per repo:
+
+```bash
+repo-harness mcp migrate-scope --repo .
+```
+
+The migration merges non-secret config fields into `~/.repo-harness/mcp.local.json`,
+rotates the bearer token and OAuth passphrase instead of relocating them, deletes
+the repo-scope OAuth token store, and removes the legacy files. ChatGPT must
+re-authorize once afterwards. Re-running on a migrated repo reports nothing to do.
 
 Health check:
 
@@ -67,13 +81,11 @@ Health check:
 curl http://127.0.0.1:8765/health
 ```
 
-The ChatGPT path uses OAuth with a local passphrase. The passphrase is stored in an ignored local file:
+The ChatGPT path uses OAuth with a local passphrase. The passphrase is stored outside every repo, under the user-level MCP storage root:
 
 ```bash
-jq -r .passphrase .repo-harness/mcp.oauth.json
+jq -r .passphrase ~/.repo-harness/mcp.oauth.json
 ```
-
-For user-scope setup, read the passphrase from `~/.repo-harness/mcp.oauth.json`.
 
 Do not commit or paste this passphrase into issue trackers, PRs, or shared logs.
 
@@ -137,11 +149,11 @@ Use this Connector URL:
 
 1. Open ChatGPT **Settings → Security and login** and enable Developer mode.
 2. Open **Settings → Plugins** and create a developer-mode app (older UI/material may call it a Connector).
-3. Use the server name recorded in `.repo-harness/mcp.local.json` under `chatgpt.serverName` (new setup records the default `repo-harness` unless `--server-name` is provided).
+3. Use the server name recorded in `~/.repo-harness/mcp.local.json` under `chatgpt.serverName` (new setup records the default `repo-harness` unless `--server-name` is provided).
 4. Provide a description and paste the public MCP server URL ending in `/mcp`.
 5. Configure Connector authentication as OAuth when prompted.
 6. Create/Scan the app and verify the advertised tools.
-8. When the authorization page opens, enter the passphrase from `.repo-harness/mcp.oauth.json`.
+8. When the authorization page opens, enter the passphrase from `~/.repo-harness/mcp.oauth.json`.
 9. Wait for the tool scan to finish, then create the Connector.
 10. Keep a permission level that asks before changes; coding tools are destructive and shell is open-world.
 
@@ -158,7 +170,7 @@ Use ChatGPT for planning and review. Use Codex for local execution.
 1. Use the single configured Connector for workflow planning and repo tools.
 2. Call `discover_harness_repos` to list registered adopted repos, or pass `query`/`name`/`repo_path` for repo-like user text such as `my-app/`; then pass the selected exact `repo_path` when targeting a specific project. Registered repo aliases are resolved through the same authorized discovery surface, not by widening filesystem access.
 3. For registered repo document/code reading, capture the `repo_id` from `discover_harness_repos`, then use `get_repo_capabilities`, `repo_manifest`, `list_tree`, `stat_file`, `read_file`, `read_files`, and `search_text`.
-4. For registered repo writes, first check `get_repo_capabilities.write_tools`; the schema is deterministic, but mutation calls execute only for repos explicitly configured as `read_write`.
+4. For registered repo writes, first check `get_repo_capabilities.write_tools`; mutation tools execute only for a repo registered with `accessMode: "read_write"`.
 5. Ask ChatGPT to turn the idea into a PRD with `write_prd_from_idea`.
 6. Ask ChatGPT to turn the PRD into a checklist Sprint with `write_checklist_sprint`.
 7. Ask ChatGPT to prepare a Codex Goal with `prepare_codex_goal_from_sprint`.
@@ -168,97 +180,27 @@ Use ChatGPT for planning and review. Use Codex for local execution.
 Planner remains a workflow sidecar rather than a remote coding agent. Only the
 separate, explicitly granted coding profile provides direct coding and shell.
 
-## General Repo Reader Contract
+## General Repo Reader Reference
 
 The general repo reader uses the registered repo whitelist as the repo-level
-authorization boundary. GPT-facing calls use `repo_id` plus repo-relative paths;
-they never require or return the local absolute repo root.
+authorization boundary and `.ignore` as the only content-level exclusion
+source. GPT-facing calls use `repo_id` plus repo-relative paths. CodeGraph is
+the indexed metadata backend, while repo-harness owns authorization, fallback,
+snapshot semantics, audit, and mutation preconditions.
 
-Inside an authorized repo, `.ignore` is the only content-level exclusion source
-for the general repo API. Dotfiles, hidden directories, unknown extensions,
-`.gitignore` matches, and ordinary source files are visible unless `.ignore`
-excludes them. The `.ignore` file itself is treated as policy input, not as a
-normal manifest entry.
+For tool reference, JSON examples, repo administration, privacy/audit, and
+known limits, see:
 
-Authorized file content is not implicitly redacted in `read_file`,
-`read_files`, or `search_text` responses. The MCP audit path records tool name,
-target path, input hash, actor/profile, repo id, operation, relative paths,
-hash summary, status, result, error code, duration, and mutation/index event ids,
-but not file bodies or patch text.
-
-`write_file`, `apply_patch`, `move_path`, and `delete_path` are the general repo
-mutation tools. They are runtime-gated by the registered repo access mode and
-return `WRITE_DISABLED` for `read_only` repos. New files require
-`must_not_exist: true`; replacements, patches, moves, and deletes require
-`expected_sha256`; mismatches return `REVISION_CONFLICT` without writing.
-`apply_patch` operates on existing text files and accepts either structured
-`old_text`/`new_text` edits or guarded unified diff hunks. `move_path` moves one
-regular file only when the target also carries `must_not_exist: true`.
-`delete_path` deletes regular files only; directory creation, empty-directory
-mutation, and recursive delete are disabled in v1. A successful mutation returns
-`before`, `after`, `diff`, `mutation_id`, and `index_state`, and leaves CodeGraph
-refresh explicitly pending. It also appends an index invalidation event to
-`.ai/harness/mcp/index-events.jsonl`. Call `refresh_repo_index` with the changed
-paths and, when available, the returned `mutation_id` after a successful mutation
-to run CodeGraph sync, invalidate repo snapshot caches, append refresh success or
-dead-letter failure to the same event log, and receive the new `index_revision`,
-`snapshot_id`, `index_state`, refresh strategy, and mutation-to-refresh lag. The
-bundled CLI adapter uses repo-level `codegraph sync` when path-only refresh is
-unavailable and reports that tradeoff with `path_refresh_supported:false`. Manual
-recovery for a dead-letter refresh is to rerun `refresh_repo_index`; if the
-adapter stays unavailable, run `bash scripts/ensure-codegraph.sh --sync` and then
-retry the tool.
-
-When a repo has a CodeGraph index, `repo_manifest`, `list_tree`, `stat_file`,
-`read_file`, `read_files`, and `search_text` share a deterministic
-`snapshot_id`, `ignore_digest`, and `index_revision`. CodeGraph inventory is
-merged as indexed metadata (`indexed`, `codegraph_language`,
-`codegraph_node_count`); the secure filesystem walker remains the source of
-truth for complete manifest coverage. If a caller sends a stale `snapshot_id`,
-the reader returns `SNAPSHOT_STALE` instead of silently mixing versions.
-Each response also reports `snapshot_state`, creation/expiry time, TTL, and a
-bounded snapshot cache marker. `snapshot_cache.key` is scoped by tool and
-repo-relative path set; `snapshot_cache.snapshot_key` names the underlying repo
-snapshot. Entry metadata is cached by repo, registry revision, `.ignore`
-digest, path, and current stat signature, so warm calls can reuse unchanged file
-metadata while file, registry, and `.ignore` changes produce a different
-snapshot. Explicit `snapshot_id` stat/read calls can reuse a cached snapshot and
-validate the requested file hash instead of rebuilding the full repo snapshot.
-For large manifests, `repo_manifest` streams the visible tree and keeps only the
-requested page entries in memory. Returned page entries include exact content
-hashes; non-page file content metadata is deferred and reported as
-`counts.content_deferred` until a later page, `stat_file`, `read_file`, or
-`search_text` returns that content.
-If CodeGraph still references a deleted indexed path or returns metadata that
-no longer matches the filesystem, the response uses
-`snapshot_state: "index_lagging"` and includes lagging paths under the
-`codegraph` object.
-
-Large-repo reader baselines are reproducible with:
-
-```bash
-bun run benchmark:mcp-reader -- --entries 10000 --json
+```text
+docs/reference-configs/general-repo-mcp.md
 ```
 
-Use `--entries all` for the full 10k/100k/500k fixture sequence.
+For index stale, CodeGraph down, manifest incomplete, mutation conflict, and
+reindex dead-letter operations, see:
 
-CodeGraph search support is treated conservatively: current CodeGraph CLI query
-is symbol-oriented, so general full-text `search_text` uses the same guarded
-filesystem fallback while preserving `.ignore` semantics and indicating whether
-the matched file is indexed by CodeGraph.
-
-`open_workspace`, `tree`, and `read_text` are explicit session-local workspace
-tools. General repository analysis uses the registered-repo flow above; the two
-surfaces do not fall back to one another.
-
-Full reference:
-
-- Tool reference, JSON examples, repo administration, privacy/audit, and known
-  limits:
-  `docs/reference-configs/general-repo-mcp.md`
-- Operations runbook for index stale, CodeGraph down, manifest incomplete,
-  mutation conflict, and reindex dead-letter:
-  `deploy/runbooks/general-repo-mcp-codegraph.md`
+```text
+deploy/runbooks/general-repo-mcp-codegraph.md
+```
 
 ## Dev Mode Agent Runner
 
@@ -341,7 +283,7 @@ Use repo-harness to inspect this repo. Call harness_status, latest_handoff, and 
 ## Reader Test Prompt
 
 ```text
-Use the repo-harness Connector. First call discover_harness_repos with query/name/repo_path when the user gives repo-like text such as "my-app/", then choose the exact registered repo_id. Call get_repo_capabilities, repo_manifest, list_tree on ".", stat_file on README.md, read_file on README.md or docs/spec.md, and search_text for "repo-harness". Do not write files.
+Use the repo-harness Connector. First call discover_harness_repos with query/name/repo_path when the user gives repo-like text such as "my-app/", then choose the exact registered repo_id. Call get_repo_capabilities, repo_manifest, list_tree on ".", read_file on README.md or docs/spec.md, and search_text for "repo-harness". Do not write files.
 ```
 
 Blocked-file smoke:
@@ -388,7 +330,7 @@ Outcome labels:
 - `surface_blocked`: schema is current, but the current model surface did not call MCP.
 - `bundle_fallback`: Pro is reviewing a local evidence bundle and did not read through MCP.
 
-When Pro is `surface_blocked`, use `repo-harness-gptpro` to send a bounded
+When Pro is `surface_blocked`, use `repo-harness-chatgpt` to send a bounded
 local evidence bundle through the existing Oracle/browser handoff. The bundle
 must say it was produced locally, list included and omitted/truncated material,
 and include:
@@ -402,12 +344,12 @@ working_tree: clean | dirty
 Do not claim MCP read-back evidence for fallback output. Pro can plan or review
 the supplied bundle, while Codex still executes and verifies locally.
 
-Permission scope is separate from invocation evidence. Standard user-scope setup
-uses the global registered repo index, not one Connector per project. Random
-external directories are still excluded unless the local user adds explicit
+Permission scope is separate from invocation evidence. Setup uses the global
+registered repo index, not one Connector per project. Random external
+directories are still excluded unless the local user adds explicit
 `--allow-root` entries; broad full-disk read is not a supported default.
-Repo-scope setup remains for repo-local guide/auth compatibility, but it is not
-the recommended ChatGPT Connector shape for users working across projects.
+Repo-scope MCP storage is retired; `repo-harness mcp migrate-scope` is the only
+supported path off it.
 
 ## PRD Prompt
 
@@ -453,6 +395,7 @@ Use repo-harness-chatgpt-bridge. Execute the latest ChatGPT-generated Codex goal
 ## Security Notes
 
 - The default planner Connector exposes workflow planning tools plus read-only access to registered adopted repos' non-ignored files.
+- MCP config, bearer token, OAuth passphrase, and OAuth token store live only under `~/.repo-harness/` (or `REPO_HARNESS_HOME`), never inside a repo working tree.
 - Registered repo paths are loaded from `~/.repo-harness/registered-repos.json` and revalidated against live repo-harness adoption markers before use.
 - External read-only workspace roots appear in the same Connector only when the local user enables reader capability with explicit allowed roots.
 - The `/mcp` endpoint requires OAuth-issued Bearer tokens by default. Do not expose it through a tunnel without Connector auth configured.
@@ -460,7 +403,7 @@ Use repo-harness-chatgpt-bridge. Execute the latest ChatGPT-generated Codex goal
 - `repo-harness mcp serve --auth url-token` is a single-user compatibility mode that accepts the same token in either `Authorization: Bearer` or `?repo_harness_token=`; logs and shared docs must not include the token.
 - Legacy workspace reader mode keeps deny globs for `.env`, private keys, SSH keys, credentials, secrets, `.git`, and dependency/build output. The general repo API uses `.ignore` as the content filter and relies on repo registration plus path guards.
 - Planner profile cannot write application source files, package manifests, lockfiles, CI config, secrets, or files outside the repo root.
-- Coding profile is user-scoped and fail-closed without explicit `read_write` grants. Its shell has local-user authority; allowed roots constrain workspace selection, not shell access.
+- Coding profile is fail-closed without explicit `read_write` grants. Its shell has local-user authority; allowed roots constrain workspace selection, not shell access.
 - MCP does not expose a default Codex runner. It prepares `.ai/harness/handoff/codex-goal.md`; the local Codex host owns `/goal` execution unless the user explicitly enables the local orchestrator dev runner.
 - The orchestrator dev runner is local-only, opt-in, timeout-bounded, audited, and limited to the fixed Codex goal handoff. It is not arbitrary shell.
 - Keep `_ref/` read-only when used as a comparison source.
