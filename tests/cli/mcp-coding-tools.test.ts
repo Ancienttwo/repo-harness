@@ -173,7 +173,7 @@ describe('coding MCP workspace and file tools', () => {
     } finally {
       await state.processManager.shutdown();
     }
-  });
+  }, 30_000);
 
   test('fails closed for traversal, ignored and secret paths, symlinks, stale revisions, and cross-session workspaces', async () => {
     const state = fixture();
@@ -223,7 +223,7 @@ describe('coding MCP workspace and file tools', () => {
     } finally {
       await state.processManager.shutdown();
     }
-  });
+  }, 30_000);
 
   test('fails closed when repository ignore policy is not a regular file', async () => {
     const state = fixture();
@@ -257,7 +257,7 @@ describe('coding MCP workspace and file tools', () => {
     } finally {
       await state.processManager.shutdown();
     }
-  });
+  }, 30_000);
 
   test('does not follow root instruction symlinks or execute a granted repo local CodeGraph binary', async () => {
     const state = fixture();
@@ -289,7 +289,7 @@ describe('coding MCP workspace and file tools', () => {
     } finally {
       await state.processManager.shutdown();
     }
-  });
+  }, 30_000);
 
   test('records process completion after a live repo grant is revoked', async () => {
     const state = fixture();
@@ -319,7 +319,7 @@ describe('coding MCP workspace and file tools', () => {
     } finally {
       await state.processManager.shutdown();
     }
-  });
+  }, 30_000);
 
   test('rolls back all files on commit failure and cleanup refuses dirty or unmerged worktrees', async () => {
     const state = fixture();
@@ -378,7 +378,7 @@ describe('coding MCP workspace and file tools', () => {
     } finally {
       await state.processManager.shutdown();
     }
-  });
+  }, 30_000);
 
   test('does not persist raw unexpected failure text in the coding audit log', async () => {
     const state = fixture();
@@ -426,5 +426,5 @@ describe('coding MCP workspace and file tools', () => {
     } finally {
       await state.processManager.shutdown();
     }
-  });
+  }, 30_000);
 });

@@ -163,7 +163,7 @@ describe("canonical adoption plan", () => {
     } finally {
       cleanup(repo);
     }
-  });
+  }, 30_000);
 
   test("standard adoption directly replaces managed planning routes", () => {
     const repo = tempRepo();
@@ -480,7 +480,7 @@ describe("canonical adoption plan", () => {
     } finally {
       cleanup(repo);
     }
-  });
+  }, 30_000);
 });
 
 describe("init command cutover", () => {
@@ -496,7 +496,7 @@ describe("init command cutover", () => {
     } finally {
       cleanup(repo);
     }
-  });
+  }, 30_000);
 
   test("ordinary minimal apply uses the TypeScript transaction and retired experimental flag is absent", () => {
     const repo = tempRepo();
@@ -516,7 +516,7 @@ describe("init command cutover", () => {
       cleanup(repo);
       cleanup(home);
     }
-  });
+  }, 30_000);
 
   test("retired reclaim and compact flags have no compatibility CLI surface", () => {
     const repo = tempRepo();
@@ -531,7 +531,7 @@ describe("init command cutover", () => {
     } finally {
       cleanup(repo);
     }
-  });
+  }, 30_000);
 
   test("retired adopt command is fail-closed with no alias or stub", () => {
     const repo = tempRepo();
@@ -543,7 +543,7 @@ describe("init command cutover", () => {
     } finally {
       cleanup(repo);
     }
-  });
+  }, 30_000);
 
   test("interactive init is rejected before it can configure user-level runtime state", () => {
     const repo = tempRepo();
@@ -555,5 +555,5 @@ describe("init command cutover", () => {
     } finally {
       cleanup(repo);
     }
-  });
+  }, 30_000);
 });

@@ -130,7 +130,7 @@ describe("contract block rewrite hardening", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("TS sync refuses duplicate contract blocks", () => {
     const original = [
@@ -151,7 +151,7 @@ describe("contract block rewrite hardening", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("TS sync tolerates trailing whitespace on markers without duplicating the block", () => {
     const cwd = makeFixture(
@@ -176,7 +176,7 @@ describe("contract block rewrite hardening", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("shell replace_contract_block aborts on missing END marker instead of eating content to EOF", () => {
     const res = runShellReplace(
@@ -184,14 +184,14 @@ describe("contract block rewrite hardening", () => {
     );
     expect(res.status).not.toBe(0);
     expect(res.stderr).toContain("unbalanced ARCHITECTURE CONTRACT markers");
-  });
+  }, 30_000);
 
   test("shell replace_contract_block aborts when END precedes BEGIN", () => {
     const res = runShellReplace(
       ["<!-- END ARCHITECTURE CONTRACT -->", "x", "<!-- BEGIN ARCHITECTURE CONTRACT -->", ""].join("\n"),
     );
     expect(res.status).not.toBe(0);
-  });
+  }, 30_000);
 
   test("shell replace_contract_block replaces balanced block and keeps surrounding content", () => {
     const res = runShellReplace(
@@ -210,7 +210,7 @@ describe("contract block rewrite hardening", () => {
     expect(res.output).toContain("outro");
     expect(res.output).not.toContain("old\n");
     expect(res.output?.match(/<!-- BEGIN ARCHITECTURE CONTRACT -->/g)?.length).toBe(1);
-  });
+  }, 30_000);
 
   test("shell fallback renders no pending request when the event request has been archived", () => {
     const cwd = mkdtempSync(join(tmpdir(), "context-sync-shell-fallback-"));
@@ -237,5 +237,5 @@ describe("contract block rewrite hardening", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });

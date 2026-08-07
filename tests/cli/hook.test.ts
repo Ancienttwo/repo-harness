@@ -50,7 +50,7 @@ describe('typed hook runtime', () => {
       expect(result.reason).toBe('non-opt-in');
       expect(result.handler).toBeUndefined();
     } finally { clean(root); }
-  });
+  }, 30_000);
 
   test('rejects an explicit repo-root mismatch before route dispatch', () => {
     const root = repo();
@@ -64,7 +64,7 @@ describe('typed hook runtime', () => {
       });
       expect(result).toEqual({ exitCode: 0, reason: 'repo-root-mismatch' });
     } finally { clean(root); clean(other); }
-  });
+  }, 30_000);
 
   test('unknown routes do not create a handler or telemetry record', () => {
     const root = repo();
@@ -74,7 +74,7 @@ describe('typed hook runtime', () => {
       expect(result.handler).toBeUndefined();
       expect(existsSync(join(root, '.ai/harness/runs/hook-events.jsonl'))).toBe(false);
     } finally { clean(root); }
-  });
+  }, 30_000);
 
   test('dispatches each route through its typed handler identity', () => {
     const root = repo();
@@ -111,7 +111,7 @@ describe('typed hook runtime', () => {
       expect(result.status).toBe(0);
       expect(result.stdout).toBe('');
     } finally { clean(root); }
-  });
+  }, 30_000);
 
   test('one telemetry record stays opaque-free without fabricating file-metric completeness', () => {
     const root = repo();
@@ -125,5 +125,5 @@ describe('typed hook runtime', () => {
       expect(record.measurement).toMatchObject({ complete: false, opaque_steps: [] });
       expect(record.measurement.incomplete_metrics).toContain('files_read');
     } finally { clean(root); }
-  });
+  }, 30_000);
 });

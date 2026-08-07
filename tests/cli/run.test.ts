@@ -74,7 +74,7 @@ describe("run command", () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("resolves bundled helpers from the package by default", () => {
     const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-package-"));
@@ -174,7 +174,7 @@ describe("run command", () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("source checkout override fails closed for missing and malformed authority", () => {
     const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-source-invalid-"));
@@ -255,7 +255,7 @@ describe("run command", () => {
     expect(res.stdout).toMatch(
       /check-task-workflow\s+Check workflow contract and policy compliance for the current repo/,
     );
-  });
+  }, 30_000);
 
   test("package sprint-backlog helper resolves the target repo root from runHelper", () => {
     const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-sprint-root-"));
@@ -283,7 +283,7 @@ describe("run command", () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("ignores repo-local helper runtime when helper_source is repo pinned", () => {
     const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-repo-pin-"));

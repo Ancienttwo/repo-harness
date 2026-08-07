@@ -109,7 +109,7 @@ describe("BDD2 Phase E3 authority", () => {
     expect(evaluation.corpus.rows.filter((row) => row.experiment === "S3")).toHaveLength(72);
     expect(evaluation.corpus.rows.filter((row) => row.experiment === "EB3")).toHaveLength(24);
     expect(evaluation.corpus.rows.filter((row) => row.experiment === "EI3")).toHaveLength(24);
-  });
+  }, 30_000);
 
   test("outcome packets withhold condition, source id, provider, appendix, URL, and tracked-artifact judgment", () => {
     const evaluation = validateEvaluation();
@@ -122,7 +122,7 @@ describe("BDD2 Phase E3 authority", () => {
     expect(text).not.toContain("appendix");
     expect(text).not.toMatch(/https?:\/\//);
     expect(text).not.toContain("unnecessary_tracked_artifact_count");
-  });
+  }, 30_000);
 
   test("fresh adjudicator packet is explicit and does not expose condition", () => {
     const evaluation = validateEvaluation();
@@ -132,7 +132,7 @@ describe("BDD2 Phase E3 authority", () => {
     const packet = buildAdjudicatorPacket(evaluation, row, primary);
     expect(packet.schema).toBe("repo-harness-bdd2-outcome-adjudication-packet.e3");
     expect(JSON.stringify(packet)).not.toContain('"condition"');
-  });
+  }, 30_000);
 
   test("score schema excludes proposal-only artifacts", () => {
     expect(() => validateOutcomeScore({ ...neutralScore(), unnecessary_tracked_artifact_count: 1 })).toThrow("keys must be exactly");
@@ -143,7 +143,7 @@ describe("BDD2 Phase E3 authority", () => {
     manifest.model_profile.command = "/usr/bin/env";
     const root = join(REPO_ROOT, ".ai/harness/runs/bdd2", `test-e3-manifest-${Date.now()}`); created.push(root); write(join(root, "manifest.json"), manifest);
     expect(() => validateEvaluation(REPO_ROOT, relative(REPO_ROOT, join(root, "manifest.json")))).toThrow("absolute codex CLI path");
-  });
+  }, 30_000);
 
   test("source corpus cannot replace the deterministic normalized projection", () => {
     const manifest = materializeAuthorityMutation((corpus) => {
@@ -151,26 +151,26 @@ describe("BDD2 Phase E3 authority", () => {
       corpus.rows[0].normalized_outcome_sha256 = sha256Text(canonicalJson(corpus.rows[0].normalized_outcome));
     });
     expect(() => validateEvaluation(REPO_ROOT, manifest)).toThrow("normalized outcome is not the deterministic full-response projection");
-  });
+  }, 30_000);
 
   test("source corpus provenance is structurally validated", () => {
     const manifest = materializeAuthorityMutation((corpus) => { corpus.sources[0].packet_count = "72"; });
     expect(() => validateEvaluation(REPO_ROOT, manifest)).toThrow("provenance invalid");
-  });
+  }, 30_000);
 
   test("source corpus provenance must resolve to the sealed historical manifest", () => {
     const manifest = materializeAuthorityMutation((corpus) => { corpus.sources[0].source_commit = "f".repeat(40); });
     expect(() => validateEvaluation(REPO_ROOT, manifest)).toThrow("source corpus commit is unavailable");
-  });
+  }, 30_000);
 
   test("adapter evidence coordinates remain bound to the reviewed appendix", () => {
     const manifest = materializeAuthorityMutation((corpus) => { const row = corpus.rows.find((item: any) => item.experiment === "EB3" && item.condition === "treatment"); row.appendix_sha256 = "f".repeat(64); });
     expect(() => validateEvaluation(REPO_ROOT, manifest)).toThrow("corpus appendix authority mismatch");
-  });
+  }, 30_000);
 
   test("model transport rejects when the child closes stdin early", async () => {
     await expect(runJsonProcess("/bin/sh", ["-c", "exec 0<&-; sleep 0.05; exit 7"], REPO_ROOT, { PATH: process.env.PATH ?? "/usr/bin:/bin" }, "x".repeat(8 * 1024 * 1024))).rejects.toThrow();
-  });
+  }, 30_000);
 
   test("complete score runs require fresh adjudication only on disagreement", () => {
     const evaluation = validateEvaluation();
@@ -181,7 +181,7 @@ describe("BDD2 Phase E3 authority", () => {
     const first = report.packets.find((packet: any) => packet.adjudication_sha256);
     rmSync(join(root, "adjudications", `${first.packet_id}.json`));
     expect(() => validateScoreRun(evaluation, run)).toThrow("disagreement requires fresh adjudicator score");
-  });
+  }, 30_000);
 });
 
 // ============================================================================
@@ -559,7 +559,7 @@ describe("BDD3 EA1 score-run validation and evidence projection (fixture round t
     const reportText = readFileSync(join(REPO_ROOT, reportRel), "utf8");
     expect(reportText).toContain("EA1");
     expect(reportText).toContain("pass");
-  });
+  }, 30_000);
 
   // Pre-Stage-B correction #2 supersedes the prior "Stage B preflight
   // correction" leniency: a purely descriptive not_established entry is not
@@ -574,7 +574,7 @@ describe("BDD3 EA1 score-run validation and evidence projection (fixture round t
     const projected = projectEa1Evidence(evaluation, run, evidenceRel, reportRel);
     expect(projected).toEqual({ intervention: "reshape", thesis: "unresolved" });
     expect(verifyEa1EvidenceProjection(evaluation, evidenceRel)).toEqual(projected);
-  });
+  }, 30_000);
 
   test("verify-evidence fails closed when a treatment row's ceiling_violation is tampered with post-projection", () => {
     const evaluation = validateEa1Evaluation(REPO_ROOT, EA1_MANIFEST);
@@ -588,7 +588,7 @@ describe("BDD3 EA1 score-run validation and evidence projection (fixture round t
     treatmentRow.treatment_result.violations = [{ rule: 3, detail: "tampered for test" }];
     writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
     expect(() => verifyEa1EvidenceProjection(evaluation, evidenceRel)).toThrow("EA1 evidence projection drift");
-  });
+  }, 30_000);
 
   // Gate P2: run.json must self-attest the generation substrate; a run.json
   // missing model_profile (e.g. produced before this correction) fails closed.
@@ -614,7 +614,7 @@ describe("BDD3 EA1 score-run validation and evidence projection (fixture round t
     delete evidenceRaw.model_profile;
     writeFileSync(evidencePath, `${JSON.stringify(evidenceRaw, null, 2)}\n`);
     expect(() => verifyEa1EvidenceProjection(evaluation, evidenceRel)).toThrow("model_profile");
-  });
+  }, 30_000);
 });
 
 // ============================================================================

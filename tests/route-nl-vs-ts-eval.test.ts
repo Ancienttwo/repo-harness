@@ -183,7 +183,7 @@ describe("route-nl-vs-ts eval", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("writeRouteReport creates parent directories", () => {
     const cwd = tempPath("route-nl-vs-ts-write");

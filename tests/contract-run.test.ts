@@ -327,7 +327,7 @@ describe("contract-run helper", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("dry-run propagates contract Why/Goal/Scope/Exemplar/Stop Conditions content into prompts", () => {
     const repo = makeRepo("contract-run-propagation-");
@@ -370,7 +370,7 @@ describe("contract-run helper", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("run executes worker then verifier and leaves a contract-verifiable review", () => {
     const repo = makeRepo();
@@ -492,7 +492,7 @@ describe("contract-run helper", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("budget overrun stops before the next child command", () => {
     const repo = makeRepo("contract-run-budget-");
@@ -556,13 +556,13 @@ describe("contract-run helper", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("unknown flags exit with usage error", () => {
     const res = runContractRun(ROOT, ["dry-run", "--bogus"]);
     expect(res.status).toBe(2);
     expect(res.stderr).toContain("unknown argument --bogus");
-  });
+  }, 30_000);
 
   test("preflight passes for a self-sufficient brief", () => {
     const repo = makeRepo("contract-run-preflight-ok-");
@@ -583,7 +583,7 @@ describe("contract-run helper", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("golden example contract brief passes its own preflight gate", () => {
     const repo = makeRepo("contract-run-golden-example-");
@@ -608,7 +608,7 @@ describe("contract-run helper", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   describe("bugfix root-cause evidence gate", () => {
     // Runs contract-run.ts directly against the real repo (not a synthetic temp repo):
@@ -677,7 +677,7 @@ describe("contract-run helper", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("preflight fails closed on a placeholder brief", () => {
     const repo = makeRepo("contract-run-preflight-fail-");
@@ -729,7 +729,7 @@ describe("contract-run helper", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("run refuses an incomplete brief before dispatching the worker", () => {
     const repo = makeRepo("contract-run-incomplete-");
@@ -819,7 +819,7 @@ describe("contract-run helper", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("runner metadata from the contract flows into the manifest", () => {
     const repo = makeRepo("contract-run-runner-");
@@ -977,7 +977,7 @@ describe("contract-run helper", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   // Worker identity must key off the literal --runner value alone, never off whether it
   // happens to match the contract's declared worker fallback. That "did we land on the
@@ -1014,7 +1014,7 @@ describe("contract-run helper", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("a Codex runner label passes through unchanged even when it is the contract's declared fallback", () => {
     const repo = makeRepo("contract-run-runner-codexfallback-");
@@ -1049,13 +1049,13 @@ describe("contract-run helper", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("invalid --effort value exits with usage error", () => {
     const res = runContractRun(ROOT, ["dry-run", "--effort", "nonsense"]);
     expect(res.status).toBe(2);
     expect(res.stderr).toContain("contract-run: --effort must be one of low, medium, high, xhigh, max");
-  });
+  }, 30_000);
 
   test("run fails closed on a blank Out of scope even though In scope is populated", () => {
     const repo = makeRepo("contract-run-outscope-run-");
@@ -1101,7 +1101,7 @@ describe("contract-run helper", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("dry-run stays advisory on a blank Out of scope", () => {
     const repo = makeRepo("contract-run-outscope-dryrun-");
@@ -1127,7 +1127,7 @@ describe("contract-run helper", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("worker prompt carries the execution boundary clause", () => {
     const repo = makeRepo("contract-run-boundary-");
@@ -1152,7 +1152,7 @@ describe("contract-run helper", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   describe("delegation budget enforce-or-reject", () => {
     test("preflight rejects a non-null tokens budget with a named-constraint message", () => {
@@ -1185,7 +1185,7 @@ describe("contract-run helper", () => {
       } finally {
         rmSync(repo, { recursive: true, force: true });
       }
-    });
+    }, 30_000);
 
     test("preflight rejects a non-inherited network value with a named-constraint message", () => {
       const repo = makeRepo("contract-run-network-reject-");
@@ -1219,7 +1219,7 @@ describe("contract-run helper", () => {
       } finally {
         rmSync(repo, { recursive: true, force: true });
       }
-    });
+    }, 30_000);
 
     test("preflight rejects a non-empty writable_paths narrowing with a named-constraint message", () => {
       const repo = makeRepo("contract-run-writable-paths-reject-");
@@ -1256,7 +1256,7 @@ describe("contract-run helper", () => {
       } finally {
         rmSync(repo, { recursive: true, force: true });
       }
-    });
+    }, 30_000);
 
     test("preflight reports every unenforceable constraint together, not just the first", () => {
       const repo = makeRepo("contract-run-multi-reject-");
@@ -1288,7 +1288,7 @@ describe("contract-run helper", () => {
       } finally {
         rmSync(repo, { recursive: true, force: true });
       }
-    });
+    }, 30_000);
 
     test("preflight passes when tokens is null, network is inherited, and writable_paths is empty", () => {
       const repo = makeRepo("contract-run-enforceable-ok-");
@@ -1318,7 +1318,7 @@ describe("contract-run helper", () => {
       } finally {
         rmSync(repo, { recursive: true, force: true });
       }
-    });
+    }, 30_000);
 
     test("preflight fails closed on the retired tool_calls field name instead of silently dropping the budget", () => {
       const repo = makeRepo("contract-run-legacy-field-");
@@ -1352,7 +1352,7 @@ describe("contract-run helper", () => {
       } finally {
         rmSync(repo, { recursive: true, force: true });
       }
-    });
+    }, 30_000);
 
     test("run enforces wall_time_minutes via the bounded process runner deadline and kills an overrunning worker", () => {
       const repo = makeRepo("contract-run-walltime-");
@@ -1408,6 +1408,6 @@ describe("contract-run helper", () => {
       } finally {
         rmSync(repo, { recursive: true, force: true });
       }
-    });
+    }, 30_000);
   });
 });

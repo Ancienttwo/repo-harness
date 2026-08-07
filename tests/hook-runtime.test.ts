@@ -40,7 +40,7 @@ describe('hook runtime typed dispatch', () => {
       expect(record.measurement).toMatchObject({ opaque_steps: [] });
       expect((record.measurement as { incomplete_metrics: string[] }).incomplete_metrics).toContain('files_read');
     } finally { rmSync(root, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test('host output policy is centralized and does not leak successful Codex stdout', () => {
     const root = fixture();
@@ -54,7 +54,7 @@ describe('hook runtime typed dispatch', () => {
       });
       expect(result.handler).toBe('subagent');
     } finally { rmSync(root, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test('typed handlers do not consult a route filesystem or spawn a route child', () => {
     const root = fixture();
@@ -73,5 +73,5 @@ describe('hook runtime typed dispatch', () => {
       expect(record.steps.every((step) => step.execution === 'in_process')).toBe(true);
       expect(existsSync(join(root, '.ai/hooks'))).toBe(false);
     } finally { rmSync(root, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 });

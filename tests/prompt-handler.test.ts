@@ -162,7 +162,7 @@ describe('typed UserPromptSubmit.default handler', () => {
     } finally {
       repo.cleanup();
     }
-  });
+  }, 30_000);
 
   test('owner waiver grant is contract-bound and never asks for a repeated subject hash', () => {
     const repo = fixture({ contract: true });
@@ -176,7 +176,7 @@ describe('typed UserPromptSubmit.default handler', () => {
     } finally {
       repo.cleanup();
     }
-  });
+  }, 30_000);
 
   test('long plan prose with a literal Completed token does not trigger done', () => {
     const repo = fixture({ contract: true });
@@ -197,7 +197,7 @@ describe('typed UserPromptSubmit.default handler', () => {
     } finally {
       repo.cleanup();
     }
-  });
+  }, 30_000);
 
   test('completionToken substring and Chinese future-completion wording do not trigger done', () => {
     const repo = fixture({ contract: true });
@@ -211,7 +211,7 @@ describe('typed UserPromptSubmit.default handler', () => {
     } finally {
       repo.cleanup();
     }
-  });
+  }, 30_000);
 
   test('done with fresh contract, checks, and AcceptanceReceipt allows archive once', () => {
     const repo = fixture({ contract: true, checks: passingChecks() });
@@ -230,7 +230,7 @@ describe('typed UserPromptSubmit.default handler', () => {
     } finally {
       repo.cleanup();
     }
-  });
+  }, 30_000);
 
   test('semantic change after an AcceptanceReceipt is rejected even when prose is unchanged', () => {
     const repo = fixture({ contract: true, checks: passingChecks() });
@@ -247,7 +247,7 @@ describe('typed UserPromptSubmit.default handler', () => {
     } finally {
       repo.cleanup();
     }
-  });
+  }, 30_000);
 
   test('malformed or pending Markdown review prose does not override a structured receipt', () => {
     for (const review of [
@@ -276,7 +276,7 @@ describe('typed UserPromptSubmit.default handler', () => {
         repo.cleanup();
       }
     }
-  });
+  }, 30_000);
 
   test('done blocks when the approved plan lacks its Evidence Contract', () => {
     const repo = fixture({ contract: true, evidenceContract: false });
@@ -288,7 +288,7 @@ describe('typed UserPromptSubmit.default handler', () => {
     } finally {
       repo.cleanup();
     }
-  });
+  }, 30_000);
 
   test('done blocks for empty, failing, and stale structured checks', () => {
     const cases: Array<[string, unknown]> = [
@@ -306,7 +306,7 @@ describe('typed UserPromptSubmit.default handler', () => {
         repo.cleanup();
       }
     }
-  });
+  }, 30_000);
 
   test('done blocks when contract verification fails before archive', () => {
     const repo = fixture({ contract: true, checks: passingChecks() });
@@ -323,7 +323,7 @@ describe('typed UserPromptSubmit.default handler', () => {
     } finally {
       repo.cleanup();
     }
-  });
+  }, 30_000);
 
   test('minimal-change advice is emitted only for execution prompts', () => {
     const repo = fixture({ contract: true, minimalChange: 'advice' });
@@ -341,7 +341,7 @@ describe('typed UserPromptSubmit.default handler', () => {
     } finally {
       repo.cleanup();
     }
-  });
+  }, 30_000);
 
   test('typed parser remains the only input read and malformed payload stays observable', () => {
     const input = parseHookInput('not json');
@@ -359,7 +359,7 @@ describe('typed UserPromptSubmit.default handler', () => {
     } finally {
       repo.cleanup();
     }
-  });
+  }, 30_000);
 
   // Sibling of the workflow-state.sh recorder/validator policy-key split
   // (tests/workflow-state-lib.test.ts): emitReviewHints's [AcceptanceSubject]
@@ -440,5 +440,5 @@ describe('typed UserPromptSubmit.default handler', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });

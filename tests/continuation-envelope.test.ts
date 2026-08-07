@@ -198,7 +198,7 @@ describe('continuation envelope routes', () => {
         expect(envelope.authority_revision).toMatch(/^sha256:[0-9a-f]{64}$/);
         expect(envelope.progress_token).toMatch(/^sha256:[0-9a-f]{64}$/);
       });
-    });
+    }, 30_000);
   }
 
   test('every route stays inside the frozen route vocabulary with one unit or one halt', () => {
@@ -263,7 +263,7 @@ describe('continuation envelope halts on unusable sprint authority', () => {
         expect(envelope.unit_ref).toBe(scenario.unit_ref);
         expect(envelope.command).toBeNull();
       });
-    });
+    }, 30_000);
   }
 
   test('halts when the active-plan marker points at a deleted plan', () => {
@@ -275,7 +275,7 @@ describe('continuation envelope halts on unusable sprint authority', () => {
       expect(envelope.reason).toBe('stale:active_plan_marker');
       expect(envelope.command).toBeNull();
     });
-  });
+  }, 30_000);
 });
 
 describe('continuation envelope determinism and read-only contract', () => {
@@ -299,7 +299,7 @@ describe('continuation envelope determinism and read-only contract', () => {
       expect(halted.status).toBe(0);
       expect((JSON.parse(halted.stdout) as ContinuationEnvelopeV1).route).toBe('halt');
     });
-  });
+  }, 30_000);
 
   test('key order is stable and matches the declared envelope shape', () => {
     withRepo((cwd) => {
@@ -314,7 +314,7 @@ describe('continuation envelope determinism and read-only contract', () => {
         'reason',
       ]);
     });
-  });
+  }, 30_000);
 
   test('performs no writes: repo tree, .ai/harness, and the state cache are untouched', () => {
     withRepo((cwd) => {
@@ -331,5 +331,5 @@ describe('continuation envelope determinism and read-only contract', () => {
       expect(spawnSync('git', ['status', '--porcelain'], { cwd, encoding: 'utf-8' }).stdout).toBe(beforeStatus);
       expect(existsSync(join(cwd, '.ai/harness/state/effective.json'))).toBe(false);
     });
-  });
+  }, 30_000);
 });

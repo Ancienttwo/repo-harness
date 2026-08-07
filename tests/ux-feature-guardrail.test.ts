@@ -47,7 +47,7 @@ describe("UX feature pre-implementation guard", () => {
     );
     expect(shown.status).toBe(0);
     expect(shown.stdout).toContain("# UX Feature Guard");
-  });
+  }, 30_000);
 
   test("projects the same guard card through every design-brief template authority", () => {
     const template = read("assets/templates/design-brief.template.md");

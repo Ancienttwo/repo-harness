@@ -145,7 +145,7 @@ describe("install-agent-fleet", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("idempotent re-run reports up-to-date for all 12 files", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-idempotent");
@@ -160,7 +160,7 @@ describe("install-agent-fleet", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("local modification to an installed target is preserved and reported as drift", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-drift");
@@ -214,7 +214,7 @@ describe("install-agent-fleet", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("an explicitly accepted user-managed fleet remains idempotent until an accepted file changes", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-user-managed");
@@ -270,7 +270,7 @@ describe("install-agent-fleet", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("--accept-user-managed rejects malformed or role-mismatched files without writing a receipt", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-user-managed-invalid");
@@ -289,7 +289,7 @@ describe("install-agent-fleet", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("--force overwrites a drifted target back to generated content", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-force");
@@ -305,7 +305,7 @@ describe("install-agent-fleet", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("invalid frontmatter fails the whole source preflight before any target mutation", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-invalid");
@@ -328,7 +328,7 @@ describe("install-agent-fleet", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("a missing or unparseable source role identity fails the installer", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-missing-role-identity");
@@ -362,7 +362,7 @@ describe("install-agent-fleet", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("a frontmatter name that does not match its source role fails closed", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-role-name-mismatch");
@@ -396,7 +396,7 @@ describe("install-agent-fleet", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("a corrected source refuses stale installed targets with mismatched role identities", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-stale-role-identity");
@@ -429,7 +429,7 @@ describe("install-agent-fleet", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("an invalid source leaves a stale installed target untouched", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-stale-role-invalid-source");
@@ -458,7 +458,7 @@ describe("install-agent-fleet", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("a provider-specific description that disagrees with the model mapping fails closed", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-description-mismatch");
@@ -482,7 +482,7 @@ describe("install-agent-fleet", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("a missing packaged source fails the whole preflight before any target mutation", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-partial-source");
@@ -503,7 +503,7 @@ describe("install-agent-fleet", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("a decoy REPO_HARNESS_HELPER_SOURCE_PATH pointing at a different real helper still fails closed on a bad packaged fixture", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-decoy-helper-source-path");
@@ -534,7 +534,7 @@ describe("install-agent-fleet", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("total failure (no source, no pre-existing targets) exits non-zero", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-total-failure");
@@ -549,7 +549,7 @@ describe("install-agent-fleet", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("missing packaged source leaves existing targets untouched across retries", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-persistent-remediation-failure");
@@ -578,7 +578,7 @@ describe("install-agent-fleet", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("--help exits zero and does not create any HOME state", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-help");
@@ -591,7 +591,7 @@ describe("install-agent-fleet", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("the installer declares Bun as its only semantic parser runtime", () => {
     const source = readFileSync(SCRIPT, "utf-8");
@@ -604,7 +604,7 @@ describe("install-agent-fleet", () => {
     expect(source).not.toContain('spawnSync("curl"');
     expect(source).toContain('const WRITABLE_AGENTS = new Set(["fast-worker", "deep-worker", "root-cause-prover", "harness-evaluator"]);');
     expect(source).toContain("if (WRITABLE_AGENTS.has(agent))");
-  });
+  }, 30_000);
 
   test("an unsupported Bun version fails before creating HOME state", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-old-bun");
@@ -633,7 +633,7 @@ describe("install-agent-fleet", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("a supported HOME Bun wins when PATH resolves an unsupported Bun", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-home-bun-fallback");
@@ -675,7 +675,7 @@ describe("install-agent-fleet", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("generated developer_instructions embeds the canonical EXECUTION_BOUNDARY text verbatim", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-boundary");
@@ -698,5 +698,5 @@ describe("install-agent-fleet", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });

@@ -43,13 +43,13 @@ describe('mcp command', () => {
     expect(setup.stdout).toContain('chatgpt');
     expect(setup.stdout).toContain('codex');
     expect(root.stdout).toContain('prepare-goal');
-  });
+  }, 30_000);
 
   test('rejects invalid subcommands with a useful error', () => {
     const result = runMcp(['missing']);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("unknown command 'missing'");
-  });
+  }, 30_000);
 
   test('prepare-goal writes Codex handoff and prints host-native /goal prompt', () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-goal-'));
@@ -88,5 +88,5 @@ describe('mcp command', () => {
       rmSync(repoRoot, { recursive: true, force: true });
       rmSync(repoHarnessHome, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });

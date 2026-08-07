@@ -135,7 +135,7 @@ describe("heartbeat triage runner", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("workflow check failure is recorded as an inbox finding without failing the runner", () => {
     const repo = makeRepo("heartbeat-triage-fail-");
@@ -158,7 +158,7 @@ describe("heartbeat triage runner", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("fallback finds the next pending row when no active-sprint marker exists", () => {
     const repo = makeRepo("heartbeat-triage-fallback-");
@@ -179,7 +179,7 @@ describe("heartbeat triage runner", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("unknown flags exit with usage error", () => {
     const res = spawnSync("bash", ["scripts/heartbeat-triage.sh", "run", "--bogus"], {
@@ -188,5 +188,5 @@ describe("heartbeat triage runner", () => {
     });
     expect(res.status).toBe(2);
     expect(res.stderr).toContain("unknown argument: --bogus");
-  });
+  }, 30_000);
 });

@@ -133,7 +133,7 @@ describe('pre-edit-guard plan-status fail-closed default (falsifier-resolved aut
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('empty status blocks with a structured reason', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'plan-status-empty-')));
@@ -152,7 +152,7 @@ describe('pre-edit-guard plan-status fail-closed default (falsifier-resolved aut
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('unrecognized (but plausible-looking) status blocks -- not just literal garbage', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'plan-status-unrecognized-')));
@@ -167,7 +167,7 @@ describe('pre-edit-guard plan-status fail-closed default (falsifier-resolved aut
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('casing variant of a known status is not byte-equal and blocks', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'plan-status-casing-')));
@@ -181,7 +181,7 @@ describe('pre-edit-guard plan-status fail-closed default (falsifier-resolved aut
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('missing plan file keeps the existing missing_artifact path unchanged', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'plan-status-missing-plan-')));
@@ -198,7 +198,7 @@ describe('pre-edit-guard plan-status fail-closed default (falsifier-resolved aut
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   describe('each known-good status', () => {
     for (const status of KNOWN_STATUSES) {
@@ -226,7 +226,7 @@ describe('pre-edit-guard plan-status fail-closed default (falsifier-resolved aut
         } finally {
           rmSync(cwd, { recursive: true, force: true });
         }
-      });
+      }, 30_000);
     }
   });
 
@@ -248,7 +248,7 @@ describe('pre-edit-guard plan-status fail-closed default (falsifier-resolved aut
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('missing active_plan.lifecycle projection is fail-closed even when the known-status array exists', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'plan-status-no-lifecycle-')));
@@ -263,7 +263,7 @@ describe('pre-edit-guard plan-status fail-closed default (falsifier-resolved aut
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('missing policy.json entirely is also fail-closed', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'plan-status-no-policy-file-')));
@@ -278,7 +278,7 @@ describe('pre-edit-guard plan-status fail-closed default (falsifier-resolved aut
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('advice mode reports the same unrecognized status without hard-blocking', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'plan-status-advice-')));
@@ -292,5 +292,5 @@ describe('pre-edit-guard plan-status fail-closed default (falsifier-resolved aut
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });

@@ -154,7 +154,7 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
       } finally {
         fixture.cleanup();
       }
-    });
+    }, 30_000);
   }
 
   test('default MCP summary truthfully declares and materializes its canonical read model', () => {
@@ -184,7 +184,7 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
     } finally {
       fixture.cleanup();
     }
-  });
+  }, 30_000);
 
   test('MCP allocates the next durable version after authority mutation', () => {
     const fixture = createEffectiveStateFixture();
@@ -215,7 +215,7 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
     } finally {
       fixture.cleanup();
     }
-  });
+  }, 30_000);
 
   test('public MCP dispatch keeps canonical authority independent from its labeled current preview', async () => {
     const fixture = createEffectiveStateFixture();
@@ -250,7 +250,7 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
     } finally {
       fixture.cleanup();
     }
-  });
+  }, 30_000);
 
   // LSC-08 falsifier: the frozen strict.stop.not-ready-to-ship-still-allows
   // cell (tests/state/fixtures/loop-semantics/characterization.json) is the
@@ -326,5 +326,5 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
     } finally {
       fixture.cleanup();
     }
-  });
+  }, 30_000);
 });

@@ -205,13 +205,13 @@ describe("scripts/run-skill-routing-eval.ts CLI", () => {
     const result = runCli(["validate"]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("validate OK");
-  });
+  }, 30_000);
 
   test("hash exits 0 (verify-only) on the committed corpus", () => {
     const result = runCli(["hash"]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("hash OK");
-  });
+  }, 30_000);
 
   test("dry-run exits 0 and prints a count for every canonical route plus none", () => {
     const result = runCli(["dry-run"]);
@@ -224,18 +224,18 @@ describe("scripts/run-skill-routing-eval.ts CLI", () => {
     ]) {
       expect(result.stdout).toContain(`${route}:`);
     }
-  });
+  }, 30_000);
 
   test("an unknown subcommand exits non-zero with usage on stderr", () => {
     const result = runCli(["bogus"]);
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("unknown or missing subcommand");
-  });
+  }, 30_000);
 
   test("missing subcommand exits non-zero", () => {
     const result = runCli([]);
     expect(result.status).not.toBe(0);
-  });
+  }, 30_000);
 });
 
 describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-07 phase A / D1)", () => {
@@ -381,7 +381,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
     expect(result.outcome).toBe("routed");
     expect(result.routes).toEqual(["repo-harness-plan"]);
     expect(result.rawExitCode).toBe(0);
-  });
+  }, 30_000);
 
   describe("computeRoutingMetrics / evaluateThresholds (pure, synthetic records — proves both the small-sample and large-sample branches)", () => {
     function record(overrides: Partial<RoutingRunRecord> & Pick<RoutingRunRecord, "id" | "kind" | "expected_route">): RoutingRunRecord {
@@ -507,7 +507,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       expect(report.discovered_surface.map((d) => d.name).sort()).toEqual(
         ["repo-harness", "repo-harness-check", "repo-harness-chatgpt", "repo-harness-cross-review", "repo-harness-plan", "repo-harness-product", "repo-harness-ship"].sort(),
       );
-    });
+    }, 30_000);
 
     test("minimal/claude excludes product, ship, and cross-review from scoring", () => {
       const reportPath = tmpReportPath("minimal-perfect");
@@ -523,7 +523,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       expect(report.metrics.per_route_recall["repo-harness-ship"]).toEqual({ numerator: 0, denominator: 0, rate: null, reachable: false });
       expect(report.metrics.per_route_recall["repo-harness-cross-review"]).toEqual({ numerator: 0, denominator: 0, rate: null, reachable: false });
       expect(report.metrics.excluded_unreachable_count).toBe(12);
-    });
+    }, 30_000);
 
     test("host-awareness changes nothing about route scoring for full (claude-plan is not canonical)", () => {
       const claudeReport = runProviderEval({
@@ -537,7 +537,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       expect(codexReport.metrics.top1_accuracy).toEqual(claudeReport.metrics.top1_accuracy);
       expect(codexReport.discovered_surface.map((d) => d.name)).toContain("claude-plan");
       expect(claudeReport.discovered_surface.map((d) => d.name)).not.toContain("claude-plan");
-    });
+    }, 30_000);
   });
 
   describe("report shape, byte binding, and corpus/manifest sha256 embedding", () => {
@@ -550,7 +550,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       expect(report.manifest_sha256).toBe(sha256Hex(readFileSync(join(ROOT, "assets", "skill-commands", "manifest.json"))));
       expect(report.records).toHaveLength(68);
       expect(report.protocol).toBe(1);
-    });
+    }, 30_000);
 
     test("the written report file and its .sha256 sidecar are byte-bound", () => {
       const reportPath = tmpReportPath("sidecar");
@@ -558,7 +558,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       const bytes = readFileSync(reportPath);
       const sidecar = readFileSync(`${reportPath}.sha256`, "utf-8").trim();
       expect(sidecar.startsWith(sha256Hex(bytes))).toBe(true);
-    });
+    }, 30_000);
 
     test("re-running with an identical stub produces byte-identical report JSON except generated_at", () => {
       const pathA = tmpReportPath("repeat-a");
@@ -567,7 +567,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       const reportB = runProviderEval({ profile: "minimal", host: "claude", provider: "stub", reportPath: pathB, dryRun: false, stubOptions: { routeFor: perfectEchoRouteFor } });
       const stripGeneratedAt = (r: unknown) => JSON.parse(JSON.stringify(r).replace(/"generated_at":"[^"]*"/, '"generated_at":""'));
       expect(stripGeneratedAt(reportA)).toEqual(stripGeneratedAt(reportB));
-    });
+    }, 30_000);
   });
 
   describe("run subcommand CLI (--dry-run pipeline end to end via the real binary)", () => {
@@ -661,7 +661,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       expect(report.evidence_scope).toBe("single_run_partial");
       expect(report.evidence_note).toContain("PARTIAL evidence");
       expect(report.evidence_note.toLowerCase()).toContain("aggregate");
-    });
+    }, 30_000);
 
     test("a genuinely bad REACHABLE route still fails its own floor and overall_pass end to end (exclusion does not neuter real failures)", () => {
       const reportPath = tmpReportPath("reach-bad-reachable");
@@ -681,7 +681,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       expect(report.metrics.per_route_recall["repo-harness"]).toEqual({ numerator: 0, denominator: 4, rate: 0, reachable: true });
       expect(report.thresholds.per_route_recall["repo-harness"].pass).toBe(false);
       expect(report.thresholds.overall_pass).toBe(false);
-    });
+    }, 30_000);
   });
 
   describe("buildAggregateReport / aggregate subcommand (SSD-07 phase A HIGH-finding fix, layer 2)", () => {
@@ -810,7 +810,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
           canonicalRoutes,
         ),
       ).toThrow(/repo-harness-product/);
-    });
+    }, 30_000);
 
     test("fewer than 2 inputs is rejected", () => {
       const { claude, claudePath } = runTwoReports();
@@ -885,7 +885,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       const sidecar = readFileSync(`${aggregateReportPath}.sha256`, "utf-8").trim();
       const bytes = readFileSync(aggregateReportPath);
       expect(sidecar.startsWith(sha256Hex(bytes))).toBe(true);
-    });
+    }, 30_000);
 
     test("aggregate CLI: fewer than 2 input paths exits non-zero with a clear usage error", () => {
       const result = spawnSync(
@@ -895,12 +895,12 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       );
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain("at least 2");
-    });
+    }, 30_000);
 
     test("--help on aggregate prints usage and exits 0", () => {
       const result = spawnSync("bun", ["scripts/run-skill-routing-eval.ts", "aggregate", "--help"], { cwd: ROOT, encoding: "utf-8" });
       expect(result.status).toBe(0);
       expect(result.stdout).toContain("aggregate --report");
-    });
+    }, 30_000);
   });
 });

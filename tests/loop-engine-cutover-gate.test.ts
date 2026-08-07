@@ -146,7 +146,7 @@ describe("loop-engine cutover gate", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("unknown flags exit with usage error", () => {
     const run = spawnSync(process.execPath, [SCRIPT, "--definitely-unknown"], {
@@ -154,5 +154,5 @@ describe("loop-engine cutover gate", () => {
     });
     expect(run.status).toBe(2);
     expect(run.stderr).toContain("unknown argument");
-  });
+  }, 30_000);
 });

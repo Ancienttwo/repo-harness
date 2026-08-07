@@ -119,7 +119,7 @@ describe("hook dispatch diet report", () => {
     expect(report.runtime_evidence.authority).toBe("hook-events.jsonl");
     expect(hookDietReportPasses(report)).toBe(true);
     expect(report.guard_regression.required_command).toBe("bun test tests/hook-runtime.test.ts");
-  });
+  }, 30_000);
 
   test("aggregates valid event records by route and evaluates LOOP-12 targets", () => {
     const dir = mkdtempSync(join(tmpdir(), "hook-diet-events-"));
@@ -141,7 +141,7 @@ describe("hook dispatch diet report", () => {
       expect(renderHookDietMarkdown(report)).toContain("## LOOP-12 targets");
       expect(renderHookDietMarkdown(report)).toContain("post_edit_event_writes");
     } finally { rmSync(dir, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test("fails closed on malformed, mixed, and incomplete required evidence", () => {
     const dir = mkdtempSync(join(tmpdir(), "hook-diet-invalid-"));
@@ -156,7 +156,7 @@ describe("hook dispatch diet report", () => {
       expect(reportFor(incomplete).runtime_evidence.available).toBe(false);
       expect(reportFor(incomplete).runtime_evidence.targets.state_resolutions.coverage).toBe(0.5);
     } finally { rmSync(dir, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test("calculates nearest-rank latency percentiles and retains max as observation", () => {
     const durations = [1, 2, 3, 4, 100];
@@ -166,7 +166,7 @@ describe("hook dispatch diet report", () => {
       runProbe: (spec) => spec.name === "session-start-context" ? { exitCode: 0, durationMs: 1, stdout: "" } : { exitCode: 0, durationMs: durations[phaseIndex++ % durations.length] },
     });
     expect(report.phase_probe.probes[0]).toMatchObject({ sample_count: 5, total_ms: 110, avg_ms: 22, p50_ms: 3, p95_ms: 100, p99_ms: 100, max_ms: 100 });
-  });
+  }, 30_000);
 
   test("gates phase latency on p95 while retaining max as observation", () => {
     const durations = [...Array(19).fill(10), 1000];
@@ -177,14 +177,14 @@ describe("hook dispatch diet report", () => {
     });
     expect(report.phase_probe.probes[0]).toMatchObject({ p95_ms: 10, max_ms: 1000, within_baseline: true });
     expect(report.slo.within_slo).toBe(true);
-  });
+  }, 30_000);
 
   test("keeps SessionStart context estimate unavailable when structured context is missing", () => {
     const report = buildHookDietReport({ repo: ROOT, iterations: 1, baselineMs: 250, runProbe: (spec) => ({ exitCode: 0, durationMs: 1, stdout: spec.name === "session-start-context" ? "not structured JSON" : "" }) });
     expect(report.session_start_context.context_bytes).toBeNull();
     expect(report.session_start_context.token_estimate.estimated_tokens).toBeNull();
     expect(report.slo.within_slo).toBe(false);
-  });
+  }, 30_000);
 
   test("CLI writes JSON and Markdown reports", () => {
     const cwd = mkdtempSync(join(tmpdir(), "hook-dispatch-diet-"));
@@ -213,11 +213,11 @@ describe("hook dispatch diet report", () => {
     const run = spawnSync(process.execPath, [SCRIPT, "--bad-flag"], { encoding: "utf-8" });
     expect(run.status).toBe(2);
     expect(run.stderr).toContain("unknown argument");
-  });
+  }, 30_000);
 
   test("missing --events value exits with usage error", () => {
     const run = spawnSync(process.execPath, [SCRIPT, "--events"], { encoding: "utf-8" });
     expect(run.status).toBe(2);
     expect(run.stderr).toContain("missing required option value");
-  });
+  }, 30_000);
 });

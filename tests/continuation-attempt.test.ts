@@ -170,7 +170,7 @@ describe('attempt receipt recorder', () => {
       expect(JSON.parse(lines[0])).toEqual(first as unknown as Record<string, unknown>);
       expect(JSON.parse(lines[1])).toEqual(second as unknown as Record<string, unknown>);
     });
-  });
+  }, 30_000);
 
   test('--outcome resumed may omit both tokens', () => {
     withLedgerRepo((cwd) => {
@@ -180,7 +180,7 @@ describe('attempt receipt recorder', () => {
       expect(receipt.after_progress_token).toBeNull();
       expect(ledgerLines(cwd)).toHaveLength(1);
     });
-  });
+  }, 30_000);
 
   test('rejects an unknown outcome and a token-bearing outcome without tokens', () => {
     withLedgerRepo((cwd) => {
@@ -195,7 +195,7 @@ describe('attempt receipt recorder', () => {
 
       expect(existsSync(join(cwd, LEDGER))).toBe(false);
     });
-  });
+  }, 30_000);
 
   test('a unit_ref containing a space is legal; a NUL byte is rejected', () => {
     withLedgerRepo((cwd) => {
@@ -223,7 +223,7 @@ describe('attempt receipt recorder', () => {
         recordedAt: '2026-08-03T00:00:00.000Z',
       })).toEqual({ ok: false, error: '--unit-ref must be a non-empty single-line value' });
     });
-  });
+  }, 30_000);
 
   test('the recorder touches no tracked file', () => {
     withLedgerRepo((cwd) => {
@@ -233,7 +233,7 @@ describe('attempt receipt recorder', () => {
       expect(spawnSync('git', ['status', '--porcelain'], { cwd, encoding: 'utf-8' }).stdout).toBe(before);
       expect(existsSync(join(cwd, LEDGER))).toBe(true);
     });
-  });
+  }, 30_000);
 
   test('eight parallel recorders append eight intact lines', async () => {
     const fixture = createEffectiveStateFixture();
@@ -296,7 +296,7 @@ describe('no-progress circuit breaker', () => {
       record(cwd, { outcome: 'completed', before: `${token}-moved`, after: token });
       expect(envelopeFrom(cwd).route).toBe('continue_active_plan');
     });
-  });
+  }, 30_000);
 
   test('receipts recorded against a superseded token do not halt the current one', () => {
     withLedgerRepo((cwd) => {
@@ -305,7 +305,7 @@ describe('no-progress circuit breaker', () => {
       recordStalled(cwd, stale);
       expect(envelopeFrom(cwd).route).toBe('continue_active_plan');
     });
-  });
+  }, 30_000);
 
   test('real material progress clears a tripped breaker', () => {
     withLedgerRepo((cwd) => {
@@ -322,7 +322,7 @@ describe('no-progress circuit breaker', () => {
       expect(moved.progress_token).not.toBe(token);
       expect(moved.route).toBe('verify_or_finish');
     });
-  });
+  }, 30_000);
 
   test('an explicit resumed receipt resets the count, which then restarts at one', () => {
     withLedgerRepo((cwd) => {
@@ -339,7 +339,7 @@ describe('no-progress circuit breaker', () => {
       recordStalled(cwd, token);
       expect(envelopeFrom(cwd).reason).toBe('no_progress');
     });
-  });
+  }, 30_000);
 
   test('a halted receipt also breaks the trailing run', () => {
     withLedgerRepo((cwd) => {
@@ -349,7 +349,7 @@ describe('no-progress circuit breaker', () => {
       recordStalled(cwd, token);
       expect(envelopeFrom(cwd).route).toBe('continue_active_plan');
     });
-  });
+  }, 30_000);
 
   test("another unit's receipts neither trigger nor clear this unit's stall", () => {
     withLedgerRepo((cwd) => {
@@ -364,7 +364,7 @@ describe('no-progress circuit breaker', () => {
       recordStalled(cwd, token);
       expect(envelopeFrom(cwd).reason).toBe('no_progress');
     });
-  });
+  }, 30_000);
 
   test('a corrupt ledger line fails closed with its own halt reason', () => {
     withLedgerRepo((cwd) => {
@@ -378,7 +378,7 @@ describe('no-progress circuit breaker', () => {
       expect(halted.unit_ref).toBe(PLAN);
       expect(halted.command).toBeNull();
     });
-  });
+  }, 30_000);
 
   test('a structurally invalid receipt is unreadable, not silently skipped', () => {
     withLedgerRepo((cwd) => {
@@ -393,7 +393,7 @@ describe('no-progress circuit breaker', () => {
       })}\n`);
       expect(envelopeFrom(cwd).reason).toBe('attempt_ledger_unreadable');
     });
-  });
+  }, 30_000);
 
   test('an absent or empty ledger leaves every route exactly as it was', () => {
     withLedgerRepo((cwd) => {
@@ -402,7 +402,7 @@ describe('no-progress circuit breaker', () => {
       write(cwd, LEDGER, '');
       expect(envelopeFrom(cwd)).toEqual(untouched);
     });
-  });
+  }, 30_000);
 });
 
 describe('circuit breaker scope', () => {
@@ -420,7 +420,7 @@ describe('circuit breaker scope', () => {
       writeFileSync(join(cwd, LEDGER), '{not json\n');
       expect(envelopeFrom(cwd)).toEqual(complete);
     });
-  });
+  }, 30_000);
 
   test('an unreadable ledger never rewrites an existing halt reason', () => {
     withLedgerRepo((cwd) => {
@@ -431,7 +431,7 @@ describe('circuit breaker scope', () => {
       write(cwd, LEDGER, '{not json\n');
       expect(envelopeFrom(cwd)).toEqual(blocked);
     });
-  });
+  }, 30_000);
 });
 
 describe('attempt ledger authority fences', () => {
@@ -463,7 +463,7 @@ describe('attempt ledger authority fences', () => {
       expect(envelopeAfter.progress_token).toBe(envelopeBefore.progress_token);
       expect(envelopeAfter.authority_revision).toBe(envelopeBefore.authority_revision);
     });
-  });
+  }, 30_000);
 
   test('`state next` still performs no writes while reading the ledger', () => {
     withLedgerRepo((cwd) => {

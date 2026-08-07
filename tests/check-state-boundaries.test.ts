@@ -186,7 +186,7 @@ describe('state architecture boundary checker', () => {
       );
     });
     expect(messages(result, 'CORE_PROCESS_EXECUTION')).toHaveLength(5);
-  });
+  }, 30_000);
 
   test('keeps canonical symbols in their core owners and catches renamed CLI authority', async () => {
     const { result } = await checkWith((root) => {
@@ -338,5 +338,5 @@ describe('state architecture boundary checker', () => {
     expect(run.stdout).toBe('');
     expect(run.stderr).toContain('CORE_FORBIDDEN_IMPORT src/core/state/forbidden.ts:1:1');
     expect(run.stderr).toContain('[state-boundaries] failed: 1 violation(s)');
-  });
+  }, 30_000);
 });

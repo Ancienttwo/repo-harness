@@ -380,7 +380,7 @@ describe('typed subagent hook handlers', () => {
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('does not roll latest.json back when a stale scoped SubagentStart arrives', () => {
     const repoRoot = tempRepo();

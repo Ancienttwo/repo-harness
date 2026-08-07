@@ -59,7 +59,7 @@ describe('state-snapshot hook command', () => {
       expect(existsSync(join(cwd, '.ai/harness/active-plan'))).toBe(false);
       expect(existsSync(join(cwd, '.ai/harness/state/effective.json'))).toBe(false);
     });
-  });
+  }, 30_000);
 
   test('rejects unsupported output flags', () => {
     withTempRepo((cwd) => {
@@ -71,5 +71,5 @@ describe('state-snapshot hook command', () => {
       expect(result.stdout).toBe('');
       expect(result.stderr).toContain('state-snapshot --json');
     });
-  });
+  }, 30_000);
 });

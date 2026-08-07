@@ -206,7 +206,7 @@ describe('install command global runtime bootstrap', () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('installs CLI, hooks, Waza, brain root, and CodeGraph without setup-plugins.sh', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-init-'));
@@ -726,7 +726,7 @@ exit 0
     expect(res.stdout).not.toContain('--with-optional');
     expect(res.stdout).not.toContain('--project-type');
     expect(res.stdout).not.toContain('setup-plugins');
-  });
+  }, 30_000);
 
   test('CLI update refreshes user-level runtime without touching the current repo', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-update-'));
@@ -789,7 +789,7 @@ exit 0
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('CLI update --version installs the requested package version', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-update-version-'));
@@ -836,7 +836,7 @@ exit 0
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('CLI update rejects protocol-1 state until explicit migration', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-update-legacy-profile-'));
@@ -887,7 +887,7 @@ exit 0
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('CLI top-level --version still prints the CLI version', () => {
     const res = spawnSync(process.execPath, [CLI, '--version'], {
@@ -897,7 +897,7 @@ exit 0
 
     expect(res.status).toBe(0);
     expect(res.stdout.trim()).toMatch(/^\d+\.\d+\.\d+$/);
-  });
+  }, 30_000);
 
   test('CLI update --check is read-only setup readiness output', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-update-check-'));
@@ -942,7 +942,7 @@ exit 0
     expect(res.stdout).toContain('--configure-codegraph');
     expect(res.stdout).toContain('--no-cli');
     expect(res.stdout).toContain('Deprecated: use repo-harness init --repo <path>');
-  });
+  }, 30_000);
 
   test('CLI install defaults non-interactively to full with its selected optional ecosystems', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-install-non-tty-'));

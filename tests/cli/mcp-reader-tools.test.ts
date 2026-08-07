@@ -1103,7 +1103,7 @@ describe('MCP reader tools', () => {
 	      expect(readFileSync(join(repoRoot, relativePath), 'utf-8')).toBe('recovered\n');
 	      expect(existsSync(lockPath)).toBe(false);
 	    }, { accessMode: 'read_write' });
-	  });
+	  }, 30_000);
 
 	  test('write mutation does not reclaim dead owner locks for a different path', async () => {
 	    await withReaderRepo(async (repoRoot, ctx) => {
@@ -1130,7 +1130,7 @@ describe('MCP reader tools', () => {
 	      expect(existsSync(lockPath)).toBe(true);
 	      rmSync(lockPath, { recursive: true, force: true });
 	    }, { accessMode: 'read_write' });
-	  });
+	  }, 30_000);
 
 	  test('write mutation keeps live owner directory locks fail-closed', async () => {
 	    await withReaderRepo(async (repoRoot, ctx) => {

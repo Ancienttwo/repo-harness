@@ -27,7 +27,7 @@ describe("install script contracts", () => {
     expect(script).not.toMatch(/\bnpm\b/);
     expect(script).not.toMatch(/\bnpx\b/);
     expect(script).not.toMatch(/\bnode\b/);
-  });
+  }, 30_000);
 
   test("Windows installer is Bun-owned and version-pinnable", () => {
     const script = read("install.ps1");

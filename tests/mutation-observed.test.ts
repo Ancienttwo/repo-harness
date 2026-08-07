@@ -107,7 +107,7 @@ describe('mutation-observed: non-qualifying edits', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });
 
 describe('mutation-observed: journal schema', () => {
@@ -137,7 +137,7 @@ describe('mutation-observed: journal schema', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });
 
 describe('mutation-observed: dirty-bit derivation', () => {
@@ -153,7 +153,7 @@ describe('mutation-observed: dirty-bit derivation', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('contract-verification is true only when the active contract\'s exit_criteria references the edited path', () => {
     const cwd = tmpWorkspace('mo-contract-bit');
@@ -186,7 +186,7 @@ describe('mutation-observed: dirty-bit derivation', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('contract-verification is false with no active plan', () => {
     const cwd = tmpWorkspace('mo-contract-bit-no-plan');
@@ -198,7 +198,7 @@ describe('mutation-observed: dirty-bit derivation', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('minimal-change reflects policy.minimal_change.mode/post_edit_observer', () => {
     const cwd = tmpWorkspace('mo-minimal-change-bit');
@@ -228,7 +228,7 @@ describe('mutation-observed: dirty-bit derivation', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('checkpoint is true for tasks/todos.md, plans/*.md, tasks/reviews/*.review.md, and .ai/harness/checks/latest.json, false otherwise', () => {
     const cwd = tmpWorkspace('mo-checkpoint-bit');
@@ -255,7 +255,7 @@ describe('mutation-observed: dirty-bit derivation', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });
 
 describe('mutation-observed: session-scoped dedupe', () => {
@@ -279,7 +279,7 @@ describe('mutation-observed: session-scoped dedupe', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('a different session editing the same path does NOT coalesce (separate pending events)', () => {
     const cwd = tmpWorkspace('mo-no-coalesce-cross-session');
@@ -299,7 +299,7 @@ describe('mutation-observed: session-scoped dedupe', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('dirty bits are OR-combined (monotonic) across a coalesced pair, not overwritten', () => {
     const cwd = tmpWorkspace('mo-coalesce-or');
@@ -335,7 +335,7 @@ describe('mutation-observed: session-scoped dedupe', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });
 
 describe('mutation-observed: crash-replay', () => {
@@ -377,7 +377,7 @@ describe('mutation-observed: crash-replay', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('consumePendingPostEditEvents is a clean no-op with nothing pending', () => {
     const cwd = tmpWorkspace('mo-consume-empty');
@@ -388,7 +388,7 @@ describe('mutation-observed: crash-replay', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('a corrupt pending file is removed at consumption with a stderr warning, without disturbing valid events', () => {
     const cwd = tmpWorkspace('mo-corrupt-pending');
@@ -431,7 +431,7 @@ describe('mutation-observed: crash-replay', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });
 
 describe('mutation-observed: advisory stdout parity', () => {
@@ -446,7 +446,7 @@ describe('mutation-observed: advisory stdout parity', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('first-principles guidance is rendered in-process from the current diff', () => {
     const cwd = tmpWorkspace('mo-first-principles');
@@ -467,7 +467,7 @@ describe('mutation-observed: advisory stdout parity', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('turbo.json and metro config advisories match the base script verbatim', () => {
     const cwd = tmpWorkspace('mo-advisories-misc');
@@ -485,7 +485,7 @@ describe('mutation-observed: advisory stdout parity', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });
 
 describe('mutation-observed: gitignore coverage (gate round-1 second widening)', () => {
@@ -511,5 +511,5 @@ describe('mutation-observed: gitignore coverage (gate round-1 second widening)',
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });

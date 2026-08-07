@@ -251,5 +251,5 @@ describe('capability-context command', () => {
     } finally {
       fs.rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });

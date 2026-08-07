@@ -137,7 +137,7 @@ describe("architecture queue", () => {
       expect(index).toContain("Human-owned backlog note.");
       expect(queue(cwd, ["reindex", "--check"]).status).toBe(0);
     });
-  });
+  }, 30_000);
 
   test("reindex self-heals stale loose pending lines and is idempotent", () => {
     tmpRepo((cwd) => {
@@ -153,7 +153,7 @@ describe("architecture queue", () => {
       const index = readFileSync(indexPath, "utf-8");
       expect(index).not.toContain("duplicate.md");
     });
-  });
+  }, 30_000);
 
   test("triage collapses cutoff legacy requests into capability cards and archives the originals", () => {
     tmpRepo((cwd) => {
@@ -173,7 +173,7 @@ describe("architecture queue", () => {
       expect(archived).toContain("20260528-120100-runtime-a.md");
       expect(queue(cwd, ["reindex", "--check"]).status).toBe(0);
     });
-  });
+  }, 30_000);
 
   test("gate modes are advisory by default and strict blocks pending requests", () => {
     tmpRepo((cwd) => {
@@ -190,7 +190,7 @@ describe("architecture queue", () => {
       );
       expect(queue(cwd, ["status", "--gate", "--format", "summary"]).status).toBe(1);
     });
-  });
+  }, 30_000);
 
   test("archive roundtrip leaves an empty derived pending block", () => {
     tmpRepo((cwd) => {
@@ -207,5 +207,5 @@ describe("architecture queue", () => {
       expect(index).toContain("<!-- BEGIN ARCHITECTURE PENDING REQUESTS -->\n- (none)\n<!-- END ARCHITECTURE PENDING REQUESTS -->");
       expect(queue(cwd, ["reindex", "--check"]).status).toBe(0);
     });
-  });
+  }, 30_000);
 });

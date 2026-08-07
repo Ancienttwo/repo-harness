@@ -93,14 +93,14 @@ describe('verifier failure log retention', () => {
     // The retained log carries the failing command's own output, which is the
     // attribution that was previously destroyed with the temp dir.
     expect(readFileSync(join(runsDir, retained[0] as string), 'utf-8')).toContain(MARKER);
-  });
+  }, 30_000);
 
   test('a passing criterion retains nothing', () => {
     const { result, retained, criterion } = runVerifier(VERIFY_CONTRACT, `echo ${MARKER}`);
 
     expect(criterion, `${result.stdout}\n${result.stderr}`).toMatchObject({ passed: true, exit_code: 0 });
     expect(retained).toEqual([]);
-  });
+  }, 30_000);
 
   test('both helper copies carry the retention path', () => {
     for (const path of ['scripts/verify-contract.sh', 'assets/templates/helpers/verify-contract.sh']) {

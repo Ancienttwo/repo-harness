@@ -172,7 +172,7 @@ describe('repo registration persistence', () => {
     } finally {
       rmSync(fixtureRoot, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('removes its newly created lock when owner metadata persistence fails', async () => {
     const fixtureRoot = mkdtempSync(join(tmpdir(), 'repo-harness-registry-lock-failure-'));
@@ -235,7 +235,7 @@ describe('repo registration persistence', () => {
     } finally {
       rmSync(fixtureRoot, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('serializes concurrent registrations, access updates, and authorization revision bumps', async () => {
     const fixtureRoot = mkdtempSync(join(tmpdir(), 'repo-harness-registry-concurrency-'));

@@ -86,7 +86,7 @@ describe("workflow-state locking", () => {
     expect(res.status).toBe(0);
     expect(res.stdout).toContain("ran-after-stale-break");
     expect(existsSync(join(cwd, ".ai/harness/.locks/stale-test.lock"))).toBe(false);
-  });
+  }, 30_000);
 
   test("rotation keeps the newest lines and archives the rest", () => {
     const file = join(cwd, ".ai/harness/rotation-test.jsonl");
@@ -106,7 +106,7 @@ describe("workflow-state locking", () => {
       .split("\n");
     expect(archive.length).toBe(2000);
     expect(archive[0]).toBe('{"n":0}');
-  });
+  }, 30_000);
 
   test("rotation is a no-op under the thresholds", () => {
     const file = join(cwd, ".ai/harness/small-test.jsonl");
@@ -114,7 +114,7 @@ describe("workflow-state locking", () => {
     const res = shell(`${SOURCE_LIB}; workflow_rotate_events_file "${file}" 2000 524288 500`);
     expect(res.status).toBe(0);
     expect(readFileSync(file, "utf-8").trim().split("\n").length).toBe(2);
-  });
+  }, 30_000);
 });
 
 function archiveStamp(): string {

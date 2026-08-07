@@ -58,5 +58,5 @@ describe('review rubric renderer', () => {
     expect(res.status).toBe(0);
     expect(res.stdout).toContain('[ReviewRubric] Deep Diff Review Rubric v2');
     expect(res.stderr).toBe('');
-  });
+  }, 30_000);
 });

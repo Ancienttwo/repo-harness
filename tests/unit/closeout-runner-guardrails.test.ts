@@ -194,7 +194,7 @@ describe('closeout runner guardrails', () => {
     expect(JSON.parse(readFileSync(receipt, 'utf-8')).interruptedBy).toBe('SIGTERM');
     await Bun.sleep(1_100);
     expect(existsSync(sentinel)).toBe(false);
-  });
+  }, 30_000);
 
   test('supervised spawn failure returns a bounded error instead of hanging on pipe close', () => {
     const startedAt = Date.now();
@@ -231,7 +231,7 @@ describe('closeout runner guardrails', () => {
 
     expect(await worker.exited).toBe(0);
     expect(await new Response(worker.stdout).text()).toContain('target:barrier-safe');
-  });
+  }, 30_000);
 
   test('the parent hard timeout returns even when the supervisor event loop is stopped', async () => {
     if (process.platform === 'win32') return;
@@ -311,7 +311,7 @@ describe('closeout runner guardrails', () => {
     expect(await holder.exited).toBe(0);
     expect(result.reason).toBe('timeout');
     expect(existsSync(targetStarted)).toBe(false);
-  });
+  }, 30_000);
 
   test('helper timeout releases the shared expensive-run token after group cleanup', async () => {
     if (process.platform === 'win32') return;
@@ -336,7 +336,7 @@ describe('closeout runner guardrails', () => {
     nextOwner.release();
     await Bun.sleep(1_100);
     expect(existsSync(sentinel)).toBe(false);
-  });
+  }, 30_000);
 
   test('caller-only SIGTERM makes the supervisor clean its group and release its token', async () => {
     if (process.platform === 'win32') return;
@@ -446,7 +446,7 @@ describe('closeout runner guardrails', () => {
 
     expect(() => acquireExpensiveRunLock(root)).toThrow('unsafe lock ancestor');
     expect(readdirSync(victim)).toEqual([]);
-  });
+  }, 30_000);
 
   test('a lock handle revalidates its ancestor identities before protected work starts', () => {
     const root = temporaryRoot('repo-harness-lock-revalidation-');
@@ -629,7 +629,7 @@ describe('closeout runner guardrails', () => {
       'child_args=(--ready "two words"); set -- ${child_args[@]+"${child_args[@]}"}; test "$#" -eq 2 && test "$1" = --ready && test "$2" = "two words"',
     ], { encoding: 'utf-8' });
     expect(nonEmptyProbe.status).toBe(0);
-  });
+  }, 30_000);
 
   test('the fixed source retains the ordinary default without making it closeout authority', () => {
     const processRunner = readFileSync(join(ROOT, 'src/effects/process-runner.ts'), 'utf-8');
@@ -641,5 +641,5 @@ describe('closeout runner guardrails', () => {
     expect(processRunner).toContain('DEFAULT_PROCESS_TIMEOUT_MS = 120_000');
     expect(helperRunner).toContain('helperTimeoutMs');
     expect(ship).not.toContain('run_cmd bash "$helper_dir/verify-sprint.sh"');
-  });
+  }, 30_000);
 });

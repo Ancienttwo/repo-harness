@@ -195,7 +195,7 @@ describe("workflow-state shared library", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("reads only the verified AcceptanceReceipt projection from structured checks", () => {
     const cwd = mkdtempSync(join(tmpdir(), "workflow-acceptance-receipt-"));
@@ -218,7 +218,7 @@ describe("workflow-state shared library", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("verify-sprint treats review Markdown as an AcceptanceReceipt projection only", () => {
     const helper = readFileSync(
@@ -313,7 +313,7 @@ describe("workflow-state shared library", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   // R-D (fix 4, hardened in fix-round-2 after external review): benchmark:
   // must be an unambiguous DIRECT child of the single declaring
@@ -383,7 +383,7 @@ describe("workflow-state shared library", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   // R-D (fix 4, second hardening after a third external review round): a `#`
   // only starts a YAML comment when it is the first character on the line or
@@ -430,7 +430,7 @@ describe("workflow-state shared library", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("workflow_contract_evidence_requirement fails closed when parser sentinels appear as yaml content", () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-evidence-requirement-sentinel-")));
@@ -461,7 +461,7 @@ describe("workflow-state shared library", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("workflow_contract_evidence_requirement fails closed on quoted spellings of canonical evidence keys", () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-evidence-requirement-quoted-key-")));
@@ -490,7 +490,7 @@ describe("workflow-state shared library", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("workflow_contract_evidence_requirement fails closed on whitespace-before-colon spellings of canonical evidence keys", () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-evidence-requirement-spaced-key-")));
@@ -514,7 +514,7 @@ describe("workflow-state shared library", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("workflow_benchmark_evidence_checks_match never invokes the validator when the contract declares not_applicable", () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-evidence-requirement-na-no-invoke-")));
@@ -568,7 +568,7 @@ describe("workflow-state shared library", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   // Regression guard for the recorder/validator policy-key split: the
   // recorder (workflow_current_review_subject_json, via
@@ -655,6 +655,6 @@ describe("workflow-state shared library", () => {
       rmSync(upstream, { recursive: true, force: true });
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
 });

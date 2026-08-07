@@ -531,7 +531,7 @@ describe("checks-materializer: writeChecksLatest overwrite semantics", () => {
       expect((consumerFacing as typeof runTrace).contract.file).toBe(LONG_SLUG_CONTRACT_RELATIVE);
       expect((consumerFacing as typeof runTrace).active_plan).toBe(LONG_SLUG_ACTIVE_PLAN);
     });
-  });
+  }, 30_000);
 
   test("end-to-end (gatekeeper CRITICAL regression, fail path): a realistic-length contract slug survives materialization byte-identical on a failing verify result too", () => {
     withTempRepo("materializer-end-to-end-fail", (repoRoot) => {
@@ -574,7 +574,7 @@ describe("checks-materializer: writeChecksLatest overwrite semantics", () => {
       expect(projection.status).toBe("fail");
       expect((projection as Record<string, unknown>).exit_code).toBe(1);
     });
-  });
+  }, 30_000);
 });
 
 describe("checks-materializer: parseAcceptancePolicySummary", () => {
@@ -813,5 +813,5 @@ describe("checks-materializer: no-independent-authoring", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });

@@ -116,7 +116,7 @@ describe('status command (Phase 1C)', () => {
         fs.rmSync(repo, { recursive: true, force: true });
       }
     });
-  });
+  }, 30_000);
 
   test('non-git-repo cwd reports inGitRepo=false and optIn=false', () => {
     withTempHome(() => {

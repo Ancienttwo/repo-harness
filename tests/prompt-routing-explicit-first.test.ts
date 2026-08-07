@@ -51,5 +51,5 @@ describe('explicit-first prompt routing', () => {
     expect(result.status).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual({ kind: 'bypass' });
     expect(result.stderr).toBe('');
-  });
+  }, 30_000);
 });

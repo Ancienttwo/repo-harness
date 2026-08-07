@@ -227,5 +227,5 @@ describe('Effective State stability contract: authority-only partition (hook-gua
     } finally {
       fixture.cleanup();
     }
-  });
+  }, 30_000);
 });

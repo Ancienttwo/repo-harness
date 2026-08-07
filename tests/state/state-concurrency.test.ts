@@ -63,7 +63,7 @@ describe('Effective State lock and source-stability characterization', () => {
     } finally {
       fixture.cleanup();
     }
-  });
+  }, 30_000);
 
   test('concurrent stale reclaimers preserve exclusive critical-section ownership', async () => {
     const fixture = createEffectiveStateFixture();

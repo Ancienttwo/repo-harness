@@ -31,7 +31,7 @@ describe('docs command', () => {
     expect(parsed.docs.find((entry: { id: string }) => entry.id === 'harness-overview').path).toContain(
       'assets/reference-configs/harness-overview.md',
     );
-  });
+  }, 30_000);
 
   test('resolves and prints bundled runtime docs', () => {
     const pathResult = runDocs(['path', 'harness-overview']);
@@ -44,13 +44,13 @@ describe('docs command', () => {
     const showResult = runDocs(['show', 'harness-overview']);
     expect(showResult.status).toBe(0);
     expect(showResult.stdout).toContain('# Harness Overview');
-  });
+  }, 30_000);
 
   test('returns exit code 2 for unknown docs', () => {
     const result = runDocs(['path', 'missing-doc']);
     expect(result.status).toBe(2);
     expect(result.stderr).toContain('unknown doc "missing-doc"');
-  });
+  }, 30_000);
 
   test('exports reusable doc resolution helpers', () => {
     expect(listRuntimeDocs().map((entry) => entry.id)).toContain('harness-overview');

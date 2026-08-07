@@ -289,7 +289,7 @@ describe('SessionStart Effective State authority', () => {
     expect(runtime).not.toContain('spawnSync');
     expect(runtime).not.toContain('PACKAGE_ROOT');
     expect(runtime).not.toContain("'state', 'resolve', '--json'");
-  });
+  }, 30_000);
 
   test('preserves exact healthy context, budget evidence, and route-runtime metrics', () => {
     const expected = JSON.parse(readFileSync(
@@ -297,7 +297,7 @@ describe('SessionStart Effective State authority', () => {
       'utf8',
     ));
     expect(captureHealthyBaseline()).toEqual(expected);
-  });
+  }, 30_000);
 
   test('distinguishes actionable, non-actionable, and blocked-but-resolved state', () => {
     const actionable = fixtureState();

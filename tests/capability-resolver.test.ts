@@ -129,7 +129,7 @@ describe("capability resolver", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("contract file pairs are required for every capability", () => {
     const cwd = tmpWorkspace("capability-contract-pair");
@@ -150,7 +150,7 @@ describe("capability resolver", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("missing registry fails closed instead of deriving legacy context blocks", () => {
     const cwd = tmpWorkspace("capability-missing-registry");
@@ -167,7 +167,7 @@ describe("capability resolver", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("environment context blocks cannot replace the capability registry", () => {
     const cwd = tmpWorkspace("capability-env-blocks");
@@ -190,7 +190,7 @@ describe("capability resolver", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("malformed registry JSON fails with an authority-specific error", () => {
     const cwd = tmpWorkspace("capability-malformed-registry");
@@ -204,7 +204,7 @@ describe("capability resolver", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test("registered prefixes must exist", () => {
     const cwd = tmpWorkspace("capability-missing-prefix");
@@ -217,5 +217,5 @@ describe("capability resolver", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });

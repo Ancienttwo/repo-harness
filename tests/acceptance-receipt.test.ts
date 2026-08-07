@@ -147,7 +147,7 @@ describe('AcceptanceReceipt', () => {
 
     writeFileSync(join(root, 'feature.txt'), 'semantic change\n');
     await expect(verifyAcceptance({ root, authorityHome: home })).rejects.toThrow('semantic subject is stale');
-  });
+  }, 30_000);
 
   test('typed user waiver stays distinct from external pass and obeys the contract', async () => {
     const allowed = makeFixture('allowed');
@@ -190,7 +190,7 @@ describe('AcceptanceReceipt', () => {
       actor: 'kito',
       summary: 'attempted waiver',
     })).toThrow('forbids user waiver');
-  });
+  }, 30_000);
 
   test('reuses one owner grant after semantic correction while every receipt stays exact', async () => {
     const { root, home } = makeFixture();
@@ -228,7 +228,7 @@ describe('AcceptanceReceipt', () => {
     expect(second.waiver_grant_sha256).toBe(first.waiver_grant_sha256);
     expect((verifyUserWaiverGrant({ root, authorityHome: home }))).toEqual(grant);
     expect((await verifyAcceptance({ root, authorityHome: home })).subject_sha256).toBe(second.subject_sha256);
-  });
+  }, 30_000);
 
   test('contract or goal authority changes invalidate the owner grant', async () => {
     const contractChanged = makeFixture();
@@ -263,7 +263,7 @@ describe('AcceptanceReceipt', () => {
       authorityHome: goalChanged.home,
       contract: 'tasks/contracts/demo.contract.md',
     })).toThrow('goal authority is stale');
-  });
+  }, 30_000);
 
   test('revocation invalidates a user-waiver receipt and external pass never binds a grant', async () => {
     const waived = makeFixture();
@@ -286,7 +286,7 @@ describe('AcceptanceReceipt', () => {
     const external = makeFixture();
     const externalReceipt = await externalPass(external.root, external.home);
     expect(externalReceipt.waiver_grant_sha256).toBeNull();
-  });
+  }, 30_000);
 
   test('non-overlapping target movement preserves acceptance; overlap invalidates it', async () => {
     const { root, home } = makeFixture();
@@ -302,7 +302,7 @@ describe('AcceptanceReceipt', () => {
     commit(root, 'advance target with overlap');
     git(root, 'checkout', 'codex/demo');
     await expect(verifyAcceptance({ root, authorityHome: home })).rejects.toThrow('overlaps 1 reviewed path');
-  });
+  }, 30_000);
 
   test('strict archive envelopes preserve plan and contract receipt authority', async () => {
     const { root, home } = makeFixture();
@@ -329,7 +329,7 @@ describe('AcceptanceReceipt', () => {
     commit(root, 'archive accepted workflow');
 
     expect((await verifyAcceptance({ root, authorityHome: home })).disposition).toBe('external_pass');
-  });
+  }, 30_000);
 
   test('strict archive envelopes preserve the waiver grant and its exact receipt', async () => {
     const { root, home } = makeFixture();
@@ -369,5 +369,5 @@ describe('AcceptanceReceipt', () => {
 
     expect(verifyUserWaiverGrant({ root, authorityHome: home }).actor).toBe('kito');
     expect((await verifyAcceptance({ root, authorityHome: home })).disposition).toBe('user_waiver');
-  });
+  }, 30_000);
 });

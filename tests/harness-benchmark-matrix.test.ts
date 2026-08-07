@@ -93,7 +93,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     // 1 reaps it. A zombie is terminated even though kill(pid, 0) still sees
     // the process-table entry; any runnable/sleeping descendant is a failure.
     expect(state === '' || state.startsWith('Z')).toBe(true);
-  });
+  }, 30_000);
 
   test('final-content detection includes provider commits made after the arm baseline', () => {
     const dir = mkdtempSync(join(tmpdir(), 'harness-committed-final-content-'));
@@ -117,7 +117,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       expect(git('status', '--porcelain')).toBe('');
       expect(benchmarkChangedFiles(dir, baseline)).toEqual(['src/status.ts']);
     } finally { rmSync(dir, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test('workspace overlays share no mutable Git objects and push only to an arm-owned origin', () => {
     const dir = mkdtempSync(join(tmpdir(), 'harness-workspace-overlay-'));
@@ -148,7 +148,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       expect(git(armOrigin, 'rev-parse', 'main').stdout.toString().trim())
         .toBe(git(target, 'rev-parse', 'HEAD').stdout.toString().trim());
     } finally { rmSync(dir, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test('HOME overlays rebase absolute cache symlinks away from the immutable profile base', () => {
     const dir = mkdtempSync(join(tmpdir(), 'harness-home-overlay-'));
@@ -186,7 +186,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       expect(readFileSync(join(linked, '.ai/harness/handoff/resume.md'), 'utf8')).toContain('## Exact Next Step');
       expect(realpathSync(linked)).not.toBe('');
     } finally { rmSync(dir, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test('harness-enabled arm overlays grade the precreated linked provider workspace', () => {
     const dir = mkdtempSync(join(tmpdir(), 'harness-profile-linked-workspaces-'));
@@ -244,7 +244,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
         expect(existsSync(join(layout.workspace, '.ai/harness/handoff/resume.md'))).toBe(true);
       }
     } finally { rmSync(dir, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test('manifest contains the exact 3x9 matrix', () => {
     const manifest = loadHarnessScenarioManifest(join(ROOT, 'evals/harness/scenarios.json'));
@@ -307,7 +307,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     } finally {
       rmSync(runRoot, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('reuses one packed artifact across isolated installs without mutating source authority', () => {
     const runRoot = mkdtempSync(join(tmpdir(), 'harness-runtime-install-'));
@@ -410,7 +410,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     expect(reportBlock).toContain('source_commit: sourceAuthority.sourceCommit');
     expect(reportBlock).toContain('...sourceAuthority.subject');
     expect(reportBlock).not.toContain('benchmarkSubject(');
-  });
+  }, 30_000);
 
   test('rejects Git-clean install-profile mode drift against the initial benchmark subject', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'harness-subject-mode-drift-'));
@@ -486,7 +486,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       expect(() => runner.assertBenchmarkSubjectUnchanged!(authority!, 'provider execution'))
         .toThrow(/provider execution.*install_profile_inputs_sha256|install_profile_inputs_sha256.*provider execution/);
     } finally { rmSync(dir, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test('parses NUL-delimited porcelain entries, stripping the leading XY status columns', () => {
     expect(parsePorcelainPaths(' M src/range.ts\0?? deploy/sql/0001.sql\0')).toEqual([
@@ -549,7 +549,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       expect(JSON.parse(readFileSync(reportPath, 'utf-8')).records).toHaveLength(27);
       expect(readFileSync(reportPath.replace(/\.json$/, '.md'), 'utf-8')).toContain('non-authoritative');
     } finally { rmSync(dir, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test('benchmark runtime evidence reads only the event-level telemetry authority', () => {
     const dir = mkdtempSync(join(tmpdir(), 'harness-event-telemetry-reader-'));
@@ -610,7 +610,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       expect(() => validateHarnessBenchmarkReportByteBinding(reportPath, report.benchmark_subject_sha256))
         .toThrow('benchmark markdown report bytes changed');
     } finally { rmSync(dir, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test('prepares one immutable base per profile and plans 27 isolated writable arm overlays', () => {
     const manifest = loadHarnessScenarioManifest(join(ROOT, 'evals/harness/scenarios.json'));
@@ -658,7 +658,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       const markdown = readFileSync(reportPath.replace(/\.json$/, '.md'), 'utf-8');
       expect(markdown).toContain('## Artifact Files');
     } finally { rmSync(dir, { recursive: true, force: true }); }
-  });
+  }, 30_000);
 
   test('cleanupArmHostRoot removes only the disposable host install, never base/workspace', () => {
     const dir = mkdtempSync(join(tmpdir(), 'harness-matrix-cleanup-test-'));

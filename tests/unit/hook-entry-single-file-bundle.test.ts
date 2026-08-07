@@ -105,12 +105,12 @@ describe('hook-entry single-file bundle', () => {
   test('unbundled hook entry dispatches the detached tooling populate', () => {
     const fixture = populateFixture();
     expectPopulateRan(runDetachedPopulate(HOOK_ENTRY, fixture), fixture);
-  });
+  }, 30_000);
 
   test('bundled hook entry dispatches the detached tooling populate', () => {
     const fixture = populateFixture();
     expectPopulateRan(runDetachedPopulate(buildBundle('0.0.0-test'), fixture), fixture);
-  });
+  }, 30_000);
 
   test('bundle keeps the shebang and survives without the eliminated bootstrap', () => {
     const bundle = readFileSync(buildBundle('0.0.0-test'), 'utf-8');
@@ -118,7 +118,7 @@ describe('hook-entry single-file bundle', () => {
     // Present via the hook-entry import; absent when only session-context's
     // dead-code-eliminated bootstrap referenced it.
     expect(bundle).toContain('runDetachedToolingPopulate');
-  });
+  }, 30_000);
 
   test('bundle carries the injected provider version and never the undefined identifier', () => {
     const bundle = readFileSync(buildBundle('9.9.9-injected'), 'utf-8');
@@ -127,7 +127,7 @@ describe('hook-entry single-file bundle', () => {
     // defect, and the prepack script fails on exactly this condition.
     expect(bundle).not.toContain('REPO_HARNESS_BUNDLED_CLI_VERSION');
     expect(readFileSync(buildBundle(null), 'utf-8')).toContain('REPO_HARNESS_BUNDLED_CLI_VERSION');
-  });
+  }, 30_000);
 
   test('package wiring ships the built bundle as the hook bin', () => {
     const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8')) as {

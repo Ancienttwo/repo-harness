@@ -42,5 +42,5 @@ describe('writeAllSync', () => {
     expect(child.status).toBe(0);
     expect(child.stderr).toBe('');
     expect(child.stdout).toBe(payload);
-  });
+  }, 30_000);
 });

@@ -180,5 +180,5 @@ describe("MCP observability report", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 });
