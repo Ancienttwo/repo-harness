@@ -132,7 +132,7 @@ Single commit; revert restores per-file entries.
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] Apply the directory-level rule in `gitignore-plan.ts` managed block, this repo's `.gitignore`, and any other gitignore-projecting template found.
-- [ ] Update any tests/fixtures asserting the old per-file managed-block content; add or extend a test asserting the managed block ignores the whole `.repo-harness/` directory.
-- [ ] Verify `git check-ignore -q .repo-harness/anything.json` reports IGNORED in this repo.
-- [ ] Full `bun test` green, `bun run check:type` green, and `bun src/cli/index.ts init --repo . --dry-run` consistent (adoption planner touched).
+- [x] Apply the directory-level rule in `gitignore-plan.ts` managed block, this repo's `.gitignore`, and any other gitignore-projecting template found.
+- [x] Update any tests/fixtures asserting the old per-file managed-block content; add or extend a test asserting the managed block ignores the whole `.repo-harness/` directory.
+- [x] Verify `git check-ignore -q .repo-harness/anything.json` reports IGNORED in this repo.
+- [x] Full `bun test` green, `bun run check:type` green, and `bun src/cli/index.ts init --repo . --dry-run` consistent (adoption planner touched).
