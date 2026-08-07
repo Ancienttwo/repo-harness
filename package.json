@@ -68,7 +68,7 @@
     "@types/bun": "latest",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
-    "archctx-contracts": "0.2.2",
+    "archctx-contracts": "0.3.0",
     "typescript": "^7.0.2"
   },
   "dependencies": {
