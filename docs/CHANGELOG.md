@@ -4,6 +4,23 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.13.2] - 2026-08-07
+
+### Security
+
+- Collapses every authored `.repo-harness/` gitignore projection to a single
+  directory-level rule (#164). The generated managed block
+  (`src/core/adoption/gitignore-plan.ts`) and the shell scaffold heredoc
+  (`scripts/lib/project-init-lib.sh`) previously listed only two dead
+  per-file entries, so the four files the MCP server actually writes under
+  `<repo>/.repo-harness/` — including `mcp.oauth-tokens.json` holding OAuth
+  access and refresh tokens — stayed NOT-IGNORED for any user who started
+  `repo-harness mcp serve --transport http` without first running
+  `mcp setup chatgpt` with repo scope. Nothing under `.repo-harness/` is
+  intentionally tracked and `.repo-harness-owner.json` is not caught by the
+  new rule. Retiring the repo config scope and the setup-time per-file
+  compensation stays a separate slice.
+
 ## [0.13.1] - 2026-08-07
 
 ### Changed
