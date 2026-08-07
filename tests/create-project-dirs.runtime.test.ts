@@ -104,7 +104,8 @@ describe("create-project-dirs runtime smoke", () => {
       expect(gitignore).toContain(".ai/harness/state/");
       expect(gitignore).toContain(".archcontext/");
       expect(gitignore).not.toContain(".ai/harness/chatgpt/bridge-extension/");
-      expect(gitignore).toContain(".repo-harness/chatgpt-browser.local.json");
+      expect(gitignore).toContain(".repo-harness/");
+      expect(gitignore).not.toContain(".repo-harness/chatgpt-browser.local.json");
       expect(gitignore).not.toContain("# repo-harness generated helper wrappers");
       expect(gitignore).not.toContain("scripts/check-task-workflow.sh");
       expect(gitignore).not.toContain("scripts/prepare-codex-handoff.sh");

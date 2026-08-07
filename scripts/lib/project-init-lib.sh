@@ -73,8 +73,7 @@ tasks/.current.md.tmp.*
 .ai/harness/chatgpt/sessions/
 .ai/harness/triage/*
 !.ai/harness/triage/.gitkeep
-.repo-harness/chatgpt-browser.local.json
-.repo-harness/chatgpt-browser.tokens.json
+.repo-harness/
 .codex/*
 .claude/.plan-state/
 EOF_RUNTIME

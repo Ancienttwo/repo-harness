@@ -108,7 +108,8 @@ describe("create-project-dirs scaffold parity", () => {
       expect(gitignore).toContain(".ai/harness/checks/*.latest.json");
       expect(gitignore).toContain(".ai/harness/checks/*.latest.md");
       expect(gitignore).not.toContain(".ai/harness/chatgpt/bridge-extension/");
-      expect(gitignore).toContain(".repo-harness/chatgpt-browser.local.json");
+      expect(gitignore).toContain(".repo-harness/");
+      expect(gitignore).not.toContain(".repo-harness/chatgpt-browser.local.json");
       expect(gitignore).toContain(".codex/*");
       expect(gitignore).not.toContain("!.codex/hooks.json");
       expect(gitignore).toContain("_ref/");
