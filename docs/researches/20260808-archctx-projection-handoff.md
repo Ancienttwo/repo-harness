@@ -44,6 +44,10 @@
 3. **P2 sequenceDiagram 生成(可半自動)**:從 entrypoint 出發的 call path 產候選握手圖;若 daemon/codegraph 不可用,fail-closed 報錯,不退化成空模板。
 4. **`agent-context` targetType 收尾**(20260705 §7 gating 條件 3 的殘留):schema enum + projection-engine builder + default-manifest 三處對齊已發佈物;這是 Stage 2 authority cutover 的前置,和本次投影可並行。
 5. **freshness 信號**:投影輸出帶 `Verified against` commit;`review.failOn: stale-context` 能對「代碼變了、投影沒刷」報警(接 repo-harness `check-architecture-sync --strict` 委派的前置)。
+6. **entity-summary 的 placement / pathTemplate 可配置化**(Stage 0 實作中新探明,archctx 側新交付項):現行渲染把 capability summary 硬編碼成扁平的 `capability-<domain>-<name>.md`,不讀 `targets.json` 的 pathTemplate,所以第 1 項要求的 `docs/architecture/modules/<domain>/<capability>.md` 巢狀落點目前投不出來。加分項:本輪 10 份已提交基線文檔的路徑與 repo-harness 側推導模板 10/10 一致,所以缺口只擋 archctx 的渲染方向,不擋 repo-harness 未來翻開關。驗收:pathTemplate 由 target 配置決定,同一 node 換模板即換落點,渲染不再持有路徑常量。
+7. **`extensions` 鍵是 repo-harness ↔ archctx 的 node 慣例,不是可選裝飾**:`extensions.contractFiles`、`extensions.lspProfile`、`extensions.verification` 三者在 `capability_source: "archcontext"` 下為必填(顯式空陣列可以,缺鍵 fail-closed),因為 repo-harness 的 capability 契約不從 node 其他欄位推導它們。archctx 側若要在 schema 或 lint 上表達這組慣例,以這三鍵為準。
+8. **`source.include` 走受限文法(D2),不是完整 glob**:只接受 `<dir>/**`(→ 前綴 `<dir>`)與「無萬用字元且不是既存目錄」的字面路徑(→ 該檔本身)兩種形狀,其餘一律 fail-closed;無萬用字元卻指向既存目錄的寫法被判為歧義並要求改寫成 `<dir>/**`;`source.exclude` 不支援;include 次序即前綴次序。收窄是刻意的——上游 glob 對整條 repo-relative 路徑比對,不收窄兩邊會對「一個邊界覆蓋什麼」給出不同答案。放寬是 additive,可日後再談。
+9. **checkout 內 `@archcontext/contracts` 的 `files` 配方與 `archctx-contracts` 發佈物不一致**:依發佈的 `archctx-contracts` 取得的 schema 檔集合,和從 arch-context checkout 內按 package `files` 欄位推得的集合對不上。repo-harness 側只把 `archctx-contracts` 當 devDependency 的 schema 權威(runtime 零 import),所以不受阻,但兩邊長期會漂。建議上游以發佈物為準校正 checkout 內的 `files` 配方。
 
 ## 4. repo-harness 側對接承諾(archctx 交付後的 Stage 2 work-package,另立)
 
