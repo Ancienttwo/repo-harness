@@ -194,7 +194,7 @@ function isNpxCacheSource(sourceRoot: string): boolean {
 function initCommandEnv(sourceRoot: string, env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv | undefined {
   if (!isNpxCacheSource(sourceRoot)) return env;
   if (env?.AGENTIC_DEV_LINK_INSTALLED_COPIES !== undefined) return env;
-  return { ...(env ?? {}), AGENTIC_DEV_LINK_INSTALLED_COPIES: "0" };
+  return { ...(env ?? process.env), AGENTIC_DEV_LINK_INSTALLED_COPIES: "0" };
 }
 
 function withStepName(step: InitStep, name: string, detail?: string): InitStep {
@@ -585,7 +585,7 @@ export function runInit(
   const steps: InitStep[] = [];
 
   if (opts.brainRoot) {
-    commandEnv = { ...(commandEnv ?? {}), REPO_HARNESS_BRAIN_ROOT: opts.brainRoot };
+    commandEnv = { ...(commandEnv ?? process.env), REPO_HARNESS_BRAIN_ROOT: opts.brainRoot };
   }
 
   const targetError = validateRepoAdoptionTarget(repoRoot, opts.repo !== undefined, commandEnv);
@@ -768,7 +768,7 @@ export function runInit(
   }
 
   if (apply && verify) {
-    const verifyEnv = { ...(commandEnv ?? {}), REPO_HARNESS_SOURCE_ROOT: sourceRoot };
+    const verifyEnv = { ...(commandEnv ?? process.env), REPO_HARNESS_SOURCE_ROOT: sourceRoot };
     if (migrate.status === "ok") {
       const handoff = runProcess(
         "bun",
