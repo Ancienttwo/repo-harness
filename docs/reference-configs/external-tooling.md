@@ -687,6 +687,91 @@ managed files by hand:
 ~/.codex/agents/harness-evaluator.toml
 ```
 
+## ArchContext Capability Source
+
+`.ai/harness/policy.json#context.capability_source` selects the single capability
+authority for a repo:
+
+| Value | Authority | Read path |
+|---|---|---|
+| `registry` (default) | `.ai/context/capabilities.json` | JSON capability registry |
+| `archcontext` | `.archcontext/model/nodes/*.yaml` | `archcontext.node/v1` capability nodes |
+
+Exactly one source is read. There is no dual-read, no merge, and no fallback in
+either direction: under `archcontext` a missing model directory fails instead of
+falling back to the JSON registry, and under `registry` a present model
+directory is never consulted. Under `archcontext` the JSON registry is not
+writable, so `repo-harness run capability-config add` refuses and points at the
+node files.
+
+The `archctx` CLI is never a runtime dependency of this workflow. Node files are
+read directly with Bun's native YAML parser, so no daemon, npm package, or
+external process is involved. Bun older than 1.3 has no `Bun.YAML`; that fails
+closed with upgrade guidance and only when `capability_source` is `archcontext`.
+
+### `source.include` grammar
+
+Upstream matches an include glob against the whole repo-relative path, so a
+wildcard-free literal addresses one file, not a directory subtree. To keep the
+two authorities from disagreeing about what a boundary covers, only two shapes
+are accepted:
+
+| Include | Capability prefix |
+|---|---|
+| `src/core/adoption/**` | `src/core/adoption` |
+| `AGENTS.md` (wildcard-free, not an existing directory) | `AGENTS.md` |
+
+Everything else fails closed. A wildcard-free literal that names an existing
+directory is rejected as ambiguous with guidance to write `<dir>/**`.
+`source.exclude` is not supported, because capability prefixes have no exclusion
+form. Include order is preserved as prefix order.
+
+### Required node fields
+
+| Capability field | Node source | Rule |
+|---|---|---|
+| `domain` / `name` | `id` segments 2 and 3 | `id` must be exactly `capability.<domain>.<name>`, with no `namespace::` prefix |
+| `id` | derived | `<domain>-<name>` |
+| `architecture_module` | derived | `docs/architecture/modules/<domain>/<name>.md` |
+| `workstream_dir` | derived | `tasks/workstreams/<domain>/<name>` |
+| `prefixes` | `source.include` | include grammar above |
+| `contract_files` | `extensions.contractFiles.agents` / `.claude` | declared, never derived: root-facing capabilities deliberately do not follow their prefix |
+| `lsp_profile` | `extensions.lspProfile` | required |
+| `verification_hints` | `extensions.verification` | required array; explicit `[]` is allowed |
+
+Nodes whose `kind` is not `capability`, or whose `status` is not `active`, are
+skipped and claim no prefixes. Fields this bridge does not consume —
+`summary`, `responsibilities`, `source.entrypoints`, `ownership`, `interfaces`,
+`criticality`, `riskDomains`, `notes`, `parent` — are ignored rather than
+translated into local semantics.
+
+### Fail-closed conditions
+
+Source-selection failures exit `2`:
+
+| Condition | Behavior |
+|---|---|
+| unknown `capability_source` value | error naming the policy key and legal values |
+| unreadable `.ai/harness/policy.json` | error naming the policy file |
+| missing `.archcontext/model/nodes` under `archcontext` | error; never falls back to the JSON registry |
+| subdirectory or non-`.yaml`/`.yml` entry in the model directory | error naming the entry |
+| unparseable node YAML | error naming the node file |
+| `Bun.YAML` unavailable | error with the Bun upgrade path |
+
+Node-shape failures surface as `ARCHCONTEXT_*` registry diagnostics and make
+`capability-resolver validate` fail; derived registries then go through the same
+validation as the JSON registry, so duplicate ids, duplicate prefixes, and
+invalid paths keep their existing diagnostic codes.
+
+### Known asymmetry with the boundary export
+
+`repo-harness run capability-resolver export --format archcontext-boundaries-v1`
+copies capability prefixes into `source.include` verbatim, so a directory prefix
+ships as a wildcard-free literal — the shape the reading side rejects as
+ambiguous. Round-tripping export output back through the reader is therefore not
+supported today. Correcting the export to emit `<dir>/**` for directory prefixes
+is tracked separately because it changes output for existing consumers.
+
 ## Manual Brain Vault Export
 
 Long-lived external knowledge may be exported to a brain file vault only through
