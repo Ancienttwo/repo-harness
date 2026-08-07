@@ -1,12 +1,12 @@
 # Task Contract: init-command-env-basedrop
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260808-0054-init-command-env-basedrop.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
-> **Last Updated**: 2026-08-08 00:55
+> **Last Updated**: 2026-08-08 02:25
 > **Review File**: `tasks/reviews/20260808-0054-init-command-env-basedrop.review.md`
 > **Notes File**: `tasks/notes/20260808-0054-init-command-env-basedrop.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
