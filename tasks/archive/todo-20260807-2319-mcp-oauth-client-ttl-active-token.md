@@ -1,7 +1,13 @@
+> **Archived**: 2026-08-07 23:19
+> **Related Plan**: plans/archive/plan-20260807-0850-mcp-oauth-client-ttl-active-token.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260807-2319
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-08-07 19:30
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

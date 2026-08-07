@@ -1,6 +1,6 @@
 # Plan: MCP config: retire repo scope, single user-level storage authority
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260807-1606
 > **Slug**: mcp-scope-retirement
 > **Planning Source**: repo-harness-plan

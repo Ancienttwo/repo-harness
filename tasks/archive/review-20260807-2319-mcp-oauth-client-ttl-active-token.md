@@ -1,12 +1,18 @@
+> **Archived**: 2026-08-07 23:19
+> **Related Plan**: plans/archive/plan-20260807-0850-mcp-oauth-client-ttl-active-token.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260807-2319
+
 # Task Review: mcp-oauth-client-ttl-active-token
 
-> **Status**: Pending
+> **Status**: Complete
 > **Plan**: plans/plan-20260807-0850-mcp-oauth-client-ttl-active-token.md
 > **Contract**: tasks/contracts/20260807-0850-mcp-oauth-client-ttl-active-token.contract.md
 > **Notes File**: tasks/notes/20260807-0850-mcp-oauth-client-ttl-active-token.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-08-07 08:50
-> **Recommendation**: fail
+> **Recommendation**: pass
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: pending
 > **Reviewed Subject Scope**: normalized-final-content

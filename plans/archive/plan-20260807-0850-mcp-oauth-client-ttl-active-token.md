@@ -1,6 +1,6 @@
 # Plan: MCP OAuth: exempt clients with active tokens from TTL cleanup
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260807-0850
 > **Slug**: mcp-oauth-client-ttl-active-token
 > **Planning Source**: repo-harness-plan

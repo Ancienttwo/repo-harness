@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-07T02:34:46+0800 -->
+<!-- updated_at: 2026-08-07T23:20:02+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Idle
-> **Updated At**: 2026-08-07T02:34:46+0800
-> **Source Branch**: codex/hook-entry-single-file-bundle
-> **Source Commit**: f435709d
+> **Status**: ManualClearedWithActiveWork
+> **Updated At**: 2026-08-07T23:20:02+0800
+> **Source Branch**: main
+> **Source Commit**: 4618a244
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -17,11 +17,11 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Current Focus
 
-- Status: Idle
+- Status: ManualClearedWithActiveWork
 - Active Plan: (none)
 - Plan Status: (none)
-- Next Task: (none)
-- Clear Note: (none)
+- Next Task: inspect active worktree marker(s)
+- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
 
 ## Mainline Snapshot Reading
 
@@ -31,7 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- (none)
+- /Users/ancienttwo/Projects/repo-harness-wt-untrack-cursor-dir: plans/plan-20260807-0847-untrack-cursor-dir.md
+- /Users/ancienttwo/Projects/repo-harness-wt-untrack-cursor-dir: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-untrack-cursor-dir
 ## Active Sprint
 
 - Sprint: (none)
@@ -55,19 +56,47 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: 38 changed/untracked path(s)
 
 ```
- D plans/plan-20260805-1745-hook-entry-single-file-bundle.md
- D tasks/contracts/20260805-1745-hook-entry-single-file-bundle.contract.md
- D tasks/notes/20260805-1745-hook-entry-single-file-bundle.notes.md
- D tasks/reviews/20260805-1745-hook-entry-single-file-bundle.review.md
+ D plans/plan-20260807-0850-mcp-oauth-client-ttl-active-token.md
+ D plans/plan-20260807-1128-gitignore-dir-level-repo-harness.md
+ D plans/plan-20260807-1606-mcp-scope-retirement.md
+ D plans/plan-20260807-1930-test-timeout-sibling-sweep.md
+ D tasks/contracts/20260807-0850-mcp-oauth-client-ttl-active-token.contract.md
+ D tasks/contracts/20260807-1128-gitignore-dir-level-repo-harness.contract.md
+ D tasks/contracts/20260807-1606-mcp-scope-retirement.contract.md
+ D tasks/contracts/20260807-1930-test-timeout-sibling-sweep.contract.md
+ M tasks/current.md
+ D tasks/notes/20260807-0850-mcp-oauth-client-ttl-active-token.notes.md
+ D tasks/notes/20260807-1128-gitignore-dir-level-repo-harness.notes.md
+ D tasks/notes/20260807-1606-mcp-scope-retirement.notes.md
+ D tasks/notes/20260807-1930-test-timeout-sibling-sweep.notes.md
+ D tasks/reviews/20260807-0850-mcp-oauth-client-ttl-active-token.review.md
+ D tasks/reviews/20260807-1128-gitignore-dir-level-repo-harness.review.md
+ D tasks/reviews/20260807-1606-mcp-scope-retirement.review.md
+ D tasks/reviews/20260807-1930-test-timeout-sibling-sweep.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260805-1745-hook-entry-single-file-bundle.md
-?? tasks/archive/contract-20260807-0234-hook-entry-single-file-bundle.md
-?? tasks/archive/notes-20260807-0234-hook-entry-single-file-bundle.md
-?? tasks/archive/review-20260807-0234-hook-entry-single-file-bundle.md
-?? tasks/archive/todo-20260807-0234-hook-entry-single-file-bundle.md
+?? plans/archive/plan-20260807-0850-mcp-oauth-client-ttl-active-token.md
+?? plans/archive/plan-20260807-1128-gitignore-dir-level-repo-harness.md
+?? plans/archive/plan-20260807-1606-mcp-scope-retirement.md
+?? plans/archive/plan-20260807-1930-test-timeout-sibling-sweep.md
+?? tasks/archive/contract-20260807-2319-gitignore-dir-level-repo-harness.md
+?? tasks/archive/contract-20260807-2319-mcp-oauth-client-ttl-active-token.md
+?? tasks/archive/contract-20260807-2320-mcp-scope-retirement.md
+?? tasks/archive/contract-20260807-2320-test-timeout-sibling-sweep.md
+?? tasks/archive/notes-20260807-2319-gitignore-dir-level-repo-harness.md
+?? tasks/archive/notes-20260807-2319-mcp-oauth-client-ttl-active-token.md
+?? tasks/archive/notes-20260807-2320-mcp-scope-retirement.md
+?? tasks/archive/notes-20260807-2320-test-timeout-sibling-sweep.md
+?? tasks/archive/review-20260807-2319-gitignore-dir-level-repo-harness.md
+?? tasks/archive/review-20260807-2319-mcp-oauth-client-ttl-active-token.md
+?? tasks/archive/review-20260807-2320-mcp-scope-retirement.md
+?? tasks/archive/review-20260807-2320-test-timeout-sibling-sweep.md
+?? tasks/archive/todo-20260807-2319-gitignore-dir-level-repo-harness.md
+?? tasks/archive/todo-20260807-2319-mcp-oauth-client-ttl-active-token.md
+?? tasks/archive/todo-20260807-2320-mcp-scope-retirement.md
+?? tasks/archive/todo-20260807-2320-test-timeout-sibling-sweep.md
 ```
 
 ## Source Artifacts

@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-07 23:20
+> **Related Plan**: plans/archive/plan-20260807-1930-test-timeout-sibling-sweep.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260807-2320
+
 # Task Review: test-timeout-sibling-sweep
 
 > **Status**: Complete

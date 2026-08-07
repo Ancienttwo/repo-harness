@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-07 23:20
+> **Related Plan**: plans/archive/plan-20260807-1606-mcp-scope-retirement.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260807-2320
+
 # Task Contract: mcp-scope-retirement
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260807-1606-mcp-scope-retirement.md
 > **Task Profile**: migration
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->

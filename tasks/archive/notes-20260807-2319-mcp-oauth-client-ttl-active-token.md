@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-07 23:19
+> **Related Plan**: plans/archive/plan-20260807-0850-mcp-oauth-client-ttl-active-token.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260807-2319
+
 # Implementation Notes: mcp-oauth-client-ttl-active-token
 
 > **Status**: Active

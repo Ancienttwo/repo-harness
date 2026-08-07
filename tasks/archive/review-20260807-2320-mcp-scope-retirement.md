@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-07 23:20
+> **Related Plan**: plans/archive/plan-20260807-1606-mcp-scope-retirement.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260807-2320
+
 # Task Review: mcp-scope-retirement
 
 > **Status**: Complete

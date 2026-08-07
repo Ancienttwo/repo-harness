@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-07 23:19
+> **Related Plan**: plans/archive/plan-20260807-0850-mcp-oauth-client-ttl-active-token.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260807-2319
+
 # Task Contract: mcp-oauth-client-ttl-active-token
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260807-0850-mcp-oauth-client-ttl-active-token.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->

@@ -1,6 +1,6 @@
 # Plan: Tests: complete the subprocess-timeout sibling sweep
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260807-1930
 > **Slug**: test-timeout-sibling-sweep
 > **Planning Source**: repo-harness-plan

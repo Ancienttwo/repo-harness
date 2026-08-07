@@ -1,6 +1,6 @@
 # Plan: Adoption gitignore: directory-level .repo-harness/ rule
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260807-1128
 > **Slug**: gitignore-dir-level-repo-harness
 > **Planning Source**: repo-harness-plan

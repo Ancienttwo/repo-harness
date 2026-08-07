@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-07 23:20
+> **Related Plan**: plans/archive/plan-20260807-1930-test-timeout-sibling-sweep.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260807-2320
+
 # Task Contract: test-timeout-sibling-sweep
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260807-1930-test-timeout-sibling-sweep.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->

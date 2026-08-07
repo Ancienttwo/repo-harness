@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-07 23:19
+> **Related Plan**: plans/archive/plan-20260807-1128-gitignore-dir-level-repo-harness.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260807-2319
+
 # Task Contract: gitignore-dir-level-repo-harness
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260807-1128-gitignore-dir-level-repo-harness.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
