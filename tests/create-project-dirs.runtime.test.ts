@@ -421,6 +421,12 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.context.capability_registry_file).toBe(".ai/context/capabilities.json");
       expect(policy.context.capability_resolver).toBe("repo-harness run capability-resolver");
       expect(policy.context.capability_config).toBe("repo-harness run capability-config");
+      // Both independently hardcoded policy seeders must agree on the capability
+      // authority switch; downstream repos stay on the JSON registry by default.
+      expect(policy.context.capability_source).toBe("registry");
+      expect(tsDefaultPolicy.context.capability_source).toBe("registry");
+      expect(policy.context.capability_source_rule).toBe(tsDefaultPolicy.context.capability_source_rule);
+      expect(policy.context.capability_source_rule).toContain("no dual-read and no fallback");
       expect(policy.documentation.profile).toBe("minimal-agentic");
       expect(policy.documentation.reference_source).toBe("user-level-runtime-docs");
       expect(policy.documentation.reference_stub_marker).toBe(REFERENCE_STUB_MARKER);

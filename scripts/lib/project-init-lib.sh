@@ -1749,6 +1749,8 @@ pi_write_harness_policy() {
     "capability_resolver": "repo-harness run capability-resolver",
     "capability_config": "repo-harness run capability-config",
     "capability_match_rule": "longest-prefix; same-length ambiguity fails",
+    "capability_source": "registry",
+    "capability_source_rule": "single authority selected by capability_source; registry reads .ai/context/capabilities.json, archcontext reads .archcontext/model/nodes/*.yaml; no dual-read and no fallback",
     "functional_block_selector": {
       "script": "repo-harness run select-agent-context-blocks",
       "config_file": ".ai/context/agent-context-blocks.txt",

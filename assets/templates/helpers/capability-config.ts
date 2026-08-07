@@ -3,7 +3,13 @@ import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { basename, dirname, resolve } from "path";
 import { spawnSync } from "child_process";
 import { fileURLToPath } from "url";
-import { readRegistry as readCapabilityRegistry, type Capability, type CapabilityRegistry } from "./capability-resolver";
+import {
+  CapabilitySourceError,
+  capabilitySourceMode,
+  readRegistry as readCapabilityRegistry,
+  type Capability,
+  type CapabilityRegistry,
+} from "./capability-resolver";
 
 type Registry = CapabilityRegistry;
 
@@ -339,6 +345,14 @@ function createWorkstream(repo: string, capability: Capability): void {
 function main(): void {
   const args = parseArgs(process.argv.slice(2));
   const repo = repoRoot(args.repo);
+  // The JSON registry is a projection target, not an authority, once archcontext
+  // owns capabilities; writing here would create a second authority.
+  if (capabilitySourceMode(repo) === "archcontext") {
+    throw new CapabilitySourceError(
+      `capability source is "archcontext"; ${REGISTRY_PATH} is not writable. ` +
+        "Declare the capability as an archcontext node under .archcontext/model/nodes instead"
+    );
+  }
   const requestedCapability = buildCapability(args, repo);
   const prefixPath = resolve(repo, requestedCapability.prefixes[0]);
   const registry = readRegistry(repo);
@@ -381,5 +395,5 @@ try {
   main();
 } catch (error) {
   console.error(`capability-config: ${(error as Error).message}`);
-  process.exit(1);
+  process.exit((error as { exitCode?: number }).exitCode ?? 1);
 }

@@ -301,6 +301,8 @@ export function defaultPolicy(documentationProfile: string): JsonObject {
       map_file: ".ai/context/context-map.json",
       capability_registry_file: ".ai/context/capabilities.json",
       capability_match_rule: "longest-prefix; same-length ambiguity fails",
+      capability_source: "registry",
+      capability_source_rule: "single authority selected by capability_source; registry reads .ai/context/capabilities.json, archcontext reads .archcontext/model/nodes/*.yaml; no dual-read and no fallback",
     },
     worktree_strategy: {
       base_branch: "main",

@@ -9,7 +9,11 @@ import {
   findMatch,
   type ArchContextBoundaryNode,
 } from "../scripts/capability-resolver";
-import type { Capability, CapabilityRegistry } from "../src/core/capabilities/registry";
+import {
+  archcontextIncludeToPrefix,
+  type Capability,
+  type CapabilityRegistry,
+} from "../src/core/capabilities/registry";
 
 const ROOT = join(import.meta.dir, "..");
 const REPO = ROOT;
@@ -215,6 +219,38 @@ describe("capability-resolver archcontext-boundaries-v1 export", () => {
     // arch-context bumps this to v2 this assertion should fail before any silent drift.
     const schema = loadSchema(ARCHITECTURE_NODE_SCHEMA_PATH);
     expect(schema.properties?.schemaVersion?.const).toBe("archcontext.node/v1");
+  });
+
+  // D9 pinning. The export copies capability prefixes into source.include
+  // verbatim, so a directory prefix ships as a wildcard-free literal. Under the
+  // archcontext include grammar a wildcard-free literal addresses a single path,
+  // which is why the reading side rejects that shape as ambiguous and asks for
+  // `<dir>/**`. This test pins the current asymmetry rather than hiding it;
+  // correcting the export (directory prefixes emitted as `<dir>/**`) is a
+  // separate slice with its own downstream-consumer impact.
+  test("export emits directory prefixes verbatim, a known asymmetry with the include grammar", () => {
+    const nodes = buildArchContextBoundariesV1(registry);
+    const web = nodes.find((node) => node.id === "capability.apps-web.web")!;
+    const rootRouter = nodes.find((node) => node.id === "capability.public-surface.root-router")!;
+
+    expect(web.source.include).toEqual(["apps/web"]);
+    expect(rootRouter.source.include).toEqual(["AGENTS.md", "CLAUDE.md"]);
+
+    const isExistingDirectory = (path: string) => path === "apps/web";
+    expect(archcontextIncludeToPrefix(web.source.include[0], { isExistingDirectory })).toEqual({
+      status: "ambiguous",
+    });
+    expect(archcontextIncludeToPrefix(`${web.source.include[0]}/**`, { isExistingDirectory })).toEqual({
+      status: "prefix",
+      prefix: "apps/web",
+    });
+    // File-shaped prefixes already round-trip through the grammar unchanged.
+    for (const include of rootRouter.source.include) {
+      expect(archcontextIncludeToPrefix(include, { isExistingDirectory })).toEqual({
+        status: "prefix",
+        prefix: include,
+      });
+    }
   });
 
   test("archctx-contracts package exposes expected version, digest, and agent-context schema surface", () => {

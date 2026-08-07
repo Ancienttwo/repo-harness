@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
+  archcontextIncludeToPrefix,
+  architectureModulePathFor,
+  capabilityRegistryFromArchcontextNodes,
   isCapabilityPathOutsideRepo,
   matchCapabilityPath,
+  workstreamDirFor,
   normalizeCapabilityPath,
   parseCapabilityRegistry,
   resolveCapabilityPaths,
@@ -165,5 +169,121 @@ describe("canonical capability registry", () => {
     expect(() => normalizeCapabilityPath("../secret", "/repo")).toThrow("traversal");
     expect(() => normalizeCapabilityPath("/other/secret", "/repo")).toThrow("outside repo");
     expect(() => normalizeCapabilityPath("C:\\other\\secret", "C:\\repo")).toThrow("outside repo");
+  });
+});
+
+describe("archcontextIncludeToPrefix", () => {
+  test("accepts directory globs and wildcard-free file literals", () => {
+    expect(archcontextIncludeToPrefix("apps/web/**")).toEqual({ status: "prefix", prefix: "apps/web" });
+    expect(archcontextIncludeToPrefix("src/core/adoption/**")).toEqual({
+      status: "prefix",
+      prefix: "src/core/adoption",
+    });
+    expect(archcontextIncludeToPrefix("AGENTS.md")).toEqual({ status: "prefix", prefix: "AGENTS.md" });
+    expect(archcontextIncludeToPrefix("src/effects/path-safety.ts")).toEqual({
+      status: "prefix",
+      prefix: "src/effects/path-safety.ts",
+    });
+  });
+
+  test("rejects every other glob shape", () => {
+    const unsupported = [
+      "",
+      "**",
+      "/**",
+      "**/*.ts",
+      "apps/*/web/**",
+      "apps/web/*",
+      "apps/web/**/*",
+      "apps/{web,api}/**",
+      "!apps/web/**",
+      "apps/[a-z]/**",
+    ];
+    for (const include of unsupported) {
+      expect(archcontextIncludeToPrefix(include), include).toEqual({ status: "unsupported" });
+    }
+  });
+
+  test("flags a wildcard-free literal that names an existing directory", () => {
+    const isExistingDirectory = (path: string) => path === "apps/web";
+    expect(archcontextIncludeToPrefix("apps/web", { isExistingDirectory })).toEqual({ status: "ambiguous" });
+    expect(archcontextIncludeToPrefix("apps/web/**", { isExistingDirectory })).toEqual({
+      status: "prefix",
+      prefix: "apps/web",
+    });
+    expect(archcontextIncludeToPrefix("apps/web/page.tsx", { isExistingDirectory })).toEqual({
+      status: "prefix",
+      prefix: "apps/web/page.tsx",
+    });
+  });
+});
+
+describe("capabilityRegistryFromArchcontextNodes", () => {
+  const node = (id: string, include: string[]) => ({
+    schemaVersion: "archcontext.node/v1",
+    id,
+    kind: "capability",
+    name: id.split(".").at(-1),
+    status: "active",
+    summary: "fixture",
+    source: { include },
+    extensions: {
+      contractFiles: { agents: "apps/web/AGENTS.md", claude: "apps/web/CLAUDE.md" },
+      lspProfile: "typescript-lsp",
+      verification: ["bun test apps/web"],
+    },
+  });
+
+  test("derives id, architecture module, and workstream dir from the node id", () => {
+    const resolution = capabilityRegistryFromArchcontextNodes([
+      { path: "nodes/web.yaml", value: node("capability.apps-web.web", ["apps/web/**"]) },
+    ]);
+    if (resolution.status !== "valid") throw new Error(`expected valid registry: ${JSON.stringify(resolution.diagnostics)}`);
+    expect(resolution.registry.capabilities).toEqual([
+      {
+        id: "apps-web-web",
+        domain: "apps-web",
+        name: "web",
+        prefixes: ["apps/web"],
+        contract_files: { agents: "apps/web/AGENTS.md", claude: "apps/web/CLAUDE.md" },
+        architecture_module: architectureModulePathFor("apps-web", "web"),
+        workstream_dir: workstreamDirFor("apps-web", "web"),
+        lsp_profile: "typescript-lsp",
+        verification_hints: ["bun test apps/web"],
+      },
+    ]);
+    expect(architectureModulePathFor("apps-web", "web")).toBe("docs/architecture/modules/apps-web/web.md");
+    expect(workstreamDirFor("apps-web", "web")).toBe("tasks/workstreams/apps-web/web");
+  });
+
+  test("sorts derived capabilities by id regardless of node order", () => {
+    const nodes = [
+      { path: "nodes/z.yaml", value: node("capability.public-surface.root-router", ["AGENTS.md"]) },
+      { path: "nodes/a.yaml", value: node("capability.apps-web.web", ["apps/web/**"]) },
+    ];
+    const resolution = capabilityRegistryFromArchcontextNodes(nodes);
+    if (resolution.status !== "valid") throw new Error("expected valid registry");
+    expect(resolution.registry.capabilities.map((capability) => capability.id)).toEqual([
+      "apps-web-web",
+      "public-surface-root-router",
+    ]);
+  });
+
+  test("routes derived registries through the canonical registry validation", () => {
+    const collision = capabilityRegistryFromArchcontextNodes([
+      { path: "nodes/a.yaml", value: node("capability.apps-web.web", ["apps/web/**"]) },
+      { path: "nodes/b.yaml", value: node("capability.apps-web.web", ["apps/web/**"]) },
+    ]);
+    expect(collision.status).toBe("invalid");
+    expect(collision.diagnostics.map((item) => item.code).sort()).toEqual([
+      "DUPLICATE_ID",
+      "DUPLICATE_PREFIX",
+    ]);
+
+    const traversal = capabilityRegistryFromArchcontextNodes([
+      { path: "nodes/a.yaml", value: node("capability.apps-web.web", ["../outside/**"]) },
+    ]);
+    expect(traversal.status).toBe("invalid");
+    expect(traversal.diagnostics.map((item) => item.code)).toEqual(["INVALID_PATH"]);
   });
 });
