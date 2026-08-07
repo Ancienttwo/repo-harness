@@ -266,6 +266,25 @@ function writeFakeCurl(fakeBin: string, version: string, logFile?: string) {
   );
 }
 
+function writeArchctxRepo(repoRoot: string, capabilitySource: "registry" | "archcontext") {
+  mkdirSync(join(repoRoot, ".ai/harness"), { recursive: true });
+  writeFileSync(
+    join(repoRoot, ".ai/harness/policy.json"),
+    JSON.stringify({ version: 1, context: { capability_source: capabilitySource } }, null, 2)
+  );
+  writeFileSync(
+    join(repoRoot, "package.json"),
+    JSON.stringify({ devDependencies: { "archctx-contracts": "0.3.0" } }, null, 2)
+  );
+}
+
+function installFleetForClaude(home: string) {
+  mkdirSync(join(home, ".claude", "agents"), { recursive: true });
+  for (const agent of MANAGED_AGENTS) {
+    copyFileSync(join(FLEET_SOURCE_DIR, `${agent}.md`), join(home, ".claude", "agents", `${agent}.md`));
+  }
+}
+
 describe("check-agent-tooling", () => {
   test("reports active tooling without the retired planning provider", () => {
     const envRoot = setupFakeEnvironment("check-agent-tooling");
@@ -1244,6 +1263,75 @@ describe("check-agent-tooling", () => {
       expect(claude.update_status).toBe("drift");
       expect(claude.drift_agents).toEqual(["deep-reasoner"]);
       expect(claude.user_managed_agents).toEqual([]);
+    } finally {
+      rmSync(envRoot.root, { recursive: true, force: true });
+    }
+  }, 15000);
+
+  test("reports archctx as present under the registry capability source and keeps strict readiness green", () => {
+    const envRoot = setupFakeEnvironment("check-agent-tooling-archctx-registry");
+    try {
+      writeArchctxRepo(envRoot.root, "registry");
+      installFleetForClaude(envRoot.home);
+      writeClaudeCodeGraphConfig(envRoot.home, true);
+      writeFakeBunx(envRoot.fakeBin);
+      writeFakeCodeGraph(envRoot.fakeBin);
+
+      const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude", "--strict-readiness"], {
+        cwd: envRoot.root,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: envRoot.home,
+          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          AGENTIC_DEV_CODEGRAPH_LOCAL_BIN: join(envRoot.fakeBin, "codegraph"),
+        },
+      });
+
+      // archctx is advisory: it never contributes to strictFailures, so a fully
+      // ready environment still exits 0 regardless of the archctx status.
+      expect(res.status).toBe(0);
+      const report = JSON.parse(res.stdout);
+      expect(report.tools.archctx.status).toBe("present");
+      expect(report.tools.archctx.capability_source).toBe("registry");
+      expect(report.tools.archctx.readiness).toBe("advisory");
+      expect(report.tools.archctx.nodes_dir_present).toBe(false);
+      expect(report.tools.archctx.node_count).toBe(0);
+      expect(report.tools.archctx.contracts_package_version).toBe("0.3.0");
+      expect(report.tools.archctx.impact.hook_correctness).toBe("unaffected");
+    } finally {
+      rmSync(envRoot.root, { recursive: true, force: true });
+    }
+  }, 15000);
+
+  test("reports archctx as partial when the archcontext source has no model nodes but still exits 0 under strict readiness", () => {
+    const envRoot = setupFakeEnvironment("check-agent-tooling-archctx-missing-model");
+    try {
+      writeArchctxRepo(envRoot.root, "archcontext");
+      installFleetForClaude(envRoot.home);
+      writeClaudeCodeGraphConfig(envRoot.home, true);
+      writeFakeBunx(envRoot.fakeBin);
+      writeFakeCodeGraph(envRoot.fakeBin);
+
+      const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude", "--strict-readiness"], {
+        cwd: envRoot.root,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: envRoot.home,
+          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          AGENTIC_DEV_CODEGRAPH_LOCAL_BIN: join(envRoot.fakeBin, "codegraph"),
+        },
+      });
+
+      // Advisory proof: a partial archctx status must not add a strict failure.
+      expect(res.status).toBe(0);
+      const report = JSON.parse(res.stdout);
+      expect(report.tools.archctx.status).toBe("partial");
+      expect(report.tools.archctx.capability_source).toBe("archcontext");
+      expect(report.tools.archctx.nodes_dir_present).toBe(false);
+      expect(report.tools.archctx.reason).toContain(".archcontext/model/nodes");
+      expect(res.stderr).not.toContain("[readiness]");
     } finally {
       rmSync(envRoot.root, { recursive: true, force: true });
     }

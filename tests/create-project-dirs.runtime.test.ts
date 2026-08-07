@@ -9,6 +9,19 @@ const ROOT = join(import.meta.dir, "..");
 const REFERENCE_STUB_MARKER = "<!-- repo-harness: reference-config-stub v1 -->";
 const RUNTIME_SMOKE_TIMEOUT_MS = 15000;
 
+/**
+ * scripts/ensure-task-workflow.sh embeds its policy fallback as a quoted
+ * `POLICY_EOF` heredoc, so the body is literal JSON with no shell expansion.
+ * Parsing it directly keeps this seeder in the cross-seeder parity assertions
+ * without having to scaffold a whole workspace.
+ */
+function ensureTaskWorkflowSeedPolicy(): Record<string, any> {
+  const source = readFileSync(join(ROOT, "scripts/ensure-task-workflow.sh"), "utf-8");
+  const match = source.match(/<<'POLICY_EOF'\n([\s\S]*?)\nPOLICY_EOF\n/);
+  if (!match) throw new Error("scripts/ensure-task-workflow.sh POLICY_EOF heredoc not found");
+  return JSON.parse(match[1]);
+}
+
 function expectReferenceConfigStub(cwd: string, docId: string): void {
   const content = readFileSync(join(cwd, "docs/reference-configs", `${docId}.md`), "utf-8");
   expect(content).toContain(REFERENCE_STUB_MARKER);
@@ -340,6 +353,25 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.external_tooling.codegraph.readiness).toBe("required-for-agent-code-navigation");
       expect(policy.external_tooling.codegraph.hook_policy).toBe("do-not-block-hooks");
       expect(policy.external_tooling.codegraph.vendoring_policy).toBe("do-not-add-package-dependency");
+      // archctx is an external optional CLI, never a runtime dependency: the entry
+      // must stay advisory and identical across every seeder that emits it.
+      const archctxEntry = {
+        cli_package: "archctx",
+        contracts_package: "archctx-contracts",
+        contracts_scope: "dev-dependency-schema-authority-only",
+        install_mode: "external-optional-cli-never-a-runtime-dependency",
+        readiness: "advisory",
+        hook_policy: "do-not-block-hooks",
+        vendoring_policy: "do-not-vendor",
+        model_dir: ".archcontext/model",
+        nodes_dir: ".archcontext/model/nodes",
+        capability_source_key: ".ai/harness/policy.json#context.capability_source",
+      };
+      expect(policy.external_tooling.archctx).toEqual(archctxEntry);
+      expect(ensureTaskWorkflowSeedPolicy().external_tooling.archctx).toEqual(archctxEntry);
+      expect(
+        JSON.parse(readFileSync(join(ROOT, ".ai/harness/policy.json"), "utf-8")).external_tooling.archctx
+      ).toEqual(archctxEntry);
       expect(policy.external_tooling.agent_fleet.source).toBe("package:agents/fleet");
       expect(policy.external_tooling.agent_fleet.managed_agents).toEqual([
         "explorer",
@@ -421,12 +453,24 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.context.capability_registry_file).toBe(".ai/context/capabilities.json");
       expect(policy.context.capability_resolver).toBe("repo-harness run capability-resolver");
       expect(policy.context.capability_config).toBe("repo-harness run capability-config");
-      // Both independently hardcoded policy seeders must agree on the capability
+      // All four independently hardcoded policy seeders must agree on the capability
       // authority switch; downstream repos stay on the JSON registry by default.
-      expect(policy.context.capability_source).toBe("registry");
-      expect(tsDefaultPolicy.context.capability_source).toBe("registry");
-      expect(policy.context.capability_source_rule).toBe(tsDefaultPolicy.context.capability_source_rule);
-      expect(policy.context.capability_source_rule).toContain("no dual-read and no fallback");
+      // Seeders: scripts/lib/project-init-lib.sh (bash `policy` above),
+      // src/core/adoption/standard-plan.ts (`tsDefaultPolicy`),
+      // scripts/ensure-task-workflow.sh (its embedded POLICY_EOF fallback seed),
+      // and this repo's own tracked .ai/harness/policy.json.
+      const fallbackSeedPolicy = ensureTaskWorkflowSeedPolicy();
+      const repoPolicy = JSON.parse(readFileSync(join(ROOT, ".ai/harness/policy.json"), "utf-8"));
+      for (const seeded of [policy, tsDefaultPolicy, fallbackSeedPolicy, repoPolicy]) {
+        expect(seeded.context.capability_source).toBe("registry");
+        expect(seeded.context.capability_source_rule).toBe(tsDefaultPolicy.context.capability_source_rule);
+        expect(seeded.context.capability_source_rule).toContain("no dual-read and no fallback");
+      }
+      // capability_config is seeded by the three file-writing seeders; standard-plan.ts
+      // does not carry it, so it is asserted separately from the switch itself.
+      for (const seeded of [policy, fallbackSeedPolicy, repoPolicy]) {
+        expect(seeded.context.capability_config).toBe("repo-harness run capability-config");
+      }
       expect(policy.documentation.profile).toBe("minimal-agentic");
       expect(policy.documentation.reference_source).toBe("user-level-runtime-docs");
       expect(policy.documentation.reference_stub_marker).toBe(REFERENCE_STUB_MARKER);

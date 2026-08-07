@@ -116,6 +116,11 @@ const CODEGRAPH_ENSURE_COMMAND = [
 const CODEGRAPH_ENSURE_BASH_COMMAND = CODEGRAPH_ENSURE_COMMAND
   ? `bash ${CODEGRAPH_ENSURE_COMMAND}`
   : null;
+const ARCHCTX_CLI_PACKAGE = "archctx";
+const ARCHCTX_CONTRACTS_PACKAGE = "archctx-contracts";
+const ARCHCTX_MODEL_DIR = ".archcontext/model";
+const ARCHCTX_NODES_DIR = ".archcontext/model/nodes";
+const ARCHCTX_CAPABILITY_SOURCE_KEY = ".ai/harness/policy.json#context.capability_source";
 const WAZA_STAGING_ROOT = path.join(HOME, ".agents");
 const WAZA_STAGING_DIR = path.join(WAZA_STAGING_ROOT, "skills");
 const WAZA_STAGING_RULES_DIR = path.join(WAZA_STAGING_ROOT, "rules");
@@ -1577,6 +1582,93 @@ function detectCodeGraph() {
   };
 }
 
+function archctxContractsVersion() {
+  const pkg = readJson(path.join(REPO_ROOT, "package.json"));
+  if (!pkg || typeof pkg !== "object") return null;
+  return (
+    pkg.devDependencies?.[ARCHCTX_CONTRACTS_PACKAGE] ||
+    pkg.dependencies?.[ARCHCTX_CONTRACTS_PACKAGE] ||
+    pkg.optionalDependencies?.[ARCHCTX_CONTRACTS_PACKAGE] ||
+    null
+  );
+}
+
+/**
+ * Reads the capability authority switch this repo runs on. Advisory only: a
+ * missing or malformed policy never fails the probe, it just reports what could
+ * be read so the operator sees which source the resolver would use.
+ */
+function archctxCapabilitySource() {
+  const policy = readJson(path.join(REPO_ROOT, ".ai/harness/policy.json"));
+  if (!policy || typeof policy !== "object") return "unknown";
+  const context = policy.context;
+  if (!context || typeof context !== "object") return "registry";
+  const value = context.capability_source;
+  if (value === undefined) return "registry";
+  return typeof value === "string" ? value : "unknown";
+}
+
+function archctxNodeCount(nodesDir) {
+  try {
+    return fs.readdirSync(nodesDir).filter((name) => /\.ya?ml$/.test(name)).length;
+  } catch (_error) {
+    return 0;
+  }
+}
+
+/**
+ * ArchContext readiness probe. archctx is an external optional CLI and never a
+ * runtime dependency of this repo, so this detector is advisory: it is reported
+ * but never added to strictFailures and never blocks hooks.
+ */
+function detectArchctx() {
+  const binPath = resolvePathCommand(ARCHCTX_CLI_PACKAGE);
+  const cliPresent = Boolean(binPath);
+  const versionResult = cliPresent ? run(binPath, ["--version"], { timeoutMs: 1500 }) : null;
+  // Some archctx builds have no --version flag and answer with a multi-line help
+  // envelope at exit 0. Report an unknown version instead of storing that blob.
+  const versionOutput = versionResult?.ok ? versionResult.stdout.trim() : "";
+  const version = versionOutput && !versionOutput.includes("\n") ? versionOutput : null;
+  const contractsPackageVersion = archctxContractsVersion();
+  const capabilitySource = archctxCapabilitySource();
+  const nodesDir = path.join(REPO_ROOT, ARCHCTX_NODES_DIR);
+  const nodesDirPresent = fs.existsSync(nodesDir);
+  const nodeCount = nodesDirPresent ? archctxNodeCount(nodesDir) : 0;
+  const nodesReady = nodesDirPresent && nodeCount > 0;
+  const status = capabilitySource === "archcontext" && !nodesReady ? "partial" : "present";
+
+  return {
+    name: "archctx",
+    status,
+    reason: capabilitySource === "archcontext"
+      ? nodesReady
+        ? `Capability source is archcontext and ${ARCHCTX_NODES_DIR} holds ${nodeCount} node file(s).`
+        : `Capability source is archcontext, but ${ARCHCTX_NODES_DIR} is missing or empty.`
+      : `Capability source is ${capabilitySource}; archctx nodes are not read by the resolver.`,
+    cli_package: ARCHCTX_CLI_PACKAGE,
+    contracts_package: ARCHCTX_CONTRACTS_PACKAGE,
+    contracts_scope: "dev-dependency-schema-authority-only",
+    install_mode: "external-optional-cli-never-a-runtime-dependency",
+    cli_present: cliPresent,
+    bin_path: binPath,
+    version,
+    contracts_package_version: contractsPackageVersion,
+    capability_source: capabilitySource,
+    capability_source_key: ARCHCTX_CAPABILITY_SOURCE_KEY,
+    model_dir: path.join(REPO_ROOT, ARCHCTX_MODEL_DIR),
+    nodes_dir: path.join(REPO_ROOT, ARCHCTX_NODES_DIR),
+    nodes_dir_present: nodesDirPresent,
+    node_count: nodeCount,
+    readiness: "advisory",
+    hook_policy: "do-not-block-hooks",
+    vendoring_policy: "do-not-vendor",
+    impact: {
+      capability_resolution: status === "present" ? "unaffected" : "archcontext-nodes-missing",
+      hook_correctness: "unaffected",
+    },
+  };
+}
+
 const wazaReport = detectWaza();
 const report = {
   generated_at: new Date().toISOString(),
@@ -1589,6 +1681,7 @@ const report = {
     codex_automation_profile: detectCodexAutomationProfile(),
     agent_fleet: detectAgentFleet(),
     codegraph: detectCodeGraph(),
+    archctx: detectArchctx(),
   },
 };
 
@@ -1718,6 +1811,16 @@ function printText(result) {
   }
   console.log(`  - Init index: ${codegraph.init_command}`);
   console.log(`  - Sync index: ${codegraph.sync_command}`);
+  console.log("");
+
+  const archctx = result.tools.archctx;
+  console.log(`ArchContext [${archctx.status}] (advisory)`);
+  console.log(`  - CLI: ${archctx.cli_present ? `present${archctx.version ? ` (v${archctx.version})` : ""} at ${archctx.bin_path}` : "missing"}`);
+  console.log(`  - Contracts package: ${archctx.contracts_package}${archctx.contracts_package_version ? `@${archctx.contracts_package_version}` : " (not declared)"} (${archctx.contracts_scope})`);
+  console.log(`  - Capability source: ${archctx.capability_source} via ${archctx.capability_source_key}`);
+  console.log(`  - Nodes: ${archctx.nodes_dir_present ? `${archctx.node_count} file(s) in ${archctx.nodes_dir}` : `missing ${archctx.nodes_dir}`}`);
+  console.log(`  - Impact: capability-resolution=${archctx.impact.capability_resolution}, hooks=${archctx.impact.hook_correctness}`);
+  console.log(`  - Readiness: ${archctx.readiness} (${archctx.reason})`);
 }
 
 if (jsonOutput) {
