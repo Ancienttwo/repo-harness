@@ -12,8 +12,11 @@
   Also picks up the MCP OAuth dynamic-client TTL fix (#161, #162) merged after
   the candidate range was cut: clients holding active tokens survive the
   absolute 30-day TTL, ending periodic re-authorization for active connectors.
-- Publish status: **pending publish**. This filing does not claim npm, Git tag,
-  or GitHub Release completion until the public readbacks below pass.
+- Publish status: **published**. `repo-harness@0.13.1` is live on npm
+  (shasum `6026823b704a7fbf42478f0386cf5f2dc2911312`), tagged `v0.13.1` on
+  release commit `53a089e2`, with the stable GitHub Release created and
+  `check-release-published.sh 0.13.1` reporting registry, dist-tag, tarball,
+  tag, and local version files in agreement.
 
 ## Candidate Evidence
 
@@ -54,12 +57,12 @@
 - [x] Push `main` so local and `origin/main` agree before the release commit.
 - [x] Bump `package.json`, `assets/skill-version.json`, `.claude/.skill-version`,
       and the five README `Current Release` blocks to `0.13.1`.
-- [ ] Run `bash scripts/check-npm-release.sh --prepublish` on the exact release
+- [x] Run `bash scripts/check-npm-release.sh --prepublish` on the exact release
       commit and publish to npm.
-- [ ] Create the annotated tag `v0.13.1` on the published commit.
-- [ ] Create the stable GitHub Release `repo-harness 0.13.1` from `v0.13.1`
+- [x] Create the annotated tag `v0.13.1` on the published commit.
+- [x] Create the stable GitHub Release `repo-harness 0.13.1` from `v0.13.1`
       with no attached asset, matching the established release convention.
-- [ ] Run `bash scripts/check-release-published.sh 0.13.1`.
+- [x] Run `bash scripts/check-release-published.sh 0.13.1`.
 
 ## Candidate Verification Record
 
