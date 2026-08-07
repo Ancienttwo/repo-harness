@@ -3,11 +3,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
 import { dirname, join, resolve } from 'path';
 
-export type McpConfigScope = 'repo' | 'user';
-
 export interface McpLocalConfig {
   version: 1 | 2 | 3;
-  scope?: McpConfigScope;
   repo?: string;
   server?: {
     host?: string;
@@ -59,24 +56,67 @@ function repoHarnessHome(): string {
   return resolve(process.env.REPO_HARNESS_HOME ?? join(process.env.HOME ?? homedir(), '.repo-harness'));
 }
 
-function mcpStorageDir(repoRoot: string, scope: McpConfigScope): string {
-  return scope === 'user' ? repoHarnessHome() : join(repoRoot, '.repo-harness');
+/** Single MCP storage authority: `~/.repo-harness/`, overridable with REPO_HARNESS_HOME. */
+export function mcpStorageDir(): string {
+  return repoHarnessHome();
 }
 
-export function mcpLocalConfigPath(repoRoot: string, scope: McpConfigScope = 'repo'): string {
-  return join(mcpStorageDir(repoRoot, scope), 'mcp.local.json');
+export function mcpLocalConfigPath(): string {
+  return join(mcpStorageDir(), 'mcp.local.json');
 }
 
-export function mcpTokenPath(repoRoot: string, scope: McpConfigScope = 'repo'): string {
-  return join(mcpStorageDir(repoRoot, scope), 'mcp.tokens.json');
+export function mcpTokenPath(): string {
+  return join(mcpStorageDir(), 'mcp.tokens.json');
 }
 
-export function mcpOAuthPath(repoRoot: string, scope: McpConfigScope = 'repo'): string {
-  return join(mcpStorageDir(repoRoot, scope), 'mcp.oauth.json');
+export function mcpOAuthPath(): string {
+  return join(mcpStorageDir(), 'mcp.oauth.json');
 }
 
-export function mcpOAuthTokenStorePath(repoRoot: string, scope: McpConfigScope = 'repo'): string {
-  return join(mcpStorageDir(repoRoot, scope), 'mcp.oauth-tokens.json');
+export function mcpOAuthTokenStorePath(): string {
+  return join(mcpStorageDir(), 'mcp.oauth-tokens.json');
+}
+
+export interface LegacyRepoScopeMcpPaths {
+  dir: string;
+  config: string;
+  tokens: string;
+  oauth: string;
+  oauthTokens: string;
+}
+
+/**
+ * Retired repo-scope storage layout. Kept only so the migration gate and
+ * `repo-harness mcp migrate-scope` can name and remove it; nothing reads
+ * configuration or credentials from these paths.
+ */
+export function legacyRepoScopeMcpPaths(repoRoot: string): LegacyRepoScopeMcpPaths {
+  const dir = join(repoRoot, '.repo-harness');
+  return {
+    dir,
+    config: join(dir, 'mcp.local.json'),
+    tokens: join(dir, 'mcp.tokens.json'),
+    oauth: join(dir, 'mcp.oauth.json'),
+    oauthTokens: join(dir, 'mcp.oauth-tokens.json'),
+  };
+}
+
+export function legacyRepoScopeMcpFiles(repoRoot: string): string[] {
+  const legacy = legacyRepoScopeMcpPaths(repoRoot);
+  return [legacy.config, legacy.tokens, legacy.oauth, legacy.oauthTokens].filter((path) => existsSync(path));
+}
+
+/**
+ * Fail closed when a repo still carries the retired repo-scope MCP config.
+ * There is deliberately no read-through fallback: the operator runs the
+ * one-shot migration, which rotates credentials instead of relocating them.
+ */
+export function assertNoLegacyRepoScopeMcpConfig(repoRoot: string): void {
+  const legacy = legacyRepoScopeMcpPaths(repoRoot);
+  if (!existsSync(legacy.config)) return;
+  throw new Error(
+    `legacy repo-scope MCP config detected at ${legacy.config}; repo scope is retired and MCP now stores config and credentials only under ${mcpStorageDir()}. Run: repo-harness mcp migrate-scope --repo ${repoRoot}`,
+  );
 }
 
 export function parseMcpLocalConfig(value: unknown): McpLocalConfig {
@@ -89,9 +129,6 @@ export function parseMcpLocalConfig(value: unknown): McpLocalConfig {
     throw new Error(`unsupported MCP local config version: ${String(version)}`);
   }
   const config = raw as unknown as McpLocalConfig;
-  if (config.scope !== undefined && config.scope !== 'repo' && config.scope !== 'user') {
-    throw new Error(`invalid MCP local config scope: ${String(config.scope)}`);
-  }
   if (config.permissions?.allowedRoots !== undefined && !Array.isArray(config.permissions.allowedRoots)) {
     throw new Error('MCP local config permissions.allowedRoots must be an array');
   }
@@ -113,7 +150,7 @@ export function parseMcpLocalConfig(value: unknown): McpLocalConfig {
   };
 }
 
-function readMcpLocalConfig(path: string): McpLocalConfig | null {
+export function readMcpLocalConfigFile(path: string): McpLocalConfig | null {
   if (!existsSync(path)) return null;
   try {
     return parseMcpLocalConfig(JSON.parse(readFileSync(path, 'utf-8')));
@@ -122,25 +159,13 @@ function readMcpLocalConfig(path: string): McpLocalConfig | null {
   }
 }
 
-export function resolveMcpConfigScope(repoRoot: string, requested?: McpConfigScope): McpConfigScope {
-  if (requested) return requested;
-  const userConfig = readMcpLocalConfig(mcpLocalConfigPath(repoRoot, 'user'));
-  if (userConfig?.profile === 'coding' && userConfig.coding?.enabled === true) return 'user';
-  if (existsSync(mcpLocalConfigPath(repoRoot, 'repo'))) return 'repo';
-  if (userConfig) return 'user';
-  return 'repo';
+export function loadMcpLocalConfig(): McpLocalConfig | null {
+  return readMcpLocalConfigFile(mcpLocalConfigPath());
 }
 
-export function loadMcpLocalConfig(repoRoot: string, scope?: McpConfigScope): McpLocalConfig | null {
-  if (scope) return readMcpLocalConfig(mcpLocalConfigPath(repoRoot, scope));
-  const userConfig = readMcpLocalConfig(mcpLocalConfigPath(repoRoot, 'user'));
-  if (userConfig?.profile === 'coding' && userConfig.coding?.enabled === true) return userConfig;
-  return readMcpLocalConfig(mcpLocalConfigPath(repoRoot, 'repo')) ?? userConfig;
-}
-
-export function readMcpBearerToken(repoRoot: string, scope?: McpConfigScope): string | null {
+export function readMcpBearerToken(): string | null {
   if (process.env.REPO_HARNESS_MCP_TOKEN?.trim()) return process.env.REPO_HARNESS_MCP_TOKEN.trim();
-  const path = mcpTokenPath(repoRoot, resolveMcpConfigScope(repoRoot, scope));
+  const path = mcpTokenPath();
   if (!existsSync(path)) return null;
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf-8')) as { bearerToken?: unknown };
@@ -150,9 +175,9 @@ export function readMcpBearerToken(repoRoot: string, scope?: McpConfigScope): st
   }
 }
 
-export function ensureMcpBearerToken(repoRoot: string, scope: McpConfigScope = 'repo'): { token: string; path: string; changed: boolean } {
-  const path = mcpTokenPath(repoRoot, scope);
-  const existing = readMcpBearerToken(repoRoot, scope);
+export function ensureMcpBearerToken(): { token: string; path: string; changed: boolean } {
+  const path = mcpTokenPath();
+  const existing = readMcpBearerToken();
   if (existing) return { token: existing, path, changed: false };
 
   const token = randomBytes(32).toString('base64url');
@@ -167,11 +192,11 @@ export function parseMcpHttpAuthMode(value: string | undefined): McpHttpAuthMode
   throw new Error(`invalid --auth "${value}" (expected: oauth, bearer, url-token)`);
 }
 
-export function readMcpOAuthPassphrase(repoRoot: string, scope?: McpConfigScope): string | null {
+export function readMcpOAuthPassphrase(): string | null {
   if (process.env.REPO_HARNESS_MCP_OAUTH_PASSPHRASE?.trim()) {
     return process.env.REPO_HARNESS_MCP_OAUTH_PASSPHRASE.trim();
   }
-  const path = mcpOAuthPath(repoRoot, resolveMcpConfigScope(repoRoot, scope));
+  const path = mcpOAuthPath();
   if (!existsSync(path)) return null;
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf-8')) as { passphrase?: unknown };
@@ -181,9 +206,9 @@ export function readMcpOAuthPassphrase(repoRoot: string, scope?: McpConfigScope)
   }
 }
 
-export function ensureMcpOAuthPassphrase(repoRoot: string, scope: McpConfigScope = 'repo'): { passphrase: string; path: string; changed: boolean } {
-  const path = mcpOAuthPath(repoRoot, scope);
-  const existing = readMcpOAuthPassphrase(repoRoot, scope);
+export function ensureMcpOAuthPassphrase(): { passphrase: string; path: string; changed: boolean } {
+  const path = mcpOAuthPath();
+  const existing = readMcpOAuthPassphrase();
   if (existing) return { passphrase: existing, path, changed: false };
 
   const passphrase = randomBytes(24).toString('base64url');

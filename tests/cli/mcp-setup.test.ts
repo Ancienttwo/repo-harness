@@ -8,11 +8,13 @@ import {
   patchCodexConfigToml,
   runMcpDoctor,
   runMcpInstallSkill,
+  runMcpMigrateScope,
   runMcpPrintGuide,
   runMcpSetupChatgpt,
   runMcpSetupCodex,
 } from '../../src/cli/mcp/setup';
 import { createMcpToolContext } from '../../src/cli/mcp/server';
+import { callMcpTool } from '../../src/cli/mcp/tools';
 import { repoHarnessPackageVersion } from '../../src/cli/mcp/version';
 import { assertChatGptMcpContract } from '../helpers/chatgpt-mcp-contract';
 import {
@@ -23,7 +25,7 @@ import {
 
 const CLI = join(import.meta.dir, '../..', 'src/cli/index.ts');
 
-function withTmpRepo<T>(fn: (repoRoot: string) => T): T {
+function withTmpRepo<T>(fn: (repoRoot: string, userHome: string) => T): T {
   const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-setup-'));
   const repoHarnessHome = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-setup-home-'));
   const previousRepoHarnessHome = process.env.REPO_HARNESS_HOME;
@@ -31,7 +33,7 @@ function withTmpRepo<T>(fn: (repoRoot: string) => T): T {
     process.env.REPO_HARNESS_HOME = repoHarnessHome;
     mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
     writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
-    return fn(repoRoot);
+    return fn(repoRoot, repoHarnessHome);
   } finally {
     if (previousRepoHarnessHome === undefined) delete process.env.REPO_HARNESS_HOME;
     else process.env.REPO_HARNESS_HOME = previousRepoHarnessHome;
@@ -40,21 +42,83 @@ function withTmpRepo<T>(fn: (repoRoot: string) => T): T {
   }
 }
 
+/**
+ * Async counterpart of withTmpRepo. The sync version returns fn's value from a
+ * try/finally, so an async body would have its temp dirs removed and its
+ * REPO_HARNESS_HOME restored before it finished.
+ */
+async function withTmpRepoAsync<T>(fn: (repoRoot: string, userHome: string) => Promise<T>): Promise<T> {
+  const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-setup-'));
+  const repoHarnessHome = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-setup-home-'));
+  const previousRepoHarnessHome = process.env.REPO_HARNESS_HOME;
+  try {
+    process.env.REPO_HARNESS_HOME = repoHarnessHome;
+    mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
+    writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
+    return await fn(repoRoot, repoHarnessHome);
+  } finally {
+    if (previousRepoHarnessHome === undefined) delete process.env.REPO_HARNESS_HOME;
+    else process.env.REPO_HARNESS_HOME = previousRepoHarnessHome;
+    rmSync(repoRoot, { recursive: true, force: true });
+    rmSync(repoHarnessHome, { recursive: true, force: true });
+  }
+}
+
+/** Materialize the retired repo-scope layout a pre-migration install would have. */
+function writeLegacyRepoScopeMcpState(repoRoot: string, overrides: Record<string, unknown> = {}): {
+  config: string;
+  tokens: string;
+  oauth: string;
+  oauthTokens: string;
+  bearerToken: string;
+  passphrase: string;
+} {
+  const dir = join(repoRoot, '.repo-harness');
+  mkdirSync(dir, { recursive: true });
+  const paths = {
+    config: join(dir, 'mcp.local.json'),
+    tokens: join(dir, 'mcp.tokens.json'),
+    oauth: join(dir, 'mcp.oauth.json'),
+    oauthTokens: join(dir, 'mcp.oauth-tokens.json'),
+    bearerToken: 'legacy-repo-scope-bearer-token-value',
+    passphrase: 'legacy-repo-scope-passphrase-value',
+  };
+  writeFileSync(paths.config, `${JSON.stringify({
+    version: 3,
+    scope: 'repo',
+    repo: repoRoot,
+    server: { host: '0.0.0.0', port: 9911, transport: 'http' },
+    auth: { mode: 'oauth', oauthFile: '.repo-harness/mcp.oauth.json', tokenFile: '.repo-harness/mcp.tokens.json' },
+    chatgpt: { serverName: 'legacy-repo-connector', endpoint: 'https://legacy-repo.example.com/mcp' },
+    permissions: { allowedRoots: [], discoveryRoots: [], fullDiskRead: false },
+    profile: 'planner',
+    ...overrides,
+  }, null, 2)}\n`);
+  writeFileSync(paths.tokens, `${JSON.stringify({ version: 1, bearerToken: paths.bearerToken }, null, 2)}\n`);
+  writeFileSync(paths.oauth, `${JSON.stringify({ version: 1, passphrase: paths.passphrase }, null, 2)}\n`);
+  writeFileSync(paths.oauthTokens, `${JSON.stringify({ version: 1, authorizations: {} }, null, 2)}\n`);
+  return paths;
+}
+
 describe('mcp setup', () => {
-  test('generates ChatGPT local config, guide, and ignore entries', () => {
-    withTmpRepo((repoRoot) => {
+  test('stores ChatGPT config and credentials only under user-level storage', () => {
+    withTmpRepo((repoRoot, userHome) => {
       const result = runMcpSetupChatgpt({ repo: repoRoot });
       expect(result.changed.length).toBeGreaterThan(0);
-      expect(existsSync(join(repoRoot, '.repo-harness/mcp.local.json'))).toBe(true);
-      expect(existsSync(join(repoRoot, '.repo-harness/mcp.tokens.json'))).toBe(true);
-      expect(existsSync(join(repoRoot, '.repo-harness/mcp.oauth.json'))).toBe(true);
-      expect(existsSync(join(repoRoot, 'docs/repo-harness-chatgpt-mcp-setup.md'))).toBe(true);
-      const config = JSON.parse(readFileSync(join(repoRoot, '.repo-harness/mcp.local.json'), 'utf-8'));
-      expect(config.auth).toMatchObject({
-        mode: 'oauth',
-        oauthFile: '.repo-harness/mcp.oauth.json',
-        tokenFile: '.repo-harness/mcp.tokens.json',
-      });
+      expect(existsSync(join(userHome, 'mcp.local.json'))).toBe(true);
+      expect(existsSync(join(userHome, 'mcp.tokens.json'))).toBe(true);
+      expect(existsSync(join(userHome, 'mcp.oauth.json'))).toBe(true);
+      // Retired repo scope: setup writes nothing into the repo working tree.
+      expect(existsSync(join(repoRoot, '.repo-harness'))).toBe(false);
+      expect(existsSync(join(repoRoot, '.gitignore'))).toBe(false);
+      expect(existsSync(join(repoRoot, 'docs/repo-harness-chatgpt-mcp-setup.md'))).toBe(false);
+      const config = JSON.parse(readFileSync(join(userHome, 'mcp.local.json'), 'utf-8'));
+      expect(config.scope).toBeUndefined();
+      expect(config.auth).toMatchObject({ mode: 'oauth' });
+      expect(config.auth.oauthFile).toContain('mcp.oauth.json');
+      expect(config.auth.tokenFile).toContain('mcp.tokens.json');
+      expect(config.auth.oauthFile.startsWith('.repo-harness/')).toBe(false);
+      expect(config.auth.tokenFile.startsWith('.repo-harness/')).toBe(false);
       expect(config.chatgpt.serverName).toBe('repo-harness');
       expect(config.devMode).toMatchObject({
         agentRunner: false,
@@ -62,26 +126,19 @@ describe('mcp setup', () => {
         timeoutMs: 120000,
       });
       expect(config.rollout).toBeUndefined();
-      const token = JSON.parse(readFileSync(join(repoRoot, '.repo-harness/mcp.tokens.json'), 'utf-8')).bearerToken;
+      const token = JSON.parse(readFileSync(join(userHome, 'mcp.tokens.json'), 'utf-8')).bearerToken;
       expect(typeof token).toBe('string');
       expect(token.length).toBeGreaterThan(30);
-      const passphrase = JSON.parse(readFileSync(join(repoRoot, '.repo-harness/mcp.oauth.json'), 'utf-8')).passphrase;
+      const passphrase = JSON.parse(readFileSync(join(userHome, 'mcp.oauth.json'), 'utf-8')).passphrase;
       expect(typeof passphrase).toBe('string');
       expect(passphrase.length).toBeGreaterThan(20);
-      const ignore = readFileSync(join(repoRoot, '.gitignore'), 'utf-8');
-      expect(ignore).toContain('.repo-harness/mcp.local.json');
-      expect(ignore).toContain('.repo-harness/mcp.tokens.json');
-      expect(ignore).toContain('.repo-harness/mcp.oauth.json');
-      expect(ignore).toContain('.repo-harness/mcp.oauth-tokens.json');
-      expect(ignore).toContain('.ai/harness/mcp/audit.log');
-      expect(ignore).toContain('.ai/harness/mcp/index-events.jsonl');
-      expect(ignore).toContain('.ai/harness/mcp/metrics.jsonl');
-      expect(ignore).toContain('.ai/harness/mcp/trace.jsonl');
 
       const doctor = JSON.parse(runMcpDoctor({ repo: repoRoot, json: true }).lines[0]);
       expect(doctor.mcp.packageVersion).toBe(repoHarnessPackageVersion());
       expect(doctor.mcp.authConfigured).toBe(true);
-      expect(doctor.mcp.permissions.configurationScope).toBe('repo');
+      expect(doctor.mcp.storageDir).toBe(userHome);
+      expect(doctor.mcp.configScope).toBeUndefined();
+      expect(doctor.mcp.permissions.configurationScope).toBeUndefined();
       expect(doctor.mcp.devMode.agentRunner).toBe(false);
       expect(doctor.chatgpt.serverName).toBe('repo-harness');
       expect(doctor.chatgpt.localEndpoint).toBe('http://127.0.0.1:8765/mcp');
@@ -101,20 +158,20 @@ describe('mcp setup', () => {
   });
 
   test('records and preserves the ChatGPT MCP server name in ignored local config', () => {
-    withTmpRepo((repoRoot) => {
+    withTmpRepo((repoRoot, userHome) => {
       const setup = runMcpSetupChatgpt({ repo: repoRoot, serverName: 'team-review-mcp' });
       expect(setup.lines.join('\n')).toContain('ChatGPT MCP server name: team-review-mcp');
 
-      let config = JSON.parse(readFileSync(join(repoRoot, '.repo-harness/mcp.local.json'), 'utf-8'));
+      let config = JSON.parse(readFileSync(join(userHome, 'mcp.local.json'), 'utf-8'));
       expect(config.chatgpt.serverName).toBe('team-review-mcp');
 
       runMcpSetupChatgpt({ repo: repoRoot, endpoint: 'https://repo-harness-mcp.example.com/mcp' });
-      config = JSON.parse(readFileSync(join(repoRoot, '.repo-harness/mcp.local.json'), 'utf-8'));
+      config = JSON.parse(readFileSync(join(userHome, 'mcp.local.json'), 'utf-8'));
       expect(config.chatgpt.serverName).toBe('team-review-mcp');
       expect(config.chatgpt.endpoint).toBe('https://repo-harness-mcp.example.com/mcp');
 
       runMcpSetupChatgpt({ repo: repoRoot });
-      config = JSON.parse(readFileSync(join(repoRoot, '.repo-harness/mcp.local.json'), 'utf-8'));
+      config = JSON.parse(readFileSync(join(userHome, 'mcp.local.json'), 'utf-8'));
       expect(config.chatgpt.serverName).toBe('team-review-mcp');
       expect(config.chatgpt.endpoint).toBe('https://repo-harness-mcp.example.com/mcp');
 
@@ -125,9 +182,9 @@ describe('mcp setup', () => {
   });
 
   test('ignores and removes retired general-repo rollout config on setup', () => {
-    withTmpRepo((repoRoot) => {
+    withTmpRepo((repoRoot, userHome) => {
       runMcpSetupChatgpt({ repo: repoRoot });
-      const configPath = join(repoRoot, '.repo-harness/mcp.local.json');
+      const configPath = join(userHome, 'mcp.local.json');
       const staleConfig = JSON.parse(readFileSync(configPath, 'utf-8'));
       staleConfig.rollout = {
         generalRepo: {
@@ -151,9 +208,9 @@ describe('mcp setup', () => {
   });
 
   test('fails closed when local MCP config cannot be parsed', () => {
-    withTmpRepo((repoRoot) => {
+    withTmpRepo((repoRoot, userHome) => {
       runMcpSetupChatgpt({ repo: repoRoot });
-      const configPath = join(repoRoot, '.repo-harness/mcp.local.json');
+      const configPath = join(userHome, 'mcp.local.json');
       writeFileSync(configPath, '{not-json\n');
 
       expect(() => createMcpToolContext({ repo: repoRoot, profile: 'planner' })).toThrow(
@@ -162,74 +219,212 @@ describe('mcp setup', () => {
     });
   });
 
-  test('user-scope ChatGPT setup stores MCP state under the OS user and authorizes current-repo reader access', () => {
-    withTmpRepo((repoRoot) => {
-      const userState = mkdtempSync(join(tmpdir(), 'repo-harness-user-mcp-'));
-      const previousHome = process.env.REPO_HARNESS_HOME;
-      try {
-        process.env.REPO_HARNESS_HOME = userState;
+  test('ChatGPT setup stores MCP state under the OS user and authorizes current-repo reader access', () => {
+    withTmpRepo((repoRoot, userHome) => {
+      const setup = runMcpSetupChatgpt({
+        repo: repoRoot,
+        serverName: 'team-review-mcp',
+        endpoint: 'https://repo-harness-mcp.example.com/mcp',
+      });
+      expect(setup.lines.join('\n')).toContain(`Storage: ${userHome}`);
+      expect(setup.lines.join('\n')).toContain('Reader capability: enabled');
+      expect(setup.lines.join('\n')).toContain('Registered repo:');
+      expect(setup.lines.join('\n')).toContain('--profile planner');
+      expect(existsSync(join(userHome, 'mcp.local.json'))).toBe(true);
+      expect(existsSync(join(userHome, 'mcp.tokens.json'))).toBe(true);
+      expect(existsSync(join(userHome, 'mcp.oauth.json'))).toBe(true);
+      expect(existsSync(join(userHome, 'registered-repos.json'))).toBe(true);
+      expect(existsSync(join(repoRoot, 'docs/repo-harness-chatgpt-mcp-setup.md'))).toBe(false);
 
-        const setup = runMcpSetupChatgpt({
-          repo: repoRoot,
-          scope: 'user',
+      const config = JSON.parse(readFileSync(join(userHome, 'mcp.local.json'), 'utf-8'));
+      expect(config).toMatchObject({
+        repo: repoRoot,
+        chatgpt: {
           serverName: 'team-review-mcp',
           endpoint: 'https://repo-harness-mcp.example.com/mcp',
-        });
-        expect(setup.lines.join('\n')).toContain('Config scope: user');
-        expect(setup.lines.join('\n')).toContain('Reader capability: enabled');
-        expect(setup.lines.join('\n')).toContain('Registered repo:');
-        expect(setup.lines.join('\n')).toContain('--profile planner');
-        expect(existsSync(join(userState, 'mcp.local.json'))).toBe(true);
-        expect(existsSync(join(userState, 'mcp.tokens.json'))).toBe(true);
-        expect(existsSync(join(userState, 'mcp.oauth.json'))).toBe(true);
-        expect(existsSync(join(userState, 'registered-repos.json'))).toBe(true);
-        expect(existsSync(join(repoRoot, 'docs/repo-harness-chatgpt-mcp-setup.md'))).toBe(false);
+        },
+        capabilities: { workspaceReader: true, workflowPlanner: true },
+        permissions: { fullDiskRead: false, allowedRoots: [], discoveryRoots: [] },
+        profile: 'planner',
+      });
+      expect(config.scope).toBeUndefined();
+      const registry = JSON.parse(readFileSync(join(userHome, 'registered-repos.json'), 'utf-8'));
+      expect(registry.repos).toEqual([
+        expect.objectContaining({ path: realpathSync(repoRoot), source: 'mcp-setup' }),
+      ]);
+      expect(config.auth.oauthFile).toContain('mcp.oauth.json');
+      expect(config.auth.tokenFile).toContain('mcp.tokens.json');
 
-        const config = JSON.parse(readFileSync(join(userState, 'mcp.local.json'), 'utf-8'));
-        expect(config).toMatchObject({
-          scope: 'user',
-          repo: repoRoot,
-          chatgpt: {
-            serverName: 'team-review-mcp',
-            endpoint: 'https://repo-harness-mcp.example.com/mcp',
-          },
-          capabilities: { workspaceReader: true, workflowPlanner: true },
-          permissions: { fullDiskRead: false, allowedRoots: [], discoveryRoots: [] },
-          profile: 'planner',
-        });
-        const registry = JSON.parse(readFileSync(join(userState, 'registered-repos.json'), 'utf-8'));
-        expect(registry.repos).toEqual([
-          expect.objectContaining({ path: realpathSync(repoRoot), source: 'mcp-setup' }),
-        ]);
-        expect(config.auth.oauthFile).toContain('mcp.oauth.json');
-        expect(config.auth.tokenFile).toContain('mcp.tokens.json');
+      const doctor = JSON.parse(runMcpDoctor({ repo: repoRoot, json: true }).lines[0]);
+      expect(doctor.status).toBe('ready_local');
+      expect(doctor.mcp.storageDir).toBe(userHome);
+      expect(doctor.mcp.localConfig).toBe(true);
+      expect(doctor.mcp.authConfigured).toBe(true);
+      expect(doctor.mcp.permissions.fullDiskRead).toBe(false);
+      expect(doctor.mcp.permissions.allowedRootCount).toBe(0);
+      expect(doctor.mcp.permissions.registeredRepoCount).toBe(1);
+      expect(doctor.mcp.capabilities.workspaceReader).toBe(true);
+      expect(doctor.codex.configured).toBe(false);
+      expect(doctor.chatgpt.serverName).toBe('team-review-mcp');
 
-        const doctor = JSON.parse(runMcpDoctor({ repo: repoRoot, json: true }).lines[0]);
-        expect(doctor.status).toBe('ready_local');
-        expect(doctor.mcp.configScope).toBe('user');
-        expect(doctor.mcp.localConfig).toBe(true);
-        expect(doctor.mcp.authConfigured).toBe(true);
-        expect(doctor.mcp.permissions.configurationScope).toBe('user');
-        expect(doctor.mcp.permissions.fullDiskRead).toBe(false);
-        expect(doctor.mcp.permissions.allowedRootCount).toBe(0);
-        expect(doctor.mcp.permissions.registeredRepoCount).toBe(1);
-        expect(doctor.mcp.capabilities.workspaceReader).toBe(true);
-        expect(doctor.codex.configured).toBe(false);
-        expect(doctor.chatgpt.serverName).toBe('team-review-mcp');
+      const ctx = createMcpToolContext({ repo: repoRoot, profile: 'planner' });
+      expect(ctx.policy.allowAbsoluteRead).toBe(false);
+      expect(ctx.policy.capabilities.workspaceReader).toBe(true);
+      expect(ctx.policy.allowedRoots).toEqual([realpathSync(repoRoot)]);
+      expect(ctx.policy.denyGlobs).toContain('.env');
+    });
+  });
 
-        const ctx = createMcpToolContext({ repo: repoRoot, profile: 'planner' });
-        expect(ctx.policy.allowAbsoluteRead).toBe(false);
-        expect(ctx.policy.capabilities.workspaceReader).toBe(true);
-        expect(ctx.policy.allowedRoots).toEqual([realpathSync(repoRoot)]);
-        expect(ctx.policy.denyGlobs).toContain('.env');
-      } finally {
-        if (previousHome === undefined) {
-          delete process.env.REPO_HARNESS_HOME;
-        } else {
-          process.env.REPO_HARNESS_HOME = previousHome;
-        }
-        rmSync(userState, { recursive: true, force: true });
+  test('MCP command entrypoints fail closed on legacy repo-scope config and name the migration', () => {
+    withTmpRepo((repoRoot, userHome) => {
+      const legacy = writeLegacyRepoScopeMcpState(repoRoot);
+      const expectedError = 'repo-harness mcp migrate-scope';
+
+      for (const action of [
+        () => runMcpSetupChatgpt({ repo: repoRoot }),
+        () => runMcpDoctor({ repo: repoRoot, json: true }),
+        () => createMcpToolContext({ repo: repoRoot, profile: 'planner' }),
+      ]) {
+        expect(action).toThrow(expectedError);
+        expect(action).toThrow('legacy repo-scope MCP config detected');
       }
+
+      // No silent read-through: the legacy files stay untouched until the
+      // operator runs the explicit migration.
+      expect(existsSync(legacy.config)).toBe(true);
+      expect(existsSync(legacy.tokens)).toBe(true);
+
+      const cli = spawnSync(
+        process.execPath,
+        [CLI, 'mcp', 'doctor', '--repo', repoRoot],
+        { encoding: 'utf-8', env: { ...process.env, REPO_HARNESS_HOME: userHome } },
+      );
+      expect(cli.status).toBe(2);
+      expect(cli.stderr).toContain('repo-harness mcp migrate-scope');
+    });
+  });
+
+  test('migrate-scope merges non-secret config, rotates credentials, and is idempotent', () => {
+    withTmpRepo((repoRoot, userHome) => {
+      const legacy = writeLegacyRepoScopeMcpState(repoRoot);
+
+      const migrated = runMcpMigrateScope({ repo: repoRoot });
+      const output = migrated.lines.join('\n');
+      expect(migrated.migrated).toBe(true);
+
+      // Non-secret fields land in the surviving user config.
+      const config = JSON.parse(readFileSync(join(userHome, 'mcp.local.json'), 'utf-8'));
+      expect(config).toMatchObject({
+        version: 3,
+        server: { host: '0.0.0.0', port: 9911 },
+        chatgpt: { serverName: 'legacy-repo-connector', endpoint: 'https://legacy-repo.example.com/mcp' },
+        profile: 'planner',
+      });
+      expect(config.scope).toBeUndefined();
+
+      // Credentials are rotated, never relocated.
+      const token = JSON.parse(readFileSync(join(userHome, 'mcp.tokens.json'), 'utf-8')).bearerToken;
+      const passphrase = JSON.parse(readFileSync(join(userHome, 'mcp.oauth.json'), 'utf-8')).passphrase;
+      expect(token).not.toBe(legacy.bearerToken);
+      expect(passphrase).not.toBe(legacy.passphrase);
+      expect(token.length).toBeGreaterThan(30);
+      expect(passphrase.length).toBeGreaterThan(20);
+
+      // Legacy files, including the OAuth token store, are gone.
+      expect(existsSync(legacy.config)).toBe(false);
+      expect(existsSync(legacy.tokens)).toBe(false);
+      expect(existsSync(legacy.oauth)).toBe(false);
+      expect(existsSync(legacy.oauthTokens)).toBe(false);
+
+      // Inventory output names what moved, what rotated, and what was voided.
+      expect(output).toContain('Migrated config fields: server.host, server.port, chatgpt.serverName, chatgpt.endpoint');
+      expect(output).toContain('Rotated bearer token:');
+      expect(output).toContain('Rotated OAuth passphrase:');
+      expect(output).toContain('ChatGPT must re-authorize once');
+      expect(output).toContain('Removed legacy files:');
+      expect(output).toContain(legacy.oauthTokens);
+
+      // The gate is satisfied afterwards.
+      expect(() => runMcpDoctor({ repo: repoRoot, json: true })).not.toThrow();
+
+      // Re-running on a migrated repo reports nothing to do and changes nothing.
+      const rerun = runMcpMigrateScope({ repo: repoRoot });
+      expect(rerun.migrated).toBe(false);
+      expect(rerun.changed).toEqual([]);
+      expect(rerun.lines.join('\n')).toContain('Nothing to migrate');
+      expect(JSON.parse(readFileSync(join(userHome, 'mcp.tokens.json'), 'utf-8')).bearerToken).toBe(token);
+      expect(JSON.parse(readFileSync(join(userHome, 'mcp.oauth.json'), 'utf-8')).passphrase).toBe(passphrase);
+    });
+  });
+
+  test('migrate-scope keeps existing user-level values and never adopts legacy secrets', () => {
+    withTmpRepo((repoRoot, userHome) => {
+      runMcpSetupChatgpt({ repo: repoRoot, serverName: 'existing-user-connector' });
+      const userToken = JSON.parse(readFileSync(join(userHome, 'mcp.tokens.json'), 'utf-8')).bearerToken;
+      const userPassphrase = JSON.parse(readFileSync(join(userHome, 'mcp.oauth.json'), 'utf-8')).passphrase;
+      const legacy = writeLegacyRepoScopeMcpState(repoRoot);
+
+      const migrated = runMcpMigrateScope({ repo: repoRoot });
+      expect(migrated.migrated).toBe(true);
+
+      const config = JSON.parse(readFileSync(join(userHome, 'mcp.local.json'), 'utf-8'));
+      expect(config.chatgpt.serverName).toBe('existing-user-connector');
+      expect(config.server.host).toBe('127.0.0.1');
+      // Only the value the user config lacked is inherited from the legacy file.
+      expect(config.chatgpt.endpoint).toBe('https://legacy-repo.example.com/mcp');
+      expect(migrated.lines.join('\n')).toContain('Migrated config fields: chatgpt.endpoint');
+
+      // An existing user-level install keeps its own credentials; the legacy
+      // values are discarded rather than adopted.
+      const token = JSON.parse(readFileSync(join(userHome, 'mcp.tokens.json'), 'utf-8')).bearerToken;
+      const passphrase = JSON.parse(readFileSync(join(userHome, 'mcp.oauth.json'), 'utf-8')).passphrase;
+      expect(token).toBe(userToken);
+      expect(passphrase).toBe(userPassphrase);
+      expect(token).not.toBe(legacy.bearerToken);
+      expect(passphrase).not.toBe(legacy.passphrase);
+      expect(existsSync(legacy.oauthTokens)).toBe(false);
+    });
+  });
+
+  test('harness_doctor and runMcpDoctor agree on mcp.localConfig from the single storage authority', async () => {
+    // Both doctor surfaces must read the same authority. The MCP tool used to
+    // probe <repo>/.repo-harness/mcp.local.json, which reported false for a
+    // correct user-level install and true for an unmigrated legacy repo.
+    const harnessDoctorLocalConfig = async (repoRoot: string): Promise<boolean> => {
+      const ctx = createMcpToolContext({ repo: repoRoot, profile: 'planner' });
+      const result = await callMcpTool(ctx, 'harness_doctor', {});
+      return JSON.parse(result.content[0].text).mcp.localConfig;
+    };
+
+    // No user-level config yet: both report false.
+    await withTmpRepoAsync(async (repoRoot) => {
+      expect(JSON.parse(runMcpDoctor({ repo: repoRoot, json: true }).lines[0]).mcp.localConfig).toBe(false);
+      expect(await harnessDoctorLocalConfig(repoRoot)).toBe(false);
+    });
+
+    // After user-level setup: both report true.
+    await withTmpRepoAsync(async (repoRoot) => {
+      runMcpSetupChatgpt({ repo: repoRoot });
+      expect(JSON.parse(runMcpDoctor({ repo: repoRoot, json: true }).lines[0]).mcp.localConfig).toBe(true);
+      expect(await harnessDoctorLocalConfig(repoRoot)).toBe(true);
+    });
+
+    // A legacy repo-scope file in the target repo must not fabricate a true.
+    // The context is built while the repo is clean (the startup gate has
+    // already run), then the legacy files appear underneath it.
+    await withTmpRepoAsync(async (repoRoot) => {
+      const ctx = createMcpToolContext({ repo: repoRoot, profile: 'planner' });
+      writeLegacyRepoScopeMcpState(repoRoot);
+      const payload = JSON.parse((await callMcpTool(ctx, 'harness_doctor', {})).content[0].text);
+      expect(payload.mcp.localConfig).toBe(false);
+    });
+  });
+
+  test('migrate-scope refuses a legacy config that claims the coding profile', () => {
+    withTmpRepo((repoRoot) => {
+      const legacy = writeLegacyRepoScopeMcpState(repoRoot, { profile: 'coding' });
+      expect(() => runMcpMigrateScope({ repo: repoRoot })).toThrow('coding profile was never valid in repo scope');
+      expect(existsSync(legacy.config)).toBe(true);
     });
   });
 
@@ -298,58 +493,46 @@ describe('mcp setup', () => {
     });
   });
 
-  test('coding setup is user-scoped, requires an explicit grant, and fails closed after permission downgrade', () => {
-    withTmpRepo((repoRoot) => {
-      const userState = mkdtempSync(join(tmpdir(), 'repo-harness-coding-setup-'));
-      const previousHome = process.env.REPO_HARNESS_HOME;
-      try {
-        process.env.REPO_HARNESS_HOME = userState;
-        expect(() => runMcpSetupChatgpt({ repo: repoRoot, scope: 'repo', profile: 'coding', grantReadWrite: [repoRoot] }))
-          .toThrow('requires --scope user');
-        expect(() => runMcpSetupChatgpt({ repo: repoRoot, scope: 'user', profile: 'coding' }))
-          .toThrow('requires at least one explicit --grant-read-write');
-        expect(() => runMcpSetupChatgpt({ repo: repoRoot, scope: 'user', profile: 'CODING' }))
-          .toThrow('invalid MCP profile');
+  test('coding setup requires an explicit grant and fails closed after permission downgrade', () => {
+    withTmpRepo((repoRoot, userHome) => {
+      expect(() => runMcpSetupChatgpt({ repo: repoRoot, profile: 'coding' }))
+        .toThrow('requires at least one explicit --grant-read-write');
+      expect(() => runMcpSetupChatgpt({ repo: repoRoot, profile: 'CODING' }))
+        .toThrow('invalid MCP profile');
 
-        const setup = runMcpSetupChatgpt({
-          repo: repoRoot,
-          scope: 'user',
-          profile: 'coding',
-          grantReadWrite: [repoRoot],
-          endpoint: 'https://coding.example.com/mcp',
-        });
-        expect(setup.lines.join('\n')).toContain('Profile: coding');
-        const config = JSON.parse(readFileSync(join(userState, 'mcp.local.json'), 'utf-8'));
-        expect(config).toMatchObject({
-          version: 3,
-          scope: 'user',
-          profile: 'coding',
-          capabilities: { workspaceReader: false, workflowPlanner: true, workspaceCoder: true },
-          coding: { enabled: true, environmentAllowlist: [] },
-        });
-        expect(config.authorizationRevision).toBe(1);
-        expect(readRegisteredRepoHarnessRepos({ adoptedOnly: true })[0]).toMatchObject({ accessMode: 'read_write' });
-        const ctx = createMcpToolContext({ repo: repoRoot, profile: 'coding' });
-        expect(ctx.policy.profile).toBe('coding');
-        expect(ctx.codingWorkspaceManager).toBeDefined();
-        expect(ctx.processManager).toBeDefined();
+      const setup = runMcpSetupChatgpt({
+        repo: repoRoot,
+        profile: 'coding',
+        grantReadWrite: [repoRoot],
+        endpoint: 'https://coding.example.com/mcp',
+      });
+      expect(setup.lines.join('\n')).toContain('Profile: coding');
+      const config = JSON.parse(readFileSync(join(userHome, 'mcp.local.json'), 'utf-8'));
+      expect(config).toMatchObject({
+        version: 3,
+        profile: 'coding',
+        capabilities: { workspaceReader: false, workflowPlanner: true, workspaceCoder: true },
+        coding: { enabled: true, environmentAllowlist: [] },
+      });
+      expect(config.scope).toBeUndefined();
+      expect(config.authorizationRevision).toBe(1);
+      expect(readRegisteredRepoHarnessRepos({ adoptedOnly: true })[0]).toMatchObject({ accessMode: 'read_write' });
+      const ctx = createMcpToolContext({ repo: repoRoot, profile: 'coding' });
+      expect(ctx.policy.profile).toBe('coding');
+      expect(ctx.codingWorkspaceManager).toBeDefined();
+      expect(ctx.processManager).toBeDefined();
 
-        const downgraded = setRepoHarnessAccessMode(repoRoot, 'read_only');
-        expect(downgraded.authorizationRevision).toBe(2);
-        expect(() => createMcpToolContext({ repo: repoRoot, profile: 'coding' })).toThrow('explicit read_write grant');
+      const downgraded = setRepoHarnessAccessMode(repoRoot, 'read_only');
+      expect(downgraded.authorizationRevision).toBe(2);
+      expect(() => createMcpToolContext({ repo: repoRoot, profile: 'coding' })).toThrow('explicit read_write grant');
 
-        expect(setRepoHarnessAccessMode(repoRoot, 'read_write').authorizationRevision).toBe(3);
-        expect(() => createMcpToolContext({ repo: repoRoot, profile: 'coding' })).toThrow('authorization revision is stale');
-        runMcpSetupChatgpt({ repo: repoRoot, scope: 'user', profile: 'planner' });
-        const disabled = JSON.parse(readFileSync(join(userState, 'mcp.local.json'), 'utf-8'));
-        expect(disabled).toMatchObject({ profile: 'planner', coding: { enabled: false } });
-        expect(disabled.authorizationRevision).toBe(4);
-        expect(() => createMcpToolContext({ repo: repoRoot, profile: 'coding' })).toThrow('coding MCP is disabled');
-      } finally {
-        if (previousHome === undefined) delete process.env.REPO_HARNESS_HOME;
-        else process.env.REPO_HARNESS_HOME = previousHome;
-        rmSync(userState, { recursive: true, force: true });
-      }
+      expect(setRepoHarnessAccessMode(repoRoot, 'read_write').authorizationRevision).toBe(3);
+      expect(() => createMcpToolContext({ repo: repoRoot, profile: 'coding' })).toThrow('authorization revision is stale');
+      runMcpSetupChatgpt({ repo: repoRoot, profile: 'planner' });
+      const disabled = JSON.parse(readFileSync(join(userHome, 'mcp.local.json'), 'utf-8'));
+      expect(disabled).toMatchObject({ profile: 'planner', coding: { enabled: false } });
+      expect(disabled.authorizationRevision).toBe(4);
+      expect(() => createMcpToolContext({ repo: repoRoot, profile: 'coding' })).toThrow('coding MCP is disabled');
     });
   });
 
@@ -360,7 +543,6 @@ describe('mcp setup', () => {
 
       expect(() => runMcpSetupChatgpt({
         repo: repoRoot,
-        scope: 'user',
         profile: 'coding',
         grantReadWrite: [repoRoot],
         endpoint: 'http://not-public.example/mcp',
@@ -379,14 +561,12 @@ describe('mcp setup', () => {
           const action = failure === 'server-name'
             ? () => runMcpSetupChatgpt({
                 repo: repoRoot,
-                scope: 'user',
                 profile: 'coding',
                 grantReadWrite: [repoRoot],
                 serverName: 'bad/name',
               })
             : () => runMcpSetupChatgpt({
                 repo: repoRoot,
-                scope: 'user',
                 profile: 'coding',
                 grantReadWrite: [repoRoot, nonAdopted],
               });
@@ -402,9 +582,9 @@ describe('mcp setup', () => {
 
   test('rerunning setup atomically migrates v1 and v2 local config to v3', () => {
     for (const version of [1, 2] as const) {
-      withTmpRepo((repoRoot) => {
-        const configPath = join(repoRoot, '.repo-harness/mcp.local.json');
-        mkdirSync(join(repoRoot, '.repo-harness'), { recursive: true });
+      withTmpRepo((repoRoot, userHome) => {
+        const configPath = join(userHome, 'mcp.local.json');
+        mkdirSync(userHome, { recursive: true });
         writeFileSync(configPath, `${JSON.stringify({
           version,
           repo: repoRoot,
@@ -428,45 +608,35 @@ describe('mcp setup', () => {
     }
   });
 
-  test('active user coding config takes precedence over a legacy repo-scoped planner config', () => {
+  // Replaces the retired scope-precedence rule: a legacy repo-scope config no
+  // longer loses to an active user config, it blocks the command outright.
+  test('legacy repo-scope config blocks an otherwise working coding setup until migrated', () => {
     withTmpRepo((repoRoot) => {
-      const userState = mkdtempSync(join(tmpdir(), 'repo-harness-coding-priority-'));
-      const previousHome = process.env.REPO_HARNESS_HOME;
-      try {
-        process.env.REPO_HARNESS_HOME = userState;
-        mkdirSync(join(repoRoot, '.repo-harness'), { recursive: true });
-        writeFileSync(join(repoRoot, '.repo-harness/mcp.local.json'), `${JSON.stringify({
-          version: 2,
-          scope: 'repo',
-          repo: repoRoot,
-          profile: 'planner',
-          auth: { mode: 'oauth' },
-          capabilities: { workflowPlanner: true, workspaceReader: true },
-        }, null, 2)}\n`);
-        runMcpSetupChatgpt({
-          repo: repoRoot,
-          scope: 'user',
-          profile: 'coding',
-          grantReadWrite: [repoRoot],
-          endpoint: 'https://coding.example.com/mcp',
-        });
-        const ctx = createMcpToolContext({ repo: repoRoot, profile: 'coding' });
-        expect(ctx.policy.profile).toBe('coding');
-        expect(ctx.policy.capabilities.workspaceCoder).toBe(true);
-      } finally {
-        if (previousHome === undefined) delete process.env.REPO_HARNESS_HOME;
-        else process.env.REPO_HARNESS_HOME = previousHome;
-        rmSync(userState, { recursive: true, force: true });
-      }
+      runMcpSetupChatgpt({
+        repo: repoRoot,
+        profile: 'coding',
+        grantReadWrite: [repoRoot],
+        endpoint: 'https://coding.example.com/mcp',
+      });
+      expect(createMcpToolContext({ repo: repoRoot, profile: 'coding' }).policy.profile).toBe('coding');
+
+      writeLegacyRepoScopeMcpState(repoRoot);
+      expect(() => createMcpToolContext({ repo: repoRoot, profile: 'coding' }))
+        .toThrow('repo-harness mcp migrate-scope');
+
+      runMcpMigrateScope({ repo: repoRoot });
+      const ctx = createMcpToolContext({ repo: repoRoot, profile: 'coding' });
+      expect(ctx.policy.profile).toBe('coding');
+      expect(ctx.policy.capabilities.workspaceCoder).toBe(true);
     });
   });
 
   test('doctor reports sensitive configured allowed roots as unsafe', () => {
-    withTmpRepo((repoRoot) => {
+    withTmpRepo((repoRoot, userHome) => {
       runMcpSetupChatgpt({ repo: repoRoot });
       const sensitiveRoot = join(repoRoot, 'credentials');
       mkdirSync(sensitiveRoot);
-      const configPath = join(repoRoot, '.repo-harness/mcp.local.json');
+      const configPath = join(userHome, 'mcp.local.json');
       const config = JSON.parse(readFileSync(configPath, 'utf-8'));
       config.permissions.allowedRoots = [sensitiveRoot];
       writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
@@ -478,7 +648,7 @@ describe('mcp setup', () => {
     });
   });
 
-  test('doctor reports ready_user for user-scope MCP on a non-repo root', () => {
+  test('doctor reports ready_user for MCP on a non-adopted root', () => {
     const root = mkdtempSync(join(tmpdir(), 'repo-harness-user-mcp-root-'));
     const userState = mkdtempSync(join(tmpdir(), 'repo-harness-user-mcp-'));
     const previousHome = process.env.REPO_HARNESS_HOME;
@@ -486,14 +656,12 @@ describe('mcp setup', () => {
       process.env.REPO_HARNESS_HOME = userState;
       runMcpSetupChatgpt({
         repo: root,
-        scope: 'user',
         serverName: 'team-review-mcp',
       });
 
       const doctor = JSON.parse(runMcpDoctor({ repo: root, json: true }).lines[0]);
       expect(doctor.status).toBe('ready_user');
-      expect(doctor.mcp.configScope).toBe('user');
-      expect(doctor.mcp.permissions.configurationScope).toBe('user');
+      expect(doctor.mcp.storageDir).toBe(userState);
       expect(doctor.mcp.permissions.fullDiskRead).toBe(false);
       expect(doctor.mcp.permissions.allowedRootCount).toBe(0);
       expect(doctor.mcp.permissions.registeredRepoCount).toBe(0);
@@ -510,13 +678,13 @@ describe('mcp setup', () => {
   });
 
   test('mcp doctor does not mask a missing recorded ChatGPT server name', () => {
-    withTmpRepo((repoRoot) => {
-      mkdirSync(join(repoRoot, '.repo-harness'), { recursive: true });
-      writeFileSync(join(repoRoot, '.repo-harness/mcp.local.json'), `${JSON.stringify({
+    withTmpRepo((repoRoot, userHome) => {
+      mkdirSync(userHome, { recursive: true });
+      writeFileSync(join(userHome, 'mcp.local.json'), `${JSON.stringify({
         version: 1,
         repo: repoRoot,
         server: { host: '127.0.0.1', port: 8765, transport: 'http' },
-        auth: { mode: 'oauth', oauthFile: '.repo-harness/mcp.oauth.json', tokenFile: '.repo-harness/mcp.tokens.json' },
+        auth: { mode: 'oauth', oauthFile: 'mcp.oauth.json', tokenFile: 'mcp.tokens.json' },
         chatgpt: { endpoint: 'https://repo-harness-mcp.example.com/mcp' },
         profile: 'planner',
       }, null, 2)}\n`);
@@ -531,13 +699,13 @@ describe('mcp setup', () => {
   });
 
   test('server-name-only ChatGPT setup preserves existing endpoint and operator settings', () => {
-    withTmpRepo((repoRoot) => {
-      mkdirSync(join(repoRoot, '.repo-harness'), { recursive: true });
-      writeFileSync(join(repoRoot, '.repo-harness/mcp.local.json'), `${JSON.stringify({
+    withTmpRepo((repoRoot, userHome) => {
+      mkdirSync(userHome, { recursive: true });
+      writeFileSync(join(userHome, 'mcp.local.json'), `${JSON.stringify({
         version: 1,
         repo: repoRoot,
         server: { host: '0.0.0.0', port: 9876, transport: 'http' },
-        auth: { mode: 'bearer', tokenFile: '.repo-harness/custom.tokens.json' },
+        auth: { mode: 'bearer', tokenFile: 'custom.tokens.json' },
         chatgpt: { endpoint: 'https://repo-harness-mcp.example.com/mcp' },
         profile: 'orchestrator',
         devMode: {
@@ -548,9 +716,9 @@ describe('mcp setup', () => {
       }, null, 2)}\n`);
 
       runMcpSetupChatgpt({ repo: repoRoot, serverName: 'team-review-mcp' });
-      const config = JSON.parse(readFileSync(join(repoRoot, '.repo-harness/mcp.local.json'), 'utf-8'));
+      const config = JSON.parse(readFileSync(join(userHome, 'mcp.local.json'), 'utf-8'));
       expect(config.server).toMatchObject({ host: '0.0.0.0', port: 9876, transport: 'http' });
-      expect(config.auth).toMatchObject({ mode: 'bearer', tokenFile: '.repo-harness/custom.tokens.json' });
+      expect(config.auth).toMatchObject({ mode: 'bearer' });
       expect(config.chatgpt).toMatchObject({
         serverName: 'team-review-mcp',
         endpoint: 'https://repo-harness-mcp.example.com/mcp',
@@ -565,13 +733,13 @@ describe('mcp setup', () => {
   });
 
   test('server-name-only ChatGPT CLI setup preserves existing bind host and port', () => {
-    withTmpRepo((repoRoot) => {
-      mkdirSync(join(repoRoot, '.repo-harness'), { recursive: true });
-      writeFileSync(join(repoRoot, '.repo-harness/mcp.local.json'), `${JSON.stringify({
+    withTmpRepo((repoRoot, userHome) => {
+      mkdirSync(userHome, { recursive: true });
+      writeFileSync(join(userHome, 'mcp.local.json'), `${JSON.stringify({
         version: 1,
         repo: repoRoot,
         server: { host: '0.0.0.0', port: 9876, transport: 'http' },
-        auth: { mode: 'bearer', tokenFile: '.repo-harness/custom.tokens.json' },
+        auth: { mode: 'bearer', tokenFile: 'custom.tokens.json' },
         chatgpt: { endpoint: 'https://repo-harness-mcp.example.com/mcp' },
         profile: 'orchestrator',
         devMode: {
@@ -581,16 +749,19 @@ describe('mcp setup', () => {
         },
       }, null, 2)}\n`);
 
+      // The child must inherit the isolated storage root explicitly; storage is
+      // user-level now, so an unset REPO_HARNESS_HOME would write to the real
+      // operator home.
       const result = spawnSync(
         process.execPath,
         [CLI, 'mcp', 'setup', 'chatgpt', '--repo', repoRoot, '--server-name', 'team-review-mcp'],
-        { encoding: 'utf-8' },
+        { encoding: 'utf-8', env: { ...process.env, REPO_HARNESS_HOME: userHome } },
       );
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('ChatGPT MCP server name: team-review-mcp');
       expect(result.stdout).toContain('Local endpoint: http://0.0.0.0:9876/mcp');
 
-      const config = JSON.parse(readFileSync(join(repoRoot, '.repo-harness/mcp.local.json'), 'utf-8'));
+      const config = JSON.parse(readFileSync(join(userHome, 'mcp.local.json'), 'utf-8'));
       expect(config.server).toMatchObject({ host: '0.0.0.0', port: 9876, transport: 'http' });
       expect(config.chatgpt).toMatchObject({
         serverName: 'team-review-mcp',
@@ -600,12 +771,14 @@ describe('mcp setup', () => {
   }, 30_000);
 
   test('stores a stable ChatGPT endpoint in ignored local config and keeps the tracked guide generic', () => {
-    withTmpRepo((repoRoot) => {
+    withTmpRepo((repoRoot, userHome) => {
       runMcpSetupChatgpt({ repo: repoRoot, endpoint: 'https://repo-harness-mcp.example.com/mcp' });
 
-      const config = JSON.parse(readFileSync(join(repoRoot, '.repo-harness/mcp.local.json'), 'utf-8'));
+      const config = JSON.parse(readFileSync(join(userHome, 'mcp.local.json'), 'utf-8'));
       expect(config.chatgpt.endpoint).toBe('https://repo-harness-mcp.example.com/mcp');
 
+      // The guide is a separate, explicitly written doc; setup no longer emits it.
+      runMcpPrintGuide({ repo: repoRoot, write: true });
       const guide = readFileSync(join(repoRoot, 'docs/repo-harness-chatgpt-mcp-setup.md'), 'utf-8');
       expect(guide).not.toContain('https://repo-harness-mcp.example.com/mcp');
       expect(guide).toContain('<https-tunnel-url>/mcp');
@@ -671,7 +844,13 @@ describe('mcp setup', () => {
   test('ChatGPT guide uses OAuth for ChatGPT and documents bearer fallback', () => {
     const guide = chatgptGuideMarkdown('https://example.test/mcp');
     expect(guide).toContain('Configure Connector authentication as OAuth');
-    expect(guide).toContain('.repo-harness/mcp.oauth.json');
+    // Single storage authority: the guide describes only the user-level shape
+    // plus the one-shot migration off the retired repo scope.
+    expect(guide).toContain('~/.repo-harness/mcp.oauth.json');
+    expect(guide).toContain('REPO_HARNESS_HOME');
+    expect(guide).toContain('repo-harness mcp migrate-scope');
+    expect(guide).not.toContain('--scope user');
+    expect(guide).not.toContain('jq -r .passphrase .repo-harness/mcp.oauth.json');
     expect(guide).toContain('oauth-protected-resource');
     expect(guide).toContain('--auth bearer');
     expect(guide).toContain('--auth url-token');

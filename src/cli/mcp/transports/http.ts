@@ -18,12 +18,12 @@ import {
   type McpServerOptions,
 } from '../server';
 import {
+  assertNoLegacyRepoScopeMcpConfig,
   loadMcpLocalConfig,
   mcpOAuthTokenStorePath,
   parseMcpHttpAuthMode,
   readMcpBearerToken,
   readMcpOAuthPassphrase,
-  resolveMcpConfigScope,
   type McpHttpAuthMode,
 } from '../auth';
 import { createMcpOAuthProvider, McpOAuthTokenStore, type McpStoredAuthInfo } from '../oauth';
@@ -530,8 +530,8 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
   const host = opts.host ?? '127.0.0.1';
   const port = opts.port ?? 8765;
   const repoRoot = resolveMcpRepoRoot(opts.repo ?? '.');
-  const configScope = resolveMcpConfigScope(repoRoot);
-  const localConfig = loadMcpLocalConfig(repoRoot, configScope);
+  assertNoLegacyRepoScopeMcpConfig(repoRoot);
+  const localConfig = loadMcpLocalConfig();
   const profile = opts.profile ?? localConfig?.profile ?? 'planner';
   const storedEndpoint = localConfig?.chatgpt?.endpoint;
   const storedPublicOrigin = storedEndpoint ? new URL(storedEndpoint).origin : undefined;
@@ -545,13 +545,13 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
   if (
     coding
     && (
-      configScope !== 'user'
-      || localConfig?.profile !== 'coding'
+      localConfig?.version !== 3
+      || localConfig.profile !== 'coding'
       || localConfig.coding?.enabled !== true
       || localConfig.authorizationRevision !== repoHarnessAuthorizationRevision()
     )
   ) {
-    throw new Error('coding profile requires enabled user-scoped v3 setup');
+    throw new Error('coding profile requires enabled v3 setup');
   }
   const readWriteRepos = readRegisteredRepoHarnessRepos({ adoptedOnly: true }).filter((repo) => repo.accessMode === 'read_write');
   if (coding && readWriteRepos.length === 0) {
@@ -561,13 +561,13 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
   if (coding && authMode !== 'oauth') {
     throw new Error('coding profile requires OAuth authentication');
   }
-  const authToken = authMode === 'bearer' || authMode === 'url-token' ? opts.authToken ?? readMcpBearerToken(repoRoot, configScope) : null;
-  const oauthPassphrase = authMode === 'oauth' ? readMcpOAuthPassphrase(repoRoot, configScope) : null;
+  const authToken = authMode === 'bearer' || authMode === 'url-token' ? opts.authToken ?? readMcpBearerToken() : null;
+  const oauthPassphrase = authMode === 'oauth' ? readMcpOAuthPassphrase() : null;
   const sessionTtlMs = boundedIntegerEnv('REPO_HARNESS_MCP_SESSION_TTL_MS', SESSION_TTL_MS, 1_000, 24 * 60 * 60 * 1000);
   const maxSessions = boundedIntegerEnv('REPO_HARNESS_MCP_MAX_SESSIONS', MAX_SESSIONS, 1, 256);
   const sessions = new McpSessionStore<McpHttpTransport>({ ttlMs: sessionTtlMs, maxSessions });
   const codingRuntimes = coding ? new CodingAuthorizationRuntimeStore(sessionTtlMs, maxSessions) : null;
-  const tokenStore = authMode === 'oauth' ? new McpOAuthTokenStore(mcpOAuthTokenStorePath(repoRoot, configScope)) : null;
+  const tokenStore = authMode === 'oauth' ? new McpOAuthTokenStore(mcpOAuthTokenStorePath()) : null;
   tokenStore?.load();
   let observedAuthorizationRevision = repoHarnessAuthorizationRevision();
   const oauthProvider = tokenStore ? createMcpOAuthProvider(tokenStore, {
@@ -598,7 +598,7 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
   };
   const authorizationTimer = coding ? setInterval(() => {
     const currentRevision = repoHarnessAuthorizationRevision();
-    const liveConfig = loadMcpLocalConfig(repoRoot, 'user');
+    const liveConfig = loadMcpLocalConfig();
     if (currentRevision !== observedAuthorizationRevision) {
       observedAuthorizationRevision = currentRevision;
       closeStaleCodingState();
@@ -615,7 +615,7 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
 
   app.use((req, res, next) => {
     if (coding) {
-      const liveConfig = loadMcpLocalConfig(repoRoot, 'user');
+      const liveConfig = loadMcpLocalConfig();
       const hasGrant = readRegisteredRepoHarnessRepos({ adoptedOnly: true }).some((repo) => repo.accessMode === 'read_write');
       if (
         liveConfig?.profile !== 'coding'

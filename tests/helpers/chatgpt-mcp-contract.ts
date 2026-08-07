@@ -15,8 +15,7 @@ export function assertChatGptMcpContract(text: string): void {
   expect(text).toContain('bundle_fallback');
   expect(text).toContain('source: local_repo_harness_bundle');
   expect(text).toContain('pro_invoked_mcp: false');
-  expect(lower).toContain('repo-scope');
-  expect(lower).toContain('user-scope');
+  expect(lower).toContain('connector');
   expect(text).not.toMatch(/asdk_app_[a-f0-9]{32}/);
   expect(text).not.toMatch(/\/Users\/[A-Za-z0-9._-]+/);
 }

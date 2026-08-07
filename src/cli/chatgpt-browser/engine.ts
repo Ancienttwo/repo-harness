@@ -171,26 +171,18 @@ function buildOracleAgentActions(input: {
 
 export function runBrowserSetup(repoRoot: string, opts: BrowserSetupOptions = {}): { lines: string[] } {
   const sessionRoot = ensureBrowserSessionRoot(repoRoot);
-  const gitignorePath = join(repoRoot, '.gitignore');
   const ignoreLines = [
     '.repo-harness/chatgpt-browser.local.json',
     '.repo-harness/chatgpt-browser.tokens.json',
     '.ai/harness/chatgpt/browser-lock.json',
     '.ai/harness/chatgpt/sessions/',
   ];
-  let updated = false;
-  if (existsSync(gitignorePath)) {
-    const current = Bun.file(gitignorePath);
-    // Bun.file().text() is async; keep setup sync by deferring .gitignore
-    // mutation to the CLI command implementation if needed in a later phase.
-    void current;
-  }
   const lines = [
     `[repo-harness chatgpt] Session root: ${sessionRoot}`,
     '[repo-harness chatgpt] Local browser config remains uncommitted.',
     '[repo-harness chatgpt] Recommended .gitignore entries:',
     ...ignoreLines.map((line) => `  ${line}`),
-    updated ? '[repo-harness chatgpt] .gitignore updated' : '[repo-harness chatgpt] .gitignore not modified by MVP setup',
+    '[repo-harness chatgpt] .gitignore not modified by MVP setup',
   ];
 
   if (opts.profileDir) {

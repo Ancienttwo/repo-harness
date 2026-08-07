@@ -8,6 +8,7 @@ import { runHelper } from '../runtime/helper-runner';
 import { listSessions, openSession, readSession, runBrowserConsult, runBrowserFollowup } from '../chatgpt-browser/engine';
 import type { BrowserProviderName, NativeBrowserChannel, ThinkingLevel } from '../chatgpt-browser/types';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
+import { loadMcpLocalConfig } from './auth';
 import { isPathInside, resolveMcpPath } from './paths';
 import { buildReaderToolDefinitions, callReaderTool, createReaderToolContext, isReaderTool } from './reader-tools';
 import { buildCodingToolDefinitions, callCodingTool, isCodingTool, type CodingToolContext } from './coding-tools';
@@ -1111,7 +1112,10 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
       case 'harness_doctor': {
         const target = targetRepoRoot(ctx, args);
         if (!target.ok) return target.result;
-        const localConfig = existsSync(join(target.repoRoot, '.repo-harness', 'mcp.local.json'));
+        // MCP config has one storage authority (~/.repo-harness, or
+        // REPO_HARNESS_HOME); it is not per-repo, so this must not probe the
+        // retired <repo>/.repo-harness path. Same shape as runMcpDoctor.
+        const localConfig = Boolean(loadMcpLocalConfig());
         const codexConfig = existsSync(join(target.repoRoot, '.codex', 'config.toml'));
         audit(ctx, name, 'ok', args);
         return textResult({

@@ -10,6 +10,7 @@ import {
   runMcpDoctor,
   runMcpLiveDoctor,
   runMcpInstallSkill,
+  runMcpMigrateScope,
   runMcpPrintGuide,
   runMcpSetupChatgpt,
   runMcpSetupCodex,
@@ -32,7 +33,6 @@ export interface McpServeOptions {
 
 interface McpSetupChatgptOptions {
   repo?: string;
-  scope?: string;
   host?: string;
   port?: string;
   endpoint?: string;
@@ -194,6 +194,16 @@ export function buildMcpCommand(): Command {
       });
     });
 
+  mcp
+    .command('migrate-scope')
+    .description('Migrate retired repo-scope MCP config to user-level storage, rotating credentials instead of relocating them')
+    .option('--repo <path>', 'Repository root to migrate', '.')
+    .action((rawOpts: { repo?: string }) => {
+      void runMcpAction(() => {
+        console.log(runMcpMigrateScope(rawOpts).lines.join('\n'));
+      });
+    });
+
   const access = new Command('access').description('Manage explicit user-scope MCP repo access');
   access
     .command('set')
@@ -238,7 +248,6 @@ export function buildMcpCommand(): Command {
     .command('chatgpt')
     .description('Generate ChatGPT Connector local config and manual setup guide')
     .option('--repo <path>', 'Repository root to configure', '.')
-    .option('--scope <scope>', 'Config scope: repo|user', 'repo')
     .option('--host <host>', 'Local MCP HTTP bind host')
     .option('--port <port>', 'Local MCP HTTP bind port')
     .option('--endpoint <url>', 'Stable public HTTPS /mcp endpoint to store in ignored local config')
