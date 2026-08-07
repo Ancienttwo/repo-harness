@@ -71,8 +71,7 @@ tasks/.current.md.tmp.*
 !.ai/harness/mcp/.gitkeep
 .ai/harness/triage/*
 !.ai/harness/triage/.gitkeep
-.repo-harness/chatgpt-browser.local.json
-.repo-harness/chatgpt-browser.tokens.json
+.repo-harness/
 .codex/*
 !.codex/
 !.codex/agents/
@@ -87,10 +86,6 @@ autoresearch/
 *.tgz
 _ref/
 _ops/
-.repo-harness/mcp.local.json
-.repo-harness/mcp.tokens.json
-.repo-harness/chatgpt-browser.local.json
-.repo-harness/chatgpt-browser.tokens.json
 .archcontext/
 .codegraph/
 .understand-anything/
@@ -103,5 +98,3 @@ _ops/
 # Operations
 # Local operations state
 .claude/worktrees/
-.repo-harness/mcp.oauth.json
-.repo-harness/mcp.oauth-tokens.json
