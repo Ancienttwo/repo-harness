@@ -10,8 +10,11 @@
   written under `<repo>/.repo-harness/` (notably `mcp.oauth-tokens.json`) can
   never sit NOT-IGNORED in a downstream working tree. Zero behavior change
   elsewhere; repo-scope retirement is deferred to a separate slice.
-- Publish status: **pending publish**. This filing does not claim npm, Git tag,
-  or GitHub Release completion until the public readbacks below pass.
+- Publish status: **published**. `repo-harness@0.13.2` is live on npm
+  (shasum `6872fbf338ba12057e58197207565a272f40d6f9`), tagged `v0.13.2` on
+  release commit `fb5c7507`, with the stable GitHub Release created and
+  `check-release-published.sh 0.13.2` reporting registry, dist-tag, tarball,
+  tag, and local version files in agreement.
 
 ## Candidate Evidence
 
@@ -36,12 +39,12 @@
       with its AcceptanceReceipt recorded on the branch.
 - [x] Bump `package.json`, `assets/skill-version.json`, `.claude/.skill-version`,
       and the five README `Current Release` blocks to `0.13.2`.
-- [ ] Run `bash scripts/check-npm-release.sh --prepublish` on the exact release
+- [x] Run `bash scripts/check-npm-release.sh --prepublish` on the exact release
       commit and publish to npm.
-- [ ] Create the annotated tag `v0.13.2` on the published commit.
-- [ ] Create the stable GitHub Release `repo-harness 0.13.2` from `v0.13.2`
+- [x] Create the annotated tag `v0.13.2` on the published commit.
+- [x] Create the stable GitHub Release `repo-harness 0.13.2` from `v0.13.2`
       with no attached asset, matching the established release convention.
-- [ ] Run `bash scripts/check-release-published.sh 0.13.2`.
+- [x] Run `bash scripts/check-release-published.sh 0.13.2`.
 
 ## Rollback
 
