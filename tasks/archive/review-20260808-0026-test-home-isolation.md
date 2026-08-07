@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-08 00:26
+> **Related Plan**: plans/archive/plan-20260807-2321-test-home-isolation.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260808-0026
+
 # Task Review: test-home-isolation
 
 > **Status**: Complete

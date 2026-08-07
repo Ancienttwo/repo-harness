@@ -1,6 +1,6 @@
 # Plan: Tests: fail-closed user-home isolation for the whole suite
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260807-2321
 > **Slug**: test-home-isolation
 > **Planning Source**: repo-harness-plan

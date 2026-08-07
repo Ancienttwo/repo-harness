@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-07T23:20:02+0800 -->
+<!-- updated_at: 2026-08-08T00:26:58+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-07T23:20:02+0800
+> **Updated At**: 2026-08-08T00:26:58+0800
 > **Source Branch**: main
-> **Source Commit**: 4618a244
+> **Source Commit**: 00496660
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -56,47 +56,19 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 38 changed/untracked path(s)
+- Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260807-0850-mcp-oauth-client-ttl-active-token.md
- D plans/plan-20260807-1128-gitignore-dir-level-repo-harness.md
- D plans/plan-20260807-1606-mcp-scope-retirement.md
- D plans/plan-20260807-1930-test-timeout-sibling-sweep.md
- D tasks/contracts/20260807-0850-mcp-oauth-client-ttl-active-token.contract.md
- D tasks/contracts/20260807-1128-gitignore-dir-level-repo-harness.contract.md
- D tasks/contracts/20260807-1606-mcp-scope-retirement.contract.md
- D tasks/contracts/20260807-1930-test-timeout-sibling-sweep.contract.md
- M tasks/current.md
- D tasks/notes/20260807-0850-mcp-oauth-client-ttl-active-token.notes.md
- D tasks/notes/20260807-1128-gitignore-dir-level-repo-harness.notes.md
- D tasks/notes/20260807-1606-mcp-scope-retirement.notes.md
- D tasks/notes/20260807-1930-test-timeout-sibling-sweep.notes.md
- D tasks/reviews/20260807-0850-mcp-oauth-client-ttl-active-token.review.md
- D tasks/reviews/20260807-1128-gitignore-dir-level-repo-harness.review.md
- D tasks/reviews/20260807-1606-mcp-scope-retirement.review.md
- D tasks/reviews/20260807-1930-test-timeout-sibling-sweep.review.md
+ D plans/plan-20260807-2321-test-home-isolation.md
+ D tasks/contracts/20260807-2321-test-home-isolation.contract.md
+ D tasks/notes/20260807-2321-test-home-isolation.notes.md
+ D tasks/reviews/20260807-2321-test-home-isolation.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260807-0850-mcp-oauth-client-ttl-active-token.md
-?? plans/archive/plan-20260807-1128-gitignore-dir-level-repo-harness.md
-?? plans/archive/plan-20260807-1606-mcp-scope-retirement.md
-?? plans/archive/plan-20260807-1930-test-timeout-sibling-sweep.md
-?? tasks/archive/contract-20260807-2319-gitignore-dir-level-repo-harness.md
-?? tasks/archive/contract-20260807-2319-mcp-oauth-client-ttl-active-token.md
-?? tasks/archive/contract-20260807-2320-mcp-scope-retirement.md
-?? tasks/archive/contract-20260807-2320-test-timeout-sibling-sweep.md
-?? tasks/archive/notes-20260807-2319-gitignore-dir-level-repo-harness.md
-?? tasks/archive/notes-20260807-2319-mcp-oauth-client-ttl-active-token.md
-?? tasks/archive/notes-20260807-2320-mcp-scope-retirement.md
-?? tasks/archive/notes-20260807-2320-test-timeout-sibling-sweep.md
-?? tasks/archive/review-20260807-2319-gitignore-dir-level-repo-harness.md
-?? tasks/archive/review-20260807-2319-mcp-oauth-client-ttl-active-token.md
-?? tasks/archive/review-20260807-2320-mcp-scope-retirement.md
-?? tasks/archive/review-20260807-2320-test-timeout-sibling-sweep.md
-?? tasks/archive/todo-20260807-2319-gitignore-dir-level-repo-harness.md
-?? tasks/archive/todo-20260807-2319-mcp-oauth-client-ttl-active-token.md
-?? tasks/archive/todo-20260807-2320-mcp-scope-retirement.md
-?? tasks/archive/todo-20260807-2320-test-timeout-sibling-sweep.md
+?? plans/archive/plan-20260807-2321-test-home-isolation.md
+?? tasks/archive/contract-20260808-0026-test-home-isolation.md
+?? tasks/archive/notes-20260808-0026-test-home-isolation.md
+?? tasks/archive/review-20260808-0026-test-home-isolation.md
+?? tasks/archive/todo-20260808-0026-test-home-isolation.md
 ```
 
 ## Source Artifacts
