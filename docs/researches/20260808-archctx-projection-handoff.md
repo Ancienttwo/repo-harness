@@ -1,0 +1,58 @@
+# Handoff:archctx 接管 docs/architecture 即時投影(mermaid 架構圖 + dataflow 握手圖)
+
+> **Date**: 2026-08-08
+> **From**: repo-harness 側(本 repo)
+> **To**: arch-context 側(`Ancienttwo/arch-context`),由 owner 平行開工
+> **前置協議**: `docs/researches/20260705-archcontext-capability-filing-handover.md`(§1 責任分界已批准;§7 覆核:gating 條件 1、2 已滿足,條件 3 source 層已對齊)
+> **背景結論**: repo-harness 對 `docs/architecture/modules/**` 沒有任何內容 writer——只有一次性 stub(`capability-config.ts:311`,existsSync 即 return)、drift request 卡片、本地 CLAUDE/AGENTS 合約塊。模組文檔實質內容全靠 agent closeout 手寫。按 §1 分界,「架構/代碼真值投影到 `docs/architecture/**`」歸 arch-context;本 handoff 把該職責落成可執行需求。
+
+## 1. 分工邊界(本輪)
+
+- **repo-harness 側(已在進行,不需要等 archctx)**:2026-08-08 以人工 fan-out 產出 10 份 by-capability 基線文檔(`docs/architecture/modules/<domain>/<capability>.md`)+ `index.md` 全局 capability 地圖。這批文檔同時定義了投影的**目標形狀**(§2 文檔契約)。基線是一次性快照(`Verified against: main@13686d8d`),不解決持續更新——持續更新正是 archctx 要接的活。
+- **arch-context 側(本 handoff 的交付範圍)**:實現 capability 模組文檔的機器投影,讓 mermaid 架構圖、dataflow 握手圖、模組表、規模信號隨代碼變更自動刷新,不再依賴 agent closeout 手寫。
+
+## 2. 文檔契約(投影目標形狀,repo-harness 側已凍結)
+
+每份 `docs/architecture/modules/<domain>/<capability>.md` 的固定結構:
+
+1. 標題 `# <domain>/<capability> 架構文檔`
+2. 引言 blockquote:狀態、`Verified against: <branch>@<commit>(<date>)`、Capability ID、Matched Prefixes、Local Contracts、事實優先級聲明
+3. `## 1. P1:能力架構地圖` — mermaid flowchart(內部模組/入口/強依賴)+ 模組職責表(file:line 錨點)+ 規模信號(文件數/LOC + 復算命令)+ 依賴邊界
+4. `## 2. P2:端到端數據流` — ≥1 張 mermaid sequenceDiagram 握手圖(輸入源頭→契約跨越→轉換→最終副作用)+ 錯誤路徑要點
+5. `## 3. P3:設計決策與不變量` — 不變量、約束、10x 失效點
+6. `## 4. 歷史決策記錄(append-only)` — dated 章節原文保留
+7. `## Optimization Backlog` / workstream 鏈接(如有)
+
+**機器/人工分區(投影的核心接縫)**:
+
+| 區段 | 所有權 | 理由 |
+|---|---|---|
+| 引言塊 `Verified against` + Matched Prefixes | **archctx 投影** | 從 model node + git 狀態直接推導 |
+| §1 P1 地圖(flowchart、模組表、規模信號、依賴邊) | **archctx 投影** | source-tree、import 邊、LOC 全部機器可推導;daemon 掛 codegraph 有 call-path 真值 |
+| §2 P2 dataflow 握手圖 | **archctx 投影(首版可半自動)** | codegraph 的 call path 可生成候選 sequenceDiagram;語義命名可保留人工覆寫區 |
+| §3 P3 + §4 歷史 + Backlog | **人工/agent 所有,投影絕不觸碰** | 設計判斷與歷史記錄不是機器可推導真值 |
+
+投影必須用 ownership marker 界定機器區(與 repo-harness 既有 `<!-- BEGIN ... -->`/`<!-- END ... -->` 控制塊同構,archctx projection marker 機制現成)。**marker 外的內容 byte-for-byte 保留**——這是驗收的硬條件。
+
+## 3. archctx 側交付清單(帶驗收標準)
+
+1. **capability summary 投影 targetType**(對應 20260705 §2 `projection_rule.entity.summary` → `docs/architecture/modules/{stableId}.md`):
+   - 輸入:`.archcontext/model/nodes/*.yaml`(stableId 形態 `capability.<domain>.<name>`,repo-harness id `verification-evals-checks` ↔ `capability.verification.evals-checks` 的映射表寫死在遷移 script)+ codegraph index。
+   - 輸出:§2 契約中標記為「archctx 投影」的區段,mermaid v10 可解析。
+   - 驗收:對本 repo 任一 capability 跑投影,機器區刷新、marker 外 byte-for-byte 不變;連續兩次投影冪等(無 diff)。
+2. **P1 flowchart 生成**:從 node 的 `source.include/entrypoints` glob + import graph 產 flowchart(模組節點、入口、強依賴邊);邊必須來自真實 import/call 關係,不允許啟發式猜邊(No-Fallback:取不到真值就省略該邊並標註,不合成)。
+3. **P2 sequenceDiagram 生成(可半自動)**:從 entrypoint 出發的 call path 產候選握手圖;若 daemon/codegraph 不可用,fail-closed 報錯,不退化成空模板。
+4. **`agent-context` targetType 收尾**(20260705 §7 gating 條件 3 的殘留):schema enum + projection-engine builder + default-manifest 三處對齊已發佈物;這是 Stage 2 authority cutover 的前置,和本次投影可並行。
+5. **freshness 信號**:投影輸出帶 `Verified against` commit;`review.failOn: stale-context` 能對「代碼變了、投影沒刷」報警(接 repo-harness `check-architecture-sync --strict` 委派的前置)。
+
+## 4. repo-harness 側對接承諾(archctx 交付後的 Stage 2 work-package,另立)
+
+- policy.json `context.capability_source: "registry" | "archcontext"` 開關(20260705 §4 Stage 0 設計,fail-closed)。
+- post-edit drift 卡片改薄為 checkpoint nudge;`check-architecture-sync` freshness 委派 archctx。
+- 本輪產出的 10 份基線文檔按 §2 分區補 marker,作為投影首次接管的底稿(機器區允許被覆蓋,人工區不允許)。
+
+## 5. 明確不做(沿用 20260705 §6)
+
+- 不做 capabilities.json ↔ nodes 長期雙向同步;authority 切換單向、fail-closed、另立 work-package。
+- 不把 workstreams/lessons/todos 移進 arch-context(任務記憶 ≠ 架構記憶)。
+- 投影不生成 P3/歷史/Backlog 的任何內容,也不「幫忙整理」它們。

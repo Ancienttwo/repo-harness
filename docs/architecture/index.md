@@ -87,6 +87,129 @@ Project
 - [Runtime Harness](domains/runtime-harness.md): generated hook implementation, user-level adapter settings, handoff, and runtime event state.
 - [Verification](domains/verification.md): unit tests, smoke checks, eval fixtures, CodeGraph readiness, and advisory tooling probes.
 
+## Capability 地图
+
+`.ai/context/capabilities.json` 声明 10 个 capability，分属 5 个 architecture domain。
+下图按 domain 分组，只画在源码里核实过的强依赖边（import 或运行时调用），
+虚线是 verification 的 gate 关系而非代码依赖。
+
+```mermaid
+flowchart LR
+  classDef surface fill:#1e40af,stroke:#bfdbfe,stroke-width:2px,color:#fff
+  classDef engine fill:#5b21b6,stroke:#ddd6fe,stroke-width:2px,color:#fff
+  classDef harness fill:#0f766e,stroke:#99f6e4,stroke-width:2px,color:#fff
+  classDef mcp fill:#9a3412,stroke:#fed7aa,stroke-width:2px,color:#fff
+  classDef verify fill:#374151,stroke:#d1d5db,stroke-width:2px,color:#fff
+
+  subgraph PS["public-surface"]
+    direction TB
+    RootRouter(["root-router<br/>根路由与产品真相入口"]):::surface
+    ActionCommands(["action-commands<br/>公开命令 skill facade"]):::surface
+    Adoption(["adoption<br/>事务式接入计划与落盘"]):::surface
+  end
+
+  subgraph WE["workflow-engine"]
+    direction TB
+    InspectionMigration(["inspection-migration<br/>仓库巡检与目录/契约生成"]):::engine
+    ContractAssets(["contract-assets<br/>契约资产、策略与 capability 注册表"]):::engine
+  end
+
+  subgraph RH["runtime-harness"]
+    direction TB
+    HookAdapters(["hook-adapters<br/>宿主 hook 路由与安装器"]):::harness
+    McpSidecar(["mcp-sidecar<br/>本地 MCP 服务与仓库注册表"]):::harness
+  end
+
+  subgraph RM["runtime-mcp"]
+    direction TB
+    GeneralRepoAccess(["general-repo-access<br/>受策略约束的通用仓库读写工具"]):::mcp
+  end
+
+  subgraph VF["verification"]
+    direction TB
+    CodegraphReadiness(["codegraph-readiness<br/>CodeGraph 探测与适配"]):::verify
+    EvalsChecks(["evals-checks<br/>测试、eval 与工作流闸门"]):::verify
+  end
+
+  RootRouter --> ActionCommands
+  ContractAssets --> Adoption
+  ContractAssets --> HookAdapters
+  ContractAssets --> CodegraphReadiness
+  InspectionMigration --> ContractAssets
+  Adoption --> ContractAssets
+  Adoption --> McpSidecar
+  HookAdapters --> ContractAssets
+  HookAdapters --> ActionCommands
+  McpSidecar --> ContractAssets
+  McpSidecar --> CodegraphReadiness
+  GeneralRepoAccess --> McpSidecar
+  GeneralRepoAccess --> CodegraphReadiness
+
+  EvalsChecks -.->|gate| RootRouter
+  EvalsChecks -.->|gate| ActionCommands
+  EvalsChecks -.->|gate| Adoption
+  EvalsChecks -.->|gate| InspectionMigration
+  EvalsChecks -.->|gate| ContractAssets
+  EvalsChecks -.->|gate| HookAdapters
+  EvalsChecks -.->|gate| McpSidecar
+  EvalsChecks -.->|gate| GeneralRepoAccess
+  EvalsChecks -.->|gate| CodegraphReadiness
+
+  style PS fill:none,stroke:#60a5fa,stroke-width:2px,color:#60a5fa
+  style WE fill:none,stroke:#a78bfa,stroke-width:2px,color:#a78bfa
+  style RH fill:none,stroke:#2dd4bf,stroke-width:2px,color:#2dd4bf
+  style RM fill:none,stroke:#fb923c,stroke-width:2px,color:#fb923c
+  style VF fill:none,stroke:#9ca3af,stroke-width:2px,color:#9ca3af
+```
+
+每条实线边的源码证据：
+
+| 边 | 证据 |
+| --- | --- |
+| root-router -> action-commands | `SKILL.md` 的 verify 步骤指名 `repo-harness-check`，该 facade 实体在 `assets/skill-commands/repo-harness-check/` |
+| contract-assets -> adoption | `src/cli/commands/init.ts` 导入 `./adoption-plan` 的 `runAdoptionApply` / `runAdoptionPlan` |
+| contract-assets -> hook-adapters | `src/cli/commands/init.ts` 导入 `../installer/install-profile` 的 `PROFILE_COMPONENTS` |
+| contract-assets -> codegraph-readiness | `src/cli/commands/init.ts` 导入 `../tools/codegraph` 的 `configureCodegraph` / `ensureCodegraph` |
+| inspection-migration -> contract-assets | `scripts/lib/project-init-lib.sh` 生成并写入 `.ai/context/capabilities.json` 与模板契约文件 |
+| adoption -> contract-assets | `src/core/adoption/source-checkout.ts` 以 `assets/workflow-contract.v1.json` 判定源码 checkout；`src/core/adoption/standard-plan.ts` 指向 `package:assets/templates/helpers` |
+| adoption -> mcp-sidecar | `src/cli/commands/adoption-plan.ts` 导入 `../../effects/repo-registry` 的 `registerRepoHarnessRepo` |
+| hook-adapters -> contract-assets | `src/cli/hook/mutation-observed.ts` 以 `capability-context request` 驱动 context-contract-sync 级联，而不是自带第二份 capability-resolver |
+| hook-adapters -> action-commands | `src/cli/installer/install-profile.ts` 读取 `assets/skill-commands/manifest.json` 并按名取用各命令源目录 |
+| mcp-sidecar -> contract-assets | `src/cli/mcp/tools.ts` 导入 `../runtime/helper-runner` 的 `runHelper` |
+| mcp-sidecar -> codegraph-readiness | `src/cli/mcp/server.ts`、`coding-tools.ts`、`reader-tools.ts` 导入 `./codegraph-adapter` |
+| general-repo-access -> mcp-sidecar | `src/cli/mcp/general-repo-access.ts` 导入同目录的 `./types` / `./paths` / `./audit` / `./redaction` 与 `../../effects/repo-registry` |
+| general-repo-access -> codegraph-readiness | `src/cli/mcp/general-repo-access.ts` 导入 `./codegraph-adapter` 的 `createCodeGraphCliAdapter` |
+
+虚线 gate 边来自 `.ai/context/capabilities.json` 每个 capability 自己声明的 `verification_hints`
+（例如 `tests/cli/adoption-plan.test.ts`、`tests/hook-runtime.test.ts`、`tests/cli/mcp-reader-tools.test.ts`），
+以及 `bun test` 与 `scripts/check-task-workflow.sh --strict` 这两个全仓闸门。
+
+contract-assets 内部还有一条投影关系而不是跨 capability 边：`scripts/sync-helper-sources.ts`
+把 `scripts/` 下的 helper 单向投影成 `assets/templates/helpers/` 的打包副本，源与投影两端同属
+contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式拦截。
+
+### Capability 索引
+
+| capability id | 主前缀 | 职责 | 模块文档 |
+| --- | --- | --- | --- |
+| `public-surface-root-router` | `SKILL.md` | 根路由与产品真相入口，把请求分发到各动作命令 | [root-router](modules/public-surface/root-router.md) |
+| `public-surface-action-commands` | `assets/skill-commands` | 公开动作命令的 skill facade 与 manifest | [action-commands](modules/public-surface/action-commands.md) |
+| `public-surface-adoption` | `src/core/adoption` | 事务式接入计划的生成、渲染与文件系统落盘 | [adoption](modules/public-surface/adoption.md) |
+| `workflow-engine-inspection-migration` | `scripts/inspect-project-state.ts` | 巡检目标仓库状态并生成或迁移工作流目录骨架 | [inspection-migration](modules/workflow-engine/inspection-migration.md) |
+| `workflow-engine-contract-assets` | `assets/workflow-contract.v1.json` | 工作流契约、策略、模板与 capability 注册表的权威面 | [contract-assets](modules/workflow-engine/contract-assets.md) |
+| `runtime-harness-hook-adapters` | `assets/hooks` | 宿主 hook 事件的进程内路由、handler 与安装器 | [hook-adapters](modules/runtime-harness/hook-adapters.md) |
+| `runtime-harness-mcp-sidecar` | `src/cli/mcp` | 本地 MCP sidecar 的传输、策略、审计与仓库注册表 | [mcp-sidecar](modules/runtime-harness/mcp-sidecar.md) |
+| `runtime-mcp-general-repo-access` | `src/cli/mcp/general-repo-access.ts` | 受策略与授权约束的通用仓库读写工具面 | [general-repo-access](modules/runtime-mcp/general-repo-access.md) |
+| `verification-codegraph-readiness` | `scripts/ensure-codegraph.sh` | CodeGraph 可用性探测、解析与 MCP 适配 | [codegraph-readiness](modules/verification/codegraph-readiness.md) |
+| `verification-evals-checks` | `tests` | 单元测试、eval fixture、工作流与任务同步闸门 | [evals-checks](modules/verification/evals-checks.md) |
+
+阅读约定：
+
+- 模块文档按 capability 组织，一个 capability 恰好对应 `modules/<domain>/<capability>.md` 一个文件。
+- 事实优先级：实际源码 > 本文与模块文档。本图与表若与 `src/`、`scripts/`、`assets/` 的现状冲突，以源码为准并提一次 architecture drift request。
+- 前缀权威在 `.ai/context/capabilities.json`，本表「主前缀」只取每个 capability 前缀列表的首项作为定位锚点，不是完整边界。
+- Verified against: `main@13686d8d`（2026-08-08）。
+
 ## Architecture Drift Flow
 
 - `scripts/architecture-queue.sh` records architecture-sensitive edits as requests.
