@@ -90,6 +90,8 @@ allowed_paths:
   - scripts/ensure-task-workflow.sh
   - assets/templates/helpers/capability-resolver.ts
   - assets/templates/helpers/capability-config.ts
+  - assets/templates/helpers/check-agent-tooling.sh
+  - assets/templates/helpers/ensure-task-workflow.sh
   - assets/reference-configs/external-tooling.md
   - docs/reference-configs/external-tooling.md
   - .ai/harness/policy.json

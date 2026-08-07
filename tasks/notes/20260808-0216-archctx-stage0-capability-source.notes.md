@@ -19,7 +19,7 @@
 
 ## Deviations From Plan Or Spec
 
-- plan 写 `"capability_source_rule": "single authority; …no dual-read and no fallback"`(带省略号)。补成完整句:`single authority selected by capability_source; registry reads .ai/context/capabilities.json, archcontext reads .archcontext/model/nodes/*.yaml; no dual-read and no fallback`,三处播种逐字一致并有断言守。
+- plan 写 `"capability_source_rule": "single authority; …no dual-read and no fallback"`(带省略号)。补成完整句:`single authority selected by capability_source; registry reads .ai/context/capabilities.json, archcontext reads .archcontext/model/nodes/*.yaml; no dual-read and no fallback`,四处播种逐字一致并有断言守。
 - `archcontextIncludeToPrefix` 的语法表与派生 registry 的 `validateCapabilityRegistryValue`/DUPLICATE_ID 用例按 plan 放在 `tests/capabilities/registry.test.ts`,没有在新测试文件里重复;新文件只留 source 层(parity / S / N / bunYamlParser / 乱序确定性)。
 
 ## Tradeoffs Considered
@@ -28,11 +28,11 @@
 |--------|----------|--------|
 | `CapabilitySourceError` 带结构化 `code` 字段 | 不加 | plan 只要求 `exitCode=2`;S1-S6 的消息各不相同已足够断言,加 code 是 plan 外的接口面 |
 | N 矩阵只做进程内单测 / 只走 CLI | 两条都做 | 进程内断言精确到 diagnostic code,CLI 断言证明整条链 fail-closed(exit 1 + 空 stdout) |
-| 顺带修 `scripts/ensure-task-workflow.sh` 的 policy 播种 | 不动 | 不在 allowed_paths,且它本来就缺 `capability_config`,是既有的第四处漂移(见 Open Questions) |
+| 顺带修 `scripts/ensure-task-workflow.sh` 的 policy 播种 | 本轮修了 | 初判「不在 allowed_paths」而搁置;R2 执行中确认它是 policy `context` 块的第四个播种点且既有漂移(缺 `capability_config`),R3 经 contract 扩权(d88220bb)把它纳入 allowed_paths,并补齐 `capability_config` + `capability_source` + `capability_source_rule`(c7876126) |
 
 ## Open Questions
 
-- `scripts/ensure-task-workflow.sh:1059` 是 policy `context` 块的第四个播种点,已经与另外三处不一致(缺 `capability_config`),本轮也没补 `capability_source`。它只在 policy 缺失时兜底写入,所以不影响本 slice,但「三处播种」的说法实际上是四处。留给后续 slice 决定是收敛还是显式声明它是精简兜底。
+- (已闭环)`scripts/ensure-task-workflow.sh:1059` 的第四个 policy `context` 播种点,R3 已随 contract 扩权(d88220bb)补齐 `capability_config` + `capability_source` + `capability_source_rule`(c7876126)。四个独立硬编码播种点——`scripts/lib/project-init-lib.sh`、`src/core/adoption/standard-plan.ts` 的 `tsDefaultPolicy`、`scripts/ensure-task-workflow.sh` 的 POLICY_EOF 兜底、本仓自身 `.ai/harness/policy.json`——由 `tests/create-project-dirs.runtime.test.ts:456` 的一致性断言守住。后续 slice 无需再处理此项。
 
 ## Evidence Links
 
