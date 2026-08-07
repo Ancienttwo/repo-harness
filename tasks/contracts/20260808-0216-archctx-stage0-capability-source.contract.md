@@ -21,7 +21,7 @@ archctx 側正交付 docs/architecture 機器投影(handoff §3)。repo-harness 
 
 - R1:`archctx-contracts` devDependency pin 0.2.2 → 0.3.0(留 devDependencies,runtime 零 import)。
 - R2:`policy.json#context.capability_source`(`registry`|`archcontext`,預設 `registry`)+ capability-resolver archcontext file-source。純映射器(`capabilityRegistryFromArchcontextNodes`、`archcontextIncludeToPrefix`、模板法則函數)寫進 `src/core/capabilities/registry.ts`(fs-free);所有 fs+YAML I/O 只在 `scripts/capability-resolver.ts`(`Bun.YAML` structural accessor,零 npm import);`capability-config` archcontext mode 拒寫;三處 policy 播種同步;fail-closed 條件 S1-S6/N1-N13 全實現(plan 的映射表與清單為準);`sync:helpers` 重生投影。
-- R3:`external_tooling.archctx` advisory 條目(三處播種)+ `check-agent-tooling.sh` `detectArchctx()` 探測,不進 strictFailures。
+- R3:`external_tooling.archctx` advisory 條目(播種點全覆蓋)+ `check-agent-tooling.sh` `detectArchctx()` 探測,不進 strictFailures。R2 執行中發現 policy `context` 塊存在第四個播種點 `scripts/ensure-task-workflow.sh:1059`(policy 缺失時兜底寫入,且既有漂移:缺 `capability_config`):R3 一併把該兜底塊與另外三處拉齊(`capability_config` + `capability_source` + `capability_source_rule`),並把跨播種器一致性斷言擴到四處。
 - R4:handoff 文檔 §3 回寫四項上游缺口/新約定(placement 可配置化、extensions 慣例、D2 文法、contracts files 配方不一致)。
 
 EXECUTION_BOUNDARY:缺席的需求是禁區,不是改進空間。未列入 plan 的行為、選項、抽象、重構、格式化一律不做;發現 plan 與現實衝突時停下回報,不自行擴權。
@@ -87,6 +87,7 @@ allowed_paths:
   - scripts/check-state-boundaries.ts
   - scripts/check-agent-tooling.sh
   - scripts/lib/project-init-lib.sh
+  - scripts/ensure-task-workflow.sh
   - assets/templates/helpers/capability-resolver.ts
   - assets/templates/helpers/capability-config.ts
   - assets/reference-configs/external-tooling.md
