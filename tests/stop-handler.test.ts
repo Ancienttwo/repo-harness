@@ -138,6 +138,7 @@ describe('runStopHandler', () => {
     writeFileSync(join(pending, `${eventId}.json`), `${JSON.stringify({
       schema: 'change_observed',
       schema_version: 2,
+      source_key: '0123456789abcdefabcd',
       event_id: eventId,
       session_id: 'session-retained',
       created_at: '2026-08-09T00:00:00.000Z',

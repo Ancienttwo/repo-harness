@@ -126,7 +126,8 @@ describe('mutation-observed: journal schema', () => {
       expect(events.length).toBe(1);
       const event = events[0];
       expect(event.schema).toBe('change_observed');
-    expect(event.schema_version).toBe(2);
+      expect(event.schema_version).toBe(2);
+      expect(event.source_key).toMatch(/^[a-f0-9]{20}$/);
       expect(event.session_id).toBe('session-a');
       expect(event.changed_paths).toEqual(['src/example.ts']);
       expect(event.subject_revision).toMatch(/^[0-9a-f]{12}$/);
@@ -268,6 +269,7 @@ describe('mutation-observed: session-scoped dedupe', () => {
       const firstEvents = pendingEvents(cwd);
       expect(firstEvents.length).toBe(1);
       const firstEventId = firstEvents[0].event_id;
+      const firstSourceKey = firstEvents[0].source_key;
       const firstCreatedAt = firstEvents[0].created_at;
       const firstNames = readdirSync(join(cwd, '.ai/harness/journal/post-edit/pending'));
 
@@ -276,6 +278,7 @@ describe('mutation-observed: session-scoped dedupe', () => {
       expect(secondEvents.length).toBe(1);
       expect(readdirSync(join(cwd, '.ai/harness/journal/post-edit/pending'))).toEqual(firstNames);
       expect(secondEvents[0].event_id).not.toBe(firstEventId);
+      expect(secondEvents[0].source_key).toBe(firstSourceKey);
       expect(secondEvents[0].created_at).toBe(firstCreatedAt);
       expect(secondEvents[0].changed_paths).toEqual(['src/repeat.ts']);
     } finally {

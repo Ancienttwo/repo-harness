@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import type { ProjectionResultV1 } from '../../core/architecture/projection';
@@ -16,6 +16,7 @@ export interface ArchitectureProjectionJobV1 {
   jobId: string;
   status: 'pending' | 'running';
   sourceEventIds: string[];
+  sourceKeys: string[];
   changedPaths: string[];
   attempt: number;
   createdAt: string;
@@ -28,6 +29,7 @@ export interface ArchitectureProjectionReceiptV1 {
   schemaVersion: 'repo-harness.architecture-projection-receipt/v1';
   jobId: string;
   sourceEventIds: string[];
+  sourceKeys: string[];
   changedPaths: string[];
   attempt: number;
   completedAt: string;
@@ -105,29 +107,37 @@ export function architectureProjectionJobState(
   repoRoot: string,
   jobId: string,
 ): 'missing' | 'pending' | 'running' | 'receipt' | 'dead-letter' {
-  for (const [kind, state] of [
-    ['pending', 'pending'], ['receipts', 'receipt'], ['running', 'running'], ['dead-letter', 'dead-letter'],
-  ] as const) if (existsSync(pathFor(repoRoot, kind, jobId))) return state;
-  return 'missing';
+  const root = realpathSync(repoRoot);
+  return withExclusiveDirectoryLock(root, LOCK_PATH, () => {
+    for (const [kind, state] of [
+      ['pending', 'pending'], ['receipts', 'receipt'], ['running', 'running'], ['dead-letter', 'dead-letter'],
+    ] as const) if (existsSync(pathFor(root, kind, jobId))) return state;
+    return 'missing';
+  });
 }
 
-export function architectureProjectionDeadLetterForSourceEvents(
+export function architectureProjectionDeadLetterForSourceKeys(
   repoRoot: string,
-  sourceEventIds: readonly string[],
+  sourceKeys: readonly string[],
 ): ArchitectureProjectionDeadLetterV1 | null {
-  const requested = new Set(sourceEventIds);
+  const requested = new Set(sourceKeys);
   if (requested.size === 0) return null;
-  return deadLettersByFailedAt(repoRoot).find((entry) => entry.job.sourceEventIds.some((eventId) => requested.has(eventId))) ?? null;
+  const root = realpathSync(repoRoot);
+  return withExclusiveDirectoryLock(root, LOCK_PATH, () =>
+    deadLettersByFailedAt(root).find((entry) => entry.job.sourceKeys.some((sourceKey) => requested.has(sourceKey))) ?? null,
+  );
 }
 
 export function enqueueArchitectureProjectionJob(
   repoRoot: string,
   sourceEventIds: readonly string[],
+  sourceKeys: readonly string[],
   changedPaths: readonly string[],
   now = new Date(),
 ): ArchitectureProjectionJobV1 | null {
   const { events, paths } = normalizedIdentity(sourceEventIds, changedPaths);
-  if (events.length === 0 || paths.length === 0) return null;
+  const keys = [...new Set(sourceKeys)].sort();
+  if (events.length === 0 || keys.length === 0 || paths.length === 0) return null;
   return withExclusiveDirectoryLock(repoRoot, LOCK_PATH, () => {
     if (names(repoRoot, 'running').length > 0) return null;
     const existing = jobsByCreatedAt(repoRoot, 'pending')[0];
@@ -143,6 +153,7 @@ export function enqueueArchitectureProjectionJob(
       jobId: id,
       status: 'pending',
       sourceEventIds: events,
+      sourceKeys: keys,
       changedPaths: paths,
       attempt: 0,
       createdAt: timestamp,
@@ -260,6 +271,7 @@ export function completeArchitectureProjectionJob(
       schemaVersion: 'repo-harness.architecture-projection-receipt/v1',
       jobId: job.jobId,
       sourceEventIds: job.sourceEventIds,
+      sourceKeys: job.sourceKeys,
       changedPaths: job.changedPaths,
       attempt: job.attempt,
       completedAt: now.toISOString(),
@@ -319,15 +331,18 @@ function assertClaimOwner(persisted: ArchitectureProjectionJobV1, claimed: Archi
 }
 
 export function architectureProjectionQueueState(repoRoot: string): ArchitectureProjectionQueueStateV1 {
-  const pending = jobsByCreatedAt(repoRoot, 'pending');
-  const deadLetters = deadLettersByFailedAt(repoRoot);
-  return {
-    schemaVersion: 'repo-harness.architecture-projection-queue-state/v1',
-    pending: pending.length,
-    running: names(repoRoot, 'running').length,
-    receipts: names(repoRoot, 'receipts').length,
-    deadLetters: deadLetters.length,
-    oldestPendingJobId: pending[0]?.jobId ?? null,
-    oldestDeadLetterJobId: deadLetters[0]?.job.jobId ?? null,
-  };
+  const root = realpathSync(repoRoot);
+  return withExclusiveDirectoryLock(root, LOCK_PATH, () => {
+    const pending = jobsByCreatedAt(root, 'pending');
+    const deadLetters = deadLettersByFailedAt(root);
+    return {
+      schemaVersion: 'repo-harness.architecture-projection-queue-state/v1',
+      pending: pending.length,
+      running: names(root, 'running').length,
+      receipts: names(root, 'receipts').length,
+      deadLetters: deadLetters.length,
+      oldestPendingJobId: pending[0]?.jobId ?? null,
+      oldestDeadLetterJobId: deadLetters[0]?.job.jobId ?? null,
+    };
+  });
 }

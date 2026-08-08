@@ -725,10 +725,12 @@ ArchContext-owned `docs/architecture/**` and declared agent-context targets,
 and acknowledges the source records only after a typed projection receipt is
 durable. Process, timeout, stale-snapshot, invalid-result, and refresh failures
 remain pending for three attempts before an explicit dead-letter transition.
-Preflight failures are jobs too; a dead-lettered source event blocks aggregate
-jobs that also contain that event, so later edits cannot reset its attempt
-budget. One repository has at most one claimed provider process, and an
-abandoned third attempt transitions directly to dead-letter on recovery.
+Preflight failures are jobs too. Each pending journal slot has a stable source
+key while its delivery event id rotates on every coalesced edit; a dead letter
+blocks aggregate jobs containing that source key, so later edits cannot reset
+its attempt budget. Store transitions and queue/dead-letter read models share
+one repository lock. One repository has at most one claimed provider process,
+and an abandoned third attempt transitions directly to dead-letter on recovery.
 `ArchitectureRefreshSignalV1` is the only major-change refresh authority; the
 consumer does not infer impact from path names, diff size, or queue-helper
 stdout. A typed refresh-required signal runs the canonical architecture,

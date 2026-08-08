@@ -538,6 +538,9 @@ export interface PostEditJournalDirtyBits {
 export interface PostEditJournalEvent {
   readonly schema: 'change_observed';
   readonly schema_version: 2;
+  /** Stable identity of this pending journal slot. Delivery event ids rotate
+   * on every coalesced edit, but this key survives until the slot is acked. */
+  readonly source_key: string;
   readonly event_id: string;
   readonly session_id: string;
   readonly created_at: string;
@@ -565,7 +568,12 @@ function readJournalEventFile(absPath: string): PostEditJournalEvent | null {
   try {
     const raw = readFileSync(absPath, 'utf-8');
     const parsed = JSON.parse(raw) as PostEditJournalEvent;
-    return parsed && parsed.schema === 'change_observed' && parsed.schema_version === 2 ? parsed : null;
+    return parsed
+      && parsed.schema === 'change_observed'
+      && parsed.schema_version === 2
+      && /^[a-f0-9]{20}$/.test(parsed.source_key)
+      ? parsed
+      : null;
   } catch {
     return null;
   }
@@ -604,7 +612,7 @@ function writeOrCoalesceJournalEventLocked(repoRoot: string, input: WriteJournal
   const nowIso = new Date().toISOString();
   const current = readJournalEventFile(absPath);
   const legacy = current ? null : readLegacyJournalEventFile(absPath);
-  const existing: PostEditJournalEvent | null = current ?? (legacy ? { ...legacy, schema_version: 2 } : null);
+  const existing: PostEditJournalEvent | null = current ?? (legacy ? { ...legacy, schema_version: 2, source_key: key } : null);
 
   const dirty: PostEditJournalDirtyBits = existing
     ? {
@@ -624,6 +632,7 @@ function writeOrCoalesceJournalEventLocked(repoRoot: string, input: WriteJournal
   const event: PostEditJournalEvent = {
     schema: 'change_observed',
     schema_version: 2,
+    source_key: key,
     event_id: `change-${randomUUID()}`,
     session_id: input.sessionId,
     created_at: existing?.created_at ?? nowIso,
@@ -676,7 +685,7 @@ function scanPendingPostEditEventFiles(repoRoot: string): PendingScanResult {
   return { valid, corruptNames, legacyNames };
 }
 
-type LegacyPostEditJournalEventV1 = Omit<PostEditJournalEvent, 'schema_version'> & { readonly schema_version: 1 };
+type LegacyPostEditJournalEventV1 = Omit<PostEditJournalEvent, 'schema_version' | 'source_key'> & { readonly schema_version: 1 };
 
 function readLegacyJournalEventFile(path: string): LegacyPostEditJournalEventV1 | null {
   try {
@@ -704,7 +713,7 @@ export function migratePendingPostEditJournalV1(repoRoot: string, limit = 100): 
     withExclusiveDirectoryLock(root, `${JOURNAL_ROOT}/locks/${key}`, () => {
       const legacy = readLegacyJournalEventFile(path);
       if (!legacy) return;
-      writeJournalEventAtomic(path, { ...legacy, schema_version: 2 });
+      writeJournalEventAtomic(path, { ...legacy, schema_version: 2, source_key: key });
       migrated += 1;
     });
   }

@@ -261,6 +261,34 @@ describe('durable architecture projection orchestration', () => {
     expect(replay.jobId).toBe(architectureProjectionQueueState(f.repoRoot).oldestDeadLetterJobId);
   });
 
+  test('keeps a dead-letter bound to its stable journal slot when the same session edits the same path again', () => {
+    const f = fixture();
+    const input = JSON.stringify({ file_path: 'src/dead-letter-slot.ts', session_id: 'same-dead-letter-session' });
+    runMutationObserved({ collector: f.collector, input });
+    const firstSource = readPendingPostEditEvents(f.repoRoot)[0]!;
+    const failedCalls = { count: 0 };
+    const failed: RunArchctxProcess = (_binary, args) => {
+      if (args[0] === 'capabilities') return capabilities();
+      failedCalls.count += 1;
+      return { status: 1, signal: null, stdout: '', stderr: 'deterministic projection failure' };
+    };
+    expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: failed }).status).toBe('retry-pending');
+    expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: failed }).status).toBe('retry-pending');
+    const deadLettered = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: failed });
+    expect(deadLettered.status).toBe('dead-letter');
+    expect(failedCalls.count).toBe(3);
+
+    runMutationObserved({ collector: f.collector, input });
+    const coalescedSource = readPendingPostEditEvents(f.repoRoot)[0]!;
+    expect(coalescedSource.event_id).not.toBe(firstSource.event_id);
+    expect(coalescedSource.source_key).toBe(firstSource.source_key);
+    const blocked = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: failed });
+    expect(blocked).toMatchObject({ status: 'dead-letter', jobId: deadLettered.jobId, acknowledgeSourceEvents: false });
+    expect(failedCalls.count).toBe(3);
+    expect(architectureProjectionQueueState(f.repoRoot)).toMatchObject({ pending: 0, running: 0, deadLetters: 1 });
+    expect(() => retryArchitectureProjectionDeadLetter(realpathSync(f.repoRoot), deadLettered.jobId!)).not.toThrow();
+  });
+
   test('persists preflight failures without consuming the provider delivery budget', () => {
     const f = fixture();
     runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/preflight.ts', session_id: 'preflight' }) });
@@ -298,11 +326,39 @@ describe('durable architecture projection orchestration', () => {
   test('allows only one running provider job per repository', () => {
     const f = fixture();
     const root = realpathSync(f.repoRoot);
-    const first = enqueueArchitectureProjectionJob(root, ['event-a'], ['src/a.ts']);
+    const first = enqueueArchitectureProjectionJob(root, ['event-a'], ['source-a'], ['src/a.ts']);
     expect(claimNextArchitectureProjectionJob(root)?.jobId).toBe(first?.jobId);
-    expect(enqueueArchitectureProjectionJob(root, ['event-b'], ['src/b.ts'])).toBeNull();
+    expect(enqueueArchitectureProjectionJob(root, ['event-b'], ['source-b'], ['src/b.ts'])).toBeNull();
     expect(claimNextArchitectureProjectionJob(root)).toBeNull();
     expect(architectureProjectionQueueState(root)).toMatchObject({ pending: 0, running: 1 });
+  });
+
+  test('reads queue state under the store lock instead of racing a concurrent transition', async () => {
+    const f = fixture();
+    const root = realpathSync(f.repoRoot);
+    const marker = join(root, '.ai/harness/architecture-projection/store-lock-held');
+    const lockModule = new URL('../src/effects/locking/exclusive-directory-lock.ts', import.meta.url).href;
+    const child = Bun.spawn({
+      cmd: [process.execPath, '-e', `
+        import { writeFileSync } from 'node:fs';
+        import { withExclusiveDirectoryLock } from ${JSON.stringify(lockModule)};
+        const [root, marker] = process.argv.slice(1);
+        withExclusiveDirectoryLock(root, '.ai/harness/architecture-projection/locks/store', () => {
+          writeFileSync(marker, 'held\\n');
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
+        });
+      `, root, marker],
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const waitDeadline = Date.now() + 2_000;
+    while (!existsSync(marker) && Date.now() < waitDeadline) await Bun.sleep(5);
+    expect(existsSync(marker)).toBe(true);
+    const startedAt = Date.now();
+    expect(architectureProjectionQueueState(root)).toMatchObject({ pending: 0, running: 0 });
+    const elapsed = Date.now() - startedAt;
+    expect(await child.exited).toBe(0);
+    expect(elapsed).toBeGreaterThanOrEqual(200);
   });
 
   test('recovers a running job whose owner process died without acknowledging its source event', () => {
@@ -310,7 +366,7 @@ describe('durable architecture projection orchestration', () => {
     const root = realpathSync(f.repoRoot);
     runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/crash.ts', session_id: 'crash' }) });
     const [source] = readPendingPostEditEvents(root);
-    const queued = enqueueArchitectureProjectionJob(root, [source!.event_id], source!.changed_paths);
+    const queued = enqueueArchitectureProjectionJob(root, [source!.event_id], [source!.source_key], source!.changed_paths);
     const running = claimNextArchitectureProjectionJob(root);
     expect(running?.jobId).toBe(queued?.jobId);
     const runningPath = join(root, '.ai/harness/architecture-projection/running', `${running!.jobId}.json`);
@@ -324,7 +380,7 @@ describe('durable architecture projection orchestration', () => {
   test('recovers a stale running job even when its PID has been reused', () => {
     const f = fixture();
     const root = realpathSync(f.repoRoot);
-    const queued = enqueueArchitectureProjectionJob(root, ['event-stale'], ['src/stale.ts'], new Date('2026-01-01T00:00:00.000Z'));
+    const queued = enqueueArchitectureProjectionJob(root, ['event-stale'], ['source-stale'], ['src/stale.ts'], new Date('2026-01-01T00:00:00.000Z'));
     const running = claimNextArchitectureProjectionJob(root, new Date('2026-01-01T00:00:01.000Z'));
     expect(running?.jobId).toBe(queued?.jobId);
     expect(running?.ownerPid).toBe(process.pid);
@@ -335,7 +391,7 @@ describe('durable architecture projection orchestration', () => {
   test('dead-letters an abandoned third attempt instead of retrying forever', () => {
     const f = fixture();
     const root = realpathSync(f.repoRoot);
-    enqueueArchitectureProjectionJob(root, ['event-timeout'], ['src/timeout.ts']);
+    enqueueArchitectureProjectionJob(root, ['event-timeout'], ['source-timeout'], ['src/timeout.ts']);
     const running = claimNextArchitectureProjectionJob(root)!;
     const runningPath = join(root, '.ai/harness/architecture-projection/running', `${running.jobId}.json`);
     writeFileSync(runningPath, `${JSON.stringify({ ...running, attempt: 3, ownerPid: 2_147_483_647 }, null, 2)}\n`);
@@ -346,7 +402,7 @@ describe('durable architecture projection orchestration', () => {
   test('receipt wins crash recovery when running cleanup did not finish', () => {
     const f = fixture();
     const root = realpathSync(f.repoRoot);
-    enqueueArchitectureProjectionJob(root, ['event-receipt-crash'], ['src/receipt-crash.ts']);
+    enqueueArchitectureProjectionJob(root, ['event-receipt-crash'], ['source-receipt-crash'], ['src/receipt-crash.ts']);
     const running = claimNextArchitectureProjectionJob(root)!;
     const receipts = join(root, '.ai/harness/architecture-projection/receipts');
     mkdirSync(receipts, { recursive: true });
@@ -359,7 +415,7 @@ describe('durable architecture projection orchestration', () => {
   test('rejects completion or failure from a stale claim owner', () => {
     const f = fixture();
     const root = realpathSync(f.repoRoot);
-    enqueueArchitectureProjectionJob(root, ['event-owner'], ['src/owner.ts']);
+    enqueueArchitectureProjectionJob(root, ['event-owner'], ['source-owner'], ['src/owner.ts']);
     const running = claimNextArchitectureProjectionJob(root)!;
     const runningPath = join(root, '.ai/harness/architecture-projection/running', `${running.jobId}.json`);
     writeFileSync(runningPath, `${JSON.stringify({ ...running, attempt: running.attempt + 1, ownerPid: running.ownerPid! + 1 }, null, 2)}\n`);

@@ -13,7 +13,7 @@ import {
 } from './archctx-provider';
 import {
   architectureProjectionQueueState,
-  architectureProjectionDeadLetterForSourceEvents,
+  architectureProjectionDeadLetterForSourceKeys,
   architectureProjectionJobId,
   architectureProjectionJobState,
   claimNextArchitectureProjectionJob,
@@ -32,6 +32,7 @@ import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 export interface ArchitectureProjectionSourceEvent {
+  readonly source_key: string;
   readonly event_id: string;
   readonly changed_paths: readonly string[];
 }
@@ -61,6 +62,7 @@ export function drainArchitectureProjectionJobs(
   const now = options.now?.() ?? new Date();
   const events = options.sourceEvents ?? [];
   const eventIds = events.map((event) => event.event_id);
+  const sourceKeys = events.map((event) => event.source_key);
   const observedPaths = events.flatMap((event) => event.changed_paths);
   let policy: ArchitectureProjectionPolicy;
   try {
@@ -72,7 +74,7 @@ export function drainArchitectureProjectionJobs(
   const clock = options.nowMs ?? Date.now;
   const deadlineMs = clock() + policy.timeoutMs;
   recoverAbandonedArchitectureProjectionJobs(root, now);
-  const blocked = architectureProjectionDeadLetterForSourceEvents(root, eventIds);
+  const blocked = architectureProjectionDeadLetterForSourceKeys(root, sourceKeys);
   if (blocked) return outcome(root, 'dead-letter', blocked.job.jobId, blocked.job.sourceEventIds, null, blocked.failure.message, false);
   let owned: string[];
   try {
@@ -89,9 +91,10 @@ export function drainArchitectureProjectionJobs(
   if (aggregateState === 'running') return outcome(root, 'idle', aggregateId, events.map((event) => event.event_id), null, null, false);
   if (aggregateState === 'dead-letter') return outcome(root, 'dead-letter', aggregateId, events.map((event) => event.event_id), null, 'job already dead-lettered', false);
   if (aggregateState === 'receipt') return outcome(root, 'idle', aggregateId, events.map((event) => event.event_id), null, null, true);
-  enqueueArchitectureProjectionJob(root, events.map((event) => event.event_id), eligible, now);
+  enqueueArchitectureProjectionJob(root, eventIds, sourceKeys, eligible, now);
   const job = claimNextArchitectureProjectionJob(root, now);
   if (!job) return outcome(root, 'idle', null, events.map((event) => event.event_id), null, null, false);
+  let completedResultStatus: ProjectionResultV1['status'] | null = null;
   try {
     const request: ProjectionRequestV1 = {
       schemaVersion: PROJECTION_REQUEST_VERSION,
@@ -124,7 +127,7 @@ export function drainArchitectureProjectionJobs(
     });
     if (clock() >= deadlineMs) throw new ClassifiedProjectionError('timeout', 'architecture projection drain exceeded its total deadline');
     completeArchitectureProjectionJob(root, job, result, refreshReceipts.map((entry) => entry.receiptDigest), now);
-    return outcome(root, 'succeeded', job.jobId, job.sourceEventIds, result.status, null, true);
+    completedResultStatus = result.status;
   } catch (error) {
     const classified = classify(error);
     let transition: ReturnType<typeof failArchitectureProjectionJob>;
@@ -144,6 +147,7 @@ export function drainArchitectureProjectionJobs(
       false,
     );
   }
+  return outcome(root, 'succeeded', job.jobId, job.sourceEventIds, completedResultStatus, null, true);
 }
 
 function summarizeNonTerminal(result: ProjectionResultV1): string {
@@ -162,11 +166,12 @@ function failPreflight(
   error: unknown,
 ): ArchitectureProjectionDrainResultV1 {
   const eventIds = events.map((event) => event.event_id);
+  const sourceKeys = events.map((event) => event.source_key);
   if (eventIds.length === 0 || changedPaths.length === 0) throw error;
-  const blocked = architectureProjectionDeadLetterForSourceEvents(repoRoot, eventIds);
+  const blocked = architectureProjectionDeadLetterForSourceKeys(repoRoot, sourceKeys);
   if (blocked) return outcome(repoRoot, 'dead-letter', blocked.job.jobId, blocked.job.sourceEventIds, null, blocked.failure.message, false);
   const expectedJobId = architectureProjectionJobId(eventIds, changedPaths);
-  const queued = enqueueArchitectureProjectionJob(repoRoot, eventIds, changedPaths, now);
+  const queued = enqueueArchitectureProjectionJob(repoRoot, eventIds, sourceKeys, changedPaths, now);
   if (!queued || queued.jobId !== expectedJobId) return outcome(repoRoot, 'idle', null, eventIds, null, null, false);
   const job = claimNextArchitectureProjectionJob(repoRoot, now);
   if (!job) return outcome(repoRoot, 'idle', null, eventIds, null, null, false);
