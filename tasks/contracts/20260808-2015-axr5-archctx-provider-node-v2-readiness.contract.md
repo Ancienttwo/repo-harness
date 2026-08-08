@@ -88,6 +88,7 @@ allowed_paths:
   - AGENTS.md
   - CLAUDE.md
   - assets/
+  - docs/architecture/
   - docs/reference-configs/
   - docs/verification/
   - package.json
