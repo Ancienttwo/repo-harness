@@ -85,9 +85,12 @@ region here would violate the contract: the human region because it is frozen, t
 region because reprojection owns it. The exclusion means "out of this slice's authority",
 NOT "no residue".
 
-- **6 hits inside markers** (`archctx:intro` / `archctx:p1` / `archctx:p2` — the
-  `Matched Prefixes` / `Verification hints` provenance lines): these refresh when archctx
-  reprojects the machine sections. No manual action needed.
+- **17 hits inside markers** (`archctx:intro` / `archctx:p1` / `archctx:p2` — the
+  `Matched Prefixes` / `Verification hints` provenance lines, plus the P1/P2 diagram and
+  table cells that name the registry): these refresh when archctx reprojects the machine
+  sections. No manual action needed. (Counted by line: 26 lines / 27 occurrences total =
+  17 in-marker + 8 frozen human-region + 1 dated `§4` line. An earlier revision of this
+  bullet said 6; that was wrong and is corrected here.)
 - **8 hits outside markers, present tense, in the frozen human region** — verbatim list as
   located by the acceptance review:
 
@@ -177,6 +180,17 @@ authorization during the gatekeeper fix round: it is a tool-written projection o
 `assets/hooks/` (`scripts/sync-hook-sources.ts`), and the capability-context block inside
 it cannot be refreshed without writing there.
 
+`AGENTS.md` and `CLAUDE.md` were added to this contract's `allowed_paths` on the same
+kind of explicit coordinator authorization, during the acceptance round. Both root
+contract files carry this repo's capability-authority declaration (the canonical-file
+line and the "source of truth for capability prefixes" rule), so editing them is inside
+this slice's Goal and the census lists them under Migrated. Their absence from
+`allowed_paths` was a contract-drafting omission, not a scope overrun: the
+`verify-sprint` allowed_paths gate reported `outside: ["AGENTS.md", "CLAUDE.md"]`.
+Reverting the two four-line edits was rejected — it would recreate exactly the residue
+this work-package exists to remove, namely a root routing contract pointing at the
+deleted `.ai/context/capabilities.json`.
+
 `.ai/harness/policy.json` keeps `context.capability_registry_file`. Removing it does not
 stick: `pi_merge_json_defaults` / `deepMergeDefaults` merge defaults *under* current
 values, so a re-run of migration/init re-adds any key the seeder declares. Keeping the
@@ -249,6 +263,15 @@ Three named follow-ups, all deliberately out of this work-package:
 - None blocking.
 
 ## Observation (non-blocking, raised by gatekeeper)
+
+`verify-sprint` reports only the first failure class, which hid a real gate failure for
+two full runs. The run that failed on the `closeout-runner-guardrails` load flake
+recorded `failure_class: "contract_failure"` while its snapshot already carried
+`allowed_paths_check.outside: ["AGENTS.md", "CLAUDE.md"]`; the allowed_paths breach only
+surfaced as `failure_class` once the flaky command went green. A multi-failure run should
+surface every failing gate, not just the first class, or a flaky command can mask a
+deterministic scope violation indefinitely. Diagnostic shape only — no gate is wrong, and
+fixing it is outside this slice.
 
 `runCapabilityContextSync` (`src/cli/commands/capability-context.ts:472-505`) is a
 partial-apply shape under archcontext when `--pending --apply` meets contract-file drift:

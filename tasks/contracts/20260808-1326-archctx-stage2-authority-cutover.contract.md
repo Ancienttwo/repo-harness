@@ -65,6 +65,8 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ```yaml
 allowed_paths:
+  - AGENTS.md
+  - CLAUDE.md
   - docs/spec.md
   - plans/
   - tasks/todos.md
