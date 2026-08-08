@@ -9,7 +9,7 @@ const LOCK_PATH = `${ARCHITECTURE_PROJECTION_RUNTIME_ROOT}/locks/store`;
 const MAX_ATTEMPTS = 3;
 const RUNNING_STALE_MS = 15 * 60 * 1000;
 
-export type ProjectionJobFailureKind = 'process' | 'timeout' | 'stale-snapshot' | 'invalid-result' | 'refresh' | 'permanent';
+export type ProjectionJobFailureKind = 'preflight' | 'process' | 'timeout' | 'stale-snapshot' | 'invalid-result' | 'refresh' | 'permanent';
 
 export interface ArchitectureProjectionJobV1 {
   schemaVersion: 'repo-harness.architecture-projection-job/v1';
@@ -285,11 +285,12 @@ export function failArchitectureProjectionJob(
     const failed: ArchitectureProjectionJobV1 = {
       ...job,
       status: 'pending',
+      attempt: failure.kind === 'preflight' ? Math.max(0, job.attempt - 1) : job.attempt,
       ownerPid: undefined,
       updatedAt: now.toISOString(),
       lastFailure: { ...failure, at: now.toISOString() },
     };
-    if (failure.kind === 'permanent' || failed.attempt >= MAX_ATTEMPTS) {
+    if (failure.kind !== 'preflight' && (failure.kind === 'permanent' || failed.attempt >= MAX_ATTEMPTS)) {
       const deadLetter: ArchitectureProjectionDeadLetterV1 = {
         schemaVersion: 'repo-harness.architecture-projection-dead-letter/v1',
         job: failed,

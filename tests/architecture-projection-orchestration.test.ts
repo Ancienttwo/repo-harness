@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { projectionResultReceiptDigest, type ArchitectureProjectionPolicy, type ProjectionRequestV1, type ProjectionResultV1 } from '../src/core/architecture/projection';
@@ -112,6 +112,30 @@ function envelopeWithStatus(
   return value;
 }
 
+function envelopeWithUnresolvedMajorSignal(request: ProjectionRequestV1) {
+  const value = structuredClone(envelope(request));
+  const snapshot = value.data.outputSnapshot;
+  value.data.refreshSignals = [{
+    schemaVersion: 'archcontext.architecture-refresh-signal/v1',
+    signalId: digest('b'),
+    idempotencyKey: digest('c'),
+    mode: 'human-action-required',
+    repository: { repositoryId: snapshot.repositoryId },
+    worktree: { workspaceId: snapshot.workspaceId, headSha: snapshot.headSha, worktreeDigest: snapshot.worktreeDigest },
+    cause: 'unresolved-major-candidate',
+    reasonCodes: ['responsibility-changed'],
+    affectedNodeIds: ['capability.test.root'],
+    refreshTargets: ['architecture-readiness'],
+    baseDigests: { modelDigest: digest('d'), sourceTreeDigest: digest('e'), flowProofDigest: digest('f'), projectionDigest: digest('0') },
+    resultingDigests: { modelDigest: digest('1'), sourceTreeDigest: digest('2'), flowProofDigest: digest('3'), projectionDigest: digest('4') },
+    projectionReceiptDigest: digest('f'),
+  }];
+  const { receiptDigest: _receipt, ...body } = value.data;
+  value.data.receiptDigest = projectionResultReceiptDigest(body);
+  value.data.refreshSignals[0]!.projectionReceiptDigest = value.data.receiptDigest;
+  return value;
+}
+
 function successfulRunner(projectionCalls: { count: number }): RunArchctxProcess {
   return (_binary, args) => {
     if (args[0] === 'capabilities') return capabilities();
@@ -216,14 +240,24 @@ describe('durable architecture projection orchestration', () => {
     expect(replay.jobId).toBe(architectureProjectionQueueState(f.repoRoot).oldestDeadLetterJobId);
   });
 
-  test('persists preflight failures as bounded jobs before provider execution', () => {
+  test('persists preflight failures without consuming the provider delivery budget', () => {
     const f = fixture();
     runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/preflight.ts', session_id: 'preflight' }) });
-    rmSync(join(f.repoRoot, '.archcontext/model/nodes'), { recursive: true, force: true });
+    const nodeDir = join(f.repoRoot, '.archcontext/model/nodes');
+    const nodePath = join(nodeDir, 'root.yaml');
+    const node = readFileSync(nodePath, 'utf8');
+    rmSync(nodeDir, { recursive: true, force: true });
     expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy }).status).toBe('retry-pending');
     expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy }).status).toBe('retry-pending');
-    expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy }).status).toBe('dead-letter');
-    expect(architectureProjectionQueueState(f.repoRoot).oldestDeadLetterJobId).toMatch(/^job-[a-f0-9]{24}$/);
+    expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy }).status).toBe('retry-pending');
+    expect(architectureProjectionQueueState(f.repoRoot)).toMatchObject({ pending: 1, deadLetters: 0 });
+    const [pendingName] = readdirSync(join(f.repoRoot, '.ai/harness/architecture-projection/pending'));
+    expect(JSON.parse(readFileSync(join(f.repoRoot, '.ai/harness/architecture-projection/pending', pendingName!), 'utf8')).attempt).toBe(0);
+    mkdirSync(nodeDir, { recursive: true });
+    writeFileSync(nodePath, node);
+    const projectionCalls = { count: 0 };
+    expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: successfulRunner(projectionCalls) }).status).toBe('succeeded');
+    expect(projectionCalls.count).toBe(1);
   });
 
   test('preflight failure does not consume the attempt budget of an unrelated pending job', () => {
@@ -376,6 +410,20 @@ describe('durable architecture projection orchestration', () => {
     }
   });
 
+  test('dead-letters an unresolved-major refresh signal without acknowledging its source event', () => {
+    const f = fixture();
+    runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/major.ts', session_id: 'major' }) });
+    const run: RunArchctxProcess = (_binary, args) => {
+      if (args[0] === 'capabilities') return capabilities();
+      return { status: 0, signal: null, stderr: '', stdout: JSON.stringify(envelopeWithUnresolvedMajorSignal(JSON.parse(args[3]!) as ProjectionRequestV1)) };
+    };
+    const result = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run });
+    expect(result).toMatchObject({ status: 'dead-letter', acknowledgeSourceEvents: false });
+    expect(result.error).toContain('unresolved major change');
+    expect(readPendingPostEditEvents(f.repoRoot)).toHaveLength(1);
+    expect(existsSync(join(f.repoRoot, '.ai/harness/architecture-refresh/receipts'))).toBe(false);
+  });
+
   test('manual drain consumes source events and reports the rollback journal count', () => {
     const f = fixture();
     writeFileSync(join(f.repoRoot, '.ai/harness/policy.json'), '{"architecture":{"projection_provider":"disabled","projection_apply":"disabled"}}\n');
@@ -390,14 +438,27 @@ describe('durable architecture projection orchestration', () => {
     expect(readPendingPostEditEvents(f.repoRoot)).toHaveLength(0);
   });
 
-  test('migrates v1 observations once and keeps the runtime reader v2-only', () => {
+  test('migrates v1 observations under the writer lock without losing coalesced dirty state', () => {
     const f = fixture();
     runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/legacy.ts', session_id: 'legacy' }) });
     const dir = join(f.repoRoot, '.ai/harness/journal/post-edit/pending');
     const path = join(dir, readdirSync(dir)[0]!);
     const event = JSON.parse(readFileSync(path, 'utf8'));
-    writeFileSync(path, `${JSON.stringify({ ...event, schema_version: 1 })}\n`);
+    writeFileSync(path, `${JSON.stringify({
+      ...event,
+      schema_version: 1,
+      dirty: { ...event.dirty, 'contract-verification': true },
+      payload: { ...event.payload, contract_verification: { contract_file: 'tasks/contracts/legacy.contract.md', checks_file: '.ai/harness/checks/latest.json' } },
+    })}\n`);
     expect(readPendingPostEditEvents(f.repoRoot)).toHaveLength(0);
+    runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/legacy.ts', session_id: 'legacy' }) });
+    expect(readPendingPostEditEvents(f.repoRoot)[0]).toMatchObject({
+      schema_version: 2,
+      dirty: { 'contract-verification': true },
+      payload: { contract_verification: { contract_file: 'tasks/contracts/legacy.contract.md' } },
+    });
+    expect(migratePendingPostEditJournalV1(f.repoRoot, 100)).toEqual({ migrated: 0, remaining: 0 });
+    writeFileSync(path, `${JSON.stringify({ ...JSON.parse(readFileSync(path, 'utf8')), schema_version: 1 })}\n`);
     expect(migratePendingPostEditJournalV1(f.repoRoot, 100)).toEqual({ migrated: 1, remaining: 0 });
     expect(readPendingPostEditEvents(f.repoRoot)[0]?.schema_version).toBe(2);
   });

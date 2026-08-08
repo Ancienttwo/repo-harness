@@ -128,7 +128,7 @@ export function matchesAuthFailureSignal(text: string): boolean {
 }
 
 const CLAUDE_CAPACITY_FAILURE_PATTERNS: readonly RegExp[] = [
-  /(?:^|\n)\s*You(?:['’]ve| have) reached your Fable(?:\s+\d+)?\s+limit\.[^\n]*\n?[^\n]*\/usage-credits[^\n]*\s*$/i,
+  /(?:^|\n)\s*You(?:['’]ve| have) reached your Fable(?:\s+\d+)?\s+limit\.[\s\S]{0,500}?\/usage-credits(?:\s|$)/i,
 ];
 
 export function matchesClaudeCapacityFailureSignal(text: string): boolean {
@@ -193,14 +193,14 @@ export function classifyCrossReviewOutcome(
 
   if (!invocation.ok) {
     const signalText = `${invocation.stderr}\n${invocation.error}`;
-    const stdoutAuth = /^\s*Not logged in\s*[·-]\s*Please run \/login\s*$/i.test(invocation.stdout);
+    const stdoutAuth = invocation.stdout.split(/\r?\n/).some((line) => /^\s*Not logged in\s*[·-]\s*Please run \/login\s*$/i.test(line));
     const code: CrossReviewErrorCode = matchesAuthFailureSignal(signalText) || stdoutAuth
       ? "auth_failure"
       : "provider_nonzero";
     return {
       kind: "failed",
       code,
-      message: invocation.error || invocation.stderr || `provider exited with status ${invocation.status}`,
+      message: invocation.error || invocation.stderr || invocation.stdout || `provider exited with status ${invocation.status}`,
       recoveredTranscript,
     };
   }

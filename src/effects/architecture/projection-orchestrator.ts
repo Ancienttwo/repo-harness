@@ -108,6 +108,13 @@ export function drainArchitectureProjectionJobs(
     if (result.status !== 'applied' && result.status !== 'noop') {
       throw new ClassifiedProjectionError('permanent', summarizeNonTerminal(result));
     }
+    const unresolvedMajor = result.refreshSignals.find((signal) => signal.mode === 'human-action-required');
+    if (unresolvedMajor) {
+      throw new ClassifiedProjectionError(
+        'permanent',
+        `archctx returned unresolved major change ${unresolvedMajor.signalId}: ${unresolvedMajor.reasonCodes.join(',')} [${unresolvedMajor.affectedNodeIds.join(',')}]`,
+      );
+    }
     const refreshReceipts = consumeArchitectureRefreshSignals(root, result.refreshSignals, job.changedPaths, {
       env: options.env,
       run: options.runRefreshActions,
@@ -163,15 +170,15 @@ function failPreflight(
   if (!queued || queued.jobId !== expectedJobId) return outcome(repoRoot, 'idle', null, eventIds, null, null, false);
   const job = claimNextArchitectureProjectionJob(repoRoot, now);
   if (!job) return outcome(repoRoot, 'idle', null, eventIds, null, null, false);
-  const classified = classify(error);
-  const transition = failArchitectureProjectionJob(repoRoot, job, classified, now);
+  const message = error instanceof Error ? error.message : String(error);
+  const transition = failArchitectureProjectionJob(repoRoot, job, { kind: 'preflight', message }, now);
   return outcome(
     repoRoot,
     transition.state === 'dead-letter' ? 'dead-letter' : 'retry-pending',
     job.jobId,
     job.sourceEventIds,
     null,
-    classified.message,
+    message,
     false,
   );
 }

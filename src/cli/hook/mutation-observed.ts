@@ -602,7 +602,9 @@ function writeOrCoalesceJournalEventLocked(repoRoot: string, input: WriteJournal
   const relativePath = `${JOURNAL_PENDING_DIR}/${key}.json`;
   const absPath = join(repoRoot, relativePath);
   const nowIso = new Date().toISOString();
-  const existing = readJournalEventFile(absPath);
+  const current = readJournalEventFile(absPath);
+  const legacy = current ? null : readLegacyJournalEventFile(absPath);
+  const existing: PostEditJournalEvent | null = current ?? (legacy ? { ...legacy, schema_version: 2 } : null);
 
   const dirty: PostEditJournalDirtyBits = existing
     ? {
@@ -686,19 +688,25 @@ function readLegacyJournalEventFile(path: string): LegacyPostEditJournalEventV1 
 /** Explicit one-way queue migration. The runtime consumer remains v2-only. */
 export function migratePendingPostEditJournalV1(repoRoot: string, limit = 100): { migrated: number; remaining: number } {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) throw new Error('post-edit journal migration limit must be 1..1000');
-  const dir = join(repoRoot, JOURNAL_PENDING_DIR);
+  const root = realpathSync(repoRoot);
+  const dir = join(root, JOURNAL_PENDING_DIR);
   let names: string[];
   try { names = readdirSync(dir).filter((name) => name.endsWith('.json')).sort(); }
   catch { return { migrated: 0, remaining: 0 }; }
   let migrated = 0;
   let remaining = 0;
   for (const name of names) {
+    const key = name.replace(/\.json$/, '');
+    if (!/^[a-f0-9]{20}$/.test(key)) continue;
     const path = join(dir, name);
-    const legacy = readLegacyJournalEventFile(path);
-    if (!legacy) continue;
+    if (!readLegacyJournalEventFile(path)) continue;
     if (migrated >= limit) { remaining += 1; continue; }
-    writeJournalEventAtomic(path, { ...legacy, schema_version: 2 });
-    migrated += 1;
+    withExclusiveDirectoryLock(root, `${JOURNAL_ROOT}/locks/${key}`, () => {
+      const legacy = readLegacyJournalEventFile(path);
+      if (!legacy) return;
+      writeJournalEventAtomic(path, { ...legacy, schema_version: 2 });
+      migrated += 1;
+    });
   }
   return { migrated, remaining };
 }

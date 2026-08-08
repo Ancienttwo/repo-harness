@@ -26,6 +26,8 @@
 - Claude's third pass found four remaining delivery hazards: a consumed event identity could suppress a later same-session edit, disabled policy could fail before the provider gate, phase-local timeouts could exceed the Stop budget, and non-terminal typed outcomes could be acknowledged. The repair assigns a fresh identity after each acknowledged delivery, validates only active provider policy, shares one absolute deadline across handshake/projection/refresh, and retains or dead-letters every non-terminal result.
 - The same pass exposed two crash/concurrency boundaries. Source observation coalescing and acknowledgement now share a per-key lock and compare `updated_at` before removal; projection receipt recovery treats an already-durable receipt as authoritative over a stale running marker.
 - Cross-repository inspection found a real snapshot-contract mismatch: repo-harness excluded `.ai/harness/**`, while ArchContext's repo-harness projection digest still included it. ArchContext commit `9c2ae39` now excludes operational harness state and its CLI protocol test mutates the pending journal between request capture and execution.
+- Claude's fourth pass found that an `applied` result could still carry an unresolved-major refresh signal and that transient model/policy preflight failures consumed the provider delivery budget. The orchestrator now dead-letters unresolved-major signals with operator-visible typed details and no source acknowledgement, while `preflight` is a durable non-attempt failure class that resumes automatically after the authority is repaired.
+- The fourth repair also serializes the bounded v1 journal migration with PostEdit coalescing, preserves legacy dirty/payload state if an edit arrives before Stop, and accepts the pinned Claude capacity/auth signatures when benign banner or warning lines surround them.
 
 ## Tradeoffs Considered
 
@@ -51,6 +53,7 @@
 - Packed installed host-cycle: `bun scripts/axr6-stop-host-cycle.ts` returned in 32064 ms after a 31000 ms package-local provider hold; Codex and Claude read back Stop=150/non-Stop=30; one `repo-harness.architecture-projection-receipt/v1` was durable before pending source events reached zero.
 - Review repair regression: 123 pass/0 fail across orchestration/provider/Stop/cross-review/bootstrap/session suites; helper projection and typecheck passed. Updated packed host-cycle: legacy 30-second budget timed out at 30008 ms with no receipt, managed lane then completed at 31681 ms with attempt=2 and pendingSourceEvents=0.
 - Third review repair regression: 110 pass/0 fail across orchestration, mutation journal, Stop policy, readiness, and cross-review tests; typecheck, hook/helper/reference projections passed. ArchContext snapshot parity regression: 70 pass/0 fail across the CLI protocol and projection-freshness suites. Packed host cycle re-proved legacy timeout at 30008 ms and managed recovery at 31773 ms with durable attempt 2.
+- Fourth review repair regression: 78 pass/0 fail across durable orchestration, journal migration, and cross-review classification; typecheck passed. The reviewed snapshot mismatch concern is closed by the paired ArchContext `9c2ae39` change, which ships in `archctx@0.4.0` before repo-harness enables that exact version.
 
 ## Promotion Filter
 
