@@ -712,8 +712,9 @@ fails closed with upgrade guidance and only when `capability_source` is
 
 Architecture projection is a separate authority. When
 `architecture.projection_provider=archctx`, repo-harness resolves the exact
-version from its own `node_modules/.bin/archctx`, performs a JSON capability
-handshake, and rejects PATH-only or mismatched installations. The advisory
+version from the consumer dependency tree, executes only that package's declared
+`bin.archctx`, performs a JSON capability handshake, and rejects PATH-only,
+escaping, or mismatched installations. The advisory
 global-tool detector below does not satisfy projection readiness; use
 `repo-harness architecture-projection status --json`. The provider remains
 disabled by default until the release pin is cut over.
@@ -740,6 +741,9 @@ form. Include order is preserved as prefix order.
 | Capability field | Node source | Rule |
 |---|---|---|
 | `domain` / `name` | `id` segments 2 and 3 | `id` must be exactly `capability.<domain>.<name>`, with no `namespace::` prefix |
+| display `name` | `name` | required non-empty node/v2 field; validated but not translated into registry identity |
+| `summary` | `summary` | required non-empty node/v2 field; validated but not translated into registry semantics |
+| `responsibilities` | `responsibilities` | required non-empty string array; validated but not translated into registry semantics |
 | `id` | derived | `<domain>-<name>` |
 | `architecture_module` | derived | `docs/architecture/modules/<domain>/<name>.md` |
 | `workstream_dir` | derived | `tasks/workstreams/<domain>/<name>` |
@@ -749,8 +753,9 @@ form. Include order is preserved as prefix order.
 | `verification_hints` | `extensions.verification` | required array; explicit `[]` is allowed |
 
 Nodes whose `kind` is not `capability`, or whose `status` is not `active`, are
-skipped and claim no prefixes. Fields this bridge does not consume —
-`summary`, `responsibilities`, `source.entrypoints`, `ownership`, `interfaces`,
+skipped and claim no prefixes. Required node/v2 descriptive fields are validated
+even when they are not translated. Optional fields this bridge does not consume —
+`source.entrypoints`, `ownership`, `interfaces`,
 `criticality`, `riskDomains`, `notes`, `parent` — are ignored rather than
 translated into local semantics.
 
@@ -766,6 +771,7 @@ Source-selection failures exit `2`:
 | subdirectory or non-`.yaml`/`.yml` entry in the model directory | error naming the entry |
 | unparseable node YAML | error naming the node file |
 | `Bun.YAML` unavailable | error with the Bun upgrade path |
+| missing/empty node/v2 `name`, `summary`, or `responsibilities` | structural error; no partial registry output |
 
 Node-shape failures surface as `ARCHCONTEXT_*` registry diagnostics and make
 `capability-resolver validate` fail; derived registries then go through the same

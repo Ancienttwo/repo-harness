@@ -232,6 +232,13 @@ describe('package-local ArchContext projection provider', () => {
     hiddenWrite.data.receiptDigest = projectionResultReceiptDigest(hiddenPayload);
     expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner([], hiddenWrite) })).toThrow('outside the projection-owned fixed-point surfaces');
 
+    const actualDiskWrite: RunArchctxProcess = (_binary, args) => {
+      if (args[0] === 'capabilities') return { status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' };
+      writeFileSync(join(f.repoRoot, 'src', 'core', 'stray.ts'), 'export const stray = true;\n');
+      return { status: 0, signal: null, stdout: JSON.stringify(projectionEnvelope(projectionRequest.expected)), stderr: '' };
+    };
+    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: actualDiskWrite })).toThrow('snapshot mismatch after projection');
+
     projectionRequest.mode = 'apply';
     expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy: { ...policy, applyMode: 'disabled' }, run: runner([], projectionEnvelope(projectionRequest.expected)) })).toThrow('apply is disabled');
   });

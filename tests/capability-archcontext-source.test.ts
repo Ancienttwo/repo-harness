@@ -547,7 +547,9 @@ describe("capability source: node-layer matrix N1-N16", () => {
       try {
         const res = runResolver(cwd, ["validate", "--format", "text"]);
         expect(res.status).toBe(1);
-        expect(`${res.stdout}${res.stderr}`).toContain(nodeCase.fragment);
+        expect(res.stdout).toBe("");
+        expect(res.stderr).toContain(`malformed capability registry: ${NODES_DIR}`);
+        expect(res.stderr).toContain(nodeCase.fragment);
       } finally {
         rmSync(cwd, { recursive: true, force: true });
       }

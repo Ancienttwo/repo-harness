@@ -37,6 +37,11 @@
   layout regression test. Model readiness now reports the actual node directory rather than
   treating registry authority as proof that projection inputs exist. Node/v2 name, summary and
   responsibilities checks have dedicated N14-N16 fail-closed cases.
+- The last repair review aligned those N14-N16 diagnostics with the structural-error channel
+  (empty stdout plus malformed-registry stderr), corrected the public field contract and declared
+  binary resolution docs, restored an actual-disk post-run mismatch regression, and binds both
+  `headSha` and `worktreeDigest` to the fixed-point baseline. Focused final repair verification:
+  40 pass / 0 fail plus type, helper projection, reference projection, and diff checks.
 
 ## Deviations From Plan Or Spec
 

@@ -227,7 +227,7 @@ function assertProjectionResultAuthority(
   if (result.status === 'applied' && policy.applyMode === 'disabled') {
     throw new Error('archctx projection returned applied while projection apply is disabled');
   }
-  if (result.outputSnapshot.worktreeDigest !== request.expected.worktreeDigest) {
+  if (result.outputSnapshot.worktreeDigest !== request.expected.worktreeDigest || result.outputSnapshot.headSha !== request.expected.headSha) {
     throw new Error('archctx projection wrote outside the projection-owned fixed-point surfaces');
   }
   const allowed = new Set<string>();
