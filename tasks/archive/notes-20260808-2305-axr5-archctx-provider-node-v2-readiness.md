@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-08 23:05
+> **Related Plan**: plans/archive/plan-20260808-2015-axr5-archctx-provider-node-v2-readiness.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260808-2305
+
 # Implementation Notes: axr5-archctx-provider-node-v2-readiness
 
 > **Status**: Active

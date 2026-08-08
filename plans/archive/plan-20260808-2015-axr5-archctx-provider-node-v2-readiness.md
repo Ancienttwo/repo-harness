@@ -1,6 +1,6 @@
 # Plan: AXR5 ArchContext provider, node v2, and readiness
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260808-2015
 > **Slug**: axr5-archctx-provider-node-v2-readiness
 > **Planning Source**: repo-harness-sprint
