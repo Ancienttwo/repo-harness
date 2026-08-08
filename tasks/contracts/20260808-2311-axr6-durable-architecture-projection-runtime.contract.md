@@ -155,6 +155,7 @@ exit_criteria:
   commands_succeed:
     - bun run check:type
     - bun run check:helpers
+    - bun scripts/axr6-stop-host-cycle.ts
 ```
 
 ## Acceptance Notes (Human Review)

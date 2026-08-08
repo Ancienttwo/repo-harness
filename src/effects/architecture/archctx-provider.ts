@@ -262,7 +262,7 @@ function assertExpectedSnapshot(expected: ProjectionRequestV1['expected'], actua
 }
 
 function findConsumerRoot(): string {
-  let current = resolve(import.meta.dir, '..', '..', '..');
+  let current = resolve(import.meta.dir);
   while (true) {
     try {
       const manifest = JSON.parse(readFileSync(join(current, 'package.json'), 'utf8')) as { name?: unknown };

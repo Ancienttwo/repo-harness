@@ -134,13 +134,13 @@ Failure path: spawn exit/signal/timeout、corrupt JSON、stale snapshot、refres
 
 ## Task Breakdown
 
-- [ ] Freeze failing tests for 10-path coalescing, source-event ack timing, three-attempt retry/dead-letter, crash recovery and owned-path loop suppression.
-- [ ] Introduce v2 journal schema plus bounded v1 rewrite migration; keep PostEdit hot path one atomic write.
-- [ ] Implement locked atomic projection job store and read model.
-- [ ] Implement Stop orchestrator and typed refresh consumer with idempotency receipts/output digests.
-- [ ] Wire Stop, manual drain and SessionStart pending/dead-letter surface with advisory/strict policy behavior.
-- [ ] Set managed Stop timeout=150 for Claude/Codex while non-Stop remains 30 and sibling hooks survive update.
-- [ ] Run focused chaos/installer/host tests, type/helper gates, then full `bun run check:ci` and real installed Stop readback.
+- [x] Freeze failing tests for 10-path coalescing, source-event ack timing, three-attempt retry/dead-letter, crash recovery and owned-path loop suppression.
+- [x] Introduce v2 journal schema plus bounded v1 rewrite migration; keep PostEdit hot path one atomic write.
+- [x] Implement locked atomic projection job store and read model.
+- [x] Implement Stop orchestrator and typed refresh consumer with idempotency receipts/output digests.
+- [x] Wire Stop, manual drain and SessionStart pending/dead-letter surface with advisory/strict policy behavior.
+- [x] Set managed Stop timeout=150 for Claude/Codex while non-Stop remains 30 and sibling hooks survive update.
+- [x] Run focused chaos/installer/host tests, type/helper gates, then full `bun run check:ci` and real installed Stop readback.
 
 ## Verification
 
@@ -168,10 +168,10 @@ Revert the AXR6 merge commit as one unit. Because capability authority stays reg
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] Freeze failing tests for 10-path coalescing, source-event ack timing, three-attempt retry/dead-letter, crash recovery and owned-path loop suppression.
-- [ ] Introduce v2 journal schema plus bounded v1 rewrite migration; keep PostEdit hot path one atomic write.
-- [ ] Implement locked atomic projection job store and read model.
-- [ ] Implement Stop orchestrator and typed refresh consumer with idempotency receipts/output digests.
-- [ ] Wire Stop, manual drain and SessionStart pending/dead-letter surface with advisory/strict policy behavior.
-- [ ] Set managed Stop timeout=150 for Claude/Codex while non-Stop remains 30 and sibling hooks survive update.
-- [ ] Run focused chaos/installer/host tests, type/helper gates, then full `bun run check:ci` and real installed Stop readback.
+- [x] Freeze failing tests for 10-path coalescing, source-event ack timing, three-attempt retry/dead-letter, crash recovery and owned-path loop suppression.
+- [x] Introduce v2 journal schema plus bounded v1 rewrite migration; keep PostEdit hot path one atomic write.
+- [x] Implement locked atomic projection job store and read model.
+- [x] Implement Stop orchestrator and typed refresh consumer with idempotency receipts/output digests.
+- [x] Wire Stop, manual drain and SessionStart pending/dead-letter surface with advisory/strict policy behavior.
+- [x] Set managed Stop timeout=150 for Claude/Codex while non-Stop remains 30 and sibling hooks survive update.
+- [x] Run focused chaos/installer/host tests, type/helper gates, then full `bun run check:ci` and real installed Stop readback.

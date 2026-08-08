@@ -1,12 +1,18 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { projectionResultReceiptDigest, type ArchitectureProjectionPolicy, type ProjectionRequestV1 } from '../src/core/architecture/projection';
 import { runMutationObserved, consumePendingPostEditEvents, readPendingPostEditEvents, migratePendingPostEditJournalV1 } from '../src/cli/hook/mutation-observed';
 import { drainArchitectureProjectionJobs } from '../src/effects/architecture/projection-orchestrator';
-import { architectureProjectionQueueState } from '../src/effects/architecture/projection-jobs';
+import {
+  architectureProjectionJobState,
+  architectureProjectionQueueState,
+  claimNextArchitectureProjectionJob,
+  enqueueArchitectureProjectionJob,
+  recoverAbandonedArchitectureProjectionJobs,
+} from '../src/effects/architecture/projection-jobs';
 import type { ArchctxProcessResult, RunArchctxProcess } from '../src/effects/architecture/archctx-provider';
 import { buildManagedHooks } from '../src/cli/installer/managed-entries';
 import { consumeArchitectureRefreshSignals } from '../src/effects/architecture/refresh-consumer';
@@ -130,6 +136,22 @@ describe('durable architecture projection orchestration', () => {
     expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: failed }).status).toBe('dead-letter');
     expect(readPendingPostEditEvents(f.repoRoot)).toHaveLength(1);
     expect(architectureProjectionQueueState(f.repoRoot).deadLetters).toBe(1);
+  });
+
+  test('recovers a running job whose owner process died without acknowledging its source event', () => {
+    const f = fixture();
+    const root = realpathSync(f.repoRoot);
+    runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/crash.ts', session_id: 'crash' }) });
+    const [source] = readPendingPostEditEvents(root);
+    const queued = enqueueArchitectureProjectionJob(root, [source!.event_id], source!.changed_paths);
+    const running = claimNextArchitectureProjectionJob(root);
+    expect(running?.jobId).toBe(queued?.jobId);
+    const runningPath = join(root, '.ai/harness/architecture-projection/running', `${running!.jobId}.json`);
+    writeFileSync(runningPath, `${JSON.stringify({ ...running, ownerPid: 2_147_483_647 }, null, 2)}\n`);
+
+    expect(recoverAbandonedArchitectureProjectionJobs(root)).toBe(1);
+    expect(architectureProjectionJobState(root, running!.jobId)).toBe('pending');
+    expect(readPendingPostEditEvents(root).map((event) => event.event_id)).toEqual([source!.event_id]);
   });
 
   test('acks only the events bound to a completed job when a newer edit arrives between retries', () => {
