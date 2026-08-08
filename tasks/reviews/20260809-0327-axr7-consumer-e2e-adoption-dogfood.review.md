@@ -40,17 +40,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
-> **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Disposition**: user_waiver
+> **Reviewer**: User
+> **Source**: user-waiver
+> **Actor**: ancienttwo
+> **Reviewed Subject SHA256**: sha256:880fac994ff26fa66b309c1eb6f858d124505e4066f24060073a08181c527c3a
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 65c58c4f7f92df3383bd1cee2ef8f4e99eda8e2d
+> **Verification Evidence SHA256**: sha256:96c083f2350441b6c91076afff26627705eed052254a35520d8fdd9de60c41a4
+> **Issued At**: 2026-08-08T21:32:51.111Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: User explicitly instructed skip Claude review for AXR7.
 - Findings: none
 
 ## Behavior Diff Notes
