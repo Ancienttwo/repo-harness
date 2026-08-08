@@ -180,6 +180,27 @@ describe('durable architecture projection orchestration', () => {
     expect(projectionCalls.count).toBe(2);
   });
 
+  test('projects a coalesced edit that arrives after request capture instead of receipt-shortcutting it', () => {
+    const f = fixture();
+    const input = JSON.stringify({ file_path: 'src/during-projection.ts', session_id: 'during-projection' });
+    runMutationObserved({ collector: f.collector, input });
+    let projectionCalls = 0;
+    const run: RunArchctxProcess = (_binary, args) => {
+      if (args[0] === 'capabilities') return capabilities();
+      projectionCalls += 1;
+      const request = JSON.parse(args[3]!) as ProjectionRequestV1;
+      if (projectionCalls === 1) runMutationObserved({ collector: f.collector, input });
+      return { status: 0, signal: null, stderr: '', stdout: JSON.stringify(envelope(request)) };
+    };
+    const first = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run });
+    consumePendingPostEditEvents(f.repoRoot, process.env, { skipArchitectureCascade: true, eventIds: first.sourceEventIds });
+    expect(readPendingPostEditEvents(f.repoRoot)).toHaveLength(1);
+    const second = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run });
+    expect(second.status).toBe('succeeded');
+    expect(second.jobId).not.toBe(first.jobId);
+    expect(projectionCalls).toBe(2);
+  });
+
   test('bounds handshake, provider, validation, and refresh under one drain deadline', () => {
     const f = fixture();
     runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/deadline.ts', session_id: 'deadline' }) });
@@ -528,6 +549,47 @@ describe('durable architecture projection orchestration', () => {
       'run context-contract-sync sync-latest',
       'capability-context request --from-latest-architecture-event',
     ]);
+  });
+
+  test('default refresh runner checkpoints each successful action before the next deadline check', () => {
+    const f = fixture();
+    const bin = join(dirname(f.repoRoot), 'checkpoint-bin');
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(join(bin, 'repo-harness'), '#!/bin/sh\nexit 0\n');
+    chmodSync(join(bin, 'repo-harness'), 0o755);
+    const signal = {
+      schemaVersion: 'archcontext.architecture-refresh-signal/v1' as const,
+      signalId: digest('5'), idempotencyKey: digest('6'), mode: 'refresh-required' as const,
+      repository: { repositoryId: 'repo.test' },
+      worktree: { workspaceId: 'workspace.test', headSha: '1'.repeat(40), worktreeDigest: digest('7') },
+      cause: 'accepted-semantic-delta' as const,
+      acceptedChange: { changeSetId: 'cs-4', eventId: 'event-4', reasonCodes: ['responsibility-changed'], affectedNodeIds: ['capability.test.root'] },
+      reasonCodes: ['responsibility-changed'], affectedNodeIds: ['capability.test.root'], refreshTargets: ['architecture-readiness'],
+      baseDigests: { modelDigest: digest('8'), sourceTreeDigest: digest('9'), flowProofDigest: digest('a'), projectionDigest: digest('b') },
+      resultingDigests: { modelDigest: digest('c'), sourceTreeDigest: digest('d'), flowProofDigest: digest('e'), projectionDigest: digest('f') },
+      projectionReceiptDigest: digest('0'),
+    };
+    let clockReads = 0;
+    expect(() => consumeArchitectureRefreshSignals(f.repoRoot, [signal], ['src/a.ts', 'src/b.ts'], {
+      env: { ...process.env, PATH: bin },
+      deadlineMs: 1_000,
+      nowMs: () => clockReads++ === 0 ? 0 : 2_000,
+    })).toThrow('timeout before canonical action');
+    const progressPath = join(f.repoRoot, '.ai/harness/architecture-projection/refresh-progress', `${signal.signalId.replace(/^sha256:/, '')}.json`);
+    expect(JSON.parse(readFileSync(progressPath, 'utf8')).actions.map((entry: { actionKey: string }) => entry.actionKey)).toEqual(['architecture-queue:src/a.ts']);
+    let resumedFrom: string[] = [];
+    const [receipt] = consumeArchitectureRefreshSignals(f.repoRoot, [signal], ['src/a.ts', 'src/b.ts'], {
+      run: (_root, _signal, _paths, _env, completed) => {
+        resumedFrom = [...completed];
+        return [
+          { actionKey: 'architecture-queue:src/b.ts', action: 'architecture-queue', status: 0, stdout: '', stderr: '' },
+          { actionKey: 'context-contract-sync', action: 'context-contract-sync', status: 0, stdout: '', stderr: '' },
+          { actionKey: 'capability-context-request', action: 'capability-context-request', status: 0, stdout: '', stderr: '' },
+        ];
+      },
+    });
+    expect(resumedFrom).toEqual(['architecture-queue:src/a.ts']);
+    expect(receipt?.actions).toHaveLength(4);
   });
 
   test('refresh retry resumes after the last durable action progress record', () => {

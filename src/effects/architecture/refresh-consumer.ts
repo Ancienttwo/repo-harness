@@ -21,6 +21,7 @@ export type RunArchitectureRefreshActions = (
   completedActionKeys: ReadonlySet<string>,
   deadlineMs?: number,
   nowMs?: () => number,
+  onActionCompleted?: (result: ArchitectureRefreshActionResult) => void,
 ) => readonly ArchitectureRefreshActionResult[];
 
 export interface ArchitectureRefreshReceiptV1 {
@@ -50,6 +51,16 @@ export function consumeArchitectureRefreshSignals(
     }
     const progressPath = refreshProgressPath(repoRoot, signal.signalId);
     const completed = readRefreshProgress(progressPath);
+    const actions = [...completed];
+    const checkpoint = (result: ArchitectureRefreshActionResult): void => {
+      if (result.status !== 0 || actions.some((entry) => entry.actionKey === result.actionKey)) return;
+      actions.push({
+        actionKey: result.actionKey,
+        action: result.action,
+        outputDigest: digest(`${result.status}\0${result.stdout}\0${result.stderr}`),
+      });
+      atomicJson(progressPath, { schemaVersion: 'repo-harness.architecture-refresh-progress/v1', signalId: signal.signalId, actions });
+    };
     const results = signal.mode === 'human-action-required'
       ? []
       : (options.run ?? runDefaultActions)(
@@ -60,17 +71,11 @@ export function consumeArchitectureRefreshSignals(
           new Set(completed.map((entry) => entry.actionKey)),
           options.deadlineMs,
           options.nowMs,
+          checkpoint,
         );
-    const actions = [...completed];
     for (const result of results) {
       if (result.status !== 0) throw new Error(`architecture refresh ${result.action} failed with exit ${result.status}: ${(result.stderr || result.stdout).trim().slice(0, 300)}`);
-      if (actions.some((entry) => entry.actionKey === result.actionKey)) continue;
-      actions.push({
-        actionKey: result.actionKey,
-        action: result.action,
-        outputDigest: digest(`${result.status}\0${result.stdout}\0${result.stderr}`),
-      });
-      atomicJson(progressPath, { schemaVersion: 'repo-harness.architecture-refresh-progress/v1', signalId: signal.signalId, actions });
+      checkpoint(result);
     }
     const body = {
       schemaVersion: 'repo-harness.architecture-refresh-receipt/v1' as const,
@@ -95,23 +100,30 @@ function runDefaultActions(
   completedActionKeys: ReadonlySet<string>,
   deadlineMs?: number,
   nowMs?: () => number,
+  onActionCompleted?: (result: ArchitectureRefreshActionResult) => void,
 ): ArchitectureRefreshActionResult[] {
   const results: ArchitectureRefreshActionResult[] = [];
   for (const path of [...new Set(changedPaths)].sort()) {
     const actionKey = `architecture-queue:${path}`;
     if (completedActionKeys.has(actionKey)) continue;
     const result = runCli(repoRoot, env, ['run', 'architecture-queue', 'record', '--file', path], remainingRefreshTimeout(deadlineMs, nowMs));
-    results.push({ actionKey, action: 'architecture-queue', ...result });
+    const completed = { actionKey, action: 'architecture-queue' as const, ...result };
+    results.push(completed);
     if (result.status !== 0) return results;
+    onActionCompleted?.(completed);
   }
   if (!completedActionKeys.has('context-contract-sync')) {
     const sync = runCli(repoRoot, env, ['run', 'context-contract-sync', 'sync-latest'], remainingRefreshTimeout(deadlineMs, nowMs));
-    results.push({ actionKey: 'context-contract-sync', action: 'context-contract-sync', ...sync });
+    const completed = { actionKey: 'context-contract-sync', action: 'context-contract-sync' as const, ...sync };
+    results.push(completed);
     if (sync.status !== 0) return results;
+    onActionCompleted?.(completed);
   }
   if (!completedActionKeys.has('capability-context-request')) {
     const capability = runCli(repoRoot, env, ['capability-context', 'request', '--from-latest-architecture-event'], remainingRefreshTimeout(deadlineMs, nowMs));
-    results.push({ actionKey: 'capability-context-request', action: 'capability-context-request', ...capability });
+    const completed = { actionKey: 'capability-context-request', action: 'capability-context-request' as const, ...capability };
+    results.push(completed);
+    if (capability.status === 0) onActionCompleted?.(completed);
   }
   return results;
 }

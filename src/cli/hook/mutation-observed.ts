@@ -624,7 +624,7 @@ function writeOrCoalesceJournalEventLocked(repoRoot: string, input: WriteJournal
   const event: PostEditJournalEvent = {
     schema: 'change_observed',
     schema_version: 2,
-    event_id: existing?.event_id ?? `change-${randomUUID()}`,
+    event_id: `change-${randomUUID()}`,
     session_id: input.sessionId,
     created_at: existing?.created_at ?? nowIso,
     updated_at: nowIso,

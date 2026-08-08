@@ -29,6 +29,7 @@ import {
 } from './delegation-state';
 import { consumePendingPostEditEvents, migratePendingPostEditJournalV1, readPendingPostEditEvents, type PostEditJournalEvent } from './mutation-observed';
 import { drainArchitectureProjectionJobs, type ArchitectureProjectionDrainResultV1 } from '../../effects/architecture/projection-orchestrator';
+import { loadArchitectureProjectionPolicy } from '../../effects/architecture/archctx-provider';
 import { runMinimalChangeCli } from './minimal-change-cli';
 import { publishCheckpointFromLedger } from '../../effects/evidence/checkpoint-store';
 import {
@@ -550,10 +551,14 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   } else if (architectureDrainError) {
     stderr.push(`[ArchitectureProjection] orchestration failed: ${architectureDrainError}\n`);
   }
-  const configuredArchitectureGate = nestedString(policy(repoRoot), ['architecture', 'projection_failure_gate']);
-  const architectureGate = configuredArchitectureGate === '' || configuredArchitectureGate === 'advisory'
-    ? 'advisory'
-    : 'strict';
+  let architectureGate: 'advisory' | 'strict' = 'advisory';
+  try {
+    architectureGate = loadArchitectureProjectionPolicy(repoRoot).failureGate;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    architectureDrainError = architectureDrainError ? `${architectureDrainError}; projection policy invalid: ${message}` : `projection policy invalid: ${message}`;
+    architectureGate = 'strict';
+  }
   if (architectureGate === 'strict' && (architectureDrainError || architectureDrain?.status === 'retry-pending' || architectureDrain?.status === 'dead-letter')) {
     const recovery = architectureDrain?.status === 'dead-letter' && architectureDrain.jobId
       ? ` Recover with: repo-harness architecture-projection retry-dead-letter --job-id ${architectureDrain.jobId} --json.`

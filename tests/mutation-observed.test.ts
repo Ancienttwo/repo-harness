@@ -259,7 +259,7 @@ describe('mutation-observed: dirty-bit derivation', () => {
 });
 
 describe('mutation-observed: session-scoped dedupe', () => {
-  test('a same-session edit to the same path coalesces into the same pending file', () => {
+  test('a same-session edit coalesces into the same pending file and advances delivery identity', () => {
     const cwd = tmpWorkspace('mo-coalesce');
     try {
       initRepo(cwd);
@@ -269,11 +269,13 @@ describe('mutation-observed: session-scoped dedupe', () => {
       expect(firstEvents.length).toBe(1);
       const firstEventId = firstEvents[0].event_id;
       const firstCreatedAt = firstEvents[0].created_at;
+      const firstNames = readdirSync(join(cwd, '.ai/harness/journal/post-edit/pending'));
 
       runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/repeat.ts'), env });
       const secondEvents = pendingEvents(cwd);
       expect(secondEvents.length).toBe(1);
-      expect(secondEvents[0].event_id).toBe(firstEventId);
+      expect(readdirSync(join(cwd, '.ai/harness/journal/post-edit/pending'))).toEqual(firstNames);
+      expect(secondEvents[0].event_id).not.toBe(firstEventId);
       expect(secondEvents[0].created_at).toBe(firstCreatedAt);
       expect(secondEvents[0].changed_paths).toEqual(['src/repeat.ts']);
     } finally {

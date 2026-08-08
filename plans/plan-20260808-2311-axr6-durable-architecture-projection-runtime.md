@@ -181,3 +181,4 @@ Failure path: spawn exit/signal/timeout、corrupt JSON、stale snapshot、refres
 - [x] Close third review pass: rotate acknowledged delivery identities, lock journal coalescing/ack, validate disabled policy without spawning, enforce one absolute drain deadline, fail closed on non-terminal results, and recover receipt-before-running-cleanup crashes.
 - [x] Prove the cross-repository snapshot contract by excluding `.ai/harness/**` from the ArchContext repo-harness projection digest (`arch-context@9c2ae39`).
 - [x] Close fourth review pass: surface unresolved-major typed signals, separate preflight from provider attempt budget, serialize v1 migration with PostEdit, and harden Claude capacity/auth signatures.
+- [x] Close fifth review pass: rotate coalesced in-flight delivery identity, unify projection failure-gate parsing, and checkpoint default refresh actions before the next action starts.
