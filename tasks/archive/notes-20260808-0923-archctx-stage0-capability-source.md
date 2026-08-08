@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-08 09:23
+> **Related Plan**: plans/archive/plan-20260808-0216-archctx-stage0-capability-source.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260808-0923
+
 # Implementation Notes: archctx-stage0-capability-source
 
 > **Status**: Active

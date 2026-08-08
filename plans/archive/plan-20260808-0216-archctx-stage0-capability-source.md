@@ -1,6 +1,6 @@
 # Plan: archctx Stage 0: capability_source 开关与 archcontext file-source
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260808-0216
 > **Slug**: archctx-stage0-capability-source
 > **Planning Source**: repo-harness-plan

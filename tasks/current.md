@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-08T02:49:57+0800 -->
+<!-- updated_at: 2026-08-08T09:23:49+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-08T02:49:57+0800
-> **Source Branch**: main
-> **Source Commit**: 68577fce
+> **Updated At**: 2026-08-08T09:23:49+0800
+> **Source Branch**: codex/archctx-stage0-capability-source
+> **Source Commit**: a318ef8a
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -31,8 +31,6 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/ancienttwo/Projects/repo-harness-wt-archctx-stage0-capability-source: plans/plan-20260808-0216-archctx-stage0-capability-source.md
-- /Users/ancienttwo/Projects/repo-harness-wt-archctx-stage0-capability-source: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-archctx-stage0-capability-source
 - /Users/ancienttwo/Projects/repo-harness-wt-untrack-cursor-dir: plans/plan-20260807-0847-untrack-cursor-dir.md
 - /Users/ancienttwo/Projects/repo-harness-wt-untrack-cursor-dir: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-untrack-cursor-dir
 ## Active Sprint
@@ -61,16 +59,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260808-0054-init-command-env-basedrop.md
- D tasks/contracts/20260808-0054-init-command-env-basedrop.contract.md
- D tasks/notes/20260808-0054-init-command-env-basedrop.notes.md
- D tasks/reviews/20260808-0054-init-command-env-basedrop.review.md
+ D plans/plan-20260808-0216-archctx-stage0-capability-source.md
+ D tasks/contracts/20260808-0216-archctx-stage0-capability-source.contract.md
+ D tasks/notes/20260808-0216-archctx-stage0-capability-source.notes.md
+ D tasks/reviews/20260808-0216-archctx-stage0-capability-source.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260808-0054-init-command-env-basedrop.md
-?? tasks/archive/contract-20260808-0249-init-command-env-basedrop.md
-?? tasks/archive/notes-20260808-0249-init-command-env-basedrop.md
-?? tasks/archive/review-20260808-0249-init-command-env-basedrop.md
-?? tasks/archive/todo-20260808-0249-init-command-env-basedrop.md
+?? plans/archive/plan-20260808-0216-archctx-stage0-capability-source.md
+?? tasks/archive/contract-20260808-0923-archctx-stage0-capability-source.md
+?? tasks/archive/notes-20260808-0923-archctx-stage0-capability-source.md
+?? tasks/archive/review-20260808-0923-archctx-stage0-capability-source.md
+?? tasks/archive/todo-20260808-0923-archctx-stage0-capability-source.md
 ```
 
 ## Source Artifacts
