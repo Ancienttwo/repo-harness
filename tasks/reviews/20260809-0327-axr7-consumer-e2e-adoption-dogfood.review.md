@@ -44,11 +44,11 @@
 > **Reviewer**: User
 > **Source**: user-waiver
 > **Actor**: ancienttwo
-> **Reviewed Subject SHA256**: sha256:880fac994ff26fa66b309c1eb6f858d124505e4066f24060073a08181c527c3a
+> **Reviewed Subject SHA256**: sha256:e534fe3b34592450a3cb10be7da4ad75d4dc6cab3cf5462b5a9ea83e059ba973
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: 65c58c4f7f92df3383bd1cee2ef8f4e99eda8e2d
-> **Verification Evidence SHA256**: sha256:96c083f2350441b6c91076afff26627705eed052254a35520d8fdd9de60c41a4
-> **Issued At**: 2026-08-08T21:32:51.111Z
+> **Reviewed Target Revision**: 99c645f368e0c0269cd8871f9f0160cd59c55260
+> **Verification Evidence SHA256**: sha256:ec779f5d81d277892b6e0ae5b1b0fe120ebf4cf3f067663dbc24a027d523a190
+> **Issued At**: 2026-08-08T21:50:26.158Z
 
 - Summary: User explicitly instructed skip Claude review for AXR7.
 - Findings: none
