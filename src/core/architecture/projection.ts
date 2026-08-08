@@ -13,6 +13,20 @@ export const ARCHCTX_REQUIRED_FEATURES = Object.freeze([
   'architecture-refresh-signal-v1',
   'projection-protocol-v1',
 ] as const);
+export const PROJECTION_STATUSES = Object.freeze([
+  'adoption-required', 'applied', 'blocked', 'human-action-required', 'noop',
+  'permanent-failure', 'planned', 'retryable-failure',
+] as const);
+export const ARCHITECTURE_MAJOR_CHANGE_REASONS = Object.freeze([
+  'constraint-changed', 'entrypoint-changed', 'interface-changed', 'lifecycle-changed',
+  'node-added', 'node-moved', 'node-removed', 'node-renamed', 'ownership-changed',
+  'relation-changed', 'responsibility-changed', 'risk-boundary-changed',
+  'verified-flow-proof-changed',
+] as const);
+export const ARCHITECTURE_REFRESH_TARGETS = Object.freeze([
+  'architecture-contract-context', 'architecture-readiness', 'architecture-request-index',
+  'capability-context', 'capability-index',
+] as const);
 
 export type Sha256Digest = `sha256:${string}`;
 export type ProjectionProvider = 'disabled' | 'archctx';
@@ -129,7 +143,7 @@ export interface ArchitectureProjectionPolicy {
 export interface ArchitectureProjectionReadinessV1 {
   schemaVersion: 'repo-harness.architecture-projection-readiness/v1';
   modelAuthority: { source: 'registry' | 'archcontext'; ready: boolean };
-  projectionProvider: { provider: ProjectionProvider; state: 'disabled' | 'missing' | 'mismatch' | 'ready'; binaryPath: string | null; version: string | null; reason: string };
+  projectionProvider: { provider: ProjectionProvider; state: 'disabled' | 'missing' | 'mismatch' | 'error' | 'ready'; binaryPath: string | null; version: string | null; reason: string };
   codeFacts: { requirement: 'required'; state: 'not-evaluated' | 'ready' | 'unavailable' };
   apply: { mode: ProjectionApplyMode; enabled: boolean };
 }
@@ -144,7 +158,7 @@ export function digestProjectionJson(value: unknown): Sha256Digest {
 
 export function readArchitectureProjectionPolicy(value: unknown): ArchitectureProjectionPolicy {
   const root = record(value, 'policy');
-  const architecture = record(root.architecture, 'policy.architecture');
+  const architecture = root.architecture === undefined ? {} : record(root.architecture, 'policy.architecture');
   const provider = architecture.projection_provider ?? 'disabled';
   const applyMode = architecture.projection_apply ?? 'disabled';
   const requiredVersion = architecture.projection_version ?? ARCHCTX_REQUIRED_VERSION;
@@ -195,16 +209,132 @@ export function projectionResultIssues(input: ProjectionResultV1): string[] {
   if (input.schemaVersion !== PROJECTION_RESULT_VERSION) issues.push('schemaVersion mismatch');
   if (!sortedUnique(input.affectedNodeIds)) issues.push('affectedNodeIds must be sorted and unique');
   if (!sortedUnique(input.files.map((file) => file.path))) issues.push('files must be sorted and unique by path');
+  if (!sortedUnique(input.refreshSignals.map((signal) => signal.signalId))) issues.push('refreshSignals.signalId must be sorted and unique');
+  for (const [index, action] of input.humanActions.entries()) if (!sortedUnique(action.affectedNodeIds)) issues.push(`humanActions[${index}].affectedNodeIds must be sorted and unique`);
   if (!sameIdentity(input.inputSnapshot, input.outputSnapshot)) issues.push('input/output snapshot identity mismatch');
+  for (const [index, file] of input.files.entries()) {
+    if (file.action === 'create' && (file.preimageDigest !== null || file.outputDigest === null)) issues.push(`files[${index}] create digest contract invalid`);
+    if (file.action === 'delete' && (file.preimageDigest === null || file.outputDigest !== null)) issues.push(`files[${index}] delete digest contract invalid`);
+    if (file.action === 'update' && (file.preimageDigest === null || file.outputDigest === null || file.preimageDigest === file.outputDigest)) issues.push(`files[${index}] update digest contract invalid`);
+    if (file.action === 'unchanged' && (file.preimageDigest === null || file.outputDigest === null || file.preimageDigest !== file.outputDigest)) issues.push(`files[${index}] unchanged digest contract invalid`);
+  }
   const { receiptDigest, ...receiptPayload } = input;
   if (projectionResultReceiptDigest(receiptPayload) !== receiptDigest) issues.push('receiptDigest mismatch');
-  for (const signal of input.refreshSignals) {
+  for (const [index, signal] of input.refreshSignals.entries()) {
+    issues.push(...refreshSignalIssues(signal, `refreshSignals[${index}]`));
     if (signal.projectionReceiptDigest !== input.receiptDigest) issues.push(`signal ${signal.signalId} receipt mismatch`);
     if (signal.repository.repositoryId !== input.outputSnapshot.repositoryId || signal.worktree.workspaceId !== input.outputSnapshot.workspaceId || signal.worktree.headSha !== input.outputSnapshot.headSha || signal.worktree.worktreeDigest !== input.outputSnapshot.worktreeDigest) issues.push(`signal ${signal.signalId} snapshot mismatch`);
   }
   if ((input.status === 'adoption-required' || input.status === 'human-action-required') !== (input.humanActions.length > 0)) issues.push('human action/status mismatch');
   return issues;
 }
+
+function refreshSignalIssues(signal: ArchitectureRefreshSignalV1, label: string): string[] {
+  const issues: string[] = [];
+  if (!sortedUnique(signal.reasonCodes) || signal.reasonCodes.length === 0) issues.push(`${label}.reasonCodes must be sorted, unique and non-empty`);
+  if (!sortedUnique(signal.affectedNodeIds) || signal.affectedNodeIds.length === 0) issues.push(`${label}.affectedNodeIds must be sorted, unique and non-empty`);
+  if (!sortedUnique(signal.refreshTargets) || signal.refreshTargets.length === 0) issues.push(`${label}.refreshTargets must be sorted, unique and non-empty`);
+  if (signal.cause === 'unresolved-major-candidate' && signal.mode !== 'human-action-required') issues.push(`${label} unresolved major candidate mode mismatch`);
+  if (signal.cause !== 'unresolved-major-candidate' && signal.mode !== 'refresh-required') issues.push(`${label} accepted change mode mismatch`);
+  if (signal.mode === 'refresh-required' && !signal.acceptedChange) issues.push(`${label} refresh-required needs acceptedChange`);
+  if (signal.mode === 'human-action-required' && signal.acceptedChange) issues.push(`${label} human-action-required forbids acceptedChange`);
+  if (signal.acceptedChange) {
+    if (!sortedUnique(signal.acceptedChange.reasonCodes) || !sortedUnique(signal.acceptedChange.affectedNodeIds)) issues.push(`${label}.acceptedChange arrays must be sorted and unique`);
+    if (signal.acceptedChange.reasonCodes.join('\0') !== signal.reasonCodes.join('\0')) issues.push(`${label}.acceptedChange reasonCodes mismatch`);
+    if (signal.acceptedChange.affectedNodeIds.join('\0') !== signal.affectedNodeIds.join('\0')) issues.push(`${label}.acceptedChange affectedNodeIds mismatch`);
+  }
+  return issues;
+}
+
+/** Strict untrusted-wire decoder. Structural validation happens before invariant checks so corrupt
+ * provider JSON becomes one fail-closed contract error rather than a property-access TypeError. */
+export function assertProjectionResult(value: unknown, expectedRequestId?: string): ProjectionResultV1 {
+  const input = record(value, 'projection result');
+  if (input.schemaVersion !== PROJECTION_RESULT_VERSION) throw new Error('projection result schemaVersion mismatch');
+  if (typeof input.requestId !== 'string' || !/^[a-zA-Z0-9_.:-]+$/.test(input.requestId)) throw new Error('projection result requestId invalid');
+  if (expectedRequestId !== undefined && input.requestId !== expectedRequestId) throw new Error('projection result requestId mismatch');
+  if (typeof input.status !== 'string' || !(PROJECTION_STATUSES as readonly string[]).includes(input.status)) throw new Error('projection result status invalid');
+  assertProjectionSnapshot(input.inputSnapshot, 'projection result inputSnapshot');
+  assertProjectionSnapshot(input.outputSnapshot, 'projection result outputSnapshot');
+  assertStringArray(input.affectedNodeIds, 'projection result affectedNodeIds');
+  if (!Array.isArray(input.files)) throw new Error('projection result files must be an array');
+  for (const [index, value] of input.files.entries()) {
+    const file = record(value, `projection result files[${index}]`);
+    if (typeof file.path !== 'string' || !repoRelativePosix(file.path)) throw new Error(`projection result files[${index}].path invalid`);
+    if (file.action !== 'create' && file.action !== 'delete' && file.action !== 'unchanged' && file.action !== 'update') throw new Error(`projection result files[${index}].action invalid`);
+    if (file.preimageDigest !== null && !isDigest(file.preimageDigest)) throw new Error(`projection result files[${index}].preimageDigest invalid`);
+    if (file.outputDigest !== null && !isDigest(file.outputDigest)) throw new Error(`projection result files[${index}].outputDigest invalid`);
+  }
+  if (!Array.isArray(input.humanActions)) throw new Error('projection result humanActions must be an array');
+  for (const [index, value] of input.humanActions.entries()) {
+    const action = record(value, `projection result humanActions[${index}]`);
+    if (!['adoption-required', 'manual-region-conflict', 'target-collision', 'unprovable-required-flow', 'unresolved-major-change'].includes(String(action.reasonCode))) throw new Error(`projection result humanActions[${index}].reasonCode invalid`);
+    assertStringArray(action.affectedNodeIds, `projection result humanActions[${index}].affectedNodeIds`);
+    if (!isDigest(action.requestPayloadDigest)) throw new Error(`projection result humanActions[${index}].requestPayloadDigest invalid`);
+  }
+  if (!Array.isArray(input.refreshSignals)) throw new Error('projection result refreshSignals must be an array');
+  for (const [index, signal] of input.refreshSignals.entries()) assertArchitectureRefreshSignal(signal, `projection result refreshSignals[${index}]`);
+  if (!isDigest(input.receiptDigest)) throw new Error('projection result receiptDigest invalid');
+  const result = input as unknown as ProjectionResultV1;
+  const issues = projectionResultIssues(result);
+  if (issues.length > 0) throw new Error(`projection result invariant failed: ${issues.join('; ')}`);
+  return result;
+}
+
+function assertProjectionSnapshot(value: unknown, label: string): void {
+  const snapshot = record(value, label);
+  if (typeof snapshot.repositoryId !== 'string' || snapshot.repositoryId.trim() === '') throw new Error(`${label}.repositoryId invalid`);
+  if (typeof snapshot.workspaceId !== 'string' || snapshot.workspaceId.trim() === '') throw new Error(`${label}.workspaceId invalid`);
+  if (typeof snapshot.headSha !== 'string' || !HEAD.test(snapshot.headSha)) throw new Error(`${label}.headSha invalid`);
+  if (typeof snapshot.baseHeadSha !== 'string' || !HEAD.test(snapshot.baseHeadSha)) throw new Error(`${label}.baseHeadSha invalid`);
+  for (const field of ['worktreeDigest', 'sourceTreeDigest', 'modelDigest', 'codeGraphDigest', 'projectionInputDigest'] as const) {
+    if (!isDigest(snapshot[field])) throw new Error(`${label}.${field} invalid`);
+  }
+  if (snapshot.indexedWorktreeDigest !== null && !isDigest(snapshot.indexedWorktreeDigest)) throw new Error(`${label}.indexedWorktreeDigest invalid`);
+  if (snapshot.rendererVersion !== ARCHITECTURE_DOCS_RENDERER_VERSION || snapshot.layoutVersion !== ARCHITECTURE_DOCS_LAYOUT_VERSION) throw new Error(`${label} renderer/layout mismatch`);
+  const generated = record(snapshot.generatedFrom, `${label}.generatedFrom`);
+  if (generated.codeGraphPackage !== '@colbymchenry/codegraph' || generated.codeGraphVersion !== '1.5.0') throw new Error(`${label}.generatedFrom package/version mismatch`);
+  if (!isDigest(generated.codeGraphBinaryDigest) || (generated.codeGraphStatus !== 'ready' && generated.codeGraphStatus !== 'unavailable')) throw new Error(`${label}.generatedFrom invalid`);
+  if (generated.codeGraphStatus === 'ready' && !isDigest(snapshot.indexedWorktreeDigest)) throw new Error(`${label}.indexedWorktreeDigest required when CodeGraph is ready`);
+}
+
+function assertArchitectureRefreshSignal(value: unknown, label: string): void {
+  const signal = record(value, label);
+  if (signal.schemaVersion !== ARCHITECTURE_REFRESH_SIGNAL_VERSION) throw new Error(`${label}.schemaVersion mismatch`);
+  for (const field of ['signalId', 'idempotencyKey', 'projectionReceiptDigest'] as const) if (!isDigest(signal[field])) throw new Error(`${label}.${field} invalid`);
+  if (signal.mode !== 'human-action-required' && signal.mode !== 'refresh-required') throw new Error(`${label}.mode invalid`);
+  if (signal.cause !== 'accepted-semantic-delta' && signal.cause !== 'unresolved-major-candidate' && signal.cause !== 'verified-flow-proof-delta') throw new Error(`${label}.cause invalid`);
+  const repository = record(signal.repository, `${label}.repository`);
+  const worktree = record(signal.worktree, `${label}.worktree`);
+  if (typeof repository.repositoryId !== 'string' || repository.repositoryId.trim() === '') throw new Error(`${label}.repositoryId invalid`);
+  if (typeof worktree.workspaceId !== 'string' || typeof worktree.headSha !== 'string' || !HEAD.test(worktree.headSha) || !isDigest(worktree.worktreeDigest)) throw new Error(`${label}.worktree invalid`);
+  const reasonCodes = assertStringArray(signal.reasonCodes, `${label}.reasonCodes`);
+  if (reasonCodes.some((reason) => !(ARCHITECTURE_MAJOR_CHANGE_REASONS as readonly string[]).includes(reason))) throw new Error(`${label}.reasonCodes invalid`);
+  assertStringArray(signal.affectedNodeIds, `${label}.affectedNodeIds`);
+  const targets = assertStringArray(signal.refreshTargets, `${label}.refreshTargets`);
+  if (targets.some((target) => !(ARCHITECTURE_REFRESH_TARGETS as readonly string[]).includes(target))) throw new Error(`${label}.refreshTargets invalid`);
+  assertDigestSet(signal.baseDigests, `${label}.baseDigests`);
+  assertDigestSet(signal.resultingDigests, `${label}.resultingDigests`);
+  if (signal.acceptedChange !== undefined) {
+    const accepted = record(signal.acceptedChange, `${label}.acceptedChange`);
+    if (typeof accepted.changeSetId !== 'string' || accepted.changeSetId.trim() === '' || typeof accepted.eventId !== 'string' || accepted.eventId.trim() === '') throw new Error(`${label}.acceptedChange identity invalid`);
+    assertStringArray(accepted.reasonCodes, `${label}.acceptedChange.reasonCodes`);
+    assertStringArray(accepted.affectedNodeIds, `${label}.acceptedChange.affectedNodeIds`);
+  }
+}
+
+function assertDigestSet(value: unknown, label: string): void {
+  const set = record(value, label);
+  for (const field of ['modelDigest', 'sourceTreeDigest', 'flowProofDigest', 'projectionDigest'] as const) if (!isDigest(set[field])) throw new Error(`${label}.${field} invalid`);
+}
+
+function assertStringArray(value: unknown, label: string): string[] {
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string' || entry.trim() === '')) throw new Error(`${label} must be an array of non-empty strings`);
+  return value as string[];
+}
+
+function isDigest(value: unknown): value is Sha256Digest { return typeof value === 'string' && DIGEST.test(value); }
+function repoRelativePosix(value: string): boolean { return value !== '' && !value.startsWith('/') && !value.includes('\\') && !value.split('/').some((part) => part === '' || part === '.' || part === '..'); }
 
 function sameIdentity(left: ProjectionSnapshotV1, right: ProjectionSnapshotV1): boolean {
   return left.repositoryId === right.repositoryId && left.workspaceId === right.workspaceId && left.baseHeadSha === right.baseHeadSha;

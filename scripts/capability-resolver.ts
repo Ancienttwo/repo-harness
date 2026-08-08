@@ -33,6 +33,10 @@ export type ArchContextNodeV2 = {
     include: string[];
   };
   extensions: {
+    contractFiles: {
+      agents: string;
+      claude: string;
+    };
     lspProfile: string;
     verification: string[];
   };
@@ -390,6 +394,10 @@ function toArchContextNodeV2(capability: Capability, isExistingDirectory: (path:
       include: includes,
     },
     extensions: {
+      contractFiles: {
+        agents: capability.contract_files.agents,
+        claude: capability.contract_files.claude,
+      },
       lspProfile: capability.lsp_profile,
       verification: [...capability.verification_hints],
     },

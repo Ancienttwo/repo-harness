@@ -1,28 +1,22 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
-import { delimiter, join, relative, resolve, sep } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 import { capabilityRegistryFromArchcontextNodes, type ArchcontextNodeFile } from '../../core/capabilities/registry';
 import {
   ARCHCTX_REQUIRED_VERSION,
   ARCHITECTURE_DOCS_LAYOUT_VERSION,
   ARCHITECTURE_DOCS_RENDERER_VERSION,
-  PROJECTION_REQUEST_VERSION,
-  PROJECTION_RESULT_VERSION,
   assertArchctxCapabilities,
+  assertProjectionResult,
   digestProjectionJson,
   projectionRequestIssues,
-  projectionResultIssues,
-  projectionResultReceiptDigest,
   readArchitectureProjectionPolicy,
   type ArchitectureProjectionPolicy,
   type ArchitectureProjectionReadinessV1,
-  type ArchitectureRefreshSignalV1,
   type ArchctxCapabilitiesV1,
   type ProjectionRequestV1,
   type ProjectionResultV1,
-  type ProjectionSnapshotV1,
-  type Sha256Digest,
 } from '../../core/architecture/projection';
 
 export interface ArchctxProcessResult { status: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string; error?: string }
@@ -35,7 +29,7 @@ export interface ArchctxProviderOptions {
   run?: RunArchctxProcess;
 }
 
-const PROJECTION_WORKTREE_IGNORES = new Set([
+const PROJECTION_WORKTREE_IGNORE_NAMES = new Set([
   '.git',
   '.codegraph',
   'node_modules',
@@ -43,8 +37,10 @@ const PROJECTION_WORKTREE_IGNORES = new Set([
   'artifacts',
   '_ops',
   '_ref',
-  '.archcontext/.local',
   '.DS_Store',
+]);
+const PROJECTION_WORKTREE_IGNORE_PATHS = new Set([
+  '.archcontext/.local',
   'docs/architecture',
 ]);
 
@@ -53,18 +49,6 @@ export interface ResolvedArchctxPackage {
   packageRoot: string;
   version: string;
 }
-
-type ArchctxProjectionProvenance = Pick<ProjectionSnapshotV1,
-  | 'baseHeadSha'
-  | 'worktreeDigest'
-  | 'sourceTreeDigest'
-  | 'modelDigest'
-  | 'codeGraphDigest'
-  | 'indexedWorktreeDigest'
-  | 'projectionInputDigest'
-  | 'rendererVersion'
-  | 'layoutVersion'
-  | 'generatedFrom'>;
 
 const DEFAULT_RUNNER: RunArchctxProcess = (binary, args, options) => {
   const result = spawnSync(binary, [...args], {
@@ -92,7 +76,9 @@ export function resolvePackageLocalArchctx(consumerRoot: string, requiredVersion
   if (manifest.name !== 'archctx' || manifest.version !== requiredVersion) throw new Error(`package-local archctx mismatch: expected archctx@${requiredVersion}, got ${String(manifest.name)}@${String(manifest.version)}`);
   const realBinary = realpathSync(binaryPath);
   const realPackage = realpathSync(packageRoot);
-  if (!realBinary.startsWith(realPackage) && !realBinary.startsWith(`${resolve(consumerRoot)}${delimiter === ';' ? '\\' : '/'}`)) throw new Error('package-local archctx binary escapes the consumer install root');
+  const realConsumer = realpathSync(resolve(consumerRoot));
+  const inside = (path: string, root: string) => path === root || path.startsWith(`${root}${sep}`);
+  if (!inside(realBinary, realPackage) && !inside(realBinary, realConsumer)) throw new Error('package-local archctx binary escapes the consumer install root');
   return { binaryPath, packageRoot, version: requiredVersion };
 }
 
@@ -130,10 +116,15 @@ export function inspectArchitectureProjectionReadiness(repoRoot: string, options
     };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
+    const state: ArchitectureProjectionReadinessV1['projectionProvider']['state'] = reason.includes('is missing')
+      ? 'missing'
+      : reason.includes('mismatch')
+        ? 'mismatch'
+        : 'error';
     return {
       schemaVersion: 'repo-harness.architecture-projection-readiness/v1',
       modelAuthority: { source, ready: source === 'registry' || existsSync(join(repoRoot, '.archcontext', 'model', 'nodes')) },
-      projectionProvider: { provider: 'archctx', state: reason.includes('mismatch') ? 'mismatch' : 'missing', binaryPath: null, version: null, reason },
+      projectionProvider: { provider: 'archctx', state, binaryPath: null, version: null, reason },
       codeFacts: { requirement: 'required', state: 'unavailable' },
       apply: { mode: policy.applyMode, enabled: false },
     };
@@ -147,56 +138,16 @@ export function runArchitectureProjection(request: ProjectionRequestV1, repoRoot
   if (request.mode === 'apply' && policy.applyMode === 'disabled') throw new Error('architecture projection apply is disabled');
   assertExpectedSnapshot(request.expected, captureArchitectureProjectionSnapshot(repoRoot), 'before projection');
   const { resolved } = archctxCapabilities(repoRoot, { ...options, policy });
-  const args = docsArgs(request);
+  const args = ['projection', 'run', '--request-json', JSON.stringify(request)];
   const processResult = (options.run ?? DEFAULT_RUNNER)(resolved.binaryPath, args, { cwd: repoRoot, timeoutMs: policy.timeoutMs, env: options.env ?? process.env });
   if (processResult.status !== 0 || processResult.signal || processResult.error) throw new Error(`archctx projection failed: ${processFailure(processResult)}`);
   const envelope = parseJson(processResult.stdout, 'archctx projection') as Record<string, unknown>;
   if (envelope.schemaVersion !== 'archcontext.envelope/v1' || envelope.ok !== true || !isRecord(envelope.data)) throw new Error(`archctx projection returned an invalid envelope: ${safeError(envelope)}`);
-  const result = mapProjectionResult(request, envelope.data);
-  assertExpectedSnapshot(request.expected, captureArchitectureProjectionSnapshot(repoRoot), 'after projection');
-  const issues = projectionResultIssues(result);
-  if (issues.length > 0) throw new Error(`archctx projection result invariant failed: ${issues.join('; ')}`);
+  const result = assertProjectionResult(envelope.data, request.requestId);
+  assertExpectedSnapshot(request.expected, result.inputSnapshot, 'in provider result input');
+  assertExpectedSnapshot(result.outputSnapshot, captureArchitectureProjectionSnapshot(repoRoot), 'after projection');
+  if (result.inputSnapshot.rendererVersion !== ARCHITECTURE_DOCS_RENDERER_VERSION || result.outputSnapshot.rendererVersion !== ARCHITECTURE_DOCS_RENDERER_VERSION || result.inputSnapshot.layoutVersion !== ARCHITECTURE_DOCS_LAYOUT_VERSION || result.outputSnapshot.layoutVersion !== ARCHITECTURE_DOCS_LAYOUT_VERSION) throw new Error('archctx projection renderer/layout mismatch');
   return result;
-}
-
-function mapProjectionResult(request: ProjectionRequestV1, data: Record<string, unknown>): ProjectionResultV1 {
-  const provenance = asProvenance(data.provenance);
-  if (provenance.worktreeDigest !== request.expected.worktreeDigest) throw new Error('archctx projection snapshot does not match request.expected');
-  const snapshot: ProjectionSnapshotV1 = {
-    ...request.expected,
-    baseHeadSha: provenance.baseHeadSha,
-    sourceTreeDigest: provenance.sourceTreeDigest,
-    modelDigest: provenance.modelDigest,
-    codeGraphDigest: provenance.codeGraphDigest,
-    indexedWorktreeDigest: provenance.indexedWorktreeDigest,
-    projectionInputDigest: provenance.projectionInputDigest,
-    rendererVersion: ARCHITECTURE_DOCS_RENDERER_VERSION,
-    layoutVersion: ARCHITECTURE_DOCS_LAYOUT_VERSION,
-    generatedFrom: provenance.generatedFrom,
-  };
-  const refreshSignals = array(data.refreshSignals).map((value) => value as ArchitectureRefreshSignalV1);
-  const rejected = array(isRecord(data.drift) ? data.drift.diffs : data.rejected).filter(isRecord);
-  const humanSignalNodes = refreshSignals.filter((signal) => signal.mode === 'human-action-required').flatMap((signal) => signal.affectedNodeIds);
-  const adoptionRequired = rejected.some((entry) => entry.reasonCode === 'projection-adoption-required');
-  const humanActions: ProjectionResultV1['humanActions'] = [];
-  if (adoptionRequired) humanActions.push({ reasonCode: 'adoption-required', affectedNodeIds: [], requestPayloadDigest: digestProjectionJson(request) });
-  if (humanSignalNodes.length > 0) humanActions.push({ reasonCode: 'unresolved-major-change', affectedNodeIds: unique(humanSignalNodes), requestPayloadDigest: digestProjectionJson(request) });
-  const status = projectionStatus(request, data, adoptionRequired, humanSignalNodes.length > 0);
-  const files = projectionFiles(data);
-  const affectedNodeIds = unique([...humanSignalNodes, ...refreshSignals.flatMap((signal) => signal.affectedNodeIds)]);
-  const withoutReceipt: Omit<ProjectionResultV1, 'receiptDigest'> = {
-    schemaVersion: PROJECTION_RESULT_VERSION,
-    requestId: request.requestId,
-    status,
-    inputSnapshot: snapshot,
-    outputSnapshot: snapshot,
-    affectedNodeIds,
-    files,
-    humanActions,
-    refreshSignals,
-  };
-  const receiptDigest = projectionResultReceiptDigest(withoutReceipt);
-  return { ...withoutReceipt, refreshSignals: refreshSignals.map((signal) => ({ ...signal, projectionReceiptDigest: receiptDigest })), receiptDigest };
 }
 
 /**
@@ -209,9 +160,9 @@ export function captureArchitectureProjectionSnapshot(repoRoot: string): Project
   const head = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   const headSha = head.status === 0 ? (head.stdout ?? '').trim() : '';
   if (!/^[a-f0-9]{40}$/.test(headSha)) throw new Error('architecture projection requires a readable 40-character Git HEAD');
-  const ignored = new Set(PROJECTION_WORKTREE_IGNORES);
-  for (const path of architectureAgentContextTargets(root)) ignored.add(path);
-  const files = listProjectionInputFiles(root, ignored).map((path) => {
+  const ignoredPaths = new Set(PROJECTION_WORKTREE_IGNORE_PATHS);
+  for (const path of architectureAgentContextTargets(root)) ignoredPaths.add(path);
+  const files = listProjectionInputFiles(root, ignoredPaths).map((path) => {
     const absolute = resolve(root, path);
     return {
       path,
@@ -255,7 +206,7 @@ function listProjectionInputFiles(root: string, ignored: Set<string>): string[] 
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const absolute = resolve(directory, entry.name);
       const path = relative(root, absolute).split(sep).join('/');
-      if (!path || ignored.has(entry.name) || ignored.has(path) || ignored.has(path.split('/')[0]!) || [...ignored].some((pattern) => path.startsWith(`${pattern}/`))) continue;
+      if (!path || PROJECTION_WORKTREE_IGNORE_NAMES.has(entry.name) || ignored.has(path) || [...ignored].some((pattern) => path.startsWith(`${pattern}/`))) continue;
       if (entry.isDirectory()) walk(absolute);
       else if (entry.isFile()) files.push(path);
     }
@@ -266,50 +217,6 @@ function assertExpectedSnapshot(expected: ProjectionRequestV1['expected'], actua
   for (const field of ['repositoryId', 'workspaceId', 'headSha', 'worktreeDigest'] as const) {
     if (expected[field] !== actual[field]) throw new Error(`architecture projection expected snapshot mismatch ${phase}: ${field}`);
   }
-}
-
-function projectionFiles(data: Record<string, unknown>): ProjectionResultV1['files'] {
-  const drift = isRecord(data.drift) ? array(data.drift.diffs).filter(isRecord) : [];
-  return drift.flatMap<ProjectionResultV1['files'][number]>((entry) => {
-    const path = typeof entry.path === 'string' ? entry.path : null;
-    if (!path) return [];
-    const expected = digestOrNull(entry.expectedDigest);
-    const actual = digestOrNull(entry.actualDigest);
-    const reason = String(entry.reasonCode ?? '');
-    if (reason === 'projection-file-missing' || reason === 'projection-manifest-missing') return expected ? [{ path, action: 'create' as const, preimageDigest: null, outputDigest: expected }] : [];
-    if (reason === 'projection-orphaned') return actual ? [{ path, action: 'delete' as const, preimageDigest: actual, outputDigest: null }] : [];
-    if (expected && actual && expected !== actual) return [{ path, action: 'update' as const, preimageDigest: actual, outputDigest: expected }];
-    return [];
-  }).sort((left, right) => left.path.localeCompare(right.path));
-}
-
-function projectionStatus(request: ProjectionRequestV1, data: Record<string, unknown>, adoption: boolean, human: boolean): ProjectionResultV1['status'] {
-  if (adoption) return 'adoption-required';
-  if (human) return 'human-action-required';
-  if (data.status === 'noop') return 'noop';
-  if (request.mode === 'apply') return 'applied';
-  const drift = isRecord(data.drift) ? data.drift : null;
-  return drift?.ok === true ? 'noop' : 'planned';
-}
-
-function docsArgs(request: ProjectionRequestV1): string[] {
-  const subcommand = request.mode === 'check' ? 'plan' : request.mode;
-  const args = ['docs', subcommand, '--profile', 'repo-harness/v1', '--generated-at', new Date(0).toISOString(), '--task-session-id', request.requestId];
-  if (request.mode === 'apply') args.push('--approved', '--expected-worktree-digest', request.expected.worktreeDigest);
-  if (request.mode === 'adopt') args.push('--approved', '--adoption-plan-id', request.adoptionPlanId!, '--expected-worktree-digest', request.expected.worktreeDigest);
-  return args;
-}
-
-function asProvenance(value: unknown): ArchctxProjectionProvenance {
-  if (!isRecord(value)) throw new Error('archctx projection provenance is missing');
-  const generated = value.generatedFrom;
-  if (!isRecord(generated) || generated.codeGraphPackage !== '@colbymchenry/codegraph' || generated.codeGraphVersion !== '1.5.0' || (generated.codeGraphStatus !== 'ready' && generated.codeGraphStatus !== 'unavailable')) throw new Error('archctx CodeGraph provenance mismatch');
-  const required = ['baseHeadSha', 'worktreeDigest', 'sourceTreeDigest', 'modelDigest', 'codeGraphDigest', 'projectionInputDigest', 'rendererVersion', 'layoutVersion'] as const;
-  for (const field of required) if (typeof value[field] !== 'string') throw new Error(`archctx projection provenance.${field} is missing`);
-  if (value.rendererVersion !== ARCHITECTURE_DOCS_RENDERER_VERSION || value.layoutVersion !== ARCHITECTURE_DOCS_LAYOUT_VERSION) throw new Error('archctx projection renderer/layout mismatch');
-  const result = value as unknown as ArchctxProjectionProvenance;
-  for (const digest of [result.worktreeDigest, result.sourceTreeDigest, result.modelDigest, result.codeGraphDigest, result.projectionInputDigest, generated.codeGraphBinaryDigest]) if (!digestOrNull(digest)) throw new Error('archctx projection provenance digest invalid');
-  return { ...result, generatedFrom: generated as ProjectionSnapshotV1['generatedFrom'] };
 }
 
 function findConsumerRoot(): string {
@@ -336,6 +243,3 @@ function parseJson(text: string, label: string): unknown {
 function processFailure(result: ArchctxProcessResult): string { return result.error ?? (result.signal ? `signal ${result.signal}` : `exit ${result.status}: ${(result.stderr || result.stdout).trim().slice(0, 300)}`); }
 function safeError(value: Record<string, unknown>): string { return isRecord(value.error) && typeof value.error.message === 'string' ? value.error.message : 'unknown error'; }
 function isRecord(value: unknown): value is Record<string, unknown> { return !!value && typeof value === 'object' && !Array.isArray(value); }
-function array(value: unknown): unknown[] { return Array.isArray(value) ? value : []; }
-function unique(values: readonly string[]): string[] { return [...new Set(values)].sort(); }
-function digestOrNull(value: unknown): Sha256Digest | null { return typeof value === 'string' && /^sha256:[a-f0-9]{64}$/.test(value) ? value as Sha256Digest : null; }

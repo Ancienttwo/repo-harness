@@ -37,6 +37,8 @@ try {
   ], checkout).stdout) as Record<string, any>;
   if (release.ok !== true || release.package?.version !== VERSION) throw new Error(`archctx pack failed: ${JSON.stringify(release.failures ?? release)}`);
   const archctxTarball = join(artifacts, String(release.artifact.tarball));
+  const codeGraphPlatform = installedPlatformPackage('@colbymchenry', 'codegraph');
+  const jiebaPlatform = installedPlatformPackage('@node-rs', 'jieba');
 
   mkdirSync(consumer, { recursive: true });
   writeFileSync(join(consumer, 'package.json'), `${JSON.stringify({
@@ -45,9 +47,9 @@ try {
       archctx: `file:${archctxTarball}`,
       'archctx-contracts': `file:${contracts.tarball}`,
       '@colbymchenry/codegraph': `file:${join(archContextRoot, 'node_modules', '@colbymchenry', 'codegraph')}`,
-      '@colbymchenry/codegraph-darwin-arm64': `file:${join(archContextRoot, 'node_modules', '.bun', 'node_modules', '@colbymchenry', 'codegraph-darwin-arm64')}`,
+      [codeGraphPlatform.name]: `file:${codeGraphPlatform.path}`,
       '@node-rs/jieba': `file:${join(archContextRoot, 'node_modules', '@node-rs', 'jieba')}`,
-      '@node-rs/jieba-darwin-arm64': `file:${join(archContextRoot, 'node_modules', '@node-rs', 'jieba-darwin-arm64')}`,
+      [jiebaPlatform.name]: `file:${jiebaPlatform.path}`,
     },
   }, null, 2)}\n`);
   const offlineEnv = {
@@ -56,6 +58,8 @@ try {
     BUN_CONFIG_REGISTRY: 'http://127.0.0.1:9',
   };
   run('npm', ['install', '--offline', '--ignore-scripts', '--omit=dev', '--omit=optional'], consumer, offlineEnv);
+  const installedNodeSchema = JSON.parse(readFileSync(join(consumer, 'node_modules', 'archctx-contracts', 'schemas', 'repo', 'architecture-node.schema.json'), 'utf8')) as any;
+  if (installedNodeSchema.properties?.schemaVersion?.const !== 'archcontext.node/v2') throw new Error('packed archctx-contracts does not expose authoritative node/v2 schema');
 
   mkdirSync(join(fixtureRepo, '.ai', 'harness'), { recursive: true });
   mkdirSync(join(fixtureRepo, '.archcontext', 'model', 'nodes'), { recursive: true });
@@ -106,6 +110,9 @@ extensions:
   });
   installedBinary = handshake.resolved.binaryPath;
   if (handshake.capabilities.package.version !== VERSION) throw new Error('package-local feature handshake version mismatch');
+  const packageLocalBinary = handshake.resolved.binaryPath === join(consumer, 'node_modules', '.bin', 'archctx');
+  const conflictingPathIgnored = packageLocalBinary && handshake.capabilities.package.version === VERSION && !realpathSync(handshake.resolved.binaryPath).startsWith(`${conflictDir}/`);
+  if (!packageLocalBinary || !conflictingPathIgnored) throw new Error('package-local provider authority was not proven');
   const expected = captureArchitectureProjectionSnapshot(fixtureRepo);
   daemonRoot = fixtureRepo;
   run(installedBinary, ['daemon', 'upgrade'], fixtureRepo, { ...offlineEnv, PATH: `${conflictDir}:${process.env.PATH ?? ''}` });
@@ -126,7 +133,7 @@ extensions:
   const readback = {
     schemaVersion: 'repo-harness.axr5-clean-room/v1',
     status: 'verified',
-    source: { repository: archContextRoot, revision, dirtySourceUsed: false },
+    source: { repository: 'Ancienttwo/arch-context', revision, archiveMode: 'git-archive', dirtySourceUsed: false },
     packages: {
       contracts: { name: 'archctx-contracts', version: VERSION, file: basename(contracts.tarball), integrity: contracts.integrity, sha512: sha512(contracts.tarball) },
       archctx: { name: 'archctx', version: VERSION, file: basename(archctxTarball), integrity: release.artifact.integrity, sha512: sha512(archctxTarball) },
@@ -135,8 +142,9 @@ extensions:
       registry: 'disabled-loopback',
       installMode: 'temporary-file-tarballs',
       committedFileDependency: false,
-      packageLocalBinary: handshake.resolved.binaryPath.endsWith('node_modules/.bin/archctx'),
-      conflictingPathIgnored: true,
+      packageLocalBinary,
+      conflictingPathIgnored,
+      authoritativeNodeSchema: installedNodeSchema.properties.schemaVersion.const,
       capabilities: handshake.capabilities,
       projection: {
         requestId: projection.requestId,
@@ -215,6 +223,20 @@ function prepareReleaseVersion(checkout: string): void {
   const updated = source.replace(/export const ARCHCONTEXT_PRODUCT_VERSION = "[^"]+";/, `export const ARCHCONTEXT_PRODUCT_VERSION = "${VERSION}";`);
   if (updated === source) throw new Error('product version source was not updated');
   writeFileSync(productVersionPath, updated);
+}
+
+function installedPlatformPackage(scope: string, baseName: string): { name: string; path: string } {
+  const expectedPrefix = `${baseName}-${process.platform}-${process.arch}`;
+  const roots = [
+    join(archContextRoot, 'node_modules', scope),
+    join(archContextRoot, 'node_modules', '.bun', 'node_modules', scope),
+  ];
+  for (const root of roots) {
+    if (!existsSync(root)) continue;
+    const name = readdirSync(root).find((entry) => entry === expectedPrefix || entry.startsWith(`${expectedPrefix}-`));
+    if (name) return { name: `${scope}/${name}`, path: join(root, name) };
+  }
+  throw new Error(`installed platform package is missing: ${scope}/${expectedPrefix}*`);
 }
 
 function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = process.env): { stdout: string; stderr: string } {

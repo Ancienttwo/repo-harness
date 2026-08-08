@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260808-2015-axr5-archctx-provider-node-v2-readiness.md
 > **Contract**: tasks/contracts/20260808-2015-axr5-archctx-provider-node-v2-readiness.contract.md
 > **Review**: tasks/reviews/20260808-2015-axr5-archctx-provider-node-v2-readiness.review.md
-> **Last Updated**: 2026-08-08 21:02
+> **Last Updated**: 2026-08-08 23:58
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -18,6 +18,11 @@
   declared agent-context targets. It checks the snapshot both before and after projection.
 - A sticky ArchContext `baseHeadSha` is retained as generation provenance and is not
   confused with the request's current `headSha`; worktree identity remains the CAS boundary.
+- The external review proved that AXR0 had published the request/result contracts without a
+  producer command that actually accepted `ProjectionRequestV1`. ArchContext commit
+  `309588e951d0f4612b177ceb154526ff8c9d5b9a` now owns that wire through
+  `archctx projection run --request-json`; repo-harness only validates and returns the typed
+  result. It does not synthesize status, receipts, refresh signals, or output snapshots.
 
 ## Deviations From Plan Or Spec
 
@@ -47,12 +52,22 @@
 - Run snapshots: `.ai/harness/runs/`
 - Clean-room package/provider readback:
   `docs/verification/axr5-archctx-clean-room-readback.json`
-- Focused suite: 99 pass, 0 fail across the eight contract test files.
+- ArchContext producer verification at `309588e951d0f4612b177ceb154526ff8c9d5b9a`:
+  `bun run verify` passed 1221 tests with 0 failures, including package boundary, Mermaid,
+  packaged CLI smoke, privacy, production readback, and evaluation gates.
+- Focused consumer suite after the review repair: 100 pass, 0 fail, 451 expects across the
+  eight contract test files; `bun run check:type` and `bun run check:helpers` also pass.
+- The regenerated clean-room fixture installs packed 0.4.0 artifacts with registry access
+  disabled, proves the authoritative node schema is `archcontext.node/v2`, ignores a
+  conflicting PATH binary, and executes the typed producer command with a valid receipt.
 - First full suite: 2262 pass, 1 skip, 1 transient review-subject concurrency failure;
   isolated `tests/archive-evidence-gates.test.ts --rerun-each=2` passed 22/22.
-- Canonical `bun run check:ci`: 2263 pass, 1 skip, 0 fail across 180 files; type,
+- Canonical pre-review `bun run check:ci`: 2263 pass, 1 skip, 0 fail across 180 files; type,
   boundary, helper/reference projections, workflow gates, inspection, package dry-run,
   tarball install smoke and architecture/task sync gates all completed successfully.
+- Canonical post-review-repair `bun run check:ci`: 2264 pass, 1 skip, 0 fail across
+  180 files with 17506 expects; the same full gate, package dry-run, and tarball install
+  smoke completed successfully.
 
 ## Promotion Filter
 

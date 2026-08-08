@@ -12,7 +12,10 @@ interface ProjectionCommandOptions {
 
 export function buildArchitectureProjectionCommand(): Command {
   const command = new Command('architecture-projection').description('Run the configured deterministic architecture projection provider');
-  command.command('status').requiredOption('--json', 'Output readiness JSON').action(() => write(inspectArchitectureProjectionReadiness(repositoryRoot())));
+  command.command('status').requiredOption('--json', 'Output readiness JSON').action(() => {
+    try { write(inspectArchitectureProjectionReadiness(repositoryRoot())); }
+    catch (error) { fail(error); }
+  });
   for (const name of ['check', 'plan', 'apply', 'drain'] as const) {
     command.command(name)
       .requiredOption('--json', 'Output ProjectionResultV1 JSON')
@@ -43,11 +46,22 @@ function execute(mode: ProjectionMode, options: ProjectionCommandOptions): void 
       expected,
       ...(mode === 'adopt' ? { adoptionPlanId: options.adoptionPlanId } : {}),
     };
-    write(runArchitectureProjection(request, root));
+    const result = runArchitectureProjection(request, root);
+    write(result);
+    if (architectureProjectionExitCode(mode, result.status) !== 0) process.exitCode = 1;
   } catch (error) {
-    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-    process.exitCode = 1;
+    fail(error);
   }
+}
+
+export function architectureProjectionExitCode(mode: ProjectionMode, status: string): 0 | 1 {
+  if (status === 'noop' || status === 'applied') return 0;
+  return mode === 'plan' && status === 'planned' ? 0 : 1;
+}
+
+function fail(error: unknown): void {
+  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  process.exitCode = 1;
 }
 
 function repositoryRoot(): string { return git(process.cwd(), ['rev-parse', '--show-toplevel']); }

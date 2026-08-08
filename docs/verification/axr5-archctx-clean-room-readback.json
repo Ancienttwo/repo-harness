@@ -2,8 +2,9 @@
   "schemaVersion": "repo-harness.axr5-clean-room/v1",
   "status": "verified",
   "source": {
-    "repository": "/Users/ancienttwo/Projects/arch-context",
-    "revision": "81275bb25103c041aa28a60a3489f043dcb5e20b",
+    "repository": "Ancienttwo/arch-context",
+    "revision": "309588e951d0f4612b177ceb154526ff8c9d5b9a",
+    "archiveMode": "git-archive",
     "dirtySourceUsed": false
   },
   "packages": {
@@ -18,8 +19,8 @@
       "name": "archctx",
       "version": "0.4.0",
       "file": "archctx-0.4.0.tgz",
-      "integrity": "sha512-XS2LwefjjyRuKLbMICYsABPsuKaq6jqPbO1RKaoWT8vAsVadPmcGDbpkHg+oznkkLWTDeJGHWky0jpAfwuBhgg==",
-      "sha512": "5d2d8bc1e7e38f246e28b6cc20262c0013ecb8a6aaea3a8f6ced5129aa164fcbc0b1569d3e67060dba641e0fa8ce79242d64c37891875a4cb48e901fc2e06182"
+      "integrity": "sha512-+vDdaqPhS6zXpQHLHLmsZ7LRXvaewkrADy6idBOLuP+x9vNxGonCeXiYSeGCKMOqfRiO+h/hiGXL0kCmkPOIMg==",
+      "sha512": "faf0dd6aa3e14bacd7a501cb1cb9ac67b2d15ef69ec24ac00f2ea274138bb8ffb1f6f3711a89c279789849e18228c3aa7d188efa1fe18865cbd240a690f38832"
     }
   },
   "consumer": {
@@ -28,6 +29,7 @@
     "committedFileDependency": false,
     "packageLocalBinary": true,
     "conflictingPathIgnored": true,
+    "authoritativeNodeSchema": "archcontext.node/v2",
     "capabilities": {
       "schemaVersion": "archcontext.capabilities/v1",
       "package": {
@@ -61,7 +63,7 @@
         "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
         "codeGraphStatus": "unavailable"
       },
-      "receiptDigest": "sha256:fbdd22eeea9f06f2b05ab3e888eeff2f90cad5a005c57540fb9b682a3b88b4fc"
+      "receiptDigest": "sha256:585c158676baa3b17c9832c7e1fc553c040dc15b78f887473576172aaf6fb630"
     }
   }
 }

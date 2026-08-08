@@ -19,6 +19,7 @@ import {
   type ArchctxProcessResult,
   type RunArchctxProcess,
 } from '../src/effects/architecture/archctx-provider';
+import { architectureProjectionExitCode } from '../src/cli/commands/architecture-projection';
 
 const roots: string[] = [];
 const digest = (value: string) => `sha256:${value.repeat(64).slice(0, 64)}` as const;
@@ -104,26 +105,30 @@ function request(repoRoot: string): ProjectionRequestV1 {
 }
 
 function projectionEnvelope(expected: ProjectionRequestV1['expected']) {
-  return {
-    schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'docs.plan', data: {
-      schemaVersion: 'archcontext.docs-projection-change-set/v1',
-      provenance: {
-        schemaVersion: 'archcontext.architecture-docs-projection-provenance/v1',
-        baseHeadSha: expected.headSha,
-        worktreeDigest: expected.worktreeDigest,
-        sourceTreeDigest: digest('2'),
-        modelDigest: digest('3'),
-        codeGraphDigest: digest('4'),
-        indexedWorktreeDigest: digest('1'),
-        projectionInputDigest: digest('5'),
-        rendererVersion: 'archcontext.docs-renderer/v2',
-        layoutVersion: 'archcontext.docs-layout/v1',
-        generatedFrom: { codeGraphPackage: '@colbymchenry/codegraph', codeGraphVersion: '1.5.0', codeGraphBinaryDigest: digest('6'), codeGraphStatus: 'ready' },
-      },
-      drift: { ok: false, reasonCodes: ['projection-file-missing'], diffs: [{ path: 'docs/architecture/index.md', reasonCode: 'projection-file-missing', expectedDigest: digest('7') }] },
-      refreshSignals: [],
-    },
+  const snapshot = {
+    ...expected,
+    baseHeadSha: expected.headSha,
+    sourceTreeDigest: digest('2'),
+    modelDigest: digest('3'),
+    codeGraphDigest: digest('4'),
+    indexedWorktreeDigest: digest('1'),
+    projectionInputDigest: digest('5'),
+    rendererVersion: 'archcontext.docs-renderer/v2' as const,
+    layoutVersion: 'archcontext.docs-layout/v1' as const,
+    generatedFrom: { codeGraphPackage: '@colbymchenry/codegraph' as const, codeGraphVersion: '1.5.0' as const, codeGraphBinaryDigest: digest('6'), codeGraphStatus: 'ready' as const },
   };
+  const withoutReceipt = {
+    schemaVersion: 'archcontext.projection-result/v1' as const,
+    requestId: 'request.axr5',
+    status: 'planned' as const,
+    inputSnapshot: { ...snapshot },
+    outputSnapshot: { ...snapshot },
+    affectedNodeIds: [],
+    files: [{ path: 'docs/architecture/index.md', action: 'create' as const, preimageDigest: null, outputDigest: digest('7') }],
+    humanActions: [],
+    refreshSignals: [],
+  };
+  return { schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'projection.run', data: { ...withoutReceipt, receiptDigest: projectionResultReceiptDigest(withoutReceipt) } };
 }
 
 function runner(calls: Array<{ binary: string; args: readonly string[] }>, docs: ReturnType<typeof projectionEnvelope>): RunArchctxProcess {
@@ -134,6 +139,15 @@ function runner(calls: Array<{ binary: string; args: readonly string[] }>, docs:
 }
 
 describe('package-local ArchContext projection provider', () => {
+  test('manual command exit status distinguishes clean/planned from human and failure outcomes', () => {
+    expect(architectureProjectionExitCode('check', 'noop')).toBe(0);
+    expect(architectureProjectionExitCode('check', 'planned')).toBe(1);
+    expect(architectureProjectionExitCode('plan', 'planned')).toBe(0);
+    expect(architectureProjectionExitCode('apply', 'applied')).toBe(0);
+    for (const status of ['adoption-required', 'human-action-required', 'blocked', 'retryable-failure', 'permanent-failure']) {
+      expect(architectureProjectionExitCode('plan', status)).toBe(1);
+    }
+  });
   test('resolves only the package-local exact version and never PATH', () => {
     const f = fixture();
     const resolved = resolvePackageLocalArchctx(f.consumerRoot);
@@ -158,7 +172,8 @@ describe('package-local ArchContext projection provider', () => {
     expect(calls).toHaveLength(2);
     expect(calls.every((call) => call.binary === f.binary)).toBe(true);
     expect(calls[0]!.args).toEqual(['capabilities', '--json']);
-    expect(calls[1]!.args.slice(0, 2)).toEqual(['docs', 'plan']);
+    expect(calls[1]!.args.slice(0, 3)).toEqual(['projection', 'run', '--request-json']);
+    expect(JSON.parse(calls[1]!.args[3]!)).toEqual(projectionRequest);
     expect(result.status).toBe('planned');
     expect(result.files).toEqual([{ path: 'docs/architecture/index.md', action: 'create', preimageDigest: null, outputDigest: digest('7') }]);
     expect(projectionResultIssues(result)).toEqual([]);
@@ -173,6 +188,10 @@ describe('package-local ArchContext projection provider', () => {
     expect(before.workspaceId).toMatch(/^workspace\.[a-f0-9]{16}$/);
     writeFileSync(join(f.repoRoot, 'AGENTS.md'), 'changed generated output\n');
     expect(captureArchitectureProjectionSnapshot(f.repoRoot)).toEqual(before);
+    mkdirSync(join(f.repoRoot, 'nested'), { recursive: true });
+    writeFileSync(join(f.repoRoot, 'nested', 'AGENTS.md'), 'not a projection target\n');
+    expect(captureArchitectureProjectionSnapshot(f.repoRoot).worktreeDigest).not.toBe(before.worktreeDigest);
+    rmSync(join(f.repoRoot, 'nested'), { recursive: true, force: true });
     writeFileSync(join(f.repoRoot, 'src', 'core', 'index.ts'), 'export const value = 2;\n');
     expect(captureArchitectureProjectionSnapshot(f.repoRoot).worktreeDigest).not.toBe(before.worktreeDigest);
   });
@@ -185,7 +204,17 @@ describe('package-local ArchContext projection provider', () => {
     expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: mismatch })).toThrow('feature set mismatch');
     expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: () => ({ status: 0, signal: null, stdout: '{', stderr: '' }) })).toThrow('corrupt JSON');
     const stale = structuredClone(validEnvelope);
-    (stale.data.provenance as { worktreeDigest: string }).worktreeDigest = digest('9');
-    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner([], stale) })).toThrow('does not match request.expected');
+    stale.data.outputSnapshot.worktreeDigest = digest('9');
+    const { receiptDigest: _old, ...payload } = stale.data;
+    stale.data.receiptDigest = projectionResultReceiptDigest(payload);
+    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner([], stale) })).toThrow('snapshot mismatch after projection');
+
+    const corrupt = structuredClone(validEnvelope) as any;
+    corrupt.data.refreshSignals = [{}];
+    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner([], corrupt) })).toThrow('refreshSignals[0].schemaVersion');
+
+    const forged = structuredClone(validEnvelope) as any;
+    forged.data.receiptDigest = digest('f');
+    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner([], forged) })).toThrow('receiptDigest mismatch');
   });
 });

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { buildArchContextNodesV2, findMatch, type ArchContextNodeV2 } from '../scripts/capability-resolver';
-import { archcontextIncludeToPrefix, type Capability, type CapabilityRegistry } from '../src/core/capabilities/registry';
+import { archcontextIncludeToPrefix, capabilityRegistryFromArchcontextNodes, type Capability, type CapabilityRegistry } from '../src/core/capabilities/registry';
 
 const ROOT = join(import.meta.dir, '..');
 const capability = (id: string, domain: string, name: string, prefixes: string[]): Capability => ({
@@ -42,11 +42,15 @@ describe('capability-resolver archcontext-nodes-v2 export', () => {
     expect(webNode.summary).toContain('apps-web/web');
     expect(webNode.responsibilities).toHaveLength(1);
     expect(webNode.source.include).toEqual(['apps/web/**']);
+    expect(webNode.extensions.contractFiles).toEqual(web.contract_files);
     expect(nodes.find((node) => node.id === 'capability.public-surface.root-router')!.source.include).toEqual(['AGENTS.md', 'CLAUDE.md']);
   });
 
   test('round-trips representative longest-prefix matches', () => {
     const nodes = buildArchContextNodesV2(registry, { isExistingDirectory: directory });
+    const roundTrip = capabilityRegistryFromArchcontextNodes(nodes.map((value, index) => ({ path: `${index}.yaml`, value })), { repoRoot: ROOT, isExistingDirectory: directory });
+    expect(roundTrip.status).toBe('valid');
+    if (roundTrip.status === 'valid') expect(roundTrip.registry.capabilities).toEqual([...registry.capabilities].sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
     for (const path of ['apps/web/src/routes/account/page.tsx', 'apps/web/other.ts', 'AGENTS.md', 'README.md']) {
       const legacy = findMatch(registry, ROOT, path);
       const matches = nodes.flatMap((node) => {
