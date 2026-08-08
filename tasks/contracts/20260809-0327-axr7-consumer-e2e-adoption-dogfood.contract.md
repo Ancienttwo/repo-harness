@@ -91,7 +91,10 @@ allowed_paths:
   - plans/
   - package.json
   - bun.lock
-  - scripts/axr7-
+  - scripts/axr7-build-flow-repair-proposal.ts
+  - scripts/axr7-build-model-proposal.ts
+  - scripts/axr7-build-selector-repair-proposal.ts
+  - scripts/axr7-consumer-e2e.ts
   - scripts/check-architecture-sync.sh
   - tasks/todos.md
   - tasks/contracts/20260809-0327-axr7-consumer-e2e-adoption-dogfood.contract.md
