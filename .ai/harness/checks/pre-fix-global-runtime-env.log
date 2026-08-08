@@ -1,0 +1,41 @@
+bun test v1.3.14 (0d9b296a)
+
+tests/cli/global-runtime.test.ts:
+67 |     withOverriddenHome('npx', (tmp, home, statePath) => {
+68 |       // isNpxCacheSource() matches on the `_npx` path segment, so this drives the
+69 |       // branch that injects AGENTIC_DEV_LINK_INSTALLED_COPIES with no caller env.
+70 |       const source = join(tmp, '_npx', 'abc123', 'node_modules', 'repo-harness');
+71 |       mkdirSync(source, { recursive: true });
+72 |       expect(runWithSeededHome(source, home)).toThrow(statePath);
+                                                   ^
+error: expect(received).toThrow(expected)
+
+Expected substring: "/var/folders/_6/dkz7p7251y1gqntnk0ll5n380000gn/T/repo-harness-global-runtime-env-base-npx-1786152505737/home/.repo-harness/install-state.json"
+Received message: "invalid skill-surface catalog at /var/folders/_6/dkz7p7251y1gqntnk0ll5n380000gn/T/repo-harness-global-runtime-env-base-npx-1786152505737/_npx/abc123/node_modules/repo-harness/assets/skill-commands/manifest.json: MANIFEST_MISSING $: skill-surface manifest is missing"
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-global-runtime-env-basedrop/tests/cli/global-runtime.test.ts:72:47)
+      at withOverriddenHome (/Users/ancienttwo/Projects/repo-harness-wt-global-runtime-env-basedrop/tests/cli/global-runtime.test.ts:56:7)
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-global-runtime-env-basedrop/tests/cli/global-runtime.test.ts:67:5)
+(fail) global runtime setup command env base > npx cache source with no caller env keeps process.env as the constructed env base [11.02ms]
+78 |       // commandEnv() passes `undefined` straight through here (a well-defined
+79 |       // value downstream); bindBunRuntimeEnv() is the helper that must not
+80 |       // materialize a PATH-only record out of it.
+81 |       const source = join(tmp, 'installed', 'repo-harness');
+82 |       mkdirSync(source, { recursive: true });
+83 |       expect(runWithSeededHome(source, home)).toThrow(statePath);
+                                                   ^
+error: expect(received).toThrow(expected)
+
+Expected substring: "/var/folders/_6/dkz7p7251y1gqntnk0ll5n380000gn/T/repo-harness-global-runtime-env-base-plain-1786152505749/home/.repo-harness/install-state.json"
+Received message: "invalid skill-surface catalog at /var/folders/_6/dkz7p7251y1gqntnk0ll5n380000gn/T/repo-harness-global-runtime-env-base-plain-1786152505749/installed/repo-harness/assets/skill-commands/manifest.json: MANIFEST_MISSING $: skill-surface manifest is missing"
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-global-runtime-env-basedrop/tests/cli/global-runtime.test.ts:83:47)
+      at withOverriddenHome (/Users/ancienttwo/Projects/repo-harness-wt-global-runtime-env-basedrop/tests/cli/global-runtime.test.ts:56:7)
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-global-runtime-env-basedrop/tests/cli/global-runtime.test.ts:77:5)
+(fail) global runtime setup command env base > non-npx source with no caller env keeps process.env as the constructed env base [5.44ms]
+
+ 0 pass
+ 2 fail
+ 2 expect() calls
+Ran 2 tests across 1 file. [59.00ms]
+PRE_FIX_EXIT=1
