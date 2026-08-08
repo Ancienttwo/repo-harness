@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-08 19:37
+> **Related Plan**: plans/archive/plan-20260808-1326-archctx-stage2-authority-cutover.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260808-1937
+
 # Task Contract: archctx-stage2-authority-cutover
 
 > **Status**: Fulfilled

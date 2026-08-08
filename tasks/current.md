@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-08T10:33:06+0800 -->
+<!-- updated_at: 2026-08-08T19:37:19+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-08T10:33:06+0800
+> **Updated At**: 2026-08-08T19:37:19+0800
 > **Source Branch**: main
-> **Source Commit**: 1a6133d4
+> **Source Commit**: eb634edb
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -56,19 +56,20 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: 11 changed/untracked path(s)
 
 ```
- D plans/plan-20260808-0924-global-runtime-env-basedrop.md
- D tasks/contracts/20260808-0924-global-runtime-env-basedrop.contract.md
- D tasks/notes/20260808-0924-global-runtime-env-basedrop.notes.md
- D tasks/reviews/20260808-0924-global-runtime-env-basedrop.review.md
+ D plans/plan-20260808-1326-archctx-stage2-authority-cutover.md
+ D tasks/contracts/20260808-1326-archctx-stage2-authority-cutover.contract.md
+ D tasks/notes/20260808-1326-archctx-stage2-authority-cutover.notes.md
+ D tasks/reviews/20260808-1326-archctx-stage2-authority-cutover.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260808-0924-global-runtime-env-basedrop.md
-?? tasks/archive/contract-20260808-1033-global-runtime-env-basedrop.md
-?? tasks/archive/notes-20260808-1033-global-runtime-env-basedrop.md
-?? tasks/archive/review-20260808-1033-global-runtime-env-basedrop.md
-?? tasks/archive/todo-20260808-1033-global-runtime-env-basedrop.md
+?? docs/researches/20260808-repo-harness-in-opencode.md
+?? plans/archive/plan-20260808-1326-archctx-stage2-authority-cutover.md
+?? tasks/archive/contract-20260808-1937-archctx-stage2-authority-cutover.md
+?? tasks/archive/notes-20260808-1937-archctx-stage2-authority-cutover.md
+?? tasks/archive/review-20260808-1937-archctx-stage2-authority-cutover.md
+?? tasks/archive/todo-20260808-1937-archctx-stage2-authority-cutover.md
 ```
 
 ## Source Artifacts

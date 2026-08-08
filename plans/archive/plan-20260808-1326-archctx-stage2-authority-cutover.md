@@ -1,6 +1,6 @@
 # Plan: Stage 2: archcontext capability authority cutover (self-host)
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260808-1326
 > **Slug**: archctx-stage2-authority-cutover
 > **Planning Source**: repo-harness-plan
