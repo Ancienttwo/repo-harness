@@ -1,26 +1,26 @@
 # Task Review: axr6-durable-architecture-projection-runtime
 
-> **Status**: Pending
+> **Status**: Reviewed
 > **Plan**: plans/plan-20260808-2311-axr6-durable-architecture-projection-runtime.md
 > **Contract**: tasks/contracts/20260808-2311-axr6-durable-architecture-projection-runtime.contract.md
 > **Notes File**: tasks/notes/20260808-2311-axr6-durable-architecture-projection-runtime.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-08-09 11:14
-> **Recommendation**: fail
+> **Last Updated**: 2026-08-09 11:25
+> **Recommendation**: pass
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: sha256:f47706820795e594d0184f43e68c447b2e3c90a438be1ee467d6fedfcf97b5e6
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: cea71bc3c2c3c328c16e9c0d8af15f302703d367
+> **Reviewed Target Revision**: 65c58c4f7f92df3383bd1cee2ef8f4e99eda8e2d
 
 ## Human Review Card
 
-- Verdict: pending external semantic acceptance
+- Verdict: pass by the contract-authorized typed user waiver; this is not represented as an external Claude pass
 - Change type: code-change
 - Intended files changed: durable architecture journal/job/orchestrator/refresh/Stop runtime, installer timeout contract, policy/assets, tests and AXR6 workflow artifacts
 - Actual files changed: all paths are inside the contract `allowed_paths`; `verify-sprint --prepare-acceptance` reports no outside paths
 - Commands passed: `bun run check:ci`; focused AXR6 contract suite; `bun run check:type`; `bun run check:helpers`; packed installed-host cycle; `repo-harness run verify-sprint --prepare-acceptance`
-- Residual risks: provider semantic acceptance is unavailable until Claude capacity resets or the user explicitly grants the contract's allowed waiver
-- Reviewer action required: Claude must review the frozen current subject, or the user must explicitly grant a waiver for that exact subject
+- Residual risks: the current subject has no external Claude verdict; the owner explicitly accepted that bounded review risk after all machine gates passed
+- Reviewer action required: none; the valid `user_waiver` AcceptanceReceipt is recorded and exact-subject bound
 - Rollback: disable the provider, drain to zero pending observations, revert AXR6 as one unit, preserve receipts/dead letters
 
 ## Mode Evidence
@@ -36,22 +36,22 @@
 - Manual checks: packed installed-host cycle proved the legacy 30-second kill, immediate orphan-provider quarantine without a second provider, and post-lease attempt-2 durable receipt
 - Supporting artifacts: `.ai/harness/checks/latest.json` and `.ai/harness/runs/run-20260809T030948-19692-20260808-2311-axr6-durable-architecture-projection-runtime.json`
 - Implementation notes reviewed: `tasks/notes/20260808-2311-axr6-durable-architecture-projection-runtime.notes.md`
-- Run snapshot: contract total=15, failed=0, status=Fulfilled; acceptance receipt remains pending
+- Run snapshot: contract total=15, failed=0, status=Fulfilled; final `verify-sprint` accepted the typed waiver without rerunning verification
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: Claude
-> **Source**: repo-harness cross-review
-> **Actor**: unavailable
+> **Disposition**: user_waiver
+> **Reviewer**: User
+> **Source**: user-waiver
+> **Actor**: ancienttwo
 > **Reviewed Subject SHA256**: sha256:f47706820795e594d0184f43e68c447b2e3c90a438be1ee467d6fedfcf97b5e6
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: cea71bc3c2c3c328c16e9c0d8af15f302703d367
-> **Verification Evidence SHA256**: sha256:a92da55b48bef32605e962d7cd171cd7965cc65fe78cb4c0fdede6afbe6bed78
-> **Issued At**: pending
+> **Reviewed Target Revision**: 65c58c4f7f92df3383bd1cee2ef8f4e99eda8e2d
+> **Verification Evidence SHA256**: sha256:91c4a41deda4d5e2dbbab9088f8d3718472d7abb01f2f1ccd27624bf269347d6
+> **Issued At**: 2026-08-08T19:25:17.833Z
 
-- Summary: No AcceptanceReceipt has been recorded. The current frozen subject reached Claude, but the provider returned `You've hit your weekly limit · resets Aug 11 at 4pm (Asia/Hong_Kong)` before producing findings or a recommendation.
-- Findings: none for the current subject; absence of findings is not a pass
+- Summary: User explicitly instructed to skip the frozen Claude review for AXR6 on 2026-08-09.
+- Findings: none
 
 ## Behavior Diff Notes
 
@@ -64,7 +64,7 @@
 
 ## Residual Risks / Follow-ups
 
-- The current subject has no external semantic verdict because the required Claude provider is capacity-blocked.
+- The current subject has no external semantic verdict because the required Claude provider was capacity-blocked; the owner accepted this bounded residual risk through the recorded waiver.
 - Operational receipts and dead letters have no retention policy in AXR6; this is advisory follow-up, not an acceptance failure.
 - An explicitly retried dead letter still requires the queue to be otherwise operable; the runtime reports the durable blockage rather than deleting evidence.
 
@@ -72,20 +72,20 @@
 
 | Dimension | Score | Notes |
 |-----------|-------|-------|
-| Functionality | pending | Machine gates pass; semantic acceptance unavailable |
-| Product depth | pending | Seven completed review rounds were repaired; current subject is unreviewed |
-| Design quality | pending | Durable authority boundaries are implemented and tested |
-| Code quality | pending | Final repository suite passes; frozen reviewer verdict is still required |
+| Functionality | 10/10 | Machine gates and installed-host cycle pass |
+| Product depth | 9/10 | Seven completed review rounds were repaired; external final verdict was waived |
+| Design quality | 9/10 | Durable authority boundaries are implemented and tested |
+| Code quality | 9/10 | Final repository suite passes; typed owner acceptance is exact-subject bound |
 
 ## Failing Items
 
-- External acceptance gate: required Claude review could not complete because the provider weekly limit was reached.
+- None. Claude review was explicitly skipped through the contract-authorized user waiver, not reclassified as an external pass.
 
 ## Retest Steps
 
-- Re-run: repo-harness cross-review against subject `sha256:f47706820795e594d0184f43e68c447b2e3c90a438be1ee467d6fedfcf97b5e6` after 2026-08-11 16:00 Asia/Hong_Kong.
-- Re-check: record one typed AcceptanceReceipt, then run `repo-harness run verify-sprint` without `--prepare-acceptance`.
+- Re-run: `repo-harness run verify-sprint` verifies the exact typed receipt without rerunning contract commands.
+- Re-check: `repo-harness run acceptance-receipt verify --contract tasks/contracts/20260808-2311-axr6-durable-architecture-projection-runtime.contract.md --verification .ai/harness/checks/latest.json`.
 
 ## Summary
 
-- Implementation and machine verification are complete. Promotion remains blocked exclusively on the frozen external AcceptanceReceipt; this document deliberately does not convert a provider-capacity failure into a pass.
+- Implementation and machine verification are complete. Promotion is authorized by the typed `user_waiver`; the evidence deliberately preserves that provenance instead of converting it into a Claude pass.
