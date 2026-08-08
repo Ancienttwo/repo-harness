@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-09 03:26
+> **Related Plan**: plans/archive/plan-20260808-2311-axr6-durable-architecture-projection-runtime.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260809-0326
+
 # Implementation Notes: axr6-durable-architecture-projection-runtime
 
 > **Status**: Active

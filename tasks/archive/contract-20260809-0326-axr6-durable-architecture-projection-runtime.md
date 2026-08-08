@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-09 03:26
+> **Related Plan**: plans/archive/plan-20260808-2311-axr6-durable-architecture-projection-runtime.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260809-0326
+
 # Task Contract: axr6-durable-architecture-projection-runtime
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260808-2311-axr6-durable-architecture-projection-runtime.md
 > **Task Profile**: code-change
 > **Workflow Profile**: strict

@@ -1,6 +1,6 @@
 # Plan: AXR6 Durable Architecture Projection Runtime
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260808-2311
 > **Slug**: axr6-durable-architecture-projection-runtime
 > **Planning Source**: repo-harness-sprint
