@@ -1,12 +1,12 @@
 # Task Contract: archctx-stage2-authority-cutover
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260808-1326-archctx-stage2-authority-cutover.md
 > **Task Profile**: migration
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
-> **Last Updated**: 2026-08-08 13:26
+> **Last Updated**: 2026-08-08 17:12
 > **Review File**: `tasks/reviews/20260808-1326-archctx-stage2-authority-cutover.review.md`
 > **Notes File**: `tasks/notes/20260808-1326-archctx-stage2-authority-cutover.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
@@ -149,11 +149,11 @@ exit_criteria:
 
 ## Acceptance Notes (Human Review)
 
-- Functional behavior:
-- Edge cases:
-- Regression risks:
+- Functional behavior: this repo resolves its ten capabilities from `.archcontext/model/nodes/*.yaml` under `capability_source: "archcontext"`; `.ai/context/capabilities.json` is deleted. Nodes and the retired registry were proven to resolve identically before the switch flipped, and re-proven independently at acceptance (all compared fields equal, 15/15 path-match parity against the `main` registry resolver).
+- Edge cases: `check-task-workflow` selects its required capability artifact by source mode and fails closed in all four combinations; both seeder paths that would have resurrected an empty registry are gated on the target repo's own source and were shown to be live and directional; `capability-config` and `capability-context sync --apply` refuse to write the registry under archcontext instead of silently recreating it; a missing or unreadable nodes directory resolves as `invalid`, never `absent`.
+- Regression risks: downstream generated repos keep registry mode — verified by initialising throwaway repos from this worktree and from `main` and diffing the trees (identical modulo fixture names and transaction timestamps). Registry-mode state hashing stays byte-identical, so existing fixtures and goldens are unaffected. Residual risks and follow-ups are enumerated in the review file.
 
 ## Rollback Point
 
-- Commit / checkpoint:
-- Revert strategy:
+- Commit / checkpoint: `1eaf63019aadd2129376987957170d8310b35c3f` (branch point, equal to `origin/main` at the time of the cut).
+- Revert strategy: revert `1ffe78de` to restore registry authority, the registry file, and the pre-thin drift card in one step; `65b808b4` is workflow-artifact-only and can be reverted with it or left in place. The nodes directory and the architecture-doc markers are additive and inert under `capability_source: "registry"`, so no cleanup follows a revert.
