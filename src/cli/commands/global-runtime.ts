@@ -123,7 +123,7 @@ function resolveBunExecutable(env?: NodeJS.ProcessEnv): string {
 function bindBunRuntimeEnv(env: NodeJS.ProcessEnv | undefined, bunExecutable: string): NodeJS.ProcessEnv {
   const activePath = env?.PATH ?? process.env.PATH ?? "";
   return {
-    ...(env ?? {}),
+    ...(env ?? process.env),
     PATH: [dirname(bunExecutable), activePath].filter(Boolean).join(delimiter),
   };
 }
@@ -269,11 +269,9 @@ function isNpxCacheSource(sourceRoot: string): boolean {
 }
 
 function commandEnv(sourceRoot: string, env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv | undefined {
-  const next = { ...(env ?? {}) };
-  if (isNpxCacheSource(sourceRoot) && next.AGENTIC_DEV_LINK_INSTALLED_COPIES === undefined) {
-    next.AGENTIC_DEV_LINK_INSTALLED_COPIES = "0";
-  }
-  return Object.keys(next).length > 0 ? next : env;
+  if (!isNpxCacheSource(sourceRoot)) return env;
+  if (env?.AGENTIC_DEV_LINK_INSTALLED_COPIES !== undefined) return env;
+  return { ...(env ?? process.env), AGENTIC_DEV_LINK_INSTALLED_COPIES: "0" };
 }
 
 function packageVersion(sourceRoot: string): string | null {
