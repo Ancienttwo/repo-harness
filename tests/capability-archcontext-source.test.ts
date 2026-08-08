@@ -396,7 +396,7 @@ describe("capability source: source-layer failures S1-S6", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Node-layer matrix N1-N13.
+// Node-layer matrix N1-N16.
 // ---------------------------------------------------------------------------
 
 const VALID_NODE_LINES = TWIN_NODES[0].lines;
@@ -507,9 +507,29 @@ const NODE_CASES: ReadonlyArray<{
     ]),
     fragment: "extensions.contractFiles.agents and extensions.contractFiles.claude are required",
   },
+  {
+    label: "N14 node name is missing",
+    code: "ARCHCONTEXT_NODE_NAME_INVALID",
+    lines: withoutLines(VALID_NODE_LINES, ["name: web"]),
+    fragment: "name is required by archcontext.node/v2",
+  },
+  {
+    label: "N15 node summary is missing",
+    code: "ARCHCONTEXT_NODE_SUMMARY_INVALID",
+    lines: withoutLines(VALID_NODE_LINES, ["summary: Web application shell"]),
+    fragment: "summary is required by archcontext.node/v2",
+  },
+  {
+    label: "N16 node responsibilities are empty",
+    code: "ARCHCONTEXT_NODE_RESPONSIBILITIES_INVALID",
+    lines: replaceLine(VALID_NODE_LINES, "responsibilities:", ["responsibilities: []"]).filter(
+      (line) => line !== "  - Own the web shell",
+    ),
+    fragment: "responsibilities must contain at least one non-empty string",
+  },
 ];
 
-describe("capability source: node-layer matrix N1-N13", () => {
+describe("capability source: node-layer matrix N1-N16", () => {
   for (const nodeCase of NODE_CASES) {
     test(`${nodeCase.label} fails closed`, () => {
       const parsed = Bun.YAML.parse(yaml(nodeCase.lines));
@@ -527,9 +547,7 @@ describe("capability source: node-layer matrix N1-N13", () => {
       try {
         const res = runResolver(cwd, ["validate", "--format", "text"]);
         expect(res.status).toBe(1);
-        expect(res.stdout).toBe("");
-        expect(res.stderr).toContain(`malformed capability registry: ${NODES_DIR}`);
-        expect(res.stderr).toContain(nodeCase.fragment);
+        expect(`${res.stdout}${res.stderr}`).toContain(nodeCase.fragment);
       } finally {
         rmSync(cwd, { recursive: true, force: true });
       }

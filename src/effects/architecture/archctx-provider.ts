@@ -68,18 +68,19 @@ export function loadArchitectureProjectionPolicy(repoRoot: string): Architecture
 }
 
 export function resolvePackageLocalArchctx(consumerRoot: string, requiredVersion: string = ARCHCTX_REQUIRED_VERSION): ResolvedArchctxPackage {
-  const packageRoot = join(resolve(consumerRoot), 'node_modules', 'archctx');
+  const packageRoot = findInstalledArchctxPackageRoot(consumerRoot, requiredVersion);
   const manifestPath = join(packageRoot, 'package.json');
-  const binaryPath = join(resolve(consumerRoot), 'node_modules', '.bin', process.platform === 'win32' ? 'archctx.cmd' : 'archctx');
-  if (!existsSync(manifestPath) || !existsSync(binaryPath)) throw new Error(`package-local archctx@${requiredVersion} is missing under ${resolve(consumerRoot)}`);
-  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { name?: unknown; version?: unknown };
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { name?: unknown; version?: unknown; bin?: unknown };
   if (manifest.name !== 'archctx' || manifest.version !== requiredVersion) throw new Error(`package-local archctx mismatch: expected archctx@${requiredVersion}, got ${String(manifest.name)}@${String(manifest.version)}`);
+  const bin = isRecord(manifest.bin) && typeof manifest.bin.archctx === 'string' ? manifest.bin.archctx : null;
+  if (!bin) throw new Error(`package-local archctx@${requiredVersion} does not declare bin.archctx`);
+  const binaryPath = resolve(packageRoot, bin);
+  if (!existsSync(binaryPath)) throw new Error(`package-local archctx@${requiredVersion} binary is missing: ${binaryPath}`);
   const realBinary = realpathSync(binaryPath);
   const realPackage = realpathSync(packageRoot);
-  const realConsumer = realpathSync(resolve(consumerRoot));
   const inside = (path: string, root: string) => path === root || path.startsWith(`${root}${sep}`);
-  if (!inside(realBinary, realPackage) && !inside(realBinary, realConsumer)) throw new Error('package-local archctx binary escapes the consumer install root');
-  return { binaryPath, packageRoot, version: requiredVersion };
+  if (!inside(realBinary, realPackage)) throw new Error('package-local archctx binary escapes the archctx package root');
+  return { binaryPath: realBinary, packageRoot: realPackage, version: requiredVersion };
 }
 
 export function archctxCapabilities(repoRoot: string, options: ArchctxProviderOptions = {}): { resolved: ResolvedArchctxPackage; capabilities: ArchctxCapabilitiesV1 } {
@@ -100,7 +101,7 @@ export function inspectArchitectureProjectionReadiness(repoRoot: string, options
   const source = capabilitySource(repoRoot);
   if (policy.provider === 'disabled') return {
     schemaVersion: 'repo-harness.architecture-projection-readiness/v1',
-    modelAuthority: { source, ready: source === 'registry' || existsSync(join(repoRoot, '.archcontext', 'model', 'nodes')) },
+    modelAuthority: { source, ready: existsSync(join(repoRoot, '.archcontext', 'model', 'nodes')) },
     projectionProvider: { provider: 'disabled', state: 'disabled', binaryPath: null, version: null, reason: 'policy.architecture.projection_provider=disabled' },
     codeFacts: { requirement: 'required', state: 'not-evaluated' },
     apply: { mode: policy.applyMode, enabled: false },
@@ -109,7 +110,7 @@ export function inspectArchitectureProjectionReadiness(repoRoot: string, options
     const handshake = archctxCapabilities(repoRoot, options);
     return {
       schemaVersion: 'repo-harness.architecture-projection-readiness/v1',
-      modelAuthority: { source, ready: source === 'registry' || existsSync(join(repoRoot, '.archcontext', 'model', 'nodes')) },
+      modelAuthority: { source, ready: existsSync(join(repoRoot, '.archcontext', 'model', 'nodes')) },
       projectionProvider: { provider: 'archctx', state: 'ready', binaryPath: handshake.resolved.binaryPath, version: handshake.resolved.version, reason: 'exact package-local capability handshake passed' },
       codeFacts: { requirement: 'required', state: 'not-evaluated' },
       apply: { mode: policy.applyMode, enabled: policy.applyMode !== 'disabled' },
@@ -123,7 +124,7 @@ export function inspectArchitectureProjectionReadiness(repoRoot: string, options
         : 'error';
     return {
       schemaVersion: 'repo-harness.architecture-projection-readiness/v1',
-      modelAuthority: { source, ready: source === 'registry' || existsSync(join(repoRoot, '.archcontext', 'model', 'nodes')) },
+      modelAuthority: { source, ready: existsSync(join(repoRoot, '.archcontext', 'model', 'nodes')) },
       projectionProvider: { provider: 'archctx', state, binaryPath: null, version: null, reason },
       codeFacts: { requirement: 'required', state: 'unavailable' },
       apply: { mode: policy.applyMode, enabled: false },
@@ -226,6 +227,9 @@ function assertProjectionResultAuthority(
   if (result.status === 'applied' && policy.applyMode === 'disabled') {
     throw new Error('archctx projection returned applied while projection apply is disabled');
   }
+  if (result.outputSnapshot.worktreeDigest !== request.expected.worktreeDigest) {
+    throw new Error('archctx projection wrote outside the projection-owned fixed-point surfaces');
+  }
   const allowed = new Set<string>();
   if (request.targets.includes('architecture-docs')) allowed.add('docs/architecture');
   if (request.targets.includes('agent-context')) for (const path of architectureAgentContextTargets(repoRoot)) allowed.add(path);
@@ -233,6 +237,17 @@ function assertProjectionResultAuthority(
     if (![...allowed].some((path) => file.path === path || file.path.startsWith(`${path}/`))) {
       throw new Error(`archctx projection result path escapes requested projection targets: ${file.path}`);
     }
+  }
+}
+
+function findInstalledArchctxPackageRoot(consumerRoot: string, requiredVersion: string): string {
+  let current = realpathSync(resolve(consumerRoot));
+  while (true) {
+    const candidate = join(current, 'node_modules', 'archctx');
+    if (existsSync(join(candidate, 'package.json'))) return candidate;
+    const parent = resolve(current, '..');
+    if (parent === current) throw new Error(`package-local archctx@${requiredVersion} is missing from the consumer dependency tree rooted at ${resolve(consumerRoot)}`);
+    current = parent;
   }
 }
 

@@ -434,8 +434,8 @@
     "archctx": {
       "cli_package": "archctx",
       "contracts_package": "archctx-contracts",
-      "contracts_scope": "dev-dependency-schema-authority-only",
-      "install_mode": "external-optional-cli-never-a-runtime-dependency",
+      "contracts_scope": "release-gated-packed-schema-authority",
+      "install_mode": "release-gated-runtime-dependency-when-projection-enabled",
       "readiness": "advisory",
       "hook_policy": "do-not-block-hooks",
       "vendoring_policy": "do-not-vendor",

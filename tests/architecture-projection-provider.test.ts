@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -39,7 +39,7 @@ function fixture() {
   mkdirSync(join(repoRoot, '.ai', 'harness'), { recursive: true });
   mkdirSync(join(repoRoot, '.archcontext', 'model', 'nodes'), { recursive: true });
   mkdirSync(join(repoRoot, 'src', 'core'), { recursive: true });
-  writeFileSync(join(packageRoot, 'package.json'), `${JSON.stringify({ name: 'archctx', version: '0.4.0' })}\n`);
+  writeFileSync(join(packageRoot, 'package.json'), `${JSON.stringify({ name: 'archctx', version: '0.4.0', bin: { archctx: './bin/archctx' } })}\n`);
   const binary = join(packageRoot, 'bin', 'archctx');
   writeFileSync(binary, '#!/bin/sh\nexit 99\n');
   chmodSync(binary, 0o755);
@@ -74,7 +74,7 @@ extensions:
   execFileSync('git', ['config', 'user.name', 'Repo Harness Test'], { cwd: repoRoot });
   execFileSync('git', ['add', '.'], { cwd: repoRoot });
   execFileSync('git', ['commit', '-m', 'fixture'], { cwd: repoRoot, stdio: 'ignore' });
-  return { root, consumerRoot, repoRoot, binary: join(binRoot, 'archctx') };
+  return { root, consumerRoot, repoRoot, binary };
 }
 
 function capabilities() {
@@ -154,9 +154,16 @@ describe('package-local ArchContext projection provider', () => {
   test('resolves only the package-local exact version and never PATH', () => {
     const f = fixture();
     const resolved = resolvePackageLocalArchctx(f.consumerRoot);
-    expect(resolved.binaryPath).toBe(f.binary);
+    expect(resolved.binaryPath).toBe(realpathSync(f.binary));
     writeFileSync(join(f.consumerRoot, 'node_modules', 'archctx', 'package.json'), '{"name":"archctx","version":"0.3.0"}\n');
     expect(() => resolvePackageLocalArchctx(f.consumerRoot)).toThrow('expected archctx@0.4.0');
+  });
+
+  test('resolves a hoisted package from an installed repo-harness package root', () => {
+    const f = fixture();
+    const installedHarnessRoot = join(f.consumerRoot, 'node_modules', 'repo-harness');
+    mkdirSync(installedHarnessRoot, { recursive: true });
+    expect(resolvePackageLocalArchctx(installedHarnessRoot).binaryPath).toBe(realpathSync(f.binary));
   });
 
   test('disabled readiness performs zero subprocess calls', () => {
@@ -173,7 +180,7 @@ describe('package-local ArchContext projection provider', () => {
     const projectionRequest = request(f.repoRoot);
     const result = runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner(calls, projectionEnvelope(projectionRequest.expected)), env: { ...process.env, PATH: join(f.root, 'conflicting-path') } });
     expect(calls).toHaveLength(2);
-    expect(calls.every((call) => call.binary === f.binary)).toBe(true);
+    expect(calls.every((call) => call.binary === realpathSync(f.binary))).toBe(true);
     expect(calls[0]!.args).toEqual(['capabilities', '--json']);
     expect(calls[1]!.args.slice(0, 3)).toEqual(['projection', 'run', '--request-json']);
     expect(JSON.parse(calls[1]!.args[3]!)).toEqual(projectionRequest);
@@ -219,6 +226,12 @@ describe('package-local ArchContext projection provider', () => {
     escaped.data.receiptDigest = projectionResultReceiptDigest(escapedPayload);
     expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner([], escaped) })).toThrow('path escapes requested projection targets');
 
+    const hiddenWrite = structuredClone(projectionEnvelope(projectionRequest.expected)) as any;
+    hiddenWrite.data.outputSnapshot.worktreeDigest = digest('9');
+    const { receiptDigest: _hiddenReceipt, ...hiddenPayload } = hiddenWrite.data;
+    hiddenWrite.data.receiptDigest = projectionResultReceiptDigest(hiddenPayload);
+    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner([], hiddenWrite) })).toThrow('outside the projection-owned fixed-point surfaces');
+
     projectionRequest.mode = 'apply';
     expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy: { ...policy, applyMode: 'disabled' }, run: runner([], projectionEnvelope(projectionRequest.expected)) })).toThrow('apply is disabled');
   });
@@ -246,7 +259,7 @@ describe('package-local ArchContext projection provider', () => {
     stale.data.outputSnapshot.worktreeDigest = digest('9');
     const { receiptDigest: _old, ...payload } = stale.data;
     stale.data.receiptDigest = projectionResultReceiptDigest(payload);
-    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner([], stale) })).toThrow('snapshot mismatch after projection');
+    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner([], stale) })).toThrow('outside the projection-owned fixed-point surfaces');
 
     const corrupt = structuredClone(validEnvelope) as any;
     corrupt.data.refreshSignals = [{}];

@@ -29,6 +29,14 @@
   surfaces. The fixed-point digest now ignores generated directories only at repository roots,
   never a nested source directory with the same basename; the producer carries the same fix in
   ArchContext commit `16645d56357a607bf0cfad3df02131c115bf5c78`.
+- The final review tightened the consumer threat boundary again: every result output worktree
+  digest must equal the request baseline, so an unreported write outside projection-owned
+  fixed-point surfaces cannot be hidden by a self-consistent provider result. Installed package
+  resolution walks the real consumer dependency tree for npm/bun hoisting, executes the package's
+  declared `bin.archctx` only when its realpath stays inside that exact package, and has a hoisted
+  layout regression test. Model readiness now reports the actual node directory rather than
+  treating registry authority as proof that projection inputs exist. Node/v2 name, summary and
+  responsibilities checks have dedicated N14-N16 fail-closed cases.
 
 ## Deviations From Plan Or Spec
 

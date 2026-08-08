@@ -118,7 +118,7 @@ extensions:
   });
   installedBinary = handshake.resolved.binaryPath;
   if (handshake.capabilities.package.version !== VERSION) throw new Error('package-local feature handshake version mismatch');
-  const packageLocalBinary = handshake.resolved.binaryPath === join(consumer, 'node_modules', '.bin', 'archctx');
+  const packageLocalBinary = handshake.resolved.binaryPath === realpathSync(join(consumer, 'node_modules', 'archctx', 'bin', 'archctx.mjs'));
   const conflictingPathIgnored = packageLocalBinary && handshake.capabilities.package.version === VERSION && !realpathSync(handshake.resolved.binaryPath).startsWith(`${conflictDir}/`);
   if (!packageLocalBinary || !conflictingPathIgnored) throw new Error('package-local provider authority was not proven');
   const expected = captureArchitectureProjectionSnapshot(fixtureRepo);
