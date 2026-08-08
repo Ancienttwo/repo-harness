@@ -1,6 +1,6 @@
 # Plan: AXR7 Consumer E2E, Adoption, and Dogfood
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260809-0327
 > **Slug**: axr7-consumer-e2e-adoption-dogfood
 > **Planning Source**: arch-context-sprint

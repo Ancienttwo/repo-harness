@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-09 05:50
+> **Related Plan**: plans/archive/plan-20260809-0327-axr7-consumer-e2e-adoption-dogfood.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260809-0550
+
 # Task Contract: axr7-consumer-e2e-adoption-dogfood
 
 > **Status**: Fulfilled
