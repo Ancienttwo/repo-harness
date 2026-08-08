@@ -13,6 +13,15 @@ source:
     - "src/cli/mcp/codegraph-adapter.ts"
     - "tests/cli/codegraph-resolver.test.ts"
     - "docs/architecture/modules/verification/codegraph-readiness.md"
+  entrypoints:
+    - id: entrypoint.codegraph-readiness.primary
+      path: "src/cli/tools/codegraph.ts"
+      symbols:
+        - name: "ensureCodegraph"
+          sinks:
+            - id: sink.codegraph-readiness.primary
+              path: "src/cli/tools/codegraph.ts"
+              symbol: "checkCodegraph"
 extensions:
   contractFiles:
     agents: "AGENTS.md"

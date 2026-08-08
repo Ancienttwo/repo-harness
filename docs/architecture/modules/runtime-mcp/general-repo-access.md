@@ -1,277 +1,75 @@
 # runtime-mcp/general-repo-access 架构文档
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-general-repo-access" sourceDigest="sha256:e2f869f09ac3c18691f44db23f176e03410ef56bbe5977a9a1e3c70a9bdc63a7" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:84b13029667e63ebc1303cd32981f81c17affadc3099c8ffc32b72c88bf8f22f" verifiedAgainst="codex/axr7-consumer-e2e-adoption-dogfood@99c645f368e0c0269cd8871f9f0160cd59c55260@2026-08-09T03:26:42+08:00" -->
+> **狀態**:`active`
+> **Verified against**:`codex/axr7-consumer-e2e-adoption-dogfood@99c645f368e0c0269cd8871f9f0160cd59c55260`(2026-08-09)
+> **Capability ID**:`capability.runtime-mcp.general-repo-access`(kind `capability`)
+> **Matched Prefixes**:`src/cli/mcp/general-repo-access.ts`、`src/cli/mcp/general-repo-access/**`、`tests/cli/mcp-reader-tools.test.ts`、`tests/cli/mcp-codegraph-contract.test.ts`、`tests/cli/mcp-policy.test.ts`、`tests/cli/mcp-tools.test.ts`
+> **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
+> **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與 Git 狀態投影生成,手改會在下次投影被覆蓋。
 
-<!-- BEGIN archctx:intro -->
+Exposes bounded read-only repository tools through MCP.
 
-> 状态：基于 `main` 工作树的 by-capability 架构复核稿。
-> Verified against: main@13686d8d（2026-08-08）
-> **Capability ID**: `runtime-mcp-general-repo-access`
-> **Matched Prefixes**（取自 `.ai/context/capabilities.json`）：`src/cli/mcp/general-repo-access.ts`、`src/cli/mcp/general-repo-access`、`tests/cli/mcp-reader-tools.test.ts`、`tests/cli/mcp-codegraph-contract.test.ts`、`tests/cli/mcp-policy.test.ts`、`tests/cli/mcp-tools.test.ts`
-> **Local Contracts**: `AGENTS.md`、`CLAUDE.md`
-> **Architecture domain / capability**: `runtime-mcp` / `general-repo-access`
-> **Workstream dir**: `tasks/workstreams/runtime-mcp/general-repo-access`（capabilities.json 已声明，当前尚未创建）
-> 事实优先级：**实际源码 > 本文 > `docs/architecture/decisions/20260622-general-repo-codegraph-access.md` > 任何计划文档**。本文只画已实现现状；任何尚未接线的东西必须显式标注为「目标设计」或「已实现、保留字段」。
+## 1. P1:能力架構地圖
 
-<!-- END archctx:intro -->
-
-## 0. 阅读约定
-
-沿用仓库既有的状态纪律，避免把规划画成现状：
-
-| 标记 | 含义 |
-| --- | --- |
-| **已实现、已接线** | 当前源码存在，并位于真实 MCP dispatch runtime path |
-| **已实现、保留字段** | 类型/接口/schema 已存在，但当前没有生产消费者 |
-| **目标设计** | 只存在于 ADR 或计划文档，尚未成为源码 |
-
-本 capability 的产品边界：把一个**用户已注册并已 adopt** 的本地仓库，通过 MCP 暴露给外部 agent 做完整分析与受控写入，唯一的内容级排除源是该仓库的 `.ignore`。授权、路径策略、快照语义、变更安全与审计全部由 repo-harness 自己持有；CodeGraph 只是索引元数据来源，不是策略引擎。
-
-<!-- BEGIN archctx:p1 -->
-
-## 1. P1：能力架构地图
-
-### 1.1 内部模块与强依赖
+### 1.1 架構圖
 
 ```mermaid
-flowchart TB
-  classDef entry fill:#1e40af,stroke:#bfdbfe,stroke-width:2px,color:#fff
-  classDef safety fill:#9a3412,stroke:#fed7aa,stroke-width:2px,color:#fff
-  classDef core fill:#5b21b6,stroke:#ddd6fe,stroke-width:2px,color:#fff
-  classDef sibling fill:#0f766e,stroke:#99f6e4,stroke-width:2px,color:#fff
-  classDef store fill:#374151,stroke:#d1d5db,stroke-width:2px,color:#fff
-
-  subgraph Host["MCP 宿主链（capability 之外）"]
-    direction TB
-    Tools(["tools.ts<br/>callMcpTool + workspaceReader 门禁"]):::sibling
-    Reader(["reader-tools.ts<br/>isGeneralRepoTool 转发"]):::sibling
-    Tools --> Reader
-  end
-
-  subgraph Cap["runtime-mcp/general-repo-access"]
-    direction TB
-    Entry(["general-repo-access.ts<br/>12 个工具定义 + dispatch"]):::entry
-    Authority(["general-repo-access/authority.ts<br/>身份 / .ignore / 路径与符号链接权威"]):::safety
-    Snapshot(["snapshot 层<br/>walk + merge + cache"]):::core
-    Mutation(["mutation 层<br/>lock + atomic commit + 前置条件"]):::core
-    Observ(["observability<br/>audit / metrics / trace / index events"]):::core
-    Entry --> Authority
-    Entry --> Snapshot
-    Entry --> Mutation
-    Entry --> Observ
-    Snapshot --> Authority
-    Mutation --> Authority
-  end
-
-  subgraph Deps["兄弟依赖（只被调用，不被本 capability 拥有）"]
-    direction TB
-    Registry(["effects/repo-registry.ts<br/>已注册仓库白名单"]):::sibling
-    CG(["mcp/codegraph-adapter.ts<br/>CodeGraph CLI 适配器"]):::sibling
-    Paths(["mcp/paths.ts<br/>isPathInside / globMatches"]):::sibling
-    Audit(["mcp/audit.ts + mcp/redaction.ts"]):::sibling
-  end
-
-  FS[("本地仓库文件系统<br/>canonicalRoot 内")]:::store
-  Events[(".ai/harness/mcp/*.jsonl<br/>index-events / metrics / trace")]:::store
-
-  Reader --> Entry
-  Authority --> Registry
-  Authority --> Paths
-  Snapshot --> CG
-  Mutation --> CG
-  Observ --> Audit
-  Observ --> Events
-  Authority --> FS
-  Mutation --> FS
-
-  style Cap fill:none,stroke:#a78bfa,stroke-width:2px,color:#a78bfa
-  style Host fill:none,stroke:#60a5fa,stroke-width:2px,color:#60a5fa
-  style Deps fill:none,stroke:#5eead4,stroke-width:2px,color:#5eead4
+flowchart LR
+  p1_capability_runtime_mcp_general_repo_access_5a2e164b["General Repository Access"]:::component
+  p1_component_general_repo_access_primary_4234dd17["Stable File Reader"]:::component
+  p1_capability_runtime_mcp_general_repo_access_5a2e164b -->|"Read a repository file"| p1_component_general_repo_access_primary_4234dd17
+  classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
+  classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
+  classDef datastore fill:#3f6212,color:#ffffff,stroke:#d9f99d,stroke-width:2px
+  classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-### 1.2 模块职责表
+- Proof: `proven` (`sha256:06213d431dd01abc74ce121eda4dc4f2f3214010b462616665feb9c7a828fe26`).
+- Semantic nodes: `2`; declared relations: `1`.
 
-| 文件 | 主要 exports / 职责 |
-| --- | --- |
-| `src/cli/mcp/general-repo-access.ts` | 唯一工具定义与 dispatch 拥有者。`GENERAL_REPO_TOOLS` 冻结 12 个工具名（`general-repo-access.ts:161`）；`buildGeneralRepoToolDefinitions()`（`:2671`）产出 inputSchema + annotations；`callGeneralRepoTool()`（`:2846`）是唯一入口，一个 `switch` 分派全部 12 个工具，并在 `try/catch` 里统一做 audit、redaction、correlation id 与 observability 落盘 |
-| 　└ snapshot 层 | `buildVisibleEntrySnapshot()`（`:1180`）走全量可见条目；`buildManifestPageSnapshot()`（`:1087`）为 `repo_manifest` 做流式分页；`mergeCodeGraphMetadata()`（`:1069`）把 CodeGraph 元数据并入文件系统 walk 结果；`rememberSnapshot()`（`:1227`）维护 TTL=5min、上限 16 条的进程内 `SNAPSHOT_CACHE`；`validateSnapshotRevision()`（`:960`）在 walk 后复算 digest，发现漂移最多重试 1 次（`MAX_SNAPSHOT_BUILD_ATTEMPTS = 2`） |
-| 　└ mutation 层 | `withMutationLocks()`（`:775`）基于 `linkSync` 的跨进程路径锁，锁目录 `mcp/mutation-locks`，含 owner.json + PID 存活检测的陈旧锁回收（`:663`–`:718`）；`atomicWriteFile()`（`:1573`）temp+rename 提交并 fsync 目录；`commitMoveNoOverwrite()`（`:1715`）用 `bun:ffi` 直接调用 `renamex_np`/`renameat2`/`MoveFileExW` 实现无覆盖原子改名；`mutationResult()`（`:1777`）/ `deleteMutationResult()`（`:1858`）产出统一的变更响应与 index invalidation 事件 |
-| 　└ observability | `audit()`（`:221`）+ `writeToolObservability()`（`:532`）；三条 JSONL 落盘面：`.ai/harness/mcp/index-events.jsonl`、`metrics.jsonl`、`trace.jsonl`（`:193`–`:197`）。事件里存 hash、路径、revision、retry 指令，不存文件正文 |
-| `src/cli/mcp/general-repo-access/authority.ts` | 全部安全权威。`uniqueRepoRecords()`（`authority.ts:141`）只接受 `readRegisteredRepoHarnessRepos({ adoptedOnly: true })` 里的仓库；`resolveRepo()`（`:175`）复核 canonical root 与 `dev:ino:birthtime` 身份，被换根即 `REPO_NOT_ALLOWED`；`normalizeRepoRelativePath()`（`:188`）拒绝绝对路径、`\0`、`..`；`readIgnorePolicy()`（`:222`）/ `isIgnored()`（`:284`）实现 `.ignore` 语义；`resolveRepoPath()`（`:323`）、`resolveRepoWritePath()`（`:442`）、`resolveWalkedRepoPath()`（`:492`）三个路径守卫；`readStableResolvedFile()`（`:565`）用 `O_NOFOLLOW` 打开并在读前读后各校验一次 inode 与 metadata signature；`assertRepoWriteEnabled()`（`:405`）是 `read_write` 唯一闸门 |
+### 1.2 模組職責表
 
-工具清单（`general-repo-access.ts:161`，全部**已实现、已接线**）：
-
-| 分组 | 工具 | 需要 `read_write` |
+| 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
-| 元信息 | `get_repo_capabilities` | 否 |
-| 读平面 | `repo_manifest`、`list_tree`、`stat_file`、`read_file`、`read_files`、`search_text` | 否 |
-| 写平面 | `write_file`、`apply_patch`、`move_path`、`delete_path` | 是 |
-| 索引 | `refresh_repo_index` | 是（列在 `WRITE_TOOLS`，`:192`） |
+| `entrypoint.general-repo-access.primary` | `src/cli/mcp/reader-tools.ts#callReaderTool` | `sink.general-repo-access.primary` → `src/cli/mcp/general-repo-access.ts#callGeneralRepoTool` |
 
-### 1.3 规模信号
+### 1.3 規模信號
 
-实测于 main@13686d8d：
+- 文件數:`6`
+- 總行數:`6727`
+- 匹配前綴:`src/cli/mcp/general-repo-access.ts`、`src/cli/mcp/general-repo-access/**`、`tests/cli/mcp-reader-tools.test.ts`、`tests/cli/mcp-codegraph-contract.test.ts`、`tests/cli/mcp-policy.test.ts`、`tests/cli/mcp-tools.test.ts`
+- 復算:`archctx docs plan --json`(掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`)
 
-| 面 | files / LOC | 设计压力 |
-| --- | ---: | --- |
-| 生产源码 | 2 / 3,504 | 单文件 `general-repo-access.ts` 占 2,924 行，是 capability 的绝对重心 |
-| 　`general-repo-access.ts` | 1 / 2,924 | 工具定义、snapshot、mutation、observability 四类职责同居一个模块 |
-| 　`general-repo-access/authority.ts` | 1 / 580 | 唯一被抽出的安全层，读写路径共享 |
-| 契约测试 | 4 / 3,223 | test:prod ≈ 0.92:1；`mcp-reader-tools.test.ts` 单文件 1,852 行 |
+### 1.4 依賴邊界
 
-复算命令：
+出向關係:
 
-```bash
-find src/cli/mcp/general-repo-access.ts src/cli/mcp/general-repo-access -type f -name '*.ts' ! -name '*.test.ts' -print | sort | xargs wc -l
-find tests/cli -type f \( -name 'mcp-reader-tools.test.ts' -o -name 'mcp-codegraph-contract.test.ts' -o -name 'mcp-policy.test.ts' -o -name 'mcp-tools.test.ts' \) -print | sort | xargs wc -l
-```
+- `calls` → `component.general-repo-access.primary` — Read a repository file
 
-### 1.4 依赖边界
+入向關係:
 
-允许的出边（当前事实）：
+- 無。
 
-- `→ src/effects/repo-registry`：仓库白名单与 `RepoHarnessAccessMode` 的唯一来源。
-- `→ src/cli/mcp/paths`：`isPathInside`、`globMatches` 两个纯函数。
-- `→ src/cli/mcp/codegraph-adapter`：`discoverRepo` / `refreshRepo`，通过 `GeneralRepoToolContext.codeGraphAdapter` 可注入，默认落到模块级 `DEFAULT_CODEGRAPH_ADAPTER`（`:189`）。
-- `→ src/cli/mcp/audit`、`redaction`、`types`：审计写入、错误文本脱敏、`McpPolicy` 类型。
-- `→ 文件系统`：只在 `repo.canonicalRoot` 之内。
+## 2. P2:端到端數據流
 
-允许的入边：只有一条。`src/cli/mcp/reader-tools.ts:11` 是本 capability 在生产代码里的**唯一** import 站点；`reader-tools.ts:435` 用 `isGeneralRepoTool(name)` 判定后转发。`buildGeneralRepoToolDefinitions()` 的结果被 `buildReaderToolDefinitions()`（`reader-tools.ts:206`）拼进 reader 工具集。
-
-禁止的边：
-
-- 不得被 `coding-tools.ts`、`state-tools.ts` 或任何 CLI 命令直接 import——绕过 `reader-tools.ts` 就绕过了 `policy.capabilities.workspaceReader` 门禁（`tools.ts:1086`）。
-- 不得暴露本地绝对路径给外部工具面；`repo_id` + repo-relative path 是唯一对外寻址方式，`canonicalRoot` 只是服务端注册表数据。
-- 不得把 CodeGraph 结果当作授权判据或可见性判据（见 §3 不变量 I3）。
-- 不得在 audit / metrics / trace / 错误消息里写入文件正文。
-
-<!-- END archctx:p1 -->
-
-<!-- BEGIN archctx:p2 -->
-
-## 2. P2：端到端数据流
-
-### 2.1 主路径：`read_file` 一次完整握手
+> **Proof**: `proven` (`sha256:06213d431dd01abc74ce121eda4dc4f2f3214010b462616665feb9c7a828fe26`); selectors `1/1`.
 
 ```mermaid
+%%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
 sequenceDiagram
   autonumber
-  participant C as MCP Client
-  participant T as tools.ts callMcpTool
-  participant R as reader-tools.ts
-  participant D as callGeneralRepoTool
-  participant A as authority.ts
-  participant S as snapshot 层
-  participant G as codegraph-adapter
-  participant F as 文件系统
-  participant O as audit / metrics / trace
-
-  C->>T: tools/call read_file { repo_id, path, line_range }
-  T->>T: isReaderTool(name) 且 policy.capabilities.workspaceReader
-  alt capability 未开启
-    T-->>C: TOOL_NOT_AVAILABLE
+  participant p2_capability_4262990f as General Repository Access
+  participant p2_component_7b8d80ff as Stable File Reader
+  p2_capability_4262990f->>p2_component_7b8d80ff: Dispatch Stable File Reader
+  alt Read a repository file completes
+  p2_capability_4262990f->>p2_component_7b8d80ff: Invoke Stable File Reader
+    Note over p2_capability_4262990f: Return success receipt
+  else Read a repository file is rejected or fails
+  p2_capability_4262990f->>p2_component_7b8d80ff: Propagate Stable File Reader failure
+    Note over p2_capability_4262990f: Return typed failure
   end
-  T->>R: callReaderTool(readerContext, name, args)
-  R->>D: isGeneralRepoTool -> callGeneralRepoTool
-  D->>D: correlationId(name)、记录 startedAtMs
-  D->>A: resolveRepo(ctx, repo_id)
-  A->>A: uniqueRepoRecords(adoptedOnly) + root 身份复核
-  A-->>D: RepoRecord { repoId, canonicalRoot, accessMode }
-  D->>A: readIgnorePolicy(canonicalRoot)
-  A->>F: O_NOFOLLOW 打开 .ignore，读前读后比对 inode
-  A-->>D: IgnorePolicy { digest, rules }
-  D->>S: buildVisibleEntrySnapshot(contentHash:false)
-  S->>G: discoverRepo(canonicalRoot)
-  G-->>S: CodeGraphRepoSnapshot { available, indexRevision, files }
-  S->>F: walkVisibleEntries 安全遍历
-  S->>S: mergeCodeGraphMetadata + validateSnapshotRevision
-  S-->>D: VisibleEntrySnapshot（命中则走 SNAPSHOT_CACHE）
-  D->>D: assertSnapshotFresh(args, snapshot)
-  D->>A: resolveRepoPath(requireFile:true)
-  A->>A: .ignore -> isPathInside -> realpath -> 物理路径再查 .ignore
-  A-->>D: ResolvedRepoPath
-  D->>A: readStableResolvedFile(resolved, ignore)
-  A->>F: openNoFollow + fstat 复核 + 读后 signature 复核
-  A-->>D: Buffer
-  D->>D: sha256 + binary 探测 + line/byte range 切片
-  D-->>R: { repo_id, snapshot_id, index_revision, ignore_digest, stale, partial, next_cursor, content, ... }
-  D->>O: audit(ok) + writeToolObservability
-  R-->>T: GeneralRepoToolResult
-  T-->>C: CallToolResult
 ```
-
-关键契约点：
-
-- 授权早于索引。`resolveRepo` → `readIgnorePolicy` → `resolveRepoPath` 三步全部跑完之前，任何 CodeGraph 调用都不影响是否可读；`discoverRepo` 只贡献 `indexed`、`index_revision` 与 lagging 统计。
-- 每个读响应都带同一组一致性字段，由 `commonFields()`（`:788`）统一拼装：`repo_id`、`snapshot_id`、`index_revision`、`ignore_digest`、`stale`、`partial`、`next_cursor`，外加 `snapshot_state` / `snapshot_created_at` / `snapshot_expires_at` / `snapshot_ttl_ms` / `snapshot_cache` 这组 ADR 未列出的可观测字段（实现是 ADR 契约的超集）。
-- `backend` 字段区分 `codegraph-indexed-filesystem-read` 与 `filesystem-fallback`（`:1953`、`:2002`）；无论哪种，读取都走同一条被守卫的文件系统路径。
-
-### 2.2 写路径与索引失效（`write_file` → `refresh_repo_index`）
-
-```mermaid
-sequenceDiagram
-  autonumber
-  participant C as MCP Client
-  participant D as callGeneralRepoTool
-  participant A as authority.ts
-  participant L as mutation lock
-  participant F as 文件系统
-  participant E as index-events.jsonl
-  participant G as codegraph-adapter
-
-  C->>D: write_file { repo_id, path, content, expected_sha256 }
-  D->>A: resolveRepo + assertRepoWriteEnabled
-  alt accessMode 不是 read_write
-    A-->>C: WRITE_DISABLED
-  end
-  D->>A: readIgnorePolicy + resolveRepoWritePath
-  D->>L: withMutationLocks([relativePath])
-  L->>F: linkSync 建锁，陈旧锁按 owner PID 回收
-  D->>A: 锁内重新 resolveRepoWritePath（TOCTOU 复核）
-  D->>D: 已存在则要求 expected_sha256，缺失则要求 must_not_exist:true
-  alt hash 不匹配
-    D-->>C: REVISION_CONFLICT（含 actual_sha256）
-  end
-  D->>F: atomicWriteFile：temp 写入 -> beforeCommit 再验 -> rename -> fsync dir
-  D->>D: invalidateRepoCaches(repo)
-  D->>G: discoverRepo 重建 snapshot（contentHash:false）
-  D->>E: index_invalidation 事件（mutation_id / invalidation_id / before+after sha256 / retry）
-  D-->>C: index_state: pending + refresh_tool: refresh_repo_index
-  C->>D: refresh_repo_index { repo_id, paths, mutation_id }
-  D->>E: latestIndexInvalidationEvent 找回源事件，算 index_lag_ms
-  D->>G: refreshRepo(canonicalRoot, { paths })
-  alt refresh 不可用或失败
-    D->>E: 写 dead-letter 事件 + 恢复命令
-    D-->>C: INDEX_UNAVAILABLE（retryable）
-  end
-  D->>E: index_refresh 事件（before/adapter/after index_revision、lagging_paths）
-  D-->>C: index_state: ready 或 index_lagging
-```
-
-### 2.3 错误路径要点
-
-`callGeneralRepoTool` 的 catch 分三档（`:2899`–`:2923`）：`GeneralRepoAccessError` → `blocked` + 原 code；其他异常 → `failed` + `INTERNAL_ADAPTER_ERROR`。两档的 message 都先过 `redactMcpText`。
-
-| 触发条件 | code | 落点 |
-| --- | --- | --- |
-| `repo_id` 缺失、不在白名单、根被移动或换成别的目录 | `REPO_NOT_ALLOWED` | `authority.ts:177`、`:179`、`:183` |
-| 绝对路径、Windows 盘符、`\0`、`..` 段 | `INVALID_RELATIVE_PATH` | `authority.ts:191`、`:198` |
-| 命中 `.ignore`（含符号链接物理目标命中、open 之后再命中） | `PATH_IGNORED` | `authority.ts:331`、`:365`、`:549` |
-| realpath 落到 root 之外 | `PATH_OUTSIDE_REPO` | `authority.ts:335`、`:360`、`:545` |
-| 符号链接指向 root 之外，或写路径穿符号链接 | `SYMLINK_ESCAPE` | `authority.ts:353`、`:455`；`.ignore` 本身是链接也走这条（`:227`） |
-| 打开/读取期间 inode、parent、metadata signature 变化 | `SNAPSHOT_STALE`（retryable） | `authority.ts:541`、`:553`、`:560`、`:574` |
-| 请求的 `snapshot_id` 与当前快照不一致 | `SNAPSHOT_STALE`（retryable） | `general-repo-access.ts:1308` |
-| 覆盖写缺 `expected_sha256`，或新建缺 `must_not_exist` | `REVISION_CONFLICT` | `:2067`、`:2081`、`:2120` |
-| `expected_sha256` 与实际不符 | `REVISION_CONFLICT`（带 `actual_sha256`） | `:1618`、`:1626` |
-| 目标已存在但要求 `must_not_exist` | `TARGET_EXISTS` | `:2060` |
-| 只读仓库调用写工具 | `WRITE_DISABLED` | `authority.ts:407` |
-| 二进制文件未给 `byte_range` | `BINARY_CONTENT` | `:1964` |
-| `line_range` 超出字节预算 | `PAYLOAD_LIMIT_REACHED` | `:1976` |
-| `line_range` 与 `byte_range` 同时给、cursor 语法错、正则非法 | `INVALID_RANGE` | `:1922`、`:1928`、`:2602` |
-| CodeGraph adapter 无 `refreshRepo` 或 refresh 未成功 | `INDEX_UNAVAILABLE`（retryable，写 dead-letter） | `:2295`、`:2343` |
-
-失败也进审计：`blocked` 与 `failed` 两条路径都调用 `audit()` 与 `writeToolObservability()`，`errorCode` 进 metrics，但 payload 正文不进。
-
-<!-- END archctx:p2 -->
-
+<!-- END ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-general-repo-access" -->
 ## 3. P3：设计决策与不变量
 
 设计出处见 `docs/architecture/decisions/20260622-general-repo-codegraph-access.md`（Sprint 0 contract freeze，2026-06-22）。该 ADR 的核心判断——「不要把授权和索引搅在一起」——在当前源码里逐条可验证。

@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: component.mcp-sidecar.primary
+kind: component
+name: "MCP Tool Dispatcher"
+status: active
+parent: capability.runtime-harness.mcp-sidecar
+summary: "Executes the reviewed dispatch an mcp tool call boundary."

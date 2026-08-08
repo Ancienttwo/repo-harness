@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: component.hook-adapters.primary
+kind: component
+name: "Architecture Cascade"
+status: active
+parent: capability.runtime-harness.hook-adapters
+summary: "Executes the reviewed drain stop architecture work boundary."

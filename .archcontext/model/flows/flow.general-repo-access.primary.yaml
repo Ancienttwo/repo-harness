@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.general-repo-access.primary
+capabilityId: capability.runtime-mcp.general-repo-access
+name: "Read a repository file"
+applicability: required
+participants:
+  - id: capability
+    nodeId: capability.runtime-mcp.general-repo-access
+  - id: component
+    nodeId: component.general-repo-access.primary
+steps:
+  - id: dispatch
+    from: capability
+    to: component
+    label: "Dispatch Stable File Reader"
+    evidence:
+      entrypointId: entrypoint.general-repo-access.primary
+      sourceSymbol: "callReaderTool"
+      sinkId: sink.general-repo-access.primary
+outcomes:
+  - id: success
+    kind: success
+    label: "Read a repository file completes"
+    steps:
+      - id: invoke-success
+        from: capability
+        to: component
+        label: "Invoke Stable File Reader"
+        evidence:
+          entrypointId: entrypoint.general-repo-access.primary
+          sourceSymbol: "callReaderTool"
+          sinkId: sink.general-repo-access.primary
+    terminal:
+      participant: capability
+      label: Return success receipt
+  - id: error
+    kind: error
+    label: "Read a repository file is rejected or fails"
+    steps:
+      - id: invoke-error
+        from: capability
+        to: component
+        label: "Propagate Stable File Reader failure"
+        evidence:
+          entrypointId: entrypoint.general-repo-access.primary
+          sourceSymbol: "callReaderTool"
+          sinkId: sink.general-repo-access.primary
+    terminal:
+      participant: capability
+      label: Return typed failure

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.inspection-migration.primary
+kind: calls
+source: capability.workflow-engine.inspection-migration
+target: component.inspection-migration.primary
+intent: "Inspect before migration"

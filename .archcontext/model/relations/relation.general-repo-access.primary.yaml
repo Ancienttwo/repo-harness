@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.general-repo-access.primary
+kind: calls
+source: capability.runtime-mcp.general-repo-access
+target: component.general-repo-access.primary
+intent: "Read a repository file"

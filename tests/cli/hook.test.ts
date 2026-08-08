@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { runHook } from '../../src/cli/hook/runtime';
@@ -98,6 +98,22 @@ describe('typed hook runtime', () => {
       }
     } finally { clean(root); }
   }, 60000);
+
+  test('the full CLI fallback forwards host stdin to the typed hook runtime', () => {
+    const root = repo();
+    try {
+      const cli = join(import.meta.dir, '..', '..', 'src', 'cli', 'index.ts');
+      const result = spawnSync(process.execPath, [cli, 'hook', 'PostToolUse', '--route', 'edit'], {
+        cwd: root,
+        env: env(root, 'codex'),
+        input: `${JSON.stringify({ session_id: 'fallback-session', tool_input: { file_path: join(root, 'README.md') } })}\n`,
+        encoding: 'utf8',
+      });
+      expect(result.status).toBe(0);
+      const pending = join(root, '.ai', 'harness', 'journal', 'post-edit', 'pending');
+      expect(readdirSync(pending).filter((name) => name.endsWith('.json'))).toHaveLength(1);
+    } finally { clean(root); }
+  }, 30_000);
 
   test('Codex suppresses successful Stop stdout while preserving failure diagnostics', () => {
     const root = repo();

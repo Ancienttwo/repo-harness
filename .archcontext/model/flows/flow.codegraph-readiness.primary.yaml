@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.codegraph-readiness.primary
+capabilityId: capability.verification.codegraph-readiness
+name: "Verify CodeGraph readiness"
+applicability: required
+participants:
+  - id: capability
+    nodeId: capability.verification.codegraph-readiness
+  - id: component
+    nodeId: component.codegraph-readiness.primary
+steps:
+  - id: dispatch
+    from: capability
+    to: component
+    label: "Dispatch CodeGraph Readiness Check"
+    evidence:
+      entrypointId: entrypoint.codegraph-readiness.primary
+      sourceSymbol: "ensureCodegraph"
+      sinkId: sink.codegraph-readiness.primary
+outcomes:
+  - id: success
+    kind: success
+    label: "Verify CodeGraph readiness completes"
+    steps:
+      - id: invoke-success
+        from: capability
+        to: component
+        label: "Invoke CodeGraph Readiness Check"
+        evidence:
+          entrypointId: entrypoint.codegraph-readiness.primary
+          sourceSymbol: "ensureCodegraph"
+          sinkId: sink.codegraph-readiness.primary
+    terminal:
+      participant: capability
+      label: Return success receipt
+  - id: error
+    kind: error
+    label: "Verify CodeGraph readiness is rejected or fails"
+    steps:
+      - id: invoke-error
+        from: capability
+        to: component
+        label: "Propagate CodeGraph Readiness Check failure"
+        evidence:
+          entrypointId: entrypoint.codegraph-readiness.primary
+          sourceSymbol: "ensureCodegraph"
+          sinkId: sink.codegraph-readiness.primary
+    terminal:
+      participant: capability
+      label: Return typed failure

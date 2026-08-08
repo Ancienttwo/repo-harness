@@ -14,6 +14,15 @@ source:
     - "src/cli/installer/**"
     - "src/cli/hook/**"
     - "src/cli/hook-entry.ts"
+  entrypoints:
+    - id: entrypoint.hook-adapters.primary
+      path: "src/cli/hook/mutation-observed.ts"
+      symbols:
+        - name: "processArchitectureCascade"
+          sinks:
+            - id: sink.hook-adapters.primary
+              path: "src/cli/hook/mutation-observed.ts"
+              symbol: "runRepoHarnessHelper"
 extensions:
   contractFiles:
     agents: "assets/hooks/AGENTS.md"

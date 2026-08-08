@@ -9,6 +9,15 @@ responsibilities:
 source:
   include:
     - "assets/skill-commands/**"
+  entrypoints:
+    - id: entrypoint.action-commands.primary
+      path: "src/cli/commands/init.ts"
+      symbols:
+        - name: "installExternalSkills"
+          sinks:
+            - id: sink.action-commands.primary
+              path: "src/cli/commands/init.ts"
+              symbol: "loadSkillSurfaceCatalog"
 extensions:
   contractFiles:
     agents: "AGENTS.md"

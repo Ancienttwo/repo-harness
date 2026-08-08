@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.action-commands.primary
+capabilityId: capability.public-surface.action-commands
+name: "Install action command skills"
+applicability: required
+participants:
+  - id: capability
+    nodeId: capability.public-surface.action-commands
+  - id: component
+    nodeId: component.action-commands.primary
+steps:
+  - id: dispatch
+    from: capability
+    to: component
+    label: "Dispatch Action Command Installer"
+    evidence:
+      entrypointId: entrypoint.action-commands.primary
+      sourceSymbol: "installExternalSkills"
+      sinkId: sink.action-commands.primary
+outcomes:
+  - id: success
+    kind: success
+    label: "Install action command skills completes"
+    steps:
+      - id: invoke-success
+        from: capability
+        to: component
+        label: "Invoke Action Command Installer"
+        evidence:
+          entrypointId: entrypoint.action-commands.primary
+          sourceSymbol: "installExternalSkills"
+          sinkId: sink.action-commands.primary
+    terminal:
+      participant: capability
+      label: Return success receipt
+  - id: error
+    kind: error
+    label: "Install action command skills is rejected or fails"
+    steps:
+      - id: invoke-error
+        from: capability
+        to: component
+        label: "Propagate Action Command Installer failure"
+        evidence:
+          entrypointId: entrypoint.action-commands.primary
+          sourceSymbol: "installExternalSkills"
+          sinkId: sink.action-commands.primary
+    terminal:
+      participant: capability
+      label: Return typed failure

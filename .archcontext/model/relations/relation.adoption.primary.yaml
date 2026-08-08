@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.adoption.primary
+kind: calls
+source: capability.public-surface.adoption
+target: component.adoption.primary
+intent: "Apply repository adoption"

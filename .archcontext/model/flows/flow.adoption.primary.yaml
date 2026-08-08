@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.adoption.primary
+capabilityId: capability.public-surface.adoption
+name: "Apply repository adoption"
+applicability: required
+participants:
+  - id: capability
+    nodeId: capability.public-surface.adoption
+  - id: component
+    nodeId: component.adoption.primary
+steps:
+  - id: dispatch
+    from: capability
+    to: component
+    label: "Dispatch Adoption Transaction"
+    evidence:
+      entrypointId: entrypoint.adoption.primary
+      sourceSymbol: "runAdoptionApply"
+      sinkId: sink.adoption.primary
+outcomes:
+  - id: success
+    kind: success
+    label: "Apply repository adoption completes"
+    steps:
+      - id: invoke-success
+        from: capability
+        to: component
+        label: "Invoke Adoption Transaction"
+        evidence:
+          entrypointId: entrypoint.adoption.primary
+          sourceSymbol: "runAdoptionApply"
+          sinkId: sink.adoption.primary
+    terminal:
+      participant: capability
+      label: Return success receipt
+  - id: error
+    kind: error
+    label: "Apply repository adoption is rejected or fails"
+    steps:
+      - id: invoke-error
+        from: capability
+        to: component
+        label: "Propagate Adoption Transaction failure"
+        evidence:
+          entrypointId: entrypoint.adoption.primary
+          sourceSymbol: "runAdoptionApply"
+          sinkId: sink.adoption.primary
+    terminal:
+      participant: capability
+      label: Return typed failure

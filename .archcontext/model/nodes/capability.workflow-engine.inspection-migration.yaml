@@ -12,6 +12,15 @@ source:
     - "scripts/create-project-dirs.sh"
     - "scripts/init-project.sh"
     - "scripts/lib/**"
+  entrypoints:
+    - id: entrypoint.inspection-migration.primary
+      path: "src/cli/commands/init.ts"
+      symbols:
+        - name: "runProcess"
+          sinks:
+            - id: sink.inspection-migration.primary
+              path: "src/effects/process-runner.ts"
+              symbol: "runProcess"
 extensions:
   contractFiles:
     agents: "scripts/AGENTS.md"

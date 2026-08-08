@@ -1,383 +1,75 @@
 # runtime-harness/hook-adapters 架构文档
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:e2f869f09ac3c18691f44db23f176e03410ef56bbe5977a9a1e3c70a9bdc63a7" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:7558c3709dd3d981b13bdd69a2d36dc08cb73a14196d092e234f5658f2022292" verifiedAgainst="codex/axr7-consumer-e2e-adoption-dogfood@99c645f368e0c0269cd8871f9f0160cd59c55260@2026-08-09T03:26:42+08:00" -->
+> **狀態**:`active`
+> **Verified against**:`codex/axr7-consumer-e2e-adoption-dogfood@99c645f368e0c0269cd8871f9f0160cd59c55260`(2026-08-09)
+> **Capability ID**:`capability.runtime-harness.hook-adapters`(kind `capability`)
+> **Matched Prefixes**:`assets/hooks/**`、`.ai/hooks/**`、`scripts/run-skill-hook.ts`、`src/cli/installer/**`、`src/cli/hook/**`、`src/cli/hook-entry.ts`
+> **Local Contracts**:`assets/hooks/AGENTS.md`、`assets/hooks/CLAUDE.md`
+> **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與 Git 狀態投影生成,手改會在下次投影被覆蓋。
 
-<!-- BEGIN archctx:intro -->
+Installs and runs typed Claude and Codex host hook routes.
 
-> 状态：基于 `main` 工作树的 by-capability 架构复核稿。
-> Verified against: main@13686d8d（2026-08-08）
-> Capability ID: `runtime-harness-hook-adapters`
-> Matched Prefixes: `assets/hooks`、`.ai/hooks`、`scripts/run-skill-hook.ts`、`src/cli/installer`、`src/cli/hook`、`src/cli/hook-entry.ts`
-> Local Contracts: `assets/hooks/AGENTS.md`、`assets/hooks/CLAUDE.md`（capabilities.json `contract_files`）
-> Workstream: `tasks/workstreams/runtime-harness/hook-adapters/`
-> 事实优先级：实际源码（`src/cli/hook/**`、`src/cli/installer/**`）> 本文 > 上层 `docs/architecture/index.md` 叙述 > 历史 plan/notes。本文只画**已实现、已接线**的现状；任何尚未接线的部分必须显式标注为**目标设计**，未标注即代表当前源码可复核。
+## 1. P1:能力架構地圖
 
-<!-- END archctx:intro -->
-
-## 0. 阅读约定
-
-| 标记 | 含义 |
-| --- | --- |
-| **已实现、已接线** | 当前源码存在，且位于真实的 host-event dispatch runtime path |
-| **已实现、隔离** | 当前源码存在，但不在 host-event dispatch path 上（只被 CLI/installer/测试消费） |
-| **已实现、保留字段** | 类型/协议字段已存在，但当前没有生产消费者 |
-| **目标设计** | 只存在于计划或提案，尚未落到源码 |
-| **已退役** | 源码已删除，只在本文历史章节留档 |
-
-本 capability 的唯一权威链是：
-
-```
-host adapter entry → repo-harness-hook → runtime.ts → ROUTES → handler-registry → 一个 typed handler
-```
-
-`ROUTES`（`src/cli/hook/route-registry.ts:66`）是 `(event, routeId, matcher)` 公开契约；每条 route 恰好绑定一个 `handler`，没有 `scripts` 数组。adapter 里的 shell 命令只是调用信封，不承载任何 hook 逻辑。
-
-<!-- BEGIN archctx:p1 -->
-
-## 1. P1：能力架构地图
-
-### 1.1 模块与真实运行时边界
+### 1.1 架構圖
 
 ```mermaid
-flowchart TB
-  classDef host fill:#374151,stroke:#d1d5db,stroke-width:2px,color:#fff
-  classDef entry fill:#1e40af,stroke:#bfdbfe,stroke-width:2px,color:#fff
-  classDef contract fill:#5b21b6,stroke:#ddd6fe,stroke-width:2px,color:#fff
-  classDef handler fill:#0f766e,stroke:#99f6e4,stroke-width:2px,color:#fff
-  classDef store fill:#9a3412,stroke:#fed7aa,stroke-width:2px,color:#fff
-  classDef isolated fill:#4b5563,stroke:#d1d5db,stroke-width:2px,color:#fff
-
-  subgraph Host["Host runtime（user-level）"]
-    direction TB
-    ClaudeCfg[("~/.claude/settings.json")]:::host
-    CodexCfg[("~/.codex/hooks.json")]:::host
-  end
-
-  subgraph Install["Installer 投影面（写 host 配置）"]
-    direction TB
-    Registry(["targets/registry.ts<br/>ALL_TARGETS"]):::contract
-    ClaudeT(["targets/claude.ts"]):::contract
-    CodexT(["targets/codex.ts"]):::contract
-    Managed(["managed-entries.ts<br/>buildHookCommand / MANAGED_TAG"]):::contract
-    Profile(["install-profile.ts<br/>minimal / full 组件集"]):::contract
-    Registry --> ClaudeT
-    Registry --> CodexT
-    ClaudeT --> Managed
-    CodexT --> Managed
-    Profile --> Managed
-  end
-
-  subgraph Dispatch["In-process dispatch（hot path）"]
-    direction TB
-    Entry(["hook-entry.ts<br/>repo-harness-hook"]):::entry
-    Runtime(["runtime.ts<br/>runHook()"]):::entry
-    Routes(["route-registry.ts<br/>ROUTES 11 tuples"]):::contract
-    Bind(["handler-registry.ts<br/>8 typed handlers"]):::contract
-    Contract(["handler-contract.ts<br/>HookHandlerContext / Result"]):::contract
-    Collector(["StateInputCollector<br/>memoized Effective State"]):::handler
-    Telemetry(["event-telemetry.ts<br/>loop-engine-hook-event/v1"]):::handler
-    Entry --> Runtime
-    Runtime --> Routes
-    Routes --> Bind
-    Bind --> Contract
-    Runtime --> Collector
-    Runtime --> Telemetry
-  end
-
-  subgraph Handlers["8 个 typed handlers"]
-    direction TB
-    H1(["session-context"]):::handler
-    H2(["mutation-guard"]):::handler
-    H3(["subagent"]):::handler
-    H4(["mutation-observed"]):::handler
-    H5(["command-observed"]):::handler
-    H6(["trace-observer"]):::handler
-    H7(["prompt"]):::handler
-    H8(["stop"]):::handler
-  end
-
-  subgraph State["运行时状态与副作用面（ignored）"]
-    direction TB
-    Runs[(".ai/harness/runs/<br/>hook-events.jsonl + journal pending")]:::store
-    OptIn[(".ai/harness/workflow-contract.json<br/>opt-in marker")]:::store
-    Helper(["repo-harness run &lt;helper&gt;<br/>architecture-queue / verify-contract"]):::store
-  end
-
-  ShLib(["assets/hooks/lib/workflow-state.sh<br/>→ .ai/hooks/lib/（projection）<br/>operator helper，非事件入口"]):::isolated
-  SkillHook(["scripts/run-skill-hook.ts<br/>skill lifecycle，deprecated-zero-overhead"]):::isolated
-
-  Managed -->|"install / uninstall"| ClaudeCfg
-  Managed -->|"install / uninstall"| CodexCfg
-  ClaudeCfg -->|"host event + stdin payload"| Entry
-  CodexCfg -->|"host event + stdin payload"| Entry
-  Routes -.->|"routesForHost()"| Managed
-  Contract --> Handlers
-  Runtime -->|"isOptIn()"| OptIn
-  Telemetry --> Runs
-  H4 --> Runs
-  H8 --> Runs
-  H8 -->|"Stop 时 spawnSync"| Helper
-
-  style ShLib stroke-dasharray:5 5
-  style SkillHook stroke-dasharray:5 5
+flowchart LR
+  p1_capability_runtime_harness_hook_adapters_75a11743["Hook Adapters"]:::component
+  p1_component_hook_adapters_primary_1659ffb9["Architecture Cascade"]:::component
+  p1_capability_runtime_harness_hook_adapters_75a11743 -->|"Drain Stop architecture work"| p1_component_hook_adapters_primary_1659ffb9
+  classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
+  classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
+  classDef datastore fill:#3f6212,color:#ffffff,stroke:#d9f99d,stroke-width:2px
+  classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-两个虚线节点是本 capability 内**不在 host-event dispatch path 上**的表面：
+- Proof: `proven` (`sha256:c112b4e41464cbd2dd291508791ba1a53d423ad21a2225b5052cc32d3fb3de97`).
+- Semantic nodes: `2`; declared relations: `1`.
 
-- `assets/hooks/lib/workflow-state.sh`（1884 行）已从事件入口降级为 operator/workflow-state helper 库，通过 `assets/hooks/projection.json` 投影到 `.ai/hooks/`；两份内容当前 byte-identical（`cmp` 验证通过）。
-- `scripts/run-skill-hook.ts` 驱动的是 `assets/skill-hooks.json` 的 init/assemble/migrate 生命周期钩子，与 Claude/Codex host event 无关。该配置自带 `"status": "deprecated-zero-overhead"`，7 个事件的 `scripts` 数组全部为空。
+### 1.2 模組職責表
 
-### 1.2 模块职责表
-
-| 文件 | 主要 exports / 职责 | 状态 |
+| 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
-| `src/cli/hook/route-registry.ts:66` | `ROUTES` —— 11 条冻结的 `(event, routeId, matcher, hosts?, handler)` 元组；`getRoute`、`routesForHost`、`routeSupportsHost`、`allEvents`。顺序即 adapter 写入顺序（Codex 按 `(path, event, i, j)` 哈希，重排会重新触发信任提示，见文件头注释 `:14`） | 已实现、已接线 |
-| `src/cli/hook/handler-registry.ts:16` | `handlers` 冻结表，把 8 个 `HookHandlerId` 绑到实现函数；`getHandlerForRoute`、`handlerIdForRoute`、`listHandlerBindings` | 已实现、已接线 |
-| `src/cli/hook/handler-contract.ts:25` | `HookHandlerContext`（event/routeId/repoRoot/input/env/now/collector/dependencies/collectSessionStdout）与 `HookHandlerResult`（exitCode/stdout/stderr/reason/sessionContexts）。handler 永不直接写 host fd | 已实现、已接线 |
-| `src/cli/hook/runtime.ts:343` | `runHook()` —— repo 解析、opt-in 判定、route 查表、handler 调用、异常兜底、telemetry finalize；`hostOutput()`（`:88`）是唯一的 fd 写出点；`resolveRepoRoot`、`isOptIn`、`resolveSessionEffectiveState` | 已实现、已接线 |
-| `src/cli/hook-entry.ts:18` | `runHookEntry()`，`commandName: 'repo-harness-hook'`。`import.meta.main` 分支同时承载 6 个非路由子命令（`minimal-change`、`review-rubric`、`review-subject`、`prompt-guard-decide`、`prompt-route`、`circuit-breaker-record`、`state-snapshot`）与 detached tooling populate 的 bundled 接收面（`:109`） | 已实现、已接线 |
-| `src/cli/hook/event-telemetry.ts:13` | `HOOK_EVENT_TELEMETRY_PROTOCOL = 'loop-engine-hook-event/v1'`、`HOOK_EVENT_TELEMETRY_PATH = '.ai/harness/runs/hook-events.jsonl'`、10 项 metric、`ALWAYS_COMPLETE` 三项（`runtime_entries`/`child_processes`/`elapsed_ms`） | 已实现、已接线 |
-| `src/cli/hook/session-context.ts`（64.6 KB，最大文件） | `buildSessionStartSections`、`ensureSessionRunIdentity`、`runDetachedToolingPopulate`、`architectureQueuePendingContext`（`:719`） | 已实现、已接线 |
-| `src/cli/hook/mutation-guard.ts`（44.6 KB） | `runMutationGuard` —— `PreToolUse.edit` 的唯一阻断权威 | 已实现、已接线 |
-| `src/cli/hook/mutation-observed.ts:79` | `runMutationObserved` 只写**至多一条** journal event；`consumePendingPostEditEvents`（`:853`）在 Stop 时重放外部命令；`processArchitectureCascade`（`:783`）、`processContractVerification`（`:793`）、`runRepoHarnessHelper`（`:741`）均为 Stop 时的 `spawnSync` | 已实现、已接线 |
-| `src/cli/hook/prompt-handler.ts`（42.6 KB）+ `prompt-intents.ts`（27.6 KB） | `runPromptHandler` 与意图识别集合（`bdd_feature_advice` / `ux_feature_guard_advice` 等） | 已实现、已接线 |
-| `src/cli/hook/subagent-handler.ts`（35.4 KB） | `runSubagentHandler`，被 4 条 route 复用（`PreToolUse.subagent` + 3 条 Codex-only） | 已实现、已接线 |
-| `src/cli/hook/stop-handler.ts:466` | `runStopHandler` —— `stop_hook_active` 递归短路（`:472`）、`consumePendingPostEditEvents`（`:488`）、`publishCheckpointFromLedger`、handoff/resume/run-summary 投影 | 已实现、已接线 |
-| `src/cli/hook/command-observed.ts`、`trace-observer.ts` | 两个 PostToolUse 观测器；均返回 host output 而不自己写 fd | 已实现、已接线 |
-| `src/cli/hook/circuit-breaker.ts`、`hook-input.ts`、`run-identity.ts`、`session-context-budget.ts`、`prompt-router.ts`、`prompt-guard-decision.ts`、`minimal-change-*.ts`、`review-*.ts`、`state-snapshot.ts`、`legacy-active-plan-migration.ts` | handler 的支撑层：payload 解析、run identity、context 预算、断路器、minimal-change 策略与信号 | 已实现、已接线（部分仅由 `hook-entry.ts` 子命令消费） |
-| `src/cli/installer/managed-entries.ts:41` | `buildHookCommand()` —— adapter 命令模板；`MANAGED_TAG = 'repo-harness-managed-hook-v1'`；`buildManagedHooks`、`stripManagedEntries`、`mergeHooks`、`isManagedEntry`；`routeInProfile`（`:58`）定义 minimal profile 的 7 条 route 白名单 | 已实现、已接线 |
-| `src/cli/installer/targets/codex.ts:49` | `~/.codex/hooks.json`；`supportsLocation('local') === false`（Codex 无 project-local hook 概念）；另写 `~/.codex/config.toml` 的 `default_mode_request_user_input` | 已实现、已接线 |
-| `src/cli/installer/targets/claude.ts:48` | `~/.claude/settings.json`（global）或 `<cwd>/.claude/settings.json`（local）；`supportsLocation` 恒返回 `true`（`:67`） | 已实现、已接线（见 §3.4 冲突项） |
-| `src/cli/installer/targets/registry.ts:17` | `ALL_TARGETS = [codexTarget, claudeTarget]`，顺序即 `--target=all` 展示顺序 | 已实现、已接线 |
-| `src/cli/installer/install-profile.ts`（1170 行） | `INSTALL_PROFILES = ['minimal','full']`、`LEGACY_INSTALL_PROFILES`、`InstalledProfileState`（protocol 2）、skill-surface manifest 校验（fail-closed，`:56`） | 已实现、已接线 |
-| `src/cli/installer/shared.ts`、`types.ts` | `atomicWriteFileSync`、`formatJson`、`readJsonOrEmpty`、`deepEqual`；`AgentTarget` 接口与 `Location = 'global' \| 'local'` | 已实现、已接线 |
-| `assets/hooks/lib/workflow-state.sh`（1884 行） | `workflow_policy_get`、`workflow_plan_status_projection` 等 workflow-state helper；读 `.ai/harness/policy.json`，依赖 `jq` | 已实现、隔离（非事件入口） |
-| `assets/hooks/projection.json` + `.ai/hooks/.projection.json` | 投影清单与 digest（`sha256:cbd48ce7…`，`file_count: 3`） | 已实现、已接线（投影校验） |
-| `scripts/run-skill-hook.ts` | `loadHookConfig`、`runHooks`；消费者只有 `scripts/assemble-template.ts:12` 与 `scripts/init-project.sh:456` | 已实现、隔离（`deprecated-zero-overhead`） |
+| `entrypoint.hook-adapters.primary` | `src/cli/hook/mutation-observed.ts#processArchitectureCascade` | `sink.hook-adapters.primary` → `src/cli/hook/mutation-observed.ts#runRepoHarnessHelper` |
 
-### 1.3 规模信号
+### 1.3 規模信號
 
-实测于 main@13686d8d：
+- 文件數:`46`
+- 總行數:`17154`
+- 匹配前綴:`assets/hooks/**`、`.ai/hooks/**`、`scripts/run-skill-hook.ts`、`src/cli/installer/**`、`src/cli/hook/**`、`src/cli/hook-entry.ts`
+- 復算:`archctx docs plan --json`(掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`)
 
-| 面 | 生产文件数 | LOC | 设计压力 |
-| --- | ---: | ---: | --- |
-| `src/cli/hook/**` + `src/cli/hook-entry.ts` | 30 | 10,896 | dispatch 热路径；`session-context.ts` / `mutation-guard.ts` / `prompt-handler.ts` 三个巨型 handler 占据一半以上体量 |
-| `src/cli/installer/**` | 7 | 1,739 | `install-profile.ts` 单文件 1,170 行，集中持有 profile/组件/事务状态 |
-| capability 合计（TS 生产） | **37** | **12,635** | —— |
-| `assets/hooks` + `.ai/hooks` | 8 | 4,105 | 其中 3,768 行是两份 byte-identical 的 `workflow-state.sh` |
-| `scripts/run-skill-hook.ts` | 1 | 244 | 隔离面 |
-| 相关测试文件（`tests/` 内命中 hook/route/prompt/subagent/mutation/stop/trace/session-context/installer 关键词） | 21 | —— | 契约覆盖集中在 `hook-contracts.test.ts` / `hook-runtime.test.ts` / `hook-protocol.test.ts` |
+### 1.4 依賴邊界
 
-复算命令（口径：排除 `*.test.ts`；`hook-entry.ts` 单独追加）：
+出向關係:
 
-```bash
-find src/cli/hook src/cli/installer -type f -name '*.ts' ! -name '*.test.ts' -print > /tmp/p.txt
-echo src/cli/hook-entry.ts >> /tmp/p.txt
-wc -l < /tmp/p.txt                 # 文件数 37
-xargs wc -l < /tmp/p.txt | tail -1 # 合计 LOC 12,635
+- `calls` → `component.hook-adapters.primary` — Drain Stop architecture work
 
-find assets/hooks .ai/hooks -type f -print0 | xargs -0 wc -l | tail -1  # 4,105
-ls tests/ | grep -icE 'hook|route|prompt|subagent|mutation|stop|trace|session-context|installer'
-```
+入向關係:
 
-### 1.4 依赖边界
+- 無。
 
-**允许的出边（当前事实）**
+## 2. P2:端到端數據流
 
-- `src/cli/hook/**` → `src/effects/loop/state-input-collector`、`src/effects/state/resolve-effective-state`、`src/effects/evidence/post-bash-importer`、`src/core/state/*`、`src/core/loop/loop-event-protocol`、`src/core/workflow/profile`。
-- `src/cli/installer/managed-entries.ts` → `src/cli/hook/route-registry`（`:18`）与 `src/core/adoption/managed-hook-config`（`:22`）。route registry 是 installer 的输入，方向单一。
-- `src/cli/installer/install-profile.ts` → `src/core/skill-surface/catalog`、`profile-components`、`assets/skill-commands/manifest.json`。
-- Stop 时的外部进程出边：`repo-harness run architecture-queue|context-contract-sync|verify-contract`、`repo-harness capability-context request`（`mutation-observed.ts:741-789`）。
-
-**允许的入边**
-
-- `src/cli/commands/install.ts:47`、`doctor.ts:231`、`status.ts:150` 消费 `ALL_TARGETS`。
-- `src/cli/index.ts` 的 `hook` 子命令与独立 `repo-harness-hook` 二进制都进入 `runHook()`；`buildHookCommand` 的模板优先 `repo-harness-hook`，回落 `repo-harness hook`（`managed-entries.ts:42`）。
-
-**禁止的边**
-
-- `route-registry.ts` 不得反向 import 任何 handler 或 installer 模块（当前零 import，纯类型+常量）。
-- handler 不得直接写 `process.stdout` / `process.exit`；fd 归 `runtime.ts:hostOutput`。唯一的受控例外是 `mutation-observed.ts:834` 的 `warnStderr`，因为 Stop 时的 journal 清理发生在 host output 成型之前，注释已就地记录该理由。
-- `.ai/hooks/**` 不得成为第二权威：它是 `assets/hooks` 的投影，改动必须回到 canonical root。
-- `standard-plan.ts`（`src/core/adoption/`）与 `fs-transaction.ts`（`src/effects/`）**不属于本 capability**（归 `public-surface-adoption`）。它们只在一次性迁移事务中出现，host-event dispatch 全程不查询它们。
-
-<!-- END archctx:p1 -->
-
-<!-- BEGIN archctx:p2 -->
-
-## 2. P2：端到端数据流
-
-### 2.1 主链路：PostToolUse.edit 一次真实握手
+> **Proof**: `proven` (`sha256:c112b4e41464cbd2dd291508791ba1a53d423ad21a2225b5052cc32d3fb3de97`); selectors `1/1`.
 
 ```mermaid
+%%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
 sequenceDiagram
   autonumber
-  participant Host as Claude/Codex host
-  participant Cfg as ~/.claude/settings.json 条目
-  participant Sh as adapter shell envelope
-  participant Entry as hook-entry.ts
-  participant RT as runtime.ts runHook()
-  participant Routes as route-registry ROUTES
-  participant Bind as handler-registry
-  participant H as mutation-observed handler
-  participant FS as .ai/harness/runs/postedit/pending
-  participant Tel as event-telemetry
-
-  Host->>Cfg: Edit/Write 完成，匹配 matcher "Edit|Write"
-  Cfg->>Sh: 执行 command 字符串（timeout 30s）
-  Sh->>Sh: git rev-parse --show-toplevel，失败则 exit 0
-  Sh->>Sh: export HOOK_REPO_ROOT，HOOK_HOST=claude
-  Sh->>Entry: exec repo-harness-hook PostToolUse --route edit（payload 走 stdin）
-  Entry->>Entry: parseCliArgs(argv)，readFileSync(0) 取 payload
-  Entry->>RT: runHookEntry({event, routeId, input})
-  RT->>RT: resolveExplicitRepoRoot(cwd, env)
-  alt HOOK_REPO_ROOT 与 cwd 的 git root 不一致
-    RT-->>Host: exit 0，reason=repo-root-mismatch（静默）
+  participant p2_capability_4262990f as Hook Adapters
+  participant p2_component_7b8d80ff as Architecture Cascade
+  p2_capability_4262990f->>p2_component_7b8d80ff: Dispatch Architecture Cascade
+  alt Drain Stop architecture work completes
+  p2_capability_4262990f->>p2_component_7b8d80ff: Invoke Architecture Cascade
+    Note over p2_capability_4262990f: Return success receipt
+  else Drain Stop architecture work is rejected or fails
+  p2_capability_4262990f->>p2_component_7b8d80ff: Propagate Architecture Cascade failure
+    Note over p2_capability_4262990f: Return typed failure
   end
-  RT->>RT: isOptIn(repoRoot)：.ai/harness/workflow-contract.json
-  alt 缺 opt-in marker
-    RT-->>Host: exit 0，reason=non-opt-in（静默）
-  end
-  RT->>Routes: getRoute('PostToolUse','edit')
-  Routes-->>RT: {handler:'mutation-observed'}
-  RT->>Bind: getHandlerForRoute(route)
-  Bind-->>RT: TypedHookHandler
-  RT->>Tel: createHookEventTelemetry({repoRoot,event,routeId,input,env})
-  RT->>RT: createStateInputCollector（memoized Effective State getters）
-  RT->>H: handler.run(HookHandlerContext)
-  H->>H: getFilePath / emitAdvisories / loadMinimalChangePolicy
-  H->>H: 计算 dirty bits（contract-verification/architecture/context/capability/minimal-change/checkpoint）
-  H->>FS: writeOrCoalesceJournalEvent（原子写，至多一条）
-  H-->>RT: HookHandlerResult{exitCode:0, stdout: advisories}
-  RT->>Tel: recordStep({name:'mutation-observed', execution:'in_process'})
-  RT->>Tel: markMetricsComplete([files_written, durable_writes, …])
-  RT->>Host: hostOutput()：唯一 fd 写出点
-  RT->>Tel: finalize({exitCode, reason, blocked})
-  Tel->>FS: 追加一条 loop-engine-hook-event/v1 到 hook-events.jsonl
 ```
-
-关键事实：`PostToolUse.edit` **不**在当轮跑 architecture-queue。HRD-05 之后它只落一条 journal event，重活推迟到 Stop。
-
-### 2.2 延迟副作用链路：Stop 时重放 architecture-queue
-
-```mermaid
-sequenceDiagram
-  autonumber
-  participant Host as Claude/Codex host
-  participant RT as runtime.ts runHook()
-  participant Stop as stop-handler runStopHandler()
-  participant MO as mutation-observed consumePendingPostEditEvents()
-  participant Pend as pending journal events
-  participant Proc as spawnSync 子进程
-  participant Ledger as checkpoint / handoff / resume 投影
-
-  Host->>RT: Stop 事件 --route default
-  RT->>Stop: handler.run(context)
-  Stop->>Stop: payload.stop_hook_active === true → exit 0（防递归短路）
-  Stop->>MO: consumePendingPostEditEvents(repoRoot, env)（try/catch 包裹）
-  MO->>Pend: 扫描 pending/*，逐 event 读 dirty bits
-  alt architecture dirty
-    MO->>Proc: repo-harness run architecture-queue record --file <path>
-    Proc-->>MO: stdout
-    alt stdout 匹配 /^\[ArchitectureDrift\] Request:/m
-      MO->>Proc: repo-harness run context-contract-sync sync-latest
-      MO->>Proc: repo-harness capability-context request --from-latest-architecture-event
-    end
-  end
-  alt contract-verification dirty
-    MO->>Proc: repo-harness run verify-contract --contract … --quiet --report-file …
-  end
-  alt minimal-change dirty
-    MO->>MO: collectMinimalChangeSignals()（in-process）
-  end
-  MO->>Pend: 成功即删除 event 文件（transit queue，非证据账本）
-  MO-->>Stop: PostEditConsumeSummary{consumed,pending,errors,warnings}
-  Stop->>Ledger: publishCheckpointFromLedger（try/catch，永不阻断 Stop）
-  Stop-->>RT: HookHandlerResult
-  RT->>Host: hostOutput()
-```
-
-级联的门控条件是 `architecture-queue.sh record` 自身的实时 stdout，而不是第二套 capability resolver —— 这是 `processArchitectureCascade`（`mutation-observed.ts:783`）刻意保留的单权威约束。
-
-### 2.3 安装侧链路：ROUTES → host 配置
-
-`repo-harness install --target both --location global --profile full` 的路径：
-
-```
-install.ts → ALL_TARGETS → target.install(loc, {profile})
-  → buildManagedHooks(host, profile)
-      → routesForHost(host)            # 过滤 route.hosts
-      → routeInProfile(route, profile) # minimal 只留 7 条
-      → buildHookEntry(route, host)    # matcher + command + timeout 30
-  → stripManagedEntries(existing)      # 按 MANAGED_TAG 只清自己写的
-  → mergeHooks(cleaned, managed)
-  → 内容相同则 action='unchanged'，否则 atomicWriteFileSync
-```
-
-`buildHookCommand`（`managed-entries.ts:42`）生成的单行命令依次做：打 `MANAGED_TAG` 标记 → `git rev-parse` 求 repo root（失败 `exit 0`）→ 导出 `HOOK_REPO_ROOT` → 优先 `exec repo-harness-hook` → 回落 `exec repo-harness hook` → 两者都不在 PATH 时 `exit 0`。
-
-### 2.4 route → handler 映射（源码复核后与 `ROUTES` 一致）
-
-| 公开 tuple | matcher | host 范围 | handler | minimal profile |
-| --- | --- | --- | --- | :---: |
-| `SessionStart.default` | —— | both | `session-context` | ✅ |
-| `PreToolUse.edit` | `Edit\|Write` | both | `mutation-guard` | ✅ |
-| `PreToolUse.subagent` | `Task\|Agent\|SendUserMessage` | both | `subagent` | ❌ |
-| `PostToolUse.edit` | `Edit\|Write` | both | `mutation-observed` | ✅ |
-| `PostToolUse.bash` | `Bash` | both | `command-observed` | ✅ |
-| `PostToolUse.always` | —— | both | `trace-observer` | ✅ |
-| `UserPromptSubmit.default` | —— | both | `prompt` | ✅ |
-| `UserPromptSubmit.delegation` | —— | codex only | `subagent` | ❌ |
-| `SubagentStart.context` | —— | codex only | `subagent` | ❌ |
-| `SubagentStop.quality` | —— | codex only | `subagent` | ❌ |
-| `Stop.default` | —— | both | `stop` | ✅ |
-
-11 条 tuple、8 个 handler ID：`subagent` 被 4 条 route 复用，其余一一对应。
-
-### 2.5 错误路径与 fail-open / fail-closed 分界
-
-**fail-open（静默 advisory，永不打断 host）**
-
-| 触发点 | 行为 |
-| --- | --- |
-| `command -v repo-harness-hook` 与 `repo-harness` 均缺失（`managed-entries.ts:42`） | shell 层 `exit 0`，host 无感 |
-| 不在 git repo（`runtime.ts:350`） | `exit 0`，`reason='not-in-git-repo'` |
-| `HOOK_REPO_ROOT` 与 cwd git root 不一致（`runtime.ts:348`） | `exit 0`，`reason='repo-root-mismatch'` |
-| 缺 opt-in marker `.ai/harness/workflow-contract.json`（`runtime.ts:351`） | `exit 0`，`reason='non-opt-in'` |
-| handler 抛异常（`runtime.ts:418`） | 捕获成 `exitCode:1` + stderr，仍会 finalize telemetry，不 crash host |
-| `consumePendingPostEditEvents` / `publishCheckpointFromLedger` 抛错（`stop-handler.ts:488`、`:497`） | try/catch 吞掉，Stop 永不被延迟副作用阻断 |
-| `hook-entry.ts:72` 的 `prompt-route` payload 解析失败 | 跳过 advisory routing，注释明确"deterministic edit guards 仍是安全权威" |
-| pending journal event 损坏 | 删除该文件 + 一行 stderr 警告，其余 event 继续处理 |
-
-**fail-closed（阻断或显式失败）**
-
-| 触发点 | 行为 |
-| --- | --- |
-| 未知 route（`runtime.ts:354`） | `exit 2`，`reason='unknown-route'`，stderr 明写 |
-| route 无绑定 handler（`runtime.ts:359`） | `exit 2`，`reason='handler-unbound'` |
-| `hook-entry.ts:117` argv 缺 event 或 `--route` | `exit 2` + usage |
-| `mutation-guard` 判定越权编辑 | `decision: 'block'` 结构化输出，`runtime.ts:436` 记 `blocked: true` |
-| Effective State 解析失败（`runtime.ts:264`） | SessionStart 投 `[HarnessStateUnavailable]`，`fail_closed: true`，明写 "Do not infer task, scope, or edit permission." |
-| skill-surface catalog 非法（`install-profile.ts:56`） | 抛错，在任何 host 状态被写之前中止 |
-
-**host output 分流**（`runtime.ts:88-141`，唯一 fd 写出点）
-
-- `SessionStart.default` 且 `stdio === undefined`：走 `budgetSessionContext`，输出 `{hookSpecificOutput:{hookEventName:'SessionStart', additionalContext}}`，预算为空则完全静默。
-- `HOOK_HOST !== 'codex'`（即 Claude）：stdout/stderr 直通。
-- `HOOK_HOST === 'codex'`：只有 4 条 structured route（`PreToolUse.subagent`、`UserPromptSubmit.delegation`、`SubagentStart.context`、`SubagentStop.quality`）且返回合法 decision/additionalContext 时才写 stdout；其余成功情况刻意静默，失败时 stdout 也被降级写到 stderr。
-
-### 2.6 遥测证据边界
-
-`src/cli/hook/event-telemetry.ts` 是唯一的 event-record 写入方，输出到 `.ai/harness/runs/hook-events.jsonl`。一条合法的 typed route 记录：
-
-- protocol `loop-engine-hook-event/v1`；
-- `runtime_entries: 1`；
-- 恰好一个 `in_process` handler step；
-- 直接 route dispatch 的 `child_processes: 0`；
-- `opaque_steps: []`。
-
-只有 `runtime_entries`、`child_processes`、`elapsed_ms` 是 `ALWAYS_COMPLETE`（`event-telemetry.ts:29`）。其余 metric 必须由 handler 通过注入的 observer 显式上报后才进 `complete_metrics`：当前只有 `mutation-observed`（`runtime.ts:445`）和 `stop`（`runtime.ts:455`）在未抛异常时标记各自的写入集。**未标记 complete 的零值必须按"不可用"读，不能当作"确认为零"。** 注意 Stop 路径的 `child_processes: 0` 只描述 route dispatch 形状，不涵盖 `consumePendingPostEditEvents` 内部的 `spawnSync` 级联。
-
-<!-- END archctx:p2 -->
-
+<!-- END ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" -->
 ## 3. P3：设计决策与不变量
 
 ### 3.1 必须保持的不变量

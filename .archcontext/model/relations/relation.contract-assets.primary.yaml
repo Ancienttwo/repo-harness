@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.contract-assets.primary
+kind: calls
+source: capability.workflow-engine.contract-assets
+target: component.contract-assets.primary
+intent: "Project the workflow contract"

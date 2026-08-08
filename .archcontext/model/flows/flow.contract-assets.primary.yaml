@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.contract-assets.primary
+capabilityId: capability.workflow-engine.contract-assets
+name: "Project the workflow contract"
+applicability: required
+participants:
+  - id: capability
+    nodeId: capability.workflow-engine.contract-assets
+  - id: component
+    nodeId: component.contract-assets.primary
+steps:
+  - id: dispatch
+    from: capability
+    to: component
+    label: "Dispatch Workflow Contract Asset"
+    evidence:
+      entrypointId: entrypoint.contract-assets.primary
+      sourceSymbol: "loadWorkflowContractAsset"
+      sinkId: sink.contract-assets.primary
+outcomes:
+  - id: success
+    kind: success
+    label: "Project the workflow contract completes"
+    steps:
+      - id: invoke-success
+        from: capability
+        to: component
+        label: "Invoke Workflow Contract Asset"
+        evidence:
+          entrypointId: entrypoint.contract-assets.primary
+          sourceSymbol: "loadWorkflowContractAsset"
+          sinkId: sink.contract-assets.primary
+    terminal:
+      participant: capability
+      label: Return success receipt
+  - id: error
+    kind: error
+    label: "Project the workflow contract is rejected or fails"
+    steps:
+      - id: invoke-error
+        from: capability
+        to: component
+        label: "Propagate Workflow Contract Asset failure"
+        evidence:
+          entrypointId: entrypoint.contract-assets.primary
+          sourceSymbol: "loadWorkflowContractAsset"
+          sinkId: sink.contract-assets.primary
+    terminal:
+      participant: capability
+      label: Return typed failure

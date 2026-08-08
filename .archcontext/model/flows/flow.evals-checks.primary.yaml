@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.evals-checks.primary
+capabilityId: capability.verification.evals-checks
+name: "Evaluate a cross-model review"
+applicability: required
+participants:
+  - id: capability
+    nodeId: capability.verification.evals-checks
+  - id: component
+    nodeId: component.evals-checks.primary
+steps:
+  - id: dispatch
+    from: capability
+    to: component
+    label: "Dispatch Review Outcome Classifier"
+    evidence:
+      entrypointId: entrypoint.evals-checks.primary
+      sourceSymbol: "runCrossReviewCommand"
+      sinkId: sink.evals-checks.primary
+outcomes:
+  - id: success
+    kind: success
+    label: "Evaluate a cross-model review completes"
+    steps:
+      - id: invoke-success
+        from: capability
+        to: component
+        label: "Invoke Review Outcome Classifier"
+        evidence:
+          entrypointId: entrypoint.evals-checks.primary
+          sourceSymbol: "runCrossReviewCommand"
+          sinkId: sink.evals-checks.primary
+    terminal:
+      participant: capability
+      label: Return success receipt
+  - id: error
+    kind: error
+    label: "Evaluate a cross-model review is rejected or fails"
+    steps:
+      - id: invoke-error
+        from: capability
+        to: component
+        label: "Propagate Review Outcome Classifier failure"
+        evidence:
+          entrypointId: entrypoint.evals-checks.primary
+          sourceSymbol: "runCrossReviewCommand"
+          sinkId: sink.evals-checks.primary
+    terminal:
+      participant: capability
+      label: Return typed failure

@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.root-router.primary
+capabilityId: capability.public-surface.root-router
+name: "Route root initialization"
+applicability: required
+participants:
+  - id: capability
+    nodeId: capability.public-surface.root-router
+  - id: component
+    nodeId: component.root-router.primary
+steps:
+  - id: dispatch
+    from: capability
+    to: component
+    label: "Dispatch Root Adoption Router"
+    evidence:
+      entrypointId: entrypoint.root-router.primary
+      sourceSymbol: "runAdoptionPlan"
+      sinkId: sink.root-router.primary
+outcomes:
+  - id: success
+    kind: success
+    label: "Route root initialization completes"
+    steps:
+      - id: invoke-success
+        from: capability
+        to: component
+        label: "Invoke Root Adoption Router"
+        evidence:
+          entrypointId: entrypoint.root-router.primary
+          sourceSymbol: "runAdoptionPlan"
+          sinkId: sink.root-router.primary
+    terminal:
+      participant: capability
+      label: Return success receipt
+  - id: error
+    kind: error
+    label: "Route root initialization is rejected or fails"
+    steps:
+      - id: invoke-error
+        from: capability
+        to: component
+        label: "Propagate Root Adoption Router failure"
+        evidence:
+          entrypointId: entrypoint.root-router.primary
+          sourceSymbol: "runAdoptionPlan"
+          sinkId: sink.root-router.primary
+    terminal:
+      participant: capability
+      label: Return typed failure

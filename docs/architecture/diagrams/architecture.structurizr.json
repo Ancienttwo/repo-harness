@@ -1,0 +1,259 @@
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:f3136225f1b961b69912e44bf85c32bbb0ae6b4be29e6c864b344878bedccf40" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:12ac0ab6eb31d304959c7b769c0e40218b159e9d43dcbece253ebb1f446d2bec" -->
+{
+  "schemaVersion": "archcontext.structurizr-export/v1",
+  "name": "ArchContext Architecture",
+  "model": {
+    "elements": [
+      {
+        "id": "capability.public-surface.action-commands",
+        "name": "Action Commands",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "capability.public-surface.adoption",
+        "name": "Adoption",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "capability.public-surface.root-router",
+        "name": "Root Router",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "capability.runtime-harness.hook-adapters",
+        "name": "Hook Adapters",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "capability.runtime-harness.mcp-sidecar",
+        "name": "MCP Sidecar",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "capability.runtime-mcp.general-repo-access",
+        "name": "General Repository Access",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "capability.verification.codegraph-readiness",
+        "name": "CodeGraph Readiness",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "capability.verification.evals-checks",
+        "name": "Evals And Checks",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "capability.workflow-engine.contract-assets",
+        "name": "Contract Assets",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "capability.workflow-engine.inspection-migration",
+        "name": "Inspection And Migration",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "component.action-commands.primary",
+        "name": "Action Command Installer",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.adoption.primary",
+        "name": "Adoption Transaction",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.codegraph-readiness.primary",
+        "name": "CodeGraph Readiness Check",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.contract-assets.primary",
+        "name": "Workflow Contract Asset",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.evals-checks.primary",
+        "name": "Review Outcome Classifier",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.general-repo-access.primary",
+        "name": "Stable File Reader",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.hook-adapters.primary",
+        "name": "Architecture Cascade",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.inspection-migration.primary",
+        "name": "Repository Inspector Process",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.mcp-sidecar.primary",
+        "name": "MCP Tool Dispatcher",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.root-router.primary",
+        "name": "Root Adoption Router",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      }
+    ],
+    "relationships": [
+      {
+        "id": "relation.action-commands.primary",
+        "sourceId": "capability.public-surface.action-commands",
+        "destinationId": "component.action-commands.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.adoption.primary",
+        "sourceId": "capability.public-surface.adoption",
+        "destinationId": "component.adoption.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.codegraph-readiness.primary",
+        "sourceId": "capability.verification.codegraph-readiness",
+        "destinationId": "component.codegraph-readiness.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.contract-assets.primary",
+        "sourceId": "capability.workflow-engine.contract-assets",
+        "destinationId": "component.contract-assets.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.evals-checks.primary",
+        "sourceId": "capability.verification.evals-checks",
+        "destinationId": "component.evals-checks.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.general-repo-access.primary",
+        "sourceId": "capability.runtime-mcp.general-repo-access",
+        "destinationId": "component.general-repo-access.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.hook-adapters.primary",
+        "sourceId": "capability.runtime-harness.hook-adapters",
+        "destinationId": "component.hook-adapters.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.inspection-migration.primary",
+        "sourceId": "capability.workflow-engine.inspection-migration",
+        "destinationId": "component.inspection-migration.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.primary",
+        "sourceId": "capability.runtime-harness.mcp-sidecar",
+        "destinationId": "component.mcp-sidecar.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.root-router.primary",
+        "sourceId": "capability.public-surface.root-router",
+        "destinationId": "component.root-router.primary",
+        "description": "calls"
+      }
+    ]
+  },
+  "views": {
+    "systemLandscape": {
+      "key": "archcontext-landscape",
+      "include": [
+        "capability.public-surface.action-commands",
+        "capability.public-surface.adoption",
+        "capability.public-surface.root-router",
+        "capability.runtime-harness.hook-adapters",
+        "capability.runtime-harness.mcp-sidecar",
+        "capability.runtime-mcp.general-repo-access",
+        "capability.verification.codegraph-readiness",
+        "capability.verification.evals-checks",
+        "capability.workflow-engine.contract-assets",
+        "capability.workflow-engine.inspection-migration",
+        "component.action-commands.primary",
+        "component.adoption.primary",
+        "component.codegraph-readiness.primary",
+        "component.contract-assets.primary",
+        "component.evals-checks.primary",
+        "component.general-repo-access.primary",
+        "component.hook-adapters.primary",
+        "component.inspection-migration.primary",
+        "component.mcp-sidecar.primary",
+        "component.root-router.primary"
+      ]
+    }
+  }
+}
+<!-- END ARCHCONTEXT:generated target="projection_target.diagram.structurizr" -->

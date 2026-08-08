@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.action-commands.primary
+kind: calls
+source: capability.public-surface.action-commands
+target: component.action-commands.primary
+intent: "Install action command skills"

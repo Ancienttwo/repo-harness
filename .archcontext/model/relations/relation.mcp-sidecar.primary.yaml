@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.primary
+kind: calls
+source: capability.runtime-harness.mcp-sidecar
+target: component.mcp-sidecar.primary
+intent: "Dispatch an MCP tool call"

@@ -122,25 +122,41 @@ describe('status command (Phase 1C)', () => {
 
   test('reports model authority, projection provider, code facts, and apply independently', () => {
     withTempHome(() => {
-      const report = runStatus(ROOT);
-      expect(report.architectureProjection).toEqual({
-        schemaVersion: 'repo-harness.architecture-projection-readiness/v1',
-        modelAuthority: { source: 'archcontext', ready: true },
-        projectionProvider: {
-          provider: 'disabled',
-          state: 'disabled',
-          binaryPath: null,
-          version: null,
-          reason: 'policy.architecture.projection_provider=disabled',
-        },
-        codeFacts: { requirement: 'required', state: 'not-evaluated' },
-        apply: { mode: 'disabled', enabled: false },
-      });
-      const text = formatStatus(report, false);
-      expect(text).toContain('model authority: archcontext (ready)');
-      expect(text).toContain('provider: disabled (disabled)');
-      expect(text).toContain('code facts: not-evaluated');
-      expect(text).toContain('apply: disabled');
+      const repo = fs.realpathSync(
+        fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-status-architecture-')),
+      );
+      try {
+        execSync('git init', { cwd: repo, stdio: 'ignore' });
+        fs.mkdirSync(path.join(repo, '.ai/harness'), { recursive: true });
+        fs.mkdirSync(path.join(repo, '.archcontext/model/nodes'), { recursive: true });
+        fs.writeFileSync(path.join(repo, '.ai/harness/workflow-contract.json'), '{}');
+        fs.writeFileSync(
+          path.join(repo, '.ai/harness/policy.json'),
+          JSON.stringify({ context: { capability_source: 'archcontext' } }),
+        );
+
+        const report = runStatus(repo);
+        expect(report.architectureProjection).toEqual({
+          schemaVersion: 'repo-harness.architecture-projection-readiness/v1',
+          modelAuthority: { source: 'archcontext', ready: true },
+          projectionProvider: {
+            provider: 'disabled',
+            state: 'disabled',
+            binaryPath: null,
+            version: null,
+            reason: 'policy.architecture.projection_provider=disabled',
+          },
+          codeFacts: { requirement: 'required', state: 'not-evaluated' },
+          apply: { mode: 'disabled', enabled: false },
+        });
+        const text = formatStatus(report, false);
+        expect(text).toContain('model authority: archcontext (ready)');
+        expect(text).toContain('provider: disabled (disabled)');
+        expect(text).toContain('code facts: not-evaluated');
+        expect(text).toContain('apply: disabled');
+      } finally {
+        fs.rmSync(repo, { recursive: true, force: true });
+      }
     });
   });
 

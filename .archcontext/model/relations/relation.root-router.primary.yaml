@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.root-router.primary
+kind: calls
+source: capability.public-surface.root-router
+target: component.root-router.primary
+intent: "Route root initialization"

@@ -151,6 +151,20 @@ describe("architecture sync gate", () => {
       const res = run("bash", ["scripts/check-architecture-sync.sh", "--changed-files", "changed.txt"], cwd);
       expect(res.status).toBe(0);
       expect(res.stdout).toContain("mode=off");
+
+      const json = run("bash", ["scripts/check-architecture-sync.sh", "--changed-files", "changed.txt", "--format", "json"], cwd);
+      expect(json.status).toBe(0);
+      expect(JSON.parse(json.stdout).projection).toMatchObject({
+        provider: "disabled",
+        apply: "disabled",
+        state: "disabled",
+        pending: 0,
+        running: 0,
+        dead_letters: 0,
+        human_actions: 0,
+        adoption_required: 0,
+        blocking: 0,
+      });
     });
   }, 30_000);
 

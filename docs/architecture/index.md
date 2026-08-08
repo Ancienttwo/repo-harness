@@ -253,8 +253,7 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 
 
 <!-- BEGIN ARCHITECTURE PENDING REQUESTS -->
-- [ ] 2026-07-30T20:51:16+0800 [high] `.ai/harness/policy.json` -> [workflow-engine-contract-assets](requests/workflow-engine-contract-assets.md)
-- [ ] 2026-08-04T01:29:29+0800 [medium] `package.json` -> [root](requests/root.md)
+- (none)
 <!-- END ARCHITECTURE PENDING REQUESTS -->
 
 
@@ -263,3 +262,43 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 
 - Treat user-level `~/.codex/hooks.json` and `~/.claude/settings.json` as host adapters. Keep hook implementation under `.ai/hooks/`, and treat repo-local `.claude/settings.json` / `.codex/hooks.json` hook adapters as retired legacy config.
 - Consider adding `bun scripts/capability-resolver.ts validate --format text` to the strict workflow gate after the architecture registry has been used through one more real slice.
+
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:f3136225f1b961b69912e44bf85c32bbb0ae6b4be29e6c864b344878bedccf40" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:9a3397a4e2441788480cb7b0dc901482941f87100a285f511714e6473ce355b2" -->
+# Architecture Index
+
+Generated: 1970-01-01T00:00:00.000Z
+
+## Entities
+
+- [Action Commands](modules/public-surface/action-commands.md) — capability / active
+- [Adoption](modules/public-surface/adoption.md) — capability / active
+- [Root Router](modules/public-surface/root-router.md) — capability / active
+- [Hook Adapters](modules/runtime-harness/hook-adapters.md) — capability / active
+- [MCP Sidecar](modules/runtime-harness/mcp-sidecar.md) — capability / active
+- [General Repository Access](modules/runtime-mcp/general-repo-access.md) — capability / active
+- [CodeGraph Readiness](modules/verification/codegraph-readiness.md) — capability / active
+- [Evals And Checks](modules/verification/evals-checks.md) — capability / active
+- [Contract Assets](modules/workflow-engine/contract-assets.md) — capability / active
+- [Inspection And Migration](modules/workflow-engine/inspection-migration.md) — capability / active
+
+## Relations
+
+- capability.public-surface.action-commands -> component.action-commands.primary — calls
+- capability.public-surface.adoption -> component.adoption.primary — calls
+- capability.verification.codegraph-readiness -> component.codegraph-readiness.primary — calls
+- capability.workflow-engine.contract-assets -> component.contract-assets.primary — calls
+- capability.verification.evals-checks -> component.evals-checks.primary — calls
+- capability.runtime-mcp.general-repo-access -> component.general-repo-access.primary — calls
+- capability.runtime-harness.hook-adapters -> component.hook-adapters.primary — calls
+- capability.workflow-engine.inspection-migration -> component.inspection-migration.primary — calls
+- capability.runtime-harness.mcp-sidecar -> component.mcp-sidecar.primary — calls
+- capability.public-surface.root-router -> component.root-router.primary — calls
+
+## Projections
+
+- [Mermaid](diagrams/architecture.mmd)
+- [Structurizr JSON](diagrams/architecture.structurizr.json)
+- [LikeC4](diagrams/architecture.likec4)
+- [Decision index](decisions/index.md)
+- [Architecture changelog](changelog.md)
+<!-- END ARCHCONTEXT:generated target="projection_target.architecture.index" -->

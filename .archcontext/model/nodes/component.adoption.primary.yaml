@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: component.adoption.primary
+kind: component
+name: "Adoption Transaction"
+status: active
+parent: capability.public-surface.adoption
+summary: "Executes the reviewed apply repository adoption boundary."

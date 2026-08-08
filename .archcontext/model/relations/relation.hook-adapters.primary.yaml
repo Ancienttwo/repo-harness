@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.hook-adapters.primary
+kind: calls
+source: capability.runtime-harness.hook-adapters
+target: component.hook-adapters.primary
+intent: "Drain Stop architecture work"

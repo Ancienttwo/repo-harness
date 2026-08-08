@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.codegraph-readiness.primary
+kind: calls
+source: capability.verification.codegraph-readiness
+target: component.codegraph-readiness.primary
+intent: "Verify CodeGraph readiness"

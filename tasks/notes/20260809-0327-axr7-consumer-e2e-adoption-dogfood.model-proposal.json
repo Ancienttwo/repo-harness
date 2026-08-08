@@ -1,0 +1,287 @@
+{
+  "schemaVersion": "archcontext.model-proposal/v1",
+  "changeSetId": "changeset.axr7.repo-harness-semantic-model",
+  "taskSessionId": "task_axr7_repo_harness_semantic_model",
+  "operations": [
+    {
+      "op": "update_entity_fields",
+      "path": ".archcontext/model/nodes/capability.public-surface.action-commands.yaml",
+      "entityId": "capability.public-surface.action-commands",
+      "expectedHash": "sha256:e75fae0944aa36ce1e10f60447f89dad847f17d83a8b3a490180401431b3f389",
+      "body": "schemaVersion: archcontext.node/v2\nid: capability.public-surface.action-commands\nkind: capability\nname: Action Commands\nstatus: active\nsummary: Defines the user-facing action command skill surface and its evaluation boundary.\nresponsibilities:\n  - Own action command assets and their behavior/evaluation contracts.\nsource:\n  include:\n    - \"assets/skill-commands/**\"\n  entrypoints:\n    - id: entrypoint.action-commands.primary\n      path: \"src/cli/commands/init.ts\"\n      symbols:\n        - name: \"runInit\"\n          sinks:\n            - id: sink.action-commands.primary\n              path: \"src/cli/commands/init.ts\"\n              symbol: \"installExternalSkills\"\nextensions:\n  contractFiles:\n    agents: \"AGENTS.md\"\n    claude: \"CLAUDE.md\"\n  lspProfile: \"typescript-lsp\"\n  verification:\n    - \"bun test tests/action-command-skills.test.ts\"\n    - \"bun run benchmark:skills --dry-run\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/nodes/component.action-commands.primary.yaml",
+      "entityId": "component.action-commands.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.node/v2\nid: component.action-commands.primary\nkind: component\nname: \"Action Command Installer\"\nstatus: active\nparent: capability.public-surface.action-commands\nsummary: \"Executes the reviewed install action command skills boundary.\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/relations/relation.action-commands.primary.yaml",
+      "entityId": "relation.action-commands.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.relation/v1\nid: relation.action-commands.primary\nkind: calls\nsource: capability.public-surface.action-commands\ntarget: component.action-commands.primary\nintent: \"Install action command skills\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/flows/flow.action-commands.primary.yaml",
+      "entityId": "flow.action-commands.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.flow/v1\nid: flow.action-commands.primary\ncapabilityId: capability.public-surface.action-commands\nname: \"Install action command skills\"\napplicability: required\nparticipants:\n  - id: capability\n    nodeId: capability.public-surface.action-commands\n  - id: component\n    nodeId: component.action-commands.primary\nsteps: []\noutcomes:\n  - id: success\n    kind: success\n    label: \"Install action command skills completes\"\n    steps:\n      - id: invoke-success\n        from: capability\n        to: component\n        label: \"Invoke Action Command Installer\"\n        evidence:\n          entrypointId: entrypoint.action-commands.primary\n          sourceSymbol: \"runInit\"\n          sinkId: sink.action-commands.primary\n    terminal:\n      participant: capability\n      label: Return success receipt\n  - id: error\n    kind: error\n    label: \"Install action command skills is rejected or fails\"\n    steps:\n      - id: invoke-error\n        from: capability\n        to: component\n        label: \"Propagate Action Command Installer failure\"\n        evidence:\n          entrypointId: entrypoint.action-commands.primary\n          sourceSymbol: \"runInit\"\n          sinkId: sink.action-commands.primary\n    terminal:\n      participant: capability\n      label: Return typed failure\n"
+    },
+    {
+      "op": "update_entity_fields",
+      "path": ".archcontext/model/nodes/capability.public-surface.adoption.yaml",
+      "entityId": "capability.public-surface.adoption",
+      "expectedHash": "sha256:657f64d7e9a01849669769811daba3dad30404ed3b23aeffc056b82798dc8194",
+      "body": "schemaVersion: archcontext.node/v2\nid: capability.public-surface.adoption\nkind: capability\nname: Adoption\nstatus: active\nsummary: Plans and applies repository adoption through the canonical filesystem transaction boundary.\nresponsibilities:\n  - Own adoption planning, path safety, transaction apply, and rollback behavior.\nsource:\n  include:\n    - \"src/cli/commands/adoption-plan.ts\"\n    - \"src/core/adoption/**\"\n    - \"src/effects/fs-transaction.ts\"\n    - \"src/effects/path-safety.ts\"\n    - \"tests/cli/adoption-plan.test.ts\"\n    - \"tests/fixtures/adoption/**\"\n  entrypoints:\n    - id: entrypoint.adoption.primary\n      path: \"src/cli/commands/adoption-plan.ts\"\n      symbols:\n        - name: \"runAdoptionApply\"\n          sinks:\n            - id: sink.adoption.primary\n              path: \"src/effects/fs-transaction.ts\"\n              symbol: \"applyAdoptionPlan\"\nextensions:\n  contractFiles:\n    agents: \"AGENTS.md\"\n    claude: \"CLAUDE.md\"\n  lspProfile: \"typescript-lsp\"\n  verification:\n    - \"bun test tests/cli/adoption-plan.test.ts\"\n    - \"bun run check:type\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/nodes/component.adoption.primary.yaml",
+      "entityId": "component.adoption.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.node/v2\nid: component.adoption.primary\nkind: component\nname: \"Adoption Transaction\"\nstatus: active\nparent: capability.public-surface.adoption\nsummary: \"Executes the reviewed apply repository adoption boundary.\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/relations/relation.adoption.primary.yaml",
+      "entityId": "relation.adoption.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.relation/v1\nid: relation.adoption.primary\nkind: calls\nsource: capability.public-surface.adoption\ntarget: component.adoption.primary\nintent: \"Apply repository adoption\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/flows/flow.adoption.primary.yaml",
+      "entityId": "flow.adoption.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.flow/v1\nid: flow.adoption.primary\ncapabilityId: capability.public-surface.adoption\nname: \"Apply repository adoption\"\napplicability: required\nparticipants:\n  - id: capability\n    nodeId: capability.public-surface.adoption\n  - id: component\n    nodeId: component.adoption.primary\nsteps: []\noutcomes:\n  - id: success\n    kind: success\n    label: \"Apply repository adoption completes\"\n    steps:\n      - id: invoke-success\n        from: capability\n        to: component\n        label: \"Invoke Adoption Transaction\"\n        evidence:\n          entrypointId: entrypoint.adoption.primary\n          sourceSymbol: \"runAdoptionApply\"\n          sinkId: sink.adoption.primary\n    terminal:\n      participant: capability\n      label: Return success receipt\n  - id: error\n    kind: error\n    label: \"Apply repository adoption is rejected or fails\"\n    steps:\n      - id: invoke-error\n        from: capability\n        to: component\n        label: \"Propagate Adoption Transaction failure\"\n        evidence:\n          entrypointId: entrypoint.adoption.primary\n          sourceSymbol: \"runAdoptionApply\"\n          sinkId: sink.adoption.primary\n    terminal:\n      participant: capability\n      label: Return typed failure\n"
+    },
+    {
+      "op": "update_entity_fields",
+      "path": ".archcontext/model/nodes/capability.public-surface.root-router.yaml",
+      "entityId": "capability.public-surface.root-router",
+      "expectedHash": "sha256:e741ae3c48b5e34394054048ca7d2162edd708fdedca1d0ec04053d116fc6322",
+      "body": "schemaVersion: archcontext.node/v2\nid: capability.public-surface.root-router\nkind: capability\nname: Root Router\nstatus: active\nsummary: Routes repository-level product and agent context into capability-specific contracts.\nresponsibilities:\n  - Own the root public contract, product entry documentation, and top-level agent routing.\nsource:\n  include:\n    - \"SKILL.md\"\n    - \"README.md\"\n    - \"AGENTS.md\"\n    - \"CLAUDE.md\"\n    - \"docs/spec.md\"\n  entrypoints:\n    - id: entrypoint.root-router.primary\n      path: \"src/cli/commands/init.ts\"\n      symbols:\n        - name: \"runInit\"\n          sinks:\n            - id: sink.root-router.primary\n              path: \"src/cli/commands/adoption-plan.ts\"\n              symbol: \"runAdoptionPlan\"\nextensions:\n  contractFiles:\n    agents: \"AGENTS.md\"\n    claude: \"CLAUDE.md\"\n  lspProfile: \"typescript-lsp\"\n  verification:\n    - \"bun scripts/inspect-project-state.ts --repo . --format text\"\n    - \"bun src/cli/index.ts init --repo . --dry-run\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/nodes/component.root-router.primary.yaml",
+      "entityId": "component.root-router.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.node/v2\nid: component.root-router.primary\nkind: component\nname: \"Root Adoption Router\"\nstatus: active\nparent: capability.public-surface.root-router\nsummary: \"Executes the reviewed route root initialization boundary.\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/relations/relation.root-router.primary.yaml",
+      "entityId": "relation.root-router.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.relation/v1\nid: relation.root-router.primary\nkind: calls\nsource: capability.public-surface.root-router\ntarget: component.root-router.primary\nintent: \"Route root initialization\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/flows/flow.root-router.primary.yaml",
+      "entityId": "flow.root-router.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.flow/v1\nid: flow.root-router.primary\ncapabilityId: capability.public-surface.root-router\nname: \"Route root initialization\"\napplicability: required\nparticipants:\n  - id: capability\n    nodeId: capability.public-surface.root-router\n  - id: component\n    nodeId: component.root-router.primary\nsteps: []\noutcomes:\n  - id: success\n    kind: success\n    label: \"Route root initialization completes\"\n    steps:\n      - id: invoke-success\n        from: capability\n        to: component\n        label: \"Invoke Root Adoption Router\"\n        evidence:\n          entrypointId: entrypoint.root-router.primary\n          sourceSymbol: \"runInit\"\n          sinkId: sink.root-router.primary\n    terminal:\n      participant: capability\n      label: Return success receipt\n  - id: error\n    kind: error\n    label: \"Route root initialization is rejected or fails\"\n    steps:\n      - id: invoke-error\n        from: capability\n        to: component\n        label: \"Propagate Root Adoption Router failure\"\n        evidence:\n          entrypointId: entrypoint.root-router.primary\n          sourceSymbol: \"runInit\"\n          sinkId: sink.root-router.primary\n    terminal:\n      participant: capability\n      label: Return typed failure\n"
+    },
+    {
+      "op": "update_entity_fields",
+      "path": ".archcontext/model/nodes/capability.runtime-harness.hook-adapters.yaml",
+      "entityId": "capability.runtime-harness.hook-adapters",
+      "expectedHash": "sha256:2322348801720e38b0c8edc58414bc0ba6aa34080c18dd69997a4504fd13cc93",
+      "body": "schemaVersion: archcontext.node/v2\nid: capability.runtime-harness.hook-adapters\nkind: capability\nname: Hook Adapters\nstatus: active\nsummary: Installs and runs typed Claude and Codex host hook routes.\nresponsibilities:\n  - Own managed hook entries, route dispatch, mutation observation, and Stop handling.\nsource:\n  include:\n    - \"assets/hooks/**\"\n    - \".ai/hooks/**\"\n    - \"scripts/run-skill-hook.ts\"\n    - \"src/cli/installer/**\"\n    - \"src/cli/hook/**\"\n    - \"src/cli/hook-entry.ts\"\n  entrypoints:\n    - id: entrypoint.hook-adapters.primary\n      path: \"src/cli/hook/mutation-observed.ts\"\n      symbols:\n        - name: \"consumePendingPostEditEvents\"\n          sinks:\n            - id: sink.hook-adapters.primary\n              path: \"src/cli/hook/mutation-observed.ts\"\n              symbol: \"processArchitectureCascade\"\nextensions:\n  contractFiles:\n    agents: \"assets/hooks/AGENTS.md\"\n    claude: \"assets/hooks/CLAUDE.md\"\n  lspProfile: \"typescript-lsp\"\n  verification:\n    - \"bun test tests/hook-runtime.test.ts tests/hook-contracts.test.ts tests/workflow-contract.test.ts\"\n    - \"bash scripts/check-task-workflow.sh --strict\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/nodes/component.hook-adapters.primary.yaml",
+      "entityId": "component.hook-adapters.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.node/v2\nid: component.hook-adapters.primary\nkind: component\nname: \"Architecture Cascade\"\nstatus: active\nparent: capability.runtime-harness.hook-adapters\nsummary: \"Executes the reviewed drain stop architecture work boundary.\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/relations/relation.hook-adapters.primary.yaml",
+      "entityId": "relation.hook-adapters.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.relation/v1\nid: relation.hook-adapters.primary\nkind: calls\nsource: capability.runtime-harness.hook-adapters\ntarget: component.hook-adapters.primary\nintent: \"Drain Stop architecture work\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/flows/flow.hook-adapters.primary.yaml",
+      "entityId": "flow.hook-adapters.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.flow/v1\nid: flow.hook-adapters.primary\ncapabilityId: capability.runtime-harness.hook-adapters\nname: \"Drain Stop architecture work\"\napplicability: required\nparticipants:\n  - id: capability\n    nodeId: capability.runtime-harness.hook-adapters\n  - id: component\n    nodeId: component.hook-adapters.primary\nsteps: []\noutcomes:\n  - id: success\n    kind: success\n    label: \"Drain Stop architecture work completes\"\n    steps:\n      - id: invoke-success\n        from: capability\n        to: component\n        label: \"Invoke Architecture Cascade\"\n        evidence:\n          entrypointId: entrypoint.hook-adapters.primary\n          sourceSymbol: \"consumePendingPostEditEvents\"\n          sinkId: sink.hook-adapters.primary\n    terminal:\n      participant: capability\n      label: Return success receipt\n  - id: error\n    kind: error\n    label: \"Drain Stop architecture work is rejected or fails\"\n    steps:\n      - id: invoke-error\n        from: capability\n        to: component\n        label: \"Propagate Architecture Cascade failure\"\n        evidence:\n          entrypointId: entrypoint.hook-adapters.primary\n          sourceSymbol: \"consumePendingPostEditEvents\"\n          sinkId: sink.hook-adapters.primary\n    terminal:\n      participant: capability\n      label: Return typed failure\n"
+    },
+    {
+      "op": "update_entity_fields",
+      "path": ".archcontext/model/nodes/capability.runtime-harness.mcp-sidecar.yaml",
+      "entityId": "capability.runtime-harness.mcp-sidecar",
+      "expectedHash": "sha256:33954bda62d9a2dbf8d096b70a72e8a3635eb073eb154d17d6c1e00c1ec9ea5a",
+      "body": "schemaVersion: archcontext.node/v2\nid: capability.runtime-harness.mcp-sidecar\nkind: capability\nname: MCP Sidecar\nstatus: active\nsummary: Provides the local MCP sidecar and its repository access policy boundary.\nresponsibilities:\n  - Own MCP lifecycle, workspace registration, access policy, and local browser integration.\nsource:\n  include:\n    - \"src/cli/mcp/**\"\n    - \"src/cli/commands/mcp.ts\"\n    - \"src/cli/chatgpt-browser/file-policy.ts\"\n    - \"src/effects/repo-registry.ts\"\n    - \"docs/repo-harness-chatgpt-mcp-setup.md\"\n    - \"docs/reference-configs/chatgpt-coding-mcp.md\"\n    - \"docs/researches/20260711-devspace-chatgpt-local-control.md\"\n  entrypoints:\n    - id: entrypoint.mcp-sidecar.primary\n      path: \"src/cli/mcp/server.ts\"\n      symbols:\n        - name: \"createRepoHarnessMcpServer\"\n          sinks:\n            - id: sink.mcp-sidecar.primary\n              path: \"src/cli/mcp/tools.ts\"\n              symbol: \"callMcpTool\"\nextensions:\n  contractFiles:\n    agents: \"AGENTS.md\"\n    claude: \"CLAUDE.md\"\n  lspProfile: \"typescript-lsp\"\n  verification:\n    - \"bun test tests/cli/mcp*.test.ts\"\n    - \"bun run check:type\"\n    - \"repo-harness mcp doctor --repo . --live\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/nodes/component.mcp-sidecar.primary.yaml",
+      "entityId": "component.mcp-sidecar.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.node/v2\nid: component.mcp-sidecar.primary\nkind: component\nname: \"MCP Tool Dispatcher\"\nstatus: active\nparent: capability.runtime-harness.mcp-sidecar\nsummary: \"Executes the reviewed dispatch an mcp tool call boundary.\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/relations/relation.mcp-sidecar.primary.yaml",
+      "entityId": "relation.mcp-sidecar.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.relation/v1\nid: relation.mcp-sidecar.primary\nkind: calls\nsource: capability.runtime-harness.mcp-sidecar\ntarget: component.mcp-sidecar.primary\nintent: \"Dispatch an MCP tool call\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/flows/flow.mcp-sidecar.primary.yaml",
+      "entityId": "flow.mcp-sidecar.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.flow/v1\nid: flow.mcp-sidecar.primary\ncapabilityId: capability.runtime-harness.mcp-sidecar\nname: \"Dispatch an MCP tool call\"\napplicability: required\nparticipants:\n  - id: capability\n    nodeId: capability.runtime-harness.mcp-sidecar\n  - id: component\n    nodeId: component.mcp-sidecar.primary\nsteps: []\noutcomes:\n  - id: success\n    kind: success\n    label: \"Dispatch an MCP tool call completes\"\n    steps:\n      - id: invoke-success\n        from: capability\n        to: component\n        label: \"Invoke MCP Tool Dispatcher\"\n        evidence:\n          entrypointId: entrypoint.mcp-sidecar.primary\n          sourceSymbol: \"createRepoHarnessMcpServer\"\n          sinkId: sink.mcp-sidecar.primary\n    terminal:\n      participant: capability\n      label: Return success receipt\n  - id: error\n    kind: error\n    label: \"Dispatch an MCP tool call is rejected or fails\"\n    steps:\n      - id: invoke-error\n        from: capability\n        to: component\n        label: \"Propagate MCP Tool Dispatcher failure\"\n        evidence:\n          entrypointId: entrypoint.mcp-sidecar.primary\n          sourceSymbol: \"createRepoHarnessMcpServer\"\n          sinkId: sink.mcp-sidecar.primary\n    terminal:\n      participant: capability\n      label: Return typed failure\n"
+    },
+    {
+      "op": "update_entity_fields",
+      "path": ".archcontext/model/nodes/capability.runtime-mcp.general-repo-access.yaml",
+      "entityId": "capability.runtime-mcp.general-repo-access",
+      "expectedHash": "sha256:a5aebc646ae22df07955b199a18f3759e1e838fd4b3931dab0a71d9f002e9e2c",
+      "body": "schemaVersion: archcontext.node/v2\nid: capability.runtime-mcp.general-repo-access\nkind: capability\nname: General Repository Access\nstatus: active\nsummary: Exposes bounded read-only repository tools through MCP.\nresponsibilities:\n  - Own general repository reader tools, CodeGraph routing, and access-policy enforcement.\nsource:\n  include:\n    - \"src/cli/mcp/general-repo-access.ts\"\n    - \"src/cli/mcp/general-repo-access/**\"\n    - \"tests/cli/mcp-reader-tools.test.ts\"\n    - \"tests/cli/mcp-codegraph-contract.test.ts\"\n    - \"tests/cli/mcp-policy.test.ts\"\n    - \"tests/cli/mcp-tools.test.ts\"\n  entrypoints:\n    - id: entrypoint.general-repo-access.primary\n      path: \"src/cli/mcp/general-repo-access.ts\"\n      symbols:\n        - name: \"callGeneralRepoTool\"\n          sinks:\n            - id: sink.general-repo-access.primary\n              path: \"src/cli/mcp/general-repo-access.ts\"\n              symbol: \"readFileTool\"\nextensions:\n  contractFiles:\n    agents: \"AGENTS.md\"\n    claude: \"CLAUDE.md\"\n  lspProfile: \"typescript-lsp\"\n  verification:\n    - \"bun test tests/cli/mcp-reader-tools.test.ts tests/cli/mcp-codegraph-contract.test.ts\"\n    - \"bun test tests/cli/mcp-policy.test.ts tests/cli/mcp-tools.test.ts\"\n    - \"bun run check:type\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/nodes/component.general-repo-access.primary.yaml",
+      "entityId": "component.general-repo-access.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.node/v2\nid: component.general-repo-access.primary\nkind: component\nname: \"Stable File Reader\"\nstatus: active\nparent: capability.runtime-mcp.general-repo-access\nsummary: \"Executes the reviewed read a repository file boundary.\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/relations/relation.general-repo-access.primary.yaml",
+      "entityId": "relation.general-repo-access.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.relation/v1\nid: relation.general-repo-access.primary\nkind: calls\nsource: capability.runtime-mcp.general-repo-access\ntarget: component.general-repo-access.primary\nintent: \"Read a repository file\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/flows/flow.general-repo-access.primary.yaml",
+      "entityId": "flow.general-repo-access.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.flow/v1\nid: flow.general-repo-access.primary\ncapabilityId: capability.runtime-mcp.general-repo-access\nname: \"Read a repository file\"\napplicability: required\nparticipants:\n  - id: capability\n    nodeId: capability.runtime-mcp.general-repo-access\n  - id: component\n    nodeId: component.general-repo-access.primary\nsteps: []\noutcomes:\n  - id: success\n    kind: success\n    label: \"Read a repository file completes\"\n    steps:\n      - id: invoke-success\n        from: capability\n        to: component\n        label: \"Invoke Stable File Reader\"\n        evidence:\n          entrypointId: entrypoint.general-repo-access.primary\n          sourceSymbol: \"callGeneralRepoTool\"\n          sinkId: sink.general-repo-access.primary\n    terminal:\n      participant: capability\n      label: Return success receipt\n  - id: error\n    kind: error\n    label: \"Read a repository file is rejected or fails\"\n    steps:\n      - id: invoke-error\n        from: capability\n        to: component\n        label: \"Propagate Stable File Reader failure\"\n        evidence:\n          entrypointId: entrypoint.general-repo-access.primary\n          sourceSymbol: \"callGeneralRepoTool\"\n          sinkId: sink.general-repo-access.primary\n    terminal:\n      participant: capability\n      label: Return typed failure\n"
+    },
+    {
+      "op": "update_entity_fields",
+      "path": ".archcontext/model/nodes/capability.verification.codegraph-readiness.yaml",
+      "entityId": "capability.verification.codegraph-readiness",
+      "expectedHash": "sha256:4207affb9a5826435a664a662af50af5d49037cb93c8a99673c483a3a7722305",
+      "body": "schemaVersion: archcontext.node/v2\nid: capability.verification.codegraph-readiness\nkind: capability\nname: CodeGraph Readiness\nstatus: active\nsummary: Resolves and verifies the repository CodeGraph runtime and index readiness.\nresponsibilities:\n  - Own CodeGraph installation detection, status normalization, and readiness diagnostics.\nsource:\n  include:\n    - \"scripts/ensure-codegraph.sh\"\n    - \"src/cli/tools/codegraph.ts\"\n    - \"src/cli/mcp/codegraph-adapter.ts\"\n    - \"tests/cli/codegraph-resolver.test.ts\"\n    - \"docs/architecture/modules/verification/codegraph-readiness.md\"\n  entrypoints:\n    - id: entrypoint.codegraph-readiness.primary\n      path: \"src/cli/tools/codegraph.ts\"\n      symbols:\n        - name: \"ensureCodegraph\"\n          sinks:\n            - id: sink.codegraph-readiness.primary\n              path: \"src/cli/tools/codegraph.ts\"\n              symbol: \"checkCodegraph\"\nextensions:\n  contractFiles:\n    agents: \"AGENTS.md\"\n    claude: \"CLAUDE.md\"\n  lspProfile: \"typescript-lsp\"\n  verification:\n    - \"bun test tests/check-agent-tooling.test.ts tests/cli/codegraph-resolver.test.ts\"\n    - \"bash scripts/ensure-codegraph.sh --check --json\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/nodes/component.codegraph-readiness.primary.yaml",
+      "entityId": "component.codegraph-readiness.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.node/v2\nid: component.codegraph-readiness.primary\nkind: component\nname: \"CodeGraph Readiness Check\"\nstatus: active\nparent: capability.verification.codegraph-readiness\nsummary: \"Executes the reviewed verify codegraph readiness boundary.\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/relations/relation.codegraph-readiness.primary.yaml",
+      "entityId": "relation.codegraph-readiness.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.relation/v1\nid: relation.codegraph-readiness.primary\nkind: calls\nsource: capability.verification.codegraph-readiness\ntarget: component.codegraph-readiness.primary\nintent: \"Verify CodeGraph readiness\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/flows/flow.codegraph-readiness.primary.yaml",
+      "entityId": "flow.codegraph-readiness.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.flow/v1\nid: flow.codegraph-readiness.primary\ncapabilityId: capability.verification.codegraph-readiness\nname: \"Verify CodeGraph readiness\"\napplicability: required\nparticipants:\n  - id: capability\n    nodeId: capability.verification.codegraph-readiness\n  - id: component\n    nodeId: component.codegraph-readiness.primary\nsteps: []\noutcomes:\n  - id: success\n    kind: success\n    label: \"Verify CodeGraph readiness completes\"\n    steps:\n      - id: invoke-success\n        from: capability\n        to: component\n        label: \"Invoke CodeGraph Readiness Check\"\n        evidence:\n          entrypointId: entrypoint.codegraph-readiness.primary\n          sourceSymbol: \"ensureCodegraph\"\n          sinkId: sink.codegraph-readiness.primary\n    terminal:\n      participant: capability\n      label: Return success receipt\n  - id: error\n    kind: error\n    label: \"Verify CodeGraph readiness is rejected or fails\"\n    steps:\n      - id: invoke-error\n        from: capability\n        to: component\n        label: \"Propagate CodeGraph Readiness Check failure\"\n        evidence:\n          entrypointId: entrypoint.codegraph-readiness.primary\n          sourceSymbol: \"ensureCodegraph\"\n          sinkId: sink.codegraph-readiness.primary\n    terminal:\n      participant: capability\n      label: Return typed failure\n"
+    },
+    {
+      "op": "update_entity_fields",
+      "path": ".archcontext/model/nodes/capability.verification.evals-checks.yaml",
+      "entityId": "capability.verification.evals-checks",
+      "expectedHash": "sha256:12ce2e84a875720ebae790a82838380170ba4ff1ee2d20c4191da46b34f7ce83",
+      "body": "schemaVersion: archcontext.node/v2\nid: capability.verification.evals-checks\nkind: capability\nname: Evals And Checks\nstatus: active\nsummary: Runs repository verification, contract gates, benchmarks, and evaluation suites.\nresponsibilities:\n  - Own machine-verifiable checks, bounded verifier execution, and evaluation evidence.\nsource:\n  include:\n    - \"tests/**\"\n    - \"evals/**\"\n    - \"scripts/run-skill-evals.ts\"\n    - \"scripts/run-harness-profile-benchmark.ts\"\n    - \"scripts/validate-harness-profile-benchmark.ts\"\n    - \"scripts/run-bounded-verifier-command.ts\"\n    - \"scripts/verify-contract.sh\"\n    - \"scripts/verify-sprint.sh\"\n    - \"scripts/check-task-workflow.sh\"\n    - \"scripts/check-task-sync.sh\"\n    - \"scripts/check-agent-tooling.sh\"\n    - \"scripts/check-brain-manifest.sh\"\n    - \"scripts/sync-brain-docs.sh\"\n  entrypoints:\n    - id: entrypoint.evals-checks.primary\n      path: \"src/effects/review/cross-review-runner.ts\"\n      symbols:\n        - name: \"runCrossReview\"\n          sinks:\n            - id: sink.evals-checks.primary\n              path: \"src/core/review/cross-review.ts\"\n              symbol: \"classifyCrossReviewOutcome\"\nextensions:\n  contractFiles:\n    agents: \"AGENTS.md\"\n    claude: \"CLAUDE.md\"\n  lspProfile: \"typescript-lsp\"\n  verification:\n    - \"bun test\"\n    - \"bash scripts/check-task-sync.sh\"\n    - \"bash scripts/check-task-workflow.sh --strict\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/nodes/component.evals-checks.primary.yaml",
+      "entityId": "component.evals-checks.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.node/v2\nid: component.evals-checks.primary\nkind: component\nname: \"Review Outcome Classifier\"\nstatus: active\nparent: capability.verification.evals-checks\nsummary: \"Executes the reviewed evaluate a cross-model review boundary.\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/relations/relation.evals-checks.primary.yaml",
+      "entityId": "relation.evals-checks.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.relation/v1\nid: relation.evals-checks.primary\nkind: calls\nsource: capability.verification.evals-checks\ntarget: component.evals-checks.primary\nintent: \"Evaluate a cross-model review\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/flows/flow.evals-checks.primary.yaml",
+      "entityId": "flow.evals-checks.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.flow/v1\nid: flow.evals-checks.primary\ncapabilityId: capability.verification.evals-checks\nname: \"Evaluate a cross-model review\"\napplicability: required\nparticipants:\n  - id: capability\n    nodeId: capability.verification.evals-checks\n  - id: component\n    nodeId: component.evals-checks.primary\nsteps: []\noutcomes:\n  - id: success\n    kind: success\n    label: \"Evaluate a cross-model review completes\"\n    steps:\n      - id: invoke-success\n        from: capability\n        to: component\n        label: \"Invoke Review Outcome Classifier\"\n        evidence:\n          entrypointId: entrypoint.evals-checks.primary\n          sourceSymbol: \"runCrossReview\"\n          sinkId: sink.evals-checks.primary\n    terminal:\n      participant: capability\n      label: Return success receipt\n  - id: error\n    kind: error\n    label: \"Evaluate a cross-model review is rejected or fails\"\n    steps:\n      - id: invoke-error\n        from: capability\n        to: component\n        label: \"Propagate Review Outcome Classifier failure\"\n        evidence:\n          entrypointId: entrypoint.evals-checks.primary\n          sourceSymbol: \"runCrossReview\"\n          sinkId: sink.evals-checks.primary\n    terminal:\n      participant: capability\n      label: Return typed failure\n"
+    },
+    {
+      "op": "update_entity_fields",
+      "path": ".archcontext/model/nodes/capability.workflow-engine.contract-assets.yaml",
+      "entityId": "capability.workflow-engine.contract-assets",
+      "expectedHash": "sha256:349d91631daa166ebcd49092790c92dc0e83ce8688185cb602532a6fde98b760",
+      "body": "schemaVersion: archcontext.node/v2\nid: capability.workflow-engine.contract-assets\nkind: capability\nname: Contract Assets\nstatus: active\nsummary: Maintains canonical workflow contracts, templates, capability nodes, and helper projections.\nresponsibilities:\n  - Own workflow contract assets, policy seeders, capability authority, and generated helper parity.\nsource:\n  include:\n    - \"assets/workflow-contract.v1.json\"\n    - \".ai/harness/workflow-contract.json\"\n    - \".ai/harness/policy.json\"\n    - \".ai/context/context-map.json\"\n    - \".archcontext/model/nodes/**\"\n    - \"scripts/capability-resolver.ts\"\n    - \"scripts/capability-config.ts\"\n    - \"scripts/contract-run.ts\"\n    - \"scripts/contract-worktree.sh\"\n    - \"scripts/archive-workflow.sh\"\n    - \"scripts/merge-gate.ts\"\n    - \"scripts/ship-worktrees.sh\"\n    - \"src/cli/commands/init.ts\"\n    - \"src/cli/commands/global-runtime.ts\"\n    - \"src/cli/commands/capability-context.ts\"\n    - \"src/cli/runtime/helper-runner.ts\"\n    - \"assets/templates/**\"\n    - \"assets/reference-configs/**\"\n    - \"docs/reference-configs/**\"\n  entrypoints:\n    - id: entrypoint.contract-assets.primary\n      path: \"src/core/adoption/standard-plan.ts\"\n      symbols:\n        - name: \"planStandardAdoption\"\n          sinks:\n            - id: sink.contract-assets.primary\n              path: \"src/core/adoption/workflow-contract-asset.ts\"\n              symbol: \"readWorkflowContractAsset\"\nextensions:\n  contractFiles:\n    agents: \"assets/AGENTS.md\"\n    claude: \"assets/CLAUDE.md\"\n  lspProfile: \"typescript-lsp\"\n  verification:\n    - \"bun test tests/workflow-contract.test.ts tests/scaffold-parity.test.ts\"\n    - \"bun scripts/capability-resolver.ts validate --format text\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/nodes/component.contract-assets.primary.yaml",
+      "entityId": "component.contract-assets.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.node/v2\nid: component.contract-assets.primary\nkind: component\nname: \"Workflow Contract Asset\"\nstatus: active\nparent: capability.workflow-engine.contract-assets\nsummary: \"Executes the reviewed project the workflow contract boundary.\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/relations/relation.contract-assets.primary.yaml",
+      "entityId": "relation.contract-assets.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.relation/v1\nid: relation.contract-assets.primary\nkind: calls\nsource: capability.workflow-engine.contract-assets\ntarget: component.contract-assets.primary\nintent: \"Project the workflow contract\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/flows/flow.contract-assets.primary.yaml",
+      "entityId": "flow.contract-assets.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.flow/v1\nid: flow.contract-assets.primary\ncapabilityId: capability.workflow-engine.contract-assets\nname: \"Project the workflow contract\"\napplicability: required\nparticipants:\n  - id: capability\n    nodeId: capability.workflow-engine.contract-assets\n  - id: component\n    nodeId: component.contract-assets.primary\nsteps: []\noutcomes:\n  - id: success\n    kind: success\n    label: \"Project the workflow contract completes\"\n    steps:\n      - id: invoke-success\n        from: capability\n        to: component\n        label: \"Invoke Workflow Contract Asset\"\n        evidence:\n          entrypointId: entrypoint.contract-assets.primary\n          sourceSymbol: \"planStandardAdoption\"\n          sinkId: sink.contract-assets.primary\n    terminal:\n      participant: capability\n      label: Return success receipt\n  - id: error\n    kind: error\n    label: \"Project the workflow contract is rejected or fails\"\n    steps:\n      - id: invoke-error\n        from: capability\n        to: component\n        label: \"Propagate Workflow Contract Asset failure\"\n        evidence:\n          entrypointId: entrypoint.contract-assets.primary\n          sourceSymbol: \"planStandardAdoption\"\n          sinkId: sink.contract-assets.primary\n    terminal:\n      participant: capability\n      label: Return typed failure\n"
+    },
+    {
+      "op": "update_entity_fields",
+      "path": ".archcontext/model/nodes/capability.workflow-engine.inspection-migration.yaml",
+      "entityId": "capability.workflow-engine.inspection-migration",
+      "expectedHash": "sha256:81e403943b8b95208a399edc869a25768cc644464857846cab46ab5651e8d3f4",
+      "body": "schemaVersion: archcontext.node/v2\nid: capability.workflow-engine.inspection-migration\nkind: capability\nname: Inspection And Migration\nstatus: active\nsummary: Inspects repository state and executes explicit initialization or migration plans.\nresponsibilities:\n  - Own project inspection, scaffold creation, and bounded migration behavior.\nsource:\n  include:\n    - \"scripts/inspect-project-state.ts\"\n    - \"scripts/create-project-dirs.sh\"\n    - \"scripts/init-project.sh\"\n    - \"scripts/lib/**\"\n  entrypoints:\n    - id: entrypoint.inspection-migration.primary\n      path: \"src/cli/commands/init.ts\"\n      symbols:\n        - name: \"runInit\"\n          sinks:\n            - id: sink.inspection-migration.primary\n              path: \"src/cli/commands/init.ts\"\n              symbol: \"runProcess\"\nextensions:\n  contractFiles:\n    agents: \"scripts/AGENTS.md\"\n    claude: \"scripts/CLAUDE.md\"\n  lspProfile: \"typescript-lsp\"\n  verification:\n    - \"bun test tests/migration-script.test.ts tests/create-project-dirs.runtime.test.ts tests/workflow-contract.test.ts\"\n    - \"bun src/cli/index.ts init --repo . --dry-run\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/nodes/component.inspection-migration.primary.yaml",
+      "entityId": "component.inspection-migration.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.node/v2\nid: component.inspection-migration.primary\nkind: component\nname: \"Repository Inspector Process\"\nstatus: active\nparent: capability.workflow-engine.inspection-migration\nsummary: \"Executes the reviewed inspect before migration boundary.\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/relations/relation.inspection-migration.primary.yaml",
+      "entityId": "relation.inspection-migration.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.relation/v1\nid: relation.inspection-migration.primary\nkind: calls\nsource: capability.workflow-engine.inspection-migration\ntarget: component.inspection-migration.primary\nintent: \"Inspect before migration\"\n"
+    },
+    {
+      "op": "create_entity",
+      "path": ".archcontext/model/flows/flow.inspection-migration.primary.yaml",
+      "entityId": "flow.inspection-migration.primary",
+      "expectedHash": "missing",
+      "body": "schemaVersion: archcontext.flow/v1\nid: flow.inspection-migration.primary\ncapabilityId: capability.workflow-engine.inspection-migration\nname: \"Inspect before migration\"\napplicability: required\nparticipants:\n  - id: capability\n    nodeId: capability.workflow-engine.inspection-migration\n  - id: component\n    nodeId: component.inspection-migration.primary\nsteps: []\noutcomes:\n  - id: success\n    kind: success\n    label: \"Inspect before migration completes\"\n    steps:\n      - id: invoke-success\n        from: capability\n        to: component\n        label: \"Invoke Repository Inspector Process\"\n        evidence:\n          entrypointId: entrypoint.inspection-migration.primary\n          sourceSymbol: \"runInit\"\n          sinkId: sink.inspection-migration.primary\n    terminal:\n      participant: capability\n      label: Return success receipt\n  - id: error\n    kind: error\n    label: \"Inspect before migration is rejected or fails\"\n    steps:\n      - id: invoke-error\n        from: capability\n        to: component\n        label: \"Propagate Repository Inspector Process failure\"\n        evidence:\n          entrypointId: entrypoint.inspection-migration.primary\n          sourceSymbol: \"runInit\"\n          sinkId: sink.inspection-migration.primary\n    terminal:\n      participant: capability\n      label: Return typed failure\n"
+    }
+  ]
+}

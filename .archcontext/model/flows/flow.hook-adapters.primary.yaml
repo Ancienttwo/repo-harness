@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.hook-adapters.primary
+capabilityId: capability.runtime-harness.hook-adapters
+name: "Drain Stop architecture work"
+applicability: required
+participants:
+  - id: capability
+    nodeId: capability.runtime-harness.hook-adapters
+  - id: component
+    nodeId: component.hook-adapters.primary
+steps:
+  - id: dispatch
+    from: capability
+    to: component
+    label: "Dispatch Architecture Cascade"
+    evidence:
+      entrypointId: entrypoint.hook-adapters.primary
+      sourceSymbol: "processArchitectureCascade"
+      sinkId: sink.hook-adapters.primary
+outcomes:
+  - id: success
+    kind: success
+    label: "Drain Stop architecture work completes"
+    steps:
+      - id: invoke-success
+        from: capability
+        to: component
+        label: "Invoke Architecture Cascade"
+        evidence:
+          entrypointId: entrypoint.hook-adapters.primary
+          sourceSymbol: "processArchitectureCascade"
+          sinkId: sink.hook-adapters.primary
+    terminal:
+      participant: capability
+      label: Return success receipt
+  - id: error
+    kind: error
+    label: "Drain Stop architecture work is rejected or fails"
+    steps:
+      - id: invoke-error
+        from: capability
+        to: component
+        label: "Propagate Architecture Cascade failure"
+        evidence:
+          entrypointId: entrypoint.hook-adapters.primary
+          sourceSymbol: "processArchitectureCascade"
+          sinkId: sink.hook-adapters.primary
+    terminal:
+      participant: capability
+      label: Return typed failure

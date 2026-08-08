@@ -27,6 +27,15 @@ source:
     - "assets/templates/**"
     - "assets/reference-configs/**"
     - "docs/reference-configs/**"
+  entrypoints:
+    - id: entrypoint.contract-assets.primary
+      path: "src/core/adoption/workflow-contract-asset.ts"
+      symbols:
+        - name: "loadWorkflowContractAsset"
+          sinks:
+            - id: sink.contract-assets.primary
+              path: "src/core/adoption/workflow-contract-asset.ts"
+              symbol: "readWorkflowContractAsset"
 extensions:
   contractFiles:
     agents: "assets/AGENTS.md"

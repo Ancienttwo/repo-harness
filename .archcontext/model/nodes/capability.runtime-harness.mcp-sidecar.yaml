@@ -15,6 +15,15 @@ source:
     - "docs/repo-harness-chatgpt-mcp-setup.md"
     - "docs/reference-configs/chatgpt-coding-mcp.md"
     - "docs/researches/20260711-devspace-chatgpt-local-control.md"
+  entrypoints:
+    - id: entrypoint.mcp-sidecar.primary
+      path: "src/cli/mcp/server.ts"
+      symbols:
+        - name: "createRepoHarnessMcpServer"
+          sinks:
+            - id: sink.mcp-sidecar.primary
+              path: "src/cli/mcp/tools.ts"
+              symbol: "callMcpTool"
 extensions:
   contractFiles:
     agents: "AGENTS.md"

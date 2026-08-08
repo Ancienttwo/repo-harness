@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: component.root-router.primary
+kind: component
+name: "Root Adoption Router"
+status: active
+parent: capability.public-surface.root-router
+summary: "Executes the reviewed route root initialization boundary."

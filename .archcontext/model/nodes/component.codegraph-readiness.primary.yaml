@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: component.codegraph-readiness.primary
+kind: component
+name: "CodeGraph Readiness Check"
+status: active
+parent: capability.verification.codegraph-readiness
+summary: "Executes the reviewed verify codegraph readiness boundary."

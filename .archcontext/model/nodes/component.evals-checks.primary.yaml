@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: component.evals-checks.primary
+kind: component
+name: "Review Outcome Classifier"
+status: active
+parent: capability.verification.evals-checks
+summary: "Executes the reviewed evaluate a cross-model review boundary."

@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: component.contract-assets.primary
+kind: component
+name: "Workflow Contract Asset"
+status: active
+parent: capability.workflow-engine.contract-assets
+summary: "Executes the reviewed project the workflow contract boundary."

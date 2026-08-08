@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: component.general-repo-access.primary
+kind: component
+name: "Stable File Reader"
+status: active
+parent: capability.runtime-mcp.general-repo-access
+summary: "Executes the reviewed read a repository file boundary."

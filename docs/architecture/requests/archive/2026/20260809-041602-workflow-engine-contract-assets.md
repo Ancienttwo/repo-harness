@@ -1,6 +1,6 @@
 # Architecture Queue Card: workflow-engine-contract-assets
 
-> **Status**: Pending
+> **Status**: Resolved
 > **Detected**: 2026-07-30T20:51:16+0800
 > **Updated**: 2026-07-30T20:51:16+0800
 > **Severity**: high
@@ -58,3 +58,11 @@
   "contract_sync_required": true
 }
 ```
+
+## Archive Resolution
+
+- Status: Resolved
+- Archived: 2026-08-09T04:16:02+0800
+- Artifacts:
+- `docs/architecture/modules/workflow-engine/contract-assets.md`
+- Note: AXR7 adopted the ten-capability model, enabled advisory automatic projection, and bound packed Stop receipts.

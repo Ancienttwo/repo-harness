@@ -14,6 +14,15 @@ source:
     - "tests/cli/mcp-codegraph-contract.test.ts"
     - "tests/cli/mcp-policy.test.ts"
     - "tests/cli/mcp-tools.test.ts"
+  entrypoints:
+    - id: entrypoint.general-repo-access.primary
+      path: "src/cli/mcp/reader-tools.ts"
+      symbols:
+        - name: "callReaderTool"
+          sinks:
+            - id: sink.general-repo-access.primary
+              path: "src/cli/mcp/general-repo-access.ts"
+              symbol: "callGeneralRepoTool"
 extensions:
   contractFiles:
     agents: "AGENTS.md"

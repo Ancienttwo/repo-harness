@@ -91,6 +91,8 @@ _ops/
 !.archcontext/model/
 .archcontext/model/*
 !.archcontext/model/nodes/
+!.archcontext/model/relations/
+!.archcontext/model/flows/
 .codegraph/
 .understand-anything/
 # Environment

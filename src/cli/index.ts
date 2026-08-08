@@ -632,9 +632,16 @@ export function buildProgram(): Command {
     .argument('<event>', 'Hook event name')
     .requiredOption('--route <route>', 'Route id (default, edit, bash, always)')
     .action((event: string, rawOpts: { route: string }) => {
+      let input: Buffer | undefined;
+      try {
+        input = readFileSync(0);
+      } catch {
+        input = undefined;
+      }
       const result = runHook({
         event: event as HookEvent,
         routeId: rawOpts.route as RouteId,
+        input,
       });
       process.exit(result.exitCode);
     });

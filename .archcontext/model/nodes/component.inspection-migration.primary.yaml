@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: component.inspection-migration.primary
+kind: component
+name: "Repository Inspector Process"
+status: active
+parent: capability.workflow-engine.inspection-migration
+summary: "Executes the reviewed inspect before migration boundary."

@@ -13,6 +13,15 @@ source:
     - "AGENTS.md"
     - "CLAUDE.md"
     - "docs/spec.md"
+  entrypoints:
+    - id: entrypoint.root-router.primary
+      path: "src/cli/commands/adoption-plan.ts"
+      symbols:
+        - name: "runAdoptionPlan"
+          sinks:
+            - id: sink.root-router.primary
+              path: "src/cli/commands/adoption-plan.ts"
+              symbol: "createPlan"
 extensions:
   contractFiles:
     agents: "AGENTS.md"

@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: component.action-commands.primary
+kind: component
+name: "Action Command Installer"
+status: active
+parent: capability.public-surface.action-commands
+summary: "Executes the reviewed install action command skills boundary."
