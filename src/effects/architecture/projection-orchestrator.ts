@@ -26,12 +26,13 @@ import {
   consumeArchitectureRefreshSignals,
   type RunArchitectureRefreshActions,
 } from './refresh-consumer';
-import {
-  migratePendingPostEditJournalV1,
-  readPendingPostEditEvents,
-} from '../../cli/hook/mutation-observed';
 import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
+
+export interface ArchitectureProjectionSourceEvent {
+  readonly event_id: string;
+  readonly changed_paths: readonly string[];
+}
 
 export interface ArchitectureProjectionDrainResultV1 {
   schemaVersion: 'repo-harness.architecture-projection-drain/v1';
@@ -47,6 +48,7 @@ export interface ArchitectureProjectionDrainResultV1 {
 export interface ArchitectureProjectionOrchestratorOptions extends ArchctxProviderOptions {
   now?: () => Date;
   runRefreshActions?: RunArchitectureRefreshActions;
+  sourceEvents?: readonly ArchitectureProjectionSourceEvent[];
 }
 
 export function drainArchitectureProjectionJobs(
@@ -57,9 +59,8 @@ export function drainArchitectureProjectionJobs(
   if (policy.provider === 'disabled') return outcome(repoRoot, 'disabled', null, [], null, null, true);
   const root = realpathSync(resolve(repoRoot));
   const now = options.now?.() ?? new Date();
-  migratePendingPostEditJournalV1(root, 100);
   recoverAbandonedArchitectureProjectionJobs(root, now);
-  const events = readPendingPostEditEvents(root);
+  const events = options.sourceEvents ?? [];
   const owned = architectureProjectionOwnedPaths(root);
   const eligible = events.flatMap((event) => event.changed_paths).filter((path) => !isOwned(path, owned));
   if (events.length > 0 && eligible.length === 0) {

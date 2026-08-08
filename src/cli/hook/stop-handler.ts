@@ -27,7 +27,7 @@ import {
   type DelegationScope,
   withDelegationStateTransaction,
 } from './delegation-state';
-import { consumePendingPostEditEvents } from './mutation-observed';
+import { consumePendingPostEditEvents, migratePendingPostEditJournalV1, readPendingPostEditEvents } from './mutation-observed';
 import { drainArchitectureProjectionJobs, type ArchitectureProjectionDrainResultV1 } from '../../effects/architecture/projection-orchestrator';
 import { runMinimalChangeCli } from './minimal-change-cli';
 import { publishCheckpointFromLedger } from '../../effects/evidence/checkpoint-store';
@@ -489,8 +489,10 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   let architectureDrain: ArchitectureProjectionDrainResultV1 | null = null;
   let architectureDrainError = '';
   try {
+    migratePendingPostEditJournalV1(repoRoot, 100);
+    const sourceEvents = readPendingPostEditEvents(repoRoot);
     architectureDrain = dependencies.drainArchitectureProjection?.(repoRoot, env)
-      ?? drainArchitectureProjectionJobs(repoRoot, { env });
+      ?? drainArchitectureProjectionJobs(repoRoot, { env, sourceEvents });
     if (architectureDrain.acknowledgeSourceEvents) {
       consumePendingPostEditEvents(repoRoot, env, {
         skipArchitectureCascade: architectureDrain.status !== 'disabled',

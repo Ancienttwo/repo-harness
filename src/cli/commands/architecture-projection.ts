@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import { PROJECTION_REQUEST_VERSION, type ProjectionMode, type ProjectionRequestV1 } from '../../core/architecture/projection';
 import { captureArchitectureProjectionSnapshot, inspectArchitectureProjectionReadiness, runArchitectureProjection } from '../../effects/architecture/archctx-provider';
 import { drainArchitectureProjectionJobs } from '../../effects/architecture/projection-orchestrator';
+import { migratePendingPostEditJournalV1, readPendingPostEditEvents } from '../hook/mutation-observed';
 
 interface ProjectionCommandOptions {
   json?: boolean;
@@ -26,7 +27,9 @@ export function buildArchitectureProjectionCommand(): Command {
   }
   command.command('drain').requiredOption('--json', 'Output durable drain JSON').action(() => {
     try {
-      const result = drainArchitectureProjectionJobs(repositoryRoot());
+      const root = repositoryRoot();
+      migratePendingPostEditJournalV1(root, 100);
+      const result = drainArchitectureProjectionJobs(root, { sourceEvents: readPendingPostEditEvents(root) });
       write(result);
       if (result.status === 'retry-pending' || result.status === 'dead-letter') process.exitCode = 1;
     } catch (error) { fail(error); }

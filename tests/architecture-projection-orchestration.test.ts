@@ -98,6 +98,10 @@ function successfulRunner(projectionCalls: { count: number }): RunArchctxProcess
   };
 }
 
+function drain(repoRoot: string, options: Parameters<typeof drainArchitectureProjectionJobs>[1]) {
+  return drainArchitectureProjectionJobs(repoRoot, { ...options, sourceEvents: readPendingPostEditEvents(repoRoot) });
+}
+
 describe('durable architecture projection orchestration', () => {
   test('coalesces ten source paths into one provider process and acks only after the durable receipt', () => {
     const f = fixture();
@@ -105,7 +109,7 @@ describe('durable architecture projection orchestration', () => {
       runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: `src/file-${index}.ts`, session_id: 'one-session' }) });
     }
     const projectionCalls = { count: 0 };
-    const drained = drainArchitectureProjectionJobs(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: successfulRunner(projectionCalls) });
+    const drained = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: successfulRunner(projectionCalls) });
     expect(drained.status).toBe('succeeded');
     expect(drained.acknowledgeSourceEvents).toBe(true);
     expect(projectionCalls.count).toBe(1);
@@ -121,9 +125,9 @@ describe('durable architecture projection orchestration', () => {
     const failed: RunArchctxProcess = (_binary, args) => args[0] === 'capabilities'
       ? capabilities()
       : { status: 1, signal: null, stdout: '', stderr: 'projection failed' };
-    expect(drainArchitectureProjectionJobs(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: failed }).status).toBe('retry-pending');
-    expect(drainArchitectureProjectionJobs(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: failed }).status).toBe('retry-pending');
-    expect(drainArchitectureProjectionJobs(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: failed }).status).toBe('dead-letter');
+    expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: failed }).status).toBe('retry-pending');
+    expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: failed }).status).toBe('retry-pending');
+    expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: failed }).status).toBe('dead-letter');
     expect(readPendingPostEditEvents(f.repoRoot)).toHaveLength(1);
     expect(architectureProjectionQueueState(f.repoRoot).deadLetters).toBe(1);
   });
@@ -134,10 +138,10 @@ describe('durable architecture projection orchestration', () => {
     const failed: RunArchctxProcess = (_binary, args) => args[0] === 'capabilities'
       ? capabilities()
       : { status: 1, signal: null, stdout: '', stderr: 'retry me' };
-    expect(drainArchitectureProjectionJobs(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: failed }).status).toBe('retry-pending');
+    expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: failed }).status).toBe('retry-pending');
     runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/second.ts', session_id: 'second' }) });
     const projectionCalls = { count: 0 };
-    const drained = drainArchitectureProjectionJobs(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: successfulRunner(projectionCalls) });
+    const drained = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: successfulRunner(projectionCalls) });
     consumePendingPostEditEvents(f.repoRoot, process.env, { skipArchitectureCascade: true, eventIds: drained.sourceEventIds });
     expect(readPendingPostEditEvents(f.repoRoot).map((event) => event.changed_paths)).toEqual([['src/second.ts']]);
   });
@@ -148,7 +152,7 @@ describe('durable architecture projection orchestration', () => {
       runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: path, session_id: 'owned' }) });
     }
     const projectionCalls = { count: 0 };
-    const drained = drainArchitectureProjectionJobs(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: successfulRunner(projectionCalls) });
+    const drained = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: successfulRunner(projectionCalls) });
     expect(drained.status).toBe('idle');
     expect(drained.acknowledgeSourceEvents).toBe(true);
     expect(projectionCalls.count).toBe(0);
@@ -159,7 +163,7 @@ describe('durable architecture projection orchestration', () => {
     const f = fixture();
     runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/disabled.ts', session_id: 'disabled' }) });
     const projectionCalls = { count: 0 };
-    const drained = drainArchitectureProjectionJobs(f.repoRoot, { consumerRoot: f.consumerRoot, policy: { ...policy, provider: 'disabled', applyMode: 'disabled' }, run: successfulRunner(projectionCalls) });
+    const drained = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy: { ...policy, provider: 'disabled', applyMode: 'disabled' }, run: successfulRunner(projectionCalls) });
     expect(drained.status).toBe('disabled');
     expect(projectionCalls.count).toBe(0);
     expect(readPendingPostEditEvents(f.repoRoot)).toHaveLength(1);
