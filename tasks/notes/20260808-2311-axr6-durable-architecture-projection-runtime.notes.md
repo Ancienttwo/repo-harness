@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260808-2311-axr6-durable-architecture-projection-runtime.md
 > **Contract**: tasks/contracts/20260808-2311-axr6-durable-architecture-projection-runtime.contract.md
 > **Review**: tasks/reviews/20260808-2311-axr6-durable-architecture-projection-runtime.review.md
-> **Last Updated**: 2026-08-09 10:10
+> **Last Updated**: 2026-08-09 11:14
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -54,7 +54,7 @@
 - Checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Focused regression: orchestration 9 pass/0 fail after adding crash recovery; provider plus packed-bundle tests 22 pass/0 fail; installer/Stop/orchestration batch 40 pass/0 fail before the packed-root correction.
-- Full repository tests: 2301 pass, 1 platform skip, 0 fail (`bun run check:ci`), followed by workflow, package dry-run, and tarball install smoke success.
+- Full repository tests on final revision `cea71bc3`: 2308 pass, 1 platform skip, 0 fail (`bun run check:ci`), followed by workflow, package dry-run, and tarball install smoke success.
 - Packed installed host-cycle: `bun scripts/axr6-stop-host-cycle.ts` returned in 32064 ms after a 31000 ms package-local provider hold; Codex and Claude read back Stop=150/non-Stop=30; one `repo-harness.architecture-projection-receipt/v1` was durable before pending source events reached zero.
 - Review repair regression: 123 pass/0 fail across orchestration/provider/Stop/cross-review/bootstrap/session suites; helper projection and typecheck passed. Updated packed host-cycle: legacy 30-second budget timed out at 30008 ms with no receipt, managed lane then completed at 31681 ms with attempt=2 and pendingSourceEvents=0.
 - Third review repair regression: 110 pass/0 fail across orchestration, mutation journal, Stop policy, readiness, and cross-review tests; typecheck, hook/helper/reference projections passed. ArchContext snapshot parity regression: 70 pass/0 fail across the CLI protocol and projection-freshness suites. Packed host cycle re-proved legacy timeout at 30008 ms and managed recovery at 31773 ms with durable attempt 2.
@@ -62,6 +62,7 @@
 - Fifth review repair regression: 57 pass/0 fail across receipt-race orchestration, Stop policy, default refresh checkpointing, and mutation coalescing; typecheck passed.
 - Sixth review repair regression: 59 pass/0 fail across stable dead-letter ownership, concurrent store-lock read serialization, journal schema, and Stop retention; typecheck passed.
 - Seventh review repair regression: 60 pass/0 fail across durable orchestration, Stop policy, and journal delivery; typecheck and helper projection passed. Packed installed-host cycle timed out the legacy lane at 30014 ms, then completed a guarded Stop in 1364 ms with no second provider, observed the first provider's completion marker, aged only the disposable claim past its 150-second lease, and recovered a durable attempt-2 receipt in 31746 ms with zero pending source events.
+- Final Sprint gate: `repo-harness run verify-sprint --prepare-acceptance` passed all 15 contract checks and froze `.ai/harness/checks/latest.json`; the AcceptanceReceipt remains pending because Claude returned its weekly-capacity limit before issuing a verdict for the current subject.
 
 ## Promotion Filter
 
