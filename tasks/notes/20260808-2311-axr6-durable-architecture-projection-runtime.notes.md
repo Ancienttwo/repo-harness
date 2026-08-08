@@ -20,6 +20,8 @@
 
 - The first packed host-cycle exposed that the pre-AXR6 consumer-root resolver assumed the unbundled `src/effects/architecture` depth. In `dist/hook-entry.js` that fixed three-level jump skipped the installed package and produced `repo-harness package root is unavailable`. AXR6 corrected the resolver to walk from the current source/bundle directory; no compatibility fallback was added.
 - External Claude review found five merge-blocking delivery defects plus a review-parser defect that had mislabeled Markdown `## [P1]` findings as PASS. The repair pass separated journal effects/ack, serialized runners, canonicalized job ids, removed queue-output inference from typed refresh, split projection failure gating from freshness, added dead-letter retry, and taught the parser heading syntax.
+- Claude's second pass found that adding a new event could change the aggregate id and bypass an older dead letter, and that policy/model preflight failures still happened before job ownership. The second repair binds dead-letter blocking to overlapping source event ids and persists preflight failures through the same three-attempt state machine.
+- The second pass also hardened claim ownership, host-killed third-attempt recovery, manual-drain acknowledgement, SessionStart corruption reporting, and per-action refresh progress. The packed host cycle now proves a real 30-second process kill followed by a recovered 150-second success on attempt 2.
 - Claude CLI `--bare` was rejected because it intentionally disables OAuth keychain reads. The runner uses `--safe-mode` instead: hooks/plugins/instructions stay isolated while OAuth remains available. Opus fallback is now limited to the pinned Fable capacity signal.
 
 ## Tradeoffs Considered
@@ -44,6 +46,7 @@
 - Focused regression: orchestration 9 pass/0 fail after adding crash recovery; provider plus packed-bundle tests 22 pass/0 fail; installer/Stop/orchestration batch 40 pass/0 fail before the packed-root correction.
 - Full repository tests: 2279 pass, 1 platform skip, 0 fail (`bun run check:ci`; workflow task-sync was the only subsequent failure before this notes synchronization).
 - Packed installed host-cycle: `bun scripts/axr6-stop-host-cycle.ts` returned in 32064 ms after a 31000 ms package-local provider hold; Codex and Claude read back Stop=150/non-Stop=30; one `repo-harness.architecture-projection-receipt/v1` was durable before pending source events reached zero.
+- Review repair regression: 123 pass/0 fail across orchestration/provider/Stop/cross-review/bootstrap/session suites; helper projection and typecheck passed. Updated packed host-cycle: legacy 30-second budget timed out at 30008 ms with no receipt, managed lane then completed at 31681 ms with attempt=2 and pendingSourceEvents=0.
 
 ## Promotion Filter
 

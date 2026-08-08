@@ -177,3 +177,4 @@ Failure path: spawn exit/signal/timeout、corrupt JSON、stale snapshot、refres
 - [x] Run focused chaos/installer/host tests, type/helper gates, then full `bun run check:ci` and real installed Stop readback.
 - [x] Close external Claude review findings: decouple non-architecture effects from source ack, enforce one running job, canonicalize job identity, honor typed refresh no-op semantics, and add independent failure gate plus dead-letter retry.
 - [x] Harden review/runtime edges: parse Markdown finding headings, bound Fable-to-Opus fallback to explicit capacity signals, ignore `.ai/harness/**` in snapshots, recover stale PID reuse, and preserve original transition failures.
+- [x] Close second review pass: bind dead letters to source-event overlap, persist preflight failures, verify claim ownership, checkpoint refresh actions, consume manual-drain acknowledgements, and prove 30-second kill then attempt-2 recovery under the 150-second lane.

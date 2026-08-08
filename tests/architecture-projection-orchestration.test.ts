@@ -12,12 +12,13 @@ import {
   architectureProjectionQueueState,
   claimNextArchitectureProjectionJob,
   enqueueArchitectureProjectionJob,
+  failArchitectureProjectionJob,
   recoverAbandonedArchitectureProjectionJobs,
   retryArchitectureProjectionDeadLetter,
 } from '../src/effects/architecture/projection-jobs';
 import type { ArchctxProcessResult, RunArchctxProcess } from '../src/effects/architecture/archctx-provider';
 import { buildManagedHooks } from '../src/cli/installer/managed-entries';
-import { consumeArchitectureRefreshSignals } from '../src/effects/architecture/refresh-consumer';
+import { consumeArchitectureRefreshSignals, type RunArchitectureRefreshActions } from '../src/effects/architecture/refresh-consumer';
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -160,10 +161,21 @@ describe('durable architecture projection orchestration', () => {
     expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: failed }).status).toBe('retry-pending');
     expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: failed }).status).toBe('retry-pending');
     expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: failed }).status).toBe('dead-letter');
+    runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/new-after-dead-letter.ts', session_id: 'after-dead-letter' }) });
     const replay = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: failed });
     expect(replay.status).toBe('dead-letter');
     expect(replay.acknowledgeSourceEvents).toBe(false);
     expect(replay.jobId).toBe(architectureProjectionQueueState(f.repoRoot).oldestDeadLetterJobId);
+  });
+
+  test('persists preflight failures as bounded jobs before provider execution', () => {
+    const f = fixture();
+    runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/preflight.ts', session_id: 'preflight' }) });
+    rmSync(join(f.repoRoot, '.archcontext/model/nodes'), { recursive: true, force: true });
+    expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy }).status).toBe('retry-pending');
+    expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy }).status).toBe('retry-pending');
+    expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy }).status).toBe('dead-letter');
+    expect(architectureProjectionQueueState(f.repoRoot).oldestDeadLetterJobId).toMatch(/^job-[a-f0-9]{24}$/);
   });
 
   test('allows only one running provider job per repository', () => {
@@ -203,6 +215,27 @@ describe('durable architecture projection orchestration', () => {
     expect(architectureProjectionJobState(root, running!.jobId)).toBe('pending');
   });
 
+  test('dead-letters an abandoned third attempt instead of retrying forever', () => {
+    const f = fixture();
+    const root = realpathSync(f.repoRoot);
+    enqueueArchitectureProjectionJob(root, ['event-timeout'], ['src/timeout.ts']);
+    const running = claimNextArchitectureProjectionJob(root)!;
+    const runningPath = join(root, '.ai/harness/architecture-projection/running', `${running.jobId}.json`);
+    writeFileSync(runningPath, `${JSON.stringify({ ...running, attempt: 3, ownerPid: 2_147_483_647 }, null, 2)}\n`);
+    expect(recoverAbandonedArchitectureProjectionJobs(root)).toBe(1);
+    expect(architectureProjectionJobState(root, running.jobId)).toBe('dead-letter');
+  });
+
+  test('rejects completion or failure from a stale claim owner', () => {
+    const f = fixture();
+    const root = realpathSync(f.repoRoot);
+    enqueueArchitectureProjectionJob(root, ['event-owner'], ['src/owner.ts']);
+    const running = claimNextArchitectureProjectionJob(root)!;
+    const runningPath = join(root, '.ai/harness/architecture-projection/running', `${running.jobId}.json`);
+    writeFileSync(runningPath, `${JSON.stringify({ ...running, attempt: running.attempt + 1, ownerPid: running.ownerPid! + 1 }, null, 2)}\n`);
+    expect(() => failArchitectureProjectionJob(root, running, { kind: 'process', message: 'stale owner' })).toThrow('claim no longer belongs');
+  });
+
   test('acks only the events bound to a completed job when a newer edit arrives between retries', () => {
     const f = fixture();
     runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/first.ts', session_id: 'first' }) });
@@ -238,6 +271,20 @@ describe('durable architecture projection orchestration', () => {
     expect(drained.status).toBe('disabled');
     expect(projectionCalls.count).toBe(0);
     expect(readPendingPostEditEvents(f.repoRoot)).toHaveLength(1);
+  });
+
+  test('manual drain consumes source events and reports the rollback journal count', () => {
+    const f = fixture();
+    writeFileSync(join(f.repoRoot, '.ai/harness/policy.json'), '{"architecture":{"projection_provider":"disabled","projection_apply":"disabled"}}\n');
+    runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/rollback.ts', session_id: 'rollback' }) });
+    const cli = realpathSync(join(import.meta.dir, '..', 'src', 'cli', 'index.ts'));
+    const output = execFileSync(process.execPath, [cli, 'architecture-projection', 'drain', '--json'], {
+      cwd: f.repoRoot,
+      env: { ...process.env, PATH: '/usr/bin:/bin' },
+      encoding: 'utf8',
+    });
+    expect(JSON.parse(output)).toMatchObject({ status: 'disabled', sourceJournalPending: 0 });
+    expect(readPendingPostEditEvents(f.repoRoot)).toHaveLength(0);
   });
 
   test('migrates v1 observations once and keeps the runtime reader v2-only', () => {
@@ -278,7 +325,7 @@ describe('durable architecture projection orchestration', () => {
     };
     const run = () => {
       calls += 1;
-      return [{ action: 'architecture-queue' as const, status: 0, stdout: '[ArchitectureDrift] Request: test', stderr: '' }];
+      return [{ actionKey: 'architecture-queue:src/index.ts', action: 'architecture-queue' as const, status: 0, stdout: '[ArchitectureDrift] Request: test', stderr: '' }];
     };
     const first = consumeArchitectureRefreshSignals(f.repoRoot, [signal], ['src/index.ts'], { run });
     const second = consumeArchitectureRefreshSignals(f.repoRoot, [signal], ['src/index.ts'], { run });
@@ -316,6 +363,45 @@ describe('durable architecture projection orchestration', () => {
       'run architecture-queue record --file src/index.ts',
       'run context-contract-sync sync-latest',
       'capability-context request --from-latest-architecture-event',
+    ]);
+  });
+
+  test('refresh retry resumes after the last durable action progress record', () => {
+    const f = fixture();
+    const signal = {
+      schemaVersion: 'archcontext.architecture-refresh-signal/v1' as const,
+      signalId: digest('m'), idempotencyKey: digest('n'), mode: 'refresh-required' as const,
+      repository: { repositoryId: 'repo.test' },
+      worktree: { workspaceId: 'workspace.test', headSha: '1'.repeat(40), worktreeDigest: digest('o') },
+      cause: 'accepted-semantic-delta' as const,
+      acceptedChange: { changeSetId: 'cs-3', eventId: 'event-3', reasonCodes: ['responsibility-changed'], affectedNodeIds: ['capability.test.root'] },
+      reasonCodes: ['responsibility-changed'], affectedNodeIds: ['capability.test.root'], refreshTargets: ['architecture-docs'],
+      baseDigests: { model: digest('p') }, resultingDigests: { model: digest('q') }, projectionReceiptDigest: digest('r'),
+    };
+    const observedCompleted: string[][] = [];
+    let attempt = 0;
+    const run: RunArchitectureRefreshActions = (_root, _signal, _paths, _env, completed) => {
+      observedCompleted.push([...completed].sort());
+      attempt += 1;
+      return attempt === 1
+        ? [
+            { actionKey: 'architecture-queue:src/a.ts', action: 'architecture-queue' as const, status: 0, stdout: '', stderr: '' },
+            { actionKey: 'architecture-queue:src/b.ts', action: 'architecture-queue' as const, status: 1, stdout: '', stderr: 'failed' },
+          ]
+        : [
+            { actionKey: 'architecture-queue:src/b.ts', action: 'architecture-queue' as const, status: 0, stdout: '', stderr: '' },
+            { actionKey: 'context-contract-sync', action: 'context-contract-sync' as const, status: 0, stdout: '', stderr: '' },
+            { actionKey: 'capability-context-request', action: 'capability-context-request' as const, status: 0, stdout: '', stderr: '' },
+          ];
+    };
+    expect(() => consumeArchitectureRefreshSignals(f.repoRoot, [signal], ['src/a.ts', 'src/b.ts'], { run })).toThrow('failed with exit 1');
+    const [receipt] = consumeArchitectureRefreshSignals(f.repoRoot, [signal], ['src/a.ts', 'src/b.ts'], { run });
+    expect(observedCompleted).toEqual([[], ['architecture-queue:src/a.ts']]);
+    expect(receipt?.actions.map((action) => action.actionKey)).toEqual([
+      'architecture-queue:src/a.ts',
+      'architecture-queue:src/b.ts',
+      'context-contract-sync',
+      'capability-context-request',
     ]);
   });
 });

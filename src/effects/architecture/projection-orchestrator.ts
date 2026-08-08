@@ -1,5 +1,6 @@
 import {
   PROJECTION_REQUEST_VERSION,
+  type ArchitectureProjectionPolicy,
   type ProjectionRequestV1,
   type ProjectionResultV1,
 } from '../../core/architecture/projection';
@@ -12,6 +13,7 @@ import {
 } from './archctx-provider';
 import {
   architectureProjectionQueueState,
+  architectureProjectionDeadLetterForSourceEvents,
   architectureProjectionJobId,
   architectureProjectionJobState,
   claimNextArchitectureProjectionJob,
@@ -55,13 +57,27 @@ export function drainArchitectureProjectionJobs(
   repoRoot: string,
   options: ArchitectureProjectionOrchestratorOptions = {},
 ): ArchitectureProjectionDrainResultV1 {
-  const policy = options.policy ?? loadArchitectureProjectionPolicy(repoRoot);
-  if (policy.provider === 'disabled') return outcome(repoRoot, 'disabled', null, [], null, null, true);
   const root = realpathSync(resolve(repoRoot));
   const now = options.now?.() ?? new Date();
-  recoverAbandonedArchitectureProjectionJobs(root, now);
   const events = options.sourceEvents ?? [];
-  const owned = architectureProjectionOwnedPaths(root);
+  const eventIds = events.map((event) => event.event_id);
+  const observedPaths = events.flatMap((event) => event.changed_paths);
+  let policy: ArchitectureProjectionPolicy;
+  try {
+    policy = options.policy ?? loadArchitectureProjectionPolicy(root);
+  } catch (error) {
+    return failPreflight(root, events, observedPaths, now, error);
+  }
+  if (policy.provider === 'disabled') return outcome(root, 'disabled', null, eventIds, null, null, true);
+  recoverAbandonedArchitectureProjectionJobs(root, now);
+  const blocked = architectureProjectionDeadLetterForSourceEvents(root, eventIds);
+  if (blocked) return outcome(root, 'dead-letter', blocked.job.jobId, blocked.job.sourceEventIds, null, blocked.failure.message, false);
+  let owned: string[];
+  try {
+    owned = architectureProjectionOwnedPaths(root);
+  } catch (error) {
+    return failPreflight(root, events, observedPaths, now, error);
+  }
   const eligible = events.flatMap((event) => event.changed_paths).filter((path) => !isOwned(path, owned));
   if (events.length > 0 && eligible.length === 0) {
     return outcome(root, 'idle', null, events.map((event) => event.event_id), null, null, true);
@@ -115,6 +131,33 @@ export function drainArchitectureProjectionJobs(
       false,
     );
   }
+}
+
+function failPreflight(
+  repoRoot: string,
+  events: readonly ArchitectureProjectionSourceEvent[],
+  changedPaths: readonly string[],
+  now: Date,
+  error: unknown,
+): ArchitectureProjectionDrainResultV1 {
+  const eventIds = events.map((event) => event.event_id);
+  if (eventIds.length === 0 || changedPaths.length === 0) throw error;
+  const blocked = architectureProjectionDeadLetterForSourceEvents(repoRoot, eventIds);
+  if (blocked) return outcome(repoRoot, 'dead-letter', blocked.job.jobId, blocked.job.sourceEventIds, null, blocked.failure.message, false);
+  enqueueArchitectureProjectionJob(repoRoot, eventIds, changedPaths, now);
+  const job = claimNextArchitectureProjectionJob(repoRoot, now);
+  if (!job) return outcome(repoRoot, 'idle', null, eventIds, null, null, false);
+  const classified = classify(error);
+  const transition = failArchitectureProjectionJob(repoRoot, job, classified, now);
+  return outcome(
+    repoRoot,
+    transition.state === 'dead-letter' ? 'dead-letter' : 'retry-pending',
+    job.jobId,
+    job.sourceEventIds,
+    null,
+    classified.message,
+    false,
+  );
 }
 
 function isOwned(path: string, roots: readonly string[]): boolean {

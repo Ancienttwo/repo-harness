@@ -5,7 +5,7 @@ import { PROJECTION_REQUEST_VERSION, type ProjectionMode, type ProjectionRequest
 import { captureArchitectureProjectionSnapshot, inspectArchitectureProjectionReadiness, runArchitectureProjection } from '../../effects/architecture/archctx-provider';
 import { drainArchitectureProjectionJobs } from '../../effects/architecture/projection-orchestrator';
 import { architectureProjectionQueueState, retryArchitectureProjectionDeadLetter } from '../../effects/architecture/projection-jobs';
-import { migratePendingPostEditJournalV1, readPendingPostEditEvents } from '../hook/mutation-observed';
+import { consumePendingPostEditEvents, migratePendingPostEditJournalV1, readPendingPostEditEvents } from '../hook/mutation-observed';
 
 interface ProjectionCommandOptions {
   json?: boolean;
@@ -31,8 +31,19 @@ export function buildArchitectureProjectionCommand(): Command {
     try {
       const root = repositoryRoot();
       migratePendingPostEditJournalV1(root, 100);
-      const result = drainArchitectureProjectionJobs(root, { sourceEvents: readPendingPostEditEvents(root) });
-      write(result);
+      const sourceEvents = readPendingPostEditEvents(root);
+      const result = drainArchitectureProjectionJobs(root, { sourceEvents });
+      consumePendingPostEditEvents(root, process.env, result.acknowledgeSourceEvents
+        ? {
+            skipArchitectureCascade: result.status !== 'disabled',
+            ...(result.status === 'disabled' ? {} : { eventIds: result.sourceEventIds }),
+          }
+        : {
+            skipArchitectureCascade: true,
+            eventIds: sourceEvents.map((event) => event.event_id),
+            retainEventFiles: true,
+          });
+      write({ ...result, sourceJournalPending: readPendingPostEditEvents(root).length });
       if (result.status === 'retry-pending' || result.status === 'dead-letter') process.exitCode = 1;
     } catch (error) { fail(error); }
   });

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync, chmodSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 
@@ -56,26 +56,44 @@ try {
   });
   assertProcess(postEdit, 'installed PostToolUse.edit');
 
+  const stopInput = `${JSON.stringify({ session_id: 'axr6-host-cycle', run_id: 'axr6-host-cycle', stop_hook_active: false })}\n`;
+  const legacyStarted = performance.now();
+  const legacyStop = spawnSync('/bin/sh', ['-c', adapters.codex.stop.command], {
+    cwd: fixture,
+    env: hookEnv,
+    input: stopInput,
+    encoding: 'utf8',
+    timeout: 30_000,
+  });
+  const legacyElapsedMs = Math.round(performance.now() - legacyStarted);
+  if ((legacyStop.error as NodeJS.ErrnoException | undefined)?.code !== 'ETIMEDOUT') {
+    throw new Error(`installed Stop unexpectedly survived the legacy 30 second process budget: status=${String(legacyStop.status)} elapsed=${legacyElapsedMs}ms`);
+  }
+  const receiptsDir = join(fixture, '.ai', 'harness', 'architecture-projection', 'receipts');
+  if (existsSync(receiptsDir) && readdirSync(receiptsDir).some((name) => name.endsWith('.json'))) {
+    throw new Error('legacy 30 second process budget produced a false durable receipt');
+  }
+
   const started = performance.now();
   const stop = spawnSync('/bin/sh', ['-c', adapters.codex.stop.command], {
     cwd: fixture,
     env: hookEnv,
-    input: `${JSON.stringify({ session_id: 'axr6-host-cycle', run_id: 'axr6-host-cycle', stop_hook_active: false })}\n`,
+    input: stopInput,
     encoding: 'utf8',
     timeout: PROCESS_TIMEOUT_MS,
   });
   const elapsedMs = Math.round(performance.now() - started);
   assertProcess(stop, 'installed Stop.default');
-  if (elapsedMs <= 30_000) throw new Error(`installed Stop returned before the legacy 30 second boundary: ${elapsedMs}ms; ${String(stop.stderr || stop.stdout).trim().slice(0, 2000)}`);
   if (elapsedMs >= HOST_TIMEOUT_MS) throw new Error(`installed Stop exceeded the managed 150 second timeout: ${elapsedMs}ms`);
 
-  const receiptsDir = join(fixture, '.ai', 'harness', 'architecture-projection', 'receipts');
   const receiptFiles = readdirSync(receiptsDir).filter((name) => name.endsWith('.json'));
   if (receiptFiles.length !== 1) throw new Error(`expected one durable projection receipt, got ${receiptFiles.length}`);
   const receipt = JSON.parse(readFileSync(join(receiptsDir, receiptFiles[0]!), 'utf8')) as {
     schemaVersion?: string;
+    attempt?: number;
     result?: { receiptDigest?: string; status?: string };
   };
+  if (receipt.attempt !== 2) throw new Error(`expected recovered Stop receipt on attempt 2, got ${String(receipt.attempt)}`);
   const pendingDir = join(fixture, '.ai', 'harness', 'journal', 'post-edit', 'pending');
   const pendingSourceEvents = readdirSync(pendingDir).filter((name) => name.endsWith('.json')).length;
   if (pendingSourceEvents !== 0) throw new Error(`source journal was not acknowledged after receipt: ${pendingSourceEvents} pending`);
@@ -90,10 +108,12 @@ try {
       claude: { stopTimeoutSeconds: adapters.claude.stop.timeout, nonStopTimeoutSeconds: adapters.claude.postEdit.timeout },
     },
     stop: {
+      legacyBudget: { timeoutMs: 30_000, elapsedMs: legacyElapsedMs, timedOut: true },
       elapsedMs,
       processTimeoutMs: PROCESS_TIMEOUT_MS,
       managedTimeoutMs: HOST_TIMEOUT_MS,
       durableReceiptSchemaVersion: receipt.schemaVersion,
+      attempt: receipt.attempt,
       projectionStatus: receipt.result?.status,
       receiptDigest: receipt.result?.receiptDigest,
       pendingSourceEvents,

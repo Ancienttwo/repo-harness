@@ -725,12 +725,20 @@ ArchContext-owned `docs/architecture/**` and declared agent-context targets,
 and acknowledges the source records only after a typed projection receipt is
 durable. Process, timeout, stale-snapshot, invalid-result, and refresh failures
 remain pending for three attempts before an explicit dead-letter transition.
+Preflight failures are jobs too; a dead-lettered source event blocks aggregate
+jobs that also contain that event, so later edits cannot reset its attempt
+budget. One repository has at most one claimed provider process, and an
+abandoned third attempt transitions directly to dead-letter on recovery.
 `ArchitectureRefreshSignalV1` is the only major-change refresh authority; the
 consumer does not infer impact from path names, diff size, or queue-helper
 stdout. A typed refresh-required signal runs the canonical architecture,
 context-contract, and capability-context writers even when the legacy queue
 helper creates no drift card. SessionStart and
 `repo-harness architecture-projection drain --json` expose queue state.
+Each successful canonical refresh action is checkpointed by action key before
+the next action runs, so a partial failure resumes without replaying completed
+writers. Missing or stale CLI authority remains a typed refresh failure; it is
+not silently skipped.
 
 Projection delivery failures use the independent
 `architecture.projection_failure_gate` (`advisory` by default); the existing
@@ -748,8 +756,9 @@ entries while preserving sibling user hooks.
 Before rolling back to a runtime that only understands journal v1, disable the
 projection provider with the current runtime, run
 `repo-harness architecture-projection drain --json`, and verify the pending
-journal count is zero. Downgrading with v2 observations still pending is not a
-supported rollback state.
+journal count reported as `sourceJournalPending` is zero. The manual drain owns
+the same selective source acknowledgement as Stop. Downgrading with v2
+observations still pending is not a supported rollback state.
 
 ### `source.include` grammar
 

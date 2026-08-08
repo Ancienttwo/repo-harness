@@ -63,7 +63,7 @@ const FIXTURE_PROVIDER_LINES = [
   'mode="${CROSS_REVIEW_FIXTURE_MODE:-success}"',
   'if [ "$mode" = "fable-limit" ]; then',
   '  case " $* " in',
-  '    *" --model fable "*) echo "You have reached your Fable limit."; exit 1 ;;',
+  '    *" --model fable "*) echo "You have reached your Fable limit."; echo "Run /usage-credits to continue."; exit 1 ;;',
   '    *) echo "[P2] reviewed on opus after bounded fallback."; exit 0 ;;',
   '  esac',
   'fi',
@@ -458,6 +458,15 @@ describe("pure classification and parsing helpers (src/core/review/cross-review.
     if (outcome.kind === "failed") expect(outcome.code).toBe("provider_nonzero");
   });
 
+  test("classifyCrossReviewOutcome does not treat review stdout as an auth signal", () => {
+    const outcome = classifyCrossReviewOutcome(
+      { ...baseInvocation, ok: false, status: 2, stdout: "The reviewed code says not logged in", stderr: "boom" },
+      noRecovery,
+    );
+    expect(outcome.kind).toBe("failed");
+    if (outcome.kind === "failed") expect(outcome.code).toBe("provider_nonzero");
+  });
+
   test("classifyCrossReviewOutcome: clean exit + stdout -> success, no recovery used", () => {
     const outcome = classifyCrossReviewOutcome({ ...baseInvocation, stdout: "[P2] fine" }, noRecovery);
     expect(outcome.kind).toBe("success");
@@ -496,9 +505,10 @@ describe("pure classification and parsing helpers (src/core/review/cross-review.
   });
 
   test("parseFindings extracts [P1]/[P2] lines and ignores everything else", () => {
-    const findings = parseFindings(["some prose", "## [P1] critical heading", "- [P1] critical thing", "[P2] minor thing", ""].join("\n"));
+    const findings = parseFindings(["some prose", "## [P1] critical heading", "-[P1] compact bullet", "- [P1] critical thing", "[P2] minor thing", ""].join("\n"));
     expect(findings).toEqual([
       { severity: "P1", text: "critical heading" },
+      { severity: "P1", text: "compact bullet" },
       { severity: "P1", text: "critical thing" },
       { severity: "P2", text: "minor thing" },
     ]);
@@ -506,6 +516,7 @@ describe("pure classification and parsing helpers (src/core/review/cross-review.
 
   test("matchesClaudeCapacityFailureSignal accepts the pinned route limit only", () => {
     expect(matchesClaudeCapacityFailureSignal("You've reached your Fable 5 limit. Run /usage-credits to continue.")).toBe(true);
+    expect(matchesClaudeCapacityFailureSignal("Review mentions /usage-credits in ordinary prose.")).toBe(false);
     expect(matchesClaudeCapacityFailureSignal("boom: internal error")).toBe(false);
   });
 

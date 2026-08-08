@@ -111,6 +111,15 @@ export function architectureProjectionJobState(
   return 'missing';
 }
 
+export function architectureProjectionDeadLetterForSourceEvents(
+  repoRoot: string,
+  sourceEventIds: readonly string[],
+): ArchitectureProjectionDeadLetterV1 | null {
+  const requested = new Set(sourceEventIds);
+  if (requested.size === 0) return null;
+  return deadLettersByFailedAt(repoRoot).find((entry) => entry.job.sourceEventIds.some((eventId) => requested.has(eventId))) ?? null;
+}
+
 export function enqueueArchitectureProjectionJob(
   repoRoot: string,
   sourceEventIds: readonly string[],
@@ -153,7 +162,25 @@ export function recoverAbandonedArchitectureProjectionJobs(repoRoot: string, now
       const updatedAtMs = Date.parse(job.updatedAt);
       const stale = !Number.isFinite(updatedAtMs) || now.getTime() - updatedAtMs >= RUNNING_STALE_MS;
       if (!stale && job.ownerPid && processIsAlive(job.ownerPid)) continue;
-      const pending = { ...job, status: 'pending' as const, updatedAt: now.toISOString(), ownerPid: undefined };
+      if (job.attempt >= MAX_ATTEMPTS) {
+        const failure = { kind: 'timeout' as const, message: `running job was abandoned after attempt ${job.attempt}` };
+        atomicJson(pathFor(repoRoot, 'dead-letter', job.jobId), {
+          schemaVersion: 'repo-harness.architecture-projection-dead-letter/v1',
+          job: { ...job, status: 'pending', ownerPid: undefined, updatedAt: now.toISOString(), lastFailure: { ...failure, at: now.toISOString() } },
+          failedAt: now.toISOString(),
+          failure,
+        } satisfies ArchitectureProjectionDeadLetterV1);
+        unlinkSync(runningPath);
+        recovered += 1;
+        continue;
+      }
+      const pending = {
+        ...job,
+        status: 'pending' as const,
+        updatedAt: now.toISOString(),
+        ownerPid: undefined,
+        lastFailure: { kind: 'timeout' as const, message: `running job was abandoned after attempt ${job.attempt}`, at: now.toISOString() },
+      };
       atomicJson(pathFor(repoRoot, 'pending', job.jobId), pending);
       unlinkSync(runningPath);
       recovered += 1;
@@ -223,6 +250,7 @@ export function completeArchitectureProjectionJob(
   return withExclusiveDirectoryLock(repoRoot, LOCK_PATH, () => {
     const runningPath = pathFor(repoRoot, 'running', job.jobId);
     if (!existsSync(runningPath)) throw new Error(`architecture projection running job is missing: ${job.jobId}`);
+    assertClaimOwner(readJson<ArchitectureProjectionJobV1>(runningPath), job);
     const receipt: ArchitectureProjectionReceiptV1 = {
       schemaVersion: 'repo-harness.architecture-projection-receipt/v1',
       jobId: job.jobId,
@@ -248,6 +276,7 @@ export function failArchitectureProjectionJob(
   return withExclusiveDirectoryLock(repoRoot, LOCK_PATH, () => {
     const runningPath = pathFor(repoRoot, 'running', job.jobId);
     if (!existsSync(runningPath)) throw new Error(`architecture projection running job is missing: ${job.jobId}`);
+    assertClaimOwner(readJson<ArchitectureProjectionJobV1>(runningPath), job);
     const failed: ArchitectureProjectionJobV1 = {
       ...job,
       status: 'pending',
@@ -270,6 +299,17 @@ export function failArchitectureProjectionJob(
     unlinkSync(runningPath);
     return { state: 'pending', job: failed };
   });
+}
+
+function assertClaimOwner(persisted: ArchitectureProjectionJobV1, claimed: ArchitectureProjectionJobV1): void {
+  if (
+    persisted.status !== 'running'
+    || persisted.jobId !== claimed.jobId
+    || persisted.attempt !== claimed.attempt
+    || persisted.ownerPid !== claimed.ownerPid
+  ) {
+    throw new Error(`architecture projection running claim no longer belongs to this process: ${claimed.jobId}`);
+  }
 }
 
 export function architectureProjectionQueueState(repoRoot: string): ArchitectureProjectionQueueStateV1 {
