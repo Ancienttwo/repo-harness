@@ -771,10 +771,11 @@ Source-selection failures exit `2`:
 | subdirectory or non-`.yaml`/`.yml` entry in the model directory | error naming the entry |
 | unparseable node YAML | error naming the node file |
 | `Bun.YAML` unavailable | error with the Bun upgrade path |
-| missing/empty node/v2 `name`, `summary`, or `responsibilities` | structural error; no partial registry output |
 
 Node-shape failures surface as `ARCHCONTEXT_*` registry diagnostics and make
-`capability-resolver validate` fail; derived registries then go through the same
+`capability-resolver validate` exit `1` with no stdout; missing/empty node/v2
+`name`, `summary`, or `responsibilities` is a structural error and never yields a
+partial registry. Derived registries then go through the same
 validation as the JSON registry, so duplicate ids, duplicate prefixes, and
 invalid paths keep their existing diagnostic codes.
 
