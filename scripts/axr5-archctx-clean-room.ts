@@ -13,6 +13,12 @@ const archContextRoot = resolve(flag('--arch-context-root') ?? join(repoRoot, '.
 const revision = flag('--revision') ?? git(archContextRoot, ['rev-parse', 'HEAD']);
 const outputPath = resolve(repoRoot, flag('--out') ?? 'docs/verification/axr5-archctx-clean-room-readback.json');
 const keep = process.argv.includes('--keep-temp');
+mkdirSync(dirname(outputPath), { recursive: true });
+writeFileSync(outputPath, `${JSON.stringify({
+  schemaVersion: 'repo-harness.axr5-clean-room/v1',
+  status: 'running',
+  source: { repository: 'Ancienttwo/arch-context', revision, archiveMode: 'git-archive', dirtySourceUsed: false },
+}, null, 2)}\n`);
 const workspace = mkdtempSync(join(tmpdir(), 'repo-harness-axr5-clean-room-'));
 let installedBinary: string | null = null;
 let daemonRoot: string | null = null;
@@ -58,7 +64,9 @@ try {
     BUN_CONFIG_REGISTRY: 'http://127.0.0.1:9',
   };
   run('npm', ['install', '--offline', '--ignore-scripts', '--omit=dev', '--omit=optional'], consumer, offlineEnv);
-  const installedNodeSchema = JSON.parse(readFileSync(join(consumer, 'node_modules', 'archctx-contracts', 'schemas', 'repo', 'architecture-node.schema.json'), 'utf8')) as any;
+  const installedNodeSchemaPath = join(consumer, 'node_modules', 'archctx-contracts', 'schemas', 'repo', 'architecture-node.schema.json');
+  const installedNodeSchemaBody = readFileSync(installedNodeSchemaPath);
+  const installedNodeSchema = JSON.parse(installedNodeSchemaBody.toString('utf8')) as any;
   if (installedNodeSchema.properties?.schemaVersion?.const !== 'archcontext.node/v2') throw new Error('packed archctx-contracts does not expose authoritative node/v2 schema');
 
   mkdirSync(join(fixtureRepo, '.ai', 'harness'), { recursive: true });
@@ -145,6 +153,7 @@ extensions:
       packageLocalBinary,
       conflictingPathIgnored,
       authoritativeNodeSchema: installedNodeSchema.properties.schemaVersion.const,
+      authoritativeNodeSchemaDigest: `sha256:${createHash('sha256').update(installedNodeSchemaBody).digest('hex')}`,
       capabilities: handshake.capabilities,
       projection: {
         requestId: projection.requestId,
@@ -157,7 +166,6 @@ extensions:
       },
     },
   };
-  mkdirSync(dirname(outputPath), { recursive: true });
   writeFileSync(outputPath, `${JSON.stringify(readback, null, 2)}\n`);
   process.stdout.write(`${JSON.stringify(readback, null, 2)}\n`);
 } finally {

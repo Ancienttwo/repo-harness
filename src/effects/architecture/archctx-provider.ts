@@ -29,7 +29,7 @@ export interface ArchctxProviderOptions {
   run?: RunArchctxProcess;
 }
 
-const PROJECTION_WORKTREE_IGNORE_NAMES = new Set([
+const PROJECTION_WORKTREE_IGNORE_ROOTS = new Set([
   '.git',
   '.codegraph',
   'node_modules',
@@ -135,8 +135,7 @@ export function runArchitectureProjection(request: ProjectionRequestV1, repoRoot
   const requestIssues = projectionRequestIssues(request);
   if (requestIssues.length > 0) throw new Error(`invalid projection request: ${requestIssues.join('; ')}`);
   const policy = options.policy ?? loadArchitectureProjectionPolicy(repoRoot);
-  if (request.mode === 'apply' && policy.applyMode === 'disabled') throw new Error('architecture projection apply is disabled');
-  assertExpectedSnapshot(request.expected, captureArchitectureProjectionSnapshot(repoRoot), 'before projection');
+  if ((request.mode === 'apply' || request.mode === 'adopt') && policy.applyMode === 'disabled') throw new Error('architecture projection apply is disabled');
   const { resolved } = archctxCapabilities(repoRoot, { ...options, policy });
   const args = ['projection', 'run', '--request-json', JSON.stringify(request)];
   const processResult = (options.run ?? DEFAULT_RUNNER)(resolved.binaryPath, args, { cwd: repoRoot, timeoutMs: policy.timeoutMs, env: options.env ?? process.env });
@@ -145,6 +144,7 @@ export function runArchitectureProjection(request: ProjectionRequestV1, repoRoot
   if (envelope.schemaVersion !== 'archcontext.envelope/v1' || envelope.ok !== true || !isRecord(envelope.data)) throw new Error(`archctx projection returned an invalid envelope: ${safeError(envelope)}`);
   const result = assertProjectionResult(envelope.data, request.requestId);
   assertExpectedSnapshot(request.expected, result.inputSnapshot, 'in provider result input');
+  assertProjectionResultAuthority(request, result, repoRoot, policy);
   assertExpectedSnapshot(result.outputSnapshot, captureArchitectureProjectionSnapshot(repoRoot), 'after projection');
   if (result.inputSnapshot.rendererVersion !== ARCHITECTURE_DOCS_RENDERER_VERSION || result.outputSnapshot.rendererVersion !== ARCHITECTURE_DOCS_RENDERER_VERSION || result.inputSnapshot.layoutVersion !== ARCHITECTURE_DOCS_LAYOUT_VERSION || result.outputSnapshot.layoutVersion !== ARCHITECTURE_DOCS_LAYOUT_VERSION) throw new Error('archctx projection renderer/layout mismatch');
   return result;
@@ -206,9 +206,32 @@ function listProjectionInputFiles(root: string, ignored: Set<string>): string[] 
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const absolute = resolve(directory, entry.name);
       const path = relative(root, absolute).split(sep).join('/');
-      if (!path || PROJECTION_WORKTREE_IGNORE_NAMES.has(entry.name) || ignored.has(path) || [...ignored].some((pattern) => path.startsWith(`${pattern}/`))) continue;
+      const rootSegment = path.split('/')[0]!;
+      if (!path || PROJECTION_WORKTREE_IGNORE_ROOTS.has(rootSegment) || ignored.has(path) || [...ignored].some((pattern) => path.startsWith(`${pattern}/`))) continue;
       if (entry.isDirectory()) walk(absolute);
       else if (entry.isFile()) files.push(path);
+    }
+  }
+}
+
+function assertProjectionResultAuthority(
+  request: ProjectionRequestV1,
+  result: ProjectionResultV1,
+  repoRoot: string,
+  policy: ArchitectureProjectionPolicy,
+): void {
+  if (result.status === 'applied' && request.mode !== 'apply' && request.mode !== 'adopt') {
+    throw new Error(`archctx projection returned applied for non-mutating mode ${request.mode}`);
+  }
+  if (result.status === 'applied' && policy.applyMode === 'disabled') {
+    throw new Error('archctx projection returned applied while projection apply is disabled');
+  }
+  const allowed = new Set<string>();
+  if (request.targets.includes('architecture-docs')) allowed.add('docs/architecture');
+  if (request.targets.includes('agent-context')) for (const path of architectureAgentContextTargets(repoRoot)) allowed.add(path);
+  for (const file of result.files) {
+    if (![...allowed].some((path) => file.path === path || file.path.startsWith(`${path}/`))) {
+      throw new Error(`archctx projection result path escapes requested projection targets: ${file.path}`);
     }
   }
 }

@@ -772,14 +772,14 @@ Node-shape failures surface as `ARCHCONTEXT_*` registry diagnostics and make
 validation as the JSON registry, so duplicate ids, duplicate prefixes, and
 invalid paths keep their existing diagnostic codes.
 
-### Known asymmetry with the boundary export
+### Node/v2 export round-trip
 
-`repo-harness run capability-resolver export --format archcontext-boundaries-v1`
-copies capability prefixes into `source.include` verbatim, so a directory prefix
-ships as a wildcard-free literal — the shape the reading side rejects as
-ambiguous. Round-tripping export output back through the reader is therefore not
-supported today. Correcting the export to emit `<dir>/**` for directory prefixes
-is tracked separately because it changes output for existing consumers.
+`repo-harness run capability-resolver export --format archcontext-nodes-v2`
+emits complete `archcontext.node/v2` capability nodes. Existing directory
+prefixes become explicit `<dir>/**` selectors, while file prefixes remain exact.
+The exported `extensions.contractFiles`, `lspProfile`, and `verification` fields
+round-trip through the canonical node/v2 reader without deriving missing
+semantics. The retired `archcontext-boundaries-v1` format is rejected.
 
 ## Manual Brain Vault Export
 

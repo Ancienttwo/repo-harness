@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -144,6 +144,9 @@ describe('package-local ArchContext projection provider', () => {
     expect(architectureProjectionExitCode('check', 'planned')).toBe(1);
     expect(architectureProjectionExitCode('plan', 'planned')).toBe(0);
     expect(architectureProjectionExitCode('apply', 'applied')).toBe(0);
+    expect(architectureProjectionExitCode('adopt', 'applied')).toBe(0);
+    expect(architectureProjectionExitCode('check', 'applied')).toBe(1);
+    expect(architectureProjectionExitCode('plan', 'applied')).toBe(1);
     for (const status of ['adoption-required', 'human-action-required', 'blocked', 'retryable-failure', 'permanent-failure']) {
       expect(architectureProjectionExitCode('plan', status)).toBe(1);
     }
@@ -192,8 +195,44 @@ describe('package-local ArchContext projection provider', () => {
     writeFileSync(join(f.repoRoot, 'nested', 'AGENTS.md'), 'not a projection target\n');
     expect(captureArchitectureProjectionSnapshot(f.repoRoot).worktreeDigest).not.toBe(before.worktreeDigest);
     rmSync(join(f.repoRoot, 'nested'), { recursive: true, force: true });
+    mkdirSync(join(f.repoRoot, 'src', 'node_modules'), { recursive: true });
+    writeFileSync(join(f.repoRoot, 'src', 'node_modules', 'not-a-root-install.ts'), 'export const visible = true;\n');
+    expect(captureArchitectureProjectionSnapshot(f.repoRoot).worktreeDigest).not.toBe(before.worktreeDigest);
+    rmSync(join(f.repoRoot, 'src', 'node_modules'), { recursive: true, force: true });
     writeFileSync(join(f.repoRoot, 'src', 'core', 'index.ts'), 'export const value = 2;\n');
     expect(captureArchitectureProjectionSnapshot(f.repoRoot).worktreeDigest).not.toBe(before.worktreeDigest);
+  });
+
+  test('rejects provider writes outside the requested surface and applied status for read-only modes', () => {
+    const f = fixture();
+    const projectionRequest = request(f.repoRoot);
+    projectionRequest.mode = 'check';
+    const applied = structuredClone(projectionEnvelope(projectionRequest.expected)) as any;
+    applied.data.status = 'applied';
+    const { receiptDigest: _appliedReceipt, ...appliedPayload } = applied.data;
+    applied.data.receiptDigest = projectionResultReceiptDigest(appliedPayload);
+    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner([], applied) })).toThrow('applied for non-mutating mode check');
+
+    const escaped = structuredClone(projectionEnvelope(projectionRequest.expected));
+    escaped.data.files[0]!.path = '.git/hooks/pre-commit';
+    const { receiptDigest: _escapedReceipt, ...escapedPayload } = escaped.data;
+    escaped.data.receiptDigest = projectionResultReceiptDigest(escapedPayload);
+    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner([], escaped) })).toThrow('path escapes requested projection targets');
+
+    projectionRequest.mode = 'apply';
+    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy: { ...policy, applyMode: 'disabled' }, run: runner([], projectionEnvelope(projectionRequest.expected)) })).toThrow('apply is disabled');
+  });
+
+  test('tracks the packed node/v2 integration proof without a stale node/v1 dependency', () => {
+    const manifest = JSON.parse(readFileSync(join(import.meta.dir, '..', 'package.json'), 'utf8')) as any;
+    const readback = JSON.parse(readFileSync(join(import.meta.dir, '..', 'docs', 'verification', 'axr5-archctx-clean-room-readback.json'), 'utf8')) as any;
+    expect(manifest.devDependencies?.['archctx-contracts']).toBeUndefined();
+    expect(manifest.scripts?.['check:archctx-integration']).toBe('bun scripts/axr5-archctx-clean-room.ts');
+    expect(readback.status).toBe('verified');
+    expect(readback.packages.contracts.version).toBe('0.4.0');
+    expect(readback.consumer.authoritativeNodeSchema).toBe('archcontext.node/v2');
+    expect(readback.consumer.authoritativeNodeSchemaDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(readback.source.dirtySourceUsed).toBe(false);
   });
 
   test('rejects feature mismatch, corrupt JSON and stale worktree', () => {

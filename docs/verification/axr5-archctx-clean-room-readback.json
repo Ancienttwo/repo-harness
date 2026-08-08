@@ -3,7 +3,7 @@
   "status": "verified",
   "source": {
     "repository": "Ancienttwo/arch-context",
-    "revision": "309588e951d0f4612b177ceb154526ff8c9d5b9a",
+    "revision": "16645d56357a607bf0cfad3df02131c115bf5c78",
     "archiveMode": "git-archive",
     "dirtySourceUsed": false
   },
@@ -19,8 +19,8 @@
       "name": "archctx",
       "version": "0.4.0",
       "file": "archctx-0.4.0.tgz",
-      "integrity": "sha512-+vDdaqPhS6zXpQHLHLmsZ7LRXvaewkrADy6idBOLuP+x9vNxGonCeXiYSeGCKMOqfRiO+h/hiGXL0kCmkPOIMg==",
-      "sha512": "faf0dd6aa3e14bacd7a501cb1cb9ac67b2d15ef69ec24ac00f2ea274138bb8ffb1f6f3711a89c279789849e18228c3aa7d188efa1fe18865cbd240a690f38832"
+      "integrity": "sha512-wpzodrRKDeJoG6oZcXuiBQJkdYIGiAlcgg5f6kAy+93JwTT1dz76t2OFlOzOpMVu0KUUtYe2cQ/Up0vSnUv1zA==",
+      "sha512": "c29ce876b44a0de2681baa19717ba205026475820688095c820e5fea4032fbddc9c134f5773efab7638594eccea4c56ed0a514b587b6710fd4a74bd29d4bf5cc"
     }
   },
   "consumer": {
@@ -30,6 +30,7 @@
     "packageLocalBinary": true,
     "conflictingPathIgnored": true,
     "authoritativeNodeSchema": "archcontext.node/v2",
+    "authoritativeNodeSchemaDigest": "sha256:a2e5d43079c4d343fb3aa81779f55dc4092624fcd70fb1072cbdddd13468fe45",
     "capabilities": {
       "schemaVersion": "archcontext.capabilities/v1",
       "package": {
@@ -63,7 +64,7 @@
         "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
         "codeGraphStatus": "unavailable"
       },
-      "receiptDigest": "sha256:585c158676baa3b17c9832c7e1fc553c040dc15b78f887473576172aaf6fb630"
+      "receiptDigest": "sha256:a1b63a821e886afea87e9dbb2ec763a409c4cbdd4211a094066c2ed4e4f76e89"
     }
   }
 }

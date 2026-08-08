@@ -55,7 +55,8 @@ function execute(mode: ProjectionMode, options: ProjectionCommandOptions): void 
 }
 
 export function architectureProjectionExitCode(mode: ProjectionMode, status: string): 0 | 1 {
-  if (status === 'noop' || status === 'applied') return 0;
+  if (status === 'noop') return 0;
+  if (status === 'applied') return mode === 'apply' || mode === 'adopt' ? 0 : 1;
   return mode === 'plan' && status === 'planned' ? 0 : 1;
 }
 

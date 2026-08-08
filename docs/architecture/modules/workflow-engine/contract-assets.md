@@ -121,7 +121,7 @@ flowchart LR
 | `.ai/context/context-map.json` | 渐进式 context 加载契约。`profile = "stable-root-progressive-subdir"`、8 个 `root_context_files`、18 个 `discoverable_contexts`、`budgets.root_total_chars = 12000`。`functional_block_selector` 自述为 compatibility selector，权威仍是 capability registry |
 | `.ai/context/capabilities.json` | capability 注册表唯一 runtime 权威，`version = 1`，当前 10 个 capability |
 | `src/core/capabilities/registry.ts` | 注册表解析/校验/最长前缀匹配的实现核心（非本 capability 前缀，但是 `capability-resolver` 的强依赖）。16 个 diagnostic code（`REGISTRY_MISSING` … `AMBIGUOUS_MATCH`），见投影副本 `assets/templates/helpers/capability-resolver.ts:28-44` |
-| `scripts/capability-resolver.ts` | 唯一注册表读取器/校验器/最长前缀匹配 CLI。命令 `list` / `match` / `validate` / `export`；格式 `json` / `text` / `prefixes` / `archcontext-boundaries-v1`（`scripts/capability-resolver.ts:83,97-102`）。`export` 与 `archcontext-boundaries-v1` 互为强制配对，是只读桥接（`scripts/capability-resolver.ts:16-31`） |
+| `scripts/capability-resolver.ts` | 唯一注册表读取器/校验器/最长前缀匹配 CLI。命令 `list` / `match` / `validate` / `export`；`export` 只接受 `archcontext-nodes-v2`，输出完整 node/v2 并可由同一 canonical reader round-trip；旧 `archcontext-boundaries-v1` fail-closed |
 | `scripts/capability-config.ts` | 显式 authority-creation 与 capability 新增命令；正常读路径不再从 `agent-context-blocks.txt` 或目录扫描派生能力 |
 | `scripts/contract-run.ts` | 任务委派 contract runner：读 `tasks/contracts/*.contract.md` 执行简报，预检、生成 worker/verifier prompt、可选派发、写 run manifest。与 `assets/workflow-contract.v1.json` 的「contract」是同名不同概念 |
 | `scripts/contract-worktree.sh` | candidate commit 与 local-merge 咽喉。`run_merge_gate`（`:1226`）、`verify_merge_gate_seal`（`:1253`）；`finish` 路径在 `:1507` 封印、`:1560`/`:1582` 复验，`:1584` 拒绝 review 后 HEAD 移动 |
@@ -295,7 +295,7 @@ sequenceDiagram
 | I2 | `helpers.scripts` 与 `helpers.descriptions` 1:1，且描述非空 | `helper-runner.ts:254-268` + `tests/workflow-contract.test.ts:199-213` |
 | I3 | `helpers.scripts` 是「有哪些 helper」的唯一 id 列表；descriptions 只挂显示数据 | 契约结构 + 上述双向校验 |
 | I4 | `.ai/context/capabilities.json` 是 capability 的唯一 runtime 权威 | `capability-resolver.ts` fail-closed；`capability-config add` 是唯一创建路径 |
-| I5 | capability context 块、ArchContext 边界导出都是单向投影，不是第二作者面 | `capability-context.ts`；`export` 仅接受 `archcontext-boundaries-v1` |
+| I5 | capability context 块、ArchContext node/v2 导出都是单向投影，不是第二作者面 | `capability-context.ts`；`export` 仅接受 `archcontext-nodes-v2`，并由 canonical reader round-trip 验证 |
 | I6 | 受保护 helper 的 source/helper/HOME/PATH/解释器解析不受调用者影响 | `protectedChildEnv()`、`resolveHelperRuntime(env, false)` |
 | I7 | merge gate 启用位来自**目标 base commit**，candidate 不能自我豁免 | `ship-worktrees.sh:907-911`；`contract-worktree.sh` gate base ref |
 | I8 | 51/52 helper 与 `scripts/` byte-identical；唯一例外携带 `@generated-from` 哈希头 | `scripts/sync-helper-sources.ts` `--check` |
