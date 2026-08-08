@@ -40,17 +40,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:8a48064b7315b61b99ff35a27aaf1b0f4882d91467b3d2a1e3d2c32a1ff2ec23
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 6f6374f1460c8c4f0ecc0d37c9a88f26556f9d6b
+> **Verification Evidence SHA256**: sha256:6464d1ebf36f0b46b38574f4a0f9de8cd92a0bcb1fb504f79fd46a42e7ee6916
+> **Issued At**: 2026-08-08T15:04:48.863Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: AXR5 typed ArchContext provider accepted after iterative full-diff review; final verdict No P1/P2 findings.
 - Findings: none
 
 ## Behavior Diff Notes
