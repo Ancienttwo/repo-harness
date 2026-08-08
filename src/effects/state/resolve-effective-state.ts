@@ -1,11 +1,16 @@
-import { readFileSync, statSync } from 'fs';
+import { readFileSync, readdirSync, statSync } from 'fs';
 import { posix, win32 } from 'path';
 import { buildReviewSubject, isImplementationSurfacePath } from '../review/diff-fingerprint';
 import { resolveWorkflowProfile, type WorkflowProfile } from '../../core/workflow/profile';
 import {
+  CAPABILITY_SOURCE_MODES,
+  capabilityRegistryFromArchcontextNodes,
   isCapabilityPathOutsideRepo,
   parseCapabilityRegistry,
   resolveCapabilityPaths,
+  type ArchcontextNodeFile,
+  type CapabilityRegistryResolution,
+  type CapabilitySourceMode,
 } from '../../core/capabilities/registry';
 import type {
   EffectiveState,
@@ -52,6 +57,8 @@ import {
 const ACTIVE_PLAN_MARKER = '.ai/harness/active-plan';
 const ACTIVE_WORKTREE_MARKER = '.ai/harness/active-worktree';
 const CAPABILITY_REGISTRY_PATH = '.ai/context/capabilities.json';
+const CAPABILITY_NODES_DIR = '.archcontext/model/nodes';
+const CAPABILITY_NODE_FILE = /\.ya?ml$/;
 const POLICY_PATH = '.ai/harness/policy.json';
 
 type WorkflowPolicy = Readonly<Record<string, unknown>> | null;
@@ -166,6 +173,77 @@ function validateWorkflowPolicy(policy: WorkflowPolicy): void {
       `invalid workflow policy path .context.capability_registry_file: ${String(registryPath)}`,
     );
   }
+  capabilitySourceMode(policy);
+}
+
+/**
+ * The single capability authority selector, mirroring
+ * scripts/capability-resolver.ts. `registry` reads the JSON registry,
+ * `archcontext` reads archcontext capability nodes; there is no dual-read and
+ * no fallback in either direction, and an unknown value fails closed.
+ *
+ * `.context.capability_registry_file` only names where the JSON registry lives
+ * and is therefore inert under `archcontext` -- the adoption seeders keep
+ * writing it as a default for registry-mode repos.
+ */
+function capabilitySourceMode(policy: WorkflowPolicy): CapabilitySourceMode {
+  const value = policyValue(policy, '.context.capability_source');
+  if (value === POLICY_FIELD_ABSENT) return 'registry';
+  if (typeof value === 'string' && (CAPABILITY_SOURCE_MODES as readonly string[]).includes(value)) {
+    return value as CapabilitySourceMode;
+  }
+  throw new Error(
+    `invalid workflow policy value .context.capability_source: ${String(value)}`,
+  );
+}
+
+/** Sorted repo-relative node file paths; empty when the directory is absent. */
+function archcontextNodePaths(cwd: string): string[] {
+  let entries: string[];
+  try {
+    entries = readdirSync(repoPath(cwd, CAPABILITY_NODES_DIR));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error;
+  }
+  return entries
+    .filter((name) => CAPABILITY_NODE_FILE.test(name))
+    .sort()
+    .map((name) => `${CAPABILITY_NODES_DIR}/${name}`);
+}
+
+/**
+ * Structural access to Bun's YAML parser. The state layer must not grow an npm
+ * YAML dependency, and a runtime without Bun.YAML cannot read the archcontext
+ * authority at all, so it fails closed rather than reporting zero capabilities.
+ */
+function parseNodeYaml(source: string): unknown {
+  const yaml = (globalThis as { Bun?: { YAML?: { parse?: (input: string) => unknown } } }).Bun?.YAML;
+  if (typeof yaml?.parse !== 'function') {
+    throw new Error(
+      'Bun.YAML is unavailable; .context.capability_source="archcontext" requires Bun >= 1.3',
+    );
+  }
+  return yaml.parse(source);
+}
+
+/**
+ * Content hash of the selected capability authority. Registry mode keeps the
+ * single-file hash byte-for-byte; archcontext mode folds the sorted node files
+ * into one revision so any node edit still moves authority_revision.
+ */
+function capabilityAuthorityHash(cwd: string, mode: CapabilitySourceMode): string {
+  if (mode === 'registry') return sourceHash(cwd, CAPABILITY_REGISTRY_PATH);
+  const paths = archcontextNodePaths(cwd);
+  if (paths.length === 0) return sha256(`missing:${CAPABILITY_NODES_DIR}`);
+  return contentRevision(Object.fromEntries(paths.map((path) => [path, sourceHash(cwd, path)])));
+}
+
+/** State-input source paths for the selected capability authority. */
+function capabilityAuthoritySourcePaths(cwd: string, mode: CapabilitySourceMode): string[] {
+  if (mode === 'registry') return [CAPABILITY_REGISTRY_PATH];
+  const paths = archcontextNodePaths(cwd);
+  return paths.length > 0 ? paths : [CAPABILITY_NODES_DIR];
 }
 
 function planStatusForPendingDraft(cwd: string, planPath: string): string {
@@ -277,6 +355,73 @@ function policyDeclaresCapabilityRegistry(policy: WorkflowPolicy): boolean {
   return true;
 }
 
+/**
+ * Load the registry from whichever authority `capability_source` selects. Under
+ * `archcontext` the policy switch itself is the declaration, so a missing nodes
+ * directory or an unreadable node is `invalid` (fail closed), never `absent`.
+ */
+function loadCapabilityRegistry(cwd: string, policy: WorkflowPolicy): CapabilityRegistryResolution {
+  if (capabilitySourceMode(policy) === 'registry') {
+    const text = readText(cwd, CAPABILITY_REGISTRY_PATH);
+    return parseCapabilityRegistry(text && text.length > 0 ? text : null, {
+      declared: policyDeclaresCapabilityRegistry(policy),
+      repoRoot: cwd,
+    });
+  }
+
+  const nodePaths = archcontextNodePaths(cwd);
+  if (nodePaths.length === 0) {
+    return {
+      status: 'invalid',
+      registry: null,
+      diagnostics: [{
+        code: 'REGISTRY_MISSING',
+        path: CAPABILITY_NODES_DIR,
+        message: `capability nodes are missing: ${CAPABILITY_NODES_DIR}`,
+      }],
+    };
+  }
+
+  const files: ArchcontextNodeFile[] = [];
+  for (const path of nodePaths) {
+    const text = readText(cwd, path);
+    if (text === null) {
+      return {
+        status: 'invalid',
+        registry: null,
+        diagnostics: [{
+          code: 'REGISTRY_MISSING',
+          path,
+          message: `capability node is unreadable: ${path}`,
+        }],
+      };
+    }
+    try {
+      files.push({ path, value: parseNodeYaml(text) });
+    } catch (error) {
+      return {
+        status: 'invalid',
+        registry: null,
+        diagnostics: [{
+          code: 'ARCHCONTEXT_NODE_NOT_OBJECT',
+          path,
+          message: `invalid capability node YAML: ${path}: ${(error as Error).message}`,
+        }],
+      };
+    }
+  }
+  return capabilityRegistryFromArchcontextNodes(files, {
+    repoRoot: cwd,
+    isExistingDirectory: (path) => {
+      try {
+        return statSync(repoPath(cwd, path)).isDirectory();
+      } catch {
+        return false;
+      }
+    },
+  });
+}
+
 function capabilityIdsForPaths(
   cwd: string,
   paths: readonly string[],
@@ -290,11 +435,7 @@ function capabilityIdsForPaths(
   // own capability:out-of-repo:<n> reason instead.
   const inRepoPaths = paths.filter((path) => !isCapabilityPathOutsideRepo(path, cwd));
   const outOfRepoPathCount = paths.length - inRepoPaths.length;
-  const text = readText(cwd, CAPABILITY_REGISTRY_PATH);
-  const registry = parseCapabilityRegistry(text && text.length > 0 ? text : null, {
-    declared: policyDeclaresCapabilityRegistry(policy),
-    repoRoot: cwd,
-  });
+  const registry = loadCapabilityRegistry(cwd, policy);
   if (registry.status === 'absent') {
     return { ids: [], registryStatus: 'absent', unmappedPaths: [], malformedEntryCount: 0, outOfRepoPathCount };
   }
@@ -364,6 +505,7 @@ function resolveEffectiveStateUnlocked(
 ): EffectiveState {
   const currentWorktree = safeRealpath(cwd);
   const policy = readWorkflowPolicy(cwd);
+  const capabilitySource = capabilitySourceMode(policy);
   const preferredMarker = readTrimmed(cwd, ACTIVE_PLAN_MARKER);
   const owner = readTrimmed(cwd, ACTIVE_WORKTREE_MARKER);
   const conflictingSources: string[] = [];
@@ -509,7 +651,7 @@ function resolveEffectiveStateUnlocked(
     plan: planPath ? sourceHash(cwd, planPath) : sha256('missing:plan'),
     contract: contractPath ? sourceHash(cwd, contractPath) : sha256('missing:contract'),
     policy: sourceHash(cwd, POLICY_PATH),
-    capability_registry: sourceHash(cwd, CAPABILITY_REGISTRY_PATH),
+    capability_registry: capabilityAuthorityHash(cwd, capabilitySource),
     active_sprint_marker: sourceHash(cwd, ACTIVE_SPRINT_MARKER),
     active_sprint_file: sprintPath ? sourceHash(cwd, sprintPath) : sha256('missing:active-sprint-file'),
     task_identity: sha256(taskId ?? 'missing:task-id'),
@@ -539,7 +681,7 @@ function resolveEffectiveStateUnlocked(
     ACTIVE_PLAN_MARKER,
     ACTIVE_WORKTREE_MARKER,
     POLICY_PATH,
-    CAPABILITY_REGISTRY_PATH,
+    ...capabilityAuthoritySourcePaths(cwd, capabilitySource),
     ...(planPath ? [planPath] : []),
     ...(contractPath ? [contractPath] : []),
     ...(reviewPath ? [reviewPath] : []),

@@ -23,7 +23,7 @@ Authoritative surfaces:
 - Public router: `SKILL.md`, `README.md`, `AGENTS.md`, `CLAUDE.md`.
 - Public command facades: `assets/skill-commands/*/SKILL.md` plus `assets/skill-commands/manifest.json`.
 - Engine: `scripts/inspect-project-state.ts`, `src/core/adoption/`, `src/effects/fs-transaction.ts`, `scripts/create-project-dirs.sh`, `scripts/lib/project-init-lib.sh`, and the [Transactional Adoption Planner](transactional-adoption-planner.md).
-- Contract assets: `assets/workflow-contract.v1.json`, `.ai/harness/workflow-contract.json`, `.ai/harness/policy.json`, `.ai/context/context-map.json`, `.ai/context/capabilities.json`.
+- Contract assets: `assets/workflow-contract.v1.json`, `.ai/harness/workflow-contract.json`, `.ai/harness/policy.json`, `.ai/context/context-map.json`, and the capability authority selected by `.ai/harness/policy.json#context.capability_source` (this repo: `.archcontext/model/nodes/*.yaml`).
 - Runtime harness: `assets/hooks/`, `.ai/hooks/`, user-level host adapters, and ignored `.ai/harness/*` runtime state.
 - MCP sidecar: `src/cli/mcp/`, `src/cli/commands/mcp.ts`, user-owned ignored config/registry under `~/.repo-harness/`, and the [MCP sidecar architecture](modules/runtime-harness/mcp-sidecar.md).
 - Verification: `tests/`, `evals/`, `scripts/check-task-workflow.sh`, `scripts/check-task-sync.sh`, `scripts/check-agent-tooling.sh`, `scripts/ensure-codegraph.sh`.
@@ -75,7 +75,7 @@ Project
 ```
 
 - Architecture owns stable truth: boundaries, snapshots, embedded Mermaid, and optional rendered diagrams.
-- `.ai/context/capabilities.json` owns declared capability prefixes and longest-prefix matching.
+- The capability authority selected by `.ai/harness/policy.json#context.capability_source` owns declared capability prefixes and longest-prefix matching; this repo resolves from `.archcontext/model/nodes/*.yaml`.
 - Local `AGENTS.md` / `CLAUDE.md` contract blocks own agent-facing context projection.
 - `tasks/workstreams/<domain>/<capability>/` owns durable multi-session progress.
 - `tasks/todos.md` owns deferred medium/long-term goals with tradeoff and revisit trigger; current execution slices stay in the active plan's `## Task Breakdown`.
@@ -89,7 +89,7 @@ Project
 
 ## Capability 地图
 
-`.ai/context/capabilities.json` 声明 10 个 capability，分属 5 个 architecture domain。
+`.ai/harness/policy.json#context.capability_source` 选中的 capability 权威声明 10 个 capability，分属 5 个 architecture domain；本仓库的权威是 `.archcontext/model/nodes/*.yaml`。
 下图按 domain 分组，只画在源码里核实过的强依赖边（import 或运行时调用），
 虚线是 verification 的 gate 关系而非代码依赖。
 
@@ -170,7 +170,7 @@ flowchart LR
 | contract-assets -> adoption | `src/cli/commands/init.ts` 导入 `./adoption-plan` 的 `runAdoptionApply` / `runAdoptionPlan` |
 | contract-assets -> hook-adapters | `src/cli/commands/init.ts` 导入 `../installer/install-profile` 的 `PROFILE_COMPONENTS` |
 | contract-assets -> codegraph-readiness | `src/cli/commands/init.ts` 导入 `../tools/codegraph` 的 `configureCodegraph` / `ensureCodegraph` |
-| inspection-migration -> contract-assets | `scripts/lib/project-init-lib.sh` 生成并写入 `.ai/context/capabilities.json` 与模板契约文件 |
+| inspection-migration -> contract-assets | `scripts/lib/project-init-lib.sh` 生成并写入下游 registry 模式的 `.ai/context/capabilities.json` 与模板契约文件（新仓库默认 `capability_source: "registry"`，与本仓库自身的 archcontext 权威无关） |
 | adoption -> contract-assets | `src/core/adoption/source-checkout.ts` 以 `assets/workflow-contract.v1.json` 判定源码 checkout；`src/core/adoption/standard-plan.ts` 指向 `package:assets/templates/helpers` |
 | adoption -> mcp-sidecar | `src/cli/commands/adoption-plan.ts` 导入 `../../effects/repo-registry` 的 `registerRepoHarnessRepo` |
 | hook-adapters -> contract-assets | `src/cli/hook/mutation-observed.ts` 以 `capability-context request` 驱动 context-contract-sync 级联，而不是自带第二份 capability-resolver |
@@ -180,7 +180,7 @@ flowchart LR
 | general-repo-access -> mcp-sidecar | `src/cli/mcp/general-repo-access.ts` 导入同目录的 `./types` / `./paths` / `./audit` / `./redaction` 与 `../../effects/repo-registry` |
 | general-repo-access -> codegraph-readiness | `src/cli/mcp/general-repo-access.ts` 导入 `./codegraph-adapter` 的 `createCodeGraphCliAdapter` |
 
-虚线 gate 边来自 `.ai/context/capabilities.json` 每个 capability 自己声明的 `verification_hints`
+虚线 gate 边来自每个 capability 在 capability 权威里自己声明的 `verification_hints`
 （例如 `tests/cli/adoption-plan.test.ts`、`tests/hook-runtime.test.ts`、`tests/cli/mcp-reader-tools.test.ts`），
 以及 `bun test` 与 `scripts/check-task-workflow.sh --strict` 这两个全仓闸门。
 
@@ -207,7 +207,7 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 
 - 模块文档按 capability 组织，一个 capability 恰好对应 `modules/<domain>/<capability>.md` 一个文件。
 - 事实优先级：实际源码 > 本文与模块文档。本图与表若与 `src/`、`scripts/`、`assets/` 的现状冲突，以源码为准并提一次 architecture drift request。
-- 前缀权威在 `.ai/context/capabilities.json`，本表「主前缀」只取每个 capability 前缀列表的首项作为定位锚点，不是完整边界。
+- 前缀权威在 `.ai/harness/policy.json#context.capability_source` 选中的 capability 权威（本仓库为 `.archcontext/model/nodes/*.yaml`），本表「主前缀」只取每个 capability 前缀列表的首项作为定位锚点，不是完整边界。
 - Verified against: `main@13686d8d`（2026-08-08）。
 
 ## Architecture Drift Flow

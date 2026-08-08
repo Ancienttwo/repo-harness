@@ -28,6 +28,54 @@ normalize_slug() {
 
 ACTIVE_PLAN_MARKER=".ai/harness/active-plan"
 
+# .ai/harness/policy.json#context.capability_source selects the single
+# capability authority: "registry" owns .ai/context/capabilities.json,
+# "archcontext" owns .archcontext/model/nodes. Without a JSON runtime this
+# reports the registry default, which only ever suppresses a seed.
+capability_source() {
+  local policy_file=".ai/harness/policy.json"
+  local runtime=""
+
+  [[ -f "$policy_file" ]] || { printf 'registry'; return 0; }
+  for candidate in node bun python3; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+      runtime="$candidate"
+      break
+    fi
+  done
+  if [[ -z "$runtime" ]]; then
+    printf 'registry'
+    return 0
+  fi
+
+  case "$runtime" in
+    python3)
+      "$runtime" - "$policy_file" <<'PY_EOF'
+import json
+import sys
+
+try:
+    policy = json.load(open(sys.argv[1], "r", encoding="utf-8"))
+    value = policy.get("context", {}).get("capability_source")
+except Exception:
+    value = None
+print(value if isinstance(value, str) and value else "registry", end="")
+PY_EOF
+      ;;
+    *)
+      "$runtime" -e '
+const fs = require("fs");
+let value;
+try {
+  const policy = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+  value = policy && policy.context ? policy.context.capability_source : undefined;
+} catch {}
+process.stdout.write(typeof value === "string" && value ? value : "registry");
+' "$policy_file"
+      ;;
+  esac
+}
+
 read_active_plan_marker() {
   local marker_file="$1"
   local marker_plan
@@ -975,7 +1023,10 @@ HANDOFF_EOF
     : > "tasks/workstreams/.gitkeep"
   fi
 
-  if [[ ! -f ".ai/context/capabilities.json" ]]; then
+  # Seeding the JSON registry into an archcontext-authority repo would
+  # reinstate the retired second authority, so the capability_source selector
+  # gates the seed. Registry-mode repos (the default) are unchanged.
+  if [[ "$(capability_source)" == "registry" && ! -f ".ai/context/capabilities.json" ]]; then
     cat > ".ai/context/capabilities.json" <<'CAPABILITIES_EOF'
 {
   "version": 1,

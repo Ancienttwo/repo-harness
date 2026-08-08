@@ -25,12 +25,19 @@ emit_existing_dirs() {
   done | sort -u
 }
 
-if [[ -f "$registry_file" ]]; then
-  if command -v bun >/dev/null 2>&1 && [[ -f "$repo/scripts/capability-resolver.ts" ]]; then
-    (cd "$repo" && bun scripts/capability-resolver.ts list --format prefixes 2>/dev/null || true) | emit_existing_dirs
+# The resolver reads whichever capability authority
+# .ai/harness/policy.json#context.capability_source selects, so it is tried
+# before the registry file is looked at. The direct JSON read below stays as the
+# no-Bun path for registry-mode repos only.
+if command -v bun >/dev/null 2>&1 && [[ -f "$repo/scripts/capability-resolver.ts" ]]; then
+  resolver_prefixes="$(cd "$repo" && bun scripts/capability-resolver.ts list --format prefixes 2>/dev/null || true)"
+  if [[ -n "$resolver_prefixes" ]]; then
+    printf '%s\n' "$resolver_prefixes" | emit_existing_dirs
     exit 0
   fi
+fi
 
+if [[ -f "$registry_file" ]]; then
   if command -v node >/dev/null 2>&1; then
     node - "$registry_file" <<'JS_EOF' | emit_existing_dirs
 const fs = require("fs");

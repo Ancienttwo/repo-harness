@@ -1,0 +1,15 @@
+schemaVersion: archcontext.node/v1
+id: capability.public-surface.action-commands
+kind: capability
+status: active
+source:
+  include:
+    - "assets/skill-commands/**"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun test tests/action-command-skills.test.ts"
+    - "bun run benchmark:skills --dry-run"

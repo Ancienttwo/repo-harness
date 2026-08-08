@@ -1,5 +1,7 @@
 # workflow-engine/contract-assets 架构文档
 
+<!-- BEGIN archctx:intro -->
+
 > 状态：基于 `main` 工作树的架构复核稿。
 > Verified against: main@13686d8d（2026-08-08）
 > **Capability ID**: `workflow-engine-contract-assets`
@@ -8,6 +10,8 @@
 > **Architecture Module**: 本文件
 > **Workstream Dir**: `tasks/workstreams/workflow-engine/contract-assets`
 > 事实优先级：**实际源码 > 本文 > 历史 closeout 段落**。第 1–3 节只描述当前 HEAD 已实现且已接线的现状；任何尚未落地的形态必须显式标注为「目标设计」。第 4 节是 append-only 的历史记录，其中的数值与命名可能已被后续 slice 取代——冲突时以第 1–3 节和源码为准。
+
+<!-- END archctx:intro -->
 
 本文刻意区分四种状态，避免把规划画成现状：
 
@@ -19,6 +23,8 @@
 | **目标设计** | 只存在于计划或历史 closeout 的意图，尚未在 HEAD 落地 |
 
 ---
+
+<!-- BEGIN archctx:p1 -->
 
 ## 1. P1：能力架构地图
 
@@ -192,6 +198,10 @@ done
 
 ---
 
+<!-- END archctx:p1 -->
+
+<!-- BEGIN archctx:p2 -->
+
 ## 2. P2：端到端数据流
 
 ### 2.1 主路径：`repo-harness init --repo <target>` 把契约资产落进目标仓库
@@ -268,6 +278,8 @@ sequenceDiagram
 - **install profile 非法**：`global-runtime` 先读 installed-profile 权威并校验 profile→components 投影，再触发 runtime projection；非法状态在 package/adapter/skill/hook 变更之前停住。
 
 ---
+
+<!-- END archctx:p2 -->
 
 ## 3. P3：设计决策与不变量
 

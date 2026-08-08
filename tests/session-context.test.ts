@@ -393,9 +393,11 @@ describe("sessionStartMainContent — capability/architecture queues", () => {
       );
       const content = sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now());
       expect(content).toContain("# Architecture Queue");
-      expect(content).toContain("1 capabilities have pending architecture drift");
+      expect(content).toContain("Checkpoint due: 1 capabilities have pending architecture drift");
       expect(content).toMatch(/oldest \d+d/);
       expect(content).toContain("repo-harness run architecture-queue status");
+      // Thinned to a checkpoint nudge: no fenced command block.
+      expect(content).not.toContain("```bash\nrepo-harness run architecture-queue status");
     });
   });
 });

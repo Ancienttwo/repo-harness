@@ -1,6 +1,6 @@
 # Architecture Domain: Runtime Harness
 
-> **Source**: `.ai/context/capabilities.json`
+> **Source**: `repo-harness run capability-resolver`
 > **Owner**: Hook implementation, user-level adapter settings, runtime event files, handoff state, and the local MCP sidecar.
 
 ## Purpose

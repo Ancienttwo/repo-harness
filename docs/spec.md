@@ -127,9 +127,10 @@ providers, adoption, substantive installation, or benchmark production.
 - **Workstream**: A durable, capability-scoped progress record under
   `tasks/workstreams/<domain>/<capability>/` that carries status across
   sessions and plans instead of living only in chat memory.
-- **Capability**: A functional block registered in
-  `.ai/context/capabilities.json` and resolved by longest-prefix path match,
-  owning local agent context and ownership boundaries for the files under it.
+- **Capability**: A functional block registered in the capability authority
+  selected by `.ai/harness/policy.json#context.capability_source` and resolved
+  by longest-prefix path match, owning local agent context and ownership
+  boundaries for the files under it.
 - **Task profile**: The declared execution shape of a contract (for example
   `code-change`) that determines which verification and delegation rules
   apply to that task.

@@ -753,14 +753,14 @@ function architectureQueuePendingContext(repoRoot: string, nowMs: number): strin
       ? `${Math.floor((nowEpochSec - oldestEpochSec) / 86400)}d`
       : 'unknown';
 
+  // Checkpoint nudge, not a manual documentation obligation: architecture
+  // truth projection belongs to archcontext (docs/researches/
+  // 20260808-archctx-projection-handoff.md §4), so this card only reports that
+  // a checkpoint is due and names the command to inspect it.
   return [
     '# Architecture Queue',
     '',
-    `${pendingCount} capabilities have pending architecture drift (oldest ${oldestDays}). Run:`,
-    '',
-    '```bash',
-    'repo-harness run architecture-queue status',
-    '```',
+    `Checkpoint due: ${pendingCount} capabilities have pending architecture drift (oldest ${oldestDays}) -- \`repo-harness run architecture-queue status\`.`,
   ].join('\n');
 }
 

@@ -1,5 +1,7 @@
 # runtime-harness/mcp-sidecar 架构文档
 
+<!-- BEGIN archctx:intro -->
+
 > 状态：基于 `main` 工作树的 by-capability 架构复核稿。
 > Verified against: main@13686d8d（2026-08-08）
 > **Capability ID**: `runtime-harness-mcp-sidecar`
@@ -7,6 +9,8 @@
 > **Local Contracts**: `AGENTS.md`、`CLAUDE.md`
 > **Verification hints**（capability 注册表原值）：`bun test tests/cli/mcp*.test.ts`、`bun run check:type`、`repo-harness mcp doctor --repo . --live`
 > 事实优先级：**实际源码 > 本文 > 任何叙述性文档**。本文只画已实现且已接线的现状；任何尚未落地的形态必须显式标注为「目标设计」。若本文与源码冲突，以源码为准并回改本文。
+
+<!-- END archctx:intro -->
 
 ## 0. 阅读约定
 
@@ -19,6 +23,8 @@
 | **外部操作面** | Cloudflare、DNS、ChatGPT app、service manager；repo-harness 引导与探测，但不改写 |
 
 本 capability 当前只有一个 breaking 的近期形态变化：`4618a244 feat(mcp)!: retire repo-scope config, single user-level storage authority (#167)`。repo-scope 的 `<repo>/.repo-harness/*.json` 已经不是配置或凭证读取源，只作为**迁移门禁要命名和删除的对象**存在（`src/cli/mcp/auth.ts:93`、`src/cli/mcp/auth.ts:114`）。
+
+<!-- BEGIN archctx:p1 -->
 
 ## 1. P1：能力架构地图
 
@@ -184,6 +190,10 @@ find tests/cli -name 'mcp*.test.ts' | xargs wc -l | tail -1
 
 显式 out of scope：Cloudflare tunnel、DNS、ChatGPT connector 应用状态、launchd/systemd。`doctor --live` 只探测不改写。
 
+<!-- END archctx:p1 -->
+
+<!-- BEGIN archctx:p2 -->
+
 ## 2. P2：端到端数据流
 
 ### 2.1 coding profile 的完整握手（已实现、已接线）
@@ -264,6 +274,8 @@ sequenceDiagram
 | CodeGraph 刷新失败 | `coding-tools.ts:203` | 变更保留，写 dead-letter 索引事件，不回滚 mutation |
 
 未被承诺的能力：Bun runtime 下不提供 PTY 与终端 resize；stdin、轮询、SIGINT、进程树回收是支持面（`process-sessions.ts` 的 pipe-only 实现）。
+
+<!-- END archctx:p2 -->
 
 ## 3. P3：设计决策与不变量
 

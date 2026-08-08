@@ -1,0 +1,33 @@
+schemaVersion: archcontext.node/v1
+id: capability.workflow-engine.contract-assets
+kind: capability
+status: active
+source:
+  include:
+    - "assets/workflow-contract.v1.json"
+    - ".ai/harness/workflow-contract.json"
+    - ".ai/harness/policy.json"
+    - ".ai/context/context-map.json"
+    - ".archcontext/model/nodes/**"
+    - "scripts/capability-resolver.ts"
+    - "scripts/capability-config.ts"
+    - "scripts/contract-run.ts"
+    - "scripts/contract-worktree.sh"
+    - "scripts/archive-workflow.sh"
+    - "scripts/merge-gate.ts"
+    - "scripts/ship-worktrees.sh"
+    - "src/cli/commands/init.ts"
+    - "src/cli/commands/global-runtime.ts"
+    - "src/cli/commands/capability-context.ts"
+    - "src/cli/runtime/helper-runner.ts"
+    - "assets/templates/**"
+    - "assets/reference-configs/**"
+    - "docs/reference-configs/**"
+extensions:
+  contractFiles:
+    agents: "assets/AGENTS.md"
+    claude: "assets/CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun test tests/workflow-contract.test.ts tests/scaffold-parity.test.ts"
+    - "bun scripts/capability-resolver.ts validate --format text"

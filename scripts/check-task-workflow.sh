@@ -106,6 +106,51 @@ if (Array.isArray(value)) {
   esac
 }
 
+CAPABILITY_REGISTRY_FILE=".ai/context/capabilities.json"
+CAPABILITY_NODES_DIR=".archcontext/model/nodes"
+
+# The workflow contract lists the capability artifacts of every supported
+# authority; .ai/harness/policy.json#context.capability_source selects which one
+# this repo actually owns. Repos on the registry default are unaffected.
+capability_source() {
+  local runtime
+  local policy_file=".ai/harness/policy.json"
+
+  [[ -f "$policy_file" ]] || { printf 'registry'; return 0; }
+  runtime="$(resolve_json_runtime || true)"
+  if [[ -z "$runtime" ]]; then
+    printf 'registry'
+    return 0
+  fi
+
+  case "$runtime" in
+    python3)
+      "$runtime" - "$policy_file" <<'PY_EOF'
+import json
+import sys
+
+try:
+    policy = json.load(open(sys.argv[1], "r", encoding="utf-8"))
+    value = policy.get("context", {}).get("capability_source")
+except Exception:
+    value = None
+print(value if isinstance(value, str) and value else "registry", end="")
+PY_EOF
+      ;;
+    *)
+      "$runtime" -e '
+const fs = require("fs");
+let value;
+try {
+  const policy = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+  value = policy && policy.context ? policy.context.capability_source : undefined;
+} catch {}
+process.stdout.write(typeof value === "string" && value ? value : "registry");
+' "$policy_file"
+      ;;
+  esac
+}
+
 ACTIVE_PLAN_MARKER=".ai/harness/active-plan"
 ACTIVE_WORKTREE_MARKER=".ai/harness/active-worktree"
 
@@ -1057,9 +1102,17 @@ else
       check_required_dir "$rel_dir"
     done < <(contract_query_lines "artifacts.requiredDirectories")
 
+    active_capability_source="$(capability_source)"
+    if [[ "$active_capability_source" == "archcontext" ]]; then
+      check_required_dir "$CAPABILITY_NODES_DIR"
+    fi
+
     while IFS= read -r rel_file; do
       [[ -z "$rel_file" ]] && continue
       if [[ "${helper_source:-package}" == "package" ]] && is_contract_helper_path "$rel_file"; then
+        continue
+      fi
+      if [[ "$rel_file" == "$CAPABILITY_REGISTRY_FILE" && "$active_capability_source" != "registry" ]]; then
         continue
       fi
       check_required_file "$rel_file"

@@ -1,6 +1,6 @@
 # Architecture Domain: Workflow Engine
 
-> **Source**: `.ai/context/capabilities.json`
+> **Source**: `repo-harness run capability-resolver`
 > **Owner**: Inspection, migration, contract, template, and policy generation.
 
 ## Purpose

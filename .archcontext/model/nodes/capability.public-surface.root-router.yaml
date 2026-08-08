@@ -1,0 +1,19 @@
+schemaVersion: archcontext.node/v1
+id: capability.public-surface.root-router
+kind: capability
+status: active
+source:
+  include:
+    - "SKILL.md"
+    - "README.md"
+    - "AGENTS.md"
+    - "CLAUDE.md"
+    - "docs/spec.md"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun scripts/inspect-project-state.ts --repo . --format text"
+    - "bun src/cli/index.ts init --repo . --dry-run"

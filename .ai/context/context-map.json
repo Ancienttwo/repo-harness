@@ -18,7 +18,7 @@
     "tasks/current.md",
     "tasks/todos.md",
     "tasks/lessons.md",
-    ".ai/context/capabilities.json",
+    ".archcontext/model/nodes",
     ".ai/harness/policy.json"
   ],
   "discoverable_contexts": [

@@ -453,16 +453,23 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.context.capability_registry_file).toBe(".ai/context/capabilities.json");
       expect(policy.context.capability_resolver).toBe("repo-harness run capability-resolver");
       expect(policy.context.capability_config).toBe("repo-harness run capability-config");
-      // All four independently hardcoded policy seeders must agree on the capability
+      // All three independently hardcoded policy seeders must agree on the capability
       // authority switch; downstream repos stay on the JSON registry by default.
       // Seeders: scripts/lib/project-init-lib.sh (bash `policy` above),
-      // src/core/adoption/standard-plan.ts (`tsDefaultPolicy`),
-      // scripts/ensure-task-workflow.sh (its embedded POLICY_EOF fallback seed),
-      // and this repo's own tracked .ai/harness/policy.json.
+      // src/core/adoption/standard-plan.ts (`tsDefaultPolicy`), and
+      // scripts/ensure-task-workflow.sh (its embedded POLICY_EOF fallback seed).
       const fallbackSeedPolicy = ensureTaskWorkflowSeedPolicy();
       const repoPolicy = JSON.parse(readFileSync(join(ROOT, ".ai/harness/policy.json"), "utf-8"));
-      for (const seeded of [policy, tsDefaultPolicy, fallbackSeedPolicy, repoPolicy]) {
+      for (const seeded of [policy, tsDefaultPolicy, fallbackSeedPolicy]) {
         expect(seeded.context.capability_source).toBe("registry");
+      }
+      // This repo cut its own authority over to archcontext nodes (Stage 2); the
+      // seeded default above is what a newly generated repo gets, not what this repo
+      // runs on. Both shapes share the one selector and the one rule string.
+      expect(repoPolicy.context.capability_source).toBe("archcontext");
+      expect(existsSync(join(ROOT, ".archcontext/model/nodes"))).toBe(true);
+      expect(existsSync(join(ROOT, ".ai/context/capabilities.json"))).toBe(false);
+      for (const seeded of [policy, tsDefaultPolicy, fallbackSeedPolicy, repoPolicy]) {
         expect(seeded.context.capability_source_rule).toBe(tsDefaultPolicy.context.capability_source_rule);
         expect(seeded.context.capability_source_rule).toContain("no dual-read and no fallback");
       }

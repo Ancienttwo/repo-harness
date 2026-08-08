@@ -1,5 +1,7 @@
 # workflow-engine/inspection-migration 架构文档
 
+<!-- BEGIN archctx:intro -->
+
 > 状态：基于 `main` 工作树的 by-capability 架构复核稿。
 > Verified against: main@13686d8d（2026-08-08）
 > **Capability ID**: `workflow-engine-inspection-migration`
@@ -7,6 +9,8 @@
 > **Local Contracts**: `scripts/AGENTS.md`、`scripts/CLAUDE.md`
 > **Workstreams**: `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`、`.../20260712-inspection-migration.md`、`.../agent-fleet-specialists.md`
 > **事实优先级**：实际源码 > 本文 > 历史 closeout 段落。本文只画已实现现状；任何尚未落地的东西必须显式标注为**目标设计**，否则按"已实现、已接线"理解。
+
+<!-- END archctx:intro -->
 
 ## 0. 阅读约定
 
@@ -18,6 +22,8 @@
 | **目标设计** | 尚未落地的形态 |
 
 一条边界纪律先说清楚：`src/core/adoption/` 与 `src/effects/fs-transaction.ts` 已经不在本能力的 prefixes 里，它们属于 `public-surface-adoption`（见 `.ai/context/capabilities.json`）。本能力只负责**判定状态**与**shell 侧脚手架**，不拥有 TS 迁移事务本体。
+
+<!-- BEGIN archctx:p1 -->
 
 ## 1. P1：能力架构地图
 
@@ -127,6 +133,10 @@ wc -l tests/migration-script.test.ts tests/create-project-dirs.runtime.test.ts t
 - helper resolution 不得扫目录、猜扩展名、查 home 目录或走 legacy env alias；只认契约 inventory。
 - `create-project-dirs.sh` 与 `init-project.sh` **不是** public command（`assets/skill-commands/manifest.json#nonPublicInternalSteps`），不得被包装成对外命令。
 
+<!-- END archctx:p1 -->
+
+<!-- BEGIN archctx:p2 -->
+
 ## 2. P2：端到端数据流
 
 ### 2.1 主路径：`repo-harness init` 中的 inspector 握手
@@ -222,6 +232,8 @@ sequenceDiagram
 - **policy 缺失或非 auto**：`pi_maybe_install_agent_fleet` 在没有 `.ai/harness/policy.json`、`install_mode != auto-install-on-init`、dry-run 模式、或 installer 脚本解析不到时，一律只打印引导语并 `return 0`；即使真的执行安装失败也只是 `[warn]` 非致命。全局 agent 目录在 dry-run 下绝不被写。
 - **JSON 解析容错**：inspector 的 `jsonPathExists` 对损坏的 policy JSON 返回 `false`，从而产出 `policy-missing-upgrade-strategy` 信号——把"读不懂"当成"需要修"，而不是当成"没问题"。
 - **Bash 严格模式差异**：`create-project-dirs.sh` 是 `set -euo pipefail`，`init-project.sh` 只有 `set -e`。后者容忍未定义变量，这是一处真实的不对称。
+
+<!-- END archctx:p2 -->
 
 ## 3. P3：设计决策与不变量
 

@@ -1,5 +1,7 @@
 # runtime-harness/hook-adapters 架构文档
 
+<!-- BEGIN archctx:intro -->
+
 > 状态：基于 `main` 工作树的 by-capability 架构复核稿。
 > Verified against: main@13686d8d（2026-08-08）
 > Capability ID: `runtime-harness-hook-adapters`
@@ -7,6 +9,8 @@
 > Local Contracts: `assets/hooks/AGENTS.md`、`assets/hooks/CLAUDE.md`（capabilities.json `contract_files`）
 > Workstream: `tasks/workstreams/runtime-harness/hook-adapters/`
 > 事实优先级：实际源码（`src/cli/hook/**`、`src/cli/installer/**`）> 本文 > 上层 `docs/architecture/index.md` 叙述 > 历史 plan/notes。本文只画**已实现、已接线**的现状；任何尚未接线的部分必须显式标注为**目标设计**，未标注即代表当前源码可复核。
+
+<!-- END archctx:intro -->
 
 ## 0. 阅读约定
 
@@ -25,6 +29,8 @@ host adapter entry → repo-harness-hook → runtime.ts → ROUTES → handler-r
 ```
 
 `ROUTES`（`src/cli/hook/route-registry.ts:66`）是 `(event, routeId, matcher)` 公开契约；每条 route 恰好绑定一个 `handler`，没有 `scripts` 数组。adapter 里的 shell 命令只是调用信封，不承载任何 hook 逻辑。
+
+<!-- BEGIN archctx:p1 -->
 
 ## 1. P1：能力架构地图
 
@@ -192,6 +198,10 @@ ls tests/ | grep -icE 'hook|route|prompt|subagent|mutation|stop|trace|session-co
 - handler 不得直接写 `process.stdout` / `process.exit`；fd 归 `runtime.ts:hostOutput`。唯一的受控例外是 `mutation-observed.ts:834` 的 `warnStderr`，因为 Stop 时的 journal 清理发生在 host output 成型之前，注释已就地记录该理由。
 - `.ai/hooks/**` 不得成为第二权威：它是 `assets/hooks` 的投影，改动必须回到 canonical root。
 - `standard-plan.ts`（`src/core/adoption/`）与 `fs-transaction.ts`（`src/effects/`）**不属于本 capability**（归 `public-surface-adoption`）。它们只在一次性迁移事务中出现，host-event dispatch 全程不查询它们。
+
+<!-- END archctx:p1 -->
+
+<!-- BEGIN archctx:p2 -->
 
 ## 2. P2：端到端数据流
 
@@ -365,6 +375,8 @@ install.ts → ALL_TARGETS → target.install(loc, {profile})
 - `opaque_steps: []`。
 
 只有 `runtime_entries`、`child_processes`、`elapsed_ms` 是 `ALWAYS_COMPLETE`（`event-telemetry.ts:29`）。其余 metric 必须由 handler 通过注入的 observer 显式上报后才进 `complete_metrics`：当前只有 `mutation-observed`（`runtime.ts:445`）和 `stop`（`runtime.ts:455`）在未抛异常时标记各自的写入集。**未标记 complete 的零值必须按"不可用"读，不能当作"确认为零"。** 注意 Stop 路径的 `child_processes: 0` 只描述 route dispatch 形状，不涵盖 `consumePendingPostEditEvents` 内部的 `spawnSync` 级联。
+
+<!-- END archctx:p2 -->
 
 ## 3. P3：设计决策与不变量
 

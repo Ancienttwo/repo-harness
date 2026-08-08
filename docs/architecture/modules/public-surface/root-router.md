@@ -1,5 +1,7 @@
 # public-surface/root-router 架构文档
 
+<!-- BEGIN archctx:intro -->
+
 > 状态：基于 `main` 工作树的 by-capability 架构复核稿。
 > Verified against: main@13686d8d（2026-08-08）
 > **Capability ID**: `public-surface-root-router`
@@ -7,6 +9,8 @@
 > **Local Contracts**: `AGENTS.md`、`CLAUDE.md`
 > **Workstream（声明值）**: `tasks/workstreams/public-surface/root-router` —— `.ai/context/capabilities.json` 已登记，但当前工作树上**不存在**该目录（见 §3.4）。
 > 事实优先级：实际源码与测试断言 > 本文 > 本 capability 内的 prose。本文只画**已实现**现状；任何尚未落地的形态必须显式标注为**目标设计**，未标注即视为当前源码可复验的事实。
+
+<!-- END archctx:intro -->
 
 ## 0. 阅读约定
 
@@ -18,6 +22,8 @@
 | **目标设计** | 尚未成为源码或文件的规划形态 |
 
 这个 capability 的特殊性：它的五个 prefix 全部是 Markdown，**没有一行属于自己的 TypeScript**。它的"运行时"是模型的上下文窗口——每个 host session 都会先加载 `SKILL.md`，再决定要不要往下走。因此它的强制机制不在实现里，而在 `tests/` 的断言与 `assets/skill-commands/manifest.json` 的投影矩阵里。
+
+<!-- BEGIN archctx:p1 -->
 
 ## 1. P1：能力架构地图
 
@@ -144,6 +150,10 @@ diff AGENTS.md CLAUDE.md && echo "AGENTS==CLAUDE identical"
 - 唯一的机器入边是 host 的 skill 加载器（`~/.claude/skills`、`~/.codex/skills`），由 `repo-harness install` 的 host-adapters 组件投影；`installed-copy-sync` 保证源目录到两个 host 的同步。
 - 唯一的人入边是仓库首页 `README.md`。
 
+<!-- END archctx:p1 -->
+
+<!-- BEGIN archctx:p2 -->
+
 ## 2. P2：端到端数据流
 
 ### 2.1 主路径：一次 setup 请求从 host session 走到落盘状态
@@ -213,6 +223,8 @@ sequenceDiagram
 - **跨作用域写入**：repo-scoped 模式禁止写 `HOME`，user-level 只能走 `repo-harness update`（`repo-harness-setup/SKILL.md:29`）。
 - **路由器超预算**：body 越过 2048 B 或文件超 80 行，`bun test` 立即红——这是本 capability 唯一会让 CI 变红的自有失败模式。
 - **越权动作**：`SKILL.md:27` 声明 scope / worktree ownership / secrets / destructive commands / high-risk paths / checks freshness / review fingerprints 全部 deterministic 且 fail closed，profile override 只能**抬高**风险地板，不能降低。
+
+<!-- END archctx:p2 -->
 
 ## 3. P3：设计决策与不变量
 

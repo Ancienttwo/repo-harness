@@ -1,6 +1,6 @@
 # Architecture Domain: Public Surface
 
-> **Source**: `.ai/context/capabilities.json`
+> **Source**: `repo-harness run capability-resolver`
 > **Owner**: Root router and command facade docs.
 
 ## Purpose

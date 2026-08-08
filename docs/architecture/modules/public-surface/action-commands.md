@@ -1,5 +1,7 @@
 # public-surface/action-commands 架构文档
 
+<!-- BEGIN archctx:intro -->
+
 > 状态：基于 `main` 工作树的 by-capability 架构复核稿。
 > Verified against: main@13686d8d（2026-08-08）
 > Capability ID: `public-surface-action-commands`
@@ -7,6 +9,8 @@
 > Local Contracts: `assets/skill-commands/CLAUDE.md`、`assets/skill-commands/AGENTS.md`（两份 byte-identical）
 > Verification hints（来自 `.ai/context/capabilities.json`）：`bun test tests/action-command-skills.test.ts`、`bun run benchmark:skills --dry-run`
 > 事实优先级：实际源码（`assets/skill-commands/**` 的真实文件 + 消费它的 `src/core/skill-surface/catalog.ts`、`scripts/skill-surface-select.ts`、`scripts/sync-codex-installed-copies.sh`）> 本文 > 任何计划/PRD 描述。本文只画已实现现状；任何尚未落地的形状必须显式标注为**目标设计**。
+
+<!-- END archctx:intro -->
 
 ## 0. 阅读约定
 
@@ -17,6 +21,8 @@
 | **目标设计** | 只存在于计划或提案，尚未成为文件或运行期行为 |
 
 本 capability 的物理边界只有 `assets/skill-commands/`。它是**数据 + prose**，不含任何可执行代码：`manifest.json` 是 runtime discovery authority，三个 `SKILL.md` 是 facade prose，`references/deploy-readiness.md` 是 progressive-load 参考页。执行权威全部在边界之外的 `repo-harness` CLI、`scripts/`、hooks 与 contract files 里。
+
+<!-- BEGIN archctx:p1 -->
 
 ## 1. P1：能力架构地图
 
@@ -159,6 +165,10 @@ wc -l tests/action-command-skills.test.ts tests/skill-surface/*.ts tests/install
 
 `repo-harness` router 不在 facade 投影里，因为它由 `sync-codex-installed-copies.sh:408-423` 无条件同步到两个 host；`repo-harness-setup`（`discoverability: "cli-reference"`）与 `repo-harness-chatgpt`（`"explicit-setup"`）的 `profiles` 为空，永远不被任何 profile 隐含。
 
+<!-- END archctx:p1 -->
+
+<!-- BEGIN archctx:p2 -->
+
 ## 2. P2：端到端数据流
 
 ### 2.1 主路径：manifest 条目 → 用户 host 上真实存在的 skill 目录
@@ -264,6 +274,8 @@ sequenceDiagram
 | `INSTALL_PROFILE` 不在词表 | sync 脚本 L35-41 | exit 2 |
 | facade prose 层面：advisory 工具挂起 / 检查被跳过 | check SKILL.md:38、44 | 必须报告为 unavailable，不得当作通过 |
 | facade prose 层面：目标仓库根缺 `## Required Checks` | check SKILL.md:14 | 作为第一条阻塞发现报告，禁止替换成默认清单 |
+
+<!-- END archctx:p2 -->
 
 ## 3. P3：设计决策与不变量
 
