@@ -1,6 +1,6 @@
 # Plan: Fix global-runtime commandEnv single-key record on the npx path
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260808-0924
 > **Slug**: global-runtime-env-basedrop
 > **Planning Source**: repo-harness-plan
