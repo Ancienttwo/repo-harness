@@ -111,11 +111,13 @@ export function buildRecommendation(findings: readonly CrossReviewFinding[]): st
 // code; anything else with a nonzero exit stays `provider_nonzero`.
 const AUTH_FAILURE_SIGNAL_PATTERNS: readonly RegExp[] = [
   /not\s+authenticated/i,
+  /not\s+logged\s+in/i,
   /unauthorized/i,
   /\b401\b/,
   /please\s+(?:log|sign)\s+in/i,
   /run\s+[`'"]?claude\s+login/i,
   /run\s+[`'"]?codex\s+login/i,
+  /run\s+\/login/i,
   /invalid\s+api\s+key/i,
   /authentication\s+failed/i,
   /no\s+credentials\s+found/i,

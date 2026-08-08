@@ -15,6 +15,7 @@ import { runProcess } from "../process-runner";
 import {
   buildRecommendation,
   classifyCrossReviewOutcome,
+  matchesAuthFailureSignal,
   parseFindings,
   selectRecoveredTranscript,
   toClaudeProjectKey,
@@ -295,6 +296,7 @@ export function runCrossReview(input: RunCrossReviewInput): CrossReviewResult {
       "-p", prompt,
       "--model", "fable",
       "--output-format", "text",
+      "--safe-mode",
       "--disable-slash-commands",
       "--allowedTools", "Read,Grep,Glob",
       "--disallowedTools", "Bash,Edit,Write",
@@ -313,14 +315,14 @@ export function runCrossReview(input: RunCrossReviewInput): CrossReviewResult {
   });
 
   // claude-mode-only retry: exactly one attempt on opus when the fable route
-  // failed with a nonzero, non-timeout exit and no stdout (mirrors
-  // repo-harness-cross-review's claude-mode Step 2 fable->opus fallback).
+  // failed with a nonzero, non-timeout, non-auth exit. Provider capacity
+  // errors may be written to stdout, so stdout presence is not success.
   // Never a loop, never a fallback to the other provider.
   if (
     input.provider === "claude" &&
     !invocation.timedOut &&
     invocation.status !== 0 &&
-    invocation.stdout.trim() === ""
+    !matchesAuthFailureSignal([invocation.stdout, invocation.stderr, invocation.error].join("\n"))
   ) {
     const retryArgs = withModel(args, "opus");
     invocation = runProcess(command, retryArgs, {

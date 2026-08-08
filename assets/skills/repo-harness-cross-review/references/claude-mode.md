@@ -1,17 +1,21 @@
 # Claude provider mode
 
 Runs the Claude Code CLI (`claude -p`) as a read-only reviewer. Claude is
-given only `Read,Grep,Glob` (no `Bash`/`Edit`/`Write`), so it cannot edit
-your code; the review scope's diff text is embedded directly in the prompt
-since Claude has no Bash access to inspect the repo itself.
+started with `--safe-mode` so host hooks, plugins, MCP servers, and repository
+instructions cannot mutate or block the review process while the normal OAuth
+credential remains available. It is given only `Read,Grep,Glob` (no
+`Bash`/`Edit`/`Write`), so it cannot edit your code; the review scope's diff
+text is embedded directly in the prompt since Claude has no Bash access to
+inspect the repo itself.
 
 ## Model and timeout
 
 - Pinned to the `fable` alias so the external opinion does not silently
   follow the host's default model.
-- If the fable route fails (nonzero exit, no output, and it was not a
-  timeout), retries exactly once on `opus` -- one fallback step, never a
-  loop, and never a fallback to a different provider.
+- If the fable route fails with a nonzero exit that is neither a timeout nor
+  an auth failure, retries exactly once on `opus` -- one fallback step, never
+  a loop, and never a fallback to a different provider. Capacity errors may
+  be emitted on stdout and are still failures, not review transcripts.
 - Default budget: 330 seconds.
 
 ## Transcript recovery

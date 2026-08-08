@@ -58,7 +58,14 @@ function initRepo(): string {
 // outcome case. Never invokes anything real.
 const FIXTURE_PROVIDER_LINES = [
   "#!/bin/sh",
+  'if [ -n "${CROSS_REVIEW_ARGS_FILE:-}" ]; then printf "%s\\n" "$@" > "$CROSS_REVIEW_ARGS_FILE"; fi',
   'mode="${CROSS_REVIEW_FIXTURE_MODE:-success}"',
+  'if [ "$mode" = "fable-limit" ]; then',
+  '  case " $* " in',
+  '    *" --model fable "*) echo "You have reached your Fable limit."; exit 1 ;;',
+  '    *) echo "[P2] reviewed on opus after bounded fallback."; exit 0 ;;',
+  '  esac',
+  'fi',
   'case "$mode" in',
   "  success)",
   '    echo "[P2] minor: consider renaming this helper for clarity."',
@@ -381,14 +388,30 @@ describe("runCrossReview (claude mode: transcript recovery)", () => {
   test("claude mode success embeds diff text without crashing on a populated scope", () => {
     withFixture((repo, provider) => {
       writeFileSync(join(repo, "untracked.txt"), "new file\n");
+      const argsFile = join(repo, "provider-args.txt");
       const result = runCrossReview({
         repoRoot: repo,
         provider: "claude",
         providerCommand: provider,
         timeoutMs: 5000,
-        env: { ...process.env, CROSS_REVIEW_FIXTURE_MODE: "success" },
+        env: { ...process.env, CROSS_REVIEW_FIXTURE_MODE: "success", CROSS_REVIEW_ARGS_FILE: argsFile },
       });
       expect(result.status).toBe("ok");
+      expect(readFileSync(argsFile, "utf8").split("\n")).toContain("--safe-mode");
+    });
+  }, 30_000);
+
+  test("claude mode retries once on opus when fable returns a capacity error on stdout", () => {
+    withFixture((repo, provider) => {
+      const result = runCrossReview({
+        repoRoot: repo,
+        provider: "claude",
+        providerCommand: provider,
+        timeoutMs: 5000,
+        env: { ...process.env, CROSS_REVIEW_FIXTURE_MODE: "fable-limit" },
+      });
+      expect(result.status).toBe("ok");
+      if (result.status === "ok") expect(result.transcript).toContain("reviewed on opus");
     });
   }, 30_000);
 });
@@ -466,6 +489,7 @@ describe("pure classification and parsing helpers (src/core/review/cross-review.
 
   test("matchesAuthFailureSignal recognizes known auth signals and rejects generic errors", () => {
     expect(matchesAuthFailureSignal("please run `codex login` again")).toBe(true);
+    expect(matchesAuthFailureSignal("Not logged in · Please run /login")).toBe(true);
     expect(matchesAuthFailureSignal("Unauthorized (401)")).toBe(true);
     expect(matchesAuthFailureSignal("boom: internal error")).toBe(false);
   });
