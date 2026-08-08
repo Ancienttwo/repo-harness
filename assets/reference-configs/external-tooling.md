@@ -729,8 +729,13 @@ Preflight failures are jobs too. Each pending journal slot has a stable source
 key while its delivery event id rotates on every coalesced edit; a dead letter
 blocks aggregate jobs containing that source key, so later edits cannot reset
 its attempt budget. Store transitions and queue/dead-letter read models share
-one repository lock. One repository has at most one claimed provider process,
-and an abandoned third attempt transitions directly to dead-letter on recovery.
+one repository lock. One repository has at most one claimed provider process.
+If the Stop owner disappears, its running claim remains quarantined for 150
+seconds—longer than the 120-second provider bound—before recovery can start a
+new attempt; an abandoned third attempt then transitions directly to dead-letter.
+Before a retry is claimed, the job refreshes delivery ids for its existing
+stable source keys, so edits incorporated before the new snapshot can be
+acknowledged while edits arriving during projection remain pending.
 `ArchitectureRefreshSignalV1` is the only major-change refresh authority; the
 consumer does not infer impact from path names, diff size, or queue-helper
 stdout. A typed refresh-required signal runs the canonical architecture,
@@ -747,6 +752,8 @@ Projection delivery failures use the independent
 `architecture.freshness_gate` retains its merge/drift meaning. A strict
 projection failure can be recovered without deleting runtime evidence via
 `repo-harness architecture-projection retry-dead-letter --job-id <job> --json`.
+An unreadable policy with no active projection queue remains an advisory
+configuration error; it cannot silently promote the default gate to strict.
 The runtime snapshot excludes `.ai/harness/**`, so concurrent harness receipts
 and traces cannot invalidate a provider snapshot.
 

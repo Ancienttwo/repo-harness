@@ -318,7 +318,9 @@ describe('durable architecture projection orchestration', () => {
     expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: failed }).status).toBe('retry-pending');
     runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/new.ts', session_id: 'new' }) });
     rmSync(join(f.repoRoot, '.archcontext/model/nodes'), { recursive: true, force: true });
-    expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy }).status).toBe('idle');
+    const preflight = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy });
+    expect(preflight.status).toBe('retry-pending');
+    expect(preflight.error).toContain('requires .archcontext/model/nodes');
     const [pendingName] = readdirSync(join(f.repoRoot, '.ai/harness/architecture-projection/pending'));
     expect(JSON.parse(readFileSync(join(f.repoRoot, '.ai/harness/architecture-projection/pending', pendingName!), 'utf8')).attempt).toBe(1);
   });
@@ -361,7 +363,7 @@ describe('durable architecture projection orchestration', () => {
     expect(elapsed).toBeGreaterThanOrEqual(200);
   });
 
-  test('recovers a running job whose owner process died without acknowledging its source event', () => {
+  test('quarantines a fresh running job after its Stop owner dies, then recovers it only after the provider lease', () => {
     const f = fixture();
     const root = realpathSync(f.repoRoot);
     runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/crash.ts', session_id: 'crash' }) });
@@ -372,7 +374,9 @@ describe('durable architecture projection orchestration', () => {
     const runningPath = join(root, '.ai/harness/architecture-projection/running', `${running!.jobId}.json`);
     writeFileSync(runningPath, `${JSON.stringify({ ...running, ownerPid: 2_147_483_647 }, null, 2)}\n`);
 
-    expect(recoverAbandonedArchitectureProjectionJobs(root)).toBe(1);
+    expect(recoverAbandonedArchitectureProjectionJobs(root, new Date(running!.updatedAt))).toBe(0);
+    expect(architectureProjectionJobState(root, running!.jobId)).toBe('running');
+    expect(recoverAbandonedArchitectureProjectionJobs(root, new Date(Date.parse(running!.updatedAt) + 150_001))).toBe(1);
     expect(architectureProjectionJobState(root, running!.jobId)).toBe('pending');
     expect(readPendingPostEditEvents(root).map((event) => event.event_id)).toEqual([source!.event_id]);
   });
@@ -395,7 +399,7 @@ describe('durable architecture projection orchestration', () => {
     const running = claimNextArchitectureProjectionJob(root)!;
     const runningPath = join(root, '.ai/harness/architecture-projection/running', `${running.jobId}.json`);
     writeFileSync(runningPath, `${JSON.stringify({ ...running, attempt: 3, ownerPid: 2_147_483_647 }, null, 2)}\n`);
-    expect(recoverAbandonedArchitectureProjectionJobs(root)).toBe(1);
+    expect(recoverAbandonedArchitectureProjectionJobs(root, new Date(Date.parse(running.updatedAt) + 150_001))).toBe(1);
     expect(architectureProjectionJobState(root, running.jobId)).toBe('dead-letter');
   });
 
@@ -434,6 +438,26 @@ describe('durable architecture projection orchestration', () => {
     const drained = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: successfulRunner(projectionCalls) });
     consumePendingPostEditEvents(f.repoRoot, process.env, { skipArchitectureCascade: true, eventIds: drained.sourceEventIds });
     expect(readPendingPostEditEvents(f.repoRoot).map((event) => event.changed_paths)).toEqual([['src/second.ts']]);
+  });
+
+  test('rebinds a retried job to the current delivery id of the same source slot before projection', () => {
+    const f = fixture();
+    const input = JSON.stringify({ file_path: 'src/rebound.ts', session_id: 'rebound' });
+    runMutationObserved({ collector: f.collector, input });
+    const firstSource = readPendingPostEditEvents(f.repoRoot)[0]!;
+    const failed: RunArchctxProcess = (_binary, args) => args[0] === 'capabilities'
+      ? capabilities()
+      : { status: 1, signal: null, stdout: '', stderr: 'retry me' };
+    expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: failed }).status).toBe('retry-pending');
+    runMutationObserved({ collector: f.collector, input });
+    const currentSource = readPendingPostEditEvents(f.repoRoot)[0]!;
+    expect(currentSource.event_id).not.toBe(firstSource.event_id);
+
+    const completed = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: successfulRunner({ count: 0 }) });
+    expect(completed.status).toBe('succeeded');
+    expect(completed.sourceEventIds).toEqual([currentSource.event_id]);
+    consumePendingPostEditEvents(f.repoRoot, process.env, { skipArchitectureCascade: true, eventIds: completed.sourceEventIds });
+    expect(readPendingPostEditEvents(f.repoRoot)).toHaveLength(0);
   });
 
   test('suppresses projection-owned docs and context paths without spawning', () => {

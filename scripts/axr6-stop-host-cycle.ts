@@ -46,6 +46,7 @@ try {
     HOOK_HOST: 'codex',
     HOOK_REPO_ROOT: fixture,
     AXR6_FAKE_ARCHCTX_HOLD_MS: String(HOLD_MS),
+    AXR6_FAKE_ARCHCTX_COMPLETION_MARKER: join(workspace, 'first-provider-complete'),
   };
   const postEdit = spawnSync('/bin/sh', ['-c', adapters.codex.postEdit.command], {
     cwd: fixture,
@@ -73,6 +74,34 @@ try {
   if (existsSync(receiptsDir) && readdirSync(receiptsDir).some((name) => name.endsWith('.json'))) {
     throw new Error('legacy 30 second process budget produced a false durable receipt');
   }
+
+  const guardedStarted = performance.now();
+  const guardedStop = spawnSync('/bin/sh', ['-c', adapters.codex.stop.command], {
+    cwd: fixture,
+    env: hookEnv,
+    input: stopInput,
+    encoding: 'utf8',
+    timeout: 10_000,
+  });
+  const guardedElapsedMs = Math.round(performance.now() - guardedStarted);
+  assertProcess(guardedStop, 'provider-lease guarded Stop.default');
+  if (existsSync(receiptsDir) && readdirSync(receiptsDir).some((name) => name.endsWith('.json'))) {
+    throw new Error('fresh abandoned job incorrectly started a second provider');
+  }
+
+  const providerMarker = hookEnv.AXR6_FAKE_ARCHCTX_COMPLETION_MARKER;
+  const markerDeadline = Date.now() + 10_000;
+  while (!existsSync(providerMarker) && Date.now() < markerDeadline) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+  }
+  if (!existsSync(providerMarker)) throw new Error('orphaned provider did not finish within its bounded hold');
+  const runningDir = join(fixture, '.ai', 'harness', 'architecture-projection', 'running');
+  const runningFiles = readdirSync(runningDir).filter((name) => name.endsWith('.json'));
+  if (runningFiles.length !== 1) throw new Error(`expected one quarantined running job, got ${runningFiles.length}`);
+  const runningPath = join(runningDir, runningFiles[0]!);
+  const abandoned = JSON.parse(readFileSync(runningPath, 'utf8')) as { updatedAt: string };
+  abandoned.updatedAt = new Date(Date.now() - 150_001).toISOString();
+  writeFileSync(runningPath, `${JSON.stringify(abandoned, null, 2)}\n`);
 
   const started = performance.now();
   const stop = spawnSync('/bin/sh', ['-c', adapters.codex.stop.command], {
@@ -109,6 +138,7 @@ try {
     },
     stop: {
       legacyBudget: { timeoutMs: 30_000, elapsedMs: legacyElapsedMs, timedOut: true },
+      providerLeaseGuard: { elapsedMs: guardedElapsedMs, secondProviderStarted: false },
       elapsedMs,
       processTimeoutMs: PROCESS_TIMEOUT_MS,
       managedTimeoutMs: HOST_TIMEOUT_MS,
@@ -194,6 +224,7 @@ function writeFakeArchctx(root: string): void {
   }, null, 2)}\n`);
   writeFileSync(bin, `#!/usr/bin/env bun
 import { createHash } from 'node:crypto';
+import { writeFileSync } from 'node:fs';
 
 const args = process.argv.slice(2);
 if (args[0] === 'capabilities') {
@@ -249,6 +280,7 @@ const canonical = (value) => {
 };
 const receiptDigest = 'sha256:' + createHash('sha256').update(canonical(payload)).digest('hex');
 await Bun.sleep(Number(process.env.AXR6_FAKE_ARCHCTX_HOLD_MS ?? '31000'));
+if (process.env.AXR6_FAKE_ARCHCTX_COMPLETION_MARKER) writeFileSync(process.env.AXR6_FAKE_ARCHCTX_COMPLETION_MARKER, 'complete\\n');
 console.log(JSON.stringify({ schemaVersion: 'archcontext.envelope/v1', ok: true, data: { ...payload, receiptDigest } }));
 `);
   chmodSync(bin, 0o755);

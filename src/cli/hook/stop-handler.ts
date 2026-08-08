@@ -489,6 +489,7 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
 
   let architectureDrain: ArchitectureProjectionDrainResultV1 | null = null;
   let architectureDrainError = '';
+  let journalSideEffectError = '';
   let sourceEvents: readonly PostEditJournalEvent[] = [];
   try {
     migratePendingPostEditJournalV1(repoRoot, 100);
@@ -513,7 +514,7 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    architectureDrainError = architectureDrainError ? `${architectureDrainError}; journal side effects failed: ${message}` : `journal side effects failed: ${message}`;
+    journalSideEffectError = message;
   }
 
   // EPC-07 (reordered from EPC-06's additive placement, documented in
@@ -551,13 +552,20 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   } else if (architectureDrainError) {
     stderr.push(`[ArchitectureProjection] orchestration failed: ${architectureDrainError}\n`);
   }
+  if (journalSideEffectError) stderr.push(`[PostEditJournal] side effects failed: ${journalSideEffectError}\n`);
   let architectureGate: 'advisory' | 'strict' = 'advisory';
   try {
     architectureGate = loadArchitectureProjectionPolicy(repoRoot).failureGate;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     architectureDrainError = architectureDrainError ? `${architectureDrainError}; projection policy invalid: ${message}` : `projection policy invalid: ${message}`;
-    architectureGate = 'strict';
+    // An unreadable policy cannot prove that strict projection delivery was
+    // enabled. Preserve the default advisory posture unless a durable job is
+    // already active and therefore proves this lane owns pending work.
+    const activeQueue = architectureDrain?.queue;
+    architectureGate = activeQueue && (activeQueue.pending > 0 || activeQueue.running > 0 || activeQueue.deadLetters > 0)
+      ? 'strict'
+      : 'advisory';
   }
   if (architectureGate === 'strict' && (architectureDrainError || architectureDrain?.status === 'retry-pending' || architectureDrain?.status === 'dead-letter')) {
     const recovery = architectureDrain?.status === 'dead-letter' && architectureDrain.jobId

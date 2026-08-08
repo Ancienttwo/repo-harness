@@ -31,6 +31,8 @@
 - Claude's fifth pass found that a same-key edit arriving after request capture could keep the old event id and hit the prior receipt on the next Stop. Every coalesced write now advances delivery identity while retaining the same bounded pending file and monotonic dirty state, so selective acknowledgement cannot erase the newer occurrence.
 - The same pass found two policy parsers and a real default-refresh checkpoint gap. Stop now reads `failureGate` only through `loadArchitectureProjectionPolicy`; disabled projection normalizes the inactive gate to advisory, invalid enabled policy blocks with its validation error, and the default refresh runner checkpoints each successful action before starting the next bounded action.
 - Claude's sixth pass found that rotating an event id also detached its dead-letter budget, and that queue read models could race locked job transitions. Journal v2 now carries a stable slot key separately from its rotating delivery id; jobs and receipts persist both identities, dead-letter overlap uses the stable key, and queue/job/dead-letter reads acquire the same store lock as transitions. The success outcome is rendered only after the provider try/catch, so a read-model failure can no longer be reclassified into an impossible failure transition after the receipt is durable.
+- Claude's seventh pass found an OS-process boundary hidden by the durable claim: a host-killed Stop can leave its bounded `archctx` child alive. Fresh abandoned claims are now quarantined for 150 seconds before recovery, so the 120-second provider bound expires before another apply can start. The packed host cycle proves an immediate second Stop does not spawn, then explicitly ages the disposable claim only after the orphan completion marker and recovers attempt 2.
+- The seventh repair also reports preflight errors while another job owns the queue, keeps malformed policy advisory when no durable projection queue proves the lane active, separates journal housekeeping errors from the strict projection gate, and refreshes a retrying job's delivery ids for the same stable source slots before snapshot capture.
 
 ## Tradeoffs Considered
 
@@ -59,6 +61,7 @@
 - Fourth review repair regression: 78 pass/0 fail across durable orchestration, journal migration, and cross-review classification; typecheck passed. The reviewed snapshot mismatch concern is closed by the paired ArchContext `9c2ae39` change, which ships in `archctx@0.4.0` before repo-harness enables that exact version.
 - Fifth review repair regression: 57 pass/0 fail across receipt-race orchestration, Stop policy, default refresh checkpointing, and mutation coalescing; typecheck passed.
 - Sixth review repair regression: 59 pass/0 fail across stable dead-letter ownership, concurrent store-lock read serialization, journal schema, and Stop retention; typecheck passed.
+- Seventh review repair regression: 60 pass/0 fail across durable orchestration, Stop policy, and journal delivery; typecheck and helper projection passed. Packed installed-host cycle timed out the legacy lane at 30014 ms, then completed a guarded Stop in 1364 ms with no second provider, observed the first provider's completion marker, aged only the disposable claim past its 150-second lease, and recovered a durable attempt-2 receipt in 31746 ms with zero pending source events.
 
 ## Promotion Filter
 

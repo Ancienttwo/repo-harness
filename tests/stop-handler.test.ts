@@ -128,6 +128,13 @@ describe('runStopHandler', () => {
     const disabled = runStopHandler({ collector: collector(disabledRoot, () => canonicalState()), dependencies: { drainArchitectureProjection: failedDrain } });
     expect(disabled.exitCode).toBe(0);
     expect(disabled.stdout).not.toContain('Strict projection failure gate blocked Stop');
+
+    const malformedInactiveRoot = fixture();
+    writeFileSync(join(malformedInactiveRoot, '.ai/harness/policy.json'), '{not-json\n');
+    const malformedInactive = runStopHandler({ collector: collector(malformedInactiveRoot, () => canonicalState()) });
+    expect(malformedInactive.exitCode).toBe(0);
+    expect(malformedInactive.stdout).not.toContain('Strict projection failure gate blocked Stop');
+    expect(malformedInactive.stderr).toContain('JSON Parse error');
   });
 
   test('runs non-architecture journal effects without acknowledging a projection-pending source event', () => {

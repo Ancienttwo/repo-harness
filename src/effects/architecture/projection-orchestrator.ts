@@ -168,14 +168,16 @@ function failPreflight(
   const eventIds = events.map((event) => event.event_id);
   const sourceKeys = events.map((event) => event.source_key);
   if (eventIds.length === 0 || changedPaths.length === 0) throw error;
+  const message = error instanceof Error ? error.message : String(error);
   const blocked = architectureProjectionDeadLetterForSourceKeys(repoRoot, sourceKeys);
   if (blocked) return outcome(repoRoot, 'dead-letter', blocked.job.jobId, blocked.job.sourceEventIds, null, blocked.failure.message, false);
   const expectedJobId = architectureProjectionJobId(eventIds, changedPaths);
   const queued = enqueueArchitectureProjectionJob(repoRoot, eventIds, sourceKeys, changedPaths, now);
-  if (!queued || queued.jobId !== expectedJobId) return outcome(repoRoot, 'idle', null, eventIds, null, null, false);
+  if (!queued || queued.jobId !== expectedJobId) {
+    return outcome(repoRoot, 'retry-pending', queued?.jobId ?? null, eventIds, null, message, false);
+  }
   const job = claimNextArchitectureProjectionJob(repoRoot, now);
-  if (!job) return outcome(repoRoot, 'idle', null, eventIds, null, null, false);
-  const message = error instanceof Error ? error.message : String(error);
+  if (!job) return outcome(repoRoot, 'retry-pending', queued.jobId, eventIds, null, message, false);
   const transition = failArchitectureProjectionJob(repoRoot, job, { kind: 'preflight', message }, now);
   return outcome(
     repoRoot,

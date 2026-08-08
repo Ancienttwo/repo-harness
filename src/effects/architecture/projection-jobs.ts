@@ -7,7 +7,9 @@ import type { ProjectionResultV1 } from '../../core/architecture/projection';
 export const ARCHITECTURE_PROJECTION_RUNTIME_ROOT = '.ai/harness/architecture-projection';
 const LOCK_PATH = `${ARCHITECTURE_PROJECTION_RUNTIME_ROOT}/locks/store`;
 const MAX_ATTEMPTS = 3;
-const RUNNING_STALE_MS = 15 * 60 * 1000;
+/** Longer than the configured 120 second provider bound. A dead Stop owner
+ * cannot be reclaimed while its orphaned provider may still be running. */
+const RUNNING_STALE_MS = 150_000;
 
 export type ProjectionJobFailureKind = 'preflight' | 'process' | 'timeout' | 'stale-snapshot' | 'invalid-result' | 'refresh' | 'permanent';
 
@@ -135,13 +137,35 @@ export function enqueueArchitectureProjectionJob(
   changedPaths: readonly string[],
   now = new Date(),
 ): ArchitectureProjectionJobV1 | null {
+  if (sourceEventIds.length !== sourceKeys.length) {
+    throw new Error('architecture projection source event ids and keys must have equal length');
+  }
+  const deliveryBySource = new Map<string, string>();
+  for (let index = 0; index < sourceKeys.length; index += 1) {
+    const key = sourceKeys[index]!;
+    const eventId = sourceEventIds[index]!;
+    const prior = deliveryBySource.get(key);
+    if (prior && prior !== eventId) throw new Error(`architecture projection source key has multiple delivery ids: ${key}`);
+    deliveryBySource.set(key, eventId);
+  }
   const { events, paths } = normalizedIdentity(sourceEventIds, changedPaths);
   const keys = [...new Set(sourceKeys)].sort();
   if (events.length === 0 || keys.length === 0 || paths.length === 0) return null;
   return withExclusiveDirectoryLock(repoRoot, LOCK_PATH, () => {
     if (names(repoRoot, 'running').length > 0) return null;
     const existing = jobsByCreatedAt(repoRoot, 'pending')[0];
-    if (existing) return existing;
+    if (existing) {
+      const currentDeliveries = existing.sourceKeys.map((key) => deliveryBySource.get(key));
+      if (currentDeliveries.every((eventId): eventId is string => eventId !== undefined)) {
+        const refreshedIds = [...new Set(currentDeliveries)].sort();
+        if (JSON.stringify(refreshedIds) !== JSON.stringify(existing.sourceEventIds)) {
+          const refreshed = { ...existing, sourceEventIds: refreshedIds, updatedAt: now.toISOString() };
+          atomicJson(pathFor(repoRoot, 'pending', existing.jobId), refreshed);
+          return refreshed;
+        }
+      }
+      return existing;
+    }
     const id = architectureProjectionJobId(events, paths);
     for (const kind of ['running', 'receipts', 'dead-letter'] as const) {
       const path = pathFor(repoRoot, kind, id);
@@ -177,7 +201,7 @@ export function recoverAbandonedArchitectureProjectionJobs(repoRoot: string, now
       }
       const updatedAtMs = Date.parse(job.updatedAt);
       const stale = !Number.isFinite(updatedAtMs) || now.getTime() - updatedAtMs >= RUNNING_STALE_MS;
-      if (!stale && job.ownerPid && processIsAlive(job.ownerPid)) continue;
+      if (!stale) continue;
       if (job.attempt >= MAX_ATTEMPTS) {
         const failure = { kind: 'timeout' as const, message: `running job was abandoned after attempt ${job.attempt}` };
         atomicJson(pathFor(repoRoot, 'dead-letter', job.jobId), {
@@ -203,11 +227,6 @@ export function recoverAbandonedArchitectureProjectionJobs(repoRoot: string, now
     }
     return recovered;
   });
-}
-
-function processIsAlive(pid: number): boolean {
-  try { process.kill(pid, 0); return true; }
-  catch (error) { return (error as NodeJS.ErrnoException).code !== 'ESRCH'; }
 }
 
 export function claimNextArchitectureProjectionJob(repoRoot: string, now = new Date()): ArchitectureProjectionJobV1 | null {

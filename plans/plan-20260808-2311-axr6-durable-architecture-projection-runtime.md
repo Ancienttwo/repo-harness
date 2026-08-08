@@ -183,3 +183,4 @@ Failure path: spawn exit/signal/timeout、corrupt JSON、stale snapshot、refres
 - [x] Close fourth review pass: surface unresolved-major typed signals, separate preflight from provider attempt budget, serialize v1 migration with PostEdit, and harden Claude capacity/auth signatures.
 - [x] Close fifth review pass: rotate coalesced in-flight delivery identity, unify projection failure-gate parsing, and checkpoint default refresh actions before the next action starts.
 - [x] Close sixth review pass: bind dead letters to stable journal-slot keys and serialize queue/dead-letter read models with store transitions.
+- [x] Close seventh review pass: quarantine orphan providers for the bounded lease, surface queued preflight errors, preserve advisory policy defaults without an active queue, and rebind retry delivery ids.
