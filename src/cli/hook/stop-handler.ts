@@ -550,10 +550,16 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   } else if (architectureDrainError) {
     stderr.push(`[ArchitectureProjection] orchestration failed: ${architectureDrainError}\n`);
   }
-  const architectureGate = nestedString(policy(repoRoot), ['architecture', 'projection_failure_gate']) || 'advisory';
+  const configuredArchitectureGate = nestedString(policy(repoRoot), ['architecture', 'projection_failure_gate']);
+  const architectureGate = configuredArchitectureGate === '' || configuredArchitectureGate === 'advisory'
+    ? 'advisory'
+    : 'strict';
   if (architectureGate === 'strict' && (architectureDrainError || architectureDrain?.status === 'retry-pending' || architectureDrain?.status === 'dead-letter')) {
+    const recovery = architectureDrain?.status === 'dead-letter' && architectureDrain.jobId
+      ? ` Recover with: repo-harness architecture-projection retry-dead-letter --job-id ${architectureDrain.jobId} --json.`
+      : ' Re-run repo-harness architecture-projection drain --json after correcting the reported failure.';
     return {
-      ...block(`[ArchitectureProjection] Strict projection failure gate blocked Stop: ${architectureDrainError || architectureDrain?.error || architectureDrain?.status}.`),
+      ...block(`[ArchitectureProjection] Strict projection failure gate blocked Stop: ${architectureDrainError || architectureDrain?.error || architectureDrain?.status}.${recovery}`),
       stderr: stderr.join(''),
     };
   }

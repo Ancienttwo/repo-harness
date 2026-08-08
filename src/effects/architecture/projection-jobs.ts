@@ -106,7 +106,7 @@ export function architectureProjectionJobState(
   jobId: string,
 ): 'missing' | 'pending' | 'running' | 'receipt' | 'dead-letter' {
   for (const [kind, state] of [
-    ['pending', 'pending'], ['running', 'running'], ['receipts', 'receipt'], ['dead-letter', 'dead-letter'],
+    ['pending', 'pending'], ['receipts', 'receipt'], ['running', 'running'], ['dead-letter', 'dead-letter'],
   ] as const) if (existsSync(pathFor(repoRoot, kind, jobId))) return state;
   return 'missing';
 }
@@ -159,6 +159,11 @@ export function recoverAbandonedArchitectureProjectionJobs(repoRoot: string, now
     for (const name of names(repoRoot, 'running')) {
       const runningPath = join(repoRoot, directory('running'), name);
       const job = readJson<ArchitectureProjectionJobV1>(runningPath);
+      if (existsSync(pathFor(repoRoot, 'receipts', job.jobId))) {
+        unlinkSync(runningPath);
+        recovered += 1;
+        continue;
+      }
       const updatedAtMs = Date.parse(job.updatedAt);
       const stale = !Number.isFinite(updatedAtMs) || now.getTime() - updatedAtMs >= RUNNING_STALE_MS;
       if (!stale && job.ownerPid && processIsAlive(job.ownerPid)) continue;

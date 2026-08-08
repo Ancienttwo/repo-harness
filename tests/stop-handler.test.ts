@@ -110,6 +110,17 @@ describe('runStopHandler', () => {
     expect(strict.exitCode).toBe(0);
     expect(JSON.parse(strict.stdout).decision).toBe('block');
     expect(strict.stdout).toContain('Strict projection failure gate blocked Stop');
+
+    const deadLetter = runStopHandler({
+      collector: collector(strictRoot, () => canonicalState()),
+      dependencies: { drainArchitectureProjection: () => ({ ...failedDrain(), status: 'dead-letter' as const }) },
+    });
+    expect(deadLetter.stdout).toContain('retry-dead-letter --job-id job-test --json');
+
+    const invalidGateRoot = fixture();
+    writeFileSync(join(invalidGateRoot, '.ai/harness/policy.json'), '{"architecture":{"projection_failure_gate":"block"}}\n');
+    const invalidGate = runStopHandler({ collector: collector(invalidGateRoot, () => canonicalState()), dependencies: { drainArchitectureProjection: failedDrain } });
+    expect(invalidGate.stdout).toContain('Strict projection failure gate blocked Stop');
   });
 
   test('runs non-architecture journal effects without acknowledging a projection-pending source event', () => {

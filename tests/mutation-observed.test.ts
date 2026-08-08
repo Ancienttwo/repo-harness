@@ -281,6 +281,21 @@ describe('mutation-observed: session-scoped dedupe', () => {
     }
   }, 30_000);
 
+  test('a same-session edit after acknowledgement creates a new delivery identity', () => {
+    const cwd = tmpWorkspace('mo-new-delivery-after-ack');
+    try {
+      initRepo(cwd);
+      const env = { ...process.env, HOOK_SESSION_ID: 'session-x' };
+      runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/repeat.ts'), env });
+      const firstEventId = pendingEvents(cwd)[0].event_id;
+      consumePendingPostEditEvents(cwd, env, { skipArchitectureCascade: true });
+      runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/repeat.ts'), env });
+      expect(pendingEvents(cwd)[0].event_id).not.toBe(firstEventId);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test('a different session editing the same path does NOT coalesce (separate pending events)', () => {
     const cwd = tmpWorkspace('mo-no-coalesce-cross-session');
     try {

@@ -467,6 +467,15 @@ describe("pure classification and parsing helpers (src/core/review/cross-review.
     if (outcome.kind === "failed") expect(outcome.code).toBe("provider_nonzero");
   });
 
+  test("classifyCrossReviewOutcome recognizes the exact Claude stdout login failure", () => {
+    const outcome = classifyCrossReviewOutcome(
+      { ...baseInvocation, ok: false, status: 1, stdout: "Not logged in · Please run /login" },
+      noRecovery,
+    );
+    expect(outcome.kind).toBe("failed");
+    if (outcome.kind === "failed") expect(outcome.code).toBe("auth_failure");
+  });
+
   test("classifyCrossReviewOutcome: clean exit + stdout -> success, no recovery used", () => {
     const outcome = classifyCrossReviewOutcome({ ...baseInvocation, stdout: "[P2] fine" }, noRecovery);
     expect(outcome.kind).toBe("success");
@@ -516,6 +525,7 @@ describe("pure classification and parsing helpers (src/core/review/cross-review.
 
   test("matchesClaudeCapacityFailureSignal accepts the pinned route limit only", () => {
     expect(matchesClaudeCapacityFailureSignal("You've reached your Fable 5 limit. Run /usage-credits to continue.")).toBe(true);
+    expect(matchesClaudeCapacityFailureSignal("Warning: route busy\nYou’ve reached your Fable 5 limit. Run /usage-credits to continue.")).toBe(true);
     expect(matchesClaudeCapacityFailureSignal("Review mentions /usage-credits in ordinary prose.")).toBe(false);
     expect(matchesClaudeCapacityFailureSignal("boom: internal error")).toBe(false);
   });

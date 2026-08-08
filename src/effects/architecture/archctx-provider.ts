@@ -27,6 +27,8 @@ export interface ArchctxProviderOptions {
   policy?: ArchitectureProjectionPolicy;
   env?: NodeJS.ProcessEnv;
   run?: RunArchctxProcess;
+  deadlineMs?: number;
+  nowMs?: () => number;
 }
 
 const PROJECTION_WORKTREE_IGNORE_ROOTS = new Set([
@@ -65,6 +67,7 @@ const DEFAULT_RUNNER: RunArchctxProcess = (binary, args, options) => {
 
 export function loadArchitectureProjectionPolicy(repoRoot: string): ArchitectureProjectionPolicy {
   const path = join(repoRoot, '.ai', 'harness', 'policy.json');
+  if (!existsSync(path)) return readArchitectureProjectionPolicy({});
   return readArchitectureProjectionPolicy(JSON.parse(readFileSync(path, 'utf8')));
 }
 
@@ -90,7 +93,7 @@ export function archctxCapabilities(repoRoot: string, options: ArchctxProviderOp
   const resolved = resolvePackageLocalArchctx(options.consumerRoot ?? findConsumerRoot(), policy.requiredVersion);
   const result = (options.run ?? DEFAULT_RUNNER)(resolved.binaryPath, ['capabilities', '--json'], {
     cwd: repoRoot,
-    timeoutMs: Math.min(policy.timeoutMs, 10_000),
+    timeoutMs: remainingTimeout(options, Math.min(policy.timeoutMs, 10_000), 'capabilities'),
     env: options.env ?? process.env,
   });
   if (result.status !== 0 || result.signal || result.error) throw new Error(`archctx capabilities failed: ${processFailure(result)}`);
@@ -140,7 +143,11 @@ export function runArchitectureProjection(request: ProjectionRequestV1, repoRoot
   if ((request.mode === 'apply' || request.mode === 'adopt') && policy.applyMode === 'disabled') throw new Error('architecture projection apply is disabled');
   const { resolved } = archctxCapabilities(repoRoot, { ...options, policy });
   const args = ['projection', 'run', '--request-json', JSON.stringify(request)];
-  const processResult = (options.run ?? DEFAULT_RUNNER)(resolved.binaryPath, args, { cwd: repoRoot, timeoutMs: policy.timeoutMs, env: options.env ?? process.env });
+  const processResult = (options.run ?? DEFAULT_RUNNER)(resolved.binaryPath, args, {
+    cwd: repoRoot,
+    timeoutMs: remainingTimeout(options, policy.timeoutMs, 'projection'),
+    env: options.env ?? process.env,
+  });
   if (processResult.status !== 0 || processResult.signal || processResult.error) throw new Error(`archctx projection failed: ${processFailure(processResult)}`);
   const envelope = parseJson(processResult.stdout, 'archctx projection') as Record<string, unknown>;
   if (envelope.schemaVersion !== 'archcontext.envelope/v1' || envelope.ok !== true || !isRecord(envelope.data)) throw new Error(`archctx projection returned an invalid envelope: ${safeError(envelope)}`);
@@ -148,8 +155,16 @@ export function runArchitectureProjection(request: ProjectionRequestV1, repoRoot
   assertExpectedSnapshot(request.expected, result.inputSnapshot, 'in provider result input');
   assertProjectionResultAuthority(request, result, repoRoot, policy);
   assertExpectedSnapshot(result.outputSnapshot, captureArchitectureProjectionSnapshot(repoRoot), 'after projection');
+  remainingTimeout(options, policy.timeoutMs, 'post-projection validation');
   if (result.inputSnapshot.rendererVersion !== ARCHITECTURE_DOCS_RENDERER_VERSION || result.outputSnapshot.rendererVersion !== ARCHITECTURE_DOCS_RENDERER_VERSION || result.inputSnapshot.layoutVersion !== ARCHITECTURE_DOCS_LAYOUT_VERSION || result.outputSnapshot.layoutVersion !== ARCHITECTURE_DOCS_LAYOUT_VERSION) throw new Error('archctx projection renderer/layout mismatch');
   return result;
+}
+
+function remainingTimeout(options: Pick<ArchctxProviderOptions, 'deadlineMs' | 'nowMs'>, maximumMs: number, phase: string): number {
+  if (options.deadlineMs === undefined) return maximumMs;
+  const remaining = Math.floor(options.deadlineMs - (options.nowMs ?? Date.now)());
+  if (remaining <= 0) throw new Error(`architecture projection timeout before ${phase}`);
+  return Math.min(maximumMs, remaining);
 }
 
 /**

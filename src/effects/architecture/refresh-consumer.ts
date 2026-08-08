@@ -19,6 +19,8 @@ export type RunArchitectureRefreshActions = (
   changedPaths: readonly string[],
   env: NodeJS.ProcessEnv,
   completedActionKeys: ReadonlySet<string>,
+  deadlineMs?: number,
+  nowMs?: () => number,
 ) => readonly ArchitectureRefreshActionResult[];
 
 export interface ArchitectureRefreshReceiptV1 {
@@ -37,7 +39,7 @@ export function consumeArchitectureRefreshSignals(
   repoRoot: string,
   signals: readonly ArchitectureRefreshSignalV1[],
   changedPaths: readonly string[],
-  options: { env?: NodeJS.ProcessEnv; run?: RunArchitectureRefreshActions; now?: Date } = {},
+  options: { env?: NodeJS.ProcessEnv; run?: RunArchitectureRefreshActions; now?: Date; deadlineMs?: number; nowMs?: () => number } = {},
 ): ArchitectureRefreshReceiptV1[] {
   const receipts: ArchitectureRefreshReceiptV1[] = [];
   for (const signal of [...signals].sort((a, b) => a.signalId.localeCompare(b.signalId))) {
@@ -50,7 +52,15 @@ export function consumeArchitectureRefreshSignals(
     const completed = readRefreshProgress(progressPath);
     const results = signal.mode === 'human-action-required'
       ? []
-      : (options.run ?? runDefaultActions)(repoRoot, signal, changedPaths, options.env ?? process.env, new Set(completed.map((entry) => entry.actionKey)));
+      : (options.run ?? runDefaultActions)(
+          repoRoot,
+          signal,
+          changedPaths,
+          options.env ?? process.env,
+          new Set(completed.map((entry) => entry.actionKey)),
+          options.deadlineMs,
+          options.nowMs,
+        );
     const actions = [...completed];
     for (const result of results) {
       if (result.status !== 0) throw new Error(`architecture refresh ${result.action} failed with exit ${result.status}: ${(result.stderr || result.stdout).trim().slice(0, 300)}`);
@@ -83,33 +93,42 @@ function runDefaultActions(
   changedPaths: readonly string[],
   env: NodeJS.ProcessEnv,
   completedActionKeys: ReadonlySet<string>,
+  deadlineMs?: number,
+  nowMs?: () => number,
 ): ArchitectureRefreshActionResult[] {
   const results: ArchitectureRefreshActionResult[] = [];
   for (const path of [...new Set(changedPaths)].sort()) {
     const actionKey = `architecture-queue:${path}`;
     if (completedActionKeys.has(actionKey)) continue;
-    const result = runCli(repoRoot, env, ['run', 'architecture-queue', 'record', '--file', path]);
+    const result = runCli(repoRoot, env, ['run', 'architecture-queue', 'record', '--file', path], remainingRefreshTimeout(deadlineMs, nowMs));
     results.push({ actionKey, action: 'architecture-queue', ...result });
     if (result.status !== 0) return results;
   }
   if (!completedActionKeys.has('context-contract-sync')) {
-    const sync = runCli(repoRoot, env, ['run', 'context-contract-sync', 'sync-latest']);
+    const sync = runCli(repoRoot, env, ['run', 'context-contract-sync', 'sync-latest'], remainingRefreshTimeout(deadlineMs, nowMs));
     results.push({ actionKey: 'context-contract-sync', action: 'context-contract-sync', ...sync });
     if (sync.status !== 0) return results;
   }
   if (!completedActionKeys.has('capability-context-request')) {
-    const capability = runCli(repoRoot, env, ['capability-context', 'request', '--from-latest-architecture-event']);
+    const capability = runCli(repoRoot, env, ['capability-context', 'request', '--from-latest-architecture-event'], remainingRefreshTimeout(deadlineMs, nowMs));
     results.push({ actionKey: 'capability-context-request', action: 'capability-context-request', ...capability });
   }
   return results;
 }
 
-function runCli(repoRoot: string, env: NodeJS.ProcessEnv, args: string[]): { status: number; stdout: string; stderr: string } {
+function runCli(repoRoot: string, env: NodeJS.ProcessEnv, args: string[], timeoutMs: number): { status: number; stdout: string; stderr: string } {
   const cli = env.REPO_HARNESS_CLI;
   const command = cli ? (env.REPO_HARNESS_BUN ?? process.execPath) : 'repo-harness';
   const commandArgs = cli ? [cli, ...args] : args;
-  const result = spawnSync(command, commandArgs, { cwd: repoRoot, env, encoding: 'utf8', timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
+  const result = spawnSync(command, commandArgs, { cwd: repoRoot, env, encoding: 'utf8', timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 });
   return { status: result.status ?? 1, stdout: result.stdout ?? '', stderr: result.stderr ?? result.error?.message ?? '' };
+}
+
+function remainingRefreshTimeout(deadlineMs?: number, nowMs: () => number = Date.now): number {
+  if (deadlineMs === undefined) return 30_000;
+  const remaining = Math.floor(deadlineMs - nowMs());
+  if (remaining <= 0) throw new Error('architecture refresh timeout before canonical action');
+  return Math.min(30_000, remaining);
 }
 
 function receiptPath(repoRoot: string, signalId: string): string {

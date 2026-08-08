@@ -68,7 +68,9 @@ export function drainArchitectureProjectionJobs(
   } catch (error) {
     return failPreflight(root, events, observedPaths, now, error);
   }
-  if (policy.provider === 'disabled') return outcome(root, 'disabled', null, eventIds, null, null, true);
+  if (policy.provider === 'disabled' || policy.applyMode !== 'automatic') return outcome(root, 'disabled', null, eventIds, null, null, true);
+  const clock = options.nowMs ?? Date.now;
+  const deadlineMs = clock() + policy.timeoutMs;
   recoverAbandonedArchitectureProjectionJobs(root, now);
   const blocked = architectureProjectionDeadLetterForSourceEvents(root, eventIds);
   if (blocked) return outcome(root, 'dead-letter', blocked.job.jobId, blocked.job.sourceEventIds, null, blocked.failure.message, false);
@@ -95,21 +97,25 @@ export function drainArchitectureProjectionJobs(
       schemaVersion: PROJECTION_REQUEST_VERSION,
       requestId: `repo-harness.projection.${job.jobId}`,
       profile: 'repo-harness/v1',
-      mode: policy.applyMode === 'automatic' ? 'apply' : 'plan',
+      mode: 'apply',
       targets: ['agent-context', 'architecture-docs'],
       changedPaths: job.changedPaths,
       expected: captureArchitectureProjectionSnapshot(root),
     };
-    const result = runArchitectureProjection(request, root, { ...options, policy });
+    const result = runArchitectureProjection(request, root, { ...options, policy, deadlineMs, nowMs: clock });
     if (result.status === 'retryable-failure') throw new ClassifiedProjectionError('process', 'archctx returned retryable-failure');
-    if (result.status === 'permanent-failure' || result.status === 'blocked') {
-      throw new ClassifiedProjectionError('permanent', `archctx returned ${result.status}`);
+    if (result.status === 'blocked') throw new ClassifiedProjectionError('process', summarizeNonTerminal(result));
+    if (result.status !== 'applied' && result.status !== 'noop') {
+      throw new ClassifiedProjectionError('permanent', summarizeNonTerminal(result));
     }
     const refreshReceipts = consumeArchitectureRefreshSignals(root, result.refreshSignals, job.changedPaths, {
       env: options.env,
       run: options.runRefreshActions,
       now,
+      deadlineMs,
+      nowMs: clock,
     });
+    if (clock() >= deadlineMs) throw new ClassifiedProjectionError('timeout', 'architecture projection drain exceeded its total deadline');
     completeArchitectureProjectionJob(root, job, result, refreshReceipts.map((entry) => entry.receiptDigest), now);
     return outcome(root, 'succeeded', job.jobId, job.sourceEventIds, result.status, null, true);
   } catch (error) {
@@ -133,6 +139,14 @@ export function drainArchitectureProjectionJobs(
   }
 }
 
+function summarizeNonTerminal(result: ProjectionResultV1): string {
+  const actions = result.humanActions
+    .map((action) => `${action.reasonCode} [${action.affectedNodeIds.join(',') || 'repository'}] payload=${action.requestPayloadDigest}`)
+    .join('; ')
+    .slice(0, 600);
+  return `archctx returned ${result.status}${actions ? `; human actions: ${actions}` : ''}`;
+}
+
 function failPreflight(
   repoRoot: string,
   events: readonly ArchitectureProjectionSourceEvent[],
@@ -144,7 +158,9 @@ function failPreflight(
   if (eventIds.length === 0 || changedPaths.length === 0) throw error;
   const blocked = architectureProjectionDeadLetterForSourceEvents(repoRoot, eventIds);
   if (blocked) return outcome(repoRoot, 'dead-letter', blocked.job.jobId, blocked.job.sourceEventIds, null, blocked.failure.message, false);
-  enqueueArchitectureProjectionJob(repoRoot, eventIds, changedPaths, now);
+  const expectedJobId = architectureProjectionJobId(eventIds, changedPaths);
+  const queued = enqueueArchitectureProjectionJob(repoRoot, eventIds, changedPaths, now);
+  if (!queued || queued.jobId !== expectedJobId) return outcome(repoRoot, 'idle', null, eventIds, null, null, false);
   const job = claimNextArchitectureProjectionJob(repoRoot, now);
   if (!job) return outcome(repoRoot, 'idle', null, eventIds, null, null, false);
   const classified = classify(error);

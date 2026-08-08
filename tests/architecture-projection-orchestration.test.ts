@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { projectionResultReceiptDigest, type ArchitectureProjectionPolicy, type ProjectionRequestV1 } from '../src/core/architecture/projection';
+import { projectionResultReceiptDigest, type ArchitectureProjectionPolicy, type ProjectionRequestV1, type ProjectionResultV1 } from '../src/core/architecture/projection';
 import { runMutationObserved, consumePendingPostEditEvents, readPendingPostEditEvents, migratePendingPostEditJournalV1 } from '../src/cli/hook/mutation-observed';
 import { drainArchitectureProjectionJobs } from '../src/effects/architecture/projection-orchestrator';
 import {
@@ -87,7 +87,7 @@ function envelope(request: ProjectionRequestV1) {
     layoutVersion: 'archcontext.docs-layout/v1' as const,
     generatedFrom: { codeGraphPackage: '@colbymchenry/codegraph' as const, codeGraphVersion: '1.5.0' as const, codeGraphBinaryDigest: digest('6'), codeGraphStatus: 'ready' as const },
   };
-  const body = {
+  const body: Omit<ProjectionResultV1, 'receiptDigest'> = {
     schemaVersion: 'archcontext.projection-result/v1' as const,
     requestId: request.requestId,
     status: 'applied' as const,
@@ -96,6 +96,20 @@ function envelope(request: ProjectionRequestV1) {
     affectedNodeIds: [], files: [], humanActions: [], refreshSignals: [],
   };
   return { schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'projection.run', data: { ...body, receiptDigest: projectionResultReceiptDigest(body) } };
+}
+
+function envelopeWithStatus(
+  request: ProjectionRequestV1,
+  status: 'human-action-required' | 'blocked',
+) {
+  const value = structuredClone(envelope(request));
+  value.data.status = status;
+  value.data.humanActions = status === 'human-action-required'
+    ? [{ reasonCode: 'unresolved-major-change' as const, affectedNodeIds: ['capability.test.root'], requestPayloadDigest: digest('a') }]
+    : [];
+  const { receiptDigest: _receipt, ...body } = value.data;
+  value.data.receiptDigest = projectionResultReceiptDigest(body);
+  return value;
 }
 
 function successfulRunner(projectionCalls: { count: number }): RunArchctxProcess {
@@ -126,6 +140,40 @@ describe('durable architecture projection orchestration', () => {
     expect(readdirSync(join(f.repoRoot, '.ai/harness/architecture-projection/receipts'))).toHaveLength(1);
     consumePendingPostEditEvents(f.repoRoot, process.env, { skipArchitectureCascade: true });
     expect(readPendingPostEditEvents(f.repoRoot)).toHaveLength(0);
+  });
+
+  test('projects a same-session path again after the prior delivery was acknowledged', () => {
+    const f = fixture();
+    const projectionCalls = { count: 0 };
+    const input = JSON.stringify({ file_path: 'src/repeated.ts', session_id: 'same-session' });
+    runMutationObserved({ collector: f.collector, input });
+    const first = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: successfulRunner(projectionCalls) });
+    consumePendingPostEditEvents(f.repoRoot, process.env, { skipArchitectureCascade: true, eventIds: first.sourceEventIds });
+    runMutationObserved({ collector: f.collector, input });
+    const second = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: successfulRunner(projectionCalls) });
+    expect(second.status).toBe('succeeded');
+    expect(second.jobId).not.toBe(first.jobId);
+    expect(projectionCalls.count).toBe(2);
+  });
+
+  test('bounds handshake, provider, validation, and refresh under one drain deadline', () => {
+    const f = fixture();
+    runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/deadline.ts', session_id: 'deadline' }) });
+    let clockMs = 0;
+    const timeouts: number[] = [];
+    const run: RunArchctxProcess = (_binary, args, options) => {
+      timeouts.push(options.timeoutMs);
+      if (args[0] === 'capabilities') {
+        clockMs = 10_000;
+        return capabilities();
+      }
+      const request = JSON.parse(args[3]!) as ProjectionRequestV1;
+      clockMs = 119_000;
+      return { status: 0, signal: null, stderr: '', stdout: JSON.stringify(envelope(request)) };
+    };
+    const result = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run, nowMs: () => clockMs });
+    expect(result.status).toBe('succeeded');
+    expect(timeouts).toEqual([10_000, 110_000]);
   });
 
   test('retains source events on process failure and dead-letters the third attempt', () => {
@@ -178,6 +226,20 @@ describe('durable architecture projection orchestration', () => {
     expect(architectureProjectionQueueState(f.repoRoot).oldestDeadLetterJobId).toMatch(/^job-[a-f0-9]{24}$/);
   });
 
+  test('preflight failure does not consume the attempt budget of an unrelated pending job', () => {
+    const f = fixture();
+    runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/healthy.ts', session_id: 'healthy' }) });
+    const failed: RunArchctxProcess = (_binary, args) => args[0] === 'capabilities'
+      ? capabilities()
+      : { status: 1, signal: null, stdout: '', stderr: 'projection failed' };
+    expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: failed }).status).toBe('retry-pending');
+    runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/new.ts', session_id: 'new' }) });
+    rmSync(join(f.repoRoot, '.archcontext/model/nodes'), { recursive: true, force: true });
+    expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy }).status).toBe('idle');
+    const [pendingName] = readdirSync(join(f.repoRoot, '.ai/harness/architecture-projection/pending'));
+    expect(JSON.parse(readFileSync(join(f.repoRoot, '.ai/harness/architecture-projection/pending', pendingName!), 'utf8')).attempt).toBe(1);
+  });
+
   test('allows only one running provider job per repository', () => {
     const f = fixture();
     const root = realpathSync(f.repoRoot);
@@ -226,6 +288,19 @@ describe('durable architecture projection orchestration', () => {
     expect(architectureProjectionJobState(root, running.jobId)).toBe('dead-letter');
   });
 
+  test('receipt wins crash recovery when running cleanup did not finish', () => {
+    const f = fixture();
+    const root = realpathSync(f.repoRoot);
+    enqueueArchitectureProjectionJob(root, ['event-receipt-crash'], ['src/receipt-crash.ts']);
+    const running = claimNextArchitectureProjectionJob(root)!;
+    const receipts = join(root, '.ai/harness/architecture-projection/receipts');
+    mkdirSync(receipts, { recursive: true });
+    writeFileSync(join(receipts, `${running.jobId}.json`), '{}\n');
+    expect(recoverAbandonedArchitectureProjectionJobs(root)).toBe(1);
+    expect(architectureProjectionJobState(root, running.jobId)).toBe('receipt');
+    expect(architectureProjectionQueueState(root).running).toBe(0);
+  });
+
   test('rejects completion or failure from a stale claim owner', () => {
     const f = fixture();
     const root = realpathSync(f.repoRoot);
@@ -271,6 +346,34 @@ describe('durable architecture projection orchestration', () => {
     expect(drained.status).toBe('disabled');
     expect(projectionCalls.count).toBe(0);
     expect(readPendingPostEditEvents(f.repoRoot)).toHaveLength(1);
+  });
+
+  test('manual apply mode stays off the automatic Stop lane', () => {
+    const f = fixture();
+    runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/manual.ts', session_id: 'manual' }) });
+    const projectionCalls = { count: 0 };
+    const result = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy: { ...policy, applyMode: 'manual' }, run: successfulRunner(projectionCalls) });
+    expect(result.status).toBe('disabled');
+    expect(result.acknowledgeSourceEvents).toBe(true);
+    expect(projectionCalls.count).toBe(0);
+  });
+
+  test('does not acknowledge human-action or blocked provider outcomes as success', () => {
+    for (const status of ['human-action-required', 'blocked'] as const) {
+      const f = fixture();
+      runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: `src/${status}.ts`, session_id: status }) });
+      const run: RunArchctxProcess = (_binary, args) => {
+        if (args[0] === 'capabilities') return capabilities();
+        const request = JSON.parse(args[3]!) as ProjectionRequestV1;
+        return { status: 0, signal: null, stderr: '', stdout: JSON.stringify(envelopeWithStatus(request, status)) };
+      };
+      const result = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run });
+      expect(result.acknowledgeSourceEvents).toBe(false);
+      expect(result.status).toBe(status === 'blocked' ? 'retry-pending' : 'dead-letter');
+      expect(result.error).toContain(status);
+      if (status === 'human-action-required') expect(result.error).toContain('unresolved-major-change');
+      expect(readPendingPostEditEvents(f.repoRoot)).toHaveLength(1);
+    }
   });
 
   test('manual drain consumes source events and reports the rollback journal count', () => {

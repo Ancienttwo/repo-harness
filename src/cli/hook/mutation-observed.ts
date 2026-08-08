@@ -34,12 +34,13 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'fs';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { basename, dirname, join } from 'path';
 import type { SessionContextSection } from './session-context-budget';
 import { loadMinimalChangePolicy } from './minimal-change-policy';
 import { collectMinimalChangeSignals } from './minimal-change-signals';
 import { fileExists, readText } from '../../effects/state/collect-state-inputs';
+import { withExclusiveDirectoryLock } from '../../effects/locking/exclusive-directory-lock';
 import type { WorktreeOwnership } from '../../effects/loop/state-input-collector';
 import {
   artifactStemFromPlan,
@@ -588,6 +589,16 @@ interface WriteJournalEventInput {
 
 function writeOrCoalesceJournalEvent(repoRoot: string, input: WriteJournalEventInput): string | null {
   const key = journalEventKey(input.sessionId, [input.filePath]);
+  try {
+    const root = realpathSync(repoRoot);
+    return withExclusiveDirectoryLock(root, `${JOURNAL_ROOT}/locks/${key}`, () => writeOrCoalesceJournalEventLocked(root, input, key));
+  } catch {
+    // Best-effort: a journal write/lock failure must never fail the hot path.
+    return null;
+  }
+}
+
+function writeOrCoalesceJournalEventLocked(repoRoot: string, input: WriteJournalEventInput, key: string): string | null {
   const relativePath = `${JOURNAL_PENDING_DIR}/${key}.json`;
   const absPath = join(repoRoot, relativePath);
   const nowIso = new Date().toISOString();
@@ -611,7 +622,7 @@ function writeOrCoalesceJournalEvent(repoRoot: string, input: WriteJournalEventI
   const event: PostEditJournalEvent = {
     schema: 'change_observed',
     schema_version: 2,
-    event_id: key,
+    event_id: existing?.event_id ?? `change-${randomUUID()}`,
     session_id: input.sessionId,
     created_at: existing?.created_at ?? nowIso,
     updated_at: nowIso,
@@ -628,13 +639,8 @@ function writeOrCoalesceJournalEvent(repoRoot: string, input: WriteJournalEventI
     },
   };
 
-  try {
-    writeJournalEventAtomic(absPath, event);
-    return relativePath;
-  } catch {
-    // Best-effort: a journal write failure must never fail the hot path.
-    return null;
-  }
+  writeJournalEventAtomic(absPath, event);
+  return relativePath;
 }
 
 interface PendingScanResult {
@@ -931,18 +937,33 @@ export function consumePendingPostEditEvents(
         );
       }
       if (options.retainEventFiles === true) {
-        writeJournalEventAtomic(join(repoRoot, JOURNAL_PENDING_DIR, name), {
-          ...event,
-          updated_at: new Date().toISOString(),
-          dirty: {
-            ...event.dirty,
-            'contract-verification': false,
-            'minimal-change': false,
-          },
+        const root = realpathSync(repoRoot);
+        const key = name.replace(/\.json$/, '');
+        withExclusiveDirectoryLock(root, `${JOURNAL_ROOT}/locks/${key}`, () => {
+          const path = join(root, JOURNAL_PENDING_DIR, name);
+          const current = readJournalEventFile(path);
+          if (!current || current.updated_at !== event.updated_at) return;
+          writeJournalEventAtomic(path, {
+            ...current,
+            updated_at: new Date().toISOString(),
+            dirty: {
+              ...current.dirty,
+              'contract-verification': false,
+              'minimal-change': false,
+            },
+          });
         });
       } else {
-        deletePendingPostEditEventFile(repoRoot, name);
-        consumed += 1;
+        const root = realpathSync(repoRoot);
+        const key = name.replace(/\.json$/, '');
+        let deleted = false;
+        withExclusiveDirectoryLock(root, `${JOURNAL_ROOT}/locks/${key}`, () => {
+          const current = readJournalEventFile(join(root, JOURNAL_PENDING_DIR, name));
+          if (!current || current.updated_at !== event.updated_at) return;
+          deletePendingPostEditEventFile(root, name);
+          deleted = true;
+        });
+        if (deleted) consumed += 1;
       }
     } catch {
       errors += 1;

@@ -167,10 +167,13 @@ export function readArchitectureProjectionPolicy(value: unknown): ArchitecturePr
   const timeoutMs = architecture.projection_timeout_ms ?? 120_000;
   if (provider !== 'disabled' && provider !== 'archctx') throw new Error('policy.architecture.projection_provider must be disabled|archctx');
   if (applyMode !== 'disabled' && applyMode !== 'manual' && applyMode !== 'automatic') throw new Error('policy.architecture.projection_apply must be disabled|manual|automatic');
+  if (provider === 'disabled') {
+    if (applyMode !== 'disabled') throw new Error('projection_apply must be disabled when projection_provider is disabled');
+    return { provider, applyMode, failureGate: 'advisory', requiredVersion: ARCHCTX_REQUIRED_VERSION, timeoutMs: 120_000 };
+  }
   if (failureGate !== 'advisory' && failureGate !== 'strict') throw new Error('policy.architecture.projection_failure_gate must be advisory|strict');
   if (typeof requiredVersion !== 'string' || requiredVersion.trim() === '') throw new Error('policy.architecture.projection_version must be a non-empty string');
   if (!Number.isInteger(timeoutMs) || (timeoutMs as number) < 1_000 || (timeoutMs as number) > 120_000) throw new Error('policy.architecture.projection_timeout_ms must be 1000..120000');
-  if (provider === 'disabled' && applyMode !== 'disabled') throw new Error('projection_apply must be disabled when projection_provider is disabled');
   return { provider, applyMode, failureGate, requiredVersion, timeoutMs: timeoutMs as number };
 }
 
