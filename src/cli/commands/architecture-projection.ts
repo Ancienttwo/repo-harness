@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { Command } from 'commander';
 import { PROJECTION_REQUEST_VERSION, type ProjectionMode, type ProjectionRequestV1 } from '../../core/architecture/projection';
 import { captureArchitectureProjectionSnapshot, inspectArchitectureProjectionReadiness, runArchitectureProjection } from '../../effects/architecture/archctx-provider';
+import { drainArchitectureProjectionJobs } from '../../effects/architecture/projection-orchestrator';
 
 interface ProjectionCommandOptions {
   json?: boolean;
@@ -16,13 +17,20 @@ export function buildArchitectureProjectionCommand(): Command {
     try { write(inspectArchitectureProjectionReadiness(repositoryRoot())); }
     catch (error) { fail(error); }
   });
-  for (const name of ['check', 'plan', 'apply', 'drain'] as const) {
+  for (const name of ['check', 'plan', 'apply'] as const) {
     command.command(name)
       .requiredOption('--json', 'Output ProjectionResultV1 JSON')
       .option('--changed-path <path...>', 'Changed repository-relative paths')
       .option('--request-id <id>', 'Stable request id')
-      .action((options: ProjectionCommandOptions) => execute(name === 'drain' ? 'plan' : name, options));
+      .action((options: ProjectionCommandOptions) => execute(name, options));
   }
+  command.command('drain').requiredOption('--json', 'Output durable drain JSON').action(() => {
+    try {
+      const result = drainArchitectureProjectionJobs(repositoryRoot());
+      write(result);
+      if (result.status === 'retry-pending' || result.status === 'dead-letter') process.exitCode = 1;
+    } catch (error) { fail(error); }
+  });
   command.command('adopt')
     .requiredOption('--json', 'Output ProjectionResultV1 JSON')
     .requiredOption('--adoption-plan-id <id>', 'Approved ArchContext adoption plan id')

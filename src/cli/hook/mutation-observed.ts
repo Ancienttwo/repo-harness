@@ -536,7 +536,7 @@ export interface PostEditJournalDirtyBits {
 
 export interface PostEditJournalEvent {
   readonly schema: 'change_observed';
-  readonly schema_version: 1;
+  readonly schema_version: 2;
   readonly event_id: string;
   readonly session_id: string;
   readonly created_at: string;
@@ -564,7 +564,7 @@ function readJournalEventFile(absPath: string): PostEditJournalEvent | null {
   try {
     const raw = readFileSync(absPath, 'utf-8');
     const parsed = JSON.parse(raw) as PostEditJournalEvent;
-    return parsed && parsed.schema === 'change_observed' ? parsed : null;
+    return parsed && parsed.schema === 'change_observed' && parsed.schema_version === 2 ? parsed : null;
   } catch {
     return null;
   }
@@ -610,7 +610,7 @@ function writeOrCoalesceJournalEvent(repoRoot: string, input: WriteJournalEventI
 
   const event: PostEditJournalEvent = {
     schema: 'change_observed',
-    schema_version: 1,
+    schema_version: 2,
     event_id: key,
     session_id: input.sessionId,
     created_at: existing?.created_at ?? nowIso,
@@ -645,6 +645,7 @@ interface PendingScanResult {
    * consumer cleans up, never a state the SessionStart display needs to
    * know about. */
   readonly corruptNames: readonly string[];
+  readonly legacyNames: readonly string[];
 }
 
 function scanPendingPostEditEventFiles(repoRoot: string): PendingScanResult {
@@ -653,16 +654,47 @@ function scanPendingPostEditEventFiles(repoRoot: string): PendingScanResult {
   try {
     names = readdirSync(dir).filter((name) => name.endsWith('.json'));
   } catch {
-    return { valid: [], corruptNames: [] };
+    return { valid: [], corruptNames: [], legacyNames: [] };
   }
   const valid: Array<{ name: string; event: PostEditJournalEvent }> = [];
   const corruptNames: string[] = [];
+  const legacyNames: string[] = [];
   for (const name of names.sort()) {
     const event = readJournalEventFile(join(dir, name));
     if (event) valid.push({ name, event });
+    else if (readLegacyJournalEventFile(join(dir, name))) legacyNames.push(name);
     else corruptNames.push(name);
   }
-  return { valid, corruptNames };
+  return { valid, corruptNames, legacyNames };
+}
+
+type LegacyPostEditJournalEventV1 = Omit<PostEditJournalEvent, 'schema_version'> & { readonly schema_version: 1 };
+
+function readLegacyJournalEventFile(path: string): LegacyPostEditJournalEventV1 | null {
+  try {
+    const value = JSON.parse(readFileSync(path, 'utf8')) as LegacyPostEditJournalEventV1;
+    return value?.schema === 'change_observed' && value.schema_version === 1 ? value : null;
+  } catch { return null; }
+}
+
+/** Explicit one-way queue migration. The runtime consumer remains v2-only. */
+export function migratePendingPostEditJournalV1(repoRoot: string, limit = 100): { migrated: number; remaining: number } {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) throw new Error('post-edit journal migration limit must be 1..1000');
+  const dir = join(repoRoot, JOURNAL_PENDING_DIR);
+  let names: string[];
+  try { names = readdirSync(dir).filter((name) => name.endsWith('.json')).sort(); }
+  catch { return { migrated: 0, remaining: 0 }; }
+  let migrated = 0;
+  let remaining = 0;
+  for (const name of names) {
+    const path = join(dir, name);
+    const legacy = readLegacyJournalEventFile(path);
+    if (!legacy) continue;
+    if (migrated >= limit) { remaining += 1; continue; }
+    writeJournalEventAtomic(path, { ...legacy, schema_version: 2 });
+    migrated += 1;
+  }
+  return { migrated, remaining };
 }
 
 /** Pending (unconsumed) events, oldest-key-first. Used both by the
@@ -853,11 +885,14 @@ function warnStderr(line: string): void {
 export function consumePendingPostEditEvents(
   repoRoot: string,
   env: NodeJS.ProcessEnv = process.env,
+  options: { skipArchitectureCascade?: boolean; eventIds?: readonly string[] } = {},
 ): PostEditConsumeSummary {
+  migratePendingPostEditJournalV1(repoRoot, 100);
   const { valid, corruptNames } = scanPendingPostEditEventFiles(repoRoot);
   let consumed = 0;
   let errors = 0;
   const warnings: string[] = [];
+  const selectedEventIds = options.eventIds ? new Set(options.eventIds) : null;
 
   for (const name of corruptNames) {
     const warning = `[PostEditJournal] WARN: removed corrupt pending event file ${name}`;
@@ -871,8 +906,9 @@ export function consumePendingPostEditEvents(
   }
 
   for (const { name, event } of valid) {
+    if (selectedEventIds && !selectedEventIds.has(event.event_id)) continue;
     try {
-      if (event.dirty.architecture) {
+      if (event.dirty.architecture && options.skipArchitectureCascade !== true) {
         for (const filePath of event.changed_paths) {
           processArchitectureCascade(repoRoot, env, filePath);
         }

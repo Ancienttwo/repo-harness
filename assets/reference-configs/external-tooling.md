@@ -719,6 +719,21 @@ global-tool detector below does not satisfy projection readiness; use
 `repo-harness architecture-projection status --json`. The provider remains
 disabled by default until the release pin is cut over.
 
+When enabled, PostEdit writes only `change_observed` v2 journal records. Stop
+coalesces all eligible records into one durable projection job, excludes
+ArchContext-owned `docs/architecture/**` and declared agent-context targets,
+and acknowledges the source records only after a typed projection receipt is
+durable. Process, timeout, stale-snapshot, invalid-result, and refresh failures
+remain pending for three attempts before an explicit dead-letter transition.
+`ArchitectureRefreshSignalV1` is the only major-change refresh authority; the
+consumer does not infer impact from path names or diff size. SessionStart and
+`repo-harness architecture-projection drain --json` expose queue state.
+
+Managed host adapters give only `Stop.default` 150 seconds so the configured
+120-second provider bound has control-plane margin. Every other managed route
+remains at 30 seconds, and installer refresh replaces only repo-harness-owned
+entries while preserving sibling user hooks.
+
 ### `source.include` grammar
 
 Upstream matches an include glob against the whole repo-relative path, so a

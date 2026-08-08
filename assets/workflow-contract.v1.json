@@ -275,6 +275,7 @@
       ".ai/harness/handoff/current.md",
       ".ai/harness/handoff/resume.md",
       ".ai/harness/capability-context/",
+      ".ai/harness/architecture-projection/",
       ".ai/harness/security/.gitkeep",
       ".ai/harness/planning/",
       ".ai/harness/architecture/events.jsonl",

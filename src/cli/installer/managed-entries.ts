@@ -44,7 +44,7 @@ export function buildHookCommand(route: Route, host: HookHost): string {
 
 export function buildHookEntry(route: Route, host: HookHost): HookEntry {
   const entry: HookEntry = {
-    hooks: [{ type: 'command', command: buildHookCommand(route, host), timeout: 30 }],
+    hooks: [{ type: 'command', command: buildHookCommand(route, host), timeout: route.event === 'Stop' && route.routeId === 'default' ? 150 : 30 }],
   };
   if (route.matcher !== undefined) entry.matcher = route.matcher;
   return entry;

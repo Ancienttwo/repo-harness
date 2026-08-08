@@ -84,6 +84,28 @@ function seedDelegation(cwd: string, scope = 'turn-ordered'): string {
 }
 
 describe('runStopHandler', () => {
+  test('surfaces projection retry advisory and blocks only under strict freshness policy', () => {
+    const failedDrain = () => ({
+      schemaVersion: 'repo-harness.architecture-projection-drain/v1' as const,
+      status: 'retry-pending' as const,
+      jobId: 'job-test', sourceEventIds: ['event-test'], resultStatus: null,
+      error: 'archctx projection failed: exit 1', acknowledgeSourceEvents: false,
+      queue: { schemaVersion: 'repo-harness.architecture-projection-queue-state/v1' as const, pending: 1, running: 0, receipts: 0, deadLetters: 0, oldestPendingJobId: 'job-test' },
+    });
+    const advisoryRoot = fixture();
+    writeFileSync(join(advisoryRoot, '.ai/harness/policy.json'), '{"architecture":{"freshness_gate":"advisory"}}\n');
+    const advisory = runStopHandler({ collector: collector(advisoryRoot, () => canonicalState()), dependencies: { drainArchitectureProjection: failedDrain } });
+    expect(advisory.exitCode).toBe(0);
+    expect(advisory.stderr).toContain('[ArchitectureProjection] retry-pending');
+
+    const strictRoot = fixture();
+    writeFileSync(join(strictRoot, '.ai/harness/policy.json'), '{"architecture":{"freshness_gate":"strict"}}\n');
+    const strict = runStopHandler({ collector: collector(strictRoot, () => canonicalState()), dependencies: { drainArchitectureProjection: failedDrain } });
+    expect(strict.exitCode).toBe(0);
+    expect(JSON.parse(strict.stdout).decision).toBe('block');
+    expect(strict.stdout).toContain('Strict freshness gate blocked Stop');
+  });
+
   test('commits the exact four-target projection once before the single state resolution', () => {
     const cwd = fixture();
     const observed: StopProjectionTarget[] = [];

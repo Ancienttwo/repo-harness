@@ -8,6 +8,7 @@ import { runCommandObserved } from './command-observed';
 import { runTraceObserver } from './trace-observer';
 import { getRoute, ROUTES, type HookEvent, type HookHandlerId, type Route, type RouteId } from './route-registry';
 import type { HookHandlerContext, HookHandlerResult, TypedHookHandler } from './handler-contract';
+import { architectureProjectionQueueState } from '../../effects/architecture/projection-jobs';
 
 function result(value: { readonly exitCode: number; readonly stdout: string; readonly stderr: string; readonly reason?: string }): HookHandlerResult {
   return value;
@@ -23,6 +24,17 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
       if (stateSection) sections.push(stateSection);
       const pending = pendingPostEditJournalSection(context.repoRoot);
       if (pending) sections.push(pending);
+      const projectionQueue = architectureProjectionQueueState(context.repoRoot);
+      if (projectionQueue.pending > 0 || projectionQueue.running > 0 || projectionQueue.deadLetters > 0) {
+        sections.push({
+          id: 'architecture-projection-queue',
+          priority: 4 as const,
+          content: `[ArchitectureProjection] pending=${projectionQueue.pending} running=${projectionQueue.running} dead-letter=${projectionQueue.deadLetters}${projectionQueue.oldestPendingJobId ? ` oldest=${projectionQueue.oldestPendingJobId}` : ''}.`,
+          mandatory: false,
+          actionable: true,
+          reference: 'repo-harness architecture-projection drain --json',
+        });
+      }
       sections.push(...buildSessionStartSections(
         context.collector,
         context.env,

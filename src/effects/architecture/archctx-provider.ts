@@ -179,6 +179,10 @@ export function captureArchitectureProjectionSnapshot(repoRoot: string): Project
   };
 }
 
+export function architectureProjectionOwnedPaths(repoRoot: string): string[] {
+  return [...new Set(['docs/architecture', ...architectureAgentContextTargets(realpathSync(resolve(repoRoot)))])].sort();
+}
+
 function architectureAgentContextTargets(root: string): string[] {
   const nodesDir = join(root, '.archcontext', 'model', 'nodes');
   if (!existsSync(nodesDir)) throw new Error('architecture projection requires .archcontext/model/nodes');

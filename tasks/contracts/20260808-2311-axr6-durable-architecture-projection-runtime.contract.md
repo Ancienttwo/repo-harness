@@ -82,10 +82,13 @@ allowed_paths:
   - tasks/reviews/20260808-2311-axr6-durable-architecture-projection-runtime.review.md
   - tasks/notes/20260808-2311-axr6-durable-architecture-projection-runtime.notes.md
   - .ai/context/capabilities.json
+  - .ai/harness/workflow-contract.json
   - .ai/harness/policy.json
+  - .gitignore
   - .claude/templates/
   - assets/
   - docs/reference-configs/
+  - scripts/
   - src/
   - tests/
 ```

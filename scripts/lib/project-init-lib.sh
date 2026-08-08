@@ -55,6 +55,7 @@ tasks/.current.md.tmp.*
 .ai/harness/handoff/resume.md
 .ai/harness/capability-context/
 .ai/harness/journal/
+.ai/harness/architecture-projection/
 .ai/harness/security/*
 !.ai/harness/security/.gitkeep
 .ai/harness/planning/*

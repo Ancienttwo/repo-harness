@@ -126,7 +126,7 @@ describe('mutation-observed: journal schema', () => {
       expect(events.length).toBe(1);
       const event = events[0];
       expect(event.schema).toBe('change_observed');
-      expect(event.schema_version).toBe(1);
+    expect(event.schema_version).toBe(2);
       expect(event.session_id).toBe('session-a');
       expect(event.changed_paths).toEqual(['src/example.ts']);
       expect(event.subject_revision).toMatch(/^[0-9a-f]{12}$/);

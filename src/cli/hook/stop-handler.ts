@@ -28,6 +28,7 @@ import {
   withDelegationStateTransaction,
 } from './delegation-state';
 import { consumePendingPostEditEvents } from './mutation-observed';
+import { drainArchitectureProjectionJobs, type ArchitectureProjectionDrainResultV1 } from '../../effects/architecture/projection-orchestrator';
 import { runMinimalChangeCli } from './minimal-change-cli';
 import { publishCheckpointFromLedger } from '../../effects/evidence/checkpoint-store';
 import {
@@ -55,6 +56,7 @@ export interface StopHandlerDependencies {
   /** Invoked once after the complete Stop projection batch commits. */
   readonly observeProjectionTransaction?: () => void;
   readonly beforeDelegationLock?: () => void;
+  readonly drainArchitectureProjection?: (repoRoot: string, env: NodeJS.ProcessEnv) => ArchitectureProjectionDrainResultV1;
 }
 
 export interface StopHandlerInput {
@@ -484,10 +486,19 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   const activePlanMarker = opts.collector.getActivePlanMarker();
   const activePlan = ownership.owner === null || ownership.ownedByCurrent ? activePlanMarker : null;
 
+  let architectureDrain: ArchitectureProjectionDrainResultV1 | null = null;
+  let architectureDrainError = '';
   try {
-    consumePendingPostEditEvents(repoRoot, env);
-  } catch {
-    // Deferred journal housekeeping never blocks Stop.
+    architectureDrain = dependencies.drainArchitectureProjection?.(repoRoot, env)
+      ?? drainArchitectureProjectionJobs(repoRoot, { env });
+    if (architectureDrain.acknowledgeSourceEvents) {
+      consumePendingPostEditEvents(repoRoot, env, {
+        skipArchitectureCascade: architectureDrain.status !== 'disabled',
+        ...(architectureDrain.status === 'disabled' ? {} : { eventIds: architectureDrain.sourceEventIds }),
+      });
+    }
+  } catch (error) {
+    architectureDrainError = error instanceof Error ? error.message : String(error);
   }
 
   // EPC-07 (reordered from EPC-06's additive placement, documented in
@@ -520,6 +531,18 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   dependencies.observeProjectionTransaction?.();
 
   const stderr: string[] = [`[FinalizeHandoff] Refreshed ${projected.paths.handoff}.\n`];
+  if (architectureDrain?.status === 'retry-pending' || architectureDrain?.status === 'dead-letter') {
+    stderr.push(`[ArchitectureProjection] ${architectureDrain.status}: ${architectureDrain.error ?? 'unknown failure'}\n`);
+  } else if (architectureDrainError) {
+    stderr.push(`[ArchitectureProjection] orchestration failed: ${architectureDrainError}\n`);
+  }
+  const architectureGate = nestedString(policy(repoRoot), ['architecture', 'freshness_gate']) || 'advisory';
+  if (architectureGate === 'strict' && (architectureDrainError || architectureDrain?.status === 'retry-pending' || architectureDrain?.status === 'dead-letter')) {
+    return {
+      ...block(`[ArchitectureProjection] Strict freshness gate blocked Stop: ${architectureDrainError || architectureDrain?.error || architectureDrain?.status}.`),
+      stderr: stderr.join(''),
+    };
+  }
   let state: EffectiveState | null = null;
   try {
     state = opts.collector.getStopEffectiveState();
