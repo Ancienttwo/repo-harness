@@ -40,6 +40,7 @@ const PROJECTION_WORKTREE_IGNORE_ROOTS = new Set([
   '.DS_Store',
 ]);
 const PROJECTION_WORKTREE_IGNORE_PATHS = new Set([
+  '.ai/harness',
   '.archcontext/.local',
   'docs/architecture',
 ]);

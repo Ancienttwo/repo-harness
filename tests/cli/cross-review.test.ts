@@ -12,6 +12,7 @@ import { runCrossReviewCommand, formatCrossReviewResult } from "../../src/cli/co
 import {
   buildRecommendation,
   classifyCrossReviewOutcome,
+  matchesClaudeCapacityFailureSignal,
   matchesAuthFailureSignal,
   parseFindings,
   selectRecoveredTranscript,
@@ -495,11 +496,17 @@ describe("pure classification and parsing helpers (src/core/review/cross-review.
   });
 
   test("parseFindings extracts [P1]/[P2] lines and ignores everything else", () => {
-    const findings = parseFindings(["some prose", "- [P1] critical thing", "[P2] minor thing", ""].join("\n"));
+    const findings = parseFindings(["some prose", "## [P1] critical heading", "- [P1] critical thing", "[P2] minor thing", ""].join("\n"));
     expect(findings).toEqual([
+      { severity: "P1", text: "critical heading" },
       { severity: "P1", text: "critical thing" },
       { severity: "P2", text: "minor thing" },
     ]);
+  });
+
+  test("matchesClaudeCapacityFailureSignal accepts the pinned route limit only", () => {
+    expect(matchesClaudeCapacityFailureSignal("You've reached your Fable 5 limit. Run /usage-credits to continue.")).toBe(true);
+    expect(matchesClaudeCapacityFailureSignal("boom: internal error")).toBe(false);
   });
 
   test("buildRecommendation: any P1 drives FAIL regardless of P2 count", () => {

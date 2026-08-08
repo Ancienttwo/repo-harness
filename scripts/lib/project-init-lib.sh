@@ -1782,6 +1782,7 @@ pi_write_harness_policy() {
     "vendoring_policy": "do-not-vendor-diagram-skill-assets",
     "projection_provider": "disabled",
     "projection_apply": "disabled",
+    "projection_failure_gate": "advisory",
     "projection_version": "0.4.0",
     "projection_timeout_ms": 120000,
     "freshness_gate": "advisory",

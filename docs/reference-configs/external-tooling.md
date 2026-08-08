@@ -726,13 +726,30 @@ and acknowledges the source records only after a typed projection receipt is
 durable. Process, timeout, stale-snapshot, invalid-result, and refresh failures
 remain pending for three attempts before an explicit dead-letter transition.
 `ArchitectureRefreshSignalV1` is the only major-change refresh authority; the
-consumer does not infer impact from path names or diff size. SessionStart and
+consumer does not infer impact from path names, diff size, or queue-helper
+stdout. A typed refresh-required signal runs the canonical architecture,
+context-contract, and capability-context writers even when the legacy queue
+helper creates no drift card. SessionStart and
 `repo-harness architecture-projection drain --json` expose queue state.
+
+Projection delivery failures use the independent
+`architecture.projection_failure_gate` (`advisory` by default); the existing
+`architecture.freshness_gate` retains its merge/drift meaning. A strict
+projection failure can be recovered without deleting runtime evidence via
+`repo-harness architecture-projection retry-dead-letter --job-id <job> --json`.
+The runtime snapshot excludes `.ai/harness/**`, so concurrent harness receipts
+and traces cannot invalidate a provider snapshot.
 
 Managed host adapters give only `Stop.default` 150 seconds so the configured
 120-second provider bound has control-plane margin. Every other managed route
 remains at 30 seconds, and installer refresh replaces only repo-harness-owned
 entries while preserving sibling user hooks.
+
+Before rolling back to a runtime that only understands journal v1, disable the
+projection provider with the current runtime, run
+`repo-harness architecture-projection drain --json`, and verify the pending
+journal count is zero. Downgrading with v2 observations still pending is not a
+supported rollback state.
 
 ### `source.include` grammar
 

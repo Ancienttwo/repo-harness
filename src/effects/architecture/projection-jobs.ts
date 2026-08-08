@@ -7,6 +7,7 @@ import type { ProjectionResultV1 } from '../../core/architecture/projection';
 export const ARCHITECTURE_PROJECTION_RUNTIME_ROOT = '.ai/harness/architecture-projection';
 const LOCK_PATH = `${ARCHITECTURE_PROJECTION_RUNTIME_ROOT}/locks/store`;
 const MAX_ATTEMPTS = 3;
+const RUNNING_STALE_MS = 15 * 60 * 1000;
 
 export type ProjectionJobFailureKind = 'process' | 'timeout' | 'stale-snapshot' | 'invalid-result' | 'refresh' | 'permanent';
 
@@ -48,6 +49,7 @@ export interface ArchitectureProjectionQueueStateV1 {
   receipts: number;
   deadLetters: number;
   oldestPendingJobId: string | null;
+  oldestDeadLetterJobId: string | null;
 }
 
 function directory(kind: 'pending' | 'running' | 'receipts' | 'dead-letter'): string {
@@ -74,8 +76,28 @@ function names(repoRoot: string, kind: 'pending' | 'running' | 'receipts' | 'dea
   catch { return []; }
 }
 
+function jobsByCreatedAt(repoRoot: string, kind: 'pending' | 'running'): ArchitectureProjectionJobV1[] {
+  return names(repoRoot, kind)
+    .map((name) => readJson<ArchitectureProjectionJobV1>(join(repoRoot, directory(kind), name)))
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.jobId.localeCompare(right.jobId));
+}
+
+function deadLettersByFailedAt(repoRoot: string): ArchitectureProjectionDeadLetterV1[] {
+  return names(repoRoot, 'dead-letter')
+    .map((name) => readJson<ArchitectureProjectionDeadLetterV1>(join(repoRoot, directory('dead-letter'), name)))
+    .sort((left, right) => left.failedAt.localeCompare(right.failedAt) || left.job.jobId.localeCompare(right.job.jobId));
+}
+
+function normalizedIdentity(sourceEventIds: readonly string[], changedPaths: readonly string[]): { events: string[]; paths: string[] } {
+  return {
+    events: [...new Set(sourceEventIds)].sort(),
+    paths: [...new Set(changedPaths)].sort(),
+  };
+}
+
 export function architectureProjectionJobId(sourceEventIds: readonly string[], changedPaths: readonly string[]): string {
-  const digest = createHash('sha256').update(JSON.stringify({ sourceEventIds: [...sourceEventIds].sort(), changedPaths: [...changedPaths].sort() })).digest('hex');
+  const { events, paths } = normalizedIdentity(sourceEventIds, changedPaths);
+  const digest = createHash('sha256').update(JSON.stringify({ sourceEventIds: events, changedPaths: paths })).digest('hex');
   return `job-${digest.slice(0, 24)}`;
 }
 
@@ -95,12 +117,12 @@ export function enqueueArchitectureProjectionJob(
   changedPaths: readonly string[],
   now = new Date(),
 ): ArchitectureProjectionJobV1 | null {
-  const events = [...new Set(sourceEventIds)].sort();
-  const paths = [...new Set(changedPaths)].sort();
+  const { events, paths } = normalizedIdentity(sourceEventIds, changedPaths);
   if (events.length === 0 || paths.length === 0) return null;
   return withExclusiveDirectoryLock(repoRoot, LOCK_PATH, () => {
-    const existingName = names(repoRoot, 'pending')[0];
-    if (existingName) return readJson<ArchitectureProjectionJobV1>(join(repoRoot, directory('pending'), existingName));
+    if (names(repoRoot, 'running').length > 0) return null;
+    const existing = jobsByCreatedAt(repoRoot, 'pending')[0];
+    if (existing) return existing;
     const id = architectureProjectionJobId(events, paths);
     for (const kind of ['running', 'receipts', 'dead-letter'] as const) {
       const path = pathFor(repoRoot, kind, id);
@@ -128,7 +150,9 @@ export function recoverAbandonedArchitectureProjectionJobs(repoRoot: string, now
     for (const name of names(repoRoot, 'running')) {
       const runningPath = join(repoRoot, directory('running'), name);
       const job = readJson<ArchitectureProjectionJobV1>(runningPath);
-      if (job.ownerPid && processIsAlive(job.ownerPid)) continue;
+      const updatedAtMs = Date.parse(job.updatedAt);
+      const stale = !Number.isFinite(updatedAtMs) || now.getTime() - updatedAtMs >= RUNNING_STALE_MS;
+      if (!stale && job.ownerPid && processIsAlive(job.ownerPid)) continue;
       const pending = { ...job, status: 'pending' as const, updatedAt: now.toISOString(), ownerPid: undefined };
       atomicJson(pathFor(repoRoot, 'pending', job.jobId), pending);
       unlinkSync(runningPath);
@@ -145,10 +169,10 @@ function processIsAlive(pid: number): boolean {
 
 export function claimNextArchitectureProjectionJob(repoRoot: string, now = new Date()): ArchitectureProjectionJobV1 | null {
   return withExclusiveDirectoryLock(repoRoot, LOCK_PATH, () => {
-    const name = names(repoRoot, 'pending')[0];
-    if (!name) return null;
-    const pendingPath = join(repoRoot, directory('pending'), name);
-    const pending = readJson<ArchitectureProjectionJobV1>(pendingPath);
+    if (names(repoRoot, 'running').length > 0) return null;
+    const pending = jobsByCreatedAt(repoRoot, 'pending')[0];
+    if (!pending) return null;
+    const pendingPath = pathFor(repoRoot, 'pending', pending.jobId);
     const running: ArchitectureProjectionJobV1 = {
       ...pending,
       status: 'running',
@@ -159,6 +183,33 @@ export function claimNextArchitectureProjectionJob(repoRoot: string, now = new D
     atomicJson(pathFor(repoRoot, 'running', running.jobId), running);
     unlinkSync(pendingPath);
     return running;
+  });
+}
+
+export function retryArchitectureProjectionDeadLetter(
+  repoRoot: string,
+  jobId: string,
+  now = new Date(),
+): ArchitectureProjectionJobV1 {
+  if (!/^job-[a-f0-9]{24}$/.test(jobId)) throw new Error('architecture projection job id is invalid');
+  return withExclusiveDirectoryLock(repoRoot, LOCK_PATH, () => {
+    if (names(repoRoot, 'running').length > 0 || names(repoRoot, 'pending').length > 0) {
+      throw new Error('architecture projection retry requires an empty pending/running queue');
+    }
+    const deadLetterPath = pathFor(repoRoot, 'dead-letter', jobId);
+    if (!existsSync(deadLetterPath)) throw new Error(`architecture projection dead letter is missing: ${jobId}`);
+    const deadLetter = readJson<ArchitectureProjectionDeadLetterV1>(deadLetterPath);
+    const pending: ArchitectureProjectionJobV1 = {
+      ...deadLetter.job,
+      status: 'pending',
+      attempt: 0,
+      ownerPid: undefined,
+      updatedAt: now.toISOString(),
+      lastFailure: undefined,
+    };
+    atomicJson(pathFor(repoRoot, 'pending', jobId), pending);
+    unlinkSync(deadLetterPath);
+    return pending;
   });
 }
 
@@ -222,13 +273,15 @@ export function failArchitectureProjectionJob(
 }
 
 export function architectureProjectionQueueState(repoRoot: string): ArchitectureProjectionQueueStateV1 {
-  const pendingNames = names(repoRoot, 'pending');
+  const pending = jobsByCreatedAt(repoRoot, 'pending');
+  const deadLetters = deadLettersByFailedAt(repoRoot);
   return {
     schemaVersion: 'repo-harness.architecture-projection-queue-state/v1',
-    pending: pendingNames.length,
+    pending: pending.length,
     running: names(repoRoot, 'running').length,
     receipts: names(repoRoot, 'receipts').length,
-    deadLetters: names(repoRoot, 'dead-letter').length,
-    oldestPendingJobId: pendingNames[0]?.replace(/\.json$/, '') ?? null,
+    deadLetters: deadLetters.length,
+    oldestPendingJobId: pending[0]?.jobId ?? null,
+    oldestDeadLetterJobId: deadLetters[0]?.job.jobId ?? null,
   };
 }

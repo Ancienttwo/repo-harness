@@ -111,7 +111,7 @@ AXR5 已经把 `ProjectionRequestV1 -> archctx@0.4.0 -> ProjectionResultV1` 固�
 - `src/effects/architecture/projection-jobs.ts`: job-store authority；exclusive lock 下做 pending/running/receipt/dead-letter 原子 transition、attempt count、crash recovery 和 read model。
 - `src/effects/architecture/projection-orchestrator.ts`: Stop-time consumer；聚合 changed paths、排除 ArchContext-owned docs/context、capture expected snapshot、执行一个 apply/plan request、按 typed status/error 分类，并在 receipt 后 ack source events。
 - `src/effects/architecture/refresh-consumer.ts`: 只消费 `ArchitectureRefreshSignalV1`；以 signalId/idempotencyKey 去重，调用既有 canonical `architecture-queue`、`context-contract-sync`、capability context request writer，并记录 output digests。
-- `src/cli/hook/stop-handler.ts`: 在 handoff projection 前调用一个 120 秒 bounded drain，按 advisory/strict policy surface readiness；不吞掉 durable failure。
+- `src/cli/hook/stop-handler.ts`: 在 handoff projection 前调用一个 120 秒 bounded drain，以独立 `projection_failure_gate` 按 advisory/strict surface readiness；既有 `freshness_gate` 只保留 merge/drift 语义。
 - `src/cli/commands/architecture-projection.ts`: `drain` 改为 job orchestrator read/execute lane，不再是 plan alias。
 - `src/cli/hook/session-context.ts`: SessionStart 显示 pending/running/dead-letter read model。
 - `src/cli/installer/managed-entries.ts`: 只有 `Stop.default` timeout=150；所有其他 route=30；installer replacement 仍保留 sibling user hooks。
@@ -157,12 +157,12 @@ Failure path: spawn exit/signal/timeout、corrupt JSON、stale snapshot、refres
 - Exit 1/signal/timeout/stale snapshot never loses source events; the third failed attempt produces a durable dead-letter record.
 - Duplicate signal and projection-owned writes are idempotent and do not create a second projection job.
 - Stop.default is 150 seconds for both hosts; all other managed routes remain 30 seconds; sibling user hooks survive update.
-- SessionStart and `architecture-projection drain --json` accurately expose pending/dead-letter state.
+- SessionStart and `architecture-projection drain --json` accurately expose pending/dead-letter state；`retry-dead-letter` 提供不删除 source evidence 的显式恢复出口。
 - Provider disabled preserves existing runtime behavior and performs no projection subprocess.
 
 ## Rollback
 
-Revert the AXR6 merge commit as one unit. Because capability authority stays registry and provider defaults disabled, rollback only retires runtime queue consumers; receipts/dead-letter files remain operational evidence and are not destructively deleted.
+降级前先在 AXR6 runtime 把 provider 设为 disabled、执行 `architecture-projection drain --json` 并确认 pending journal 为零，再 revert AXR6 merge commit。因为旧 runtime 不理解 v2 observation，带 pending v2 queue 的直接降级不是支持状态。receipts/dead-letter files 继续作为 operational evidence 保留，不做破坏性删除。
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
@@ -175,3 +175,5 @@ Revert the AXR6 merge commit as one unit. Because capability authority stays reg
 - [x] Wire Stop, manual drain and SessionStart pending/dead-letter surface with advisory/strict policy behavior.
 - [x] Set managed Stop timeout=150 for Claude/Codex while non-Stop remains 30 and sibling hooks survive update.
 - [x] Run focused chaos/installer/host tests, type/helper gates, then full `bun run check:ci` and real installed Stop readback.
+- [x] Close external Claude review findings: decouple non-architecture effects from source ack, enforce one running job, canonicalize job identity, honor typed refresh no-op semantics, and add independent failure gate plus dead-letter retry.
+- [x] Harden review/runtime edges: parse Markdown finding headings, bound Fable-to-Opus fallback to explicit capacity signals, ignore `.ai/harness/**` in snapshots, recover stale PID reuse, and preserve original transition failures.

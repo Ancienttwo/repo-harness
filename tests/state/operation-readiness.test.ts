@@ -104,9 +104,10 @@ describe('evaluateReadiness fixture-driven matrix', () => {
     expect(readArchitectureProjectionPolicy({ architecture: {
       projection_provider: 'archctx',
       projection_apply: 'manual',
+      projection_failure_gate: 'strict',
       projection_version: '0.4.0',
       projection_timeout_ms: 120000,
-    } })).toEqual({ provider: 'archctx', applyMode: 'manual', requiredVersion: '0.4.0', timeoutMs: 120000 });
+    } })).toEqual({ provider: 'archctx', applyMode: 'manual', failureGate: 'strict', requiredVersion: '0.4.0', timeoutMs: 120000 });
     expect(() => readArchitectureProjectionPolicy({ architecture: {
       projection_provider: 'disabled',
       projection_apply: 'automatic',

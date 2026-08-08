@@ -81,7 +81,7 @@ export type CrossReviewResult = CrossReviewSuccess | CrossReviewFailure;
 
 // --- Finding / recommendation parsing (pure text processing) ---------------
 
-const FINDING_LINE_PATTERN = /^\s*[-*]?\s*\[(P1|P2)\]\s*(.+)$/;
+const FINDING_LINE_PATTERN = /^\s*(?:(?:[-*]|#{1,6})\s+)?\[(P1|P2)\]\s*(.+)$/;
 
 export function parseFindings(transcript: string): readonly CrossReviewFinding[] {
   const findings: CrossReviewFinding[] = [];
@@ -125,6 +125,15 @@ const AUTH_FAILURE_SIGNAL_PATTERNS: readonly RegExp[] = [
 
 export function matchesAuthFailureSignal(text: string): boolean {
   return AUTH_FAILURE_SIGNAL_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+const CLAUDE_CAPACITY_FAILURE_PATTERNS: readonly RegExp[] = [
+  /reached\s+your\s+fable(?:\s+\d+)?\s+limit/i,
+  /usage-credits/i,
+];
+
+export function matchesClaudeCapacityFailureSignal(text: string): boolean {
+  return CLAUDE_CAPACITY_FAILURE_PATTERNS.some((pattern) => pattern.test(text));
 }
 
 // --- Outcome classification (pure decision table) ---------------------------

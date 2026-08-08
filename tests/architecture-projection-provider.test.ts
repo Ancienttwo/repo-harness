@@ -23,7 +23,7 @@ import { architectureProjectionExitCode } from '../src/cli/commands/architecture
 
 const roots: string[] = [];
 const digest = (value: string) => `sha256:${value.repeat(64).slice(0, 64)}` as const;
-const policy: ArchitectureProjectionPolicy = { provider: 'archctx', applyMode: 'manual', requiredVersion: ARCHCTX_REQUIRED_VERSION, timeoutMs: 120_000 };
+const policy: ArchitectureProjectionPolicy = { provider: 'archctx', applyMode: 'manual', failureGate: 'advisory', requiredVersion: ARCHCTX_REQUIRED_VERSION, timeoutMs: 120_000 };
 
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
@@ -197,6 +197,8 @@ describe('package-local ArchContext projection provider', () => {
     expect(before.repositoryId).toMatch(/^repo\.[a-f0-9]{16}$/);
     expect(before.workspaceId).toMatch(/^workspace\.[a-f0-9]{16}$/);
     writeFileSync(join(f.repoRoot, 'AGENTS.md'), 'changed generated output\n');
+    expect(captureArchitectureProjectionSnapshot(f.repoRoot)).toEqual(before);
+    writeFileSync(join(f.repoRoot, '.ai', 'harness', 'runtime-state.json'), '{"updated":true}\n');
     expect(captureArchitectureProjectionSnapshot(f.repoRoot)).toEqual(before);
     mkdirSync(join(f.repoRoot, 'nested'), { recursive: true });
     writeFileSync(join(f.repoRoot, 'nested', 'AGENTS.md'), 'not a projection target\n');

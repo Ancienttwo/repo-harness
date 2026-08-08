@@ -1,8 +1,10 @@
 import { execFileSync } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 import { Command } from 'commander';
 import { PROJECTION_REQUEST_VERSION, type ProjectionMode, type ProjectionRequestV1 } from '../../core/architecture/projection';
 import { captureArchitectureProjectionSnapshot, inspectArchitectureProjectionReadiness, runArchitectureProjection } from '../../effects/architecture/archctx-provider';
 import { drainArchitectureProjectionJobs } from '../../effects/architecture/projection-orchestrator';
+import { architectureProjectionQueueState, retryArchitectureProjectionDeadLetter } from '../../effects/architecture/projection-jobs';
 import { migratePendingPostEditJournalV1, readPendingPostEditEvents } from '../hook/mutation-observed';
 
 interface ProjectionCommandOptions {
@@ -34,6 +36,16 @@ export function buildArchitectureProjectionCommand(): Command {
       if (result.status === 'retry-pending' || result.status === 'dead-letter') process.exitCode = 1;
     } catch (error) { fail(error); }
   });
+  command.command('retry-dead-letter')
+    .requiredOption('--json', 'Output retried job and queue state JSON')
+    .requiredOption('--job-id <id>', 'Exact dead-letter job id')
+    .action((options: { jobId: string }) => {
+      try {
+        const root = realpathSync(repositoryRoot());
+        const job = retryArchitectureProjectionDeadLetter(root, options.jobId);
+        write({ schemaVersion: 'repo-harness.architecture-projection-retry/v1', job, queue: architectureProjectionQueueState(root) });
+      } catch (error) { fail(error); }
+    });
   command.command('adopt')
     .requiredOption('--json', 'Output ProjectionResultV1 JSON')
     .requiredOption('--adoption-plan-id <id>', 'Approved ArchContext adoption plan id')

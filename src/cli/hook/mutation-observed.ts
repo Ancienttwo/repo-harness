@@ -872,10 +872,12 @@ function warnStderr(line: string): void {
 }
 
 /**
- * Processes every pending journal event's dirty bits (architecture cascade,
- * contract verification, deferred minimal-change signals) and DELETES the
- * event file on success (retention: transit queue, not an evidence ledger --
- * see `deletePendingPostEditEventFile`'s doc comment). Best-effort per
+ * Processes every selected journal event's dirty bits (architecture cascade,
+ * contract verification, deferred minimal-change signals). The default path
+ * deletes the event on success. `retainEventFiles` persists the event with
+ * non-architecture dirty bits cleared, allowing those orthogonal effects to
+ * complete while a durable architecture job still owns the source ack.
+ * Best-effort per
  * event: one event's failure leaves its file in `pending/` for the next
  * Stop to retry rather than losing the others or throwing out of Stop.
  * Corrupt pending files (unparseable JSON, wrong schema) are removed
@@ -885,7 +887,7 @@ function warnStderr(line: string): void {
 export function consumePendingPostEditEvents(
   repoRoot: string,
   env: NodeJS.ProcessEnv = process.env,
-  options: { skipArchitectureCascade?: boolean; eventIds?: readonly string[] } = {},
+  options: { skipArchitectureCascade?: boolean; eventIds?: readonly string[]; retainEventFiles?: boolean } = {},
 ): PostEditConsumeSummary {
   migratePendingPostEditJournalV1(repoRoot, 100);
   const { valid, corruptNames } = scanPendingPostEditEventFiles(repoRoot);
@@ -928,8 +930,20 @@ export function consumePendingPostEditEvents(
           event.payload.minimal_change.base_ref,
         );
       }
-      deletePendingPostEditEventFile(repoRoot, name);
-      consumed += 1;
+      if (options.retainEventFiles === true) {
+        writeJournalEventAtomic(join(repoRoot, JOURNAL_PENDING_DIR, name), {
+          ...event,
+          updated_at: new Date().toISOString(),
+          dirty: {
+            ...event.dirty,
+            'contract-verification': false,
+            'minimal-change': false,
+          },
+        });
+      } else {
+        deletePendingPostEditEventFile(repoRoot, name);
+        consumed += 1;
+      }
     } catch {
       errors += 1;
     }

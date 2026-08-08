@@ -2,16 +2,18 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { projectionResultReceiptDigest, type ArchitectureProjectionPolicy, type ProjectionRequestV1 } from '../src/core/architecture/projection';
 import { runMutationObserved, consumePendingPostEditEvents, readPendingPostEditEvents, migratePendingPostEditJournalV1 } from '../src/cli/hook/mutation-observed';
 import { drainArchitectureProjectionJobs } from '../src/effects/architecture/projection-orchestrator';
 import {
   architectureProjectionJobState,
+  architectureProjectionJobId,
   architectureProjectionQueueState,
   claimNextArchitectureProjectionJob,
   enqueueArchitectureProjectionJob,
   recoverAbandonedArchitectureProjectionJobs,
+  retryArchitectureProjectionDeadLetter,
 } from '../src/effects/architecture/projection-jobs';
 import type { ArchctxProcessResult, RunArchctxProcess } from '../src/effects/architecture/archctx-provider';
 import { buildManagedHooks } from '../src/cli/installer/managed-entries';
@@ -20,7 +22,7 @@ import { consumeArchitectureRefreshSignals } from '../src/effects/architecture/r
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 const digest = (token: string) => `sha256:${token.repeat(64).slice(0, 64)}` as const;
-const policy: ArchitectureProjectionPolicy = { provider: 'archctx', applyMode: 'automatic', requiredVersion: '0.4.0', timeoutMs: 120_000 };
+const policy: ArchitectureProjectionPolicy = { provider: 'archctx', applyMode: 'automatic', failureGate: 'advisory', requiredVersion: '0.4.0', timeoutMs: 120_000 };
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'repo-harness-axr6-'));
@@ -136,6 +138,42 @@ describe('durable architecture projection orchestration', () => {
     expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: failed }).status).toBe('dead-letter');
     expect(readPendingPostEditEvents(f.repoRoot)).toHaveLength(1);
     expect(architectureProjectionQueueState(f.repoRoot).deadLetters).toBe(1);
+    const deadLetterId = architectureProjectionQueueState(f.repoRoot).oldestDeadLetterJobId;
+    expect(deadLetterId).toMatch(/^job-[a-f0-9]{24}$/);
+    const retried = retryArchitectureProjectionDeadLetter(realpathSync(f.repoRoot), deadLetterId!);
+    expect(retried.attempt).toBe(0);
+    expect(architectureProjectionQueueState(f.repoRoot).deadLetters).toBe(0);
+    expect(architectureProjectionQueueState(f.repoRoot).pending).toBe(1);
+  });
+
+  test('normalizes duplicate paths into one stable job identity and preserves dead-letter visibility', () => {
+    const f = fixture();
+    for (const session_id of ['duplicate-a', 'duplicate-b']) {
+      runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/shared.ts', session_id }) });
+    }
+    const sources = readPendingPostEditEvents(f.repoRoot);
+    expect(architectureProjectionJobId(sources.map((event) => event.event_id), ['src/shared.ts', 'src/shared.ts']))
+      .toBe(architectureProjectionJobId(sources.map((event) => event.event_id), ['src/shared.ts']));
+    const failed: RunArchctxProcess = (_binary, args) => args[0] === 'capabilities'
+      ? capabilities()
+      : { status: 1, signal: null, stdout: '', stderr: 'projection failed' };
+    expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: failed }).status).toBe('retry-pending');
+    expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: failed }).status).toBe('retry-pending');
+    expect(drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: failed }).status).toBe('dead-letter');
+    const replay = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: failed });
+    expect(replay.status).toBe('dead-letter');
+    expect(replay.acknowledgeSourceEvents).toBe(false);
+    expect(replay.jobId).toBe(architectureProjectionQueueState(f.repoRoot).oldestDeadLetterJobId);
+  });
+
+  test('allows only one running provider job per repository', () => {
+    const f = fixture();
+    const root = realpathSync(f.repoRoot);
+    const first = enqueueArchitectureProjectionJob(root, ['event-a'], ['src/a.ts']);
+    expect(claimNextArchitectureProjectionJob(root)?.jobId).toBe(first?.jobId);
+    expect(enqueueArchitectureProjectionJob(root, ['event-b'], ['src/b.ts'])).toBeNull();
+    expect(claimNextArchitectureProjectionJob(root)).toBeNull();
+    expect(architectureProjectionQueueState(root)).toMatchObject({ pending: 0, running: 1 });
   });
 
   test('recovers a running job whose owner process died without acknowledging its source event', () => {
@@ -152,6 +190,17 @@ describe('durable architecture projection orchestration', () => {
     expect(recoverAbandonedArchitectureProjectionJobs(root)).toBe(1);
     expect(architectureProjectionJobState(root, running!.jobId)).toBe('pending');
     expect(readPendingPostEditEvents(root).map((event) => event.event_id)).toEqual([source!.event_id]);
+  });
+
+  test('recovers a stale running job even when its PID has been reused', () => {
+    const f = fixture();
+    const root = realpathSync(f.repoRoot);
+    const queued = enqueueArchitectureProjectionJob(root, ['event-stale'], ['src/stale.ts'], new Date('2026-01-01T00:00:00.000Z'));
+    const running = claimNextArchitectureProjectionJob(root, new Date('2026-01-01T00:00:01.000Z'));
+    expect(running?.jobId).toBe(queued?.jobId);
+    expect(running?.ownerPid).toBe(process.pid);
+    expect(recoverAbandonedArchitectureProjectionJobs(root, new Date('2026-01-01T00:16:00.000Z'))).toBe(1);
+    expect(architectureProjectionJobState(root, running!.jobId)).toBe('pending');
   });
 
   test('acks only the events bound to a completed job when a newer edit arrives between retries', () => {
@@ -236,5 +285,37 @@ describe('durable architecture projection orchestration', () => {
     expect(calls).toBe(1);
     expect(second).toEqual(first);
     expect(first[0]?.actions[0]?.outputDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
+  });
+
+  test('typed refresh authority runs canonical sync actions even when architecture-queue reports no drift card', () => {
+    const f = fixture();
+    const bin = join(dirname(f.repoRoot), 'refresh-bin');
+    const calls = join(dirname(f.repoRoot), 'refresh-calls.txt');
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(join(bin, 'repo-harness'), '#!/bin/sh\nprintf "%s\\n" "$*" >> "$AXR6_REFRESH_CALLS"\nexit 0\n');
+    chmodSync(join(bin, 'repo-harness'), 0o755);
+    const signal = {
+      schemaVersion: 'archcontext.architecture-refresh-signal/v1' as const,
+      signalId: digest('g'), idempotencyKey: digest('h'), mode: 'refresh-required' as const,
+      repository: { repositoryId: 'repo.test' },
+      worktree: { workspaceId: 'workspace.test', headSha: '1'.repeat(40), worktreeDigest: digest('i') },
+      cause: 'accepted-semantic-delta' as const,
+      acceptedChange: { changeSetId: 'cs-2', eventId: 'event-2', reasonCodes: ['responsibility-changed'], affectedNodeIds: ['capability.test.root'] },
+      reasonCodes: ['responsibility-changed'], affectedNodeIds: ['capability.test.root'], refreshTargets: ['architecture-docs'],
+      baseDigests: { model: digest('j') }, resultingDigests: { model: digest('k') }, projectionReceiptDigest: digest('l'),
+    };
+    const [receipt] = consumeArchitectureRefreshSignals(f.repoRoot, [signal], ['src/index.ts'], {
+      env: { ...process.env, PATH: bin, AXR6_REFRESH_CALLS: calls },
+    });
+    expect(receipt?.actions.map((action) => action.action)).toEqual([
+      'architecture-queue',
+      'context-contract-sync',
+      'capability-context-request',
+    ]);
+    expect(readFileSync(calls, 'utf8').trim().split('\n')).toEqual([
+      'run architecture-queue record --file src/index.ts',
+      'run context-contract-sync sync-latest',
+      'capability-context request --from-latest-architecture-event',
+    ]);
   });
 });

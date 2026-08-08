@@ -15,7 +15,7 @@ import { runProcess } from "../process-runner";
 import {
   buildRecommendation,
   classifyCrossReviewOutcome,
-  matchesAuthFailureSignal,
+  matchesClaudeCapacityFailureSignal,
   parseFindings,
   selectRecoveredTranscript,
   toClaudeProjectKey,
@@ -315,14 +315,14 @@ export function runCrossReview(input: RunCrossReviewInput): CrossReviewResult {
   });
 
   // claude-mode-only retry: exactly one attempt on opus when the fable route
-  // failed with a nonzero, non-timeout, non-auth exit. Provider capacity
-  // errors may be written to stdout, so stdout presence is not success.
+  // failed with the provider's explicit capacity signal. Capacity errors may
+  // be written to stdout, so stdout presence alone is not success.
   // Never a loop, never a fallback to the other provider.
   if (
     input.provider === "claude" &&
     !invocation.timedOut &&
     invocation.status !== 0 &&
-    !matchesAuthFailureSignal([invocation.stdout, invocation.stderr, invocation.error].join("\n"))
+    matchesClaudeCapacityFailureSignal([invocation.stdout, invocation.stderr, invocation.error].join("\n"))
   ) {
     const retryArgs = withModel(args, "opus");
     invocation = runProcess(command, retryArgs, {

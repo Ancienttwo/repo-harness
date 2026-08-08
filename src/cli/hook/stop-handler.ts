@@ -27,7 +27,7 @@ import {
   type DelegationScope,
   withDelegationStateTransaction,
 } from './delegation-state';
-import { consumePendingPostEditEvents, migratePendingPostEditJournalV1, readPendingPostEditEvents } from './mutation-observed';
+import { consumePendingPostEditEvents, migratePendingPostEditJournalV1, readPendingPostEditEvents, type PostEditJournalEvent } from './mutation-observed';
 import { drainArchitectureProjectionJobs, type ArchitectureProjectionDrainResultV1 } from '../../effects/architecture/projection-orchestrator';
 import { runMinimalChangeCli } from './minimal-change-cli';
 import { publishCheckpointFromLedger } from '../../effects/evidence/checkpoint-store';
@@ -488,19 +488,31 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
 
   let architectureDrain: ArchitectureProjectionDrainResultV1 | null = null;
   let architectureDrainError = '';
+  let sourceEvents: readonly PostEditJournalEvent[] = [];
   try {
     migratePendingPostEditJournalV1(repoRoot, 100);
-    const sourceEvents = readPendingPostEditEvents(repoRoot);
+    sourceEvents = readPendingPostEditEvents(repoRoot);
     architectureDrain = dependencies.drainArchitectureProjection?.(repoRoot, env)
       ?? drainArchitectureProjectionJobs(repoRoot, { env, sourceEvents });
-    if (architectureDrain.acknowledgeSourceEvents) {
+  } catch (error) {
+    architectureDrainError = error instanceof Error ? error.message : String(error);
+  }
+  try {
+    if (architectureDrain?.acknowledgeSourceEvents) {
       consumePendingPostEditEvents(repoRoot, env, {
         skipArchitectureCascade: architectureDrain.status !== 'disabled',
         ...(architectureDrain.status === 'disabled' ? {} : { eventIds: architectureDrain.sourceEventIds }),
       });
+    } else {
+      consumePendingPostEditEvents(repoRoot, env, {
+        skipArchitectureCascade: true,
+        eventIds: sourceEvents.map((event) => event.event_id),
+        retainEventFiles: true,
+      });
     }
   } catch (error) {
-    architectureDrainError = error instanceof Error ? error.message : String(error);
+    const message = error instanceof Error ? error.message : String(error);
+    architectureDrainError = architectureDrainError ? `${architectureDrainError}; journal side effects failed: ${message}` : `journal side effects failed: ${message}`;
   }
 
   // EPC-07 (reordered from EPC-06's additive placement, documented in
@@ -538,10 +550,10 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   } else if (architectureDrainError) {
     stderr.push(`[ArchitectureProjection] orchestration failed: ${architectureDrainError}\n`);
   }
-  const architectureGate = nestedString(policy(repoRoot), ['architecture', 'freshness_gate']) || 'advisory';
+  const architectureGate = nestedString(policy(repoRoot), ['architecture', 'projection_failure_gate']) || 'advisory';
   if (architectureGate === 'strict' && (architectureDrainError || architectureDrain?.status === 'retry-pending' || architectureDrain?.status === 'dead-letter')) {
     return {
-      ...block(`[ArchitectureProjection] Strict freshness gate blocked Stop: ${architectureDrainError || architectureDrain?.error || architectureDrain?.status}.`),
+      ...block(`[ArchitectureProjection] Strict projection failure gate blocked Stop: ${architectureDrainError || architectureDrain?.error || architectureDrain?.status}.`),
       stderr: stderr.join(''),
     };
   }

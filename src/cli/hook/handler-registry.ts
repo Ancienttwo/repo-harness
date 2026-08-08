@@ -29,10 +29,12 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
         sections.push({
           id: 'architecture-projection-queue',
           priority: 4 as const,
-          content: `[ArchitectureProjection] pending=${projectionQueue.pending} running=${projectionQueue.running} dead-letter=${projectionQueue.deadLetters}${projectionQueue.oldestPendingJobId ? ` oldest=${projectionQueue.oldestPendingJobId}` : ''}.`,
+          content: `[ArchitectureProjection] pending=${projectionQueue.pending} running=${projectionQueue.running} dead-letter=${projectionQueue.deadLetters}${projectionQueue.oldestPendingJobId ? ` oldest-pending=${projectionQueue.oldestPendingJobId}` : ''}${projectionQueue.oldestDeadLetterJobId ? ` oldest-dead-letter=${projectionQueue.oldestDeadLetterJobId}` : ''}.`,
           mandatory: false,
           actionable: true,
-          reference: 'repo-harness architecture-projection drain --json',
+          reference: projectionQueue.oldestDeadLetterJobId
+            ? `repo-harness architecture-projection retry-dead-letter --job-id ${projectionQueue.oldestDeadLetterJobId} --json`
+            : 'repo-harness architecture-projection drain --json',
         });
       }
       sections.push(...buildSessionStartSections(

@@ -73,7 +73,7 @@ export function drainArchitectureProjectionJobs(
   if (aggregateState === 'receipt') return outcome(root, 'idle', aggregateId, events.map((event) => event.event_id), null, null, true);
   enqueueArchitectureProjectionJob(root, events.map((event) => event.event_id), eligible, now);
   const job = claimNextArchitectureProjectionJob(root, now);
-  if (!job) return outcome(root, 'idle', null, [], null, null, true);
+  if (!job) return outcome(root, 'idle', null, events.map((event) => event.event_id), null, null, false);
   try {
     const request: ProjectionRequestV1 = {
       schemaVersion: PROJECTION_REQUEST_VERSION,
@@ -98,7 +98,13 @@ export function drainArchitectureProjectionJobs(
     return outcome(root, 'succeeded', job.jobId, job.sourceEventIds, result.status, null, true);
   } catch (error) {
     const classified = classify(error);
-    const transition = failArchitectureProjectionJob(root, job, classified, now);
+    let transition: ReturnType<typeof failArchitectureProjectionJob>;
+    try {
+      transition = failArchitectureProjectionJob(root, job, classified, now);
+    } catch (transitionError) {
+      const transitionMessage = transitionError instanceof Error ? transitionError.message : String(transitionError);
+      throw new Error(`${classified.message}; architecture projection failure transition failed: ${transitionMessage}`, { cause: error });
+    }
     return outcome(
       root,
       transition.state === 'dead-letter' ? 'dead-letter' : 'retry-pending',

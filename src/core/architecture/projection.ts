@@ -136,6 +136,7 @@ export interface ArchctxCapabilitiesV1 {
 export interface ArchitectureProjectionPolicy {
   provider: ProjectionProvider;
   applyMode: ProjectionApplyMode;
+  failureGate: 'advisory' | 'strict';
   requiredVersion: string;
   timeoutMs: number;
 }
@@ -161,14 +162,16 @@ export function readArchitectureProjectionPolicy(value: unknown): ArchitecturePr
   const architecture = root.architecture === undefined ? {} : record(root.architecture, 'policy.architecture');
   const provider = architecture.projection_provider ?? 'disabled';
   const applyMode = architecture.projection_apply ?? 'disabled';
+  const failureGate = architecture.projection_failure_gate ?? 'advisory';
   const requiredVersion = architecture.projection_version ?? ARCHCTX_REQUIRED_VERSION;
   const timeoutMs = architecture.projection_timeout_ms ?? 120_000;
   if (provider !== 'disabled' && provider !== 'archctx') throw new Error('policy.architecture.projection_provider must be disabled|archctx');
   if (applyMode !== 'disabled' && applyMode !== 'manual' && applyMode !== 'automatic') throw new Error('policy.architecture.projection_apply must be disabled|manual|automatic');
+  if (failureGate !== 'advisory' && failureGate !== 'strict') throw new Error('policy.architecture.projection_failure_gate must be advisory|strict');
   if (typeof requiredVersion !== 'string' || requiredVersion.trim() === '') throw new Error('policy.architecture.projection_version must be a non-empty string');
   if (!Number.isInteger(timeoutMs) || (timeoutMs as number) < 1_000 || (timeoutMs as number) > 120_000) throw new Error('policy.architecture.projection_timeout_ms must be 1000..120000');
   if (provider === 'disabled' && applyMode !== 'disabled') throw new Error('projection_apply must be disabled when projection_provider is disabled');
-  return { provider, applyMode, requiredVersion, timeoutMs: timeoutMs as number };
+  return { provider, applyMode, failureGate, requiredVersion, timeoutMs: timeoutMs as number };
 }
 
 export function assertArchctxCapabilities(value: unknown, requiredVersion: string = ARCHCTX_REQUIRED_VERSION): ArchctxCapabilitiesV1 {

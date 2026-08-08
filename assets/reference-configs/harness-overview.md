@@ -201,7 +201,7 @@ rather than inferring those values from turns, tool names, or timestamps.
 - Use `repo-harness capability-context status|request|sync` to keep paired local context files aligned with the registry. The command writes only the controlled `CAPABILITY CONTEXT` block and preserves hand-authored content plus the separate architecture contract block.
 - `.ai/context/capability-source-map.json` is the optional human-edited source-map manifest for capability positioning and source pointers. Missing entries fall back to registry/architecture/workstream metadata; `--auto-fill-positioning` writes deterministic draft entries explicitly, not from hooks.
 - `.ai/harness/capability-context/` is ignored runtime queue state. Post-edit hooks may enqueue requests, and `SessionStart` only reminds the current agent to run `repo-harness capability-context sync --pending --apply`.
-- `.ai/harness/architecture-projection/` is ignored durable projection runtime state. It owns pending/running jobs, typed receipts, refresh receipts, and dead letters; source observations are acknowledged only after a terminal receipt.
+- `.ai/harness/architecture-projection/` is ignored durable projection runtime state. It owns one running provider job per repository, pending jobs, typed receipts, refresh receipts, and dead letters; source observations are acknowledged only after a terminal receipt. SessionStart exposes the exact oldest dead-letter id for the explicit `architecture-projection retry-dead-letter` recovery command.
 - `SessionStart` also summarizes pending architecture request cards so a resumed agent can see drift debt before claiming finish.
 
 ## Initializer and Runtime Model

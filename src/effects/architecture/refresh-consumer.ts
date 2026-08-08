@@ -73,14 +73,11 @@ function runDefaultActions(
   env: NodeJS.ProcessEnv,
 ): ArchitectureRefreshActionResult[] {
   const results: ArchitectureRefreshActionResult[] = [];
-  let requestObserved = false;
   for (const path of [...new Set(changedPaths)].sort()) {
     const result = runCli(repoRoot, env, ['run', 'architecture-queue', 'record', '--file', path]);
     results.push({ action: 'architecture-queue', ...result });
-    requestObserved ||= /^\[ArchitectureDrift\] Request:/m.test(result.stdout);
     if (result.status !== 0) return results;
   }
-  if (!requestObserved) throw new Error('architecture refresh signal did not materialize a canonical architecture request');
   const sync = runCli(repoRoot, env, ['run', 'context-contract-sync', 'sync-latest']);
   results.push({ action: 'context-contract-sync', ...sync });
   if (sync.status !== 0) return results;
