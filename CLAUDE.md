@@ -7,7 +7,7 @@ This repository self-hosts the `repo-harness` contract; the former `repo-harness
 - `tasks/current.md` for the tracked current-status snapshot derived from workflow artifacts
 - `tasks/todos.md` for deferred medium/long-term goals, not active execution checklists
 - `plans/prds/` for upper-layer PRDs; `plans/sprints/` for ordered sprint backlogs operated through `repo-harness run sprint-backlog`; task contracts stay the execution slices
-- `.ai/context/capabilities.json` for the capability registry and longest-prefix context boundaries
+- `.archcontext/model/nodes/*.yaml` for the capability nodes and longest-prefix context boundaries, selected by `.ai/harness/policy.json#context.capability_source`
 - `tasks/workstreams/` for capability long-running workstreams that project durable progress into local contracts
 - `tasks/lessons.md` for correction-derived rules
 - `docs/researches/` for deep repo knowledge
@@ -25,7 +25,7 @@ This repository self-hosts the `repo-harness` contract; the former `repo-harness
 - Use `tasks/notes/<plan-stem>.notes.md` only for non-obvious slice decisions, deviations, tradeoffs, and open questions; `<plan-stem>` is the active plan filename without `plan-` and `.md` (for example `20260531-0045-governance-workflow`). Do not use notes as durable memory or a task log, and archive/promote them deliberately when the slice closes.
 - Treat hook execution as typed and user-level: `~/.claude/settings.json` and `~/.codex/hooks.json` invoke `repo-harness-hook`, whose route registry selects exactly one in-process handler. `.ai/hooks/lib/workflow-state.sh` is an operator-helper library, never a host-event dispatcher.
 - Keep the umbrella hierarchy explicit: architecture owns stable truth, capability contracts own local agent context, `tasks/workstreams/<domain>/<capability>/` owns durable progress, and `tasks/todos.md` owns only deferred medium/long-term goals with tradeoff and revisit trigger.
-- Treat `.ai/context/capabilities.json` as the source of truth for capability prefixes; `agent-context-blocks.txt` and nested agent files are initialization inputs only, never runtime resolver authority.
+- Treat `.archcontext/model/nodes/*.yaml` as the source of truth for capability prefixes under `capability_source: "archcontext"`; `agent-context-blocks.txt` and nested agent files are initialization inputs only, never runtime resolver authority.
 - Keep architecture drift handling split: `architecture-queue.sh` writes architecture requests/events, `workstream-sync.sh` maintains durable capability workstreams, and `context-contract-sync.sh` only updates controlled local `CLAUDE.md`/`AGENTS.md` architecture blocks.
 - Keep `assets/workflow-contract.v1.json` and `.ai/harness/workflow-contract.json` in sync.
 - Keep `CLAUDE.md` and `AGENTS.md` short; put detailed guidance in `docs/reference-configs/`.

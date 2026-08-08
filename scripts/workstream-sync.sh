@@ -197,7 +197,7 @@ if ! resolver_json="$(capability_resolver match --path "$functional_block" --for
 fi
 
 if [[ "$(json_get "$resolver_json" "matched" || true)" != "true" ]]; then
-  echo "workstream-sync: --block must match a declared capability prefix in .ai/context/capabilities.json" >&2
+  echo "workstream-sync: --block must match a declared capability prefix in the capability authority selected by .ai/harness/policy.json#context.capability_source" >&2
   exit 2
 fi
 
@@ -229,7 +229,7 @@ if [[ ! -f "$architecture_domain_file" ]]; then
   cat > "$architecture_domain_file" <<EOF_DOMAIN
 # Architecture Domain: ${architecture_domain}
 
-> **Source**: \`.ai/context/capabilities.json\`
+> **Source**: \`repo-harness run capability-resolver\`
 
 ## Capabilities
 

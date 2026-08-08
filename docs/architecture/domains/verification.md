@@ -1,6 +1,6 @@
 # Architecture Domain: Verification
 
-> **Source**: `.ai/context/capabilities.json`
+> **Source**: `repo-harness run capability-resolver`
 > **Owner**: Regression tests, workflow gates, eval harness, CodeGraph readiness, and advisory tooling checks.
 
 ## Purpose

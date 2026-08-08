@@ -1,11 +1,15 @@
 # verification/codegraph-readiness 架构文档
 
+<!-- BEGIN archctx:intro -->
+
 > 状态：基于 `main` 工作树的 by-capability 架构复核稿。
 > Verified against: main@13686d8d（2026-08-08）
 > Capability ID: `verification-codegraph-readiness`（domain `verification` / name `codegraph-readiness`）
 > Matched Prefixes: `scripts/ensure-codegraph.sh`、`src/cli/tools/codegraph.ts`、`src/cli/mcp/codegraph-adapter.ts`、`tests/cli/codegraph-resolver.test.ts`、`docs/architecture/modules/verification/codegraph-readiness.md`
 > Local Contracts: `AGENTS.md` / `CLAUDE.md`（`.ai/context/capabilities.json` 的 `contract_files`）；`workstream_dir` 声明为 `tasks/workstreams/verification/codegraph-readiness`，当前尚未创建。
 > 事实优先级：实际源码 > 本文 > 任何历史 prose。本文只画**已实现、已接线**的现状；任何尚未落地的形状必须显式标注为**目标设计**。
+
+<!-- END archctx:intro -->
 
 状态标记沿用本仓架构文档约定：
 
@@ -19,6 +23,8 @@
 
 - **Readiness 链**（`scripts/ensure-codegraph.sh` → `src/cli/tools/codegraph.ts` → `scripts/check-agent-tooling.sh`）：面向操作者与 `init`/`doctor`，回答"CodeGraph 装好了吗、索引在不在、host MCP 配没配"。
 - **Reader 链**（`src/cli/mcp/codegraph-adapter.ts`）：面向 repo-harness 自己的 MCP server，把 CodeGraph 索引当作 general-repo-access 工具的**元数据来源**。
+
+<!-- BEGIN archctx:p1 -->
 
 ## 1. P1：能力架构地图
 
@@ -126,6 +132,10 @@ wc -l scripts/check-agent-tooling.sh src/cli/commands/tools.ts
 - MCP 配置写入只允许发生在 `configureCodegraph`（以及 `init` 显式传 `configureCodegraphMcp: true` 时，`init.ts:710`），不得进入默认 ensure/check 路径。
 - `_ref/` 下的 CodeGraph checkout 是参考材料，不属于就绪表面。
 
+<!-- END archctx:p1 -->
+
+<!-- BEGIN archctx:p2 -->
+
 ## 2. P2：端到端数据流
 
 ### 2.1 只读就绪查询（`--check`）
@@ -174,6 +184,8 @@ sequenceDiagram
 MCP reader 路径是另一条链：`general-repo-access.ts` 在 `buildManifestPageSnapshot`（`:1087`，调用点 `:1089`）与 `buildVisibleEntrySnapshot`（`:1180`，调用点 `:1182`）中调 `discoverRepo`。若 `<repo>/.codegraph` 不存在，适配器立即返回 `INDEX_UNAVAILABLE` 且 `retryable=false`（`codegraph-adapter.ts:144`），上层降级为 `filesystem-fallback`（`general-repo-access.ts:528`）而**不是**报错——这是该链条与 readiness 链在失败语义上的关键差别：readiness 链 fail-loud，reader 链 fail-soft 并把失败编码进响应字段。
 
 其余错误分支：`spawnSync` 的 `result.error` 中含 `ETIMEDOUT` 归 `INDEX_UNAVAILABLE`（可重试），其他归 `INTERNAL_ADAPTER_ERROR`（不可重试，`:160`、`:261`）；非零退出统一归 `INDEX_UNAVAILABLE`；JSON 解析失败归 `INTERNAL_ADAPTER_ERROR` 且 `retryable=false`（`:200`）。`configureCodegraph` 的失败不 throw，全部落成 `actions[]` 里的 `failed`/`skipped` 条目并附 reason（例如 Codex 无 project-local MCP 时 `--location local` 直接 `failed`，`:614`）。
+
+<!-- END archctx:p2 -->
 
 ## 3. P3：设计决策与不变量
 

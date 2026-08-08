@@ -14,7 +14,7 @@ Keep this file focused on the local contract for this primary functional block.
 
 ## Positioning
 
-Owns the workflow-engine-inspection-migration capability boundary declared in .ai/context/capabilities.json.
+Owns the workflow-engine-inspection-migration capability boundary declared in .archcontext/model/nodes.
 
 ## Source Map
 

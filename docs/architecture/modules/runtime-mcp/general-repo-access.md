@@ -1,5 +1,7 @@
 # runtime-mcp/general-repo-access 架构文档
 
+<!-- BEGIN archctx:intro -->
+
 > 状态：基于 `main` 工作树的 by-capability 架构复核稿。
 > Verified against: main@13686d8d（2026-08-08）
 > **Capability ID**: `runtime-mcp-general-repo-access`
@@ -8,6 +10,8 @@
 > **Architecture domain / capability**: `runtime-mcp` / `general-repo-access`
 > **Workstream dir**: `tasks/workstreams/runtime-mcp/general-repo-access`（capabilities.json 已声明，当前尚未创建）
 > 事实优先级：**实际源码 > 本文 > `docs/architecture/decisions/20260622-general-repo-codegraph-access.md` > 任何计划文档**。本文只画已实现现状；任何尚未接线的东西必须显式标注为「目标设计」或「已实现、保留字段」。
+
+<!-- END archctx:intro -->
 
 ## 0. 阅读约定
 
@@ -20,6 +24,8 @@
 | **目标设计** | 只存在于 ADR 或计划文档，尚未成为源码 |
 
 本 capability 的产品边界：把一个**用户已注册并已 adopt** 的本地仓库，通过 MCP 暴露给外部 agent 做完整分析与受控写入，唯一的内容级排除源是该仓库的 `.ignore`。授权、路径策略、快照语义、变更安全与审计全部由 repo-harness 自己持有；CodeGraph 只是索引元数据来源，不是策略引擎。
+
+<!-- BEGIN archctx:p1 -->
 
 ## 1. P1：能力架构地图
 
@@ -136,6 +142,10 @@ find tests/cli -type f \( -name 'mcp-reader-tools.test.ts' -o -name 'mcp-codegra
 - 不得暴露本地绝对路径给外部工具面；`repo_id` + repo-relative path 是唯一对外寻址方式，`canonicalRoot` 只是服务端注册表数据。
 - 不得把 CodeGraph 结果当作授权判据或可见性判据（见 §3 不变量 I3）。
 - 不得在 audit / metrics / trace / 错误消息里写入文件正文。
+
+<!-- END archctx:p1 -->
+
+<!-- BEGIN archctx:p2 -->
 
 ## 2. P2：端到端数据流
 
@@ -259,6 +269,8 @@ sequenceDiagram
 | CodeGraph adapter 无 `refreshRepo` 或 refresh 未成功 | `INDEX_UNAVAILABLE`（retryable，写 dead-letter） | `:2295`、`:2343` |
 
 失败也进审计：`blocked` 与 `failed` 两条路径都调用 `audit()` 与 `writeToolObservability()`，`errorCode` 进 metrics，但 payload 正文不进。
+
+<!-- END archctx:p2 -->
 
 ## 3. P3：设计决策与不变量
 

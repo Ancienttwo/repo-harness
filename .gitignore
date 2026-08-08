@@ -86,7 +86,10 @@ autoresearch/
 *.tgz
 _ref/
 _ops/
-.archcontext/
+.archcontext/*
+!.archcontext/model/
+.archcontext/model/*
+!.archcontext/model/nodes/
 .codegraph/
 .understand-anything/
 # Environment

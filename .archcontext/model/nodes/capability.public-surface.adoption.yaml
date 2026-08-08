@@ -1,0 +1,20 @@
+schemaVersion: archcontext.node/v1
+id: capability.public-surface.adoption
+kind: capability
+status: active
+source:
+  include:
+    - "src/cli/commands/adoption-plan.ts"
+    - "src/core/adoption/**"
+    - "src/effects/fs-transaction.ts"
+    - "src/effects/path-safety.ts"
+    - "tests/cli/adoption-plan.test.ts"
+    - "tests/fixtures/adoption/**"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun test tests/cli/adoption-plan.test.ts"
+    - "bun run check:type"

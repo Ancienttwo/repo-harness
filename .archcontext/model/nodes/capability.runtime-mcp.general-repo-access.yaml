@@ -1,0 +1,21 @@
+schemaVersion: archcontext.node/v1
+id: capability.runtime-mcp.general-repo-access
+kind: capability
+status: active
+source:
+  include:
+    - "src/cli/mcp/general-repo-access.ts"
+    - "src/cli/mcp/general-repo-access/**"
+    - "tests/cli/mcp-reader-tools.test.ts"
+    - "tests/cli/mcp-codegraph-contract.test.ts"
+    - "tests/cli/mcp-policy.test.ts"
+    - "tests/cli/mcp-tools.test.ts"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun test tests/cli/mcp-reader-tools.test.ts tests/cli/mcp-codegraph-contract.test.ts"
+    - "bun test tests/cli/mcp-policy.test.ts tests/cli/mcp-tools.test.ts"
+    - "bun run check:type"

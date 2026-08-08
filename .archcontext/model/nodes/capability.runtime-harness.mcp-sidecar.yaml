@@ -1,0 +1,22 @@
+schemaVersion: archcontext.node/v1
+id: capability.runtime-harness.mcp-sidecar
+kind: capability
+status: active
+source:
+  include:
+    - "src/cli/mcp/**"
+    - "src/cli/commands/mcp.ts"
+    - "src/cli/chatgpt-browser/file-policy.ts"
+    - "src/effects/repo-registry.ts"
+    - "docs/repo-harness-chatgpt-mcp-setup.md"
+    - "docs/reference-configs/chatgpt-coding-mcp.md"
+    - "docs/researches/20260711-devspace-chatgpt-local-control.md"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun test tests/cli/mcp*.test.ts"
+    - "bun run check:type"
+    - "repo-harness mcp doctor --repo . --live"

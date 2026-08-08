@@ -1,11 +1,15 @@
 # public-surface/adoption 架构文档
 
+<!-- BEGIN archctx:intro -->
+
 > 状态：基于 `main` 工作树的 by-capability 架构复核稿。
 > Verified against: main@13686d8d（2026-08-08）
 > **Capability ID**: `public-surface-adoption`
 > **Matched Prefixes**: `src/cli/commands/adoption-plan.ts`、`src/core/adoption`、`src/effects/fs-transaction.ts`、`src/effects/path-safety.ts`、`tests/cli/adoption-plan.test.ts`、`tests/fixtures/adoption`
 > **Local Contracts**: `AGENTS.md`、`CLAUDE.md`
 > **事实优先级**：实际源码 > 本文 > `docs/architecture/transactional-adoption-planner.md` > 任何计划稿。本文只画已实现现状；任何尚未接线的形状必须显式标注为**目标设计**或**保留未接线**。
+
+<!-- END archctx:intro -->
 
 ## 0. 阅读约定
 
@@ -19,6 +23,8 @@
 本 capability 的一句话边界：**把「已检查的仓库状态」翻译成一份完整、可预演、可回滚的文件系统事务，并且只由一个 executor 提交。**规划侧禁止 import effects；effects 只消费已规划好的 operation。
 
 ---
+
+<!-- BEGIN archctx:p1 -->
 
 ## 1. P1：能力架构地图
 
@@ -189,6 +195,10 @@ wc -l tests/cli/adoption-plan.test.ts tests/fixtures/adoption/*.json
 
 ---
 
+<!-- END archctx:p1 -->
+
+<!-- BEGIN archctx:p2 -->
+
 ## 2. P2：端到端数据流
 
 ### 2.1 `repo-harness init --repo <downstream> --dry-run` 与 apply 的共享路径
@@ -325,6 +335,8 @@ sequenceDiagram
 | rollback manifest 路径不在 `BACKUP_ROOT` 下 | `fs-transaction.ts:637` | 拒绝，返回结构化错误 |
 
 ---
+
+<!-- END archctx:p2 -->
 
 ## 3. P3：设计决策与不变量
 

@@ -1,0 +1,28 @@
+schemaVersion: archcontext.node/v1
+id: capability.verification.evals-checks
+kind: capability
+status: active
+source:
+  include:
+    - "tests/**"
+    - "evals/**"
+    - "scripts/run-skill-evals.ts"
+    - "scripts/run-harness-profile-benchmark.ts"
+    - "scripts/validate-harness-profile-benchmark.ts"
+    - "scripts/run-bounded-verifier-command.ts"
+    - "scripts/verify-contract.sh"
+    - "scripts/verify-sprint.sh"
+    - "scripts/check-task-workflow.sh"
+    - "scripts/check-task-sync.sh"
+    - "scripts/check-agent-tooling.sh"
+    - "scripts/check-brain-manifest.sh"
+    - "scripts/sync-brain-docs.sh"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun test"
+    - "bash scripts/check-task-sync.sh"
+    - "bash scripts/check-task-workflow.sh --strict"

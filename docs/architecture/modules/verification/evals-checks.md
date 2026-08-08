@@ -1,11 +1,15 @@
 # verification/evals-checks 架构文档
 
+<!-- BEGIN archctx:intro -->
+
 > 状态：基于 `main` 工作树的 by-capability 架构复核稿。
 > Verified against: main@13686d8d（2026-08-08）
 > **Capability ID**: `verification-evals-checks`
 > **Matched Prefixes**: `tests`, `evals`, `scripts/run-skill-evals.ts`, `scripts/run-harness-profile-benchmark.ts`, `scripts/validate-harness-profile-benchmark.ts`, `scripts/run-bounded-verifier-command.ts`, `scripts/verify-contract.sh`, `scripts/verify-sprint.sh`, `scripts/check-task-workflow.sh`, `scripts/check-task-sync.sh`, `scripts/check-agent-tooling.sh`, `scripts/check-brain-manifest.sh`, `scripts/sync-brain-docs.sh`
 > **Local Contracts**: `AGENTS.md`, `CLAUDE.md`
 > 事实优先级：实际源码（`scripts/*`、`tests/*`、`evals/*`、`package.json`）> 本文 > 计划与历史记录。本文只画已实现现状；任何尚未落地的形态必须显式标注为**目标设计**。
+
+<!-- END archctx:intro -->
 
 ## 0. 阅读约定
 
@@ -16,6 +20,8 @@
 | **目标设计** | 尚未落地为可执行文件或未接入任何 gate |
 
 本能力面把验证拆成五层，彼此的权威边界是硬约束而非风格差异：regression tests、workflow gates、bounded contract verifier、eval fixtures、profile benchmark。**证据生产者**（profile benchmark）与**证据消费者**（bounded verifier / verify-sprint）不可互换，见 §3。
+
+<!-- BEGIN archctx:p1 -->
 
 ## 1. P1：能力架构地图
 
@@ -168,6 +174,10 @@ wc -l scripts/run-skill-evals.ts scripts/run-harness-profile-benchmark.ts \
 | `bash scripts/check-agent-tooling.sh --host both --check-updates` | **advisory**（CodeGraph 就绪除外） | CodeGraph host/index 就绪是 agent 导航硬要求；版本新鲜度与其余外部工具仅在用户明确要求工具维护时才处理 |
 | `check-brain-manifest.sh` / `sync-brain-docs.sh` | **能力外** | 外部 brain-vault drift 刻意排除在验证之外，只由 operator 手动运行 |
 
+<!-- END archctx:p1 -->
+
+<!-- BEGIN archctx:p2 -->
+
 ## 2. P2：端到端数据流
 
 ### 2.1 pre-merge `repo-harness-check` 握手
@@ -235,6 +245,8 @@ sequenceDiagram
 - profile benchmark：`PRODUCER_TERMINATING` 后拒绝新 arm（`:321`），wall-clock 预算耗尽即拒绝启动（`:323`），provider 进程组未终止则抛错（`:359`），cleanup 未 drain 干净就不释放 expensive-run lock（`:278-281`）。
 - skill eval 证据缺失或 dry-run 过重 → 非权威；release 归档必须记录缺口或修复命令。
 - 外部工具更新检查可能被跳过或超时；CodeGraph host/index 就绪是硬要求，版本新鲜度等其余项保持 advisory。
+
+<!-- END archctx:p2 -->
 
 ## 3. P3：设计决策与不变量
 

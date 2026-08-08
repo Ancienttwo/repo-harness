@@ -1,0 +1,19 @@
+schemaVersion: archcontext.node/v1
+id: capability.verification.codegraph-readiness
+kind: capability
+status: active
+source:
+  include:
+    - "scripts/ensure-codegraph.sh"
+    - "src/cli/tools/codegraph.ts"
+    - "src/cli/mcp/codegraph-adapter.ts"
+    - "tests/cli/codegraph-resolver.test.ts"
+    - "docs/architecture/modules/verification/codegraph-readiness.md"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun test tests/check-agent-tooling.test.ts tests/cli/codegraph-resolver.test.ts"
+    - "bash scripts/ensure-codegraph.sh --check --json"

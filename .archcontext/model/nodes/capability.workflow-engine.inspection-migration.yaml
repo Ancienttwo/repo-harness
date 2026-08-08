@@ -1,0 +1,18 @@
+schemaVersion: archcontext.node/v1
+id: capability.workflow-engine.inspection-migration
+kind: capability
+status: active
+source:
+  include:
+    - "scripts/inspect-project-state.ts"
+    - "scripts/create-project-dirs.sh"
+    - "scripts/init-project.sh"
+    - "scripts/lib/**"
+extensions:
+  contractFiles:
+    agents: "scripts/AGENTS.md"
+    claude: "scripts/CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun test tests/migration-script.test.ts tests/create-project-dirs.runtime.test.ts tests/workflow-contract.test.ts"
+    - "bun src/cli/index.ts init --repo . --dry-run"
