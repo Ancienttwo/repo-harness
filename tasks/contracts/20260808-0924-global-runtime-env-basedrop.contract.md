@@ -1,12 +1,12 @@
 # Task Contract: global-runtime-env-basedrop
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260808-0924-global-runtime-env-basedrop.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
-> **Last Updated**: 2026-08-08 09:24
+> **Last Updated**: 2026-08-08 10:20
 > **Review File**: `tasks/reviews/20260808-0924-global-runtime-env-basedrop.review.md`
 > **Notes File**: `tasks/notes/20260808-0924-global-runtime-env-basedrop.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
