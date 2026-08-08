@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260808-2015-axr5-archctx-provider-node-v2-readiness.md
 > **Contract**: tasks/contracts/20260808-2015-axr5-archctx-provider-node-v2-readiness.contract.md
 > **Review**: tasks/reviews/20260808-2015-axr5-archctx-provider-node-v2-readiness.review.md
-> **Last Updated**: 2026-08-08 20:15
+> **Last Updated**: 2026-08-08 21:02
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -13,10 +13,20 @@
   PATH is never a candidate.
 - Projection provider and capability source are orthogonal policy dimensions.
 - Node v2 parser/exporter/self-host files move atomically; v1 is rejected without fallback.
+- The consumer reproduces ArchContext's public fixed-point snapshot contract: canonical
+  repo/workspace identity plus a content digest that excludes architecture docs and
+  declared agent-context targets. It checks the snapshot both before and after projection.
+- A sticky ArchContext `baseHeadSha` is retained as generation provenance and is not
+  confused with the request's current `headSha`; worktree identity remains the CAS boundary.
 
 ## Deviations From Plan Or Spec
 
-- None recorded.
+- The clean-room proof was strengthened from capability handshake only to a real packed
+  `ProjectionRequestV1 -> ProjectionResultV1` call. The fixture has one node/v2 capability,
+  registry access is disabled, and a conflicting PATH binary is present.
+- The disposable fixture intentionally has no `.codegraph` index. The result therefore
+  records the real package-local CodeGraph 1.5.0 binary digest with `unavailable` status and
+  returns `human-action-required`; AXR7 owns a ready-index semantic projection proof.
 
 ## Tradeoffs Considered
 
@@ -28,12 +38,21 @@
 
 ## Open Questions
 
-- None.
+- None inside AXR5. Durable Stop orchestration and ready-index E2E remain explicitly owned
+  by AXR6 and AXR7 rather than hidden as provider fallbacks.
 
 ## Evidence Links
 
 - Checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
+- Clean-room package/provider readback:
+  `docs/verification/axr5-archctx-clean-room-readback.json`
+- Focused suite: 99 pass, 0 fail across the eight contract test files.
+- First full suite: 2262 pass, 1 skip, 1 transient review-subject concurrency failure;
+  isolated `tests/archive-evidence-gates.test.ts --rerun-each=2` passed 22/22.
+- Canonical `bun run check:ci`: 2263 pass, 1 skip, 0 fail across 180 files; type,
+  boundary, helper/reference projections, workflow gates, inspection, package dry-run,
+  tarball install smoke and architecture/task sync gates all completed successfully.
 
 ## Promotion Filter
 

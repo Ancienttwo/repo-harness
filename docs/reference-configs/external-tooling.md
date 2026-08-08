@@ -695,7 +695,7 @@ authority for a repo:
 | Value | Authority | Read path |
 |---|---|---|
 | `registry` (default) | `.ai/context/capabilities.json` | JSON capability registry |
-| `archcontext` | `.archcontext/model/nodes/*.yaml` | `archcontext.node/v1` capability nodes |
+| `archcontext` | `.archcontext/model/nodes/*.yaml` | `archcontext.node/v2` capability nodes |
 
 Exactly one source is read. There is no dual-read, no merge, and no fallback in
 either direction: under `archcontext` a missing model directory fails instead of
@@ -704,10 +704,19 @@ directory is never consulted. Under `archcontext` the JSON registry is not
 writable, so `repo-harness run capability-config add` refuses and points at the
 node files.
 
-The `archctx` CLI is never a runtime dependency of this workflow. Node files are
-read directly with Bun's native YAML parser, so no daemon, npm package, or
-external process is involved. Bun older than 1.3 has no `Bun.YAML`; that fails
-closed with upgrade guidance and only when `capability_source` is `archcontext`.
+Capability authority does not require the `archctx` CLI: node files are read
+directly with Bun's native YAML parser, so selecting `capability_source` never
+spawns a daemon or external process. Bun older than 1.3 has no `Bun.YAML`; that
+fails closed with upgrade guidance and only when `capability_source` is
+`archcontext`.
+
+Architecture projection is a separate authority. When
+`architecture.projection_provider=archctx`, repo-harness resolves the exact
+version from its own `node_modules/.bin/archctx`, performs a JSON capability
+handshake, and rejects PATH-only or mismatched installations. The advisory
+global-tool detector below does not satisfy projection readiness; use
+`repo-harness architecture-projection status --json`. The provider remains
+disabled by default until the release pin is cut over.
 
 ### `source.include` grammar
 

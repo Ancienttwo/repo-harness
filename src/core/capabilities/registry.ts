@@ -44,6 +44,9 @@ export type CapabilityRegistryDiagnosticCode =
   | "ARCHCONTEXT_NODE_ID_INVALID"
   | "ARCHCONTEXT_NODE_KIND_INVALID"
   | "ARCHCONTEXT_NODE_STATUS_INVALID"
+  | "ARCHCONTEXT_NODE_NAME_INVALID"
+  | "ARCHCONTEXT_NODE_SUMMARY_INVALID"
+  | "ARCHCONTEXT_NODE_RESPONSIBILITIES_INVALID"
   | "ARCHCONTEXT_INCLUDE_REQUIRED"
   | "ARCHCONTEXT_EXCLUDE_UNSUPPORTED"
   | "ARCHCONTEXT_INCLUDE_SHAPE_UNSUPPORTED"
@@ -523,7 +526,7 @@ export type ArchcontextIncludeTranslation =
   | { readonly status: "unsupported" }
   | { readonly status: "ambiguous" };
 
-const ARCHCONTEXT_NODE_SCHEMA_VERSION = "archcontext.node/v1";
+const ARCHCONTEXT_NODE_SCHEMA_VERSION = "archcontext.node/v2";
 const ARCHCONTEXT_CAPABILITY_KIND = "capability";
 const ARCHCONTEXT_ACTIVE_STATUS = "active";
 const ARCHCONTEXT_ID_PREFIX = "capability";
@@ -650,6 +653,30 @@ export function capabilityRegistryFromArchcontextNodes(
       continue;
     }
     const { domain, name } = idParts;
+    if (!nonEmptyString(node.name)) {
+      diagnostics.push(diagnostic(
+        "ARCHCONTEXT_NODE_NAME_INVALID",
+        `${file.path}#name`,
+        `${file.path}: name is required by ${ARCHCONTEXT_NODE_SCHEMA_VERSION}`,
+      ));
+      continue;
+    }
+    if (!nonEmptyString(node.summary)) {
+      diagnostics.push(diagnostic(
+        "ARCHCONTEXT_NODE_SUMMARY_INVALID",
+        `${file.path}#summary`,
+        `${file.path}: summary is required by ${ARCHCONTEXT_NODE_SCHEMA_VERSION}`,
+      ));
+      continue;
+    }
+    if (!Array.isArray(node.responsibilities) || node.responsibilities.length === 0 || node.responsibilities.some((entry) => !nonEmptyString(entry))) {
+      diagnostics.push(diagnostic(
+        "ARCHCONTEXT_NODE_RESPONSIBILITIES_INVALID",
+        `${file.path}#responsibilities`,
+        `${file.path}: responsibilities must contain at least one non-empty string`,
+      ));
+      continue;
+    }
 
     const source = node.source;
     const include = isRecord(source) ? source.include : undefined;

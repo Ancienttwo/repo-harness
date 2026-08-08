@@ -1,7 +1,11 @@
-schemaVersion: archcontext.node/v1
+schemaVersion: archcontext.node/v2
 id: capability.runtime-harness.mcp-sidecar
 kind: capability
+name: MCP Sidecar
 status: active
+summary: Provides the local MCP sidecar and its repository access policy boundary.
+responsibilities:
+  - Own MCP lifecycle, workspace registration, access policy, and local browser integration.
 source:
   include:
     - "src/cli/mcp/**"

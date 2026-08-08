@@ -220,12 +220,13 @@ describe("archcontextIncludeToPrefix", () => {
 
 describe("capabilityRegistryFromArchcontextNodes", () => {
   const node = (id: string, include: string[]) => ({
-    schemaVersion: "archcontext.node/v1",
+    schemaVersion: "archcontext.node/v2",
     id,
     kind: "capability",
     name: id.split(".").at(-1),
     status: "active",
     summary: "fixture",
+    responsibilities: ["fixture responsibility"],
     source: { include },
     extensions: {
       contractFiles: { agents: "apps/web/AGENTS.md", claude: "apps/web/CLAUDE.md" },

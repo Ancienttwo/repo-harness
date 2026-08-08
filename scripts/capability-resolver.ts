@@ -18,15 +18,17 @@ import {
 
 export type { Capability, CapabilityRegistry, ContractFiles } from "../src/core/capabilities/registry";
 
-// archcontext-boundaries-v1 is a deliberately narrow, read-only export of the
-// capability registry shaped as a subset of ArchitectureNode (archcontext.node/v1).
-// Tests derive the bridge subset from archctx-contracts' authoritative schema;
-// docs/researches/20260705-archcontext-capability-filing-handover.md explains
-// why this stays a read-only bridge with no archctx CLI/daemon runtime dependency.
-export type ArchContextBoundaryNode = {
-  schemaVersion: "archcontext.node/v1";
+// Explicit one-shot registry -> ArchContext node/v2 migration projection. The
+// exporter carries only facts already present in the registry; it does not
+// become a second runtime authority and is never read by capability resolution.
+export type ArchContextNodeV2 = {
+  schemaVersion: "archcontext.node/v2";
   id: string;
   kind: "capability";
+  name: string;
+  status: "active";
+  summary: string;
+  responsibilities: string[];
   source: {
     include: string[];
   };
@@ -36,7 +38,7 @@ export type ArchContextBoundaryNode = {
   };
 };
 
-type Format = "json" | "text" | "prefixes" | "archcontext-boundaries-v1";
+type Format = "json" | "text" | "prefixes" | "archcontext-nodes-v2";
 
 type Args = {
   command: string;
@@ -153,7 +155,7 @@ function usage(): never {
       "  scripts/capability-resolver.ts match --path <repo-relative-path> [--repo <repo>] [--format json|text]",
       "  scripts/capability-resolver.ts match --paths-from <file|-> [--repo <repo>] [--format json|text]",
       "  scripts/capability-resolver.ts validate [--repo <repo>] [--format json|text]",
-      "  scripts/capability-resolver.ts export --format archcontext-boundaries-v1 [--repo <repo>]",
+      "  scripts/capability-resolver.ts export --format archcontext-nodes-v2 [--repo <repo>]",
     ].join("\n")
   );
   process.exit(2);
@@ -182,7 +184,7 @@ function parseArgs(argv: string[]): Args {
         break;
       case "--format": {
         const value = argv[++index] as Format;
-        if (!["json", "text", "prefixes", "archcontext-boundaries-v1"].includes(value)) usage();
+        if (!["json", "text", "prefixes", "archcontext-nodes-v2"].includes(value)) usage();
         args.format = value;
         break;
       }
@@ -200,8 +202,8 @@ function parseArgs(argv: string[]): Args {
   if (args.command === "match" && !args.path && !args.pathsFrom) usage();
   if (args.command === "match" && args.path && args.pathsFrom) usage();
   if (args.command === "match" && args.format === "prefixes") usage();
-  if (args.command === "export" && args.format !== "archcontext-boundaries-v1") usage();
-  if (args.command !== "export" && args.format === "archcontext-boundaries-v1") usage();
+  if (args.command === "export" && args.format !== "archcontext-nodes-v2") usage();
+  if (args.command !== "export" && args.format === "archcontext-nodes-v2") usage();
   return args;
 }
 
@@ -367,13 +369,25 @@ function printJson(value: unknown): void {
   console.log(JSON.stringify(value, null, 2));
 }
 
-function toArchContextBoundaryNode(capability: Capability): ArchContextBoundaryNode {
+function toArchContextNodeV2(capability: Capability, isExistingDirectory: (path: string) => boolean): ArchContextNodeV2 {
+  const displayName = capability.name.split("-").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+  const includes = capability.prefixes.map((prefix) => {
+    try {
+      return isExistingDirectory(prefix) ? `${prefix}/**` : prefix;
+    } catch {
+      return prefix;
+    }
+  });
   return {
-    schemaVersion: "archcontext.node/v1",
+    schemaVersion: "archcontext.node/v2",
     id: `capability.${capability.domain}.${capability.name}`,
     kind: "capability",
+    name: displayName,
+    status: "active",
+    summary: `Capability boundary for ${capability.domain}/${capability.name}.`,
+    responsibilities: [`Own the source paths declared by the ${capability.id} capability boundary.`],
     source: {
-      include: [...capability.prefixes],
+      include: includes,
     },
     extensions: {
       lspProfile: capability.lsp_profile,
@@ -382,9 +396,16 @@ function toArchContextBoundaryNode(capability: Capability): ArchContextBoundaryN
   };
 }
 
-export function buildArchContextBoundariesV1(registry: CapabilityRegistry): ArchContextBoundaryNode[] {
+export function buildArchContextNodesV2(
+  registry: CapabilityRegistry,
+  options: { repoRoot?: string; isExistingDirectory?: (path: string) => boolean } = {},
+): ArchContextNodeV2[] {
+  const repoRoot = options.repoRoot ?? process.cwd();
+  const isExistingDirectory = options.isExistingDirectory ?? ((path: string) => {
+    try { return statSync(resolve(repoRoot, path)).isDirectory(); } catch { return false; }
+  });
   return registry.capabilities
-    .map(toArchContextBoundaryNode)
+    .map((capability) => toArchContextNodeV2(capability, isExistingDirectory))
     .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
 }
 
@@ -465,7 +486,7 @@ async function main(): Promise<void> {
     if (exportErrors.length > 0) {
       throw new Error(`capability registry is invalid:\n${exportErrors.join("\n")}`);
     }
-    printJson(buildArchContextBoundariesV1(registry));
+    printJson(buildArchContextNodesV2(registry, { repoRoot: repo }));
     return;
   }
 

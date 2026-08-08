@@ -1,7 +1,11 @@
-schemaVersion: archcontext.node/v1
+schemaVersion: archcontext.node/v2
 id: capability.verification.evals-checks
 kind: capability
+name: Evals And Checks
 status: active
+summary: Runs repository verification, contract gates, benchmarks, and evaluation suites.
+responsibilities:
+  - Own machine-verifiable checks, bounded verifier execution, and evaluation evidence.
 source:
   include:
     - "tests/**"

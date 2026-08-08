@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "repo-harness.axr5-clean-room/v1",
+  "status": "verified",
+  "source": {
+    "repository": "/Users/ancienttwo/Projects/arch-context",
+    "revision": "81275bb25103c041aa28a60a3489f043dcb5e20b",
+    "dirtySourceUsed": false
+  },
+  "packages": {
+    "contracts": {
+      "name": "archctx-contracts",
+      "version": "0.4.0",
+      "file": "archctx-contracts-0.4.0.tgz",
+      "integrity": "sha512-tZSDY57RhN1MYoydgyjdgAcXZ1VI48N5QTg5kopG2tfVrMlrqXvxitVzR/ZsfRs/Vk+I7L6lH5eeIiHzUFlgKQ==",
+      "sha512": "b59483639ed184dd4c628c9d8328dd800717675548e3c379413839928a46dad7d5acc96ba97bf18ad57347f66c7d1b3f564f88ecbea51f979e2221f350596029"
+    },
+    "archctx": {
+      "name": "archctx",
+      "version": "0.4.0",
+      "file": "archctx-0.4.0.tgz",
+      "integrity": "sha512-XS2LwefjjyRuKLbMICYsABPsuKaq6jqPbO1RKaoWT8vAsVadPmcGDbpkHg+oznkkLWTDeJGHWky0jpAfwuBhgg==",
+      "sha512": "5d2d8bc1e7e38f246e28b6cc20262c0013ecb8a6aaea3a8f6ced5129aa164fcbc0b1569d3e67060dba641e0fa8ce79242d64c37891875a4cb48e901fc2e06182"
+    }
+  },
+  "consumer": {
+    "registry": "disabled-loopback",
+    "installMode": "temporary-file-tarballs",
+    "committedFileDependency": false,
+    "packageLocalBinary": true,
+    "conflictingPathIgnored": true,
+    "capabilities": {
+      "schemaVersion": "archcontext.capabilities/v1",
+      "package": {
+        "name": "archctx",
+        "version": "0.4.0"
+      },
+      "protocols": {
+        "projectionRequest": "archcontext.projection-request/v1",
+        "projectionResult": "archcontext.projection-result/v1",
+        "architectureRefreshSignal": "archcontext.architecture-refresh-signal/v1"
+      },
+      "renderers": {
+        "architectureDocs": "archcontext.docs-renderer/v2",
+        "agentContext": "archcontext.agent-context-renderer/v1"
+      },
+      "features": [
+        "architecture-docs-renderer-v2",
+        "architecture-refresh-signal-v1",
+        "projection-protocol-v1"
+      ]
+    },
+    "projection": {
+      "requestId": "repo-harness.axr5-clean-room",
+      "status": "human-action-required",
+      "worktreeDigestMatched": true,
+      "rendererVersion": "archcontext.docs-renderer/v2",
+      "layoutVersion": "archcontext.docs-layout/v1",
+      "codeGraph": {
+        "codeGraphPackage": "@colbymchenry/codegraph",
+        "codeGraphVersion": "1.5.0",
+        "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
+        "codeGraphStatus": "unavailable"
+      },
+      "receiptDigest": "sha256:fbdd22eeea9f06f2b05ab3e888eeff2f90cad5a005c57540fb9b682a3b88b4fc"
+    }
+  }
+}

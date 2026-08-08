@@ -1,7 +1,11 @@
-schemaVersion: archcontext.node/v1
+schemaVersion: archcontext.node/v2
 id: capability.public-surface.adoption
 kind: capability
+name: Adoption
 status: active
+summary: Plans and applies repository adoption through the canonical filesystem transaction boundary.
+responsibilities:
+  - Own adoption planning, path safety, transaction apply, and rollback behavior.
 source:
   include:
     - "src/cli/commands/adoption-plan.ts"

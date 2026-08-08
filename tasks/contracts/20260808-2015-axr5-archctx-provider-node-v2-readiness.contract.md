@@ -89,6 +89,7 @@ allowed_paths:
   - CLAUDE.md
   - assets/
   - docs/reference-configs/
+  - docs/verification/
   - package.json
   - bun.lock
   - scripts/
@@ -173,5 +174,5 @@ exit_criteria:
 
 ## Rollback Point
 
-- Commit / checkpoint:
-- Revert strategy:
+- Commit / checkpoint: AXR5 implementation commit on `codex/axr5-archctx-provider-node-v2-readiness`.
+- Revert strategy: revert the AXR5 implementation commit as one unit; provider remains disabled by default, so no runtime queue or ledger migration is required.

@@ -1,7 +1,11 @@
-schemaVersion: archcontext.node/v1
+schemaVersion: archcontext.node/v2
 id: capability.workflow-engine.inspection-migration
 kind: capability
+name: Inspection And Migration
 status: active
+summary: Inspects repository state and executes explicit initialization or migration plans.
+responsibilities:
+  - Own project inspection, scaffold creation, and bounded migration behavior.
 source:
   include:
     - "scripts/inspect-project-state.ts"

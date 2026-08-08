@@ -13,6 +13,7 @@ import {
   type EvaluateReadinessResult,
 } from '../../src/core/workflow/operation-readiness';
 import type { WorkflowProfile } from '../../src/core/workflow/profile';
+import { readArchitectureProjectionPolicy } from '../../src/core/architecture/projection';
 
 const FIXTURE_PATH = join(import.meta.dir, 'fixtures/loop-semantics/operation-readiness.json');
 const CHARACTERIZATION_PATH = join(import.meta.dir, 'fixtures/loop-semantics/characterization.json');
@@ -99,6 +100,18 @@ function toEvaluateReadinessInput(raw: RawCaseInput): EvaluateReadinessInput {
 }
 
 describe('evaluateReadiness fixture-driven matrix', () => {
+  test('architecture projection policy keeps provider and apply orthogonal and fail-closed', () => {
+    expect(readArchitectureProjectionPolicy({ architecture: {
+      projection_provider: 'archctx',
+      projection_apply: 'manual',
+      projection_version: '0.4.0',
+      projection_timeout_ms: 120000,
+    } })).toEqual({ provider: 'archctx', applyMode: 'manual', requiredVersion: '0.4.0', timeoutMs: 120000 });
+    expect(() => readArchitectureProjectionPolicy({ architecture: {
+      projection_provider: 'disabled',
+      projection_apply: 'automatic',
+    } })).toThrow('projection_apply must be disabled');
+  });
   test('fixture declares exactly the nine frozen characterization cells with no duplicates', () => {
     expect(fixture.positive_cases).toHaveLength(9);
     const fixtureNames = new Set(fixture.positive_cases.map((testCase) => testCase.name));

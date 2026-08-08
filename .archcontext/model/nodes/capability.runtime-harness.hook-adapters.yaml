@@ -1,7 +1,11 @@
-schemaVersion: archcontext.node/v1
+schemaVersion: archcontext.node/v2
 id: capability.runtime-harness.hook-adapters
 kind: capability
+name: Hook Adapters
 status: active
+summary: Installs and runs typed Claude and Codex host hook routes.
+responsibilities:
+  - Own managed hook entries, route dispatch, mutation observation, and Stop handling.
 source:
   include:
     - "assets/hooks/**"

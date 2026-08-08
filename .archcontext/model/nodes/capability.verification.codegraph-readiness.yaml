@@ -1,7 +1,11 @@
-schemaVersion: archcontext.node/v1
+schemaVersion: archcontext.node/v2
 id: capability.verification.codegraph-readiness
 kind: capability
+name: CodeGraph Readiness
 status: active
+summary: Resolves and verifies the repository CodeGraph runtime and index readiness.
+responsibilities:
+  - Own CodeGraph installation detection, status normalization, and readiness diagnostics.
 source:
   include:
     - "scripts/ensure-codegraph.sh"

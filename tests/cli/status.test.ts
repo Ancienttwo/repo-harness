@@ -11,6 +11,8 @@ import {
   type InstallProfile,
 } from '../../src/cli/installer/install-profile';
 
+const ROOT = path.join(import.meta.dir, '..', '..');
+
 function withTempHome(fn: (home: string) => void): void {
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-status-')));
   const prev = process.env.HOME;
@@ -117,6 +119,30 @@ describe('status command (Phase 1C)', () => {
       }
     });
   }, 30_000);
+
+  test('reports model authority, projection provider, code facts, and apply independently', () => {
+    withTempHome(() => {
+      const report = runStatus(ROOT);
+      expect(report.architectureProjection).toEqual({
+        schemaVersion: 'repo-harness.architecture-projection-readiness/v1',
+        modelAuthority: { source: 'archcontext', ready: true },
+        projectionProvider: {
+          provider: 'disabled',
+          state: 'disabled',
+          binaryPath: null,
+          version: null,
+          reason: 'policy.architecture.projection_provider=disabled',
+        },
+        codeFacts: { requirement: 'required', state: 'not-evaluated' },
+        apply: { mode: 'disabled', enabled: false },
+      });
+      const text = formatStatus(report, false);
+      expect(text).toContain('model authority: archcontext (ready)');
+      expect(text).toContain('provider: disabled (disabled)');
+      expect(text).toContain('code facts: not-evaluated');
+      expect(text).toContain('apply: disabled');
+    });
+  });
 
   test('non-git-repo cwd reports inGitRepo=false and optIn=false', () => {
     withTempHome(() => {

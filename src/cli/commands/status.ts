@@ -27,6 +27,8 @@ import {
   type InstallProfile,
   readLegacyInstalledProfileForMigration,
 } from '../installer/install-profile';
+import { inspectArchitectureProjectionReadiness } from '../../effects/architecture/archctx-provider';
+import type { ArchitectureProjectionReadinessV1 } from '../../core/architecture/projection';
 
 function packageVersion(): string {
   const packagePath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'package.json');
@@ -75,6 +77,7 @@ export interface StatusReport {
         error: string;
         path: string;
       };
+  architectureProjection?: ArchitectureProjectionReadinessV1 | { error: string };
 }
 
 function resolveRepoRoot(cwd: string): string | null {
@@ -175,12 +178,22 @@ export function runStatus(cwd: string = process.cwd()): StatusReport {
     repo.optIn = fs.existsSync(path.join(repoRoot, OPT_IN_MARKER));
   }
 
+  let architectureProjection: StatusReport['architectureProjection'];
+  if (repoRoot && repo.optIn) {
+    try {
+      architectureProjection = inspectArchitectureProjectionReadiness(repoRoot);
+    } catch (error) {
+      architectureProjection = { error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
   return {
     cli: { version: CLI_VERSION },
     targets,
     repo,
     routes: { total: ROUTES.length, byEvent },
     installedProfile,
+    ...(architectureProjection ? { architectureProjection } : {}),
   };
 }
 
@@ -221,6 +234,17 @@ export function formatStatus(report: StatusReport, asJson = false): string {
     lines.push(`  opt-in (${report.repo.optInMarker}): ${report.repo.optIn ? 'yes' : 'no'}`);
   } else {
     lines.push('  not in a git repo');
+  }
+  if (report.architectureProjection) {
+    lines.push('');
+    lines.push('Architecture projection:');
+    if ('error' in report.architectureProjection) lines.push(`  error: ${report.architectureProjection.error}`);
+    else {
+      lines.push(`  model authority: ${report.architectureProjection.modelAuthority.source} (${report.architectureProjection.modelAuthority.ready ? 'ready' : 'blocked'})`);
+      lines.push(`  provider: ${report.architectureProjection.projectionProvider.provider} (${report.architectureProjection.projectionProvider.state})`);
+      lines.push(`  code facts: ${report.architectureProjection.codeFacts.state}`);
+      lines.push(`  apply: ${report.architectureProjection.apply.mode}`);
+    }
   }
   return lines.join('\n');
 }

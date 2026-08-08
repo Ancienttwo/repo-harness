@@ -108,12 +108,14 @@ const TWIN_NODES: ReadonlyArray<{ readonly file: string; readonly lines: readonl
   {
     file: "capability.apps-web.web.yaml",
     lines: [
-      "schemaVersion: archcontext.node/v1",
+      "schemaVersion: archcontext.node/v2",
       "id: capability.apps-web.web",
       "kind: capability",
       "name: web",
       "status: active",
       "summary: Web application shell",
+      "responsibilities:",
+      "  - Own the web shell",
       "source:",
       "  include:",
       "    - apps/web/**",
@@ -129,12 +131,14 @@ const TWIN_NODES: ReadonlyArray<{ readonly file: string; readonly lines: readonl
   {
     file: "capability.apps-web.account.yaml",
     lines: [
-      "schemaVersion: archcontext.node/v1",
+      "schemaVersion: archcontext.node/v2",
       "id: capability.apps-web.account",
       "kind: capability",
       "name: account",
       "status: active",
       "summary: Account routes",
+      "responsibilities:",
+      "  - Own account routes",
       "source:",
       "  include:",
       "    - apps/web/src/routes/account/**",
@@ -150,12 +154,14 @@ const TWIN_NODES: ReadonlyArray<{ readonly file: string; readonly lines: readonl
   {
     file: "capability.public-surface.root-router.yaml",
     lines: [
-      "schemaVersion: archcontext.node/v1",
+      "schemaVersion: archcontext.node/v2",
       "id: capability.public-surface.root-router",
       "kind: capability",
       "name: root-router",
       "status: active",
       "summary: Root routing contracts",
+      "responsibilities:",
+      "  - Own root routing contracts",
       "source:",
       "  include:",
       "    - AGENTS.md",
@@ -208,7 +214,7 @@ const PARITY_COMMANDS: ReadonlyArray<readonly string[]> = [
   ["match", "--path", "AGENTS.md", "--format", "json"],
   ["validate", "--format", "text"],
   ["validate", "--format", "json"],
-  ["export", "--format", "archcontext-boundaries-v1"],
+  ["export", "--format", "archcontext-nodes-v2"],
 ];
 
 describe("capability source: archcontext file-source parity", () => {
@@ -257,7 +263,7 @@ describe("capability source: archcontext file-source parity", () => {
       TWIN_NODES.map((node, index) => ({ ...node, file: `${9 - index}-node.yml` })),
     );
     try {
-      for (const command of [["list", "--format", "json"], ["export", "--format", "archcontext-boundaries-v1"]]) {
+      for (const command of [["list", "--format", "json"], ["export", "--format", "archcontext-nodes-v2"]]) {
         const fromOrdered = runResolver(ordered, command);
         const fromShuffled = runResolver(shuffled, command);
         expect(fromOrdered.status, fromOrdered.stderr).toBe(0);
@@ -418,8 +424,8 @@ const NODE_CASES: ReadonlyArray<{
   {
     label: "N2 unsupported schemaVersion",
     code: "ARCHCONTEXT_SCHEMA_VERSION_UNSUPPORTED",
-    lines: replaceLine(VALID_NODE_LINES, "schemaVersion: archcontext.node/v1", ["schemaVersion: archcontext.node/v2"]),
-    fragment: "schemaVersion must be archcontext.node/v1",
+    lines: replaceLine(VALID_NODE_LINES, "schemaVersion: archcontext.node/v2", ["schemaVersion: archcontext.node/v1"]),
+    fragment: "schemaVersion must be archcontext.node/v2",
   },
   {
     label: "N3 id is not capability.<domain>.<name>",

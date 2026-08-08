@@ -1,7 +1,11 @@
-schemaVersion: archcontext.node/v1
+schemaVersion: archcontext.node/v2
 id: capability.workflow-engine.contract-assets
 kind: capability
+name: Contract Assets
 status: active
+summary: Maintains canonical workflow contracts, templates, capability nodes, and helper projections.
+responsibilities:
+  - Own workflow contract assets, policy seeders, capability authority, and generated helper parity.
 source:
   include:
     - "assets/workflow-contract.v1.json"

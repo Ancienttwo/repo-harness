@@ -1,7 +1,11 @@
-schemaVersion: archcontext.node/v1
+schemaVersion: archcontext.node/v2
 id: capability.public-surface.root-router
 kind: capability
+name: Root Router
 status: active
+summary: Routes repository-level product and agent context into capability-specific contracts.
+responsibilities:
+  - Own the root public contract, product entry documentation, and top-level agent routing.
 source:
   include:
     - "SKILL.md"

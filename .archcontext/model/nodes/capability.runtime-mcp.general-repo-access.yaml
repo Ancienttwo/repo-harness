@@ -1,7 +1,11 @@
-schemaVersion: archcontext.node/v1
+schemaVersion: archcontext.node/v2
 id: capability.runtime-mcp.general-repo-access
 kind: capability
+name: General Repository Access
 status: active
+summary: Exposes bounded read-only repository tools through MCP.
+responsibilities:
+  - Own general repository reader tools, CodeGraph routing, and access-policy enforcement.
 source:
   include:
     - "src/cli/mcp/general-repo-access.ts"

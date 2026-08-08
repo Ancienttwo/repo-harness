@@ -1617,9 +1617,9 @@ function archctxNodeCount(nodesDir) {
 }
 
 /**
- * ArchContext readiness probe. archctx is an external optional CLI and never a
- * runtime dependency of this repo, so this detector is advisory: it is reported
- * but never added to strictFailures and never blocks hooks.
+ * Advisory global ArchContext probe. This is deliberately orthogonal to the
+ * package-local architecture projection provider: a PATH installation can help
+ * an operator, but never satisfies provider readiness or blocks hooks.
  */
 function detectArchctx() {
   const binPath = resolvePathCommand(ARCHCTX_CLI_PACKAGE);

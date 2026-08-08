@@ -1,7 +1,11 @@
-schemaVersion: archcontext.node/v1
+schemaVersion: archcontext.node/v2
 id: capability.public-surface.action-commands
 kind: capability
+name: Action Commands
 status: active
+summary: Defines the user-facing action command skill surface and its evaluation boundary.
+responsibilities:
+  - Own action command assets and their behavior/evaluation contracts.
 source:
   include:
     - "assets/skill-commands/**"
