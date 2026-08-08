@@ -40,17 +40,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:bcbe45de48e677410bb10e9f6b0efec03f30a39e489104788270db7fcdc6919c
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 856eb6a3cc7935996e4fc1a264d9daf8258a9894
+> **Verification Evidence SHA256**: sha256:7e0a24a21efa3114e8496a9034725345cd30014ff8a506143325c26f13ce24f8
+> **Issued At**: 2026-08-07T19:24:33.242Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: Gatekeeper review over d2a5af7d..0fe28bb6: 12 verification commands green, D1-D10 design rulings verified in code, scope fidelity 29/29 files within allowed_paths after hygiene fix, exit criteria 17/17 PASS via verify-sprint; two P2/P3 documentation-hygiene findings fixed in 0fe28bb6 and re-checked.
 - Findings: none
 
 ## Behavior Diff Notes
