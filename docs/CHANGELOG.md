@@ -4,6 +4,28 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-08-09
+
+### Added
+
+- Makes the public `archctx@0.4.0` runtime and
+  `archctx-contracts@0.4.0` schema surface exact production dependencies when
+  the ArchContext projection provider is enabled. The release keeps the
+  package boundary fail-closed: no checkout overlay, global PATH fallback, or
+  vendored diagram runtime is used.
+
+### Changed
+
+- Promotes this self-host repository's projection failure and architecture
+  freshness gates from advisory to strict after AXR1-AXR7 proved the complete
+  producer-to-consumer flow. Major module changes now enqueue an architecture
+  refresh signal, the runtime drains the typed request through `archctx`, and
+  Stop/readiness cannot report clean while a projection failure, dead letter,
+  or qualifying stale request remains.
+- Architecture documents remain Markdown with Mermaid `flowchart` and
+  `sequenceDiagram` sources only. Mermaid validation stays an authoring-time
+  skill/dev concern; the npm package contains no HTML or browser runtime.
+
 ## [0.13.2] - 2026-08-07
 
 ### Security

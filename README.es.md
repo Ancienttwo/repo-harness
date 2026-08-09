@@ -466,8 +466,8 @@ repositorio adopte la misma política.
 
 ## Versión actual
 
-- Paquete npm: `repo-harness@0.13.2`
-- Sello de workflow generado: `repo-harness@0.13.2+template@0.13.2`
+- Paquete npm: `repo-harness@0.14.0`
+- Sello de workflow generado: `repo-harness@0.14.0+template@0.14.0`
 - Repositorio de GitHub: `Ancienttwo/repo-harness`
 - Notas de versión e historial: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

@@ -47,7 +47,7 @@
 6. **entity-summary 的 placement / pathTemplate 可配置化**(Stage 0 實作中新探明,archctx 側新交付項):現行渲染把 capability summary 硬編碼成扁平的 `capability-<domain>-<name>.md`,不讀 `targets.json` 的 pathTemplate,所以第 1 項要求的 `docs/architecture/modules/<domain>/<capability>.md` 巢狀落點目前投不出來。加分項:本輪 10 份已提交基線文檔的路徑與 repo-harness 側推導模板 10/10 一致,所以缺口只擋 archctx 的渲染方向,不擋 repo-harness 未來翻開關。驗收:pathTemplate 由 target 配置決定,同一 node 換模板即換落點,渲染不再持有路徑常量。
 7. **`extensions` 鍵是 repo-harness ↔ archctx 的 node 慣例,不是可選裝飾**:`extensions.contractFiles`、`extensions.lspProfile`、`extensions.verification` 三者在 `capability_source: "archcontext"` 下為必填(顯式空陣列可以,缺鍵 fail-closed),因為 repo-harness 的 capability 契約不從 node 其他欄位推導它們。archctx 側若要在 schema 或 lint 上表達這組慣例,以這三鍵為準。
 8. **`source.include` 走受限文法(D2),不是完整 glob**:只接受 `<dir>/**`(→ 前綴 `<dir>`)與「無萬用字元且不是既存目錄」的字面路徑(→ 該檔本身)兩種形狀,其餘一律 fail-closed;無萬用字元卻指向既存目錄的寫法被判為歧義並要求改寫成 `<dir>/**`;`source.exclude` 不支援;include 次序即前綴次序。收窄是刻意的——上游 glob 對整條 repo-relative 路徑比對,不收窄兩邊會對「一個邊界覆蓋什麼」給出不同答案。放寬是 additive,可日後再談。
-9. **checkout 內 `@archcontext/contracts` 的 `files` 配方與 `archctx-contracts` 發佈物不一致**:依發佈的 `archctx-contracts` 取得的 schema 檔集合,和從 arch-context checkout 內按 package `files` 欄位推得的集合對不上。repo-harness 側只把 `archctx-contracts` 當 devDependency 的 schema 權威(runtime 零 import),所以不受阻,但兩邊長期會漂。建議上游以發佈物為準校正 checkout 內的 `files` 配方。
+9. **checkout 內 `@archcontext/contracts` 的 `files` 配方與 `archctx-contracts` 發佈物不一致(歷史缺口,AXR8 已收斂)**:初次 handoff 時,依發佈的 `archctx-contracts` 取得的 schema 檔集合,和從 arch-context checkout 內按 package `files` 欄位推得的集合對不上。AXR8 已以 `archctx-contracts@0.4.0` 的公開 tarball 作唯一 schema authority,並把它與 `archctx@0.4.0` 一起精確固定為 `repo-harness@0.14.0` production dependency;consumer 不再依賴 sibling checkout 或 file overlay。
 
 ## 4. repo-harness 側對接承諾(archctx 交付後的 Stage 2 work-package,另立)
 
@@ -60,3 +60,21 @@
 - 不做 capabilities.json ↔ nodes 長期雙向同步;authority 切換單向、fail-closed、另立 work-package。
 - 不把 workstreams/lessons/todos 移進 arch-context(任務記憶 ≠ 架構記憶)。
 - 投影不生成 P3/歷史/Backlog 的任何內容,也不「幫忙整理」它們。
+
+## 6. AXR8 release cutover readback(2026-08-09)
+
+- npm `latest` 已指向 `archctx@0.4.0`;公開包的 package-local
+  `@colbymchenry/codegraph` 精確為 `1.5.0`,Node 24 clean-room 的 41-command
+  help、`doctor` 四個 runtime version 與 `update --check` 全部一致。
+- `repo-harness@0.14.0` candidate 從 lockfile 精確解析
+  `archctx@0.4.0` 與 `archctx-contracts@0.4.0`;provider handshake 回報
+  `binaryPath` 位於 package-local dependency,不走 PATH。
+- self-host `projection_failure_gate` 與 `freshness_gate` 已由 advisory 升為
+  strict。`check-architecture-sync --format json` 的 candidate runtime
+  readback 為 provider `ready`,pending/running/dead-letter/human-action/
+  adoption-required 全為 0,10 個 capability 的 Mermaid-only 投影基線仍由
+  `tests/architecture-projection-e2e.test.ts` 逐一驗證。
+- 完整 candidate release gate 的 2313 tests、1 skip、0 fail 已通過;首次
+  gate 只因本 research 尚未同步而被 `check-task-sync` 擋下,補本段後重跑
+  workflow/release tail 作最終 authority。Claude review 依 owner 指令跳過,
+  closeout 必須記 typed user waiver,不得聲稱 external Claude pass。

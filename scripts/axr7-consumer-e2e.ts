@@ -19,7 +19,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
 const VERSION = "0.4.0";
-const REPO_HARNESS_VERSION = "0.13.2";
+const REPO_HARNESS_VERSION = "0.14.0";
 const repoRoot = resolve(import.meta.dir, "..");
 const archContextRoot = resolve(flag("--arch-context-root") ?? join(repoRoot, "..", "arch-context"));
 const revision = flag("--arch-context-revision") ?? git(archContextRoot, ["rev-parse", "HEAD"]);
@@ -203,8 +203,10 @@ function architectureDigest(root: string): string {
 }
 
 function packRepoHarness(artifacts: string): { tarball: string; integrity: string } {
-  const [packed] = JSON.parse(run("npm", ["pack", "--json", "--pack-destination", artifacts], repoRoot).stdout) as Array<{ filename?: string; integrity?: string }>;
-  if (!packed?.filename || !packed.integrity) throw new Error("repo-harness npm pack did not return one integrity-bound artifact");
+  const [packed] = JSON.parse(run("npm", ["pack", "--json", "--pack-destination", artifacts], repoRoot).stdout) as Array<{ filename?: string; integrity?: string; version?: string }>;
+  if (!packed?.filename || !packed.integrity || packed.version !== REPO_HARNESS_VERSION) {
+    throw new Error(`repo-harness npm pack did not return ${REPO_HARNESS_VERSION} as one integrity-bound artifact`);
+  }
   return { tarball: join(artifacts, packed.filename), integrity: packed.integrity };
 }
 
