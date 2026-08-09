@@ -50,7 +50,6 @@ Owns the workflow-engine-contract-assets capability boundary declared in .archco
 - Verification: Use root required checks plus local commands recorded in this capability contract.
 - Latest snapshot: `(none yet)`
 - Semantic diagram source: `docs/architecture/modules/workflow-engine/contract-assets.md`
-- Latest human diagram: `(none yet)`
 - Pending architecture request: `(none)`
 
 ## Active Workstreams

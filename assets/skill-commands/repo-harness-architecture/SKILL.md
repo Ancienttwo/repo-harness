@@ -19,8 +19,7 @@ architecture documentation, drift-request, or diagram pass.
    - umbrella status in `docs/architecture/index.md`
    - module or snapshot docs under `docs/architecture/`
    - Mermaid fenced block in the relevant module or snapshot Markdown when a visual flow materially helps
-   - optional human-readable diagram artifact under `docs/architecture/diagrams/`
-5. Use Markdown Mermaid as the semantic diagram source; use `mermaid` only for optional human-readable HTML renderings grounded in observed repo files.
+5. Use Markdown Mermaid as the only architecture diagram artifact. Do not generate standalone HTML; use the external `mermaid` skill only to review layout and renderability before shipping the Markdown source.
 6. Archive handled requests with:
    - `repo-harness run archive-architecture-request --request <request> --status <resolved|superseded|rejected|no-change> --artifact <path> --note <text>`
    - For `resolved`, the live `Pending` request must declare `> **Architecture Module**:` and that exact existing module path must be supplied as an `--artifact`.
@@ -34,12 +33,12 @@ architecture documentation, drift-request, or diagram pass.
 - If no pending architecture request exists, report `no-change` and do not invent one.
 - If capability resolution is ambiguous, stop at the matching paths and ask for a narrower scope.
 - If `check-architecture-sync.sh` blocks in strict mode, resolve or archive the pending request card for the touched capability before finishing the worktree.
-- If diagram rendering fails, keep the Mermaid Markdown source and report the render failure.
+- If diagram validation fails, fix the Mermaid Markdown source or report the validation failure; do not substitute HTML.
 
 ## Boundaries
 
 - Does not run `repo-harness init`.
 - Does not install or refresh the full harness.
 - Does not let hooks rewrite architecture prose; hooks only record drift requests.
-- Does not vendor `mermaid`; it remains an external installed skill for optional human-readable HTML.
+- Does not vendor `mermaid`; it remains an external authoring/review skill and never owns a product artifact.
 - Keeps `docs/architecture/requests/` pending-only by archiving handled requests.

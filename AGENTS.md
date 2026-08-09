@@ -90,7 +90,6 @@ bun src/cli/index.ts init --repo . --dry-run
 - Verification: Use root required checks plus local commands recorded in this capability contract.
 - Latest snapshot: `(none yet)`
 - Semantic diagram source: `docs/architecture/modules/verification/evals-checks.md`
-- Latest human diagram: `(none yet)`
 - Pending architecture request: `(none)`
 
 ## Active Workstreams

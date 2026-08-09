@@ -401,7 +401,6 @@ function architectureIndexContent(): string {
 
 - Latest snapshot: (none yet)
 - Semantic diagram source: (none yet)
-- Latest human diagram: (none yet)
 
 ## Pending Requests
 

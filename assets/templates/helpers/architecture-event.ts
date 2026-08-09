@@ -377,9 +377,8 @@ function renderRequiredFollowUp(event: ArchitectureEvent): string {
     "- If functional block is not `root`, read its local `AGENTS.md` / `CLAUDE.md`.",
     "- Decide whether this change affects module boundaries, entrypoints, dependency rules, runtime paths, or verification commands.",
     "- For substantial changes, write a snapshot under `docs/architecture/snapshots/`.",
-    "- When a visual explains the boundary better than prose, add or update a Mermaid fenced block in the relevant architecture module or snapshot Markdown first; that Markdown is the semantic source for LLM readers.",
-    "- When a human-readable rendering is useful, generate a matching `$mermaid` architecture HTML file under `docs/architecture/diagrams/` and link it back to the Markdown semantic source.",
-    "- Treat `mermaid` as an external installed skill dependency at `~/.codex/skills/mermaid`; do not copy, vendor, or inline its templates into this repo.",
+    "- When a visual materially improves the explanation, add an evidence-backed Mermaid fenced block to the architecture module or snapshot Markdown.",
+    "- Mermaid Markdown is the only architecture diagram artifact. Do not generate standalone HTML; use the external `mermaid` skill only for authoring and review.",
     `- If this starts or advances durable execution, run \`repo-harness run workstream-sync ensure --block "${functionalBlock}" --request "${requestFile}"\`.`,
     "- After the snapshot or diagram is produced, run `repo-harness run context-contract-sync sync-latest` so the local architecture contract block links to the latest artifacts.",
   ].join("\n");
@@ -693,7 +692,6 @@ function renderContractBlock(args: Args): string {
   const workstreamDir = requireOption(args, "workstreamDir");
   const blockSlug = safeToken(functionalBlock);
   const latestSnapshot = findLatestMatchingFile("docs/architecture/snapshots", blockSlug, ".md");
-  const latestHumanDiagram = findLatestMatchingFile("docs/architecture/diagrams", blockSlug, ".html");
   const semanticDiagramSource = latestSnapshot === "(none yet)" ? architectureModule : latestSnapshot;
   const eventTs = args.options.eventTs || "unknown";
   const filePath = args.options.filePath || "unknown";
@@ -725,7 +723,6 @@ function renderContractBlock(args: Args): string {
     "- Verification: Use root required checks plus local commands recorded in this capability contract.",
     `- Latest snapshot: \`${latestSnapshot}\``,
     `- Semantic diagram source: \`${semanticDiagramSource}\``,
-    `- Latest human diagram: \`${latestHumanDiagram}\``,
     `- Pending architecture request: \`${requestFile}\``,
     "",
     "## Active Workstreams",

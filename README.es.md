@@ -446,7 +446,7 @@ son dependencias empaquetadas ordinarias.
 | --- | --- | --- |
 | [Hylarucoder](https://x.com/hylarucoder) / Geju | El método de due diligence P1/P2/P3 y la práctica Geju que dieron forma a la disciplina de planning, tracing y decision-rationale de este workflow | Contribución metodológica y agradecimiento; no es una dependencia empaquetada |
 | Waza de [TW93](https://x.com/HiTw93), incluyendo `think`, `hunt`, `check` y `health` | Planning diario, bug hunts, verificación, health checks y sync de skill Codex-first | Instalado a través del skills CLI en los host skill roots |
-| `mermaid` | Diagramas de architecture y system-flow legibles por humanos cuando Mermaid no alcanza | Skill runtime-referenced, no vendored en los repos generados |
+| `mermaid` | Soporte de authoring y review para bloques Mermaid fenced dentro de la documentación de arquitectura | Skill externo runtime-referenced, no vendored en los repos generados y sin generar HTML standalone |
 | CodeGraph (`@colbymchenry/codegraph`) | Navegación symbol-aware, impact tracing y readiness checks para este repo self-host | Dev dependency en este repo; los repos generados se mantienen global-MCP-first salvo que la policy haga opt-in |
 | [Oracle](https://github.com/steipete/oracle) de [Peter Steinberger](https://x.com/steipete) (`@steipete/oracle`, MIT) | Motor de consulta de navegador GPT Pro / ChatGPT Web por defecto, al que el Oracle provider `chatgpt-browser` invoca externamente (shell out) para las consultas `gptpro` | Binario resuelto externamente (`--oracle-bin`, `REPO_HARNESS_ORACLE_BIN`, `node_modules/.bin`, o `PATH`); nunca se descarga automáticamente, y un binario ausente es un fallo duro de `ORACLE_NOT_INSTALLED` |
 | OpenAI Codex | Agente de ejecución primario para implementación repo-local, verificación y GitHub contributor attribution cuando un commit incluye materialmente trabajo escrito por Codex | Un runtime de agente externo; la atribución es un trailer de commit explícito, no automatización oculta de hooks |
@@ -466,8 +466,8 @@ repositorio adopte la misma política.
 
 ## Versión actual
 
-- Paquete npm: `repo-harness@0.14.0`
-- Sello de workflow generado: `repo-harness@0.14.0+template@0.14.0`
+- Paquete npm: `repo-harness@0.14.1`
+- Sello de workflow generado: `repo-harness@0.14.1+template@0.14.1`
 - Repositorio de GitHub: `Ancienttwo/repo-harness`
 - Notas de versión e historial: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

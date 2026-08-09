@@ -213,6 +213,9 @@ describe("repo-harness action command skills", () => {
 
     expect(architecture).toContain("repo-harness run archive-architecture-request");
     expect(architecture).toContain("mermaid");
+    expect(architecture).toContain("only architecture diagram artifact");
+    expect(architecture).toContain("Do not generate standalone HTML");
+    expect(architecture).not.toContain("optional human-readable HTML");
     expect(architecture).toContain("Does not run `repo-harness init`");
     expect(architecture).toContain("hooks only record drift requests");
 
