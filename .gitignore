@@ -16,6 +16,7 @@ bun.lockb
 # IDE
 .idea/
 .vscode/settings.json
+.cursor/
 
 # Sisyphus internal state (not project deliverables)
 .sisyphus/boulder.json
