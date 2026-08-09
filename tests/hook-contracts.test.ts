@@ -259,10 +259,11 @@ describe("Hook contracts", () => {
     expect(sync).toContain("Active Workstreams");
     expect(sync).toContain("discoverable_contexts");
     expect(sync).toContain("Semantic diagram source");
-    expect(sync).toContain("Latest human diagram");
-    expect(sync).toContain("docs/architecture/diagrams");
+    expect(sync).not.toContain("Latest human diagram");
+    expect(sync).not.toContain("docs/architecture/diagrams");
     expect(eventHelper).toContain("Mermaid fenced block");
-    expect(eventHelper).toContain("Markdown semantic source");
+    expect(eventHelper).toContain("only architecture diagram artifact");
+    expect(eventHelper).not.toContain("architecture HTML");
     expect(workstream).toContain("tasks/workstreams");
     expect(workstream).toContain("context-contract-sync.sh");
   });

@@ -449,7 +449,7 @@ agent runtime を中心に構築されています。これらは通常の bundl
 | --- | --- | --- |
 | [Hylarucoder](https://x.com/hylarucoder) / Geju | この workflow における planning、tracing、decision-rationale の規律を形作った P1/P2/P3 due-diligence method と Geju の実践 | Methodology への貢献と謝辞であり、bundled dependency ではありません |
 | Waza by [TW93](https://x.com/HiTw93)(`think`、`hunt`、`check`、`health` を含む) | 日々の planning、bug hunt、verification、health check、Codex-first な skill sync | skills CLI を通じて host の skill root にインストールされます |
-| `mermaid` | Mermaid だけでは足りないときの、人間が読める architecture / system-flow diagram | Runtime で参照される skill であり、生成されたリポジトリには vendor されません |
+| `mermaid` | architecture 文書内の Mermaid fenced block に対する authoring / review 支援 | Runtime で参照される外部 skill であり、生成されたリポジトリには vendor されず、standalone HTML も生成しません |
 | CodeGraph(`@colbymchenry/codegraph`) | この self-host リポジトリのための symbol-aware navigation、impact tracing、readiness check | 本リポジトリでは dev dependency。生成されたリポジトリは、policy が opt-in しない限り global-MCP-first のままです |
 | [Oracle](https://github.com/steipete/oracle) by [Peter Steinberger](https://x.com/steipete)(`@steipete/oracle`、MIT) | `chatgpt-browser` の Oracle provider が `gptpro` consult のために shell out する、既定の GPT Pro / ChatGPT Web browser consult engine | 外部で解決される binary(`--oracle-bin`、`REPO_HARNESS_ORACLE_BIN`、`node_modules/.bin`、または `PATH`)。自動ダウンロードはされず、binary が見つからない場合は hard な `ORACLE_NOT_INSTALLED` failure になります |
 | OpenAI Codex | commit が実質的に Codex 作成の作業を含むときの、repo-local な実装・verification・GitHub contributor attribution を担う primary execution agent | 外部 agent runtime。attribution は隠れた hook automation ではなく、明示的な commit trailer です |
@@ -469,8 +469,8 @@ commit script や hooks に組み込まないでください。
 
 ## 現在の Release
 
-- npm package：`repo-harness@0.14.0`
-- Generated workflow stamp：`repo-harness@0.14.0+template@0.14.0`
+- npm package：`repo-harness@0.14.1`
+- Generated workflow stamp：`repo-harness@0.14.1+template@0.14.1`
 - GitHub repository：`Ancienttwo/repo-harness`
 - Release notes and history：[`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

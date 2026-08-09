@@ -4,6 +4,19 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-08-10
+
+### Fixed
+
+- Makes Markdown Mermaid the single architecture diagram artifact across the
+  `repo-harness-architecture` skill, architecture queue follow-up prompt,
+  generated architecture indexes, capability contract projections, and
+  reference docs. Standalone HTML generation and discovery are removed;
+  the external `mermaid` skill remains authoring/review-only.
+- Adds regression coverage that renders a real architecture request and proves
+  it contains the Mermaid-only instruction with no HTML artifact route, while
+  preserving the existing consumer E2E invariant of zero architecture HTML.
+
 ## [0.14.0] - 2026-08-09
 
 ### Added

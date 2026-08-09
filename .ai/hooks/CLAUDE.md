@@ -62,7 +62,6 @@ Owns the runtime-harness-hook-adapters capability boundary declared in .archcont
 - Verification: Use root required checks plus local commands recorded in this capability contract.
 - Latest snapshot: `(none yet)`
 - Semantic diagram source: `docs/architecture/modules/runtime-harness/hook-adapters.md`
-- Latest human diagram: `(none yet)`
 - Pending architecture request: `(none)`
 
 ## Active Workstreams

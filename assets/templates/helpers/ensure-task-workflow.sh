@@ -1045,7 +1045,6 @@ CAPABILITIES_EOF
 
 - Latest snapshot: (none yet)
 - Semantic diagram source: (none yet)
-- Latest human diagram: (none yet)
 
 ## Architecture Drift Flow
 
@@ -1054,7 +1053,7 @@ CAPABILITIES_EOF
 - `repo-harness run context-contract-sync` keeps only the controlled architecture block in functional-block `AGENTS.md` and `CLAUDE.md` files aligned.
 - `repo-harness run workstream-sync` keeps durable multi-session progress under `tasks/workstreams/<domain>/<capability>/` and projects only pointers into local contracts.
 - Semantic architecture diagrams live as Mermaid fenced blocks in the relevant module or snapshot Markdown.
-- Human-readable architecture diagrams are optional `mermaid` HTML files in `docs/architecture/diagrams/` and should link back to the Markdown semantic source.
+- Markdown Mermaid fenced blocks are the only architecture diagram artifacts; do not generate standalone HTML.
 
 ## Pending Requests
 

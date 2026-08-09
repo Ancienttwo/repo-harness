@@ -47,7 +47,6 @@ User intent
 
 ```mermaid
 %% architecture_module: docs/architecture/index.md
-%% human_diagram: docs/architecture/diagrams/agentic-dev-plugin-architecture.html
 %% generated_from: repo evidence + P1/P2/P3
 flowchart LR
   intent["User / Agent Intent"]
