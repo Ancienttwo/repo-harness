@@ -27,8 +27,18 @@ so pass `--profile minimal` explicitly when refreshing a deliberately minimal
 host.
 
 Full always projects the package-bundled cross-review and `claude-plan` Skills
-required by its provider surfaces. Marketplace Waza and Mermaid are selected
-by full as well; minimal does not select them.
+required by its provider surfaces. Marketplace Waza and Mermaid are selected by
+full as well; minimal does not select them.
+
+`reverse-skill-router` is a recommended but explicit-only dependency. Its
+upstream pack tells agents to treat a mentioned target as authorized, which is
+not a valid repo-harness authority boundary. It is therefore never selected by
+`minimal` or `full`; install it only after independent scope review with
+`repo-harness install --with-reverse-skill` or
+`repo-harness update --with-reverse-skill`. The install copies the router pack;
+its optional security toolchains remain on-demand. The catalog pins upstream
+commit `539899ddc7608d63dc66e08e794d572e080f1a55` and verifies the selected
+tree's SHA-256 before any host projection.
 
 Installed profile state is protocol 2. Protocol-1 state is never reinterpreted
 in normal reads because its `minimal` name meant the retired 5-hook projection.

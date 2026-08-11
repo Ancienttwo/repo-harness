@@ -52,6 +52,8 @@ export interface SkillSurfacePackage {
   readonly source: string | null;
   /** Upstream package spec (e.g. "tw93/Waza") for kind:"external" packages fetched via `bunx skills add`; null otherwise. */
   readonly provider: string | null;
+  /** Optional immutable full-tree digest required before host projection. */
+  readonly integrity: string | null;
   readonly hosts: readonly SkillSurfaceHost[];
   readonly profiles: readonly SkillSurfaceProfile[];
   readonly discoverability: SkillSurfaceDiscoverability;
@@ -83,6 +85,23 @@ export interface SkillSurfaceCatalog {
   readonly nonPublicInternalSteps: readonly string[];
   readonly retiredPackages: readonly SkillSurfaceRetiredPackage[];
 }
+
+export interface ExternalSkillInstallGroup {
+  readonly provider: string;
+  readonly hosts: readonly SkillSurfaceHost[];
+  readonly skills: readonly string[];
+  readonly integrityBySkill: Readonly<Record<string, string | null>>;
+}
+
+export interface IntegrityBoundExternalSkillInstallGroup extends Omit<ExternalSkillInstallGroup, "integrityBySkill"> {
+  readonly integrityBySkill: Readonly<Record<string, string>>;
+}
+
+export type RequiredExternalSkillInstallGroup =
+  | { readonly status: "selected"; readonly group: IntegrityBoundExternalSkillInstallGroup }
+  | { readonly status: "missing"; readonly name: string }
+  | { readonly status: "not_explicit_only"; readonly name: string }
+  | { readonly status: "missing_integrity"; readonly name: string };
 
 export type SkillSurfaceCatalogDiagnosticCode =
   | "MANIFEST_MISSING"
@@ -238,6 +257,17 @@ function validatePackage(
   if (raw.provider !== null && raw.provider !== undefined && typeof raw.provider !== "string") {
     diagnostics.push(diagnostic("FIELD_REQUIRED", `${basePath}.provider`, `${name}: provider must be a string or null`));
   }
+  if (
+    raw.integrity !== null &&
+    raw.integrity !== undefined &&
+    (typeof raw.integrity !== "string" || !/^sha256:[0-9a-f]{64}$/.test(raw.integrity))
+  ) {
+    diagnostics.push(diagnostic(
+      "FIELD_REQUIRED",
+      `${basePath}.integrity`,
+      `${name}: integrity must be null or sha256:<64 lowercase hex>`,
+    ));
+  }
 
   if (typeof raw.kind === "string" && !(SKILL_SURFACE_KINDS as readonly string[]).includes(raw.kind)) {
     diagnostics.push(diagnostic(
@@ -333,6 +363,7 @@ function validatePackage(
     kind: (raw.kind as SkillSurfaceKind) ?? "facade",
     source: (raw.source as string | null) ?? null,
     provider: typeof raw.provider === "string" ? raw.provider : null,
+    integrity: typeof raw.integrity === "string" ? raw.integrity : null,
     hosts: isStringArray(raw.hosts) ? (raw.hosts as SkillSurfaceHost[]) : [],
     profiles: isStringArray(raw.profiles) ? (raw.profiles as SkillSurfaceProfile[]) : [],
     discoverability: (raw.discoverability as SkillSurfaceDiscoverability) ?? "cli-reference",
@@ -715,6 +746,71 @@ export function externalSkillsForProfile(
   return computeExternalSkillsForProfile(catalog.packages, profile);
 }
 
+/**
+ * External marketplace install groups for one concrete host target. A null
+ * Provider and host-set form the grouping key because one upstream may expose
+ * Skills to different hosts.
+ */
+export function externalSkillInstallGroups(
+  catalog: SkillSurfaceCatalog,
+  options: {
+    readonly hosts: readonly SkillSurfaceHost[];
+    readonly profileGate: SkillSurfaceProfile | null;
+    readonly names?: readonly string[];
+  },
+): readonly ExternalSkillInstallGroup[] {
+  const groups = new Map<string, {
+    provider: string;
+    hosts: SkillSurfaceHost[];
+    skills: string[];
+    integrityBySkill: Record<string, string | null>;
+  }>();
+  for (const pkg of catalog.packages) {
+    if (pkg.kind !== "external" || pkg.provider === null) continue;
+    if (options.names !== undefined && !options.names.includes(pkg.name)) continue;
+    if (pkg.profiles.length === 0) continue;
+    if (options.profileGate !== null && !pkg.profiles.includes(options.profileGate)) continue;
+    const hosts = options.hosts.filter((host) => pkg.hosts.includes(host));
+    if (hosts.length === 0) continue;
+    const key = `${pkg.provider}\u0000${hosts.join("\u0000")}`;
+    const group = groups.get(key) ?? {
+      provider: pkg.provider,
+      hosts: [...hosts],
+      skills: [],
+      integrityBySkill: {},
+    };
+    group.skills.push(pkg.name);
+    group.integrityBySkill[pkg.name] = pkg.integrity;
+    groups.set(key, group);
+  }
+  return [...groups.values()];
+}
+
+/** Select one named explicit-only external package, or fail closed. */
+export function requiredExplicitExternalSkillInstallGroup(
+  catalog: SkillSurfaceCatalog,
+  name: string,
+  hosts: readonly SkillSurfaceHost[],
+): RequiredExternalSkillInstallGroup {
+  const named = catalog.packages.find((pkg) => pkg.name === name);
+  if (named === undefined || named.kind !== "external" || named.provider === null) {
+    return { status: "missing", name };
+  }
+  if (named.profiles.length !== 0) return { status: "not_explicit_only", name };
+  if (named.integrity === null) return { status: "missing_integrity", name };
+  const selectedHosts = hosts.filter((host) => named.hosts.includes(host));
+  if (selectedHosts.length === 0) return { status: "missing", name };
+  return {
+    status: "selected",
+    group: {
+      provider: named.provider,
+      hosts: selectedHosts,
+      skills: [name],
+      integrityBySkill: { [name]: named.integrity },
+    },
+  };
+}
+
 /** The union installProfileHostMutationPaths() snapshots/allowlists. */
 export function mutationPathSkillNames(catalog: SkillSurfaceCatalog): {
   readonly repoHarnessSkills: readonly string[];
@@ -732,11 +828,11 @@ export function mutationPathSkillNames(catalog: SkillSurfaceCatalog): {
   return { repoHarnessSkills, externalSkills };
 }
 
-/** PROFILE_OWNED_SKILLS parity: external packages plus the narrow cross-model-acceptance provider-skills. */
+/** PROFILE_OWNED_SKILLS parity: profile-selected external packages plus the narrow cross-model-acceptance provider-skills. */
 export function profileOwnedSkillNames(catalog: SkillSurfaceCatalog): readonly string[] {
   return catalog.packages
     .filter((pkg) => (
-      pkg.kind === "external" ||
+      (pkg.kind === "external" && pkg.profiles.length > 0) ||
       (pkg.kind === "provider-skill" && pkg.component === "cross-model-acceptance")
     ))
     .map((pkg) => pkg.name);
@@ -748,7 +844,9 @@ export function probeExpectations(catalog: SkillSurfaceCatalog): {
   readonly planningCapabilityPaths: readonly string[];
   readonly crossModel: readonly string[];
 } {
-  const planningSkillNames = catalog.packages.filter((pkg) => pkg.kind === "external").map((pkg) => pkg.name);
+  const planningSkillNames = catalog.packages
+    .filter((pkg) => pkg.kind === "external" && pkg.profiles.length > 0)
+    .map((pkg) => pkg.name);
   const planningCapabilityPaths = catalog.packages
     .filter((pkg) => pkg.kind === "facade" && pkg.component === "planning-integrations" && pkg.source !== null)
     .map((pkg) => `${pkg.source}/SKILL.md`);

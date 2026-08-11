@@ -1,5 +1,5 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync } from "fs";
-import { homedir } from "os";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "fs";
+import { homedir, tmpdir } from "os";
 import { delimiter, dirname, join, resolve, sep } from "path";
 import { fileURLToPath } from "url";
 import { configureBrainRoot, defaultBrainRootChoice, expandHomePath } from "./brain-root";
@@ -11,8 +11,14 @@ import { runInstall, type InstallTargetSpec } from "./install";
 import { compareVersions, readLatestPackageVersion } from "./doctor";
 import { configureCodegraph } from "../tools/codegraph";
 import { runProcess as runBoundedProcess } from "../../effects/process-runner";
+import { commitVerifiedSkillTree, skillTreeSha256 } from "../../effects/skill-tree-integrity";
 import { PROFILE_COMPONENTS, readInstalledProfile, type InstallProfile } from "../installer/install-profile";
-import { parseSkillSurfaceCatalog, type SkillSurfaceCatalog } from "../../core/skill-surface/catalog";
+import {
+  externalSkillInstallGroups as catalogExternalSkillInstallGroups,
+  parseSkillSurfaceCatalog,
+  requiredExplicitExternalSkillInstallGroup,
+  type SkillSurfaceCatalog,
+} from "../../core/skill-surface/catalog";
 
 export interface GlobalRuntimeOptions {
   sourceRoot?: string;
@@ -24,6 +30,7 @@ export interface GlobalRuntimeOptions {
   syncSkill?: boolean;
   hostAdapters?: boolean;
   externalSkills?: boolean;
+  reverseSkill?: boolean;
   codegraph?: boolean;
   brainRoot?: string;
   profile?: InstallProfile;
@@ -68,18 +75,6 @@ function loadSkillSurfaceCatalog(sourceRoot: string): SkillSurfaceCatalog {
     throw new Error(`invalid skill-surface catalog at ${manifestPath}: ${detail}`);
   }
   return resolution.catalog;
-}
-
-/** Groups kind:"external" catalog packages by upstream provider, preserving manifest declaration order. */
-function externalSkillGroupsFromCatalog(catalog: SkillSurfaceCatalog): ReadonlyMap<string, readonly string[]> {
-  const groups = new Map<string, string[]>();
-  for (const pkg of catalog.packages) {
-    if (pkg.kind !== "external" || pkg.provider === null) continue;
-    const list = groups.get(pkg.provider) ?? [];
-    list.push(pkg.name);
-    groups.set(pkg.provider, list);
-  }
-  return groups;
 }
 
 function defaultSourceRoot(): string {
@@ -254,6 +249,10 @@ function hostIds(target: InstallTargetSpec): Array<"codex" | "claude"> {
   if (target === "codex") return ["codex"];
   if (target === "claude") return ["claude"];
   return ["claude", "codex"];
+}
+
+function targetFromHostIds(hosts: readonly ("codex" | "claude")[]): InstallTargetSpec {
+  return hosts.length === 2 ? "both" : hosts[0]!;
 }
 
 function homeDir(env?: NodeJS.ProcessEnv): string {
@@ -456,33 +455,145 @@ function installAgentFleet(sourceRoot: string, env?: NodeJS.ProcessEnv): GlobalR
   return withStepName(runProcess('bash', [script], sourceRoot, env), 'install agent fleet');
 }
 
-function installWazaSkills(sourceRoot: string, target: InstallTargetSpec, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
-  const agents = hostAgents(target);
-  const wazaSkills = externalSkillGroupsFromCatalog(loadSkillSurfaceCatalog(sourceRoot)).get("tw93/Waza") ?? [];
+function externalSkillStepName(provider: string): string {
+  if (provider === "tw93/Waza") return "configure Waza skills";
+  if (provider === "BfdCampos/dotfiles") return "configure Mermaid skill";
+  if (provider.startsWith("zhaoxuya520/reverse-skill@")) return "configure Reverse Skill";
+  return `configure external skills ${provider}`;
+}
+
+function installExternalSkillGroup(
+  sourceRoot: string,
+  target: InstallTargetSpec,
+  provider: string,
+  skills: readonly string[],
+  integrityBySkill: Readonly<Record<string, string | null>>,
+  env?: NodeJS.ProcessEnv,
+): GlobalRuntimeStep {
+  const stepName = externalSkillStepName(provider);
   const skillsRoot = join(homeDir(env), '.agents', 'skills');
-  const missing = wazaSkills.filter((skill) => !existsSync(join(skillsRoot, skill, 'SKILL.md')));
-  if (missing.length > 0) {
+  const committedIntegritySkills = new Set<string>();
+  const missing = skills.filter((skill) => !existsSync(join(skillsRoot, skill, 'SKILL.md')));
+  const ordinaryMissing = missing.filter((skill) => integrityBySkill[skill] == null);
+  if (ordinaryMissing.length > 0) {
+    const agents = hostAgents(target);
     const step = runProcess(
       "bunx",
       [
         "skills",
         "add",
-        "tw93/Waza",
+        provider,
         "-g",
         "-a",
         ...agents,
         "-s",
-        ...missing,
+        ...ordinaryMissing,
         "-y",
       ],
       sourceRoot,
       env,
     );
     if (step.status === 'failed') {
-      return withStepName(step, "configure Waza skills", `target=${target}; missing=${missing.join(',')}`);
+      return withStepName(step, stepName, `target=${target}; missing=${ordinaryMissing.join(',')}`);
     }
   }
-  return projectStagedSkills(wazaSkills, target, env, 'configure Waza skills');
+
+  const integrityMissing = missing.filter((skill) => integrityBySkill[skill] != null);
+  if (integrityMissing.length > 0) {
+    const isolatedHome = mkdtempSync(join(tmpdir(), "repo-harness-skill-stage-"));
+    const isolatedEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      ...(env ?? {}),
+      HOME: isolatedHome,
+      USERPROFILE: isolatedHome,
+      XDG_CONFIG_HOME: join(isolatedHome, ".config"),
+    };
+    // Custom host roots would defeat isolation even with HOME redirected.
+    for (const key of ["CODEX_HOME", "CLAUDE_CONFIG_DIR", "AGENTS_HOME", "SKILLS_HOME"]) {
+      delete isolatedEnv[key];
+    }
+    try {
+      const step = runProcess(
+        "bunx",
+        [
+          "skills",
+          "add",
+          provider,
+          "-g",
+          "-a",
+          ...hostAgents(target),
+          "-s",
+          ...integrityMissing,
+          "-y",
+        ],
+        sourceRoot,
+        isolatedEnv,
+      );
+      if (step.status === "failed") {
+        return withStepName(step, stepName, `isolated target=${target}; missing=${integrityMissing.join(',')}`);
+      }
+
+      for (const skill of integrityMissing) {
+        const expected = integrityBySkill[skill]!;
+        const isolatedSkill = join(isolatedHome, ".agents", "skills", skill);
+        let actual: string;
+        try {
+          actual = skillTreeSha256(isolatedSkill);
+        } catch (error) {
+          return {
+            step: stepName,
+            status: "failed",
+            detail: `cannot verify isolated staging integrity for ${skill}: ${(error as Error).message}`,
+          };
+        }
+        if (actual !== expected) {
+          return {
+            step: stepName,
+            status: "failed",
+            detail: `isolated staging integrity mismatch for ${skill}: expected=${expected}; actual=${actual}`,
+          };
+        }
+      }
+
+      for (const skill of integrityMissing) {
+        const committed = commitVerifiedSkillTree(
+          join(isolatedHome, ".agents", "skills", skill),
+          join(skillsRoot, skill),
+          integrityBySkill[skill]!,
+        );
+        if (committed.status === "failed") {
+          return { step: stepName, status: "failed", detail: committed.detail };
+        }
+        committedIntegritySkills.add(skill);
+      }
+    } finally {
+      rmSync(isolatedHome, { recursive: true, force: true });
+    }
+  }
+  for (const skill of skills) {
+    const expected = integrityBySkill[skill];
+    if (expected === null || expected === undefined) continue;
+    const installed = join(skillsRoot, skill);
+    try {
+      const actual = skillTreeSha256(installed);
+      if (actual !== expected) {
+        if (committedIntegritySkills.has(skill)) rmSync(installed, { recursive: true, force: true });
+        return {
+          step: stepName,
+          status: "failed",
+          detail: `staging integrity mismatch for ${skill}: expected=${expected}; actual=${actual}`,
+        };
+      }
+    } catch (error) {
+      if (committedIntegritySkills.has(skill)) rmSync(installed, { recursive: true, force: true });
+      return {
+        step: stepName,
+        status: "failed",
+        detail: `cannot verify staging integrity for ${skill}: ${(error as Error).message}`,
+      };
+    }
+  }
+  return projectStagedSkills(skills, target, env, stepName);
 }
 
 function projectStagedSkills(
@@ -557,32 +668,6 @@ function syncWazaSharedRules(target: InstallTargetSpec, env?: NodeJS.ProcessEnv)
     status: missing.length > 0 ? "failed" : "ok",
     detail: missing.length > 0 ? `missing ${missing.join(", ")}` : `synced ${synced.length} files`,
   };
-}
-
-function installMermaidSkill(sourceRoot: string, target: InstallTargetSpec, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
-  const mermaidSkills = externalSkillGroupsFromCatalog(loadSkillSurfaceCatalog(sourceRoot)).get("BfdCampos/dotfiles") ?? [];
-  const installed = join(homeDir(env), '.agents', 'skills', 'mermaid', 'SKILL.md');
-  if (!existsSync(installed)) {
-    const agents = hostAgents(target);
-    const step = runProcess(
-      "bunx",
-      [
-        "skills",
-        "add",
-        "BfdCampos/dotfiles",
-        "-g",
-        "-a",
-        ...agents,
-        "-s",
-        ...mermaidSkills,
-        "-y",
-      ],
-      sourceRoot,
-      env,
-    );
-    if (step.status === 'failed') return withStepName(step, "configure Mermaid skill", `target=${target}`);
-  }
-  return projectStagedSkills(mermaidSkills, target, env, 'configure Mermaid skill');
 }
 
 function configureBrain(root: string | undefined, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
@@ -675,15 +760,74 @@ export function runGlobalRuntimeSetup(
   else steps.push({ step: 'install agent fleet', status: 'skipped', detail: 'disabled by install profile' });
 
   if (opts.externalSkills === true) {
-    const waza = installWazaSkills(sourceRoot, target, env);
-    steps.push(waza);
-    steps.push(waza.status === "ok"
-      ? syncWazaSharedRules(target, env)
-      : { step: "sync Waza shared rules", status: "skipped", detail: "Waza install failed" });
-    steps.push(installMermaidSkill(sourceRoot, target, env));
+    const catalog = loadSkillSurfaceCatalog(sourceRoot);
+    const externalGroups = catalogExternalSkillInstallGroups(catalog, {
+      hosts: hostIds(target),
+      // A minimal caller can deliberately opt into the ordinary marketplace
+      // set; the normal minimal profile default never sets externalSkills=true.
+      profileGate: profile === "minimal" ? null : profile,
+    });
+    for (const { provider, hosts, skills, integrityBySkill } of externalGroups) {
+      const groupTarget = targetFromHostIds(hosts);
+      const installed = installExternalSkillGroup(
+        sourceRoot,
+        groupTarget,
+        provider,
+        skills,
+        integrityBySkill,
+        env,
+      );
+      steps.push(installed);
+      if (provider === "tw93/Waza") {
+        steps.push(installed.status === "ok"
+          ? syncWazaSharedRules(groupTarget, env)
+          : { step: "sync Waza shared rules", status: "skipped", detail: "Waza install failed" });
+      }
+    }
   } else {
-    steps.push({ step: "configure Waza skills", status: "skipped", detail: "disabled" });
-    steps.push({ step: "configure Mermaid skill", status: "skipped", detail: "disabled" });
+    const catalog = loadSkillSurfaceCatalog(sourceRoot);
+    for (const { provider } of catalogExternalSkillInstallGroups(catalog, {
+      hosts: hostIds(target),
+      profileGate: profile,
+    })) {
+      steps.push({ step: externalSkillStepName(provider), status: "skipped", detail: "disabled" });
+    }
+  }
+
+  if (opts.reverseSkill === true) {
+    const catalog = loadSkillSurfaceCatalog(sourceRoot);
+    const selection = requiredExplicitExternalSkillInstallGroup(
+      catalog,
+      "reverse-skill-router",
+      hostIds(target),
+    );
+    if (selection.status !== "selected") {
+      steps.push({
+        step: "configure Reverse Skill",
+        status: "failed",
+        detail: selection.status === "missing"
+          ? "required explicit catalog package reverse-skill-router is missing for the selected host target"
+          : selection.status === "not_explicit_only"
+            ? "catalog package reverse-skill-router must remain explicit-only"
+            : "catalog package reverse-skill-router requires a pinned tree integrity digest",
+      });
+    } else {
+      const { provider, hosts, skills, integrityBySkill } = selection.group;
+      steps.push(installExternalSkillGroup(
+        sourceRoot,
+        targetFromHostIds(hosts),
+        provider,
+        skills,
+        integrityBySkill,
+        env,
+      ));
+    }
+  } else {
+    steps.push({
+      step: "configure Reverse Skill",
+      status: "skipped",
+      detail: "requires explicit --with-reverse-skill opt-in",
+    });
   }
 
   if (profile === 'full') {

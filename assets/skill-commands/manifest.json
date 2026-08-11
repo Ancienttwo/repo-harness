@@ -298,6 +298,24 @@
       "mutatesRepoByDefault": false,
       "summary": "Diagram-design skill. Fetched from BfdCampos/dotfiles via bunx skills add.",
       "retirementCandidate": null
+    },
+    {
+      "name": "reverse-skill-router",
+      "kind": "external",
+      "source": null,
+      "provider": "zhaoxuya520/reverse-skill@539899ddc7608d63dc66e08e794d572e080f1a55",
+      "integrity": "sha256:7aafee6c0dec684d410af6864ab77da4d88b9d442142c0efb91b235ce9793dda",
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [],
+      "discoverability": "external-marketplace",
+      "component": "adaptive-workflow",
+      "requires": [],
+      "mutatesRepoByDefault": false,
+      "summary": "Explicit-opt-in reverse-engineering and security-task router pack. Fetched from zhaoxuya520/reverse-skill via bunx skills add after independent authorization review.",
+      "retirementCandidate": null
     }
   ],
   "expectedProjections": {

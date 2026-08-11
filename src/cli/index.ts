@@ -103,6 +103,7 @@ interface GlobalRuntimeCommandOptions {
   syncSkill?: boolean;
   hooks?: string | false;
   externalSkills?: boolean;
+  reverseSkill?: boolean;
   codegraph?: boolean;
   brainRoot?: string;
   json?: boolean;
@@ -308,6 +309,7 @@ async function runGlobalRuntimeBootstrap(
     syncSkill: rawOpts.syncSkill !== false,
     hostAdapters: rawOpts.hooks !== false,
     externalSkills,
+    reverseSkill: rawOpts.reverseSkill === true,
     codegraph,
     brainRoot: rawOpts.brainRoot,
     profile,
@@ -359,6 +361,7 @@ export function buildProgram(): Command {
     .option('--no-sync-skill', 'Skip refreshing repo-harness skill aliases under host skill roots')
     .option('--no-hooks', 'Skip global hook adapter installation during full runtime install')
     .option('--no-external-skills', 'Skip Waza, Mermaid, and cross-review (repo-harness-cross-review/claude-plan) skill bootstrap')
+    .option('--with-reverse-skill', 'Explicitly install the high-risk reverse-skill-router after independent authorization review')
     .option('--no-codegraph', 'Skip CodeGraph CLI/MCP configuration')
     .option('--brain-root <path>', 'Brain vault root to persist for repo-harness brain commands')
     .option('--json', 'Output JSON instead of human-readable text')
@@ -540,6 +543,7 @@ export function buildProgram(): Command {
     .option('--no-sync-skill', 'Skip refreshing repo-harness skill aliases under host skill roots')
     .option('--no-hooks', 'Skip global hook adapter installation')
     .option('--with-external-skills', 'Also bootstrap third-party Waza, Mermaid, and cross-review skills')
+    .option('--with-reverse-skill', 'Explicitly install the high-risk reverse-skill-router after independent authorization review')
     .option('--no-external-skills', 'Compatibility no-op; update no longer bootstraps third-party skills by default')
     .option('--configure-codegraph', 'Also configure CodeGraph CLI/MCP during runtime refresh')
     .option('--no-codegraph', 'Compatibility no-op; update no longer configures CodeGraph by default')
@@ -561,6 +565,7 @@ export function buildProgram(): Command {
       syncSkill?: boolean;
       hooks?: string | false;
       withExternalSkills?: boolean;
+      withReverseSkill?: boolean;
       externalSkills?: boolean;
       codegraph?: boolean;
       configureCodegraph?: boolean;
@@ -599,6 +604,7 @@ export function buildProgram(): Command {
         syncSkill: rawOpts.syncSkill !== false,
         hostAdapters: rawOpts.hooks !== false,
         externalSkills: rawOpts.withExternalSkills === true,
+        reverseSkill: rawOpts.withReverseSkill === true,
         codegraph: rawOpts.configureCodegraph === true,
         brainRoot: rawOpts.brainRoot,
       });

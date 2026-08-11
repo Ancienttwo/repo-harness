@@ -4,6 +4,17 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Registers `zhaoxuya520/reverse-skill`'s `reverse-skill-router` as a recommended
+  explicit-only external Skill for Claude and Codex, installed through
+  `--with-reverse-skill`. It is deliberately excluded from both profiles
+  because its upstream target-mention authorization assumption is not a valid
+  repo-harness authority boundary. External provider projection is now
+  catalog- and host-driven; the provider is commit-pinned and its selected tree
+  is integrity-checked before host projection. Optional toolchains remain
+  on-demand.
+
 ## [0.14.1] - 2026-08-10
 
 ### Fixed
