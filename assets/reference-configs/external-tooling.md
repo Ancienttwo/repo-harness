@@ -4,6 +4,7 @@ Generated repos route external tooling by host/runtime shape. Task-level
 skill routing lives in `docs/reference-configs/agentic-development-flow.md`.
 
 - `Waza` supplies `/think`, `/hunt`, and `/check` for daily small/medium work
+- `reverse-skill-router` is an explicit-only recommended router for independently authorized reverse-engineering and security work
 - `hai-stack` supplies `geju` for live, pre-contract exploration; only its frozen output enters a contract
 - Codex automation requires `health`, `check`, and `mermaid` from `~/.codex/skills`
 - `CodeGraph` is required agent readiness for code navigation and impact tracing
@@ -32,7 +33,7 @@ bootstrap path must not silently install unrelated toolchains or Claude
 marketplace plugins.
 
 `repo-harness uninstall` removes repo-harness managed Codex/Claude hook
-adapters. It intentionally does not uninstall Waza, Mermaid, CodeGraph,
+adapters. It intentionally does not uninstall Waza, Mermaid, Reverse Skill, CodeGraph,
 brain config, package-manager globals, or user-authored sibling hook entries.
 
 `repo-harness update` is a reconciliation command, not a best-effort package
@@ -62,6 +63,28 @@ plan consult on a mid-execution design fork) and is unaffected by this
 package's host-aware installation. These harness skills ship with the full
 profile (the default for `init`) and provide the peer acceptance gate surface
 for the typed `AcceptanceReceipt`; the review section is projection only.
+
+Reverse Skill is registered from `zhaoxuya520/reverse-skill` as the recommended
+but explicit-only `reverse-skill-router`. It is not part of either install
+profile because the upstream pack requires agents to read
+`field-journal/precedent-auth.md`, which treats merely mentioning a target as
+authorization. That assumption cannot replace a real scope or RoE boundary.
+The catalog pins upstream commit
+`539899ddc7608d63dc66e08e794d572e080f1a55` and the selected tree digest
+`sha256:7aafee6c0dec684d410af6864ab77da4d88b9d442142c0efb91b235ce9793dda`;
+repo-harness verifies the full staged tree before projecting it into either
+host root.
+After independent review, install it explicitly:
+
+```bash
+repo-harness install --with-reverse-skill
+repo-harness update --with-reverse-skill
+```
+
+Add `--no-external-skills` to the install command when Reverse Skill should be
+the only marketplace Skill added. The Skills CLI copies the router pack into
+the selected host Skill roots; repo-harness does not execute its workflows or
+bootstrap its optional analysis/security toolchains during install.
 
 The review scope is the current reviewable diff, not just committed branch
 history: branch diff against the default base, staged changes, unstaged tracked

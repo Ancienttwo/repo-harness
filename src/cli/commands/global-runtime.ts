@@ -1,6 +1,6 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync } from "fs";
-import { homedir } from "os";
-import { delimiter, dirname, join, resolve, sep } from "path";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "fs";
+import { homedir, tmpdir } from "os";
+import { delimiter, dirname, join, relative, resolve, sep } from "path";
 import { fileURLToPath } from "url";
 import { ARCHCONTEXT_NODE_RANGE, productVersionManifest } from "archctx-contracts";
 import { configureBrainRoot, defaultBrainRootChoice, expandHomePath } from "./brain-root";
@@ -12,8 +12,13 @@ import { runInstall, type InstallTargetSpec } from "./install";
 import { compareVersions, readLatestPackageVersion } from "./doctor";
 import { configureCodegraph } from "../tools/codegraph";
 import { runProcess as runBoundedProcess } from "../../effects/process-runner";
+import { commitVerifiedSkillTree, skillTreeSha256 } from "../../effects/skill-tree-integrity";
 import { PROFILE_COMPONENTS, readInstalledProfile, type InstallProfile } from "../installer/install-profile";
-import { parseSkillSurfaceCatalog, type SkillSurfaceCatalog } from "../../core/skill-surface/catalog";
+import {
+  parseSkillSurfaceCatalog,
+  requiredExplicitExternalSkillInstallGroup,
+  type SkillSurfaceCatalog,
+} from "../../core/skill-surface/catalog";
 import { archctxCapabilities } from "../../effects/architecture/archctx-provider";
 
 export interface GlobalRuntimeOptions {
@@ -26,6 +31,7 @@ export interface GlobalRuntimeOptions {
   syncSkill?: boolean;
   hostAdapters?: boolean;
   externalSkills?: boolean;
+  reverseSkill?: boolean;
   codegraph?: boolean;
   brainRoot?: string;
   profile?: InstallProfile;
@@ -75,7 +81,7 @@ function loadSkillSurfaceCatalog(sourceRoot: string): SkillSurfaceCatalog {
   return resolution.catalog;
 }
 
-/** Groups kind:"external" catalog packages by upstream provider, preserving manifest declaration order. */
+/** Groups external catalog packages by provider for the managed Waza/Mermaid refresh path. */
 function externalSkillGroupsFromCatalog(catalog: SkillSurfaceCatalog): ReadonlyMap<string, readonly string[]> {
   const groups = new Map<string, string[]>();
   for (const pkg of catalog.packages) {
@@ -271,6 +277,10 @@ function hostIds(target: InstallTargetSpec): Array<"codex" | "claude"> {
   if (target === "codex") return ["codex"];
   if (target === "claude") return ["claude"];
   return ["claude", "codex"];
+}
+
+function targetFromHostIds(hosts: readonly ("codex" | "claude")[]): InstallTargetSpec {
+  return hosts.length === 2 ? "both" : hosts[0]!;
 }
 
 function homeDir(env?: NodeJS.ProcessEnv): string {
@@ -626,6 +636,178 @@ function installAgentFleet(sourceRoot: string, env?: NodeJS.ProcessEnv): GlobalR
   return withStepName(runProcess('bash', [script], sourceRoot, env), 'install agent fleet');
 }
 
+function externalSkillStepName(provider: string): string {
+  if (provider === "tw93/Waza") return "configure Waza skills";
+  if (provider === "BfdCampos/dotfiles") return "configure Mermaid skill";
+  if (provider.startsWith("zhaoxuya520/reverse-skill@")) return "configure Reverse Skill";
+  return `configure external skills ${provider}`;
+}
+
+function installExternalSkillGroup(
+  sourceRoot: string,
+  target: InstallTargetSpec,
+  provider: string,
+  skills: readonly string[],
+  integrityBySkill: Readonly<Record<string, string | null>>,
+  env?: NodeJS.ProcessEnv,
+): GlobalRuntimeStep {
+  const stepName = externalSkillStepName(provider);
+  const home = homeDir(env);
+  const skillsRoot = join(home, '.agents', 'skills');
+  const canonicalSkillsRoot = join(realpathSync(home), '.agents', 'skills');
+  const committedIntegritySkills = new Set<string>();
+  const preflight = preflightStagedSkillProjection(skills, target, env, stepName);
+  if (preflight) return preflight;
+  const missing = skills.filter((skill) => !existsSync(join(skillsRoot, skill, 'SKILL.md')));
+  const ordinaryMissing = missing.filter((skill) => integrityBySkill[skill] == null);
+  if (ordinaryMissing.length > 0) {
+    const agents = hostAgents(target);
+    const step = runProcess(
+      "bunx",
+      [
+        "skills",
+        "add",
+        provider,
+        "-g",
+        "-a",
+        ...agents,
+        "-s",
+        ...ordinaryMissing,
+        "-y",
+      ],
+      sourceRoot,
+      env,
+    );
+    if (step.status === 'failed') {
+      return withStepName(step, stepName, `target=${target}; missing=${ordinaryMissing.join(',')}`);
+    }
+  }
+
+  const integrityMissing = missing.filter((skill) => integrityBySkill[skill] != null);
+  if (integrityMissing.length > 0) {
+    const isolatedHome = mkdtempSync(join(tmpdir(), "repo-harness-skill-stage-"));
+    const isolatedEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      ...(env ?? {}),
+      HOME: isolatedHome,
+      USERPROFILE: isolatedHome,
+      XDG_CONFIG_HOME: join(isolatedHome, ".config"),
+      XDG_CACHE_HOME: join(isolatedHome, ".cache"),
+      BUN_INSTALL: join(isolatedHome, ".bun"),
+      BUN_INSTALL_CACHE_DIR: join(isolatedHome, ".bun", "install", "cache"),
+      NPM_CONFIG_CACHE: join(isolatedHome, ".npm"),
+      npm_config_cache: join(isolatedHome, ".npm"),
+    };
+    // Custom host roots would defeat isolation even with HOME redirected.
+    for (const key of ["CODEX_HOME", "CLAUDE_CONFIG_DIR", "AGENTS_HOME", "SKILLS_HOME"]) {
+      delete isolatedEnv[key];
+    }
+    try {
+      const step = runProcess(
+        "bunx",
+        [
+          "skills",
+          "add",
+          provider,
+          "-g",
+          "-a",
+          ...hostAgents(target),
+          "-s",
+          ...integrityMissing,
+          "-y",
+        ],
+        sourceRoot,
+        isolatedEnv,
+      );
+      if (step.status === "failed") {
+        return withStepName(step, stepName, `isolated target=${target}; missing=${integrityMissing.join(',')}`);
+      }
+
+      for (const skill of integrityMissing) {
+        const expected = integrityBySkill[skill]!;
+        const isolatedSkill = join(isolatedHome, ".agents", "skills", skill);
+        let actual: string;
+        try {
+          actual = skillTreeSha256(isolatedSkill);
+        } catch (error) {
+          return {
+            step: stepName,
+            status: "failed",
+            detail: `cannot verify isolated staging integrity for ${skill}: ${(error as Error).message}`,
+          };
+        }
+        if (actual !== expected) {
+          return {
+            step: stepName,
+            status: "failed",
+            detail: `isolated staging integrity mismatch for ${skill}: expected=${expected}; actual=${actual}`,
+          };
+        }
+      }
+
+      for (const skill of integrityMissing) {
+        const committed = commitVerifiedSkillTree(
+          join(isolatedHome, ".agents", "skills", skill),
+          join(skillsRoot, skill),
+          integrityBySkill[skill]!,
+          { expectedCanonicalParent: canonicalSkillsRoot },
+        );
+        if (committed.status === "failed") {
+          return { step: stepName, status: "failed", detail: committed.detail };
+        }
+        committedIntegritySkills.add(skill);
+      }
+    } finally {
+      rmSync(isolatedHome, { recursive: true, force: true });
+    }
+  }
+  for (const skill of skills) {
+    const expected = integrityBySkill[skill];
+    if (expected === null || expected === undefined) continue;
+    const installed = join(skillsRoot, skill);
+    try {
+      const stat = lstatSync(installed);
+      const canonicalRoot = realpathSync(skillsRoot);
+      if (
+        canonicalRoot !== canonicalSkillsRoot
+        || !stat.isDirectory()
+        || stat.isSymbolicLink()
+        || realpathSync(installed) !== join(canonicalRoot, skill)
+      ) {
+        if (committedIntegritySkills.has(skill)) rmSync(installed, { recursive: true, force: true });
+        return {
+          step: stepName,
+          status: "failed",
+          detail: `refusing non-canonical integrity staging root for ${skill}: ${installed}`,
+        };
+      }
+      const actual = skillTreeSha256(installed);
+      if (actual !== expected) {
+        if (committedIntegritySkills.has(skill)) rmSync(installed, { recursive: true, force: true });
+        return {
+          step: stepName,
+          status: "failed",
+          detail: `staging integrity mismatch for ${skill}: expected=${expected}; actual=${actual}`,
+        };
+      }
+    } catch (error) {
+      if (committedIntegritySkills.has(skill)) rmSync(installed, { recursive: true, force: true });
+      return {
+        step: stepName,
+        status: "failed",
+        detail: `cannot verify staging integrity for ${skill}: ${(error as Error).message}`,
+      };
+    }
+  }
+  const projection = projectStagedSkills(skills, target, env, stepName);
+  if (projection.status === "failed") {
+    for (const skill of committedIntegritySkills) {
+      rmSync(join(skillsRoot, skill), { recursive: true, force: true });
+    }
+  }
+  return projection;
+}
+
 function installWazaSkills(sourceRoot: string, target: InstallTargetSpec, env?: NodeJS.ProcessEnv, refresh = false): GlobalRuntimeStep {
   const agents = hostAgents(target);
   const wazaSkills = externalSkillGroupsFromCatalog(loadSkillSurfaceCatalog(sourceRoot)).get("tw93/Waza") ?? [];
@@ -664,12 +846,23 @@ function preflightStagedSkillProjection(
   step: string,
 ): GlobalRuntimeStep | null {
   const home = homeDir(env);
-  const roots = hostIds(target).map((host) => join(home, host === 'codex' ? '.codex' : '.claude', 'skills'));
+  const canonicalHome = realpathSync(home);
+  const roots = hostIds(target).map((host) => {
+    const hostRoot = host === 'codex' ? '.codex' : '.claude';
+    return {
+      path: join(home, hostRoot, 'skills'),
+      expected: join(canonicalHome, hostRoot, 'skills'),
+    };
+  });
+  for (const root of roots) {
+    const invalid = invalidProjectionRoot(root.path, root.expected);
+    if (invalid) return { step, status: 'failed', detail: invalid };
+  }
   for (const skill of skills) {
     const source = join(home, '.agents', 'skills', skill);
     for (const root of roots) {
-      const destination = join(root, skill);
-      if (!existsSync(destination)) continue;
+      const destination = join(root.path, skill);
+      if (!pathEntryExists(destination)) continue;
       try {
         if (existsSync(join(source, 'SKILL.md')) && realpathSync(destination) === realpathSync(source)) continue;
       } catch { /* the fail-closed result below owns unreadable projections */ }
@@ -686,30 +879,86 @@ function projectStagedSkills(
   step: string,
 ): GlobalRuntimeStep {
   const home = homeDir(env);
-  const roots = hostIds(target).map((host) => join(home, host === 'codex' ? '.codex' : '.claude', 'skills'));
+  const canonicalHome = realpathSync(home);
+  const roots = hostIds(target).map((host) => {
+    const hostRoot = host === 'codex' ? '.codex' : '.claude';
+    return {
+      path: join(home, hostRoot, 'skills'),
+      expected: join(canonicalHome, hostRoot, 'skills'),
+    };
+  });
   const projected: string[] = [];
+  const created: string[] = [];
+  const fail = (detail: string): GlobalRuntimeStep => {
+    for (const destination of created.reverse()) rmSync(destination, { recursive: true, force: true });
+    return { step, status: 'failed', detail };
+  };
   for (const skill of skills) {
     const source = join(home, '.agents', 'skills', skill);
     if (!existsSync(join(source, 'SKILL.md'))) {
-      return { step, status: 'failed', detail: `staging skill missing after install: ${source}` };
+      return fail(`staging skill missing after install: ${source}`);
     }
     for (const root of roots) {
-      const destination = join(root, skill);
-      mkdirSync(root, { recursive: true });
-      if (existsSync(destination)) {
-        try {
+      const destination = join(root.path, skill);
+      try {
+        const invalidBefore = invalidProjectionRoot(root.path, root.expected);
+        if (invalidBefore) return fail(invalidBefore);
+        mkdirSync(root.path, { recursive: true });
+        const invalidAfter = invalidProjectionRoot(root.path, root.expected);
+        if (invalidAfter) return fail(invalidAfter);
+        if (pathEntryExists(destination)) {
           if (realpathSync(destination) === realpathSync(source)) {
             projected.push(destination);
             continue;
           }
-        } catch { /* the fail-closed error below owns unreadable projections */ }
-        return { step, status: 'failed', detail: `refusing to overwrite unowned host skill ${destination}` };
+          return fail(`refusing to overwrite unowned host skill ${destination}`);
+        }
+        symlinkSync(source, destination, 'dir');
+      } catch (error) {
+        return fail(`cannot project staged skill ${destination}: ${(error as Error).message}`);
       }
-      symlinkSync(source, destination, 'dir');
+      created.push(destination);
       projected.push(destination);
     }
   }
   return { step, status: 'ok', detail: `projected ${projected.length} host skills` };
+}
+
+function pathEntryExists(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+function prospectiveCanonicalPath(path: string): string {
+  let ancestor = path;
+  while (!pathEntryExists(ancestor)) {
+    const parent = dirname(ancestor);
+    if (parent === ancestor) throw new Error(`cannot resolve an existing ancestor for ${path}`);
+    ancestor = parent;
+  }
+  return resolve(realpathSync(ancestor), relative(ancestor, path));
+}
+
+function invalidProjectionRoot(root: string, expected: string): string | null {
+  let actual: string;
+  try {
+    actual = prospectiveCanonicalPath(root);
+  } catch (error) {
+    return `cannot resolve host skill root ${root}: ${(error as Error).message}`;
+  }
+  if (actual !== expected) {
+    return `refusing non-canonical host skill root: expected=${expected}; actual=${actual}`;
+  }
+  if (!pathEntryExists(root)) return null;
+  const stat = lstatSync(root);
+  return stat.isDirectory() && !stat.isSymbolicLink()
+    ? null
+    : `refusing non-directory host skill root ${root}`;
 }
 
 function captureWazaSharedRules(env?: NodeJS.ProcessEnv): ReadonlyMap<string, string> {
@@ -810,7 +1059,6 @@ function installMermaidSkill(sourceRoot: string, target: InstallTargetSpec, env?
   }
   return projectStagedSkills(mermaidSkills, target, env, 'configure Mermaid skill');
 }
-
 function configureBrain(root: string | undefined, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
   try {
     const selected = root
@@ -948,6 +1196,42 @@ export function runGlobalRuntimeSetup(
   } else {
     steps.push({ step: "configure Waza skills", status: "skipped", detail: "disabled" });
     steps.push({ step: "configure Mermaid skill", status: "skipped", detail: "disabled" });
+  }
+
+  if (opts.reverseSkill === true) {
+    const catalog = loadSkillSurfaceCatalog(sourceRoot);
+    const selection = requiredExplicitExternalSkillInstallGroup(
+      catalog,
+      "reverse-skill-router",
+      hostIds(target),
+    );
+    if (selection.status !== "selected") {
+      steps.push({
+        step: "configure Reverse Skill",
+        status: "failed",
+        detail: selection.status === "missing"
+          ? "required explicit catalog package reverse-skill-router is missing for the selected host target"
+          : selection.status === "not_explicit_only"
+            ? "catalog package reverse-skill-router must remain explicit-only"
+            : "catalog package reverse-skill-router requires a pinned tree integrity digest",
+      });
+    } else {
+      const { provider, hosts, skills, integrityBySkill } = selection.group;
+      steps.push(installExternalSkillGroup(
+        sourceRoot,
+        targetFromHostIds(hosts),
+        provider,
+        skills,
+        integrityBySkill,
+        env,
+      ));
+    }
+  } else {
+    steps.push({
+      step: "configure Reverse Skill",
+      status: "skipped",
+      detail: "requires explicit --with-reverse-skill opt-in",
+    });
   }
 
   if (profile === 'full') {

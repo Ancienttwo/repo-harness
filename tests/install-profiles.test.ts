@@ -528,7 +528,9 @@ describe('install profiles', () => {
       for (const facade of ['repo-harness-plan', 'repo-harness-check', 'repo-harness-product', 'repo-harness-ship']) {
         expect(paths).toContain(join(env.HOME!, host, 'skills', facade));
       }
+      expect(paths).toContain(join(env.HOME!, host, 'skills', 'reverse-skill-router'));
     }
+    expect(paths).toContain(join(env.HOME!, '.agents', 'skills', 'reverse-skill-router'));
   }));
 
   test('host transaction restores prior bytes and removes later mutations', () => withHome((env) => {
@@ -677,7 +679,7 @@ describe('install profiles', () => {
 
   test('downgrade preserves a user-owned staging skill registry when only host links are transaction-owned', () => withHome((env) => {
     writeManagedHostSurfaces(env, 'full');
-    const names = ['think', 'hunt', 'check', 'health', 'mermaid'];
+    const names = ['think', 'hunt', 'check', 'health', 'mermaid', 'reverse-skill-router'];
     for (const name of names) writePath(join(env.HOME!, '.agents', 'skills', name, 'SKILL.md'), `# ${name}\n`);
     const lock = join(env.HOME!, '.agents', '.skill-lock.json');
     writePath(lock, `${JSON.stringify({ version: 3, skills: {
@@ -696,6 +698,7 @@ describe('install profiles', () => {
     const planning = applyInstallProfile('full', env, new Date('2026-01-01T00:00:00Z'), first);
     commitInstallHostTransaction(first);
     expect(planning.state.ownership_manifest.some(({ path }) => path.endsWith('/.codex/skills/think'))).toBe(true);
+    expect(planning.state.ownership_manifest.some(({ path }) => path.includes('/reverse-skill-router'))).toBe(false);
 
     const second = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
     prepareInstallProfileSwitch('minimal', env);
@@ -704,6 +707,7 @@ describe('install profiles', () => {
     commitInstallHostTransaction(second);
 
     expect(existsSync(join(env.HOME!, '.agents', 'skills', 'think', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(env.HOME!, '.codex', 'skills', 'reverse-skill-router', 'SKILL.md'))).toBe(true);
     expect(JSON.parse(readFileSync(lock, 'utf-8')).skills).toEqual({
       think: { source: 'user/waza' },
       mermaid: { source: 'user/mermaid' },

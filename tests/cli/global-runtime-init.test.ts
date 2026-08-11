@@ -5,10 +5,12 @@ import { join } from 'path';
 import { spawnSync } from 'child_process';
 import { PassThrough, Writable } from 'stream';
 import { runGlobalRuntimeSetup } from '../../src/cli/commands/global-runtime';
-import { resolveOptionalRuntimeDeps } from '../../src/cli/index';
+import { resolveOptionalRuntimeDeps, runTransactionalRuntimeRefresh } from '../../src/cli/index';
 
 const ROOT = join(import.meta.dir, '..', '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
+const REVERSE_PROVIDER = 'zhaoxuya520/reverse-skill@539899ddc7608d63dc66e08e794d572e080f1a55';
+const REVERSE_FAKE_TREE_INTEGRITY = 'sha256:0089d4f8f81d3c4b8b055ac9a3674838cdb064ffae2f4c99d357977d3719baae';
 
 function writeExecutable(filePath: string, content: string): void {
   writeFileSync(filePath, content);
@@ -37,6 +39,15 @@ function setupFakeSource(root: string): void {
     join(root, 'scripts', 'install-agent-fleet.sh'),
     '#!/bin/bash\nset -euo pipefail\necho "fleet installed"\n',
   );
+}
+
+function setReverseSkillIntegrity(root: string, integrity: string | null): void {
+  const manifestPath = join(root, 'assets', 'skill-commands', 'manifest.json');
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+  const pkg = manifest.packages.find(({ name }: { name: string }) => name === 'reverse-skill-router');
+  if (!pkg) throw new Error('reverse-skill-router missing from fixture manifest');
+  pkg.integrity = integrity;
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
 function writeFakeCodegraph(fakeBin: string, logFile: string): void {
@@ -192,6 +203,7 @@ describe('install command global runtime bootstrap', () => {
         env: {
           ...process.env,
           HOME: home,
+          BUN_INSTALL: join(home, '.bun'),
           PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
         },
       });
@@ -271,6 +283,7 @@ describe('install command global runtime bootstrap', () => {
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
+      setReverseSkillIntegrity(source, REVERSE_FAKE_TREE_INTEGRITY);
       mkdirSync(join(home, '.agents', 'rules'), { recursive: true });
       writeFileSync(join(home, '.agents', 'rules', 'anti-patterns.md'), 'anti\n');
       writeFileSync(join(home, '.agents', 'rules', 'chinese.md'), 'zh\n');
@@ -278,13 +291,13 @@ describe('install command global runtime bootstrap', () => {
       writeFileSync(join(home, '.agents', 'rules', 'english.md'), 'en\n');
       writeFakeCodegraph(fakeBin, codegraphLog);
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n`);
-      // The install/init external-skills bootstrap (installWazaSkills /
-      // installMermaidSkill) invokes `bunx skills add ...` directly, and the
+      // The install/init provider-driven external-skills bootstrap invokes
+      // `bunx skills add ...` directly, and the
       // CodeGraph MCP configure step shells out to the real
       // scripts/check-agent-tooling.sh (for repo-agnostic tooling detection),
       // which also calls `bunx skills ls -g --json` for Waza status. This one
       // fake bunx answers both, so the read-only probe never hits the network.
-      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nif [[ "\${1:-}" == "skills" && "\${2:-}" == "add" ]]; then if [[ " $* " == *" tw93/Waza "* ]]; then names='think hunt check health'; else names='mermaid'; fi; for skill in $names; do mkdir -p "$HOME/.agents/skills/$skill"; printf '# %s\\n' "$skill" > "$HOME/.agents/skills/$skill/SKILL.md"; done; fi\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nif [[ "\${1:-}" == "skills" && "\${2:-}" == "add" ]]; then if [[ " $* " == *" tw93/Waza "* ]]; then names='think hunt check health'; elif [[ " $* " == *" zhaoxuya520/reverse-skill@"* ]]; then names='reverse-skill-router'; else names='mermaid'; fi; for skill in $names; do mkdir -p "$HOME/.agents/skills/$skill"; printf '# %s\\n' "$skill" > "$HOME/.agents/skills/$skill/SKILL.md"; done; fi\nexit 0\n`);
 
       const result = runGlobalRuntimeSetup({
         sourceRoot: source,
@@ -292,6 +305,7 @@ describe('install command global runtime bootstrap', () => {
         target: 'codex',
         profile: 'full',
         externalSkills: true,
+        reverseSkill: true,
         codegraph: true,
         brainRoot: join(home, 'brain'),
         env: {
@@ -315,6 +329,10 @@ describe('install command global runtime bootstrap', () => {
       expect(readFileSync(bunxLog, 'utf-8')).toContain(
         'skills add BfdCampos/dotfiles -g -a codex -s mermaid -y',
       );
+      expect(readFileSync(bunxLog, 'utf-8')).toContain(
+        `skills add ${REVERSE_PROVIDER} -g -a codex -s reverse-skill-router -y`,
+      );
+      expect(existsSync(join(home, '.codex', 'skills', 'reverse-skill-router', 'SKILL.md'))).toBe(true);
       expect(existsSync(join(home, '.codex', 'skills', 'repo-harness-cross-review', 'SKILL.md'))).toBe(true);
       expect(existsSync(join(home, '.claude', 'skills', 'repo-harness-cross-review', 'SKILL.md'))).toBe(false);
       expect(readFileSync(bunxLog, 'utf-8')).not.toContain('feature-dev');
@@ -452,6 +470,366 @@ describe('install command global runtime bootstrap', () => {
     }
   }, 15_000);
 
+  test('fails closed before host projection when the pinned Reverse Skill tree digest drifts', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-reverse-skill-integrity-'));
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    const isolatedHomeLog = join(tmp, 'isolated-home.log');
+    const isolatedRuntimeLog = join(tmp, 'isolated-runtime.log');
+    const hostileBunInstall = join(tmp, 'hostile-bun-install');
+    try {
+      mkdirSync(home, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      mkdirSync(hostileBunInstall, { recursive: true });
+      writeExecutable(
+        join(fakeBin, 'bun'),
+        '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n',
+      );
+      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash
+printf '%s\n' "$HOME" > "${isolatedHomeLog}"
+printf '%s\n%s\n%s\n' "$BUN_INSTALL" "$BUN_INSTALL_CACHE_DIR" "$XDG_CACHE_HOME" > "${isolatedRuntimeLog}"
+mkdir -p "$BUN_INSTALL"
+printf 'isolated\n' > "$BUN_INSTALL/probe"
+mkdir -p "$HOME/.agents/skills/reverse-skill-router" "$HOME/.codex/skills/reverse-skill-router"
+printf '# drifted reverse-skill-router\n' > "$HOME/.agents/skills/reverse-skill-router/SKILL.md"
+printf '# premature host projection\n' > "$HOME/.codex/skills/reverse-skill-router/SKILL.md"
+exit 0
+`);
+
+      const result = runGlobalRuntimeSetup({
+        sourceRoot: ROOT,
+        cwd: repo,
+        target: 'codex',
+        profile: 'minimal',
+        installCli: false,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        reverseSkill: true,
+        codegraph: false,
+        brainRoot: join(home, 'brain'),
+        env: {
+          ...process.env,
+          HOME: home,
+          BUN_INSTALL: hostileBunInstall,
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+        },
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.steps.find((step) => step.step === 'configure Reverse Skill')).toMatchObject({
+        status: 'failed',
+      });
+      expect(result.steps.find((step) => step.step === 'configure Reverse Skill')?.detail).toContain(
+        'isolated staging integrity mismatch',
+      );
+      expect(readFileSync(isolatedHomeLog, 'utf-8').trim()).not.toBe(home);
+      const [isolatedBunInstall, isolatedBunCache, isolatedXdgCache] = readFileSync(isolatedRuntimeLog, 'utf-8').trim().split('\n');
+      expect(isolatedBunInstall).toBe(join(readFileSync(isolatedHomeLog, 'utf-8').trim(), '.bun'));
+      expect(isolatedBunCache).toBe(join(isolatedBunInstall, 'install', 'cache'));
+      expect(isolatedXdgCache).toBe(join(readFileSync(isolatedHomeLog, 'utf-8').trim(), '.cache'));
+      expect(existsSync(join(hostileBunInstall, 'probe'))).toBe(false);
+      expect(existsSync(join(home, '.agents', 'skills', 'reverse-skill-router'))).toBe(false);
+      expect(existsSync(join(home, '.codex', 'skills', 'reverse-skill-router'))).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test('rejects a pre-existing Reverse Skill staging symlink even when its target matches the pinned digest', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-reverse-skill-staging-symlink-'));
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const outside = join(tmp, 'outside');
+    try {
+      mkdirSync(join(home, '.agents', 'skills'), { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(outside, { recursive: true });
+      writeFileSync(join(outside, 'SKILL.md'), '# reverse-skill-router\n');
+      symlinkSync(outside, join(home, '.agents', 'skills', 'reverse-skill-router'), 'dir');
+
+      const result = runGlobalRuntimeSetup({
+        sourceRoot: ROOT,
+        cwd: repo,
+        target: 'codex',
+        profile: 'minimal',
+        installCli: false,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        reverseSkill: true,
+        codegraph: false,
+        brainRoot: join(home, 'brain'),
+        env: { ...process.env, HOME: home },
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.steps.find((step) => step.step === 'configure Reverse Skill')).toMatchObject({
+        status: 'failed',
+        detail: expect.stringContaining('refusing non-canonical integrity staging root'),
+      });
+      expect(existsSync(join(home, '.codex', 'skills', 'reverse-skill-router'))).toBe(false);
+      expect(readFileSync(join(outside, 'SKILL.md'), 'utf-8')).toBe('# reverse-skill-router\n');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test('rejects a symlinked shared skills root instead of blessing its outside realpath', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-reverse-skill-root-symlink-'));
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const outside = join(tmp, 'outside');
+    try {
+      mkdirSync(join(home, '.agents'), { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(join(outside, 'reverse-skill-router'), { recursive: true });
+      writeFileSync(join(outside, 'reverse-skill-router', 'SKILL.md'), '# reverse-skill-router\n');
+      symlinkSync(outside, join(home, '.agents', 'skills'), 'dir');
+
+      const result = runGlobalRuntimeSetup({
+        sourceRoot: ROOT,
+        cwd: repo,
+        target: 'codex',
+        profile: 'minimal',
+        installCli: false,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        reverseSkill: true,
+        codegraph: false,
+        brainRoot: join(home, 'brain'),
+        env: { ...process.env, HOME: home },
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.steps.find((step) => step.step === 'configure Reverse Skill')).toMatchObject({
+        status: 'failed',
+        detail: expect.stringContaining('refusing non-canonical integrity staging root'),
+      });
+      expect(existsSync(join(home, '.codex', 'skills', 'reverse-skill-router'))).toBe(false);
+      expect(readFileSync(join(outside, 'reverse-skill-router', 'SKILL.md'), 'utf-8'))
+        .toBe('# reverse-skill-router\n');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test('preflights unowned Reverse Skill host paths before committing shared staging', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-reverse-skill-host-preflight-'));
+    const source = join(tmp, 'source');
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    const bunxLog = join(tmp, 'bunx.log');
+    try {
+      mkdirSync(home, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      setupFakeSource(source);
+      setReverseSkillIntegrity(source, REVERSE_FAKE_TREE_INTEGRITY);
+      mkdirSync(join(home, '.codex', 'skills', 'reverse-skill-router'), { recursive: true });
+      writeFileSync(join(home, '.codex', 'skills', 'reverse-skill-router', 'SKILL.md'), '# user-owned\n');
+      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" > "${bunxLog}"\nexit 0\n`);
+
+      const result = runGlobalRuntimeSetup({
+        sourceRoot: source,
+        cwd: repo,
+        target: 'codex',
+        profile: 'minimal',
+        installCli: false,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        reverseSkill: true,
+        codegraph: false,
+        brainRoot: join(home, 'brain'),
+        env: { ...process.env, HOME: home, PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.steps.find((step) => step.step === 'configure Reverse Skill')).toMatchObject({
+        status: 'failed',
+        detail: expect.stringContaining('refusing to refresh unowned host skill'),
+      });
+      expect(existsSync(bunxLog)).toBe(false);
+      expect(existsSync(join(home, '.agents', 'skills', 'reverse-skill-router'))).toBe(false);
+      expect(readFileSync(join(home, '.codex', 'skills', 'reverse-skill-router', 'SKILL.md'), 'utf-8'))
+        .toBe('# user-owned\n');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test('rejects symlinked host skill roots without writing outside HOME', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-reverse-skill-host-root-symlink-'));
+    const source = join(tmp, 'source');
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const outside = join(tmp, 'outside');
+    try {
+      mkdirSync(join(home, '.codex'), { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(outside, { recursive: true });
+      setupFakeSource(source);
+      setReverseSkillIntegrity(source, REVERSE_FAKE_TREE_INTEGRITY);
+      symlinkSync(outside, join(home, '.codex', 'skills'), 'dir');
+
+      const result = runGlobalRuntimeSetup({
+        sourceRoot: source,
+        cwd: repo,
+        target: 'codex',
+        profile: 'minimal',
+        installCli: false,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        reverseSkill: true,
+        codegraph: false,
+        brainRoot: join(home, 'brain'),
+        env: { ...process.env, HOME: home },
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.steps.find((step) => step.step === 'configure Reverse Skill')).toMatchObject({
+        status: 'failed',
+        detail: expect.stringContaining('refusing non-canonical host skill root'),
+      });
+      expect(existsSync(join(outside, 'reverse-skill-router'))).toBe(false);
+      expect(existsSync(join(home, '.agents', 'skills', 'reverse-skill-router'))).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test('dangling host skill roots return a failed step and compensate committed staging', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-reverse-skill-host-root-dangling-'));
+    const source = join(tmp, 'source');
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    try {
+      mkdirSync(join(home, '.codex'), { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      setupFakeSource(source);
+      setReverseSkillIntegrity(source, REVERSE_FAKE_TREE_INTEGRITY);
+      symlinkSync(join(tmp, 'missing-host-root'), join(home, '.codex', 'skills'), 'dir');
+      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash
+mkdir -p "$HOME/.agents/skills/reverse-skill-router"
+printf '# reverse-skill-router\\n' > "$HOME/.agents/skills/reverse-skill-router/SKILL.md"
+exit 0
+`);
+
+      const result = runGlobalRuntimeSetup({
+        sourceRoot: source,
+        cwd: repo,
+        target: 'codex',
+        profile: 'minimal',
+        installCli: false,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        reverseSkill: true,
+        codegraph: false,
+        brainRoot: join(home, 'brain'),
+        env: { ...process.env, HOME: home, PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.steps.find((step) => step.step === 'configure Reverse Skill')).toMatchObject({ status: 'failed' });
+      expect(existsSync(join(home, '.agents', 'skills', 'reverse-skill-router'))).toBe(false);
+      expect(existsSync(join(tmp, 'missing-host-root'))).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test('fails closed when explicit Reverse Skill selection is absent from the catalog', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-reverse-skill-missing-catalog-'));
+    const source = join(tmp, 'source');
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(home, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      setupFakeSource(source);
+      const manifestPath = join(source, 'assets', 'skill-commands', 'manifest.json');
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+      manifest.packages = manifest.packages.filter(
+        ({ name }: { name: string }) => name !== 'reverse-skill-router',
+      );
+      writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+      const result = runGlobalRuntimeSetup({
+        sourceRoot: source,
+        cwd: repo,
+        target: 'codex',
+        profile: 'minimal',
+        installCli: false,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        reverseSkill: true,
+        codegraph: false,
+        brainRoot: join(home, 'brain'),
+        env: { ...process.env, HOME: home },
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.steps.find((step) => step.step === 'configure Reverse Skill')).toEqual({
+        step: 'configure Reverse Skill',
+        status: 'failed',
+        detail: 'required explicit catalog package reverse-skill-router is missing for the selected host target',
+      });
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test('fails closed before provider execution when explicit Reverse Skill integrity is absent', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-reverse-skill-missing-integrity-'));
+    const source = join(tmp, 'source');
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(home, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      setupFakeSource(source);
+      setReverseSkillIntegrity(source, null);
+
+      const result = runGlobalRuntimeSetup({
+        sourceRoot: source,
+        cwd: repo,
+        target: 'codex',
+        profile: 'minimal',
+        installCli: false,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        reverseSkill: true,
+        codegraph: false,
+        brainRoot: join(home, 'brain'),
+        env: { ...process.env, HOME: home },
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.steps.find((step) => step.step === 'configure Reverse Skill')).toEqual({
+        step: 'configure Reverse Skill',
+        status: 'failed',
+        detail: 'catalog package reverse-skill-router requires a pinned tree integrity digest',
+      });
+      expect(existsSync(join(home, '.agents', 'skills', 'reverse-skill-router'))).toBe(false);
+      expect(existsSync(join(home, '.codex', 'skills', 'reverse-skill-router'))).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   test('repairs Bun dependency loop by reinstalling CLI from a packed tarball', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-loop-'));
     const source = join(tmp, 'source');
@@ -555,6 +933,10 @@ describe('install command global runtime bootstrap', () => {
 
       expect(result.exitCode).toBe(0);
       expect(result.steps.find((step) => step.step === 'configure Waza skills')?.status).toBe('skipped');
+      expect(result.steps.find((step) => step.step === 'configure Reverse Skill')).toMatchObject({
+        status: 'skipped',
+        detail: 'requires explicit --with-reverse-skill opt-in',
+      });
       expect(result.steps.find((step) => step.step === 'cross-review skill repo-harness-cross-review')?.status).toBe('ok');
       expect(existsSync(join(home, '.claude', 'skills', 'repo-harness-cross-review', 'SKILL.md'))).toBe(true);
       expect(existsSync(join(home, '.claude', 'skills', 'merge-gate', 'SKILL.md'))).toBe(false);
@@ -580,6 +962,8 @@ if [[ "\${1:-}" == "skills" && "\${2:-}" == "add" ]]; then
     names='think hunt check health'
     mkdir -p "$HOME/.agents/rules"
     for rule in anti-patterns.md chinese.md durable-context.md english.md; do printf '# rule\\n' > "$HOME/.agents/rules/$rule"; done
+	  elif [[ " $* " == *" zhaoxuya520/reverse-skill@"* ]]; then
+    names='reverse-skill-router'
   else
     names='mermaid'
   fi
@@ -612,6 +996,7 @@ exit 0
       });
       expect(existsSync(join(home, '.claude', 'skills', 'think', 'SKILL.md'))).toBe(true);
       expect(existsSync(join(home, '.claude', 'skills', 'mermaid', 'SKILL.md'))).toBe(true);
+      expect(existsSync(join(home, '.claude', 'skills', 'reverse-skill-router', 'SKILL.md'))).toBe(false);
       expect(existsSync(join(home, '.claude', 'skills', 'repo-harness-cross-review'))).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -627,7 +1012,7 @@ exit 0
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
-      for (const skill of ['think', 'hunt', 'check', 'health', 'mermaid']) {
+      for (const skill of ['think', 'hunt', 'check', 'health', 'mermaid', 'reverse-skill-router']) {
         mkdirSync(join(home, '.agents', 'skills', skill), { recursive: true });
         writeFileSync(join(home, '.agents', 'skills', skill, 'SKILL.md'), `# ${skill}\n`);
       }
@@ -969,10 +1354,62 @@ exit 0
     expect(res.stdout).toContain('Usage: repo-harness install');
     expect(res.stdout).toContain('--target <target>');
     expect(res.stdout).toContain('--no-cli');
+    expect(res.stdout).toContain('--with-reverse-skill');
     expect(res.stdout).toContain('--brain-root <path>');
     expect(res.stdout).not.toContain('--with-optional');
     expect(res.stdout).not.toContain('--project-type');
     expect(res.stdout).not.toContain('setup-plugins');
+  }, 30_000);
+
+  test('CLI install routes --with-reverse-skill into the explicit provider path', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-install-reverse-flag-'));
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    const bunxLog = join(tmp, 'bunx.log');
+    try {
+      mkdirSync(home, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nexit 0\n');
+      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" > "${bunxLog}"\nexit 0\n`);
+
+      const res = spawnSync(process.execPath, [
+        CLI,
+        'install',
+        '--profile',
+        'minimal',
+        '--target',
+        'codex',
+        '--no-cli',
+        '--no-sync-skill',
+        '--no-hooks',
+        '--no-external-skills',
+        '--no-codegraph',
+        '--with-reverse-skill',
+        '--json',
+      ], {
+        cwd: repo,
+        encoding: 'utf-8',
+        env: {
+          ...process.env,
+          HOME: home,
+          BUN_INSTALL: join(home, '.bun'),
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+          REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
+        },
+      });
+
+      expect(res.status, `${res.stderr}\n${res.stdout}`).toBe(1);
+      const result = JSON.parse(res.stdout);
+      expect(result.steps.find((step: { step: string }) => step.step === 'configure Reverse Skill')).toMatchObject({
+        status: 'failed',
+        detail: expect.stringContaining('cannot verify isolated staging integrity for reverse-skill-router'),
+      });
+      expect(readFileSync(bunxLog, 'utf-8')).toContain(`skills add ${REVERSE_PROVIDER}`);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   }, 30_000);
 
   test('CLI update refreshes user-level runtime without touching the current repo', () => {
@@ -1039,6 +1476,77 @@ exit 0
       rmSync(tmp, { recursive: true, force: true });
     }
   }, 30_000);
+
+  test('update host transaction compensates Reverse Skill projections when a later step fails', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-update-reverse-rollback-'));
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const staging = join(home, '.agents', 'skills', 'reverse-skill-router');
+    const projected = join(home, '.codex', 'skills', 'reverse-skill-router');
+    try {
+      mkdirSync(home, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+
+      const result = runTransactionalRuntimeRefresh({
+        cwd: repo,
+        target: 'codex',
+        profile: 'full',
+        reverseSkill: true,
+        env: { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun') },
+      }, () => {
+        mkdirSync(staging, { recursive: true });
+        writeFileSync(join(staging, 'SKILL.md'), '# reverse-skill-router\n');
+        mkdirSync(join(home, '.codex', 'skills'), { recursive: true });
+        symlinkSync(staging, projected, 'dir');
+        return {
+          exitCode: 1,
+          steps: [
+            { step: 'configure Reverse Skill', status: 'ok', detail: 'projected 1 host skills' },
+            { step: 'cross-review skills', status: 'failed', detail: 'refusing to overwrite unowned host skill' },
+          ],
+          lines: [],
+          stdout: '',
+          stderr: '',
+        };
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(existsSync(staging)).toBe(false);
+      expect(existsSync(projected)).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test('runtime host transaction lock uses process HOME when an injected env omits HOME', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-runtime-lock-home-'));
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const previousHome = process.env.HOME;
+    try {
+      mkdirSync(home, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      process.env.HOME = home;
+
+      let observedExpectedLock = false;
+      const result = runTransactionalRuntimeRefresh({
+        cwd: repo,
+        target: 'codex',
+        profile: 'full',
+        env: { BUN_INSTALL: join(home, '.bun') },
+      }, () => {
+        observedExpectedLock = existsSync(join(home, '.repo-harness', 'transactions', 'global-runtime.lock'));
+        return { exitCode: 0, steps: [], lines: [], stdout: '', stderr: '' };
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(observedExpectedLock).toBe(true);
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 
   test('CLI update --version installs the requested package version', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-update-version-'));
@@ -1127,6 +1635,7 @@ exit 0
         env: {
           ...process.env,
           HOME: home,
+          BUN_INSTALL: join(home, '.bun'),
           PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
           REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
         },
@@ -1190,6 +1699,7 @@ exit 0
     expect(res.stdout).toContain('--check');
     expect(res.stdout).toContain('--no-runtime-refresh');
     expect(res.stdout).toContain('--with-external-skills');
+    expect(res.stdout).toContain('--with-reverse-skill');
     expect(res.stdout).toContain('--configure-codegraph');
     expect(res.stdout).toContain('--no-cli');
     expect(res.stdout).toContain('Deprecated: use repo-harness init --repo <path>');
@@ -1216,6 +1726,8 @@ if [[ "\${1:-}" == "skills" && "\${2:-}" == "add" ]]; then
     names='think hunt check health'
     mkdir -p "$HOME/.agents/rules"
     for rule in anti-patterns.md chinese.md durable-context.md english.md; do printf '# rule\\n' > "$HOME/.agents/rules/$rule"; done
+  elif [[ " $* " == *" zhaoxuya520/reverse-skill@"* ]]; then
+    names='reverse-skill-router'
   else
     names='mermaid'
   fi
@@ -1257,6 +1769,7 @@ exit 0
       expect(res.stdout).toContain('[profile] full');
       expect(res.stdout).toContain('install repo-harness CLI');
       expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add tw93/Waza');
+      expect(readFileSync(bunxLog, 'utf-8')).not.toContain('skills add zhaoxuya520/reverse-skill');
       expect(readFileSync(codegraphLog, 'utf-8')).toContain('codegraph install');
       expect(JSON.parse(readFileSync(join(home, '.repo-harness', 'install-state.json'), 'utf-8')).profile).toBe('full');
     } finally {

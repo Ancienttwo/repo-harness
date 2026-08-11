@@ -214,7 +214,7 @@ describe("init command", () => {
     }
   }, 30000);
 
-  test("runInit can bootstrap core Waza, Mermaid, and cross-review skills for Claude and Codex", () => {
+  test("runInit bootstraps the full-profile Waza, Mermaid, and cross-review set without explicit-only Reverse Skill", () => {
     const tmp = join(tmpdir(), `repo-harness-init-skills-${Date.now()}`);
     const source = join(tmp, "source");
     const repo = join(tmp, "repo");
@@ -259,6 +259,7 @@ describe("init command", () => {
       expect(readFileSync(bunxLog, "utf-8")).toContain(
         "skills add BfdCampos/dotfiles -g -a claude-code codex -s mermaid -y",
       );
+      expect(readFileSync(bunxLog, "utf-8")).not.toContain("zhaoxuya520/reverse-skill");
       // SSD-06: repo-harness-cross-review installs on both hosts (host-aware
       // provider mode selection lives inside the package); claude-plan stays
       // Codex-only (unchanged, R4).

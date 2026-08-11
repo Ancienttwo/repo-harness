@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import {
+  externalSkillInstallGroups,
   externalSkillsForProfile,
   facadesForProfile,
   hostSkillPlacements,
@@ -9,6 +10,7 @@ import {
   parseSkillSurfaceCatalog,
   probeExpectations,
   profileOwnedSkillNames,
+  requiredExplicitExternalSkillInstallGroup,
   SKILL_SURFACE_PROFILES,
   validateSkillSurfaceCatalogValue,
   type SkillSurfaceCatalog,
@@ -141,6 +143,13 @@ describe("skill-surface catalog: every validation rejection, proven on a bad fix
     expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, broken])))).toContain("FIELD_REQUIRED");
   });
 
+  test("FIELD_REQUIRED: integrity must be a lowercase SHA-256 digest", () => {
+    for (const integrity of [42, "sha256:ABC", "sha512:deadbeef"]) {
+      const broken = { ...FACADE, integrity };
+      expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, broken])))).toContain("FIELD_REQUIRED");
+    }
+  });
+
   test("FIELD_REQUIRED: hosts/profiles/requires must be string arrays; mutatesRepoByDefault must be boolean", () => {
     expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, { ...FACADE, hosts: "claude" }]))))
       .toContain("FIELD_REQUIRED");
@@ -170,6 +179,26 @@ describe("skill-surface catalog: every validation rejection, proven on a bad fix
   test("INVALID_PROFILE: a profile outside the two known profiles", () => {
     const broken = { ...FACADE, profiles: ["minimal", "bogus"] };
     expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, broken])))).toContain("INVALID_PROFILE");
+  });
+
+  test("INVALID_INTEGRITY_SCOPE: integrity-bound packages must stay explicit-only external packages", () => {
+    const digest = `sha256:${"a".repeat(64)}`;
+    const profileSelected = {
+      ...FACADE,
+      name: "profile-integrity-bypass",
+      kind: "external",
+      source: null,
+      provider: "example/provider@pinned",
+      integrity: digest,
+      profiles: ["minimal"],
+      discoverability: "external-marketplace",
+      component: "adaptive-workflow",
+    };
+    const nonExternal = { ...FACADE, integrity: digest };
+    expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, profileSelected]))))
+      .toContain("INVALID_INTEGRITY_SCOPE");
+    expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, nonExternal]))))
+      .toContain("INVALID_INTEGRITY_SCOPE");
   });
 
   test("DUPLICATE_NAME: two packages share a name", () => {
@@ -264,14 +293,17 @@ describe("skill-surface catalog: the real manifest.json on disk", () => {
   // repo-harness-setup, repo-harness-plan, repo-harness-check, repo-harness-product,
   // repo-harness-ship, repo-harness-architecture, repo-harness-cross-review,
   // merge-gate, repo-harness-chatgpt, claude-plan) + 5 unaffected external
-  // skills = 16 total. See tasks/notes/20260715-1140-skill-surface-discovery-convergence.notes.md#SSD-06.
-  test("covers all 11 repo-owned sources plus the 5 external skills (16 packages)", () => {
+  // skills = 16 total. Reverse Skill is the first post-cutover catalog
+  // addition, bringing the live surface to 11 repo-owned + 6 external.
+  test("covers all 11 repo-owned sources plus the 6 external skills (17 packages)", () => {
     if (resolution.status !== "valid") throw new Error("expected valid catalog");
-    expect(resolution.catalog.packages.length).toBe(16);
+    expect(resolution.catalog.packages.length).toBe(17);
     const repoOwned = resolution.catalog.packages.filter((p) => p.kind !== "external");
     expect(repoOwned.length).toBe(11);
     const external = resolution.catalog.packages.filter((p) => p.kind === "external");
-    expect(external.map((p) => p.name).sort()).toEqual(["check", "health", "hunt", "mermaid", "think"]);
+    expect(external.map((p) => p.name).sort()).toEqual([
+      "check", "health", "hunt", "mermaid", "reverse-skill-router", "think",
+    ]);
   });
 
   test("merge-gate is a non-selectable classification-only judge entry", () => {
@@ -386,9 +418,56 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     expect(chatgpt?.profiles).toEqual([]);
   });
 
-  test("externalSkillsForProfile: full gets the 5 Waza+mermaid names and minimal gets none", () => {
+  test("externalSkillsForProfile: full gets Waza and Mermaid while Reverse Skill stays explicit-only", () => {
     expect(externalSkillsForProfile(catalog, "minimal")).toEqual([]);
     expect(externalSkillsForProfile(catalog, "full")).toEqual(["think", "hunt", "check", "health", "mermaid"]);
+    expect(externalSkillsForProfile(catalog, undefined)).toContain("reverse-skill-router");
+  });
+
+  test("externalSkillInstallGroups applies profile and host gates while excluding explicit-only packages", () => {
+    expect(externalSkillInstallGroups(catalog, {
+      hosts: ["claude", "codex"],
+      profileGate: "minimal",
+    })).toEqual([]);
+    expect(externalSkillInstallGroups(catalog, {
+      hosts: ["claude", "codex"],
+      profileGate: "full",
+    }).map(({ provider, hosts, skills }) => ({ provider, hosts, skills }))).toEqual([
+      { provider: "tw93/Waza", hosts: ["claude", "codex"], skills: ["think", "hunt", "check", "health"] },
+      { provider: "BfdCampos/dotfiles", hosts: ["claude", "codex"], skills: ["mermaid"] },
+    ]);
+    expect(requiredExplicitExternalSkillInstallGroup(catalog, "reverse-skill-router", ["codex"])).toEqual({
+      status: "selected",
+      group: {
+      provider: "zhaoxuya520/reverse-skill@539899ddc7608d63dc66e08e794d572e080f1a55",
+      hosts: ["codex"],
+      skills: ["reverse-skill-router"],
+      integrityBySkill: {
+        "reverse-skill-router": "sha256:7aafee6c0dec684d410af6864ab77da4d88b9d442142c0efb91b235ce9793dda",
+      },
+      },
+    });
+  });
+
+  test("requiredExplicitExternalSkillInstallGroup rejects a profile-selected package", () => {
+    const fullPackage = catalog.packages.find((pkg) => pkg.name === "mermaid")!;
+    expect(requiredExplicitExternalSkillInstallGroup(catalog, fullPackage.name, ["codex"])).toEqual({
+      status: "not_explicit_only",
+      name: "mermaid",
+    });
+  });
+
+  test("requiredExplicitExternalSkillInstallGroup requires pinned tree integrity", () => {
+    const withoutIntegrity: SkillSurfaceCatalog = {
+      ...catalog,
+      packages: catalog.packages.map((pkg) => (
+        pkg.name === "reverse-skill-router" ? { ...pkg, integrity: null } : pkg
+      )),
+    };
+    expect(requiredExplicitExternalSkillInstallGroup(withoutIntegrity, "reverse-skill-router", ["codex"])).toEqual({
+      status: "missing_integrity",
+      name: "reverse-skill-router",
+    });
   });
 
   test("mutationPathSkillNames covers every package path that can be host-synced post-cutover", () => {
@@ -396,7 +475,9 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     expect(repoHarnessSkills).toEqual([
       "repo-harness", "repo-harness-plan", "repo-harness-check", "repo-harness-product", "repo-harness-ship",
     ]);
-    expect(externalSkills).toEqual(["repo-harness-cross-review", "think", "hunt", "check", "health", "mermaid"]);
+    expect(externalSkills).toEqual([
+      "repo-harness-cross-review", "think", "hunt", "check", "health", "mermaid", "reverse-skill-router",
+    ]);
   });
 
   test("profileOwnedSkillNames matches the post-cutover cross-model-acceptance + external set", () => {
