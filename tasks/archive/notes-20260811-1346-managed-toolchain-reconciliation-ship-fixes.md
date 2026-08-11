@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-11 13:46
+> **Related Plan**: plans/archive/plan-20260811-1124-managed-toolchain-reconciliation-ship-fixes.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260811-1346
+
 # Implementation Notes: managed-toolchain-reconciliation-ship-fixes
 
 - The pre-fix review reproduced four independent blockers: destructive global

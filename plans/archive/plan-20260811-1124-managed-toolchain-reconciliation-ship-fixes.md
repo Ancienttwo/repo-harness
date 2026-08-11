@@ -1,6 +1,6 @@
 # Plan: Managed Toolchain Reconciliation Ship Fixes
 
-> **Status**: Review
+> **Status**: Archived
 > **Created**: 20260811-1124
 > **Slug**: managed-toolchain-reconciliation-ship-fixes
 > **Planning Source**: codex-plan-or-waza-think
