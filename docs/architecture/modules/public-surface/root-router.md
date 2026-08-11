@@ -1,7 +1,7 @@
 # public-surface/root-router 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-root-router" sourceDigest="sha256:e2f869f09ac3c18691f44db23f176e03410ef56bbe5977a9a1e3c70a9bdc63a7" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:8890081c2d7d742c17e683cd456e6b43db94fff28dfabb6ffaa9651219d9a48f" verifiedAgainst="codex/axr7-consumer-e2e-adoption-dogfood@99c645f368e0c0269cd8871f9f0160cd59c55260@2026-08-09T03:26:42+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-root-router" sourceDigest="sha256:d3f85ff5d717213da582ca1641fbd32c6241f5b232754593ffcb6c3187397951" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:7ad5a3efcba24bb1c506ffa5bcef15f886860ac59a37e5405a1f5ac9d2c39f46" verifiedAgainst="codex/managed-toolchain-reconciliation-ship-fixes@65eb3891783559c6c51d8c0bc6c537fa00c323c8@2026-08-10T00:38:07+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`codex/axr7-consumer-e2e-adoption-dogfood@99c645f368e0c0269cd8871f9f0160cd59c55260`(2026-08-09)
+> **Verified against**:`codex/managed-toolchain-reconciliation-ship-fixes@65eb3891783559c6c51d8c0bc6c537fa00c323c8`(2026-08-10)
 > **Capability ID**:`capability.public-surface.root-router`(kind `capability`)
 > **Matched Prefixes**:`SKILL.md`、`README.md`、`AGENTS.md`、`CLAUDE.md`、`docs/spec.md`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
@@ -36,7 +36,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 文件數:`5`
-- 總行數:`832`
+- 總行數:`830`
 - 匹配前綴:`SKILL.md`、`README.md`、`AGENTS.md`、`CLAUDE.md`、`docs/spec.md`
 - 復算:`archctx docs plan --json`(掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`)
 

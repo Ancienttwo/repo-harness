@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.global-runtime-reconciliation.primary
+capabilityId: capability.runtime-harness.global-runtime-reconciliation
+name: Reconcile the global runtime closure
+applicability: required
+participants:
+  - id: update-command
+    nodeId: capability.runtime-harness.global-runtime-reconciliation
+  - id: reconciler
+    nodeId: component.global-runtime-reconciliation.primary
+steps:
+  - id: install-and-readback
+    from: update-command
+    to: reconciler
+    label: Install candidate and verify exact dependency closure
+    evidence:
+      entrypointId: entrypoint.global-runtime-reconciliation.candidate-readback
+      sourceSymbol: verifyInstalledManagedRuntime
+      sinkId: sink.global-runtime-reconciliation.candidate-readback
+outcomes:
+  - id: success
+    kind: success
+    label: Mandatory closure and selected profile tooling are ready
+    steps:
+      - id: return-success
+        from: update-command
+        to: reconciler
+        label: Return versioned reconciliation receipt
+        evidence:
+          entrypointId: entrypoint.global-runtime-reconciliation.candidate-readback
+          sourceSymbol: verifyInstalledManagedRuntime
+          sinkId: sink.global-runtime-reconciliation.candidate-readback
+    terminal:
+      participant: update-command
+      label: Continue host runtime refresh
+  - id: error
+    kind: error
+    label: Package, Node, capability, or tooling readback failed
+    steps:
+      - id: return-failure
+        from: update-command
+        to: reconciler
+        label: Return typed failure before later host mutation
+        evidence:
+          entrypointId: entrypoint.global-runtime-reconciliation.candidate-readback
+          sourceSymbol: verifyInstalledManagedRuntime
+          sinkId: sink.global-runtime-reconciliation.candidate-readback
+    terminal:
+      participant: update-command
+      label: Stop update with recovery detail

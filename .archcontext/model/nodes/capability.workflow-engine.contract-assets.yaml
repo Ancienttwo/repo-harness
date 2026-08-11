@@ -21,7 +21,6 @@ source:
     - "scripts/merge-gate.ts"
     - "scripts/ship-worktrees.sh"
     - "src/cli/commands/init.ts"
-    - "src/cli/commands/global-runtime.ts"
     - "src/cli/commands/capability-context.ts"
     - "src/cli/runtime/helper-runner.ts"
     - "assets/templates/**"

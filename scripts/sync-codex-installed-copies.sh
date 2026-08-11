@@ -48,6 +48,17 @@ if [[ ! -d "$SOURCE_ROOT" ]]; then
   exit 1
 fi
 
+# A process running the previously installed CLI loads its old TypeScript
+# modules before `bun add -g` replaces the package. When that old updater reaches
+# this newly installed script, perform the candidate's exact closure readback
+# before projecting any host files. This makes the first update invocation fail
+# closed instead of reporting success from stale in-memory update logic.
+BUN_GLOBAL_ROOT="${BUN_INSTALL:-$HOME/.bun}/install/global/node_modules/repo-harness"
+if [[ -d "$BUN_GLOBAL_ROOT" ]] \
+  && [[ "$(cd "$SOURCE_ROOT" && pwd -P)" == "$(cd "$BUN_GLOBAL_ROOT" && pwd -P)" ]]; then
+  bun "$SOURCE_ROOT/scripts/check-managed-runtime.ts"
+fi
+
 # Resolved once, eagerly, here in the main shell process (never inside a function
 # invoked as a pipeline's non-last stage -- bash forks a subshell for those, which
 # would silently swallow a failure here as "selects nothing" instead of aborting).

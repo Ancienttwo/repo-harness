@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:f3136225f1b961b69912e44bf85c32bbb0ae6b4be29e6c864b344878bedccf40" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:12ac0ab6eb31d304959c7b769c0e40218b159e9d43dcbece253ebb1f446d2bec" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:dfeee72dd6b65c11c5410cf52261499a156ed11386d32cb5121711b63684470d" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:2a7471ae324271ace7dd0a9380b4ddb2b97a91cbd83c996501b47cf897ba5d05" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
@@ -23,6 +23,14 @@
       {
         "id": "capability.public-surface.root-router",
         "name": "Root Router",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "capability.runtime-harness.global-runtime-reconciliation",
+        "name": "Global Runtime Reconciliation",
         "type": "Software System",
         "tags": [
           "capability"
@@ -133,6 +141,14 @@
         ]
       },
       {
+        "id": "component.global-runtime-reconciliation.primary",
+        "name": "Global Runtime Reconciler",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
         "id": "component.hook-adapters.primary",
         "name": "Architecture Cascade",
         "type": "Component",
@@ -203,6 +219,12 @@
         "description": "calls"
       },
       {
+        "id": "relation.global-runtime-reconciliation.primary",
+        "sourceId": "capability.runtime-harness.global-runtime-reconciliation",
+        "destinationId": "component.global-runtime-reconciliation.primary",
+        "description": "calls"
+      },
+      {
         "id": "relation.hook-adapters.primary",
         "sourceId": "capability.runtime-harness.hook-adapters",
         "destinationId": "component.hook-adapters.primary",
@@ -235,6 +257,7 @@
         "capability.public-surface.action-commands",
         "capability.public-surface.adoption",
         "capability.public-surface.root-router",
+        "capability.runtime-harness.global-runtime-reconciliation",
         "capability.runtime-harness.hook-adapters",
         "capability.runtime-harness.mcp-sidecar",
         "capability.runtime-mcp.general-repo-access",
@@ -248,6 +271,7 @@
         "component.contract-assets.primary",
         "component.evals-checks.primary",
         "component.general-repo-access.primary",
+        "component.global-runtime-reconciliation.primary",
         "component.hook-adapters.primary",
         "component.inspection-migration.primary",
         "component.mcp-sidecar.primary",

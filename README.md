@@ -111,7 +111,7 @@ looks wrong, stop and read
 ### Update and remove
 
 ```bash
-repo-harness update          # refresh user-level CLI and runtime pieces
+repo-harness update          # reconcile CLI, mandatory deps, profile tooling, and CodeGraph
 repo-harness update --check  # read-only repair guidance, no writes
 repo-harness uninstall       # remove managed host adapters only
 ```
@@ -441,8 +441,8 @@ repo-harness commit scripts or hooks unless that repo adopts the same policy.
 
 ## Current Release
 
-- npm package: `repo-harness@0.14.1`
-- Generated workflow stamp: `repo-harness@0.14.1+template@0.14.1`
+- npm package: `repo-harness@0.14.2`
+- Generated workflow stamp: `repo-harness@0.14.2+template@0.14.2`
 - GitHub repository: `Ancienttwo/repo-harness`
 - Release notes and history: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

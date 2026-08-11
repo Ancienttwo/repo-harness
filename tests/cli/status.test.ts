@@ -130,6 +130,8 @@ describe('status command (Phase 1C)', () => {
         fs.mkdirSync(path.join(repo, '.ai/harness'), { recursive: true });
         fs.mkdirSync(path.join(repo, '.archcontext/model/nodes'), { recursive: true });
         fs.writeFileSync(path.join(repo, '.ai/harness/workflow-contract.json'), '{}');
+        fs.writeFileSync(path.join(repo, '.archcontext/manifest.yaml'), 'schema_version: archcontext/v1\n');
+        fs.writeFileSync(path.join(repo, '.archcontext/product.yaml'), 'name: fixture\n');
         fs.writeFileSync(
           path.join(repo, '.ai/harness/policy.json'),
           JSON.stringify({ context: { capability_source: 'archcontext' } }),

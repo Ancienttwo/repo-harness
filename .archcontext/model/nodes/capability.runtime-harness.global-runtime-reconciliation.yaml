@@ -1,0 +1,53 @@
+schemaVersion: archcontext.node/v2
+id: capability.runtime-harness.global-runtime-reconciliation
+kind: capability
+name: Global Runtime Reconciliation
+status: active
+summary: Reconciles the installed repo-harness runtime, its mandatory ArchContext closure, and profile-owned external tooling.
+responsibilities:
+  - Install and read back the exact repo-harness, archctx, archctx-contracts, and package-local CodeGraph versions.
+  - Require a compatible ArchContext Node runtime and a successful package-local capability handshake.
+  - Refresh mutable Waza and Mermaid skills only when explicitly requested, plus the exact global CodeGraph CLI and MCP registration.
+  - Fail closed before later host mutations when the mandatory runtime closure cannot be reconciled.
+source:
+  include:
+    - "package.json"
+    - "bun.lock"
+    - "src/cli/index.ts"
+    - "src/cli/commands/global-runtime.ts"
+    - "scripts/check-managed-runtime.ts"
+    - "scripts/sync-codex-installed-copies.sh"
+    - "src/effects/architecture/**"
+    - "tests/cli/global-runtime-init.test.ts"
+    - "tests/cli/global-runtime.test.ts"
+    - "tests/architecture-projection-provider.test.ts"
+    - "tests/architecture-projection-orchestration.test.ts"
+    - "assets/reference-configs/external-tooling.md"
+    - "docs/reference-configs/external-tooling.md"
+    - "docs/reference-configs/install-profiles.md"
+  entrypoints:
+    - id: entrypoint.global-runtime-reconciliation.update
+      path: "src/cli/commands/global-runtime.ts"
+      symbols:
+        - name: "runGlobalRuntimeSetup"
+          sinks:
+            - id: sink.global-runtime-reconciliation.readback
+              path: "src/cli/commands/global-runtime.ts"
+              symbol: "reconcileManagedRuntime"
+    - id: entrypoint.global-runtime-reconciliation.candidate-readback
+      path: "src/cli/commands/global-runtime.ts"
+      symbols:
+        - name: "verifyInstalledManagedRuntime"
+          sinks:
+            - id: sink.global-runtime-reconciliation.candidate-readback
+              path: "src/cli/commands/global-runtime.ts"
+              symbol: "reconcileManagedRuntime"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun test tests/cli/global-runtime-init.test.ts tests/cli/global-runtime.test.ts"
+    - "bun test tests/architecture-projection-provider.test.ts tests/architecture-projection-orchestration.test.ts"
+    - "bun run check:release"
