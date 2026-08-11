@@ -86,9 +86,14 @@ export function commitVerifiedSkillTree(
   const copyTree = dependencies.copyTree ?? cpSync;
   const renameTree = dependencies.renameTree ?? renameSync;
   const requestedParent = dirname(destination);
-  const prospectiveParent = dependencies.expectedCanonicalParent === undefined
-    ? null
-    : prospectiveCanonicalPath(requestedParent);
+  let prospectiveParent: string | null;
+  try {
+    prospectiveParent = dependencies.expectedCanonicalParent === undefined
+      ? null
+      : prospectiveCanonicalPath(requestedParent);
+  } catch (error) {
+    return { status: "failed", detail: `cannot resolve staging parent authority: ${(error as Error).message}` };
+  }
   if (prospectiveParent !== null && prospectiveParent !== dependencies.expectedCanonicalParent) {
     return {
       status: "failed",
