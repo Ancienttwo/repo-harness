@@ -222,6 +222,40 @@ OpenCode 官方 threat model 明确说明：permission system 是用户交互和
 - arbitrary Bash 的路径写入无法只靠 `tool.execute.before` 完全证明；
 - 结束后必须重新计算 Git diff，确认没有越出 `allowed_paths`。
 
+### 7.1 配置隔离与 missing-agent fallback 的实测反例
+
+历史 eval commit `cb07282f` 对未合入的 OpenCode cross-review runtime
+`a2bfed64` 做了 disposable falsifier。测试使用 OpenCode `1.18.15` 和
+`nvidia/openai/gpt-oss-20b`，把 hostile HOME、XDG、project config、目标 Git
+仓库以及 tracked/untracked/ignored sentinels 全部放在临时目录，并在每次运行后
+删除。它得到四个可复用结论：
+
+1. `--pure`、`OPENCODE_CONFIG_DIR` 和
+   `OPENCODE_DISABLE_PROJECT_CONFIG=1` 能排除 hostile project config，但不能阻止
+   user config 合并；resolved config 仍包含 hostile user agent，并把它选为
+   `default_agent`。
+2. 当生成的 reviewer agent 能被精确解析时，它最后追加的 wildcard deny 层阻止了
+   `apply_patch` 写入。OpenCode upstream exit 为 0，repo-harness 将工具尝试分类为
+   `policy_violation`，三个 sentinel 均未改变。
+3. 当指定 agent 无法解析时，OpenCode 会退回 user-owned default agent，而不是
+   fail closed。该 fallback 的最终 `write`/`bash` permission 为 allow；一次权威运行
+   改写了 tracked、untracked 和 ignored 三类 sentinel，upstream 仍 exit 0，
+   repo-harness 只能在副作用发生后报告 `policy_violation`。
+4. LLM 是否在单次 turn 选择写工具具有非确定性，因此安全 gate 必须以 resolved
+   principal 与最终 permission 是否可写作为 deterministic failure；sentinel mutation
+   只能作为补强证据，不能成为唯一 oracle。
+
+因此 cross-review runtime 不能把 config-only permission 与事后 JSONL classifier
+当作 read-only security boundary。任何后续 OpenCode adapter 必须同时证明：
+
+- credential-preserving 的 disposable HOME/XDG；
+- missing or unresolved agent 直接失败，禁止 default-agent fallback；
+- 实际 resolved principal 与预期 reviewer 的 attestation；
+- Docker、VM 或其他独立 filesystem sandbox 在执行前阻断越界写入。
+
+这份证据只否定旧 runtime 的安全前提，不构成该 runtime 的实现或验收；旧分支无需
+合并，eval runner 也不应连同被推翻的 parent runtime 一起进入 production history。
+
 ---
 
 # 三、目标架构
