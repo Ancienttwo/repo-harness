@@ -44,11 +44,11 @@
 > **Reviewer**: User
 > **Source**: user-waiver
 > **Actor**: kito
-> **Reviewed Subject SHA256**: sha256:eb6ac6f835b312f1440f2d6507208530ec00aabccdeebdb66da285e01e97e721
+> **Reviewed Subject SHA256**: sha256:b927b1944c348c2c32f70ee4030609c26a24b745406a0a58402d2b9958da09e9
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: e922c27099365c7e7f259df508fa46cf6c6260c1
-> **Verification Evidence SHA256**: sha256:fa256aa4c78d2e83f0eb496f70217e2794d380e118a25d1543cf3d3641b017b6
-> **Issued At**: 2026-08-11T10:52:25.775Z
+> **Verification Evidence SHA256**: sha256:4efe7173aa7df981010d7d07f53bda0b263153786113594cc6e436f9d5cfd791
+> **Issued At**: 2026-08-11T11:29:29.185Z
 
 - Summary: Contract owner explicitly waived the configured Claude second review after its CLI authentication failed; accepts the bounded residual risks recorded in the review.
 - Findings: none
