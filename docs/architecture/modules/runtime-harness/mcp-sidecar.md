@@ -1,7 +1,7 @@
 # runtime-harness/mcp-sidecar 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:cc6734ac6b014c92943c3028a0e8a4517ef3913d0525a7e663be3f643e6f8548" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:5d72f3ad040b5c272697024a972d4589d51906a6b10c9e4eec8190c260e05539" verifiedAgainst="main@ee33d127fadefa58f00b63367a7a936d2335fd08@2026-08-11T13:54:22+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:b98399a36a250b99b856fc3180e4615dc6c5d73758645b808a91479b8e0227c3" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:146b162f3f1fe88f59e5f304303677bc2eb037a4264117b8b49057631084609c" verifiedAgainst="main@e922c27099365c7e7f259df508fa46cf6c6260c1@2026-08-11T17:45:15+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`main@ee33d127fadefa58f00b63367a7a936d2335fd08`(2026-08-11)
+> **Verified against**:`main@e922c27099365c7e7f259df508fa46cf6c6260c1`(2026-08-11)
 > **Capability ID**:`capability.runtime-harness.mcp-sidecar`(kind `capability`)
 > **Matched Prefixes**:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`、`src/cli/chatgpt-browser/file-policy.ts`、`src/effects/repo-registry.ts`、`docs/repo-harness-chatgpt-mcp-setup.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`docs/researches/20260711-devspace-chatgpt-local-control.md`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
