@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-11 19:31
+> **Related Plan**: plans/archive/plan-20260811-1344-codex-native-agent-authority.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260811-1931
+
 # Implementation Notes: codex-native-agent-authority
 
 > **Status**: Active

@@ -1,6 +1,6 @@
 # Plan: Codex Native Agent Authority Cutover
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260811-1344
 > **Slug**: codex-native-agent-authority
 > **Planning Source**: repo-harness-plan
