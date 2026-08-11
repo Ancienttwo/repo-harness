@@ -74,8 +74,6 @@ function seedDelegation(cwd: string, scope = 'turn-ordered'): string {
     eligible: true,
     explicit: true,
     spawned: false,
-    fallback_used: false,
-    stop_fallback: true,
     created_at_epoch: Math.floor(Date.now() / 1000),
   };
   writeFileSync(join(dir, 'latest.json'), `${JSON.stringify(state, null, 2)}\n`);
@@ -335,10 +333,10 @@ describe('runStopHandler', () => {
     expect(existsSync(outside)).toBe(false);
   });
 
-  test('readiness wins over plan completeness and delegation without a minimal-change suffix', () => {
+  test('readiness wins over plan completeness without a minimal-change suffix', () => {
     const cwd = fixture();
     seedMinimalChange(cwd);
-    const delegation = seedDelegation(cwd);
+    seedDelegation(cwd);
     mkdirSync(join(cwd, '.ai/harness/planning'), { recursive: true });
     writeFileSync(join(cwd, '.ai/harness/planning/pending.json'), `${JSON.stringify({ kind: 'codex-plan', prompt_slug: 'ordered', created_at: 'now' })}\n`);
 
@@ -354,13 +352,12 @@ describe('runStopHandler', () => {
     expect(result.stdout).toContain('[ReadinessGate]');
     expect(result.stdout).not.toContain('[MinimalChange]');
     expect(existsSync(join(cwd, '.ai/harness/planning/plan-completeness.json'))).toBe(false);
-    expect(JSON.parse(readFileSync(delegation, 'utf8')).fallback_used).toBe(false);
   });
 
-  test('plan completeness wins over delegation and carries the minimal-change suffix', () => {
+  test('plan completeness carries the minimal-change suffix', () => {
     const cwd = fixture();
     seedMinimalChange(cwd);
-    const delegation = seedDelegation(cwd);
+    seedDelegation(cwd);
     mkdirSync(join(cwd, '.ai/harness/planning'), { recursive: true });
     writeFileSync(join(cwd, '.ai/harness/planning/pending.json'), `${JSON.stringify({ kind: 'codex-plan', prompt_slug: 'ordered', created_at: 'now' })}\n`);
 
@@ -375,11 +372,9 @@ describe('runStopHandler', () => {
 
     expect(result.stdout).toContain('[PlanCompletenessGate]');
     expect(result.stdout).toContain('[MinimalChange]');
-    expect(result.stdout).not.toContain('[DelegationFallback]');
-    expect(JSON.parse(readFileSync(delegation, 'utf8')).fallback_used).toBe(false);
   });
 
-  test('delegation fallback is last, carries the suffix, and lite skips it', () => {
+  test('explicit delegation state never authorizes a Stop-time alternate runner', () => {
     const cwd = fixture();
     seedMinimalChange(cwd);
     const delegation = seedDelegation(cwd);
@@ -388,9 +383,12 @@ describe('runStopHandler', () => {
       input: JSON.stringify({ turn_id: 'ordered' }),
       env: { HOOK_RUN_ID: 'stop-delegation-last' },
     });
-    expect(standard.stdout).toContain('[DelegationFallback]');
-    expect(standard.stdout).toContain('[MinimalChange]');
-    expect(JSON.parse(readFileSync(delegation, 'utf8')).fallback_used).toBe(true);
+    expect(standard.stdout).toBe('');
+    expect(JSON.parse(readFileSync(delegation, 'utf8'))).toMatchObject({
+      explicit: true,
+      spawned: false,
+    });
+    expect(readFileSync(delegation, 'utf8')).not.toContain('fallback_used');
 
     const liteCwd = fixture();
     const liteDelegation = seedDelegation(liteCwd);
@@ -400,6 +398,6 @@ describe('runStopHandler', () => {
       env: { HOOK_RUN_ID: 'stop-lite' },
     });
     expect(lite.stdout).toBe('');
-    expect(JSON.parse(readFileSync(liteDelegation, 'utf8')).fallback_used).toBe(false);
+    expect(readFileSync(liteDelegation, 'utf8')).not.toContain('fallback_used');
   });
 });

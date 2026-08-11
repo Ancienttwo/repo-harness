@@ -502,17 +502,26 @@ description (for example, `Opus at max effort` or `Sonnet at high effort`) to th
 mapped GPT-5.6 model and reasoning level. A missing label fails closed so the
 installed metadata cannot claim a different model from the TOML settings.
 
-These files define the desired installed role configuration and feed both Codex
-dispatch surfaces: native MultiAgentV2 `agent_type` selection, and Codex App
-Thread dispatch, where `model` and `model_reasoning_effort` are read back out of
-the installed TOML and passed explicitly to `codex_app__create_thread`. App
-Thread dispatch is the default Codex path because the flat native spawn schema
-carries only a task name, a message, and `fork_turns`: it cannot select a model
-per role, so a `gpt-5.6-luna` role dispatched natively silently inherits the
-parent model. These files do not by themselves prove that either surface honored
-the configured model; keep runtime selection claims behind a real canary — a
-SubagentStart observation on the native path, an official thread read on the
-thread path.
+These files define the desired installed role configuration for Codex native
+MultiAgent `agent_type` selection. On Codex CLI 0.147, the live native spawn
+surface accepts `agent_type`; that field is the only fleet identity/lifecycle
+authority. A dispatch packet must also pass `fork_turns="none"` and remain
+self-contained. If the live schema cannot accept the requested installed
+`agent_type`, the fleet dispatch fails closed instead of selecting an App
+thread, `codex-exec`, or the main thread.
+
+Installed files do not by themselves prove that Codex honored the configured
+model. Runtime selection claims stay behind official `SubagentStart`
+`agent_type`/`model` evidence. `SubagentStart` does not expose reasoning effort,
+so that field remains `configured_unverified` and is never promoted to a runtime
+claim.
+
+A 2026-08-11 Codex CLI 0.147 canary recorded `explorer` on its configured
+`gpt-5.6-luna` model and `deep-reasoner` on its configured `gpt-5.6-terra`
+model in one session. The strict tooling check aggregated both official
+observations as `verified`. This closes the older flat-V2 limitation for the
+versioned native surface; it does not turn missing future `agent_type` or model
+readback into a compatibility fallback.
 
 ### Local merge gate
 
@@ -552,55 +561,38 @@ and CI remain the remote merge authority.
 For Codex, repo-harness keeps configuration readiness and runtime routing
 readiness separate:
 
-- `UserPromptSubmit.delegation` initializes
-  `.ai/harness/delegation/latest.json` with
-  `native_role_routing.status = "unverified"` and a repo-scoped evidence
-  directory for that delegation.
+- `UserPromptSubmit.delegation` is an explicit command adapter only: `/delegate`
+  or `/parallel` injects the bounded dispatch contract. Natural-language prompt
+  classification and SessionStart standing authorization are not authorities.
 - `SubagentStart.context` consumes Codex's official `agent_type` and `model`
   fields plus `turn_id` and `agent_id`. It enumerates project custom-agent TOML
   files first, then user files, parses them with `Bun.TOML.parse`, selects by
   the schema-authoritative `name`, and writes one atomic observation per child
-  without reading Codex transcripts. The filename is only a convention; an
-  unrelated valid profile may inherit its model, while the selected profile
+  under the event-scoped directory referenced by
+  `.ai/harness/delegation/native-role-routing.json`, even when no prompt advisor
+  state exists. It does not read Codex transcripts. The filename is only a
+  convention; an unrelated valid profile may inherit its model, while the selected profile
   must pin one before repo-harness can verify model routing.
-- `check-agent-tooling.sh` deterministically aggregates every child observation
-  in the current delegation. An empty current delegation retains the latest
-  completed canary instead of erasing negative evidence. Each verified or
-  mismatched observation carries the selected TOML SHA-256, so later config
-  drift invalidates stale evidence. `--strict-readiness`
-  fails after `unavailable`, `mismatch`, `invalid`, or structurally malformed
-  evidence; only a genuinely absent canary remains advisory `unverified`.
+- `check-agent-tooling.sh` deterministically aggregates the current native
+  event scope only; it never revives a historical scope. The hook retains at
+  most 32 observations in that scope and removes older managed scope evidence
+  under a dedicated native-evidence lock. Each verified or mismatched
+  observation carries the selected TOML SHA-256, so later config drift
+  invalidates stale evidence. `--strict-readiness` fails after `unverified`,
+  `unavailable`, `mismatch`, `invalid`, structurally malformed evidence, an
+  empty current scope, or a missing current pointer target.
 
-SubagentStart does not expose `model_reasoning_effort`, so repo-harness never
-claims that per-role reasoning effort is verified from this gate.
-
-`native_role_routing` evidence stays scoped to the native fallback path; it says
-nothing about App Thread dispatch, and an absent native canary is not a failure
-of the default thread path. Thread-path model evidence comes from official
-thread reads instead: the requested `model`/`thinking` passed to
-`codex_app__create_thread` and the model observed on the materialized thread are
-recorded separately, and a thread whose runtime model was never read back stays
-unverified. A post-merge live canary on 2026-08-02 requested
-`gpt-5.6-luna`/`max`, materialized a worktree thread, and completed a bounded
-read-only task at the shipped main SHA. The host-owned rollout `turn_context`
-observed `model = gpt-5.6-luna` and `effort = max`, which proves the host-local
-execution matched the request. It does not close the orchestrator contract: the
-current `codex_app__read_thread` response omitted model and effort fields, so
-portable runtime readiness remains unverified and must not be inferred from
-create-call acceptance or private rollout parsing.
-
-The readback contract is version-bound and fail-closed. On Codex CLI
-`0.146.0-alpha.9.2`, `codex app-server generate-json-schema` shows that
-`ThreadReadResponse` contains only `thread`, while its `Thread` object exposes
-`modelProvider` but neither `model` nor `reasoningEffort`. The same generated
-schema exposes `model` and nullable `reasoningEffort` on `ThreadStartResponse`
-and `ThreadResumeResponse`, but the App Thread tools do not propagate those
-fields across the pending-worktree materialization path. Runtime readiness is
-closed only when a public App Thread response exposes the materialized thread's
-observed `model` and reasoning effort separately from the requested tuple. A
-missing or mismatched observed tuple keeps the role-routed result unverified and
-selects the declared fallback; repo-harness must not scrape rollout JSONL or
-SQLite as a compatibility path.
+The official [Codex Subagents documentation](https://developers.openai.com/codex/subagents)
+documents `model_reasoning_effort` in each agent file, and the official
+[Configuration Reference](https://developers.openai.com/codex/config-reference)
+also documents `agents.default_subagent_reasoning_effort` plus explicit spawn
+effort precedence. `SubagentStart` does not expose the effective
+`model_reasoning_effort`, so repo-harness records `reasoning_effort_status =
+"configured_unverified"` and never promotes a configured or requested value to
+runtime proof. A missing, default,
+mismatched, invalid, or unverified native observation blocks a role-routing
+claim and authorizes no alternate fleet runner. repo-harness must not scrape
+rollout JSONL or SQLite as a compatibility path.
 
 `developer_instructions` is the packaged `.md` body plus the canonical
 EXECUTION_BOUNDARY anti-extras clause, kept byte-identical to the

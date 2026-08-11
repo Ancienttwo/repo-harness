@@ -74,7 +74,7 @@ The global bootstrap: installs the npm package as the global CLI, refreshes
 repo-harness skill aliases, installs user-level hook adapters, and records an
 explicit install profile. It is idempotent and does not apply repo-local workflow
 files to the current directory. `--dry-run --json` lists components to install,
-skip, and remove first. Profiles, delegation mode, refresh commands, and the
+skip, and remove first. Profiles, native Codex delegation authority, refresh commands, and the
 read-only `setup check` audit:
 [`install-profiles.md`](docs/reference-configs/install-profiles.md).
 

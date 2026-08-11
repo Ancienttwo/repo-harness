@@ -54,6 +54,10 @@ function readLatest(repoRoot: string): Record<string, unknown> {
   return JSON.parse(readFileSync(join(repoRoot, '.ai/harness/delegation/latest.json'), 'utf8')) as Record<string, unknown>;
 }
 
+function readNativeRoutingState(repoRoot: string): Record<string, unknown> {
+  return JSON.parse(readFileSync(join(repoRoot, '.ai/harness/delegation/native-role-routing.json'), 'utf8')) as Record<string, unknown>;
+}
+
 function readRoutingObservations(repoRoot: string): Record<string, unknown>[] {
   const root = join(repoRoot, '.ai/harness/delegation/role-routing');
   const paths: string[] = [];
@@ -164,7 +168,7 @@ describe('typed subagent hook handlers', () => {
         delegation: {
           max_agents: 4,
           max_depth: 2,
-          preferred_runners: ['subagent', 'codex-app-thread', 'codex-exec', 'main-thread'],
+          preferred_runners: ['codex-app-thread', 'codex-exec', 'main-thread'],
           fallback_runner: 'main-thread',
         },
       }));
@@ -184,32 +188,23 @@ describe('typed subagent hook handlers', () => {
       expect(context).toContain('[repo-harness:delegation]');
       expect(context).toContain('Spawn no more than 2 agents.');
       expect(context).toContain('active task contract (tasks/contracts/test.contract.md)');
-      expect(context).toContain('Codex App Thread dispatch (codex_app__create_thread) is the preferred parallelism accelerator');
-      expect(context).toContain('read from the installed ~/.codex/agents/<role>.toml');
-      expect(context).toContain(
-        'Native spawn_agent is a declared fallback only when the App Thread tools are unavailable AND the live spawn schema accepts the exact model and reasoning effort of that role',
-      );
-      expect(context).toContain('MUST NOT fall back to native spawn, because native spawn silently inherits the parent model');
-      expect(context).toContain('Otherwise degrade to codex-exec, then sequential main-thread, on the SAME contract via contract-run.');
-      expect(context).toContain('Runner preference (policy delegation.preferred_runners): subagent, codex-app-thread, codex-exec, main-thread.');
-      expect(context).toContain('- A pendingWorktreeId is not a thread id: confirm the thread materialized with an official thread read before counting the worker as running.');
-      expect(context).toContain('- Adopt a thread worker result only after reading the final turn of that thread.');
-      expect(context).toContain('- Archive completed threads one at a time.');
-      expect(context).toContain('- Thread workers must not create further threads, agents, or background tasks.');
-      expect(context).toContain(
-        'If the live create_thread schema cannot carry that exact model and reasoning effort, the resulting thread is inherited-model and MUST NOT be adopted as a role-routed worker.',
-      );
-      expect(context).toContain(
-        "- Treat a thread as inherited-model whenever the live create_thread surface cannot carry that role's exact model and reasoning effort; such a thread MUST NOT be adopted as a role-routed worker.",
-      );
-      expect(context).toContain('- On the native spawn_agent fallback path, pass fork_turns="none"');
+      expect(context).toContain('Runner authority: Codex native spawn_agent with the exact installed agent_type.');
+      expect(context).toContain('If native agent_type selection or matching evidence is unavailable, fail closed');
+      expect(context).toContain('- Call native spawn_agent with the requested installed agent_type and fork_turns="none"');
+      expect(context).toContain('Reasoning effort is configured_unverified');
+      expect(context).not.toContain('codex_app__create_thread');
+      expect(context).toContain('Do not dispatch the fleet role through an App thread, codex-exec, the main thread, or another runner.');
       expect(context).toContain('Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief.');
       const state = JSON.parse(readFileSync(join(repoRoot, '.ai/harness/delegation/latest.json'), 'utf8')) as Record<string, unknown>;
       expect(state.scope_id).toBe('session-session-1');
       expect(state.state_file).toBe('turns/session-session-1.json');
       expect(state.max_agents).toBe(2);
       expect(state.max_depth).toBe(2);
-      expect(state.preferred_runners).toEqual(['subagent', 'codex-app-thread', 'codex-exec', 'main-thread']);
+      expect(state.preferred_runners).toEqual(['subagent']);
+      expect(state).not.toHaveProperty('fallback_runner');
+      expect(state).not.toHaveProperty('native_role_routing');
+      expect(state).not.toHaveProperty('stop_fallback');
+      expect(state).not.toHaveProperty('fallback_used');
 
       const silent = runSubagentHandler({
         event: 'UserPromptSubmit',
@@ -218,6 +213,20 @@ describe('typed subagent hook handlers', () => {
         input: JSON.stringify({ session_id: 'session-silent', prompt: 'Should we use subagents for this?' }),
       });
       expect(silent.stdout).toBe('');
+      const quoted = runSubagentHandler({
+        event: 'UserPromptSubmit',
+        repoRoot,
+        env,
+        input: JSON.stringify({ session_id: 'session-quoted', prompt: 'Explain /delegate; do not spawn anything.' }),
+      });
+      expect(quoted.stdout).toBe('');
+      const commandLikeProse = runSubagentHandler({
+        event: 'UserPromptSubmit',
+        repoRoot,
+        env,
+        input: JSON.stringify({ session_id: 'session-command-like', prompt: '/delegate? Explain the command without running it.' }),
+      });
+      expect(commandLikeProse.stdout).toBe('');
       const nonCodex = runSubagentHandler({
         event: 'UserPromptSubmit',
         repoRoot,
@@ -273,6 +282,38 @@ describe('typed subagent hook handlers', () => {
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
       rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('persists native role/model evidence without advisor-created delegation state', () => {
+    const repoRoot = tempRepo();
+    try {
+      writeWorkerProfile(repoRoot);
+      const output = startSubagent(repoRoot, {
+        session_id: 'session-native-event',
+        turn_id: 'turn-native-event',
+        agent_id: 'agent-native-event',
+        agent_type: 'fast-worker',
+        model: 'gpt-5.6-sol',
+      });
+      expect(output.exitCode).toBe(0);
+      expect(additionalContext(output.stdout)).toContain('[repo-harness:native-role-routing] verified');
+      expect(existsSync(join(repoRoot, '.ai/harness/delegation/latest.json'))).toBe(false);
+      expect(readNativeRoutingState(repoRoot)).toMatchObject({
+        required: true,
+        evidence_dir: 'role-routing/session-session-native-event',
+        reasoning_effort_status: 'configured_unverified',
+      });
+      expect(readRoutingObservations(repoRoot)).toEqual([
+        expect.objectContaining({
+          status: 'verified',
+          agent_type: 'fast-worker',
+          observed_model: 'gpt-5.6-sol',
+          reasoning_effort_status: 'configured_unverified',
+        }),
+      ]);
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
     }
   });
 
@@ -402,13 +443,16 @@ describe('typed subagent hook handlers', () => {
       expect(stale.exitCode).toBe(0);
       expect(readFileSync(join(repoRoot, '.ai/harness/delegation/latest.json'), 'utf8')).toBe(latestBefore);
       expect((JSON.parse(readFileSync(stateAPath, 'utf8')) as Record<string, unknown>).spawned).toBe(false);
-      expect(additionalContext(stale.stdout)).not.toContain('[repo-harness:native-role-routing]');
+      expect(additionalContext(stale.stdout)).toContain('[repo-harness:native-role-routing] unavailable');
+      expect(readNativeRoutingState(repoRoot)).toMatchObject({
+        evidence_dir: 'role-routing/session-session-stale',
+      });
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
     }
   });
 
-  test('bounds a held delegation lock without partially updating either projection', () => {
+  test('keeps native event evidence independent from a held advisor-state lock', () => {
     const repoRoot = tempRepo();
     try {
       seedDelegation(repoRoot, { session_id: 'session-held', turn_id: 'held-a' });
@@ -429,6 +473,11 @@ describe('typed subagent hook handlers', () => {
       const elapsedMs = Date.now() - startedAt;
       expect(output.exitCode).toBe(0);
       expect(elapsedMs).toBeLessThan(4_500);
+      expect(additionalContext(output.stdout)).toContain('[repo-harness:native-role-routing] unavailable');
+      expect(readNativeRoutingState(repoRoot)).toMatchObject({
+        evidence_dir: 'role-routing/session-session-held',
+        reasoning_effort_status: 'configured_unverified',
+      });
       expect(readFileSync(lockPath, 'utf8')).toBe(heldLock);
       expect(readFileSync(latestPath, 'utf8')).toBe(latestBefore);
       const isolated = JSON.parse(readFileSync(turnPath, 'utf8')) as Record<string, unknown>;
@@ -438,6 +487,45 @@ describe('typed subagent hook handlers', () => {
       rmSync(repoRoot, { recursive: true, force: true });
     }
   }, 8_000);
+
+  test('retains only the current scope and its latest 32 native observations', () => {
+    const repoRoot = tempRepo();
+    try {
+      writeWorkerProfile(repoRoot);
+      const stateDir = join(repoRoot, '.ai/harness/state');
+      mkdirSync(stateDir, { recursive: true });
+      const startWithProgress = (sessionId: string, index: number) => {
+        writeFileSync(join(stateDir, 'effective.json'), JSON.stringify({
+          workflow_profile: 'standard',
+          progress_token: `progress-${sessionId}-${index}`,
+        }));
+        return startSubagent(repoRoot, {
+          session_id: sessionId,
+          turn_id: `turn-${index}`,
+          agent_id: `agent-${index}`,
+          agent_type: 'fast-worker',
+          model: 'gpt-5.6-sol',
+        });
+      };
+
+      expect(startWithProgress('old', 0).exitCode).toBe(0);
+      for (let index = 1; index <= 40; index += 1) {
+        const output = startWithProgress('current', index);
+        expect(output.exitCode).toBe(0);
+        expect(additionalContext(output.stdout)).toContain('[repo-harness:native-role-routing] verified');
+      }
+
+      const routingRoot = join(repoRoot, '.ai/harness/delegation/role-routing');
+      expect(readdirSync(routingRoot)).toEqual(['session-current']);
+      expect(readRoutingObservations(repoRoot)).toHaveLength(32);
+      expect(readNativeRoutingState(repoRoot)).toMatchObject({
+        evidence_dir: 'role-routing/session-current',
+        reasoning_effort_status: 'configured_unverified',
+      });
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  }, 30_000);
 
   test('rejects symlinked custom-agent and role-routing evidence directories', () => {
     const agentOutside = tempRepo();
@@ -461,13 +549,7 @@ describe('typed subagent hook handlers', () => {
 
       writeWorkerProfile(linkedEvidenceRepo);
       seedDelegation(linkedEvidenceRepo, { session_id: 'session-evidence-link' });
-      const seeded = readLatest(linkedEvidenceRepo);
-      const routing = seeded.native_role_routing as Record<string, unknown>;
-      const evidencePath = join(
-        linkedEvidenceRepo,
-        '.ai/harness/delegation',
-        routing.evidence_dir as string,
-      );
+      const evidencePath = join(linkedEvidenceRepo, '.ai/harness/delegation/role-routing/session-session-evidence-link');
       mkdirSync(join(evidencePath, '..'), { recursive: true });
       symlinkDirectory(evidenceOutside, evidencePath);
       const linkedEvidence = startSubagent(linkedEvidenceRepo, {
@@ -478,7 +560,7 @@ describe('typed subagent hook handlers', () => {
         model: 'gpt-5.6-sol',
       });
       expect(additionalContext(linkedEvidence.stdout)).toContain('[repo-harness:native-role-routing] unverified');
-      expect(additionalContext(linkedEvidence.stdout)).toContain('no safe role-routing evidence directory');
+      expect(additionalContext(linkedEvidence.stdout)).toContain('No safe native role-routing evidence directory');
       expect(readdirSync(evidenceOutside)).toEqual([]);
     } finally {
       rmSync(agentOutside, { recursive: true, force: true });

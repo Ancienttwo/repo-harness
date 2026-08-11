@@ -617,6 +617,9 @@ describe("Workflow helper scripts", () => {
       const headings = headingsOf(content);
       const missing = [...standaloneHeadings].filter((heading) => !headings.has(heading));
       expect(missing, `${label} is missing sections present in the standalone template`).toEqual([]);
+      expect(content, `${label} restores an alternate fleet runner`).toContain(
+        "preferred:\n      - subagent\n    fallback: null",
+      );
     }
   });
 

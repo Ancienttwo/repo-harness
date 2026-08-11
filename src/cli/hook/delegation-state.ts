@@ -26,15 +26,9 @@ export interface DelegationState {
   readonly eligible?: unknown;
   readonly explicit?: unknown;
   readonly spawned?: unknown;
-  readonly fallback_used?: unknown;
   readonly scope_id?: unknown;
   readonly state_file?: unknown;
   readonly created_at_epoch?: unknown;
-  readonly native_role_routing?: {
-    readonly required?: unknown;
-    readonly evidence_dir?: unknown;
-    readonly [key: string]: unknown;
-  };
 }
 
 export interface DelegationStatePaths {
@@ -232,19 +226,12 @@ function mergeMonotonic(
 ): DelegationState {
   const previous = current ?? {};
   const merged: Record<string, unknown> = { ...previous, ...update };
-  for (const key of ['spawned', 'fallback_used'] as const) {
-    const wasTrue = previous[key] === true;
-    const isTrue = update[key] === true;
-    if (wasTrue || isTrue) merged[key] = true;
-  }
+  if (previous.spawned === true || update.spawned === true) merged.spawned = true;
   // These timestamps describe the first successful claim. A later writer may
   // update other metadata, but must not make a monotonic transition appear to
   // move backwards or happen again.
   if (previous.spawned === true && previous.spawned_at !== undefined) {
     merged.spawned_at = previous.spawned_at;
-  }
-  if (previous.fallback_used === true && previous.fallback_used_at !== undefined) {
-    merged.fallback_used_at = previous.fallback_used_at;
   }
   return merged;
 }

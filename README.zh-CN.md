@@ -73,7 +73,7 @@ repo-harness install
 这个全局 bootstrap 会把 npm 包安装成全局 CLI，刷新 repo-harness 的 skill
 aliases，安装 user-level hook adapters，并记录一份明确的 install profile。
 它是幂等的，不会把 repo-local workflow 文件应用到当前目录。`--dry-run
---json` 会先列出将要安装、跳过和移除的组件。Profile、delegation mode、
+--json` 会先列出将要安装、跳过和移除的组件。Profile、原生 Codex delegation authority、
 刷新命令，以及只读的 `setup check` audit，见
 [`install-profiles.md`](docs/reference-configs/install-profiles.md)。
 
