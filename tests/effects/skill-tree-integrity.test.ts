@@ -79,6 +79,28 @@ describe("verified Skill tree staging commit", () => {
     }
   });
 
+  test("a symlinked staging ancestor cannot redefine the caller's canonical parent authority", () => {
+    const root = mkdtempSync(join(tmpdir(), "repo-harness-skill-tree-parent-symlink-"));
+    try {
+      const home = join(root, "home");
+      const outside = join(root, "outside");
+      const source = join(root, "source");
+      mkdirSync(home, { recursive: true });
+      mkdirSync(outside, { recursive: true });
+      mkdirSync(source, { recursive: true });
+      writeFileSync(join(source, "SKILL.md"), "# verified bytes\n");
+      symlinkSync(outside, join(home, ".agents"), "dir");
+      const destination = join(home, ".agents", "skills", "reverse-skill-router");
+
+      expect(commitVerifiedSkillTree(source, destination, skillTreeSha256(source), {
+        expectedCanonicalParent: join(home, ".agents", "skills"),
+      })).toMatchObject({ status: "failed", detail: expect.stringContaining("escapes canonical authority") });
+      expect(existsSync(join(outside, "skills", "reverse-skill-router"))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test("a killed owner is reclaimed and its orphan transaction does not block retry", () => {
     const root = mkdtempSync(join(tmpdir(), "repo-harness-skill-tree-killed-owner-"));
     try {

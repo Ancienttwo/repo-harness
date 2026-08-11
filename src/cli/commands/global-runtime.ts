@@ -652,7 +652,9 @@ function installExternalSkillGroup(
   env?: NodeJS.ProcessEnv,
 ): GlobalRuntimeStep {
   const stepName = externalSkillStepName(provider);
-  const skillsRoot = join(homeDir(env), '.agents', 'skills');
+  const home = homeDir(env);
+  const skillsRoot = join(home, '.agents', 'skills');
+  const canonicalSkillsRoot = join(realpathSync(home), '.agents', 'skills');
   const committedIntegritySkills = new Set<string>();
   const preflight = preflightStagedSkillProjection(skills, target, env, stepName);
   if (preflight) return preflight;
@@ -743,6 +745,7 @@ function installExternalSkillGroup(
           join(isolatedHome, ".agents", "skills", skill),
           join(skillsRoot, skill),
           integrityBySkill[skill]!,
+          { expectedCanonicalParent: canonicalSkillsRoot },
         );
         if (committed.status === "failed") {
           return { step: stepName, status: "failed", detail: committed.detail };
@@ -760,7 +763,12 @@ function installExternalSkillGroup(
     try {
       const stat = lstatSync(installed);
       const canonicalRoot = realpathSync(skillsRoot);
-      if (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(installed) !== join(canonicalRoot, skill)) {
+      if (
+        canonicalRoot !== canonicalSkillsRoot
+        || !stat.isDirectory()
+        || stat.isSymbolicLink()
+        || realpathSync(installed) !== join(canonicalRoot, skill)
+      ) {
         if (committedIntegritySkills.has(skill)) rmSync(installed, { recursive: true, force: true });
         return {
           step: stepName,

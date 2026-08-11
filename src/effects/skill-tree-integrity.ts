@@ -21,6 +21,8 @@ export type SkillTreeCommitResult =
 export interface SkillTreeCommitDependencies {
   readonly copyTree?: typeof cpSync;
   readonly renameTree?: typeof renameSync;
+  /** Literal canonical parent authority; unlike realpath(input), this cannot bless a symlinked ancestor. */
+  readonly expectedCanonicalParent?: string;
 }
 
 function pathEntryExists(path: string): boolean {
@@ -76,6 +78,15 @@ export function commitVerifiedSkillTree(
   const requestedParent = dirname(destination);
   mkdirSync(requestedParent, { recursive: true });
   const parent = realpathSync(requestedParent);
+  if (
+    dependencies.expectedCanonicalParent !== undefined
+    && parent !== dependencies.expectedCanonicalParent
+  ) {
+    return {
+      status: "failed",
+      detail: `staging parent escapes canonical authority: expected=${dependencies.expectedCanonicalParent}; actual=${parent}`,
+    };
+  }
   const canonicalDestination = join(parent, basename(destination));
   const key = createHash("sha256").update(canonicalDestination).digest("hex");
   const transactionPrefix = `.repo-harness-skill-stage-${key}-`;
