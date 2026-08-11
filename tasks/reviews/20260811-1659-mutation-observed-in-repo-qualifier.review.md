@@ -40,17 +40,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:5a4806cfad0c4ab9aa304adbc7f3eae7dfa23e914adf6c20cb1dde6974ec99c9
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: ee33d127fadefa58f00b63367a7a936d2335fd08
+> **Verification Evidence SHA256**: sha256:024cd00b93169600d6f4115b9fc2f83852ab262327b22913a1ce21c17d4a9b7f
+> **Issued At**: 2026-08-11T09:15:54.041Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: In-repo qualifier gate reviewed against the 2026-08-11 cross-review spec: fail-closed canonicalRepoRelativePath qualification before advisories/dirty-bits/journal, gate-only (in-repo changed_paths byte-stable), red-green regression with PRE_FIX_EXIT=1 artifact, full suite 2326 pass / 0 fail, type check clean. No P0/P1 findings.
 - Findings: none
 
 ## Behavior Diff Notes
