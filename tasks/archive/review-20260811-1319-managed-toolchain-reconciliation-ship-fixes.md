@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-11 13:19
+> **Related Plan**: plans/archive/plan-20260811-1124-managed-toolchain-reconciliation-ship-fixes.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260811-1319
+
 # Task Review: managed-toolchain-reconciliation-ship-fixes
 
 > **Status**: Pass

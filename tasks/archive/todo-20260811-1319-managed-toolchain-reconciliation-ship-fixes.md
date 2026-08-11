@@ -1,7 +1,13 @@
+> **Archived**: 2026-08-11 13:19
+> **Related Plan**: plans/archive/plan-20260811-1124-managed-toolchain-reconciliation-ship-fixes.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260811-1319
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-08-11 11:24
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.
