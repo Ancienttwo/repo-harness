@@ -55,17 +55,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:eaef27e623ea6c304be0a9fcea6341847f77ee8a586e08445aa659e881bdc340
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: b9639f26cef478514e9917059da313fd42741d2e
+> **Verification Evidence SHA256**: sha256:07ac5bca6c1f6f3ba8614d695ed73ae36741bafa3f86993149feb280ac0e8958
+> **Issued At**: 2026-08-11T11:53:46.720Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: Claude reviewed the final production diff, identified one HOME-authority P2 that was fixed and regression-tested, accepted the public init boundary disposition, and returned PASS on the final incremental review.
 - Findings: none
 
 ## Behavior Diff Notes
