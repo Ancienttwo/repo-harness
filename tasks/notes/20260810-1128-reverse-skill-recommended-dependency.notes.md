@@ -65,6 +65,13 @@
   failed step. The disposable provider environment now also binds
   `BUN_INSTALL`, Bun cache, XDG cache, and npm cache under its temporary HOME
   instead of inheriting operator-global state.
+- The filesystem boundary rejects pre-existing path substitution and ordinary
+  concurrent transaction conflicts. It does not claim isolation from a
+  malicious concurrent process running as the same OS user: that principal
+  can replace the canonical Skill or host configuration after any successful
+  install, so closing the final check/use window requires a different security
+  boundary (sandbox/privileged broker plus descriptor-relative native
+  operations), not another path recheck in this work package.
 
 ## Tradeoffs Considered
 

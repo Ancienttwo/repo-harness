@@ -19,7 +19,7 @@
 - Intended files changed: Skill catalog, install/update/init selection, integrity effect, tests, runtime docs, workflow artifacts.
 - Actual files changed: intended scope only; primary dirty checkout remained untouched and implementation stayed in the contract worktree.
 - Commands passed: full `bun test` (2325 pass, 1 skip), focused 5-file suite, typecheck, reference-config parity, architecture/task/workflow/deploy gates, project-state audit, init dry-run, tarball smoke, live pinned disposable install smoke.
-- Residual risks: upstream content is intentionally high-risk and retains an invalid target-mention authorization assumption; default profiles never select it, and explicit use still requires independent scope/RoE review.
+- Residual risks: upstream content is intentionally high-risk and retains an invalid target-mention authorization assumption; default profiles never select it, and explicit use still requires independent scope/RoE review. Same-UID malicious concurrent filesystem replacement is outside the installer boundary because that principal can rewrite the installed Skill after commit; protecting against it requires OS isolation or a privileged broker.
 - Reviewer action required: commit the plan/contract authority, rerun prepared evidence, then record the contract-frozen Claude AcceptanceReceipt.
 - Rollback: remove the catalog entry, explicit flag, provider/integrity projection, tests, and documentation as one unit.
 
