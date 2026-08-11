@@ -422,9 +422,9 @@ function sendSessionNotFound(res: Response, status = 404): void {
   });
 }
 
-function recordForSession(sessions: McpSessionStore<McpHttpTransport>, sessionId: string | undefined) {
+function acquireSession(sessions: McpSessionStore<McpHttpTransport>, sessionId: string | undefined) {
   if (!sessionId || !isValidSessionId(sessionId)) return undefined;
-  return sessions.get(sessionId);
+  return sessions.acquire(sessionId);
 }
 
 async function handleMcpPost(
@@ -443,10 +443,6 @@ async function handleMcpPost(
   }
   const sessionId = sessionIdFromRequest(req);
   if (!sessionId && isInitializeRequest(body)) {
-    if (!sessions.canCreate()) {
-      res.status(429).json({ error: { code: 'SESSION_LIMIT_REACHED', message: 'Too many active MCP sessions.' } });
-      return;
-    }
     const authorizationId = codingRuntimes ? authorizationIdFromRequest(req) : undefined;
     if (codingRuntimes && !authorizationId) {
       sendOAuthUnauthorized(req, res, 'Coding authorization identity is missing');
@@ -467,27 +463,46 @@ async function handleMcpPost(
         throw error;
       }
     }
+    const reservation = sessions.reserveForCreate();
+    if (!reservation) {
+      res.status(429).json({ error: { code: 'SESSION_LIMIT_REACHED', message: 'Too many active MCP sessions.' } });
+      return;
+    }
+    let sessionInitialized = false;
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
-      onsessioninitialized: (newSessionId) => { sessions.set(newSessionId, transport); },
+      onsessioninitialized: (newSessionId) => {
+        reservation.commit(newSessionId, transport);
+        sessionInitialized = true;
+      },
     }) as McpHttpTransport;
     transport.authorizationId = authorizationId;
     transport.onclose = () => {
       if (transport.sessionId) sessions.delete(transport.sessionId);
     };
     const server = createRepoHarnessMcpServer({ ...opts, codingRuntime });
-    await server.connect(transport);
-    await transport.handleRequest(req, res, body);
+    try {
+      await server.connect(transport);
+      await transport.handleRequest(req, res, body);
+    } finally {
+      reservation.release();
+      if (!sessionInitialized) await transport.close().catch(() => undefined);
+    }
     return;
   }
   if (sessionId) {
-    const record = recordForSession(sessions, sessionId);
-    if (record && authorizationOwnsTransport(req, record.transport, codingRuntimes !== null)) {
+    const lease = acquireSession(sessions, sessionId);
+    if (lease && authorizationOwnsTransport(req, lease.record.transport, codingRuntimes !== null)) {
       const authorizationId = authorizationIdFromRequest(req);
       if (authorizationId) codingRuntimes?.touch(authorizationId);
-      await record.transport.handleRequest(req, res, body);
+      try {
+        await lease.record.transport.handleRequest(req, res, body);
+      } finally {
+        lease.release();
+      }
       return;
     }
+    lease?.release();
   }
   sendSessionNotFound(res);
 }
@@ -498,14 +513,19 @@ async function handleMcpGet(
   sessions: McpSessionStore<McpHttpTransport>,
   codingRuntimes: CodingAuthorizationRuntimeStore | null,
 ): Promise<void> {
-  const record = recordForSession(sessions, sessionIdFromRequest(req));
-  if (!record || !authorizationOwnsTransport(req, record.transport, codingRuntimes !== null)) {
+  const lease = acquireSession(sessions, sessionIdFromRequest(req));
+  if (!lease || !authorizationOwnsTransport(req, lease.record.transport, codingRuntimes !== null)) {
+    lease?.release();
     sendSessionNotFound(res);
     return;
   }
   const authorizationId = authorizationIdFromRequest(req);
   if (authorizationId) codingRuntimes?.touch(authorizationId);
-  await record.transport.handleRequest(req, res);
+  try {
+    await lease.record.transport.handleRequest(req, res);
+  } finally {
+    lease.release();
+  }
 }
 
 async function handleMcpDelete(
@@ -515,15 +535,20 @@ async function handleMcpDelete(
   codingRuntimes: CodingAuthorizationRuntimeStore | null,
 ): Promise<void> {
   const sessionId = sessionIdFromRequest(req);
-  const record = recordForSession(sessions, sessionId);
-  if (!sessionId || !record || !authorizationOwnsTransport(req, record.transport, codingRuntimes !== null)) {
+  const lease = acquireSession(sessions, sessionId);
+  if (!sessionId || !lease || !authorizationOwnsTransport(req, lease.record.transport, codingRuntimes !== null)) {
+    lease?.release();
     sendSessionNotFound(res);
     return;
   }
   const authorizationId = authorizationIdFromRequest(req);
   if (authorizationId) codingRuntimes?.touch(authorizationId);
-  await record.transport.handleRequest(req, res);
-  await sessions.closeAndDelete(sessionId);
+  try {
+    await lease.record.transport.handleRequest(req, res);
+  } finally {
+    lease.release();
+    await sessions.closeAndDelete(sessionId);
+  }
 }
 
 export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
@@ -669,6 +694,10 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
       active_sessions: sessions.size,
       max_sessions: sessions.maxSessions,
       session_ttl_ms: sessions.ttlMs,
+      sessions_created: sessions.metrics.created,
+      sessions_closed: sessions.metrics.closed,
+      sessions_expired: sessions.metrics.expired,
+      sessions_evicted: sessions.metrics.evicted,
       schema_hash: createHash('sha256').update(JSON.stringify(tools)).digest('hex'),
     });
   });

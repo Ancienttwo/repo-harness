@@ -4,6 +4,15 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Reclaims the least-recently-used idle Streamable HTTP MCP session when a new
+  `initialize` request reaches the configured session cap, while preserving
+  sessions with in-flight requests. This prevents abandoned ChatGPT Connector
+  reconnect sessions from accumulating until `SESSION_LIMIT_REACHED` (#174).
+  `/health` now reports cumulative created, closed, expired, and evicted session
+  counters for lifecycle diagnosis.
+
 ## [0.14.1] - 2026-08-10
 
 ### Fixed
