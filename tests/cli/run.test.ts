@@ -176,18 +176,20 @@ describe("run command", () => {
     }
   }, 30_000);
 
-  test("protected helpers receive one verified Node runtime without widening protected PATH", () => {
+  test("protected helpers never probe caller PATH for a Node runtime", () => {
     const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-protected-node-"));
     try {
       const fakeBin = join(tmp, "node-bin");
+      const marker = join(tmp, "caller-node-executed");
       mkdirSync(fakeBin);
       const node = join(fakeBin, "node");
-      writeFileSync(node, "#!/bin/sh\necho v24.18.0\n");
+      writeFileSync(node, `#!/bin/sh\ntouch "${marker}"\necho v24.18.0\n`);
       chmodSync(node, 0o755);
 
       const env = protectedChildEnv({ ...process.env, PATH: fakeBin, REPO_HARNESS_NODE_BIN: "/attacker/node" });
-      expect(env.REPO_HARNESS_NODE_BIN).toBe(realpathSync(node));
-      expect(env.PATH?.split(":"), "the candidate directory must not become a general command authority").not.toContain(fakeBin);
+      expect(env.REPO_HARNESS_NODE_BIN).not.toBe(realpathSync(node));
+      expect(existsSync(marker), "caller PATH Node must not execute during protected environment construction").toBe(false);
+      expect(env.PATH?.split(":"), "caller PATH must not become a general command authority").not.toContain(fakeBin);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

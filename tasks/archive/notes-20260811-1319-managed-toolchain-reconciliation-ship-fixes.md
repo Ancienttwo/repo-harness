@@ -47,10 +47,12 @@
   `>=24 <26`; relying on the runner image's ambient Node makes CI readiness
   nondeterministic even when local release gates use a compatible PATH.
 - Preserve protected-helper PATH isolation while carrying one exact Node
-  authority. `helper-runner` verifies a compatible executable from the caller
-  PATH, canonicalizes it, and passes only `REPO_HARNESS_NODE_BIN`; the general
-  protected PATH never gains the candidate directory. ArchContext independently
-  revalidates the exact executable and version before use.
+  authority. `helper-runner` ignores caller runtime hints and discovers Node only
+  from fixed system, NVM installation, and GitHub toolcache roots; it passes the
+  canonical executable only as `REPO_HARNESS_NODE_BIN`, while the general
+  protected PATH stays minimal. ArchContext independently revalidates the exact
+  executable and version before use. A side-effecting fake caller-PATH Node is
+  a negative regression and must never execute during discovery.
 
 ## Deviations From Plan Or Spec
 

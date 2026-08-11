@@ -1,5 +1,5 @@
-import { existsSync, lstatSync, readFileSync, realpathSync } from 'fs';
-import { delimiter, dirname, extname, isAbsolute, join, resolve } from 'path';
+import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from 'fs';
+import { dirname, extname, isAbsolute, join, resolve } from 'path';
 import { userInfo } from 'os';
 import { fileURLToPath } from 'url';
 import { ARCHCONTEXT_NODE_RANGE } from 'archctx-contracts';
@@ -60,23 +60,53 @@ function protectedPath(): string {
   ])].join(':');
 }
 
-function compatibleNodeRuntime(source: NodeJS.ProcessEnv): string | undefined {
-  const extensions = process.platform === 'win32'
-    ? (source.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').split(';').filter(Boolean)
-    : [''];
-  for (const directory of (source.PATH ?? '').split(delimiter)) {
-    if (!directory) continue;
-    for (const extension of extensions) {
-      const executable = optionalHostExecutable([join(directory, `node${extension}`)]);
-      if (!executable) continue;
-      const result = runBoundedProcess(executable, ['--version'], {
-        env: { ...source, PATH: protectedPath() },
-        inheritEnv: false,
-        timeoutMs: 5_000,
-      });
-      const version = result.stdout.trim().replace(/^v/, '');
-      if (result.status === 0 && Bun.semver.satisfies(version, ARCHCONTEXT_NODE_RANGE)) return executable;
+function childDirectories(root: string): string[] {
+  if (!existsSync(root)) return [];
+  return readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.isSymbolicLink())
+    .map((entry) => join(root, entry.name))
+    .sort();
+}
+
+function trustedNodeCandidates(): string[] {
+  const home = userInfo().homedir;
+  const nvmVersions = join(home, '.nvm', 'versions', 'node');
+  const candidates = [
+    '/usr/bin/node',
+    '/usr/local/bin/node',
+    '/opt/homebrew/bin/node',
+    ...childDirectories(nvmVersions).map((versionRoot) => join(versionRoot, 'bin', 'node')),
+  ];
+  const toolcacheRoots = process.platform === 'win32'
+    ? ['C:\\hostedtoolcache\\windows\\node']
+    : ['/opt/hostedtoolcache/node', '/Users/runner/hostedtoolcache/node', '/Users/runner/work/_tool/node'];
+  for (const root of toolcacheRoots) {
+    for (const versionRoot of childDirectories(root)) {
+      for (const architectureRoot of childDirectories(versionRoot)) {
+        candidates.push(
+          process.platform === 'win32'
+            ? join(architectureRoot, 'node.exe')
+            : join(architectureRoot, 'bin', 'node'),
+        );
+      }
     }
+  }
+  return [...new Set(candidates)];
+}
+
+function trustedNodeRuntime(): string | undefined {
+  for (const candidate of trustedNodeCandidates()) {
+    if (!isAbsolute(candidate) || !existsSync(candidate)) continue;
+    const actual = realpathSync(candidate);
+    const stat = lstatSync(actual);
+    if (!stat.isFile() || (stat.mode & 0o111) === 0) continue;
+    const result = runBoundedProcess(actual, ['--version'], {
+      env: { PATH: protectedPath() },
+      inheritEnv: false,
+      timeoutMs: 5_000,
+    });
+    const version = result.stdout.trim().replace(/^v/, '');
+    if (result.status === 0 && Bun.semver.satisfies(version, ARCHCONTEXT_NODE_RANGE)) return actual;
   }
   return undefined;
 }
@@ -90,7 +120,7 @@ function copyAllowedEnv(source: NodeJS.ProcessEnv, target: NodeJS.ProcessEnv, ke
 
 export function protectedChildEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const account = userInfo();
-  const nodeRuntime = compatibleNodeRuntime(source);
+  const nodeRuntime = trustedNodeRuntime();
   const env: NodeJS.ProcessEnv = {
     HOME: account.homedir,
     USER: account.username,

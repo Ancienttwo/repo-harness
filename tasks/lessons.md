@@ -12,6 +12,12 @@
 
 ## Active Lessons
 
+- Date: 2026-08-11
+- Triggered by correction: final ship review proved that a protected closeout helper still executed `node --version` from the caller-provided `PATH` before replacing that `PATH` with its minimal environment.
+- Mistake pattern: treating canonical path plus a compatible version string as executable provenance; validation executed the untrusted candidate and then promoted it into the protected runtime authority.
+- Prevention rule: protected subprocess boundaries must discover runtimes only from explicit product-owned system/install roots, never from caller environment lookup. A negative regression must place a side-effecting fake executable on caller `PATH` and prove it is not executed even during discovery.
+- Where to apply next time: helper runtime construction, package-manager/runtime discovery, hook adapters, and any path that promotes an executable into a sanitized child environment.
+
 - Date: 2026-07-26
 - Triggered by correction: PR #132 review found that a repo-external target was reported correctly but also counted as an anonymous capability, while NUL-bearing paths and Win32 absolute hook paths diverged from the intended fail-closed and repo-scope boundaries.
 - Mistake pattern: using one partition predicate as both reporting classification and validation authority, then treating every non-POSIX-absolute path as repo-relative.
