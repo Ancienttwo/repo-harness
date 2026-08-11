@@ -235,8 +235,9 @@ function runTransactionalProfileProjection(
     return null;
   },
 ): { result: GlobalRuntimeResult; state: InstalledProfileState | null } {
-  return withRuntimeHostTransactionLock(options.env, () => {
-    const transaction = beginInstallHostTransaction(installProfileHostMutationPaths(options.env), options.env);
+  const transactionEnv = runtimeHostTransactionEnv(options.env);
+  return withRuntimeHostTransactionLock(transactionEnv, () => {
+    const transaction = beginInstallHostTransaction(installProfileHostMutationPaths(transactionEnv), transactionEnv);
     let migrationSource: LegacyInstalledProfileState | null;
     let result: GlobalRuntimeResult;
     try {
@@ -265,8 +266,18 @@ function runTransactionalProfileProjection(
   });
 }
 
+function runtimeHostTransactionEnv(env: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    ...env,
+    HOME: env?.HOME ?? process.env.HOME ?? homedir(),
+  };
+}
+
 function withRuntimeHostTransactionLock<T>(env: NodeJS.ProcessEnv | undefined, run: () => T): T {
-  const home = (env ?? process.env).HOME ?? homedir();
+  // Resolve the protected root with the same precedence as runtime mutations.
+  // A partial injected env must not make the lock fall back to a different HOME.
+  const home = env?.HOME ?? process.env.HOME ?? homedir();
   return withExclusiveDirectoryLock(
     realpathSync(home),
     '.repo-harness/transactions/global-runtime.lock',
@@ -279,8 +290,9 @@ export function runTransactionalRuntimeRefresh(
   options: GlobalRuntimeOptions,
   setup: (options: GlobalRuntimeOptions) => GlobalRuntimeResult = runGlobalRuntimeSetup,
 ): GlobalRuntimeResult {
-  return withRuntimeHostTransactionLock(options.env, () => {
-    const transaction = beginInstallHostTransaction(installProfileHostMutationPaths(options.env), options.env);
+  const transactionEnv = runtimeHostTransactionEnv(options.env);
+  return withRuntimeHostTransactionLock(transactionEnv, () => {
+    const transaction = beginInstallHostTransaction(installProfileHostMutationPaths(transactionEnv), transactionEnv);
     let result: GlobalRuntimeResult;
     try {
       result = setup(options);

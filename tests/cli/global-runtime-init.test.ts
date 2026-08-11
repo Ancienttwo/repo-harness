@@ -1518,6 +1518,36 @@ exit 0
     }
   });
 
+  test('runtime host transaction lock uses process HOME when an injected env omits HOME', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-runtime-lock-home-'));
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const previousHome = process.env.HOME;
+    try {
+      mkdirSync(home, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      process.env.HOME = home;
+
+      let observedExpectedLock = false;
+      const result = runTransactionalRuntimeRefresh({
+        cwd: repo,
+        target: 'codex',
+        profile: 'full',
+        env: { BUN_INSTALL: join(home, '.bun') },
+      }, () => {
+        observedExpectedLock = existsSync(join(home, '.repo-harness', 'transactions', 'global-runtime.lock'));
+        return { exitCode: 0, steps: [], lines: [], stdout: '', stderr: '' };
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(observedExpectedLock).toBe(true);
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   test('CLI update --version installs the requested package version', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-update-version-'));
     const home = join(tmp, 'home');

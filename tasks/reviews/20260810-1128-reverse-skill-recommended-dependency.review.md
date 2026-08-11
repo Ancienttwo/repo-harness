@@ -38,6 +38,12 @@
   rollback gap; explicit CLI routing, transactional update compensation, and a
   shared install/update lock now close both paths. No introduced finding remains
   open.
+- External Claude review reported two P2 candidates. The lock/mutation HOME
+  precedence mismatch was valid and is fixed with a focused regression. The
+  proposed `init` lock expansion was rejected after tracing the public action:
+  it always passes `hostAdapters: false` and `externalSkills: false`, and
+  `runInit` has no other production caller, so the claimed shared host mutation
+  is unreachable from `repo-harness init`.
 - Commands run: `bun test`; focused catalog/init/global-runtime/profile/integrity tests; all required repository checks and tarball smoke.
 - Manual checks: pinned upstream list/install in disposable HOME; 41 selectable skills, 348 selected files, scanner reported Critical Risk/17 alerts; final repo-harness smoke projected exactly one Codex symlink and cleaned temporary roots.
 - Supporting artifacts: plan, contract, notes, and this review.

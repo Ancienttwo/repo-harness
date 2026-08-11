@@ -75,6 +75,19 @@
   failed process cannot roll back another process's successful projection.
   Reproductions cover the late-failure rollback, two-process update ordering,
   and the overlapping adapter mutation surface.
+- External Claude review found that the transaction lock used `(env ??
+  process.env).HOME` while runtime mutation helpers use `env?.HOME ??
+  process.env.HOME`. A partial injected environment could therefore lock the
+  OS-account home while mutating the process HOME. The lock now uses the same
+  precedence as the mutation path, with a regression that observes the lock
+  inside the process HOME when the injected environment omits `HOME`.
+- Claude also proposed locking the repo `init` external-skill path. That does
+  not apply to the public command: `src/cli/index.ts` fixes `hostAdapters` and
+  `externalSkills` to `false` for `repo-harness init`, and repository-wide call
+  tracing found no other production caller of `runInit`. The default-enabled
+  branch remains an internal test/helper surface and cannot race a second CLI
+  process, so expanding the global runtime lock into repo adoption would create
+  a false shared-state boundary.
 - The filesystem boundary rejects pre-existing path substitution and ordinary
   concurrent transaction conflicts. It does not claim isolation from a
   malicious concurrent process running as the same OS user: that principal
