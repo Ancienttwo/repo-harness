@@ -131,12 +131,17 @@ describe("repo-harness action command skills", () => {
 
   test("plan and its review mode are non-mutating by default", () => {
     const plan = readSkillPackage("repo-harness-plan");
+    const create = readReference("repo-harness-plan", "create.md");
     expect(plan).toContain("Neither mode edits implementation files by default");
     expect(readReference("repo-harness-plan", "review.md")).toContain("Does not edit files or implement the plan by default");
-    expect(readReference("repo-harness-plan", "create.md")).toContain("repo-harness run capture-plan");
-    expect(readReference("repo-harness-plan", "create.md")).toContain("invoke `geju` before a contract exists");
-    expect(readReference("repo-harness-plan", "create.md")).toContain("parent agent then completes P1/P2/P3");
-    expect(readReference("repo-harness-plan", "create.md").toLowerCase()).not.toContain("gstack");
+    expect(create).toContain("repo-harness run capture-plan");
+    expect(create).toContain("invoke `geju` before a contract exists");
+    expect(create).toContain("parent agent then completes P1/P2/P3");
+    expect(create).toContain("one batched round of at most 3 questions");
+    expect(create).toContain("[ASSUMED]");
+    expect(create).toContain("[UNKNOWN]");
+    expect(create).toContain("in non-interactive runs ask nothing");
+    expect(create.toLowerCase()).not.toContain("gstack");
     expect(readReference("repo-harness-plan", "review.md").toLowerCase()).not.toContain("gstack");
   });
 
@@ -273,6 +278,10 @@ describe("repo-harness action command skills", () => {
     expect(prd).toContain("claude -p --model opus");
     expect(prd).toContain("Prefer Claude");
     expect(prd).toContain("Use Codex fallback only");
+    expect(prd).toContain("one batched round of at most 3 questions");
+    expect(prd).toContain("accept-all-defaults path");
+    expect(prd).toContain("In non-interactive runs ask nothing");
+    expect(prd).toContain("[ASSUMED]");
     expect(prd).toContain("[UNKNOWN]");
     expect(prd).toContain("[UNVERIFIED]");
     expect(prd).toContain("Does not skip the `$geju` direction pass");
