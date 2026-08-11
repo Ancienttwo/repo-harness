@@ -1,7 +1,8 @@
 import { existsSync, lstatSync, readFileSync, realpathSync } from 'fs';
-import { dirname, extname, isAbsolute, join, resolve } from 'path';
+import { delimiter, dirname, extname, isAbsolute, join, resolve } from 'path';
 import { userInfo } from 'os';
 import { fileURLToPath } from 'url';
+import { ARCHCONTEXT_NODE_RANGE } from 'archctx-contracts';
 import { runProcess as runBoundedProcess } from '../../effects/process-runner';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -59,6 +60,27 @@ function protectedPath(): string {
   ])].join(':');
 }
 
+function compatibleNodeRuntime(source: NodeJS.ProcessEnv): string | undefined {
+  const extensions = process.platform === 'win32'
+    ? (source.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').split(';').filter(Boolean)
+    : [''];
+  for (const directory of (source.PATH ?? '').split(delimiter)) {
+    if (!directory) continue;
+    for (const extension of extensions) {
+      const executable = optionalHostExecutable([join(directory, `node${extension}`)]);
+      if (!executable) continue;
+      const result = runBoundedProcess(executable, ['--version'], {
+        env: { ...source, PATH: protectedPath() },
+        inheritEnv: false,
+        timeoutMs: 5_000,
+      });
+      const version = result.stdout.trim().replace(/^v/, '');
+      if (result.status === 0 && Bun.semver.satisfies(version, ARCHCONTEXT_NODE_RANGE)) return executable;
+    }
+  }
+  return undefined;
+}
+
 function copyAllowedEnv(source: NodeJS.ProcessEnv, target: NodeJS.ProcessEnv, keys: readonly string[]): void {
   for (const key of keys) {
     const value = source[key];
@@ -66,14 +88,16 @@ function copyAllowedEnv(source: NodeJS.ProcessEnv, target: NodeJS.ProcessEnv, ke
   }
 }
 
-function protectedChildEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+export function protectedChildEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const account = userInfo();
+  const nodeRuntime = compatibleNodeRuntime(source);
   const env: NodeJS.ProcessEnv = {
     HOME: account.homedir,
     USER: account.username,
     LOGNAME: account.username,
     PATH: protectedPath(),
     TMPDIR: '/tmp',
+    ...(nodeRuntime ? { REPO_HARNESS_NODE_BIN: nodeRuntime } : {}),
   };
   copyAllowedEnv(source, env, [
     'LANG',

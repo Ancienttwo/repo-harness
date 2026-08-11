@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: component.global-runtime-reconciliation.primary
+kind: component
+name: Global Runtime Reconciler
+status: active
+parent: capability.runtime-harness.global-runtime-reconciliation
+summary: Executes bounded install, exact dependency readback, runtime handshake, and profile-tool refresh.

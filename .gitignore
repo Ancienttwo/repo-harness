@@ -89,11 +89,17 @@ autoresearch/
 _ref/
 _ops/
 .archcontext/*
+!.archcontext/manifest.yaml
+!.archcontext/product.yaml
 !.archcontext/model/
 .archcontext/model/*
 !.archcontext/model/nodes/
 !.archcontext/model/relations/
 !.archcontext/model/flows/
+!.archcontext/decisions/
+!.archcontext/policies/
+!.archcontext/practices/
+!.archcontext/projections/
 .codegraph/
 .understand-anything/
 # Environment

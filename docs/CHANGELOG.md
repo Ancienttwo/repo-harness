@@ -13,6 +13,27 @@ All notable changes to this skill are documented here.
   `/health` now reports cumulative created, closed, expired, and evicted session
   counters for lifecycle diagnosis.
 
+## [0.14.2] - 2026-08-10
+
+### Fixed
+
+- Makes `repo-harness update` reconcile and read back its mandatory
+  `archctx@0.4.1` and `archctx-contracts@0.4.1` dependency closure instead of
+  trusting a successful Bun global install. A stale global dependency tree is
+  reported with an explicit operator repair command; update never removes the
+  working CLI before a replacement is known-good, and unresolved mismatches
+  fail closed before host configuration is mutated.
+- Propagates ArchContext's exact Node `>=24 <26` runtime contract, invokes the
+  package-local ArchContext binary with a compatible PATH-owned Node, and
+  reports a hard readiness error when that runtime is unavailable.
+- Refreshes the exact CodeGraph CLI during update. Mutable third-party Waza and
+  Mermaid providers remain behind explicit `--with-external-skills`; the
+  ArchContext package-local CodeGraph and user-level CodeGraph MCP remain
+  independently versioned and independently verified.
+- Requires the complete ArchContext base model (`manifest.yaml`,
+  `product.yaml`, and model nodes) before projection apply is reported as
+  enabled.
+
 ## [0.14.1] - 2026-08-10
 
 ### Fixed

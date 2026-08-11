@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { AcceptedArchitectureChangeReferenceV1 } from 'archctx-contracts';
 import { canonicalize } from '../evidence/canonical-json';
 
 export const PROJECTION_REQUEST_VERSION = 'archcontext.projection-request/v1' as const;
@@ -7,7 +8,7 @@ export const ARCHCTX_CAPABILITIES_VERSION = 'archcontext.capabilities/v1' as con
 export const ARCHITECTURE_REFRESH_SIGNAL_VERSION = 'archcontext.architecture-refresh-signal/v1' as const;
 export const ARCHITECTURE_DOCS_RENDERER_VERSION = 'archcontext.docs-renderer/v2' as const;
 export const ARCHITECTURE_DOCS_LAYOUT_VERSION = 'archcontext.docs-layout/v1' as const;
-export const ARCHCTX_REQUIRED_VERSION = '0.4.0' as const;
+export const ARCHCTX_REQUIRED_VERSION = '0.4.1' as const;
 export const ARCHCTX_REQUIRED_FEATURES = Object.freeze([
   'architecture-docs-renderer-v2',
   'architecture-refresh-signal-v1',
@@ -58,6 +59,7 @@ export interface ProjectionRequestV1 {
   changedPaths: string[];
   expected: ProjectionExpectedSnapshotV1;
   adoptionPlanId?: string;
+  acceptedChange?: AcceptedArchitectureChangeReferenceV1;
 }
 
 export interface ProjectionSnapshotV1 extends ProjectionExpectedSnapshotV1 {
@@ -202,6 +204,16 @@ export function projectionRequestIssues(input: ProjectionRequestV1): string[] {
   if (!DIGEST.test(input.expected.worktreeDigest)) issues.push('expected.worktreeDigest invalid');
   if (input.mode === 'adopt' && !input.adoptionPlanId) issues.push('adoptionPlanId required');
   if (input.mode !== 'adopt' && input.adoptionPlanId !== undefined) issues.push('adoptionPlanId only allowed for adopt');
+  if (input.acceptedChange) {
+    if (input.acceptedChange.changeSetId.trim() === '') issues.push('acceptedChange.changeSetId must not be empty');
+    if (input.acceptedChange.eventId.trim() === '') issues.push('acceptedChange.eventId must not be empty');
+    if (!sortedUnique(input.acceptedChange.reasonCodes) || input.acceptedChange.reasonCodes.length === 0) issues.push('acceptedChange.reasonCodes must be sorted, unique and non-empty');
+    if (!sortedUnique(input.acceptedChange.affectedNodeIds) || input.acceptedChange.affectedNodeIds.length === 0) issues.push('acceptedChange.affectedNodeIds must be sorted, unique and non-empty');
+    for (const reason of input.acceptedChange.reasonCodes) {
+      if (!(ARCHITECTURE_MAJOR_CHANGE_REASONS as readonly string[]).includes(reason)) issues.push(`acceptedChange.reasonCodes contains unsupported reason: ${reason}`);
+    }
+    if (input.acceptedChange.affectedNodeIds.some((nodeId) => nodeId.trim() === '')) issues.push('acceptedChange.affectedNodeIds must not contain empty node ids');
+  }
   return issues;
 }
 

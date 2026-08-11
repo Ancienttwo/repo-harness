@@ -1,0 +1,40 @@
+codeFacts:
+  mode: "embedded"
+  provider: "codegraph"
+  required: true
+content:
+  decisions: ".archcontext/decisions"
+  generated: ".archcontext/generated"
+  policies: ".archcontext/policies"
+  practices: ".archcontext/practices"
+  projections: ".archcontext/projections"
+generated:
+  commitToGit: true
+  formats:
+    - "markdown"
+    - "mermaid"
+model:
+  layout: "split"
+  root: ".archcontext/model"
+privacy:
+  cloudContentUpload: "deny"
+  localTunnel:
+    includeSourceByDefault: false
+    maxResultBytes: 8192
+product:
+  governanceLevel: "auto"
+  id: "product.repo-harness"
+  name: "repo-harness"
+review:
+  failOn:
+    - "invalid-schema"
+    - "prohibited-dependency"
+    - "unjustified-compatibility"
+    - "stale-context"
+    - "incomplete-intervention"
+runtime:
+  checkpoint:
+    changedFileThreshold: 20
+    requiredBeforeComplete: true
+  contextBudgetBytes: 12288
+schemaVersion: "archcontext.manifest/v1"

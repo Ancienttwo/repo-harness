@@ -5,9 +5,10 @@ import { PROJECTION_REQUEST_VERSION, type ProjectionMode, type ProjectionRequest
 import { captureArchitectureProjectionSnapshot, inspectArchitectureProjectionReadiness, runArchitectureProjection } from '../../effects/architecture/archctx-provider';
 import { drainArchitectureProjectionJobs } from '../../effects/architecture/projection-orchestrator';
 import { architectureProjectionQueueState, retryArchitectureProjectionDeadLetter } from '../../effects/architecture/projection-jobs';
+import { consumeArchitectureRefreshSignals } from '../../effects/architecture/refresh-consumer';
 import { consumePendingPostEditEvents, migratePendingPostEditJournalV1, readPendingPostEditEvents } from '../hook/mutation-observed';
 
-interface ProjectionCommandOptions {
+export interface ProjectionCommandOptions {
   json?: boolean;
   changedPath?: string[];
   requestId?: string;
@@ -81,6 +82,10 @@ function execute(mode: ProjectionMode, options: ProjectionCommandOptions): void 
       ...(mode === 'adopt' ? { adoptionPlanId: options.adoptionPlanId } : {}),
     };
     const result = runArchitectureProjection(request, root);
+    if ((mode === 'apply' || mode === 'adopt') && (result.status === 'applied' || result.status === 'noop')) {
+      const unresolved = result.refreshSignals.find((signal) => signal.mode === 'human-action-required');
+      if (!unresolved) consumeArchitectureRefreshSignals(root, result.refreshSignals, request.changedPaths);
+    }
     write(result);
     if (architectureProjectionExitCode(mode, result.status) !== 0) process.exitCode = 1;
   } catch (error) {

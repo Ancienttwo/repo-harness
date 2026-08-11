@@ -2,15 +2,15 @@
   "schemaVersion": "archcontext.architecture-docs-projection-manifest/v1",
   "rendererVersion": "archcontext.docs-renderer/v2",
   "profile": "repo-harness/v1",
-  "sourceDigest": "sha256:f3136225f1b961b69912e44bf85c32bbb0ae6b4be29e6c864b344878bedccf40",
+  "sourceDigest": "sha256:dfeee72dd6b65c11c5410cf52261499a156ed11386d32cb5121711b63684470d",
   "provenance": {
     "schemaVersion": "archcontext.architecture-docs-projection-provenance/v1",
-    "baseHeadSha": "99c645f368e0c0269cd8871f9f0160cd59c55260",
-    "worktreeDigest": "sha256:1ab3cef78174d49563605366a3dba4de2c84b2b28e331dc97490a50e51d37456",
-    "sourceTreeDigest": "sha256:dd5526c2f01faad5b3177e3d9f07762266431e95fa0d13f3d70dcd413eee639c",
-    "modelDigest": "sha256:b101a51368277f96d7e058358ec3db7c16b9cd85fa547a0baba9f68bac4eb6f1",
-    "codeGraphDigest": "sha256:6f26006b631c6ed5b539e023ef138a46e3a85b87b0164ad4315276fe617dfe8d",
-    "indexedWorktreeDigest": "sha256:94b8f22e5d91b910c6fd6fc280f47d7385f649893d2444bc9d77e45ea1b62a18",
+    "baseHeadSha": "65eb3891783559c6c51d8c0bc6c537fa00c323c8",
+    "worktreeDigest": "sha256:e4ea33ae9931b821a0a4c855212d5a1fd17a0bdc661df776936d703303be8361",
+    "sourceTreeDigest": "sha256:319f4c1ef13c5c653d16967fe51f414f500fa9e9b0f1d159f2de239f317532eb",
+    "modelDigest": "sha256:e7e1a02e1fb8c6e0732999db19c5ab1541d8529ffb270b2be1eb96af579fa4cb",
+    "codeGraphDigest": "sha256:507b0a8cdefd5c688469deb109fea53ee5012b2e60a30e6102acc085ab07fe34",
+    "indexedWorktreeDigest": "sha256:a65c672da6760b11251c8381a50c4c46ab0276e7ade9a12d82493ad81c9d34a5",
     "rendererVersion": "archcontext.docs-renderer/v2",
     "layoutVersion": "archcontext.docs-layout/v1",
     "generatedFrom": {
@@ -19,9 +19,9 @@
       "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
       "codeGraphStatus": "ready"
     },
-    "projectionInputDigest": "sha256:369fe4a8f932317b07415a959c45e563f9ec160ffbce60c1390b17547f680953"
+    "projectionInputDigest": "sha256:e2e9430a606e2de79c670a99b1b3cee4d4b6768a05ba93e981e7b6d27f143c24"
   },
-  "projectionDigest": "sha256:6dd2115a413a93435357ae07f6145a6814f5bd23a881efe738ff69d20aff4d32",
+  "projectionDigest": "sha256:0eb7edb77f36d19972a50713181ba8fef5a12f00c42238efd6b91f8ff4098722",
   "semanticBaseline": {
     "semanticState": {
       "schemaVersion": "archcontext.architecture-semantic-state/v1",
@@ -99,6 +99,31 @@
             "relations": "sha256:160de03d9f30d8d9e7d1c423a35022fa28e213883deb5a8c5643aec35cd173af",
             "responsibilities": "sha256:b19dff1ffe30d8389d863150565d286a9d90689c03fbdfad9113f95e6fc32532",
             "riskBoundaries": "sha256:64d9e3d912b286430fcad4a04c30eb774b6dc4f2fdf4a58487ad144f21a6bd50"
+          }
+        },
+        {
+          "capabilityId": "capability.runtime-harness.global-runtime-reconciliation",
+          "memberNodeIds": [
+            "capability.runtime-harness.global-runtime-reconciliation",
+            "component.global-runtime-reconciliation.primary"
+          ],
+          "semanticFingerprint": "sha256:3b9c42c515c6fa16b589a70fa2be0e2eb6f6c5a34d2482188f48092391c04dd7",
+          "flowProofFingerprint": "sha256:e192f23fc51093e0d68fbd67cdc967cc32b4367f27270adf55fde11278cc1abc",
+          "proofStatus": {
+            "p1": "proven",
+            "p2": "proven"
+          },
+          "facets": {
+            "constraints": "sha256:597bb80f40e6e9ccc53af5bf93c08f789515e8e289dc479760c90b0f8b498aae",
+            "entrypoints": "sha256:2dd3761d26c2e47f4b8d0fe40b1a349828e5d05645b3e6320daf5d0daf2e676d",
+            "interfaces": "sha256:d5f36938de4068dbc201e0b31a767d8f99786cfd846c6819f5592e1ed98220e9",
+            "lifecycle": "sha256:8f39f6a90c4e4a00a000095cf4160ede8bf05dbcbf6506d558e9f6d8036f067b",
+            "names": "sha256:ab5727c42171a2bd4725d557ceecd44b7907be1a75337e941b1a8233bc9c7b7d",
+            "ownership": "sha256:118330d210725d2b9039466f554193045acf19c39f4b570606f8770f7690ad7c",
+            "placement": "sha256:acc5802feb47e20e6d6bf1783d88a25b6b2fa725e0fbf6ede2493e256ec805f8",
+            "relations": "sha256:31d34531975f205ad3d3591325c1e61d0da3ccc688f523338a5db3369aa7fcef",
+            "responsibilities": "sha256:07e87e49d6fe9654c0f90f2898ba6ce61bd6456f32f6e5a50f94581b7922be25",
+            "riskBoundaries": "sha256:c46170a738b7fbcdb8d660d2dbbae982e4f948e2f499d466cb1d8d7396ad3fe6"
           }
         },
         {
@@ -232,7 +257,7 @@
             "capability.workflow-engine.contract-assets",
             "component.contract-assets.primary"
           ],
-          "semanticFingerprint": "sha256:978d62f481427b37bba26eb40ade3d901efaa82585d2f5ab2fefc91be0a93b54",
+          "semanticFingerprint": "sha256:b7dc5aae64333eb9380da5053300eda55013615d2527c0ab18c2fd678bde38e5",
           "flowProofFingerprint": "sha256:7aff700fff069cba9cfe751b7043a5659ec51c3cd57ca37c5bfae0302bb36ca5",
           "proofStatus": {
             "p1": "proven",
@@ -244,7 +269,7 @@
             "interfaces": "sha256:ed74f47a1470eda0cf5d08f723f3e74a64982905408576a22644186ab21f1cf0",
             "lifecycle": "sha256:bf3c4d394ff9ff932058b430624c78c6c9829facec43ec4c07d9927073f00849",
             "names": "sha256:e31899d9e186d148454e81c4e8bdbcd2b101881960ca4d20ee6bf07602fa91e6",
-            "ownership": "sha256:f7d6feaf55ce6305994b35708cd9b9ac459c550768b576599556435370159d69",
+            "ownership": "sha256:d732a82e99bba8f7a09d6b1b8e15484b333b3ec2aac05660cd463e2831683a0d",
             "placement": "sha256:671d5cc250bbd86f61953e7123805ce5cd5ef63870883f353fdc7c8fdd61c436",
             "relations": "sha256:5ea345c271e1ea605cdcbe01a74824fb4a94caf5a0a5eda3b3416e2ad09880d5",
             "responsibilities": "sha256:3a83d2b5a627791cb1b9fc903de926b872d674d1159a0691f8e72afd6b881ea7",
@@ -277,20 +302,20 @@
           }
         }
       ],
-      "semanticFingerprint": "sha256:a1bc02bf682b7e0be82226074f1db2efb77b800b02112a1983616e3293eec64a",
-      "flowProofFingerprint": "sha256:b91a667ef7b358b132a95b01a366709809d07681409120626ebe35aa00f92bf9"
+      "semanticFingerprint": "sha256:0de8074b26088dc5530e16dc7ca6bbb0d18b399a09d60a7377c7c49c16416d19",
+      "flowProofFingerprint": "sha256:f61c06c8566ec4ff22ec096ee22c06e91a046ceefa8fcd2f1d9faf436763a457"
     },
     "digests": {
-      "modelDigest": "sha256:b101a51368277f96d7e058358ec3db7c16b9cd85fa547a0baba9f68bac4eb6f1",
-      "sourceTreeDigest": "sha256:dd5526c2f01faad5b3177e3d9f07762266431e95fa0d13f3d70dcd413eee639c",
-      "flowProofDigest": "sha256:b91a667ef7b358b132a95b01a366709809d07681409120626ebe35aa00f92bf9",
-      "projectionDigest": "sha256:6dd2115a413a93435357ae07f6145a6814f5bd23a881efe738ff69d20aff4d32"
+      "modelDigest": "sha256:e7e1a02e1fb8c6e0732999db19c5ab1541d8529ffb270b2be1eb96af579fa4cb",
+      "sourceTreeDigest": "sha256:319f4c1ef13c5c653d16967fe51f414f500fa9e9b0f1d159f2de239f317532eb",
+      "flowProofDigest": "sha256:f61c06c8566ec4ff22ec096ee22c06e91a046ceefa8fcd2f1d9faf436763a457",
+      "projectionDigest": "sha256:0eb7edb77f36d19972a50713181ba8fef5a12f00c42238efd6b91f8ff4098722"
     }
   },
-  "receiptDigest": "sha256:6db36ecf2ff59933dab8d3064de88503cea9010fd9682ff12846b8dbd567f5b2",
+  "receiptDigest": "sha256:1fdf35956853e6a488b11e540603fb4e97017733128a26ceac8301b844816de9",
   "refreshSignalIds": [],
-  "targetCount": 16,
-  "fileCount": 16,
+  "targetCount": 17,
+  "fileCount": 17,
   "targets": [
     {
       "targetId": "projection_target.architecture.index",
@@ -302,8 +327,8 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "markdown",
-      "sourceDigest": "sha256:f3136225f1b961b69912e44bf85c32bbb0ae6b4be29e6c864b344878bedccf40",
-      "outputDigest": "sha256:9a3397a4e2441788480cb7b0dc901482941f87100a285f511714e6473ce355b2"
+      "sourceDigest": "sha256:dfeee72dd6b65c11c5410cf52261499a156ed11386d32cb5121711b63684470d",
+      "outputDigest": "sha256:b06c6e04a526077cd1c45aed4cac83fbbab0e57227b7d8a2a0d06329ef2cd392"
     },
     {
       "targetId": "projection_target.entity.capability-public-surface-action-commands",
@@ -317,12 +342,12 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "markdown",
-      "sourceDigest": "sha256:e2f869f09ac3c18691f44db23f176e03410ef56bbe5977a9a1e3c70a9bdc63a7",
-      "outputDigest": "sha256:d81666038d22ded4a743f4d41543ce7251cfd3b8f29eb36ecceb12d1d4c0fb5d",
+      "sourceDigest": "sha256:d3f85ff5d717213da582ca1641fbd32c6241f5b232754593ffcb6c3187397951",
+      "outputDigest": "sha256:dbe395b2504e70143536dc2aa6fa3f6065796c508962a8956298d78775a02fea",
       "verifiedAgainst": {
-        "branch": "codex/axr7-consumer-e2e-adoption-dogfood",
-        "commit": "99c645f368e0c0269cd8871f9f0160cd59c55260",
-        "committedAt": "2026-08-09T03:26:42+08:00"
+        "branch": "codex/managed-toolchain-reconciliation-ship-fixes",
+        "commit": "65eb3891783559c6c51d8c0bc6c537fa00c323c8",
+        "committedAt": "2026-08-10T00:38:07+08:00"
       }
     },
     {
@@ -337,12 +362,12 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "markdown",
-      "sourceDigest": "sha256:e2f869f09ac3c18691f44db23f176e03410ef56bbe5977a9a1e3c70a9bdc63a7",
-      "outputDigest": "sha256:811d8d6683f0ff78de6f8f0dcf74db837243ae61d49f0da7d21d9ba4b2decf7b",
+      "sourceDigest": "sha256:d3f85ff5d717213da582ca1641fbd32c6241f5b232754593ffcb6c3187397951",
+      "outputDigest": "sha256:1eb021c02534fe5a953efbd873f5f7a351fb31a9371f6ecbfa5552f6b82597b5",
       "verifiedAgainst": {
-        "branch": "codex/axr7-consumer-e2e-adoption-dogfood",
-        "commit": "99c645f368e0c0269cd8871f9f0160cd59c55260",
-        "committedAt": "2026-08-09T03:26:42+08:00"
+        "branch": "codex/managed-toolchain-reconciliation-ship-fixes",
+        "commit": "65eb3891783559c6c51d8c0bc6c537fa00c323c8",
+        "committedAt": "2026-08-10T00:38:07+08:00"
       }
     },
     {
@@ -357,12 +382,32 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "markdown",
-      "sourceDigest": "sha256:e2f869f09ac3c18691f44db23f176e03410ef56bbe5977a9a1e3c70a9bdc63a7",
-      "outputDigest": "sha256:8890081c2d7d742c17e683cd456e6b43db94fff28dfabb6ffaa9651219d9a48f",
+      "sourceDigest": "sha256:d3f85ff5d717213da582ca1641fbd32c6241f5b232754593ffcb6c3187397951",
+      "outputDigest": "sha256:7ad5a3efcba24bb1c506ffa5bcef15f886860ac59a37e5405a1f5ac9d2c39f46",
       "verifiedAgainst": {
-        "branch": "codex/axr7-consumer-e2e-adoption-dogfood",
-        "commit": "99c645f368e0c0269cd8871f9f0160cd59c55260",
-        "committedAt": "2026-08-09T03:26:42+08:00"
+        "branch": "codex/managed-toolchain-reconciliation-ship-fixes",
+        "commit": "65eb3891783559c6c51d8c0bc6c537fa00c323c8",
+        "committedAt": "2026-08-10T00:38:07+08:00"
+      }
+    },
+    {
+      "targetId": "projection_target.entity.capability-runtime-harness-global-runtime-reconciliation",
+      "type": "entity-summary",
+      "scope": {
+        "kind": "entity",
+        "id": "capability.runtime-harness.global-runtime-reconciliation",
+        "entityKind": "capability"
+      },
+      "path": "docs/architecture/modules/runtime-harness/global-runtime-reconciliation.md",
+      "ownership": "mixed",
+      "rendererVersion": "archcontext.docs-renderer/v2",
+      "format": "markdown",
+      "sourceDigest": "sha256:d3f85ff5d717213da582ca1641fbd32c6241f5b232754593ffcb6c3187397951",
+      "outputDigest": "sha256:034d4fb02ae80e9a2bb26afcaa694f1d6a8840896b1bb67cc86316c44d2dfd19",
+      "verifiedAgainst": {
+        "branch": "codex/managed-toolchain-reconciliation-ship-fixes",
+        "commit": "65eb3891783559c6c51d8c0bc6c537fa00c323c8",
+        "committedAt": "2026-08-10T00:38:07+08:00"
       }
     },
     {
@@ -377,12 +422,12 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "markdown",
-      "sourceDigest": "sha256:e2f869f09ac3c18691f44db23f176e03410ef56bbe5977a9a1e3c70a9bdc63a7",
-      "outputDigest": "sha256:7558c3709dd3d981b13bdd69a2d36dc08cb73a14196d092e234f5658f2022292",
+      "sourceDigest": "sha256:d3f85ff5d717213da582ca1641fbd32c6241f5b232754593ffcb6c3187397951",
+      "outputDigest": "sha256:a9f60dcbc1a89902987be58d02b149d1cd98e43b0e3bd17f0662dd3ea956a97f",
       "verifiedAgainst": {
-        "branch": "codex/axr7-consumer-e2e-adoption-dogfood",
-        "commit": "99c645f368e0c0269cd8871f9f0160cd59c55260",
-        "committedAt": "2026-08-09T03:26:42+08:00"
+        "branch": "codex/managed-toolchain-reconciliation-ship-fixes",
+        "commit": "65eb3891783559c6c51d8c0bc6c537fa00c323c8",
+        "committedAt": "2026-08-10T00:38:07+08:00"
       }
     },
     {
@@ -397,12 +442,12 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "markdown",
-      "sourceDigest": "sha256:e2f869f09ac3c18691f44db23f176e03410ef56bbe5977a9a1e3c70a9bdc63a7",
-      "outputDigest": "sha256:2d07d6c7b360881ae65b2cb94b6840a06fc5d11e22aca7f14c79f8594eb08741",
+      "sourceDigest": "sha256:d3f85ff5d717213da582ca1641fbd32c6241f5b232754593ffcb6c3187397951",
+      "outputDigest": "sha256:0699aa40d35201967d90798983296ed3314ee98bf7014a63df49efa6119ea61d",
       "verifiedAgainst": {
-        "branch": "codex/axr7-consumer-e2e-adoption-dogfood",
-        "commit": "99c645f368e0c0269cd8871f9f0160cd59c55260",
-        "committedAt": "2026-08-09T03:26:42+08:00"
+        "branch": "codex/managed-toolchain-reconciliation-ship-fixes",
+        "commit": "65eb3891783559c6c51d8c0bc6c537fa00c323c8",
+        "committedAt": "2026-08-10T00:38:07+08:00"
       }
     },
     {
@@ -417,12 +462,12 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "markdown",
-      "sourceDigest": "sha256:e2f869f09ac3c18691f44db23f176e03410ef56bbe5977a9a1e3c70a9bdc63a7",
-      "outputDigest": "sha256:84b13029667e63ebc1303cd32981f81c17affadc3099c8ffc32b72c88bf8f22f",
+      "sourceDigest": "sha256:d3f85ff5d717213da582ca1641fbd32c6241f5b232754593ffcb6c3187397951",
+      "outputDigest": "sha256:fe5fee4d9399b71fc607520efaa2d12bce16f2ebd34fc8b2f9486db0112db739",
       "verifiedAgainst": {
-        "branch": "codex/axr7-consumer-e2e-adoption-dogfood",
-        "commit": "99c645f368e0c0269cd8871f9f0160cd59c55260",
-        "committedAt": "2026-08-09T03:26:42+08:00"
+        "branch": "codex/managed-toolchain-reconciliation-ship-fixes",
+        "commit": "65eb3891783559c6c51d8c0bc6c537fa00c323c8",
+        "committedAt": "2026-08-10T00:38:07+08:00"
       }
     },
     {
@@ -437,12 +482,12 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "markdown",
-      "sourceDigest": "sha256:e2f869f09ac3c18691f44db23f176e03410ef56bbe5977a9a1e3c70a9bdc63a7",
-      "outputDigest": "sha256:d8e634d8f8123b3d4f090bcc586ad64d800ef6974ec9a9feb54ec15b2d0adc8f",
+      "sourceDigest": "sha256:d3f85ff5d717213da582ca1641fbd32c6241f5b232754593ffcb6c3187397951",
+      "outputDigest": "sha256:d73ab56f5c85a9db759284d229591fa5953d8cc8e29e8fbde4089f1ec92a8a2a",
       "verifiedAgainst": {
-        "branch": "codex/axr7-consumer-e2e-adoption-dogfood",
-        "commit": "99c645f368e0c0269cd8871f9f0160cd59c55260",
-        "committedAt": "2026-08-09T03:26:42+08:00"
+        "branch": "codex/managed-toolchain-reconciliation-ship-fixes",
+        "commit": "65eb3891783559c6c51d8c0bc6c537fa00c323c8",
+        "committedAt": "2026-08-10T00:38:07+08:00"
       }
     },
     {
@@ -457,12 +502,12 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "markdown",
-      "sourceDigest": "sha256:e2f869f09ac3c18691f44db23f176e03410ef56bbe5977a9a1e3c70a9bdc63a7",
-      "outputDigest": "sha256:03104693c583e973c1b472da85d171ee13bd64b705d99c1411cdecd84b60cd81",
+      "sourceDigest": "sha256:d3f85ff5d717213da582ca1641fbd32c6241f5b232754593ffcb6c3187397951",
+      "outputDigest": "sha256:f024a4e6cee26399d3aa6467c9a4f20379e7bd27f13a13c689ece53b85566523",
       "verifiedAgainst": {
-        "branch": "codex/axr7-consumer-e2e-adoption-dogfood",
-        "commit": "99c645f368e0c0269cd8871f9f0160cd59c55260",
-        "committedAt": "2026-08-09T03:26:42+08:00"
+        "branch": "codex/managed-toolchain-reconciliation-ship-fixes",
+        "commit": "65eb3891783559c6c51d8c0bc6c537fa00c323c8",
+        "committedAt": "2026-08-10T00:38:07+08:00"
       }
     },
     {
@@ -477,12 +522,12 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "markdown",
-      "sourceDigest": "sha256:e2f869f09ac3c18691f44db23f176e03410ef56bbe5977a9a1e3c70a9bdc63a7",
-      "outputDigest": "sha256:c30194997ad313067865c5091dbc7b50e06315616dc52c576c80810473c37937",
+      "sourceDigest": "sha256:d3f85ff5d717213da582ca1641fbd32c6241f5b232754593ffcb6c3187397951",
+      "outputDigest": "sha256:784fc68ad5a4d03f4a0a1d1614ea33b02b4964fb4ce2df5abbd83bef2a9956d3",
       "verifiedAgainst": {
-        "branch": "codex/axr7-consumer-e2e-adoption-dogfood",
-        "commit": "99c645f368e0c0269cd8871f9f0160cd59c55260",
-        "committedAt": "2026-08-09T03:26:42+08:00"
+        "branch": "codex/managed-toolchain-reconciliation-ship-fixes",
+        "commit": "65eb3891783559c6c51d8c0bc6c537fa00c323c8",
+        "committedAt": "2026-08-10T00:38:07+08:00"
       }
     },
     {
@@ -497,12 +542,12 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "markdown",
-      "sourceDigest": "sha256:e2f869f09ac3c18691f44db23f176e03410ef56bbe5977a9a1e3c70a9bdc63a7",
-      "outputDigest": "sha256:d52b503b421a6d70f71f2b4b866d99209b82337d346c053d71c8db25009afaeb",
+      "sourceDigest": "sha256:d3f85ff5d717213da582ca1641fbd32c6241f5b232754593ffcb6c3187397951",
+      "outputDigest": "sha256:94ed462b924593a4940c572a3aa7f98185157bbdd02c0608140bc0a873ad4122",
       "verifiedAgainst": {
-        "branch": "codex/axr7-consumer-e2e-adoption-dogfood",
-        "commit": "99c645f368e0c0269cd8871f9f0160cd59c55260",
-        "committedAt": "2026-08-09T03:26:42+08:00"
+        "branch": "codex/managed-toolchain-reconciliation-ship-fixes",
+        "commit": "65eb3891783559c6c51d8c0bc6c537fa00c323c8",
+        "committedAt": "2026-08-10T00:38:07+08:00"
       }
     },
     {
@@ -515,7 +560,7 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "markdown",
-      "sourceDigest": "sha256:f3136225f1b961b69912e44bf85c32bbb0ae6b4be29e6c864b344878bedccf40",
+      "sourceDigest": "sha256:dfeee72dd6b65c11c5410cf52261499a156ed11386d32cb5121711b63684470d",
       "outputDigest": "sha256:34055a2aa0fbe868ce5dea7df5354de5da63830e5972ff683d9647f97374ec26"
     },
     {
@@ -528,7 +573,7 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "markdown",
-      "sourceDigest": "sha256:f3136225f1b961b69912e44bf85c32bbb0ae6b4be29e6c864b344878bedccf40",
+      "sourceDigest": "sha256:dfeee72dd6b65c11c5410cf52261499a156ed11386d32cb5121711b63684470d",
       "outputDigest": "sha256:1f723aeb74466aae7d607eeab8c438a830c36f49a48e6622f868a8151afabea6"
     },
     {
@@ -542,8 +587,8 @@
       "ownership": "generated",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "mermaid",
-      "sourceDigest": "sha256:f3136225f1b961b69912e44bf85c32bbb0ae6b4be29e6c864b344878bedccf40",
-      "outputDigest": "sha256:58ef4b6135fb331a758238c5de072dbb24f9661a6f896b04c1187f90ee89e52e"
+      "sourceDigest": "sha256:dfeee72dd6b65c11c5410cf52261499a156ed11386d32cb5121711b63684470d",
+      "outputDigest": "sha256:b1ee3ddc27e5448bbe83462cf54a235b213cb4a46091224883b40b988f1c72f3"
     },
     {
       "targetId": "projection_target.diagram.structurizr",
@@ -556,8 +601,8 @@
       "ownership": "generated",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "structurizr-json",
-      "sourceDigest": "sha256:f3136225f1b961b69912e44bf85c32bbb0ae6b4be29e6c864b344878bedccf40",
-      "outputDigest": "sha256:12ac0ab6eb31d304959c7b769c0e40218b159e9d43dcbece253ebb1f446d2bec"
+      "sourceDigest": "sha256:dfeee72dd6b65c11c5410cf52261499a156ed11386d32cb5121711b63684470d",
+      "outputDigest": "sha256:2a7471ae324271ace7dd0a9380b4ddb2b97a91cbd83c996501b47cf897ba5d05"
     },
     {
       "targetId": "projection_target.diagram.likec4",
@@ -570,8 +615,8 @@
       "ownership": "generated",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "likec4",
-      "sourceDigest": "sha256:f3136225f1b961b69912e44bf85c32bbb0ae6b4be29e6c864b344878bedccf40",
-      "outputDigest": "sha256:a696bb0ed298ac078a91bef0eaa56cf7fbc5cd1dd4bc809c0ce4f86bc43e8e43"
+      "sourceDigest": "sha256:dfeee72dd6b65c11c5410cf52261499a156ed11386d32cb5121711b63684470d",
+      "outputDigest": "sha256:196159656b7a2e9f9ba964b9b8405e9b40896efb50c8ff4e5ad4bd181437ebe0"
     }
   ]
 }

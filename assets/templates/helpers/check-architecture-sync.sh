@@ -216,8 +216,19 @@ count_json_files() {
 projection_state="disabled"
 projection_reason="policy.architecture.projection_provider=disabled"
 if [[ "$projection_provider" == "archctx" ]]; then
-  if command -v repo-harness >/dev/null 2>&1; then
+  if [[ -f "$repo/src/cli/index.ts" ]] && command -v bun >/dev/null 2>&1; then
+    projection_status_json="$(bun "$repo/src/cli/index.ts" architecture-projection status --json 2>/dev/null || true)"
+    if [[ -z "$projection_status_json" ]]; then
+      projection_state="error"
+      projection_reason="candidate readiness status unavailable"
+    fi
+  elif command -v repo-harness >/dev/null 2>&1; then
     projection_status_json="$(repo-harness architecture-projection status --json 2>/dev/null || true)"
+  else
+    projection_state="missing"
+    projection_reason="repo-harness CLI unavailable for provider handshake"
+  fi
+  if [[ "$projection_state" != "missing" && -n "${projection_status_json:-}" ]]; then
     if [[ -n "$projection_status_json" ]] && command -v jq >/dev/null 2>&1; then
       projection_state="$(printf '%s' "$projection_status_json" | jq -r '.projectionProvider.state // "error"' 2>/dev/null || printf 'error')"
       projection_reason="$(printf '%s' "$projection_status_json" | jq -r '.projectionProvider.reason // "readiness status unavailable"' 2>/dev/null || printf 'readiness status unavailable')"
@@ -230,13 +241,7 @@ try {
 ' 2>/dev/null || printf 'error\treadiness status unavailable')"
       projection_state="${projection_readback%%$'\t'*}"
       projection_reason="${projection_readback#*$'\t'}"
-    else
-      projection_state="error"
-      projection_reason="readiness status unavailable"
     fi
-  else
-    projection_state="missing"
-    projection_reason="repo-harness CLI unavailable for provider handshake"
   fi
 fi
 

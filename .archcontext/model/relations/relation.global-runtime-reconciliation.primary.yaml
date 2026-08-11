@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.primary
+kind: calls
+source: capability.runtime-harness.global-runtime-reconciliation
+target: component.global-runtime-reconciliation.primary
+intent: Reconcile and verify the selected global runtime closure
