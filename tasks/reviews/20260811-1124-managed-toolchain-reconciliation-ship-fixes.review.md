@@ -40,7 +40,18 @@
 
 ## Acceptance Receipt Projection
 
-- Pending tool projection for final subject `sha256:6b3e8538...09572`. The user waiver grant skips only the unavailable Claude review; it does not waive local or PR gates.
+> **Disposition**: user_waiver
+> **Reviewer**: User
+> **Source**: user-waiver
+> **Actor**: ancienttwo
+> **Reviewed Subject SHA256**: sha256:6b3e8538454524af983808aef43b28e2b09669430e58d404b76ec27a7ae09572
+> **Reviewed Subject Scope**: normalized-final-content
+> **Reviewed Target Revision**: f2b1d84f5f15b0ea4f73545bbfccd68c358dc180
+> **Verification Evidence SHA256**: sha256:295e24955f14b8d523181a042bf0c2272b5182ef03c3c6a0529478c8d1e33306
+> **Issued At**: 2026-08-11T05:45:22.083Z
+
+- Summary: User explicitly instructed to skip Claude review after the Claude CLI weekly limit blocked external review; gatekeeper PASS and final check:release evidence remain required.
+- Findings: none
 
 ## Behavior Diff Notes
 
