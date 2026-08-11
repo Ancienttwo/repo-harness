@@ -202,7 +202,7 @@ describe('mcp http transport', () => {
     expect(cleanupErrors[0]).toBeInstanceOf(Error);
   });
 
-  test('session store enforces TTL, max sessions, lastSeen refresh, and close semantics without sleeping', async () => {
+  test('session store reclaims the oldest idle session at capacity and reports lifecycle counters', async () => {
     let now = 1_000;
     const closed: string[] = [];
     const makeTransport = (sessionId: string): McpSessionClosableTransport => ({
@@ -213,30 +213,64 @@ describe('mcp http transport', () => {
     });
     const store = new McpSessionStore({ ttlMs: 100, maxSessions: 2, now: () => now });
 
-    expect(store.canCreate()).toBe(true);
     store.set('s1', makeTransport('s1'));
     now += 40;
     store.set('s2', makeTransport('s2'));
     expect(store.size).toBe(2);
-    expect(store.canCreate()).toBe(false);
 
     now += 40;
     expect(store.get('s1')?.lastSeenAt).toBe(now);
-    now += 70;
-    expect(store.cleanupExpired()).toBe(1);
-    expect(closed).toEqual(['s2']);
+    const reservation = store.reserveForCreate();
+    expect(reservation).toBeDefined();
     expect(store.size).toBe(1);
-    expect(store.canCreate()).toBe(true);
+    await Bun.sleep(0);
+    expect(closed).toEqual(['s2']);
+    reservation?.commit('s3', makeTransport('s3'));
+    expect(store.size).toBe(2);
+    expect(store.metrics).toEqual({ created: 3, closed: 0, expired: 0, evicted: 1 });
 
     await store.closeAndDelete('s1');
     expect(closed).toEqual(['s2', 's1']);
-    expect(store.size).toBe(0);
+    expect(store.size).toBe(1);
+    expect(store.metrics).toEqual({ created: 3, closed: 1, expired: 0, evicted: 1 });
 
-    store.set('s3', makeTransport('s3'));
+    now += 101;
+    expect(store.cleanupExpired()).toBe(1);
+    await Bun.sleep(0);
+    expect(closed).toEqual(['s2', 's1', 's3']);
+    expect(store.metrics).toEqual({ created: 3, closed: 1, expired: 1, evicted: 1 });
+
     store.set('s4', makeTransport('s4'));
+    store.set('s5', makeTransport('s5'));
     await store.closeAll();
-    expect(closed.slice(-2).sort()).toEqual(['s3', 's4']);
+    expect(closed.slice(-2).sort()).toEqual(['s4', 's5']);
     expect(store.size).toBe(0);
+    expect(store.metrics).toEqual({ created: 5, closed: 3, expired: 1, evicted: 1 });
+  });
+
+  test('session store never evicts a session with an in-flight request', async () => {
+    const closed: string[] = [];
+    const makeTransport = (sessionId: string): McpSessionClosableTransport => ({
+      sessionId,
+      async close() {
+        closed.push(sessionId);
+      },
+    });
+    const store = new McpSessionStore({ ttlMs: 100, maxSessions: 1, now: () => 1_000 });
+    store.set('s1', makeTransport('s1'));
+
+    const lease = store.acquire('s1');
+    expect(lease).toBeDefined();
+    expect(store.reserveForCreate()).toBeUndefined();
+    expect(store.size).toBe(1);
+    expect(closed).toEqual([]);
+
+    lease?.release();
+    const reservation = store.reserveForCreate();
+    expect(reservation).toBeDefined();
+    await Bun.sleep(0);
+    expect(closed).toEqual(['s1']);
+    reservation?.release();
   });
 
   test('public HTTP bind fails closed without an explicit public origin', async () => {
@@ -258,7 +292,7 @@ describe('mcp http transport', () => {
     }
   });
 
-  test('requires bearer auth and accepts authenticated initialize requests', async () => {
+  test('requires bearer auth and reclaims an abandoned session on authenticated initialize', async () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-http-'));
     const port = await freePort();
     const restoreRegistryHome = useTempRegistryHome();
@@ -288,7 +322,12 @@ describe('mcp http transport', () => {
           '--auth',
           'bearer',
         ],
-        { cwd: process.cwd(), stdout: 'ignore', stderr: 'pipe', env: { ...process.env } },
+        {
+          cwd: process.cwd(),
+          stdout: 'ignore',
+          stderr: 'pipe',
+          env: { ...process.env, REPO_HARNESS_MCP_MAX_SESSIONS: '1' },
+        },
       );
       await waitForHealth(port);
 
@@ -300,6 +339,11 @@ describe('mcp http transport', () => {
         auth: 'bearer',
         auth_mode: 'bearer',
         profile: 'planner',
+        active_sessions: 0,
+        sessions_created: 0,
+        sessions_closed: 0,
+        sessions_expired: 0,
+        sessions_evicted: 0,
       });
       expect(healthJson.schema_hash).toMatch(/^[a-f0-9]{64}$/);
       expect(JSON.stringify(healthJson)).not.toContain(token);
@@ -345,12 +389,45 @@ describe('mcp http transport', () => {
       expect(toolsList.status).toBe(200);
       expect(await toolsList.text()).toContain('read_workflow_file');
 
+      const reinitialized = await fetch(`http://127.0.0.1:${port}/mcp`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+        },
+        body: initializeBody(),
+      });
+      expect(reinitialized.status).toBe(200);
+      const replacementSessionId = reinitialized.headers.get('mcp-session-id');
+      expect(replacementSessionId).toMatch(/^[0-9a-f-]{36}$/);
+      expect(replacementSessionId).not.toBe(sessionId);
+
+      const afterEviction = await fetch(`http://127.0.0.1:${port}/mcp`, {
+        method: 'GET',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'mcp-session-id': sessionId ?? '',
+        },
+      });
+      expect(afterEviction.status).toBe(404);
+
+      const recoveryHealth = await fetch(`http://127.0.0.1:${port}/health`);
+      expect(await recoveryHealth.json()).toMatchObject({
+        active_sessions: 1,
+        max_sessions: 1,
+        sessions_created: 2,
+        sessions_closed: 0,
+        sessions_expired: 0,
+        sessions_evicted: 1,
+      });
+
       const deleted = await fetch(`http://127.0.0.1:${port}/mcp`, {
         method: 'DELETE',
         headers: {
           authorization: `Bearer ${token}`,
           accept: 'application/json, text/event-stream',
-          'mcp-session-id': sessionId ?? '',
+          'mcp-session-id': replacementSessionId ?? '',
         },
       });
       expect([200, 202, 204]).toContain(deleted.status);
@@ -359,10 +436,19 @@ describe('mcp http transport', () => {
         method: 'GET',
         headers: {
           authorization: `Bearer ${token}`,
-          'mcp-session-id': sessionId ?? '',
+          'mcp-session-id': replacementSessionId ?? '',
         },
       });
       expect(afterDelete.status).toBe(404);
+
+      const closedHealth = await fetch(`http://127.0.0.1:${port}/health`);
+      expect(await closedHealth.json()).toMatchObject({
+        active_sessions: 0,
+        sessions_created: 2,
+        sessions_closed: 1,
+        sessions_expired: 0,
+        sessions_evicted: 1,
+      });
 
       const stale = await fetch(`http://127.0.0.1:${port}/mcp`, {
         method: 'GET',
