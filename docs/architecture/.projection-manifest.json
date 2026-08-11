@@ -5,12 +5,12 @@
   "sourceDigest": "sha256:dfeee72dd6b65c11c5410cf52261499a156ed11386d32cb5121711b63684470d",
   "provenance": {
     "schemaVersion": "archcontext.architecture-docs-projection-provenance/v1",
-    "baseHeadSha": "9799fc093f225bd66f7ef3a60fcb437b18317271",
-    "worktreeDigest": "sha256:43a3b7e4040e1941be5f344c810b2cfbb06b03f3709d402fa8a0d6255804d7b1",
-    "sourceTreeDigest": "sha256:0bf096366bb09710c121e9efad2baa7075e186e9f169a421763b13d629cdc2fe",
+    "baseHeadSha": "8c953f85a3a14e275cce09a217c90a0158545470",
+    "worktreeDigest": "sha256:ce1b583afc421fc1550765a5c831f0b8abcea096e9f5f8ce01e0485336a43c61",
+    "sourceTreeDigest": "sha256:def4f4dce712ae5f563830b2558f68212908adf1d80856720582484ca0ab219c",
     "modelDigest": "sha256:e7e1a02e1fb8c6e0732999db19c5ab1541d8529ffb270b2be1eb96af579fa4cb",
-    "codeGraphDigest": "sha256:d42f1197f6932cadf379a6df314abd2703524c1fcfeb31b9adb492b5b8e349e2",
-    "indexedWorktreeDigest": "sha256:9ddaf09937b1cc56fbd6a4ac187a8e17681be1d3408b0347c050a3c4b382ce05",
+    "codeGraphDigest": "sha256:45b470517dee78031500940cf32de2771bef520b8da1fd143721637122174f30",
+    "indexedWorktreeDigest": "sha256:d71ab1eafcc33266f3f831b958d4dc924a23997cfaf5d1e301f81214fafa855c",
     "rendererVersion": "archcontext.docs-renderer/v2",
     "layoutVersion": "archcontext.docs-layout/v1",
     "generatedFrom": {
@@ -19,9 +19,9 @@
       "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
       "codeGraphStatus": "ready"
     },
-    "projectionInputDigest": "sha256:5b457a474ea60b2d244a4f7666590426b559bf2de51b6fc0ac38878386193adb"
+    "projectionInputDigest": "sha256:315a26e503ded170d11acff1fc1da57caca31d412db9d0324a72dac34028335b"
   },
-  "projectionDigest": "sha256:bfeba229eab7fd66dd2e723c653ddfd22e1ff476bdf0048a406e7e80d57253af",
+  "projectionDigest": "sha256:b018601ce916942d6cef12c92eb764c22736f14f81f4089e322500104c953076",
   "semanticBaseline": {
     "semanticState": {
       "schemaVersion": "archcontext.architecture-semantic-state/v1",
@@ -307,12 +307,12 @@
     },
     "digests": {
       "modelDigest": "sha256:e7e1a02e1fb8c6e0732999db19c5ab1541d8529ffb270b2be1eb96af579fa4cb",
-      "sourceTreeDigest": "sha256:0bf096366bb09710c121e9efad2baa7075e186e9f169a421763b13d629cdc2fe",
+      "sourceTreeDigest": "sha256:def4f4dce712ae5f563830b2558f68212908adf1d80856720582484ca0ab219c",
       "flowProofDigest": "sha256:f61c06c8566ec4ff22ec096ee22c06e91a046ceefa8fcd2f1d9faf436763a457",
-      "projectionDigest": "sha256:bfeba229eab7fd66dd2e723c653ddfd22e1ff476bdf0048a406e7e80d57253af"
+      "projectionDigest": "sha256:b018601ce916942d6cef12c92eb764c22736f14f81f4089e322500104c953076"
     }
   },
-  "receiptDigest": "sha256:61923e7b0f867246c5911cc42e4921db6e8de30da7fe319b2a80104fbfc22e6e",
+  "receiptDigest": "sha256:041b68e28147ba3110387b067471b06c437dfd52b90c867e265f4740ad606abf",
   "refreshSignalIds": [],
   "targetCount": 17,
   "fileCount": 17,
@@ -342,12 +342,12 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "markdown",
-      "sourceDigest": "sha256:7b33441d98c3f7e984b3e81612c90507d79fabbc2728f78f47814484240a77f0",
-      "outputDigest": "sha256:4764a184f84e2db2e126b81d5a0c5e01facb8afa4b8ac543a9431d5281d13c4a",
+      "sourceDigest": "sha256:75f51c6f9b82b1428590c253411e554f81f792f30df5058111864e68d78e5cec",
+      "outputDigest": "sha256:c64c2f1e794db3d96672f2e574e67207e54deb880e6ada024799ddb809e72532",
       "verifiedAgainst": {
-        "branch": "codex/recovery-interview-routing-projection-20260811",
-        "commit": "5881b276e31f66b634adb6af89a8b18e43e12aea",
-        "committedAt": "2026-08-11T20:30:47+08:00"
+        "branch": "main",
+        "commit": "8c953f85a3a14e275cce09a217c90a0158545470",
+        "committedAt": "2026-08-11T23:12:29+08:00"
       }
     },
     {
@@ -362,12 +362,12 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "markdown",
-      "sourceDigest": "sha256:7b33441d98c3f7e984b3e81612c90507d79fabbc2728f78f47814484240a77f0",
-      "outputDigest": "sha256:59d7cf6cd7c1abd16e77ca943db9a72dc7439b61be8c9364d6a76a64e89edb70",
+      "sourceDigest": "sha256:75f51c6f9b82b1428590c253411e554f81f792f30df5058111864e68d78e5cec",
+      "outputDigest": "sha256:7deb6234395219ae360bd3ed30501b688787d63699b8ceebff992679bdc0b4a0",
       "verifiedAgainst": {
-        "branch": "codex/recovery-interview-routing-projection-20260811",
-        "commit": "5881b276e31f66b634adb6af89a8b18e43e12aea",
-        "committedAt": "2026-08-11T20:30:47+08:00"
+        "branch": "main",
+        "commit": "8c953f85a3a14e275cce09a217c90a0158545470",
+        "committedAt": "2026-08-11T23:12:29+08:00"
       }
     },
     {
@@ -382,12 +382,12 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "markdown",
-      "sourceDigest": "sha256:7b33441d98c3f7e984b3e81612c90507d79fabbc2728f78f47814484240a77f0",
-      "outputDigest": "sha256:e41273be156a066e06e9e9ebb81fe0378afb71cf3084531241e12ec5f5984bed",
+      "sourceDigest": "sha256:75f51c6f9b82b1428590c253411e554f81f792f30df5058111864e68d78e5cec",
+      "outputDigest": "sha256:ee5285e65c0ee85a7472375266711d6b8f72055932205e8febce5149ee5e3041",
       "verifiedAgainst": {
-        "branch": "codex/recovery-interview-routing-projection-20260811",
-        "commit": "5881b276e31f66b634adb6af89a8b18e43e12aea",
-        "committedAt": "2026-08-11T20:30:47+08:00"
+        "branch": "main",
+        "commit": "8c953f85a3a14e275cce09a217c90a0158545470",
+        "committedAt": "2026-08-11T23:12:29+08:00"
       }
     },
     {
@@ -402,12 +402,12 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "markdown",
-      "sourceDigest": "sha256:7b33441d98c3f7e984b3e81612c90507d79fabbc2728f78f47814484240a77f0",
-      "outputDigest": "sha256:3c3d5e3e49f126109adb740f4a0ef7b3919bdaca854cac4aa6e4002423fb48b4",
+      "sourceDigest": "sha256:75f51c6f9b82b1428590c253411e554f81f792f30df5058111864e68d78e5cec",
+      "outputDigest": "sha256:f1ca2b3eb38aabc6cd910bffe688f5fa6a48ce35050b27043e796cefca1bb778",
       "verifiedAgainst": {
-        "branch": "codex/recovery-interview-routing-projection-20260811",
-        "commit": "5881b276e31f66b634adb6af89a8b18e43e12aea",
-        "committedAt": "2026-08-11T20:30:47+08:00"
+        "branch": "main",
+        "commit": "8c953f85a3a14e275cce09a217c90a0158545470",
+        "committedAt": "2026-08-11T23:12:29+08:00"
       }
     },
     {
@@ -422,12 +422,12 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "markdown",
-      "sourceDigest": "sha256:7b33441d98c3f7e984b3e81612c90507d79fabbc2728f78f47814484240a77f0",
-      "outputDigest": "sha256:e8343df0f13bb7efebd072b0224ffeebcc20323ea43fabbddf5589f4d9019efa",
+      "sourceDigest": "sha256:75f51c6f9b82b1428590c253411e554f81f792f30df5058111864e68d78e5cec",
+      "outputDigest": "sha256:a21a2079e91cf605d5d9ef1a0e1d343a22940fcefa024387589a90a2d03b8b98",
       "verifiedAgainst": {
-        "branch": "codex/recovery-interview-routing-projection-20260811",
-        "commit": "5881b276e31f66b634adb6af89a8b18e43e12aea",
-        "committedAt": "2026-08-11T20:30:47+08:00"
+        "branch": "main",
+        "commit": "8c953f85a3a14e275cce09a217c90a0158545470",
+        "committedAt": "2026-08-11T23:12:29+08:00"
       }
     },
     {
@@ -442,12 +442,12 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "markdown",
-      "sourceDigest": "sha256:7b33441d98c3f7e984b3e81612c90507d79fabbc2728f78f47814484240a77f0",
-      "outputDigest": "sha256:f78aee235333220335a2b8842678f2b35e93d952f66b44abaac6637c83915f0a",
+      "sourceDigest": "sha256:75f51c6f9b82b1428590c253411e554f81f792f30df5058111864e68d78e5cec",
+      "outputDigest": "sha256:6e30a07a0315dd730ec4b9286906d700e93521eedf8b0084eb53b7c9b5286ede",
       "verifiedAgainst": {
-        "branch": "codex/recovery-interview-routing-projection-20260811",
-        "commit": "5881b276e31f66b634adb6af89a8b18e43e12aea",
-        "committedAt": "2026-08-11T20:30:47+08:00"
+        "branch": "main",
+        "commit": "8c953f85a3a14e275cce09a217c90a0158545470",
+        "committedAt": "2026-08-11T23:12:29+08:00"
       }
     },
     {
@@ -462,12 +462,12 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "markdown",
-      "sourceDigest": "sha256:7b33441d98c3f7e984b3e81612c90507d79fabbc2728f78f47814484240a77f0",
-      "outputDigest": "sha256:94eb3b50aab53279159fb7ab9875c4408bf2b420cee376bd8764f2b6fa94512c",
+      "sourceDigest": "sha256:75f51c6f9b82b1428590c253411e554f81f792f30df5058111864e68d78e5cec",
+      "outputDigest": "sha256:9a7b7417e376d778a7ff9369859e03f959f7dfbf22983dbaadf23fa500a32b5e",
       "verifiedAgainst": {
-        "branch": "codex/recovery-interview-routing-projection-20260811",
-        "commit": "5881b276e31f66b634adb6af89a8b18e43e12aea",
-        "committedAt": "2026-08-11T20:30:47+08:00"
+        "branch": "main",
+        "commit": "8c953f85a3a14e275cce09a217c90a0158545470",
+        "committedAt": "2026-08-11T23:12:29+08:00"
       }
     },
     {
@@ -482,12 +482,12 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "markdown",
-      "sourceDigest": "sha256:7b33441d98c3f7e984b3e81612c90507d79fabbc2728f78f47814484240a77f0",
-      "outputDigest": "sha256:61f4b5221a5b7c6cac71ed7d27853d330e760844de3ecc5e87e47fe0584a4fb6",
+      "sourceDigest": "sha256:75f51c6f9b82b1428590c253411e554f81f792f30df5058111864e68d78e5cec",
+      "outputDigest": "sha256:a11f8b7861b316d7ff4831d1644d6febd20cabfe0ec3e00875eca7a2301bcef4",
       "verifiedAgainst": {
-        "branch": "codex/recovery-interview-routing-projection-20260811",
-        "commit": "5881b276e31f66b634adb6af89a8b18e43e12aea",
-        "committedAt": "2026-08-11T20:30:47+08:00"
+        "branch": "main",
+        "commit": "8c953f85a3a14e275cce09a217c90a0158545470",
+        "committedAt": "2026-08-11T23:12:29+08:00"
       }
     },
     {
@@ -502,12 +502,12 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "markdown",
-      "sourceDigest": "sha256:7b33441d98c3f7e984b3e81612c90507d79fabbc2728f78f47814484240a77f0",
-      "outputDigest": "sha256:a9cf17acfa2dfe97c42eb12daa5a47e048e23d15ac05cde00a1c4308aa58e097",
+      "sourceDigest": "sha256:75f51c6f9b82b1428590c253411e554f81f792f30df5058111864e68d78e5cec",
+      "outputDigest": "sha256:8c19dd2e71561bd1d7af5fe601120b77a72694fa19f042d5305fa88396ee9034",
       "verifiedAgainst": {
         "branch": "main",
-        "commit": "9799fc093f225bd66f7ef3a60fcb437b18317271",
-        "committedAt": "2026-08-11T20:55:45+08:00"
+        "commit": "8c953f85a3a14e275cce09a217c90a0158545470",
+        "committedAt": "2026-08-11T23:12:29+08:00"
       }
     },
     {
@@ -522,12 +522,12 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "markdown",
-      "sourceDigest": "sha256:7b33441d98c3f7e984b3e81612c90507d79fabbc2728f78f47814484240a77f0",
-      "outputDigest": "sha256:9fe297355b902d03628dad5f2f0b29523d0da560c551519cefb7f2b2fac07181",
+      "sourceDigest": "sha256:75f51c6f9b82b1428590c253411e554f81f792f30df5058111864e68d78e5cec",
+      "outputDigest": "sha256:4bf4cfa2adcf729698370fe268f97487eba1c5de05c414bd07587f784240bc73",
       "verifiedAgainst": {
-        "branch": "codex/recovery-interview-routing-projection-20260811",
-        "commit": "5881b276e31f66b634adb6af89a8b18e43e12aea",
-        "committedAt": "2026-08-11T20:30:47+08:00"
+        "branch": "main",
+        "commit": "8c953f85a3a14e275cce09a217c90a0158545470",
+        "committedAt": "2026-08-11T23:12:29+08:00"
       }
     },
     {
@@ -542,12 +542,12 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v2",
       "format": "markdown",
-      "sourceDigest": "sha256:7b33441d98c3f7e984b3e81612c90507d79fabbc2728f78f47814484240a77f0",
-      "outputDigest": "sha256:caa72f81e134cee9d5ee4cd3c1a19c88d69edc600e67fcb4accc00f9c460a80d",
+      "sourceDigest": "sha256:75f51c6f9b82b1428590c253411e554f81f792f30df5058111864e68d78e5cec",
+      "outputDigest": "sha256:3e35bd98abdb47b89b81f355ee006d334b4e4ca7e64d88c0ea5a2194b195d159",
       "verifiedAgainst": {
-        "branch": "codex/recovery-interview-routing-projection-20260811",
-        "commit": "5881b276e31f66b634adb6af89a8b18e43e12aea",
-        "committedAt": "2026-08-11T20:30:47+08:00"
+        "branch": "main",
+        "commit": "8c953f85a3a14e275cce09a217c90a0158545470",
+        "committedAt": "2026-08-11T23:12:29+08:00"
       }
     },
     {

@@ -1,7 +1,7 @@
 # runtime-harness/hook-adapters 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:7b33441d98c3f7e984b3e81612c90507d79fabbc2728f78f47814484240a77f0" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:e8343df0f13bb7efebd072b0224ffeebcc20323ea43fabbddf5589f4d9019efa" verifiedAgainst="codex/recovery-interview-routing-projection-20260811@5881b276e31f66b634adb6af89a8b18e43e12aea@2026-08-11T20:30:47+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:75f51c6f9b82b1428590c253411e554f81f792f30df5058111864e68d78e5cec" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:a21a2079e91cf605d5d9ef1a0e1d343a22940fcefa024387589a90a2d03b8b98" verifiedAgainst="main@8c953f85a3a14e275cce09a217c90a0158545470@2026-08-11T23:12:29+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`codex/recovery-interview-routing-projection-20260811@5881b276e31f66b634adb6af89a8b18e43e12aea`(2026-08-11)
+> **Verified against**:`main@8c953f85a3a14e275cce09a217c90a0158545470`(2026-08-11)
 > **Capability ID**:`capability.runtime-harness.hook-adapters`(kind `capability`)
 > **Matched Prefixes**:`assets/hooks/**`、`.ai/hooks/**`、`scripts/run-skill-hook.ts`、`src/cli/installer/**`、`src/cli/hook/**`、`src/cli/hook-entry.ts`
 > **Local Contracts**:`assets/hooks/AGENTS.md`、`assets/hooks/CLAUDE.md`

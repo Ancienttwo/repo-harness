@@ -1,7 +1,7 @@
 # public-surface/action-commands 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" sourceDigest="sha256:7b33441d98c3f7e984b3e81612c90507d79fabbc2728f78f47814484240a77f0" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:4764a184f84e2db2e126b81d5a0c5e01facb8afa4b8ac543a9431d5281d13c4a" verifiedAgainst="codex/recovery-interview-routing-projection-20260811@5881b276e31f66b634adb6af89a8b18e43e12aea@2026-08-11T20:30:47+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" sourceDigest="sha256:75f51c6f9b82b1428590c253411e554f81f792f30df5058111864e68d78e5cec" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:c64c2f1e794db3d96672f2e574e67207e54deb880e6ada024799ddb809e72532" verifiedAgainst="main@8c953f85a3a14e275cce09a217c90a0158545470@2026-08-11T23:12:29+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`codex/recovery-interview-routing-projection-20260811@5881b276e31f66b634adb6af89a8b18e43e12aea`(2026-08-11)
+> **Verified against**:`main@8c953f85a3a14e275cce09a217c90a0158545470`(2026-08-11)
 > **Capability ID**:`capability.public-surface.action-commands`(kind `capability`)
 > **Matched Prefixes**:`assets/skill-commands/**`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
