@@ -67,3 +67,12 @@ Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset 
 - Promote to `tasks/lessons.md` only after a repeated correction or failure pattern.
 - Promote to `docs/researches/` only when it is durable repo knowledge with evidence.
 - Promote to harness asset files only after verification across more than one task or fixture.
+
+## Closeout Adjudication
+
+- 2026-08-11: `contract-worktree finish --merge` blocked by the strict projection
+  gate: archctx classified the 11-capability version sweep as
+  `unresolved-major-change` requiring human adoption. Owner adjudicated directly
+  ("合并吧") and ordered the merge; merged manually on main under that decision.
+  The adoption demand lived only in this worktree's archcontext state; main
+  carries the same content via direct commit 67449e11 with all gates green.
