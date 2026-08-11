@@ -1,7 +1,7 @@
 # runtime-mcp/general-repo-access 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-general-repo-access" sourceDigest="sha256:cc6734ac6b014c92943c3028a0e8a4517ef3913d0525a7e663be3f643e6f8548" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:84a141fcd7d33e64d974947ad315c71cdf10c2a670e9dd799e99d925198badff" verifiedAgainst="main@ee33d127fadefa58f00b63367a7a936d2335fd08@2026-08-11T13:54:22+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-general-repo-access" sourceDigest="sha256:7b33441d98c3f7e984b3e81612c90507d79fabbc2728f78f47814484240a77f0" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:94eb3b50aab53279159fb7ab9875c4408bf2b420cee376bd8764f2b6fa94512c" verifiedAgainst="codex/recovery-interview-routing-projection-20260811@5881b276e31f66b634adb6af89a8b18e43e12aea@2026-08-11T20:30:47+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`main@ee33d127fadefa58f00b63367a7a936d2335fd08`(2026-08-11)
+> **Verified against**:`codex/recovery-interview-routing-projection-20260811@5881b276e31f66b634adb6af89a8b18e43e12aea`(2026-08-11)
 > **Capability ID**:`capability.runtime-mcp.general-repo-access`(kind `capability`)
 > **Matched Prefixes**:`src/cli/mcp/general-repo-access.ts`、`src/cli/mcp/general-repo-access/**`、`tests/cli/mcp-reader-tools.test.ts`、`tests/cli/mcp-codegraph-contract.test.ts`、`tests/cli/mcp-policy.test.ts`、`tests/cli/mcp-tools.test.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`

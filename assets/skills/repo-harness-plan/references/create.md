@@ -9,9 +9,10 @@ work. Run the shared preflight in `../SKILL.md` first.
 
 1. Read repo-local `AGENTS.md`, `CLAUDE.md`, `tasks/todos.md`, and `.ai/harness/policy.json` when present.
 2. For product discovery and complex/design or architecture planning, invoke `geju` before a contract exists to establish the thesis, direction, falsifier, and cheapest proof point. The parent agent then completes P1/P2/P3 with its own repo/runtime capabilities; no external planning provider owns or blocks this lifecycle.
-3. Before recommending implementation, write a workflow inventory: active plan path, expected contract/review/notes files, `tasks/todos.md`, `.ai/harness/checks/latest.json`, `.ai/harness/runs/`, allowed-path owner, and the plan switching or worktree isolation rule.
-4. Produce one recommended plan and name the next action: `repo-harness-setup` (selecting its init, scaffold, migrate, upgrade, or repair mode) or `repo-harness-check`.
-5. When the plan is decision-complete, capture it with `repo-harness run capture-plan --slug <slug> --title <title>` so the repo has a file-backed `plans/plan-*.md` artifact.
+3. When high-impact items stay undecided after the repo reading and any `geju` pass — target model, system boundary, data authority, irreversible or expensive choices, acceptance criteria — and the session is interactive, run the `$interview` minimum-effective-interview pass: one batched round of at most 3 questions, each with a recommended default and options stating what each choice changes; open a second round only when the first answers expose a contradiction. Record every default the agent adopts on the user's behalf as `[ASSUMED]` with a one-line why and unresolved gaps as `[UNKNOWN]` in the plan; in non-interactive runs ask nothing and keep the plan in Draft with those markers.
+4. Before recommending implementation, write a workflow inventory: active plan path, expected contract/review/notes files, `tasks/todos.md`, `.ai/harness/checks/latest.json`, `.ai/harness/runs/`, allowed-path owner, and the plan switching or worktree isolation rule.
+5. Produce one recommended plan and name the next action: `repo-harness-setup` (selecting its init, scaffold, migrate, upgrade, or repair mode) or `repo-harness-check`.
+6. When the plan is decision-complete, capture it with `repo-harness run capture-plan --slug <slug> --title <title>` so the repo has a file-backed `plans/plan-*.md` artifact.
 
 ## Delegation Brief
 
@@ -22,6 +23,7 @@ When this plan traces back to a `$geju`/格局 pass, freeze its thesis and high-
 ## Failure Modes
 
 - If the inspector cannot classify the repo, keep the plan in Draft and list the missing files.
+- If `$interview` is unavailable, still perform the same compact minimum-effective-interview pass in the current agent through the runtime's structured question tool (Claude `AskUserQuestion`, Codex `request_user_input`) or plain-text numbered questions, and report the missing skill as a fallback condition.
 - If implementation approval is absent, do not run `repo-harness run plan-to-todo`.
 - If the requested command surface is ambiguous, pick one public command and name why the alternatives are out of scope.
 

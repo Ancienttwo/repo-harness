@@ -1,7 +1,7 @@
 # public-surface/action-commands 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" sourceDigest="sha256:cc6734ac6b014c92943c3028a0e8a4517ef3913d0525a7e663be3f643e6f8548" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:934c54b7b3fac6c9040d24b4d89b7d5247b001434961e671f25b059ba9fac380" verifiedAgainst="main@ee33d127fadefa58f00b63367a7a936d2335fd08@2026-08-11T13:54:22+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" sourceDigest="sha256:7b33441d98c3f7e984b3e81612c90507d79fabbc2728f78f47814484240a77f0" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:4764a184f84e2db2e126b81d5a0c5e01facb8afa4b8ac543a9431d5281d13c4a" verifiedAgainst="codex/recovery-interview-routing-projection-20260811@5881b276e31f66b634adb6af89a8b18e43e12aea@2026-08-11T20:30:47+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`main@ee33d127fadefa58f00b63367a7a936d2335fd08`(2026-08-11)
+> **Verified against**:`codex/recovery-interview-routing-projection-20260811@5881b276e31f66b634adb6af89a8b18e43e12aea`(2026-08-11)
 > **Capability ID**:`capability.public-surface.action-commands`(kind `capability`)
 > **Matched Prefixes**:`assets/skill-commands/**`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
@@ -36,7 +36,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 文件數:`7`
-- 總行數:`633`
+- 總行數:`651`
 - 匹配前綴:`assets/skill-commands/**`
 - 復算:`archctx docs plan --json`(掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`)
 
