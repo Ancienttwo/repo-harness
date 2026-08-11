@@ -1,7 +1,7 @@
 # verification/codegraph-readiness 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-codegraph-readiness" sourceDigest="sha256:d3f85ff5d717213da582ca1641fbd32c6241f5b232754593ffcb6c3187397951" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:d73ab56f5c85a9db759284d229591fa5953d8cc8e29e8fbde4089f1ec92a8a2a" verifiedAgainst="codex/managed-toolchain-reconciliation-ship-fixes@65eb3891783559c6c51d8c0bc6c537fa00c323c8@2026-08-10T00:38:07+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-codegraph-readiness" sourceDigest="sha256:cc6734ac6b014c92943c3028a0e8a4517ef3913d0525a7e663be3f643e6f8548" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:d1038be4a41e8509dbfbc88da755c2e9c6dea95b744e886edcfa02d0954be98d" verifiedAgainst="main@ee33d127fadefa58f00b63367a7a936d2335fd08@2026-08-11T13:54:22+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`codex/managed-toolchain-reconciliation-ship-fixes@65eb3891783559c6c51d8c0bc6c537fa00c323c8`(2026-08-10)
+> **Verified against**:`main@ee33d127fadefa58f00b63367a7a936d2335fd08`(2026-08-11)
 > **Capability ID**:`capability.verification.codegraph-readiness`(kind `capability`)
 > **Matched Prefixes**:`scripts/ensure-codegraph.sh`、`src/cli/tools/codegraph.ts`、`src/cli/mcp/codegraph-adapter.ts`、`tests/cli/codegraph-resolver.test.ts`、`docs/architecture/modules/verification/codegraph-readiness.md`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
