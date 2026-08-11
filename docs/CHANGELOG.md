@@ -2,7 +2,7 @@
 
 All notable changes to this skill are documented here.
 
-## [Unreleased]
+## [0.14.2] - 2026-08-11
 
 ### Added
 
@@ -27,6 +27,10 @@ All notable changes to this skill are documented here.
   `/parallel` remain prompt-start typed commands. New contract templates select
   only `subagent` and declare no fallback; Stop no longer synthesizes a second
   dispatch instruction.
+- Syncs the mandatory `archctx` / `archctx-contracts` closure to 0.4.2 across
+  package pins, policy `projection_version`, `ARCHCTX_REQUIRED_VERSION`, the
+  downstream policy templates, and eval fixtures.
+- Bounds cross-review retries and adds an advisory skipped status.
 
 ### Fixed
 
@@ -36,13 +40,13 @@ All notable changes to this skill are documented here.
   reconnect sessions from accumulating until `SESSION_LIMIT_REACHED` (#174).
   `/health` now reports cumulative created, closed, expired, and evicted session
   counters for lifecycle diagnosis.
-
-## [0.14.2] - 2026-08-10
-
-### Fixed
-
+- Modernizes the axr5 clean-room integration proof for bun 1.3 install layouts:
+  workspace packages link from the checkout's declared workspace list, consumer
+  `file:` dependencies probe both install roots, and `prepareReleaseVersion`
+  accepts an already-at-version source while still failing closed on a missing
+  declaration. The proof is regenerated against the published archctx 0.4.2.
 - Makes `repo-harness update` reconcile and read back its mandatory
-  `archctx@0.4.1` and `archctx-contracts@0.4.1` dependency closure instead of
+  `archctx@0.4.2` and `archctx-contracts@0.4.2` dependency closure instead of
   trusting a successful Bun global install. A stale global dependency tree is
   reported with an explicit operator repair command; update never removes the
   working CLI before a replacement is known-good, and unresolved mismatches
