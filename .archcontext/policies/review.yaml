@@ -1,0 +1,6 @@
+failOn:
+  - "invalid-schema"
+  - "stale-context"
+  - "unjustified-compatibility"
+id: "policy.review"
+schemaVersion: "archcontext.policy/v1"

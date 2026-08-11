@@ -1,6 +1,6 @@
 {
   "name": "repo-harness",
-  "version": "0.14.1",
+  "version": "0.14.2",
   "description": "Installs, migrates, audits, and repairs repo-local agentic development harnesses",
   "license": "MIT",
   "repository": {
@@ -31,7 +31,8 @@
     "repo-harness-hook": "dist/hook-entry.js"
   },
   "engines": {
-    "bun": ">=1.1.35"
+    "bun": ">=1.1.35",
+    "node": ">=24 <26"
   },
   "scripts": {
     "benchmark:mcp-reader": "bun scripts/benchmark-general-repo-reader.ts",
@@ -73,8 +74,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.28.0",
-    "archctx": "0.4.0",
-    "archctx-contracts": "0.4.0",
+    "archctx": "0.4.1",
+    "archctx-contracts": "0.4.1",
     "commander": "^15.0.0",
     "express": "^5.2.1"
   }

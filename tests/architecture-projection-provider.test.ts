@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import {
   ARCHCTX_REQUIRED_VERSION,
   PROJECTION_REQUEST_VERSION,
+  projectionRequestIssues,
   projectionResultReceiptDigest,
   projectionResultIssues,
   type ArchitectureProjectionPolicy,
@@ -14,12 +15,13 @@ import {
 import {
   inspectArchitectureProjectionReadiness,
   captureArchitectureProjectionSnapshot,
+  resolveCompatibleNodeRuntime,
   resolvePackageLocalArchctx,
   runArchitectureProjection,
   type ArchctxProcessResult,
   type RunArchctxProcess,
 } from '../src/effects/architecture/archctx-provider';
-import { architectureProjectionExitCode } from '../src/cli/commands/architecture-projection';
+import { architectureProjectionExitCode, buildArchitectureProjectionCommand } from '../src/cli/commands/architecture-projection';
 
 const roots: string[] = [];
 const digest = (value: string) => `sha256:${value.repeat(64).slice(0, 64)}` as const;
@@ -39,14 +41,14 @@ function fixture() {
   mkdirSync(join(repoRoot, '.ai', 'harness'), { recursive: true });
   mkdirSync(join(repoRoot, '.archcontext', 'model', 'nodes'), { recursive: true });
   mkdirSync(join(repoRoot, 'src', 'core'), { recursive: true });
-  writeFileSync(join(packageRoot, 'package.json'), `${JSON.stringify({ name: 'archctx', version: '0.4.0', bin: { archctx: './bin/archctx' } })}\n`);
+  writeFileSync(join(packageRoot, 'package.json'), `${JSON.stringify({ name: 'archctx', version: '0.4.1', engines: { node: '>=24 <26' }, bin: { archctx: './bin/archctx' } })}\n`);
   const binary = join(packageRoot, 'bin', 'archctx');
   writeFileSync(binary, '#!/bin/sh\nexit 99\n');
   chmodSync(binary, 0o755);
   symlinkSync(join('..', 'archctx', 'bin', 'archctx'), join(binRoot, 'archctx'));
   writeFileSync(join(repoRoot, '.ai', 'harness', 'policy.json'), `${JSON.stringify({
     context: { capability_source: 'archcontext' },
-    architecture: { projection_provider: 'archctx', projection_apply: 'manual', projection_version: '0.4.0', projection_timeout_ms: 120000 },
+    architecture: { projection_provider: 'archctx', projection_apply: 'manual', projection_version: '0.4.1', projection_timeout_ms: 120000 },
   })}\n`);
   writeFileSync(join(repoRoot, '.archcontext', 'model', 'nodes', 'capability.test.core.yaml'), `schemaVersion: archcontext.node/v2
 kind: capability
@@ -80,7 +82,7 @@ extensions:
 function capabilities() {
   return {
     schemaVersion: 'archcontext.capabilities/v1',
-    package: { name: 'archctx', version: '0.4.0' },
+    package: { name: 'archctx', version: '0.4.1' },
     protocols: {
       projectionRequest: 'archcontext.projection-request/v1',
       projectionResult: 'archcontext.projection-result/v1',
@@ -139,6 +141,28 @@ function runner(calls: Array<{ binary: string; args: readonly string[] }>, docs:
 }
 
 describe('package-local ArchContext projection provider', () => {
+  test('does not expose caller-authored architecture acceptance as CLI authority', () => {
+    const command = buildArchitectureProjectionCommand();
+    for (const name of ['check', 'plan', 'apply', 'adopt']) {
+      const subcommand = command.commands.find((candidate) => candidate.name() === name);
+      expect(subcommand).toBeDefined();
+      expect(subcommand!.options.map((option) => option.long)).not.toContain('--accepted-change-set-id');
+      expect(subcommand!.options.map((option) => option.long)).not.toContain('--accepted-event-id');
+      expect(subcommand!.options.map((option) => option.long)).not.toContain('--accepted-reason');
+      expect(subcommand!.options.map((option) => option.long)).not.toContain('--accepted-node-id');
+    }
+
+    const invalid = request(fixture().repoRoot);
+    invalid.acceptedChange = {
+      changeSetId: 'changeset.unsorted',
+      eventId: 'event.unsorted',
+      reasonCodes: ['ownership-changed', 'node-added'],
+      affectedNodeIds: ['capability.workflow', 'capability.runtime'],
+    };
+    expect(projectionRequestIssues(invalid)).toContain('acceptedChange.reasonCodes must be sorted, unique and non-empty');
+    expect(projectionRequestIssues(invalid)).toContain('acceptedChange.affectedNodeIds must be sorted, unique and non-empty');
+  });
+
   test('manual command exit status distinguishes clean/planned from human and failure outcomes', () => {
     expect(architectureProjectionExitCode('check', 'noop')).toBe(0);
     expect(architectureProjectionExitCode('check', 'planned')).toBe(1);
@@ -156,7 +180,7 @@ describe('package-local ArchContext projection provider', () => {
     const resolved = resolvePackageLocalArchctx(f.consumerRoot);
     expect(resolved.binaryPath).toBe(realpathSync(f.binary));
     writeFileSync(join(f.consumerRoot, 'node_modules', 'archctx', 'package.json'), '{"name":"archctx","version":"0.3.0"}\n');
-    expect(() => resolvePackageLocalArchctx(f.consumerRoot)).toThrow('expected archctx@0.4.0');
+    expect(() => resolvePackageLocalArchctx(f.consumerRoot)).toThrow('expected archctx@0.4.1');
   });
 
   test('resolves a hoisted package from an installed repo-harness package root', () => {
@@ -174,10 +198,56 @@ describe('package-local ArchContext projection provider', () => {
     expect(calls).toHaveLength(0);
   });
 
+  test('does not enable apply for a partial model that lacks manifest and product authority', () => {
+    const f = fixture();
+    const calls: Array<{ binary: string; args: readonly string[] }> = [];
+    const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, {
+      consumerRoot: f.consumerRoot,
+      policy,
+      run: runner(calls, projectionEnvelope(captureArchitectureProjectionSnapshot(f.repoRoot))),
+    });
+    expect(readiness.projectionProvider.state).toBe('ready');
+    expect(readiness.modelAuthority.ready).toBe(true);
+    expect(readiness.apply.enabled).toBe(false);
+  });
+
+  test('fails closed when PATH has no Node runtime compatible with archctx', () => {
+    const f = fixture();
+    const fakeBin = join(f.root, 'bin');
+    mkdirSync(fakeBin, { recursive: true });
+    const node = join(fakeBin, 'node');
+    writeFileSync(node, '#!/bin/sh\necho v22.14.0\n');
+    chmodSync(node, 0o755);
+    const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, {
+      consumerRoot: f.consumerRoot,
+      policy,
+      env: { ...process.env, PATH: fakeBin },
+    });
+    expect(readiness.projectionProvider.state).toBe('error');
+    expect(readiness.projectionProvider.reason).toContain('requires Node >=24 <26');
+  });
+
+  test('uses the protected helper exact Node authority without widening PATH', () => {
+    const f = fixture();
+    const fakeBin = join(f.root, 'protected-node');
+    mkdirSync(fakeBin, { recursive: true });
+    const node = join(fakeBin, 'node');
+    writeFileSync(node, '#!/bin/sh\necho v24.18.0\n');
+    chmodSync(node, 0o755);
+    expect(resolveCompatibleNodeRuntime({ PATH: '/usr/bin:/bin', REPO_HARNESS_NODE_BIN: node })).toBe(realpathSync(node));
+    expect(() => resolveCompatibleNodeRuntime({ PATH: '/usr/bin:/bin', REPO_HARNESS_NODE_BIN: 'node' })).toThrow('must be an absolute path');
+  });
+
   test('handshakes capabilities then maps a validated projection result', () => {
     const f = fixture();
     const calls: Array<{ binary: string; args: readonly string[] }> = [];
     const projectionRequest = request(f.repoRoot);
+    projectionRequest.acceptedChange = {
+      changeSetId: 'changeset.add-capability',
+      eventId: 'event.user-accepted',
+      reasonCodes: ['node-added', 'ownership-changed'],
+      affectedNodeIds: ['capability.runtime', 'capability.workflow'],
+    };
     const result = runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner(calls, projectionEnvelope(projectionRequest.expected)), env: { ...process.env, PATH: join(f.root, 'conflicting-path') } });
     expect(calls).toHaveLength(2);
     expect(calls.every((call) => call.binary === realpathSync(f.binary))).toBe(true);
@@ -200,6 +270,13 @@ describe('package-local ArchContext projection provider', () => {
     expect(captureArchitectureProjectionSnapshot(f.repoRoot)).toEqual(before);
     writeFileSync(join(f.repoRoot, '.ai', 'harness', 'runtime-state.json'), '{"updated":true}\n');
     expect(captureArchitectureProjectionSnapshot(f.repoRoot)).toEqual(before);
+    mkdirSync(join(f.repoRoot, '.claude'), { recursive: true });
+    writeFileSync(join(f.repoRoot, '.claude', '.session-id'), 'session-one\n');
+    writeFileSync(join(f.repoRoot, '.claude', '.trace.jsonl'), '{"event":"one"}\n');
+    expect(captureArchitectureProjectionSnapshot(f.repoRoot)).toEqual(before);
+    writeFileSync(join(f.repoRoot, '.claude', 'settings.json'), '{}\n');
+    expect(captureArchitectureProjectionSnapshot(f.repoRoot).worktreeDigest).not.toBe(before.worktreeDigest);
+    rmSync(join(f.repoRoot, '.claude', 'settings.json'));
     mkdirSync(join(f.repoRoot, 'nested'), { recursive: true });
     writeFileSync(join(f.repoRoot, 'nested', 'AGENTS.md'), 'not a projection target\n');
     expect(captureArchitectureProjectionSnapshot(f.repoRoot).worktreeDigest).not.toBe(before.worktreeDigest);
@@ -251,7 +328,7 @@ describe('package-local ArchContext projection provider', () => {
     expect(manifest.devDependencies?.['archctx-contracts']).toBeUndefined();
     expect(manifest.scripts?.['check:archctx-integration']).toBe('bun scripts/axr5-archctx-clean-room.ts');
     expect(readback.status).toBe('verified');
-    expect(readback.packages.contracts.version).toBe('0.4.0');
+    expect(readback.packages.contracts.version).toBe('0.4.1');
     expect(readback.consumer.authoritativeNodeSchema).toBe('archcontext.node/v2');
     expect(readback.consumer.authoritativeNodeSchemaDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(readback.source.dirtySourceUsed).toBe(false);

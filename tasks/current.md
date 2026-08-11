@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-09T05:50:50+0800 -->
+<!-- updated_at: 2026-08-11T13:46:03+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-09T05:50:50+0800
-> **Source Branch**: codex/axr7-consumer-e2e-adoption-dogfood
-> **Source Commit**: 51b0b867
+> **Updated At**: 2026-08-11T13:46:03+0800
+> **Source Branch**: codex/managed-toolchain-reconciliation-ship-fixes
+> **Source Commit**: db7b6aac
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -35,6 +35,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - /Users/ancienttwo/Projects/repo-harness-wt-opencode-cross-review-runtime: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-opencode-cross-review-runtime
 - /Users/ancienttwo/Projects/repo-harness-wt-opencode-execution-capsule-falsifier: plans/plan-20260809-0230-opencode-execution-capsule-falsifier.md
 - /Users/ancienttwo/Projects/repo-harness-wt-opencode-execution-capsule-falsifier: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-opencode-execution-capsule-falsifier
+- /Users/ancienttwo/Projects/repo-harness-wt-reverse-skill-recommended-dependency: plans/plan-20260810-1128-reverse-skill-recommended-dependency.md
+- /Users/ancienttwo/Projects/repo-harness-wt-reverse-skill-recommended-dependency: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-reverse-skill-recommended-dependency
 - /Users/ancienttwo/Projects/repo-harness-wt-untrack-cursor-dir: plans/plan-20260807-0847-untrack-cursor-dir.md
 - /Users/ancienttwo/Projects/repo-harness-wt-untrack-cursor-dir: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-untrack-cursor-dir
 ## Active Sprint
@@ -60,19 +62,18 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: 9 changed/untracked path(s)
 
 ```
- D plans/plan-20260809-0327-axr7-consumer-e2e-adoption-dogfood.md
- D tasks/contracts/20260809-0327-axr7-consumer-e2e-adoption-dogfood.contract.md
- D tasks/notes/20260809-0327-axr7-consumer-e2e-adoption-dogfood.notes.md
- D tasks/reviews/20260809-0327-axr7-consumer-e2e-adoption-dogfood.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260809-0327-axr7-consumer-e2e-adoption-dogfood.md
-?? tasks/archive/contract-20260809-0550-axr7-consumer-e2e-adoption-dogfood.md
-?? tasks/archive/notes-20260809-0550-axr7-consumer-e2e-adoption-dogfood.md
-?? tasks/archive/review-20260809-0550-axr7-consumer-e2e-adoption-dogfood.md
-?? tasks/archive/todo-20260809-0550-axr7-consumer-e2e-adoption-dogfood.md
+ D plans/plan-20260811-1124-managed-toolchain-reconciliation-ship-fixes.md
+ D tasks/contracts/20260811-1124-managed-toolchain-reconciliation-ship-fixes.contract.md
+ D tasks/notes/20260811-1124-managed-toolchain-reconciliation-ship-fixes.notes.md
+ D tasks/reviews/20260811-1124-managed-toolchain-reconciliation-ship-fixes.review.md
+?? plans/archive/plan-20260811-1124-managed-toolchain-reconciliation-ship-fixes.md
+?? tasks/archive/contract-20260811-1346-managed-toolchain-reconciliation-ship-fixes.md
+?? tasks/archive/notes-20260811-1346-managed-toolchain-reconciliation-ship-fixes.md
+?? tasks/archive/review-20260811-1346-managed-toolchain-reconciliation-ship-fixes.md
+?? tasks/archive/todo-20260811-1346-managed-toolchain-reconciliation-ship-fixes.md
 ```
 
 ## Source Artifacts

@@ -77,6 +77,49 @@ function writeFakeCodegraph(fakeBin: string, logFile: string): void {
   );
 }
 
+function setupManagedRuntimeReadback(home: string, fakeBin: string, harnessVersion = '9.9.9'): void {
+  const globalModules = join(home, '.bun', 'install', 'global', 'node_modules');
+  const harness = join(globalModules, 'repo-harness');
+  const archctx = join(globalModules, 'archctx');
+  mkdirSync(harness, { recursive: true });
+  mkdirSync(join(archctx, 'bin'), { recursive: true });
+  mkdirSync(join(globalModules, 'archctx-contracts'), { recursive: true });
+  mkdirSync(join(globalModules, '@colbymchenry', 'codegraph'), { recursive: true });
+  writeFileSync(join(harness, 'package.json'), JSON.stringify({
+    name: 'repo-harness',
+    version: harnessVersion,
+    dependencies: { archctx: '0.4.1', 'archctx-contracts': '0.4.1' },
+  }));
+  writeFileSync(join(archctx, 'package.json'), JSON.stringify({
+    name: 'archctx',
+    version: '0.4.1',
+    engines: { node: '>=24 <26' },
+    bin: { archctx: './bin/archctx.mjs' },
+    dependencies: { '@colbymchenry/codegraph': '1.5.0' },
+  }));
+  writeExecutable(join(archctx, 'bin', 'archctx.mjs'), '#!/usr/bin/env node\n');
+  writeFileSync(join(globalModules, 'archctx-contracts', 'package.json'), JSON.stringify({ name: 'archctx-contracts', version: '0.4.1' }));
+  writeFileSync(join(globalModules, '@colbymchenry', 'codegraph', 'package.json'), JSON.stringify({ name: '@colbymchenry/codegraph', version: '1.5.0' }));
+  const systemNode = spawnSync('node', ['-p', 'process.execPath'], { encoding: 'utf-8' }).stdout.trim();
+  writeExecutable(join(fakeBin, 'node'), [
+    '#!/bin/bash',
+    'if [[ "${1:-}" == "--version" ]]; then echo v24.11.0; exit 0; fi',
+    `if [[ "\${1:-}" == *"/archctx/bin/archctx.mjs" ]]; then printf '%s\\n' '${JSON.stringify({
+      schemaVersion: 'archcontext.capabilities/v1',
+      package: { name: 'archctx', version: '0.4.1' },
+      protocols: {
+        projectionRequest: 'archcontext.projection-request/v1',
+        projectionResult: 'archcontext.projection-result/v1',
+        architectureRefreshSignal: 'archcontext.architecture-refresh-signal/v1',
+      },
+      renderers: { architectureDocs: 'archcontext.docs-renderer/v2', agentContext: 'archcontext.agent-context-renderer/v1' },
+      features: ['architecture-docs-renderer-v2', 'architecture-refresh-signal-v1', 'projection-protocol-v1'],
+    })}'; exit 0; fi`,
+    `exec "${systemNode}" "$@"`,
+    '',
+  ].join('\n'));
+}
+
 describe('install command global runtime bootstrap', () => {
   test('upgrades an old Bun runtime before any global install or update steps', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-init-bun-floor-'));
@@ -190,8 +233,11 @@ describe('install command global runtime bootstrap', () => {
       const childEnv: NodeJS.ProcessEnv = {
         ...process.env,
         HOME: home,
+        BUN_INSTALL: join(home, '.bun'),
         PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
       };
+      const harnessVersion = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version as string;
+      setupManagedRuntimeReadback(home, fakeBin, harnessVersion);
       delete childEnv.REPO_HARNESS_BUN_EXECUTABLE;
 
       const res = spawnSync(
@@ -209,10 +255,12 @@ describe('install command global runtime bootstrap', () => {
         { cwd: repo, encoding: 'utf-8', env: childEnv },
       );
 
-      expect(res.status).toBe(0);
-      const runtimeStep = JSON.parse(res.stdout).steps[0];
+      expect(res.status, `${res.stderr}\n${res.stdout}`).toBe(0);
+      const steps = JSON.parse(res.stdout).steps as Array<{ step: string; status: string; command?: string[] }>;
+      const runtimeStep = steps.find((step) => step.step === 'ensure Bun runtime')!;
       expect(runtimeStep.status).toBe('skipped');
-      expect(runtimeStep.command[0]).toBe(process.execPath);
+      expect(runtimeStep.command?.[0]).toBe(process.execPath);
+      expect(steps.find((step) => step.step === 'install repo-harness CLI')?.status).toBe('skipped');
       expect(existsSync(bunLog)).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -299,6 +347,127 @@ describe('install command global runtime bootstrap', () => {
       rmSync(tmp, { recursive: true, force: true });
     }
   }, 15000);
+
+  test('update mode reconciles mandatory dependencies and refreshes explicitly selected Waza, Mermaid, and CodeGraph', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-managed-update-'));
+    const source = join(tmp, 'source');
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    const bunLog = join(tmp, 'bun.log');
+    const bunxLog = join(tmp, 'bunx.log');
+    const codegraphLog = join(tmp, 'codegraph.log');
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(home, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      setupFakeSource(source);
+      setupManagedRuntimeReadback(home, fakeBin);
+      for (const skill of ['think', 'hunt', 'check', 'health', 'mermaid']) {
+        mkdirSync(join(home, '.agents', 'skills', skill), { recursive: true });
+        writeFileSync(join(home, '.agents', 'skills', skill, 'SKILL.md'), `# stale ${skill}\n`);
+      }
+      mkdirSync(join(home, '.agents', 'rules'), { recursive: true });
+      mkdirSync(join(home, '.codex', 'rules'), { recursive: true });
+      for (const rule of ['anti-patterns.md', 'chinese.md', 'durable-context.md', 'english.md']) {
+        writeFileSync(join(home, '.agents', 'rules', rule), '# stale rule\n');
+        writeFileSync(join(home, '.codex', 'rules', rule), '# stale rule\n');
+      }
+      writeFakeCodegraph(fakeBin, codegraphLog);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nif [[ " $* " == *" tw93/Waza "* ]]; then for rule in anti-patterns.md chinese.md durable-context.md english.md; do printf '# refreshed rule\\n' > "$HOME/.agents/rules/$rule"; done; fi\nexit 0\n`);
+
+      const result = runGlobalRuntimeSetup({
+        sourceRoot: source,
+        cwd: repo,
+        target: 'codex',
+        profile: 'full',
+        installSpec: 'repo-harness@9.9.9',
+        updateMode: true,
+        externalSkills: true,
+        syncSkill: false,
+        hostAdapters: false,
+        env: {
+          ...process.env,
+          HOME: home,
+          BUN_INSTALL: join(home, '.bun'),
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+          REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
+          AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: '0',
+        },
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.steps.find((step) => step.step === 'verify managed runtime dependencies')).toMatchObject({ status: 'ok' });
+      expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add tw93/Waza -g -a codex -s think hunt check health -y');
+      expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add BfdCampos/dotfiles -g -a codex -s mermaid -y');
+      expect(readFileSync(bunLog, 'utf-8')).toContain('add -g @colbymchenry/codegraph@1.5.0');
+      expect(result.steps.find((step) => step.step === 'ensure CodeGraph CLI')?.detail).toBe('updated=1.5.0');
+      expect(readFileSync(join(home, '.codex', 'rules', 'chinese.md'), 'utf-8')).toBe('# refreshed rule\n');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  test('update mode preserves the working CLI and fails closed when Bun leaves a stale mandatory dependency tree', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-managed-update-repair-'));
+    const source = join(tmp, 'source');
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    const bunLog = join(tmp, 'bun.log');
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(home, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      setupFakeSource(source);
+      setupManagedRuntimeReadback(home, fakeBin);
+      const archctxManifest = join(home, '.bun', 'install', 'global', 'node_modules', 'archctx', 'package.json');
+      const stale = JSON.parse(readFileSync(archctxManifest, 'utf-8'));
+      stale.version = '0.3.0';
+      writeFileSync(archctxManifest, JSON.stringify(stale));
+      writeExecutable(join(fakeBin, 'bun'), [
+        '#!/bin/bash',
+        `printf '%s\\n' "$*" >> "${bunLog}"`,
+        'if [[ "${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi',
+        'exit 0',
+        '',
+      ].join('\n'));
+
+      const result = runGlobalRuntimeSetup({
+        sourceRoot: source,
+        cwd: repo,
+        profile: 'minimal',
+        installSpec: 'repo-harness@9.9.9',
+        updateMode: true,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        codegraph: false,
+        env: {
+          ...process.env,
+          HOME: home,
+          BUN_INSTALL: join(home, '.bun'),
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+          REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
+        },
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.steps.find((step) => step.step === 'verify managed runtime dependencies')).toMatchObject({
+        status: 'failed',
+        detail: expect.stringContaining('managed runtime mismatch'),
+      });
+      const log = readFileSync(bunLog, 'utf-8');
+      expect(log.match(/add -g repo-harness@9\.9\.9/g)).toHaveLength(1);
+      expect(log).not.toContain('remove -g repo-harness');
+      expect(existsSync(join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness', 'package.json'))).toBe(true);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 15_000);
 
   test('fails closed before host projection when the pinned Reverse Skill tree digest drifts', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-reverse-skill-integrity-'));
@@ -516,7 +685,7 @@ exit 0
     }
   });
 
-  test('full installs bundled cross-review capability when external marketplace skills are disabled', () => {
+  test('full installs bundled cross-review while mutable marketplace skills stay disabled by default', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-full-cross-review-'));
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
@@ -532,7 +701,6 @@ exit 0
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
-        externalSkills: false,
         codegraph: false,
         env: { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun') },
       }, { authorityHome: () => home });
@@ -629,7 +797,7 @@ exit 0
       const result = runGlobalRuntimeSetup({
         sourceRoot: ROOT,
         cwd: repo,
-        target: 'codex',
+        target: 'both',
         profile: 'full',
         installCli: false,
         syncSkill: false,
@@ -643,12 +811,91 @@ exit 0
       expect(result.exitCode).toBe(1);
       expect(result.steps.find(({ step }) => step === 'configure Waza skills')).toMatchObject({
         status: 'failed',
-        detail: expect.stringContaining('refusing to overwrite unowned host skill'),
+        detail: expect.stringContaining('refusing to refresh unowned host skill'),
       });
+      expect(existsSync(join(home, '.claude', 'skills', 'think'))).toBe(false);
+      expect(existsSync(join(home, '.claude', 'skills', 'mermaid'))).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
   });
+
+  test('update mode checks the mandatory closure even when CLI installation is disabled', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-managed-update-no-cli-'));
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    try {
+      mkdirSync(home, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      setupManagedRuntimeReadback(home, fakeBin, '9.9.8');
+      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n');
+
+      const result = runGlobalRuntimeSetup({
+        sourceRoot: ROOT,
+        cwd: repo,
+        profile: 'minimal',
+        installCli: false,
+        installSpec: 'repo-harness@9.9.9',
+        updateMode: true,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        codegraph: false,
+        env: {
+          ...process.env,
+          HOME: home,
+          BUN_INSTALL: join(home, '.bun'),
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+          REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
+        },
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.steps.find((step) => step.step === 'verify managed runtime dependencies')).toMatchObject({ status: 'failed' });
+      expect(result.steps.some((step) => step.step === 'install host adapters')).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test('the installed candidate handoff checks its closure before projecting host files', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-candidate-handoff-'));
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    const codexSkills = join(tmp, 'codex-skills');
+    try {
+      mkdirSync(home, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      setupManagedRuntimeReadback(home, fakeBin, JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version as string);
+      const globalHarness = join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness');
+      rmSync(globalHarness, { recursive: true, force: true });
+      symlinkSync(ROOT, globalHarness, 'dir');
+      writeExecutable(join(fakeBin, 'node'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo v22.14.0; exit 0; fi\nexit 1\n');
+
+      const result = spawnSync('bash', [join(ROOT, 'scripts', 'sync-codex-installed-copies.sh')], {
+        cwd: repo,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          HOME: home,
+          BUN_INSTALL: join(home, '.bun'),
+          PATH: `${fakeBin}:${join(process.env.HOME ?? '', '.bun', 'bin')}:/usr/bin:/bin`,
+          AGENTIC_DEV_SOURCE_ROOT: ROOT,
+          CODEX_SKILLS_ROOT: codexSkills,
+        },
+      });
+
+      expect(result.status, `${result.stderr}\n${result.stdout}`).toBe(1);
+      expect(result.stderr).toContain('requires Node >=24 <26');
+      expect(existsSync(codexSkills)).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 15_000);
 
   test('npx cache sources force copy-based installed skill sync', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-init-npx-'));
@@ -899,6 +1146,7 @@ exit 0
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       mkdirSync(join(home, '.repo-harness'), { recursive: true });
+      setupManagedRuntimeReadback(home, fakeBin);
       writeFileSync(join(home, '.repo-harness', 'install-state.json'), `${JSON.stringify({
         protocol: 2,
         profile: 'full',
@@ -931,6 +1179,7 @@ exit 0
           env: {
             ...process.env,
             HOME: home,
+            BUN_INSTALL: join(home, '.bun'),
             PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
             REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
           },
@@ -961,6 +1210,7 @@ exit 0
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
+      setupManagedRuntimeReadback(home, fakeBin);
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n`);
 
       const res = spawnSync(
@@ -982,6 +1232,7 @@ exit 0
           env: {
             ...process.env,
             HOME: home,
+            BUN_INSTALL: join(home, '.bun'),
             PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
             REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
           },

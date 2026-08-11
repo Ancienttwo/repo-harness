@@ -36,13 +36,17 @@ marketplace plugins.
 adapters. It intentionally does not uninstall Waza, Mermaid, Reverse Skill, CodeGraph,
 brain config, package-manager globals, or user-authored sibling hook entries.
 
-`repo-harness update` refreshes only the CLI and repo-harness-owned user-level
-runtime by default. Third-party tooling and CodeGraph registration stay
-readiness findings from `repo-harness setup check` unless the update command is
-run with an explicit opt-in such as `--with-external-skills` or
-`--configure-codegraph`. Repo-local workflow refresh stays on
-`repo-harness init`; `setup check --check-updates` reports an Agent action when
-the current adopted repo's dry-run adoption plan has pending operations.
+`repo-harness update` is a reconciliation command, not a best-effort package
+install. It verifies the installed package's exact `archctx` and
+`archctx-contracts` dependencies, package-local CodeGraph, compatible ArchContext
+Node runtime, and capability handshake. A stale Bun global dependency tree is
+reported with explicit remove/install recovery commands; update does not remove
+a working CLI before a replacement is known-good. The global CodeGraph CLI/MCP
+is refreshed at the exact shipped compatibility version. Mutable third-party
+Waza and Mermaid providers remain behind explicit `--with-external-skills`;
+`--no-codegraph` disables the CodeGraph refresh.
+Repo-local workflow refresh stays on `repo-harness init`; `setup check
+--check-updates` remains the read-only advisory surface.
 
 The cross-review skill is **harness-owned and self-contained** — its source
 lives in `assets/skills/repo-harness-cross-review/` and it wraps the peer CLI
@@ -434,7 +438,7 @@ diff -qr ~/.agents/skills/geju ~/.codex/skills/geju
 ### CodeGraph
 
 ```bash
-bun add -g @colbymchenry/codegraph@latest && codegraph sync . && codegraph status .
+bun add -g @colbymchenry/codegraph@1.5.0 && codegraph sync . && codegraph status .
 ```
 
 ## Agent Fleet

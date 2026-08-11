@@ -127,13 +127,12 @@ export interface ResolveOptionalRuntimeDepsOptions {
  * Resolve the two user-selectable optional dependencies (external skills,
  * CodeGraph) for the `init`/`install` global runtime bootstrap.
  *
- * Non-interactive (non-TTY, or `--json`): unchanged from today — default on,
- * `--no-external-skills`/`--no-codegraph` opt out.
+ * Non-interactive (non-TTY, or `--json`): mutable external skills are opt-in;
+ * CodeGraph follows the command's explicit/default option value.
  *
  * Interactive: for each item not explicitly passed on the CLI (i.e. its
- * option value source isn't `'cli'`), prompt; Enter/`y` keeps today's
- * default-on outcome, `n` skips it. An explicitly passed `--no-*` flag is
- * honored without prompting.
+ * option value source isn't `'cli'`), prompt; Enter/`y` keeps the command's
+ * configured default, `n` skips it. Explicit flags are honored without prompting.
  */
 export async function resolveOptionalRuntimeDeps(
   rawOpts: GlobalRuntimeCommandOptions,
@@ -360,7 +359,7 @@ export function buildProgram(): Command {
     .option('--no-cli', 'Skip installing the repo-harness CLI globally')
     .option('--no-sync-skill', 'Skip refreshing repo-harness skill aliases under host skill roots')
     .option('--no-hooks', 'Skip global hook adapter installation during full runtime install')
-    .option('--no-external-skills', 'Skip Waza, Mermaid, and cross-review (repo-harness-cross-review/claude-plan) skill bootstrap')
+    .option('--no-external-skills', 'Skip mutable third-party Waza and Mermaid skill bootstrap')
     .option('--with-reverse-skill', 'Explicitly install the high-risk reverse-skill-router after independent authorization review')
     .option('--no-codegraph', 'Skip CodeGraph CLI/MCP configuration')
     .option('--brain-root <path>', 'Brain vault root to persist for repo-harness brain commands')
@@ -542,11 +541,11 @@ export function buildProgram(): Command {
     .option('--no-cli', 'Skip installing the repo-harness CLI globally')
     .option('--no-sync-skill', 'Skip refreshing repo-harness skill aliases under host skill roots')
     .option('--no-hooks', 'Skip global hook adapter installation')
-    .option('--with-external-skills', 'Also bootstrap third-party Waza, Mermaid, and cross-review skills')
+    .option('--with-external-skills', 'Also refresh mutable third-party Waza and Mermaid providers')
     .option('--with-reverse-skill', 'Explicitly install the high-risk reverse-skill-router after independent authorization review')
-    .option('--no-external-skills', 'Compatibility no-op; update no longer bootstraps third-party skills by default')
-    .option('--configure-codegraph', 'Also configure CodeGraph CLI/MCP during runtime refresh')
-    .option('--no-codegraph', 'Compatibility no-op; update no longer configures CodeGraph by default')
+    .option('--no-external-skills', 'Do not refresh third-party Waza and Mermaid providers (default)')
+    .option('--configure-codegraph', 'Refresh CodeGraph CLI/MCP (default during update)')
+    .option('--no-codegraph', 'Skip refreshing the global CodeGraph CLI/MCP')
     .option('--brain-root <path>', 'Brain vault root for manifest sync')
     .option('--repo <path>', 'Deprecated: use repo-harness init --repo <path>')
     .option('--dry-run', 'Deprecated: use repo-harness init --dry-run for repo-level planning')
@@ -601,11 +600,12 @@ export function buildProgram(): Command {
         target,
         installCli: rawOpts.cli !== false,
         installSpec,
+        updateMode: true,
         syncSkill: rawOpts.syncSkill !== false,
         hostAdapters: rawOpts.hooks !== false,
-        externalSkills: rawOpts.withExternalSkills === true,
+        externalSkills: rawOpts.externalSkills === false ? false : rawOpts.withExternalSkills === true ? true : undefined,
         reverseSkill: rawOpts.withReverseSkill === true,
-        codegraph: rawOpts.configureCodegraph === true,
+        codegraph: rawOpts.codegraph === false ? false : rawOpts.configureCodegraph === true ? true : undefined,
         brainRoot: rawOpts.brainRoot,
       });
       if (rawOpts.json === true) {

@@ -26,9 +26,18 @@ validates any recorded state before mutation but does not inherit its profile,
 so pass `--profile minimal` explicitly when refreshing a deliberately minimal
 host.
 
+Update also reconciles the installed runtime dependency closure. It requires
+exact package-local `archctx` and `archctx-contracts` versions, ArchContext's
+exact package-local CodeGraph dependency, Node `>=24 <26`, and a successful
+`archctx capabilities --json` handshake. Both profiles refresh the exact global
+CodeGraph CLI/MCP by default. Waza and Mermaid remain mutable third-party
+providers and refresh only with explicit `--with-external-skills`;
+`--no-codegraph` is the bounded CodeGraph opt-out.
+
 Full always projects the package-bundled cross-review and `claude-plan` Skills
-required by its provider surfaces. Marketplace Waza and Mermaid are selected by
-full as well; minimal does not select them.
+required by its provider surfaces. Marketplace Waza and Mermaid are mutable
+third-party providers and are selected only by an explicit install prompt or
+`update --with-external-skills`, independent of the stored profile.
 
 `reverse-skill-router` is a recommended but explicit-only dependency. Its
 upstream pack tells agents to treat a mentioned target as authorized, which is

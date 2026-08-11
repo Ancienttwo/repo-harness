@@ -1,9 +1,9 @@
 # workflow-engine/contract-assets 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" sourceDigest="sha256:e2f869f09ac3c18691f44db23f176e03410ef56bbe5977a9a1e3c70a9bdc63a7" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:c30194997ad313067865c5091dbc7b50e06315616dc52c576c80810473c37937" verifiedAgainst="codex/axr7-consumer-e2e-adoption-dogfood@99c645f368e0c0269cd8871f9f0160cd59c55260@2026-08-09T03:26:42+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" sourceDigest="sha256:d3f85ff5d717213da582ca1641fbd32c6241f5b232754593ffcb6c3187397951" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:784fc68ad5a4d03f4a0a1d1614ea33b02b4964fb4ce2df5abbd83bef2a9956d3" verifiedAgainst="codex/managed-toolchain-reconciliation-ship-fixes@65eb3891783559c6c51d8c0bc6c537fa00c323c8@2026-08-10T00:38:07+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`codex/axr7-consumer-e2e-adoption-dogfood@99c645f368e0c0269cd8871f9f0160cd59c55260`(2026-08-09)
+> **Verified against**:`codex/managed-toolchain-reconciliation-ship-fixes@65eb3891783559c6c51d8c0bc6c537fa00c323c8`(2026-08-10)
 > **Capability ID**:`capability.workflow-engine.contract-assets`(kind `capability`)
-> **Matched Prefixes**:`assets/workflow-contract.v1.json`、`.ai/harness/workflow-contract.json`、`.ai/harness/policy.json`、`.ai/context/context-map.json`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-run.ts`、`scripts/contract-worktree.sh`、`scripts/archive-workflow.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`src/cli/commands/init.ts`、`src/cli/commands/global-runtime.ts`、`src/cli/commands/capability-context.ts`、`src/cli/runtime/helper-runner.ts`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`
+> **Matched Prefixes**:`assets/workflow-contract.v1.json`、`.ai/harness/workflow-contract.json`、`.ai/harness/policy.json`、`.ai/context/context-map.json`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-run.ts`、`scripts/contract-worktree.sh`、`scripts/archive-workflow.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`src/cli/commands/init.ts`、`src/cli/commands/capability-context.ts`、`src/cli/runtime/helper-runner.ts`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`
 > **Local Contracts**:`assets/AGENTS.md`、`assets/CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與 Git 狀態投影生成,手改會在下次投影被覆蓋。
 
@@ -35,9 +35,9 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 文件數:`160`
-- 總行數:`45892`
-- 匹配前綴:`assets/workflow-contract.v1.json`、`.ai/harness/workflow-contract.json`、`.ai/harness/policy.json`、`.ai/context/context-map.json`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-run.ts`、`scripts/contract-worktree.sh`、`scripts/archive-workflow.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`src/cli/commands/init.ts`、`src/cli/commands/global-runtime.ts`、`src/cli/commands/capability-context.ts`、`src/cli/runtime/helper-runner.ts`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`
+- 文件數:`161`
+- 總行數:`45247`
+- 匹配前綴:`assets/workflow-contract.v1.json`、`.ai/harness/workflow-contract.json`、`.ai/harness/policy.json`、`.ai/context/context-map.json`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-run.ts`、`scripts/contract-worktree.sh`、`scripts/archive-workflow.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`src/cli/commands/init.ts`、`src/cli/commands/capability-context.ts`、`src/cli/runtime/helper-runner.ts`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`
 - 復算:`archctx docs plan --json`(掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`)
 
 ### 1.4 依賴邊界
@@ -105,7 +105,7 @@ sequenceDiagram
 
 1. **helper 数量增长（当前 52）**。每加一个 helper 要同时改 4 处：`helpers.scripts`、`helpers.descriptions`、`scripts/<name>`、`assets/templates/helpers/<name>`。fail-closed 校验保证漏改会红，但这是**线性增长的手工同步成本**——它已经在真实 ship 中触发过（见第 4 节 2026-07-14 段落记录的 rebase 事件）。第一个撑不住的不是正确性，是改动摩擦。
 2. **policy 顶层域数量（当前 29）**。`deepMergeDefaults` 是无 schema 的结构性合并。域数继续涨，「默认值改了但已装仓库不会自动拿到」这类静默偏差会越来越难发现，因为没有 policy schema 版本化与迁移断言。
-3. **capability 数量（当前 10）与最长前缀匹配**。`DUPLICATE_PREFIX` 与 `AMBIGUOUS_MATCH` 已经在守，但注册表本身是单文件、人工排序；到几十个 capability 时，「哪个 prefix 该归谁」的判断会先于工具失效。
+3. **capability 数量（当前 11）与最长前缀匹配**。`DUPLICATE_PREFIX` 与 `AMBIGUOUS_MATCH` 已经在守，但注册表本身是单文件、人工排序；到几十个 capability 时，「哪个 prefix 该归谁」的判断会先于工具失效。
 4. **`assets/templates/` 27k 行**。它是投影，正确性由 `--check` 保证，但每次 helper 改动都在 diff 里翻倍出现，review 信噪比下降。
 
 最小连贯的护栏仍是现有那套：parity 测试 + `sync-helper-sources.ts --check` + `capability-resolver validate` + 自迁移 dry-run。要更进一步，第一刀应是给 `.ai/harness/policy.json` 引入 schema 版本与迁移断言，而不是加抽象。

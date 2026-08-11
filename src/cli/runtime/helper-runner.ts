@@ -1,7 +1,8 @@
-import { existsSync, lstatSync, readFileSync, realpathSync } from 'fs';
+import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from 'fs';
 import { dirname, extname, isAbsolute, join, resolve } from 'path';
 import { userInfo } from 'os';
 import { fileURLToPath } from 'url';
+import { ARCHCONTEXT_NODE_RANGE } from 'archctx-contracts';
 import { runProcess as runBoundedProcess } from '../../effects/process-runner';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -59,6 +60,57 @@ function protectedPath(): string {
   ])].join(':');
 }
 
+function childDirectories(root: string): string[] {
+  if (!existsSync(root)) return [];
+  return readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.isSymbolicLink())
+    .map((entry) => join(root, entry.name))
+    .sort();
+}
+
+function trustedNodeCandidates(): string[] {
+  const home = userInfo().homedir;
+  const nvmVersions = join(home, '.nvm', 'versions', 'node');
+  const candidates = [
+    '/usr/bin/node',
+    '/usr/local/bin/node',
+    '/opt/homebrew/bin/node',
+    ...childDirectories(nvmVersions).map((versionRoot) => join(versionRoot, 'bin', 'node')),
+  ];
+  const toolcacheRoots = process.platform === 'win32'
+    ? ['C:\\hostedtoolcache\\windows\\node']
+    : ['/opt/hostedtoolcache/node', '/Users/runner/hostedtoolcache/node', '/Users/runner/work/_tool/node'];
+  for (const root of toolcacheRoots) {
+    for (const versionRoot of childDirectories(root)) {
+      for (const architectureRoot of childDirectories(versionRoot)) {
+        candidates.push(
+          process.platform === 'win32'
+            ? join(architectureRoot, 'node.exe')
+            : join(architectureRoot, 'bin', 'node'),
+        );
+      }
+    }
+  }
+  return [...new Set(candidates)];
+}
+
+function trustedNodeRuntime(): string | undefined {
+  for (const candidate of trustedNodeCandidates()) {
+    if (!isAbsolute(candidate) || !existsSync(candidate)) continue;
+    const actual = realpathSync(candidate);
+    const stat = lstatSync(actual);
+    if (!stat.isFile() || (stat.mode & 0o111) === 0) continue;
+    const result = runBoundedProcess(actual, ['--version'], {
+      env: { PATH: protectedPath() },
+      inheritEnv: false,
+      timeoutMs: 5_000,
+    });
+    const version = result.stdout.trim().replace(/^v/, '');
+    if (result.status === 0 && Bun.semver.satisfies(version, ARCHCONTEXT_NODE_RANGE)) return actual;
+  }
+  return undefined;
+}
+
 function copyAllowedEnv(source: NodeJS.ProcessEnv, target: NodeJS.ProcessEnv, keys: readonly string[]): void {
   for (const key of keys) {
     const value = source[key];
@@ -66,14 +118,16 @@ function copyAllowedEnv(source: NodeJS.ProcessEnv, target: NodeJS.ProcessEnv, ke
   }
 }
 
-function protectedChildEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+export function protectedChildEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const account = userInfo();
+  const nodeRuntime = trustedNodeRuntime();
   const env: NodeJS.ProcessEnv = {
     HOME: account.homedir,
     USER: account.username,
     LOGNAME: account.username,
     PATH: protectedPath(),
     TMPDIR: '/tmp',
+    ...(nodeRuntime ? { REPO_HARNESS_NODE_BIN: nodeRuntime } : {}),
   };
   copyAllowedEnv(source, env, [
     'LANG',

@@ -131,7 +131,7 @@ try {
     schemaVersion: 'repo-harness.axr6-stop-host-cycle/v1',
     status: 'verified',
     installedPackage: { name: 'repo-harness', tarball: basename(repoHarnessTarball) },
-    provider: { name: 'archctx', version: '0.4.0', packageLocal: true, holdMs: HOLD_MS },
+    provider: { name: 'archctx', version: '0.4.1', packageLocal: true, holdMs: HOLD_MS },
     adapters: {
       codex: { stopTimeoutSeconds: adapters.codex.stop.timeout, nonStopTimeoutSeconds: adapters.codex.postEdit.timeout },
       claude: { stopTimeoutSeconds: adapters.claude.stop.timeout, nonStopTimeoutSeconds: adapters.claude.postEdit.timeout },
@@ -180,7 +180,7 @@ function initializeFixture(root: string): void {
     architecture: {
       projection_provider: 'archctx',
       projection_apply: 'automatic',
-      projection_version: '0.4.0',
+      projection_version: '0.4.1',
       projection_timeout_ms: 120000,
       freshness_gate: 'advisory',
     },
@@ -218,11 +218,12 @@ function writeFakeArchctx(root: string): void {
   mkdirSync(dirname(bin), { recursive: true });
   writeFileSync(join(root, 'package.json'), `${JSON.stringify({
     name: 'archctx',
-    version: '0.4.0',
+    version: '0.4.1',
     type: 'module',
+    engines: { node: '>=24 <26' },
     bin: { archctx: './bin/archctx.mjs' },
   }, null, 2)}\n`);
-  writeFileSync(bin, `#!/usr/bin/env bun
+  writeFileSync(bin, `#!/usr/bin/env node
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 
@@ -230,7 +231,7 @@ const args = process.argv.slice(2);
 if (args[0] === 'capabilities') {
   console.log(JSON.stringify({
     schemaVersion: 'archcontext.capabilities/v1',
-    package: { name: 'archctx', version: '0.4.0' },
+    package: { name: 'archctx', version: '0.4.1' },
     protocols: {
       projectionRequest: 'archcontext.projection-request/v1',
       projectionResult: 'archcontext.projection-result/v1',
@@ -279,7 +280,7 @@ const canonical = (value) => {
   return '{' + Object.keys(value).sort().map((key) => JSON.stringify(key) + ':' + canonical(value[key])).join(',') + '}';
 };
 const receiptDigest = 'sha256:' + createHash('sha256').update(canonical(payload)).digest('hex');
-await Bun.sleep(Number(process.env.AXR6_FAKE_ARCHCTX_HOLD_MS ?? '31000'));
+await new Promise((resolve) => setTimeout(resolve, Number(process.env.AXR6_FAKE_ARCHCTX_HOLD_MS ?? '31000')));
 if (process.env.AXR6_FAKE_ARCHCTX_COMPLETION_MARKER) writeFileSync(process.env.AXR6_FAKE_ARCHCTX_COMPLETION_MARKER, 'complete\\n');
 console.log(JSON.stringify({ schemaVersion: 'archcontext.envelope/v1', ok: true, data: { ...payload, receiptDigest } }));
 `);

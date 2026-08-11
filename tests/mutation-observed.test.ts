@@ -108,6 +108,44 @@ describe('mutation-observed: non-qualifying edits', () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
+
+  test('an out-of-repository absolute path writes no journal event', () => {
+    const cwd = tmpWorkspace('mo-out-of-repo');
+    const outside = tmpWorkspace('mo-outside');
+    try {
+      initRepo(cwd);
+      mkdirSync(join(outside, 'plans'), { recursive: true });
+      writeFileSync(join(outside, 'plans', 'session-plan.md'), '# host-side plan\n');
+      const result = runMutationObserved({
+        collector: collectorFor(cwd),
+        input: editPayload(join(outside, 'plans', 'session-plan.md')),
+      });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toBe('');
+      expect(pendingEvents(cwd)).toEqual([]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test('a traversal-escaping relative path writes no journal event', () => {
+    const cwd = tmpWorkspace('mo-traversal-escape');
+    try {
+      initRepo(cwd);
+      const result = runMutationObserved({
+        collector: collectorFor(cwd),
+        input: editPayload('../escaped.md'),
+      });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toBe('');
+      expect(pendingEvents(cwd)).toEqual([]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
 });
 
 describe('mutation-observed: journal schema', () => {
