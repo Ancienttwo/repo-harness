@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "fs";
 import { homedir, tmpdir } from "os";
-import { delimiter, dirname, join, resolve, sep } from "path";
+import { delimiter, dirname, join, relative, resolve, sep } from "path";
 import { fileURLToPath } from "url";
 import { ARCHCONTEXT_NODE_RANGE, productVersionManifest } from "archctx-contracts";
 import { configureBrainRoot, defaultBrainRootChoice, expandHomePath } from "./brain-root";
@@ -692,6 +692,11 @@ function installExternalSkillGroup(
       HOME: isolatedHome,
       USERPROFILE: isolatedHome,
       XDG_CONFIG_HOME: join(isolatedHome, ".config"),
+      XDG_CACHE_HOME: join(isolatedHome, ".cache"),
+      BUN_INSTALL: join(isolatedHome, ".bun"),
+      BUN_INSTALL_CACHE_DIR: join(isolatedHome, ".bun", "install", "cache"),
+      NPM_CONFIG_CACHE: join(isolatedHome, ".npm"),
+      npm_config_cache: join(isolatedHome, ".npm"),
     };
     // Custom host roots would defeat isolation even with HOME redirected.
     for (const key of ["CODEX_HOME", "CLAUDE_CONFIG_DIR", "AGENTS_HOME", "SKILLS_HOME"]) {
@@ -841,11 +846,22 @@ function preflightStagedSkillProjection(
   step: string,
 ): GlobalRuntimeStep | null {
   const home = homeDir(env);
-  const roots = hostIds(target).map((host) => join(home, host === 'codex' ? '.codex' : '.claude', 'skills'));
+  const canonicalHome = realpathSync(home);
+  const roots = hostIds(target).map((host) => {
+    const hostRoot = host === 'codex' ? '.codex' : '.claude';
+    return {
+      path: join(home, hostRoot, 'skills'),
+      expected: join(canonicalHome, hostRoot, 'skills'),
+    };
+  });
+  for (const root of roots) {
+    const invalid = invalidProjectionRoot(root.path, root.expected);
+    if (invalid) return { step, status: 'failed', detail: invalid };
+  }
   for (const skill of skills) {
     const source = join(home, '.agents', 'skills', skill);
     for (const root of roots) {
-      const destination = join(root, skill);
+      const destination = join(root.path, skill);
       if (!pathEntryExists(destination)) continue;
       try {
         if (existsSync(join(source, 'SKILL.md')) && realpathSync(destination) === realpathSync(source)) continue;
@@ -863,7 +879,14 @@ function projectStagedSkills(
   step: string,
 ): GlobalRuntimeStep {
   const home = homeDir(env);
-  const roots = hostIds(target).map((host) => join(home, host === 'codex' ? '.codex' : '.claude', 'skills'));
+  const canonicalHome = realpathSync(home);
+  const roots = hostIds(target).map((host) => {
+    const hostRoot = host === 'codex' ? '.codex' : '.claude';
+    return {
+      path: join(home, hostRoot, 'skills'),
+      expected: join(canonicalHome, hostRoot, 'skills'),
+    };
+  });
   const projected: string[] = [];
   const created: string[] = [];
   const fail = (detail: string): GlobalRuntimeStep => {
@@ -876,18 +899,20 @@ function projectStagedSkills(
       return fail(`staging skill missing after install: ${source}`);
     }
     for (const root of roots) {
-      const destination = join(root, skill);
-      mkdirSync(root, { recursive: true });
-      if (pathEntryExists(destination)) {
-        try {
+      const destination = join(root.path, skill);
+      try {
+        const invalidBefore = invalidProjectionRoot(root.path, root.expected);
+        if (invalidBefore) return fail(invalidBefore);
+        mkdirSync(root.path, { recursive: true });
+        const invalidAfter = invalidProjectionRoot(root.path, root.expected);
+        if (invalidAfter) return fail(invalidAfter);
+        if (pathEntryExists(destination)) {
           if (realpathSync(destination) === realpathSync(source)) {
             projected.push(destination);
             continue;
           }
-        } catch { /* the fail-closed error below owns unreadable projections */ }
-        return fail(`refusing to overwrite unowned host skill ${destination}`);
-      }
-      try {
+          return fail(`refusing to overwrite unowned host skill ${destination}`);
+        }
         symlinkSync(source, destination, 'dir');
       } catch (error) {
         return fail(`cannot project staged skill ${destination}: ${(error as Error).message}`);
@@ -907,6 +932,33 @@ function pathEntryExists(path: string): boolean {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
     throw error;
   }
+}
+
+function prospectiveCanonicalPath(path: string): string {
+  let ancestor = path;
+  while (!pathEntryExists(ancestor)) {
+    const parent = dirname(ancestor);
+    if (parent === ancestor) throw new Error(`cannot resolve an existing ancestor for ${path}`);
+    ancestor = parent;
+  }
+  return resolve(realpathSync(ancestor), relative(ancestor, path));
+}
+
+function invalidProjectionRoot(root: string, expected: string): string | null {
+  let actual: string;
+  try {
+    actual = prospectiveCanonicalPath(root);
+  } catch (error) {
+    return `cannot resolve host skill root ${root}: ${(error as Error).message}`;
+  }
+  if (actual !== expected) {
+    return `refusing non-canonical host skill root: expected=${expected}; actual=${actual}`;
+  }
+  if (!pathEntryExists(root)) return null;
+  const stat = lstatSync(root);
+  return stat.isDirectory() && !stat.isSymbolicLink()
+    ? null
+    : `refusing non-directory host skill root ${root}`;
 }
 
 function captureWazaSharedRules(env?: NodeJS.ProcessEnv): ReadonlyMap<string, string> {

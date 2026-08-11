@@ -11,7 +11,7 @@ import {
   renameSync,
   rmSync,
 } from "fs";
-import { basename, dirname, join, relative } from "path";
+import { basename, dirname, join, relative, resolve } from "path";
 import { acquireExclusiveDirectoryLock } from "./locking/exclusive-directory-lock";
 
 export type SkillTreeCommitResult =
@@ -33,6 +33,16 @@ function pathEntryExists(path: string): boolean {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
     throw error;
   }
+}
+
+function prospectiveCanonicalPath(path: string): string {
+  let ancestor = path;
+  while (!pathEntryExists(ancestor)) {
+    const parent = dirname(ancestor);
+    if (parent === ancestor) throw new Error(`cannot resolve an existing ancestor for ${path}`);
+    ancestor = parent;
+  }
+  return resolve(realpathSync(ancestor), relative(ancestor, path));
 }
 
 /** Content-address one installed Skill tree without following nested symlinks. */
@@ -76,6 +86,15 @@ export function commitVerifiedSkillTree(
   const copyTree = dependencies.copyTree ?? cpSync;
   const renameTree = dependencies.renameTree ?? renameSync;
   const requestedParent = dirname(destination);
+  const prospectiveParent = dependencies.expectedCanonicalParent === undefined
+    ? null
+    : prospectiveCanonicalPath(requestedParent);
+  if (prospectiveParent !== null && prospectiveParent !== dependencies.expectedCanonicalParent) {
+    return {
+      status: "failed",
+      detail: `staging parent escapes canonical authority: expected=${dependencies.expectedCanonicalParent}; actual=${prospectiveParent}`,
+    };
+  }
   mkdirSync(requestedParent, { recursive: true });
   const parent = realpathSync(requestedParent);
   if (

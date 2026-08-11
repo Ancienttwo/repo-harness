@@ -65,6 +65,7 @@
 - The required selector rejects missing entries, profile-selected entries, unsupported hosts, and missing integrity before provider execution.
 - Integrity-bound installs write first to a disposable HOME, then commit verified bytes through same-filesystem temp copy, post-copy hash, canonical exclusive lock, and atomic rename before host projection.
 - Catalog validation rejects integrity metadata on any profile-selected or non-external package, and runtime projection rejects non-canonical staging roots plus unowned host paths before shared staging changes.
+- Host and staging ancestor symlinks, dangling host roots, and inherited Bun/npm cache roots are covered by hostile-path regression tests; all writes remain under canonical or disposable roots.
 
 ## Residual Risks / Follow-ups
 

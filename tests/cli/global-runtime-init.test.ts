@@ -475,16 +475,22 @@ describe('install command global runtime bootstrap', () => {
     const repo = join(tmp, 'repo');
     const fakeBin = join(tmp, 'bin');
     const isolatedHomeLog = join(tmp, 'isolated-home.log');
+    const isolatedRuntimeLog = join(tmp, 'isolated-runtime.log');
+    const hostileBunInstall = join(tmp, 'hostile-bun-install');
     try {
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
+      mkdirSync(hostileBunInstall, { recursive: true });
       writeExecutable(
         join(fakeBin, 'bun'),
         '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n',
       );
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash
 printf '%s\n' "$HOME" > "${isolatedHomeLog}"
+printf '%s\n%s\n%s\n' "$BUN_INSTALL" "$BUN_INSTALL_CACHE_DIR" "$XDG_CACHE_HOME" > "${isolatedRuntimeLog}"
+mkdir -p "$BUN_INSTALL"
+printf 'isolated\n' > "$BUN_INSTALL/probe"
 mkdir -p "$HOME/.agents/skills/reverse-skill-router" "$HOME/.codex/skills/reverse-skill-router"
 printf '# drifted reverse-skill-router\n' > "$HOME/.agents/skills/reverse-skill-router/SKILL.md"
 printf '# premature host projection\n' > "$HOME/.codex/skills/reverse-skill-router/SKILL.md"
@@ -503,7 +509,12 @@ exit 0
         reverseSkill: true,
         codegraph: false,
         brainRoot: join(home, 'brain'),
-        env: { ...process.env, HOME: home, PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
+        env: {
+          ...process.env,
+          HOME: home,
+          BUN_INSTALL: hostileBunInstall,
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+        },
       });
 
       expect(result.exitCode).toBe(1);
@@ -514,6 +525,11 @@ exit 0
         'isolated staging integrity mismatch',
       );
       expect(readFileSync(isolatedHomeLog, 'utf-8').trim()).not.toBe(home);
+      const [isolatedBunInstall, isolatedBunCache, isolatedXdgCache] = readFileSync(isolatedRuntimeLog, 'utf-8').trim().split('\n');
+      expect(isolatedBunInstall).toBe(join(readFileSync(isolatedHomeLog, 'utf-8').trim(), '.bun'));
+      expect(isolatedBunCache).toBe(join(isolatedBunInstall, 'install', 'cache'));
+      expect(isolatedXdgCache).toBe(join(readFileSync(isolatedHomeLog, 'utf-8').trim(), '.cache'));
+      expect(existsSync(join(hostileBunInstall, 'probe'))).toBe(false);
       expect(existsSync(join(home, '.agents', 'skills', 'reverse-skill-router'))).toBe(false);
       expect(existsSync(join(home, '.codex', 'skills', 'reverse-skill-router'))).toBe(false);
     } finally {
@@ -641,6 +657,90 @@ exit 0
       expect(existsSync(join(home, '.agents', 'skills', 'reverse-skill-router'))).toBe(false);
       expect(readFileSync(join(home, '.codex', 'skills', 'reverse-skill-router', 'SKILL.md'), 'utf-8'))
         .toBe('# user-owned\n');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test('rejects symlinked host skill roots without writing outside HOME', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-reverse-skill-host-root-symlink-'));
+    const source = join(tmp, 'source');
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const outside = join(tmp, 'outside');
+    try {
+      mkdirSync(join(home, '.codex'), { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(outside, { recursive: true });
+      setupFakeSource(source);
+      setReverseSkillIntegrity(source, REVERSE_FAKE_TREE_INTEGRITY);
+      symlinkSync(outside, join(home, '.codex', 'skills'), 'dir');
+
+      const result = runGlobalRuntimeSetup({
+        sourceRoot: source,
+        cwd: repo,
+        target: 'codex',
+        profile: 'minimal',
+        installCli: false,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        reverseSkill: true,
+        codegraph: false,
+        brainRoot: join(home, 'brain'),
+        env: { ...process.env, HOME: home },
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.steps.find((step) => step.step === 'configure Reverse Skill')).toMatchObject({
+        status: 'failed',
+        detail: expect.stringContaining('refusing non-canonical host skill root'),
+      });
+      expect(existsSync(join(outside, 'reverse-skill-router'))).toBe(false);
+      expect(existsSync(join(home, '.agents', 'skills', 'reverse-skill-router'))).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test('dangling host skill roots return a failed step and compensate committed staging', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-reverse-skill-host-root-dangling-'));
+    const source = join(tmp, 'source');
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    try {
+      mkdirSync(join(home, '.codex'), { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      setupFakeSource(source);
+      setReverseSkillIntegrity(source, REVERSE_FAKE_TREE_INTEGRITY);
+      symlinkSync(join(tmp, 'missing-host-root'), join(home, '.codex', 'skills'), 'dir');
+      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash
+mkdir -p "$HOME/.agents/skills/reverse-skill-router"
+printf '# reverse-skill-router\\n' > "$HOME/.agents/skills/reverse-skill-router/SKILL.md"
+exit 0
+`);
+
+      const result = runGlobalRuntimeSetup({
+        sourceRoot: source,
+        cwd: repo,
+        target: 'codex',
+        profile: 'minimal',
+        installCli: false,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        reverseSkill: true,
+        codegraph: false,
+        brainRoot: join(home, 'brain'),
+        env: { ...process.env, HOME: home, PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.steps.find((step) => step.step === 'configure Reverse Skill')).toMatchObject({ status: 'failed' });
+      expect(existsSync(join(home, '.agents', 'skills', 'reverse-skill-router'))).toBe(false);
+      expect(existsSync(join(tmp, 'missing-host-root'))).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

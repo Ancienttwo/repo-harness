@@ -95,6 +95,7 @@ describe("verified Skill tree staging commit", () => {
       expect(commitVerifiedSkillTree(source, destination, skillTreeSha256(source), {
         expectedCanonicalParent: join(home, ".agents", "skills"),
       })).toMatchObject({ status: "failed", detail: expect.stringContaining("escapes canonical authority") });
+      expect(existsSync(join(outside, "skills"))).toBe(false);
       expect(existsSync(join(outside, "skills", "reverse-skill-router"))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });

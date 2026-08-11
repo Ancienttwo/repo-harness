@@ -58,6 +58,13 @@
   projection failure. Explicit-only paths remain in transaction snapshots for
   failure compensation but intentionally stay outside profile ownership, so a
   profile switch neither adopts nor retires a separately authorized install.
+- Adversarial filesystem/environment passes then closed the enclosing-root
+  cases: a symlinked `.agents`, `.agents/skills`, `.codex/.claude`, or host
+  `skills` root is rejected against the canonical HOME before any outside
+  directory or projection is created; dangling host roots return a typed
+  failed step. The disposable provider environment now also binds
+  `BUN_INSTALL`, Bun cache, XDG cache, and npm cache under its temporary HOME
+  instead of inheriting operator-global state.
 
 ## Tradeoffs Considered
 
