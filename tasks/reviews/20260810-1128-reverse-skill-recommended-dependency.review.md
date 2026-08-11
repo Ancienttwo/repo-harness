@@ -31,7 +31,9 @@
 
 ## Verification Evidence
 
-- Waza `/check` run: architecture PASS and security PASS on the final diff; no introduced findings remain.
+- Waza `/check` run: post-merge architecture and security specialists found
+  integrity-route, host-preflight, and staging-symlink gaps; all were fixed and
+  covered by focused regression tests. No introduced finding remains open.
 - Commands run: `bun test`; focused catalog/init/global-runtime/profile/integrity tests; all required repository checks and tarball smoke.
 - Manual checks: pinned upstream list/install in disposable HOME; 41 selectable skills, 348 selected files, scanner reported Critical Risk/17 alerts; final repo-harness smoke projected exactly one Codex symlink and cleaned temporary roots.
 - Supporting artifacts: plan, contract, notes, and this review.
@@ -62,6 +64,7 @@
 - `repo-harness install --with-reverse-skill` and `repo-harness update --with-reverse-skill` are the only selection routes.
 - The required selector rejects missing entries, profile-selected entries, unsupported hosts, and missing integrity before provider execution.
 - Integrity-bound installs write first to a disposable HOME, then commit verified bytes through same-filesystem temp copy, post-copy hash, canonical exclusive lock, and atomic rename before host projection.
+- Catalog validation rejects integrity metadata on any profile-selected or non-external package, and runtime projection rejects non-canonical staging roots plus unowned host paths before shared staging changes.
 
 ## Residual Risks / Follow-ups
 

@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "fs";
 import { homedir, tmpdir } from "os";
 import { delimiter, dirname, join, resolve, sep } from "path";
 import { fileURLToPath } from "url";
@@ -654,6 +654,8 @@ function installExternalSkillGroup(
   const stepName = externalSkillStepName(provider);
   const skillsRoot = join(homeDir(env), '.agents', 'skills');
   const committedIntegritySkills = new Set<string>();
+  const preflight = preflightStagedSkillProjection(skills, target, env, stepName);
+  if (preflight) return preflight;
   const missing = skills.filter((skill) => !existsSync(join(skillsRoot, skill, 'SKILL.md')));
   const ordinaryMissing = missing.filter((skill) => integrityBySkill[skill] == null);
   if (ordinaryMissing.length > 0) {
@@ -756,6 +758,16 @@ function installExternalSkillGroup(
     if (expected === null || expected === undefined) continue;
     const installed = join(skillsRoot, skill);
     try {
+      const stat = lstatSync(installed);
+      const canonicalRoot = realpathSync(skillsRoot);
+      if (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(installed) !== join(canonicalRoot, skill)) {
+        if (committedIntegritySkills.has(skill)) rmSync(installed, { recursive: true, force: true });
+        return {
+          step: stepName,
+          status: "failed",
+          detail: `refusing non-canonical integrity staging root for ${skill}: ${installed}`,
+        };
+      }
       const actual = skillTreeSha256(installed);
       if (actual !== expected) {
         if (committedIntegritySkills.has(skill)) rmSync(installed, { recursive: true, force: true });
@@ -774,7 +786,13 @@ function installExternalSkillGroup(
       };
     }
   }
-  return projectStagedSkills(skills, target, env, stepName);
+  const projection = projectStagedSkills(skills, target, env, stepName);
+  if (projection.status === "failed") {
+    for (const skill of committedIntegritySkills) {
+      rmSync(join(skillsRoot, skill), { recursive: true, force: true });
+    }
+  }
+  return projection;
 }
 
 function installWazaSkills(sourceRoot: string, target: InstallTargetSpec, env?: NodeJS.ProcessEnv, refresh = false): GlobalRuntimeStep {
@@ -820,7 +838,7 @@ function preflightStagedSkillProjection(
     const source = join(home, '.agents', 'skills', skill);
     for (const root of roots) {
       const destination = join(root, skill);
-      if (!existsSync(destination)) continue;
+      if (!pathEntryExists(destination)) continue;
       try {
         if (existsSync(join(source, 'SKILL.md')) && realpathSync(destination) === realpathSync(source)) continue;
       } catch { /* the fail-closed result below owns unreadable projections */ }
@@ -839,28 +857,48 @@ function projectStagedSkills(
   const home = homeDir(env);
   const roots = hostIds(target).map((host) => join(home, host === 'codex' ? '.codex' : '.claude', 'skills'));
   const projected: string[] = [];
+  const created: string[] = [];
+  const fail = (detail: string): GlobalRuntimeStep => {
+    for (const destination of created.reverse()) rmSync(destination, { recursive: true, force: true });
+    return { step, status: 'failed', detail };
+  };
   for (const skill of skills) {
     const source = join(home, '.agents', 'skills', skill);
     if (!existsSync(join(source, 'SKILL.md'))) {
-      return { step, status: 'failed', detail: `staging skill missing after install: ${source}` };
+      return fail(`staging skill missing after install: ${source}`);
     }
     for (const root of roots) {
       const destination = join(root, skill);
       mkdirSync(root, { recursive: true });
-      if (existsSync(destination)) {
+      if (pathEntryExists(destination)) {
         try {
           if (realpathSync(destination) === realpathSync(source)) {
             projected.push(destination);
             continue;
           }
         } catch { /* the fail-closed error below owns unreadable projections */ }
-        return { step, status: 'failed', detail: `refusing to overwrite unowned host skill ${destination}` };
+        return fail(`refusing to overwrite unowned host skill ${destination}`);
       }
-      symlinkSync(source, destination, 'dir');
+      try {
+        symlinkSync(source, destination, 'dir');
+      } catch (error) {
+        return fail(`cannot project staged skill ${destination}: ${(error as Error).message}`);
+      }
+      created.push(destination);
       projected.push(destination);
     }
   }
   return { step, status: 'ok', detail: `projected ${projected.length} host skills` };
+}
+
+function pathEntryExists(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
 }
 
 function captureWazaSharedRules(env?: NodeJS.ProcessEnv): ReadonlyMap<string, string> {

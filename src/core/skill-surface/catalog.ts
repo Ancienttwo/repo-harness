@@ -115,6 +115,7 @@ export type SkillSurfaceCatalogDiagnosticCode =
   | "INVALID_DISCOVERABILITY"
   | "INVALID_HOST"
   | "INVALID_PROFILE"
+  | "INVALID_INTEGRITY_SCOPE"
   | "DUPLICATE_NAME"
   | "DUPLICATE_SOURCE"
   | "COMPONENT_NOT_IN_PROFILE"
@@ -587,6 +588,13 @@ export function validateSkillSurfaceCatalogValue(
   }
 
   for (const [index, pkg] of packages.entries()) {
+    if (pkg.integrity !== null && (pkg.kind !== "external" || pkg.profiles.length > 0)) {
+      diagnostics.push(diagnostic(
+        "INVALID_INTEGRITY_SCOPE",
+        `packages[${index}].integrity`,
+        `${pkg.name}: integrity-bound packages must be explicit-only external packages`,
+      ));
+    }
     const rc = pkg.retirementCandidate;
     if (!rc || rc.replacement === null) continue;
     const targetIndex = names.get(rc.replacement);
@@ -811,7 +819,11 @@ export function requiredExplicitExternalSkillInstallGroup(
   };
 }
 
-/** The union installProfileHostMutationPaths() snapshots/allowlists. */
+/**
+ * The union installProfileHostMutationPaths() snapshots/allowlists. Explicit
+ * packages are included so a failed combined CLI operation can compensate
+ * their writes, even though their lifecycle stays outside profile ownership.
+ */
 export function mutationPathSkillNames(catalog: SkillSurfaceCatalog): {
   readonly repoHarnessSkills: readonly string[];
   readonly externalSkills: readonly string[];
@@ -828,7 +840,12 @@ export function mutationPathSkillNames(catalog: SkillSurfaceCatalog): {
   return { repoHarnessSkills, externalSkills };
 }
 
-/** PROFILE_OWNED_SKILLS parity: profile-selected external packages plus the narrow cross-model-acceptance provider-skills. */
+/**
+ * PROFILE_OWNED_SKILLS parity: profile-selected external packages plus the
+ * narrow cross-model-acceptance provider-skills. Explicit-only packages stay
+ * out so profile switches neither adopt nor retire a separately authorized
+ * install.
+ */
 export function profileOwnedSkillNames(catalog: SkillSurfaceCatalog): readonly string[] {
   return catalog.packages
     .filter((pkg) => (

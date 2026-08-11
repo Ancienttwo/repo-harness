@@ -181,6 +181,26 @@ describe("skill-surface catalog: every validation rejection, proven on a bad fix
     expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, broken])))).toContain("INVALID_PROFILE");
   });
 
+  test("INVALID_INTEGRITY_SCOPE: integrity-bound packages must stay explicit-only external packages", () => {
+    const digest = `sha256:${"a".repeat(64)}`;
+    const profileSelected = {
+      ...FACADE,
+      name: "profile-integrity-bypass",
+      kind: "external",
+      source: null,
+      provider: "example/provider@pinned",
+      integrity: digest,
+      profiles: ["minimal"],
+      discoverability: "external-marketplace",
+      component: "adaptive-workflow",
+    };
+    const nonExternal = { ...FACADE, integrity: digest };
+    expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, profileSelected]))))
+      .toContain("INVALID_INTEGRITY_SCOPE");
+    expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, nonExternal]))))
+      .toContain("INVALID_INTEGRITY_SCOPE");
+  });
+
   test("DUPLICATE_NAME: two packages share a name", () => {
     const result = validateSkillSurfaceCatalogValue(catalogValue([ROUTER, FACADE, { ...FACADE }]));
     expect(codes(result)).toContain("DUPLICATE_NAME");

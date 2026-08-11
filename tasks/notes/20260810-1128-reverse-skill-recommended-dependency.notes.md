@@ -49,6 +49,15 @@
   owner-token/stale-reclaim directory lock, asserts ownership, and atomically
   renames. Fault tests cover copy failure, post-copy mismatch, dangling
   destinations, and killed-owner recovery with a successful retry.
+- Post-merge architecture/security review found two additional authority
+  gaps. The catalog now rejects integrity-bound packages unless they are
+  explicit-only external packages, preventing a future profile/init route
+  from discarding the digest. The runtime now preflights every host path
+  before provider execution, rejects symlink or non-canonical integrity
+  staging roots, and compensates transaction-created staging/host links on a
+  projection failure. Explicit-only paths remain in transaction snapshots for
+  failure compensation but intentionally stay outside profile ownership, so a
+  profile switch neither adopts nor retires a separately authorized install.
 
 ## Tradeoffs Considered
 

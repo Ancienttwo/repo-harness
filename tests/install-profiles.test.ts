@@ -698,6 +698,7 @@ describe('install profiles', () => {
     const planning = applyInstallProfile('full', env, new Date('2026-01-01T00:00:00Z'), first);
     commitInstallHostTransaction(first);
     expect(planning.state.ownership_manifest.some(({ path }) => path.endsWith('/.codex/skills/think'))).toBe(true);
+    expect(planning.state.ownership_manifest.some(({ path }) => path.includes('/reverse-skill-router'))).toBe(false);
 
     const second = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
     prepareInstallProfileSwitch('minimal', env);
