@@ -1792,7 +1792,7 @@ pi_write_harness_policy() {
     "projection_provider": "disabled",
     "projection_apply": "disabled",
     "projection_failure_gate": "advisory",
-    "projection_version": "0.4.1",
+    "projection_version": "0.4.2",
     "projection_timeout_ms": 120000,
     "freshness_gate": "advisory",
     "gate_min_severity": "medium",

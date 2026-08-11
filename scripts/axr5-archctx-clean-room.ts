@@ -7,7 +7,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { PROJECTION_REQUEST_VERSION, type ProjectionRequestV1 } from '../src/core/architecture/projection';
 import { archctxCapabilities, captureArchitectureProjectionSnapshot, runArchitectureProjection } from '../src/effects/architecture/archctx-provider';
 
-const VERSION = '0.4.1';
+const VERSION = '0.4.2';
 const repoRoot = resolve(import.meta.dir, '..');
 const archContextRoot = resolve(flag('--arch-context-root') ?? join(repoRoot, '..', 'arch-context'));
 const revision = flag('--revision') ?? git(archContextRoot, ['rev-parse', 'HEAD']);
@@ -52,9 +52,9 @@ try {
     dependencies: {
       archctx: `file:${archctxTarball}`,
       'archctx-contracts': `file:${contracts.tarball}`,
-      '@colbymchenry/codegraph': `file:${join(archContextRoot, 'node_modules', '@colbymchenry', 'codegraph')}`,
+      '@colbymchenry/codegraph': `file:${installedPackagePath('@colbymchenry', 'codegraph')}`,
       [codeGraphPlatform.name]: `file:${codeGraphPlatform.path}`,
-      '@node-rs/jieba': `file:${join(archContextRoot, 'node_modules', '@node-rs', 'jieba')}`,
+      '@node-rs/jieba': `file:${installedPackagePath('@node-rs', 'jieba')}`,
       [jiebaPlatform.name]: `file:${jiebaPlatform.path}`,
     },
   }, null, 2)}\n`);
@@ -188,14 +188,18 @@ function linkBuildDependencies(checkout: string): void {
     if (name === '@archcontext') continue;
     symlinkSync(join(sourceModules, name), join(targetModules, name), 'dir');
   }
-  const sourceScope = join(sourceModules, '@archcontext');
   const targetScope = join(targetModules, '@archcontext');
   mkdirSync(targetScope, { recursive: true });
-  for (const name of readdirSync(sourceScope)) {
-    const sourcePackage = realpathSync(join(sourceScope, name));
-    if (!sourcePackage.startsWith(`${archContextRoot}/`)) throw new Error(`workspace package escapes source root: ${name}`);
-    const packageRelativePath = sourcePackage.slice(archContextRoot.length + 1);
-    symlinkSync(join(checkout, packageRelativePath), join(targetScope, name), 'dir');
+  const workspaces = (JSON.parse(readFileSync(join(checkout, 'package.json'), 'utf8')) as { workspaces?: unknown }).workspaces;
+  if (!Array.isArray(workspaces) || workspaces.length === 0) throw new Error('checkout package.json declares no workspaces');
+  const checkoutRealPath = realpathSync(checkout);
+  for (const workspaceDir of workspaces) {
+    if (typeof workspaceDir !== 'string') throw new Error(`workspace entry is not a string: ${String(workspaceDir)}`);
+    const packageDir = realpathSync(join(checkout, workspaceDir));
+    if (!packageDir.startsWith(`${checkoutRealPath}/`)) throw new Error(`workspace package escapes checkout: ${workspaceDir}`);
+    const packageName = (JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as { name?: unknown }).name;
+    if (typeof packageName !== 'string' || !packageName.startsWith('@archcontext/')) throw new Error(`unexpected workspace package name: ${String(packageName)}`);
+    symlinkSync(packageDir, join(targetScope, packageName.slice('@archcontext/'.length)), 'dir');
   }
 }
 
@@ -228,9 +232,23 @@ function prepareReleaseVersion(checkout: string): void {
   }
   const productVersionPath = join(checkout, 'packages', 'contracts', 'src', 'product-version.ts');
   const source = readFileSync(productVersionPath, 'utf8');
+  if (!/export const ARCHCONTEXT_PRODUCT_VERSION = "[^"]+";/.test(source)) {
+    throw new Error('product version declaration is missing');
+  }
   const updated = source.replace(/export const ARCHCONTEXT_PRODUCT_VERSION = "[^"]+";/, `export const ARCHCONTEXT_PRODUCT_VERSION = "${VERSION}";`);
-  if (updated === source) throw new Error('product version source was not updated');
   writeFileSync(productVersionPath, updated);
+}
+
+function installedPackagePath(scope: string, name: string): string {
+  const roots = [
+    join(archContextRoot, 'node_modules', scope),
+    join(archContextRoot, 'node_modules', '.bun', 'node_modules', scope),
+  ];
+  for (const root of roots) {
+    const candidate = join(root, name);
+    if (existsSync(candidate)) return candidate;
+  }
+  throw new Error(`installed package is missing: ${scope}/${name}`);
 }
 
 function installedPlatformPackage(scope: string, baseName: string): { name: string; path: string } {
