@@ -40,17 +40,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:a33e64e00dfc38a8ff234c3ba1c102bfb9fcb91c58d54874f8a8a429d1597ab4
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 7e9992caf7692fc684725f3c2cd2421e1b40418c
+> **Verification Evidence SHA256**: sha256:4a969843d9191485ab7eccd2e6d2fce9772bed785ddccaaa6566d77924699019
+> **Issued At**: 2026-08-11T14:56:01.201Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: archctx 0.4.1->0.4.2 synced across all binding points; axr5 clean-room modernized for bun 1.3 layout (workspace links, two-root file: deps, already-at-version guard, all fail closed); proof regenerated verified/0.4.2 dirty=false; full suite 2344 pass 0 fail; gatekeeper content pass bound to 2eb88fe1
 - Findings: none
 
 ## Behavior Diff Notes
