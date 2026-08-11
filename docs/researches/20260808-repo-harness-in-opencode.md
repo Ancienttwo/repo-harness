@@ -649,6 +649,8 @@ running
 
 # 六、Pi 的接入方案
 
+> 后续补充（2026-08-11）：上游 harness-v2（`4181f66`）的 same-process SDK 语义评估已落档于 `20260811-pi-harness-v2-reference-assessment.md`；本节「首版 RPC、后续 same-process SDK」的结论不变。
+
 下文把 `/pi` 理解为当前 `earendil-works/pi` 的 Pi coding agent。
 
 Pi 和 OpenCode 不应使用完全相同的 adapter 实现：
