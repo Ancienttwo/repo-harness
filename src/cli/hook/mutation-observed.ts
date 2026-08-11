@@ -39,7 +39,7 @@ import { basename, dirname, join } from 'path';
 import type { SessionContextSection } from './session-context-budget';
 import { loadMinimalChangePolicy } from './minimal-change-policy';
 import { collectMinimalChangeSignals } from './minimal-change-signals';
-import { fileExists, readText } from '../../effects/state/collect-state-inputs';
+import { canonicalRepoRelativePath, fileExists, readText } from '../../effects/state/collect-state-inputs';
 import { withExclusiveDirectoryLock } from '../../effects/locking/exclusive-directory-lock';
 import type { WorktreeOwnership } from '../../effects/loop/state-input-collector';
 import {
@@ -83,9 +83,13 @@ export function runMutationObserved(opts: MutationObservedInput): MutationObserv
   const payload = parsePayload(opts.input);
 
   const filePath = getFilePath(repoRoot, payload, env);
-  if (!filePath) {
-    // Mirrors `[[ -z "$FILE_PATH" ]] && exit 0` -- the non-qualifying case:
-    // no event, no advisories, no journal write.
+  if (!filePath || canonicalRepoRelativePath(repoRoot, filePath) === null) {
+    // Mirrors `[[ -z "$FILE_PATH" ]] && exit 0` -- the non-qualifying case --
+    // extended fail-closed to targets that do not canonicalize inside this
+    // repository (host-side plan/memory files under ~/.claude, traversal or
+    // symlink escapes): no event, no advisories, no journal write. An
+    // out-of-repo event would otherwise become a projection job that archctx
+    // rejects with non-retryable AC_SCHEMA_INVALID and block the Stop gate.
     return { exitCode: 0, stdout: '', stderr: '' };
   }
 
