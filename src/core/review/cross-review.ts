@@ -77,7 +77,30 @@ export interface CrossReviewFailure {
   readonly recoveredTranscript?: string;
 }
 
-export type CrossReviewResult = CrossReviewSuccess | CrossReviewFailure;
+/**
+ * Provider-side unavailability after the bounded attempt budget is spent.
+ *
+ * The external opinion is advisory: when the provider itself could not be
+ * made to produce a usable transcript within its fixed attempt budget, the
+ * run resolves here (non-blocking) instead of failing the caller. This is
+ * NOT a pass and NOT a synthesized review -- it carries the last attempt's
+ * closed error code so the reason stays explicit. `degraded_scope` never
+ * lands here: an unobservable review scope is the harness's own failure and
+ * stays a blocking CrossReviewFailure.
+ */
+export interface CrossReviewSkipped {
+  readonly status: "skipped";
+  readonly provider: CrossReviewProviderMode;
+  readonly scope: CrossReviewScope;
+  /** Provider attempts actually spent before skipping (always the full budget). */
+  readonly attempts: number;
+  readonly code: CrossReviewErrorCode;
+  readonly message: string;
+  /** Informational only; recovered text never promotes a skipped run to a pass. */
+  readonly recoveredTranscript?: string;
+}
+
+export type CrossReviewResult = CrossReviewSuccess | CrossReviewFailure | CrossReviewSkipped;
 
 // --- Finding / recommendation parsing (pure text processing) ---------------
 

@@ -14,7 +14,7 @@
  * registered, same as every other command module here.
  */
 
-import { runCrossReview } from "../../effects/review/cross-review-runner";
+import { MAX_ATTEMPTS, runCrossReview } from "../../effects/review/cross-review-runner";
 import type { CrossReviewProviderMode, CrossReviewResult } from "../../core/review/cross-review";
 
 export interface CrossReviewCommandOptions {
@@ -48,14 +48,35 @@ export function runCrossReviewCommand(opts: CrossReviewCommandOptions): CrossRev
     env: opts.env,
     now: opts.now,
   });
+  // "skipped" is provider-side unavailability after the bounded attempt
+  // budget: the external opinion is advisory, so it exits 0 and never blocks
+  // the caller. Only a real P1 finding or a blocking failure (degraded scope)
+  // exits nonzero.
   const exitCode = result.status === "ok"
     ? (result.findings.some((finding) => finding.severity === "P1") ? 1 : 0)
-    : 1;
+    : result.status === "skipped"
+      ? 0
+      : 1;
   return { exitCode, result, output: formatCrossReviewResult(result, opts.json === true) };
 }
 
 export function formatCrossReviewResult(result: CrossReviewResult, asJson = false): string {
   if (asJson) return JSON.stringify(result, null, 2);
+
+  if (result.status === "skipped") {
+    const lines = [
+      `[cross-review:${result.provider}] SKIPPED after ${result.attempts}/${MAX_ATTEMPTS} attempts (${result.code}): ${result.message}`,
+      "The external opinion is advisory and unavailable; proceed on your own review. Do not re-run this review or narrow the diff to retry it.",
+    ];
+    if (result.recoveredTranscript) {
+      lines.push(
+        "",
+        "--- recovered session transcript (informational only; result remains skipped) ---",
+        result.recoveredTranscript,
+      );
+    }
+    return lines.join("\n");
+  }
 
   if (result.status === "failed") {
     const lines = [`[cross-review:${result.provider}] FAILED (${result.code}): ${result.message}`];

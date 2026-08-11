@@ -19,13 +19,23 @@ import {
   parseFindings,
   selectRecoveredTranscript,
   toClaudeProjectKey,
-  type CrossReviewFailure,
+  type CrossReviewClassification,
   type CrossReviewProviderMode,
   type CrossReviewResult,
   type CrossReviewScope,
   type CrossReviewScopeCapture,
+  type CrossReviewSkipped,
   type RecoveryCandidateFile,
 } from "../../core/review/cross-review";
+
+/**
+ * Fixed provider attempt budget. ANY failed classification consumes one
+ * attempt -- timeout, nonzero exit, auth failure and empty output alike --
+ * and the budget is never extended: two attempts, then the run resolves to a
+ * non-blocking `skipped` result. Never a third attempt, never a fallback to
+ * the other provider.
+ */
+export const MAX_ATTEMPTS = 2;
 
 // Matches repo-harness-cross-review's two source-provider budgets that
 // preceded this extraction (claude-mode: "330s"; codex-mode: "default 1800s,
@@ -266,9 +276,12 @@ export interface RunCrossReviewInput {
 
 /**
  * Full SSD-04 cross-review run: capture scope, invoke the selected provider
- * with a bounded timeout, recover a transcript when needed, and classify the
- * outcome into one CrossReviewResult. Every failure mode is an explicit typed
- * result; never a fallback to the other provider and never a synthesized pass.
+ * within a fixed two-attempt budget, recover a transcript when needed, and
+ * classify the outcome into one CrossReviewResult. Every failure mode is an
+ * explicit typed result; never a fallback to the other provider and never a
+ * synthesized pass. Provider-side unavailability that survives the whole
+ * budget resolves to a non-blocking `skipped` result -- the external opinion
+ * is advisory, so an unavailable provider must not stall the caller.
  */
 export function runCrossReview(input: RunCrossReviewInput): CrossReviewResult {
   const now = input.now ?? Date.now;
@@ -284,7 +297,6 @@ export function runCrossReview(input: RunCrossReviewInput): CrossReviewResult {
   }
   const scope = scopeCapture;
   const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS[input.provider];
-  const startedAtMs = now();
 
   let command: string;
   let args: string[];
@@ -307,63 +319,69 @@ export function runCrossReview(input: RunCrossReviewInput): CrossReviewResult {
     args = ["exec", "-s", "read-only", prompt, "-c", 'model_reasoning_effort="high"'];
   }
 
-  let invocation = runProcess(command, args, {
-    cwd: input.repoRoot,
-    timeoutMs,
-    stdio: "pipe",
-    env: input.env,
-  });
-
-  // claude-mode-only retry: exactly one attempt on opus when the fable route
-  // failed with the provider's explicit capacity signal. Capacity errors may
-  // be written to stdout, so stdout presence alone is not success.
-  // Never a loop, never a fallback to the other provider.
-  if (
-    input.provider === "claude" &&
-    !invocation.timedOut &&
-    invocation.status !== 0 &&
-    matchesClaudeCapacityFailureSignal([invocation.stdout, invocation.stderr, invocation.error].join("\n"))
-  ) {
-    const retryArgs = withModel(args, "opus");
-    invocation = runProcess(command, retryArgs, {
+  // Bounded attempt loop: each iteration either returns a success, or
+  // consumes exactly one attempt and -- on the last one -- returns the
+  // non-blocking skipped result. Any failed classification (timeout, nonzero
+  // exit, auth failure, empty/malformed output) consumes an attempt equally.
+  let attempts = 0;
+  for (;;) {
+    attempts += 1;
+    // claude's second attempt re-runs on opus (the fable route's documented
+    // capacity escape hatch); codex re-runs the identical argv. Never the
+    // other provider.
+    const attemptArgs = attempts > 1 && input.provider === "claude" ? withModel(args, "opus") : args;
+    const startedAtMs = now();
+    const invocation = runProcess(command, attemptArgs, {
       cwd: input.repoRoot,
       timeoutMs,
       stdio: "pipe",
       env: input.env,
     });
-  }
 
-  // Transcript recovery is claude-mode-only (repo-harness-cross-review's
-  // codex-mode has no recovery step), and only attempted when stdout is empty.
-  const recovery = input.provider === "claude" && invocation.stdout.trim() === ""
-    ? recoverClaudeTranscript(input.repoRoot, {
-      claudeConfigDir: input.claudeConfigDir ?? process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"),
-      startedAtMs,
-    })
-    : { attempted: false as const, text: "", malformed: false };
+    // Transcript recovery is claude-mode-only (repo-harness-cross-review's
+    // codex-mode has no recovery step), and only attempted when stdout is empty.
+    const recovery = input.provider === "claude" && invocation.stdout.trim() === ""
+      ? recoverClaudeTranscript(input.repoRoot, {
+        claudeConfigDir: input.claudeConfigDir ?? process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"),
+        startedAtMs,
+      })
+      : { attempted: false as const, text: "", malformed: false };
 
-  const classification = classifyCrossReviewOutcome(invocation, recovery);
-  if (classification.kind === "failed") {
-    const failure: CrossReviewFailure = {
-      status: "failed",
+    const classification: CrossReviewClassification = classifyCrossReviewOutcome(invocation, recovery);
+    if (classification.kind === "success") {
+      const findings = parseFindings(classification.transcript);
+      return {
+        status: "ok",
+        provider: input.provider,
+        scope,
+        transcript: classification.transcript,
+        usedTranscriptRecovery: classification.usedRecovery,
+        findings,
+        recommendation: buildRecommendation(findings),
+      };
+    }
+
+    if (attempts < MAX_ATTEMPTS) continue;
+
+    // Budget spent. The provider's explicit capacity signal no longer gates a
+    // retry, but when it is present on the final attempt it names why the
+    // external opinion is unavailable, so it is folded into the skip message.
+    const capacityLimited = matchesClaudeCapacityFailureSignal(
+      [invocation.stdout, invocation.stderr, invocation.error].join("\n"),
+    );
+    const message = capacityLimited
+      ? `${classification.message} (provider capacity limit reported on the final attempt)`
+      : classification.message;
+    const skipped: CrossReviewSkipped = {
+      status: "skipped",
       provider: input.provider,
       scope,
+      attempts,
       code: classification.code,
-      message: classification.message,
+      message,
     };
     return classification.recoveredTranscript
-      ? { ...failure, recoveredTranscript: classification.recoveredTranscript }
-      : failure;
+      ? { ...skipped, recoveredTranscript: classification.recoveredTranscript }
+      : skipped;
   }
-
-  const findings = parseFindings(classification.transcript);
-  return {
-    status: "ok",
-    provider: input.provider,
-    scope,
-    transcript: classification.transcript,
-    usedTranscriptRecovery: classification.usedRecovery,
-    findings,
-    recommendation: buildRecommendation(findings),
-  };
 }

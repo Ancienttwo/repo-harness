@@ -15,6 +15,13 @@ advances while the review runs.
   stdout in the meantime -- a short budget kills healthy runs.
 - stdin receives no data, so it reaches EOF immediately -- avoiding a known
   Codex stdin deadlock.
+- Exactly two attempts, whatever went wrong: any failed attempt (timeout,
+  nonzero exit, auth failure, empty output) consumes one, and attempt 2
+  re-runs the identical command -- never a third attempt, never a fallback to
+  a different provider.
+- Both attempts spent without a usable transcript -> `skipped`: advisory and
+  non-blocking (exit 0). Proceed on your own review; do not re-run the review
+  or narrow the diff to retry it.
 
 ## Command
 
@@ -26,4 +33,7 @@ repo-harness cross-review --provider codex
 
 - No merge-gate: this mode never produces or verifies a `merge-gate` receipt.
 - No semantic fallback: a nonzero exit or timeout is reported as an
-  explicit failure code, never retried against Claude instead.
+  explicit code, never retried against Claude instead, and a `skipped` run is
+  never a pass.
+- Only `degraded_scope` (the harness could not observe what to review) is
+  blocking, with exit 1. Provider unavailability is advisory.

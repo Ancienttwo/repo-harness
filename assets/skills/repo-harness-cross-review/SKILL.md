@@ -33,5 +33,5 @@ how to interpret findings, and the boundaries below.
 ## Boundaries
 
 - Read-only: the provider never edits code (no Bash/Edit/Write for Claude; read-only sandbox for Codex).
-- A provider failure (timeout, empty output, malformed transcript, auth failure, nonzero exit, degraded scope) is explicit. Never a fallback, never a synthesized pass.
+- Bounded: 2 provider attempts, then `SKIPPED` -- advisory, non-blocking (exit 0). Do not re-run it or narrow the diff to retry. Only `degraded_scope` blocks (exit 1). Never a synthesized pass.
 - Never produces or verifies a `merge-gate` receipt; that judge is separate.

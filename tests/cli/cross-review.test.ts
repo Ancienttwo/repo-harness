@@ -60,6 +60,15 @@ function initRepo(): string {
 const FIXTURE_PROVIDER_LINES = [
   "#!/bin/sh",
   'if [ -n "${CROSS_REVIEW_ARGS_FILE:-}" ]; then printf "%s\\n" "$@" > "$CROSS_REVIEW_ARGS_FILE"; fi',
+  // Appending log + invocation counter: lets a test observe how many attempts
+  // were actually spent and what argv each attempt used.
+  'if [ -n "${CROSS_REVIEW_ARGS_LOG:-}" ]; then printf "%s\\n" "--- attempt ---" "$@" >> "$CROSS_REVIEW_ARGS_LOG"; fi',
+  "count=0",
+  'if [ -n "${CROSS_REVIEW_COUNTER_FILE:-}" ]; then',
+  '  if [ -f "$CROSS_REVIEW_COUNTER_FILE" ]; then count=$(cat "$CROSS_REVIEW_COUNTER_FILE"); fi',
+  "  count=$((count + 1))",
+  '  echo "$count" > "$CROSS_REVIEW_COUNTER_FILE"',
+  "fi",
   'mode="${CROSS_REVIEW_FIXTURE_MODE:-success}"',
   'if [ "$mode" = "fable-limit" ]; then',
   '  case " $* " in',
@@ -90,6 +99,22 @@ const FIXTURE_PROVIDER_LINES = [
   "  nonzero)",
   '    echo "boom: internal error" 1>&2',
   "    exit 3",
+  "    ;;",
+  // Reports the provider's explicit capacity-limit signal on every attempt.
+  "  capacity)",
+  '    echo "You have reached your Fable limit."',
+  '    echo "Run /usage-credits to continue."',
+  "    exit 1",
+  "    ;;",
+  // Fails the first invocation, succeeds on every later one -- drives the
+  // "attempt 1 fails, attempt 2 succeeds" bounded-retry case.
+  "  fail-once)",
+  '    if [ "$count" -le 1 ]; then',
+  '      echo "boom: transient provider error" 1>&2',
+  "      exit 3",
+  "    fi",
+  '    echo "[P2] reviewed on attempt 2."',
+  "    exit 0",
   "    ;;",
   "  *)",
   '    echo "unknown fixture mode: $mode" 1>&2',
@@ -231,7 +256,7 @@ describe("runCrossReview (codex mode, fixture provider process)", () => {
     });
   }, 30_000);
 
-  test("empty_output: clean exit with no stdout and no recovery attempted", () => {
+  test("empty_output: clean exit with no stdout and no recovery attempted skips after the budget", () => {
     withFixture((repo, provider) => {
       const result = runCrossReview({
         repoRoot: repo,
@@ -240,24 +265,13 @@ describe("runCrossReview (codex mode, fixture provider process)", () => {
         timeoutMs: 5000,
         env: { ...process.env, CROSS_REVIEW_FIXTURE_MODE: "empty" },
       });
-      expect(result.status).toBe("failed");
-      if (result.status === "failed") expect(result.code).toBe("empty_output");
+      expect(result.status).toBe("skipped");
+      if (result.status === "skipped") {
+        expect(result.code).toBe("empty_output");
+        expect(result.attempts).toBe(2);
+      }
     });
   }, 30_000);
-
-  test("timeout: a provider that outlives the budget is killed and reported explicitly", () => {
-    withFixture((repo, provider) => {
-      const result = runCrossReview({
-        repoRoot: repo,
-        provider: "codex",
-        providerCommand: provider,
-        timeoutMs: 300,
-        env: { ...process.env, CROSS_REVIEW_FIXTURE_MODE: "timeout" },
-      });
-      expect(result.status).toBe("failed");
-      if (result.status === "failed") expect(result.code).toBe("timeout");
-    });
-  }, 15000);
 
   test("auth_failure: a nonzero exit with an auth signal in stderr is distinguished from provider_nonzero", () => {
     withFixture((repo, provider) => {
@@ -268,22 +282,8 @@ describe("runCrossReview (codex mode, fixture provider process)", () => {
         timeoutMs: 5000,
         env: { ...process.env, CROSS_REVIEW_FIXTURE_MODE: "auth" },
       });
-      expect(result.status).toBe("failed");
-      if (result.status === "failed") expect(result.code).toBe("auth_failure");
-    });
-  }, 30_000);
-
-  test("provider_nonzero: a nonzero exit without an auth signal stays the generic code", () => {
-    withFixture((repo, provider) => {
-      const result = runCrossReview({
-        repoRoot: repo,
-        provider: "codex",
-        providerCommand: provider,
-        timeoutMs: 5000,
-        env: { ...process.env, CROSS_REVIEW_FIXTURE_MODE: "nonzero" },
-      });
-      expect(result.status).toBe("failed");
-      if (result.status === "failed") expect(result.code).toBe("provider_nonzero");
+      expect(result.status).toBe("skipped");
+      if (result.status === "skipped") expect(result.code).toBe("auth_failure");
     });
   }, 30_000);
 
@@ -338,6 +338,144 @@ describe("runCrossReview (codex mode, fixture provider process)", () => {
   }, 30_000);
 });
 
+describe("bounded attempt budget: 2 attempts, then a non-blocking skip", () => {
+  test("timeout on both attempts -> skipped after 2 attempts with exit code 0", () => {
+    withFixture((repo, provider) => {
+      const timeoutMs = 300;
+      const startedAt = Date.now();
+      const command = runCrossReviewCommand({
+        repoRoot: repo,
+        provider: "codex",
+        providerCommand: provider,
+        timeoutMs,
+        env: { ...process.env, CROSS_REVIEW_FIXTURE_MODE: "timeout" },
+      });
+      const elapsedMs = Date.now() - startedAt;
+      expect(command.result.status).toBe("skipped");
+      if (command.result.status === "skipped") {
+        expect(command.result.attempts).toBe(2);
+        expect(command.result.code).toBe("timeout");
+      }
+      expect(command.exitCode).toBe(0);
+      expect(command.output).toContain("SKIPPED");
+      // A killed provider process cannot be observed through a counter file it
+      // never got to flush, so two full budgets of wall clock is the proof that
+      // a second attempt really was spawned (lower bound only, never flaky).
+      expect(elapsedMs).toBeGreaterThanOrEqual(2 * timeoutMs);
+    });
+  }, 30_000);
+
+  test("nonzero exit on both attempts -> skipped after 2 attempts with exit code 0", () => {
+    withFixture((repo, provider) => {
+      const counterFile = `${provider}.count`;
+      const command = runCrossReviewCommand({
+        repoRoot: repo,
+        provider: "codex",
+        providerCommand: provider,
+        timeoutMs: 5000,
+        env: {
+          ...process.env,
+          CROSS_REVIEW_FIXTURE_MODE: "nonzero",
+          CROSS_REVIEW_COUNTER_FILE: counterFile,
+        },
+      });
+      expect(command.result.status).toBe("skipped");
+      if (command.result.status === "skipped") {
+        expect(command.result.attempts).toBe(2);
+        expect(command.result.code).toBe("provider_nonzero");
+      }
+      expect(command.exitCode).toBe(0);
+      expect(command.output).toContain("SKIPPED");
+      expect(readFileSync(counterFile, "utf8").trim()).toBe("2");
+    });
+  }, 30_000);
+
+  test("claude mode: attempt 1 fails, attempt 2 runs on opus and succeeds", () => {
+    withFixture((repo, provider) => {
+      const counterFile = `${provider}.count`;
+      const argsLog = `${provider}.args`;
+      const command = runCrossReviewCommand({
+        repoRoot: repo,
+        provider: "claude",
+        providerCommand: provider,
+        timeoutMs: 5000,
+        env: {
+          ...process.env,
+          CROSS_REVIEW_FIXTURE_MODE: "fail-once",
+          CROSS_REVIEW_COUNTER_FILE: counterFile,
+          CROSS_REVIEW_ARGS_LOG: argsLog,
+        },
+      });
+      expect(command.result.status).toBe("ok");
+      if (command.result.status === "ok") {
+        expect(command.result.transcript).toContain("reviewed on attempt 2");
+      }
+      expect(command.exitCode).toBe(0);
+      expect(readFileSync(counterFile, "utf8").trim()).toBe("2");
+
+      // The second attempt is the opus route; the first stays on fable.
+      const attempts = readFileSync(argsLog, "utf8").split("--- attempt ---").filter((chunk) => chunk.trim() !== "");
+      expect(attempts).toHaveLength(2);
+      expect(attempts[0].split("\n")).toContain("fable");
+      expect(attempts[1].split("\n")).toContain("--model");
+      expect(attempts[1].split("\n")).toContain("opus");
+    });
+  }, 30_000);
+
+  test("happy path spends exactly one attempt (no gratuitous second invocation)", () => {
+    withFixture((repo, provider) => {
+      const counterFile = `${provider}.count`;
+      const command = runCrossReviewCommand({
+        repoRoot: repo,
+        provider: "codex",
+        providerCommand: provider,
+        timeoutMs: 5000,
+        env: {
+          ...process.env,
+          CROSS_REVIEW_FIXTURE_MODE: "success",
+          CROSS_REVIEW_COUNTER_FILE: counterFile,
+        },
+      });
+      expect(command.result.status).toBe("ok");
+      expect(command.exitCode).toBe(0);
+      expect(readFileSync(counterFile, "utf8").trim()).toBe("1");
+    });
+  }, 30_000);
+
+  test("a capacity signal on the final attempt is folded into the skip message", () => {
+    withFixture((repo, provider) => {
+      const command = runCrossReviewCommand({
+        repoRoot: repo,
+        provider: "claude",
+        providerCommand: provider,
+        timeoutMs: 5000,
+        env: { ...process.env, CROSS_REVIEW_FIXTURE_MODE: "capacity" },
+      });
+      expect(command.result.status).toBe("skipped");
+      if (command.result.status === "skipped") {
+        expect(command.result.attempts).toBe(2);
+        expect(command.result.message).toContain("capacity limit");
+      }
+      expect(command.exitCode).toBe(0);
+    });
+  }, 30_000);
+
+  test("degraded_scope stays a blocking failure with exit code 1 (never skipped)", () => {
+    withFixture((repo) => {
+      const command = runCrossReviewCommand({
+        repoRoot: repo,
+        provider: "codex",
+        baseRevision: "this-ref-does-not-exist-xyz",
+        providerCommand: "/nonexistent/should-never-be-invoked",
+      });
+      expect(command.result.status).toBe("failed");
+      if (command.result.status === "failed") expect(command.result.code).toBe("degraded_scope");
+      expect(command.exitCode).toBe(1);
+      expect(command.output).toContain("FAILED");
+    });
+  }, 30_000);
+});
+
 describe("runCrossReview (claude mode: transcript recovery)", () => {
   test("malformed_transcript: a recovered session file exists but yields no usable assistant text", () => {
     withFixture((repo, provider) => {
@@ -358,8 +496,8 @@ describe("runCrossReview (claude mode: transcript recovery)", () => {
           timeoutMs: 5000,
           env: { ...process.env, CROSS_REVIEW_FIXTURE_MODE: "empty" },
         });
-        expect(result.status).toBe("failed");
-        if (result.status === "failed") expect(result.code).toBe("malformed_transcript");
+        expect(result.status).toBe("skipped");
+        if (result.status === "skipped") expect(result.code).toBe("malformed_transcript");
       } finally {
         rmSync(claudeConfigDir, { recursive: true, force: true });
       }
@@ -378,8 +516,8 @@ describe("runCrossReview (claude mode: transcript recovery)", () => {
           timeoutMs: 5000,
           env: { ...process.env, CROSS_REVIEW_FIXTURE_MODE: "empty" },
         });
-        expect(result.status).toBe("failed");
-        if (result.status === "failed") expect(result.code).toBe("empty_output");
+        expect(result.status).toBe("skipped");
+        if (result.status === "skipped") expect(result.code).toBe("empty_output");
       } finally {
         rmSync(claudeConfigDir, { recursive: true, force: true });
       }
