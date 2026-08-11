@@ -65,6 +65,16 @@
   failed step. The disposable provider environment now also binds
   `BUN_INSTALL`, Bun cache, XDG cache, and npm cache under its temporary HOME
   instead of inheriting operator-global state.
+- The final CLI/adversarial pass found two lifecycle gaps that source-level
+  tests had not exercised. Commander exposes `--with-reverse-skill` as
+  `withReverseSkill`, so install now maps that exact attribute into the runtime
+  selector and a real CLI regression proves the provider route is entered.
+  Update also now runs all host mutations inside the same snapshot/rollback
+  transaction as install; a shared exclusive directory lock serializes full
+  install/update transactions plus global adapter install/uninstall, so one
+  failed process cannot roll back another process's successful projection.
+  Reproductions cover the late-failure rollback, two-process update ordering,
+  and the overlapping adapter mutation surface.
 - The filesystem boundary rejects pre-existing path substitution and ordinary
   concurrent transaction conflicts. It does not claim isolation from a
   malicious concurrent process running as the same OS user: that principal

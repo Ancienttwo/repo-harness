@@ -18,7 +18,7 @@
 - Change type: code-change
 - Intended files changed: Skill catalog, install/update/init selection, integrity effect, tests, runtime docs, workflow artifacts.
 - Actual files changed: intended scope only; primary dirty checkout remained untouched and implementation stayed in the contract worktree.
-- Commands passed: full `bun test` (2325 pass, 1 skip), focused 5-file suite, typecheck, reference-config parity, architecture/task/workflow/deploy gates, project-state audit, init dry-run, tarball smoke, live pinned disposable install smoke.
+- Commands passed: full `bun test` (2347 pass, 1 skip), focused 5-file suite, typecheck, reference-config parity, architecture/task/workflow/deploy gates, project-state audit, init dry-run, tarball smoke, live pinned disposable install smoke.
 - Residual risks: upstream content is intentionally high-risk and retains an invalid target-mention authorization assumption; default profiles never select it, and explicit use still requires independent scope/RoE review. Same-UID malicious concurrent filesystem replacement is outside the installer boundary because that principal can rewrite the installed Skill after commit; protecting against it requires OS isolation or a privileged broker.
 - Reviewer action required: commit the plan/contract authority, rerun prepared evidence, then record the contract-frozen Claude AcceptanceReceipt.
 - Rollback: remove the catalog entry, explicit flag, provider/integrity projection, tests, and documentation as one unit.
@@ -33,7 +33,11 @@
 
 - Waza `/check` run: post-merge architecture and security specialists found
   integrity-route, host-preflight, and staging-symlink gaps; all were fixed and
-  covered by focused regression tests. No introduced finding remains open.
+  covered by focused regression tests. The final adversarial pass additionally
+  found an install flag attribute mismatch plus a late-failure/concurrent update
+  rollback gap; explicit CLI routing, transactional update compensation, and a
+  shared install/update lock now close both paths. No introduced finding remains
+  open.
 - Commands run: `bun test`; focused catalog/init/global-runtime/profile/integrity tests; all required repository checks and tarball smoke.
 - Manual checks: pinned upstream list/install in disposable HOME; 41 selectable skills, 348 selected files, scanner reported Critical Risk/17 alerts; final repo-harness smoke projected exactly one Codex symlink and cleaned temporary roots.
 - Supporting artifacts: plan, contract, notes, and this review.
@@ -66,6 +70,10 @@
 - Integrity-bound installs write first to a disposable HOME, then commit verified bytes through same-filesystem temp copy, post-copy hash, canonical exclusive lock, and atomic rename before host projection.
 - Catalog validation rejects integrity metadata on any profile-selected or non-external package, and runtime projection rejects non-canonical staging roots plus unowned host paths before shared staging changes.
 - Host and staging ancestor symlinks, dangling host roots, and inherited Bun/npm cache roots are covered by hostile-path regression tests; all writes remain under canonical or disposable roots.
+- Full install/update and global adapter install/uninstall share one exclusive
+  host transaction boundary: a failed late step restores only its own snapshot,
+  while a concurrent process waits and cannot have its successful projection
+  removed by another rollback.
 
 ## Residual Risks / Follow-ups
 

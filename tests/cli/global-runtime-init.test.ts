@@ -5,7 +5,7 @@ import { join } from 'path';
 import { spawnSync } from 'child_process';
 import { PassThrough, Writable } from 'stream';
 import { runGlobalRuntimeSetup } from '../../src/cli/commands/global-runtime';
-import { resolveOptionalRuntimeDeps } from '../../src/cli/index';
+import { resolveOptionalRuntimeDeps, runTransactionalRuntimeRefresh } from '../../src/cli/index';
 
 const ROOT = join(import.meta.dir, '..', '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -203,6 +203,7 @@ describe('install command global runtime bootstrap', () => {
         env: {
           ...process.env,
           HOME: home,
+          BUN_INSTALL: join(home, '.bun'),
           PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
         },
       });
@@ -1360,6 +1361,57 @@ exit 0
     expect(res.stdout).not.toContain('setup-plugins');
   }, 30_000);
 
+  test('CLI install routes --with-reverse-skill into the explicit provider path', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-install-reverse-flag-'));
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    const bunxLog = join(tmp, 'bunx.log');
+    try {
+      mkdirSync(home, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nexit 0\n');
+      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" > "${bunxLog}"\nexit 0\n`);
+
+      const res = spawnSync(process.execPath, [
+        CLI,
+        'install',
+        '--profile',
+        'minimal',
+        '--target',
+        'codex',
+        '--no-cli',
+        '--no-sync-skill',
+        '--no-hooks',
+        '--no-external-skills',
+        '--no-codegraph',
+        '--with-reverse-skill',
+        '--json',
+      ], {
+        cwd: repo,
+        encoding: 'utf-8',
+        env: {
+          ...process.env,
+          HOME: home,
+          BUN_INSTALL: join(home, '.bun'),
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+          REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
+        },
+      });
+
+      expect(res.status, `${res.stderr}\n${res.stdout}`).toBe(1);
+      const result = JSON.parse(res.stdout);
+      expect(result.steps.find((step: { step: string }) => step.step === 'configure Reverse Skill')).toMatchObject({
+        status: 'failed',
+        detail: expect.stringContaining('cannot verify isolated staging integrity for reverse-skill-router'),
+      });
+      expect(readFileSync(bunxLog, 'utf-8')).toContain(`skills add ${REVERSE_PROVIDER}`);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test('CLI update refreshes user-level runtime without touching the current repo', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-update-'));
     const home = join(tmp, 'home');
@@ -1424,6 +1476,47 @@ exit 0
       rmSync(tmp, { recursive: true, force: true });
     }
   }, 30_000);
+
+  test('update host transaction compensates Reverse Skill projections when a later step fails', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-update-reverse-rollback-'));
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const staging = join(home, '.agents', 'skills', 'reverse-skill-router');
+    const projected = join(home, '.codex', 'skills', 'reverse-skill-router');
+    try {
+      mkdirSync(home, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+
+      const result = runTransactionalRuntimeRefresh({
+        cwd: repo,
+        target: 'codex',
+        profile: 'full',
+        reverseSkill: true,
+        env: { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun') },
+      }, () => {
+        mkdirSync(staging, { recursive: true });
+        writeFileSync(join(staging, 'SKILL.md'), '# reverse-skill-router\n');
+        mkdirSync(join(home, '.codex', 'skills'), { recursive: true });
+        symlinkSync(staging, projected, 'dir');
+        return {
+          exitCode: 1,
+          steps: [
+            { step: 'configure Reverse Skill', status: 'ok', detail: 'projected 1 host skills' },
+            { step: 'cross-review skills', status: 'failed', detail: 'refusing to overwrite unowned host skill' },
+          ],
+          lines: [],
+          stdout: '',
+          stderr: '',
+        };
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(existsSync(staging)).toBe(false);
+      expect(existsSync(projected)).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 
   test('CLI update --version installs the requested package version', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-update-version-'));
@@ -1512,6 +1605,7 @@ exit 0
         env: {
           ...process.env,
           HOME: home,
+          BUN_INSTALL: join(home, '.bun'),
           PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
           REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
         },
