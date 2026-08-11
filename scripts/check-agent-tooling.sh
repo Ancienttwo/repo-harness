@@ -1006,7 +1006,7 @@ function detectCodexNativeRoleRouting() {
   }
 
   const stateRoot = path.join(REPO_ROOT, ".ai", "harness", "delegation");
-  const statePath = path.join(stateRoot, "latest.json");
+  const statePath = path.join(stateRoot, "native-role-routing.json");
   if (!fs.existsSync(statePath)) {
     return {
       status: "unverified",
@@ -1026,16 +1026,10 @@ function detectCodexNativeRoleRouting() {
     };
   }
 
-  const routingState = state.native_role_routing;
-  if (routingState === undefined) {
-    return {
-      status: "unverified",
-      reason: "The latest delegation state predates native role/model evidence capture.",
-      evidence_path: statePath,
-      observations: [],
-    };
-  }
-  if (!routingState || typeof routingState !== "object") {
+  const routingState = state;
+  if (routingState.schema_version !== 1
+    || routingState.required !== true
+    || routingState.reasoning_effort_status !== "configured_unverified") {
     return {
       status: "invalid",
       reason: "The native role/model evidence state is malformed.",
@@ -1072,6 +1066,14 @@ function detectCodexNativeRoleRouting() {
       observations: [],
     };
   }
+  if (!currentEvidence.exists) {
+    return {
+      status: "invalid",
+      reason: "The native role/model evidence pointer targets a missing directory.",
+      evidence_path: currentEvidence.path,
+      observations: [],
+    };
+  }
 
   function observationFiles(directory) {
     if (!fs.existsSync(directory)) return [];
@@ -1087,33 +1089,8 @@ function detectCodexNativeRoleRouting() {
     }
   }
 
-  function latestRecordedDirectory() {
-    const resolvedRoot = resolveEvidenceDirectory("role-routing");
-    if (!resolvedRoot || !resolvedRoot.exists) return null;
-    const routingRoot = resolvedRoot.path;
-    try {
-      const entries = fs.readdirSync(routingRoot, { withFileTypes: true });
-      if (entries.some((entry) => !entry.isDirectory())) return { invalid: true };
-      const candidates = entries
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => path.join(routingRoot, entry.name))
-        .map((directory) => ({ directory, files: observationFiles(directory) }))
-        .filter((entry) => entry.files === null || entry.files.length > 0);
-      if (candidates.some((entry) => entry.files === null)) return { invalid: true };
-      const ranked = candidates
-        .map((entry) => ({
-          ...entry,
-          latestMtime: Math.max(...entry.files.map((file) => fs.statSync(file).mtimeMs)),
-        }))
-        .sort((left, right) => right.latestMtime - left.latestMtime || left.directory.localeCompare(right.directory));
-      return ranked[0] || null;
-    } catch {
-      return { invalid: true };
-    }
-  }
-
-  let evidenceDir = currentEvidence.path;
-  let files = observationFiles(evidenceDir);
+  const evidenceDir = currentEvidence.path;
+  const files = observationFiles(evidenceDir);
   if (files === null) {
     return {
       status: "invalid",
@@ -1121,21 +1098,6 @@ function detectCodexNativeRoleRouting() {
       evidence_path: evidenceDir,
       observations: [],
     };
-  }
-  if (files.length === 0) {
-    const previous = latestRecordedDirectory();
-    if (previous?.invalid) {
-      return {
-        status: "invalid",
-        reason: "Stored native role/model evidence contains an unsafe entry.",
-        evidence_path: path.join(stateRoot, "role-routing"),
-        observations: [],
-      };
-    }
-    if (previous) {
-      evidenceDir = previous.directory;
-      files = previous.files;
-    }
   }
   if (files.length === 0) {
     return {
@@ -1187,12 +1149,13 @@ function detectCodexNativeRoleRouting() {
       && observation.reason.trim().length > 0
       && observation.reason.length <= 512
       && !/[\u0000-\u001f\u007f]/.test(observation.reason)
-      && bounded(observation.agent_id, /^[A-Za-z0-9._:-]+$/)
-      && bounded(observation.turn_id, /^[A-Za-z0-9._:-]+$/)
+      && observation.reasoning_effort_status === "configured_unverified"
       && validDate(observation.checked_at);
     let semanticValid = commonValid;
     if (semanticValid && ["verified", "mismatch"].includes(observation.status)) {
-      semanticValid = bounded(observation.agent_type, /^[A-Za-z0-9_-]+$/)
+      semanticValid = bounded(observation.agent_id, /^[A-Za-z0-9._:-]+$/)
+        && bounded(observation.turn_id, /^[A-Za-z0-9._:-]+$/)
+        && bounded(observation.agent_type, /^[A-Za-z0-9_-]+$/)
         && observation.agent_type !== "default"
         && bounded(observation.observed_model, /^[A-Za-z0-9._-]+$/)
         && bounded(observation.configured_model, /^[A-Za-z0-9._-]+$/)
@@ -1203,19 +1166,30 @@ function detectCodexNativeRoleRouting() {
           ? observation.observed_model === observation.configured_model
           : observation.observed_model !== observation.configured_model);
     } else if (semanticValid && observation.status === "unavailable") {
-      semanticValid = observation.agent_type === "default"
+      semanticValid = bounded(observation.agent_id, /^[A-Za-z0-9._:-]+$/)
+        && bounded(observation.turn_id, /^[A-Za-z0-9._:-]+$/)
+        && observation.agent_type === "default"
         && bounded(observation.observed_model, /^[A-Za-z0-9._-]+$/)
         && observation.configured_model === null
         && observation.config_path === null
         && observation.config_sha256 === null;
     } else if (semanticValid && observation.status === "unverified") {
+      const agentIdValid = observation.agent_id === null
+        || bounded(observation.agent_id, /^[A-Za-z0-9._:-]+$/);
+      const turnIdValid = observation.turn_id === null
+        || bounded(observation.turn_id, /^[A-Za-z0-9._:-]+$/);
       const agentTypeValid = observation.agent_type === null
         || bounded(observation.agent_type, /^[A-Za-z0-9_-]+$/);
       const observedModelValid = observation.observed_model === null
         || bounded(observation.observed_model, /^[A-Za-z0-9._-]+$/);
-      semanticValid = agentTypeValid
+      semanticValid = agentIdValid
+        && turnIdValid
+        && agentTypeValid
         && observedModelValid
-        && (observation.agent_type === null || observation.observed_model === null)
+        && (observation.agent_id === null
+          || observation.turn_id === null
+          || observation.agent_type === null
+          || observation.observed_model === null)
         && observation.configured_model === null
         && observation.config_path === null
         && observation.config_sha256 === null;
@@ -1694,7 +1668,7 @@ if (strictReadiness && ["missing", "partial"].includes(report.tools.agent_fleet.
 }
 if (
   strictReadiness
-  && ["unavailable", "mismatch", "invalid"].includes(report.tools.agent_fleet.native_role_routing.status)
+  && ["unverified", "unavailable", "mismatch", "invalid"].includes(report.tools.agent_fleet.native_role_routing.status)
 ) {
   const routing = report.tools.agent_fleet.native_role_routing;
   strictFailures.push(`Codex native role routing is ${routing.status}: ${routing.reason}`);

@@ -1,7 +1,13 @@
+> **Archived**: 2026-08-11 19:31
+> **Related Plan**: plans/archive/plan-20260811-1344-codex-native-agent-authority.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260811-1931
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-08-11 16:59
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

@@ -471,53 +471,12 @@ describe("sessionStartMainContent — pending plan capture, current status, acti
   });
 });
 
-describe("sessionStartMainContent — codex delegation auto-authorization", () => {
-  test("codex host + repo policy delegation.mode=auto -> standing authorization block", () => {
-    withTmpRepo("main-delegation-auto", (repoRoot) => {
-      withTmpHome((home) => {
-        writeFileSync(
-          join(repoRoot, ".ai/harness/policy.json"),
-          JSON.stringify({ delegation: { mode: "auto", max_agents: 3 } }),
-        );
-        const env = { ...process.env, HOME: home, HOOK_HOST: "codex" };
-        const content = sessionStartMainContent(freshCollector(repoRoot), env, Date.now());
-        expect(content).toContain("# Delegation Standing Authorization");
-        expect(content).toContain("spawn no more than 3");
-        expect(content).toContain("one codex_app__create_thread per");
-        expect(content).toContain("installed ~/.codex/agents/<role>.toml");
-        expect(content).toContain(
-          "Native spawn_agent is a declared fallback only when the App Thread tools are",
-        );
-        expect(content).toContain("accept must not fall back to native spawn, because native spawn silently");
-        expect(content).toContain("a pendingWorktreeId is not a thread id");
-        expect(content).toContain(
-          "If the live create_thread surface cannot carry that exact model and",
-        );
-        expect(content).toContain(
-          "role-routed worker; degrade to codex-exec, then the sequential main thread,",
-        );
-      });
-    });
-  });
-
-  test("claude host never injects the block even with delegation.mode=auto", () => {
-    withTmpRepo("main-delegation-claude", (repoRoot) => {
-      withTmpHome((home) => {
-        writeFileSync(
-          join(repoRoot, ".ai/harness/policy.json"),
-          JSON.stringify({ delegation: { mode: "auto" } }),
-        );
-        const env = { ...process.env, HOME: home, HOOK_HOST: "claude" };
-        expect(sessionStartMainContent(freshCollector(repoRoot), env, Date.now())).toBeNull();
-      });
-    });
-  });
-
-  test("global ~/.repo-harness/config.json delegation.mode overrides repo policy", () => {
-    withTmpRepo("main-delegation-global", (repoRoot) => {
+describe("sessionStartMainContent — explicit native delegation authority", () => {
+  test("legacy delegation.mode config never creates standing authorization", () => {
+    withTmpRepo("main-delegation-explicit", (repoRoot) => {
       withTmpHome((home) => {
         mkdirSync(join(home, ".repo-harness"), { recursive: true });
-        writeFileSync(join(home, ".repo-harness/config.json"), JSON.stringify({ delegation: { mode: "explicit" } }));
+        writeFileSync(join(home, ".repo-harness/config.json"), JSON.stringify({ delegation: { mode: "auto" } }));
         writeFileSync(join(repoRoot, ".ai/harness/policy.json"), JSON.stringify({ delegation: { mode: "auto" } }));
         const env = { ...process.env, HOME: home, HOOK_HOST: "codex" };
         expect(sessionStartMainContent(freshCollector(repoRoot), env, Date.now())).toBeNull();

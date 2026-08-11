@@ -170,6 +170,25 @@ mismatch preserves the file and reports the mismatch. Custom sibling commands,
 unknown events, and unrelated adapter blocks remain intact. Runtime dispatch
 does not inspect legacy command shapes, so there is no dual-read path.
 
+### Codex native agent authority (2026-08-11)
+
+- P1: `agents/fleet/*.md` remains persona authority and installed Codex TOML is
+  its deterministic projection. The hook runtime owns permission guidance,
+  circuit limits, and evidence only; it does not select a second transport.
+- P2: `/delegate` or `/parallel` may create bounded advisor state, but every
+  official `SubagentStart` independently validates `agent_type`/`model` against
+  the installed TOML and writes event-scoped evidence through
+  `.ai/harness/delegation/native-role-routing.json` under a dedicated native
+  evidence lock, independently from the advisor-state lock. Only the current
+  scope is retained, bounded to its latest 32 observations.
+  Persistence failure downgrades the child to `unverified`; evidence no longer
+  depends on prompt-advisor state and in-memory validation cannot substitute for
+  the durable observation.
+- P3: native `spawn_agent` plus exact `agent_type` is the sole Codex fleet
+  identity/lifecycle authority. Missing/default/mismatched evidence fails
+  closed without App-thread, `codex-exec`, or main-thread fallback. Reasoning
+  effort stays `configured_unverified` because the event exposes no such field.
+
 ## 5. 验证面
 
 capabilities.json 的 `verification_hints`：

@@ -512,22 +512,16 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.sidecar_research.spawn_decision).toContain("do not ask the user");
       expect(policy.sidecar_research.fallback_runner).toBe("main-thread trace");
       expect(policy.sidecar_research.main_thread_policy).toContain("if spawning is not worthwhile");
-      expect(policy.delegation.preferred_runners).toEqual([
-        "subagent",
-        "codex-app-thread",
-        "codex-subagent",
-        "codex-exec",
-        "main-thread",
-      ]);
-      expect(policy.delegation.fallback_runner).toBe("main-thread");
+      expect(policy.delegation.preferred_runners).toEqual(["subagent"]);
+      expect(policy.delegation.fallback_runner).toBeUndefined();
       expect(policy.delegation.brief_source).toBe("tasks/contracts/<stem>.contract.md");
       expect(policy.delegation.runner_rule).toContain(
-        "Codex App Thread dispatch via codex_app__create_thread on the Codex host",
+        "Codex uses native spawn_agent with the exact installed agent_type",
       );
       expect(policy.delegation.runner_rule).toContain(
-        "MUST NOT fall back to native spawn, because native spawn silently inherits the parent model",
+        "fails closed without an alternate fleet runner",
       );
-      expect(policy.delegation.runner_rule).toContain("MUST NOT silently succeed");
+      expect(policy.delegation.runner_rule).toContain("configured_unverified");
       expect(policy.documentation.reference_configs).toContain("global-working-rules.md");
       expect(policy.documentation.reference_configs).toContain("minimal-change-hooks.md");
       expect(policy.upgrade.strategy_version).toBe(1);

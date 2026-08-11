@@ -125,25 +125,16 @@ target files, an optional command, and the verification surface, so the Agent
 executes each one deliberately. `repo-harness init-hook` remains a compatibility
 alias for the adapter-only install path.
 
-## Codex Delegation Mode
+## Codex Delegation Authority
 
-`repo-harness install --target codex|both --location global` also resolves and
-persists the Codex delegation mode read by the delegation-advisor hook. Pass
-`--delegation-mode auto|explicit` for non-interactive use, or answer the one-line
-interactive prompt shown in a TTY; Enter keeps the current choice and defaults to
-`explicit` when nothing is configured yet.
+Adapter installation has no delegation-mode prompt or config write. Codex fleet
+delegation is explicit: `/delegate` or `/parallel` may inject a bounded dispatch
+contract, while authorization can also come directly from the current user turn,
+applicable `AGENTS.md`, or an explicitly invoked skill. Natural-language hook
+classification and SessionStart standing authorization are not authorities.
 
-The chosen mode is written to `delegation.mode` in
-`~/.repo-harness/config.json`, merged with existing keys such as `brainRoot`.
-This global value takes precedence over a repo's `.ai/harness/policy.json`
-`delegation.mode`.
-
-At runtime:
-
-- `auto` injects one standing bounded-delegation authorization block per session
-  at `SessionStart`.
-- The typed `subagent` handler injects on `UserPromptSubmit` only for explicit
-  triggers (`/delegate`, `/parallel`, ...), in both `auto` and `explicit` modes.
-
-The step never fires for `--target claude`. With no flag and no TTY it leaves the
-file untouched; it never writes a silent default.
+At runtime, Codex uses native `spawn_agent` with the exact installed
+`agent_type` and `fork_turns="none"`. Missing or mismatched native role/model
+evidence fails closed without an App-thread, `codex-exec`, or main-thread fleet
+fallback. Existing `delegation.mode` keys in user config are inert because the
+runtime no longer reads them; no compatibility parser or migration shim is kept.

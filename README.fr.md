@@ -77,7 +77,7 @@ alias de skill repo-harness, installe les hook adapters de niveau utilisateur,
 et enregistre un install profile explicite. Il est idempotent et n'applique
 aucun fichier de workflow repo-local au répertoire courant. `--dry-run --json`
 liste d'abord les composants à installer, ignorer et supprimer. Profiles,
-delegation mode, commandes de rafraîchissement, et l'audit read-only `setup
+autorité de délégation Codex native, commandes de rafraîchissement, et l'audit read-only `setup
 check` : [`install-profiles.md`](docs/reference-configs/install-profiles.md).
 
 ### 3. Prévisualiser le contrat repo-local

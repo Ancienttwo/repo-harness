@@ -76,7 +76,7 @@ repo-harness の skill alias を更新し、user-level の hook adapter をイ�
 明示的な install profile を記録します。冪等(idempotent)であり、repo-local な
 workflow ファイルをカレントディレクトリへ適用することはありません。
 `--dry-run --json` を使うと、インストール・skip・削除される component を
-先に一覧できます。profile、delegation mode、refresh コマンド、read-only な
+先に一覧できます。profile、native Codex delegation authority、refresh コマンド、read-only な
 `setup check` audit については
 [`install-profiles.md`](docs/reference-configs/install-profiles.md)
 を参照してください。
