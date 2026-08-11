@@ -1261,98 +1261,6 @@ function toolingUpdateAdvisoryContext(repoRoot: string, env: NodeJS.ProcessEnv, 
   return null;
 }
 
-function delegationModeFromRepoPolicy(repoRoot: string): 'auto' | 'explicit' | null {
-  const raw = readText(repoRoot, '.ai/harness/policy.json');
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as { delegation?: { mode?: unknown } };
-    const mode = parsed.delegation?.mode;
-    return mode === 'auto' || mode === 'explicit' ? mode : null;
-  } catch {
-    return null;
-  }
-}
-
-function delegationModeFromGlobalConfig(home: string): 'auto' | 'explicit' | null {
-  if (!home) return null;
-  const path = join(home, '.repo-harness', 'config.json');
-  let raw: string;
-  try {
-    raw = readFileSync(path, 'utf-8');
-  } catch {
-    return null;
-  }
-  try {
-    const parsed = JSON.parse(raw) as { delegation?: { mode?: unknown } };
-    const mode = parsed.delegation?.mode;
-    return mode === 'auto' || mode === 'explicit' ? mode : null;
-  } catch {
-    return null;
-  }
-}
-
-function effectiveDelegationMode(repoRoot: string, env: NodeJS.ProcessEnv): 'auto' | 'explicit' {
-  const globalMode = delegationModeFromGlobalConfig(env.HOME ?? '');
-  if (globalMode) return globalMode;
-  return delegationModeFromRepoPolicy(repoRoot) === 'auto' ? 'auto' : 'explicit';
-}
-
-function delegationMaxAgentsValue(repoRoot: string): string {
-  const raw = readText(repoRoot, '.ai/harness/policy.json');
-  if (raw) {
-    try {
-      const parsed = JSON.parse(raw) as { delegation?: { max_agents?: unknown } };
-      const value = parsed.delegation?.max_agents;
-      if (typeof value === 'number' && Number.isInteger(value) && value >= 0) return String(value);
-      if (typeof value === 'string' && /^\d+$/.test(value)) return value;
-    } catch {
-      /* fall through to default */
-    }
-  }
-  return '2';
-}
-
-/** 8. `codex_delegation_auto_context`. */
-function codexDelegationAutoContext(repoRoot: string, env: NodeJS.ProcessEnv): string | null {
-  if (env.HOOK_HOST !== 'codex') return null;
-  if (effectiveDelegationMode(repoRoot, env) !== 'auto') return null;
-  const maxAgents = delegationMaxAgentsValue(repoRoot);
-  return [
-    '# Delegation Standing Authorization',
-    '',
-    'delegation.mode=auto is standing user authorization for bounded native',
-    'subagent and Codex App Thread delegation for this session. Dispatch only',
-    'when at least two independent, bounded workstreams exist;',
-    `spawn no more than ${maxAgents} agents; never give concurrent writers`,
-    'overlapping write ownership; do not spawn for a trivial or strictly',
-    'sequential task.',
-    '',
-    'Prefer Codex App Thread dispatch: one codex_app__create_thread per',
-    'workstream, created with the exact model and reasoning effort read from the',
-    'installed ~/.codex/agents/<role>.toml. Use a unique task id per creation',
-    'attempt; a pendingWorktreeId is not a thread id, so confirm materialization',
-    'with an official thread read before counting the worker as running; record',
-    'the requested model and effort separately from the observed runtime model;',
-    'adopt a result only after reading the final turn of that thread; archive',
-    'completed threads one at a time; thread workers must not create further',
-    'threads, agents, or background tasks.',
-    '',
-    'If the live create_thread surface cannot carry that exact model and',
-    'reasoning effort, the thread is inherited-model and must not be adopted as a',
-    'role-routed worker; degrade to codex-exec, then the sequential main thread,',
-    'on the SAME contract and record the degradation.',
-    '',
-    'Native spawn_agent is a declared fallback only when the App Thread tools are',
-    'unavailable and the live spawn schema accepts the exact model and reasoning',
-    'effort of that role; a role whose exact model/effort that schema does not',
-    'accept must not fall back to native spawn, because native spawn silently',
-    'inherits the parent model. Otherwise degrade to codex-exec, then the',
-    'sequential main thread, on the SAME contract and record the degradation. On',
-    'the native fallback pass fork_turns="none" on spawn_agent calls that select',
-    'an agent_type and close finished agent threads.',
-  ].join('\n');
-}
-
 /** Exported so parity fixtures (tests/session-context.test.ts) can assert exact joined output without duplicating this literal. */
 export const INPUT_PRIORITY_CONTEXT = [
   '# Input Priority',
@@ -1386,8 +1294,7 @@ function safely(
 /**
  * The full `session-start-context.sh` composition, verbatim order: resume
  * blob (gated), capability queue, architecture queue, pending plan capture,
- * current status snapshot, active sprint, tooling update advisory, codex
- * delegation auto-authorization -- each appended with a single `\n`
+ * current status snapshot, active sprint, and tooling update advisory -- each appended with a single `\n`
  * separator, then the whole thing prefixed with the input-priority block IFF
  * non-empty.
  */
@@ -1411,7 +1318,6 @@ export function sessionStartMainContent(
   context = appendBlock(context, safely('current-status-snapshot', observeDiagnostic, () => currentStatusSnapshotContext(repoRoot)));
   context = appendBlock(context, safely('active-sprint', observeDiagnostic, () => activeSprintContext(repoRoot)));
   context = appendBlock(context, safely('tooling-update-advisory', observeDiagnostic, () => toolingUpdateAdvisoryContext(repoRoot, env, nowMs)));
-  context = appendBlock(context, safely('codex-delegation-auto', observeDiagnostic, () => codexDelegationAutoContext(repoRoot, env)));
 
   if (!context) return null;
   return `${INPUT_PRIORITY_CONTEXT}\n${context}`;
@@ -1419,7 +1325,7 @@ export function sessionStartMainContent(
 
 /** Headers that flip the old script-loop branch's `actionable` bit for this id (mirrors runtime.ts's retired `scriptActionable` regex verbatim). */
 const SESSION_START_ACTIONABLE_HEADERS =
-  /^# (Pending Plan Capture|Capability Context Queue|Architecture Queue|Active Sprint|Delegation Standing Authorization)/m;
+  /^# (Pending Plan Capture|Capability Context Queue|Architecture Queue|Active Sprint)/m;
 
 export function sessionStartMainSection(
   collector: SessionContextCollector,

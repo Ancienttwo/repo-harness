@@ -33,7 +33,7 @@ try {
 
   const binDir = join(consumer, 'node_modules', '.bin');
   const cli = join(binDir, 'repo-harness');
-  run(cli, ['install', '--target', 'both', '--location', 'global', '--delegation-mode', 'explicit'], fixture, {
+  run(cli, ['install', '--target', 'both', '--location', 'global'], fixture, {
     ...offlineEnv,
     PATH: `${binDir}:${process.env.PATH ?? ''}`,
   });

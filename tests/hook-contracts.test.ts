@@ -96,18 +96,15 @@ describe("Hook contracts", () => {
     expect(handler).toContain("last_blocked_hash");
   });
 
-  test("delegation standing authorization stays separate from per-prompt typed permission", () => {
+  test("delegation requires an explicit slash command and has no standing authorization", () => {
     const advisor = read("src/cli/hook/subagent-handler.ts");
     expect(advisor).toContain("activeContractPath");
     expect(advisor).not.toContain("policyDelegation.mode");
     expect(advisor).not.toContain("auto-mode");
     expect(advisor).not.toContain("readGlobalDelegationMode");
     const sessionStart = read("src/cli/hook/session-context.ts");
-    expect(sessionStart).toContain("Delegation Standing Authorization");
-    expect(sessionStart).toContain(
-      "standing user authorization for bounded native",
-    );
-    expect(sessionStart).toContain("effectiveDelegationMode");
+    expect(sessionStart).not.toContain("Delegation Standing Authorization");
+    expect(sessionStart).not.toContain("effectiveDelegationMode");
   });
 
   test("typed prompt handler keeps route hints, gates, acceptance, and circuit rendering", () => {

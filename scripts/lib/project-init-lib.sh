@@ -365,9 +365,7 @@ delegation:
   runner:
     preferred:
       - subagent
-      - codex-exec
-      - main-thread
-    fallback: main-thread
+    fallback: null
     brief_is_authoritative: true
 ```
 
@@ -1875,13 +1873,11 @@ pi_write_harness_policy() {
     "strict_max_agents": 3,
     "max_depth": 1,
     "allow_parallel_writers": false,
-    "stop_fallback": true,
     "state_file": ".ai/harness/delegation/latest.json",
-    "preferred_runners": ["subagent", "codex-app-thread", "codex-subagent", "codex-exec", "main-thread"],
-    "fallback_runner": "main-thread",
+    "preferred_runners": ["subagent"],
     "brief_source": "tasks/contracts/<stem>.contract.md",
-    "runner_rule": "the active task contract is the authoritative execution brief consumed by contract-run; the preferred parallelism accelerator is native subagent on the Claude host and Codex App Thread dispatch via codex_app__create_thread on the Codex host, each thread created with the role's exact model and reasoning effort read from the installed ~/.codex/agents/<role>.toml. Native codex-subagent (spawn_agent) is a declared fallback only when the App Thread tools are unavailable AND the live spawn schema accepts the role's exact model/effort combination; a role whose exact model/effort that schema does not accept MUST NOT fall back to native spawn, because native spawn silently inherits the parent model. Otherwise degrade to codex-exec, then sequential main-thread, on the SAME contract. Runner-availability fallback MUST be recorded in the contract-run manifest and MUST NOT silently succeed; it is a runner-availability fallback, not a product-semantics compatibility fallback.",
-    "rule": "UserPromptSubmit.delegation only injects bounded subagent context after explicit user authorization such as /delegate, /parallel, spawn subagents, or parallel investigation, regardless of delegation.mode. When delegation.mode resolves to \"auto\", the in-process session-context builder (src/cli/hook/session-context.ts) instead injects one standing bounded-delegation authorization block at SessionStart (Codex host only) for the whole session; UserPromptSubmit.delegation does not re-assert it on later prompts. The global ~/.repo-harness/config.json delegation.mode value, when exactly \"auto\" or \"explicit\", takes precedence over this repo policy value when resolving that SessionStart mode."
+    "runner_rule": "the active task contract is the authoritative execution brief. Claude uses its native subagent surface. Codex uses native spawn_agent with the exact installed agent_type and fork_turns=none; official SubagentStart agent_type/model fields are the runtime observation. Missing, default, mismatched, invalid, or unverified native routing fails closed without an alternate fleet runner. Reasoning effort remains configured_unverified until Codex exposes an official runtime field.",
+    "rule": "UserPromptSubmit.delegation injects bounded delegation context only for the typed /delegate or /parallel command. Natural-language inference and SessionStart standing authorization are not delegation authorities."
   },
   "sidecar_research": {
     "default": true,

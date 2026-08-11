@@ -113,9 +113,7 @@ delegation:
   runner:
     preferred:
       - subagent
-      - codex-exec
-      - main-thread
-    fallback: main-thread
+    fallback: null
     brief_is_authoritative: true
 ```
 

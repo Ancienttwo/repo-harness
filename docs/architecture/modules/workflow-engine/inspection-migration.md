@@ -112,6 +112,16 @@ bun scripts/inspect-project-state.ts --repo . --format text
 
 以下段落逐字保留自本文件前一版本，不翻译、不改写。
 
+### 2026-08-11 Codex Native Agent Projection Cutover
+
+- `scripts/lib/project-init-lib.sh`, `scripts/ensure-task-workflow.sh`, and the
+  packaged helper mirror now emit one native-subagent runner authority.
+- Generated policy keeps `mode: "explicit"` as the declared state but has no
+  automatic SessionStart authorization, natural-language permission parser, or
+  alternate Codex fleet runner.
+- The cutover removes the retired authoring path in the same work-package; no
+  compatibility key reader, translation, or migration shim is installed.
+
 ### 2026-07-11 Helper Authority Closeout
 
 - `src/core/source-projection.ts` is the shared filesystem projection primitive

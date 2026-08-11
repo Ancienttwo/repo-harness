@@ -223,8 +223,7 @@
           "lite_early_exit",
           "minimal_change_review",
           "review_freshness_warning",
-          "plan_completeness_gate",
-          "delegation_fallback"
+          "plan_completeness_gate"
         ],
         "side_effects": [
           ".ai/harness/events.jsonl",
@@ -271,8 +270,7 @@
           "lite_early_exit",
           "minimal_change_review",
           "review_freshness_warning",
-          "plan_completeness_gate",
-          "delegation_fallback"
+          "plan_completeness_gate"
         ],
         "side_effects": [
           ".ai/harness/events.jsonl",
@@ -321,8 +319,7 @@
           "lite_early_exit",
           "minimal_change_review",
           "review_freshness_warning",
-          "plan_completeness_gate",
-          "delegation_fallback"
+          "plan_completeness_gate"
         ],
         "side_effects": [
           ".ai/harness/events.jsonl",

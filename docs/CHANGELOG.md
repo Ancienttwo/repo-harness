@@ -4,6 +4,19 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Makes native Codex `spawn_agent` with the exact installed `agent_type` the
+  sole fleet identity/lifecycle authority. Official `SubagentStart` role/model
+  evidence is now persisted even without advisor state; reasoning effort stays
+  explicitly `configured_unverified`.
+- Removes the Codex delegation-mode installer/config surface, SessionStart
+  standing authorization, natural-language delegation inference, and
+  App-thread/`codex-exec`/main-thread fleet fallbacks. `/delegate` and
+  `/parallel` remain prompt-start typed commands. New contract templates select
+  only `subagent` and declare no fallback; Stop no longer synthesizes a second
+  dispatch instruction.
+
 ### Fixed
 
 - Reclaims the least-recently-used idle Streamable HTTP MCP session when a new

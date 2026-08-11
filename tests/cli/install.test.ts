@@ -398,100 +398,25 @@ describe('install command (Phase 1B)', () => {
   }, 30_000);
 });
 
-describe('install --delegation-mode (global delegation config write)', () => {
-  test('--delegation-mode auto flag writes delegation.mode to ~/.repo-harness/config.json', () => {
+describe('install native Codex delegation authority', () => {
+  test('adapter-only install exposes no delegation-mode compatibility option or config write', () => {
     withTempHome((home) => {
-      const install = spawnSync(
-        'bun',
-        [CLI, 'install', '--target', 'codex', '--location', 'global', '--delegation-mode', 'auto'],
-        {
-          cwd: ROOT,
-          env: { ...process.env, HOME: home },
-          encoding: 'utf-8',
-        },
-      );
-      expect(install.status).toBe(0);
-      expect(install.stdout).toContain('delegation.mode=auto');
+      const help = spawnSync('bun', [CLI, 'install', '--help'], {
+        cwd: ROOT,
+        env: { ...process.env, HOME: home },
+        encoding: 'utf-8',
+      });
+      expect(help.status).toBe(0);
+      expect(help.stdout).not.toContain('--delegation-mode');
 
-      const configPath = path.join(home, '.repo-harness', 'config.json');
-      expect(fs.existsSync(configPath)).toBe(true);
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      expect(config.delegation.mode).toBe('auto');
-    });
-  }, 30_000);
-
-  test('merges delegation.mode with existing brainRoot and unknown nested delegation keys', () => {
-    withTempHome((home) => {
-      const configPath = path.join(home, '.repo-harness', 'config.json');
-      fs.mkdirSync(path.dirname(configPath), { recursive: true });
-      fs.writeFileSync(
-        configPath,
-        `${JSON.stringify(
-          {
-            brainRoot: '/Users/example/brain',
-            someOtherTopLevelKey: 'kept',
-            delegation: { notes: 'pre-existing nested key' },
-          },
-          null,
-          2,
-        )}\n`,
-      );
-
-      const result = runInstall({ target: 'codex', location: 'global', delegationMode: 'explicit' });
-      expect(result.exitCode).toBe(0);
-
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      expect(config.brainRoot).toBe('/Users/example/brain');
-      expect(config.someOtherTopLevelKey).toBe('kept');
-      expect(config.delegation).toEqual({ notes: 'pre-existing nested key', mode: 'explicit' });
-    });
-  });
-
-  test('--delegation-mode with an invalid value exits 2 and writes nothing', () => {
-    withTempHome((home) => {
-      const install = spawnSync(
-        'bun',
-        [CLI, 'install', '--target', 'codex', '--location', 'global', '--delegation-mode', 'bogus'],
-        {
-          cwd: ROOT,
-          env: { ...process.env, HOME: home },
-          encoding: 'utf-8',
-        },
-      );
-      expect(install.status).toBe(2);
-      expect(install.stderr).toContain('invalid --delegation-mode "bogus"');
-      expect(fs.existsSync(path.join(home, '.repo-harness', 'config.json'))).toBe(false);
-    });
-  }, 30_000);
-
-  test('no --delegation-mode flag over non-TTY stdio leaves ~/.repo-harness/config.json untouched', () => {
-    withTempHome((home) => {
-      // spawnSync's stdio pipes are never a TTY (isTTY is undefined), so this
-      // exercises the non-interactive branch of resolveDelegationMode.
-      // Passing input (even empty) closes stdin immediately, so a wrongly
-      // interactive code path would fail fast on EOF instead of hanging.
       const install = spawnSync('bun', [CLI, 'install', '--target', 'codex', '--location', 'global'], {
         cwd: ROOT,
         env: { ...process.env, HOME: home },
         encoding: 'utf-8',
-        input: '',
-        timeout: 20000,
       });
       expect(install.status).toBe(0);
       expect(fs.existsSync(path.join(home, '.codex/hooks.json'))).toBe(true);
       expect(fs.existsSync(path.join(home, '.repo-harness', 'config.json'))).toBe(false);
     });
   }, 30_000);
-
-  test('re-running with the same mode is idempotent and reports unchanged', () => {
-    withTempHome(() => {
-      const first = runInstall({ target: 'codex', location: 'global', delegationMode: 'auto' });
-      expect(first.exitCode).toBe(0);
-      expect(first.lines.some((l) => l.includes('delegation.mode=auto'))).toBe(true);
-
-      const second = runInstall({ target: 'codex', location: 'global', delegationMode: 'auto' });
-      expect(second.exitCode).toBe(0);
-      expect(second.lines.some((l) => l.includes('unchanged') && l.includes('delegation.mode=auto'))).toBe(true);
-    });
-  });
 });

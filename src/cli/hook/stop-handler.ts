@@ -22,11 +22,6 @@ import { randomBytes } from 'crypto';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { execFileSync } from 'child_process';
 import type { EffectiveState } from '../../core/state/types';
-import {
-  delegationScope,
-  type DelegationScope,
-  withDelegationStateTransaction,
-} from './delegation-state';
 import { consumePendingPostEditEvents, migratePendingPostEditJournalV1, readPendingPostEditEvents, type PostEditJournalEvent } from './mutation-observed';
 import { drainArchitectureProjectionJobs, type ArchitectureProjectionDrainResultV1 } from '../../effects/architecture/projection-orchestrator';
 import { loadArchitectureProjectionPolicy } from '../../effects/architecture/archctx-provider';
@@ -56,7 +51,6 @@ export interface StopHandlerDependencies {
   readonly observeProjectionWrite?: (target: StopProjectionTarget) => void;
   /** Invoked once after the complete Stop projection batch commits. */
   readonly observeProjectionTransaction?: () => void;
-  readonly beforeDelegationLock?: () => void;
   readonly drainArchitectureProjection?: (repoRoot: string, env: NodeJS.ProcessEnv) => ArchitectureProjectionDrainResultV1;
 }
 
@@ -285,51 +279,6 @@ class StopProjectionBatch {
     this.observer?.(event);
     atomicWrite(this.repoRoot, join(this.repoRoot, runSummary.path), this.content.runSummary);
     this.observer?.(runSummary);
-  }
-}
-
-function claimDelegationFallback(
-  repoRoot: string,
-  payload: StopPayload,
-  env: NodeJS.ProcessEnv,
-  now: Date,
-  beforeLock?: () => void,
-): boolean {
-  const scope = delegationScope(
-    payload as unknown as Record<string, unknown>,
-    env,
-  );
-  const scopes: readonly DelegationScope[] = scope ? [scope] : [];
-  // Keep the rendezvous seam immediately before lock acquisition. The
-  // transaction itself rereads latest and scoped state after acquisition.
-  beforeLock?.();
-  try {
-    return withDelegationStateTransaction(repoRoot, scopes, (transaction) => {
-      const state = transaction.snapshot.state;
-      if (!state) return false;
-      const created = Number(state.created_at_epoch);
-      const age = Number.isFinite(created) ? Math.floor(now.getTime() / 1000) - created : 0;
-      const eligible = state.eligible === true
-        && state.explicit === true
-        && state.spawned !== true
-        && state.fallback_used !== true
-        && state.stop_fallback !== false
-        && age >= 0
-        && age <= 24 * 60 * 60;
-      if (!eligible) return false;
-      const timestamp = now.toISOString();
-      const committed = transaction.commit({
-        ...state,
-        fallback_used: true,
-        fallback_used_at: timestamp,
-        updated_at: timestamp,
-      });
-      return committed !== null;
-    });
-  } catch {
-    // Hook availability is intentionally fail-open when the shared lock is
-    // unavailable or a state projection is malformed.
-    return false;
   }
 }
 
@@ -616,11 +565,6 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
     now,
   );
   if (planGate) return { ...planGate, stderr: stderr.join('') };
-
-  if (claimDelegationFallback(repoRoot, payload, env, now, dependencies.beforeDelegationLock)) {
-    const result = block(`[DelegationFallback] This turn explicitly requested bounded delegation, but no SubagentStart event was observed. Continue the task now by spawning the independent explorer/reviewer or isolated worker workstreams first when at least two independent workstreams exist, wait for them, reconcile their findings in the parent, then complete the response. Do not spawn for a trivial or strictly sequential task.${minimal.suffix}`);
-    return { ...result, stderr: stderr.join('') };
-  }
 
   return { exitCode: 0, stdout: '', stderr: stderr.join('') };
 }

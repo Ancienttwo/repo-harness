@@ -20,11 +20,14 @@ import {
   readFileSync,
   realpathSync,
   renameSync,
+  rmdirSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } from 'fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { recordCircuitAttempt } from './circuit-breaker';
+import { withExclusiveDirectoryLock } from '../../effects/locking/exclusive-directory-lock';
 import type { WorkflowProfile } from '../../core/workflow/profile';
 import {
   DELEGATION_STATE_RELATIVE,
@@ -74,6 +77,7 @@ interface NativeRoleRouting {
   readonly configured_model: string | null;
   readonly config_path: string | null;
   readonly config_sha256: string | null;
+  readonly reasoning_effort_status: 'configured_unverified';
   readonly status: 'verified' | 'mismatch' | 'invalid' | 'unavailable' | 'unverified';
   readonly reason: string;
   readonly checked_at: string;
@@ -81,6 +85,9 @@ interface NativeRoleRouting {
 
 const RETURN_CONTRACT_MARKER = '[repo-harness:return-channel]';
 const RETURN_CONTRACT_TEXT = '\n\n[repo-harness:return-channel] Your final text message is the only channel returned to your caller. Put the complete findings/report in final text. Do not call SendUserMessage for report delivery; content sent through SendUserMessage is delivered outside the Agent tool result.';
+const NATIVE_ROLE_ROUTING_STATE_FILE = 'native-role-routing.json';
+const NATIVE_ROLE_ROUTING_LOCK_RELATIVE = `${DELEGATION_STATE_RELATIVE}/native-role-routing.lock`;
+const MAX_NATIVE_ROLE_OBSERVATIONS = 32;
 
 function result(stdout = '', stderr = '', exitCode = 0): SubagentHandlerResult {
   return { exitCode, stdout, stderr };
@@ -146,11 +153,69 @@ function writeJson(path: string, value: unknown): void {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-function atomicWriteJson(path: string, value: unknown): void {
-  mkdirSync(dirname(path), { recursive: true });
+interface PathIdentity {
+  readonly path: string;
+  readonly dev: number;
+  readonly ino: number;
+}
+
+function captureEvidenceWritePath(stateRoot: string, path: string): PathIdentity[] {
+  const root = resolve(stateRoot);
+  const target = resolve(path);
+  const parent = dirname(target);
+  const rel = relative(root, target);
+  if (!rel || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    throw new Error(`native role evidence path escapes state root: ${path}`);
+  }
+  const identities: PathIdentity[] = [];
+  let current = root;
+  const parentRelative = relative(root, parent);
+  const segments = parentRelative ? parentRelative.split(sep) : [];
+  for (const segment of ['', ...segments]) {
+    if (segment) current = join(current, segment);
+    const stat = lstatSync(current);
+    if (stat.isSymbolicLink() || !stat.isDirectory() || realpathSync(current) !== current) {
+      throw new Error(`native role evidence ancestor is unsafe: ${current}`);
+    }
+    identities.push({ path: current, dev: stat.dev, ino: stat.ino });
+  }
+  if (existsSync(target)) {
+    const targetStat = lstatSync(target);
+    if (targetStat.isSymbolicLink() || !targetStat.isFile()) {
+      throw new Error(`native role evidence target is unsafe: ${target}`);
+    }
+  }
+  return identities;
+}
+
+function assertEvidenceWritePath(identities: readonly PathIdentity[], path: string): void {
+  for (const identity of identities) {
+    const stat = lstatSync(identity.path);
+    if (stat.isSymbolicLink() || !stat.isDirectory()
+      || stat.dev !== identity.dev || stat.ino !== identity.ino
+      || realpathSync(identity.path) !== identity.path) {
+      throw new Error(`native role evidence ancestor changed during write: ${identity.path}`);
+    }
+  }
+  if (existsSync(path)) {
+    const targetStat = lstatSync(path);
+    if (targetStat.isSymbolicLink() || !targetStat.isFile()) {
+      throw new Error(`native role evidence target changed during write: ${path}`);
+    }
+  }
+}
+
+function atomicWriteJson(stateRoot: string, path: string, value: unknown): void {
+  const identities = captureEvidenceWritePath(stateRoot, path);
   const temporary = `${path}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-  renameSync(temporary, path);
+  try {
+    writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
+    assertEvidenceWritePath(identities, path);
+    renameSync(temporary, path);
+  } catch (error) {
+    try { unlinkSync(temporary); } catch { /* no temporary file remains at the validated path */ }
+    throw error;
+  }
 }
 
 function activeContractPath(repoRoot: string): ActiveContract | null {
@@ -182,26 +247,10 @@ function policyDelegation(repoRoot: string): JsonObject {
     : {};
 }
 
-function isDelegationDiscussion(text: string): boolean {
-  if (!/\b(spawn|use|run)\s+(bounded\s+)?subagents?\b/i.test(text)) return false;
-  if (/^\s*(please\s+)?(spawn|use|run)\s+(bounded\s+)?subagents?\s+(to|for)\b/i.test(text)) return false;
-  return [
-    /[?？]/,
-    /\b(should|need|necessary)\b/i,
-    /(机制|有必要|必要|是否|为什么|怎么|如何|架构|设计|注册|路由|本来就有)/i,
-    /\b(mechanism|architecture|design|registration|route|routing|adapter|hook)\b/i,
-  ].some((pattern) => pattern.test(text));
-}
-
 function delegationTrigger(prompt: string): { readonly name: string } | null {
-  const triggers: readonly { readonly name: string; readonly pattern: RegExp; readonly skipDiscussion?: boolean }[] = [
-    { name: 'slash-delegate', pattern: /(^|\s)\/(delegate|parallel)\b/i },
-    { name: 'spawn-subagents', pattern: /\b(spawn|use|run)\s+(bounded\s+)?subagents?\b/i, skipDiscussion: true },
-    { name: 'multiple-agents', pattern: /\buse\s+multiple\s+agents?\b/i },
-    { name: 'parallel-agents', pattern: /\bparallel\s+(agents?|workstreams?|investigation|research)\b/i },
-    { name: 'chinese-subagent', pattern: /交给\s*子代理|使用多个\s*(agent|代理)|并行(调查|研究|处理|执行|agent|代理)/i },
-  ];
-  return triggers.find((entry) => entry.pattern.test(prompt) && !(entry.skipDiscussion && isDelegationDiscussion(prompt))) ?? null;
+  return /^\s*\/(delegate|parallel)(?:\s|$)/i.test(prompt)
+    ? { name: 'slash-delegate' }
+    : null;
 }
 
 function renderDelegationOutput(context: string): string {
@@ -258,35 +307,20 @@ function runDelegationAdvisor(repoRoot: string, input: JsonObject, env: NodeJS.P
     const strictMax = Number.isInteger(policy.strict_max_agents) ? policy.strict_max_agents as number : 3;
     const maxAgents = strictContract ? Math.min(strictMax, 3) : Math.min(defaultMax, 2);
     const maxDepth = Number.isInteger(policy.max_depth) ? policy.max_depth as number : 1;
-    const preferredRunners = Array.isArray(policy.preferred_runners) && policy.preferred_runners.length
-      ? policy.preferred_runners
-      : ['subagent'];
-    const fallbackRunner = typeof policy.fallback_runner === 'string' && policy.fallback_runner
-      ? policy.fallback_runner
-      : null;
+    const preferredRunners = ['subagent'];
     const scope = delegationScope(input, env);
     const relativeStateFile = scope ? join('turns', `${scope.id}.json`) : 'latest.json';
     const promptHash = hash(prompt, 'sha1');
-    const evidenceScope = `${scope?.id || 'unscoped'}-${promptHash.slice(0, 16)}`;
     const state: DelegationState = {
       version: 2,
       eligible: true,
       explicit: true,
       spawned: false,
-      fallback_used: false,
       mode: 'explicit',
       max_agents: maxAgents,
       max_depth: maxDepth,
       allow_parallel_writers: false,
-      stop_fallback: true,
-      native_role_routing: {
-        required: true,
-        status: 'unverified',
-        reason: 'No authoritative SubagentStart role/model evidence has been recorded for this delegation.',
-        evidence_dir: join('role-routing', evidenceScope),
-      },
       preferred_runners: preferredRunners,
-      fallback_runner: fallbackRunner,
       trigger: trigger.name,
       prompt_hash: promptHash,
       scope_source: scope?.source || 'unscoped',
@@ -302,10 +336,10 @@ function runDelegationAdvisor(repoRoot: string, input: JsonObject, env: NodeJS.P
         scope ? [scope] : [],
         (transaction) => {
           const stateFile = transaction.snapshot.paths?.stateFile ?? relativeStateFile;
-        transaction.commit(
-          { ...state, state_file: stateFile },
-          { stateFile: relativeStateFile, replace: true },
-        );
+          transaction.commit(
+            { ...state, state_file: stateFile },
+            { stateFile: relativeStateFile, replace: true },
+          );
         },
       );
     } catch {
@@ -322,20 +356,15 @@ function runDelegationAdvisor(repoRoot: string, input: JsonObject, env: NodeJS.P
       '- Never give two agents overlapping write ownership.',
       `- Keep max spawn depth at ${maxDepth}.`,
       '- Give every agent a precise scope and required return format.',
-      '- On the native spawn_agent fallback path, pass fork_turns="none" on every spawn_agent call that selects an agent_type: the default fork_turns="all" copies the full parent conversation into the child. A named-role child works from its self-contained packet and the contract brief, not inherited parent history.',
-      '- Use a unique task id for every thread creation attempt; never reuse one across retries.',
-      '- A pendingWorktreeId is not a thread id: confirm the thread materialized with an official thread read before counting the worker as running.',
-      '- Record the requested model and reasoning effort separately from the observed runtime model; an unread model claim stays unverified.',
-      '- Adopt a thread worker result only after reading the final turn of that thread.',
-      '- Archive completed threads one at a time.',
-      '- Thread workers must not create further threads, agents, or background tasks.',
+      '- Call native spawn_agent with the requested installed agent_type and fork_turns="none". A named-role child works from its self-contained packet and the contract brief, not inherited parent history.',
+      '- The agent_type field is mandatory. If the live spawn schema cannot accept it, stop and report native role routing unavailable; do not select another runner.',
+      '- Record the requested agent_type and observed runtime model separately. Reasoning effort is configured_unverified because SubagentStart does not expose it.',
       '- Wait for all requested agents.',
       '- Reconcile contradictory findings in the parent.',
-      '- Close completed agent threads.',
+      '- Close completed native agents.',
       '- Do not spawn for a trivial or strictly sequential task.',
-      '- The role labels above describe responsibilities only; on both the thread path and the native path they do not prove that Codex selected a same-name custom-agent profile or its configured model.',
-      "- Treat a thread as inherited-model whenever the live create_thread surface cannot carry that role's exact model and reasoning effort; such a thread MUST NOT be adopted as a role-routed worker. Degrade to codex-exec, then sequential main-thread, on the SAME contract and record the degradation.",
-      '- Treat native children as inherited-model until the SubagentStart hook records matching non-default agent_type and model evidence. If it records unavailable or mismatch, report runner degradation and use the contract runner fallback instead of claiming role-specific routing.',
+      '- A role label in the dispatch message does not prove selection. Only official SubagentStart agent_type/model evidence can verify the installed custom-agent profile.',
+      '- If SubagentStart records unavailable, mismatch, invalid, or unverified routing, fail closed and report the status; do not claim role routing and do not select an alternate runner.',
     ];
     const permissionContext = [
       '[repo-harness:delegation]',
@@ -344,7 +373,7 @@ function runDelegationAdvisor(repoRoot: string, input: JsonObject, env: NodeJS.P
       '',
       'No active task contract was resolved. Scope remains the current user prompt; do not invent implementation, verification, or workflow work.',
       '',
-      `Runner preference (policy delegation.preferred_runners): ${preferredRunners.join(', ')}. Delegate only when the current prompt contains at least two independent bounded workstreams; otherwise run sequentially.`,
+      'Runner authority: Codex native spawn_agent with an installed agent_type. Delegate only when the current prompt contains at least two independent bounded workstreams; otherwise run sequentially.',
       '',
       ...sharedRules,
     ].join('\n');
@@ -355,7 +384,7 @@ function runDelegationAdvisor(repoRoot: string, input: JsonObject, env: NodeJS.P
       '',
       `The current user turn is the execution authority. The active task contract (${activeContract?.contract}) constrains the implementation scope authorized by the current turn, but does not by itself authorize resuming prior implementation or completing Exit Criteria.`,
       '',
-      `Runner preference (policy delegation.preferred_runners): ${preferredRunners.join(', ')}. Codex App Thread dispatch (codex_app__create_thread) is the preferred parallelism accelerator that consumes the contract brief: one thread per bounded workstream, created with the exact model and reasoning effort read from the installed ~/.codex/agents/<role>.toml, with that TOML developer_instructions plus the contract brief inlined as the first message of the thread. If the live create_thread schema cannot carry that exact model and reasoning effort, the resulting thread is inherited-model and MUST NOT be adopted as a role-routed worker. Native spawn_agent is a declared fallback only when the App Thread tools are unavailable AND the live spawn schema accepts the exact model and reasoning effort of that role; a role whose exact model/effort that schema does not accept MUST NOT fall back to native spawn, because native spawn silently inherits the parent model. Otherwise degrade to codex-exec, then sequential ${fallbackRunner || 'main-thread'}, on the SAME contract via contract-run. Runner-availability degradation MUST be recorded in the contract-run manifest and MUST NOT silently succeed; it is a runner-availability fallback, not a product-semantics change.`,
+      'Runner authority: Codex native spawn_agent with the exact installed agent_type. The custom-agent TOML remains the persona/model configuration source; the live SubagentStart event is the runtime identity/model observation. If native agent_type selection or matching evidence is unavailable, fail closed and report it. Do not dispatch the fleet role through an App thread, codex-exec, the main thread, or another runner.',
       '',
       'If this task contains at least two independent, bounded workstreams, dispatch per the contract before doing the corresponding work in the parent; otherwise run it sequentially.',
       '',
@@ -460,8 +489,7 @@ function customAgentProfile(repoRoot: string, agentType: string, env: NodeJS.Pro
   return { ok: false, invalid: true, reason: 'No custom-agent profile matches the authoritative agent_type.' };
 }
 
-function nativeRoleRoutingEvidence(repoRoot: string, input: JsonObject, state: DelegationState, env: NodeJS.ProcessEnv, now: Date): NativeRoleRouting | null {
-  if (state.native_role_routing?.required !== true) return null;
+function nativeRoleRoutingEvidence(repoRoot: string, input: JsonObject, env: NodeJS.ProcessEnv, now: Date): NativeRoleRouting {
   const agentType = firstString(input, ['agent_type']);
   const observedModel = firstString(input, ['model']);
   const agentId = firstString(input, ['agent_id']);
@@ -476,6 +504,7 @@ function nativeRoleRoutingEvidence(repoRoot: string, input: JsonObject, state: D
     configured_model: null,
     config_path: null,
     config_sha256: null,
+    reasoning_effort_status: 'configured_unverified' as const,
     checked_at: now.toISOString(),
   };
   if (!agentType || !observedModel || !agentId || !turnId) {
@@ -496,6 +525,84 @@ function nativeRoleRoutingEvidence(repoRoot: string, input: JsonObject, state: D
     return { ...base, status: 'mismatch', reason: `Codex started ${agentType} on ${observedModel}, but its custom-agent TOML requires ${profile.model}.`, configured_model: profile.model ?? null, config_path: profile.configPath ?? null, config_sha256: profile.configSha256 ?? null };
   }
   return { ...base, status: 'verified', reason: `Codex started custom agent ${agentType} on its configured model ${observedModel}.`, configured_model: profile.model ?? null, config_path: profile.configPath ?? null, config_sha256: profile.configSha256 ?? null };
+}
+
+function nativeRoleRoutingScope(input: JsonObject, env: NodeJS.ProcessEnv): string {
+  const session = firstString(input, ['session_id', 'run_id']) || env.CODEX_SESSION_ID || '';
+  if (session) return `session-${sanitize(session)}`;
+  const turnId = firstString(input, ['turn_id']);
+  return turnId ? `turn-${sanitize(turnId)}` : 'unscoped';
+}
+
+function safeUnlinkEvidenceFile(stateDir: string, path: string): void {
+  const identities = captureEvidenceWritePath(stateDir, path);
+  assertEvidenceWritePath(identities, path);
+  unlinkSync(path);
+}
+
+function pruneNativeRoleRoutingEvidence(stateDir: string, currentEvidenceDir: string): void {
+  const routingRoot = resolveEvidenceDir(stateDir, 'role-routing');
+  if (!routingRoot) return;
+  const scopeEntries = readdirSync(routingRoot, { withFileTypes: true });
+  for (const scopeEntry of scopeEntries) {
+    if (!scopeEntry.isDirectory() || !/^(?:session|turn)-[a-z0-9-]+$|^unscoped$/.test(scopeEntry.name)) continue;
+    const scopeDir = join(routingRoot, scopeEntry.name);
+    const fileEntries = readdirSync(scopeDir, { withFileTypes: true });
+    if (fileEntries.some((entry) => !entry.isFile() || !/^[a-f0-9]{64}\.json$/.test(entry.name))) continue;
+    const files = fileEntries.map((entry) => join(scopeDir, entry.name));
+    if (scopeDir === currentEvidenceDir) {
+      const stale = files
+        .map((path) => ({ path, mtimeMs: statSync(path).mtimeMs }))
+        .sort((left, right) => right.mtimeMs - left.mtimeMs || left.path.localeCompare(right.path))
+        .slice(MAX_NATIVE_ROLE_OBSERVATIONS);
+      for (const entry of stale) safeUnlinkEvidenceFile(stateDir, entry.path);
+      continue;
+    }
+    for (const path of files) safeUnlinkEvidenceFile(stateDir, path);
+    const scopeStat = lstatSync(scopeDir);
+    if (!scopeStat.isSymbolicLink() && scopeStat.isDirectory() && realpathSync(scopeDir) === scopeDir) {
+      rmdirSync(scopeDir);
+    }
+  }
+}
+
+function persistNativeRoleRoutingEvidence(
+  repoRoot: string,
+  input: JsonObject,
+  env: NodeJS.ProcessEnv,
+  now: Date,
+): NativeRoleRouting {
+  const canonicalRepoRoot = realpathSync(repoRoot);
+  return withExclusiveDirectoryLock(canonicalRepoRoot, NATIVE_ROLE_ROUTING_LOCK_RELATIVE, () => {
+    const stateDir = join(canonicalRepoRoot, DELEGATION_STATE_RELATIVE);
+    const observation = nativeRoleRoutingEvidence(repoRoot, input, env, now);
+    const evidenceRelative = join('role-routing', nativeRoleRoutingScope(input, env));
+    const evidenceDir = resolveEvidenceDir(stateDir, evidenceRelative);
+    if (!evidenceDir) {
+      return {
+        ...observation,
+        status: observation.status === 'invalid' ? 'invalid' : 'unverified',
+        reason: 'No safe native role-routing evidence directory is available.',
+      };
+    }
+    const agentId = firstString(input, ['agent_id']);
+    const turnId = firstString(input, ['turn_id']);
+    const evidenceKey = agentId && turnId
+      ? hash(`${turnId}\0${agentId}`, 'sha256')
+      : hash(`${observation.checked_at}\0${randomBytes(16).toString('hex')}`, 'sha256');
+    atomicWriteJson(stateDir, join(evidenceDir, `${evidenceKey}.json`), observation);
+    atomicWriteJson(stateDir, join(stateDir, NATIVE_ROLE_ROUTING_STATE_FILE), {
+      schema_version: 1,
+      required: true,
+      status: 'unverified',
+      reason: 'Runtime status is aggregated from official SubagentStart observations.',
+      evidence_dir: evidenceRelative,
+      reasoning_effort_status: 'configured_unverified',
+      updated_at: now.toISOString(),
+    });
+    try { pruneNativeRoleRoutingEvidence(stateDir, evidenceDir); } catch { /* bounded cleanup retries on the next event */ }
+    return observation;
+  });
 }
 
 function resolveEvidenceDir(stateDir: string, relativePath: unknown): string | null {
@@ -562,49 +669,39 @@ function runSubagentStart(repoRoot: string, input: JsonObject, env: NodeJS.Proce
     return result('', '', 2);
   }
 
-  const stateDir = join(repoRoot, DELEGATION_STATE_RELATIVE);
-  let nativeRoleRouting: NativeRoleRouting | null = null;
+  const observedRouting = nativeRoleRoutingEvidence(repoRoot, input, env, now);
+  let nativeRoleRouting: NativeRoleRouting = observedRouting;
   try {
-    let routingForContext: NativeRoleRouting | null = null;
     withDelegationStateTransaction(
       repoRoot,
       delegationScopes(input, env),
       (transaction) => {
         const state = transaction.snapshot.state;
-        if (!state?.eligible) return;
-        const updated: Record<string, unknown> = { ...state };
-        if (state.explicit && !state.spawned) {
-          updated.spawned = true;
-          updated.spawned_at = now.toISOString();
-        }
-        routingForContext = nativeRoleRoutingEvidence(repoRoot, input, state, env, now);
-        if (routingForContext) {
-          const evidenceDir = resolveEvidenceDir(stateDir, state.native_role_routing?.evidence_dir);
-          const agentId = firstString(input, ['agent_id']);
-          const turnId = firstString(input, ['turn_id']);
-          if (!evidenceDir || !agentId || !turnId) {
-            routingForContext = {
-              ...routingForContext,
-              status: routingForContext.status === 'invalid' ? 'invalid' : 'unverified',
-              reason: evidenceDir
-                ? 'SubagentStart omitted the identity fields required to persist role-routing evidence.'
-                : 'Delegation state has no safe role-routing evidence directory.',
-            };
-          } else {
-            const evidenceKey = hash(`${turnId}\0${agentId}`, 'sha256');
-            atomicWriteJson(join(evidenceDir, `${evidenceKey}.json`), routingForContext);
+        if (state?.eligible) {
+          const updated: Record<string, unknown> = { ...state };
+          if (state.explicit && !state.spawned) {
+            updated.spawned = true;
+            updated.spawned_at = now.toISOString();
           }
+          updated.updated_at = now.toISOString();
+          transaction.commit(updated);
         }
-        updated.updated_at = now.toISOString();
-        transaction.commit(updated);
       },
     );
-    nativeRoleRouting = routingForContext;
   } catch {
-    // Context remains useful even when delegation state is absent or malformed.
+    // Advisor lifecycle state is best effort and cannot suppress official event evidence.
+  }
+  try {
+    nativeRoleRouting = persistNativeRoleRoutingEvidence(repoRoot, input, env, now);
+  } catch {
+    nativeRoleRouting = {
+      ...observedRouting,
+      status: observedRouting.status === 'invalid' ? 'invalid' : 'unverified',
+      reason: 'Native role/model evidence could not be persisted safely; routing is not verified.',
+    };
   }
 
-  const contextRouting = nativeRoleRouting as NativeRoleRouting | null;
+  const contextRouting = nativeRoleRouting;
   const context = [
     '[repo-harness:subagent-context]',
     '',
@@ -613,7 +710,7 @@ function runSubagentStart(repoRoot: string, input: JsonObject, env: NodeJS.Proce
           `[repo-harness:native-role-routing] ${contextRouting.status}: ${contextRouting.reason}`,
           contextRouting.status === 'verified'
             ? 'Custom-agent model routing is verified for this child; reasoning-effort routing remains unverified because SubagentStart does not expose it.'
-            : 'Do not claim custom-agent model or reasoning-effort routing. Return this routing status to the parent so it can record runner degradation or use the configured fallback.',
+            : 'Do not claim custom-agent model or reasoning-effort routing. Return this routing status to the parent and fail closed; no alternate fleet runner is authorized.',
           '',
         ]
       : []),

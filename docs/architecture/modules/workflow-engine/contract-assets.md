@@ -125,6 +125,21 @@ sequenceDiagram
 - 旧文档头部与 P1 曾把 `assets/skills/merge-gate/` 列为 matched prefix 与权威文件。该目录在 HEAD **不存在**（`assets/skills/` 下只有 `claude-plan`、`repo-harness-chatgpt`、`repo-harness-cross-review`、`repo-harness-plan`、`repo-harness-product`、`repo-harness-setup`），`.ai/context/capabilities.json` 的 prefix 列表也已移除它。这与 2026-07-21 段落「former host-only merge-gate skill/agent ... are removed」一致。
 - 旧 P2 只描述了 shell 路线（`pi_install_workflow_contract` → `pi_write_harness_policy` → …）。这些函数在 `scripts/lib/project-init-lib.sh:917,1675` 仍然存在，但调用者只有 `scripts/create-project-dirs.sh:43` 与 `scripts/init-project.sh:69`，且这两个脚本**不在** `helpers.scripts` 契约清单里。`repo-harness init` 的实际 runtime path 是 §2.1 的 TS 事务模型。
 
+### 2026-08-11 Codex Native Agent Policy Cutover
+
+- The delegation policy now names only native `subagent` transport. Claude
+  keeps its native host behavior; Codex requires the exact installed
+  `agent_type` and `fork_turns=none`.
+- App-thread, `codex-exec`, and main-thread fleet fallbacks are removed from the
+  self-host policy and every generated policy projection. A native routing
+  mismatch is observable failure, not runner degradation.
+- Every new contract template now projects `preferred: [subagent]` with
+  `fallback: null`; the contract brief cannot restore an alternate fleet runner
+  after policy selection.
+- Prompt-hook permission is typed `/delegate` or `/parallel` only. Policy no
+  longer grants SessionStart standing authorization or treats natural-language
+  classification as permission.
+
 ---
 
 ## 4. 历史决策记录（append-only）
