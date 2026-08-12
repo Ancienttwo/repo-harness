@@ -1,7 +1,7 @@
 # workflow-engine/contract-assets 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" sourceDigest="sha256:6d50fa43d5583ee0ef25afa1363333f11f3559475cae0f8dd61d8973925acf41" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:0ea514b37d20981c5c91cdd82b3775cd51b5457d7f55e1c5e2fbcdd4409e6664" verifiedAgainst="main@1495a1d6d3b60b8b442061a420f443432e140791@2026-08-12T21:59:27+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" sourceDigest="sha256:6d50fa43d5583ee0ef25afa1363333f11f3559475cae0f8dd61d8973925acf41" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:4ed97fc0617f36e832189a37a20f4ee0ef42f852f710578ba512170012b2371e" verifiedAgainst="main@c30f08fcf306b15911f300288bd10cbff03d5377@2026-08-12T23:03:40+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`main@1495a1d6d3b60b8b442061a420f443432e140791`(2026-08-12)
+> **Verified against**:`main@c30f08fcf306b15911f300288bd10cbff03d5377`(2026-08-12)
 > **Capability ID**:`capability.workflow-engine.contract-assets`(kind `capability`)
 > **Matched Prefixes**:`assets/workflow-contract.v1.json`、`.ai/harness/workflow-contract.json`、`.ai/harness/policy.json`、`.ai/context/context-map.json`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-run.ts`、`scripts/contract-worktree.sh`、`scripts/archive-workflow.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`src/cli/commands/init.ts`、`src/cli/commands/capability-context.ts`、`src/cli/runtime/helper-runner.ts`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`
 > **Local Contracts**:`assets/AGENTS.md`、`assets/CLAUDE.md`

@@ -1,8 +1,8 @@
 # runtime-harness/global-runtime-reconciliation 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" sourceDigest="sha256:6d50fa43d5583ee0ef25afa1363333f11f3559475cae0f8dd61d8973925acf41" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:19b290ef59cea80656a381d7ba52c63d67aca174e37506c289b3dc3503baefa0" verifiedAgainst="main@1495a1d6d3b60b8b442061a420f443432e140791@2026-08-12T21:59:27+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" sourceDigest="sha256:6d50fa43d5583ee0ef25afa1363333f11f3559475cae0f8dd61d8973925acf41" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:03e585accd98063fab131c2df6eb96132fe58826930c1f5b5a241c67f7e3208c" verifiedAgainst="main@c30f08fcf306b15911f300288bd10cbff03d5377@2026-08-12T23:03:40+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`main@1495a1d6d3b60b8b442061a420f443432e140791`(2026-08-12)
+> **Verified against**:`main@c30f08fcf306b15911f300288bd10cbff03d5377`(2026-08-12)
 > **Capability ID**:`capability.runtime-harness.global-runtime-reconciliation`(kind `capability`)
 > **Matched Prefixes**:`package.json`、`bun.lock`、`src/cli/index.ts`、`src/cli/commands/global-runtime.ts`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`tests/cli/global-runtime-init.test.ts`、`tests/cli/global-runtime.test.ts`、`tests/architecture-projection-provider.test.ts`、`tests/architecture-projection-orchestration.test.ts`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
