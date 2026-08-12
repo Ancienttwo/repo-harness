@@ -1,7 +1,7 @@
 # runtime-mcp/general-repo-access 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-general-repo-access" sourceDigest="sha256:75f51c6f9b82b1428590c253411e554f81f792f30df5058111864e68d78e5cec" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:9a7b7417e376d778a7ff9369859e03f959f7dfbf22983dbaadf23fa500a32b5e" verifiedAgainst="main@8c953f85a3a14e275cce09a217c90a0158545470@2026-08-11T23:12:29+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-general-repo-access" sourceDigest="sha256:8b1c630fcc836865746e89b73082aff49877544222cbcfacae9600aa1deb4c1b" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:1e339c5ea9d81b77f3246e0c6ac2ec6a05db6c87a58eb394449a30a6e96330f5" verifiedAgainst="main@221a3732341a4d98de78653fd39e59b920693e84@2026-08-12T14:43:29+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`main@8c953f85a3a14e275cce09a217c90a0158545470`(2026-08-11)
+> **Verified against**:`main@221a3732341a4d98de78653fd39e59b920693e84`(2026-08-12)
 > **Capability ID**:`capability.runtime-mcp.general-repo-access`(kind `capability`)
 > **Matched Prefixes**:`src/cli/mcp/general-repo-access.ts`、`src/cli/mcp/general-repo-access/**`、`tests/cli/mcp-reader-tools.test.ts`、`tests/cli/mcp-codegraph-contract.test.ts`、`tests/cli/mcp-policy.test.ts`、`tests/cli/mcp-tools.test.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
