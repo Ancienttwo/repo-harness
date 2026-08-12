@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { projectionResultReceiptDigest, type ArchitectureProjectionPolicy, type ProjectionRequestV1, type ProjectionResultV1 } from '../src/core/architecture/projection';
 import { runMutationObserved, consumePendingPostEditEvents, readPendingPostEditEvents, migratePendingPostEditJournalV1 } from '../src/cli/hook/mutation-observed';
+import { readArchitectureDriftCursor } from '../src/cli/hook/architecture-drift';
 import { drainArchitectureProjectionJobs } from '../src/effects/architecture/projection-orchestrator';
 import {
   architectureProjectionJobState,
@@ -525,18 +526,21 @@ describe('durable architecture projection orchestration', () => {
     expect(existsSync(join(f.repoRoot, '.ai/harness/architecture-refresh/receipts'))).toBe(false);
   });
 
-  test('manual drain consumes source events and reports the rollback journal count', () => {
+  test('manual drain reads the cursor authority and leaves the journal to its own consumer', () => {
     const f = fixture();
     writeFileSync(join(f.repoRoot, '.ai/harness/policy.json'), '{"architecture":{"projection_provider":"disabled","projection_apply":"disabled"}}\n');
     runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/rollback.ts', session_id: 'rollback' }) });
+    writeFileSync(join(f.repoRoot, 'src/shell-written.ts'), 'export const written = 1;\n');
     const cli = realpathSync(join(import.meta.dir, '..', 'src', 'cli', 'index.ts'));
     const output = execFileSync(process.execPath, [cli, 'architecture-projection', 'drain', '--json'], {
       cwd: f.repoRoot,
       env: { ...process.env, PATH: '/usr/bin:/bin' },
       encoding: 'utf8',
     });
-    expect(JSON.parse(output)).toMatchObject({ status: 'disabled', sourceJournalPending: 0 });
-    expect(readPendingPostEditEvents(f.repoRoot)).toHaveLength(0);
+    expect(JSON.parse(output)).toMatchObject({ status: 'disabled', sourceJournalPending: 1 });
+    expect(readPendingPostEditEvents(f.repoRoot)).toHaveLength(1);
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: f.repoRoot, encoding: 'utf8' }).trim();
+    expect(readArchitectureDriftCursor(f.repoRoot)?.head_sha).toBe(head);
   });
 
   test('migrates v1 observations under the writer lock without losing coalesced dirty state', () => {

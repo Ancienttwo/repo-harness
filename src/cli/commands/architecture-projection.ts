@@ -6,7 +6,12 @@ import { captureArchitectureProjectionSnapshot, inspectArchitectureProjectionRea
 import { drainArchitectureProjectionJobs } from '../../effects/architecture/projection-orchestrator';
 import { architectureProjectionQueueState, retryArchitectureProjectionDeadLetter } from '../../effects/architecture/projection-jobs';
 import { consumeArchitectureRefreshSignals } from '../../effects/architecture/refresh-consumer';
-import { consumePendingPostEditEvents, migratePendingPostEditJournalV1, readPendingPostEditEvents } from '../hook/mutation-observed';
+import { processArchitectureCascade, readPendingPostEditEvents } from '../hook/mutation-observed';
+import {
+  advanceArchitectureDriftCursor,
+  architectureDriftSourceEvent,
+  computeArchitectureDriftChangedSet,
+} from '../hook/architecture-drift';
 
 export interface ProjectionCommandOptions {
   json?: boolean;
@@ -31,19 +36,16 @@ export function buildArchitectureProjectionCommand(): Command {
   command.command('drain').requiredOption('--json', 'Output durable drain JSON').action(() => {
     try {
       const root = repositoryRoot();
-      migratePendingPostEditJournalV1(root, 100);
-      const sourceEvents = readPendingPostEditEvents(root);
-      const result = drainArchitectureProjectionJobs(root, { sourceEvents });
-      consumePendingPostEditEvents(root, process.env, result.acknowledgeSourceEvents
-        ? {
-            skipArchitectureCascade: result.status !== 'disabled',
-            ...(result.status === 'disabled' ? {} : { eventIds: result.sourceEventIds }),
-          }
-        : {
-            skipArchitectureCascade: true,
-            eventIds: sourceEvents.map((event) => event.event_id),
-            retainEventFiles: true,
-          });
+      const changedSet = computeArchitectureDriftChangedSet(root);
+      for (const warning of changedSet.warnings) process.stderr.write(`${warning}\n`);
+      const driftEvent = architectureDriftSourceEvent(changedSet);
+      const result = drainArchitectureProjectionJobs(root, { sourceEvents: driftEvent ? [driftEvent] : [] });
+      if (result.status === 'disabled') {
+        for (const changedPath of changedSet.paths) processArchitectureCascade(root, process.env, changedPath);
+      }
+      if (result.acknowledgeSourceEvents && changedSet.headSha !== null) {
+        advanceArchitectureDriftCursor(root, changedSet.headSha);
+      }
       write({ ...result, sourceJournalPending: readPendingPostEditEvents(root).length });
       if (result.status === 'retry-pending' || result.status === 'dead-letter') process.exitCode = 1;
     } catch (error) { fail(error); }

@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync, symlinkSync } from 'fs';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, mkdirSync, symlinkSync } from 'fs';
+import { spawnSync } from 'child_process';
 import { dirname, join } from 'path';
 import { tmpdir } from 'os';
 import type { EffectiveState } from '../src/core/state/types';
 import { runStopHandler, type StopProjectionTarget } from '../src/cli/hook/stop-handler';
 import { readPendingPostEditEvents } from '../src/cli/hook/mutation-observed';
+import { readArchitectureDriftCursor } from '../src/cli/hook/architecture-drift';
 
 const fixtures: string[] = [];
 
@@ -18,6 +20,25 @@ function fixture(): string {
   mkdirSync(join(cwd, '.ai/harness'), { recursive: true });
   writeFileSync(join(cwd, '.ai/harness/policy.json'), '{}\n');
   return cwd;
+}
+
+function git(cwd: string, args: readonly string[]): string {
+  const result = spawnSync('git', [...args], { cwd, encoding: 'utf-8' });
+  if (result.status !== 0) throw new Error(result.stderr);
+  return result.stdout.trim();
+}
+
+/** A repository the drift cursor can actually anchor to. */
+function gitFixture(): { cwd: string; head: string } {
+  const cwd = realpathSync(fixture());
+  git(cwd, ['init', '-b', 'main']);
+  git(cwd, ['config', 'user.email', 'stop-handler@example.com']);
+  git(cwd, ['config', 'user.name', 'Stop Handler Test']);
+  writeFileSync(join(cwd, '.gitignore'), '.ai/harness/\n');
+  writeFileSync(join(cwd, 'README.md'), '# fixture\n');
+  git(cwd, ['add', '-A']);
+  git(cwd, ['commit', '-m', 'seed']);
+  return { cwd, head: git(cwd, ['rev-parse', 'HEAD']) };
 }
 
 function canonicalState(options: {
@@ -135,22 +156,22 @@ describe('runStopHandler', () => {
     expect(malformedInactive.stderr).toContain('JSON Parse error');
   });
 
-  test('runs non-architecture journal effects without acknowledging a projection-pending source event', () => {
+  test('consumes journal trigger effects independently of the projection drain outcome', () => {
     const cwd = fixture();
     const pending = join(cwd, '.ai/harness/journal/post-edit/pending');
     mkdirSync(pending, { recursive: true });
-    const eventId = 'event-retained';
-    writeFileSync(join(pending, `${eventId}.json`), `${JSON.stringify({
+    const eventId = 'event-consumed';
+    writeFileSync(join(pending, '0123456789abcdefabcd.json'), `${JSON.stringify({
       schema: 'change_observed',
       schema_version: 2,
       source_key: '0123456789abcdefabcd',
       event_id: eventId,
-      session_id: 'session-retained',
+      session_id: 'session-consumed',
       created_at: '2026-08-09T00:00:00.000Z',
       updated_at: '2026-08-09T00:00:00.000Z',
       changed_paths: ['src/example.ts'],
       subject_revision: null,
-      dirty: { 'contract-verification': true, architecture: true, context: true, capability: true, 'minimal-change': true, checkpoint: false },
+      dirty: { 'contract-verification': true, context: true, capability: true, 'minimal-change': true, checkpoint: false },
       payload: {
         contract_verification: { contract_file: 'tasks/contracts/example.contract.md', checks_file: '.ai/harness/checks/latest.json' },
         minimal_change: { path: 'src/example.ts', base_ref: 'HEAD' },
@@ -159,7 +180,7 @@ describe('runStopHandler', () => {
     const failedDrain = () => ({
       schemaVersion: 'repo-harness.architecture-projection-drain/v1' as const,
       status: 'retry-pending' as const,
-      jobId: 'job-retained', sourceEventIds: [eventId], resultStatus: null,
+      jobId: 'job-retained', sourceEventIds: ['drift-unrelated'], resultStatus: null,
       error: 'projection failed', acknowledgeSourceEvents: false,
       queue: { schemaVersion: 'repo-harness.architecture-projection-queue-state/v1' as const, pending: 1, running: 0, receipts: 0, deadLetters: 0, oldestPendingJobId: 'job-retained', oldestDeadLetterJobId: null },
     });
@@ -170,11 +191,38 @@ describe('runStopHandler', () => {
       dependencies: { drainArchitectureProjection: failedDrain },
     });
 
-    const [retained] = readPendingPostEditEvents(cwd);
-    expect(retained?.event_id).toBe(eventId);
-    expect(retained?.dirty.architecture).toBe(true);
-    expect(retained?.dirty['contract-verification']).toBe(false);
-    expect(retained?.dirty['minimal-change']).toBe(false);
+    // The journal no longer carries any architecture datum, so its trigger
+    // effects are never held back by the architecture lane's outcome.
+    expect(readPendingPostEditEvents(cwd)).toEqual([]);
+  });
+
+  test('advances the drift cursor only for an acknowledged architecture delivery', () => {
+    const held = gitFixture();
+    writeFileSync(join(held.cwd, 'src-shell-write.ts'), 'export const written = 1;\n');
+    const drainResult = (acknowledgeSourceEvents: boolean) => () => ({
+      schemaVersion: 'repo-harness.architecture-projection-drain/v1' as const,
+      status: acknowledgeSourceEvents ? 'succeeded' as const : 'retry-pending' as const,
+      jobId: 'job-cursor', sourceEventIds: [], resultStatus: null,
+      error: acknowledgeSourceEvents ? null : 'projection failed',
+      acknowledgeSourceEvents,
+      queue: { schemaVersion: 'repo-harness.architecture-projection-queue-state/v1' as const, pending: 0, running: 0, receipts: 0, deadLetters: 0, oldestPendingJobId: null, oldestDeadLetterJobId: null },
+    });
+
+    const heldResult = runStopHandler({
+      collector: collector(held.cwd, () => canonicalState()),
+      env: { ...process.env, PATH: '', HOOK_RUN_ID: 'cursor-held' },
+      dependencies: { drainArchitectureProjection: drainResult(false) },
+    });
+    expect(readArchitectureDriftCursor(held.cwd)).toBeNull();
+    expect(heldResult.stderr).toContain('drift cursor (missing) is unresolvable');
+
+    const advanced = gitFixture();
+    runStopHandler({
+      collector: collector(advanced.cwd, () => canonicalState()),
+      env: { ...process.env, PATH: '', HOOK_RUN_ID: 'cursor-advanced' },
+      dependencies: { drainArchitectureProjection: drainResult(true) },
+    });
+    expect(readArchitectureDriftCursor(advanced.cwd)?.head_sha).toBe(advanced.head);
   });
 
   test('commits the exact four-target projection once before the single state resolution', () => {

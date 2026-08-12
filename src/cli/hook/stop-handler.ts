@@ -22,7 +22,12 @@ import { randomBytes } from 'crypto';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { execFileSync } from 'child_process';
 import type { EffectiveState } from '../../core/state/types';
-import { consumePendingPostEditEvents, migratePendingPostEditJournalV1, readPendingPostEditEvents, type PostEditJournalEvent } from './mutation-observed';
+import { consumePendingPostEditEvents, processArchitectureCascade } from './mutation-observed';
+import {
+  advanceArchitectureDriftCursor,
+  architectureDriftSourceEvent,
+  computeArchitectureDriftChangedSet,
+} from './architecture-drift';
 import { drainArchitectureProjectionJobs, type ArchitectureProjectionDrainResultV1 } from '../../effects/architecture/projection-orchestrator';
 import { loadArchitectureProjectionPolicy } from '../../effects/architecture/archctx-provider';
 import { runMinimalChangeCli } from './minimal-change-cli';
@@ -439,28 +444,27 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   let architectureDrain: ArchitectureProjectionDrainResultV1 | null = null;
   let architectureDrainError = '';
   let journalSideEffectError = '';
-  let sourceEvents: readonly PostEditJournalEvent[] = [];
+  let driftWarnings: readonly string[] = [];
   try {
-    migratePendingPostEditJournalV1(repoRoot, 100);
-    sourceEvents = readPendingPostEditEvents(repoRoot);
+    const changedSet = computeArchitectureDriftChangedSet(repoRoot);
+    driftWarnings = changedSet.warnings;
+    const driftEvent = architectureDriftSourceEvent(changedSet);
     architectureDrain = dependencies.drainArchitectureProjection?.(repoRoot, env)
-      ?? drainArchitectureProjectionJobs(repoRoot, { env, sourceEvents });
+      ?? drainArchitectureProjectionJobs(repoRoot, { env, sourceEvents: driftEvent ? [driftEvent] : [] });
+    if (architectureDrain.status === 'disabled') {
+      for (const changedPath of changedSet.paths) processArchitectureCascade(repoRoot, env, changedPath);
+    }
+    // The cursor is the retry boundary: it only moves past a range the
+    // consumer acknowledged, so a retry-pending, dead-lettered, or throwing
+    // drain replays the same range on the next Stop.
+    if (architectureDrain.acknowledgeSourceEvents && changedSet.headSha !== null) {
+      advanceArchitectureDriftCursor(repoRoot, changedSet.headSha, now);
+    }
   } catch (error) {
     architectureDrainError = error instanceof Error ? error.message : String(error);
   }
   try {
-    if (architectureDrain?.acknowledgeSourceEvents) {
-      consumePendingPostEditEvents(repoRoot, env, {
-        skipArchitectureCascade: architectureDrain.status !== 'disabled',
-        ...(architectureDrain.status === 'disabled' ? {} : { eventIds: architectureDrain.sourceEventIds }),
-      });
-    } else {
-      consumePendingPostEditEvents(repoRoot, env, {
-        skipArchitectureCascade: true,
-        eventIds: sourceEvents.map((event) => event.event_id),
-        retainEventFiles: true,
-      });
-    }
+    consumePendingPostEditEvents(repoRoot, env, { skipArchitectureCascade: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     journalSideEffectError = message;
@@ -496,6 +500,7 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   dependencies.observeProjectionTransaction?.();
 
   const stderr: string[] = [`[FinalizeHandoff] Refreshed ${projected.paths.handoff}.\n`];
+  for (const warning of driftWarnings) stderr.push(`${warning}\n`);
   if (architectureDrain?.status === 'retry-pending' || architectureDrain?.status === 'dead-letter') {
     stderr.push(`[ArchitectureProjection] ${architectureDrain.status}: ${architectureDrain.error ?? 'unknown failure'}\n`);
   } else if (architectureDrainError) {

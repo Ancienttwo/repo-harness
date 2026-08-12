@@ -839,7 +839,7 @@ function runCapabilityContextRequest(repoRoot: string, env: NodeJS.ProcessEnv): 
  * the (still same, unmodified) `architecture-queue.sh record` command's real
  * output, not a second capability-resolver implementation.
  */
-function processArchitectureCascade(repoRoot: string, env: NodeJS.ProcessEnv, filePath: string): void {
+export function processArchitectureCascade(repoRoot: string, env: NodeJS.ProcessEnv, filePath: string): void {
   if (!repoHarnessRunnerAvailable(env)) return;
   const result = runRepoHarnessHelper(repoRoot, env, 'architecture-queue', ['record', '--file', filePath]);
   if (/^\[ArchitectureDrift\] Request:/m.test(result.stdout)) {
