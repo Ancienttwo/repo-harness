@@ -180,15 +180,59 @@ describe('mutation-observed: journal schema', () => {
 });
 
 describe('mutation-observed: dirty-bit derivation', () => {
-  test('architecture, context, and capability are unconditionally true for any qualifying edit', () => {
+  test('context and capability are unconditionally true, and no architecture bit is written', () => {
     const cwd = tmpWorkspace('mo-arch-bits');
     try {
       initRepo(cwd);
       runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/unrelated.ts') });
       const [event] = pendingEvents(cwd);
-      expect(event.dirty.architecture).toBe(true);
       expect(event.dirty.context).toBe(true);
       expect(event.dirty.capability).toBe(true);
+      // The architecture changed set is git-derived at Stop
+      // (src/cli/hook/architecture-drift.ts); the journal carries no
+      // architecture datum for any consumer to read.
+      expect(Object.keys(event.dirty)).not.toContain('architecture');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test('a codex apply_patch PostToolUse payload stays a clean no-op', () => {
+    const cwd = tmpWorkspace('mo-apply-patch');
+    try {
+      initRepo(cwd);
+      // Codex 0.147.0 apply_patch reaches this route but carries its targets
+      // inside `tool_input.command`, which this single-path handler does not
+      // expand. That blindness is why the architecture changed set moved to
+      // git; the remaining journal bits are Claude Edit/Write-shaped, so the
+      // payload must stay a no-op rather than grow a second path extractor.
+      const result = runMutationObserved({
+        collector: collectorFor(cwd),
+        input: JSON.stringify({
+          session_id: 'codex-fleet-session',
+          hook_event_name: 'PostToolUse',
+          tool_name: 'apply_patch',
+          tool_input: {
+            command: [
+              '*** Begin Patch',
+              '*** Update File: src/broker.ts',
+              '@@',
+              '-const value = 1;',
+              '+const value = 2;',
+              '*** Add File: packages/cloud-postgres/src/index.ts',
+              '+export const added = true;',
+              '*** End Patch',
+              '',
+            ].join('\n'),
+          },
+        }),
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toBe('');
+      expect(pendingEvents(cwd)).toEqual([]);
+      expect(existsSync(join(cwd, '.ai/harness/journal/post-edit/pending'))).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -331,7 +375,7 @@ describe('mutation-observed: session-scoped dedupe', () => {
       const env = { ...process.env, HOOK_SESSION_ID: 'session-x' };
       runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/repeat.ts'), env });
       const firstEventId = pendingEvents(cwd)[0].event_id;
-      consumePendingPostEditEvents(cwd, env, { skipArchitectureCascade: true });
+      consumePendingPostEditEvents(cwd, env);
       runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/repeat.ts'), env });
       expect(pendingEvents(cwd)[0].event_id).not.toBe(firstEventId);
     } finally {

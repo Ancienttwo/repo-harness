@@ -163,7 +163,7 @@ describe('durable architecture projection orchestration', () => {
     expect(projectionCalls.count).toBe(1);
     expect(readPendingPostEditEvents(f.repoRoot)).toHaveLength(10);
     expect(readdirSync(join(f.repoRoot, '.ai/harness/architecture-projection/receipts'))).toHaveLength(1);
-    consumePendingPostEditEvents(f.repoRoot, process.env, { skipArchitectureCascade: true });
+    consumePendingPostEditEvents(f.repoRoot, process.env);
     expect(readPendingPostEditEvents(f.repoRoot)).toHaveLength(0);
   });
 
@@ -173,7 +173,7 @@ describe('durable architecture projection orchestration', () => {
     const input = JSON.stringify({ file_path: 'src/repeated.ts', session_id: 'same-session' });
     runMutationObserved({ collector: f.collector, input });
     const first = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: successfulRunner(projectionCalls) });
-    consumePendingPostEditEvents(f.repoRoot, process.env, { skipArchitectureCascade: true, eventIds: first.sourceEventIds });
+    consumePendingPostEditEvents(f.repoRoot, process.env);
     runMutationObserved({ collector: f.collector, input });
     const second = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: successfulRunner(projectionCalls) });
     expect(second.status).toBe('succeeded');
@@ -194,7 +194,6 @@ describe('durable architecture projection orchestration', () => {
       return { status: 0, signal: null, stderr: '', stdout: JSON.stringify(envelope(request)) };
     };
     const first = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run });
-    consumePendingPostEditEvents(f.repoRoot, process.env, { skipArchitectureCascade: true, eventIds: first.sourceEventIds });
     expect(readPendingPostEditEvents(f.repoRoot)).toHaveLength(1);
     const second = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run });
     expect(second.status).toBe('succeeded');
@@ -427,9 +426,10 @@ describe('durable architecture projection orchestration', () => {
     expect(() => failArchitectureProjectionJob(root, running, { kind: 'process', message: 'stale owner' })).toThrow('claim no longer belongs');
   });
 
-  test('acks only the events bound to a completed job when a newer edit arrives between retries', () => {
+  test('binds a completed retry to the events of its own job when a newer source arrives between retries', () => {
     const f = fixture();
     runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/first.ts', session_id: 'first' }) });
+    const firstEventId = readPendingPostEditEvents(f.repoRoot)[0]!.event_id;
     const failed: RunArchctxProcess = (_binary, args) => args[0] === 'capabilities'
       ? capabilities()
       : { status: 1, signal: null, stdout: '', stderr: 'retry me' };
@@ -437,8 +437,7 @@ describe('durable architecture projection orchestration', () => {
     runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/second.ts', session_id: 'second' }) });
     const projectionCalls = { count: 0 };
     const drained = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: successfulRunner(projectionCalls) });
-    consumePendingPostEditEvents(f.repoRoot, process.env, { skipArchitectureCascade: true, eventIds: drained.sourceEventIds });
-    expect(readPendingPostEditEvents(f.repoRoot).map((event) => event.changed_paths)).toEqual([['src/second.ts']]);
+    expect(drained.sourceEventIds).toEqual([firstEventId]);
   });
 
   test('rebinds a retried job to the current delivery id of the same source slot before projection', () => {
@@ -457,7 +456,7 @@ describe('durable architecture projection orchestration', () => {
     const completed = drain(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: successfulRunner({ count: 0 }) });
     expect(completed.status).toBe('succeeded');
     expect(completed.sourceEventIds).toEqual([currentSource.event_id]);
-    consumePendingPostEditEvents(f.repoRoot, process.env, { skipArchitectureCascade: true, eventIds: completed.sourceEventIds });
+    consumePendingPostEditEvents(f.repoRoot, process.env);
     expect(readPendingPostEditEvents(f.repoRoot)).toHaveLength(0);
   });
 

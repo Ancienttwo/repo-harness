@@ -464,7 +464,7 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
     architectureDrainError = error instanceof Error ? error.message : String(error);
   }
   try {
-    consumePendingPostEditEvents(repoRoot, env, { skipArchitectureCascade: true });
+    consumePendingPostEditEvents(repoRoot, env);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     journalSideEffectError = message;

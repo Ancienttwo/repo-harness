@@ -17,6 +17,11 @@
  * the condition-by-condition dirty-bit derivation table and the falsifier
  * record.
  *
+ * The architecture cascade is no longer one of those dirty bits: a journal
+ * event only exists for a Claude Edit/Write tool call, which made the cascade
+ * blind to shell and apply_patch writes. `architecture-drift.ts` owns that
+ * changed set now; this journal owns edit-time trigger payloads only.
+ *
  * Host-visible advisory stdout (DocDrift/DeployAsset echoes, and the
  * former first-principles advisory) is ported in-process — those never wrote
  * anything durable, so they stay on the hot path without a second route
@@ -107,7 +112,6 @@ export function runMutationObserved(opts: MutationObservedInput): MutationObserv
 
   const dirty: PostEditJournalDirtyBits = {
     'contract-verification': contractTarget !== null,
-    architecture: true,
     context: true,
     capability: true,
     'minimal-change': minimalChangeEnabled,
@@ -532,7 +536,6 @@ function currentGitRevision(repoRoot: string): string | null {
 
 export interface PostEditJournalDirtyBits {
   readonly 'contract-verification': boolean;
-  readonly architecture: boolean;
   readonly context: boolean;
   readonly capability: boolean;
   readonly 'minimal-change': boolean;
@@ -621,7 +624,6 @@ function writeOrCoalesceJournalEventLocked(repoRoot: string, input: WriteJournal
   const dirty: PostEditJournalDirtyBits = existing
     ? {
         'contract-verification': existing.dirty['contract-verification'] || input.dirty['contract-verification'],
-        architecture: existing.dirty.architecture || input.dirty.architecture,
         context: existing.dirty.context || input.dirty.context,
         capability: existing.dirty.capability || input.dirty.capability,
         'minimal-change': existing.dirty['minimal-change'] || input.dirty['minimal-change'],
@@ -832,7 +834,9 @@ function runCapabilityContextRequest(repoRoot: string, env: NodeJS.ProcessEnv): 
 }
 
 /**
- * `run_architecture_queue_sync()` port (post-edit-guard.sh:49-96). The
+ * `run_architecture_queue_sync()` port (post-edit-guard.sh:49-96), now
+ * invoked per path of the Stop-time drift changed set (see
+ * `architecture-drift.ts`) instead of per journal event. The
  * context-contract-sync + capability-context cascade is gated on
  * architecture-queue's OWN real-time output matching
  * `/^\[ArchitectureDrift\] Request:/m` -- replicated here exactly, against
@@ -899,29 +903,23 @@ function warnStderr(line: string): void {
 }
 
 /**
- * Processes every selected journal event's dirty bits (architecture cascade,
- * contract verification, deferred minimal-change signals). The default path
- * deletes the event on success. `retainEventFiles` persists the event with
- * non-architecture dirty bits cleared, allowing those orthogonal effects to
- * complete while a durable architecture job still owns the source ack.
- * Best-effort per
- * event: one event's failure leaves its file in `pending/` for the next
- * Stop to retry rather than losing the others or throwing out of Stop.
- * Corrupt pending files (unparseable JSON, wrong schema) are removed
+ * Processes every pending journal event's dirty bits (contract verification,
+ * deferred minimal-change signals) and deletes the event on success.
+ * Best-effort per event: one event's failure leaves its file in `pending/`
+ * for the next Stop to retry rather than losing the others or throwing out of
+ * Stop. Corrupt pending files (unparseable JSON, wrong schema) are removed
  * outright with a stderr warning -- they can never be "retried" into
  * validity.
  */
 export function consumePendingPostEditEvents(
   repoRoot: string,
   env: NodeJS.ProcessEnv = process.env,
-  options: { skipArchitectureCascade?: boolean; eventIds?: readonly string[]; retainEventFiles?: boolean } = {},
 ): PostEditConsumeSummary {
   migratePendingPostEditJournalV1(repoRoot, 100);
   const { valid, corruptNames } = scanPendingPostEditEventFiles(repoRoot);
   let consumed = 0;
   let errors = 0;
   const warnings: string[] = [];
-  const selectedEventIds = options.eventIds ? new Set(options.eventIds) : null;
 
   for (const name of corruptNames) {
     const warning = `[PostEditJournal] WARN: removed corrupt pending event file ${name}`;
@@ -935,13 +933,7 @@ export function consumePendingPostEditEvents(
   }
 
   for (const { name, event } of valid) {
-    if (selectedEventIds && !selectedEventIds.has(event.event_id)) continue;
     try {
-      if (event.dirty.architecture && options.skipArchitectureCascade !== true) {
-        for (const filePath of event.changed_paths) {
-          processArchitectureCascade(repoRoot, env, filePath);
-        }
-      }
       if (event.dirty['contract-verification'] && event.payload.contract_verification) {
         processContractVerification(
           repoRoot,
@@ -957,35 +949,16 @@ export function consumePendingPostEditEvents(
           event.payload.minimal_change.base_ref,
         );
       }
-      if (options.retainEventFiles === true) {
-        const root = realpathSync(repoRoot);
-        const key = name.replace(/\.json$/, '');
-        withExclusiveDirectoryLock(root, `${JOURNAL_ROOT}/locks/${key}`, () => {
-          const path = join(root, JOURNAL_PENDING_DIR, name);
-          const current = readJournalEventFile(path);
-          if (!current || current.updated_at !== event.updated_at) return;
-          writeJournalEventAtomic(path, {
-            ...current,
-            updated_at: new Date().toISOString(),
-            dirty: {
-              ...current.dirty,
-              'contract-verification': false,
-              'minimal-change': false,
-            },
-          });
-        });
-      } else {
-        const root = realpathSync(repoRoot);
-        const key = name.replace(/\.json$/, '');
-        let deleted = false;
-        withExclusiveDirectoryLock(root, `${JOURNAL_ROOT}/locks/${key}`, () => {
-          const current = readJournalEventFile(join(root, JOURNAL_PENDING_DIR, name));
-          if (!current || current.updated_at !== event.updated_at) return;
-          deletePendingPostEditEventFile(root, name);
-          deleted = true;
-        });
-        if (deleted) consumed += 1;
-      }
+      const root = realpathSync(repoRoot);
+      const key = name.replace(/\.json$/, '');
+      let deleted = false;
+      withExclusiveDirectoryLock(root, `${JOURNAL_ROOT}/locks/${key}`, () => {
+        const current = readJournalEventFile(join(root, JOURNAL_PENDING_DIR, name));
+        if (!current || current.updated_at !== event.updated_at) return;
+        deletePendingPostEditEventFile(root, name);
+        deleted = true;
+      });
+      if (deleted) consumed += 1;
     } catch {
       errors += 1;
     }
