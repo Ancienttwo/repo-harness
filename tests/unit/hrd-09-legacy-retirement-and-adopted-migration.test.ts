@@ -96,6 +96,12 @@ describe('HRD-09 terminal runtime migration', () => {
       expect(applied.ok).toBe(true);
       expect(applied.transactionManifestPath).toBeDefined();
       expect(planAdoption({ repoRoot: repo, mode: 'standard' }).summary.plannedTotal).toBe(0);
+      // Adoption lands as a commit in practice. Committing it here keeps the
+      // Stop route's git-derived architecture changed set at the realistic
+      // post-adoption delta instead of replaying the whole 70-file adoption
+      // transaction through the per-path cascade.
+      execFileSync('git', ['add', '-A'], { cwd: repo });
+      execFileSync('git', ['commit', '-q', '-m', 'adopt harness'], { cwd: repo });
 
       const retirement = JSON.parse(readFileSync(join(ROOT, 'assets/workflow-contract.v1.json'), 'utf8'))
         .migrations.upgrade.actions.find((action: { id?: string }) => action.id === 'legacy-hook-runtime-retirement') as { paths: string[] };

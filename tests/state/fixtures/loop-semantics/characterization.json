@@ -231,6 +231,7 @@
           ".ai/harness/handoff/resume.md",
           ".ai/harness/runs/hook-events.jsonl",
           ".ai/harness/runs/loop-semantics-lite-stop.json",
+          ".ai/harness/state/architecture-drift-cursor.json",
           ".ai/harness/state/effective.json"
         ],
         "missing_semantic_fields": []
@@ -278,6 +279,7 @@
           ".ai/harness/handoff/resume.md",
           ".ai/harness/runs/hook-events.jsonl",
           ".ai/harness/runs/loop-semantics-standard-stop.json",
+          ".ai/harness/state/architecture-drift-cursor.json",
           ".ai/harness/state/effective.json"
         ],
         "missing_semantic_fields": []
@@ -327,6 +329,7 @@
           ".ai/harness/handoff/resume.md",
           ".ai/harness/runs/hook-events.jsonl",
           ".ai/harness/runs/loop-semantics-strict-stop.json",
+          ".ai/harness/state/architecture-drift-cursor.json",
           ".ai/harness/state/effective.json"
         ],
         "missing_semantic_fields": []

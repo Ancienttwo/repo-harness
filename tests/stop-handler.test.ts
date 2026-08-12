@@ -6,7 +6,7 @@ import { tmpdir } from 'os';
 import type { EffectiveState } from '../src/core/state/types';
 import { runStopHandler, type StopProjectionTarget } from '../src/cli/hook/stop-handler';
 import { readPendingPostEditEvents } from '../src/cli/hook/mutation-observed';
-import { readArchitectureDriftCursor } from '../src/cli/hook/architecture-drift';
+import { advanceArchitectureDriftCursor, readArchitectureDriftCursor } from '../src/cli/hook/architecture-drift';
 
 const fixtures: string[] = [];
 
@@ -224,6 +224,55 @@ describe('runStopHandler', () => {
     });
     expect(readArchitectureDriftCursor(advanced.cwd)?.head_sha).toBe(advanced.head);
   });
+
+  test('feeds every shell-written path of a codex fleet session to the architecture cascade', () => {
+    // The reported failure: a Codex worktree session writes exclusively
+    // through shell, so no post-edit journal event exists and drift recording
+    // saw nothing. Every mutation below is a plain fs/git write -- no hook
+    // payload is ever handed to the journal writer.
+    const { cwd } = gitFixture();
+    writeFileSync(join(cwd, '.ai/harness/policy.json'), '{"architecture":{"projection_provider":"disabled","projection_apply":"disabled"}}\n');
+    const anchor = git(cwd, ['rev-parse', 'HEAD']);
+
+    const stubRoot = mkdtempSync(join(tmpdir(), 'repo-harness-stop-cascade-'));
+    fixtures.push(stubRoot);
+    const calls = join(stubRoot, 'calls.txt');
+    const stubCli = join(stubRoot, 'stub-cli.ts');
+    writeFileSync(stubCli, [
+      "import { appendFileSync } from 'fs';",
+      "appendFileSync(process.env.STOP_CASCADE_CALLS!, `${process.argv.slice(2).join(' ')}\\n`);",
+      '',
+    ].join('\n'));
+
+    mkdirSync(join(cwd, 'src'), { recursive: true });
+    writeFileSync(join(cwd, 'src/committed-change.ts'), 'export const committed = 1;\n');
+    git(cwd, ['add', '-A']);
+    git(cwd, ['commit', '-m', 'shell commit']);
+    const head = git(cwd, ['rev-parse', 'HEAD']);
+    writeFileSync(join(cwd, 'src/shell-write.ts'), 'export const shellWritten = 1;\n');
+    mkdirSync(join(cwd, 'packages/new-pkg/src'), { recursive: true });
+    writeFileSync(join(cwd, 'packages/new-pkg/src/index.ts'), 'export const added = 1;\n');
+    rmSync(join(cwd, 'README.md'));
+
+    // The commit above already landed, so only a cursor at the earlier anchor
+    // proves the commit range is part of the changed set.
+    advanceArchitectureDriftCursor(cwd, anchor);
+
+    const result = runStopHandler({
+      collector: collector(cwd, () => canonicalState()),
+      env: { ...process.env, HOOK_RUN_ID: 'fleet-shell-writes', REPO_HARNESS_CLI: stubCli, STOP_CASCADE_CALLS: calls },
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(readPendingPostEditEvents(cwd)).toEqual([]);
+    expect(readFileSync(calls, 'utf8').trim().split('\n').sort()).toEqual([
+      'run architecture-queue record --file README.md',
+      'run architecture-queue record --file packages/new-pkg/src/index.ts',
+      'run architecture-queue record --file src/committed-change.ts',
+      'run architecture-queue record --file src/shell-write.ts',
+    ]);
+    expect(readArchitectureDriftCursor(cwd)?.head_sha).toBe(head);
+  }, 30_000);
 
   test('commits the exact four-target projection once before the single state resolution', () => {
     const cwd = fixture();

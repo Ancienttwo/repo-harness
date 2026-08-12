@@ -189,6 +189,33 @@ does not inspect legacy command shapes, so there is no dual-read path.
   closed without App-thread, `codex-exec`, or main-thread fallback. Reasoning
   effort stays `configured_unverified` because the event exposes no such field.
 
+### Stop-time git changed set as the architecture observation authority (2026-08-12)
+
+- P1: `src/cli/hook/architecture-drift.ts` owns the architecture changed set. The
+  post-edit journal keeps only edit-time trigger payloads (contract
+  verification, minimal change, checkpoint); its `dirty.architecture` bit and
+  the `skipArchitectureCascade`/`eventIds`/`retainEventFiles` handshake with the
+  projection drain are removed, not gated. A journal event only ever existed for
+  a Claude Edit/Write tool call, so shell writes (the Codex worktree fleet
+  shape) and apply_patch payloads were invisible to drift recording.
+- P2: Stop computes `git diff --name-only --no-renames <cursor> HEAD` unioned
+  with `git status --porcelain --untracked-files=all` (rename rows contribute
+  both sides), canonicalizes every path through the same repo-relative filter
+  the edit route uses, and hands one deterministic
+  `ArchitectureProjectionSourceEvent` to `drainArchitectureProjectionJobs`. When
+  projection is disabled the same path list drives `processArchitectureCascade`.
+  `repo-harness architecture-projection drain --json` reads the same authority;
+  its output schema is unchanged.
+- P3: the cursor (`.ai/harness/state/architecture-drift-cursor.json`, a single
+  slot following `session-run-identity.json`) advances to HEAD only on an
+  acknowledged delivery, so retry-pending, dead-letter, and thrown failures
+  replay the same range on the next Stop. A missing or unresolvable cursor
+  re-anchors at HEAD, processes working-tree entries only, and emits one stderr
+  note instead of replaying history. Deletions stay in the feed:
+  `architecture-queue record --file` classifies lexically and records a card for
+  a path that no longer exists on disk. The cascade commands themselves are
+  byte-identical -- only their input feed changed.
+
 ## 5. 验证面
 
 capabilities.json 的 `verification_hints`：
@@ -203,6 +230,7 @@ bash scripts/check-task-workflow.sh --strict
 - `bun test tests/cli/route-registry.test.ts tests/cli/hook.test.ts`
 - `bun test tests/prompt-handler.test.ts tests/subagent-handler.test.ts`
 - `bun test tests/command-observed.test.ts tests/trace-observer.test.ts`
+- `bun test tests/architecture-drift.test.ts tests/stop-handler.test.ts tests/mutation-observed.test.ts`
 - `bun test tests/hook-contracts.test.ts tests/hook-protocol.test.ts`
 - `bun run check:type`
 - `bun run check:hooks`
