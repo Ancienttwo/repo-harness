@@ -539,6 +539,7 @@ describe('closeout runner guardrails', () => {
     const root = temporaryRoot('repo-harness-benchmark-provider-group-');
     initializeGitRepository(root);
     const providerStarted = join(root, 'provider-started');
+    const providerGroupPid = join(root, 'provider-group-pid');
     const descendantSentinel = join(root, 'descendant-survived');
     const contenderAttempting = join(root, 'contender-attempting');
     const contenderEntered = join(root, 'contender-entered');
@@ -546,6 +547,7 @@ describe('closeout runner guardrails', () => {
     const contenderWorker = join(root, 'benchmark-provider-group-contender.ts');
     const providerCommand = [
       "trap 'exit 0' TERM",
+      `printf '%s\\n' "$$" > ${JSON.stringify(providerGroupPid)}`,
       `(trap '' TERM; sleep 1; touch ${JSON.stringify(descendantSentinel)}) >/dev/null 2>&1 &`,
       `touch ${JSON.stringify(providerStarted)}`,
       'wait',
@@ -560,10 +562,13 @@ describe('closeout runner guardrails', () => {
     ].join('\n'));
     writeFileSync(contenderWorker, [
       `import { acquireExpensiveRunLock } from ${JSON.stringify(join(ROOT, 'src/effects/expensive-run-lock.ts'))};`,
-      "import { writeFileSync } from 'fs';",
+      "import { readFileSync, writeFileSync } from 'fs';",
       `writeFileSync(${JSON.stringify(contenderAttempting)}, 'attempting\\n');`,
       `const lock = acquireExpensiveRunLock(${JSON.stringify(root)});`,
-      `writeFileSync(${JSON.stringify(contenderEntered)}, 'entered\\n');`,
+      `const providerGroupPid = Number(readFileSync(${JSON.stringify(providerGroupPid)}, 'utf8').trim());`,
+      'let providerGroupAlive = true;',
+      "try { process.kill(-providerGroupPid, 0); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ESRCH') providerGroupAlive = false; else throw error; }",
+      `writeFileSync(${JSON.stringify(contenderEntered)}, providerGroupAlive ? 'alive\\n' : 'drained\\n');`,
       'lock.release();',
       '',
     ].join('\n'));
@@ -572,30 +577,21 @@ describe('closeout runner guardrails', () => {
       cwd: ROOT, detached: true, stdout: 'pipe', stderr: 'pipe',
     });
     await waitForPath(providerStarted);
+    await waitForPath(providerGroupPid);
     process.kill(producer.pid, 'SIGTERM');
     const contender = Bun.spawn([process.execPath, contenderWorker], {
       cwd: ROOT, stdout: 'pipe', stderr: 'pipe',
     });
     await waitForPath(contenderAttempting);
-    // The token is released inside the signal cleanup, after
-    // terminateActiveProviderGroups() drains the leaderless group and
-    // immediately before the producer exits (installProducerSignalCleanup in
-    // scripts/run-harness-profile-benchmark.ts). So "retained until drained"
-    // is observable as an ordering: the contender cannot enter before the
-    // producer is gone. Racing the two events tests that ordering directly.
-    // A fixed sleep here tested only that the drain was slower than the sleep,
-    // which is a property of machine load rather than of the guarantee.
-    const contenderWon = await Promise.race([
-      // .catch keeps the losing waiter from surfacing as an unhandled
-      // rejection once the race has already settled.
-      waitForPath(contenderEntered, 5_000).then(() => true).catch(() => false),
-      producer.exited.then(() => false),
-    ]);
-    expect(contenderWon).toBe(false);
-
-    expect(await producer.exited).toBe(143);
+    // The token is released only after terminateActiveProviderGroups() drains
+    // the leaderless group. Process exit follows that release, but scheduler
+    // order may let the contender run first, so observe the real invariant at
+    // lock acquisition: the recorded provider process group must already be
+    // absent. This is the same observable production uses before releasing.
+    await waitForPath(contenderEntered, 5_000);
     expect(await contender.exited).toBe(0);
-    expect(existsSync(contenderEntered)).toBe(true);
+    expect(readFileSync(contenderEntered, 'utf8')).toBe('drained\n');
+    expect(await producer.exited).toBe(143);
     await Bun.sleep(600);
     expect(existsSync(descendantSentinel)).toBe(false);
   }, 10_000);
