@@ -19,7 +19,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
 const VERSION = "0.4.2";
-const REPO_HARNESS_VERSION = "0.14.2";
+const REPO_HARNESS_VERSION = "0.15.0";
 const repoRoot = resolve(import.meta.dir, "..");
 const archContextRoot = resolve(flag("--arch-context-root") ?? join(repoRoot, "..", "arch-context"));
 const revision = flag("--arch-context-revision") ?? git(archContextRoot, ["rev-parse", "HEAD"]);

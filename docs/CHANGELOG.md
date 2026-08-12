@@ -2,6 +2,30 @@
 
 All notable changes to this skill are documented here.
 
+## [0.15.0] - 2026-08-12
+
+### Added
+
+- Adds a repo-level architecture-drift changed-set cursor as the single
+  mutation authority used by Stop and manual drain paths. Multi-file patches
+  and shell-written files now reach the same deterministic projection instead
+  of depending on a single tool-reported path.
+
+### Changed
+
+- Cuts architecture cascade discovery over to the frozen Stop diff and retires
+  the journal's architecture dirty bit, removing the duplicate authoring path
+  while preserving cursor acknowledgement only after the cascade succeeds.
+- Aligns the Claude planning brief with the architect-consultation packet and
+  refreshes generated architecture projections against the 0.14.2 baseline.
+
+### Fixed
+
+- Keeps the architecture-drift cursor pending when the legacy cascade runner is
+  unavailable, when the follow-up fails, or when manual drain cannot complete.
+  A later Stop can therefore retry the same changed set instead of silently
+  acknowledging lost work.
+
 ## [0.14.2] - 2026-08-11
 
 ### Added
