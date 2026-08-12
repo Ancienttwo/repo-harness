@@ -40,17 +40,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
-> **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Disposition**: user_waiver
+> **Reviewer**: User
+> **Source**: user-waiver
+> **Actor**: kito
+> **Reviewed Subject SHA256**: sha256:56f0b3745651eb2b80871a2e32acbeed235f43810f1ba0829b226958d71c22f0
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 221a3732341a4d98de78653fd39e59b920693e84
+> **Verification Evidence SHA256**: sha256:5a8ed2e466835adb30c71fdea3d39da47548054b616a006876b7d95b39315726
+> **Issued At**: 2026-08-12T07:44:57.410Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: Owner accepted the bounded legacy-cascade acknowledgement change after frozen full-suite verification and deep Codex review.
 - Findings: none
 
 ## Behavior Diff Notes
