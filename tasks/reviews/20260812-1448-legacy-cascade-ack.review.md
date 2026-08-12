@@ -44,11 +44,11 @@
 > **Reviewer**: User
 > **Source**: user-waiver
 > **Actor**: kito
-> **Reviewed Subject SHA256**: sha256:8b1988498be95ef0efc4d3ce49dc5e0543dbabe7c993b479c6d8a4e332d9c17d
+> **Reviewed Subject SHA256**: sha256:721a03d63b50ece5c34f94f73e81903b90c9265fc45d8a74f11af533b48cd40e
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: 221a3732341a4d98de78653fd39e59b920693e84
-> **Verification Evidence SHA256**: sha256:df7189333a021b9bcf490a875b0b1d434a12ee608d273bce4aac4c10a4fc9837
-> **Issued At**: 2026-08-12T08:03:43.946Z
+> **Reviewed Target Revision**: 7f5a7f1bcdcb3148557645df88ddfbb347d52781
+> **Verification Evidence SHA256**: sha256:e76a4f6a102cb0a5a6c799ca0eb8135040303da21ebe90f1ba343a748886e7c4
+> **Issued At**: 2026-08-12T13:14:28.461Z
 
 - Summary: Owner accepted the bounded legacy-cascade acknowledgement change after frozen full-suite verification and deep Codex review.
 - Findings: none
