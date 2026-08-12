@@ -452,7 +452,10 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
     architectureDrain = dependencies.drainArchitectureProjection?.(repoRoot, env)
       ?? drainArchitectureProjectionJobs(repoRoot, { env, sourceEvents: driftEvent ? [driftEvent] : [] });
     if (architectureDrain.status === 'disabled') {
-      for (const changedPath of changedSet.paths) processArchitectureCascade(repoRoot, env, changedPath);
+      for (const changedPath of changedSet.paths) {
+        const cascade = processArchitectureCascade(repoRoot, env, changedPath);
+        if (!cascade.ok) throw new Error(cascade.error);
+      }
     }
     // The cursor is the retry boundary: it only moves past a range the
     // consumer acknowledged, so a retry-pending, dead-lettered, or throwing

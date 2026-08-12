@@ -783,9 +783,9 @@ export function pendingPostEditJournalSection(repoRoot: string): SessionContextS
 // consumed atomically. Invoked by runtime.ts's Stop.default dispatch.
 // ---------------------------------------------------------------------------
 
-function commandAvailable(cmd: string): boolean {
+function commandAvailable(cmd: string, env: NodeJS.ProcessEnv): boolean {
   try {
-    return spawnSync('sh', ['-c', `command -v ${cmd}`], { stdio: 'ignore' }).status === 0;
+    return spawnSync('sh', ['-c', `command -v ${cmd}`], { env, stdio: 'ignore' }).status === 0;
   } catch {
     return false;
   }
@@ -794,8 +794,8 @@ function commandAvailable(cmd: string): boolean {
 /** `repo_harness_runner_available()` port (assets/hooks/post-edit-guard.sh:14-19). */
 function repoHarnessRunnerAvailable(env: NodeJS.ProcessEnv): boolean {
   const cli = env.REPO_HARNESS_CLI;
-  if (cli && existsSync(cli) && commandAvailable('bun')) return true;
-  return commandAvailable('repo-harness');
+  if (cli && existsSync(cli) && commandAvailable('bun', env)) return true;
+  return commandAvailable('repo-harness', env);
 }
 
 /** `run_repo_harness_helper()` port (assets/hooks/post-edit-guard.sh:21-29). */
@@ -806,7 +806,7 @@ function runRepoHarnessHelper(
   args: readonly string[],
 ): { status: number; stdout: string } {
   const cli = env.REPO_HARNESS_CLI;
-  if (cli && existsSync(cli) && commandAvailable('bun')) {
+  if (cli && existsSync(cli) && commandAvailable('bun', env)) {
     const res = spawnSync('bun', [cli, 'run', helper, ...args], { cwd: repoRoot, encoding: 'utf-8', env });
     return { status: res.status ?? 1, stdout: res.stdout ?? '' };
   }
@@ -816,21 +816,23 @@ function runRepoHarnessHelper(
 
 /** capability-context's own 3-tier fallback (post-edit-guard.sh:73-93) --
  * NOT `run <helper>` shaped, ported as its own function. */
-function runCapabilityContextRequest(repoRoot: string, env: NodeJS.ProcessEnv): void {
+function runCapabilityContextRequest(repoRoot: string, env: NodeJS.ProcessEnv): { status: number } {
   const args = ['capability-context', 'request', '--from-latest-architecture-event'];
   const cli = env.REPO_HARNESS_CLI;
-  if (cli && existsSync(cli) && commandAvailable('bun')) {
-    spawnSync('bun', [cli, ...args], { cwd: repoRoot, encoding: 'utf-8', env });
-    return;
+  if (cli && existsSync(cli) && commandAvailable('bun', env)) {
+    const result = spawnSync('bun', [cli, ...args], { cwd: repoRoot, encoding: 'utf-8', env });
+    return { status: result.status ?? 1 };
   }
-  if (commandAvailable('repo-harness')) {
-    spawnSync('repo-harness', args, { cwd: repoRoot, encoding: 'utf-8', env });
-    return;
+  if (commandAvailable('repo-harness', env)) {
+    const result = spawnSync('repo-harness', args, { cwd: repoRoot, encoding: 'utf-8', env });
+    return { status: result.status ?? 1 };
   }
   const localCli = join(repoRoot, 'src/cli/index.ts');
-  if (commandAvailable('bun') && existsSync(localCli)) {
-    spawnSync('bun', [localCli, ...args], { cwd: repoRoot, encoding: 'utf-8', env });
+  if (commandAvailable('bun', env) && existsSync(localCli)) {
+    const result = spawnSync('bun', [localCli, ...args], { cwd: repoRoot, encoding: 'utf-8', env });
+    return { status: result.status ?? 1 };
   }
+  return { status: 1 };
 }
 
 /**
@@ -843,13 +845,29 @@ function runCapabilityContextRequest(repoRoot: string, env: NodeJS.ProcessEnv): 
  * the (still same, unmodified) `architecture-queue.sh record` command's real
  * output, not a second capability-resolver implementation.
  */
-export function processArchitectureCascade(repoRoot: string, env: NodeJS.ProcessEnv, filePath: string): void {
-  if (!repoHarnessRunnerAvailable(env)) return;
-  const result = runRepoHarnessHelper(repoRoot, env, 'architecture-queue', ['record', '--file', filePath]);
-  if (/^\[ArchitectureDrift\] Request:/m.test(result.stdout)) {
-    runRepoHarnessHelper(repoRoot, env, 'context-contract-sync', ['sync-latest']);
-    runCapabilityContextRequest(repoRoot, env);
+export type ArchitectureCascadeResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly error: string };
+
+export function processArchitectureCascade(repoRoot: string, env: NodeJS.ProcessEnv, filePath: string): ArchitectureCascadeResult {
+  if (!repoHarnessRunnerAvailable(env)) {
+    return { ok: false, error: `legacy architecture cascade runner is unavailable for ${filePath}` };
   }
+  const result = runRepoHarnessHelper(repoRoot, env, 'architecture-queue', ['record', '--file', filePath]);
+  if (result.status !== 0) {
+    return { ok: false, error: `legacy architecture cascade failed for ${filePath}: architecture-queue exited ${result.status}` };
+  }
+  if (/^\[ArchitectureDrift\] Request:/m.test(result.stdout)) {
+    const contextSync = runRepoHarnessHelper(repoRoot, env, 'context-contract-sync', ['sync-latest']);
+    if (contextSync.status !== 0) {
+      return { ok: false, error: `legacy architecture cascade failed for ${filePath}: context-contract-sync exited ${contextSync.status}` };
+    }
+    const capabilityContext = runCapabilityContextRequest(repoRoot, env);
+    if (capabilityContext.status !== 0) {
+      return { ok: false, error: `legacy architecture cascade failed for ${filePath}: capability-context exited ${capabilityContext.status}` };
+    }
+  }
+  return { ok: true };
 }
 
 /** `run_continuous_contract_verification()`'s durable action (post-edit-guard.sh:31-47). */

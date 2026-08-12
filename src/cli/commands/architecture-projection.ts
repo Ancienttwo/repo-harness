@@ -41,7 +41,10 @@ export function buildArchitectureProjectionCommand(): Command {
       const driftEvent = architectureDriftSourceEvent(changedSet);
       const result = drainArchitectureProjectionJobs(root, { sourceEvents: driftEvent ? [driftEvent] : [] });
       if (result.status === 'disabled') {
-        for (const changedPath of changedSet.paths) processArchitectureCascade(root, process.env, changedPath);
+        for (const changedPath of changedSet.paths) {
+          const cascade = processArchitectureCascade(root, process.env, changedPath);
+          if (!cascade.ok) throw new Error(cascade.error);
+        }
       }
       if (result.acknowledgeSourceEvents && changedSet.headSha !== null) {
         advanceArchitectureDriftCursor(root, changedSet.headSha);

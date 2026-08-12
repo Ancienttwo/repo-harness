@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -525,21 +525,23 @@ describe('durable architecture projection orchestration', () => {
     expect(existsSync(join(f.repoRoot, '.ai/harness/architecture-refresh/receipts'))).toBe(false);
   });
 
-  test('manual drain reads the cursor authority and leaves the journal to its own consumer', () => {
+  test('manual drain leaves the cursor unchanged when the legacy cascade helper fails', () => {
     const f = fixture();
     writeFileSync(join(f.repoRoot, '.ai/harness/policy.json'), '{"architecture":{"projection_provider":"disabled","projection_apply":"disabled"}}\n');
     runMutationObserved({ collector: f.collector, input: JSON.stringify({ file_path: 'src/rollback.ts', session_id: 'rollback' }) });
     writeFileSync(join(f.repoRoot, 'src/shell-written.ts'), 'export const written = 1;\n');
+    const failingCli = join(dirname(f.repoRoot), 'failing-cascade-cli.ts');
+    writeFileSync(failingCli, 'process.exit(7);\n');
     const cli = realpathSync(join(import.meta.dir, '..', 'src', 'cli', 'index.ts'));
-    const output = execFileSync(process.execPath, [cli, 'architecture-projection', 'drain', '--json'], {
+    const result = spawnSync(process.execPath, [cli, 'architecture-projection', 'drain', '--json'], {
       cwd: f.repoRoot,
-      env: { ...process.env, PATH: '/usr/bin:/bin' },
+      env: { ...process.env, REPO_HARNESS_CLI: failingCli },
       encoding: 'utf8',
     });
-    expect(JSON.parse(output)).toMatchObject({ status: 'disabled', sourceJournalPending: 1 });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('legacy architecture cascade failed for');
     expect(readPendingPostEditEvents(f.repoRoot)).toHaveLength(1);
-    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: f.repoRoot, encoding: 'utf8' }).trim();
-    expect(readArchitectureDriftCursor(f.repoRoot)?.head_sha).toBe(head);
+    expect(readArchitectureDriftCursor(f.repoRoot)).toBeNull();
   });
 
   test('migrates v1 observations under the writer lock without losing coalesced dirty state', () => {

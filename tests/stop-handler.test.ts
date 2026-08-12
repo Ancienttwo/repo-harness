@@ -6,7 +6,7 @@ import { tmpdir } from 'os';
 import type { EffectiveState } from '../src/core/state/types';
 import { runStopHandler, type StopProjectionTarget } from '../src/cli/hook/stop-handler';
 import { readPendingPostEditEvents } from '../src/cli/hook/mutation-observed';
-import { advanceArchitectureDriftCursor, readArchitectureDriftCursor } from '../src/cli/hook/architecture-drift';
+import { advanceArchitectureDriftCursor, computeArchitectureDriftChangedSet, readArchitectureDriftCursor } from '../src/cli/hook/architecture-drift';
 
 const fixtures: string[] = [];
 
@@ -223,6 +223,59 @@ describe('runStopHandler', () => {
       dependencies: { drainArchitectureProjection: drainResult(true) },
     });
     expect(readArchitectureDriftCursor(advanced.cwd)?.head_sha).toBe(advanced.head);
+  });
+
+  test('retains a committed drift range when the disabled-provider cascade runner is unavailable', () => {
+    const { cwd, head: anchor } = gitFixture();
+    writeFileSync(join(cwd, '.ai/harness/policy.json'), '{"architecture":{"projection_provider":"disabled","projection_apply":"disabled"}}\n');
+    advanceArchitectureDriftCursor(cwd, anchor);
+    writeFileSync(join(cwd, 'committed-only.ts'), 'export const committed = true;\n');
+    git(cwd, ['add', 'committed-only.ts']);
+    git(cwd, ['commit', '-m', 'committed drift']);
+
+    const result = runStopHandler({
+      collector: collector(cwd, () => canonicalState()),
+      env: { PATH: '', HOOK_RUN_ID: 'cascade-runner-unavailable' },
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toContain('[ArchitectureProjection] orchestration failed:');
+    expect(result.stderr).toContain('legacy architecture cascade runner is unavailable');
+    expect(readArchitectureDriftCursor(cwd)?.head_sha).toBe(anchor);
+    expect(computeArchitectureDriftChangedSet(cwd).paths).toContain('committed-only.ts');
+  });
+
+  test('retains a committed drift range when a request-triggered cascade follow-up fails', () => {
+    const { cwd, head: anchor } = gitFixture();
+    writeFileSync(join(cwd, '.ai/harness/policy.json'), '{"architecture":{"projection_provider":"disabled","projection_apply":"disabled"}}\n');
+    advanceArchitectureDriftCursor(cwd, anchor);
+    writeFileSync(join(cwd, 'follow-up-failure.ts'), 'export const followUp = true;\n');
+    git(cwd, ['add', 'follow-up-failure.ts']);
+    git(cwd, ['commit', '-m', 'follow-up drift']);
+
+    const stubRoot = mkdtempSync(join(tmpdir(), 'repo-harness-stop-follow-up-'));
+    fixtures.push(stubRoot);
+    const stubCli = join(stubRoot, 'stub-cli.ts');
+    writeFileSync(stubCli, [
+      "const args = process.argv.slice(2);",
+      "if (args[0] === 'run' && args[1] === 'architecture-queue') {",
+      "  process.stdout.write('[ArchitectureDrift] Request: docs/architecture/requests/root.md\\n');",
+      "  process.exit(0);",
+      "}",
+      "if (args[0] === 'run' && args[1] === 'context-contract-sync') process.exit(9);",
+      "process.exit(0);",
+      '',
+    ].join('\n'));
+
+    const result = runStopHandler({
+      collector: collector(cwd, () => canonicalState()),
+      env: { ...process.env, HOOK_RUN_ID: 'cascade-follow-up-failure', REPO_HARNESS_CLI: stubCli },
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toContain('context-contract-sync exited 9');
+    expect(readArchitectureDriftCursor(cwd)?.head_sha).toBe(anchor);
+    expect(computeArchitectureDriftChangedSet(cwd).paths).toContain('follow-up-failure.ts');
   });
 
   test('feeds every shell-written path of a codex fleet session to the architecture cascade', () => {

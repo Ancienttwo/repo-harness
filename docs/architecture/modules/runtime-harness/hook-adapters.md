@@ -209,9 +209,15 @@ does not inspect legacy command shapes, so there is no dual-read path.
 - P3: the cursor (`.ai/harness/state/architecture-drift-cursor.json`, a single
   slot following `session-run-identity.json`) advances to HEAD only on an
   acknowledged delivery, so retry-pending, dead-letter, and thrown failures
-  replay the same range on the next Stop. A missing or unresolvable cursor
-  re-anchors at HEAD, processes working-tree entries only, and emits one stderr
-  note instead of replaying history. Deletions stay in the feed:
+  replay the same range on the next Stop. For the disabled projection provider,
+  acknowledgment covers the complete legacy cascade: the runner must resolve,
+  every primary `architecture-queue` invocation must succeed, and every
+  request-triggered `context-contract-sync` / `capability-context` follow-up
+  must succeed. Stop remains advisory and reports a bounded diagnostic, while
+  the manual drain exits non-zero; neither path advances the cursor after a
+  partial cascade. A missing or unresolvable cursor re-anchors at HEAD,
+  processes working-tree entries only, and emits one stderr note instead of
+  replaying history. Deletions stay in the feed:
   `architecture-queue record --file` classifies lexically and records a card for
   a path that no longer exists on disk. The cascade commands themselves are
   byte-identical -- only their input feed changed.
