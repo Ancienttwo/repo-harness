@@ -18,6 +18,10 @@ All notable changes to this skill are documented here.
   while preserving cursor acknowledgement only after the cascade succeeds.
 - Aligns the Claude planning brief with the architect-consultation packet and
   refreshes generated architecture projections against the 0.14.2 baseline.
+- Clarifies the Codex native fleet contract against the 0.147 model catalog:
+  Sol/Terra roots use the repository's v2 packet shape, while Luna-rooted v1
+  sessions still discover custom agent roles through their distinct lifecycle
+  surface.
 
 ### Fixed
 
