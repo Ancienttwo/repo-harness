@@ -34,7 +34,7 @@
 - Waza `/check` run: not run — acceptance at this boundary was the gatekeeper review (one review per boundary; no stacking)
 - Commands run: `bun run check:type`; `bun test tests/architecture-drift.test.ts tests/stop-handler.test.ts tests/mutation-observed.test.ts tests/architecture-projection-orchestration.test.ts`; `bash scripts/verify-sprint.sh --contract … --prepare-acceptance`; `bash scripts/check-task-sync.sh`; `bash scripts/check-architecture-sync.sh`; `bash scripts/check-deploy-sql-order.sh`; `bun src/cli/index.ts run check-task-workflow --strict`
 - Manual checks: single-authority grep sweep (`skipArchitectureCascade|dirty\.architecture|retainEventFiles` → zero code hits); deletion falsifier probed live (`architecture-queue record` on a deleted path classifies and exits 0); LSC-01 golden diff verified as exactly the 3 cursor-slot lines
-- Supporting artifacts: AcceptanceReceipt (external_pass, issued 2026-08-12T05:51:23.847Z); `.ai/harness/checks/latest.json` (pass, subject-bound)
+- Supporting artifacts: AcceptanceReceipt (external_pass, issued 2026-08-12T06:30:26.280Z); `.ai/harness/checks/latest.json` (pass, subject-bound)
 - Implementation notes reviewed: `tasks/notes/20260812-1209-stop-diff-changed-set.notes.md` (deletions-fed decision, `--untracked-files=all` rationale, `retainEventFiles` removal, constant source_key, HRD-09 fixture measurement)
 - Run snapshot: `.ai/harness/runs/run-20260812T133252-93507-20260812-1209-stop-diff-changed-set.json`
 
@@ -48,7 +48,7 @@
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: df24af4a7bbf3fffc34a34f7ed366cb12ed025c3
 > **Verification Evidence SHA256**: sha256:2daba079970ca81b29e6b3f06183d9b8c46c6a8bbc0d01e03f2f37fe0730307d
-> **Issued At**: 2026-08-12T05:51:23.847Z
+> **Issued At**: 2026-08-12T06:30:26.280Z
 
 - Summary: Gatekeeper review passed all six substantive gates (single-authority invariant, cursor ack semantics, changed-set completeness incl. -uall/deletions/renames, fixture-change non-masking, scope discipline, docs/notes fidelity); exit criteria 12/12 green incl. full bun test at frozen HEAD c72d0487; residual per-path cascade fan-out accepted as in-design and deferred in tasks/todos.md
 - Findings: none
