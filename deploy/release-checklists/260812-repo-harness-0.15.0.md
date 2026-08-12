@@ -4,7 +4,7 @@
 - Package: `repo-harness@0.15.0`
 - Base release: `v0.14.2`
 - Source range: `v0.14.2..candidate`
-- Candidate commit: pending freeze
+- Frozen product commit: `f3b4afe4da639e59927af542ed7f6359601e6e3d`
 - Release scope: make the repo-level architecture changed-set cursor the single
   Stop/manual-drain mutation authority, retire the journal architecture dirty
   bit, and preserve unacknowledged work when a legacy cascade cannot complete.
@@ -25,9 +25,10 @@
 
 ## Candidate Evidence
 
-- Version consistency: pending candidate gate.
-- Full repository/release checks: pending candidate gate.
-- Packed tarball install and bin startup: pending candidate gate.
+- Version consistency: package, skill, and template all read back `0.15.0`.
+- Full repository/release checks: 2364 pass, 1 platform skip, 0 fail;
+  18,172 expectations across 183 test files.
+- Packed tarball install and bin startup: pass for `repo-harness@0.15.0`.
 - Exact `main` CI: pending candidate push.
 - Skill-eval evidence: unavailable and not required for this hook correctness
   release; no effectiveness claim is made.
@@ -35,8 +36,9 @@
 ## Required Release Sequence
 
 - [x] Classify `v0.14.2..candidate` as a backward-compatible minor release.
-- [ ] Freeze the candidate and run `bun run check:release` exactly once.
-- [ ] Record the candidate subject, evidence hashes, and acceptance receipt.
+- [x] Freeze the candidate and complete the final post-fix
+      `bun run check:release` gate.
+- [x] Record the candidate subject, evidence hashes, and acceptance receipt.
 - [ ] Merge the candidate to `main`, push the exact release commit, and confirm
       GitHub Actions CI for that SHA.
 - [ ] Publish `repo-harness@0.15.0` to npm `latest`.
