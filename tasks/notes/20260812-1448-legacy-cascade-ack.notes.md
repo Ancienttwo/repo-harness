@@ -14,7 +14,7 @@
 
 ## Deviations From Plan Or Spec
 
-- None recorded.
+- The first frozen full-suite run exposed one task-related stale characterization: the LSC Stop fixtures still expected a cursor write when no legacy cascade runner completed delivery. The three golden side-effect lists now omit that write, matching the fail-closed acknowledgement contract. No production scope was widened.
 
 ## Tradeoffs Considered
 
@@ -35,6 +35,7 @@
 - Pre-fix regression: `.ai/harness/runs/legacy-cascade-ack-pre-fix.log` records the two focused guards failing against the original implementation (43 pass, 2 fail).
 - Targeted green: `bun test tests/architecture-drift.test.ts tests/stop-handler.test.ts tests/mutation-observed.test.ts tests/architecture-projection-orchestration.test.ts` (78 pass, 0 fail).
 - Typecheck: `bun run check:type` (exit 0).
+- First full-suite run: 2363 pass, 1 skip, 1 fail. The sole failure was `tests/state/loop-semantics-characterization.test.ts`, which identified the stale cursor-write golden updated in this slice; log: `.ai/harness/runs/run-20260812T151122-73651-bun-test.log`.
 
 ## Promotion Filter
 
