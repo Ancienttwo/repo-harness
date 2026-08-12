@@ -828,7 +828,7 @@ describe("check-agent-tooling", () => {
       writeFakeCodeGraph(envRoot.fakeBin);
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "both", "--strict-readiness"], {
-        cwd: ROOT,
+        cwd: envRoot.root,
         encoding: "utf-8",
         env: {
           ...process.env,
