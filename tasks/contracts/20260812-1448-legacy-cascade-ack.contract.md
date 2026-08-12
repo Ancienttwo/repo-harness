@@ -1,6 +1,6 @@
 # Task Contract: legacy-cascade-ack
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260812-1448-legacy-cascade-ack.md
 > **Task Profile**: bugfix
 > **Workflow Profile**: strict

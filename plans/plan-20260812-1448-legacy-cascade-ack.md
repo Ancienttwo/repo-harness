@@ -1,6 +1,6 @@
 # Plan: Fail-closed legacy architecture cascade acknowledgement
 
-> **Status**: Executing
+> **Status**: Completed
 > **Created**: 20260812-1448
 > **Slug**: legacy-cascade-ack
 > **Planning Source**: user-approved-fix
@@ -149,7 +149,7 @@ Revert the focused branch. Cursor files are ignored runtime state; preserving th
 - [x] Add failing Stop and manual-drain regression cases.
 - [x] Implement typed cascade delivery and fail-closed cursor advancement in both consumers.
 - [x] Run targeted verification and update architecture/workflow artifacts.
-- [ ] Freeze code, run final required checks once, and record fresh acceptance evidence.
+- [x] Freeze code, run final required checks once, and record fresh acceptance evidence.
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
@@ -158,4 +158,4 @@ Revert the focused branch. Cursor files are ignored runtime state; preserving th
 - [x] Add failing Stop and manual-drain regression cases.
 - [x] Implement typed cascade delivery and fail-closed cursor advancement in both consumers.
 - [x] Run targeted verification and update architecture/workflow artifacts.
-- [ ] Freeze code, run final required checks once, and record fresh acceptance evidence.
+- [x] Freeze code, run final required checks once, and record fresh acceptance evidence.
