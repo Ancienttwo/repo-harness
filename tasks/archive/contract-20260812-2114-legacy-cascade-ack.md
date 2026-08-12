@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-12 21:14
+> **Related Plan**: plans/archive/plan-20260812-1448-legacy-cascade-ack.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260812-2114
+
 # Task Contract: legacy-cascade-ack
 
 > **Status**: Fulfilled

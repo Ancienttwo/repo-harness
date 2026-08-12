@@ -1,6 +1,6 @@
 # Plan: Fail-closed legacy architecture cascade acknowledgement
 
-> **Status**: Completed
+> **Status**: Archived
 > **Created**: 20260812-1448
 > **Slug**: legacy-cascade-ack
 > **Planning Source**: user-approved-fix

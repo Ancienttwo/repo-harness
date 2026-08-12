@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-12 21:14
+> **Related Plan**: plans/archive/plan-20260812-1448-legacy-cascade-ack.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260812-2114
+
 # Implementation Notes: legacy-cascade-ack
 
 > **Status**: Active
