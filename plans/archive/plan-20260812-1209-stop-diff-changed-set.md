@@ -1,6 +1,6 @@
 # Plan: Stop-time git diff as architecture changed-set authority
 
-> **Status**: Completed
+> **Status**: Archived
 > **Created**: 20260812-1209
 > **Slug**: stop-diff-changed-set
 > **Planning Source**: repo-harness-plan

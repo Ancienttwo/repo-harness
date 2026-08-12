@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-11T19:31:35+0800 -->
+<!-- updated_at: 2026-08-12T14:42:31+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-08-11T19:31:35+0800
-> **Source Branch**: codex/codex-native-agent-authority-integration
-> **Source Commit**: d97ca586
+> **Updated At**: 2026-08-12T14:42:31+0800
+> **Source Branch**: codex/stop-diff-changed-set
+> **Source Commit**: fc9d2cea
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -58,16 +58,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260811-1344-codex-native-agent-authority.md
- D tasks/contracts/20260811-1344-codex-native-agent-authority.contract.md
- D tasks/notes/20260811-1344-codex-native-agent-authority.notes.md
- D tasks/reviews/20260811-1344-codex-native-agent-authority.review.md
+ D plans/plan-20260812-1209-stop-diff-changed-set.md
+ D tasks/contracts/20260812-1209-stop-diff-changed-set.contract.md
+ D tasks/notes/20260812-1209-stop-diff-changed-set.notes.md
+ D tasks/reviews/20260812-1209-stop-diff-changed-set.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260811-1344-codex-native-agent-authority.md
-?? tasks/archive/contract-20260811-1931-codex-native-agent-authority.md
-?? tasks/archive/notes-20260811-1931-codex-native-agent-authority.md
-?? tasks/archive/review-20260811-1931-codex-native-agent-authority.md
-?? tasks/archive/todo-20260811-1931-codex-native-agent-authority.md
+?? plans/archive/plan-20260812-1209-stop-diff-changed-set.md
+?? tasks/archive/contract-20260812-1442-stop-diff-changed-set.md
+?? tasks/archive/notes-20260812-1442-stop-diff-changed-set.md
+?? tasks/archive/review-20260812-1442-stop-diff-changed-set.md
+?? tasks/archive/todo-20260812-1442-stop-diff-changed-set.md
 ```
 
 ## Source Artifacts

@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-12 14:42
+> **Related Plan**: plans/archive/plan-20260812-1209-stop-diff-changed-set.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260812-1442
+
 # Task Contract: stop-diff-changed-set
 
 > **Status**: Fulfilled
