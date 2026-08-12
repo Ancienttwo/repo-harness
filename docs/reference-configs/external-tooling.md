@@ -503,12 +503,32 @@ mapped GPT-5.6 model and reasoning level. A missing label fails closed so the
 installed metadata cannot claim a different model from the TOML settings.
 
 These files define the desired installed role configuration for Codex native
-MultiAgent `agent_type` selection. On Codex CLI 0.147, the live native spawn
-surface accepts `agent_type`; that field is the only fleet identity/lifecycle
-authority. A dispatch packet must also pass `fork_turns="none"` and remain
-self-contained. If the live schema cannot accept the requested installed
-`agent_type`, the fleet dispatch fails closed instead of selecting an App
-thread, `codex-exec`, or the main thread.
+MultiAgent `agent_type` selection. On Codex CLI 0.147, the supported repository
+fleet roots use the live v2 native spawn surface. `agent_type` is the only fleet
+identity/lifecycle authority, and a repository fleet dispatch packet must also
+pass `fork_turns="none"` and remain self-contained. If the live schema cannot
+accept the requested installed `agent_type` and v2 packet shape, the fleet
+dispatch fails closed instead of translating fields or selecting an App thread,
+`codex-exec`, a generic subagent, or the main thread.
+
+The native multi-agent tool surface is routed per root model by the Codex model
+catalog (`models_cache.json#multi_agent_version`, verified on CLI 0.147.0):
+`gpt-5.6-sol`/`sol-wm`/`terra` roots get v2 with `task_name`, `fork_turns`,
+`list_agents`, and `send_message`; `gpt-5.6-luna` and `codex-auto-review` roots
+get the v1 namespace. V1 still discovers configured custom agent TOMLs and
+accepts `agent_type`, but uses `fork_context=false`, `send_input`,
+`resume_agent`, `close_agent`, and `wait`; its tools may be deferred behind
+`tool_search`. A V1 root is outside this repository's v2 fleet packet contract,
+so dispatch from that surface fails closed as repository policy, not because
+Codex V1 can only create a generic built-in subagent.
+
+`features.multi_agent_v2 = true` is a global override that forces every root
+model onto v2. It is not a prerequisite for fleet dispatch from a sol/terra root
+and must not be enabled as a "fix" for a dispatch that failed to pass
+`agent_type`/`fork_turns`. The v2 `list_agents` tool enumerates live agent
+threads in the current task tree, not the installed role registry. Luna's v1
+marking has no official rationale (open upstream issue openai/codex#35097) and
+is treated as catalog state, not a model-capability claim.
 
 Installed files do not by themselves prove that Codex honored the configured
 model. Runtime selection claims stay behind official `SubagentStart`
