@@ -1,6 +1,6 @@
 # Plan: Stop-time git diff as architecture changed-set authority
 
-> **Status**: Executing
+> **Status**: Completed
 > **Created**: 20260812-1209
 > **Slug**: stop-diff-changed-set
 > **Planning Source**: repo-harness-plan
@@ -195,10 +195,10 @@ Stop fires in every codex fleet/worktree session shape we care about. Verified o
 
 ## Task Breakdown
 
-- [ ] T1: Drift-cursor module — cursor state read/write, git changed-set computation (diff + status porcelain), canonicalization, deterministic source-event construction; unit tests. (verification: `bun test tests/architecture-drift*.test.ts`)
-- [ ] T2: Stop-handler + drain command cutover — stop-handler builds sourceEvents from cursor authority, advances cursor on ack; legacy cascade path iterates cursor paths; `architecture-projection.ts` drain command same cutover; update orchestration tests. (verification: `bun test tests/stop-handler.test.ts tests/architecture-projection-orchestration.test.ts`)
-- [ ] T3: Journal architecture-bit retirement — mutation-observed stops setting the bit, consumePendingPostEditEvents drops the architecture branch and drain handshake, type cleanup; apply_patch payload characterization fixture; update mutation-observed tests. (verification: `bun test tests/mutation-observed.test.ts`)
-- [ ] T4: End-to-end acceptance + required checks — shell-write worktree scenario test, full `bun test`, CLAUDE.md required checks, docs touch-up (`docs/architecture/` module note for the changed observation pipeline). (verification: Required Checks block)
+- [x] T1: Drift-cursor module — cursor state read/write, git changed-set computation (diff + status porcelain), canonicalization, deterministic source-event construction; unit tests. (verification: `bun test tests/architecture-drift*.test.ts`)
+- [x] T2: Stop-handler + drain command cutover — stop-handler builds sourceEvents from cursor authority, advances cursor on ack; legacy cascade path iterates cursor paths; `architecture-projection.ts` drain command same cutover; update orchestration tests. (verification: `bun test tests/stop-handler.test.ts tests/architecture-projection-orchestration.test.ts`)
+- [x] T3: Journal architecture-bit retirement — mutation-observed stops setting the bit, consumePendingPostEditEvents drops the architecture branch and drain handshake, type cleanup; apply_patch payload characterization fixture; update mutation-observed tests. (verification: `bun test tests/mutation-observed.test.ts`)
+- [x] T4: End-to-end acceptance + required checks — shell-write worktree scenario test, full `bun test`, CLAUDE.md required checks, docs touch-up (`docs/architecture/` module note for the changed observation pipeline). (verification: Required Checks block)
 
 Phases are independently landable in order T1 → T2 → T3 → T4; T2 and T3 touch disjoint consumption branches but share `stop-handler.ts`, so they execute sequentially by one writer.
 
@@ -206,7 +206,7 @@ Phases are independently landable in order T1 → T2 → T3 → T4; T2 and T3 to
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] T1: Drift-cursor module — cursor state read/write, git changed-set computation (diff + status porcelain), canonicalization, deterministic source-event construction; unit tests. (verification: `bun test tests/architecture-drift*.test.ts`)
-- [ ] T2: Stop-handler + drain command cutover — stop-handler builds sourceEvents from cursor authority, advances cursor on ack; legacy cascade path iterates cursor paths; `architecture-projection.ts` drain command same cutover; update orchestration tests. (verification: `bun test tests/stop-handler.test.ts tests/architecture-projection-orchestration.test.ts`)
-- [ ] T3: Journal architecture-bit retirement — mutation-observed stops setting the bit, consumePendingPostEditEvents drops the architecture branch and drain handshake, type cleanup; apply_patch payload characterization fixture; update mutation-observed tests. (verification: `bun test tests/mutation-observed.test.ts`)
-- [ ] T4: End-to-end acceptance + required checks — shell-write worktree scenario test, full `bun test`, CLAUDE.md required checks, docs touch-up (`docs/architecture/` module note for the changed observation pipeline). (verification: Required Checks block)
+- [x] T1: Drift-cursor module — cursor state read/write, git changed-set computation (diff + status porcelain), canonicalization, deterministic source-event construction; unit tests. (verification: `bun test tests/architecture-drift*.test.ts`)
+- [x] T2: Stop-handler + drain command cutover — stop-handler builds sourceEvents from cursor authority, advances cursor on ack; legacy cascade path iterates cursor paths; `architecture-projection.ts` drain command same cutover; update orchestration tests. (verification: `bun test tests/stop-handler.test.ts tests/architecture-projection-orchestration.test.ts`)
+- [x] T3: Journal architecture-bit retirement — mutation-observed stops setting the bit, consumePendingPostEditEvents drops the architecture branch and drain handshake, type cleanup; apply_patch payload characterization fixture; update mutation-observed tests. (verification: `bun test tests/mutation-observed.test.ts`)
+- [x] T4: End-to-end acceptance + required checks — shell-write worktree scenario test, full `bun test`, CLAUDE.md required checks, docs touch-up (`docs/architecture/` module note for the changed observation pipeline). (verification: Required Checks block)

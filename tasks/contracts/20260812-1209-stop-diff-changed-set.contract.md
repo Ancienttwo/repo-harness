@@ -140,9 +140,9 @@ exit_criteria:
 
 ## Acceptance Notes (Human Review)
 
-- Functional behavior:
-- Edge cases:
-- Regression risks:
+- Functional behavior: Stop-time drift cursor is the single architecture changed-set authority; fleet shell-write scenario proven end-to-end (`tests/stop-handler.test.ts:196-262` asserts all four path classes reach the cascade and the cursor lands on HEAD).
+- Edge cases: deletions classify without stat (probed live); renames contribute both sides; files inside untracked directories enumerated via `--untracked-files=all` (the exact byok-sdk missed-package shape); missing/unresolvable cursor re-anchors fail-closed with no history replay; out-of-repo/symlink-escape paths dropped by canonicalization.
+- Regression risks: per-path cascade fan-out at Stop in projection-disabled repos is uncapped (in-design, deferred in `tasks/todos.md` with revisit trigger); Claude Edit/Write journal triggers for contract-verification/minimal-change/checkpoint unchanged and covered by existing suites.
 
 ## Rollback Point
 
