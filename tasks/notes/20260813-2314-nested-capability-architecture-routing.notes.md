@@ -19,10 +19,11 @@
 
 ## Deviations From Plan Or Spec
 
-- The contract runs `check-architecture-sync.sh` before the full Bun suite. Two
-  frozen-evidence attempts observed the provider as `error` only when probed
-  immediately after the full suite, while three direct probes returned `ready`.
-  Reordering keeps both gates strict without adding a retry or fallback path.
+- The bounded verifier deliberately strips inherited `REPO_HARNESS_*` wiring.
+  This host's default Node is v26.5.0, outside Archcontext's `>=24 <26`
+  contract, so the architecture criterion names the installed trusted Node
+  v24.18.0 explicitly. An equivalent scrubbed-shell probe passed; no retry or
+  fallback path was added.
 
 ## Tradeoffs Considered
 
@@ -43,9 +44,9 @@
 - Red guard: `.ai/harness/runs/nested-capability-architecture-routing/pre-fix.txt`
 - Green guard: `bun test tests/architecture-queue.test.ts` (6 pass, 0 fail)
 - Full suite: `env -u REPO_HARNESS_NODE_BIN bun test --max-concurrency 4` (2366 pass, 1 platform skip, 0 fail)
-- Architecture readiness: three consecutive direct
-  `bash scripts/check-architecture-sync.sh` runs passed with
-  `provider=archctx state=ready` after the retained failed evidence probes.
+- Architecture readiness: the verifier-equivalent scrubbed shell passed with
+  `provider=archctx state=ready` when the contract explicitly supplied
+  `$HOME/.nvm/versions/node/v24.18.0/bin/node`.
 
 ## Promotion Filter
 

@@ -143,7 +143,7 @@ exit_criteria:
   tests_pass:
     - path: tests/architecture-queue.test.ts
   commands_succeed:
-    - bash scripts/check-architecture-sync.sh
+    - REPO_HARNESS_NODE_BIN="$HOME/.nvm/versions/node/v24.18.0/bin/node" bash scripts/check-architecture-sync.sh
     - env -u REPO_HARNESS_NODE_BIN bun test --max-concurrency 4
     - bash scripts/check-deploy-sql-order.sh
     - bash scripts/check-task-sync.sh
