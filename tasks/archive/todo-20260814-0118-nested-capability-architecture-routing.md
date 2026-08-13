@@ -1,7 +1,13 @@
+> **Archived**: 2026-08-14 01:18
+> **Related Plan**: plans/archive/plan-20260813-2314-nested-capability-architecture-routing.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260814-0118
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-08-13 23:15
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

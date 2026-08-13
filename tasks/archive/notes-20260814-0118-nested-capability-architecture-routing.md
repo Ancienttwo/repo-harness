@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-14 01:18
+> **Related Plan**: plans/archive/plan-20260813-2314-nested-capability-architecture-routing.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260814-0118
+
 # Implementation Notes: nested-capability-architecture-routing
 
 > **Status**: Active

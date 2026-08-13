@@ -1,6 +1,6 @@
 # Plan: Nested capability architecture routing
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260813-2314
 > **Slug**: nested-capability-architecture-routing
 > **Planning Source**: waza-think

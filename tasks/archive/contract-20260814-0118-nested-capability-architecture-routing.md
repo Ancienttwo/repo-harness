@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-14 01:18
+> **Related Plan**: plans/archive/plan-20260813-2314-nested-capability-architecture-routing.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260814-0118
+
 # Task Contract: nested-capability-architecture-routing
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260813-2314-nested-capability-architecture-routing.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
