@@ -19,7 +19,10 @@
 
 ## Deviations From Plan Or Spec
 
-- None recorded.
+- The contract runs `check-architecture-sync.sh` before the full Bun suite. Two
+  frozen-evidence attempts observed the provider as `error` only when probed
+  immediately after the full suite, while three direct probes returned `ready`.
+  Reordering keeps both gates strict without adding a retry or fallback path.
 
 ## Tradeoffs Considered
 
@@ -40,6 +43,9 @@
 - Red guard: `.ai/harness/runs/nested-capability-architecture-routing/pre-fix.txt`
 - Green guard: `bun test tests/architecture-queue.test.ts` (6 pass, 0 fail)
 - Full suite: `env -u REPO_HARNESS_NODE_BIN bun test --max-concurrency 4` (2366 pass, 1 platform skip, 0 fail)
+- Architecture readiness: three consecutive direct
+  `bash scripts/check-architecture-sync.sh` runs passed with
+  `provider=archctx state=ready` after the retained failed evidence probes.
 
 ## Promotion Filter
 

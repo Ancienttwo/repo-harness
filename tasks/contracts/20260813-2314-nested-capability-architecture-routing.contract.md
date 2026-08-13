@@ -143,9 +143,9 @@ exit_criteria:
   tests_pass:
     - path: tests/architecture-queue.test.ts
   commands_succeed:
+    - bash scripts/check-architecture-sync.sh
     - env -u REPO_HARNESS_NODE_BIN bun test --max-concurrency 4
     - bash scripts/check-deploy-sql-order.sh
-    - bash scripts/check-architecture-sync.sh
     - bash scripts/check-task-sync.sh
     - repo-harness run check-task-workflow --strict
     - bun scripts/inspect-project-state.ts --repo . --format text
