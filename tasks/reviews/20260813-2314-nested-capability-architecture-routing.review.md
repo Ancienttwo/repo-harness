@@ -40,18 +40,18 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:2f7b5b222dfbfd4a16df853e41edff4d3af3abc823f95e2310d2244c153b829e
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: ab12a3c5c5675a85ff04c1e1e32409a823bbc6b5
+> **Verification Evidence SHA256**: sha256:42e7fa2490b3b137f8a4cf3e55623d7dea6374c191dca7f44168226083732547
+> **Issued At**: 2026-08-13T17:16:42.512Z
 
-- Summary: Review passed, but no contract-valid AcceptanceReceipt has been recorded.
-- Findings: none
+- Summary: Claude external review passed with no P0/P1; five non-blocking P2 observations are recorded verbatim in substance.
+- Findings: P2: Unrelated /src/ paths now fail closed if capability-resolver match fails; this is intentional under the repository no-fallback invariant, but changes the previous advisory exit behavior.; P2: Nested capability routing covers registered src paths only; nested package/config/boundary severity remains out of scope and is documented as residual risk.; P2: The source predicate accepts any src segment beneath the matched capability prefix, including nested fixture-style src directories.; P2: The promoted-source path with a missing architecture-event helper is not directly covered; classified-path advisory skip is covered.; P2: Previously unrelated src candidates incur capability resolver availability plus match process startup on the hook path.
 
 ## Behavior Diff Notes
 
