@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-12T23:29:59+0800 -->
+<!-- updated_at: 2026-08-14T01:18:14+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-08-12T23:29:59+0800
-> **Source Branch**: main
-> **Source Commit**: c30f08fc
+> **Updated At**: 2026-08-14T01:18:14+0800
+> **Source Branch**: codex/nested-capability-architecture-routing
+> **Source Commit**: 7c2b8767
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: release-closeout
+> **Reason**: archive-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -51,18 +51,23 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 5 changed/untracked path(s)
+- Summary: 10 changed/untracked path(s)
 
 ```
- M deploy/release-checklists/260812-repo-harness-0.15.0.md
- M docs/architecture/.projection-manifest.json
- M docs/architecture/modules/runtime-harness/global-runtime-reconciliation.md
- M docs/architecture/modules/verification/evals-checks.md
- M docs/architecture/modules/workflow-engine/contract-assets.md
+ D plans/plan-20260813-2314-nested-capability-architecture-routing.md
+ D tasks/contracts/20260813-2314-nested-capability-architecture-routing.contract.md
+ D tasks/notes/20260813-2314-nested-capability-architecture-routing.notes.md
+ D tasks/reviews/20260813-2314-nested-capability-architecture-routing.review.md
+ M tasks/todos.md
+?? plans/archive/plan-20260813-2314-nested-capability-architecture-routing.md
+?? tasks/archive/contract-20260814-0118-nested-capability-architecture-routing.md
+?? tasks/archive/notes-20260814-0118-nested-capability-architecture-routing.md
+?? tasks/archive/review-20260814-0118-nested-capability-architecture-routing.md
+?? tasks/archive/todo-20260814-0118-nested-capability-architecture-routing.md
 ```
 
 ## Source Artifacts

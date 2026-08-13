@@ -324,6 +324,15 @@ classify_change() {
   printf 'none unrelated\n'
 }
 
+is_capability_source_change() {
+  local rel_path="$1"
+  local matched_prefix="$2"
+
+  [[ -n "$matched_prefix" && "$matched_prefix" != "root" ]] || return 1
+  [[ "$rel_path" == "$matched_prefix/"* ]] || return 1
+  [[ "/$rel_path" == */src/* ]]
+}
+
 policy_arch_value() {
   local key="$1"
   local default_value="$2"
@@ -458,7 +467,7 @@ record_command() {
     exit 2
   fi
 
-  local rel_path severity change_type capability_match resolver_stderr
+  local rel_path severity change_type capability_match resolver_stderr architecture_event_ready
   rel_path="$(repo_relative_path "$file_path" || true)"
   if [[ -z "$rel_path" ]]; then
     echo "[ArchitectureDrift] Skipped unsafe path: $file_path"
@@ -466,18 +475,22 @@ record_command() {
   fi
 
   read -r severity change_type < <(classify_change "$rel_path")
-  if [[ "$severity" == "none" ]]; then
+  if [[ "$severity" == "none" && "$change_type" != "unrelated" ]]; then
     echo "[ArchitectureDrift] No architecture drift request for $rel_path ($change_type)."
     exit 0
   fi
 
-  if ! architecture_event_required >/dev/null 2>&1; then
-    echo "[ArchitectureQueue] WARN: architecture-event helper is required to record $rel_path; skipping advisory queue update"
-    exit 0
+  architecture_event_ready="false"
+  if [[ "$severity" != "none" ]]; then
+    if ! architecture_event_required >/dev/null 2>&1; then
+      echo "[ArchitectureQueue] WARN: architecture-event helper is required to record $rel_path; skipping advisory queue update"
+      exit 0
+    fi
+    architecture_event_ready="true"
   fi
 
   capability_match=""
-  if capability_resolver_available; then
+  if [[ "$severity" != "none" || "/$rel_path" == */src/* ]] && capability_resolver_available; then
     resolver_stderr="$(mktemp)"
     if ! capability_match="$(capability_resolver match --path "$rel_path" --format json 2>"$resolver_stderr")"; then
       [[ -n "$capability_match" ]] && echo "$capability_match" >&2
@@ -491,6 +504,23 @@ record_command() {
       capability_match=""
     fi
     rm -f "$resolver_stderr"
+  fi
+
+  if [[ "$severity" == "none" ]] &&
+     [[ "$(json_get "$capability_match" "matched" || true)" == "true" ]] &&
+     is_capability_source_change "$rel_path" "$(json_get "$capability_match" "matched_prefix" || true)"; then
+    severity="low"
+    change_type="source-change"
+  fi
+
+  if [[ "$severity" == "none" ]]; then
+    echo "[ArchitectureDrift] No architecture drift request for $rel_path ($change_type)."
+    exit 0
+  fi
+
+  if [[ "$architecture_event_ready" != "true" ]] && ! architecture_event_required >/dev/null 2>&1; then
+    echo "[ArchitectureQueue] WARN: architecture-event helper is required to record $rel_path; skipping advisory queue update"
+    exit 0
   fi
 
   local functional_block matched_prefix capability_id contract_agents contract_claude capability_resolved
