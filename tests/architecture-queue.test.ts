@@ -139,6 +139,94 @@ describe("architecture queue", () => {
     });
   }, 30_000);
 
+  test("record routes nested workspace source through the longest-prefix capability", () => {
+    tmpRepo((cwd) => {
+      mkdirSync(join(cwd, "packages/providers/hyperliquid/src"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/context"), { recursive: true });
+      copyFileSync(
+        join(ROOT, "assets/templates/helpers/capability-resolver.ts"),
+        join(cwd, "scripts/capability-resolver.ts"),
+      );
+      writeFileSync(
+        join(cwd, ".ai/context/capabilities.json"),
+        `${JSON.stringify({
+          version: 1,
+          capabilities: [
+            {
+              id: "provider-hyperliquid",
+              domain: "providers",
+              name: "hyperliquid",
+              prefixes: ["packages/providers/hyperliquid"],
+              contract_files: {
+                agents: "AGENTS.md",
+                claude: "CLAUDE.md",
+              },
+              architecture_module: "docs/architecture/modules/providers/hyperliquid.md",
+              workstream_dir: "tasks/workstreams/providers/hyperliquid",
+              lsp_profile: "typescript-lsp",
+              verification_hints: ["bun test"],
+            },
+          ],
+        }, null, 2)}\n`,
+      );
+
+      const result = queue(cwd, [
+        "record",
+        "--file",
+        "packages/providers/hyperliquid/src/l1-lifecycle-evidence.ts",
+      ]);
+
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+      expect(result.stdout).toContain(
+        "[ArchitectureDrift] Request: docs/architecture/requests/provider-hyperliquid.md",
+      );
+      expect(result.stdout).toContain("severity=low capability_id=provider-hyperliquid");
+      expect(existsSync(join(cwd, "docs/architecture/requests/root.md"))).toBe(false);
+      const card = readFileSync(
+        join(cwd, "docs/architecture/requests/provider-hyperliquid.md"),
+        "utf-8",
+      );
+      expect(card).toContain("> **Matched Prefix**: `packages/providers/hyperliquid`");
+      expect(card).toContain(
+        "> **Architecture Module**: `docs/architecture/modules/providers/hyperliquid.md`",
+      );
+      expect(card).toContain(
+        "`packages/providers/hyperliquid/src/l1-lifecycle-evidence.ts`",
+      );
+
+      const unmatched = queue(cwd, [
+        "record",
+        "--file",
+        "packages/providers/unregistered/src/source.ts",
+      ]);
+      expect(unmatched.status).toBe(0);
+      expect(unmatched.stdout).toContain(
+        "No architecture drift request for packages/providers/unregistered/src/source.ts (unrelated)",
+      );
+      expect(existsSync(join(cwd, "docs/architecture/requests/root.md"))).toBe(false);
+    });
+  }, 30_000);
+
+  test("record preserves advisory skip before resolver failure for classified paths", () => {
+    tmpRepo((cwd) => {
+      rmSync(join(cwd, "scripts/architecture-event.ts"));
+      mkdirSync(join(cwd, ".ai/context"), { recursive: true });
+      copyFileSync(
+        join(ROOT, "assets/templates/helpers/capability-resolver.ts"),
+        join(cwd, "scripts/capability-resolver.ts"),
+      );
+      writeFileSync(join(cwd, ".ai/context/capabilities.json"), "not-json\n");
+
+      const result = queue(cwd, ["record", "--file", "src/cli/hook/mutation-guard.ts"]);
+
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+      expect(result.stdout).toContain(
+        "architecture-event helper is required to record src/cli/hook/mutation-guard.ts; skipping advisory queue update",
+      );
+      expect(result.stderr).toBe("");
+    });
+  }, 30_000);
+
   test("reindex self-heals stale loose pending lines and is idempotent", () => {
     tmpRepo((cwd) => {
       expect(queue(cwd, ["record", "--file", "src/cli/hook/mutation-guard.ts"]).status).toBe(0);
