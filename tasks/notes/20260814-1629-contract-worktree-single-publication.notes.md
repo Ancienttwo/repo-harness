@@ -42,6 +42,8 @@
 - The second Claude pass returned no P1 findings and five new P2 findings. Automatic EXIT-trap rollback is now blocked after target publication, preserving the journal and lifecycle state for explicit reconcile; a real merged-phase write failure test covers this in-process error path.
 - Signing policy reads now distinguish unset, valid, invalid, and unreadable states. Invalid values fail closed, and a fake-Git runtime test proves `commit.gpgsign=true` reaches `commit-tree -S` and leaves the target untouched on signing failure.
 - Empty publication commits are rejected when lifecycle and target trees match, with a focused negative control. Complete replay resolves `refs/heads/<target>` rather than an ambiguous short ref.
+- The third Claude pass returned no P1 and one P2: completed publication replay used exact target-HEAD equality. The predicate now uses the same ancestry semantics as landed-effect detection. A direct runtime test proves later target commits preserve completion while a target reset that removes the publication invalidates it.
+- The post-fix 148-test combined run had three failures: the new replay test failed before its positional-argument harness was corrected, while two unrelated ship-worktrees cases failed from transient account-home resolution. Focused reruns after correction passed 1/1 and 2/2 respectively; the prior full publication suite remains 147/0 before this final one-test addition.
 
 ## Architecture Major-Change Adjudication
 

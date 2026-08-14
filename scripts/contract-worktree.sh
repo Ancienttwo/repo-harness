@@ -695,7 +695,7 @@ closeout_journal_complete_effect_present() {
   if [[ "$operation" == "finish" && "$merge_back" == "1" ]]; then
     target_branch="$(closeout_journal_field "$dir/meta.json" target_branch)"
     [[ -n "$target_branch" ]] || return 1
-    [[ "$(git rev-parse "refs/heads/$target_branch^{commit}" 2>/dev/null)" == "$complete_ref" ]]
+    git merge-base --is-ancestor "$complete_ref" "refs/heads/$target_branch" >/dev/null 2>&1
     return
   fi
   [[ "$(git rev-parse HEAD)" == "$complete_ref" ]]

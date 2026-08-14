@@ -551,6 +551,55 @@ describe("contract-worktree finish closeout journal", () => {
     });
   }, 30_000);
 
+  test("complete merge publication remains present after target advance but not after target reset", () => {
+    withTempRepo("closeout-journal-complete-effect", (container) => {
+      const fixture = installFixture(container);
+      expect(runProcess("git", ["commit", "--allow-empty", "-m", "publication"], fixture.primary).status).toBe(0);
+      const publication = runProcess("git", ["rev-parse", "main"], fixture.primary).stdout.trim();
+      expect(runProcess("git", ["commit", "--allow-empty", "-m", "later package"], fixture.primary).status).toBe(0);
+      const later = runProcess("git", ["rev-parse", "main"], fixture.primary).stdout.trim();
+      const dir = join(container, "complete-journal");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        join(dir, "meta.json"),
+        [
+          "{",
+          '  "operation": "finish",',
+          '  "merge_back": "1",',
+          '  "target_branch": "main"',
+          "}",
+          "",
+        ].join("\n"),
+      );
+      writeFileSync(
+        join(dir, "status.json"),
+        [
+          "{",
+          '  "status": "complete",',
+          '  "phases": [',
+          `    {"phase": "complete", "at": "2026-08-14T00:00:00+0000", "ref": "${publication}"}`,
+          "  ]",
+          "}",
+          "",
+        ].join("\n"),
+      );
+      const predicate = [
+        'journal_dir="$1"',
+        "set -- help",
+        "source scripts/contract-worktree.sh >/dev/null",
+        'closeout_journal_complete_effect_present "$journal_dir"',
+      ].join("; ");
+
+      const advanced = runProcess("bash", ["-c", predicate, "complete-effect", dir], fixture.linked);
+      expect(advanced.status, `${advanced.stdout}\n${advanced.stderr}`).toBe(0);
+
+      expect(runProcess("git", ["reset", "--hard", `${publication}^`], fixture.primary).status).toBe(0);
+      const reset = runProcess("bash", ["-c", predicate, "complete-effect", dir], fixture.linked);
+      expect(reset.status).not.toBe(0);
+      expect(later).not.toBe(publication);
+    });
+  }, 30_000);
+
   // The core acceptance requirement: per-phase SIGKILL injection. Each case
   // crashes the helper immediately after the named phase is durably recorded,
   // then proves a fresh process can find and undo the half-applied closeout.

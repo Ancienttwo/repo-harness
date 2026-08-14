@@ -1,7 +1,7 @@
 # verification/codegraph-readiness 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-codegraph-readiness" sourceDigest="sha256:a738bfb2788564971142f8e4d2b069494262756691773dd5ca585b1312ddff05" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:2dad6a44176e5c427ef4b51b14e96b519c30b3c9085e3c07f26db6ce1a3f3055" verifiedAgainst="codex/contract-worktree-single-publication@99419a294cacbede8f2f7dd0ea036f5eaf11aab7@2026-08-14T17:33:10+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-codegraph-readiness" sourceDigest="sha256:d118da521d33e77a5137f35950d5bcc18b2806af399b833f3bbeb0820a3383db" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:018e6b1ab6fabe7e1f34bc68410f3ad3ca1e11f14adfca1541ddbae65c65c4f1" verifiedAgainst="codex/contract-worktree-single-publication@58ffcb4ff4c98656cfa24860a2e0d8ec19a6afb2@2026-08-14T17:43:40+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`codex/contract-worktree-single-publication@99419a294cacbede8f2f7dd0ea036f5eaf11aab7`(2026-08-14)
+> **Verified against**:`codex/contract-worktree-single-publication@58ffcb4ff4c98656cfa24860a2e0d8ec19a6afb2`(2026-08-14)
 > **Capability ID**:`capability.verification.codegraph-readiness`(kind `capability`)
 > **Matched Prefixes**:`scripts/ensure-codegraph.sh`、`src/cli/tools/codegraph.ts`、`src/cli/mcp/codegraph-adapter.ts`、`tests/cli/codegraph-resolver.test.ts`、`docs/architecture/modules/verification/codegraph-readiness.md`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
