@@ -137,7 +137,10 @@ describe("repo-harness action command skills", () => {
     expect(create).toContain("repo-harness run capture-plan");
     expect(create).toContain("invoke `geju` before a contract exists");
     expect(create).toContain("parent agent then completes P1/P2/P3");
-    expect(create).toContain("one batched round of at most 3 questions");
+    expect(create).toContain("compact calibration card");
+    expect(create).toContain("ask exactly 1 highest-information-gain question");
+    expect(create).toContain("Ask zero questions when repo evidence already resolves the decision");
+    expect(create).toContain("stop for the user's answer before producing the plan");
     expect(create).toContain("[ASSUMED]");
     expect(create).toContain("[UNKNOWN]");
     expect(create).toContain("in non-interactive runs ask nothing");
