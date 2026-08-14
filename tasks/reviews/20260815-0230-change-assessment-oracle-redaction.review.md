@@ -40,18 +40,18 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
-> **Actor**: not-applicable
+> **Disposition**: user_waiver
+> **Reviewer**: User
+> **Source**: user-waiver
+> **Actor**: ancienttwo
 > **Reviewed Subject SHA256**: sha256:576fcabbcc8e52a922491b11017db7e02b7e42c25ae8d8abdbbb499458b2a81d
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: f12380487cb882040251251309666f3927edfed7
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Verification Evidence SHA256**: sha256:8c292c00e30b1df151b552609ce0db4c0780f99e2f62ec33c5bb8cbc9a38826b
+> **Issued At**: 2026-08-14T18:51:44.788Z
 
-- Summary: pending typed receipt projection.
-- Findings: none.
+- Summary: User explicitly instructed go on after being informed that PR #190 requires an independent persistent typed user waiver; all focused, self-hosted, and hosted checks passed.
+- Findings: none
 
 ## Behavior Diff Notes
 
