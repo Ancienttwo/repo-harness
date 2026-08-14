@@ -50,6 +50,13 @@ repos.
   reviewable evidence.
 - Contract verification, review recommendation, external acceptance or manual
   override, and latest trace evidence are required before closeout.
+- Hooks remain fail-open observers. The prepare-acceptance gate recomputes a
+  policy-base-bound Change Assessment packet over final content; it selects
+  high-risk paths and required executable oracles without making Hook journals
+  or model judgments into authority. Each risk reason must have an allowed
+  oracle covering every selected path or `*`. AcceptanceReceipt remains the
+  sole merge authority by recomputing and binding that packet in canonical
+  verification evidence.
 - Worktree isolation protects unrelated dirty state; agents must not absorb
   unrelated changes from the target tree.
 - Direct coding MCP is default-off, user-scoped, OAuth profile/revision-bound,
@@ -96,6 +103,17 @@ canonical `## External Acceptance Advice` with `pass`, bound under Review Rubric
 v2 to the normalized final-content review subject and current benchmark evidence.
 Machine verification is bounded and consumes frozen evidence; it must not launch
 providers, adoption, substantive installation, or benchmark production.
+
+Before semantic review, reviewers use the prepared `ReviewSelectionPacket` to
+focus on selected paths, the closed reason set, and declared test/readback oracles.
+The packet is bound to the exact final subject and policy target revision; a
+reviewer disagreement may escalate it but cannot weaken it. The overlay takes
+effect only after a fresh `verify-sprint --prepare-acceptance` rebinds it into
+canonical evidence; a stale prepared packet cannot finalize. `pattern_novelty`
+is driven only by abstraction-shaped additions relative to the policy base.
+Release runtime
+readback is recorded separately as `RuntimeEvidenceReceipt`, never as a task
+AcceptanceReceipt field.
 
 ## Acceptance Scenarios
 

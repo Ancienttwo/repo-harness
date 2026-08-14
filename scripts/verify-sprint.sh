@@ -516,15 +516,20 @@ fi
 
 finalize_prepared_acceptance() {
   local acceptance_row acceptance_exit acceptance_status acceptance_reviewer acceptance_source acceptance_disposition acceptance_message
-  local finalized_checks
+  local finalized_checks change_assessment_file=".ai/harness/checks/change-assessment.latest.json"
 
   [[ -n "$BUN_BIN" && -x "$BUN_BIN" ]] || { echo "verify-sprint: trusted Bun runtime is unavailable" >&2; return 1; }
   [[ -f "$helper_dir/acceptance-receipt.ts" ]] || { echo "verify-sprint: AcceptanceReceipt helper is missing: $helper_dir/acceptance-receipt.ts" >&2; return 1; }
   [[ -n "$review_file" && -f "$review_file" ]] || { echo "verify-sprint: task review projection file is missing" >&2; return 1; }
   [[ -s "$checks_file" ]] || { echo "verify-sprint: prepared verification evidence is missing; run with --prepare-acceptance first" >&2; return 1; }
+  [[ -s "$change_assessment_file" ]] || { echo "verify-sprint: current Change Assessment packet is missing; rerun --prepare-acceptance first" >&2; return 1; }
   command -v jq >/dev/null 2>&1 || { echo "verify-sprint: jq is required to finalize AcceptanceReceipt evidence" >&2; return 1; }
-  jq -e '.source == "verify-sprint" and .status == "pass" and .exit_code == 0' "$checks_file" >/dev/null 2>&1 || {
+  jq -e '.source == "verify-sprint" and .status == "pass" and .exit_code == 0 and (.change_assessment.status == "pass") and ([.guards[] | select(.name == "change_assessment" and .status == "pass")] | length == 1)' "$checks_file" >/dev/null 2>&1 || {
     echo "verify-sprint: prepared verification evidence is not passing; run with --prepare-acceptance first" >&2
+    return 1
+  }
+  jq -e --slurpfile current_assessment "$change_assessment_file" '.change_assessment == $current_assessment[0]' "$checks_file" >/dev/null 2>&1 || {
+    echo "verify-sprint: Change Assessment packet changed after prepared evidence; rerun --prepare-acceptance before recording/finalizing AcceptanceReceipt" >&2
     return 1
   }
 
@@ -692,6 +697,55 @@ if [[ -z "$review_file" || ! -f "$review_file" ]]; then
   echo "Missing task review file" >&2
 fi
 
+# Change Assessment v1 owns review selection at the same final-subject
+# boundary as prepared verification. Hooks may have emitted advisory reports,
+# but this recomputation reads only policy, contract, and final repository
+# state; a missing/degraded assessment is therefore a fail-closed verification
+# fact, never a Hook-journal fallback.
+change_assessment_file=".ai/harness/checks/change-assessment.latest.json"
+change_assessment_status="fail"
+change_assessment_message="Change Assessment is unavailable."
+if [[ -z "$BUN_BIN" || ! -x "$BUN_BIN" ]]; then
+  change_assessment_message="Trusted Bun runtime is unavailable for Change Assessment."
+elif [[ ! -f "$helper_dir/change-assessment.ts" ]]; then
+  change_assessment_message="Change Assessment helper is missing: $helper_dir/change-assessment.ts"
+else
+  change_assessment_packet_args=()
+  if [[ -s "$change_assessment_file" ]] && command -v jq >/dev/null 2>&1 \
+    && jq -e '.schema == "repo-harness-change-assessment-evidence.v1" and .status == "pass" and ([.selection_packet.reasons[]? | select(.code == "reviewer_disagreement")] | length == 1)' "$change_assessment_file" >/dev/null 2>&1; then
+    # Preserve only the closed reviewer-disagreement overlay. A previous base
+    # packet is always recomputed; a stale overlay instead fails closed in the
+    # helper's exact-subject/base validator.
+    change_assessment_packet_args=(--packet "$change_assessment_file")
+  fi
+  set +e
+  if [[ ${#change_assessment_packet_args[@]} -gt 0 ]]; then
+    change_assessment_output="$(REPO_HARNESS_TARGET_REPO_ROOT="$(pwd -P)" "$BUN_BIN" "$helper_dir/change-assessment.ts" prepare --contract "$contract_file" --output "$change_assessment_file" "${change_assessment_packet_args[@]}" 2>&1)"
+  else
+    change_assessment_output="$(REPO_HARNESS_TARGET_REPO_ROOT="$(pwd -P)" "$BUN_BIN" "$helper_dir/change-assessment.ts" prepare --contract "$contract_file" --output "$change_assessment_file" 2>&1)"
+  fi
+  change_assessment_exit=$?
+  set -e
+  if [[ "$change_assessment_exit" -eq 0 ]] \
+    && [[ -s "$change_assessment_file" ]] \
+    && command -v jq >/dev/null 2>&1 \
+    && jq -e '.schema == "repo-harness-change-assessment-evidence.v1" and .status == "pass" and (.selection_packet.status == "ready")' "$change_assessment_file" >/dev/null 2>&1; then
+    change_assessment_status="pass"
+    change_assessment_message="Change Assessment selected a final-subject review packet."
+  else
+    change_assessment_message="${change_assessment_output:-Change Assessment did not produce a passing packet.}"
+  fi
+fi
+if [[ "$change_assessment_status" != "pass" ]]; then
+  mkdir -p "$(dirname "$change_assessment_file")"
+  change_assessment_failure_file="${change_assessment_file}.$$.tmp"
+  printf '%s\n' "{\"schema\":\"repo-harness-change-assessment-evidence.v1\",\"status\":\"fail\",\"message\":\"$(json_escape "$change_assessment_message")\"}" > "$change_assessment_failure_file"
+  mv "$change_assessment_failure_file" "$change_assessment_file"
+fi
+if [[ "$change_assessment_status" == "pass" ]] && command -v jq >/dev/null 2>&1; then
+  review_subject_sha256="$(jq -r '.selection_packet.review_subject_sha256 // empty' "$change_assessment_file" 2>/dev/null || true)"
+fi
+
 acceptance_status="missing"
 acceptance_reviewer=""
 acceptance_source=""
@@ -737,7 +791,7 @@ case "$acceptance_status" in
     acceptance_gate="fail"
     ;;
 esac
-if [[ "$contract_exit" -eq 0 && "$review_status" == "pass" && "$acceptance_gate" == "pass" && "$allowed_paths_status" == "pass" ]]; then
+if [[ "$contract_exit" -eq 0 && "$review_status" == "pass" && "$change_assessment_status" == "pass" && "$acceptance_gate" == "pass" && "$allowed_paths_status" == "pass" ]]; then
   status="pass"
   exit_code=0
 fi
@@ -750,6 +804,8 @@ if [[ -z "$failure_class" && "$status" != "pass" ]]; then
     failure_class="contract"
   elif [[ "$review_status" != "pass" ]]; then
     failure_class="review"
+  elif [[ "$change_assessment_status" != "pass" ]]; then
+    failure_class="change_assessment"
   elif [[ "$acceptance_gate" != "pass" ]]; then
     failure_class="acceptance_receipt"
   elif [[ "$allowed_paths_status" != "pass" ]]; then
@@ -761,7 +817,7 @@ fi
 if [[ "$status" == "pass" ]]; then
   next_step="finish contract worktree or archive completed task"
 else
-  next_step="resolve failing contract, review, AcceptanceReceipt, or allowed_paths gate"
+  next_step="resolve failing contract, Change Assessment, review, AcceptanceReceipt, or allowed_paths gate"
 fi
 handoff_current_exists=false
 handoff_resume_exists=false
@@ -787,6 +843,8 @@ if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; 
     --arg review_file "${review_file:-}" \
     --arg review_status "$review_status" \
     --arg review_message "$review_message" \
+    --arg change_assessment_status "$change_assessment_status" \
+    --arg change_assessment_message "$change_assessment_message" \
     --arg acceptance_status "$acceptance_status" \
     --arg acceptance_reviewer "$acceptance_reviewer" \
     --arg acceptance_source "$acceptance_source" \
@@ -802,6 +860,7 @@ if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; 
     --arg benchmark_subject_sha256 "$benchmark_subject_sha256" \
     --argjson files_changed "$(git_changed_files_json)" \
     --argjson allowed_paths_check "$allowed_paths_check" \
+    --slurpfile change_assessment "$change_assessment_file" \
     --argjson allowed_paths "$(allowed_paths_json "$contract_file")" \
     --argjson handoff_current_exists "$handoff_current_exists" \
     --argjson handoff_resume_exists "$handoff_resume_exists" \
@@ -838,6 +897,7 @@ if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; 
       guards: [
         {name: "contract", status: $contract_status},
         {name: "review", status: $review_status},
+        {name: "change_assessment", status: $change_assessment_status},
         {name: "acceptance_receipt", status: $acceptance_status},
         {name: "allowed_paths", status: ($allowed_paths_check.status // "unavailable")}
       ],
@@ -868,6 +928,11 @@ if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; 
         status: $review_status,
         message: $review_message
       },
+      change_assessment: ($change_assessment[0] // {
+        schema: "repo-harness-change-assessment-evidence.v1",
+        status: "fail",
+        message: $change_assessment_message
+      }),
       acceptance_receipt: {
         status: $acceptance_status,
         disposition: $acceptance_disposition,
@@ -918,6 +983,7 @@ else
   "guards": [
     {"name": "contract", "status": "$([[ "$contract_exit" -eq 0 ]] && printf pass || printf fail)"},
     {"name": "review", "status": "$(json_escape "$review_status")"},
+    {"name": "change_assessment", "status": "$(json_escape "$change_assessment_status")"},
     {"name": "acceptance_receipt", "status": "$(json_escape "$acceptance_status")"},
     {"name": "allowed_paths", "status": "$(json_escape "$allowed_paths_status")"}
   ],
@@ -949,6 +1015,11 @@ else
     "file": "$(json_escape "${review_file:-}")",
     "status": "$(json_escape "$review_status")",
     "message": "$(json_escape "$review_message")"
+  },
+  "change_assessment": {
+    "schema": "repo-harness-change-assessment-evidence.v1",
+    "status": "fail",
+    "message": "$(json_escape "$change_assessment_message")"
   },
   "acceptance_receipt": {
     "status": "$(json_escape "$acceptance_status")",

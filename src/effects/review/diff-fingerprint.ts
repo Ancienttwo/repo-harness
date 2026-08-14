@@ -1,4 +1,4 @@
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { lstatSync, readFileSync, readlinkSync } from 'fs';
 import { join } from 'path';
@@ -46,6 +46,42 @@ export interface ReviewSubject {
   readonly target_overlap_count: number;
   readonly review_subject_sha256: string;
   readonly reason?: string;
+}
+
+export interface ReviewSubjectAddedLine {
+  readonly path: string;
+  readonly line: string;
+}
+
+/**
+ * The only policy-owned base selector for subject-bound verification. Generic
+ * diff consumers may intentionally choose another explicit ref, but a merge
+ * or acceptance authority must never silently fall back to HEAD: that would
+ * turn "no configured target" into a self-comparison and hide a missing
+ * policy contract.
+ */
+export type PolicyReviewBaseResolution =
+  | { readonly ok: true; readonly targetRef: string }
+  | { readonly ok: false; readonly reason: string };
+
+export function resolvePolicyReviewBase(repoRoot: string): PolicyReviewBaseResolution {
+  try {
+    const policy = JSON.parse(readFileSync(join(repoRoot, '.ai', 'harness', 'policy.json'), 'utf-8')) as unknown;
+    if (!policy || typeof policy !== 'object' || Array.isArray(policy)) {
+      return { ok: false, reason: 'workflow policy is malformed' };
+    }
+    const strategy = (policy as Record<string, unknown>).worktree_strategy;
+    if (!strategy || typeof strategy !== 'object' || Array.isArray(strategy)) {
+      return { ok: false, reason: 'worktree_strategy is missing' };
+    }
+    const reviewBase = (strategy as Record<string, unknown>).review_base;
+    if (typeof reviewBase !== 'string' || reviewBase.trim() === '') {
+      return { ok: false, reason: 'worktree_strategy.review_base is missing' };
+    }
+    return { ok: true, targetRef: reviewBase.trim() };
+  } catch {
+    return { ok: false, reason: 'workflow policy is missing or unreadable' };
+  }
 }
 
 // Accumulates whether any git observation failed during a single fingerprint
@@ -532,4 +568,55 @@ export function buildReviewSubject(
     target_overlap_count: targetOverlapPaths.length,
     review_subject_sha256: reviewSubjectSha256,
   });
+}
+
+/**
+ * Return only additions in the final subject relative to its already-bound
+ * policy review base. This deliberately lives beside buildReviewSubject: it
+ * uses that subject's target and path set rather than inventing another base
+ * resolver or treating a Hook journal as diff authority.
+ */
+export function reviewSubjectAddedLines(repoRoot: string, subject: ReviewSubject): readonly ReviewSubjectAddedLine[] {
+  if (subject.status !== 'ok') throw new Error('review subject is unavailable for hunk observation');
+  const subjectPaths = new Set(subject.paths);
+  const entries: ReviewSubjectAddedLine[] = [];
+  const collectAddedLines = (patch: string): void => {
+    let currentPath: string | null = null;
+    for (const line of patch.split(/\r?\n/u)) {
+      if (line.startsWith('+++ ')) {
+        const candidate = line.slice(4).replace(/^b\//u, '').split('\t', 1)[0] ?? '';
+        currentPath = candidate && candidate !== '/dev/null' ? candidate : null;
+        continue;
+      }
+      if (currentPath && subjectPaths.has(currentPath) && line.startsWith('+') && !line.startsWith('+++')) {
+        entries.push({ path: currentPath, line: line.slice(1) });
+      }
+    }
+  };
+  const wholeDiff = spawnSync('git', [
+    '-C', repoRoot, '-c', 'core.quotepath=false', '--literal-pathspecs', 'diff', '--no-ext-diff', '--find-renames', '--no-color', '--unified=0', subject.target_ref, '--',
+  ], { encoding: 'utf-8', maxBuffer: PATCH_HASH_MAX_BUFFER });
+  if (wholeDiff.error || wholeDiff.status !== 0) throw new Error('review subject rename-aware hunk observation failed');
+  collectAddedLines(wholeDiff.stdout ?? '');
+
+  // `git diff <base>` intentionally omits untracked files. The subject's own
+  // status parser identifies exactly those paths; each is therefore wholly
+  // new and can be represented as one /dev/null hunk without treating a
+  // tracked rename destination as a new file.
+  const statusRes = gitRunBuffer(repoRoot, ['status', '--porcelain=v1', '--untracked-files=all', '-z']);
+  if (!statusRes.ok) throw new Error('review subject untracked-path observation failed');
+  const statusCtx: FingerprintCtx = { degraded: false };
+  const untracked = parseStatusZ(splitNul(statusRes.buf, statusCtx)).untracked
+    .filter((path) => subjectPaths.has(path));
+  if (statusCtx.degraded) throw new Error('review subject untracked-path encoding is unavailable');
+  for (const path of untracked) {
+    const result = spawnSync('git', [
+      '-C', repoRoot, '-c', 'core.quotepath=false', '--literal-pathspecs', 'diff', '--no-index', '--no-ext-diff', '--no-color', '--unified=0', '/dev/null', path,
+    ], { encoding: 'utf-8', maxBuffer: PATCH_HASH_MAX_BUFFER });
+    if (result.error || (result.status !== 0 && result.status !== 1)) {
+      throw new Error(`review subject untracked hunk observation failed: ${path}`);
+    }
+    collectAddedLines(result.stdout ?? '');
+  }
+  return Object.freeze(entries);
 }

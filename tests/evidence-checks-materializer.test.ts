@@ -493,6 +493,11 @@ describe("checks-materializer: writeChecksLatest overwrite semantics", () => {
         review: { file: "tasks/reviews/fixture.review.md", status: "pass" },
         active_plan: LONG_SLUG_ACTIVE_PLAN,
         guards: [{ name: "contract", status: "pass" }],
+        change_assessment: {
+          schema: "repo-harness-change-assessment-evidence.v1",
+          status: "pass",
+          selection_packet: { kind: "repo-harness-review-selection-packet" },
+        },
       };
       const emitResult = emitAuthoritativeVerifyEvidence({
         repoRoot,
@@ -530,6 +535,8 @@ describe("checks-materializer: writeChecksLatest overwrite semantics", () => {
       expect((consumerFacing as typeof runTrace).run_file.startsWith(".ai/harness/runs/")).toBe(true);
       expect((consumerFacing as typeof runTrace).contract.file).toBe(LONG_SLUG_CONTRACT_RELATIVE);
       expect((consumerFacing as typeof runTrace).active_plan).toBe(LONG_SLUG_ACTIVE_PLAN);
+      expect((consumerFacing as typeof runTrace).change_assessment.schema).toBe("repo-harness-change-assessment-evidence.v1");
+      expect((consumerFacing as typeof runTrace).change_assessment.selection_packet.kind).toBe("repo-harness-review-selection-packet");
     });
   }, 30_000);
 

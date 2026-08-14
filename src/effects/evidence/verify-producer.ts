@@ -37,7 +37,7 @@ import { fileURLToPath } from "url";
 
 import type { EvidenceEventRecord, GenesisRecord, JsonValue, SubjectIdentity } from "../../core/evidence/types";
 import { appendEvidenceEvent, appendGenesisRecord } from "./event-log";
-import { buildReviewSubject, uniqueSorted } from "../review/diff-fingerprint";
+import { buildReviewSubject, resolvePolicyReviewBase, uniqueSorted } from "../review/diff-fingerprint";
 import { LEDGER_EPOCH_START_SHA } from "./epoch";
 
 const PRODUCER_ID = "verify-sprint";
@@ -102,10 +102,6 @@ export interface VerifyProducerInput {
   readonly runTrace?: JsonValue;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function sha256Hex(content: Buffer | string): string {
   return createHash("sha256").update(content).digest("hex");
 }
@@ -158,19 +154,6 @@ function lastCommitTouching(repoRoot: string, relativePath: string): string | nu
   if (!result.ok) return null;
   const sha = result.text.trim();
   return sha.length > 0 ? sha : null;
-}
-
-/** `.ai/harness/policy.json#worktree_strategy.review_base` (pattern reference: `scripts/acceptance-receipt.ts`'s `reviewBase`). Defaults to `HEAD` so a fixture/standalone repo without a policy file still resolves. */
-function resolveReviewBaseRef(repoRoot: string): string {
-  const policyPath = join(repoRoot, ".ai/harness/policy.json");
-  if (!existsSync(policyPath)) return "HEAD";
-  try {
-    const policy = JSON.parse(readFileSync(policyPath, "utf-8")) as unknown;
-    const value = isRecord(policy) && isRecord(policy.worktree_strategy) ? policy.worktree_strategy.review_base : undefined;
-    return typeof value === "string" && value.trim() !== "" ? value : "HEAD";
-  } catch {
-    return "HEAD";
-  }
 }
 
 /** This module's own `package.json` version -- the repo-harness tool's version, independent of whichever `repoRoot` is being verified. */
@@ -285,8 +268,15 @@ export function emitAuthoritativeVerifyEvidence(input: VerifyProducerInput): Ver
     };
   }
 
-  const reviewBaseRef = resolveReviewBaseRef(repoRoot);
-  const subject = buildReviewSubject(repoRoot, { targetRef: reviewBaseRef });
+  const reviewBase = resolvePolicyReviewBase(repoRoot);
+  if (!reviewBase.ok) {
+    return {
+      ok: false,
+      reason: "subject_mismatch",
+      message: `policy review base is unavailable: ${reviewBase.reason}`,
+    };
+  }
+  const subject = buildReviewSubject(repoRoot, { targetRef: reviewBase.targetRef });
   if (subject.status !== "ok") {
     return {
       ok: false,

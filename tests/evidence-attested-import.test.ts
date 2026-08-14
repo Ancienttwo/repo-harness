@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { execFileSync } from "child_process";
+import { createHash } from "crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -8,6 +9,7 @@ import { LEDGER_EPOCH_START_SHA } from "../src/effects/evidence/epoch";
 import { importAttestedEvidence, type AttestedReceiptInput } from "../src/effects/evidence/attested-import";
 import { readAcceptedEvents, readGenesisRecord } from "../src/effects/evidence/event-log";
 import { buildReviewSubject } from "../src/effects/review/diff-fingerprint";
+import { prepareChangeAssessment } from "../src/effects/review/change-assessment";
 import { runAcceptanceReceiptCli } from "../scripts/acceptance-receipt";
 
 function git(repoRoot: string, args: readonly string[]): string {
@@ -365,6 +367,27 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
     while (cleanupDirs.length > 0) rmSync(cleanupDirs.pop()!, { recursive: true, force: true });
   });
 
+  function stableJson(value: unknown): string {
+    if (value === null || typeof value !== "object") return JSON.stringify(value);
+    if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(",")}}`;
+  }
+
+  function changeAssessmentEvidence(root: string): Record<string, unknown> {
+    const prepared = prepareChangeAssessment({ repoRoot: root, contractPath: "tasks/contracts/fixture-cli.contract.md" });
+    if (prepared.assessment.status !== "ready" || !prepared.packet || prepared.packet.status !== "ready") {
+      throw new Error("fixture Change Assessment must be ready");
+    }
+    const basis = {
+      schema: "repo-harness-change-assessment-evidence.v1",
+      status: "pass",
+      assessment: prepared.assessment,
+      selection_packet: prepared.packet,
+    };
+    return { ...basis, evidence_sha256: `sha256:${createHash("sha256").update(stableJson(basis)).digest("hex")}` };
+  }
+
   function writePassingChecks(root: string): void {
     const subject = buildReviewSubject(root, { targetRef: "main" });
     expect(subject.status).toBe("ok");
@@ -384,9 +407,11 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
             { name: "contract", status: "pass" },
             { name: "review", status: "pass" },
             { name: "allowed_paths", status: "pass" },
+            { name: "change_assessment", status: "pass" },
           ],
           contract: { file: "tasks/contracts/fixture-cli.contract.md" },
           review: { file: "tasks/reviews/fixture-cli.review.md" },
+          change_assessment: changeAssessmentEvidence(root),
         },
         null,
         2,
@@ -431,6 +456,12 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
         "",
         "```json",
         '{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}',
+        "```",
+        "",
+        "## Change Assessment",
+        "",
+        "```json",
+        '{"protocol":1,"oracles":[]}',
         "```",
         "",
       ].join("\n"),

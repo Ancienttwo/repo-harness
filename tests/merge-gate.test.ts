@@ -3,7 +3,9 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { spawnSync } from 'child_process';
+import { createHash } from 'crypto';
 import { buildReviewSubject } from '../src/effects/review/diff-fingerprint';
+import { prepareChangeAssessment } from '../src/effects/review/change-assessment';
 import { acceptanceReceiptPath, recordAcceptance } from '../scripts/acceptance-receipt';
 
 const ROOT = join(import.meta.dir, '..');
@@ -27,6 +29,27 @@ function git(cwd: string, ...args: string[]): string {
 function commit(cwd: string, message: string): void {
   git(cwd, 'add', '-A');
   git(cwd, 'commit', '-m', message);
+}
+
+function stableJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(',')}}`;
+}
+
+function changeAssessmentEvidence(cwd: string): Record<string, unknown> {
+  const prepared = prepareChangeAssessment({ repoRoot: cwd, contractPath: 'tasks/contracts/demo.contract.md' });
+  if (prepared.assessment.status !== 'ready' || !prepared.packet || prepared.packet.status !== 'ready') {
+    throw new Error('fixture Change Assessment must be ready');
+  }
+  const basis = {
+    schema: 'repo-harness-change-assessment-evidence.v1',
+    status: 'pass',
+    assessment: prepared.assessment,
+    selection_packet: prepared.packet,
+  };
+  return { ...basis, evidence_sha256: `sha256:${createHash('sha256').update(stableJson(basis)).digest('hex')}` };
 }
 
 async function makeFixture() {
@@ -63,6 +86,12 @@ async function makeFixture() {
     '{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}',
     '```',
     '',
+    '## Change Assessment',
+    '',
+    '```json',
+    '{"protocol":1,"oracles":[]}',
+    '```',
+    '',
   ].join('\n'));
   writeFileSync(join(cwd, 'tasks', 'reviews', 'demo.review.md'), '# Review\n\n> **Recommendation**: pass\n');
   commit(cwd, 'candidate');
@@ -80,9 +109,11 @@ async function makeFixture() {
       { name: 'contract', status: 'pass' },
       { name: 'review', status: 'pass' },
       { name: 'allowed_paths', status: 'pass' },
+      { name: 'change_assessment', status: 'pass' },
     ],
     contract: { file: 'tasks/contracts/demo.contract.md' },
     review: { file: 'tasks/reviews/demo.review.md' },
+    change_assessment: changeAssessmentEvidence(cwd),
   }, null, 2)}\n`);
 
   const providerCalls = join(home, 'provider-calls');
@@ -145,14 +176,15 @@ describe('provider-free merge seal', () => {
     expect(readFileSync(fixture.providerCalls, 'utf-8').trim()).toBe('1');
   }, 30_000);
 
-  test('non-overlapping target movement reuses acceptance and recomputes only the local seal', async () => {
+  test('non-overlapping target movement invalidates exact-target Change Assessment evidence', async () => {
     const fixture = await makeFixture();
     git(fixture.cwd, 'checkout', 'main');
     writeFileSync(join(fixture.cwd, 'other.txt'), 'target advanced\n');
     commit(fixture.cwd, 'advance base');
     git(fixture.cwd, 'checkout', 'codex/demo');
     const resealed = run('bun', [fixture.harness, 'run', '--base', 'main', '--format', 'sha'], fixture.cwd);
-    expect(resealed.status, resealed.stderr).toBe(0);
+    expect(resealed.status).not.toBe(0);
+    expect(resealed.stderr).toContain('change assessment packet is stale');
     expect(readFileSync(fixture.providerCalls, 'utf-8').trim()).toBe('1');
   }, 30_000);
 

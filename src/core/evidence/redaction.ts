@@ -19,7 +19,7 @@
  * ledger (a real `verify-sprint` run against this package's own,
  * realistic-length contract slug).
  *
- * Two typed exemptions from entropy redaction are applied structurally --
+ * Three typed exemptions from entropy redaction are applied structurally --
  * classified BEFORE the entropy pass runs, never a post-hoc unhash:
  *
  *   1. Declared hash: a whole string value matching
@@ -48,8 +48,14 @@
  *      remains the actual fail-closed check for path-key-convention fields,
  *      unchanged and still enforced by `event-writer.ts` independently of
  *      this module.
+ *   3. Repo-harness protocol identifiers: whole values under `schema` or
+ *      `kind` that match the public `repo-harness-...` identifier grammar.
+ *      These values are consumer-facing discriminants, not secrets; hashing
+ *      them makes an otherwise fingerprinted nested evidence envelope
+ *      unverifiable after ledger materialization. Known-secret matching still
+ *      runs before this exemption, exactly as for hashes and paths.
  *
- * Both exemptions skip ONLY the entropy pattern. The secret-value denylist
+ * All exemptions skip ONLY the entropy pattern. The secret-value denylist
  * check (`findKnownSecretSpans`) still runs unconditionally over every
  * field, exempted or not -- a literal secret value sitting in a hash-shaped
  * or path-shaped position must still be replaced. Free-text fields (no
@@ -107,12 +113,29 @@ export function looksLikeSafeRepoRelativePath(value: string): boolean {
   return /\.[^./]+$/.test(value);
 }
 
+const REPO_HARNESS_PROTOCOL_IDENTIFIERS = new Set([
+  "repo-harness-change-assessment-evidence.v1",
+  "repo-harness-review-selection-packet",
+]);
+
+/** Rule 3: a closed public protocol-discriminant allowlist. Key, whole-value,
+ * and exact-membership checks keep attacker-shaped `repo-harness-...` strings
+ * subject to entropy redaction while preserving the two consumer contracts
+ * whose fingerprints must survive ledger materialization byte-for-byte. */
+export function isRepoHarnessProtocolIdentifier(key: string | undefined, value: string): boolean {
+  if (key !== "schema" && key !== "kind") return false;
+  return REPO_HARNESS_PROTOCOL_IDENTIFIERS.has(value);
+}
+
 /** Structural classification: does this leaf (key + value) qualify for
  * either typed exemption? Computed once, up front -- see the module doc
  * comment's "order of operations" note (classify first, then redact the
  * rest; never a post-hoc unhash). */
 export function isEntropyExemptLeaf(key: string | undefined, value: string): boolean {
-  return isDeclaredHashValue(value) || isPathConventionKey(key) || looksLikeSafeRepoRelativePath(value);
+  return isDeclaredHashValue(value)
+    || isPathConventionKey(key)
+    || looksLikeSafeRepoRelativePath(value)
+    || isRepoHarnessProtocolIdentifier(key, value);
 }
 
 interface Span {
