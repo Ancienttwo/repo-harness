@@ -339,6 +339,32 @@ describe("architecture queue", () => {
     });
   }, 30_000);
 
+  test("stable-card migration refuses an archive-directory symlink", () => {
+    tmpRepo((cwd) => {
+      const target = "src/cli/hook/archive-symlink.ts";
+      expect(queue(cwd, ["record", "--file", target]).status).toBe(0);
+      const cardPath = join(cwd, "docs/architecture/requests/root.md");
+      const canonical = readFileSync(cardPath, "utf8");
+      const legacy = canonical
+        .replace(/\n## Event Records\s*\n```json[\s\S]*?```\s*\n?/, "\n")
+        .replace(/,\n  "event_key": "sha256:[0-9a-f]{64}"/, "");
+      writeFileSync(cardPath, legacy);
+      const eventsPath = join(cwd, ".ai/harness/architecture/events.jsonl");
+      const outside = mkdtempSync(join(tmpdir(), "architecture-audit-outside-"));
+      try {
+        writeFileSync(join(outside, "events-202608.jsonl"), readFileSync(eventsPath, "utf8"));
+        symlinkSync(outside, join(cwd, ".ai/harness/architecture/archive"));
+        const before = readFileSync(eventsPath, "utf8");
+        const failed = queue(cwd, ["record", "--file", target]);
+        expect(failed.status).toBe(1);
+        expect(readFileSync(eventsPath, "utf8")).toBe(before);
+        expect(readFileSync(cardPath, "utf8")).toBe(legacy);
+      } finally {
+        rmSync(outside, { recursive: true, force: true });
+      }
+    });
+  }, 30_000);
+
   test("invalid legacy migration fails before journal or audit mutation", () => {
     tmpRepo((cwd) => {
       const target = "src/cli/hook/legacy-invalid.ts";

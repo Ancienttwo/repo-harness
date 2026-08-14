@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from "fs";
@@ -708,6 +709,24 @@ describe("sessionStartMainContent — cold-path event-log rotation (gatekeeper P
       const now = new Date();
       const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
       expect(existsSync(join(repoRoot, ".ai/harness/architecture/archive", `events-${stamp}.jsonl`))).toBe(true);
+    });
+  });
+
+  test("architecture rotation refuses an archive-directory symlink", () => {
+    withTmpRepo("rotate-architecture-archive-symlink", (repoRoot) => {
+      mkdirSync(join(repoRoot, ".ai/harness/architecture"), { recursive: true });
+      const eventsPath = join(repoRoot, ".ai/harness/architecture/events.jsonl");
+      writeEventLines(eventsPath, 2500);
+      const before = readFileSync(eventsPath, "utf8");
+      const outside = mkdtempSync(join(tmpdir(), "architecture-archive-outside-"));
+      try {
+        symlinkSync(outside, join(repoRoot, ".ai/harness/architecture/archive"));
+        sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now());
+        expect(readFileSync(eventsPath, "utf8")).toBe(before);
+        expect(existsSync(join(outside, "events-202608.jsonl"))).toBe(false);
+      } finally {
+        rmSync(outside, { recursive: true, force: true });
+      }
     });
   });
 

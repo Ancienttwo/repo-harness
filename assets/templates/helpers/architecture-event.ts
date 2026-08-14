@@ -385,6 +385,9 @@ function requestEventsFromSource(file: string): ArchitectureEvent[] {
 function validateCardMetadata(file: string, events: ArchitectureEvent[], latest: ArchitectureEvent): void {
   const metadata = readMetadata(file);
   if (!metadata.Status) throw new Error(`architecture request is missing Status metadata: ${file}`);
+  if (!["Pending", "Resolved", "Superseded", "No architecture change"].includes(metadata.Status)) {
+    throw new Error(`architecture request has unknown Status metadata: ${file}`);
+  }
   const expected: Record<string, string> = {
     Severity: maxSeverity(events.map((entry) => entry.severity || "unknown")),
     "Change Type": latest.change_type || "",
@@ -411,7 +414,7 @@ function validateCardMetadata(file: string, events: ArchitectureEvent[], latest:
   }
 }
 
-function validateLegacyCard(file: string, events: ArchitectureEvent[]): void {
+function validateLegacyCard(file: string, events: ArchitectureEvent[]): ArchitectureEvent[] {
   if (events.length === 0) throw new Error(`legacy architecture card has no reconstructable audit events: ${file}`);
   const source = readFileSync(file, "utf8");
   const fieldsMatch = source.match(/## Event Fields\s*```json\s*([\s\S]*?)\s*```/);
@@ -420,8 +423,9 @@ function validateLegacyCard(file: string, events: ArchitectureEvent[]): void {
   if (Object.prototype.hasOwnProperty.call(raw, "event_key")) {
     throw new Error(`modern architecture request is missing Event Records: ${file}`);
   }
-  const latest = dedupeEvents(events)[0];
-  const expectedLegacy = { ...latest, severity: maxSeverity(events.map((entry) => entry.severity || "unknown")), event_key: undefined };
+  const currentEvents = dedupeEvents(events);
+  const latest = events.at(-1)!;
+  const expectedLegacy = { ...latest, severity: maxSeverity(currentEvents.map((entry) => entry.severity || "unknown")), event_key: undefined };
   const normalizedLegacy = validateEvent(raw, file, false);
   for (const field of EVENT_STRING_FIELDS) {
     if (normalizedLegacy[field] !== expectedLegacy[field]) {
@@ -433,7 +437,8 @@ function validateLegacyCard(file: string, events: ArchitectureEvent[]): void {
     || normalizedLegacy.contract_sync_required !== expectedLegacy.contract_sync_required) {
     throw new Error(`legacy architecture booleans do not match the audit log: ${file}`);
   }
-  validateCardMetadata(file, events, expectedLegacy);
+  validateCardMetadata(file, currentEvents, expectedLegacy);
+  return currentEvents;
 }
 
 function markdownCodeCell(value: string): string {
@@ -480,6 +485,23 @@ function assertSafeWriteTarget(file: string): void {
   if (existsSync(file) && lstatSync(file).isSymbolicLink()) throw new Error(`write target must not be a symlink: ${file}`);
   const parent = realpathSync(dirname(resolve(file)));
   if (parent !== repo && !parent.startsWith(`${repo}/`)) throw new Error(`write target resolves outside repository: ${file}`);
+}
+
+function assertSafeReadTarget(file: string): void {
+  const repo = realpathSync(process.cwd());
+  const absolute = resolve(file);
+  const relative = absolute === repo ? "" : absolute.startsWith(`${repo}/`) ? absolute.slice(repo.length + 1) : null;
+  if (relative === null) throw new Error(`read target is outside repository: ${file}`);
+  let cursor = repo;
+  for (const part of relative.split("/").filter(Boolean)) {
+    cursor = `${cursor}/${part}`;
+    if (!existsSync(cursor)) throw new Error(`read target does not exist: ${file}`);
+    if (lstatSync(cursor).isSymbolicLink()) throw new Error(`read target must not traverse a symlink: ${file}`);
+  }
+  const resolved = realpathSync(absolute);
+  if (resolved !== repo && !resolved.startsWith(`${repo}/`)) {
+    throw new Error(`read target resolves outside repository: ${file}`);
+  }
 }
 
 function processIsAlive(pid: number): boolean {
@@ -739,6 +761,7 @@ function upsertRequest(args: Args, internalMigrationEvents: ArchitectureEvent[] 
 
 function architectureEventLogFiles(eventFile: string): string[] {
   const archiveDir = `${dirname(eventFile)}/archive`;
+  if (existsSync(archiveDir)) assertSafeReadTarget(archiveDir);
   const files = existsSync(archiveDir)
     ? readdirSync(archiveDir, { withFileTypes: true })
         .filter((entry) => entry.isFile() && /^events-\d{6}\.jsonl$/.test(entry.name))
@@ -746,6 +769,7 @@ function architectureEventLogFiles(eventFile: string): string[] {
         .sort()
     : [];
   if (existsSync(eventFile)) files.push(eventFile);
+  for (const file of files) assertSafeReadTarget(file);
   return files;
 }
 
@@ -753,7 +777,6 @@ function legacyEventsFromLog(eventFile: string, requestFile: string, excludeTran
   const events: ArchitectureEvent[] = [];
   const files = architectureEventLogFiles(eventFile);
   for (const file of files) {
-    if (lstatSync(file).isSymbolicLink()) throw new Error(`architecture audit source must not be a symlink: ${file}`);
     for (const line of readFileSync(file, "utf8").split(/\r?\n/)) {
       if (!line.trim()) continue;
       const parsed = JSON.parse(line) as ArchitectureEvent & { transaction_id?: string };
@@ -762,7 +785,7 @@ function legacyEventsFromLog(eventFile: string, requestFile: string, excludeTran
       events.push(validateEvent(parsed, requestFile, false));
     }
   }
-  return dedupeEvents(events);
+  return events;
 }
 
 function eventLogContainsTransaction(file: string, transactionId: string): boolean {
@@ -779,6 +802,9 @@ function eventLogContainsTransaction(file: string, transactionId: string): boole
 type QueueTransaction = {
   transaction_id: string;
   request_file: string;
+  event_file: string;
+  index_file: string;
+  requests_dir: string;
   event: ArchitectureEvent;
 };
 
@@ -794,8 +820,7 @@ function preflightLegacyCard(
     eventFile,
     () => legacyEventsFromLog(eventFile, requestFile, excludeTransactionId),
   );
-  validateLegacyCard(requestFile, events);
-  return events;
+  return validateLegacyCard(requestFile, events);
 }
 
 function completeQueueTransaction(
@@ -836,6 +861,9 @@ function recordEvent(args: Args): "changed" | "unchanged" {
   const indexFile = requireOption(args, "indexFile");
   const requestsDir = requireOption(args, "requestsDir");
   const parsed = JSON.parse(args.options.eventJson ?? readStdin()) as ArchitectureEvent;
+  if (args.options.migrationEventsJson !== undefined) {
+    throw new Error("migration-events-json is not a public architecture-event option");
+  }
   const event = validateEvent(normalizeEvent({ ...parsed, event_key: undefined }, requestFile), requestFile, true);
 
   return withQueueLock(requestsDir, () => {
@@ -846,6 +874,13 @@ function recordEvent(args: Args): "changed" | "unchanged" {
       transaction = JSON.parse(readFileSync(transactionFile, "utf8"));
       if (typeof transaction?.transaction_id !== "string" || typeof transaction?.request_file !== "string") {
         throw new Error(`invalid unfinished architecture transaction: ${transactionFile}`);
+      }
+      if (
+        transaction.event_file !== eventFile
+        || transaction.index_file !== indexFile
+        || transaction.requests_dir !== requestsDir
+      ) {
+        throw new Error(`unfinished architecture transaction target binding does not match: ${transactionFile}`);
       }
       if (dirname(transaction.request_file) !== requestsDir || !transaction.request_file.endsWith(".md")) {
         throw new Error(`unfinished architecture transaction has unsafe request path: ${transaction.request_file}`);
@@ -888,7 +923,14 @@ function recordEvent(args: Args): "changed" | "unchanged" {
       }
     }
     if (!transaction) {
-      transaction = { transaction_id: randomUUID(), request_file: requestFile, event };
+      transaction = {
+        transaction_id: randomUUID(),
+        request_file: requestFile,
+        event_file: eventFile,
+        index_file: indexFile,
+        requests_dir: requestsDir,
+        event,
+      };
       atomicWriteFile(transactionFile, `${JSON.stringify(transaction, null, 2)}\n`);
     }
     return completeQueueTransaction(

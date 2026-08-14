@@ -16,16 +16,18 @@ import { createHash } from 'crypto';
 import {
   appendFileSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmdirSync,
   statSync,
   writeFileSync,
 } from 'fs';
 import { fileURLToPath } from 'url';
-import { basename, dirname, join } from 'path';
+import { basename, dirname, join, relative, resolve } from 'path';
 import {
   createSessionContextProviderDiagnostic,
   type SessionContextProviderDiagnostic,
@@ -513,8 +515,23 @@ function workflowRotateEventsFileLocked(repoRoot: string, relPath: string, wcLin
   const base = basename(relPath).replace(/\.jsonl$/, '');
   const archiveFile = join(archiveDir, `${base}-${stamp}.jsonl`);
 
+  const root = realpathSync(repoRoot);
+  const lexicalRoot = resolve(repoRoot);
+  const lexicalArchive = resolve(archiveDir);
+  const archiveRelative = relative(lexicalRoot, lexicalArchive);
+  if (archiveRelative === '..' || archiveRelative.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`)) return;
+  const archivePath = join(root, archiveRelative);
+  let cursor = root;
+  for (const part of archivePath.slice(root.length + 1).split('/').filter(Boolean)) {
+    cursor = join(cursor, part);
+    if (!existsSync(cursor)) break;
+    if (lstatSync(cursor).isSymbolicLink()) return;
+  }
+
   try {
     mkdirSync(archiveDir, { recursive: true });
+    if (realpathSync(archiveDir) !== archivePath) return;
+    if (existsSync(archiveFile) && lstatSync(archiveFile).isSymbolicLink()) return;
   } catch {
     return;
   }

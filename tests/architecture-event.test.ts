@@ -7,11 +7,12 @@ import { createHash } from "crypto";
 
 const ROOT = join(import.meta.dir, "..");
 
-function runArchitectureEvent(args: string[], cwd = ROOT, input = "") {
+function runArchitectureEvent(args: string[], cwd = ROOT, input = "", env?: Record<string, string>) {
   return spawnSync("bun", [join(ROOT, "scripts/architecture-event.ts"), ...args], {
     cwd,
     input,
     encoding: "utf-8",
+    env: { ...process.env, ...env },
   });
 }
 
@@ -389,6 +390,39 @@ describe("architecture-event helper", () => {
       expect(reopened.status, reopened.stderr).toBe(0);
       expect(reopened.stdout).toBe("changed");
       expect(readFileSync(cardPath, "utf8")).toContain("> **Status**: Pending");
+
+      writeFileSync(cardPath, canonical.replace("> **Status**: Pending", "> **Status**: Pendding"));
+      expect(runArchitectureEvent(args, cwd).status).toBe(1);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("unfinished transaction is bound to its event and index targets", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "architecture-event-target-binding-"));
+    try {
+      mkdirSync(join(cwd, "docs/architecture/requests"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness/architecture"), { recursive: true });
+      const requestFile = "docs/architecture/requests/root.md";
+      const event = {
+        ts: "2026-08-14T01:00:00+0800", file_path: "src/target.ts", severity: "low",
+        functional_block: "root", capability_id: "root", matched_prefix: "root",
+        architecture_domain: "root", architecture_capability: "_root",
+        architecture_module: "docs/architecture/index-a.md", workstream_dir: "tasks/workstreams/root/_root",
+        contract_agents: "", contract_claude: "", change_type: "source-change",
+        request_file: requestFile, spawn_recommended: false, contract_sync_required: false,
+      };
+      const common = ["record-event", "--request-file", requestFile, "--requests-dir", "docs/architecture/requests", "--event-json", JSON.stringify(event)];
+      const failed = runArchitectureEvent([
+        ...common, "--event-file", ".ai/harness/architecture/events-a.jsonl", "--index-file", "docs/architecture/index-a.md",
+      ], cwd, "", { REPO_HARNESS_ARCHITECTURE_FAIL_AFTER_EVENT: "1" });
+      expect(failed.status).toBe(1);
+      const mismatched = runArchitectureEvent([
+        ...common, "--event-file", ".ai/harness/architecture/events-b.jsonl", "--index-file", "docs/architecture/index-b.md",
+      ], cwd);
+      expect(mismatched.status).toBe(1);
+      expect(readFileSync(join(cwd, ".ai/harness/architecture/events-a.jsonl"), "utf8").trim().split("\n")).toHaveLength(1);
+      expect(existsSync(join(cwd, ".ai/harness/architecture/events-b.jsonl"))).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -439,6 +473,21 @@ describe("architecture-event helper", () => {
       expect(record({ ...base, ts: "2026-08-14T04:00:00+0800" }).status).toBe(0);
       expect(readFileSync(join(cwd, ".ai/harness/architecture/events.jsonl"), "utf8").trim().split("\n")).toHaveLength(4);
       expect(readFileSync(cardPath, "utf8")).toContain("> **Status**: Pending");
+
+      const eventLog = join(cwd, ".ai/harness/architecture/events.jsonl");
+      const beforeInjection = readFileSync(eventLog, "utf8");
+      const publicInjection = runArchitectureEvent([
+        "record-event",
+        "--request-file", requestFile,
+        "--event-file", ".ai/harness/architecture/events.jsonl",
+        "--index-file", "docs/architecture/index.md",
+        "--requests-dir", "docs/architecture/requests",
+        "--event-json", JSON.stringify({ ...base, ts: "2026-08-14T06:00:00+0800" }),
+        "--migration-events-json", "[]",
+      ], cwd);
+      expect(publicInjection.status).toBe(1);
+      expect(readFileSync(eventLog, "utf8")).toBe(beforeInjection);
+      expect(existsSync(join(cwd, "docs/architecture/requests/.architecture-queue-transaction.json"))).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
