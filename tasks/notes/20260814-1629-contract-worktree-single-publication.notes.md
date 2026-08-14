@@ -46,6 +46,7 @@
 - The post-fix 148-test combined run had three failures: the new replay test failed before its positional-argument harness was corrected, while two unrelated ship-worktrees cases failed from transient account-home resolution. Focused reruns after correction passed 1/1 and 2/2 respectively; the prior full publication suite remains 147/0 before this final one-test addition.
 - The fourth Claude pass returned no P1 and two mechanical P2 findings. All Step 7 target assertions now use fully qualified `refs/heads/<target>` refs, and both publication fixtures set repo-local `commit.gpgsign=false` so host global signing configuration cannot leak into ordinary cases; explicit fake-Git signing tests remain authoritative for the signed path.
 - The resulting combined run passed every publication/journal test and 146/148 overall; the same two unrelated ship-worktrees account-home cases remained red in the combined process and are rerun separately as their established environment-sensitive boundary.
+- The final Claude read-only acceptance against subject `sha256:014f17ecb9c4f8ea4784b716b32b761bee32b822b0a98fabf0805a473b4d4d0b` returned `VERDICT: PASS`, no P0/P1, and four P3 advisories. The advisories cover a dead config-status variable, `extensions.worktreeConfig` signing-policy ownership, an underspecified no-op cleanup command in docs, and source-SHA reachability after branch cleanup; all are recorded in the typed `external_pass` receipt without mutating the accepted subject.
 
 ## Architecture Major-Change Adjudication
 

@@ -117,7 +117,7 @@ Make one work-package publish as one commit on the target branch while preservin
 - [x] Replace the merge-mode `--ff-only` publication with a single atomic commit/ref update while retaining no-merge behavior.
 - [x] Update closeout journal reconciliation and observable output for the synthesized publication SHA.
 - [x] Synchronize packaged helper, workflow documentation, architecture projection, and task artifacts.
-- [ ] Run red-green, focused closeout suites, root required checks, and independent diff acceptance.
+- [x] Run red-green, focused closeout suites, root required checks, and independent diff acceptance.
 
 ## Verification
 
@@ -142,4 +142,4 @@ Make one work-package publish as one commit on the target branch while preservin
 - [x] Replace the merge-mode `--ff-only` publication with a single atomic commit/ref update while retaining no-merge behavior.
 - [x] Update closeout journal reconciliation and observable output for the synthesized publication SHA.
 - [x] Synchronize packaged helper, workflow documentation, architecture projection, and task artifacts.
-- [ ] Run red-green, focused closeout suites, root required checks, and independent diff acceptance.
+- [x] Run red-green, focused closeout suites, root required checks, and independent diff acceptance.
