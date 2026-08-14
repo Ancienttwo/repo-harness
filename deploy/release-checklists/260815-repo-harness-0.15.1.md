@@ -39,6 +39,10 @@
   contains 484 files, is 9,944,553 bytes (15,057,942 unpacked), and includes
   the Change Assessment, runtime receipt, and architecture queue canonical plus
   template helpers. `check-tarball-install-smoke.sh` passed under Node 24.
+- Acceptance blocker repair: PR #190 preserves long committed oracle IDs at
+  the fingerprinted `required_oracles[].id` path; 54 focused tests,
+  self-hosted typed acceptance, and exact hosted CI passed before merge to
+  `main@1185370b2a2ea660dd47e61d58e0e1a08862b9ff`.
 - Exact `main` CI: pending candidate merge.
 - Independent release review and AcceptanceReceipt: pending final subject.
 

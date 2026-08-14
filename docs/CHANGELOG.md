@@ -30,6 +30,10 @@ All notable changes to this skill are documented here.
   architecture snapshot tree, adds crash recovery and recurrence handling, and
   rejects forged cards, unsafe symlink targets, and stale migration authority
   before mutation.
+- Preserves committed Change Assessment oracle IDs through evidence
+  redaction/materialization so assessment, selection-packet, and envelope
+  fingerprints remain verifiable without exempting unrelated IDs or known
+  secrets.
 
 ## [0.15.0] - 2026-08-12
 
