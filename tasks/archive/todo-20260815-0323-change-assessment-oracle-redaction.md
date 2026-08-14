@@ -1,7 +1,13 @@
+> **Archived**: 2026-08-15 03:23
+> **Related Plan**: plans/archive/plan-20260815-0230-change-assessment-oracle-redaction.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260815-0323
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-08-15 02:30
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

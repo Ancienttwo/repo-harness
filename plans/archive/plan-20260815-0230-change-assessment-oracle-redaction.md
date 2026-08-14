@@ -1,6 +1,6 @@
 # Plan: Fix Change Assessment oracle evidence redaction
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260815-0230
 > **Slug**: change-assessment-oracle-redaction
 > **Planning Source**: codex-plan-or-waza-think
@@ -136,12 +136,12 @@ Add one structural entropy exemption only for `required_oracles/<array-index>/id
 
 - [x] Add a failing regression for long Change Assessment oracle IDs.
 - [x] Implement the structural exemption while preserving known-secret redaction.
-- [ ] Run focused and required checks, review, and merge the bugfix PR.
+- [x] Run focused and required checks, review, and merge the bugfix PR.
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] Add a failing regression for long Change Assessment oracle IDs.
-- [ ] Implement the structural exemption while preserving known-secret redaction.
-- [ ] Run focused and required checks, review, and merge the bugfix PR.
+- [x] Add a failing regression for long Change Assessment oracle IDs.
+- [x] Implement the structural exemption while preserving known-secret redaction.
+- [x] Run focused and required checks, review, and merge the bugfix PR.
