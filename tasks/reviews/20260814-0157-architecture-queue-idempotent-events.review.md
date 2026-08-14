@@ -41,17 +41,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
-> **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Disposition**: user_waiver
+> **Reviewer**: User
+> **Source**: user-waiver
+> **Actor**: ancienttwo
+> **Reviewed Subject SHA256**: sha256:55220efb4572580f1c670c6c94a1aa1496aa937c16288d3e051e9c9857efc7cf
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: a55ab9a7af32e300d650669c13483f5ad60b21bc
+> **Verification Evidence SHA256**: sha256:3b2ebf76065362c7cb14e820fe7fe5bb9b7f856c58b50a148137e5a620a9f891
+> **Issued At**: 2026-08-14T17:10:11.139Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: User explicitly authorized user-waiver acceptance for WIP branch merge and cleanup after passing targeted verification and dual read-only review.
 - Findings: none
 
 ## Behavior Diff Notes
