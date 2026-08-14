@@ -1,12 +1,12 @@
 # Task Contract: architecture-queue-idempotent-events
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260814-0157-architecture-queue-idempotent-events.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
-> **Last Updated**: 2026-08-14 05:20
+> **Last Updated**: 2026-08-15 00:58
 > **Review File**: `tasks/reviews/20260814-0157-architecture-queue-idempotent-events.review.md`
 > **Notes File**: `tasks/notes/20260814-0157-architecture-queue-idempotent-events.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`

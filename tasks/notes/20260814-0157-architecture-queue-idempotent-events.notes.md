@@ -1,10 +1,10 @@
 # Implementation Notes: architecture-queue-idempotent-events
 
-> **Status**: Active
+> **Status**: Archived
 > **Plan**: plans/plan-20260814-0157-architecture-queue-idempotent-events.md
 > **Contract**: tasks/contracts/20260814-0157-architecture-queue-idempotent-events.contract.md
 > **Review**: tasks/reviews/20260814-0157-architecture-queue-idempotent-events.review.md
-> **Last Updated**: 2026-08-14 05:20
+> **Last Updated**: 2026-08-15 00:58
 > **Lifecycle**: notes
 
 ## Design Decisions

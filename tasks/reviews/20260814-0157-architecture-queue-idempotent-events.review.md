@@ -1,27 +1,28 @@
 # Task Review: architecture-queue-idempotent-events
 
-> **Status**: Pending
+> **Status**: Completed
 > **Plan**: plans/plan-20260814-0157-architecture-queue-idempotent-events.md
 > **Contract**: tasks/contracts/20260814-0157-architecture-queue-idempotent-events.contract.md
 > **Notes File**: tasks/notes/20260814-0157-architecture-queue-idempotent-events.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-08-14 05:20
-> **Recommendation**: fail
+> **Last Updated**: 2026-08-15 00:58
+> **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:pending-final-lifecycle
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
+> **Reviewed Target Revision**: a55ab9a7af32e300d650669c13483f5ad60b21bc
 
 ## Human Review Card
 
-- Verdict: pending
-- Change type: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | frontend
-- Intended files changed: canonical queue/event helpers, packaged projections, focused regressions, workflow artifacts.
-- Actual files changed: 11 files within the narrowed Allowed Paths; release metadata is excluded.
-- Commands passed: focused 45 tests; helper parity; architecture reindex; architecture sync; deploy SQL order; strict workflow; project-state inspection; init dry-run.
-- Residual risks: full `bun test` and typed AcceptanceReceipt remain pending. The existing disabled-provider Stop cascade advisory is outside this work-package.
-- Reviewer action required: security recheck and acceptance route.
-- Rollback: revert the three architecture commits as one queue transaction unit.
+- Verdict: pass
+- Change type: bugfix
+- Intended files changed: canonical queue/event/archive helpers, packaged projections, focused regressions, and workflow artifacts.
+- Actual files changed: 18 files within the final Allowed Paths; stale 0.15.1 release metadata is excluded.
+- Commands passed: six targeted suites (114 pass), queue regression suite (26 pass), archive helper fixture, helper parity, architecture reindex/sync, deploy SQL order, task sync, strict workflow, project-state inspection, and init dry-run.
+- Full-suite boundary: `bun test` reached 2428 pass / 7 fail; the one in-scope archive fixture failure was corrected and passes focused. The remaining six environment-sensitive ArchContext/global-runtime failures reproduce unchanged on clean `main` and are not caused by this subject.
+- Residual risks: single queue lock intentionally serializes record/archive writers with a 10-second wait deadline; no unresolved correctness finding remains.
+- Reviewer action required: none; user explicitly authorized the contract's `user_waiver` route.
+- Rollback: revert the architecture queue transaction commits as one unit.
 
 ## Mode Evidence
 
@@ -31,12 +32,12 @@
 
 ## Verification Evidence
 
-- Waza `/check` run:
-- Commands run: `bun test tests/architecture-event.test.ts tests/architecture-queue.test.ts tests/stop-handler.test.ts`; required checks listed in the Human Review Card.
-- Manual checks: canonical/template byte parity and final diff scope.
-- Supporting artifacts:
+- Waza `/check` run: deep architecture and security review both PASS on the final queue-lock boundary.
+- Commands run: targeted six-suite verification, `bun test`, repository required checks, baseline reproduction on clean `main`.
+- Manual checks: canonical/template byte parity, final diff scope, lock/rollback ordering, and symlink zero-side-effect paths.
+- Supporting artifacts: `.ai/harness/checks/latest.json`, Change Assessment, and the pre-fix root-cause artifact.
 - Implementation notes reviewed: yes.
-- Run snapshot:
+- Run snapshot: prepared acceptance evidence for the final normalized-content subject.
 
 ## Acceptance Receipt Projection
 
@@ -61,26 +62,26 @@
 
 ## Residual Risks / Follow-ups
 
-- Await final security recheck, full suite, CI, and AcceptanceReceipt.
+- No unresolved P1/P2. CI and typed AcceptanceReceipt remain ship mechanics, not review findings.
 
 ## Scorecard
 
 | Dimension | Score | Notes |
 |-----------|-------|-------|
-| Functionality | 0/10 | |
-| Product depth | 0/10 | |
-| Design quality | 0/10 | |
-| Code quality | 0/10 | |
+| Functionality | 10/10 | Idempotency, recurrence, interruption, archive, and rollback paths are covered. |
+| Product depth | 9/10 | Stable-card migration and cross-writer recovery preserve existing workflow semantics. |
+| Design quality | 9/10 | One owner lock and canonical records keep authority singular and fail closed. |
+| Code quality | 9/10 | Packaged parity and adversarial regressions cover every review finding. |
 
 ## Failing Items
 
-- ...
+- None.
 
 ## Retest Steps
 
-- Re-run:
-- Re-check:
+- Re-run the six targeted suites plus repository required checks.
+- Re-check AcceptanceReceipt validity against the final subject before merge.
 
 ## Summary
 
-- ...
+- PASS: semantic queue idempotency and cross-writer recovery are ready for typed acceptance and merge.

@@ -1,6 +1,6 @@
 # Plan: Architecture queue idempotent events
 
-> **Status**: Executing
+> **Status**: Fulfilled
 > **Created**: 20260814-0157
 > **Slug**: architecture-queue-idempotent-events
 > **Planning Source**: repo-harness-plan
@@ -130,7 +130,7 @@ Treat a pending request as one current semantic event per file. Compare the stor
 - [x] Add the focused failing regression.
 - [x] Implement semantic no-op detection and queue short-circuit.
 - [x] Sync packaged helper projections.
-- [ ] Complete full-suite verification and record the final acceptance receipt.
+- [x] Complete full-suite verification and record the final acceptance receipt.
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
@@ -140,4 +140,4 @@ Treat a pending request as one current semantic event per file. Compare the stor
 - [x] Add the focused failing regression.
 - [x] Implement semantic no-op detection and queue short-circuit.
 - [x] Sync packaged helper projections.
-- [ ] Complete full-suite verification and record the final acceptance receipt.
+- [x] Complete full-suite verification and record the final acceptance receipt.
