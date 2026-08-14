@@ -296,6 +296,21 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       expect(artifact.sha256).toMatch(/^sha256:[a-f0-9]{64}$/);
       const artifactOutsideRoot = relative(ROOT, realpathSync(artifact.path));
       expect(artifactOutsideRoot === '..' || artifactOutsideRoot.startsWith('../')).toBe(true);
+      const sourceManifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
+        dependencies?: Record<string, unknown>;
+      };
+      const directDependencies = Object.keys(sourceManifest.dependencies ?? {});
+      expect(directDependencies.length).toBeGreaterThan(0);
+      const listing = Bun.spawnSync(['tar', '-tzf', artifact.path], {
+        cwd: runRoot,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      expect(listing.exitCode).toBe(0);
+      const entries = listing.stdout.toString();
+      for (const dependency of directDependencies) {
+        expect(entries).toContain(`package/node_modules/${dependency}/package.json`);
+      }
       expect(() => assertBenchmarkRuntimeArtifactUnchanged(artifact)).not.toThrow();
 
       writeFileSync(artifact.path, Buffer.concat([
@@ -321,7 +336,15 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       for (const suffix of ['one', 'two']) {
         const home = join(runRoot, `home-${suffix}`);
         mkdirSync(home, { recursive: true });
-        const env = isolatedHarnessEnvironment(home);
+        const freshNpmCache = join(home, '.npm-cache');
+        const env: NodeJS.ProcessEnv = {
+          ...isolatedHarnessEnvironment(home),
+          NPM_CONFIG_CACHE: freshNpmCache,
+          npm_config_cache: freshNpmCache,
+          NPM_CONFIG_REGISTRY: 'http://127.0.0.1:9',
+          npm_config_registry: 'http://127.0.0.1:9',
+          BUN_CONFIG_REGISTRY: 'http://127.0.0.1:9',
+        };
         const install = Bun.spawnSync([process.execPath, 'add', '-g', artifact.path], {
           cwd: ROOT,
           env,

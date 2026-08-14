@@ -33,7 +33,16 @@ function initRepo(cwd: string): void {
   git(cwd, ['config', 'user.name', 'Mutation Observed Test']);
   writeFileSync(join(cwd, 'README.md'), '# fixture\n');
   git(cwd, ['add', '.']);
-  git(cwd, ['commit', '-m', 'seed']);
+  const result = spawnSync('git', ['commit', '-m', 'seed'], {
+    cwd,
+    encoding: 'utf-8',
+    env: {
+      ...process.env,
+      GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z',
+      GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z',
+    },
+  });
+  if (result.status !== 0) throw new Error(result.stderr);
 }
 
 function tmpWorkspace(prefix: string): string {
@@ -534,6 +543,60 @@ describe('mutation-observed: crash-replay', () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
+});
+
+describe('mutation-observed: effect failure contract', () => {
+  test('a journal commit followed by a throw converges on the next same-route invocation', () => {
+    const baselineRoot = tmpWorkspace('mo-effect-baseline');
+    const retryRoot = tmpWorkspace('mo-effect-retry');
+    try {
+      initRepo(baselineRoot);
+      initRepo(retryRoot);
+      const baselineEnv = { ...process.env, HOOK_SESSION_ID: 'effect-session' };
+      runMutationObserved({ collector: collectorFor(baselineRoot), input: editPayload('src/effect.ts'), env: baselineEnv });
+      const baseline = pendingEvents(baselineRoot)[0];
+
+      expect(() => runMutationObserved({
+        collector: collectorFor(retryRoot),
+        input: editPayload('src/effect.ts'),
+        env: baselineEnv,
+        afterJournalWrite: () => { throw new Error('fault after journal commit'); },
+      })).toThrow('fault after journal commit');
+      expect(pendingEvents(retryRoot)).toHaveLength(1);
+
+      runMutationObserved({ collector: collectorFor(retryRoot), input: editPayload('src/effect.ts'), env: baselineEnv });
+      const retried = pendingEvents(retryRoot)[0];
+      expect(retried).toMatchObject({
+        schema: baseline.schema,
+        schema_version: baseline.schema_version,
+        source_key: baseline.source_key,
+        session_id: baseline.session_id,
+        changed_paths: baseline.changed_paths,
+        subject_revision: baseline.subject_revision,
+        dirty: baseline.dirty,
+        payload: baseline.payload,
+      });
+    } finally {
+      rmSync(baselineRoot, { recursive: true, force: true });
+      rmSync(retryRoot, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test('a qualifying no-op path has no durable effect and no observer callback', () => {
+    const cwd = tmpWorkspace('mo-effect-noop');
+    try {
+      initRepo(cwd);
+      let observed = 0;
+      const result = runMutationObserved({
+        collector: collectorFor(cwd),
+        input: '{}',
+        afterJournalWrite: () => { observed += 1; },
+      });
+      expect(result.exitCode).toBe(0);
+      expect(observed).toBe(0);
+      expect(pendingEvents(cwd)).toEqual([]);
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
 });
 
 describe('mutation-observed: advisory stdout parity', () => {

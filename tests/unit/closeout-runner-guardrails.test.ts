@@ -85,9 +85,35 @@ async function waitForChildProcess(parentPid: number, timeoutMs = 2_000): Promis
   throw new Error(`timed out waiting for child of ${parentPid}`);
 }
 
+function isPositiveSafePid(pid: number): pid is number {
+  return Number.isSafeInteger(pid) && pid > 0;
+}
+
+function readPositiveSafePid(path: string, label: string): number {
+  const raw = readFileSync(path, 'utf-8').trim();
+  if (!/^[1-9]\d*$/.test(raw)) {
+    throw new Error(`${label} did not contain a positive PID`);
+  }
+  const pid = Number(raw);
+  if (!isPositiveSafePid(pid)) {
+    throw new Error(`${label} did not contain a safe PID`);
+  }
+  return pid;
+}
+
 function killIfPresent(pid: number, signal: NodeJS.Signals): void {
+  if (!isPositiveSafePid(pid)) return;
   try {
     process.kill(pid, signal);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+  }
+}
+
+function killGroupIfPresent(pid: number | null, signal: NodeJS.Signals): void {
+  if (pid === null || !isPositiveSafePid(pid)) return;
+  try {
+    process.kill(-pid, signal);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
   }
@@ -254,9 +280,11 @@ describe('closeout runner guardrails', () => {
     });
     await waitForPath(supervisorPidPath);
     await waitForPath(processGroupPidPath);
-    const supervisorPid = Number(readFileSync(supervisorPidPath, 'utf-8').trim());
-    const processGroupPid = Number(readFileSync(processGroupPidPath, 'utf-8').trim());
+    let supervisorPid: number | null = null;
+    let processGroupPid: number | null = null;
     try {
+      supervisorPid = readPositiveSafePid(supervisorPidPath, 'supervisor pid');
+      processGroupPid = readPositiveSafePid(processGroupPidPath, 'process group pid');
       const exitCode = await Promise.race([
         worker.exited,
         Bun.sleep(4_000).then(() => null),
@@ -273,8 +301,8 @@ describe('closeout runner guardrails', () => {
       );
       expect(processGroupExists(processGroupPid)).toBe(false);
     } finally {
-      killIfPresent(-processGroupPid, 'SIGKILL');
-      killIfPresent(supervisorPid, 'SIGKILL');
+      killGroupIfPresent(processGroupPid, 'SIGKILL');
+      if (supervisorPid !== null) killIfPresent(supervisorPid, 'SIGKILL');
       killIfPresent(worker.pid, 'SIGKILL');
     }
   }, 6_000);

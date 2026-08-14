@@ -1,7 +1,7 @@
 # runtime-harness/hook-adapters 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:f8a01d8075bf128d7ac306ecb8df7bc6057f834260320109b4d0d3bf935f28a9" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:4a3c6019ff91402cdb1b300db62ddcfee14fe02c58435b38248337cc78d6051c" verifiedAgainst="codex/contract-worktree-single-publication@b5a12126e3671da429813220d6f0484c6ecce262@2026-08-14T17:51:08+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:c1e3969b3cc61b423b71d4b6b94dd77c5c45cde69181a5d472dc44e18cbe694f" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:a15c736778c46b5250ef016073b3bade1399705a5d93c661f88c003af1dc6d53" verifiedAgainst="codex/hook-effect-ship@1ea187bda5bcb9c8040fcbadbdfb80e861008b04@2026-08-14T21:20:10+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`codex/contract-worktree-single-publication@b5a12126e3671da429813220d6f0484c6ecce262`(2026-08-14)
+> **Verified against**:`codex/hook-effect-ship@1ea187bda5bcb9c8040fcbadbdfb80e861008b04`(2026-08-14)
 > **Capability ID**:`capability.runtime-harness.hook-adapters`(kind `capability`)
 > **Matched Prefixes**:`assets/hooks/**`、`.ai/hooks/**`、`scripts/run-skill-hook.ts`、`src/cli/installer/**`、`src/cli/hook/**`、`src/cli/hook-entry.ts`
 > **Local Contracts**:`assets/hooks/AGENTS.md`、`assets/hooks/CLAUDE.md`
@@ -36,7 +36,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 文件數:`47`
-- 總行數:`17261`
+- 總行數:`17549`
 - 匹配前綴:`assets/hooks/**`、`.ai/hooks/**`、`scripts/run-skill-hook.ts`、`src/cli/installer/**`、`src/cli/hook/**`、`src/cli/hook-entry.ts`
 - 復算:`archctx docs plan --json`(掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`)
 
@@ -107,6 +107,31 @@ sequenceDiagram
 
 - 根 `CLAUDE.md` 写"repo-local `.claude/settings.json` 与 `.codex/hooks.json` hook adapters 已退役"，但 `src/cli/installer/targets/claude.ts:67` 的 `supportsLocation` 仍恒返回 `true`，`resolvePath`（`:58`）在 `--location local` 时写 `<cwd>/.claude/settings.json`，`install.ts:63` 也仍把 `local` 当合法输入。Codex 侧已经真正关死（`codex.ts` 的 `supportsLocation('local') === false`）。**当前源码事实：Claude 的 repo-local 安装路径仍可执行。** 本文按源码记录，退役声明与实现之间的落差需要一次显式裁决（收紧实现，或把根 `CLAUDE.md` 的表述改成"不作为产品交付面推荐"）。
 - 本文档旧版 P1 把 `standard-plan.ts` / `fs-transaction.ts` 列为本 capability 模块。按 `.ai/context/capabilities.json`，这两个路径属于 `public-surface-adoption` 的 prefixes。已改列为跨 capability 的一次性迁移依赖，dispatch 路径不消费它们的结论保持不变。
+
+### 3.5 Typed durable-effect failure boundary (2026-08-14)
+
+- P1: `src/cli/hook/handler-registry.ts` is the sole declaration point for
+  bounded effect contracts. Only `mutation-observed` (one post-edit journal
+  phase) and `stop` (handoff, resume, event, run-summary) declare one; every
+  other typed handler remains uninstrumented rather than being inferred as
+  effect-free. `src/cli/hook/runtime.ts` owns the invocation-local observation
+  and removes handler-ID completeness branches.
+- P2: existing post-commit observers feed an additive
+  `effect_observation` field in `loop-engine-hook-event/v1`. A thrown targeted
+  handler is recorded as `unknown_partial` when no observer phase was seen,
+  `committed_partial` for an observed prefix, and `committed_complete` after
+  the declared bounded phases. A successful no-op is `none_committed`.
+  Telemetry is diagnostic only; the journal and Stop projection files remain
+  recovery authority and the public `RunHookResult` vocabulary is unchanged.
+- P3: the next host-delivered same-route event is the only production retry
+  operation. Fault tests inject throws after each named post-commit phase and
+  compare normalized durable artifacts with a no-fault baseline. Stop's append
+  event uses a timestamp-free projection key over every non-volatile rendering
+  input and compares only the latest Stop inside a bounded reconciliation
+  window; an unprovable latest event fails closed as reconcile-required. This
+  is handler-local idempotency, not a generic transaction or rollback layer.
+  Missing observer evidence fails closed as unknown and never authorizes
+  cleanup.
 
 ## 4. 历史决策记录（append-only）
 

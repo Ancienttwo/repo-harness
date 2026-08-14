@@ -120,6 +120,40 @@ export type HookEventTelemetryMetric =
   | 'event_writes'
   | 'elapsed_ms';
 
+/**
+ * Diagnostic state for a handler-owned durable-effect observation.
+ *
+ * `none_committed` is a proof that this invocation did not report a committed
+ * phase.  `unknown_partial` is deliberately different: a handler threw before
+ * the post-commit observer could tell us what landed, so the runtime must not
+ * infer zero effects.  The two committed states describe the observed prefix
+ * and the contract-complete terminal state respectively.  These values are
+ * telemetry only; durable artifacts remain the recovery authority.
+ */
+export type HookEffectObservationState =
+  | 'none_committed'
+  | 'unknown_partial'
+  | 'committed_partial'
+  | 'committed_complete';
+
+export type HookEffectBoundary = 'durable-emission';
+export type HookEffectCardinality = 'zero-or-one' | 'bounded-sequence';
+export type HookEffectRecovery = 'retry-converges' | 'reconcile-required';
+
+/** Additive, validated effect observation carried by targeted hook telemetry. */
+export interface HookEventTelemetryEffectObservation {
+  readonly contract_id: string;
+  readonly boundary: HookEffectBoundary;
+  readonly cardinality: HookEffectCardinality;
+  readonly recovery: HookEffectRecovery;
+  readonly state: HookEffectObservationState;
+  readonly committed_phases: readonly string[];
+  readonly last_committed_phase: string | null;
+}
+
+/** Short alias for handler-contract consumers and tests. */
+export type HookEffectObservation = HookEventTelemetryEffectObservation;
+
 /** One ordered unit of work performed while handling a host event. */
 export interface HookEventTelemetryStep {
   readonly name: string;
@@ -171,6 +205,8 @@ export interface HookEventTelemetryRecord {
     readonly incomplete_metrics: readonly HookEventTelemetryMetric[];
     readonly opaque_steps: readonly string[];
   };
+  /** Omitted for handlers without an explicit effect contract. */
+  readonly effect_observation?: HookEventTelemetryEffectObservation;
   readonly fingerprint: `sha256:${string}`;
 }
 

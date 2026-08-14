@@ -8,17 +8,20 @@
  */
 import {
   appendFileSync,
+  closeSync,
   existsSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readFileSync,
+  readSync,
   renameSync,
   rmdirSync,
   statSync,
   unlinkSync,
   writeFileSync,
 } from 'fs';
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { execFileSync } from 'child_process';
 import type { EffectiveState } from '../../core/state/types';
@@ -38,6 +41,7 @@ import {
   renderRecoveryResume,
   resolveRecoveryEvidence,
 } from '../../effects/evidence/recovery-materializer';
+import { HookEffectReconciliationRequired } from './handler-contract';
 
 export interface StopCollector {
   getRepoRoot(): string;
@@ -56,6 +60,8 @@ export interface StopHandlerDependencies {
   readonly observeProjectionWrite?: (target: StopProjectionTarget) => void;
   /** Invoked once after the complete Stop projection batch commits. */
   readonly observeProjectionTransaction?: () => void;
+  /** Narrow post-commit fault/observation seam; never driven by an env flag. */
+  readonly afterProjectionWrite?: (target: StopProjectionTarget) => void;
   readonly drainArchitectureProjection?: (repoRoot: string, env: NodeJS.ProcessEnv) => ArchitectureProjectionDrainResultV1;
 }
 
@@ -251,6 +257,83 @@ function withEventsLock(repoRoot: string, eventsPath: string, fn: () => void): v
   }
 }
 
+/**
+ * Stop's event append is the only non-overwriting projection target. A host
+ * retry reuses the existing run identity, so suppress the same semantic event
+ * while still reporting the phase as committed to the invocation-local
+ * observer. This is intentionally local to Stop; it is not a generic journal.
+ */
+function eventAlreadyRecorded(eventsPath: string, content: string): boolean {
+  const semanticKey = stopEventSemanticKey(content);
+  if (!semanticKey) return false;
+  try {
+    const size = statSync(eventsPath).size;
+    const start = Math.max(0, size - STOP_EVENT_RECONCILE_WINDOW_BYTES);
+    const length = size - start;
+    const buffer = Buffer.alloc(length);
+    const fd = openSync(eventsPath, 'r');
+    try {
+      let offset = 0;
+      while (offset < length) {
+        const bytesRead = readSync(fd, buffer, offset, length - offset, start + offset);
+        if (bytesRead === 0) throw new Error('stop-handler: event reconciliation read made no progress');
+        offset += bytesRead;
+      }
+    } finally {
+      closeSync(fd);
+    }
+    const tail = buffer.toString('utf8');
+    const lines = tail.split('\n');
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      const line = lines[index]!;
+      const prior = stopEventRecord(line);
+      if (!prior) continue;
+      return prior.projectionKey === semanticKey;
+    }
+    if (start > 0) {
+      throw new HookEffectReconciliationRequired(
+        `stop-handler: latest Stop event is outside the ${STOP_EVENT_RECONCILE_WINDOW_BYTES}-byte reconciliation window`,
+      );
+    }
+    return false;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+const STOP_EVENT_RECONCILE_WINDOW_BYTES = 1024 * 1024;
+
+/**
+ * Stable Stop operation identity: the semantic event payload, excluding its
+ * timestamp. This lets a retry at a later host time converge while a later
+ * Stop in the same run with a changed source plan remains a new event.
+ */
+function stopEventSemanticKey(content: string): string | null {
+  return stopEventRecord(content)?.projectionKey ?? null;
+}
+
+function stopEventRecord(content: string): { readonly projectionKey: string } | null {
+  let candidate: Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(content.trim());
+    if (!parsed || typeof parsed !== 'object') return null;
+    candidate = parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const extra = candidate.extra && typeof candidate.extra === 'object' && !Array.isArray(candidate.extra)
+    ? candidate.extra as Record<string, unknown>
+    : null;
+  return candidate.event_type === 'handoff_refresh'
+    && candidate.reason === 'session-stop'
+    && extra
+    && typeof extra.projection_key === 'string'
+    && /^[0-9a-f]{64}$/.test(extra.projection_key)
+    ? { projectionKey: extra.projection_key }
+    : null;
+}
+
 class StopProjectionBatch {
   private readonly targets: readonly StopProjectionTarget[];
 
@@ -259,6 +342,7 @@ class StopProjectionBatch {
     private readonly paths: ProjectionPaths,
     private readonly content: { handoff: string; resume: string; event: string; runSummary: string },
     private readonly observer?: (target: StopProjectionTarget) => void,
+    private readonly afterProjectionWrite?: (target: StopProjectionTarget) => void,
   ) {
     this.targets = [
       { kind: 'handoff', path: paths.handoff },
@@ -272,18 +356,24 @@ class StopProjectionBatch {
     const [handoff, resume, event, runSummary] = this.targets;
     atomicWrite(this.repoRoot, join(this.repoRoot, handoff.path), this.content.handoff);
     this.observer?.(handoff);
+    this.afterProjectionWrite?.(handoff);
     atomicWrite(this.repoRoot, join(this.repoRoot, resume.path), this.content.resume);
     this.observer?.(resume);
+    this.afterProjectionWrite?.(resume);
     const eventPath = join(this.repoRoot, event.path);
     assertSafeRepoWritePath(this.repoRoot, eventPath);
     mkdirSync(dirname(eventPath), { recursive: true });
     withEventsLock(this.repoRoot, eventPath, () => {
       assertSafeRepoWritePath(this.repoRoot, eventPath);
-      appendFileSync(eventPath, this.content.event, { mode: 0o600 });
+      if (!eventAlreadyRecorded(eventPath, this.content.event)) {
+        appendFileSync(eventPath, this.content.event, { mode: 0o600 });
+      }
     });
     this.observer?.(event);
+    this.afterProjectionWrite?.(event);
     atomicWrite(this.repoRoot, join(this.repoRoot, runSummary.path), this.content.runSummary);
     this.observer?.(runSummary);
+    this.afterProjectionWrite?.(runSummary);
   }
 }
 
@@ -305,12 +395,35 @@ function projection(repoRoot: string, activePlan: string | null, env: NodeJS.Pro
   const handoffContent = renderRecoveryHandoff(context, evidence, contractPath);
   const resumeContent = renderRecoveryResume(context, evidence, contractPath);
   const runSummary = `${context.paths.runsDir}/${context.runId}.json`;
+  const projectionKey = createHash('sha256').update(JSON.stringify({
+    // This is the renderer's stable input projection. Deliberately omit the
+    // generated timestamps and workingDirectory: a later same-route host
+    // event gets a fresh timestamp, while the event log itself is already
+    // scoped to the fixed repo root. Neither may split an otherwise identical
+    // Stop retry.
+    context: {
+      reason: context.reason,
+      run_id: context.runId,
+      artifacts: context.artifacts,
+      source_plan: context.sourcePlan,
+      active_sprint_row: context.activeSprintRowText,
+      action: context.action,
+      next_task: context.nextTask,
+      goal: context.goal,
+      changed: context.changed,
+      recent_commands: context.recentCommandsText,
+      supersedes: context.supersedes,
+      paths: context.paths,
+      global_handoff_path: context.globalHandoffPath,
+    },
+    evidence,
+  })).digest('hex');
   const eventContent = `${JSON.stringify({
     ts: formatOffset(now),
     event_type: 'handoff_refresh',
     reason: 'session-stop',
     run_id: context.runId,
-    extra: { source_plan: context.sourcePlan, parent_run_id: context.runId },
+    extra: { source_plan: context.sourcePlan, parent_run_id: context.runId, projection_key: projectionKey },
   })}\n`;
   const runSummaryContent = `${JSON.stringify({
     generated_at: formatOffset(now),
@@ -499,6 +612,7 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
     projected.paths,
     projected.content,
     dependencies.observeProjectionWrite,
+    dependencies.afterProjectionWrite,
   ).commit();
   dependencies.observeProjectionTransaction?.();
 
