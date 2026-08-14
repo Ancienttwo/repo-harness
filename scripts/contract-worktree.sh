@@ -682,6 +682,25 @@ closeout_journal_phase_ref() {
   sed -n "s/^    {\"phase\": \"${name}\", \"at\": \"[^\"]*\", \"ref\": \"\([^\"]*\)\"}.*\$/\1/p" "$file" | tail -1
 }
 
+# A complete ref identifies the durable external effect, not necessarily the
+# current source-worktree HEAD. Local/no-merge and ship transactions complete at
+# the source HEAD; single-publication finish completes at the synthesized target
+# commit, so replay must prove that exact target ref is still installed.
+closeout_journal_complete_effect_present() {
+  local dir="$1" complete_ref operation merge_back target_branch
+  complete_ref="$(closeout_journal_phase_ref "$dir" complete)"
+  [[ -n "$complete_ref" ]] || return 1
+  operation="$(closeout_journal_field "$dir/meta.json" operation)"
+  merge_back="$(closeout_journal_field "$dir/meta.json" merge_back)"
+  if [[ "$operation" == "finish" && "$merge_back" == "1" ]]; then
+    target_branch="$(closeout_journal_field "$dir/meta.json" target_branch)"
+    [[ -n "$target_branch" ]] || return 1
+    [[ "$(git rev-parse "$target_branch^{commit}" 2>/dev/null)" == "$complete_ref" ]]
+    return
+  fi
+  [[ "$(git rev-parse HEAD)" == "$complete_ref" ]]
+}
+
 # Rewrites the whole status document so the phase list has exactly one authority
 # and lands in one atomic rename. An empty phase name only flips the status.
 closeout_journal_record() {
@@ -765,7 +784,7 @@ closeout_journal_begin() {
       # If HEAD has moved off the recorded completion the transaction was undone
       # afterwards (an outer rollback), so the same key must start fresh instead
       # of reporting success for work that no longer exists.
-      if [[ "$(git rev-parse HEAD)" == "$(closeout_journal_phase_ref "$dir" complete)" ]]; then
+      if closeout_journal_complete_effect_present "$dir"; then
         closeout_journal_dir="$dir"
         return 2
       fi
@@ -1486,7 +1505,7 @@ finish_worktree() {
     run_gate=1
   fi
 
-  local verified_sha current_head publication_sha publication_tree
+  local verified_sha current_head publication_sha publication_tree commit_gpgsign
   # Single timestamp authority: one `date` call for this whole finish run, shared
   # by the post-freeze allowlist prediction (Step 3, when a gate runs) and the
   # archive step's actual output (Step 4, unconditional), so the two cannot
@@ -1598,9 +1617,16 @@ finish_worktree() {
     exit 1
   }
   publication_tree="$(git rev-parse "$verified_sha^{tree}")"
-  publication_sha="$(git commit-tree "$publication_tree" -p "$frozen_base_sha" \
-    -m "$commit_message" \
-    -m "Source-Worktree-Head: $verified_sha")"
+  commit_gpgsign="$(git config --bool commit.gpgsign 2>/dev/null || true)"
+  if [[ "$commit_gpgsign" == "true" ]]; then
+    publication_sha="$(git commit-tree "$publication_tree" -p "$frozen_base_sha" \
+      -m "$commit_message" \
+      -m "Source-Worktree-Head: $verified_sha" -S)"
+  else
+    publication_sha="$(git commit-tree "$publication_tree" -p "$frozen_base_sha" \
+      -m "$commit_message" \
+      -m "Source-Worktree-Head: $verified_sha")"
+  fi
   [[ "$(git rev-parse "$publication_sha^")" == "$frozen_base_sha" ]] || {
     echo "contract-worktree: synthesized publication parent does not match frozen target base" >&2
     exit 1

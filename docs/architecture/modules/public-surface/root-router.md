@@ -1,7 +1,7 @@
 # public-surface/root-router 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-root-router" sourceDigest="sha256:866de19faa98b32b0a17800367d168ff915e212eccb6831fa64a5908beaee79b" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:ceb9b99d766b69c2c9753680b71955adcba99055bde7c091a8923f7691b9d89c" verifiedAgainst="codex/contract-worktree-single-publication@6d62d3b2d0a635911037b66a3e3e8095fac74b28@2026-08-14T01:25:22+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-root-router" sourceDigest="sha256:d48a6c323aecbfa1738025ed07ee5940c601c2c1e112c845b3c0119a4cb80fae" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:bc08d713ca124d5f845115e85b04efe5a6f48d06eef99cde8bf78de112b80106" verifiedAgainst="codex/contract-worktree-single-publication@25f470b79253042df604b919dbe9b6dff9164506@2026-08-14T17:06:34+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`codex/contract-worktree-single-publication@6d62d3b2d0a635911037b66a3e3e8095fac74b28`(2026-08-14)
+> **Verified against**:`codex/contract-worktree-single-publication@25f470b79253042df604b919dbe9b6dff9164506`(2026-08-14)
 > **Capability ID**:`capability.public-surface.root-router`(kind `capability`)
 > **Matched Prefixes**:`SKILL.md`、`README.md`、`AGENTS.md`、`CLAUDE.md`、`docs/spec.md`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`

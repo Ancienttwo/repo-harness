@@ -15,6 +15,8 @@ import { join } from "path";
 import { spawnSync } from "child_process";
 
 const ROOT = join(import.meta.dir, "..");
+const REAL_GIT = Bun.which("git");
+if (!REAL_GIT) throw new Error("git executable is required for contract-worktree publication tests");
 const PLAN = "plans/plan-20260814-1629-demo.md";
 const CONTRACT = "tasks/contracts/20260814-1629-demo.contract.md";
 const REVIEW = "tasks/reviews/20260814-1629-demo.review.md";
@@ -242,9 +244,9 @@ describe("contract-worktree single publication commit", () => {
           "#!/bin/bash",
           'if [[ "${1:-}" == "commit-tree" && -n "${WRONG_PUBLICATION_TREE:-}" ]]; then',
           "  shift 2",
-          '  exec /usr/bin/git commit-tree "$WRONG_PUBLICATION_TREE" "$@"',
+          `  exec ${JSON.stringify(REAL_GIT)} commit-tree "$WRONG_PUBLICATION_TREE" "$@"`,
           "fi",
-          'exec /usr/bin/git "$@"',
+          `exec ${JSON.stringify(REAL_GIT)} "$@"`,
           "",
         ].join("\n"),
       );

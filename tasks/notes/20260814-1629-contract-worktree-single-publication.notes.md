@@ -29,7 +29,16 @@
 
 ## Open Questions
 
-- Final AcceptanceReceipt remains pending explicit authorization for external Claude review or an explicit typed user waiver.
+- Final AcceptanceReceipt remains pending a second Claude pass over the post-review corrections.
+
+## External Review Corrections
+
+- The first authorized Claude pass returned no P1 findings and six P2 implementation/test findings. The slice treats them as actionable rather than recording an immediate pass.
+- Complete-journal replay now checks the durable effect named by the complete ref: source HEAD for ordinary closeout, synthesized target ref for merge publication.
+- The pre-cutover lifecycle fallback now has an end-to-end landed-legacy-ff recovery test and a next-major removal boundary in the canonical workflow documentation.
+- `commit.gpgsign=true` now selects `commit-tree -S` and therefore fails before target mutation when signing cannot complete.
+- Static publication-order assertions now prove every marker exists before comparing indices; fake Git shims resolve the actual executable instead of assuming `/usr/bin/git`.
+- Crash coverage now includes the object-only window after `commit-tree` but before `publication_prepared` is durably written.
 
 ## Architecture Major-Change Adjudication
 

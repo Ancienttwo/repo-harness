@@ -530,15 +530,18 @@ describe("Workflow helper scripts", () => {
     expect(contract.indexOf('git commit -m "$commit_message"')).toBeLessThan(
       contract.indexOf('run_merge_gate "$gate_base_ref" "$post_freeze_manifest"'),
     );
-    expect(contract.indexOf('verify_merge_gate_seal "$gate_base_ref"')).toBeLessThan(
-      contract.indexOf('publication_sha="$(git commit-tree "$publication_tree"'),
-    );
-    expect(contract.indexOf('finish_transaction_phase publication_prepared "$publication_sha"')).toBeLessThan(
-      contract.indexOf('git -C "$target_worktree" merge --ff-only "$publication_sha"'),
-    );
-    expect(contract.indexOf('git -C "$target_worktree" merge --ff-only "$publication_sha"')).toBeLessThan(
-      contract.indexOf('finish_transaction_phase merged "$publication_sha"'),
-    );
+    const publicationCommitIndex = contract.indexOf('publication_sha="$(git commit-tree "$publication_tree"');
+    const publicationPreparedIndex = contract.indexOf('finish_transaction_phase publication_prepared "$publication_sha"');
+    const publicationMergeIndex = contract.indexOf('git -C "$target_worktree" merge --ff-only "$publication_sha"');
+    const publicationMergedIndex = contract.indexOf('finish_transaction_phase merged "$publication_sha"');
+    for (const index of [publicationCommitIndex, publicationPreparedIndex, publicationMergeIndex, publicationMergedIndex]) {
+      expect(index).toBeGreaterThanOrEqual(0);
+    }
+    expect(contract.indexOf('verify_merge_gate_seal "$gate_base_ref"')).toBeLessThan(publicationCommitIndex);
+    expect(publicationPreparedIndex).toBeLessThan(publicationMergeIndex);
+    expect(publicationMergeIndex).toBeLessThan(publicationMergedIndex);
+    expect(contract).toContain('if [[ "$commit_gpgsign" == "true" ]]; then');
+    expect(contract).toContain('-m "Source-Worktree-Head: $verified_sha" -S)');
     expect(contract).toContain('local merge gate base must equal target branch $target_branch');
     expect(ship.indexOf('verified_sha="$(verify_merge_gate_before_ship "$gate_base_ref")"')).toBeLessThan(
       ship.indexOf('push_branch "$branch" "$verified_sha"'),

@@ -30,6 +30,8 @@ import { withRepo, resolveFixtureState } from "./state/effective-state-fixture";
 // process can locate the journal, the snapshot, and the original HEAD.
 
 const ROOT = join(import.meta.dir, "..");
+const REAL_GIT = Bun.which("git");
+if (!REAL_GIT) throw new Error("git executable is required for closeout journal tests");
 
 setDefaultTimeout(120_000);
 
@@ -175,7 +177,7 @@ const FAKE_GIT = [
   "    exit 137",
   "  fi",
   "fi",
-  'exec /usr/bin/git "$@"',
+  `exec ${JSON.stringify(REAL_GIT)} "$@"`,
   "",
 ].join("\n");
 
@@ -191,6 +193,7 @@ const FAKE_DD = [
   'kill_on_complete=0',
   `[[ "\$payload" == *'"operation": "ship"'* && "\$payload" == *'"status": "complete"'* ]] && kill_on_complete=1`,
   `[[ "\${FAULT_FINISH_COMPLETE:-0}" == "1" && "\$payload" == *'"operation": "finish"'* && "\$payload" == *'"status": "complete"'* ]] && kill_on_complete=1`,
+  `[[ "\${FAULT_BEFORE_PUBLICATION_PREPARED:-0}" == "1" && "\$payload" == *'"phase": "publication_prepared"'* ]] && kill_on_complete=1`,
   'if [[ -f "${FAULT_PID_FILE:-/nonexistent}" && "$kill_on_complete" == "1" ]]; then',
   '  kill -9 "$(cat "$FAULT_PID_FILE")" 2>/dev/null || true',
   "  exit 137",
@@ -646,7 +649,32 @@ describe("contract-worktree finish closeout journal", () => {
       expect(abort.status, `${abort.stdout}\n${abort.stderr}`).toBe(0);
       expect(runProcess("git", ["rev-parse", "HEAD"], fixture.linked).stdout.trim()).toBe(headBefore);
 
-      // Second run: publication object and its journal identity exist, but the
+      // Second run: commit-tree has created the object, but the helper dies
+      // before publication_prepared is recorded. An unreachable object is not
+      // an external effect and must remain safely abortable.
+      const objectOnlyDdShim = join(container, "object-only-dd-shim");
+      mkdirSync(objectOnlyDdShim, { recursive: true });
+      writeExecutable(join(objectOnlyDdShim, "dd"), FAKE_DD);
+      const objectOnlyCrash = runHelperWithFault(
+        "scripts/contract-worktree.sh",
+        ["finish", "--merge"],
+        fixture.linked,
+        fixture.pidFile,
+        {
+          REPO_HARNESS_GIT_BIN: fixture.fakeGit,
+          FAULT_BEFORE_PUBLICATION_PREPARED: "1",
+          PATH: `${objectOnlyDdShim}:${process.env.PATH ?? ""}`,
+        },
+      );
+      expect(objectOnlyCrash.status).not.toBe(0);
+      dir = onlyJournal(fixture, "finish");
+      expect(readJournal(dir).phases).not.toContain("publication_prepared");
+      expect(runProcess("git", ["rev-parse", "main"], fixture.primary).stdout.trim()).toBe(mainBefore);
+      const objectOnlyAbort = runHelper("scripts/contract-worktree.sh", ["recover", "abort"], fixture.linked);
+      expect(objectOnlyAbort.status, `${objectOnlyAbort.stdout}\n${objectOnlyAbort.stderr}`).toBe(0);
+      expect(runProcess("git", ["rev-parse", "HEAD"], fixture.linked).stdout.trim()).toBe(headBefore);
+
+      // Third run: publication object and its journal identity exist, but the
       // target update has not run. Object existence is not an external effect;
       // recovery must still allow rollback and keep main byte-identical.
       const preparedCrash = runHelperWithFault(
@@ -669,7 +697,7 @@ describe("contract-worktree finish closeout journal", () => {
       expect(preparedAbort.status, `${preparedAbort.stdout}\n${preparedAbort.stderr}`).toBe(0);
       expect(runProcess("git", ["rev-parse", "HEAD"], fixture.linked).stdout.trim()).toBe(headBefore);
 
-      // Third run: crash right after the target publication landed but before
+      // Fourth run: crash right after the target publication landed but before
       // `complete`. The source branch is deliberately not an ancestor of main;
       // recovery must use publication_prepared's target commit identity.
       const ddShim = join(container, "finish-dd-shim");
@@ -716,6 +744,45 @@ describe("contract-worktree finish closeout journal", () => {
       // Reconcile completes only the missing steps: no second merge, no move.
       expect(runProcess("git", ["rev-parse", "main"], fixture.primary).stdout.trim()).toBe(mergedSha);
       expect(existsSync(join(dir, "snapshot"))).toBe(false);
+    });
+  }, 30_000);
+
+  test("a pre-cutover lifecycle journal detects an already-landed legacy fast-forward", () => {
+    withTempRepo("closeout-journal-legacy-recovery", (container) => {
+      const fixture = installFixture(container);
+      const mainBefore = runProcess("git", ["rev-parse", "main"], fixture.primary).stdout.trim();
+      const crashed = runHelperWithFault(
+        "scripts/contract-worktree.sh",
+        ["finish", "--merge"],
+        fixture.linked,
+        fixture.pidFile,
+        {
+          REPO_HARNESS_GIT_BIN: fixture.fakeGit,
+          FAULT_AFTER_PHASE: "lifecycle_committed",
+          FAULT_JOURNAL_DIR: join(fixture.journalRoot, "finish"),
+        },
+      );
+      expect(crashed.status).not.toBe(0);
+      const dir = onlyJournal(fixture, "finish");
+      const legacy = readJournal(dir);
+      expect(legacy.phases).toContain("lifecycle_committed");
+      expect(legacy.phases).not.toContain("publication_prepared");
+
+      // Emulate the pre-cutover helper's external effect: it fast-forwarded the
+      // target directly to the lifecycle HEAD without a publication phase.
+      const lifecycleHead = runProcess("git", ["rev-parse", "HEAD"], fixture.linked).stdout.trim();
+      const legacyMerge = runProcess("git", ["merge", "--ff-only", lifecycleHead], fixture.primary);
+      expect(legacyMerge.status, `${legacyMerge.stdout}\n${legacyMerge.stderr}`).toBe(0);
+      expect(runProcess("git", ["rev-parse", "main"], fixture.primary).stdout.trim()).not.toBe(mainBefore);
+
+      const abort = runHelper("scripts/contract-worktree.sh", ["recover", "abort"], fixture.linked);
+      expect(abort.status).toBe(1);
+      expect(abort.stderr).toContain("refusing abort after the merge landed");
+
+      const reconcile = runHelper("scripts/contract-worktree.sh", ["recover", "reconcile"], fixture.linked);
+      expect(reconcile.status, `${reconcile.stdout}\n${reconcile.stderr}`).toBe(0);
+      expect(readJournal(dir).status).toBe("complete");
+      expect(runProcess("git", ["rev-parse", "main"], fixture.primary).stdout.trim()).toBe(lifecycleHead);
     });
   }, 30_000);
 
