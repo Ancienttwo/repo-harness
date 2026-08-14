@@ -407,6 +407,11 @@ awk -v status="$resolved_status" '
 mv "$tmp_file" "$archive_file"
 rm -f "$rel_request"
 
+if [[ "${REPO_HARNESS_ARCHITECTURE_ARCHIVE_FAIL_AFTER_MUTATION:-0}" == "1" ]]; then
+  echo "archive-architecture-request: injected failure after live request mutation" >&2
+  exit 39
+fi
+
 bash "$queue_helper" reindex
 bash "$queue_helper" reindex --check
 

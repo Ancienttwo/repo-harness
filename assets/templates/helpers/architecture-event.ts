@@ -518,7 +518,7 @@ function processIsAlive(pid: number): boolean {
 
 function acquireQueueLock(requestsDir: string, ownerPid: number, ownerToken: string): string {
   assertSafeWriteTarget(`${requestsDir}/.write-probe`);
-  const lockFile = `${requestsDir}/.architecture-queue.lock`;
+  const lockFile = ".ai/harness/architecture/.architecture-queue.lock";
   const deadline = Date.now() + 10_000;
   while (true) {
     try {
@@ -551,7 +551,7 @@ function acquireQueueLock(requestsDir: string, ownerPid: number, ownerToken: str
 }
 
 function releaseQueueLock(requestsDir: string, ownerPid: number, ownerToken: string): void {
-  const lockFile = `${requestsDir}/.architecture-queue.lock`;
+  const lockFile = ".ai/harness/architecture/.architecture-queue.lock";
   assertSafeWriteTarget(lockFile);
   if (!existsSync(lockFile)) throw new Error(`architecture queue lock is missing: ${lockFile}`);
   const owner = JSON.parse(readFileSync(lockFile, "utf8"));

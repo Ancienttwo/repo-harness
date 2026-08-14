@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   utimesSync,
@@ -746,6 +747,24 @@ describe("sessionStartMainContent — cold-path event-log rotation (gatekeeper P
         expect(lstatSync(eventsPath).isSymbolicLink()).toBe(true);
       } finally {
         rmSync(outside, { force: true });
+      }
+    });
+  });
+
+  test("architecture rotation refuses a shared lock-root symlink", () => {
+    withTmpRepo("rotate-architecture-lock-root-symlink", (repoRoot) => {
+      mkdirSync(join(repoRoot, ".ai/harness/architecture"), { recursive: true });
+      const eventsPath = join(repoRoot, ".ai/harness/architecture/events.jsonl");
+      writeEventLines(eventsPath, 2500);
+      const before = readFileSync(eventsPath, "utf8");
+      const outside = mkdtempSync(join(tmpdir(), "architecture-lock-outside-"));
+      try {
+        symlinkSync(outside, join(repoRoot, ".ai/harness/.locks"));
+        sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now());
+        expect(readFileSync(eventsPath, "utf8")).toBe(before);
+        expect(readdirSync(outside)).toEqual([]);
+      } finally {
+        rmSync(outside, { recursive: true, force: true });
       }
     });
   });

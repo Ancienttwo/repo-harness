@@ -447,8 +447,9 @@ function sleepSyncMs(ms: number): void {
  * regardless of which file is actually being locked (so both rotation calls
  * share one lock namespace root, differentiated only by `name`).
  */
-function withEventsLock(lockRoot: string, name: string, fn: () => void): void {
+function withEventsLock(repoRoot: string, lockRoot: string, name: string, fn: () => void): void {
   const lockDir = join(lockRoot, `${name}.lock`);
+  if (!isSafeRepoPath(repoRoot, lockRoot)) return;
   try {
     mkdirSync(lockRoot, { recursive: true });
   } catch {
@@ -490,6 +491,7 @@ function withEventsLock(lockRoot: string, name: string, fn: () => void): void {
   }
 
   try {
+    if (!isSafeRepoPath(repoRoot, lockRoot) || !isSafeRepoPath(repoRoot, lockDir)) return;
     fn();
   } finally {
     try {
@@ -578,7 +580,7 @@ function workflowRotateEventsFile(
   if (counts.lines <= maxLines && counts.bytes <= maxBytes) return;
   if (!(counts.lines > keep)) return;
 
-  withEventsLock(lockRoot, `evt-${basename(relPath)}`, () => {
+  withEventsLock(repoRoot, lockRoot, `evt-${basename(relPath)}`, () => {
     workflowRotateEventsFileLocked(repoRoot, relPath, counts.lines, keep);
   });
 }

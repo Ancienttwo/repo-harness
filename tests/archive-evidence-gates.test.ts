@@ -265,6 +265,11 @@ function installArchitectureArchiveFixture(cwd: string): void {
     join(ROOT, "scripts/archive-architecture-request.sh"),
     join(cwd, "scripts/archive-architecture-request.sh"),
   );
+  copyFileSync(
+    join(ROOT, "scripts/architecture-event.ts"),
+    join(cwd, "scripts/architecture-event.ts"),
+  );
+  mkdirSync(join(cwd, ".ai/harness/architecture"), { recursive: true });
   writeFileSync(
     join(cwd, "scripts/architecture-queue.sh"),
     [

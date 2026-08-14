@@ -419,7 +419,7 @@ describe("architecture queue", () => {
         detached: true,
         env: { ...process.env, REPO_HARNESS_ARCHITECTURE_HOLD_AFTER_LOCK_MS: "10000" },
       });
-      const ownerPath = join(cwd, "docs/architecture/requests/.architecture-queue.lock");
+      const ownerPath = join(cwd, ".ai/harness/architecture/.architecture-queue.lock");
       const deadline = Date.now() + 3000;
       while (!existsSync(ownerPath) && Date.now() < deadline) await Bun.sleep(20);
       expect(existsSync(ownerPath)).toBe(true);
@@ -434,7 +434,7 @@ describe("architecture queue", () => {
 
   test("record reclaims an ownerless partial queue lock after a bounded stale window", async () => {
     tmpRepo((cwd) => {
-      const lock = join(cwd, "docs/architecture/requests/.architecture-queue.lock");
+      const lock = join(cwd, ".ai/harness/architecture/.architecture-queue.lock");
       writeFileSync(lock, "");
       const stale = new Date(Date.now() - 3000);
       utimesSync(lock, stale, stale);
@@ -662,7 +662,7 @@ describe("architecture queue", () => {
         { cwd, env: { ...process.env, REPO_HARNESS_ARCHITECTURE_ARCHIVE_HOLD_AFTER_LOCK_MS: "500" } },
       );
       const archiveExit = new Promise<number | null>((resolve) => archive.on("exit", resolve));
-      const lockFile = join(cwd, "docs/architecture/requests/.architecture-queue.lock");
+      const lockFile = join(cwd, ".ai/harness/architecture/.architecture-queue.lock");
       for (let attempt = 0; attempt < 100 && !existsSync(lockFile); attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
@@ -677,6 +677,48 @@ describe("architecture queue", () => {
       const index = readFileSync(join(cwd, "docs/architecture/index.md"), "utf8");
       expect(index).toContain("requests/root.md");
       expect(readFileSync(join(cwd, ".ai/harness/architecture/events.jsonl"), "utf8").trim().split("\n")).toHaveLength(2);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("archive rollback keeps the queue lock until restoration completes", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "architecture-queue-archive-rollback-race-"));
+    try {
+      mkdirSync(join(cwd, "scripts"), { recursive: true });
+      mkdirSync(join(cwd, "docs/architecture/requests"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness/architecture"), { recursive: true });
+      for (const file of ["architecture-queue.sh", "architecture-event.ts", "archive-architecture-request.sh"]) {
+        copyFileSync(join(ROOT, "scripts", file), join(cwd, "scripts", file));
+      }
+      expect(run("chmod", ["+x", "scripts/architecture-queue.sh", "scripts/archive-architecture-request.sh"], cwd).status).toBe(0);
+      writeFileSync(join(cwd, "docs/architecture/index.md"), "# Architecture Index\n\n## Pending Requests\n");
+      expect(queue(cwd, ["record", "--file", ".ai/hooks/pre-edit-guard.sh"]).status).toBe(0);
+
+      const archive = spawn(
+        "bash",
+        ["scripts/archive-architecture-request.sh", "--request", "docs/architecture/requests/root.md", "--status", "no-change"],
+        { cwd, env: {
+          ...process.env,
+          REPO_HARNESS_ARCHITECTURE_ARCHIVE_HOLD_AFTER_LOCK_MS: "500",
+          REPO_HARNESS_ARCHITECTURE_ARCHIVE_FAIL_AFTER_MUTATION: "1",
+        } },
+      );
+      const archiveExit = new Promise<number | null>((resolve) => archive.on("exit", resolve));
+      const lockFile = join(cwd, ".ai/harness/architecture/.architecture-queue.lock");
+      for (let attempt = 0; attempt < 100 && !existsSync(lockFile); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(existsSync(lockFile)).toBe(true);
+      const recordExit = await queueAsync(cwd, "src/cli/hook/post-rollback.ts");
+      expect(await archiveExit).toBe(39);
+      expect(recordExit).toBe(0);
+
+      const card = readFileSync(join(cwd, "docs/architecture/requests/root.md"), "utf8");
+      expect(card).toContain(".ai/hooks/pre-edit-guard.sh");
+      expect(card).toContain("src/cli/hook/post-rollback.ts");
+      expect(readFileSync(join(cwd, "docs/architecture/index.md"), "utf8")).toContain("requests/root.md");
+      expect(existsSync(lockFile)).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
