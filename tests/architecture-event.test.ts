@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, w
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
+import { createHash } from "crypto";
 
 const ROOT = join(import.meta.dir, "..");
 
@@ -240,7 +241,29 @@ describe("architecture-event helper", () => {
       const cardPath = join(cwd, requestFile);
       const before = readFileSync(cardPath, "utf8");
       expect(before).toContain("> **Severity**: high");
-      expect(before).toContain('"severity": "high"');
+      const eventFieldsMatch = before.match(/## Event Fields\s*```json\s*([\s\S]*?)\s*```/);
+      expect(eventFieldsMatch).not.toBeNull();
+      const eventFields = JSON.parse(eventFieldsMatch![1]);
+      expect(eventFields.severity).toBe("low");
+      const semanticFields = {
+        file_path: low.file_path,
+        severity: low.severity,
+        functional_block: low.functional_block,
+        capability_id: low.capability_id,
+        matched_prefix: low.matched_prefix,
+        architecture_domain: low.architecture_domain,
+        architecture_capability: low.architecture_capability,
+        architecture_module: low.architecture_module,
+        workstream_dir: low.workstream_dir,
+        contract_agents: low.contract_agents,
+        contract_claude: low.contract_claude,
+        change_type: low.change_type,
+        spawn_recommended: low.spawn_recommended,
+        contract_sync_required: low.contract_sync_required,
+      };
+      expect(eventFields.event_key).toBe(
+        `sha256:${createHash("sha256").update(JSON.stringify(semanticFields)).digest("hex")}`,
+      );
 
       const repeated = runArchitectureEvent(
         [

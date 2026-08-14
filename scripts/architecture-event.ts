@@ -427,7 +427,7 @@ function renderRequestCard(event: ArchitectureEvent, events: ArchitectureEvent[]
     })
     .join("\n");
 
-  const latestEvent = normalizeEvent({ ...event, ...latest, severity }, event.request_file || "");
+  const latestEvent = normalizeEvent(latest, event.request_file || "");
 
   return [
     `# Architecture Queue Card: ${titleToken}`,
