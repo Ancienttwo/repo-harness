@@ -262,6 +262,9 @@ function readMetadata(file: string): Record<string, string> {
   for (const line of readFileSync(file, "utf-8").split(/\r?\n/)) {
     const match = line.match(/^> \*\*(.+?)\*\*:\s*(.*)$/);
     if (!match) continue;
+    if (Object.prototype.hasOwnProperty.call(metadata, match[1])) {
+      throw new Error(`duplicate architecture metadata label ${match[1]}: ${file}`);
+    }
     metadata[match[1]] = stripCode(match[2]);
   }
   return metadata;
@@ -495,21 +498,29 @@ function withQueueLock<T>(requestsDir: string, operation: () => T): T {
   const deadline = Date.now() + 10_000;
   while (true) {
     try {
-      mkdirSync(lockDir);
-      writeFileSync(`${lockDir}/owner.json`, JSON.stringify({ pid: process.pid, created_at: new Date().toISOString() }));
+      const fd = openSync(lockDir, "wx", 0o600);
+      try {
+        writeAllSync(fd, JSON.stringify({ pid: process.pid, created_at: new Date().toISOString() }));
+      } finally {
+        closeSync(fd);
+      }
       const holdMs = Number(process.env.REPO_HARNESS_ARCHITECTURE_HOLD_AFTER_LOCK_MS || "0");
       if (Number.isFinite(holdMs) && holdMs > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, holdMs);
       break;
     } catch (error: any) {
-      if (error?.code !== "EEXIST") throw error;
+      if (error?.code !== "EEXIST" || !existsSync(lockDir)) throw error;
       try {
-        const owner = JSON.parse(readFileSync(`${lockDir}/owner.json`, "utf8"));
+        const owner = JSON.parse(readFileSync(lockDir, "utf8"));
         if (!processIsAlive(Number(owner.pid))) {
-          rmSync(lockDir, { recursive: true, force: true });
+          rmSync(lockDir, { force: true });
           continue;
         }
       } catch {
-        // A creator may be between mkdir and owner publication; retry briefly.
+        const ageMs = Date.now() - statSync(lockDir).mtimeMs;
+        if (ageMs >= 2_000) {
+          rmSync(lockDir, { force: true });
+          continue;
+        }
       }
       if (Date.now() >= deadline) throw new Error(`architecture queue lock unavailable: ${lockDir}`);
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
@@ -518,7 +529,7 @@ function withQueueLock<T>(requestsDir: string, operation: () => T): T {
   try {
     return operation();
   } finally {
-    rmSync(lockDir, { recursive: true, force: true });
+    rmSync(lockDir, { force: true });
   }
 }
 
@@ -705,17 +716,20 @@ function samePendingFileEvent(
     && previous.event_key === next.event_key;
 }
 
-function upsertRequest(args: Args): "changed" | "unchanged" {
+function upsertRequest(args: Args, internalMigrationEvents: ArchitectureEvent[] | null = null): "changed" | "unchanged" {
   const requestFile = requireOption(args, "requestFile");
   const rawEvent = args.options.eventJson ?? readStdin();
   const parsed = JSON.parse(rawEvent) as ArchitectureEvent;
   const event = validateEvent(normalizeEvent({ ...parsed, event_key: undefined }, requestFile), requestFile, true);
   const existingMetadata = readMetadata(requestFile);
-  const migrationEvents = args.options.migrationEventsJson
-    ? (JSON.parse(args.options.migrationEventsJson) as unknown[]).map((entry) => validateEvent(entry, requestFile, true))
-    : null;
-  const existingEvents = migrationEvents || requestEventsFromSource(requestFile);
-  const isLegacyMigration = migrationEvents !== null;
+  if (args.options.migrationEventsJson !== undefined) {
+    throw new Error("migration-events-json is not a public architecture-event option");
+  }
+  if (!internalMigrationEvents && existsSync(requestFile) && !/## Event Records\s*```json/.test(readFileSync(requestFile, "utf8"))) {
+    throw new Error("stable legacy cards must be migrated through record-event audit preflight");
+  }
+  const existingEvents = internalMigrationEvents || requestEventsFromSource(requestFile);
+  const isLegacyMigration = internalMigrationEvents !== null;
   const previous = existingEvents.find((entry) => entry.file_path === event.file_path);
   if (!isLegacyMigration && isPendingRequest(requestFile) && previous && samePendingFileEvent(previous, event)) return "unchanged";
   const events = dedupeEvents([...existingEvents, event]);
@@ -723,27 +737,97 @@ function upsertRequest(args: Args): "changed" | "unchanged" {
   return "changed";
 }
 
+function architectureEventLogFiles(eventFile: string): string[] {
+  const archiveDir = `${dirname(eventFile)}/archive`;
+  const files = existsSync(archiveDir)
+    ? readdirSync(archiveDir, { withFileTypes: true })
+        .filter((entry) => entry.isFile() && /^events-\d{6}\.jsonl$/.test(entry.name))
+        .map((entry) => `${archiveDir}/${entry.name}`)
+        .sort()
+    : [];
+  if (existsSync(eventFile)) files.push(eventFile);
+  return files;
+}
+
 function legacyEventsFromLog(eventFile: string, requestFile: string, excludeTransactionId = ""): ArchitectureEvent[] {
-  if (!existsSync(eventFile)) return [];
   const events: ArchitectureEvent[] = [];
-  for (const line of readFileSync(eventFile, "utf8").split(/\r?\n/)) {
-    if (!line.trim()) continue;
-    const parsed = JSON.parse(line) as ArchitectureEvent & { transaction_id?: string };
-    if (excludeTransactionId && parsed.transaction_id === excludeTransactionId) continue;
-    if (parsed.request_file !== requestFile) continue;
-    events.push(validateEvent(parsed, requestFile, false));
+  const files = architectureEventLogFiles(eventFile);
+  for (const file of files) {
+    if (lstatSync(file).isSymbolicLink()) throw new Error(`architecture audit source must not be a symlink: ${file}`);
+    for (const line of readFileSync(file, "utf8").split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      const parsed = JSON.parse(line) as ArchitectureEvent & { transaction_id?: string };
+      if (excludeTransactionId && parsed.transaction_id === excludeTransactionId) continue;
+      if (parsed.request_file !== requestFile) continue;
+      events.push(validateEvent(parsed, requestFile, false));
+    }
   }
   return dedupeEvents(events);
 }
 
 function eventLogContainsTransaction(file: string, transactionId: string): boolean {
-  if (!existsSync(file)) return false;
-  for (const line of readFileSync(file, "utf8").split(/\r?\n/)) {
-    if (!line.trim()) continue;
-    const parsed = JSON.parse(line);
-    if (parsed?.transaction_id === transactionId) return true;
+  for (const logFile of architectureEventLogFiles(file)) {
+    for (const line of readFileSync(logFile, "utf8").split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      const parsed = JSON.parse(line);
+      if (parsed?.transaction_id === transactionId) return true;
+    }
   }
   return false;
+}
+
+type QueueTransaction = {
+  transaction_id: string;
+  request_file: string;
+  event: ArchitectureEvent;
+};
+
+function preflightLegacyCard(
+  requestFile: string,
+  eventFile: string,
+  excludeTransactionId: string,
+): ArchitectureEvent[] | null {
+  if (!existsSync(requestFile)) return null;
+  const source = readFileSync(requestFile, "utf8");
+  if (/## Event Records\s*```json/.test(source)) return null;
+  const events = withEventLogLock(
+    eventFile,
+    () => legacyEventsFromLog(eventFile, requestFile, excludeTransactionId),
+  );
+  validateLegacyCard(requestFile, events);
+  return events;
+}
+
+function completeQueueTransaction(
+  transaction: QueueTransaction,
+  args: Args,
+  eventFile: string,
+  indexFile: string,
+  requestsDir: string,
+  transactionFile: string,
+  legacyEvents: ArchitectureEvent[] | null,
+  injectFailure: boolean,
+): "changed" | "unchanged" {
+  const requestFile = transaction.request_file;
+  const activeEvent = validateEvent(transaction.event, requestFile, true);
+  withEventLogLock(eventFile, () => {
+    if (!eventLogContainsTransaction(eventFile, transaction.transaction_id)) {
+      const currentLog = existsSync(eventFile) ? readFileSync(eventFile, "utf8") : "";
+      const prefix = currentLog && !currentLog.endsWith("\n") ? `${currentLog}\n` : currentLog;
+      atomicWriteFile(eventFile, `${prefix}${JSON.stringify({ ...activeEvent, transaction_id: transaction.transaction_id })}\n`);
+    }
+  });
+  if (injectFailure && process.env.REPO_HARNESS_ARCHITECTURE_FAIL_AFTER_EVENT === "1") {
+    throw new Error("injected architecture failure after event persistence");
+  }
+  const migrationEvents = legacyEvents ? dedupeEvents([...legacyEvents, activeEvent]) : null;
+  const result = upsertRequest({
+    ...args,
+    options: { ...args.options, requestFile, eventJson: JSON.stringify(activeEvent) },
+  }, migrationEvents);
+  reindexRequests({ command: "reindex-requests", options: { indexFile, requestsDir }, flags: new Set() });
+  rmSync(transactionFile);
+  return result;
 }
 
 function recordEvent(args: Args): "changed" | "unchanged" {
@@ -757,20 +841,43 @@ function recordEvent(args: Args): "changed" | "unchanged" {
   return withQueueLock(requestsDir, () => {
     const transactionFile = `${requestsDir}/.architecture-queue-transaction.json`;
     for (const target of [requestFile, eventFile, indexFile, transactionFile]) assertSafeWriteTarget(target);
-    let legacyPreflightEvents: ArchitectureEvent[] | null = null;
-    if (existsSync(requestFile)) {
-      const source = readFileSync(requestFile, "utf8");
-      if (!/## Event Records\s*```json/.test(source)) {
-        let recoveryTransactionId = "";
-        if (existsSync(transactionFile)) {
-          const recovery = JSON.parse(readFileSync(transactionFile, "utf8"));
-          recoveryTransactionId = typeof recovery.transaction_id === "string" ? recovery.transaction_id : "";
-        }
-        legacyPreflightEvents = legacyEventsFromLog(eventFile, requestFile, recoveryTransactionId);
-        validateLegacyCard(requestFile, legacyPreflightEvents);
+    let transaction: QueueTransaction | null = null;
+    if (existsSync(transactionFile)) {
+      transaction = JSON.parse(readFileSync(transactionFile, "utf8"));
+      if (typeof transaction?.transaction_id !== "string" || typeof transaction?.request_file !== "string") {
+        throw new Error(`invalid unfinished architecture transaction: ${transactionFile}`);
+      }
+      if (dirname(transaction.request_file) !== requestsDir || !transaction.request_file.endsWith(".md")) {
+        throw new Error(`unfinished architecture transaction has unsafe request path: ${transaction.request_file}`);
+      }
+      assertSafeWriteTarget(transaction.request_file);
+      transaction.event = validateEvent(transaction.event, transaction.request_file, true);
+      if (transaction.request_file !== requestFile || transaction.event.event_key !== event.event_key) {
+        const recoveryLegacy = preflightLegacyCard(
+          transaction.request_file,
+          eventFile,
+          transaction.transaction_id,
+        );
+        completeQueueTransaction(
+          transaction,
+          args,
+          eventFile,
+          indexFile,
+          requestsDir,
+          transactionFile,
+          recoveryLegacy,
+          false,
+        );
+        transaction = null;
       }
     }
-    if (!existsSync(transactionFile) && existsSync(requestFile)) {
+
+    const legacyPreflightEvents = preflightLegacyCard(
+      requestFile,
+      eventFile,
+      transaction?.transaction_id || "",
+    );
+    if (!transaction && existsSync(requestFile)) {
       const source = readFileSync(requestFile, "utf8");
       if (/## Event Records\s*```json/.test(source)) {
         const previous = requestEventsFromSource(requestFile).find((entry) => entry.file_path === event.file_path);
@@ -780,50 +887,20 @@ function recordEvent(args: Args): "changed" | "unchanged" {
         }
       }
     }
-    let transaction: { transaction_id: string; request_file: string; event: ArchitectureEvent };
-    if (existsSync(transactionFile)) {
-      transaction = JSON.parse(readFileSync(transactionFile, "utf8"));
-      if (
-        typeof transaction.transaction_id !== "string"
-        || transaction.request_file !== requestFile
-        || transaction.event?.event_key !== event.event_key
-      ) {
-        throw new Error(`unfinished architecture transaction does not match incoming event: ${transactionFile}`);
-      }
-      transaction.event = validateEvent(transaction.event, requestFile, true);
-    } else {
+    if (!transaction) {
       transaction = { transaction_id: randomUUID(), request_file: requestFile, event };
       atomicWriteFile(transactionFile, `${JSON.stringify(transaction, null, 2)}\n`);
     }
-    const activeEvent = transaction.event;
-    withEventLogLock(eventFile, () => {
-      if (!eventLogContainsTransaction(eventFile, transaction.transaction_id)) {
-        const currentLog = existsSync(eventFile) ? readFileSync(eventFile, "utf8") : "";
-        const prefix = currentLog && !currentLog.endsWith("\n") ? `${currentLog}\n` : currentLog;
-        atomicWriteFile(eventFile, `${prefix}${JSON.stringify({ ...activeEvent, transaction_id: transaction.transaction_id })}\n`);
-      }
-    });
-    if (process.env.REPO_HARNESS_ARCHITECTURE_FAIL_AFTER_EVENT === "1") {
-      throw new Error("injected architecture failure after event persistence");
-    }
-    const migrationEventsJson = legacyPreflightEvents
-      ? JSON.stringify(dedupeEvents([...legacyPreflightEvents, activeEvent]))
-      : undefined;
-    const result = upsertRequest({
-      ...args,
-      options: {
-        ...args.options,
-        eventJson: JSON.stringify(activeEvent),
-        ...(migrationEventsJson ? { migrationEventsJson } : {}),
-      },
-    });
-    reindexRequests({
-      command: "reindex-requests",
-      options: { indexFile, requestsDir },
-      flags: new Set(),
-    });
-    rmSync(transactionFile);
-    return result;
+    return completeQueueTransaction(
+      transaction,
+      args,
+      eventFile,
+      indexFile,
+      requestsDir,
+      transactionFile,
+      legacyPreflightEvents,
+      true,
+    );
   });
 }
 

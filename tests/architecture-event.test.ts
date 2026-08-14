@@ -370,6 +370,8 @@ describe("architecture-event helper", () => {
       const cardPath = join(cwd, requestFile);
       const canonical = readFileSync(cardPath, "utf8");
 
+      expect(runArchitectureEvent([...args, "--migration-events-json", "[]"], cwd).status).toBe(1);
+
       writeFileSync(cardPath, canonical.replace(/"event_key": "sha256:[0-9a-f]{64}"/, '"event_key": "sha256:forged"'));
       expect(runArchitectureEvent(args, cwd).status).toBe(1);
 

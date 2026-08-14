@@ -8,6 +8,7 @@ import {
   readdirSync,
   rmSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from "fs";
 import { tmpdir } from "os";
@@ -219,6 +220,25 @@ describe("architecture queue", () => {
     });
   }, 30_000);
 
+  test("record replays interrupted z before processing a newly sorted a event", () => {
+    tmpRepo((cwd) => {
+      const failed = run(
+        "bash",
+        ["scripts/architecture-queue.sh", "record", "--file", "src/cli/hook/z.ts"],
+        cwd,
+        { REPO_HARNESS_ARCHITECTURE_FAIL_AFTER_EVENT: "1" },
+      );
+      expect(failed.status).toBe(1);
+      const next = queue(cwd, ["record", "--file", "src/cli/hook/a.ts"]);
+      expect(next.status, next.stderr).toBe(0);
+      const card = readFileSync(join(cwd, "docs/architecture/requests/root.md"), "utf8");
+      expect(card).toContain("src/cli/hook/z.ts");
+      expect(card).toContain("src/cli/hook/a.ts");
+      expect(readFileSync(join(cwd, ".ai/harness/architecture/events.jsonl"), "utf8").trim().split("\n")).toHaveLength(2);
+      expect(existsSync(join(cwd, "docs/architecture/requests/.architecture-queue-transaction.json"))).toBe(false);
+    });
+  }, 30_000);
+
   test("record serializes concurrent events without losing a card entry", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "architecture-queue-concurrent-"));
     try {
@@ -295,6 +315,30 @@ describe("architecture queue", () => {
     });
   }, 30_000);
 
+  test("stable-card migration reconstructs events split across archive and live logs", () => {
+    tmpRepo((cwd) => {
+      expect(queue(cwd, ["record", "--file", "src/cli/hook/archive-a.ts"]).status).toBe(0);
+      expect(queue(cwd, ["record", "--file", "src/cli/hook/archive-b.ts"]).status).toBe(0);
+      const cardPath = join(cwd, "docs/architecture/requests/root.md");
+      const legacy = readFileSync(cardPath, "utf8")
+        .replace(/\n## Event Records\s*\n```json[\s\S]*?```\s*\n?/, "\n")
+        .replace(/,\n  "event_key": "sha256:[0-9a-f]{64}"/, "");
+      writeFileSync(cardPath, legacy);
+      const eventsPath = join(cwd, ".ai/harness/architecture/events.jsonl");
+      const lines = readFileSync(eventsPath, "utf8").trim().split("\n");
+      mkdirSync(join(cwd, ".ai/harness/architecture/archive"), { recursive: true });
+      writeFileSync(join(cwd, ".ai/harness/architecture/archive/events-202608.jsonl"), `${lines[0]}\n`);
+      writeFileSync(eventsPath, `${lines[1]}\n`);
+
+      const migrated = queue(cwd, ["record", "--file", "src/cli/hook/archive-b.ts"]);
+      expect(migrated.status, migrated.stderr).toBe(0);
+      const current = readFileSync(cardPath, "utf8");
+      expect(current).toContain("src/cli/hook/archive-a.ts");
+      expect(current).toContain("src/cli/hook/archive-b.ts");
+      expect(current).toContain("## Event Records");
+    });
+  }, 30_000);
+
   test("invalid legacy migration fails before journal or audit mutation", () => {
     tmpRepo((cwd) => {
       const target = "src/cli/hook/legacy-invalid.ts";
@@ -327,6 +371,10 @@ describe("architecture queue", () => {
       expect(queue(cwd, ["status", "--gate"]).status).toBe(1);
       writeFileSync(cardPath, canonical.replace("> **Spawn Recommended**: true", "> **Spawn Recommended**: false"));
       expect(queue(cwd, ["status", "--gate"]).status).toBe(1);
+      writeFileSync(cardPath, canonical.replace("> **Status**: Pending", "> **Status**: Resolved\n> **Status**: Pending"));
+      expect(queue(cwd, ["status", "--gate"]).status).toBe(1);
+      writeFileSync(cardPath, canonical.replace("> **Severity**: high", "> **Severity**: low\n> **Severity**: high"));
+      expect(queue(cwd, ["status", "--gate"]).status).toBe(1);
     });
   }, 30_000);
 
@@ -345,7 +393,7 @@ describe("architecture queue", () => {
         detached: true,
         env: { ...process.env, REPO_HARNESS_ARCHITECTURE_HOLD_AFTER_LOCK_MS: "10000" },
       });
-      const ownerPath = join(cwd, "docs/architecture/requests/.architecture-queue.lock/owner.json");
+      const ownerPath = join(cwd, "docs/architecture/requests/.architecture-queue.lock");
       const deadline = Date.now() + 3000;
       while (!existsSync(ownerPath) && Date.now() < deadline) await Bun.sleep(20);
       expect(existsSync(ownerPath)).toBe(true);
@@ -356,6 +404,17 @@ describe("architecture queue", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
+  }, 30_000);
+
+  test("record reclaims an ownerless partial queue lock after a bounded stale window", async () => {
+    tmpRepo((cwd) => {
+      const lock = join(cwd, "docs/architecture/requests/.architecture-queue.lock");
+      writeFileSync(lock, "");
+      const stale = new Date(Date.now() - 3000);
+      utimesSync(lock, stale, stale);
+      const result = queue(cwd, ["record", "--file", "src/cli/hook/ownerless.ts"]);
+      expect(result.status, result.stderr).toBe(0);
+    });
   }, 30_000);
 
   test("record never reclaims a live shared rotation lock at the old two-second threshold", async () => {

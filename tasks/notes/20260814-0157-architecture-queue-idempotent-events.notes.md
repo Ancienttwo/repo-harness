@@ -16,6 +16,7 @@
 - Every request/event/index write rejects symlink targets and parents resolving outside the repository, and uses same-directory temporary files plus rename.
 - A durable transaction journal distinguishes retry from a later semantic recurrence (`K1 -> K2 -> K1` or archive/reopen), while the shared event-log lock prevents SessionStart rotation from racing the writer. Dead queue owners are reclaimed by PID evidence.
 - Legacy-card reconstruction is preflighted against the existing audit log before any journal or event mutation. The writer and rotation path now share the same 60-second stale-lock contract, so neither side can reclaim the other's live lock at the former two-second boundary.
+- Queue ownership is an atomic exclusive file carrying PID evidence; ownerless partial locks have bounded stale recovery. An unfinished transaction is replayed before a different incoming event, public CLI callers cannot inject migration events, and stable-card reconstruction reads both canonical monthly archives and the live log.
 
 ## Deviations From Plan Or Spec
 
