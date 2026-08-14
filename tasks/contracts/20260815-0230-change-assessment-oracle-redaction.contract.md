@@ -68,7 +68,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ## Change Assessment
 
 ```json
-{"protocol":1,"oracles":[{"id":"oracle-redaction-regressions","kind":"deterministic_test","paths":["*"]}]}
+{"protocol":1,"oracles":[{"id":"change-assessment-oracle-redaction-regressions","kind":"deterministic_test","paths":["*"]}]}
 ```
 
 ## Acceptance Policy
