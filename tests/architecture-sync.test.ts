@@ -74,25 +74,26 @@ function writePolicy(cwd: string, mode: "off" | "advisory" | "strict") {
 }
 
 function writePendingCard(cwd: string, capabilityId = "apps-web", severity = "high") {
-  writeFileSync(
-    join(cwd, "docs/architecture/requests", `${capabilityId}.md`),
-    [
-      `# Architecture Drift Request: ${capabilityId}`,
-      "",
-      "> **Status**: Pending",
-      "> **Detected**: 2026-06-01T12:00:00+0800",
-      `> **Severity**: ${severity}`,
-      "> **Change Type**: workflow-surface",
-      "> **File**: `apps/web/src/routes/account.tsx`",
-      "> **Functional Block**: `apps/web`",
-      `> **Capability ID**: \`${capabilityId}\``,
-      "> **Matched Prefix**: `apps/web`",
-      "> **Architecture Domain**: `apps-web`",
-      "> **Architecture Capability**: `web`",
-      "> **Architecture Module**: `docs/architecture/modules/apps-web/web.md`",
-      "",
-    ].join("\n"),
-  );
+  const requestFile = `docs/architecture/requests/${capabilityId}.md`;
+  const event = {
+    ts: "2026-06-01T12:00:00+0800",
+    file_path: "apps/web/src/routes/account.tsx",
+    severity,
+    functional_block: "apps/web",
+    capability_id: capabilityId,
+    matched_prefix: "apps/web",
+    architecture_domain: "apps-web",
+    architecture_capability: "web",
+    architecture_module: "docs/architecture/modules/apps-web/web.md",
+    workstream_dir: "tasks/workstreams/apps-web/web",
+    contract_agents: "apps/web/AGENTS.md",
+    contract_claude: "apps/web/CLAUDE.md",
+    change_type: "workflow-surface",
+    request_file: requestFile,
+    spawn_recommended: false,
+    contract_sync_required: false,
+  };
+  expect(run("bun", ["scripts/architecture-event.ts", "upsert-request", "--request-file", requestFile, "--event-json", JSON.stringify(event)], cwd).status).toBe(0);
   expect(run("bash", ["scripts/architecture-queue.sh", "reindex"], cwd).status).toBe(0);
 }
 
