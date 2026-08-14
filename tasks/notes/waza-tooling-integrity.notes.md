@@ -35,3 +35,33 @@ to verify. Verified locally with `repo-harness install --target both --no-cli`,
 `repo-harness setup check --target codex --check-updates --json`,
 `repo-harness setup check --target claude --check-updates --json`,
 `bun run check:type`, and `bun test`.
+
+## 2026-08-14 Goal Calibration Overlay
+
+The operator-approved planning change keeps hook routing advisory-only and adds
+the behavior at the planning-skill boundary. New full-mode planning first reads
+the repo and prior decisions, then exposes a compact calibration card and asks
+at most one highest-information-gain question only when a high-impact decision
+remains. Resolved cases ask zero questions; headless cases stay unconfirmed and
+must not simulate a user answer.
+
+The same rule is projected into the local Waza `think` runtime and the shared
+`interview` skill for Codex and Claude. This is an explicit local overlay on the
+fresh upstream Waza bundle, not an upstream Waza release; a future Waza refresh
+will overwrite it until the behavior is accepted upstream or the overlay is
+retired.
+
+Runtime readback after `bunx skills add tw93/Waza -g -a claude-code codex -s
+think hunt check health -y` showed all four managed skill directories and all
+four shared rules synchronized across staging, Codex, and Claude. The
+update-aware detector then reported the intentional boundary precisely:
+`update_status=update-available`, with only `skills/think/SKILL.md` differing
+from fetched upstream; there was no host drift and no shared-rule drift.
+
+Focused skill-contract tests passed (`21 pass, 0 fail`). The root checks passed
+for deploy SQL order, architecture sync, task sync, strict task workflow,
+project inspection, and init dry-run. The full `bun test` run reached `2358
+pass, 1 skip, 6 fail`; all six failures are outside this slice in existing
+ArchContext/global-runtime fixtures after bringing the package-local dependency
+from stale `archctx@0.4.1` to the lockfile-authoritative `archctx@0.4.2`. No
+Goal Calibration or action-command skill test failed.
