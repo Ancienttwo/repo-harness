@@ -1,6 +1,6 @@
 # Plan: Contract Worktree Single Publication Commit
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260814-1629
 > **Slug**: contract-worktree-single-publication
 > **Planning Source**: codex-plan

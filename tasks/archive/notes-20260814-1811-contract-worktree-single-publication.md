@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-14 18:11
+> **Related Plan**: plans/archive/plan-20260814-1629-contract-worktree-single-publication.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260814-1811
+
 # Implementation Notes: contract-worktree-single-publication
 
 > **Status**: Active

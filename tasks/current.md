@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-14T01:18:14+0800 -->
+<!-- updated_at: 2026-08-14T18:11:43+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Idle
-> **Updated At**: 2026-08-14T01:18:14+0800
-> **Source Branch**: codex/nested-capability-architecture-routing
-> **Source Commit**: 7c2b8767
+> **Status**: ManualClearedWithActiveWork
+> **Updated At**: 2026-08-14T18:11:43+0800
+> **Source Branch**: codex/contract-worktree-single-publication
+> **Source Commit**: cb4da95f
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -17,11 +17,11 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Current Focus
 
-- Status: Idle
+- Status: ManualClearedWithActiveWork
 - Active Plan: (none)
 - Plan Status: (none)
-- Next Task: (none)
-- Clear Note: (none)
+- Next Task: inspect active worktree marker(s)
+- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
 
 ## Mainline Snapshot Reading
 
@@ -31,7 +31,12 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- (none)
+- /private/tmp/repo-harness-architecture-queue-idempotent: plans/plan-20260814-0157-architecture-queue-idempotent-events.md
+- /private/tmp/repo-harness-architecture-queue-idempotent: active-worktree owner -> /private/tmp/repo-harness-architecture-queue-idempotent
+- /private/tmp/repo-harness-wt-change-assessment-v1: plans/plan-20260814-1808-change-assessment-v1.md
+- /private/tmp/repo-harness-wt-change-assessment-v1: active-worktree owner -> /private/tmp/repo-harness-wt-change-assessment-v1
+- /private/tmp/repo-harness-wt-hook-effect-failure-contract: plans/plan-20260814-1635-hook-effect-failure-contract.md
+- /private/tmp/repo-harness-wt-hook-effect-failure-contract: active-worktree owner -> /private/tmp/repo-harness-wt-hook-effect-failure-contract
 ## Active Sprint
 
 - Sprint: (none)
@@ -47,7 +52,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=completed, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: (none)
+- Exact Next Step: Stage the completed module diff first; then run /check and let canonical workflow gates determine whether review, external acceptance, verification, or worktree finish is next. Command: /check
 
 ## Checks
 
@@ -58,16 +63,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260813-2314-nested-capability-architecture-routing.md
- D tasks/contracts/20260813-2314-nested-capability-architecture-routing.contract.md
- D tasks/notes/20260813-2314-nested-capability-architecture-routing.notes.md
- D tasks/reviews/20260813-2314-nested-capability-architecture-routing.review.md
+ D plans/plan-20260814-1629-contract-worktree-single-publication.md
+ D tasks/contracts/20260814-1629-contract-worktree-single-publication.contract.md
+ D tasks/notes/20260814-1629-contract-worktree-single-publication.notes.md
+ D tasks/reviews/20260814-1629-contract-worktree-single-publication.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260813-2314-nested-capability-architecture-routing.md
-?? tasks/archive/contract-20260814-0118-nested-capability-architecture-routing.md
-?? tasks/archive/notes-20260814-0118-nested-capability-architecture-routing.md
-?? tasks/archive/review-20260814-0118-nested-capability-architecture-routing.md
-?? tasks/archive/todo-20260814-0118-nested-capability-architecture-routing.md
+?? plans/archive/plan-20260814-1629-contract-worktree-single-publication.md
+?? tasks/archive/contract-20260814-1811-contract-worktree-single-publication.md
+?? tasks/archive/notes-20260814-1811-contract-worktree-single-publication.md
+?? tasks/archive/review-20260814-1811-contract-worktree-single-publication.md
+?? tasks/archive/todo-20260814-1811-contract-worktree-single-publication.md
 ```
 
 ## Source Artifacts
