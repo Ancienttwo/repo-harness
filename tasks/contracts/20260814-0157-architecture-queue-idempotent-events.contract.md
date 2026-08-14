@@ -58,7 +58,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ## Change Assessment
 
 ```json
-{"protocol":1,"oracles":[{"id":"architecture-idempotency-regressions","kind":"deterministic_test","paths":["*"]},{"id":"architecture-queue-runtime","kind":"runtime_readback","paths":["*"]}]}
+{"protocol":1,"oracles":[{"id":"sha256:87cd8b2f319b93ec0c20ceee263cfee3b0ec9eafafb064e14cd94156a9c94afc","kind":"deterministic_test","paths":["*"]},{"id":"architecture-queue-runtime","kind":"runtime_readback","paths":["*"]}]}
 ```
 
 ## Acceptance Policy
