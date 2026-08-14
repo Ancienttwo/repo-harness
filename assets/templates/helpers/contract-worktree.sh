@@ -1616,7 +1616,7 @@ finish_worktree() {
   verified_sha="$(verify_merge_gate_seal "$gate_base_ref")"
   current_head="$(git rev-parse "$current_branch^{commit}")"
   [[ "$verified_sha" == "$current_head" ]] || { echo "contract-worktree: branch moved after merge-gate review" >&2; exit 1; }
-  [[ "$(git -C "$target_worktree" rev-parse "$target_branch^{commit}")" == "$frozen_base_sha" ]] || {
+  [[ "$(git -C "$target_worktree" rev-parse "refs/heads/$target_branch^{commit}")" == "$frozen_base_sha" ]] || {
     echo "contract-worktree: target branch moved after merge-gate review" >&2
     exit 1
   }
@@ -1660,11 +1660,11 @@ finish_worktree() {
   }
   finish_transaction_phase publication_prepared "$publication_sha"
   git -C "$target_worktree" merge --ff-only "$publication_sha"
-  [[ "$(git -C "$target_worktree" rev-parse "$target_branch^{commit}")" == "$publication_sha" ]] || {
+  [[ "$(git -C "$target_worktree" rev-parse "refs/heads/$target_branch^{commit}")" == "$publication_sha" ]] || {
     echo "contract-worktree: target branch does not resolve to synthesized publication commit" >&2
     exit 1
   }
-  [[ "$(git -C "$target_worktree" rev-parse "$target_branch^{tree}")" == "$publication_tree" ]] || {
+  [[ "$(git -C "$target_worktree" rev-parse "refs/heads/$target_branch^{tree}")" == "$publication_tree" ]] || {
     echo "contract-worktree: published target tree does not match verified lifecycle tree" >&2
     exit 1
   }

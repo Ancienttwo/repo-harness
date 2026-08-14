@@ -61,6 +61,7 @@ function installFixture(container: string): { primary: string; linked: string } 
   expect(run("git", ["init", "-b", "main"], primary).status).toBe(0);
   expect(run("git", ["config", "user.name", "Publication Test"], primary).status).toBe(0);
   expect(run("git", ["config", "user.email", "publication@test.local"], primary).status).toBe(0);
+  expect(run("git", ["config", "commit.gpgsign", "false"], primary).status).toBe(0);
 
   for (const dir of [
     "scripts",

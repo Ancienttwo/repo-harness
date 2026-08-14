@@ -234,6 +234,7 @@ function installFixture(container: string): Fixture {
   expect(runProcess("git", ["init", "-b", "main"], primary).status).toBe(0);
   expect(runProcess("git", ["config", "user.name", "Journal Test"], primary).status).toBe(0);
   expect(runProcess("git", ["config", "user.email", "journal@test.local"], primary).status).toBe(0);
+  expect(runProcess("git", ["config", "commit.gpgsign", "false"], primary).status).toBe(0);
 
   for (const dir of [
     "scripts",

@@ -44,6 +44,8 @@
 - Empty publication commits are rejected when lifecycle and target trees match, with a focused negative control. Complete replay resolves `refs/heads/<target>` rather than an ambiguous short ref.
 - The third Claude pass returned no P1 and one P2: completed publication replay used exact target-HEAD equality. The predicate now uses the same ancestry semantics as landed-effect detection. A direct runtime test proves later target commits preserve completion while a target reset that removes the publication invalidates it.
 - The post-fix 148-test combined run had three failures: the new replay test failed before its positional-argument harness was corrected, while two unrelated ship-worktrees cases failed from transient account-home resolution. Focused reruns after correction passed 1/1 and 2/2 respectively; the prior full publication suite remains 147/0 before this final one-test addition.
+- The fourth Claude pass returned no P1 and two mechanical P2 findings. All Step 7 target assertions now use fully qualified `refs/heads/<target>` refs, and both publication fixtures set repo-local `commit.gpgsign=false` so host global signing configuration cannot leak into ordinary cases; explicit fake-Git signing tests remain authoritative for the signed path.
+- The resulting combined run passed every publication/journal test and 146/148 overall; the same two unrelated ship-worktrees account-home cases remained red in the combined process and are rerun separately as their established environment-sensitive boundary.
 
 ## Architecture Major-Change Adjudication
 
