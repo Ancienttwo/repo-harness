@@ -1,7 +1,7 @@
 # workflow-engine/contract-assets 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" sourceDigest="sha256:d48a6c323aecbfa1738025ed07ee5940c601c2c1e112c845b3c0119a4cb80fae" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:d3bb3ddc2b9499424598cb104acb0b1cc871580f9d11054a1e827636c68bcbbf" verifiedAgainst="codex/contract-worktree-single-publication@25f470b79253042df604b919dbe9b6dff9164506@2026-08-14T17:06:34+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" sourceDigest="sha256:a738bfb2788564971142f8e4d2b069494262756691773dd5ca585b1312ddff05" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:9c10c9da08fef0435e9d53535ff657ca5f31e443a542afeba746f0dec5ab5cfe" verifiedAgainst="codex/contract-worktree-single-publication@99419a294cacbede8f2f7dd0ea036f5eaf11aab7@2026-08-14T17:33:10+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`codex/contract-worktree-single-publication@25f470b79253042df604b919dbe9b6dff9164506`(2026-08-14)
+> **Verified against**:`codex/contract-worktree-single-publication@99419a294cacbede8f2f7dd0ea036f5eaf11aab7`(2026-08-14)
 > **Capability ID**:`capability.workflow-engine.contract-assets`(kind `capability`)
 > **Matched Prefixes**:`assets/workflow-contract.v1.json`、`.ai/harness/workflow-contract.json`、`.ai/harness/policy.json`、`.ai/context/context-map.json`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-run.ts`、`scripts/contract-worktree.sh`、`scripts/archive-workflow.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`src/cli/commands/init.ts`、`src/cli/commands/capability-context.ts`、`src/cli/runtime/helper-runner.ts`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`
 > **Local Contracts**:`assets/AGENTS.md`、`assets/CLAUDE.md`
@@ -36,7 +36,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 文件數:`161`
-- 總行數:`45496`
+- 總行數:`45546`
 - 匹配前綴:`assets/workflow-contract.v1.json`、`.ai/harness/workflow-contract.json`、`.ai/harness/policy.json`、`.ai/context/context-map.json`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-run.ts`、`scripts/contract-worktree.sh`、`scripts/archive-workflow.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`src/cli/commands/init.ts`、`src/cli/commands/capability-context.ts`、`src/cli/runtime/helper-runner.ts`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`
 - 復算:`archctx docs plan --json`(掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`)
 
@@ -153,7 +153,12 @@ sequenceDiagram
   created-but-unpublished object as abortable and a target ref containing that
   exact commit as landed, so the pre-existing SIGKILL window remains fail-closed.
 - Publication preserves repository signing policy: `commit.gpgsign=true`
-  selects `commit-tree -S`, and a signing failure stops before target mutation.
+  selects `commit-tree -S`; invalid policy values and signing failures stop
+  before target mutation. A lifecycle tree already equal to the target tree is
+  rejected rather than published as an empty commit.
+- After the target ref contains the publication commit, in-process assertion or
+  journal-write failures retain the lifecycle state and journal for explicit
+  reconcile; the EXIT trap may auto-abort only while no target effect exists.
 - Recovery of journals created before this cutover is explicitly bounded to
   the next major release: only a missing-`publication_prepared` lifecycle HEAD
   already contained by the target is recognized. Operators must resolve those

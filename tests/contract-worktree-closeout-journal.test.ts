@@ -194,6 +194,7 @@ const FAKE_DD = [
   `[[ "\$payload" == *'"operation": "ship"'* && "\$payload" == *'"status": "complete"'* ]] && kill_on_complete=1`,
   `[[ "\${FAULT_FINISH_COMPLETE:-0}" == "1" && "\$payload" == *'"operation": "finish"'* && "\$payload" == *'"status": "complete"'* ]] && kill_on_complete=1`,
   `[[ "\${FAULT_BEFORE_PUBLICATION_PREPARED:-0}" == "1" && "\$payload" == *'"phase": "publication_prepared"'* ]] && kill_on_complete=1`,
+  `if [[ "\${FAULT_FAIL_MERGED_WRITE:-0}" == "1" && "\$payload" == *'"phase": "merged"'* ]]; then exit 74; fi`,
   'if [[ -f "${FAULT_PID_FILE:-/nonexistent}" && "$kill_on_complete" == "1" ]]; then',
   '  kill -9 "$(cat "$FAULT_PID_FILE")" 2>/dev/null || true',
   "  exit 137",
@@ -783,6 +784,40 @@ describe("contract-worktree finish closeout journal", () => {
       expect(reconcile.status, `${reconcile.stdout}\n${reconcile.stderr}`).toBe(0);
       expect(readJournal(dir).status).toBe("complete");
       expect(runProcess("git", ["rev-parse", "main"], fixture.primary).stdout.trim()).toBe(lifecycleHead);
+    });
+  }, 30_000);
+
+  test("an in-process journal write failure after publication retains recovery authority", () => {
+    withTempRepo("closeout-journal-landed-write-failure", (container) => {
+      const fixture = installFixture(container);
+      const mainBefore = runProcess("git", ["rev-parse", "main"], fixture.primary).stdout.trim();
+      const ddShim = join(container, "merged-write-dd-shim");
+      mkdirSync(ddShim, { recursive: true });
+      writeExecutable(join(ddShim, "dd"), FAKE_DD);
+
+      const failed = runHelper("scripts/contract-worktree.sh", ["finish", "--merge"], fixture.linked, {
+        FAULT_FAIL_MERGED_WRITE: "1",
+        PATH: `${ddShim}:${process.env.PATH ?? ""}`,
+      });
+      expect(failed.status).not.toBe(0);
+      expect(failed.stderr).toContain("target publication landed; journal retained for 'recover reconcile'");
+
+      const dir = onlyJournal(fixture, "finish");
+      const journal = readJournal(dir);
+      expect(journal.status).toBe("in_progress");
+      expect(journal.phases).toContain("publication_prepared");
+      expect(journal.phases).not.toContain("merged");
+      const published = runProcess("git", ["rev-parse", "main"], fixture.primary).stdout.trim();
+      expect(published).not.toBe(mainBefore);
+      expect(runProcess("git", ["rev-parse", "main^{tree}"], fixture.primary).stdout.trim()).toBe(
+        runProcess("git", ["rev-parse", "HEAD^{tree}"], fixture.linked).stdout.trim(),
+      );
+      expect(existsSync(join(fixture.linked, PLAN))).toBe(false);
+
+      const reconcile = runHelper("scripts/contract-worktree.sh", ["recover", "reconcile"], fixture.linked);
+      expect(reconcile.status, `${reconcile.stdout}\n${reconcile.stderr}`).toBe(0);
+      expect(readJournal(dir).status).toBe("complete");
+      expect(runProcess("git", ["rev-parse", "main"], fixture.primary).stdout.trim()).toBe(published);
     });
   }, 30_000);
 

@@ -1,7 +1,7 @@
 # public-surface/adoption 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-adoption" sourceDigest="sha256:d48a6c323aecbfa1738025ed07ee5940c601c2c1e112c845b3c0119a4cb80fae" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:3520f4e3088f8301b8d53e09c28369a8dc5c342d2f2bd80d5b751540d7725265" verifiedAgainst="codex/contract-worktree-single-publication@25f470b79253042df604b919dbe9b6dff9164506@2026-08-14T17:06:34+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-adoption" sourceDigest="sha256:a738bfb2788564971142f8e4d2b069494262756691773dd5ca585b1312ddff05" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:0769f40971fa7f820733ebe17c207275b51ef6137f9c0b1bfe2d1ff657fa887e" verifiedAgainst="codex/contract-worktree-single-publication@99419a294cacbede8f2f7dd0ea036f5eaf11aab7@2026-08-14T17:33:10+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`codex/contract-worktree-single-publication@25f470b79253042df604b919dbe9b6dff9164506`(2026-08-14)
+> **Verified against**:`codex/contract-worktree-single-publication@99419a294cacbede8f2f7dd0ea036f5eaf11aab7`(2026-08-14)
 > **Capability ID**:`capability.public-surface.adoption`(kind `capability`)
 > **Matched Prefixes**:`src/cli/commands/adoption-plan.ts`、`src/core/adoption/**`、`src/effects/fs-transaction.ts`、`src/effects/path-safety.ts`、`tests/cli/adoption-plan.test.ts`、`tests/fixtures/adoption/**`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`

@@ -1,7 +1,7 @@
 # runtime-harness/hook-adapters 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:d48a6c323aecbfa1738025ed07ee5940c601c2c1e112c845b3c0119a4cb80fae" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:badb961c7141168788d8a90300db1e9e2cdf6abd06a2e3a4c289991c9d7d4103" verifiedAgainst="codex/contract-worktree-single-publication@25f470b79253042df604b919dbe9b6dff9164506@2026-08-14T17:06:34+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:a738bfb2788564971142f8e4d2b069494262756691773dd5ca585b1312ddff05" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:e8f753097ee6061691f338a7dfdae54339a627fa4563e49c305115ceb6287862" verifiedAgainst="codex/contract-worktree-single-publication@99419a294cacbede8f2f7dd0ea036f5eaf11aab7@2026-08-14T17:33:10+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`codex/contract-worktree-single-publication@25f470b79253042df604b919dbe9b6dff9164506`(2026-08-14)
+> **Verified against**:`codex/contract-worktree-single-publication@99419a294cacbede8f2f7dd0ea036f5eaf11aab7`(2026-08-14)
 > **Capability ID**:`capability.runtime-harness.hook-adapters`(kind `capability`)
 > **Matched Prefixes**:`assets/hooks/**`、`.ai/hooks/**`、`scripts/run-skill-hook.ts`、`src/cli/installer/**`、`src/cli/hook/**`、`src/cli/hook-entry.ts`
 > **Local Contracts**:`assets/hooks/AGENTS.md`、`assets/hooks/CLAUDE.md`

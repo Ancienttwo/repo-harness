@@ -267,4 +267,114 @@ describe("contract-worktree single publication commit", () => {
       rmSync(container, { recursive: true, force: true });
     }
   }, 30_000);
+
+  test("finish refuses an empty publication when lifecycle and frozen target trees match", () => {
+    const container = realpathSync(mkdtempSync(join(tmpdir(), "contract-worktree-empty-publication-")));
+    try {
+      const { primary, linked } = installFixture(container);
+      const base = run("git", ["rev-parse", "main"], primary).stdout.trim();
+      const fixedTree = run("git", ["rev-parse", "main^{tree}"], primary).stdout.trim();
+      const fakeGit = join(container, "equal-tree-git.sh");
+      writeExecutable(
+        fakeGit,
+        [
+          "#!/bin/bash",
+          'if [[ "${1:-}" == "rev-parse" && "${2:-}" == *"^{tree}" ]]; then',
+          '  printf "%s\\n" "$FIXED_PUBLICATION_TREE"',
+          "  exit 0",
+          "fi",
+          `exec ${JSON.stringify(REAL_GIT)} "$@"`,
+          "",
+        ].join("\n"),
+      );
+      mkdirSync(join(linked, "src"), { recursive: true });
+      writeFileSync(join(linked, "src/change.ts"), "export const changed = true;\n");
+      commitAll(linked, "checkpoint before empty publication");
+
+      const finish = run("bash", ["scripts/contract-worktree.sh", "finish", "--merge"], linked, {
+        REPO_HARNESS_GIT_BIN: fakeGit,
+        FIXED_PUBLICATION_TREE: fixedTree,
+      });
+
+      expect(finish.status).not.toBe(0);
+      expect(finish.stderr).toContain("refusing empty publication");
+      expect(run("git", ["rev-parse", "main"], primary).stdout.trim()).toBe(base);
+    } finally {
+      rmSync(container, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("commit.gpgsign requires the signed commit-tree path and fails before target mutation", () => {
+    const container = realpathSync(mkdtempSync(join(tmpdir(), "contract-worktree-signed-publication-")));
+    try {
+      const { primary, linked } = installFixture(container);
+      const base = run("git", ["rev-parse", "main"], primary).stdout.trim();
+      const fakeGit = join(container, "signed-git.sh");
+      writeExecutable(
+        fakeGit,
+        [
+          "#!/bin/bash",
+          'if [[ "${1:-}" == "config" && "${2:-}" == "--get" && "${3:-}" == "commit.gpgsign" ]]; then printf "true\\n"; exit 0; fi',
+          'if [[ "${1:-}" == "config" && "${2:-}" == "--bool" && "${3:-}" == "--get" && "${4:-}" == "commit.gpgsign" ]]; then printf "true\\n"; exit 0; fi',
+          'if [[ "${1:-}" == "commit-tree" ]]; then',
+          '  for arg in "$@"; do',
+          '    if [[ "$arg" == "-S" ]]; then echo "injected signing failure" >&2; exit 55; fi',
+          "  done",
+          "  echo 'commit-tree omitted -S' >&2",
+          "  exit 56",
+          "fi",
+          `exec ${JSON.stringify(REAL_GIT)} "$@"`,
+          "",
+        ].join("\n"),
+      );
+      mkdirSync(join(linked, "src"), { recursive: true });
+      writeFileSync(join(linked, "src/change.ts"), "export const changed = true;\n");
+      commitAll(linked, "checkpoint before signing failure");
+
+      const finish = run("bash", ["scripts/contract-worktree.sh", "finish", "--merge"], linked, {
+        REPO_HARNESS_GIT_BIN: fakeGit,
+      });
+
+      expect(finish.status).not.toBe(0);
+      expect(finish.stderr).toContain("injected signing failure");
+      expect(finish.stderr).not.toContain("commit-tree omitted -S");
+      expect(run("git", ["rev-parse", "main"], primary).stdout.trim()).toBe(base);
+    } finally {
+      rmSync(container, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("an invalid commit.gpgsign value fails closed before commit-tree", () => {
+    const container = realpathSync(mkdtempSync(join(tmpdir(), "contract-worktree-invalid-signing-")));
+    try {
+      const { primary, linked } = installFixture(container);
+      const base = run("git", ["rev-parse", "main"], primary).stdout.trim();
+      const fakeGit = join(container, "invalid-signing-git.sh");
+      writeExecutable(
+        fakeGit,
+        [
+          "#!/bin/bash",
+          'if [[ "${1:-}" == "config" && "${2:-}" == "--get" && "${3:-}" == "commit.gpgsign" ]]; then printf "sometimes\\n"; exit 0; fi',
+          'if [[ "${1:-}" == "config" && "${2:-}" == "--bool" && "${3:-}" == "--get" && "${4:-}" == "commit.gpgsign" ]]; then exit 3; fi',
+          'if [[ "${1:-}" == "commit-tree" ]]; then echo "commit-tree must not run" >&2; exit 57; fi',
+          `exec ${JSON.stringify(REAL_GIT)} "$@"`,
+          "",
+        ].join("\n"),
+      );
+      mkdirSync(join(linked, "src"), { recursive: true });
+      writeFileSync(join(linked, "src/change.ts"), "export const changed = true;\n");
+      commitAll(linked, "checkpoint before invalid signing config");
+
+      const finish = run("bash", ["scripts/contract-worktree.sh", "finish", "--merge"], linked, {
+        REPO_HARNESS_GIT_BIN: fakeGit,
+      });
+
+      expect(finish.status).not.toBe(0);
+      expect(finish.stderr).toContain("commit.gpgsign is configured but is not a valid boolean");
+      expect(finish.stderr).not.toContain("commit-tree must not run");
+      expect(run("git", ["rev-parse", "main"], primary).stdout.trim()).toBe(base);
+    } finally {
+      rmSync(container, { recursive: true, force: true });
+    }
+  }, 30_000);
 });

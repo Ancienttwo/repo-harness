@@ -695,7 +695,7 @@ closeout_journal_complete_effect_present() {
   if [[ "$operation" == "finish" && "$merge_back" == "1" ]]; then
     target_branch="$(closeout_journal_field "$dir/meta.json" target_branch)"
     [[ -n "$target_branch" ]] || return 1
-    [[ "$(git rev-parse "$target_branch^{commit}" 2>/dev/null)" == "$complete_ref" ]]
+    [[ "$(git rev-parse "refs/heads/$target_branch^{commit}" 2>/dev/null)" == "$complete_ref" ]]
     return
   fi
   [[ "$(git rev-parse HEAD)" == "$complete_ref" ]]
@@ -969,7 +969,11 @@ finish_transaction_on_exit() {
   local status=$?
   trap - EXIT
   if [[ "$finish_transaction_active" -eq 1 && "$status" -ne 0 ]]; then
-    finish_transaction_abort || status=1
+    if closeout_finish_effect_landed "$closeout_journal_dir"; then
+      echo "contract-worktree: finish failed after target publication landed; journal retained for 'recover reconcile'" >&2
+    else
+      finish_transaction_abort || status=1
+    fi
   fi
   exit "$status"
 }
@@ -1505,7 +1509,7 @@ finish_worktree() {
     run_gate=1
   fi
 
-  local verified_sha current_head publication_sha publication_tree commit_gpgsign
+  local verified_sha current_head publication_sha publication_tree frozen_base_tree commit_gpgsign_raw commit_gpgsign config_status
   # Single timestamp authority: one `date` call for this whole finish run, shared
   # by the post-freeze allowlist prediction (Step 3, when a gate runs) and the
   # archive step's actual output (Step 4, unconditional), so the two cannot
@@ -1617,7 +1621,26 @@ finish_worktree() {
     exit 1
   }
   publication_tree="$(git rev-parse "$verified_sha^{tree}")"
-  commit_gpgsign="$(git config --bool commit.gpgsign 2>/dev/null || true)"
+  frozen_base_tree="$(git rev-parse "$frozen_base_sha^{tree}")"
+  [[ "$publication_tree" != "$frozen_base_tree" ]] || {
+    echo "contract-worktree: verified lifecycle tree already equals frozen target; refusing empty publication" >&2
+    exit 1
+  }
+  config_status=0
+  commit_gpgsign_raw="$(git config --get commit.gpgsign 2>/dev/null)" || config_status=$?
+  case "$config_status" in
+    0)
+      if ! commit_gpgsign="$(git config --bool --get commit.gpgsign 2>/dev/null)"; then
+        echo "contract-worktree: commit.gpgsign is configured but is not a valid boolean" >&2
+        exit 1
+      fi
+      ;;
+    1) commit_gpgsign="false" ;;
+    *)
+      echo "contract-worktree: cannot read commit.gpgsign configuration" >&2
+      exit 1
+      ;;
+  esac
   if [[ "$commit_gpgsign" == "true" ]]; then
     publication_sha="$(git commit-tree "$publication_tree" -p "$frozen_base_sha" \
       -m "$commit_message" \

@@ -39,6 +39,9 @@
 - `commit.gpgsign=true` now selects `commit-tree -S` and therefore fails before target mutation when signing cannot complete.
 - Static publication-order assertions now prove every marker exists before comparing indices; fake Git shims resolve the actual executable instead of assuming `/usr/bin/git`.
 - Crash coverage now includes the object-only window after `commit-tree` but before `publication_prepared` is durably written.
+- The second Claude pass returned no P1 findings and five new P2 findings. Automatic EXIT-trap rollback is now blocked after target publication, preserving the journal and lifecycle state for explicit reconcile; a real merged-phase write failure test covers this in-process error path.
+- Signing policy reads now distinguish unset, valid, invalid, and unreadable states. Invalid values fail closed, and a fake-Git runtime test proves `commit.gpgsign=true` reaches `commit-tree -S` and leaves the target untouched on signing failure.
+- Empty publication commits are rejected when lifecycle and target trees match, with a focused negative control. Complete replay resolves `refs/heads/<target>` rather than an ambiguous short ref.
 
 ## Architecture Major-Change Adjudication
 
