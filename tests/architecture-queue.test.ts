@@ -295,6 +295,25 @@ describe("architecture queue", () => {
     });
   }, 30_000);
 
+  test("invalid legacy migration fails before journal or audit mutation", () => {
+    tmpRepo((cwd) => {
+      const target = "src/cli/hook/legacy-invalid.ts";
+      expect(queue(cwd, ["record", "--file", target]).status).toBe(0);
+      const cardPath = join(cwd, "docs/architecture/requests/root.md");
+      const eventsPath = join(cwd, ".ai/harness/architecture/events.jsonl");
+      const legacy = readFileSync(cardPath, "utf8")
+        .replace(/\n## Event Records\s*\n```json[\s\S]*?```\s*\n?/, "\n")
+        .replace(/,\n  "event_key": "sha256:[0-9a-f]{64}"/, "")
+        .replace("> **Open Edits**: 1", "> **Open Edits**: 9");
+      writeFileSync(cardPath, legacy);
+      const before = readFileSync(eventsPath, "utf8");
+      const failed = queue(cwd, ["record", "--file", "src/cli/hook/new-after-invalid.ts"]);
+      expect(failed.status).toBe(1);
+      expect(readFileSync(eventsPath, "utf8")).toBe(before);
+      expect(existsSync(join(cwd, "docs/architecture/requests/.architecture-queue-transaction.json"))).toBe(false);
+    });
+  }, 30_000);
+
   test("status fails closed when card metadata diverges from canonical records", () => {
     tmpRepo((cwd) => {
       expect(queue(cwd, ["record", "--file", "src/cli/hook/metadata.ts"]).status).toBe(0);
@@ -303,6 +322,10 @@ describe("architecture queue", () => {
       writeFileSync(cardPath, canonical.replace("> **Severity**: high", "> **Severity**: low"));
       expect(queue(cwd, ["status", "--gate"]).status).toBe(1);
       writeFileSync(cardPath, canonical.replace("> **Status**: Pending\n", ""));
+      expect(queue(cwd, ["status", "--gate"]).status).toBe(1);
+      writeFileSync(cardPath, canonical.replace(/> \*\*Updated\*\*: .*\n/, "> **Updated**: 1999-01-01T00:00:00Z\n"));
+      expect(queue(cwd, ["status", "--gate"]).status).toBe(1);
+      writeFileSync(cardPath, canonical.replace("> **Spawn Recommended**: true", "> **Spawn Recommended**: false"));
       expect(queue(cwd, ["status", "--gate"]).status).toBe(1);
     });
   }, 30_000);
@@ -330,6 +353,31 @@ describe("architecture queue", () => {
       await new Promise((resolve) => child.on("exit", resolve));
       const retried = queue(cwd, ["record", "--file", "src/cli/hook/crash.ts"]);
       expect(retried.status, retried.stderr).toBe(0);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("record never reclaims a live shared rotation lock at the old two-second threshold", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "architecture-queue-live-rotation-"));
+    try {
+      mkdirSync(join(cwd, "scripts"), { recursive: true });
+      mkdirSync(join(cwd, "docs/architecture/requests"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness/architecture"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness/.locks/evt-events.jsonl.lock"), { recursive: true });
+      for (const file of ["architecture-queue.sh", "architecture-event.ts", "archive-architecture-request.sh"]) {
+        copyFileSync(join(ROOT, "scripts", file), join(cwd, "scripts", file));
+      }
+      writeFileSync(join(cwd, "docs/architecture/index.md"), "# Architecture Index\n\n## Pending Requests\n");
+      const child = spawn("bash", ["scripts/architecture-queue.sh", "record", "--file", "src/cli/hook/live-rotation.ts"], { cwd });
+      const exited = new Promise<number | null>((resolve) => child.on("exit", resolve));
+      await Bun.sleep(2500);
+      const lock = join(cwd, ".ai/harness/.locks/evt-events.jsonl.lock");
+      expect(existsSync(lock)).toBe(true);
+      expect(existsSync(join(cwd, "docs/architecture/requests/root.md"))).toBe(false);
+      rmSync(lock, { recursive: true, force: true });
+      const exitCode = await exited;
+      expect(exitCode).toBe(0);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

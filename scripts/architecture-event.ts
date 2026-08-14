@@ -393,11 +393,44 @@ function validateCardMetadata(file: string, events: ArchitectureEvent[], latest:
     "Architecture Capability": latest.architecture_capability || "",
     "Architecture Module": latest.architecture_module || "",
     "Workstream Directory": latest.workstream_dir || "",
+    Updated: latest.ts || "",
+    "Contract Files": `${latest.contract_agents || "none"}\`, \`${latest.contract_claude || "none"}`,
+    "Contract Sync Required": String(Boolean(latest.contract_sync_required)),
+    "Spawn Recommended": String(events.some((entry) => Boolean(entry.spawn_recommended))),
     "Open Edits": String(events.length),
   };
   for (const [label, value] of Object.entries(expected)) {
     if (metadata[label] !== value) throw new Error(`architecture request metadata ${label} does not match canonical records: ${file}`);
   }
+  const earliest = events.map((entry) => entry.ts || "").filter(Boolean).sort()[0] || "";
+  if (!metadata.Detected || metadata.Detected > earliest) {
+    throw new Error(`architecture request metadata Detected is not a valid first observation: ${file}`);
+  }
+}
+
+function validateLegacyCard(file: string, events: ArchitectureEvent[]): void {
+  if (events.length === 0) throw new Error(`legacy architecture card has no reconstructable audit events: ${file}`);
+  const source = readFileSync(file, "utf8");
+  const fieldsMatch = source.match(/## Event Fields\s*```json\s*([\s\S]*?)\s*```/);
+  if (!fieldsMatch) throw new Error(`legacy architecture card is missing Event Fields: ${file}`);
+  const raw = JSON.parse(fieldsMatch[1]);
+  if (Object.prototype.hasOwnProperty.call(raw, "event_key")) {
+    throw new Error(`modern architecture request is missing Event Records: ${file}`);
+  }
+  const latest = dedupeEvents(events)[0];
+  const expectedLegacy = { ...latest, severity: maxSeverity(events.map((entry) => entry.severity || "unknown")), event_key: undefined };
+  const normalizedLegacy = validateEvent(raw, file, false);
+  for (const field of EVENT_STRING_FIELDS) {
+    if (normalizedLegacy[field] !== expectedLegacy[field]) {
+      throw new Error(`legacy architecture Event Fields ${field} do not match the audit log: ${file}`);
+    }
+  }
+  if (normalizedLegacy.severity !== expectedLegacy.severity) throw new Error(`legacy architecture severity does not match the audit log: ${file}`);
+  if (normalizedLegacy.spawn_recommended !== expectedLegacy.spawn_recommended
+    || normalizedLegacy.contract_sync_required !== expectedLegacy.contract_sync_required) {
+    throw new Error(`legacy architecture booleans do not match the audit log: ${file}`);
+  }
+  validateCardMetadata(file, events, expectedLegacy);
 }
 
 function markdownCodeCell(value: string): string {
@@ -501,7 +534,7 @@ function withEventLogLock<T>(eventFile: string, operation: () => T): T {
     } catch (error: any) {
       if (error?.code !== "EEXIST") throw error;
       const ageMs = Date.now() - statSync(lockDir).mtimeMs;
-      if (ageMs >= 2_000) {
+      if (ageMs >= 60_000) {
         try {
           rmdirSync(lockDir);
           continue;
@@ -690,12 +723,13 @@ function upsertRequest(args: Args): "changed" | "unchanged" {
   return "changed";
 }
 
-function legacyEventsFromLog(eventFile: string, requestFile: string): ArchitectureEvent[] {
+function legacyEventsFromLog(eventFile: string, requestFile: string, excludeTransactionId = ""): ArchitectureEvent[] {
   if (!existsSync(eventFile)) return [];
   const events: ArchitectureEvent[] = [];
   for (const line of readFileSync(eventFile, "utf8").split(/\r?\n/)) {
     if (!line.trim()) continue;
-    const parsed = JSON.parse(line) as ArchitectureEvent;
+    const parsed = JSON.parse(line) as ArchitectureEvent & { transaction_id?: string };
+    if (excludeTransactionId && parsed.transaction_id === excludeTransactionId) continue;
     if (parsed.request_file !== requestFile) continue;
     events.push(validateEvent(parsed, requestFile, false));
   }
@@ -723,6 +757,19 @@ function recordEvent(args: Args): "changed" | "unchanged" {
   return withQueueLock(requestsDir, () => {
     const transactionFile = `${requestsDir}/.architecture-queue-transaction.json`;
     for (const target of [requestFile, eventFile, indexFile, transactionFile]) assertSafeWriteTarget(target);
+    let legacyPreflightEvents: ArchitectureEvent[] | null = null;
+    if (existsSync(requestFile)) {
+      const source = readFileSync(requestFile, "utf8");
+      if (!/## Event Records\s*```json/.test(source)) {
+        let recoveryTransactionId = "";
+        if (existsSync(transactionFile)) {
+          const recovery = JSON.parse(readFileSync(transactionFile, "utf8"));
+          recoveryTransactionId = typeof recovery.transaction_id === "string" ? recovery.transaction_id : "";
+        }
+        legacyPreflightEvents = legacyEventsFromLog(eventFile, requestFile, recoveryTransactionId);
+        validateLegacyCard(requestFile, legacyPreflightEvents);
+      }
+    }
     if (!existsSync(transactionFile) && existsSync(requestFile)) {
       const source = readFileSync(requestFile, "utf8");
       if (/## Event Records\s*```json/.test(source)) {
@@ -759,23 +806,9 @@ function recordEvent(args: Args): "changed" | "unchanged" {
     if (process.env.REPO_HARNESS_ARCHITECTURE_FAIL_AFTER_EVENT === "1") {
       throw new Error("injected architecture failure after event persistence");
     }
-    let migrationEventsJson: string | undefined;
-    if (existsSync(requestFile)) {
-      const source = readFileSync(requestFile, "utf8");
-      const hasRecords = /## Event Records\s*```json/.test(source);
-      if (!hasRecords) {
-        const legacyShape = source.match(/## Event Fields\s*```json\s*([\s\S]*?)\s*```/);
-        if (!legacyShape || Object.prototype.hasOwnProperty.call(JSON.parse(legacyShape[1]), "event_key")) {
-          throw new Error(`architecture request is not a recognized stable legacy card: ${requestFile}`);
-        }
-        const migrated = legacyEventsFromLog(eventFile, requestFile);
-        const openEdits = Number(readMetadata(requestFile)["Open Edits"] || "0");
-        if (migrated.length === 0 || (migrated.length !== openEdits && migrated.length !== openEdits + 1)) {
-          throw new Error(`legacy architecture card cannot be reconstructed from the audit log: ${requestFile}`);
-        }
-        migrationEventsJson = JSON.stringify(migrated);
-      }
-    }
+    const migrationEventsJson = legacyPreflightEvents
+      ? JSON.stringify(dedupeEvents([...legacyPreflightEvents, activeEvent]))
+      : undefined;
     const result = upsertRequest({
       ...args,
       options: {
