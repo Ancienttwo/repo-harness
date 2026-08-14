@@ -386,6 +386,36 @@ describe("D6 redaction: typed-field exemption (EPC-05 gatekeeper CRITICAL fix)",
     expect(result.nested.kind).not.toBe(prefixedToken);
   });
 
+  test("Change Assessment oracle IDs survive only at the fingerprinted required_oracles path", () => {
+    const oracleId = "published-package-runtime-readback";
+    expect(oracleId.length).toBeGreaterThanOrEqual(32);
+    const result = redactPayloadStrings({
+      change_assessment: {
+        assessment: { required_oracles: [{ id: oracleId }] },
+        selection_packet: { required_oracles: [{ id: oracleId }] },
+      },
+      unrelated: { id: oracleId },
+    }, []) as {
+      change_assessment: {
+        assessment: { required_oracles: Array<{ id: string }> };
+        selection_packet: { required_oracles: Array<{ id: string }> };
+      };
+      unrelated: { id: string };
+    };
+    expect(result.change_assessment.assessment.required_oracles[0]?.id).toBe(oracleId);
+    expect(result.change_assessment.selection_packet.required_oracles[0]?.id).toBe(oracleId);
+    expect(result.unrelated.id).not.toBe(oracleId);
+  });
+
+  test("known-secret matching still redacts a Change Assessment oracle ID", () => {
+    const oracleId = "published-package-runtime-readback";
+    const result = redactPayloadStrings({ required_oracles: [{ id: oracleId }] }, [oracleId]) as {
+      required_oracles: Array<{ id: string }>;
+    };
+    expect(result.required_oracles[0]?.id).not.toContain(oracleId);
+    expect(result.required_oracles[0]?.id).toContain("sha256:");
+  });
+
   test("array entries that are whole-value safe repo-relative paths are exempt too (allowed_paths/files_changed)", () => {
     const result = redactPayloadStrings(
       { allowed_paths: [LONG_SLUG_CONTRACT_PATH, "scripts/verify-sprint.sh"] },

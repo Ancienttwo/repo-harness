@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 
-import type { EvidenceEventRecord, SubjectIdentity, TrustClass } from "../src/core/evidence/types";
+import type { EvidenceEventRecord, JsonValue, SubjectIdentity, TrustClass } from "../src/core/evidence/types";
 import { appendEvidenceEvent, appendGenesisRecord, readAcceptedEvents } from "../src/effects/evidence/event-log";
 import { LEDGER_EPOCH_START_SHA } from "../src/effects/evidence/epoch";
 import { emitAuthoritativeVerifyEvidence } from "../src/effects/evidence/verify-producer";
@@ -17,6 +17,7 @@ import {
 } from "../src/effects/evidence/checks-materializer";
 import { canonicalize } from "../src/core/evidence/canonical-json";
 import { createHash } from "crypto";
+import { assessChange, buildReviewSelectionPacket } from "../src/core/review/change-assessment";
 import {
   runMutationObserved,
   readPendingPostEditEvents,
@@ -480,7 +481,30 @@ describe("checks-materializer: writeChecksLatest overwrite semantics", () => {
   test("end-to-end (gatekeeper CRITICAL regression): a realistic-length contract slug + real sha256:-prefixed review_subject_sha256 survives materialization byte-identical, D8-provenanced", () => {
     withTempRepo("materializer-end-to-end-pass", (repoRoot) => {
       setupGitFixtureRepo(repoRoot, LONG_SLUG_CONTRACT_RELATIVE);
-      const expectedSubject = recomputeExpectedSubject(repoRoot);
+      const subject = buildReviewSubject(repoRoot, { targetRef: "base-tag" });
+      expect(subject.status).toBe("ok");
+      const expectedSubject = subject.review_subject_sha256;
+      const oracle = { id: "published-package-runtime-readback", kind: "runtime_readback" as const, paths: ["*"] };
+      const assessment = assessChange({
+        subject,
+        workflowProfile: "strict",
+        strictCategories: ["release"],
+        patternNoveltyPaths: [],
+        declaredOracles: [oracle],
+      });
+      expect(assessment.status).toBe("ready");
+      if (assessment.status !== "ready") return;
+      const selectionPacket = buildReviewSelectionPacket(assessment);
+      const changeAssessmentBasis = {
+        schema: "repo-harness-change-assessment-evidence.v1",
+        status: "pass",
+        assessment,
+        selection_packet: selectionPacket,
+      };
+      const changeAssessment = {
+        ...changeAssessmentBasis,
+        evidence_sha256: `sha256:${createHash("sha256").update(canonicalize(changeAssessmentBasis as unknown as JsonValue)).digest("hex")}`,
+      };
       const runTrace = {
         schema: "repo-harness-run-trace.v1",
         status: "pass",
@@ -493,11 +517,7 @@ describe("checks-materializer: writeChecksLatest overwrite semantics", () => {
         review: { file: "tasks/reviews/fixture.review.md", status: "pass" },
         active_plan: LONG_SLUG_ACTIVE_PLAN,
         guards: [{ name: "contract", status: "pass" }],
-        change_assessment: {
-          schema: "repo-harness-change-assessment-evidence.v1",
-          status: "pass",
-          selection_packet: { kind: "repo-harness-review-selection-packet" },
-        },
+        change_assessment: changeAssessment,
       };
       const emitResult = emitAuthoritativeVerifyEvidence({
         repoRoot,
@@ -506,7 +526,7 @@ describe("checks-materializer: writeChecksLatest overwrite semantics", () => {
         status: "pass",
         runSnapshotPath: LONG_SLUG_RUN_FILE,
         expectedSubjectSha256: expectedSubject,
-        runTrace,
+        runTrace: runTrace as unknown as JsonValue,
       });
       expect(emitResult.ok).toBe(true);
       if (!emitResult.ok) return;
@@ -524,19 +544,22 @@ describe("checks-materializer: writeChecksLatest overwrite semantics", () => {
       // exact regression that slipped through: pre-fix, review_subject_sha256
       // came back double-prefixed and every long-slug path field came back
       // partially hashed, so this assertion alone would have caught it.
-      expect(consumerFacing).toEqual(runTrace);
+      expect(consumerFacing as unknown).toEqual(runTrace as unknown);
       expect(projection.provenance.source_event_ids).toEqual([emitResult.event.event_id]);
       expect(projection.provenance.worktree_id).toBe(emitResult.genesis.worktree_id);
 
       // Direct, named field-level proof of the CRITICAL finding.
-      expect((consumerFacing as typeof runTrace).review_subject_sha256).toBe(expectedSubject);
-      expect((consumerFacing as typeof runTrace).review_subject_sha256).not.toMatch(/^sha256:sha256:/);
-      expect((consumerFacing as typeof runTrace).run_file).toBe(LONG_SLUG_RUN_FILE);
-      expect((consumerFacing as typeof runTrace).run_file.startsWith(".ai/harness/runs/")).toBe(true);
-      expect((consumerFacing as typeof runTrace).contract.file).toBe(LONG_SLUG_CONTRACT_RELATIVE);
-      expect((consumerFacing as typeof runTrace).active_plan).toBe(LONG_SLUG_ACTIVE_PLAN);
-      expect((consumerFacing as typeof runTrace).change_assessment.schema).toBe("repo-harness-change-assessment-evidence.v1");
-      expect((consumerFacing as typeof runTrace).change_assessment.selection_packet.kind).toBe("repo-harness-review-selection-packet");
+      const materialized = consumerFacing as unknown as typeof runTrace;
+      expect(materialized.review_subject_sha256).toBe(expectedSubject);
+      expect(materialized.review_subject_sha256).not.toMatch(/^sha256:sha256:/);
+      expect(materialized.run_file).toBe(LONG_SLUG_RUN_FILE);
+      expect(materialized.run_file.startsWith(".ai/harness/runs/")).toBe(true);
+      expect(materialized.contract.file).toBe(LONG_SLUG_CONTRACT_RELATIVE);
+      expect(materialized.active_plan).toBe(LONG_SLUG_ACTIVE_PLAN);
+      expect(materialized.change_assessment.schema).toBe("repo-harness-change-assessment-evidence.v1");
+      expect(materialized.change_assessment.selection_packet.kind).toBe("repo-harness-review-selection-packet");
+      expect(materialized.change_assessment.assessment.required_oracles[0]?.id).toBe(oracle.id);
+      expect(materialized.change_assessment.selection_packet.required_oracles[0]?.id).toBe(oracle.id);
     });
   }, 30_000);
 
