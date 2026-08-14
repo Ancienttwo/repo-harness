@@ -1,6 +1,6 @@
 # Plan: Fix Change Assessment oracle evidence redaction
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260815-0230
 > **Slug**: change-assessment-oracle-redaction
 > **Planning Source**: codex-plan-or-waza-think

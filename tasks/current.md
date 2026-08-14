@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-14T21:14:31+0800 -->
+<!-- updated_at: 2026-08-15T03:23:47+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Active
-> **Updated At**: 2026-08-14T21:14:31+0800
-> **Source Branch**: codex/change-assessment-v1
-> **Source Commit**: 09711920
+> **Status**: ManualClearedWithActiveWork
+> **Updated At**: 2026-08-15T03:23:47+0800
+> **Source Branch**: codex/release-0-15-1-closeout
+> **Source Commit**: 1cdcd7bb
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: rebase-main
+> **Reason**: archive-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Active
-- Active Plan: plans/plan-20260814-1808-change-assessment-v1.md
-- Plan Status: Review
-- Next Task: (none)
-- Clear Note: (none)
+- Status: ManualClearedWithActiveWork
+- Active Plan: (none)
+- Plan Status: (none)
+- Next Task: inspect active worktree marker(s)
+- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
 
 ## Mainline Snapshot Reading
 
@@ -31,14 +31,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- .: plans/plan-20260814-1808-change-assessment-v1.md
-- .: active-worktree owner -> /private/tmp/repo-harness-wt-change-assessment-v1
-- /private/tmp/repo-harness-architecture-queue-idempotent: plans/plan-20260814-0157-architecture-queue-idempotent-events.md
-- /private/tmp/repo-harness-architecture-queue-idempotent: active-worktree owner -> /private/tmp/repo-harness-architecture-queue-idempotent
-- /private/tmp/repo-harness-wt-hook-effect-failure-contract: plans/plan-20260814-1635-hook-effect-failure-contract.md
-- /private/tmp/repo-harness-wt-hook-effect-failure-contract: active-worktree owner -> /private/tmp/repo-harness-wt-hook-effect-failure-contract
-- /private/tmp/repo-harness-wt-release-0-15-1: plans/plan-20260814-1826-release-0-15-1.md
-- /private/tmp/repo-harness-wt-release-0-15-1: active-worktree owner -> /private/tmp/repo-harness-wt-release-0-15-1
+- /private/tmp/repo-harness-wt-fix-oracle-redaction: plans/plan-20260815-0230-change-assessment-oracle-redaction.md
+- /private/tmp/repo-harness-wt-fix-oracle-redaction: active-worktree owner -> /private/tmp/repo-harness-wt-fix-oracle-redaction
+- /private/tmp/repo-harness-wt-release-0-15-1-v2: plans/plan-20260815-0140-release-0-15-1.md
+- /private/tmp/repo-harness-wt-release-0-15-1-v2: active-worktree owner -> /private/tmp/repo-harness-wt-release-0-15-1-v2
 ## Active Sprint
 
 - Sprint: (none)
@@ -58,14 +54,23 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
+- status=(none), source=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: clean
+- Summary: 10 changed/untracked path(s)
 
 ```
-(none)
+ D plans/plan-20260815-0230-change-assessment-oracle-redaction.md
+ D tasks/contracts/20260815-0230-change-assessment-oracle-redaction.contract.md
+ D tasks/notes/20260815-0230-change-assessment-oracle-redaction.notes.md
+ D tasks/reviews/20260815-0230-change-assessment-oracle-redaction.review.md
+ M tasks/todos.md
+?? plans/archive/plan-20260815-0230-change-assessment-oracle-redaction.md
+?? tasks/archive/contract-20260815-0323-change-assessment-oracle-redaction.md
+?? tasks/archive/notes-20260815-0323-change-assessment-oracle-redaction.md
+?? tasks/archive/review-20260815-0323-change-assessment-oracle-redaction.md
+?? tasks/archive/todo-20260815-0323-change-assessment-oracle-redaction.md
 ```
 
 ## Source Artifacts
