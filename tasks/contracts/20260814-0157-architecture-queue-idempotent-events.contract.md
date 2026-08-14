@@ -6,7 +6,7 @@
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
-> **Last Updated**: 2026-08-14 01:57
+> **Last Updated**: 2026-08-14 05:20
 > **Review File**: `tasks/reviews/20260814-0157-architecture-queue-idempotent-events.review.md`
 > **Notes File**: `tasks/notes/20260814-0157-architecture-queue-idempotent-events.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
@@ -21,7 +21,7 @@ Repeated `architecture-queue record` calls for the same pending file and unchang
 
 ## Scope
 
-- In scope: semantic no-op detection in `architecture-event upsert-request`; queue short-circuit before event append/reindex; packaged helper projection; focused regression test and workflow evidence.
+- In scope: semantic no-op detection; one locked queue transaction across audit event, request card, and index; canonical card authority validation; symlink-safe atomic writes; packaged helper projection; focused regression tests and workflow evidence.
 - Out of scope: architecture classification, capability resolution, ArchContext projection policy, request archival, and any existing downstream WIP.
 - Taste constraints: Preserve fail-closed helper output handling and the existing `[ArchitectureDrift] Request:` contract for real updates.
 
@@ -82,16 +82,6 @@ allowed_paths:
   - tests/architecture-queue.test.ts
   - tests/architecture-event.test.ts
   - tests/stop-handler.test.ts
-  - package.json
-  - assets/skill-version.json
-  - scripts/axr7-consumer-e2e.ts
-  - README.md
-  - README.zh-CN.md
-  - README.es.md
-  - README.fr.md
-  - README.ja.md
-  - docs/CHANGELOG.md
-  - deploy/release-checklists/260814-repo-harness-0.15.1.md
 ```
 
 ## Evidence Requirements
@@ -157,6 +147,7 @@ exit_criteria:
 
 - Functional behavior: unchanged repeated pending-file observations perform no durable architecture queue write.
 - Edge cases: a previously observed file repeated after another file remains a no-op; a genuinely different file still increments open edits.
+- Safety cases: interruption recovery, concurrent records, symlink escape, malformed/forged/non-Pending cards, mixed severity, and Markdown pipe paths fail closed or converge without loss.
 - Regression risks: semantic comparison must include routing/module/contract fields so a capability remap cannot be suppressed.
 
 ## Rollback Point

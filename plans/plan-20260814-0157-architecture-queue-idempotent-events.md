@@ -104,7 +104,7 @@ Stop repeated observations of an unchanged pending architecture file from rewrit
 ## Scope
 
 - Make `architecture-event upsert-request` report whether the pending file event changed semantically.
-- Make `architecture-queue record` stop before event append and reindex when the request is unchanged.
+- Make `architecture-queue record` reconcile audit event, request card, and index under one cross-process lock so unchanged and interrupted retries converge without data loss.
 - Keep canonical helpers and packaged helper projections byte-identical.
 - Add a regression test covering immediate repetition and repetition after another file event.
 
@@ -130,7 +130,7 @@ Treat a pending request as one current semantic event per file. Compare the stor
 - [x] Add the focused failing regression.
 - [x] Implement semantic no-op detection and queue short-circuit.
 - [x] Sync packaged helper projections.
-- [ ] Complete verification and review the final diff.
+- [ ] Complete full-suite verification and record the final acceptance receipt.
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
@@ -140,4 +140,4 @@ Treat a pending request as one current semantic event per file. Compare the stor
 - [x] Add the focused failing regression.
 - [x] Implement semantic no-op detection and queue short-circuit.
 - [x] Sync packaged helper projections.
-- [ ] Complete verification and review the final diff.
+- [ ] Complete full-suite verification and record the final acceptance receipt.
