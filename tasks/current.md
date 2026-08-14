@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-15T03:23:47+0800 -->
+<!-- updated_at: 2026-08-15T03:24:05+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-15T03:23:47+0800
+> **Updated At**: 2026-08-15T03:24:05+0800
 > **Source Branch**: codex/release-0-15-1-closeout
-> **Source Commit**: 1cdcd7bb
+> **Source Commit**: 87799292
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -58,19 +58,18 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: 9 changed/untracked path(s)
 
 ```
- D plans/plan-20260815-0230-change-assessment-oracle-redaction.md
- D tasks/contracts/20260815-0230-change-assessment-oracle-redaction.contract.md
- D tasks/notes/20260815-0230-change-assessment-oracle-redaction.notes.md
- D tasks/reviews/20260815-0230-change-assessment-oracle-redaction.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260815-0230-change-assessment-oracle-redaction.md
-?? tasks/archive/contract-20260815-0323-change-assessment-oracle-redaction.md
-?? tasks/archive/notes-20260815-0323-change-assessment-oracle-redaction.md
-?? tasks/archive/review-20260815-0323-change-assessment-oracle-redaction.md
-?? tasks/archive/todo-20260815-0323-change-assessment-oracle-redaction.md
+ D plans/plan-20260815-0140-release-0-15-1.md
+ D tasks/contracts/20260815-0140-release-0-15-1.contract.md
+ D tasks/notes/20260815-0140-release-0-15-1.notes.md
+ D tasks/reviews/20260815-0140-release-0-15-1.review.md
+?? plans/archive/plan-20260815-0140-release-0-15-1.md
+?? tasks/archive/contract-20260815-0324-release-0-15-1.md
+?? tasks/archive/notes-20260815-0324-release-0-15-1.md
+?? tasks/archive/review-20260815-0324-release-0-15-1.md
+?? tasks/archive/todo-20260815-0324-release-0-15-1.md
 ```
 
 ## Source Artifacts
