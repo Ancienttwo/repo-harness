@@ -297,6 +297,22 @@ describe("architecture queue", () => {
     });
   }, 30_000);
 
+  test("record rejects a symlinked queue-lock parent before external mutation", () => {
+    tmpRepo((cwd) => {
+      const outside = mkdtempSync(join(tmpdir(), "architecture-lock-parent-outside-"));
+      try {
+        rmSync(join(cwd, ".ai/harness/architecture"), { recursive: true, force: true });
+        symlinkSync(outside, join(cwd, ".ai/harness/architecture"));
+        const result = queue(cwd, ["record", "--file", "src/cli/hook/lock-parent.ts"]);
+        expect(result.status).toBe(1);
+        expect(readdirSync(outside)).toEqual([]);
+        expect(existsSync(join(cwd, "docs/architecture/requests/root.md"))).toBe(false);
+      } finally {
+        rmSync(outside, { recursive: true, force: true });
+      }
+    });
+  }, 30_000);
+
   test("record migrates the exact stable pre-Event-Records card from its audit log", () => {
     tmpRepo((cwd) => {
       const target = "src/cli/hook/legacy-stable.ts";
@@ -722,5 +738,32 @@ describe("architecture queue", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
+  }, 30_000);
+
+  test("archive rejects a symlinked queue-lock parent before live mutation", () => {
+    tmpRepo((cwd) => {
+      expect(queue(cwd, ["record", "--file", ".ai/hooks/pre-edit-guard.sh"]).status).toBe(0);
+      const cardPath = join(cwd, "docs/architecture/requests/root.md");
+      const indexPath = join(cwd, "docs/architecture/index.md");
+      const beforeCard = readFileSync(cardPath, "utf8");
+      const beforeIndex = readFileSync(indexPath, "utf8");
+      const outside = mkdtempSync(join(tmpdir(), "architecture-archive-lock-outside-"));
+      try {
+        rmSync(join(cwd, ".ai/harness/architecture"), { recursive: true, force: true });
+        symlinkSync(outside, join(cwd, ".ai/harness/architecture"));
+        const archive = run(
+          "bash",
+          ["scripts/archive-architecture-request.sh", "--request", "docs/architecture/requests/root.md", "--status", "no-change"],
+          cwd,
+        );
+        expect(archive.status).toBe(1);
+        expect(readFileSync(cardPath, "utf8")).toBe(beforeCard);
+        expect(readFileSync(indexPath, "utf8")).toBe(beforeIndex);
+        expect(readdirSync(outside)).toEqual([]);
+        expect(existsSync(join(cwd, "docs/architecture/requests/archive"))).toBe(false);
+      } finally {
+        rmSync(outside, { recursive: true, force: true });
+      }
+    });
   }, 30_000);
 });

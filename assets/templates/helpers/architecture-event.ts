@@ -519,6 +519,7 @@ function processIsAlive(pid: number): boolean {
 function acquireQueueLock(requestsDir: string, ownerPid: number, ownerToken: string): string {
   assertSafeWriteTarget(`${requestsDir}/.write-probe`);
   const lockFile = ".ai/harness/architecture/.architecture-queue.lock";
+  assertSafeWriteTarget(lockFile);
   const deadline = Date.now() + 10_000;
   while (true) {
     try {
