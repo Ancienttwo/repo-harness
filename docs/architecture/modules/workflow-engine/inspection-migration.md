@@ -1,7 +1,7 @@
 # workflow-engine/inspection-migration 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-inspection-migration" sourceDigest="sha256:f8a01d8075bf128d7ac306ecb8df7bc6057f834260320109b4d0d3bf935f28a9" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:c41515e18590d050b60cc186f3c80043d7c7447082e92423ed6852d123e09a8a" verifiedAgainst="codex/contract-worktree-single-publication@b5a12126e3671da429813220d6f0484c6ecce262@2026-08-14T17:51:08+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-inspection-migration" sourceDigest="sha256:c1e3969b3cc61b423b71d4b6b94dd77c5c45cde69181a5d472dc44e18cbe694f" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:6a7de762a022cdce8f811303586332cf09d0a46d54967eb43c05b1bd6ce7ebda" verifiedAgainst="codex/hook-effect-ship@1ea187bda5bcb9c8040fcbadbdfb80e861008b04@2026-08-14T21:20:10+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`codex/contract-worktree-single-publication@b5a12126e3671da429813220d6f0484c6ecce262`(2026-08-14)
+> **Verified against**:`codex/hook-effect-ship@1ea187bda5bcb9c8040fcbadbdfb80e861008b04`(2026-08-14)
 > **Capability ID**:`capability.workflow-engine.inspection-migration`(kind `capability`)
 > **Matched Prefixes**:`scripts/inspect-project-state.ts`、`scripts/create-project-dirs.sh`、`scripts/init-project.sh`、`scripts/lib/**`
 > **Local Contracts**:`scripts/AGENTS.md`、`scripts/CLAUDE.md`

@@ -1,7 +1,7 @@
 # public-surface/adoption 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-adoption" sourceDigest="sha256:f8a01d8075bf128d7ac306ecb8df7bc6057f834260320109b4d0d3bf935f28a9" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:3ea78a7352963da512b5146d6fac9eecb1f48222573579d1b368e2af486514ad" verifiedAgainst="codex/contract-worktree-single-publication@b5a12126e3671da429813220d6f0484c6ecce262@2026-08-14T17:51:08+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-adoption" sourceDigest="sha256:c1e3969b3cc61b423b71d4b6b94dd77c5c45cde69181a5d472dc44e18cbe694f" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:77f08e9918a7b55f65e6ebe4fc941422e3fe811c89e777a2f44c6d358601ef21" verifiedAgainst="codex/hook-effect-ship@1ea187bda5bcb9c8040fcbadbdfb80e861008b04@2026-08-14T21:20:10+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`codex/contract-worktree-single-publication@b5a12126e3671da429813220d6f0484c6ecce262`(2026-08-14)
+> **Verified against**:`codex/hook-effect-ship@1ea187bda5bcb9c8040fcbadbdfb80e861008b04`(2026-08-14)
 > **Capability ID**:`capability.public-surface.adoption`(kind `capability`)
 > **Matched Prefixes**:`src/cli/commands/adoption-plan.ts`、`src/core/adoption/**`、`src/effects/fs-transaction.ts`、`src/effects/path-safety.ts`、`tests/cli/adoption-plan.test.ts`、`tests/fixtures/adoption/**`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`

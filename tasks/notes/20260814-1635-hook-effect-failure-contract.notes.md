@@ -1,6 +1,6 @@
 # Implementation Notes: hook-effect-failure-contract
 
-> **Status**: Active
+> **Status**: Completed
 > **Plan**: plans/plan-20260814-1635-hook-effect-failure-contract.md
 > **Contract**: tasks/contracts/20260814-1635-hook-effect-failure-contract.contract.md
 > **Review**: tasks/reviews/20260814-1635-hook-effect-failure-contract.review.md
@@ -68,6 +68,11 @@
 | Timestamp-free projection key + latest-Stop bounded reconciliation | Chosen | It proves retry dedupe after interleaved writes without turning equal historical states into permanent dedupe; overflow fails closed. |
 
 ## Open Questions
+
+- Resolved at ship: the separate projection work package owned all twelve
+  provider outputs, reused the existing repository CodeGraph index, and reached
+  canonical `noop` after apply. The combined full suite passed with `2389 pass /
+  1 skip / 0 fail` under complete process visibility.
 
 - Canonical architecture projection needs a revised work package that owns the
   provider's complete eleven-capability flow-proof refresh. The current scoped

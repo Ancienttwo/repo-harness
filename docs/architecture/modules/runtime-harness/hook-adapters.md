@@ -1,7 +1,7 @@
 # runtime-harness/hook-adapters 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:f8a01d8075bf128d7ac306ecb8df7bc6057f834260320109b4d0d3bf935f28a9" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:4a3c6019ff91402cdb1b300db62ddcfee14fe02c58435b38248337cc78d6051c" verifiedAgainst="codex/contract-worktree-single-publication@b5a12126e3671da429813220d6f0484c6ecce262@2026-08-14T17:51:08+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:c1e3969b3cc61b423b71d4b6b94dd77c5c45cde69181a5d472dc44e18cbe694f" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:a15c736778c46b5250ef016073b3bade1399705a5d93c661f88c003af1dc6d53" verifiedAgainst="codex/hook-effect-ship@1ea187bda5bcb9c8040fcbadbdfb80e861008b04@2026-08-14T21:20:10+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`codex/contract-worktree-single-publication@b5a12126e3671da429813220d6f0484c6ecce262`(2026-08-14)
+> **Verified against**:`codex/hook-effect-ship@1ea187bda5bcb9c8040fcbadbdfb80e861008b04`(2026-08-14)
 > **Capability ID**:`capability.runtime-harness.hook-adapters`(kind `capability`)
 > **Matched Prefixes**:`assets/hooks/**`、`.ai/hooks/**`、`scripts/run-skill-hook.ts`、`src/cli/installer/**`、`src/cli/hook/**`、`src/cli/hook-entry.ts`
 > **Local Contracts**:`assets/hooks/AGENTS.md`、`assets/hooks/CLAUDE.md`
@@ -36,7 +36,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 文件數:`47`
-- 總行數:`17261`
+- 總行數:`17549`
 - 匹配前綴:`assets/hooks/**`、`.ai/hooks/**`、`scripts/run-skill-hook.ts`、`src/cli/installer/**`、`src/cli/hook/**`、`src/cli/hook-entry.ts`
 - 復算:`archctx docs plan --json`(掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`)
 

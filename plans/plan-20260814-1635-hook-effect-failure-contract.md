@@ -1,6 +1,6 @@
 # Plan: Hook Effect Failure Contract and Confluence Proof
 
-> **Status**: Executing
+> **Status**: Completed
 > **Created**: 20260814-1635
 > **Slug**: hook-effect-failure-contract
 > **Planning Source**: repo-harness-plan
@@ -353,7 +353,7 @@ revised and the contract `allowed_paths` is updated. Runtime cache under
 - [x] Add Stop per-phase fault injection and baseline-versus-retry terminal-state
       comparison; apply only the bounded Stop-local idempotency repair proven
       necessary by the red test.
-- [ ] Update the hook-adapters architecture acceptance clauses and regenerate
+- [x] Update the hook-adapters architecture acceptance clauses and regenerate
       its projection manifest through the canonical projection route.
 - [x] Run focused tests, type checking, architecture/task gates, and the full
       repository suite; record unrelated pre-existing global-runtime failures
