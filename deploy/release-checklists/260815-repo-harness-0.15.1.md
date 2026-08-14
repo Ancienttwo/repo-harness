@@ -4,7 +4,8 @@
 - Package: `repo-harness@0.15.1`
 - Base release: `v0.15.0`
 - Source range: `v0.15.0..candidate`
-- Candidate commit: pending freeze
+- Release-prep commit: `eb5970dad9474638a00c7357d7eeae2e53705345`
+- Final candidate commit: pending acceptance projection
 - Release scope: publish the contract-first Change Assessment and acceptance
   authority, durable hook-effect recovery, Goal Calibration Gate, one-commit
   contract worktrees, nested capability routing, and transaction-safe semantic
@@ -27,16 +28,25 @@
 
 - npm baseline: `latest=0.15.0`; `repo-harness@0.15.1` returned E404 before
   candidate preparation.
-- Version consistency: pending candidate gate.
-- Full repository/release checks: pending candidate gate.
-- Packed tarball contents and isolated install: pending candidate gate.
+- Version consistency: `check-skill-version`, CLI `--version`, helper/hook
+  projection checks, typecheck, state boundaries, and 37 focused release tests
+  passed; all source authorities report 0.15.1.
+- Full repository/release checks: the non-isolated local run reached 2429 pass,
+  1 skip, 6 fail; the CI-isolated rerun stopped at the same macOS Node 26
+  ArchContext fixture mismatch already present on clean `main`. Exact hosted
+  Node 24 CI remains the release authority and is pending candidate push.
+- Packed tarball contents and isolated install: `repo-harness-0.15.1.tgz`
+  contains 484 files, is 9,944,553 bytes (15,057,942 unpacked), and includes
+  the Change Assessment, runtime receipt, and architecture queue canonical plus
+  template helpers. `check-tarball-install-smoke.sh` passed under Node 24.
 - Exact `main` CI: pending candidate merge.
 - Independent release review and AcceptanceReceipt: pending final subject.
 
 ## Required Release Sequence
 
 - [x] Rebuild from current `main` and classify `v0.15.0..candidate` by shipped risk surface.
-- [ ] Freeze the candidate and run `bun run check:release`.
+- [x] Freeze the candidate and run `bun run check:release`; preserve the local
+  Node 26 baseline mismatch for hosted Node 24 CI resolution.
 - [ ] Record final-subject review and AcceptanceReceipt evidence.
 - [ ] Merge the candidate to `main` and confirm exact GitHub Actions CI.
 - [ ] Publish `repo-harness@0.15.1` to npm `latest`.
