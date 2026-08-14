@@ -45,6 +45,32 @@ if (packed.integrity !== view["dist.integrity"]) fail("packed tarball integrity 
 if (packed.shasum !== view["dist.shasum"]) fail("packed tarball shasum does not match registry metadata");
 JS_EOF
 
+# Published-package runtime evidence is intentionally separate from a task
+# AcceptanceReceipt. This clean install is the release-side oracle: registry
+# metadata binds the tarball, then the installed CLI and installed hook must
+# both read back their real runtime contracts.
+PACKED_TARBALL="$(bun - "$PACK_JSON" <<'JS_EOF'
+const [, , path] = process.argv;
+const packed = (await Bun.file(path).json());
+const entry = Array.isArray(packed) ? packed[0] : packed;
+if (!entry?.filename) process.exit(1);
+console.log(entry.filename);
+JS_EOF
+)"
+RUNTIME_APP="$TMP_DIR/runtime-app"
+RUNTIME_REPO="$TMP_DIR/runtime-repo"
+mkdir -p "$RUNTIME_APP" "$RUNTIME_REPO"
+git -C "$RUNTIME_REPO" init -q
+(cd "$RUNTIME_APP" && npm init -y >/dev/null && npm install "$TMP_DIR/$PACKED_TARBALL" >/dev/null)
+bun scripts/runtime-evidence-receipt.ts verify \
+  --registry "$VIEW_JSON" \
+  --tarball "$TMP_DIR/$PACKED_TARBALL" \
+  --installed-package "$RUNTIME_APP/node_modules/$PACKAGE_NAME" \
+  --installed-cli "$RUNTIME_APP/node_modules/.bin/repo-harness" \
+  --installed-hook "$RUNTIME_APP/node_modules/.bin/repo-harness-hook" \
+  --hook-repo "$RUNTIME_REPO" \
+  --output ".ai/harness/checks/runtime-evidence-release.latest.json"
+
 git rev-parse -q --verify "refs/tags/v${PACKAGE_VERSION}" >/dev/null
 bun scripts/check-skill-version.ts --project . >/dev/null
 

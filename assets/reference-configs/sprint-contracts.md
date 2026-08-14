@@ -94,6 +94,42 @@ evidence_requirements:
 
 Every new contract freezes one reviewer and the waiver rule in a strict `## Acceptance Policy` JSON block. `verify-sprint --prepare-acceptance` produces the final local evidence bundle; one semantic reviewer then returns `external_pass` or `reject`, or the named contract owner creates one typed UserWaiverGrant when the policy allows it. The grant binds the normalized contract and goal authorities, not a subject hash. Each user-waiver AcceptanceReceipt is then materialized from that grant and still binds the exact normalized implementation subject, verification and benchmark evidence, target revision, and reviewed paths. A semantic change invalidates the old receipt and requires fresh passing verification, but the same unchanged grant may materialize the new exact receipt without another owner prompt. Contract/goal authority changes or revocation invalidate the grant. Review Markdown is a deterministic projection, never authoring authority; user waiver never becomes external pass and never authorizes provider disclosure or merge.
 
+Every new contract also carries exactly one strict `## Change Assessment` JSON
+block. Its v1 shape is `{"protocol":1,"oracles":[...]}`; every oracle has a
+stable id, one of `deterministic_test`, `runtime_readback`, or
+`manual_acceptance`, and literal subject paths or `*`. Empty oracles are valid
+only for a final subject that routes no risk. For every routed reason, an
+allowed oracle kind must cover every selected path (or declare `*`); covering
+one path in a multi-path reason leaves the other path in `oracle_gap`.
+`manual_acceptance` is a legal declaration for human-facing acceptance context,
+but it does not satisfy the machine-verifiable oracle required by
+`authority_change`, `pattern_novelty`, or `irreversible_effect`. Change Assessment is recomputed
+at `verify-sprint --prepare-acceptance`, never from a Hook journal or model
+judgment. It binds a `ReviewSelectionPacket` to the exact final subject hash,
+policy review base, target revision, selected paths, reasons, and declared
+oracles. Its closed reason set is `authority_change`, `irreversible_effect`,
+`pattern_novelty`, `reviewer_disagreement`, and `oracle_gap`; an unmet oracle
+blocks. `pattern_novelty` routes only additions in a rename-aware whole diff
+relative to the policy base, not a token already present in final content or a
+pure rename destination; untracked files are wholly new. Reviewer disagreement
+is an append-only post-review escalation on the same packet, never a new
+diff/base authority. After escalation, rerun `verify-sprint --prepare-acceptance`:
+it revalidates the packet against a freshly recomputed base and puts the overlay
+in canonical evidence. Finalization rejects a checks file whose assessment no
+longer equals the current packet, so the prior evidence and receipt are stale.
+The v1 cutover is intentionally fail-closed: an in-flight contract created
+before this block existed must add and review its explicit declaration before
+running the upgraded verifier; no compatibility oracle is inferred.
+
+`AcceptanceReceipt` remains protocol 2 and the sole merge authority. It strictly
+recomputes the active policy/contract base assessment from the exact final
+subject before accepting an envelope; a self-hashed declared assessment or
+packet is not sufficient. It binds
+the packet through the canonical verification-evidence hash rather than adding
+duplicate receipt fields. Because the packet carries the exact policy target
+revision, any target movement requires fresh prepared verification before
+acceptance can validate, even if the movement is otherwise non-overlapping.
+
 - `not_applicable` preserves any existing benchmark report on disk and excludes it from this contract's acceptance and checks binding: the coupled review's `Benchmark Evidence SHA256` must read literally `not-applicable`, `.ai/harness/checks/latest.json`'s `benchmark_evidence.status` must read `not_applicable`, and report presence no longer fails the checks match.
 - `required` keeps byte-exact strictness: the current authoritative report's fingerprint and benchmark subject hash must resolve, and both the review's `Benchmark Evidence SHA256` and the recorded checks fingerprint/subject must match that current evidence exactly; a missing or drifted report fails.
 
@@ -148,7 +184,7 @@ authority.
 ## Review Coupling
 
 - A contract is not truly done until its typed `AcceptanceReceipt` records a contract-allowed final disposition.
-- `tasks/reviews/<plan-stem>.review.md` is a human-readable projection of the typed `AcceptanceReceipt` plus any manual observations. It is not an authoring authority. The receipt binds `Reviewed Subject SHA256` with scope `normalized-final-content`; target revision invalidates acceptance only when target movement overlaps reviewed paths.
+- `tasks/reviews/<plan-stem>.review.md` is a human-readable projection of the typed `AcceptanceReceipt` plus any manual observations. It is not an authoring authority. The receipt binds `Reviewed Subject SHA256` with scope `normalized-final-content`; its canonical verification evidence includes an exact-target `ReviewSelectionPacket`, so any target revision movement requires fresh prepared verification.
 - `tasks/notes/<plan-stem>.notes.md` captures task-local decisions and should be archived or promoted deliberately, not left as hidden long-term memory.
 - Closeout is promote-then-archive: durable truths move into `docs/architecture/`, `docs/researches/`, `docs/spec.md`, or `tasks/lessons.md` before `archive-workflow.sh` moves fulfilled plan/contract/review/notes/todo artifacts into `plans/archive/` and `tasks/archive/`.
 

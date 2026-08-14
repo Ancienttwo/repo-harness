@@ -13,7 +13,7 @@ import {
   writeFileSync,
 } from 'fs';
 import { userInfo } from 'os';
-import { dirname, isAbsolute, join, relative, resolve } from 'path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { spawnSync } from 'child_process';
 
@@ -175,33 +175,28 @@ export function parseAcceptancePolicy(contractText: string): AcceptancePolicy {
   return value as AcceptancePolicy;
 }
 
-function reviewBase(root: string): string {
-  const policyPath = join(root, '.ai', 'harness', 'policy.json');
-  if (!existsSync(policyPath)) fail('workflow policy is missing');
-  const policy = JSON.parse(readFileSync(policyPath, 'utf-8')) as unknown;
-  const value = isRecord(policy) && isRecord(policy.worktree_strategy)
-    ? policy.worktree_strategy.review_base
-    : undefined;
-  if (typeof value !== 'string' || value.trim() === '') fail('worktree_strategy.review_base is missing');
-  return value;
-}
-
-async function currentSubject(root: string, targetRef = reviewBase(root)): Promise<ReviewSubject> {
+async function currentSubject(root: string, targetRef?: string): Promise<ReviewSubject> {
   const modulePath = join(PACKAGE_ROOT, 'src', 'effects', 'review', 'diff-fingerprint.ts');
   const module = await import(pathToFileURL(modulePath).href) as {
     buildReviewSubject: (repoRoot: string, opts: { targetRef: string }) => ReviewSubject;
+    resolvePolicyReviewBase: (repoRoot: string) => { ok: true; targetRef: string } | { ok: false; reason: string };
   };
-  const subject = module.buildReviewSubject(root, { targetRef });
+  const reviewBase = module.resolvePolicyReviewBase(root);
+  if (!reviewBase.ok) fail(`policy review base is unavailable: ${reviewBase.reason}`);
+  if (targetRef !== undefined && targetRef !== reviewBase.targetRef) {
+    fail('AcceptanceReceipt target ref is stale against workflow policy');
+  }
+  const subject = module.buildReviewSubject(root, { targetRef: targetRef ?? reviewBase.targetRef });
   if (subject.status !== 'ok' || !/^sha256:[0-9a-f]{64}$/.test(subject.review_subject_sha256)) {
     fail('current normalized review subject is unavailable');
   }
   return subject;
 }
 
-function normalizedVerificationEvidence(content: string, subjectSha256: string): {
+async function normalizedVerificationEvidence(content: string, subject: ReviewSubject, root: string, contractPath: string): Promise<{
   fingerprint: string;
   benchmark: string;
-} {
+}> {
   let value: unknown;
   try {
     value = JSON.parse(content);
@@ -209,7 +204,23 @@ function normalizedVerificationEvidence(content: string, subjectSha256: string):
     fail(`verification evidence is invalid JSON: ${(error as Error).message}`);
   }
   if (!isRecord(value)) fail('verification evidence must be an object');
-  if (value.review_subject_sha256 !== subjectSha256) fail('verification evidence is stale for the current subject');
+  if (value.review_subject_sha256 !== subject.review_subject_sha256) fail('verification evidence is stale for the current subject');
+  const declaredContractPath = isRecord(value.contract) && typeof value.contract.file === 'string' ? value.contract.file : null;
+  const activeContractSlug = (path: string): string | null => {
+    const name = basename(path);
+    if (!path.startsWith('tasks/contracts/') || !name.endsWith('.contract.md')) return null;
+    return name.slice(0, -'.contract.md'.length).replace(/^\d{8}-\d{4}-/u, '');
+  };
+  const archivedContractSlug = (path: string): string | null => {
+    const match = /^contract-\d{8}-\d{4}-(.+)\.md$/u.exec(basename(path));
+    return path.startsWith('tasks/archive/') ? (match?.[1] ?? null) : null;
+  };
+  const archivedContractProjection = declaredContractPath !== null
+    && archivedContractSlug(contractPath) !== null
+    && archivedContractSlug(contractPath) === activeContractSlug(declaredContractPath);
+  if (!declaredContractPath || (declaredContractPath !== contractPath && !archivedContractProjection)) {
+    fail('verification evidence contract is stale for the active acceptance contract');
+  }
   if (value.status !== 'pass' || value.exit_code !== 0 || value.source !== 'verify-sprint') {
     fail('verification evidence is not a passing verify-sprint result');
   }
@@ -221,8 +232,76 @@ function normalizedVerificationEvidence(content: string, subjectSha256: string):
     const guard = guards.find((entry) => isRecord(entry) && entry.name === name);
     return isRecord(guard) ? guard.status : undefined;
   };
-  for (const name of ['contract', 'review', 'allowed_paths']) {
+  for (const name of ['contract', 'review', 'allowed_paths', 'change_assessment']) {
     if (guardStatus(name) !== 'pass') fail(`verification evidence guard ${name} is not pass`);
+  }
+  if (!isRecord(value.change_assessment) || value.change_assessment.status !== 'pass') {
+    fail('verification evidence change assessment is not passing');
+  }
+  const assessment = value.change_assessment;
+  const assessmentBasis = {
+    schema: assessment.schema,
+    status: assessment.status,
+    assessment: assessment.assessment,
+    selection_packet: assessment.selection_packet,
+  };
+  if (typeof assessment.evidence_sha256 !== 'string' || assessment.evidence_sha256 !== sha256(stableJson(assessmentBasis))) {
+    fail('verification evidence change assessment fingerprint is stale');
+  }
+  const assessmentPath = join(PACKAGE_ROOT, 'src', 'core', 'review', 'change-assessment.ts');
+  const assessmentModule = await import(pathToFileURL(assessmentPath).href) as {
+    validateChangeAssessment: (value: unknown) => {
+      assessment_sha256: string;
+      status: 'ready' | 'blocked';
+    };
+    validateReviewSelectionPacket: (value: unknown) => {
+      status: 'ready' | 'blocked';
+      review_subject_sha256: string;
+      target_ref: string;
+      target_revision: string;
+    };
+    validateReviewSelectionPacketAgainstAssessment: (value: unknown, assessment: unknown) => {
+      status: 'ready' | 'blocked';
+      assessment_sha256: string;
+      review_subject_sha256: string;
+      target_ref: string;
+      target_revision: string;
+    };
+  };
+  const assessmentEffectsPath = join(PACKAGE_ROOT, 'src', 'effects', 'review', 'change-assessment.ts');
+  const assessmentEffects = await import(pathToFileURL(assessmentEffectsPath).href) as {
+    prepareChangeAssessment: (args: { repoRoot: string; contractPath: string }) => {
+      assessment: { status: 'ready' | 'blocked' | 'degraded'; assessment_sha256?: string };
+      packet: unknown;
+    };
+  };
+  let packet: ReturnType<typeof assessmentModule.validateReviewSelectionPacketAgainstAssessment>;
+  try {
+    const declared = assessmentModule.validateChangeAssessment(assessment.assessment);
+    const selfBoundPacket = assessmentModule.validateReviewSelectionPacket(assessment.selection_packet);
+    if (
+      selfBoundPacket.review_subject_sha256 !== subject.review_subject_sha256
+      || selfBoundPacket.target_ref !== subject.target_ref
+      || selfBoundPacket.target_revision !== subject.target_rev
+    ) {
+      fail('verification evidence change assessment packet is stale for the current subject');
+    }
+    const recomputed = assessmentEffects.prepareChangeAssessment({ repoRoot: root, contractPath });
+    if (recomputed.assessment.status === 'degraded' || !('assessment_sha256' in recomputed.assessment)) {
+      fail('verification evidence Change Assessment base is unavailable');
+    }
+    if (declared.assessment_sha256 !== recomputed.assessment.assessment_sha256) {
+      fail('verification evidence Change Assessment does not match current base assessment');
+    }
+    packet = assessmentModule.validateReviewSelectionPacketAgainstAssessment(assessment.selection_packet, recomputed.assessment);
+  } catch (error) {
+    fail(`verification evidence change assessment is invalid: ${(error as Error).message}`);
+  }
+  if (packet.status !== 'ready' || packet.review_subject_sha256 !== subject.review_subject_sha256 || packet.target_ref !== subject.target_ref || packet.target_revision !== subject.target_rev) {
+    fail('verification evidence change assessment packet is stale for the current subject');
+  }
+  if (!isRecord(assessment.assessment) || assessment.assessment.assessment_sha256 !== packet.assessment_sha256) {
+    fail('verification evidence change assessment does not bind its packet');
   }
   const benchmark = isRecord(value.benchmark_evidence) && value.benchmark_evidence.status === 'not_applicable'
     ? 'not-applicable'
@@ -238,6 +317,7 @@ function normalizedVerificationEvidence(content: string, subjectSha256: string):
     review_status: guardStatus('review'),
     allowed_paths_status: guardStatus('allowed_paths'),
     review_subject_sha256: value.review_subject_sha256,
+    change_assessment: assessment,
     benchmark_evidence: value.benchmark_evidence,
     commands: value.commands,
   };
@@ -489,7 +569,7 @@ async function acceptanceContext(args: {
   const goal = readRegular(root, goalPath, 'goal');
   const verification = readRegular(root, args.verification, 'verification evidence');
   const subject = await currentSubject(root);
-  const evidence = normalizedVerificationEvidence(verification.content, subject.review_subject_sha256);
+  const evidence = await normalizedVerificationEvidence(verification.content, subject, root, contract.path);
   return { root, contract, policy, owner, goal, verification, subject, evidence };
 }
 
@@ -620,7 +700,7 @@ export async function verifyAcceptance(args: {
   if (subject.target_rev !== receipt.target_revision && subject.target_overlap_count > 0) {
     fail(`AcceptanceReceipt target overlaps ${subject.target_overlap_count} reviewed path(s)`);
   }
-  const evidence = normalizedVerificationEvidence(verification.content, subject.review_subject_sha256);
+  const evidence = await normalizedVerificationEvidence(verification.content, subject, root, contract.path);
   if (evidence.fingerprint !== receipt.verification_evidence_sha256) fail('AcceptanceReceipt verification evidence is stale');
   if (receipt.disposition === 'reject') fail('AcceptanceReceipt disposition is reject');
   if (receipt.disposition === 'user_waiver') {

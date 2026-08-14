@@ -36,6 +36,8 @@ const required = [
   "src/cli/hook/prompt-handler.ts",
   "assets/templates/helpers/capability-resolver.ts",
   "assets/templates/helpers/capability-config.ts",
+  "assets/templates/helpers/change-assessment.ts",
+  "assets/templates/helpers/runtime-evidence-receipt.ts",
   "interfaces/effective-state-v1.ts",
   "interfaces/types.ts",
 ];

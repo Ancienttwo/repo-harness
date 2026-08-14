@@ -3511,6 +3511,12 @@ describe("Workflow helper scripts", () => {
           "  benchmark: not_applicable",
           "```",
           "",
+          "## Change Assessment",
+          "",
+          "```json",
+          '{"protocol":1,"oracles":[{"id":"fixture-deterministic","kind":"deterministic_test","paths":["*"]}]}',
+          "```",
+          "",
         ].join("\n")
       );
       initGitRepo(cwd);
@@ -3563,6 +3569,13 @@ describe("Workflow helper scripts", () => {
     const cwd = tmpWorkspace("helper-verify-sprint-finalize");
     const rerunMarker = join(cwd, "verify-contract-reran");
     const projectionMarker = join(cwd, "receipt-projected");
+    const changeAssessment = {
+      schema: "repo-harness-change-assessment-evidence.v1",
+      status: "pass",
+      assessment: { fixture: true },
+      selection_packet: { fixture: true },
+      evidence_sha256: "sha256:fixture",
+    };
     try {
       mkdirSync(join(cwd, ".ai/harness/checks"), { recursive: true });
       mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
@@ -3582,9 +3595,15 @@ describe("Workflow helper scripts", () => {
             { name: "review", status: "pass" },
             { name: "acceptance_receipt", status: "pending" },
             { name: "allowed_paths", status: "pass" },
+            { name: "change_assessment", status: "pass" },
           ],
           acceptance_receipt: { status: "pending" },
+          change_assessment: changeAssessment,
         }, null, 2)}\n`,
+      );
+      writeFileSync(
+        join(cwd, ".ai/harness/checks/change-assessment.latest.json"),
+        `${JSON.stringify(changeAssessment, null, 2)}\n`,
       );
       writeFileSync(
         join(cwd, "scripts/verify-contract.sh"),
@@ -3621,6 +3640,17 @@ describe("Workflow helper scripts", () => {
       const checks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
       expect(checks.acceptance_receipt).toEqual({ status: "pending" });
       expect(checks.guards.find((guard: { name: string }) => guard.name === "acceptance_receipt")?.status).toBe("pending");
+
+      // A reviewer overlay writes a new subject-bound packet. Finalization
+      // must refuse this old prepared trace until prepare-acceptance has
+      // emitted a replacement canonical checks record.
+      writeFileSync(
+        join(cwd, ".ai/harness/checks/change-assessment.latest.json"),
+        `${JSON.stringify({ ...changeAssessment, evidence_sha256: "sha256:changed" }, null, 2)}\n`,
+      );
+      const stale = run("bash", ["scripts/verify-sprint.sh"], cwd);
+      expect(stale.status).toBe(1);
+      expect(`${stale.stdout}\n${stale.stderr}`).toContain("Change Assessment packet changed after prepared evidence");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -3638,9 +3668,17 @@ describe("Workflow helper scripts", () => {
         mkdirSync(join(cwd, "tasks/notes"), { recursive: true });
         mkdirSync(join(cwd, "docs"), { recursive: true });
         copyHelpers(cwd);
+        // The deployed helper resolves Change Assessment modules from its
+        // package root. Mirror the package's published `src/` payload rather
+        // than accidentally exercising an incomplete copied-helper fixture.
+        cpSync(join(ROOT, "src"), join(cwd, "src"), { recursive: true });
         copyFileSync(
           join(ROOT, "assets/hooks/lib/workflow-state.sh"),
           join(cwd, ".ai/hooks/lib/workflow-state.sh")
+        );
+        writeFileSync(
+          join(cwd, ".ai/harness/policy.json"),
+          `${JSON.stringify({ worktree_strategy: { review_base: "main" } }, null, 2)}\n`,
         );
 
         writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
@@ -3666,6 +3704,12 @@ describe("Workflow helper scripts", () => {
             "    - docs/spec.md",
             "evidence_requirements:",
             "  benchmark: not_applicable",
+            "```",
+            "",
+            "## Change Assessment",
+            "",
+            "```json",
+            '{"protocol":1,"oracles":[{"id":"fixture-deterministic","kind":"deterministic_test","paths":["*"]}]}',
             "```",
             "",
           ].join("\n")
@@ -3743,9 +3787,14 @@ describe("Workflow helper scripts", () => {
       mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
       mkdirSync(join(cwd, "docs"), { recursive: true });
       copyHelpers(cwd);
+      cpSync(join(ROOT, "src"), join(cwd, "src"), { recursive: true });
       copyFileSync(
         join(ROOT, "assets/hooks/lib/workflow-state.sh"),
         join(cwd, ".ai/hooks/lib/workflow-state.sh")
+      );
+      writeFileSync(
+        join(cwd, ".ai/harness/policy.json"),
+        `${JSON.stringify({ worktree_strategy: { review_base: "main" } }, null, 2)}\n`,
       );
 
       writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
@@ -3768,6 +3817,12 @@ describe("Workflow helper scripts", () => {
           "    - docs/spec.md",
           "evidence_requirements:",
           "  benchmark: not_applicable",
+          "```",
+          "",
+          "## Change Assessment",
+          "",
+          "```json",
+          '{"protocol":1,"oracles":[{"id":"fixture-deterministic","kind":"deterministic_test","paths":["*"]}]}',
           "```",
           "",
         ].join("\n")
@@ -3821,11 +3876,16 @@ describe("Workflow helper scripts", () => {
       mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
       mkdirSync(join(cwd, "docs"), { recursive: true });
       copyHelpers(cwd);
+      cpSync(join(ROOT, "src"), join(cwd, "src"), { recursive: true });
       copyFileSync(
         join(ROOT, "assets/hooks/lib/workflow-state.sh"),
         join(cwd, ".ai/hooks/lib/workflow-state.sh")
       );
-      writeFileSync(join(cwd, ".gitignore"), ".ai/harness/worktrees/\n.ai/harness/checks/latest.json\n.ai/harness/runs/\n");
+      writeFileSync(
+        join(cwd, ".ai/harness/policy.json"),
+        `${JSON.stringify({ worktree_strategy: { review_base: "main" } }, null, 2)}\n`,
+      );
+      writeFileSync(join(cwd, ".gitignore"), ".ai/harness/worktrees/\n.ai/harness/checks/*.latest.json\n.ai/harness/runs/\n");
       writeFileSync(join(cwd, "README.md"), "# baseline\n");
       initGitRepo(cwd);
       commitAll(cwd, "remote main baseline");
@@ -3852,6 +3912,12 @@ describe("Workflow helper scripts", () => {
           "    - docs/task-change.md",
           "evidence_requirements:",
           "  benchmark: not_applicable",
+          "```",
+          "",
+          "## Change Assessment",
+          "",
+          "```json",
+          '{"protocol":1,"oracles":[{"id":"fixture-deterministic","kind":"deterministic_test","paths":["*"]}]}',
           "```",
           "",
         ].join("\n")
@@ -3992,9 +4058,14 @@ describe("Workflow helper scripts", () => {
       mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
       mkdirSync(join(cwd, "docs"), { recursive: true });
       copyHelpers(cwd);
+      cpSync(join(ROOT, "src"), join(cwd, "src"), { recursive: true });
       copyFileSync(
         join(ROOT, "assets/hooks/lib/workflow-state.sh"),
         join(cwd, ".ai/hooks/lib/workflow-state.sh")
+      );
+      writeFileSync(
+        join(cwd, ".ai/harness/policy.json"),
+        `${JSON.stringify({ worktree_strategy: { review_base: "main" } }, null, 2)}\n`,
       );
 
       writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
@@ -4024,12 +4095,20 @@ describe("Workflow helper scripts", () => {
           "  benchmark: not_applicable",
           "```",
           "",
+          "## Change Assessment",
+          "",
+          "```json",
+          '{"protocol":1,"oracles":[{"id":"fixture-deterministic","kind":"deterministic_test","paths":["*"]}]}',
+          "```",
+          "",
         ].join("\n")
       );
       writeFileSync(
         join(cwd, "tasks/reviews/demo.review.md"),
         ["# Task Review: demo", "", "> **Recommendation**: pass", "", humanReviewCard(), "", externalAcceptanceAdvice(), ""].join("\n")
       );
+      initGitRepo(cwd);
+      commitAll(cwd, "card profile assessment baseline");
 
       const res = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd);
       expect(res.status).toBe(0);
@@ -4104,9 +4183,14 @@ describe("Workflow helper scripts", () => {
       mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
       mkdirSync(join(cwd, "docs"), { recursive: true });
       copyHelpers(cwd);
+      cpSync(join(ROOT, "src"), join(cwd, "src"), { recursive: true });
       copyFileSync(
         join(ROOT, "assets/hooks/lib/workflow-state.sh"),
         join(cwd, ".ai/hooks/lib/workflow-state.sh")
+      );
+      writeFileSync(
+        join(cwd, ".ai/harness/policy.json"),
+        `${JSON.stringify({ worktree_strategy: { review_base: "main" } }, null, 2)}\n`,
       );
 
       writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
@@ -4135,12 +4219,20 @@ describe("Workflow helper scripts", () => {
           "  benchmark: not_applicable",
           "```",
           "",
+          "## Change Assessment",
+          "",
+          "```json",
+          '{"protocol":1,"oracles":[{"id":"fixture-deterministic","kind":"deterministic_test","paths":["*"]}]}',
+          "```",
+          "",
         ].join("\n")
       );
       writeFileSync(
         join(cwd, "tasks/reviews/demo.review.md"),
         ["# Task Review: demo", "", "> **Recommendation**: pass", "", externalAcceptanceAdvice(), ""].join("\n")
       );
+      initGitRepo(cwd);
+      commitAll(cwd, "missing card assessment baseline");
 
       const res = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd);
       expect(res.status).toBe(0);

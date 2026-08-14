@@ -96,6 +96,33 @@ sequenceDiagram
 
 **10x 规模下先垮的点。** 不是 verifier，而是全量测试成本与证据生产延迟：183 个测试文件 / 66,345 LOC 已是 `bun test` 的主要壁钟成本，而 3×9 矩阵单次授权跑受 50 分钟绝对预算约束。当前拆分让小切片跑聚焦测试、release/pre-merge 才跑全量 gate；再放大一个量级时，先撑不住的是 benchmark 的 evidence-production latency 与 expensive lane 的串行度，而不是有界验证本身。
 
+### Change Assessment v1 final-subject gate
+
+`verify-sprint --prepare-acceptance` now treats `buildReviewSubject` plus
+`.ai/harness/policy.json#worktree_strategy.review_base` as the sole selection
+authority. It recomputes a deterministic `ChangeAssessment` and exact-target
+`ReviewSelectionPacket` after the final diff, then includes that envelope in
+the canonical verification-evidence hash consumed by AcceptanceReceipt.
+Minimal-change hooks and their journal stay fail-open diagnostics; neither
+model output nor Hook history can change routing. Missing policy/base,
+degraded subject, invalid packet, or a missing oracle fails verification
+closed. The bounded release CLI creates `RuntimeEvidenceReceipt` separately
+for published tarball, clean-install CLI, and installed-hook readback.
+
+Each reason's allowed oracle must cover every routed final path (or `*`), and
+`pattern_novelty` reads only added rename-aware policy-base diff hunks. A reviewer
+disagreement remains a subject-bound overlay until the next prepare run validates
+it against the freshly recomputed base and emits the replacement canonical
+evidence. The finalizer compares that packet with prepared checks, while
+`AcceptanceReceipt` separately recomputes the assessment before accepting its
+canonical hash; self-consistent forged hashes and prior receipts therefore fail
+closed. Runtime hook/CLI readback uses the current trusted Bun executable
+directory plus `/usr/bin:/bin`, preserving the real `#!/usr/bin/env bun` path
+without inheriting a broad PATH. Clean-install readback binds `.bin` symlinks to
+the manifest's canonical package targets and binds package.json, CLI, and hook
+bytes to their published tarball members; matching output from another file is
+not runtime evidence.
+
 ## 4. 历史决策记录（append-only）
 
 以下段落逐字保留自本文件的历史版本，不翻译、不改写。

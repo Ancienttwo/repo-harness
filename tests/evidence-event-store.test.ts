@@ -370,6 +370,22 @@ describe("D6 redaction: typed-field exemption (EPC-05 gatekeeper CRITICAL fix)",
     expect(result.active_plan).toBe(LONG_SLUG_ACTIVE_PLAN);
   });
 
+  test("repo-harness schema and kind discriminants survive while arbitrary long values under those keys remain redacted", () => {
+    const schema = "repo-harness-change-assessment-evidence.v1";
+    const kind = "repo-harness-review-selection-packet";
+    const token = "Zx9Qk3mP7vRt2Nw8Ly5Ju1Hb6Fg4Ds0Ac";
+    const prefixedToken = `repo-harness-${token.toLowerCase()}`;
+    const result = redactPayloadStrings({ schema, kind, nested: { schema: token, kind: prefixedToken } }, []) as {
+      schema: string;
+      kind: string;
+      nested: { schema: string; kind: string };
+    };
+    expect(result.schema).toBe(schema);
+    expect(result.kind).toBe(kind);
+    expect(result.nested.schema).not.toBe(token);
+    expect(result.nested.kind).not.toBe(prefixedToken);
+  });
+
   test("array entries that are whole-value safe repo-relative paths are exempt too (allowed_paths/files_changed)", () => {
     const result = redactPayloadStrings(
       { allowed_paths: [LONG_SLUG_CONTRACT_PATH, "scripts/verify-sprint.sh"] },

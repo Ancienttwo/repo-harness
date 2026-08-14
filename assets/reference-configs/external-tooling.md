@@ -314,6 +314,20 @@ tools directly.
 Today this is a convention only: `repo-harness` does not automatically discover,
 summarize, or gate on these manifests yet.
 
+For the CLI/npm release surface, `runtime-evidence-receipt.ts verify` is the
+bounded exception: it records a separate `RuntimeEvidenceReceipt v1` only when
+a registry readback binds the published tarball and a clean install returns the
+expected CLI version and `repo-harness-state-snapshot` hook contract. The
+installed package manifest must declare `repo-harness` and `repo-harness-hook`
+bin targets; supplied executable paths resolve to those in-package targets
+(including `.bin` symlinks), and the installed manifest plus both bin contents
+must byte-match their published tarball members. This is
+release-side runtime evidence, not an `AcceptanceReceipt`, task-review oracle,
+scheduler, or service-auth readback; missing any observation fails closed.
+Installed CLI/hook commands run with the current trusted Bun executable
+directory plus `/usr/bin:/bin`, which is the minimum PATH supporting their real
+`#!/usr/bin/env bun` shebang without inheriting the caller environment.
+
 The recommended v1 convention is evidence ingestion, not provider invocation.
 It is not yet an automatic `repo-harness check` gate:
 

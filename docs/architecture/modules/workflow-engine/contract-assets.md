@@ -400,6 +400,17 @@ sequenceDiagram
 - PR CI is the sole candidate-branch lane. `codex/**` push CI is removed and
   workflow concurrency cancels superseded runs for the same PR/ref.
 
+### 2026-08-14 Change Assessment contract projection
+
+- New contract templates freeze a strict `## Change Assessment` declaration;
+  helper inventory projects `change-assessment.ts` and
+  `runtime-evidence-receipt.ts` into the npm package with the other canonical
+  helpers.
+- The contract declaration is only oracle intent. Final-subject selection is
+  recomputed at prepare-acceptance from policy `review_base`, and the result is
+  bound through verification evidence while protocol-2 AcceptanceReceipt stays
+  the single merge authority.
+
 ---
 
 ## Workstream Ledger
