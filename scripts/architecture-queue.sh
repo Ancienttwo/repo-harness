@@ -563,7 +563,7 @@ record_command() {
     read -r architecture_domain architecture_capability architecture_module workstream_dir < <(architecture_event derive-scope --block "$functional_block" --format lines)
   fi
 
-  local iso_timestamp request_file spawn_recommended contract_sync_required request_event_json event_json
+  local iso_timestamp request_file spawn_recommended contract_sync_required request_event_json request_update event_json
   iso_timestamp="$(date '+%Y-%m-%dT%H:%M:%S%z')"
   request_file="$(request_card_path "$capability_id")"
   spawn_recommended="false"
@@ -594,7 +594,24 @@ record_command() {
     --pretty)"
 
   mkdir -p "$requests_dir" "$(dirname "$event_file")" docs/architecture/snapshots docs/architecture/diagrams docs/architecture/domains docs/architecture/modules tasks/workstreams
-  architecture_event upsert-request --request-file "$request_file" --event-json "$request_event_json"
+  request_update="$(architecture_event upsert-request --request-file "$request_file" --event-json "$request_event_json")"
+  case "$request_update" in
+    unchanged)
+      quiet="true"
+      check_mode="false"
+      reindex_requests
+      echo "[ArchitectureDrift] No architecture drift update for $rel_path (unchanged request)."
+      echo "[ArchitectureDrift] Request: $request_file"
+      echo "[ArchitectureDrift] severity=$severity capability_id=$capability_id functional_block=$functional_block spawn_recommended=$spawn_recommended contract_sync_required=$contract_sync_required"
+      exit 0
+      ;;
+    changed)
+      ;;
+    *)
+      echo "architecture-queue: architecture-event returned invalid upsert status: ${request_update:-empty}" >&2
+      exit 1
+      ;;
+  esac
 
   event_json="$(architecture_event event-json \
     --ts "$iso_timestamp" \

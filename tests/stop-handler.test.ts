@@ -284,27 +284,39 @@ describe('runStopHandler', () => {
 
     const stubRoot = mkdtempSync(join(tmpdir(), 'repo-harness-stop-follow-up-'));
     fixtures.push(stubRoot);
+    const stateFile = join(stubRoot, 'state.txt');
     const stubCli = join(stubRoot, 'stub-cli.ts');
     writeFileSync(stubCli, [
+      "import { existsSync, writeFileSync } from 'fs';",
       "const args = process.argv.slice(2);",
       "if (args[0] === 'run' && args[1] === 'architecture-queue') {",
+      "  if (existsSync(process.env.STOP_FOLLOWUP_STATE!)) process.stdout.write('[ArchitectureDrift] No architecture drift update for follow-up-failure.ts (unchanged request).\\n');",
       "  process.stdout.write('[ArchitectureDrift] Request: docs/architecture/requests/root.md\\n');",
       "  process.exit(0);",
       "}",
-      "if (args[0] === 'run' && args[1] === 'context-contract-sync') process.exit(9);",
+      "if (args[0] === 'run' && args[1] === 'context-contract-sync') {",
+      "  if (!existsSync(process.env.STOP_FOLLOWUP_STATE!)) { writeFileSync(process.env.STOP_FOLLOWUP_STATE!, 'failed-once\\n'); process.exit(9); }",
+      "  process.exit(0);",
+      "}",
       "process.exit(0);",
       '',
     ].join('\n'));
 
+    const env = { ...process.env, HOOK_RUN_ID: 'cascade-follow-up-failure', REPO_HARNESS_CLI: stubCli, STOP_FOLLOWUP_STATE: stateFile };
     const result = runStopHandler({
       collector: collector(cwd, () => canonicalState()),
-      env: { ...process.env, HOOK_RUN_ID: 'cascade-follow-up-failure', REPO_HARNESS_CLI: stubCli },
+      env,
     });
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toContain('context-contract-sync exited 9');
     expect(readArchitectureDriftCursor(cwd)?.head_sha).toBe(anchor);
     expect(computeArchitectureDriftChangedSet(cwd).paths).toContain('follow-up-failure.ts');
+
+    const retried = runStopHandler({ collector: collector(cwd, () => canonicalState()), env });
+    expect(retried.exitCode).toBe(0);
+    expect(retried.stderr).not.toContain('legacy architecture cascade failed');
+    expect(readArchitectureDriftCursor(cwd)?.head_sha).toBe(git(cwd, ['rev-parse', 'HEAD']));
   });
 
   test('feeds every shell-written path of a codex fleet session to the architecture cascade', () => {

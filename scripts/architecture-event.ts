@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { createHash } from "crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, writeSync } from "fs";
 import { dirname, resolve } from "path";
 
@@ -213,6 +214,7 @@ function eventJson(args: Args): string {
 }
 
 type ArchitectureEvent = {
+  event_key?: string;
   ts?: string;
   file_path?: string;
   severity?: string;
@@ -317,11 +319,13 @@ function requestEventsFromSource(file: string): ArchitectureEvent[] {
         .map((cell) => cell.trim())
         .filter(Boolean);
       if (cells.length < 4 || cells[0] === "Last Event" || cells[0].startsWith("---")) continue;
+      const storedEventKey = cells[4] ? stripCode(cells[4]) : "";
       events.push({
         ts: cells[0],
         severity: cells[1],
         change_type: cells[2],
         file_path: stripCode(cells[3]),
+        event_key: storedEventKey && storedEventKey !== "legacy" ? storedEventKey : undefined,
       });
     }
   }
@@ -346,8 +350,28 @@ function dedupeEvents(events: ArchitectureEvent[]): ArchitectureEvent[] {
   });
 }
 
+function semanticEventKey(event: ArchitectureEvent): string {
+  const semanticFields = {
+    file_path: event.file_path,
+    severity: event.severity,
+    functional_block: event.functional_block,
+    capability_id: event.capability_id,
+    matched_prefix: event.matched_prefix,
+    architecture_domain: event.architecture_domain,
+    architecture_capability: event.architecture_capability,
+    architecture_module: event.architecture_module,
+    workstream_dir: event.workstream_dir,
+    contract_agents: event.contract_agents,
+    contract_claude: event.contract_claude,
+    change_type: event.change_type,
+    spawn_recommended: Boolean(event.spawn_recommended),
+    contract_sync_required: Boolean(event.contract_sync_required),
+  };
+  return `sha256:${createHash("sha256").update(JSON.stringify(semanticFields)).digest("hex")}`;
+}
+
 function normalizeEvent(event: ArchitectureEvent, requestFile: string): ArchitectureEvent {
-  return {
+  const normalized: ArchitectureEvent = {
     ts: event.ts || new Date().toISOString(),
     file_path: event.file_path || "unknown",
     severity: event.severity || "medium",
@@ -365,6 +389,7 @@ function normalizeEvent(event: ArchitectureEvent, requestFile: string): Architec
     spawn_recommended: Boolean(event.spawn_recommended),
     contract_sync_required: Boolean(event.contract_sync_required),
   };
+  return { ...normalized, event_key: event.event_key || semanticEventKey(normalized) };
 }
 
 function renderRequiredFollowUp(event: ArchitectureEvent): string {
@@ -398,7 +423,7 @@ function renderRequestCard(event: ArchitectureEvent, events: ArchitectureEvent[]
   const titleToken = event.capability_id || event.functional_block || "root";
   const touchedRows = events
     .map((entry) => {
-      return `| ${entry.ts || "unknown"} | ${entry.severity || "unknown"} | ${entry.change_type || "unknown"} | \`${entry.file_path || "unknown"}\` |`;
+      return `| ${entry.ts || "unknown"} | ${entry.severity || "unknown"} | ${entry.change_type || "unknown"} | \`${entry.file_path || "unknown"}\` | \`${entry.event_key || "legacy"}\` |`;
     })
     .join("\n");
 
@@ -429,9 +454,9 @@ function renderRequestCard(event: ArchitectureEvent, events: ArchitectureEvent[]
     "",
     "## Touched Files",
     "",
-    "| Last Event | Severity | Change Type | File |",
-    "| --- | --- | --- | --- |",
-    touchedRows || "| unknown | unknown | unknown | `unknown` |",
+    "| Last Event | Severity | Change Type | File | Event Key |",
+    "| --- | --- | --- | --- | --- |",
+    touchedRows || "| unknown | unknown | unknown | `unknown` | `legacy` |",
     "",
     "## Event Fields",
     "",
@@ -442,15 +467,28 @@ function renderRequestCard(event: ArchitectureEvent, events: ArchitectureEvent[]
   ].join("\n");
 }
 
-function upsertRequest(args: Args): void {
+function samePendingFileEvent(
+  previous: ArchitectureEvent,
+  next: ArchitectureEvent,
+): boolean {
+  return previous.file_path === next.file_path
+    && typeof previous.event_key === "string"
+    && previous.event_key === next.event_key;
+}
+
+function upsertRequest(args: Args): "changed" | "unchanged" {
   const requestFile = requireOption(args, "requestFile");
   const rawEvent = args.options.eventJson ?? readStdin();
   const parsed = JSON.parse(rawEvent) as ArchitectureEvent;
-  const event = normalizeEvent(parsed, requestFile);
+  const event = normalizeEvent({ ...parsed, event_key: undefined }, requestFile);
   const existingMetadata = readMetadata(requestFile);
-  const events = dedupeEvents([...requestEventsFromSource(requestFile), event]);
+  const existingEvents = requestEventsFromSource(requestFile);
+  const previous = existingEvents.find((entry) => entry.file_path === event.file_path);
+  if (previous && samePendingFileEvent(previous, event)) return "unchanged";
+  const events = dedupeEvents([...existingEvents, event]);
   mkdirSync(dirname(requestFile), { recursive: true });
   writeFileSync(requestFile, renderRequestCard(event, events, existingMetadata));
+  return "changed";
 }
 
 function upsertFromRequest(args: Args): void {
@@ -541,7 +579,7 @@ function reindexRequests(args: Args): void {
     return;
   }
   mkdirSync(dirname(indexFile), { recursive: true });
-  writeFileSync(indexFile, next);
+  if (current !== next) writeFileSync(indexFile, next);
 }
 
 function defaultContextMap() {
@@ -816,8 +854,8 @@ try {
       print(eventJson(args));
       break;
     case "upsert-request":
-      upsertRequest(args);
-      process.exit(0);
+      print(upsertRequest(args));
+      break;
     case "upsert-from-request":
       upsertFromRequest(args);
       process.exit(0);

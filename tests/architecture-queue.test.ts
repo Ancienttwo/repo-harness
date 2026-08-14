@@ -139,6 +139,58 @@ describe("architecture queue", () => {
     });
   }, 30_000);
 
+  test("record is byte-idempotent when Stop observes the same pending file again", () => {
+    tmpRepo((cwd) => {
+      const target = "src/cli/hook/mutation-guard.ts";
+      const first = queue(cwd, ["record", "--file", target]);
+      expect(first.status, `${first.stdout}\n${first.stderr}`).toBe(0);
+      expect(first.stdout).toContain("[ArchitectureDrift] Request: docs/architecture/requests/root.md");
+
+      const requestPath = join(cwd, "docs/architecture/requests/root.md");
+      const indexPath = join(cwd, "docs/architecture/index.md");
+      const eventsPath = join(cwd, ".ai/harness/architecture/events.jsonl");
+      const before = {
+        request: readFileSync(requestPath, "utf8"),
+        index: readFileSync(indexPath, "utf8"),
+        events: readFileSync(eventsPath, "utf8"),
+      };
+
+      const second = queue(cwd, ["record", "--file", target]);
+      expect(second.status, `${second.stdout}\n${second.stderr}`).toBe(0);
+      expect(second.stdout).toContain(
+        `[ArchitectureDrift] No architecture drift update for ${target} (unchanged request).`,
+      );
+      expect(second.stdout).toContain("[ArchitectureDrift] Request: docs/architecture/requests/root.md");
+      expect(second.stdout).toContain("spawn_recommended=true");
+      expect(readFileSync(requestPath, "utf8")).toBe(before.request);
+      expect(readFileSync(indexPath, "utf8")).toBe(before.index);
+      expect(readFileSync(eventsPath, "utf8")).toBe(before.events);
+
+      const other = queue(cwd, ["record", "--file", "src/cli/hook/prompt-handler.ts"]);
+      expect(other.status, `${other.stdout}\n${other.stderr}`).toBe(0);
+      const afterOther = {
+        request: readFileSync(requestPath, "utf8"),
+        index: readFileSync(indexPath, "utf8"),
+        events: readFileSync(eventsPath, "utf8"),
+      };
+
+      const repeatedOlder = queue(cwd, ["record", "--file", target]);
+      expect(repeatedOlder.status, `${repeatedOlder.stdout}\n${repeatedOlder.stderr}`).toBe(0);
+      expect(repeatedOlder.stdout).toContain("(unchanged request).");
+      expect(readFileSync(requestPath, "utf8")).toBe(afterOther.request);
+      expect(readFileSync(indexPath, "utf8")).toBe(afterOther.index);
+      expect(readFileSync(eventsPath, "utf8")).toBe(afterOther.events);
+
+      writeFileSync(indexPath, afterOther.index.replace("[root](requests/root.md)", "[stale](requests/stale.md)"));
+      const selfHeal = queue(cwd, ["record", "--file", target]);
+      expect(selfHeal.status, `${selfHeal.stdout}\n${selfHeal.stderr}`).toBe(0);
+      expect(selfHeal.stdout).toContain("(unchanged request).");
+      expect(readFileSync(requestPath, "utf8")).toBe(afterOther.request);
+      expect(readFileSync(indexPath, "utf8")).toBe(afterOther.index);
+      expect(readFileSync(eventsPath, "utf8")).toBe(afterOther.events);
+    });
+  }, 30_000);
+
   test("record routes nested workspace source through the longest-prefix capability", () => {
     tmpRepo((cwd) => {
       mkdirSync(join(cwd, "packages/providers/hyperliquid/src"), { recursive: true });
