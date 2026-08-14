@@ -464,7 +464,10 @@ describe("architecture-event helper", () => {
       expect(record(base).status).toBe(0);
       expect(record({ ...base, ts: "2026-08-14T02:00:00+0800", severity: "medium" }).status).toBe(0);
       expect(record({ ...base, ts: "2026-08-14T03:00:00+0800" }).status).toBe(0);
-      const lines = readFileSync(join(cwd, ".ai/harness/architecture/events.jsonl"), "utf8").trim().split("\n").map(JSON.parse);
+      const lines = readFileSync(join(cwd, ".ai/harness/architecture/events.jsonl"), "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as { severity: string });
       expect(lines).toHaveLength(3);
       expect(lines.map((entry) => entry.severity)).toEqual(["low", "medium", "low"]);
 
