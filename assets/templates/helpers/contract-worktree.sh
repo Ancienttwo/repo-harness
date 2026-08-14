@@ -682,6 +682,25 @@ closeout_journal_phase_ref() {
   sed -n "s/^    {\"phase\": \"${name}\", \"at\": \"[^\"]*\", \"ref\": \"\([^\"]*\)\"}.*\$/\1/p" "$file" | tail -1
 }
 
+# A complete ref identifies the durable external effect, not necessarily the
+# current source-worktree HEAD. Local/no-merge and ship transactions complete at
+# the source HEAD; single-publication finish completes at the synthesized target
+# commit, so replay must prove that exact target ref is still installed.
+closeout_journal_complete_effect_present() {
+  local dir="$1" complete_ref operation merge_back target_branch
+  complete_ref="$(closeout_journal_phase_ref "$dir" complete)"
+  [[ -n "$complete_ref" ]] || return 1
+  operation="$(closeout_journal_field "$dir/meta.json" operation)"
+  merge_back="$(closeout_journal_field "$dir/meta.json" merge_back)"
+  if [[ "$operation" == "finish" && "$merge_back" == "1" ]]; then
+    target_branch="$(closeout_journal_field "$dir/meta.json" target_branch)"
+    [[ -n "$target_branch" ]] || return 1
+    git merge-base --is-ancestor "$complete_ref" "refs/heads/$target_branch" >/dev/null 2>&1
+    return
+  fi
+  [[ "$(git rev-parse HEAD)" == "$complete_ref" ]]
+}
+
 # Rewrites the whole status document so the phase list has exactly one authority
 # and lands in one atomic rename. An empty phase name only flips the status.
 closeout_journal_record() {
@@ -765,7 +784,7 @@ closeout_journal_begin() {
       # If HEAD has moved off the recorded completion the transaction was undone
       # afterwards (an outer rollback), so the same key must start fresh instead
       # of reporting success for work that no longer exists.
-      if [[ "$(git rev-parse HEAD)" == "$(closeout_journal_phase_ref "$dir" complete)" ]]; then
+      if closeout_journal_complete_effect_present "$dir"; then
         closeout_journal_dir="$dir"
         return 2
       fi
@@ -935,8 +954,8 @@ finish_transaction_abort() {
 }
 
 finish_transaction_commit() {
-  local head
-  head="$(git rev-parse HEAD)"
+  local head="${1:-}"
+  head="${head:-$(git rev-parse HEAD)}"
   finish_transaction_active=0
   trap - EXIT
   closeout_journal_record "$closeout_journal_dir" complete complete "$head"
@@ -950,21 +969,32 @@ finish_transaction_on_exit() {
   local status=$?
   trap - EXIT
   if [[ "$finish_transaction_active" -eq 1 && "$status" -ne 0 ]]; then
-    finish_transaction_abort || status=1
+    if closeout_finish_effect_landed "$closeout_journal_dir"; then
+      echo "contract-worktree: finish failed after target publication landed; journal retained for 'recover reconcile'" >&2
+    else
+      finish_transaction_abort || status=1
+    fi
   fi
   exit "$status"
 }
 
-# True once finish's only external effect -- the fast-forward of the target
-# branch -- is observable, whether or not the `merged` phase was reached before
-# the interrupt. `abort` refuses on true, `reconcile` refuses on false, so the
-# window between the merge and its phase record cannot defeat either rule.
+# True once finish's only external effect -- publication on the target branch --
+# is observable, whether or not the `merged` phase was reached before the
+# interrupt. `abort` refuses on true, `reconcile` refuses on false, so the window
+# between the target update and its phase record cannot defeat either rule.
 closeout_finish_effect_landed() {
   local dir="$1" head target_branch base_sha
   closeout_journal_has_phase "$dir" merged && return 0
   [[ "$(closeout_journal_field "$dir/meta.json" merge_back)" == "1" ]] || return 1
-  head="$(closeout_journal_phase_ref "$dir" lifecycle_committed)"
-  [[ -n "$head" ]] || head="$(closeout_journal_phase_ref "$dir" implementation_committed)"
+  head="$(closeout_journal_phase_ref "$dir" publication_prepared)"
+  if [[ -z "$head" ]]; then
+    # Journals opened before single-publication cutover recorded the source
+    # branch head instead. Retain that exact landed-effect probe so an already
+    # applied legacy fast-forward can never be mistaken for an abortable local
+    # transaction.
+    head="$(closeout_journal_phase_ref "$dir" lifecycle_committed)"
+    [[ -n "$head" ]] || head="$(closeout_journal_phase_ref "$dir" implementation_committed)"
+  fi
   [[ -n "$head" ]] || return 1
   base_sha="$(closeout_journal_field "$dir/meta.json" base_sha)"
   [[ "$head" != "$base_sha" ]] || return 1
@@ -1121,7 +1151,8 @@ recover_worktree() {
         echo "contract-worktree: no landed merge to reconcile (last phase: $last_phase); run 'recover abort' instead" >&2
         return 1
       }
-      head="$(closeout_journal_phase_ref "$dir" lifecycle_committed)"
+      head="$(closeout_journal_phase_ref "$dir" publication_prepared)"
+      [[ -n "$head" ]] || head="$(closeout_journal_phase_ref "$dir" lifecycle_committed)"
       [[ -n "$head" ]] || head="$(closeout_journal_phase_ref "$dir" implementation_committed)"
       closeout_journal_has_phase "$dir" merged || closeout_journal_record "$dir" in_progress merged "$head"
       closeout_journal_record "$dir" complete complete "$head"
@@ -1478,7 +1509,7 @@ finish_worktree() {
     run_gate=1
   fi
 
-  local verified_sha current_head
+  local verified_sha current_head publication_sha publication_tree frozen_base_tree commit_gpgsign_raw commit_gpgsign config_status
   # Single timestamp authority: one `date` call for this whole finish run, shared
   # by the post-freeze allowlist prediction (Step 3, when a gate runs) and the
   # archive step's actual output (Step 4, unconditional), so the two cannot
@@ -1572,8 +1603,11 @@ finish_worktree() {
     return 0
   fi
 
-  # Step 7: re-validate the receipt against L (F plus only allowlisted drift) before
-  # the fast-forward merge; ff-merge uses the SHA this verify prints.
+  # Step 7: re-validate the receipt against L (F plus only allowlisted drift),
+  # then synthesize one publication commit P whose sole parent is the frozen
+  # target base and whose tree is byte-identical to L. Checkpoint and lifecycle
+  # commits remain on the source branch for recovery/audit but never become
+  # target first-parent history.
   if [[ -n "$(git -C "$target_worktree" status --porcelain=v1 --untracked-files=all)" ]]; then
     echo "contract-worktree: target worktree is dirty, refusing merge: $target_worktree" >&2
     exit 1
@@ -1582,10 +1616,61 @@ finish_worktree() {
   verified_sha="$(verify_merge_gate_seal "$gate_base_ref")"
   current_head="$(git rev-parse "$current_branch^{commit}")"
   [[ "$verified_sha" == "$current_head" ]] || { echo "contract-worktree: branch moved after merge-gate review" >&2; exit 1; }
-  git -C "$target_worktree" merge --ff-only "$verified_sha"
-  finish_transaction_phase merged "$verified_sha"
-  finish_transaction_commit
-  echo "[ContractWorktree] Merged $current_branch into $target_branch at $target_worktree"
+  [[ "$(git -C "$target_worktree" rev-parse "refs/heads/$target_branch^{commit}")" == "$frozen_base_sha" ]] || {
+    echo "contract-worktree: target branch moved after merge-gate review" >&2
+    exit 1
+  }
+  publication_tree="$(git rev-parse "$verified_sha^{tree}")"
+  frozen_base_tree="$(git rev-parse "$frozen_base_sha^{tree}")"
+  [[ "$publication_tree" != "$frozen_base_tree" ]] || {
+    echo "contract-worktree: verified lifecycle tree already equals frozen target; refusing empty publication" >&2
+    exit 1
+  }
+  config_status=0
+  commit_gpgsign_raw="$(git config --get commit.gpgsign 2>/dev/null)" || config_status=$?
+  case "$config_status" in
+    0)
+      if ! commit_gpgsign="$(git config --bool --get commit.gpgsign 2>/dev/null)"; then
+        echo "contract-worktree: commit.gpgsign is configured but is not a valid boolean" >&2
+        exit 1
+      fi
+      ;;
+    1) commit_gpgsign="false" ;;
+    *)
+      echo "contract-worktree: cannot read commit.gpgsign configuration" >&2
+      exit 1
+      ;;
+  esac
+  if [[ "$commit_gpgsign" == "true" ]]; then
+    publication_sha="$(git commit-tree "$publication_tree" -p "$frozen_base_sha" \
+      -m "$commit_message" \
+      -m "Source-Worktree-Head: $verified_sha" -S)"
+  else
+    publication_sha="$(git commit-tree "$publication_tree" -p "$frozen_base_sha" \
+      -m "$commit_message" \
+      -m "Source-Worktree-Head: $verified_sha")"
+  fi
+  [[ "$(git rev-parse "$publication_sha^")" == "$frozen_base_sha" ]] || {
+    echo "contract-worktree: synthesized publication parent does not match frozen target base" >&2
+    exit 1
+  }
+  [[ "$(git rev-parse "$publication_sha^{tree}")" == "$publication_tree" ]] || {
+    echo "contract-worktree: synthesized publication tree does not match verified lifecycle tree" >&2
+    exit 1
+  }
+  finish_transaction_phase publication_prepared "$publication_sha"
+  git -C "$target_worktree" merge --ff-only "$publication_sha"
+  [[ "$(git -C "$target_worktree" rev-parse "refs/heads/$target_branch^{commit}")" == "$publication_sha" ]] || {
+    echo "contract-worktree: target branch does not resolve to synthesized publication commit" >&2
+    exit 1
+  }
+  [[ "$(git -C "$target_worktree" rev-parse "refs/heads/$target_branch^{tree}")" == "$publication_tree" ]] || {
+    echo "contract-worktree: published target tree does not match verified lifecycle tree" >&2
+    exit 1
+  }
+  finish_transaction_phase merged "$publication_sha"
+  finish_transaction_commit "$publication_sha"
+  echo "[ContractWorktree] Merged $current_branch into $target_branch as single publication commit $publication_sha at $target_worktree"
 }
 
 # Plans captured via sprint-backlog start-task carry
