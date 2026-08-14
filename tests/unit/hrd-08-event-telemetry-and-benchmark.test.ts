@@ -157,4 +157,39 @@ describe('HRD-08 event telemetry authority', () => {
   test('strict validator rejects the retired per-script protocol', () => {
     expect(isHookEventTelemetryRecord({ protocol: 1, script: 'prompt-guard.sh' })).toBe(false);
   });
+
+  test('effect observations are additive, validated, and fingerprinted', () => {
+    const repoRoot = tempDir('hrd08-effect-observation-');
+    const base = () => createHookEventTelemetry({ repoRoot, event: 'PostToolUse', routeId: 'edit' });
+    const complete = base().finalize({
+      exitCode: 0,
+      reason: 'ok',
+      effectObservation: {
+        contract_id: 'mutation-observed.durable-journal.v1',
+        boundary: 'durable-emission',
+        cardinality: 'zero-or-one',
+        recovery: 'retry-converges',
+        state: 'committed_complete',
+        committed_phases: ['journal'],
+        last_committed_phase: 'journal',
+      },
+    });
+    const partial = base().finalize({
+      exitCode: 1,
+      reason: 'handler-failed',
+      effectObservation: {
+        contract_id: 'mutation-observed.durable-journal.v1',
+        boundary: 'durable-emission',
+        cardinality: 'zero-or-one',
+        recovery: 'retry-converges',
+        state: 'unknown_partial',
+        committed_phases: [],
+        last_committed_phase: null,
+      },
+    });
+    expect(isHookEventTelemetryRecord(complete)).toBe(true);
+    expect(isHookEventTelemetryRecord(partial)).toBe(true);
+    expect(complete.fingerprint).not.toBe(partial.fingerprint);
+    expect(isHookEventTelemetryRecord({ ...complete, effect_observation: { ...complete.effect_observation!, state: 'bogus' } })).toBe(false);
+  });
 });

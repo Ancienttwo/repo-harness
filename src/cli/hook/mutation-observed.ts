@@ -74,6 +74,8 @@ export interface MutationObservedInput {
   readonly env?: NodeJS.ProcessEnv;
   /** HRD-08 event telemetry observer, invoked only after one journal transaction commits. */
   readonly observeJournalWrite?: (path: string) => void;
+  /** Narrow post-commit fault/observation seam; never driven by an env flag. */
+  readonly afterJournalWrite?: (path: string) => void;
 }
 
 export interface MutationObservedResult {
@@ -127,6 +129,7 @@ export function runMutationObserved(opts: MutationObservedInput): MutationObserv
     minimalChangeInfo: minimalChangeEnabled ? { path: filePath, baseRef: 'HEAD' } : null,
   });
   if (journalPath) opts.observeJournalWrite?.(journalPath);
+  if (journalPath) opts.afterJournalWrite?.(journalPath);
 
   return { exitCode: 0, stdout: out.join(''), stderr: errOut.join('') };
 }

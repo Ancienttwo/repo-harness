@@ -103,6 +103,35 @@ function seedDelegation(cwd: string, scope = 'turn-ordered'): string {
   return statePath;
 }
 
+function normalizedStopArtifacts(cwd: string, runId: string): Record<string, string> {
+  const paths = {
+    handoff: join(cwd, '.ai/harness/handoff/current.md'),
+    resume: join(cwd, '.ai/harness/handoff/resume.md'),
+    events: join(cwd, '.ai/harness/events.jsonl'),
+    runSummary: join(cwd, '.ai/harness/runs', `${runId}.json`),
+  };
+  const normalize = (value: string): string => value
+    .replaceAll(cwd, '<repo>')
+    .replace(/^> \*\*Working Directory\*\*: .*$/gm, '> **Working Directory**: <repo>')
+    .replace(/Content hash: sha256:[0-9a-f]+/g, 'Content hash: <normalized>');
+  return Object.fromEntries(Object.entries(paths).map(([key, path]) => [
+    key,
+    existsSync(path)
+      ? key === 'events'
+        ? readFileSync(path, 'utf8').split('\n').filter(Boolean).map((line) => {
+          try {
+            const event = JSON.parse(line) as Record<string, unknown>;
+            delete event.ts;
+            return JSON.stringify(event);
+          } catch {
+            return line;
+          }
+        }).join('\n') + '\n'
+        : normalize(readFileSync(path, 'utf8'))
+      : '(missing)',
+  ]));
+}
+
 describe('runStopHandler', () => {
   test('surfaces projection retry advisory and blocks only under the independent projection failure gate', () => {
     const failedDrain = () => ({
@@ -549,5 +578,257 @@ describe('runStopHandler', () => {
     });
     expect(lite.stdout).toBe('');
     expect(readFileSync(liteDelegation, 'utf8')).not.toContain('fallback_used');
+  });
+
+  test('each named Stop commit phase converges on a fresh retry without duplicate events', () => {
+    const phases: StopProjectionTarget['kind'][] = ['handoff', 'resume', 'event', 'run-summary'];
+    const runId = 'effect-matrix-run';
+    const faultNow = new Date('2026-08-14T08:00:00.000Z');
+    const retryNow = new Date('2026-08-14T08:01:00.000Z');
+
+    const baselineRoot = fixture();
+    runStopHandler({
+      collector: collector(baselineRoot, () => canonicalState()),
+      env: { HOOK_RUN_ID: runId },
+      dependencies: { now: () => retryNow },
+    });
+    const baseline = normalizedStopArtifacts(baselineRoot, runId);
+
+    for (const phase of phases) {
+      const retryRoot = fixture();
+      expect(() => runStopHandler({
+        collector: collector(retryRoot, () => canonicalState()),
+        env: { HOOK_RUN_ID: runId },
+        dependencies: {
+          now: () => faultNow,
+          afterProjectionWrite: (target) => {
+            if (target.kind === phase) throw new Error(`fault after ${phase}`);
+          },
+        },
+      })).toThrow(`fault after ${phase}`);
+
+      runStopHandler({
+        collector: collector(retryRoot, () => canonicalState()),
+        env: { HOOK_RUN_ID: runId },
+        dependencies: { now: () => retryNow },
+      });
+      expect(normalizedStopArtifacts(retryRoot, runId)).toEqual(baseline);
+      const events = readFileSync(join(retryRoot, '.ai/harness/events.jsonl'), 'utf8').trim().split('\n').filter(Boolean);
+      expect(events).toHaveLength(1);
+    }
+  }, 60_000);
+
+  test('event retry finds its semantic key beyond 64KiB of legal shared-log inserts', () => {
+    const cwd = fixture();
+    const runId = 'interleaved-event-run';
+    expect(() => runStopHandler({
+      collector: collector(cwd, () => canonicalState()),
+      env: { HOOK_RUN_ID: runId },
+      dependencies: {
+        now: () => new Date('2026-08-14T08:00:00.000Z'),
+        afterProjectionWrite: (target) => {
+          if (target.kind === 'event') throw new Error('fault after event');
+        },
+      },
+    })).toThrow('fault after event');
+    const eventsPath = join(cwd, '.ai/harness/events.jsonl');
+    const inserted = `${JSON.stringify({
+      ts: '2026-08-14T08:00:30+0800',
+      event_type: 'operator-event',
+      reason: 'legal shared writer',
+      run_id: 'operator-run',
+      extra: { payload: 'x'.repeat(70 * 1024) },
+    })}\n`;
+    writeFileSync(eventsPath, `${readFileSync(eventsPath, 'utf8')}${inserted}`);
+
+    runStopHandler({
+      collector: collector(cwd, () => canonicalState()),
+      env: { HOOK_RUN_ID: runId },
+      dependencies: { now: () => new Date('2026-08-14T08:01:00.000Z') },
+    });
+    const events = readFileSync(eventsPath, 'utf8').trim().split('\n').filter(Boolean);
+    expect(events).toHaveLength(2);
+    expect(events.filter((line) => JSON.parse(line).event_type === 'handoff_refresh')).toHaveLength(1);
+  });
+
+  test('event reconciliation is latest-Stop only and fails closed beyond its bounded window', () => {
+    const cwd = fixture();
+    const runId = 'latest-stop-run';
+    const run = (minute: number) => runStopHandler({
+      collector: collector(cwd, () => canonicalState()),
+      env: { HOOK_RUN_ID: runId },
+      dependencies: { now: () => new Date(`2026-08-14T08:0${minute}:00.000Z`) },
+    });
+    run(0);
+    mkdirSync(join(cwd, '.claude'), { recursive: true });
+    writeFileSync(join(cwd, '.claude/.trace.jsonl'), '{"command":"B"}\n');
+    run(1);
+    writeFileSync(join(cwd, '.claude/.trace.jsonl'), '');
+    run(2);
+    let events = readFileSync(join(cwd, '.ai/harness/events.jsonl'), 'utf8').trim().split('\n').filter(Boolean);
+    expect(events).toHaveLength(3);
+
+    const overflowRoot = fixture();
+    expect(() => runStopHandler({
+      collector: collector(overflowRoot, () => canonicalState()),
+      env: { HOOK_RUN_ID: 'overflow-run' },
+      dependencies: {
+        now: () => new Date('2026-08-14T08:00:00.000Z'),
+        afterProjectionWrite: (target) => {
+          if (target.kind === 'event') throw new Error('fault after event');
+        },
+      },
+    })).toThrow('fault after event');
+    const overflowEvents = join(overflowRoot, '.ai/harness/events.jsonl');
+    writeFileSync(overflowEvents, `${readFileSync(overflowEvents, 'utf8')}${JSON.stringify({
+      ts: '2026-08-14T08:00:30+0800', event_type: 'operator-event', reason: 'overflow', run_id: 'operator',
+      extra: { payload: 'x'.repeat(2 * 1024 * 1024) },
+    })}\n`);
+    expect(() => runStopHandler({
+      collector: collector(overflowRoot, () => canonicalState()),
+      env: { HOOK_RUN_ID: 'overflow-run' },
+      dependencies: { now: () => new Date('2026-08-14T08:01:00.000Z') },
+    })).toThrow('latest Stop event is outside the 1048576-byte reconciliation window');
+    events = readFileSync(overflowEvents, 'utf8').trim().split('\n').filter(Boolean);
+    expect(events.filter((line) => JSON.parse(line).event_type === 'handoff_refresh')).toHaveLength(1);
+  });
+
+  test('the same run can append a later Stop when projection semantics change', () => {
+    const cwd = fixture();
+    mkdirSync(join(cwd, 'plans'), { recursive: true });
+    writeFileSync(join(cwd, 'plans/one.md'), '# one\n');
+    writeFileSync(join(cwd, 'plans/two.md'), '# two\n');
+    mkdirSync(join(cwd, 'tasks'), { recursive: true });
+    writeFileSync(join(cwd, 'tasks/todos.md'), '# Deferred\n> **Source Plan**: plans/one.md\n');
+    const now = new Date('2026-08-14T08:00:00.000Z');
+    runStopHandler({
+      collector: collector(cwd, () => canonicalState(), 'plans/one.md'),
+      env: { HOOK_RUN_ID: 'semantic-run' },
+      dependencies: { now: () => now },
+    });
+    writeFileSync(join(cwd, 'tasks/todos.md'), '# Deferred\n> **Source Plan**: plans/two.md\n');
+    runStopHandler({
+      collector: collector(cwd, () => canonicalState(), 'plans/two.md'),
+      env: { HOOK_RUN_ID: 'semantic-run' },
+      dependencies: { now: () => new Date('2026-08-14T08:01:00.000Z') },
+    });
+
+    const events = readFileSync(join(cwd, '.ai/harness/events.jsonl'), 'utf8').trim().split('\n').filter(Boolean);
+    expect(events).toHaveLength(2);
+    expect(JSON.parse(events[0]!).extra.source_plan).toBe('plans/one.md');
+    expect(JSON.parse(events[1]!).extra.source_plan).toBe('plans/two.md');
+  });
+
+  test('the same run and plan append a later Stop when the live changed set changes', () => {
+    const { cwd } = gitFixture();
+    const firstNow = new Date('2026-08-14T08:00:00.000Z');
+    runStopHandler({
+      collector: collector(cwd, () => canonicalState(), null),
+      env: { HOOK_RUN_ID: 'changed-set-run' },
+      dependencies: { now: () => firstNow },
+    });
+    mkdirSync(join(cwd, 'src'), { recursive: true });
+    writeFileSync(join(cwd, 'src/new-change.ts'), 'export const changed = true;\n');
+    runStopHandler({
+      collector: collector(cwd, () => canonicalState(), null),
+      env: { HOOK_RUN_ID: 'changed-set-run' },
+      dependencies: { now: () => new Date('2026-08-14T08:01:00.000Z') },
+    });
+    const events = readFileSync(join(cwd, '.ai/harness/events.jsonl'), 'utf8').trim().split('\n').filter(Boolean);
+    expect(events).toHaveLength(2);
+  });
+
+  test('the same run appends when recovery-only rendered inputs change', () => {
+    const mutations: readonly ((cwd: string) => void)[] = [
+      (cwd) => {
+        mkdirSync(join(cwd, '.claude'), { recursive: true });
+        writeFileSync(join(cwd, '.claude/.trace.jsonl'), '{"command":"bun test"}\n');
+      },
+      (cwd) => {
+        mkdirSync(join(cwd, '.claude'), { recursive: true });
+        writeFileSync(join(cwd, '.claude/.task-state.json'), '{"source_plan":"plans/superseded.md"}\n');
+      },
+      (cwd) => {
+        mkdirSync(join(cwd, 'plans/sprints'), { recursive: true });
+        writeFileSync(join(cwd, 'plans/sprints/sprint.md'), '# Sprint\n\n## Backlog\n\n| ID | Task | Status |\n|---|---|---|\n| S1 | Changed row | pending |\n');
+        mkdirSync(join(cwd, '.ai/harness/sprint'), { recursive: true });
+        writeFileSync(join(cwd, '.ai/harness/sprint/active-sprint'), 'plans/sprints/sprint.md\n');
+      },
+    ];
+
+    for (const [index, mutate] of mutations.entries()) {
+      const cwd = fixture();
+      const runId = `recovery-input-run-${index}`;
+      const codexHome = join(cwd, 'codex-home');
+      runStopHandler({
+        collector: collector(cwd, () => canonicalState()),
+        env: { HOOK_RUN_ID: runId, CODEX_HOME: codexHome },
+        dependencies: { now: () => new Date('2026-08-14T08:00:00.000Z') },
+      });
+      mutate(cwd);
+      runStopHandler({
+        collector: collector(cwd, () => canonicalState()),
+        env: { HOOK_RUN_ID: runId, CODEX_HOME: codexHome },
+        dependencies: { now: () => new Date('2026-08-14T08:01:00.000Z') },
+      });
+      const events = readFileSync(join(cwd, '.ai/harness/events.jsonl'), 'utf8').trim().split('\n').filter(Boolean);
+      expect(events, `recovery input mutation ${index}`).toHaveLength(2);
+    }
+
+    const cwd = fixture();
+    const codexHome = join(cwd, 'codex-home');
+    const env = { HOOK_RUN_ID: 'global-handoff-run', CODEX_HOME: codexHome };
+    runStopHandler({
+      collector: collector(cwd, () => canonicalState()), env,
+      dependencies: { now: () => new Date('2026-08-14T08:00:00.000Z') },
+    });
+    mkdirSync(join(codexHome, 'handoffs'), { recursive: true });
+    writeFileSync(join(codexHome, 'handoffs/handoff-20260814.md'), '# global\n');
+    runStopHandler({
+      collector: collector(cwd, () => canonicalState()), env,
+      dependencies: { now: () => new Date('2026-08-14T08:01:00.000Z') },
+    });
+    const events = readFileSync(join(cwd, '.ai/harness/events.jsonl'), 'utf8').trim().split('\n').filter(Boolean);
+    expect(events).toHaveLength(2);
+  });
+
+  test('the same run appends when artifact or policy-derived recovery paths change', () => {
+    const plan = 'plans/plan-20260814-0000-key-inputs.md';
+    const planBody = (review: string, notes: string) => [
+      '# Projection key inputs',
+      `> **Task Review**: ${review}`,
+      `> **Implementation Notes**: ${notes}`,
+      '## Task Breakdown',
+      '- [ ] continue',
+      '',
+    ].join('\n');
+
+    const artifactRoot = fixture();
+    mkdirSync(join(artifactRoot, 'plans'), { recursive: true });
+    writeFileSync(join(artifactRoot, plan), planBody('tasks/reviews/one.review.md', 'tasks/notes/one.notes.md'));
+    const artifactRun = (minute: number) => runStopHandler({
+      collector: collector(artifactRoot, () => canonicalState(), plan),
+      env: { HOOK_RUN_ID: 'artifact-key-run' },
+      dependencies: { now: () => new Date(`2026-08-14T08:0${minute}:00.000Z`) },
+    });
+    artifactRun(0);
+    writeFileSync(join(artifactRoot, plan), planBody('tasks/reviews/two.review.md', 'tasks/notes/two.notes.md'));
+    artifactRun(1);
+    expect(readFileSync(join(artifactRoot, '.ai/harness/events.jsonl'), 'utf8').trim().split('\n')).toHaveLength(2);
+
+    const policyRoot = fixture();
+    const policyRun = (minute: number) => runStopHandler({
+      collector: collector(policyRoot, () => canonicalState()),
+      env: { HOOK_RUN_ID: 'policy-path-key-run' },
+      dependencies: { now: () => new Date(`2026-08-14T08:0${minute}:00.000Z`) },
+    });
+    policyRun(0);
+    writeFileSync(join(policyRoot, '.ai/harness/policy.json'), `${JSON.stringify({
+      harness: { checks_file: '.ai/harness/checks/alternate.json' },
+      context: { map_file: '.ai/harness/context/alternate.json' },
+      tasks: { todo_file: '.ai/harness/tasks/alternate.md', research_dir: 'docs/alternate-research' },
+    })}\n`);
+    policyRun(1);
+    expect(readFileSync(join(policyRoot, '.ai/harness/events.jsonl'), 'utf8').trim().split('\n')).toHaveLength(2);
   });
 });

@@ -108,6 +108,31 @@ sequenceDiagram
 - 根 `CLAUDE.md` 写"repo-local `.claude/settings.json` 与 `.codex/hooks.json` hook adapters 已退役"，但 `src/cli/installer/targets/claude.ts:67` 的 `supportsLocation` 仍恒返回 `true`，`resolvePath`（`:58`）在 `--location local` 时写 `<cwd>/.claude/settings.json`，`install.ts:63` 也仍把 `local` 当合法输入。Codex 侧已经真正关死（`codex.ts` 的 `supportsLocation('local') === false`）。**当前源码事实：Claude 的 repo-local 安装路径仍可执行。** 本文按源码记录，退役声明与实现之间的落差需要一次显式裁决（收紧实现，或把根 `CLAUDE.md` 的表述改成"不作为产品交付面推荐"）。
 - 本文档旧版 P1 把 `standard-plan.ts` / `fs-transaction.ts` 列为本 capability 模块。按 `.ai/context/capabilities.json`，这两个路径属于 `public-surface-adoption` 的 prefixes。已改列为跨 capability 的一次性迁移依赖，dispatch 路径不消费它们的结论保持不变。
 
+### 3.5 Typed durable-effect failure boundary (2026-08-14)
+
+- P1: `src/cli/hook/handler-registry.ts` is the sole declaration point for
+  bounded effect contracts. Only `mutation-observed` (one post-edit journal
+  phase) and `stop` (handoff, resume, event, run-summary) declare one; every
+  other typed handler remains uninstrumented rather than being inferred as
+  effect-free. `src/cli/hook/runtime.ts` owns the invocation-local observation
+  and removes handler-ID completeness branches.
+- P2: existing post-commit observers feed an additive
+  `effect_observation` field in `loop-engine-hook-event/v1`. A thrown targeted
+  handler is recorded as `unknown_partial` when no observer phase was seen,
+  `committed_partial` for an observed prefix, and `committed_complete` after
+  the declared bounded phases. A successful no-op is `none_committed`.
+  Telemetry is diagnostic only; the journal and Stop projection files remain
+  recovery authority and the public `RunHookResult` vocabulary is unchanged.
+- P3: the next host-delivered same-route event is the only production retry
+  operation. Fault tests inject throws after each named post-commit phase and
+  compare normalized durable artifacts with a no-fault baseline. Stop's append
+  event uses a timestamp-free projection key over every non-volatile rendering
+  input and compares only the latest Stop inside a bounded reconciliation
+  window; an unprovable latest event fails closed as reconcile-required. This
+  is handler-local idempotency, not a generic transaction or rollback layer.
+  Missing observer evidence fails closed as unknown and never authorizes
+  cleanup.
+
 ## 4. 历史决策记录（append-only）
 
 > 以下小节为既有文档原文逐字保留，未翻译、未改写。

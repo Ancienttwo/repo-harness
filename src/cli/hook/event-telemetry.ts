@@ -3,6 +3,7 @@ import { appendFileSync, mkdirSync } from 'fs';
 import { performance } from 'perf_hooks';
 import { join } from 'path';
 import type {
+  HookEventTelemetryEffectObservation,
   HookEventTelemetryMetric,
   HookEventTelemetryRecord,
   HookEventTelemetryStep,
@@ -52,6 +53,7 @@ export interface HookEventTelemetryFinalResult {
   readonly exitCode: number;
   readonly reason: string;
   readonly blocked?: boolean;
+  readonly effectObservation?: HookEventTelemetryEffectObservation;
 }
 
 export interface HookEventTelemetryAccumulator {
@@ -233,6 +235,7 @@ export function createHookEventTelemetry(
           incomplete_metrics: incompleteMetrics,
           opaque_steps: [...opaqueSteps],
         },
+        effect_observation: result.effectObservation,
       };
       const semanticFingerprint = {
         event: options.event,
@@ -257,6 +260,7 @@ export function createHookEventTelemetry(
           event_writes: eventWrites,
         },
         measurement: unsigned.measurement,
+        effect_observation: unsigned.effect_observation,
       };
       finalized = {
         ...unsigned,
@@ -297,6 +301,7 @@ export function isHookEventTelemetryRecord(value: unknown): value is HookEventTe
     !/^sha256:[0-9a-f]{64}$/.test(record.fingerprint)
   ) return false;
   const metrics = record.metrics;
+  if (!isEffectObservation(record.effect_observation)) return false;
   return (
     finiteNonNegative(metrics.state_resolutions) &&
     finiteNonNegative(metrics.child_processes) &&
@@ -312,4 +317,28 @@ export function isHookEventTelemetryRecord(value: unknown): value is HookEventTe
     Array.isArray(record.measurement.incomplete_metrics) &&
     Array.isArray(record.measurement.opaque_steps)
   );
+}
+
+function isEffectObservation(value: unknown): value is HookEventTelemetryEffectObservation | undefined {
+  if (value === undefined) return true;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const observation = value as Partial<HookEventTelemetryEffectObservation>;
+  const states = ['none_committed', 'unknown_partial', 'committed_partial', 'committed_complete'];
+  const cardinals = ['zero-or-one', 'bounded-sequence'];
+  const recoveries = ['retry-converges', 'reconcile-required'];
+  return typeof observation.contract_id === 'string'
+    && observation.contract_id.trim().length > 0
+    && observation.boundary === 'durable-emission'
+    && typeof observation.cardinality === 'string'
+    && cardinals.includes(observation.cardinality)
+    && typeof observation.recovery === 'string'
+    && recoveries.includes(observation.recovery)
+    && typeof observation.state === 'string'
+    && states.includes(observation.state)
+    && Array.isArray(observation.committed_phases)
+    && observation.committed_phases.every((phase) => typeof phase === 'string' && phase.length > 0)
+    && new Set(observation.committed_phases).size === observation.committed_phases.length
+    && (observation.last_committed_phase === null
+      || (typeof observation.last_committed_phase === 'string'
+        && observation.committed_phases.includes(observation.last_committed_phase)));
 }

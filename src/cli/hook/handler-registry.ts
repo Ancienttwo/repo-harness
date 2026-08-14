@@ -7,8 +7,37 @@ import { runSubagentHandler } from './subagent-handler';
 import { runCommandObserved } from './command-observed';
 import { runTraceObserver } from './trace-observer';
 import { getRoute, ROUTES, type HookEvent, type HookHandlerId, type Route, type RouteId } from './route-registry';
-import type { HookHandlerContext, HookHandlerResult, TypedHookHandler } from './handler-contract';
+import type { HookEffectContract, HookHandlerContext, HookHandlerResult, TypedHookHandler } from './handler-contract';
 import { architectureProjectionQueueState } from '../../effects/architecture/projection-jobs';
+
+const MUTATION_OBSERVED_EFFECT_CONTRACT: HookEffectContract = Object.freeze({
+  contractId: 'mutation-observed.durable-journal.v1',
+  boundary: 'durable-emission',
+  cardinality: 'zero-or-one',
+  recovery: 'retry-converges',
+  completeMetrics: [
+    'state_resolutions',
+    'files_written',
+    'durable_writes',
+    'write_transactions',
+    'full_projection_writes',
+    'event_writes',
+  ] as const,
+  phases: ['journal'] as const,
+});
+
+const STOP_EFFECT_CONTRACT: HookEffectContract = Object.freeze({
+  contractId: 'stop.recovery-projection.v1',
+  boundary: 'durable-emission',
+  cardinality: 'bounded-sequence',
+  recovery: 'retry-converges',
+  completeMetrics: [
+    'files_written',
+    'durable_writes',
+    'write_transactions',
+  ] as const,
+  phases: ['handoff', 'resume', 'event', 'run-summary'] as const,
+});
 
 function result(value: { readonly exitCode: number; readonly stdout: string; readonly stderr: string; readonly reason?: string }): HookHandlerResult {
   return value;
@@ -82,12 +111,16 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
   },
   'mutation-observed': {
     id: 'mutation-observed',
+    effectContract: MUTATION_OBSERVED_EFFECT_CONTRACT,
     run(context: HookHandlerContext): HookHandlerResult {
       return result(runMutationObserved({
         collector: context.collector,
         input: context.input,
         env: context.env,
         observeJournalWrite: context.dependencies.observeJournalWrite,
+        afterJournalWrite: context.dependencies.afterEffectCommit
+          ? () => context.dependencies.afterEffectCommit?.('journal')
+          : undefined,
       }));
     },
   },
@@ -123,6 +156,7 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
   },
   stop: {
     id: 'stop',
+    effectContract: STOP_EFFECT_CONTRACT,
     run(context: HookHandlerContext): HookHandlerResult {
       return result(runStopHandler({
         collector: context.collector,
@@ -132,6 +166,9 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
           now: () => context.now,
           observeProjectionWrite: context.dependencies.observeProjectionWrite,
           observeProjectionTransaction: context.dependencies.observeProjectionTransaction,
+          afterProjectionWrite: context.dependencies.afterEffectCommit
+            ? (target) => context.dependencies.afterEffectCommit?.(target.kind)
+            : undefined,
         },
       }));
     },
