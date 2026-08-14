@@ -188,8 +188,10 @@ const FAKE_GIT = [
 const FAKE_DD = [
   "#!/bin/bash",
   'payload="$(cat)"',
-  'if [[ -f "${FAULT_PID_FILE:-/nonexistent}" ]] &&',
-  `   [[ "\$payload" == *'"operation": "ship"'* && "\$payload" == *'"status": "complete"'* ]]; then`,
+  'kill_on_complete=0',
+  `[[ "\$payload" == *'"operation": "ship"'* && "\$payload" == *'"status": "complete"'* ]] && kill_on_complete=1`,
+  `[[ "\${FAULT_FINISH_COMPLETE:-0}" == "1" && "\$payload" == *'"operation": "finish"'* && "\$payload" == *'"status": "complete"'* ]] && kill_on_complete=1`,
+  'if [[ -f "${FAULT_PID_FILE:-/nonexistent}" && "$kill_on_complete" == "1" ]]; then',
   '  kill -9 "$(cat "$FAULT_PID_FILE")" 2>/dev/null || true',
   "  exit 137",
   "fi",
@@ -617,7 +619,7 @@ describe("contract-worktree finish closeout journal", () => {
     }, 30_000);
   }
 
-  test("SIGKILL after gate_sealed still rolls back, and SIGKILL after merged reconciles without a second merge", () => {
+  test("SIGKILL around publication rolls back before target mutation and reconciles after it", () => {
     withTempRepo("closeout-journal-merge", (container) => {
       const fixture = installFixture(container);
       const headBefore = runProcess("git", ["rev-parse", "HEAD"], fixture.linked).stdout.trim();
@@ -644,7 +646,35 @@ describe("contract-worktree finish closeout journal", () => {
       expect(abort.status, `${abort.stdout}\n${abort.stderr}`).toBe(0);
       expect(runProcess("git", ["rev-parse", "HEAD"], fixture.linked).stdout.trim()).toBe(headBefore);
 
-      // Second run: crash right after the merge landed but before `complete`.
+      // Second run: publication object and its journal identity exist, but the
+      // target update has not run. Object existence is not an external effect;
+      // recovery must still allow rollback and keep main byte-identical.
+      const preparedCrash = runHelperWithFault(
+        "scripts/contract-worktree.sh",
+        ["finish", "--merge"],
+        fixture.linked,
+        fixture.pidFile,
+        {
+          REPO_HARNESS_GIT_BIN: fixture.fakeGit,
+          FAULT_AFTER_PHASE: "publication_prepared",
+          FAULT_JOURNAL_DIR: join(fixture.journalRoot, "finish"),
+        },
+      );
+      expect(preparedCrash.status).not.toBe(0);
+      dir = onlyJournal(fixture, "finish");
+      expect(readJournal(dir).phases).toContain("publication_prepared");
+      expect(readJournal(dir).phases).not.toContain("merged");
+      expect(runProcess("git", ["rev-parse", "main"], fixture.primary).stdout.trim()).toBe(mainBefore);
+      const preparedAbort = runHelper("scripts/contract-worktree.sh", ["recover", "abort"], fixture.linked);
+      expect(preparedAbort.status, `${preparedAbort.stdout}\n${preparedAbort.stderr}`).toBe(0);
+      expect(runProcess("git", ["rev-parse", "HEAD"], fixture.linked).stdout.trim()).toBe(headBefore);
+
+      // Third run: crash right after the target publication landed but before
+      // `complete`. The source branch is deliberately not an ancestor of main;
+      // recovery must use publication_prepared's target commit identity.
+      const ddShim = join(container, "finish-dd-shim");
+      mkdirSync(ddShim, { recursive: true });
+      writeExecutable(join(ddShim, "dd"), FAKE_DD);
       const mergedCrash = runHelperWithFault(
         "scripts/contract-worktree.sh",
         ["finish", "--merge"],
@@ -654,6 +684,8 @@ describe("contract-worktree finish closeout journal", () => {
           REPO_HARNESS_GIT_BIN: fixture.fakeGit,
           FAULT_AFTER_PHASE: "merged",
           FAULT_JOURNAL_DIR: join(fixture.journalRoot, "finish"),
+          FAULT_FINISH_COMPLETE: "1",
+          PATH: `${ddShim}:${process.env.PATH ?? ""}`,
         },
       );
       expect(mergedCrash.status).not.toBe(0);
@@ -665,6 +697,11 @@ describe("contract-worktree finish closeout journal", () => {
 
       const mergedSha = runProcess("git", ["rev-parse", "main"], fixture.primary).stdout.trim();
       expect(mergedSha).not.toBe(mainBefore);
+      const sourceHead = runProcess("git", ["rev-parse", "HEAD"], fixture.linked).stdout.trim();
+      expect(runProcess("git", ["merge-base", "--is-ancestor", sourceHead, "main"], fixture.primary).status).not.toBe(0);
+      expect(runProcess("git", ["rev-parse", "main^{tree}"], fixture.primary).stdout.trim()).toBe(
+        runProcess("git", ["rev-parse", "HEAD^{tree}"], fixture.linked).stdout.trim(),
+      );
 
       // Abort is refused once the merge landed; it must never undo an applied
       // external effect.

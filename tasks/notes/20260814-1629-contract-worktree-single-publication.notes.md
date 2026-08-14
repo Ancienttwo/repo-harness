@@ -1,0 +1,52 @@
+# Implementation Notes: contract-worktree-single-publication
+
+> **Status**: Active
+> **Plan**: plans/plan-20260814-1629-contract-worktree-single-publication.md
+> **Contract**: tasks/contracts/20260814-1629-contract-worktree-single-publication.contract.md
+> **Review**: tasks/reviews/20260814-1629-contract-worktree-single-publication.review.md
+> **Last Updated**: 2026-08-14 16:29
+> **Lifecycle**: notes
+
+## Design Decisions
+
+- Keep checkpoint commits on the source branch and synthesize a separate target commit with `git commit-tree`; do not rewrite the source branch because its HEAD and journal snapshot are the recovery authority.
+- Bind the publication commit to the frozen target base as its sole parent and to the verified lifecycle HEAD's exact tree. The existing merge seal continues to verify the source HEAD; tree/parent assertions bridge that authority to the target commit.
+- Record `publication_prepared` before mutating the target so a fresh recovery process can distinguish “object created only” from “target ref updated”.
+- Preserve `finish --no-merge` behavior: without a publication boundary its checkpoint history is intentionally still available for later PR shipping.
+
+## Deviations From Plan Or Spec
+
+- The full `bun test` run reached 2,362 pass / 1 skip but remained red on six pre-existing environment-sensitive ArchContext/global-runtime bootstrap cases after the reference-config projection drift introduced by this slice was fixed. Focused reruns confirm the reference-config projection now passes; the remaining failures are outside this contract's changed paths.
+- External Claude acceptance could not run because sending the private worktree diff to an external provider requires explicit user authorization. No waiver or synthetic receipt was recorded.
+
+## Tradeoffs Considered
+
+| Option | Decision | Reason |
+|--------|----------|--------|
+| Rewrite source branch with reset/squash | Reject | Destroys the branch HEAD used by receipt/seal and complicates crash rollback. |
+| `git merge --squash` in the primary worktree | Reject | Mutates index/worktree before the final atomic boundary and enlarges the crash surface. |
+| `git commit-tree` plus fast-forward target | Use | Creates one commit object without touching either worktree, then reuses Git's atomic ref/worktree update and dirty-target protection. |
+
+## Open Questions
+
+- Final AcceptanceReceipt remains pending explicit authorization for external Claude review or an explicit typed user waiver.
+
+## Architecture Major-Change Adjudication
+
+- The first ArchContext pass reported `unresolved-major-change` only because this linked worktree had no CodeGraph index (`codeGraphStatus: unavailable`, all 11 capabilities lost flow proof). No acceptance override was applied.
+- After `codegraph init .` indexed 487 files / 9,572 nodes / 37,332 edges, the same projection classified `majorChange.mode: none`. The canonical docs apply completed with receipt `sha256:7193de83d43aa29a50f2712219f7ce3f7dd4b86800a4c3b7976b160211efe438`.
+
+## Evidence Links
+
+- Checks: `.ai/harness/checks/latest.json`
+- Run snapshots: `.ai/harness/runs/`
+
+## Promotion Filter
+
+Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset files only when all three hold: hard to reverse, surprising without local context, and a real trade-off existed. If any one is missing, keep it in this notes file instead.
+
+## Promotion Candidates
+
+- Promote to `tasks/lessons.md` only after a repeated correction or failure pattern.
+- Promote to `docs/researches/` only when it is durable repo knowledge with evidence.
+- Promote to harness asset files only after verification across more than one task or fixture.

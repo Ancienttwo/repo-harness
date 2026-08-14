@@ -531,7 +531,13 @@ describe("Workflow helper scripts", () => {
       contract.indexOf('run_merge_gate "$gate_base_ref" "$post_freeze_manifest"'),
     );
     expect(contract.indexOf('verify_merge_gate_seal "$gate_base_ref"')).toBeLessThan(
-      contract.indexOf('git -C "$target_worktree" merge --ff-only "$verified_sha"'),
+      contract.indexOf('publication_sha="$(git commit-tree "$publication_tree"'),
+    );
+    expect(contract.indexOf('finish_transaction_phase publication_prepared "$publication_sha"')).toBeLessThan(
+      contract.indexOf('git -C "$target_worktree" merge --ff-only "$publication_sha"'),
+    );
+    expect(contract.indexOf('git -C "$target_worktree" merge --ff-only "$publication_sha"')).toBeLessThan(
+      contract.indexOf('finish_transaction_phase merged "$publication_sha"'),
     );
     expect(contract).toContain('local merge gate base must equal target branch $target_branch');
     expect(ship.indexOf('verified_sha="$(verify_merge_gate_before_ship "$gate_base_ref")"')).toBeLessThan(

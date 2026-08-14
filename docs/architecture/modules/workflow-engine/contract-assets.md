@@ -1,7 +1,7 @@
 # workflow-engine/contract-assets 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" sourceDigest="sha256:6d50fa43d5583ee0ef25afa1363333f11f3559475cae0f8dd61d8973925acf41" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:4ed97fc0617f36e832189a37a20f4ee0ef42f852f710578ba512170012b2371e" verifiedAgainst="main@c30f08fcf306b15911f300288bd10cbff03d5377@2026-08-12T23:03:40+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" sourceDigest="sha256:866de19faa98b32b0a17800367d168ff915e212eccb6831fa64a5908beaee79b" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:860c6f38eda183b10358fb3638c2c8d261166f8d456667bdfcb8c76919833a91" verifiedAgainst="codex/contract-worktree-single-publication@6d62d3b2d0a635911037b66a3e3e8095fac74b28@2026-08-14T01:25:22+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`main@c30f08fcf306b15911f300288bd10cbff03d5377`(2026-08-12)
+> **Verified against**:`codex/contract-worktree-single-publication@6d62d3b2d0a635911037b66a3e3e8095fac74b28`(2026-08-14)
 > **Capability ID**:`capability.workflow-engine.contract-assets`(kind `capability`)
 > **Matched Prefixes**:`assets/workflow-contract.v1.json`、`.ai/harness/workflow-contract.json`、`.ai/harness/policy.json`、`.ai/context/context-map.json`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-run.ts`、`scripts/contract-worktree.sh`、`scripts/archive-workflow.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`src/cli/commands/init.ts`、`src/cli/commands/capability-context.ts`、`src/cli/runtime/helper-runner.ts`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`
 > **Local Contracts**:`assets/AGENTS.md`、`assets/CLAUDE.md`
@@ -36,7 +36,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 文件數:`161`
-- 總行數:`45320`
+- 總行數:`45431`
 - 匹配前綴:`assets/workflow-contract.v1.json`、`.ai/harness/workflow-contract.json`、`.ai/harness/policy.json`、`.ai/context/context-map.json`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-run.ts`、`scripts/contract-worktree.sh`、`scripts/archive-workflow.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`src/cli/commands/init.ts`、`src/cli/commands/capability-context.ts`、`src/cli/runtime/helper-runner.ts`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`
 - 復算:`archctx docs plan --json`(掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`)
 
@@ -90,6 +90,7 @@ sequenceDiagram
 | I8 | 51/52 helper 与 `scripts/` byte-identical；唯一例外携带 `@generated-from` 哈希头 | `scripts/sync-helper-sources.ts` `--check` |
 | I9 | adoption 事务永不无声覆盖用户内容 | `expectedContentHash` / `expectedAbsent` / move-collision 抛错 |
 | I10 | install profile 单一 authored 权威是 `profile`，`components` 是漂移检查过的投影 | `global-runtime.ts:651` + `PROFILE_COMPONENTS` |
+| I11 | 本地 contract publication 每个 work-package 只向 target 增加一个 commit，且 publication tree 必须与 seal 验证后的 lifecycle HEAD byte-identical | `contract-worktree.sh` 的 frozen-base、`commit-tree` parent/tree 断言、`publication_prepared` journal phase |
 
 ### 3.3 已接受的约束与取舍
 
@@ -98,6 +99,7 @@ sequenceDiagram
 - **闸门在 commit 之后跑**。pre-commit 的 HEAD 无法标识 merge candidate，所以只能先落 commit 再封印；FAIL/BLOCKED 靠恢复 pre-finish commit 与实时工作流工件来回滚。
 - **`functional_block_selector` 保留在 context-map 里但自述为 compatibility selector**（`.ai/context/context-map.json`，`rule` 字段原文：`compatibility selector; capability registry is the source of truth`）。这是**已实现、保留字段**：结构在，权威已经移交给注册表。它是有边界的遗留物，不是双权威。
 - **`merge-gate` 无 provider 调用**。它是确定性封印，不是语义评审；语义验收由独立的 AcceptanceReceipt 承担。这条边界让闸门可离线、可重放。
+- **证据边界不再等于 public commit 边界**。source branch 保留 checkpoint 与 lifecycle commits 供恢复和审计；local merge 用 frozen target base + verified lifecycle tree 合成一个 publication commit。代价是 source commit topology 不进入 target ancestry，收益是 main history 与 work-package/rollback 边界一致；journal 记录 publication SHA，并以 target ref 是否包含它判断外部效果是否已经落地。
 
 ### 3.4 10x 规模下先垮的点
 
@@ -139,6 +141,20 @@ sequenceDiagram
 - Prompt-hook permission is typed `/delegate` or `/parallel` only. Policy no
   longer grants SessionStart standing authorization or treats natural-language
   classification as permission.
+
+### 2026-08-14 Single Publication Commit Cutover
+
+- `contract-worktree finish --merge` no longer fast-forwards the source branch's
+  checkpoint and lifecycle topology into the target. It seals the exact source
+  lifecycle HEAD, creates one commit whose parent is the frozen target base and
+  whose tree is identical to that HEAD, then fast-forwards the target to the
+  synthesized publication commit.
+- `publication_prepared` is recorded before target mutation. Recovery treats a
+  created-but-unpublished object as abortable and a target ref containing that
+  exact commit as landed, so the pre-existing SIGKILL window remains fail-closed.
+- `finish --no-merge` and PR shipping retain source-branch commits because the
+  provider owns their later merge/squash boundary. AcceptanceReceipt and review
+  subject schemas are unchanged; commit topology is not semantic authority.
 
 ---
 

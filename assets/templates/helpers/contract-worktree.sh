@@ -935,8 +935,8 @@ finish_transaction_abort() {
 }
 
 finish_transaction_commit() {
-  local head
-  head="$(git rev-parse HEAD)"
+  local head="${1:-}"
+  head="${head:-$(git rev-parse HEAD)}"
   finish_transaction_active=0
   trap - EXIT
   closeout_journal_record "$closeout_journal_dir" complete complete "$head"
@@ -955,16 +955,23 @@ finish_transaction_on_exit() {
   exit "$status"
 }
 
-# True once finish's only external effect -- the fast-forward of the target
-# branch -- is observable, whether or not the `merged` phase was reached before
-# the interrupt. `abort` refuses on true, `reconcile` refuses on false, so the
-# window between the merge and its phase record cannot defeat either rule.
+# True once finish's only external effect -- publication on the target branch --
+# is observable, whether or not the `merged` phase was reached before the
+# interrupt. `abort` refuses on true, `reconcile` refuses on false, so the window
+# between the target update and its phase record cannot defeat either rule.
 closeout_finish_effect_landed() {
   local dir="$1" head target_branch base_sha
   closeout_journal_has_phase "$dir" merged && return 0
   [[ "$(closeout_journal_field "$dir/meta.json" merge_back)" == "1" ]] || return 1
-  head="$(closeout_journal_phase_ref "$dir" lifecycle_committed)"
-  [[ -n "$head" ]] || head="$(closeout_journal_phase_ref "$dir" implementation_committed)"
+  head="$(closeout_journal_phase_ref "$dir" publication_prepared)"
+  if [[ -z "$head" ]]; then
+    # Journals opened before single-publication cutover recorded the source
+    # branch head instead. Retain that exact landed-effect probe so an already
+    # applied legacy fast-forward can never be mistaken for an abortable local
+    # transaction.
+    head="$(closeout_journal_phase_ref "$dir" lifecycle_committed)"
+    [[ -n "$head" ]] || head="$(closeout_journal_phase_ref "$dir" implementation_committed)"
+  fi
   [[ -n "$head" ]] || return 1
   base_sha="$(closeout_journal_field "$dir/meta.json" base_sha)"
   [[ "$head" != "$base_sha" ]] || return 1
@@ -1121,7 +1128,8 @@ recover_worktree() {
         echo "contract-worktree: no landed merge to reconcile (last phase: $last_phase); run 'recover abort' instead" >&2
         return 1
       }
-      head="$(closeout_journal_phase_ref "$dir" lifecycle_committed)"
+      head="$(closeout_journal_phase_ref "$dir" publication_prepared)"
+      [[ -n "$head" ]] || head="$(closeout_journal_phase_ref "$dir" lifecycle_committed)"
       [[ -n "$head" ]] || head="$(closeout_journal_phase_ref "$dir" implementation_committed)"
       closeout_journal_has_phase "$dir" merged || closeout_journal_record "$dir" in_progress merged "$head"
       closeout_journal_record "$dir" complete complete "$head"
@@ -1478,7 +1486,7 @@ finish_worktree() {
     run_gate=1
   fi
 
-  local verified_sha current_head
+  local verified_sha current_head publication_sha publication_tree
   # Single timestamp authority: one `date` call for this whole finish run, shared
   # by the post-freeze allowlist prediction (Step 3, when a gate runs) and the
   # archive step's actual output (Step 4, unconditional), so the two cannot
@@ -1572,8 +1580,11 @@ finish_worktree() {
     return 0
   fi
 
-  # Step 7: re-validate the receipt against L (F plus only allowlisted drift) before
-  # the fast-forward merge; ff-merge uses the SHA this verify prints.
+  # Step 7: re-validate the receipt against L (F plus only allowlisted drift),
+  # then synthesize one publication commit P whose sole parent is the frozen
+  # target base and whose tree is byte-identical to L. Checkpoint and lifecycle
+  # commits remain on the source branch for recovery/audit but never become
+  # target first-parent history.
   if [[ -n "$(git -C "$target_worktree" status --porcelain=v1 --untracked-files=all)" ]]; then
     echo "contract-worktree: target worktree is dirty, refusing merge: $target_worktree" >&2
     exit 1
@@ -1582,10 +1593,35 @@ finish_worktree() {
   verified_sha="$(verify_merge_gate_seal "$gate_base_ref")"
   current_head="$(git rev-parse "$current_branch^{commit}")"
   [[ "$verified_sha" == "$current_head" ]] || { echo "contract-worktree: branch moved after merge-gate review" >&2; exit 1; }
-  git -C "$target_worktree" merge --ff-only "$verified_sha"
-  finish_transaction_phase merged "$verified_sha"
-  finish_transaction_commit
-  echo "[ContractWorktree] Merged $current_branch into $target_branch at $target_worktree"
+  [[ "$(git -C "$target_worktree" rev-parse "$target_branch^{commit}")" == "$frozen_base_sha" ]] || {
+    echo "contract-worktree: target branch moved after merge-gate review" >&2
+    exit 1
+  }
+  publication_tree="$(git rev-parse "$verified_sha^{tree}")"
+  publication_sha="$(git commit-tree "$publication_tree" -p "$frozen_base_sha" \
+    -m "$commit_message" \
+    -m "Source-Worktree-Head: $verified_sha")"
+  [[ "$(git rev-parse "$publication_sha^")" == "$frozen_base_sha" ]] || {
+    echo "contract-worktree: synthesized publication parent does not match frozen target base" >&2
+    exit 1
+  }
+  [[ "$(git rev-parse "$publication_sha^{tree}")" == "$publication_tree" ]] || {
+    echo "contract-worktree: synthesized publication tree does not match verified lifecycle tree" >&2
+    exit 1
+  }
+  finish_transaction_phase publication_prepared "$publication_sha"
+  git -C "$target_worktree" merge --ff-only "$publication_sha"
+  [[ "$(git -C "$target_worktree" rev-parse "$target_branch^{commit}")" == "$publication_sha" ]] || {
+    echo "contract-worktree: target branch does not resolve to synthesized publication commit" >&2
+    exit 1
+  }
+  [[ "$(git -C "$target_worktree" rev-parse "$target_branch^{tree}")" == "$publication_tree" ]] || {
+    echo "contract-worktree: published target tree does not match verified lifecycle tree" >&2
+    exit 1
+  }
+  finish_transaction_phase merged "$publication_sha"
+  finish_transaction_commit "$publication_sha"
+  echo "[ContractWorktree] Merged $current_branch into $target_branch as single publication commit $publication_sha at $target_worktree"
 }
 
 # Plans captured via sprint-backlog start-task carry
