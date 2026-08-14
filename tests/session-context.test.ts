@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { execFileSync } from "child_process";
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -726,6 +727,25 @@ describe("sessionStartMainContent — cold-path event-log rotation (gatekeeper P
         expect(existsSync(join(outside, "events-202608.jsonl"))).toBe(false);
       } finally {
         rmSync(outside, { recursive: true, force: true });
+      }
+    });
+  });
+
+  test("architecture rotation refuses a source-log symlink", () => {
+    withTmpRepo("rotate-architecture-source-symlink", (repoRoot) => {
+      mkdirSync(join(repoRoot, ".ai/harness/architecture"), { recursive: true });
+      const eventsPath = join(repoRoot, ".ai/harness/architecture/events.jsonl");
+      const outside = join(tmpdir(), `architecture-events-outside-${process.pid}-${Date.now()}.jsonl`);
+      try {
+        writeEventLines(outside, 2500);
+        const before = readFileSync(outside, "utf8");
+        symlinkSync(outside, eventsPath);
+        sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now());
+        expect(readFileSync(outside, "utf8")).toBe(before);
+        expect(existsSync(join(repoRoot, ".ai/harness/architecture/archive"))).toBe(false);
+        expect(lstatSync(eventsPath).isSymbolicLink()).toBe(true);
+      } finally {
+        rmSync(outside, { force: true });
       }
     });
   });

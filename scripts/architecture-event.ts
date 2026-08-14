@@ -87,6 +87,8 @@ function parseArgs(argv: string[]): Args {
       "upsert-from-request",
       "reindex-requests",
       "validate-requests",
+      "acquire-queue-lock",
+      "release-queue-lock",
       "request-info",
       "sync-context-map",
       "sync-contract-files",
@@ -514,45 +516,71 @@ function processIsAlive(pid: number): boolean {
   }
 }
 
-function withQueueLock<T>(requestsDir: string, operation: () => T): T {
+function acquireQueueLock(requestsDir: string, ownerPid: number, ownerToken: string): string {
   assertSafeWriteTarget(`${requestsDir}/.write-probe`);
-  const lockDir = `${requestsDir}/.architecture-queue.lock`;
+  const lockFile = `${requestsDir}/.architecture-queue.lock`;
   const deadline = Date.now() + 10_000;
   while (true) {
     try {
-      const fd = openSync(lockDir, "wx", 0o600);
+      const fd = openSync(lockFile, "wx", 0o600);
       try {
-        writeAllSync(fd, JSON.stringify({ pid: process.pid, created_at: new Date().toISOString() }));
+        writeAllSync(fd, JSON.stringify({ pid: ownerPid, token: ownerToken, created_at: new Date().toISOString() }));
       } finally {
         closeSync(fd);
       }
-      const holdMs = Number(process.env.REPO_HARNESS_ARCHITECTURE_HOLD_AFTER_LOCK_MS || "0");
-      if (Number.isFinite(holdMs) && holdMs > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, holdMs);
-      break;
+      return lockFile;
     } catch (error: any) {
-      if (error?.code !== "EEXIST" || !existsSync(lockDir)) throw error;
+      if (error?.code !== "EEXIST" || !existsSync(lockFile)) throw error;
       try {
-        const owner = JSON.parse(readFileSync(lockDir, "utf8"));
+        const owner = JSON.parse(readFileSync(lockFile, "utf8"));
         if (!processIsAlive(Number(owner.pid))) {
-          rmSync(lockDir, { force: true });
+          rmSync(lockFile, { force: true });
           continue;
         }
       } catch {
-        const ageMs = Date.now() - statSync(lockDir).mtimeMs;
+        const ageMs = Date.now() - statSync(lockFile).mtimeMs;
         if (ageMs >= 2_000) {
-          rmSync(lockDir, { force: true });
+          rmSync(lockFile, { force: true });
           continue;
         }
       }
-      if (Date.now() >= deadline) throw new Error(`architecture queue lock unavailable: ${lockDir}`);
+      if (Date.now() >= deadline) throw new Error(`architecture queue lock unavailable: ${lockFile}`);
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
     }
   }
+}
+
+function releaseQueueLock(requestsDir: string, ownerPid: number, ownerToken: string): void {
+  const lockFile = `${requestsDir}/.architecture-queue.lock`;
+  assertSafeWriteTarget(lockFile);
+  if (!existsSync(lockFile)) throw new Error(`architecture queue lock is missing: ${lockFile}`);
+  const owner = JSON.parse(readFileSync(lockFile, "utf8"));
+  if (Number(owner.pid) !== ownerPid || owner.token !== ownerToken) {
+    throw new Error(`architecture queue lock owner does not match: ${lockFile}`);
+  }
+  rmSync(lockFile);
+}
+
+function withQueueLock<T>(requestsDir: string, operation: () => T): T {
+  const ownerToken = randomUUID();
+  acquireQueueLock(requestsDir, process.pid, ownerToken);
+  const holdMs = Number(process.env.REPO_HARNESS_ARCHITECTURE_HOLD_AFTER_LOCK_MS || "0");
+  if (Number.isFinite(holdMs) && holdMs > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, holdMs);
   try {
     return operation();
   } finally {
-    rmSync(lockDir, { force: true });
+    releaseQueueLock(requestsDir, process.pid, ownerToken);
   }
+}
+
+function queueLockOwner(args: Args): { requestsDir: string; ownerPid: number; ownerToken: string } {
+  const requestsDir = requireOption(args, "requestsDir");
+  const ownerPid = Number(requireOption(args, "ownerPid"));
+  const ownerToken = requireOption(args, "ownerToken");
+  if (!Number.isInteger(ownerPid) || ownerPid <= 0 || !processIsAlive(ownerPid)) {
+    throw new Error("architecture queue lock owner pid must identify a live process");
+  }
+  return { requestsDir, ownerPid, ownerToken };
 }
 
 function withEventLogLock<T>(eventFile: string, operation: () => T): T {
@@ -1329,6 +1357,16 @@ try {
     case "validate-requests":
       validateRequests(args);
       process.exit(0);
+    case "acquire-queue-lock": {
+      const owner = queueLockOwner(args);
+      acquireQueueLock(owner.requestsDir, owner.ownerPid, owner.ownerToken);
+      process.exit(0);
+    }
+    case "release-queue-lock": {
+      const owner = queueLockOwner(args);
+      releaseQueueLock(owner.requestsDir, owner.ownerPid, owner.ownerToken);
+      process.exit(0);
+    }
     case "request-info":
       print(requestInfo(args));
       break;

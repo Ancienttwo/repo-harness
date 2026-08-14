@@ -501,8 +501,24 @@ function withEventsLock(lockRoot: string, name: string, fn: () => void): void {
 }
 
 /** `workflow_rotate_events_file_locked()` port. */
+function isSafeRepoPath(repoRoot: string, target: string): boolean {
+  const root = realpathSync(repoRoot);
+  const lexicalRoot = resolve(repoRoot);
+  const lexicalTarget = resolve(target);
+  const targetRelative = relative(lexicalRoot, lexicalTarget);
+  if (targetRelative === '..' || targetRelative.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`)) return false;
+  let cursor = root;
+  for (const part of targetRelative.split(process.platform === 'win32' ? '\\' : '/').filter(Boolean)) {
+    cursor = join(cursor, part);
+    if (!existsSync(cursor)) break;
+    if (lstatSync(cursor).isSymbolicLink()) return false;
+  }
+  return true;
+}
+
 function workflowRotateEventsFileLocked(repoRoot: string, relPath: string, wcLineCount: number, keep: number): void {
   const absPath = join(repoRoot, relPath);
+  if (!isSafeRepoPath(repoRoot, absPath)) return;
   const parsed = readEventsFileForRotation(absPath);
   if (parsed === null) return;
 
@@ -516,17 +532,10 @@ function workflowRotateEventsFileLocked(repoRoot: string, relPath: string, wcLin
   const archiveFile = join(archiveDir, `${base}-${stamp}.jsonl`);
 
   const root = realpathSync(repoRoot);
-  const lexicalRoot = resolve(repoRoot);
-  const lexicalArchive = resolve(archiveDir);
-  const archiveRelative = relative(lexicalRoot, lexicalArchive);
+  const archiveRelative = relative(resolve(repoRoot), resolve(archiveDir));
   if (archiveRelative === '..' || archiveRelative.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`)) return;
   const archivePath = join(root, archiveRelative);
-  let cursor = root;
-  for (const part of archivePath.slice(root.length + 1).split('/').filter(Boolean)) {
-    cursor = join(cursor, part);
-    if (!existsSync(cursor)) break;
-    if (lstatSync(cursor).isSymbolicLink()) return;
-  }
+  if (!isSafeRepoPath(repoRoot, archiveDir)) return;
 
   try {
     mkdirSync(archiveDir, { recursive: true });
@@ -563,6 +572,7 @@ function workflowRotateEventsFile(
 ): void {
   const absPath = join(repoRoot, relPath);
   if (!existsSync(absPath)) return;
+  if (!isSafeRepoPath(repoRoot, absPath)) return;
   const counts = fileLineAndByteCount(absPath);
   if (counts === null) return;
   if (counts.lines <= maxLines && counts.bytes <= maxBytes) return;
