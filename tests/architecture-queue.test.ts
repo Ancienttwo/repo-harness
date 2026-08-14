@@ -266,6 +266,75 @@ describe("architecture queue", () => {
     });
   }, 30_000);
 
+  test("record rejects an in-repository intermediate symlink", () => {
+    tmpRepo((cwd) => {
+      mkdirSync(join(cwd, "src"), { recursive: true });
+      rmSync(join(cwd, "docs/architecture/requests"), { recursive: true, force: true });
+      symlinkSync("../../../src", join(cwd, "docs/architecture/requests"));
+      const result = queue(cwd, ["record", "--file", "src/cli/hook/symlink-parent.ts"]);
+      expect(result.status).toBe(1);
+      expect(existsSync(join(cwd, "src/root.md"))).toBe(false);
+    });
+  }, 30_000);
+
+  test("record migrates the exact stable pre-Event-Records card from its audit log", () => {
+    tmpRepo((cwd) => {
+      const target = "src/cli/hook/legacy-stable.ts";
+      expect(queue(cwd, ["record", "--file", target]).status).toBe(0);
+      const cardPath = join(cwd, "docs/architecture/requests/root.md");
+      const modern = readFileSync(cardPath, "utf8");
+      const legacy = modern
+        .replace(/\n## Event Records\s*\n```json[\s\S]*?```\s*\n?/, "\n")
+        .replace(/,\n  "event_key": "sha256:[0-9a-f]{64}"/, "");
+      writeFileSync(cardPath, legacy);
+      const migrated = queue(cwd, ["record", "--file", target]);
+      expect(migrated.status, migrated.stderr).toBe(0);
+      const current = readFileSync(cardPath, "utf8");
+      expect(current).toContain("## Event Records");
+      expect(current).toMatch(/"event_key": "sha256:[0-9a-f]{64}"/);
+    });
+  }, 30_000);
+
+  test("status fails closed when card metadata diverges from canonical records", () => {
+    tmpRepo((cwd) => {
+      expect(queue(cwd, ["record", "--file", "src/cli/hook/metadata.ts"]).status).toBe(0);
+      const cardPath = join(cwd, "docs/architecture/requests/root.md");
+      const canonical = readFileSync(cardPath, "utf8");
+      writeFileSync(cardPath, canonical.replace("> **Severity**: high", "> **Severity**: low"));
+      expect(queue(cwd, ["status", "--gate"]).status).toBe(1);
+      writeFileSync(cardPath, canonical.replace("> **Status**: Pending\n", ""));
+      expect(queue(cwd, ["status", "--gate"]).status).toBe(1);
+    });
+  }, 30_000);
+
+  test("record reclaims a queue lock whose owner was SIGKILLed", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "architecture-queue-sigkill-"));
+    try {
+      mkdirSync(join(cwd, "scripts"), { recursive: true });
+      mkdirSync(join(cwd, "docs/architecture/requests"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness/architecture"), { recursive: true });
+      for (const file of ["architecture-queue.sh", "architecture-event.ts", "archive-architecture-request.sh"]) {
+        copyFileSync(join(ROOT, "scripts", file), join(cwd, "scripts", file));
+      }
+      writeFileSync(join(cwd, "docs/architecture/index.md"), "# Architecture Index\n\n## Pending Requests\n");
+      const child = spawn("bash", ["scripts/architecture-queue.sh", "record", "--file", "src/cli/hook/crash.ts"], {
+        cwd,
+        detached: true,
+        env: { ...process.env, REPO_HARNESS_ARCHITECTURE_HOLD_AFTER_LOCK_MS: "10000" },
+      });
+      const ownerPath = join(cwd, "docs/architecture/requests/.architecture-queue.lock/owner.json");
+      const deadline = Date.now() + 3000;
+      while (!existsSync(ownerPath) && Date.now() < deadline) await Bun.sleep(20);
+      expect(existsSync(ownerPath)).toBe(true);
+      process.kill(-child.pid!, "SIGKILL");
+      await new Promise((resolve) => child.on("exit", resolve));
+      const retried = queue(cwd, ["record", "--file", "src/cli/hook/crash.ts"]);
+      expect(retried.status, retried.stderr).toBe(0);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test("record preserves pipe paths and keeps canonical per-file severities", () => {
     tmpRepo((cwd) => {
       for (const target of [".ai/harness/policy.json", "src/cli/hook/low.ts", "src/cli/hook/a|b.ts"]) {

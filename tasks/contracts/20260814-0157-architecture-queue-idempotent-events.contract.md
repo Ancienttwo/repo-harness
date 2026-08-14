@@ -82,6 +82,8 @@ allowed_paths:
   - tests/architecture-queue.test.ts
   - tests/architecture-event.test.ts
   - tests/stop-handler.test.ts
+  - src/cli/hook/session-context.ts
+  - tests/session-context.test.ts
 ```
 
 ## Evidence Requirements

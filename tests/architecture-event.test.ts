@@ -373,6 +373,12 @@ describe("architecture-event helper", () => {
       writeFileSync(cardPath, canonical.replace(/"event_key": "sha256:[0-9a-f]{64}"/, '"event_key": "sha256:forged"'));
       expect(runArchitectureEvent(args, cwd).status).toBe(1);
 
+      writeFileSync(cardPath, canonical.replace("> **Severity**: low", "> **Severity**: high"));
+      expect(runArchitectureEvent(args, cwd).status).toBe(1);
+
+      writeFileSync(cardPath, canonical.replace("> **Status**: Pending\n", ""));
+      expect(runArchitectureEvent(args, cwd).status).toBe(1);
+
       writeFileSync(cardPath, canonical.replace(/## Event Fields\s*```json[\s\S]*?```/, "## Event Fields\n\n```json\n{}\n```"));
       expect(runArchitectureEvent(args, cwd).status).toBe(1);
 
@@ -380,6 +386,56 @@ describe("architecture-event helper", () => {
       const reopened = runArchitectureEvent(args, cwd);
       expect(reopened.status, reopened.stderr).toBe(0);
       expect(reopened.stdout).toBe("changed");
+      expect(readFileSync(cardPath, "utf8")).toContain("> **Status**: Pending");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("records K1 to K2 to K1 as three occurrences instead of global-key deduplication", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "architecture-event-recurrence-"));
+    try {
+      mkdirSync(join(cwd, "docs/architecture/requests"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness/architecture"), { recursive: true });
+      writeFileSync(join(cwd, "docs/architecture/index.md"), "# Architecture Index\n\n## Pending Requests\n");
+      const requestFile = "docs/architecture/requests/root.md";
+      const base = {
+        ts: "2026-08-14T01:00:00+0800",
+        file_path: "src/recurrence.ts",
+        severity: "low",
+        functional_block: "root",
+        capability_id: "root",
+        matched_prefix: "root",
+        architecture_domain: "root",
+        architecture_capability: "_root",
+        architecture_module: "docs/architecture/index.md",
+        workstream_dir: "tasks/workstreams/root/_root",
+        contract_agents: "",
+        contract_claude: "",
+        change_type: "source-change",
+        request_file: requestFile,
+        spawn_recommended: false,
+        contract_sync_required: false,
+      };
+      const record = (event: object) => runArchitectureEvent([
+        "record-event",
+        "--request-file", requestFile,
+        "--event-file", ".ai/harness/architecture/events.jsonl",
+        "--index-file", "docs/architecture/index.md",
+        "--requests-dir", "docs/architecture/requests",
+        "--event-json", JSON.stringify(event),
+      ], cwd);
+      expect(record(base).status).toBe(0);
+      expect(record({ ...base, ts: "2026-08-14T02:00:00+0800", severity: "medium" }).status).toBe(0);
+      expect(record({ ...base, ts: "2026-08-14T03:00:00+0800" }).status).toBe(0);
+      const lines = readFileSync(join(cwd, ".ai/harness/architecture/events.jsonl"), "utf8").trim().split("\n").map(JSON.parse);
+      expect(lines).toHaveLength(3);
+      expect(lines.map((entry) => entry.severity)).toEqual(["low", "medium", "low"]);
+
+      const cardPath = join(cwd, requestFile);
+      writeFileSync(cardPath, readFileSync(cardPath, "utf8").replace("> **Status**: Pending", "> **Status**: Resolved"));
+      expect(record({ ...base, ts: "2026-08-14T04:00:00+0800" }).status).toBe(0);
+      expect(readFileSync(join(cwd, ".ai/harness/architecture/events.jsonl"), "utf8").trim().split("\n")).toHaveLength(4);
       expect(readFileSync(cardPath, "utf8")).toContain("> **Status**: Pending");
     } finally {
       rmSync(cwd, { recursive: true, force: true });

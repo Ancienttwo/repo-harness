@@ -711,6 +711,21 @@ describe("sessionStartMainContent — cold-path event-log rotation (gatekeeper P
     });
   });
 
+  test("busy shared event lock skips rotation instead of racing an architecture writer", () => {
+    withTmpRepo("rotate-architecture-busy-lock", (repoRoot) => {
+      mkdirSync(join(repoRoot, ".ai/harness/architecture"), { recursive: true });
+      const eventsPath = join(repoRoot, ".ai/harness/architecture/events.jsonl");
+      writeEventLines(eventsPath, 2500);
+      const before = readFileSync(eventsPath, "utf8");
+      mkdirSync(join(repoRoot, ".ai/harness/.locks/evt-events.jsonl.lock"), { recursive: true });
+
+      sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now());
+
+      expect(readFileSync(eventsPath, "utf8")).toBe(before);
+      expect(existsSync(join(repoRoot, ".ai/harness/architecture/archive"))).toBe(false);
+    });
+  }, 10_000);
+
   test("small events.jsonl (under both thresholds) is left untouched, no archive dir created", () => {
     withTmpRepo("rotate-small-untouched", (repoRoot) => {
       const eventsPath = join(repoRoot, ".ai/harness/events.jsonl");

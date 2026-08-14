@@ -437,7 +437,7 @@ function sleepSyncMs(ms: number): void {
 /**
  * `workflow_with_lock()` port: mkdir-based mutual exclusion. Spins up to 40
  * times at 50ms (~2s), breaks a lock older than 60s (crashed holder), and as
- * a last resort runs the callback unlocked rather than wedging SessionStart
+ * a last resort skips the cold-path callback rather than racing an event writer
  * -- verbatim thresholds from the bash source. `lockRoot` is always
  * `dirname(workflowEventsFile()) + "/.locks"`, computed ONCE by the caller
  * and reused for both rotation targets, matching bash's own
@@ -477,7 +477,9 @@ function withEventsLock(lockRoot: string, name: string, fn: () => void): void {
           waited = 0;
           continue;
         }
-        fn();
+        // Rotation is best-effort; running unlocked can overwrite a concurrent
+        // architecture event transaction, so preserve the live log and retry
+        // on a later SessionStart instead.
         return;
       }
       sleepSyncMs(50);

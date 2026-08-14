@@ -411,6 +411,8 @@ reindex_requests() {
 
 status_command() {
   local count mode threshold blocking
+  architecture_event_required
+  architecture_event validate-requests --requests-dir "$requests_dir"
   count="$(pending_count)"
   mode="$(policy_arch_value "freshness_gate" "advisory")"
   threshold="$(policy_arch_value "gate_min_severity" "medium")"

@@ -14,6 +14,7 @@
 - `record-event` owns one cross-process critical section. It persists the deduplicated audit event first, then atomically replaces the canonical card and derived index. A retry completes any interrupted suffix without duplicating the audit event.
 - The card stores full canonical `Event Records`; `Event Fields` must match one validated record and every `event_key` must recompute from the per-file semantic fields. Markdown tables are presentation only.
 - Every request/event/index write rejects symlink targets and parents resolving outside the repository, and uses same-directory temporary files plus rename.
+- A durable transaction journal distinguishes retry from a later semantic recurrence (`K1 -> K2 -> K1` or archive/reopen), while the shared event-log lock prevents SessionStart rotation from racing the writer. Dead queue owners are reclaimed by PID evidence.
 
 ## Deviations From Plan Or Spec
 
@@ -38,7 +39,7 @@
 - Checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Pre-fix regression: `.ai/harness/runs/architecture-queue-idempotent-events-pre-fix.txt`
-- Focused verification: `bun test tests/architecture-event.test.ts tests/architecture-queue.test.ts tests/stop-handler.test.ts` (45 pass, 0 fail).
+- Focused verification: architecture/event queue regressions cover byte-idempotency, interruption, recurrence, archive/reopen, stable-card migration, SIGKILL recovery, concurrent writers, metadata authority, and symlink boundaries; Stop and SessionStart tests cover the shared rotation lock.
 - Safety verification: helper projection, architecture sync, deploy SQL order, strict workflow, project-state inspection, init dry-run, and architecture reindex checks pass.
 
 ## Promotion Filter
