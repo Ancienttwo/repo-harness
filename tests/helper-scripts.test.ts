@@ -391,21 +391,26 @@ describe("Workflow helper scripts", () => {
       mkdirSync(join(cwd, "docs/architecture/modules/apps-web"), { recursive: true });
       const requestPath = join(cwd, "docs/architecture/requests/20260522-apps-web-account.md");
       const artifactPath = join(cwd, "docs/architecture/modules/apps-web/account.md");
-      writeFileSync(
-        requestPath,
-        [
-          "# Architecture Drift Request: apps-web-account",
-          "",
-          "> **Status**: Pending",
-          "> **File**: `apps/web/src/routes/account/page.tsx`",
-          "> **Architecture Module**: `docs/architecture/modules/apps-web/account.md`",
-          "",
-          "## Required Follow-up",
-          "",
-          "- Decide whether docs need updating.",
-          "",
-        ].join("\n")
-      );
+      const requestFile = "docs/architecture/requests/20260522-apps-web-account.md";
+      const event = {
+        ts: "2026-05-22T12:00:00+0800",
+        file_path: "apps/web/src/routes/account/page.tsx",
+        severity: "medium",
+        functional_block: "apps/web",
+        capability_id: "apps-web-account",
+        matched_prefix: "apps/web",
+        architecture_domain: "apps-web",
+        architecture_capability: "account",
+        architecture_module: "docs/architecture/modules/apps-web/account.md",
+        workstream_dir: "tasks/workstreams/apps-web/account",
+        contract_agents: "AGENTS.md",
+        contract_claude: "CLAUDE.md",
+        change_type: "source-change",
+        request_file: requestFile,
+        spawn_recommended: false,
+        contract_sync_required: false,
+      };
+      expect(run("bun", ["scripts/architecture-event.ts", "upsert-request", "--request-file", requestFile, "--event-json", JSON.stringify(event)], cwd).status).toBe(0);
       writeFileSync(artifactPath, "# Account Architecture\n");
       writeFileSync(
         join(cwd, "docs/architecture/index.md"),

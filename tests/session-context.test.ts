@@ -2,10 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { execFileSync } from "child_process";
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from "fs";
@@ -710,6 +713,76 @@ describe("sessionStartMainContent — cold-path event-log rotation (gatekeeper P
       expect(existsSync(join(repoRoot, ".ai/harness/architecture/archive", `events-${stamp}.jsonl`))).toBe(true);
     });
   });
+
+  test("architecture rotation refuses an archive-directory symlink", () => {
+    withTmpRepo("rotate-architecture-archive-symlink", (repoRoot) => {
+      mkdirSync(join(repoRoot, ".ai/harness/architecture"), { recursive: true });
+      const eventsPath = join(repoRoot, ".ai/harness/architecture/events.jsonl");
+      writeEventLines(eventsPath, 2500);
+      const before = readFileSync(eventsPath, "utf8");
+      const outside = mkdtempSync(join(tmpdir(), "architecture-archive-outside-"));
+      try {
+        symlinkSync(outside, join(repoRoot, ".ai/harness/architecture/archive"));
+        sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now());
+        expect(readFileSync(eventsPath, "utf8")).toBe(before);
+        expect(existsSync(join(outside, "events-202608.jsonl"))).toBe(false);
+      } finally {
+        rmSync(outside, { recursive: true, force: true });
+      }
+    });
+  });
+
+  test("architecture rotation refuses a source-log symlink", () => {
+    withTmpRepo("rotate-architecture-source-symlink", (repoRoot) => {
+      mkdirSync(join(repoRoot, ".ai/harness/architecture"), { recursive: true });
+      const eventsPath = join(repoRoot, ".ai/harness/architecture/events.jsonl");
+      const outside = join(tmpdir(), `architecture-events-outside-${process.pid}-${Date.now()}.jsonl`);
+      try {
+        writeEventLines(outside, 2500);
+        const before = readFileSync(outside, "utf8");
+        symlinkSync(outside, eventsPath);
+        sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now());
+        expect(readFileSync(outside, "utf8")).toBe(before);
+        expect(existsSync(join(repoRoot, ".ai/harness/architecture/archive"))).toBe(false);
+        expect(lstatSync(eventsPath).isSymbolicLink()).toBe(true);
+      } finally {
+        rmSync(outside, { force: true });
+      }
+    });
+  });
+
+  test("architecture rotation refuses a shared lock-root symlink", () => {
+    withTmpRepo("rotate-architecture-lock-root-symlink", (repoRoot) => {
+      mkdirSync(join(repoRoot, ".ai/harness/architecture"), { recursive: true });
+      const eventsPath = join(repoRoot, ".ai/harness/architecture/events.jsonl");
+      writeEventLines(eventsPath, 2500);
+      const before = readFileSync(eventsPath, "utf8");
+      const outside = mkdtempSync(join(tmpdir(), "architecture-lock-outside-"));
+      try {
+        symlinkSync(outside, join(repoRoot, ".ai/harness/.locks"));
+        sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now());
+        expect(readFileSync(eventsPath, "utf8")).toBe(before);
+        expect(readdirSync(outside)).toEqual([]);
+      } finally {
+        rmSync(outside, { recursive: true, force: true });
+      }
+    });
+  });
+
+  test("busy shared event lock skips rotation instead of racing an architecture writer", () => {
+    withTmpRepo("rotate-architecture-busy-lock", (repoRoot) => {
+      mkdirSync(join(repoRoot, ".ai/harness/architecture"), { recursive: true });
+      const eventsPath = join(repoRoot, ".ai/harness/architecture/events.jsonl");
+      writeEventLines(eventsPath, 2500);
+      const before = readFileSync(eventsPath, "utf8");
+      mkdirSync(join(repoRoot, ".ai/harness/.locks/evt-events.jsonl.lock"), { recursive: true });
+
+      sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now());
+
+      expect(readFileSync(eventsPath, "utf8")).toBe(before);
+      expect(existsSync(join(repoRoot, ".ai/harness/architecture/archive"))).toBe(false);
+    });
+  }, 10_000);
 
   test("small events.jsonl (under both thresholds) is left untouched, no archive dir created", () => {
     withTmpRepo("rotate-small-untouched", (repoRoot) => {

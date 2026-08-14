@@ -3,14 +3,16 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, w
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
+import { createHash } from "crypto";
 
 const ROOT = join(import.meta.dir, "..");
 
-function runArchitectureEvent(args: string[], cwd = ROOT, input = "") {
+function runArchitectureEvent(args: string[], cwd = ROOT, input = "", env?: Record<string, string>) {
   return spawnSync("bun", [join(ROOT, "scripts/architecture-event.ts"), ...args], {
     cwd,
     input,
     encoding: "utf-8",
+    env: { ...process.env, ...env },
   });
 }
 
@@ -121,6 +123,374 @@ describe("architecture-event helper", () => {
       expect(request).toContain("external `mermaid` skill only for authoring and review");
       expect(request).not.toContain("architecture HTML");
       expect(request).not.toContain("docs/architecture/diagrams/");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("updates a repeated file only when its semantic routing changes", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "architecture-event-semantic-update-"));
+    try {
+      const requestFile = "docs/architecture/requests/provider.md";
+      const event = {
+        ts: "2026-08-14T01:00:00+0800",
+        file_path: "packages/provider/src/index.ts",
+        severity: "low",
+        functional_block: "packages/provider",
+        capability_id: "provider",
+        matched_prefix: "packages/provider",
+        architecture_domain: "providers",
+        architecture_capability: "provider",
+        architecture_module: "docs/architecture/modules/providers/provider.md",
+        workstream_dir: "tasks/workstreams/providers/provider",
+        contract_agents: "packages/provider/AGENTS.md",
+        contract_claude: "packages/provider/CLAUDE.md",
+        change_type: "source-change",
+        request_file: requestFile,
+        spawn_recommended: false,
+        contract_sync_required: false,
+      };
+
+      const first = runArchitectureEvent(
+        ["upsert-request", "--request-file", requestFile, "--event-json", JSON.stringify(event)],
+        cwd,
+      );
+      expect(first.status).toBe(0);
+      expect(first.stdout).toBe("changed");
+      const firstCard = readFileSync(join(cwd, requestFile), "utf8");
+      const firstEventKey = firstCard.match(/"event_key": "([^"]+)"/)?.[1];
+      expect(firstEventKey).toMatch(/^sha256:[0-9a-f]{64}$/);
+
+      const changed = {
+        ...event,
+        event_key: firstEventKey,
+        ts: "2026-08-14T02:00:00+0800",
+        matched_prefix: "packages/provider/src",
+        architecture_module: "docs/architecture/modules/providers/provider-source.md",
+      };
+      const second = runArchitectureEvent(
+        ["upsert-request", "--request-file", requestFile, "--event-json", JSON.stringify(changed)],
+        cwd,
+      );
+      expect(second.status).toBe(0);
+      expect(second.stdout).toBe("changed");
+      const changedCard = readFileSync(join(cwd, requestFile), "utf8");
+      expect(changedCard).toContain("> **Updated**: 2026-08-14T02:00:00+0800");
+      expect(changedCard).toContain(
+        "> **Architecture Module**: `docs/architecture/modules/providers/provider-source.md`",
+      );
+
+      const repeated = runArchitectureEvent(
+        [
+          "upsert-request",
+          "--request-file",
+          requestFile,
+          "--event-json",
+          JSON.stringify({ ...changed, ts: "2026-08-14T03:00:00+0800" }),
+        ],
+        cwd,
+      );
+      expect(repeated.status).toBe(0);
+      expect(repeated.stdout).toBe("unchanged");
+      expect(readFileSync(join(cwd, requestFile), "utf8")).toBe(changedCard);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("keeps a low-severity latest file idempotent under a high-severity card", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "architecture-event-mixed-severity-"));
+    try {
+      const requestFile = "docs/architecture/requests/root.md";
+      const base = {
+        functional_block: "root",
+        capability_id: "root",
+        matched_prefix: "root",
+        architecture_domain: "root",
+        architecture_capability: "_root",
+        architecture_module: "docs/architecture/index.md",
+        workstream_dir: "tasks/workstreams/root/_root",
+        contract_agents: "",
+        contract_claude: "",
+        request_file: requestFile,
+        spawn_recommended: false,
+        contract_sync_required: false,
+      };
+      const high = {
+        ...base,
+        ts: "2026-08-14T01:00:00+0800",
+        file_path: ".ai/harness/policy.json",
+        severity: "high",
+        change_type: "workflow-surface",
+      };
+      const low = {
+        ...base,
+        ts: "2026-08-14T02:00:00+0800",
+        file_path: "src/provider.ts",
+        severity: "low",
+        change_type: "source-change",
+      };
+
+      for (const event of [high, low]) {
+        const result = runArchitectureEvent(
+          ["upsert-request", "--request-file", requestFile, "--event-json", JSON.stringify(event)],
+          cwd,
+        );
+        expect(result.status).toBe(0);
+        expect(result.stdout).toBe("changed");
+      }
+      const cardPath = join(cwd, requestFile);
+      const before = readFileSync(cardPath, "utf8");
+      expect(before).toContain("> **Severity**: high");
+      const eventFieldsMatch = before.match(/## Event Fields\s*```json\s*([\s\S]*?)\s*```/);
+      expect(eventFieldsMatch).not.toBeNull();
+      const eventFields = JSON.parse(eventFieldsMatch![1]);
+      expect(eventFields.severity).toBe("low");
+      const semanticFields = {
+        file_path: low.file_path,
+        severity: low.severity,
+        functional_block: low.functional_block,
+        capability_id: low.capability_id,
+        matched_prefix: low.matched_prefix,
+        architecture_domain: low.architecture_domain,
+        architecture_capability: low.architecture_capability,
+        architecture_module: low.architecture_module,
+        workstream_dir: low.workstream_dir,
+        contract_agents: low.contract_agents,
+        contract_claude: low.contract_claude,
+        change_type: low.change_type,
+        spawn_recommended: low.spawn_recommended,
+        contract_sync_required: low.contract_sync_required,
+      };
+      expect(eventFields.event_key).toBe(
+        `sha256:${createHash("sha256").update(JSON.stringify(semanticFields)).digest("hex")}`,
+      );
+
+      const repeated = runArchitectureEvent(
+        [
+          "upsert-request",
+          "--request-file",
+          requestFile,
+          "--event-json",
+          JSON.stringify({ ...low, ts: "2026-08-14T03:00:00+0800" }),
+        ],
+        cwd,
+      );
+      expect(repeated.status).toBe(0);
+      expect(repeated.stdout).toBe("unchanged");
+      expect(readFileSync(cardPath, "utf8")).toBe(before);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("keeps alternating prefixes of one capability independently idempotent", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "architecture-event-multi-prefix-"));
+    try {
+      const requestFile = "docs/architecture/requests/provider.md";
+      const base = {
+        severity: "low",
+        functional_block: "packages/providers/hyperliquid",
+        capability_id: "provider-hyperliquid",
+        architecture_domain: "providers",
+        architecture_capability: "hyperliquid",
+        architecture_module: "docs/architecture/modules/providers/hyperliquid.md",
+        workstream_dir: "tasks/workstreams/providers/hyperliquid",
+        contract_agents: "packages/providers/hyperliquid/AGENTS.md",
+        contract_claude: "packages/providers/hyperliquid/CLAUDE.md",
+        change_type: "source-change",
+        request_file: requestFile,
+        spawn_recommended: false,
+        contract_sync_required: false,
+      };
+      const first = {
+        ...base,
+        ts: "2026-08-14T01:00:00+0800",
+        file_path: "packages/providers/hyperliquid/src/l1.ts",
+        matched_prefix: "packages/providers/hyperliquid",
+      };
+      const second = {
+        ...base,
+        ts: "2026-08-14T02:00:00+0800",
+        file_path: "packages/providers/hyperliquid/src/spot/orders.ts",
+        matched_prefix: "packages/providers/hyperliquid/src/spot",
+      };
+
+      for (const event of [first, second]) {
+        const result = runArchitectureEvent(
+          ["upsert-request", "--request-file", requestFile, "--event-json", JSON.stringify(event)],
+          cwd,
+        );
+        expect(result.status).toBe(0);
+        expect(result.stdout).toBe("changed");
+      }
+      const cardPath = join(cwd, requestFile);
+      const before = readFileSync(cardPath, "utf8");
+
+      for (const event of [
+        { ...first, ts: "2026-08-14T03:00:00+0800" },
+        { ...second, ts: "2026-08-14T04:00:00+0800" },
+      ]) {
+        const repeated = runArchitectureEvent(
+          ["upsert-request", "--request-file", requestFile, "--event-json", JSON.stringify(event)],
+          cwd,
+        );
+        expect(repeated.status).toBe(0);
+        expect(repeated.stdout).toBe("unchanged");
+        expect(readFileSync(cardPath, "utf8")).toBe(before);
+      }
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("fails closed on malformed or forged card authority and reopens a non-Pending card", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "architecture-event-authority-"));
+    try {
+      const requestFile = "docs/architecture/requests/root.md";
+      const event = {
+        ts: "2026-08-14T01:00:00+0800",
+        file_path: "src/authority.ts",
+        severity: "low",
+        functional_block: "root",
+        capability_id: "root",
+        matched_prefix: "root",
+        architecture_domain: "root",
+        architecture_capability: "_root",
+        architecture_module: "docs/architecture/index.md",
+        workstream_dir: "tasks/workstreams/root/_root",
+        contract_agents: "",
+        contract_claude: "",
+        change_type: "source-change",
+        request_file: requestFile,
+        spawn_recommended: false,
+        contract_sync_required: false,
+      };
+      const args = ["upsert-request", "--request-file", requestFile, "--event-json", JSON.stringify(event)];
+      expect(runArchitectureEvent(args, cwd).status).toBe(0);
+      const cardPath = join(cwd, requestFile);
+      const canonical = readFileSync(cardPath, "utf8");
+
+      expect(runArchitectureEvent([...args, "--migration-events-json", "[]"], cwd).status).toBe(1);
+
+      writeFileSync(cardPath, canonical.replace(/"event_key": "sha256:[0-9a-f]{64}"/, '"event_key": "sha256:forged"'));
+      expect(runArchitectureEvent(args, cwd).status).toBe(1);
+
+      writeFileSync(cardPath, canonical.replace("> **Severity**: low", "> **Severity**: high"));
+      expect(runArchitectureEvent(args, cwd).status).toBe(1);
+
+      writeFileSync(cardPath, canonical.replace("> **Status**: Pending\n", ""));
+      expect(runArchitectureEvent(args, cwd).status).toBe(1);
+
+      writeFileSync(cardPath, canonical.replace(/## Event Fields\s*```json[\s\S]*?```/, "## Event Fields\n\n```json\n{}\n```"));
+      expect(runArchitectureEvent(args, cwd).status).toBe(1);
+
+      writeFileSync(cardPath, canonical.replace("> **Status**: Pending", "> **Status**: Resolved"));
+      const reopened = runArchitectureEvent(args, cwd);
+      expect(reopened.status, reopened.stderr).toBe(0);
+      expect(reopened.stdout).toBe("changed");
+      expect(readFileSync(cardPath, "utf8")).toContain("> **Status**: Pending");
+
+      writeFileSync(cardPath, canonical.replace("> **Status**: Pending", "> **Status**: Pendding"));
+      expect(runArchitectureEvent(args, cwd).status).toBe(1);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("unfinished transaction is bound to its event and index targets", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "architecture-event-target-binding-"));
+    try {
+      mkdirSync(join(cwd, "docs/architecture/requests"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness/architecture"), { recursive: true });
+      const requestFile = "docs/architecture/requests/root.md";
+      const event = {
+        ts: "2026-08-14T01:00:00+0800", file_path: "src/target.ts", severity: "low",
+        functional_block: "root", capability_id: "root", matched_prefix: "root",
+        architecture_domain: "root", architecture_capability: "_root",
+        architecture_module: "docs/architecture/index-a.md", workstream_dir: "tasks/workstreams/root/_root",
+        contract_agents: "", contract_claude: "", change_type: "source-change",
+        request_file: requestFile, spawn_recommended: false, contract_sync_required: false,
+      };
+      const common = ["record-event", "--request-file", requestFile, "--requests-dir", "docs/architecture/requests", "--event-json", JSON.stringify(event)];
+      const failed = runArchitectureEvent([
+        ...common, "--event-file", ".ai/harness/architecture/events-a.jsonl", "--index-file", "docs/architecture/index-a.md",
+      ], cwd, "", { REPO_HARNESS_ARCHITECTURE_FAIL_AFTER_EVENT: "1" });
+      expect(failed.status).toBe(1);
+      const mismatched = runArchitectureEvent([
+        ...common, "--event-file", ".ai/harness/architecture/events-b.jsonl", "--index-file", "docs/architecture/index-b.md",
+      ], cwd);
+      expect(mismatched.status).toBe(1);
+      expect(readFileSync(join(cwd, ".ai/harness/architecture/events-a.jsonl"), "utf8").trim().split("\n")).toHaveLength(1);
+      expect(existsSync(join(cwd, ".ai/harness/architecture/events-b.jsonl"))).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("records K1 to K2 to K1 as three occurrences instead of global-key deduplication", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "architecture-event-recurrence-"));
+    try {
+      mkdirSync(join(cwd, "docs/architecture/requests"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness/architecture"), { recursive: true });
+      writeFileSync(join(cwd, "docs/architecture/index.md"), "# Architecture Index\n\n## Pending Requests\n");
+      const requestFile = "docs/architecture/requests/root.md";
+      const base = {
+        ts: "2026-08-14T01:00:00+0800",
+        file_path: "src/recurrence.ts",
+        severity: "low",
+        functional_block: "root",
+        capability_id: "root",
+        matched_prefix: "root",
+        architecture_domain: "root",
+        architecture_capability: "_root",
+        architecture_module: "docs/architecture/index.md",
+        workstream_dir: "tasks/workstreams/root/_root",
+        contract_agents: "",
+        contract_claude: "",
+        change_type: "source-change",
+        request_file: requestFile,
+        spawn_recommended: false,
+        contract_sync_required: false,
+      };
+      const record = (event: object) => runArchitectureEvent([
+        "record-event",
+        "--request-file", requestFile,
+        "--event-file", ".ai/harness/architecture/events.jsonl",
+        "--index-file", "docs/architecture/index.md",
+        "--requests-dir", "docs/architecture/requests",
+        "--event-json", JSON.stringify(event),
+      ], cwd);
+      expect(record(base).status).toBe(0);
+      expect(record({ ...base, ts: "2026-08-14T02:00:00+0800", severity: "medium" }).status).toBe(0);
+      expect(record({ ...base, ts: "2026-08-14T03:00:00+0800" }).status).toBe(0);
+      const lines = readFileSync(join(cwd, ".ai/harness/architecture/events.jsonl"), "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as { severity: string });
+      expect(lines).toHaveLength(3);
+      expect(lines.map((entry) => entry.severity)).toEqual(["low", "medium", "low"]);
+
+      const cardPath = join(cwd, requestFile);
+      writeFileSync(cardPath, readFileSync(cardPath, "utf8").replace("> **Status**: Pending", "> **Status**: Resolved"));
+      expect(record({ ...base, ts: "2026-08-14T04:00:00+0800" }).status).toBe(0);
+      expect(readFileSync(join(cwd, ".ai/harness/architecture/events.jsonl"), "utf8").trim().split("\n")).toHaveLength(4);
+      expect(readFileSync(cardPath, "utf8")).toContain("> **Status**: Pending");
+
+      const eventLog = join(cwd, ".ai/harness/architecture/events.jsonl");
+      const beforeInjection = readFileSync(eventLog, "utf8");
+      const publicInjection = runArchitectureEvent([
+        "record-event",
+        "--request-file", requestFile,
+        "--event-file", ".ai/harness/architecture/events.jsonl",
+        "--index-file", "docs/architecture/index.md",
+        "--requests-dir", "docs/architecture/requests",
+        "--event-json", JSON.stringify({ ...base, ts: "2026-08-14T06:00:00+0800" }),
+        "--migration-events-json", "[]",
+      ], cwd);
+      expect(publicInjection.status).toBe(1);
+      expect(readFileSync(eventLog, "utf8")).toBe(beforeInjection);
+      expect(existsSync(join(cwd, "docs/architecture/requests/.architecture-queue-transaction.json"))).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

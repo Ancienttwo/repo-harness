@@ -25,6 +25,33 @@ architecture_transaction_dir=""
 architecture_transaction_active=0
 architecture_transaction_paths=()
 architecture_transaction_existed=()
+architecture_queue_lock_active=0
+architecture_queue_lock_token=""
+architecture_event_helper="$SCRIPT_DIR/architecture-event.ts"
+
+architecture_queue_lock_release() {
+  if [[ "$architecture_queue_lock_active" -ne 1 ]]; then
+    return 0
+  fi
+  bun "$architecture_event_helper" release-queue-lock \
+    --requests-dir "docs/architecture/requests" \
+    --owner-pid "$$" \
+    --owner-token "$architecture_queue_lock_token"
+  architecture_queue_lock_active=0
+}
+
+architecture_queue_lock_acquire() {
+  architecture_queue_lock_token="archive-$$-$(date +%s)-${RANDOM:-0}"
+  bun "$architecture_event_helper" acquire-queue-lock \
+    --requests-dir "docs/architecture/requests" \
+    --owner-pid "$$" \
+    --owner-token "$architecture_queue_lock_token"
+  architecture_queue_lock_active=1
+  trap architecture_transaction_on_exit EXIT
+  if [[ -n "${REPO_HARNESS_ARCHITECTURE_ARCHIVE_HOLD_AFTER_LOCK_MS:-}" ]]; then
+    sleep "$(awk -v ms="$REPO_HARNESS_ARCHITECTURE_ARCHIVE_HOLD_AFTER_LOCK_MS" 'BEGIN { printf "%.3f", ms / 1000 }')"
+  fi
+}
 
 architecture_transaction_snapshot() {
   local path="$1"
@@ -62,6 +89,10 @@ architecture_transaction_on_exit() {
       echo "archive-architecture-request: archive failed; restored live architecture artifacts" >&2
     fi
   fi
+  if ! architecture_queue_lock_release; then
+    echo "archive-architecture-request: failed to release architecture queue lock" >&2
+    status=1
+  fi
   [[ -z "$architecture_transaction_dir" ]] || rm -rf "$architecture_transaction_dir"
   exit "$status"
 }
@@ -84,9 +115,10 @@ architecture_transaction_begin() {
 
 architecture_transaction_commit() {
   architecture_transaction_active=0
-  trap - EXIT
   rm -rf "$architecture_transaction_dir"
   architecture_transaction_dir=""
+  architecture_queue_lock_release
+  trap - EXIT
 }
 
 metadata_value() {
@@ -241,6 +273,14 @@ case "$rel_request" in
     ;;
 esac
 
+queue_helper="$SCRIPT_DIR/architecture-queue.sh"
+if [[ ! -f "$queue_helper" || ! -f "$architecture_event_helper" ]]; then
+  echo "archive-architecture-request: architecture queue helpers are missing" >&2
+  exit 1
+fi
+
+architecture_queue_lock_acquire
+
 if [[ ! -f "$rel_request" ]]; then
   echo "archive-architecture-request: request not found: $rel_request" >&2
   exit 1
@@ -253,12 +293,6 @@ fi
 request_status="$(metadata_value "$rel_request" "Status")"
 if [[ "$request_status" != "Pending" ]]; then
   echo "archive-architecture-request: request status must be Pending, got ${request_status:-missing}: $rel_request" >&2
-  exit 1
-fi
-
-queue_helper="$SCRIPT_DIR/architecture-queue.sh"
-if [[ ! -f "$queue_helper" ]]; then
-  echo "archive-architecture-request: architecture queue helper is missing: $queue_helper" >&2
   exit 1
 fi
 
@@ -372,6 +406,11 @@ awk -v status="$resolved_status" '
 
 mv "$tmp_file" "$archive_file"
 rm -f "$rel_request"
+
+if [[ "${REPO_HARNESS_ARCHITECTURE_ARCHIVE_FAIL_AFTER_MUTATION:-0}" == "1" ]]; then
+  echo "archive-architecture-request: injected failure after live request mutation" >&2
+  exit 39
+fi
 
 bash "$queue_helper" reindex
 bash "$queue_helper" reindex --check

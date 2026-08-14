@@ -16,16 +16,18 @@ import { createHash } from 'crypto';
 import {
   appendFileSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmdirSync,
   statSync,
   writeFileSync,
 } from 'fs';
 import { fileURLToPath } from 'url';
-import { basename, dirname, join } from 'path';
+import { basename, dirname, join, relative, resolve } from 'path';
 import {
   createSessionContextProviderDiagnostic,
   type SessionContextProviderDiagnostic,
@@ -437,7 +439,7 @@ function sleepSyncMs(ms: number): void {
 /**
  * `workflow_with_lock()` port: mkdir-based mutual exclusion. Spins up to 40
  * times at 50ms (~2s), breaks a lock older than 60s (crashed holder), and as
- * a last resort runs the callback unlocked rather than wedging SessionStart
+ * a last resort skips the cold-path callback rather than racing an event writer
  * -- verbatim thresholds from the bash source. `lockRoot` is always
  * `dirname(workflowEventsFile()) + "/.locks"`, computed ONCE by the caller
  * and reused for both rotation targets, matching bash's own
@@ -445,8 +447,9 @@ function sleepSyncMs(ms: number): void {
  * regardless of which file is actually being locked (so both rotation calls
  * share one lock namespace root, differentiated only by `name`).
  */
-function withEventsLock(lockRoot: string, name: string, fn: () => void): void {
+function withEventsLock(repoRoot: string, lockRoot: string, name: string, fn: () => void): void {
   const lockDir = join(lockRoot, `${name}.lock`);
+  if (!isSafeRepoPath(repoRoot, lockRoot)) return;
   try {
     mkdirSync(lockRoot, { recursive: true });
   } catch {
@@ -477,7 +480,9 @@ function withEventsLock(lockRoot: string, name: string, fn: () => void): void {
           waited = 0;
           continue;
         }
-        fn();
+        // Rotation is best-effort; running unlocked can overwrite a concurrent
+        // architecture event transaction, so preserve the live log and retry
+        // on a later SessionStart instead.
         return;
       }
       sleepSyncMs(50);
@@ -486,6 +491,7 @@ function withEventsLock(lockRoot: string, name: string, fn: () => void): void {
   }
 
   try {
+    if (!isSafeRepoPath(repoRoot, lockRoot) || !isSafeRepoPath(repoRoot, lockDir)) return;
     fn();
   } finally {
     try {
@@ -497,8 +503,24 @@ function withEventsLock(lockRoot: string, name: string, fn: () => void): void {
 }
 
 /** `workflow_rotate_events_file_locked()` port. */
+function isSafeRepoPath(repoRoot: string, target: string): boolean {
+  const root = realpathSync(repoRoot);
+  const lexicalRoot = resolve(repoRoot);
+  const lexicalTarget = resolve(target);
+  const targetRelative = relative(lexicalRoot, lexicalTarget);
+  if (targetRelative === '..' || targetRelative.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`)) return false;
+  let cursor = root;
+  for (const part of targetRelative.split(process.platform === 'win32' ? '\\' : '/').filter(Boolean)) {
+    cursor = join(cursor, part);
+    if (!existsSync(cursor)) break;
+    if (lstatSync(cursor).isSymbolicLink()) return false;
+  }
+  return true;
+}
+
 function workflowRotateEventsFileLocked(repoRoot: string, relPath: string, wcLineCount: number, keep: number): void {
   const absPath = join(repoRoot, relPath);
+  if (!isSafeRepoPath(repoRoot, absPath)) return;
   const parsed = readEventsFileForRotation(absPath);
   if (parsed === null) return;
 
@@ -511,8 +533,16 @@ function workflowRotateEventsFileLocked(repoRoot: string, relPath: string, wcLin
   const base = basename(relPath).replace(/\.jsonl$/, '');
   const archiveFile = join(archiveDir, `${base}-${stamp}.jsonl`);
 
+  const root = realpathSync(repoRoot);
+  const archiveRelative = relative(resolve(repoRoot), resolve(archiveDir));
+  if (archiveRelative === '..' || archiveRelative.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`)) return;
+  const archivePath = join(root, archiveRelative);
+  if (!isSafeRepoPath(repoRoot, archiveDir)) return;
+
   try {
     mkdirSync(archiveDir, { recursive: true });
+    if (realpathSync(archiveDir) !== archivePath) return;
+    if (existsSync(archiveFile) && lstatSync(archiveFile).isSymbolicLink()) return;
   } catch {
     return;
   }
@@ -544,12 +574,13 @@ function workflowRotateEventsFile(
 ): void {
   const absPath = join(repoRoot, relPath);
   if (!existsSync(absPath)) return;
+  if (!isSafeRepoPath(repoRoot, absPath)) return;
   const counts = fileLineAndByteCount(absPath);
   if (counts === null) return;
   if (counts.lines <= maxLines && counts.bytes <= maxBytes) return;
   if (!(counts.lines > keep)) return;
 
-  withEventsLock(lockRoot, `evt-${basename(relPath)}`, () => {
+  withEventsLock(repoRoot, lockRoot, `evt-${basename(relPath)}`, () => {
     workflowRotateEventsFileLocked(repoRoot, relPath, counts.lines, keep);
   });
 }
