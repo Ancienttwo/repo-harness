@@ -2,6 +2,39 @@
 
 All notable changes to this skill are documented here.
 
+## [0.15.1] - 2026-08-15
+
+### Added
+
+- Adds a contract-first Change Assessment and typed AcceptanceReceipt path that
+  binds verification, review selection, final subject, and explicit user
+  waivers before a work package can close.
+- Adds durable hook-effect failure semantics with stop, retry, recovery, and
+  event telemetry, plus a Goal Calibration Gate that asks at most one
+  highest-information-gain planning question.
+
+### Changed
+
+- Publishes one commit per contract worktree and makes nested capability
+  architecture routing resolve arbitrary workspace `src/**` depth through the
+  canonical capability registry.
+- Records research on composable agent-harness boundaries without adopting a
+  second runtime authority.
+
+### Fixed
+
+- Makes architecture queue events semantically idempotent per changed file,
+  including mixed severity and alternating capability prefixes, while keeping
+  unchanged requests eligible for index self-healing.
+- Serializes record/archive writers with a rollback-safe queue lock outside the
+  architecture snapshot tree, adds crash recovery and recurrence handling, and
+  rejects forged cards, unsafe symlink targets, and stale migration authority
+  before mutation.
+- Preserves committed Change Assessment oracle IDs through evidence
+  redaction/materialization so assessment, selection-packet, and envelope
+  fingerprints remain verifiable without exempting unrelated IDs or known
+  secrets.
+
 ## [0.15.0] - 2026-08-12
 
 ### Added
