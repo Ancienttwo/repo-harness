@@ -19,7 +19,7 @@
  * ledger (a real `verify-sprint` run against this package's own,
  * realistic-length contract slug).
  *
- * Three typed exemptions from entropy redaction are applied structurally --
+ * Four typed exemptions from entropy redaction are applied structurally --
  * classified BEFORE the entropy pass runs, never a post-hoc unhash:
  *
  *   1. Declared hash: a whole string value matching
@@ -54,6 +54,13 @@
  *      them makes an otherwise fingerprinted nested evidence envelope
  *      unverifiable after ledger materialization. Known-secret matching still
  *      runs before this exemption, exactly as for hashes and paths.
+ *   4. Change Assessment oracle identifiers: the whole `id` leaf only when
+ *      its structural path ends in `required_oracles/<array-index>/id`.
+ *      Oracle IDs are committed contract authority and participate in the
+ *      assessment, selection-packet, and evidence fingerprints; rewriting
+ *      one while preserving those hashes creates a self-inconsistent
+ *      verification envelope. This is deliberately not a general `id`
+ *      exemption. Known-secret matching still runs first.
  *
  * All exemptions skip ONLY the entropy pattern. The secret-value denylist
  * check (`findKnownSecretSpans`) still runs unconditionally over every
@@ -127,15 +134,34 @@ export function isRepoHarnessProtocolIdentifier(key: string | undefined, value: 
   return REPO_HARNESS_PROTOCOL_IDENTIFIERS.has(value);
 }
 
+/** Rule 4: only the fingerprinted Change Assessment oracle-array position.
+ * The numeric segment proves this is an array entry; a free-form object such
+ * as `{ required_oracles: { attacker: { id } } }` does not qualify. */
+export function isChangeAssessmentOracleIdPath(path: readonly string[]): boolean {
+  if (path.length < 3) return false;
+  const idKey = path[path.length - 1];
+  const arrayIndex = path[path.length - 2];
+  const collection = path[path.length - 3];
+  return idKey === "id"
+    && collection === "required_oracles"
+    && typeof arrayIndex === "string"
+    && /^(?:0|[1-9][0-9]*)$/.test(arrayIndex);
+}
+
 /** Structural classification: does this leaf (key + value) qualify for
  * either typed exemption? Computed once, up front -- see the module doc
  * comment's "order of operations" note (classify first, then redact the
  * rest; never a post-hoc unhash). */
-export function isEntropyExemptLeaf(key: string | undefined, value: string): boolean {
+export function isEntropyExemptLeaf(
+  key: string | undefined,
+  value: string,
+  path: readonly string[] = [],
+): boolean {
   return isDeclaredHashValue(value)
     || isPathConventionKey(key)
     || looksLikeSafeRepoRelativePath(value)
-    || isRepoHarnessProtocolIdentifier(key, value);
+    || isRepoHarnessProtocolIdentifier(key, value)
+    || isChangeAssessmentOracleIdPath(path);
 }
 
 interface Span {
@@ -226,7 +252,7 @@ export function redactSecretValue(
 export function redactPayloadStrings(value: JsonValue, knownSecretValues: readonly string[]): JsonValue {
   return mapStringLeaves(value, (path, leaf) => {
     const key = path[path.length - 1];
-    const exempt = isEntropyExemptLeaf(key, leaf);
+    const exempt = isEntropyExemptLeaf(key, leaf, path);
     return redactSecretValue(leaf, knownSecretValues, { entropyExempt: exempt });
   });
 }
