@@ -17,10 +17,12 @@
 - A durable transaction journal distinguishes retry from a later semantic recurrence (`K1 -> K2 -> K1` or archive/reopen), while the shared event-log lock prevents SessionStart rotation from racing the writer. Dead queue owners are reclaimed by PID evidence.
 - Legacy-card reconstruction is preflighted against the existing audit log before any journal or event mutation. The writer and rotation path now share the same 60-second stale-lock contract, so neither side can reclaim the other's live lock at the former two-second boundary.
 - Queue ownership is an atomic exclusive file carrying PID evidence; ownerless partial locks have bounded stale recovery. An unfinished transaction is replayed before a different incoming event, public CLI callers cannot inject migration events, and stable-card reconstruction reads both canonical monthly archives and the live log.
+- Request archival now acquires that same queue-owner file before inspecting the live card and holds it through archive, reindex, contract projection, and rollback/commit. The cross-process owner is the live shell PID plus an opaque token, so a crashed archiver is reclaimable while a live archiver cannot race `record-event`.
+- SessionStart rotation rejects symlinks in both the source event-log path and the archive destination path before reading or writing, including a second source check inside the event-log lock.
 
 ## Deviations From Plan Or Spec
 
-- Security review showed that a shell-level early exit was insufficient: card-first persistence could lose the audit record after interruption, concurrent Stop handlers could lose card entries, and editable Markdown hashes were not trustworthy authority. The slice was widened within the same six code/test paths to make the whole queue update convergent and fail closed.
+- Security review showed that a shell-level early exit was insufficient: card-first persistence could lose the audit record after interruption, concurrent Stop handlers could lose card entries, archival could hide a concurrent record, and editable Markdown hashes were not trustworthy authority. The contract scope was explicitly widened to the archive helper/projection and architecture-sync fixture so every queue writer shares one lock and every strict-gate fixture uses canonical card authority.
 
 ## Tradeoffs Considered
 

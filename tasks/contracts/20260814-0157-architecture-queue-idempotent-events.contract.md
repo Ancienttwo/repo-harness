@@ -77,10 +77,13 @@ allowed_paths:
   - tasks/notes/20260814-0157-architecture-queue-idempotent-events.notes.md
   - scripts/architecture-event.ts
   - scripts/architecture-queue.sh
+  - scripts/archive-architecture-request.sh
   - assets/templates/helpers/architecture-event.ts
   - assets/templates/helpers/architecture-queue.sh
+  - assets/templates/helpers/archive-architecture-request.sh
   - tests/architecture-queue.test.ts
   - tests/architecture-event.test.ts
+  - tests/architecture-sync.test.ts
   - tests/stop-handler.test.ts
   - src/cli/hook/session-context.ts
   - tests/session-context.test.ts
