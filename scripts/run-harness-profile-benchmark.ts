@@ -517,6 +517,10 @@ export interface BenchmarkRuntimeArtifact {
   sha256: string;
 }
 
+interface LocalPackedPackage {
+  filename?: unknown;
+}
+
 function assertPathOutsideRoot(path: string, root: string, label: string): void {
   const candidate = resolve(path);
   const authorityRoot = resolve(root);
@@ -531,15 +535,114 @@ function assertPathOutsideRoot(path: string, root: string, label: string): void 
 export function prepareBenchmarkRuntimeArtifact(sourceRoot: string, runRoot: string): BenchmarkRuntimeArtifact {
   const packageRoot = join(runRoot, 'runtime-package');
   mkdirSync(packageRoot, { recursive: true });
+  const cacheRoot = join(runRoot, 'npm-cache');
+  const npmEnv = { ...process.env, NPM_CONFIG_CACHE: cacheRoot, npm_config_cache: cacheRoot };
+  const sourceArtifactRoot = join(runRoot, 'runtime-source');
+  mkdirSync(sourceArtifactRoot, { recursive: true });
   const packed = JSON.parse(run(
     'npm',
-    ['pack', '--ignore-scripts', '--json', '--pack-destination', packageRoot],
+    ['pack', '--ignore-scripts', '--json', '--pack-destination', sourceArtifactRoot],
     sourceRoot,
-  )) as Array<{ filename?: unknown }>;
+    npmEnv,
+  )) as LocalPackedPackage[];
   if (!Array.isArray(packed) || packed.length !== 1 || typeof packed[0]?.filename !== 'string') {
     throw new Error('npm pack did not produce exactly one runtime tarball');
   }
-  const artifactPath = resolve(packageRoot, packed[0].filename);
+  const sourceArtifactPath = resolve(sourceArtifactRoot, packed[0].filename);
+  const sourceArtifactRelativePath = relative(sourceArtifactRoot, sourceArtifactPath);
+  if (sourceArtifactRelativePath === '' || isAbsolute(sourceArtifactRelativePath)
+    || sourceArtifactRelativePath === '..' || sourceArtifactRelativePath.startsWith(`..${sep}`)) {
+    throw new Error(`benchmark source artifact escaped runner root: ${sourceArtifactPath}`);
+  }
+  if (!existsSync(sourceArtifactPath) || !statSync(sourceArtifactPath).isFile()) {
+    throw new Error(`benchmark source artifact missing: ${sourceArtifactPath}`);
+  }
+  const stageRoot = join(runRoot, 'runtime-stage');
+  mkdirSync(stageRoot, { recursive: true });
+  run('tar', ['-xzf', sourceArtifactPath, '-C', stageRoot], runRoot);
+  const stagedPackageRoot = join(stageRoot, 'package');
+  const sourcePackageManifestPath = join(stagedPackageRoot, 'package.json');
+  const sourcePackageManifest = JSON.parse(readFileSync(sourcePackageManifestPath, 'utf-8')) as {
+    dependencies?: Record<string, unknown>;
+  };
+  const directDependencies = Object.keys(sourcePackageManifest.dependencies ?? {});
+  const resolveInstalledPackage = (fromPackage: string, dependency: string): string | null => {
+    let current = fromPackage;
+    while (true) {
+      const candidate = join(current, 'node_modules', dependency);
+      if (existsSync(join(candidate, 'package.json'))) return realpathSync(candidate);
+      const parent = dirname(current);
+      if (parent === current) return null;
+      current = parent;
+    }
+  };
+  const sourceRootReal = realpathSync(sourceRoot);
+  const dependencyQueue = directDependencies.map((name) => ({ name, fromPackage: sourceRoot }));
+  // A package's real source path is its identity. Keeping paths (instead of
+  // names) preserves nested versions such as body-parser/node_modules/foo.
+  const dependencySources = new Set<string>();
+  const missingOptional = (manifest: Record<string, unknown>, name: string): boolean => {
+    const optional = manifest.optionalDependencies;
+    return typeof optional === 'object' && optional !== null
+      && Object.prototype.hasOwnProperty.call(optional, name);
+  };
+  const optionalPeer = (manifest: Record<string, unknown>, name: string): boolean => {
+    const meta = manifest.peerDependenciesMeta;
+    if (typeof meta !== 'object' || meta === null) return false;
+    const entry = (meta as Record<string, unknown>)[name];
+    return typeof entry === 'object' && entry !== null && (entry as Record<string, unknown>).optional === true;
+  };
+  while (dependencyQueue.length > 0) {
+    const next = dependencyQueue.shift()!;
+    const sourcePackage = resolveInstalledPackage(next.fromPackage, next.name);
+    if (!sourcePackage) {
+      const fromManifestPath = join(next.fromPackage, 'package.json');
+      const fromManifest = JSON.parse(readFileSync(fromManifestPath, 'utf-8')) as Record<string, unknown>;
+      if (missingOptional(fromManifest, next.name) || optionalPeer(fromManifest, next.name)) continue;
+      throw new Error(`benchmark runtime dependency is not installed: ${next.name} from ${next.fromPackage}`);
+    }
+    if (dependencySources.has(sourcePackage)) continue;
+    dependencySources.add(sourcePackage);
+    const manifest = JSON.parse(readFileSync(join(sourcePackage, 'package.json'), 'utf-8')) as Record<string, unknown>;
+    const dependencies = typeof manifest.dependencies === 'object' && manifest.dependencies !== null
+      ? Object.keys(manifest.dependencies as Record<string, unknown>) : [];
+    const optionalDependencies = typeof manifest.optionalDependencies === 'object' && manifest.optionalDependencies !== null
+      ? Object.keys(manifest.optionalDependencies as Record<string, unknown>) : [];
+    const peerDependencies = typeof manifest.peerDependencies === 'object' && manifest.peerDependencies !== null
+      ? Object.keys(manifest.peerDependencies as Record<string, unknown>) : [];
+    for (const dependency of [...dependencies, ...optionalDependencies, ...peerDependencies]) {
+      dependencyQueue.push({ name: dependency, fromPackage: sourcePackage });
+    }
+  }
+  for (const sourcePackage of dependencySources) {
+    const sourceRelativePath = relative(sourceRootReal, sourcePackage);
+    if (sourceRelativePath === '' || sourceRelativePath.startsWith(`..${sep}`) || isAbsolute(sourceRelativePath)) {
+      throw new Error(`benchmark runtime dependency escaped source root: ${sourcePackage}`);
+    }
+    const packageDestination = join(stagedPackageRoot, sourceRelativePath);
+    mkdirSync(packageDestination, { recursive: true });
+    // Copy only the package's own files. Nested node_modules are represented by
+    // their own queue entries, so excluding them avoids duplicating the closure
+    // while preserving each package's source-relative resolution path.
+    cpSync(sourcePackage, packageDestination, {
+      recursive: true,
+      filter: (candidate) => basename(candidate) !== 'node_modules',
+    });
+  }
+  // Bun resolves a tarball's declared dependencies before it can use the
+  // archive's node_modules. The benchmark artifact is intentionally self
+  // contained, so remove install-time dependency resolution metadata from the
+  // staged copy while leaving sourceRoot's package.json untouched.
+  const stagedManifest = JSON.parse(readFileSync(sourcePackageManifestPath, 'utf-8')) as Record<string, unknown>;
+  delete stagedManifest.dependencies;
+  delete stagedManifest.optionalDependencies;
+  delete stagedManifest.peerDependencies;
+  delete stagedManifest.devDependencies;
+  delete stagedManifest.bundledDependencies;
+  writeFileSync(sourcePackageManifestPath, `${JSON.stringify(stagedManifest, null, 2)}\n`);
+  const artifactName = basename(sourceArtifactPath);
+  const artifactPath = resolve(packageRoot, artifactName);
+  run('tar', ['-czf', artifactPath, '-C', stageRoot, 'package'], runRoot);
   const artifactRelativePath = relative(packageRoot, artifactPath);
   if (artifactRelativePath === '' || isAbsolute(artifactRelativePath)
     || artifactRelativePath === '..' || artifactRelativePath.startsWith(`..${sep}`)) {
