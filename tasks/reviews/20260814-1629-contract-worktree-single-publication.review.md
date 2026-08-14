@@ -48,9 +48,9 @@
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: 6d62d3b2d0a635911037b66a3e3e8095fac74b28
 > **Verification Evidence SHA256**: sha256:4609ed4ad83bdc27db18c2bb2b87c9f2e5725f0e82b400d4842a6f81ab2d21da
-> **Issued At**: 2026-08-14T10:06:15.218Z
+> **Issued At**: 2026-08-14T10:11:12.787Z
 
-- Summary: Claude final read-only review: no P0/P1; four concrete P3 advisories; VERDICT PASS.
+- Summary: Claude final read-only review: no P0/P1; four concrete P3 advisories; VERDICT PASS. Subject hash unchanged after goal-state closeout update.
 - Findings: P3: scripts/contract-worktree.sh has an unused commit_gpgsign_raw variable used only to capture config exit status.; P3: With extensions.worktreeConfig, reading commit.gpgsign from the source worktree may differ from a target-worktree-local signing policy.; P3: The empty-publication documentation names an explicit no-op or cleanup path without mapping it to concrete commands.; P3: Source-Worktree-Head audit value depends on retaining the source branch or object reachability after publication.
 
 ## Behavior Diff Notes
