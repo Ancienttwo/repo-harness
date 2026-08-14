@@ -7,16 +7,24 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { spawnSync } from "child_process";
+import { spawn, spawnSync } from "child_process";
 
 const ROOT = join(import.meta.dir, "..");
 
-function run(cmd: string, args: string[], cwd: string) {
-  return spawnSync(cmd, args, { cwd, encoding: "utf-8" });
+function run(cmd: string, args: string[], cwd: string, env?: Record<string, string>) {
+  return spawnSync(cmd, args, { cwd, encoding: "utf-8", env: { ...process.env, ...env } });
+}
+
+function queueAsync(cwd: string, file: string): Promise<number | null> {
+  return new Promise((resolve) => {
+    const child = spawn("bash", ["scripts/architecture-queue.sh", "record", "--file", file], { cwd });
+    child.on("exit", resolve);
+  });
 }
 
 function tmpRepo(fn: (cwd: string) => void): void {
@@ -188,6 +196,90 @@ describe("architecture queue", () => {
       expect(readFileSync(requestPath, "utf8")).toBe(afterOther.request);
       expect(readFileSync(indexPath, "utf8")).toBe(afterOther.index);
       expect(readFileSync(eventsPath, "utf8")).toBe(afterOther.events);
+    });
+  }, 30_000);
+
+  test("record repairs a card-write interruption without duplicating the audit event", () => {
+    tmpRepo((cwd) => {
+      const target = "src/cli/hook/mutation-guard.ts";
+      const failed = run(
+        "bash",
+        ["scripts/architecture-queue.sh", "record", "--file", target],
+        cwd,
+        { REPO_HARNESS_ARCHITECTURE_FAIL_AFTER_EVENT: "1" },
+      );
+      expect(failed.status).toBe(1);
+      expect(existsSync(join(cwd, "docs/architecture/requests/root.md"))).toBe(false);
+      expect(readFileSync(join(cwd, ".ai/harness/architecture/events.jsonl"), "utf8").trim().split("\n")).toHaveLength(1);
+
+      const retried = queue(cwd, ["record", "--file", target]);
+      expect(retried.status, retried.stderr).toBe(0);
+      expect(readFileSync(join(cwd, ".ai/harness/architecture/events.jsonl"), "utf8").trim().split("\n")).toHaveLength(1);
+      expect(readFileSync(join(cwd, "docs/architecture/requests/root.md"), "utf8")).toContain(`\`${target}\``);
+    });
+  }, 30_000);
+
+  test("record serializes concurrent events without losing a card entry", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "architecture-queue-concurrent-"));
+    try {
+      mkdirSync(join(cwd, "scripts"), { recursive: true });
+      mkdirSync(join(cwd, "docs/architecture/requests"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness/architecture"), { recursive: true });
+      for (const file of ["architecture-queue.sh", "architecture-event.ts", "archive-architecture-request.sh"]) {
+        copyFileSync(join(ROOT, "scripts", file), join(cwd, "scripts", file));
+      }
+      writeFileSync(join(cwd, "docs/architecture/index.md"), "# Architecture Index\n\n## Pending Requests\n");
+      const [first, second] = await Promise.all([
+        queueAsync(cwd, "src/cli/hook/concurrent-a.ts"),
+        queueAsync(cwd, "src/cli/hook/concurrent-b.ts"),
+      ]);
+      expect([first, second]).toEqual([0, 0]);
+      const card = readFileSync(join(cwd, "docs/architecture/requests/root.md"), "utf8");
+      expect(card).toContain("src/cli/hook/concurrent-a.ts");
+      expect(card).toContain("src/cli/hook/concurrent-b.ts");
+      expect(readFileSync(join(cwd, ".ai/harness/architecture/events.jsonl"), "utf8").trim().split("\n")).toHaveLength(2);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("record refuses symlink write targets outside the repository", () => {
+    tmpRepo((cwd) => {
+      const outside = join(tmpdir(), `architecture-outside-${process.pid}-${Date.now()}`);
+      writeFileSync(outside, "sentinel\n");
+      const targets = [
+        "docs/architecture/requests/root.md",
+        ".ai/harness/architecture/events.jsonl",
+        "docs/architecture/index.md",
+      ];
+      for (const target of targets) {
+        const full = join(cwd, target);
+        rmSync(full, { force: true });
+        symlinkSync(outside, full);
+        const result = queue(cwd, ["record", "--file", "src/cli/hook/symlink-escape.ts"]);
+        expect(result.status).toBe(1);
+        expect(readFileSync(outside, "utf8")).toBe("sentinel\n");
+        rmSync(full, { force: true });
+        if (target === "docs/architecture/index.md") writeFileSync(full, "# Architecture Index\n\n## Pending Requests\n");
+      }
+      rmSync(outside, { force: true });
+    });
+  }, 30_000);
+
+  test("record preserves pipe paths and keeps canonical per-file severities", () => {
+    tmpRepo((cwd) => {
+      for (const target of [".ai/harness/policy.json", "src/cli/hook/low.ts", "src/cli/hook/a|b.ts"]) {
+        const result = queue(cwd, ["record", "--file", target]);
+        expect(result.status, result.stderr).toBe(0);
+      }
+      const repeated = queue(cwd, ["record", "--file", "src/cli/hook/a|b.ts"]);
+      expect(repeated.status, repeated.stderr).toBe(0);
+      expect(repeated.stdout).toContain("(unchanged request)");
+      const card = readFileSync(join(cwd, "docs/architecture/requests/root.md"), "utf8");
+      expect(card).toContain("src/cli/hook/a\\|b.ts");
+      const records = JSON.parse(card.match(/## Event Records\s*```json\s*([\s\S]*?)\s*```/)![1]);
+      expect(records.find((event: any) => event.file_path === "src/cli/hook/low.ts").severity).toBe("high");
+      expect(records.find((event: any) => event.file_path === "src/cli/hook/a|b.ts").severity).toBe("high");
     });
   }, 30_000);
 

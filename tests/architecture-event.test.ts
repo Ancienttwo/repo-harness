@@ -343,6 +343,49 @@ describe("architecture-event helper", () => {
     }
   }, 30_000);
 
+  test("fails closed on malformed or forged card authority and reopens a non-Pending card", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "architecture-event-authority-"));
+    try {
+      const requestFile = "docs/architecture/requests/root.md";
+      const event = {
+        ts: "2026-08-14T01:00:00+0800",
+        file_path: "src/authority.ts",
+        severity: "low",
+        functional_block: "root",
+        capability_id: "root",
+        matched_prefix: "root",
+        architecture_domain: "root",
+        architecture_capability: "_root",
+        architecture_module: "docs/architecture/index.md",
+        workstream_dir: "tasks/workstreams/root/_root",
+        contract_agents: "",
+        contract_claude: "",
+        change_type: "source-change",
+        request_file: requestFile,
+        spawn_recommended: false,
+        contract_sync_required: false,
+      };
+      const args = ["upsert-request", "--request-file", requestFile, "--event-json", JSON.stringify(event)];
+      expect(runArchitectureEvent(args, cwd).status).toBe(0);
+      const cardPath = join(cwd, requestFile);
+      const canonical = readFileSync(cardPath, "utf8");
+
+      writeFileSync(cardPath, canonical.replace(/"event_key": "sha256:[0-9a-f]{64}"/, '"event_key": "sha256:forged"'));
+      expect(runArchitectureEvent(args, cwd).status).toBe(1);
+
+      writeFileSync(cardPath, canonical.replace(/## Event Fields\s*```json[\s\S]*?```/, "## Event Fields\n\n```json\n{}\n```"));
+      expect(runArchitectureEvent(args, cwd).status).toBe(1);
+
+      writeFileSync(cardPath, canonical.replace("> **Status**: Pending", "> **Status**: Resolved"));
+      const reopened = runArchitectureEvent(args, cwd);
+      expect(reopened.status, reopened.stderr).toBe(0);
+      expect(reopened.stdout).toBe("changed");
+      expect(readFileSync(cardPath, "utf8")).toContain("> **Status**: Pending");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test("updates context-map discoverable contexts idempotently", () => {
     const cwd = mkdtempSync(join(tmpdir(), "architecture-event-context-map-"));
     try {

@@ -1,6 +1,19 @@
 #!/usr/bin/env bun
 import { createHash } from "crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, writeSync } from "fs";
+import {
+  closeSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+  writeSync,
+} from "fs";
 import { dirname, resolve } from "path";
 
 type Args = {
@@ -19,6 +32,7 @@ function usage(): never {
       "  scripts/architecture-event.ts repo-path --repo <repo> --path <path>",
       "  scripts/architecture-event.ts event-json --ts <ts> --file-path <path> ... [--pretty]",
       "  scripts/architecture-event.ts upsert-request --request-file <path> --event-json <json>",
+      "  scripts/architecture-event.ts record-event --request-file <path> --event-file <path> --index-file <path> --requests-dir <dir> --event-json <json>",
       "  scripts/architecture-event.ts upsert-from-request --source-request <path> --request-file <path>",
       "  scripts/architecture-event.ts reindex-requests --index-file <path> --requests-dir <dir> [--check]",
       "  scripts/architecture-event.ts request-info --request-file <path>",
@@ -66,6 +80,7 @@ function parseArgs(argv: string[]): Args {
       "repo-path",
       "event-json",
       "upsert-request",
+      "record-event",
       "upsert-from-request",
       "reindex-requests",
       "request-info",
@@ -248,36 +263,60 @@ function readMetadata(file: string): Record<string, string> {
   return metadata;
 }
 
-function extractEventFields(file: string): ArchitectureEvent {
+const EVENT_STRING_FIELDS = [
+  "ts",
+  "file_path",
+  "severity",
+  "functional_block",
+  "capability_id",
+  "matched_prefix",
+  "architecture_domain",
+  "architecture_capability",
+  "architecture_module",
+  "workstream_dir",
+  "contract_agents",
+  "contract_claude",
+  "change_type",
+  "request_file",
+] as const;
+
+function validateEvent(value: unknown, requestFile: string, requireKey = false): ArchitectureEvent {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("architecture event must be a JSON object");
+  }
+  const event = value as Record<string, unknown>;
+  for (const field of EVENT_STRING_FIELDS) {
+    if (typeof event[field] !== "string") throw new Error(`architecture event field ${field} must be a string`);
+  }
+  for (const field of ["ts", "file_path", "severity", "functional_block", "capability_id", "matched_prefix", "architecture_domain", "architecture_capability", "architecture_module", "workstream_dir", "change_type"] as const) {
+    if (!(event[field] as string).trim()) throw new Error(`architecture event field ${field} must not be empty`);
+  }
+  if (!["low", "medium", "high", "critical"].includes(event.severity as string)) {
+    throw new Error(`unsupported architecture event severity: ${event.severity}`);
+  }
+  for (const field of ["spawn_recommended", "contract_sync_required"] as const) {
+    if (typeof event[field] !== "boolean") throw new Error(`architecture event field ${field} must be a boolean`);
+  }
+  const normalizedPath = normalizeRepoPath(event.file_path as string, process.cwd());
+  if (normalizedPath !== event.file_path) throw new Error(`architecture event file_path must be repo-relative: ${event.file_path}`);
+  if (event.request_file !== requestFile) throw new Error(`architecture event request_file does not match ${requestFile}`);
+
+  const normalized = event as ArchitectureEvent;
+  const expectedKey = semanticEventKey({ ...normalized, event_key: undefined });
+  if (requireKey && event.event_key !== expectedKey) throw new Error("architecture event_key does not match canonical fields");
+  if (event.event_key !== undefined && event.event_key !== expectedKey) throw new Error("architecture event_key does not match canonical fields");
+  return { ...normalized, event_key: expectedKey };
+}
+
+function extractEventFields(file: string, enforceRequestFile = true): ArchitectureEvent {
   if (!existsSync(file)) return {};
   const source = readFileSync(file, "utf-8");
   const match = source.match(/## Event Fields\s*```json\s*([\s\S]*?)\s*```/);
   if (match) {
-    try {
-      return JSON.parse(match[1]);
-    } catch {
-      // Fall through to metadata synthesis for older or manually edited files.
-    }
+    const parsed = JSON.parse(match[1]) as ArchitectureEvent;
+    return validateEvent(parsed, enforceRequestFile ? file : String(parsed.request_file || ""), enforceRequestFile);
   }
-  const metadata = readMetadata(file);
-  return {
-    ts: metadata.Detected || metadata.Updated || "",
-    file_path: metadata.File || "",
-    severity: metadata.Severity || "medium",
-    functional_block: metadata["Functional Block"] || "root",
-    capability_id: metadata["Capability ID"] || "root",
-    matched_prefix: metadata["Matched Prefix"] || metadata["Functional Block"] || "root",
-    architecture_domain: metadata["Architecture Domain"] || "root",
-    architecture_capability: metadata["Architecture Capability"] || "_root",
-    architecture_module: metadata["Architecture Module"] || "docs/architecture/index.md",
-    workstream_dir: metadata["Workstream Directory"] || "tasks/workstreams/root/_root",
-    contract_agents: metadata["Contract Files"]?.split(",")[0]?.trim().replace(/^`|`$/g, "") || "",
-    contract_claude: metadata["Contract Files"]?.split(",")[1]?.trim().replace(/^`|`$/g, "") || "",
-    change_type: metadata["Change Type"] || "unknown",
-    request_file: "",
-    spawn_recommended: (metadata["Spawn Recommended"] || "false") === "true",
-    contract_sync_required: (metadata["Contract Sync Required"] || "false") === "true",
-  };
+  throw new Error(`architecture request is missing canonical Event Fields: ${file}`);
 }
 
 function severityRank(severity: string): number {
@@ -310,28 +349,78 @@ function isPendingRequest(file: string): boolean {
 function requestEventsFromSource(file: string): ArchitectureEvent[] {
   if (!existsSync(file)) return [];
   const source = readFileSync(file, "utf-8");
-  const events: ArchitectureEvent[] = [];
-  const tableMatch = source.match(/## Touched Files\s*\n([\s\S]*?)(?:\n## |\n?$)/);
-  if (tableMatch) {
-    for (const line of tableMatch[1].split(/\r?\n/)) {
-      const cells = line
-        .split("|")
-        .map((cell) => cell.trim())
-        .filter(Boolean);
-      if (cells.length < 4 || cells[0] === "Last Event" || cells[0].startsWith("---")) continue;
-      const storedEventKey = cells[4] ? stripCode(cells[4]) : "";
-      events.push({
-        ts: cells[0],
-        severity: cells[1],
-        change_type: cells[2],
-        file_path: stripCode(cells[3]),
-        event_key: storedEventKey && storedEventKey !== "legacy" ? storedEventKey : undefined,
-      });
+  const recordsMatch = source.match(/## Event Records\s*```json\s*([\s\S]*?)\s*```/);
+  if (recordsMatch) {
+    const parsed = JSON.parse(recordsMatch[1]);
+    if (!Array.isArray(parsed)) throw new Error(`architecture Event Records must be an array: ${file}`);
+    const records = dedupeEvents(parsed.map((entry) => validateEvent(entry, file, true)));
+    const latest = extractEventFields(file);
+    const canonicalLatest = records.find((entry) => entry.event_key === latest.event_key);
+    if (!canonicalLatest || JSON.stringify(canonicalLatest) !== JSON.stringify(latest)) {
+      throw new Error(`architecture Event Fields do not match canonical Event Records: ${file}`);
     }
+    return records;
   }
   const latest = extractEventFields(file);
-  if (latest.file_path) events.push(latest);
-  return dedupeEvents(events);
+  return [latest];
+}
+
+function markdownCodeCell(value: string): string {
+  return value.replaceAll("\\", "\\\\").replaceAll("|", "\\|").replaceAll("`", "\\`");
+}
+
+function atomicWriteFile(file: string, value: string): void {
+  assertSafeWriteTarget(file);
+  const temporary = `${file}.tmp-${process.pid}-${Date.now()}`;
+  const fd = openSync(temporary, "wx", 0o600);
+  try {
+    writeAllSync(fd, value);
+  } finally {
+    closeSync(fd);
+  }
+  try {
+    renameSync(temporary, file);
+  } finally {
+    if (existsSync(temporary)) rmSync(temporary);
+  }
+}
+
+function assertSafeWriteTarget(file: string): void {
+  const repo = realpathSync(process.cwd());
+  let existingAncestor = dirname(resolve(file));
+  while (!existsSync(existingAncestor)) {
+    const parent = dirname(existingAncestor);
+    if (parent === existingAncestor) throw new Error(`write target has no existing ancestor: ${file}`);
+    existingAncestor = parent;
+  }
+  const resolvedAncestor = realpathSync(existingAncestor);
+  if (resolvedAncestor !== repo && !resolvedAncestor.startsWith(`${repo}/`)) {
+    throw new Error(`write target ancestor resolves outside repository: ${file}`);
+  }
+  mkdirSync(dirname(file), { recursive: true });
+  if (existsSync(file) && lstatSync(file).isSymbolicLink()) throw new Error(`write target must not be a symlink: ${file}`);
+  const parent = realpathSync(dirname(resolve(file)));
+  if (parent !== repo && !parent.startsWith(`${repo}/`)) throw new Error(`write target resolves outside repository: ${file}`);
+}
+
+function withQueueLock<T>(requestsDir: string, operation: () => T): T {
+  assertSafeWriteTarget(`${requestsDir}/.write-probe`);
+  const lockDir = `${requestsDir}/.architecture-queue.lock`;
+  const deadline = Date.now() + 10_000;
+  while (true) {
+    try {
+      mkdirSync(lockDir);
+      break;
+    } catch (error: any) {
+      if (error?.code !== "EEXIST" || Date.now() >= deadline) throw new Error(`architecture queue lock unavailable: ${lockDir}`);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+    }
+  }
+  try {
+    return operation();
+  } finally {
+    rmSync(lockDir, { recursive: true, force: true });
+  }
 }
 
 function dedupeEvents(events: ArchitectureEvent[]): ArchitectureEvent[] {
@@ -423,7 +512,7 @@ function renderRequestCard(event: ArchitectureEvent, events: ArchitectureEvent[]
   const titleToken = event.capability_id || event.functional_block || "root";
   const touchedRows = events
     .map((entry) => {
-      return `| ${entry.ts || "unknown"} | ${entry.severity || "unknown"} | ${entry.change_type || "unknown"} | \`${entry.file_path || "unknown"}\` | \`${entry.event_key || "legacy"}\` |`;
+      return `| ${entry.ts || "unknown"} | ${entry.severity || "unknown"} | ${entry.change_type || "unknown"} | \`${markdownCodeCell(entry.file_path || "unknown")}\` | \`${entry.event_key || "legacy"}\` |`;
     })
     .join("\n");
 
@@ -464,6 +553,12 @@ function renderRequestCard(event: ArchitectureEvent, events: ArchitectureEvent[]
     JSON.stringify(latestEvent, null, 2),
     "```",
     "",
+    "## Event Records",
+    "",
+    "```json",
+    JSON.stringify(events, null, 2),
+    "```",
+    "",
   ].join("\n");
 }
 
@@ -480,26 +575,62 @@ function upsertRequest(args: Args): "changed" | "unchanged" {
   const requestFile = requireOption(args, "requestFile");
   const rawEvent = args.options.eventJson ?? readStdin();
   const parsed = JSON.parse(rawEvent) as ArchitectureEvent;
-  const event = normalizeEvent({ ...parsed, event_key: undefined }, requestFile);
+  const event = validateEvent(normalizeEvent({ ...parsed, event_key: undefined }, requestFile), requestFile, true);
   const existingMetadata = readMetadata(requestFile);
   const existingEvents = requestEventsFromSource(requestFile);
   const previous = existingEvents.find((entry) => entry.file_path === event.file_path);
-  if (previous && samePendingFileEvent(previous, event)) return "unchanged";
+  if (isPendingRequest(requestFile) && previous && samePendingFileEvent(previous, event)) return "unchanged";
   const events = dedupeEvents([...existingEvents, event]);
-  mkdirSync(dirname(requestFile), { recursive: true });
-  writeFileSync(requestFile, renderRequestCard(event, events, existingMetadata));
+  atomicWriteFile(requestFile, renderRequestCard(event, events, existingMetadata));
   return "changed";
+}
+
+function eventLogContains(file: string, eventKey: string): boolean {
+  if (!existsSync(file)) return false;
+  for (const line of readFileSync(file, "utf8").split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const parsed = JSON.parse(line);
+    if (parsed?.event_key === eventKey) return true;
+  }
+  return false;
+}
+
+function recordEvent(args: Args): "changed" | "unchanged" {
+  const requestFile = requireOption(args, "requestFile");
+  const eventFile = requireOption(args, "eventFile");
+  const indexFile = requireOption(args, "indexFile");
+  const requestsDir = requireOption(args, "requestsDir");
+  const parsed = JSON.parse(args.options.eventJson ?? readStdin()) as ArchitectureEvent;
+  const event = validateEvent(normalizeEvent({ ...parsed, event_key: undefined }, requestFile), requestFile, true);
+
+  return withQueueLock(requestsDir, () => {
+    for (const target of [requestFile, eventFile, indexFile]) assertSafeWriteTarget(target);
+    if (!eventLogContains(eventFile, event.event_key!)) {
+      const currentLog = existsSync(eventFile) ? readFileSync(eventFile, "utf8") : "";
+      const prefix = currentLog && !currentLog.endsWith("\n") ? `${currentLog}\n` : currentLog;
+      atomicWriteFile(eventFile, `${prefix}${JSON.stringify(event)}\n`);
+    }
+    if (process.env.REPO_HARNESS_ARCHITECTURE_FAIL_AFTER_EVENT === "1") {
+      throw new Error("injected architecture failure after event persistence");
+    }
+    const result = upsertRequest({ ...args, options: { ...args.options, eventJson: JSON.stringify(event) } });
+    reindexRequests({
+      command: "reindex-requests",
+      options: { indexFile, requestsDir },
+      flags: new Set(),
+    });
+    return result;
+  });
 }
 
 function upsertFromRequest(args: Args): void {
   const sourceRequest = requireOption(args, "sourceRequest");
   const requestFile = requireOption(args, "requestFile");
-  const parsed = normalizeEvent(extractEventFields(sourceRequest), requestFile);
+  const parsed = normalizeEvent({ ...extractEventFields(sourceRequest, false), event_key: undefined }, requestFile);
   parsed.request_file = requestFile;
   const existingMetadata = readMetadata(requestFile);
   const events = dedupeEvents([...requestEventsFromSource(requestFile), parsed]);
-  mkdirSync(dirname(requestFile), { recursive: true });
-  writeFileSync(requestFile, renderRequestCard(parsed, events, existingMetadata));
+  atomicWriteFile(requestFile, renderRequestCard(parsed, events, existingMetadata));
 }
 
 function requestInfo(args: Args): string {
@@ -579,7 +710,7 @@ function reindexRequests(args: Args): void {
     return;
   }
   mkdirSync(dirname(indexFile), { recursive: true });
-  if (current !== next) writeFileSync(indexFile, next);
+  if (current !== next) atomicWriteFile(indexFile, next);
 }
 
 function defaultContextMap() {
@@ -855,6 +986,9 @@ try {
       break;
     case "upsert-request":
       print(upsertRequest(args));
+      break;
+    case "record-event":
+      print(recordEvent(args));
       break;
     case "upsert-from-request":
       upsertFromRequest(args);
