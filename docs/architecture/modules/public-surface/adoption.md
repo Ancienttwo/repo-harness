@@ -1,7 +1,7 @@
 # public-surface/adoption 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-adoption" sourceDigest="sha256:c1e3969b3cc61b423b71d4b6b94dd77c5c45cde69181a5d472dc44e18cbe694f" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:77f08e9918a7b55f65e6ebe4fc941422e3fe811c89e777a2f44c6d358601ef21" verifiedAgainst="codex/hook-effect-ship@1ea187bda5bcb9c8040fcbadbdfb80e861008b04@2026-08-14T21:20:10+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-adoption" sourceDigest="sha256:ed2fb72aa5735e5416c9896402b7e984385b0f67f9e971968fb2335443489823" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:da9e2e87803637f1c934db6c92aa6ccf9217c2463489bb8621a81fc1a22d7439" verifiedAgainst="main@3f1e551ab39177e3397f6dedc3984a9af3ee7c49@2026-08-15T03:33:04+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`codex/hook-effect-ship@1ea187bda5bcb9c8040fcbadbdfb80e861008b04`(2026-08-14)
+> **Verified against**:`main@3f1e551ab39177e3397f6dedc3984a9af3ee7c49`(2026-08-15)
 > **Capability ID**:`capability.public-surface.adoption`(kind `capability`)
 > **Matched Prefixes**:`src/cli/commands/adoption-plan.ts`、`src/core/adoption/**`、`src/effects/fs-transaction.ts`、`src/effects/path-safety.ts`、`tests/cli/adoption-plan.test.ts`、`tests/fixtures/adoption/**`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`

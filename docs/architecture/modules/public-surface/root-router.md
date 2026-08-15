@@ -1,7 +1,7 @@
 # public-surface/root-router 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-root-router" sourceDigest="sha256:c1e3969b3cc61b423b71d4b6b94dd77c5c45cde69181a5d472dc44e18cbe694f" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:982b4f48d3bd33074e22ae883c63e64a0c3ec7038a42a765f7e7cdce193e1310" verifiedAgainst="codex/hook-effect-ship@1ea187bda5bcb9c8040fcbadbdfb80e861008b04@2026-08-14T21:20:10+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-root-router" sourceDigest="sha256:ed2fb72aa5735e5416c9896402b7e984385b0f67f9e971968fb2335443489823" rendererVersion="archcontext.docs-renderer/v2" outputDigest="sha256:58ef7b902f68ad58ae0abc9df3d0d8a1fa4e23defa63a1a34bcceb78011164ef" verifiedAgainst="main@3f1e551ab39177e3397f6dedc3984a9af3ee7c49@2026-08-15T03:33:04+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`codex/hook-effect-ship@1ea187bda5bcb9c8040fcbadbdfb80e861008b04`(2026-08-14)
+> **Verified against**:`main@3f1e551ab39177e3397f6dedc3984a9af3ee7c49`(2026-08-15)
 > **Capability ID**:`capability.public-surface.root-router`(kind `capability`)
 > **Matched Prefixes**:`SKILL.md`、`README.md`、`AGENTS.md`、`CLAUDE.md`、`docs/spec.md`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
@@ -36,7 +36,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 文件數:`5`
-- 總行數:`831`
+- 總行數:`849`
 - 匹配前綴:`SKILL.md`、`README.md`、`AGENTS.md`、`CLAUDE.md`、`docs/spec.md`
 - 復算:`archctx docs plan --json`(掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`)
 
