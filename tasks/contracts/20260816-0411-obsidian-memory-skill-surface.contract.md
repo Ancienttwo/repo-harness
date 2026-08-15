@@ -81,6 +81,11 @@ allowed_paths:
   - scripts/check-agent-tooling.sh
   - tests/
   - docs/reference-configs/external-tooling.md
+  # docs/reference-configs/ is a byte-identical projection of
+  # assets/reference-configs/ (tests/reference-configs-projection.test.ts).
+  # Editing the doc requires editing its source and re-running
+  # `bun run sync:reference-configs`, so the source file is in scope too.
+  - assets/reference-configs/external-tooling.md
 ```
 
 ## Evidence Requirements
