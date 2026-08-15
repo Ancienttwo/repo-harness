@@ -72,7 +72,7 @@ describe("AXR7 repo-harness architecture consumer", () => {
     };
     expect(manifest.profile).toBe("repo-harness/v1");
     expect(manifest.targetCount).toBe(17);
-    expect(manifest.provenance?.rendererVersion).toBe("archcontext.docs-renderer/v2");
+    expect(manifest.provenance?.rendererVersion).toBe("archcontext.docs-renderer/v3");
     expect(manifest.provenance?.layoutVersion).toBe("archcontext.docs-layout/v1");
     expect(manifest.provenance?.generatedFrom).toMatchObject({ codeGraphVersion: "1.5.0", codeGraphStatus: "ready" });
     expect(manifest.provenance?.indexedWorktreeDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
