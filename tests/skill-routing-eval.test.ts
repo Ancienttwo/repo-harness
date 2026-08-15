@@ -251,7 +251,9 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
   describe("buildDiscoveredSkillSurface (pure discovery-surface projection)", () => {
     test("minimal discovers router, plan/check facades, and explicit-setup chatgpt", () => {
       const names = buildDiscoveredSkillSurface(catalog, "minimal", "claude").map((e) => e.name).sort();
-      expect(names).toEqual(["repo-harness", "repo-harness-chatgpt", "repo-harness-check", "repo-harness-plan"]);
+      expect(names).toEqual(
+        ["obsidian-memory", "repo-harness", "repo-harness-chatgpt", "repo-harness-check", "repo-harness-plan"],
+      );
     });
 
     test("full is host-aware: codex additionally gets claude-plan", () => {
@@ -505,7 +507,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       expect(report.metrics.double_trigger).toEqual({ count: 0, denominator: 68, rate: 0 });
       expect(report.metrics.provider_error_count).toBe(0);
       expect(report.discovered_surface.map((d) => d.name).sort()).toEqual(
-        ["repo-harness", "repo-harness-check", "repo-harness-chatgpt", "repo-harness-cross-review", "repo-harness-plan", "repo-harness-product", "repo-harness-ship"].sort(),
+        ["obsidian-memory", "repo-harness", "repo-harness-check", "repo-harness-chatgpt", "repo-harness-cross-review", "repo-harness-plan", "repo-harness-product", "repo-harness-ship"].sort(),
       );
     }, 30_000);
 

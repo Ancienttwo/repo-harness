@@ -86,6 +86,11 @@ allowed_paths:
   # Editing the doc requires editing its source and re-running
   # `bun run sync:reference-configs`, so the source file is in scope too.
   - assets/reference-configs/external-tooling.md
+  # assets/templates/helpers/ is the shipped byte-copy projection of scripts/
+  # (tests/unit/helper-projection-drift.test.ts). Editing the in-scope
+  # scripts/check-agent-tooling.sh requires re-running
+  # `bun run sync:helpers`, so its projection is in scope too.
+  - assets/templates/helpers/check-agent-tooling.sh
 ```
 
 ## Evidence Requirements

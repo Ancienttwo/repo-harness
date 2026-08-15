@@ -19,6 +19,8 @@
 ## Deviations From Plan Or Spec
 
 - `docs/reference-configs/external-tooling.md` is a byte-identical projection of `assets/reference-configs/external-tooling.md` (`tests/reference-configs-projection.test.ts`). Editing only the doc, as the contract's `allowed_paths` literally permitted, would have failed that drift check. Edited the asset source and re-ran `bun run sync:reference-configs`; `allowed_paths` was widened to name the source file, per the contract's own "update this contract before widening scope" rule.
+- `scripts/check-agent-tooling.sh` is a byte-copy projection into `assets/templates/helpers/` (`tests/unit/helper-projection-drift.test.ts`), the same class of coupling as the reference-configs mirror. Re-ran `bun run sync:helpers`; `allowed_paths` widened to name the projected copy.
+- Two further fixture inventories in `tests/skill-routing-eval.test.ts` enumerate the discovered skill surface (`buildDiscoveredSkillSurface` for minimal/claude, and the full/claude provider-eval report's `discovered_surface`). The new facade legitimately joins that surface on both profiles, so both lists gained the name; no routing metric assertion changed (top1 42/42 and the 68-case double-trigger denominator still hold, because `obsidian-memory` is not a canonical route in the frozen corpus).
 - Existing fixture lists updated to include the new entry without weakening any assertion: `tests/skill-surface/catalog.test.ts` (package counts 17→18 and 11→12 repo-owned, both profile facade lists, `mutationPathSkillNames` repo-owned list) and `tests/action-command-skills.test.ts` (`TARGET_FACADE_KIND_PACKAGES`). These are exact-equality inventories, so each is an intentional restatement of the new surface, not a relaxation.
 
 ## Tradeoffs Considered
