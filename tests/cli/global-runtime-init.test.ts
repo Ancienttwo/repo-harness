@@ -17,6 +17,15 @@ function writeExecutable(filePath: string, content: string): void {
   chmodSync(filePath, 0o755);
 }
 
+function sanitizedChildEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  // Machine shells (zshenv) can export an explicit node runtime authority that
+  // outranks PATH resolution; these tests fake node via fakeBin-first PATH and
+  // must resolve exactly like CI, where no such export exists.
+  delete env.REPO_HARNESS_NODE_BIN;
+  return env;
+}
+
 function setupFakeSource(root: string): void {
   mkdirSync(join(root, 'scripts'), { recursive: true });
   mkdirSync(join(root, 'assets', 'skills', 'repo-harness-cross-review'), { recursive: true });
@@ -153,7 +162,7 @@ describe('install command global runtime bootstrap', () => {
         externalSkills: false,
         codegraph: false,
         env: {
-          ...process.env,
+          ...sanitizedChildEnv(),
           HOME: home,
           BUN_INSTALL: join(home, '.bun'),
           PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
@@ -201,7 +210,7 @@ describe('install command global runtime bootstrap', () => {
         externalSkills: false,
         codegraph: false,
         env: {
-          ...process.env,
+          ...sanitizedChildEnv(),
           HOME: home,
           BUN_INSTALL: join(home, '.bun'),
           PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
@@ -232,7 +241,7 @@ describe('install command global runtime bootstrap', () => {
         `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.0.0; exit 0; fi\nexit 99\n`,
       );
       const childEnv: NodeJS.ProcessEnv = {
-        ...process.env,
+        ...sanitizedChildEnv(),
         HOME: home,
         BUN_INSTALL: join(home, '.bun'),
         PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
@@ -309,7 +318,7 @@ describe('install command global runtime bootstrap', () => {
         codegraph: true,
         brainRoot: join(home, 'brain'),
         env: {
-          ...process.env,
+          ...sanitizedChildEnv(),
           HOME: home,
           PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: '0',
@@ -390,7 +399,7 @@ describe('install command global runtime bootstrap', () => {
         syncSkill: false,
         hostAdapters: false,
         env: {
-          ...process.env,
+          ...sanitizedChildEnv(),
           HOME: home,
           BUN_INSTALL: join(home, '.bun'),
           PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
@@ -448,7 +457,7 @@ describe('install command global runtime bootstrap', () => {
         externalSkills: false,
         codegraph: false,
         env: {
-          ...process.env,
+          ...sanitizedChildEnv(),
           HOME: home,
           BUN_INSTALL: join(home, '.bun'),
           PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
@@ -511,7 +520,7 @@ exit 0
         codegraph: false,
         brainRoot: join(home, 'brain'),
         env: {
-          ...process.env,
+          ...sanitizedChildEnv(),
           HOME: home,
           BUN_INSTALL: hostileBunInstall,
           PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
@@ -562,7 +571,7 @@ exit 0
         reverseSkill: true,
         codegraph: false,
         brainRoot: join(home, 'brain'),
-        env: { ...process.env, HOME: home },
+        env: { ...sanitizedChildEnv(), HOME: home },
       });
 
       expect(result.exitCode).toBe(1);
@@ -601,7 +610,7 @@ exit 0
         reverseSkill: true,
         codegraph: false,
         brainRoot: join(home, 'brain'),
-        env: { ...process.env, HOME: home },
+        env: { ...sanitizedChildEnv(), HOME: home },
       });
 
       expect(result.exitCode).toBe(1);
@@ -646,7 +655,7 @@ exit 0
         reverseSkill: true,
         codegraph: false,
         brainRoot: join(home, 'brain'),
-        env: { ...process.env, HOME: home, PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
+        env: { ...sanitizedChildEnv(), HOME: home, PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
       });
 
       expect(result.exitCode).toBe(1);
@@ -689,7 +698,7 @@ exit 0
         reverseSkill: true,
         codegraph: false,
         brainRoot: join(home, 'brain'),
-        env: { ...process.env, HOME: home },
+        env: { ...sanitizedChildEnv(), HOME: home },
       });
 
       expect(result.exitCode).toBe(1);
@@ -735,7 +744,7 @@ exit 0
         reverseSkill: true,
         codegraph: false,
         brainRoot: join(home, 'brain'),
-        env: { ...process.env, HOME: home, PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
+        env: { ...sanitizedChildEnv(), HOME: home, PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
       });
 
       expect(result.exitCode).toBe(1);
@@ -776,7 +785,7 @@ exit 0
         reverseSkill: true,
         codegraph: false,
         brainRoot: join(home, 'brain'),
-        env: { ...process.env, HOME: home },
+        env: { ...sanitizedChildEnv(), HOME: home },
       });
 
       expect(result.exitCode).toBe(1);
@@ -814,7 +823,7 @@ exit 0
         reverseSkill: true,
         codegraph: false,
         brainRoot: join(home, 'brain'),
-        env: { ...process.env, HOME: home },
+        env: { ...sanitizedChildEnv(), HOME: home },
       });
 
       expect(result.exitCode).toBe(1);
@@ -892,7 +901,7 @@ exit 0
         hostAdapters: false,
         externalSkills: false,
         codegraph: false,
-        env: { ...process.env, HOME: home, PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
+        env: { ...sanitizedChildEnv(), HOME: home, PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
       });
 
       expect(result.exitCode).toBe(0);
@@ -928,7 +937,7 @@ exit 0
         syncSkill: false,
         hostAdapters: false,
         codegraph: false,
-        env: { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun') },
+        env: { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun') },
       }, { authorityHome: () => home });
 
       expect(result.exitCode).toBe(0);
@@ -986,7 +995,7 @@ exit 0
         externalSkills: true,
         codegraph: false,
         brainRoot: join(home, 'brain'),
-        env: { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun'), PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
+        env: { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'), PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
       });
 
       expect(result.exitCode).toBe(0);
@@ -1031,7 +1040,7 @@ exit 0
         externalSkills: true,
         codegraph: false,
         brainRoot: join(home, 'brain'),
-        env: { ...process.env, HOME: home, PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
+        env: { ...sanitizedChildEnv(), HOME: home, PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
       });
 
       expect(result.exitCode).toBe(1);
@@ -1070,7 +1079,7 @@ exit 0
         externalSkills: false,
         codegraph: false,
         env: {
-          ...process.env,
+          ...sanitizedChildEnv(),
           HOME: home,
           BUN_INSTALL: join(home, '.bun'),
           PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
@@ -1106,7 +1115,7 @@ exit 0
         cwd: repo,
         encoding: 'utf8',
         env: {
-          ...process.env,
+          ...sanitizedChildEnv(),
           HOME: home,
           BUN_INSTALL: join(home, '.bun'),
           PATH: `${fakeBin}:${join(process.env.HOME ?? '', '.bun', 'bin')}:/usr/bin:/bin`,
@@ -1143,7 +1152,7 @@ exit 0
         externalSkills: false,
         codegraph: false,
         env: {
-          ...process.env,
+          ...sanitizedChildEnv(),
           HOME: home,
           PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
         },
@@ -1182,7 +1191,7 @@ exit 0
         externalSkills: false,
         codegraph: false,
         env: {
-          ...process.env,
+          ...sanitizedChildEnv(),
           HOME: home,
           BUN_INSTALL: join(home, '.bun'),
           PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
@@ -1225,7 +1234,7 @@ exit 0
         externalSkills: false,
         codegraph: false,
         env: {
-          ...process.env,
+          ...sanitizedChildEnv(),
           HOME: home,
           BUN_INSTALL: join(home, '.bun'),
           PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
@@ -1264,7 +1273,7 @@ exit 0
         externalSkills: false,
         codegraph: false,
         env: {
-          ...process.env,
+          ...sanitizedChildEnv(),
           HOME: home,
           BUN_INSTALL: join(home, '.bun'),
           PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
@@ -1303,7 +1312,7 @@ exit 0
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nexit 42\n`);
 
       const baseEnv: NodeJS.ProcessEnv = {
-        ...process.env,
+        ...sanitizedChildEnv(),
         HOME: home,
         BUN_INSTALL: join(home, '.bun'),
         PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
@@ -1392,7 +1401,7 @@ exit 0
         cwd: repo,
         encoding: 'utf-8',
         env: {
-          ...process.env,
+          ...sanitizedChildEnv(),
           HOME: home,
           BUN_INSTALL: join(home, '.bun'),
           PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
@@ -1454,7 +1463,7 @@ exit 0
           cwd: repo,
           encoding: 'utf-8',
           env: {
-            ...process.env,
+            ...sanitizedChildEnv(),
             HOME: home,
             BUN_INSTALL: join(home, '.bun'),
             PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
@@ -1492,7 +1501,7 @@ exit 0
         target: 'codex',
         profile: 'full',
         reverseSkill: true,
-        env: { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun') },
+        env: { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun') },
       }, () => {
         mkdirSync(staging, { recursive: true });
         writeFileSync(join(staging, 'SKILL.md'), '# reverse-skill-router\n');
@@ -1578,7 +1587,7 @@ exit 0
           cwd: repo,
           encoding: 'utf-8',
           env: {
-            ...process.env,
+            ...sanitizedChildEnv(),
             HOME: home,
             BUN_INSTALL: join(home, '.bun'),
             PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
@@ -1633,7 +1642,7 @@ exit 0
         cwd: repo,
         encoding: 'utf-8',
         env: {
-          ...process.env,
+          ...sanitizedChildEnv(),
           HOME: home,
           BUN_INSTALL: join(home, '.bun'),
           PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
@@ -1670,7 +1679,7 @@ exit 0
       const res = spawnSync('bun', [CLI, 'update', '--check', '--target', 'codex', '--json'], {
         cwd: repo,
         encoding: 'utf-8',
-        env: { ...process.env, HOME: home },
+        env: { ...sanitizedChildEnv(), HOME: home },
       });
 
       const s = res.status;
@@ -1755,7 +1764,7 @@ exit 0
           input: '',
           timeout: 20000,
           env: {
-            ...process.env,
+            ...sanitizedChildEnv(),
             HOME: home,
             BUN_INSTALL: join(home, '.bun'),
             PATH: `${fakeBin}:${process.env.PATH ?? ''}`,

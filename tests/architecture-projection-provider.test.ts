@@ -218,10 +218,13 @@ describe('package-local ArchContext projection provider', () => {
     const node = join(fakeBin, 'node');
     writeFileSync(node, '#!/bin/sh\necho v22.14.0\n');
     chmodSync(node, 0o755);
+    const pathOnlyEnv: NodeJS.ProcessEnv = { ...process.env, PATH: fakeBin };
+    // An exported runtime authority must not rescue this failure mode.
+    delete pathOnlyEnv.REPO_HARNESS_NODE_BIN;
     const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, {
       consumerRoot: f.consumerRoot,
       policy,
-      env: { ...process.env, PATH: fakeBin },
+      env: pathOnlyEnv,
     });
     expect(readiness.projectionProvider.state).toBe('error');
     expect(readiness.projectionProvider.reason).toContain('requires Node >=24 <26');
