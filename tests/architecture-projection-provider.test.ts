@@ -212,6 +212,20 @@ describe('package-local ArchContext projection provider', () => {
     expect(handshake.resolved.version).toBe('9.9.9');
   });
 
+  test('fails closed when the target repo vendors a mismatching archctx', () => {
+    const f = fixture();
+    vendorArchctx(f.repoRoot, '0.0.1');
+    expect(() => archctxCapabilities(f.repoRoot, { policy, run: () => ({ status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' }) }))
+      .toThrow(`expected archctx@${ARCHCTX_REQUIRED_VERSION}, got archctx@0.0.1 (resolved from repo root ${f.repoRoot})`);
+  });
+
+  test('resolves from the running CLI package root when the target repo vendors no archctx', () => {
+    const f = fixture();
+    const handshake = archctxCapabilities(f.repoRoot, { policy, run: () => ({ status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' }) });
+    expect(handshake.resolved.version).toBe(ARCHCTX_REQUIRED_VERSION);
+    expect(handshake.resolved.packageRoot).toBe(realpathSync(join(import.meta.dir, '..', 'node_modules', 'archctx')));
+  });
+
   test('disabled readiness performs zero subprocess calls', () => {
     const f = fixture();
     const calls: Array<{ binary: string; args: readonly string[] }> = [];
