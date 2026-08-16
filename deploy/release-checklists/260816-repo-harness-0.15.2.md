@@ -78,7 +78,7 @@
 - [x] Record the `0.15.2` section in `docs/CHANGELOG.md`.
 - [x] Freeze the candidate and run `bun run check:release`.
 - [x] Run `bun run check:type`, the full `bun test`, and the deploy/architecture/task sync checks.
-- [ ] Record final-subject review and AcceptanceReceipt evidence.
+- [x] Record final-subject review and AcceptanceReceipt evidence.
 - [ ] Merge the candidate to `main` and confirm exact GitHub Actions CI.
 - [ ] Publish `repo-harness@0.15.2` to npm `latest`.
 - [ ] Create and push annotated tag `v0.15.2` and stable GitHub Release.
