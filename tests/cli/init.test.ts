@@ -424,7 +424,6 @@ describe("init command", () => {
           tmp,
           "--dry-run",
           "--no-verify",
-          "--no-codegraph",
           "--json",
         ],
         {
@@ -456,7 +455,8 @@ describe("init command", () => {
     expect(res.stdout).toContain("--repo <path>");
     expect(res.stdout).toContain("--dry-run");
     expect(res.stdout).not.toContain("--experimental-ts-apply");
-    expect(res.stdout).toContain("--no-codegraph");
+    expect(res.stdout).not.toContain("--no-codegraph");
+    expect(res.stdout).not.toContain("--sync-codegraph");
   }, 30_000);
 
   test("CLI update rejects repo refresh flags with an init hint", () => {
@@ -499,7 +499,6 @@ describe("init command", () => {
           "init",
           "--dry-run",
           "--no-verify",
-          "--no-codegraph",
           "--json",
         ],
         {
@@ -611,6 +610,44 @@ describe("init command", () => {
       expect(codegraphStep?.status).toBe("failed");
       expect(codegraphStep?.detail).toBe("CodeGraph readiness check failed");
       expect(codegraphStep?.stderr).toContain("JSON Parse error");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("applied init fails closed when the mandatory CodeGraph CLI is missing", () => {
+    const tmp = join(tmpdir(), `repo-harness-init-codegraph-missing-${Date.now()}`);
+    const source = join(tmp, "source");
+    const repo = join(tmp, "repo");
+    const home = join(tmp, "home");
+    const fakeBin = join(tmp, "bin");
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(home, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      setupFakeSource(source);
+
+      const result = runInit({
+        repo,
+        sourceRoot: source,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        verify: false,
+        env: {
+          ...process.env,
+          HOME: home,
+          PATH: `${fakeBin}:/opt/homebrew/bin:/usr/bin:/bin`,
+          AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
+          AGENTIC_DEV_CODEGRAPH_ALLOW_GLOBAL: "0",
+        },
+      });
+
+      const codegraphStep = result.steps.find((step) => step.step === "ensure codegraph index");
+      expect(result.exitCode).toBe(1);
+      expect(codegraphStep?.status).toBe("failed");
+      expect(codegraphStep?.detail).toContain("repo-harness update");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -790,11 +827,9 @@ describe("init command", () => {
 
       const input = new PassThrough();
       // Answers, in prompt order: host target, reporting language (English),
-      // brain location, brain mode, external skills confirm, CodeGraph
-      // confirm, final "Proceed" confirm. Blank lines take each prompt's
-      // default (defaults to "yes" for the two new confirms), preserving
-      // today's default-on outcome.
-      ["\n", "3\n", "\n", "\n", "\n", "\n", "y\n"].forEach((answer, index) => {
+      // brain location, brain mode, external skills confirm, then final
+      // "Proceed" confirm. CodeGraph is mandatory and is not prompted.
+      ["\n", "3\n", "\n", "\n", "\n", "y\n"].forEach((answer, index) => {
         setTimeout(() => input.write(answer), index * 5);
       });
       setTimeout(() => input.end(), 40);
@@ -833,23 +868,26 @@ describe("init command", () => {
     }
   }, CODEGRAPH_INIT_TIMEOUT_MS);
 
-  test("interactive init skips external skills and CodeGraph when declined", async () => {
+  test("interactive init can skip external skills but still initializes mandatory CodeGraph", async () => {
     const tmp = join(tmpdir(), `repo-harness-init-interactive-declined-${Date.now()}`);
     const source = join(tmp, "source");
     const repo = join(tmp, "repo");
     const home = join(tmp, "home");
+    const fakeBin = join(tmp, "bin");
+    const codegraphLog = join(tmp, "codegraph.log");
     const outputChunks: string[] = [];
     try {
       mkdirSync(source, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(home, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
+      writeFakeCodegraph(fakeBin, codegraphLog);
 
       const input = new PassThrough();
-      // Same prompt order as above, but decline both new confirms ("n").
-      // Neither bunx nor codegraph should be invoked, so no fake binaries
-      // are needed on PATH for this run.
-      ["\n", "3\n", "\n", "\n", "n\n", "n\n", "y\n"].forEach((answer, index) => {
+      // Decline only the mutable external-skills prompt; CodeGraph has no
+      // opt-out and the final answer confirms the plan.
+      ["\n", "3\n", "\n", "\n", "n\n", "y\n"].forEach((answer, index) => {
         setTimeout(() => input.write(answer), index * 5);
       });
       setTimeout(() => input.end(), 40);
@@ -870,16 +908,18 @@ describe("init command", () => {
         env: {
           ...process.env,
           HOME: home,
+          PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+          AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
         },
       });
 
       expect(result.exitCode).toBe(0);
       expect(result.steps.find((step) => step.step === "external skills")?.status).toBe("skipped");
       expect(result.steps.find((step) => step.step === "external skills")?.detail).toBe("disabled");
-      expect(result.steps.find((step) => step.step === "ensure codegraph index")?.status).toBe("skipped");
-      expect(result.steps.find((step) => step.step === "ensure codegraph index")?.detail).toBe("disabled");
+      expect(result.steps.find((step) => step.step === "ensure codegraph index")?.status).toBe("ok");
+      expect(readFileSync(codegraphLog, "utf-8")).toContain("codegraph sync .");
       expect(outputChunks.join("")).toContain("externalSkills=false");
-      expect(outputChunks.join("")).toContain("CodeGraph=skip");
+      expect(outputChunks.join("")).toContain("CodeGraph=ensure --init --sync plus global MCP configure");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

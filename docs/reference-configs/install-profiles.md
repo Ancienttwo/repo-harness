@@ -30,9 +30,9 @@ Update also reconciles the installed runtime dependency closure. It requires
 exact package-local `archctx` and `archctx-contracts` versions, ArchContext's
 exact package-local CodeGraph dependency, Node `>=24 <26`, and a successful
 `archctx capabilities --json` handshake. Both profiles refresh the exact global
-CodeGraph CLI/MCP by default. Waza and Mermaid remain mutable third-party
-providers and refresh only with explicit `--with-external-skills`;
-`--no-codegraph` is the bounded CodeGraph opt-out.
+CodeGraph CLI/MCP as a mandatory runtime dependency. Waza and Mermaid remain
+mutable third-party providers and refresh only with explicit
+`--with-external-skills`; CodeGraph has no public opt-out.
 
 Full always projects the package-bundled cross-review and `claude-plan` Skills
 required by its provider surfaces. Marketplace Waza and Mermaid are mutable

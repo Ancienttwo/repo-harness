@@ -5,6 +5,7 @@
     "": {
       "name": "repo-harness",
       "dependencies": {
+        "@colbymchenry/codegraph": "1.5.0",
         "@modelcontextprotocol/sdk": "^1.28.0",
         "archctx": "0.4.3",
         "archctx-contracts": "0.4.3",
@@ -12,7 +13,6 @@
         "express": "^5.2.1",
       },
       "devDependencies": {
-        "@colbymchenry/codegraph": "1.5.0",
         "@types/bun": "latest",
         "@types/cors": "^2.8.17",
         "@types/express": "^5.0.0",

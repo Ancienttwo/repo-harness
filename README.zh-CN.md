@@ -430,7 +430,7 @@ dependency。
 | [TW93](https://x.com/HiTw93) 的 Waza，包括 `think`、`hunt`、`check` 和 `health` | 日常 planning、bug hunt、verification、health check，以及 Codex-first 的 skill sync | 通过 skills CLI 安装进 host skill root |
 | `mermaid` | 为架构文档中的 Mermaid fenced blocks 提供 authoring 和 review 支持 | Runtime-referenced 的外部 skill，不会 vendor 进生成的仓库，也不会生成 standalone HTML |
 | [`reverse-skill-router`](https://github.com/zhaoxuya520/reverse-skill) | 将逆向工程和安全任务路由到专项 playbook | 推荐但仅显式安装（`--with-reverse-skill`）；上游把“提到目标”视作授权，因此必须独立审核 scope，不进入任何默认 profile |
-| CodeGraph（`@colbymchenry/codegraph`） | 为这个 self-host 仓库提供 symbol-aware 导航、impact tracing 和 readiness check | 本仓库的 dev dependency；生成的仓库默认保持 global-MCP-first，除非 policy 显式开启 |
+| CodeGraph（`@colbymchenry/codegraph`） | 提供 symbol-aware 导航、impact tracing 和 readiness check | 精确锁定的 production dependency（`1.5.0`）；global install/update 确保 CLI + MCP，每次实际 repo init 都初始化并同步仓库索引 |
 | [Peter Steinberger](https://x.com/steipete) 的 [Oracle](https://github.com/steipete/oracle)（`@steipete/oracle`，MIT） | `chatgpt-browser` 的 Oracle provider 为 `gptpro` consult 默认 shell 出去调用的 GPT Pro / ChatGPT Web 浏览器 consult 引擎 | 外部解析的 binary（`--oracle-bin`、`REPO_HARNESS_ORACLE_BIN`、`node_modules/.bin` 或 `PATH`）；从不自动下载，缺失 binary 会硬失败 `ORACLE_NOT_INSTALLED` |
 | OpenAI Codex | repo-local 实现和验证的主要执行 agent；commit 实质包含 Codex 产出内容时，也承担 GitHub contributor attribution | 外部 agent runtime；attribution 是显式的 commit trailer，不是隐藏的 hook automation |
 

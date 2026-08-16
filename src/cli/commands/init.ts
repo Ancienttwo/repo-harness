@@ -564,7 +564,7 @@ export function runInit(
   const externalSkills = opts.externalSkills !== false;
   const codegraph = opts.codegraph !== false;
   const configureCgMcp = opts.configureCodegraphMcp === true;
-  const syncCodegraph = opts.syncCodegraph === true;
+  const syncCodegraph = opts.syncCodegraph !== false;
   const brainMode = opts.brainMode ?? "skip";
   const target = opts.target ?? "both";
   const mode = opts.mode ?? "standard";
@@ -674,12 +674,14 @@ export function runInit(
     try {
       const cg = ensureCodegraph({ repoRoot, init: true, sync: syncCodegraph, env: commandEnv, host: target });
       const cgFailed = cg.actions.some((entry) => entry.status === "failed");
+      const projectIndexStatus = (cg.raw as { project_index?: { status?: string } }).project_index?.status;
+      const cgUnavailable = cg.resolution.source === "missing" || projectIndexStatus !== "up-to-date";
       steps.push({
         step: "ensure codegraph index",
-        status: cg.actions.length === 0 ? "skipped" : cgFailed ? "failed" : "ok",
+        status: cgFailed || cgUnavailable ? "failed" : "ok",
         detail:
           cg.resolution.source === "missing"
-            ? "codegraph CLI not found; skipped (install via: repo-harness tools ensure codegraph)"
+            ? "codegraph CLI not found; run: repo-harness update"
             : cg.actions.length > 0
               ? cg.actions.map((entry) => `${entry.action}:${entry.status}`).join(", ")
               : `index ${cg.status}`,
@@ -951,7 +953,7 @@ export async function runInteractiveInit(opts: InteractiveInitOptions = {}): Pro
       output,
       "Install external skills (Waza /think /hunt /check /health, Mermaid, cross-review)?",
     );
-    const codegraph = await askConfirm(rl, output, "Install CodeGraph CLI and configure its MCP server?");
+    const codegraph = true;
 
     writeLine(output, renderInteractivePlan([
       `repo=${repoRoot}`,

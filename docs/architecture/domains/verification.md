@@ -21,7 +21,7 @@ repos, command facades, hooks, migration helpers, and installed runtime copies.
 - `check-task-workflow.sh --strict` is the repo-local harness readiness gate.
 - External brain-manifest and vault drift are outside repo verification and run only as explicit operator actions.
 - External tooling probes remain read-only by default; CodeGraph readiness is required for agent code navigation, while other external tooling remains advisory.
-- This self-host repo may use a vendored CodeGraph dev dependency; generated downstream repos keep global CodeGraph MCP setup explicit unless policy opts in.
+- CodeGraph is a mandatory repo-harness production dependency; generated downstream repos consume the managed global CLI/MCP and are indexed during applied init.
 
 ## Verification Surface
 

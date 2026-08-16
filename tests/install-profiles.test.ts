@@ -765,9 +765,9 @@ describe('install profiles', () => {
     expect(rollbackInstallProfile(env).profile).toBe('minimal');
   }));
 
-  test('Minimal CodeGraph stays conditional while Full enables it', () => withHome((env) => {
+  test('CodeGraph is mandatory in both install profiles', () => withHome((env) => {
     const cwd = env.HOME!;
-    expect(profileEnablesCodegraph('minimal', cwd)).toBe(false);
+    expect(profileEnablesCodegraph('minimal', cwd)).toBe(true);
     expect(profileEnablesCodegraph('full', cwd)).toBe(true);
   }));
 

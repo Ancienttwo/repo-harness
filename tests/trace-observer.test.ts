@@ -104,6 +104,7 @@ describe('runTraceObserver', () => {
       const first = runTraceObserver({
         repoRoot,
         input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' }),
+        env: {},
         dependencies: { now: () => new Date('2026-07-21T12:34:56.000Z') },
       });
       expect(first).toMatchObject({ exitCode: 0, reason: 'ok', stdout: '', stderr: '' });
@@ -114,6 +115,7 @@ describe('runTraceObserver', () => {
       const second = runTraceObserver({
         repoRoot,
         input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' }),
+        env: {},
         dependencies: { now: () => new Date('2026-07-21T12:35:56.000Z') },
       });
       expect(second.exitCode).toBe(0);
@@ -170,6 +172,7 @@ describe('runTraceObserver', () => {
           session_id: 'external-session',
           source: 'other-host',
         }),
+        env: {},
       });
       expect(result.exitCode).toBe(0);
       expect(traceRecords(repoRoot)[0]).toMatchObject({

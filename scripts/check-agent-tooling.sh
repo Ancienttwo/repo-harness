@@ -1565,7 +1565,7 @@ function detectCodeGraph() {
     reason: !cliPresent
       ? "CodeGraph CLI is not installed."
       : localDependencyMissing
-        ? "CodeGraph global fallback is present, but this repo declares a local dev dependency that is not installed."
+        ? "CodeGraph global fallback is present, but this repo declares a local dependency that is not installed."
       : !selectedMcpConfigured
         ? "CodeGraph CLI is present, but one or more selected host MCP configs are missing or deferred."
         : projectIndexStatus === "not-initialized"

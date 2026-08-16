@@ -19,10 +19,12 @@ function runJson(command: string, args: string[]) {
 describe("CodeGraph tooling integration", () => {
   test("repository CodeGraph dependency is an exact pin and matches the local binary", () => {
     const manifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8")) as {
+      dependencies: Record<string, string>;
       devDependencies: Record<string, string>;
     };
-    const pinnedVersion = manifest.devDependencies["@colbymchenry/codegraph"];
+    const pinnedVersion = manifest.dependencies["@colbymchenry/codegraph"];
     expect(pinnedVersion).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(manifest.devDependencies["@colbymchenry/codegraph"]).toBeUndefined();
 
     const local = spawnSync(join(ROOT, "node_modules/.bin/codegraph"), ["--version"], {
       cwd: ROOT,

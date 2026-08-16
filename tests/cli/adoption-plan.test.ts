@@ -502,7 +502,7 @@ describe("init command cutover", () => {
     const repo = tempRepo();
     const home = tempRepo();
     try {
-      const apply = spawnSync("bun", [CLI, "init", "--repo", repo, "--mode", "minimal", "--no-verify", "--no-codegraph", "--json"], {
+      const apply = spawnSync("bun", [CLI, "init", "--repo", repo, "--mode", "minimal", "--no-verify", "--json"], {
         cwd: ROOT,
         encoding: "utf-8",
         env: { ...process.env, REPO_HARNESS_HOME: home },

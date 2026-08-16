@@ -451,7 +451,7 @@ agent runtime を中心に構築されています。これらは通常の bundl
 | Waza by [TW93](https://x.com/HiTw93)(`think`、`hunt`、`check`、`health` を含む) | 日々の planning、bug hunt、verification、health check、Codex-first な skill sync | skills CLI を通じて host の skill root にインストールされます |
 | `mermaid` | architecture 文書内の Mermaid fenced block に対する authoring / review 支援 | Runtime で参照される外部 skill であり、生成されたリポジトリには vendor されず、standalone HTML も生成しません |
 | [`reverse-skill-router`](https://github.com/zhaoxuya520/reverse-skill) | リバースエンジニアリングと security task を専門 playbook にルーティングします | 推奨ですが明示 opt-in (`--with-reverse-skill`) のみ。upstream の「対象を言及 = 許可済み」という前提は独立した scope review が必要なため、profile には含めません |
-| CodeGraph(`@colbymchenry/codegraph`) | この self-host リポジトリのための symbol-aware navigation、impact tracing、readiness check | 本リポジトリでは dev dependency。生成されたリポジトリは、policy が opt-in しない限り global-MCP-first のままです |
+| CodeGraph(`@colbymchenry/codegraph`) | symbol-aware navigation、impact tracing、readiness check | `1.5.0` に固定した production dependency。install/update が CLI + MCP を管理し、init がリポジトリ索引を初期化・同期します |
 | [Oracle](https://github.com/steipete/oracle) by [Peter Steinberger](https://x.com/steipete)(`@steipete/oracle`、MIT) | `chatgpt-browser` の Oracle provider が `gptpro` consult のために shell out する、既定の GPT Pro / ChatGPT Web browser consult engine | 外部で解決される binary(`--oracle-bin`、`REPO_HARNESS_ORACLE_BIN`、`node_modules/.bin`、または `PATH`)。自動ダウンロードはされず、binary が見つからない場合は hard な `ORACLE_NOT_INSTALLED` failure になります |
 | OpenAI Codex | commit が実質的に Codex 作成の作業を含むときの、repo-local な実装・verification・GitHub contributor attribution を担う primary execution agent | 外部 agent runtime。attribution は隠れた hook automation ではなく、明示的な commit trailer です |
 

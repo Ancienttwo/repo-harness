@@ -77,9 +77,9 @@ sequenceDiagram
 1. **只读即只读。** `--check` 路径绝不执行 `bun install`、`codegraph init`、`codegraph sync`、`codegraph install`。这条由 `tests/cli/codegraph-resolver.test.ts` 用"假 codegraph 在 init/sync/install 上 exit 2"的方式硬性钉死，而不是靠 code review。
 2. **探测单一权威。** readiness 判定只有 `check-agent-tooling.sh#detectCodeGraph` 一个来源；`src/cli/tools/codegraph.ts` 是它的消费者与格式化层。任何在 TS 侧重新实现"找二进制/读配置"的代码都是重复权威。
 3. **本地依赖优先于全局。** 解析顺序为 `AGENTIC_DEV_CODEGRAPH_LOCAL_BIN` → `node_modules/@colbymchenry/codegraph-<platform>-<arch>/bin/codegraph` → `node_modules/.bin/codegraph` → PATH 上的 `codegraph`（`:1398` 起，候选顺序见 `:1404`-`:1408`）。落到 global 而仓库又声明了本地依赖，会被显式判为 `partial` 而非静默通过。
-4. **配置写入必须显式。** host MCP 配置只在 `tools configure codegraph` 或 `init --configure-codegraph-mcp` 下被改写；`install` 与默认 ensure/check 路径零写入。
+4. **host 与 repo 写入分层。** global `install`/`update` 强制确保精确版本 CLI 和 MCP 配置；repo `init` 只初始化并同步目标仓库索引，不写 HOME；`--check` 始终只读。
 5. **MCP 执行面不信任 repo 内的可执行文件。** `server.ts:133` 以 `allowRepoLocalBin: false` 构造适配器，PATH 中位于 repo 内的目录被剔除，repo 内的显式 bin 覆盖被拒绝。这是防"被索引的仓库反向控制索引器"的边界，不是性能取舍。
-6. **下游生成仓库默认走全局 MCP。** 本自托管仓库把 CodeGraph 作为 devDependency 是特例；生成的下游仓库保持全局默认，除非本地 policy 显式选择 vendored 依赖。
+6. **下游生成仓库复用 managed global runtime。** `repo-harness` 本身精确 pin CodeGraph production dependency；生成仓库不额外 vendoring，而是在 applied init 时使用 managed CLI 初始化并同步本地索引。
 
 约束与取舍：
 

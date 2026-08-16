@@ -58,7 +58,7 @@ Out of scope:
 
 - Product application scaffolds after their first generated skeleton.
 - `_ref/` external reference checkouts and `_ops/` private operations state.
-- Installing, upgrading, or enabling external host tools such as Waza, `geju`, or MCP servers. This self-host repo may vendor CodeGraph as a dev dependency, but generated downstream repos keep CodeGraph host setup explicit unless local policy opts in.
+- Installing, upgrading, or enabling optional external host tools such as Waza or `geju`. CodeGraph is the exception: it is a mandatory repo-harness runtime dependency, while generated downstream repos consume the managed global CLI/MCP and receive an initialized index during `repo-harness init`.
 - Vendoring external skill bodies such as `mermaid`.
 
 ## Umbrella Hierarchy

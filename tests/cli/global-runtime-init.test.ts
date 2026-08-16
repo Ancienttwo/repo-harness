@@ -97,7 +97,7 @@ function setupManagedRuntimeReadback(home: string, fakeBin: string, harnessVersi
   writeFileSync(join(harness, 'package.json'), JSON.stringify({
     name: 'repo-harness',
     version: harnessVersion,
-    dependencies: { archctx: '0.4.3', 'archctx-contracts': '0.4.3' },
+    dependencies: { '@colbymchenry/codegraph': '1.5.0', archctx: '0.4.3', 'archctx-contracts': '0.4.3' },
   }));
   writeFileSync(join(archctx, 'package.json'), JSON.stringify({
     name: 'archctx',
@@ -238,7 +238,7 @@ describe('install command global runtime bootstrap', () => {
       mkdirSync(fakeBin, { recursive: true });
       writeExecutable(
         join(fakeBin, 'bun'),
-        `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.0.0; exit 0; fi\nexit 99\n`,
+        `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nexit 0\n`,
       );
       const childEnv: NodeJS.ProcessEnv = {
         ...sanitizedChildEnv(),
@@ -248,7 +248,8 @@ describe('install command global runtime bootstrap', () => {
       };
       const harnessVersion = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version as string;
       setupManagedRuntimeReadback(home, fakeBin, harnessVersion);
-      delete childEnv.REPO_HARNESS_BUN_EXECUTABLE;
+      writeFakeCodegraph(fakeBin, join(tmp, 'codegraph.log'));
+      childEnv.REPO_HARNESS_BUN_EXECUTABLE = join(fakeBin, 'bun');
 
       const res = spawnSync(
         process.execPath,
@@ -259,7 +260,6 @@ describe('install command global runtime bootstrap', () => {
           '--no-sync-skill',
           '--no-hooks',
           '--no-external-skills',
-          '--no-codegraph',
           '--json',
         ],
         { cwd: repo, encoding: 'utf-8', env: childEnv },
@@ -269,9 +269,9 @@ describe('install command global runtime bootstrap', () => {
       const steps = JSON.parse(res.stdout).steps as Array<{ step: string; status: string; command?: string[] }>;
       const runtimeStep = steps.find((step) => step.step === 'ensure Bun runtime')!;
       expect(runtimeStep.status).toBe('skipped');
-      expect(runtimeStep.command?.[0]).toBe(process.execPath);
+      expect(runtimeStep.command?.[0]).toBe(join(fakeBin, 'bun'));
       expect(steps.find((step) => step.step === 'install repo-harness CLI')?.status).toBe('skipped');
-      expect(existsSync(bunLog)).toBe(false);
+      expect(readFileSync(bunLog, 'utf-8')).toContain('add -g @colbymchenry/codegraph@1.5.0');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -641,7 +641,9 @@ exit 0
       setReverseSkillIntegrity(source, REVERSE_FAKE_TREE_INTEGRITY);
       mkdirSync(join(home, '.codex', 'skills', 'reverse-skill-router'), { recursive: true });
       writeFileSync(join(home, '.codex', 'skills', 'reverse-skill-router', 'SKILL.md'), '# user-owned\n');
-      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" > "${bunxLog}"\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nexit 0\n`);
+      setupManagedRuntimeReadback(home, fakeBin, JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version as string);
+      writeFakeCodegraph(fakeBin, join(tmp, 'codegraph.log'));
 
       const result = runGlobalRuntimeSetup({
         sourceRoot: source,
@@ -1367,6 +1369,7 @@ exit 0
     expect(res.stdout).toContain('--brain-root <path>');
     expect(res.stdout).not.toContain('--with-optional');
     expect(res.stdout).not.toContain('--project-type');
+    expect(res.stdout).not.toContain('--no-codegraph');
     expect(res.stdout).not.toContain('setup-plugins');
   }, 30_000);
 
@@ -1381,7 +1384,9 @@ exit 0
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nexit 0\n');
-      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" > "${bunxLog}"\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nexit 0\n`);
+      setupManagedRuntimeReadback(home, fakeBin, JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version as string);
+      writeFakeCodegraph(fakeBin, join(tmp, 'codegraph.log'));
 
       const res = spawnSync(process.execPath, [
         CLI,
@@ -1394,7 +1399,6 @@ exit 0
         '--no-sync-skill',
         '--no-hooks',
         '--no-external-skills',
-        '--no-codegraph',
         '--with-reverse-skill',
         '--json',
       ], {
@@ -1456,7 +1460,6 @@ exit 0
           '--no-sync-skill',
           '--no-hooks',
           '--no-external-skills',
-          '--no-codegraph',
           '--json',
         ],
         {
@@ -1580,7 +1583,6 @@ exit 0
           '--no-sync-skill',
           '--no-hooks',
           '--no-external-skills',
-          '--no-codegraph',
           '--json',
         ],
         {
@@ -1636,7 +1638,6 @@ exit 0
         '--no-sync-skill',
         '--no-hooks',
         '--no-external-skills',
-        '--no-codegraph',
         '--json',
       ], {
         cwd: repo,
@@ -1710,6 +1711,7 @@ exit 0
     expect(res.stdout).toContain('--with-external-skills');
     expect(res.stdout).toContain('--with-reverse-skill');
     expect(res.stdout).toContain('--configure-codegraph');
+    expect(res.stdout).not.toContain('--no-codegraph');
     expect(res.stdout).toContain('--no-cli');
     expect(res.stdout).toContain('Deprecated: use repo-harness init --repo <path>');
   }, 30_000);
@@ -1787,24 +1789,24 @@ exit 0
   }, 25000);
 });
 
-describe('resolveOptionalRuntimeDeps (interactive optional-dep prompts)', () => {
-  test('non-interactive defaults optional ecosystems off', async () => {
+describe('resolveOptionalRuntimeDeps (interactive external-skill prompt)', () => {
+  test('non-interactive keeps external skills off and CodeGraph mandatory', async () => {
     const result = await resolveOptionalRuntimeDeps({ target: 'both' }, undefined, { interactive: false });
-    expect(result).toEqual({ externalSkills: false, codegraph: false });
+    expect(result).toEqual({ externalSkills: false, codegraph: true });
   });
 
-  test('non-interactive still honors explicit --no-* flags without prompting', async () => {
+  test('CodeGraph cannot be disabled through the internal option shape', async () => {
     const result = await resolveOptionalRuntimeDeps(
       { target: 'both', externalSkills: false, codegraph: false },
       undefined,
       { interactive: false },
     );
-    expect(result).toEqual({ externalSkills: false, codegraph: false });
+    expect(result).toEqual({ externalSkills: false, codegraph: true });
   });
 
-  test('interactive mode prompts, and answering "n" skips both optional deps', async () => {
+  test('interactive mode only prompts for external skills', async () => {
     const input = new PassThrough();
-    ['n\n', 'n\n'].forEach((answer, index) => {
+    ['n\n'].forEach((answer, index) => {
       setTimeout(() => input.write(answer), index * 5);
     });
     setTimeout(() => input.end(), 20);
@@ -1822,14 +1824,14 @@ describe('resolveOptionalRuntimeDeps (interactive optional-dep prompts)', () => 
       output,
     });
 
-    expect(result).toEqual({ externalSkills: false, codegraph: false });
+    expect(result).toEqual({ externalSkills: false, codegraph: true });
     expect(outputChunks.join('')).toContain('Install external skills');
-    expect(outputChunks.join('')).toContain('Install CodeGraph CLI');
+    expect(outputChunks.join('')).not.toContain('Install CodeGraph CLI');
   });
 
   test('interactive mode keeps optional ecosystems off when the answer is blank', async () => {
     const input = new PassThrough();
-    ['\n', '\n'].forEach((answer, index) => {
+    ['\n'].forEach((answer, index) => {
       setTimeout(() => input.write(answer), index * 5);
     });
     setTimeout(() => input.end(), 20);
@@ -1845,13 +1847,12 @@ describe('resolveOptionalRuntimeDeps (interactive optional-dep prompts)', () => 
       output,
     });
 
-    expect(result).toEqual({ externalSkills: false, codegraph: false });
+    expect(result).toEqual({ externalSkills: false, codegraph: true });
   });
 
-  test('interactive mode does not prompt for a flag explicitly passed on the CLI', async () => {
+  test('interactive mode ignores the retired CodeGraph opt-out shape', async () => {
     const input = new PassThrough();
-    // Only externalSkills should be prompted (codegraph was explicit via
-    // --no-codegraph); a single "n" answer must apply to that one prompt.
+    // Only externalSkills is mutable; a single "n" answer applies to it.
     setTimeout(() => input.write('n\n'), 5);
     setTimeout(() => input.end(), 20);
     const output = new Writable({
@@ -1867,6 +1868,6 @@ describe('resolveOptionalRuntimeDeps (interactive optional-dep prompts)', () => 
       output,
     });
 
-    expect(result).toEqual({ externalSkills: false, codegraph: false });
+    expect(result).toEqual({ externalSkills: false, codegraph: true });
   });
 });

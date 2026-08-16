@@ -13,6 +13,10 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
+- Promotes `@colbymchenry/codegraph@1.5.0` from a self-host dev dependency to
+  a mandatory production dependency. Global install/update no longer expose a
+  CodeGraph opt-out, and applied repo init now initializes and syncs the index
+  fail-closed while dry-run remains read-only.
 - Syncs the archctx dependency line to 0.4.3 with docs-renderer v3 and moves
   the three version anchors, adopting the upstream canonical-body-digest fix
   that stops projection restamp churn.

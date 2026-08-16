@@ -382,7 +382,6 @@ describe('install command (Phase 1B)', () => {
           '--no-cli',
           '--no-sync-skill',
           '--no-external-skills',
-          '--no-codegraph',
         ],
         {
           cwd: ROOT,

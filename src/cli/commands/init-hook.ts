@@ -539,7 +539,7 @@ function commandForToolGap(toolName: string, tool: ToolingTool, target: InitHook
     return normalizeToolCommand(tool.install_command, target);
   }
   if (toolName === 'codex_automation_profile') {
-    return 'repo-harness init --target codex --no-cli --no-hooks --no-codegraph';
+    return 'repo-harness init --target codex --no-cli --no-hooks';
   }
   return normalizeToolCommand(
     tool.sync_command ?? tool.ensure_command ?? tool.mcp_install_command ?? tool.install_command ?? tool.upgrade_command,

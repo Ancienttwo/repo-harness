@@ -41,7 +41,6 @@ import {
   assertInstallProfile,
   planLegacyInstallProfileMigration,
   planInstallProfile,
-  profileEnablesCodegraph,
   profileEnablesExternalSkills,
   prepareLegacyInstallProfileMigration,
   prepareInstallProfileSwitch,
@@ -124,11 +123,11 @@ export interface ResolveOptionalRuntimeDepsOptions {
 }
 
 /**
- * Resolve the two user-selectable optional dependencies (external skills,
- * CodeGraph) for the `init`/`install` global runtime bootstrap.
+ * Resolve the mutable external-skills choice for global runtime bootstrap.
+ * CodeGraph is a mandatory runtime dependency and cannot be disabled.
  *
  * Non-interactive (non-TTY, or `--json`): mutable external skills are opt-in;
- * CodeGraph follows the command's explicit/default option value.
+ * CodeGraph is always enabled.
  *
  * Interactive: for each item not explicitly passed on the CLI (i.e. its
  * option value source isn't `'cli'`), prompt; Enter/`y` keeps the command's
@@ -140,7 +139,7 @@ export async function resolveOptionalRuntimeDeps(
   opts: ResolveOptionalRuntimeDepsOptions,
 ): Promise<{ externalSkills: boolean; codegraph: boolean }> {
   let externalSkills = rawOpts.externalSkills === true;
-  let codegraph = rawOpts.codegraph === true;
+  const codegraph = true;
   if (!opts.interactive) return { externalSkills, codegraph };
 
   const input = opts.input ?? process.stdin;
@@ -151,11 +150,6 @@ export async function resolveOptionalRuntimeDeps(
       const answer = (await rl.question('Install external skills (Waza, Mermaid, cross-review)? [y/N]: ')).trim().toLowerCase();
       output.write('\n');
       externalSkills = answer === 'y' || answer === 'yes';
-    }
-    if (cmd?.getOptionValueSource('codegraph') !== 'cli') {
-      const answer = (await rl.question('Install CodeGraph CLI and configure its MCP server? [y/N]: ')).trim().toLowerCase();
-      output.write('\n');
-      codegraph = answer === 'y' || answer === 'yes';
     }
   } finally {
     rl.close();
@@ -282,15 +276,13 @@ async function runGlobalRuntimeBootstrap(
   const interactive = process.stdin.isTTY === true && process.stdout.isTTY === true && rawOpts.json !== true;
   const defaults = {
     externalSkills: profileEnablesExternalSkills(profile),
-    codegraph: profileEnablesCodegraph(profile),
+    codegraph: true,
   };
   const selectedDefaults = {
     externalSkills: cmd?.getOptionValueSource('externalSkills') === 'cli'
       ? rawOpts.externalSkills !== false
       : defaults.externalSkills,
-    codegraph: cmd?.getOptionValueSource('codegraph') === 'cli'
-      ? rawOpts.codegraph !== false
-      : defaults.codegraph,
+    codegraph: true,
   };
   const { externalSkills, codegraph } = interactive
     ? await resolveOptionalRuntimeDeps({
@@ -354,7 +346,6 @@ export function buildProgram(): Command {
     .option('--no-hooks', 'Skip global hook adapter installation during full runtime install')
     .option('--no-external-skills', 'Skip mutable third-party Waza and Mermaid skill bootstrap')
     .option('--with-reverse-skill', 'Explicitly install the high-risk reverse-skill-router after independent authorization review')
-    .option('--no-codegraph', 'Skip CodeGraph CLI/MCP configuration')
     .option('--brain-root <path>', 'Brain vault root to persist for repo-harness brain commands')
     .option('--json', 'Output JSON instead of human-readable text')
     .action(async (rawOpts: GlobalRuntimeCommandOptions & { location?: string; state?: boolean; rollback?: boolean }, cmd: Command) => {
@@ -380,7 +371,7 @@ export function buildProgram(): Command {
           syncSkill: true,
           hostAdapters: true,
           externalSkills: profileEnablesExternalSkills(profile),
-          codegraph: profileEnablesCodegraph(profile),
+          codegraph: true,
           profile,
         }, (transaction) => rollbackInstallProfile(process.env, transaction));
         const result = transaction.result;
@@ -423,10 +414,8 @@ export function buildProgram(): Command {
     .option('--dry-run', 'Plan repo harness changes without applying them')
     .option('--target <target>', `Host target for readiness checks and optional global bootstrap: ${TARGET_HELP}`, 'both')
     .option('--no-verify', 'Skip repo workflow verification after apply')
-    .option('--no-codegraph', 'Skip building the CodeGraph index and MCP readiness check')
     .option('--mode <mode>', 'Adoption mode: minimal|standard|self-host', 'standard')
     .option('--configure-codegraph', 'Deprecated: user-level MCP config belongs to repo-harness update/setup')
-    .option('--sync-codegraph', 'Sync the CodeGraph index after ensure')
     .option('--brain-root <path>', 'Deprecated: user-level brain config belongs to repo-harness update/setup')
     .option('--brain-mode <mode>', 'Deprecated: init does not perform user-level brain sync', 'skip')
     .option('--interactive', 'Rejected: public init is repo-local and does not configure user-level runtime state')
@@ -501,9 +490,9 @@ export function buildProgram(): Command {
         hostAdapters: false,
         externalSkills: false,
         verify: rawOpts.verify !== false,
-        codegraph: rawOpts.codegraph !== false,
+        codegraph: true,
         configureCodegraphMcp: false,
-        syncCodegraph: rawOpts.syncCodegraph === true,
+        syncCodegraph: true,
         mode,
         brainRoot: rawOpts.brainRoot,
         brainMode: rawOpts.brainMode as InitBrainMode,
@@ -533,7 +522,6 @@ export function buildProgram(): Command {
     .option('--with-reverse-skill', 'Explicitly install the high-risk reverse-skill-router after independent authorization review')
     .option('--no-external-skills', 'Do not refresh third-party Waza and Mermaid providers (default)')
     .option('--configure-codegraph', 'Refresh CodeGraph CLI/MCP (default during update)')
-    .option('--no-codegraph', 'Skip refreshing the global CodeGraph CLI/MCP')
     .option('--brain-root <path>', 'Brain vault root for manifest sync')
     .option('--repo <path>', 'Deprecated: use repo-harness init --repo <path>')
     .option('--dry-run', 'Deprecated: use repo-harness init --dry-run for repo-level planning')
@@ -593,7 +581,7 @@ export function buildProgram(): Command {
         hostAdapters: rawOpts.hooks !== false,
         externalSkills: rawOpts.externalSkills === false ? false : rawOpts.withExternalSkills === true ? true : undefined,
         reverseSkill: rawOpts.withReverseSkill === true,
-        codegraph: rawOpts.codegraph === false ? false : rawOpts.configureCodegraph === true ? true : undefined,
+        codegraph: true,
         brainRoot: rawOpts.brainRoot,
       });
       if (rawOpts.json === true) {

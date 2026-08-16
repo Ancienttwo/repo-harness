@@ -14,7 +14,6 @@ import {
 } from 'fs';
 import { homedir } from 'os';
 import { delimiter, dirname, join } from 'path';
-import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { buildManagedHooks, isManagedEntry, type HookHost, type HooksByEvent } from './managed-entries';
 import {
@@ -973,9 +972,7 @@ function probeInstalledComponents(
   // below, not a separate host-installed Skill directory.
   const handoffEvidence = canonicalEvidence(home, ['references/handoff.md']);
   const adaptiveEvidence = canonicalEvidence(home, ['src/core/workflow/profile.ts']);
-  const codegraphEvidence = state.profile === 'full'
-    ? executableEvidence('codegraph', env)
-    : canonicalEvidence(home, ['src/cli/tools/codegraph.ts']);
+  const codegraphEvidence = executableEvidence('codegraph', env);
   const probeExpectations = catalogProbeExpectations(loadSkillSurfaceCatalog());
   const planningSkillNames = probeExpectations.planningSkillNames;
   const planningSkills = completeHostSkillSetEvidence(home, planningSkillNames);
@@ -1156,15 +1153,6 @@ export function profileEnablesExternalSkills(profile: InstallProfile): boolean {
   return profile === 'full';
 }
 
-export function profileEnablesCodegraph(profile: InstallProfile, cwd = process.cwd()): boolean {
-  if (profile === 'full') return true;
-  try {
-    const policy = JSON.parse(readFileSync(join(cwd, '.ai/harness/policy.json'), 'utf-8')) as {
-      tooling?: { codegraph?: { enabled?: unknown } };
-    };
-    if (policy.tooling?.codegraph?.enabled === true) return true;
-  } catch { /* policy opt-in absent */ }
-  const tracked = spawnSync('git', ['ls-files'], { cwd, encoding: 'utf-8' });
-  if (tracked.status !== 0) return false;
-  return tracked.stdout.split('\n').filter(Boolean).length >= 2_000;
+export function profileEnablesCodegraph(_profile: InstallProfile, _cwd = process.cwd()): boolean {
+  return true;
 }

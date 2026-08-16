@@ -43,8 +43,8 @@ Node runtime, and capability handshake. A stale Bun global dependency tree is
 reported with explicit remove/install recovery commands; update does not remove
 a working CLI before a replacement is known-good. The global CodeGraph CLI/MCP
 is refreshed at the exact shipped compatibility version. Mutable third-party
-Waza and Mermaid providers remain behind explicit `--with-external-skills`;
-`--no-codegraph` disables the CodeGraph refresh.
+Waza and Mermaid providers remain behind explicit `--with-external-skills`.
+CodeGraph is mandatory and has no public opt-out.
 Repo-local workflow refresh stays on `repo-harness init`; `setup check
 --check-updates` remains the read-only advisory surface.
 
@@ -208,11 +208,11 @@ Codex and Claude exploration for indexed TypeScript and other supported language
 does not replace `.ai/context/capabilities.json`, workflow checks, tests,
 architecture drift events, or shell-script review.
 
-This self-host repo vendors CodeGraph as a dev dependency so `bun install`
-materializes `node_modules/.bin/codegraph`; its source-only
-`scripts/ensure-codegraph.sh` can manage the local index. Generated downstream
-repos keep the global MCP installer default and should use the `codegraph`
-command directly unless local policy explicitly opts into vendoring.
+`repo-harness` pins CodeGraph as a production dependency, so package installs
+materialize `node_modules/.bin/codegraph`. Global `install`/`update` ensure the
+exact CLI and MCP projection; applied repo `init` initializes and syncs the
+target index. Generated downstream repos use that managed global runtime and do
+not need to add a repo-local package dependency.
 
 ### Runtime Ownership Boundary
 
@@ -261,7 +261,7 @@ is one terminal command, or explicit authorization for their agent to run the
 same command:
 
 ```bash
-bun add -g @colbymchenry/codegraph && repo-harness tools configure codegraph --target codex --location global
+bun add -g @colbymchenry/codegraph@1.5.0 && repo-harness tools configure codegraph --target codex --location global
 ```
 
 This delegates host-specific MCP config to CodeGraph's target adapters for
