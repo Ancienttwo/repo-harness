@@ -1,7 +1,7 @@
 # public-surface/action-commands 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" sourceDigest="sha256:e7855ae0ff5f6f4e7d07727a4cdfcbacb4be06183dcf1108dc0cd7547d3b2891" rendererVersion="archcontext.docs-renderer/v3" outputDigest="sha256:1867843decbdc9cae57f5072505d86ca55cc76ebd51f4f76443f5a37a98bb466" verifiedAgainst="main@7f359d8eb5340103019c75db5493ad52250be5d3@2026-08-16T02:36:41+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" sourceDigest="sha256:936d1decb7d3cef77c235c77d85c47103c85b202e28dc837e8c1f4785b5acf7d" rendererVersion="archcontext.docs-renderer/v3" outputDigest="sha256:46f4c3455988e99ae42ded2bcf94a896862f3c47153c2260f21856fdeef9e0ea" verifiedAgainst="main@274dd72d03f2db86127f2e3447890baa17a27001@2026-08-16T11:16:06+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`main@7f359d8eb5340103019c75db5493ad52250be5d3`(2026-08-16)
+> **Verified against**:`main@274dd72d03f2db86127f2e3447890baa17a27001`(2026-08-16)
 > **Capability ID**:`capability.public-surface.action-commands`(kind `capability`)
 > **Matched Prefixes**:`assets/skill-commands/**`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
@@ -36,7 +36,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 文件數:`7`
-- 總行數:`651`
+- 總行數:`673`
 - 匹配前綴:`assets/skill-commands/**`
 - 復算:`archctx docs plan --json`(掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`)
 

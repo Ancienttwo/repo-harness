@@ -1,8 +1,8 @@
 # runtime-harness/global-runtime-reconciliation 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" sourceDigest="sha256:b4e5e49d2d11f89de55595cb338eed7e9bb4a078692549d01626234eeb4478dd" rendererVersion="archcontext.docs-renderer/v3" outputDigest="sha256:b49229f01693ab53ffb93884f78c1081c017083b4bfe3dc01cd2741b35f1b38a" verifiedAgainst="main@f6363fe9631634a171e8086166f711c800dbb2cb@2026-08-16T03:02:40+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" sourceDigest="sha256:0c764353adca39e6a8eb89da6ef238d595bb19f6efcfcb75026eec448b5db1eb" rendererVersion="archcontext.docs-renderer/v3" outputDigest="sha256:e31af6738be2e586486f879a4d696904ab3d0e5efa9d1b8d2b5475d6f7ae3e01" verifiedAgainst="main@274dd72d03f2db86127f2e3447890baa17a27001@2026-08-16T11:16:06+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`main@f6363fe9631634a171e8086166f711c800dbb2cb`(2026-08-16)
+> **Verified against**:`main@274dd72d03f2db86127f2e3447890baa17a27001`(2026-08-16)
 > **Capability ID**:`capability.runtime-harness.global-runtime-reconciliation`(kind `capability`)
 > **Matched Prefixes**:`package.json`、`bun.lock`、`src/cli/index.ts`、`src/cli/commands/global-runtime.ts`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`tests/cli/global-runtime-init.test.ts`、`tests/cli/global-runtime.test.ts`、`tests/architecture-projection-provider.test.ts`、`tests/architecture-projection-orchestration.test.ts`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
@@ -38,7 +38,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 文件數:`17`
-- 總行數:`9150`
+- 總行數:`9178`
 - 匹配前綴:`package.json`、`bun.lock`、`src/cli/index.ts`、`src/cli/commands/global-runtime.ts`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`tests/cli/global-runtime-init.test.ts`、`tests/cli/global-runtime.test.ts`、`tests/architecture-projection-provider.test.ts`、`tests/architecture-projection-orchestration.test.ts`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`
 - 復算:`archctx docs plan --json`(掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`)
 
