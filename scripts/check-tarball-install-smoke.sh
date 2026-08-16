@@ -178,7 +178,16 @@ if (plan.protocol !== 1 || plan.command !== "init" || plan.apply !== false) {
 }
 JS_EOF
 
-"$CLI" init --repo "$TARGET_REPO" --no-verify --no-codegraph --json >"$TMP_DIR/init-apply.json"
+"$CLI" init --repo "$TARGET_REPO" --no-verify --json >"$TMP_DIR/init-apply.json"
+bun - "$TMP_DIR/init-apply.json" <<'JS_EOF'
+const [, , path] = process.argv;
+const result = await Bun.file(path).json();
+const codegraph = result.steps?.find((step) => step.step === "ensure codegraph index");
+if (result.exitCode !== 0 || codegraph?.status !== "ok") {
+  console.error("[tarball-smoke] ERROR: packaged init did not establish the mandatory CodeGraph index");
+  process.exit(1);
+}
+JS_EOF
 
 if ! "$CLI" run check-task-workflow --help >/dev/null; then
   echo "[tarball-smoke] ERROR: packaged 'repo-harness run check-task-workflow --help' failed (run dispatcher / helper lookup / bin startup broken)" >&2

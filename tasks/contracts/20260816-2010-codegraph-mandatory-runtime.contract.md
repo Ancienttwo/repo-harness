@@ -6,7 +6,7 @@
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: verification-codegraph-readiness
-> **Last Updated**: 2026-08-16 20:10
+> **Last Updated**: 2026-08-16 21:21
 > **Review File**: `tasks/reviews/20260816-2010-codegraph-mandatory-runtime.review.md`
 > **Notes File**: `tasks/notes/20260816-2010-codegraph-mandatory-runtime.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`

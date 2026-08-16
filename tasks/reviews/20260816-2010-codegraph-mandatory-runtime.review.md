@@ -5,7 +5,7 @@
 > **Contract**: tasks/contracts/20260816-2010-codegraph-mandatory-runtime.contract.md
 > **Notes File**: tasks/notes/20260816-2010-codegraph-mandatory-runtime.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-08-16 21:09
+> **Last Updated**: 2026-08-16 21:21
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: sha256:398bd2654f23db5bda3a55abe0a172440932142c01c62603ff293a66e73d153a
@@ -42,6 +42,10 @@
   `dirname(process.execPath)` makes the test reach the intended resolver state;
   the focused CI-env test and typecheck pass locally, with the PR rerun as the
   authoritative clean Linux check.
+- PR CI correction: run 922 passed the full tests and workflow checks before
+  the package smoke found a stale `--no-codegraph` invocation. Tarball smoke and
+  benchmark setup now consume mandatory CodeGraph, and the corrected tarball
+  smoke passes locally while asserting packaged init index readiness.
 
 ## Acceptance Receipt Projection
 

@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260816-2010-codegraph-mandatory-runtime.md
 > **Contract**: tasks/contracts/20260816-2010-codegraph-mandatory-runtime.contract.md
 > **Review**: tasks/reviews/20260816-2010-codegraph-mandatory-runtime.review.md
-> **Last Updated**: 2026-08-16 21:09
+> **Last Updated**: 2026-08-16 21:21
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -24,6 +24,10 @@
   `check-agent-tooling.sh` failed before it could report `source=missing`. The
   fixture now retains `dirname(process.execPath)` while both CodeGraph resolver
   sources remain explicitly disabled; production behavior is unchanged.
+- CI run 922 then passed the full test/workflow sequence and exposed two stale
+  executable consumers of the retired flag: tarball install smoke and harness
+  benchmark setup. Both now exercise mandatory CodeGraph instead; the tarball
+  smoke also asserts that packaged init reports its CodeGraph step as `ok`.
 
 ## Tradeoffs Considered
 
@@ -46,6 +50,8 @@
 - CI correction: the failing regression test passes with the CI isolation env;
   typecheck also remains green. The PR rerun is the authoritative clean-runner
   check for the Linux path contract.
+- Package correction: `bash scripts/check-tarball-install-smoke.sh` passes with
+  the packed production dependency and repo index initialization enabled.
 
 ## Promotion Filter
 
