@@ -1,6 +1,6 @@
 {
-  "version": "0.15.1",
-  "templateVersion": "0.15.1",
+  "version": "0.15.2",
+  "templateVersion": "0.15.2",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "compatibility": {
@@ -243,6 +243,10 @@
     {
       "version": "0.13.0",
       "description": "Adds the long-run continuation protocol with a read-only ContinuationEnvelopeV1 from state next, AttemptReceiptV1 liveness receipts, and a no-progress circuit breaker; makes contract-worktree and ship-worktrees closeout a crash-durable, exclusively owned CloseoutJournalV1 transaction with explicit recover inspect|abort|reconcile; and publishes the host conformance contract with a sprint-backlog grammar drift check"
+    },
+    {
+      "version": "0.15.2",
+      "description": "Syncs archctx 0.4.3 with docs-renderer v3 so canonical-body-digest restamp churn stops, adds the repo-owned obsidian-memory dual-host skill facade with a runtime-referenced official Obsidian skills declaration, strips machine node-runtime authority from faked CLI test environments, and resolves archctx from the target repo before the CLI root so architecture projection drain no longer blocks after a global refresh"
     }
   ],
   "generatedProjectStamp": {
