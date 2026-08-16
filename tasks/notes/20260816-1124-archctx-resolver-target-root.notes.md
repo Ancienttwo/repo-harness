@@ -31,6 +31,11 @@
 
 - None.
 
+## Gatekeeper Observations (non-blocking)
+
+- Ancestor walk beyond the repo boundary (`src/effects/architecture/archctx-provider.ts:161`, `:349`): `findArchctxPackageRoot` climbs from `repoRoot` to the filesystem root, so an ancestor project's `node_modules/archctx` counts as the repo's vendored copy and a mismatch there fails closed instead of falling back to the CLI copy. This is the frozen P3 rule ("沿 repoRoot 向上爬到第一個命中"), not a defect; it is a residual risk for a repo checked out inside another project's dependency tree.
+- Mismatch message names the search origin (`src/effects/architecture/archctx-provider.ts:94`): the error reports `resolved from repo|consumer root <startRoot>`, not the directory the offending `package.json` was actually found in; in a walk-up hit those differ. Diagnostic precision only — the repo-vs-consumer origin distinction the plan required is present.
+
 ## Evidence Links
 
 - Checks: `.ai/harness/checks/latest.json`
