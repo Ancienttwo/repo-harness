@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-15T03:24:05+0800 -->
+<!-- updated_at: 2026-08-16T15:20:16+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-15T03:24:05+0800
-> **Source Branch**: codex/release-0-15-1-closeout
-> **Source Commit**: 87799292
+> **Status**: Idle
+> **Updated At**: 2026-08-16T15:20:16+0800
+> **Source Branch**: main
+> **Source Commit**: ed54f6dd
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive-workflow
+> **Reason**: release-0.15.2-closeout
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
+- Status: Idle
 - Active Plan: (none)
 - Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Next Task: (none)
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -31,10 +31,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /private/tmp/repo-harness-wt-fix-oracle-redaction: plans/plan-20260815-0230-change-assessment-oracle-redaction.md
-- /private/tmp/repo-harness-wt-fix-oracle-redaction: active-worktree owner -> /private/tmp/repo-harness-wt-fix-oracle-redaction
-- /private/tmp/repo-harness-wt-release-0-15-1-v2: plans/plan-20260815-0140-release-0-15-1.md
-- /private/tmp/repo-harness-wt-release-0-15-1-v2: active-worktree owner -> /private/tmp/repo-harness-wt-release-0-15-1-v2
+- (none)
 ## Active Sprint
 
 - Sprint: (none)
@@ -54,22 +51,15 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=(none), source=(none), file=.ai/harness/checks/latest.json
+- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 9 changed/untracked path(s)
+- Summary: 2 changed/untracked path(s)
 
 ```
- D plans/plan-20260815-0140-release-0-15-1.md
- D tasks/contracts/20260815-0140-release-0-15-1.contract.md
- D tasks/notes/20260815-0140-release-0-15-1.notes.md
- D tasks/reviews/20260815-0140-release-0-15-1.review.md
-?? plans/archive/plan-20260815-0140-release-0-15-1.md
-?? tasks/archive/contract-20260815-0324-release-0-15-1.md
-?? tasks/archive/notes-20260815-0324-release-0-15-1.md
-?? tasks/archive/review-20260815-0324-release-0-15-1.md
-?? tasks/archive/todo-20260815-0324-release-0-15-1.md
+ M deploy/release-checklists/260816-repo-harness-0.15.2.md
+ M docs/architecture/.projection-manifest.json
 ```
 
 ## Source Artifacts

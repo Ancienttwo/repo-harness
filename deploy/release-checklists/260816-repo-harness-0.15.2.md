@@ -4,16 +4,17 @@
 - Package: `repo-harness@0.15.2`
 - Base release: `v0.15.1`
 - Source range: `v0.15.1..67a0b271d008b81f8c095b24f6cceb4f177610e0`
-- Release-prep commit: `(pending, this branch's release-prep commit)`
-- Final candidate commit: `(pending merge to main)`
+- Release-prep commit: `dd9dcf4cded6a4d95f0fe3fc2d37d758e7bcf449`
+- Final candidate commit: `ed54f6dd3f84efec93edc7e65ba48666e961104c`
 - Release scope: publish the archctx 0.4.3 / docs-renderer v3 sync that adopts
   the upstream canonical-body-digest restamp-churn fix, the repo-owned
   `obsidian-memory` dual-host skill-surface facade with runtime-referenced
   official Obsidian skills, the CLI test machine node-runtime authority strip
   for local/CI parity, and the archctx target-repo resolution fix that closes
   the publish-to-global-refresh Stop-block window.
-- Publish status: **pending**. No npm publication, tag, GitHub Release, or
-  merge has been performed for this version.
+- Publish status: **complete**. Registry, tag, GitHub Release, published-package
+  readback, selected Bun-global runtime, and the post-refresh architecture
+  projection acceptance all passed.
 
 ## Authority Boundary
 
@@ -63,11 +64,13 @@
   `docs/reference-configs/release-deploy.md`, missing eval evidence is recorded
   as unavailable rather than substituted; this release's authority rests on the
   full `check:release` gate and the standalone full test run.
-- Pending-release acceptance: after publication and global runtime refresh,
-  `repo-harness architecture-projection drain --json` run from the **global**
-  CLI against this repository must pass. That is the final live acceptance of
-  PR #193 and cannot be observed before the global CLI carries both the fix and
-  archctx 0.4.3.
+- Post-release acceptance: after the global CLI refresh, the first
+  `repo-harness architecture-projection drain --json` correctly resolved from
+  the target repository and reported its stale installed `archctx@0.4.2`.
+  `bun install --frozen-lockfile` restored the target repository's declared
+  `archctx@0.4.3`; the next drain succeeded, applied the pending job, and left
+  `pending=0`, `deadLetters=0`, and `sourceJournalPending=0`. This closes PR
+  #193's final live acceptance without falling back to the CLI package root.
 
 ## Required Release Sequence
 
@@ -79,14 +82,36 @@
 - [x] Freeze the candidate and run `bun run check:release`.
 - [x] Run `bun run check:type`, the full `bun test`, and the deploy/architecture/task sync checks.
 - [x] Record final-subject review and AcceptanceReceipt evidence.
-- [ ] Merge the candidate to `main` and confirm exact GitHub Actions CI.
-- [ ] Publish `repo-harness@0.15.2` to npm `latest`.
-- [ ] Create and push annotated tag `v0.15.2` and stable GitHub Release.
-- [ ] Run `bash scripts/check-release-published.sh 0.15.2`.
-- [ ] Install exact Bun-global `repo-harness@0.15.2` and verify version/readiness.
-- [ ] Run `repo-harness architecture-projection drain --json` from the refreshed
+- [x] Merge the candidate to `main` and confirm exact GitHub Actions CI.
+- [x] Publish `repo-harness@0.15.2` to npm `latest`.
+- [x] Create and push annotated tag `v0.15.2` and stable GitHub Release.
+- [x] Run `bash scripts/check-release-published.sh 0.15.2`.
+- [x] Install exact Bun-global `repo-harness@0.15.2` and verify version/readiness.
+- [x] Run `repo-harness architecture-projection drain --json` from the refreshed
       global CLI against this repo as PR #193's final live acceptance.
-- [ ] Record closeout evidence and return to clean, synchronized `main`.
+- [x] Record closeout evidence and return to clean, synchronized `main`.
+
+## Publish Follow-through
+
+- Exact `main@ed54f6dd` GitHub Actions CI run `31930665509` passed.
+- npm publication returned `+ repo-harness@0.15.2`; registry readback returned
+  `latest=0.15.2`, tarball
+  `https://registry.npmjs.org/repo-harness/-/repo-harness-0.15.2.tgz`, shasum
+  `dc052a4f215b93228a838bbe1c3a9c131aad4b88`, and
+  `gitHead=ed54f6dd3f84efec93edc7e65ba48666e961104c`.
+- Annotated tag `v0.15.2` peels to `ed54f6dd`; the stable, non-draft,
+  non-prerelease GitHub Release is
+  `https://github.com/Ancienttwo/repo-harness/releases/tag/v0.15.2`.
+- `bash scripts/check-release-published.sh 0.15.2` passed registry, dist-tag,
+  tarball integrity, tag, runtime receipt, and local-version agreement.
+- `bun install -g repo-harness@0.15.2` installed both binaries and
+  `repo-harness --version` returned `0.15.2`. Runtime readiness reported
+  `fail=0`, `ok=28`, `warn=1`, `na=2`, and `needs_agent=2`; the advisory
+  actions are the pre-existing local security review and missing optional
+  official Obsidian runtime skills, neither of which is release authority.
+- The post-refresh global architecture drain succeeded after synchronizing the
+  target repository's ignored dependency installation to its locked
+  `archctx@0.4.3`; the queue is empty and no dead letters remain.
 
 ## Rollback
 
