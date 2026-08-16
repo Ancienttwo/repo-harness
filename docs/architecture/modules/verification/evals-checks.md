@@ -96,6 +96,12 @@ sequenceDiagram
 
 **10x 规模下先垮的点。** 不是 verifier，而是全量测试成本与证据生产延迟：183 个测试文件 / 66,345 LOC 已是 `bun test` 的主要壁钟成本，而 3×9 矩阵单次授权跑受 50 分钟绝对预算约束。当前拆分让小切片跑聚焦测试、release/pre-merge 才跑全量 gate；再放大一个量级时，先撑不住的是 benchmark 的 evidence-production latency 与 expensive lane 的串行度，而不是有界验证本身。
 
+### Hidden-ground-truth debug evaluation v1
+
+`scripts/run-debug-ground-truth-eval.ts` owns a second, eval-only diagnostic profile. It is intentionally separate from both the immutable 3×9 profile benchmark and `run-skill-evals.ts`: public scenarios and trusted fixtures enter a disposable workspace assigned to the trusted stub, while `evals/debug-hunt/ground-truth.json` is omitted from its callback arguments and workspace. The deterministic grader copies the original fixture again before replaying the oracle, so workspace edits cannot turn a diagnostic claim into a pass. Per-case `provider_status` (`submitted`, `no_submission`, `error`) remains distinct from `grading_status` (`pass`, `fail`, `ungraded`, `error`, `no_submission`), with hashes binding the runner, public scenarios, fixture set, hidden truth, submission, and grader inputs.
+
+This profile changes no `/hunt` or `root-cause-prover` runtime behavior. Its v1 execution surface is trusted TypeScript/Bun fixtures and the deterministic in-process `stub`; the injectable callback is a test seam, not an untrusted-provider process boundary. Hostile code, Docker/gVisor, live-provider claims, patch generation, and a replacement for the canonical profile benchmark are outside this capability contract. The first 10x bottleneck is provider cost plus disposable fixture provisioning; the declared manifest and provenance hashes permit later sharding without exposing a second answer-key authority.
+
 ### Change Assessment v1 final-subject gate
 
 `verify-sprint --prepare-acceptance` now treats `buildReviewSubject` plus

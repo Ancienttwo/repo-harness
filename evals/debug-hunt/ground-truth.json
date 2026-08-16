@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "profile": "debug-ground-truth-eval-v1",
+  "cases": [
+    {
+      "id": "logic-off-by-one",
+      "fixture": "logic-off-by-one",
+      "expectation": "diagnosis",
+      "root_cause": {
+        "file": "src/range.ts",
+        "condition": "The loop stops before including the requested end value."
+      },
+      "reproduction": {
+        "command": "bun test tests/range.test.ts",
+        "expected_exit_code": 1
+      }
+    },
+    {
+      "id": "async-ordering",
+      "fixture": "async-ordering",
+      "expectation": "diagnosis",
+      "root_cause": {
+        "file": "src/dashboard.ts",
+        "condition": "Older asynchronous work can overwrite the newer response because completion callbacks have no request-order guard."
+      },
+      "reproduction": {
+        "command": "bun test tests/dashboard.test.ts",
+        "expected_exit_code": 1
+      }
+    },
+    {
+      "id": "stale-persisted-artifact",
+      "fixture": "stale-persisted-artifact",
+      "expectation": "diagnosis",
+      "root_cause": {
+        "file": "state/active-release.json",
+        "condition": "The persisted release artifact is stale while the loader correctly reads that artifact."
+      },
+      "reproduction": {
+        "command": "bun test tests/catalog.test.ts",
+        "expected_exit_code": 1
+      }
+    },
+    {
+      "id": "red-herring-no-bug",
+      "fixture": "red-herring-no-bug",
+      "expectation": "abstain",
+      "reproduction": {
+        "command": "bun test tests/status.test.ts",
+        "expected_exit_code": 0
+      }
+    }
+  ]
+}

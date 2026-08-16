@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "profile": "debug-ground-truth-eval-v1",
+  "scenarios": [
+    {
+      "id": "logic-off-by-one",
+      "fixture": "logic-off-by-one",
+      "symptom": "Calling inclusiveRange(2, 4) omits one value from the result. Diagnose the cause without editing the fixture. Return only the required JSON diagnostic response."
+    },
+    {
+      "id": "async-ordering",
+      "fixture": "async-ordering",
+      "symptom": "After a newer dashboard request succeeds, the UI sometimes displays an older response. Diagnose the cause without editing the fixture. Return only the required JSON diagnostic response."
+    },
+    {
+      "id": "stale-persisted-artifact",
+      "fixture": "stale-persisted-artifact",
+      "symptom": "The catalog reports an out-of-date release despite the loader code being invoked. Diagnose the cause without editing the fixture. Return only the required JSON diagnostic response."
+    },
+    {
+      "id": "red-herring-no-bug",
+      "fixture": "red-herring-no-bug",
+      "symptom": "A prior report claimed the ready status can become stale after a refresh. Investigate the current fixture and abstain if there is no reproducible defect. Return only the required JSON diagnostic response."
+    }
+  ]
+}
