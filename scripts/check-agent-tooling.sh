@@ -101,6 +101,12 @@ const WAZA_RAW_BASE_URL = "https://raw.githubusercontent.com/tw93/Waza/main";
 const WAZA_MANAGED_SKILLS = ["think", "hunt", "check", "health"];
 const WAZA_SHARED_RULES = ["anti-patterns.md", "chinese.md", "durable-context.md", "english.md"];
 const CODEX_AUTOMATION_SKILLS = ["health", "check", "mermaid"];
+// Official Obsidian skills the repo-owned obsidian-memory facade delegates to
+// for vault Markdown authoring and vault runtime operations. Runtime-referenced
+// on both hosts, never vendored into this repo; a missing skill is reported as
+// a gap rather than a hard failure, matching CODEX_AUTOMATION_SKILLS.
+const OBSIDIAN_RUNTIME_SKILLS = ["obsidian-markdown", "obsidian-cli"];
+const OBSIDIAN_RUNTIME_CONSUMER = "obsidian-memory";
 const AGENT_FLEET_SOURCE_DIR = process.env.REPO_HARNESS_AGENT_FLEET_SOURCE_DIR;
 const AGENT_FLEET_SOURCE_LABEL = "package:agents/fleet";
 const AGENT_FLEET_DEFAULT_MANAGED = ["explorer", "deep-reasoner", "fast-worker", "deep-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
@@ -845,6 +851,71 @@ function detectCodexAutomationProfile() {
     installed_skills: installedSkills,
     missing_skills: missingSkills,
     skills,
+  };
+}
+
+function inspectObsidianRuntimeSkill(host, skill) {
+  const skillFile = path.join(HOSTS[host].skillsDir, skill, "SKILL.md");
+  const local = readSkillFile(skillFile);
+
+  return {
+    name: skill,
+    path: skillFile,
+    real_path: resolveRealPath(skillFile),
+    present: local.exists,
+    version: local.version,
+    hash: local.hash,
+  };
+}
+
+function detectObsidianRuntimeSkillsHost(host) {
+  const meta = HOSTS[host];
+  const skills = OBSIDIAN_RUNTIME_SKILLS.map((skill) => inspectObsidianRuntimeSkill(host, skill));
+  const installedSkills = skills.filter((entry) => entry.present).map((entry) => entry.name);
+  const missingSkills = skills.filter((entry) => !entry.present).map((entry) => entry.name);
+  const status = missingSkills.length === 0 ? "present" : installedSkills.length > 0 ? "partial" : "missing";
+
+  return {
+    label: meta.label,
+    status,
+    source: meta.skillsDir,
+    installed_skills: installedSkills,
+    missing_skills: missingSkills,
+    skills,
+  };
+}
+
+function detectObsidianRuntimeSkills() {
+  const hosts = {};
+  for (const host of SELECTED_HOSTS) {
+    hosts[host] = detectObsidianRuntimeSkillsHost(host);
+  }
+
+  const values = Object.values(hosts);
+  const presentCount = values.filter((entry) => entry.status === "present").length;
+  const anyInstalled = values.some((entry) => entry.installed_skills.length > 0);
+  const status = values.length > 0 && presentCount === values.length
+    ? "present"
+    : anyInstalled
+      ? "partial"
+      : "missing";
+  const gaps = Object.entries(hosts)
+    .filter(([, entry]) => entry.missing_skills.length > 0)
+    .map(([host, entry]) => `${host}: ${entry.missing_skills.join(", ")}`);
+
+  return {
+    name: "obsidian_runtime_skills",
+    status,
+    reason: status === "present"
+      ? `Detected all official Obsidian skills required by ${OBSIDIAN_RUNTIME_CONSUMER} on every selected host.`
+      : `Missing official Obsidian skills required by ${OBSIDIAN_RUNTIME_CONSUMER} (${gaps.join("; ")}).`,
+    required_skills: OBSIDIAN_RUNTIME_SKILLS,
+    optional_skills: [],
+    required_by: OBSIDIAN_RUNTIME_CONSUMER,
+    mode: "runtime-reference",
+    readiness: "advisory",
+    vendoring_policy: "do-not-vendor-skill-body",
+    hosts,
   };
 }
 
@@ -1653,6 +1724,7 @@ const report = {
   tools: {
     waza: wazaReport,
     codex_automation_profile: detectCodexAutomationProfile(),
+    obsidian_runtime_skills: detectObsidianRuntimeSkills(),
     agent_fleet: detectAgentFleet(),
     codegraph: detectCodeGraph(),
     archctx: detectArchctx(),
@@ -1741,6 +1813,21 @@ function printText(result) {
   }
   console.log(`  - Routes: health=${codexAutomation.routes.workflow_health}, check=${codexAutomation.routes.review_gate}, diagram=${codexAutomation.routes.architecture_diagram}`);
   console.log(`  - Vendoring: ${codexAutomation.vendoring_policy}`);
+  console.log("");
+
+  const obsidianRuntime = result.tools.obsidian_runtime_skills;
+  console.log(`Obsidian runtime skills [${obsidianRuntime.status}]`);
+  console.log(`  - Required: ${obsidianRuntime.required_skills.join(", ")}`);
+  console.log(`  - Required by: ${obsidianRuntime.required_by}`);
+  console.log(`  - Mode: ${obsidianRuntime.mode} (${obsidianRuntime.readiness})`);
+  for (const host of SELECTED_HOSTS) {
+    const entry = obsidianRuntime.hosts[host];
+    console.log(`  - ${entry.label}: ${entry.status} (${entry.source})`);
+    if (entry.missing_skills.length) {
+      console.log(`    missing: ${entry.missing_skills.join(", ")}`);
+    }
+  }
+  console.log(`  - Vendoring: ${obsidianRuntime.vendoring_policy}`);
   console.log("");
 
   const agentFleet = result.tools.agent_fleet;

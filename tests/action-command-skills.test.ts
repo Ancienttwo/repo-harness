@@ -40,6 +40,9 @@ const TARGET_FACADE_KIND_PACKAGES = [
   "repo-harness-product",
   "repo-harness-ship",
   "repo-harness-architecture",
+  // Post-cutover addition: a repo-owned facade sourced from
+  // assets/skills/obsidian-memory, projected to both hosts by every profile.
+  "obsidian-memory",
 ];
 
 function readCommand(name: string): string {

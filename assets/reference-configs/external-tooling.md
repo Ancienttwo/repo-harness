@@ -96,6 +96,20 @@ requires Waza `health`, Waza `check`, and the standalone `mermaid` skill to
 exist under `~/.codex/skills`; the skill bodies stay owned by their original
 installations.
 
+The official Obsidian skills are runtime-referenced too, not vendored. The
+repo-owned `obsidian-memory` facade (source in `assets/skills/obsidian-memory/`,
+projected into both host skill roots) owns only the judgment layer — what to
+recall, what is worth persisting, and how the project sub-vault is organized —
+and delegates every Obsidian-specific format and runtime action to the official
+skills: `obsidian-markdown` for authoring or rewriting vault notes, and
+`obsidian-cli` for searching, opening, or operating on a running vault. Both
+must exist under `~/.claude/skills` and `~/.codex/skills`;
+`bash scripts/check-agent-tooling.sh --host both` probes both roots and reports
+a missing skill as a gap in the `obsidian_runtime_skills` section. The gap is
+advisory for the environment check and fail-closed at skill runtime:
+`obsidian-memory` stops and reports rather than hand-writing its own Markdown
+dialect. This repo does not vendor either skill body.
+
 ## Detect Safely
 
 Use `repo-harness run check-agent-tooling` for a read-only tooling report.

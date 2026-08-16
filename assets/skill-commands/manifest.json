@@ -137,6 +137,26 @@
       "retirementCandidate": null
     },
     {
+      "name": "obsidian-memory",
+      "kind": "facade",
+      "source": "assets/skills/obsidian-memory",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [
+        "minimal",
+        "full"
+      ],
+      "discoverability": "profile-facade",
+      "component": "adaptive-workflow",
+      "requires": [],
+      "mutatesRepoByDefault": false,
+      "summary": "Cross-project long-term memory over the user's Obsidian brain vault: recall relevant notes before a task and persist distilled conclusions after it. Repo artifacts stay the source of truth; sync direction is repo -> brain. Explicitly invoked by the model or operator, never from hooks. Requires the runtime-referenced official obsidian-markdown and obsidian-cli skills.",
+      "retirementCandidate": null
+    },
+    {
       "name": "repo-harness-cross-review",
       "kind": "provider-skill",
       "source": "assets/skills/repo-harness-cross-review",
@@ -322,13 +342,15 @@
     "facadesByProfile": {
       "minimal": [
         "repo-harness-plan",
-        "repo-harness-check"
+        "repo-harness-check",
+        "obsidian-memory"
       ],
       "full": [
         "repo-harness-plan",
         "repo-harness-check",
         "repo-harness-product",
-        "repo-harness-ship"
+        "repo-harness-ship",
+        "obsidian-memory"
       ]
     },
     "externalSkillsByProfile": {
