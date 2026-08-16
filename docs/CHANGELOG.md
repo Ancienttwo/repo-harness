@@ -2,6 +2,29 @@
 
 All notable changes to this skill are documented here.
 
+## [0.15.2] - 2026-08-16
+
+### Added
+
+- Adds `obsidian-memory` as a repo-owned dual-host skill-surface facade, with
+  the official Obsidian skills declared as runtime-referenced tooling in
+  `check-agent-tooling` and authority-boundary tests pinning the facade
+  contract.
+
+### Changed
+
+- Syncs the archctx dependency line to 0.4.3 with docs-renderer v3 and moves
+  the three version anchors, adopting the upstream canonical-body-digest fix
+  that stops projection restamp churn.
+- Strips machine node-runtime authority from faked PATH environments in the CLI
+  tests so local and CI runs agree.
+
+### Fixed
+
+- Resolves archctx from the target repository before the CLI root, closing the
+  window where a freshly refreshed global CLI blocked the Stop-gate
+  architecture projection drain of an unrelated repo.
+
 ## [0.15.1] - 2026-08-15
 
 ### Added
