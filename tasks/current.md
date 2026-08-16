@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-16T15:20:16+0800 -->
+<!-- updated_at: 2026-08-16T17:49:42+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-08-16T15:20:16+0800
+> **Updated At**: 2026-08-16T17:49:42+0800
 > **Source Branch**: main
-> **Source Commit**: ed54f6dd
+> **Source Commit**: 7e9d5703
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: release-0.15.2-closeout
+> **Reason**: archive-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -47,19 +47,27 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=completed, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: (none)
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Execute captured plan: repo-harness 0.15.2 release prep
 
 ## Checks
 
-- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 2 changed/untracked path(s)
+- Summary: 10 changed/untracked path(s)
 
 ```
- M deploy/release-checklists/260816-repo-harness-0.15.2.md
- M docs/architecture/.projection-manifest.json
+ D plans/plan-20260816-1216-release-0-15-2.md
+ D tasks/contracts/20260816-1216-release-0-15-2.contract.md
+ D tasks/notes/20260816-1216-release-0-15-2.notes.md
+ D tasks/reviews/20260816-1216-release-0-15-2.review.md
+ M tasks/todos.md
+?? plans/archive/plan-20260816-1216-release-0-15-2.md
+?? tasks/archive/contract-20260816-1749-release-0-15-2.md
+?? tasks/archive/notes-20260816-1749-release-0-15-2.md
+?? tasks/archive/review-20260816-1749-release-0-15-2.md
+?? tasks/archive/todo-20260816-1749-release-0-15-2.md
 ```
 
 ## Source Artifacts
