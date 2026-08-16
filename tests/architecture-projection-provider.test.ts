@@ -13,6 +13,7 @@ import {
   type ProjectionRequestV1,
 } from '../src/core/architecture/projection';
 import {
+  archctxCapabilities,
   inspectArchitectureProjectionReadiness,
   captureArchitectureProjectionSnapshot,
   resolveCompatibleNodeRuntime,
@@ -79,10 +80,20 @@ extensions:
   return { root, consumerRoot, repoRoot, binary };
 }
 
-function capabilities() {
+function vendorArchctx(root: string, version: string): string {
+  const packageRoot = join(root, 'node_modules', 'archctx');
+  mkdirSync(join(packageRoot, 'bin'), { recursive: true });
+  writeFileSync(join(packageRoot, 'package.json'), `${JSON.stringify({ name: 'archctx', version, engines: { node: '>=24 <26' }, bin: { archctx: './bin/archctx' } })}\n`);
+  const binary = join(packageRoot, 'bin', 'archctx');
+  writeFileSync(binary, '#!/bin/sh\nexit 99\n');
+  chmodSync(binary, 0o755);
+  return binary;
+}
+
+function capabilities(version = '0.4.3') {
   return {
     schemaVersion: 'archcontext.capabilities/v1',
-    package: { name: 'archctx', version: '0.4.3' },
+    package: { name: 'archctx', version },
     protocols: {
       projectionRequest: 'archcontext.projection-request/v1',
       projectionResult: 'archcontext.projection-result/v1',
@@ -188,6 +199,17 @@ describe('package-local ArchContext projection provider', () => {
     const installedHarnessRoot = join(f.consumerRoot, 'node_modules', 'repo-harness');
     mkdirSync(installedHarnessRoot, { recursive: true });
     expect(resolvePackageLocalArchctx(installedHarnessRoot).binaryPath).toBe(realpathSync(f.binary));
+  });
+
+  test('resolves the target repo dependency tree before the running CLI package root', () => {
+    const f = fixture();
+    const repoBinary = vendorArchctx(f.repoRoot, '9.9.9');
+    const handshake = archctxCapabilities(f.repoRoot, {
+      policy: { ...policy, requiredVersion: '9.9.9' },
+      run: () => ({ status: 0, signal: null, stdout: JSON.stringify(capabilities('9.9.9')), stderr: '' }),
+    });
+    expect(handshake.resolved.binaryPath).toBe(realpathSync(repoBinary));
+    expect(handshake.resolved.version).toBe('9.9.9');
   });
 
   test('disabled readiness performs zero subprocess calls', () => {
