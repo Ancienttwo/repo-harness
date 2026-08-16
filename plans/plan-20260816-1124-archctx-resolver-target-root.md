@@ -1,6 +1,6 @@
 # Plan: archctx resolver 目標 repo 優先解析
 
-> **Status**: Executing
+> **Status**: Complete
 > **Created**: 20260816-1124
 > **Slug**: archctx-resolver-target-root
 > **Planning Source**: repo-harness-plan
@@ -144,16 +144,16 @@ Stop hook（全域 bun CLI 0.15.1）→ drain 探針 → `archctxCapabilities(re
 
 ## Task Breakdown
 
-- [ ] T1 resolver repoRoot 優先解析 + 調用點改造
-- [ ] T2 三個回歸場景測試（含 pre-fix failure artifact）
-- [ ] T3 todos 條目兌現刪除
-- [ ] T4 全量驗證 + 實盤全域 CLI drain 復驗 + gatekeeper + ship
+- [x] T1 resolver repoRoot 優先解析 + 調用點改造
+- [x] T2 三個回歸場景測試（含 pre-fix failure artifact）
+- [x] T3 todos 條目兌現刪除
+- [x] T4 全量驗證 + 實盤全域 CLI drain 復驗 + gatekeeper + ship
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] T1 resolver repoRoot 優先解析 + 調用點改造
-- [ ] T2 三個回歸場景測試（含 pre-fix failure artifact）
-- [ ] T3 todos 條目兌現刪除
-- [ ] T4 全量驗證 + 實盤全域 CLI drain 復驗 + gatekeeper + ship
+- [x] T1 resolver repoRoot 優先解析 + 調用點改造
+- [x] T2 三個回歸場景測試（含 pre-fix failure artifact）
+- [x] T3 todos 條目兌現刪除
+- [x] T4 全量驗證 + 實盤全域 CLI drain 復驗 + gatekeeper + ship

@@ -1,6 +1,6 @@
 # Task Contract: archctx-resolver-target-root
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260816-1124-archctx-resolver-target-root.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
@@ -139,11 +139,11 @@ exit_criteria:
 
 ## Acceptance Notes (Human Review)
 
-- Functional behavior:
-- Edge cases:
-- Regression risks:
+- Functional behavior: `archctxCapabilities` resolves archctx as explicit `options.consumerRoot` override -> target repo dependency tree -> running CLI package root; a live A/B probe against a fixture repo pinned to archctx 0.4.2 showed the branch CLI resolving that repo's own binary while the unfixed `main` CLI reported `package-local archctx mismatch: expected archctx@0.4.2, got archctx@0.4.3`.
+- Edge cases: a repo vendoring a mismatching archctx throws instead of being masked by the CLI copy; a repo vendoring none keeps the previous consumerRoot behavior; the explicit override used by `global-runtime` readback is unchanged. Verified by the three regression scenarios in `tests/architecture-projection-provider.test.ts:204,215,222`.
+- Regression risks: the repo-side search walks up past the repo boundary, so an ancestor project's `node_modules/archctx` counts as the repo's vendored copy and a mismatch there fails closed; the mismatch message names the search-origin root rather than the ancestor directory the package was found in.
 
 ## Rollback Point
 
-- Commit / checkpoint:
-- Revert strategy:
+- Commit / checkpoint: `4cc7fcb8` (red-first regression guard) and `8d5d7a44` (resolver fix) on `codex/archctx-resolver-target-root`.
+- Revert strategy: revert `8d5d7a44` and `4cc7fcb8` (or the whole branch / merged PR); resolution then returns to the CLI `consumerRoot` path with no other surface affected.
