@@ -12,7 +12,7 @@ import {
 } from "fs";
 import { spawnSync } from "child_process";
 import { tmpdir } from "os";
-import { join } from "path";
+import { dirname, join } from "path";
 import { PassThrough, Writable } from "stream";
 import {
   runInit,
@@ -638,7 +638,7 @@ describe("init command", () => {
         env: {
           ...process.env,
           HOME: home,
-          PATH: `${fakeBin}:/opt/homebrew/bin:/usr/bin:/bin`,
+          PATH: `${fakeBin}:${dirname(process.execPath)}:/usr/bin:/bin`,
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
           AGENTIC_DEV_CODEGRAPH_ALLOW_GLOBAL: "0",
         },

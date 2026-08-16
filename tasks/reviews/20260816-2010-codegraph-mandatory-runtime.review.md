@@ -5,7 +5,7 @@
 > **Contract**: tasks/contracts/20260816-2010-codegraph-mandatory-runtime.contract.md
 > **Notes File**: tasks/notes/20260816-2010-codegraph-mandatory-runtime.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-08-16 20:10
+> **Last Updated**: 2026-08-16 21:09
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: sha256:398bd2654f23db5bda3a55abe0a172440932142c01c62603ff293a66e73d153a
@@ -37,6 +37,11 @@
 - Supporting artifacts: `.ai/harness/checks/change-assessment.latest.json`
 - Implementation notes reviewed: yes
 - Run snapshot: full suite 2446 pass, 1 platform skip, 0 fail
+- PR CI correction: run 921 proved the missing-CLI fixture removed the Linux
+  JavaScript runtime together with CodeGraph. Preserving
+  `dirname(process.execPath)` makes the test reach the intended resolver state;
+  the focused CI-env test and typecheck pass locally, with the PR rerun as the
+  authoritative clean Linux check.
 
 ## Acceptance Receipt Projection
 

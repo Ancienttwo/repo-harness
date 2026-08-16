@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260816-2010-codegraph-mandatory-runtime.md
 > **Contract**: tasks/contracts/20260816-2010-codegraph-mandatory-runtime.contract.md
 > **Review**: tasks/reviews/20260816-2010-codegraph-mandatory-runtime.review.md
-> **Last Updated**: 2026-08-16 20:10
+> **Last Updated**: 2026-08-16 21:09
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -18,7 +18,12 @@
 
 ## Deviations From Plan Or Spec
 
-- None recorded.
+- PR #195 CI run 921 exposed a Linux-only fixture defect in the new
+  missing-CodeGraph regression test. Its synthetic `PATH` retained macOS runtime
+  locations but removed GitHub Actions' Bun directory, so
+  `check-agent-tooling.sh` failed before it could report `source=missing`. The
+  fixture now retains `dirname(process.execPath)` while both CodeGraph resolver
+  sources remain explicitly disabled; production behavior is unchanged.
 
 ## Tradeoffs Considered
 
@@ -38,6 +43,9 @@
 - Run snapshots: `.ai/harness/runs/`
 - Change Assessment: `.ai/harness/checks/change-assessment.latest.json`
 - Full suite: 2446 passed, 1 platform skip, 0 failed across 2447 tests.
+- CI correction: the failing regression test passes with the CI isolation env;
+  typecheck also remains green. The PR rerun is the authoritative clean-runner
+  check for the Linux path contract.
 
 ## Promotion Filter
 
