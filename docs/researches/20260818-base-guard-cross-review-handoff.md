@@ -108,7 +108,18 @@ While appending the aggregate job with a shell heredoc, the change went in witho
 
 The cause is in the route registry (`src/cli/hook/route-registry.ts`): `PreToolUse` binds `mutation-guard` to matcher `Edit|Write` only. `PostToolUse.bash` exists but routes to `command-observed`, which observes rather than blocks. `mutation-guard` does understand `apply_patch` command payloads, but a plain `cat >> file` redirection is not one.
 
-So the plan gate, the scope gate, and the minimal-change gate all cover tool-call writes and none of them cover shell-redirection writes. This is reported, not fixed — fixing it means deciding whether `PreToolUse.bash` becomes a blocking route, which changes the public route tuple that Codex trust-hashes.
+A first draft of this section claimed the plan gate, the scope gate, and the minimal-change gate were all bypassed. That was wrong and is corrected here. The gates split cleanly by where they read their input:
+
+- **Diff-derived, not bypassable.** `allowed_paths_check` reads `git_changed_files_list` (`scripts/verify-sprint.sh:357`), which is `git diff --name-only` plus `ls-files --others`. It cannot tell how the bytes arrived and does not need to. A shell write inside a contract worktree is caught exactly like an `Edit`.
+- **Pre-write, bypassable.** `PlanStatusGuard` exists only inside `mutation-guard.ts` (`:552`) and fires only on the `Edit|Write` matcher. There is no diff-derived equivalent anywhere in `src/` or `scripts/`.
+
+So the gap is one gate, not three: authorization that is enforced at write time is mechanism-dependent by construction, while authorization enforced on the resulting diff is not.
+
+That reframes the fix. Building a shell-write parser for a blocking `PreToolUse.bash` would be a heuristic shadow parser over an unbounded surface — redirections, `tee`, `sed -i`, `python -c`, `eval`, subshells — which this repo's own rules forbid, and which would grant false confidence while staying trivially bypassable. It would also duplicate, unsoundly, what the diff-derived gate already does soundly.
+
+The sound shape is to give the plan gate a diff-derived enforcement point alongside its pre-write advisory one, so that "implementation changed without an approved plan" is decided from the changed set at gate time rather than from the tool that produced it. That is a new gate with its own false-positive surface and is not attempted here.
+
+Open question for the reviewer, replacing the one previously filed under section 7 item 4: is a pre-write guard that only covers some write mechanisms worth keeping as-is once its limit is documented, or does a partially-covering block gate do more harm than an explicit "advisory only" label?
 
 ---
 
@@ -128,4 +139,4 @@ So the plan gate, the scope gate, and the minimal-change gate all cover tool-cal
 1. Is fork-point equality itself falsifiable? The case to look for is a legitimate workflow where `base_commit != git merge-base HEAD base_branch` and the recorded base is nonetheless the correct diff base. Merge-instead-of-rebase into the contract worktree is the shape to check first.
 2. The guard returns early when `base_branch` is absent or unresolvable. That is a silent gap by construction. Should it instead fail closed, given that a metadata record with a `base_commit` but no `base_branch` is already malformed?
 3. `contract_worktree_metadata_rows` was extracted so the guard and the diff-base resolver read the same record. The resolver iterates all matching rows with a per-row fallback chain; the guard takes only the first. Is that divergence exploitable when more than one metadata file matches?
-4. Section 5's route-coverage gap: is making `PreToolUse.bash` a blocking route worth re-prompting Codex trust, or is the right answer that shell writes are out of scope for a tool-call-level guard?
+4. Section 5 closes with its own question about pre-write versus diff-derived enforcement of the plan gate.
