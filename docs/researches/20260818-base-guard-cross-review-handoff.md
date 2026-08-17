@@ -136,7 +136,6 @@ Three choices in it are worth attacking:
 |------|---------|
 | Explicit rebase-adoption record (old base, new base, reason, evidence invalidation) | A rebase leaves stale evidence bound to a contract. Today the guard forces a manual refresh and the receipt is re-bound by hand; that worked once, in this slice |
 | SessionStart provider blob atomicity | Already a deferred goal; the 1,500-token budget against a 12,000-char resume cap is present-tense, not a 10x hypothetical |
-| `child_processes` telemetry truthfulness | Prerequisite for any resource contract; `recordDirectChildProcess` still has zero call sites |
 | Fast Feedback Lane, HookResourceContract, ExternalEvidenceReceipt, Operator Inbox | Not scheduled. Each needs one observed owner-confirmed material correction first |
 
 ---
@@ -148,3 +147,53 @@ Three choices in it are worth attacking:
 3. `contract_worktree_metadata_rows` was extracted so the guard and the diff-base resolver read the same record. The resolver iterates all matching rows with a per-row fallback chain; the guard takes only the first. Is that divergence exploitable when more than one metadata file matches?
 4. The advisory in `83d80780` runs on `Stop.default`, already the largest measured share of hook time. It adds one `Array.filter` over an already-computed array and, only on a hit, one file append — no new subprocess and no second `git status`. Is that accounting complete, or is there a cost path in it that was missed?
 5. Advisory-only means an agent can read the line and keep going. Is a signal nobody is forced to act on worth the code, or does it just become noise that trains everyone to ignore a `[PlanStatusGuard]` prefix that *does* block in its pre-write form?
+
+---
+
+## 8. Round-two findings, reproduced
+
+The second external review landed four claims against `6ad02039`. Three were reproduced locally and are confirmed defects in what shipped; one made an outdated item in this document obsolete.
+
+### Confirmed: the metadata-row selector is bypassable
+
+`contract_worktree_metadata_rows` emits `\x1f`-joined rows and skips only rows that serialize to the empty string. A record matching this worktree with every field empty serializes to `\x1f\x1f`, which is **not** empty. The guard takes `head -1`, decodes empty fields, and returns silently; the resolver skips that row and takes the stale base from the next one.
+
+Reproduced with two metadata files in one fixture — `00-empty.json` (exact-worktree match, all fields empty) and `10-stale.json` (branch match, pre-rebase base):
+
+```
+rows:
+^_^_
+bc6c41e2...^_main^_
+resolver picks: bc6c41e2...        # the stale base
+guard output:   (none)             # silently passed
+```
+
+With `00-empty.json` removed, the same fixture fires correctly. So the code comment in `contract_worktree_metadata_rows` — "the guard and the resolver must agree on which record describes this worktree" — asserts an invariant the implementation does not hold. That comment is the defect's best evidence against itself.
+
+The reviewer is right that the fix is not to make the guard loop too. Guard and resolver must consume one selected record, chosen by a single typed selector with exact-worktree precedence, duplicate detection, and the source file carried through.
+
+### Confirmed: `jq` absence silently disables the guard
+
+`contract_worktree_metadata_rows` opens with `command -v jq >/dev/null 2>&1 || return 1`, and the guard converts that into "no rows" and returns 0. On the same fixture with a stale base, with `jq` on `PATH` the guard fires; with `jq` removed from `PATH` it produces no output and exits 0.
+
+`jq` is documented as optional. A scope-base authority that describes itself as fail-closed must not disappear when an optional dependency is missing.
+
+### Confirmed by code reading: `start` and the guard disagree on what `base_commit` means
+
+`contract-worktree.sh` records `base_commit = source HEAD` when it creates a new branch and `merge-base(HEAD, base_branch)` when it reuses one. The guard asserts the second form unconditionally. Starting a contract from a parent branch that is ahead of `main` therefore trips the guard with "this worktree was rebased after start" when no rebase happened.
+
+The reviewer's deeper point is the one that matters: this is not a guard false positive to patch, it is `base_commit` carrying two meanings — task scope origin and current integration fork point — that coincide only in linear workflows. Either `start` refuses a source that is ahead of the target, or the field splits.
+
+### Obsolete: the `child_processes` item
+
+Removed from section 6. `395f61aa` pinned the contract at the declaration: the metric counts direct route-runtime children, not handler-internal Git/Bun plumbing, and the zero call site is the HRD-09 sentinel — it goes non-zero only if a route regresses to the retired `run-hook.sh` shape, and two tests pin it to 0 deliberately. Wiring it in would have broken correct tests.
+
+That commit's own message names the failure mode that produced the original item: reading `event-telemetry.ts` alone yields a convincing bug report because the contract lived only in a report legend. The same mistake was repeated here in this document.
+
+### Not reproduced, accepted as credible
+
+Criss-cross histories with multiple best merge bases, and a local `base_branch` lagging its upstream, were not reproduced in this session. Both mechanisms follow from documented `git merge-base` behaviour and the guard's single-value comparison, and both belong in the same work-package.
+
+### Standing correction to section 5
+
+The Stop advisory shipped in `83d80780` establishes the weak invariant only: at Stop, implementation diff is covered by a currently-Approved plan. It cannot establish that approval preceded the mutation — plan Draft, shell write, plan Approved, gate passes. Proving the temporal invariant needs mutation-time authorization capture, not a better diff read. The advisory should be read as covering the weak form.
