@@ -50,3 +50,56 @@ worktree_merge_mode() {
 
   printf 'unmerged\n'
 }
+
+# Batch entrypoint:
+#
+#   bash scripts/worktree-merge-lib.sh --target <ref> <branch>...
+#
+# Prints one `<branch>\t<mode>` line per input branch, in input order, using
+# the same `worktree_merge_mode` the two sourcing consumers call. It exists so
+# a caller that is not bash -- the SessionStart cleanable-worktree notice in
+# src/cli/hook/session-context.ts -- can consume this authority instead of
+# re-deriving the predicate, which is the two-authority defect issue #196 was.
+#
+# Batch rather than per-branch: a scan of N worktrees costs one process spawn,
+# not N.
+worktree_merge_lib_main() {
+  local target=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --target)
+        [[ $# -ge 2 ]] || { printf 'worktree-merge-lib: --target requires a ref\n' >&2; return 2; }
+        target="$2"
+        shift 2
+        ;;
+      --)
+        shift
+        break
+        ;;
+      -*)
+        printf 'worktree-merge-lib: unknown option: %s\n' "$1" >&2
+        return 2
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
+  [[ -n "$target" ]] || { printf 'worktree-merge-lib: --target <ref> is required\n' >&2; return 2; }
+
+  local branch
+  for branch in "$@"; do
+    [[ -n "$branch" ]] || continue
+    printf '%s\t%s\n' "$branch" "$(worktree_merge_mode "$branch" "$target")"
+  done
+}
+
+# Executed-vs-sourced guard. When this file is sourced, BASH_SOURCE[0] is this
+# path while $0 stays the sourcing script, so nothing below runs and sourcing
+# remains side-effect free -- scripts/contract-worktree.sh and
+# scripts/ship-worktrees.sh source this file for the function alone and must
+# keep observing exactly that.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  worktree_merge_lib_main "$@"
+fi
