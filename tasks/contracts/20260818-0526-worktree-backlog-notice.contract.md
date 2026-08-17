@@ -77,18 +77,47 @@ than executes under `--dry-run`, so the mode never appears there at all.
 
 ## Scan bound
 
-Cap the scan at 24 worktrees. Measured cost is ~22ms per `merge-tree`
-invocation, bounding the scan near 0.5s. Above the cap, state the unchecked
-count explicitly and point at `ship-worktrees --cleanup-merged --dry-run` for
-the full list. Do not truncate silently.
+Cap the scan at 24 worktrees. The scan costs two things per worktree, not one:
+a `merge-tree` classification for every scanned worktree (~22ms), and a
+`git status --porcelain=v1 --untracked-files=all` cleanliness read for every
+worktree that classification proves merged. End-to-end measurement of
+`worktreeBacklogSessionContent` over a 25-worktree x 2555-file fixture puts the
+cold ceiling near **1.9s** (1945ms cold, ~600ms warm). Twenty-four distinct
+worktrees each pay their own cold index/lstat pass rather than sharing a warm
+cache, so a per-call figure taken from one warm worktree understates the
+aggregate by roughly 40%. Quote the cold number.
+
+This section previously read "bounding the scan near 0.5s", derived from
+`merge-tree` alone before the cleanliness read existed. The delivery falsified
+the premise, not merely the arithmetic. The cap stays 24: the reasons for it
+hold at 1.9s as they did at 0.5s. If that ceiling becomes unacceptable, the
+lever is a lower cap, not dropping the cleanliness split.
+
+Above the cap, state the unchecked count explicitly and point at
+`ship-worktrees --cleanup-merged --dry-run` for the full list. Do not truncate
+silently.
 
 ## Falsifier
 
 If the section lists a worktree that `contract-worktree cleanup` would refuse,
 the notice is worse than silence: it trains the operator to run a cleanup that
 fails, and the habit formed after that is reaching for
-`--discard-scaffold-only`. Cheapest proof: build a dirty, genuinely unmerged
-contract worktree and assert it is absent from the section.
+`--discard-scaffold-only`.
+
+Proof: build a **squash-absorbed and dirty** contract worktree and assert it is
+absent from the cleanable list, while a clean merged sibling stays listed.
+Merge state must be identical to the cleanable case so that working-tree state
+is the only difference.
+
+This section previously proposed a dirty **and unmerged** worktree as the
+cheapest proof. That fixture is not discriminating: `unmerged` excludes it on
+its own, leaving the dirtiness dimension inert, so the test passes against an
+implementation that ignores dirtiness entirely. It also understated the stake.
+A dirty merged worktree is not one refused row —
+`guard_dirty_merged_worktree ... || exit 1` (`scripts/ship-worktrees.sh:1146`)
+runs before the `DRY_RUN` branch and aborts the whole batch, so the
+recommended `--dry-run` fails too and every worktree registered after it is
+never reached. That is the accumulation dynamic of issue #196 itself.
 
 ## Root Cause Evidence
 
