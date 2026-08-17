@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-17T23:43:47+0800 -->
+<!-- updated_at: 2026-08-18T02:09:27+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-08-17T23:43:47+0800
+> **Updated At**: 2026-08-18T02:09:27+0800
 > **Source Branch**: main
-> **Source Commit**: b9092491
+> **Source Commit**: 35346e39
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: manual
@@ -33,8 +33,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 - /Users/ancienttwo/Projects/repo-harness-wt-codegraph-mandatory-runtime: plans/plan-20260816-2010-codegraph-mandatory-runtime.md
 - /Users/ancienttwo/Projects/repo-harness-wt-codegraph-mandatory-runtime: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-codegraph-mandatory-runtime
-- /Users/ancienttwo/Projects/repo-harness-wt-scaffold-discard-empty-array: plans/plan-20260817-2327-scaffold-discard-empty-array.md
-- /Users/ancienttwo/Projects/repo-harness-wt-scaffold-discard-empty-array: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-scaffold-discard-empty-array
+- /Users/ancienttwo/Projects/repo-harness-wt-typed-lock-transient-errors: plans/plan-20260818-0126-typed-lock-transient-errors.md
+- /Users/ancienttwo/Projects/repo-harness-wt-typed-lock-transient-errors: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-typed-lock-transient-errors
 ## Active Sprint
 
 - Sprint: (none)
@@ -50,7 +50,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=completed, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: (none)
+- Exact Next Step: Stage the completed module diff first; then run /check and let canonical workflow gates determine whether review, external acceptance, verification, or worktree finish is next. Command: /check
 
 ## Checks
 
@@ -62,11 +62,11 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ```
  M docs/architecture/.projection-manifest.json
- M docs/architecture/modules/runtime-harness/global-runtime-reconciliation.md
  M docs/architecture/modules/runtime-harness/hook-adapters.md
  M docs/architecture/modules/verification/evals-checks.md
- M docs/architecture/modules/workflow-engine/contract-assets.md
- M plans/plan-20260817-2101-minimal-change-v2-enforce.md
+ M plans/plan-20260818-0133-lite-enforce-gap.md
+ M tasks/todos.md
+?? docs/researches/20260818-claude-code-agentic-swe-at-scale.md
 ```
 
 ## Source Artifacts
