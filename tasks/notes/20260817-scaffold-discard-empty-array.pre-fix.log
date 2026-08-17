@@ -1,0 +1,23 @@
+bun test v1.3.14 (0d9b296a)
+
+tests/helper-scripts.test.ts:
+1957 |       const cleanup = run(
+1958 |         "bash",
+1959 |         ["scripts/ship-worktrees.sh", "--cleanup-merged", "--discard-scaffold-only", "--target", "main"],
+1960 |         cwd
+1961 |       );
+1962 |       expect(cleanup.stderr).not.toContain("unbound variable");
+                                        ^
+error: expect(received).not.toContain(expected)
+
+Expected to not contain: "unbound variable"
+Received: "scripts/ship-worktrees.sh: line 787: untracked_paths[@]: unbound variable\n"
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-scaffold-discard-empty-array/tests/helper-scripts.test.ts:1962:34)
+(fail) Workflow helper scripts > ship-worktrees cleanup-merged can discard scaffold-only dirty merged worktree with no untracked paths [444.46ms]
+
+ 123 pass
+ 1 fail
+ 1377 expect() calls
+Ran 124 tests across 1 file. [43.26s]
+PRE_FIX_EXIT=1
