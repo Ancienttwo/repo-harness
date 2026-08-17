@@ -1552,7 +1552,18 @@ export function worktreeBacklogSessionContent(repoRoot: string): string | null {
     return `  - \`${slug}\` at \`${entry.path}\` (branch \`${entry.branch}\`)`;
   };
 
-  const lines = ['# Cleanable Contract Worktrees', ''];
+  // The header states what the body actually contains. A section whose every
+  // entry is blocked is not a list of cleanable worktrees, and titling it as
+  // one repeats -- at smaller scale -- the misdescription this section exists
+  // to avoid.
+  const header =
+    cleanable.length > 0
+      ? '# Cleanable Contract Worktrees'
+      : blocked.length > 0
+        ? '# Blocked Contract Worktrees'
+        : '# Contract Worktree Scan Incomplete';
+
+  const lines = [header, ''];
   // Dirty-merged first: it is the one that stops the batch, so it is the one
   // that has to be read first.
   if (blocked.length > 0) {
@@ -1566,7 +1577,11 @@ export function worktreeBacklogSessionContent(repoRoot: string): string | null {
     lines.push(...cleanable.map(describe));
     lines.push(`- Review with \`${WORKTREE_CLEANUP_DRY_RUN}\`, then run \`${WORKTREE_CLEANUP_COMMAND}\` from this worktree.`);
   } else if (blocked.length === 0) {
-    lines.push(`- None of the first ${scanned.length} contract worktree(s) are merged into \`${target}\`.`);
+    // "are cleanable", not "are merged into <target>": a merged worktree whose
+    // directory is gone was withheld above, so it is inside `scanned.length`
+    // and merged, which made the stronger claim literally false. Only
+    // reachable past the cap, since all three lists empty returns null.
+    lines.push(`- None of the first ${scanned.length} contract worktree(s) are cleanable.`);
   }
   if (unchecked > 0) {
     lines.push(

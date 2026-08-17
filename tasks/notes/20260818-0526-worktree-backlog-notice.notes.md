@@ -67,15 +67,30 @@
   never reaches a session. `mandatory` stays false — an unnoticed backlog is
   untidy, not unsafe.
 
-- **Revised scan cost, flagged rather than re-tuned.** The contract derived the
-  cap of 24 from `merge-tree` alone (~22ms each, "near 0.5s"). The cleanliness
-  read adds one `git status --porcelain=v1 --untracked-files=all` per *merged*
-  candidate — measured 0.02-0.05s on this 2529-file worktree — so the
-  pathological case (24 scanned, all merged) is roughly 24 x (22ms + ~35ms)
-  ≈ 1.4s, not 0.5s. The steady state is unchanged, since the status read only
-  fires for worktrees already proven merged. The cap is contract-specified at
-  24 and was not re-tuned here; if 1.4s at SessionStart is unacceptable the
-  decision is a lower cap, not dropping the cleanliness split.
+- **Revised scan cost: ~1.9s cold, flagged rather than re-tuned.** The contract
+  derived the cap of 24 from `merge-tree` alone (~22ms each, "near 0.5s"). The
+  cleanliness read adds one `git status --porcelain=v1 --untracked-files=all`
+  per *merged* candidate.
+
+  My first estimate (~1.4s) extrapolated from a single worktree's per-call
+  range (0.02-0.05s) and undershot by about 40%. End-to-end measurement of
+  `worktreeBacklogSessionContent` over a 25-worktree x 2555-file fixture:
+
+  ```
+  run 1: 1945 ms   <- cold
+  run 2:  658 ms
+  run 3:  558 ms
+  ```
+
+  Twenty-four *distinct* worktrees each pay their own cold index/lstat pass;
+  they do not share a warm cache, which is what the single-worktree
+  extrapolation missed. SessionStart is the cold case, so **~1.9s is the
+  ceiling to quote**. Steady state is unaffected — the status read only fires
+  for worktrees already proven merged.
+
+  The cap stays 24: the two reasons for it hold at 1.9s just as at 0.5s. If
+  that ceiling ever becomes unacceptable, the lever is a lower cap, not
+  dropping the cleanliness split.
 
 - **Over-cap wording is a report, not a truncation.** Above 24 the section
   states the unchecked count and points at

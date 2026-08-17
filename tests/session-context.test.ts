@@ -1132,6 +1132,45 @@ describe("worktreeBacklogSessionSection — cleanable contract worktree notice",
     });
   }, 30_000);
 
+  test("blocked-only: the header states what the body contains, and no cleanup command is offered", () => {
+    withWorktreeFixture("wt-backlog-blocked-only", (fixture) => {
+      const dirtyPath = addAbsorbedWorktree(fixture, "only-dirty-demo");
+      writeFileSync(join(dirtyPath, "wip.txt"), "uncommitted\n");
+
+      const content = worktreeBacklogSessionContent(fixture.repoRoot);
+      expect(content).not.toBeNull();
+      // Titling an all-blocked body "Cleanable" is the same misdescription
+      // this section exists to avoid, one scale down.
+      expect(content!.split("\n")[0]).toBe("# Blocked Contract Worktrees");
+      expect(content!).toContain("Blocking the batch: 1 worktree(s)");
+      expect(content!).toContain("codex/only-dirty-demo");
+      expect(content!).not.toContain("Cleanable now");
+      // Nothing is cleanable, so the cleanup command must not be recommended.
+      expect(content!).not.toContain("then run `repo-harness run ship-worktrees --cleanup-merged`");
+    });
+  }, 30_000);
+
+  test("past the cap with every merged worktree withheld, the summary line claims only what is true", () => {
+    withWorktreeFixture("wt-backlog-cap-withheld", (fixture) => {
+      // 25 registrations, all merged (branch tip == main), all with their
+      // directories removed. Every one is withheld, so the summary line is
+      // reached with `scanned.length` worktrees that ARE merged -- the case
+      // where "none of the first N are merged into main" was literally false.
+      for (let index = 0; index < 25; index += 1) {
+        const path = addAncestorWorktree(fixture, `gone-${String(index).padStart(2, "0")}`);
+        rmSync(path, { recursive: true, force: true });
+      }
+
+      const content = worktreeBacklogSessionContent(fixture.repoRoot);
+      expect(content).not.toBeNull();
+      expect(content!.split("\n")[0]).toBe("# Contract Worktree Scan Incomplete");
+      expect(content!).toContain("None of the first 24 contract worktree(s) are cleanable.");
+      expect(content!).not.toContain("are merged into `main`");
+      expect(content!).toContain("Scan capped at 24; 1 further worktree(s) were not checked.");
+      expect(content!).not.toContain("gone-0");
+    });
+  }, 60_000);
+
   test("a merged worktree whose directory is gone is withheld from both lists", () => {
     withWorktreeFixture("wt-backlog-prunable", (fixture) => {
       const prunablePath = addAbsorbedWorktree(fixture, "prunable-demo");
