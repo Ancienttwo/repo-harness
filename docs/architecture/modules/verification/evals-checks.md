@@ -1,7 +1,7 @@
 # verification/evals-checks 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" sourceDigest="sha256:8d443ac6c5d9f7e033b310e6104fdc66eea3f14ebccce6af3aa48858235f749f" rendererVersion="archcontext.docs-renderer/v3" outputDigest="sha256:2a9974a6c32c2e29346f4d9eccaf22f3b83d715dd48bf8b3a4480b42ec77b57c" verifiedAgainst="main@bdc75c21b1020f5e6393a24f0cd0b0cd3cf986ee@2026-08-18T03:27:00+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" sourceDigest="sha256:450aa1f909fa0eb129f669f8f4ca049c441a3a9f06df2d64c1a46a021a99c324" rendererVersion="archcontext.docs-renderer/v3" outputDigest="sha256:4ddb97133bd2e2296a552a3a49d3e6dbfaa9b4f61c7962471ad3fc9e34631a19" verifiedAgainst="main@c082343144e0d0b47f360653a66c7d4ab6513a7b@2026-08-18T04:41:12+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`main@bdc75c21b1020f5e6393a24f0cd0b0cd3cf986ee`(2026-08-18)
+> **Verified against**:`main@c082343144e0d0b47f360653a66c7d4ab6513a7b`(2026-08-18)
 > **Capability ID**:`capability.verification.evals-checks`(kind `capability`)
 > **Matched Prefixes**:`tests/**`、`evals/**`、`scripts/run-skill-evals.ts`、`scripts/run-harness-profile-benchmark.ts`、`scripts/validate-harness-profile-benchmark.ts`、`scripts/run-bounded-verifier-command.ts`、`scripts/verify-contract.sh`、`scripts/verify-sprint.sh`、`scripts/check-task-workflow.sh`、`scripts/check-task-sync.sh`、`scripts/check-agent-tooling.sh`、`scripts/check-brain-manifest.sh`、`scripts/sync-brain-docs.sh`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
@@ -35,8 +35,8 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 文件數:`535`
-- 總行數:`171906`
+- 文件數:`536`
+- 總行數:`172117`
 - 匹配前綴:`tests/**`、`evals/**`、`scripts/run-skill-evals.ts`、`scripts/run-harness-profile-benchmark.ts`、`scripts/validate-harness-profile-benchmark.ts`、`scripts/run-bounded-verifier-command.ts`、`scripts/verify-contract.sh`、`scripts/verify-sprint.sh`、`scripts/check-task-workflow.sh`、`scripts/check-task-sync.sh`、`scripts/check-agent-tooling.sh`、`scripts/check-brain-manifest.sh`、`scripts/sync-brain-docs.sh`
 - 復算:`archctx docs plan --json`(掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`)
 

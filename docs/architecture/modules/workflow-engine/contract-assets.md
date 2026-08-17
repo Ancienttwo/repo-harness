@@ -1,7 +1,7 @@
 # workflow-engine/contract-assets 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" sourceDigest="sha256:14ac6d5ceb4a91006846f6d3a60877af80ac09ac238fa644bc293d6a858f694c" rendererVersion="archcontext.docs-renderer/v3" outputDigest="sha256:a442daaf87c5359e3714657991594a1ee11fff416d1f3d3555faf13e8e4d4093" verifiedAgainst="main@bdc75c21b1020f5e6393a24f0cd0b0cd3cf986ee@2026-08-18T03:27:00+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" sourceDigest="sha256:e4c72675ac2371f949de4eb4636032a20c5902e384542642eb8607318427cf4a" rendererVersion="archcontext.docs-renderer/v3" outputDigest="sha256:c43060a622a41fc961ebf90a53899c2d5cc5857e5118ae8b97746c06e6b45425" verifiedAgainst="main@c082343144e0d0b47f360653a66c7d4ab6513a7b@2026-08-18T04:41:12+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`main@bdc75c21b1020f5e6393a24f0cd0b0cd3cf986ee`(2026-08-18)
+> **Verified against**:`main@c082343144e0d0b47f360653a66c7d4ab6513a7b`(2026-08-18)
 > **Capability ID**:`capability.workflow-engine.contract-assets`(kind `capability`)
 > **Matched Prefixes**:`assets/workflow-contract.v1.json`、`.ai/harness/workflow-contract.json`、`.ai/harness/policy.json`、`.ai/context/context-map.json`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-run.ts`、`scripts/contract-worktree.sh`、`scripts/archive-workflow.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`src/cli/commands/init.ts`、`src/cli/commands/capability-context.ts`、`src/cli/runtime/helper-runner.ts`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`
 > **Local Contracts**:`assets/AGENTS.md`、`assets/CLAUDE.md`
@@ -36,7 +36,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 文件數:`164`
-- 總行數:`47079`
+- 總行數:`47134`
 - 匹配前綴:`assets/workflow-contract.v1.json`、`.ai/harness/workflow-contract.json`、`.ai/harness/policy.json`、`.ai/context/context-map.json`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-run.ts`、`scripts/contract-worktree.sh`、`scripts/archive-workflow.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`src/cli/commands/init.ts`、`src/cli/commands/capability-context.ts`、`src/cli/runtime/helper-runner.ts`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`
 - 復算:`archctx docs plan --json`(掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`)
 
