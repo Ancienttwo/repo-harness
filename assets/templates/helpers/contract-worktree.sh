@@ -285,6 +285,45 @@ clear_primary_markers_for_transferred_plan() {
   fi
 }
 
+bootstrap_worktree_runtime() {
+  # A fresh linked worktree starts without the gitignored runtime artifacts the
+  # verification gates depend on, and both resulting failures name neither cause.
+  # A missing dependency tree surfaces as `state=missing`, because
+  # check-architecture-sync resolves the provider through the candidate build,
+  # which requires archctx package-locally, while the globally installed CLI
+  # resolves it elsewhere and cheerfully reports ready. A missing code index
+  # surfaces as `unresolved-major-change` listing every capability, because
+  # archctx cannot prove a single flow without code facts. Seeding both here
+  # keeps that diagnosis from being re-derived once per worktree.
+  local worktree_path="$1"
+
+  if [[ -f "$worktree_path/package.json" ]] \
+    && { [[ -f "$worktree_path/bun.lock" ]] || [[ -f "$worktree_path/bun.lockb" ]]; } \
+    && command -v bun >/dev/null 2>&1 \
+    && [[ ! -d "$worktree_path/node_modules" ]]; then
+    echo "[ContractWorktree] Installing dependencies (gates resolve archctx package-locally)"
+    if ! (cd "$worktree_path" && bun install --frozen-lockfile >/dev/null); then
+      echo "[ContractWorktree] bun install --frozen-lockfile failed; no verification gate can run in this worktree" >&2
+      return 1
+    fi
+  fi
+
+  # Mirror only an adoption the primary worktree already made. No .codegraph
+  # directory means the operator did not opt into indexing, and start has no
+  # business opting in on their behalf.
+  if [[ -d "$REPO_ROOT/.codegraph" ]] \
+    && command -v codegraph >/dev/null 2>&1 \
+    && [[ ! -f "$worktree_path/.codegraph/codegraph.db" ]]; then
+    echo "[ContractWorktree] Indexing CodeGraph (architecture projection requires code facts)"
+    if ! (cd "$worktree_path" && codegraph init >/dev/null 2>&1); then
+      echo "[ContractWorktree] codegraph init failed; architecture projection will report unresolved-major-change for every capability" >&2
+      return 1
+    fi
+  fi
+
+  return 0
+}
+
 start_worktree() {
   local plan_file=""
   local worktree_path=""
@@ -358,6 +397,7 @@ start_worktree() {
     echo "[ContractWorktree] Created worktree: $worktree_path"
   fi
 
+  bootstrap_worktree_runtime "$worktree_path"
   copy_plan_into_worktree "$plan_file" "$worktree_path"
   remove_copied_untracked_source_plan "$plan_file" "$worktree_path"
   clear_primary_markers_for_transferred_plan "$plan_file"

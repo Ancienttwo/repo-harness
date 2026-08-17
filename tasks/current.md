@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-18T04:31:53+0800 -->
+<!-- updated_at: 2026-08-18T04:58:42+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-18T04:31:53+0800
-> **Source Branch**: codex/verify-sprint-rebase-base-guard
-> **Source Commit**: 39165816
+> **Updated At**: 2026-08-18T04:58:42+0800
+> **Source Branch**: codex/worktree-runtime-bootstrap
+> **Source Commit**: d5d0b0c5
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -33,10 +33,12 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 - /Users/ancienttwo/Projects/repo-harness-wt-codegraph-mandatory-runtime: plans/plan-20260816-2010-codegraph-mandatory-runtime.md
 - /Users/ancienttwo/Projects/repo-harness-wt-codegraph-mandatory-runtime: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-codegraph-mandatory-runtime
+- /Users/ancienttwo/Projects/repo-harness-wt-setup-plugins-shift-overrun: plans/plan-20260818-0444-setup-plugins-shift-overrun.md
+- /Users/ancienttwo/Projects/repo-harness-wt-setup-plugins-shift-overrun: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-setup-plugins-shift-overrun
 - /Users/ancienttwo/Projects/repo-harness-wt-unify-ai-memory-layers: plans/plan-20260818-0302-unify-ai-memory-layers.md
 - /Users/ancienttwo/Projects/repo-harness-wt-unify-ai-memory-layers: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-unify-ai-memory-layers
-- /Users/ancienttwo/Projects/repo-harness-wt-worktree-runtime-bootstrap: plans/plan-20260818-0334-worktree-runtime-bootstrap.md
-- /Users/ancienttwo/Projects/repo-harness-wt-worktree-runtime-bootstrap: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-worktree-runtime-bootstrap
+- /Users/ancienttwo/Projects/repo-harness-wt-unplanned-implementation-advice: plans/plan-20260818-0450-unplanned-implementation-advice.md
+- /Users/ancienttwo/Projects/repo-harness-wt-unplanned-implementation-advice: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-unplanned-implementation-advice
 ## Active Sprint
 
 - Sprint: (none)
@@ -63,16 +65,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260818-0347-verify-sprint-rebase-base-guard.md
- D tasks/contracts/20260818-0347-verify-sprint-rebase-base-guard.contract.md
- D tasks/notes/20260818-0347-verify-sprint-rebase-base-guard.notes.md
- D tasks/reviews/20260818-0347-verify-sprint-rebase-base-guard.review.md
+ D plans/plan-20260818-0334-worktree-runtime-bootstrap.md
+ D tasks/contracts/20260818-0334-worktree-runtime-bootstrap.contract.md
+ D tasks/notes/20260818-0334-worktree-runtime-bootstrap.notes.md
+ D tasks/reviews/20260818-0334-worktree-runtime-bootstrap.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260818-0347-verify-sprint-rebase-base-guard.md
-?? tasks/archive/contract-20260818-0431-verify-sprint-rebase-base-guard.md
-?? tasks/archive/notes-20260818-0431-verify-sprint-rebase-base-guard.md
-?? tasks/archive/review-20260818-0431-verify-sprint-rebase-base-guard.md
-?? tasks/archive/todo-20260818-0431-verify-sprint-rebase-base-guard.md
+?? plans/archive/plan-20260818-0334-worktree-runtime-bootstrap.md
+?? tasks/archive/contract-20260818-0458-worktree-runtime-bootstrap.md
+?? tasks/archive/notes-20260818-0458-worktree-runtime-bootstrap.md
+?? tasks/archive/review-20260818-0458-worktree-runtime-bootstrap.md
+?? tasks/archive/todo-20260818-0458-worktree-runtime-bootstrap.md
 ```
 
 ## Source Artifacts
