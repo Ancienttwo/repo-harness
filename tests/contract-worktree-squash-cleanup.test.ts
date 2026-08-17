@@ -242,6 +242,94 @@ describe("contract-worktree cleanup squash-merge absorption", () => {
     }
   }, 15000);
 
+  // Regression guard for the batch entrypoint. `contract-worktree cleanup
+  // --slug` already recognizes squash absorption (the tests above), but
+  // `ship-worktrees --cleanup-merged` filtered with an ancestry check only,
+  // so every squash-merged worktree -- which is every worktree under this
+  // project's house ship flow -- was reported unmerged and skipped, and
+  // worktrees accumulated without bound. See:
+  //   plans/plan-20260817-2055-worktree-merge-authority.md
+  //   tasks/contracts/20260817-2055-worktree-merge-authority.contract.md
+  test("ship-worktrees --cleanup-merged cleans a squash-merged worktree instead of skipping it", () => {
+    const cwd = tmpWorkspace("helper-ship-cleanup-squash");
+    const worktreePath = `${cwd}-wt-ship-squash`;
+    try {
+      copyHelpers(cwd);
+      initGitRepo(cwd);
+      writeFileSync(join(cwd, "README.md"), "# demo\n");
+      commitAll(cwd, "init ship cleanup squash");
+
+      expect(run("git", ["worktree", "add", worktreePath, "-b", "codex/ship-squash"], cwd).status).toBe(0);
+      writeFileSync(join(worktreePath, "feature.txt"), "squash feature\n");
+      commitAll(worktreePath, "add squash feature");
+
+      expect(run("git", ["merge", "--squash", "codex/ship-squash"], cwd).status).toBe(0);
+      commitAll(cwd, "squash-merge codex/ship-squash");
+      expect(
+        run("git", ["merge-base", "--is-ancestor", "codex/ship-squash", "main"], cwd).status,
+      ).not.toBe(0);
+
+      mkdirSync(join(cwd, ".ai/harness/worktrees"), { recursive: true });
+      writeFileSync(join(cwd, ".ai/harness/worktrees/ship-squash.json"), '{"slug":"ship-squash"}\n');
+
+      const result = run("bash", ["scripts/ship-worktrees.sh", "--cleanup-merged"], cwd);
+      expect(result.status).toBe(0);
+      expect(result.stdout).not.toContain("Skipped unmerged branch");
+      expect(result.stdout).toContain("absorbed into main (squash-equivalent tree)");
+
+      expect(existsSync(worktreePath)).toBe(false);
+      expect(
+        run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/ship-squash"], cwd).status,
+      ).not.toBe(0);
+      expect(existsSync(join(cwd, ".ai/harness/worktrees/ship-squash.json"))).toBe(false);
+    } finally {
+      run("git", ["worktree", "remove", "--force", worktreePath], cwd);
+      rmSync(worktreePath, { recursive: true, force: true });
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 15000);
+
+  // Negative control for the batch entrypoint: relocating the merge
+  // determination must not widen it. A branch carrying a commit main does
+  // not have stays skipped.
+  test("ship-worktrees --cleanup-merged still skips a branch carrying an unmerged extra commit", () => {
+    const cwd = tmpWorkspace("helper-ship-cleanup-extra");
+    const worktreePath = `${cwd}-wt-ship-extra`;
+    try {
+      copyHelpers(cwd);
+      initGitRepo(cwd);
+      writeFileSync(join(cwd, "README.md"), "# demo\n");
+      commitAll(cwd, "init ship cleanup extra");
+
+      expect(run("git", ["worktree", "add", worktreePath, "-b", "codex/ship-extra"], cwd).status).toBe(0);
+      writeFileSync(join(worktreePath, "feature.txt"), "squash feature\n");
+      commitAll(worktreePath, "add squash feature");
+
+      expect(run("git", ["merge", "--squash", "codex/ship-extra"], cwd).status).toBe(0);
+      commitAll(cwd, "squash-merge codex/ship-extra");
+
+      writeFileSync(join(worktreePath, "extra.txt"), "not on main\n");
+      commitAll(worktreePath, "add unmerged extra change");
+
+      mkdirSync(join(cwd, ".ai/harness/worktrees"), { recursive: true });
+      writeFileSync(join(cwd, ".ai/harness/worktrees/ship-extra.json"), '{"slug":"ship-extra"}\n');
+
+      const result = run("bash", ["scripts/ship-worktrees.sh", "--cleanup-merged"], cwd);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("Skipped unmerged branch: codex/ship-extra");
+
+      expect(existsSync(worktreePath)).toBe(true);
+      expect(
+        run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/ship-extra"], cwd).status,
+      ).toBe(0);
+      expect(existsSync(join(cwd, ".ai/harness/worktrees/ship-extra.json"))).toBe(true);
+    } finally {
+      run("git", ["worktree", "remove", "--force", worktreePath], cwd);
+      rmSync(worktreePath, { recursive: true, force: true });
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 15000);
+
   test("cleanup deletes a plain-merged (ancestor) branch via -d on a real run", () => {
     const cwd = tmpWorkspace("helper-cleanup-ancestor-real");
     const worktreePath = `${cwd}-wt-ancestor-real`;
