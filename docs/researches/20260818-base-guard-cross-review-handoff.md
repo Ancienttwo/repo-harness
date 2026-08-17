@@ -3,7 +3,7 @@
 - Date: 2026-08-18
 - Repo: `Ancienttwo/repo-harness`
 - Reviewer target: external model (GPT), second round
-- Baseline the reviewer should read: `main` at `83d80780` or later. Every SHA below is pushed to `origin`.
+- Baseline the reviewer should read: `main` at `b516e1d5` or later. Every SHA below is pushed to `origin`.
 
 This document exists because the previous round produced two rebuttals in a row, each of which read a different snapshot than the one being discussed. Everything asserted here names a pushed commit or a command that can be re-run.
 
@@ -18,6 +18,7 @@ This document exists because the previous round produced two rebuttals in a row,
 | `6ad02039` | the base-staleness guard, contract closeout, and `tasks/todos.md` row 22 removal |
 | `b0469e0f` | `Required / CI` aggregate job in `.github/workflows/ci.yml` |
 | `83d80780` | Stop-time advisory for implementation changes with no active plan |
+| `b516e1d5` | Single typed selector for worktree base metadata; classified fail-closed causes |
 
 Branch protection on `main` (applied via API, read back):
 
@@ -197,3 +198,23 @@ Criss-cross histories with multiple best merge bases, and a local `base_branch` 
 ### Standing correction to section 5
 
 The Stop advisory shipped in `83d80780` establishes the weak invariant only: at Stop, implementation diff is covered by a currently-Approved plan. It cannot establish that approval preceded the mutation — plan Draft, shell write, plan Approved, gate passes. Proving the temporal invariant needs mutation-time authorization capture, not a better diff read. The advisory should be read as covering the weak form.
+
+---
+
+## 9. What the round-two findings turned into
+
+`b516e1d5` replaces the row emitter with `contract_worktree_metadata_select`, which returns exactly one record carrying its source file and match kind. Exact-worktree match outranks branch match; duplicates on either side fail closed. `contract_worktree_base_commit` and the guard both read that one record, so the agreement the old comment merely asserted is now structural.
+
+Eleven named causes replace the single "was rebased" message: `metadata_malformed`, `metadata_unparseable`, `parser_unavailable`, `duplicate_exact_worktree_metadata`, `duplicate_branch_metadata`, `base_ref_unresolvable`, `base_ref_unsynchronized`, `no_common_ancestor`, `ambiguous_merge_base`, `stacked_source_start`, `stale_base_commit`. `git merge-base --all` is used, so ambiguity is its own class rather than a coin flip. A `base_branch` that disagrees with an already-present `@{upstream}` fails closed; the guard never fetches. An explicit `REPO_HARNESS_DIFF_BASE` or `HARNESS_DIFF_BASE` short-circuits it, since metadata is not the diff base then.
+
+The test file went from 3 cases to 13, covering the reproduced bypass, duplicate exact records, exact-over-branch precedence, missing `base_branch`, unresolvable `base_branch`, invalid JSON, absent `jq`, stacked source start, criss-cross ambiguity, a target ref lagging its upstream, and the override.
+
+### The correction that came out of implementing it
+
+The first draft failed closed whenever `base_commit` was absent, and the full suite caught it: `tests/helper-scripts.test.ts` exercises a legacy record carrying `base_branch` and `started_at` but no `base_commit`, where the resolver derives a base on every run. Nothing stored can be stale there, so the guard has no claim. The rule now splits three ways — a record with no base of any kind is malformed, a record with a usable fallback is the legacy shape and passes, a record with `base_commit` must also carry `base_branch` to be checkable.
+
+Worth stating plainly because the review asked for fail-closed on missing `base_branch` and that is only right for the third case. Fail-closed is not a posture to apply uniformly; it applies to states that are actually unverifiable.
+
+### Still open, unchanged by this round
+
+`stacked_source_start` fails closed and is now named accurately, but the underlying overload stands: `base_commit` is written as source HEAD for a new branch and as a merge base for a reused one, and it is read as a fork point. Supporting stacked contract worktrees needs the field split into a scope origin and an integration base, with the publication delta checked against the target separately. That is a product decision, not a guard fix, and it is not filed as a deferred goal because the decision — whether stacked worktrees are a supported shape at all — has not been made.
