@@ -1,13 +1,13 @@
 ---
 name: obsidian-memory
 description: |
-  Cross-project long-term memory over the user's Obsidian brain vault: recall relevant
+  Cross-project long-term memory over an Obsidian brain vault: recall relevant
   notes before a task, and persist distilled conclusions (decisions, pitfalls, solutions,
-  progress) back after a task. The vault is an aggregation/projection layer — repo-local
-  artifacts stay the per-project source of truth, and sync direction is repo → brain.
-  Explicitly invoked by the model or operator; never executed from hooks. Use when the
-  user asks to recall project memory, persist lessons to Obsidian, initialize a project
-  sub-vault, or when closing a significant task whose conclusions are worth keeping.
+  progress) back after a task. The vault is an optional aggregation/projection layer —
+  repo-local artifacts stay the per-project source of truth, and sync direction is
+  repo → brain. Explicitly invoked by the model or operator; never executed from hooks.
+  Use when the user asks to recall project memory, persist lessons to Obsidian, initialize
+  a project sub-vault, or when closing a significant task whose conclusions are worth keeping.
   Triggers: 检索记忆, 查一下知识库, 沉淀经验, 记到 Obsidian, 更新知识库, 复盘沉淀,
   初始化记忆库, recall project memory, persist lessons, update the brain vault,
   knowledge base brain. Do not use for repo-runtime contracts (tasks/, docs/ stay
@@ -24,18 +24,20 @@ description: |
 - 双读者: vault 的读者是 agent **和用户本人**。笔记必须是人能直接阅读学习的成文——完整句子、讲清 why 与 tradeoff，不写 agent 速记、不堆原始日志；`index.md` 是人的阅读入口。
 - 边界: 本 skill 只能由模型或用户显式调用。hooks 永不执行它——hook 层最多发 `[BrainPromote]` 类建议文本，不读写 vault 状态。
 
-## Vault 解析（fail-closed）
+## Vault 解析（fail-closed，且 vault 本身是可选的）
 
 1. 读 `~/.repo-harness/config.json` 的 `brainRoot`。
-2. 缺失或路径不存在 → 停止并告知用户配置（`repo-harness update --brain-root <path>` 或手改 config），**不扫描磁盘猜 vault、不临时新建 vault root**。
+2. 未配置或路径不存在 → **停止并说明**，不扫描磁盘猜 vault、不临时新建 vault root。
 3. 项目 sub-vault 为 `<brainRoot>/<project-slug>/`；`<project-slug>` 取 repo 目录名或用户指定名。
+
+**没有配置 brainRoot 是一个合法的稳态，不是待修复的故障。** 未配置就意味着这台机器不使用 vault 层：repo 内 artifact 依然是完整可用的权威记忆，收口时把结论写进 `tasks/lessons.md`、`docs/researches/` 等既有槽位即可，不要为了让本 skill 能跑而去创建 vault。仅当用户明确表示要启用 vault 层时，才指路 `repo-harness install --brain-root <path>` 或 `repo-harness update --brain-root <path>`。
 
 ## Phase init · 建立项目 sub-vault
 
 仅在 sub-vault 不存在或用户明确要求时执行：
 
-1. 创建 `<brainRoot>/<project-slug>/`，内含 `index.md` 与按需的 `decisions/`、`patterns/`、`references/`、`runbooks/`（对齐 vault 既有分类，不发明新分类学）。
-2. `index.md` 记项目一句话背景、长期偏好、当前进度指针、各子目录链接；用 wiki-link 挂进 vault 根 `index.md` 的 Domains 列表。
+1. 创建 `<brainRoot>/<project-slug>/`，内含 `index.md` 与按需的 `decisions/`、`patterns/`、`notes/`、`references/`、`runbooks/`（对齐 vault 既有分类，不发明新分类学）。
+2. `index.md` 记项目一句话背景、长期偏好、当前进度指针、各子目录链接；用 wiki-link 挂进 vault 根 `index.md`。
 3. **依赖官方 Obsidian skills（硬依赖）**：任何创建或修改 vault 内 `.md` 的动作必须同时调用官方 `obsidian-markdown` skill（frontmatter、wiki-links、callouts 等格式权威）；需要对运行中 vault 做搜索/打开/任务操作时用官方 `obsidian-cli` skill。本 skill 只负责判断与索引（写什么、何时写、如何组织），不自定 Markdown 方言。两个官方 skill 缺失时 fail-closed 报告，不降级手写格式。
 
 ## Phase recall · 任务前召回
@@ -47,18 +49,24 @@ description: |
 ## Phase persist · 任务后沉淀
 
 1. 提取候选：关键决策及理由、踩坑根因与解法、可复用方案/模式、失败方案及拒因、进度里程碑。
-2. **价值闸门**——同时满足才写：未来会再用到（对 agent 复用或对用户学习二者居其一即可）；不是 repo artifact 已记录内容的复述（已有的写一行 wiki-link 指回 repo 路径，不复制正文）；不是一次性/临时信息。
-3. **敏感闸门**——写盘前扫描内容：密码、API key、token、私钥、真实 env 值一律不落 vault；命中即改写为占位符或放弃该条。
-4. 写入对应子目录并更新 sub-vault `index.md`；同类主题已有笔记则更新原文件，不另开重复页；发现过时结论直接改掉。
-5. 在 repo-harness 管理的仓库里，`docs/reference-configs/` 类文档的外化走既有 `repo-harness brain promote`/`sync` 通道，本 skill 不与其重复搬运。
+2. **排除式写入门槛（先过这一条）**——凡是 git、包管理 registry、代码托管平台、CI 或任一可重跑命令已经权威记录的事实，vault 只写指针，不写正文。据此明确排除：commit SHA、PR/issue 编号、merge commit、CI run ID、tag、release URL、`main == origin/main == <sha>` 之类的同步状态、worktree 干净与否、测试通过计数、某次命令的快照输出。这些写下去那一刻就开始腐烂，而且原本就有权威源。
+3. **价值闸门**——过了排除规则后还要同时满足：未来会再用到（对 agent 复用或对用户学习二者居其一即可）；不是 repo artifact 已记录内容的复述（已有的写一行 wiki-link 指回 repo 路径，不复制正文）；不是一次性/临时信息。
+4. **敏感闸门**——写盘前扫描内容：密码、API key、token、私钥、真实 env 值一律不落 vault；命中即改写为占位符或放弃该条。
+5. **绝对路径慎写**——机器改名、家目录迁移、checkout 位置变化都会让硬编码路径静默失效。能写 repo 相对路径或让工具自行解析根路径的，就不要写绝对路径。
+6. 写入对应子目录并更新 sub-vault `index.md`；同类主题已有笔记则更新原文件，不另开重复页；发现过时结论直接改掉。
+
+## 目录所有权边界
+
+在 repo-harness 管理的仓库里，`.ai/harness/brain-manifest.json` 声明的 `brain_path` 是 `repo-harness brain sync` 的**机器投影**，手写内容会被下次 sync 覆盖。本 skill 永远不写 manifest 声明过的路径；记忆笔记落在 `notes/`、`decisions/` 这类 manifest 不拥有的子目录。`docs/reference-configs/` 类文档的外化走既有 `brain promote`/`sync` 通道，本 skill 不与其重复搬运。
 
 ## 与既有记忆层的分工
 
 | 层 | 归属 | 存什么 |
 |----|------|--------|
 | repo `tasks/lessons.md`、`docs/researches/`、`MEMORY.md` | 各项目 source of truth | 项目内可执行的规则与知识 |
-| `~/.claude/memory/`、`GLOBAL.md` | 会话运行时记忆 | 用户偏好、跨项目工作规律 |
-| Obsidian vault（本 skill） | 跨项目聚合投影 | 蒸馏后的决策/模式/坑/进度，供人和多 runtime 复用 |
+| host 自动记忆（Claude Code project memory、Codex chronicle 等） | session 级运行时缓存 | 当轮上下文；**不得引用为事实**，有长期价值的先 promote 到权威层 |
+| 用户级跨项目偏好文件 | 跨项目偏好 source of truth | 用户习惯、跨项目通用坑、工具偏好 |
+| Obsidian vault（本 skill） | 可选的跨项目聚合投影 | 蒸馏后的决策/模式/坑/进度，供人和多 runtime 复用 |
 
 同一事实只在权威层写正文，其余层写指针。
 
@@ -67,13 +75,16 @@ description: |
 | 情况 | 规则 |
 |------|------|
 | 想在 hook 里自动触发 | 禁止；hook 只发建议文本，沉淀由模型在收尾流程显式调用 |
-| brainRoot 未配置 | fail-closed 停止并指路，不猜路径 |
+| brainRoot 未配置 | 合法稳态；报告后停止，不猜路径、不代建 vault |
 | 记忆与现状矛盾 | 现状赢；修正或删除过时笔记 |
-| 每轮任务都想写一笔 | 只沉淀过价值闸门的内容；无货则明说本轮无可沉淀 |
+| 每轮任务都想写一笔 | 只沉淀过闸门的内容；无货则明说本轮无可沉淀 |
 | 大段对话/代码想整段存档 | 不存原文，存结论 + 指回 repo 的链接 |
+| 想把验收报告贴进来 | CI run、commit、PR、release 状态一律只写指针 |
 | 含敏感值的配置经验 | 用 `<PLACEHOLDER>` 改写后再存 |
+| 声称「已接入某处」 | 当场 grep 目标文件验证；只存在于文档里的接线等于没有接线 |
 
 ## Provenance
 
 - 2026-08-16 由用户的「Obsidian 作为跨项目 AI 知识库大脑」提案落地；经评审否决 hook 实现路线，采用 skill + 显式收口，对齐 repo-harness `brain-manifest.json` 的既有 invariant（hooks 不读写外部 vault 状态）。
+- 2026-08-18 修订：加入排除式写入门槛与 manifest 目录所有权边界，并把 vault 层明确为可选——未配置 brainRoot 时 repo 内 artifact 独立成立，不再把「没有 vault」当成待修复状态。
 - 双侧安装：`~/.claude/skills/obsidian-memory/` 与 `~/.codex/skills/obsidian-memory/` 内容一致，用 `cmp` 校验。
