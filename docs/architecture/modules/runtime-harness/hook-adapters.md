@@ -1,7 +1,7 @@
 # runtime-harness/hook-adapters 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:1020b08b798ae8d819105fb06ead6413073d6f29290fbba92bdf3150ca949e8e" rendererVersion="archcontext.docs-renderer/v3" outputDigest="sha256:bf67d96e97d554286377fc969cc9c2f6f9a985904d7376ea630c2061bed34ed0" verifiedAgainst="main@b90924911310060d4d6ddcc801e300cabf7ebf3a@2026-08-17T23:41:40+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:4a1372a677e2ec3a7bbe6b2a8fd2533c396f2ddf2ab9edb15dc948bf1f2cbd33" rendererVersion="archcontext.docs-renderer/v3" outputDigest="sha256:a93d075874097f4af830ca9d7b606cd656c3063fb29db4c6a62cb5a4a8f375c7" verifiedAgainst="main@a24990b54d34e85e5ba7c6ff52e6658a03e1dc2c@2026-08-18T02:23:49+08:00" -->
 > **狀態**:`active`
-> **Verified against**:`main@b90924911310060d4d6ddcc801e300cabf7ebf3a`(2026-08-17)
+> **Verified against**:`main@a24990b54d34e85e5ba7c6ff52e6658a03e1dc2c`(2026-08-18)
 > **Capability ID**:`capability.runtime-harness.hook-adapters`(kind `capability`)
 > **Matched Prefixes**:`assets/hooks/**`、`.ai/hooks/**`、`scripts/run-skill-hook.ts`、`src/cli/installer/**`、`src/cli/hook/**`、`src/cli/hook-entry.ts`
 > **Local Contracts**:`assets/hooks/AGENTS.md`、`assets/hooks/CLAUDE.md`
@@ -36,7 +36,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 文件數:`47`
-- 總行數:`17698`
+- 總行數:`17716`
 - 匹配前綴:`assets/hooks/**`、`.ai/hooks/**`、`scripts/run-skill-hook.ts`、`src/cli/installer/**`、`src/cli/hook/**`、`src/cli/hook-entry.ts`
 - 復算:`archctx docs plan --json`(掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`)
 
