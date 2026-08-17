@@ -179,9 +179,23 @@ failure the root contract forbids: one datum, one source of truth.
 
 ## Entity delta
 
-`+1 / -0` internal: `scripts/lib/worktree-merge-lib.sh`. Justified by two real
-consumers and a cross-module invariant, which is the shared-component threshold
-in the root contract. No public surface added.
+`+1 / -0`: `scripts/worktree-merge-lib.sh`. Justified by two real consumers and
+a cross-module invariant, which is the shared-component threshold in the root
+contract.
+
+Corrected during execution: this is a packaged helper, not a purely internal
+file. `contract-worktree.sh` sources it in installed downstream repos, so it
+must be registered in `assets/workflow-contract.v1.json#helpers.scripts` and the
+mirrored `.ai/harness/workflow-contract.json`, which are versioned manifests
+downstream consumes. It adds no invocable entrypoint — no command, subcommand,
+or flag — but the earlier "no public surface added" claim understated it: the
+helper inventory downstream repos install grows by one file.
+
+Path correction: `scripts/` top level, not `scripts/lib/`. `helpers.scripts` is
+flat (54 entries, zero directory separators) and `tests/helper-scripts.test.ts:580-583`
+compares it against a non-recursive `readdirSync`. `scripts/lib/` is the tier
+that is deliberately not projected downstream (`project-init-lib.sh` is absent
+from the manifest). A projected lib does not belong there.
 
 ## Phase independence
 

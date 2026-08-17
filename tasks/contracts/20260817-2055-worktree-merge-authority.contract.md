@@ -29,11 +29,20 @@ branches exactly as `contract-worktree cleanup --slug` already does.
 
 ## Scope
 
-- In scope: extract `scripts/lib/worktree-merge-lib.sh` exposing
+- In scope: extract `scripts/worktree-merge-lib.sh` exposing
   `worktree_merge_mode <branch> <target>` that prints `ancestor`, `absorbed`, or
   `unmerged`; make `scripts/contract-worktree.sh` and `scripts/ship-worktrees.sh`
-  both consume it; add the batch-path regression case to
-  `tests/contract-worktree-squash-cleanup.test.ts`.
+  both consume it; register the lib in `assets/workflow-contract.v1.json#helpers.scripts`
+  and the mirrored `.ai/harness/workflow-contract.json`; run `bun run sync:helpers`
+  so `assets/templates/helpers/` stays a clean projection of `scripts/`; add the
+  batch-path regression case to `tests/contract-worktree-squash-cleanup.test.ts`.
+- Path decision: the lib sits at `scripts/` top level, not `scripts/lib/`.
+  `helpers.scripts` is a flat 54-entry list with zero directory separators, and
+  `tests/helper-scripts.test.ts:580-583` compares it against a non-recursive
+  `readdirSync`. `scripts/lib/` holds helpers that are deliberately NOT projected
+  downstream (`project-init-lib.sh` is absent from the manifest); this lib must be
+  projected because `contract-worktree.sh` sources it in installed repos, so it
+  belongs to the packaged tier by definition, not by convenience.
 - Out of scope: Phase 2 of the source plan (the SessionStart backlog section in
   `src/cli/hook/session-context.ts`) is a separate contract and must not be
   started here. No automatic deletion, no remote branch deletion, no new CLI
@@ -66,7 +75,7 @@ commit on top of a squash-merged tree and assert the function prints `unmerged`.
 - root_cause: scripts/ship-worktrees.sh:1120 filters batch cleanup with `git merge-base --is-ancestor` only, while scripts/contract-worktree.sh:1793-1810 additionally accepts a `git merge-tree --write-tree` squash-absorbed branch, so squash-merged worktrees are reported unmerged and never cleaned.
 - repro: bash scripts/ship-worktrees.sh --cleanup-merged --dry-run prints `[Ship] Skipped unmerged branch: codex/debug-ground-truth-eval-v1` while bash scripts/contract-worktree.sh cleanup --slug debug-ground-truth-eval-v1 --target main --dry-run prints `absorbed into main (squash-equivalent tree)` and would remove it.
 - regression_guard: tests/contract-worktree-squash-cleanup.test.ts
-- pre_fix_failure_artifact: .ai/harness/evidence/pre-fix-worktree-merge-authority.log
+- pre_fix_failure_artifact: tasks/notes/20260817-worktree-merge-authority.pre-fix.log
 
 ## Workflow Inventory
 
@@ -103,6 +112,9 @@ allowed_paths:
   - tasks/notes/20260817-2055-worktree-merge-authority.notes.md
   - .ai/context/capabilities.json
   - .ai/harness/evidence/
+  - .ai/harness/workflow-contract.json
+  - assets/workflow-contract.v1.json
+  - assets/templates/helpers/
   - scripts/
   - tests/
 ```

@@ -33,6 +33,11 @@ if [[ -n "${REPO_HARNESS_HELPER_SOURCE_PATH:-}" && -f "$REPO_HARNESS_HELPER_SOUR
 fi
 helper_dir="$(cd "$(dirname "$helper_source")" && pwd)"
 
+worktree_merge_lib="$helper_dir/worktree-merge-lib.sh"
+[[ -f "$worktree_merge_lib" ]] || { echo "ship-worktrees: worktree merge library is unavailable: $worktree_merge_lib" >&2; exit 1; }
+# shellcheck source=worktree-merge-lib.sh
+. "$worktree_merge_lib"
+
 usage() {
   cat <<'USAGE_EOF'
 Usage:
@@ -1117,7 +1122,12 @@ cleanup_merged() {
     if [[ -n "$SLUG_OVERRIDE" && "$slug" != "$SLUG_OVERRIDE" ]]; then
       continue
     fi
-    if git merge-base --is-ancestor "$branch" "$TARGET_BRANCH" >/dev/null 2>&1; then
+    # Same authority as contract-worktree cleanup --slug. An ancestry-only
+    # filter here reported every squash-merged worktree as unmerged, which
+    # under this project's squash ship flow means every worktree (issue #196).
+    # Dirtiness is still a separate refusal below: merged-but-dirty must stay
+    # distinguishable from unmerged.
+    if [[ "$(worktree_merge_mode "$branch" "$TARGET_BRANCH")" != "unmerged" ]]; then
       if ! ensure_worktree_status_for_cleanup "$path"; then
         if [[ "$DRY_RUN" -eq 1 ]]; then
           run_cmd bash "$helper_dir/contract-worktree.sh" cleanup --slug "$slug" --target "$TARGET_BRANCH" --dry-run

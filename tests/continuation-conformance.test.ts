@@ -242,6 +242,7 @@ function installFixture(container: string): Fixture {
     'capture-plan.sh',
     'plan-to-todo.sh',
     'contract-worktree.sh',
+    'worktree-merge-lib.sh',
     'archive-workflow.sh',
   ]) {
     copyFileSync(join(ROOT, 'scripts', helper), join(primary, 'scripts', helper));
