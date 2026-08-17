@@ -1927,6 +1927,53 @@ describe("Workflow helper scripts", () => {
     }
   }, 15000);
 
+  test("ship-worktrees cleanup-merged can discard scaffold-only dirty merged worktree with no untracked paths", () => {
+    const cwd = tmpWorkspace("helper-ship-cleanup-scaffold-tracked-only");
+    const worktreePath = `${cwd}-wt-demo`;
+    try {
+      copyHelpers(cwd);
+      initGitRepo(cwd);
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/notes"), { recursive: true });
+      writeFileSync(join(cwd, "README.md"), "# demo\n");
+      writeFileSync(join(cwd, "tasks/todos.md"), "# Deferred Goal Ledger\n");
+      writeFileSync(join(cwd, "plans/plan-20260304-1410-demo.md"), "# Plan: demo\n");
+      writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), "# Contract\n");
+      writeFileSync(join(cwd, "tasks/notes/demo.notes.md"), "# Notes\n");
+      commitAll(cwd, "init tracked scaffold cleanup");
+
+      expect(run("git", ["worktree", "add", worktreePath, "-b", "codex/demo"], cwd).status).toBe(0);
+      mkdirSync(join(cwd, ".ai/harness/worktrees"), { recursive: true });
+      writeFileSync(join(cwd, ".ai/harness/worktrees/demo.json"), '{"slug":"demo"}\n');
+
+      // Every dirty scaffold path is tracked; the untracked set is empty.
+      writeFileSync(join(worktreePath, "tasks/todos.md"), "# Deferred Goal Ledger\n- generated scaffold\n");
+      writeFileSync(join(worktreePath, "plans/plan-20260304-1410-demo.md"), "# Plan: demo\n\n- generated\n");
+      writeFileSync(join(worktreePath, "tasks/contracts/demo.contract.md"), "# Contract\n\n- generated\n");
+      writeFileSync(join(worktreePath, "tasks/notes/demo.notes.md"), "# Notes\n\n- generated\n");
+      expect(run("git", ["status", "--porcelain=v1", "--untracked-files=all"], worktreePath).stdout).not.toContain("??");
+
+      const cleanup = run(
+        "bash",
+        ["scripts/ship-worktrees.sh", "--cleanup-merged", "--discard-scaffold-only", "--target", "main"],
+        cwd
+      );
+      expect(cleanup.stderr).not.toContain("unbound variable");
+      expect(cleanup.status).toBe(0);
+      expect(cleanup.stdout).toContain("Discarded scaffold-only changes");
+      expect(cleanup.stdout).toContain("Removed worktree");
+      expect(cleanup.stdout).toContain("Deleted branch: codex/demo");
+      expect(existsSync(worktreePath)).toBe(false);
+      expect(run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/demo"], cwd).status).not.toBe(0);
+      expect(existsSync(join(cwd, ".ai/harness/worktrees/demo.json"))).toBe(false);
+    } finally {
+      run("git", ["worktree", "remove", "--force", worktreePath], cwd);
+      rmSync(worktreePath, { recursive: true, force: true });
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 15000);
+
   test("ship-worktrees cleanup-merged should require explicit scaffold discard flag", () => {
     const cwd = tmpWorkspace("helper-ship-cleanup-scaffold-no-flag");
     const worktreePath = `${cwd}-wt-demo`;

@@ -803,7 +803,7 @@ discard_scaffold_dirty_paths() {
     run_cmd git -C "$worktree" checkout -- "${tracked_paths[@]}"
   fi
 
-  for path in "${untracked_paths[@]}"; do
+  for path in ${untracked_paths[@]+"${untracked_paths[@]}"}; do
     if [[ "$DRY_RUN" -eq 1 ]]; then
       echo "[Ship] would remove scaffold file: $worktree/$path"
     else
