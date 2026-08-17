@@ -218,56 +218,111 @@ git_changed_files_json() {
   done < <(git_changed_files_list | awk 'NF && !seen[$0]++') | jq -R -s 'split("\n") | map(select(length > 0))'
 }
 
-# Emits one `\x1f`-joined `<base_commit> <base_branch> <started_at>` line per
-# worktree metadata record matching this worktree or branch. Sole matching
-# authority: the diff-base resolver below and the staleness guard further down
-# must agree on which record describes this worktree, or the guard could
-# validate a base the resolver never uses.
-contract_worktree_metadata_rows() {
-  local current_worktree current_branch metadata_file metadata_row
-  command -v jq >/dev/null 2>&1 || return 1
+# Selects exactly one contract-worktree metadata record for this worktree and
+# emits it as a `\x1f`-joined
+# `<source_file> <match_kind> <base_commit> <base_branch> <started_at>` line.
+#
+# Sole selection authority. The diff-base resolver and the staleness guard below
+# both read this one record, so they cannot disagree about which file describes
+# this worktree. An earlier version emitted every matching row and let each
+# caller pick, which let an all-empty record satisfy the guard while the
+# resolver walked past it to a stale one.
+#
+# Exit codes: 0 with a record, 1 when nothing matches (the only silent path),
+# 2 when metadata exists but cannot be trusted, with the reason on stderr.
+contract_worktree_metadata_select() {
+  local current_worktree current_branch metadata_file parsed
+  local -a exact=() branch_only=()
+  local any_file=0
+
   current_worktree="$(pwd -P)"
   current_branch="$(git branch --show-current 2>/dev/null || true)"
-  [[ -n "$current_branch" ]] || return 1
 
   for metadata_file in .ai/harness/worktrees/*.json; do
     [[ -f "$metadata_file" ]] || continue
-    metadata_row="$(jq -r \
+    any_file=1
+    if ! command -v jq >/dev/null 2>&1; then
+      echo "verify-sprint: contract worktree metadata is present but jq is unavailable: $metadata_file" >&2
+      echo "verify-sprint: reason=parser_unavailable" >&2
+      echo "verify-sprint: the scope-base guard cannot run without a JSON parser; install jq or remove the metadata" >&2
+      return 2
+    fi
+    if ! parsed="$(jq -er \
       --arg worktree "$current_worktree" \
       --arg branch "$current_branch" \
-      'if ((.worktree // "") == $worktree or (.branch // "") == $branch) then [(.base_commit // ""), (.base_branch // ""), (.started_at // "")] | join("\u001f") else "" end' \
-      "$metadata_file" 2>/dev/null || true)"
-    [[ -n "$metadata_row" ]] || continue
-    printf '%s\n' "$metadata_row"
+      '
+      def kind:
+        if ((.worktree // "") != "" and (.worktree // "") == $worktree) then "exact_worktree"
+        elif ($branch != "" and (.branch // "") == $branch) then "branch"
+        else "none" end;
+      [kind, (.base_commit // ""), (.base_branch // ""), (.started_at // "")] | join("\u001f")
+      ' "$metadata_file" 2>/dev/null)"; then
+      echo "verify-sprint: contract worktree metadata is not valid JSON: $metadata_file" >&2
+      echo "verify-sprint: reason=metadata_unparseable" >&2
+      return 2
+    fi
+    case "$parsed" in
+      exact_worktree*) exact+=("$metadata_file"$'\x1f'"$parsed") ;;
+      branch*) branch_only+=("$metadata_file"$'\x1f'"$parsed") ;;
+    esac
   done
+
+  [[ "$any_file" -eq 1 ]] || return 1
+
+  if ((${#exact[@]} > 1)); then
+    echo "verify-sprint: more than one metadata record claims this worktree path" >&2
+    echo "verify-sprint: reason=duplicate_exact_worktree_metadata" >&2
+    printf 'verify-sprint:   %s\n' "${exact[@]%%$'\x1f'*}" >&2
+    return 2
+  fi
+  if ((${#exact[@]} == 1)); then
+    printf '%s' "${exact[0]}"
+    return 0
+  fi
+  if ((${#branch_only[@]} > 1)); then
+    echo "verify-sprint: more than one metadata record claims branch '$current_branch'" >&2
+    echo "verify-sprint: reason=duplicate_branch_metadata" >&2
+    printf 'verify-sprint:   %s\n' "${branch_only[@]%%$'\x1f'*}" >&2
+    return 2
+  fi
+  if ((${#branch_only[@]} == 1)); then
+    printf '%s' "${branch_only[0]}"
+    return 0
+  fi
+  return 1
+}
+
+# Splits a selected record into the caller's named variables.
+contract_worktree_metadata_fields() {
+  local record="$1"
+  IFS=$'\x1f' read -r META_SOURCE_FILE META_MATCH_KIND META_BASE_COMMIT META_BASE_BRANCH META_STARTED_AT <<< "$record"
 }
 
 contract_worktree_base_commit() {
-  local metadata_row base_commit base_branch started_at
+  local record base_commit
+  record="$(contract_worktree_metadata_select)" || return 1
+  contract_worktree_metadata_fields "$record"
+  base_commit="$META_BASE_COMMIT"
 
-  while IFS= read -r metadata_row; do
-    [[ -n "$metadata_row" ]] || continue
-    IFS=$'\x1f' read -r base_commit base_branch started_at <<< "$metadata_row"
+  if [[ -n "$base_commit" ]]; then
+    git rev-parse --verify "$base_commit^{commit}" >/dev/null 2>&1 || return 1
+    printf '%s' "$base_commit"
+    return 0
+  fi
+  if [[ -n "$META_STARTED_AT" ]]; then
+    base_commit="$(git rev-list -1 --before="$META_STARTED_AT" HEAD 2>/dev/null || true)"
     if [[ -n "$base_commit" ]]; then
-      git rev-parse --verify "$base_commit^{commit}" >/dev/null 2>&1 || return 1
       printf '%s' "$base_commit"
       return 0
     fi
-    if [[ -n "$started_at" ]]; then
-      base_commit="$(git rev-list -1 --before="$started_at" HEAD 2>/dev/null || true)"
-      if [[ -n "$base_commit" ]]; then
-        printf '%s' "$base_commit"
-        return 0
-      fi
+  fi
+  if [[ -n "$META_BASE_BRANCH" ]] && git rev-parse --verify "$META_BASE_BRANCH^{commit}" >/dev/null 2>&1; then
+    base_commit="$(git merge-base HEAD "$META_BASE_BRANCH" 2>/dev/null || true)"
+    if [[ -n "$base_commit" ]]; then
+      printf '%s' "$base_commit"
+      return 0
     fi
-    if [[ -n "$base_branch" ]] && git rev-parse --verify "$base_branch^{commit}" >/dev/null 2>&1; then
-      base_commit="$(git merge-base HEAD "$base_branch" 2>/dev/null || true)"
-      if [[ -n "$base_commit" ]]; then
-        printf '%s' "$base_commit"
-        return 0
-      fi
-    fi
-  done < <(contract_worktree_metadata_rows)
+  fi
 
   return 1
 }
@@ -329,28 +384,124 @@ git_diff_merge_base() {
 # is satisfied trivially in the case that was actually observed: rebasing onto a
 # target that grew from the recorded base leaves that base reachable from HEAD,
 # so `merge-base --is-ancestor` passes while the diff still spans the target's
-# own commits. Equality catches both that case and the rarer diverged rebase
-# where the recorded base leaves the branch entirely.
+# own commits.
 #
-# Fail closed naming both SHAs; never fall through to another base, because
-# silently picking a different one stops measuring what the contract promised.
+# Every state that is neither "no matching metadata" nor "verified current"
+# fails closed and names its own cause. A single "was rebased" message for all
+# of them sends the reader looking for a rebase that may never have happened.
 assert_contract_worktree_base_is_current_fork_point() {
-  local metadata_row base_commit base_branch started_at fork_point
-  metadata_row="$(contract_worktree_metadata_rows 2>/dev/null | head -1 || true)"
-  [[ -n "$metadata_row" ]] || return 0
-  IFS=$'\x1f' read -r base_commit base_branch started_at <<< "$metadata_row"
-  # Nothing recorded to check, or no branch to compute a fork point against:
-  # the resolver falls back to its own derivation and this guard has no claim.
-  [[ -n "$base_commit" && -n "$base_branch" ]] || return 0
-  git rev-parse --verify "$base_branch^{commit}" >/dev/null 2>&1 || return 0
-  fork_point="$(git merge-base HEAD "$base_branch" 2>/dev/null || true)"
-  [[ -n "$fork_point" ]] || return 0
-  [[ "$base_commit" != "$fork_point" ]] || return 0
-  echo "verify-sprint: contract worktree base_commit is stale" >&2
-  echo "verify-sprint:   recorded base:                 $base_commit" >&2
-  echo "verify-sprint:   current fork point ($base_branch): $fork_point" >&2
-  echo "verify-sprint: this worktree was rebased after start; .ai/harness/worktrees/<slug>.json still records the pre-rebase base" >&2
-  echo "verify-sprint: refresh base_commit to $fork_point before re-running the gate, or rebuild the worktree" >&2
+  local record select_status fork_point base_upstream
+  local -a bases=()
+
+  # An explicit override outranks metadata in `git_diff_base_ref`, so the
+  # recorded base is not the diff base and this guard has no claim.
+  [[ -z "${REPO_HARNESS_DIFF_BASE:-}${HARNESS_DIFF_BASE:-}" ]] || return 0
+
+  select_status=0
+  record="$(contract_worktree_metadata_select)" || select_status=$?
+  case "$select_status" in
+    0) ;;
+    1) return 0 ;;
+    *) exit 1 ;;
+  esac
+
+  contract_worktree_metadata_fields "$record"
+
+  # A record that claims this worktree but supplies no base at all is malformed:
+  # the resolver has nothing to derive from either, so the selection is
+  # meaningless rather than merely unverifiable.
+  if [[ -z "$META_BASE_COMMIT" && -z "$META_STARTED_AT" && -z "$META_BASE_BRANCH" ]]; then
+    echo "verify-sprint: contract worktree metadata carries no base at all: $META_SOURCE_FILE" >&2
+    echo "verify-sprint: reason=metadata_malformed" >&2
+    echo "verify-sprint:   missing: base_commit, started_at, base_branch" >&2
+    echo "verify-sprint: repair or remove the record" >&2
+    exit 1
+  fi
+
+  # No recorded base, but a usable fallback: the resolver derives one from
+  # started_at or base_branch on every run, so nothing stored can have gone
+  # stale. This is the documented legacy shape, not a malformed record.
+  [[ -n "$META_BASE_COMMIT" ]] || return 0
+
+  if [[ -z "$META_BASE_BRANCH" ]]; then
+    echo "verify-sprint: contract worktree metadata records a base_commit with no base_branch: $META_SOURCE_FILE" >&2
+    echo "verify-sprint: reason=metadata_malformed" >&2
+    echo "verify-sprint:   missing: base_branch" >&2
+    echo "verify-sprint: a stored base cannot be checked against a fork point without its branch; repair or remove the record" >&2
+    exit 1
+  fi
+
+  if ! git rev-parse --verify "$META_BASE_BRANCH^{commit}" >/dev/null 2>&1; then
+    echo "verify-sprint: recorded base_branch does not resolve: $META_BASE_BRANCH" >&2
+    echo "verify-sprint: reason=base_ref_unresolvable" >&2
+    echo "verify-sprint: source: $META_SOURCE_FILE" >&2
+    exit 1
+  fi
+
+  # A target ref that lags its own remote-tracking ref makes the local fork
+  # point look current while the real integration target has moved. Compared
+  # against an already-present tracking ref only; this guard never fetches.
+  base_upstream="$(git rev-parse --verify --symbolic-full-name "$META_BASE_BRANCH@{upstream}" 2>/dev/null || true)"
+  if [[ -n "$base_upstream" ]]; then
+    if [[ "$(git rev-parse "$META_BASE_BRANCH^{commit}")" != "$(git rev-parse "$base_upstream^{commit}")" ]]; then
+      echo "verify-sprint: recorded base_branch is not synchronized with its upstream" >&2
+      echo "verify-sprint: reason=base_ref_unsynchronized" >&2
+      echo "verify-sprint:   $META_BASE_BRANCH: $(git rev-parse "$META_BASE_BRANCH^{commit}")" >&2
+      echo "verify-sprint:   $base_upstream: $(git rev-parse "$base_upstream^{commit}")" >&2
+      echo "verify-sprint: fetch and reconcile $META_BASE_BRANCH before running the gate" >&2
+      exit 1
+    fi
+  fi
+
+  while IFS= read -r fork_point; do
+    [[ -n "$fork_point" ]] && bases+=("$fork_point")
+  done < <(git merge-base --all HEAD "$META_BASE_BRANCH" 2>/dev/null || true)
+
+  if ((${#bases[@]} == 0)); then
+    echo "verify-sprint: HEAD and $META_BASE_BRANCH share no common ancestor" >&2
+    echo "verify-sprint: reason=no_common_ancestor" >&2
+    echo "verify-sprint: source: $META_SOURCE_FILE" >&2
+    exit 1
+  fi
+
+  # Criss-cross history can leave several equally-best merge bases, and plain
+  # `git merge-base` picks one without guaranteeing which. Scope computed from
+  # different bases is a different changed set, so this is its own class -- not
+  # a stale base, and not something to resolve by accepting any member.
+  if ((${#bases[@]} > 1)); then
+    echo "verify-sprint: HEAD and $META_BASE_BRANCH have more than one best merge base" >&2
+    echo "verify-sprint: reason=ambiguous_merge_base" >&2
+    printf 'verify-sprint:   %s\n' "${bases[@]}" >&2
+    echo "verify-sprint: pick the intended diff base explicitly via REPO_HARNESS_DIFF_BASE" >&2
+    exit 1
+  fi
+
+  fork_point="${bases[0]}"
+  [[ "$META_BASE_COMMIT" != "$fork_point" ]] || return 0
+
+  # Two different failures share this comparison. A base that is an ancestor of
+  # the target is a target that moved under the worktree -- the rebase case. A
+  # base that is not is a worktree started from a source ahead of the target,
+  # which `contract-worktree start` records as the source HEAD; publishing that
+  # tree would carry the parent's commits into the target without them ever
+  # appearing in this contract's own scope.
+  if git merge-base --is-ancestor "$META_BASE_COMMIT" "$META_BASE_BRANCH" 2>/dev/null; then
+    echo "verify-sprint: contract worktree base_commit is stale" >&2
+    echo "verify-sprint: reason=stale_base_commit" >&2
+    echo "verify-sprint:   recorded base:                 $META_BASE_COMMIT" >&2
+    echo "verify-sprint:   current fork point ($META_BASE_BRANCH): $fork_point" >&2
+    echo "verify-sprint: this worktree was rebased after start; $META_SOURCE_FILE still records the pre-rebase base" >&2
+    echo "verify-sprint: refresh base_commit to $fork_point before re-running the gate, or rebuild the worktree" >&2
+    exit 1
+  fi
+
+  echo "verify-sprint: contract worktree started from a source ahead of its base_branch" >&2
+  echo "verify-sprint: reason=stacked_source_start" >&2
+  echo "verify-sprint:   recorded base:                 $META_BASE_COMMIT" >&2
+  echo "verify-sprint:   current fork point ($META_BASE_BRANCH): $fork_point" >&2
+  echo "verify-sprint: no rebase happened; the recorded base is not reachable from $META_BASE_BRANCH" >&2
+  echo "verify-sprint: publication would carry the parent work into $META_BASE_BRANCH outside this contract's scope" >&2
+  echo "verify-sprint: land the parent work first, or restart this contract from $META_BASE_BRANCH" >&2
   exit 1
 }
 
