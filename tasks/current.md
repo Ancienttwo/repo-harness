@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-18T05:11:25+0800 -->
+<!-- updated_at: 2026-08-18T05:48:10+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-18T05:11:25+0800
-> **Source Branch**: codex/unify-ai-memory-layers
-> **Source Commit**: 440bc3c2
+> **Updated At**: 2026-08-18T05:48:10+0800
+> **Source Branch**: codex/worktree-metadata-authority
+> **Source Commit**: d0fbeb36
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -33,10 +33,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 - /Users/ancienttwo/Projects/repo-harness-wt-codegraph-mandatory-runtime: plans/plan-20260816-2010-codegraph-mandatory-runtime.md
 - /Users/ancienttwo/Projects/repo-harness-wt-codegraph-mandatory-runtime: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-codegraph-mandatory-runtime
-- /Users/ancienttwo/Projects/repo-harness-wt-setup-plugins-shift-overrun: plans/plan-20260818-0444-setup-plugins-shift-overrun.md
-- /Users/ancienttwo/Projects/repo-harness-wt-setup-plugins-shift-overrun: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-setup-plugins-shift-overrun
-- /Users/ancienttwo/Projects/repo-harness-wt-worktree-metadata-authority: plans/plan-20260818-0509-worktree-metadata-authority.md
-- /Users/ancienttwo/Projects/repo-harness-wt-worktree-metadata-authority: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-worktree-metadata-authority
+- /Users/ancienttwo/Projects/repo-harness-wt-worktree-backlog-notice: plans/plan-20260818-0526-worktree-backlog-notice.md
+- /Users/ancienttwo/Projects/repo-harness-wt-worktree-backlog-notice: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-worktree-backlog-notice
 ## Active Sprint
 
 - Sprint: (none)
@@ -63,16 +61,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260818-0302-unify-ai-memory-layers.md
- D tasks/contracts/20260818-0302-unify-ai-memory-layers.contract.md
- D tasks/notes/20260818-0302-unify-ai-memory-layers.notes.md
- D tasks/reviews/20260818-0302-unify-ai-memory-layers.review.md
+ D plans/plan-20260818-0509-worktree-metadata-authority.md
+ D tasks/contracts/20260818-0509-worktree-metadata-authority.contract.md
+ D tasks/notes/20260818-0509-worktree-metadata-authority.notes.md
+ D tasks/reviews/20260818-0509-worktree-metadata-authority.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260818-0302-unify-ai-memory-layers.md
-?? tasks/archive/contract-20260818-0511-unify-ai-memory-layers.md
-?? tasks/archive/notes-20260818-0511-unify-ai-memory-layers.md
-?? tasks/archive/review-20260818-0511-unify-ai-memory-layers.md
-?? tasks/archive/todo-20260818-0511-unify-ai-memory-layers.md
+?? plans/archive/plan-20260818-0509-worktree-metadata-authority.md
+?? tasks/archive/contract-20260818-0548-worktree-metadata-authority.md
+?? tasks/archive/notes-20260818-0548-worktree-metadata-authority.md
+?? tasks/archive/review-20260818-0548-worktree-metadata-authority.md
+?? tasks/archive/todo-20260818-0548-worktree-metadata-authority.md
 ```
 
 ## Source Artifacts
