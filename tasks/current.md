@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-16T22:46:23+0800 -->
+<!-- updated_at: 2026-08-17T23:43:47+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-16T22:46:23+0800
-> **Source Branch**: codex/debug-ground-truth-eval-v1
-> **Source Commit**: 847d7de7
+> **Status**: Active
+> **Updated At**: 2026-08-17T23:43:47+0800
+> **Source Branch**: main
+> **Source Commit**: b9092491
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive-workflow
+> **Reason**: manual
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
+- Status: Active
 - Active Plan: (none)
 - Plan Status: (none)
 - Next Task: inspect active worktree marker(s)
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -33,6 +33,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 - /Users/ancienttwo/Projects/repo-harness-wt-codegraph-mandatory-runtime: plans/plan-20260816-2010-codegraph-mandatory-runtime.md
 - /Users/ancienttwo/Projects/repo-harness-wt-codegraph-mandatory-runtime: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-codegraph-mandatory-runtime
+- /Users/ancienttwo/Projects/repo-harness-wt-scaffold-discard-empty-array: plans/plan-20260817-2327-scaffold-discard-empty-array.md
+- /Users/ancienttwo/Projects/repo-harness-wt-scaffold-discard-empty-array: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-scaffold-discard-empty-array
 ## Active Sprint
 
 - Sprint: (none)
@@ -56,19 +58,15 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: 6 changed/untracked path(s)
 
 ```
- D plans/plan-20260816-1753-debug-ground-truth-eval-v1.md
- D tasks/contracts/20260816-1753-debug-ground-truth-eval-v1.contract.md
- D tasks/notes/20260816-1753-debug-ground-truth-eval-v1.notes.md
- D tasks/reviews/20260816-1753-debug-ground-truth-eval-v1.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260816-1753-debug-ground-truth-eval-v1.md
-?? tasks/archive/contract-20260816-2246-debug-ground-truth-eval-v1.md
-?? tasks/archive/notes-20260816-2246-debug-ground-truth-eval-v1.md
-?? tasks/archive/review-20260816-2246-debug-ground-truth-eval-v1.md
-?? tasks/archive/todo-20260816-2246-debug-ground-truth-eval-v1.md
+ M docs/architecture/.projection-manifest.json
+ M docs/architecture/modules/runtime-harness/global-runtime-reconciliation.md
+ M docs/architecture/modules/runtime-harness/hook-adapters.md
+ M docs/architecture/modules/verification/evals-checks.md
+ M docs/architecture/modules/workflow-engine/contract-assets.md
+ M plans/plan-20260817-2101-minimal-change-v2-enforce.md
 ```
 
 ## Source Artifacts
