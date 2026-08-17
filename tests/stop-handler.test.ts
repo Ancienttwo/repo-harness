@@ -610,6 +610,67 @@ describe('runStopHandler', () => {
     expect(result.stderr).toContain('[MinimalChange] Enforced review');
   });
 
+  test('a lite profile does not swallow the enforce gate', () => {
+    // The lite risk floor is reachable with exactly the change shapes that
+    // produce a `review` verdict: a single dependency-manifest edit is one
+    // implementation path (src/effects/review/diff-fingerprint.ts:399-401),
+    // one capability, and carries no strict path token
+    // (src/core/workflow/profile.ts:104-113), so the deterministic floor stays
+    // lite (profile.ts:256-273) while the report carries a dependency finding
+    // (src/cli/hook/minimal-change-signals.ts:398-408,589). The enforce gate
+    // must therefore run before Stop's lite early return, not after it.
+    const cwd = fixture();
+    seedMinimalChangeEnforce(cwd);
+
+    const result = runStopHandler({
+      collector: collector(cwd, () => canonicalState({ profile: 'lite' })),
+      input: JSON.stringify({ turn_id: 'lite-enforce-block' }),
+      env: { HOOK_RUN_ID: 'stop-minimal-lite-enforce-block' },
+    });
+
+    expect(JSON.parse(result.stdout).decision).toBe('block');
+    expect(result.stdout).toContain('[MinimalChange] Enforce gate blocked Stop');
+    expect(result.stdout).toContain(ENFORCE_FINGERPRINT);
+  });
+
+  test('a lite profile with nothing to audit keeps its zero-ceremony silence', () => {
+    const cwd = fixture();
+    // Enforce mode is ON; only the report is absent. Without this policy the
+    // test would pass on a disabled gate and prove nothing about the hoist --
+    // what it must pin is that the gate itself stays lazy when there is no
+    // `review` verdict to act on.
+    writeFileSync(join(cwd, '.ai/harness/policy.json'), `${JSON.stringify({
+      minimal_change: { mode: 'enforce', stop_review: true },
+    })}\n`);
+
+    const result = runStopHandler({
+      collector: collector(cwd, () => canonicalState({ profile: 'lite' })),
+      input: JSON.stringify({ turn_id: 'lite-enforce-quiet' }),
+      env: { HOOK_RUN_ID: 'stop-minimal-lite-enforce-quiet' },
+    });
+
+    expect(result.stdout).toBe('');
+    expect(result.stderr).not.toContain('[MinimalChange]');
+  });
+
+  test('a lite profile still gets the advice-mode review hint', () => {
+    // Intended consequence of the hoist, not collateral: advice mode means
+    // "surface the hint on every profile", and lite's previous silence was
+    // the other face of the same swallow this slice closes. Advice still
+    // never blocks.
+    const cwd = fixture();
+    seedMinimalChange(cwd);
+
+    const result = runStopHandler({
+      collector: collector(cwd, () => canonicalState({ profile: 'lite' })),
+      input: JSON.stringify({ turn_id: 'lite-advice-hint' }),
+      env: { HOOK_RUN_ID: 'stop-minimal-lite-advice-hint' },
+    });
+
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('[MinimalChange] Non-blocking review');
+  });
+
   test('advice mode keeps the same review non-blocking end to end', () => {
     const cwd = fixture();
     seedMinimalChangeEnforce(cwd);

@@ -220,8 +220,8 @@
         "minimal_change_review_appended": false,
         "ordering": [
           "refresh_handoff",
-          "lite_early_exit",
           "minimal_change_review",
+          "lite_early_exit",
           "review_freshness_warning",
           "plan_completeness_gate"
         ],
@@ -267,8 +267,8 @@
         "minimal_change_review_appended": false,
         "ordering": [
           "refresh_handoff",
-          "lite_early_exit",
           "minimal_change_review",
+          "lite_early_exit",
           "review_freshness_warning",
           "plan_completeness_gate"
         ],
@@ -316,8 +316,8 @@
         "minimal_change_review_appended": false,
         "ordering": [
           "refresh_handoff",
-          "lite_early_exit",
           "minimal_change_review",
+          "lite_early_exit",
           "review_freshness_warning",
           "plan_completeness_gate"
         ],
