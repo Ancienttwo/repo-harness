@@ -46,9 +46,9 @@
 > **Actor**: not-applicable
 > **Reviewed Subject SHA256**: sha256:769698fe07b00c98833cc33d0c29454c2c7c0c2ce114394621462968b60ef3e6
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: e4681cefe2b32b588ba8a86371815b6ab30c4887
-> **Verification Evidence SHA256**: sha256:b5303ca646463f5e351befc27a9ec56cb6dd6ae70407ed921e8f72bb6186a810
-> **Issued At**: 2026-08-17T21:02:26.708Z
+> **Reviewed Target Revision**: 9ccd6fb188d78e63381dbdbc385ef7f974618331
+> **Verification Evidence SHA256**: sha256:c141796f0388f683a5921d3458327f55b0d42210f8bec78796b940706afd7d01
+> **Issued At**: 2026-08-17T21:02:57.919Z
 
 - Summary: Stop-time advisory over the git-derived changed set; shell-parser shape explicitly rejected. 7/7 contract criteria pass, full suite 2480 pass / 0 fail, typecheck clean.
 - Findings: none
