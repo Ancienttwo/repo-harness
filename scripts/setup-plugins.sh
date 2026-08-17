@@ -18,11 +18,11 @@ while [[ $# -gt 0 ]]; do
       else
         echo "[setup-plugins] retired hook profile ignored: ${profile:-<missing>}" >&2
       fi
-      shift 2
+      shift $(( $# >= 2 ? 2 : 1 ))
       ;;
     --lsp|--project-type)
       echo "[setup-plugins] retired option ignored: $1 ${2:-}" >&2
-      shift 2
+      shift $(( $# >= 2 ? 2 : 1 ))
       ;;
     *)
       args+=("$1")
