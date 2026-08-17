@@ -40,17 +40,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:e5f4323962d9fb6bb26fc4b3f62598c1726d30bfe48a29b92137968b0892559c
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 639b5fc7950c09a523d421556cfd24bb97b6d966
+> **Verification Evidence SHA256**: sha256:58f149fa4f73b1892643885f7b4e3e204192f15f4a31578e4455d468bf2cce9e
+> **Issued At**: 2026-08-17T21:46:34.517Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: One typed selector for worktree base metadata; reproduced bypass closed, eleven named fail-closed causes. 16/16 contract criteria pass, full suite 2498 pass / 0 fail.
 - Findings: none
 
 ## Behavior Diff Notes
