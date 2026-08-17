@@ -27,6 +27,23 @@ const METRICS: readonly HookEventTelemetryMetric[] = [
   'elapsed_ms',
 ];
 
+/**
+ * Metrics whose zero/one value is trustworthy without an explicit observer.
+ *
+ * `child_processes` counts *direct route-runtime children* -- a dispatch that
+ * spawns its route instead of running a typed handler in process. It is not a
+ * count of every fork under the handler: the Git and Bun plumbing inside
+ * session-context, mutation-observed and friends is handler business logic and
+ * is deliberately excluded (`scripts/hook-dispatch-diet-report.ts` states the
+ * same split in its report legend). `recordDirectChildProcess` therefore has no
+ * call site by design -- it is the sentinel that would go non-zero if a route
+ * ever regressed to the retired `run-hook.sh` shape, which is why
+ * `tests/hook-runtime.test.ts` ("typed handlers do not ... spawn a route
+ * child") and `tests/hook-runtime-characterization.test.ts` both pin it to 0.
+ * Wiring it into the internal spawn sites would not close a measurement gap; it
+ * would destroy the invariant those tests assert. See
+ * `docs/researches/20260721-hrd09-legacy-retirement-evidence.md`.
+ */
 const ALWAYS_COMPLETE: readonly HookEventTelemetryMetric[] = [
   'runtime_entries',
   'child_processes',
