@@ -106,6 +106,7 @@ allowed_paths:
   - tasks/contracts/20260817-2327-scaffold-discard-empty-array.contract.md
   - tasks/reviews/20260817-2327-scaffold-discard-empty-array.review.md
   - tasks/notes/20260817-2327-scaffold-discard-empty-array.notes.md
+  - tasks/notes/20260817-scaffold-discard-empty-array.pre-fix.log
   - .ai/context/capabilities.json
   - assets/templates/helpers/
   - scripts/
