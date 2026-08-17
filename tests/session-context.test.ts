@@ -1041,11 +1041,13 @@ describe("worktreeBacklogSessionSection — cleanable contract worktree notice",
 
       const content = section!.content;
       expect(content).toContain("# Cleanable Contract Worktrees");
+      expect(content).toContain("Cleanable now: 1 worktree(s) merged into `main` and clean.");
       expect(content).toContain("`absorbed-demo`");
       expect(content).toContain(path);
       expect(content).toContain("codex/absorbed-demo");
-      expect(content).toContain("Nothing was deleted.");
+      expect(content).toContain("This notice deleted nothing.");
       expect(content).toContain("repo-harness run ship-worktrees --cleanup-merged --dry-run");
+      expect(content).not.toContain("Blocking the batch");
     });
   }, 30_000);
 
@@ -1081,7 +1083,71 @@ describe("worktreeBacklogSessionSection — cleanable contract worktree notice",
       expect(content).not.toBeNull();
       expect(content!).toContain("codex/merged-demo");
       expect(content!).not.toContain("kept-demo");
-      expect(content!).toContain("1 contract worktree(s) already merged into `main`");
+      expect(content!).toContain("Cleanable now: 1 worktree(s) merged into `main` and clean.");
+    });
+  }, 30_000);
+
+  test("FALSIFIER: a merged-but-dirty worktree is named as the batch blocker, never offered as cleanable", () => {
+    withWorktreeFixture("wt-backlog-dirty-merged", (fixture) => {
+      // The discriminating fixture: absorbed into main exactly like the
+      // cleanable case, differing only in working-tree state. Merge state
+      // alone cannot separate these two, so this is what proves the
+      // cleanliness split is doing work.
+      const dirtyPath = addAbsorbedWorktree(fixture, "dirty-merged-demo");
+      writeFileSync(join(dirtyPath, "wip.txt"), "uncommitted\n");
+      addAbsorbedWorktree(fixture, "clean-merged-demo");
+
+      const modes = execFileSync(
+        "bash",
+        [
+          join(fixture.repoRoot, "scripts/worktree-merge-lib.sh"),
+          "--target",
+          "main",
+          "codex/dirty-merged-demo",
+        ],
+        { cwd: fixture.repoRoot, encoding: "utf-8" },
+      );
+      expect(modes).toBe("codex/dirty-merged-demo\tabsorbed\n");
+
+      const content = worktreeBacklogSessionContent(fixture.repoRoot);
+      expect(content).not.toBeNull();
+
+      const blockedBlock = content!.slice(
+        content!.indexOf("- Blocking the batch:"),
+        content!.indexOf("- Cleanable now:"),
+      );
+      const cleanableBlock = content!.slice(content!.indexOf("- Cleanable now:"));
+
+      // Visible, because one dirty merged worktree aborts the whole
+      // --cleanup-merged run and every worktree after it stays behind.
+      expect(blockedBlock).toContain("codex/dirty-merged-demo");
+      expect(blockedBlock).toContain("`--dry-run` included");
+      expect(blockedBlock).toContain("--discard-scaffold-only");
+      expect(blockedBlock).not.toContain("codex/clean-merged-demo");
+
+      // ...but never in the list the operator is invited to act on.
+      expect(cleanableBlock).toContain("Cleanable now: 1 worktree(s) merged into `main` and clean.");
+      expect(cleanableBlock).toContain("codex/clean-merged-demo");
+      expect(cleanableBlock).not.toContain("codex/dirty-merged-demo");
+    });
+  }, 30_000);
+
+  test("a merged worktree whose directory is gone is withheld from both lists", () => {
+    withWorktreeFixture("wt-backlog-prunable", (fixture) => {
+      const prunablePath = addAbsorbedWorktree(fixture, "prunable-demo");
+      addAbsorbedWorktree(fixture, "present-demo");
+      // Registration survives, directory does not. `contract-worktree cleanup`
+      // fails on an unhandled `cd` into this path and
+      // `ship-worktrees --cleanup-merged --slug` exits with "linked worktree
+      // status unavailable after repair attempt", so the section must not
+      // offer it at all.
+      rmSync(prunablePath, { recursive: true, force: true });
+
+      const content = worktreeBacklogSessionContent(fixture.repoRoot);
+      expect(content).not.toBeNull();
+      expect(content!).not.toContain("prunable-demo");
+      expect(content!).toContain("Cleanable now: 1 worktree(s) merged into `main` and clean.");
+      expect(content!).toContain("codex/present-demo");
     });
   }, 30_000);
 
@@ -1093,7 +1159,7 @@ describe("worktreeBacklogSessionSection — cleanable contract worktree notice",
 
       const content = worktreeBacklogSessionContent(fixture.repoRoot);
       expect(content).not.toBeNull();
-      expect(content!).toContain("24 contract worktree(s) already merged into `main`");
+      expect(content!).toContain("Cleanable now: 24 worktree(s) merged into `main` and clean.");
       expect(content!).toContain("Scan capped at 24; 1 further worktree(s) were not checked.");
       expect(content!).toContain("repo-harness run ship-worktrees --cleanup-merged --dry-run");
       expect(content!.split("\n").filter((line) => line.includes("(branch `codex/capped-"))).toHaveLength(24);
