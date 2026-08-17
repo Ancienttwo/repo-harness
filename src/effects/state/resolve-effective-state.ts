@@ -750,6 +750,19 @@ function resolveEffectiveStateUnlocked(
 
 
 /**
+ * Thrown when the stability contract exhausts its bounded re-reads because an
+ * authority source kept changing across them. Sustained concurrent authority
+ * churn, not an unresolvable workflow profile, so callers classify this by type
+ * and may retry.
+ */
+export class StateResolutionUnstableError extends Error {
+  constructor() {
+    super('workflow authority changed repeatedly while resolving effective state');
+    this.name = 'StateResolutionUnstableError';
+  }
+}
+
+/**
  * Run one stable-resolve + version-commit attempt. The version lock's
  * `confirmSnapshot` seam re-collects source hashes immediately before the
  * candidate version is computed and compares them against this attempt's own
@@ -802,7 +815,7 @@ export function resolveEffectiveState(
       return resolveAndCommitEffectiveState(cwd, nowMs, risk, publicationEffects);
     } catch (error) {
       if (error instanceof StateVersionConfirmMismatchError) {
-        throw new Error('workflow authority changed repeatedly while resolving effective state');
+        throw new StateResolutionUnstableError();
       }
       throw error;
     }
@@ -832,7 +845,7 @@ function resolveStableEffectiveState(
     }
     state = confirmed;
   }
-  throw new Error('workflow authority changed repeatedly while resolving effective state');
+  throw new StateResolutionUnstableError();
 }
 
 export function buildStateSnapshotFromEffectiveState(

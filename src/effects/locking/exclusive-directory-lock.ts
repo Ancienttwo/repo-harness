@@ -19,6 +19,25 @@ const LOCK_STALE_MS = 30_000;
 const LOCK_WAIT_MS = 5_000;
 const MAX_LOCK_WAIT_MS = 2_147_483_647;
 
+/**
+ * Thrown when the lock cannot be held because another holder is contending for
+ * it: the acquire wait deadline expired, or this process' token stopped being
+ * the single published owner. Both kinds are ordinary concurrent-write
+ * contention rather than an unrecoverable lock state, so callers classify this
+ * by type and may retry.
+ */
+export class ExclusiveLockContentionError extends Error {
+  readonly lockPath: string;
+  readonly kind: 'timeout' | 'lost-ownership';
+
+  constructor(message: string, lockPath: string, kind: 'timeout' | 'lost-ownership') {
+    super(message);
+    this.name = 'ExclusiveLockContentionError';
+    this.lockPath = lockPath;
+    this.kind = kind;
+  }
+}
+
 interface FileIdentity {
   readonly dev: number;
   readonly ino: number;
@@ -316,9 +335,11 @@ export function acquireExclusiveDirectoryLock(
       }
       if (options.reclaimStaleOwner !== false) reclaimStaleLockDirectory(location);
       if (Date.now() >= deadline) {
-        throw new Error(
+        throw new ExclusiveLockContentionError(
           `timed out waiting for exclusive lock ${location.lockPath}; `
           + 'verify the owner is not live before manual cleanup',
+          location.lockPath,
+          'timeout',
         );
       }
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
@@ -354,7 +375,13 @@ export function acquireExclusiveDirectoryLock(
         closeSync(fd);
         fd = null;
         removeOwnedLock(location, ownerPath, directoryIdentity, ownerIdentity);
-        if (Date.now() >= deadline) throw new Error(`lost exclusive lock ownership: ${location.lockPath}`);
+        if (Date.now() >= deadline) {
+          throw new ExclusiveLockContentionError(
+            `lost exclusive lock ownership: ${location.lockPath}`,
+            location.lockPath,
+            'lost-ownership',
+          );
+        }
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
         continue;
       }
@@ -382,7 +409,11 @@ export function acquireExclusiveDirectoryLock(
         handle.directoryIdentity,
         handle.ownerIdentity,
       )) {
-        throw new Error(`lost exclusive lock ownership: ${location.lockPath}`);
+        throw new ExclusiveLockContentionError(
+          `lost exclusive lock ownership: ${location.lockPath}`,
+          location.lockPath,
+          'lost-ownership',
+        );
       }
     },
     release() {

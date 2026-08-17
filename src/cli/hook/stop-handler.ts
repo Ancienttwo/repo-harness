@@ -778,30 +778,6 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
       stderr: stderr.join(''),
     };
   }
-  // The minimal_change enforce gate runs BEFORE the lite early return because
-  // it is orthogonal to ceremony: its `review` verdict is a property of the
-  // change (a new dependency or a new abstraction), not of the workflow
-  // profile, and lite is precisely where such a change hides. The deterministic
-  // risk floor stays lite for a single-manifest or single-source edit with one
-  // capability and no strict path token (src/core/workflow/profile.ts:256-273),
-  // while the Stop report itself is the per-path artifact the PostEdit observer
-  // last wrote (src/cli/hook/minimal-change-cli.ts:56-85) -- the two file sets
-  // are independent, so a `review` verdict under a lite profile is reachable
-  // and was previously swallowed here. The gate carries its own lazy
-  // conditions (non-enforce mode, non-`review` verdict, missing report or
-  // fingerprint all return null), so a lite session with nothing to audit
-  // keeps its zero-ceremony silence.
-  const minimalPolicy = loadMinimalChangePolicy(repoRoot);
-  const minimal = minimalChangeReview(repoRoot, minimalPolicy);
-  if (minimal.summary) stderr.push(`${minimal.summary}\n`);
-  const profile = state?.workflow_profile === 'lite'
-    || state?.workflow_profile === 'standard'
-    || state?.workflow_profile === 'strict'
-    ? state.workflow_profile
-    : 'strict';
-  const minimalGate = minimalChangeEnforceBlock(repoRoot, minimalPolicy, minimal, profile, stderr);
-  if (minimalGate) return { ...minimalGate, stderr: stderr.join('') };
-
   if (state?.workflow_profile === 'lite') {
     return { exitCode: 0, stdout: '', stderr: stderr.join('') };
   }
@@ -809,6 +785,9 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
     stderr.push(`[ReadinessGate] readyToShip=false (missing: ${readiness.readyToShip.reasons.join(',') || 'unspecified'}); Stop is not blocked -- resolve before shipping.\n`);
   }
 
+  const minimalPolicy = loadMinimalChangePolicy(repoRoot);
+  const minimal = minimalChangeReview(repoRoot, minimalPolicy);
+  if (minimal.summary) stderr.push(`${minimal.summary}\n`);
   if (state?.review.path && ['stale', 'missing', 'unavailable'].includes(state.review.freshness)) {
     stderr.push(`[ReviewFreshness] ${state.review.detail || 'Review is stale for current review subject'}\n`);
   }
@@ -822,6 +801,12 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
     now,
   );
   if (planGate) return { ...planGate, stderr: stderr.join('') };
+
+  const profile = state?.workflow_profile === 'standard' || state?.workflow_profile === 'strict'
+    ? state.workflow_profile
+    : 'strict';
+  const minimalGate = minimalChangeEnforceBlock(repoRoot, minimalPolicy, minimal, profile, stderr);
+  if (minimalGate) return { ...minimalGate, stderr: stderr.join('') };
 
   return { exitCode: 0, stdout: '', stderr: stderr.join('') };
 }

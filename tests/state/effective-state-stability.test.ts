@@ -25,8 +25,8 @@ import type { EffectiveState } from '../../src/core/state/types';
 // source_hashes map -- including non-authority, high-churn surfaces such as
 // checks/latest.json, tasks/current.md, handoff/resume, and the
 // review_subject working-tree diff fingerprint -- between re-reads, and
-// throws "workflow authority changed repeatedly while resolving effective
-// state" whenever any one of them differs. The hook wrapper
+// throws `StateResolutionUnstableError` whenever any one of them differs. The
+// hook wrapper
 // (src/cli/hook/runtime.ts) collapses that throw into `null`, which
 // mutation-guard.ts cannot distinguish from a genuine blocker, so it fails
 // closed with the generic "Deterministic workflow profile resolution

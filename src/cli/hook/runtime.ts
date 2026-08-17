@@ -12,7 +12,11 @@ import {
 import { writeAllSync } from '../runtime/write-all-sync';
 import { createStateInputCollector } from '../../effects/loop/state-input-collector';
 import { createHookEventTelemetry } from './event-telemetry';
-import { resolveEffectiveState } from '../../effects/state/resolve-effective-state';
+import {
+  resolveEffectiveState,
+  StateResolutionUnstableError,
+} from '../../effects/state/resolve-effective-state';
+import { ExclusiveLockContentionError } from '../../effects/locking/exclusive-directory-lock';
 import type { EffectiveState, EffectiveStateRiskInput } from '../../core/state/types';
 import type { WorkflowProfile } from '../../core/workflow/profile';
 import { createHookEffectTracker, hookEffectFailureMetadata, type HookHandlerResult } from './handler-contract';
@@ -281,24 +285,23 @@ export function resolveSessionEffectiveState(
 }
 
 const EFFECTIVE_STATE_RESOLUTION_MAX_ATTEMPTS = 3;
-const STABILITY_UNSTABLE_MESSAGE = 'workflow authority changed repeatedly while resolving effective state';
-const LOCK_TIMEOUT_MESSAGE_PREFIX = 'timed out waiting for exclusive lock ';
 
 /**
- * The two known transient-instability throw signatures resolveEffectiveState
- * can raise: the stability contract's re-read exhaustion (partitioned to
- * authority sources only in resolve-effective-state.ts, but still reachable
- * under sustained AUTHORITY churn) and the exclusive state-lock timeout
- * (src/effects/locking/exclusive-directory-lock.ts). Both are concurrent-
- * write contention, not a genuinely unresolvable workflow profile -- the
- * bounded retry below gives ordinary contention a chance to clear. Each
- * adapter owns the final mapping: PreEdit preserves its existing null versus
- * re-throw partition, while SessionStart emits bounded unavailable evidence.
+ * The transient-instability throw signatures resolveEffectiveState can raise:
+ * the stability contract's re-read exhaustion (partitioned to authority
+ * sources only in resolve-effective-state.ts, but still reachable under
+ * sustained AUTHORITY churn) and exclusive state-lock contention -- acquire
+ * timeout or lost ownership (src/effects/locking/exclusive-directory-lock.ts).
+ * All are concurrent-write contention, not a genuinely unresolvable workflow
+ * profile -- the bounded retry below gives ordinary contention a chance to
+ * clear. Each throw site owns its error type, so this classifier never
+ * inspects message text. Each adapter owns the final mapping: PreEdit
+ * preserves its existing null versus re-throw partition, while SessionStart
+ * emits bounded unavailable evidence.
  */
 function isTransientResolutionInstability(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  return error.message === STABILITY_UNSTABLE_MESSAGE
-    || error.message.startsWith(LOCK_TIMEOUT_MESSAGE_PREFIX);
+  return error instanceof StateResolutionUnstableError
+    || error instanceof ExclusiveLockContentionError;
 }
 
 function resolveEffectiveStateWithTransientRetry(

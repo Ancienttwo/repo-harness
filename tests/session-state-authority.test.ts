@@ -15,14 +15,22 @@ import {
   projectUnavailableStateSessionSection,
   resolveSessionEffectiveState,
 } from '../src/cli/hook/runtime';
+import { ExclusiveLockContentionError } from '../src/effects/locking/exclusive-directory-lock';
 
-const STABILITY_ERROR = 'workflow authority changed repeatedly while resolving effective state';
-const LOCK_ERROR = 'timed out waiting for exclusive lock /private/fixture/state.lock';
+
 type StateResolver = (
   repoRoot: string,
   nowMs: number,
   risk?: EffectiveStateRiskInput,
 ) => EffectiveState;
+
+function lockContention(): ExclusiveLockContentionError {
+  return new ExclusiveLockContentionError(
+    'timed out waiting for exclusive lock /private/fixture/state.lock',
+    '/private/fixture/state.lock',
+    'timeout',
+  );
+}
 
 function fixtureState(overrides: Partial<EffectiveState> = {}): EffectiveState {
   return {
@@ -167,12 +175,15 @@ function runMockedFailure(kind: 'transient' | 'non-transient'): {
     const worker = `
       import { mock } from 'bun:test';
       let attempts = 0;
+      const resolverModule = await import(process.env.RESOLVER_MODULE);
       mock.module(process.env.RESOLVER_MODULE, () => ({
+        ...resolverModule,
         resolveEffectiveState() {
           attempts += 1;
-          throw new Error(process.env.FAILURE_KIND === 'transient'
-            ? '${STABILITY_ERROR}'
-            : 'injected state failure /private/secret/worktree');
+          if (process.env.FAILURE_KIND === 'transient') {
+            throw new resolverModule.StateResolutionUnstableError();
+          }
+          throw new Error('injected state failure /private/secret/worktree');
         },
       }));
       const { runHook } = await import(process.env.RUNTIME_MODULE + '?isolated-failure=' + process.env.FAILURE_KIND);
@@ -234,12 +245,15 @@ function runMockedPreEdit(kind: 'transient' | 'non-transient'): {
     const worker = `
       import { mock } from 'bun:test';
       let attempts = 0;
+      const resolverModule = await import(process.env.RESOLVER_MODULE);
       mock.module(process.env.RESOLVER_MODULE, () => ({
+        ...resolverModule,
         resolveEffectiveState() {
           attempts += 1;
-          throw new Error(process.env.FAILURE_KIND === 'transient'
-            ? '${STABILITY_ERROR}'
-            : 'injected non-transient pre-edit failure');
+          if (process.env.FAILURE_KIND === 'transient') {
+            throw new resolverModule.StateResolutionUnstableError();
+          }
+          throw new Error('injected non-transient pre-edit failure');
         },
       }));
       const { runHook } = await import(process.env.RUNTIME_MODULE + '?isolated-preedit=' + process.env.FAILURE_KIND);
@@ -321,7 +335,7 @@ describe('SessionStart Effective State authority', () => {
     const calls: Array<{ root: string; nowMs: number; risk: unknown }> = [];
     const resolveAttempt = ((root: string, nowMs: number, risk: unknown) => {
       calls.push({ root, nowMs, risk });
-      if (calls.length === 1) throw new Error(LOCK_ERROR);
+      if (calls.length === 1) throw lockContention();
       return fixtureState();
     }) as StateResolver;
     const outcome = resolveSessionEffectiveState('/repo-b', 123456, resolveAttempt);
@@ -336,7 +350,7 @@ describe('SessionStart Effective State authority', () => {
     let attempts = 0;
     const outcome = resolveSessionEffectiveState('/private/repo-b', 123, (() => {
       attempts += 1;
-      throw new Error(LOCK_ERROR);
+      throw lockContention();
     }) as StateResolver);
     expect(attempts).toBe(3);
     expect(outcome.kind).toBe('unavailable');

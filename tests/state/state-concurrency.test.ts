@@ -5,7 +5,10 @@ import { spawn, spawnSync } from 'child_process';
 import { commitFixture, resolveFixtureState, createEffectiveStateFixture, writeFixture, writeFixtureStateLock, PLAN } from './effective-state-fixture';
 import { ROOT } from './effective-state-fixture';
 import { stateVersionOwnerPath } from '../../src/effects/state/git-state-version-store';
-import { resolveEffectiveState } from '../../src/effects/state/resolve-effective-state';
+import {
+  resolveEffectiveState,
+  StateResolutionUnstableError,
+} from '../../src/effects/state/resolve-effective-state';
 import { EFFECTIVE_STATE_CACHE, type StateCacheWriteEffects } from '../../src/effects/state/state-cache';
 import { withStateLock } from '../../src/effects/state/state-lock';
 import { sourceHash } from '../../src/effects/state/collect-state-inputs';
@@ -447,7 +450,7 @@ describe('Effective State lock and source-stability characterization', () => {
       const cachePath = join(fixture.cwd, '.ai/harness/state/effective.json');
       const afterCount = Number.parseInt(readFileSync(counterPath, 'utf-8'), 10);
       expect(afterCount).toBeGreaterThan(beforeCount);
-      expect(failure?.message).toBe('workflow authority changed repeatedly while resolving effective state');
+      expect(failure).toBeInstanceOf(StateResolutionUnstableError);
       expect(existsSync(cachePath)).toBe(false);
       expect(existsSync(stateVersionOwnerPath(fixture.cwd))).toBe(false);
     } finally {
@@ -594,7 +597,7 @@ describe('Effective State lock and source-stability characterization', () => {
 
       const afterCount = Number.parseInt(readFileSync(counterPath, 'utf-8'), 10);
       expect(afterCount).toBeGreaterThan(beforeCount);
-      expect(failure?.message).toBe('workflow authority changed repeatedly while resolving effective state');
+      expect(failure).toBeInstanceOf(StateResolutionUnstableError);
       expect(cacheWriteTempCount).toBe(0);
       expect(existsSync(stateVersionOwnerPath(fixture.cwd))).toBe(false);
       expect(existsSync(join(fixture.cwd, EFFECTIVE_STATE_CACHE))).toBe(false);
