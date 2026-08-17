@@ -40,17 +40,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:769698fe07b00c98833cc33d0c29454c2c7c0c2ce114394621462968b60ef3e6
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: e4681cefe2b32b588ba8a86371815b6ab30c4887
+> **Verification Evidence SHA256**: sha256:b5303ca646463f5e351befc27a9ec56cb6dd6ae70407ed921e8f72bb6186a810
+> **Issued At**: 2026-08-17T21:02:26.708Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: Stop-time advisory over the git-derived changed set; shell-parser shape explicitly rejected. 7/7 contract criteria pass, full suite 2480 pass / 0 fail, typecheck clean.
 - Findings: none
 
 ## Behavior Diff Notes
