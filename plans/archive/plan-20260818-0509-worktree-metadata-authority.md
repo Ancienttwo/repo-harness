@@ -1,6 +1,6 @@
 # Plan: Single typed selector and classified fail-closed boundaries for contract-worktree base metadata
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260818-0509
 > **Slug**: worktree-metadata-authority
 > **Planning Source**: codex-plan-or-waza-think

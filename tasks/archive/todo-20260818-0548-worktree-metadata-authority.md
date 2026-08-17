@@ -1,7 +1,13 @@
+> **Archived**: 2026-08-18 05:48
+> **Related Plan**: plans/archive/plan-20260818-0509-worktree-metadata-authority.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260818-0548
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-08-18 05:09
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

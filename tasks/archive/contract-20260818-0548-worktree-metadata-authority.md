@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-18 05:48
+> **Related Plan**: plans/archive/plan-20260818-0509-worktree-metadata-authority.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260818-0548
+
 # Task Contract: worktree-metadata-authority
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260818-0509-worktree-metadata-authority.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->

@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-18 05:48
+> **Related Plan**: plans/archive/plan-20260818-0509-worktree-metadata-authority.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260818-0548
+
 # Notes: worktree-metadata-authority
 
 > **Plan**: plans/plan-20260818-0509-worktree-metadata-authority.md
