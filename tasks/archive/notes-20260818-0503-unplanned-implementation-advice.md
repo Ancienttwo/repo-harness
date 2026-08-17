@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-18 05:03
+> **Related Plan**: plans/archive/plan-20260818-0450-unplanned-implementation-advice.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260818-0503
+
 # Notes: unplanned-implementation-advice
 
 > **Plan**: plans/plan-20260818-0450-unplanned-implementation-advice.md

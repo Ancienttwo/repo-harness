@@ -1,6 +1,6 @@
 # Plan: Stop-time advisory for implementation changes with no active plan
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260818-0450
 > **Slug**: unplanned-implementation-advice
 > **Planning Source**: codex-plan-or-waza-think
