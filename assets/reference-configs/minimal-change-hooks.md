@@ -2,8 +2,9 @@
 
 Minimal-change hooks keep large or risky edits visible without turning the hook
 runtime into an implementation policy engine. Repos that do not declare
-`minimal_change` policy stay off by default; enabled policy remains advisory and
-fail-open.
+`minimal_change` policy stay off by default, and `mode: "advice"` stays
+advisory and fail-open. A repo opts into blocking explicitly with
+`mode: "enforce"`, which arms one Stop gate and nothing else.
 
 ## Runtime Path
 
@@ -20,8 +21,9 @@ fail-open.
   deterministic report to `.ai/harness/checks/minimal-change.latest.json`.
 - `Stop.default` runs the in-process `src/cli/hook/stop-handler.ts`. Stop
   review reads the canonical latest report for diagnostics and block-reason
-  suffixes without rewriting the recovery handoff. It does not block the
-  session by itself.
+  suffixes without rewriting the recovery handoff. Under `mode: "advice"` it
+  does not block the session by itself; under `mode: "enforce"` it runs the
+  enforce gate described below.
 
 ## Policy
 
@@ -56,9 +58,42 @@ The policy lives at `.ai/harness/policy.json` under `minimal_change`:
 
 Missing or malformed policy disables the layer. `mode: "off"` also disables it.
 `mode: "advice"` enables advisory context and Stop review; the post-edit
-observer stays opt-in through `post_edit_observer: true`. `mode: "enforce"` is
-treated as advisory behavior in this layer, so minimal-change findings never
-become a host-level block.
+observer stays opt-in through `post_edit_observer: true`. `mode: "enforce"`
+keeps every advice-mode behavior and additionally arms the Stop enforce gate.
+An unknown mode fails closed to `off`. `mode` is the single source of truth:
+`enforce` is the only blocking mode, and there is no separate blocking knob.
+
+## Enforce Gate
+
+Under `mode: "enforce"`, Stop blocks when the latest report verdict is
+`review` and no matching audit receipt exists. The block reason lists the
+findings and restates the receipt contract, so it stays self-contained.
+
+The receipt lives at `.ai/harness/checks/minimal-change-audit.latest.json`:
+
+```json
+{
+  "version": 1,
+  "fingerprint": "<the audited report's fingerprint>",
+  "decisions": ["one non-empty decision per finding"],
+  "generated_at": "2026-08-17T21:30:00.000Z"
+}
+```
+
+`fingerprint` must equal the audited report's `fingerprint` exactly. A missing,
+malformed, or mismatched receipt releases nothing: the gate stays closed. Like
+the report, the receipt is runtime evidence under `.ai/harness/` and is never
+committed.
+
+The gate is bounded by the shared circuit breaker
+(`.ai/harness/state/circuit-breaker.json`, kind `minimal-change`), keyed per
+report fingerprint: at most two blocks for the same fingerprint, after which
+Stop is released with a warning instead of blocking. A new report fingerprint
+is real progress and resets the counter.
+
+Enforce is per-repo opt-in. The shipped defaults stay `mode: "advice"` with
+`post_edit_observer: false`, and setting `mode` back to `"advice"` restores
+advisory-only behavior with no other change.
 
 ## Report Contract
 

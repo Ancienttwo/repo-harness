@@ -700,7 +700,7 @@ function captureStop(profile: Profile): Record<string, unknown> {
       ordering: observedSourceOrder(STOP_HANDLER_SOURCE, [
         { name: 'refresh_handoff', marker: 'new StopProjectionBatch(' },
         { name: 'lite_early_exit', marker: "if (state?.workflow_profile === 'lite')" },
-        { name: 'minimal_change_review', marker: 'const minimal = minimalChangeReview(repoRoot);' },
+        { name: 'minimal_change_review', marker: 'const minimal = minimalChangeReview(repoRoot, minimalPolicy);' },
         { name: 'review_freshness_warning', marker: "if (state?.review.path && ['stale'" },
         { name: 'plan_completeness_gate', marker: 'const planGate = planCompletenessBlock(' },
       ]),

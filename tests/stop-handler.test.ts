@@ -86,6 +86,30 @@ function seedMinimalChange(cwd: string): void {
   })}\n`);
 }
 
+const ENFORCE_FINGERPRINT = 'sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0';
+
+/** minimal_change enforce fixture: a `review` verdict with a stable fingerprint. */
+function seedMinimalChangeEnforce(cwd: string, fingerprint = ENFORCE_FINGERPRINT): void {
+  mkdirSync(join(cwd, '.ai/harness/checks'), { recursive: true });
+  writeFileSync(join(cwd, '.ai/harness/checks/minimal-change.latest.json'), `${JSON.stringify({
+    version: 1,
+    verdict: 'review',
+    fingerprint,
+    report_path: '.ai/harness/checks/minimal-change.latest.json',
+    findings: [{ tag: 'dependency', path: 'package.json', question: 'Is the new dependency required?' }],
+  })}\n`);
+  writeFileSync(join(cwd, '.ai/harness/policy.json'), `${JSON.stringify({
+    minimal_change: { mode: 'enforce', stop_review: true, report_path: '.ai/harness/checks/minimal-change.latest.json' },
+  })}\n`);
+}
+
+function writeAuditReceipt(cwd: string, receipt: unknown): void {
+  writeFileSync(
+    join(cwd, '.ai/harness/checks/minimal-change-audit.latest.json'),
+    `${JSON.stringify(receipt)}\n`,
+  );
+}
+
 function seedDelegation(cwd: string, scope = 'turn-ordered'): string {
   const dir = join(cwd, '.ai/harness/delegation');
   mkdirSync(join(dir, 'turns'), { recursive: true });
@@ -563,6 +587,141 @@ describe('runStopHandler', () => {
 
     expect(result.stdout).toContain('[PlanCompletenessGate]');
     expect(result.stdout).toContain('[MinimalChange]');
+  });
+
+  test('enforce mode blocks a review verdict that carries no audit receipt', () => {
+    const cwd = fixture();
+    seedMinimalChangeEnforce(cwd);
+
+    const result = runStopHandler({
+      collector: collector(cwd, () => canonicalState()),
+      input: JSON.stringify({ turn_id: 'enforce-block' }),
+      env: { HOOK_RUN_ID: 'stop-minimal-enforce-block' },
+    });
+
+    expect(result.stdout).toContain('[MinimalChange] Enforce gate blocked Stop');
+    expect(JSON.parse(result.stdout).decision).toBe('block');
+    expect(result.stdout).toContain('.ai/harness/checks/minimal-change-audit.latest.json');
+    expect(result.stdout).toContain(ENFORCE_FINGERPRINT);
+    expect(result.stdout).toContain('[dependency] package.json');
+    // The reason is self-contained: it names the methodology without making
+    // the gate depend on that skill being installed.
+    expect(result.stdout).toContain('reclaim-code-entropy');
+    expect(result.stderr).toContain('[MinimalChange] Enforced review');
+  });
+
+  test('advice mode keeps the same review non-blocking end to end', () => {
+    const cwd = fixture();
+    seedMinimalChangeEnforce(cwd);
+    writeFileSync(join(cwd, '.ai/harness/policy.json'), `${JSON.stringify({
+      minimal_change: { mode: 'advice', stop_review: true, report_path: '.ai/harness/checks/minimal-change.latest.json' },
+    })}\n`);
+
+    const result = runStopHandler({
+      collector: collector(cwd, () => canonicalState()),
+      input: JSON.stringify({ turn_id: 'advice-release' }),
+      env: { HOOK_RUN_ID: 'stop-minimal-advice-release' },
+    });
+
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('[MinimalChange] Non-blocking review');
+    expect(existsSync(join(cwd, '.ai/harness/state/circuit-breaker.json'))).toBe(false);
+  });
+
+  test('a matching audit receipt releases Stop, and only a matching one does', () => {
+    const cwd = fixture();
+    seedMinimalChangeEnforce(cwd);
+    const valid = {
+      version: 1,
+      fingerprint: ENFORCE_FINGERPRINT,
+      decisions: ['package.json dependency is required by the approved contract'],
+      generated_at: '2026-08-17T21:30:00.000Z',
+    };
+
+    writeAuditReceipt(cwd, valid);
+    const released = runStopHandler({
+      collector: collector(cwd, () => canonicalState()),
+      input: JSON.stringify({ turn_id: 'receipt-release' }),
+      env: { HOOK_RUN_ID: 'stop-minimal-receipt-release' },
+    });
+    expect(released.stdout).toBe('');
+    expect(released.stderr).toContain('[MinimalChange] Audit receipt accepted');
+    expect(existsSync(join(cwd, '.ai/harness/state/circuit-breaker.json'))).toBe(false);
+
+    // Every rejected receipt shape keeps the gate closed (fail closed).
+    const rejected: readonly unknown[] = [
+      { ...valid, fingerprint: `${ENFORCE_FINGERPRINT.slice(0, -1)}1` },
+      { ...valid, version: 2 },
+      { ...valid, decisions: [] },
+      { ...valid, decisions: ['  '] },
+      { ...valid, decisions: [{ decision: 'structured entries are not the receipt shape' }] },
+      { ...valid, generated_at: 'not-a-timestamp' },
+      { fingerprint: ENFORCE_FINGERPRINT, decisions: valid.decisions, generated_at: valid.generated_at },
+    ];
+    rejected.forEach((receipt, index) => {
+      rmSync(join(cwd, '.ai/harness/state'), { recursive: true, force: true });
+      writeAuditReceipt(cwd, receipt);
+      const blocked = runStopHandler({
+        collector: collector(cwd, () => canonicalState()),
+        input: JSON.stringify({ turn_id: `receipt-reject-${index}` }),
+        env: { HOOK_RUN_ID: `stop-minimal-receipt-reject-${index}` },
+      });
+      expect(blocked.stdout).toContain('[MinimalChange] Enforce gate blocked Stop');
+    });
+
+    // A malformed receipt file is not a release either.
+    rmSync(join(cwd, '.ai/harness/state'), { recursive: true, force: true });
+    writeFileSync(join(cwd, '.ai/harness/checks/minimal-change-audit.latest.json'), '{not-json');
+    const malformed = runStopHandler({
+      collector: collector(cwd, () => canonicalState()),
+      input: JSON.stringify({ turn_id: 'receipt-malformed' }),
+      env: { HOOK_RUN_ID: 'stop-minimal-receipt-malformed' },
+    });
+    expect(malformed.stdout).toContain('[MinimalChange] Enforce gate blocked Stop');
+  });
+
+  test('a review report without a fingerprint releases Stop instead of deadlocking it', () => {
+    const cwd = fixture();
+    seedMinimalChangeEnforce(cwd);
+    // Neither release path can act on a fingerprint-less report: no receipt can
+    // match it and the breaker cannot key on it, so the gate must stay out.
+    writeFileSync(join(cwd, '.ai/harness/checks/minimal-change.latest.json'), `${JSON.stringify({
+      version: 1,
+      verdict: 'review',
+      report_path: '.ai/harness/checks/minimal-change.latest.json',
+      findings: [{ tag: 'dependency', path: 'package.json', question: 'Is the new dependency required?' }],
+    })}\n`);
+
+    const result = runStopHandler({
+      collector: collector(cwd, () => canonicalState()),
+      input: JSON.stringify({ turn_id: 'missing-fingerprint' }),
+      env: { HOOK_RUN_ID: 'stop-minimal-missing-fingerprint' },
+    });
+
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('[MinimalChange] Enforce gate skipped');
+    expect(result.stderr).toContain('carries no fingerprint');
+    expect(existsSync(join(cwd, '.ai/harness/state/circuit-breaker.json'))).toBe(false);
+  });
+
+  test('the circuit breaker releases Stop after two blocks on the same fingerprint', () => {
+    const cwd = fixture();
+    seedMinimalChangeEnforce(cwd);
+    const run = (turn: string) => runStopHandler({
+      collector: collector(cwd, () => canonicalState()),
+      input: JSON.stringify({ turn_id: turn }),
+      env: { HOOK_RUN_ID: `stop-minimal-breaker-${turn}` },
+    });
+
+    expect(run('one').stdout).toContain('[MinimalChange] Enforce gate blocked Stop');
+    expect(run('two').stdout).toContain('[MinimalChange] Enforce gate blocked Stop');
+    const third = run('three');
+    expect(third.stdout).toBe('');
+    expect(third.stderr).toContain('[MinimalChange] Circuit breaker tripped after 2 enforce blocks');
+
+    // A different report fingerprint is real progress: the gate blocks again.
+    seedMinimalChangeEnforce(cwd, `${ENFORCE_FINGERPRINT.slice(0, -1)}a`);
+    expect(run('four').stdout).toContain('[MinimalChange] Enforce gate blocked Stop');
   });
 
   test('explicit delegation state never authorizes a Stop-time alternate runner', () => {

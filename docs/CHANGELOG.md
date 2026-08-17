@@ -2,6 +2,16 @@
 
 All notable changes to this skill are documented here.
 
+## [Unreleased]
+
+### Added
+
+- Adds `minimal_change` enforce mode: `mode: "enforce"` arms a Stop gate that
+  blocks a `review` verdict until a fingerprint-matching audit receipt at
+  `.ai/harness/checks/minimal-change-audit.latest.json` releases it, bounded by
+  the shared circuit breaker at two blocks per report fingerprint. Defaults stay
+  `advice` with the post-edit observer opt-in; enforce is per-repo opt-in.
+
 ## [0.15.2] - 2026-08-16
 
 ### Added

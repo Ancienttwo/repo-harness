@@ -54,12 +54,29 @@ describe('minimal-change policy', () => {
     expect(policy.session_context).toBe(false);
   });
 
-  test('normalizes v1 enforce to advice without blocking', () => {
+  test('enforce is accepted and is the only blocking mode', () => {
     const policy = normalizeMinimalChangePolicy({ mode: 'enforce' });
-    expect(policy.mode).toBe('advice');
+    expect(policy.mode).toBe('enforce');
     expect(policy.requestedMode).toBe('enforce');
+    expect(policy.blocking).toBe(true);
+    expect(policy.warnings).toEqual([]);
+    // enforce inherits the advice-mode field fallbacks; post_edit_observer
+    // stays the explicit per-repo opt-in it is in advice mode.
+    expect(policy.session_context).toBe(true);
+    expect(policy.prompt_advice).toBe(true);
+    expect(policy.stop_review).toBe(true);
+    expect(policy.post_edit_observer).toBe(false);
+
+    expect(normalizeMinimalChangePolicy({ mode: 'advice' }).blocking).toBe(false);
+    expect(normalizeMinimalChangePolicy({ mode: 'off' }).blocking).toBe(false);
+  });
+
+  test('unknown modes still fail closed to off without blocking', () => {
+    const policy = normalizeMinimalChangePolicy({ mode: 'ENFORCE' });
+    expect(policy.mode).toBe('off');
+    expect(policy.requestedMode).toBe('off');
     expect(policy.blocking).toBe(false);
-    expect(policy.warnings.join('\n')).toContain('enforce is not supported');
+    expect(policy.warnings.join('\n')).toContain('unknown minimal_change.mode=ENFORCE');
   });
 
   test('bounds numeric fields and keeps report path under .ai/harness', () => {
@@ -85,6 +102,13 @@ describe('minimal-change policy', () => {
       JSON.stringify({ minimal_change: { mode: 'advice' } }, null, 2),
     );
     expect(loadMinimalChangePolicy(repo).mode).toBe('advice');
+
+    writeFileSync(
+      join(repo, '.ai/harness/policy.json'),
+      JSON.stringify({ minimal_change: { mode: 'enforce' } }, null, 2),
+    );
+    expect(loadMinimalChangePolicy(repo).mode).toBe('enforce');
+    expect(loadMinimalChangePolicy(repo).blocking).toBe(true);
 
     writeFileSync(join(repo, '.ai/harness/policy.json'), '{not-json');
     expect(loadMinimalChangePolicy(repo).mode).toBe('off');

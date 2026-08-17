@@ -5,7 +5,7 @@ import type { WorkflowProfile } from '../../core/workflow/profile';
 import { withExclusiveDirectoryLock } from '../../effects/locking/exclusive-directory-lock';
 
 const CIRCUIT_KINDS = [
-  'guard', 'review', 'subagent', 'repair', 'cross-model-consult',
+  'guard', 'review', 'subagent', 'repair', 'cross-model-consult', 'minimal-change',
 ] as const;
 
 export type CircuitKind = typeof CIRCUIT_KINDS[number];
@@ -71,6 +71,9 @@ export function circuitLimit(attempt: CircuitAttempt): number {
     case 'review': return attempt.profile === 'strict' ? 2 : 1;
     case 'subagent': return attempt.profile === 'strict' && attempt.explicitHighRiskContract ? 3 : 2;
     case 'repair': return 2;
+    // Stop's minimal_change enforce gate: at most two blocks per report
+    // fingerprint before the gate releases with a warning.
+    case 'minimal-change': return 2;
     case 'cross-model-consult':
       return attempt.riskTriggeredConsult || attempt.userRequestedConsult ? 1 : 0;
   }

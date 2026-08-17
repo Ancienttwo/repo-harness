@@ -471,7 +471,7 @@
   },
   "minimal_change": {
     "version": 1,
-    "mode": "advice",
+    "mode": "enforce",
     "session_context": true,
     "prompt_advice": true,
     "post_edit_observer": true,

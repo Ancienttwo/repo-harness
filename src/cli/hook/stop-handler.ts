@@ -34,6 +34,13 @@ import {
 import { drainArchitectureProjectionJobs, type ArchitectureProjectionDrainResultV1 } from '../../effects/architecture/projection-orchestrator';
 import { loadArchitectureProjectionPolicy } from '../../effects/architecture/archctx-provider';
 import { runMinimalChangeCli } from './minimal-change-cli';
+import {
+  MINIMAL_CHANGE_AUDIT_RECEIPT_PATH,
+  loadMinimalChangePolicy,
+  type MinimalChangePolicy,
+} from './minimal-change-policy';
+import { recordCircuitAttempt } from './circuit-breaker';
+import type { WorkflowProfile } from '../../core/workflow/profile';
 import { publishCheckpointFromLedger } from '../../effects/evidence/checkpoint-store';
 import {
   buildRecoveryContext,
@@ -90,6 +97,11 @@ interface StopPayload {
 interface MinimalChangeReview {
   readonly suffix: string;
   readonly summary: string;
+  /** Verdict of the latest report; '' when the review could not be read. */
+  readonly verdict: string;
+  readonly fingerprint: string;
+  readonly reportPath: string;
+  readonly findingLines: readonly string[];
 }
 
 interface ProjectionPaths {
@@ -444,16 +456,27 @@ function projection(repoRoot: string, activePlan: string | null, env: NodeJS.Pro
   };
 }
 
-function minimalChangeReview(repoRoot: string): MinimalChangeReview {
+const EMPTY_MINIMAL_CHANGE_REVIEW: MinimalChangeReview = {
+  suffix: '',
+  summary: '',
+  verdict: '',
+  fingerprint: '',
+  reportPath: '',
+  findingLines: [],
+};
+
+function minimalChangeReview(repoRoot: string, policy: MinimalChangePolicy): MinimalChangeReview {
   try {
     const result = runMinimalChangeCli(['review', '--phase', 'stop'], { cwd: repoRoot });
     const report = JSON.parse(result.stdout) as {
       verdict?: unknown;
       report_path?: unknown;
       findings?: unknown;
+      fingerprint?: unknown;
     };
     const findings = Array.isArray(report.findings) ? report.findings : [];
-    if (report.verdict === 'disabled' || findings.length === 0) return { suffix: '', summary: '' };
+    const verdict = typeof report.verdict === 'string' ? report.verdict : '';
+    if (verdict === 'disabled' || findings.length === 0) return EMPTY_MINIMAL_CHANGE_REVIEW;
     const reportPath = typeof report.report_path === 'string'
       ? report.report_path
       : '.ai/harness/checks/minimal-change.latest.json';
@@ -466,11 +489,101 @@ function minimalChangeReview(repoRoot: string): MinimalChangeReview {
         : typeof value.evidence === 'string' ? value.evidence : 'review required';
       return `- [${tag}] ${path}: ${question}`;
     });
-    const summary = `[MinimalChange] Non-blocking review (${reportPath}):\n${lines.join('\n')}`;
-    return { suffix: `\n\n${summary}`, summary };
+    const label = policy.blocking ? 'Enforced review' : 'Non-blocking review';
+    const summary = `[MinimalChange] ${label} (${reportPath}):\n${lines.join('\n')}`;
+    return {
+      suffix: `\n\n${summary}`,
+      summary,
+      verdict,
+      fingerprint: typeof report.fingerprint === 'string' ? report.fingerprint : '',
+      reportPath,
+      findingLines: lines,
+    };
   } catch {
-    return { suffix: '', summary: '' };
+    return EMPTY_MINIMAL_CHANGE_REVIEW;
   }
+}
+
+/**
+ * Audit receipt contract for the enforce gate:
+ * `.ai/harness/checks/minimal-change-audit.latest.json` must be a JSON object
+ * with `version: 1`, a `fingerprint` equal to the audited report fingerprint,
+ * a non-empty `decisions` array of non-empty strings, and a parseable
+ * `generated_at` timestamp. Missing, malformed, or mismatched receipts release
+ * nothing: the gate stays closed.
+ */
+function minimalChangeReceiptReleases(repoRoot: string, fingerprint: string): boolean {
+  if (!fingerprint) return false;
+  const receipt = readJson(join(repoRoot, MINIMAL_CHANGE_AUDIT_RECEIPT_PATH));
+  if (!receipt) return false;
+  if (receipt.version !== 1) return false;
+  if (typeof receipt.fingerprint !== 'string' || receipt.fingerprint !== fingerprint) return false;
+  if (!Array.isArray(receipt.decisions) || receipt.decisions.length === 0) return false;
+  if (!receipt.decisions.every((entry) => typeof entry === 'string' && entry.trim() !== '')) return false;
+  if (typeof receipt.generated_at !== 'string' || Number.isNaN(Date.parse(receipt.generated_at))) return false;
+  return true;
+}
+
+function minimalChangeBlockReason(review: MinimalChangeReview): string {
+  return [
+    `[MinimalChange] Enforce gate blocked Stop: the latest report verdict is \`review\` and no matching audit receipt exists (${review.reportPath}).`,
+    'Findings:',
+    ...review.findingLines,
+    'Resolve each finding by removing the growth it names, or record an explicit audit receipt at',
+    `  ${MINIMAL_CHANGE_AUDIT_RECEIPT_PATH}`,
+    `  {"version":1,"fingerprint":"${review.fingerprint}","decisions":["<one non-empty decision per finding>"],"generated_at":"<ISO-8601 timestamp>"}`,
+    '`fingerprint` must equal the audited report fingerprint exactly; a missing, malformed, or mismatched receipt keeps this gate closed.',
+    'Methodology: the reclaim-code-entropy skill covers this review when it is installed; this gate reads only the receipt file.',
+  ].join('\n');
+}
+
+/**
+ * Stop's minimal_change enforce gate. Blocks a `review` verdict that carries no
+ * matching audit receipt, and releases with a warning once the shared circuit
+ * breaker trips for the same report fingerprint.
+ */
+function minimalChangeEnforceBlock(
+  repoRoot: string,
+  policy: MinimalChangePolicy,
+  review: MinimalChangeReview,
+  profile: WorkflowProfile,
+  stderr: string[],
+): StopHandlerResult | null {
+  if (!policy.blocking || review.verdict !== 'review') return null;
+  // A report without a usable fingerprint has no releasable state: no receipt
+  // can name it and the breaker cannot key on it, so blocking here would be
+  // terminal. The sole writer always emits a fingerprint, which makes this a
+  // corrupt report -- the same lazy treatment a truncated report already gets
+  // through its parse failure.
+  if (!review.fingerprint) {
+    stderr.push(`[MinimalChange] Enforce gate skipped: ${review.reportPath} carries no fingerprint and cannot be audited or bounded; treat the report as corrupt and regenerate it.\n`);
+    return null;
+  }
+  if (minimalChangeReceiptReleases(repoRoot, review.fingerprint)) {
+    stderr.push(`[MinimalChange] Audit receipt accepted for ${review.fingerprint}; Stop released.\n`);
+    return null;
+  }
+  try {
+    const decision = recordCircuitAttempt(repoRoot, {
+      kind: 'minimal-change',
+      guard: 'MinimalChangeEnforce',
+      reason: 'minimal-change review verdict without a matching audit receipt',
+      pathOrAction: review.reportPath,
+      // Keyed per report fingerprint: a new report is real progress and resets
+      // the counter, a repeated one advances toward the limit.
+      progressToken: review.fingerprint,
+      fingerprint: review.fingerprint,
+      profile,
+    });
+    if (decision.tripped) {
+      stderr.push(`[MinimalChange] Circuit breaker tripped after ${decision.limit} enforce blocks for ${review.fingerprint}; releasing Stop with the review unresolved.\n`);
+      return null;
+    }
+  } catch (error) {
+    // The breaker can only release; a recording failure keeps the gate closed.
+    stderr.push(`[MinimalChange] Circuit breaker unavailable: ${error instanceof Error ? error.message : String(error)}\n`);
+  }
+  return block(minimalChangeBlockReason(review));
 }
 
 function block(reason: string): StopHandlerResult {
@@ -672,7 +785,8 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
     stderr.push(`[ReadinessGate] readyToShip=false (missing: ${readiness.readyToShip.reasons.join(',') || 'unspecified'}); Stop is not blocked -- resolve before shipping.\n`);
   }
 
-  const minimal = minimalChangeReview(repoRoot);
+  const minimalPolicy = loadMinimalChangePolicy(repoRoot);
+  const minimal = minimalChangeReview(repoRoot, minimalPolicy);
   if (minimal.summary) stderr.push(`${minimal.summary}\n`);
   if (state?.review.path && ['stale', 'missing', 'unavailable'].includes(state.review.freshness)) {
     stderr.push(`[ReviewFreshness] ${state.review.detail || 'Review is stale for current review subject'}\n`);
@@ -687,6 +801,12 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
     now,
   );
   if (planGate) return { ...planGate, stderr: stderr.join('') };
+
+  const profile = state?.workflow_profile === 'standard' || state?.workflow_profile === 'strict'
+    ? state.workflow_profile
+    : 'strict';
+  const minimalGate = minimalChangeEnforceBlock(repoRoot, minimalPolicy, minimal, profile, stderr);
+  if (minimalGate) return { ...minimalGate, stderr: stderr.join('') };
 
   return { exitCode: 0, stdout: '', stderr: stderr.join('') };
 }

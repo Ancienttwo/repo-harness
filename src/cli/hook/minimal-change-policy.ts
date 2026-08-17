@@ -13,8 +13,9 @@ export const MINIMAL_CHANGE_PROTECTED_CONCERNS = Object.freeze([
 
 export const MINIMAL_CHANGE_REPORT_PATH = '.ai/harness/checks/minimal-change.latest.json';
 
-export type MinimalChangeMode = 'off' | 'advice';
-export type MinimalChangeRawMode = MinimalChangeMode | 'enforce';
+export const MINIMAL_CHANGE_AUDIT_RECEIPT_PATH = '.ai/harness/checks/minimal-change-audit.latest.json';
+
+export type MinimalChangeMode = 'off' | 'advice' | 'enforce';
 export type MinimalChangeDependencyPolicy = 'warn' | 'observe' | 'off';
 export type MinimalChangeNewFilePolicy = 'warn' | 'observe' | 'off';
 export type MinimalChangeAbstractionPolicy = 'warn' | 'observe' | 'off';
@@ -22,8 +23,9 @@ export type MinimalChangeAbstractionPolicy = 'warn' | 'observe' | 'off';
 export interface MinimalChangePolicy {
   readonly version: 1;
   readonly mode: MinimalChangeMode;
-  readonly requestedMode: MinimalChangeRawMode;
-  readonly blocking: false;
+  readonly requestedMode: MinimalChangeMode;
+  /** Derived from `mode`; enforce is the only blocking mode. */
+  readonly blocking: boolean;
   readonly session_context: boolean;
   readonly prompt_advice: boolean;
   readonly post_edit_observer: boolean;
@@ -92,18 +94,11 @@ function enumField<T extends readonly string[]>(
 
 function normalizeMode(value: unknown): {
   mode: MinimalChangeMode;
-  requestedMode: MinimalChangeRawMode;
+  requestedMode: MinimalChangeMode;
   warning?: string;
 } {
-  if (value === 'off' || value === 'advice') {
+  if (value === 'off' || value === 'advice' || value === 'enforce') {
     return { mode: value, requestedMode: value };
-  }
-  if (value === 'enforce') {
-    return {
-      mode: 'advice',
-      requestedMode: 'enforce',
-      warning: 'minimal_change.mode=enforce is not supported in v1; normalized to advice',
-    };
   }
   if (typeof value === 'string') {
     return {
@@ -151,7 +146,7 @@ export function normalizeMinimalChangePolicy(value: unknown): MinimalChangePolic
     version: 1,
     mode: mode.mode,
     requestedMode: mode.requestedMode,
-    blocking: false,
+    blocking: mode.mode === 'enforce',
     session_context: boolField(input.session_context, fallback.session_context),
     prompt_advice: boolField(input.prompt_advice, fallback.prompt_advice),
     post_edit_observer: boolField(input.post_edit_observer, fallback.post_edit_observer),
