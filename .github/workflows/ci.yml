@@ -84,3 +84,24 @@ jobs:
           tests/cli/mcp-http.test.ts
           tests/cli/mcp-oauth.test.ts
           tests/cli/mcp-stdio.test.ts
+
+  # Stable aggregate context for branch protection. Binding protection to the
+  # individual jobs means the matrix OS list is part of the protection rule:
+  # add or rename an OS and the required contexts silently reference check runs
+  # that never report again. Protection requires only this job.
+  required:
+    name: Required / CI
+    runs-on: ubuntu-latest
+    # Must run even when a dependency fails, otherwise a failed run leaves this
+    # context skipped and the required check never reports at all.
+    if: always()
+    needs:
+      - test
+      - mcp-path-matrix
+    steps:
+      - name: Assert upstream jobs succeeded
+        run: |
+          echo "test=${{ needs.test.result }}"
+          echo "mcp-path-matrix=${{ needs.mcp-path-matrix.result }}"
+          [ "${{ needs.test.result }}" = "success" ] || exit 1
+          [ "${{ needs.mcp-path-matrix.result }}" = "success" ] || exit 1
