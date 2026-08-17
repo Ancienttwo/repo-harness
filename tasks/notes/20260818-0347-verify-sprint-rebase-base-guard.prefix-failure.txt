@@ -1,0 +1,37 @@
+bun test v1.3.14 (0d9b296a)
+
+tests/verify-sprint-rebase-base-guard.test.ts:
+122 |       const ancestry = spawnSync(REAL_GIT!, ["merge-base", "--is-ancestor", recorded, "HEAD"], { cwd: dir });
+123 |       expect(ancestry.status).toBe(0);
+124 | 
+125 |       const result = runHelper(dir);
+126 |       expect(result.status).not.toBe(0);
+127 |       expect(result.stderr).toContain("base_commit is stale");
+                                  ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "base_commit is stale"
+Received: ""
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-verify-sprint-rebase-base-guard/tests/verify-sprint-rebase-base-guard.test.ts:127:29)
+(fail) verify-sprint contract worktree base guard > fires when the branch was rebased onto an advanced main and the base still reaches HEAD [159.94ms]
+135 |   test("fails closed when the recorded base left the branch entirely", () => {
+136 |     const dir = seedOrphanedBase();
+137 |     try {
+138 |       const result = runHelper(dir);
+139 |       expect(result.status).not.toBe(0);
+140 |       expect(result.stderr).toContain("base_commit is stale");
+                                  ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "base_commit is stale"
+Received: ""
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-verify-sprint-rebase-base-guard/tests/verify-sprint-rebase-base-guard.test.ts:140:29)
+(fail) verify-sprint contract worktree base guard > fails closed when the recorded base left the branch entirely [109.25ms]
+
+ 1 pass
+ 2 fail
+ 6 expect() calls
+Ran 3 tests across 1 file. [373.00ms]
+PRE_FIX_EXIT=1

@@ -218,8 +218,13 @@ git_changed_files_json() {
   done < <(git_changed_files_list | awk 'NF && !seen[$0]++') | jq -R -s 'split("\n") | map(select(length > 0))'
 }
 
-contract_worktree_base_commit() {
-  local current_worktree current_branch metadata_file metadata_row base_commit base_branch started_at
+# Emits one `\x1f`-joined `<base_commit> <base_branch> <started_at>` line per
+# worktree metadata record matching this worktree or branch. Sole matching
+# authority: the diff-base resolver below and the staleness guard further down
+# must agree on which record describes this worktree, or the guard could
+# validate a base the resolver never uses.
+contract_worktree_metadata_rows() {
+  local current_worktree current_branch metadata_file metadata_row
   command -v jq >/dev/null 2>&1 || return 1
   current_worktree="$(pwd -P)"
   current_branch="$(git branch --show-current 2>/dev/null || true)"
@@ -232,6 +237,15 @@ contract_worktree_base_commit() {
       --arg branch "$current_branch" \
       'if ((.worktree // "") == $worktree or (.branch // "") == $branch) then [(.base_commit // ""), (.base_branch // ""), (.started_at // "")] | join("\u001f") else "" end' \
       "$metadata_file" 2>/dev/null || true)"
+    [[ -n "$metadata_row" ]] || continue
+    printf '%s\n' "$metadata_row"
+  done
+}
+
+contract_worktree_base_commit() {
+  local metadata_row base_commit base_branch started_at
+
+  while IFS= read -r metadata_row; do
     [[ -n "$metadata_row" ]] || continue
     IFS=$'\x1f' read -r base_commit base_branch started_at <<< "$metadata_row"
     if [[ -n "$base_commit" ]]; then
@@ -253,7 +267,7 @@ contract_worktree_base_commit() {
         return 0
       fi
     fi
-  done
+  done < <(contract_worktree_metadata_rows)
 
   return 1
 }
@@ -302,6 +316,42 @@ git_diff_merge_base() {
   [[ -n "$base_ref" ]] || return 1
   git rev-parse --verify "$base_ref^{commit}" >/dev/null 2>&1 || return 1
   git merge-base HEAD "$base_ref" 2>/dev/null
+}
+
+# `base_commit` in .ai/harness/worktrees/<slug>.json is stored state, not
+# derived: `write_start_metadata` returns early once the file exists, so
+# rebasing a contract worktree moves the branch and leaves that value at the
+# pre-rebase base. Every scope gate afterwards then diffs from a base that is no
+# longer this branch's fork point and charges the target's own commits to this
+# contract's allowed_paths.
+#
+# The predicate is equality with the current fork point, NOT ancestry. Ancestry
+# is satisfied trivially in the case that was actually observed: rebasing onto a
+# target that grew from the recorded base leaves that base reachable from HEAD,
+# so `merge-base --is-ancestor` passes while the diff still spans the target's
+# own commits. Equality catches both that case and the rarer diverged rebase
+# where the recorded base leaves the branch entirely.
+#
+# Fail closed naming both SHAs; never fall through to another base, because
+# silently picking a different one stops measuring what the contract promised.
+assert_contract_worktree_base_is_current_fork_point() {
+  local metadata_row base_commit base_branch started_at fork_point
+  metadata_row="$(contract_worktree_metadata_rows 2>/dev/null | head -1 || true)"
+  [[ -n "$metadata_row" ]] || return 0
+  IFS=$'\x1f' read -r base_commit base_branch started_at <<< "$metadata_row"
+  # Nothing recorded to check, or no branch to compute a fork point against:
+  # the resolver falls back to its own derivation and this guard has no claim.
+  [[ -n "$base_commit" && -n "$base_branch" ]] || return 0
+  git rev-parse --verify "$base_branch^{commit}" >/dev/null 2>&1 || return 0
+  fork_point="$(git merge-base HEAD "$base_branch" 2>/dev/null || true)"
+  [[ -n "$fork_point" ]] || return 0
+  [[ "$base_commit" != "$fork_point" ]] || return 0
+  echo "verify-sprint: contract worktree base_commit is stale" >&2
+  echo "verify-sprint:   recorded base:                 $base_commit" >&2
+  echo "verify-sprint:   current fork point ($base_branch): $fork_point" >&2
+  echo "verify-sprint: this worktree was rebased after start; .ai/harness/worktrees/<slug>.json still records the pre-rebase base" >&2
+  echo "verify-sprint: refresh base_commit to $fork_point before re-running the gate, or rebuild the worktree" >&2
+  exit 1
 }
 
 git_changed_files_list() {
@@ -465,6 +515,11 @@ emit_verify_evidence() {
     --checks-file "$checks_file"
   return $?
 }
+
+# Runs before contract resolution: a stale base is a property of the worktree,
+# not of the contract, and diagnosing it first is the whole point -- the failure
+# this replaces surfaced as an allowed_paths violation listing unrelated files.
+assert_contract_worktree_base_is_current_fork_point
 
 if [[ -f "$WORKFLOW_STATE_LIB" ]]; then
   # shellcheck source=/dev/null

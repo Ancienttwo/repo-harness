@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-18T03:26:58+0800 -->
+<!-- updated_at: 2026-08-18T04:31:53+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-18T03:26:58+0800
-> **Source Branch**: codex/finish-stale-base-guard
-> **Source Commit**: e1a9a431
+> **Updated At**: 2026-08-18T04:31:53+0800
+> **Source Branch**: codex/verify-sprint-rebase-base-guard
+> **Source Commit**: 39165816
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -35,6 +35,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - /Users/ancienttwo/Projects/repo-harness-wt-codegraph-mandatory-runtime: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-codegraph-mandatory-runtime
 - /Users/ancienttwo/Projects/repo-harness-wt-unify-ai-memory-layers: plans/plan-20260818-0302-unify-ai-memory-layers.md
 - /Users/ancienttwo/Projects/repo-harness-wt-unify-ai-memory-layers: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-unify-ai-memory-layers
+- /Users/ancienttwo/Projects/repo-harness-wt-worktree-runtime-bootstrap: plans/plan-20260818-0334-worktree-runtime-bootstrap.md
+- /Users/ancienttwo/Projects/repo-harness-wt-worktree-runtime-bootstrap: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-worktree-runtime-bootstrap
 ## Active Sprint
 
 - Sprint: (none)
@@ -61,16 +63,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260818-0233-finish-stale-base-guard.md
- D tasks/contracts/20260818-0233-finish-stale-base-guard.contract.md
- D tasks/notes/20260818-0233-finish-stale-base-guard.notes.md
- D tasks/reviews/20260818-0233-finish-stale-base-guard.review.md
+ D plans/plan-20260818-0347-verify-sprint-rebase-base-guard.md
+ D tasks/contracts/20260818-0347-verify-sprint-rebase-base-guard.contract.md
+ D tasks/notes/20260818-0347-verify-sprint-rebase-base-guard.notes.md
+ D tasks/reviews/20260818-0347-verify-sprint-rebase-base-guard.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260818-0233-finish-stale-base-guard.md
-?? tasks/archive/contract-20260818-0326-finish-stale-base-guard.md
-?? tasks/archive/notes-20260818-0326-finish-stale-base-guard.md
-?? tasks/archive/review-20260818-0326-finish-stale-base-guard.md
-?? tasks/archive/todo-20260818-0326-finish-stale-base-guard.md
+?? plans/archive/plan-20260818-0347-verify-sprint-rebase-base-guard.md
+?? tasks/archive/contract-20260818-0431-verify-sprint-rebase-base-guard.md
+?? tasks/archive/notes-20260818-0431-verify-sprint-rebase-base-guard.md
+?? tasks/archive/review-20260818-0431-verify-sprint-rebase-base-guard.md
+?? tasks/archive/todo-20260818-0431-verify-sprint-rebase-base-guard.md
 ```
 
 ## Source Artifacts
