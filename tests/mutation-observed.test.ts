@@ -302,6 +302,20 @@ describe('mutation-observed: dirty-bit derivation', () => {
       expect(pendingEvents(cwd).find((e) => e.changed_paths.includes('src/a.ts'))!.dirty['minimal-change']).toBe(false);
 
       mkdirSync(join(cwd, '.ai/harness'), { recursive: true });
+
+      // Both gates are required (mutation-observed.ts:
+      // `policy.mode !== 'off' && policy.post_edit_observer`). advice mode
+      // alone is NOT enough -- post_edit_observer stays an explicit per-repo
+      // opt-in, so a mode-only policy leaves the collection chain dark.
+      writeFileSync(
+        join(cwd, '.ai/harness/policy.json'),
+        JSON.stringify({ minimal_change: { mode: 'advice', post_edit_observer: false } }, null, 2),
+      );
+      runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/advice-only.ts') });
+      const adviceOnlyEvent = pendingEvents(cwd).find((e) => e.changed_paths.includes('src/advice-only.ts'))!;
+      expect(adviceOnlyEvent.dirty['minimal-change']).toBe(false);
+      expect(adviceOnlyEvent.payload.minimal_change).toBeUndefined();
+
       writeFileSync(
         join(cwd, '.ai/harness/policy.json'),
         JSON.stringify({ minimal_change: { mode: 'advice', post_edit_observer: true } }, null, 2),

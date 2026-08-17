@@ -12,6 +12,12 @@
 
 ## Active Lessons
 
+- Date: 2026-08-17
+- Triggered by correction: a `minimal_change` enforce/v2 proposal was drafted on the assumption that advice mode had been observing this repo for two months, but the signal loop had never run once — collection needs both gates (`src/cli/hook/mutation-observed.ts:113`, `policy.mode !== 'off' && policy.post_edit_observer`), this repo's `post_edit_observer` was `false`, `.ai/harness/checks/minimal-change.latest.json` did not exist, and `verdict: 'review'` had occurred zero times.
+- Mistake pattern: inferring that a per-repo observation mechanism is live from one enabling field (`mode: advice`) while its separate power switch stayed off, then reasoning about thresholds and escalation over a dataset that was never collected.
+- Prevention rule: verify a mechanism's default value and its actual energized state separately — read the per-repo switch and confirm the report artifact exists. Before proposing enforce/escalation over any observer, produce its running evidence (report file present, verdict distribution); with zero data, energize collection first and defer the upgrade.
+- Where to apply next time: `minimal_change` and other policy-gated observers, hook-chain features with a mode plus a per-phase toggle, and any proposal that argues from "the advisory version is being ignored".
+
 - Date: 2026-08-11
 - Triggered by correction: final ship review proved that a protected closeout helper still executed `node --version` from the caller-provided `PATH` before replacing that `PATH` with its minimal environment.
 - Mistake pattern: treating canonical path plus a compatible version string as executable provenance; validation executed the untrusted candidate and then promoted it into the protected runtime authority.

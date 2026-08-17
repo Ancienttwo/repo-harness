@@ -30,6 +30,24 @@ describe('minimal-change policy', () => {
     expect(policy.stop_review).toBe(true);
   });
 
+  test('post_edit_observer is an explicit per-repo opt-in, never inferred from mode', () => {
+    // The advice-mode fallback for this one field is false (unlike
+    // session_context/prompt_advice/stop_review), so the post-edit signal
+    // chain only runs when a repo writes the boolean itself.
+    expect(normalizeMinimalChangePolicy({ mode: 'advice', post_edit_observer: true }).post_edit_observer).toBe(true);
+    expect(normalizeMinimalChangePolicy({ mode: 'advice', post_edit_observer: false }).post_edit_observer).toBe(false);
+    expect(normalizeMinimalChangePolicy({ mode: 'advice' }).post_edit_observer).toBe(false);
+
+    // A non-boolean value is not a truthy opt-in either; it falls back.
+    expect(normalizeMinimalChangePolicy({ mode: 'advice', post_edit_observer: 'true' }).post_edit_observer).toBe(false);
+
+    // off mode keeps the same fallback, and an explicit true here is still
+    // carried through the policy object -- mutation-observed.ts is what
+    // combines it with `mode !== 'off'`.
+    expect(normalizeMinimalChangePolicy({ mode: 'off' }).post_edit_observer).toBe(false);
+    expect(normalizeMinimalChangePolicy({ mode: 'off', post_edit_observer: true }).post_edit_observer).toBe(true);
+  });
+
   test('supports explicit off mode', () => {
     const policy = normalizeMinimalChangePolicy({ mode: 'off', session_context: false });
     expect(policy.mode).toBe('off');
