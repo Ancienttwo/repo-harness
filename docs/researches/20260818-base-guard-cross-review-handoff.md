@@ -3,7 +3,7 @@
 - Date: 2026-08-18
 - Repo: `Ancienttwo/repo-harness`
 - Reviewer target: external model (GPT), second round
-- Baseline the reviewer should read: `main` at `b0469e0f` or later. Every SHA below is pushed to `origin`.
+- Baseline the reviewer should read: `main` at `83d80780` or later. Every SHA below is pushed to `origin`.
 
 This document exists because the previous round produced two rebuttals in a row, each of which read a different snapshot than the one being discussed. Everything asserted here names a pushed commit or a command that can be re-run.
 
@@ -17,6 +17,7 @@ This document exists because the previous round produced two rebuttals in a row,
 | `3b541c8a` | the talk notes that started this thread, `docs/researches/20260818-claude-code-agentic-swe-at-scale.md` |
 | `6ad02039` | the base-staleness guard, contract closeout, and `tasks/todos.md` row 22 removal |
 | `b0469e0f` | `Required / CI` aggregate job in `.github/workflows/ci.yml` |
+| `83d80780` | Stop-time advisory for implementation changes with no active plan |
 
 Branch protection on `main` (applied via API, read back):
 
@@ -117,9 +118,15 @@ So the gap is one gate, not three: authorization that is enforced at write time 
 
 That reframes the fix. Building a shell-write parser for a blocking `PreToolUse.bash` would be a heuristic shadow parser over an unbounded surface — redirections, `tee`, `sed -i`, `python -c`, `eval`, subshells — which this repo's own rules forbid, and which would grant false confidence while staying trivially bypassable. It would also duplicate, unsoundly, what the diff-derived gate already does soundly.
 
-The sound shape is to give the plan gate a diff-derived enforcement point alongside its pre-write advisory one, so that "implementation changed without an approved plan" is decided from the changed set at gate time rather than from the tool that produced it. That is a new gate with its own false-positive surface and is not attempted here.
+The sound shape is to give the plan gate a diff-derived observation point alongside its pre-write one, so that "implementation changed without an approved plan" is decided from the changed set rather than from the tool that produced it. **This landed in `83d80780`**, advisory-only by owner decision.
 
-Open question for the reviewer, replacing the one previously filed under section 7 item 4: is a pre-write guard that only covers some write mechanisms worth keeping as-is once its limit is documented, or does a partially-covering block gate do more harm than an explicit "advisory only" label?
+`runStopHandler` now filters the changed set it already computes for the architecture drain — `computeArchitectureDriftChangedSet`, which reads `git status --porcelain -z` and is therefore indifferent to write mechanism — through the already-exported `isImplementationSurfacePath`. When no active plan is present and the result is non-empty it emits two stderr lines and appends one record to `.ai/harness/runs/unplanned-implementation.jsonl`. Exit code, the `decision: block` stdout path, lite profile, and sessions with an active plan are all untouched. `tests/stop-handler-unplanned-implementation.test.ts` covers fire, active-plan silence, workflow-surface silence, and clean tree.
+
+Three choices in it are worth attacking:
+
+- **Advisory, not enforce.** No data exists on how often this fires during ordinary work on `main`. The repo's own 2026-08-17 lesson is that tightening a gate against imagined receipts designs for the wrong thing, so the enforce decision is deliberately deferred until the JSONL can be read.
+- **Plain JSONL, not a telemetry metric.** Adding a field to `hook-events.jsonl` would have been the obvious route, but `event-telemetry.ts` carries a measurement-completeness contract and already has one metric (`child_processes`) declared complete while never populated. Repeating that shape to collect data *about a gate* would be self-defeating.
+- **No policy key.** Adding the switch before knowing whether anyone should flip it is designing the upgrade path ahead of the evidence.
 
 ---
 
@@ -139,4 +146,5 @@ Open question for the reviewer, replacing the one previously filed under section
 1. Is fork-point equality itself falsifiable? The case to look for is a legitimate workflow where `base_commit != git merge-base HEAD base_branch` and the recorded base is nonetheless the correct diff base. Merge-instead-of-rebase into the contract worktree is the shape to check first.
 2. The guard returns early when `base_branch` is absent or unresolvable. That is a silent gap by construction. Should it instead fail closed, given that a metadata record with a `base_commit` but no `base_branch` is already malformed?
 3. `contract_worktree_metadata_rows` was extracted so the guard and the diff-base resolver read the same record. The resolver iterates all matching rows with a per-row fallback chain; the guard takes only the first. Is that divergence exploitable when more than one metadata file matches?
-4. Section 5 closes with its own question about pre-write versus diff-derived enforcement of the plan gate.
+4. The advisory in `83d80780` runs on `Stop.default`, already the largest measured share of hook time. It adds one `Array.filter` over an already-computed array and, only on a hit, one file append — no new subprocess and no second `git status`. Is that accounting complete, or is there a cost path in it that was missed?
+5. Advisory-only means an agent can read the line and keep going. Is a signal nobody is forced to act on worth the code, or does it just become noise that trains everyone to ignore a `[PlanStatusGuard]` prefix that *does* block in its pre-write form?
