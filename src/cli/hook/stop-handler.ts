@@ -31,6 +31,7 @@ import {
   architectureDriftSourceEvent,
   computeArchitectureDriftChangedSet,
 } from './architecture-drift';
+import { isImplementationSurfacePath } from '../../effects/review/diff-fingerprint';
 import { drainArchitectureProjectionJobs, type ArchitectureProjectionDrainResultV1 } from '../../effects/architecture/projection-orchestrator';
 import { loadArchitectureProjectionPolicy } from '../../effects/architecture/archctx-provider';
 import { runMinimalChangeCli } from './minimal-change-cli';
@@ -49,6 +50,27 @@ import {
   resolveRecoveryEvidence,
 } from '../../effects/evidence/recovery-materializer';
 import { HookEffectReconciliationRequired } from './handler-contract';
+
+// Ignored runtime evidence, same tree as hook-events.jsonl. Deliberately not a
+// telemetry metric and not a typed journal: this exists to measure a hit rate
+// before deciding whether the advisory should ever block, and adding a metric
+// would repeat the `child_processes` completeness problem already on the ledger.
+const UNPLANNED_IMPLEMENTATION_EVIDENCE = '.ai/harness/runs/unplanned-implementation.jsonl';
+
+function recordUnplannedImplementation(repoRoot: string, now: Date, paths: readonly string[]): void {
+  try {
+    const target = join(repoRoot, UNPLANNED_IMPLEMENTATION_EVIDENCE);
+    mkdirSync(dirname(target), { recursive: true });
+    appendFileSync(target, `${JSON.stringify({
+      observed_at: now.toISOString(),
+      path_count: paths.length,
+      paths,
+    })}\n`, 'utf-8');
+  } catch {
+    // Evidence collection must never change the Stop result; the sibling side
+    // effects above are wrapped the same way.
+  }
+}
 
 export interface StopCollector {
   getRepoRoot(): string;
@@ -671,9 +693,18 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   let architectureDrainError = '';
   let journalSideEffectError = '';
   let driftWarnings: readonly string[] = [];
+  let unplannedImplementationPaths: readonly string[] = [];
   try {
     const changedSet = computeArchitectureDriftChangedSet(repoRoot);
     driftWarnings = changedSet.warnings;
+    // PlanStatusGuard only sees `Edit|Write` tool calls, so a shell write to an
+    // implementation path never reaches it. This changed set is git-derived
+    // (`git status --porcelain -z`), so it is indifferent to how the bytes were
+    // written -- which is exactly the blind spot to cover. Advisory only: no
+    // data exists yet on how often this fires on real work.
+    if (!activePlan) {
+      unplannedImplementationPaths = changedSet.paths.filter(isImplementationSurfacePath);
+    }
     const driftEvent = architectureDriftSourceEvent(changedSet);
     architectureDrain = dependencies.drainArchitectureProjection?.(repoRoot, env)
       ?? drainArchitectureProjectionJobs(repoRoot, { env, sourceEvents: driftEvent ? [driftEvent] : [] });
@@ -805,6 +836,14 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   if (state?.workflow_profile === 'lite') {
     return { exitCode: 0, stdout: '', stderr: stderr.join('') };
   }
+  if (unplannedImplementationPaths.length > 0) {
+    const shown = unplannedImplementationPaths.slice(0, 3).join(', ');
+    const more = unplannedImplementationPaths.length > 3 ? `, +${unplannedImplementationPaths.length - 3} more` : '';
+    stderr.push(`[PlanStatusGuard] ${unplannedImplementationPaths.length} implementation path(s) changed with no active plan: ${shown}${more}\n`);
+    stderr.push('[PlanStatusGuard] Advisory: capture the approved plan with repo-harness run capture-plan --slug <slug> --title <title> --artifact-level work-package --promotion-reason human_decision_boundary --status Approved --execute\n');
+    recordUnplannedImplementation(repoRoot, now, unplannedImplementationPaths);
+  }
+
   if (readiness?.readyToShip.decision === 'block') {
     stderr.push(`[ReadinessGate] readyToShip=false (missing: ${readiness.readyToShip.reasons.join(',') || 'unspecified'}); Stop is not blocked -- resolve before shipping.\n`);
   }

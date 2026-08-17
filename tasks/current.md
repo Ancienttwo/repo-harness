@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-18T04:58:42+0800 -->
+<!-- updated_at: 2026-08-18T05:03:14+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-18T04:58:42+0800
-> **Source Branch**: codex/worktree-runtime-bootstrap
-> **Source Commit**: d5d0b0c5
+> **Updated At**: 2026-08-18T05:03:14+0800
+> **Source Branch**: codex/unplanned-implementation-advice
+> **Source Commit**: 18a81ba4
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -37,8 +37,6 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - /Users/ancienttwo/Projects/repo-harness-wt-setup-plugins-shift-overrun: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-setup-plugins-shift-overrun
 - /Users/ancienttwo/Projects/repo-harness-wt-unify-ai-memory-layers: plans/plan-20260818-0302-unify-ai-memory-layers.md
 - /Users/ancienttwo/Projects/repo-harness-wt-unify-ai-memory-layers: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-unify-ai-memory-layers
-- /Users/ancienttwo/Projects/repo-harness-wt-unplanned-implementation-advice: plans/plan-20260818-0450-unplanned-implementation-advice.md
-- /Users/ancienttwo/Projects/repo-harness-wt-unplanned-implementation-advice: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-unplanned-implementation-advice
 ## Active Sprint
 
 - Sprint: (none)
@@ -65,16 +63,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260818-0334-worktree-runtime-bootstrap.md
- D tasks/contracts/20260818-0334-worktree-runtime-bootstrap.contract.md
- D tasks/notes/20260818-0334-worktree-runtime-bootstrap.notes.md
- D tasks/reviews/20260818-0334-worktree-runtime-bootstrap.review.md
+ D plans/plan-20260818-0450-unplanned-implementation-advice.md
+ D tasks/contracts/20260818-0450-unplanned-implementation-advice.contract.md
+ D tasks/notes/20260818-0450-unplanned-implementation-advice.notes.md
+ D tasks/reviews/20260818-0450-unplanned-implementation-advice.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260818-0334-worktree-runtime-bootstrap.md
-?? tasks/archive/contract-20260818-0458-worktree-runtime-bootstrap.md
-?? tasks/archive/notes-20260818-0458-worktree-runtime-bootstrap.md
-?? tasks/archive/review-20260818-0458-worktree-runtime-bootstrap.md
-?? tasks/archive/todo-20260818-0458-worktree-runtime-bootstrap.md
+?? plans/archive/plan-20260818-0450-unplanned-implementation-advice.md
+?? tasks/archive/contract-20260818-0503-unplanned-implementation-advice.md
+?? tasks/archive/notes-20260818-0503-unplanned-implementation-advice.md
+?? tasks/archive/review-20260818-0503-unplanned-implementation-advice.md
+?? tasks/archive/todo-20260818-0503-unplanned-implementation-advice.md
 ```
 
 ## Source Artifacts
