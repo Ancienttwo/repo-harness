@@ -1377,13 +1377,171 @@ export function sessionStartMainSection(
 }
 
 // ---------------------------------------------------------------------------
+// Cleanable contract worktree notice (issue #196)
+// ---------------------------------------------------------------------------
+//
+// The four merged fixes made contract-worktree cleanup actually reach
+// squash-merged worktrees; none of them tell anyone there is something to
+// clean, which is how 100+ worktree directories accumulated. This section only
+// notices. Deletion stays operator-executed: a worktree can hold unpushed work
+// and removal is irreversible.
+
+/**
+ * Bound on how many contract worktrees one SessionStart classifies. Each
+ * classification costs one `git merge-tree --write-tree` (~22ms measured),
+ * which holds the whole scan near half a second at this cap. Worktrees past
+ * the cap are reported as an explicit unchecked count -- never silently
+ * dropped, because a silent truncation would make the notice's own silence
+ * unreadable.
+ */
+const WORKTREE_BACKLOG_SCAN_CAP = 24;
+
+const WORKTREE_MERGE_LIB = 'scripts/worktree-merge-lib.sh';
+const WORKTREE_CLEANUP_DRY_RUN = 'repo-harness run ship-worktrees --cleanup-merged --dry-run';
+const WORKTREE_CLEANUP_COMMAND = 'repo-harness run ship-worktrees --cleanup-merged';
+
+interface LinkedWorktreeEntry {
+  readonly branch: string;
+  readonly path: string;
+}
+
+/** `list_contract_worktrees()`'s awk in ship-worktrees.sh, minus the prefix filter (applied by the caller) and keeping the first `worktree` line so the main worktree stays identifiable. */
+function listWorktreeEntries(repoRoot: string): { main: string | null; entries: LinkedWorktreeEntry[] } {
+  let output: string;
+  try {
+    output = execFileSync('git', ['worktree', 'list', '--porcelain'], {
+      cwd: repoRoot,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+  } catch {
+    return { main: null, entries: [] };
+  }
+
+  const entries: LinkedWorktreeEntry[] = [];
+  let main: string | null = null;
+  let path = '';
+  for (const line of output.split('\n')) {
+    if (line.startsWith('worktree ')) {
+      path = line.slice('worktree '.length);
+      if (main === null) main = path;
+      continue;
+    }
+    if (!line.startsWith('branch ') || !path) continue;
+    const ref = line.slice('branch '.length);
+    entries.push({
+      branch: ref.startsWith('refs/heads/') ? ref.slice('refs/heads/'.length) : ref,
+      path,
+    });
+  }
+  return { main, entries };
+}
+
+function samePath(left: string, right: string): boolean {
+  try {
+    return realpathSync(left) === realpathSync(right);
+  } catch {
+    return left === right;
+  }
+}
+
+/**
+ * Classifies contract worktrees through the batch entrypoint of
+ * `scripts/worktree-merge-lib.sh`. That function is the single merge
+ * authority as of `b456121a`; re-deriving `git merge-tree --write-tree` here
+ * would put the same datum back under two authorities, which is the defect
+ * issue #196 actually was. One spawn classifies the whole scan.
+ */
+export function worktreeBacklogSessionContent(repoRoot: string): string | null {
+  const libPath = join(repoRoot, WORKTREE_MERGE_LIB);
+  if (!existsSync(libPath)) return null;
+
+  const { main, entries } = listWorktreeEntries(repoRoot);
+  if (!main) return null;
+  // Both cleanup entrypoints refuse from a linked worktree
+  // (`is_linked_worktree` in ship-worktrees.sh, the primary-worktree check in
+  // contract-worktree.sh's cleanup). Read from inside one, this notice could
+  // only name a command that cannot run where it is read.
+  if (!samePath(main, repoRoot)) return null;
+
+  const prefix = policyGet(repoRoot, ['worktree_strategy', 'branch_prefix'], 'codex/');
+  const contractWorktrees = entries.filter(
+    (entry) => entry.branch.startsWith(prefix) && !samePath(entry.path, repoRoot),
+  );
+  if (contractWorktrees.length === 0) return null;
+
+  const scanned = contractWorktrees.slice(0, WORKTREE_BACKLOG_SCAN_CAP);
+  const unchecked = contractWorktrees.length - scanned.length;
+  const target = workflowTargetBranch(repoRoot);
+
+  let modeOutput: string;
+  try {
+    modeOutput = execFileSync('bash', [libPath, '--target', target, ...scanned.map((entry) => entry.branch)], {
+      cwd: repoRoot,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+  } catch {
+    return null;
+  }
+
+  // Enumerate the two proving modes rather than negating `unmerged`: the lib
+  // is fail-closed, and a mode this reader does not recognize must land on the
+  // silent side, not in a list the operator is invited to act on.
+  const merged = new Set(
+    modeOutput
+      .split('\n')
+      .map((line) => line.split('\t'))
+      .filter((cells) => cells[1] === 'ancestor' || cells[1] === 'absorbed')
+      .map((cells) => cells[0]),
+  );
+  const listed = scanned.filter((entry) => merged.has(entry.branch));
+  if (listed.length === 0 && unchecked === 0) return null;
+
+  const lines = ['# Cleanable Contract Worktrees', ''];
+  if (listed.length > 0) {
+    lines.push(`- ${listed.length} contract worktree(s) already merged into \`${target}\`. Nothing was deleted.`);
+    for (const entry of listed) {
+      const slug = entry.branch.slice(prefix.length) || entry.branch;
+      lines.push(`  - \`${slug}\` at \`${entry.path}\` (branch \`${entry.branch}\`)`);
+    }
+  } else {
+    lines.push(`- None of the first ${scanned.length} contract worktree(s) are merged into \`${target}\`. Nothing was deleted.`);
+  }
+  if (unchecked > 0) {
+    lines.push(
+      `- Scan capped at ${WORKTREE_BACKLOG_SCAN_CAP}; ${unchecked} further worktree(s) were not checked. Run \`${WORKTREE_CLEANUP_DRY_RUN}\` for the full list.`,
+    );
+  }
+  lines.push(
+    `- Deletion stays yours: review with \`${WORKTREE_CLEANUP_DRY_RUN}\`, then run \`${WORKTREE_CLEANUP_COMMAND}\` from this worktree. A dirty worktree is still refused separately.`,
+  );
+  return lines.join('\n');
+}
+
+/** Same shape as the two sibling sections above: repo root in, section or null out. `actionable` is true because the content names an operator action; `mandatory` stays false -- an unnoticed backlog is untidy, not unsafe. */
+export function worktreeBacklogSessionSection(repoRoot: string): SessionContextSection | null {
+  const content = worktreeBacklogSessionContent(repoRoot);
+  if (!content) return null;
+  return {
+    id: 'worktree-backlog-notice',
+    priority: 6,
+    content,
+    mandatory: false,
+    actionable: true,
+    reference: WORKTREE_CLEANUP_DRY_RUN,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Top-level composition -- feeds runtime.ts's single budgetSessionContext call
 // ---------------------------------------------------------------------------
 
 /**
  * All three retired scripts' sections, in their former script-loop order
  * (`session-start-context.sh`, `minimal-change-context.sh`,
- * `security-sentinel.sh`). `runtime.ts` prepends the unchanged
+ * `security-sentinel.sh`), followed by the cleanable-worktree notice, which
+ * was never a script. `runtime.ts` prepends the unchanged
  * `effective-state` section (still the single Effective State resolution,
  * still added before any of these) and feeds the combined array to the
  * existing `budgetSessionContext` exactly once.
@@ -1401,6 +1559,8 @@ export function buildSessionStartSections(
   if (minimalChange) sections.push(minimalChange);
   const security = securitySentinelSessionSection(collector.getRepoRoot(), env);
   if (security) sections.push(security);
+  const worktreeBacklog = worktreeBacklogSessionSection(collector.getRepoRoot());
+  if (worktreeBacklog) sections.push(worktreeBacklog);
   return sections;
 }
 
