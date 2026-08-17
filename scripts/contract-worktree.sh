@@ -1456,6 +1456,16 @@ finish_worktree() {
       echo "contract-worktree: target worktree is dirty, refusing merge: $target_worktree" >&2
       exit 1
     fi
+    # The publication commit parents the frozen target base and carries this
+    # branch's tree verbatim. If the frozen base is not reachable from this
+    # branch, that tree never saw the target's newer commits, so publishing it
+    # would fast-forward the target onto content that silently reverts them.
+    if ! git merge-base --is-ancestor "$frozen_base_sha" "$current_branch"; then
+      echo "contract-worktree: target branch advanced past this worktree's fork point; refusing merge" >&2
+      echo "contract-worktree: frozen target base $frozen_base_sha ($target_branch) is not an ancestor of $current_branch" >&2
+      echo "contract-worktree: rebase this worktree onto $target_branch (or restart the contract worktree from the refreshed base), then re-run the closeout gates" >&2
+      exit 1
+    fi
   fi
   local closeout_key closeout_original_head closeout_begin_status=0
   closeout_original_head="$(git rev-parse HEAD)"
@@ -1625,6 +1635,13 @@ finish_worktree() {
     echo "contract-worktree: target branch moved after merge-gate review" >&2
     exit 1
   }
+  if ! git merge-base --is-ancestor "$frozen_base_sha" "$current_branch"; then
+    echo "contract-worktree: target branch advanced past this worktree's fork point; refusing merge" >&2
+    echo "contract-worktree: frozen target base $frozen_base_sha ($target_branch) is not an ancestor of $current_branch" >&2
+    echo "contract-worktree: rebase this worktree onto $target_branch (or restart the contract worktree from the refreshed base), then re-run the closeout gates" >&2
+    finish_transaction_abort
+    return 1
+  fi
   publication_tree="$(git rev-parse "$verified_sha^{tree}")"
   frozen_base_tree="$(git rev-parse "$frozen_base_sha^{tree}")"
   [[ "$publication_tree" != "$frozen_base_tree" ]] || {

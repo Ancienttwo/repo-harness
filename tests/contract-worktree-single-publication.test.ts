@@ -232,6 +232,35 @@ describe("contract-worktree single publication commit", () => {
     }
   }, 30_000);
 
+  test("finish fails closed when the target advanced past the un-rebased worktree fork point", () => {
+    const container = realpathSync(mkdtempSync(join(tmpdir(), "contract-worktree-stale-base-")));
+    try {
+      const { primary, linked } = installFixture(container);
+      const base = run("git", ["rev-parse", "main"], primary).stdout.trim();
+
+      mkdirSync(join(linked, "src"), { recursive: true });
+      writeFileSync(join(linked, "src/change.ts"), "export const changed = true;\n");
+      commitAll(linked, "checkpoint from the original base");
+
+      expect(run("git", ["commit", "--allow-empty", "-m", "parallel session one"], primary).status).toBe(0);
+      expect(run("git", ["commit", "--allow-empty", "-m", "parallel session two"], primary).status).toBe(0);
+      const advanced = run("git", ["rev-parse", "main"], primary).stdout.trim();
+      expect(advanced).not.toBe(base);
+
+      const finish = run("bash", ["scripts/contract-worktree.sh", "finish", "--merge"], linked);
+
+      expect(finish.status).not.toBe(0);
+      expect(finish.stderr).toContain("target branch advanced past this worktree's fork point");
+      expect(run("git", ["rev-parse", "main"], primary).stdout.trim()).toBe(advanced);
+      expect(run("git", ["log", "-1", "--format=%s", "main"], primary).stdout.trim()).toBe("parallel session two");
+      expect(run("git", ["rev-list", "--count", `${base}..main`], primary).stdout.trim()).toBe("2");
+      expect(existsSync(join(linked, PLAN))).toBe(true);
+      expect(existsSync(join(linked, "src/change.ts"))).toBe(true);
+    } finally {
+      rmSync(container, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test("finish rejects a synthesized commit whose tree differs from the verified lifecycle tree", () => {
     const container = realpathSync(mkdtempSync(join(tmpdir(), "contract-worktree-tree-mismatch-")));
     try {
