@@ -73,6 +73,48 @@ exit=0
 | Seed `args=("")` or drop `set -u` | Rejected | Would forward a bogus empty argument or relax a project-wide invariant |
 | Restructure the retired-option loop so it always appends | Rejected | Out of scope per contract; changes retired-option behavior |
 
+## Out Of Scope / Future Work
+
+Found during this slice, deliberately not fixed (contract Scope forbids touching the
+retired-option loop; this is a separate defect class needing its own contract).
+
+**`shift 2` overruns `$#` at three sites.** When a two-token retired option is the
+last argument, `shift 2` has fewer than 2 positional parameters left. Bash 3.2 returns
+non-zero from `shift` in that case, and under `set -euo pipefail` the script exits 1
+silently — after logging the retired-option message but before reaching either exec.
+The three sites are:
+
+- `scripts/setup-plugins.sh:21` — `--hooks`
+- `scripts/setup-plugins.sh:25` — `--lsp` and `--project-type` (shared branch)
+
+Reproduced against the stub on bash 3.2.57(1):
+
+```
+$ bash scripts/setup-plugins.sh --hooks
+[setup-plugins] retired hook profile ignored: <missing>
+exit=1
+$ bash scripts/setup-plugins.sh --repo . --lsp
+[setup-plugins] retired option ignored: --lsp
+exit=1
+$ bash scripts/setup-plugins.sh --repo . --project-type
+[setup-plugins] retired option ignored: --project-type
+exit=1
+$ bash scripts/setup-plugins.sh --hooks none        # control
+RH_ARG:[install]
+RH_ARG:[--no-hooks]
+exit=0
+```
+
+The `--repo . --lsp` case is the damaging one: a real argument was parsed and would
+have been forwarded, but the script dies before exec, so the caller sees a retired-option
+warning and a silent failure rather than an install.
+
+**Bun fallback (`:39`) has no execution test.** Reaching it requires `repo-harness`
+absent from PATH, which risks invoking the real bun entrypoint. It carries the identical
+guard and was verified manually. An automated test is cheap — put a `bun` stub in the
+temp dir alongside the `repo-harness` stub and build a PATH that excludes both the real
+`repo-harness` and `~/.bun/bin`. Left to the `shift 2` slice.
+
 ## Open Questions
 
 - None.
