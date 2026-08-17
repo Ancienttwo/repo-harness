@@ -1113,7 +1113,7 @@ ship_primary_local_merge() {
 }
 
 cleanup_merged() {
-  local branch path slug cleaned=0
+  local branch path slug merge_mode cleaned=0
   ! is_linked_worktree || fail "--cleanup-merged must run from the target primary worktree"
 
   while IFS=$'\t' read -r branch path; do
@@ -1127,7 +1127,15 @@ cleanup_merged() {
     # under this project's squash ship flow means every worktree (issue #196).
     # Dirtiness is still a separate refusal below: merged-but-dirty must stay
     # distinguishable from unmerged.
-    if [[ "$(worktree_merge_mode "$branch" "$TARGET_BRANCH")" != "unmerged" ]]; then
+    #
+    # Enumerate the accepting modes rather than negating `unmerged`. This
+    # branch reaches guard_dirty_merged_worktree below, which under
+    # --discard-scaffold-only performs an irreversible write (git checkout --
+    # on tracked scaffold, rm -f on untracked) BEFORE cleanup is delegated.
+    # A value this function does not recognize must therefore land on the
+    # refusing side, and negation would put it on the accepting side.
+    merge_mode="$(worktree_merge_mode "$branch" "$TARGET_BRANCH")"
+    if [[ "$merge_mode" == "ancestor" || "$merge_mode" == "absorbed" ]]; then
       if ! ensure_worktree_status_for_cleanup "$path"; then
         if [[ "$DRY_RUN" -eq 1 ]]; then
           run_cmd bash "$helper_dir/contract-worktree.sh" cleanup --slug "$slug" --target "$TARGET_BRANCH" --dry-run

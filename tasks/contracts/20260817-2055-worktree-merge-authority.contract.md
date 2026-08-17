@@ -1,6 +1,6 @@
 # Task Contract: worktree-merge-authority
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260817-2055-worktree-merge-authority.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->

@@ -36,11 +36,29 @@
   is unavailable`, exit 1) rather than falling back to the old inline
   ancestry check. A fallback would have quietly restored the exact two-authority
   split this contract exists to remove.
-- `scripts/ship-worktrees.sh` branches on `!= "unmerged"` rather than listing
-  `ancestor|absorbed`. The lib's contract is that only those two values mean
-  merged, and negating the single refusal keeps the batch filter from silently
-  ignoring a future fourth value: an unrecognized mode would be treated as
-  unmerged, which is the safe side.
+- `scripts/ship-worktrees.sh:1138` enumerates the accepting modes
+  (`ancestor` or `absorbed`) instead of negating `unmerged`. An earlier
+  revision negated, on the stated reasoning that an unrecognized mode would
+  fall to the safe side. That reasoning was backwards and review caught it:
+  negation routes every unrecognized value into the *accepting* branch.
+  What is actually at risk there is not deletion -- ship has no deletion site
+  of its own and delegates all removal to `contract-worktree.sh cleanup`,
+  whose enumerated `case` (`scripts/contract-worktree.sh:1804-1815`) exits 1
+  on anything outside `ancestor|absorbed`, so worktree, branch, and metadata
+  all survive. The irreversible write sits *before* that delegation:
+  `guard_dirty_merged_worktree` at `:1146` runs ahead of the delegation at
+  `:1148`, and under `--discard-scaffold-only` it reaches
+  `discard_scaffold_dirty_paths` (`:787-819`), which runs `git checkout --`
+  over tracked scaffold and `rm -f` over untracked files. Reviewer reproduced
+  it: with a genuinely unmerged branch and an injected `rebased` mode,
+  uncommitted `tasks/todos.md` was reverted and untracked
+  `plans/plan-draft.md` was deleted, and only then did the tool announce that
+  the branch was unmerged and refuse cleanup. The work was already gone.
+  Enumeration puts unknown values on the refusing side, which is where they
+  belong.
+- The enumeration is written as two `==` comparisons, not `@(ancestor|absorbed)`.
+  `scripts/ship-worktrees.sh` never runs `shopt -s extglob`, so the extglob
+  form silently fails to match and breaks the negative control.
 
 ## Falsifier Verification
 
