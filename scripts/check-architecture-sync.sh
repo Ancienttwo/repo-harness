@@ -262,6 +262,17 @@ projection_blocking=$((projection_pending + projection_running + projection_dead
 if [[ "$projection_provider" == "archctx" && "$projection_state" != "ready" ]]; then
   projection_blocking=$((projection_blocking + 1))
 fi
+# Reported, never gated: the Stop drain applies projections into the worktree
+# but nothing commits them, so the restamp backlog only surfaces when a human
+# happens to read the diff. Counting it here names the backlog at its own
+# check surface instead of leaving it to be rediscovered in an unrelated turn.
+# A non-git checkout has no "uncommitted" concept, so 0 is the accurate count
+# there rather than a stand-in for an unavailable value.
+projection_uncommitted=0
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  projection_uncommitted="$(git status --porcelain -- docs/architecture 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ' || true)"
+  : "${projection_uncommitted:=0}"
+fi
 
 case "$mode" in
   off|advisory|strict) ;;
@@ -312,8 +323,8 @@ fi
 
 if [[ "$mode" == "off" ]]; then
   case "$format" in
-    json) printf '{"mode":"off","changed_capabilities":0,"blocking":0,"projection":{"provider":"%s","apply":"%s","state":"%s","pending":%s,"running":%s,"dead_letters":%s,"human_actions":%s,"adoption_required":%s,"blocking":%s}}\n' "$(json_escape "$projection_provider")" "$(json_escape "$projection_apply")" "$(json_escape "$projection_state")" "$projection_pending" "$projection_running" "$projection_dead_letters" "$projection_human_actions" "$projection_adoption_required" "$projection_blocking" ;;
-    text) echo "[ArchitectureSync] mode=off changed_capabilities=0 blocking=0"; echo "[ArchitectureProjection] provider=$projection_provider apply=$projection_apply state=$projection_state pending=$projection_pending running=$projection_running dead_letters=$projection_dead_letters human_actions=$projection_human_actions adoption_required=$projection_adoption_required blocking=$projection_blocking" ;;
+    json) printf '{"mode":"off","changed_capabilities":0,"blocking":0,"projection":{"provider":"%s","apply":"%s","state":"%s","pending":%s,"running":%s,"dead_letters":%s,"human_actions":%s,"adoption_required":%s,"blocking":%s,"uncommitted":%s}}\n' "$(json_escape "$projection_provider")" "$(json_escape "$projection_apply")" "$(json_escape "$projection_state")" "$projection_pending" "$projection_running" "$projection_dead_letters" "$projection_human_actions" "$projection_adoption_required" "$projection_blocking" "$projection_uncommitted" ;;
+    text) echo "[ArchitectureSync] mode=off changed_capabilities=0 blocking=0"; echo "[ArchitectureProjection] provider=$projection_provider apply=$projection_apply state=$projection_state pending=$projection_pending running=$projection_running dead_letters=$projection_dead_letters human_actions=$projection_human_actions adoption_required=$projection_adoption_required blocking=$projection_blocking uncommitted=$projection_uncommitted" ;;
     *) echo "check-architecture-sync: unsupported --format: $format" >&2; exit 2 ;;
   esac
   exit 0
@@ -331,8 +342,8 @@ fi
 changed_files="$(collect_changed_files | sort -u)"
 if [[ -z "$changed_files" ]]; then
   case "$format" in
-    json) printf '{"mode":"%s","gate_min_severity":"%s","changed_capabilities":0,"blocking":0,"projection":{"provider":"%s","apply":"%s","state":"%s","reason":"%s","pending":%s,"running":%s,"dead_letters":%s,"human_actions":%s,"adoption_required":%s,"blocking":%s}}\n' "$(json_escape "$mode")" "$(json_escape "$threshold")" "$(json_escape "$projection_provider")" "$(json_escape "$projection_apply")" "$(json_escape "$projection_state")" "$(json_escape "$projection_reason")" "$projection_pending" "$projection_running" "$projection_dead_letters" "$projection_human_actions" "$projection_adoption_required" "$projection_blocking" ;;
-    text) echo "[ArchitectureSync] mode=$mode gate_min_severity=$threshold changed_capabilities=0 blocking=0"; echo "[ArchitectureProjection] provider=$projection_provider apply=$projection_apply state=$projection_state pending=$projection_pending running=$projection_running dead_letters=$projection_dead_letters human_actions=$projection_human_actions adoption_required=$projection_adoption_required blocking=$projection_blocking" ;;
+    json) printf '{"mode":"%s","gate_min_severity":"%s","changed_capabilities":0,"blocking":0,"projection":{"provider":"%s","apply":"%s","state":"%s","reason":"%s","pending":%s,"running":%s,"dead_letters":%s,"human_actions":%s,"adoption_required":%s,"blocking":%s,"uncommitted":%s}}\n' "$(json_escape "$mode")" "$(json_escape "$threshold")" "$(json_escape "$projection_provider")" "$(json_escape "$projection_apply")" "$(json_escape "$projection_state")" "$(json_escape "$projection_reason")" "$projection_pending" "$projection_running" "$projection_dead_letters" "$projection_human_actions" "$projection_adoption_required" "$projection_blocking" "$projection_uncommitted" ;;
+    text) echo "[ArchitectureSync] mode=$mode gate_min_severity=$threshold changed_capabilities=0 blocking=0"; echo "[ArchitectureProjection] provider=$projection_provider apply=$projection_apply state=$projection_state pending=$projection_pending running=$projection_running dead_letters=$projection_dead_letters human_actions=$projection_human_actions adoption_required=$projection_adoption_required blocking=$projection_blocking uncommitted=$projection_uncommitted" ;;
     *) echo "check-architecture-sync: unsupported --format: $format" >&2; exit 2 ;;
   esac
   exit 0
@@ -362,12 +373,12 @@ case "$format" in
     blocking_json="$(
       printf '%s\n' "$blocking_lines" | awk -F '\t' 'NF >= 3 { printf "%s{\"capability_id\":\"%s\",\"severity\":\"%s\",\"request\":\"%s\"}", sep, $1, $2, $3; sep="," }'
     )"
-    printf '{"mode":"%s","gate_min_severity":"%s","changed_capabilities":%s,"blocking":%s,"blocking_requests":[%s],"projection":{"provider":"%s","apply":"%s","state":"%s","reason":"%s","pending":%s,"running":%s,"dead_letters":%s,"human_actions":%s,"adoption_required":%s,"blocking":%s}}\n' \
-      "$(json_escape "$mode")" "$(json_escape "$threshold")" "$changed_count" "$blocking_count" "$blocking_json" "$(json_escape "$projection_provider")" "$(json_escape "$projection_apply")" "$(json_escape "$projection_state")" "$(json_escape "$projection_reason")" "$projection_pending" "$projection_running" "$projection_dead_letters" "$projection_human_actions" "$projection_adoption_required" "$projection_blocking"
+    printf '{"mode":"%s","gate_min_severity":"%s","changed_capabilities":%s,"blocking":%s,"blocking_requests":[%s],"projection":{"provider":"%s","apply":"%s","state":"%s","reason":"%s","pending":%s,"running":%s,"dead_letters":%s,"human_actions":%s,"adoption_required":%s,"blocking":%s,"uncommitted":%s}}\n' \
+      "$(json_escape "$mode")" "$(json_escape "$threshold")" "$changed_count" "$blocking_count" "$blocking_json" "$(json_escape "$projection_provider")" "$(json_escape "$projection_apply")" "$(json_escape "$projection_state")" "$(json_escape "$projection_reason")" "$projection_pending" "$projection_running" "$projection_dead_letters" "$projection_human_actions" "$projection_adoption_required" "$projection_blocking" "$projection_uncommitted"
     ;;
   text)
     echo "[ArchitectureSync] mode=$mode gate_min_severity=$threshold changed_capabilities=$changed_count blocking=$blocking_count"
-    echo "[ArchitectureProjection] provider=$projection_provider apply=$projection_apply state=$projection_state pending=$projection_pending running=$projection_running dead_letters=$projection_dead_letters human_actions=$projection_human_actions adoption_required=$projection_adoption_required blocking=$projection_blocking"
+    echo "[ArchitectureProjection] provider=$projection_provider apply=$projection_apply state=$projection_state pending=$projection_pending running=$projection_running dead_letters=$projection_dead_letters human_actions=$projection_human_actions adoption_required=$projection_adoption_required blocking=$projection_blocking uncommitted=$projection_uncommitted"
     if [[ "$blocking_count" -gt 0 ]]; then
       printf '%s\n' "$blocking_lines" | while IFS=$'\t' read -r capability severity request; do
         [[ -n "$capability" ]] || continue
