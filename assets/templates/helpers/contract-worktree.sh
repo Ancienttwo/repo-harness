@@ -33,6 +33,11 @@ if [[ -n "${REPO_HARNESS_HELPER_SOURCE_PATH:-}" && -f "$REPO_HARNESS_HELPER_SOUR
 fi
 helper_dir="$(cd "$(dirname "$helper_source")" && pwd)"
 
+worktree_merge_lib="$helper_dir/worktree-merge-lib.sh"
+[[ -f "$worktree_merge_lib" ]] || { echo "contract-worktree: worktree merge library is unavailable: $worktree_merge_lib" >&2; exit 1; }
+# shellcheck source=worktree-merge-lib.sh
+. "$worktree_merge_lib"
+
 usage() {
   cat <<'USAGE_EOF'
 Usage:
@@ -1791,29 +1796,23 @@ cleanup_worktree() {
   fi
 
   if git show-ref --verify --quiet "refs/heads/$branch_name"; then
-    if git merge-base --is-ancestor "$branch_name" "$target_branch" >/dev/null 2>&1; then
-      echo "[ContractWorktree] Merge check for $branch_name: ancestor of $target_branch"
-      merge_mode="ancestor"
-    else
-      # Squash-merge (this repo's house ship flow) never makes the branch
-      # tip an ancestor of the target. Fall back to an absorption check:
-      # a conflict-free `git merge-tree --write-tree` whose resulting tree
-      # exactly equals the target's tree proves the branch adds nothing
-      # target doesn't already have. Any other outcome (conflict, command
-      # failure, differing tree) keeps refusing -- fail-closed, no widening.
-      local target_tree merge_tree_output absorbed=0
-      target_tree="$(git rev-parse "$target_branch^{tree}")"
-      if merge_tree_output="$(git merge-tree --write-tree "$target_branch" "$branch_name" 2>/dev/null)"; then
-        [[ "$merge_tree_output" == "$target_tree" ]] && absorbed=1
-      fi
-      if [[ "$absorbed" -eq 1 ]]; then
+    # Merge state comes from the shared authority in worktree-merge-lib.sh --
+    # scripts/ship-worktrees.sh consumes the same function, so the batch and
+    # single-slug entrypoints cannot drift apart again. The lib is
+    # fail-closed: anything it cannot prove merged comes back `unmerged`.
+    merge_mode="$(worktree_merge_mode "$branch_name" "$target_branch")"
+    case "$merge_mode" in
+      ancestor)
+        echo "[ContractWorktree] Merge check for $branch_name: ancestor of $target_branch"
+        ;;
+      absorbed)
         echo "[ContractWorktree] Merge check for $branch_name: absorbed into $target_branch (squash-equivalent tree)"
-        merge_mode="absorbed"
-      else
+        ;;
+      *)
         echo "contract-worktree: branch $branch_name is not fully merged into $target_branch; refusing cleanup" >&2
         exit 1
-      fi
-    fi
+        ;;
+    esac
   else
     echo "[ContractWorktree] Branch already absent, skipping: $branch_name"
   fi

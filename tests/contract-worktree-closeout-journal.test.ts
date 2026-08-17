@@ -249,7 +249,12 @@ function installFixture(container: string): Fixture {
   ]) {
     mkdirSync(join(primary, dir), { recursive: true });
   }
-  for (const helper of ["contract-worktree.sh", "ship-worktrees.sh", "archive-workflow.sh"]) {
+  for (const helper of [
+    "contract-worktree.sh",
+    "ship-worktrees.sh",
+    "worktree-merge-lib.sh",
+    "archive-workflow.sh",
+  ]) {
     copyFileSync(join(ROOT, "scripts", helper), join(primary, "scripts", helper));
     chmodSync(join(primary, "scripts", helper), 0o755);
   }
@@ -591,11 +596,21 @@ describe("contract-worktree finish closeout journal", () => {
         'closeout_journal_complete_effect_present "$journal_dir"',
       ].join("; ");
 
-      const advanced = runProcess("bash", ["-c", predicate, "complete-effect", dir], fixture.linked);
+      // $0 must name the sourced script: contract-worktree.sh resolves its
+      // sibling helpers (including worktree-merge-lib.sh) from dirname "$0".
+      const advanced = runProcess(
+        "bash",
+        ["-c", predicate, "scripts/contract-worktree.sh", dir],
+        fixture.linked,
+      );
       expect(advanced.status, `${advanced.stdout}\n${advanced.stderr}`).toBe(0);
 
       expect(runProcess("git", ["reset", "--hard", `${publication}^`], fixture.primary).status).toBe(0);
-      const reset = runProcess("bash", ["-c", predicate, "complete-effect", dir], fixture.linked);
+      const reset = runProcess(
+        "bash",
+        ["-c", predicate, "scripts/contract-worktree.sh", dir],
+        fixture.linked,
+      );
       expect(reset.status).not.toBe(0);
       expect(later).not.toBe(publication);
     });

@@ -376,7 +376,7 @@ describe("archive evidence gates", () => {
       ]) {
         mkdirSync(join(primary, dir), { recursive: true });
       }
-      for (const helper of ["contract-worktree.sh", "archive-workflow.sh"]) {
+      for (const helper of ["contract-worktree.sh", "worktree-merge-lib.sh", "archive-workflow.sh"]) {
         copyFileSync(join(ROOT, "scripts", helper), join(primary, "scripts", helper));
         chmodSync(join(primary, "scripts", helper), 0o755);
       }
