@@ -48,7 +48,7 @@
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: 639b5fc7950c09a523d421556cfd24bb97b6d966
 > **Verification Evidence SHA256**: sha256:58f149fa4f73b1892643885f7b4e3e204192f15f4a31578e4455d468bf2cce9e
-> **Issued At**: 2026-08-17T21:46:34.517Z
+> **Issued At**: 2026-08-17T21:47:52.463Z
 
 - Summary: One typed selector for worktree base metadata; reproduced bypass closed, eleven named fail-closed causes. 16/16 contract criteria pass, full suite 2498 pass / 0 fail.
 - Findings: none
