@@ -22,9 +22,10 @@
  * Rows 5 and 4 split on `next_action`, which is the effective-state
  * projector's single "next step inside the active plan" field (first open plan
  * task, else a fresh handoff's exact next step). Rows 8-11 are the only place
- * the sprint file is read at all, and they read exactly two predicates from it
- * -- its status and whether any row is still pending. Which row runs next stays
- * `sprint-backlog`'s decision; this projection only names the command.
+ * the sprint file is read at all: they read its status, whether any row is
+ * still pending, and -- because `start-task` requires `--task` and never
+ * selects a row itself -- the first pending row's Task cell, which the
+ * `advance_sprint` command has to name.
  *
  * `verify_or_finish` (row 5) reuses the requirement-key vocabulary
  * `complete_approved_work_package` as its reason: the effective-state
@@ -41,6 +42,7 @@
  */
 import { evaluateAttemptStall, type AttemptLedgerRead } from './attempt-ledger';
 import { markdownHeader } from './artifact-parsers';
+import { backlogRows } from './sprint-backlog-rows';
 import type {
   ContinuationEnvelopeV1,
   ContinuationRoute,
@@ -50,7 +52,17 @@ import type {
 /** Existing commands the envelope points at; never re-implemented here. */
 const CONTINUE_COMMAND = 'repo-harness state resolve --json';
 const VERIFY_COMMAND = 'repo-harness run verify-sprint';
-const ADVANCE_COMMAND = 'repo-harness run sprint-backlog start-task --execute';
+
+/**
+ * `sprint-backlog start-task` requires `--task`: it refuses to select a row
+ * itself, because the backlog carries no dependency or parallel-safety column.
+ * Naming the row is the caller's decision, and this projection is that caller
+ * -- it names the first pending row's Task cell, which `backlogRows` already
+ * publishes. The cell is free text, so it is single-quote escaped.
+ */
+function advanceCommand(task: string): string {
+  return `repo-harness run sprint-backlog start-task --task '${task.replace(/'/g, "'\\''")}' --execute`;
+}
 
 const EXECUTABLE_PLAN_STATUS: ReadonlySet<string> = new Set(['approved', 'executing']);
 const EXECUTABLE_SPRINT_STATUS: ReadonlySet<string> = new Set(['Approved', 'Executing']);
@@ -72,29 +84,18 @@ export interface ContinuationEnvelopeInputs {
 }
 
 /**
- * Backlog row status cells, in file order. Mirrors `sprint-backlog.sh`'s
- * `backlog_rows` scan (rows between `## Backlog` and the next `## ` heading,
- * `| <index> | <status> | ...`) but reads only the status cell -- the task,
- * mode, acceptance, and plan cells stay `sprint-backlog`'s business.
+ * Backlog row status cells, in file order. The grammar itself lives in
+ * `sprint-backlog-rows.ts`, which is the single TypeScript projection of
+ * `sprint-backlog.sh`'s `backlog_rows` scan; the mode, acceptance, and plan
+ * cells stay `sprint-backlog`'s and the coordination plane's business.
  *
- * Exported for the drift check in `tests/sprint-backlog-grammar-drift.test.ts`,
- * which runs this scan and the live `backlog_rows` awk over one fixture corpus
- * and fails when either grammar moves alone.
+ * Still exported for the drift check in
+ * `tests/sprint-backlog-grammar-drift.test.ts`, which runs this scan and the
+ * live `backlog_rows` awk over one fixture corpus and fails when either
+ * grammar moves alone.
  */
 export function backlogRowStatuses(sprintText: string): string[] {
-  const statuses: string[] = [];
-  let inSection = false;
-  for (const line of sprintText.split(/\r?\n/)) {
-    if (/^## Backlog[ \t]*$/.test(line)) {
-      inSection = true;
-      continue;
-    }
-    if (!inSection) continue;
-    if (/^## /.test(line)) break;
-    if (!/^\|[ \t]*[0-9]+[ \t]*\|/.test(line)) continue;
-    statuses.push((line.split('|')[2] ?? '').trim());
-  }
-  return statuses;
+  return backlogRows(sprintText).map((row) => row.status);
 }
 
 /** The route table above, before the circuit breaker's post-pass. */
@@ -153,17 +154,19 @@ function projectRoutedEnvelope(
     return envelope('halt', sprintPath, null, `sprint_status:${sprintStatus ?? 'unknown'}`);
   }
 
-  const rows = backlogRowStatuses(sprintText);
+  const rows = backlogRows(sprintText);
   if (rows.length === 0) {
     return envelope('halt', sprintPath, null, 'sprint_backlog:empty');
   }
-  if (rows.some((status) => status === PENDING_ROW)) {
-    return envelope('advance_sprint', sprintPath, ADVANCE_COMMAND, 'sprint_backlog:pending');
+  const pending = rows.find((row) => row.status === PENDING_ROW);
+  if (pending) {
+    return envelope('advance_sprint', sprintPath, advanceCommand(pending.task), 'sprint_backlog:pending');
   }
   // `[ ]` and `[x]` are the only statuses `sprint-backlog` writes (in-flight
-  // work keeps its row pending and lives in a separate marker directory), so
-  // anything else is an unrecognized backlog state, never a finished goal.
-  if (!rows.every((status) => /^\[[xX]\]$/.test(status))) {
+  // work keeps its row pending and is recorded on the shared coordination
+  // plane), so anything else is an unrecognized backlog state, never a
+  // finished goal.
+  if (!rows.every((row) => /^\[[xX]\]$/.test(row.status))) {
     return envelope('halt', sprintPath, null, 'sprint_backlog:unknown_row_status');
   }
   return envelope('complete', sprintPath, null, 'sprint_backlog:complete');

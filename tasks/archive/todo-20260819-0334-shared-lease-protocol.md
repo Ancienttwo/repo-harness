@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-19 03:34
+> **Related Plan**: plans/archive/plan-20260818-1156-shared-lease-protocol.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260819-0334
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog

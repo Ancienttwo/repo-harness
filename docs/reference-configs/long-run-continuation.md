@@ -27,7 +27,7 @@ Rules that make the tick safe to repeat:
 | Route | Meaning | Host action |
 |---|---|---|
 | `continue_active_plan` | The active plan has an open task; `reason` carries `next_action:<step>` | Run the envelope's `command` (`repo-harness state resolve --json`) for the full brief, then dispatch bounded execution on that next task |
-| `advance_sprint` | No active plan, and the Approved sprint still has a pending row | `repo-harness run sprint-backlog start-task --execute` |
+| `advance_sprint` | No active plan, and the Approved sprint still has a pending row | Run the envelope's `command` verbatim. `start-task` requires `--task` and never selects a row itself, so the envelope names the first pending row: `repo-harness run sprint-backlog start-task --task '<row task>' --execute` |
 | `verify_or_finish` | The active plan's tasks are all checked off | Run the completion gate — `repo-harness run verify-sprint --prepare-acceptance`, then `repo-harness run acceptance-receipt record`, then `repo-harness run verify-sprint` — and only then `repo-harness run contract-worktree finish`. The envelope's `command` field names only the gate's final verification step (`repo-harness run verify-sprint`); the full gate sequence and the `finish` step are protocol knowledge from this document, not envelope-supplied |
 | `halt` | A blocker, an unapproved plan/sprint, unusable sprint authority, a stall, or an unreadable ledger; `command` is `null` | Surface `reason` to the operator and stop. Never retry a halt without a state change — the same bytes produce the same halt |
 | `complete` | Every backlog row of the active sprint is done | Stop the loop |

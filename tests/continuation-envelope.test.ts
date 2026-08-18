@@ -147,7 +147,7 @@ describe('continuation envelope routes', () => {
       expected: {
         route: 'advance_sprint',
         unit_ref: SPRINT,
-        command: 'repo-harness run sprint-backlog start-task --execute',
+        command: "repo-harness run sprint-backlog start-task --task 'second work package' --execute",
         reason: 'sprint_backlog:pending',
       },
     },

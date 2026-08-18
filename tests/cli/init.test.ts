@@ -12,7 +12,7 @@ import {
 } from "fs";
 import { spawnSync } from "child_process";
 import { tmpdir } from "os";
-import { join } from "path";
+import { dirname, join } from "path";
 import { PassThrough, Writable } from "stream";
 import {
   runInit,
@@ -22,6 +22,12 @@ import {
   writeGlobalContextFiles,
 } from "../../src/cli/commands/init";
 import { configuredBrainRoot } from "../../src/cli/commands/brain-root";
+import {
+  cutoverMarkerPath,
+  inspectCutoverQuiescence,
+  isCutoverInstalled,
+  recordCutoverInstalled,
+} from "../../src/effects/state/coordination-cutover";
 
 const ROOT = join(import.meta.dir, "..", "..");
 const CLI = join(ROOT, "src/cli/index.ts");
@@ -884,6 +890,97 @@ describe("init command", () => {
       rmSync(tmp, { recursive: true, force: true });
     }
   }, CODEGRAPH_INIT_TIMEOUT_MS);
+});
+
+/**
+ * The shared lease cutover is one-shot. Live contract worktrees are the normal
+ * steady state of an adopted repository, so a permanently armed quiescence gate
+ * would refuse every later `init` -- including upgrades that have nothing to do
+ * with sprint leases. Both directions are asserted here.
+ */
+describe("init cutover quiescence gate", () => {
+  function liveContractWorktreeRepo(tmp: string): { source: string; repo: string } {
+    const source = join(tmp, "source");
+    const repo = join(tmp, "repo");
+    mkdirSync(source, { recursive: true });
+    mkdirSync(repo, { recursive: true });
+    setupFakeSource(source);
+    expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
+    writeFileSync(join(repo, "README.md"), "fixture\n");
+    expect(spawnSync("git", ["add", "-A"], { cwd: repo }).status).toBe(0);
+    expect(
+      spawnSync("git", ["-c", "user.email=t@e.st", "-c", "user.name=t", "commit", "-qm", "base"], {
+        cwd: repo,
+      }).status,
+    ).toBe(0);
+
+    // A linked worktree carrying its own contract metadata: exactly the
+    // `executing_contract_worktree` blocker the gate reports.
+    const live = join(tmp, "live");
+    expect(spawnSync("git", ["worktree", "add", "-q", live, "-b", "codex/live"], { cwd: repo }).status).toBe(0);
+    mkdirSync(join(live, ".ai", "harness", "worktrees"), { recursive: true });
+    writeFileSync(join(live, ".ai", "harness", "worktrees", "codex-live.json"), "{}\n");
+
+    return { source, repo };
+  }
+
+  const initOptions = {
+    syncSkill: false,
+    hostAdapters: false,
+    externalSkills: false,
+    verify: false,
+    codegraph: false,
+  } as const;
+
+  test("refuses to apply while the plane is absent and execution state is live", () => {
+    const tmp = join(tmpdir(), `init-cutover-absent-${Date.now()}`);
+    try {
+      const { source, repo } = liveContractWorktreeRepo(tmp);
+      expect(isCutoverInstalled(repo)).toBe(false);
+
+      const result = runInit({ repo, sourceRoot: source, ...initOptions });
+
+      expect(result.exitCode).toBe(1);
+      const gate = result.steps.find((step) => step.step === "cutover quiescence");
+      expect(gate?.status).toBe("failed");
+      expect(gate?.stderr).toContain("executing_contract_worktree");
+      // Fail-closed means nothing was applied and nothing was marked.
+      expect(existsSync(join(repo, ".ai", "harness", "workflow-contract.json"))).toBe(false);
+      expect(isCutoverInstalled(repo)).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 30000);
+
+  test("does not refuse once the plane is installed, even with live contract worktrees", () => {
+    const tmp = join(tmpdir(), `init-cutover-installed-${Date.now()}`);
+    try {
+      const { source, repo } = liveContractWorktreeRepo(tmp);
+      recordCutoverInstalled(cutoverMarkerPath(repo)!);
+      expect(isCutoverInstalled(repo)).toBe(true);
+      // The blockers are still live; the marker is what makes the gate inert.
+      expect(inspectCutoverQuiescence(repo).quiescent).toBe(false);
+
+      const result = runInit({ repo, sourceRoot: source, ...initOptions });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.steps.find((step) => step.step === "cutover quiescence")).toBeUndefined();
+      expect(existsSync(join(repo, ".ai", "harness", "workflow-contract.json"))).toBe(true);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 30000);
+
+  test("an empty coordination directory does not read as installed", () => {
+    const tmp = join(tmpdir(), `init-cutover-empty-${Date.now()}`);
+    try {
+      const { repo } = liveContractWorktreeRepo(tmp);
+      mkdirSync(dirname(cutoverMarkerPath(repo)!), { recursive: true });
+      expect(isCutoverInstalled(repo)).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 30000);
 });
 
 describe("bundled host runtimes", () => {

@@ -29,6 +29,7 @@ import { buildMcpCommand } from './commands/mcp';
 import { buildChatgptCommand } from './commands/chatgpt';
 import { buildRunCommand } from './commands/run';
 import { buildStateCommand } from './commands/state';
+import { buildSprintCommand } from './commands/sprint';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
 import { runGlobalRuntimeSetup, type GlobalRuntimeOptions, type GlobalRuntimeResult } from './commands/global-runtime';
@@ -721,6 +722,7 @@ export function buildProgram(): Command {
   program.addCommand(buildChatgptCommand());
   program.addCommand(buildRunCommand());
   program.addCommand(buildStateCommand());
+  program.addCommand(buildSprintCommand());
   program.addCommand(buildArchitectureProjectionCommand());
   program
     .command('circuit-breaker-record', { hidden: true })

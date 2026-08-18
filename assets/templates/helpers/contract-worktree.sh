@@ -1397,6 +1397,109 @@ refresh_and_freeze_base() {
   git rev-parse "$base_ref^{commit}"
 }
 
+# --- shared sprint lease gate ------------------------------------------------
+# A contract worktree that holds a sprint claim token may publish only while it
+# still owns that lease. The gate is the real enforcement boundary for `steal`:
+# a stolen-from agent cannot publish, with or without any hook.
+#
+# A worktree holding no token is not executing a claimed sprint row (a plan
+# captured outside the sprint flow), so there is no ownership to compare and
+# nothing to gate.
+sprint_lease_claim_id=""
+sprint_lease_token_file=""
+SPRINT_CLI_RESOLVED=0
+SPRINT_CLI_CMD=()
+
+resolve_sprint_cli() {
+  [[ "$SPRINT_CLI_RESOLVED" -eq 0 ]] || return 0
+  if [[ -n "${REPO_HARNESS_CLI_BIN:-}" ]]; then
+    if [[ "$REPO_HARNESS_CLI_BIN" != /* || ! -x "$REPO_HARNESS_CLI_BIN" ]]; then
+      echo "contract-worktree: REPO_HARNESS_CLI_BIN is not an executable absolute path: $REPO_HARNESS_CLI_BIN" >&2
+      return 1
+    fi
+    SPRINT_CLI_CMD=("$REPO_HARNESS_CLI_BIN")
+  elif command -v repo-harness >/dev/null 2>&1; then
+    SPRINT_CLI_CMD=(repo-harness)
+  elif [[ -f "src/cli/index.ts" ]] && command -v bun >/dev/null 2>&1; then
+    SPRINT_CLI_CMD=(bun "src/cli/index.ts")
+  else
+    echo "contract-worktree: the repo-harness CLI is unavailable; the sprint lease cannot be verified" >&2
+    return 1
+  fi
+  SPRINT_CLI_RESOLVED=1
+}
+
+sprint_lease() {
+  resolve_sprint_cli || return 1
+  "${SPRINT_CLI_CMD[@]}" sprint "$@"
+}
+
+sprint_claim_dir() {
+  local marker
+  marker="$(policy_get '.sprints.active_marker_file' '.ai/harness/sprint/active-sprint')"
+  printf '%s/claims' "$(dirname "$marker")"
+}
+
+# One worktree executes one claimed row, so more than one token here is an
+# impossible state and fails closed instead of selecting one.
+resolve_sprint_claim_token() {
+  local dir token
+  sprint_lease_claim_id=""
+  sprint_lease_token_file=""
+  dir="$(sprint_claim_dir)"
+  [[ -d "$dir" ]] || return 0
+  for token in "$dir"/*.claim; do
+    [[ -f "$token" ]] || continue
+    if [[ -n "$sprint_lease_token_file" ]]; then
+      echo "contract-worktree: more than one sprint claim token in this worktree: $dir" >&2
+      return 1
+    fi
+    sprint_lease_token_file="$token"
+  done
+  [[ -n "$sprint_lease_token_file" ]] || return 0
+  sprint_lease_claim_id="$(sed -n 's/^claim_id=//p' "$sprint_lease_token_file" | head -1)"
+  if [[ -z "$sprint_lease_claim_id" ]]; then
+    echo "contract-worktree: sprint claim token carries no claim id: $sprint_lease_token_file" >&2
+    return 1
+  fi
+  return 0
+}
+
+# Claim id, worktree binding, and task revision, all inside the per-task lock,
+# before the publication tree is built.
+sprint_lease_begin_completion() {
+  local target_branch="$1" output
+  [[ -n "$sprint_lease_claim_id" ]] || return 0
+  if ! output="$(sprint_lease begin-completion \
+    --claim-id "$sprint_lease_claim_id" \
+    --worktree "$closeout_journal_worktree" \
+    --target-ref "$target_branch" 2>&1)"; then
+    printf '%s\n' "$output" >&2
+    echo "contract-worktree: this worktree no longer owns the sprint lease it claimed (claim $sprint_lease_claim_id); refusing to publish" >&2
+    return 1
+  fi
+  echo "[ContractWorktree] Sprint lease verified for claim $sprint_lease_claim_id"
+  return 0
+}
+
+# Release after publication, never before: no single atomic operation spans a
+# git publication and a filesystem lease. A crash in between leaves a completed
+# canonical row with a residual lease, which is a legal named state that
+# `repo-harness sprint reconcile` clears -- so a failed release here is
+# reported, not treated as a failed finish.
+sprint_lease_release_after_publication() {
+  local output
+  [[ -n "$sprint_lease_claim_id" ]] || return 0
+  if ! output="$(sprint_lease release --claim-id "$sprint_lease_claim_id" 2>&1)"; then
+    printf '%s\n' "$output" >&2
+    echo "[ContractWorktree] Warning: the sprint lease survived publication (claim $sprint_lease_claim_id); run 'repo-harness sprint reconcile --task-id <id> --target-ref <branch>' to clear it" >&2
+    return 0
+  fi
+  rm -f "$sprint_lease_token_file"
+  echo "[ContractWorktree] Released sprint lease (claim $sprint_lease_claim_id)"
+  return 0
+}
+
 finish_worktree() {
   local merge_back=1
   local target_branch
@@ -1504,6 +1607,12 @@ finish_worktree() {
 
   [[ -n "$contract_file" && -f "$contract_file" ]] || { echo "contract-worktree: no active sprint contract found" >&2; exit 1; }
   [[ -n "$review_file" && -f "$review_file" ]] || { echo "contract-worktree: no active sprint review found" >&2; exit 1; }
+
+  # Sprint lease gate, before any verification or publication work: ownership
+  # is checked first so a displaced agent stops here rather than after running
+  # a full verification pass it may not publish.
+  resolve_sprint_claim_token || { closeout_claim_release; return 1; }
+  sprint_lease_begin_completion "$target_branch" || { closeout_claim_release; return 1; }
 
   frozen_base_sha="$(refresh_and_freeze_base "$gate_base_ref" "$target_branch")"
   verify_acceptance_receipt "$contract_file"
@@ -1759,6 +1868,7 @@ finish_worktree() {
   }
   finish_transaction_phase merged "$publication_sha"
   finish_transaction_commit "$publication_sha"
+  sprint_lease_release_after_publication
   echo "[ContractWorktree] Merged $current_branch into $target_branch as single publication commit $publication_sha at $target_worktree"
 }
 
@@ -1799,7 +1909,11 @@ backfill_sprint_backlog() {
   task_ref="${sprint_path#*#}"
   sprint_path="${sprint_path%%#*}"
 
-  if REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" bash "$helper_dir/sprint-backlog.sh" complete-task --sprint "$sprint_path" --task "$task_ref" --plan "$archived_plan"; then
+  # --defer-lease-release: this back-fill only builds the publication tree. The
+  # lease is released after the publication commit lands, so the crash window
+  # in between stays a named, reconcilable state instead of a lease that was
+  # dropped before the work was published.
+  if REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" bash "$helper_dir/sprint-backlog.sh" complete-task --sprint "$sprint_path" --task "$task_ref" --plan "$archived_plan" --defer-lease-release; then
     echo "[ContractWorktree] Sprint backlog updated: $sprint_path ($task_ref)"
   else
     echo "[ContractWorktree] Sprint backlog back-fill failed for $sprint_path ($task_ref); finish is incomplete." >&2

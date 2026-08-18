@@ -90,6 +90,14 @@ function writeExecutable(path: string, body: string): void {
   chmodSync(path, 0o755);
 }
 
+/** A `repo-harness` entrypoint bound to this checkout, for the shell helpers. */
+const CLI_WRAPPER = (() => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'conformance-cli-')));
+  const wrapper = join(dir, 'repo-harness');
+  writeExecutable(wrapper, `#!/bin/bash\nexec ${process.execPath} ${CLI} "$@"\n`);
+  return wrapper;
+})();
+
 function withTempDir<T>(prefix: string, fn: (dir: string) => T): T {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), `${prefix}-`)));
   try {
@@ -351,6 +359,52 @@ function installFixture(container: string): Fixture {
   };
 }
 
+/**
+ * Argv for a command string the envelope published, read the way a POSIX
+ * shell would: whitespace-separated words, single-quoted spans, and backslash
+ * escapes. The driver never synthesizes argv of its own -- it runs the string
+ * it was handed -- so a command the envelope names but cannot succeed fails
+ * here instead of passing against a driver-invented variant.
+ */
+function shellArgv(command: string): string[] {
+  const argv: string[] = [];
+  let current = '';
+  let started = false;
+  let quoted = false;
+  for (let i = 0; i < command.length; i += 1) {
+    const char = command[i]!;
+    if (quoted) {
+      if (char === "'") quoted = false;
+      else current += char;
+      continue;
+    }
+    if (char === "'") {
+      quoted = true;
+      started = true;
+      continue;
+    }
+    if (char === '\\' && i + 1 < command.length) {
+      current += command[i + 1]!;
+      started = true;
+      i += 1;
+      continue;
+    }
+    if (char === ' ' || char === '\t') {
+      if (started) {
+        argv.push(current);
+        current = '';
+        started = false;
+      }
+      continue;
+    }
+    current += char;
+    started = true;
+  }
+  expect(quoted, `unterminated quote in command: ${command}`).toBe(false);
+  if (started) argv.push(current);
+  return argv;
+}
+
 /** Read one continuation envelope. This is the only thing the driver reads. */
 function tick(cwd: string): ContinuationEnvelopeV1 {
   const result = run(process.execPath, [CLI, 'state', 'next', '--json'], cwd);
@@ -401,6 +455,10 @@ function helper(cwd: string, script: string, args: readonly string[], env: NodeJ
     HOOK_HOST: 'codex',
     REPO_HARNESS_HOOK_CLI: join(ROOT, 'src/cli/hook-entry.ts'),
     REPO_HARNESS_BUN_BIN: process.execPath,
+    // The sprint lease verbs live in the CLI; a disposable repository has no
+    // copy of it, and an ambient `repo-harness` on PATH would be a different
+    // build than the source under test.
+    REPO_HARNESS_CLI_BIN: CLI_WRAPPER,
     REPO_HARNESS_WORKFLOW_STATE_LIB: join(cwd, '.ai/hooks/lib/workflow-state.sh'),
     ...env,
   });
@@ -422,6 +480,7 @@ function helperWithFault(
       HOOK_HOST: 'codex',
       REPO_HARNESS_HOOK_CLI: join(ROOT, 'src/cli/hook-entry.ts'),
       REPO_HARNESS_BUN_BIN: process.execPath,
+      REPO_HARNESS_CLI_BIN: CLI_WRAPPER,
       REPO_HARNESS_WORKFLOW_STATE_LIB: join(cwd, '.ai/hooks/lib/workflow-state.sh'),
       REPO_HARNESS_GIT_BIN: fixture.fakeGit,
       FAULT_PID_FILE: fixture.pidFile,
@@ -432,8 +491,19 @@ function helperWithFault(
   );
 }
 
+/**
+ * `advance_sprint`'s command names the row it claims, so its string is not a
+ * constant. The driver matches on this prefix and executes the argv it parses
+ * out of whatever follows.
+ */
+const ADVANCE_SPRINT_PREFIX = 'repo-harness run sprint-backlog start-task';
+
+/** The exact string the envelope is expected to publish for one backlog row. */
+function advanceSprintCommand(task: string): string {
+  return `${ADVANCE_SPRINT_PREFIX} --task '${task}' --execute`;
+}
+
 const HOST_COMMAND = {
-  advanceSprint: 'repo-harness run sprint-backlog start-task --execute',
   resolveState: 'repo-harness state resolve --json',
   prepareAcceptance: 'repo-harness run verify-sprint --prepare-acceptance',
   recordAcceptance: 'repo-harness run acceptance-receipt record',
@@ -449,9 +519,12 @@ function recordDriverCommand(fixture: Fixture, command: string): void {
 function executeHostCommand(fixture: Fixture, cwd: string, command: string): Run {
   recordDriverCommand(fixture, command);
   const gateEnv = { CONFORMANCE_GATE_LOG: fixture.gateLog };
+  if (command.startsWith(`${ADVANCE_SPRINT_PREFIX} `)) {
+    // Literal execution: `repo-harness run <helper> <args...>` maps onto the
+    // fixture's own copy of that helper, with the published args unchanged.
+    return helper(cwd, 'scripts/sprint-backlog.sh', shellArgv(command).slice(3), gateEnv);
+  }
   switch (command) {
-    case HOST_COMMAND.advanceSprint:
-      return helper(cwd, 'scripts/sprint-backlog.sh', ['start-task', '--execute'], gateEnv);
     case HOST_COMMAND.resolveState:
       return run(process.execPath, [CLI, 'state', 'resolve', '--json'], cwd);
     case HOST_COMMAND.prepareAcceptance:
@@ -536,7 +609,7 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
       const start = tick(primary);
       expect(start.route).toBe('advance_sprint');
       expect(start.unit_ref).toBe(SPRINT);
-      expect(start.command).toBe('repo-harness run sprint-backlog start-task --execute');
+      expect(start.command).toBe(advanceSprintCommand('row-one'));
 
       const advance = executeHostCommand(fixture, primary, start.command!);
       expect(advance.status, `${advance.stdout}\n${advance.stderr}`).toBe(0);
@@ -723,7 +796,7 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
 
       const driverCommands = readFileSync(fixture.driverLog, 'utf-8').trim().split('\n');
       expect(driverCommands).toEqual([
-        HOST_COMMAND.advanceSprint,
+        advanceSprintCommand('row-one'),
         HOST_COMMAND.resolveState,
         HOST_COMMAND.prepareAcceptance,
         HOST_COMMAND.recordAcceptance,
@@ -733,7 +806,7 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
         HOST_COMMAND.recordAcceptance,
         HOST_COMMAND.verifySprint,
         HOST_COMMAND.finishMerge,
-        HOST_COMMAND.advanceSprint,
+        advanceSprintCommand('row-two'),
         HOST_COMMAND.resolveState,
         HOST_COMMAND.resolveState,
         HOST_COMMAND.resolveState,

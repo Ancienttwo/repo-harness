@@ -35,8 +35,8 @@ Usage:
   repo-harness run sprint-backlog init --slug <slug> [--title <title>]
   repo-harness run sprint-backlog status
   repo-harness run sprint-backlog next
-  repo-harness run sprint-backlog start-task [--task <index|task>] [--execute] [--force] [--sprint <file>]
-  repo-harness run sprint-backlog complete-task --task <index|task> [--plan <plan-file>] [--sprint <file>]
+  repo-harness run sprint-backlog start-task --task <index|task> [--execute] [--sprint <file>]
+  repo-harness run sprint-backlog complete-task --task <index|task> [--plan <plan-file>] [--sprint <file>] [--defer-lease-release]
 
 Program-level sprint backlog helper. PRDs live in plans/prds/ as the upper
 planning layer; sprints live in plans/sprints/ as ordered execution backlogs.
@@ -44,12 +44,18 @@ Contract backlog rows are expanded with $think before the existing plan ->
 contract -> worktree flow. Inline rows stay in the sprint backlog or active
 plan Task Breakdown. tasks/todos.md stays the deferred-goal ledger.
 
-start-task reserves the next (or named) pending backlog row. Contract rows can
-capture a thin plan seed. Inline rows only record an in-flight marker and should
-not create plan/contract/review artifacts.
+start-task claims the named pending backlog row on the shared coordination
+plane before any capture runs. --task is required: preventing duplicate claims
+is not the same as proving two rows are safe to run in parallel, and the
+backlog carries no dependency or parallel-safety column, so there is no
+automatic claim-next. Contract rows can capture a thin plan seed. Inline rows
+should not create plan/contract/review artifacts.
 --sprint overrides the active-sprint marker (still confined to the sprints
 dir), which finish back-fill uses inside worktrees where the runtime marker
 is absent.
+--defer-lease-release leaves the lease alone: contract finish releases it after
+the publication commit lands, so complete-task must not release it while
+building the publication tree.
 
 Exit codes: 0 success; 1 error; 2 usage error; 3 no pending backlog task (next/start-task).
 USAGE_EOF
@@ -145,6 +151,18 @@ require_active_sprint() {
   printf '%s' "$sprint_file"
 }
 
+# The shared coordination plane, rooted at the git common directory so every
+# linked worktree of one clone addresses the same locks and leases. A
+# repo-relative path resolves inside each worktree instead, which is exactly
+# why the retired `.backlog-lock` and in-flight markers serialized nothing
+# across agents.
+coordination_root() {
+  local common_dir
+  common_dir="$(git rev-parse --git-common-dir 2>/dev/null)" || return 1
+  common_dir="$(cd "$common_dir" 2>/dev/null && pwd -P)" || return 1
+  printf '%s/repo-harness/coordination/v1' "$common_dir"
+}
+
 # Serialize read-modify-write mutations: two concurrent complete-task or
 # start-task calls would otherwise both render from the same snapshot and the
 # second mv would drop the first writer's update.
@@ -159,13 +177,18 @@ release_backlog_lock() {
 
 acquire_backlog_lock() {
   local attempts=0
+  local coordination_dir
   local max_attempts="${REPO_HARNESS_BACKLOG_LOCK_ATTEMPTS:-100}"
   local sleep_seconds="${REPO_HARNESS_BACKLOG_LOCK_SLEEP_SECONDS:-0.1}"
   case "$max_attempts" in
     ''|*[!0-9]*) max_attempts=100 ;;
   esac
   [[ "$sleep_seconds" =~ ^[0-9]+([.][0-9]+)?$ ]] || sleep_seconds=0.1
-  BACKLOG_LOCK_DIR="$(dirname "$marker_file")/.backlog-lock"
+  if ! coordination_dir="$(coordination_root)"; then
+    echo "sprint-backlog: not inside a git repository; the shared backlog lock is unavailable" >&2
+    exit 1
+  fi
+  BACKLOG_LOCK_DIR="$coordination_dir/locks/backlog.lock"
   mkdir -p "$(dirname "$BACKLOG_LOCK_DIR")"
   until mkdir "$BACKLOG_LOCK_DIR" 2>/dev/null; do
     # Reclaim only when the stale dir actually goes away; a non-empty lock dir
@@ -429,9 +452,14 @@ cmd_next() {
 cmd_complete_task() {
   local task_ref=""
   local plan_file=""
+  local defer_lease_release=0
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --defer-lease-release)
+        defer_lease_release=1
+        shift
+        ;;
       --task)
         [[ -n "${2:-}" ]] || { echo "sprint-backlog: --task requires a value" >&2; exit 2; }
         task_ref="$2"
@@ -538,7 +566,13 @@ cmd_complete_task() {
   fi
   printf '| %s | %s | %s | done |\n' "$timestamp" "$target_task" "${plan_cell:-(none)}" >> "$sprint_file"
 
-  clear_in_flight "$target_task"
+  # Same critical section as the row rewrite: the backlog lock is still held
+  # (released by the EXIT trap), so completion and release are one transaction
+  # for an inline task. Contract finish passes --defer-lease-release because its
+  # transaction boundary is the publication commit, not this rewrite.
+  if [[ "$defer_lease_release" -eq 0 ]]; then
+    release_task_lease "$sprint_file" "$target_task"
+  fi
 
   local done total
   read -r done total <<<"$(backlog_counts "$sprint_file")"
@@ -549,48 +583,156 @@ cmd_complete_task() {
   fi
 }
 
-# In-flight markers live under the gitignored runtime dir so duplicate
-# start-task calls are refused without writing tracked files in the primary
-# tree (contract rows must stay merge-pure until finish back-fills them).
-in_flight_dir() {
-  printf '%s/in-flight' "$(dirname "$marker_file")"
+# --- shared lease plane ------------------------------------------------------
+# Execution ownership lives in the common-dir lease record, never here. The
+# retired per-worktree in-flight markers were invisible to sibling worktrees
+# and keyed by normalize_slug(), which collapses "Fix auth bug" and
+# "Fix auth-bug" into one key -- harmless for a local marker and fatal for a
+# shared lease. They are deleted, not translated: mapping a legacy marker to a
+# canonical task needs the very identity derivation this protocol introduces,
+# and install/upgrade refuses to proceed while any legacy marker survives.
+
+SPRINT_CLI_RESOLVED=0
+SPRINT_CLI_CMD=()
+
+# The CLI owns every digest and every lease mutation. Re-deriving task_id or
+# task_revision in awk here would be a second implementation of the identity
+# contract, so the shell only ever passes values the CLI handed it back.
+resolve_sprint_cli() {
+  [[ "$SPRINT_CLI_RESOLVED" -eq 0 ]] || return 0
+  if [[ -n "${REPO_HARNESS_CLI_BIN:-}" ]]; then
+    if [[ "$REPO_HARNESS_CLI_BIN" != /* || ! -x "$REPO_HARNESS_CLI_BIN" ]]; then
+      echo "sprint-backlog: REPO_HARNESS_CLI_BIN is not an executable absolute path: $REPO_HARNESS_CLI_BIN" >&2
+      exit 1
+    fi
+    SPRINT_CLI_CMD=("$REPO_HARNESS_CLI_BIN")
+  elif command -v repo-harness >/dev/null 2>&1; then
+    SPRINT_CLI_CMD=(repo-harness)
+  elif [[ -f "src/cli/index.ts" ]] && command -v bun >/dev/null 2>&1; then
+    SPRINT_CLI_CMD=(bun "src/cli/index.ts")
+  else
+    echo "sprint-backlog: the repo-harness CLI is unavailable; sprint leases cannot be reached" >&2
+    exit 1
+  fi
+  SPRINT_CLI_RESOLVED=1
 }
 
-in_flight_marker_for() {
-  printf '%s/%s' "$(in_flight_dir)" "$(normalize_slug "$1")"
+sprint_lease() {
+  resolve_sprint_cli
+  "${SPRINT_CLI_CMD[@]}" sprint "$@"
 }
 
-task_in_flight() {
-  [[ -f "$(in_flight_marker_for "$1")" ]]
+# The verbs emit one JSON object per line-per-field, so a field read is exact
+# rather than a general JSON parse the shell has no business attempting.
+json_string_field() {
+  printf '%s\n' "$1" | sed -nE "s/^[[:space:]]*\"$2\": \"([^\"]*)\",?[[:space:]]*\$/\1/p" | head -1
 }
 
-record_in_flight() {
-  mkdir -p "$(in_flight_dir)"
-  printf '%s' "${2:-capturing}" > "$(in_flight_marker_for "$1")"
+coordination_target_ref() {
+  policy_get '.worktree_strategy.merge_back.target' 'main'
 }
 
-clear_in_flight() {
-  rm -f "$(in_flight_marker_for "$1")" 2>/dev/null || true
+coordination_session_id() {
+  printf '%s' "${HOOK_RUN_ID:-${CLAUDE_RUN_ID:-${CODEX_RUN_ID:-session-$$}}}"
 }
 
-# Drop markers whose backlog row is gone or already complete (finish back-fill
-# runs in the worktree and cannot clean the primary tree's markers).
-prune_in_flight_markers() {
-  local file="$1"
-  local marker task_slug keep _idx status task _rest
-  [[ -d "$(in_flight_dir)" ]] || return 0
-  for marker in "$(in_flight_dir)"/*; do
-    [[ -e "$marker" ]] || continue
-    task_slug="$(basename "$marker")"
-    keep=0
-    while IFS=$'\t' read -r _idx status task _rest; do
-      if [[ "$(normalize_slug "$task")" == "$task_slug" && "$status" == "[ ]" ]]; then
-        keep=1
-        break
-      fi
-    done < <(backlog_rows "$file")
-    [[ "$keep" -eq 1 ]] || rm -f "$marker"
+# The fencing token this tree holds. The lease record is the authority; this
+# file is only the capability proving that this tree, and not a tree the claim
+# was stolen from, may still act on it.
+claim_token_dir() {
+  printf '%s/claims' "$(dirname "$marker_file")"
+}
+
+claim_token_field() {
+  sed -n "s/^$2=//p" "$1" | head -1
+}
+
+write_claim_token() {
+  local tree="$1" task_id="$2" claim_id="$3" sprint_path="$4" task_cell="$5" unit_ref="$6"
+  local dir="$tree/$(claim_token_dir)"
+  mkdir -p "$dir"
+  {
+    printf 'claim_id=%s\n' "$claim_id"
+    printf 'task_id=%s\n' "$task_id"
+    printf 'sprint=%s\n' "$sprint_path"
+    printf 'task=%s\n' "$task_cell"
+    printf 'unit_ref=%s\n' "$unit_ref"
+  } > "$dir/${task_id}.claim"
+}
+
+# 0 with the token path on stdout, 1 when this tree holds none, 2 when more
+# than one matches -- ambiguity fails closed instead of picking a token.
+find_claim_token() {
+  local sprint_path="$1" task_cell="$2" dir token match=""
+  dir="$(claim_token_dir)"
+  [[ -d "$dir" ]] || return 1
+  for token in "$dir"/*.claim; do
+    [[ -f "$token" ]] || continue
+    [[ "$(claim_token_field "$token" sprint)" == "$sprint_path" ]] || continue
+    [[ "$(claim_token_field "$token" task)" == "$task_cell" ]] || continue
+    if [[ -n "$match" ]]; then
+      echo "sprint-backlog: more than one claim token matches '$task_cell' in $sprint_path" >&2
+      return 2
+    fi
+    match="$token"
   done
+  [[ -n "$match" ]] || return 1
+  printf '%s' "$match"
+}
+
+# Inline completion releases inside the caller's backlog-lock critical section.
+# A row completed without a token in this tree releases nothing: either it was
+# never claimed, or the claim was stolen and the new owner's lease is not this
+# caller's to delete.
+release_task_lease() {
+  local sprint_path="$1" task_cell="$2"
+  local token status claim_id output
+  set +e
+  token="$(find_claim_token "$sprint_path" "$task_cell")"
+  status=$?
+  set -e
+  case "$status" in
+    0) ;;
+    1) return 0 ;;
+    *) exit 1 ;;
+  esac
+
+  claim_id="$(claim_token_field "$token" claim_id)"
+  if [[ -z "$claim_id" ]]; then
+    echo "sprint-backlog: claim token carries no claim id: $token" >&2
+    exit 1
+  fi
+  if ! output="$(sprint_lease release --claim-id "$claim_id" 2>&1)"; then
+    printf '%s\n' "$output" >&2
+    echo "sprint-backlog: could not release the lease for '$task_cell' (claim $claim_id)" >&2
+    exit 1
+  fi
+  rm -f "$token"
+  echo "Released lease for '$task_cell' (claim $claim_id)"
+}
+
+# `reserving -> bound`. The path is resolved with `pwd -P` on both sides of the
+# protocol -- here and in contract-worktree finish -- so the binding comparison
+# is between two canonical paths and a symlinked worktree cannot look like a
+# different one.
+bind_claim() {
+  local claim_id="$1" worktree="$2" branch="$3" unit_ref="$4" output
+  if ! output="$(sprint_lease bind --claim-id "$claim_id" --worktree "$worktree" --branch "$branch" --unit-ref "$unit_ref" 2>&1)"; then
+    printf '%s\n' "$output" >&2
+    echo "sprint-backlog: could not bind claim ${claim_id} to ${worktree}" >&2
+    exit 1
+  fi
+}
+
+# Undo a reservation this call created after capture failed. Only the holder of
+# the same fencing token may do this, which is what release enforces.
+rollback_claim() {
+  local claim_id="$1" output
+  [[ -n "$claim_id" ]] || return 0
+  if ! output="$(sprint_lease release --claim-id "$claim_id" 2>&1)"; then
+    printf '%s\n' "$output" >&2
+    echo "sprint-backlog: the reservation survived a failed capture (claim $claim_id); run 'repo-harness sprint reconcile --task-id <id> --target-ref <branch>' to clear it" >&2
+  fi
 }
 
 # Fill only the Plan cell of one backlog row (status untouched); used by
@@ -639,7 +781,6 @@ set_row_plan_cell() {
 cmd_start_task() {
   local task_ref=""
   local execute=0
-  local force=0
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -650,10 +791,6 @@ cmd_start_task() {
         ;;
       --execute)
         execute=1
-        shift
-        ;;
-      --force)
-        force=1
         shift
         ;;
       --sprint)
@@ -669,6 +806,16 @@ cmd_start_task() {
     esac
   done
 
+  # No claim-next. Backlog rows carry no depends_on, no parallel_group, and no
+  # conflict_key, so "the next pending row" is not "a row that may run
+  # concurrently"; preventing duplicate claims is not the same as proving two
+  # rows are parallel-safe, and this helper only does the first.
+  if [[ -z "$task_ref" ]]; then
+    echo "sprint-backlog: start-task requires --task <index|task>; there is no automatic claim-next" >&2
+    usage >&2
+    exit 2
+  fi
+
   local sprint_file sprint_status
   sprint_file="$(require_active_sprint)"
   sprint_status="$(extract_status "$sprint_file")"
@@ -682,40 +829,18 @@ cmd_start_task() {
   esac
 
   acquire_backlog_lock
-  prune_in_flight_markers "$sprint_file"
 
-  local target_row match_count candidate_task
-  if [[ -n "$task_ref" ]]; then
-    match_count="$(backlog_rows "$sprint_file" | TASK_REF="$task_ref" awk -F '\t' '$1 == ENVIRON["TASK_REF"] || $3 == ENVIRON["TASK_REF"] { count++ } END { print count + 0 }')"
-    if [[ "$match_count" -eq 0 ]]; then
-      echo "sprint-backlog: no backlog row matches task '$task_ref' in $sprint_file" >&2
-      exit 1
-    fi
-    if [[ "$match_count" -gt 1 ]]; then
-      echo "sprint-backlog: task reference '$task_ref' is ambiguous (${match_count} backlog rows match); fix duplicate indices or task names first" >&2
-      exit 1
-    fi
-    target_row="$(backlog_rows "$sprint_file" | TASK_REF="$task_ref" awk -F '\t' '$1 == ENVIRON["TASK_REF"] || $3 == ENVIRON["TASK_REF"] { print; exit }')"
-  else
-    # Auto-select skips rows that are already in flight so repeated runs walk
-    # the queue instead of duplicating an active task.
-    target_row=""
-    while IFS= read -r candidate_row; do
-      [[ -n "$candidate_row" ]] || continue
-      candidate_task="$(printf '%s' "$candidate_row" | cut -f3)"
-      if ! task_in_flight "$candidate_task"; then
-        target_row="$candidate_row"
-        break
-      fi
-    done < <(backlog_rows "$sprint_file" | awk -F '\t' '$2 == "[ ]"')
-    if [[ -z "$target_row" ]]; then
-      if [[ -n "$(next_pending_row "$sprint_file")" ]]; then
-        echo "sprint-backlog: every pending backlog task is already in flight; finish one or rerun with --task <ref> --force" >&2
-      fi
-      echo "next_task: (none)"
-      exit 3
-    fi
+  local target_row match_count
+  match_count="$(backlog_rows "$sprint_file" | TASK_REF="$task_ref" awk -F '\t' '$1 == ENVIRON["TASK_REF"] || $3 == ENVIRON["TASK_REF"] { count++ } END { print count + 0 }')"
+  if [[ "$match_count" -eq 0 ]]; then
+    echo "sprint-backlog: no backlog row matches task '$task_ref' in $sprint_file" >&2
+    exit 1
   fi
+  if [[ "$match_count" -gt 1 ]]; then
+    echo "sprint-backlog: task reference '$task_ref' is ambiguous (${match_count} backlog rows match); fix duplicate indices or task names first" >&2
+    exit 1
+  fi
+  target_row="$(backlog_rows "$sprint_file" | TASK_REF="$task_ref" awk -F '\t' '$1 == ENVIRON["TASK_REF"] || $3 == ENVIRON["TASK_REF"] { print; exit }')"
 
   local target_index target_status target_task target_mode target_acceptance
   target_index="$(printf '%s' "$target_row" | cut -f1)"
@@ -729,15 +854,44 @@ cmd_start_task() {
     exit 1
   fi
 
-  if task_in_flight "$target_task" && [[ "$force" -ne 1 ]]; then
-    echo "sprint-backlog: backlog task '$target_task' is already in flight (recorded: $(cat "$(in_flight_marker_for "$target_task")" 2>/dev/null || printf 'capturing')); rerun with --force to restart it" >&2
+  # Claim before anything is captured, and against the canonical target ref
+  # rather than this tree's copy: a worktree cut from an older commit must not
+  # reserve work from its own stale backlog. The lease starts `reserving`
+  # because the execution worktree does not exist yet.
+  local target_ref identity task_id task_revision claim_output claim_id
+  target_ref="$(coordination_target_ref)"
+  if ! identity="$(sprint_lease identify --task "$target_task" --target-ref "$target_ref" --sprint-path "$sprint_file" 2>&1)"; then
+    printf '%s\n' "$identity" >&2
+    echo "sprint-backlog: cannot derive the coordination identity of '$target_task' from $target_ref" >&2
     exit 1
   fi
-  record_in_flight "$target_task" "capturing"
+  task_id="$(json_string_field "$identity" task_id)"
+  task_revision="$(json_string_field "$identity" task_revision)"
+  if [[ -z "$task_id" || -z "$task_revision" ]]; then
+    echo "sprint-backlog: sprint identify returned no task identity for '$target_task'" >&2
+    exit 1
+  fi
+
+  if ! claim_output="$(sprint_lease claim \
+    --task-id "$task_id" \
+    --expected-task-revision "$task_revision" \
+    --target-ref "$target_ref" \
+    --sprint-path "$sprint_file" \
+    --session-id "$(coordination_session_id)" 2>&1)"; then
+    printf '%s\n' "$claim_output" >&2
+    echo "sprint-backlog: backlog task '$target_task' could not be claimed" >&2
+    exit 1
+  fi
+  claim_id="$(json_string_field "$claim_output" claim_id)"
+  if [[ -z "$claim_id" ]]; then
+    echo "sprint-backlog: sprint claim returned no claim id for '$target_task'" >&2
+    exit 1
+  fi
+  echo "Claimed backlog task '$target_task' (row ${target_index}) as claim ${claim_id}"
 
   [[ -f "$helper_dir/capture-plan.sh" ]] || {
     release_backlog_lock
-    clear_in_flight "$target_task"
+    rollback_claim "$claim_id"
     echo "sprint-backlog: packaged capture-plan helper not found" >&2
     exit 1
   }
@@ -768,13 +922,18 @@ BODY_EOF
     capture_output="$(bash "$helper_dir/capture-plan.sh" --artifact-level checklist-row --slug "$target_task" --title "Sprint row: ${target_task}" --source repo-harness-sprint --orchestration-kind sprint-inline --source-ref "sprint:${sprint_file}#${target_task}" --body-file "$body_file" 2>&1)" || {
       printf '%s\n' "$capture_output" >&2
       rm -f "$body_file"
-      clear_in_flight "$target_task"
+      rollback_claim "$claim_id"
       echo "sprint-backlog: checklist-row capture failed for inline task '$target_task'" >&2
       exit 1
     }
     rm -f "$body_file"
     printf '%s\n' "$capture_output"
-    record_in_flight "$target_task" "inline:${sprint_file}#${target_index}"
+    # Inline work executes here, so this tree is the execution worktree and the
+    # bind can happen immediately.
+    bind_claim "$claim_id" "$(pwd -P)" "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || printf 'HEAD')" \
+      "inline:${sprint_file}#${target_index}"
+    write_claim_token "." "$task_id" "$claim_id" "$sprint_file" "$target_task" \
+      "inline:${sprint_file}#${target_index}"
     echo "Backlog row ${target_index} ('${target_task}') is inline; appended checklist row(s) to the active plan without plan/contract/review/notes projection."
     return 0
   fi
@@ -823,7 +982,7 @@ BODY_EOF
   capture_output="$(bash "$helper_dir/capture-plan.sh" "${capture_args[@]}" 2>&1)" || {
     printf '%s\n' "$capture_output" >&2
     rm -f "$body_file"
-    clear_in_flight "$target_task"
+    rollback_claim "$claim_id"
     echo "sprint-backlog: capture-plan failed for task '$target_task'" >&2
     exit 1
   }
@@ -832,10 +991,25 @@ BODY_EOF
 
   plan_path="$(printf '%s\n' "$capture_output" | sed -nE 's/^Captured plan: (.+)$/\1/p' | head -1)"
   if [[ -z "$plan_path" ]]; then
-    echo "sprint-backlog: warning: could not resolve captured plan path; backlog Plan cell unchanged" >&2
-    return 0
+    rollback_claim "$claim_id"
+    echo "sprint-backlog: could not resolve captured plan path; the reservation was rolled back" >&2
+    exit 1
   fi
-  record_in_flight "$target_task" "$plan_path"
+
+  # Bind the reservation to the execution worktree once it exists. Without
+  # --execute (or with worktree creation disabled by policy) there is no
+  # worktree to name, so the lease stays `reserving` and the token stays here.
+  local worktree_path worktree_branch worktree_abs
+  worktree_path="$(printf '%s\n' "$capture_output" | sed -nE 's/^\[ContractWorktree\] (Created worktree|Added worktree for existing branch|Reusing existing worktree): (.+)$/\2/p' | tail -1)"
+  worktree_branch="$(printf '%s\n' "$capture_output" | sed -nE 's/^\[ContractWorktree\] Branch: (.+)$/\1/p' | tail -1)"
+  if [[ -n "$worktree_path" && -n "$worktree_branch" && -d "$worktree_path" ]]; then
+    worktree_abs="$(cd "$worktree_path" && pwd -P)"
+    bind_claim "$claim_id" "$worktree_abs" "$worktree_branch" "$plan_path"
+    write_claim_token "$worktree_abs" "$task_id" "$claim_id" "$sprint_file" "$target_task" "$plan_path"
+  else
+    write_claim_token "." "$task_id" "$claim_id" "$sprint_file" "$target_task" "$plan_path"
+    echo "sprint-backlog: no execution worktree was created; claim ${claim_id} stays reserving until 'repo-harness sprint bind' names one" >&2
+  fi
 
   # Contract mode: the plan moves into a worktree branched from HEAD, so
   # writing the Plan cell here would dirty the primary tree and block the

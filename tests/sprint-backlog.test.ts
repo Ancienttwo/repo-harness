@@ -4,6 +4,7 @@ import { describe, test, expect, setDefaultTimeout } from "bun:test";
 // exceed bun's 5s default under parallel load (see tasks/lessons.md 2026-06-10).
 setDefaultTimeout(20000);
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -23,9 +24,38 @@ import { createStateInputCollector } from "../src/effects/loop/state-input-colle
 
 const ROOT = join(import.meta.dir, "..");
 const HELPER_DIR = join(ROOT, "assets/templates/helpers");
+const CLI = join(ROOT, "src/cli/index.ts");
+
+// sprint-backlog.sh now reaches the shared coordination plane under the git
+// common directory, so every workspace is a real repository. An ambient
+// `repo-harness` on PATH would be a different build, so the helper is pointed
+// at this checkout through REPO_HARNESS_CLI_BIN.
+const CLI_WRAPPER = (() => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "sprint-backlog-cli-")));
+  const wrapper = join(dir, "repo-harness");
+  writeFileSync(wrapper, `#!/bin/bash\nexec ${process.execPath} ${CLI} "$@"\n`);
+  chmodSync(wrapper, 0o755);
+  return wrapper;
+})();
+
+const BACKLOG_LOCK_RELATIVE = ".git/repo-harness/coordination/v1/locks/backlog.lock";
 
 function tmpWorkspace(prefix: string): string {
-  return realpathSync(mkdtempSync(join(tmpdir(), `${prefix}-`)));
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), `${prefix}-`)));
+  for (const args of [
+    ["init", "--quiet", "--initial-branch", "main"],
+    ["config", "user.email", "sprint@example.com"],
+    ["config", "user.name", "Sprint Fixture"],
+  ]) {
+    expect(spawnSync("git", args, { cwd, encoding: "utf-8" }).status).toBe(0);
+  }
+  return cwd;
+}
+
+/** Commit the fixture so the canonical target ref carries the backlog row. */
+function commitFixture(cwd: string): void {
+  expect(spawnSync("git", ["add", "-A"], { cwd, encoding: "utf-8" }).status).toBe(0);
+  expect(spawnSync("git", ["commit", "--quiet", "-m", "fixture"], { cwd, encoding: "utf-8" }).status).toBe(0);
 }
 
 // Strip vars that would let sprint-backlog.sh's REPO_HARNESS_TARGET_REPO_ROOT
@@ -40,7 +70,7 @@ function run(cmd: string, args: string[], cwd: string, env?: Record<string, stri
   return spawnSync(cmd, args, {
     cwd,
     encoding: "utf-8",
-    env: { ...base, ...env },
+    env: { ...base, REPO_HARNESS_CLI_BIN: CLI_WRAPPER, ...env },
   });
 }
 
@@ -91,6 +121,7 @@ function writeActiveSprintFixture(cwd: string, sprintRelPath: string) {
     ].join("\n")
   );
   writeFileSync(join(cwd, ".ai/harness/sprint/active-sprint"), sprintRelPath);
+  commitFixture(cwd);
 }
 
 describe("sprint-backlog helper", () => {
@@ -329,8 +360,9 @@ describe("sprint-backlog helper", () => {
       // Row 1 (task-a) is contract mode: the plan is captured but the primary
       // tree's sprint file must stay untouched so the worktree merge-back
       // stays fast-forwardable; finish back-fills the row.
-      const start = run("bash", ["scripts/sprint-backlog.sh", "start-task"], cwd);
-      expect(start.status).toBe(0);
+      const start = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a"], cwd);
+      expect(start.status, `${start.stdout}\n${start.stderr}`).toBe(0);
+      expect(start.stdout).toContain("Claimed backlog task 'task-a'");
       const planPath = start.stdout.match(/Captured plan: (plans\/plan-[^\s]+\.md)/)?.[1] ?? "";
       expect(planPath).toMatch(/^plans\/plan-\d{8}-\d{4}-task-a\.md$/);
       expect(start.stdout).toContain("stays (pending)");
@@ -364,40 +396,43 @@ describe("sprint-backlog helper", () => {
     }
   }, 30_000);
 
-  test("duplicate start-task is refused, auto-select skips in-flight rows, --force restarts", () => {
+  test("a duplicate start-task is refused by the lease, and completion releases it", () => {
+    // The retired per-worktree in-flight marker and `--force` are gone: the
+    // shared lease is the only thing that says a row is being worked, and a
+    // second start-task is refused by the lease rather than by a local file.
     const cwd = tmpWorkspace("sprint-backlog-in-flight");
     try {
       copySprintHelpers(cwd, ["sprint-backlog.sh", "capture-plan.sh"]);
       const sprintPath = "plans/sprints/20260610-0000-fixture-sprint.sprint.md";
       writeActiveSprintFixture(cwd, sprintPath);
 
-      const first = run("bash", ["scripts/sprint-backlog.sh", "start-task"], cwd);
-      expect(first.status).toBe(0);
-      expect(existsSync(join(cwd, ".ai/harness/sprint/in-flight/task-a"))).toBe(true);
+      const first = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a"], cwd);
+      expect(first.status, `${first.stdout}\n${first.stderr}`).toBe(0);
+      const claims = readdirSync(join(cwd, ".ai/harness/sprint/claims"));
+      expect(claims).toHaveLength(1);
+      expect(claims[0]).toMatch(/^[0-9a-f]{64}\.claim$/);
 
       const dup = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a"], cwd);
       expect(dup.status).toBe(1);
-      expect(dup.stderr).toContain("already in flight");
+      expect(dup.stderr).toContain("is not available");
+      expect(dup.stderr).toContain("could not be claimed");
 
-      const auto = run("bash", ["scripts/sprint-backlog.sh", "start-task"], cwd);
-      expect(auto.status).toBe(0);
-      expect(auto.stdout).toContain("task-b");
-      expect(auto.stdout).toContain("appended checklist row(s) to the active plan");
+      const noClaimNext = run("bash", ["scripts/sprint-backlog.sh", "start-task"], cwd);
+      expect(noClaimNext.status).toBe(2);
+      expect(noClaimNext.stderr).toContain("there is no automatic claim-next");
 
-      const exhausted = run("bash", ["scripts/sprint-backlog.sh", "start-task"], cwd);
-      expect(exhausted.status).toBe(3);
-      expect(exhausted.stderr).toContain("already in flight");
-
-      const forced = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a", "--force"], cwd);
-      expect(forced.status).toBe(0);
+      const force = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a", "--force"], cwd);
+      expect(force.status).toBe(2);
+      expect(force.stderr).toContain("unknown start-task argument: --force");
 
       const complete = run("bash", ["scripts/sprint-backlog.sh", "complete-task", "--task", "task-a"], cwd);
-      expect(complete.status).toBe(0);
-      expect(existsSync(join(cwd, ".ai/harness/sprint/in-flight/task-a"))).toBe(false);
+      expect(complete.status, `${complete.stdout}\n${complete.stderr}`).toBe(0);
+      expect(complete.stdout).toContain("Released lease for 'task-a'");
+      expect(readdirSync(join(cwd, ".ai/harness/sprint/claims"))).toHaveLength(0);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, 60_000);
 
   test("a non-empty stale lock times out instead of hot-looping", () => {
     const cwd = tmpWorkspace("sprint-backlog-lock-timeout");
@@ -405,7 +440,7 @@ describe("sprint-backlog helper", () => {
       copySprintHelpers(cwd, ["sprint-backlog.sh"]);
       const sprintPath = "plans/sprints/20260610-0000-fixture-sprint.sprint.md";
       writeActiveSprintFixture(cwd, sprintPath);
-      const lockDir = join(cwd, ".ai/harness/sprint/.backlog-lock");
+      const lockDir = join(cwd, BACKLOG_LOCK_RELATIVE);
       mkdirSync(lockDir, { recursive: true });
       writeFileSync(join(lockDir, "holder"), "still here");
       expect(run("bash", ["-lc", `touch -t 202001010000 '${lockDir}'`], cwd).status).toBe(0);
@@ -430,7 +465,7 @@ describe("sprint-backlog helper", () => {
         readFileSync(join(cwd, sprintPath), "utf-8").replace("> **Status**: Approved", "> **Status**: Draft")
       );
 
-      const draft = run("bash", ["scripts/sprint-backlog.sh", "start-task"], cwd);
+      const draft = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a"], cwd);
       expect(draft.status).toBe(1);
       expect(draft.stderr).toContain("approve the sprint before starting tasks");
     } finally {
@@ -450,7 +485,8 @@ describe("sprint-backlog helper", () => {
       expect(inline.status).toBe(1);
       expect(inline.stderr).toContain("No active plan marker resolves to a plan");
       expect(inline.stderr).toContain("checklist-row capture failed for inline task 'task-b'");
-      expect(existsSync(join(cwd, ".ai/harness/sprint/in-flight/task-b"))).toBe(false);
+      // The reservation this call created is rolled back by its own token.
+      expect(existsSync(join(cwd, ".ai/harness/sprint/claims"))).toBe(false);
       expect(readdirSync(join(cwd, "plans")).filter((name) => name.includes("task-b"))).toHaveLength(0);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
@@ -503,7 +539,7 @@ describe("sprint-backlog helper", () => {
       copySprintHelpers(cwd, ["sprint-backlog.sh"]);
       const sprintPath = "plans/sprints/20260610-0000-fixture-sprint.sprint.md";
       writeActiveSprintFixture(cwd, sprintPath);
-      const lockDir = join(cwd, ".ai/harness/sprint/.backlog-lock");
+      const lockDir = join(cwd, BACKLOG_LOCK_RELATIVE);
       mkdirSync(lockDir, { recursive: true });
       // Backdate the lock past the 1-minute stale threshold.
       expect(run("bash", ["-lc", `touch -t 202001010000 '${lockDir}'`], cwd).status).toBe(0);
