@@ -15,6 +15,7 @@
 
 ## Deviations From Plan Or Spec
 
+- `docs/reference-configs/sprint-contracts.md` is a byte-identical projection of `assets/reference-configs/sprint-contracts.md`, enforced by `tests/reference-configs-projection.test.ts`. The contract named only the projection path, so the convention subsection was authored in the asset source and regenerated with `bun run sync:reference-configs`; `assets/reference-configs/sprint-contracts.md` was added to `allowed_paths` for the same reason.
 - The contract's `allowed_paths` block omitted `docs/reference-configs/sprint-contracts.md` even though `## Scope` (In scope) and the dispatch brief both require editing it. Resolved through the contract's own scope gate ("update this contract before widening scope") by adding that one path to `allowed_paths`; no scope was widened beyond what Goal/Scope already declared. Flagged to the parent rather than treated as a silent fix.
 
 ## Tradeoffs Considered

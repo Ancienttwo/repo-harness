@@ -72,6 +72,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ```yaml
 allowed_paths:
   - docs/spec.md
+  - assets/reference-configs/sprint-contracts.md
   - docs/reference-configs/sprint-contracts.md
   - plans/
   - tasks/todos.md
