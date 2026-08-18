@@ -765,11 +765,34 @@ describe('install profiles', () => {
     expect(rollbackInstallProfile(env).profile).toBe('minimal');
   }));
 
-  test('Minimal CodeGraph stays conditional while Full enables it', () => withHome((env) => {
+  test('CodeGraph enablement is explicit: full profile or policy opt-in, never repo size', () => withHome((env) => {
     const cwd = env.HOME!;
     expect(profileEnablesCodegraph('minimal', cwd)).toBe(false);
     expect(profileEnablesCodegraph('full', cwd)).toBe(true);
-  }));
+
+    // Explicit local policy opt-in enables CodeGraph even on the minimal profile.
+    const optIn = mkdtempSync(join(tmpdir(), 'repo-harness-codegraph-optin-'));
+    try {
+      writePath(join(optIn, '.ai/harness/policy.json'), JSON.stringify({ tooling: { codegraph: { enabled: true } } }));
+      expect(profileEnablesCodegraph('minimal', optIn)).toBe(true);
+    } finally {
+      rmSync(optIn, { recursive: true, force: true });
+    }
+
+    // A large tracked-file count is not an opt-in signal: no policy entry, no CodeGraph.
+    const large = mkdtempSync(join(tmpdir(), 'repo-harness-codegraph-large-'));
+    try {
+      expect(spawnSync('git', ['init', '-q'], { cwd: large, encoding: 'utf-8' }).status).toBe(0);
+      mkdirSync(join(large, 'src'), { recursive: true });
+      for (let i = 0; i < 2_100; i += 1) writeFileSync(join(large, 'src', `f${i}.ts`), 'export const x = 1;\n');
+      expect(spawnSync('git', ['add', '-A'], { cwd: large, encoding: 'utf-8' }).status).toBe(0);
+      const tracked = spawnSync('git', ['ls-files'], { cwd: large, encoding: 'utf-8' });
+      expect(tracked.stdout.split('\n').filter(Boolean).length).toBeGreaterThanOrEqual(2_000);
+      expect(profileEnablesCodegraph('minimal', large)).toBe(false);
+    } finally {
+      rmSync(large, { recursive: true, force: true });
+    }
+  }), 30_000);
 
   test('CLI dry-run and state query expose machine-readable profile authority', () => withHome((env) => {
     const dryRun = spawnSync(process.execPath, [CLI, 'install', '--profile', 'full', '--dry-run', '--json'], {

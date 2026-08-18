@@ -12,6 +12,17 @@ All notable changes to this skill are documented here.
   the shared circuit breaker at two blocks per report fingerprint. Defaults stay
   `advice` with the post-edit observer opt-in; enforce is per-repo opt-in.
 
+### Changed
+
+- Makes CodeGraph enablement purely explicit. `profileEnablesCodegraph` no
+  longer auto-enables CodeGraph for repositories with at least 2000 tracked
+  files; the only true paths are the `full` profile and an explicit
+  `tooling.codegraph.enabled: true` in the target repo's
+  `.ai/harness/policy.json`. Downstream repos on the minimal profile without
+  that opt-in no longer gain CodeGraph, and policy read or parse failures fail
+  closed to disabled. This repo's own policy carries the explicit opt-in, so
+  self-host behavior is unchanged.
+
 ## [0.15.2] - 2026-08-16
 
 ### Added
