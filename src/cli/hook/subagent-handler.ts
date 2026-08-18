@@ -86,7 +86,7 @@ interface NativeRoleRouting {
 const RETURN_CONTRACT_MARKER = '[repo-harness:return-channel]';
 const RETURN_CONTRACT_TEXT = '\n\n[repo-harness:return-channel] Your final text message is the only channel returned to your caller. Put the complete findings/report in final text. Do not call SendUserMessage for report delivery; content sent through SendUserMessage is delivered outside the Agent tool result.';
 export const LONG_COMMAND_GUARDRAIL_MARKER = '[repo-harness:long-command-guardrail]';
-const LONG_COMMAND_GUARDRAIL_TEXT = `${LONG_COMMAND_GUARDRAIL_MARKER} Do not foreground-wait on a verification, test, or gate command you expect to exceed roughly five minutes; the host stream watchdog terminates an agent after 600 seconds of silence. The default action is to hand that command back to the orchestrator: report RESULT: BLOCKED and name the command instead of waiting on it. Run it yourself only when you can start it in the background and poll a log that keeps producing output.`;
+const LONG_COMMAND_GUARDRAIL_TEXT = `${LONG_COMMAND_GUARDRAIL_MARKER} Do not foreground-wait on a verification, test, or gate command you expect to exceed roughly five minutes; the host stream watchdog terminates an agent after 600 seconds of silence. The default action is to hand that command back to the orchestrator: name the command and return BLOCKED on your role's machine-readable first line (RESULT:/VERDICT:/RECOMMENDATION:) instead of waiting on it. Run it yourself only when you can start it in the background and poll a log that keeps producing output.`;
 const NATIVE_ROLE_ROUTING_STATE_FILE = 'native-role-routing.json';
 const NATIVE_ROLE_ROUTING_LOCK_RELATIVE = `${DELEGATION_STATE_RELATIVE}/native-role-routing.lock`;
 const MAX_NATIVE_ROLE_OBSERVATIONS = 32;

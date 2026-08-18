@@ -143,8 +143,9 @@ The same 600-second ceiling applies to the host stream watchdog that kills a
 delegated agent after 600 seconds of silence. Any gate command expected to
 exceed roughly five minutes (`verify-sprint`, a full `bun test`) is run by the
 orchestrator's main loop in the background, not foreground-waited inside a
-dispatched worker. A worker handed such a command reports `RESULT: BLOCKED`
-naming the command and hands control back; it does not stand watch. The
+dispatched worker. An agent handed such a command names the command and returns
+BLOCKED on its role's machine-readable first line (`RESULT:` / `VERDICT:` /
+`RECOMMENDATION:`), handing control back; it does not stand watch. The
 standing advisory is injected at SubagentStart under the
 `[repo-harness:long-command-guardrail]` marker.
 

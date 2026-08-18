@@ -335,8 +335,8 @@ describe('typed subagent hook handlers', () => {
       expect(output.exitCode).toBe(0);
       const context = additionalContext(output.stdout);
       expect(context.split(LONG_COMMAND_GUARDRAIL_MARKER).length - 1).toBe(1);
-      expect(context).toContain('RESULT: BLOCKED');
-      expect(context).toContain('hand that command back to the orchestrator');
+      expect(context).toMatch(/hand[^.]*back[^.]*orchestrator/i);
+      expect(context).toContain('BLOCKED');
       expect(context).toContain('600 seconds');
 
       expect(appendLongCommandGuardrail(context)).toBe(context);
