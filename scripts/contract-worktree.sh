@@ -94,6 +94,31 @@ check_architecture_freshness() {
   return 0
 }
 
+# The projection manifest is the one architecture artifact with no human-authored
+# region: it is byte-derivable from the architecture model plus the provenance stamp,
+# and the hook cascade re-stamps it whenever a declared source footprint moves. The
+# target worktree is therefore routinely dirty in this one path through no decision of
+# the operator's, and the closeout then refuses a merge that has nothing to do with it.
+# The capability documents are `mixed` ownership (human-authored §3/§4) and are never
+# touched here — discarding those could destroy work no projection can regenerate.
+#
+# This restores the file to HEAD rather than exempting it from the dirty check, because
+# an exemption does not actually unblock the merge: `git merge --ff-only` refuses to
+# overwrite local modifications to a file the publication tree also changes, so the
+# refusal would just move past `publication_prepared`, mid-transaction.
+#
+# Bounded on purpose: only a plain unstaged modification is restored. A staged change or
+# an untracked file still refuses, because those carry an intent this cannot read.
+MACHINE_OWNED_PROJECTION_PATH="docs/architecture/.projection-manifest.json"
+
+restore_machine_owned_projection_output() {
+  local worktree="$1" porcelain
+  porcelain="$(git -C "$worktree" status --porcelain=v1 --untracked-files=all -- "$MACHINE_OWNED_PROJECTION_PATH")"
+  [[ "$porcelain" == " M $MACHINE_OWNED_PROJECTION_PATH" ]] || return 0
+  git -C "$worktree" checkout -- "$MACHINE_OWNED_PROJECTION_PATH"
+  echo "[ContractWorktree] restored machine-owned projection output to HEAD: $MACHINE_OWNED_PROJECTION_PATH" >&2
+}
+
 normalize_slug() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g'
 }
@@ -1492,6 +1517,7 @@ finish_worktree() {
   if [[ "$merge_back" -eq 1 ]]; then
     target_worktree="$(find_worktree_for_branch "$target_branch" || true)"
     [[ -n "$target_worktree" ]] || { echo "contract-worktree: target branch has no checked-out worktree: $target_branch" >&2; exit 1; }
+    restore_machine_owned_projection_output "$target_worktree"
     if [[ -n "$(git -C "$target_worktree" status --porcelain=v1 --untracked-files=all)" ]]; then
       echo "contract-worktree: target worktree is dirty, refusing merge: $target_worktree" >&2
       exit 1
@@ -1663,6 +1689,7 @@ finish_worktree() {
   # target base and whose tree is byte-identical to L. Checkpoint and lifecycle
   # commits remain on the source branch for recovery/audit but never become
   # target first-parent history.
+  restore_machine_owned_projection_output "$target_worktree"
   if [[ -n "$(git -C "$target_worktree" status --porcelain=v1 --untracked-files=all)" ]]; then
     echo "contract-worktree: target worktree is dirty, refusing merge: $target_worktree" >&2
     exit 1
