@@ -1,6 +1,7 @@
 # Plan: HE-06 Handoff and Current Snapshot UX
 
-> **Status**: Approved
+> **Status**: Complete
+> **Completion Evidence**: All checklist rows shipped. `scripts/prepare-handoff.sh:18-31` carries `--reason` and `--status`; `scripts/check-task-workflow.sh:640-683` carries the handoff/resume freshness pair gate. The plan header was left at `Approved` only because the artifact-batch row was never ticked at the time.
 > **Created**: 2026-06-17
 > **Slug**: HE-06-handoff-current-ux
 > **Spec**: `docs/spec.md`
@@ -33,4 +34,4 @@
 - [x] Add strict workflow gate for `tasks/current.md` newer than resume.
 - [x] Add source-artifacts-first handoff protocol rule.
 - [x] Add helper tests for active artifacts, status output, stale resume, and active-marker current snapshot behavior.
-- [ ] Stage HE-06 artifact batch.
+- [x] Stage HE-06 artifact batch.

@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-19 00:54
+> **Related Plan**: plans/archive/plan-20260802-0309-codex-app-thread-dispatch.md
+> **Outcome**: Superseded
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260819-0054
+
 # Task Contract: codex-app-thread-dispatch
 
 > **Status**: Active

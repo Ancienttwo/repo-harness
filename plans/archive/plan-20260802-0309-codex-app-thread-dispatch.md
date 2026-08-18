@@ -1,6 +1,7 @@
 # Plan: Codex delegation runner: App Thread dispatch default, native spawn fallback
 
-> **Status**: Executing
+> **Status**: Superseded
+> **Superseded By**: plans/archive/plan-20260811-1344-codex-native-agent-authority.md
 > **Created**: 20260802-0309
 > **Slug**: codex-app-thread-dispatch
 > **Planning Source**: repo-harness-plan

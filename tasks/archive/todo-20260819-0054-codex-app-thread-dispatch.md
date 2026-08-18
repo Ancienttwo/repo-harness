@@ -1,7 +1,13 @@
+> **Archived**: 2026-08-19 00:54
+> **Related Plan**: plans/archive/plan-20260802-0309-codex-app-thread-dispatch.md
+> **Outcome**: Superseded
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260819-0054
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-08-18 16:36
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

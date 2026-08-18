@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-19 00:54
+> **Related Plan**: plans/archive/plan-20260711-0219-codex-native-role-model-override.md
+> **Outcome**: Superseded
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260819-0054
+
 # Task Contract: codex-native-role-model-override
 
 > **Status**: Blocked

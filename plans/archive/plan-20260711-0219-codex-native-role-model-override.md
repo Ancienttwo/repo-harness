@@ -1,6 +1,8 @@
 # Plan: Codex native-role model override
 
-> **Status**: Blocked
+> **Status**: Superseded
+> **Superseded By**: plans/archive/plan-20260811-1344-codex-native-agent-authority.md
+> **Supersede Reason**: The recorded blocker (the V2 spawn schema never emits `role`/`model`, so children inherit the parent model) was lifted by Codex 0.147's native `agent_type` surface; the solution landed in the native-agent-authority plan. Reasoning-effort readback stays unavailable and is an explicitly accepted permanent upstream boundary in that plan.
 > **Created**: 20260711-0219
 > **Slug**: codex-native-role-model-override
 > **Artifact Level**: work-package

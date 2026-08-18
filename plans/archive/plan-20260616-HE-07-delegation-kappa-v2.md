@@ -1,6 +1,7 @@
 # Plan: HE-07 Delegation Contract Kappa v2
 
-> **Status**: Approved
+> **Status**: Complete
+> **Completion Evidence**: All checklist rows shipped. `assets/templates/contract.template.md:110-116` carries the explorer/worker/verifier role separation; `scripts/contract-run.ts:924-932` emits the delegation plan with allowed paths, verifier rubric, and budget/permission semantics into the run manifest. The plan header was left at `Approved` only because the artifact-batch row was never ticked at the time.
 > **Created**: 2026-06-17
 > **Slug**: HE-07-delegation-kappa-v2
 > **Spec**: `docs/spec.md`
@@ -33,4 +34,4 @@
 - [x] Record delegation plan, permissions, budgets, allowed paths, and rubric in run manifest.
 - [x] Preserve budget handling where `tool_calls` is enforceable and document advisory semantics.
 - [x] Add contract-run dry-run dogfood command.
-- [ ] Stage HE-07 artifact batch.
+- [x] Stage HE-07 artifact batch.
