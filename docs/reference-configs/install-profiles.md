@@ -91,9 +91,11 @@ fails closed.
 
 CodeGraph configuration is tracked as a projected host-config surface with its
 owned-entry hash. Reinstall refreshes that ownership only when the entry is new
-or was already package-owned. Minimal keeps CodeGraph conditional; full requires
-the executable projection. Neither profile treats an unrelated pre-existing MCP
-entry as package-owned.
+or was already package-owned. Minimal enables CodeGraph only on an explicit local
+opt-in (`tooling.codegraph.enabled: true` in the target repo's
+`.ai/harness/policy.json`); repo size never enables it. Full requires the
+executable projection. Neither profile treats an unrelated pre-existing MCP entry
+as package-owned.
 
 Install and benchmark transactions must also bind `BUN_INSTALL` to the selected
 host home. Setting `HOME` alone does not isolate Bun global installation when a

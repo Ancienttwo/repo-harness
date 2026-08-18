@@ -14,7 +14,6 @@ import {
 } from 'fs';
 import { homedir } from 'os';
 import { delimiter, dirname, join } from 'path';
-import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { buildManagedHooks, isManagedEntry, type HookHost, type HooksByEvent } from './managed-entries';
 import {
@@ -1164,7 +1163,5 @@ export function profileEnablesCodegraph(profile: InstallProfile, cwd = process.c
     };
     if (policy.tooling?.codegraph?.enabled === true) return true;
   } catch { /* policy opt-in absent */ }
-  const tracked = spawnSync('git', ['ls-files'], { cwd, encoding: 'utf-8' });
-  if (tracked.status !== 0) return false;
-  return tracked.stdout.split('\n').filter(Boolean).length >= 2_000;
+  return false;
 }

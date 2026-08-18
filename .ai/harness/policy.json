@@ -335,6 +335,11 @@
     "recovery": "hybrid",
     "state": "file-backed"
   },
+  "tooling": {
+    "codegraph": {
+      "enabled": true
+    }
+  },
   "external_tooling": {
     "routing": {
       "simple": "waza"
