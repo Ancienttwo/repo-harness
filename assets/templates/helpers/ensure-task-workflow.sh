@@ -1150,7 +1150,7 @@ ARCHITECTURE_INDEX_EOF
     "projection_provider": "disabled",
     "projection_apply": "disabled",
     "projection_failure_gate": "advisory",
-    "projection_version": "0.4.3",
+    "projection_version": "0.4.4",
     "projection_timeout_ms": 120000,
     "freshness_gate": "advisory",
     "gate_min_severity": "medium",

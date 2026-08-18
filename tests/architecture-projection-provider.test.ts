@@ -42,14 +42,14 @@ function fixture() {
   mkdirSync(join(repoRoot, '.ai', 'harness'), { recursive: true });
   mkdirSync(join(repoRoot, '.archcontext', 'model', 'nodes'), { recursive: true });
   mkdirSync(join(repoRoot, 'src', 'core'), { recursive: true });
-  writeFileSync(join(packageRoot, 'package.json'), `${JSON.stringify({ name: 'archctx', version: '0.4.3', engines: { node: '>=24 <26' }, bin: { archctx: './bin/archctx' } })}\n`);
+  writeFileSync(join(packageRoot, 'package.json'), `${JSON.stringify({ name: 'archctx', version: '0.4.4', engines: { node: '>=24 <26' }, bin: { archctx: './bin/archctx' } })}\n`);
   const binary = join(packageRoot, 'bin', 'archctx');
   writeFileSync(binary, '#!/bin/sh\nexit 99\n');
   chmodSync(binary, 0o755);
   symlinkSync(join('..', 'archctx', 'bin', 'archctx'), join(binRoot, 'archctx'));
   writeFileSync(join(repoRoot, '.ai', 'harness', 'policy.json'), `${JSON.stringify({
     context: { capability_source: 'archcontext' },
-    architecture: { projection_provider: 'archctx', projection_apply: 'manual', projection_version: '0.4.3', projection_timeout_ms: 120000 },
+    architecture: { projection_provider: 'archctx', projection_apply: 'manual', projection_version: '0.4.4', projection_timeout_ms: 120000 },
   })}\n`);
   writeFileSync(join(repoRoot, '.archcontext', 'model', 'nodes', 'capability.test.core.yaml'), `schemaVersion: archcontext.node/v2
 kind: capability
@@ -90,7 +90,7 @@ function vendorArchctx(root: string, version: string): string {
   return binary;
 }
 
-function capabilities(version = '0.4.3') {
+function capabilities(version = '0.4.4') {
   return {
     schemaVersion: 'archcontext.capabilities/v1',
     package: { name: 'archctx', version },
@@ -99,7 +99,7 @@ function capabilities(version = '0.4.3') {
       projectionResult: 'archcontext.projection-result/v1',
       architectureRefreshSignal: 'archcontext.architecture-refresh-signal/v1',
     },
-    renderers: { architectureDocs: 'archcontext.docs-renderer/v3', agentContext: 'archcontext.agent-context-renderer/v1' },
+    renderers: { architectureDocs: 'archcontext.docs-renderer/v4', agentContext: 'archcontext.agent-context-renderer/v1' },
     features: ['architecture-docs-renderer-v2', 'architecture-refresh-signal-v1', 'projection-protocol-v1'],
   };
 }
@@ -126,7 +126,7 @@ function projectionEnvelope(expected: ProjectionRequestV1['expected']) {
     codeGraphDigest: digest('4'),
     indexedWorktreeDigest: digest('1'),
     projectionInputDigest: digest('5'),
-    rendererVersion: 'archcontext.docs-renderer/v3' as const,
+    rendererVersion: 'archcontext.docs-renderer/v4' as const,
     layoutVersion: 'archcontext.docs-layout/v1' as const,
     generatedFrom: { codeGraphPackage: '@colbymchenry/codegraph' as const, codeGraphVersion: '1.5.0' as const, codeGraphBinaryDigest: digest('6'), codeGraphStatus: 'ready' as const },
   };
@@ -191,7 +191,7 @@ describe('package-local ArchContext projection provider', () => {
     const resolved = resolvePackageLocalArchctx(f.consumerRoot);
     expect(resolved.binaryPath).toBe(realpathSync(f.binary));
     writeFileSync(join(f.consumerRoot, 'node_modules', 'archctx', 'package.json'), '{"name":"archctx","version":"0.3.0"}\n');
-    expect(() => resolvePackageLocalArchctx(f.consumerRoot)).toThrow('expected archctx@0.4.3');
+    expect(() => resolvePackageLocalArchctx(f.consumerRoot)).toThrow('expected archctx@0.4.4');
   });
 
   test('resolves a hoisted package from an installed repo-harness package root', () => {
@@ -367,7 +367,7 @@ describe('package-local ArchContext projection provider', () => {
     expect(manifest.devDependencies?.['archctx-contracts']).toBeUndefined();
     expect(manifest.scripts?.['check:archctx-integration']).toBe('bun scripts/axr5-archctx-clean-room.ts');
     expect(readback.status).toBe('verified');
-    expect(readback.packages.contracts.version).toBe('0.4.3');
+    expect(readback.packages.contracts.version).toBe('0.4.4');
     expect(readback.consumer.authoritativeNodeSchema).toBe('archcontext.node/v2');
     expect(readback.consumer.authoritativeNodeSchemaDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(readback.source.dirtySourceUsed).toBe(false);

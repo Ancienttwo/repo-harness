@@ -3,24 +3,24 @@
   "status": "verified",
   "source": {
     "repository": "Ancienttwo/arch-context",
-    "revision": "f745a6dcb3b0e912bfd6ea0c9095300c91ceb80f",
+    "revision": "40609455ffb6a8483ad49b1f4d52a93c880b6650",
     "archiveMode": "git-archive",
     "dirtySourceUsed": false
   },
   "packages": {
     "contracts": {
       "name": "archctx-contracts",
-      "version": "0.4.3",
-      "file": "archctx-contracts-0.4.3.tgz",
-      "integrity": "sha512-U/Ds5iTumD7DMUBBd2JqN6INWzFx9RpM+LpuUw4lxJaToD+8Mfhrves6Kgir4dXbrKkHZNnnmxIrdo4okSGkDg==",
-      "sha512": "53f0ece624ee983ec331404177626a37a20d5b3171f51a4cf8ba6e530e25c49693a03fbc31f86bbdeb3a2a08abe1d5dbaca90764d9e79b122b768e289121a40e"
+      "version": "0.4.4",
+      "file": "archctx-contracts-0.4.4.tgz",
+      "integrity": "sha512-g9qR++xzPyPkSqpaobgl6Ob2dU5bRfZDZfMjtLVVRb3W0oLGNnwIc8JTTGZH8tkL+l9XDNkvDLjFg5dPuvYnCg==",
+      "sha512": "83da91fbec733f23e44aaa5aa1b825e8e6f6754e5b45f64365f323b4b55545bdd6d282c6367c0873c2534c6647f2d90bfa5f570cd92f0cb8c583974fbaf6270a"
     },
     "archctx": {
       "name": "archctx",
-      "version": "0.4.3",
-      "file": "archctx-0.4.3.tgz",
-      "integrity": "sha512-+c+HH8iR4uT2KWuxGPotvjqkxKta/7vVtY5JEbA78uw2wh51DUzamnPci1vo/OA73+wgYGxseG7eddQJTYu3Tg==",
-      "sha512": "f9cf871fc891e2e4f6296bb118fa2dbe3aa4c4ab5affbbd5b58e4911b03bf2ec36c21e750d4cda9a73dc8b5be8fce03bdfec20606c6c786ede75d4094d8bb74e"
+      "version": "0.4.4",
+      "file": "archctx-0.4.4.tgz",
+      "integrity": "sha512-uKM9Gzm28+aJcmLgZip1+nF8HropIihUOfoidNQ6bJFggDByd578chKX9EDuqGvx/3YmuZb3MSjubOzdXh58hw==",
+      "sha512": "b8a33d1b39b6f3e6897262e0662a75fa717c1eba2922285439fa2274d43a6c9160803072779efc721297f440eea86bf1ff7626b996f73128ee6cecdd5e1e7c87"
     }
   },
   "consumer": {
@@ -35,7 +35,7 @@
       "schemaVersion": "archcontext.capabilities/v1",
       "package": {
         "name": "archctx",
-        "version": "0.4.3"
+        "version": "0.4.4"
       },
       "protocols": {
         "projectionRequest": "archcontext.projection-request/v1",
@@ -43,7 +43,7 @@
         "architectureRefreshSignal": "archcontext.architecture-refresh-signal/v1"
       },
       "renderers": {
-        "architectureDocs": "archcontext.docs-renderer/v3",
+        "architectureDocs": "archcontext.docs-renderer/v4",
         "agentContext": "archcontext.agent-context-renderer/v1"
       },
       "features": [
@@ -56,7 +56,7 @@
       "requestId": "repo-harness.axr5-clean-room",
       "status": "human-action-required",
       "worktreeDigestMatched": true,
-      "rendererVersion": "archcontext.docs-renderer/v3",
+      "rendererVersion": "archcontext.docs-renderer/v4",
       "layoutVersion": "archcontext.docs-layout/v1",
       "codeGraph": {
         "codeGraphPackage": "@colbymchenry/codegraph",
@@ -64,7 +64,7 @@
         "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
         "codeGraphStatus": "unavailable"
       },
-      "receiptDigest": "sha256:97e81058b7d476cf65e6037977d30b59f5969b5a8766e1393831e662f7a05501"
+      "receiptDigest": "sha256:d2eabb4b74802ae2c1e1204e05b6a9f8011f7e359d6b010ef40d6e76e02fc6d8"
     }
   }
 }

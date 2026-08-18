@@ -24,7 +24,7 @@ import { consumeArchitectureRefreshSignals, type RunArchitectureRefreshActions }
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 const digest = (token: string) => `sha256:${token.repeat(64).slice(0, 64)}` as const;
-const policy: ArchitectureProjectionPolicy = { provider: 'archctx', applyMode: 'automatic', failureGate: 'advisory', requiredVersion: '0.4.3', timeoutMs: 120_000 };
+const policy: ArchitectureProjectionPolicy = { provider: 'archctx', applyMode: 'automatic', failureGate: 'advisory', requiredVersion: '0.4.4', timeoutMs: 120_000 };
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'repo-harness-axr6-'));
@@ -35,7 +35,7 @@ function fixture() {
   mkdirSync(join(repoRoot, '.archcontext/model/nodes'), { recursive: true });
   mkdirSync(join(repoRoot, 'src'), { recursive: true });
   mkdirSync(join(consumerRoot, 'node_modules/archctx/bin'), { recursive: true });
-  writeFileSync(join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ architecture: { projection_provider: 'archctx', projection_apply: 'automatic', projection_version: '0.4.3', projection_timeout_ms: 120000 } })}\n`);
+  writeFileSync(join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ architecture: { projection_provider: 'archctx', projection_apply: 'automatic', projection_version: '0.4.4', projection_timeout_ms: 120000 } })}\n`);
   writeFileSync(join(repoRoot, '.archcontext/model/nodes/root.yaml'), `schemaVersion: archcontext.node/v2
 kind: capability
 id: capability.test.root
@@ -57,7 +57,7 @@ extensions:
   writeFileSync(join(repoRoot, 'src/index.ts'), 'export const value = 1;\n');
   writeFileSync(join(repoRoot, 'AGENTS.md'), '# agents\n');
   writeFileSync(join(repoRoot, 'CLAUDE.md'), '# claude\n');
-  writeFileSync(join(consumerRoot, 'node_modules/archctx/package.json'), `${JSON.stringify({ name: 'archctx', version: '0.4.3', engines: { node: '>=24 <26' }, bin: { archctx: './bin/archctx' } })}\n`);
+  writeFileSync(join(consumerRoot, 'node_modules/archctx/package.json'), `${JSON.stringify({ name: 'archctx', version: '0.4.4', engines: { node: '>=24 <26' }, bin: { archctx: './bin/archctx' } })}\n`);
   writeFileSync(join(consumerRoot, 'node_modules/archctx/bin/archctx'), '#!/bin/sh\nexit 1\n');
   chmodSync(join(consumerRoot, 'node_modules/archctx/bin/archctx'), 0o755);
   execFileSync('git', ['init'], { cwd: repoRoot, stdio: 'ignore' });
@@ -72,9 +72,9 @@ extensions:
 function capabilities(): ArchctxProcessResult {
   return { status: 0, signal: null, stderr: '', stdout: JSON.stringify({
     schemaVersion: 'archcontext.capabilities/v1',
-    package: { name: 'archctx', version: '0.4.3' },
+    package: { name: 'archctx', version: '0.4.4' },
     protocols: { projectionRequest: 'archcontext.projection-request/v1', projectionResult: 'archcontext.projection-result/v1', architectureRefreshSignal: 'archcontext.architecture-refresh-signal/v1' },
-    renderers: { architectureDocs: 'archcontext.docs-renderer/v3', agentContext: 'archcontext.agent-context-renderer/v1' },
+    renderers: { architectureDocs: 'archcontext.docs-renderer/v4', agentContext: 'archcontext.agent-context-renderer/v1' },
     features: ['architecture-docs-renderer-v2', 'architecture-refresh-signal-v1', 'projection-protocol-v1'],
   }) };
 }
@@ -84,7 +84,7 @@ function envelope(request: ProjectionRequestV1) {
     ...request.expected,
     baseHeadSha: request.expected.headSha,
     sourceTreeDigest: digest('1'), modelDigest: digest('2'), codeGraphDigest: digest('3'), indexedWorktreeDigest: digest('4'), projectionInputDigest: digest('5'),
-    rendererVersion: 'archcontext.docs-renderer/v3' as const,
+    rendererVersion: 'archcontext.docs-renderer/v4' as const,
     layoutVersion: 'archcontext.docs-layout/v1' as const,
     generatedFrom: { codeGraphPackage: '@colbymchenry/codegraph' as const, codeGraphVersion: '1.5.0' as const, codeGraphBinaryDigest: digest('6'), codeGraphStatus: 'ready' as const },
   };
