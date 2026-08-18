@@ -137,6 +137,18 @@ acceptance can validate, even if the movement is otherwise non-overlapping.
 
 `verify-contract.sh --read-only` is read-only for contract state writes only: it does not rewrite the contract `> **Status**:` line. It executes `tests_pass` with Bun and `commands_succeed` in a non-login Bash with `BASH_ENV` unset. One fixed absolute 600-second budget covers the whole invocation; each command records duration, exit status, signal, and timeout state, and expiry terminates the command's process group before the verifier returns. The budget is not a policy or environment knob.
 
+### Long Gate Commands Belong to the Orchestrator
+
+The same 600-second ceiling applies to the host stream watchdog that kills a
+delegated agent after 600 seconds of silence. Any gate command expected to
+exceed roughly five minutes (`verify-sprint`, a full `bun test`) is run by the
+orchestrator's main loop in the background, not foreground-waited inside a
+dispatched worker. An agent handed such a command names the command and returns
+BLOCKED on its role's machine-readable first line (`RESULT:` / `VERDICT:` /
+`RECOMMENDATION:`), handing control back; it does not stand watch. The
+standing advisory is injected at SubagentStart under the
+`[repo-harness:long-command-guardrail]` marker.
+
 Verification is an evidence consumer. `commands_succeed` must not launch profile benchmarks/providers, `init`, evidence-producer scripts, or substantive installs; the verifier rejects those command shapes before execution. Produce expensive evidence explicitly, validate its subject/provenance/bytes, then let `verify-sprint` consume that frozen artifact through `verify-contract --read-only`.
 
 A verifier consumes already-produced evidence; it must not become the producer of expensive, runtime-heavy evidence (for example, a full multi-provider/multi-profile benchmark matrix). An authoritative matrix or similarly expensive one-time evidence run belongs outside `commands_succeed`: the author runs it once on a clean checkout before merge and commits the resulting tracked report (for example `evals/harness/reports/profile-comparison.json`/`.md`); the contract then verifies that report's bytes and provenance, not a live re-run.

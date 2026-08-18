@@ -85,6 +85,8 @@ interface NativeRoleRouting {
 
 const RETURN_CONTRACT_MARKER = '[repo-harness:return-channel]';
 const RETURN_CONTRACT_TEXT = '\n\n[repo-harness:return-channel] Your final text message is the only channel returned to your caller. Put the complete findings/report in final text. Do not call SendUserMessage for report delivery; content sent through SendUserMessage is delivered outside the Agent tool result.';
+export const LONG_COMMAND_GUARDRAIL_MARKER = '[repo-harness:long-command-guardrail]';
+const LONG_COMMAND_GUARDRAIL_TEXT = `${LONG_COMMAND_GUARDRAIL_MARKER} Do not foreground-wait on a verification, test, or gate command you expect to exceed roughly five minutes; the host stream watchdog terminates an agent after 600 seconds of silence. The default action is to hand that command back to the orchestrator: name the command and return BLOCKED on your role's machine-readable first line (RESULT:/VERDICT:/RECOMMENDATION:) instead of waiting on it. Run it yourself only when you can start it in the background and poll a log that keeps producing output.`;
 const NATIVE_ROLE_ROUTING_STATE_FILE = 'native-role-routing.json';
 const NATIVE_ROLE_ROUTING_LOCK_RELATIVE = `${DELEGATION_STATE_RELATIVE}/native-role-routing.lock`;
 const MAX_NATIVE_ROLE_OBSERVATIONS = 32;
@@ -630,6 +632,13 @@ function resolveEvidenceDir(stateDir: string, relativePath: unknown): string | n
   return current;
 }
 
+/** Append the standing long-command advisory once; marker presence is authoritative. */
+export function appendLongCommandGuardrail(context: string): string {
+  return context.includes(LONG_COMMAND_GUARDRAIL_MARKER)
+    ? context
+    : `${context}\n\n${LONG_COMMAND_GUARDRAIL_TEXT}`;
+}
+
 function runSubagentStart(repoRoot: string, input: JsonObject, env: NodeJS.ProcessEnv, now: Date): SubagentHandlerResult {
   const effective = parseEffectiveState(repoRoot);
   let profile = typeof effective?.workflow_profile === 'string' ? effective.workflow_profile : '';
@@ -702,7 +711,7 @@ function runSubagentStart(repoRoot: string, input: JsonObject, env: NodeJS.Proce
   }
 
   const contextRouting = nativeRoleRouting;
-  const context = [
+  const context = appendLongCommandGuardrail([
     '[repo-harness:subagent-context]',
     '',
     ...(contextRouting
@@ -735,7 +744,7 @@ function runSubagentStart(repoRoot: string, input: JsonObject, env: NodeJS.Proce
     'If you discover useful additional work, record it under Out of scope / Future work in the notes or review artifact. Do not implement it. Do not end with unsolicited offers to do more work.',
     '',
     'If the requested outcome cannot be completed without expanding scope, fail closed: stop, name the missing decision, and cite the exact file/section that blocks execution.',
-  ].join('\n');
+  ].join('\n'));
   return result(`${JSON.stringify({ hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: context } })}\n`);
 }
 
