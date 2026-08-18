@@ -1,11 +1,10 @@
 # workflow-engine/inspection-migration 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-inspection-migration" sourceDigest="sha256:053d6183406a92a9eabfd8f14e0a63f5627c4bc2c2c096b02e5802f4291fc976" rendererVersion="archcontext.docs-renderer/v3" outputDigest="sha256:d0afe318cf9304d271d6b4c707a35809c46f3f83a4e95acfa8b51df24ebbf0b3" verifiedAgainst="main@7f359d8eb5340103019c75db5493ad52250be5d3@2026-08-16T02:36:41+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-inspection-migration" sourceDigest="sha256:654f7236e2e51fd19e64129d48fe05f974f3172f6f69c671a78f31ba896198ae" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:a148fc8868cf1e59ce9fe25484555aff2c06e611ed559c709c045b9cde19ab0a" -->
 > **狀態**:`active`
-> **Verified against**:`main@7f359d8eb5340103019c75db5493ad52250be5d3`(2026-08-16)
 > **Capability ID**:`capability.workflow-engine.inspection-migration`(kind `capability`)
 > **Matched Prefixes**:`scripts/inspect-project-state.ts`、`scripts/create-project-dirs.sh`、`scripts/init-project.sh`、`scripts/lib/**`
 > **Local Contracts**:`scripts/AGENTS.md`、`scripts/CLAUDE.md`
-> **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與 Git 狀態投影生成,手改會在下次投影被覆蓋。
+> **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
 Inspects repository state and executes explicit initialization or migration plans.
 
@@ -35,10 +34,9 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 文件數:`6`
-- 總行數:`3844`
+- 規模量級:`5–10` 個文件 / `2000–5000` 行
 - 匹配前綴:`scripts/inspect-project-state.ts`、`scripts/create-project-dirs.sh`、`scripts/init-project.sh`、`scripts/lib/**`
-- 復算:`archctx docs plan --json`(掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`)
+- 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
 

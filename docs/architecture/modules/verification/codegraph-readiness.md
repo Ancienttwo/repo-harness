@@ -1,11 +1,10 @@
 # verification/codegraph-readiness 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-codegraph-readiness" sourceDigest="sha256:4e620957d3a19badfa29979fcb2e685a4239b142188d09a0a25ef179bfd78baf" rendererVersion="archcontext.docs-renderer/v3" outputDigest="sha256:6a2b180831e69bbd0509ce8dcc8e36aeb5131240f4bc1d45ffd393163f5a9aeb" verifiedAgainst="main@7f359d8eb5340103019c75db5493ad52250be5d3@2026-08-16T02:36:41+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-codegraph-readiness" sourceDigest="sha256:d7227e9a523c174482329de071e53fca93c9d0936dbdcc5be70065a006d7783f" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:385eae056b2e6fa98d5d9d85d6acd36191d5a705c20f9dcfd0bb5d5d2ad2e8f1" -->
 > **狀態**:`active`
-> **Verified against**:`main@7f359d8eb5340103019c75db5493ad52250be5d3`(2026-08-16)
 > **Capability ID**:`capability.verification.codegraph-readiness`(kind `capability`)
 > **Matched Prefixes**:`scripts/ensure-codegraph.sh`、`src/cli/tools/codegraph.ts`、`src/cli/mcp/codegraph-adapter.ts`、`tests/cli/codegraph-resolver.test.ts`、`docs/architecture/modules/verification/codegraph-readiness.md`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
-> **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與 Git 狀態投影生成,手改會在下次投影被覆蓋。
+> **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
 Resolves and verifies the repository CodeGraph runtime and index readiness.
 
@@ -35,10 +34,9 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 文件數:`5`
-- 總行數:`1280`
+- 規模量級:`5–10` 個文件 / `1000–2000` 行
 - 匹配前綴:`scripts/ensure-codegraph.sh`、`src/cli/tools/codegraph.ts`、`src/cli/mcp/codegraph-adapter.ts`、`tests/cli/codegraph-resolver.test.ts`、`docs/architecture/modules/verification/codegraph-readiness.md`
-- 復算:`archctx docs plan --json`(掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`)
+- 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
 

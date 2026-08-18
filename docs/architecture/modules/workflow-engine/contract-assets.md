@@ -1,11 +1,10 @@
 # workflow-engine/contract-assets 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" sourceDigest="sha256:2356b10fa58e8e8ed29888a17a3bb7fa3233f85584b5a951c77e62f7d2e34f96" rendererVersion="archcontext.docs-renderer/v3" outputDigest="sha256:c6e08b23f5cb524fe693f6e1a2ab6d841897447e8237d217861582d4910c8083" verifiedAgainst="main@5cdfe9c2c52deb81fdb76eb42587586825eb1a49@2026-08-18T07:00:08+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" sourceDigest="sha256:7ee8ed6740da71e8140f0ab2ff708ec8756622821b0875aa230a6a3f019780fe" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:aa161d6f10d15d68a3af9439d8bdbbd7e32b81781e3747645d4ccee5020cd79a" -->
 > **狀態**:`active`
-> **Verified against**:`main@5cdfe9c2c52deb81fdb76eb42587586825eb1a49`(2026-08-18)
 > **Capability ID**:`capability.workflow-engine.contract-assets`(kind `capability`)
 > **Matched Prefixes**:`assets/workflow-contract.v1.json`、`.ai/harness/workflow-contract.json`、`.ai/harness/policy.json`、`.ai/context/context-map.json`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-run.ts`、`scripts/contract-worktree.sh`、`scripts/archive-workflow.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`src/cli/commands/init.ts`、`src/cli/commands/capability-context.ts`、`src/cli/runtime/helper-runner.ts`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`
 > **Local Contracts**:`assets/AGENTS.md`、`assets/CLAUDE.md`
-> **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與 Git 狀態投影生成,手改會在下次投影被覆蓋。
+> **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
 Maintains canonical workflow contracts, templates, capability nodes, and helper projections.
 
@@ -35,10 +34,9 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 文件數:`164`
-- 總行數:`47472`
+- 規模量級:`100–200` 個文件 / `20k–50k` 行
 - 匹配前綴:`assets/workflow-contract.v1.json`、`.ai/harness/workflow-contract.json`、`.ai/harness/policy.json`、`.ai/context/context-map.json`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-run.ts`、`scripts/contract-worktree.sh`、`scripts/archive-workflow.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`src/cli/commands/init.ts`、`src/cli/commands/capability-context.ts`、`src/cli/runtime/helper-runner.ts`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`
-- 復算:`archctx docs plan --json`(掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`)
+- 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
 

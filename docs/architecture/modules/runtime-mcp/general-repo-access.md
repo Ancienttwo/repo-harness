@@ -1,11 +1,10 @@
 # runtime-mcp/general-repo-access 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-general-repo-access" sourceDigest="sha256:5e485c5e073e25c913a6a941d100ed13da4369ef37e3553c4ff9ff805fecfc76" rendererVersion="archcontext.docs-renderer/v3" outputDigest="sha256:694165f9077c24af54ef2763d92b2c93501a1df046bc0cff148b7ceea3d5f631" verifiedAgainst="main@7f359d8eb5340103019c75db5493ad52250be5d3@2026-08-16T02:36:41+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-general-repo-access" sourceDigest="sha256:42b8f1e808805a06b5f8a604796875cd15075125ad6aae37781b919fc795e9e0" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:88c96e6dda01a1222e85a989f6049b5b6b0018f769029b42e4f6029f49e66d72" -->
 > **狀態**:`active`
-> **Verified against**:`main@7f359d8eb5340103019c75db5493ad52250be5d3`(2026-08-16)
 > **Capability ID**:`capability.runtime-mcp.general-repo-access`(kind `capability`)
 > **Matched Prefixes**:`src/cli/mcp/general-repo-access.ts`、`src/cli/mcp/general-repo-access/**`、`tests/cli/mcp-reader-tools.test.ts`、`tests/cli/mcp-codegraph-contract.test.ts`、`tests/cli/mcp-policy.test.ts`、`tests/cli/mcp-tools.test.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
-> **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與 Git 狀態投影生成,手改會在下次投影被覆蓋。
+> **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
 Exposes bounded read-only repository tools through MCP.
 
@@ -35,10 +34,9 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 文件數:`6`
-- 總行數:`6727`
+- 規模量級:`5–10` 個文件 / `5000–10000` 行
 - 匹配前綴:`src/cli/mcp/general-repo-access.ts`、`src/cli/mcp/general-repo-access/**`、`tests/cli/mcp-reader-tools.test.ts`、`tests/cli/mcp-codegraph-contract.test.ts`、`tests/cli/mcp-policy.test.ts`、`tests/cli/mcp-tools.test.ts`
-- 復算:`archctx docs plan --json`(掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`)
+- 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
 

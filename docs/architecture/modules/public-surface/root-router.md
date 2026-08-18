@@ -1,11 +1,10 @@
 # public-surface/root-router 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-root-router" sourceDigest="sha256:77fcdaea6e50b1410cd0d8883a810cebe747ce64c2dec220906139d0f5ba9850" rendererVersion="archcontext.docs-renderer/v3" outputDigest="sha256:0484191aeda6851860b5522e734aeb6560902a894d06081dbde2e8a7b2889e6f" verifiedAgainst="codex/release-0-15-2@40437b577e40af007dbbd100879d5b089ea769a3@2026-08-16T12:48:11+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-root-router" sourceDigest="sha256:4b156de6b1c762fba52333c97bc1928eb8ccdfa64972fe4c9034249d5b66a22c" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:ae0761f94d159619eca95cc0e65038bb547c0d31d085c4f9c4f9095d639f0db1" -->
 > **狀態**:`active`
-> **Verified against**:`codex/release-0-15-2@40437b577e40af007dbbd100879d5b089ea769a3`(2026-08-16)
 > **Capability ID**:`capability.public-surface.root-router`(kind `capability`)
 > **Matched Prefixes**:`SKILL.md`、`README.md`、`AGENTS.md`、`CLAUDE.md`、`docs/spec.md`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
-> **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與 Git 狀態投影生成,手改會在下次投影被覆蓋。
+> **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
 Routes repository-level product and agent context into capability-specific contracts.
 
@@ -35,10 +34,9 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 文件數:`5`
-- 總行數:`849`
+- 規模量級:`5–10` 個文件 / `500–1000` 行
 - 匹配前綴:`SKILL.md`、`README.md`、`AGENTS.md`、`CLAUDE.md`、`docs/spec.md`
-- 復算:`archctx docs plan --json`(掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`)
+- 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
 

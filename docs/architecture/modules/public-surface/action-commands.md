@@ -1,11 +1,10 @@
 # public-surface/action-commands 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" sourceDigest="sha256:936d1decb7d3cef77c235c77d85c47103c85b202e28dc837e8c1f4785b5acf7d" rendererVersion="archcontext.docs-renderer/v3" outputDigest="sha256:46f4c3455988e99ae42ded2bcf94a896862f3c47153c2260f21856fdeef9e0ea" verifiedAgainst="main@274dd72d03f2db86127f2e3447890baa17a27001@2026-08-16T11:16:06+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" sourceDigest="sha256:6c1d5494a41634fd28f9685b325b1d79d2bb95fac249f5c57dc5519e35c5c307" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:5c61debb2a48e091cde2de1f88b22066a8e4fb7b2e6fc18e4e98fbc2e1f0aa56" -->
 > **狀態**:`active`
-> **Verified against**:`main@274dd72d03f2db86127f2e3447890baa17a27001`(2026-08-16)
 > **Capability ID**:`capability.public-surface.action-commands`(kind `capability`)
 > **Matched Prefixes**:`assets/skill-commands/**`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
-> **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與 Git 狀態投影生成,手改會在下次投影被覆蓋。
+> **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
 Defines the user-facing action command skill surface and its evaluation boundary.
 
@@ -35,10 +34,9 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 文件數:`7`
-- 總行數:`673`
+- 規模量級:`5–10` 個文件 / `500–1000` 行
 - 匹配前綴:`assets/skill-commands/**`
-- 復算:`archctx docs plan --json`(掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`)
+- 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
 

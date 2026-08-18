@@ -1,11 +1,10 @@
 # runtime-harness/mcp-sidecar 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:11823bead91969821fd08b091b4c43ce696904a3c87dd3b153e65c65fdc16025" rendererVersion="archcontext.docs-renderer/v3" outputDigest="sha256:c3d8e47ba1a07348c1d6a6b4f3cdc73af0386adfc90376618831cbd2164ae7c2" verifiedAgainst="main@7f359d8eb5340103019c75db5493ad52250be5d3@2026-08-16T02:36:41+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:8e2ba45e941e3259fe9e2346d1460a18e2c199dc7017e55531370c09bc5b4731" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:a941fe11388c621fe51eaee5dc2b143d4b24ef7f2a9fd3114a5ac15baa12cb11" -->
 > **狀態**:`active`
-> **Verified against**:`main@7f359d8eb5340103019c75db5493ad52250be5d3`(2026-08-16)
 > **Capability ID**:`capability.runtime-harness.mcp-sidecar`(kind `capability`)
 > **Matched Prefixes**:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`、`src/cli/chatgpt-browser/file-policy.ts`、`src/effects/repo-registry.ts`、`docs/repo-harness-chatgpt-mcp-setup.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`docs/researches/20260711-devspace-chatgpt-local-control.md`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
-> **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與 Git 狀態投影生成,手改會在下次投影被覆蓋。
+> **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
 Provides the local MCP sidecar and its repository access policy boundary.
 
@@ -35,10 +34,9 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 文件數:`31`
-- 總行數:`13613`
+- 規模量級:`20–50` 個文件 / `10k–20k` 行
 - 匹配前綴:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`、`src/cli/chatgpt-browser/file-policy.ts`、`src/effects/repo-registry.ts`、`docs/repo-harness-chatgpt-mcp-setup.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`docs/researches/20260711-devspace-chatgpt-local-control.md`
-- 復算:`archctx docs plan --json`(掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`)
+- 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
 

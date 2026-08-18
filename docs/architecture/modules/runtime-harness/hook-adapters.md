@@ -1,11 +1,10 @@
 # runtime-harness/hook-adapters 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:5b88bcaa77e406e1a87da49ba2c02030dc050c463117e62507be32e5baab367f" rendererVersion="archcontext.docs-renderer/v3" outputDigest="sha256:561303eef5c3210d86e61dbf4cb60cb5ff99b338633fd5a5bed2064f295c3a18" verifiedAgainst="main@5cdfe9c2c52deb81fdb76eb42587586825eb1a49@2026-08-18T07:00:08+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" sourceDigest="sha256:c5528c7ff9467b71364ce083ab4d0bbaff0729765c1e1f8b511ae54319a88e94" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:235db05ad6aca5f3bd47ce84257904865e2b41f0b69c00c2f50989b6e7e61313" -->
 > **狀態**:`active`
-> **Verified against**:`main@5cdfe9c2c52deb81fdb76eb42587586825eb1a49`(2026-08-18)
 > **Capability ID**:`capability.runtime-harness.hook-adapters`(kind `capability`)
 > **Matched Prefixes**:`assets/hooks/**`、`.ai/hooks/**`、`scripts/run-skill-hook.ts`、`src/cli/installer/**`、`src/cli/hook/**`、`src/cli/hook-entry.ts`
 > **Local Contracts**:`assets/hooks/AGENTS.md`、`assets/hooks/CLAUDE.md`
-> **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與 Git 狀態投影生成,手改會在下次投影被覆蓋。
+> **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
 Installs and runs typed Claude and Codex host hook routes.
 
@@ -35,10 +34,9 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 文件數:`47`
-- 總行數:`18005`
+- 規模量級:`20–50` 個文件 / `10k–20k` 行
 - 匹配前綴:`assets/hooks/**`、`.ai/hooks/**`、`scripts/run-skill-hook.ts`、`src/cli/installer/**`、`src/cli/hook/**`、`src/cli/hook-entry.ts`
-- 復算:`archctx docs plan --json`(掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`)
+- 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
 

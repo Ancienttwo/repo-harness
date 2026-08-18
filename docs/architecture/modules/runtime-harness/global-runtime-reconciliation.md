@@ -1,12 +1,11 @@
 # runtime-harness/global-runtime-reconciliation 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" sourceDigest="sha256:61687d309133233011e8d8b820c1060cfb2aaac0c42f3d26ac9cf18e2e6d2a0d" rendererVersion="archcontext.docs-renderer/v3" outputDigest="sha256:9ece5b9a6251f34b4cd3158d0a83cc1b66535679816199bee023db44503abba1" verifiedAgainst="main@84eb7c0272608be83703f371256df663fed1c070@2026-08-16T22:46:24+08:00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" sourceDigest="sha256:98d6d0833fdeb919d85edb53b7d4350adcf117bd35331d1e35bd511de9205ea9" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:f38d06e22caaddcf65c12512bed1ef976f1457d57e0ba4651e724a2ae42b998c" -->
 > **狀態**:`active`
-> **Verified against**:`main@84eb7c0272608be83703f371256df663fed1c070`(2026-08-16)
 > **Capability ID**:`capability.runtime-harness.global-runtime-reconciliation`(kind `capability`)
 > **Matched Prefixes**:`package.json`、`bun.lock`、`src/cli/index.ts`、`src/cli/commands/global-runtime.ts`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`tests/cli/global-runtime-init.test.ts`、`tests/cli/global-runtime.test.ts`、`tests/architecture-projection-provider.test.ts`、`tests/architecture-projection-orchestration.test.ts`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
-> **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與 Git 狀態投影生成,手改會在下次投影被覆蓋。
+> **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
 Reconciles the installed repo-harness runtime, its mandatory ArchContext closure, and profile-owned external tooling.
 
@@ -37,10 +36,9 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 文件數:`17`
-- 總行數:`9236`
+- 規模量級:`10–20` 個文件 / `5000–10000` 行
 - 匹配前綴:`package.json`、`bun.lock`、`src/cli/index.ts`、`src/cli/commands/global-runtime.ts`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`tests/cli/global-runtime-init.test.ts`、`tests/cli/global-runtime.test.ts`、`tests/architecture-projection-provider.test.ts`、`tests/architecture-projection-orchestration.test.ts`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`
-- 復算:`archctx docs plan --json`(掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`)
+- 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
 
