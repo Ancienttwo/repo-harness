@@ -3,7 +3,11 @@ import { createHash } from 'crypto';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { runSubagentHandler } from '../src/cli/hook/subagent-handler';
+import {
+  appendLongCommandGuardrail,
+  LONG_COMMAND_GUARDRAIL_MARKER,
+  runSubagentHandler,
+} from '../src/cli/hook/subagent-handler';
 
 function tempRepo(): string {
   return mkdtempSync(join(tmpdir(), 'repo-harness-subagent-handler-'));
@@ -312,6 +316,30 @@ describe('typed subagent hook handlers', () => {
           reasoning_effort_status: 'configured_unverified',
         }),
       ]);
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('injects the long-command guardrail advisory once into SubagentStart context', () => {
+    const repoRoot = tempRepo();
+    try {
+      writeWorkerProfile(repoRoot);
+      const output = startSubagent(repoRoot, {
+        session_id: 'session-guardrail',
+        turn_id: 'turn-guardrail',
+        agent_id: 'agent-guardrail',
+        agent_type: 'fast-worker',
+        model: 'gpt-5.6-sol',
+      });
+      expect(output.exitCode).toBe(0);
+      const context = additionalContext(output.stdout);
+      expect(context.split(LONG_COMMAND_GUARDRAIL_MARKER).length - 1).toBe(1);
+      expect(context).toContain('RESULT: BLOCKED');
+      expect(context).toContain('hand that command back to the orchestrator');
+      expect(context).toContain('600 seconds');
+
+      expect(appendLongCommandGuardrail(context)).toBe(context);
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
     }
