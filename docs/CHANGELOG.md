@@ -4,16 +4,36 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.15.3] - 2026-08-19
+
 ### Added
 
+- Adds the shared coordination plane WP1: sprint rows are claimed and completed
+  through a git common-dir lease store behind `sprint claim`, `bind`, `release`,
+  `steal`, `reconcile`, `identify`, and `begin-completion`. The cutover is
+  quiescent and fail-closed rather than dual-authority.
+- Adds a SubagentStart long-command guardrail advisory so delegated runners are
+  warned about output-swallowing pipes before a long command stalls a watchdog.
+- Adds a SessionStart notice for cleanable contract worktrees.
 - Adds `minimal_change` enforce mode: `mode: "enforce"` arms a Stop gate that
   blocks a `review` verdict until a fingerprint-matching audit receipt at
   `.ai/harness/checks/minimal-change-audit.latest.json` releases it, bounded by
   the shared circuit breaker at two blocks per report fingerprint. Defaults stay
   `advice` with the post-edit observer opt-in; enforce is per-repo opt-in.
+- Adds a Stop advisory when implementation changes carry no active plan.
+- Adds the `debug-ground-truth-eval-v1` benchmark and reports the uncommitted
+  architecture projection backlog from `check-architecture-sync`.
+- Adds a stable aggregate CI context so branch protection has one required
+  check to bind.
 
 ### Changed
 
+- Hardens the coordination lease protocol: the owner record carries three
+  explicit fields, a `completing` guard blocks concurrent completion, inline
+  `complete` passes through the same gate, legacy lease shapes are rejected
+  fail-closed instead of being upgraded, and marker writes have a fixed order.
+- Pins `archctx` to 0.4.4 and migrates architecture projections to the
+  `archcontext.docs-renderer/v4` contract.
 - Makes CodeGraph enablement purely explicit. `profileEnablesCodegraph` no
   longer auto-enables CodeGraph for repositories with at least 2000 tracked
   files; the only true paths are the `full` profile and an explicit
@@ -22,6 +42,21 @@ All notable changes to this skill are documented here.
   that opt-in no longer gain CodeGraph, and policy read or parse failures fail
   closed to disabled. This repo's own policy carries the explicit opt-in, so
   self-host behavior is unchanged.
+- Collapses worktree base metadata onto one typed selector in `verify-sprint`,
+  classified fail-closed, and unifies the `.ai` memory layers.
+
+### Fixed
+
+- Guards the `setup-plugins.sh` shift overrun on final-position retired options
+  and the empty-args expansion that preceded it.
+- Guards the empty untracked array in `ship-worktrees` scaffold discard on
+  bash 3.2.
+- Collapses worktree merge determination to one authority.
+- Runs the `minimal_change` enforce gate before the Stop handler's lite early
+  return.
+- Restores machine-owned projection output before the merge gate, and restores
+  the lite-enforce-gap closeout content that a typed-lock publication
+  overwrote.
 
 ## [0.15.2] - 2026-08-16
 
