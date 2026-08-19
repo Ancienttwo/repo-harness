@@ -775,6 +775,14 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
       expect(actionableTwo.unit_ref).toBe(planTwo);
 
       runCompletionGate(fixture, worktreeTwo, actionableTwo);
+
+      // finish retires the merged worktree on its own success path, so the
+      // ledger's runtime-evidence state has to be read while the worktree is
+      // still on disk. The durable half of the claim -- that it never entered
+      // anyone's tracked tree -- is asserted against published history below.
+      const ledgerPresentBeforeFinish = existsSync(join(worktreeTwo, LEDGER));
+      const worktreeStatusBeforeFinish = git(worktreeTwo, ['status', '--porcelain', '--untracked-files=all']).stdout;
+
       const finishTwo = executeHostCommand(fixture, worktreeTwo, HOST_COMMAND.finishMerge);
       expect(finishTwo.status, `${finishTwo.stdout}\n${finishTwo.stderr}`).toBe(0);
       expect(finishTwo.stdout).toContain('Merged codex/row-two into main');
@@ -843,8 +851,9 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
 
       // The attempt ledger stayed ignored runtime evidence throughout: it never
       // entered the tracked tree of either worktree.
-      expect(existsSync(join(worktreeTwo, LEDGER))).toBe(true);
-      expect(git(worktreeTwo, ['status', '--porcelain', '--untracked-files=all']).stdout).toBe('');
+      expect(ledgerPresentBeforeFinish).toBe(true);
+      expect(worktreeStatusBeforeFinish).toBe('');
+      expect(git(primary, ['log', '--all', '--oneline', '--', LEDGER]).stdout).toBe('');
     });
   }, 90_000);
 });

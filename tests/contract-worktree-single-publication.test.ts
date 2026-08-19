@@ -54,6 +54,18 @@ function commitAll(cwd: string, message: string): string {
   return run("git", ["rev-parse", "HEAD"], cwd).stdout.trim();
 }
 
+// finish cleans the merged worktree up on its own success path, so after a
+// successful `finish --merge` neither the linked worktree nor the source branch
+// name survives to be queried. The publication commit's own trailer is the
+// surviving record of the tip it was built from, and that object stays readable
+// from the shared store.
+function sourceWorktreeHead(primary: string): string {
+  const body = run("git", ["log", "-1", "--format=%B", "main"], primary).stdout;
+  const match = /^Source-Worktree-Head: ([0-9a-f]{40})$/m.exec(body);
+  expect(match, `publication commit carries no Source-Worktree-Head trailer:\n${body}`).not.toBeNull();
+  return match![1];
+}
+
 function installFixture(container: string): { primary: string; linked: string } {
   const primary = join(container, "primary");
   const linked = join(container, "linked");
@@ -186,11 +198,11 @@ describe("contract-worktree single publication commit", () => {
       expect(finish.status, `${finish.stdout}\n${finish.stderr}`).toBe(0);
 
       const published = run("git", ["rev-parse", "main"], primary).stdout.trim();
-      const sourceHead = run("git", ["rev-parse", "HEAD"], linked).stdout.trim();
+      const sourceHead = sourceWorktreeHead(primary);
       const commitCount = Number(run("git", ["rev-list", "--count", `${base}..main`], primary).stdout.trim());
       const parent = run("git", ["rev-parse", "main^"], primary).stdout.trim();
       const publishedTree = run("git", ["rev-parse", "main^{tree}"], primary).stdout.trim();
-      const sourceTree = run("git", ["rev-parse", `${sourceHead}^{tree}`], linked).stdout.trim();
+      const sourceTree = run("git", ["rev-parse", `${sourceHead}^{tree}`], primary).stdout.trim();
 
       expect(commitCount).toBe(1);
       expect(parent).toBe(base);
@@ -403,6 +415,95 @@ describe("contract-worktree single publication commit", () => {
       expect(finish.stderr).toContain("commit.gpgsign is configured but is not a valid boolean");
       expect(finish.stderr).not.toContain("commit-tree must not run");
       expect(run("git", ["rev-parse", "main"], primary).stdout.trim()).toBe(base);
+    } finally {
+      rmSync(container, { recursive: true, force: true });
+    }
+  }, 30_000);
+});
+
+// Regression guard for the cleanup attempt at the tail of finish's merge-back
+// success path. cleanup_worktree was already fail-closed and correct, but
+// nothing ever invoked it after a successful finish, so contract worktrees
+// accumulated on disk without bound. See:
+//   plans/plan-20260819-2155-finish-auto-cleanup.md
+describe("contract-worktree finish cleans up the merged worktree", () => {
+  test("a successful finish --merge removes the worktree, the branch, and the start metadata", () => {
+    const container = realpathSync(mkdtempSync(join(tmpdir(), "contract-worktree-finish-cleanup-")));
+    try {
+      const { primary, linked } = installFixture(container);
+
+      // `start` writes this metadata inside the worktree; publishing carries it
+      // to the target, where cleanup is the only thing that retires it.
+      mkdirSync(join(linked, ".ai/harness/worktrees"), { recursive: true });
+      writeFileSync(join(linked, ".ai/harness/worktrees/demo.json"), '{"slug":"demo"}\n');
+      mkdirSync(join(linked, "src"), { recursive: true });
+      writeFileSync(join(linked, "src/change.ts"), "export const changed = true;\n");
+      commitAll(linked, "checkpoint before cleanup");
+
+      const finish = run("bash", ["scripts/contract-worktree.sh", "finish", "--merge"], linked);
+      expect(finish.status, `${finish.stdout}\n${finish.stderr}`).toBe(0);
+
+      expect(existsSync(linked)).toBe(false);
+      expect(
+        run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/demo"], primary).status,
+      ).not.toBe(0);
+      expect(existsSync(join(primary, ".ai/harness/worktrees/demo.json"))).toBe(false);
+
+      // The caller's shell is left sitting in a deleted directory, so finish
+      // has to name where to go.
+      expect(finish.stdout).toContain(`cd ${primary}`);
+
+      // Cleanup runs strictly after the transaction commits: it must not be
+      // able to unwind the publication it just proved was absorbed.
+      expect(run("git", ["log", "-1", "--format=%s", "main"], primary).stdout.trim()).toBe(
+        "feat(contract): complete demo",
+      );
+      expect(existsSync(join(primary, "src/change.ts"))).toBe(true);
+    } finally {
+      rmSync(container, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("a refused cleanup keeps the publication and still exits 0", () => {
+    const container = realpathSync(mkdtempSync(join(tmpdir(), "contract-worktree-cleanup-refused-")));
+    try {
+      const { primary, linked } = installFixture(container);
+      // finish itself never runs `git worktree remove` -- only the cleanup it
+      // delegates to does -- so failing exactly that verb injects a cleanup
+      // refusal without disturbing any step of the publication.
+      const fakeGit = join(container, "refuse-remove-git.sh");
+      writeExecutable(
+        fakeGit,
+        [
+          "#!/bin/bash",
+          'if [[ "${1:-}" == "worktree" && "${2:-}" == "remove" ]]; then',
+          '  echo "injected worktree remove failure" >&2',
+          "  exit 42",
+          "fi",
+          `exec ${JSON.stringify(REAL_GIT)} "$@"`,
+          "",
+        ].join("\n"),
+      );
+      mkdirSync(join(linked, "src"), { recursive: true });
+      writeFileSync(join(linked, "src/change.ts"), "export const changed = true;\n");
+      commitAll(linked, "checkpoint before refused cleanup");
+
+      const finish = run("bash", ["scripts/contract-worktree.sh", "finish", "--merge"], linked, {
+        REPO_HARNESS_GIT_BIN: fakeGit,
+      });
+
+      // finish already succeeded before cleanup was attempted; a cleanup
+      // refusal must not be reported back to the caller as a failed finish.
+      expect(finish.status, `${finish.stdout}\n${finish.stderr}`).toBe(0);
+      expect(finish.stderr).toContain("automatic worktree cleanup refused");
+      expect(finish.stderr).toContain("cleanup --slug demo --target main");
+      expect(existsSync(linked)).toBe(true);
+      expect(
+        run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/demo"], primary).status,
+      ).toBe(0);
+      expect(run("git", ["log", "-1", "--format=%s", "main"], primary).stdout.trim()).toBe(
+        "feat(contract): complete demo",
+      );
     } finally {
       rmSync(container, { recursive: true, force: true });
     }

@@ -1920,6 +1920,24 @@ finish_worktree() {
   finish_transaction_commit "$publication_sha"
   sprint_lease_reconcile_after_publication "$target_branch"
   echo "[ContractWorktree] Merged $current_branch into $target_branch as single publication commit $publication_sha at $target_worktree"
+
+  # Cleanup runs after the transaction is committed and its EXIT trap disarmed,
+  # so a refusal here cannot reach finish_transaction_abort and unwind a
+  # publication that already landed. Nothing runs after this block, so deleting
+  # this process's own cwd is safe.
+  #
+  # cleanup_worktree is fail-closed and must run from the target primary
+  # worktree. The child needs the repo-root override as well as the cwd: this
+  # process exported REPO_HARNESS_TARGET_REPO_ROOT as the linked worktree, and
+  # the child would otherwise cd straight back here and refuse.
+  if (cd "$target_worktree" \
+    && REPO_HARNESS_TARGET_REPO_ROOT="$target_worktree" \
+      bash "$helper_dir/contract-worktree.sh" cleanup --slug "$slug" --target "$target_branch"); then
+    echo "[ContractWorktree] Worktree removed after merge; this shell's directory is gone -- cd $target_worktree"
+  else
+    echo "[ContractWorktree] Warning: automatic worktree cleanup refused; the worktree and branch remain on disk" >&2
+    echo "[ContractWorktree] run from $target_worktree: repo-harness run contract-worktree cleanup --slug $slug --target $target_branch" >&2
+  fi
 }
 
 # Plans captured via sprint-backlog start-task carry
