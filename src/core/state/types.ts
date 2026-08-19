@@ -251,13 +251,19 @@ export interface BoardClaimV1 {
 }
 
 /**
- * Per-card diagnostics. The two conflict fields spec 12 describes
- * (`actual_path_overlap` / `scope_overlap`) are absent rather than empty: the
- * changed-set authority is a cwd-bound shell function, and re-deriving it here
- * would be a shadow parser. Absent says "not computed"; `[]` would say "no
- * overlap", which this projection cannot prove.
+ * The diagnostics both board projections share: every field derivable from the
+ * canonical row, the lease record, and git's worktree list alone. No evidence
+ * dimension, so a projection that never opens an attempt ledger (the hook
+ * slice) and one that does (the full board) still classify ownership through
+ * one implementation.
+ *
+ * The two conflict fields spec 12 describes (`actual_path_overlap` /
+ * `scope_overlap`) are absent rather than empty: the changed-set authority is
+ * a cwd-bound shell function, and re-deriving it here would be a shadow
+ * parser. Absent says "not computed"; `[]` would say "no overlap", which
+ * neither projection can prove.
  */
-export interface BoardDiagnosticsV1 {
+export interface BoardOwnershipDiagnosticsV1 {
   readonly definition_drift: boolean;
   readonly target_ref_mismatch: boolean;
   readonly worktree_missing: boolean;
@@ -265,6 +271,10 @@ export interface BoardDiagnosticsV1 {
   readonly lease_cleanup_required: boolean;
   /** The store's `unknown_reason`, verbatim; null unless `lease_state` is `unknown`. */
   readonly lease_unknown_reason: string | null;
+}
+
+/** Per-card diagnostics: the shared ownership set plus the evidence overlay. */
+export interface BoardDiagnosticsV1 extends BoardOwnershipDiagnosticsV1 {
   readonly progress_unreadable_reason: string | null;
 }
 
@@ -327,4 +337,73 @@ export interface BoardDocumentV1 {
   readonly revisions: BoardRevisionsV1;
   readonly snapshot_consistency: BoardSnapshotConsistency;
   readonly cards: readonly BoardCardV1[];
+}
+
+/* -------------------------------------------------------------------------
+ * Hook board slice (WP3)
+ *
+ * What a hook may afford to observe, and nothing more. `BoardDocumentV1` costs
+ * 644-1288ms because its evidence dimension resolves Effective State once per
+ * owner worktree (~100ms each); a route that fires on every structured edit
+ * cannot pay that, so the slice reads only the two cheap authorities -- the
+ * canonical sprint and the lease plane, plus git's worktree list -- and
+ * publishes exactly what those two can prove.
+ *
+ * Three groups of fields are STRUCTURALLY ABSENT rather than null or empty:
+ *
+ * - `progress_state`: the evidence dimension is never collected here, and a
+ *   `not_observed` field would advertise a dimension this document does not
+ *   have;
+ * - `column`: the column decision table consumes `progress_state`, so a column
+ *   projected without it would be a second, quieter column rule that disagrees
+ *   with `repo-harness state board --json` on exactly the `stalled` rows;
+ * - every conflict field (`actual_path_overlap`, `scope_overlap`): the WP2
+ *   precedent, for the same shadow-parser reason.
+ *
+ * Absence is the contract. A consumer reads the closing pointer line and runs
+ * the board command when it needs the dimensions this slice refuses to guess.
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The current tree's own row: what it holds, and what is wrong with what it
+ * holds. Null on the slice when this tree holds no resolvable claim.
+ */
+export interface BoardSliceSelfV1 {
+  readonly task_id: string;
+  readonly task_revision: string;
+  /** The backlog task cell verbatim. */
+  readonly task: string;
+  /** The backlog Plan cell verbatim; empty until finish back-fills it. */
+  readonly plan: string;
+  readonly task_state: TaskState;
+  readonly lease_state: BoardLeaseState;
+  readonly claim: BoardClaimV1 | null;
+  readonly diagnostics: BoardOwnershipDiagnosticsV1;
+  readonly actions: BoardActionsV1;
+}
+
+/**
+ * One other row with a live lease. Peers exist so a spawned agent learns that
+ * someone else is already holding work, which is the whole point of injecting
+ * anything at spawn time; they carry no diagnostics because a peer's
+ * remediation is its owner's, not this tree's.
+ */
+export interface BoardSlicePeerV1 {
+  readonly task_id: string;
+  readonly task: string;
+  readonly lease_state: BoardLeaseState;
+  readonly worktree: string | null;
+  readonly branch: string | null;
+  /** Whether git still lists the owner worktree; false is the orphan signal. */
+  readonly worktree_present: boolean;
+}
+
+export interface BoardSliceV1 {
+  readonly protocol: 1;
+  readonly kind: 'repo-harness-board-slice';
+  readonly canonical_target: BoardCanonicalTargetV1;
+  readonly sprint_path: string;
+  readonly self: BoardSliceSelfV1 | null;
+  /** Live-lease rows other than `self`, in `task_id` lexicographic order. */
+  readonly peers: readonly BoardSlicePeerV1[];
 }

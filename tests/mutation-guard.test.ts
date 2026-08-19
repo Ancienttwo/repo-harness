@@ -653,4 +653,24 @@ describe('gate round-1 parity closure: restored input-normalization fallbacks', 
       rmSync(root, { recursive: true, force: true });
     }
   }, 30_000);
+
+  // WP3 falsification-matrix row: "non-sprint execution is unaffected by the
+  // lease gate". Every other guard's fixture in this file is a repository with
+  // no coordination state, so this asserts the invariant those fixtures all
+  // silently depend on. The armed paths live in tests/board-slice.test.ts.
+  test('LeaseOwnershipGuard: an ordinary plan without any sprint state is untouched', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-no-lease-')));
+    try {
+      initRepo(cwd);
+      writePolicy(cwd);
+      writeActivePlan(cwd, 'Approved');
+      mkdirSync(join(cwd, 'docs'), { recursive: true });
+      writeFileSync(join(cwd, 'docs/spec.md'), '# spec\n');
+      const result = edit(cwd, 'src/feature.ts', { profile: 'lite' });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).not.toContain('LeaseOwnershipGuard');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
 });

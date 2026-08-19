@@ -703,6 +703,41 @@ describe('typed subagent hook handlers', () => {
       rmSync(repoRoot, { recursive: true, force: true });
     }
   });
+
+  // WP3: the slice mounts must be invisible in a repository that runs no
+  // sprint. Byte-equality across hosts, the arming predicate, and the five
+  // fail-closed steps live in tests/board-slice.test.ts, which builds the real
+  // git/lease fixtures those claims need.
+  test('a repository with no coordination state receives no slice on either mount', () => {
+    const repoRoot = tempRepo();
+    try {
+      const spawn = runSubagentHandler({
+        event: 'PreToolUse',
+        repoRoot,
+        input: JSON.stringify({ tool_name: 'Task', tool_input: { prompt: 'Write the report.' } }),
+      });
+      const prompt = String(
+        ((jsonResult(spawn.stdout).hookSpecificOutput as Record<string, unknown>)
+          .updatedInput as Record<string, unknown>).prompt,
+      );
+      expect(prompt).toContain('[repo-harness:return-channel]');
+      expect(prompt).not.toContain('[repo-harness:board-slice]');
+
+      const start = runSubagentHandler({
+        event: 'SubagentStart',
+        repoRoot,
+        env: codexEnv(),
+        input: JSON.stringify({ agent_type: 'default', model: 'gpt-x', agent_id: 'a-1', turn_id: 't-1' }),
+      });
+      const context = String(
+        (jsonResult(start.stdout).hookSpecificOutput as Record<string, unknown>).additionalContext,
+      );
+      expect(context).toContain('[repo-harness:subagent-context]');
+      expect(context).not.toContain('[repo-harness:board-slice]');
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 function exists(path: string): boolean {

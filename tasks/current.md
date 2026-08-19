@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-20T01:20:51+0800 -->
+<!-- updated_at: 2026-08-20T03:49:25+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-20T01:20:51+0800
-> **Source Branch**: codex/wp2-board-projection
-> **Source Commit**: 0573ca45
+> **Status**: Idle
+> **Updated At**: 2026-08-20T03:49:25+0800
+> **Source Branch**: codex/wp3-hook-visibility
+> **Source Commit**: 81d5919b
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -17,11 +17,11 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
+- Status: Idle
 - Active Plan: (none)
 - Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Next Task: (none)
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -31,8 +31,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/ancienttwo/Projects/repo-harness: plans/plan-20260819-2155-finish-auto-cleanup.md
-- /Users/ancienttwo/Projects/repo-harness: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness
+- (none)
 ## Active Sprint
 
 - Sprint: (none)
@@ -59,16 +58,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260819-2109-wp2-board-projection.md
- D tasks/contracts/20260819-2109-wp2-board-projection.contract.md
- D tasks/notes/20260819-2109-wp2-board-projection.notes.md
- D tasks/reviews/20260819-2109-wp2-board-projection.review.md
+ D plans/plan-20260820-0159-wp3-hook-visibility.md
+ D tasks/contracts/20260820-0159-wp3-hook-visibility.contract.md
+ D tasks/notes/20260820-0159-wp3-hook-visibility.notes.md
+ D tasks/reviews/20260820-0159-wp3-hook-visibility.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260819-2109-wp2-board-projection.md
-?? tasks/archive/contract-20260820-0120-wp2-board-projection.md
-?? tasks/archive/notes-20260820-0120-wp2-board-projection.md
-?? tasks/archive/review-20260820-0120-wp2-board-projection.md
-?? tasks/archive/todo-20260820-0120-wp2-board-projection.md
+?? plans/archive/plan-20260820-0159-wp3-hook-visibility.md
+?? tasks/archive/contract-20260820-0349-wp3-hook-visibility.md
+?? tasks/archive/notes-20260820-0349-wp3-hook-visibility.md
+?? tasks/archive/review-20260820-0349-wp3-hook-visibility.md
+?? tasks/archive/todo-20260820-0349-wp3-hook-visibility.md
 ```
 
 ## Source Artifacts

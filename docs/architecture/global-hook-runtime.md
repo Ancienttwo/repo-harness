@@ -69,6 +69,19 @@ The public route inventory is:
 | `SubagentStop` | `quality` | Codex only | `subagent` |
 | `Stop` | `default` | all | `stop` |
 
+The tuple order and membership are a stable public contract that Codex trust-
+hashes, so a capability is added inside an existing handler, never as a new or
+reordered row. Three rows above carry the WP3 coordination surface that way:
+
+| Route | WP3 addition | Failure mode |
+| --- | --- | --- |
+| `SubagentStart` / `context` | `BoardSliceV1` appended to the context array | advisory; resolution failure means no block |
+| `PreToolUse` / `subagent` | the same slice appended to the `Task\|Agent` prompt, guarded by `HOOK_HOST != codex` for exactly-once; the `SendUserMessage` branch is untouched | advisory |
+| `PreToolUse` / `edit` | `LeaseOwnershipGuard`, armed only by a claim token whose `unit_ref` is the active-plan marker AND a linked worktree | fail-closed `exit(2)` once armed; advisory before arming |
+
+See `docs/architecture/shared-coordination-plane.md` §9 for the arming
+predicate, the five ownership steps, and the measured cost basis.
+
 The event result is fail-closed for unknown routes and missing handler
 bindings. A non-git or non-opt-in repository exits quietly without creating a
 runtime event record.

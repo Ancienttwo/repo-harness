@@ -26,6 +26,7 @@ import {
   writeFileSync,
 } from 'fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
+import { BOARD_SLICE_MARKER, resolveBoardSliceBlock } from './board-slice-context';
 import { recordCircuitAttempt } from './circuit-breaker';
 import { withExclusiveDirectoryLock } from '../../effects/locking/exclusive-directory-lock';
 import type { WorkflowProfile } from '../../core/workflow/profile';
@@ -264,19 +265,52 @@ function renderDelegationOutput(context: string): string {
   })}\n`;
 }
 
-function runReturnChannel(input: JsonObject): SubagentHandlerResult {
+/**
+ * Append the read-only board slice once. Advisory in every direction: a
+ * resolution failure means no block, and an already-present marker means no
+ * second block.
+ *
+ * The `HOOK_HOST !== 'codex'` guard is what makes injection exactly-once. On
+ * the Codex host the same slice already rides `SubagentStart.context`, and
+ * `runReturnChannel` has no other host discrimination -- Codex spawning
+ * through `Agent` would otherwise receive the block twice, from two routes,
+ * with no marker shared between them at the moment the prompt is built.
+ */
+function appendBoardSlice(repoRoot: string, prompt: string, env: NodeJS.ProcessEnv): string {
+  if (env.HOOK_HOST === 'codex') return prompt;
+  if (prompt.includes(BOARD_SLICE_MARKER)) return prompt;
+  const block = resolveBoardSliceBlock(repoRoot);
+  return block === null ? prompt : `${prompt}\n\n${block}`;
+}
+
+/**
+ * Two independent appendices, each gated by its own marker.
+ *
+ * The previous shape returned early on `RETURN_CONTRACT_MARKER`, which was
+ * correct while the contract text was the only appendix and became a
+ * swallowing bug the moment a second one existed: a re-spawn carrying an
+ * already-stamped prompt would never receive the slice. Each appendix now
+ * decides for itself, and the envelope is emitted whenever either one changed
+ * the prompt.
+ */
+function runReturnChannel(repoRoot: string, input: JsonObject, env: NodeJS.ProcessEnv): SubagentHandlerResult {
   const toolName = String(input.tool_name ?? '');
   if (toolName === 'Task' || toolName === 'Agent') {
     const toolInput = input.tool_input;
     if (!toolInput || typeof toolInput !== 'object' || Array.isArray(toolInput)) return result();
     const prompt = (toolInput as JsonObject).prompt;
-    if (typeof prompt !== 'string' || prompt.includes(RETURN_CONTRACT_MARKER)) return result();
+    if (typeof prompt !== 'string') return result();
+    const withContract = prompt.includes(RETURN_CONTRACT_MARKER)
+      ? prompt
+      : prompt + RETURN_CONTRACT_TEXT;
+    const updatedPrompt = appendBoardSlice(repoRoot, withContract, env);
+    if (updatedPrompt === prompt) return result();
     return result(`${JSON.stringify({
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         permissionDecision: 'allow',
         permissionDecisionReason: 'subagent-return-channel-guard: delivery contract appended to spawn prompt',
-        updatedInput: { ...(toolInput as JsonObject), prompt: prompt + RETURN_CONTRACT_TEXT },
+        updatedInput: { ...(toolInput as JsonObject), prompt: updatedPrompt },
       },
     })}\n`);
   }
@@ -710,10 +744,23 @@ function runSubagentStart(repoRoot: string, input: JsonObject, env: NodeJS.Proce
     };
   }
 
+  // Pure advisory, resolved before the guardrail so the block sits with the
+  // rest of the spawn context rather than after the standing footer. A failure
+  // here means no injection: SubagentStart must never become blocking over a
+  // read-only observation, and the existing handler idiom for that is a
+  // swallowing try/catch.
+  let boardSlice: string | null = null;
+  try {
+    boardSlice = resolveBoardSliceBlock(repoRoot);
+  } catch {
+    boardSlice = null;
+  }
+
   const contextRouting = nativeRoleRouting;
   const context = appendLongCommandGuardrail([
     '[repo-harness:subagent-context]',
     '',
+    ...(boardSlice ? [boardSlice, ''] : []),
     ...(contextRouting
       ? [
           `[repo-harness:native-role-routing] ${contextRouting.status}: ${contextRouting.reason}`,
@@ -796,7 +843,7 @@ export function runSubagentHandler(opts: SubagentHandlerInput): SubagentHandlerR
   const env = opts.env ?? process.env;
   const input = parsePayload(opts.input);
   const now = opts.now?.() ?? new Date();
-  if (opts.event === 'PreToolUse') return runReturnChannel(input);
+  if (opts.event === 'PreToolUse') return runReturnChannel(opts.repoRoot, input, env);
   if (opts.event === 'UserPromptSubmit') {
     if (env.HOOK_HOST !== 'codex') return result();
     return runDelegationAdvisor(opts.repoRoot, input, env, now);

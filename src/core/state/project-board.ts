@@ -59,6 +59,7 @@ import type {
   BoardDiagnosticsV1,
   BoardDocumentV1,
   BoardLeaseState,
+  BoardOwnershipDiagnosticsV1,
   BoardProgressState,
   BoardRevisionsV1,
   TaskState,
@@ -152,7 +153,28 @@ export interface BoardInputsV1 {
   readonly revisions: BoardRevisionsV1;
 }
 
-const ACTIVE_LEASE_STATES: ReadonlySet<BoardLeaseState> = new Set<BoardLeaseState>([
+/**
+ * The ownership-dimension inputs, and only those: the canonical row, the lease
+ * read, and whether git still lists the owner worktree. This is the exact
+ * subset `src/core/state/project-board-slice.ts` can collect without opening an
+ * attempt ledger or resolving a second worktree's Effective State, and every
+ * `derive*` function below is written against it so the two projections cannot
+ * drift into two lease classifications.
+ *
+ * `worktree_present` is a tri-state on purpose: `null` means no owner worktree
+ * was observed at all (a `reserving` lease names none), which is not the same
+ * fact as `false` ("git no longer lists the one it names").
+ */
+export interface BoardOwnershipInput {
+  readonly task_id: string;
+  readonly task_revision: string;
+  readonly row: BacklogRow | null;
+  readonly lease: BoardLeaseInput;
+  readonly worktree_present: boolean | null;
+}
+
+/** Lease states the slice reports as a live peer. */
+export const ACTIVE_LEASE_STATES: ReadonlySet<BoardLeaseState> = new Set<BoardLeaseState>([
   'reserving',
   'bound',
   'completing',
@@ -167,7 +189,7 @@ const GIVABLE_LEASE_STATES: ReadonlySet<string> = new Set(['reserving', 'bound']
  * matches canonical, and a status cell outside the `[ ]` / `[x]` grammar
  * `sprint-backlog.sh` writes. Neither row is claimable and neither is done.
  */
-function taskState(task: BoardTaskInput): TaskState {
+export function deriveTaskState(task: BoardOwnershipInput): TaskState {
   const row = task.row;
   if (row === null) return 'missing';
   if (COMPLETED_ROW_STATUS_PATTERN.test(row.status)) return 'done';
@@ -196,14 +218,14 @@ function progressState(task: BoardTaskInput): BoardProgressState {
   return verdict === 'no_progress' ? 'stalled' : 'active';
 }
 
-function projectDiagnostics(
-  task: BoardTaskInput,
+export function deriveOwnershipDiagnostics(
+  task: BoardOwnershipInput,
   state: TaskState,
   lease: BoardLeaseState,
   canonicalRef: string,
-): BoardDiagnosticsV1 {
+): BoardOwnershipDiagnosticsV1 {
   const record = task.lease.record;
-  const worktreeMissing = task.evidence !== null && !task.evidence.worktree_present;
+  const worktreeMissing = task.worktree_present === false;
   return {
     definition_drift: state === 'drifted',
     target_ref_mismatch: record !== null && record.target_ref !== canonicalRef,
@@ -218,15 +240,22 @@ function projectDiagnostics(
       && record.finish_transaction_key === null,
     lease_cleanup_required: state === 'done' && lease !== 'available',
     lease_unknown_reason: task.lease.unknown_reason,
-    progress_unreadable_reason: task.evidence?.progress_unreadable_reason ?? null,
   };
 }
 
-function projectColumn(
+/**
+ * The column decision table. Exported for the slice, which computes a column
+ * it never publishes: `projectActions`'s `reconcile` offer keys off "blocked",
+ * and re-deriving a second blocking rule there would be exactly the divergence
+ * the shared derivation exists to prevent. The slice passes `not_observed`,
+ * which is the truthful progress value for a projection that never reads a
+ * ledger, and drops the result.
+ */
+export function deriveColumn(
   state: TaskState,
   lease: BoardLeaseState,
   progress: BoardProgressState,
-  diagnostics: BoardDiagnosticsV1,
+  diagnostics: BoardOwnershipDiagnosticsV1,
 ): BoardColumn {
   if (state === 'done') return 'done';
   if (
@@ -253,11 +282,11 @@ function projectColumn(
  * the caller's own statement; there is no value here that could stand in for
  * them without forging provenance.
  */
-function projectActions(
-  task: BoardTaskInput,
+export function deriveActions(
+  task: BoardOwnershipInput,
   lease: BoardLeaseState,
   column: BoardColumn,
-  diagnostics: BoardDiagnosticsV1,
+  diagnostics: BoardOwnershipDiagnosticsV1,
   canonicalRef: string,
 ): BoardActionsV1 {
   const record = task.lease.record;
@@ -278,7 +307,7 @@ function projectActions(
   };
 }
 
-function projectClaim(record: LeaseOwnerRecordV1 | null): BoardClaimV1 | null {
+export function deriveClaim(record: LeaseOwnerRecordV1 | null): BoardClaimV1 | null {
   if (record === null) return null;
   return {
     claim_id: record.claim_id,
@@ -295,12 +324,33 @@ function projectClaim(record: LeaseOwnerRecordV1 | null): BoardClaimV1 | null {
   };
 }
 
+/**
+ * The board's own inputs, narrowed to the ownership subset the shared
+ * derivation consumes. A `reserving` lease names no execution worktree, so the
+ * collector observed none and `worktree_present` is `null` -- the same value
+ * the old `task.evidence !== null && !task.evidence.worktree_present` guard
+ * produced as `worktree_missing: false`.
+ */
+function ownershipInput(task: BoardTaskInput): BoardOwnershipInput {
+  return {
+    task_id: task.task_id,
+    task_revision: task.task_revision,
+    row: task.row,
+    lease: task.lease,
+    worktree_present: task.evidence === null ? null : task.evidence.worktree_present,
+  };
+}
+
 function projectCard(task: BoardTaskInput, canonicalRef: string): BoardCardV1 {
+  const ownership = ownershipInput(task);
   const lease = task.lease.classification;
-  const state = taskState(task);
+  const state = deriveTaskState(ownership);
   const progress = progressState(task);
-  const diagnostics = projectDiagnostics(task, state, lease, canonicalRef);
-  const column = projectColumn(state, lease, progress, diagnostics);
+  const diagnostics: BoardDiagnosticsV1 = {
+    ...deriveOwnershipDiagnostics(ownership, state, lease, canonicalRef),
+    progress_unreadable_reason: task.evidence?.progress_unreadable_reason ?? null,
+  };
+  const column = deriveColumn(state, lease, progress, diagnostics);
   const row = task.row;
   return {
     task_id: task.task_id,
@@ -314,9 +364,9 @@ function projectCard(task: BoardTaskInput, canonicalRef: string): BoardCardV1 {
     task_state: state,
     lease_state: lease,
     progress_state: progress,
-    claim: projectClaim(task.lease.record),
+    claim: deriveClaim(task.lease.record),
     diagnostics,
-    actions: projectActions(task, lease, column, diagnostics, canonicalRef),
+    actions: deriveActions(ownership, lease, column, diagnostics, canonicalRef),
   };
 }
 

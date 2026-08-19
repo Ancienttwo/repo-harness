@@ -183,5 +183,117 @@ receipt 是无害的:它只会清掉一次停滞计数。
 | board 输入收集(IO) | `src/effects/state/collect-board-inputs.ts` |
 | board 一致性解析 | `src/effects/state/resolve-board.ts` |
 | worktree 拓扑读取 | `src/effects/git/worktree-topology.ts` |
+| hook slice 投影(纯) | `src/core/state/project-board-slice.ts` |
+| hook slice 输入收集(IO) | `src/effects/state/collect-slice-inputs.ts` |
+| claim token 读取 | `src/effects/state/coordination-claim-token.ts` |
+| slice 渲染与两个 host 挂载 | `src/cli/hook/board-slice-context.ts` |
+| PreEdit lease gate | `src/cli/hook/mutation-guard.ts`(`LeaseOwnershipGuard`) |
 | CLI 动词 | `src/cli/commands/state.ts`(`state board --json`) |
-| 设计来源 | `docs/researches/20260819-GPT-kanban.md` §3-§12 |
+| 设计来源 | `docs/researches/20260819-GPT-kanban.md` §3-§13 |
+
+## 9. Hook 层:board slice 与 PreEdit lease gate(WP3)
+
+WP1 给了正确性,WP2 给了按需可见性(`state board --json`),但 agent 之间在关键
+时刻仍然互相看不见:新 spawn 的 subagent 对同伴的 claim 一无所知,而拿着被偷走的
+lease 继续编辑的 agent 要到 finish 才知道,中间的工作全部作废。WP3 补的是这两个
+时刻,补法是往三个**已存在**的 handler 分支里加东西。
+
+### 9.1 三个挂载点
+
+| 挂载点 | 位置 | 语义 |
+| --- | --- | --- |
+| Codex `SubagentStart.context` | `runSubagentStart`,插在 `appendLongCommandGuardrail` 之前 | 纯 advisory,注入失败等于不注入 |
+| Claude `PreToolUse.subagent` 的 `Task\|Agent` 分支 | `runReturnChannel` | 同一份 slice,带 `HOOK_HOST != codex` 守卫 |
+| `PreToolUse.edit` | `runPerPathGuards`,在 `mainLoopDispatchGuard` 之后、`getPreEditEffectiveState` 之前 | 武装后 fail-closed |
+
+route tuple 不新增、不重排——Codex 对顺序做 trust hash,这是硬约束。
+
+两个注入点共用一个 `renderBoardSlice()`,host 只做包装;`tests/board-slice.test.ts`
+对同一份 fixture 断言两边取出的 marker block 逐字节相等。第二个 renderer 会让这条
+断言退化成「两份同样的 bug 互相印证」,所以只能有一个。
+
+`HOOK_HOST != codex` 守卫的存在理由很具体:`runReturnChannel` 本身没有 host 区分,
+Codex 通过 `Agent` spawn 时两条 route 都会命中,而 prompt 构造的那一刻两者之间还没有
+共享的 marker,双重注入是真实的。
+
+`SendUserMessage` 分支一个字节都没动,deny 语义原样保留。
+
+### 9.2 为什么 slice 不是 board:22ms vs 644ms
+
+hook 遥测(`.ai/harness/runs/hook-events.jsonl`,n=41,485)给的实测基线:
+`PreToolUse.edit` p50 256.2ms / p95 442.3ms,`SubagentStart.context` p50 7.3ms。
+组件基准:`resolveEffectiveStateReadOnly` 每个 worktree ~100ms,`readCanonicalSprint`
+14.3ms,`readWorktreeTopology` 6.9ms,`readLease` ~0.1ms。整张 `resolveBoard`
+644–1288ms。
+
+一条一年触发约 2,141 次的 route 付不起 644ms,所以 slice 只读两个便宜且权威的来源
+(canonical sprint + lease plane,加 git 的 worktree list),完全不碰 evidence 维度。
+本次实测:未武装 0.072ms(基线的 0.028%,预算 <2%),武装 29.3ms(11.4%,预算
+<15%);端到端交叉验证 32.2ms(12.55%)。
+
+不做缓存,也不做 A/B 双读。缓存过的 board 是更差的陈旧读——它连 `changed_during_read`
+这个信号都没有——而真正的权威本来就会在 finish 的 task lock 里重读一遍。
+
+### 9.3 结构性缺席:`progress_state`、`column`、conflict 字段
+
+`BoardSliceV1` 里没有这三组字段,不是 null,也不是空数组,是类型上就不存在:
+
+- `progress_state`:evidence 维度根本没采集。放一个 `not_observed` 等于宣告这份
+  文档有一个它其实没有的维度。
+- `column`:列决策表吃 `progress_state`。少一个输入还硬算出来的列,就是第二套更
+  安静的列规则,会恰好在 `stalled` 那些行上和 `state board --json` 打架。
+- `actual_path_overlap` / `scope_overlap`:沿用 WP2 的理由,changed-set 权威是
+  cwd-bound 的 shell 函数,在 TS 里重算就是 shadow parser。
+
+缺席本身是契约。消费者读到固定的收尾指针行就知道该跑 `repo-harness state board --json`。
+
+反过来,ownership 维度(task state、diagnostics、offered actions、projected claim)
+全部从 `project-board.ts` 导出复用,slice 自己一个决策都不做。两套 lease 分类会让
+slice 变成一个更安静的权威,告诉 agent 它拥有 board 说它没有的工作。
+
+### 9.4 武装条件为什么绑 `unit_ref`
+
+claim token 是只写的:`scripts/sprint-backlog.sh` 的 `write_claim_token` 只在
+`start-task` 里调用,除 inline release 外没有任何删除路径,不存在 GC。
+
+于是「有 token 就武装」会永久武装任何跑过一次 inline sprint task 的 primary tree,
+让它之后每一次编辑都撞上一个没人持有的 lease——这正好违反 falsification matrix 里
+「non-sprint execution is unaffected by the lease gate」那一行。
+
+双重谓词按成本排序拆掉这颗雷:
+
+1. token 的 `unit_ref` 必须等于**当前**的 active-plan marker(纯文件系统读)。陈旧
+   token 因此自动失效——它的 `unit_ref` 记的是当初那个 plan;inline 模式写的是
+   `inline:<sprint>#<index>`,永远不可能等于一个 `plans/plan-*.md`。
+2. 当前树必须是 linked worktree(一次 `git rev-parse`),只在条件 1 已经命中后才付。
+
+顺序是刻意的:未武装路径只付一次目录扫描。
+
+### 9.5 武装后的五步与 fail 语义
+
+命中后逐步验证,任一步失败都是显式 `exit(2)` 加自己的 reason token:
+
+| 步 | 检查 | reason token |
+| --- | --- | --- |
+| 1 | token 唯一 | `lease_claim_token_ambiguous` |
+| 2 | common-dir owner record 存在且 `claim_id` 与 token 一致 | `lease_owner_unreadable` / `lease_owner_claim_mismatch` |
+| 3 | `state === 'bound'` | `lease_state_not_bound` |
+| 4 | owner 的 worktree 与 branch 就是当前树 | `lease_owner_tree_mismatch` |
+| 5 | `task_revision` 与 canonical 行一致 | `lease_task_revision_drifted` |
+
+歧义(多于一个 token 匹配)复刻 `find_claim_token` 的 `return 2`:绝不挑一个。
+挑一个等于把 shell 会拒绝交出的 capability 交出去。
+
+`runtime.ts` 把 handler 抛出的异常映射成 exit 1,宿主读作 fail-open,所以任何
+fail-closed 意图都必须是显式 `exit(2)`,不能是逃逸的异常——`WorkflowResolutionUnstableGuard`
+是既有先例。武装**之前**的 IO 失败反过来是 advisory + 放行:这条 route 一年触发几千次,
+不能因为 harness 的 IO 抖动就把人挡在外面。
+
+决策 memo 在 `Ctx` 上:多路径 `apply_patch` 每个 path 都会跑一遍 `runPerPathGuards`,
+但 lease ownership 是关于**树**的事实,按 path 重算只会把武装态的采集乘以批次大小。
+
+### 9.6 这不是发布权威
+
+这是一个提前反馈门。`Bash` 写入完全绕得过去,真正的权威仍然是 `start-task` claim、
+inline `complete-task`、`contract-worktree finish` 三处。WP3 不新增通用 Bash mutation
+parser,也不动 `AttemptReceiptV1`。

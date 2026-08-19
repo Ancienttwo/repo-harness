@@ -1,7 +1,13 @@
+> **Archived**: 2026-08-20 03:49
+> **Related Plan**: plans/archive/plan-20260820-0159-wp3-hook-visibility.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260820-0349
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-08-20 01:59
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

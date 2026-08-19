@@ -28,7 +28,13 @@ import {
   canonicalRepoRelativePath,
   fileExists,
   readText,
+  safeRealpath,
 } from '../../effects/state/collect-state-inputs';
+import { findClaimTokenByUnitRef } from '../../effects/state/coordination-claim-token';
+import {
+  collectSliceInputs,
+  resolveSliceOptions,
+} from '../../effects/state/collect-slice-inputs';
 import type { WorktreeOwnership } from '../../effects/loop/state-input-collector';
 import {
   contractAllowsPath,
@@ -72,6 +78,7 @@ export function runMutationGuard(opts: MutationGuardInput): MutationGuardResult 
     stderr: [],
     runId: null,
     resolvedProfileHint: null,
+    leaseOwnership: null,
   };
 
   try {
@@ -144,6 +151,14 @@ interface Ctx {
   runId: string | null;
   /** The current invocation's own resolved profile, once known (even if the overall resolution is blocked -- matches bash's `${WORKFLOW_PROFILE:-}`). */
   resolvedProfileHint: string | null;
+  /**
+   * The lease-ownership decision for this event, computed at most once. An
+   * `apply_patch` batch runs `runPerPathGuards()` once per target path, but
+   * lease ownership is a fact about the TREE, not about a path: recomputing it
+   * per path would multiply the armed collection by the batch size while
+   * producing the same answer every time.
+   */
+  leaseOwnership: LeaseOwnershipDecision | null;
 }
 
 /** Mirrors a bash `exit N`: unwinds the whole handler immediately. */
@@ -220,6 +235,206 @@ function mainLoopDispatchGuard(ctx: Ctx, filePath: string): void {
     `Main-loop source edit blocked: ${filePath}. The orchestrator does not hand-edit code files.`,
     'Dispatch this implementation to an execution subagent (fast-worker / deep-worker); diagnosis stays in the main loop. Operator off-switch: unset REPO_HARNESS_MAIN_LOOP_EDIT_GUARD.',
     'state_violation',
+  );
+  exit(2);
+}
+
+// ---------------------------------------------------------------------------
+// LeaseOwnershipGuard: early feedback for a sprint-bound execution unit
+// ---------------------------------------------------------------------------
+
+/**
+ * `pass` covers both "not armed" and "armed and every step held". The two are
+ * indistinguishable to the caller by design: an unarmed tree must be affected
+ * by exactly nothing, and a passing armed tree must be affected by exactly
+ * nothing either.
+ */
+type LeaseOwnershipDecision =
+  | { readonly kind: 'pass' }
+  | {
+      readonly kind: 'refuse';
+      /** Assertable reason token; one per failing step. */
+      readonly token: string;
+      readonly reason: string;
+      readonly fix: string;
+    };
+
+function refuse(token: string, reason: string, fix: string): LeaseOwnershipDecision {
+  return { kind: 'refuse', token, reason, fix };
+}
+
+/**
+ * The current branch, or null when HEAD is detached or git refuses. Null never
+ * passes the owner-tree comparison: an execution tree that cannot name its own
+ * branch cannot prove it is the one the lease names.
+ */
+function currentBranch(repoRoot: string): string | null {
+  try {
+    const branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd: repoRoot,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    return branch && branch !== 'HEAD' ? branch : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The double predicate, then five steps.
+ *
+ * ## Arming (verdict C)
+ *
+ * Claim tokens are write-only: `scripts/sprint-backlog.sh` creates them in
+ * `start-task` and nothing in this repository ever deletes one outside the
+ * inline release path. "A token exists" therefore does not mean "this tree is
+ * executing a sprint row" -- it can mean "this tree ran an inline sprint task
+ * once, months ago". Arming on existence alone would permanently arm the
+ * primary tree of any repository that ever used the sprint flow and block
+ * every subsequent edit against a lease nobody holds.
+ *
+ * Two conditions defuse that, in cost order:
+ *
+ * 1. a claim token whose `unit_ref` equals the CURRENT active-plan marker --
+ *    a pure filesystem read, and the discriminator that makes a stale token
+ *    inert (its `unit_ref` names the plan it was minted for; inline tokens
+ *    carry `inline:<sprint>#<index>` and can never equal a plan path);
+ * 2. the current tree is a linked worktree -- one `git rev-parse`, paid only
+ *    after condition 1 already matched, because `PreToolUse.edit` fires on
+ *    every structured write and the unarmed path must stay near-free.
+ *
+ * ## Failure semantics
+ *
+ * Pre-arming failure is advisory and passes: this route fires thousands of
+ * times a year and must not block on harness IO jitter. Every failure AFTER
+ * arming is fail-closed with an explicit `exit(2)`, never an escaping
+ * exception -- `runtime.ts` maps a throw to exit 1, which the host reads as
+ * fail-open, so a thrown fail-closed intent would invert into its opposite.
+ * `WorkflowResolutionUnstableGuard` below is the existing precedent.
+ *
+ * This is an EARLY FEEDBACK gate, not the publication authority. A `Bash`
+ * write bypasses it entirely; `start-task` claim, inline `complete-task`, and
+ * `contract-worktree finish` remain the real gates, and nothing here relaxes
+ * them.
+ */
+function computeLeaseOwnership(ctx: Ctx): LeaseOwnershipDecision {
+  let unitRef: string | null;
+  let token: ReturnType<typeof findClaimTokenByUnitRef>;
+  try {
+    unitRef = ctx.collector.getActivePlanMarker();
+    if (!unitRef) return { kind: 'pass' };
+    token = findClaimTokenByUnitRef(ctx.repoRoot, unitRef);
+  } catch (error) {
+    out(ctx, `[LeaseOwnershipGuard] Advisory: claim-token state could not be read (${describeError(error)}); the lease gate stays inactive for this edit.`);
+    return { kind: 'pass' };
+  }
+  if (token.outcome === 'none') return { kind: 'pass' };
+  if (!isLinkedWorktree(ctx.repoRoot)) return { kind: 'pass' };
+
+  // ---- step 1: token uniqueness ------------------------------------------
+  if (token.outcome === 'ambiguous') {
+    return refuse(
+      'lease_claim_token_ambiguous',
+      `More than one claim token in this worktree names unit ${unitRef} (${token.matches.join(', ')}); ambiguous ownership cannot be resolved by picking one.`,
+      'Remove the claim token that does not belong to this worktree, or run repo-harness state board --json to identify which claim this tree actually owns.',
+    );
+  }
+  const held = token.token;
+
+  let collection;
+  try {
+    const options = resolveSliceOptions(ctx.repoRoot);
+    if (options === null) {
+      return refuse(
+        'lease_sprint_unresolvable',
+        `This worktree holds claim ${held.claim_id} for unit ${unitRef}, but no active sprint marker resolves; the claim cannot be validated against canonical.`,
+        'Restore .ai/harness/sprint/active-sprint, or release the stale claim with repo-harness sprint release --claim-id ' + held.claim_id,
+      );
+    }
+    collection = collectSliceInputs(ctx.repoRoot, options);
+  } catch (error) {
+    return refuse(
+      'lease_state_unreadable',
+      `This worktree holds claim ${held.claim_id} for unit ${unitRef}, but the coordination state could not be read (${describeError(error)}).`,
+      'Resolve the coordination-state read failure, then retry; do not edit against an unverifiable lease.',
+    );
+  }
+
+  const canonical = collection.tasks.find((task) => task.task_id === held.task_id);
+  const record = canonical?.lease.record ?? null;
+
+  // ---- step 2: the common-dir owner record names this tree's claim --------
+  if (canonical === undefined || record === null) {
+    return refuse(
+      'lease_owner_unreadable',
+      `This worktree holds claim ${held.claim_id} for task ${held.task_id}, but the shared plane has no readable owner record for it${canonical === undefined ? ' and the row is not on the canonical sprint' : ''}.`,
+      `Run repo-harness sprint reconcile --task-id ${held.task_id} --target-ref ${collection.canonical_target.ref} before editing.`,
+    );
+  }
+  if (record.claim_id !== held.claim_id) {
+    return refuse(
+      'lease_owner_claim_mismatch',
+      `Task ${held.task_id} is owned by claim ${record.claim_id}, but this worktree holds claim ${held.claim_id}; the claim moved.`,
+      `Stop editing here and continue from the owning worktree, or take the claim over with repo-harness sprint steal --expected-claim-id ${record.claim_id} --reason '<reason>' --session-id '<session-id>'.`,
+    );
+  }
+
+  // ---- step 3: the lease is bound ----------------------------------------
+  if (record.state !== 'bound') {
+    return refuse(
+      'lease_state_not_bound',
+      `Claim ${held.claim_id} is ${record.state}, not bound; a lease that is not bound names no execution worktree that may write.`,
+      record.state === 'reserving'
+        ? 'Bind the reservation to this worktree with repo-harness sprint bind before editing.'
+        : `Finish or reconcile the ${record.state} lease before editing (repo-harness sprint reconcile --task-id ${held.task_id} --target-ref ${collection.canonical_target.ref}).`,
+    );
+  }
+
+  // ---- step 4: the owner tree is this tree -------------------------------
+  const currentTree = safeRealpath(ctx.repoRoot);
+  const ownerTree = record.execution_worktree === null ? null : safeRealpath(record.execution_worktree);
+  const branch = currentBranch(ctx.repoRoot);
+  if (ownerTree !== currentTree || record.branch === null || record.branch !== branch) {
+    return refuse(
+      'lease_owner_tree_mismatch',
+      `Claim ${held.claim_id} is bound to worktree ${record.execution_worktree ?? '(none)'} on branch ${record.branch ?? '(none)'}, but this edit runs in ${currentTree} on branch ${branch ?? '(detached)'}.`,
+      'Edit from the worktree and branch the lease names, or rebind the claim to this tree with repo-harness sprint bind.',
+    );
+  }
+
+  // ---- step 5: the definition has not drifted ----------------------------
+  if (record.task_revision !== canonical.task_revision) {
+    return refuse(
+      'lease_task_revision_drifted',
+      `Claim ${held.claim_id} holds task revision ${record.task_revision}, but canonical ${collection.canonical_target.ref} now defines ${canonical.task_revision}; the row's definition changed underneath this claim.`,
+      `Re-read the canonical row and reconcile with repo-harness sprint reconcile --task-id ${held.task_id} --target-ref ${collection.canonical_target.ref} before continuing.`,
+    );
+  }
+
+  return { kind: 'pass' };
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Ownership precedes scope: this runs before the Effective State resolution
+ * because an agent editing under a lease it no longer holds should learn that
+ * first, not after a contract-scope verdict that assumes the claim is valid.
+ */
+function leaseOwnershipGuard(ctx: Ctx, filePath: string): void {
+  ctx.leaseOwnership ??= computeLeaseOwnership(ctx);
+  const decision = ctx.leaseOwnership;
+  if (decision.kind === 'pass') return;
+  out(ctx, `[LeaseOwnershipGuard] ${decision.token}: ${filePath}`);
+  structuredError(
+    ctx,
+    'LeaseOwnershipGuard',
+    decision.reason,
+    decision.fix,
+    'contract_failure',
   );
   exit(2);
 }
@@ -339,6 +554,8 @@ function runPerPathGuards(
   }
 
   mainLoopDispatchGuard(ctx, filePath);
+
+  leaseOwnershipGuard(ctx, filePath);
 
   // ---- resolve_effective_state: the ONE Effective State resolution -------
   let effective: EffectiveState | null;
