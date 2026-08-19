@@ -995,56 +995,29 @@ stalled / orphaned / recovery warning
 
 ---
 
-# 十四、一次性迁移
+# 十四、一次性迁移（2026-08-19 修订：按落地实现改为 quiescent fail-closed cutover）
 
-原 Draft 所称“无 schema migration”不成立，因为旧 runtime state 路径和 marker schema确实要退役。
+> 修订记录：本节原文要求 `migrate-legacy-claims` 把旧 in-flight marker 逐个映射成新 Lease。落地实现（main `f5f4d8ce`，`src/effects/state/coordination-cutover.ts`）否决了该方向，修订后以实现为准：把 legacy marker 映射回 canonical task，需要在未验证的 legacy state 上运行本项目才引入的身份推导，这正是仓库禁止的对权威数据做本地语义再推导。原文的 fail-closed 收口条款保留且必须落地（见下）。
 
-新增：
+原 Draft 所称“无 schema migration”不成立这一判断维持：旧 runtime state 路径和 marker schema 确实要退役，但退役方式是静止切换，不是状态翻译。
 
-```bash
-repo-harness sprint migrate-legacy-claims --dry-run --json
-repo-harness sprint migrate-legacy-claims --apply --json
-```
+## 采纳语义：quiescent cutover
 
-## 迁移流程
+不提供 marker→Lease 的转换命令。cutover 只在静止状态下一次性启用，在 `coordination/v1/locks/migration.lock` 下：
 
-在：
+1. 检查三类 blocker：任何 worktree 存在旧 `.ai/harness/sprint/in-flight/*` marker、任何未完成的 closeout transaction、任何已存在的 v1 lease；
+2. 存在任一 blocker 即拒绝启用，指向操作者先完成或释放旧流程；
+3. 全部静止后写入 `protocol.json` 一次性标记，旧路径随即退役。
 
-```text
-coordination/v1/locks/migration.lock
-```
+没有部分迁移，没有 steady-state fallback。
 
-下：
+## fail-closed 收口（原文条款；落地缺口由 hardening work-package 关闭）
 
-1. `git worktree list --porcelain`；
-2. 扫描每个 worktree 的旧：
+- `sprint claim` 等 v1 入口在发现旧 marker 但没有 v1 `protocol.json` 时必须 fail closed 并指向 init cutover。落地实现只在 `repo-harness init` 的 apply 路径检查（`src/cli/commands/init.ts`），绕过 init 直接 claim 不触发闸门；
+- `protocol.json` 必须在 `adoptionApply` 成功之后写入。落地实现先写标记后 apply，中途失败会永久解除武装；
+- `git` 二进制缺失必须是错误，不得静默跳过闸门。
 
-   ```text
-   .ai/harness/sprint/in-flight/*
-   ```
-3. 读取 marker；
-4. 解析 marker 对应 plan；
-5. 从 Plan `Source Ref` 解析 Sprint path 与 Task；
-6. 在 canonical target ref 唯一定位 Task；
-7. 检查 Task 仍 pending；
-8. 检查没有两个旧 marker指向同一 Task；
-9. 预先构造全部新 owner records；
-10. 所有输入均有效后才开始写入；
-11. 生成新 `claim_id`；
-12. 根据 worktree 是否存在写 `reserved` 或 `bound`；
-13. 写 worktree-local claim projection；
-14. 全部成功后删除旧 markers和旧 in-flight directory；
-15. 写 protocol marker。
-
-任一项失败：
-
-```text
-不删除任何旧 marker
-不启用 v1
-不部分迁移
-```
-
-升级后的 Claim 命令若发现旧 marker但没有 v1 protocol marker，应 fail closed并指向 migration 命令。没有 steady-state fallback。
+三条缺口的关闭排入 `plans/plan-20260819-1519-coordination-lease-hardening.md`（T4/T5）。
 
 ## Rollback
 
@@ -1285,3 +1258,44 @@ WP-A Protocol
 ```
 
 只有 **WP-B 完整覆盖 claim、bind、finish、inline completion、fencing 和迁移** 后，才算真正解决跨 worktree 重复领取。
+
+---
+
+# 落地状态与符合度修订（2026-08-19）
+
+本方案在 main `f5f4d8ce`（plan `plans/archive/plan-20260818-1156-shared-lease-protocol.md`，其定稿早于本文一天）落地了 WP-A 全部与 WP-B 约 85%。对照本文逐条审查后的处置如下。
+
+## 实现优于本文、以实现为准
+
+- task_id / task_revision 用 JSON-array domain separation 代替 `\0` 拼接，抗分隔符伪造更强（`src/core/state/coordination-identity.ts`）；domain tag 为 `repo-harness-task-id` / `repo-harness-task-revision`，字段集与 §3.2/§3.3 一致；
+- 状态机为 `reserving / bound / completing / released` 四态，`released` 显式命名 release 的 crash window；
+- §14 迁移按修订后的 quiescent fail-closed cutover 执行；
+- `unknown_reason` 八态列举与真 linked-worktree 竞态 harness（`tests/sprint-claim-concurrency.test.ts`）严于本文要求。
+
+## HIGH 偏离，由 `plans/plan-20260819-1519-coordination-lease-hardening.md` 关闭
+
+1. inline `complete-task` 在改写 row 前无 lease 闸门（违反目标 6 与 §9.4）；
+2. `completing → steal` 未禁止（违反 §6 硬规则，现有测试曾把该分支 pin 为合法行为）；
+3. owner record 缺 `generation` / `sprint.target_ref` / `finish_transaction_key`（§5/§10.3/§9.3 的输入；必须在首个 live lease 出现前补齐，否则升级为带迁移的 protocol bump）；
+4. §14 fail-closed 收口三条（见修订后 §14）。
+
+## MEDIUM/LOW 偏离，推迟到后续 WP（`tasks/todos.md` 有对应行）
+
+- `events/<task-id>.jsonl` audit log（§4/§7/§8.4/§9.4）；
+- reconcile 的 git-topology orphan 清理（§8.5）；
+- `completing → bound` finish-abort 恢复与 reconcile 完成 finish journal（§9.3）；
+- claim 前置条件 3：canonical worktree 对 sprint path 无未提交变化（§3.1）；
+- bind 时 `resumed` receipt（§8.2，随 WP2 board 的 stall overlay 落地）。
+
+## 单 clone 身份约束（v1 接受）
+
+task_id preimage 含 `repoIdentity`（git common dir 绝对路径，`src/effects/state/coordination-canonical-source.ts`）：移动仓库目录会改变全部 task_id。v1 边界是单机单 clone，接受该约束；跨机演进按第一节的“额外投影输入”路线走，不改身份公式。
+
+## WP 对照
+
+| 本文 | 仓库编号与位置 | 状态 |
+|---|---|---|
+| WP-A + WP-B | WP1（`f5f4d8ce` 已落地）+ `plans/plan-20260819-1519-coordination-lease-hardening.md` | hardening 待执行；WP-A 冻结产物中 architecture module doc 与 board-types 随 WP2 补 |
+| WP-C Board | WP2（`tasks/todos.md` read-only board projection 行） | 未动 |
+| WP-D Hook | WP3（`tasks/todos.md` host-aware hook visibility 行） | 未动 |
+| Deferred WP-E | WP4（conditional metadata relocation 行） | 不排期 |
