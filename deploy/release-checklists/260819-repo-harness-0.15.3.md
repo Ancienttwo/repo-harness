@@ -24,9 +24,9 @@
   the surrounding hook/installer fixes across this range. `0.16.0` is reserved
   for the release where the kanban program lands complete, meaning WP2 (board)
   and WP3 (hook) ship together.
-- Publish status: **pending**. Candidate prepared on `codex/release-0-15-3`;
-  npm publication, tag, and GitHub Release are the orchestrator's follow-on
-  phase and have not been performed.
+- Publish status: **complete**. Registry, tag, GitHub Release, published-package
+  readback, selected Bun-global runtime, and the post-refresh architecture
+  projection drain acceptance all passed. See Publish Follow-through.
 
 ## Authority Boundary
 
@@ -113,13 +113,48 @@
 - [x] Record the `0.15.3` section in `docs/CHANGELOG.md`.
 - [x] Freeze the candidate and run `bun run check:release`.
 - [x] Run `bun run check:type`, the full `bun test`, and the deploy/architecture/task sync checks.
-- [ ] Record final-subject review and AcceptanceReceipt evidence.
-- [ ] Merge the candidate to `main` and confirm exact GitHub Actions CI.
-- [ ] Publish `repo-harness@0.15.3` to npm `latest`.
-- [ ] Create and push annotated tag `v0.15.3` and stable GitHub Release.
-- [ ] Run `bash scripts/check-release-published.sh 0.15.3`.
-- [ ] Install exact Bun-global `repo-harness@0.15.3` and verify version/readiness.
-- [ ] Record closeout evidence and return to clean, synchronized `main`.
+- [x] Record final-subject review and AcceptanceReceipt evidence.
+- [x] Merge the candidate to `main` and confirm exact GitHub Actions CI.
+- [x] Publish `repo-harness@0.15.3` to npm `latest`.
+- [x] Create and push annotated tag `v0.15.3` and stable GitHub Release.
+- [x] Run `bash scripts/check-release-published.sh 0.15.3`.
+- [x] Install exact Bun-global `repo-harness@0.15.3` and verify version/readiness.
+- [x] Record closeout evidence and return to clean, synchronized `main`.
+
+## Publish Follow-through
+
+- AcceptanceReceipt closed on the candidate at `4ae02ff8`: `external_pass`,
+  reviewer Claude, Reviewed Subject SHA256
+  `sha256:e182826d618c906901a2635a3fc631641996d795f20374be8f9cd8cd3f60f527`,
+  Verification Evidence SHA256
+  `sha256:4f9d036da2aeaf07c78938c3714b3c86223dc1a5f4b0790b0bdf2a8bc5673326`.
+  Three receipt findings recorded (bounded-verifier archctx collision P2; two
+  exit-criteria right-sizing amendments P3; missing Change Assessment oracle
+  declaration P3), none blocking.
+- `main` fast-forwarded `4ff0e64f..4ae02ff8`; exact GitHub Actions CI run
+  `32253072855` on `4ae02ff8` passed before publication.
+- npm publication required a fresh web login first: the stored token had
+  expired wholesale, and `npm publish` surfaces that as `E404 Not Found - PUT`
+  with no auth prompt rather than E401 (`npm whoami` confirmed E401).
+  `npm login --auth-type=web --browser=false` then a second per-publish web
+  authorization completed the flow; publication returned `+ repo-harness@0.15.3`.
+- Registry readback: `latest=0.15.3`, tarball
+  `https://registry.npmjs.org/repo-harness/-/repo-harness-0.15.3.tgz`, shasum
+  `1f7671f9cd73b38544106678c2f06acdd9d62c4e` (byte-identical to the candidate
+  evidence), `gitHead=4ae02ff864b906bc9f821c94bbe8d2e80ac88537`.
+- Annotated tag `v0.15.3` peels to `4ae02ff8`; the stable, non-draft GitHub
+  Release is `https://github.com/Ancienttwo/repo-harness/releases/tag/v0.15.3`.
+- `bash scripts/check-release-published.sh 0.15.3` passed registry, dist-tag,
+  tarball integrity, tag, runtime receipt
+  (`sha256:dc6fef7207eb81966aa141bc9a236e92f0545ef3077a175c540f9b8179c42ead`),
+  and local-version agreement.
+- `bun install -g repo-harness@0.15.3` (after `bun remove -g` to force lock
+  re-resolution) installed both binaries; `repo-harness --version` returned
+  `0.15.3`, the global copy carries `archcontext.docs-renderer/v4` and hoists
+  `archctx@0.4.4`, closing the v3-runtime downgrade trap this release exists to
+  ship.
+- Post-refresh `repo-harness architecture-projection drain --json` reported
+  `status=idle`, `pending=0`, `deadLetters=0`, `sourceJournalPending=0`.
 
 ## Rollback
 
