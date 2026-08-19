@@ -34,10 +34,9 @@
   the WP2 board projection, and the WP3 hook injection plus edit gate — are now
   shipped. The consumer-visible surface grows by a new CLI verb and two new hook
   behaviors, which is a minor rather than a patch.
-- Publish status: **pending**. This filing covers candidate preparation and the
-  full gate sweep only. Registry publication, tag, GitHub Release,
-  published-package readback, and the global-runtime refresh are the
-  orchestrator's follow-on phase and are not recorded here.
+- Publish status: **complete**. Registry, tag, GitHub Release, published-package
+  readback, selected Bun-global runtime, and the post-refresh architecture
+  projection drain acceptance all passed. See Publish Follow-through.
 
 ## Authority Boundary
 
@@ -167,13 +166,13 @@
 - [x] Freeze the candidate and run `bun run check:release`.
 - [x] Run `bun run check:type`, the full `bun test`, and the deploy/architecture/task sync checks.
 - [x] Pack and smoke-install the candidate tarball.
-- [ ] Record final-subject review and AcceptanceReceipt evidence.
-- [ ] Merge the candidate to `main` and confirm exact GitHub Actions CI.
-- [ ] Publish `repo-harness@0.16.0` to npm `latest`.
-- [ ] Create and push annotated tag `v0.16.0` and stable GitHub Release.
-- [ ] Run `bash scripts/check-release-published.sh 0.16.0`.
-- [ ] Install exact Bun-global `repo-harness@0.16.0` and verify version/readiness.
-- [ ] Record closeout evidence and return to clean, synchronized `main`.
+- [x] Record final-subject review and AcceptanceReceipt evidence.
+- [x] Merge the candidate to `main` and confirm exact GitHub Actions CI.
+- [x] Publish `repo-harness@0.16.0` to npm `latest`.
+- [x] Create and push annotated tag `v0.16.0` and stable GitHub Release.
+- [x] Run `bash scripts/check-release-published.sh 0.16.0`.
+- [x] Install exact Bun-global `repo-harness@0.16.0` and verify version/readiness.
+- [x] Record closeout evidence and return to clean, synchronized `main`.
 
 ## Publish Follow-through
 
@@ -206,3 +205,38 @@ Two carry-forward notes from the 0.15.3 publication, both recorded in
   consuming repo, that is the designed fail-open-to-honest verdict rather than a
   defect; the board is read-only and holds no lock, so no rollback is required
   to recover lease state.
+
+## Publish Follow-through
+
+- AcceptanceReceipt closed on the candidate at `fd45771d`: `external_pass`,
+  reviewer Claude, Reviewed Subject SHA256
+  `sha256:ed7b43c54ab4ade52944e421d55422f416797e192e4af23436fa7dd2ba8db4bf`,
+  Verification Evidence SHA256
+  `sha256:38106b8276685698059d9cb6fed4f80bb784b9529182ad89774e86f20def5fec`.
+  Three receipt findings (filing unpacked-size correction P3, third
+  load-sensitivity timeout-class member P3, archctx bounded-verifier
+  environment collision P2 — pre-existing, ledgered), none blocking. The gate
+  first returned FAIL on the unreproducible unpacked-size figure; `6391e1dd`
+  corrected it to the three-way-measured 15,425,182 before the receipt bound.
+- `main` fast-forwarded `37b7cada..fd45771d`; GitHub Actions CI passed on both
+  `37b7cada` (WP3 publication) and the merged tip `fd45771d` before
+  publication (runs 32295196656 and 32301066428).
+- npm publication via web auth returned `+ repo-harness@0.16.0`; registry
+  readback: `latest=0.16.0`, shasum
+  `76e601adab53a2a93104b70bb4e8b45d81d26924` (byte-identical to the candidate
+  evidence), `gitHead=fd45771d95de6f32fc5ba22cbb2a2589c399c258`.
+- Annotated tag `v0.16.0` peels to `fd45771d`; the stable GitHub Release is
+  `https://github.com/Ancienttwo/repo-harness/releases/tag/v0.16.0`.
+- `bash scripts/check-release-published.sh 0.16.0` passed registry, dist-tag,
+  tarball integrity, tag, runtime receipt
+  (`sha256:e68eb6fb0a99f81b71f457780c16835952e9f253f50f4418d6e6e2fb5c0fd56e`),
+  and local-version agreement.
+- `bun remove -g` + `bun install -g repo-harness@0.16.0` installed both
+  binaries; `repo-harness --version` returned `0.16.0` and the global copy
+  hoists `archctx@0.4.4`. The installed runtime now carries the full
+  coordination plane: `repo-harness state board --json` answers with the
+  correct exit-2 `--sprint` hint, and the finish auto-retirement tail from
+  `39e359c2` is live for future closeouts.
+- Post-refresh `repo-harness architecture-projection drain --json` reported
+  `status=idle`, `pending=0`, `deadLetters=0`; `check-architecture-sync.sh`
+  strict gate `blocking=0`.
