@@ -63,7 +63,11 @@ import {
 } from '../src/effects/state/coordination-lease-store';
 import { withExclusiveDirectoryLock } from '../src/effects/locking/exclusive-directory-lock';
 import { resolveGitCommonDirectory } from '../src/effects/git/common-directory';
-import { inspectCutoverQuiescence } from '../src/effects/state/coordination-cutover';
+import {
+  cutoverMarkerPath,
+  inspectCutoverQuiescence,
+  recordCutoverInstalled,
+} from '../src/effects/state/coordination-cutover';
 
 const ROOT = join(import.meta.dir, '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -243,9 +247,12 @@ function claimArgs(identity: Identity, sessionId: string): string[] {
 interface OwnerRecord {
   readonly claim_id: string;
   readonly task_id: string;
+  readonly target_ref: string;
+  readonly generation: number;
   readonly state: string;
   readonly execution_worktree: string | null;
   readonly branch: string | null;
+  readonly finish_transaction_key: string | null;
   readonly stolen_from: { readonly claim_id: string; readonly reason: string } | null;
 }
 
@@ -344,25 +351,41 @@ describe('concurrent claims over real linked worktrees', () => {
     ]);
 
     // Serialized by the per-task lock, so the lease ends up with exactly one
-    // owner whichever order the two landed in.
+    // owner whichever order the two landed in, and never both.
     const lease = readLease(fixture.primary, identity.task_id);
     expect(lease.record).not.toBeNull();
+    expect([completion, steal].filter((run) => run.status === 0)).toHaveLength(1);
 
     if (steal.status !== 0) {
-      // The completion gate won and the steal found the lease already moved on.
+      // The completion gate won. The steal is not merely late here -- it is
+      // refused by the state machine: once the publication window is open, a
+      // steal that succeeded would erase the marker that says the publication
+      // may already have landed, and the new owner would see a pending-looking
+      // row whose work is in fact published.
       expect(completion.status).toBe(0);
       expect(lease.record!.state).toBe('completing');
       expect(lease.record!.claim_id).toBe(owner.claim_id);
-      expect(steal.stderr).toMatch(LOST_THE_RACE);
+      expect(lease.record!.generation).toBe(1);
+      expect(steal.stderr).toContain('cannot steal a lease in state completing');
+      // Nor does a later, uncontended steal get it: the refusal is a state
+      // rule, not a race outcome.
+      const later = sprint(fixture.worktreeB, [
+        'steal', '--expected-claim-id', owner.claim_id, '--reason', 'reassigned', '--session-id', 'session-b',
+      ]);
+      expect(later.status).toBe(1);
+      expect(later.stderr).toContain('cannot steal a lease in state completing');
+      expect(readLease(fixture.primary, identity.task_id).record!.claim_id).toBe(owner.claim_id);
       return;
     }
 
-    // The steal won. Whether the displaced gate call had already passed or not,
-    // the displaced token cannot pass the gate again -- and contract finish
+    // The steal won, which means it landed while the lease was still `bound`.
+    // The displaced token cannot pass the gate again -- and contract finish
     // runs that gate immediately before it builds the publication tree, so a
     // stolen-from agent cannot publish.
     expect(lease.record!.claim_id).toBe(thiefClaimId(steal));
     expect(lease.record!.stolen_from).toEqual({ claim_id: owner.claim_id, reason: 'reassigned' });
+    // Fencing history, not just a fresh token: the second owner is generation 2.
+    expect(lease.record!.generation).toBe(2);
     const retry = sprint(fixture.worktreeA, [
       'begin-completion', '--claim-id', owner.claim_id, '--worktree', fixture.worktreeA, '--target-ref', 'main',
     ]);
@@ -417,24 +440,85 @@ describe('a stolen-from agent cannot act on the new owner"s lease', () => {
     expect(rightTree.status).toBe(0);
   }, 60_000);
 
-  test('contract finish gates publication on the lease and releases only after it', () => {
+  test('contract finish gates publication on the lease and reconciles only after it', () => {
     // The wiring, read out of the live script: the gate must run before the
-    // publication commit is synthesized, and the release only after the
-    // transaction commits. A release before publication would drop ownership of
-    // work that was never published.
+    // publication commit is synthesized, the closeout journal key must be
+    // stamped on the lease before that too, and the cleanup only after the
+    // transaction commits. Dropping ownership before publication would free a
+    // row whose work was never published.
     const script = readFileSync(join(ROOT, 'scripts/contract-worktree.sh'), 'utf-8');
     const gate = script.indexOf('sprint_lease_begin_completion "$target_branch"');
+    const stamp = script.indexOf('sprint_lease_record_finish_transaction "$target_branch" "$closeout_key"');
     const publish = script.indexOf('publication_sha="$(git commit-tree');
     const commit = script.indexOf('finish_transaction_commit "$publication_sha"');
     // lastIndexOf: the first occurrence is the function definition, which sits
     // above finish_worktree; the call site is the one whose order matters.
-    const release = script.lastIndexOf('sprint_lease_release_after_publication');
+    const cleanup = script.lastIndexOf('sprint_lease_reconcile_after_publication "$target_branch"');
     expect(gate).toBeGreaterThan(0);
-    expect(publish).toBeGreaterThan(gate);
-    expect(release).toBeGreaterThan(commit);
+    expect(stamp).toBeGreaterThan(gate);
+    expect(publish).toBeGreaterThan(stamp);
+    expect(cleanup).toBeGreaterThan(commit);
+
+    // The key handed to the lease is the closeout journal's own, never derived
+    // a second time here.
+    expect(script).toContain('--finish-transaction-key "$journal_key"');
+    // Cleanup is reconcile, not release: at this point the lease is
+    // `completing`, which release refuses because it cannot tell whether the
+    // publication landed. Nothing in this script releases a lease any more.
+    expect(script).toContain('--expected-claim-id "$sprint_lease_claim_id"');
+    expect(script).not.toContain('sprint_lease release');
     // The back-fill inside the publication tree must not release the lease.
     expect(script).toContain('--defer-lease-release');
   });
+
+  test('the post-publication cleanup clears the lease with its own token', () => {
+    // The path the script now takes, over a real clone: the finish stamps its
+    // journal key, publication lands, and reconcile -- narrowed to this
+    // claim -- clears the lease that release cannot touch.
+    const fixture = createFixture('sprint-post-publication-cleanup');
+    const owner = claimAndBind(fixture, fixture.worktreeA, fixture.worktreeA, 'codex/row-a');
+    const identity = identify(fixture.primary, ROW_ONE);
+
+    const gated = sprintJson<OwnerRecord>(sprint(fixture.worktreeA, [
+      'begin-completion', '--claim-id', owner.claim_id, '--worktree', fixture.worktreeA,
+      '--target-ref', 'main', '--finish-transaction-key', 'finish/abc123',
+    ]));
+    expect(gated.state).toBe('completing');
+    expect(gated.finish_transaction_key).toBe('finish/abc123');
+
+    // Why the script stopped calling release at all.
+    const released = sprint(fixture.worktreeA, ['release', '--claim-id', owner.claim_id]);
+    expect(released.status).toBe(1);
+    expect(released.stderr).toContain('cannot release a lease in state completing');
+
+    // Publication lands on the target ref.
+    writeFileSync(
+      join(fixture.primary, SPRINT_PATH),
+      sprintFile([
+        `| 1 | [x] | ${ROW_ONE} | contract | tests pass | \`plans/archive/plan-row-one.md\` |`,
+        PENDING_ROWS[1],
+      ]),
+    );
+    git(fixture.primary, ['add', '-A']);
+    git(fixture.primary, ['commit', '--quiet', '-m', 'publish row one']);
+
+    // A token that does not own the lease clears nothing.
+    const foreign = sprint(fixture.worktreeA, [
+      'reconcile', '--task-id', identity.task_id,
+      '--expected-claim-id', 'claim-not-mine', '--target-ref', 'main',
+    ]);
+    expect(foreign.status).toBe(1);
+    expect(foreign.stderr).toContain('claim id mismatch');
+    expect(readLease(fixture.primary, identity.task_id).classification).toBe('completing');
+
+    const cleared = sprintJson<{ action: string; canonical_status: string }>(sprint(fixture.worktreeA, [
+      'reconcile', '--task-id', identity.task_id,
+      '--expected-claim-id', owner.claim_id, '--target-ref', 'main',
+    ]));
+    expect(cleared.canonical_status).toBe('[x]');
+    expect(cleared.action).toBe('cleared_completed_lease');
+    expect(readLease(fixture.primary, identity.task_id).classification).toBe('available');
+  }, 60_000);
 });
 
 describe('reservations, crash windows, and reconcile', () => {
@@ -787,6 +871,72 @@ describe('quiescent fail-closed cutover', () => {
     // Nothing was migrated, repaired, or deleted along the way.
     writeFileSync(join(journal, 'status.json'), '{\n  "status": "complete"\n}\n');
     expect(inspectCutoverQuiescence(fixture.primary).quiescent).toBe(true);
+  }, 60_000);
+
+  test('claim and steal refuse while retired markers survive an uninstalled plane', () => {
+    // `init` is not the only route to the plane. A claim taken directly on a
+    // clone that never crossed over would run v1 beside legacy per-worktree
+    // markers it cannot see, which is the duplicate claim the cutover exists
+    // to prevent -- so the ownership verbs carry the same fail-closed gate.
+    const fixture = createFixture('sprint-claim-legacy-gate');
+    const rowOne = identify(fixture.primary, ROW_ONE);
+    const owner = sprintJson<OwnerRecord>(sprint(fixture.worktreeA, claimArgs(rowOne, 'session-a')));
+
+    mkdirSync(join(fixture.worktreeB, '.ai/harness/sprint/in-flight'), { recursive: true });
+    writeFileSync(join(fixture.worktreeB, '.ai/harness/sprint/in-flight/second-row'), 'capturing');
+
+    const rowTwo = identify(fixture.primary, ROW_TWO);
+    const blockedClaim = sprint(fixture.worktreeB, claimArgs(rowTwo, 'session-b'));
+    expect(blockedClaim.status).toBe(1);
+    expect(blockedClaim.stderr).toContain('has not crossed over to the v1 coordination plane');
+    expect(blockedClaim.stderr).toContain('in-flight');
+    expect(blockedClaim.stderr).toContain('repo-harness init');
+    // Fail closed leaves the legacy marker and elects no lease.
+    expect(readLease(fixture.primary, rowTwo.task_id).classification).toBe('available');
+    expect(existsSync(join(fixture.worktreeB, '.ai/harness/sprint/in-flight/second-row'))).toBe(true);
+
+    const blockedSteal = sprint(fixture.worktreeB, [
+      'steal', '--expected-claim-id', owner.claim_id, '--reason', 'stalled', '--session-id', 'session-b',
+    ]);
+    expect(blockedSteal.status).toBe(1);
+    expect(blockedSteal.stderr).toContain('has not crossed over to the v1 coordination plane');
+    expect(readLease(fixture.primary, rowOne.task_id).record?.claim_id).toBe(owner.claim_id);
+
+    // The crossing is one-shot: once the protocol marker is recorded, the gate
+    // is inert even while the operator's own legacy files are still on disk.
+    recordCutoverInstalled(cutoverMarkerPath(fixture.primary)!);
+    expect(sprint(fixture.worktreeB, claimArgs(rowTwo, 'session-b')).status).toBe(0);
+  }, 60_000);
+
+  test('a missing git binary is a typed error, never a skipped gate', () => {
+    // Separate process, because PATH is process-global and this suite runs
+    // beside others. `process.execPath` keeps bun reachable without PATH.
+    const fixture = createFixture('sprint-cutover-no-git', false);
+    const emptyPath = realpathSync(mkdtempSync(join(tmpdir(), 'no-git-path-')));
+    FIXTURES.add(emptyPath);
+
+    const probe = spawnSync(
+      process.execPath,
+      [
+        '-e',
+        [
+          'const mod = await import(process.argv[1]);',
+          'for (const name of ["cutoverMarkerPath", "inspectCutoverQuiescence", "legacyCutoverRefusal"]) {',
+          '  try { mod[name](process.argv[2]); console.log(`${name}:none`); }',
+          '  catch (error) { console.log(`${name}:${error.name}`); }',
+          '}',
+        ].join('\n'),
+        join(ROOT, 'src/effects/state/coordination-cutover.ts'),
+        fixture.primary,
+      ],
+      { encoding: 'utf-8', env: { PATH: emptyPath, HOME: emptyPath } },
+    );
+
+    expect(probe.stdout.trim().split('\n')).toEqual([
+      'cutoverMarkerPath:GitBinaryUnavailableError',
+      'inspectCutoverQuiescence:GitBinaryUnavailableError',
+      'legacyCutoverRefusal:GitBinaryUnavailableError',
+    ]);
   }, 60_000);
 
   test('init refuses to apply while the repo is not quiescent', () => {

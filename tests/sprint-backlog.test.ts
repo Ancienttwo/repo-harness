@@ -434,6 +434,62 @@ describe("sprint-backlog helper", () => {
     }
   }, 60_000);
 
+  test("the inline completion gate refuses a claimed row without the owning token", () => {
+    // The false-completion this protocol exists to close: flipping a row to [x]
+    // is what publishes "this task is done", so a tree that does not hold the
+    // owning fencing token must not be able to do it.
+    const cwd = tmpWorkspace("sprint-backlog-completion-gate");
+    try {
+      copySprintHelpers(cwd, ["sprint-backlog.sh", "capture-plan.sh"]);
+      const sprintPath = "plans/sprints/20260610-0000-fixture-sprint.sprint.md";
+      writeActiveSprintFixture(cwd, sprintPath);
+
+      // Zero coordination: with no lease store the gate never reaches the
+      // plane, which is what keeps the single-agent flow unchanged.
+      expect(existsSync(join(cwd, ".git/repo-harness/coordination/v1/leases"))).toBe(false);
+
+      const start = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a"], cwd);
+      expect(start.status, `${start.stdout}\n${start.stderr}`).toBe(0);
+      const claimsDir = join(cwd, ".ai/harness/sprint/claims");
+      const token = join(claimsDir, readdirSync(claimsDir)[0]);
+      const ownerToken = readFileSync(token, "utf-8");
+      const claimId = ownerToken.match(/^claim_id=(.+)$/m)?.[1] ?? "";
+      expect(claimId).not.toBe("");
+
+      // A tree holding no token for the row is refused, and the refusal names
+      // the claim that owns it rather than reporting a generic conflict.
+      rmSync(token);
+      const foreign = run("bash", ["scripts/sprint-backlog.sh", "complete-task", "--task", "task-a"], cwd);
+      expect(foreign.status).toBe(1);
+      expect(foreign.stderr).toContain(`is claimed by ${claimId}`);
+      expect(foreign.stderr).toContain("holds no claim token");
+      expect(readFileSync(join(cwd, sprintPath), "utf-8")).toContain("| 1 | [ ] | task-a |");
+
+      // A stolen-from tree keeps its old token; the comparison is against the
+      // owner record, so the stale token is refused too.
+      writeFileSync(token, ownerToken.replace(claimId, "claim-that-was-stolen-from"));
+      const stale = run("bash", ["scripts/sprint-backlog.sh", "complete-task", "--task", "task-a"], cwd);
+      expect(stale.status).toBe(1);
+      expect(stale.stderr).toContain("the claim moved");
+      expect(readFileSync(join(cwd, sprintPath), "utf-8")).toContain("| 1 | [ ] | task-a |");
+
+      // A row with no lease of its own completes unchanged, even though the
+      // lease store is live for a sibling row.
+      const unclaimed = run("bash", ["scripts/sprint-backlog.sh", "complete-task", "--task", "task-b"], cwd);
+      expect(unclaimed.status, `${unclaimed.stdout}\n${unclaimed.stderr}`).toBe(0);
+      expect(readFileSync(join(cwd, sprintPath), "utf-8")).toMatch(/\|\s*2\s*\|\s*\[x\]\s*\|\s*task-b/);
+
+      // And the owning token still completes its own row and releases it.
+      writeFileSync(token, ownerToken);
+      const owner = run("bash", ["scripts/sprint-backlog.sh", "complete-task", "--task", "task-a"], cwd);
+      expect(owner.status, `${owner.stdout}\n${owner.stderr}`).toBe(0);
+      expect(owner.stdout).toContain("Released lease for 'task-a'");
+      expect(readdirSync(claimsDir)).toHaveLength(0);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 60_000);
+
   test("a non-empty stale lock times out instead of hot-looping", () => {
     const cwd = tmpWorkspace("sprint-backlog-lock-timeout");
     try {

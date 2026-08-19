@@ -1406,6 +1406,7 @@ refresh_and_freeze_base() {
 # captured outside the sprint flow), so there is no ownership to compare and
 # nothing to gate.
 sprint_lease_claim_id=""
+sprint_lease_task_id=""
 sprint_lease_token_file=""
 SPRINT_CLI_RESOLVED=0
 SPRINT_CLI_CMD=()
@@ -1445,6 +1446,7 @@ sprint_claim_dir() {
 resolve_sprint_claim_token() {
   local dir token
   sprint_lease_claim_id=""
+  sprint_lease_task_id=""
   sprint_lease_token_file=""
   dir="$(sprint_claim_dir)"
   [[ -d "$dir" ]] || return 0
@@ -1460,6 +1462,14 @@ resolve_sprint_claim_token() {
   sprint_lease_claim_id="$(sed -n 's/^claim_id=//p' "$sprint_lease_token_file" | head -1)"
   if [[ -z "$sprint_lease_claim_id" ]]; then
     echo "contract-worktree: sprint claim token carries no claim id: $sprint_lease_token_file" >&2
+    return 1
+  fi
+  # The task id addresses the lease directly, which is what post-publication
+  # reconcile needs: by then the fencing token no longer resolves through a
+  # lease scan in every shape reconcile has to handle.
+  sprint_lease_task_id="$(sed -n 's/^task_id=//p' "$sprint_lease_token_file" | head -1)"
+  if [[ -z "$sprint_lease_task_id" ]]; then
+    echo "contract-worktree: sprint claim token carries no task id: $sprint_lease_token_file" >&2
     return 1
   fi
   return 0
@@ -1482,21 +1492,59 @@ sprint_lease_begin_completion() {
   return 0
 }
 
-# Release after publication, never before: no single atomic operation spans a
-# git publication and a filesystem lease. A crash in between leaves a completed
-# canonical row with a residual lease, which is a legal named state that
-# `repo-harness sprint reconcile` clears -- so a failed release here is
-# reported, not treated as a failed finish.
-sprint_lease_release_after_publication() {
-  local output
+# Stamp the closeout journal key onto the lease, so a crash inside the
+# publication window names the journal that has to be resolved.
+#
+# This is deliberately a second call rather than an argument to the gate above:
+# the journal key is derived from the frozen target base, and the ownership
+# gate runs before the base is frozen so a displaced agent stops before running
+# a verification pass it may not publish. `bound -> completing` is re-runnable
+# by the same token from the same worktree by design, so this is that same
+# transition, now carrying the key.
+sprint_lease_record_finish_transaction() {
+  local target_branch="$1" journal_key="$2" output
   [[ -n "$sprint_lease_claim_id" ]] || return 0
-  if ! output="$(sprint_lease release --claim-id "$sprint_lease_claim_id" 2>&1)"; then
+  if ! output="$(sprint_lease begin-completion \
+    --claim-id "$sprint_lease_claim_id" \
+    --worktree "$closeout_journal_worktree" \
+    --target-ref "$target_branch" \
+    --finish-transaction-key "$journal_key" 2>&1)"; then
     printf '%s\n' "$output" >&2
-    echo "[ContractWorktree] Warning: the sprint lease survived publication (claim $sprint_lease_claim_id); run 'repo-harness sprint reconcile --task-id <id> --target-ref <branch>' to clear it" >&2
+    echo "contract-worktree: could not record the closeout journal key on the sprint lease (claim $sprint_lease_claim_id); refusing to publish" >&2
+    return 1
+  fi
+  echo "[ContractWorktree] Sprint lease carries closeout journal key $journal_key"
+  return 0
+}
+
+# Clear the lease after publication, never before: no single atomic operation
+# spans a git publication and a filesystem lease.
+#
+# `reconcile`, not `release`. The lease is `completing` here, and release
+# refuses that state precisely because it cannot tell whether the publication
+# landed. Reconcile can: it reads the canonical row on the target ref, and a
+# row that already reads `[x]` is the proof that no execution ownership remains
+# to hold. A cleanup that does not land is reported, never fatal -- the
+# publication is already published, so a residual lease is a legal state a
+# later reconcile clears rather than a failed finish.
+sprint_lease_reconcile_after_publication() {
+  local target_branch="$1" output
+  [[ -n "$sprint_lease_claim_id" ]] || return 0
+  if ! output="$(sprint_lease reconcile \
+    --task-id "$sprint_lease_task_id" \
+    --expected-claim-id "$sprint_lease_claim_id" \
+    --target-ref "$target_branch" 2>&1)"; then
+    printf '%s\n' "$output" >&2
+    echo "[ContractWorktree] Warning: the sprint lease survived publication (claim $sprint_lease_claim_id); run 'repo-harness sprint reconcile --task-id $sprint_lease_task_id --target-ref $target_branch' to clear it" >&2
+    return 0
+  fi
+  if ! printf '%s' "$output" | grep -q '"action": "cleared_completed_lease"'; then
+    printf '%s\n' "$output" >&2
+    echo "[ContractWorktree] Warning: reconcile left the sprint lease in place (claim $sprint_lease_claim_id); the canonical row on $target_branch does not read [x] yet" >&2
     return 0
   fi
   rm -f "$sprint_lease_token_file"
-  echo "[ContractWorktree] Released sprint lease (claim $sprint_lease_claim_id)"
+  echo "[ContractWorktree] Reconciled sprint lease after publication (claim $sprint_lease_claim_id)"
   return 0
 }
 
@@ -1654,6 +1702,8 @@ finish_worktree() {
     "target_branch=$target_branch" \
     "base_sha=$frozen_base_sha")"
   closeout_claim_bind_journal "$closeout_key"
+  sprint_lease_record_finish_transaction "$target_branch" "$closeout_key" \
+    || { closeout_claim_release; return 1; }
   closeout_journal_begin "finish" "$closeout_key" \
     "branch=$current_branch" \
     "plan=${active_plan:-}" \
@@ -1868,7 +1918,7 @@ finish_worktree() {
   }
   finish_transaction_phase merged "$publication_sha"
   finish_transaction_commit "$publication_sha"
-  sprint_lease_release_after_publication
+  sprint_lease_reconcile_after_publication "$target_branch"
   echo "[ContractWorktree] Merged $current_branch into $target_branch as single publication commit $publication_sha at $target_worktree"
 }
 

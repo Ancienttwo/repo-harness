@@ -8,11 +8,20 @@
 import { describe, expect, test } from 'bun:test';
 import {
   COORDINATION_PROTOCOL,
+  FIRST_LEASE_GENERATION,
   TASK_DIGEST_PATTERN,
+  beginLeaseCompletionRecord,
+  bindLeaseRecord,
+  buildLeaseOwnerRecord,
   deriveTaskId,
   deriveTaskRevision,
   lookupCanonicalTask,
+  parseLeaseOwnerRecord,
   projectCanonicalTasks,
+  releaseLeaseRecord,
+  serializeLeaseOwnerRecord,
+  stealLeaseRecord,
+  type LeaseOwnerRecordV1,
 } from '../src/core/state/coordination-identity';
 
 const REPO_IDENTITY = '/tmp/example-clone/.git';
@@ -242,5 +251,192 @@ describe('task revision granularity', () => {
 
   test('the protocol version is part of the preimage', () => {
     expect(COORDINATION_PROTOCOL).toBe(1);
+  });
+});
+
+/**
+ * The owner record's three fencing/authority fields, falsified where they are
+ * cheapest to falsify: no filesystem, no git, no clock. Every case here is a
+ * shape the store must classify `unknown` rather than partly trust.
+ */
+describe('owner record schema', () => {
+  const TASK = taskByCell(sprint([ROW_A, ROW_B]), 'wire the claim verbs');
+
+  function owner(): LeaseOwnerRecordV1 {
+    return buildLeaseOwnerRecord({
+      claimId: 'claim-1',
+      taskId: TASK.task_id,
+      taskRevision: TASK.task_revision,
+      sprintPath: SPRINT_PATH,
+      targetRef: 'refs/heads/main',
+      generation: FIRST_LEASE_GENERATION,
+      sessionId: 'session-1',
+      sourceWorktree: '/tmp/example-clone',
+    });
+  }
+
+  test('a fresh claim mints generation 1, records its ref, and has no finish key', () => {
+    const record = owner();
+    expect(record.generation).toBe(1);
+    expect(record.target_ref).toBe('refs/heads/main');
+    expect(record.finish_transaction_key).toBeNull();
+    expect(parseLeaseOwnerRecord(serializeLeaseOwnerRecord(record))).toEqual(record);
+  });
+
+  test('parse rejects a record missing generation, target_ref, or finish_transaction_key', () => {
+    for (const field of ['generation', 'target_ref', 'finish_transaction_key'] as const) {
+      const { [field]: _dropped, ...withoutField } = owner();
+      expect(parseLeaseOwnerRecord(`${JSON.stringify(withoutField)}\n`)).toBeNull();
+    }
+  });
+
+  test('parse rejects a generation that is not a whole number at or above 1', () => {
+    for (const generation of [0, -1, 1.5, '2', null]) {
+      expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...owner(), generation })}\n`)).toBeNull();
+    }
+    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...owner(), generation: 7 })}\n`)?.generation)
+      .toBe(7);
+  });
+
+  test('parse rejects an empty target_ref and a non-null non-string finish key', () => {
+    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...owner(), target_ref: '' })}\n`)).toBeNull();
+    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...owner(), finish_transaction_key: 7 })}\n`))
+      .toBeNull();
+    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...owner(), finish_transaction_key: '' })}\n`))
+      .toBeNull();
+  });
+
+  test('begin-completion records the closeout journal key it was handed', () => {
+    const bound = bindLeaseRecord(owner(), {
+      claimId: 'claim-1',
+      executionWorktree: '/tmp/wt',
+      branch: 'codex/row',
+      unitRef: 'plans/plan-row.md',
+    });
+    expect(bound.ok).toBe(true);
+    if (!bound.ok) return;
+
+    const keyed = beginLeaseCompletionRecord(bound.record, {
+      claimId: 'claim-1',
+      executionWorktree: '/tmp/wt',
+      finishTransactionKey: 'finish/abc123',
+    });
+    expect(keyed.ok).toBe(true);
+    if (keyed.ok) {
+      expect(keyed.record.state).toBe('completing');
+      expect(keyed.record.finish_transaction_key).toBe('finish/abc123');
+    }
+
+    // No journal, no key: the field is never filled with a plausible stand-in.
+    const unkeyed = beginLeaseCompletionRecord(bound.record, {
+      claimId: 'claim-1',
+      executionWorktree: '/tmp/wt',
+      finishTransactionKey: null,
+    });
+    expect(unkeyed.ok).toBe(true);
+    if (unkeyed.ok) expect(unkeyed.record.finish_transaction_key).toBeNull();
+  });
+
+  test('a steal increments the generation and keeps the claimed ref', () => {
+    const first = owner();
+    const stolen = stealLeaseRecord(first, {
+      expectedClaimId: 'claim-1',
+      reason: 'no progress',
+      newClaimId: 'claim-2',
+      sessionId: 'session-2',
+      sourceWorktree: '/tmp/other',
+    });
+    expect(stolen.ok).toBe(true);
+    if (!stolen.ok) return;
+    expect(stolen.record.generation).toBe(2);
+    expect(stolen.record.target_ref).toBe(first.target_ref);
+    expect(stolen.record.finish_transaction_key).toBeNull();
+    expect(stolen.record.stolen_from).toEqual({ claim_id: 'claim-1', reason: 'no progress' });
+
+    const again = stealLeaseRecord(stolen.record, {
+      expectedClaimId: 'claim-2',
+      reason: 'reassigned',
+      newClaimId: 'claim-3',
+      sessionId: 'session-3',
+      sourceWorktree: '/tmp/third',
+    });
+    expect(again.ok).toBe(true);
+    if (again.ok) expect(again.record.generation).toBe(3);
+  });
+});
+
+describe('lease state guards', () => {
+  const TASK = taskByCell(sprint([ROW_A, ROW_B]), 'build the lease store');
+
+  function inState(state: 'reserving' | 'bound' | 'completing' | 'released'): LeaseOwnerRecordV1 {
+    return {
+      ...buildLeaseOwnerRecord({
+        claimId: 'claim-1',
+        taskId: TASK.task_id,
+        taskRevision: TASK.task_revision,
+        sprintPath: SPRINT_PATH,
+        targetRef: 'main',
+        generation: FIRST_LEASE_GENERATION,
+        sessionId: 'session-1',
+        sourceWorktree: '/tmp/example-clone',
+      }),
+      state,
+    };
+  }
+
+  test('a completing lease refuses every steal, however the token is presented', () => {
+    const stolen = stealLeaseRecord(inState('completing'), {
+      expectedClaimId: 'claim-1',
+      reason: 'stalled',
+      newClaimId: 'claim-2',
+      sessionId: 'session-2',
+      sourceWorktree: '/tmp/other',
+    });
+    expect(stolen.ok).toBe(false);
+    if (!stolen.ok) expect(stolen.error).toContain('cannot steal a lease in state completing');
+
+    // The states a steal is for are unaffected.
+    for (const state of ['reserving', 'bound'] as const) {
+      const allowed = stealLeaseRecord(inState(state), {
+        expectedClaimId: 'claim-1',
+        reason: 'stalled',
+        newClaimId: 'claim-2',
+        sessionId: 'session-2',
+        sourceWorktree: '/tmp/other',
+      });
+      expect(allowed.ok).toBe(true);
+    }
+  });
+
+  test('release accepts only reserving and bound', () => {
+    for (const state of ['reserving', 'bound'] as const) {
+      const released = releaseLeaseRecord(inState(state), 'claim-1');
+      expect(released.ok).toBe(true);
+      if (released.ok) expect(released.record.state).toBe('released');
+    }
+    for (const state of ['completing', 'released'] as const) {
+      const refused = releaseLeaseRecord(inState(state), 'claim-1');
+      expect(refused.ok).toBe(false);
+      if (!refused.ok) {
+        expect(refused.error).toContain(`cannot release a lease in state ${state}`);
+      }
+    }
+  });
+
+  test('the fencing token is compared before the state, on every transition', () => {
+    for (const transition of [
+      () => releaseLeaseRecord(inState('completing'), 'claim-other'),
+      () => stealLeaseRecord(inState('completing'), {
+        expectedClaimId: 'claim-other',
+        reason: 'stalled',
+        newClaimId: 'claim-2',
+        sessionId: 'session-2',
+        sourceWorktree: '/tmp/other',
+      }),
+    ]) {
+      const outcome = transition();
+      expect(outcome.ok).toBe(false);
+      if (!outcome.ok) expect(outcome.error).not.toContain('state completing');
+    }
   });
 });

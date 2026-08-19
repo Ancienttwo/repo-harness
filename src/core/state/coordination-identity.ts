@@ -223,6 +223,9 @@ export interface LeaseStolenFrom {
   readonly reason: string;
 }
 
+/** The first `generation` a fresh claim mints; every steal increments it. */
+export const FIRST_LEASE_GENERATION = 1;
+
 export interface LeaseOwnerRecordV1 {
   readonly protocol: typeof COORDINATION_PROTOCOL;
   readonly kind: typeof LEASE_OWNER_KIND;
@@ -230,11 +233,31 @@ export interface LeaseOwnerRecordV1 {
   readonly task_id: string;
   readonly task_revision: string;
   readonly sprint_path: string;
+  /**
+   * The canonical ref the claim was validated against. Every later verb that
+   * re-reads canonical compares its own `--target-ref` against this value, so a
+   * completion validated on a different ref than the claim was taken on fails
+   * closed instead of proving pendingness against the wrong authority.
+   */
+  readonly target_ref: string;
+  /**
+   * Fencing history. `claim_id` alone says who owns the lease now; `generation`
+   * says how many owners preceded them, which is what a preemption chain needs
+   * and what a stale reader cannot forge by re-minting a uuid.
+   */
+  readonly generation: number;
   readonly state: PersistedLeaseState;
   readonly claimed_by: LeaseClaimedBy;
   readonly execution_worktree: string | null;
   readonly branch: string | null;
   readonly unit_ref: string | null;
+  /**
+   * The closeout journal key the publication window runs under, set when the
+   * lease enters `completing`. Null in every other state: outside that window
+   * there is no finish transaction to recover, and inventing one would name a
+   * journal entry that does not exist.
+   */
+  readonly finish_transaction_key: string | null;
   /** Who this lease was taken from, and why. Never inferred; only `steal` sets it. */
   readonly stolen_from: LeaseStolenFrom | null;
 }
@@ -244,6 +267,8 @@ export interface BuildLeaseOwnerInput {
   readonly taskId: string;
   readonly taskRevision: string;
   readonly sprintPath: string;
+  readonly targetRef: string;
+  readonly generation: number;
   readonly sessionId: string;
   readonly sourceWorktree: string;
   readonly stolenFrom?: LeaseStolenFrom | null;
@@ -258,11 +283,14 @@ export function buildLeaseOwnerRecord(input: BuildLeaseOwnerInput): LeaseOwnerRe
     task_id: input.taskId,
     task_revision: input.taskRevision,
     sprint_path: input.sprintPath,
+    target_ref: input.targetRef,
+    generation: input.generation,
     state: 'reserving',
     claimed_by: { session_id: input.sessionId, source_worktree: input.sourceWorktree },
     execution_worktree: null,
     branch: null,
     unit_ref: null,
+    finish_transaction_key: null,
     stolen_from: input.stolenFrom ?? null,
   };
 }
@@ -304,6 +332,15 @@ export function parseLeaseOwnerRecord(raw: string): LeaseOwnerRecordV1 | null {
     || !TASK_DIGEST_PATTERN.test(value.task_revision)
   ) return null;
   if (!nonEmptyString(value.sprint_path)) return null;
+  // Absent is rejected, not defaulted: a record written by a build that did not
+  // carry these fields cannot be distinguished from one whose fields were
+  // stripped, and inventing either value would forge fencing or canonical
+  // authority. The store classifies such a record `unknown`.
+  if (!nonEmptyString(value.target_ref)) return null;
+  if (typeof value.generation !== 'number'
+    || !Number.isInteger(value.generation)
+    || value.generation < FIRST_LEASE_GENERATION) return null;
+  if (!nullableString(value.finish_transaction_key)) return null;
   if (
     typeof value.state !== 'string'
     || !(PERSISTED_LEASE_STATES as readonly string[]).includes(value.state)
@@ -336,6 +373,8 @@ export function parseLeaseOwnerRecord(raw: string): LeaseOwnerRecordV1 | null {
     task_id: value.task_id,
     task_revision: value.task_revision,
     sprint_path: value.sprint_path,
+    target_ref: value.target_ref,
+    generation: value.generation,
     state: value.state as PersistedLeaseState,
     claimed_by: {
       session_id: claimedByValue.session_id,
@@ -344,6 +383,7 @@ export function parseLeaseOwnerRecord(raw: string): LeaseOwnerRecordV1 | null {
     execution_worktree: value.execution_worktree as string | null,
     branch: value.branch as string | null,
     unit_ref: value.unit_ref as string | null,
+    finish_transaction_key: value.finish_transaction_key as string | null,
     stolen_from: stolenFrom,
   };
 }
@@ -395,6 +435,13 @@ export interface BeginCompletionInput {
   readonly claimId: string;
   /** The worktree the completion runs in, already resolved to its real path. */
   readonly executionWorktree: string;
+  /**
+   * The closeout journal key this publication window runs under, or null when
+   * the caller opened no journal. Never derived here: the journal is the
+   * closeout transaction's own authority and this layer only records what it
+   * was handed.
+   */
+  readonly finishTransactionKey: string | null;
 }
 
 /**
@@ -430,13 +477,30 @@ export function beginLeaseCompletionRecord(
       error: `lease for task ${record.task_id} is bound to ${record.execution_worktree ?? '(no worktree)'}, not ${input.executionWorktree}`,
     };
   }
-  return { ok: true, record: { ...record, state: 'completing' } };
+  return {
+    ok: true,
+    record: {
+      ...record,
+      state: 'completing',
+      finish_transaction_key: input.finishTransactionKey,
+    },
+  };
 }
+
+/** The only states a lease may be given up from (spec 8.3). */
+const RELEASABLE_LEASE_STATES: readonly PersistedLeaseState[] = ['reserving', 'bound'];
 
 /**
  * `-> released`. The record is written before the lease directory is removed,
  * so the crash window between the two is a named, reconcilable state rather
  * than an ambiguous one.
+ *
+ * Only `reserving` and `bound` may be given up. `completing` is excluded
+ * because a release there cannot tell whether the publication landed: the
+ * canonical row is the authority on that, and `reconcile` is the verb that
+ * reads it. Releasing from `completing` would drop the lease on work whose
+ * publication may have failed, freeing the row for a second agent while the
+ * finish journal is still open.
  */
 export function releaseLeaseRecord(
   record: LeaseOwnerRecordV1,
@@ -445,8 +509,11 @@ export function releaseLeaseRecord(
   if (record.claim_id !== claimId) {
     return { ok: false, error: claimMismatch(record, claimId) };
   }
-  if (record.state === 'released') {
-    return { ok: false, error: `lease for task ${record.task_id} is already released` };
+  if (!RELEASABLE_LEASE_STATES.includes(record.state)) {
+    return {
+      ok: false,
+      error: `cannot release a lease in state ${record.state}; expected reserving or bound`,
+    };
   }
   return { ok: true, record: { ...record, state: 'released' } };
 }
@@ -464,8 +531,14 @@ export interface StealLeaseInput {
  * lease from and why. This is what `start-task --force` could not do, and the
  * reason `--force` is retired by this work package.
  *
- * The stolen lease keeps its observed `task_revision`. Re-validating the row
- * against canonical is the caller's job, exactly as it is for `claim`.
+ * The stolen lease keeps its observed `task_revision` and `target_ref`.
+ * Re-validating the row against canonical is the caller's job, exactly as it is
+ * for `claim`.
+ *
+ * `completing` is refused outright (spec 6). Once the completion split has
+ * passed its gate the publication may already have landed, and a steal there
+ * would erase the window marker that says so -- the new owner would find a
+ * pending-looking row whose work is in fact already published.
  */
 export function stealLeaseRecord(
   record: LeaseOwnerRecordV1,
@@ -475,6 +548,13 @@ export function stealLeaseRecord(
     return {
       ok: false,
       error: `expected claim id ${input.expectedClaimId} for task ${record.task_id}, but the lease is owned by ${record.claim_id}`,
+    };
+  }
+  if (record.state === 'completing') {
+    return {
+      ok: false,
+      error: `cannot steal a lease in state completing for task ${record.task_id}; `
+        + 'its publication window is open, so resolve the finish first with sprint reconcile',
     };
   }
   if (input.newClaimId === record.claim_id) {
@@ -488,6 +568,8 @@ export function stealLeaseRecord(
         taskId: record.task_id,
         taskRevision: record.task_revision,
         sprintPath: record.sprint_path,
+        targetRef: record.target_ref,
+        generation: record.generation + 1,
         sessionId: input.sessionId,
         sourceWorktree: input.sourceWorktree,
         stolenFrom: { claim_id: record.claim_id, reason: input.reason },

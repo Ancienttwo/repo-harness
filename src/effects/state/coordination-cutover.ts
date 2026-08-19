@@ -49,6 +49,32 @@ export interface CutoverQuiescence {
   readonly blockers: readonly CutoverBlocker[];
 }
 
+/**
+ * The git binary itself is missing, as opposed to the target simply not being
+ * a git clone. The two are indistinguishable through a thrown `execFileSync`
+ * unless they are separated here, and collapsing them makes the quiescence gate
+ * fail open on exactly the environment that can prove nothing about the repo.
+ */
+export class GitBinaryUnavailableError extends Error {
+  readonly kind = 'git_binary_unavailable';
+
+  constructor(cause: unknown) {
+    super(
+      'the git binary is unavailable, so the coordination cutover gate cannot be evaluated: '
+      + (cause instanceof Error ? cause.message : String(cause)),
+    );
+    this.name = 'GitBinaryUnavailableError';
+  }
+}
+
+/** Re-raise a missing binary; every other git failure is the caller's to classify. */
+function rethrowIfGitBinaryMissing(error: unknown): void {
+  if (error instanceof GitBinaryUnavailableError) throw error;
+  if ((error as NodeJS.ErrnoException | null)?.code === 'ENOENT') {
+    throw new GitBinaryUnavailableError(error);
+  }
+}
+
 function git(cwd: string, args: readonly string[]): string | null {
   try {
     return execFileSync('git', [...args], {
@@ -57,7 +83,8 @@ function git(cwd: string, args: readonly string[]): string | null {
       stdio: ['ignore', 'pipe', 'ignore'],
       maxBuffer: 16 * 1024 * 1024,
     });
-  } catch {
+  } catch (error) {
+    rethrowIfGitBinaryMissing(error);
     return null;
   }
 }
@@ -116,7 +143,8 @@ function unfinishedCloseoutJournals(repoRoot: string): CutoverBlocker[] {
   let resolvedRoot: string;
   try {
     resolvedRoot = join(resolveGitCommonDirectory(repoRoot), TRANSACTIONS_RELATIVE_PATH);
-  } catch {
+  } catch (error) {
+    rethrowIfGitBinaryMissing(error);
     return [];
   }
   const blockers: CutoverBlocker[] = [];
@@ -145,16 +173,17 @@ function unfinishedCloseoutJournals(repoRoot: string): CutoverBlocker[] {
 }
 
 /**
- * Report every reason an install or upgrade must refuse. Read-only and total:
- * it never repairs, migrates, or deletes what it finds.
+ * Every registered worktree still carrying retired per-worktree markers. Split
+ * out because the v1 entrypoint gate is interested in exactly this blocker and
+ * nothing else: a live contract worktree or an open closeout is the normal
+ * steady state of an adopted repo, while a legacy marker means the clone never
+ * crossed over.
  */
-export function inspectCutoverQuiescence(repoRoot: string): CutoverQuiescence {
+export function inspectLegacyInFlightMarkers(repoRoot: string): CutoverBlocker[] {
   const worktrees = listWorktreePaths(repoRoot);
   const legacyRelative = legacyInFlightRelativePath(repoRoot);
   const blockers: CutoverBlocker[] = [];
-
-  const scanned = worktrees.length > 0 ? worktrees : [repoRoot];
-  for (const [index, worktree] of scanned.entries()) {
+  for (const worktree of worktrees.length > 0 ? worktrees : [repoRoot]) {
     const legacyDir = join(worktree, legacyRelative);
     const markers = directoryEntries(legacyDir);
     if (markers.length > 0) {
@@ -164,9 +193,21 @@ export function inspectCutoverQuiescence(repoRoot: string): CutoverQuiescence {
         detail: `retired per-worktree in-flight markers: ${markers.sort().join(', ')}`,
       });
     }
-    // The main worktree keeps its own metadata records for the worktrees it
-    // started, so only linked worktrees prove an execution is open here.
-    if (index === 0) continue;
+  }
+  return blockers;
+}
+
+/**
+ * Report every reason an install or upgrade must refuse. Read-only and total:
+ * it never repairs, migrates, or deletes what it finds.
+ */
+export function inspectCutoverQuiescence(repoRoot: string): CutoverQuiescence {
+  const worktrees = listWorktreePaths(repoRoot);
+  const blockers: CutoverBlocker[] = [...inspectLegacyInFlightMarkers(repoRoot)];
+
+  // The main worktree keeps its own metadata records for the worktrees it
+  // started, so only linked worktrees prove an execution is open here.
+  for (const worktree of (worktrees.length > 0 ? worktrees : [repoRoot]).slice(1)) {
     const metadata = directoryEntries(join(worktree, WORKTREE_METADATA_DIR))
       .filter((entry) => entry.endsWith('.json'));
     if (metadata.length > 0) {
@@ -198,12 +239,17 @@ const CUTOVER_PROTOCOL_VERSION = 1;
  * at the git common directory, so a non-git adoption target has no plane to
  * cross over to and no sprint execution state to be quiescent about; the gate
  * is inapplicable there rather than failing.
+ *
+ * A missing git binary is not that case and throws: it proves nothing about
+ * the target, and returning `null` there disarms the gate on the one
+ * environment that cannot evaluate it.
  */
 export function cutoverMarkerPath(repoRoot: string): string | null {
   let commonDir: string;
   try {
     commonDir = resolveGitCommonDirectory(repoRoot);
-  } catch {
+  } catch (error) {
+    rethrowIfGitBinaryMissing(error);
     return null;
   }
   return join(commonDir, CUTOVER_MARKER_RELATIVE_PATH);
@@ -234,6 +280,25 @@ export function isCutoverInstalled(repoRoot: string): boolean {
 /** Record the crossing, so the quiescence gate never fires for this clone again. */
 export function recordCutoverInstalled(markerPath: string): void {
   writeFileDurably(markerPath, `${JSON.stringify({ protocol: CUTOVER_PROTOCOL_VERSION })}\n`);
+}
+
+/**
+ * The fail-closed gate every v1 ownership entrypoint runs, not just `init`.
+ *
+ * `init` is the only place the crossing is recorded, but it is not the only
+ * way to reach the plane: a claim taken directly against a clone that still
+ * carries retired per-worktree markers would run the new protocol beside the
+ * old one, and the old markers are invisible to it -- precisely the duplicate
+ * claim the cutover exists to prevent. Returns the refusal text, or `null` when
+ * the entrypoint may proceed.
+ */
+export function legacyCutoverRefusal(repoRoot: string): string | null {
+  if (isCutoverInstalled(repoRoot)) return null;
+  const blockers = inspectLegacyInFlightMarkers(repoRoot);
+  if (blockers.length === 0) return null;
+  return 'this clone has not crossed over to the v1 coordination plane and still carries retired '
+    + `sprint execution markers: ${blockers.map((blocker) => `${blocker.path} (${blocker.detail})`).join('; ')}`
+    + '; finish or release that work, then run the init cutover (repo-harness init --repo <path>)';
 }
 
 export function formatCutoverBlockers(quiescence: CutoverQuiescence): string {

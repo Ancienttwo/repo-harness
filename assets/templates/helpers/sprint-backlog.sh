@@ -512,6 +512,11 @@ cmd_complete_task() {
     exit 1
   fi
 
+  # Before the rewrite, never after: flipping the row to [x] is the step that
+  # publishes "this task is done", so it is the step the shared lease has to
+  # gate. Inside the backlog lock the caller already holds.
+  assert_completion_lease_gate "$sprint_file" "$target_task"
+
   plan_cell="$target_plan"
   if [[ -n "$plan_file" ]]; then
     plan_cell="\`${plan_file}\`"
@@ -678,6 +683,101 @@ find_claim_token() {
   done
   [[ -n "$match" ]] || return 1
   printf '%s' "$match"
+}
+
+# Read one field of a common-dir owner record. The record is written by the
+# CLI as two-space-indented JSON with one field per line, which is the same
+# shape `closeout_journal_field` reads in contract-worktree.sh. The CLI stays
+# the only authority on the record; this reports which claim owns it so a
+# refusal can name it.
+lease_owner_field() {
+  local file="$1" name="$2"
+  [[ -f "$file" && ! -L "$file" ]] || return 1
+  sed -n "s/^  \"${name}\": \"\(.*\)\",\{0,1\}\$/\1/p" "$file" | head -1
+}
+
+# The inline completion gate.
+#
+# Execution ownership lives in the shared lease, so a tree without the owning
+# fencing token may not flip a claimed row to [x] -- the exact false-completion
+# this protocol exists to close. Three shapes, and the reason each is what it is:
+#
+# - no lease store on this clone: its absence is the authority for "nothing
+#   owns anything here", so the zero-coordination single-agent flow completes
+#   exactly as before, without deriving an identity or reading a canonical ref;
+# - a lease store with no lease for this row: nothing owns the row, proceed;
+# - a lease for this row: this tree must hold a claim token carrying the same
+#   claim id the owner record does. A stolen-from tree keeps its old token and
+#   therefore fails the comparison, which is the point.
+#
+# Anything the CLI would classify `unknown` -- a symlinked lease, a missing or
+# unreadable owner record -- refuses and names `sprint reconcile`, because an
+# unclassifiable lease cannot prove the row is unowned.
+assert_completion_lease_gate() {
+  local sprint_path="$1" task_cell="$2"
+  local coordination_dir leases_root entry identity task_id lease_dir owner_file
+  local owner_claim token token_claim found status
+
+  if ! coordination_dir="$(coordination_root)"; then
+    echo "sprint-backlog: not inside a git repository; the shared lease cannot be read" >&2
+    exit 1
+  fi
+  leases_root="$coordination_dir/leases"
+  [[ -d "$leases_root" ]] || return 0
+  found=0
+  for entry in "$leases_root"/*; do
+    if [[ -e "$entry" || -L "$entry" ]]; then
+      found=1
+      break
+    fi
+  done
+  [[ "$found" -eq 1 ]] || return 0
+
+  # The CLI owns every digest: re-deriving task_id here would be a second
+  # implementation of the identity contract.
+  if ! identity="$(sprint_lease identify --task "$task_cell" --target-ref "$(coordination_target_ref)" --sprint-path "$sprint_path" 2>&1)"; then
+    printf '%s\n' "$identity" >&2
+    echo "sprint-backlog: cannot derive the coordination identity of '$task_cell'; leases are live on this clone, so the row cannot be completed unverified" >&2
+    exit 1
+  fi
+  task_id="$(json_string_field "$identity" task_id)"
+  if [[ -z "$task_id" ]]; then
+    echo "sprint-backlog: sprint identify returned no task id for '$task_cell'" >&2
+    exit 1
+  fi
+
+  lease_dir="$leases_root/$task_id"
+  [[ -e "$lease_dir" || -L "$lease_dir" ]] || return 0
+  if [[ ! -d "$lease_dir" || -L "$lease_dir" ]]; then
+    echo "sprint-backlog: the lease for '$task_cell' is not a lease directory ($lease_dir); run 'repo-harness sprint reconcile --task-id $task_id --target-ref <branch>' before completing it" >&2
+    exit 1
+  fi
+
+  owner_file="$lease_dir/owner.json"
+  owner_claim="$(lease_owner_field "$owner_file" claim_id || true)"
+  if [[ -z "$owner_claim" ]]; then
+    echo "sprint-backlog: the lease for '$task_cell' has no readable owner record ($lease_dir); run 'repo-harness sprint reconcile --task-id $task_id --target-ref <branch>' before completing it" >&2
+    exit 1
+  fi
+
+  set +e
+  token="$(find_claim_token "$sprint_path" "$task_cell")"
+  status=$?
+  set -e
+  case "$status" in
+    0) ;;
+    1)
+      echo "sprint-backlog: backlog task '$task_cell' is claimed by ${owner_claim} and this worktree holds no claim token for it; complete it from the owning worktree, or take the claim over with 'repo-harness sprint steal --expected-claim-id ${owner_claim} --reason <reason> --session-id <id>'" >&2
+      exit 1
+      ;;
+    *) exit 1 ;;
+  esac
+
+  token_claim="$(claim_token_field "$token" claim_id)"
+  if [[ "$token_claim" != "$owner_claim" ]]; then
+    echo "sprint-backlog: backlog task '$task_cell' is claimed by ${owner_claim}, but this worktree holds claim ${token_claim:-(none)}; the claim moved, so this tree may not complete the row" >&2
+    exit 1
+  fi
 }
 
 # Inline completion releases inside the caller's backlog-lock critical section.

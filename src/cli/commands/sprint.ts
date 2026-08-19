@@ -24,6 +24,7 @@ import { realpathSync } from 'fs';
 import { Command } from 'commander';
 import {
   COMPLETED_ROW_STATUS_PATTERN,
+  FIRST_LEASE_GENERATION,
   PENDING_ROW_STATUS,
   TASK_DIGEST_PATTERN,
   beginLeaseCompletionRecord,
@@ -42,6 +43,7 @@ import {
   type CanonicalSprintRead,
   type CanonicalSprintSource,
 } from '../../effects/state/coordination-canonical-source';
+import { legacyCutoverRefusal } from '../../effects/state/coordination-cutover';
 import {
   createLeaseDirectory,
   findLeaseByClaimId,
@@ -57,6 +59,11 @@ import type { CommandOutcome } from './state';
 
 /** Every filesystem and Git effect the verbs may reach, injected. */
 export interface CoordinationPort {
+  /**
+   * The refusal text when this clone still carries retired per-worktree
+   * markers and has not crossed over, or `null` when ownership verbs may run.
+   */
+  readonly legacyCutoverRefusal: () => string | null;
   readonly readCanonicalSprint: (source: CanonicalSprintSource) => CanonicalSprintRead;
   readonly withTaskLock: <T>(taskId: string, run: () => T) => T;
   readonly readLease: (taskId: string) => LeaseRead;
@@ -241,6 +248,11 @@ export function claimSprintCommand(
 
   const source: CanonicalSprintSource = { targetRef, sprintPath };
   try {
+    // Before anything is elected: a claim taken on a clone that never crossed
+    // over would run the v1 plane beside legacy markers it cannot see.
+    const cutover = deps.coordination.legacyCutoverRefusal();
+    if (cutover !== null) return refuse(cutover);
+
     const before = verifyCanonicalPreconditions(deps, source, taskId, expectedTaskRevision);
     if (!before.ok) return refuse(before.error);
 
@@ -262,6 +274,10 @@ export function claimSprintCommand(
         taskId,
         taskRevision: before.task.task_revision,
         sprintPath,
+        // Captured, not re-derived later: every verb that re-reads canonical
+        // must prove it read the same authority this claim was validated on.
+        targetRef,
+        generation: FIRST_LEASE_GENERATION,
         sessionId,
         sourceWorktree: deps.sourceWorktree,
       });
@@ -359,6 +375,18 @@ export interface BeginCompletionCommandOptions {
   readonly claimId?: string;
   readonly worktree?: string;
   readonly targetRef?: string;
+  readonly finishTransactionKey?: string;
+}
+
+/**
+ * The canonical ref a verb was asked to validate against must be the one the
+ * claim was taken on. Anything else re-reads a different authority: a row that
+ * is pending on the caller's ref says nothing about the ref the lease protects,
+ * so the check fails closed rather than silently switching authority.
+ */
+function targetRefDrift(record: LeaseOwnerRecordV1, targetRef: string): string | null {
+  if (record.target_ref === targetRef) return null;
+  return `lease for task ${record.task_id} was claimed against ${record.target_ref}, not ${targetRef}`;
 }
 
 /**
@@ -394,9 +422,12 @@ export function beginCompletionSprintCommand(
     return withOwnedLease(deps, claimId, (taskId) => {
       const current = lockedRecord(deps, taskId);
       if (isOutcome(current)) return current;
+      const drift = targetRefDrift(current, targetRef);
+      if (drift !== null) return refuse(drift);
       const transition = beginLeaseCompletionRecord(current, {
         claimId,
         executionWorktree: worktree,
+        finishTransactionKey: options.finishTransactionKey ?? null,
       });
       if (!transition.ok) return refuse(transition.error);
 
@@ -484,6 +515,11 @@ export function stealSprintCommand(
   if (isOutcome(sessionId)) return sessionId;
 
   try {
+    // Same gate as `claim`: a steal is the other way a token is minted, so it
+    // may not run on a clone that never crossed over either.
+    const cutover = deps.coordination.legacyCutoverRefusal();
+    if (cutover !== null) return refuse(cutover);
+
     return withOwnedLease(deps, expectedClaimId, (taskId) => {
       const current = lockedRecord(deps, taskId);
       if (isOutcome(current)) return current;
@@ -506,6 +542,7 @@ export function stealSprintCommand(
 export interface ReconcileCommandOptions {
   readonly taskId?: string;
   readonly targetRef?: string;
+  readonly expectedClaimId?: string;
 }
 
 export type ReconcileAction =
@@ -536,6 +573,12 @@ export type ReconcileAction =
  * proof is only as good as the ref it was read from; a reconcile that silently
  * skipped the canonical check when a ref was absent would report `none` for a
  * lease it was asked to resolve.
+ *
+ * `--expected-claim-id` is optional and narrowing, never widening: an operator
+ * resolving a residue has no token to offer, while a caller cleaning up after
+ * its own publication does, and passing it means "clear my lease or nothing".
+ * Without it the verb behaves exactly as before -- the proofs it acts on come
+ * from an authority other than the caller either way.
  */
 export function reconcileSprintCommand(
   options: ReconcileCommandOptions,
@@ -555,6 +598,17 @@ export function reconcileSprintCommand(
       let canonicalError: string | null = null;
 
       if (read.record !== null) {
+        const drift = targetRefDrift(read.record, targetRef);
+        if (drift !== null) return refuse(drift);
+        if (
+          options.expectedClaimId !== undefined
+          && read.record.claim_id !== options.expectedClaimId
+        ) {
+          return refuse(
+            `claim id mismatch for task ${taskId}: lease is owned by ${read.record.claim_id}, `
+            + `not ${options.expectedClaimId}`,
+          );
+        }
         if (read.record.state === 'released') {
           deps.coordination.removeLease(taskId, read.record.claim_id);
           action = 'cleared_released_lease';
@@ -609,6 +663,7 @@ export function processSprintDependencies(cwd: string): SprintCommandDependencie
     sourceWorktree: realpathSync(cwd),
     newClaimId: () => randomUUID(),
     coordination: {
+      legacyCutoverRefusal: () => legacyCutoverRefusal(cwd),
       readCanonicalSprint: (source) => readCanonicalSprint(cwd, source),
       withTaskLock: (taskId, run) => withTaskLock(cwd, taskId, run),
       readLease: (taskId) => readLease(cwd, taskId),
@@ -670,6 +725,7 @@ export function buildSprintCommand(): Command {
     .requiredOption('--claim-id <id>', 'Fencing token returned by claim')
     .requiredOption('--worktree <path>', 'Worktree the completion runs in')
     .requiredOption('--target-ref <ref>', 'Canonical ref the task revision is re-checked against')
+    .option('--finish-transaction-key <key>', 'Closeout journal key this publication window runs under')
     .action((opts: BeginCompletionCommandOptions) => {
       writeOutcome(beginCompletionSprintCommand(opts, processSprintDependencies(process.cwd())));
     });
@@ -697,6 +753,7 @@ export function buildSprintCommand(): Command {
     .description('Report one lease and clear it only where released state or a completed canonical row proves it is finished')
     .requiredOption('--task-id <id>', 'Coordination task id')
     .requiredOption('--target-ref <ref>', 'Canonical ref the backlog row status is read from')
+    .option('--expected-claim-id <id>', 'Act only if the lease is still held by this claim')
     .action((opts: ReconcileCommandOptions) => {
       writeOutcome(reconcileSprintCommand(opts, processSprintDependencies(process.cwd())));
     });

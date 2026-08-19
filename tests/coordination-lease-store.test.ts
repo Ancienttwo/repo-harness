@@ -32,6 +32,7 @@ import {
   type LeaseOwnerRecordV1,
 } from '../src/core/state/coordination-identity';
 import {
+  beginCompletionSprintCommand,
   bindSprintCommand,
   claimSprintCommand,
   processSprintDependencies,
@@ -94,6 +95,8 @@ function recordFor(taskCell: string, claimId: string): LeaseOwnerRecordV1 {
     taskId,
     taskRevision: deriveTaskRevision({ taskId, modeCell: 'contract', acceptanceCell: 'green' }),
     sprintPath: SPRINT_PATH,
+    targetRef: 'main',
+    generation: 1,
     sessionId: 'session-1',
     sourceWorktree: '/tmp/lease-store-fixture',
   });
@@ -726,6 +729,147 @@ describe('claim verbs', () => {
     expect(claimSprintCommand({ ...base, sessionId: undefined }, deps(repo)).exitCode).toBe(2);
     expect(reconcileSprintCommand({ taskId: 'nope' }, deps(repo)).exitCode).toBe(2);
     expect(bindSprintCommand({ claimId: 'claim-1' }, deps(repo)).exitCode).toBe(2);
+  });
+
+  /** Claim row B and bind it to `/tmp/wt`, the shape every finish gate needs. */
+  function claimAndBind(repo: string, claimId = 'claim-1'): string {
+    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo, [claimId])).exitCode)
+      .toBe(0);
+    expect(bindSprintCommand(
+      { claimId, worktree: '/tmp/wt', branch: 'codex/example', unitRef: 'plans/plan-x.md' },
+      deps(repo),
+    ).exitCode).toBe(0);
+    return canonicalTask(repo, 'wire the claim verbs').task_id;
+  }
+
+  test('begin-completion refuses a target ref the claim was not taken against', () => {
+    const repo = repoWithSprint();
+    claimAndBind(repo);
+    run(repo, ['branch', 'other', 'main']);
+
+    // Same live token, same worktree, a ref the lease was never validated on:
+    // pendingness proved there says nothing about the ref the lease protects.
+    const wrongRef = beginCompletionSprintCommand(
+      { claimId: 'claim-1', worktree: '/tmp/wt', targetRef: 'other' },
+      deps(repo),
+    );
+    expect(wrongRef.exitCode).toBe(1);
+    expect(wrongRef.stderr).toContain('was claimed against main, not other');
+
+    const rightRef = beginCompletionSprintCommand(
+      { claimId: 'claim-1', worktree: '/tmp/wt', targetRef: 'main' },
+      deps(repo),
+    );
+    expect(rightRef.exitCode).toBe(0);
+    expect((JSON.parse(rightRef.stdout) as LeaseOwnerRecordV1).state).toBe('completing');
+  });
+
+  test('begin-completion records the closeout journal key, and null without one', () => {
+    const repo = repoWithSprint();
+    claimAndBind(repo);
+    const keyed = beginCompletionSprintCommand(
+      { claimId: 'claim-1', worktree: '/tmp/wt', targetRef: 'main', finishTransactionKey: 'finish/9f2c' },
+      deps(repo),
+    );
+    expect(keyed.exitCode).toBe(0);
+    expect((JSON.parse(keyed.stdout) as LeaseOwnerRecordV1).finish_transaction_key).toBe('finish/9f2c');
+
+    const other = repoWithSprint();
+    claimAndBind(other);
+    const unkeyed = beginCompletionSprintCommand(
+      { claimId: 'claim-1', worktree: '/tmp/wt', targetRef: 'main' },
+      deps(other),
+    );
+    expect(unkeyed.exitCode).toBe(0);
+    expect((JSON.parse(unkeyed.stdout) as LeaseOwnerRecordV1).finish_transaction_key).toBeNull();
+  });
+
+  test('a drifted task definition blocks begin-completion', () => {
+    const repo = repoWithSprint();
+    const taskId = claimAndBind(repo);
+    // Same Task cell, so the same task_id; a changed Acceptance cell is exactly
+    // what `task_revision` exists to catch.
+    commitSprint(repo, [
+      ROW_A,
+      '| 2 | [ ] | wire the claim verbs | contract | claim tests pass AND cover steal | (pending) |',
+    ]);
+
+    const drifted = beginCompletionSprintCommand(
+      { claimId: 'claim-1', worktree: '/tmp/wt', targetRef: 'main' },
+      deps(repo),
+    );
+    expect(drifted.exitCode).toBe(1);
+    expect(drifted.stderr).toContain('drifted since it was claimed');
+    // Fail closed: the lease stays bound, not half-moved into completing.
+    expect(readLease(repo, taskId).classification).toBe('bound');
+  });
+
+  test('reconcile refuses a target ref the lease was not claimed against', () => {
+    const repo = repoWithSprint();
+    const taskId = claimAndBind(repo);
+    run(repo, ['branch', 'other', 'main']);
+
+    const wrongRef = reconcileSprintCommand({ taskId, targetRef: 'other' }, deps(repo));
+    expect(wrongRef.exitCode).toBe(1);
+    expect(wrongRef.stderr).toContain('was claimed against main, not other');
+    expect(readLease(repo, taskId).classification).toBe('bound');
+
+    // An absent lease has no recorded ref to disagree with, so reporting still works.
+    const absent = reconcileSprintCommand(
+      { taskId: canonicalTask(repo, 'build the lease store').task_id, targetRef: 'other' },
+      deps(repo),
+    );
+    expect(absent.exitCode).toBe(0);
+    expect(JSON.parse(absent.stdout)).toMatchObject({ classification: 'available', action: 'none' });
+  });
+
+  test('a completing lease refuses both release and steal', () => {
+    const repo = repoWithSprint();
+    const taskId = claimAndBind(repo);
+    expect(beginCompletionSprintCommand(
+      { claimId: 'claim-1', worktree: '/tmp/wt', targetRef: 'main' },
+      deps(repo),
+    ).exitCode).toBe(0);
+    expect(readLease(repo, taskId).classification).toBe('completing');
+
+    // Release would drop the lease without knowing whether the publication
+    // landed; steal would erase the marker that says it might have.
+    const released = releaseSprintCommand({ claimId: 'claim-1' }, deps(repo));
+    expect(released.exitCode).toBe(1);
+    expect(released.stderr).toContain('cannot release a lease in state completing');
+
+    const stolen = stealSprintCommand(
+      { expectedClaimId: 'claim-1', reason: 'stalled', sessionId: 'session-2' },
+      deps(repo, ['claim-2']),
+    );
+    expect(stolen.exitCode).toBe(1);
+    expect(stolen.stderr).toContain('cannot steal a lease in state completing');
+
+    // Neither refusal touched the record.
+    const still = readLease(repo, taskId);
+    expect(still.classification).toBe('completing');
+    expect(still.record?.claim_id).toBe('claim-1');
+    expect(still.record?.generation).toBe(1);
+  });
+
+  test('claim records the canonical ref and generation 1; a steal increments it', () => {
+    const repo = repoWithSprint();
+    const first = claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo));
+    expect(first.exitCode).toBe(0);
+    const claimed = JSON.parse(first.stdout) as LeaseOwnerRecordV1;
+    expect(claimed.target_ref).toBe('main');
+    expect(claimed.generation).toBe(1);
+    expect(claimed.finish_transaction_key).toBeNull();
+
+    const stolen = stealSprintCommand(
+      { expectedClaimId: 'claim-1', reason: 'no progress', sessionId: 'session-2' },
+      deps(repo, ['claim-2']),
+    );
+    expect(stolen.exitCode).toBe(0);
+    const thief = JSON.parse(stolen.stdout) as LeaseOwnerRecordV1;
+    expect(thief.generation).toBe(2);
+    expect(thief.target_ref).toBe('main');
+    expect(readLease(repo, claimed.task_id).record?.generation).toBe(2);
   });
 
   test('an unresolvable ref or absent sprint path fails closed', () => {
