@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-19T17:25:18+0800 -->
+<!-- updated_at: 2026-08-19T20:50:52+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-08-19T17:25:18+0800
-> **Source Branch**: codex/coordination-lease-hardening
-> **Source Commit**: b7cebcf1
+> **Updated At**: 2026-08-19T20:50:52+0800
+> **Source Branch**: main
+> **Source Commit**: a5c6910d
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -58,16 +58,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260819-1519-coordination-lease-hardening.md
- D tasks/contracts/20260819-1519-coordination-lease-hardening.contract.md
- D tasks/notes/20260819-1519-coordination-lease-hardening.notes.md
- D tasks/reviews/20260819-1519-coordination-lease-hardening.review.md
+ D plans/plan-20260819-1805-release-0-15-3.md
+ D tasks/contracts/20260819-1805-release-0-15-3.contract.md
+ D tasks/notes/20260819-1805-release-0-15-3.notes.md
+ D tasks/reviews/20260819-1805-release-0-15-3.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260819-1519-coordination-lease-hardening.md
-?? tasks/archive/contract-20260819-1725-coordination-lease-hardening.md
-?? tasks/archive/notes-20260819-1725-coordination-lease-hardening.md
-?? tasks/archive/review-20260819-1725-coordination-lease-hardening.md
-?? tasks/archive/todo-20260819-1725-coordination-lease-hardening.md
+?? plans/archive/plan-20260819-1805-release-0-15-3.md
+?? tasks/archive/contract-20260819-2050-release-0-15-3.md
+?? tasks/archive/notes-20260819-2050-release-0-15-3.md
+?? tasks/archive/review-20260819-2050-release-0-15-3.md
+?? tasks/archive/todo-20260819-2050-release-0-15-3.md
 ```
 
 ## Source Artifacts
