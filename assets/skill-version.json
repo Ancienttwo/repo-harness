@@ -1,6 +1,6 @@
 {
-  "version": "0.15.3",
-  "templateVersion": "0.15.3",
+  "version": "0.16.0",
+  "templateVersion": "0.16.0",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "compatibility": {
@@ -251,6 +251,10 @@
     {
       "version": "0.15.3",
       "description": "Lands the shared coordination plane WP1 as a common-dir lease store behind the sprint verbs claim, bind, release, steal, reconcile, identify, and begin-completion with a quiescent fail-closed cutover; hardens the lease protocol with a three-field owner record, a completing-state guard, an inline complete gate, fail-closed rejection of legacy lease shapes, and a fixed marker write order; pins archctx 0.4.4 with the archcontext.docs-renderer/v4 projection contract; adds a SubagentStart long-command guardrail advisory and a SessionStart cleanable-contract-worktree notice; makes CodeGraph enablement explicit opt-in only; adds minimal_change enforce mode behind a Stop gate and circuit breaker; and collapses worktree base metadata onto one typed, fail-closed selector"
+    },
+    {
+      "version": "0.16.0",
+      "description": "Completes the kanban coordination program on top of the 0.15.3 lease plane: adds the deterministic board projection `state board --json` emitting the frozen BoardDocumentV1 with four precedence-ordered columns, three separated dimensions, per-dimension and composite input revisions, and a stable | changed_during_read snapshot-consistency verdict from a single-retry collector; adds a bind-time resumed receipt so a steal-then-rebind no longer inherits the previous claim's no-progress receipts; injects a byte-identical read-only BoardSliceV1 at Codex SubagentStart context and the Claude PreToolUse.subagent Task|Agent branch through one pure projector and one shared renderer; arms a PreToolUse.edit lease gate only behind the double predicate of a unique claim token matching the active-plan marker and a linked worktree, failing closed with an explicit reason token per step while leaving non-sprint execution untouched; and retires the merged worktree at the tail of contract-worktree finish --merge"
     }
   ],
   "generatedProjectStamp": {

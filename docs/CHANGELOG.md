@@ -4,6 +4,62 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-08-20
+
+Completes the kanban coordination program that `0.15.3` opened. `0.15.3` shipped
+the lease plane's correctness (WP1 plus its hardening pass); `0.16.0` adds the
+board that makes ownership observable (WP2) and the hook surfaces that put it in
+front of agents at the two moments it matters (WP3).
+
+### Added
+
+- Adds `repo-harness state board --json [--sprint <path>] [--target-ref <ref>]`,
+  emitting the frozen `BoardDocumentV1`: four columns with precedence
+  `done > blocked > doing > todo`, three separated dimensions (task, lease,
+  progress), per-dimension and composite input revisions, and a
+  `snapshot_consistency` verdict of `stable` or `changed_during_read` produced by
+  a collect-project-collect pass with one full-round retry. The board reads
+  canonical sprint bytes through `git show`, this sprint's leases, raw
+  `git worktree list --porcelain`, owner-worktree attempt ledgers, and
+  read-only progress tokens; it never reads worktree metadata and never takes a
+  task lock.
+- Passes the lease vocabulary through the board unchanged
+  (`available | reserving | bound | completing | released | unknown`), derives
+  `orphaned` into diagnostics, keeps residual `released` rows in `blocked`, and
+  marks any `done` row still holding a non-available lease with
+  `lease_cleanup_required` plus an executable reconcile action.
+- Injects a byte-identical read-only `BoardSliceV1` into Codex
+  `SubagentStart.context` and the Claude `PreToolUse.subagent` `Task|Agent`
+  branch, so a freshly spawned subagent starts with peer claims in view instead
+  of blind. One pure projector and one shared renderer produce the slice; the
+  hosts only wrap it, and an `env.HOOK_HOST` guard keeps injection
+  exactly-once. The slice structurally omits `progress_state`, `column`, and all
+  conflict fields, and its collector never resolves effective state or reads
+  attempt ledgers.
+- Adds a `PreToolUse.edit` lease gate that fires only when a unique claim token
+  whose `unit_ref` matches the active-plan marker coexists with a linked
+  worktree. Once armed it runs five checks, each failing closed with its own
+  reason token; an IO failure before arming degrades to an advisory and passes.
+  Non-sprint execution is unaffected, so a stale write-only claim token cannot
+  permanently arm a tree.
+- Adds the shared coordination plane architecture document at
+  `docs/architecture/shared-coordination-plane.md` and a hook route-table
+  annotation in `docs/architecture/global-hook-runtime.md`.
+
+### Changed
+
+- Appends a bind-time `resumed` receipt before the owner record is written, so a
+  steal-then-rebind no longer inherits the previous claim's no-progress receipts
+  and reports a false `stalled` to the first board reader.
+- Extracts the shared task, lease, and diagnostics derivation out of
+  `project-board.ts` so the full board and the hook slice project from one
+  source rather than two parallel readings.
+
+### Fixed
+
+- Retires the merged worktree at the tail of `contract-worktree finish --merge`
+  instead of leaving it behind for a later manual cleanup.
+
 ## [0.15.3] - 2026-08-19
 
 ### Added
