@@ -22,6 +22,7 @@
 import { randomUUID } from 'crypto';
 import { realpathSync } from 'fs';
 import { Command } from 'commander';
+import { buildAttemptReceipt } from '../../core/state/attempt-ledger';
 import {
   COMPLETED_ROW_STATUS_PATTERN,
   FIRST_LEASE_GENERATION,
@@ -43,6 +44,7 @@ import {
   type CanonicalSprintRead,
   type CanonicalSprintSource,
 } from '../../effects/state/coordination-canonical-source';
+import { appendAttemptReceipt } from '../../effects/state/attempt-ledger-store';
 import { legacyCutoverRefusal } from '../../effects/state/coordination-cutover';
 import {
   createLeaseDirectory,
@@ -72,6 +74,11 @@ export interface CoordinationPort {
   readonly removeLease: (taskId: string, claimId: string) => void;
   readonly rollbackOwnLease: (taskId: string, claimId: string) => void;
   readonly findLeaseByClaimId: (claimId: string) => LeaseClaimLookup;
+  /**
+   * Append one `resumed` attempt receipt to the execution worktree's own
+   * ignored runtime ledger. Throws on failure; `bind` fails closed on it.
+   */
+  readonly appendResumedReceipt: (worktree: string, unitRef: string) => void;
 }
 
 export interface SprintCommandDependencies {
@@ -338,6 +345,25 @@ export interface BindCommandOptions {
  * `reserving -> bound`. Claiming precedes worktree creation, so the first
  * record cannot name an execution worktree that does not exist yet; this verb
  * fills it once `contract-worktree start` has succeeded.
+ *
+ * The `resumed` receipt is appended BEFORE the bound record is written, and
+ * the order is not incidental. `evaluateAttemptStall` walks a unit's receipts
+ * backwards and stops at anything that is not a no-progress `completed`, so a
+ * `resumed` receipt is what stops a new generation from inheriting the
+ * previous claim's stall count -- without it, the first board read after a
+ * steal-then-rebind reports a `stalled` that never happened to this owner.
+ *
+ * Appending after the owner write would leave the window this exists to close:
+ * a lease already `bound` while still carrying the old claim's stall count. So
+ * an append failure fails the bind closed -- the lease stays `reserving` and
+ * the caller's existing `rollback_claim` path applies. The opposite residue,
+ * an orphan `resumed` receipt from a bind that then failed, is harmless: a
+ * receipt is evidence, never authority, and the worst it can do is clear one
+ * stall count.
+ *
+ * It is not conditioned on `generation`: a first bind's ledger has no receipts
+ * for the unit to clear, so the receipt is a no-op there, and branching on
+ * generation would add a second rule for the same invariant.
  */
 export function bindSprintCommand(
   options: BindCommandOptions,
@@ -363,6 +389,7 @@ export function bindSprintCommand(
         unitRef,
       });
       if (!transition.ok) return refuse(transition.error);
+      deps.coordination.appendResumedReceipt(worktree, unitRef);
       deps.coordination.writeLeaseOwner(taskId, transition.record);
       return ok(transition.record);
     });
@@ -672,6 +699,20 @@ export function processSprintDependencies(cwd: string): SprintCommandDependencie
       removeLease: (taskId, claimId) => removeLease(cwd, taskId, claimId),
       rollbackOwnLease: (taskId, claimId) => removeOwnLeaseAfterFailedClaim(cwd, taskId, claimId),
       findLeaseByClaimId: (claimId) => findLeaseByClaimId(cwd, claimId),
+      appendResumedReceipt: (worktree, unitRef) => {
+        // The ledger is the execution worktree's own ignored runtime evidence,
+        // which is the only ledger `evaluateAttemptStall` is ever pointed at
+        // for this lease. The receipt reuses `buildAttemptReceipt` rather than
+        // hand-building a line, so there stays exactly one definition of a
+        // well-formed receipt.
+        const built = buildAttemptReceipt({
+          unitRef,
+          outcome: 'resumed',
+          recordedAt: new Date().toISOString(),
+        });
+        if (!built.ok) throw new Error(built.error);
+        appendAttemptReceipt(worktree, built.receipt);
+      },
     },
   };
 }

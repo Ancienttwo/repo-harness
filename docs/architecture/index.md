@@ -48,6 +48,16 @@ Authoritative surfaces:
   agree on profile, operation, decision, reason, and readiness for the same
   fixtures; the parity gate is `tests/state/adapter-parity.test.ts`, with no
   separate gate machinery.
+- Shared coordination plane: the cross-worktree ownership and visibility
+  contract — lease identity and the four-state machine
+  (`src/core/state/coordination-identity.ts`,
+  `src/effects/state/coordination-lease-store.ts`,
+  `src/cli/commands/sprint.ts`) plus the read-only kanban projection
+  (`src/core/state/project-board.ts`,
+  `src/effects/state/collect-board-inputs.ts`,
+  `src/effects/state/resolve-board.ts`,
+  `src/effects/git/worktree-topology.ts`, `repo-harness state board --json`),
+  and the [Shared Coordination Plane](shared-coordination-plane.md).
 - Shared execution effects: `src/effects/process-runner.ts`,
   `src/effects/process-supervisor.ts`, `src/effects/process-group-launcher.ts`,
   `src/effects/locking/`, and `src/effects/git/` own bounded process lifecycle

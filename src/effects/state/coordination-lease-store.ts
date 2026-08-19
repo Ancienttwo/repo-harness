@@ -75,6 +75,18 @@ export interface LeaseRead {
   readonly record: LeaseOwnerRecordV1 | null;
   /** Non-null only when `classification` is `unknown`. */
   readonly unknown_reason: LeaseUnknownReason | null;
+  /**
+   * The owner record's bytes exactly as they were read, or null when there
+   * were none to read (no lease directory, no record file, an unreadable
+   * record, or a record that is not a regular file).
+   *
+   * Read-only and additive: nothing in the classification above consults it.
+   * It exists because the board's coordination digest must hash bytes rather
+   * than the parsed record -- two records that parse identically but were
+   * written by different owners at different moments are exactly the torn read
+   * the digest has to make visible, and parsing erases that difference.
+   */
+  readonly raw: string | null;
 }
 
 function assertTaskId(taskId: string): void {
@@ -185,8 +197,12 @@ export function writeLeaseOwnerDurably(
   fsyncDirectory(directory);
 }
 
-function classifyUnknown(taskId: string, reason: LeaseUnknownReason): LeaseRead {
-  return { task_id: taskId, classification: 'unknown', record: null, unknown_reason: reason };
+function classifyUnknown(
+  taskId: string,
+  reason: LeaseUnknownReason,
+  raw: string | null = null,
+): LeaseRead {
+  return { task_id: taskId, classification: 'unknown', record: null, unknown_reason: reason, raw };
 }
 
 /**
@@ -201,7 +217,13 @@ export function readLease(cwd: string, taskId: string): LeaseRead {
     directoryStat = lstatSync(directory);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { task_id: taskId, classification: 'available', record: null, unknown_reason: null };
+      return {
+        task_id: taskId,
+        classification: 'available',
+        record: null,
+        unknown_reason: null,
+        raw: null,
+      };
     }
     throw error;
   }
@@ -228,13 +250,15 @@ export function readLease(cwd: string, taskId: string): LeaseRead {
   } catch {
     return classifyUnknown(taskId, 'owner_record_unreadable');
   }
-  if (raw.trim().length === 0) return classifyUnknown(taskId, 'owner_record_empty');
+  if (raw.trim().length === 0) return classifyUnknown(taskId, 'owner_record_empty', raw);
 
   const record = parseLeaseOwnerRecord(raw);
-  if (record === null) return classifyUnknown(taskId, 'owner_record_malformed');
-  if (record.task_id !== taskId) return classifyUnknown(taskId, 'owner_record_task_id_mismatch');
+  if (record === null) return classifyUnknown(taskId, 'owner_record_malformed', raw);
+  if (record.task_id !== taskId) {
+    return classifyUnknown(taskId, 'owner_record_task_id_mismatch', raw);
+  }
 
-  return { task_id: taskId, classification: record.state, record, unknown_reason: null };
+  return { task_id: taskId, classification: record.state, record, unknown_reason: null, raw };
 }
 
 export interface LeaseByClaimId {

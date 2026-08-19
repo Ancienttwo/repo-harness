@@ -488,10 +488,28 @@ describe('claim verbs', () => {
     run(repo, ['commit', '--quiet', '-m', 'sprint']);
   }
 
-  function deps(repo: string, claimIds: readonly string[] = ['claim-1']): SprintCommandDependencies {
+  /**
+   * Every `resumed` receipt `bind` appends through the fixture port, in call
+   * order. The fixture binds to `/tmp/wt`, which is not a repository, so the
+   * live append is replaced by a recorder here; the append's own IO is proved
+   * over real linked worktrees in `tests/sprint-claim-concurrency.test.ts`.
+   */
+  const RESUMED_RECEIPTS: Array<{ worktree: string; unitRef: string }> = [];
+
+  function deps(
+    repo: string,
+    claimIds: readonly string[] = ['claim-1'],
+    appendResumedReceipt: (worktree: string, unitRef: string) => void = (worktree, unitRef) => {
+      RESUMED_RECEIPTS.push({ worktree, unitRef });
+    },
+  ): SprintCommandDependencies {
     const queue = [...claimIds];
     const live = processSprintDependencies(repo);
-    return { ...live, newClaimId: () => queue.shift() ?? randomUUID() };
+    return {
+      ...live,
+      newClaimId: () => queue.shift() ?? randomUUID(),
+      coordination: { ...live.coordination, appendResumedReceipt },
+    };
   }
 
   function canonicalTask(repo: string, taskCell: string) {
@@ -634,6 +652,65 @@ describe('claim verbs', () => {
     );
     expect(rebind.exitCode).toBe(1);
     expect(rebind.stderr).toContain('cannot bind a lease in state bound');
+  });
+
+  test('bind appends a resumed receipt for the execution worktree and unit', () => {
+    const repo = repoWithSprint();
+    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo)).exitCode).toBe(0);
+    RESUMED_RECEIPTS.length = 0;
+
+    expect(bindSprintCommand(
+      { claimId: 'claim-1', worktree: '/tmp/wt', branch: 'codex/example', unitRef: 'plans/plan-x.md' },
+      deps(repo),
+    ).exitCode).toBe(0);
+
+    // The receipt names the worktree whose ledger the board will read for this
+    // lease, and the unit `evaluateAttemptStall` filters that ledger by.
+    expect(RESUMED_RECEIPTS).toEqual([{ worktree: '/tmp/wt', unitRef: 'plans/plan-x.md' }]);
+  });
+
+  test('a resumed receipt that cannot be appended fails the bind closed', () => {
+    const repo = repoWithSprint();
+    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo)).exitCode).toBe(0);
+    const taskId = canonicalTask(repo, 'wire the claim verbs').task_id;
+
+    const outcome = bindSprintCommand(
+      { claimId: 'claim-1', worktree: '/tmp/wt', branch: 'codex/example', unitRef: 'plans/plan-x.md' },
+      deps(repo, ['claim-1'], () => {
+        throw new Error('ledger is not writable');
+      }),
+    );
+
+    // Receipt before owner write: the append failed, so nothing was written.
+    // A lease left `bound` while still carrying the previous claim's stall
+    // count is exactly the shape this ordering exists to prevent.
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.stderr).toContain('ledger is not writable');
+    const lease = readLease(repo, taskId);
+    expect(lease.classification).toBe('reserving');
+    expect(lease.record?.execution_worktree).toBeNull();
+  });
+
+  test('readLease publishes the owner record bytes verbatim, or null', () => {
+    const repo = repoWithSprint();
+    const taskId = canonicalTask(repo, 'wire the claim verbs').task_id;
+
+    // No lease directory at all: nothing was read, so there are no bytes.
+    expect(readLease(repo, taskId).raw).toBeNull();
+
+    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo)).exitCode).toBe(0);
+    const live = readLease(repo, taskId);
+    expect(live.raw).toBe(readFileSync(leaseOwnerPath(repo, taskId), 'utf-8'));
+    // Bytes, not a re-serialization of the parse: the digest that consumes
+    // this must be able to see two records that parse the same but differ.
+    expect(live.raw).toBe(serializeLeaseOwnerRecord(live.record!));
+
+    // A malformed record is still bytes, and classification is unchanged.
+    writeFileSync(leaseOwnerPath(repo, taskId), '{ not json');
+    const malformed = readLease(repo, taskId);
+    expect(malformed.classification).toBe('unknown');
+    expect(malformed.unknown_reason).toBe('owner_record_malformed');
+    expect(malformed.raw).toBe('{ not json');
   });
 
   test('an unknown fencing token cannot bind, release, or steal', () => {

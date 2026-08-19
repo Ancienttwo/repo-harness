@@ -155,6 +155,65 @@ function sprintJson<T>(run: Run): T {
   return JSON.parse(run.stdout) as T;
 }
 
+function state(cwd: string, args: readonly string[]): Run {
+  const result = spawnSync(process.execPath, [CLI, 'state', ...args], {
+    cwd,
+    encoding: 'utf-8',
+    env: sandboxEnv(),
+  });
+  return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+}
+
+interface BoardCard {
+  readonly task_id: string;
+  readonly task: string;
+  readonly column: string;
+  readonly task_state: string;
+  readonly lease_state: string;
+  readonly progress_state: string;
+  readonly claim: {
+    readonly claim_id: string;
+    readonly generation: number;
+    readonly worktree: string | null;
+    readonly branch: string | null;
+    readonly unit_ref: string | null;
+    readonly stolen_from: { readonly claim_id: string; readonly reason: string } | null;
+  } | null;
+  readonly diagnostics: {
+    readonly worktree_missing: boolean;
+    readonly orphan_reclaimable: boolean;
+    readonly lease_cleanup_required: boolean;
+    readonly progress_unreadable_reason: string | null;
+  };
+  readonly actions: {
+    readonly release: string | null;
+    readonly steal: string | null;
+    readonly reconcile: string | null;
+  };
+}
+
+interface BoardDocument {
+  readonly protocol: number;
+  readonly kind: string;
+  readonly canonical_target: { readonly ref: string; readonly oid: string };
+  readonly sprint_path: string;
+  readonly revisions: Readonly<Record<string, string>>;
+  readonly snapshot_consistency: string;
+  readonly cards: readonly BoardCard[];
+}
+
+function board(cwd: string, args: readonly string[] = []): BoardDocument {
+  const run = state(cwd, ['board', '--json', ...args]);
+  if (run.status !== 0) throw new Error(`state board failed (${run.status}): ${run.stderr}`);
+  return JSON.parse(run.stdout) as BoardDocument;
+}
+
+function cardOf(document: BoardDocument, task: string): BoardCard {
+  const found = document.cards.find((card) => card.task === task);
+  if (!found) throw new Error(`no board card for task ${task}`);
+  return found;
+}
+
 function sprintFile(rows: readonly string[]): string {
   return [
     '# Sprint: Race',
@@ -252,6 +311,7 @@ interface OwnerRecord {
   readonly state: string;
   readonly execution_worktree: string | null;
   readonly branch: string | null;
+  readonly unit_ref: string | null;
   readonly finish_transaction_key: string | null;
   readonly stolen_from: { readonly claim_id: string; readonly reason: string } | null;
 }
@@ -1037,6 +1097,218 @@ describe('lock wedges and their blast radius', () => {
     expect(complete.status).toBe(0);
     expect(existsSync(backlogLock)).toBe(false);
   }, 60_000);
+});
+
+/**
+ * The board over the same real clone the ownership verbs run against. Nothing
+ * here is mocked: real linked worktrees, real leases on the shared plane, real
+ * `git worktree list`, and the real attempt ledgers in the owner worktrees.
+ *
+ * Three falsification rows are owned by this block (plan verdict H):
+ * lease-changes-during-read, unreadable-ledger-never-transfers-ownership, and
+ * new-generation-resets-stall. The first two are asserted structurally through
+ * the collector seam in `tests/board-snapshot-consistency.test.ts`, because a
+ * real filesystem cannot schedule a tear deterministically; what this block
+ * adds is that the same shapes are actually reachable over real state.
+ */
+describe('board projection over real linked worktrees', () => {
+  /** Claim one row from `cwd` and bind it to `worktree`. */
+  function claimRow(
+    cwd: string,
+    taskRef: string,
+    worktree: string,
+    branch: string,
+    sessionId: string,
+  ): OwnerRecord {
+    const identity = identify(cwd, taskRef);
+    const claimed = sprintJson<OwnerRecord>(sprint(cwd, claimArgs(identity, sessionId)));
+    return sprintJson<OwnerRecord>(sprint(cwd, [
+      'bind',
+      '--claim-id', claimed.claim_id,
+      '--worktree', worktree,
+      '--branch', branch,
+      '--unit-ref', `plans/plan-${branch.replace(/[^a-z]/g, '-')}.md`,
+    ]));
+  }
+
+  test('two bound worktrees are two doing cards with distinct ownership', () => {
+    const fixture = createFixture('board-two-owners');
+    const first = claimRow(fixture.worktreeA, ROW_ONE, fixture.worktreeA, 'codex/row-a', 'session-a');
+    const second = claimRow(fixture.worktreeB, ROW_TWO, fixture.worktreeB, 'codex/row-b', 'session-b');
+
+    // No `--sprint`: the active sprint marker is the only fallback, and it is
+    // the same answer every other verb resolves "which sprint" to.
+    const document = board(fixture.primary);
+    expect(document.kind).toBe('repo-harness-board');
+    expect(document.sprint_path).toBe(SPRINT_PATH);
+    expect(document.canonical_target.ref).toBe('main');
+    expect(document.cards).toHaveLength(2);
+
+    const cardOne = cardOf(document, ROW_ONE);
+    const cardTwo = cardOf(document, ROW_TWO);
+    for (const card of [cardOne, cardTwo]) {
+      expect(card.column).toBe('doing');
+      expect(card.task_state).toBe('pending');
+      expect(card.lease_state).toBe('bound');
+      expect(card.diagnostics.worktree_missing).toBe(false);
+    }
+    expect(cardOne.claim?.claim_id).toBe(first.claim_id);
+    expect(cardTwo.claim?.claim_id).toBe(second.claim_id);
+    expect(cardOne.claim?.claim_id).not.toBe(cardTwo.claim?.claim_id);
+    expect(cardOne.claim?.generation).toBe(1);
+    expect(cardTwo.claim?.generation).toBe(1);
+    expect(cardOne.claim?.worktree).toBe(fixture.worktreeA);
+    expect(cardTwo.claim?.worktree).toBe(fixture.worktreeB);
+    // Every linked worktree addresses one plane, so the board is the same
+    // document wherever it is read from.
+    expect(board(fixture.worktreeB, ['--sprint', SPRINT_PATH])).toEqual(document);
+  }, 180_000);
+
+  test('a steal shows up as a second generation with provenance', () => {
+    const fixture = createFixture('board-steal');
+    const owner = claimRow(fixture.worktreeA, ROW_ONE, fixture.worktreeA, 'codex/row-a', 'session-a');
+    const thief = sprintJson<OwnerRecord>(sprint(fixture.worktreeB, [
+      'steal',
+      '--expected-claim-id', owner.claim_id,
+      '--reason', 'no progress for 2h',
+      '--session-id', 'session-b',
+    ]));
+
+    const card = cardOf(board(fixture.primary, ['--sprint', SPRINT_PATH]), ROW_ONE);
+    expect(card.claim?.claim_id).toBe(thief.claim_id);
+    expect(card.claim?.generation).toBe(2);
+    expect(card.claim?.stolen_from).toEqual({ claim_id: owner.claim_id, reason: 'no progress for 2h' });
+    // A steal mints a fresh reservation: the new owner has no worktree yet.
+    expect(card.lease_state).toBe('reserving');
+    expect(card.claim?.worktree).toBeNull();
+    expect(card.column).toBe('doing');
+  }, 180_000);
+
+  test('a removed worktree is a blocked, reclaimable orphan', () => {
+    const fixture = createFixture('board-orphan');
+    const owner = claimRow(fixture.worktreeA, ROW_ONE, fixture.worktreeA, 'codex/row-a', 'session-a');
+    git(fixture.primary, ['worktree', 'remove', '--force', fixture.worktreeA]);
+
+    const card = cardOf(board(fixture.primary, ['--sprint', SPRINT_PATH]), ROW_ONE);
+    expect(card.diagnostics.worktree_missing).toBe(true);
+    expect(card.diagnostics.orphan_reclaimable).toBe(true);
+    expect(card.diagnostics.progress_unreadable_reason).toBe('owner_worktree_missing');
+    expect(card.progress_state).toBe('unreadable');
+    expect(card.column).toBe('blocked');
+    // Reported, never reclaimed: the lease and its owner are untouched.
+    expect(card.claim?.claim_id).toBe(owner.claim_id);
+    expect(card.actions.release).toBe(`repo-harness sprint release --claim-id ${owner.claim_id}`);
+    expect(card.actions.reconcile).toContain('repo-harness sprint reconcile --task-id');
+  }, 180_000);
+
+  test('a completed row is done with cleanup, not doing', () => {
+    const fixture = createFixture('board-done-residue');
+    const owner = claimRow(fixture.worktreeA, ROW_ONE, fixture.worktreeA, 'codex/row-a', 'session-a');
+    // The publication back-fills the canonical row; the lease outlives it when
+    // the finish crashes between the two.
+    writeFileSync(join(fixture.primary, SPRINT_PATH), sprintFile([
+      `| 1 | [x] | ${ROW_ONE} | contract | tests pass | (done) |`,
+      `| 2 | [ ] | ${ROW_TWO} | inline | doc updated | (pending) |`,
+    ]));
+    git(fixture.primary, ['commit', '--quiet', '-am', 'complete row one']);
+
+    const card = cardOf(board(fixture.primary, ['--sprint', SPRINT_PATH]), ROW_ONE);
+    expect(card.task_state).toBe('done');
+    expect(card.column).toBe('done');
+    expect(card.diagnostics.lease_cleanup_required).toBe(true);
+    expect(card.claim?.claim_id).toBe(owner.claim_id);
+    expect(card.actions.reconcile).toContain('--target-ref main');
+  }, 180_000);
+
+  test('a new generation resets the previous claim stall count', () => {
+    const fixture = createFixture('board-stall-reset');
+    const unitRef = 'plans/plan-codex-row-a.md';
+    const owner = claimRow(fixture.worktreeA, ROW_ONE, fixture.worktreeA, 'codex/row-a', 'session-a');
+    expect(owner.unit_ref).toBe(unitRef);
+
+    // The stall proof, recorded exactly as the loop host records it: two
+    // consecutive turns that moved the owner worktree's progress token nowhere.
+    const envelope = JSON.parse(
+      state(fixture.worktreeA, ['next', '--json']).stdout,
+    ) as { progress_token: string };
+    expect(envelope.progress_token).toMatch(/^sha256:/);
+    for (let turn = 0; turn < 2; turn += 1) {
+      const recorded = state(fixture.worktreeA, [
+        'attempt', '--json',
+        '--unit-ref', unitRef,
+        '--outcome', 'completed',
+        '--before-progress-token', envelope.progress_token,
+        '--after-progress-token', envelope.progress_token,
+      ]);
+      expect(recorded.status).toBe(0);
+    }
+    expect(cardOf(board(fixture.primary, ['--sprint', SPRINT_PATH]), ROW_ONE).progress_state)
+      .toBe('stalled');
+
+    const thief = sprintJson<OwnerRecord>(sprint(fixture.worktreeB, [
+      'steal',
+      '--expected-claim-id', owner.claim_id,
+      '--reason', 'stalled',
+      '--session-id', 'session-b',
+    ]));
+    const rebound = sprintJson<OwnerRecord>(sprint(fixture.worktreeB, [
+      'bind',
+      '--claim-id', thief.claim_id,
+      '--worktree', fixture.worktreeA,
+      '--branch', 'codex/row-a',
+      '--unit-ref', unitRef,
+    ]));
+    expect(rebound.generation).toBe(2);
+
+    // Same worktree, same unit, same ledger, same trailing no-progress
+    // receipts -- and the new owner is not stalled, because `bind` appended a
+    // `resumed` receipt that stops the backward walk before it reaches them.
+    const card = cardOf(board(fixture.primary, ['--sprint', SPRINT_PATH]), ROW_ONE);
+    expect(card.claim?.generation).toBe(2);
+    expect(card.progress_state).toBe('active');
+    expect(card.column).toBe('doing');
+
+    const ledger = readFileSync(
+      join(fixture.worktreeA, '.ai/harness/runs/continuation/attempts.jsonl'),
+      'utf-8',
+    ).trim().split('\n').map((line) => JSON.parse(line) as { outcome: string });
+    // Appended, never rewritten: the ledger stays append-only evidence.
+    expect(ledger.map((receipt) => receipt.outcome))
+      .toEqual(['resumed', 'completed', 'completed', 'resumed']);
+  }, 240_000);
+
+  /**
+   * The premise this whole work package rests on: lock-free A/B input-revision
+   * comparison converges to `stable` under real load. Nothing before this
+   * measured it, because no parallel load existed to measure.
+   *
+   * The assertion is the mechanism -- every run must produce a well-formed
+   * document with a consistency value from the vocabulary. The ratio is
+   * logged, not asserted at a threshold, because a flaky-by-construction
+   * threshold in CI would be a worse signal than the number itself. Below ~80%
+   * the plan's pre-authorized fallback applies (drop `evidence` from the
+   * composite digest, mark the progress overlay possibly-stale).
+   */
+  test('twenty consecutive board reads under active worktrees', () => {
+    const fixture = createFixture('board-stability-probe');
+    claimRow(fixture.worktreeA, ROW_ONE, fixture.worktreeA, 'codex/row-a', 'session-a');
+    claimRow(fixture.worktreeB, ROW_TWO, fixture.worktreeB, 'codex/row-b', 'session-b');
+
+    const RUNS = 20;
+    let stable = 0;
+    for (let run = 0; run < RUNS; run += 1) {
+      const document = board(fixture.primary, ['--sprint', SPRINT_PATH]);
+      expect(['stable', 'changed_during_read']).toContain(document.snapshot_consistency);
+      expect(document.cards).toHaveLength(2);
+      expect(document.revisions.board).toMatch(/^sha256:[0-9a-f]{64}$/);
+      if (document.snapshot_consistency === 'stable') stable += 1;
+    }
+    console.log(
+      `[board stability probe] 3 worktrees, 2 active leases, ${RUNS} runs: `
+      + `stable ${stable}/${RUNS} (${Math.round((stable / RUNS) * 100)}%)`,
+    );
+    expect(stable).toBeGreaterThanOrEqual(0);
+  }, 600_000);
 });
 
 describe('helper mirrors', () => {

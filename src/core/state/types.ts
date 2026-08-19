@@ -4,6 +4,11 @@ import type {
   WorkflowProfileSignals,
 } from '../workflow/profile';
 import type { EvaluateReadinessResult } from '../workflow/operation-readiness';
+import type {
+  LeaseState,
+  LeaseStolenFrom,
+  PersistedLeaseState,
+} from './coordination-identity';
 
 export type SnapshotPlanState =
   | 'none'
@@ -191,4 +196,135 @@ export interface EffectiveStateRiskInput {
   readonly capabilityCount?: number;
   readonly operationKind?: WorkflowOperationKind;
   readonly explicitOverride?: WorkflowProfile;
+}
+
+/* -------------------------------------------------------------------------
+ * Deterministic kanban board (WP2)
+ *
+ * The read-only projection of one canonical sprint onto four columns. It is a
+ * diagnostic read model and never an authority: `claim`, `steal`, `release`,
+ * and `begin-completion` re-read the lease under their own task lock, which is
+ * exactly why this document may report `changed_during_read` instead of
+ * blocking on a lock it deliberately never takes.
+ *
+ * Three dimensions stay separated rather than collapsing into one `status`,
+ * because they answer three different questions with three different
+ * authorities: the canonical row (`task_state`), the shared lease plane
+ * (`lease_state`), and the owner worktree's attempt ledger (`progress_state`).
+ * Only the first two can move work; the third is an evidence overlay.
+ * ---------------------------------------------------------------------- */
+
+/** Column precedence is fixed at `done > blocked > doing > todo`. */
+export type BoardColumn = 'todo' | 'doing' | 'blocked' | 'done';
+
+/**
+ * The canonical-row dimension. `missing` names a lease whose row no longer
+ * exists on the canonical ref; `drifted` names a row whose definition no longer
+ * matches what its owner claimed (or whose status cell is outside the `[ ]` /
+ * `[x]` grammar `sprint-backlog.sh` writes).
+ */
+export type TaskState = 'pending' | 'done' | 'missing' | 'drifted';
+
+/**
+ * The lease dimension: the store's own vocabulary, passed through unchanged.
+ * `orphaned` is deliberately absent -- it is not a persisted state but a
+ * derivation over topology, published as `diagnostics.orphan_reclaimable`.
+ */
+export type BoardLeaseState = LeaseState | 'unknown';
+
+/** The evidence dimension. `stalled` never transfers ownership (spec 10.5). */
+export type BoardProgressState = 'not_observed' | 'active' | 'stalled' | 'unreadable';
+
+/** The owning lease record, projected. Null when no lease record exists. */
+export interface BoardClaimV1 {
+  readonly claim_id: string;
+  readonly generation: number;
+  readonly state: PersistedLeaseState;
+  readonly worktree: string | null;
+  readonly branch: string | null;
+  readonly unit_ref: string | null;
+  readonly session_id: string;
+  readonly source_worktree: string;
+  readonly target_ref: string;
+  readonly finish_transaction_key: string | null;
+  readonly stolen_from: LeaseStolenFrom | null;
+}
+
+/**
+ * Per-card diagnostics. The two conflict fields spec 12 describes
+ * (`actual_path_overlap` / `scope_overlap`) are absent rather than empty: the
+ * changed-set authority is a cwd-bound shell function, and re-deriving it here
+ * would be a shadow parser. Absent says "not computed"; `[]` would say "no
+ * overlap", which this projection cannot prove.
+ */
+export interface BoardDiagnosticsV1 {
+  readonly definition_drift: boolean;
+  readonly target_ref_mismatch: boolean;
+  readonly worktree_missing: boolean;
+  readonly orphan_reclaimable: boolean;
+  readonly lease_cleanup_required: boolean;
+  /** The store's `unknown_reason`, verbatim; null unless `lease_state` is `unknown`. */
+  readonly lease_unknown_reason: string | null;
+  readonly progress_unreadable_reason: string | null;
+}
+
+/** Existing command strings, never re-implemented logic. Null means not offered. */
+export interface BoardActionsV1 {
+  readonly release: string | null;
+  readonly steal: string | null;
+  readonly reconcile: string | null;
+}
+
+export interface BoardCardV1 {
+  readonly task_id: string;
+  readonly task_revision: string;
+  /** The backlog index cell verbatim; a string, exactly as the row grammar reads it. */
+  readonly row_index: string;
+  readonly task: string;
+  readonly mode: string;
+  readonly acceptance: string;
+  readonly plan: string;
+  readonly column: BoardColumn;
+  readonly task_state: TaskState;
+  readonly lease_state: BoardLeaseState;
+  readonly progress_state: BoardProgressState;
+  readonly claim: BoardClaimV1 | null;
+  readonly diagnostics: BoardDiagnosticsV1;
+  readonly actions: BoardActionsV1;
+}
+
+/**
+ * Four per-dimension input revisions plus their composite. Comparing only the
+ * sprint revision reports `stable` while lease owners flip underneath the read;
+ * the composite is what `snapshot_consistency` actually compares, and the four
+ * dimensions are published so a torn read can be localized.
+ */
+export interface BoardRevisionsV1 {
+  readonly task_authority: string;
+  readonly coordination: string;
+  readonly topology: string;
+  readonly evidence: string;
+  readonly board: string;
+}
+
+/**
+ * `changed_during_read` means the inputs moved across a full collect ->
+ * project -> collect round twice. The document stays usable for diagnosis;
+ * no ownership verb may trust it.
+ */
+export type BoardSnapshotConsistency = 'stable' | 'changed_during_read';
+
+export interface BoardCanonicalTargetV1 {
+  readonly ref: string;
+  readonly oid: string;
+}
+
+export interface BoardDocumentV1 {
+  readonly protocol: 1;
+  readonly kind: 'repo-harness-board';
+  readonly canonical_target: BoardCanonicalTargetV1;
+  readonly sprint_path: string;
+  readonly revisions: BoardRevisionsV1;
+  readonly snapshot_consistency: BoardSnapshotConsistency;
+  readonly cards: readonly BoardCardV1[];
 }
