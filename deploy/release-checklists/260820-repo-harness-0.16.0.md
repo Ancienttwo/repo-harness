@@ -119,7 +119,7 @@
   `required_decisions: (none)`, empty `upgrade_plan`. No readiness yellow flags
   to record.
 - Packed tarball: `repo-harness-0.16.0.tgz` contains 502 files, is 10,077,287
-  bytes packed and 15,809,024 bytes unpacked, shasum
+  bytes packed and 15,425,182 bytes unpacked, shasum
   `76e601adab53a2a93104b70bb4e8b45d81d26924`.
   `bash scripts/check-tarball-install-smoke.sh repo-harness-0.16.0.tgz`
   returned exit 0 with `[tarball-smoke] OK: repo-harness-0.16.0.tgz installs
