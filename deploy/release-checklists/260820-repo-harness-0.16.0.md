@@ -4,8 +4,11 @@
 - Package: `repo-harness@0.16.0`
 - Base release: `v0.15.3`
 - Source range: `v0.15.3..37b7cada9f6d9b54d034b0391e0afb25432ab56b` (8 commits)
-- Release-prep commit: `(pending)` — assigned on `codex/release-0-16-0` when the
-  version anchors, changelog, filing, and workflow artifacts are committed
+- Release-prep commits on `codex/release-0-16-0`:
+  `e9c795bd` (version anchors + changelog) and
+  `f51bdc1c208b8b5a8805e7c5c166127e7d2019b6` (this filing + the plan, contract,
+  notes, and review artifacts). This line was added by the follow-up commit
+  below, since a filing cannot contain its own hash.
 - Final candidate commit: `(pending)` — assigned when the candidate merges to
   `main`, which is the orchestrator's follow-on phase
 - Release scope: publish the completion of the kanban coordination program that
