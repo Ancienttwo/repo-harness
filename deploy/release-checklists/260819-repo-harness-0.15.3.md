@@ -4,8 +4,10 @@
 - Package: `repo-harness@0.15.3`
 - Base release: `v0.15.2`
 - Source range: `v0.15.2..4ff0e64fca4d9f13bc68c2a07710dde8170335dc` (73 commits)
-- Release-prep commit: `(pending)`
-- Final candidate commit: `(pending)`
+- Release-prep commit: `b25e8f6a56dea773dc438164d30039f7c0ff0c3f` (version anchors,
+  changelog, filing, and workflow artifacts on `codex/release-0-15-3`)
+- Final candidate commit: `(pending)` — assigned when the candidate merges to
+  `main`, which is the orchestrator's follow-on phase
 - Release scope: publish the shared coordination plane WP1 lease store behind
   the `sprint claim|bind|release|steal|reconcile|identify|begin-completion`
   verbs with a quiescent fail-closed cutover, the coordination-lease-hardening
