@@ -224,7 +224,7 @@ boundary explicit:
 | Capability | Owner | Required for |
 |---|---|---|
 | `bun` | repo-harness | repo-harness-owned global installs, local dependency install, tests, and runtime execution |
-| `bash` | repo-harness | helper scripts, migration, setup checks, and contract verification wrappers |
+| `bash` | repo-harness | helper scripts, migration, setup checks, and contract verification wrappers; Git-for-Windows Bash is the Windows platform contract |
 | `npm` | npm registry | registry readbacks, publish gates, and opt-in update checks; not repo-harness-owned global install repair |
 | `npx` / `skills_cli` | external Skills CLI | Waza and Mermaid skill bootstrap/update commands |
 | `rsync` | platform filesystem | Waza staging-to-Codex sync and installed-copy runtime mirroring |
@@ -235,6 +235,26 @@ use `bun add -g` or `bun install`. Waza/Mermaid remain explicit external Skills
 CLI dependencies until a separate plan replaces that integration. Missing
 optional capabilities should degrade the named feature, not blur command
 ownership.
+
+On Windows, `repo-harness install` and `repo-harness update` are the only
+protected-helper tool discovery ceremonies. They resolve `git.exe` and
+`taskkill.exe` from that invocation's `PATH`, require the latter to match
+`SystemRoot\\System32\\taskkill.exe`, require Git, Bash, and `usr/bin` to
+resolve under one non-symlink Git-for-Windows root, probe the executables, and
+atomically persist protocol 1 under the OS account's
+`~/.repo-harness/config.json#protectedHelperRuntime`. Existing sibling config
+fields are preserved.
+
+Normal `acceptance-receipt`, `merge-gate`, `contract-worktree`, and
+`ship-worktrees` dispatch reads that exact contract. The protected child gets
+the platform `PATH` delimiter, account home, native temp/SystemRoot values,
+pinned Bun/Git/Bash, the Git-for-Windows POSIX directories, and the exact
+`taskkill.exe` passed to both supervisor termination paths; caller binary overrides, `HOME`, shell
+startup hooks, and general `PATH` entries are discarded. A missing, malformed,
+relocated, symlinked, cross-root, or incomplete contract fails before helper
+execution and instructs the operator to rerun install/update. There is no
+runtime discovery fallback. Optional feature dependencies such as `jq` and
+`gh` remain separately operator-owned and are not installed by this contract.
 
 Installed-copy sync has two explicit modes. `AGENTIC_DEV_LINK_INSTALLED_COPIES=1`
 uses symlinks and does not require `rsync`; if symlink creation fails, the
@@ -584,9 +604,9 @@ The exact target base commit enables the local gate in
 `.ai/harness/policy.json#merge_gate`; the candidate cannot disable that base
 requirement. Runtime setup installs no merge-gate skill, agent, or provider
 runtime. Caller `HOME`, helper-source, and runner environment overrides are ignored for
-the protected ship/gate helpers. The official runner also pins Bash, Git, Bun,
-and `gh` to installed host executables and replaces caller `PATH` with the
-minimal host runtime path. The host state directories, AcceptanceReceipt, and
+the protected ship/gate helpers. The official runner pins Bash, Git, and Bun;
+where a fixed trusted host `gh` is present it pins that executable too, and it
+replaces caller `PATH` with the minimal host runtime path. The host state directories, AcceptanceReceipt, and
 seal must be owned by the OS account and not group/world writable. After
 `contract-worktree finish` creates the candidate commit, the installed helper
 binds the seal to repository root, target base ref/SHA, candidate head SHA,

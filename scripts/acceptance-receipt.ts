@@ -90,7 +90,23 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = SCRIPT_DIR.endsWith('/assets/templates/helpers')
   ? resolve(SCRIPT_DIR, '../../..')
   : resolve(SCRIPT_DIR, '..');
-const GIT_BIN = ['/usr/bin/git', '/bin/git'].find((path) => existsSync(path)) ?? 'git';
+function protectedGitBinary(): string {
+  const configured = process.env.REPO_HARNESS_GIT_BIN?.trim();
+  const candidates = [configured, '/usr/bin/git', '/bin/git'].filter((path): path is string => Boolean(path));
+  for (const candidate of candidates) {
+    if (!isAbsolute(candidate) || !existsSync(candidate)) continue;
+    const source = lstatSync(candidate);
+    if (source.isSymbolicLink() || !source.isFile()) continue;
+    const actual = realpathSync(candidate);
+    const target = lstatSync(actual);
+    if (target.isSymbolicLink() || !target.isFile()) continue;
+    if (process.platform !== 'win32' && (target.mode & 0o111) === 0) continue;
+    return actual;
+  }
+  throw new Error('trusted git executable is unavailable');
+}
+
+const GIT_BIN = protectedGitBinary();
 
 function fail(message: string, code = 1): never {
   const error = new Error(message) as Error & { exitCode?: number };

@@ -8,7 +8,7 @@
 
 import { Command } from 'commander';
 import { readFileSync, realpathSync } from 'fs';
-import { homedir } from 'os';
+import { homedir, userInfo } from 'os';
 import { createInterface } from 'readline/promises';
 import { askConfirm } from './tty-prompt';
 import { runInstall, runUninstall, type InstallTargetSpec } from './commands/install';
@@ -33,6 +33,7 @@ import { buildSprintCommand } from './commands/sprint';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
 import { runGlobalRuntimeSetup, type GlobalRuntimeOptions, type GlobalRuntimeResult } from './commands/global-runtime';
+import { windowsProtectedHelperConfigPath } from './runtime/protected-helper-platform';
 import {
   applyInstallProfile,
   beginInstallHostTransaction,
@@ -178,7 +179,7 @@ function runTransactionalProfileProjection(
 ): { result: GlobalRuntimeResult; state: InstalledProfileState | null } {
   const transactionEnv = runtimeHostTransactionEnv(options.env);
   return withRuntimeHostTransactionLock(transactionEnv, () => {
-    const transaction = beginInstallHostTransaction(installProfileHostMutationPaths(transactionEnv), transactionEnv);
+    const transaction = beginInstallHostTransaction(runtimeHostMutationPaths(transactionEnv), transactionEnv);
     let migrationSource: LegacyInstalledProfileState | null;
     let result: GlobalRuntimeResult;
     try {
@@ -215,10 +216,18 @@ function runtimeHostTransactionEnv(env: NodeJS.ProcessEnv | undefined): NodeJS.P
   };
 }
 
+function runtimeHostMutationPaths(env: NodeJS.ProcessEnv): readonly string[] {
+  const paths = [...installProfileHostMutationPaths(env)];
+  if (process.platform === 'win32') paths.push(windowsProtectedHelperConfigPath());
+  return [...new Set(paths)];
+}
+
 function withRuntimeHostTransactionLock<T>(env: NodeJS.ProcessEnv | undefined, run: () => T): T {
   // Resolve the protected root with the same precedence as runtime mutations.
   // A partial injected env must not make the lock fall back to a different HOME.
-  const home = env?.HOME ?? process.env.HOME ?? homedir();
+  const home = process.platform === 'win32'
+    ? userInfo().homedir
+    : env?.HOME ?? process.env.HOME ?? homedir();
   return withExclusiveDirectoryLock(
     realpathSync(home),
     '.repo-harness/transactions/global-runtime.lock',
@@ -233,7 +242,7 @@ export function runTransactionalRuntimeRefresh(
 ): GlobalRuntimeResult {
   const transactionEnv = runtimeHostTransactionEnv(options.env);
   return withRuntimeHostTransactionLock(transactionEnv, () => {
-    const transaction = beginInstallHostTransaction(installProfileHostMutationPaths(transactionEnv), transactionEnv);
+    const transaction = beginInstallHostTransaction(runtimeHostMutationPaths(transactionEnv), transactionEnv);
     let result: GlobalRuntimeResult;
     try {
       result = setup(options);

@@ -23,6 +23,7 @@ interface SupervisorOptions {
   readonly stdio: 'pipe' | 'inherit' | 'ignore';
   readonly expensiveLockCwd: string | null;
   readonly gitBin: string | null;
+  readonly taskkillBin: string | null;
   readonly command: string;
   readonly args: readonly string[];
 }
@@ -54,7 +55,7 @@ function usage(): never {
   process.stderr.write(
     'Usage: process-supervisor.ts --metadata <path> --parent-pid <pid> --timeout-ms <ms> '
     + '--capture-bytes <bytes> --stdio pipe|inherit|ignore '
-    + '[--expensive-lock-cwd <path> --git-bin <path>] -- <command> [args...]\n',
+    + '[--expensive-lock-cwd <path> --git-bin <path>] [--taskkill-bin <path>] -- <command> [args...]\n',
   );
   process.exit(2);
 }
@@ -124,6 +125,7 @@ function parseArgs(argv: readonly string[]): SupervisorOptions {
     stdio,
     expensiveLockCwd,
     gitBin,
+    taskkillBin: optionalValue('--taskkill-bin'),
     command: argv[separator + 1],
     args: argv.slice(separator + 2),
   };
@@ -168,10 +170,10 @@ function signalExitCode(signal: NodeJS.Signals): number {
   }
 }
 
-function signalProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
+function signalProcessGroup(child: ChildProcess, signal: NodeJS.Signals, taskkillBin: string | null): void {
   if (!child.pid) return;
   if (process.platform === 'win32') {
-    const result = spawnSync('taskkill', ['/pid', String(child.pid), '/T', ...(signal === 'SIGKILL' ? ['/F'] : [])], {
+    const result = spawnSync(taskkillBin ?? 'taskkill', ['/pid', String(child.pid), '/T', ...(signal === 'SIGKILL' ? ['/F'] : [])], {
       stdio: 'ignore',
       windowsHide: true,
     });
@@ -323,11 +325,11 @@ async function superviseTarget(options: SupervisorOptions): Promise<number> {
       didTimeOut = outcome === 'timeout';
       didLoseParent = outcome === 'parent-lost';
       interruptedBy = outcome === 'timeout' || outcome === 'parent-lost' ? null : outcome;
-      signalProcessGroup(child, 'SIGTERM');
+      signalProcessGroup(child, 'SIGTERM', options.taskkillBin);
       // Always wait the complete grace period and address the original group
       // with SIGKILL. The leader may exit before a TERM-resistant descendant.
       await Bun.sleep(PROCESS_SUPERVISOR_TERMINATION_GRACE_MS);
-      signalProcessGroup(child, 'SIGKILL');
+      signalProcessGroup(child, 'SIGKILL', options.taskkillBin);
       await waitForProcessGroupQuiescence(child, () => false);
       cleanupComplete = true;
       // If an adversarial descendant escaped the original process group while
@@ -342,7 +344,7 @@ async function superviseTarget(options: SupervisorOptions): Promise<number> {
     // not release the expensive-run lock, or a live group could overlap a
     // new contender's work.
     try {
-      signalProcessGroup(child, 'SIGKILL');
+      signalProcessGroup(child, 'SIGKILL', options.taskkillBin);
     } catch {
       // Best effort only; confirmation below decides the lock's fate.
     }

@@ -75,7 +75,7 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: MCP reader and path security tests
+      - name: MCP path security and protected helper platform tests
         run: >-
           bun test --timeout 180000 --max-concurrency 1
           tests/cli/mcp-workspaces.test.ts
@@ -84,6 +84,7 @@ jobs:
           tests/cli/mcp-http.test.ts
           tests/cli/mcp-oauth.test.ts
           tests/cli/mcp-stdio.test.ts
+          tests/cli/windows-protected-helper-runtime-smoke.test.ts
 
   # Stable aggregate context for branch protection. Binding protection to the
   # individual jobs means the matrix OS list is part of the protection rule:

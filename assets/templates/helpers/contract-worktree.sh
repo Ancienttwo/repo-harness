@@ -7,9 +7,28 @@ GIT_BIN="${REPO_HARNESS_GIT_BIN:-/usr/bin/git}"
 BASH_BIN="${REPO_HARNESS_BASH_BIN:-/bin/bash}"
 BUN_BIN="${REPO_HARNESS_BUN_BIN:-}"
 WORKFLOW_STATE_LIB="${REPO_HARNESS_WORKFLOW_STATE_LIB:-.ai/hooks/lib/workflow-state.sh}"
-[[ "$GIT_BIN" == /* && -x "$GIT_BIN" ]] || { echo "contract-worktree: trusted git executable is unavailable" >&2; exit 1; }
-[[ "$BASH_BIN" == /* && -x "$BASH_BIN" ]] || { echo "contract-worktree: trusted bash executable is unavailable" >&2; exit 1; }
-if [[ -n "$BUN_BIN" ]] && [[ "$WORKFLOW_STATE_LIB" != /* || ! -f "$WORKFLOW_STATE_LIB" || -L "$WORKFLOW_STATE_LIB" ]]; then
+if [[ "${OS:-}" == "Windows_NT" ]]; then
+  GIT_BIN="${GIT_BIN//\\//}"
+  BASH_BIN="${BASH_BIN//\\//}"
+  BUN_BIN="${BUN_BIN//\\//}"
+  WORKFLOW_STATE_LIB="${WORKFLOW_STATE_LIB//\\//}"
+  REPO_HARNESS_TARGET_REPO_ROOT="${REPO_HARNESS_TARGET_REPO_ROOT:-}"
+  REPO_HARNESS_TARGET_REPO_ROOT="${REPO_HARNESS_TARGET_REPO_ROOT//\\//}"
+  REPO_HARNESS_HELPER_SOURCE_PATH="${REPO_HARNESS_HELPER_SOURCE_PATH:-}"
+  REPO_HARNESS_HELPER_SOURCE_PATH="${REPO_HARNESS_HELPER_SOURCE_PATH//\\//}"
+fi
+is_absolute_host_path() {
+  case "$1" in
+    /*) return 0 ;;
+    [A-Za-z]:/*|[A-Za-z]:\\*) [[ "${OS:-}" == "Windows_NT" ]] && return 0 ;;
+  esac
+  return 1
+}
+is_trusted_executable() { is_absolute_host_path "$1" && [[ -f "$1" && ! -L "$1" && -x "$1" ]]; }
+is_trusted_regular_file() { is_absolute_host_path "$1" && [[ -f "$1" && ! -L "$1" ]]; }
+is_trusted_executable "$GIT_BIN" || { echo "contract-worktree: trusted git executable is unavailable" >&2; exit 1; }
+is_trusted_executable "$BASH_BIN" || { echo "contract-worktree: trusted bash executable is unavailable" >&2; exit 1; }
+if [[ -n "$BUN_BIN" ]] && ! is_trusted_regular_file "$WORKFLOW_STATE_LIB"; then
   echo "contract-worktree: trusted workflow-state library is unavailable" >&2
   exit 1
 fi
@@ -167,9 +186,9 @@ acknowledge_architecture_projection_publication() {
   # This acknowledgement mutates ignored cursor state only, after the exact
   # accepted tree is already public. Prefer the just-published source CLI so a
   # self-hosting repo does not depend on an older globally installed command.
-  if [[ -n "$BUN_BIN" && "$BUN_BIN" == /* && -x "$BUN_BIN" && -f "$target_worktree/src/cli/index.ts" ]]; then
+  if [[ -n "$BUN_BIN" ]] && is_trusted_executable "$BUN_BIN" && [[ -f "$target_worktree/src/cli/index.ts" ]]; then
     projection_cli=("$BUN_BIN" "$target_worktree/src/cli/index.ts")
-  elif [[ -n "${REPO_HARNESS_CLI_BIN:-}" && "$REPO_HARNESS_CLI_BIN" == /* && -x "$REPO_HARNESS_CLI_BIN" ]]; then
+  elif [[ -n "${REPO_HARNESS_CLI_BIN:-}" ]] && is_trusted_executable "$REPO_HARNESS_CLI_BIN"; then
     projection_cli=("$REPO_HARNESS_CLI_BIN")
   elif command -v repo-harness >/dev/null 2>&1; then
     projection_cli=(repo-harness)
@@ -1452,7 +1471,7 @@ run_merge_gate() {
     echo "contract-worktree: merge-gate helper is missing: $helper_dir/merge-gate.ts" >&2
     exit 1
   }
-  [[ "$BUN_BIN" == /* && -x "$BUN_BIN" ]] || {
+  is_trusted_executable "$BUN_BIN" || {
     echo "contract-worktree: merge gate requires the trusted Bun runtime injected by repo-harness run" >&2
     exit 1
   }
@@ -1463,7 +1482,7 @@ run_merge_gate() {
 verify_merge_gate_seal() {
   local base_ref="$1"
   echo "[ContractWorktree] Revalidating local merge seal against $base_ref" >&2
-  [[ "$BUN_BIN" == /* && -x "$BUN_BIN" ]] || {
+  is_trusted_executable "$BUN_BIN" || {
     echo "contract-worktree: merge gate requires the trusted Bun runtime injected by repo-harness run" >&2
     exit 1
   }
@@ -1476,7 +1495,7 @@ verify_acceptance_receipt() {
     echo "contract-worktree: AcceptanceReceipt helper is missing: $helper_dir/acceptance-receipt.ts" >&2
     exit 1
   }
-  [[ "$BUN_BIN" == /* && -x "$BUN_BIN" ]] || {
+  is_trusted_executable "$BUN_BIN" || {
     echo "contract-worktree: AcceptanceReceipt requires the trusted Bun runtime injected by repo-harness run" >&2
     exit 1
   }
@@ -1525,7 +1544,7 @@ SPRINT_CLI_CMD=()
 resolve_sprint_cli() {
   [[ "$SPRINT_CLI_RESOLVED" -eq 0 ]] || return 0
   if [[ -n "${REPO_HARNESS_CLI_BIN:-}" ]]; then
-    if [[ "$REPO_HARNESS_CLI_BIN" != /* || ! -x "$REPO_HARNESS_CLI_BIN" ]]; then
+    if ! is_trusted_executable "$REPO_HARNESS_CLI_BIN"; then
       echo "contract-worktree: REPO_HARNESS_CLI_BIN is not an executable absolute path: $REPO_HARNESS_CLI_BIN" >&2
       return 1
     fi

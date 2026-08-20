@@ -34,10 +34,16 @@ type Candidate = {
 const LOCKED_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
 
 function fixedGitBinary(): string {
-  for (const candidate of ["/usr/bin/git", "/bin/git"]) {
+  const configured = process.env.REPO_HARNESS_GIT_BIN?.trim();
+  for (const candidate of [configured, "/usr/bin/git", "/bin/git"].filter((path): path is string => Boolean(path))) {
     if (!isAbsolute(candidate) || !existsSync(candidate)) continue;
-    const stat = lstatSync(candidate);
-    if (!stat.isSymbolicLink() && stat.isFile() && (stat.mode & 0o111) !== 0) return candidate;
+    const source = lstatSync(candidate);
+    if (source.isSymbolicLink() || !source.isFile()) continue;
+    const actual = realpathSync(candidate);
+    const target = lstatSync(actual);
+    if (target.isSymbolicLink() || !target.isFile()) continue;
+    if (process.platform !== "win32" && (target.mode & 0o111) === 0) continue;
+    return actual;
   }
   fail("trusted git executable is unavailable");
 }
@@ -50,8 +56,8 @@ function lockedGitEnv(): NodeJS.ProcessEnv {
     HOME: account.homedir,
     USER: account.username,
     LOGNAME: account.username,
-    PATH: LOCKED_PATH,
-    TMPDIR: "/tmp",
+    PATH: process.env.REPO_HARNESS_PROTECTED_PATH ?? LOCKED_PATH,
+    TMPDIR: process.env.REPO_HARNESS_PROTECTED_TMPDIR ?? "/tmp",
     REPO_HARNESS_GIT_BIN: GIT_BIN,
   };
 }
