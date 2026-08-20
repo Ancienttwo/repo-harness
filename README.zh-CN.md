@@ -457,8 +457,8 @@ policy。
 
 ## 当前 Release
 
-- npm package：`repo-harness@0.16.0`
-- Generated workflow stamp：`repo-harness@0.16.0+template@0.16.0`
+- npm package：`repo-harness@0.16.1`
+- Generated workflow stamp：`repo-harness@0.16.1+template@0.16.1`
 - GitHub repository：`Ancienttwo/repo-harness`
 - Release notes 和 history：[`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

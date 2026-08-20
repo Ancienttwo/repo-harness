@@ -1135,13 +1135,18 @@ exit 0
           HOME: home,
           BUN_INSTALL: join(home, '.bun'),
           PATH: `${fakeBin}:${join(process.env.HOME ?? '', '.bun', 'bin')}:/usr/bin:/bin`,
+          // Sabotaging PATH alone is not enough: resolveCompatibleNodeRuntime falls through to a
+          // tier-3 scan of trusted machine paths (/usr/local/bin, hostedtoolcache, nvm) that finds a
+          // real Node 24 on CI. Pin the tier-1 explicit authority at the incompatible fake so the
+          // closure check fails closed before PATH and candidate scanning are reached.
+          REPO_HARNESS_NODE_BIN: join(fakeBin, 'node'),
           AGENTIC_DEV_SOURCE_ROOT: ROOT,
           CODEX_SKILLS_ROOT: codexSkills,
         },
       });
 
       expect(result.status, `${result.stderr}\n${result.stdout}`).toBe(1);
-      expect(result.stderr).toContain('requires Node >=24 <26');
+      expect(result.stderr).toContain('must satisfy Node >=24 <26');
       expect(existsSync(codexSkills)).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });

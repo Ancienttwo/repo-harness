@@ -1,6 +1,6 @@
 {
-  "version": "0.16.0",
-  "templateVersion": "0.16.0",
+  "version": "0.16.1",
+  "templateVersion": "0.16.1",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "compatibility": {
@@ -255,6 +255,10 @@
     {
       "version": "0.16.0",
       "description": "Completes the kanban coordination program on top of the 0.15.3 lease plane: adds the deterministic board projection `state board --json` emitting the frozen BoardDocumentV1 with four precedence-ordered columns, three separated dimensions, per-dimension and composite input revisions, and a stable | changed_during_read snapshot-consistency verdict from a single-retry collector; adds a bind-time resumed receipt so a steal-then-rebind no longer inherits the previous claim's no-progress receipts; injects a byte-identical read-only BoardSliceV1 at Codex SubagentStart context and the Claude PreToolUse.subagent Task|Agent branch through one pure projector and one shared renderer; arms a PreToolUse.edit lease gate only behind the double predicate of a unique claim token matching the active-plan marker and a linked worktree, failing closed with an explicit reason token per step while leaving non-sprint execution untouched; and retires the merged worktree at the tail of contract-worktree finish --merge"
+    },
+    {
+      "version": "0.16.1",
+      "description": "Replaces the boolean `overwrite` flag on the seven MCP workflow-artifact write tools with an optional `expected_sha256` revision precondition (absent = create-only with WOULD_OVERWRITE, supplied = guarded overwrite with REVISION_CONFLICT and no current-hash echo), routes those writes through a guarded synchronous writer with lstat symlink and regular-file guards plus temp+fsync+rename+parent-fsync, returns sha256/previousSha256 on success, and rejects undeclared parameters server-side with UNKNOWN_PARAMETER while `overwrite` specifically returns RETIRED_PARAMETER naming `expected_sha256`"
     }
   ],
   "generatedProjectStamp": {

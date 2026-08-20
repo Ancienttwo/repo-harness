@@ -17,6 +17,76 @@ All notable changes to this skill are documented here.
   `SubagentStart.context` is the single injection owner, so the clause reaches
   each rendered task packet exactly once.
 
+## [0.16.1] - 2026-08-20
+
+Closes ESA-06, the last direct-`writeFileSync` write path on the MCP server.
+The seven workflow-artifact write tools stop being last-writer-wins: a caller
+that wants to replace an artifact must first read the revision it is replacing.
+
+### Removed
+
+- **`overwrite` on the MCP workflow-artifact write tools (breaking MCP surface
+  change).** The boolean `overwrite` flag is deleted from all seven tool
+  schemas and replaced by the optional `expected_sha256` revision
+  precondition. `overwrite` was a caller-supplied assertion about a file the
+  caller had never read, so two sessions targeting one repo through
+  `repo_path` could silently destroy each other's content; `expected_sha256`
+  is an assertion about content, which the server can check. There is no
+  compatibility mode, no dual authority, and no shim — a request carrying
+  `overwrite` is rejected, never reinterpreted:
+
+  | Retired parameter | Replacement |
+  |---|---|
+  | `write_prd` `overwrite` | `write_prd` `expected_sha256` |
+  | `write_prd_from_idea` `overwrite` | `write_prd_from_idea` `expected_sha256` |
+  | `write_sprint` `overwrite` | `write_sprint` `expected_sha256` |
+  | `write_checklist_sprint` `overwrite` | `write_checklist_sprint` `expected_sha256` |
+  | `write_plan` `overwrite` | `write_plan` `expected_sha256` |
+  | `prepare_codex_goal_from_sprint` `overwrite` | `prepare_codex_goal_from_sprint` `expected_sha256` |
+  | `write_codex_goal` `overwrite` | `write_codex_goal` `expected_sha256` |
+
+  Migration: omit the field to create a new artifact (an existing target now
+  returns `WOULD_OVERWRITE`); to replace an existing one, call
+  `read_workflow_file` and pass the `sha256` it returns as `expected_sha256`.
+  A stale hash returns `REVISION_CONFLICT` and the file is left byte-unchanged.
+  Conflict errors deliberately do not echo the current hash: echoing it would
+  let a caller lift the hash and rewrite blindly, which is the clobbering this
+  release removes.
+
+  Migration window: `overwrite` is rejected with `RETIRED_PARAMETER` naming
+  `expected_sha256` throughout `0.16.x`; the retired-parameter table is deleted
+  at `0.17.0`, after which the same request returns `UNKNOWN_PARAMETER`.
+  `append_handoff_note` is unchanged — it still appends without a precondition,
+  because append concurrency is a separate design.
+
+### Changed
+
+- Routes every workflow-artifact write through the new
+  `src/cli/mcp/guarded-write.ts` primitive. The old path was check-then-write
+  with a raw `writeFileSync`; the new one evaluates the revision precondition
+  and then commits durably (temp file in the target directory, `fsync`,
+  `rename`, parent-directory `fsync`). A failed write leaves the previous
+  revision intact and no `.tmp` residue, and the file's mode survives
+  replacement. `paths.ts` remains the sole containment and policy authority.
+- Adds `sha256` and `previousSha256` to every successful write payload
+  (`previousSha256` is `null` on create). Both are bare hex and
+  byte-comparable with `read_workflow_file`'s `sha256`, so a read result feeds
+  straight back into the next write without reshaping.
+- Rejects undeclared parameters on the seven write tools with
+  `UNKNOWN_PARAMETER` and details naming the unknown keys and the allowed set.
+  The MCP server dispatches through the low-level SDK path, which does not
+  enforce per-tool `inputSchema`, so a misspelled or invented key was
+  previously accepted and silently ignored.
+
+### Fixed
+
+- Workflow-artifact writes no longer follow a symlink at the target. A symlink
+  inside the repo (for example `plans/prds/x.prd.md` pointing at
+  `docs/spec.md`) passes the path policy, and the previous writer followed it
+  and overwrote the link target. The target is now `lstat`-checked and any
+  symlink is refused with `SYMLINK_ESCAPE`; a target that exists but is not a
+  regular file is refused with `NOT_A_REGULAR_FILE`.
+
 ## [0.16.0] - 2026-08-20
 
 Completes the kanban coordination program that `0.15.3` opened. `0.15.3` shipped

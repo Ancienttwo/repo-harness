@@ -62,7 +62,7 @@ interface McpPrepareGoalOptions {
   sprint: string;
   referenceRepo?: string;
   extraInstructions?: string;
-  overwrite?: boolean;
+  expectedSha256?: string;
 }
 
 function parsePort(value: string): number {
@@ -104,7 +104,9 @@ async function prepareCodexGoalFromSprint(rawOpts: McpPrepareGoalOptions): Promi
     goal_sprint_path: rawOpts.sprint,
     reference_repo: rawOpts.referenceRepo,
     extra_instructions: rawOpts.extraInstructions,
-    overwrite: rawOpts.overwrite === true,
+    // Absent means create-only; the key is sent only when the caller supplied
+    // one, so an omitted flag never reads as an empty revision precondition.
+    ...(rawOpts.expectedSha256 === undefined ? {} : { expected_sha256: rawOpts.expectedSha256 }),
   });
   const payload = JSON.parse(result.content[0]?.text ?? '{}');
   if (payload.error) {
@@ -301,7 +303,7 @@ export function buildMcpCommand(): Command {
     .requiredOption('--sprint <path>', 'Checklist Sprint path to execute')
     .option('--reference-repo <path>', 'Read-only reference repo path to include in the Goal')
     .option('--extra-instructions <text>', 'Additional bounded execution instruction for Codex')
-    .option('--overwrite', 'Replace an existing Codex goal handoff')
+    .option('--expected-sha256 <hex>', 'Current sha256 of .ai/harness/handoff/codex-goal.md; required to regenerate an existing goal, omit to create')
     .action((rawOpts: McpPrepareGoalOptions) => {
       void runMcpAction(async () => {
         const lines = await prepareCodexGoalFromSprint(rawOpts);

@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-21T03:06:54+0800 -->
+<!-- updated_at: 2026-08-21T00:51:50+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-21T03:06:54+0800
-> **Source Branch**: codex/windows-protected-helper-platform-contract
-> **Source Commit**: ed8146bc
+> **Updated At**: 2026-08-21T00:51:50+0800
+> **Source Branch**: codex/esa06-guarded-artifact-writer
+> **Source Commit**: 621074b0
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -31,10 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/ancienttwo/Projects/repo-harness-wt-bun-14-upgrade-take2: plans/plan-20260821-0303-bun-14-upgrade-take2.md
-- /Users/ancienttwo/Projects/repo-harness-wt-bun-14-upgrade-take2: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-bun-14-upgrade-take2
-- /Users/ancienttwo/Projects/repo-harness-wt-restamp-auto-publication: plans/plan-20260821-0222-restamp-auto-publication.md
-- /Users/ancienttwo/Projects/repo-harness-wt-restamp-auto-publication: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-restamp-auto-publication
+- /Users/ancienttwo/Projects/repo-harness-wt-windows-protected-helper-platform-contract: plans/plan-20260820-2347-windows-protected-helper-platform-contract.md
+- /Users/ancienttwo/Projects/repo-harness-wt-windows-protected-helper-platform-contract: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-windows-protected-helper-platform-contract
 ## Active Sprint
 
 - Sprint: (none)
@@ -50,7 +48,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=completed, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Run focused/full verification, external acceptance, and workflow closeout.
+- Exact Next Step: (none)
 
 ## Checks
 
@@ -61,16 +59,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260820-2347-windows-protected-helper-platform-contract.md
- D tasks/contracts/20260820-2347-windows-protected-helper-platform-contract.contract.md
- D tasks/notes/20260820-2347-windows-protected-helper-platform-contract.notes.md
- D tasks/reviews/20260820-2347-windows-protected-helper-platform-contract.review.md
+ D plans/plan-20260820-2307-esa06-guarded-artifact-writer.md
+ D tasks/contracts/20260820-2307-esa06-guarded-artifact-writer.contract.md
+ D tasks/notes/20260820-2307-esa06-guarded-artifact-writer.notes.md
+ D tasks/reviews/20260820-2307-esa06-guarded-artifact-writer.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260820-2347-windows-protected-helper-platform-contract.md
-?? tasks/archive/contract-20260821-0306-windows-protected-helper-platform-contract.md
-?? tasks/archive/notes-20260821-0306-windows-protected-helper-platform-contract.md
-?? tasks/archive/review-20260821-0306-windows-protected-helper-platform-contract.md
-?? tasks/archive/todo-20260821-0306-windows-protected-helper-platform-contract.md
+?? plans/archive/plan-20260820-2307-esa06-guarded-artifact-writer.md
+?? tasks/archive/contract-20260821-0051-esa06-guarded-artifact-writer.md
+?? tasks/archive/notes-20260821-0051-esa06-guarded-artifact-writer.md
+?? tasks/archive/review-20260821-0051-esa06-guarded-artifact-writer.md
+?? tasks/archive/todo-20260821-0051-esa06-guarded-artifact-writer.md
 ```
 
 ## Source Artifacts

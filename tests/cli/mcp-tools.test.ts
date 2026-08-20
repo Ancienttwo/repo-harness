@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { registerRepoHarnessRepo, repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
@@ -306,7 +306,7 @@ describe('mcp tools', () => {
     });
   });
 
-  test('writes planning artifacts and blocks overwrite by default', async () => {
+  test('writes planning artifacts and refuses to replace one without a revision precondition', async () => {
     await withRepo(async (repoRoot, ctx) => {
       const prd = await jsonTool(ctx, 'write_prd', {
         title: 'New Feature',
@@ -315,14 +315,31 @@ describe('mcp tools', () => {
       });
       expect(prd.status).toBe('written');
       expect(prd.path).toMatch(/^plans\/prds\/\d{8}-\d{4}-new-feature\.prd\.md$/);
+      expect(prd.sha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(prd.previousSha256).toBeNull();
       expect(existsSync(join(repoRoot, prd.path))).toBe(true);
 
+      const existingSlug = prd.path.replace(/^plans\/prds\//, '').replace(/\.prd\.md$/, '');
       const blocked = await jsonTool(ctx, 'write_prd', {
         title: 'New Feature',
-        slug: prd.path.replace(/^plans\/prds\//, '').replace(/\.prd\.md$/, ''),
-        body: '# New Feature\n\nBody.',
+        slug: existingSlug,
+        body: '# New Feature\n\nReplacement body.',
       });
       expect(blocked.error.code).toBe('WOULD_OVERWRITE');
+      // A conflict must not hand back the current hash; that would turn the
+      // guard into a blind write -> lift-hash -> rewrite loop.
+      expect(JSON.stringify(blocked)).not.toContain(prd.sha256);
+      expect(readFileSync(join(repoRoot, prd.path), 'utf-8')).toContain('\nBody.');
+
+      const stale = await jsonTool(ctx, 'write_prd', {
+        title: 'New Feature',
+        slug: existingSlug,
+        body: '# New Feature\n\nStale body.',
+        expected_sha256: 'a'.repeat(64),
+      });
+      expect(stale.error.code).toBe('REVISION_CONFLICT');
+      expect(JSON.stringify(stale)).not.toContain(prd.sha256);
+      expect(readFileSync(join(repoRoot, prd.path), 'utf-8')).toContain('\nBody.');
 
       const sprint = await jsonTool(ctx, 'write_sprint', {
         title: 'Sprint',
@@ -341,6 +358,152 @@ describe('mcp tools', () => {
       const handoff = await jsonTool(ctx, 'append_handoff_note', { actor: 'test', body: 'handoff note' });
       expect(handoff.path).toBe('.ai/harness/handoff/chatgpt-plan.md');
       expect(readFileSync(join(repoRoot, '.ai/harness/handoff/chatgpt-plan.md'), 'utf-8')).toContain('handoff note');
+    });
+  });
+
+  test('round-trips read_workflow_file sha256 back through expected_sha256', async () => {
+    await withRepo(async (repoRoot, ctx) => {
+      const created = await jsonTool(ctx, 'write_plan', {
+        title: 'Round Trip',
+        slug: 'round-trip',
+        body: '# Round Trip\n\nFirst revision.',
+      });
+      expect(created.status).toBe('written');
+
+      const read = await jsonTool(ctx, 'read_workflow_file', { path: created.path });
+      expect(read.sha256).toBe(created.sha256);
+
+      const replaced = await jsonTool(ctx, 'write_plan', {
+        title: 'Round Trip',
+        slug: 'round-trip',
+        body: '# Round Trip\n\nSecond revision.',
+        expected_sha256: read.sha256,
+      });
+      expect(replaced.status).toBe('written');
+      expect(replaced.previousSha256).toBe(read.sha256);
+      expect(replaced.sha256).not.toBe(read.sha256);
+      expect(readFileSync(join(repoRoot, created.path), 'utf-8')).toContain('Second revision.');
+
+      const reread = await jsonTool(ctx, 'read_workflow_file', { path: created.path });
+      expect(reread.sha256).toBe(replaced.sha256);
+
+      const absent = await jsonTool(ctx, 'write_plan', {
+        title: 'Never Written',
+        slug: 'never-written',
+        body: '# Never Written\n\nBody.',
+        expected_sha256: read.sha256,
+      });
+      expect(absent.error.code).toBe('REVISION_CONFLICT');
+      expect(absent.error.details.reason).toBe('target_absent');
+      expect(existsSync(join(repoRoot, 'plans/plan-never-written.md'))).toBe(false);
+    });
+  });
+
+  test('two racing writes on one revision produce exactly one winner', async () => {
+    await withRepo(async (repoRoot, ctx) => {
+      const created = await jsonTool(ctx, 'write_plan', {
+        title: 'Race',
+        slug: 'race',
+        body: '# Race\n\nBase revision.',
+      });
+      const base = created.sha256;
+
+      const [first, second] = await Promise.all([
+        callMcpTool(ctx, 'write_plan', { title: 'Race', slug: 'race', body: '# Race\n\nWriter A.', expected_sha256: base }),
+        callMcpTool(ctx, 'write_plan', { title: 'Race', slug: 'race', body: '# Race\n\nWriter B.', expected_sha256: base }),
+      ]).then((results) => results.map((result) => JSON.parse(result.content[0].text)));
+
+      const written = [first, second].filter((entry) => entry.status === 'written');
+      const conflicted = [first, second].filter((entry) => entry.error?.code === 'REVISION_CONFLICT');
+      expect(written).toHaveLength(1);
+      expect(conflicted).toHaveLength(1);
+      expect(written[0].previousSha256).toBe(base);
+
+      const content = readFileSync(join(repoRoot, created.path), 'utf-8');
+      expect(content.includes('Writer A.') !== content.includes('Writer B.')).toBe(true);
+    });
+  });
+
+  test('rejects the retired overwrite parameter and any undeclared parameter server-side', async () => {
+    await withRepo(async (repoRoot, ctx) => {
+      const retired = await jsonTool(ctx, 'write_plan', {
+        title: 'Retired',
+        slug: 'retired',
+        body: '# Retired\n\nBody.',
+        overwrite: true,
+      });
+      expect(retired.error.code).toBe('RETIRED_PARAMETER');
+      expect(retired.error.message).toContain('expected_sha256');
+      expect(retired.error.message).toContain('0.16.1');
+      expect(retired.error.details).toMatchObject({ retired: 'overwrite', replacement: 'expected_sha256' });
+      expect(existsSync(join(repoRoot, 'plans/plan-retired.md'))).toBe(false);
+
+      const unknown = await jsonTool(ctx, 'write_plan', {
+        title: 'Unknown',
+        slug: 'unknown',
+        body: '# Unknown\n\nBody.',
+        force_write: true,
+      });
+      expect(unknown.error.code).toBe('UNKNOWN_PARAMETER');
+      expect(unknown.error.details.unknown).toEqual(['force_write']);
+      expect(unknown.error.details.allowed).toContain('expected_sha256');
+      expect(existsSync(join(repoRoot, 'plans/plan-unknown.md'))).toBe(false);
+
+      for (const tool of [
+        'write_prd',
+        'write_prd_from_idea',
+        'write_sprint',
+        'write_checklist_sprint',
+        'prepare_codex_goal_from_sprint',
+        'write_codex_goal',
+      ]) {
+        const rejected = await jsonTool(ctx, tool, { overwrite: false });
+        expect(rejected.error.code).toBe('RETIRED_PARAMETER');
+      }
+    });
+  });
+
+  test('every workflow write tool accepts expected_sha256 and none accepts overwrite', async () => {
+    await withRepo(async (_repoRoot, ctx) => {
+      const guarded = [
+        'write_prd',
+        'write_prd_from_idea',
+        'write_sprint',
+        'write_checklist_sprint',
+        'write_plan',
+        'prepare_codex_goal_from_sprint',
+        'write_codex_goal',
+      ];
+      const definitions = buildMcpToolDefinitions(ctx.policy);
+      for (const name of guarded) {
+        const definition = definitions.find((tool) => tool.name === name);
+        expect(definition).toBeDefined();
+        const properties = Object.keys((definition!.inputSchema as { properties: Record<string, unknown> }).properties);
+        expect(properties).toContain('expected_sha256');
+        expect(properties).not.toContain('overwrite');
+      }
+
+      // append_handoff_note is out of scope for this release and stays unguarded.
+      const handoff = definitions.find((tool) => tool.name === 'append_handoff_note');
+      const handoffProperties = Object.keys((handoff!.inputSchema as { properties: Record<string, unknown> }).properties);
+      expect(handoffProperties).not.toContain('expected_sha256');
+      expect(handoffProperties).not.toContain('overwrite');
+    });
+  });
+
+  test('refuses to write through a symlinked workflow artifact target', async () => {
+    await withRepo(async (repoRoot, ctx) => {
+      const protectedPath = join(repoRoot, 'tasks/current.md');
+      symlinkSync(protectedPath, join(repoRoot, 'plans/plan-symlinked.md'));
+
+      const result = await jsonTool(ctx, 'write_plan', {
+        title: 'Symlinked',
+        slug: 'symlinked',
+        body: '# Symlinked\n\nClobber attempt.',
+      });
+
+      expect(result.error.code).toBe('SYMLINK_ESCAPE');
+      expect(readFileSync(protectedPath, 'utf-8')).toBe('status=Active\n');
     });
   });
 
