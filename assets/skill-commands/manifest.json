@@ -151,7 +151,10 @@
       ],
       "discoverability": "profile-facade",
       "component": "adaptive-workflow",
-      "requires": [],
+      "requires": [
+        "obsidian-markdown",
+        "obsidian-cli"
+      ],
       "mutatesRepoByDefault": false,
       "summary": "Cross-project long-term memory over the user's Obsidian brain vault: recall relevant notes before a task and persist distilled conclusions after it. Repo artifacts stay the source of truth; sync direction is repo -> brain. Explicitly invoked by the model or operator, never from hooks. Requires the runtime-referenced official obsidian-markdown and obsidian-cli skills.",
       "retirementCandidate": null
@@ -335,6 +338,42 @@
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Explicit-opt-in reverse-engineering and security-task router pack. Fetched from zhaoxuya520/reverse-skill via bunx skills add after independent authorization review.",
+      "retirementCandidate": null
+    },
+    {
+      "name": "obsidian-markdown",
+      "kind": "external",
+      "source": null,
+      "provider": "kepano/obsidian-skills@a1dc48e68138490d522c04cbf5822214c6eb1202",
+      "integrity": "sha256:ac9b702f9697f0bbf5f0fdc0c6896d94efef01438a59a4b508e5d7346da050e6",
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [],
+      "discoverability": "external-marketplace",
+      "component": "adaptive-workflow",
+      "requires": [],
+      "mutatesRepoByDefault": false,
+      "summary": "Explicit-opt-in official Obsidian Markdown authoring companion Skill. Pinned to kepano/obsidian-skills and verified before projection.",
+      "retirementCandidate": null
+    },
+    {
+      "name": "obsidian-cli",
+      "kind": "external",
+      "source": null,
+      "provider": "kepano/obsidian-skills@a1dc48e68138490d522c04cbf5822214c6eb1202",
+      "integrity": "sha256:58b3eaf9ccaadfcbe3b8d0eddb0d1fe872ef42c4cf289393a72d4e9a6d896f6f",
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [],
+      "discoverability": "external-marketplace",
+      "component": "adaptive-workflow",
+      "requires": [],
+      "mutatesRepoByDefault": false,
+      "summary": "Explicit-opt-in official Obsidian CLI companion Skill. Does not install or require the Obsidian executable or desktop App.",
       "retirementCandidate": null
     }
   ],

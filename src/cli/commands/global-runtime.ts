@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "fs";
+import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "fs";
 import { homedir, tmpdir } from "os";
 import { delimiter, dirname, join, relative, resolve, sep } from "path";
 import { fileURLToPath } from "url";
@@ -13,9 +13,10 @@ import { compareVersions, readLatestPackageVersion } from "./doctor";
 import { configureCodegraph } from "../tools/codegraph";
 import { runProcess as runBoundedProcess } from "../../effects/process-runner";
 import { commitVerifiedSkillTree, skillTreeSha256 } from "../../effects/skill-tree-integrity";
-import { PROFILE_COMPONENTS, readInstalledProfile, type InstallProfile } from "../installer/install-profile";
+import { PROFILE_COMPONENTS, managedInstallSurfaceIsCurrent, readInstalledProfile, type InstallProfile } from "../installer/install-profile";
 import {
   parseSkillSurfaceCatalog,
+  requiredExplicitExternalDependencyInstallGroups,
   requiredExplicitExternalSkillInstallGroup,
   type SkillSurfaceCatalog,
 } from "../../core/skill-surface/catalog";
@@ -31,6 +32,7 @@ export interface GlobalRuntimeOptions {
   syncSkill?: boolean;
   hostAdapters?: boolean;
   externalSkills?: boolean;
+  obsidianSkills?: boolean;
   reverseSkill?: boolean;
   codegraph?: boolean;
   brainRoot?: string;
@@ -640,6 +642,7 @@ function externalSkillStepName(provider: string): string {
   if (provider === "tw93/Waza") return "configure Waza skills";
   if (provider === "BfdCampos/dotfiles") return "configure Mermaid skill";
   if (provider.startsWith("zhaoxuya520/reverse-skill@")) return "configure Reverse Skill";
+  if (provider.startsWith("kepano/obsidian-skills@")) return "configure Obsidian companion Skills";
   return `configure external skills ${provider}`;
 }
 
@@ -650,16 +653,40 @@ function installExternalSkillGroup(
   skills: readonly string[],
   integrityBySkill: Readonly<Record<string, string | null>>,
   env?: NodeJS.ProcessEnv,
+  refresh = false,
 ): GlobalRuntimeStep {
   const stepName = externalSkillStepName(provider);
   const home = homeDir(env);
   const skillsRoot = join(home, '.agents', 'skills');
   const canonicalSkillsRoot = join(realpathSync(home), '.agents', 'skills');
   const committedIntegritySkills = new Set<string>();
+  const replacementBackupRoot = mkdtempSync(join(tmpdir(), "repo-harness-skill-replace-"));
+  const replacedIntegritySkills = new Set<string>();
+  const restoreReplacedSkills = (): void => {
+    for (const skill of replacedIntegritySkills) {
+      const installed = join(skillsRoot, skill);
+      rmSync(installed, { recursive: true, force: true });
+      cpSync(join(replacementBackupRoot, skill), installed, {
+        recursive: true,
+        force: false,
+        errorOnExist: true,
+        verbatimSymlinks: true,
+      });
+    }
+  };
+  const fail = (result: GlobalRuntimeStep): GlobalRuntimeStep => {
+    for (const skill of committedIntegritySkills) {
+      rmSync(join(skillsRoot, skill), { recursive: true, force: true });
+    }
+    restoreReplacedSkills();
+    rmSync(replacementBackupRoot, { recursive: true, force: true });
+    return result;
+  };
   const preflight = preflightStagedSkillProjection(skills, target, env, stepName);
-  if (preflight) return preflight;
+  if (preflight) return fail(preflight);
   const missing = skills.filter((skill) => !existsSync(join(skillsRoot, skill, 'SKILL.md')));
-  const ordinaryMissing = missing.filter((skill) => integrityBySkill[skill] == null);
+  const selected = refresh ? skills : missing;
+  const ordinaryMissing = selected.filter((skill) => integrityBySkill[skill] == null);
   if (ordinaryMissing.length > 0) {
     const agents = hostAgents(target);
     const step = runProcess(
@@ -679,11 +706,11 @@ function installExternalSkillGroup(
       env,
     );
     if (step.status === 'failed') {
-      return withStepName(step, stepName, `target=${target}; missing=${ordinaryMissing.join(',')}`);
+      return fail(withStepName(step, stepName, `target=${target}; missing=${ordinaryMissing.join(',')}`));
     }
   }
 
-  const integrityMissing = missing.filter((skill) => integrityBySkill[skill] != null);
+  const integrityMissing = selected.filter((skill) => integrityBySkill[skill] != null);
   if (integrityMissing.length > 0) {
     const isolatedHome = mkdtempSync(join(tmpdir(), "repo-harness-skill-stage-"));
     const isolatedEnv: NodeJS.ProcessEnv = {
@@ -720,7 +747,7 @@ function installExternalSkillGroup(
         isolatedEnv,
       );
       if (step.status === "failed") {
-        return withStepName(step, stepName, `isolated target=${target}; missing=${integrityMissing.join(',')}`);
+        return fail(withStepName(step, stepName, `isolated target=${target}; missing=${integrityMissing.join(',')}`));
       }
 
       for (const skill of integrityMissing) {
@@ -730,22 +757,42 @@ function installExternalSkillGroup(
         try {
           actual = skillTreeSha256(isolatedSkill);
         } catch (error) {
-          return {
+          return fail({
             step: stepName,
             status: "failed",
             detail: `cannot verify isolated staging integrity for ${skill}: ${(error as Error).message}`,
-          };
+          });
         }
         if (actual !== expected) {
-          return {
+          return fail({
             step: stepName,
             status: "failed",
             detail: `isolated staging integrity mismatch for ${skill}: expected=${expected}; actual=${actual}`,
-          };
+          });
         }
       }
 
       for (const skill of integrityMissing) {
+        const installed = join(skillsRoot, skill);
+        if (existsSync(installed)) {
+          const state = readInstalledProfile(env);
+          const receipt = state?.ownership_manifest.find((surface) => surface.path === installed);
+          if (!state || receipt === undefined || !managedInstallSurfaceIsCurrent(receipt)) {
+            return fail({
+              step: stepName,
+              status: "failed",
+              detail: `refusing to refresh unowned or drifted staging skill ${installed}`,
+            });
+          }
+          cpSync(installed, join(replacementBackupRoot, skill), {
+            recursive: true,
+            force: false,
+            errorOnExist: true,
+            verbatimSymlinks: true,
+          });
+          rmSync(installed, { recursive: true, force: true });
+          replacedIntegritySkills.add(skill);
+        }
         const committed = commitVerifiedSkillTree(
           join(isolatedHome, ".agents", "skills", skill),
           join(skillsRoot, skill),
@@ -753,7 +800,7 @@ function installExternalSkillGroup(
           { expectedCanonicalParent: canonicalSkillsRoot },
         );
         if (committed.status === "failed") {
-          return { step: stepName, status: "failed", detail: committed.detail };
+          return fail({ step: stepName, status: "failed", detail: committed.detail });
         }
         committedIntegritySkills.add(skill);
       }
@@ -774,37 +821,31 @@ function installExternalSkillGroup(
         || stat.isSymbolicLink()
         || realpathSync(installed) !== join(canonicalRoot, skill)
       ) {
-        if (committedIntegritySkills.has(skill)) rmSync(installed, { recursive: true, force: true });
-        return {
+        return fail({
           step: stepName,
           status: "failed",
           detail: `refusing non-canonical integrity staging root for ${skill}: ${installed}`,
-        };
+        });
       }
       const actual = skillTreeSha256(installed);
       if (actual !== expected) {
-        if (committedIntegritySkills.has(skill)) rmSync(installed, { recursive: true, force: true });
-        return {
+        return fail({
           step: stepName,
           status: "failed",
           detail: `staging integrity mismatch for ${skill}: expected=${expected}; actual=${actual}`,
-        };
+        });
       }
     } catch (error) {
-      if (committedIntegritySkills.has(skill)) rmSync(installed, { recursive: true, force: true });
-      return {
+      return fail({
         step: stepName,
         status: "failed",
         detail: `cannot verify staging integrity for ${skill}: ${(error as Error).message}`,
-      };
+      });
     }
   }
   const projection = projectStagedSkills(skills, target, env, stepName);
-  if (projection.status === "failed") {
-    for (const skill of committedIntegritySkills) {
-      rmSync(join(skillsRoot, skill), { recursive: true, force: true });
-    }
-  }
+  if (projection.status === "failed") return fail(projection);
+  rmSync(replacementBackupRoot, { recursive: true, force: true });
   return projection;
 }
 
@@ -1231,6 +1272,45 @@ export function runGlobalRuntimeSetup(
       step: "configure Reverse Skill",
       status: "skipped",
       detail: "requires explicit --with-reverse-skill opt-in",
+    });
+  }
+
+  if (opts.obsidianSkills === true) {
+    const catalog = loadSkillSurfaceCatalog(sourceRoot);
+    const selection = requiredExplicitExternalDependencyInstallGroups(
+      catalog,
+      "obsidian-memory",
+      hostIds(target),
+    );
+    if (selection.status !== "selected") {
+      steps.push({
+        step: "configure Obsidian companion Skills",
+        status: "failed",
+        detail: selection.status === "missing"
+          ? `required Obsidian dependency ${selection.name} is missing for the selected host target`
+          : selection.status === "not_explicit_only"
+            ? `catalog package ${selection.name} must remain explicit-only`
+            : `catalog package ${selection.name} requires a pinned tree integrity digest`,
+      });
+    } else {
+      for (const { provider, hosts, skills, integrityBySkill } of selection.groups) {
+        steps.push(installExternalSkillGroup(
+          sourceRoot,
+          targetFromHostIds(hosts),
+          provider,
+          skills,
+          integrityBySkill,
+          env,
+          updateMode,
+        ));
+        if (steps.at(-1)?.status === "failed") break;
+      }
+    }
+  } else {
+    steps.push({
+      step: "configure Obsidian companion Skills",
+      status: "skipped",
+      detail: "requires explicit --with-obsidian-skills opt-in",
     });
   }
 

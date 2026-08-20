@@ -117,13 +117,10 @@ const SKILLS_CLI_COMMAND = "skills";
 const SKILLS_CLI_PROBE_ARGS = ["ls", "-g", "--json"];
 const SKILLS_CLI_PROBE_TIMEOUT_MS = 45000;
 const CODEX_AUTOMATION_SKILLS = ["health", "check", "mermaid"];
-// Official Obsidian skills the repo-owned obsidian-memory facade delegates to
-// for vault Markdown authoring and vault runtime operations. Runtime-referenced
-// on both hosts, never vendored into this repo; a missing skill is reported as
-// a gap rather than a hard failure, matching CODEX_AUTOMATION_SKILLS.
-const OBSIDIAN_RUNTIME_SKILLS = ["obsidian-markdown", "obsidian-cli"];
 const OBSIDIAN_RUNTIME_CONSUMER = "obsidian-memory";
 const AGENT_FLEET_SOURCE_DIR = process.env.REPO_HARNESS_AGENT_FLEET_SOURCE_DIR;
+const PACKAGE_ROOT = path.dirname(path.dirname(AGENT_FLEET_SOURCE_DIR));
+const SKILL_SURFACE_MANIFEST_PATH = path.join(PACKAGE_ROOT, "assets", "skill-commands", "manifest.json");
 const AGENT_FLEET_SOURCE_LABEL = "package:agents/fleet";
 const AGENT_FLEET_DEFAULT_MANAGED = ["explorer", "deep-reasoner", "fast-worker", "deep-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
 const AGENT_FLEET_INSTALL_COMMAND = "repo-harness run install-agent-fleet";
@@ -898,7 +895,8 @@ function inspectObsidianRuntimeSkill(host, skill) {
 
 function detectObsidianRuntimeSkillsHost(host) {
   const meta = HOSTS[host];
-  const skills = OBSIDIAN_RUNTIME_SKILLS.map((skill) => inspectObsidianRuntimeSkill(host, skill));
+  const requiredSkills = obsidianRuntimeContract().requiredSkills;
+  const skills = requiredSkills.map((skill) => inspectObsidianRuntimeSkill(host, skill));
   const installedSkills = skills.filter((entry) => entry.present).map((entry) => entry.name);
   const missingSkills = skills.filter((entry) => !entry.present).map((entry) => entry.name);
   const status = missingSkills.length === 0 ? "present" : installedSkills.length > 0 ? "partial" : "missing";
@@ -914,6 +912,22 @@ function detectObsidianRuntimeSkillsHost(host) {
 }
 
 function detectObsidianRuntimeSkills() {
+  const contract = obsidianRuntimeContract();
+  if (contract.status !== "valid") {
+    return {
+      name: "obsidian_runtime_skills",
+      status: "invalid",
+      reason: contract.reason,
+      required_skills: [],
+      optional_skills: [],
+      required_by: OBSIDIAN_RUNTIME_CONSUMER,
+      mode: "catalog-dependency-closure",
+      readiness: "managed",
+      vendoring_policy: "do-not-vendor-skill-body",
+      install_command: "repo-harness install --with-obsidian-skills",
+      hosts: {},
+    };
+  }
   const hosts = {};
   for (const host of SELECTED_HOSTS) {
     hosts[host] = detectObsidianRuntimeSkillsHost(host);
@@ -931,20 +945,52 @@ function detectObsidianRuntimeSkills() {
     .filter(([, entry]) => entry.missing_skills.length > 0)
     .map(([host, entry]) => `${host}: ${entry.missing_skills.join(", ")}`);
 
+  const installState = readJson(path.join(HOME, ".repo-harness", "install-state.json"));
+  const ownership = Array.isArray(installState?.ownership_manifest) ? installState.ownership_manifest : [];
+  const managed = ownership.some((surface) => {
+    if (typeof surface?.path !== "string") return false;
+    const normalized = surface.path.replaceAll("\\", "/");
+    return normalized.includes("/skills/") && contract.requiredSkills.includes(path.basename(surface.path));
+  });
+  const target = hostMode === "both" ? "both" : hostMode;
+
   return {
     name: "obsidian_runtime_skills",
     status,
     reason: status === "present"
-      ? `Detected all official Obsidian skills required by ${OBSIDIAN_RUNTIME_CONSUMER} on every selected host.`
-      : `Missing official Obsidian skills required by ${OBSIDIAN_RUNTIME_CONSUMER} (${gaps.join("; ")}).`,
-    required_skills: OBSIDIAN_RUNTIME_SKILLS,
+      ? `Detected all catalog-declared Obsidian skills required by ${OBSIDIAN_RUNTIME_CONSUMER} on every selected host.`
+      : `Missing catalog-declared Obsidian skills required by ${OBSIDIAN_RUNTIME_CONSUMER} (${gaps.join("; ")}).`,
+    required_skills: contract.requiredSkills,
     optional_skills: [],
     required_by: OBSIDIAN_RUNTIME_CONSUMER,
-    mode: "runtime-reference",
-    readiness: "advisory",
+    mode: "catalog-dependency-closure",
+    readiness: managed ? "managed" : "advisory",
+    managed_receipt: managed,
+    install_command: `repo-harness install --target ${target} --with-obsidian-skills`,
     vendoring_policy: "do-not-vendor-skill-body",
     hosts,
-  };
+};
+}
+
+function obsidianRuntimeContract() {
+  const manifest = readJson(SKILL_SURFACE_MANIFEST_PATH);
+  const packages = Array.isArray(manifest?.packages) ? manifest.packages : [];
+  const consumer = packages.find((pkg) => pkg?.name === OBSIDIAN_RUNTIME_CONSUMER);
+  if (!consumer || !Array.isArray(consumer.requires) || consumer.requires.length === 0) {
+    return { status: "invalid", reason: `${OBSIDIAN_RUNTIME_CONSUMER} has no catalog dependency closure`, requiredSkills: [] };
+  }
+  const requiredSkills = consumer.requires.filter((name) => typeof name === "string");
+  if (requiredSkills.length !== consumer.requires.length || new Set(requiredSkills).size !== requiredSkills.length) {
+    return { status: "invalid", reason: `${OBSIDIAN_RUNTIME_CONSUMER} has an invalid catalog dependency closure`, requiredSkills: [] };
+  }
+  const invalid = requiredSkills.find((name) => {
+    const pkg = packages.find((entry) => entry?.name === name);
+    return !pkg || pkg.kind !== "external" || pkg.provider == null || !/^sha256:[0-9a-f]{64}$/.test(pkg.integrity ?? "");
+  });
+  if (invalid) {
+    return { status: "invalid", reason: `catalog dependency ${invalid} is not a pinned external Skill`, requiredSkills: [] };
+  }
+  return { status: "valid", reason: null, requiredSkills };
 }
 
 function resolveManagedAgents() {
@@ -1768,6 +1814,14 @@ if (strictReadiness && ["missing", "partial"].includes(report.tools.agent_fleet.
 }
 if (
   strictReadiness
+  && report.tools.obsidian_runtime_skills.readiness === "managed"
+  && ["missing", "partial", "invalid"].includes(report.tools.obsidian_runtime_skills.status)
+) {
+  const obsidian = report.tools.obsidian_runtime_skills;
+  strictFailures.push(`Managed Obsidian companion Skill readiness is ${obsidian.status}: ${obsidian.reason}`);
+}
+if (
+  strictReadiness
   && ["unverified", "unavailable", "mismatch", "invalid"].includes(report.tools.agent_fleet.native_role_routing.status)
 ) {
   const routing = report.tools.agent_fleet.native_role_routing;
@@ -1855,6 +1909,7 @@ function printText(result) {
       console.log(`    missing: ${entry.missing_skills.join(", ")}`);
     }
   }
+  if (obsidianRuntime.status !== "present") console.log(`  - Install: ${obsidianRuntime.install_command}`);
   console.log(`  - Vendoring: ${obsidianRuntime.vendoring_policy}`);
   console.log("");
 

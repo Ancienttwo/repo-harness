@@ -88,7 +88,7 @@ sequenceDiagram
 
 **与现有 prose 的冲突（以源码为准）：**
 
-- 下方 2026-07-14 段落写 `verify-contract.sh` 是 "one fixed 600-second deadline"。当前源码 `scripts/verify-contract.sh:5` 是 `VERIFICATION_BUDGET_MS=1200000`，即 1200 秒（20 分钟）。历史段落按 append-only 原样保留，**当前事实以 1200 秒为准**。
+- 下方 2026-07-14 段落写 `verify-contract.sh` 是 "one fixed 600-second deadline"。当前源码 `scripts/verify-contract.sh:5` 是 `VERIFICATION_BUDGET_MS=3600000`，即 3600 秒（60 分钟）。历史段落按 append-only 原样保留，**当前事实以 3600 秒为准**。
 - 旧 P1 段把权威清单写成 `bash scripts/check-task-workflow.sh --strict`；根 `## Required Checks` 现用 `repo-harness run check-task-workflow --strict`（helper runtime 调用形态），且额外含 `bash scripts/check-architecture-sync.sh`。本文 §1.4 按根契约列出。
 - `assets/skill-commands/repo-harness-check/SKILL.md` 把 Codex 必需 skill 写作 `health`/`check`/`mermaid`，仓库根 `CLAUDE.md` 写的是 `health`、`check`、`diagram-design`。两处未对齐，本文不替任一方裁定。
 

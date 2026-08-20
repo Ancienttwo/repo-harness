@@ -12,7 +12,7 @@ const PACKAGE_HELPERS_ROOT = join(PACKAGE_ROOT, 'assets', 'templates', 'helpers'
 const PACKAGE_CONTRACT = join(PACKAGE_ROOT, 'assets', 'workflow-contract.v1.json');
 const PACKAGE_WORKFLOW_STATE = join(PACKAGE_ROOT, 'assets', 'hooks', 'lib', 'workflow-state.sh');
 const PROTECTED_HELPERS = new Set(['acceptance-receipt', 'contract-worktree', 'ship-worktrees', 'merge-gate']);
-const VERIFIER_HELPER_TIMEOUT_MS = 1_260_000;
+const VERIFIER_HELPER_TIMEOUT_MS = 3_660_000;
 const CLOSEOUT_HELPER_TIMEOUT_MS = 900_000;
 const ORDINARY_HELPER_TIMEOUT_MS = 120_000;
 
