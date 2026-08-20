@@ -34,6 +34,7 @@ import {
 import { isImplementationSurfacePath } from '../../effects/review/diff-fingerprint';
 import { drainArchitectureProjectionJobs, type ArchitectureProjectionDrainResultV1 } from '../../effects/architecture/projection-orchestrator';
 import { loadArchitectureProjectionPolicy } from '../../effects/architecture/archctx-provider';
+import { publishArchitectureProjectionRestampForDrain } from '../../effects/architecture/restamp-publication';
 import { runMinimalChangeCli } from './minimal-change-cli';
 import {
   MINIMAL_CHANGE_AUDIT_RECEIPT_PATH,
@@ -723,6 +724,20 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   } catch (error) {
     architectureDrainError = error instanceof Error ? error.message : String(error);
   }
+  // Auto-publication of a digest-only manifest restamp, deliberately outside
+  // the drain's try/catch above: a publication fault must never reach
+  // `architectureDrainError` and therefore can never arm the strict projection
+  // gate below. Every path -- published, skipped, faulted -- exits 0 with at
+  // most one advisory line, and the effect's only durable mutation is a single
+  // `update-ref` CAS on the current branch.
+  let restampAdvisory = '';
+  if (architectureDrain) {
+    try {
+      restampAdvisory = publishArchitectureProjectionRestampForDrain(repoRoot, architectureDrain).advisory ?? '';
+    } catch (error) {
+      restampAdvisory = `[ArchitectureProjection] restamp publication failed: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
   try {
     consumePendingPostEditEvents(repoRoot, env);
   } catch (error) {
@@ -767,6 +782,7 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   } else if (architectureDrainError) {
     stderr.push(`[ArchitectureProjection] orchestration failed: ${architectureDrainError}\n`);
   }
+  if (restampAdvisory) stderr.push(`${restampAdvisory}\n`);
   if (journalSideEffectError) stderr.push(`[PostEditJournal] side effects failed: ${journalSideEffectError}\n`);
   let architectureGate: 'advisory' | 'strict' = 'advisory';
   try {

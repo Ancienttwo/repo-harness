@@ -5,6 +5,7 @@ import { PROJECTION_REQUEST_VERSION, type ProjectionMode, type ProjectionRequest
 import { captureArchitectureProjectionSnapshot, inspectArchitectureProjectionReadiness, runArchitectureProjection } from '../../effects/architecture/archctx-provider';
 import { drainArchitectureProjectionJobs } from '../../effects/architecture/projection-orchestrator';
 import { architectureProjectionQueueState, retryArchitectureProjectionDeadLetter } from '../../effects/architecture/projection-jobs';
+import { publishLatestArchitectureProjectionRestamp } from '../../effects/architecture/restamp-publication';
 import { consumeArchitectureRefreshSignals } from '../../effects/architecture/refresh-consumer';
 import { processArchitectureCascade, readPendingPostEditEvents } from '../hook/mutation-observed';
 import {
@@ -54,6 +55,18 @@ export function buildArchitectureProjectionCommand(): Command {
       if (result.status === 'retry-pending' || result.status === 'dead-letter') process.exitCode = 1;
     } catch (error) { fail(error); }
   });
+  // Manual recovery entry for the Stop-time auto-publication: same classifier,
+  // same gate, same synthesis. Exit 1 unless a commit was actually published,
+  // so an operator never reads a refused gate as a successful publication.
+  command.command('publish-restamp')
+    .requiredOption('--json', 'Output restamp publication JSON')
+    .action(() => {
+      try {
+        const outcome = publishLatestArchitectureProjectionRestamp(realpathSync(repositoryRoot()));
+        write(outcome);
+        if (outcome.status !== 'published') process.exitCode = 1;
+      } catch (error) { fail(error); }
+    });
   command.command('acknowledge-publication')
     .requiredOption('--json', 'Output publication acknowledgement JSON')
     .requiredOption('--publication-sha <sha>', 'Exact synthesized publication SHA')
