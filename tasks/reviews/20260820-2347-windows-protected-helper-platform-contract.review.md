@@ -40,17 +40,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
-> **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Disposition**: user_waiver
+> **Reviewer**: User
+> **Source**: user-waiver
+> **Actor**: ancienttwo
+> **Reviewed Subject SHA256**: sha256:fe312ed924fe55adc6b1d067afb630a1bfd67914b3d211dc91a441d073db24ea
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: ead6b216f45798c4eac1e529e57c73862f28d4ab
+> **Verification Evidence SHA256**: sha256:332811e8b61ceffcdbc33b405e08f65d3648da4f77ca5e905bbaf0f3b40efa2d
+> **Issued At**: 2026-08-20T19:06:04.096Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: User explicitly approved the typed waiver after all eight external-review findings were remediated and deterministic verification passed 25/25.
 - Findings: none
 
 ## Behavior Diff Notes
