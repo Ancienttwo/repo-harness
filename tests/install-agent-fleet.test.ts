@@ -66,8 +66,10 @@ const CODEX_EXPECTATIONS: Record<
 
 // Canonical anti-extras clause (scripts/contract-run.ts EXECUTION_BOUNDARY, joined with
 // "\n"). Hardcoded here the same way tests/workflow-contract.test.ts hardcodes the
-// canonical first sentence: this is the literal text the installer must embed verbatim
-// into every generated Codex agent's developer_instructions.
+// canonical first sentence: this is the literal text the installer must NOT embed into
+// a generated persona. The clause has exactly one owner on the Codex native-child path,
+// the SubagentStart task packet, which alone knows whether the child is contract-bound
+// and writable.
 const CANONICAL_BOUNDARY_TEXT = [
   "Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief. Treat absent requirements as forbidden design space, not as permission to improve.",
   "",
@@ -677,23 +679,28 @@ describe("install-agent-fleet", () => {
     }
   }, 30_000);
 
-  test("generated developer_instructions embeds the canonical EXECUTION_BOUNDARY text verbatim", () => {
+  test("generated developer_instructions carries the role body only, never the EXECUTION_BOUNDARY clause", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-boundary");
     try {
-      // The installer source holds the boundary as an array of paragraph literals
-      // (joined into one string only at runtime), so assert each paragraph is present
-      // in the source verbatim, then assert the fully-joined text appears in the
-      // actual generated output -- the stronger, functional half of this check.
+      // The installer no longer owns the clause at all: neither its source nor any
+      // generated persona may carry a paragraph of it.
       const installerSource = readFileSync(SCRIPT, "utf-8");
       for (const paragraph of CANONICAL_BOUNDARY_TEXT.split("\n\n")) {
-        expect(installerSource).toContain(paragraph);
+        expect(installerSource).not.toContain(paragraph);
       }
 
       const res = runInstaller(home, FLEET_SOURCE_DIR);
       expect(res.status).toBe(0);
       for (const agent of AGENTS) {
         const toml = readFileSync(join(home, ".codex/agents", `${agent}.toml`), "utf-8");
-        expect(toml).toContain(CANONICAL_BOUNDARY_TEXT);
+        for (const paragraph of CANONICAL_BOUNDARY_TEXT.split("\n\n")) {
+          expect(toml).not.toContain(paragraph);
+        }
+        // The persona body itself is still projected: developer_instructions ends
+        // with the source body's final line, not with an appended boundary block.
+        const sourceBody = readFileSync(join(FLEET_SOURCE_DIR, `${agent}.md`), "utf-8").trimEnd();
+        const lastBodyLine = sourceBody.slice(sourceBody.lastIndexOf("\n") + 1);
+        expect(toml).toContain(`${lastBodyLine}'''`);
       }
     } finally {
       rmSync(root, { recursive: true, force: true });

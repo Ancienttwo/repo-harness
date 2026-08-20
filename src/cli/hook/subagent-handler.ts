@@ -62,11 +62,16 @@ interface JsonObject {
   readonly [key: string]: unknown;
 }
 
-interface ActiveContract {
+interface ActiveContractRef {
   readonly plan: string;
   readonly contract: string;
+}
+
+interface ActiveContract extends ActiveContractRef {
   readonly content: string;
 }
+
+type SandboxMode = 'read-only' | 'workspace-write';
 
 interface NativeRoleRouting {
   readonly schema_version: 1;
@@ -78,6 +83,7 @@ interface NativeRoleRouting {
   readonly configured_model: string | null;
   readonly config_path: string | null;
   readonly config_sha256: string | null;
+  readonly sandbox_mode: SandboxMode | null;
   readonly reasoning_effort_status: 'configured_unverified';
   readonly status: 'verified' | 'mismatch' | 'invalid' | 'unavailable' | 'unverified';
   readonly reason: string;
@@ -88,6 +94,28 @@ const RETURN_CONTRACT_MARKER = '[repo-harness:return-channel]';
 const RETURN_CONTRACT_TEXT = '\n\n[repo-harness:return-channel] Your final text message is the only channel returned to your caller. Put the complete findings/report in final text. Do not call SendUserMessage for report delivery; content sent through SendUserMessage is delivered outside the Agent tool result.';
 export const LONG_COMMAND_GUARDRAIL_MARKER = '[repo-harness:long-command-guardrail]';
 const LONG_COMMAND_GUARDRAIL_TEXT = `${LONG_COMMAND_GUARDRAIL_MARKER} Do not foreground-wait on a verification, test, or gate command you expect to exceed roughly five minutes; the host stream watchdog terminates an agent after 600 seconds of silence. The default action is to hand that command back to the orchestrator: name the command and return BLOCKED on your role's machine-readable first line (RESULT:/VERDICT:/RECOMMENDATION:) instead of waiting on it. Run it yourself only when you can start it in the background and poll a log that keeps producing output.`;
+export const EXECUTION_BOUNDARY_MARKER = '[repo-harness:execution-boundary/v1]';
+/**
+ * The single runtime owner of the anti-extras clause on the Codex native-child
+ * path. Personas and the delegation advisor deliberately carry none: a child
+ * that reads the same authority two or three times reads it as boilerplate.
+ * `SubagentStart` is the only injection site that sees the real child start,
+ * its scanned `sandbox_mode`, and active contract state at once, so it is the
+ * only site that can render the clause exactly when it applies. The marker
+ * makes composed-stack occurrence counting deterministic.
+ */
+const EXECUTION_BOUNDARY_BLOCK = [
+  `${EXECUTION_BOUNDARY_MARKER} Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief. Treat absent requirements as forbidden design space, not as permission to improve.`,
+  '',
+  'Do not add optional features, alternate UX, extra integrations, migration paths, compatibility behavior, fallback behavior, telemetry, broad cleanup, refactors, new abstractions, extra docs, or polish unless that work is explicitly listed under In scope or required by Exit Criteria.',
+  '',
+  'If you discover useful additional work, record it under Out of scope / Future work in the notes or review artifact. Do not implement it. Do not end with unsolicited offers to do more work.',
+  '',
+  'If the requested outcome cannot be completed without expanding scope, fail closed: stop, name the missing decision, and cite the exact file/section that blocks execution.',
+].join('\n');
+const READ_ONLY_SCOPE_NOTE = 'Read-only scope: inspect, verify, and report against the active contract. Do not implement, edit files, or run write commands; hand any required change back to the parent.';
+const CONTRACT_ACTIVE_STATUS = /^> \*\*Status\*\*:\s*(Active|Ready|Executing)\s*$/mi;
+const CONTRACT_STRICT_OR_HIGH_RISK = /^> \*\*(Workflow Profile|Risk)\*\*:\s*(strict|high)\s*$/mi;
 const NATIVE_ROLE_ROUTING_STATE_FILE = 'native-role-routing.json';
 const NATIVE_ROLE_ROUTING_LOCK_RELATIVE = `${DELEGATION_STATE_RELATIVE}/native-role-routing.lock`;
 const MAX_NATIVE_ROLE_OBSERVATIONS = 32;
@@ -221,18 +249,34 @@ function atomicWriteJson(stateRoot: string, path: string, value: unknown): void 
   }
 }
 
-function activeContractPath(repoRoot: string): ActiveContract | null {
+/**
+ * Sole owner of the `.ai/harness/active-plan` -> contract path derivation.
+ * Callers layer their own predicate on top: the advisor asks "is a contract
+ * active" (`Status`), `runSubagentStart` also asks "is this strict/high risk"
+ * (`Workflow Profile`/`Risk`). The two questions are deliberately not merged --
+ * a Draft high-risk contract still tightens the spawn cap.
+ */
+function activeContractRef(repoRoot: string): ActiveContractRef | null {
   try {
     const plan = readFileSync(join(repoRoot, '.ai/harness/active-plan'), 'utf8').trim();
     const match = /^plans\/plan-([a-zA-Z0-9][a-zA-Z0-9._-]*)\.md$/.exec(plan);
     if (!match) return null;
-    const contract = `tasks/contracts/${match[1]}.contract.md`;
-    const planPath = join(repoRoot, plan);
-    const contractPath = join(repoRoot, contract);
+    return { plan, contract: `tasks/contracts/${match[1]}.contract.md` };
+  } catch {
+    return null;
+  }
+}
+
+function activeContractPath(repoRoot: string): ActiveContract | null {
+  const ref = activeContractRef(repoRoot);
+  if (!ref) return null;
+  try {
+    const planPath = join(repoRoot, ref.plan);
+    const contractPath = join(repoRoot, ref.contract);
     if (!statSync(planPath).isFile() || !statSync(contractPath).isFile()) return null;
     const content = readFileSync(contractPath, 'utf8');
-    if (!/^> \*\*Status\*\*:\s*(Active|Ready|Executing)\s*$/mi.test(content)) return null;
-    return { plan, contract, content };
+    if (!CONTRACT_ACTIVE_STATUS.test(content)) return null;
+    return { ...ref, content };
   } catch {
     return null;
   }
@@ -413,6 +457,9 @@ function runDelegationAdvisor(repoRoot: string, input: JsonObject, env: NodeJS.P
       '',
       ...sharedRules,
     ].join('\n');
+    // Parent permission and routing only. The anti-extras clause is owned by
+    // `SubagentStart` (see EXECUTION_BOUNDARY_BLOCK): children spawn with
+    // fork_turns="none" and never inherit this text anyway.
     const contractContext = [
       '[repo-harness:delegation]',
       '',
@@ -425,14 +472,6 @@ function runDelegationAdvisor(repoRoot: string, input: JsonObject, env: NodeJS.P
       'If this task contains at least two independent, bounded workstreams, dispatch per the contract before doing the corresponding work in the parent; otherwise run it sequentially.',
       '',
       ...sharedRules,
-      '',
-      'Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief. Treat absent requirements as forbidden design space, not as permission to improve.',
-      '',
-      'Do not add optional features, alternate UX, extra integrations, migration paths, compatibility behavior, fallback behavior, telemetry, broad cleanup, refactors, new abstractions, extra docs, or polish unless that work is explicitly listed under In scope or required by Exit Criteria.',
-      '',
-      'If you discover useful additional work, record it under Out of scope / Future work in the notes or review artifact. Do not implement it. Do not end with unsolicited offers to do more work.',
-      '',
-      'If the requested outcome cannot be completed without expanding scope, fail closed: stop, name the missing decision, and cite the exact file/section that blocks execution.',
     ].join('\n');
     return result(renderDelegationOutput(activeContract ? contractContext : permissionContext));
   } catch {
@@ -453,6 +492,17 @@ interface AgentMatch {
   readonly configPath: string;
   readonly model: string;
   readonly configSha256: string;
+  readonly sandboxMode: string;
+}
+
+interface CustomAgentProfile {
+  readonly ok: boolean;
+  readonly invalid?: boolean;
+  readonly reason?: string;
+  readonly configPath?: string;
+  readonly model?: string;
+  readonly configSha256?: string;
+  readonly sandboxMode?: string;
 }
 
 interface AgentScan {
@@ -492,6 +542,7 @@ function scanAgentDirectory(directory: string, authorityRoot: string, agentType:
           configPath,
           model: typeof parsed.model === 'string' ? parsed.model.trim() : '',
           configSha256: hash(raw, 'sha256'),
+          sandboxMode: typeof parsed.sandbox_mode === 'string' ? parsed.sandbox_mode.trim() : '',
         });
       }
     } catch {
@@ -501,27 +552,33 @@ function scanAgentDirectory(directory: string, authorityRoot: string, agentType:
   return { matches, invalid: false };
 }
 
-function customAgentProfile(repoRoot: string, agentType: string, env: NodeJS.ProcessEnv): { readonly ok: boolean; readonly invalid?: boolean; readonly reason?: string; readonly configPath?: string; readonly model?: string; readonly configSha256?: string } {
+/**
+ * Writability is read from the selected profile, never inferred from the agent
+ * name, and never defaulted: a profile that does not declare one of the two
+ * legal `sandbox_mode` values is invalid, so the child falls into the
+ * fail-closed routing row and receives no implementation boundary.
+ */
+function acceptAgentMatch(match: AgentMatch, scope: 'project' | 'user'): CustomAgentProfile {
+  if (!validBoundedField(match.model, /^[A-Za-z0-9._-]+$/)) {
+    return { ok: false, invalid: true, reason: `Selected ${scope} custom-agent profile does not pin a model.` };
+  }
+  if (match.sandboxMode !== 'read-only' && match.sandboxMode !== 'workspace-write') {
+    return { ok: false, invalid: true, reason: `Selected ${scope} custom-agent profile does not declare a valid sandbox_mode.` };
+  }
+  return { ok: true, ...match };
+}
+
+function customAgentProfile(repoRoot: string, agentType: string, env: NodeJS.ProcessEnv): CustomAgentProfile {
   const projectCodexRoot = join(repoRoot, '.codex');
   const project = scanAgentDirectory(join(projectCodexRoot, 'agents'), projectCodexRoot, agentType);
   if (project.invalid) return { ok: false, invalid: true, reason: 'Project custom-agent configuration is malformed or ambiguous.' };
   if (project.matches.length > 1) return { ok: false, invalid: true, reason: 'Project custom-agent name is duplicated.' };
-  if (project.matches.length === 1) {
-    const match = project.matches[0];
-    return validBoundedField(match.model, /^[A-Za-z0-9._-]+$/)
-      ? { ok: true, ...match }
-      : { ok: false, invalid: true, reason: 'Selected project custom-agent profile does not pin a model.' };
-  }
+  if (project.matches.length === 1) return acceptAgentMatch(project.matches[0], 'project');
   const codexHome = env.CODEX_HOME || (env.HOME ? join(env.HOME, '.codex') : '');
   const user = scanAgentDirectory(codexHome ? join(codexHome, 'agents') : '', codexHome, agentType);
   if (user.invalid) return { ok: false, invalid: true, reason: 'User custom-agent configuration is malformed or ambiguous.' };
   if (user.matches.length > 1) return { ok: false, invalid: true, reason: 'User custom-agent name is duplicated.' };
-  if (user.matches.length === 1) {
-    const match = user.matches[0];
-    return validBoundedField(match.model, /^[A-Za-z0-9._-]+$/)
-      ? { ok: true, ...match }
-      : { ok: false, invalid: true, reason: 'Selected user custom-agent profile does not pin a model.' };
-  }
+  if (user.matches.length === 1) return acceptAgentMatch(user.matches[0], 'user');
   return { ok: false, invalid: true, reason: 'No custom-agent profile matches the authoritative agent_type.' };
 }
 
@@ -540,6 +597,7 @@ function nativeRoleRoutingEvidence(repoRoot: string, input: JsonObject, env: Nod
     configured_model: null,
     config_path: null,
     config_sha256: null,
+    sandbox_mode: null,
     reasoning_effort_status: 'configured_unverified' as const,
     checked_at: now.toISOString(),
   };
@@ -557,10 +615,11 @@ function nativeRoleRoutingEvidence(repoRoot: string, input: JsonObject, env: Nod
   }
   const profile = customAgentProfile(repoRoot, agentType, env);
   if (!profile.ok) return { ...base, status: profile.invalid ? 'invalid' : 'unverified', reason: profile.reason ?? '' };
+  const sandboxMode = profile.sandboxMode as SandboxMode;
   if (profile.model !== observedModel) {
-    return { ...base, status: 'mismatch', reason: `Codex started ${agentType} on ${observedModel}, but its custom-agent TOML requires ${profile.model}.`, configured_model: profile.model ?? null, config_path: profile.configPath ?? null, config_sha256: profile.configSha256 ?? null };
+    return { ...base, status: 'mismatch', reason: `Codex started ${agentType} on ${observedModel}, but its custom-agent TOML requires ${profile.model}.`, configured_model: profile.model ?? null, config_path: profile.configPath ?? null, config_sha256: profile.configSha256 ?? null, sandbox_mode: sandboxMode };
   }
-  return { ...base, status: 'verified', reason: `Codex started custom agent ${agentType} on its configured model ${observedModel}.`, configured_model: profile.model ?? null, config_path: profile.configPath ?? null, config_sha256: profile.configSha256 ?? null };
+  return { ...base, status: 'verified', reason: `Codex started custom agent ${agentType} on its configured model ${observedModel}.`, configured_model: profile.model ?? null, config_path: profile.configPath ?? null, config_sha256: profile.configSha256 ?? null, sandbox_mode: sandboxMode };
 }
 
 function nativeRoleRoutingScope(input: JsonObject, env: NodeJS.ProcessEnv): string {
@@ -677,20 +736,18 @@ function runSubagentStart(repoRoot: string, input: JsonObject, env: NodeJS.Proce
   const effective = parseEffectiveState(repoRoot);
   let profile = typeof effective?.workflow_profile === 'string' ? effective.workflow_profile : '';
   let explicitHighRisk = false;
-  const activePlan = (() => {
-    try { return readFileSync(join(repoRoot, '.ai/harness/active-plan'), 'utf8').trim(); } catch { return ''; }
-  })();
-  const activeContract = activePlan
-    ? activePlan.replace(/^plans\/plan-/, 'tasks/contracts/').replace(/\.md$/, '.contract.md')
-    : '';
-  if (activeContract && existsSync(join(repoRoot, activeContract))) {
-    let content = '';
-    try { content = readFileSync(join(repoRoot, activeContract), 'utf8'); } catch { content = ''; }
-    if (/^> \*\*(Workflow Profile|Risk)\*\*:\s*(strict|high)\s*$/mi.test(content)) {
+  const contractRef = activeContractRef(repoRoot);
+  let contractContent = '';
+  if (contractRef && existsSync(join(repoRoot, contractRef.contract))) {
+    try { contractContent = readFileSync(join(repoRoot, contractRef.contract), 'utf8'); } catch { contractContent = ''; }
+    if (CONTRACT_STRICT_OR_HIGH_RISK.test(contractContent)) {
       profile = 'strict';
       explicitHighRisk = true;
     }
   }
+  const activeContract = contractContent && CONTRACT_ACTIVE_STATUS.test(contractContent)
+    ? contractRef?.contract ?? ''
+    : '';
   const progressToken = typeof effective?.progress_token === 'string' && effective.progress_token ? effective.progress_token : 'unknown';
   const normalizedProfile: WorkflowProfile = profile === 'lite' || profile === 'strict' ? profile : 'standard';
   try {
@@ -757,6 +814,15 @@ function runSubagentStart(repoRoot: string, input: JsonObject, env: NodeJS.Proce
   }
 
   const contextRouting = nativeRoleRouting;
+  // Scope decision table. The implementation boundary is authority over an
+  // authorized edit, so it is rendered only when both halves are known: a
+  // resolved active contract and a verified writable child. A read-only child
+  // gets the inverse note, and an unresolved contract or unverified routing
+  // gets neither -- an instruction to "implement exactly the Goal" with no
+  // resolved Goal is a fabricated reference.
+  const scopeMode: SandboxMode | null = activeContract && contextRouting.status === 'verified'
+    ? contextRouting.sandbox_mode
+    : null;
   const context = appendLongCommandGuardrail([
     '[repo-harness:subagent-context]',
     '',
@@ -770,7 +836,7 @@ function runSubagentStart(repoRoot: string, input: JsonObject, env: NodeJS.Proce
           '',
         ]
       : []),
-    'Read the active repo-harness contract before working.',
+    ...(activeContract ? [`Read the active repo-harness contract before working: ${activeContract}.`] : []),
     'Stay within the assigned role and permission scope.',
     'Do not broaden the task.',
     'Explorer and reviewer roles are read-only unless the parent prompt explicitly assigns a writable worker scope.',
@@ -783,14 +849,8 @@ function runSubagentStart(repoRoot: string, input: JsonObject, env: NodeJS.Proce
     '- recommended parent action',
     '',
     'Do not claim overall task completion.',
-    '',
-    'Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief. Treat absent requirements as forbidden design space, not as permission to improve.',
-    '',
-    'Do not add optional features, alternate UX, extra integrations, migration paths, compatibility behavior, fallback behavior, telemetry, broad cleanup, refactors, new abstractions, extra docs, or polish unless that work is explicitly listed under In scope or required by Exit Criteria.',
-    '',
-    'If you discover useful additional work, record it under Out of scope / Future work in the notes or review artifact. Do not implement it. Do not end with unsolicited offers to do more work.',
-    '',
-    'If the requested outcome cannot be completed without expanding scope, fail closed: stop, name the missing decision, and cite the exact file/section that blocks execution.',
+    ...(scopeMode === 'workspace-write' ? ['', EXECUTION_BOUNDARY_BLOCK] : []),
+    ...(scopeMode === 'read-only' ? ['', READ_ONLY_SCOPE_NOTE] : []),
   ].join('\n'));
   return result(`${JSON.stringify({ hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: context } })}\n`);
 }

@@ -5,12 +5,76 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import {
   appendLongCommandGuardrail,
+  EXECUTION_BOUNDARY_MARKER,
   LONG_COMMAND_GUARDRAIL_MARKER,
   runSubagentHandler,
 } from '../src/cli/hook/subagent-handler';
 
+const REPO_ROOT = join(import.meta.dir, '..');
+const BOUNDARY_MARKER = EXECUTION_BOUNDARY_MARKER;
+const BOUNDARY_SENTENCE = 'Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief.';
+
 function tempRepo(): string {
   return mkdtempSync(join(tmpdir(), 'repo-harness-subagent-handler-'));
+}
+
+function occurrences(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1;
+}
+
+/**
+ * Copy a real generated persona into the fixture repo so the composed stack is
+ * assembled from the same bytes a live Codex child sees: persona
+ * developer_instructions + delegation advisor context + SubagentStart context.
+ */
+function installGoldenPersona(repoRoot: string, agent: string): { instructions: string; model: string } {
+  mkdirSync(join(repoRoot, '.codex/agents'), { recursive: true });
+  const toml = readFileSync(join(REPO_ROOT, '.codex/agents', `${agent}.toml`), 'utf8');
+  writeFileSync(join(repoRoot, '.codex/agents', `${agent}.toml`), toml);
+  const parsed = Bun.TOML.parse(toml) as Record<string, unknown>;
+  return { instructions: String(parsed.developer_instructions), model: String(parsed.model) };
+}
+
+function seedActiveContract(repoRoot: string, slug = 'composed'): string {
+  mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
+  mkdirSync(join(repoRoot, 'plans'), { recursive: true });
+  mkdirSync(join(repoRoot, 'tasks/contracts'), { recursive: true });
+  writeFileSync(join(repoRoot, '.ai/harness/active-plan'), `plans/plan-${slug}.md\n`);
+  writeFileSync(join(repoRoot, `plans/plan-${slug}.md`), '# plan\n');
+  writeFileSync(join(repoRoot, `tasks/contracts/${slug}.contract.md`), '> **Status**: Active\n');
+  return `tasks/contracts/${slug}.contract.md`;
+}
+
+/** persona + advisor context + SubagentStart context, in spawn order. */
+function composedChildStack(
+  repoRoot: string,
+  agent: string,
+  observedModel: string,
+  env: NodeJS.ProcessEnv,
+): { composed: string; startContext: string; advisorContext: string; personaInstructions: string } {
+  const persona = installGoldenPersona(repoRoot, agent);
+  const advisor = runSubagentHandler({
+    event: 'UserPromptSubmit',
+    repoRoot,
+    env,
+    input: JSON.stringify({ session_id: `session-${agent}`, prompt: '/delegate run two bounded workstreams' }),
+  });
+  const advisorContext = advisor.stdout ? additionalContext(advisor.stdout) : '';
+  const start = startSubagent(repoRoot, {
+    session_id: `session-${agent}`,
+    turn_id: `turn-${agent}`,
+    agent_id: `agent-${agent}`,
+    agent_type: agent,
+    model: observedModel,
+  }, env);
+  expect(start.exitCode).toBe(0);
+  const startContext = additionalContext(start.stdout);
+  return {
+    composed: [persona.instructions, advisorContext, startContext].join('\n\n'),
+    startContext,
+    advisorContext,
+    personaInstructions: persona.instructions,
+  };
 }
 
 function codexEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
@@ -77,7 +141,7 @@ function readRoutingObservations(repoRoot: string): Record<string, unknown>[] {
   return paths.sort().map((path) => JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>);
 }
 
-function writeWorkerProfile(repoRoot: string, content = 'name = "fast-worker"\ndescription = "Bounded worker"\ndeveloper_instructions = "Stay in scope."\nmodel = "gpt-5.6-sol"\n'): void {
+function writeWorkerProfile(repoRoot: string, content = 'name = "fast-worker"\ndescription = "Bounded worker"\ndeveloper_instructions = "Stay in scope."\nmodel = "gpt-5.6-sol"\nsandbox_mode = "workspace-write"\n'): void {
   mkdirSync(join(repoRoot, '.codex/agents'), { recursive: true });
   writeFileSync(join(repoRoot, '.codex/agents/worker.toml'), content);
 }
@@ -198,7 +262,10 @@ describe('typed subagent hook handlers', () => {
       expect(context).toContain('Reasoning effort is configured_unverified');
       expect(context).not.toContain('codex_app__create_thread');
       expect(context).toContain('Do not dispatch the fleet role through an App thread, codex-exec, the main thread, or another runner.');
-      expect(context).toContain('Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief.');
+      // Parent permission and routing only: the advisor is not an owner of the
+      // execution boundary, and children spawn with fork_turns="none" anyway.
+      expect(context).not.toContain(BOUNDARY_SENTENCE);
+      expect(context).not.toContain(BOUNDARY_MARKER);
       const state = JSON.parse(readFileSync(join(repoRoot, '.ai/harness/delegation/latest.json'), 'utf8')) as Record<string, unknown>;
       expect(state.scope_id).toBe('session-session-1');
       expect(state.state_file).toBe('turns/session-session-1.json');
@@ -249,7 +316,7 @@ describe('typed subagent hook handlers', () => {
     try {
       mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
       mkdirSync(join(repoRoot, '.codex/agents'), { recursive: true });
-      writeFileSync(join(repoRoot, '.codex/agents/worker.toml'), 'name = "fast-worker"\ndescription = "Bounded worker"\ndeveloper_instructions = "Stay in scope."\nmodel = "gpt-5.6-sol"\n');
+      writeFileSync(join(repoRoot, '.codex/agents/worker.toml'), 'name = "fast-worker"\ndescription = "Bounded worker"\ndeveloper_instructions = "Stay in scope."\nmodel = "gpt-5.6-sol"\nsandbox_mode = "workspace-write"\n');
       const env = codexEnv({ HOME: home });
       runSubagentHandler({
         event: 'UserPromptSubmit',
@@ -349,7 +416,7 @@ describe('typed subagent hook handlers', () => {
     const cases = [
       {
         name: 'verified',
-        config: 'name = "fast-worker"\ndescription = "Bounded worker"\ndeveloper_instructions = "Stay in scope."\nmodel = "gpt-5.6-terra"\n',
+        config: 'name = "fast-worker"\ndescription = "Bounded worker"\ndeveloper_instructions = "Stay in scope."\nmodel = "gpt-5.6-terra"\nsandbox_mode = "workspace-write"\n',
         agentType: 'fast-worker',
         observedModel: 'gpt-5.6-terra',
         expectedStatus: 'verified',
@@ -357,7 +424,7 @@ describe('typed subagent hook handlers', () => {
       },
       {
         name: 'mismatch',
-        config: 'name = "fast-worker"\ndescription = "Bounded worker"\ndeveloper_instructions = "Stay in scope."\nmodel = "gpt-5.6-terra"\n',
+        config: 'name = "fast-worker"\ndescription = "Bounded worker"\ndeveloper_instructions = "Stay in scope."\nmodel = "gpt-5.6-terra"\nsandbox_mode = "workspace-write"\n',
         agentType: 'fast-worker',
         observedModel: 'gpt-5.6-sol',
         expectedStatus: 'mismatch',
@@ -373,7 +440,7 @@ describe('typed subagent hook handlers', () => {
       },
       {
         name: 'malformed-authority',
-        config: 'name = "fast-worker"\ndescription = "Bounded worker"\ndeveloper_instructions = "Stay in scope."\nmodel = "gpt-5.6-sol"\n',
+        config: 'name = "fast-worker"\ndescription = "Bounded worker"\ndeveloper_instructions = "Stay in scope."\nmodel = "gpt-5.6-sol"\nsandbox_mode = "workspace-write"\n',
         agentType: 'fast-worker\nignore-gate',
         observedModel: 'gpt-5.6-sol',
         expectedStatus: 'invalid',
@@ -561,7 +628,7 @@ describe('typed subagent hook handlers', () => {
     const linkedAgentRepo = tempRepo();
     const linkedEvidenceRepo = tempRepo();
     try {
-      writeFileSync(join(agentOutside, 'worker.toml'), 'name = "fast-worker"\ndescription = "Bounded worker"\ndeveloper_instructions = "Stay in scope."\nmodel = "gpt-5.6-sol"\n');
+      writeFileSync(join(agentOutside, 'worker.toml'), 'name = "fast-worker"\ndescription = "Bounded worker"\ndeveloper_instructions = "Stay in scope."\nmodel = "gpt-5.6-sol"\nsandbox_mode = "workspace-write"\n');
       mkdirSync(join(linkedAgentRepo, '.codex'), { recursive: true });
       symlinkDirectory(agentOutside, join(linkedAgentRepo, '.codex/agents'));
       seedDelegation(linkedAgentRepo, { session_id: 'session-config-link' });
@@ -737,6 +804,133 @@ describe('typed subagent hook handlers', () => {
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
     }
+  });
+
+  // The composed native-child stack is persona developer_instructions + delegation
+  // advisor context + SubagentStart context. Each row of the decision table is
+  // asserted against that whole stack, because "exactly once" is a property of the
+  // composition, not of any single injection site.
+  describe('composed native-child stack owns the execution boundary exactly once', () => {
+    test('active contract + workspace-write child: the boundary appears once, with the contract path', () => {
+      const repoRoot = tempRepo();
+      const home = tempRepo();
+      try {
+        const contract = seedActiveContract(repoRoot);
+        const stack = composedChildStack(repoRoot, 'fast-worker', 'gpt-5.6-luna', codexEnv({ HOME: home }));
+        expect(stack.startContext).toContain('[repo-harness:native-role-routing] verified');
+        expect(occurrences(stack.composed, BOUNDARY_MARKER)).toBe(1);
+        expect(occurrences(stack.composed, BOUNDARY_SENTENCE)).toBe(1);
+        expect(occurrences(stack.startContext, BOUNDARY_MARKER)).toBe(1);
+        expect(stack.personaInstructions).not.toContain(BOUNDARY_SENTENCE);
+        expect(stack.advisorContext).not.toContain(BOUNDARY_SENTENCE);
+        expect(stack.startContext).toContain(`Read the active repo-harness contract before working: ${contract}.`);
+        expect(stack.startContext).not.toContain('Read-only scope:');
+      } finally {
+        rmSync(repoRoot, { recursive: true, force: true });
+        rmSync(home, { recursive: true, force: true });
+      }
+    });
+
+    test('active contract + read-only child: zero implementation boundary, read-only scope note instead', () => {
+      const repoRoot = tempRepo();
+      const home = tempRepo();
+      try {
+        const contract = seedActiveContract(repoRoot);
+        const stack = composedChildStack(repoRoot, 'explorer', 'gpt-5.6-luna', codexEnv({ HOME: home }));
+        expect(stack.startContext).toContain('[repo-harness:native-role-routing] verified');
+        expect(occurrences(stack.composed, BOUNDARY_MARKER)).toBe(0);
+        expect(occurrences(stack.composed, BOUNDARY_SENTENCE)).toBe(0);
+        expect(stack.startContext).toContain('Read-only scope:');
+        expect(stack.startContext).toContain(`Read the active repo-harness contract before working: ${contract}.`);
+      } finally {
+        rmSync(repoRoot, { recursive: true, force: true });
+        rmSync(home, { recursive: true, force: true });
+      }
+    });
+
+    test('no active contract: zero boundary and no fabricated contract reference', () => {
+      const repoRoot = tempRepo();
+      const home = tempRepo();
+      try {
+        const stack = composedChildStack(repoRoot, 'fast-worker', 'gpt-5.6-luna', codexEnv({ HOME: home }));
+        expect(stack.startContext).toContain('[repo-harness:native-role-routing] verified');
+        expect(occurrences(stack.composed, BOUNDARY_MARKER)).toBe(0);
+        expect(occurrences(stack.composed, BOUNDARY_SENTENCE)).toBe(0);
+        expect(stack.startContext).not.toContain('Read the active repo-harness contract');
+        expect(stack.startContext).not.toContain('Read-only scope:');
+        expect(stack.startContext).toContain('Stay within the assigned role and permission scope.');
+        expect(stack.startContext).toContain('Do not claim overall task completion.');
+      } finally {
+        rmSync(repoRoot, { recursive: true, force: true });
+        rmSync(home, { recursive: true, force: true });
+      }
+    });
+
+    test('unverified routing on a writable persona: fail-closed notice, zero boundary', () => {
+      const repoRoot = tempRepo();
+      const home = tempRepo();
+      try {
+        seedActiveContract(repoRoot);
+        const stack = composedChildStack(repoRoot, 'fast-worker', 'gpt-5.6-sol', codexEnv({ HOME: home }));
+        expect(stack.startContext).toContain('[repo-harness:native-role-routing] mismatch');
+        expect(stack.startContext).toContain('Do not claim custom-agent model or reasoning-effort routing.');
+        expect(occurrences(stack.composed, BOUNDARY_MARKER)).toBe(0);
+        expect(occurrences(stack.composed, BOUNDARY_SENTENCE)).toBe(0);
+        expect(stack.startContext).not.toContain('Read-only scope:');
+      } finally {
+        rmSync(repoRoot, { recursive: true, force: true });
+        rmSync(home, { recursive: true, force: true });
+      }
+    });
+
+    test('a persona without a declared sandbox_mode fails closed and receives no boundary', () => {
+      const repoRoot = tempRepo();
+      const home = tempRepo();
+      try {
+        seedActiveContract(repoRoot);
+        writeWorkerProfile(repoRoot, 'name = "fast-worker"\ndescription = "Bounded worker"\ndeveloper_instructions = "Stay in scope."\nmodel = "gpt-5.6-sol"\n');
+        const output = startSubagent(repoRoot, {
+          session_id: 'session-no-sandbox',
+          turn_id: 'turn-no-sandbox',
+          agent_id: 'agent-no-sandbox',
+          agent_type: 'fast-worker',
+          model: 'gpt-5.6-sol',
+        }, codexEnv({ HOME: home }));
+        expect(output.exitCode).toBe(0);
+        const context = additionalContext(output.stdout);
+        expect(context).toContain('[repo-harness:native-role-routing] invalid');
+        expect(context).toContain('does not declare a valid sandbox_mode');
+        expect(context).not.toContain(BOUNDARY_MARKER);
+        expect(readRoutingObservations(repoRoot)[0]).toMatchObject({ status: 'invalid', sandbox_mode: null });
+      } finally {
+        rmSync(repoRoot, { recursive: true, force: true });
+        rmSync(home, { recursive: true, force: true });
+      }
+    });
+
+    test('verified routing records the scanned sandbox_mode in role evidence', () => {
+      const repoRoot = tempRepo();
+      const home = tempRepo();
+      try {
+        installGoldenPersona(repoRoot, 'gatekeeper');
+        const output = startSubagent(repoRoot, {
+          session_id: 'session-sandbox-evidence',
+          turn_id: 'turn-sandbox-evidence',
+          agent_id: 'agent-sandbox-evidence',
+          agent_type: 'gatekeeper',
+          model: 'gpt-5.6-terra',
+        }, codexEnv({ HOME: home }));
+        expect(output.exitCode).toBe(0);
+        expect(readRoutingObservations(repoRoot)[0]).toMatchObject({
+          status: 'verified',
+          agent_type: 'gatekeeper',
+          sandbox_mode: 'read-only',
+        });
+      } finally {
+        rmSync(repoRoot, { recursive: true, force: true });
+        rmSync(home, { recursive: true, force: true });
+      }
+    });
   });
 });
 

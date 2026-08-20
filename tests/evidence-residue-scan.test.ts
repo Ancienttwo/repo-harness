@@ -195,12 +195,12 @@ describe("residue scan: direct re-assertion of each named retired surface", () =
 describe("closeout assertion: frozen fallback (row 13, orchestrator ruling)", () => {
   const CHANGELOG_PATH = join(REPO_ROOT, "docs/CHANGELOG.md");
   const RESEARCH_DOC_PATH = join(REPO_ROOT, "docs/researches/20260723-epc-program-closeout.research.md");
-  const SPRINT_DOC_PATH = join(REPO_ROOT, "plans/sprints/20260722-0001-evidence-projection-convergence.sprint.md");
+  const SPRINT_DOC_PATH = join(REPO_ROOT, "plans/archive/20260722-0001-evidence-projection-convergence.sprint.md");
 
   const FALLBACK_DOCS: ReadonlyArray<{ readonly label: string; readonly path: string }> = [
     { label: "docs/CHANGELOG.md", path: CHANGELOG_PATH },
     { label: "docs/researches/20260723-epc-program-closeout.research.md", path: RESEARCH_DOC_PATH },
-    { label: "plans/sprints/20260722-0001-evidence-projection-convergence.sprint.md", path: SPRINT_DOC_PATH },
+    { label: "plans/archive/20260722-0001-evidence-projection-convergence.sprint.md", path: SPRINT_DOC_PATH },
   ];
 
   /**

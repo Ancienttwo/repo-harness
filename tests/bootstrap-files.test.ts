@@ -96,7 +96,10 @@ describe("Bootstrap Script Contracts", () => {
       expect(toml).not.toContain("Opus 4.8 at max effort");
       expect(toml).not.toContain("Sonnet 5 at max effort");
       expect(toml).toContain("developer_instructions = '''");
-      expect(toml).toContain(
+      // Persona owns role identity only. The execution boundary is injected once
+      // by the runtime task packet (SubagentStart context), contract- and
+      // writability-aware, so a read-only persona is never told to implement.
+      expect(toml).not.toContain(
         "Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief."
       );
       expect(read(`agents/fleet/${spec.name}.md`)).toContain(`name: ${spec.name}`);

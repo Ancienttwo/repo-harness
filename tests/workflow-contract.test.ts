@@ -62,21 +62,25 @@ describe("workflow contract manifest", () => {
   });
 
   test("execution boundary canonical sentence stays identical across its constant sources", () => {
-    // The EXECUTION_BOUNDARY clause is duplicated across these surfaces so it reaches
-    // every delegated runner (contract worker prompts, the MCP codex-goal path, the
-    // typed Codex delegation handler, and the generated Codex agent fleet TOML). This
-    // asserts the first sentence never drifts.
+    // One owner per delegated runner path: the standalone contract-run worker
+    // prompt, the MCP codex-goal document, and the Codex native-child task packet
+    // (SubagentStart context). The generated agent fleet TOML is no longer a
+    // source -- the persona owns role identity only, and the native child gets the
+    // clause exactly once from the task packet. This asserts the first sentence
+    // never drifts between the three remaining owners.
     const canonicalSentence =
       "Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief.";
     const sources = [
       "scripts/contract-run.ts",
       "src/cli/mcp/tools.ts",
       "src/cli/hook/subagent-handler.ts",
-      "scripts/install-agent-fleet.sh",
     ];
     for (const relPath of sources) {
       const content = readFileSync(join(ROOT, relPath), "utf-8");
       expect(content).toContain(canonicalSentence);
+    }
+    for (const relPath of ["scripts/install-agent-fleet.sh", "assets/templates/helpers/install-agent-fleet.sh"]) {
+      expect(readFileSync(join(ROOT, relPath), "utf-8")).not.toContain(canonicalSentence);
     }
   });
 
