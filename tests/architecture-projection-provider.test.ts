@@ -282,6 +282,7 @@ describe('package-local ArchContext projection provider', () => {
     const candidates = trustedNodeCandidates(home);
     expect(candidates.slice(0, 3)).toEqual(['/usr/bin/node', '/usr/local/bin/node', '/opt/homebrew/bin/node']);
     expect(candidates.filter((candidate) => candidate.startsWith(home))).toEqual([
+      join(home, '.local', 'bin', 'node'),
       join(nvmRoot, 'v20.11.0', 'bin', 'node'),
       join(nvmRoot, 'v24.18.0', 'bin', 'node'),
     ]);
@@ -327,7 +328,7 @@ describe('package-local ArchContext projection provider', () => {
     expect(() => resolveCompatibleNodeRuntime(scrubbedEnv, scoped)).toThrow(/requires Node >=24 <26/);
     expect(() => resolveCompatibleNodeRuntime(scrubbedEnv, scoped)).toThrow(/REPO_HARNESS_NODE_BIN \(unset\)/);
     expect(() => resolveCompatibleNodeRuntime(scrubbedEnv, scoped)).toThrow(new RegExp(`PATH \\(${fakeBin}\\)`));
-    expect(() => resolveCompatibleNodeRuntime(scrubbedEnv, scoped)).toThrow(new RegExp(`trusted candidates \\(${staleNode}\\)`));
+    expect(() => resolveCompatibleNodeRuntime(scrubbedEnv, scoped)).toThrow(new RegExp(`trusted candidates \\(${join(home, '.local', 'bin', 'node')}, ${staleNode}\\)`));
   });
 
   test('uses the protected helper exact Node authority without widening PATH', () => {

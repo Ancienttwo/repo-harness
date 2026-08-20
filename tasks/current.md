@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-20T16:21:12+0800 -->
+<!-- updated_at: 2026-08-20T17:12:08+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-20T16:21:12+0800
-> **Source Branch**: main
-> **Source Commit**: aebebae1
+> **Updated At**: 2026-08-20T17:12:08+0800
+> **Source Branch**: codex/deferred-goals-cleanup
+> **Source Commit**: 6f599644
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -56,49 +56,19 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 699 changed/untracked path(s)
+- Summary: 10 changed/untracked path(s)
 
 ```
- M docs/architecture/.projection-manifest.json
- D plans/plan-20260528-1436-hook-global-runtime.md
- D plans/plan-20260528-1443-hook-auto-archive-on-done.md
- D plans/plan-20260528-1652-codegraph-readiness.md
- D plans/plan-20260529-0004-capability-context-cli-hook.md
- D plans/plan-20260529-0909-astrozi-user-level-hook.md
- D plans/plan-20260530-1023-tracked-current-status-snapshot.md
- D plans/plan-20260530-2005-think-headroom-caveman-codegraph-cbm.md
- D plans/plan-20260531-0216-think-external-acceptance-contract-worktree-finish-sprint-verifi.md
- D plans/plan-20260606-0443-think-skill-codex-repo-skill-think-hook-agents-md.md
- D plans/plan-20260612-2351-downstream-legacy-cleanup-policy.md
- D plans/plan-20260613-0314-think-scan-init-hook.md
- D plans/plan-20260614-1838-gptpro-review-followup.md
- D plans/plan-20260616-HE-01-harness-research-baseline.md
- D plans/plan-20260616-HE-02-filing-terminology-normalization.md
- D plans/plan-20260616-HE-03-human-review-card.md
- D plans/plan-20260616-HE-04-contract-profiles.md
- D plans/plan-20260616-HE-08-spec-onboarding-compression.md
- D plans/plan-20260622-1651-pr17-review-freshness-failclosed.md
- D plans/plan-20260623-1516-plan-completeness-gate-english-guidance.md
- D plans/plan-20260705-2027-review-scope-fidelity.md
- D plans/plan-20260711-0115-think-plan-011459.md
- D plans/plan-20260711-1034-chatgpt-coding-mcp-live-canary.md
- D plans/plan-20260712-0450-bdd2-eval-foundation.md
- D plans/plan-20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.md
- D plans/plan-20260712-1330-bun-1-3-14-runtime-upgrade.md
- D plans/plan-20260714-0421-verifier-evidence-lifecycle-cutover.md
- D plans/plan-20260714-2318-repo-harness-0-10-0-release-blockers.md
- D plans/plan-20260715-1140-skill-surface-discovery-convergence.md
- D plans/plan-20260716-0150-lsc-01-profile-operation-characterization.md
- D plans/plan-20260716-0222-effective-state-test-retirement.md
- D plans/plan-20260716-0338-closeout-runner-guardrails.md
- D plans/plan-20260716-1419-closeout-authority-bootstrap.md
- D plans/plan-20260718-1405-lsc-02-artifact-requirement-policy.md
- D plans/plan-20260718-1531-lsc-03-standard-contract-semantic-cutover.md
- D plans/plan-20260718-1909-lsc-04-revision-partition-and-progress-token.md
- D plans/plan-20260718-2119-lsc-05-stable-state-version-allocation.md
- D plans/plan-20260718-2239-lsc-06-operation-readiness-evaluator.md
- D plans/plan-20260718-2350-lsc-07-stop-semantics-cutover.md
- D plans/plan-20260719-0155-lsc-08-adapter-parity-and-docs.md
+ D plans/plan-20260820-1629-deferred-goals-cleanup.md
+ D tasks/contracts/20260820-1629-deferred-goals-cleanup.contract.md
+ D tasks/notes/20260820-1629-deferred-goals-cleanup.notes.md
+ D tasks/reviews/20260820-1629-deferred-goals-cleanup.review.md
+ M tasks/todos.md
+?? plans/archive/plan-20260820-1629-deferred-goals-cleanup.md
+?? tasks/archive/contract-20260820-1711-deferred-goals-cleanup.md
+?? tasks/archive/notes-20260820-1711-deferred-goals-cleanup.md
+?? tasks/archive/review-20260820-1711-deferred-goals-cleanup.md
+?? tasks/archive/todo-20260820-1711-deferred-goals-cleanup.md
 ```
 
 ## Source Artifacts

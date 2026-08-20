@@ -1,0 +1,23 @@
+bun test v1.3.14 (0d9b296a)
+
+tests/test-timeout-contract.test.ts:
+33 |           + `  await new Promise((resolve) => setTimeout(resolve, 6_000));\n`
+34 |           + `  expect(Date.now() - started).toBeGreaterThan(5_900);\n`
+35 |           + `});\n`);
+36 |       }
+37 |       const result = spawnSync('bun', ['test'], { cwd: root, encoding: 'utf8', timeout: 120_000 });
+38 |       expect(`${result.stdout}${result.stderr}`).not.toContain('timed out after 5000ms');
+                                                          ^
+error: expect(received).not.toContain(expected)
+
+Expected to not contain: "timed out after 5000ms"
+Received: "bun test v1.3.14 (0d9b296a)\n\ntests/slow-a.test.ts:\n(fail) slow-a needs more than the bun 5000ms default [5000.66ms]\n  ^ this test timed out after 5000ms.\n\n 1 pass\n 1 fail\n 1 expect() calls\nRan 2 tests across 2 files. [11.02s]\n"
+
+      at <anonymous> (/private/tmp/rh-wt-flake-diagnosis/tests/test-timeout-contract.test.ts:38:54)
+(fail) test runner timeout contract > the configured default timeout applies to every test file, not just the first [11030.99ms]
+
+ 0 pass
+ 1 fail
+ 1 expect() calls
+Ran 1 test across 1 file. [11.05s]
+PRE_FIX_EXIT=1

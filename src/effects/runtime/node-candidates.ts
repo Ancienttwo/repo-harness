@@ -25,6 +25,9 @@ export function trustedNodeCandidates(home: string): string[] {
     '/usr/bin/node',
     '/usr/local/bin/node',
     '/opt/homebrew/bin/node',
+    // A user-curated pin (commonly a symlink to a specific major) outranks the
+    // nvm sweep: it is one explicit choice, not an enumeration of installs.
+    join(home, '.local', 'bin', 'node'),
     ...childDirectories(nvmVersions).map((versionRoot) => join(versionRoot, 'bin', 'node')),
   ];
   const toolcacheRoots = process.platform === 'win32'

@@ -93,13 +93,34 @@ sequenceDiagram
 
 ### 3.3 10x 规模下先垮的点
 
-按当前实现的可证伪顺序：
+排序依据是本仓库自己的 dispatch 遥测 `.ai/harness/runs/hook-events.jsonl`：44,301 条记录，窗口 `2026-07-23T09:05Z` → `2026-08-20T08:26Z`，按 `event.route_id` 聚合 `metrics.elapsed_ms`。占比是该 route 在实测总 hook 墙钟时间中的份额，不是猜测。
 
-1. **`hook-events.jsonl` 的同步 `appendFileSync` 争用。** `PostToolUse.always` 对每次工具调用都触发一次 dispatch + 一次追加。10x 事件量下这是最先出现的尾延迟来源，且并发 host 进程写同一文件时记录交错风险上升。
-2. **Stop 时的级联子进程。** 一次 Stop 最多可拉起 `architecture-queue` + `context-contract-sync` + `capability-context` + `verify-contract` 四类 `spawnSync`，逐 pending event 串行。pending 队列一旦积压，Stop 的墙钟时间随队列长度线性增长，而 host 的 30s adapter timeout 是硬上限。
-3. **`session-context.ts` 的 64.6 KB 单文件与 SessionStart 预算。** section 数量增长时 `budgetSessionContext` 的裁剪会先牺牲低优先级 provider，诊断信息比业务上下文更早被挤掉。
-4. **`resolveEffectiveState` 的锁竞争。** `runtime.ts:277` 的三次有界重试只覆盖两种已知瞬时签名（stability 重读耗尽、独占锁超时）。并行 agent 数量上去后，重试耗尽会把 SessionStart 推进 `[HarnessStateUnavailable]` 分支 —— 这是正确的 fail-closed，但用户侧表现为上下文突然消失。
-5. **`install-profile.ts` 1,170 行的单点。** profile 组件矩阵继续增长时，这里是最先需要拆分的文件。
+| route | 调用数 | 时间占比 | p50 | p95 | p99 / max |
+| --- | --- | --- | --- | --- | --- |
+| `Stop.default` | 675 | 48.7% | 549ms | 18.4s | 24.4s / 27.4s |
+| `PostToolUse.bash` | 16,398 | 26.7% | 52ms | 113ms | 244ms / 1.2s |
+| `PreToolUse.edit` | 2,219 | 16.5% | 253ms | 437ms | 873ms / 10.9s |
+| `SessionStart.default` | 492 | 4.6% | 304ms | 711ms | 1.2s / 2.1s |
+| `PostToolUse.always` | 21,217 | 2.6% | 3.2ms | 11.2ms | — / 386ms |
+| 其余 6 条 route 合计 | 3,300 | <1.0% | — | — | — |
+
+按实测的可证伪顺序：
+
+1. **Stop 的串行级联。** 一次 Stop 最多可拉起 `architecture-queue` + `context-contract-sync` + `capability-context` + `verify-contract` 四类 `spawnSync`，逐 pending event 串行。这是唯一已经贴到硬上限的 route：675 次 Stop 里 93 次超过 5s、77 次超过 10s，p99 24.4s，而 host 的 30s adapter timeout 就在旁边。10x 之前它就会先撞墙 —— 它已经吃掉近一半的实测 hook 时间。
+2. **`PostToolUse.bash` 的单位成本 × 调用量。** p50 52ms 单看不贵，但它是第二高频 route（16,398 次），乘出来就是 26.7% 的总时间。它没有尾延迟问题（p99 244ms），垮的方式是稳态吞吐：命令密度上去后每次 Bash 调用都固定付这 50ms。
+3. **`PreToolUse.edit` 阻塞编辑热路径。** mutation-guard 是**同步前置**门，p50 253ms 直接计入用户可感知的编辑延迟，且 max 10.9s 说明它在状态解析退化时会长尾。§3.2 那条"编辑热路径近乎零成本"的权衡只对 `PostToolUse.edit`（0.8%、p50 13ms）成立，对 PreToolUse 一侧不成立。
+4. **SessionStart 上下文预算是全有或全无。** 七个 provider（resume、capability-context-pending、architecture-queue-pending、pending-plan-capture、current-status-snapshot、active-sprint、tooling-update-advisory）在 `session-context.ts:1345-1351` 被 `appendBlock` 拼成**一整块** priority-5 的 `session-start-context.sh` section。`budgetSessionContext` 的裁剪粒度是 section（`session-context-budget.ts:437`），不是 provider —— 超预算时整块被丢掉、只留一行 `[ContextRef:session-start-context.sh]` 占位。所以这里不存在"低优先级 provider 先被牺牲"，而是七块内容一起消失。延迟本身不是瓶颈（4.6%、p95 711ms）。
+5. **`resolveEffectiveState` 的锁竞争。** `runtime.ts:277` 的三次有界重试只覆盖两种已知瞬时签名（stability 重读耗尽、独占锁超时）。并行 agent 数量上去后，重试耗尽会把 SessionStart 推进 `[HarnessStateUnavailable]` 分支 —— 这是正确的 fail-closed，但用户侧表现为上下文突然消失。
+6. **`install-profile.ts` 1,167 行的单点。** profile 组件矩阵继续增长时，这里是最先需要拆分的文件。不在 dispatch 热路径上。
+
+两个 sink 不是同一个东西，早期版本把它们混为一谈：
+
+- `.ai/harness/runs/hook-events.jsonl` 由 dispatcher 的 `event-telemetry.ts:135` 在**每条 route** 完成后同步 `appendFileSync` 一条，因此它是上表的数据来源，也是唯一全 route 覆盖的写入。
+- `.claude/.trace.jsonl` 只由 `trace-observer.ts:190` 写，而 `trace-observer` 只挂在 `PostToolUse.always` 这一条 route 上（`route-registry.ts:100-104`）。
+
+`PostToolUse.always` 确实是调用量最大的 route（21,217 次，超过 bash），但实测它是**最便宜**的高频路径：p50 3.2ms、总占比 2.6%。同步追加争用在当前量级下不是排名靠前的风险；真要成为瓶颈，先出问题的会是 dispatcher 那条全 route 追加，而不是 trace 这一条。
+
+注意遥测本身的边界：`metrics.child_processes` 在全部 44,301 条记录里都是 `0`，它属于 `measurement.incomplete_metrics`，不能用来反推 Stop 的子进程数量；上表只依赖 `elapsed_ms` 这个被标记为 complete 的字段。
 
 ### 3.4 prose ↔ 源码冲突（需上层裁决）
 

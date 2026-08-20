@@ -39,7 +39,7 @@
     "benchmark:skills": "bun scripts/run-skill-evals.ts",
     "benchmark:harness": "bun scripts/run-harness-profile-benchmark.ts",
     "benchmark:debug": "bun scripts/run-debug-ground-truth-eval.ts",
-    "test": "bun test",
+    "test": "bun test --timeout 60000",
     "test:coverage": "bun test --coverage",
     "check:type": "node node_modules/typescript/bin/tsc --noEmit",
     "sync:hooks": "bun scripts/sync-hook-sources.ts --write",

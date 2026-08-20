@@ -657,8 +657,11 @@ describe('durable architecture projection orchestration', () => {
     let clockReads = 0;
     expect(() => consumeArchitectureRefreshSignals(f.repoRoot, [signal], ['src/a.ts', 'src/b.ts'], {
       env: { ...process.env, PATH: bin },
-      deadlineMs: 1_000,
-      nowMs: () => clockReads++ === 0 ? 0 : 2_000,
+      // deadlineMs minus the virtual now is handed to spawnSync as a REAL
+      // wall-clock kill timer; keep the derived budget generous so a loaded
+      // machine cannot SIGTERM the fake action before the second clock read.
+      deadlineMs: 30_000,
+      nowMs: () => clockReads++ === 0 ? 0 : 60_000,
     })).toThrow('timeout before canonical action');
     const progressPath = join(f.repoRoot, '.ai/harness/architecture-projection/refresh-progress', `${signal.signalId.replace(/^sha256:/, '')}.json`);
     expect(JSON.parse(readFileSync(progressPath, 'utf8')).actions.map((entry: { actionKey: string }) => entry.actionKey)).toEqual(['architecture-queue:src/a.ts']);
