@@ -26,6 +26,27 @@
 - `bun run check:type` exit 0.
 - Main CI run 32409656130 on 01920840: success.
 
+## Change Assessment
+
+```json
+{"protocol":1,"oracles":[{"id":"shape-lock-suite","kind":"deterministic_test","paths":["*"]},{"id":"ci-green","kind":"runtime_readback","paths":["*"]},{"id":"orchestrator-acceptance","kind":"manual_acceptance","paths":["*"]}]}
+```
+
+## Acceptance Policy
+
+```json
+{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}
+```
+
+## Allowed Paths
+
+```yaml
+allowed_paths:
+  - plans/
+  - tasks/
+  - tests/architecture-projection-restamp-cli.test.ts
+```
+
 ## Evidence Requirements
 
 ```yaml
