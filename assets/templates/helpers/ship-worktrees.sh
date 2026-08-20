@@ -931,9 +931,8 @@ seal_merge_gate_before_ship() {
 merge_gate_required() {
   local base_ref="$1" result
   is_trusted_executable "$BUN_BIN" || fail "merge gate requires the trusted Bun runtime injected by repo-harness run"
-  command -v jq >/dev/null 2>&1 || fail "merge gate preflight requires jq"
-  result="$("$BUN_BIN" "$helper_dir/merge-gate.ts" fingerprint --base "$base_ref" --format json)" || fail "cannot read merge-gate requirement from $base_ref"
-  printf '%s' "$result" | jq -er '.required == true' >/dev/null 2>&1
+  result="$("$BUN_BIN" "$helper_dir/merge-gate.ts" fingerprint --base "$base_ref" --format required)" || fail "cannot read merge-gate requirement from $base_ref"
+  [[ "$result" == "true" ]]
 }
 
 refresh_target_base() {

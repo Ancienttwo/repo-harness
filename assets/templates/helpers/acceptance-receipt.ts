@@ -87,26 +87,33 @@ type Options = {
 };
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const PACKAGE_ROOT = SCRIPT_DIR.endsWith('/assets/templates/helpers')
+const PACKAGE_ROOT = basename(SCRIPT_DIR) === 'helpers'
+  && basename(dirname(SCRIPT_DIR)) === 'templates'
+  && basename(dirname(dirname(SCRIPT_DIR))) === 'assets'
   ? resolve(SCRIPT_DIR, '../../..')
   : resolve(SCRIPT_DIR, '..');
-function protectedGitBinary(): string {
-  const configured = process.env.REPO_HARNESS_GIT_BIN?.trim();
-  const candidates = [configured, '/usr/bin/git', '/bin/git'].filter((path): path is string => Boolean(path));
-  for (const candidate of candidates) {
-    if (!isAbsolute(candidate) || !existsSync(candidate)) continue;
-    const source = lstatSync(candidate);
-    if (source.isSymbolicLink() || !source.isFile()) continue;
-    const actual = realpathSync(candidate);
-    const target = lstatSync(actual);
-    if (target.isSymbolicLink() || !target.isFile()) continue;
-    if (process.platform !== 'win32' && (target.mode & 0o111) === 0) continue;
-    return actual;
-  }
-  throw new Error('trusted git executable is unavailable');
-}
-
-const GIT_BIN = protectedGitBinary();
+type ProtectedRuntime = {
+  platform: NodeJS.Platform;
+  accountHome: string;
+  accountUsername: string;
+  gitBin: string;
+  bashBin: string;
+  bunExecutable: string;
+  pathEntries: readonly string[];
+  pathDelimiter: ':' | ';';
+  tempDir: string;
+  systemRoot?: string;
+};
+type ProtectedPlatformModule = {
+  resolveProtectedHelperPlatform: () => ProtectedRuntime;
+  protectedHelperRuntimeEnv: (runtime: ProtectedRuntime) => NodeJS.ProcessEnv;
+};
+const protectedPlatform = await import(
+  pathToFileURL(join(PACKAGE_ROOT, 'src', 'cli', 'runtime', 'protected-helper-platform.ts')).href
+) as ProtectedPlatformModule;
+const PROTECTED_RUNTIME = protectedPlatform.resolveProtectedHelperPlatform();
+const GIT_BIN = PROTECTED_RUNTIME.gitBin;
+const GIT_ENV = protectedPlatform.protectedHelperRuntimeEnv(PROTECTED_RUNTIME);
 
 function fail(message: string, code = 1): never {
   const error = new Error(message) as Error & { exitCode?: number };
@@ -139,7 +146,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function gitText(root: string, args: string[]): string {
-  const result = spawnSync(GIT_BIN, ['-C', root, ...args], { encoding: 'utf-8' });
+  const result = spawnSync(GIT_BIN, ['-C', root, ...args], { encoding: 'utf-8', env: GIT_ENV });
   if (result.status !== 0) fail(`git ${args.join(' ')} failed: ${result.stderr.trim() || 'unknown error'}`);
   return result.stdout.trim();
 }
@@ -494,7 +501,7 @@ function resolveArchived(root: string, path: string, family: 'plans' | 'tasks', 
   if (existsSync(resolve(root, path))) return path;
   const archiveRoot = join(root, family, 'archive');
   if (!existsSync(archiveRoot)) fail(`receipt authority file is missing: ${path}`);
-  const tracked = spawnSync(GIT_BIN, ['-C', root, 'ls-files', `${family}/archive`], { encoding: 'utf-8' })
+  const tracked = spawnSync(GIT_BIN, ['-C', root, 'ls-files', `${family}/archive`], { encoding: 'utf-8', env: GIT_ENV })
     .stdout.split(/\r?\n/).filter(Boolean);
   const matches = tracked.filter((candidate) => {
     const absolute = resolve(root, candidate);

@@ -408,6 +408,18 @@ describe("run command", () => {
     }
   });
 
+  test("runHelper returns a structured spawn error when helper resolution fails", () => {
+    const res = runHelper({
+      helper: "check-task-workflow",
+      env: { REPO_HARNESS_SOURCE_ROOT: "relative/source-root" },
+      stdio: "pipe",
+    });
+
+    expect(res.exitCode).toBe(1);
+    expect(res.reason).toBe("spawn-error");
+    expect(res.stderr).toContain("REPO_HARNESS_SOURCE_ROOT must be an absolute path");
+  });
+
   test("bundled workstream-sync resolves bundled sibling helpers", () => {
     const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-workstream-package-"));
     try {

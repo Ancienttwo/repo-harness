@@ -181,12 +181,16 @@ sequenceDiagram
 - P2: an explicit Windows install/update resolves Git and `taskkill` from the
   operator environment, proves `taskkill` matches native `SystemRoot\\System32`,
   proves Git/Bash/`usr/bin` share one non-symlink
-  Git-for-Windows root, probes the executables, and atomically writes the OS
+  Git-for-Windows root, validates the ceremony's absolute non-symlink `TEMP`
+  directory, probes the executables, and atomically writes the OS
   account config without replacing siblings. Later `runHelper` reads and
   revalidates that record, resolves the repo with pinned Git, selects the
   packaged helper, and launches pinned Bash/Bun with an isolated Windows
-  environment. Missing or stale state stops before the helper or repository
-  side effect.
+  environment. Direct `acceptance-receipt.ts` and `merge-gate.ts` invocation
+  re-resolves the same host contract rather than trusting caller binary/path/temp
+  overrides, and the shell ship path asks merge-gate for a scalar required flag
+  without adding a `jq` dependency. Missing or stale state stops before the
+  helper or repository side effect.
 - P3: runtime `PATH` probing would reintroduce caller authority, so discovery is
   intentionally confined to install/update and relocation requires an explicit
   update. Small host-absolute predicates in the two shell helpers preserve the

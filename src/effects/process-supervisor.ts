@@ -170,28 +170,26 @@ function signalExitCode(signal: NodeJS.Signals): number {
   }
 }
 
-function signalProcessGroup(child: ChildProcess, signal: NodeJS.Signals, taskkillBin: string | null): void {
-  if (!child.pid) return;
+export function taskkillAttemptSucceeded(result: { readonly status: number | null; readonly error?: Error }): boolean {
+  if (result.error) throw result.error;
+  return result.status === 0;
+}
+
+function signalProcessGroup(child: ChildProcess, signal: NodeJS.Signals, taskkillBin: string | null): boolean {
+  if (!child.pid) return true;
   if (process.platform === 'win32') {
     const result = spawnSync(taskkillBin ?? 'taskkill', ['/pid', String(child.pid), '/T', ...(signal === 'SIGKILL' ? ['/F'] : [])], {
       stdio: 'ignore',
       windowsHide: true,
     });
-    // A spawn-level failure (e.g. taskkill.exe unreachable) means termination
-    // was never even attempted; that must not be swallowed like an
-    // already-exited target. taskkill's own exit status cannot reliably
-    // distinguish "already gone" from "failed to kill the tree" without
-    // parsing localized output, so it is intentionally not treated as proof of
-    // success here; whether the group is actually gone is decided
-    // independently by the caller's post-signal confirmation.
-    if (result.error) throw result.error;
-    return;
+    return taskkillAttemptSucceeded(result);
   }
   try {
     process.kill(-child.pid, signal);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
   }
+  return true;
 }
 
 function collectBounded(
@@ -325,11 +323,14 @@ async function superviseTarget(options: SupervisorOptions): Promise<number> {
       didTimeOut = outcome === 'timeout';
       didLoseParent = outcome === 'parent-lost';
       interruptedBy = outcome === 'timeout' || outcome === 'parent-lost' ? null : outcome;
-      signalProcessGroup(child, 'SIGTERM', options.taskkillBin);
+      const gracefulCleanupConfirmed = signalProcessGroup(child, 'SIGTERM', options.taskkillBin);
       // Always wait the complete grace period and address the original group
       // with SIGKILL. The leader may exit before a TERM-resistant descendant.
       await Bun.sleep(PROCESS_SUPERVISOR_TERMINATION_GRACE_MS);
-      signalProcessGroup(child, 'SIGKILL', options.taskkillBin);
+      const forcedCleanupConfirmed = signalProcessGroup(child, 'SIGKILL', options.taskkillBin);
+      if (process.platform === 'win32' && !gracefulCleanupConfirmed && !forcedCleanupConfirmed) {
+        throw new Error(`taskkill could not confirm termination of process tree ${child.pid}`);
+      }
       await waitForProcessGroupQuiescence(child, () => false);
       cleanupComplete = true;
       // If an adversarial descendant escaped the original process group while

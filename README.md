@@ -73,7 +73,7 @@ repo-harness install
 
 On Windows, keep Git for Windows on the install/update `PATH`. That explicit
 ceremony validates and pins `git.exe`, its matching `bash.exe`/`usr/bin`, and
-native `System32` tools in the OS account's
+the install account's absolute `TEMP` directory plus native `System32` tools in the OS account's
 `~/.repo-harness/config.json#protectedHelperRuntime`. Protected workflow
 helpers do not rediscover tools from a caller's `PATH`; rerun
 `repo-harness update` after relocating or replacing Git for Windows.

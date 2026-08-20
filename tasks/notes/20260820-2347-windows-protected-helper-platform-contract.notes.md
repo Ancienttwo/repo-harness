@@ -21,8 +21,10 @@
 - Validate the optional Git-for-Windows `mingw64/bin` directory if it exists;
   a symlink or non-directory is an error instead of a reason to omit it
   silently from the protected `PATH`.
-- Derive Windows `SystemRoot`, temp, account, and `PATHEXT` values from the
-  validated contract/account rather than copying the caller environment.
+- Derive Windows `SystemRoot`, account, and `PATHEXT` from the validated
+  contract/account. `TEMP` is accepted only during the explicit install/update
+  ceremony, validated as an absolute non-symlink directory, persisted, and then
+  reused without consulting per-invocation caller environment.
 - At install time require PATH-resolved `taskkill.exe` to equal
   `SystemRoot\\System32\\taskkill.exe`, then pass that exact binary to both the
   normal supervisor and the hard-timeout backstop instead of relying on PATH
@@ -44,6 +46,17 @@
   `docs/architecture/.projection-manifest.json` even when the semantic module is
   the only human-owned architecture edit, so that generated receipt is included
   explicitly in the task contract's allowed paths.
+- The one allowed external semantic review inspected frozen subject
+  `sha256:0e34b23c7a5b05f93c948c26c22a296bec6447d2129bb946dba7bc16a002b81d`
+  against target `7ce86fdd` and returned fail with 2 P1 and 6 P2 findings. The
+  remediation stays inside this work package: platform-safe packaged-root
+  detection; a scalar merge-gate policy output that removes required-path `jq`;
+  direct TypeScript-helper contract resolution; pinned Git for the expensive
+  lock; persisted/validated temp authority; structured `runHelper` resolution
+  errors; opt-in ephemeral Windows smoke; and a realpath-escape regression.
+  The external-review budget is exhausted, so the repaired subject cannot be
+  represented as an external pass; closeout requires the contract's explicit
+  typed user-waiver path after deterministic verification.
 
 ## Tradeoffs Considered
 
@@ -62,13 +75,17 @@
 - Checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Pre-fix regression: `.ai/harness/runs/windows-protected-helper-platform-contract/pre-fix-regression.txt`
-- Platform-neutral focused suite: 26 tests / 114 expectations passed on
-  2026-08-21; Windows-native smoke is bound to the existing OS matrix.
-- Full local CI passed on 2026-08-21 with 2,750 tests passed, one platform skip,
+- Post-review remediation suite: 36 tests / 242 expectations passed on
+  2026-08-21 across the platform contract, direct helper, merge gate, process
+  runner, and run-helper surfaces. Helper projection and closeout guardrails
+  also passed; Windows-native smoke is bound to the existing OS matrix.
+- Pre-review full local CI passed on 2026-08-21 with 2,750 tests passed, one platform skip,
   zero failures, followed by workflow checks, repository inspection, package
   dry-run, and tarball install smoke. Ambient `CODEX_SESSION_ID` was removed for
   the run so trace-observer fixtures received their declared test environment;
-  the contract records that exact hermetic test command.
+  the contract records that exact hermetic test command. This evidence predates
+  the external-review remediation and will be regenerated once after the final
+  focused checks are stable.
 
 ## Promotion Filter
 

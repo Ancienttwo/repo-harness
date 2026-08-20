@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, type Stats } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, type Stats } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { spawnSync } from 'child_process';
 import {
   discoverWindowsProtectedHelperContract,
   resolveProtectedHelperPlatform,
@@ -22,6 +23,7 @@ const CONTRACT: WindowsProtectedHelperContract = {
   bash_bin: `${GIT_ROOT}\\bin\\bash.exe`,
   posix_tools_dir: `${GIT_ROOT}\\usr\\bin`,
   system_tools_dir: 'C:\\Windows\\System32',
+  temp_dir: 'C:\\Users\\Ada\\AppData\\Local\\Temp',
 };
 
 type FakePathKind = 'file' | 'directory' | 'symlink' | 'missing';
@@ -34,7 +36,10 @@ function fakeStats(kind: FakePathKind): Stats {
   } as Stats;
 }
 
-function access(overrides: Record<string, FakePathKind> = {}): ProtectedHelperFileAccess {
+function access(
+  overrides: Record<string, FakePathKind> = {},
+  realpaths: Record<string, string> = {},
+): ProtectedHelperFileAccess {
   const entries: Array<[string, FakePathKind]> = [
     [CONTRACT.git_root, 'directory'],
     [CONTRACT.git_bin, 'file'],
@@ -42,13 +47,14 @@ function access(overrides: Record<string, FakePathKind> = {}): ProtectedHelperFi
     [CONTRACT.posix_tools_dir, 'directory'],
     [CONTRACT.system_tools_dir, 'directory'],
     [`${CONTRACT.system_tools_dir}\\taskkill.exe`, 'file'],
+    [CONTRACT.temp_dir, 'directory'],
     ...Object.entries(overrides),
   ];
   const kinds = new Map(entries.map(([path, kind]) => [path.toLowerCase(), kind] as const));
   return {
     exists: (path) => (kinds.get(path.toLowerCase()) ?? 'missing') !== 'missing',
     lstat: (path) => fakeStats(kinds.get(path.toLowerCase()) ?? 'missing'),
-    realpath: (path) => path,
+    realpath: (path) => realpaths[path.toLowerCase()] ?? path,
     readFile: () => {
       throw new Error('not used');
     },
@@ -65,6 +71,8 @@ describe('Windows protected-helper platform contract', () => {
       bunExecutable: 'C:\\Users\\Ada\\.bun\\bin\\bun.exe',
       contract: CONTRACT,
       fileAccess: access(),
+      nativeSystemToolsDirectory: CONTRACT.system_tools_dir,
+      nativeTempDirectory: CONTRACT.temp_dir,
     });
     expect(runtime.pathDelimiter).toBe(';');
     expect(runtime.pathEntries).toContain(`${GIT_ROOT}\\usr\\bin`);
@@ -72,6 +80,7 @@ describe('Windows protected-helper platform contract', () => {
     expect(runtime.tempDir).toBe('C:\\Users\\Ada\\AppData\\Local\\Temp');
     expect(runtime.systemRoot).toBe('C:\\Windows');
     expect(runtime.taskkillBin).toBe('C:\\Windows\\System32\\taskkill.exe');
+    expect(runtime.tempDir).toBe(CONTRACT.temp_dir);
     expect(runtime.pathEntries.indexOf(`${GIT_ROOT}\\cmd`)).toBeLessThan(
       runtime.pathEntries.indexOf('C:\\Users\\Ada\\.bun\\bin'),
     );
@@ -88,6 +97,16 @@ describe('Windows protected-helper platform contract', () => {
     }))).toThrow('regular file');
 
     expect(() => validateWindowsProtectedHelperContract({ ...CONTRACT, fallback: 'PATH' }, access())).toThrow('unknown field');
+
+    const { temp_dir: _tempDir, ...missingTemp } = CONTRACT;
+    expect(() => validateWindowsProtectedHelperContract(missingTemp, access())).toThrow('missing field: temp_dir');
+
+    const escapedGit = 'D:\\attacker\\git.exe';
+    expect(() => validateWindowsProtectedHelperContract(CONTRACT, access({
+      [escapedGit]: 'file',
+    }, {
+      [CONTRACT.git_bin.toLowerCase()]: escapedGit,
+    }))).toThrow('Git-for-Windows root');
   });
 
   test('sanitized child environment ignores caller binary and path overrides', () => {
@@ -97,6 +116,8 @@ describe('Windows protected-helper platform contract', () => {
       bunExecutable: 'C:\\Users\\Ada\\.bun\\bin\\bun.exe',
       contract: CONTRACT,
       fileAccess: access(),
+      nativeSystemToolsDirectory: CONTRACT.system_tools_dir,
+      nativeTempDirectory: CONTRACT.temp_dir,
     });
     const env = protectedChildEnv({
       PATH: 'C:\\attacker',
@@ -125,8 +146,11 @@ describe('Windows protected-helper platform contract', () => {
         PATHEXT: '.EXE',
         SystemRoot: 'C:\\Windows',
         WINDIR: 'C:\\Windows',
+        TEMP: CONTRACT.temp_dir,
       },
       fileAccess: access(),
+      nativeSystemToolsDirectory: CONTRACT.system_tools_dir,
+      nativeTempDirectory: CONTRACT.temp_dir,
     });
     expect(discovered.git_root.toLowerCase()).toBe(CONTRACT.git_root.toLowerCase());
     expect(discovered.git_bin.toLowerCase()).toBe(CONTRACT.git_bin.toLowerCase());
@@ -136,11 +160,34 @@ describe('Windows protected-helper platform contract', () => {
       env: {
         PATH: `"${GIT_ROOT}\\cmd";C:\\attacker\\System32`,
         SystemRoot: 'C:\\Windows',
+        TEMP: CONTRACT.temp_dir,
       },
       fileAccess: access({
         'C:\\attacker\\System32\\taskkill.exe': 'file',
       }),
+      nativeSystemToolsDirectory: CONTRACT.system_tools_dir,
+      nativeTempDirectory: CONTRACT.temp_dir,
     })).toThrow('native System32');
+
+    expect(() => discoverWindowsProtectedHelperContract({
+      env: {
+        PATH: `"${GIT_ROOT}\\cmd";${CONTRACT.system_tools_dir}`,
+        SystemRoot: 'C:\\Windows',
+      },
+      fileAccess: access(),
+      nativeSystemToolsDirectory: CONTRACT.system_tools_dir,
+    })).toThrow('requires an absolute TEMP directory');
+
+    expect(() => discoverWindowsProtectedHelperContract({
+      env: {
+        PATH: `"${GIT_ROOT}\\cmd";${CONTRACT.system_tools_dir}`,
+        SystemRoot: 'C:\\Windows',
+        TEMP: 'relative\\temp',
+      },
+      fileAccess: access(),
+      nativeSystemToolsDirectory: CONTRACT.system_tools_dir,
+      nativeTempDirectory: 'relative\\temp',
+    })).toThrow('native temp directory must be an absolute Windows path');
 
     const configPath = 'C:\\Users\\Ada\\.repo-harness\\config.json';
     const staleAccess: ProtectedHelperFileAccess = {
@@ -155,6 +202,7 @@ describe('Windows protected-helper platform contract', () => {
       accountHome: 'C:\\Users\\Ada',
       configPath,
       fileAccess: staleAccess,
+      nativeSystemToolsDirectory: CONTRACT.system_tools_dir,
     })).toThrow('protocol must be 1');
 
     expect(() => resolveProtectedHelperPlatform({
@@ -162,6 +210,7 @@ describe('Windows protected-helper platform contract', () => {
       accountHome: 'C:\\Users\\Ada',
       configPath: 'C:\\missing\\config.json',
       fileAccess: access(),
+      nativeSystemToolsDirectory: CONTRACT.system_tools_dir,
     })).toThrow('run repo-harness install or repo-harness update');
 
     expect(() => resolveProtectedHelperPlatform({
@@ -175,6 +224,7 @@ describe('Windows protected-helper platform contract', () => {
         }),
         readFile: () => JSON.stringify({ protectedHelperRuntime: CONTRACT }),
       },
+      nativeSystemToolsDirectory: CONTRACT.system_tools_dir,
     })).toThrow('config directory must be a non-symlink directory');
   });
 
@@ -203,6 +253,40 @@ describe('Windows protected-helper platform contract', () => {
       accountHome: 'C:\\Users\\Ada',
       contract: CONTRACT,
       fileAccess: access({ [mingw]: 'symlink' }),
+      nativeSystemToolsDirectory: CONTRACT.system_tools_dir,
+      nativeTempDirectory: CONTRACT.temp_dir,
     })).toThrow('non-symlink directory');
+  });
+
+  const testPosix = process.platform === 'win32' ? test.skip : test;
+  testPosix('direct protected TypeScript helpers ignore caller runtime overrides', () => {
+    const home = mkdtempSync(join(tmpdir(), 'repo-harness-direct-helper-env-'));
+    const marker = join(home, 'fake-git-ran');
+    const fakeGit = join(home, 'git');
+    try {
+      writeFileSync(fakeGit, `#!/bin/sh\ntouch "${marker}"\nexit 99\n`);
+      chmodSync(fakeGit, 0o755);
+      const result = spawnSync(process.execPath, [join(import.meta.dir, '..', '..', 'scripts', 'merge-gate.ts'), 'fingerprint', '--base', 'HEAD', '--format', 'required'], {
+        cwd: join(import.meta.dir, '..', '..'),
+        encoding: 'utf-8',
+        env: {
+          ...process.env,
+          REPO_HARNESS_GIT_BIN: fakeGit,
+          REPO_HARNESS_PROTECTED_PATH: home,
+          REPO_HARNESS_PROTECTED_TMPDIR: home,
+        },
+      });
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout.trim()).toMatch(/^(?:true|false)$/);
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('ship reads merge-gate policy without requiring jq', () => {
+    const ship = readFileSync(join(import.meta.dir, '..', '..', 'scripts', 'ship-worktrees.sh'), 'utf-8');
+    expect(ship).toContain('fingerprint --base "$base_ref" --format required');
+    expect(ship).not.toContain('merge gate preflight requires jq');
   });
 });

@@ -73,7 +73,7 @@ repo-harness install
 
 Windows 上应在执行 install/update 时让 Git for Windows 位于 `PATH`。
 这次显式配置会验证 `git.exe`、同一安装根下的 `bash.exe`/`usr/bin` 以及原生
-`System32` 工具，并将绝对路径固定到 OS 账号的
+`System32` 工具和安装账号的绝对 `TEMP` 目录，并将这些路径固定到 OS 账号的
 `~/.repo-harness/config.json#protectedHelperRuntime`。protected workflow
 helper 运行时不会再从调用者 `PATH` 搜索工具；Git for Windows 被移动或替换
 后，必须重新运行 `repo-harness update`。

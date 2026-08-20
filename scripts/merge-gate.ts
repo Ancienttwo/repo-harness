@@ -13,15 +13,15 @@ import {
   writeFileSync,
 } from "fs";
 import { userInfo } from "os";
-import { dirname, isAbsolute, join, resolve } from "path";
-import { fileURLToPath } from "url";
+import { basename, dirname, isAbsolute, join, resolve } from "path";
+import { fileURLToPath, pathToFileURL } from "url";
 import {
   acceptanceReceiptPath,
   verifyAcceptance,
   type AcceptanceReceipt,
 } from "./acceptance-receipt.ts";
 
-type OutputFormat = "json" | "sha";
+type OutputFormat = "json" | "sha" | "required";
 
 type Candidate = {
   baseSha: string;
@@ -31,35 +31,37 @@ type Candidate = {
   changedFiles: string[];
 };
 
-const LOCKED_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
-
-function fixedGitBinary(): string {
-  const configured = process.env.REPO_HARNESS_GIT_BIN?.trim();
-  for (const candidate of [configured, "/usr/bin/git", "/bin/git"].filter((path): path is string => Boolean(path))) {
-    if (!isAbsolute(candidate) || !existsSync(candidate)) continue;
-    const source = lstatSync(candidate);
-    if (source.isSymbolicLink() || !source.isFile()) continue;
-    const actual = realpathSync(candidate);
-    const target = lstatSync(actual);
-    if (target.isSymbolicLink() || !target.isFile()) continue;
-    if (process.platform !== "win32" && (target.mode & 0o111) === 0) continue;
-    return actual;
-  }
-  fail("trusted git executable is unavailable");
-}
-
-const GIT_BIN = fixedGitBinary();
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+const PACKAGE_ROOT = basename(SCRIPT_DIR) === "helpers"
+  && basename(dirname(SCRIPT_DIR)) === "templates"
+  && basename(dirname(dirname(SCRIPT_DIR))) === "assets"
+  ? resolve(SCRIPT_DIR, "../../..")
+  : resolve(SCRIPT_DIR, "..");
+type ProtectedRuntime = {
+  platform: NodeJS.Platform;
+  accountHome: string;
+  accountUsername: string;
+  gitBin: string;
+  bashBin: string;
+  bunExecutable: string;
+  pathEntries: readonly string[];
+  pathDelimiter: ":" | ";";
+  tempDir: string;
+  systemRoot?: string;
+};
+type ProtectedPlatformModule = {
+  resolveProtectedHelperPlatform: () => ProtectedRuntime;
+  protectedHelperRuntimeEnv: (runtime: ProtectedRuntime) => NodeJS.ProcessEnv;
+};
+const protectedPlatform = await import(
+  pathToFileURL(join(PACKAGE_ROOT, "src", "cli", "runtime", "protected-helper-platform.ts")).href
+) as ProtectedPlatformModule;
+const PROTECTED_RUNTIME = protectedPlatform.resolveProtectedHelperPlatform();
+const GIT_BIN = PROTECTED_RUNTIME.gitBin;
+const GIT_ENV = protectedPlatform.protectedHelperRuntimeEnv(PROTECTED_RUNTIME);
 
 function lockedGitEnv(): NodeJS.ProcessEnv {
-  const account = userInfo();
-  return {
-    HOME: account.homedir,
-    USER: account.username,
-    LOGNAME: account.username,
-    PATH: process.env.REPO_HARNESS_PROTECTED_PATH ?? LOCKED_PATH,
-    TMPDIR: process.env.REPO_HARNESS_PROTECTED_TMPDIR ?? "/tmp",
-    REPO_HARNESS_GIT_BIN: GIT_BIN,
-  };
+  return { ...GIT_ENV };
 }
 
 type Seal = {
@@ -287,7 +289,7 @@ function parseArgs(argv: string[]): {
 } {
   const command = argv.shift();
   if (command !== "run" && command !== "verify" && command !== "fingerprint") {
-    fail("usage: merge-gate.ts <run|verify|fingerprint> --base <ref> [--format json|sha] [--allow-post-freeze <path>] [--expect-post-freeze-destination <path=sha256:...>]", 2);
+    fail("usage: merge-gate.ts <run|verify|fingerprint> --base <ref> [--format json|sha|required] [--allow-post-freeze <path>] [--expect-post-freeze-destination <path=sha256:...>]", 2);
   }
   let base = "";
   let format: OutputFormat = "json";
@@ -310,7 +312,7 @@ function parseArgs(argv: string[]): {
       expectedPostFreezeDestinations[path] = digest;
     } else if (flag === "--format") {
       const value = argv.shift();
-      if (value !== "json" && value !== "sha") fail("--format must be json or sha", 2);
+      if (value !== "json" && value !== "sha" && value !== "required") fail("--format must be json, sha, or required", 2);
       format = value;
     } else fail(`unknown argument: ${flag}`, 2);
   }
@@ -479,6 +481,10 @@ function readSeal(path: string): Seal {
 function printResult(format: OutputFormat, required: boolean, current: Candidate): void {
   if (format === "sha") {
     console.log(current.headSha);
+    return;
+  }
+  if (format === "required") {
+    console.log(required ? "true" : "false");
     return;
   }
   console.log(JSON.stringify({

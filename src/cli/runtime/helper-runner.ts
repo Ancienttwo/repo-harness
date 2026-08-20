@@ -5,6 +5,7 @@ import { ARCHCONTEXT_NODE_RANGE } from 'archctx-contracts';
 import { runProcess as runBoundedProcess } from '../../effects/process-runner';
 import { trustedNodeCandidates } from '../../effects/runtime/node-candidates';
 import {
+  protectedHelperRuntimeEnv,
   resolveProtectedHelperPlatform,
   type ProtectedHelperPlatform,
 } from './protected-helper-platform';
@@ -73,26 +74,9 @@ export function protectedChildEnv(
 ): NodeJS.ProcessEnv {
   const nodeRuntime = trustedNodeRuntime(runtime);
   const env: NodeJS.ProcessEnv = {
-    HOME: runtime.accountHome,
-    USER: runtime.accountUsername,
-    LOGNAME: runtime.accountUsername,
-    ...(runtime.platform === 'win32' ? {
-      OS: 'Windows_NT',
-      USERPROFILE: runtime.accountHome,
-      USERNAME: runtime.accountUsername,
-      SystemRoot: runtime.systemRoot,
-      WINDIR: runtime.systemRoot,
-      PATHEXT: '.COM;.EXE;.BAT;.CMD',
-      TEMP: runtime.tempDir,
-      TMP: runtime.tempDir,
-    } : {}),
+    ...protectedHelperRuntimeEnv(runtime),
     PATH: protectedPath(runtime),
-    TMPDIR: runtime.tempDir,
-    REPO_HARNESS_BASH_BIN: runtime.bashBin,
-    REPO_HARNESS_GIT_BIN: runtime.gitBin,
-    REPO_HARNESS_BUN_BIN: runtime.bunExecutable,
     REPO_HARNESS_PROTECTED_PATH: protectedPath(runtime),
-    REPO_HARNESS_PROTECTED_TMPDIR: runtime.tempDir,
     ...(nodeRuntime ? { REPO_HARNESS_NODE_BIN: nodeRuntime } : {}),
   };
   copyAllowedEnv(source, env, [
@@ -399,7 +383,17 @@ export function resolveHelper(helper: string, cwd = process.cwd(), env: NodeJS.P
 export function runHelper(opts: RunHelperOptions): RunHelperResult {
   const cwd = opts.cwd ?? process.cwd();
   const env = { ...process.env, ...(opts.env ?? {}) };
-  const context = resolveHelperContext(opts.helper, cwd, env);
+  let context: ResolvedHelperContext;
+  try {
+    context = resolveHelperContext(opts.helper, cwd, env);
+  } catch (error) {
+    return {
+      exitCode: 1,
+      reason: 'spawn-error',
+      helper: opts.helper,
+      stderr: error instanceof Error ? error.message : String(error),
+    };
+  }
   const resolved = context.resolved;
   if (!resolved) {
     return {
@@ -436,7 +430,10 @@ export function runHelper(opts: RunHelperOptions): RunHelperResult {
   let expensiveRunLock: { readonly cwd: string; readonly gitBin: string } | undefined;
   try {
     if (helperRequiresExpensiveRunLock(resolved.id, args)) {
-      expensiveRunLock = { cwd: resolved.repoRoot, gitBin: trustedGit };
+      expensiveRunLock = {
+        cwd: resolved.repoRoot,
+        gitBin: context.runtime?.gitBin ?? resolveProtectedHelperPlatform().gitBin,
+      };
     }
   } catch (error) {
     return {

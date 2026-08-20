@@ -240,21 +240,26 @@ On Windows, `repo-harness install` and `repo-harness update` are the only
 protected-helper tool discovery ceremonies. They resolve `git.exe` and
 `taskkill.exe` from that invocation's `PATH`, require the latter to match
 `SystemRoot\\System32\\taskkill.exe`, require Git, Bash, and `usr/bin` to
-resolve under one non-symlink Git-for-Windows root, probe the executables, and
+resolve under one non-symlink Git-for-Windows root, require the ceremony's
+`TEMP` to be an absolute non-symlink directory, probe the executables, and
 atomically persist protocol 1 under the OS account's
 `~/.repo-harness/config.json#protectedHelperRuntime`. Existing sibling config
 fields are preserved.
 
 Normal `acceptance-receipt`, `merge-gate`, `contract-worktree`, and
 `ship-worktrees` dispatch reads that exact contract. The protected child gets
-the platform `PATH` delimiter, account home, native temp/SystemRoot values,
+the platform `PATH` delimiter, account home, pinned temp/SystemRoot values,
 pinned Bun/Git/Bash, the Git-for-Windows POSIX directories, and the exact
 `taskkill.exe` passed to both supervisor termination paths; caller binary overrides, `HOME`, shell
 startup hooks, and general `PATH` entries are discarded. A missing, malformed,
 relocated, symlinked, cross-root, or incomplete contract fails before helper
 execution and instructs the operator to rerun install/update. There is no
-runtime discovery fallback. Optional feature dependencies such as `jq` and
-`gh` remain separately operator-owned and are not installed by this contract.
+runtime discovery fallback. The protected TypeScript entrypoints re-resolve the
+same host contract themselves when invoked directly, so their Git and temp
+authority does not depend on dispatcher-only environment variables. Optional
+feature dependencies such as `jq` and `gh` remain separately operator-owned
+and are not installed by this contract; the required merge-gate path does not
+depend on `jq`.
 
 Installed-copy sync has two explicit modes. `AGENTIC_DEV_LINK_INSTALLED_COPIES=1`
 uses symlinks and does not require `rsync`; if symlink creation fails, the

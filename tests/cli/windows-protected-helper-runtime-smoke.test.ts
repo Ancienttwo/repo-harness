@@ -10,8 +10,12 @@ import { runProcess } from '../../src/effects/process-runner';
 const ROOT = join(import.meta.dir, '..', '..');
 
 describe('Windows protected-helper runtime smoke', () => {
-  test('runs every protected helper through the pinned Git-for-Windows contract', () => {
-    if (process.platform !== 'win32') return;
+  const testWindowsCi = process.platform === 'win32'
+    && process.env.REPO_HARNESS_WINDOWS_PROTECTED_HELPER_SMOKE === '1'
+    ? test
+    : test.skip;
+
+  testWindowsCi('runs every protected helper through the pinned Git-for-Windows contract', () => {
 
     const home = userInfo().homedir;
     const configDir = join(home, '.repo-harness');

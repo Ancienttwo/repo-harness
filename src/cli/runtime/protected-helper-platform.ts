@@ -12,6 +12,7 @@ import {
 } from 'fs';
 import { userInfo } from 'os';
 import { dirname, isAbsolute, join, win32 } from 'path';
+import { dlopen, FFIType, ptr } from 'bun:ffi';
 
 export const WINDOWS_PROTECTED_HELPER_CONFIG_KEY = 'protectedHelperRuntime';
 
@@ -28,6 +29,7 @@ export interface WindowsProtectedHelperContract {
   bash_bin: string;
   posix_tools_dir: string;
   system_tools_dir: string;
+  temp_dir: string;
 }
 
 export interface ProtectedHelperPlatform {
@@ -66,11 +68,15 @@ type ResolveOptions = {
   configPath?: string;
   contract?: WindowsProtectedHelperContract;
   fileAccess?: ProtectedHelperFileAccess;
+  nativeSystemToolsDirectory?: string;
+  nativeTempDirectory?: string;
 };
 
 type DiscoverOptions = {
   env?: NodeJS.ProcessEnv;
   fileAccess?: ProtectedHelperFileAccess;
+  nativeSystemToolsDirectory?: string;
+  nativeTempDirectory?: string;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -130,9 +136,33 @@ function pathInsideWindowsRoot(path: string, root: string): boolean {
   return relative === '' || (!relative.startsWith('..') && !win32.isAbsolute(relative));
 }
 
+export function nativeWindowsSystemToolsDirectory(): string {
+  if (process.platform !== 'win32') {
+    throw new Error('native Windows system directory is unavailable on this platform');
+  }
+  const kernel32 = dlopen('kernel32.dll', {
+    GetSystemDirectoryW: {
+      args: [FFIType.ptr, FFIType.u32],
+      returns: FFIType.u32,
+    },
+  });
+  try {
+    const buffer = new Uint16Array(32_768);
+    const length = kernel32.symbols.GetSystemDirectoryW(ptr(buffer), buffer.length);
+    if (!Number.isSafeInteger(length) || length < 1 || length >= buffer.length) {
+      throw new Error('GetSystemDirectoryW did not return a usable native system directory');
+    }
+    return win32.normalize(Buffer.from(buffer.buffer, 0, length * 2).toString('utf16le'));
+  } finally {
+    kernel32.close();
+  }
+}
+
 export function validateWindowsProtectedHelperContract(
   raw: unknown,
   access: ProtectedHelperFileAccess = DEFAULT_FILE_ACCESS,
+  nativeSystemToolsDirectory?: string,
+  nativeTempDirectory?: string,
 ): WindowsProtectedHelperContract {
   if (!isRecord(raw)) throw new Error('Windows protected-helper contract must be an object');
   exactKeys(raw, [
@@ -144,6 +174,7 @@ export function validateWindowsProtectedHelperContract(
     'bash_bin',
     'posix_tools_dir',
     'system_tools_dir',
+    'temp_dir',
   ], 'Windows protected-helper contract');
   if (raw.protocol !== 1) throw new Error('Windows protected-helper contract protocol must be 1');
   if (raw.platform !== 'win32') throw new Error('Windows protected-helper contract platform must be win32');
@@ -156,11 +187,13 @@ export function validateWindowsProtectedHelperContract(
   const requestedBash = requireWindowsAbsolute(raw.bash_bin, 'bash_bin');
   const requestedPosixTools = requireWindowsAbsolute(raw.posix_tools_dir, 'posix_tools_dir');
   const requestedSystemTools = requireWindowsAbsolute(raw.system_tools_dir, 'system_tools_dir');
+  const requestedTemp = requireWindowsAbsolute(raw.temp_dir, 'temp_dir');
   const gitRoot = requireDirectory(requestedRoot, 'git_root', access);
   const gitBin = requireRegularFile(requestedGit, 'git_bin', access);
   const bashBin = requireRegularFile(requestedBash, 'bash_bin', access);
   const posixToolsDir = requireDirectory(requestedPosixTools, 'posix_tools_dir', access);
   const systemToolsDir = requireDirectory(requestedSystemTools, 'system_tools_dir', access);
+  const tempDir = requireDirectory(requestedTemp, 'temp_dir', access);
   requireRegularFile(win32.join(systemToolsDir, 'taskkill.exe'), 'taskkill.exe', access);
 
   for (const [label, path] of [
@@ -188,6 +221,26 @@ export function validateWindowsProtectedHelperContract(
   if (win32.basename(systemToolsDir).toLowerCase() !== 'system32') {
     throw new Error('Windows protected-helper system_tools_dir must be the native System32 directory');
   }
+  if (nativeSystemToolsDirectory !== undefined) {
+    const expectedSystemTools = requireDirectory(
+      requireWindowsAbsolute(nativeSystemToolsDirectory, 'native system directory'),
+      'native system directory',
+      access,
+    );
+    if (!sameWindowsPath(systemToolsDir, expectedSystemTools)) {
+      throw new Error('Windows protected-helper system_tools_dir does not match the OS native system directory');
+    }
+  }
+  if (nativeTempDirectory !== undefined) {
+    const expectedTemp = requireDirectory(
+      requireWindowsAbsolute(nativeTempDirectory, 'native temp directory'),
+      'native temp directory',
+      access,
+    );
+    if (!sameWindowsPath(tempDir, expectedTemp)) {
+      throw new Error('Windows protected-helper temp_dir does not match the OS account temp directory');
+    }
+  }
 
   return {
     protocol: 1,
@@ -198,12 +251,15 @@ export function validateWindowsProtectedHelperContract(
     bash_bin: bashBin,
     posix_tools_dir: posixToolsDir,
     system_tools_dir: systemToolsDir,
+    temp_dir: tempDir,
   };
 }
 
 function readWindowsContract(
   configPath: string,
   access: ProtectedHelperFileAccess,
+  nativeSystemToolsDirectory: string,
+  nativeTempDirectory?: string,
 ): WindowsProtectedHelperContract {
   if (!access.exists(configPath)) {
     throw new Error(`Windows protected-helper platform contract is missing: ${configPath}; run repo-harness install or repo-harness update`);
@@ -227,7 +283,12 @@ function readWindowsContract(
   if (!(WINDOWS_PROTECTED_HELPER_CONFIG_KEY in parsed)) {
     throw new Error(`Windows protected-helper platform contract is missing from ${configPath}; run repo-harness install or repo-harness update`);
   }
-  return validateWindowsProtectedHelperContract(parsed[WINDOWS_PROTECTED_HELPER_CONFIG_KEY], access);
+  return validateWindowsProtectedHelperContract(
+    parsed[WINDOWS_PROTECTED_HELPER_CONFIG_KEY],
+    access,
+    nativeSystemToolsDirectory,
+    nativeTempDirectory,
+  );
 }
 
 function fixedPosixExecutable(label: string, candidates: readonly string[], access: ProtectedHelperFileAccess): string {
@@ -263,9 +324,10 @@ export function resolveProtectedHelperPlatform(options: ResolveOptions = {}): Pr
   }
 
   const configPath = options.configPath ?? win32.join(accountHome, '.repo-harness', 'config.json');
+  const nativeSystemTools = options.nativeSystemToolsDirectory ?? nativeWindowsSystemToolsDirectory();
   const contract = options.contract
-    ? validateWindowsProtectedHelperContract(options.contract, access)
-    : readWindowsContract(configPath, access);
+    ? validateWindowsProtectedHelperContract(options.contract, access, nativeSystemTools, options.nativeTempDirectory)
+    : readWindowsContract(configPath, access, nativeSystemTools, options.nativeTempDirectory);
   const optionalMingw = win32.join(contract.git_root, 'mingw64', 'bin');
   const mingwEntries = access.exists(optionalMingw)
     ? [requireDirectory(optionalMingw, 'mingw64 tools directory', access)]
@@ -288,7 +350,7 @@ export function resolveProtectedHelperPlatform(options: ResolveOptions = {}): Pr
     taskkillBin: win32.join(contract.system_tools_dir, 'taskkill.exe'),
     pathEntries: [...new Map(pathEntries.map((entry) => [win32.normalize(entry).toLowerCase(), entry])).values()],
     pathDelimiter: ';',
-    tempDir: win32.join(accountHome, 'AppData', 'Local', 'Temp'),
+    tempDir: contract.temp_dir,
     systemRoot: win32.dirname(contract.system_tools_dir),
   };
 }
@@ -315,16 +377,16 @@ export function discoverWindowsProtectedHelperContract(options: DiscoverOptions 
     throw new Error(`Windows protected-helper install requires Git for Windows cmd\\git.exe or bin\\git.exe (found ${gitBin})`);
   }
   const gitRoot = win32.dirname(win32.dirname(gitBin));
-  const declaredSystemRoots = [env.SystemRoot, env.WINDIR]
-    .filter((value): value is string => typeof value === 'string' && value.trim() !== '')
-    .map((value) => requireWindowsAbsolute(value, 'SystemRoot'));
-  if (declaredSystemRoots.length === 0) {
-    throw new Error('Windows protected-helper install requires SystemRoot or WINDIR');
+  const nativeSystemTools = options.nativeSystemToolsDirectory ?? nativeWindowsSystemToolsDirectory();
+  const requestedTemp = options.nativeTempDirectory ?? env.TEMP?.trim();
+  if (!requestedTemp) {
+    throw new Error('Windows protected-helper install requires an absolute TEMP directory');
   }
-  if (declaredSystemRoots.some((value) => !sameWindowsPath(value, declaredSystemRoots[0]!))) {
-    throw new Error('Windows protected-helper install requires SystemRoot and WINDIR to identify the same directory');
-  }
-  const nativeSystemTools = win32.join(declaredSystemRoots[0]!, 'System32');
+  const nativeTemp = requireDirectory(
+    requireWindowsAbsolute(requestedTemp, 'native temp directory'),
+    'native temp directory',
+    access,
+  );
   const taskkill = executableFromPath('taskkill', env, access);
   if (!sameWindowsPath(taskkill, win32.join(nativeSystemTools, 'taskkill.exe'))) {
     throw new Error('Windows protected-helper install requires PATH taskkill.exe to come from native System32');
@@ -338,7 +400,33 @@ export function discoverWindowsProtectedHelperContract(options: DiscoverOptions 
     bash_bin: win32.join(gitRoot, 'bin', 'bash.exe'),
     posix_tools_dir: win32.join(gitRoot, 'usr', 'bin'),
     system_tools_dir: nativeSystemTools,
-  }, access);
+    temp_dir: nativeTemp,
+  }, access, nativeSystemTools, nativeTemp);
+}
+
+export function protectedHelperRuntimeEnv(runtime: ProtectedHelperPlatform): NodeJS.ProcessEnv {
+  return {
+    HOME: runtime.accountHome,
+    USER: runtime.accountUsername,
+    LOGNAME: runtime.accountUsername,
+    ...(runtime.platform === 'win32' ? {
+      OS: 'Windows_NT',
+      USERPROFILE: runtime.accountHome,
+      USERNAME: runtime.accountUsername,
+      SystemRoot: runtime.systemRoot,
+      WINDIR: runtime.systemRoot,
+      PATHEXT: '.COM;.EXE;.BAT;.CMD',
+      TEMP: runtime.tempDir,
+      TMP: runtime.tempDir,
+    } : {}),
+    PATH: runtime.pathEntries.join(runtime.pathDelimiter),
+    TMPDIR: runtime.tempDir,
+    REPO_HARNESS_BASH_BIN: runtime.bashBin,
+    REPO_HARNESS_GIT_BIN: runtime.gitBin,
+    REPO_HARNESS_BUN_BIN: runtime.bunExecutable,
+    REPO_HARNESS_PROTECTED_PATH: runtime.pathEntries.join(runtime.pathDelimiter),
+    REPO_HARNESS_PROTECTED_TMPDIR: runtime.tempDir,
+  };
 }
 
 export function writeWindowsProtectedHelperContract(

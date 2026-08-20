@@ -76,6 +76,8 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: MCP path security and protected helper platform tests
+        env:
+          REPO_HARNESS_WINDOWS_PROTECTED_HELPER_SMOKE: "1"
         run: >-
           bun test --timeout 180000 --max-concurrency 1
           tests/cli/mcp-workspaces.test.ts
