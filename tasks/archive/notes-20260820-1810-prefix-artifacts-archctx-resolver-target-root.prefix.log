@@ -1,0 +1,27 @@
+> **Archived**: 2026-08-20 18:10
+> **Related Plan**: (none)
+> **Outcome**: Superseded
+> **Lifecycle**: notes
+> **Parent Run ID**: orphan-family-sweep
+
+bun test v1.3.14 (0d9b296a)
+
+tests/architecture-projection-provider.test.ts:
+87 | 
+88 | export function resolvePackageLocalArchctx(consumerRoot: string, requiredVersion: string = ARCHCTX_REQUIRED_VERSION): ResolvedArchctxPackage {
+89 |   const packageRoot = findInstalledArchctxPackageRoot(consumerRoot, requiredVersion);
+90 |   const manifestPath = join(packageRoot, 'package.json');
+91 |   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { name?: unknown; version?: unknown; bin?: unknown; engines?: unknown };
+92 |   if (manifest.name !== 'archctx' || manifest.version !== requiredVersion) throw new Error(`package-local archctx mismatch: expected archctx@${requiredVersion}, got ${String(manifest.name)}@${String(manifest.version)}`);
+                                                                                                                                                                                                                               ^
+error: package-local archctx mismatch: expected archctx@9.9.9, got archctx@0.4.3
+      at resolvePackageLocalArchctx (/Users/ancienttwo/Projects/repo-harness-wt-archctx-resolver-target-root/src/effects/architecture/archctx-provider.ts:92:219)
+      at archctxCapabilities (/Users/ancienttwo/Projects/repo-harness-wt-archctx-resolver-target-root/src/effects/architecture/archctx-provider.ts:153:20)
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-archctx-resolver-target-root/tests/architecture-projection-provider.test.ts:207:23)
+(fail) package-local ArchContext projection provider > resolves the target repo dependency tree before the running CLI package root [72.26ms]
+
+ 13 pass
+ 1 fail
+ 81 expect() calls
+Ran 14 tests across 1 file. [3.33s]
+PRE_FIX_EXIT=1

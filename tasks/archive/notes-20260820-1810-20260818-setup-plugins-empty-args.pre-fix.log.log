@@ -1,0 +1,43 @@
+> **Archived**: 2026-08-20 18:10
+> **Related Plan**: (none)
+> **Outcome**: Superseded
+> **Lifecycle**: notes
+> **Parent Run ID**: orphan-family-sweep
+
+bun test v1.3.14 (0d9b296a)
+
+tests/setup-plugins-structure.test.ts:
+91 |     if (stubDir) rmSync(stubDir, { recursive: true, force: true });
+92 |   });
+93 | 
+94 |   test("forwards with no arguments instead of failing on an empty array", () => {
+95 |     const res = runSetup([]);
+96 |     expect(res.stderr).not.toContain("unbound variable");
+                                ^
+error: expect(received).not.toContain(expected)
+
+Expected to not contain: "unbound variable"
+Received: "/Users/ancienttwo/Projects/repo-harness-wt-setup-plugins-empty-args/scripts/setup-plugins.sh: line 35: args[@]: unbound variable\n"
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-setup-plugins-empty-args/tests/setup-plugins-structure.test.ts:96:28)
+(fail) setup-plugins argument forwarding > forwards with no arguments instead of failing on an empty array [9.65ms]
+ 99 |   }, 30_000);
+100 | 
+101 |   test("forwards when every argument is consumed by a retired option", () => {
+102 |     const res = runSetup(["--lsp", "ts"]);
+103 |     expect(res.stderr).toContain("retired option ignored: --lsp ts");
+104 |     expect(res.stderr).not.toContain("unbound variable");
+                                 ^
+error: expect(received).not.toContain(expected)
+
+Expected to not contain: "unbound variable"
+Received: "[setup-plugins] retired option ignored: --lsp ts\n/Users/ancienttwo/Projects/repo-harness-wt-setup-plugins-empty-args/scripts/setup-plugins.sh: line 35: args[@]: unbound variable\n"
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-setup-plugins-empty-args/tests/setup-plugins-structure.test.ts:104:28)
+(fail) setup-plugins argument forwarding > forwards when every argument is consumed by a retired option [11.29ms]
+
+ 6 pass
+ 2 fail
+ 18 expect() calls
+Ran 8 tests across 1 file. [1430.00ms]
+PRE_FIX_EXIT=1

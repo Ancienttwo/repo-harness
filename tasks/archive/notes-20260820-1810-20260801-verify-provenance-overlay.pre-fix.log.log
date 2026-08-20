@@ -1,0 +1,59 @@
+> **Archived**: 2026-08-20 18:10
+> **Related Plan**: (none)
+> **Outcome**: Superseded
+> **Lifecycle**: notes
+> **Parent Run ID**: orphan-family-sweep
+
+bun test v1.3.14 (0d9b296a)
+
+tests/evidence-projection-drift.test.ts:
+278 |       // materialized content -- not a projection this drift check applies
+279 |       // to; nothing to recompute against.
+280 |       return;
+281 |     }
+282 |     const { provenance, ...consumerFacing } = parsed as { provenance: { content_hash: string } };
+283 |     expect(contentHashOf(consumerFacing)).toBe(provenance.content_hash);
+                                                ^
+error: expect(received).toBe(expected)
+
+Expected: "sha256:2840da08712144701b8292de4dc1e00e1705f01ce73911e739a3cb1ab916605a"
+Received: "sha256:4447362b5e04cd6acde03d1f14e52aa5d6f53192235caed2e4482f0897eb5f68"
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness/tests/evidence-projection-drift.test.ts:283:43)
+(fail) projection drift: materialized checks/latest > this worktree's own live checks/latest.json, when it carries a real materialized projection, is provenance.content_hash self-consistent [3.54ms]
+354 |     });
+355 |   }
+356 | 
+357 |   test("the shipped finalize overlay deletes the materializer-owned provenance block before re-emission", () => {
+358 |     const program = readFinalizeOverlayProgram();
+359 |     expect(program).toContain("del(.provenance)");
+                          ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "del(.provenance)"
+Received: "      .acceptance_receipt = {\n        status: \"pass\",\n        disposition: $disposition,\n        reviewer: $reviewer,\n        source: $source,\n        message: $message\n      }\n      | .guards = [.guards[] | if .name == \"acceptance_receipt\" then .status = \"pass\" else . end]\n      | .next_step = \"finish contract worktree or archive completed task\"\n    "
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness/tests/evidence-projection-drift.test.ts:359:21)
+(fail) projection drift: materialized checks/latest > the shipped finalize overlay deletes the materializer-owned provenance block before re-emission [0.20ms]
+423 |       expect(finalizedRunTrace.guards).toEqual([
+424 |         { name: "acceptance_receipt", status: "pass" },
+425 |         { name: "allowed_paths_check", status: "pass" },
+426 |       ]);
+427 |       // ... and it hands back a run trace, not a projection.
+428 |       expect("provenance" in finalizedRunTrace).toBe(false);
+                                                      ^
+error: expect(received).toBe(expected)
+
+Expected: false
+Received: true
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness/tests/evidence-projection-drift.test.ts:428:49)
+      at withTempRepo (/Users/ancienttwo/Projects/repo-harness/tests/evidence-projection-drift.test.ts:43:5)
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness/tests/evidence-projection-drift.test.ts:374:5)
+(fail) projection drift: materialized checks/latest > running the shipped finalize overlay through the materializer yields a content_hash self-consistent projection [16.09ms]
+
+ 6 pass
+ 3 fail
+ 39 expect() calls
+Ran 9 tests across 1 file. [947.00ms]
+PRE_FIX_EXIT=1

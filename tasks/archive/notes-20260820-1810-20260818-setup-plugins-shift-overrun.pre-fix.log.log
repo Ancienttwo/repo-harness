@@ -1,0 +1,71 @@
+> **Archived**: 2026-08-20 18:10
+> **Related Plan**: (none)
+> **Outcome**: Superseded
+> **Lifecycle**: notes
+> **Parent Run ID**: orphan-family-sweep
+
+bun test v1.3.14 (0d9b296a)
+
+tests/setup-plugins-structure.test.ts:
+119 |   }, 30_000);
+120 | 
+121 |   test("forwards when --hooks is the final argument", () => {
+122 |     const res = runSetup(["--hooks"]);
+123 |     expect(res.stderr).toContain("retired hook profile ignored: <missing>");
+124 |     expect(res.status).toBe(0);
+                             ^
+error: expect(received).toBe(expected)
+
+Expected: 0
+Received: 1
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-setup-plugins-shift-overrun/tests/setup-plugins-structure.test.ts:124:24)
+(fail) setup-plugins argument forwarding > forwards when --hooks is the final argument [5.36ms]
+126 |   }, 30_000);
+127 | 
+128 |   test("forwards a preceding real argument when --lsp is the final argument", () => {
+129 |     const res = runSetup(["--repo", ".", "--lsp"]);
+130 |     expect(res.stderr).toContain("retired option ignored: --lsp");
+131 |     expect(res.status).toBe(0);
+                             ^
+error: expect(received).toBe(expected)
+
+Expected: 0
+Received: 1
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-setup-plugins-shift-overrun/tests/setup-plugins-structure.test.ts:131:24)
+(fail) setup-plugins argument forwarding > forwards a preceding real argument when --lsp is the final argument [6.02ms]
+133 |   }, 30_000);
+134 | 
+135 |   test("forwards a preceding real argument when --project-type is the final argument", () => {
+136 |     const res = runSetup(["--repo", ".", "--project-type"]);
+137 |     expect(res.stderr).toContain("retired option ignored: --project-type");
+138 |     expect(res.status).toBe(0);
+                             ^
+error: expect(received).toBe(expected)
+
+Expected: 0
+Received: 1
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-setup-plugins-shift-overrun/tests/setup-plugins-structure.test.ts:138:24)
+(fail) setup-plugins argument forwarding > forwards a preceding real argument when --project-type is the final argument [5.76ms]
+226 |   }, 30_000);
+227 | 
+228 |   test("falls back to the bun entrypoint when --hooks is the final argument", () => {
+229 |     const res = runSetupViaBun(["--repo", ".", "--hooks"]);
+230 |     expect(res.stderr).toContain("retired hook profile ignored: <missing>");
+231 |     expect(res.status).toBe(0);
+                             ^
+error: expect(received).toBe(expected)
+
+Expected: 0
+Received: 1
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-setup-plugins-shift-overrun/tests/setup-plugins-structure.test.ts:231:24)
+(fail) setup-plugins bun fallback path > falls back to the bun entrypoint when --hooks is the final argument [7.02ms]
+
+ 12 pass
+ 4 fail
+ 42 expect() calls
+Ran 16 tests across 1 file. [1114.00ms]
+PRE_FIX_EXIT=1

@@ -1,0 +1,155 @@
+> **Archived**: 2026-08-20 18:10
+> **Related Plan**: (none)
+> **Outcome**: Superseded
+> **Lifecycle**: notes
+> **Parent Run ID**: orphan-family-sweep
+
+bun test v1.3.14 (0d9b296a)
+
+tests/verify-sprint-rebase-base-guard.test.ts:
+121 |       const ancestry = spawnSync(REAL_GIT!, ["merge-base", "--is-ancestor", recorded, "HEAD"], { cwd: dir });
+122 |       expect(ancestry.status).toBe(0);
+123 | 
+124 |       const result = runHelper(dir);
+125 |       expect(result.status).not.toBe(0);
+126 |       expect(result.stderr).toContain("reason=stale_base_commit");
+                                  ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "reason=stale_base_commit"
+Received: "verify-sprint: contract worktree base_commit is stale\nverify-sprint:   recorded base:                 58fc2660bb54b00c2b34284c6c5d351095dc1b74\nverify-sprint:   current fork point (main): 12242801e8ec38afd30955458d75bb8a980a9101\nverify-sprint: this worktree was rebased after start; .ai/harness/worktrees/<slug>.json still records the pre-rebase base\nverify-sprint: refresh base_commit to 12242801e8ec38afd30955458d75bb8a980a9101 before re-running the gate, or rebuild the worktree\n"
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-worktree-metadata-authority/tests/verify-sprint-rebase-base-guard.test.ts:126:29)
+(fail) verify-sprint contract worktree base guard > fires when the branch was rebased onto an advanced main and the base still reaches HEAD [267.68ms]
+155 |       writeMetadata(dir, "00-empty.json", { worktree: dir, base_commit: "", base_branch: "", started_at: "" });
+156 |       writeMetadata(dir, "10-stale.json", { branch: "feat", base_commit: recorded, base_branch: "main" });
+157 | 
+158 |       const result = runHelper(dir);
+159 |       expect(result.status).not.toBe(0);
+160 |       expect(result.stderr).toContain("reason=metadata_malformed");
+                                  ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "reason=metadata_malformed"
+Received: ""
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-worktree-metadata-authority/tests/verify-sprint-rebase-base-guard.test.ts:160:29)
+(fail) verify-sprint contract worktree base guard > an all-empty exact-worktree record cannot mask a stale record behind it [449.47ms]
+171 |     try {
+172 |       selfMetadata(dir, "a.json", { base_commit: git(dir, "rev-parse", "HEAD") });
+173 |       selfMetadata(dir, "b.json", { base_commit: git(dir, "rev-parse", "HEAD") });
+174 |       const result = runHelper(dir);
+175 |       expect(result.status).not.toBe(0);
+176 |       expect(result.stderr).toContain("reason=duplicate_exact_worktree_metadata");
+                                  ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "reason=duplicate_exact_worktree_metadata"
+Received: "verify-sprint: contract worktree base_commit is stale\nverify-sprint:   recorded base:                 8642ec2996475b7c5fc1926080b22bdeea2efc73\nverify-sprint:   current fork point (main): e8615b43c8095f9d571d5da75e8b3da307c13321\nverify-sprint: this worktree was rebased after start; .ai/harness/worktrees/<slug>.json still records the pre-rebase base\nverify-sprint: refresh base_commit to e8615b43c8095f9d571d5da75e8b3da307c13321 before re-running the gate, or rebuild the worktree\n"
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-worktree-metadata-authority/tests/verify-sprint-rebase-base-guard.test.ts:176:29)
+(fail) verify-sprint contract worktree base guard > two records claiming the same worktree path fail closed [614.15ms]
+197 |     const dir = seedHealthy();
+198 |     try {
+199 |       writeMetadata(dir, "demo.json", { worktree: dir, base_commit: git(dir, "rev-parse", "HEAD"), base_branch: "" });
+200 |       const result = runHelper(dir);
+201 |       expect(result.status).not.toBe(0);
+202 |       expect(result.stderr).toContain("reason=metadata_malformed");
+                                  ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "reason=metadata_malformed"
+Received: ""
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-worktree-metadata-authority/tests/verify-sprint-rebase-base-guard.test.ts:202:29)
+(fail) verify-sprint contract worktree base guard > a record missing base_branch fails closed instead of being skipped [303.43ms]
+210 |     const dir = seedHealthy();
+211 |     try {
+212 |       selfMetadata(dir, "demo.json", { base_commit: git(dir, "rev-parse", "HEAD"), base_branch: "no-such-branch" });
+213 |       const result = runHelper(dir);
+214 |       expect(result.status).not.toBe(0);
+215 |       expect(result.stderr).toContain("reason=base_ref_unresolvable");
+                                  ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "reason=base_ref_unresolvable"
+Received: ""
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-worktree-metadata-authority/tests/verify-sprint-rebase-base-guard.test.ts:215:29)
+(fail) verify-sprint contract worktree base guard > an unresolvable base_branch fails closed [151.80ms]
+222 |     const dir = seedHealthy();
+223 |     try {
+224 |       writeFileSync(join(dir, ".ai/harness/worktrees/broken.json"), "{not json\n");
+225 |       const result = runHelper(dir);
+226 |       expect(result.status).not.toBe(0);
+227 |       expect(result.stderr).toContain("reason=metadata_unparseable");
+                                  ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "reason=metadata_unparseable"
+Received: ""
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-worktree-metadata-authority/tests/verify-sprint-rebase-base-guard.test.ts:227:29)
+(fail) verify-sprint contract worktree base guard > invalid JSON in a metadata file fails closed and names the file [129.96ms]
+235 |     const { dir } = seedRebasedOntoAdvancedMain();
+236 |     try {
+237 |       const shim = pathWithoutJq(dir);
+238 |       const result = runHelper(dir, { PATH: shim });
+239 |       expect(result.status).not.toBe(0);
+240 |       expect(result.stderr).toContain("reason=parser_unavailable");
+                                  ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "reason=parser_unavailable"
+Received: ""
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-worktree-metadata-authority/tests/verify-sprint-rebase-base-guard.test.ts:240:29)
+(fail) verify-sprint contract worktree base guard > metadata present with no JSON parser fails closed rather than disabling the guard [185.90ms]
+252 |       commit(dir, "contract.txt", "contract work");
+253 |       selfMetadata(dir, "demo.json", { base_commit: sourceHead });
+254 | 
+255 |       const result = runHelper(dir);
+256 |       expect(result.status).not.toBe(0);
+257 |       expect(result.stderr).toContain("reason=stacked_source_start");
+                                  ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "reason=stacked_source_start"
+Received: "verify-sprint: contract worktree base_commit is stale\nverify-sprint:   recorded base:                 1cfc5b9ae17d5f4107333ec32e41502eda34247a\nverify-sprint:   current fork point (main): 85ec54d203ee2ef834ef636097e22afa6c41b8f6\nverify-sprint: this worktree was rebased after start; .ai/harness/worktrees/<slug>.json still records the pre-rebase base\nverify-sprint: refresh base_commit to 85ec54d203ee2ef834ef636097e22afa6c41b8f6 before re-running the gate, or rebuild the worktree\n"
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-worktree-metadata-authority/tests/verify-sprint-rebase-base-guard.test.ts:257:29)
+(fail) verify-sprint contract worktree base guard > a worktree started from a source ahead of base_branch is not reported as a rebase [157.35ms]
+282 |       if (bases.length < 2) return; // fixture did not produce ambiguity on this git build
+283 | 
+284 |       selfMetadata(dir, "demo.json", { base_commit: bases[0] });
+285 |       const result = runHelper(dir);
+286 |       expect(result.status).not.toBe(0);
+287 |       expect(result.stderr).toContain("reason=ambiguous_merge_base");
+                                  ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "reason=ambiguous_merge_base"
+Received: ""
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-worktree-metadata-authority/tests/verify-sprint-rebase-base-guard.test.ts:287:29)
+(fail) verify-sprint contract worktree base guard > criss-cross history with several best merge bases is its own class [325.47ms]
+305 |       commit(dir, "feat.txt", "contract work");
+306 |       selfMetadata(dir, "demo.json", { base_commit: git(dir, "merge-base", "HEAD", "main") });
+307 | 
+308 |       const result = runHelper(dir);
+309 |       expect(result.status).not.toBe(0);
+310 |       expect(result.stderr).toContain("reason=base_ref_unsynchronized");
+                                  ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "reason=base_ref_unsynchronized"
+Received: ""
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-worktree-metadata-authority/tests/verify-sprint-rebase-base-guard.test.ts:310:29)
+(fail) verify-sprint contract worktree base guard > a base_branch lagging its upstream fails closed instead of passing on the stale local ref [211.79ms]
+
+ 3 pass
+ 10 fail
+ 24 expect() calls
+Ran 13 tests across 1 file. [3.40s]
+PRE_FIX_EXIT=1

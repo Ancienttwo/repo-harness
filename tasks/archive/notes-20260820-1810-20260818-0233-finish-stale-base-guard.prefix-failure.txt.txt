@@ -1,0 +1,28 @@
+> **Archived**: 2026-08-20 18:10
+> **Related Plan**: (none)
+> **Outcome**: Superseded
+> **Lifecycle**: notes
+> **Parent Run ID**: orphan-family-sweep
+
+bun test v1.3.14 (0d9b296a)
+
+tests/contract-worktree-single-publication.test.ts:
+247 |       const advanced = run("git", ["rev-parse", "main"], primary).stdout.trim();
+248 |       expect(advanced).not.toBe(base);
+249 | 
+250 |       const finish = run("bash", ["scripts/contract-worktree.sh", "finish", "--merge"], linked);
+251 | 
+252 |       expect(finish.status).not.toBe(0);
+                                      ^
+error: expect(received).not.toBe(expected)
+
+Expected: not 0
+
+      at <anonymous> (/Users/ancienttwo/Projects/repo-harness-wt-finish-stale-base-guard/tests/contract-worktree-single-publication.test.ts:252:33)
+(fail) contract-worktree single publication commit > finish fails closed when the target advanced past the un-rebased worktree fork point [1809.60ms]
+
+ 6 pass
+ 1 fail
+ 98 expect() calls
+Ran 7 tests across 1 file. [16.83s]
+PRE_FIX_EXIT=1
