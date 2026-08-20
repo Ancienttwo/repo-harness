@@ -390,6 +390,15 @@ function shellArgv(command: string): string[] {
       i += 1;
       continue;
     }
+    // Tripwire, not a parser extension: this reader only understands
+    // whitespace-separated words, single-quoted spans, and backslash escapes.
+    // A double quote or a bare newline outside single quotes is a form real
+    // bash parses differently, so it fails loudly here instead of being
+    // misread into a plausible-looking argv.
+    expect(
+      char === '"' || char === '\n',
+      `shellArgv only parses single-quoted words; unquoted ${char === '\n' ? 'newline' : 'double quote'} in command: ${command}`,
+    ).toBe(false);
     if (char === ' ' || char === '\t') {
       if (started) {
         argv.push(current);

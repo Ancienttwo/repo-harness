@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-20T20:18:00+0800 -->
+<!-- updated_at: 2026-08-20T20:42:27+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-20T20:18:00+0800
-> **Source Branch**: codex/native-subagent-boundary-dedup
-> **Source Commit**: 43b4c5de
+> **Status**: Idle
+> **Updated At**: 2026-08-20T20:42:27+0800
+> **Source Branch**: codex/envelope-pin-mergegate-leakscan
+> **Source Commit**: 2a91ed24
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -17,11 +17,11 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
+- Status: Idle
 - Active Plan: (none)
 - Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Next Task: (none)
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -31,8 +31,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/ancienttwo/Projects/repo-harness-wt-envelope-pin-mergegate-leakscan: plans/plan-20260820-1902-envelope-pin-mergegate-leakscan.md
-- /Users/ancienttwo/Projects/repo-harness-wt-envelope-pin-mergegate-leakscan: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-envelope-pin-mergegate-leakscan
+- (none)
 ## Active Sprint
 
 - Sprint: (none)
@@ -59,16 +58,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260820-1713-native-subagent-boundary-dedup.md
- D tasks/contracts/20260820-1713-native-subagent-boundary-dedup.contract.md
- D tasks/notes/20260820-1713-native-subagent-boundary-dedup.notes.md
- D tasks/reviews/20260820-1713-native-subagent-boundary-dedup.review.md
+ D plans/plan-20260820-1902-envelope-pin-mergegate-leakscan.md
+ D tasks/contracts/20260820-1902-envelope-pin-mergegate-leakscan.contract.md
+ D tasks/notes/20260820-1902-envelope-pin-mergegate-leakscan.notes.md
+ D tasks/reviews/20260820-1902-envelope-pin-mergegate-leakscan.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260820-1713-native-subagent-boundary-dedup.md
-?? tasks/archive/contract-20260820-2017-native-subagent-boundary-dedup.md
-?? tasks/archive/notes-20260820-2017-native-subagent-boundary-dedup.md
-?? tasks/archive/review-20260820-2017-native-subagent-boundary-dedup.md
-?? tasks/archive/todo-20260820-2017-native-subagent-boundary-dedup.md
+?? plans/archive/plan-20260820-1902-envelope-pin-mergegate-leakscan.md
+?? tasks/archive/contract-20260820-2042-envelope-pin-mergegate-leakscan.md
+?? tasks/archive/notes-20260820-2042-envelope-pin-mergegate-leakscan.md
+?? tasks/archive/review-20260820-2042-envelope-pin-mergegate-leakscan.md
+?? tasks/archive/todo-20260820-2042-envelope-pin-mergegate-leakscan.md
 ```
 
 ## Source Artifacts

@@ -138,6 +138,73 @@ function validatePostFreezeDestinations(allowlist: string[], destinations: Recor
   }
 }
 
+// Credential shapes that must never enter a sealed merge candidate. The set is
+// deliberately small and anchored: every entry is a vendor-issued token shape
+// with a fixed prefix and length, so a false positive cannot silently block an
+// ordinary merge. There is no allowlist, no suppression flag, and no policy
+// key -- a hit is a stop, not a warning.
+const CREDENTIAL_PATTERNS: readonly { readonly id: string; readonly pattern: RegExp }[] = [
+  { id: "pem-private-key", pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
+  { id: "aws-access-key-id", pattern: /AKIA[0-9A-Z]{16}/ },
+  { id: "github-personal-token", pattern: /ghp_[A-Za-z0-9]{36}/ },
+  { id: "github-oauth-token", pattern: /gho_[A-Za-z0-9]{36}/ },
+  { id: "github-fine-grained-token", pattern: /github_pat_[A-Za-z0-9_]{22,}/ },
+  { id: "slack-token", pattern: /xox[baprs]-[A-Za-z0-9-]{10,}/ },
+  { id: "npm-auth-token", pattern: /_authToken\s*=/ },
+];
+
+// Paths that are local operator state by construction: `_ops/` is the ignored
+// local operations surface, and a tracked path carrying an absolute home
+// segment is a leaked machine path rather than a repository path.
+const PRIVATE_PATH_PATTERNS: readonly { readonly id: string; readonly pattern: RegExp }[] = [
+  { id: "local-ops-path", pattern: /^_ops\// },
+  { id: "absolute-home-path", pattern: /\/Users\/[^/]+\// },
+];
+
+// Added lines only: the gate judges what this candidate introduces, not what
+// the base already carries. The diff is captured with --binary, so it can hold
+// byte sequences that are not valid UTF-8; toString replaces them rather than
+// throwing, which keeps a binary hunk from turning into a scanner malfunction.
+// Findings name the pattern id and the file, never the matched bytes.
+function collectLeakFindings(current: Candidate): string[] {
+  const findings: string[] = [];
+  let file = "(unknown file)";
+  for (const line of current.diff.toString("utf-8").split("\n")) {
+    if (line.startsWith("+++ ")) {
+      const path = line.slice(4).trim();
+      file = path.startsWith("b/") ? path.slice(2) : path;
+      continue;
+    }
+    if (!line.startsWith("+")) continue;
+    for (const entry of CREDENTIAL_PATTERNS) {
+      if (entry.pattern.test(line)) {
+        findings.push(`credential pattern ${entry.id} in an added line of ${file} (matched content redacted)`);
+      }
+    }
+  }
+  for (const path of current.changedFiles) {
+    for (const entry of PRIVATE_PATH_PATTERNS) {
+      if (entry.pattern.test(path)) findings.push(`private path pattern ${entry.id}: ${path}`);
+    }
+  }
+  return findings;
+}
+
+// Fail closed in both directions: a hit stops the run before any seal exists,
+// and a scanner malfunction stops it too rather than sealing an unscanned
+// candidate.
+function requireLeakFreeCandidate(current: Candidate): void {
+  let findings: string[];
+  try {
+    findings = collectLeakFindings(current);
+  } catch (error) {
+    fail(`leak scan failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (findings.length > 0) {
+    fail(`leak scan blocked the merge candidate:\n${findings.join("\n")}`);
+  }
+}
+
 function fail(message: string, code = 2): never {
   console.error(`merge-gate: ${message}`);
   process.exit(code);
@@ -516,6 +583,7 @@ if (args.command === "verify") {
 }
 
 requireCleanCandidate(root);
+requireLeakFreeCandidate(current);
 const postFreezeAllowlist = Array.from(new Set(args.allowPostFreeze)).sort();
 validatePostFreezeAllowlistShape(postFreezeAllowlist);
 validatePostFreezeDestinations(postFreezeAllowlist, args.expectedPostFreezeDestinations);

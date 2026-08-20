@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { spawnSync } from 'child_process';
@@ -52,7 +52,7 @@ function changeAssessmentEvidence(cwd: string): Record<string, unknown> {
   return { ...basis, evidence_sha256: `sha256:${createHash('sha256').update(stableJson(basis)).digest('hex')}` };
 }
 
-async function makeFixture() {
+async function makeFixture(seedCandidate?: (cwd: string) => void) {
   const cwd = mkdtempSync(join(tmpdir(), 'repo-harness-merge-seal-repo-'));
   const home = mkdtempSync(join(tmpdir(), 'repo-harness-merge-seal-home-'));
   tempDirs.push(cwd, home);
@@ -94,6 +94,10 @@ async function makeFixture() {
     '',
   ].join('\n'));
   writeFileSync(join(cwd, 'tasks', 'reviews', 'demo.review.md'), '# Review\n\n> **Recommendation**: pass\n');
+  // Seeded before the candidate commit so the acceptance receipt covers the
+  // same subject the gate scans: a later commit would fail on staleness first
+  // and never reach the leak scan.
+  seedCandidate?.(cwd);
   commit(cwd, 'candidate');
   const subject = buildReviewSubject(cwd, { targetRef: 'main' });
   writeFileSync(join(cwd, '.ai', 'harness', 'checks', 'latest.json'), `${JSON.stringify({
@@ -207,5 +211,51 @@ describe('provider-free merge seal', () => {
     expect(verified.status, verified.stderr).toBe(0);
     expect(verified.stdout.trim()).toBe(git(fixture.cwd, 'rev-parse', 'HEAD'));
     expect(readFileSync(fixture.providerCalls, 'utf-8').trim()).toBe('1');
+  }, 30_000);
+});
+
+/**
+ * The seeded credential is assembled at runtime: a literal token shape in this
+ * file would be an added line in this repository's own merge candidate and
+ * would trip the very scan under test.
+ */
+describe('merge candidate leak scan', () => {
+  const FAKE_AWS_KEY = `AKIA${'A'.repeat(16)}`;
+
+  function sealFile(cwd: string, home: string): string {
+    return join(dirname(acceptanceReceiptPath(cwd, home)), 'merge-seal.latest.json');
+  }
+
+  test('an added credential line fails the run before any seal is written', async () => {
+    const fixture = await makeFixture((cwd) => {
+      writeFileSync(join(cwd, 'feature.txt'), `candidate\nAWS_ACCESS_KEY_ID=${FAKE_AWS_KEY}\n`);
+    });
+    const sealed = run('bun', [fixture.harness, 'run', '--base', 'main', '--format', 'sha'], fixture.cwd);
+    expect(sealed.status).not.toBe(0);
+    expect(sealed.stderr).toContain('leak scan blocked the merge candidate');
+    expect(sealed.stderr).toContain('aws-access-key-id');
+    expect(sealed.stderr).toContain('feature.txt');
+    expect(sealed.stderr).not.toContain(FAKE_AWS_KEY);
+    expect(existsSync(sealFile(fixture.cwd, fixture.home))).toBe(false);
+  }, 30_000);
+
+  test('a candidate free of leak patterns still seals', async () => {
+    const fixture = await makeFixture();
+    const sealed = run('bun', [fixture.harness, 'run', '--base', 'main', '--format', 'sha'], fixture.cwd);
+    expect(sealed.status, sealed.stderr).toBe(0);
+    expect(existsSync(sealFile(fixture.cwd, fixture.home))).toBe(true);
+  }, 30_000);
+
+  test('a changed file under _ops/ fails the run before any seal is written', async () => {
+    const fixture = await makeFixture((cwd) => {
+      mkdirSync(join(cwd, '_ops'), { recursive: true });
+      writeFileSync(join(cwd, '_ops', 'provider-state.json'), '{"local":true}\n');
+    });
+    const sealed = run('bun', [fixture.harness, 'run', '--base', 'main', '--format', 'sha'], fixture.cwd);
+    expect(sealed.status).not.toBe(0);
+    expect(sealed.stderr).toContain('leak scan blocked the merge candidate');
+    expect(sealed.stderr).toContain('local-ops-path');
+    expect(sealed.stderr).toContain('_ops/provider-state.json');
+    expect(existsSync(sealFile(fixture.cwd, fixture.home))).toBe(false);
   }, 30_000);
 });

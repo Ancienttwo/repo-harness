@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'crypto';
-import { existsSync, readFileSync, readdirSync, rmSync } from 'fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'fs';
+import { tmpdir } from 'os';
 import { join, relative } from 'path';
 import { spawnSync } from 'child_process';
 import type { ContinuationEnvelopeV1 } from '../src/core/state/types';
@@ -276,6 +285,80 @@ describe('continuation envelope halts on unusable sprint authority', () => {
       expect(envelope.command).toBeNull();
     });
   }, 30_000);
+});
+
+/**
+ * The `advance_sprint` command names a free-text Task cell, so its single-quote
+ * escaping is the only thing standing between an ordinary backlog row and an
+ * injected argument. Proving that by inspection re-implements the shell; this
+ * pin hands the published command string to a real `bash`, which tokenizes it
+ * itself, and reads back the argv a real `sprint-backlog` invocation would see.
+ */
+describe('advance_sprint command survives an adversarial Task cell through real bash', () => {
+  const COMMAND_PREFIX = 'repo-harness run sprint-backlog ';
+  // Every shape that makes single-quote escaping non-trivial. Markdown table
+  // cells cannot carry `|` or a newline, so those are out of the grammar's
+  // reach rather than omitted; leading/trailing whitespace is trimmed by the
+  // row scan, so whitespace cases keep it internal.
+  const CORPUS = [
+    'plain control sample',
+    "embedded ' single quote",
+    "already escaped '\\'' sequence",
+    'spaces\tand\ttabs mixed',
+    'substitution $(rm -rf /tmp/x)',
+    'backticks `rm -rf /tmp/x`',
+    'double "quoted" span',
+    'back\\slash and \\\\ pair',
+    'semicolon ; then more',
+    'and && operator',
+    '--leading-dash-looks-like-a-flag',
+    "$(echo pwned) '; touch /tmp/pwned; '",
+  ] as const;
+
+  function argvEchoScript(): { path: string; cleanup: () => void } {
+    const dir = mkdtempSync(join(tmpdir(), 'repo-harness-argv-echo-'));
+    const path = join(dir, 'argv-echo.sh');
+    writeFileSync(path, "#!/bin/bash\nprintf '%s\\0' \"$@\"\n");
+    chmodSync(path, 0o755);
+    return { path, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  }
+
+  function bashArgv(command: string, scriptPath: string): string[] {
+    expect(command.startsWith(COMMAND_PREFIX)).toBe(true);
+    const rewritten = `'${scriptPath}' ${command.slice(COMMAND_PREFIX.length)}`;
+    const { REPO_HARNESS_NODE_BIN: _node, ...env } = process.env;
+    const result = spawnSync('bash', ['-c', rewritten], { env, encoding: 'buffer' });
+    expect(String(result.stderr)).toBe('');
+    expect(result.status).toBe(0);
+    const parts = String(result.stdout).split('\0');
+    expect(parts.pop()).toBe('');
+    return parts;
+  }
+
+  test('bash recovers the Task cell byte-identically with no injected token', () => {
+    const echo = argvEchoScript();
+    try {
+      withRepo((cwd) => {
+        dropActivePlan(cwd);
+        for (const task of CORPUS) {
+          useSprint(cwd, sprintFile('Approved', [
+            `| 1 | [ ] | ${task} | contract | pending | (pending) |`,
+          ]));
+          commitFixture(cwd, 'adversarial backlog row');
+          const envelope = envelopeFrom(cwd);
+          expect(envelope.route).toBe('advance_sprint');
+          expect(bashArgv(envelope.command!, echo.path)).toEqual([
+            'start-task',
+            '--task',
+            task,
+            '--execute',
+          ]);
+        }
+      });
+    } finally {
+      echo.cleanup();
+    }
+  }, 120_000);
 });
 
 describe('continuation envelope determinism and read-only contract', () => {
