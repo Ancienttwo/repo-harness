@@ -6,7 +6,7 @@
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: kito
 > **Capability ID**: root
-> **Last Updated**: 2026-08-21 02:40
+> **Last Updated**: 2026-08-21 03:52
 > **Review File**: `tasks/reviews/20260821-0021-obsidian-companion-dependencies.review.md`
 > **Notes File**: `tasks/notes/20260821-0021-obsidian-companion-dependencies.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
@@ -38,6 +38,10 @@ non-vault hooks/CI, and the existing atomic global-runtime transaction.
   outer helper budgets to contain the measured required suite, without adding
   a per-invocation override, and commits the contract authority before binding
   canonical evidence.
+  The subsequently approved gate slice replaces adapter-parity's five stale
+  per-test 30-second overrides with one file-level budget sized from measured
+  loaded execution; production Effective State and lock behavior stay out of
+  scope.
 - Out of scope: vendoring upstream Skill bodies; installing or launching the
   `obsidian` executable or desktop App; npm runtime dependencies; vault
   discovery; hook/CI/workflow vault access; `brain sync` behavior.

@@ -5,7 +5,7 @@
 > **Contract**: tasks/contracts/20260821-0021-obsidian-companion-dependencies.contract.md
 > **Notes File**: tasks/notes/20260821-0021-obsidian-companion-dependencies.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-08-21 03:43
+> **Last Updated**: 2026-08-21 03:52
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: sha256:28a013dd831864694eb76ae9ba5b8dbe1cadef00cb9bd6612ac1a50adfe12641
@@ -74,6 +74,10 @@
   kill. Canonical acceptance remains unavailable because four unrelated
   adapter-parity cases timed out under full-suite load; their exact test file
   immediately passed 17/17 alone in 53.84s.
+- The adapter-parity blocker now has deterministic red/green load evidence:
+  four concurrent file runs failed 4/4 with the old local 30-second overrides
+  and pass 4/4 with the shared 300-second file budget. Production state and
+  lock code are unchanged.
 - Evidence binding correctly refused the earlier dirty/untracked contract. The
   current closeout slice authorizes a local commit before the one final retry.
 - Advisory: the tooling probe reports Waza staging drift and a timed-out optional Skills CLI probe; these are environment readiness findings, not Obsidian implementation failures.
@@ -89,10 +93,8 @@
 
 ## Failing Items
 
-- Canonical `verify-sprint --prepare-acceptance` run
-  `run-20260821T030515-29706` completed the full suite inside the corrected
-  budget but failed on four load-sensitive adapter-parity timeouts; no
-  AcceptanceReceipt was produced.
+- Final canonical verification and AcceptanceReceipt regeneration are pending
+  after rebasing the now-frozen fix onto the latest target.
 
 ## Retest Steps
 

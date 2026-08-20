@@ -232,3 +232,6 @@ Pin the intended `kepano/obsidian-skills` upstream commit and compute full-tree 
 - [x] Resize the fixed verifier/outer-helper budget authority to contain the
   measured full suite, remove duplicate focused commands from the contract,
   and preserve fail-closed deadline enforcement without an invocation override.
+- [x] Repair the adapter-parity test-local timeout authority proven to fail
+  under full-suite-equivalent subprocess load, without changing state or lock
+  production semantics.

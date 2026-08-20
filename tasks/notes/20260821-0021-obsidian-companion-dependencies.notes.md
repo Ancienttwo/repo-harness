@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260821-0021-obsidian-companion-dependencies.md
 > **Contract**: tasks/contracts/20260821-0021-obsidian-companion-dependencies.contract.md
 > **Review**: tasks/reviews/20260821-0021-obsidian-companion-dependencies.review.md
-> **Last Updated**: 2026-08-21 03:43
+> **Last Updated**: 2026-08-21 03:52
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -109,6 +109,24 @@
   This is an unrelated load-sensitive gate outside the approved implementation
   scope; no adapter or timeout code was changed and the expensive round was not
   repeated again.
+
+## Adapter Parity Timeout Root Cause Evidence
+
+- root_cause: `tests/state/adapter-parity.test.ts` attached five test-local
+  `30_000ms` overrides to cells that synchronously execute multiple real
+  CLI/hook children; the overrides superseded the canonical command's default,
+  and Bun cannot observe its timeout while `spawnSync` blocks.
+- deterministic_repro: four concurrent copies of
+  `bun test tests/state/adapter-parity.test.ts` failed 4/4 before the fix at the
+  `allowed-to-stop` cell after 32.1–35.3 seconds. All lock-specific scenario
+  cells passed, ruling out shared Effective State lock leakage.
+- regression_guard: the same four-copy load probe passes 4/4 after replacing
+  the five local overrides with `setDefaultTimeout(300_000)`; the affected cell
+  completes in 33.4–36.6 seconds and every copy reports 17/17.
+- sibling_sweep: many other subprocess-heavy test files carry 30-second local
+  budgets, but none appeared in the canonical failure set or this deterministic
+  repro. They remain unchanged because there is no evidence that they share the
+  adapter-parity failure.
 
 ## Promotion Filter
 
