@@ -6,7 +6,7 @@
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: kito
 > **Capability ID**: root
-> **Last Updated**: 2026-08-21 03:52
+> **Last Updated**: 2026-08-21 03:54
 > **Review File**: `tasks/reviews/20260821-0021-obsidian-companion-dependencies.review.md`
 > **Notes File**: `tasks/notes/20260821-0021-obsidian-companion-dependencies.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
@@ -181,6 +181,7 @@ exit_criteria:
     - path: tests/skill-surface/obsidian-memory-contract.test.ts
     - path: tests/check-agent-tooling.test.ts
     - path: tests/install-profiles.test.ts
+    - path: tests/state/adapter-parity.test.ts
   commands_succeed:
     - bun test --timeout 60000
     - bash scripts/check-deploy-sql-order.sh

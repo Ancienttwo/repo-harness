@@ -32,7 +32,7 @@ import {
 
 const FIXTURES = join(import.meta.dir, 'fixtures');
 
-// Adapter-parity cells synchronously exercise multiple real CLI/hook child
+// The adapter-parity cells synchronously exercise multiple real CLI/hook child
 // processes. Under the full-suite scheduler, spawnSync can keep the test body
 // blocked well beyond the command-line default before Bun can observe a test
 // timeout. Size this file-level harness budget above the measured loaded path;

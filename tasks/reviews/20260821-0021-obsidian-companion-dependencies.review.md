@@ -5,19 +5,19 @@
 > **Contract**: tasks/contracts/20260821-0021-obsidian-companion-dependencies.contract.md
 > **Notes File**: tasks/notes/20260821-0021-obsidian-companion-dependencies.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-08-21 03:52
+> **Last Updated**: 2026-08-21 03:54
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: sha256:28a013dd831864694eb76ae9ba5b8dbe1cadef00cb9bd6612ac1a50adfe12641
+> **Reviewed Subject SHA256**: sha256:042994d33086572d1c4d5a6c86276b0f3fd0110a9122474addc48b0f764797b4
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: 7ce86fddbd628bbbd3948002b1c84b187624fb56
+> **Reviewed Target Revision**: 36c60876d47d53755e68d7bf3e69d032dc2046db
 
 ## Human Review Card
 
 - Verdict: pass
 - Change type: code-change
 - Intended files changed: manifest/catalog, global install/update transaction, tooling projection, install-profile docs, focused tests, and workflow artifacts
-- Actual files changed: 23 product/doc/test paths in the normalized review subject plus plan, contract, review, notes, and `tasks/todos.md`; the additional path is the automatic architecture projection manifest
+- Actual files changed: 24 product/doc/test paths in the normalized review subject plus plan, contract, review, notes, and `tasks/todos.md`; these include the automatic architecture projection manifest and adapter-parity regression guard
 - Commands passed: all focused Obsidian/catalog/install/tooling tests; 35 focused verifier/projection/runner tests; six non-test required checks; helper mirror and whitespace checks
 - Residual risks: upstream companion revisions remain deliberately pinned; updating them requires new subtree digests and the same integrity tests
 - Reviewer action required: none for implementation correctness
