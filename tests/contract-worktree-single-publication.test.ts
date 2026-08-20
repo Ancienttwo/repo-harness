@@ -42,6 +42,20 @@ function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEn
   });
 }
 
+// Coordination wait metrics are rooted at the primary worktree, not at the
+// linked one: finish deletes its own worktree on the success path.
+const WAITS_LEDGER_RELATIVE = ".ai/harness/runs/coordination/waits.jsonl";
+
+function finishAttempts(primary: string): Array<Record<string, unknown>> {
+  const path = join(primary, WAITS_LEDGER_RELATIVE);
+  if (!existsSync(path)) return [];
+  return readFileSync(path, "utf-8")
+    .split("\n")
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>)
+    .filter((record) => record.kind === "finish_attempt");
+}
+
 function writeExecutable(path: string, body: string): void {
   writeFileSync(path, body);
   chmodSync(path, 0o755);
@@ -242,6 +256,15 @@ describe("contract-worktree single publication commit", () => {
         JSON.parse(readFileSync(join(primary, ".ai/harness/state/architecture-drift-cursor.json"), "utf-8")),
       ).toEqual({ head_sha: published });
       expect(existsSync(join(primary, "plans/archive"))).toBe(true);
+
+      const attempts = finishAttempts(primary);
+      expect(attempts.length).toBe(1);
+      expect(attempts[0].protocol).toBe(1);
+      expect(attempts[0].outcome).toBe("merged");
+      expect(attempts[0].slug).toBe("demo");
+      expect(attempts[0].frozen_base).toBe(base);
+      expect(attempts[0].publication).toBe(published);
+      expect(Number.isInteger(attempts[0].ms)).toBe(true);
     } finally {
       rmSync(container, { recursive: true, force: true });
     }
@@ -298,6 +321,14 @@ describe("contract-worktree single publication commit", () => {
       expect(run("git", ["rev-list", "--count", `${base}..main`], primary).stdout.trim()).toBe("2");
       expect(existsSync(join(linked, PLAN))).toBe(true);
       expect(existsSync(join(linked, "src/change.ts"))).toBe(true);
+
+      const attempts = finishAttempts(primary);
+      expect(attempts.length).toBe(1);
+      expect(attempts[0].outcome).toBe("refused_stale_fork");
+      expect(attempts[0].slug).toBe("demo");
+      expect(attempts[0].frozen_base).toBe(advanced);
+      expect(attempts[0].publication).toBeNull();
+      expect(Number.isInteger(attempts[0].ms)).toBe(true);
     } finally {
       rmSync(container, { recursive: true, force: true });
     }

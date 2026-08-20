@@ -39,6 +39,16 @@ const CLI_WRAPPER = (() => {
 })();
 
 const BACKLOG_LOCK_RELATIVE = ".git/repo-harness/coordination/v1/locks/backlog.lock";
+// Coordination wait metrics land in the primary worktree (the parent of the git
+// common directory), so a plain fixture repo sees them at its own root.
+const WAITS_LEDGER_RELATIVE = ".ai/harness/runs/coordination/waits.jsonl";
+
+function readJsonl(path: string): Array<Record<string, unknown>> {
+  return readFileSync(path, "utf-8")
+    .split("\n")
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
 
 function tmpWorkspace(prefix: string): string {
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), `${prefix}-`)));
@@ -396,6 +406,37 @@ describe("sprint-backlog helper", () => {
     }
   }, 30_000);
 
+  test("start-task appends one acquired backlog_lock_wait record to the coordination ledger", () => {
+    const cwd = tmpWorkspace("sprint-backlog-wait-metrics");
+    try {
+      copySprintHelpers(cwd, ["sprint-backlog.sh", "capture-plan.sh"]);
+      const sprintPath = "plans/sprints/20260610-0000-fixture-sprint.sprint.md";
+      writeActiveSprintFixture(cwd, sprintPath);
+
+      const waitsPath = join(cwd, WAITS_LEDGER_RELATIVE);
+      expect(existsSync(waitsPath)).toBe(false);
+
+      const start = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a"], cwd);
+      expect(start.status, `${start.stdout}\n${start.stderr}`).toBe(0);
+
+      expect(existsSync(waitsPath)).toBe(true);
+      const records = readJsonl(waitsPath).filter((record) => record.kind === "backlog_lock_wait");
+      expect(records.length).toBe(1);
+      const record = records[0];
+      expect(record.protocol).toBe(1);
+      expect(record.verb).toBe("start-task");
+      expect(record.outcome).toBe("acquired");
+      expect(Number.isInteger(record.ms)).toBe(true);
+      expect(record.ms).toBeGreaterThanOrEqual(0);
+      expect(Number.isInteger(record.attempts)).toBe(true);
+      expect(record.attempts).toBe(0);
+      expect(record.reclaimed_stale).toBe(false);
+      expect(typeof record.at).toBe("string");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test("a duplicate start-task is refused by the lease, and completion releases it", () => {
     // The retired per-worktree in-flight marker and `--force` are gone: the
     // shared lease is the only thing that says a row is being worked, and a
@@ -505,6 +546,13 @@ describe("sprint-backlog helper", () => {
       expect(complete.status).toBe(1);
       expect(complete.stderr).toContain("timed out acquiring backlog lock");
       expect(readFileSync(join(cwd, sprintPath), "utf-8")).toContain("| 1 | [ ] | task-a |");
+
+      const timedOut = readJsonl(join(cwd, WAITS_LEDGER_RELATIVE))
+        .filter((record) => record.kind === "backlog_lock_wait");
+      expect(timedOut.length).toBe(1);
+      expect(timedOut[0].outcome).toBe("timeout");
+      expect(timedOut[0].verb).toBe("complete-task");
+      expect(timedOut[0].attempts).toBe(5);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

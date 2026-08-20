@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-20T20:42:27+0800 -->
+<!-- updated_at: 2026-08-20T22:11:18+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Idle
-> **Updated At**: 2026-08-20T20:42:27+0800
-> **Source Branch**: codex/envelope-pin-mergegate-leakscan
-> **Source Commit**: 2a91ed24
+> **Status**: ManualClearedWithActiveWork
+> **Updated At**: 2026-08-20T22:11:18+0800
+> **Source Branch**: codex/coordination-wait-metrics
+> **Source Commit**: 32c3ead6
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -17,11 +17,11 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Current Focus
 
-- Status: Idle
+- Status: ManualClearedWithActiveWork
 - Active Plan: (none)
 - Plan Status: (none)
-- Next Task: (none)
-- Clear Note: (none)
+- Next Task: inspect active worktree marker(s)
+- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
 
 ## Mainline Snapshot Reading
 
@@ -31,7 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- (none)
+- /Users/ancienttwo/Projects/repo-harness-wt-mcp-workspace-cleanup-target-binding: plans/plan-20260820-2054-mcp-workspace-cleanup-target-binding.md
+- /Users/ancienttwo/Projects/repo-harness-wt-mcp-workspace-cleanup-target-binding: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-mcp-workspace-cleanup-target-binding
 ## Active Sprint
 
 - Sprint: (none)
@@ -58,16 +59,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260820-1902-envelope-pin-mergegate-leakscan.md
- D tasks/contracts/20260820-1902-envelope-pin-mergegate-leakscan.contract.md
- D tasks/notes/20260820-1902-envelope-pin-mergegate-leakscan.notes.md
- D tasks/reviews/20260820-1902-envelope-pin-mergegate-leakscan.review.md
+ D plans/plan-20260820-2049-coordination-wait-metrics.md
+ D tasks/contracts/20260820-2049-coordination-wait-metrics.contract.md
+ D tasks/notes/20260820-2049-coordination-wait-metrics.notes.md
+ D tasks/reviews/20260820-2049-coordination-wait-metrics.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260820-1902-envelope-pin-mergegate-leakscan.md
-?? tasks/archive/contract-20260820-2042-envelope-pin-mergegate-leakscan.md
-?? tasks/archive/notes-20260820-2042-envelope-pin-mergegate-leakscan.md
-?? tasks/archive/review-20260820-2042-envelope-pin-mergegate-leakscan.md
-?? tasks/archive/todo-20260820-2042-envelope-pin-mergegate-leakscan.md
+?? plans/archive/plan-20260820-2049-coordination-wait-metrics.md
+?? tasks/archive/contract-20260820-2211-coordination-wait-metrics.md
+?? tasks/archive/notes-20260820-2211-coordination-wait-metrics.md
+?? tasks/archive/review-20260820-2211-coordination-wait-metrics.md
+?? tasks/archive/todo-20260820-2211-coordination-wait-metrics.md
 ```
 
 ## Source Artifacts

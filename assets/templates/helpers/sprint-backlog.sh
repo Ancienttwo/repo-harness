@@ -163,6 +163,51 @@ coordination_root() {
   printf '%s/repo-harness/coordination/v1' "$common_dir"
 }
 
+json_escape() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//$'\n'/\\n}"
+  value="${value//$'\r'/\\r}"
+  value="${value//$'\t'/\\t}"
+  printf '%s' "$value"
+}
+
+now_ms() {
+  if command -v node >/dev/null 2>&1; then
+    node -e 'process.stdout.write(String(Date.now()))'
+  elif command -v bun >/dev/null 2>&1; then
+    bun -e 'process.stdout.write(String(Date.now()))'
+  else
+    printf '%s000' "$(date +%s)"
+  fi
+}
+
+# Coordination wait metrics sink. Rooted at the primary worktree (the parent of
+# the git common directory) for the same reason `coordination_root` is: one
+# clone must own one ledger, and a per-worktree path would scatter the records
+# across linked worktrees -- and would not survive the worktree cleanup that
+# `contract-worktree finish` runs on its own success path.
+coordination_waits_file() {
+  local common_dir
+  common_dir="$(git rev-parse --git-common-dir 2>/dev/null)" || return 1
+  common_dir="$(cd "$common_dir" 2>/dev/null && pwd -P)" || return 1
+  printf '%s/.ai/harness/runs/coordination/waits.jsonl' "$(dirname "$common_dir")"
+}
+
+# Append-only, single-line, no lock file: the same idiom the workstream-sync
+# event log uses. Interleaved writes from concurrent agents are the accepted
+# tradeoff; a torn record loses one measurement, never a host command. Every
+# failure path returns 0 so instrumentation can never change an exit status.
+coordination_wait_emit() {
+  local record="$1" file
+  file="$(coordination_waits_file 2>/dev/null)" || return 0
+  [[ -n "$file" ]] || return 0
+  mkdir -p "$(dirname "$file")" 2>/dev/null || return 0
+  printf '%s\n' "$record" >> "$file" 2>/dev/null || return 0
+  return 0
+}
+
 # Serialize read-modify-write mutations: two concurrent complete-task or
 # start-task calls would otherwise both render from the same snapshot and the
 # second mv would drop the first writer's update.
@@ -175,8 +220,17 @@ release_backlog_lock() {
   fi
 }
 
+emit_backlog_lock_wait() {
+  local verb="$1" started_ms="$2" attempts="$3" reclaimed_stale="$4" outcome="$5"
+  coordination_wait_emit "{\"protocol\":1,\"kind\":\"backlog_lock_wait\",\"at\":\"$(json_escape "$(date '+%Y-%m-%dT%H:%M:%S%z')")\",\"verb\":\"$(json_escape "$verb")\",\"ms\":$(( $(now_ms) - started_ms )),\"attempts\":${attempts},\"reclaimed_stale\":${reclaimed_stale},\"outcome\":\"$(json_escape "$outcome")\"}" || true
+}
+
 acquire_backlog_lock() {
+  local verb="${1:-unknown}"
   local attempts=0
+  local reclaimed_stale=false
+  local started_ms
+  started_ms="$(now_ms)"
   local coordination_dir
   local max_attempts="${REPO_HARNESS_BACKLOG_LOCK_ATTEMPTS:-100}"
   local sleep_seconds="${REPO_HARNESS_BACKLOG_LOCK_SLEEP_SECONDS:-0.1}"
@@ -196,16 +250,23 @@ acquire_backlog_lock() {
     if [[ -n "$(find "$BACKLOG_LOCK_DIR" -maxdepth 0 -mmin +1 2>/dev/null)" ]] \
       && rmdir "$BACKLOG_LOCK_DIR" 2>/dev/null; then
       echo "sprint-backlog: reclaiming stale backlog lock: $BACKLOG_LOCK_DIR" >&2
+      reclaimed_stale=true
       continue
     fi
     attempts=$((attempts + 1))
     if [[ "$attempts" -ge "$max_attempts" ]]; then
       echo "sprint-backlog: timed out acquiring backlog lock: $BACKLOG_LOCK_DIR" >&2
+      emit_backlog_lock_wait "$verb" "$started_ms" "$attempts" "$reclaimed_stale" timeout
       exit 1
     fi
     sleep "$sleep_seconds"
   done
   trap release_backlog_lock EXIT INT TERM
+  # After the trap, never before: the emission spawns a node process for
+  # `now_ms`, and doing that while the lock dir exists but the release trap is
+  # unarmed would widen the leak window by one spawn. The `ms` bracket still
+  # ends at acquisition (`started_ms` is read from before the loop).
+  emit_backlog_lock_wait "$verb" "$started_ms" "$attempts" "$reclaimed_stale" acquired
 }
 
 # Backlog rows live between '## Backlog' and the next '## ' heading:
@@ -487,7 +548,7 @@ cmd_complete_task() {
 
   local sprint_file target_row target_index target_status target_task target_plan plan_cell match_count
   sprint_file="$(require_active_sprint)"
-  acquire_backlog_lock
+  acquire_backlog_lock complete-task
 
   # task_ref travels via ENVIRON (awk -v reprocesses backslash escapes).
   match_count="$(backlog_rows "$sprint_file" | TASK_REF="$task_ref" awk -F '\t' '$1 == ENVIRON["TASK_REF"] || $3 == ENVIRON["TASK_REF"] { count++ } END { print count + 0 }')"
@@ -928,7 +989,7 @@ cmd_start_task() {
       ;;
   esac
 
-  acquire_backlog_lock
+  acquire_backlog_lock start-task
 
   local target_row match_count
   match_count="$(backlog_rows "$sprint_file" | TASK_REF="$task_ref" awk -F '\t' '$1 == ENVIRON["TASK_REF"] || $3 == ENVIRON["TASK_REF"] { count++ } END { print count + 0 }')"

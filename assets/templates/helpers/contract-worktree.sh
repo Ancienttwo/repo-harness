@@ -59,6 +59,61 @@ json_escape() {
   printf '%s' "$value"
 }
 
+now_ms() {
+  if command -v node >/dev/null 2>&1; then
+    node -e 'process.stdout.write(String(Date.now()))'
+  elif command -v bun >/dev/null 2>&1; then
+    bun -e 'process.stdout.write(String(Date.now()))'
+  else
+    printf '%s000' "$(date +%s)"
+  fi
+}
+
+# Coordination wait metrics sink. Rooted at the primary worktree (the parent of
+# the git common directory), not at this worktree: `finish` deletes its own
+# worktree on the success path, so a per-worktree ledger would lose exactly the
+# `merged` record it just wrote, and scatter the rest across linked worktrees.
+coordination_waits_file() {
+  local common_dir
+  common_dir="$(git rev-parse --git-common-dir 2>/dev/null)" || return 1
+  common_dir="$(cd "$common_dir" 2>/dev/null && pwd -P)" || return 1
+  printf '%s/.ai/harness/runs/coordination/waits.jsonl' "$(dirname "$common_dir")"
+}
+
+# Append-only, single-line, no lock file: the same idiom the workstream-sync
+# event log uses. Interleaved writes from concurrent agents are the accepted
+# tradeoff; a torn record loses one measurement, never a host command. Every
+# failure path returns 0 so instrumentation can never change an exit status.
+coordination_wait_emit() {
+  local record="$1" file
+  file="$(coordination_waits_file 2>/dev/null)" || return 0
+  [[ -n "$file" ]] || return 0
+  mkdir -p "$(dirname "$file")" 2>/dev/null || return 0
+  printf '%s\n' "$record" >> "$file" 2>/dev/null || return 0
+  return 0
+}
+
+# One `finish_attempt` record per finish attempt. `finish_attempt_started_ms`
+# is set at finish entry and cleared by the emission, so the refusal sites that
+# call `finish_transaction_abort` right after emitting cannot double-count, and
+# an abort reached outside a finish attempt emits nothing.
+finish_attempt_started_ms=""
+finish_attempt_slug=""
+finish_attempt_frozen_base=""
+
+emit_finish_attempt() {
+  local outcome="$1" frozen_base="${2:-}" publication="${3:-}" publication_field
+  [[ -n "$finish_attempt_started_ms" ]] || return 0
+  if [[ -n "$publication" ]]; then
+    publication_field="\"$(json_escape "$publication")\""
+  else
+    publication_field="null"
+  fi
+  coordination_wait_emit "{\"protocol\":1,\"kind\":\"finish_attempt\",\"at\":\"$(json_escape "$(date '+%Y-%m-%dT%H:%M:%S%z')")\",\"slug\":\"$(json_escape "$finish_attempt_slug")\",\"ms\":$(( $(now_ms) - finish_attempt_started_ms )),\"outcome\":\"$(json_escape "$outcome")\",\"frozen_base\":\"$(json_escape "$frozen_base")\",\"publication\":${publication_field}}" || true
+  finish_attempt_started_ms=""
+  return 0
+}
+
 policy_get() {
   local jq_path="$1"
   local default_value="${2:-}"
@@ -1031,6 +1086,7 @@ finish_transaction_phase() {
 
 finish_transaction_abort() {
   local index path
+  emit_finish_attempt aborted "$finish_attempt_frozen_base" ""
   if [[ -n "$finish_transaction_original_head" ]] && [[ "$(git rev-parse HEAD)" != "$finish_transaction_original_head" ]]; then
     git reset --mixed "$finish_transaction_original_head"
   fi
@@ -1632,6 +1688,9 @@ sprint_lease_reconcile_after_publication() {
 }
 
 finish_worktree() {
+  finish_attempt_started_ms="$(now_ms)"
+  finish_attempt_slug=""
+  finish_attempt_frozen_base=""
   local merge_back=1
   local target_branch
   local gate_base_ref
@@ -1707,6 +1766,7 @@ finish_worktree() {
   [[ -n "$current_branch" ]] || { echo "contract-worktree: detached HEAD is not supported" >&2; exit 1; }
   [[ "$current_branch" != "$target_branch" ]] || { echo "contract-worktree: already on target branch $target_branch" >&2; exit 1; }
   slug="$(normalize_slug "${current_branch##*/}")"
+  finish_attempt_slug="$slug"
   commit_message="${commit_message:-feat(contract): complete ${slug}}"
 
   if [[ -f "$WORKFLOW_STATE_LIB" ]]; then
@@ -1747,6 +1807,7 @@ finish_worktree() {
   sprint_lease_begin_completion "$target_branch" || { closeout_claim_release; return 1; }
 
   frozen_base_sha="$(refresh_and_freeze_base "$gate_base_ref" "$target_branch")"
+  finish_attempt_frozen_base="$frozen_base_sha"
   verify_acceptance_receipt "$contract_file"
   check_architecture_freshness "$target_branch"
   REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" bash "$helper_dir/verify-sprint.sh"
@@ -1770,6 +1831,7 @@ finish_worktree() {
       echo "contract-worktree: target branch advanced past this worktree's fork point; refusing merge" >&2
       echo "contract-worktree: frozen target base $frozen_base_sha ($target_branch) is not an ancestor of $current_branch" >&2
       echo "contract-worktree: rebase this worktree onto $target_branch (or restart the contract worktree from the refreshed base), then re-run the closeout gates" >&2
+      emit_finish_attempt refused_stale_fork "$frozen_base_sha" ""
       exit 1
     fi
   fi
@@ -1953,6 +2015,7 @@ finish_worktree() {
     echo "contract-worktree: target branch advanced past this worktree's fork point; refusing merge" >&2
     echo "contract-worktree: frozen target base $frozen_base_sha ($target_branch) is not an ancestor of $current_branch" >&2
     echo "contract-worktree: rebase this worktree onto $target_branch (or restart the contract worktree from the refreshed base), then re-run the closeout gates" >&2
+    emit_finish_attempt refused_stale_fork "$frozen_base_sha" ""
     finish_transaction_abort
     return 1
   fi
@@ -2009,6 +2072,7 @@ finish_worktree() {
   finish_transaction_phase merged "$publication_sha"
   finish_transaction_commit "$publication_sha"
   sprint_lease_reconcile_after_publication "$target_branch"
+  emit_finish_attempt merged "$frozen_base_sha" "$publication_sha"
   echo "[ContractWorktree] Merged $current_branch into $target_branch as single publication commit $publication_sha at $target_worktree"
 
   # Cleanup runs after the transaction is committed and its EXIT trap disarmed,
