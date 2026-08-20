@@ -642,11 +642,22 @@ mismatched, invalid, or unverified native observation blocks a role-routing
 claim and authorizes no alternate fleet runner. repo-harness must not scrape
 rollout JSONL or SQLite as a compatibility path.
 
-`developer_instructions` is the packaged `.md` body plus the canonical
-EXECUTION_BOUNDARY anti-extras clause, kept byte-identical to the
-`EXECUTION_BOUNDARY` constant in `scripts/contract-run.ts` so every generated
-Codex agent carries the same boundary as the Claude worker prompts, the MCP
-`codex-goal` path, and the Codex delegation advisor hook.
+`developer_instructions` is the packaged `.md` role body only. Generated
+personas carry no EXECUTION_BOUNDARY anti-extras clause, and neither does the
+Codex delegation advisor hook: on the native-child path `SubagentStart.context`
+is the single injection owner, so the clause appears exactly once in each
+rendered task packet under the marker
+`[repo-harness:execution-boundary/v1]`. The hook renders it only when both
+halves of the scope decision are known — a resolved active contract and a child
+whose selected profile declares `sandbox_mode = "workspace-write"`; a
+`read-only` child gets the inverse note, and an unresolved contract or
+unverified routing gets neither.
+
+`sandbox_mode` is therefore required in every custom-agent TOML and validated
+fail-closed. Writability is read from the selected profile, never inferred from
+the agent name and never defaulted: a profile missing `sandbox_mode`, or
+declaring anything other than `read-only` or `workspace-write`, routes the child
+to native-role-routing `invalid` and receives no implementation boundary.
 
 ### `install_mode`: self-host vs. downstream
 

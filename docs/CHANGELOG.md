@@ -4,6 +4,19 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Requires `sandbox_mode` in every Codex custom-agent TOML and validates it
+  fail-closed. A hand-written `~/.codex/agents/*.toml` that omits
+  `sandbox_mode`, or declares anything other than `read-only` or
+  `workspace-write`, now routes the child to native-role-routing `invalid`
+  instead of inheriting a default; writability is never inferred from the agent
+  name.
+- Removes the EXECUTION_BOUNDARY anti-extras clause from generated personas'
+  `developer_instructions`, leaving the role body only. On the native-child path
+  `SubagentStart.context` is the single injection owner, so the clause reaches
+  each rendered task packet exactly once.
+
 ## [0.16.0] - 2026-08-20
 
 Completes the kanban coordination program that `0.15.3` opened. `0.15.3` shipped
