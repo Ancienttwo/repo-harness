@@ -40,6 +40,10 @@
   `global-runtime.ts` entrypoints; this slice does not fabricate an
   `acceptedChange` reference or widen architecture ownership without a separate
   architecture decision.
+- The canonical architecture projection refreshes
+  `docs/architecture/.projection-manifest.json` even when the semantic module is
+  the only human-owned architecture edit, so that generated receipt is included
+  explicitly in the task contract's allowed paths.
 
 ## Tradeoffs Considered
 
@@ -62,9 +66,9 @@
   2026-08-21; Windows-native smoke is bound to the existing OS matrix.
 - Full local CI passed on 2026-08-21 with 2,750 tests passed, one platform skip,
   zero failures, followed by workflow checks, repository inspection, package
-  dry-run, and tarball install smoke. Ambient Codex/Claude run-identity variables
-  were removed for the run so trace-observer fixtures received their declared
-  test environment.
+  dry-run, and tarball install smoke. Ambient `CODEX_SESSION_ID` was removed for
+  the run so trace-observer fixtures received their declared test environment;
+  the contract records that exact hermetic test command.
 
 ## Promotion Filter
 

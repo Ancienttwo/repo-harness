@@ -80,6 +80,7 @@ allowed_paths:
   - assets/templates/helpers/ship-worktrees.sh
   - assets/reference-configs/external-tooling.md
   - docs/architecture/modules/workflow-engine/contract-assets.md
+  - docs/architecture/.projection-manifest.json
   - docs/reference-configs/external-tooling.md
   - plans/
   - tasks/todos.md
@@ -150,7 +151,7 @@ exit_criteria:
   commands_succeed:
     - bun test tests/unit/windows-protected-helper-platform-contract.test.ts tests/cli/run.test.ts tests/process-runner.test.ts --timeout 60000
     - bun run check:type
-    - bun test --timeout 60000
+    - env -u CODEX_SESSION_ID bun test --timeout 60000
     - bash scripts/check-deploy-sql-order.sh
     - bash scripts/check-architecture-sync.sh
     - bash scripts/check-task-sync.sh
