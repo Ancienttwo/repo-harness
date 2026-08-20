@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-20T17:12:08+0800 -->
+<!-- updated_at: 2026-08-20T17:41:51+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-20T17:12:08+0800
-> **Source Branch**: codex/deferred-goals-cleanup
-> **Source Commit**: 6f599644
+> **Updated At**: 2026-08-20T17:41:51+0800
+> **Source Branch**: codex/skills-cli-probe-authority
+> **Source Commit**: bccdc43e
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -33,6 +33,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 - /private/tmp/repo-harness-wt-projection-publication-ownership: plans/plan-20260820-1605-projection-publication-ownership.md
 - /private/tmp/repo-harness-wt-projection-publication-ownership: active-worktree owner -> /private/tmp/repo-harness-wt-projection-publication-ownership
+- /Users/ancienttwo/Projects/repo-harness-wt-native-subagent-boundary-dedup: plans/plan-20260820-1713-native-subagent-boundary-dedup.md
+- /Users/ancienttwo/Projects/repo-harness-wt-native-subagent-boundary-dedup: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-native-subagent-boundary-dedup
 ## Active Sprint
 
 - Sprint: (none)
@@ -59,16 +61,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260820-1629-deferred-goals-cleanup.md
- D tasks/contracts/20260820-1629-deferred-goals-cleanup.contract.md
- D tasks/notes/20260820-1629-deferred-goals-cleanup.notes.md
- D tasks/reviews/20260820-1629-deferred-goals-cleanup.review.md
+ D plans/plan-20260820-1717-skills-cli-probe-authority.md
+ D tasks/contracts/20260820-1717-skills-cli-probe-authority.contract.md
+ D tasks/notes/20260820-1717-skills-cli-probe-authority.notes.md
+ D tasks/reviews/20260820-1717-skills-cli-probe-authority.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260820-1629-deferred-goals-cleanup.md
-?? tasks/archive/contract-20260820-1711-deferred-goals-cleanup.md
-?? tasks/archive/notes-20260820-1711-deferred-goals-cleanup.md
-?? tasks/archive/review-20260820-1711-deferred-goals-cleanup.md
-?? tasks/archive/todo-20260820-1711-deferred-goals-cleanup.md
+?? plans/archive/plan-20260820-1717-skills-cli-probe-authority.md
+?? tasks/archive/contract-20260820-1741-skills-cli-probe-authority.md
+?? tasks/archive/notes-20260820-1741-skills-cli-probe-authority.md
+?? tasks/archive/review-20260820-1741-skills-cli-probe-authority.md
+?? tasks/archive/todo-20260820-1741-skills-cli-probe-authority.md
 ```
 
 ## Source Artifacts

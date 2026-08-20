@@ -48,10 +48,11 @@ const argv = process.argv.slice(2);
 let jsonOutput = false;
 let checkUpdates = false;
 let strictReadiness = false;
+let probeSkillsCli = false;
 let hostMode = "both";
 
 function usage() {
-  console.log(`Usage: scripts/check-agent-tooling.sh [--json] [--check-updates] [--strict-readiness] [--host claude|codex|both]`);
+  console.log(`Usage: scripts/check-agent-tooling.sh [--json] [--check-updates] [--strict-readiness] [--probe-skills-cli] [--host claude|codex|both]`);
 }
 
 for (let index = 0; index < argv.length; index += 1) {
@@ -66,6 +67,10 @@ for (let index = 0; index < argv.length; index += 1) {
   }
   if (arg === "--strict-readiness") {
     strictReadiness = true;
+    continue;
+  }
+  if (arg === "--probe-skills-cli") {
+    probeSkillsCli = true;
     continue;
   }
   if (arg === "--host") {
@@ -100,6 +105,17 @@ const WAZA_SOURCE_URL = "https://github.com/tw93/Waza.git";
 const WAZA_RAW_BASE_URL = "https://raw.githubusercontent.com/tw93/Waza/main";
 const WAZA_MANAGED_SKILLS = ["think", "hunt", "check", "health"];
 const WAZA_SHARED_RULES = ["anti-patterns.md", "chinese.md", "durable-context.md", "english.md"];
+// Skills CLI reporting is opt-in, like `--check-updates`. PATH resolution is
+// cheap and always runs, so an absent binary is reported as `missing`; the
+// `ls -g --json` call itself measured 36.8s against a real global skill set
+// (the cost is in the Skills CLI, not in the former `bunx` wrapper), so the
+// default run reports `not-probed` instead of paying that per invocation.
+// `--probe-skills-cli` runs the real probe under a budget with headroom.
+// There is no bunx fallback: an unresolved binary stays `missing` rather than
+// being re-probed through a second authority.
+const SKILLS_CLI_COMMAND = "skills";
+const SKILLS_CLI_PROBE_ARGS = ["ls", "-g", "--json"];
+const SKILLS_CLI_PROBE_TIMEOUT_MS = 45000;
 const CODEX_AUTOMATION_SKILLS = ["health", "check", "mermaid"];
 // Official Obsidian skills the repo-owned obsidian-memory facade delegates to
 // for vault Markdown authoring and vault runtime operations. Runtime-referenced
@@ -612,8 +628,11 @@ function inspectWazaSkill(host, skill, skillLock, skillItems, upstreamSkills) {
 function detectWaza() {
   const skillLockPath = path.join(HOME, ".agents", ".skill-lock.json");
   const skillLock = readJson(skillLockPath);
-  const skillsResult = run("bunx", ["skills", "ls", "-g", "--json"], { timeoutMs: 1500 });
-  const skillItems = skillsResult.ok ? parseJson(skillsResult.stdout) || [] : [];
+  const skillsCliPath = resolvePathCommand(SKILLS_CLI_COMMAND);
+  const skillsResult = skillsCliPath && probeSkillsCli
+    ? run(skillsCliPath, SKILLS_CLI_PROBE_ARGS, { timeoutMs: SKILLS_CLI_PROBE_TIMEOUT_MS })
+    : null;
+  const skillItems = skillsResult?.ok ? parseJson(skillsResult.stdout) || [] : [];
   const wazaEntries = Object.entries(skillLock?.skills || {}).filter(([, meta]) => meta?.source === WAZA_SOURCE_REPO);
   const upstream = fetchWazaUpstreamSkills();
   const hostStatuses = {};
@@ -743,7 +762,16 @@ function detectWaza() {
     staging_rules_path: WAZA_STAGING_RULES_DIR,
     sync_mode: "codex-first-copy-from-staging",
     host_drift_policy: "report-per-host-directory-rule-staging-and-upstream-drift",
-    skills_cli_status: skillsResult.ok ? "available" : skillsResult.timed_out ? "timed-out" : "unavailable",
+    skills_cli_path: skillsCliPath,
+    skills_cli_status: !skillsCliPath
+      ? "missing"
+      : !probeSkillsCli
+        ? "not-probed"
+        : skillsResult.ok
+          ? "available"
+          : skillsResult.timed_out
+            ? "timed-out"
+            : "unavailable",
     source_lock_entries: wazaEntries.map(([name]) => name).sort(),
     upstream_status: upstream.status,
     upstream_reason: upstream.reason,
@@ -787,12 +815,12 @@ function detectRuntimeCapabilities(waza) {
     ),
     skills_cli: {
       name: "skills_cli",
-      status: waza.skills_cli_status === "available" ? "available" : waza.skills_cli_status,
-      path: null,
+      status: waza.skills_cli_status,
+      path: waza.skills_cli_path,
       owner: "external-skills-cli",
       required: false,
       required_for: "Waza/Mermaid external skill bootstrap; repo-harness reports this as an explicit exception boundary",
-      command: "bunx skills ls -g --json",
+      command: `${SKILLS_CLI_COMMAND} ${SKILLS_CLI_PROBE_ARGS.join(" ")}`,
     },
     bash: commandCapability(
       "bash",

@@ -39,13 +39,15 @@ function writeFakeCodeGraph(fakeBin: string, logFile: string) {
   );
 }
 
-function writeFakeBunx(fakeBin: string) {
+// check-agent-tooling.sh resolves `skills` from PATH (and only spawns it under
+// --probe-skills-cli), so the stub has to be the binary itself, not bunx.
+function writeFakeSkillsCli(fakeBin: string) {
   writeExecutable(
-    join(fakeBin, "bunx"),
+    join(fakeBin, "skills"),
     [
       "#!/bin/bash",
       "set -euo pipefail",
-      "if [[ \"$*\" == *\"skills ls -g --json\"* ]]; then echo '[]'; exit 0; fi",
+      "if [[ \"$*\" == \"ls -g --json\" ]]; then echo '[]'; exit 0; fi",
       "exit 1",
       "",
     ].join("\n")
@@ -60,7 +62,7 @@ describe("tools ensure codegraph", () => {
       mkdirSync(join(envRoot.home, ".codex"), { recursive: true });
       writeFileSync(join(envRoot.home, ".codex", "config.toml"), "[mcp_servers.codegraph]\ncommand = \"codegraph\"\n");
       writeFakeCodeGraph(envRoot.fakeBin, logFile);
-      writeFakeBunx(envRoot.fakeBin);
+      writeFakeSkillsCli(envRoot.fakeBin);
 
       const res = spawnSync("bun", [CLI, "tools", "ensure", "codegraph", "--check", "--json", "--repo", ROOT], {
         cwd: ROOT,

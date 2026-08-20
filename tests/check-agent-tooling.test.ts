@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   chmodSync,
   copyFileSync,
+  existsSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
@@ -142,22 +143,25 @@ function symlinkClaudeWazaToAgents(home: string) {
   }
 }
 
-function writeFakeBunx(fakeBin: string, logFile?: string) {
+// The Skills CLI probe resolves `skills` from PATH and runs it directly, so
+// every spawn of the script needs this stub on the stubbed PATH; otherwise the
+// probe reaches the real Skills CLI on the developer machine.
+function writeFakeSkillsCli(fakeBin: string, logFile?: string) {
   const items = WAZA_SKILLS
     .map((skill) => ({ name: skill, agents: ["Claude Code", "Codex"] }))
     .map((item) => JSON.stringify(item))
     .join(",");
   writeExecutable(
-    join(fakeBin, "bunx"),
+    join(fakeBin, "skills"),
     [
       "#!/bin/bash",
       "set -euo pipefail",
-      logFile ? `echo "bunx $*" >> "${logFile}"` : "",
-      "if [[ \"$*\" == *\"skills ls -g --json\"* ]]; then",
+      logFile ? `echo "skills $*" >> "${logFile}"` : "",
+      "if [[ \"$*\" == \"ls -g --json\" ]]; then",
       `  echo '[${items}]'`,
       "  exit 0",
       "fi",
-      "if [[ \"$*\" == *\"skills check\"* || \"$*\" == *\"skills update\"* ]]; then",
+      "if [[ \"${1:-}\" == \"check\" || \"${1:-}\" == \"update\" ]]; then",
       "  echo 'unexpected mutating skill command' >&2",
       "  exit 2",
       "fi",
@@ -165,6 +169,53 @@ function writeFakeBunx(fakeBin: string, logFile?: string) {
       "",
     ].join("\n")
   );
+}
+
+// A `skills` stub that never returns, used to prove the probe budget is
+// enforced. Pair it with writeCappedFakeTimeout so the run is bounded in
+// test time instead of the full production budget.
+function writeHangingFakeSkillsCli(fakeBin: string) {
+  writeExecutable(
+    join(fakeBin, "skills"),
+    // `exec` matters: without it the killed wrapper leaves an orphaned `sleep`
+    // holding the inherited stdout pipe, and spawnSync waits for EOF anyway.
+    ["#!/bin/bash", "exec sleep 120", ""].join("\n")
+  );
+}
+
+// Stands in for GNU `timeout` with a shortened cap: the script asks for its
+// production budget, this stub enforces 2s and returns 124 like the real
+// binary, so the timed-out mapping is exercised without waiting out the real
+// 45s budget.
+function writeCappedFakeTimeout(fakeBin: string, capSeconds = 2) {
+  writeExecutable(
+    join(fakeBin, "timeout"),
+    [
+      "#!/bin/bash",
+      "if [[ \"${1:-}\" == --kill-after=* ]]; then shift; fi",
+      "if [[ \"${1:-}\" == *s ]]; then shift; fi",
+      "\"$@\" &",
+      "child=$!",
+      `( sleep ${capSeconds}; kill -9 "$child" 2>/dev/null ) &`,
+      "watcher=$!",
+      "status=0",
+      "wait \"$child\" 2>/dev/null || status=$?",
+      "kill \"$watcher\" 2>/dev/null || true",
+      "if [[ \"$status\" -ge 128 ]]; then exit 124; fi",
+      "exit \"$status\"",
+      "",
+    ].join("\n")
+  );
+}
+
+// PATH with every directory that ships a real `skills` binary removed, so the
+// absent-binary case cannot silently resolve the developer machine's install.
+function pathWithoutSkillsCli(prefix: string) {
+  const entries = (process.env.PATH ?? "").split(":").filter((dir) => {
+    if (!dir) return false;
+    return !existsSync(join(dir, "skills"));
+  });
+  return [prefix, ...entries].join(":");
 }
 
 function writeFakeCodeGraph(
@@ -303,7 +354,8 @@ describe("check-agent-tooling", () => {
       symlinkClaudeWazaToAgents(envRoot.home);
       writeWazaLock(envRoot.home);
 
-      writeFakeBunx(envRoot.fakeBin);
+      const skillsCliLog = join(envRoot.root, "skills-cli.log");
+      writeFakeSkillsCli(envRoot.fakeBin, skillsCliLog);
       writeFakeCodeGraph(envRoot.fakeBin);
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "both"], {
@@ -324,7 +376,14 @@ describe("check-agent-tooling", () => {
       );
       expect(report.runtime_capabilities.bun.required).toBe(true);
       expect(report.runtime_capabilities.npx.owner).toBe("npm-registry");
-      expect(report.runtime_capabilities.skills_cli.status).toBe("available");
+      // Default run: PATH resolution still happens (cheap), the probe itself
+      // does not. The absent log proves no spawn was paid for.
+      expect(report.runtime_capabilities.skills_cli.status).toBe("not-probed");
+      expect(report.runtime_capabilities.skills_cli.path).toBe(join(envRoot.fakeBin, "skills"));
+      expect(report.runtime_capabilities.skills_cli.command).toBe("skills ls -g --json");
+      expect(report.tools.waza.skills_cli_status).toBe("not-probed");
+      expect(existsSync(skillsCliLog)).toBe(false);
+      expect(report.tools.waza.hosts.codex.skills[0].skills_cli_agents).toEqual([]);
       expect(report.runtime_capabilities.rsync.required).toBe(false);
       expect(report.runtime_capabilities.symlink.required_for).toContain("copy mode remains the fallback");
       expect(report.tools).not.toHaveProperty("gstack");
@@ -372,11 +431,106 @@ describe("check-agent-tooling", () => {
     }
   }, 15000);
 
+  test("--probe-skills-cli reports the resolved Skills CLI as available", () => {
+    const envRoot = setupFakeEnvironment("check-agent-tooling-skills-cli-probe");
+    try {
+      const skillsCliLog = join(envRoot.root, "skills-cli.log");
+      mkdirSync(join(envRoot.home, ".agents", "skills"), { recursive: true });
+      mkdirSync(join(envRoot.home, ".codex"), { recursive: true });
+      writeWazaBundle(join(envRoot.home, ".agents", "skills"), "3.0.0");
+      writeWazaBundle(join(envRoot.home, ".codex", "skills"), "3.0.0");
+      writeWazaLock(envRoot.home);
+      writeFakeSkillsCli(envRoot.fakeBin, skillsCliLog);
+      writeFakeCodeGraph(envRoot.fakeBin);
+
+      const res = spawnSync("bash", [SCRIPT, "--json", "--probe-skills-cli", "--host", "codex"], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: envRoot.home,
+          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
+        },
+      });
+
+      expect(res.status).toBe(0);
+      const report = JSON.parse(res.stdout);
+      expect(report.runtime_capabilities.skills_cli.status).toBe("available");
+      expect(report.runtime_capabilities.skills_cli.path).toBe(join(envRoot.fakeBin, "skills"));
+      expect(report.tools.waza.skills_cli_status).toBe("available");
+      expect(readFileSync(skillsCliLog, "utf-8")).toContain("skills ls -g --json");
+      expect(report.tools.waza.hosts.codex.skills[0].skills_cli_agents).toEqual(["Claude Code", "Codex"]);
+    } finally {
+      rmSync(envRoot.root, { recursive: true, force: true });
+    }
+  }, 15000);
+
+  test("reports the Skills CLI as timed-out when the probed binary exceeds the budget", () => {
+    const envRoot = setupFakeEnvironment("check-agent-tooling-skills-cli-timeout");
+    try {
+      writeHangingFakeSkillsCli(envRoot.fakeBin);
+      writeCappedFakeTimeout(envRoot.fakeBin);
+      writeFakeCodeGraph(envRoot.fakeBin);
+
+      const res = spawnSync("bash", [SCRIPT, "--json", "--probe-skills-cli", "--host", "codex"], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: envRoot.home,
+          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
+        },
+      });
+
+      expect(res.status).toBe(0);
+      const report = JSON.parse(res.stdout);
+      expect(report.runtime_capabilities.skills_cli.status).toBe("timed-out");
+      expect(report.runtime_capabilities.skills_cli.path).toBe(join(envRoot.fakeBin, "skills"));
+      expect(report.tools.waza.skills_cli_status).toBe("timed-out");
+    } finally {
+      rmSync(envRoot.root, { recursive: true, force: true });
+    }
+  }, 30000);
+
+  test("reports the Skills CLI as missing when no skills binary is on PATH", () => {
+    const envRoot = setupFakeEnvironment("check-agent-tooling-skills-cli-missing");
+    try {
+      writeFakeCodeGraph(envRoot.fakeBin);
+
+      const res = spawnSync("bash", [SCRIPT, "--json", "--host", "codex"], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: envRoot.home,
+          PATH: pathWithoutSkillsCli(envRoot.fakeBin),
+          AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
+        },
+      });
+
+      expect(res.status).toBe(0);
+      const report = JSON.parse(res.stdout);
+      expect(report.runtime_capabilities.skills_cli.status).toBe("missing");
+      expect(report.runtime_capabilities.skills_cli.path).toBe(null);
+      expect(report.tools.waza.skills_cli_status).toBe("missing");
+      expect(report.tools.waza.skills_cli_path).toBe(null);
+      // Skill-item-dependent inspection degrades exactly as it already does
+      // when the probe fails: no CLI-reported agents, no invented data.
+      expect(report.tools.waza.hosts.codex.skills.every((skill: { skills_cli_agents: string[] }) =>
+        skill.skills_cli_agents.length === 0
+      )).toBe(true);
+    } finally {
+      rmSync(envRoot.root, { recursive: true, force: true });
+    }
+  }, 15000);
+
   test("reports Claude CodeGraph MCP as deferred when alwaysLoad is missing", () => {
     const envRoot = setupFakeEnvironment("check-agent-tooling-codegraph-claude-deferred");
     try {
       writeClaudeCodeGraphConfig(envRoot.home, false);
-      writeFakeBunx(envRoot.fakeBin);
+      writeFakeSkillsCli(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude"], {
@@ -407,7 +561,7 @@ describe("check-agent-tooling", () => {
     const envRoot = setupFakeEnvironment("check-agent-tooling-codegraph-claude-always-load");
     try {
       writeClaudeCodeGraphConfig(envRoot.home, true);
-      writeFakeBunx(envRoot.fakeBin);
+      writeFakeSkillsCli(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude"], {
@@ -460,28 +614,7 @@ describe("check-agent-tooling", () => {
         ].join("\n"),
       );
 
-      writeExecutable(
-        join(envRoot.fakeBin, "bunx"),
-        [
-          "#!/bin/bash",
-          "set -euo pipefail",
-          `echo "bunx $*" >> "${logFile}"`,
-          "if [[ \"$*\" == *\"skills ls -g --json\"* ]]; then",
-          `  echo '[${WAZA_SKILLS.map((skill) => JSON.stringify({ name: skill, agents: ["Claude Code", "Codex"] })).join(",")}]'`,
-          "  exit 0",
-          "fi",
-          "if [[ \"$*\" == *\"skills check\"* ]]; then",
-          "  echo 'unexpected mutating skill command' >&2",
-          "  exit 2",
-          "fi",
-          "if [[ \"$*\" == *\"skills update\"* ]]; then",
-          "  echo 'unexpected mutating skill command' >&2",
-          "  exit 2",
-          "fi",
-          "exit 1",
-          "",
-        ].join("\n")
-      );
+      writeFakeSkillsCli(envRoot.fakeBin, logFile);
 
       writeFakeCodeGraph(envRoot.fakeBin, { logFile });
       writeFakeNpm(envRoot.fakeBin, "0.9.6", logFile);
@@ -529,7 +662,7 @@ describe("check-agent-tooling", () => {
     try {
       mkdirSync(join(envRoot.home, ".codex"), { recursive: true });
       writeFileSync(join(envRoot.home, ".codex", "config.toml"), "# no codegraph mcp\n");
-      writeFakeBunx(envRoot.fakeBin);
+      writeFakeSkillsCli(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "codex", "--strict-readiness"], {
@@ -569,7 +702,7 @@ describe("check-agent-tooling", () => {
       writeSkill(join(envRoot.home, ".codex", "skills"), "mermaid", "1.0.0");
       symlinkClaudeWazaToAgents(envRoot.home);
       writeWazaLock(envRoot.home);
-      writeFakeBunx(envRoot.fakeBin);
+      writeFakeSkillsCli(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
       writeFakeNpm(envRoot.fakeBin, "0.9.6");
       writeFakeCurl(envRoot.fakeBin, "9.0.0");
@@ -624,7 +757,7 @@ describe("check-agent-tooling", () => {
       writeSkill(join(envRoot.home, ".codex", "skills"), "mermaid", "1.0.0");
       symlinkClaudeWazaToAgents(envRoot.home);
       writeWazaLock(envRoot.home);
-      writeFakeBunx(envRoot.fakeBin);
+      writeFakeSkillsCli(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
       writeFakeNpm(envRoot.fakeBin, "0.9.6");
       writeFakeCurl(envRoot.fakeBin, "3.0.0");
@@ -666,7 +799,7 @@ describe("check-agent-tooling", () => {
       mkdirSync(localBin, { recursive: true });
       mkdirSync(join(envRoot.home, ".codex"), { recursive: true });
       writeFileSync(join(envRoot.home, ".codex", "config.toml"), "[mcp_servers.codegraph]\ncommand = \"codegraph\"\n");
-      writeFakeBunx(envRoot.fakeBin);
+      writeFakeSkillsCli(envRoot.fakeBin);
       writeFakeCodeGraph(localBin, { version: "0.9.6" });
       writeFakeCodeGraph(envRoot.fakeBin, { version: "0.8.0" });
 
@@ -711,7 +844,7 @@ describe("check-agent-tooling", () => {
         join(envRoot.root, "package.json"),
         JSON.stringify({ devDependencies: { "@colbymchenry/codegraph": "1.0.1" } }, null, 2)
       );
-      writeFakeBunx(envRoot.fakeBin);
+      writeFakeSkillsCli(envRoot.fakeBin);
       writeFakeCodeGraph(bundleBin, { version: "1.0.1" });
       writeExecutable(join(shimBin, "codegraph"), "#!/bin/bash\necho 'bad shim used' >&2\nexit 99\n");
 
@@ -741,7 +874,7 @@ describe("check-agent-tooling", () => {
     const envRoot = setupFakeEnvironment("check-agent-tooling-fleet-missing");
     try {
       writeClaudeCodeGraphConfig(envRoot.home, true);
-      writeFakeBunx(envRoot.fakeBin);
+      writeFakeSkillsCli(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude", "--strict-readiness"], {
@@ -773,7 +906,7 @@ describe("check-agent-tooling", () => {
     const envRoot = setupFakeEnvironment("check-agent-tooling-fleet-partial");
     try {
       writeClaudeCodeGraphConfig(envRoot.home, true);
-      writeFakeBunx(envRoot.fakeBin);
+      writeFakeSkillsCli(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
 
       mkdirSync(join(envRoot.home, ".claude", "agents"), { recursive: true });
@@ -824,7 +957,7 @@ describe("check-agent-tooling", () => {
         copyFileSync(join(FLEET_SOURCE_DIR, `${agent}.md`), join(envRoot.home, ".claude", "agents", `${agent}.md`));
         copyFileSync(join(ROOT, ".codex", "agents", `${agent}.toml`), join(envRoot.home, ".codex", "agents", `${agent}.toml`));
       }
-      writeFakeBunx(envRoot.fakeBin);
+      writeFakeSkillsCli(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "both", "--strict-readiness"], {
@@ -1176,7 +1309,7 @@ describe("check-agent-tooling", () => {
         writeFileSync(join(envRoot.home, ".codex", "agents", `${agent}.toml`), `name = "${agent}"\n`);
       }
 
-      writeFakeBunx(envRoot.fakeBin);
+      writeFakeSkillsCli(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
       writeFakeNpm(envRoot.fakeBin, "0.9.6");
       writeFakeCurl(envRoot.fakeBin, "3.0.0");
@@ -1248,7 +1381,7 @@ describe("check-agent-tooling", () => {
         },
       ]);
 
-      writeFakeBunx(envRoot.fakeBin);
+      writeFakeSkillsCli(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
       writeFakeNpm(envRoot.fakeBin, "0.9.6");
       writeFakeCurl(envRoot.fakeBin, "3.0.0");
@@ -1326,7 +1459,7 @@ describe("check-agent-tooling", () => {
         },
       ]);
 
-      writeFakeBunx(envRoot.fakeBin);
+      writeFakeSkillsCli(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
       writeFakeNpm(envRoot.fakeBin, "0.9.6");
       writeFakeCurl(envRoot.fakeBin, "3.0.0");
@@ -1383,7 +1516,7 @@ describe("check-agent-tooling", () => {
         "not-the-expected-authority"
       );
 
-      writeFakeBunx(envRoot.fakeBin);
+      writeFakeSkillsCli(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
       writeFakeNpm(envRoot.fakeBin, "0.9.6");
       writeFakeCurl(envRoot.fakeBin, "3.0.0");
@@ -1416,7 +1549,7 @@ describe("check-agent-tooling", () => {
       writeArchctxRepo(envRoot.root, "registry");
       installFleetForClaude(envRoot.home);
       writeClaudeCodeGraphConfig(envRoot.home, true);
-      writeFakeBunx(envRoot.fakeBin);
+      writeFakeSkillsCli(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude", "--strict-readiness"], {
@@ -1452,7 +1585,7 @@ describe("check-agent-tooling", () => {
       writeArchctxRepo(envRoot.root, "archcontext");
       installFleetForClaude(envRoot.home);
       writeClaudeCodeGraphConfig(envRoot.home, true);
-      writeFakeBunx(envRoot.fakeBin);
+      writeFakeSkillsCli(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude", "--strict-readiness"], {

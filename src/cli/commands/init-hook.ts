@@ -493,6 +493,10 @@ function runtimeCapabilityStatus(capability: RuntimeCapability): InitHookCheckSt
   if (['missing', 'unavailable', 'unsupported', 'failed', 'fail', 'timed-out'].includes(normalized)) {
     return capability.required ? 'needs_agent' : 'warn';
   }
+  // `not-probed` is an opt-in capability that was deliberately not measured
+  // (scripts/check-agent-tooling.sh --probe-skills-cli), not a failure: it must
+  // never escalate to needs_agent, the way an unmeasured update check does not.
+  if (['not-probed', 'not-checked'].includes(normalized)) return 'warn';
   return capability.required ? 'needs_agent' : 'warn';
 }
 

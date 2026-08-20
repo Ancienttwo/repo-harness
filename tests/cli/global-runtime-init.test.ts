@@ -17,6 +17,16 @@ function writeExecutable(filePath: string, content: string): void {
   chmodSync(filePath, 0o755);
 }
 
+// scripts/check-agent-tooling.sh (invoked by the CodeGraph configure step)
+// resolves `skills` from PATH; the probe itself only runs under
+// --probe-skills-cli. This stub keeps both paths off the real installation.
+function writeFakeSkillsCli(fakeBin: string): void {
+  writeExecutable(
+    join(fakeBin, 'skills'),
+    `#!/bin/bash\nif [[ "$*" == "ls -g --json" ]]; then echo '[]'; exit 0; fi\nexit 1\n`,
+  );
+}
+
 function sanitizedChildEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
   // Machine shells (zshenv) can export an explicit node runtime authority that
@@ -301,11 +311,11 @@ describe('install command global runtime bootstrap', () => {
       writeFakeCodegraph(fakeBin, codegraphLog);
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n`);
       // The install/init provider-driven external-skills bootstrap invokes
-      // `bunx skills add ...` directly, and the
-      // CodeGraph MCP configure step shells out to the real
-      // scripts/check-agent-tooling.sh (for repo-agnostic tooling detection),
-      // which also calls `bunx skills ls -g --json` for Waza status. This one
-      // fake bunx answers both, so the read-only probe never hits the network.
+      // `bunx skills add ...` directly. The CodeGraph MCP configure step shells
+      // out to the real scripts/check-agent-tooling.sh, whose Waza status probe
+      // resolves the `skills` binary from PATH instead of going through bunx, so
+      // that one is stubbed separately below.
+      writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nif [[ "\${1:-}" == "skills" && "\${2:-}" == "add" ]]; then if [[ " $* " == *" tw93/Waza "* ]]; then names='think hunt check health'; elif [[ " $* " == *" zhaoxuya520/reverse-skill@"* ]]; then names='reverse-skill-router'; else names='mermaid'; fi; for skill in $names; do mkdir -p "$HOME/.agents/skills/$skill"; printf '# %s\\n' "$skill" > "$HOME/.agents/skills/$skill/SKILL.md"; done; fi\nexit 0\n`);
 
       const result = runGlobalRuntimeSetup({
@@ -350,9 +360,10 @@ describe('install command global runtime bootstrap', () => {
       );
       expect(readFileSync(codegraphLog, 'utf-8')).toContain('codegraph install --target codex --location global --yes');
       // Regression guard: the Waza status probe inside check-agent-tooling.sh
-      // must go through bunx, not npx, so bun-only machines don't get a false
-      // "Waza unavailable" report from the setup check diagnostic surface.
-      expect(readFileSync(bunxLog, 'utf-8')).toContain('skills ls -g --json');
+      // resolves the `skills` binary from PATH and never re-routes through
+      // bunx, whose package resolution made the probe budget report a false
+      // "timed-out" on working installations.
+      expect(readFileSync(bunxLog, 'utf-8')).not.toContain('skills ls -g --json');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -386,6 +397,7 @@ describe('install command global runtime bootstrap', () => {
       }
       writeFakeCodegraph(fakeBin, codegraphLog);
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n`);
+      writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nif [[ " $* " == *" tw93/Waza "* ]]; then for rule in anti-patterns.md chinese.md durable-context.md english.md; do printf '# refreshed rule\\n' > "$HOME/.agents/rules/$rule"; done; fi\nexit 0\n`);
 
       const result = runGlobalRuntimeSetup({
@@ -496,6 +508,7 @@ describe('install command global runtime bootstrap', () => {
         join(fakeBin, 'bun'),
         '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n',
       );
+      writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash
 printf '%s\n' "$HOME" > "${isolatedHomeLog}"
 printf '%s\n%s\n%s\n' "$BUN_INSTALL" "$BUN_INSTALL_CACHE_DIR" "$XDG_CACHE_HOME" > "${isolatedRuntimeLog}"
@@ -641,6 +654,7 @@ exit 0
       setReverseSkillIntegrity(source, REVERSE_FAKE_TREE_INTEGRITY);
       mkdirSync(join(home, '.codex', 'skills', 'reverse-skill-router'), { recursive: true });
       writeFileSync(join(home, '.codex', 'skills', 'reverse-skill-router', 'SKILL.md'), '# user-owned\n');
+      writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" > "${bunxLog}"\nexit 0\n`);
 
       const result = runGlobalRuntimeSetup({
@@ -726,6 +740,7 @@ exit 0
       setupFakeSource(source);
       setReverseSkillIntegrity(source, REVERSE_FAKE_TREE_INTEGRITY);
       symlinkSync(join(tmp, 'missing-host-root'), join(home, '.codex', 'skills'), 'dir');
+      writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash
 mkdir -p "$HOME/.agents/skills/reverse-skill-router"
 printf '# reverse-skill-router\\n' > "$HOME/.agents/skills/reverse-skill-router/SKILL.md"
@@ -965,6 +980,7 @@ exit 0
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nexit 0\n');
+      writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash
 if [[ "\${1:-}" == "skills" && "\${2:-}" == "add" ]]; then
   if [[ " $* " == *" tw93/Waza "* ]]; then
@@ -1381,6 +1397,7 @@ exit 0
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nexit 0\n');
+      writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" > "${bunxLog}"\nexit 0\n`);
 
       const res = spawnSync(process.execPath, [
@@ -1728,6 +1745,7 @@ exit 0
       mkdirSync(fakeBin, { recursive: true });
       writeFakeCodegraph(fakeBin, codegraphLog);
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nif [[ "\${1:-}" == "-" ]]; then exec "${process.execPath}" "$@"; fi\nif [[ " $* " == *" add -g "* ]]; then mkdir -p "$HOME/.bun/bin"; printf '#!/bin/sh\\n' > "$HOME/.bun/bin/repo-harness"; chmod +x "$HOME/.bun/bin/repo-harness"; fi\nexit 0\n`);
+      writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash
 printf '%s\\n' "$*" >> "${bunxLog}"
 if [[ "\${1:-}" == "skills" && "\${2:-}" == "add" ]]; then

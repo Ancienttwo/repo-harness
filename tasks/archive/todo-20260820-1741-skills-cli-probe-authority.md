@@ -1,7 +1,13 @@
+> **Archived**: 2026-08-20 17:41
+> **Related Plan**: plans/archive/plan-20260820-1717-skills-cli-probe-authority.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260820-1741
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-08-20 17:18
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

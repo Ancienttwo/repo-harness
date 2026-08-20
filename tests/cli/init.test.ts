@@ -38,6 +38,15 @@ function makeExecutable(path: string, body: string): void {
   chmodSync(path, 0o755);
 }
 
+// scripts/check-agent-tooling.sh resolves `skills` from PATH; the probe itself
+// only runs under --probe-skills-cli. This stub keeps both paths hermetic.
+function writeFakeSkillsCli(fakeBin: string): void {
+  makeExecutable(
+    join(fakeBin, "skills"),
+    `#!/bin/bash\nif [[ "$*" == "ls -g --json" ]]; then echo '[]'; exit 0; fi\nexit 1\n`,
+  );
+}
+
 function setupFakeSource(root: string): void {
   mkdirSync(join(root, "scripts"), { recursive: true });
   mkdirSync(join(root, "assets"), { recursive: true });
@@ -246,6 +255,7 @@ describe("init command", () => {
       writeFileSync(join(home, ".agents", "rules", "chinese.md"), "zh\n");
       writeFileSync(join(home, ".agents", "rules", "durable-context.md"), "durable\n");
       writeFileSync(join(home, ".agents", "rules", "english.md"), "en\n");
+      writeFakeSkillsCli(fakeBin);
       makeExecutable(
         join(fakeBin, "bunx"),
         `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nexit 0\n`,
@@ -966,6 +976,7 @@ describe("init command", () => {
       mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
       writeFakeCodegraph(fakeBin, codegraphLog);
+      writeFakeSkillsCli(fakeBin);
       makeExecutable(join(fakeBin, "bunx"), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nexit 0\n`);
 
       const input = new PassThrough();
