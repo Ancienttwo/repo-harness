@@ -57,6 +57,19 @@
   The external-review budget is exhausted, so the repaired subject cannot be
   represented as an external pass; closeout requires the contract's explicit
   typed user-waiver path after deterministic verification.
+- Final full verification exposed one unrelated test-authority flaw: the
+  benchmark mode-drift fixture relied on `bun add -g <local-dir>` mutating source
+  file modes to `0777`, but Bun 1.4.0 now preserves `0755`. The test now creates
+  the intended Git-clean mode drift explicitly after the install, so it tests
+  the benchmark subject invariant rather than a package-manager side effect.
+- That same final run exposed two task-local integration regressions hidden by
+  the earlier focused set: eager platform-module loading escaped the single-file
+  hook bundle and made standalone POSIX helper fixtures look for a nonexistent
+  copied `src/` tree. Protected Git resolution is now lazy; POSIX uses the same
+  fixed system binaries directly, while Windows loads and revalidates the
+  persisted platform module only when a Git-bearing protected operation runs.
+  The three formerly failing tests and all affected acceptance/merge/platform
+  tests pass in a 31-test / 380-expectation focused retest.
 
 ## Tradeoffs Considered
 

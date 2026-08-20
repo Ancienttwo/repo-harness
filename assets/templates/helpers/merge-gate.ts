@@ -13,10 +13,11 @@ import {
   writeFileSync,
 } from "fs";
 import { userInfo } from "os";
-import { basename, dirname, isAbsolute, join, resolve } from "path";
-import { fileURLToPath, pathToFileURL } from "url";
+import { dirname, isAbsolute, join, resolve } from "path";
+import { fileURLToPath } from "url";
 import {
   acceptanceReceiptPath,
+  resolveProtectedGitRuntime,
   verifyAcceptance,
   type AcceptanceReceipt,
 } from "./acceptance-receipt.ts";
@@ -31,37 +32,8 @@ type Candidate = {
   changedFiles: string[];
 };
 
-const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const PACKAGE_ROOT = basename(SCRIPT_DIR) === "helpers"
-  && basename(dirname(SCRIPT_DIR)) === "templates"
-  && basename(dirname(dirname(SCRIPT_DIR))) === "assets"
-  ? resolve(SCRIPT_DIR, "../../..")
-  : resolve(SCRIPT_DIR, "..");
-type ProtectedRuntime = {
-  platform: NodeJS.Platform;
-  accountHome: string;
-  accountUsername: string;
-  gitBin: string;
-  bashBin: string;
-  bunExecutable: string;
-  pathEntries: readonly string[];
-  pathDelimiter: ":" | ";";
-  tempDir: string;
-  systemRoot?: string;
-};
-type ProtectedPlatformModule = {
-  resolveProtectedHelperPlatform: () => ProtectedRuntime;
-  protectedHelperRuntimeEnv: (runtime: ProtectedRuntime) => NodeJS.ProcessEnv;
-};
-const protectedPlatform = await import(
-  pathToFileURL(join(PACKAGE_ROOT, "src", "cli", "runtime", "protected-helper-platform.ts")).href
-) as ProtectedPlatformModule;
-const PROTECTED_RUNTIME = protectedPlatform.resolveProtectedHelperPlatform();
-const GIT_BIN = PROTECTED_RUNTIME.gitBin;
-const GIT_ENV = protectedPlatform.protectedHelperRuntimeEnv(PROTECTED_RUNTIME);
-
 function lockedGitEnv(): NodeJS.ProcessEnv {
-  return { ...GIT_ENV };
+  return { ...resolveProtectedGitRuntime().env };
 }
 
 type Seal = {
@@ -227,7 +199,8 @@ function sha256(value: string | Buffer): string {
 }
 
 function runGit(root: string, args: string[], binary = false, required = true) {
-  const result = spawnSync(GIT_BIN, args, {
+  const runtime = resolveProtectedGitRuntime();
+  const result = spawnSync(runtime.gitBin, args, {
     cwd: root,
     encoding: binary ? null : "utf-8",
     maxBuffer: 64 * 1024 * 1024,
