@@ -94,29 +94,44 @@ check_architecture_freshness() {
   return 0
 }
 
-# The projection manifest is the one architecture artifact with no human-authored
-# region: it is byte-derivable from the architecture model plus the provenance stamp,
-# and the hook cascade re-stamps it whenever a declared source footprint moves. The
-# target worktree is therefore routinely dirty in this one path through no decision of
-# the operator's, and the closeout then refuses a merge that has nothing to do with it.
-# The capability documents are `mixed` ownership (human-authored §3/§4) and are never
-# touched here — discarding those could destroy work no projection can regenerate.
-#
-# This restores the file to HEAD rather than exempting it from the dirty check, because
-# an exemption does not actually unblock the merge: `git merge --ff-only` refuses to
-# overwrite local modifications to a file the publication tree also changes, so the
-# refusal would just move past `publication_prepared`, mid-transaction.
-#
-# Bounded on purpose: only a plain unstaged modification is restored. A staged change or
-# an untracked file still refuses, because those carry an intent this cannot read.
-MACHINE_OWNED_PROJECTION_PATH="docs/architecture/.projection-manifest.json"
+acknowledge_architecture_projection_publication() {
+  local target_worktree="$1" publication_sha="$2" apply_mode changed_paths output
+  local -a projection_cli=()
 
-restore_machine_owned_projection_output() {
-  local worktree="$1" porcelain
-  porcelain="$(git -C "$worktree" status --porcelain=v1 --untracked-files=all -- "$MACHINE_OWNED_PROJECTION_PATH")"
-  [[ "$porcelain" == " M $MACHINE_OWNED_PROJECTION_PATH" ]] || return 0
-  git -C "$worktree" checkout -- "$MACHINE_OWNED_PROJECTION_PATH"
-  echo "[ContractWorktree] restored machine-owned projection output to HEAD: $MACHINE_OWNED_PROJECTION_PATH" >&2
+  apply_mode="$(policy_get '.architecture.projection_apply' 'disabled')"
+  [[ "$apply_mode" == "automatic" ]] || return 0
+  if ! changed_paths="$(git -C "$target_worktree" diff-tree --no-commit-id --name-only -r \
+      "$publication_sha^" "$publication_sha")"; then
+    echo "contract-worktree: could not inspect the publication tree for architecture projection output" >&2
+    return 1
+  fi
+  if ! printf '%s\n' "$changed_paths" | grep -Fqx 'docs/architecture/.projection-manifest.json'; then
+    return 0
+  fi
+
+  # This acknowledgement mutates ignored cursor state only, after the exact
+  # accepted tree is already public. Prefer the just-published source CLI so a
+  # self-hosting repo does not depend on an older globally installed command.
+  if [[ -n "$BUN_BIN" && "$BUN_BIN" == /* && -x "$BUN_BIN" && -f "$target_worktree/src/cli/index.ts" ]]; then
+    projection_cli=("$BUN_BIN" "$target_worktree/src/cli/index.ts")
+  elif [[ -n "${REPO_HARNESS_CLI_BIN:-}" && "$REPO_HARNESS_CLI_BIN" == /* && -x "$REPO_HARNESS_CLI_BIN" ]]; then
+    projection_cli=("$REPO_HARNESS_CLI_BIN")
+  elif command -v repo-harness >/dev/null 2>&1; then
+    projection_cli=(repo-harness)
+  else
+    echo "contract-worktree: automatic projection publication acknowledgement requires the repo-harness CLI" >&2
+    return 1
+  fi
+
+  if ! output="$(cd "$target_worktree" \
+    && REPO_HARNESS_TARGET_REPO_ROOT="$target_worktree" \
+      "${projection_cli[@]}" architecture-projection acknowledge-publication \
+        --json --publication-sha "$publication_sha" 2>&1)"; then
+    printf '%s\n' "$output" >&2
+    echo "contract-worktree: could not acknowledge the manifest-bearing publication in the architecture drift cursor" >&2
+    return 1
+  fi
+  echo "[ContractWorktree] Architecture projection publication acknowledged: $publication_sha"
 }
 
 normalize_slug() {
@@ -470,6 +485,10 @@ is_local_runtime_marker_path() {
   return 1
 }
 
+is_workflow_owned_projection_output() {
+  [[ "$1" == "docs/architecture/.projection-manifest.json" ]]
+}
+
 check_scope_against_contract() {
   local contract_file="$1"
   local changed_paths path blocked=0
@@ -492,7 +511,7 @@ check_scope_against_contract() {
 
   while IFS= read -r path; do
     [[ -n "$path" ]] || continue
-    if is_local_runtime_marker_path "$path"; then
+    if is_local_runtime_marker_path "$path" || is_workflow_owned_projection_output "$path"; then
       continue
     fi
     if ! workflow_contract_allows_path "$contract_file" "$path"; then
@@ -1116,7 +1135,7 @@ closeout_recover_select() {
 }
 
 recover_worktree() {
-  local action="${1:-}" key="" dir status last_phase head claim claim_result=0 target_ref=""
+  local action="${1:-}" key="" dir status last_phase head claim claim_result=0 target_ref="" target_worktree=""
   shift || true
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -1243,6 +1262,21 @@ recover_worktree() {
       head="$(closeout_journal_phase_ref "$dir" publication_prepared)"
       [[ -n "$head" ]] || head="$(closeout_journal_phase_ref "$dir" lifecycle_committed)"
       [[ -n "$head" ]] || head="$(closeout_journal_phase_ref "$dir" implementation_committed)"
+      # Only the synthesized-publication journal shape can carry the exact
+      # manifest-bearing tree proof required by the acknowledgement command.
+      # The documented pre-cutover journal shape remains reconcilable without
+      # inventing that proof.
+      if closeout_journal_has_phase "$dir" publication_prepared; then
+        target_ref="$(closeout_journal_field "$dir/meta.json" target_branch)"
+        target_worktree="$(find_worktree_for_branch "$target_ref" || true)"
+        [[ -n "$target_worktree" ]] || {
+          echo "contract-worktree: target branch has no checked-out worktree for projection acknowledgement: $target_ref" >&2
+          return 1
+        }
+        acknowledge_architecture_projection_publication "$target_worktree" "$head" || return 1
+        closeout_journal_has_phase "$dir" projection_acknowledged \
+          || closeout_journal_record "$dir" in_progress projection_acknowledged "$head"
+      fi
       closeout_journal_has_phase "$dir" merged || closeout_journal_record "$dir" in_progress merged "$head"
       closeout_journal_record "$dir" complete complete "$head"
       rm -rf "$dir/snapshot"
@@ -1724,7 +1758,6 @@ finish_worktree() {
   if [[ "$merge_back" -eq 1 ]]; then
     target_worktree="$(find_worktree_for_branch "$target_branch" || true)"
     [[ -n "$target_worktree" ]] || { echo "contract-worktree: target branch has no checked-out worktree: $target_branch" >&2; exit 1; }
-    restore_machine_owned_projection_output "$target_worktree"
     if [[ -n "$(git -C "$target_worktree" status --porcelain=v1 --untracked-files=all)" ]]; then
       echo "contract-worktree: target worktree is dirty, refusing merge: $target_worktree" >&2
       exit 1
@@ -1904,7 +1937,6 @@ finish_worktree() {
   # target base and whose tree is byte-identical to L. Checkpoint and lifecycle
   # commits remain on the source branch for recovery/audit but never become
   # target first-parent history.
-  restore_machine_owned_projection_output "$target_worktree"
   if [[ -n "$(git -C "$target_worktree" status --porcelain=v1 --untracked-files=all)" ]]; then
     echo "contract-worktree: target worktree is dirty, refusing merge: $target_worktree" >&2
     exit 1
@@ -1972,6 +2004,8 @@ finish_worktree() {
     echo "contract-worktree: published target tree does not match verified lifecycle tree" >&2
     exit 1
   }
+  acknowledge_architecture_projection_publication "$target_worktree" "$publication_sha" || exit 1
+  finish_transaction_phase projection_acknowledged "$publication_sha"
   finish_transaction_phase merged "$publication_sha"
   finish_transaction_commit "$publication_sha"
   sprint_lease_reconcile_after_publication "$target_branch"

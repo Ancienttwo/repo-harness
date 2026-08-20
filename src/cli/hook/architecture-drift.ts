@@ -53,6 +53,13 @@ export interface ArchitectureDriftChangedSet {
   readonly warnings: readonly string[];
 }
 
+export interface ArchitectureProjectionPublicationAcknowledgement {
+  readonly schemaVersion: 'repo-harness.architecture-projection-publication-ack/v1';
+  readonly publicationSha: string;
+  readonly manifestDigest: `sha256:${string}`;
+  readonly cursorSha: string;
+}
+
 function git(repoRoot: string, args: readonly string[]): string | null {
   try {
     return execFileSync('git', args, {
@@ -90,6 +97,63 @@ export function advanceArchitectureDriftCursor(repoRoot: string, headSha: string
   const state: ArchitectureDriftCursorState = { version: 1, head_sha: headSha, updated_at: now.toISOString() };
   writeFileSync(temp, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
   renameSync(temp, target);
+}
+
+/**
+ * A synthesized contract publication whose exact accepted tree already carries
+ * the projection manifest is the delivery acknowledgement for that source
+ * delta. Advancing the Stop cursor here prevents the same publication from
+ * being delivered again merely because its commit SHA changed after the
+ * provider stamped `verifiedAgainst.commit` in the source worktree.
+ *
+ * Every proof is local and fail-closed: the requested SHA must be the clean
+ * checked-out HEAD, must be a synthesized contract publication, and must have
+ * changed the tracked manifest in that commit. No caller can acknowledge an
+ * arbitrary range or a manifest that differs from the published blob.
+ */
+export function acknowledgeArchitectureProjectionPublication(
+  repoRoot: string,
+  publicationSha: string,
+  now: Date = new Date(),
+): ArchitectureProjectionPublicationAcknowledgement {
+  if (!/^[0-9a-f]{40,64}$/.test(publicationSha)) throw new Error('architecture projection publication SHA is invalid');
+
+  const headSha = git(repoRoot, ['rev-parse', 'HEAD'])?.trim() ?? '';
+  if (headSha !== publicationSha) throw new Error(`architecture projection publication is not checked-out HEAD: expected ${publicationSha}, got ${headSha || '(unavailable)'}`);
+
+  const status = git(repoRoot, ['status', '--porcelain=v1', '--untracked-files=no']);
+  if (status === null) throw new Error('architecture projection publication worktree status is unavailable');
+  if (status.trim() !== '') throw new Error('architecture projection publication worktree has tracked changes');
+
+  const message = git(repoRoot, ['log', '-1', '--format=%B', publicationSha]);
+  if (message === null || !/^Source-Worktree-Head: [0-9a-f]{40,64}$/m.test(message)) {
+    throw new Error('architecture projection publication lacks the Source-Worktree-Head proof');
+  }
+
+  const manifestPath = 'docs/architecture/.projection-manifest.json';
+  const changedPaths = git(repoRoot, ['diff-tree', '--no-commit-id', '--name-only', '-r', `${publicationSha}^`, publicationSha]);
+  if (changedPaths === null || !changedPaths.split('\n').includes(manifestPath)) {
+    throw new Error('architecture projection publication did not change the projection manifest');
+  }
+
+  let worktreeManifest: string;
+  try {
+    worktreeManifest = readFileSync(join(repoRoot, manifestPath), 'utf8');
+  } catch {
+    throw new Error('architecture projection publication manifest is unavailable');
+  }
+  const publishedManifest = git(repoRoot, ['show', `${publicationSha}:${manifestPath}`]);
+  if (publishedManifest === null || publishedManifest !== worktreeManifest) {
+    throw new Error('architecture projection publication manifest differs from the published blob');
+  }
+
+  advanceArchitectureDriftCursor(repoRoot, publicationSha, now);
+  return {
+    schemaVersion: 'repo-harness.architecture-projection-publication-ack/v1',
+    publicationSha,
+    manifestDigest: `sha256:${createHash('sha256').update(worktreeManifest).digest('hex')}`,
+    cursorSha: publicationSha,
+  };
 }
 
 /**

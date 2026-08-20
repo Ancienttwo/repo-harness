@@ -3,7 +3,9 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, unlinkSync, 
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
+import { createHash } from 'crypto';
 import {
+  acknowledgeArchitectureProjectionPublication,
   advanceArchitectureDriftCursor,
   architectureDriftSourceEvent,
   computeArchitectureDriftChangedSet,
@@ -187,6 +189,58 @@ describe('architecture drift cursor slot', () => {
 
     writeFileSync(cursorPath, `${JSON.stringify({ version: 1, head_sha: 'nope', updated_at: 'now' })}\n`);
     expect(readArchitectureDriftCursor(cwd)).toBeNull();
+  });
+});
+
+describe('architecture projection publication acknowledgement', () => {
+  function publicationFixture(): { cwd: string; publication: string } {
+    const cwd = fixture();
+    write(cwd, 'docs/architecture/.projection-manifest.json', '{"version":1}\n');
+    commitAll(cwd, 'projection baseline');
+    write(cwd, 'docs/architecture/.projection-manifest.json', '{"version":2}\n');
+    git(cwd, ['add', '-A']);
+    git(cwd, [
+      'commit',
+      '-m',
+      'feat(contract): complete projection-fixture',
+      '-m',
+      `Source-Worktree-Head: ${'a'.repeat(40)}`,
+    ]);
+    return { cwd, publication: git(cwd, ['rev-parse', 'HEAD']) };
+  }
+
+  test('advances the cursor to a clean synthesized publication that changed the manifest', () => {
+    const { cwd, publication } = publicationFixture();
+
+    const acknowledgement = acknowledgeArchitectureProjectionPublication(
+      cwd,
+      publication,
+      new Date('2026-08-20T08:00:00.000Z'),
+    );
+
+    expect(acknowledgement).toEqual({
+      schemaVersion: 'repo-harness.architecture-projection-publication-ack/v1',
+      publicationSha: publication,
+      manifestDigest: `sha256:${createHash('sha256').update('{"version":2}\n').digest('hex')}`,
+      cursorSha: publication,
+    });
+    expect(readArchitectureDriftCursor(cwd)?.head_sha).toBe(publication);
+    expect(computeArchitectureDriftChangedSet(cwd).paths).toEqual([]);
+  });
+
+  test('rejects a non-HEAD publication, a dirty manifest, and a commit without a manifest delta', () => {
+    const { cwd, publication } = publicationFixture();
+    const parent = git(cwd, ['rev-parse', 'HEAD^']);
+
+    expect(() => acknowledgeArchitectureProjectionPublication(cwd, parent)).toThrow('not checked-out HEAD');
+
+    write(cwd, 'docs/architecture/.projection-manifest.json', '{"dirty":true}\n');
+    expect(() => acknowledgeArchitectureProjectionPublication(cwd, publication)).toThrow('tracked changes');
+    git(cwd, ['checkout', '--', 'docs/architecture/.projection-manifest.json']);
+
+    git(cwd, ['commit', '--allow-empty', '-m', 'feat(contract): complete empty', '-m', `Source-Worktree-Head: ${'b'.repeat(40)}`]);
+    const emptyPublication = git(cwd, ['rev-parse', 'HEAD']);
+    expect(() => acknowledgeArchitectureProjectionPublication(cwd, emptyPublication)).toThrow('did not change the projection manifest');
   });
 });
 

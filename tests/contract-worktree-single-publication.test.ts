@@ -85,6 +85,7 @@ function installFixture(container: string): { primary: string; linked: string } 
     "tasks/contracts",
     "tasks/reviews",
     "tasks/notes",
+    "src/cli",
   ]) mkdirSync(join(primary, dir), { recursive: true });
 
   for (const helper of ["contract-worktree.sh", "worktree-merge-lib.sh", "archive-workflow.sh"]) {
@@ -112,14 +113,32 @@ function installFixture(container: string): { primary: string; linked: string } 
   );
   writeExecutable(join(primary, "scripts/check-architecture-sync.sh"), "#!/bin/bash\nexit 0\n");
   writeExecutable(join(primary, "scripts/verify-sprint.sh"), "#!/bin/bash\nexit 0\n");
+  writeFileSync(
+    join(primary, "src/cli/index.ts"),
+    [
+      'import { mkdirSync, writeFileSync } from "fs";',
+      'import { join } from "path";',
+      'const args = process.argv.slice(2);',
+      'if (args[0] !== "architecture-projection" || args[1] !== "acknowledge-publication") process.exit(64);',
+      'const shaIndex = args.indexOf("--publication-sha");',
+      'const publicationSha = shaIndex >= 0 ? args[shaIndex + 1] : "";',
+      'if (!/^[0-9a-f]{40}$/.test(publicationSha)) process.exit(65);',
+      'const stateDir = join(process.cwd(), ".ai/harness/state");',
+      'mkdirSync(stateDir, { recursive: true });',
+      'writeFileSync(join(stateDir, "architecture-drift-cursor.json"), JSON.stringify({ head_sha: publicationSha }) + "\\n");',
+      'process.stdout.write(JSON.stringify({ publicationSha }) + "\\n");',
+      "",
+    ].join("\n"),
+  );
   writeExecutable(
     join(primary, "scripts/refresh-current-status.sh"),
     "#!/bin/bash\nprintf '# Current Status Snapshot\\n\\n> **Status**: Idle\\n' > tasks/current.md\n",
   );
   writeFileSync(
     join(primary, ".ai/harness/policy.json"),
-    `${JSON.stringify({ worktree_strategy: { review_base: "main", merge_back: { target: "main" } } }, null, 2)}\n`,
+    `${JSON.stringify({ architecture: { projection_apply: "automatic" }, worktree_strategy: { review_base: "main", merge_back: { target: "main" } } }, null, 2)}\n`,
   );
+  writeFileSync(join(primary, ".gitignore"), ".ai/harness/state/\n");
   writeFileSync(join(primary, "docs/architecture/index.md"), "# Architecture Index\n\n## Pending Requests\n\n- (none)\n");
   writeFileSync(
     join(primary, PLAN),
@@ -193,6 +212,10 @@ describe("contract-worktree single publication commit", () => {
       commitAll(linked, "checkpoint one");
       writeFileSync(join(linked, "src/second.ts"), "export const second = 2;\n");
       commitAll(linked, "checkpoint two");
+      writeFileSync(
+        join(linked, "docs/architecture/.projection-manifest.json"),
+        '{"projection":"reviewed-with-contract"}\n',
+      );
 
       const finish = run("bash", ["scripts/contract-worktree.sh", "finish", "--merge"], linked);
       expect(finish.status, `${finish.stdout}\n${finish.stderr}`).toBe(0);
@@ -211,6 +234,13 @@ describe("contract-worktree single publication commit", () => {
       expect(run("git", ["merge-base", "--is-ancestor", sourceHead, "main"], primary).status).not.toBe(0);
       expect(readFileSync(join(primary, "src/first.ts"), "utf-8")).toBe("export const first = 1;\n");
       expect(readFileSync(join(primary, "src/second.ts"), "utf-8")).toBe("export const second = 2;\n");
+      expect(readFileSync(join(primary, "docs/architecture/.projection-manifest.json"), "utf-8"))
+        .toBe('{"projection":"reviewed-with-contract"}\n');
+      expect(run("git", ["show", "--pretty=format:", "--name-only", "main"], primary).stdout)
+        .toContain("docs/architecture/.projection-manifest.json");
+      expect(
+        JSON.parse(readFileSync(join(primary, ".ai/harness/state/architecture-drift-cursor.json"), "utf-8")),
+      ).toEqual({ head_sha: published });
       expect(existsSync(join(primary, "plans/archive"))).toBe(true);
     } finally {
       rmSync(container, { recursive: true, force: true });

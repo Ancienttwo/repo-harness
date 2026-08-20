@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-20T17:41:51+0800 -->
+<!-- updated_at: 2026-08-20T19:05:53+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-20T17:41:51+0800
-> **Source Branch**: codex/skills-cli-probe-authority
-> **Source Commit**: bccdc43e
+> **Updated At**: 2026-08-20T19:05:53+0800
+> **Source Branch**: codex/projection-publication-ownership
+> **Source Commit**: 122301ee
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -31,8 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /private/tmp/repo-harness-wt-projection-publication-ownership: plans/plan-20260820-1605-projection-publication-ownership.md
-- /private/tmp/repo-harness-wt-projection-publication-ownership: active-worktree owner -> /private/tmp/repo-harness-wt-projection-publication-ownership
+- /Users/ancienttwo/Projects/repo-harness-wt-envelope-pin-mergegate-leakscan: plans/plan-20260820-1902-envelope-pin-mergegate-leakscan.md
+- /Users/ancienttwo/Projects/repo-harness-wt-envelope-pin-mergegate-leakscan: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-envelope-pin-mergegate-leakscan
 - /Users/ancienttwo/Projects/repo-harness-wt-native-subagent-boundary-dedup: plans/plan-20260820-1713-native-subagent-boundary-dedup.md
 - /Users/ancienttwo/Projects/repo-harness-wt-native-subagent-boundary-dedup: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-native-subagent-boundary-dedup
 ## Active Sprint
@@ -61,16 +61,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260820-1717-skills-cli-probe-authority.md
- D tasks/contracts/20260820-1717-skills-cli-probe-authority.contract.md
- D tasks/notes/20260820-1717-skills-cli-probe-authority.notes.md
- D tasks/reviews/20260820-1717-skills-cli-probe-authority.review.md
+ D plans/plan-20260820-1605-projection-publication-ownership.md
+ D tasks/contracts/20260820-1605-projection-publication-ownership.contract.md
+ D tasks/notes/20260820-1605-projection-publication-ownership.notes.md
+ D tasks/reviews/20260820-1605-projection-publication-ownership.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260820-1717-skills-cli-probe-authority.md
-?? tasks/archive/contract-20260820-1741-skills-cli-probe-authority.md
-?? tasks/archive/notes-20260820-1741-skills-cli-probe-authority.md
-?? tasks/archive/review-20260820-1741-skills-cli-probe-authority.md
-?? tasks/archive/todo-20260820-1741-skills-cli-probe-authority.md
+?? plans/archive/plan-20260820-1605-projection-publication-ownership.md
+?? tasks/archive/contract-20260820-1905-projection-publication-ownership.md
+?? tasks/archive/notes-20260820-1905-projection-publication-ownership.md
+?? tasks/archive/review-20260820-1905-projection-publication-ownership.md
+?? tasks/archive/todo-20260820-1905-projection-publication-ownership.md
 ```
 
 ## Source Artifacts

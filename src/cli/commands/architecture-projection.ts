@@ -8,6 +8,7 @@ import { architectureProjectionQueueState, retryArchitectureProjectionDeadLetter
 import { consumeArchitectureRefreshSignals } from '../../effects/architecture/refresh-consumer';
 import { processArchitectureCascade, readPendingPostEditEvents } from '../hook/mutation-observed';
 import {
+  acknowledgeArchitectureProjectionPublication,
   advanceArchitectureDriftCursor,
   architectureDriftSourceEvent,
   computeArchitectureDriftChangedSet,
@@ -53,6 +54,15 @@ export function buildArchitectureProjectionCommand(): Command {
       if (result.status === 'retry-pending' || result.status === 'dead-letter') process.exitCode = 1;
     } catch (error) { fail(error); }
   });
+  command.command('acknowledge-publication')
+    .requiredOption('--json', 'Output publication acknowledgement JSON')
+    .requiredOption('--publication-sha <sha>', 'Exact synthesized publication SHA')
+    .action((options: { publicationSha: string }) => {
+      try {
+        const root = repositoryRoot();
+        write(acknowledgeArchitectureProjectionPublication(root, options.publicationSha));
+      } catch (error) { fail(error); }
+    });
   command.command('retry-dead-letter')
     .requiredOption('--json', 'Output retried job and queue state JSON')
     .requiredOption('--job-id <id>', 'Exact dead-letter job id')

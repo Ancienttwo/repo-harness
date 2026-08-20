@@ -347,6 +347,126 @@ function humanReviewCard(verdict = "pass", externalAcceptance = "pass"): string 
   ].join("\n");
 }
 
+function installAutomaticProjectionVerifyFixture(cwd: string): string {
+  for (const dir of [
+    ".ai/hooks/lib",
+    "bin",
+    "plans",
+    "tasks/contracts",
+    "tasks/notes",
+    "tasks/reviews",
+    "docs/architecture/modules",
+  ]) mkdirSync(join(cwd, dir), { recursive: true });
+  copyHelpers(cwd);
+  cpSync(join(ROOT, "src"), join(cwd, "src"), { recursive: true });
+  copyFileSync(
+    join(ROOT, "assets/hooks/lib/workflow-state.sh"),
+    join(cwd, ".ai/hooks/lib/workflow-state.sh"),
+  );
+  writeFileSync(
+    join(cwd, ".ai/harness/policy.json"),
+    `${JSON.stringify({
+      worktree_strategy: { review_base: "main" },
+      architecture: { projection_provider: "archctx", projection_apply: "automatic" },
+    }, null, 2)}\n`,
+  );
+  writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+  writeFileSync(
+    join(cwd, "plans/plan-20260820-1605-projection-fixture.md"),
+    [
+      "# Plan: projection fixture",
+      "",
+      "> **Status**: Executing",
+      "> **Task Contract**: `tasks/contracts/projection-fixture.contract.md`",
+      "> **Task Review**: `tasks/reviews/projection-fixture.review.md`",
+      "> **Implementation Notes**: `tasks/notes/projection-fixture.notes.md`",
+      "",
+    ].join("\n"),
+  );
+  writeActivePlan(cwd, "plans/plan-20260820-1605-projection-fixture.md");
+  writeFileSync(
+    join(cwd, "tasks/contracts/projection-fixture.contract.md"),
+    [
+      "# Task Contract: projection-fixture",
+      "",
+      "> **Status**: Active",
+      "> **Task Profile**: code-change",
+      "> **Review File**: `tasks/reviews/projection-fixture.review.md`",
+      "> **Notes File**: `tasks/notes/projection-fixture.notes.md`",
+      "",
+      "```yaml",
+      "allowed_paths:",
+      "  - docs/spec.md",
+      "  - plans/",
+      "  - tasks/",
+      "exit_criteria:",
+      "  files_exist:",
+      "    - docs/spec.md",
+      "evidence_requirements:",
+      "  benchmark: not_applicable",
+      "```",
+      "",
+      "## Change Assessment",
+      "",
+      "```json",
+      '{"protocol":1,"oracles":[{"id":"fixture-deterministic","kind":"deterministic_test","paths":["*"]}]}',
+      "```",
+      "",
+    ].join("\n"),
+  );
+  writeFileSync(join(cwd, "tasks/notes/projection-fixture.notes.md"), "# Implementation Notes\n");
+
+  const fakeCli = join(cwd, "bin/repo-harness-fixture");
+  writeFileSync(
+    fakeCli,
+    [
+      "#!/bin/bash",
+      "set -euo pipefail",
+      '[[ "${1:-}" == "architecture-projection" ]] || exit 91',
+      'case "${2:-}" in',
+      "  status)",
+      "    printf '%s\\n' '{\"apply\":{\"mode\":\"automatic\",\"enabled\":true}}'",
+      "    ;;",
+      "  apply)",
+      "    mkdir -p docs/architecture/modules",
+      "    printf '%s\\n' '{\"projection\":\"acceptance-owned\"}' > docs/architecture/.projection-manifest.json",
+      '    if [[ "${PROJECTION_EXTRA_PATH:-0}" == "1" ]]; then',
+      "      printf '%s\\n' '# unexpected generated module' > docs/architecture/modules/unexpected.md",
+      "    fi",
+      "    printf '%s\\n' '{\"status\":\"applied\"}'",
+      "    ;;",
+      "  *) exit 92 ;;",
+      "esac",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(fakeCli, 0o755);
+
+  initGitRepo(cwd);
+  commitAll(cwd, "automatic projection fixture baseline");
+  writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n\nChanged.\n");
+  writeFileSync(
+    join(cwd, "docs/architecture/.projection-manifest.json"),
+    '{"projection":"acceptance-owned"}\n',
+  );
+  writeFileSync(
+    join(cwd, "tasks/reviews/projection-fixture.review.md"),
+    [
+      "# Task Review: projection-fixture",
+      "",
+      "> **Recommendation**: pass",
+      reviewSubjectMetadata(cwd),
+      "",
+      humanReviewCard(),
+      "",
+      externalAcceptanceAdvice("Codex", "codex-review", cwd),
+      "",
+    ].join("\n"),
+  );
+  rmSync(join(cwd, "docs/architecture/.projection-manifest.json"));
+  return fakeCli;
+}
+
 // Extracts the body of a bash heredoc (exclusive of its open/close marker lines) so
 // tests can assert on the seed contract template text embedded in plan-to-todo.sh,
 // ensure-task-workflow.sh, and project-init-lib.sh without hard-coding line numbers.
@@ -3612,6 +3732,51 @@ describe("Workflow helper scripts", () => {
       expect(checks.run_file).toMatch(/^\.ai\/harness\/runs\/.+-demo\.json$/);
       expect(join(cwd, checks.run_file)).toBe(runFilePath);
       expect(checks.lifecycle.evidence_tier).toBe("harness-trace-v1");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("verify-sprint materializes an automatic projection before freezing the acceptance subject", () => {
+    const cwd = tmpWorkspace("helper-verify-sprint-projection-publication");
+    try {
+      const fakeCli = installAutomaticProjectionVerifyFixture(cwd);
+      const res = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd, {
+        REPO_HARNESS_CLI_BIN: fakeCli,
+        HOOK_HOST: "claude",
+        REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
+      });
+
+      const { content: checks } = latestRunSnapshot(cwd);
+      expect(res.status, `${res.stdout}\n${res.stderr}\n${JSON.stringify(checks, null, 2)}`).toBe(0);
+      expect(res.stderr).toContain("[ArchitectureProjection] acceptance materialization: applied");
+      expect(readFileSync(join(cwd, "docs/architecture/.projection-manifest.json"), "utf8"))
+        .toBe('{"projection":"acceptance-owned"}\n');
+      expect(checks.files_changed).toContain("docs/architecture/.projection-manifest.json");
+      expect(checks.allowed_paths_check.status).toBe("pass");
+      expect(checks.contract.allowed_paths).not.toContain("docs/architecture/.projection-manifest.json");
+      expect(checks.review_subject_sha256).toBe(currentReviewBinding(cwd).subject);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("verify-sprint does not exempt other automatic architecture projection outputs", () => {
+    const cwd = tmpWorkspace("helper-verify-sprint-projection-scope");
+    try {
+      const fakeCli = installAutomaticProjectionVerifyFixture(cwd);
+      const res = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd, {
+        REPO_HARNESS_CLI_BIN: fakeCli,
+        PROJECTION_EXTRA_PATH: "1",
+        HOOK_HOST: "claude",
+        REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
+      });
+
+      expect(res.status).toBe(1);
+      const { content: checks } = latestRunSnapshot(cwd);
+      expect(checks.allowed_paths_check.status).toBe("fail");
+      expect(checks.allowed_paths_check.outside).toContain("docs/architecture/modules/unexpected.md");
+      expect(checks.allowed_paths_check.outside).not.toContain("docs/architecture/.projection-manifest.json");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
