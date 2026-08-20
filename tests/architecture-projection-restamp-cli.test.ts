@@ -86,8 +86,12 @@ const RESTAMP = projectionResult([
   { path: ARCHITECTURE_PROJECTION_MANIFEST_PATH, action: 'update', preimageDigest: digest('9'), outputDigest: digest('c') },
 ]);
 
-/** A repository whose only dirty tracked path is a restamped manifest. */
-function fixture(): string {
+/**
+ * A repository whose only dirty tracked path is a restamped manifest, unless
+ * `dirtyManifest` is false: a clean worktree keeps a drain out of the legacy
+ * cascade, which needs a `repo-harness` runner resolvable from PATH.
+ */
+function fixture(options: { dirtyManifest?: boolean } = {}): string {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-restamp-cli-')));
   roots.push(root);
   mkdirSync(join(root, '.ai/harness'), { recursive: true });
@@ -102,7 +106,9 @@ function fixture(): string {
   git(root, ['config', 'commit.gpgsign', 'false']);
   git(root, ['add', '-A']);
   git(root, ['commit', '-q', '-m', 'seed']);
-  writeFileSync(join(root, ARCHITECTURE_PROJECTION_MANIFEST_PATH), `${JSON.stringify({ worktreeDigest: digest('b') }, null, 2)}\n`);
+  if (options.dirtyManifest !== false) {
+    writeFileSync(join(root, ARCHITECTURE_PROJECTION_MANIFEST_PATH), `${JSON.stringify({ worktreeDigest: digest('b') }, null, 2)}\n`);
+  }
   return root;
 }
 
@@ -163,7 +169,7 @@ describe('architecture-projection drain output shape', () => {
   // Publication lives outside the drain: this locks the operator-visible JSON
   // contract so it cannot silently grow a publication field.
   test('is byte-stable and carries no publication keys', () => {
-    const root = fixture();
+    const root = fixture({ dirtyManifest: false });
     const result = cli(root, ['architecture-projection', 'drain', '--json']);
 
     expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
@@ -190,7 +196,9 @@ describe('architecture-projection drain output shape', () => {
     ]);
     expect(drain.schemaVersion).toBe('repo-harness.architecture-projection-drain/v1');
     expect(drain.status).toBe('disabled');
-    // The drain never publishes: the dirty manifest is still dirty afterward.
-    expect(status(root)).toBe(` M ${ARCHITECTURE_PROJECTION_MANIFEST_PATH}`);
+    // "the drain never publishes a dirty manifest" is covered by the Stop-handler
+    // tests: asserting it here would need a dirty tracked path, which routes a
+    // disabled drain through the PATH-dependent legacy cascade.
+    expect(status(root)).toBe('');
   });
 });
