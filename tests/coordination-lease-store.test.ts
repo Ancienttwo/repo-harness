@@ -32,6 +32,7 @@ import {
   type LeaseOwnerRecordV1,
 } from '../src/core/state/coordination-identity';
 import {
+  abortCompletionSprintCommand,
   beginCompletionSprintCommand,
   bindSprintCommand,
   claimSprintCommand,
@@ -454,7 +455,7 @@ describe('per-task lock', () => {
 });
 
 /**
- * The five verbs over these primitives, on a real repository with a real
+ * The ownership verbs over these primitives, on a real repository with a real
  * canonical ref. Racing them across linked worktrees is the concurrency
  * harness's job, not this file's; what is pinned here is that each verb is
  * gated on the fencing token and on canonical authority.
@@ -859,6 +860,80 @@ describe('claim verbs', () => {
     );
     expect(unkeyed.exitCode).toBe(0);
     expect((JSON.parse(unkeyed.stdout) as LeaseOwnerRecordV1).finish_transaction_key).toBeNull();
+  });
+
+  test('abort-completion restores a pending task and refuses every mismatched authority', () => {
+    const repo = repoWithSprint();
+    const taskId = claimAndBind(repo);
+    expect(beginCompletionSprintCommand(
+      { claimId: 'claim-1', worktree: '/tmp/wt', targetRef: 'main', finishTransactionKey: 'finish/9f2c' },
+      deps(repo),
+    ).exitCode).toBe(0);
+
+    expect(abortCompletionSprintCommand(
+      { claimId: 'stale-claim', worktree: '/tmp/wt', targetRef: 'main' },
+      deps(repo),
+    ).exitCode).toBe(1);
+    expect(abortCompletionSprintCommand(
+      { claimId: 'claim-1', worktree: '/tmp/other', targetRef: 'main' },
+      deps(repo),
+    ).exitCode).toBe(1);
+    run(repo, ['branch', 'other', 'main']);
+    expect(abortCompletionSprintCommand(
+      { claimId: 'claim-1', worktree: '/tmp/wt', targetRef: 'other' },
+      deps(repo),
+    ).exitCode).toBe(1);
+
+    // A failed finish may discover task-definition drift after the first gate.
+    // Pendingness, not the stale revision, authorizes reopening the same lease
+    // so the next owner can inspect that drift explicitly.
+    commitSprint(repo, [
+      ROW_A,
+      '| 2 | [ ] | wire the claim verbs | contract | updated acceptance | (pending) |',
+    ]);
+    const restored = abortCompletionSprintCommand(
+      { claimId: 'claim-1', worktree: '/tmp/wt', targetRef: 'main' },
+      deps(repo),
+    );
+    expect(restored.exitCode).toBe(0);
+    expect(JSON.parse(restored.stdout)).toMatchObject({
+      state: 'bound',
+      claim_id: 'claim-1',
+      execution_worktree: '/tmp/wt',
+      finish_transaction_key: null,
+      canonical_status: '[ ]',
+    });
+    expect(abortCompletionSprintCommand(
+      { claimId: 'claim-1', worktree: '/tmp/wt', targetRef: 'main' },
+      deps(repo),
+    ).exitCode).toBe(0);
+    expect(readLease(repo, taskId).classification).toBe('bound');
+
+    commitSprint(repo, [ROW_A, ROW_B]);
+    expect(beginCompletionSprintCommand(
+      { claimId: 'claim-1', worktree: '/tmp/wt', targetRef: 'main', finishTransactionKey: 'finish/next' },
+      deps(repo),
+    ).exitCode).toBe(0);
+    commitSprint(repo, [
+      ROW_A,
+      '| 2 | [x] | wire the claim verbs | contract | claim tests pass | `plans/archive/plan-x.md` |',
+    ]);
+    const completed = abortCompletionSprintCommand(
+      { claimId: 'claim-1', worktree: '/tmp/wt', targetRef: 'main' },
+      deps(repo),
+    );
+    expect(completed.exitCode).toBe(1);
+    expect(completed.stderr).toContain('canonical status is [x], expected [ ]');
+    expect(readLease(repo, taskId).classification).toBe('completing');
+
+    commitSprint(repo, [ROW_A]);
+    const missing = abortCompletionSprintCommand(
+      { claimId: 'claim-1', worktree: '/tmp/wt', targetRef: 'main' },
+      deps(repo),
+    );
+    expect(missing.exitCode).toBe(1);
+    expect(missing.stderr).toContain(`has task id ${taskId}`);
+    expect(readLease(repo, taskId).classification).toBe('completing');
   });
 
   test('a drifted task definition blocks begin-completion', () => {

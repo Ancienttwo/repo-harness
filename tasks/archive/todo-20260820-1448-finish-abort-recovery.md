@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-20 14:48
+> **Related Plan**: plans/archive/plan-20260820-1245-finish-abort-recovery.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260820-1448
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog

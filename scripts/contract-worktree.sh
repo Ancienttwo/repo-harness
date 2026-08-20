@@ -534,6 +534,7 @@ closeout_claim_dir=""
 closeout_claim_mode=""
 closeout_claim_operation=""
 closeout_claim_conflict_dir=""
+closeout_claim_target_ref=""
 
 closeout_journal_root() {
   local common_dir
@@ -570,7 +571,8 @@ closeout_claim_write_owner() {
     printf '  "operation": "%s",\n' "$(json_escape "$operation")"
     printf '  "worktree": "%s",\n' "$(json_escape "$closeout_journal_worktree")"
     printf '  "pid": "%s",\n' "$$"
-    printf '  "journal_key": "%s"\n' "$(json_escape "$journal_key")"
+    printf '  "journal_key": "%s",\n' "$(json_escape "$journal_key")"
+    printf '  "target_ref": "%s"\n' "$(json_escape "$closeout_claim_target_ref")"
     printf '}\n'
   } | closeout_journal_write "$target"
 }
@@ -623,12 +625,19 @@ closeout_claim_release() {
   closeout_claim_dir=""
   closeout_claim_mode=""
   closeout_claim_operation=""
+  closeout_claim_target_ref=""
   trap - EXIT
 }
 
 closeout_claim_on_exit() {
   local exit_code=$?
   trap - EXIT
+  if [[ "$exit_code" -ne 0 && "$sprint_lease_completion_open" -eq 1 ]]; then
+    if ! sprint_lease_abort_completion "$sprint_lease_target_ref"; then
+      echo "contract-worktree: sprint completion abort failed; retaining the closeout ownership claim for explicit recovery" >&2
+      exit 1
+    fi
+  fi
   closeout_claim_release || exit_code=1
   exit "$exit_code"
 }
@@ -700,16 +709,19 @@ closeout_claim_report() {
 # No closeout effect is possible in that window, so explicit `recover abort`
 # may remove only that orphan claim and any status-less journal directory.
 closeout_claim_abort_orphan() {
-  local operation="$1" claim journal_key journal_dir takeover_result=0
+  local operation="$1" claim journal_key journal_dir target_ref takeover_result=0
   claim="$(closeout_claim_path "$operation")" || return 1
   [[ -d "$claim" ]] || return 1
   journal_key="$(closeout_journal_field "$claim/owner.json" journal_key)"
+  target_ref="$(closeout_journal_field "$claim/owner.json" target_ref)"
   if [[ -n "$journal_key" ]]; then
     journal_dir="$(closeout_journal_root)/$operation/$journal_key"
     [[ ! -f "$journal_dir/status.json" ]] || return 4
   fi
   closeout_claim_takeover_for_recovery "$operation" || takeover_result=$?
   [[ "$takeover_result" -eq 0 ]] || return "$takeover_result"
+  resolve_sprint_claim_token || return 1
+  sprint_lease_abort_completion "$target_ref" || return 5
   if [[ -n "${journal_dir:-}" && -d "$journal_dir" ]]; then
     rm -rf "$journal_dir"
   fi
@@ -1011,6 +1023,10 @@ finish_transaction_abort() {
       cp -Rp "$finish_transaction_dir/$index/value" "$path"
     fi
   done
+  if ! sprint_lease_abort_completion "$sprint_lease_target_ref"; then
+    echo "contract-worktree: sprint completion abort failed; closeout journal retained for explicit recovery" >&2
+    return 1
+  fi
   finish_transaction_active=0
   finish_transaction_original_head=""
   trap - EXIT
@@ -1100,7 +1116,7 @@ closeout_recover_select() {
 }
 
 recover_worktree() {
-  local action="${1:-}" key="" dir status last_phase head claim claim_result=0
+  local action="${1:-}" key="" dir status last_phase head claim claim_result=0 target_ref=""
   shift || true
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -1195,6 +1211,9 @@ recover_worktree() {
         echo "contract-worktree: closeout journal has no restorable snapshot: $dir" >&2
         return 1
       }
+      resolve_sprint_claim_token || return 1
+      target_ref="$(closeout_journal_field "$dir/meta.json" target_branch)"
+      sprint_lease_abort_completion "$target_ref" || return 1
       closeout_journal_record "$dir" aborted "" ""
       rm -rf "$dir/snapshot"
       closeout_claim_release
@@ -1408,6 +1427,8 @@ refresh_and_freeze_base() {
 sprint_lease_claim_id=""
 sprint_lease_task_id=""
 sprint_lease_token_file=""
+sprint_lease_completion_open=0
+sprint_lease_target_ref=""
 SPRINT_CLI_RESOLVED=0
 SPRINT_CLI_CMD=()
 
@@ -1488,7 +1509,35 @@ sprint_lease_begin_completion() {
     echo "contract-worktree: this worktree no longer owns the sprint lease it claimed (claim $sprint_lease_claim_id); refusing to publish" >&2
     return 1
   fi
+  sprint_lease_completion_open=1
+  sprint_lease_target_ref="$target_branch"
   echo "[ContractWorktree] Sprint lease verified for claim $sprint_lease_claim_id"
+  return 0
+}
+
+# Restore an unpublished completion window to `bound`. The caller must first
+# prove that publication did not land; the CLI then independently checks the
+# same fencing token, worktree binding, target ref, and canonical pending row.
+# The CLI transition is idempotent so recovery can be retried after a crash
+# between the lease write and the closeout journal update.
+sprint_lease_abort_completion() {
+  local target_ref="$1" output
+  [[ -n "$sprint_lease_claim_id" ]] || return 0
+  if [[ -z "$target_ref" ]]; then
+    echo "contract-worktree: sprint completion abort has no recorded target ref" >&2
+    return 1
+  fi
+  if ! output="$(sprint_lease abort-completion \
+    --claim-id "$sprint_lease_claim_id" \
+    --worktree "$closeout_journal_worktree" \
+    --target-ref "$target_ref" 2>&1)"; then
+    printf '%s\n' "$output" >&2
+    echo "contract-worktree: could not restore sprint lease $sprint_lease_claim_id to bound" >&2
+    return 1
+  fi
+  sprint_lease_completion_open=0
+  sprint_lease_target_ref=""
+  echo "[ContractWorktree] Restored sprint lease to bound after aborted completion (claim $sprint_lease_claim_id)"
   return 0
 }
 
@@ -1611,6 +1660,7 @@ finish_worktree() {
     echo "contract-worktree: run 'repo-harness run contract-worktree recover inspect', then 'recover abort' or 'recover reconcile'" >&2
     return 1
   fi
+  closeout_claim_target_ref="$target_branch"
   if ! closeout_claim_acquire "finish"; then
     echo "contract-worktree: closeout already owned for this worktree and operation: $closeout_claim_conflict_dir" >&2
     echo "contract-worktree: run 'repo-harness run contract-worktree recover inspect', then 'recover abort' or 'recover reconcile'; 'recover abort' also clears a claim with no recorded journal phase" >&2
@@ -1702,8 +1752,14 @@ finish_worktree() {
     "target_branch=$target_branch" \
     "base_sha=$frozen_base_sha")"
   closeout_claim_bind_journal "$closeout_key"
-  sprint_lease_record_finish_transaction "$target_branch" "$closeout_key" \
-    || { closeout_claim_release; return 1; }
+  if ! sprint_lease_record_finish_transaction "$target_branch" "$closeout_key"; then
+    # The first begin-completion already opened the lease window. A target-ref
+    # drift or other second-gate refusal is still pre-publication here, so close
+    # that window before giving up the closeout claim.
+    sprint_lease_abort_completion "$target_branch" || return 1
+    closeout_claim_release
+    return 1
+  fi
   closeout_journal_begin "finish" "$closeout_key" \
     "branch=$current_branch" \
     "plan=${active_plan:-}" \

@@ -1,5 +1,5 @@
 /**
- * `repo-harness sprint <claim|bind|release|steal|reconcile>`: the ownership
+ * `repo-harness sprint <claim|bind|begin-completion|abort-completion|release|steal|reconcile>`: the ownership
  * verbs of the shared lease protocol.
  *
  * Every verb below is a pure command projection returning `CommandOutcome`;
@@ -8,7 +8,7 @@
  * `SprintCommandDependencies`, so the verbs are testable without a repo and
  * the effect modules stay the single owners of their side effects.
  *
- * Two rules hold across all five verbs:
+ * Two rules hold across all ownership verbs:
  *
  * - every ownership mutation runs inside that task's lock, because a bare
  *   compare-and-mutate on `claim_id` is still a TOCTOU: A reads owner = B, B is
@@ -28,6 +28,7 @@ import {
   FIRST_LEASE_GENERATION,
   PENDING_ROW_STATUS,
   TASK_DIGEST_PATTERN,
+  abortLeaseCompletionRecord,
   beginLeaseCompletionRecord,
   bindLeaseRecord,
   buildLeaseOwnerRecord,
@@ -405,6 +406,12 @@ export interface BeginCompletionCommandOptions {
   readonly finishTransactionKey?: string;
 }
 
+export interface AbortCompletionCommandOptions {
+  readonly claimId?: string;
+  readonly worktree?: string;
+  readonly targetRef?: string;
+}
+
 /**
  * The canonical ref a verb was asked to validate against must be the one the
  * claim was taken on. Anything else re-reads a different authority: a row that
@@ -476,6 +483,64 @@ export function beginCompletionSprintCommand(
         return refuse(
           `task ${taskId} drifted since it was claimed: canonical revision is `
           + `${lookup.task.task_revision}, the claim observed ${current.task_revision}`,
+        );
+      }
+
+      deps.coordination.writeLeaseOwner(taskId, transition.record);
+      return ok({ ...transition.record, canonical_status: lookup.task.row.status });
+    });
+  } catch (error) {
+    return operationalFailure(error);
+  }
+}
+
+/**
+ * Restore a failed, provably unpublished completion window to `bound`.
+ * Publication proof remains the shell transaction owner's responsibility;
+ * this command independently fences the mutation and refuses to reopen a row
+ * whose canonical authority no longer says pending.
+ */
+export function abortCompletionSprintCommand(
+  options: AbortCompletionCommandOptions,
+  deps: SprintCommandDependencies,
+): CommandOutcome {
+  const claimId = requireOption(options.claimId, '--claim-id');
+  if (isOutcome(claimId)) return claimId;
+  const worktree = requireOption(options.worktree, '--worktree');
+  if (isOutcome(worktree)) return worktree;
+  const targetRef = requireOption(options.targetRef, '--target-ref');
+  if (isOutcome(targetRef)) return targetRef;
+
+  try {
+    return withOwnedLease(deps, claimId, (taskId) => {
+      const current = lockedRecord(deps, taskId);
+      if (isOutcome(current)) return current;
+      const drift = targetRefDrift(current, targetRef);
+      if (drift !== null) return refuse(drift);
+      const transition = abortLeaseCompletionRecord(current, {
+        claimId,
+        executionWorktree: worktree,
+      });
+      if (!transition.ok) return refuse(transition.error);
+
+      const canonical = deps.coordination.readCanonicalSprint({
+        targetRef,
+        sprintPath: current.sprint_path,
+      });
+      if (!canonical.ok) return refuse(canonical.error);
+      const lookup = lookupCanonicalTask(
+        {
+          repoIdentity: deps.repoIdentity,
+          sprintPath: current.sprint_path,
+          sprintText: canonical.text,
+        },
+        taskId,
+      );
+      if (!lookup.ok) return refuse(lookup.error);
+      if (lookup.task.row.status !== PENDING_ROW_STATUS) {
+        return refuse(
+          `cannot abort completion of task ${taskId} on ${targetRef}: canonical status is `
+          + `${lookup.task.row.status || '(empty)'}, expected ${PENDING_ROW_STATUS}`,
         );
       }
 
@@ -769,6 +834,16 @@ export function buildSprintCommand(): Command {
     .option('--finish-transaction-key <key>', 'Closeout journal key this publication window runs under')
     .action((opts: BeginCompletionCommandOptions) => {
       writeOutcome(beginCompletionSprintCommand(opts, processSprintDependencies(process.cwd())));
+    });
+
+  sprint
+    .command('abort-completion')
+    .description('Restore an unpublished completion to bound after checking its fencing token and canonical row')
+    .requiredOption('--claim-id <id>', 'Fencing token returned by claim')
+    .requiredOption('--worktree <path>', 'Worktree whose completion was aborted')
+    .requiredOption('--target-ref <ref>', 'Canonical ref whose task row must still be pending')
+    .action((opts: AbortCompletionCommandOptions) => {
+      writeOutcome(abortCompletionSprintCommand(opts, processSprintDependencies(process.cwd())));
     });
 
   sprint

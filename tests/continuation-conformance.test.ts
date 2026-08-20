@@ -38,6 +38,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
 import { buildReviewSubject } from '../src/effects/review/diff-fingerprint';
+import { readLease } from '../src/effects/state/coordination-lease-store';
 import type { ContinuationEnvelopeV1 } from '../src/core/state/types';
 
 const ROOT = join(import.meta.dir, '..');
@@ -614,6 +615,15 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
       const advance = executeHostCommand(fixture, primary, start.command!);
       expect(advance.status, `${advance.stdout}\n${advance.stderr}`).toBe(0);
       const worktreeOne = createdWorktree(advance.stdout);
+      const claimDir = join(worktreeOne, '.ai/harness/sprint/claims');
+      const claimFiles = readdirSync(claimDir);
+      expect(claimFiles).toHaveLength(1);
+      const claimFile = join(claimDir, claimFiles[0]!);
+      const originalClaimToken = readFileSync(claimFile, 'utf-8');
+      const taskId = originalClaimToken.match(/^task_id=(.+)$/m)?.[1] ?? '';
+      const originalClaimId = originalClaimToken.match(/^claim_id=(.+)$/m)?.[1] ?? '';
+      expect(taskId).not.toBe('');
+      expect(originalClaimId).not.toBe('');
 
       // --- Row 1, tick 2: the unit moved into its worktree. ----------------
       const openPlan = tick(worktreeOne);
@@ -644,6 +654,26 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
       expect(actionableOne.unit_ref).toBe(planOne);
       expect(actionableOne.command).toBe(HOST_COMMAND.verifySprint);
 
+      // A normal pre-journal failure happens after the lease gate but before
+      // any publication can exist. The EXIT path must restore ownership to
+      // `bound` immediately, without requiring the crash-recovery surface.
+      const architectureCheck = join(worktreeOne, 'scripts/check-architecture-sync.sh');
+      writeExecutable(architectureCheck, '#!/bin/bash\nexit 73\n');
+      const rejectedFinish = helper(
+        worktreeOne,
+        'scripts/contract-worktree.sh',
+        ['finish', '--merge'],
+      );
+      expect(rejectedFinish.status).not.toBe(0);
+      expect(rejectedFinish.stdout).toContain('Restored sprint lease to bound after aborted completion');
+      expect(readLease(worktreeOne, taskId).record).toMatchObject({
+        state: 'bound',
+        claim_id: originalClaimId,
+        execution_worktree: worktreeOne,
+        finish_transaction_key: null,
+      });
+      writeExecutable(architectureCheck, '#!/bin/bash\nexit 0\n');
+
       // Completion gate, then closeout -- and the closeout is SIGKILLed the
       // moment the journal durably records `lifecycle_applied`.
       const mainBeforeCrash = git(primary, ['rev-parse', 'main']).stdout.trim();
@@ -665,6 +695,7 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
       expect(crashedJournal.status).toBe('in_progress');
       expect(crashedJournal.phases[crashedJournal.phases.length - 1]).toBe('lifecycle_applied');
       expect(crashedJournal.phases).not.toContain('complete');
+      expect(readLease(worktreeOne, taskId).record?.state).toBe('completing');
       // Nothing external landed: main still points at the exact pre-crash
       // commit (HEAD-vs-main would be vacuous here -- HEAD is a symref to
       // main in the primary tree).
@@ -688,6 +719,45 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
       expect(abort.status, `${abort.stdout}\n${abort.stderr}`).toBe(0);
       expect(abort.stdout).toContain('restored the pre-closeout state');
       expect(journalStatus(journalDir).status).toBe('aborted');
+
+      const recoveredLease = readLease(worktreeOne, taskId).record;
+      expect(recoveredLease).toMatchObject({
+        state: 'bound',
+        claim_id: originalClaimId,
+        execution_worktree: worktreeOne,
+        finish_transaction_key: null,
+      });
+
+      // Recovery re-opens the existing ownership state, so another Agent can
+      // take over through the ordinary fenced steal/bind path. Rebind the new
+      // generation to this fixture worktree and replace only the local fencing
+      // token; the subsequent real finish proves the handoff is executable.
+      const steal = run(process.execPath, [
+        CLI,
+        'sprint',
+        'steal',
+        '--expected-claim-id', originalClaimId,
+        '--reason', 'recover failed finish in a replacement session',
+        '--session-id', 'replacement-session',
+      ], primary);
+      expect(steal.status, `${steal.stdout}\n${steal.stderr}`).toBe(0);
+      const replacement = JSON.parse(steal.stdout) as { claim_id: string };
+      expect(replacement.claim_id).not.toBe(originalClaimId);
+      const branch = git(worktreeOne, ['branch', '--show-current']).stdout.trim();
+      const bind = run(process.execPath, [
+        CLI,
+        'sprint',
+        'bind',
+        '--claim-id', replacement.claim_id,
+        '--worktree', worktreeOne,
+        '--branch', branch,
+        '--unit-ref', planOne,
+      ], primary);
+      expect(bind.status, `${bind.stdout}\n${bind.stderr}`).toBe(0);
+      writeFileSync(claimFile, originalClaimToken.replace(
+        `claim_id=${originalClaimId}`,
+        `claim_id=${replacement.claim_id}`,
+      ));
 
       // The rolled-back state is exactly the pre-closeout one: the envelope
       // still routes to the same unit, and the retry completes cleanly.

@@ -487,6 +487,53 @@ export function beginLeaseCompletionRecord(
   };
 }
 
+export interface AbortCompletionInput {
+  readonly claimId: string;
+  /** The worktree whose failed closeout is being rolled back. */
+  readonly executionWorktree: string;
+}
+
+/**
+ * `completing -> bound`, after the caller has proved that publication did not
+ * land. This pure layer owns only the fenced state transition; the caller owns
+ * the canonical-row and publication checks that authorize it.
+ *
+ * An already restored `bound` record with no finish key is idempotent. That
+ * closes the crash window between publishing this lease update and recording
+ * the closeout journal as aborted. No other `bound` shape is accepted.
+ */
+export function abortLeaseCompletionRecord(
+  record: LeaseOwnerRecordV1,
+  input: AbortCompletionInput,
+): LeaseTransition {
+  if (record.claim_id !== input.claimId) {
+    return { ok: false, error: claimMismatch(record, input.claimId) };
+  }
+  if (record.execution_worktree !== input.executionWorktree) {
+    return {
+      ok: false,
+      error: `lease for task ${record.task_id} is bound to ${record.execution_worktree ?? '(no worktree)'}, not ${input.executionWorktree}`,
+    };
+  }
+  if (record.state === 'bound' && record.finish_transaction_key === null) {
+    return { ok: true, record };
+  }
+  if (record.state !== 'completing') {
+    return {
+      ok: false,
+      error: `cannot abort completion of a lease in state ${record.state}; expected completing`,
+    };
+  }
+  return {
+    ok: true,
+    record: {
+      ...record,
+      state: 'bound',
+      finish_transaction_key: null,
+    },
+  };
+}
+
 /** The only states a lease may be given up from (spec 8.3). */
 const RELEASABLE_LEASE_STATES: readonly PersistedLeaseState[] = ['reserving', 'bound'];
 

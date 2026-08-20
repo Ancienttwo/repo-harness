@@ -89,6 +89,7 @@ sequenceDiagram
 | I9 | adoption 事务永不无声覆盖用户内容 | `expectedContentHash` / `expectedAbsent` / move-collision 抛错 |
 | I10 | install profile 单一 authored 权威是 `profile`，`components` 是漂移检查过的投影 | `global-runtime.ts:651` + `PROFILE_COMPONENTS` |
 | I11 | 本地 contract publication 每个 work-package 只向 target 增加一个 commit，且 publication tree 必须与 seal 验证后的 lifecycle HEAD byte-identical | `contract-worktree.sh` 的 frozen-base、`commit-tree` parent/tree 断言、`publication_prepared` journal phase |
+| I12 | finish abort 只有在 runner 证明 target publication 未落地后才能把同一 fenced lease 从 `completing` 恢复为 `bound`；canonical 已完成行绝不重开 | `contract-worktree.sh` 的 landed-effect probe + `sprint abort-completion` 的 task-lock/canonical-row gate |
 
 ### 3.3 已接受的约束与取舍
 
@@ -98,6 +99,7 @@ sequenceDiagram
 - **`functional_block_selector` 保留在 context-map 里但自述为 compatibility selector**（`.ai/context/context-map.json`，`rule` 字段原文：`compatibility selector; capability registry is the source of truth`）。这是**已实现、保留字段**：结构在，权威已经移交给注册表。它是有边界的遗留物，不是双权威。
 - **`merge-gate` 无 provider 调用**。它是确定性封印，不是语义评审；语义验收由独立的 AcceptanceReceipt 承担。这条边界让闸门可离线、可重放。
 - **证据边界不再等于 public commit 边界**。source branch 保留 checkpoint 与 lifecycle commits 供恢复和审计；local merge 用 frozen target base + verified lifecycle tree 合成一个 publication commit。代价是 source commit topology 不进入 target ancestry，收益是 main history 与 work-package/rollback 边界一致；journal 记录 publication SHA，并以 target ref 是否包含它判断外部效果是否已经落地。
+- **lease 与 closeout journal 没有跨存储原子事务**。abort 先幂等恢复 lease，再把 journal 标为 `aborted`；若两步之间崩溃，显式 `recover abort` 重放同一个 fenced transition。反向排序会留下已宣称 aborted、却仍不可接力的 `completing` lease，因此不采用。
 
 ### 3.4 10x 规模下先垮的点
 

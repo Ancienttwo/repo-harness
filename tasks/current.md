@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-20T14:33:59+0800 -->
+<!-- updated_at: 2026-08-20T14:48:18+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-20T14:33:59+0800
-> **Source Branch**: codex/fail-closed-codegraph-init
-> **Source Commit**: e6515102
+> **Updated At**: 2026-08-20T14:48:18+0800
+> **Source Branch**: codex/finish-abort-recovery
+> **Source Commit**: 727ae802
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -31,8 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /private/tmp/repo-harness-wt-finish-abort-recovery: plans/plan-20260820-1245-finish-abort-recovery.md
-- /private/tmp/repo-harness-wt-finish-abort-recovery: active-worktree owner -> /private/tmp/repo-harness-wt-finish-abort-recovery
+- /Users/ancienttwo/Projects/repo-harness-wt-cross-review-single-pass: plans/plan-20260820-1436-cross-review-single-pass.md
+- /Users/ancienttwo/Projects/repo-harness-wt-cross-review-single-pass: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-cross-review-single-pass
 ## Active Sprint
 
 - Sprint: (none)
@@ -56,19 +56,18 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: 9 changed/untracked path(s)
 
 ```
- D plans/plan-20260820-1255-fail-closed-codegraph-init.md
- D tasks/contracts/20260820-1255-fail-closed-codegraph-init.contract.md
- D tasks/notes/20260820-1255-fail-closed-codegraph-init.notes.md
- D tasks/reviews/20260820-1255-fail-closed-codegraph-init.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260820-1255-fail-closed-codegraph-init.md
-?? tasks/archive/contract-20260820-1433-fail-closed-codegraph-init.md
-?? tasks/archive/notes-20260820-1433-fail-closed-codegraph-init.md
-?? tasks/archive/review-20260820-1433-fail-closed-codegraph-init.md
-?? tasks/archive/todo-20260820-1433-fail-closed-codegraph-init.md
+ D plans/plan-20260820-1245-finish-abort-recovery.md
+ D tasks/contracts/20260820-1245-finish-abort-recovery.contract.md
+ D tasks/notes/20260820-1245-finish-abort-recovery.notes.md
+ D tasks/reviews/20260820-1245-finish-abort-recovery.review.md
+?? plans/archive/plan-20260820-1245-finish-abort-recovery.md
+?? tasks/archive/contract-20260820-1448-finish-abort-recovery.md
+?? tasks/archive/notes-20260820-1448-finish-abort-recovery.md
+?? tasks/archive/review-20260820-1448-finish-abort-recovery.md
+?? tasks/archive/todo-20260820-1448-finish-abort-recovery.md
 ```
 
 ## Source Artifacts

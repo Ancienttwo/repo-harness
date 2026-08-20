@@ -10,6 +10,7 @@ import {
   COORDINATION_PROTOCOL,
   FIRST_LEASE_GENERATION,
   TASK_DIGEST_PATTERN,
+  abortLeaseCompletionRecord,
   beginLeaseCompletionRecord,
   bindLeaseRecord,
   buildLeaseOwnerRecord,
@@ -335,6 +336,56 @@ describe('owner record schema', () => {
     });
     expect(unkeyed.ok).toBe(true);
     if (unkeyed.ok) expect(unkeyed.record.finish_transaction_key).toBeNull();
+  });
+
+  test('abort-completion restores only the same fenced worktree and is idempotent', () => {
+    const bound = bindLeaseRecord(owner(), {
+      claimId: 'claim-1',
+      executionWorktree: '/tmp/wt',
+      branch: 'codex/row',
+      unitRef: 'plans/plan-row.md',
+    });
+    expect(bound.ok).toBe(true);
+    if (!bound.ok) return;
+    const completing = beginLeaseCompletionRecord(bound.record, {
+      claimId: 'claim-1',
+      executionWorktree: '/tmp/wt',
+      finishTransactionKey: 'finish/abc123',
+    });
+    expect(completing.ok).toBe(true);
+    if (!completing.ok) return;
+
+    expect(abortLeaseCompletionRecord(completing.record, {
+      claimId: 'stale-claim',
+      executionWorktree: '/tmp/wt',
+    }).ok).toBe(false);
+    expect(abortLeaseCompletionRecord(completing.record, {
+      claimId: 'claim-1',
+      executionWorktree: '/tmp/other',
+    }).ok).toBe(false);
+
+    const restored = abortLeaseCompletionRecord(completing.record, {
+      claimId: 'claim-1',
+      executionWorktree: '/tmp/wt',
+    });
+    expect(restored.ok).toBe(true);
+    if (!restored.ok) return;
+    expect(restored.record).toMatchObject({
+      state: 'bound',
+      claim_id: 'claim-1',
+      execution_worktree: '/tmp/wt',
+      finish_transaction_key: null,
+    });
+
+    const replay = abortLeaseCompletionRecord(restored.record, {
+      claimId: 'claim-1',
+      executionWorktree: '/tmp/wt',
+    });
+    expect(replay).toEqual(restored);
+    expect(abortLeaseCompletionRecord(owner(), {
+      claimId: 'claim-1',
+      executionWorktree: '/tmp/wt',
+    }).ok).toBe(false);
   });
 
   test('a steal increments the generation and keeps the claimed ref', () => {

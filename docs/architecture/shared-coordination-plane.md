@@ -3,7 +3,7 @@
 > **状态**:WP1 lease 协议 + WP2 board 投影已落地(2026-08-19)
 > **协议**:`repo-harness-lease-owner` v1、`repo-harness-board` v1
 > **权威**:`src/core/state/coordination-identity.ts`、`src/effects/state/coordination-lease-store.ts`、`src/core/state/project-board.ts`
-> **CLI**:`repo-harness sprint <identify|claim|bind|begin-completion|release|steal|reconcile>`、`repo-harness state board --json`
+> **CLI**:`repo-harness sprint <identify|claim|bind|begin-completion|abort-completion|release|steal|reconcile>`、`repo-harness state board --json`
 > **设计来源**:`docs/researches/20260819-GPT-kanban.md` §3-§12
 
 本文是人工撰写的跨模块契约文档,不是 ArchContext capability 投影,所以它住在
@@ -65,11 +65,21 @@ available --claim--> reserving --bind--> bound --begin-completion--> completing
                           +----release------+--> released --(目录移除)--> available
                           |                 |
                           +-----steal-------+--> reserving(generation + 1, stolen_from 有值)
+completing --abort-completion--> bound
 ```
 
 - `completing` 拒绝 steal:publication 可能已经落地,steal 会抹掉那个窗口标记。
 - `release` 只接受 `reserving` / `bound`:从 `completing` 释放无法判断 publication
   是否成功,那是 canonical row 的权威,由 `reconcile` 读。
+- `abort-completion` 只在 closeout runner 已证明 publication 未落地后调用；CLI
+  仍独立核对原 claim、execution worktree、target ref 与 canonical `[ ]` 行，再把
+  `completing` 恢复为 `bound` 并清空 `finish_transaction_key`。已恢复的同一条
+  `bound` 记录可幂等重放，以覆盖 lease 写入与 journal 标记 `aborted` 之间的崩溃窗。
+- canonical 行已 `[x]`、缺失或改名时，`abort-completion` fail-closed，不能把已发布
+  工作重新开放给 `steal`；此时仍走 `recover reconcile`。
+- abort 不要求 `task_revision` 仍匹配：finish 可能正因 pending row 的 Mode/Acceptance
+  漂移而失败；恢复到 `bound` 保留这份漂移，后续 takeover 必须显式处理，而不是把
+  无 publication 的 lease 永久锁在 `completing`。
 - `released` 先durably 写盘再删目录,所以 release 中途崩溃留下的是一个具名可
   reconcile 的状态,而不是一个歧义状态。
 
@@ -125,7 +135,7 @@ A.revisions.board == B.revisions.board  -> stable
 撕裂可见。
 
 **信任边界**:`changed_during_read` 的 board 仅供诊断。`claim`、`steal`、`release`、
-`begin-completion` 一律不得信任 board snapshot,必须在各自的 task lock 内重新读
+`begin-completion`、`abort-completion` 一律不得信任 board snapshot,必须在各自的 task lock 内重新读
 权威。board 从不加锁,这是它可以在任意时刻被任意数量的观察者调用的代价与前提。
 
 ## 6. 三维状态分离与列优先级
