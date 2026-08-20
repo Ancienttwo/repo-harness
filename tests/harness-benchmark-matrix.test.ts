@@ -497,6 +497,10 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       });
       expect(install.exitCode).toBe(0);
       expect(git('status', '--porcelain')).toBe('');
+      // Inject the mode drift explicitly: bun stopped chmodding a locally installed
+      // package's source bins to 0o777 in 1.4, so relying on that side effect coupled
+      // this test to a toolchain implementation detail instead of the drift it asserts.
+      executablePaths.forEach((path) => chmodSync(path, 0o777));
       expect(executablePaths.map((path) => statSync(path).mode & 0o777)).toEqual([0o777, 0o777]);
       const driftedSubject = benchmarkSubject(source, manifest, seed);
       expect(driftedSubject.install_profile_inputs_sha256).not.toBe(initialSubject.install_profile_inputs_sha256);
