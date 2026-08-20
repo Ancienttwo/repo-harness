@@ -13,8 +13,10 @@ import {
 } from '../../src/cli/mcp/coding-tools';
 import {
   cleanupManagedCodingWorkspace,
+  codingWorkspaceStatePath,
   CodingWorkspaceError,
   CodingWorkspaceManager,
+  deleteCodingWorkspaceBranchAtSnapshot,
   listManagedCodingWorkspaces,
 } from '../../src/cli/mcp/coding-workspaces';
 import { McpProcessSessionManager } from '../../src/cli/mcp/process-sessions';
@@ -117,6 +119,7 @@ afterEach(() => {
 describe('coding MCP workspace and file tools', () => {
   test('process tool contract is pipe-only', () => {
     const tools = buildCodingToolDefinitions();
+    const openProperties = tools.find(({ name }) => name === 'open_workspace')?.inputSchema.properties ?? {};
     const execProperties = tools.find(({ name }) => name === 'exec_command')?.inputSchema.properties ?? {};
     const stdinProperties = tools.find(({ name }) => name === 'write_stdin')?.inputSchema.properties ?? {};
     expect(execProperties).not.toHaveProperty('tty');
@@ -124,13 +127,20 @@ describe('coding MCP workspace and file tools', () => {
     expect(execProperties).not.toHaveProperty('rows');
     expect(stdinProperties).not.toHaveProperty('columns');
     expect(stdinProperties).not.toHaveProperty('rows');
+    expect(openProperties).toHaveProperty('integration_target_ref');
   });
 
   test('defaults to an isolated worktree without exposing absolute paths and supports guarded patch plus shell', async () => {
     const state = fixture();
     try {
       const opened = parse(await callCodingTool(state.ctx, 'open_workspace', { repo_id: state.repoId }));
-      expect(opened).toMatchObject({ repo_id: state.repoId, mode: 'worktree', dirty_source: false, managed: true });
+      expect(opened).toMatchObject({
+        repo_id: state.repoId,
+        mode: 'worktree',
+        dirty_source: false,
+        managed: true,
+        integration_target_ref: 'refs/heads/main',
+      });
       expect(opened.workspace_id).toMatch(/^cws_/);
       expect(JSON.stringify(opened)).not.toContain(state.repo);
       expect(opened.instructions).toEqual([{ path: 'AGENTS.md', content: '# Local instructions\n' }]);
@@ -375,6 +385,172 @@ describe('coding MCP workspace and file tools', () => {
       git(state.repo, 'merge', '--ff-only', workspace.branch);
       expect(cleanupManagedCodingWorkspace(opened.workspace_id, state.env)).toMatchObject({ workspace_id: opened.workspace_id, removed: true });
       expect(listManagedCodingWorkspaces(state.env)).toEqual([]);
+    } finally {
+      await state.processManager.shutdown();
+    }
+  }, 30_000);
+
+  test('cleanup refuses an unmerged workspace when the source checkout HEAD contains its branch', async () => {
+    const state = fixture();
+    try {
+      const opened = parse(await callCodingTool(state.ctx, 'open_workspace', { repo_id: state.repoId }));
+      const workspace = state.manager.get(opened.workspace_id);
+      writeFileSync(join(workspace.root, 'src/a.txt'), 'feature\n');
+      git(workspace.root, 'add', 'src/a.txt');
+      git(workspace.root, 'commit', '-m', 'feature remains unmerged to main');
+
+      git(state.repo, 'switch', '-c', 'other');
+      git(state.repo, 'merge', '--ff-only', workspace.branch);
+      expect(git(state.repo, 'merge-base', '--is-ancestor', workspace.branch, 'HEAD')).toBe('');
+      expect(spawnSync('git', ['-C', state.repo, 'merge-base', '--is-ancestor', workspace.branch, 'main']).status).not.toBe(0);
+
+      expect(() => cleanupManagedCodingWorkspace(opened.workspace_id, state.env)).toThrow('unmerged');
+      expect(existsSync(workspace.root)).toBe(true);
+      expect(spawnSync('git', ['-C', state.repo, 'show-ref', '--verify', '--quiet', `refs/heads/${workspace.branch}`]).status).toBe(0);
+      expect(listManagedCodingWorkspaces(state.env)).toHaveLength(1);
+    } finally {
+      await state.processManager.shutdown();
+    }
+  }, 30_000);
+
+  test('cleanup recognizes squash absorption against the workspace-bound integration target', async () => {
+    const state = fixture();
+    try {
+      const opened = parse(await callCodingTool(state.ctx, 'open_workspace', { repo_id: state.repoId }));
+      const workspace = state.manager.get(opened.workspace_id);
+      writeFileSync(join(workspace.root, 'src/a.txt'), 'squash feature\n');
+      git(workspace.root, 'add', 'src/a.txt');
+      git(workspace.root, 'commit', '-m', 'squash feature');
+
+      git(state.repo, 'merge', '--squash', workspace.branch);
+      git(state.repo, 'commit', '-m', 'squash workspace');
+      expect(spawnSync('git', ['-C', state.repo, 'merge-base', '--is-ancestor', workspace.branch, 'main']).status).not.toBe(0);
+
+      expect(cleanupManagedCodingWorkspace(opened.workspace_id, state.env)).toMatchObject({
+        workspace_id: opened.workspace_id,
+        removed: true,
+        integration_target_ref: 'refs/heads/main',
+        merge_mode: 'absorbed',
+      });
+      expect(existsSync(workspace.root)).toBe(false);
+      expect(spawnSync('git', ['-C', state.repo, 'show-ref', '--verify', '--quiet', `refs/heads/${workspace.branch}`]).status).not.toBe(0);
+    } finally {
+      await state.processManager.shutdown();
+    }
+  }, 30_000);
+
+  test('keeps the creation base and cleanup integration target as separate authorities', async () => {
+    const state = fixture();
+    try {
+      const baseSha = git(state.repo, 'rev-parse', 'HEAD');
+      const opened = parse(await callCodingTool(state.ctx, 'open_workspace', {
+        repo_id: state.repoId,
+        base_ref: baseSha,
+      }));
+      expect(opened).toMatchObject({
+        base_ref: baseSha,
+        base_sha: baseSha,
+        integration_target_ref: 'refs/heads/main',
+      });
+    } finally {
+      await state.processManager.shutdown();
+    }
+  }, 30_000);
+
+  test('explicit cleanup target cannot override a workspace-bound integration target', async () => {
+    const state = fixture();
+    try {
+      const opened = parse(await callCodingTool(state.ctx, 'open_workspace', { repo_id: state.repoId }));
+      const workspace = state.manager.get(opened.workspace_id);
+      git(state.repo, 'branch', 'other');
+
+      expect(() => cleanupManagedCodingWorkspace(opened.workspace_id, state.env, { targetRef: 'other' })).toThrow('does not match');
+      expect(existsSync(workspace.root)).toBe(true);
+      expect(spawnSync('git', ['-C', state.repo, 'show-ref', '--verify', '--quiet', `refs/heads/${workspace.branch}`]).status).toBe(0);
+      expect(listManagedCodingWorkspaces(state.env)).toHaveLength(1);
+    } finally {
+      await state.processManager.shutdown();
+    }
+  }, 30_000);
+
+  test('legacy managed workspace cleanup requires an explicit stable target', async () => {
+    const state = fixture();
+    try {
+      const opened = parse(await callCodingTool(state.ctx, 'open_workspace', { repo_id: state.repoId }));
+      const workspace = state.manager.get(opened.workspace_id);
+      writeFileSync(join(workspace.root, 'src/a.txt'), 'legacy feature\n');
+      git(workspace.root, 'add', 'src/a.txt');
+      git(workspace.root, 'commit', '-m', 'legacy feature');
+      git(state.repo, 'merge', '--ff-only', workspace.branch);
+
+      const statePath = codingWorkspaceStatePath(state.env);
+      const persisted = JSON.parse(readFileSync(statePath, 'utf-8')) as { workspaces: Array<Record<string, unknown>> };
+      delete persisted.workspaces[0]?.integrationTargetRef;
+      writeFileSync(statePath, `${JSON.stringify(persisted, null, 2)}\n`);
+
+      expect(() => cleanupManagedCodingWorkspace(opened.workspace_id, state.env)).toThrow('explicit --target');
+      expect(existsSync(workspace.root)).toBe(true);
+      expect(listManagedCodingWorkspaces(state.env)[0]?.integrationTargetRef).toBeNull();
+
+      expect(cleanupManagedCodingWorkspace(opened.workspace_id, state.env, { targetRef: 'main' })).toMatchObject({
+        workspace_id: opened.workspace_id,
+        removed: true,
+        integration_target_ref: 'refs/heads/main',
+        merge_mode: 'ancestor',
+      });
+    } finally {
+      await state.processManager.shutdown();
+    }
+  }, 30_000);
+
+  test('cleanup retains the branch and state when the bound target moves after merge classification', async () => {
+    const state = fixture();
+    try {
+      const opened = parse(await callCodingTool(state.ctx, 'open_workspace', { repo_id: state.repoId }));
+      const workspace = state.manager.get(opened.workspace_id);
+      const originalMain = git(state.repo, 'rev-parse', 'main');
+      writeFileSync(join(workspace.root, 'src/a.txt'), 'target race\n');
+      git(workspace.root, 'add', 'src/a.txt');
+      git(workspace.root, 'commit', '-m', 'target race');
+      git(state.repo, 'merge', '--ff-only', workspace.branch);
+      const mergedCommit = git(state.repo, 'rev-parse', 'main');
+      git(state.repo, 'worktree', 'remove', workspace.root);
+      git(state.repo, 'update-ref', 'refs/heads/main', originalMain);
+
+      expect(() => deleteCodingWorkspaceBranchAtSnapshot(
+        state.repo,
+        `refs/heads/${workspace.branch}`,
+        mergedCommit,
+        'refs/heads/main',
+        mergedCommit,
+      )).toThrow('changed during cleanup');
+      expect(existsSync(workspace.root)).toBe(false);
+      expect(spawnSync('git', ['-C', state.repo, 'show-ref', '--verify', '--quiet', `refs/heads/${workspace.branch}`]).status).toBe(0);
+      expect(listManagedCodingWorkspaces(state.env)).toHaveLength(1);
+    } finally {
+      await state.processManager.shutdown();
+    }
+  }, 30_000);
+
+  test('managed workspace creation rejects detached HEAD without an explicit integration target', async () => {
+    const state = fixture();
+    try {
+      git(state.repo, 'switch', '--detach');
+      const rejected = parse(await callCodingTool(state.ctx, 'open_workspace', { repo_id: state.repoId }));
+      expect(rejected.error.code).toBe('INTEGRATION_TARGET_INVALID');
+      expect(listManagedCodingWorkspaces(state.env)).toEqual([]);
+
+      const opened = parse(await callCodingTool(state.ctx, 'open_workspace', {
+        repo_id: state.repoId,
+        integration_target_ref: 'main',
+      }));
+      expect(opened).toMatchObject({ integration_target_ref: 'refs/heads/main', managed: true });
+
+      const checkout = parse(await callCodingTool(state.ctx, 'open_workspace', {
+        repo_id: state.repoId,
+        mode: 'checkout',
+      }));
+      expect(checkout).toMatchObject({ integration_target_ref: null, managed: false });
     } finally {
       await state.processManager.shutdown();
     }

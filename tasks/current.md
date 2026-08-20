@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-20T22:11:18+0800 -->
+<!-- updated_at: 2026-08-20T23:32:52+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-20T22:11:18+0800
-> **Source Branch**: codex/coordination-wait-metrics
-> **Source Commit**: 32c3ead6
+> **Updated At**: 2026-08-20T23:32:52+0800
+> **Source Branch**: codex/mcp-workspace-cleanup-target-binding
+> **Source Commit**: 36db8a2a
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -31,8 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/ancienttwo/Projects/repo-harness-wt-mcp-workspace-cleanup-target-binding: plans/plan-20260820-2054-mcp-workspace-cleanup-target-binding.md
-- /Users/ancienttwo/Projects/repo-harness-wt-mcp-workspace-cleanup-target-binding: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-mcp-workspace-cleanup-target-binding
+- /Users/ancienttwo/Projects/repo-harness-wt-esa06-guarded-artifact-writer: plans/plan-20260820-2307-esa06-guarded-artifact-writer.md
+- /Users/ancienttwo/Projects/repo-harness-wt-esa06-guarded-artifact-writer: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-esa06-guarded-artifact-writer
 ## Active Sprint
 
 - Sprint: (none)
@@ -59,16 +59,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260820-2049-coordination-wait-metrics.md
- D tasks/contracts/20260820-2049-coordination-wait-metrics.contract.md
- D tasks/notes/20260820-2049-coordination-wait-metrics.notes.md
- D tasks/reviews/20260820-2049-coordination-wait-metrics.review.md
+ D plans/plan-20260820-2054-mcp-workspace-cleanup-target-binding.md
+ D tasks/contracts/20260820-2054-mcp-workspace-cleanup-target-binding.contract.md
+ D tasks/notes/20260820-2054-mcp-workspace-cleanup-target-binding.notes.md
+ D tasks/reviews/20260820-2054-mcp-workspace-cleanup-target-binding.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260820-2049-coordination-wait-metrics.md
-?? tasks/archive/contract-20260820-2211-coordination-wait-metrics.md
-?? tasks/archive/notes-20260820-2211-coordination-wait-metrics.md
-?? tasks/archive/review-20260820-2211-coordination-wait-metrics.md
-?? tasks/archive/todo-20260820-2211-coordination-wait-metrics.md
+?? plans/archive/plan-20260820-2054-mcp-workspace-cleanup-target-binding.md
+?? tasks/archive/contract-20260820-2332-mcp-workspace-cleanup-target-binding.md
+?? tasks/archive/notes-20260820-2332-mcp-workspace-cleanup-target-binding.md
+?? tasks/archive/review-20260820-2332-mcp-workspace-cleanup-target-binding.md
+?? tasks/archive/todo-20260820-2332-mcp-workspace-cleanup-target-binding.md
 ```
 
 ## Source Artifacts

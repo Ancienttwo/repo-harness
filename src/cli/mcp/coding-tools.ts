@@ -246,6 +246,10 @@ export function buildCodingToolDefinitions(): CodingToolDefinition[] {
           repo_id: { type: 'string' },
           mode: { enum: ['worktree', 'checkout'], default: 'worktree' },
           base_ref: { type: 'string', default: 'HEAD' },
+          integration_target_ref: {
+            type: 'string',
+            description: 'Local or remote branch ref that must contain this workspace before managed cleanup; defaults to the source checkout HEAD branch.',
+          },
         },
         required: ['repo_id'],
         additionalProperties: false,
@@ -592,7 +596,11 @@ export async function callCodingTool(ctx: CodingToolContext, name: string, args:
     if (name === 'open_workspace') {
       const repoId = String(args.repo_id ?? '').trim();
       const mode = args.mode === 'checkout' ? 'checkout' : 'worktree';
-      const result = ctx.workspaceManager.open(repoId, mode, String(args.base_ref ?? 'HEAD'));
+      const baseRef = String(args.base_ref ?? 'HEAD');
+      const integrationTargetRef = args.integration_target_ref === undefined
+        ? 'HEAD'
+        : String(args.integration_target_ref);
+      const result = ctx.workspaceManager.open(repoId, mode, baseRef, integrationTargetRef);
       workspace = ctx.workspaceManager.get(result.workspace_id);
       audit(workspace, ctx, name, 'ok', args, { operation: 'open_workspace', relativePaths: ['.'] });
       return textResult(result);

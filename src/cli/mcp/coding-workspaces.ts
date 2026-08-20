@@ -33,6 +33,7 @@ export interface CodingWorkspace {
   branch: string;
   baseRef: string;
   baseSha: string;
+  integrationTargetRef: string | null;
   dirtySource: boolean;
   openedAt: string;
   managed: boolean;
@@ -46,15 +47,20 @@ export interface CodingWorkspacePublic {
   branch: string;
   base_ref: string;
   base_sha: string;
+  integration_target_ref: string | null;
   dirty_source: boolean;
   managed: boolean;
   instructions: Array<{ path: string; content: string }>;
   available_instruction_files: string[];
 }
 
+type PersistedCodingWorkspace = Omit<CodingWorkspace, 'integrationTargetRef'> & {
+  integrationTargetRef?: unknown;
+};
+
 interface CodingWorkspaceStateFile {
   version: 1;
-  workspaces: CodingWorkspace[];
+  workspaces: PersistedCodingWorkspace[];
 }
 
 interface IgnoreRule {
@@ -297,6 +303,139 @@ function git(root: string, args: string[], opts: { allowFailure?: boolean } = {}
   return result.status === 0 ? result.stdout.trim() : '';
 }
 
+type WorktreeMergeMode = 'ancestor' | 'absorbed' | 'unmerged';
+
+const WORKTREE_MERGE_LIB = resolve(import.meta.dir, '../../../scripts/worktree-merge-lib.sh');
+
+function resolveIntegrationTargetRef(root: string, value: string): string {
+  const requested = value.trim();
+  if (!requested) {
+    throw new CodingWorkspaceError('INTEGRATION_TARGET_REQUIRED', 'managed workspaces require a non-empty integration target ref');
+  }
+
+  const args = requested === 'HEAD'
+    ? ['-C', root, 'symbolic-ref', '--quiet', 'HEAD']
+    : ['-C', root, 'rev-parse', '--symbolic-full-name', '--verify', requested];
+  const result = spawnSync('git', args, { encoding: 'utf-8', maxBuffer: 1024 * 1024 });
+  const targetRef = result.status === 0 ? result.stdout.trim() : '';
+  if (!targetRef || targetRef.includes('\n') || (!targetRef.startsWith('refs/heads/') && !targetRef.startsWith('refs/remotes/'))) {
+    throw new CodingWorkspaceError(
+      'INTEGRATION_TARGET_INVALID',
+      'integration target must resolve to one local or remote branch ref; detached HEAD, tags, and commit ids are not cleanup authorities',
+      { integration_target_ref: requested },
+    );
+  }
+  return targetRef;
+}
+
+function worktreeMergeMode(sourceRoot: string, branchCommit: string, targetCommit: string): WorktreeMergeMode {
+  if (!existsSync(WORKTREE_MERGE_LIB)) {
+    throw new CodingWorkspaceError('MERGE_CHECK_UNAVAILABLE', 'the packaged worktree merge authority is unavailable');
+  }
+  const result = spawnSync('bash', [WORKTREE_MERGE_LIB, '--target', targetCommit, branchCommit], {
+    cwd: sourceRoot,
+    encoding: 'utf-8',
+    maxBuffer: 1024 * 1024,
+  });
+  if (result.status !== 0) {
+    throw new CodingWorkspaceError('MERGE_CHECK_UNAVAILABLE', 'the worktree merge authority could not classify the workspace branch', {
+      branch_commit: branchCommit,
+      integration_target_commit: targetCommit,
+    });
+  }
+  const rows = result.stdout.trim().split('\n');
+  const [classifiedBranch, mode, ...extra] = rows[0]?.split('\t') ?? [];
+  if (rows.length !== 1 || extra.length > 0 || classifiedBranch !== branchCommit || (mode !== 'ancestor' && mode !== 'absorbed' && mode !== 'unmerged')) {
+    throw new CodingWorkspaceError('MERGE_CHECK_UNAVAILABLE', 'the worktree merge authority returned an invalid classification', {
+      branch_commit: branchCommit,
+      integration_target_commit: targetCommit,
+    });
+  }
+  return mode;
+}
+
+function workspaceBranchSnapshot(sourceRoot: string, branch: string): { branchRef: string; branchCommit: string } {
+  const branchRef = `refs/heads/${branch}`;
+  const result = spawnSync('git', ['-C', sourceRoot, 'rev-parse', '--symbolic-full-name', '--verify', branchRef], {
+    encoding: 'utf-8',
+    maxBuffer: 1024 * 1024,
+  });
+  if (result.status !== 0 || result.stdout.trim() !== branchRef) {
+    throw new CodingWorkspaceError('WORKSPACE_BRANCH_INVALID', 'managed workspace branch is missing or is not a canonical local branch ref', {
+      branch,
+    });
+  }
+  return {
+    branchRef,
+    branchCommit: git(sourceRoot, ['rev-parse', '--verify', `${branchRef}^{commit}`]),
+  };
+}
+
+export function deleteCodingWorkspaceBranchAtSnapshot(
+  sourceRoot: string,
+  branchRef: string,
+  branchCommit: string,
+  targetRef: string,
+  targetCommit: string,
+): void {
+  const transaction = [
+    'start',
+    `verify ${targetRef} ${targetCommit}`,
+    `delete ${branchRef} ${branchCommit}`,
+    'prepare',
+    'commit',
+    '',
+  ].join('\n');
+  const result = spawnSync('git', ['-C', sourceRoot, 'update-ref', '--stdin'], {
+    input: transaction,
+    encoding: 'utf-8',
+    maxBuffer: 1024 * 1024,
+  });
+  if (result.status !== 0) {
+    throw new CodingWorkspaceError(
+      'WORKSPACE_REFS_CHANGED',
+      'workspace branch or integration target changed during cleanup; the branch and state record were retained',
+      { branch_ref: branchRef, integration_target_ref: targetRef },
+    );
+  }
+}
+
+function cleanupIntegrationTargetRef(
+  workspace: PersistedCodingWorkspace,
+  targetOverride: string | undefined,
+): string {
+  const stored = typeof workspace.integrationTargetRef === 'string' ? workspace.integrationTargetRef.trim() : '';
+  if (!stored || stored === 'HEAD') {
+    if (!targetOverride?.trim()) {
+      throw new CodingWorkspaceError(
+        'INTEGRATION_TARGET_REQUIRED',
+        'managed workspace has no stable integration target; rerun cleanup with an explicit --target branch ref',
+        { workspace_id: workspace.id },
+      );
+    }
+    return resolveIntegrationTargetRef(workspace.sourceRoot, targetOverride);
+  }
+
+  const targetRef = resolveIntegrationTargetRef(workspace.sourceRoot, stored);
+  if (targetRef !== stored) {
+    throw new CodingWorkspaceError('INTEGRATION_TARGET_INVALID', 'persisted integration target is not a canonical branch ref', {
+      workspace_id: workspace.id,
+      integration_target_ref: stored,
+    });
+  }
+  if (targetOverride?.trim()) {
+    const overrideRef = resolveIntegrationTargetRef(workspace.sourceRoot, targetOverride);
+    if (overrideRef !== targetRef) {
+      throw new CodingWorkspaceError('INTEGRATION_TARGET_MISMATCH', 'explicit cleanup target does not match the workspace-bound integration target', {
+        workspace_id: workspace.id,
+        integration_target_ref: targetRef,
+        requested_target_ref: overrideRef,
+      });
+    }
+  }
+  return targetRef;
+}
+
 function sanitizeBranchPart(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48) || 'repo';
 }
@@ -372,6 +511,7 @@ function publicWorkspace(workspace: CodingWorkspace): CodingWorkspacePublic {
     branch: workspace.branch,
     base_ref: workspace.baseRef,
     base_sha: workspace.baseSha,
+    integration_target_ref: workspace.integrationTargetRef,
     dirty_source: workspace.dirtySource,
     managed: workspace.managed,
     instructions: rootInstructions(workspace.root),
@@ -384,10 +524,18 @@ export class CodingWorkspaceManager {
 
   constructor(private readonly env: NodeJS.ProcessEnv = process.env) {}
 
-  open(repoId: string, mode: CodingWorkspaceMode = 'worktree', baseRef = 'HEAD'): CodingWorkspacePublic {
+  open(
+    repoId: string,
+    mode: CodingWorkspaceMode = 'worktree',
+    baseRef = 'HEAD',
+    integrationTargetRef = 'HEAD',
+  ): CodingWorkspacePublic {
     const repo = registeredRepo(repoId, this.env);
     const sourceRoot = realpathSync(repo.path);
     const baseSha = git(sourceRoot, ['rev-parse', '--verify', `${baseRef}^{commit}`]);
+    const boundIntegrationTargetRef = mode === 'worktree'
+      ? resolveIntegrationTargetRef(sourceRoot, integrationTargetRef)
+      : null;
     const dirtySource = isDirty(sourceRoot);
     const id = `cws_${randomUUID()}`;
     let root = sourceRoot;
@@ -414,6 +562,7 @@ export class CodingWorkspaceManager {
       branch,
       baseRef,
       baseSha,
+      integrationTargetRef: boundIntegrationTargetRef,
       dirtySource,
       openedAt: new Date().toISOString(),
       managed,
@@ -460,7 +609,10 @@ export class CodingWorkspaceManager {
   }
 }
 
-export function listManagedCodingWorkspaces(env: NodeJS.ProcessEnv = process.env): Array<Omit<CodingWorkspace, 'root' | 'sourceRoot'> & { dirty: boolean; path_exists: boolean }> {
+export function listManagedCodingWorkspaces(env: NodeJS.ProcessEnv = process.env): Array<
+  Omit<CodingWorkspace, 'root' | 'sourceRoot' | 'integrationTargetRef'>
+  & { integrationTargetRef: string | null; dirty: boolean; path_exists: boolean }
+> {
   return stateFile(env).workspaces.map((workspace) => ({
     id: workspace.id,
     repoId: workspace.repoId,
@@ -469,6 +621,7 @@ export function listManagedCodingWorkspaces(env: NodeJS.ProcessEnv = process.env
     branch: workspace.branch,
     baseRef: workspace.baseRef,
     baseSha: workspace.baseSha,
+    integrationTargetRef: typeof workspace.integrationTargetRef === 'string' ? workspace.integrationTargetRef : null,
     dirtySource: workspace.dirtySource,
     openedAt: workspace.openedAt,
     managed: workspace.managed,
@@ -477,19 +630,38 @@ export function listManagedCodingWorkspaces(env: NodeJS.ProcessEnv = process.env
   }));
 }
 
-export function cleanupManagedCodingWorkspace(workspaceId: string, env: NodeJS.ProcessEnv = process.env): { workspace_id: string; removed: true; branch: string } {
+export function cleanupManagedCodingWorkspace(
+  workspaceId: string,
+  env: NodeJS.ProcessEnv = process.env,
+  options: { targetRef?: string } = {},
+): { workspace_id: string; removed: true; branch: string; integration_target_ref: string; merge_mode: Exclude<WorktreeMergeMode, 'unmerged'> } {
   const state = stateFile(env);
   const workspace = state.workspaces.find((entry) => entry.id === workspaceId);
   if (!workspace || !workspace.managed) throw new CodingWorkspaceError('WORKSPACE_NOT_FOUND', 'managed workspace is unknown', { workspace_id: workspaceId });
   if (existsSync(workspace.root) && isDirty(workspace.root)) {
     throw new CodingWorkspaceError('WORKTREE_DIRTY', 'refusing to remove a dirty managed worktree', { workspace_id: workspaceId });
   }
-  const merged = spawnSync('git', ['-C', workspace.sourceRoot, 'merge-base', '--is-ancestor', workspace.branch, 'HEAD'], { encoding: 'utf-8' });
-  if (merged.status !== 0) throw new CodingWorkspaceError('WORKTREE_UNMERGED', 'refusing to remove an unmerged managed worktree', { workspace_id: workspaceId, branch: workspace.branch });
+  const targetRef = cleanupIntegrationTargetRef(workspace, options.targetRef);
+  const targetCommit = git(workspace.sourceRoot, ['rev-parse', '--verify', `${targetRef}^{commit}`]);
+  const { branchRef, branchCommit } = workspaceBranchSnapshot(workspace.sourceRoot, workspace.branch);
+  const mergeMode = worktreeMergeMode(workspace.sourceRoot, branchCommit, targetCommit);
+  if (mergeMode === 'unmerged') {
+    throw new CodingWorkspaceError('WORKTREE_UNMERGED', 'refusing to remove a managed worktree that is unmerged from its integration target', {
+      workspace_id: workspaceId,
+      branch: workspace.branch,
+      integration_target_ref: targetRef,
+    });
+  }
   if (existsSync(workspace.root)) git(workspace.sourceRoot, ['worktree', 'remove', workspace.root]);
-  git(workspace.sourceRoot, ['branch', '-d', workspace.branch]);
+  deleteCodingWorkspaceBranchAtSnapshot(workspace.sourceRoot, branchRef, branchCommit, targetRef, targetCommit);
   state.workspaces = state.workspaces.filter((entry) => entry.id !== workspaceId);
   writeState(env, state);
   if (existsSync(workspace.root)) rmSync(workspace.root, { recursive: true, force: true });
-  return { workspace_id: workspaceId, removed: true, branch: workspace.branch };
+  return {
+    workspace_id: workspaceId,
+    removed: true,
+    branch: workspace.branch,
+    integration_target_ref: targetRef,
+    merge_mode: mergeMode,
+  };
 }
