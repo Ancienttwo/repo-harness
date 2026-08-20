@@ -102,7 +102,16 @@ function writeFakeCodegraph(fakeBin: string, logFile: string): void {
       "case \"${1:-}\" in",
       "  \"--version\") echo '0.9.6' ;;",
       "  \"status\")",
-      "    if [[ -f .codegraph/initialized ]]; then",
+      "    if [[ -f .codegraph/unavailable ]]; then",
+      "      echo 'Temporary status failure'",
+      "    elif [[ -f .codegraph/unknown ]]; then",
+      "      echo 'CodeGraph Status'",
+      "      echo 'Status output unavailable'",
+      "    elif [[ -f .codegraph/stale ]]; then",
+      "      echo 'CodeGraph Status'",
+      "      echo 'Pending Changes'",
+      "      echo 'Run \"codegraph sync\" to update the index'",
+      "    elif [[ -f .codegraph/initialized ]]; then",
       "      echo 'CodeGraph Status'",
       "      echo 'Index is up to date'",
       "    else",
@@ -579,6 +588,171 @@ describe("init command", () => {
       expect(log).toContain("codegraph init -i .");
       expect(log).toContain("codegraph install --target codex --location global --yes");
       expect(log).toContain("codegraph install --target claude --location global --yes");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, CODEGRAPH_INIT_TIMEOUT_MS);
+
+  test("enabled applied init fails closed when the CodeGraph CLI is missing", () => {
+    const tmp = join(tmpdir(), `repo-harness-init-codegraph-missing-${Date.now()}`);
+    const source = join(tmp, "source");
+    const repo = join(tmp, "repo");
+    const home = join(tmp, "home");
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(home, { recursive: true });
+      setupFakeSource(source);
+
+      const result = runInit({
+        repo,
+        sourceRoot: source,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        verify: false,
+        env: {
+          ...process.env,
+          HOME: home,
+          AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
+          AGENTIC_DEV_CODEGRAPH_ALLOW_GLOBAL: "0",
+        },
+      });
+
+      const codegraphStep = result.steps.find((step) => step.step === "ensure codegraph index");
+      expect(result.exitCode).toBe(1);
+      expect(codegraphStep?.status).toBe("failed");
+      expect(codegraphStep?.detail).toContain("index unavailable");
+      expect(codegraphStep?.stderr).toContain("install with: bun add -g @colbymchenry/codegraph");
+      expect(codegraphStep?.stderr).toContain("repo-harness tools configure codegraph --target codex --location global");
+      expect(codegraphStep?.stderr).toContain("then run: codegraph init -i . && codegraph sync .");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, CODEGRAPH_INIT_TIMEOUT_MS);
+
+  test("enabled applied init fails closed when the CodeGraph index remains stale", () => {
+    const tmp = join(tmpdir(), `repo-harness-init-codegraph-stale-${Date.now()}`);
+    const source = join(tmp, "source");
+    const repo = join(tmp, "repo");
+    const home = join(tmp, "home");
+    const fakeBin = join(tmp, "bin");
+    const logFile = join(tmp, "codegraph.log");
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(join(repo, ".codegraph"), { recursive: true });
+      mkdirSync(home, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      writeFileSync(join(repo, ".codegraph", "stale"), "stale\n");
+      setupFakeSource(source);
+      writeFakeCodegraph(fakeBin, logFile);
+
+      const result = runInit({
+        repo,
+        sourceRoot: source,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        verify: false,
+        syncCodegraph: true,
+        env: {
+          ...process.env,
+          HOME: home,
+          PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+          AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
+        },
+      });
+
+      const codegraphStep = result.steps.find((step) => step.step === "ensure codegraph index");
+      expect(result.exitCode).toBe(1);
+      expect(codegraphStep?.status).toBe("failed");
+      expect(codegraphStep?.detail).toContain("index stale");
+      expect(codegraphStep?.stderr).toContain("run: codegraph sync .");
+      expect(readFileSync(logFile, "utf8")).toContain("codegraph sync .");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, CODEGRAPH_INIT_TIMEOUT_MS);
+
+  test("enabled applied init fails closed with a diagnostic command when the CodeGraph index status is unknown", () => {
+    const tmp = join(tmpdir(), `repo-harness-init-codegraph-unknown-${Date.now()}`);
+    const source = join(tmp, "source");
+    const repo = join(tmp, "repo");
+    const home = join(tmp, "home");
+    const fakeBin = join(tmp, "bin");
+    const logFile = join(tmp, "codegraph.log");
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(join(repo, ".codegraph"), { recursive: true });
+      mkdirSync(home, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      writeFileSync(join(repo, ".codegraph", "unknown"), "unknown\n");
+      setupFakeSource(source);
+      writeFakeCodegraph(fakeBin, logFile);
+
+      const result = runInit({
+        repo,
+        sourceRoot: source,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        verify: false,
+        env: {
+          ...process.env,
+          HOME: home,
+          PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+          AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
+        },
+      });
+
+      const codegraphStep = result.steps.find((step) => step.step === "ensure codegraph index");
+      expect(result.exitCode).toBe(1);
+      expect(codegraphStep?.status).toBe("failed");
+      expect(codegraphStep?.detail).toContain("index unknown");
+      expect(codegraphStep?.stderr).toContain("inspect with: codegraph status .");
+      expect(codegraphStep?.stderr).not.toContain("codegraph init -i .");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, CODEGRAPH_INIT_TIMEOUT_MS);
+
+  test("enabled applied init diagnoses unreadable status without reinstalling an available CodeGraph CLI", () => {
+    const tmp = join(tmpdir(), `repo-harness-init-codegraph-unavailable-${Date.now()}`);
+    const source = join(tmp, "source");
+    const repo = join(tmp, "repo");
+    const home = join(tmp, "home");
+    const fakeBin = join(tmp, "bin");
+    const logFile = join(tmp, "codegraph.log");
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(join(repo, ".codegraph"), { recursive: true });
+      mkdirSync(home, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      writeFileSync(join(repo, ".codegraph", "unavailable"), "unavailable\n");
+      setupFakeSource(source);
+      writeFakeCodegraph(fakeBin, logFile);
+
+      const result = runInit({
+        repo,
+        sourceRoot: source,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        verify: false,
+        env: {
+          ...process.env,
+          HOME: home,
+          PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+          AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
+        },
+      });
+
+      const codegraphStep = result.steps.find((step) => step.step === "ensure codegraph index");
+      expect(result.exitCode).toBe(1);
+      expect(codegraphStep?.status).toBe("failed");
+      expect(codegraphStep?.detail).toContain("index unavailable");
+      expect(codegraphStep?.stderr).toContain("inspect with: codegraph status .");
+      expect(codegraphStep?.stderr).not.toContain("install with:");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

@@ -1,7 +1,13 @@
+> **Archived**: 2026-08-20 14:33
+> **Related Plan**: plans/archive/plan-20260820-1255-fail-closed-codegraph-init.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260820-1433
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-08-20 12:55
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

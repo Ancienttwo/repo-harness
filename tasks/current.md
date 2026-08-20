@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-20T12:19:56+0800 -->
+<!-- updated_at: 2026-08-20T14:33:59+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Idle
-> **Updated At**: 2026-08-20T12:19:56+0800
-> **Source Branch**: codex/archctx-node-resilience
-> **Source Commit**: 5eab7116
+> **Status**: ManualClearedWithActiveWork
+> **Updated At**: 2026-08-20T14:33:59+0800
+> **Source Branch**: codex/fail-closed-codegraph-init
+> **Source Commit**: e6515102
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -17,11 +17,11 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Current Focus
 
-- Status: Idle
+- Status: ManualClearedWithActiveWork
 - Active Plan: (none)
 - Plan Status: (none)
-- Next Task: (none)
-- Clear Note: (none)
+- Next Task: inspect active worktree marker(s)
+- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
 
 ## Mainline Snapshot Reading
 
@@ -31,7 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- (none)
+- /private/tmp/repo-harness-wt-finish-abort-recovery: plans/plan-20260820-1245-finish-abort-recovery.md
+- /private/tmp/repo-harness-wt-finish-abort-recovery: active-worktree owner -> /private/tmp/repo-harness-wt-finish-abort-recovery
 ## Active Sprint
 
 - Sprint: (none)
@@ -58,16 +59,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260820-0515-archctx-node-resilience.md
- D tasks/contracts/20260820-0515-archctx-node-resilience.contract.md
- D tasks/notes/20260820-0515-archctx-node-resilience.notes.md
- D tasks/reviews/20260820-0515-archctx-node-resilience.review.md
+ D plans/plan-20260820-1255-fail-closed-codegraph-init.md
+ D tasks/contracts/20260820-1255-fail-closed-codegraph-init.contract.md
+ D tasks/notes/20260820-1255-fail-closed-codegraph-init.notes.md
+ D tasks/reviews/20260820-1255-fail-closed-codegraph-init.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260820-0515-archctx-node-resilience.md
-?? tasks/archive/contract-20260820-1219-archctx-node-resilience.md
-?? tasks/archive/notes-20260820-1219-archctx-node-resilience.md
-?? tasks/archive/review-20260820-1219-archctx-node-resilience.md
-?? tasks/archive/todo-20260820-1219-archctx-node-resilience.md
+?? plans/archive/plan-20260820-1255-fail-closed-codegraph-init.md
+?? tasks/archive/contract-20260820-1433-fail-closed-codegraph-init.md
+?? tasks/archive/notes-20260820-1433-fail-closed-codegraph-init.md
+?? tasks/archive/review-20260820-1433-fail-closed-codegraph-init.md
+?? tasks/archive/todo-20260820-1433-fail-closed-codegraph-init.md
 ```
 
 ## Source Artifacts

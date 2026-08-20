@@ -4,6 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
 import { listHelpers, protectedChildEnv, resolveHelper, runHelper } from "../../src/cli/runtime/helper-runner";
+import { RUN_HELP_GROUPS, RUN_HELP_MAX_HELPERS, RUN_HELP_MAX_LINES } from "../../src/cli/commands/run";
 
 const ROOT = join(import.meta.dir, "..", "..");
 const CLI = join(ROOT, "src/cli/index.ts");
@@ -274,6 +275,26 @@ describe("run command", () => {
     expect(res.stdout).toMatch(
       /check-task-workflow\s+Check workflow contract and policy compliance for the current repo/,
     );
+    expect(res.stdout).toContain("Planning & execution:");
+    expect(res.stdout).toContain("Verification & maintenance:");
+  }, 30_000);
+
+  test("run --help groups every real helper exactly once and stays within explicit budgets", () => {
+    const helpers = listHelpers(packageRuntimeEnv());
+    const realIds = helpers.map((helper) => helper.id).sort();
+    const groupedIds: string[] = RUN_HELP_GROUPS.flatMap((group) => group.helpers).sort();
+
+    expect(new Set(groupedIds).size).toBe(groupedIds.length);
+    expect(groupedIds).toEqual(realIds);
+    expect(helpers.length).toBeLessThanOrEqual(RUN_HELP_MAX_HELPERS);
+
+    const res = spawnSync("bun", [CLI, "run", "--help"], {
+      cwd: ROOT,
+      encoding: "utf-8",
+      env: packageRuntimeEnv(),
+    });
+    expect(res.status).toBe(0);
+    expect(res.stdout.trimEnd().split("\n").length).toBeLessThanOrEqual(RUN_HELP_MAX_LINES);
   }, 30_000);
 
   test("package sprint-backlog helper resolves the target repo root from runHelper", () => {

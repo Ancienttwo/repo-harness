@@ -725,16 +725,29 @@ export function runInit(
   if (codegraph && apply) {
     try {
       const cg = ensureCodegraph({ repoRoot, init: true, sync: syncCodegraph, env: commandEnv, host: target });
-      const cgFailed = cg.actions.some((entry) => entry.status === "failed");
+      const failedActions = cg.actions.filter((entry) => entry.status === "failed");
+      const indexReady = cg.projectIndexStatus === "up-to-date";
+      const cgFailed = failedActions.length > 0 || !indexReady;
+      const actionDetail = cg.actions.map((entry) => `${entry.action}:${entry.status}`).join(", ");
+      const indexDetail = `index ${cg.projectIndexStatus}`;
+      const indexRemediation = cg.projectIndexStatus === "unavailable" && cg.resolution.source === "missing"
+        ? `install with: ${cg.remediation.installCommand}; then run: ${cg.remediation.initCommand} && ${cg.remediation.syncCommand}`
+        : cg.projectIndexStatus === "unavailable" || cg.projectIndexStatus === "unknown"
+          ? `inspect with: ${cg.remediation.projectIndexCommand}`
+          : cg.projectIndexStatus === "stale"
+            ? `run: ${cg.remediation.syncCommand}`
+            : `run: ${cg.remediation.initCommand} && ${cg.remediation.syncCommand}`;
+      const failureDetail = [
+        ...failedActions.map((entry) => entry.stderr || `${entry.action} failed`),
+        ...(!indexReady
+          ? [`CodeGraph is enabled, but the project index is ${cg.projectIndexStatus}; ${indexRemediation}`]
+          : []),
+      ].filter(Boolean).join("\n");
       steps.push({
         step: "ensure codegraph index",
-        status: cg.actions.length === 0 ? "skipped" : cgFailed ? "failed" : "ok",
-        detail:
-          cg.resolution.source === "missing"
-            ? "codegraph CLI not found; skipped (install via: repo-harness tools ensure codegraph)"
-            : cg.actions.length > 0
-              ? cg.actions.map((entry) => `${entry.action}:${entry.status}`).join(", ")
-              : `index ${cg.status}`,
+        status: cgFailed ? "failed" : cg.actions.length === 0 ? "skipped" : "ok",
+        detail: actionDetail ? `${actionDetail}; ${indexDetail}` : indexDetail,
+        stderr: failureDetail || undefined,
       });
 
       const mcpHosts =
