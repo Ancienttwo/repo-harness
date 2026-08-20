@@ -1,9 +1,10 @@
-import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from 'fs';
+import { existsSync, lstatSync, readFileSync, realpathSync } from 'fs';
 import { dirname, extname, isAbsolute, join, resolve } from 'path';
 import { userInfo } from 'os';
 import { fileURLToPath } from 'url';
 import { ARCHCONTEXT_NODE_RANGE } from 'archctx-contracts';
 import { runProcess as runBoundedProcess } from '../../effects/process-runner';
+import { trustedNodeCandidates } from '../../effects/runtime/node-candidates';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(SCRIPT_DIR, '..', '..', '..');
@@ -60,42 +61,8 @@ function protectedPath(): string {
   ])].join(':');
 }
 
-function childDirectories(root: string): string[] {
-  if (!existsSync(root)) return [];
-  return readdirSync(root, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && !entry.isSymbolicLink())
-    .map((entry) => join(root, entry.name))
-    .sort();
-}
-
-function trustedNodeCandidates(): string[] {
-  const home = userInfo().homedir;
-  const nvmVersions = join(home, '.nvm', 'versions', 'node');
-  const candidates = [
-    '/usr/bin/node',
-    '/usr/local/bin/node',
-    '/opt/homebrew/bin/node',
-    ...childDirectories(nvmVersions).map((versionRoot) => join(versionRoot, 'bin', 'node')),
-  ];
-  const toolcacheRoots = process.platform === 'win32'
-    ? ['C:\\hostedtoolcache\\windows\\node']
-    : ['/opt/hostedtoolcache/node', '/Users/runner/hostedtoolcache/node', '/Users/runner/work/_tool/node'];
-  for (const root of toolcacheRoots) {
-    for (const versionRoot of childDirectories(root)) {
-      for (const architectureRoot of childDirectories(versionRoot)) {
-        candidates.push(
-          process.platform === 'win32'
-            ? join(architectureRoot, 'node.exe')
-            : join(architectureRoot, 'bin', 'node'),
-        );
-      }
-    }
-  }
-  return [...new Set(candidates)];
-}
-
 function trustedNodeRuntime(): string | undefined {
-  for (const candidate of trustedNodeCandidates()) {
+  for (const candidate of trustedNodeCandidates(userInfo().homedir)) {
     if (!isAbsolute(candidate) || !existsSync(candidate)) continue;
     const actual = realpathSync(candidate);
     const stat = lstatSync(actual);

@@ -22,6 +22,7 @@ import {
   type ArchctxProcessResult,
   type RunArchctxProcess,
 } from '../src/effects/architecture/archctx-provider';
+import { trustedNodeCandidates } from '../src/effects/runtime/node-candidates';
 import { architectureProjectionExitCode, buildArchitectureProjectionCommand } from '../src/cli/commands/architecture-projection';
 
 const roots: string[] = [];
@@ -247,7 +248,7 @@ describe('package-local ArchContext projection provider', () => {
     expect(readiness.apply.enabled).toBe(false);
   });
 
-  test('fails closed when PATH has no Node runtime compatible with archctx', () => {
+  test('fails closed when neither PATH nor the trusted candidates carry a compatible Node runtime', () => {
     const f = fixture();
     const fakeBin = join(f.root, 'bin');
     mkdirSync(fakeBin, { recursive: true });
@@ -261,9 +262,72 @@ describe('package-local ArchContext projection provider', () => {
       consumerRoot: f.consumerRoot,
       policy,
       env: pathOnlyEnv,
+      trustedNodeCandidateSource: () => [],
     });
     expect(readiness.projectionProvider.state).toBe('error');
     expect(readiness.projectionProvider.reason).toContain('requires Node >=24 <26');
+    expect(readiness.projectionProvider.reason).toContain('trusted candidates ((none))');
+  });
+
+  test('enumerates fixed system paths then sorted nvm versions in the shared trusted-candidate scan', () => {
+    const f = fixture();
+    const home = join(f.root, 'home');
+    const nvmRoot = join(home, '.nvm', 'versions', 'node');
+    for (const version of ['v20.11.0', 'v24.18.0']) {
+      mkdirSync(join(nvmRoot, version, 'bin'), { recursive: true });
+      const binary = join(nvmRoot, version, 'bin', 'node');
+      writeFileSync(binary, `#!/bin/sh\necho ${version}\n`);
+      chmodSync(binary, 0o755);
+    }
+    const candidates = trustedNodeCandidates(home);
+    expect(candidates.slice(0, 3)).toEqual(['/usr/bin/node', '/usr/local/bin/node', '/opt/homebrew/bin/node']);
+    expect(candidates.filter((candidate) => candidate.startsWith(home))).toEqual([
+      join(nvmRoot, 'v20.11.0', 'bin', 'node'),
+      join(nvmRoot, 'v24.18.0', 'bin', 'node'),
+    ]);
+  });
+
+  test('resolves a scrubbed-env Node runtime through the shared nvm scan when PATH has none', () => {
+    const f = fixture();
+    const fakeBin = join(f.root, 'bin');
+    mkdirSync(fakeBin, { recursive: true });
+    const incompatiblePathNode = join(fakeBin, 'node');
+    writeFileSync(incompatiblePathNode, '#!/bin/sh\necho v22.14.0\n');
+    chmodSync(incompatiblePathNode, 0o755);
+    const home = join(f.root, 'home');
+    const nvmRoot = join(home, '.nvm', 'versions', 'node');
+    for (const version of ['v20.11.0', 'v24.18.0']) {
+      mkdirSync(join(nvmRoot, version, 'bin'), { recursive: true });
+      const binary = join(nvmRoot, version, 'bin', 'node');
+      writeFileSync(binary, `#!/bin/sh\necho ${version}\n`);
+      chmodSync(binary, 0o755);
+    }
+    // The scrubbed bounded-verifier shape: REPO_HARNESS_NODE_BIN stripped whole.
+    const scrubbedEnv: NodeJS.ProcessEnv = { PATH: fakeBin, HOME: home };
+    const scoped = () => trustedNodeCandidates(home).filter((candidate) => candidate.startsWith(`${home}/`));
+    expect(resolveCompatibleNodeRuntime(scrubbedEnv, scoped))
+      .toBe(realpathSync(join(nvmRoot, 'v24.18.0', 'bin', 'node')));
+  });
+
+  test('applies the archctx Node range to trusted candidates and reports every scanned source', () => {
+    const f = fixture();
+    const fakeBin = join(f.root, 'bin');
+    mkdirSync(fakeBin, { recursive: true });
+    const incompatiblePathNode = join(fakeBin, 'node');
+    writeFileSync(incompatiblePathNode, '#!/bin/sh\necho v22.14.0\n');
+    chmodSync(incompatiblePathNode, 0o755);
+    const home = join(f.root, 'home');
+    const nvmRoot = join(home, '.nvm', 'versions', 'node');
+    mkdirSync(join(nvmRoot, 'v20.11.0', 'bin'), { recursive: true });
+    const staleNode = join(nvmRoot, 'v20.11.0', 'bin', 'node');
+    writeFileSync(staleNode, '#!/bin/sh\necho v20.11.0\n');
+    chmodSync(staleNode, 0o755);
+    const scrubbedEnv: NodeJS.ProcessEnv = { PATH: fakeBin, HOME: home };
+    const scoped = () => trustedNodeCandidates(home).filter((candidate) => candidate.startsWith(`${home}/`));
+    expect(() => resolveCompatibleNodeRuntime(scrubbedEnv, scoped)).toThrow(/requires Node >=24 <26/);
+    expect(() => resolveCompatibleNodeRuntime(scrubbedEnv, scoped)).toThrow(/REPO_HARNESS_NODE_BIN \(unset\)/);
+    expect(() => resolveCompatibleNodeRuntime(scrubbedEnv, scoped)).toThrow(new RegExp(`PATH \\(${fakeBin}\\)`));
+    expect(() => resolveCompatibleNodeRuntime(scrubbedEnv, scoped)).toThrow(new RegExp(`trusted candidates \\(${staleNode}\\)`));
   });
 
   test('uses the protected helper exact Node authority without widening PATH', () => {

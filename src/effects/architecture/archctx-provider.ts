@@ -1,8 +1,10 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import { userInfo } from 'node:os';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { ARCHCONTEXT_NODE_RANGE } from 'archctx-contracts';
+import { trustedNodeCandidates } from '../runtime/node-candidates';
 import { capabilityRegistryFromArchcontextNodes, type ArchcontextNodeFile } from '../../core/capabilities/registry';
 import {
   ARCHCTX_REQUIRED_VERSION,
@@ -28,6 +30,7 @@ export interface ArchctxProviderOptions {
   policy?: ArchitectureProjectionPolicy;
   env?: NodeJS.ProcessEnv;
   run?: RunArchctxProcess;
+  trustedNodeCandidateSource?: () => readonly string[];
   deadlineMs?: number;
   nowMs?: () => number;
 }
@@ -105,7 +108,19 @@ export function resolvePackageLocalArchctx(consumerRoot: string, requiredVersion
   return { binaryPath: realBinary, nodeRange: ARCHCONTEXT_NODE_RANGE, packageRoot: realPackage, version: requiredVersion };
 }
 
-export function resolveCompatibleNodeRuntime(env: NodeJS.ProcessEnv): string {
+/**
+ * Resolution order: the explicit `REPO_HARNESS_NODE_BIN` authority, then the
+ * inherited PATH, then the shared trusted-candidate scan. The third tier exists
+ * because the bounded verifier's env scrub strips the `REPO_HARNESS_` prefix
+ * whole, so a gate that reaches the architecture projection inside the sandbox
+ * sees neither the explicit runtime nor an nvm-managed Node on its protected
+ * PATH. Every tier applies the same `ARCHCONTEXT_NODE_RANGE` check and the
+ * exhausted case still fails closed.
+ */
+export function resolveCompatibleNodeRuntime(
+  env: NodeJS.ProcessEnv,
+  trustedCandidateSource: () => readonly string[] = () => trustedNodeCandidates(userInfo().homedir),
+): string {
   const explicitRuntime = env.REPO_HARNESS_NODE_BIN?.trim();
   if (explicitRuntime) {
     if (!isAbsolute(explicitRuntime)) throw new Error('REPO_HARNESS_NODE_BIN must be an absolute path');
@@ -133,7 +148,22 @@ export function resolveCompatibleNodeRuntime(env: NodeJS.ProcessEnv): string {
       if (result.status === 0 && Bun.semver.satisfies(version, ARCHCONTEXT_NODE_RANGE)) return realpathSync(candidate);
     }
   }
-  throw new Error(`archctx requires Node ${ARCHCONTEXT_NODE_RANGE}; no compatible node executable was found on PATH`);
+  const trustedCandidates = trustedCandidateSource();
+  for (const candidate of trustedCandidates) {
+    if (!isAbsolute(candidate) || !existsSync(candidate)) continue;
+    const actual = realpathSync(candidate);
+    const stat = statSync(actual);
+    if (!stat.isFile() || (stat.mode & 0o111) === 0) continue;
+    const result = spawnSync(actual, ['--version'], { env, encoding: 'utf8', timeout: 5_000 });
+    const version = (result.stdout ?? '').trim().replace(/^v/, '');
+    if (result.status === 0 && Bun.semver.satisfies(version, ARCHCONTEXT_NODE_RANGE)) return actual;
+  }
+  throw new Error(
+    `archctx requires Node ${ARCHCONTEXT_NODE_RANGE}; no compatible node executable was found. `
+    + `Scanned sources: REPO_HARNESS_NODE_BIN (unset), `
+    + `PATH (${pathValue || '(empty)'}), `
+    + `trusted candidates (${trustedCandidates.length > 0 ? trustedCandidates.join(', ') : '(none)'})`,
+  );
 }
 
 function runArchctxProcess(
@@ -145,7 +175,7 @@ function runArchctxProcess(
 ): ArchctxProcessResult {
   const env = options.env ?? process.env;
   if (options.run) return options.run(resolved.binaryPath, args, { cwd, timeoutMs, env });
-  const nodeExecutable = resolveCompatibleNodeRuntime(env);
+  const nodeExecutable = resolveCompatibleNodeRuntime(env, options.trustedNodeCandidateSource);
   return DEFAULT_RUNNER(nodeExecutable, [resolved.binaryPath, ...args], { cwd, timeoutMs, env });
 }
 
