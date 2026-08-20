@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-20T23:32:52+0800 -->
+<!-- updated_at: 2026-08-21T03:06:54+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-20T23:32:52+0800
-> **Source Branch**: codex/mcp-workspace-cleanup-target-binding
-> **Source Commit**: 36db8a2a
+> **Updated At**: 2026-08-21T03:06:54+0800
+> **Source Branch**: codex/windows-protected-helper-platform-contract
+> **Source Commit**: ed8146bc
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -31,8 +31,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/ancienttwo/Projects/repo-harness-wt-esa06-guarded-artifact-writer: plans/plan-20260820-2307-esa06-guarded-artifact-writer.md
-- /Users/ancienttwo/Projects/repo-harness-wt-esa06-guarded-artifact-writer: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-esa06-guarded-artifact-writer
+- /Users/ancienttwo/Projects/repo-harness-wt-bun-14-upgrade-take2: plans/plan-20260821-0303-bun-14-upgrade-take2.md
+- /Users/ancienttwo/Projects/repo-harness-wt-bun-14-upgrade-take2: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-bun-14-upgrade-take2
+- /Users/ancienttwo/Projects/repo-harness-wt-restamp-auto-publication: plans/plan-20260821-0222-restamp-auto-publication.md
+- /Users/ancienttwo/Projects/repo-harness-wt-restamp-auto-publication: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-restamp-auto-publication
 ## Active Sprint
 
 - Sprint: (none)
@@ -48,7 +50,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=completed, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: (none)
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Run focused/full verification, external acceptance, and workflow closeout.
 
 ## Checks
 
@@ -59,16 +61,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260820-2054-mcp-workspace-cleanup-target-binding.md
- D tasks/contracts/20260820-2054-mcp-workspace-cleanup-target-binding.contract.md
- D tasks/notes/20260820-2054-mcp-workspace-cleanup-target-binding.notes.md
- D tasks/reviews/20260820-2054-mcp-workspace-cleanup-target-binding.review.md
+ D plans/plan-20260820-2347-windows-protected-helper-platform-contract.md
+ D tasks/contracts/20260820-2347-windows-protected-helper-platform-contract.contract.md
+ D tasks/notes/20260820-2347-windows-protected-helper-platform-contract.notes.md
+ D tasks/reviews/20260820-2347-windows-protected-helper-platform-contract.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260820-2054-mcp-workspace-cleanup-target-binding.md
-?? tasks/archive/contract-20260820-2332-mcp-workspace-cleanup-target-binding.md
-?? tasks/archive/notes-20260820-2332-mcp-workspace-cleanup-target-binding.md
-?? tasks/archive/review-20260820-2332-mcp-workspace-cleanup-target-binding.md
-?? tasks/archive/todo-20260820-2332-mcp-workspace-cleanup-target-binding.md
+?? plans/archive/plan-20260820-2347-windows-protected-helper-platform-contract.md
+?? tasks/archive/contract-20260821-0306-windows-protected-helper-platform-contract.md
+?? tasks/archive/notes-20260821-0306-windows-protected-helper-platform-contract.md
+?? tasks/archive/review-20260821-0306-windows-protected-helper-platform-contract.md
+?? tasks/archive/todo-20260821-0306-windows-protected-helper-platform-contract.md
 ```
 
 ## Source Artifacts

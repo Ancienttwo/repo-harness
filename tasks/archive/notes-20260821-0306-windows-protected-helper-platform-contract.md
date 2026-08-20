@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-21 03:06
+> **Related Plan**: plans/archive/plan-20260820-2347-windows-protected-helper-platform-contract.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260821-0306
+
 # Implementation Notes: windows-protected-helper-platform-contract
 
 ## Frozen Decisions

@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-21 03:06
+> **Related Plan**: plans/archive/plan-20260820-2347-windows-protected-helper-platform-contract.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260821-0306
+
 # Task Review: windows-protected-helper-platform-contract
 
 > **Status**: Pending

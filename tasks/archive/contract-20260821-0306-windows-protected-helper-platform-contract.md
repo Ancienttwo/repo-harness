@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-21 03:06
+> **Related Plan**: plans/archive/plan-20260820-2347-windows-protected-helper-platform-contract.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260821-0306
+
 # Task Contract: windows-protected-helper-platform-contract
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260820-2347-windows-protected-helper-platform-contract.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->

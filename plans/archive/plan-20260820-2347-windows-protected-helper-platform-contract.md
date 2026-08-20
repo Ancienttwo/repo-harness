@@ -1,6 +1,6 @@
 # Plan: Windows Protected Helper Platform Contract
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260820-2347
 > **Slug**: windows-protected-helper-platform-contract
 > **Planning Source**: codex-plan
