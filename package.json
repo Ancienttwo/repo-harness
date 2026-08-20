@@ -69,12 +69,12 @@
   "devDependencies": {
     "@colbymchenry/codegraph": "1.5.0",
     "@types/bun": "latest",
-    "@types/cors": "^2.8.19",
-    "@types/express": "^5.0.6",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.28.0",
     "archctx": "0.4.4",
     "archctx-contracts": "0.4.4",
     "commander": "^15.0.0",
