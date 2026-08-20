@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-21T03:29:36+0800 -->
+<!-- updated_at: 2026-08-21T03:51:59+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-21T03:29:36+0800
-> **Source Branch**: codex/restamp-auto-publication
-> **Source Commit**: 687b4e28
+> **Updated At**: 2026-08-21T03:51:59+0800
+> **Source Branch**: main
+> **Source Commit**: 36c60876
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -48,7 +48,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=completed, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: (none)
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Fixture edit per option (a): drop the dirty-manifest setup from the shape-lock test (keep the other two tests unchanged); keep asserting the exact key order and absence of publication keys.
 
 ## Checks
 
@@ -56,19 +56,18 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: 9 changed/untracked path(s)
 
 ```
- D plans/plan-20260821-0222-restamp-auto-publication.md
- D tasks/contracts/20260821-0222-restamp-auto-publication.contract.md
- D tasks/notes/20260821-0222-restamp-auto-publication.notes.md
- D tasks/reviews/20260821-0222-restamp-auto-publication.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260821-0222-restamp-auto-publication.md
-?? tasks/archive/contract-20260821-0329-restamp-auto-publication.md
-?? tasks/archive/notes-20260821-0329-restamp-auto-publication.md
-?? tasks/archive/review-20260821-0329-restamp-auto-publication.md
-?? tasks/archive/todo-20260821-0329-restamp-auto-publication.md
+ D plans/plan-20260821-0335-restamp-ci-shape-fix.md
+ D tasks/contracts/20260821-0335-restamp-ci-shape-fix.contract.md
+ D tasks/notes/20260821-0335-restamp-ci-shape-fix.notes.md
+ D tasks/reviews/20260821-0335-restamp-ci-shape-fix.review.md
+?? plans/archive/plan-20260821-0335-restamp-ci-shape-fix.md
+?? tasks/archive/contract-20260821-0351-restamp-ci-shape-fix.md
+?? tasks/archive/notes-20260821-0351-restamp-ci-shape-fix.md
+?? tasks/archive/review-20260821-0351-restamp-ci-shape-fix.md
+?? tasks/archive/todo-20260821-0351-restamp-ci-shape-fix.md
 ```
 
 ## Source Artifacts
