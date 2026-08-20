@@ -41,8 +41,8 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 - root_cause: `src/cli/runtime/helper-runner.ts:28-33,391-402` pins protected dispatch to POSIX-only `/bin/bash` and `/usr/bin|/bin/git`, builds a colon-delimited Unix PATH/TMP contract, and provides no Windows host authority for the Git-for-Windows POSIX toolchain.
 - repro: on Windows run `repo-harness run contract-worktree status`; protected resolution throws `required system executable is unavailable: bash` before the packaged helper starts.
-- regression_guard: `tests/unit/windows-protected-helper-platform-contract.test.ts`
-- pre_fix_failure_artifact: `.ai/harness/runs/windows-protected-helper-platform-contract/pre-fix-regression.txt`
+- regression_guard: tests/unit/windows-protected-helper-platform-contract.test.ts
+- pre_fix_failure_artifact: .ai/harness/runs/windows-protected-helper-platform-contract/pre-fix-regression.txt
 
 ## Workflow Inventory
 
