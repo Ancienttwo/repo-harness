@@ -197,6 +197,7 @@ describe('workflow circuit breakers', () => {
     expect(circuitLimit(attempt({ kind: 'cross-model-consult' }))).toBe(0);
     expect(circuitLimit(attempt({ kind: 'cross-model-consult', riskTriggeredConsult: true }))).toBe(1);
     expect(circuitLimit(attempt({ kind: 'cross-model-consult', userRequestedConsult: true }))).toBe(1);
+    expect(circuitLimit(attempt({ kind: 'semantic-review' }))).toBe(1);
   });
 
   test('keeps independent runtime counters per circuit kind', () => withRepo((cwd) => {

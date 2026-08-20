@@ -54,6 +54,27 @@ function initRepo(): string {
   return dir;
 }
 
+function activateWorkPackage(repo: string): void {
+  const plan = "plans/plan-20260820-1436-fixture.md";
+  const contract = "tasks/contracts/20260820-1436-fixture.contract.md";
+  mkdirSync(join(repo, ".ai", "harness"), { recursive: true });
+  mkdirSync(join(repo, "plans"), { recursive: true });
+  mkdirSync(join(repo, "tasks", "contracts"), { recursive: true });
+  writeFileSync(join(repo, plan), [
+    "# Plan: fixture",
+    "",
+    "> **Status**: Executing",
+    `> **Task Contract**: \`${contract}\``,
+    "",
+  ].join("\n"));
+  writeFileSync(join(repo, contract), "# Task Contract: fixture\n");
+  writeFileSync(join(repo, ".ai", "harness", "policy.json"), JSON.stringify({
+    circuit_breakers: { semantic_reviews_per_work_package: 1 },
+  }));
+  writeFileSync(join(repo, ".ai", "harness", "active-plan"), `${plan}\n`);
+  writeFileSync(join(repo, ".ai", "harness", "active-worktree"), `${repo}\n`);
+}
+
 // A tiny stand-in for the claude/codex CLI: behavior selected by the
 // CROSS_REVIEW_FIXTURE_MODE env var so one script covers every provider
 // outcome case. Never invokes anything real.
@@ -334,6 +355,36 @@ describe("runCrossReview (codex mode, fixture provider process)", () => {
       const parsed = JSON.parse(command.output);
       expect(parsed.status).toBe("ok");
       expect(parsed.provider).toBe("codex");
+    });
+  }, 30_000);
+
+  test("an active work-package enters direct provider review once across later subject changes", () => {
+    withFixture((repo, provider) => {
+      activateWorkPackage(repo);
+      const counterFile = `${provider}.single-pass-count`;
+      const options = {
+        repoRoot: repo,
+        provider: "codex" as const,
+        providerCommand: provider,
+        timeoutMs: 5000,
+        env: {
+          ...process.env,
+          CROSS_REVIEW_FIXTURE_MODE: "success",
+          CROSS_REVIEW_COUNTER_FILE: counterFile,
+        },
+      };
+
+      const first = runCrossReviewCommand(options);
+      expect(first.exitCode).toBe(0);
+      expect(readFileSync(counterFile, "utf8").trim()).toBe("1");
+
+      writeFileSync(join(repo, "README.md"), "# fixture\npost-review correction\n");
+      const second = runCrossReviewCommand(options);
+      expect(second.exitCode).toBe(1);
+      expect(second.result.status).toBe("failed");
+      if (second.result.status === "failed") expect(second.result.code).toBe("review_budget_exhausted");
+      expect(second.output).toContain("one semantic review");
+      expect(readFileSync(counterFile, "utf8").trim()).toBe("1");
     });
   }, 30_000);
 });
@@ -660,13 +711,26 @@ describe("pure classification and parsing helpers (src/core/review/cross-review.
     expect(matchesAuthFailureSignal("boom: internal error")).toBe(false);
   });
 
-  test("parseFindings extracts [P1]/[P2] lines and ignores everything else", () => {
-    const findings = parseFindings(["some prose", "## [P1] critical heading", "-[P1] compact bullet", "- [P1] critical thing", "[P2] minor thing", ""].join("\n"));
+  test("parseFindings extracts plain and Markdown-wrapped [P1]/[P2] lines and ignores everything else", () => {
+    const findings = parseFindings([
+      "some prose",
+      "## [P1] critical heading",
+      "-[P1] compact bullet",
+      "- [P1] critical thing",
+      "[P2] minor thing",
+      "**[P1] bold critical heading**",
+      "- **[P2]** bold marker advisory",
+      "**[P1]** bold marker critical",
+      "",
+    ].join("\n"));
     expect(findings).toEqual([
       { severity: "P1", text: "critical heading" },
       { severity: "P1", text: "compact bullet" },
       { severity: "P1", text: "critical thing" },
       { severity: "P2", text: "minor thing" },
+      { severity: "P1", text: "bold critical heading" },
+      { severity: "P2", text: "bold marker advisory" },
+      { severity: "P1", text: "bold marker critical" },
     ]);
   });
 

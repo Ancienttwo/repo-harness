@@ -272,6 +272,10 @@ export interface RunCrossReviewInput {
   readonly claudeConfigDir?: string;
   readonly env?: NodeJS.ProcessEnv;
   readonly now?: () => number;
+  /** Runs after scope capture but before prompt construction or provider spawn. */
+  readonly admitProviderInvocation?: (scope: CrossReviewScope) =>
+    | { readonly allowed: true }
+    | { readonly allowed: false; readonly code: "degraded_scope" | "review_budget_exhausted"; readonly message: string };
 }
 
 /**
@@ -296,6 +300,16 @@ export function runCrossReview(input: RunCrossReviewInput): CrossReviewResult {
     };
   }
   const scope = scopeCapture;
+  const admission = input.admitProviderInvocation?.(scope);
+  if (admission && !admission.allowed) {
+    return {
+      status: "failed",
+      provider: input.provider,
+      scope,
+      code: admission.code,
+      message: admission.message,
+    };
+  }
   const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS[input.provider];
 
   let command: string;

@@ -460,6 +460,9 @@ describe("create-project-dirs runtime smoke", () => {
       // scripts/ensure-task-workflow.sh (its embedded POLICY_EOF fallback seed).
       const fallbackSeedPolicy = ensureTaskWorkflowSeedPolicy();
       const repoPolicy = JSON.parse(readFileSync(join(ROOT, ".ai/harness/policy.json"), "utf-8"));
+      for (const seeded of [policy, tsDefaultPolicy, fallbackSeedPolicy, repoPolicy]) {
+        expect(seeded.circuit_breakers.semantic_reviews_per_work_package).toBe(1);
+      }
       for (const seeded of [policy, tsDefaultPolicy, fallbackSeedPolicy]) {
         expect(seeded.context.capability_source).toBe("registry");
       }

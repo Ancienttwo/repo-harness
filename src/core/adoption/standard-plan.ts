@@ -369,6 +369,14 @@ export function defaultPolicy(documentationProfile: string): JsonObject {
         ],
       },
     },
+    circuit_breakers: {
+      guard_repeat: 2,
+      review: { lite: 1, standard: 1, strict: 2 },
+      semantic_reviews_per_work_package: 1,
+      subagents: { default: 2, strict_explicit_contract: 3 },
+      repair_loops: 2,
+      cross_model_consults_default: 0,
+    },
     upgrade: {
       strategy_version: 1,
       remove_only_ownership: "known_generated",

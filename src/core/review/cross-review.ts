@@ -16,7 +16,7 @@ export const CROSS_REVIEW_PROVIDER_MODES = ["claude", "codex"] as const;
 export type CrossReviewProviderMode = (typeof CROSS_REVIEW_PROVIDER_MODES)[number];
 
 // Closed error-code union (plan "Trace C" + SSD-04 acceptance): every
-// provider/scope failure mode is one of these six, never a seventh code and
+// provider/scope/admission failure mode is one of these codes and
 // never a fallback to another provider or a synthesized pass.
 export const CROSS_REVIEW_ERROR_CODES = [
   "timeout",
@@ -25,6 +25,7 @@ export const CROSS_REVIEW_ERROR_CODES = [
   "auth_failure",
   "provider_nonzero",
   "degraded_scope",
+  "review_budget_exhausted",
 ] as const;
 export type CrossReviewErrorCode = (typeof CROSS_REVIEW_ERROR_CODES)[number];
 
@@ -104,12 +105,19 @@ export type CrossReviewResult = CrossReviewSuccess | CrossReviewFailure | CrossR
 
 // --- Finding / recommendation parsing (pure text processing) ---------------
 
-const FINDING_LINE_PATTERN = /^\s*(?:(?:[-*]\s*)|(?:#{1,6}\s+))?\[(P1|P2)\]\s*(.+)$/;
+const FINDING_PREFIX_PATTERN = /^(?:-\s*|\*\s+|#{1,6}\s+)?/;
+const FINDING_LINE_PATTERN = /^(?:\*\*|__)?\[(P1|P2)\](?:\*\*|__)?\s*(.+)$/;
 
 export function parseFindings(transcript: string): readonly CrossReviewFinding[] {
   const findings: CrossReviewFinding[] = [];
   for (const rawLine of transcript.split(/\r?\n/)) {
-    const match = FINDING_LINE_PATTERN.exec(rawLine);
+    let line = rawLine.trim();
+    if ((line.startsWith("**") && line.endsWith("**"))
+      || (line.startsWith("__") && line.endsWith("__"))) {
+      line = line.slice(2, -2).trim();
+    }
+    line = line.replace(FINDING_PREFIX_PATTERN, "");
+    const match = FINDING_LINE_PATTERN.exec(line);
     if (!match) continue;
     const severity = match[1] as "P1" | "P2";
     const text = match[2].trim();

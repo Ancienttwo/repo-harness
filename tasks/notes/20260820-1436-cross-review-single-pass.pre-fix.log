@@ -1,0 +1,14 @@
+REGRESSION_GUARD=tests/cli/cross-review.test.ts
+COMMAND=bun test tests/cli/cross-review.test.ts --test-name-pattern "active work-package|Markdown-wrapped"
+
+(fail) runCrossReview (codex mode, fixture provider process) > an active work-package enters direct provider review once across later subject changes
+Expected second exitCode: 1
+Received second exitCode: 0
+
+(fail) pure classification and parsing helpers (src/core/review/cross-review.ts) > parseFindings extracts plain and Markdown-wrapped [P1]/[P2] lines and ignores everything else
+Expected bold P1/P2 findings: 2
+Received bold P1/P2 findings: 0
+
+0 pass
+2 fail
+PRE_FIX_EXIT=1
