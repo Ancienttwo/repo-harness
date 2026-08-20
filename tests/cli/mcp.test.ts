@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'child_process';
+import { createHash } from 'crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -84,6 +85,51 @@ describe('mcp command', () => {
       const goalPath = join(repoRoot, '.ai/harness/handoff/codex-goal.md');
       expect(existsSync(goalPath)).toBe(true);
       expect(readFileSync(goalPath, 'utf-8')).toContain('## Host-native /goal prompt');
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+      rmSync(repoHarnessHome, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test('prepare-goal regenerates an existing goal only with --expected-sha256', () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-goal-regen-'));
+    const repoHarnessHome = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-goal-regen-home-'));
+    try {
+      mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
+      mkdirSync(join(repoRoot, 'plans/prds'), { recursive: true });
+      mkdirSync(join(repoRoot, 'plans/sprints'), { recursive: true });
+      writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
+      writeFileSync(join(repoRoot, 'plans/prds/example.prd.md'), '# Example PRD\n');
+      writeFileSync(join(repoRoot, 'plans/sprints/example.sprint.md'), '# Example Sprint\n\n- [ ] Task\n');
+
+      const baseArgs = [
+        'prepare-goal',
+        '--repo',
+        repoRoot,
+        '--prd',
+        join(repoRoot, 'plans/prds/example.prd.md'),
+        '--sprint',
+        join(repoRoot, 'plans/sprints/example.sprint.md'),
+      ];
+      const env = { REPO_HARNESS_HOME: repoHarnessHome };
+
+      const first = runMcp(baseArgs, env);
+      expect(first.status).toBe(0);
+
+      const goalPath = join(repoRoot, '.ai/harness/handoff/codex-goal.md');
+      const created = readFileSync(goalPath, 'utf-8');
+
+      const second = runMcp(baseArgs, env);
+      expect(second.status).not.toBe(0);
+      expect(second.stderr).toContain('WOULD_OVERWRITE');
+      expect(readFileSync(goalPath, 'utf-8')).toBe(created);
+
+      const sha256 = createHash('sha256').update(created).digest('hex');
+      const third = runMcp([...baseArgs, '--extra-instructions', 'Regenerated body.', '--expected-sha256', sha256], env);
+      expect(third.status).toBe(0);
+      const regenerated = readFileSync(goalPath, 'utf-8');
+      expect(regenerated).toContain('Regenerated body.');
+      expect(regenerated).not.toBe(created);
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
       rmSync(repoHarnessHome, { recursive: true, force: true });

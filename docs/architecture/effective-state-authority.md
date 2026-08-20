@@ -147,8 +147,15 @@ calibration numbers are not release evidence.
 - No old/new resolver feature flag or dual steady-state implementation is allowed.
 - Cache or current-snapshot availability cannot be used as an optimization input until it can be proven not to become authority.
 - The first expected 10x pressure point is repeated synchronous Git/source collection, not pure projection.
-- ESA-06 workflow-artifact overwrite semantics remain deferred; this authority
-  convergence does not introduce a revision-precondition compatibility mode.
+- ESA-06 shipped at 0.16.1 as a mandatory revision precondition, not as a
+  compatibility mode: the MCP workflow-artifact write tools replaced boolean
+  `overwrite` with optional `expected_sha256`, and `overwrite` is rejected
+  outright rather than reinterpreted. Writes commit through
+  `src/cli/mcp/guarded-write.ts` (symlink and regular-file guards, hash
+  precondition, temp + fsync + rename + parent fsync) while `paths.ts` keeps
+  sole containment authority. Cross-process locking stays deferred, so the
+  guard is exact within one server process and leaves a microsecond
+  check-to-rename window across processes.
 - PID reuse can conservatively make a stale token appear live; the bounded
   timeout and verified manual cleanup path preserve mutual exclusion without a
   new host-native dependency. Active hostile ancestor rename after the final

@@ -1,7 +1,13 @@
+> **Archived**: 2026-08-21 00:51
+> **Related Plan**: plans/archive/plan-20260820-2307-esa06-guarded-artifact-writer.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260821-0051
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-08-20 23:07
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.
