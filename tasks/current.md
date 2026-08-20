@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-21T00:51:50+0800 -->
+<!-- updated_at: 2026-08-21T03:29:36+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-21T00:51:50+0800
-> **Source Branch**: codex/esa06-guarded-artifact-writer
-> **Source Commit**: 621074b0
+> **Updated At**: 2026-08-21T03:29:36+0800
+> **Source Branch**: codex/restamp-auto-publication
+> **Source Commit**: 687b4e28
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -31,8 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/ancienttwo/Projects/repo-harness-wt-windows-protected-helper-platform-contract: plans/plan-20260820-2347-windows-protected-helper-platform-contract.md
-- /Users/ancienttwo/Projects/repo-harness-wt-windows-protected-helper-platform-contract: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-windows-protected-helper-platform-contract
+- /Users/ancienttwo/Projects/repo-harness-wt-bun-14-upgrade-take2: plans/plan-20260821-0303-bun-14-upgrade-take2.md
+- /Users/ancienttwo/Projects/repo-harness-wt-bun-14-upgrade-take2: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-bun-14-upgrade-take2
 ## Active Sprint
 
 - Sprint: (none)
@@ -59,16 +59,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260820-2307-esa06-guarded-artifact-writer.md
- D tasks/contracts/20260820-2307-esa06-guarded-artifact-writer.contract.md
- D tasks/notes/20260820-2307-esa06-guarded-artifact-writer.notes.md
- D tasks/reviews/20260820-2307-esa06-guarded-artifact-writer.review.md
+ D plans/plan-20260821-0222-restamp-auto-publication.md
+ D tasks/contracts/20260821-0222-restamp-auto-publication.contract.md
+ D tasks/notes/20260821-0222-restamp-auto-publication.notes.md
+ D tasks/reviews/20260821-0222-restamp-auto-publication.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260820-2307-esa06-guarded-artifact-writer.md
-?? tasks/archive/contract-20260821-0051-esa06-guarded-artifact-writer.md
-?? tasks/archive/notes-20260821-0051-esa06-guarded-artifact-writer.md
-?? tasks/archive/review-20260821-0051-esa06-guarded-artifact-writer.md
-?? tasks/archive/todo-20260821-0051-esa06-guarded-artifact-writer.md
+?? plans/archive/plan-20260821-0222-restamp-auto-publication.md
+?? tasks/archive/contract-20260821-0329-restamp-auto-publication.md
+?? tasks/archive/notes-20260821-0329-restamp-auto-publication.md
+?? tasks/archive/review-20260821-0329-restamp-auto-publication.md
+?? tasks/archive/todo-20260821-0329-restamp-auto-publication.md
 ```
 
 ## Source Artifacts

@@ -118,6 +118,29 @@ export function architectureProjectionJobState(
   });
 }
 
+export function readArchitectureProjectionReceipt(
+  repoRoot: string,
+  jobId: string,
+): ArchitectureProjectionReceiptV1 | null {
+  if (!/^job-[a-f0-9]{24}$/.test(jobId)) return null;
+  const root = realpathSync(repoRoot);
+  return withExclusiveDirectoryLock(root, LOCK_PATH, () => {
+    const path = pathFor(root, 'receipts', jobId);
+    return existsSync(path) ? readJson<ArchitectureProjectionReceiptV1>(path) : null;
+  });
+}
+
+/** Newest durable receipt by completion time; the manual publication entry's provider authority. */
+export function latestArchitectureProjectionReceipt(repoRoot: string): ArchitectureProjectionReceiptV1 | null {
+  const root = realpathSync(repoRoot);
+  return withExclusiveDirectoryLock(root, LOCK_PATH, () =>
+    names(root, 'receipts')
+      .map((name) => readJson<ArchitectureProjectionReceiptV1>(join(root, directory('receipts'), name)))
+      .sort((left, right) => left.completedAt.localeCompare(right.completedAt) || left.jobId.localeCompare(right.jobId))
+      .at(-1) ?? null,
+  );
+}
+
 export function architectureProjectionDeadLetterForSourceKeys(
   repoRoot: string,
   sourceKeys: readonly string[],
