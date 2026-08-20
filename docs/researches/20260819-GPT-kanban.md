@@ -1299,3 +1299,7 @@ task_id preimage 含 `repoIdentity`（git common dir 绝对路径，`src/effects
 | WP-C Board | WP2（`tasks/todos.md` read-only board projection 行） | 未动 |
 | WP-D Hook | WP3（`tasks/todos.md` host-aware hook visibility 行） | 未动 |
 | Deferred WP-E | WP4（conditional metadata relocation 行） | 不排期 |
+
+## Addendum (2026-08-20): cross-machine coordination stays a projection-source seam
+
+Ledger closure note: the deferred "cloud / cross-machine coordination" row was retired from `tasks/todos.md` as a design-decision record rather than deferrable work. The decision it recorded stays binding: WP1's correctness comes from git-derived, clock-free reclaim (worktree absence from `git worktree list` is the only reclaim evidence), and a pluggable lease store spanning machines would force that down to a TTL-lease consistency model. If a real multi-machine need ever appears, the forward seam is an additional projection input source (for example `gh pr list`) on top of the versioned `protocol: 1, kind: 'repo-harness-board'` envelope — never a swappable lease store.
