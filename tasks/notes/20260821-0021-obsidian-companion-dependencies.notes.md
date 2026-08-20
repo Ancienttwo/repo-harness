@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260821-0021-obsidian-companion-dependencies.md
 > **Contract**: tasks/contracts/20260821-0021-obsidian-companion-dependencies.contract.md
 > **Review**: tasks/reviews/20260821-0021-obsidian-companion-dependencies.review.md
-> **Last Updated**: 2026-08-21 02:40
+> **Last Updated**: 2026-08-21 03:43
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -99,6 +99,16 @@
   architecture/task synchronization checks pass. The final canonical round is
   intentionally deferred until the contract and frozen implementation are
   committed, so it runs once against the exact authority it will bind.
+- Candidate-CLI canonical run `run-20260821T030515-29706` proved the budget
+  ordering fix: the 2,118,892ms full-suite command completed inside the
+  3,600,000ms inner deadline and the 3,660,000ms outer wrapper remained alive.
+  The suite itself returned 2765 pass, 1 skip, 4 fail because four
+  `tests/state/adapter-parity.test.ts` cases hit their 30-second test timeout
+  under full-suite load. The exact file immediately passed 17/17 in 53.84s
+  when run alone, with the affected cases taking 2.7s, 2.9s, 2.7s, and 15.6s.
+  This is an unrelated load-sensitive gate outside the approved implementation
+  scope; no adapter or timeout code was changed and the expensive round was not
+  repeated again.
 
 ## Promotion Filter
 

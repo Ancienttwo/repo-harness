@@ -5,10 +5,10 @@
 > **Contract**: tasks/contracts/20260821-0021-obsidian-companion-dependencies.contract.md
 > **Notes File**: tasks/notes/20260821-0021-obsidian-companion-dependencies.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-08-21 02:40
+> **Last Updated**: 2026-08-21 03:43
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: sha256:6d714814716d4cc034d70aa99cd79b5fe25a7e1038378626a8a08472cc47f2f2
+> **Reviewed Subject SHA256**: sha256:28a013dd831864694eb76ae9ba5b8dbe1cadef00cb9bd6612ac1a50adfe12641
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: 7ce86fddbd628bbbd3948002b1c84b187624fb56
 
@@ -17,7 +17,7 @@
 - Verdict: pass
 - Change type: code-change
 - Intended files changed: manifest/catalog, global install/update transaction, tooling projection, install-profile docs, focused tests, and workflow artifacts
-- Actual files changed: 22 product/doc/test paths in the normalized review subject plus plan, contract, review, notes, and `tasks/todos.md`
+- Actual files changed: 23 product/doc/test paths in the normalized review subject plus plan, contract, review, notes, and `tasks/todos.md`; the additional path is the automatic architecture projection manifest
 - Commands passed: all focused Obsidian/catalog/install/tooling tests; 35 focused verifier/projection/runner tests; six non-test required checks; helper mirror and whitespace checks
 - Residual risks: upstream companion revisions remain deliberately pinned; updating them requires new subtree digests and the same integrity tests
 - Reviewer action required: none for implementation correctness
@@ -69,6 +69,11 @@
   correction keeps one fixed, non-overridable inner authority at 3,600,000ms,
   keeps the outer helper 60 seconds higher, and removes four duplicate focused
   commands already covered by `tests_pass`.
+- Candidate-CLI run `run-20260821T030515-29706` proves that correction at
+  runtime: the 2,118,892ms suite completed without an inner or outer budget
+  kill. Canonical acceptance remains unavailable because four unrelated
+  adapter-parity cases timed out under full-suite load; their exact test file
+  immediately passed 17/17 alone in 53.84s.
 - Evidence binding correctly refused the earlier dirty/untracked contract. The
   current closeout slice authorizes a local commit before the one final retry.
 - Advisory: the tooling probe reports Waza staging drift and a timed-out optional Skills CLI probe; these are environment readiness findings, not Obsidian implementation failures.
@@ -85,8 +90,9 @@
 ## Failing Items
 
 - Canonical `verify-sprint --prepare-acceptance` run
-  `run-20260821T021225-96548` is superseded as failed evidence by the approved
-  fixed-budget correction; the final committed-authority retry is pending.
+  `run-20260821T030515-29706` completed the full suite inside the corrected
+  budget but failed on four load-sensitive adapter-parity timeouts; no
+  AcceptanceReceipt was produced.
 
 ## Retest Steps
 
