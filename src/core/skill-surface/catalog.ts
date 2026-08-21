@@ -103,6 +103,12 @@ export type RequiredExternalSkillInstallGroup =
   | { readonly status: "not_explicit_only"; readonly name: string }
   | { readonly status: "missing_integrity"; readonly name: string };
 
+export type RequiredExternalDependencyInstallGroups =
+  | { readonly status: "selected"; readonly groups: readonly IntegrityBoundExternalSkillInstallGroup[] }
+  | { readonly status: "missing"; readonly name: string }
+  | { readonly status: "not_explicit_only"; readonly name: string }
+  | { readonly status: "missing_integrity"; readonly name: string };
+
 export type SkillSurfaceCatalogDiagnosticCode =
   | "MANIFEST_MISSING"
   | "INVALID_JSON"
@@ -118,6 +124,11 @@ export type SkillSurfaceCatalogDiagnosticCode =
   | "INVALID_INTEGRITY_SCOPE"
   | "DUPLICATE_NAME"
   | "DUPLICATE_SOURCE"
+  | "UNKNOWN_REQUIREMENT"
+  | "SELF_REQUIREMENT"
+  | "DUPLICATE_REQUIREMENT"
+  | "CYCLIC_REQUIREMENT"
+  | "HOST_INCOMPATIBLE_REQUIREMENT"
   | "COMPONENT_NOT_IN_PROFILE"
   | "RETIREMENT_CANDIDATE_NOT_OBJECT"
   | "RETIREMENT_REPLACEMENT_UNKNOWN"
@@ -588,6 +599,45 @@ export function validateSkillSurfaceCatalogValue(
   }
 
   for (const [index, pkg] of packages.entries()) {
+    const seenRequirements = new Set<string>();
+    for (const [requirementIndex, requirement] of pkg.requires.entries()) {
+      const requirementPath = `packages[${index}].requires[${requirementIndex}]`;
+      if (seenRequirements.has(requirement)) {
+        diagnostics.push(diagnostic(
+          "DUPLICATE_REQUIREMENT",
+          requirementPath,
+          `${pkg.name}: duplicate requirement "${requirement}"`,
+        ));
+        continue;
+      }
+      seenRequirements.add(requirement);
+      if (requirement === pkg.name) {
+        diagnostics.push(diagnostic(
+          "SELF_REQUIREMENT",
+          requirementPath,
+          `${pkg.name}: a package cannot require itself`,
+        ));
+        continue;
+      }
+      const targetIndex = names.get(requirement);
+      if (targetIndex === undefined) {
+        diagnostics.push(diagnostic(
+          "UNKNOWN_REQUIREMENT",
+          requirementPath,
+          `${pkg.name}: required package "${requirement}" is not in this catalog`,
+        ));
+        continue;
+      }
+      const target = packages[targetIndex];
+      const unsupportedHosts = pkg.hosts.filter((host) => !target.hosts.includes(host));
+      if (unsupportedHosts.length > 0) {
+        diagnostics.push(diagnostic(
+          "HOST_INCOMPATIBLE_REQUIREMENT",
+          requirementPath,
+          `${pkg.name}: required package "${requirement}" does not support hosts ${unsupportedHosts.join(", ")}`,
+        ));
+      }
+    }
     if (pkg.integrity !== null && (pkg.kind !== "external" || pkg.profiles.length > 0)) {
       diagnostics.push(diagnostic(
         "INVALID_INTEGRITY_SCOPE",
@@ -615,6 +665,36 @@ export function validateSkillSurfaceCatalogValue(
       ));
     }
   }
+
+  const visitState = new Map<string, "visiting" | "visited">();
+  const reportedCycles = new Set<string>();
+  const visitRequirements = (name: string, trail: readonly string[]): void => {
+    const state = visitState.get(name);
+    if (state === "visited") return;
+    if (state === "visiting") {
+      const start = trail.indexOf(name);
+      const cycle = [...trail.slice(start), name];
+      const key = [...new Set(cycle)].sort().join("\0");
+      if (!reportedCycles.has(key)) {
+        reportedCycles.add(key);
+        diagnostics.push(diagnostic(
+          "CYCLIC_REQUIREMENT",
+          `packages[${names.get(name) ?? 0}].requires`,
+          `dependency cycle: ${cycle.join(" -> ")}`,
+        ));
+      }
+      return;
+    }
+    visitState.set(name, "visiting");
+    const pkgIndex = names.get(name);
+    if (pkgIndex !== undefined) {
+      for (const requirement of packages[pkgIndex].requires) {
+        if (requirement !== name && names.has(requirement)) visitRequirements(requirement, [...trail, name]);
+      }
+    }
+    visitState.set(name, "visited");
+  };
+  for (const name of names.keys()) visitRequirements(name, []);
 
   if (options.exists) {
     for (const [index, pkg] of packages.entries()) {
@@ -817,6 +897,75 @@ export function requiredExplicitExternalSkillInstallGroup(
       integrityBySkill: { [name]: named.integrity },
     },
   };
+}
+
+/** Stable transitive dependency names for one package, excluding the root. */
+export function dependencyClosureNames(
+  catalog: SkillSurfaceCatalog,
+  rootName: string,
+): readonly string[] {
+  const byName = new Map(catalog.packages.map((pkg) => [pkg.name, pkg]));
+  const ordered: string[] = [];
+  const visited = new Set<string>();
+  const visit = (name: string): void => {
+    if (visited.has(name)) return;
+    visited.add(name);
+    const pkg = byName.get(name);
+    if (pkg === undefined) return;
+    for (const requirement of pkg.requires) {
+      if (!ordered.includes(requirement)) ordered.push(requirement);
+      visit(requirement);
+    }
+  };
+  visit(rootName);
+  return ordered;
+}
+
+/**
+ * Resolve all transitive external dependencies of one catalog package and
+ * group them by immutable provider/host projection. The root package itself
+ * is not selected; ordinary profile installation therefore remains unable to
+ * trigger explicit-only downloads through a facade dependency edge.
+ */
+export function requiredExplicitExternalDependencyInstallGroups(
+  catalog: SkillSurfaceCatalog,
+  rootName: string,
+  hosts: readonly SkillSurfaceHost[],
+): RequiredExternalDependencyInstallGroups {
+  const byName = new Map(catalog.packages.map((pkg) => [pkg.name, pkg]));
+  const root = byName.get(rootName);
+  if (root === undefined) return { status: "missing", name: rootName };
+  const ordered = dependencyClosureNames(catalog, rootName)
+    .map((name) => byName.get(name))
+    .filter((pkg): pkg is SkillSurfacePackage => pkg?.kind === "external");
+
+  const groups = new Map<string, {
+    provider: string;
+    hosts: SkillSurfaceHost[];
+    skills: string[];
+    integrityBySkill: Record<string, string>;
+  }>();
+  for (const pkg of ordered) {
+    if (pkg.provider === null) return { status: "missing", name: pkg.name };
+    if (pkg.profiles.length !== 0) return { status: "not_explicit_only", name: pkg.name };
+    if (pkg.integrity === null) return { status: "missing_integrity", name: pkg.name };
+    const selectedHosts = hosts.filter((host) => pkg.hosts.includes(host));
+    if (selectedHosts.length === 0) return { status: "missing", name: pkg.name };
+    const key = `${pkg.provider}\u0000${selectedHosts.join("\u0000")}`;
+    const group = groups.get(key) ?? {
+      provider: pkg.provider,
+      hosts: [...selectedHosts],
+      skills: [],
+      integrityBySkill: {},
+    };
+    if (!group.skills.includes(pkg.name)) {
+      group.skills.push(pkg.name);
+      group.integrityBySkill[pkg.name] = pkg.integrity;
+    }
+    groups.set(key, group);
+  }
+  if (groups.size === 0) return { status: "missing", name: rootName };
+  return { status: "selected", groups: [...groups.values()] };
 }
 
 /**

@@ -1,10 +1,14 @@
 import { existsSync, lstatSync, readFileSync, realpathSync } from 'fs';
 import { dirname, extname, isAbsolute, join, resolve } from 'path';
-import { userInfo } from 'os';
 import { fileURLToPath } from 'url';
 import { ARCHCONTEXT_NODE_RANGE } from 'archctx-contracts';
 import { runProcess as runBoundedProcess } from '../../effects/process-runner';
 import { trustedNodeCandidates } from '../../effects/runtime/node-candidates';
+import {
+  protectedHelperRuntimeEnv,
+  resolveProtectedHelperPlatform,
+  type ProtectedHelperPlatform,
+} from './protected-helper-platform';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(SCRIPT_DIR, '..', '..', '..');
@@ -12,26 +16,9 @@ const PACKAGE_HELPERS_ROOT = join(PACKAGE_ROOT, 'assets', 'templates', 'helpers'
 const PACKAGE_CONTRACT = join(PACKAGE_ROOT, 'assets', 'workflow-contract.v1.json');
 const PACKAGE_WORKFLOW_STATE = join(PACKAGE_ROOT, 'assets', 'hooks', 'lib', 'workflow-state.sh');
 const PROTECTED_HELPERS = new Set(['acceptance-receipt', 'contract-worktree', 'ship-worktrees', 'merge-gate']);
-const VERIFIER_HELPER_TIMEOUT_MS = 1_260_000;
+const VERIFIER_HELPER_TIMEOUT_MS = 3_660_000;
 const CLOSEOUT_HELPER_TIMEOUT_MS = 900_000;
 const ORDINARY_HELPER_TIMEOUT_MS = 120_000;
-
-function fixedSystemExecutable(label: string, candidates: readonly string[]): string {
-  for (const candidate of candidates) {
-    if (!existsSync(candidate)) continue;
-    const stat = lstatSync(candidate);
-    if (!stat.isSymbolicLink() && stat.isFile() && (stat.mode & 0o111) !== 0) return candidate;
-  }
-  throw new Error(`required system executable is unavailable: ${label}`);
-}
-
-function systemBash(): string {
-  return fixedSystemExecutable('bash', ['/bin/bash']);
-}
-
-function systemGit(): string {
-  return fixedSystemExecutable('git', ['/usr/bin/git', '/bin/git']);
-}
 
 function optionalHostExecutable(candidates: readonly string[]): string | undefined {
   for (const candidate of candidates) {
@@ -50,25 +37,21 @@ const HOST_GH = optionalHostExecutable([
   '/home/linuxbrew/.linuxbrew/bin/gh',
 ]);
 
-function protectedPath(): string {
+function protectedPath(runtime: ProtectedHelperPlatform): string {
   return [...new Set([
-    dirname(process.execPath),
+    ...runtime.pathEntries,
     ...(HOST_GH ? [dirname(HOST_GH)] : []),
-    '/usr/bin',
-    '/bin',
-    '/usr/sbin',
-    '/sbin',
-  ])].join(':');
+  ])].join(runtime.pathDelimiter);
 }
 
-function trustedNodeRuntime(): string | undefined {
-  for (const candidate of trustedNodeCandidates(userInfo().homedir)) {
+function trustedNodeRuntime(runtime: ProtectedHelperPlatform): string | undefined {
+  for (const candidate of trustedNodeCandidates(runtime.accountHome)) {
     if (!isAbsolute(candidate) || !existsSync(candidate)) continue;
     const actual = realpathSync(candidate);
     const stat = lstatSync(actual);
     if (!stat.isFile() || (stat.mode & 0o111) === 0) continue;
     const result = runBoundedProcess(actual, ['--version'], {
-      env: { PATH: protectedPath() },
+      env: { PATH: protectedPath(runtime) },
       inheritEnv: false,
       timeoutMs: 5_000,
     });
@@ -85,15 +68,15 @@ function copyAllowedEnv(source: NodeJS.ProcessEnv, target: NodeJS.ProcessEnv, ke
   }
 }
 
-export function protectedChildEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const account = userInfo();
-  const nodeRuntime = trustedNodeRuntime();
+export function protectedChildEnv(
+  source: NodeJS.ProcessEnv,
+  runtime: ProtectedHelperPlatform = resolveProtectedHelperPlatform(),
+): NodeJS.ProcessEnv {
+  const nodeRuntime = trustedNodeRuntime(runtime);
   const env: NodeJS.ProcessEnv = {
-    HOME: account.homedir,
-    USER: account.username,
-    LOGNAME: account.username,
-    PATH: protectedPath(),
-    TMPDIR: '/tmp',
+    ...protectedHelperRuntimeEnv(runtime),
+    PATH: protectedPath(runtime),
+    REPO_HARNESS_PROTECTED_PATH: protectedPath(runtime),
     ...(nodeRuntime ? { REPO_HARNESS_NODE_BIN: nodeRuntime } : {}),
   };
   copyAllowedEnv(source, env, [
@@ -339,9 +322,14 @@ function resolveHelperFileName(helper: string, files: readonly string[]): string
   return files.find((fileName) => helperId(fileName) === helper) ?? null;
 }
 
-function resolveRepoRoot(cwd: string, env: NodeJS.ProcessEnv, protectedHelper: boolean): string {
-  const result = runBoundedProcess(protectedHelper ? systemGit() : 'git', ['-C', cwd, 'rev-parse', '--show-toplevel'], {
-    env: protectedHelper ? protectedChildEnv(env) : env,
+function resolveRepoRoot(
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  protectedHelper: boolean,
+  runtime: ProtectedHelperPlatform | null,
+): string {
+  const result = runBoundedProcess(runtime?.gitBin ?? 'git', ['-C', cwd, 'rev-parse', '--show-toplevel'], {
+    env: protectedHelper ? protectedChildEnv(env, runtime!) : env,
     inheritEnv: !protectedHelper,
     timeoutMs: 5000,
   });
@@ -365,20 +353,48 @@ function resolveFromDir(
   return { id: helperId(fileName), fileName, path: filePath, source, repoRoot };
 }
 
-export function resolveHelper(helper: string, cwd = process.cwd(), env: NodeJS.ProcessEnv = process.env): ResolvedHelper | null {
-  const protectedHelper = isProtectedHelper(helper);
-  const repoRoot = resolveRepoRoot(cwd, env, protectedHelper);
-  const runtime = resolveHelperRuntime(env, !protectedHelper);
-  const fileName = resolveHelperFileName(helper, readContractHelpers(runtime.contractPath));
-  if (!fileName) return null;
+type ResolvedHelperContext = {
+  resolved: ResolvedHelper | null;
+  runtime: ProtectedHelperPlatform | null;
+};
 
-  return resolveFromDir(fileName, runtime.helpersRoot, runtime.source, repoRoot);
+function resolveHelperContext(
+  helper: string,
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+): ResolvedHelperContext {
+  const protectedHelper = isProtectedHelper(helper);
+  const protectedRuntime = protectedHelper ? resolveProtectedHelperPlatform() : null;
+  const repoRoot = resolveRepoRoot(cwd, env, protectedHelper, protectedRuntime);
+  const helperRuntime = resolveHelperRuntime(env, !protectedHelper);
+  const fileName = resolveHelperFileName(helper, readContractHelpers(helperRuntime.contractPath));
+  if (!fileName) return { resolved: null, runtime: protectedRuntime };
+
+  return {
+    resolved: resolveFromDir(fileName, helperRuntime.helpersRoot, helperRuntime.source, repoRoot),
+    runtime: protectedRuntime,
+  };
+}
+
+export function resolveHelper(helper: string, cwd = process.cwd(), env: NodeJS.ProcessEnv = process.env): ResolvedHelper | null {
+  return resolveHelperContext(helper, cwd, env).resolved;
 }
 
 export function runHelper(opts: RunHelperOptions): RunHelperResult {
   const cwd = opts.cwd ?? process.cwd();
   const env = { ...process.env, ...(opts.env ?? {}) };
-  const resolved = resolveHelper(opts.helper, cwd, env);
+  let context: ResolvedHelperContext;
+  try {
+    context = resolveHelperContext(opts.helper, cwd, env);
+  } catch (error) {
+    return {
+      exitCode: 1,
+      reason: 'spawn-error',
+      helper: opts.helper,
+      stderr: error instanceof Error ? error.message : String(error),
+    };
+  }
+  const resolved = context.resolved;
   if (!resolved) {
     return {
       exitCode: 2,
@@ -390,11 +406,11 @@ export function runHelper(opts: RunHelperOptions): RunHelperResult {
 
   const args = [...(opts.args ?? [])];
   const protectedHelper = isProtectedHelper(opts.helper);
-  const trustedBash = protectedHelper ? systemBash() : 'bash';
-  const trustedGit = protectedHelper ? systemGit() : 'git';
+  const trustedBash = context.runtime?.bashBin ?? 'bash';
+  const trustedGit = context.runtime?.gitBin ?? 'git';
   const command = resolved.fileName.endsWith('.sh') ? trustedBash : process.execPath;
   const childEnv: NodeJS.ProcessEnv = {
-    ...(protectedHelper ? protectedChildEnv(env) : env),
+    ...(protectedHelper ? protectedChildEnv(env, context.runtime!) : env),
     REPO_HARNESS_HELPER_SOURCE_PATH: resolved.path,
     REPO_HARNESS_TARGET_REPO_ROOT: resolved.repoRoot,
   };
@@ -414,7 +430,10 @@ export function runHelper(opts: RunHelperOptions): RunHelperResult {
   let expensiveRunLock: { readonly cwd: string; readonly gitBin: string } | undefined;
   try {
     if (helperRequiresExpensiveRunLock(resolved.id, args)) {
-      expensiveRunLock = { cwd: resolved.repoRoot, gitBin: systemGit() };
+      expensiveRunLock = {
+        cwd: resolved.repoRoot,
+        gitBin: context.runtime?.gitBin ?? resolveProtectedHelperPlatform().gitBin,
+      };
     }
   } catch (error) {
     return {
@@ -434,6 +453,7 @@ export function runHelper(opts: RunHelperOptions): RunHelperResult {
     timeoutMs: opts.timeoutMs ?? helperTimeoutMs(resolved.id),
     maxOutputBytes: opts.maxOutputBytes,
     processGroup: true,
+    taskkillBin: context.runtime?.taskkillBin,
     expensiveRunLock,
   });
 

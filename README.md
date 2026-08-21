@@ -41,9 +41,10 @@ with a tasks-first agent contract that keeps Claude and Codex aligned.
 
 ### 1. Install the CLI
 
-Prerequisites: a Git working tree, `bash`, and `bun`; `jq` is optional. No
-Node.js required — the installer uses Bun >= 1.1.35 as the runtime, installing or
-upgrading Bun first when needed.
+Prerequisites: a Git working tree and `bun`; macOS/Linux also require `bash`,
+while Windows requires Git for Windows (including its Bash and `usr/bin`
+tools). `jq` is optional. No Node.js required — the installer uses Bun >=
+1.1.35 as the runtime, installing or upgrading Bun first when needed.
 
 ```bash
 # macOS / Linux
@@ -69,6 +70,13 @@ npx -y repo-harness@latest install   # npx fallback; the CLI still runs on Bun
 ```bash
 repo-harness install
 ```
+
+On Windows, keep Git for Windows on the install/update `PATH`. That explicit
+ceremony validates and pins `git.exe`, its matching `bash.exe`/`usr/bin`, and
+the install account's absolute `TEMP` directory plus native `System32` tools in the OS account's
+`~/.repo-harness/config.json#protectedHelperRuntime`. Protected workflow
+helpers do not rediscover tools from a caller's `PATH`; rerun
+`repo-harness update` after relocating or replacing Git for Windows.
 
 The global bootstrap: installs the npm package as the global CLI, refreshes
 repo-harness skill aliases, installs user-level hook adapters, and records an

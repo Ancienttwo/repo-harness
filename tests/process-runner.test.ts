@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { capProcessOutput, runProcess } from "../src/effects/process-runner";
+import { taskkillAttemptSucceeded } from "../src/effects/process-supervisor";
 
 describe("process runner", () => {
   test("captures status and redacts common secrets from output and command args", () => {
@@ -48,5 +49,12 @@ describe("process runner", () => {
     expect(result.timedOut).toBe(true);
     expect(result.error).toContain("process timed out after 20ms");
     expect(result.stderr).toContain("process timed out after 20ms");
+  });
+
+  test("treats only a zero taskkill exit status as confirmed termination", () => {
+    expect(taskkillAttemptSucceeded({ status: 0 })).toBe(true);
+    expect(taskkillAttemptSucceeded({ status: 1 })).toBe(false);
+    expect(taskkillAttemptSucceeded({ status: null })).toBe(false);
+    expect(() => taskkillAttemptSucceeded({ status: null, error: new Error("spawn failed") })).toThrow("spawn failed");
   });
 });

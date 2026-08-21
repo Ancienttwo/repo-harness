@@ -142,6 +142,9 @@ async function makeFixture(seedCandidate?: (cwd: string) => void) {
 describe('provider-free merge seal', () => {
   test('consumes the one AcceptanceReceipt and binds exact base/head/full diff locally', async () => {
     const fixture = await makeFixture();
+    const required = run('bun', [fixture.harness, 'fingerprint', '--base', 'main', '--format', 'required'], fixture.cwd);
+    expect(required.status, required.stderr).toBe(0);
+    expect(required.stdout.trim()).toBe('true');
     const sealed = run('bun', [fixture.harness, 'run', '--base', 'main', '--format', 'json'], fixture.cwd);
     expect(sealed.status, sealed.stderr).toBe(0);
     expect(JSON.parse(sealed.stdout).required).toBe(true);

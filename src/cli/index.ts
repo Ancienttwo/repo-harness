@@ -8,7 +8,7 @@
 
 import { Command } from 'commander';
 import { readFileSync, realpathSync } from 'fs';
-import { homedir } from 'os';
+import { homedir, userInfo } from 'os';
 import { createInterface } from 'readline/promises';
 import { askConfirm } from './tty-prompt';
 import { runInstall, runUninstall, type InstallTargetSpec } from './commands/install';
@@ -33,6 +33,7 @@ import { buildSprintCommand } from './commands/sprint';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
 import { runGlobalRuntimeSetup, type GlobalRuntimeOptions, type GlobalRuntimeResult } from './commands/global-runtime';
+import { windowsProtectedHelperConfigPath } from './runtime/protected-helper-platform';
 import {
   applyInstallProfile,
   beginInstallHostTransaction,
@@ -105,6 +106,7 @@ interface GlobalRuntimeCommandOptions {
   hooks?: string | false;
   externalSkills?: boolean;
   withReverseSkill?: boolean;
+  withObsidianSkills?: boolean;
   codegraph?: boolean;
   brainRoot?: string;
   json?: boolean;
@@ -178,7 +180,7 @@ function runTransactionalProfileProjection(
 ): { result: GlobalRuntimeResult; state: InstalledProfileState | null } {
   const transactionEnv = runtimeHostTransactionEnv(options.env);
   return withRuntimeHostTransactionLock(transactionEnv, () => {
-    const transaction = beginInstallHostTransaction(installProfileHostMutationPaths(transactionEnv), transactionEnv);
+    const transaction = beginInstallHostTransaction(runtimeHostMutationPaths(transactionEnv), transactionEnv);
     let migrationSource: LegacyInstalledProfileState | null;
     let result: GlobalRuntimeResult;
     try {
@@ -215,10 +217,18 @@ function runtimeHostTransactionEnv(env: NodeJS.ProcessEnv | undefined): NodeJS.P
   };
 }
 
+function runtimeHostMutationPaths(env: NodeJS.ProcessEnv): readonly string[] {
+  const paths = [...installProfileHostMutationPaths(env)];
+  if (process.platform === 'win32') paths.push(windowsProtectedHelperConfigPath());
+  return [...new Set(paths)];
+}
+
 function withRuntimeHostTransactionLock<T>(env: NodeJS.ProcessEnv | undefined, run: () => T): T {
   // Resolve the protected root with the same precedence as runtime mutations.
   // A partial injected env must not make the lock fall back to a different HOME.
-  const home = env?.HOME ?? process.env.HOME ?? homedir();
+  const home = process.platform === 'win32'
+    ? userInfo().homedir
+    : env?.HOME ?? process.env.HOME ?? homedir();
   return withExclusiveDirectoryLock(
     realpathSync(home),
     '.repo-harness/transactions/global-runtime.lock',
@@ -233,7 +243,7 @@ export function runTransactionalRuntimeRefresh(
 ): GlobalRuntimeResult {
   const transactionEnv = runtimeHostTransactionEnv(options.env);
   return withRuntimeHostTransactionLock(transactionEnv, () => {
-    const transaction = beginInstallHostTransaction(installProfileHostMutationPaths(transactionEnv), transactionEnv);
+    const transaction = beginInstallHostTransaction(runtimeHostMutationPaths(transactionEnv), transactionEnv);
     let result: GlobalRuntimeResult;
     try {
       result = setup(options);
@@ -307,6 +317,7 @@ async function runGlobalRuntimeBootstrap(
     hostAdapters: rawOpts.hooks !== false,
     externalSkills,
     reverseSkill: rawOpts.withReverseSkill === true,
+    obsidianSkills: rawOpts.withObsidianSkills === true,
     codegraph,
     brainRoot: rawOpts.brainRoot,
     profile,
@@ -355,6 +366,7 @@ export function buildProgram(): Command {
     .option('--no-hooks', 'Skip global hook adapter installation during full runtime install')
     .option('--no-external-skills', 'Skip mutable third-party Waza and Mermaid skill bootstrap')
     .option('--with-reverse-skill', 'Explicitly install the high-risk reverse-skill-router after independent authorization review')
+    .option('--with-obsidian-skills', 'Explicitly install the pinned obsidian-markdown and obsidian-cli companion Skills')
     .option('--no-codegraph', 'Skip CodeGraph CLI/MCP configuration')
     .option('--brain-root <path>', 'Brain vault root to persist for repo-harness brain commands')
     .option('--json', 'Output JSON instead of human-readable text')
@@ -532,6 +544,7 @@ export function buildProgram(): Command {
     .option('--no-hooks', 'Skip global hook adapter installation')
     .option('--with-external-skills', 'Also refresh mutable third-party Waza and Mermaid providers')
     .option('--with-reverse-skill', 'Explicitly install the high-risk reverse-skill-router after independent authorization review')
+    .option('--with-obsidian-skills', 'Explicitly install or verify the pinned obsidian-markdown and obsidian-cli companion Skills')
     .option('--no-external-skills', 'Do not refresh third-party Waza and Mermaid providers (default)')
     .option('--configure-codegraph', 'Refresh CodeGraph CLI/MCP (default during update)')
     .option('--no-codegraph', 'Skip refreshing the global CodeGraph CLI/MCP')
@@ -554,6 +567,7 @@ export function buildProgram(): Command {
       hooks?: string | false;
       withExternalSkills?: boolean;
       withReverseSkill?: boolean;
+      withObsidianSkills?: boolean;
       externalSkills?: boolean;
       codegraph?: boolean;
       configureCodegraph?: boolean;
@@ -594,6 +608,7 @@ export function buildProgram(): Command {
         hostAdapters: rawOpts.hooks !== false,
         externalSkills: rawOpts.externalSkills === false ? false : rawOpts.withExternalSkills === true ? true : undefined,
         reverseSkill: rawOpts.withReverseSkill === true,
+        obsidianSkills: rawOpts.withObsidianSkills === true,
         codegraph: rawOpts.codegraph === false ? false : rawOpts.configureCodegraph === true ? true : undefined,
         brainRoot: rawOpts.brainRoot,
       });

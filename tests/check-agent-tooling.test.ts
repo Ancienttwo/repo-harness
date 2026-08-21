@@ -404,6 +404,12 @@ describe("check-agent-tooling", () => {
         architecture_diagram: "mermaid",
       });
       expect(report.tools.codex_automation_profile.vendoring_policy).toBe("do-not-vendor-skill-body");
+      expect(report.tools.obsidian_runtime_skills.required_skills).toEqual(["obsidian-markdown", "obsidian-cli"]);
+      expect(report.tools.obsidian_runtime_skills.mode).toBe("catalog-dependency-closure");
+      expect(report.tools.obsidian_runtime_skills.readiness).toBe("advisory");
+      expect(report.tools.obsidian_runtime_skills.install_command)
+        .toBe("repo-harness install --target both --with-obsidian-skills");
+      expect(readFileSync(SCRIPT, "utf-8")).not.toContain("OBSIDIAN_RUNTIME_SKILLS");
       expect(report.tools).not.toHaveProperty("gbrain");
       expect(report.tools.codegraph.status).toBe("partial");
       expect(report.tools.codegraph.primary_host).toBe("codex");
@@ -426,10 +432,43 @@ describe("check-agent-tooling", () => {
       expect(textRes.status).toBe(0);
       expect(textRes.stdout.toLowerCase()).not.toContain("gstack");
       expect(textRes.stdout).toContain("Waza [present]");
+      expect(textRes.stdout).toContain("repo-harness install --target both --with-obsidian-skills");
     } finally {
       rmSync(envRoot.root, { recursive: true, force: true });
     }
   }, 15000);
+
+  test("managed Obsidian companion receipt turns missing projected Skills into a strict readiness failure", () => {
+    const envRoot = setupFakeEnvironment("check-agent-tooling-obsidian-managed");
+    try {
+      mkdirSync(join(envRoot.home, ".repo-harness"), { recursive: true });
+      writeFileSync(join(envRoot.home, ".repo-harness", "install-state.json"), JSON.stringify({
+        protocol: 2,
+        ownership_manifest: [{
+          path: join(envRoot.home, ".agents", "skills", "obsidian-markdown"),
+        }],
+      }));
+      writeFakeSkillsCli(envRoot.fakeBin);
+
+      const res = spawnSync("bash", [SCRIPT, "--json", "--strict-readiness", "--host", "codex"], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: envRoot.home,
+          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
+        },
+      });
+      expect(res.status).toBe(2);
+      expect(res.stderr).toContain("Managed Obsidian companion Skill readiness is missing");
+      const report = JSON.parse(res.stdout);
+      expect(report.tools.obsidian_runtime_skills.readiness).toBe("managed");
+      expect(report.tools.obsidian_runtime_skills.managed_receipt).toBe(true);
+    } finally {
+      rmSync(envRoot.root, { recursive: true, force: true });
+    }
+  }, 15_000);
 
   test("--probe-skills-cli reports the resolved Skills CLI as available", () => {
     const envRoot = setupFakeEnvironment("check-agent-tooling-skills-cli-probe");

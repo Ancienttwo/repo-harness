@@ -17,11 +17,12 @@ import { dirname, isAbsolute, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import {
   acceptanceReceiptPath,
+  resolveProtectedGitRuntime,
   verifyAcceptance,
   type AcceptanceReceipt,
 } from "./acceptance-receipt.ts";
 
-type OutputFormat = "json" | "sha";
+type OutputFormat = "json" | "sha" | "required";
 
 type Candidate = {
   baseSha: string;
@@ -31,29 +32,8 @@ type Candidate = {
   changedFiles: string[];
 };
 
-const LOCKED_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
-
-function fixedGitBinary(): string {
-  for (const candidate of ["/usr/bin/git", "/bin/git"]) {
-    if (!isAbsolute(candidate) || !existsSync(candidate)) continue;
-    const stat = lstatSync(candidate);
-    if (!stat.isSymbolicLink() && stat.isFile() && (stat.mode & 0o111) !== 0) return candidate;
-  }
-  fail("trusted git executable is unavailable");
-}
-
-const GIT_BIN = fixedGitBinary();
-
 function lockedGitEnv(): NodeJS.ProcessEnv {
-  const account = userInfo();
-  return {
-    HOME: account.homedir,
-    USER: account.username,
-    LOGNAME: account.username,
-    PATH: LOCKED_PATH,
-    TMPDIR: "/tmp",
-    REPO_HARNESS_GIT_BIN: GIT_BIN,
-  };
+  return { ...resolveProtectedGitRuntime().env };
 }
 
 type Seal = {
@@ -219,7 +199,8 @@ function sha256(value: string | Buffer): string {
 }
 
 function runGit(root: string, args: string[], binary = false, required = true) {
-  const result = spawnSync(GIT_BIN, args, {
+  const runtime = resolveProtectedGitRuntime();
+  const result = spawnSync(runtime.gitBin, args, {
     cwd: root,
     encoding: binary ? null : "utf-8",
     maxBuffer: 64 * 1024 * 1024,
@@ -281,7 +262,7 @@ function parseArgs(argv: string[]): {
 } {
   const command = argv.shift();
   if (command !== "run" && command !== "verify" && command !== "fingerprint") {
-    fail("usage: merge-gate.ts <run|verify|fingerprint> --base <ref> [--format json|sha] [--allow-post-freeze <path>] [--expect-post-freeze-destination <path=sha256:...>]", 2);
+    fail("usage: merge-gate.ts <run|verify|fingerprint> --base <ref> [--format json|sha|required] [--allow-post-freeze <path>] [--expect-post-freeze-destination <path=sha256:...>]", 2);
   }
   let base = "";
   let format: OutputFormat = "json";
@@ -304,7 +285,7 @@ function parseArgs(argv: string[]): {
       expectedPostFreezeDestinations[path] = digest;
     } else if (flag === "--format") {
       const value = argv.shift();
-      if (value !== "json" && value !== "sha") fail("--format must be json or sha", 2);
+      if (value !== "json" && value !== "sha" && value !== "required") fail("--format must be json, sha, or required", 2);
       format = value;
     } else fail(`unknown argument: ${flag}`, 2);
   }
@@ -473,6 +454,10 @@ function readSeal(path: string): Seal {
 function printResult(format: OutputFormat, required: boolean, current: Candidate): void {
   if (format === "sha") {
     console.log(current.headSha);
+    return;
+  }
+  if (format === "required") {
+    console.log(required ? "true" : "false");
     return;
   }
   console.log(JSON.stringify({
