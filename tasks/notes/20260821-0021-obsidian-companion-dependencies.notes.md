@@ -138,6 +138,25 @@
   subject and target. This disposition does not authorize private-diff
   disclosure, push, PR creation, or merge.
 
+## Architecture Queue SIGKILL Test Root Cause Evidence
+
+- root_cause: `tests/architecture-queue.test.ts` allowed only three seconds for
+  a spawned `architecture-queue.sh record` process to traverse its Bun/helper
+  startup path and publish `.architecture-queue.lock`. After the target's Bun
+  and tooling update, the focused test reached that lock after the deadline,
+  so it failed before exercising SIGKILL or stale-owner reclaim.
+- deterministic_repro: the exact focused test failed alone at 3.01 seconds on
+  the pre-fix assertion that the lock file existed; the production reclaim
+  path was never reached.
+- regression_guard: the existing focused test now registers the child exit
+  promise immediately, allows 30 seconds for lock publication inside a
+  60-second test budget, and passes alone plus four concurrent copies. The
+  four-copy probe completed 4/4 with each copy exercising SIGKILL and reclaim.
+- sibling_sweep: the other bounded path waits use direct single-runtime marker
+  publication or pre-created lock state, and the shared `queueAsync` helper
+  registers its exit listener immediately. None shares this multi-helper
+  startup plus late-exit-listener shape, so no sibling was changed.
+
 ## Promotion Filter
 
 Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset files only when all three hold: hard to reverse, surprising without local context, and a real trade-off existed. If any one is missing, keep it in this notes file instead.

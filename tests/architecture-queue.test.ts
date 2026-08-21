@@ -435,18 +435,19 @@ describe("architecture queue", () => {
         detached: true,
         env: { ...process.env, REPO_HARNESS_ARCHITECTURE_HOLD_AFTER_LOCK_MS: "10000" },
       });
+      const exited = new Promise((resolve) => child.once("exit", resolve));
       const ownerPath = join(cwd, ".ai/harness/architecture/.architecture-queue.lock");
-      const deadline = Date.now() + 3000;
+      const deadline = Date.now() + 30_000;
       while (!existsSync(ownerPath) && Date.now() < deadline) await Bun.sleep(20);
       expect(existsSync(ownerPath)).toBe(true);
       process.kill(-child.pid!, "SIGKILL");
-      await new Promise((resolve) => child.on("exit", resolve));
+      await exited;
       const retried = queue(cwd, ["record", "--file", "src/cli/hook/crash.ts"]);
       expect(retried.status, retried.stderr).toBe(0);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, 60_000);
 
   test("record reclaims an ownerless partial queue lock after a bounded stale window", async () => {
     tmpRepo((cwd) => {
