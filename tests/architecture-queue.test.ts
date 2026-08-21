@@ -21,10 +21,25 @@ function run(cmd: string, args: string[], cwd: string, env?: Record<string, stri
   return spawnSync(cmd, args, { cwd, encoding: "utf-8", env: { ...process.env, ...env } });
 }
 
-function queueAsync(cwd: string, file: string): Promise<number | null> {
+type AsyncQueueResult = {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+};
+
+function queueAsync(cwd: string, file: string, env?: Record<string, string>): Promise<AsyncQueueResult> {
   return new Promise((resolve) => {
-    const child = spawn("bash", ["scripts/architecture-queue.sh", "record", "--file", file], { cwd });
-    child.on("exit", resolve);
+    const child = spawn("bash", ["scripts/architecture-queue.sh", "record", "--file", file], {
+      cwd,
+      env: { ...process.env, ...env },
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("close", (status) => resolve({ status, stdout, stderr }));
   });
 }
 
@@ -253,11 +268,47 @@ describe("architecture queue", () => {
         queueAsync(cwd, "src/cli/hook/concurrent-a.ts"),
         queueAsync(cwd, "src/cli/hook/concurrent-b.ts"),
       ]);
-      expect([first, second]).toEqual([0, 0]);
+      expect(
+        [first.status, second.status],
+        `first stderr:\n${first.stderr}\nsecond stderr:\n${second.stderr}`,
+      ).toEqual([0, 0]);
       const card = readFileSync(join(cwd, "docs/architecture/requests/root.md"), "utf8");
       expect(card).toContain("src/cli/hook/concurrent-a.ts");
       expect(card).toContain("src/cli/hook/concurrent-b.ts");
       expect(readFileSync(join(cwd, ".ai/harness/architecture/events.jsonl"), "utf8").trim().split("\n")).toHaveLength(2);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("queue lock is published only after its owner record is complete", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "architecture-queue-lock-publish-"));
+    try {
+      mkdirSync(join(cwd, "scripts"), { recursive: true });
+      mkdirSync(join(cwd, "docs/architecture/requests"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness/architecture"), { recursive: true });
+      for (const file of ["architecture-queue.sh", "architecture-event.ts", "archive-architecture-request.sh"]) {
+        copyFileSync(join(ROOT, "scripts", file), join(cwd, "scripts", file));
+      }
+      writeFileSync(join(cwd, "docs/architecture/index.md"), "# Architecture Index\n\n## Pending Requests\n");
+
+      const record = queueAsync(cwd, "src/cli/hook/atomic-lock-owner.ts", {
+        REPO_HARNESS_ARCHITECTURE_HOLD_BEFORE_LOCK_PUBLISH_MS: "250",
+        REPO_HARNESS_ARCHITECTURE_HOLD_AFTER_LOCK_MS: "250",
+      });
+      const lockFile = join(cwd, ".ai/harness/architecture/.architecture-queue.lock");
+      const deadline = Date.now() + 5_000;
+      while (!existsSync(lockFile) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+
+      expect(existsSync(lockFile)).toBe(true);
+      const owner = JSON.parse(readFileSync(lockFile, "utf8"));
+      expect(Number.isInteger(owner.pid)).toBe(true);
+      expect(typeof owner.token).toBe("string");
+      expect(owner.token.length).toBeGreaterThan(0);
+      const result = await record;
+      expect(result.status, result.stderr).toBe(0);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -684,9 +735,9 @@ describe("architecture queue", () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
       expect(existsSync(lockFile)).toBe(true);
-      const recordExit = await queueAsync(cwd, "src/cli/hook/post-archive.ts");
+      const record = await queueAsync(cwd, "src/cli/hook/post-archive.ts");
       expect(await archiveExit).toBe(0);
-      expect(recordExit).toBe(0);
+      expect(record.status, record.stderr).toBe(0);
 
       const card = readFileSync(join(cwd, "docs/architecture/requests/root.md"), "utf8");
       expect(card).toContain("src/cli/hook/post-archive.ts");
@@ -727,9 +778,9 @@ describe("architecture queue", () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
       expect(existsSync(lockFile)).toBe(true);
-      const recordExit = await queueAsync(cwd, "src/cli/hook/post-rollback.ts");
+      const record = await queueAsync(cwd, "src/cli/hook/post-rollback.ts");
       expect(await archiveExit).toBe(39);
-      expect(recordExit).toBe(0);
+      expect(record.status, record.stderr).toBe(0);
 
       const card = readFileSync(join(cwd, "docs/architecture/requests/root.md"), "utf8");
       expect(card).toContain(".ai/hooks/pre-edit-guard.sh");

@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "crypto";
 import {
   closeSync,
   existsSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -520,18 +521,34 @@ function acquireQueueLock(requestsDir: string, ownerPid: number, ownerToken: str
   assertSafeWriteTarget(`${requestsDir}/.write-probe`);
   const lockFile = ".ai/harness/architecture/.architecture-queue.lock";
   assertSafeWriteTarget(lockFile);
+  const candidateToken = createHash("sha256").update(ownerToken).digest("hex").slice(0, 16);
+  const candidateFile = `${lockFile}.${ownerPid}.${candidateToken}.tmp`;
+  assertSafeWriteTarget(candidateFile);
   const deadline = Date.now() + 10_000;
   while (true) {
     try {
-      const fd = openSync(lockFile, "wx", 0o600);
+      const fd = openSync(candidateFile, "wx", 0o600);
       try {
         writeAllSync(fd, JSON.stringify({ pid: ownerPid, token: ownerToken, created_at: new Date().toISOString() }));
       } finally {
         closeSync(fd);
       }
-      return lockFile;
+      const holdBeforePublishMs = Number(process.env.REPO_HARNESS_ARCHITECTURE_HOLD_BEFORE_LOCK_PUBLISH_MS || "0");
+      if (Number.isFinite(holdBeforePublishMs) && holdBeforePublishMs > 0) {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, holdBeforePublishMs);
+      }
+      try {
+        linkSync(candidateFile, lockFile);
+        return lockFile;
+      } catch (error: any) {
+        if (error?.code !== "EEXIST") throw error;
+      }
     } catch (error: any) {
-      if (error?.code !== "EEXIST" || !existsSync(lockFile)) throw error;
+      if (error?.code !== "EEXIST") throw error;
+    } finally {
+      rmSync(candidateFile, { force: true });
+    }
+    if (existsSync(lockFile)) {
       try {
         const owner = JSON.parse(readFileSync(lockFile, "utf8"));
         if (!processIsAlive(Number(owner.pid))) {
@@ -545,9 +562,9 @@ function acquireQueueLock(requestsDir: string, ownerPid: number, ownerToken: str
           continue;
         }
       }
-      if (Date.now() >= deadline) throw new Error(`architecture queue lock unavailable: ${lockFile}`);
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
     }
+    if (Date.now() >= deadline) throw new Error(`architecture queue lock unavailable: ${lockFile}`);
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
   }
 }
 
