@@ -84,7 +84,7 @@ describe('helper projection drift', () => {
   });
 
   test('the verification budget constant matches across both helper copies', () => {
-    const constant = 'VERIFICATION_BUDGET_MS=1200000';
+    const constant = 'VERIFICATION_BUDGET_MS=3600000';
     expect(readFileSync(join(SCRIPTS_DIR, 'verify-contract.sh'), 'utf-8')).toContain(constant);
     expect(readFileSync(join(HELPERS_DIR, 'verify-contract.sh'), 'utf-8')).toContain(constant);
   });

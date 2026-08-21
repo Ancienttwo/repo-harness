@@ -811,7 +811,7 @@ describe("contract-worktree finish closeout journal", () => {
       expect(runProcess("git", ["rev-parse", "main"], fixture.primary).stdout.trim()).toBe(mergedSha);
       expect(existsSync(join(dir, "snapshot"))).toBe(false);
     });
-  }, 30_000);
+  });
 
   test("a pre-cutover lifecycle journal detects an already-landed legacy fast-forward", () => {
     withTempRepo("closeout-journal-legacy-recovery", (container) => {

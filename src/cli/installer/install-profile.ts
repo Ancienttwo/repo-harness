@@ -18,6 +18,7 @@ import { fileURLToPath } from 'url';
 import { buildManagedHooks, isManagedEntry, type HookHost, type HooksByEvent } from './managed-entries';
 import {
   mutationPathSkillNames as catalogMutationPathSkillNames,
+  requiredExplicitExternalDependencyInstallGroups,
   parseSkillSurfaceCatalog,
   probeExpectations as catalogProbeExpectations,
   profileOwnedSkillNames as catalogProfileOwnedSkillNames,
@@ -491,6 +492,11 @@ function surfaceIsCurrent(surface: ManagedInstallSurface): boolean {
   }
 }
 
+/** Verify one recorded managed surface without requiring unrelated profile probes. */
+export function managedInstallSurfaceIsCurrent(surface: ManagedInstallSurface): boolean {
+  return surfaceIsCurrent(surface);
+}
+
 export function assertInstallProfile(value: string): InstallProfile {
   if (!INSTALL_PROFILES.includes(value as InstallProfile)) {
     throw new Error(`invalid install profile ${value}; expected ${INSTALL_PROFILES.join('|')}`);
@@ -607,6 +613,16 @@ function componentsForTransactionPath(path: string): readonly InstallComponent[]
   const normalized = path.replaceAll('\\', '/');
   const name = normalized.split('/').at(-1) ?? '';
   const ownedSkills = profileOwnedSkillsSet();
+  const obsidianSelection = requiredExplicitExternalDependencyInstallGroups(
+    loadSkillSurfaceCatalog(),
+    'obsidian-memory',
+    ['claude', 'codex'],
+  );
+  if (obsidianSelection.status !== 'selected') {
+    throw new Error(`invalid Obsidian dependency selection: ${obsidianSelection.status}:${obsidianSelection.name}`);
+  }
+  const obsidianSkills = new Set(obsidianSelection.groups.flatMap(({ skills }) => skills));
+  if (obsidianSkills.has(name) && normalized.includes('/skills/')) return ['adaptive-workflow'];
   if (ownedSkills.has(name) && normalized.includes('/skills/')) {
     const crossModelSkills = catalogProbeExpectations(loadSkillSurfaceCatalog()).crossModel;
     return crossModelSkills.includes(name)
@@ -657,7 +673,12 @@ function transactionOwnedSurfaces(
         }];
       }
     }
-    if (snapshot.existed) return [];
+    if (snapshot.existed) {
+      const previousSurface = previous?.ownership_manifest.find((surface) => surface.path === snapshot.path);
+      if (previousSurface === undefined) return [];
+      const refreshed = captureOwnedPath(snapshot.path, previousSurface.components);
+      return refreshed ? [refreshed] : [];
+    }
     const surface = captureOwnedPath(snapshot.path, componentsForTransactionPath(snapshot.path));
     return surface ? [surface] : [];
   });
