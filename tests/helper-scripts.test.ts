@@ -2783,6 +2783,10 @@ describe("Workflow helper scripts", () => {
       copyHelpers(cwd);
       installHooks(cwd);
 
+      writeFileSync(
+        join(cwd, "package.json"),
+        JSON.stringify({ name: "helper-verify-contract-pass", private: true, scripts: { test: "bun test" } }, null, 2) + "\n"
+      );
       writeFileSync(join(cwd, "src/index.ts"), "export const value = 1;\n");
       writeFileSync(
         join(cwd, "tests/unit/contract-pass.test.ts"),

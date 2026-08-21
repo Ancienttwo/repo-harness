@@ -565,6 +565,121 @@ run_bounded() {
     -- "$@"
 }
 
+# tests_pass is intentionally owned by the nearest package manifest rather than
+# by the verifier's Bun invocation. This preserves package-local test runner
+# configuration (for example Vitest defines or Bun preloads) and keeps one
+# declared test authority for every criterion.
+repository_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd -P)"
+repository_root="$(cd "$repository_root" && pwd -P)"
+resolved_test_owner=""
+resolved_test_path=""
+resolved_test_command=""
+test_owner_resolution_error=""
+
+path_is_within_repository() {
+  local candidate="$1"
+  [[ "$candidate" == "$repository_root" || "$candidate" == "$repository_root/"* ]]
+}
+
+canonicalize_tests_pass_path() {
+  local candidate="$1"
+  "$bun_bin" -e '
+    const { realpathSync } = require("node:fs");
+    try {
+      process.stdout.write(realpathSync(process.argv.at(-1)));
+    } catch {
+      process.exit(1);
+    }
+  ' -- "$candidate"
+}
+
+package_test_script_status() {
+  local manifest="$1"
+  "$bun_bin" -e '
+    const { readFileSync } = require("node:fs");
+    let manifest;
+    try {
+      manifest = JSON.parse(readFileSync(process.argv.at(-1), "utf8"));
+    } catch {
+      process.exit(10);
+    }
+    if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) process.exit(10);
+    if (manifest.scripts !== undefined && (!manifest.scripts || typeof manifest.scripts !== "object" || Array.isArray(manifest.scripts))) process.exit(10);
+    if (typeof manifest.scripts?.test !== "string" || manifest.scripts.test.trim() === "") process.exit(11);
+  ' -- "$manifest" >/dev/null 2>&1
+}
+
+render_package_test_command() {
+  local owner="$1" test_path="$2"
+  printf 'bun run --cwd %q test -- %q' "$owner" "$test_path"
+}
+
+resolve_tests_pass_owner() {
+  local path="$1" candidate_path test_path ancestor manifest manifest_path manifest_status parent
+  resolved_test_owner=""
+  resolved_test_path=""
+  resolved_test_command=""
+  test_owner_resolution_error=""
+
+  if [[ "$path" == /* ]]; then
+    candidate_path="$path"
+  else
+    candidate_path="$repository_root/$path"
+  fi
+
+  if ! test_path="$(canonicalize_tests_pass_path "$candidate_path" 2>/dev/null)"; then
+    test_owner_resolution_error="tests_pass path is symlink-ambiguous: $path"
+    return 1
+  fi
+  if ! path_is_within_repository "$test_path"; then
+    test_owner_resolution_error="tests_pass path resolves outside repository: $path"
+    return 1
+  fi
+
+  ancestor="$(dirname "$test_path")"
+  while path_is_within_repository "$ancestor"; do
+    manifest="$ancestor/package.json"
+    if [[ -e "$manifest" || -L "$manifest" ]]; then
+      if ! manifest_path="$(canonicalize_tests_pass_path "$manifest" 2>/dev/null)"; then
+        test_owner_resolution_error="tests_pass package manifest is symlink-ambiguous: $path"
+        return 1
+      fi
+      if ! path_is_within_repository "$manifest_path"; then
+        test_owner_resolution_error="tests_pass package manifest resolves outside repository: $path"
+        return 1
+      fi
+      if [[ "$manifest_path" != "$manifest" ]]; then
+        test_owner_resolution_error="tests_pass package manifest is symlink-ambiguous: $path"
+        return 1
+      fi
+
+      if package_test_script_status "$manifest_path"; then
+        resolved_test_owner="${ancestor#"$repository_root"/}"
+        [[ "$ancestor" == "$repository_root" ]] && resolved_test_owner="."
+        resolved_test_path="${test_path#"$ancestor"/}"
+        resolved_test_command="$(render_package_test_command "$resolved_test_owner" "$resolved_test_path")"
+        return 0
+      else
+        manifest_status=$?
+      fi
+      if [[ "$manifest_status" -eq 11 ]]; then
+        test_owner_resolution_error="tests_pass package scripts.test is missing: $path"
+      else
+        test_owner_resolution_error="tests_pass package manifest is malformed: $path"
+      fi
+      return 1
+    fi
+
+    [[ "$ancestor" == "$repository_root" ]] && break
+    parent="$(dirname "$ancestor")"
+    [[ "$parent" == "$ancestor" ]] && break
+    ancestor="$parent"
+  done
+
+  test_owner_resolution_error="tests_pass package owner is missing: $path"
+  return 1
+}
+
 write_report() {
   local report_path="$1"
   local idx
@@ -966,10 +1081,15 @@ if ((${#tests_pass[@]})); then
       continue
     fi
 
+    if ! resolve_tests_pass_owner "$path"; then
+      fail "tests_pass" "$path" "$test_owner_resolution_error"
+      continue
+    fi
+
     result_path="$tmp_dir/test-${test_index}.json"
     log_path="$tmp_dir/test-${test_index}.log"
     set +e
-    run_bounded "$log_path" "$result_path" "$bun_bin" test "$path"
+    run_bounded "$log_path" "$result_path" "$bun_bin" run --cwd "$resolved_test_owner" test -- "$resolved_test_path"
     bounded_exit=$?
     set -e
     bounded_duration="$(sed -nE 's/.*"duration_ms":([0-9]+).*/\1/p' "$result_path" 2>/dev/null || true)"
@@ -979,9 +1099,9 @@ if ((${#tests_pass[@]})); then
     bounded_timed_out="${bounded_timed_out:-false}"
     bounded_signal="${bounded_signal:-null}"
     if [[ "$bounded_exit" -eq 0 ]]; then
-      record_timed_result "tests_pass" "$path" true "tests_pass: $path (${bounded_duration}ms)" "$bounded_duration" false 0 "$bounded_signal"
+      record_timed_result "tests_pass" "$path" true "tests_pass: $path via $resolved_test_command (${bounded_duration}ms)" "$bounded_duration" false 0 "$bounded_signal"
     else
-      record_timed_result "tests_pass" "$path" false "tests_pass: $path (${bounded_duration}ms, exit=$bounded_exit)" "$bounded_duration" "$bounded_timed_out" "$bounded_exit" "$bounded_signal"
+      record_timed_result "tests_pass" "$path" false "tests_pass: $path via $resolved_test_command (${bounded_duration}ms, exit=$bounded_exit)" "$bounded_duration" "$bounded_timed_out" "$bounded_exit" "$bounded_signal"
       retain_failure_log "$log_path" "$path"
     fi
     test_index=$((test_index + 1))
