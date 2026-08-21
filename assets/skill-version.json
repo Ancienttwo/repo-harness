@@ -1,6 +1,6 @@
 {
-  "version": "0.16.1",
-  "templateVersion": "0.16.1",
+  "version": "0.16.2",
+  "templateVersion": "0.16.2",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "compatibility": {
@@ -259,6 +259,10 @@
     {
       "version": "0.16.1",
       "description": "Replaces the boolean `overwrite` flag on the seven MCP workflow-artifact write tools with an optional `expected_sha256` revision precondition (absent = create-only with WOULD_OVERWRITE, supplied = guarded overwrite with REVISION_CONFLICT and no current-hash echo), routes those writes through a guarded synchronous writer with lstat symlink and regular-file guards plus temp+fsync+rename+parent-fsync, returns sha256/previousSha256 on success, and rejects undeclared parameters server-side with UNKNOWN_PARAMETER while `overwrite` specifically returns RETIRED_PARAMETER naming `expected_sha256`"
+    },
+    {
+      "version": "0.16.2",
+      "description": "Fixes MCP runtime issues from #204, binds MCP HTTP sessions to the startup profile with fail-closed config-flip handling, publishes the architecture queue lock owner record atomically via staged hard-link creation, requires and fail-closed-validates sandbox_mode in Codex custom-agent TOMLs with EXECUTION_BOUNDARY persona de-duplication, and adds artifact-hygiene rules (final-diff-only comments and PR text) to the global working rules and generated agent contracts"
     }
   ],
   "generatedProjectStamp": {
