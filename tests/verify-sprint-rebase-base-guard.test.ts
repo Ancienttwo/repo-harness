@@ -20,6 +20,7 @@ function runHelper(cwd: string, extraEnv: Record<string, string> = {}) {
   for (const key of [
     "REPO_HARNESS_HELPER_SOURCE_PATH",
     "REPO_HARNESS_SOURCE_ROOT",
+    "REPO_HARNESS_NODE_BIN",
     "REPO_HARNESS_DIFF_BASE",
     "HARNESS_DIFF_BASE",
     "GITHUB_BASE_REF",
@@ -76,6 +77,21 @@ function selfMetadata(dir: string, name: string, extra: Record<string, unknown>)
     base_branch: "main",
     ...extra,
   });
+}
+
+/**
+ * A clone whose `main` tracks `origin/main`, so the base-sync guard has a real
+ * upstream to compare against. The caller then moves local `main` to whichever
+ * quadrant it is exercising (equal, ahead, behind, diverged).
+ */
+function seedTrackingClone(prefix: string): { upstream: string; dir: string } {
+  const upstream = initRepo("verify-sprint-upstream-");
+  commit(upstream, "main-only.txt", "main advances");
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
+  spawnSync(REAL_GIT!, ["clone", "-q", upstream, dir], { encoding: "utf-8" });
+  git(dir, "config", "user.email", "test@example.com");
+  git(dir, "config", "user.name", "Test");
+  return { upstream, dir };
 }
 
 /**
@@ -291,13 +307,8 @@ describe("verify-sprint contract worktree base guard", () => {
   });
 
   test("a base_branch lagging its upstream fails closed instead of passing on the stale local ref", () => {
-    const upstream = initRepo("verify-sprint-upstream-");
-    const dir = realpathSync(mkdtempSync(join(tmpdir(), "verify-sprint-clone-")));
+    const { upstream, dir } = seedTrackingClone("verify-sprint-behind-");
     try {
-      commit(upstream, "main-only.txt", "main advances");
-      spawnSync(REAL_GIT!, ["clone", "-q", upstream, dir], { encoding: "utf-8" });
-      git(dir, "config", "user.email", "test@example.com");
-      git(dir, "config", "user.name", "Test");
       // Local `main` deliberately behind its own remote-tracking ref. Move off
       // main first: a checked-out branch cannot be force-updated.
       git(dir, "checkout", "-q", "-b", "feat");
@@ -308,6 +319,64 @@ describe("verify-sprint contract worktree base guard", () => {
       const result = runHelper(dir);
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain("reason=base_ref_unsynchronized");
+      expect(result.stderr).toContain("behind or diverged");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(upstream, { recursive: true, force: true });
+    }
+  });
+
+  test("a base_branch level with its upstream passes the base-sync guard", () => {
+    const { upstream, dir } = seedTrackingClone("verify-sprint-equal-");
+    try {
+      git(dir, "checkout", "-q", "-b", "feat");
+      commit(dir, "feat.txt", "contract work");
+      selfMetadata(dir, "demo.json", { base_commit: git(dir, "merge-base", "HEAD", "main") });
+
+      const result = runHelper(dir);
+      expect(result.stderr).not.toContain("reason=base_ref_unsynchronized");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(upstream, { recursive: true, force: true });
+    }
+  });
+
+  test("a base_branch strictly ahead of its upstream passes the base-sync guard", () => {
+    const { upstream, dir } = seedTrackingClone("verify-sprint-ahead-");
+    try {
+      // Local `main` carries a commit the remote has not seen yet. It still
+      // contains every upstream commit, so the recorded fork point is current.
+      commit(dir, "local-ahead.txt", "unpushed publication commit");
+      git(dir, "checkout", "-q", "-b", "feat");
+      commit(dir, "feat.txt", "contract work");
+      selfMetadata(dir, "demo.json", { base_commit: git(dir, "merge-base", "HEAD", "main") });
+
+      const result = runHelper(dir);
+      expect(result.stderr).not.toContain("reason=base_ref_unsynchronized");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(upstream, { recursive: true, force: true });
+    }
+  });
+
+  test("a base_branch diverged from its upstream fails closed", () => {
+    const { upstream, dir } = seedTrackingClone("verify-sprint-diverged-");
+    try {
+      // Local `main` both drops an upstream commit and grows its own, so the
+      // upstream is no longer an ancestor of it. Move off main first: a
+      // checked-out branch cannot be force-updated.
+      git(dir, "checkout", "-q", "-b", "feat");
+      git(dir, "branch", "-f", "main", "feat~1");
+      git(dir, "checkout", "-q", "main");
+      commit(dir, "local-divergent.txt", "divergent main work");
+      git(dir, "checkout", "-q", "feat");
+      commit(dir, "feat.txt", "contract work");
+      selfMetadata(dir, "demo.json", { base_commit: git(dir, "merge-base", "HEAD", "main") });
+
+      const result = runHelper(dir);
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("reason=base_ref_unsynchronized");
+      expect(result.stderr).toContain("behind or diverged");
     } finally {
       rmSync(dir, { recursive: true, force: true });
       rmSync(upstream, { recursive: true, force: true });
