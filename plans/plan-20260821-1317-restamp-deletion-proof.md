@@ -130,8 +130,8 @@ Preserve the existing two-authority split: provider receipt decides whether the 
 
 - [x] Replace the single-path name-only proof with an exact name-status modification proof and preserve fail-closed index restoration.
 - [x] Add the deletion regression test and run the focused restamp publication tests.
-- [ ] Close the deferred ledger row, run required workflow/type/full-suite checks, commit, push, and wait for CI.
-- [ ] Publish npm `repo-harness@0.16.1`, create the tag and GitHub release from the existing changelog, refresh the global install, and record runtime evidence.
+- [x] Close the deferred ledger row, run required workflow/type/full-suite checks, commit, push, and wait for CI.
+- [x] Publish npm `repo-harness@0.16.1`, create the tag and GitHub release from the existing changelog, refresh the global install, and record runtime evidence.
 
 ## Verification
 
@@ -148,9 +148,3 @@ The code/test/ledger change is one revertable commit. Any proof mismatch fails c
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
-
-## Task Breakdown
-- [x] Replace the single-path name-only proof with an exact name-status modification proof and preserve fail-closed index restoration.
-- [x] Add the deletion regression test and run the focused restamp publication tests.
-- [ ] Close the deferred ledger row, run required workflow/type/full-suite checks, commit, push, and wait for CI.
-- [ ] Publish npm `repo-harness@0.16.1`, create the tag and GitHub release from the existing changelog, refresh the global install, and record runtime evidence.

@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260821-1317-restamp-deletion-proof.md
 > **Contract**: tasks/contracts/20260821-1317-restamp-deletion-proof.contract.md
 > **Review**: tasks/reviews/20260821-1317-restamp-deletion-proof.review.md
-> **Last Updated**: 2026-08-21 13:51
+> **Last Updated**: 2026-08-21 15:15
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -13,7 +13,7 @@
 
 ## Deviations From Plan Or Spec
 
-- None recorded.
+- The acceptance materializer refreshed the architecture projection manifest and the generated portion of `global-runtime-reconciliation.md`; both are included in closeout because `check-architecture-sync.sh` correctly rejects a stale or uncommitted projection.
 
 ## Tradeoffs Considered
 
@@ -35,8 +35,11 @@
 
 - Focused publication suite: `bun test tests/architecture-restamp-publication.test.ts --timeout 60000` — 12 pass, 0 fail.
 - Required local checks: `bun run check:type`, `bash scripts/check-deploy-sql-order.sh`, `bash scripts/check-architecture-sync.sh`, `bash scripts/check-task-sync.sh`, `repo-harness run check-task-workflow --strict`, `bun scripts/inspect-project-state.ts --repo . --format text`, and `bun src/cli/index.ts init --repo . --dry-run` — all passed.
-- Full suite under the host environment: `bun test --timeout 60000` — 2789 pass, 1 skip, 2 fail. Both failures are in `tests/trace-observer.test.ts` and are caused by inherited `CODEX_SESSION_ID`/`CODEX_THREAD_ID` changing session persistence and host attribution; the same file passes 9/9 when those host variables are unset.
-- Strict contract verification was started with the host variables unset and passed the preflight, focused test, typecheck, deploy-SQL, architecture-sync, task-sync, workflow, inspect-project-state, and init dry-run criteria before the long full-suite criterion; it was stopped before completion to avoid an unbounded wait. No commit, push, tag, npm publish, or external release action was performed.
+- Clean-environment full suite after rebasing onto the final release commit: `bun test --timeout 60000` — 2802 pass, 1 skip, 0 fail, 21417 assertions across 206 files in 835.42 seconds.
+- Commit `f6fee1cec2f034a4658a7253b8e7949004ecbd2c` was pushed to `main`; GitHub Actions run `32455887786` passed every required job for that exact revision.
+- npm tarball readback for `repo-harness@0.16.1` matched local pack SHA-1 `2bcef1b751c66ad2ec7255f00912bab568184cdb` and integrity; clean install reported `0.16.1` and contained the guarded-write module.
+- Annotated tag `v0.16.1` resolves to `f6fee1cec2f034a4658a7253b8e7949004ecbd2c`; GitHub release `repo-harness 0.16.1` is published from the changelog.
+- Global Bun installation reports `repo-harness 0.16.1`; `doctor` reports 11 ok, 1 advisory warning, 0 failures. `check-release-published.sh 0.16.1` passed and emitted runtime-evidence receipt `sha256:688c037c8a66f99bfeb2494c9ec9f0fe452caac5f724f3f49765e104f4cabe72`.
 
 ## Promotion Filter
 
