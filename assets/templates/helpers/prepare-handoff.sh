@@ -10,6 +10,7 @@ else
   cd "$SCRIPT_DIR/.."
 fi
 helper_dir="$SCRIPT_DIR"
+workflow_state_lib="${REPO_HARNESS_WORKFLOW_STATE_LIB:-.ai/hooks/lib/workflow-state.sh}"
 
 reason="manual"
 mode="write"
@@ -39,9 +40,9 @@ USAGE_EOF
   esac
 done
 
-if [[ -f ".ai/hooks/lib/workflow-state.sh" ]]; then
+if [[ -f "$workflow_state_lib" ]]; then
   # shellcheck source=/dev/null
-  . ".ai/hooks/lib/workflow-state.sh"
+  . "$workflow_state_lib"
   if [[ "$mode" == "status" ]]; then
     echo "Active plan: $(get_active_plan || printf '(none)')"
     echo "Active contract: $(workflow_active_contract || printf '(none)')"

@@ -4609,6 +4609,43 @@ describe("Workflow helper scripts", () => {
     }
   }, 30_000);
 
+  test("packaged prepare-handoff should resolve recovery materializer from its selected helper runtime", () => {
+    const cwd = tmpWorkspace("helper-packaged-prepare-handoff");
+    try {
+      mkdirSync(join(cwd, ".ai/hooks/lib"), { recursive: true });
+      mkdirSync(join(cwd, "tasks"), { recursive: true });
+      copyFileSync(
+        join(ROOT, "assets/hooks/lib/workflow-state.sh"),
+        join(cwd, ".ai/hooks/lib/workflow-state.sh")
+      );
+      writeFileSync(join(cwd, "tasks/todos.md"), "# Deferred Goals\n");
+      initGitRepo(cwd);
+      commitAll(cwd, "fixture");
+
+      expect(existsSync(join(cwd, "scripts/recovery-view-cli.ts"))).toBe(false);
+      const helperSource = join(HELPER_DIR, "prepare-handoff.sh");
+      const res = run(
+        "bash",
+        [helperSource, "--reason", "package-runtime"],
+        cwd,
+        {
+          REPO_HARNESS_TARGET_REPO_ROOT: cwd,
+          REPO_HARNESS_HELPER_SOURCE_PATH: helperSource,
+          REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, "assets/hooks/lib/workflow-state.sh"),
+        }
+      );
+
+      expect(res.status).toBe(0);
+      expect(res.stderr).toBe("");
+      expect(readFileSync(join(cwd, ".ai/harness/handoff/current.md"), "utf-8")).toContain(
+        "**Reason**: package-runtime"
+      );
+      expect(existsSync(join(cwd, ".ai/harness/handoff/resume.md"))).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test("prepare-handoff should include untracked files in changed-file context", () => {
     const cwd = tmpWorkspace("helper-prepare-handoff-untracked");
     try {
