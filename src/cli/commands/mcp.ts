@@ -229,7 +229,10 @@ export function buildMcpCommand(): Command {
     .action((rawOpts: { json?: boolean }) => {
       void runMcpAction(() => {
         const rows = listManagedCodingWorkspaces();
-        console.log(rawOpts.json ? JSON.stringify({ workspaces: rows }, null, 2) : rows.map((row) => `${row.id}\t${row.branch}\t${row.dirty ? 'dirty' : 'clean'}\t${row.path_exists ? 'present' : 'missing'}`).join('\n'));
+        console.log(rawOpts.json ? JSON.stringify({ workspaces: rows }, null, 2) : rows.map((row) => {
+          const worktreeState = row.stale_reason !== null ? 'stale' : (row.dirty ? 'dirty' : 'clean');
+          return `${row.id}\t${row.branch}\t${worktreeState}\t${row.path_exists ? 'present' : 'missing'}`;
+        }).join('\n'));
       });
     });
   workspaces

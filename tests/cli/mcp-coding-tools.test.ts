@@ -390,6 +390,28 @@ describe('coding MCP workspace and file tools', () => {
     }
   }, 30_000);
 
+  test('workspace list reports a stale entry per row instead of failing the whole call', async () => {
+    const state = fixture();
+    try {
+      const stale = parse(await callCodingTool(state.ctx, 'open_workspace', { repo_id: state.repoId }));
+      const healthy = parse(await callCodingTool(state.ctx, 'open_workspace', { repo_id: state.repoId }));
+      const staleRoot = state.manager.get(stale.workspace_id).root;
+      rmSync(join(staleRoot, '.git'), { recursive: true, force: true });
+      expect(existsSync(staleRoot)).toBe(true);
+
+      const rows = listManagedCodingWorkspaces(state.env);
+      expect(rows).toHaveLength(2);
+      const staleRow = rows.find((row) => row.id === stale.workspace_id);
+      expect(staleRow).toMatchObject({ path_exists: true, dirty: null });
+      expect(typeof staleRow?.stale_reason).toBe('string');
+      expect(staleRow?.stale_reason?.length ?? 0).toBeGreaterThan(0);
+      const healthyRow = rows.find((row) => row.id === healthy.workspace_id);
+      expect(healthyRow).toMatchObject({ path_exists: true, dirty: false, stale_reason: null });
+    } finally {
+      await state.processManager.shutdown();
+    }
+  }, 30_000);
+
   test('cleanup refuses an unmerged workspace when the source checkout HEAD contains its branch', async () => {
     const state = fixture();
     try {

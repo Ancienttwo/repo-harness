@@ -611,23 +611,39 @@ export class CodingWorkspaceManager {
 
 export function listManagedCodingWorkspaces(env: NodeJS.ProcessEnv = process.env): Array<
   Omit<CodingWorkspace, 'root' | 'sourceRoot' | 'integrationTargetRef'>
-  & { integrationTargetRef: string | null; dirty: boolean; path_exists: boolean }
+  & { integrationTargetRef: string | null; dirty: boolean | null; path_exists: boolean; stale_reason: string | null }
 > {
-  return stateFile(env).workspaces.map((workspace) => ({
-    id: workspace.id,
-    repoId: workspace.repoId,
-    displayName: workspace.displayName,
-    mode: workspace.mode,
-    branch: workspace.branch,
-    baseRef: workspace.baseRef,
-    baseSha: workspace.baseSha,
-    integrationTargetRef: typeof workspace.integrationTargetRef === 'string' ? workspace.integrationTargetRef : null,
-    dirtySource: workspace.dirtySource,
-    openedAt: workspace.openedAt,
-    managed: workspace.managed,
-    path_exists: existsSync(workspace.root),
-    dirty: existsSync(workspace.root) ? isDirty(workspace.root) : false,
-  }));
+  return stateFile(env).workspaces.map((workspace) => {
+    const pathExists = existsSync(workspace.root);
+    // A recorded directory that still exists but is no longer a usable worktree
+    // is reported as one explicit stale row with an unknown dirty state. It is
+    // never skipped, never repaired, and never allowed to fail the whole list.
+    let dirty: boolean | null = pathExists ? null : false;
+    let staleReason: string | null = null;
+    if (pathExists) {
+      try {
+        dirty = isDirty(workspace.root);
+      } catch (error) {
+        staleReason = error instanceof Error ? error.message : String(error);
+      }
+    }
+    return {
+      id: workspace.id,
+      repoId: workspace.repoId,
+      displayName: workspace.displayName,
+      mode: workspace.mode,
+      branch: workspace.branch,
+      baseRef: workspace.baseRef,
+      baseSha: workspace.baseSha,
+      integrationTargetRef: typeof workspace.integrationTargetRef === 'string' ? workspace.integrationTargetRef : null,
+      dirtySource: workspace.dirtySource,
+      openedAt: workspace.openedAt,
+      managed: workspace.managed,
+      path_exists: pathExists,
+      dirty,
+      stale_reason: staleReason,
+    };
+  });
 }
 
 export function cleanupManagedCodingWorkspace(
