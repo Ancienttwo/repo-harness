@@ -6,8 +6,7 @@
 - Source range: `v0.16.1..0a9eb31d` (6 commits on `main` plus the
   artifact-hygiene commit carried on `codex/release-0-16-2`)
 - Release-prep branch: `codex/release-0-16-2`
-- Final candidate commit: `(pending)` — assigned when the candidate merges to
-  `main`
+- Final candidate commit: `69c95991` (squash merge of PR #212)
 - Release scope: patch. MCP issue #204 runtime fixes (#207: initialize session
   reservation released on construction failure; one stale workspace no longer
   aborts the listing), MCP HTTP sessions bound to the startup profile with
@@ -22,8 +21,15 @@
   persona de-dup) are ancestors of tag `v0.16.1` and therefore shipped in
   0.16.1; they are re-homed into the `[0.16.1]` section marked "recorded
   belatedly" rather than misattributed to 0.16.2.
-- Publish status: **pending** — this preparation did not publish, tag, create
-  a GitHub Release, or merge to `main`.
+- Publish status: **complete**. PR #212 merged at `69c95991` with CI green
+  (Test 8m12s, MCP path matrix ubuntu/macos/windows, Required/CI).
+  `repo-harness@0.16.2` published via npm web-auth; tag `v0.16.2` and the
+  GitHub Release created at the merged commit; `check:release-published`
+  readback passed (registry, dist-tag, tarball, tag, and local version files
+  agree); Bun-global runtime refreshed to 0.16.2 (`repo-harness --version`,
+  hook symlink verified); post-refresh architecture projection acceptance
+  clean (state=ready, pending=0, dead_letters=0, blocking=0). Merged
+  branches and worktrees cleaned locally and on the remote.
 
 ## Authority Boundary
 
