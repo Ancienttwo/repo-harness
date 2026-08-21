@@ -414,6 +414,17 @@ export function runHelper(opts: RunHelperOptions): RunHelperResult {
     REPO_HARNESS_HELPER_SOURCE_PATH: resolved.path,
     REPO_HARNESS_TARGET_REPO_ROOT: resolved.repoRoot,
   };
+  if (resolved.id === 'prepare-handoff') {
+    const workflowStateRoot = resolved.source === 'package'
+      ? dirname(PACKAGE_WORKFLOW_STATE)
+      : join(dirname(resolved.path), '..', 'assets', 'hooks', 'lib');
+    childEnv.REPO_HARNESS_WORKFLOW_STATE_LIB = resolveFromDir(
+      'workflow-state.sh',
+      workflowStateRoot,
+      resolved.source,
+      resolved.repoRoot,
+    ).path;
+  }
   if (protectedHelper) {
     childEnv.REPO_HARNESS_BASH_BIN = trustedBash;
     childEnv.REPO_HARNESS_GIT_BIN = trustedGit;

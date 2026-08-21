@@ -1857,7 +1857,7 @@ workflow_contract_allows_path() {
 }
 workflow_write_handoff() {
   local reason="${1:-session-stop}"
-  local source_plan parent_run_id bun_bin
+  local source_plan parent_run_id bun_bin helper_source recovery_view_cli
 
   # EPC-07: independent handoff/resume content assembly retired same-package
   # (Phase A/B: tasks/contracts/20260722-2246-epc-07-recovery-view-cutover.contract.md).
@@ -1871,7 +1871,21 @@ workflow_write_handoff() {
   # EPC-07's four named recovery views.
   workflow_ensure_harness_surface
   bun_bin="${REPO_HARNESS_BUN_BIN:-bun}"
-  "$bun_bin" "scripts/recovery-view-cli.ts" --reason "$reason" --quiet
+  helper_source="${REPO_HARNESS_HELPER_SOURCE_PATH:-}"
+  if [[ -n "$helper_source" ]]; then
+    if [[ ! -f "$helper_source" || "$(basename "$helper_source")" != "prepare-handoff.sh" ]]; then
+      echo "workflow_write_handoff: invalid REPO_HARNESS_HELPER_SOURCE_PATH for prepare-handoff" >&2
+      return 1
+    fi
+    recovery_view_cli="$(cd "$(dirname "$helper_source")" && pwd)/recovery-view-cli.ts"
+  else
+    recovery_view_cli="scripts/recovery-view-cli.ts"
+  fi
+  if [[ ! -f "$recovery_view_cli" ]]; then
+    echo "workflow_write_handoff: recovery materializer is missing: $recovery_view_cli" >&2
+    return 1
+  fi
+  "$bun_bin" "$recovery_view_cli" --reason "$reason" --quiet
 
   source_plan="$(get_todo_source_plan || true)"
   if [[ "$source_plan" == "(none)" ]]; then

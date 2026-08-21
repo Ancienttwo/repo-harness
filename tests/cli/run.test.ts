@@ -325,6 +325,37 @@ describe("run command", () => {
     }
   }, 30_000);
 
+  test("package prepare-handoff binds its workflow library and recovery helper from one runtime", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-prepare-handoff-"));
+    try {
+      mkdirSync(join(tmp, ".ai/hooks/lib"), { recursive: true });
+      mkdirSync(join(tmp, "tasks"), { recursive: true });
+      writeFileSync(
+        join(tmp, ".ai/hooks/lib/workflow-state.sh"),
+        "workflow_write_handoff() { echo stale-target-workflow >&2; return 91; }\n",
+      );
+      writeFileSync(join(tmp, "tasks/todos.md"), "# Deferred Goals\n");
+      expect(spawnSync("git", ["init"], { cwd: tmp }).status).toBe(0);
+
+      const result = runHelper({
+        helper: "prepare-handoff",
+        args: ["--reason", "package-runtime"],
+        cwd: tmp,
+        env: packageRuntimeEnv(),
+        stdio: "pipe",
+      });
+
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(result.stderr ?? "").not.toContain("stale-target-workflow");
+      expect(existsSync(join(tmp, "scripts/recovery-view-cli.ts"))).toBe(false);
+      expect(readFileSync(join(tmp, ".ai/harness/handoff/current.md"), "utf-8")).toContain(
+        "**Reason**: package-runtime",
+      );
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test("ignores repo-local helper runtime when helper_source is repo pinned", () => {
     const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-repo-pin-"));
     try {
