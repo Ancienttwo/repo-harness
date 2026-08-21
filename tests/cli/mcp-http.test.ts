@@ -471,7 +471,7 @@ describe('mcp http transport', () => {
 
   test('health responds without running a synchronous git cold path per request', async () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-health-git-'));
-    const shimDir = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-git-shim-'));
+    const traceDir = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-git-trace-'));
     const port = await freePort();
     const restoreRegistryHome = useTempRegistryHome();
     let proc: Bun.Subprocess | null = null;
@@ -480,11 +480,11 @@ describe('mcp http transport', () => {
       writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
       runMcpSetupChatgpt({ repo: repoRoot, port: String(port) });
 
-      const realGit = Bun.spawnSync(['/usr/bin/env', 'which', 'git'], { stdout: 'pipe' }).stdout.toString().trim();
-      expect(realGit).not.toBe('');
-      const gitLog = join(shimDir, 'git-invocations.log');
-      const shim = join(shimDir, 'git');
-      writeFileSync(shim, `#!/bin/sh\nprintf '%s\\n' "$*" >> "${gitLog}"\nexec ${realGit} "$@"\n`, { mode: 0o755 });
+      // GIT_TRACE is git's own invocation log: it needs no PATH shim, so it
+      // works the same on POSIX and Windows, where an extensionless shell
+      // wrapper is not an executable.
+      const gitTrace = join(traceDir, 'git-trace.log');
+      writeFileSync(gitTrace, '');
 
       proc = Bun.spawn(
         [
@@ -509,25 +509,30 @@ describe('mcp http transport', () => {
           cwd: process.cwd(),
           stdout: 'ignore',
           stderr: 'pipe',
-          env: { ...process.env, PATH: `${shimDir}:${process.env.PATH}` },
+          env: { ...process.env, GIT_TRACE: gitTrace },
         },
       );
       await waitForHealth(port);
 
-      // Startup may resolve the repo root through git; steady-state health probes
-      // must not, because that cold path blocks the event loop for seconds.
-      writeFileSync(gitLog, '');
+      // Startup resolves the repo root through git. Asserting that first proves
+      // the trace actually observes this server's git calls, so the silence
+      // asserted below cannot pass vacuously.
+      expect(readFileSync(gitTrace, 'utf-8')).toContain('rev-parse');
+
+      // Steady-state health probes must not run that cold path, because it
+      // blocks the event loop for seconds on a cold disk.
+      writeFileSync(gitTrace, '');
       for (let attempt = 0; attempt < 3; attempt += 1) {
         const response = await fetch(`http://127.0.0.1:${port}/health`);
         expect(response.status).toBe(200);
         expect(await response.json()).toMatchObject({ status: 'ok', profile: 'planner' });
       }
-      expect(readFileSync(gitLog, 'utf-8')).toBe('');
+      expect(readFileSync(gitTrace, 'utf-8')).toBe('');
     } finally {
       proc?.kill();
       await proc?.exited.catch(() => undefined);
       restoreRegistryHome();
-      rmSync(shimDir, { recursive: true, force: true });
+      rmSync(traceDir, { recursive: true, force: true });
       rmSync(repoRoot, { recursive: true, force: true });
     }
   }, 30_000);
