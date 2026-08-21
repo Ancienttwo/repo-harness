@@ -12,6 +12,7 @@
 - Do not silently expand scope beyond approved plan.
 - If unexpected repo changes appear, stop and ask.
 - Prefer modifying existing files over unnecessary file creation.
+- Write comments, commit messages, and PR text from the final diff only: comments state only the non-obvious reason at the owning boundary; PR text states final behavior plus only rationale a reviewer cannot recover from the diff; never mention discarded attempts, reverted work, or never-merged states.
 
 ### Final Response Contract
 1. What changed — list modified files with one-line summary each

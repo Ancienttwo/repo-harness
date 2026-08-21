@@ -53,7 +53,6 @@ RULES:
   - Promote factors only after hypothesis and backtest summary artifacts exist
   - Run the configured factor-lab check before claiming factor-lab work is complete
 {{/IF}}
-
 ACTIVE_PLAN:
   - .ai/harness/active-plan selects the current active plan only for its owning worktree; .ai/harness/active-worktree records that owner
 

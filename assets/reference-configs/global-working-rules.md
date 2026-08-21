@@ -75,6 +75,14 @@ For architecture reviews, bug hunts, risky refactors, deployment issues, auth/pa
 
 Reports must be concise and grounded in files, commands, runtime behavior, observed code, or verified system state.
 
+## Artifact Hygiene
+
+Write comments, commit messages, and PR text from the final diff only, as if discarded intermediate attempts never existed. Session history is not documentation material.
+
+- Comments state only the non-obvious reason at the owning boundary; never restate the operation, preserve intermediate attempts, or list speculative future work.
+- PR text states final behavior plus only the material rationale or trade-off a reviewer cannot recover from the diff; never mention never-merged states, reverted work, or why something is absent (no "(without X)" titles, no paragraphs justifying a removal the reviewer never saw).
+- When the user rejects an addition, the correct artifact output is the version where that addition never existed — not an annotated explanation of its removal.
+
 ## Completion Summary Rule
 
 For non-trivial completed tasks, include a short `下一刀` section only when verified state shows a concrete next bottleneck, unresolved risk, failing check, deployment gap, review gap, or active-plan item that materially affects the user's stated goal.
