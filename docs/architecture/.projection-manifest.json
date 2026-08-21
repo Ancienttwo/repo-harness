@@ -5,12 +5,12 @@
   "sourceDigest": "sha256:dfeee72dd6b65c11c5410cf52261499a156ed11386d32cb5121711b63684470d",
   "provenance": {
     "schemaVersion": "archcontext.architecture-docs-projection-provenance/v1",
-    "baseHeadSha": "1569fe33893f11f38ba80095658021c1c59e6f1d",
-    "worktreeDigest": "sha256:0c26721b93fcdd446dcb5a603e8449066026d1b99a0e1e013e0584a152d12dad",
-    "sourceTreeDigest": "sha256:17f053f90d1da59617c43b538a6fdf973308a7ee57cbc882f7bface34e99dd4d",
+    "baseHeadSha": "784b6d9f1df4c5b60cb19eb2aeef5c281aa02170",
+    "worktreeDigest": "sha256:76811096a1b2557c52605425ba6e2a5767e68e1822dfbe281e64bc399e90a4bd",
+    "sourceTreeDigest": "sha256:8070b21adcab81df6ef9fc836ee471420e39786d3f3a0e5d573d6adb7b48a092",
     "modelDigest": "sha256:e7e1a02e1fb8c6e0732999db19c5ab1541d8529ffb270b2be1eb96af579fa4cb",
-    "codeGraphDigest": "sha256:dfc91ecf7f499d8e4b39d38e5c3cc5f7dac91574e67f0d1181898d55f730a486",
-    "indexedWorktreeDigest": "sha256:6a759b1c70538b81c921bb9d861a9435c3373244c929c8637f3fa10a06647909",
+    "codeGraphDigest": "sha256:250d20de682689656c92bb2b2838e0452391e93e9266ae2a0360dd05721282fa",
+    "indexedWorktreeDigest": "sha256:26b61dfe572b8a997232c4494ef5927ef86da75cccf46942b72ae43a3773a319",
     "rendererVersion": "archcontext.docs-renderer/v4",
     "layoutVersion": "archcontext.docs-layout/v1",
     "generatedFrom": {
@@ -19,9 +19,9 @@
       "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
       "codeGraphStatus": "ready"
     },
-    "projectionInputDigest": "sha256:204c0e54e12bd33e55294bf5779bb2b6f79d2b698ae14d7db20e303c27208584"
+    "projectionInputDigest": "sha256:00a54bb4754a40de31071215e6fd01248a89802c9ceb7714c928de09e07fee88"
   },
-  "projectionDigest": "sha256:57e96e74614f3cc39c76f329ef8368a4a441072e2c3ed62f07f5a3e5fb71c5b2",
+  "projectionDigest": "sha256:3aa57195ac2d21f6bdd401d7f989a09e1af850616877f33c5f96d0584f1d5a2f",
   "semanticBaseline": {
     "semanticState": {
       "schemaVersion": "archcontext.architecture-semantic-state/v1",
@@ -307,12 +307,12 @@
     },
     "digests": {
       "modelDigest": "sha256:e7e1a02e1fb8c6e0732999db19c5ab1541d8529ffb270b2be1eb96af579fa4cb",
-      "sourceTreeDigest": "sha256:17f053f90d1da59617c43b538a6fdf973308a7ee57cbc882f7bface34e99dd4d",
+      "sourceTreeDigest": "sha256:8070b21adcab81df6ef9fc836ee471420e39786d3f3a0e5d573d6adb7b48a092",
       "flowProofDigest": "sha256:f61c06c8566ec4ff22ec096ee22c06e91a046ceefa8fcd2f1d9faf436763a457",
-      "projectionDigest": "sha256:57e96e74614f3cc39c76f329ef8368a4a441072e2c3ed62f07f5a3e5fb71c5b2"
+      "projectionDigest": "sha256:3aa57195ac2d21f6bdd401d7f989a09e1af850616877f33c5f96d0584f1d5a2f"
     }
   },
-  "receiptDigest": "sha256:5b27d61570a03b1cd745f9b467110ba7798cd19076aca3377d17efe8fa771e82",
+  "receiptDigest": "sha256:efdbc84597c68183f3b5f7c490e74be69b69be9141ca53349a5bce499688934c",
   "refreshSignalIds": [],
   "targetCount": 17,
   "fileCount": 17,
@@ -445,9 +445,9 @@
       "sourceDigest": "sha256:8e2ba45e941e3259fe9e2346d1460a18e2c199dc7017e55531370c09bc5b4731",
       "outputDigest": "sha256:a941fe11388c621fe51eaee5dc2b143d4b24ef7f2a9fd3114a5ac15baa12cb11",
       "verifiedAgainst": {
-        "branch": "main",
-        "commit": "1569fe33893f11f38ba80095658021c1c59e6f1d",
-        "committedAt": "2026-08-21T15:30:47+08:00"
+        "branch": "codex/issue-209-atomic-queue-lock",
+        "commit": "784b6d9f1df4c5b60cb19eb2aeef5c281aa02170",
+        "committedAt": "2026-08-21T16:09:59+08:00"
       }
     },
     {
@@ -505,9 +505,9 @@
       "sourceDigest": "sha256:2b41a1b3f03e0f2a17b8e83607c353f16dc1370b0d6cfada99502c1048e2c342",
       "outputDigest": "sha256:66d4b7068ff03b389eb468fcfeb98d6146109c54d1e89eaf119a8f278ac9a5e4",
       "verifiedAgainst": {
-        "branch": "main",
-        "commit": "1569fe33893f11f38ba80095658021c1c59e6f1d",
-        "committedAt": "2026-08-21T15:30:47+08:00"
+        "branch": "codex/issue-209-atomic-queue-lock",
+        "commit": "e779b0c240ac60479a348262730ec06f242141b6",
+        "committedAt": "2026-08-21T17:04:09+08:00"
       }
     },
     {
@@ -525,9 +525,9 @@
       "sourceDigest": "sha256:7ee8ed6740da71e8140f0ab2ff708ec8756622821b0875aa230a6a3f019780fe",
       "outputDigest": "sha256:aa161d6f10d15d68a3af9439d8bdbbd7e32b81781e3747645d4ccee5020cd79a",
       "verifiedAgainst": {
-        "branch": "main",
-        "commit": "f6fee1cec2f034a4658a7253b8e7949004ecbd2c",
-        "committedAt": "2026-08-21T14:48:03+08:00"
+        "branch": "codex/issue-209-atomic-queue-lock",
+        "commit": "e779b0c240ac60479a348262730ec06f242141b6",
+        "committedAt": "2026-08-21T17:04:09+08:00"
       }
     },
     {
