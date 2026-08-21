@@ -229,6 +229,21 @@ describe('architecture projection restamp gate matrix', () => {
     expect(status(root)).toBe(` M ${ARCHITECTURE_PROJECTION_MANIFEST_PATH}`);
   });
 
+  test('rejects a manifest deletion even when it is the only dirty tracked path', () => {
+    const root = fixture();
+    const base = git(root, ['rev-parse', 'HEAD']);
+    rmSync(join(root, ARCHITECTURE_PROJECTION_MANIFEST_PATH));
+
+    const outcome = publishArchitectureProjectionRestamp(root, RESTAMP);
+
+    expect(outcome.status).toBe('skipped');
+    expect(outcome.reason).toBe('single-path-proof-failed');
+    expect(outcome.detail).toBe(`D ${ARCHITECTURE_PROJECTION_MANIFEST_PATH}`);
+    expect(git(root, ['rev-parse', 'HEAD'])).toBe(base);
+    expect(git(root, ['diff', '--cached', '--name-only'])).toBe('');
+    expect(status(root)).toBe(` D ${ARCHITECTURE_PROJECTION_MANIFEST_PATH}`);
+  });
+
   test('git refuses a stale compare-and-swap, which is the only concurrency primitive used', () => {
     const root = fixture();
     const stale = git(root, ['rev-parse', 'HEAD']);

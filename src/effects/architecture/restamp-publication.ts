@@ -203,12 +203,12 @@ export function publishArchitectureProjectionRestamp(
     try {
       const tree = gitOut(repoRoot, ['write-tree'], 'git write-tree');
       const commitSha = gitOut(repoRoot, ['commit-tree', tree, '-p', gate.headSha, '-m', message], 'git commit-tree');
-      const published = gitOut(repoRoot, ['diff-tree', '--no-commit-id', '--name-only', '-r', '-z', gate.headSha, commitSha], 'git diff-tree')
+      const published = gitOut(repoRoot, ['diff-tree', '--no-commit-id', '--name-status', '-r', '-z', gate.headSha, commitSha], 'git diff-tree')
         .split('\0')
-        .filter((path) => path.length > 0);
-      if (published.length !== 1 || published[0] !== ARCHITECTURE_PROJECTION_MANIFEST_PATH) {
+        .filter((field) => field.length > 0);
+      if (published.length !== 2 || published[0] !== 'M' || published[1] !== ARCHITECTURE_PROJECTION_MANIFEST_PATH) {
         restoreIndex(repoRoot);
-        return skipped('single-path-proof-failed', published.join(', ') || 'empty diff');
+        return skipped('single-path-proof-failed', published.join(' ') || 'empty diff');
       }
       const updated = git(repoRoot, ['update-ref', '-m', RESTAMP_REFLOG_MESSAGE, gate.branchRef, commitSha, gate.headSha]);
       if (updated.status !== 0) {

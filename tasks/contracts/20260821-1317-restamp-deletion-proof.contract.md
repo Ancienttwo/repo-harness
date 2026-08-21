@@ -1,0 +1,155 @@
+# Task Contract: restamp-deletion-proof
+
+> **Status**: Active
+> **Plan**: plans/plan-20260821-1317-restamp-deletion-proof.md
+> **Task Profile**: code-change
+> <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
+> **Owner**: ancienttwo
+> **Capability ID**: root
+> **Last Updated**: 2026-08-21 13:19
+> **Review File**: `tasks/reviews/20260821-1317-restamp-deletion-proof.review.md`
+> **Notes File**: `tasks/notes/20260821-1317-restamp-deletion-proof.notes.md`
+> **Exemplar**: `docs/reference-configs/contract-brief-example.md`
+
+## Why
+
+The manual `architecture-projection publish-restamp` entry can combine a stale provider receipt that classifies the manifest as an update with a current worktree deletion. The existing Git proof checks only that the synthesized commit touches one path, so it can publish a commit deleting the machine-owned architecture manifest. The Stop lane normally rewrites the manifest first, but the shared effects function must fail closed for every caller before its compare-and-swap updates the branch.
+
+## Goal
+
+`publishArchitectureProjectionRestamp` advances the branch only when `git diff-tree --name-status` proves that the synthesized commit contains exactly one `M` record for `docs/architecture/.projection-manifest.json`. A deletion remains uncommitted, the index is restored, and the outcome is `single-path-proof-failed`.
+
+## Scope
+
+- In scope: strengthen the post-`commit-tree`, pre-`update-ref` proof; add a deletion fixture; remove the fulfilled deferred ledger row; synchronize the plan, contract, review, and notes.
+- Out of scope: changing provider classification, `evaluateRestampGate`, Stop-lane semantics, receipt formats, or accepting manifest creation as a restamp.
+- Taste constraints: preserve fail-closed behavior and the existing single-authority split; add no compatibility or heuristic path.
+
+## Stop Conditions
+
+- Stop and hand back to the parent if the change would require editing a path outside Allowed Paths.
+- Stop if an Exit Criteria command cannot be run in this environment.
+- Stop if Goal, Scope, or Exit Criteria are internally contradictory.
+
+## Falsifier
+
+If Git emits a different tokenization for a normal single-file modification under `--name-status -z`, the strengthened proof would reject valid restamps. The cheapest proof is the existing successful publication fixture in `tests/architecture-restamp-publication.test.ts`, which must remain green alongside the new deletion case.
+
+## Root Cause Evidence
+
+Required when Task Profile is `bugfix`; leave as-is otherwise.
+
+- root_cause: one sentence naming file:line/condition (testable, not "a state issue").
+- repro: the command or UI path that reproduces the symptom.
+- regression_guard: path to a test that fails on the unfixed code and passes after the fix (must also appear under exit_criteria.tests_pass).
+- pre_fix_failure_artifact: path to a captured run of regression_guard on the UNFIXED code. Capture with `bun test <regression_guard> > <artifact> 2>&1; echo "PRE_FIX_EXIT=$?" >> <artifact>` (no pipes — pipes swallow the exit status). The gate requires a non-zero `PRE_FIX_EXIT=` line plus the regression_guard path string in the artifact (see the Root Cause Evidence Gate section in docs/reference-configs/sprint-contracts.md).
+
+## Workflow Inventory
+
+- Source plan: `plans/plan-20260821-1317-restamp-deletion-proof.md`
+- Deferred-goal ledger: `tasks/todos.md`
+- Review file: `tasks/reviews/20260821-1317-restamp-deletion-proof.review.md`
+- Notes file: `tasks/notes/20260821-1317-restamp-deletion-proof.notes.md`
+- Checks file: `.ai/harness/checks/latest.json`
+- Run snapshots: `.ai/harness/runs/`
+- Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
+- Completion gate: run `verify-sprint --prepare-acceptance`, record one typed AcceptanceReceipt under the frozen policy below, then run `verify-sprint`; review Markdown is projection only.
+
+## Change Assessment
+
+```json
+{"protocol":1,"oracles":[{"id":"restamp-deletion-regression","kind":"deterministic_test","paths":["src/effects/architecture/restamp-publication.ts","tests/architecture-restamp-publication.test.ts"]},{"id":"full-suite","kind":"deterministic_test","paths":["*"]},{"id":"release-runtime-readback","kind":"runtime_readback","paths":["*"]}]}
+```
+
+## Acceptance Policy
+
+```json
+{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}
+```
+
+## Allowed Paths
+
+```yaml
+allowed_paths:
+  - plans/plan-20260821-1317-restamp-deletion-proof.md
+  - tasks/todos.md
+  - tasks/contracts/20260821-1317-restamp-deletion-proof.contract.md
+  - tasks/reviews/20260821-1317-restamp-deletion-proof.review.md
+  - tasks/notes/20260821-1317-restamp-deletion-proof.notes.md
+  - src/effects/architecture/restamp-publication.ts
+  - tests/architecture-restamp-publication.test.ts
+```
+
+## Evidence Requirements
+
+```yaml
+evidence_requirements:
+  # Set benchmark to required when this contract consumes the harness profile benchmark matrix.
+  benchmark: not_applicable
+```
+
+## Delegation Contract
+
+```yaml
+delegation:
+  budget:
+    tokens: null
+    runner_invocations: null
+    wall_time_minutes: null
+  permission_scope:
+    mode: inherit_allowed_paths
+    writable_paths: []
+    network: inherited
+  roles:
+    parent:
+      mode: narrate_and_gatekeep
+      purpose: approval_checkpoint_owner
+    explorer:
+      mode: read_only
+      purpose: codebase_research
+    worker:
+      mode: edit_within_allowed_paths
+      purpose: implementation
+    verifier:
+      mode: read_only
+      purpose: exit_criteria_review
+  runner:
+    preferred:
+      - subagent
+    fallback: null
+    brief_is_authoritative: true
+```
+
+## Exit Criteria (Machine Verifiable)
+
+```yaml
+exit_criteria:
+  files_contain:
+    - path: src/effects/architecture/restamp-publication.ts
+      pattern: "--name-status"
+  artifacts_exist:
+    - .ai/harness/checks/latest.json
+    - tasks/notes/20260821-1317-restamp-deletion-proof.notes.md
+  tests_pass:
+    - path: tests/architecture-restamp-publication.test.ts
+  commands_succeed:
+    - bun run check:type
+    - bash scripts/check-deploy-sql-order.sh
+    - bash scripts/check-architecture-sync.sh
+    - bash scripts/check-task-sync.sh
+    - repo-harness run check-task-workflow --strict
+    - bun scripts/inspect-project-state.ts --repo . --format text
+    - bun src/cli/index.ts init --repo . --dry-run
+    - bun test --timeout 60000
+```
+
+## Acceptance Notes (Human Review)
+
+- Functional behavior: modification-only restamps still publish; deletion-only worktrees fail before the ref CAS.
+- Edge cases: deletion proof restores the manifest index entry and preserves the deleted worktree state for operator recovery.
+- Regression risks: Git `--name-status -z` tokenization is guarded by both the existing happy-path fixture and the new deletion fixture.
+
+## Rollback Point
+
+- Commit / checkpoint: pre-change `8172c030`.
+- Revert strategy: revert the single code/test/ledger/workflow commit; no schema or data migration is involved.
