@@ -1,6 +1,6 @@
 # Plan: Obsidian companion Skill dependency closure
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260821-0021
 > **Slug**: obsidian-companion-dependencies
 > **Planning Source**: repo-harness-plan

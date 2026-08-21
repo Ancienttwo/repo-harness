@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-21 13:49
+> **Related Plan**: plans/archive/plan-20260821-0021-obsidian-companion-dependencies.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260821-1349
+
 # Implementation Notes: obsidian-companion-dependencies
 
 > **Status**: Active
