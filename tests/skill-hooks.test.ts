@@ -8,6 +8,7 @@ import {
   getHookDefinition,
   runHooks,
   executeHookScript,
+  rethrowNonEpipeStdinError,
   VALID_EVENTS,
 } from "../scripts/run-skill-hook";
 
@@ -123,6 +124,7 @@ describe("Hook Execution (temp directory)", () => {
   const tmpSuccessScript = join(tmpBase, "success.sh");
   const tmpFailScript = join(tmpBase, "fail.sh");
   const tmpContextScript = join(tmpBase, "context.sh");
+  const tmpClosedStdinScript = join(tmpBase, "closed-stdin.sh");
 
   // Setup temp files
   mkdirSync(tmpBase, { recursive: true });
@@ -133,9 +135,20 @@ describe("Hook Execution (temp directory)", () => {
     tmpContextScript,
     '#!/bin/bash\nread -r ctx\necho "event=$SKILL_HOOK_EVENT"\necho "context=$ctx"'
   );
+  writeFileSync(
+    tmpClosedStdinScript,
+    '#!/bin/bash\nexec 0<&-\necho "declined the stdin offer"'
+  );
 
   // Make scripts executable
-  Bun.spawnSync(["chmod", "+x", tmpSuccessScript, tmpFailScript, tmpContextScript]);
+  Bun.spawnSync([
+    "chmod",
+    "+x",
+    tmpSuccessScript,
+    tmpFailScript,
+    tmpContextScript,
+    tmpClosedStdinScript,
+  ]);
 
   test("executeHookScript runs a successful script", async () => {
     const result = await executeHookScript(tmpSuccessScript, "pre-init");
@@ -156,6 +169,32 @@ describe("Hook Execution (temp directory)", () => {
     expect(result.output).toContain("event=pre-assemble");
     expect(result.output).toContain('"planType":"C"');
   }, 30_000);
+
+  // Regression: Bun 1.4 on Linux surfaces the stdin-write EPIPE that 1.3 swallowed.
+  // The context offer is optional, so a script that closes stdin and exits 0 is a
+  // successful hook. Payload exceeds the 64KiB pipe buffer so the write cannot be
+  // absorbed by the kernel and must actually hit the closed pipe.
+  test("executeHookScript succeeds when the script closes stdin without reading", async () => {
+    const result = await executeHookScript(tmpClosedStdinScript, "pre-init", {
+      payload: "x".repeat(128 * 1024),
+    });
+    expect(result.success).toBe(true);
+    expect(result.output).toContain("declined the stdin offer");
+  }, 30_000);
+
+  // Scoping guard for the tolerance above: only EPIPE is absorbed.
+  test("rethrowNonEpipeStdinError absorbs EPIPE and propagates every other code", () => {
+    const epipe = Object.assign(new Error("write EPIPE"), { code: "EPIPE" });
+    expect(() => rethrowNonEpipeStdinError(epipe)).not.toThrow();
+
+    const econnreset = Object.assign(new Error("write ECONNRESET"), {
+      code: "ECONNRESET",
+    });
+    expect(() => rethrowNonEpipeStdinError(econnreset)).toThrow("write ECONNRESET");
+
+    const codeless = new Error("stream blew up");
+    expect(() => rethrowNonEpipeStdinError(codeless)).toThrow("stream blew up");
+  });
 
   test("executeHookScript returns error for missing script", async () => {
     const result = await executeHookScript("/nonexistent/script.sh", "pre-init");

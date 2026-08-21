@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-21T03:29:36+0800 -->
+<!-- updated_at: 2026-08-21T04:26:43+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-21T03:29:36+0800
-> **Source Branch**: codex/restamp-auto-publication
-> **Source Commit**: 687b4e28
+> **Status**: Idle
+> **Updated At**: 2026-08-21T04:26:43+0800
+> **Source Branch**: codex/bun-14-upgrade-take2
+> **Source Commit**: 67e55b90
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -17,11 +17,11 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
+- Status: Idle
 - Active Plan: (none)
 - Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Next Task: (none)
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -31,8 +31,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/ancienttwo/Projects/repo-harness-wt-bun-14-upgrade-take2: plans/plan-20260821-0303-bun-14-upgrade-take2.md
-- /Users/ancienttwo/Projects/repo-harness-wt-bun-14-upgrade-take2: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-bun-14-upgrade-take2
+- (none)
 ## Active Sprint
 
 - Sprint: (none)
@@ -59,16 +58,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260821-0222-restamp-auto-publication.md
- D tasks/contracts/20260821-0222-restamp-auto-publication.contract.md
- D tasks/notes/20260821-0222-restamp-auto-publication.notes.md
- D tasks/reviews/20260821-0222-restamp-auto-publication.review.md
+ D plans/plan-20260821-0303-bun-14-upgrade-take2.md
+ D tasks/contracts/20260821-0303-bun-14-upgrade-take2.contract.md
+ D tasks/notes/20260821-0303-bun-14-upgrade-take2.notes.md
+ D tasks/reviews/20260821-0303-bun-14-upgrade-take2.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260821-0222-restamp-auto-publication.md
-?? tasks/archive/contract-20260821-0329-restamp-auto-publication.md
-?? tasks/archive/notes-20260821-0329-restamp-auto-publication.md
-?? tasks/archive/review-20260821-0329-restamp-auto-publication.md
-?? tasks/archive/todo-20260821-0329-restamp-auto-publication.md
+?? plans/archive/plan-20260821-0303-bun-14-upgrade-take2.md
+?? tasks/archive/contract-20260821-0426-bun-14-upgrade-take2.md
+?? tasks/archive/notes-20260821-0426-bun-14-upgrade-take2.md
+?? tasks/archive/review-20260821-0426-bun-14-upgrade-take2.md
+?? tasks/archive/todo-20260821-0426-bun-14-upgrade-take2.md
 ```
 
 ## Source Artifacts

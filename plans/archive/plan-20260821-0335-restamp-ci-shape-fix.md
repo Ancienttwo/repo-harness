@@ -1,6 +1,6 @@
 # Plan: Fix PATH-dependent drain-shape test on main CI
 
-> **Status**: Approved
+> **Status**: Archived
 > **Created**: 20260821-0335
 > **Slug**: restamp-ci-shape-fix
 > **Planning Source**: repo-harness-plan

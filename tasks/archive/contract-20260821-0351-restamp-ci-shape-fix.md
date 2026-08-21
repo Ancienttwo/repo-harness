@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-21 03:51
+> **Related Plan**: plans/archive/plan-20260821-0335-restamp-ci-shape-fix.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260821-0351
+
 # Task Contract: restamp-ci-shape-fix
 
 > **Status**: Fulfilled
