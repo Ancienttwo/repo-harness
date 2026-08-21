@@ -41,9 +41,10 @@ checks 和 review evidence 写回项目文件，让下一个 agent 会话从文�
 
 ### 1. 安装 CLI
 
-前置条件：一个 Git working tree、`bash` 和 `bun`；`jq` 可选。不需要
-Node.js——installer 使用 Bun >= 1.1.35 作为 runtime，需要时会先安装或升级
-Bun。
+前置条件：一个 Git working tree 和 `bun`；macOS/Linux 还需要 `bash`，
+Windows 则需要 Git for Windows（包括其 Bash 与 `usr/bin` 工具）。`jq`
+可选。不需要 Node.js——installer 使用 Bun >= 1.1.35 作为 runtime，需要时会
+先安装或升级 Bun。
 
 ```bash
 # macOS / Linux
@@ -69,6 +70,13 @@ npx -y repo-harness@latest install   # npx fallback; the CLI still runs on Bun
 ```bash
 repo-harness install
 ```
+
+Windows 上应在执行 install/update 时让 Git for Windows 位于 `PATH`。
+这次显式配置会验证 `git.exe`、同一安装根下的 `bash.exe`/`usr/bin` 以及原生
+`System32` 工具和安装账号的绝对 `TEMP` 目录，并将这些路径固定到 OS 账号的
+`~/.repo-harness/config.json#protectedHelperRuntime`。protected workflow
+helper 运行时不会再从调用者 `PATH` 搜索工具；Git for Windows 被移动或替换
+后，必须重新运行 `repo-harness update`。
 
 这个全局 bootstrap 会把 npm 包安装成全局 CLI，刷新 repo-harness 的 skill
 aliases，安装 user-level hook adapters，并记录一份明确的 install profile。

@@ -167,6 +167,38 @@ sequenceDiagram
   provider owns their later merge/squash boundary. AcceptanceReceipt and review
   subject schemas are unchanged; commit topology is not semantic authority.
 
+### 2026-08-21 Windows Protected Helper Platform Contract
+
+- P1: `src/cli/runtime/helper-runner.ts` remains the sole protected-helper
+  dispatcher; `src/cli/runtime/protected-helper-platform.ts` owns platform
+  resolution and the protocol-1 Windows schema; install/update owns discovery
+  and persistence; Git for Windows supplies the Bash/POSIX runtime; and the
+  existing process runner/supervisor pair owns bounded execution and receives
+  the exact validated `taskkill.exe` for both termination paths. The
+  four source helpers and their packaged asset mirrors remain the execution
+  surface. Installing Git, `jq`, `gh`, WSL, or an alternate shell is outside
+  this boundary.
+- P2: an explicit Windows install/update resolves Git and `taskkill` from the
+  operator environment, proves `taskkill` matches native `SystemRoot\\System32`,
+  proves Git/Bash/`usr/bin` share one non-symlink
+  Git-for-Windows root, validates the ceremony's absolute non-symlink `TEMP`
+  directory, probes the executables, and atomically writes the OS
+  account config without replacing siblings. Later `runHelper` reads and
+  revalidates that record, resolves the repo with pinned Git, selects the
+  packaged helper, and launches pinned Bash/Bun with an isolated Windows
+  environment. Direct `acceptance-receipt.ts` and `merge-gate.ts` invocation
+  re-resolves the same host contract rather than trusting caller binary/path/temp
+  overrides, and the shell ship path asks merge-gate for a scalar required flag
+  without adding a `jq` dependency. Missing or stale state stops before the
+  helper or repository side effect.
+- P3: runtime `PATH` probing would reintroduce caller authority, so discovery is
+  intentionally confined to install/update and relocation requires an explicit
+  update. Small host-absolute predicates in the two shell helpers preserve the
+  existing Bash implementation while accepting Windows drive paths. At 10x
+  invocation volume, repeated validation is bounded local filesystem I/O; the
+  first operational failure remains a moved Git-for-Windows installation, and
+  that failure is deliberately closed rather than repaired heuristically.
+
 ---
 
 ## 4. 历史决策记录（append-only）

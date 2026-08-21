@@ -7,9 +7,28 @@ GIT_BIN="${REPO_HARNESS_GIT_BIN:-/usr/bin/git}"
 BASH_BIN="${REPO_HARNESS_BASH_BIN:-/bin/bash}"
 BUN_BIN="${REPO_HARNESS_BUN_BIN:-}"
 WORKFLOW_STATE_LIB="${REPO_HARNESS_WORKFLOW_STATE_LIB:-.ai/hooks/lib/workflow-state.sh}"
-[[ "$GIT_BIN" == /* && -x "$GIT_BIN" ]] || { echo "ship-worktrees: trusted git executable is unavailable" >&2; exit 1; }
-[[ "$BASH_BIN" == /* && -x "$BASH_BIN" ]] || { echo "ship-worktrees: trusted bash executable is unavailable" >&2; exit 1; }
-if [[ -n "$BUN_BIN" ]] && [[ "$WORKFLOW_STATE_LIB" != /* || ! -f "$WORKFLOW_STATE_LIB" || -L "$WORKFLOW_STATE_LIB" ]]; then
+if [[ "${OS:-}" == "Windows_NT" ]]; then
+  GIT_BIN="${GIT_BIN//\\//}"
+  BASH_BIN="${BASH_BIN//\\//}"
+  BUN_BIN="${BUN_BIN//\\//}"
+  WORKFLOW_STATE_LIB="${WORKFLOW_STATE_LIB//\\//}"
+  REPO_HARNESS_TARGET_REPO_ROOT="${REPO_HARNESS_TARGET_REPO_ROOT:-}"
+  REPO_HARNESS_TARGET_REPO_ROOT="${REPO_HARNESS_TARGET_REPO_ROOT//\\//}"
+  REPO_HARNESS_HELPER_SOURCE_PATH="${REPO_HARNESS_HELPER_SOURCE_PATH:-}"
+  REPO_HARNESS_HELPER_SOURCE_PATH="${REPO_HARNESS_HELPER_SOURCE_PATH//\\//}"
+fi
+is_absolute_host_path() {
+  case "$1" in
+    /*) return 0 ;;
+    [A-Za-z]:/*|[A-Za-z]:\\*) [[ "${OS:-}" == "Windows_NT" ]] && return 0 ;;
+  esac
+  return 1
+}
+is_trusted_executable() { is_absolute_host_path "$1" && [[ -f "$1" && ! -L "$1" && -x "$1" ]]; }
+is_trusted_regular_file() { is_absolute_host_path "$1" && [[ -f "$1" && ! -L "$1" ]]; }
+is_trusted_executable "$GIT_BIN" || { echo "ship-worktrees: trusted git executable is unavailable" >&2; exit 1; }
+is_trusted_executable "$BASH_BIN" || { echo "ship-worktrees: trusted bash executable is unavailable" >&2; exit 1; }
+if [[ -n "$BUN_BIN" ]] && ! is_trusted_regular_file "$WORKFLOW_STATE_LIB"; then
   echo "ship-worktrees: trusted workflow-state library is unavailable" >&2
   exit 1
 fi
@@ -870,7 +889,7 @@ require_finish_ready() {
   [[ -n "$review_file" && -f "$review_file" ]] || fail "active sprint review is missing"
 
   [[ -f "$helper_dir/acceptance-receipt.ts" ]] || fail "AcceptanceReceipt helper is missing: $helper_dir/acceptance-receipt.ts"
-  [[ "$BUN_BIN" == /* && -x "$BUN_BIN" ]] || fail "AcceptanceReceipt requires the trusted Bun runtime injected by repo-harness run"
+  is_trusted_executable "$BUN_BIN" || fail "AcceptanceReceipt requires the trusted Bun runtime injected by repo-harness run"
   REPO_HARNESS_TARGET_REPO_ROOT="$(pwd -P)" "$BUN_BIN" "$helper_dir/acceptance-receipt.ts" verify \
     --contract "$contract_file" --verification ".ai/harness/checks/latest.json" >/dev/null \
     || fail "active AcceptanceReceipt is missing, rejected, or stale"
@@ -890,7 +909,7 @@ finish_contract_worktree() {
 verify_merge_gate_before_ship() {
   local base_ref="$1"
   [[ -f "$helper_dir/merge-gate.ts" ]] || fail "merge-gate helper is missing: $helper_dir/merge-gate.ts"
-  [[ "$BUN_BIN" == /* && -x "$BUN_BIN" ]] || fail "merge gate requires the trusted Bun runtime injected by repo-harness run"
+  is_trusted_executable "$BUN_BIN" || fail "merge gate requires the trusted Bun runtime injected by repo-harness run"
   if [[ "$DRY_RUN" -eq 1 ]]; then
     git rev-parse HEAD
     return 0
@@ -901,7 +920,7 @@ verify_merge_gate_before_ship() {
 seal_merge_gate_before_ship() {
   local base_ref="$1"
   [[ -f "$helper_dir/merge-gate.ts" ]] || fail "merge-gate helper is missing: $helper_dir/merge-gate.ts"
-  [[ "$BUN_BIN" == /* && -x "$BUN_BIN" ]] || fail "merge gate requires the trusted Bun runtime injected by repo-harness run"
+  is_trusted_executable "$BUN_BIN" || fail "merge gate requires the trusted Bun runtime injected by repo-harness run"
   if [[ "$DRY_RUN" -eq 1 ]]; then
     git rev-parse HEAD
     return 0
@@ -911,10 +930,9 @@ seal_merge_gate_before_ship() {
 
 merge_gate_required() {
   local base_ref="$1" result
-  [[ "$BUN_BIN" == /* && -x "$BUN_BIN" ]] || fail "merge gate requires the trusted Bun runtime injected by repo-harness run"
-  command -v jq >/dev/null 2>&1 || fail "merge gate preflight requires jq"
-  result="$("$BUN_BIN" "$helper_dir/merge-gate.ts" fingerprint --base "$base_ref" --format json)" || fail "cannot read merge-gate requirement from $base_ref"
-  printf '%s' "$result" | jq -er '.required == true' >/dev/null 2>&1
+  is_trusted_executable "$BUN_BIN" || fail "merge gate requires the trusted Bun runtime injected by repo-harness run"
+  result="$("$BUN_BIN" "$helper_dir/merge-gate.ts" fingerprint --base "$base_ref" --format required)" || fail "cannot read merge-gate requirement from $base_ref"
+  [[ "$result" == "true" ]]
 }
 
 refresh_target_base() {

@@ -1,5 +1,5 @@
 import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "fs";
-import { homedir, tmpdir } from "os";
+import { homedir, tmpdir, userInfo } from "os";
 import { delimiter, dirname, join, relative, resolve, sep } from "path";
 import { fileURLToPath } from "url";
 import { ARCHCONTEXT_NODE_RANGE, productVersionManifest } from "archctx-contracts";
@@ -21,6 +21,11 @@ import {
   type SkillSurfaceCatalog,
 } from "../../core/skill-surface/catalog";
 import { archctxCapabilities } from "../../effects/architecture/archctx-provider";
+import {
+  discoverWindowsProtectedHelperContract,
+  resolveProtectedHelperPlatform,
+  writeWindowsProtectedHelperContract,
+} from "../runtime/protected-helper-platform";
 
 export interface GlobalRuntimeOptions {
   sourceRoot?: string;
@@ -99,8 +104,14 @@ function defaultSourceRoot(): string {
   return join(SCRIPT_DIR, "..", "..", "..");
 }
 
-function runProcess(command: string, args: string[], cwd: string, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
-  const result = runBoundedProcess(command, args, { cwd, env });
+function runProcess(
+  command: string,
+  args: string[],
+  cwd: string,
+  env?: NodeJS.ProcessEnv,
+  inheritEnv = true,
+): GlobalRuntimeStep {
+  const result = runBoundedProcess(command, args, { cwd, env, inheritEnv });
 
   return {
     step: "",
@@ -1120,6 +1131,71 @@ function configureBrain(root: string | undefined, env?: NodeJS.ProcessEnv): Glob
   }
 }
 
+export function configureProtectedHelperPlatform(
+  cwd: string,
+  bunExecutable: string,
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): GlobalRuntimeStep {
+  if (platform !== 'win32') {
+    return {
+      step: 'configure protected helper platform',
+      status: 'skipped',
+      detail: `native ${platform} system toolchain`,
+    };
+  }
+  try {
+    const account = userInfo();
+    const contract = discoverWindowsProtectedHelperContract({ env });
+    const runtime = resolveProtectedHelperPlatform({
+      platform,
+      accountHome: account.homedir,
+      accountUsername: account.username,
+      bunExecutable,
+      contract,
+    });
+    const probeEnv: NodeJS.ProcessEnv = {
+      HOME: runtime.accountHome,
+      USER: runtime.accountUsername,
+      LOGNAME: runtime.accountUsername,
+      OS: 'Windows_NT',
+      USERPROFILE: runtime.accountHome,
+      USERNAME: runtime.accountUsername,
+      SystemRoot: runtime.systemRoot,
+      WINDIR: runtime.systemRoot,
+      PATHEXT: '.COM;.EXE;.BAT;.CMD',
+      PATH: runtime.pathEntries.join(runtime.pathDelimiter),
+      TMPDIR: runtime.tempDir,
+      TEMP: runtime.tempDir,
+      TMP: runtime.tempDir,
+    };
+    const git = runProcess(contract.git_bin, ['--version'], cwd, probeEnv, false);
+    if (git.status !== 'ok') {
+      return { ...git, step: 'configure protected helper platform', detail: 'Git for Windows probe failed' };
+    }
+    const bash = runProcess(contract.bash_bin, ['--version'], cwd, probeEnv, false);
+    if (bash.status !== 'ok') {
+      return { ...bash, step: 'configure protected helper platform', detail: 'Git for Windows Bash probe failed' };
+    }
+    const taskkill = runProcess(runtime.taskkillBin!, ['/?'], cwd, probeEnv, false);
+    if (taskkill.status !== 'ok') {
+      return { ...taskkill, step: 'configure protected helper platform', detail: 'Windows taskkill probe failed' };
+    }
+    const written = writeWindowsProtectedHelperContract(contract, account.homedir);
+    return {
+      step: 'configure protected helper platform',
+      status: 'ok',
+      detail: `${written.changed ? 'pinned' : 'verified'} ${contract.distribution} at ${contract.git_root}`,
+    };
+  } catch (error) {
+    return {
+      step: 'configure protected helper platform',
+      status: 'failed',
+      stderr: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 function ensureCodegraphCli(cwd: string, bunExecutable: string, env?: NodeJS.ProcessEnv, refresh = false): GlobalRuntimeStep {
   const check = runProcess("codegraph", ["--version"], cwd, env);
   if (!refresh && check.status === "ok") return withStepName(check, "ensure CodeGraph CLI", "present");
@@ -1197,6 +1273,10 @@ export function runGlobalRuntimeSetup(
   if (bunRuntime.status === "failed") {
     return finalizeRuntimeResult(steps);
   }
+
+  const protectedHelperPlatform = configureProtectedHelperPlatform(cwd, bunExecutable, env);
+  steps.push(protectedHelperPlatform);
+  if (protectedHelperPlatform.status === 'failed') return finalizeRuntimeResult(steps);
 
   if (opts.installCli !== false) {
     const install = installCli(sourceRoot, cwd, bunExecutable, env, opts.installSpec);

@@ -13,6 +13,7 @@ import {
   writeFileSync,
 } from 'fs';
 import { userInfo } from 'os';
+import { createRequire } from 'module';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { spawnSync } from 'child_process';
@@ -87,10 +88,81 @@ type Options = {
 };
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const PACKAGE_ROOT = SCRIPT_DIR.endsWith('/assets/templates/helpers')
+const PACKAGE_ROOT = basename(SCRIPT_DIR) === 'helpers'
+  && basename(dirname(SCRIPT_DIR)) === 'templates'
+  && basename(dirname(dirname(SCRIPT_DIR))) === 'assets'
   ? resolve(SCRIPT_DIR, '../../..')
   : resolve(SCRIPT_DIR, '..');
-const GIT_BIN = ['/usr/bin/git', '/bin/git'].find((path) => existsSync(path)) ?? 'git';
+type ProtectedRuntime = {
+  platform: NodeJS.Platform;
+  accountHome: string;
+  accountUsername: string;
+  gitBin: string;
+  bashBin: string;
+  bunExecutable: string;
+  pathEntries: readonly string[];
+  pathDelimiter: ':' | ';';
+  tempDir: string;
+  systemRoot?: string;
+};
+type ProtectedPlatformModule = {
+  resolveProtectedHelperPlatform: () => ProtectedRuntime;
+  protectedHelperRuntimeEnv: (runtime: ProtectedRuntime) => NodeJS.ProcessEnv;
+};
+type ProtectedGitRuntime = {
+  readonly gitBin: string;
+  readonly env: NodeJS.ProcessEnv;
+};
+const requireFromHelper = createRequire(import.meta.url);
+let protectedGitRuntimeCache: ProtectedGitRuntime | null = null;
+
+function fixedPosixExecutable(label: string, candidates: readonly string[]): string {
+  for (const candidate of candidates) {
+    if (!isAbsolute(candidate) || !existsSync(candidate)) continue;
+    const source = lstatSync(candidate);
+    if (source.isSymbolicLink() || !source.isFile()) continue;
+    const actual = realpathSync(candidate);
+    const target = lstatSync(actual);
+    if (target.isSymbolicLink() || !target.isFile() || (target.mode & 0o111) === 0) continue;
+    return actual;
+  }
+  throw new Error(`required system executable is unavailable: ${label}`);
+}
+
+export function resolveProtectedGitRuntime(): ProtectedGitRuntime {
+  if (protectedGitRuntimeCache) return protectedGitRuntimeCache;
+  if (process.platform !== 'win32') {
+    const account = userInfo();
+    const gitBin = fixedPosixExecutable('git', ['/usr/bin/git', '/bin/git']);
+    const bashBin = fixedPosixExecutable('bash', ['/bin/bash']);
+    const protectedPath = `${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin`;
+    protectedGitRuntimeCache = {
+      gitBin,
+      env: {
+        HOME: account.homedir,
+        USER: account.username,
+        LOGNAME: account.username,
+        PATH: protectedPath,
+        TMPDIR: '/tmp',
+        REPO_HARNESS_BASH_BIN: bashBin,
+        REPO_HARNESS_GIT_BIN: gitBin,
+        REPO_HARNESS_BUN_BIN: process.execPath,
+        REPO_HARNESS_PROTECTED_PATH: protectedPath,
+        REPO_HARNESS_PROTECTED_TMPDIR: '/tmp',
+      },
+    };
+    return protectedGitRuntimeCache;
+  }
+  const protectedPlatform = requireFromHelper(
+    join(PACKAGE_ROOT, 'src', 'cli', 'runtime', 'protected-helper-platform.ts'),
+  ) as ProtectedPlatformModule;
+  const runtime = protectedPlatform.resolveProtectedHelperPlatform();
+  protectedGitRuntimeCache = {
+    gitBin: runtime.gitBin,
+    env: protectedPlatform.protectedHelperRuntimeEnv(runtime),
+  };
+  return protectedGitRuntimeCache;
+}
 
 function fail(message: string, code = 1): never {
   const error = new Error(message) as Error & { exitCode?: number };
@@ -123,7 +195,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function gitText(root: string, args: string[]): string {
-  const result = spawnSync(GIT_BIN, ['-C', root, ...args], { encoding: 'utf-8' });
+  const runtime = resolveProtectedGitRuntime();
+  const result = spawnSync(runtime.gitBin, ['-C', root, ...args], { encoding: 'utf-8', env: runtime.env });
   if (result.status !== 0) fail(`git ${args.join(' ')} failed: ${result.stderr.trim() || 'unknown error'}`);
   return result.stdout.trim();
 }
@@ -478,7 +551,8 @@ function resolveArchived(root: string, path: string, family: 'plans' | 'tasks', 
   if (existsSync(resolve(root, path))) return path;
   const archiveRoot = join(root, family, 'archive');
   if (!existsSync(archiveRoot)) fail(`receipt authority file is missing: ${path}`);
-  const tracked = spawnSync(GIT_BIN, ['-C', root, 'ls-files', `${family}/archive`], { encoding: 'utf-8' })
+  const runtime = resolveProtectedGitRuntime();
+  const tracked = spawnSync(runtime.gitBin, ['-C', root, 'ls-files', `${family}/archive`], { encoding: 'utf-8', env: runtime.env })
     .stdout.split(/\r?\n/).filter(Boolean);
   const matches = tracked.filter((candidate) => {
     const absolute = resolve(root, candidate);

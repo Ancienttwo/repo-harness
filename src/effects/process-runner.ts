@@ -2,7 +2,7 @@ import { spawnSync } from "child_process";
 import { mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { PROCESS_SUPERVISOR_TERMINATION_GRACE_MS } from "./process-supervisor";
+import { PROCESS_SUPERVISOR_TERMINATION_GRACE_MS, taskkillAttemptSucceeded } from "./process-supervisor";
 
 export interface ProcessOutputRedaction {
   readonly pattern: RegExp;
@@ -18,6 +18,7 @@ export interface RunProcessOptions {
   readonly maxOutputBytes?: number;
   readonly redactions?: readonly ProcessOutputRedaction[];
   readonly processGroup?: boolean;
+  readonly taskkillBin?: string;
   readonly expensiveRunLock?: {
     readonly cwd: string;
     readonly gitBin: string;
@@ -76,30 +77,34 @@ function processGroupExists(pid: number): boolean {
   }
 }
 
-function signalProcessGroup(pid: number, signal: NodeJS.Signals): void {
+function signalProcessGroup(pid: number, signal: NodeJS.Signals, taskkillBin?: string): boolean {
   try {
     if (process.platform === "win32") {
-      spawnSync("taskkill", ["/pid", String(pid), "/T", ...(signal === "SIGKILL" ? ["/F"] : [])], {
+      return taskkillAttemptSucceeded(spawnSync(taskkillBin ?? "taskkill", ["/pid", String(pid), "/T", ...(signal === "SIGKILL" ? ["/F"] : [])], {
         stdio: "ignore",
         windowsHide: true,
-      });
+      }));
     } else {
       process.kill(-pid, signal);
     }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
   }
+  return true;
 }
 
 function waitSynchronously(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
-function terminateAbandonedProcessGroup(pid: number): string {
+function terminateAbandonedProcessGroup(pid: number, taskkillBin?: string): string {
   try {
-    signalProcessGroup(pid, "SIGTERM");
+    const gracefulCleanupConfirmed = signalProcessGroup(pid, "SIGTERM", taskkillBin);
     waitSynchronously(PROCESS_SUPERVISOR_TERMINATION_GRACE_MS);
-    signalProcessGroup(pid, "SIGKILL");
+    const forcedCleanupConfirmed = signalProcessGroup(pid, "SIGKILL", taskkillBin);
+    if (process.platform === "win32" && !gracefulCleanupConfirmed && !forcedCleanupConfirmed) {
+      return `supervisor backstop taskkill could not confirm termination of process tree ${pid}`;
+    }
     const deadline = Date.now() + PROCESS_SUPERVISOR_TERMINATION_GRACE_MS;
     while (processGroupExists(pid) && Date.now() < deadline) waitSynchronously(10);
     return processGroupExists(pid)
@@ -149,6 +154,7 @@ function runSupervisedProcess(
         "--git-bin", opts.expensiveRunLock.gitBin,
       );
     }
+    if (opts.taskkillBin) supervisorArgs.push("--taskkill-bin", opts.taskkillBin);
     supervisorArgs.push("--", command, ...args);
     const supervisorHardTimeoutMs = timeoutMs
       + PROCESS_SUPERVISOR_TERMINATION_GRACE_MS
@@ -191,7 +197,7 @@ function runSupervisedProcess(
       || receipt.completed !== true
       || (receipt.processGroupPid !== null && processGroupPid === null);
     if (envelopeMismatch) {
-      const cleanupError = processGroupPid === null ? "" : terminateAbandonedProcessGroup(processGroupPid);
+      const cleanupError = processGroupPid === null ? "" : terminateAbandonedProcessGroup(processGroupPid, opts.taskkillBin);
       const envelopeError = supervisorTimedOut
         ? `process supervisor exceeded hard timeout after ${supervisorHardTimeoutMs}ms`
         : [
