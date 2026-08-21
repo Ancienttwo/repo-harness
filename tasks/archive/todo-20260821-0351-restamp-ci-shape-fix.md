@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-21 03:51
+> **Related Plan**: plans/archive/plan-20260821-0335-restamp-ci-shape-fix.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260821-0351
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog

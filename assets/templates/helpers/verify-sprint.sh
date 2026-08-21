@@ -390,7 +390,7 @@ git_diff_merge_base() {
 # fails closed and names its own cause. A single "was rebased" message for all
 # of them sends the reader looking for a rebase that may never have happened.
 assert_contract_worktree_base_is_current_fork_point() {
-  local record select_status fork_point base_upstream
+  local record select_status fork_point base_upstream base_local_sha base_upstream_sha
   local -a bases=()
 
   # An explicit override outranks metadata in `git_diff_base_ref`, so the
@@ -439,16 +439,21 @@ assert_contract_worktree_base_is_current_fork_point() {
   fi
 
   # A target ref that lags its own remote-tracking ref makes the local fork
-  # point look current while the real integration target has moved. Compared
-  # against an already-present tracking ref only; this guard never fetches.
+  # point look current while the real integration target has moved. Only
+  # missing upstream commits are that harm: local-ahead still contains every
+  # commit the remote has, so the fork point is not stale. Fail when the
+  # upstream is not an ancestor of the local ref -- behind, or diverged.
+  # Compared against an already-present tracking ref only; this never fetches.
   base_upstream="$(git rev-parse --verify --symbolic-full-name "$META_BASE_BRANCH@{upstream}" 2>/dev/null || true)"
   if [[ -n "$base_upstream" ]]; then
-    if [[ "$(git rev-parse "$META_BASE_BRANCH^{commit}")" != "$(git rev-parse "$base_upstream^{commit}")" ]]; then
-      echo "verify-sprint: recorded base_branch is not synchronized with its upstream" >&2
+    base_local_sha="$(git rev-parse "$META_BASE_BRANCH^{commit}")"
+    base_upstream_sha="$(git rev-parse "$base_upstream^{commit}")"
+    if ! git merge-base --is-ancestor "$base_upstream_sha" "$base_local_sha"; then
+      echo "verify-sprint: recorded base_branch is behind or diverged from its upstream" >&2
       echo "verify-sprint: reason=base_ref_unsynchronized" >&2
-      echo "verify-sprint:   $META_BASE_BRANCH: $(git rev-parse "$META_BASE_BRANCH^{commit}")" >&2
-      echo "verify-sprint:   $base_upstream: $(git rev-parse "$base_upstream^{commit}")" >&2
-      echo "verify-sprint: fetch and reconcile $META_BASE_BRANCH before running the gate" >&2
+      echo "verify-sprint:   $META_BASE_BRANCH: $base_local_sha" >&2
+      echo "verify-sprint:   $base_upstream: $base_upstream_sha" >&2
+      echo "verify-sprint: fast-forward $META_BASE_BRANCH (git pull --ff-only), or reconcile the divergence, before running the gate" >&2
       exit 1
     fi
   fi

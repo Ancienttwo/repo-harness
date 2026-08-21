@@ -89,6 +89,20 @@ export function getHookDefinition(
 }
 
 /**
+ * Stdin-offer error filter for the hook contract.
+ *
+ * The hook contract OFFERS context on stdin; consuming it is optional. A hook
+ * script that exits or closes stdin without reading is legal, and the resulting
+ * EPIPE on the write/end is the expected shape of that offer being declined,
+ * not a communication failure — the hook outcome stays determined by exit code.
+ * Every other stream error still propagates as before.
+ */
+export function rethrowNonEpipeStdinError(error: NodeJS.ErrnoException): void {
+  if (error.code === "EPIPE") return;
+  throw error;
+}
+
+/**
  * Execute a single hook script.
  * Context is passed via stdin as JSON and SKILL_HOOK_EVENT env var.
  */
@@ -126,7 +140,8 @@ export async function executeHookScript(
     child.stdout.on("data", (data: Buffer) => stdoutChunks.push(data.toString()));
     child.stderr.on("data", (data: Buffer) => stderrChunks.push(data.toString()));
 
-    // Pass context via stdin
+    // Pass context via stdin (an offer; see rethrowNonEpipeStdinError)
+    child.stdin.on("error", rethrowNonEpipeStdinError);
     child.stdin.write(JSON.stringify(context));
     child.stdin.end();
 
