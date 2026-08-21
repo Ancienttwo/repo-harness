@@ -118,7 +118,7 @@ sequenceDiagram
 
 | 历史段落 | 历史说法 | HEAD 实际 | 位置 |
 | --- | --- | --- | --- |
-| 2026-07-16 Closeout Runner Guardrails | `verify-contract`/`verify-sprint` 720 秒 | **1,260 秒**（`VERIFIER_HELPER_TIMEOUT_MS = 1_260_000`） | `src/cli/runtime/helper-runner.ts:13` |
+| 2026-07-16 Closeout Runner Guardrails | `verify-contract`/`verify-sprint` 720 秒 | **3,660 秒**（`VERIFIER_HELPER_TIMEOUT_MS = 3_660_000`） | `src/cli/runtime/helper-runner.ts:15` |
 | 2026-07-16 Closeout Runner Guardrails | 900 秒档只含 `contract-worktree`/`ship-worktrees` | 还包含 **`merge-gate`**；`PROTECTED_HELPERS` 另含 `acceptance-receipt` | `helper-runner.ts:12`、`:134-137` |
 | 2026-07-14 Helper Descriptions | 46 → 48 条描述 | **52 条**（scripts 与 descriptions 均为 52） | `assets/workflow-contract.v1.json#helpers` |
 

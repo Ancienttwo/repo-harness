@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-21T12:26:37+0800 -->
+<!-- updated_at: 2026-08-21T13:49:22+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-08-21T12:26:37+0800
-> **Source Branch**: codex/basegate-ancestor-relax
-> **Source Commit**: bd4eb6b8
+> **Updated At**: 2026-08-21T13:49:22+0800
+> **Source Branch**: codex/obsidian-companion-dependencies
+> **Source Commit**: 123cbfad
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -47,7 +47,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=completed, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: (none)
+- Exact Next Step: Stage the completed module diff first; then run /check and let canonical workflow gates determine whether review, external acceptance, verification, or worktree finish is next. Command: /check
 
 ## Checks
 
@@ -58,16 +58,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260821-1136-basegate-ancestor-relax.md
- D tasks/contracts/20260821-1136-basegate-ancestor-relax.contract.md
- D tasks/notes/20260821-1136-basegate-ancestor-relax.notes.md
- D tasks/reviews/20260821-1136-basegate-ancestor-relax.review.md
+ D plans/plan-20260821-0021-obsidian-companion-dependencies.md
+ D tasks/contracts/20260821-0021-obsidian-companion-dependencies.contract.md
+ D tasks/notes/20260821-0021-obsidian-companion-dependencies.notes.md
+ D tasks/reviews/20260821-0021-obsidian-companion-dependencies.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260821-1136-basegate-ancestor-relax.md
-?? tasks/archive/contract-20260821-1226-basegate-ancestor-relax.md
-?? tasks/archive/notes-20260821-1226-basegate-ancestor-relax.md
-?? tasks/archive/review-20260821-1226-basegate-ancestor-relax.md
-?? tasks/archive/todo-20260821-1226-basegate-ancestor-relax.md
+?? plans/archive/plan-20260821-0021-obsidian-companion-dependencies.md
+?? tasks/archive/contract-20260821-1349-obsidian-companion-dependencies.md
+?? tasks/archive/notes-20260821-1349-obsidian-companion-dependencies.md
+?? tasks/archive/review-20260821-1349-obsidian-companion-dependencies.md
+?? tasks/archive/todo-20260821-1349-obsidian-companion-dependencies.md
 ```
 
 ## Source Artifacts

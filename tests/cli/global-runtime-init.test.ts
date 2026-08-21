@@ -4,6 +4,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
 import { PassThrough, Writable } from 'stream';
+import { createHash } from 'crypto';
 import { runGlobalRuntimeSetup } from '../../src/cli/commands/global-runtime';
 import { resolveOptionalRuntimeDeps, runTransactionalRuntimeRefresh } from '../../src/cli/index';
 
@@ -11,6 +12,23 @@ const ROOT = join(import.meta.dir, '..', '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
 const REVERSE_PROVIDER = 'zhaoxuya520/reverse-skill@539899ddc7608d63dc66e08e794d572e080f1a55';
 const REVERSE_FAKE_TREE_INTEGRITY = 'sha256:0089d4f8f81d3c4b8b055ac9a3674838cdb064ffae2f4c99d357977d3719baae';
+const OBSIDIAN_PROVIDER = 'kepano/obsidian-skills@a1dc48e68138490d522c04cbf5822214c6eb1202';
+
+function singleFileSkillIntegrity(content: string): string {
+  const hash = createHash('sha256');
+  hash.update(`F\0SKILL.md\0${Buffer.byteLength(content)}\0`);
+  hash.update(content);
+  hash.update('\0');
+  return `sha256:${hash.digest('hex')}`;
+}
+
+function singleFileManagedTreeHash(content: string): string {
+  const hash = createHash('sha256');
+  hash.update('F\0SKILL.md\0');
+  hash.update(content);
+  hash.update('\0');
+  return `sha256:${hash.digest('hex')}`;
+}
 
 function writeExecutable(filePath: string, content: string): void {
   writeFileSync(filePath, content);
@@ -66,6 +84,17 @@ function setReverseSkillIntegrity(root: string, integrity: string | null): void 
   const pkg = manifest.packages.find(({ name }: { name: string }) => name === 'reverse-skill-router');
   if (!pkg) throw new Error('reverse-skill-router missing from fixture manifest');
   pkg.integrity = integrity;
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
+function setObsidianSkillIntegrities(root: string): void {
+  const manifestPath = join(root, 'assets', 'skill-commands', 'manifest.json');
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+  for (const name of ['obsidian-markdown', 'obsidian-cli']) {
+    const pkg = manifest.packages.find((entry: { name: string }) => entry.name === name);
+    if (!pkg) throw new Error(`${name} missing from fixture manifest`);
+    pkg.integrity = singleFileSkillIntegrity(`# ${name}\n`);
+  }
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
@@ -351,6 +380,7 @@ describe('install command global runtime bootstrap', () => {
       expect(readFileSync(bunxLog, 'utf-8')).toContain(
         `skills add ${REVERSE_PROVIDER} -g -a codex -s reverse-skill-router -y`,
       );
+      expect(readFileSync(bunxLog, 'utf-8')).not.toContain(OBSIDIAN_PROVIDER);
       expect(existsSync(join(home, '.codex', 'skills', 'reverse-skill-router', 'SKILL.md'))).toBe(true);
       expect(existsSync(join(home, '.codex', 'skills', 'repo-harness-cross-review', 'SKILL.md'))).toBe(true);
       expect(existsSync(join(home, '.claude', 'skills', 'repo-harness-cross-review', 'SKILL.md'))).toBe(false);
@@ -368,6 +398,117 @@ describe('install command global runtime bootstrap', () => {
       rmSync(tmp, { recursive: true, force: true });
     }
   }, 15000);
+
+  test('explicit Obsidian bundle installs, verifies, and reprojects both pinned Skills without an executable dependency', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-obsidian-skills-'));
+    const source = join(tmp, 'source');
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    const bunxLog = join(tmp, 'bunx.log');
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(home, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      setupFakeSource(source);
+      setObsidianSkillIntegrities(source);
+      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n');
+      writeFakeSkillsCli(fakeBin);
+      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash
+printf '%s\n' "$*" >> "${bunxLog}"
+if [[ " $* " == *" ${OBSIDIAN_PROVIDER} "* ]]; then
+  for skill in obsidian-markdown obsidian-cli; do
+    mkdir -p "$HOME/.agents/skills/$skill"
+    printf '# %s\n' "$skill" > "$HOME/.agents/skills/$skill/SKILL.md"
+  done
+fi
+exit 0
+`);
+      const env = {
+        ...sanitizedChildEnv(),
+        HOME: home,
+        BUN_INSTALL: join(home, '.bun'),
+        PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+        REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
+      };
+
+      const installed = runGlobalRuntimeSetup({
+        sourceRoot: source,
+        cwd: repo,
+        target: 'both',
+        profile: 'minimal',
+        installCli: false,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        obsidianSkills: true,
+        codegraph: false,
+        env,
+      });
+      expect(installed.exitCode).toBe(0);
+      expect(readFileSync(bunxLog, 'utf-8')).toContain(
+        `skills add ${OBSIDIAN_PROVIDER} -g -a claude-code codex -s obsidian-markdown obsidian-cli -y`,
+      );
+      for (const skill of ['obsidian-markdown', 'obsidian-cli']) {
+        expect(existsSync(join(home, '.agents', 'skills', skill, 'SKILL.md'))).toBe(true);
+        expect(existsSync(join(home, '.claude', 'skills', skill, 'SKILL.md'))).toBe(true);
+        expect(existsSync(join(home, '.codex', 'skills', skill, 'SKILL.md'))).toBe(true);
+      }
+      expect(existsSync(join(fakeBin, 'obsidian'))).toBe(false);
+
+      for (const skill of ['obsidian-markdown', 'obsidian-cli']) {
+        writeFileSync(join(home, '.agents', 'skills', skill, 'SKILL.md'), `# old ${skill}\n`);
+      }
+      mkdirSync(join(home, '.repo-harness'), { recursive: true });
+      writeFileSync(join(home, '.repo-harness', 'install-state.json'), `${JSON.stringify({
+        protocol: 2,
+        profile: 'minimal',
+        components: [
+          'cli', 'effective-state', 'scope-worktree-check-guards', 'handoff', 'host-adapters',
+          'adaptive-workflow', 'codegraph-conditional',
+        ],
+        transaction_id: 'obsidian-fixture',
+        applied_at: '2026-08-21T00:00:00.000Z',
+        ownership_manifest: ['obsidian-markdown', 'obsidian-cli'].map((skill) => ({
+          components: ['adaptive-workflow'],
+          authority: 'repo-harness-install-transaction',
+          removal: 'managed-surfaces-only',
+          path: join(home, '.agents', 'skills', skill),
+          type: 'directory-copy',
+          content_hash: singleFileManagedTreeHash(`# old ${skill}\n`),
+          managed_marker: 'transaction-created-directory',
+          symlink_target: null,
+        })),
+        previous: null,
+      }, null, 2)}\n`);
+
+      rmSync(join(home, '.codex', 'skills', 'obsidian-cli'));
+      const verifiedUpdate = runGlobalRuntimeSetup({
+        sourceRoot: source,
+        cwd: repo,
+        target: 'both',
+        profile: 'minimal',
+        updateMode: true,
+        installCli: false,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        obsidianSkills: true,
+        codegraph: false,
+        env,
+      });
+      expect(verifiedUpdate.exitCode).toBe(0);
+      expect(verifiedUpdate.steps.find((step) => step.step === 'configure Obsidian companion Skills'))
+        .toMatchObject({ status: 'ok' });
+      expect(existsSync(join(home, '.codex', 'skills', 'obsidian-cli', 'SKILL.md'))).toBe(true);
+      expect(readFileSync(join(home, '.agents', 'skills', 'obsidian-cli', 'SKILL.md'), 'utf-8'))
+        .toBe('# obsidian-cli\n');
+      expect(readFileSync(bunxLog, 'utf-8').trim().split('\n')).toHaveLength(2);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 15_000);
 
   test('update mode reconciles mandatory dependencies and refreshes explicitly selected Waza, Mermaid, and CodeGraph', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-managed-update-'));
@@ -1385,6 +1526,7 @@ exit 0
     expect(res.stdout).toContain('--target <target>');
     expect(res.stdout).toContain('--no-cli');
     expect(res.stdout).toContain('--with-reverse-skill');
+    expect(res.stdout).toContain('--with-obsidian-skills');
     expect(res.stdout).toContain('--brain-root <path>');
     expect(res.stdout).not.toContain('--with-optional');
     expect(res.stdout).not.toContain('--project-type');
@@ -1731,6 +1873,7 @@ exit 0
     expect(res.stdout).toContain('--no-runtime-refresh');
     expect(res.stdout).toContain('--with-external-skills');
     expect(res.stdout).toContain('--with-reverse-skill');
+    expect(res.stdout).toContain('--with-obsidian-skills');
     expect(res.stdout).toContain('--configure-codegraph');
     expect(res.stdout).toContain('--no-cli');
     expect(res.stdout).toContain('Deprecated: use repo-harness init --repo <path>');

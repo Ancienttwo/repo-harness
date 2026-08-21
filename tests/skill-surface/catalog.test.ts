@@ -10,6 +10,7 @@ import {
   parseSkillSurfaceCatalog,
   probeExpectations,
   profileOwnedSkillNames,
+  requiredExplicitExternalDependencyInstallGroups,
   requiredExplicitExternalSkillInstallGroup,
   SKILL_SURFACE_PROFILES,
   validateSkillSurfaceCatalogValue,
@@ -212,6 +213,43 @@ describe("skill-surface catalog: every validation rejection, proven on a bad fix
     expect(codes(result)).toContain("DUPLICATE_SOURCE");
   });
 
+  test("UNKNOWN_REQUIREMENT: requires targets must exist", () => {
+    const broken = { ...FACADE, requires: ["missing-skill"] };
+    expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, broken]))))
+      .toContain("UNKNOWN_REQUIREMENT");
+  });
+
+  test("SELF_REQUIREMENT: packages cannot require themselves", () => {
+    const broken = { ...FACADE, requires: [FACADE.name] };
+    expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, broken]))))
+      .toContain("SELF_REQUIREMENT");
+  });
+
+  test("DUPLICATE_REQUIREMENT: requires edges are unique", () => {
+    const broken = { ...FACADE, requires: [ROUTER.name, ROUTER.name] };
+    expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, broken]))))
+      .toContain("DUPLICATE_REQUIREMENT");
+  });
+
+  test("CYCLIC_REQUIREMENT: dependency graphs must be acyclic", () => {
+    const left = { ...FACADE, name: "left", requires: ["right"] };
+    const right = { ...FACADE, name: "right", source: "assets/skill-commands/right", requires: ["left"] };
+    expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, left, right]))))
+      .toContain("CYCLIC_REQUIREMENT");
+  });
+
+  test("HOST_INCOMPATIBLE_REQUIREMENT: every consumer host must be supported by its dependency", () => {
+    const dependency = {
+      ...FACADE,
+      name: "codex-only",
+      source: "assets/skill-commands/codex-only",
+      hosts: ["codex"],
+    };
+    const broken = { ...FACADE, requires: [dependency.name] };
+    expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, broken, dependency]))))
+      .toContain("HOST_INCOMPATIBLE_REQUIREMENT");
+  });
+
   test("COMPONENT_NOT_IN_PROFILE: a profile-discovered package whose component is absent from that profile's component set", () => {
     const broken = { ...FACADE, component: "cross-model-acceptance" }; // minimal's set doesn't include this
     const result = validateSkillSurfaceCatalogValue(catalogValue([ROUTER, broken]), {
@@ -297,14 +335,14 @@ describe("skill-surface catalog: the real manifest.json on disk", () => {
   // addition, bringing the live surface to 11 repo-owned + 6 external.
   // obsidian-memory is the second repo-owned addition (a facade projected to
   // both hosts by every profile), bringing it to 12 repo-owned + 6 external.
-  test("covers all 12 repo-owned sources plus the 6 external skills (18 packages)", () => {
+  test("covers all 12 repo-owned sources plus the 8 external skills (20 packages)", () => {
     if (resolution.status !== "valid") throw new Error("expected valid catalog");
-    expect(resolution.catalog.packages.length).toBe(18);
+    expect(resolution.catalog.packages.length).toBe(20);
     const repoOwned = resolution.catalog.packages.filter((p) => p.kind !== "external");
     expect(repoOwned.length).toBe(12);
     const external = resolution.catalog.packages.filter((p) => p.kind === "external");
     expect(external.map((p) => p.name).sort()).toEqual([
-      "check", "health", "hunt", "mermaid", "reverse-skill-router", "think",
+      "check", "health", "hunt", "mermaid", "obsidian-cli", "obsidian-markdown", "reverse-skill-router", "think",
     ]);
   });
 
@@ -472,6 +510,25 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     });
   });
 
+  test("Obsidian companion dependency closure selects exactly the two pinned Skills for both hosts", () => {
+    expect(requiredExplicitExternalDependencyInstallGroups(
+      catalog,
+      "obsidian-memory",
+      ["claude", "codex"],
+    )).toEqual({
+      status: "selected",
+      groups: [{
+        provider: "kepano/obsidian-skills@a1dc48e68138490d522c04cbf5822214c6eb1202",
+        hosts: ["claude", "codex"],
+        skills: ["obsidian-markdown", "obsidian-cli"],
+        integrityBySkill: {
+          "obsidian-markdown": "sha256:ac9b702f9697f0bbf5f0fdc0c6896d94efef01438a59a4b508e5d7346da050e6",
+          "obsidian-cli": "sha256:58b3eaf9ccaadfcbe3b8d0eddb0d1fe872ef42c4cf289393a72d4e9a6d896f6f",
+        },
+      }],
+    });
+  });
+
   test("mutationPathSkillNames covers every package path that can be host-synced post-cutover", () => {
     const { repoHarnessSkills, externalSkills } = mutationPathSkillNames(catalog);
     expect(repoHarnessSkills).toEqual([
@@ -480,6 +537,7 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     ]);
     expect(externalSkills).toEqual([
       "repo-harness-cross-review", "think", "hunt", "check", "health", "mermaid", "reverse-skill-router",
+      "obsidian-markdown", "obsidian-cli",
     ]);
   });
 

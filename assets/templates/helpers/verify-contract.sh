@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERIFICATION_BUDGET_MS=1200000
+VERIFICATION_BUDGET_MS=3600000
 
 # Delegate evidence_requirements parsing to the one shared lib function
 # (workflow_contract_evidence_requirement) instead of re-implementing a second

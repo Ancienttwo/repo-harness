@@ -106,6 +106,7 @@ interface GlobalRuntimeCommandOptions {
   hooks?: string | false;
   externalSkills?: boolean;
   withReverseSkill?: boolean;
+  withObsidianSkills?: boolean;
   codegraph?: boolean;
   brainRoot?: string;
   json?: boolean;
@@ -316,6 +317,7 @@ async function runGlobalRuntimeBootstrap(
     hostAdapters: rawOpts.hooks !== false,
     externalSkills,
     reverseSkill: rawOpts.withReverseSkill === true,
+    obsidianSkills: rawOpts.withObsidianSkills === true,
     codegraph,
     brainRoot: rawOpts.brainRoot,
     profile,
@@ -364,6 +366,7 @@ export function buildProgram(): Command {
     .option('--no-hooks', 'Skip global hook adapter installation during full runtime install')
     .option('--no-external-skills', 'Skip mutable third-party Waza and Mermaid skill bootstrap')
     .option('--with-reverse-skill', 'Explicitly install the high-risk reverse-skill-router after independent authorization review')
+    .option('--with-obsidian-skills', 'Explicitly install the pinned obsidian-markdown and obsidian-cli companion Skills')
     .option('--no-codegraph', 'Skip CodeGraph CLI/MCP configuration')
     .option('--brain-root <path>', 'Brain vault root to persist for repo-harness brain commands')
     .option('--json', 'Output JSON instead of human-readable text')
@@ -541,6 +544,7 @@ export function buildProgram(): Command {
     .option('--no-hooks', 'Skip global hook adapter installation')
     .option('--with-external-skills', 'Also refresh mutable third-party Waza and Mermaid providers')
     .option('--with-reverse-skill', 'Explicitly install the high-risk reverse-skill-router after independent authorization review')
+    .option('--with-obsidian-skills', 'Explicitly install or verify the pinned obsidian-markdown and obsidian-cli companion Skills')
     .option('--no-external-skills', 'Do not refresh third-party Waza and Mermaid providers (default)')
     .option('--configure-codegraph', 'Refresh CodeGraph CLI/MCP (default during update)')
     .option('--no-codegraph', 'Skip refreshing the global CodeGraph CLI/MCP')
@@ -563,6 +567,7 @@ export function buildProgram(): Command {
       hooks?: string | false;
       withExternalSkills?: boolean;
       withReverseSkill?: boolean;
+      withObsidianSkills?: boolean;
       externalSkills?: boolean;
       codegraph?: boolean;
       configureCodegraph?: boolean;
@@ -603,6 +608,7 @@ export function buildProgram(): Command {
         hostAdapters: rawOpts.hooks !== false,
         externalSkills: rawOpts.externalSkills === false ? false : rawOpts.withExternalSkills === true ? true : undefined,
         reverseSkill: rawOpts.withReverseSkill === true,
+        obsidianSkills: rawOpts.withObsidianSkills === true,
         codegraph: rawOpts.codegraph === false ? false : rawOpts.configureCodegraph === true ? true : undefined,
         brainRoot: rawOpts.brainRoot,
       });
