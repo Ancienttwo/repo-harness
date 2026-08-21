@@ -469,24 +469,28 @@ async function handleMcpPost(
       return;
     }
     let sessionInitialized = false;
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => randomUUID(),
-      onsessioninitialized: (newSessionId) => {
-        reservation.commit(newSessionId, transport);
-        sessionInitialized = true;
-      },
-    }) as McpHttpTransport;
-    transport.authorizationId = authorizationId;
-    transport.onclose = () => {
-      if (transport.sessionId) sessions.delete(transport.sessionId);
-    };
-    const server = createRepoHarnessMcpServer({ ...opts, codingRuntime });
+    // Transport and server construction stay inside the try: a throw from either
+    // must still release the reservation, otherwise the slot leaks for the whole
+    // process lifetime and the store fails closed at capacity forever.
+    let transport: McpHttpTransport | undefined;
     try {
+      transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+        onsessioninitialized: (newSessionId) => {
+          reservation.commit(newSessionId, transport as McpHttpTransport);
+          sessionInitialized = true;
+        },
+      }) as McpHttpTransport;
+      transport.authorizationId = authorizationId;
+      transport.onclose = () => {
+        if (transport?.sessionId) sessions.delete(transport.sessionId);
+      };
+      const server = createRepoHarnessMcpServer({ ...opts, codingRuntime });
       await server.connect(transport);
       await transport.handleRequest(req, res, body);
     } finally {
       reservation.release();
-      if (!sessionInitialized) await transport.close().catch(() => undefined);
+      if (!sessionInitialized) await transport?.close().catch(() => undefined);
     }
     return;
   }

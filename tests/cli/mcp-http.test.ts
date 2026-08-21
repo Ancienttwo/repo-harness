@@ -469,6 +469,88 @@ describe('mcp http transport', () => {
     }
   }, 30_000);
 
+  test('releases the session reservation when initialize server construction throws', async () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-reservation-'));
+    const port = await freePort();
+    const restoreRegistryHome = useTempRegistryHome();
+    let proc: Bun.Subprocess | null = null;
+    try {
+      mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
+      writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
+      runMcpSetupChatgpt({ repo: repoRoot, port: String(port) });
+      const token = (await Bun.file(join(process.env.REPO_HARNESS_HOME!, 'mcp.tokens.json')).json()).bearerToken;
+
+      proc = Bun.spawn(
+        [
+          'bun',
+          'src/cli/index.ts',
+          'mcp',
+          'serve',
+          '--repo',
+          repoRoot,
+          '--transport',
+          'http',
+          '--host',
+          '127.0.0.1',
+          '--port',
+          String(port),
+          '--profile',
+          'planner',
+          '--auth',
+          'bearer',
+        ],
+        {
+          cwd: process.cwd(),
+          stdout: 'ignore',
+          stderr: 'pipe',
+          env: { ...process.env, REPO_HARNESS_MCP_MAX_SESSIONS: '1' },
+        },
+      );
+      await waitForHealth(port);
+
+      // A legacy repo-scope config appearing after startup makes server
+      // construction throw on the next initialize, which is the exact failure
+      // path that used to skip the reservation release.
+      const legacyDir = join(repoRoot, '.repo-harness');
+      mkdirSync(legacyDir, { recursive: true });
+      writeFileSync(join(legacyDir, 'mcp.local.json'), '{}\n');
+
+      const failedInitialize = await fetch(`http://127.0.0.1:${port}/mcp`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+        },
+        body: initializeBody(),
+      });
+      expect(failedInitialize.status).toBe(500);
+      expect(await failedInitialize.text()).toContain('legacy repo-scope MCP config');
+
+      rmSync(legacyDir, { recursive: true, force: true });
+
+      const recoveredInitialize = await fetch(`http://127.0.0.1:${port}/mcp`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+        },
+        body: initializeBody(),
+      });
+      expect(recoveredInitialize.status).toBe(200);
+      expect(recoveredInitialize.headers.get('mcp-session-id')).toMatch(/^[0-9a-f-]{36}$/);
+
+      const health = await fetch(`http://127.0.0.1:${port}/health`);
+      expect(await health.json()).toMatchObject({ active_sessions: 1, max_sessions: 1, sessions_created: 1 });
+    } finally {
+      proc?.kill();
+      await proc?.exited.catch(() => undefined);
+      restoreRegistryHome();
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test('supports URL token compatibility mode for single-user clients', async () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-url-token-'));
     const port = await freePort();
