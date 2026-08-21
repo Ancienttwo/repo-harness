@@ -44,11 +44,11 @@
 > **Reviewer**: User
 > **Source**: user-waiver
 > **Actor**: kito
-> **Reviewed Subject SHA256**: sha256:165dd0910612ae29cbcaca89db28a4c5343eaec2aa86330398780225b8d4a058
+> **Reviewed Subject SHA256**: sha256:32b684708eb820f0fb996301d487f07da24ecff9b96691e21a8671c6d11f8161
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: 36c60876d47d53755e68d7bf3e69d032dc2046db
-> **Verification Evidence SHA256**: sha256:e3cc956ee0e4c6b3ba13f62141bd029597f527c22f6147f825925c2c29689366
-> **Issued At**: 2026-08-21T03:43:01.494Z
+> **Reviewed Target Revision**: 8172c03085e1c1553dc58677d3b1384917bb67ae
+> **Verification Evidence SHA256**: sha256:79e90cce3ae97e5acbe49704032e1b68b8dfe94978834db908d8a7cb46de9918
+> **Issued At**: 2026-08-21T05:47:03.990Z
 
 - Summary: Repo owner explicitly approved user_waiver AcceptanceReceipt for the frozen Obsidian companion Skills subject.
 - Findings: none
