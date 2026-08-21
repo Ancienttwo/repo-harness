@@ -506,8 +506,8 @@
       "outputDigest": "sha256:66d4b7068ff03b389eb468fcfeb98d6146109c54d1e89eaf119a8f278ac9a5e4",
       "verifiedAgainst": {
         "branch": "codex/obsidian-companion-dependencies",
-        "commit": "7ace8b41d3684de4d97eb926b9f582148561a6c2",
-        "committedAt": "2026-08-21T03:53:14+08:00"
+        "commit": "0015dd94ede741cad21f148c996af1bd3201ae8c",
+        "committedAt": "2026-08-21T03:55:02+08:00"
       }
     },
     {

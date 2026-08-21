@@ -5,10 +5,10 @@
 > **Contract**: tasks/contracts/20260821-0021-obsidian-companion-dependencies.contract.md
 > **Notes File**: tasks/notes/20260821-0021-obsidian-companion-dependencies.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-08-21 03:54
+> **Last Updated**: 2026-08-21 04:31
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: sha256:042994d33086572d1c4d5a6c86276b0f3fd0110a9122474addc48b0f764797b4
+> **Reviewed Subject SHA256**: sha256:165dd0910612ae29cbcaca89db28a4c5343eaec2aa86330398780225b8d4a058
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: 36c60876d47d53755e68d7bf3e69d032dc2046db
 
@@ -40,17 +40,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
-> **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Disposition**: user_waiver
+> **Reviewer**: User
+> **Source**: user-waiver
+> **Actor**: kito
+> **Reviewed Subject SHA256**: sha256:165dd0910612ae29cbcaca89db28a4c5343eaec2aa86330398780225b8d4a058
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 36c60876d47d53755e68d7bf3e69d032dc2046db
+> **Verification Evidence SHA256**: sha256:e3cc956ee0e4c6b3ba13f62141bd029597f527c22f6147f825925c2c29689366
+> **Issued At**: 2026-08-21T03:43:01.494Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: Repo owner explicitly approved user_waiver AcceptanceReceipt for the frozen Obsidian companion Skills subject.
 - Findings: none
 
 ## Behavior Diff Notes
@@ -93,8 +93,12 @@
 
 ## Failing Items
 
-- Final canonical verification and AcceptanceReceipt regeneration are pending
-  after rebasing the now-frozen fix onto the latest target.
+- Canonical `verify-sprint --prepare-acceptance` passed all 17 criteria and
+  froze passing verification evidence for the reviewed subject and target.
+  The owner explicitly granted the contract-allowed user waiver, and the typed
+  AcceptanceReceipt plus final seal both validate against that frozen evidence.
+- No implementation or acceptance blocker remains. Push, PR creation, and merge
+  remain outside the authority granted for this work-package.
 
 ## Retest Steps
 

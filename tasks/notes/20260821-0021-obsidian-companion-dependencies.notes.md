@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260821-0021-obsidian-companion-dependencies.md
 > **Contract**: tasks/contracts/20260821-0021-obsidian-companion-dependencies.contract.md
 > **Review**: tasks/reviews/20260821-0021-obsidian-companion-dependencies.review.md
-> **Last Updated**: 2026-08-21 03:52
+> **Last Updated**: 2026-08-21 04:31
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -127,6 +127,16 @@
   budgets, but none appeared in the canonical failure set or this deterministic
   repro. They remain unchanged because there is no evidence that they share the
   adapter-parity failure.
+- canonical_result: `run-20260821T035707-263` passed all 17 contract criteria.
+  The adapter-parity focused criterion completed in 59.843s and the complete
+  repository suite completed in 1,877.827s; the full verification round stayed
+  inside both fixed budgets and emitted passing frozen evidence for subject
+  `sha256:165dd0910612ae29cbcaca89db28a4c5343eaec2aa86330398780225b8d4a058`
+  at target `36c60876d47d53755e68d7bf3e69d032dc2046db`.
+- acceptance_state: the repo owner explicitly authorized the contract-allowed
+  typed `user_waiver`; the resulting AcceptanceReceipt is valid for the frozen
+  subject and target. This disposition does not authorize private-diff
+  disclosure, push, PR creation, or merge.
 
 ## Promotion Filter
 
