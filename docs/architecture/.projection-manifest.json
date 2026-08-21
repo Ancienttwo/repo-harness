@@ -5,12 +5,12 @@
   "sourceDigest": "sha256:dfeee72dd6b65c11c5410cf52261499a156ed11386d32cb5121711b63684470d",
   "provenance": {
     "schemaVersion": "archcontext.architecture-docs-projection-provenance/v1",
-    "baseHeadSha": "7ace8b41d3684de4d97eb926b9f582148561a6c2",
-    "worktreeDigest": "sha256:7df12201a6b01819d30ca8c9129d2f1083dfe75855f726112ffdf46e047f4a75",
-    "sourceTreeDigest": "sha256:205575079fa8f6d63a7c55179527d95e2ffd4abbaa7fe253a0ea4ac543d830fd",
+    "baseHeadSha": "0731a59c94eae2775b59d8c6d1d3edde3b50c282",
+    "worktreeDigest": "sha256:335fa0531a107f281ed51a214bffd226403281ab98b615ee0d4c9a1ae6a7dd4e",
+    "sourceTreeDigest": "sha256:d956fb928df1df7ade91b9d1c6b3fad81a52151d209e76826621907642464bd1",
     "modelDigest": "sha256:e7e1a02e1fb8c6e0732999db19c5ab1541d8529ffb270b2be1eb96af579fa4cb",
-    "codeGraphDigest": "sha256:7eae3dbe9b151c1bf72ba3a239e23f99b9983f757564e3f0c8dca43f7bf70e09",
-    "indexedWorktreeDigest": "sha256:49fe9f84ad7bb2bbe500bb3ca20ebb57f14d7fcd5d8d4664fe7db921d17bb754",
+    "codeGraphDigest": "sha256:a346b048d48fe2fd6df1e11a0096fce0d575f12141740f590085bf99f425155b",
+    "indexedWorktreeDigest": "sha256:b68cdfc336234b7d083dbf42861d32c248758c9e6ddc0b8487f76ae24bc068db",
     "rendererVersion": "archcontext.docs-renderer/v4",
     "layoutVersion": "archcontext.docs-layout/v1",
     "generatedFrom": {
@@ -19,9 +19,9 @@
       "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
       "codeGraphStatus": "ready"
     },
-    "projectionInputDigest": "sha256:9e83d0e9685ea6e71443f71da46d16232cfd50e6ca993df3499b6d02049be8ff"
+    "projectionInputDigest": "sha256:9013d4bb819294033e0104ff40db142f6bb507ea8d70bd10570d154198100c15"
   },
-  "projectionDigest": "sha256:a5da267dc19d75d34680bb7671fb47a7f6055cc9698ee26d34c22ee3a161d3f3",
+  "projectionDigest": "sha256:e0c84cfab41665cf7438d1be731041b572116980fc7b6af73f90f13dc31974f7",
   "semanticBaseline": {
     "semanticState": {
       "schemaVersion": "archcontext.architecture-semantic-state/v1",
@@ -307,12 +307,12 @@
     },
     "digests": {
       "modelDigest": "sha256:e7e1a02e1fb8c6e0732999db19c5ab1541d8529ffb270b2be1eb96af579fa4cb",
-      "sourceTreeDigest": "sha256:205575079fa8f6d63a7c55179527d95e2ffd4abbaa7fe253a0ea4ac543d830fd",
+      "sourceTreeDigest": "sha256:d956fb928df1df7ade91b9d1c6b3fad81a52151d209e76826621907642464bd1",
       "flowProofDigest": "sha256:f61c06c8566ec4ff22ec096ee22c06e91a046ceefa8fcd2f1d9faf436763a457",
-      "projectionDigest": "sha256:a5da267dc19d75d34680bb7671fb47a7f6055cc9698ee26d34c22ee3a161d3f3"
+      "projectionDigest": "sha256:e0c84cfab41665cf7438d1be731041b572116980fc7b6af73f90f13dc31974f7"
     }
   },
-  "receiptDigest": "sha256:185fe1b974a4644b2d44b5a867c9404d456f002c87806ba83928b76afca94e1c",
+  "receiptDigest": "sha256:216c902564f19258763a1cd3a631ab83e5ab95202079a9d12d6767ac430ebd1f",
   "refreshSignalIds": [],
   "targetCount": 17,
   "fileCount": 17,
@@ -406,8 +406,8 @@
       "outputDigest": "sha256:f38d06e22caaddcf65c12512bed1ef976f1457d57e0ba4651e724a2ae42b998c",
       "verifiedAgainst": {
         "branch": "codex/obsidian-companion-dependencies",
-        "commit": "7ace8b41d3684de4d97eb926b9f582148561a6c2",
-        "committedAt": "2026-08-21T03:53:14+08:00"
+        "commit": "0731a59c94eae2775b59d8c6d1d3edde3b50c282",
+        "committedAt": "2026-08-21T11:47:57+08:00"
       }
     },
     {
@@ -426,8 +426,8 @@
       "outputDigest": "sha256:235db05ad6aca5f3bd47ce84257904865e2b41f0b69c00c2f50989b6e7e61313",
       "verifiedAgainst": {
         "branch": "codex/obsidian-companion-dependencies",
-        "commit": "7ace8b41d3684de4d97eb926b9f582148561a6c2",
-        "committedAt": "2026-08-21T03:53:14+08:00"
+        "commit": "0731a59c94eae2775b59d8c6d1d3edde3b50c282",
+        "committedAt": "2026-08-21T11:47:57+08:00"
       }
     },
     {
@@ -506,8 +506,8 @@
       "outputDigest": "sha256:66d4b7068ff03b389eb468fcfeb98d6146109c54d1e89eaf119a8f278ac9a5e4",
       "verifiedAgainst": {
         "branch": "codex/obsidian-companion-dependencies",
-        "commit": "0015dd94ede741cad21f148c996af1bd3201ae8c",
-        "committedAt": "2026-08-21T03:55:02+08:00"
+        "commit": "0731a59c94eae2775b59d8c6d1d3edde3b50c282",
+        "committedAt": "2026-08-21T11:47:57+08:00"
       }
     },
     {
