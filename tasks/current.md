@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-21T04:26:43+0800 -->
+<!-- updated_at: 2026-08-21T12:26:37+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-08-21T04:26:43+0800
-> **Source Branch**: codex/bun-14-upgrade-take2
-> **Source Commit**: 67e55b90
+> **Updated At**: 2026-08-21T12:26:37+0800
+> **Source Branch**: codex/basegate-ancestor-relax
+> **Source Commit**: bd4eb6b8
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -58,16 +58,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260821-0303-bun-14-upgrade-take2.md
- D tasks/contracts/20260821-0303-bun-14-upgrade-take2.contract.md
- D tasks/notes/20260821-0303-bun-14-upgrade-take2.notes.md
- D tasks/reviews/20260821-0303-bun-14-upgrade-take2.review.md
+ D plans/plan-20260821-1136-basegate-ancestor-relax.md
+ D tasks/contracts/20260821-1136-basegate-ancestor-relax.contract.md
+ D tasks/notes/20260821-1136-basegate-ancestor-relax.notes.md
+ D tasks/reviews/20260821-1136-basegate-ancestor-relax.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260821-0303-bun-14-upgrade-take2.md
-?? tasks/archive/contract-20260821-0426-bun-14-upgrade-take2.md
-?? tasks/archive/notes-20260821-0426-bun-14-upgrade-take2.md
-?? tasks/archive/review-20260821-0426-bun-14-upgrade-take2.md
-?? tasks/archive/todo-20260821-0426-bun-14-upgrade-take2.md
+?? plans/archive/plan-20260821-1136-basegate-ancestor-relax.md
+?? tasks/archive/contract-20260821-1226-basegate-ancestor-relax.md
+?? tasks/archive/notes-20260821-1226-basegate-ancestor-relax.md
+?? tasks/archive/review-20260821-1226-basegate-ancestor-relax.md
+?? tasks/archive/todo-20260821-1226-basegate-ancestor-relax.md
 ```
 
 ## Source Artifacts
