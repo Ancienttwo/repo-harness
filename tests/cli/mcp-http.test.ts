@@ -619,6 +619,89 @@ describe('mcp http transport', () => {
     }
   }, 30_000);
 
+  test('binds sessions to the startup profile and fails closed when the config flips to coding', async () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-profile-flip-'));
+    const port = await freePort();
+    const restoreRegistryHome = useTempRegistryHome();
+    let proc: Bun.Subprocess | null = null;
+    try {
+      mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
+      writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
+      writeFileSync(join(repoRoot, 'AGENTS.md'), '# Profile flip test\n');
+      const runGit = (...args: string[]) => {
+        const result = Bun.spawnSync(['git', '-C', repoRoot, ...args], { stdout: 'pipe', stderr: 'pipe' });
+        if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+      };
+      runGit('init', '-b', 'main');
+      runGit('config', 'user.email', 'tests@example.com');
+      runGit('config', 'user.name', 'Repo Harness Tests');
+      runGit('add', '.');
+      runGit('commit', '-m', 'fixture');
+      runMcpSetupChatgpt({ repo: repoRoot, port: String(port) });
+      const token = (await Bun.file(join(process.env.REPO_HARNESS_HOME!, 'mcp.tokens.json')).json()).bearerToken;
+
+      // `startMcpHttp` resolves the profile from the local config when the
+      // caller omits it, so this entrypoint is driven directly instead of
+      // through the CLI, which always passes an explicit --profile.
+      const entry = join(repoRoot, 'serve-entry.ts');
+      writeFileSync(
+        entry,
+        `import { startMcpHttp } from ${JSON.stringify(join(process.cwd(), 'src/cli/mcp/transports/http.ts'))};\n`
+        + `await startMcpHttp({ repo: ${JSON.stringify(repoRoot)}, host: '127.0.0.1', port: ${port}, auth: 'bearer' });\n`,
+      );
+      proc = Bun.spawn(['bun', entry], { cwd: process.cwd(), stdout: 'ignore', stderr: 'pipe', env: { ...process.env } });
+      await waitForHealth(port);
+
+      const initialize = () => fetch(`http://127.0.0.1:${port}/mcp`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+        },
+        body: initializeBody(),
+      });
+
+      const beforeFlip = await initialize();
+      expect(beforeFlip.status).toBe(200);
+      expect(beforeFlip.headers.get('mcp-session-id')).toMatch(/^[0-9a-f-]{36}$/);
+
+      // The local config now becomes a fully valid coding setup. The running
+      // process still enforces the planner profile it started with: no coding
+      // grant middleware, no OAuth requirement, no Host/Origin pinning. A new
+      // session must not resolve a coding tool context behind that enforcement.
+      runMcpSetupChatgpt({
+        repo: repoRoot,
+        profile: 'coding',
+        grantReadWrite: [repoRoot],
+        endpoint: `https://coding.test/mcp`,
+        port: String(port),
+      });
+      expect(readRegisteredRepoHarnessRepos({ adoptedOnly: true })
+        .some((repo) => repo.accessMode === 'read_write')).toBe(true);
+
+      const afterFlip = await initialize();
+      expect(afterFlip.status).toBe(503);
+      expect(afterFlip.headers.get('mcp-session-id')).toBeNull();
+      const flipBody = await afterFlip.json() as { error: { code: string; message: string } };
+      expect(flipBody.error.code).toBe('PROFILE_CHANGED');
+      expect(flipBody.error.message).toContain('planner');
+      expect(flipBody.error.message).toContain('coding');
+
+      const health = await fetch(`http://127.0.0.1:${port}/health`);
+      expect(await health.json()).toMatchObject({
+        profile: 'planner',
+        active_sessions: 1,
+        sessions_created: 1,
+      });
+    } finally {
+      proc?.kill();
+      await proc?.exited.catch(() => undefined);
+      restoreRegistryHome();
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test('supports URL token compatibility mode for single-user clients', async () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-url-token-'));
     const port = await freePort();
