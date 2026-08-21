@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-21T13:49:22+0800 -->
+<!-- updated_at: 2026-08-21T15:47:50+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-08-21T13:49:22+0800
-> **Source Branch**: codex/obsidian-companion-dependencies
-> **Source Commit**: 123cbfad
+> **Updated At**: 2026-08-21T15:47:50+0800
+> **Source Branch**: main
+> **Source Commit**: cc70bf0d
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -55,19 +55,18 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: 9 changed/untracked path(s)
 
 ```
- D plans/plan-20260821-0021-obsidian-companion-dependencies.md
- D tasks/contracts/20260821-0021-obsidian-companion-dependencies.contract.md
- D tasks/notes/20260821-0021-obsidian-companion-dependencies.notes.md
- D tasks/reviews/20260821-0021-obsidian-companion-dependencies.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260821-0021-obsidian-companion-dependencies.md
-?? tasks/archive/contract-20260821-1349-obsidian-companion-dependencies.md
-?? tasks/archive/notes-20260821-1349-obsidian-companion-dependencies.md
-?? tasks/archive/review-20260821-1349-obsidian-companion-dependencies.md
-?? tasks/archive/todo-20260821-1349-obsidian-companion-dependencies.md
+ D plans/plan-20260821-1317-restamp-deletion-proof.md
+ D tasks/contracts/20260821-1317-restamp-deletion-proof.contract.md
+ D tasks/notes/20260821-1317-restamp-deletion-proof.notes.md
+ D tasks/reviews/20260821-1317-restamp-deletion-proof.review.md
+?? plans/archive/plan-20260821-1317-restamp-deletion-proof.md
+?? tasks/archive/contract-20260821-1547-restamp-deletion-proof.md
+?? tasks/archive/notes-20260821-1547-restamp-deletion-proof.md
+?? tasks/archive/review-20260821-1547-restamp-deletion-proof.md
+?? tasks/archive/todo-20260821-1547-restamp-deletion-proof.md
 ```
 
 ## Source Artifacts

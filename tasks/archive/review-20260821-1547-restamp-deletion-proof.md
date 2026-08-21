@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-21 15:47
+> **Related Plan**: plans/archive/plan-20260821-1317-restamp-deletion-proof.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260821-1547
+
 # Task Review: restamp-deletion-proof
 
 > **Status**: Pending
@@ -40,17 +46,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Codex
+> **Source**: codex-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:9505fa02a4e0b62b2b20b22e97bd06342d4aac2c9666f64898506aba5b383d68
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 99777231a2afa1c42b841e8de5f615f99e5e97db
+> **Verification Evidence SHA256**: sha256:4f1dea5cb2aa0c4f67e153b4d833a66fb4887c15ac872dc2735ebce02dd7073b
+> **Issued At**: 2026-08-21T07:47:25.882Z
 
-- Summary: No AcceptanceReceipt has been recorded by this worker; parent closeout must re-run the acceptance boundary.
+- Summary: Restamp deletion proof, full verification, exact-revision CI, npm 0.16.1 registry readback, GitHub release, global runtime refresh, and runtime evidence all passed.
 - Findings: none
 
 ## Behavior Diff Notes

@@ -1,6 +1,6 @@
 # Plan: Harden restamp publication against manifest deletion
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260821-1317
 > **Slug**: restamp-deletion-proof
 > **Planning Source**: repo-harness-plan

@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-21 15:47
+> **Related Plan**: plans/archive/plan-20260821-1317-restamp-deletion-proof.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260821-1547
+
 # Task Contract: restamp-deletion-proof
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260821-1317-restamp-deletion-proof.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->

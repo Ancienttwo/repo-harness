@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-21 15:47
+> **Related Plan**: plans/archive/plan-20260821-1317-restamp-deletion-proof.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260821-1547
+
 # Implementation Notes: restamp-deletion-proof
 
 > **Status**: Active
