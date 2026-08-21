@@ -640,6 +640,16 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
     codingRuntimes?.cleanupExpired();
   }, Math.min(sessionTtlMs, 60_000));
   cleanupTimer.unref?.();
+  // The server description reported by /health is fixed for the process: this
+  // context is built once here instead of per request, where rebuilding it
+  // re-ran `git rev-parse --show-toplevel` synchronously and blocked the event
+  // loop for seconds on a cold disk. Live state stays live: the coding grant is
+  // still re-checked per request by the middleware above, and session counters
+  // are read from the store on each response.
+  const healthContext = createMcpToolContext({ ...opts, repo: repoRoot, codingRuntime: null });
+  const healthSchemaHash = createHash('sha256')
+    .update(JSON.stringify(buildMcpToolDefinitions(healthContext.policy, { enableChatgptBrowser: opts.enableChatgptBrowser === true })))
+    .digest('hex');
   const app = express();
 
   app.use((req, res, next) => {
@@ -682,16 +692,14 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
   app.get('/health', (req, res) => {
     sessions.cleanupExpired();
     codingRuntimes?.cleanupExpired();
-    const ctx = createMcpToolContext({ ...opts, repo: repoRoot, codingRuntime: null });
-    const tools = buildMcpToolDefinitions(ctx.policy, { enableChatgptBrowser: opts.enableChatgptBrowser === true });
     res.json({
       status: 'ok',
       server: 'repo-harness-mcp',
       package_version: repoHarnessPackageVersion(),
       mcp_protocol: 'streamable-http',
-      profile: ctx.policy.profile,
-      capabilities: ctx.policy.capabilities,
-      allowed_root_count: ctx.policy.allowedRoots?.length ?? 0,
+      profile: healthContext.policy.profile,
+      capabilities: healthContext.policy.capabilities,
+      allowed_root_count: healthContext.policy.allowedRoots?.length ?? 0,
       auth: authMode === 'oauth' ? (oauthPassphrase ? 'oauth' : 'missing') : (authToken ? authMode : 'missing'),
       auth_mode: authMode,
       public_origin: getPublicOrigin(req, configuredPublicOrigin),
@@ -702,7 +710,7 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
       sessions_closed: sessions.metrics.closed,
       sessions_expired: sessions.metrics.expired,
       sessions_evicted: sessions.metrics.evicted,
-      schema_hash: createHash('sha256').update(JSON.stringify(tools)).digest('hex'),
+      schema_hash: healthSchemaHash,
     });
   });
 

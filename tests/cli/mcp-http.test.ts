@@ -469,6 +469,69 @@ describe('mcp http transport', () => {
     }
   }, 30_000);
 
+  test('health responds without running a synchronous git cold path per request', async () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-health-git-'));
+    const shimDir = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-git-shim-'));
+    const port = await freePort();
+    const restoreRegistryHome = useTempRegistryHome();
+    let proc: Bun.Subprocess | null = null;
+    try {
+      mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
+      writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
+      runMcpSetupChatgpt({ repo: repoRoot, port: String(port) });
+
+      const realGit = Bun.spawnSync(['/usr/bin/env', 'which', 'git'], { stdout: 'pipe' }).stdout.toString().trim();
+      expect(realGit).not.toBe('');
+      const gitLog = join(shimDir, 'git-invocations.log');
+      const shim = join(shimDir, 'git');
+      writeFileSync(shim, `#!/bin/sh\nprintf '%s\\n' "$*" >> "${gitLog}"\nexec ${realGit} "$@"\n`, { mode: 0o755 });
+
+      proc = Bun.spawn(
+        [
+          'bun',
+          'src/cli/index.ts',
+          'mcp',
+          'serve',
+          '--repo',
+          repoRoot,
+          '--transport',
+          'http',
+          '--host',
+          '127.0.0.1',
+          '--port',
+          String(port),
+          '--profile',
+          'planner',
+          '--auth',
+          'bearer',
+        ],
+        {
+          cwd: process.cwd(),
+          stdout: 'ignore',
+          stderr: 'pipe',
+          env: { ...process.env, PATH: `${shimDir}:${process.env.PATH}` },
+        },
+      );
+      await waitForHealth(port);
+
+      // Startup may resolve the repo root through git; steady-state health probes
+      // must not, because that cold path blocks the event loop for seconds.
+      writeFileSync(gitLog, '');
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const response = await fetch(`http://127.0.0.1:${port}/health`);
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({ status: 'ok', profile: 'planner' });
+      }
+      expect(readFileSync(gitLog, 'utf-8')).toBe('');
+    } finally {
+      proc?.kill();
+      await proc?.exited.catch(() => undefined);
+      restoreRegistryHome();
+      rmSync(shimDir, { recursive: true, force: true });
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test('releases the session reservation when initialize server construction throws', async () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-reservation-'));
     const port = await freePort();
