@@ -2,9 +2,46 @@
 
 All notable changes to this skill are documented here.
 
-## [Unreleased]
+## [0.16.2] - 2026-08-21
+
+### Fixed
+
+- **MCP runtime fixes for issue #204 (#207).** The initialize session
+  reservation releases on transport/server construction failure instead of
+  leaking a session slot until SESSION_LIMIT_REACHED, and one stale recorded
+  workspace no longer aborts the whole workspace listing — stale rows carry an
+  explicit `stale_reason` with an unknown dirty state.
+- **MCP HTTP sessions bind to the startup profile and fail closed on a config
+  flip (#210).** An HTTP session created under one profile can no longer keep
+  serving after the server's configuration changes underneath it.
+- **Architecture queue lock owner record publishes atomically (#211).**
+  `acquireQueueLock` used to publish the lock with `openSync(..., "wx")` and
+  write the owner JSON afterwards, so a contender that read the lock in that
+  interval saw an empty record, classified it as malformed after two seconds,
+  and could delete a live owner's lock. The complete owner record is now staged
+  under a sibling temp name and published with same-directory hard-link
+  creation, so a parseable authority path never exists before its bytes are
+  complete. The concurrent-queue test now captures child stderr and attaches
+  it to failed status assertions.
 
 ### Changed
+
+- **Artifact-hygiene rules land in the global working rules and generated
+  agent contracts.** Comments, commit messages, and PR text must be written
+  from the final diff only: comments carry only the non-obvious reason at the
+  owning boundary, PR text carries final behavior plus only rationale a
+  reviewer cannot recover from the diff, and discarded intermediate attempts,
+  reverted work, and never-merged states are never mentioned. The rule ships
+  in `assets/reference-configs/global-working-rules.md`, the generated
+  `AGENTS.md` Safety Rules, and the generated `CLAUDE.md` Development
+  Protocol.
+- Collapses the stray blank line the template engine left around the
+  `FACTOR_FACTORY` conditional in the generated `AGENTS.md` task-protocol
+  section.
+
+## [0.16.1] - 2026-08-20
+
+### Changed (recorded belatedly; shipped in this release)
 
 - Requires `sandbox_mode` in every Codex custom-agent TOML and validates it
   fail-closed. A hand-written `~/.codex/agents/*.toml` that omits
@@ -16,8 +53,6 @@ All notable changes to this skill are documented here.
   `developer_instructions`, leaving the role body only. On the native-child path
   `SubagentStart.context` is the single injection owner, so the clause reaches
   each rendered task packet exactly once.
-
-## [0.16.1] - 2026-08-20
 
 Closes ESA-06, the last direct-`writeFileSync` write path on the MCP server.
 The seven workflow-artifact write tools stop being last-writer-wins: a caller
