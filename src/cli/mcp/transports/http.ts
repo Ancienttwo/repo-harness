@@ -427,12 +427,17 @@ function acquireSession(sessions: McpSessionStore<McpHttpTransport>, sessionId: 
   return sessions.acquire(sessionId);
 }
 
+export function resolveMcpHttpProfile(opts: McpServerOptions, config: ReturnType<typeof loadMcpLocalConfig>): string {
+  return opts.profile ?? config?.profile ?? 'planner';
+}
+
 async function handleMcpPost(
   req: Request,
   res: Response,
   opts: McpHttpOptions,
   sessions: McpSessionStore<McpHttpTransport>,
   codingRuntimes: CodingAuthorizationRuntimeStore | null,
+  startupProfile: string,
 ): Promise<void> {
   let body: unknown;
   try {
@@ -443,6 +448,22 @@ async function handleMcpPost(
   }
   const sessionId = sessionIdFromRequest(req);
   if (!sessionId && isInitializeRequest(body)) {
+    // The whole HTTP enforcement layer (coding-grant middleware, OAuth
+    // requirement, host/origin pinning, per-authorization coding runtimes) is
+    // decided once from the startup profile. A local config flip after startup
+    // would otherwise let a new session resolve a different tool context behind
+    // that stale enforcement, so sessions are bound to the startup profile and
+    // a flip fails closed until the operator restarts the server.
+    const currentProfile = resolveMcpHttpProfile(opts, loadMcpLocalConfig());
+    if (currentProfile !== startupProfile) {
+      res.status(503).json({
+        error: {
+          code: 'PROFILE_CHANGED',
+          message: `The local MCP profile changed from "${startupProfile}" to "${currentProfile}" after startup; restart the MCP server to serve the new profile.`,
+        },
+      });
+      return;
+    }
     const authorizationId = codingRuntimes ? authorizationIdFromRequest(req) : undefined;
     if (codingRuntimes && !authorizationId) {
       sendOAuthUnauthorized(req, res, 'Coding authorization identity is missing');
@@ -485,7 +506,7 @@ async function handleMcpPost(
       transport.onclose = () => {
         if (transport?.sessionId) sessions.delete(transport.sessionId);
       };
-      const server = createRepoHarnessMcpServer({ ...opts, codingRuntime });
+      const server = createRepoHarnessMcpServer({ ...opts, profile: startupProfile, codingRuntime });
       await server.connect(transport);
       await transport.handleRequest(req, res, body);
     } finally {
@@ -561,7 +582,7 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
   const repoRoot = resolveMcpRepoRoot(opts.repo ?? '.');
   assertNoLegacyRepoScopeMcpConfig(repoRoot);
   const localConfig = loadMcpLocalConfig();
-  const profile = opts.profile ?? localConfig?.profile ?? 'planner';
+  const profile = resolveMcpHttpProfile(opts, localConfig);
   const storedEndpoint = localConfig?.chatgpt?.endpoint;
   const storedPublicOrigin = storedEndpoint ? new URL(storedEndpoint).origin : undefined;
   const configuredPublicOrigin = process.env.REPO_HARNESS_MCP_PUBLIC_ORIGIN?.trim()
@@ -764,7 +785,7 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
   }
 
   app.post('/mcp', requireMcpHttpAuth(authMode, authToken, oauthProvider, configuredPublicOrigin), express.raw({ type: '*/*', limit: '1mb' }), (req, res) => {
-    handleMcpPost(req, res, { ...opts, repo: repoRoot }, sessions, codingRuntimes).catch((error: unknown) => {
+    handleMcpPost(req, res, { ...opts, repo: repoRoot }, sessions, codingRuntimes, profile).catch((error: unknown) => {
       if (!res.headersSent) res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
     });
   });
