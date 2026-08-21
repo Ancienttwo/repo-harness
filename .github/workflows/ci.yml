@@ -75,6 +75,54 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: TEMP windows supervisor probe
+        if: runner.os == 'Windows'
+        shell: bash
+        continue-on-error: true
+        run: |
+          cat > "$GITHUB_WORKSPACE/windows-probe.ts" <<'PROBE'
+          import { spawn } from 'child_process';
+          import { runProcess } from './src/effects/process-runner';
+
+          const t0 = Date.now();
+          const plain = runProcess(process.execPath, ['-e', 'console.log("PLAIN_OK")'], {
+            cwd: process.cwd(), stdio: 'pipe', timeoutMs: 8000,
+          });
+          console.log('PROBE1 unsupervised', Date.now() - t0, JSON.stringify({
+            ok: plain.ok, status: plain.status, timedOut: plain.timedOut,
+            stdout: plain.stdout, stderr: plain.stderr, error: plain.error,
+          }));
+
+          const t1 = Date.now();
+          const supervised = runProcess(process.execPath, ['-e', 'console.log("SUPERVISED_OK")'], {
+            cwd: process.cwd(), stdio: 'pipe', processGroup: true, timeoutMs: 8000,
+          });
+          console.log('PROBE2 supervised', Date.now() - t1, JSON.stringify({
+            ok: supervised.ok, status: supervised.status, timedOut: supervised.timedOut,
+            stdout: supervised.stdout, stderr: supervised.stderr, error: supervised.error,
+          }));
+
+          const child = spawn(process.execPath, ['-e',
+            'for await (const c of Bun.file(3).stream()) { if (c.length > 0) { console.log("BARRIER_RELEASED"); process.exit(0); } } console.log("BARRIER_EOF_NO_DATA");',
+          ], { stdio: ['ignore', 'pipe', 'pipe', 'pipe'] });
+          let out = '';
+          child.stdout?.on('data', (chunk) => { out += String(chunk); });
+          const started = Date.now();
+          const timer = setTimeout(() => {
+            console.log('PROBE3 barrier HANG', Date.now() - started, JSON.stringify(out));
+            child.kill();
+            process.exit(0);
+          }, 8000);
+          child.once('exit', (code) => {
+            clearTimeout(timer);
+            console.log('PROBE3 barrier exit', code, Date.now() - started, JSON.stringify(out));
+            process.exit(0);
+          });
+          (child.stdio[3] as NodeJS.WritableStream).end('start\n');
+          PROBE
+          bun "$GITHUB_WORKSPACE/windows-probe.ts"
+          rm -f "$GITHUB_WORKSPACE/windows-probe.ts"
+
       - name: MCP path security and protected helper platform tests
         env:
           REPO_HARNESS_WINDOWS_PROTECTED_HELPER_SMOKE: "1"
