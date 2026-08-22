@@ -40,17 +40,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Codex
+> **Source**: codex-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:5c69c30edf6887d3e423121839a5f24629a70390d0ecde2bd356b8083062d661
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: b247da899ad04ea5f9baed94c3e89aef5c67a4fe
+> **Verification Evidence SHA256**: sha256:53303874f6e908124bdf74f8bd99d76da91366e2ced023bb6a0eb31936ce12db
+> **Issued At**: 2026-08-22T06:55:20.212Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: WP0-A PublicationReceiptV1 passed independent deep review after closing adoption, provider fencing, journal validation, ownership, and scope findings.
 - Findings: none
 
 ## Behavior Diff Notes
