@@ -17,7 +17,7 @@
 - Verdict: pass
 - Change type: code-change
 - Intended files changed: WP0-A receipt core/effects/CLI, task-backed ship journal integration, packaged helper mirror, focused tests, and workflow artifacts.
-- Actual files changed: 14 files, all within contract `allowed_paths`; no dependency or Lease Protocol 2 change.
+- Actual files changed: 15 files, all within contract `allowed_paths`; this includes the generated architecture projection manifest and no dependency or Lease Protocol 2 change.
 - Commands passed: publication unit (6), closeout journal (21), helper scripts (130), typecheck, strict workflow, architecture/task/deploy checks, init dry-run, helper mirror comparison, and `git diff --check`.
 - Residual risks: full-suite trace-observer assertions inherit Codex host/session values and remain an environment-specific red unrelated to this diff; no full-suite green claim is made.
 - Reviewer action required: none for WP0-A code acceptance.
