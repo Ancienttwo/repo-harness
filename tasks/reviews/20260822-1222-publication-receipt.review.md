@@ -46,11 +46,11 @@
 > **Actor**: not-applicable
 > **Reviewed Subject SHA256**: sha256:5c69c30edf6887d3e423121839a5f24629a70390d0ecde2bd356b8083062d661
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: b247da899ad04ea5f9baed94c3e89aef5c67a4fe
-> **Verification Evidence SHA256**: sha256:53303874f6e908124bdf74f8bd99d76da91366e2ced023bb6a0eb31936ce12db
-> **Issued At**: 2026-08-22T06:55:20.212Z
+> **Reviewed Target Revision**: c205d647ada9177279ef6cafeda97643546feb9a
+> **Verification Evidence SHA256**: sha256:52c3e1dbfd33b963c9172a6817caf6eed3d702e4a1297d18e6e383cef262597b
+> **Issued At**: 2026-08-22T07:17:53.790Z
 
-- Summary: WP0-A PublicationReceiptV1 passed independent deep review after closing adoption, provider fencing, journal validation, ownership, and scope findings.
+- Summary: PublicationReceiptV1 final subject passed external review and full repository verification.
 - Findings: none
 
 ## Behavior Diff Notes
