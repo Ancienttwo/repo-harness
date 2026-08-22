@@ -186,11 +186,11 @@ exit_criteria:
 
 ## Acceptance Notes (Human Review)
 
-- Functional behavior:
-- Edge cases:
-- Regression risks:
+- Functional behavior: Schema 2 review ownership, pointer-fenced lifecycle commands, linked-PR review entry, and board projection passed focused and full-suite verification.
+- Edge cases: Crash after `mark-reviewing` but before ship `complete` replays the idempotent review proof without re-entering the completing-only receipt path; markerless legacy publications fail closed.
+- Regression risks: WP0-C still owns provider-fetch reconcile and recovery beyond the local ship-journal replay implemented here.
 
 ## Rollback Point
 
-- Commit / checkpoint:
-- Revert strategy:
+- Commit / checkpoint: `70ace994` plus the final workflow-evidence commit.
+- Revert strategy: Revert the WP0-B commits as one unit; do not downgrade emitted schema-2 reviewing records through an older CLI.

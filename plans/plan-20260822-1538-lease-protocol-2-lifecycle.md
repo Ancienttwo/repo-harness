@@ -1,6 +1,6 @@
 # Plan: Lease Protocol 2 and PR Review Lifecycle
 
-> **Status**: Executing
+> **Status**: Review
 > **Created**: 20260822-1538
 > **Slug**: lease-protocol-2-lifecycle
 > **Planning Source**: user-approved-plan
@@ -172,7 +172,7 @@ Success means:
 - [x] Make legacy inspection/migration explicit and block ordinary `sprint reconcile` from clearing reviewing leases.
 - [x] Extend board/claim projections and refusal messages for reviewing.
 - [x] Add focused compatibility, transition, concurrency, closeout, migration, idempotency, and negative fencing tests.
-- [ ] Run the contract criteria, targeted suites, full repository checks, independent review, and AcceptanceReceipt finalization.
+- [x] Run the contract criteria, targeted suites, full repository checks, independent review, and AcceptanceReceipt finalization.
 
 ## Verification
 
@@ -196,4 +196,4 @@ Success means:
 - [x] Make legacy inspection/migration explicit and block ordinary `sprint reconcile` from clearing reviewing leases.
 - [x] Extend board/claim projections and refusal messages for reviewing.
 - [x] Add focused compatibility, transition, concurrency, closeout, migration, idempotency, and negative fencing tests.
-- [ ] Run the contract criteria, targeted suites, full repository checks, independent review, and AcceptanceReceipt finalization.
+- [x] Run the contract criteria, targeted suites, full repository checks, independent review, and AcceptanceReceipt finalization.
