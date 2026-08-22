@@ -1,6 +1,8 @@
 import { Command } from 'commander';
+import { spawnSync } from 'child_process';
 import { randomUUID } from 'crypto';
 import { realpathSync } from 'fs';
+import { join } from 'path';
 
 import {
   canonicalPublicationJournalEvidenceBytes,
@@ -22,6 +24,7 @@ import {
   inspectLegacyPublication,
   migrateLegacyPublication,
   reopenPublication,
+  reconcilePublication,
   takeoverPublication,
 } from '../../effects/publication/publication-lifecycle';
 import { PublicationLifecycleError } from '../../core/publication/publication-lifecycle';
@@ -84,6 +87,15 @@ type LegacyOptions = {
   shipJournal: string;
   confirmLegacyMigration?: boolean;
 };
+type ReconcileOptions = {
+  taskId: string;
+  expectedClaimId: string;
+  expectedGeneration: string;
+  publicationId: string;
+  expectedHeadSha: string;
+  remote: string;
+};
+type RecoveryOptions = { key?: string; confirmAbort?: boolean };
 
 function parseCreateIntent(raw: string | undefined): PublicationCreateIntentV1 | undefined {
   if (raw === undefined) return undefined;
@@ -111,13 +123,33 @@ function outputError(error: unknown): void {
     return;
   }
   if (error instanceof PublicationLifecycleError) {
-    process.stderr.write(`${JSON.stringify({ ok: false, error: error.code, message: error.message })}\n`);
+    process.stderr.write(`${JSON.stringify({ ok: false, error: error.code, message: error.message, ...(error.details === undefined ? {} : { details: error.details }) })}\n`);
     process.exitCode = 1;
     return;
   }
   const message = error instanceof Error ? error.message : String(error);
   process.stderr.write(`${JSON.stringify({ ok: false, error: 'publication_incomplete', message })}\n`);
   process.exitCode = 1;
+}
+
+function runShipRecovery(action: 'inspect' | 'abort' | 'reconcile', options: RecoveryOptions): void {
+  if (action === 'abort' && options.confirmAbort !== true) {
+    throw new PublicationLifecycleError('recovery_confirmation_required', 'publication recover abort requires --confirm-abort');
+  }
+  if (action !== 'inspect' && !options.key) {
+    throw new PublicationLifecycleError('publication_incomplete', `publication recover ${action} requires --key`);
+  }
+  const args = [join(process.cwd(), 'scripts/ship-worktrees.sh'), '--recover', action];
+  if (options.key) args.push('--key', options.key);
+  const result = spawnSync('/bin/bash', args, { cwd: process.cwd(), encoding: 'utf-8' });
+  if (result.error || result.status !== 0) {
+    throw new PublicationLifecycleError(
+      'publication_incomplete',
+      (result.stderr || result.error?.message || `ship recovery exited ${result.status ?? 'without status'}`).trim(),
+      result.error,
+    );
+  }
+  process.stdout.write(`${JSON.stringify({ ok: true, action, message: result.stdout.trim() })}\n`);
 }
 
 function numberOption(value: string, flag: string): number {
@@ -330,6 +362,48 @@ export function buildPublicationCommand(): Command {
         });
         process.stdout.write(`${JSON.stringify({ ok: true, lineage })}\n`);
       } catch (error) { outputError(error); }
+    });
+
+  publication
+    .command('reconcile')
+    .description('Close one reviewing publication against a freshly fetched provider target')
+    .requiredOption('--task-id <id>', 'Task id')
+    .requiredOption('--expected-claim-id <id>', 'Current reviewing claim id')
+    .requiredOption('--expected-generation <generation>', 'Current reviewing generation')
+    .requiredOption('--publication-id <id>', 'Current publication id')
+    .requiredOption('--expected-head-sha <sha>', 'Current publication head SHA')
+    .requiredOption('--remote <remote>', 'Provider target Git remote')
+    .action((options: ReconcileOptions) => {
+      try {
+        const result = reconcilePublication({
+          ...lifecycleEnvironment(),
+          task_id: options.taskId,
+          expected_claim_id: options.expectedClaimId,
+          expected_generation: numberOption(options.expectedGeneration, '--expected-generation'),
+          publication_id: options.publicationId,
+          expected_head_sha: options.expectedHeadSha,
+          remote: options.remote,
+        });
+        process.stdout.write(`${JSON.stringify({ ok: true, ...result })}\n`);
+      } catch (error) { outputError(error); }
+    });
+
+  const recover = publication.command('recover').description('Inspect or explicitly resolve an incomplete ship transaction');
+  recover.command('inspect')
+    .option('--key <key>', 'Exact ship transaction key')
+    .action((options: RecoveryOptions) => {
+      try { runShipRecovery('inspect', options); } catch (error) { outputError(error); }
+    });
+  recover.command('reconcile')
+    .requiredOption('--key <key>', 'Exact ship transaction key')
+    .action((options: RecoveryOptions) => {
+      try { runShipRecovery('reconcile', options); } catch (error) { outputError(error); }
+    });
+  recover.command('abort')
+    .requiredOption('--key <key>', 'Exact ship transaction key')
+    .requiredOption('--confirm-abort', 'Confirm rollback before any landed external effect')
+    .action((options: RecoveryOptions) => {
+      try { runShipRecovery('abort', options); } catch (error) { outputError(error); }
     });
 
   const legacy = publication.command('legacy').description('Inspect and explicitly migrate fully attributable legacy completing publications');

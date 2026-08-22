@@ -316,6 +316,12 @@ export function deriveActions(
     reconcile: reconcilable
       ? `repo-harness sprint reconcile --task-id ${task.task_id} --target-ref ${canonicalRef}`
       : null,
+    publication_reconcile: lifecycleBase === null
+      ? null
+      : `repo-harness publication reconcile ${lifecycleBase} --remote '<remote>'`,
+    publication_recover: record !== null && record.state === 'completing'
+      ? 'repo-harness publication recover inspect'
+      : null,
     publication_reopen: publication === null || record === null
       ? null
       : `repo-harness publication reopen --task-id ${task.task_id} --claim-id ${record.claim_id}`

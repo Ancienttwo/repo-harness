@@ -425,9 +425,9 @@
       "sourceDigest": "sha256:c5528c7ff9467b71364ce083ab4d0bbaff0729765c1e1f8b511ae54319a88e94",
       "outputDigest": "sha256:235db05ad6aca5f3bd47ce84257904865e2b41f0b69c00c2f50989b6e7e61313",
       "verifiedAgainst": {
-        "branch": "main",
-        "commit": "bcfb4c5705a02015ace509448f2cfcffb0c58bd9",
-        "committedAt": "2026-08-21T23:30:15+08:00"
+        "branch": "codex/publication-recovery-reconcile",
+        "commit": "83bd0d7dcf69758cb3c7d6cecc0166c874bfbfa1",
+        "committedAt": "2026-08-22T21:36:28+08:00"
       }
     },
     {

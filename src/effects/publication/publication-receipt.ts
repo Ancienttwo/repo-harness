@@ -70,6 +70,14 @@ export interface ProviderPullRequestStateV1 {
   readonly merged_at: string | null;
 }
 
+/**
+ * One live provider read joining immutable PR identity fields and dynamic
+ * closure facts. Reconcile uses this instead of rebuilding receipt evidence:
+ * a post-merge base advance is normal and must not invalidate publication
+ * identity.
+ */
+export interface ProviderPullRequestIntegrationV1 extends ProviderPullRequestV1, ProviderPullRequestStateV1 {}
+
 export interface MergeSealEvidenceV1 {
   readonly path: string;
   readonly sha256: string;
@@ -229,6 +237,31 @@ export function observeProviderPullRequestState(
   } catch (error) {
     if (error instanceof PublicationReceiptError) throw error;
     throw incomplete('provider PR state observation failed', error);
+  }
+}
+
+export function observeProviderPullRequestIntegration(
+  repoRoot: string,
+  prNumber: number,
+  ghBin = process.env.REPO_HARNESS_GH_BIN ?? 'gh',
+): ProviderPullRequestIntegrationV1 {
+  try {
+    if (!Number.isInteger(prNumber) || prNumber < 1) throw incomplete('PR number is invalid');
+    const providerRepoId = observeProviderRepoId(repoRoot, ghBin);
+    const value = ghJson(repoRoot, ghBin, [
+      'pr', 'view', String(prNumber),
+      '--json', 'number,url,headRefOid,headRefName,baseRefName,baseRefOid,body,createdAt,state,mergedAt',
+    ]);
+    const immutable = providerPrFromJson(providerRepoId, value, prNumber);
+    const record = asRecord(value, 'provider PR integration state');
+    const state = requiredString(record.state, 'provider PR state');
+    if (record.mergedAt !== null && typeof record.mergedAt !== 'string') {
+      throw incomplete('provider PR mergedAt is invalid');
+    }
+    return Object.freeze({ ...immutable, state, merged_at: record.mergedAt as string | null });
+  } catch (error) {
+    if (error instanceof PublicationReceiptError) throw error;
+    throw incomplete('provider PR integration observation failed', error);
   }
 }
 

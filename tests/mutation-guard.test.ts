@@ -9,6 +9,17 @@ import { resolveEffectiveState } from '../src/effects/state/resolve-effective-st
 import { buildReviewSubject } from '../src/effects/review/diff-fingerprint';
 import type { EffectiveState } from '../src/core/state/types';
 import type { WorkflowProfile } from '../src/core/workflow/profile';
+import {
+  beginLeaseCompletionRecord,
+  bindLeaseRecord,
+  buildLeaseOwnerRecord,
+  deriveTaskId,
+  deriveTaskRevision,
+  enterReviewingLeaseRecord,
+  type LeaseOwnerRecord,
+} from '../src/core/state/coordination-identity';
+import { resolveRepoIdentity } from '../src/effects/state/coordination-canonical-source';
+import { createLeaseDirectory, writeLeaseOwnerDurably } from '../src/effects/state/coordination-lease-store';
 
 // HRD-03 falsifier proof + guard-by-guard parity fixtures for the in-process
 // mutation-guard handler that replaces worktree-guard.sh + pre-edit-guard.sh.
@@ -67,6 +78,92 @@ function writeActivePlan(cwd: string, status: string, extra: string[] = []): str
   writeFileSync(join(cwd, '.ai/harness/active-plan'), `${plan}\n`);
   writeFileSync(join(cwd, '.ai/harness/active-worktree'), `${realpathSync(cwd)}\n`);
   return plan;
+}
+
+const PUBLICATION_GUARD_SPRINT = 'plans/sprints/publication-guard.sprint.md';
+const PUBLICATION_GUARD_TASK = 'publication remediation';
+const PUBLICATION_GUARD_CLAIM = 'claim-publication-guard';
+
+interface PublicationGuardFixture {
+  readonly root: string;
+  readonly worktree: string;
+  readonly taskId: string;
+  readonly record: LeaseOwnerRecord;
+  cleanup(): void;
+}
+
+/** A real linked worktree plus the shared owner record that arms the hook. */
+function installPublicationGuardFixture(state: 'completing' | 'reviewing'): PublicationGuardFixture {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-publication-')));
+  const primary = join(root, 'primary');
+  const worktree = join(root, 'review');
+  mkdirSync(primary, { recursive: true });
+  initRepo(primary);
+  writePolicy(primary);
+  mkdirSync(join(primary, 'plans/sprints'), { recursive: true });
+  mkdirSync(join(primary, 'docs'), { recursive: true });
+  writeFileSync(join(primary, PUBLICATION_GUARD_SPRINT), [
+    '# Publication guard sprint', '', '## Backlog', '',
+    '| # | Status | Task | Mode | Acceptance | Plan |',
+    '| --- | --- | --- | --- | --- | --- |',
+    `| 1 | [ ] | ${PUBLICATION_GUARD_TASK} | contract | remediation tests pass | (pending) |`, '',
+  ].join('\n'));
+  writeFileSync(join(primary, 'docs/spec.md'), '# spec\n');
+  mkdirSync(join(primary, '.ai/harness/sprint'), { recursive: true });
+  writeFileSync(join(primary, '.ai/harness/sprint/active-sprint'), `${PUBLICATION_GUARD_SPRINT}\n`);
+  git(primary, ['add', '.']);
+  git(primary, ['commit', '-m', 'publication guard state']);
+  git(primary, ['worktree', 'add', '-b', 'codex/publication-guard', worktree]);
+
+  const activePlan = writeActivePlan(worktree, 'Executing');
+  const repoIdentity = resolveRepoIdentity(worktree);
+  const taskId = deriveTaskId({ repoIdentity, sprintPath: PUBLICATION_GUARD_SPRINT, taskCell: PUBLICATION_GUARD_TASK });
+  const taskRevision = deriveTaskRevision({ taskId, modeCell: 'contract', acceptanceCell: 'remediation tests pass' });
+  const claimed = buildLeaseOwnerRecord({
+    claimId: PUBLICATION_GUARD_CLAIM,
+    taskId,
+    taskRevision,
+    sprintPath: PUBLICATION_GUARD_SPRINT,
+    targetRef: 'main',
+    generation: 1,
+    sessionId: 'publication-guard-session',
+    sourceWorktree: primary,
+  });
+  const bound = bindLeaseRecord(claimed, {
+    claimId: PUBLICATION_GUARD_CLAIM,
+    executionWorktree: worktree,
+    branch: 'codex/publication-guard',
+    unitRef: activePlan,
+  });
+  if (!bound.ok) throw new Error(bound.error);
+  const completing = beginLeaseCompletionRecord(bound.record, {
+    claimId: PUBLICATION_GUARD_CLAIM,
+    executionWorktree: worktree,
+    finishTransactionKey: 'finish-publication-guard',
+  });
+  if (!completing.ok) throw new Error(completing.error);
+  const transition = state === 'completing' ? completing : enterReviewingLeaseRecord(completing.record, {
+    claimId: PUBLICATION_GUARD_CLAIM,
+    publication: {
+      publication_id: `sha256:${'a'.repeat(64)}`,
+      receipt_sha256: `sha256:${'b'.repeat(64)}`,
+      head_sha: 'c'.repeat(40),
+      ship_transaction_key: 'ship-publication-guard',
+    },
+  });
+  if (!transition.ok) throw new Error(transition.error);
+  if (!createLeaseDirectory(worktree, taskId)) throw new Error('lease election failed');
+  writeLeaseOwnerDurably(worktree, taskId, transition.record);
+  mkdirSync(join(worktree, '.ai/harness/sprint/claims'), { recursive: true });
+  writeFileSync(join(worktree, `.ai/harness/sprint/claims/${taskId}.claim`), [
+    `claim_id=${PUBLICATION_GUARD_CLAIM}`,
+    `task_id=${taskId}`,
+    `sprint=${PUBLICATION_GUARD_SPRINT}`,
+    `task=${PUBLICATION_GUARD_TASK}`,
+    `unit_ref=${activePlan}`,
+    '',
+  ].join('\n'));
+  return { root, worktree, taskId, record: transition.record, cleanup: () => rmSync(root, { recursive: true, force: true }) };
 }
 
 /** Builds a real, non-mocked collector: same `resolveEffectiveState` authority production wiring uses. */
@@ -673,4 +770,37 @@ describe('gate round-1 parity closure: restored input-normalization fallbacks', 
       rmSync(cwd, { recursive: true, force: true });
     }
   });
+});
+
+describe('publication lifecycle remediation is routed outside sprint reconcile', () => {
+  test('a reviewing lease names reconcile, reopen, takeover, and abandon with its fenced publication identity', () => {
+    const fixture = installPublicationGuardFixture('reviewing');
+    try {
+      const result = edit(fixture.worktree, 'src/feature.ts', { profile: 'lite' });
+      const output = `${result.stdout}\n${result.stderr}`;
+      expect(result.exitCode).toBe(2);
+      expect(output).toContain('[LeaseOwnershipGuard] lease_state_not_bound:');
+      expect(output).toContain(`repo-harness publication reconcile --task-id ${fixture.taskId}`);
+      expect(output).toContain('--expected-claim-id claim-publication-guard --expected-generation 1');
+      expect(output).toContain(`--publication-id ${(fixture.record as Extract<LeaseOwnerRecord, { state: 'reviewing' }>).current_publication.publication_id}`);
+      expect(output).toContain('publication reopen/takeover/abandon');
+      expect(output).not.toContain('repo-harness sprint reconcile');
+    } finally {
+      fixture.cleanup();
+    }
+  }, 30_000);
+
+  test('a completing lease directs the owner to publication recover inspect, not sprint reconcile', () => {
+    const fixture = installPublicationGuardFixture('completing');
+    try {
+      const result = edit(fixture.worktree, 'src/feature.ts', { profile: 'lite' });
+      const output = `${result.stdout}\n${result.stderr}`;
+      expect(result.exitCode).toBe(2);
+      expect(output).toContain('[LeaseOwnershipGuard] lease_state_not_bound:');
+      expect(output).toContain('repo-harness publication recover inspect');
+      expect(output).not.toContain('repo-harness sprint reconcile');
+    } finally {
+      fixture.cleanup();
+    }
+  }, 30_000);
 });

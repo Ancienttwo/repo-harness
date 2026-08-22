@@ -502,6 +502,8 @@ describe('actions', () => {
     expect(card.claim?.current_publication).toEqual(reviewing.current_publication);
     expect(card.actions).toEqual({
       release: null, steal: null, reconcile: null,
+      publication_reconcile: `repo-harness publication reconcile --task-id ${TASK_ID} --expected-claim-id claim-1 --expected-generation 1 --publication-id ${reviewing.current_publication.publication_id} --expected-head-sha ${reviewing.current_publication.head_sha} --remote '<remote>'`,
+      publication_recover: null,
       publication_reopen: `repo-harness publication reopen --task-id ${TASK_ID} --claim-id claim-1 --expected-generation 1 --publication-id ${reviewing.current_publication.publication_id} --expected-head-sha ${reviewing.current_publication.head_sha}`,
       publication_takeover: `repo-harness publication takeover --task-id ${TASK_ID} --expected-claim-id claim-1 --expected-generation 1 --publication-id ${reviewing.current_publication.publication_id} --expected-head-sha ${reviewing.current_publication.head_sha} --reason '<reason>' --session-id '<session-id>'`,
       publication_abandon: `repo-harness publication abandon --task-id ${TASK_ID} --expected-claim-id claim-1 --expected-generation 1 --publication-id ${reviewing.current_publication.publication_id} --expected-head-sha ${reviewing.current_publication.head_sha} --reason '<reason>'`,
@@ -512,8 +514,15 @@ describe('actions', () => {
     const card = cardFor('pending', 'available', 'not_observed');
     expect(card.actions).toEqual({
       release: null, steal: null, reconcile: null,
+      publication_reconcile: null, publication_recover: null,
       publication_reopen: null, publication_takeover: null, publication_abandon: null,
     });
+  });
+
+  test('a completing lease routes recovery to the publication adapter', () => {
+    const card = cardFor('pending', 'completing', 'active');
+    expect(card.actions.publication_reconcile).toBeNull();
+    expect(card.actions.publication_recover).toBe('repo-harness publication recover inspect');
   });
 });
 

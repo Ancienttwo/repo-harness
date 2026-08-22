@@ -382,12 +382,20 @@ function computeLeaseOwnership(ctx: Ctx): LeaseOwnershipDecision {
 
   // ---- step 3: the lease is bound ----------------------------------------
   if (record.state !== 'bound') {
+    const recovery = record.state === 'reviewing' && 'current_publication' in record && record.current_publication !== null
+      ? `Reconcile provider integration with repo-harness publication reconcile --task-id ${held.task_id}`
+        + ` --expected-claim-id ${record.claim_id} --expected-generation ${record.generation}`
+        + ` --publication-id ${record.current_publication.publication_id}`
+        + ` --expected-head-sha ${record.current_publication.head_sha} --remote '<remote>', or use publication reopen/takeover/abandon.`
+      : record.state === 'completing'
+        ? 'Inspect the incomplete closeout with repo-harness publication recover inspect, then explicitly recover reconcile or abort.'
+        : `Finish or reconcile the ${record.state} lease before editing (repo-harness sprint reconcile --task-id ${held.task_id} --target-ref ${collection.canonical_target.ref}).`;
     return refuse(
       'lease_state_not_bound',
       `Claim ${held.claim_id} is ${record.state}, not bound; a lease that is not bound names no execution worktree that may write.`,
       record.state === 'reserving'
         ? 'Bind the reservation to this worktree with repo-harness sprint bind before editing.'
-        : `Finish or reconcile the ${record.state} lease before editing (repo-harness sprint reconcile --task-id ${held.task_id} --target-ref ${collection.canonical_target.ref}).`,
+        : recovery,
     );
   }
 
