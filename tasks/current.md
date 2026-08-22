@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-23T00:48:17+0800 -->
+<!-- updated_at: 2026-08-23T01:45:39+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-23T00:48:17+0800
-> **Source Branch**: codex/issue-216-bun-runtime-floor
-> **Source Commit**: 393e7d46
+> **Updated At**: 2026-08-23T01:45:39+0800
+> **Source Branch**: codex/merge-readiness-v1
+> **Source Commit**: 53242a5c
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -33,8 +33,6 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 - /private/tmp/repo-harness-gpt-pro-orchestrate: plans/plan-20260822-1240-gpt-pro-orchestrate-mode.md
 - /private/tmp/repo-harness-gpt-pro-orchestrate: active-worktree owner -> /private/tmp/repo-harness-gpt-pro-orchestrate
-- /Users/ancienttwo/Projects/repo-harness-wt-merge-readiness-v1: plans/plan-20260822-2240-merge-readiness-v1.md
-- /Users/ancienttwo/Projects/repo-harness-wt-merge-readiness-v1: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-merge-readiness-v1
 ## Active Sprint
 
 - Sprint: (none)
@@ -58,19 +56,18 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: 9 changed/untracked path(s)
 
 ```
- D plans/plan-20260822-2346-issue-216-bun-runtime-floor.md
- D tasks/contracts/20260822-2346-issue-216-bun-runtime-floor.contract.md
- D tasks/notes/20260822-2346-issue-216-bun-runtime-floor.notes.md
- D tasks/reviews/20260822-2346-issue-216-bun-runtime-floor.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260822-2346-issue-216-bun-runtime-floor.md
-?? tasks/archive/contract-20260823-0048-issue-216-bun-runtime-floor.md
-?? tasks/archive/notes-20260823-0048-issue-216-bun-runtime-floor.md
-?? tasks/archive/review-20260823-0048-issue-216-bun-runtime-floor.md
-?? tasks/archive/todo-20260823-0048-issue-216-bun-runtime-floor.md
+ D plans/plan-20260822-2240-merge-readiness-v1.md
+ D tasks/contracts/20260822-2240-merge-readiness-v1.contract.md
+ D tasks/notes/20260822-2240-merge-readiness-v1.notes.md
+ D tasks/reviews/20260822-2240-merge-readiness-v1.review.md
+?? plans/archive/plan-20260822-2240-merge-readiness-v1.md
+?? tasks/archive/contract-20260823-0145-merge-readiness-v1.md
+?? tasks/archive/notes-20260823-0145-merge-readiness-v1.md
+?? tasks/archive/review-20260823-0145-merge-readiness-v1.md
+?? tasks/archive/todo-20260823-0145-merge-readiness-v1.md
 ```
 
 ## Source Artifacts

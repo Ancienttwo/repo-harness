@@ -31,6 +31,7 @@ import { buildRunCommand } from './commands/run';
 import { buildStateCommand } from './commands/state';
 import { buildSprintCommand } from './commands/sprint';
 import { buildPublicationCommand } from './commands/publication';
+import { buildFleetCommand } from './commands/fleet';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
 import {
@@ -100,6 +101,7 @@ export const SUBCOMMANDS = [
   'chatgpt',
   'state',
   'publication',
+  'fleet',
   'architecture-projection',
 ] as const;
 export type Subcommand = (typeof SUBCOMMANDS)[number];
@@ -747,6 +749,7 @@ export function buildProgram(): Command {
   program.addCommand(buildStateCommand());
   program.addCommand(buildSprintCommand());
   program.addCommand(buildPublicationCommand());
+  program.addCommand(buildFleetCommand());
   program.addCommand(buildArchitectureProjectionCommand());
   program
     .command('circuit-breaker-record', { hidden: true })

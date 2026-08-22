@@ -28,6 +28,10 @@ import {
   takeoverPublication,
 } from '../../effects/publication/publication-lifecycle';
 import { PublicationLifecycleError } from '../../core/publication/publication-lifecycle';
+import {
+  MergeReadinessError,
+  resolvePublicationReadiness,
+} from '../../effects/publication/merge-readiness';
 
 type EnsureOptions = {
   taskId: string;
@@ -96,6 +100,7 @@ type ReconcileOptions = {
   remote: string;
 };
 type RecoveryOptions = { key?: string; confirmAbort?: boolean };
+type ReadinessOptions = { publicationId?: string; pr?: string; json: boolean };
 
 function parseCreateIntent(raw: string | undefined): PublicationCreateIntentV1 | undefined {
   if (raw === undefined) return undefined;
@@ -117,6 +122,11 @@ function parseCreateIntent(raw: string | undefined): PublicationCreateIntentV1 |
 }
 
 function outputError(error: unknown): void {
+  if (error instanceof MergeReadinessError) {
+    process.stderr.write(`${JSON.stringify({ ok: false, error: error.code, message: error.message })}\n`);
+    process.exitCode = 1;
+    return;
+  }
   if (error instanceof PublicationReceiptError) {
     process.stderr.write(`${JSON.stringify({ ok: false, error: error.code, message: error.message })}\n`);
     process.exitCode = 1;
@@ -385,6 +395,28 @@ export function buildPublicationCommand(): Command {
           remote: options.remote,
         });
         process.stdout.write(`${JSON.stringify({ ok: true, ...result })}\n`);
+      } catch (error) { outputError(error); }
+    });
+
+  publication
+    .command('readiness')
+    .description('Derive one read-only fenced merge-readiness verdict')
+    .option('--publication-id <id>', 'Current publication id')
+    .option('--pr <number>', 'Legacy/adoption read path using the live full-payload marker')
+    .requiredOption('--json', 'Output the MergeReadinessV1 document as JSON')
+    .action((options: ReadinessOptions) => {
+      try {
+        const prNumber = options.pr === undefined ? undefined : numberOption(options.pr, '--pr');
+        const verdict = resolvePublicationReadiness({
+          repo_root: process.cwd(),
+          publication_id: options.publicationId,
+          pr_number: prNumber,
+          gh_bin: process.env.REPO_HARNESS_GH_BIN,
+          git_bin: process.env.REPO_HARNESS_GIT_BIN,
+          merge_seal_path: process.env.REPO_HARNESS_PUBLICATION_SEAL_PATH,
+          checks_path: process.env.REPO_HARNESS_PUBLICATION_CHECKS_PATH,
+        });
+        process.stdout.write(`${JSON.stringify(verdict)}\n`);
       } catch (error) { outputError(error); }
     });
 
