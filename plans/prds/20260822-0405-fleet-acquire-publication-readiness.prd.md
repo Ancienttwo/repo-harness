@@ -1,9 +1,9 @@
 # PRD: Fleet Task Acquisition, Publication Lifecycle, and Merge Readiness
 
-> **Status**: Draft
+> **Status**: Approved
 > **Slug**: fleet-acquire-publication-readiness
 > **Created**: 2026-08-22T04:05:55+0800
-> **Updated**: 2026-08-22T12:13:34+0800
+> **Updated**: 2026-08-22T15:25:00+0800
 > **Source Spec**: `docs/spec.md`
 > **Tier**: standard
 
@@ -14,28 +14,29 @@
 - Platform: repo-harness CLI on one machine, GitHub via `gh`; MCP mirroring ships as part of WP2, not assumed before it.
 - P0 surface: `PublicationReceiptV1` → Lease Protocol 2 + PR Review Lifecycle (`reviewing` + `publication reopen/takeover/abandon`) → Publication Recovery + Integration Reconcile → `publication readiness` (`MergeReadinessV1`).
 - Core metric: An agent goes from "no context" to "bound worktree with a work envelope" in one command; a user answers "is this PR safe to merge" in one command fenced to an exact head SHA; a CI failure re-enters work only through explicit reopen/takeover, never through liveness guesses or raw steal.
-- Hard constraint: No new authority **categories**. Task authority stays in canonical sprint rows, execution authority stays in git-common-dir leases (extended, versioned), evidence stays repo-local, provider facts stay on GitHub; everything else added is a rebuildable artifact or a read model.
+- Hard constraint: No new authority **categories**. Task authority stays in canonical sprint rows, execution authority stays in git-common-dir leases (extended, versioned), evidence stays repo-local, provider facts stay on GitHub. Rebuildable artifacts and read models remain the default; the only explicit exception is an immutable, non-authoritative `TaskMessageEventV1` communication fact whose loss may lose message history but can never change workflow authority or state.
 - Key risk: WP0-B touches the lease state machine and record schema — highest-care change; and the digest-domain trap: `COORDINATION_PROTOCOL` participates in task_id/task_revision digests, so the record schema version must be a new field, never a bump of that constant.
 - Unknowns: Cross-machine steal signal policy (deferred with remote claim protocol); pre-existing handoff dual-producer overlap; `gh` rate behavior.
-- Acceptance scenarios: `finish --no-merge` lands the lease in `reviewing` with a current-publication pointer; takeover re-enters via `reserving → bind`, never directly `bound`; receipt rebuilds fully from the PR marker; readiness flips on head or base movement; two same-token repair attempts trigger `no_progress`.
-- Suggested next step: WP0-A (`PublicationReceiptV1` with full-payload PR marker and deterministic `publication_id`) — additive, no concurrency surface.
+- Acceptance scenarios: `finish --no-merge` lands the lease in `reviewing` with a current-publication pointer; takeover re-enters via `reserving → bind`, never directly `bound`; receipt rebuilds fully from the PR marker; readiness flips on head or base movement; two same-token repair attempts trigger `no_progress`; task messages arrive only at a real turn boundary and claim-scoped messages never cross generation takeover.
+- Suggested next step: WP0-B (Lease Protocol 2 + lifecycle). WP3-A (`Task Inbox V1`) is now decision-complete but cannot implement claim/generation delivery semantics until WP0-B freezes takeover behavior.
 
 ## Problem
 
 repo-harness `63f0ba11` already implements the hard parts of multi-agent task execution: canonical sprint rows with content-addressed task revisions, atomic lease election with claim-ID fencing and generations (`src/cli/commands/sprint.ts:233-322`), a strict `reserving → bind → bound` binding invariant (claim always creates `reserving`, `coordination-identity.ts:288`; only `bind` writes `bound` together with `execution_worktree`/`branch`/`unit_ref` after appending a `resumed` receipt, `sprint.ts:369-400`; `abort-completion` merely restores a previously bound record), a three-axis read-only board projection with torn-snapshot detection (`resolve-board.ts:41-60`), subject-bound review/checks/acceptance freshness (`project-effective-state.ts:113-188`), and a ship flow that ends in a draft PR without auto-merge.
 
-Four gaps block the outer loop ("agent enters any registered repo, acquires a task, verifies, publishes; the user picks PRs to merge"):
+Five gaps block the outer loop ("agent enters any registered repo, acquires a task, verifies, publishes; the user picks PRs to merge"):
 
 1. **The lease state machine has no PR-review state (verified, structural).** The default PR ship path runs `contract-worktree finish --no-merge`, which unconditionally executes `begin-completion` (`bound → completing`, `contract-worktree.sh:1825-1826`) before verification. Both `--no-merge` success branches end at `finish_transaction_commit` and `return 0` (`:1995-2014`) — that function (`:1136-1146`) never touches the lease; `reconcile_after_publication` runs only on the real-merge branch (`:2092-2093`); `abort_completion` only on failure. No cleanup, hook, or CI path reconciles afterward, and `stealLeaseRecord` refuses `completing` (`coordination-identity.ts:600-606`). Every shipped draft PR leaves its lease stranded in `completing` for the whole review window, clearable only by manual `sprint reconcile`. `completing` was designed as a short crash-ambiguity window, not a days-long review state.
 2. **Publication identity is unrecorded.** `create_or_report_pr` (`scripts/ship-worktrees.sh:980-1018`) obtains the PR URL and only echoes it; the journal's `pr_observed` phase records a commit SHA. A weak mapping is reconstructable from `gh pr list --head <branch>` while the branch survives, but nothing typed, fenced, or generation-aware survives branch cleanup, renames, duplicate PRs, or stacked absorption.
 3. **Merge readiness is unverifiable as a unit.** Local evidence freshness and provider CI/review facts exist separately; nothing joins them under one head-SHA fence. The existing `sprint reconcile` cannot serve remote-merge closure: it never fetches (`coordination-canonical-source.ts:58-89`), and it refuses on strict string inequality of `target_ref` with no ref canonicalization (`coordination-identity.ts:421-424`, `sprint.ts:693-694`).
 4. **Failure feedback has no route.** No mechanism maps a CI failure or changes-requested event back to a task/claim/publication and re-enters it into work — and per gap 1, the state machine could not accept it anyway.
+5. **Workers and orchestrators have no task-addressed message route.** Claude and Codex transcripts are locally observable but are not writable context buses; session resume forks execution, and PTY injection impersonates the user. Session IDs are disposable and diverge across restart/takeover, while the lease already provides the stable `task_id + claim_id + generation` ownership address needed for delayed turn-boundary delivery.
 
 ### Product Direction
 
 - Hard Constraints:
   - Repo owns meaning; Git owns version and publication; leases own temporary execution rights; `PublicationReceiptV1` binds task + claim + candidate + PR; the provider owns PR/CI/merge facts; the user owns the final merge. CLI, MCP, agents, and any future operator own nothing durable.
-  - No new authority categories. `reviewing` extends the existing lease authority (not freely rebuildable); receipts, feedback events, readiness, offers, and boards are rebuildable artifacts or read-time projections. Deleting every rebuildable artifact must lose zero workflow authority.
+  - No new authority categories. `reviewing` extends the existing lease authority (not freely rebuildable); receipts, provider feedback events, readiness, offers, and boards are rebuildable artifacts or read-time projections. `TaskMessageEventV1` is the single bounded exception to rebuildability: it is an immutable communication fact, never an authority fact. Deleting it may lose conversation history but must lose zero task, execution, publication, readiness, or merge authority.
   - `PublicationReceiptV1` is an **immutable identity fact** with a **deterministic ID**: `publication_id = sha256(protocol + provider_repo_id + task_id + claim_id + generation + head_sha)`, so crash-retry and rebuild converge on one identity. Dynamic PR state (`provider_state`, `integration_state`, `publication_state`, readiness) lives in read-time projections. Integration absorption reuses the existing `worktree_merge_mode` judgment (`ancestor`/`absorbed`); no second implementation.
   - The PR body marker carries the **full canonical receipt payload** (bounded JSON, no local paths/credentials/feedback bodies) so a lost local receipt rebuilds completely from the provider. The marker is an untrusted carrier: rebuild verifies it against live provider facts and local evidence digests, and a marker alone never authorizes any lease mutation. (A remote publication ref as a stronger cross-clone carrier is a deferred upgrade tied to the remote claim protocol.)
   - Lease record schema becomes **protocol 2 of the lease-owner record**, adding `reviewing` and a `current_publication` pointer. **The digest-domain constant is untouchable**: `COORDINATION_PROTOCOL = 1` participates in task_id/task_revision digest domains (`coordination-identity.ts:74-95`), so versioning uses a new record-schema field; bumping the constant would silently change every task identity. Compatibility is explicit: protocol-2 readers accept existing records; the first `reviewing` transition writes the extended record; older CLIs parse unknown states as `unknown` and fail closed (verified: closed-set parser, `coordination-identity.ts:344-347`; `unknown` is never silently cleared, `coordination-lease-store.ts:314-322`) — that refusal is the intended guard, surfaced with an upgrade message. Legacy stranded leases (`completing` + completed no-merge journal + PR) get a detection command and explicit per-lease migration; no silent auto-fix.
@@ -47,8 +48,10 @@ Four gaps block the outer loop ("agent enters any registered repo, acquires a ta
   - `sprint steal` keeps its current `reserving`/`bound` semantics unchanged, but **must refuse `reviewing`** (pointing at `publication takeover`), exactly as it refuses `completing`. Without this refusal the entire publication lifecycle is bypassable.
   - The `current_publication` pointer in the lease record is the single authority for "which publication is current"; receipts stay immutable, lineage events are audit-only, and supersession is derived from the pointer. All reopen/takeover/abandon/reconcile compare it under the task lock.
   - Remote-merge closure uses a new `publication reconcile`, not the existing `sprint reconcile`: fetch provider target into an isolated observation ref, prove the sprint row is `[x]` at the fetched OID, verify receipt/pointer/claim/generation, then clear the `reviewing` lease under the task lock and record `integration_state`. It reuses the existing proof principle (canonical `[x]` before lease clearance) but not the command, whose no-fetch and strict target-ref string equality make it unfit for provider-driven closure.
-  - There is **no session-liveness authority**. Hook events, worktree presence, and progress tokens are evidence, never proof of life. No `session_alive` boolean; delivery state lives in `FeedbackDeliveryReceiptV1`. Nothing auto-releases or auto-steals on missing signals; `orphan_reclaimable` and runtime observations remain diagnostics.
-  - Feedback is **intake + redispatch, not wake**: provider events persist as immutable `FeedbackEventV1` records in a dedicated inbox under the git-common-dir coordination plane; mutable delivery/ack state is a separate `FeedbackDeliveryReceiptV1` so event digests and `feedback_revision` stay stable. Handoff/resume files are consumers of the inbox, never observer write targets — handoff already has two producers (Stop batch `stop-handler.ts:372-413`; `recovery-view-cli.ts` via `verify-sprint.sh:954-955`); a third is forbidden.
+  - There is **no session-liveness authority**. Hook events, worktree presence, and progress tokens are evidence, never proof of life. No `session_alive` boolean; feedback and task-message delivery state lives only in their separate delivery receipts. Nothing auto-releases or auto-steals on missing signals; `orphan_reclaimable` and runtime observations remain diagnostics.
+  - Feedback is **provider intake + redispatch, not wake**: provider events persist as immutable, reconstructible `FeedbackEventV1` records in a dedicated publication inbox under the git-common-dir coordination plane; mutable delivery/ack state is a separate `FeedbackDeliveryReceiptV1` so event digests and `feedback_revision` stay stable. `FeedbackEventV1` never carries operator/agent chat because its identity and reconstruction depend on provider facts.
+  - Task messaging is **task-addressed asynchronous delivery, not session chat**: immutable `TaskMessageEventV1` records use `task_id` plus an explicit `task|claim` scope; mutable per-recipient state lives in `TaskMessageDeliveryReceiptV1`. A `claim`-scoped message is fenced to the exact `claim_id + generation` and becomes `superseded` on takeover; a `task`-scoped message survives takeover and may be delivered to the successor. Message writes and reads never mutate the lease, prove liveness, wake a runtime, or authorize commands. Handoff/resume files may summarize inbox state but are never inbox write targets — handoff already has two producers (Stop batch `stop-handler.ts:372-413`; `recovery-view-cli.ts` via `verify-sprint.sh:954-955`); a third is forbidden.
+  - Task-message bodies are bounded untrusted peer data. Hooks inject them only in an explicitly delimited untrusted-context block, never as system/developer instructions. Trust metadata is derived from the invocation channel and cannot be elevated by caller-supplied fields; secrets and raw transcript copies are forbidden.
   - Repair is **not a new task**. `RepairOfferV1` is distinct from `TaskOfferV1`: same task/claim/publication lineage, entered only via reopen/takeover, never via plain `sprint claim`.
   - `fleet acquire` v1 returns bound worktrees only for `execution_ready` offers: row pending ∧ lease available ∧ snapshot stable ∧ repo `read_write` ∧ contract mode ∧ approved decision-complete plan exists and matches the row ∧ contract projectable. Rows needing planning are excluded (a `PlanningOfferV1` lane is deferred); acquire never fabricates a bound worktree it cannot actually create.
   - Merge readiness is derived at read time, keyed by `publication_id`, fenced to `expected_head_sha` **and** the verified base/target revision; `ready` additionally requires the PR to be non-draft. No `ready=true` is ever persisted.
@@ -86,7 +89,7 @@ Four gaps block the outer loop ("agent enters any registered repo, acquires a ta
 ### Primary Users
 
 - User: Autonomous coding agent (disposable CLI session).
-  - Need: One command returning a fully bound work envelope for execution-ready tasks or a clean "nothing eligible"; explicit repair entry (`reopen`/`takeover`) with persisted feedback when its publication fails CI or review.
+  - Need: One command returning a fully bound work envelope for execution-ready tasks or a clean "nothing eligible"; explicit repair entry (`reopen`/`takeover`) with persisted feedback when its publication fails CI or review; a task-addressed inbox that survives session replacement without silently retargeting claim-private messages.
   - Success signal: First productive edit without reading board internals; a successor agent takes over a dead session's publication via `takeover → bind` with zero liveness guessing.
 
 ### Secondary Users
@@ -106,6 +109,7 @@ Four gaps block the outer loop ("agent enters any registered repo, acquires a ta
 | Receipt rebuild completeness | Field-equivalent receipt | Delete local receipt; rebuild from marker + provider; compare | any lossy rebuild |
 | Readiness fencing | 100% | Head push → `head_moved`; base advance → `base_moved_since_verification`; draft → blocked | any stale `ready` |
 | Ownership safety of feedback | 0 lease mutations from observers | Intake tests assert lease record unchanged | any observer-driven mutation |
+| Task-message ownership safety | 0 cross-generation claim deliveries; 0 lease mutations | Takeover fixture plus byte-for-byte lease comparison before/after send/deliver/ack | any stale-claim delivery or lease write |
 
 ## Acceptance Scenarios
 
@@ -137,11 +141,19 @@ Four gaps block the outer loop ("agent enters any registered repo, acquires a ta
 - Then (must NOT): No column/status/`ready` flag persisted; no mutation proceeds on a snapshot precondition (leases re-read under task lock, provider facts re-fetched, head and base fences compared); `read_only` repos never offered; stale envelopes fail closed (`authorization_stale`); planning-required rows never surface as `execution_ready` and acquire never claims them; a receipt whose generation mismatches the pointer surfaces `publication_claim_mismatch`, never silent re-attribution.
 - Machine-checkable evidence: Typed errors; write-surface test limiting writes to coordination-plane runtime artifacts and ignored caches.
 
+### Scenario 5: task inbox delivers at a turn boundary without becoming session authority
+
+- Given: A `bound` task with owner claim C/generation G, one `claim`-scoped message and one `task`-scoped message; then an explicit publication takeover creates claim C2/generation G+1.
+- When: The successor's Claude or Codex turn hook consumes the task inbox.
+- Then: The C/G message is `superseded` and its body is not injected; the task-scoped message is delivered once to C2/G+1 inside a bounded untrusted-context block; retry is idempotent; send, delivery, acknowledgement, and supersession leave the lease byte-for-byte unchanged; no action occurs until a real turn boundary invokes the hook.
+- Machine-checkable evidence: Event and per-recipient receipt assertions; hook-context snapshot; idempotent retry; lease digest equality; no PTY/session-resume invocation.
+
 ## Non-goals
 
 - **Remote claim protocol (cross-machine CAS refs)** and the remote publication-ref carrier. Deferred until multi-machine acquisition is real; the acquire step sequence and marker design stay extensible for it; its design doc must first resolve the cross-machine steal-signal question (human-only remote steal vs explicit audited TTL).
 - **Resident operator daemon, webhooks, SSE, notification center.** On-demand CLI first; a daemon is justified by measured evidence (readiness p95, active publication count, manual poll frequency, missed-feedback latency), and may own only caches/cursors/delivery metadata.
 - **Agent runtime adapters / PTY ownership / session wake.**
+- **Raw transcript exchange or direct Claude↔Codex session injection.** Transcripts remain debugging observations, never inbox inputs or authority; `tmux send-keys`, `codex exec resume`, and `claude --resume` are not delivery channels.
 - **In-product PR merge.** v1 deep-links to GitHub.
 - **Web/TUI kanban UI.** `fleet board --json` / `fleet watch --format jsonl` are the v1 surfaces.
 - **Multi-tenant cloud service.**
@@ -157,11 +169,10 @@ Four gaps block the outer loop ("agent enters any registered repo, acquires a ta
 - Hard Constraints:
   - Deterministic `publication_id` (see Product Direction) so PR-created-then-crash retries converge.
   - Immutable creation-time facts only; dynamic state in projections.
-  - PR marker carries the full canonical payload; local receipt is a cache; `fleet receipt rebuild` restores a field-equivalent receipt from marker + provider facts, verifying receipt target/base/branch/head against live provider facts and local evidence digests. Marker never authorizes mutations.
+  - PR marker carries the full canonical payload; local receipt is a cache; `fleet receipt rebuild` restores a field-equivalent receipt from marker + provider facts, verifying against live head and local evidence digests. Marker never authorizes mutations.
   - Ship journal `pr_observed` upgraded to provider repo ID + PR number + receipt digest.
   - PR create succeeds but receipt/marker write fails → typed `publication_incomplete`, non-zero exit, journal keeps a recoverable phase; lease stays `completing` for Module 3's recovery. Never a warning-only success.
-  - Before creating a PR, ship durably records a canonical `publication_create_intent` (provider repo, task, claim, generation, head, deterministic publication ID) in its existing closeout journal. Only that matching intent authorizes the first marker after a create-before-marker crash; a pre-existing markerless PR is `publication_claim_mismatch`, never re-attribution. Existing full markers verify target/base/branch/head + identity.
-  - WP0-A coverage is task-backed linked-worktree publication only. Primary dirty-worktree maintenance closeout has no task/claim lease authority and is outside receipt coverage.
+  - Existing-PR adoption verifies head + identity; generation mismatch → `publication_claim_mismatch`, never re-attribution.
 - Recommended Defaults: Write hook in `create_or_report_pr` after create/lookup; include `review_subject_sha256`, `verification_evidence_sha256`, `merge_seal_sha256`, `base_sha`; idempotent by `publication_id`.
 - Normal path: ship → PR → receipt → marker → journal.
 - Failure path 1: Marker embed fails after receipt write → same `publication_incomplete` handling; recovery retries embed.
@@ -245,13 +256,31 @@ Four gaps block the outer loop ("agent enters any registered repo, acquires a ta
 - Dependencies: Modules 1–5; `gh`; recovery materializers (read-only).
 - Open decisions: CLI-manual intake only in P1 (recommended) vs hook-triggered.
 
+### Module 6A: Task Inbox V1 (WP3-A)
+
+- Purpose: Let users, orchestrators, Claude workers, and Codex workers exchange bounded task-local messages without treating a disposable session as an address or authority.
+- Hard Constraints:
+  - Task identity comes from the canonical sprint row; claim ownership comes from the current lease. Send resolves and freezes `task_id + task_revision`; a `claim`-scoped send additionally re-reads the lease under the task lock to freeze `claim_id + generation`. Consumers revalidate the canonical revision and, for owner delivery, the current lease. Session IDs, transcript paths, panes, and process IDs never appear in the protocol.
+  - Inbox: `<git-common-dir>/repo-harness/task-inbox/v1/<task-id>/events/<message-id>.json`. `TaskMessageEventV1` is immutable; the sender generates `message_id` before the first write, an identical retry is idempotent, and reuse with different canonical bytes fails typed `message_id_conflict`.
+  - Mutable per-recipient state is separate at `<task-id>/delivery/<message-id>/<recipient-key>.json` as `TaskMessageDeliveryReceiptV1`. Recipient keys are canonical `claim:<claim-id>:g<generation>`, `orchestrator:<id>`, or `user:<id>` values derived by the consumer boundary, not caller-selected paths. Event digests never include delivery state.
+  - `scope=claim` freezes `target_claim_id + target_generation`; any other owner must mark the owner delivery `superseded` without injecting the body. `scope=task` omits a target claim: it may be written while unowned, follows takeover only while no recipient has acknowledged it, and becomes globally satisfied after the first valid acknowledgement unless an explicit future broadcast mode is separately specified. `audience=owner|orchestrator|user` limits projection and delivery; it never grants authority.
+  - Send, consume, acknowledge, and supersede re-read canonical task/lease state where relevant but never write it. Task-revision mismatch fails typed `task_revision_mismatch`; missing owner leaves a task-scoped owner message pending but rejects a claim-scoped send/delivery (`task_unowned`); claim/recipient mismatches fail closed (`claim_mismatch` or `recipient_unavailable`). No fallback retargeting or generation inference.
+  - Hook delivery occurs only at an existing Claude/Codex turn boundary and injects one bounded, explicitly delimited untrusted peer-message block. Bodies have byte/count limits, are excluded from handoff/resume source-of-truth fields, and must not contain copied raw transcripts or secrets. Delivery never invokes PTYs, CLI resume, host adapters, or wake signals.
+  - `sender_kind` and `sender_trust` are assigned by the command/hook invocation boundary; callers cannot claim a stronger identity in the event payload. Every body remains untrusted regardless of sender metadata.
+  - This module owns durable communication history but zero workflow meaning: no message body, acknowledgement, unread count, or delivery status is a mutation precondition or input to task, lease, publication, readiness, or merge authorization.
+- Recommended Defaults: `fleet message send --task-id ... --scope task|claim --audience ... --body-file ...`; `fleet inbox list`; `fleet inbox ack`; Kanban cards show counts and `attention_owner`, not full message bodies.
+- Normal path: sender resolves task/claim → immutable event write → receiver turn hook revalidates lease and filters → untrusted context injection → per-recipient delivery receipt → explicit acknowledgement → board projection.
+- Failure paths: reused ID with different bytes → `message_id_conflict`; task revision changed → `task_revision_mismatch`; takeover before claim delivery → `superseded`; malformed/unreadable event → `task_message_unreadable`, no inferred body or retargeting; no owner/receiver turn → task-scoped owner message remains pending, with no liveness conclusion.
+- Dependencies: Module 2 lease schema and takeover semantics; Module 5 task discovery/authorization; existing hook router. It does not depend on `PublicationReceiptV1` or provider feedback.
+- Open decisions: None. This PRD explicitly accepts non-rebuildable, non-authoritative immutable communication history as the bounded exception described above.
+
 ### Module 7: Fleet Board projection (WP4)
 
 - Purpose: Cross-repo kanban read model.
 - Hard Constraints: Pure projection over registry + boards + receipts + publication status + readiness + inbox; derived columns (`Available | Working | In review | Ready to merge | Done`), orthogonal `attention_owner` inbox, per-repo `snapshot_consistency`; never a mutation precondition; card actions map only to explicit domain commands.
 - Normal path: iterate authorized repos → collect → join → JSON/JSONL.
 - Failure path: one repo unreadable → its cards `unreadable`, others unaffected.
-- Dependencies: Modules 1–6.
+- Dependencies: Modules 1–6A.
 - Open decisions: None.
 
 ### Module 8 (P2, deferred): Operator daemon (WP5)
@@ -356,6 +385,45 @@ Observer + Projector + Command Router only; owns caches/cursors/delivery metadat
       }
     },
     {
+      "id": "task_message_event_v1",
+      "owner": "immutable, non-authoritative communication fact in the git-common-dir task inbox; intentionally not reconstructible",
+      "fields": {
+        "protocol": "1",
+        "kind": "repo-harness-task-message-event",
+        "message_id": "uuid generated before first write; identical retry only",
+        "task_id": "sha256",
+        "task_revision": "sha256",
+        "scope": "task|claim",
+        "target_claim_id": "uuid|null; required only for claim scope",
+        "target_generation": "number|null; required only for claim scope",
+        "sender_kind": "user|operator|agent",
+        "sender_id": "string|null",
+        "sender_trust": "local_operator|lease_owner|unverified_agent (transport-derived)",
+        "audience": "owner|orchestrator|user",
+        "body": "bounded UTF-8 untrusted text",
+        "body_sha256": "sha256",
+        "created_at": "datetime",
+        "in_reply_to": "message_id|null",
+        "event_digest": "sha256 over canonical immutable fields"
+      }
+    },
+    {
+      "id": "task_message_delivery_receipt_v1",
+      "owner": "mutable per-recipient delivery state; never workflow authority",
+      "fields": {
+        "message_id": "uuid",
+        "recipient_kind": "claim|orchestrator|user",
+        "recipient_id": "canonical transport-derived string",
+        "recipient_task_revision": "sha256",
+        "recipient_claim_id": "uuid|null",
+        "recipient_generation": "number|null",
+        "delivery_state": "pending|delivered|acknowledged|superseded",
+        "delivery_channel": "hook_session|manual",
+        "delivered_at": "datetime|null",
+        "acknowledged_at": "datetime|null"
+      }
+    },
+    {
       "id": "reaction_attempt_receipt_v1",
       "owner": "runtime ledger for repair loops; separate from AttemptReceiptV1",
       "fields": {
@@ -413,6 +481,8 @@ Observer + Projector + Command Router only; owns caches/cursors/delivery metadat
     { "from": "publication_status_projection", "to": "publication_receipt_v1", "via": "publication_id" },
     { "from": "feedback_event_v1", "to": "publication_receipt_v1", "via": "publication_id" },
     { "from": "feedback_delivery_receipt_v1", "to": "feedback_event_v1", "via": "provider_event_id" },
+    { "from": "task_message_event_v1", "to": "lease_owner_record_v2_extension", "via": "task_id + task_revision + optional exact claim_id/generation scope; lookup only, never mutation" },
+    { "from": "task_message_delivery_receipt_v1", "to": "task_message_event_v1", "via": "message_id" },
     { "from": "merge_readiness_v1", "to": "publication_receipt_v1", "via": "publication_id + expected_head_sha + expected_base_sha" },
     { "from": "repair_offer_v1", "to": "feedback_event_v1", "via": "publication_id + feedback_revision" }
   ]
@@ -424,6 +494,7 @@ Observer + Projector + Command Router only; owns caches/cursors/delivery metadat
 | Target | Number | Measurement Method | Degradation Threshold |
 | --- | ---: | --- | ---: |
 | `fleet acquire` end-to-end (warm, local) | 5 s | timed CLI run in tests | 15 s |
+| Task-inbox turn consumption (100 pending events, local) | 200 ms | fixture hook invocation excluding model/runtime startup | 1 s |
 | `publication readiness` single publication | 3 s | timed CLI run (`gh` on network) | 10 s |
 | `fleet board` across 10 repos | 10 s | timed CLI run | 30 s |
 
@@ -442,8 +513,8 @@ Observer + Projector + Command Router only; owns caches/cursors/delivery metadat
 
 You are implementing this PRD.
 
-- Build first: Module 1 (WP0-A). Then Module 2 (WP0-B — lease protocol 2 + lifecycle; highest-care change; **never touch `COORDINATION_PROTOCOL`**, it feeds task-identity digests). Then Module 3 (WP0-C), Module 4 (WP1), Module 5 (WP2, incl. MCP mirror). Modules 6–7 after all P0 acceptance scenarios pass; Module 8 waits for measured evidence.
-- Do not reinterpret: the hard constraints in Product Direction — deterministic immutable receipt with full-payload marker; digest-domain decoupling; `reviewing` entry preconditions; reopen requires live worktree; takeover via `reserving → bind`, never direct `bound`; steal refuses `reviewing`; pointer authority under task lock; `publication reconcile` fetches, never assumes local sync; typed `publication_incomplete` on partial ship; no liveness authority; feedback event/delivery split; repair ≠ new task; execution-ready-only acquire; head **and** base fencing; non-draft requirement; no auto-merge.
+- Build order: Module 1 (WP0-A), Module 2 (WP0-B — lease protocol 2 + lifecycle; highest-care change; **never touch `COORDINATION_PROTOCOL`**, it feeds task-identity digests), Module 3 (WP0-C), Module 4 (WP1), Module 5 (WP2, incl. MCP mirror), Module 6A (WP3-A Task Inbox), Module 6 (WP3 provider feedback), Module 7 (WP4). WP3-A's contract may be planned earlier, but implementation cannot precede WP0-B's frozen takeover/generation semantics. Module 8 waits for measured evidence.
+- Do not reinterpret: the hard constraints in Product Direction — deterministic immutable receipt with full-payload marker; digest-domain decoupling; `reviewing` entry preconditions; reopen requires live worktree; takeover via `reserving → bind`, never direct `bound`; steal refuses `reviewing`; pointer authority under task lock; `publication reconcile` fetches, never assumes local sync; typed `publication_incomplete` on partial ship; no liveness authority; provider feedback event/delivery split; task-message event/per-recipient delivery split; task-vs-claim scope; bodies always untrusted; no PTY/resume wake path; repair ≠ new task; execution-ready-only acquire; head **and** base fencing; non-draft requirement; no auto-merge.
 - You may improve: JSON field naming, CLI ergonomics, error wording, module layout (`src/core/{fleet,publication}/`, `src/effects/{fleet,scm}/`, `src/cli/commands/{fleet,publication}.ts`) following the core/effects split.
 - Verify with: root required checks (`bun test --timeout 60000`, `repo-harness run check-task-workflow --strict`, `bun src/cli/index.ts init --repo . --dry-run`) plus the acceptance scripts below.
 
@@ -452,6 +523,7 @@ You are implementing this PRD.
 1. Lifecycle test: fixture ship through `finish --no-merge` with stubbed/recorded `gh`; lease ends `reviewing` with pointer; forced receipt-write failure → non-zero `publication_incomplete` and `publication recover` resolves it; `steal` refuses `reviewing`; `reopen` succeeds with live worktree and fails `worktree_missing` without; `takeover` yields `reserving` (generation + 1, canonical revalidated) and reaches `bound` only via `bind`.
 2. Identity test: N concurrent `fleet acquire` on one execution-ready task → one winner; planning-required rows never offered as ready; after ship, receipt `head_sha` == live PR head, marker payload is complete, and deleting the local receipt then `fleet receipt rebuild` restores a field-equivalent receipt; crash-retry of `create_or_report_pr` converges on the same `publication_id`.
 3. Fencing + feedback test: capture `ready:true`; push a new head → `head_moved`; advance the base → `base_moved_since_verification`; mark PR draft → blocked. Run intake twice on the same provider event → one `FeedbackEventV1`; two completed same-token repair attempts → `no_progress`, `attention_owner=user`; observer polls write zero reaction receipts and intake never mutates the lease.
+4. Task inbox test: send task- and claim-scoped messages to C/G; retry event creation with identical bytes → one event, reuse the ID with different bytes → `message_id_conflict`; takeover to C2/G+1; invoke both Claude and Codex hook adapters → claim message superseded and absent from context, task message delivered once in a bounded untrusted block; acknowledge it; assert every send/consume/ack step leaves the lease bytes unchanged and invokes no PTY/resume process.
 
 ## Adjacent Patterns
 
@@ -467,4 +539,4 @@ No UI ships in this PRD. `fleet board --json` / `fleet watch --format jsonl` are
 
 ## Backend Perspective
 
-All provider access goes through `gh` (user's existing credential). Fleet/publication modules follow the existing core/effects split: pure projections, lifecycle transitions, and protocol types in `src/core/`, filesystem/`gh`/registry IO in `src/effects/`. Writes are limited to: coordination-plane runtime artifacts (publications, feedback inbox, lease transitions under task lock), the PR body marker, ship-journal fields, and ignored observation caches. A wiped publications/feedback/cache surface plus provider facts and repo state must reconstruct everything except the lease authority itself (Acceptance Script 2); lease transitions remain the only writes requiring the task lock.
+All provider access goes through `gh` (user's existing credential). Fleet/publication modules follow the existing core/effects split: pure projections, lifecycle transitions, and protocol types in `src/core/`, filesystem/`gh`/registry IO in `src/effects/`. Writes are limited to: coordination-plane runtime artifacts (publications, provider-feedback inbox, task-message inbox, delivery receipts, lease transitions under task lock), the PR body marker, ship-journal fields, and ignored observation caches. A wiped publications/provider-feedback/cache surface plus provider facts and repo state must reconstruct everything except the lease authority itself (Acceptance Script 2). The task-message inbox is intentionally excluded from that rebuild guarantee: wiping it may lose communication history but must change no workflow meaning. Lease transitions remain the only writes requiring the task lock; task-message paths may hold the lock for revalidation but never write the lease.
