@@ -40,17 +40,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:d97ccf07a98485d63a354b09f346085caa5329075ee622fa4eff6242bfdbcdab
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: c205d647ada9177279ef6cafeda97643546feb9a
+> **Verification Evidence SHA256**: sha256:0552f846dc4bee9fda9d50c3f47ef89d75e433497b376efe87714f010815cd21
+> **Issued At**: 2026-08-22T10:11:28.295Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: Independent gatekeeper verified WP0-B schema, lifecycle fencing, crash recovery, board projection, and full contract exit criteria; no blocking findings remain.
 - Findings: none
 
 ## Behavior Diff Notes
