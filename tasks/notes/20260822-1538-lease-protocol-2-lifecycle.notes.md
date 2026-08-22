@@ -65,6 +65,7 @@
 - Run snapshots: `.ai/harness/runs/`
 - Independent gate: PASS after crash-recovery re-review.
 - Full repository suite: 2844 pass, 2 platform skips, 0 fail (754.31s, outside sandbox).
+- Automatic architecture projection restamped its manifest against the final WP0-B subject; semantic architecture output was unchanged.
 
 ## Promotion Filter
 
