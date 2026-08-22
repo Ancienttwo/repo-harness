@@ -938,6 +938,7 @@ describe("ship-worktrees closeout journal", () => {
       [
         "#!/bin/bash",
         "set -euo pipefail",
+        '[[ -z "${PUBLICATION_CLI_LOG:-}" ]] || printf \'%s\\n\' "$*" >> "$PUBLICATION_CLI_LOG"',
         'if [[ "${1:-}" == "sprint" ]]; then printf \'{"ok":true}\\n\'; exit 0; fi',
         'if [[ "${1:-}" == "publication" && "${2:-}" == "receipt" && "${3:-}" == "prepare" ]]; then',
         `  printf '%s\\n' '{"action":"create","create_intent":{"claim_id":"fixture-claim","generation":1,"head_sha":"${"c".repeat(40)}","kind":"repo-harness-publication-create-intent","protocol":1,"provider_repo_id":"R_fixture","publication_id":"sha256:${"a".repeat(64)}","task_id":"${"a".repeat(64)}"},"kind":"repo-harness-publication-prepare","protocol":1}'`,
@@ -949,7 +950,21 @@ describe("ship-worktrees closeout journal", () => {
         '  printf \'%s\\n\' "$7"',
         "  exit 0",
         "fi",
+        'if [[ "${1:-}" == "publication" && "${2:-}" == "mark-reviewing" ]]; then',
+        '  journal=""; for ((index=1; index <= $#; index++)); do [[ "${!index}" != "--ship-journal" ]] || { next=$((index + 1)); journal="${!next}"; }; done',
+        '  [[ -n "$journal" && -f "$journal" ]] || { echo "missing ship journal" >&2; exit 42; }',
+        '  grep -q \'"phase": "pr_observed"\' "$journal" || { echo "mark-before-pr-observed" >&2; exit 43; }',
+        '  ! grep -q \'"phase": "complete"\' "$journal" || { echo "mark-after-complete" >&2; exit 44; }',
+        '  [[ -z "${PUBLICATION_MARK_STATE:-}" ]] || cp "$journal" "$PUBLICATION_MARK_STATE"',
+        '  [[ "${FAULT_ON_MARK_REVIEWING:-0}" != "1" ]] || { echo \'{"ok":false,"error":"publication_incomplete"}\' >&2; exit 45; }',
+        '  if [[ "${FAULT_KILL_AFTER_MARK_REVIEWING:-0}" == "1" && -n "${FAULT_PID_FILE:-}" && -f "$FAULT_PID_FILE" ]]; then kill -9 "$(cat "$FAULT_PID_FILE")" 2>/dev/null || true; exit 137; fi',
+        '  [[ -z "${PUBLICATION_LEASE_STATE:-}" ]] || printf \'reviewing\\n\' > "$PUBLICATION_LEASE_STATE"',
+        '  [[ -z "${PUBLICATION_MARK_POINTER:-}" ]] || printf \'fixture-pointer\\n\' > "$PUBLICATION_MARK_POINTER"',
+        '  printf \'{"ok":true,"current_publication":{"publication_id":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","receipt_sha256":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","head_sha":"cccccccccccccccccccccccccccccccccccccccc","ship_transaction_key":"fixture-ship"}}\\n\'',
+        "  exit 0",
+        "fi",
         'if [[ "${1:-}" == "publication" && "${2:-}" == "receipt" && "${3:-}" == "ensure" ]]; then',
+        '  [[ ! -f "${PUBLICATION_LEASE_STATE:-}" || "$(cat "$PUBLICATION_LEASE_STATE")" != "reviewing" ]] || { echo "ensure requires completing lease but fixture lease is reviewing" >&2; exit 46; }',
         '  if [[ "${FAULT_ON_PUBLICATION_ENSURE:-0}" == "1" && -n "${FAULT_PID_FILE:-}" && -f "$FAULT_PID_FILE" ]]; then kill -9 "$(cat "$FAULT_PID_FILE")" 2>/dev/null || true; exit 137; fi',
         '  [[ "${FIXTURE_PUBLICATION_ENSURE_LOG_NOISE:-0}" != "1" ]] || printf \'fixture-log-noise\\n\'',
         `  printf '%s\\n' '{"provider_repo_id":"R_fixture","provider_pr_number":1,"publication_id":"sha256:${"a".repeat(64)}","receipt_digest":"sha256:${"b".repeat(64)}"}'`,
@@ -1023,6 +1038,52 @@ describe("ship-worktrees closeout journal", () => {
         .filter((line) => line.startsWith("pr create"));
       expect(prCreates).toHaveLength(1);
       expect(runProcess("git", ["rev-parse", "refs/heads/codex/demo"], fixture.remote).status).toBe(0);
+    });
+  }, 30_000);
+
+  test("review entry observes pr_observed before ship complete", () => {
+    withTempRepo("closeout-journal-ship-review-entry-order", (container) => {
+      const fixture = installShipFixture(container);
+      const markLog = join(container, "publication-mark.log");
+      const markState = join(container, "publication-mark-state.json");
+      const result = runHelper("scripts/ship-worktrees.sh", ["--target", "main", "--remote", "origin"], fixture.linked, {
+        REPO_HARNESS_GH_BIN: fixture.ghBin,
+        GH_LOG: fixture.ghLog,
+        PUBLICATION_CLI_LOG: markLog,
+        PUBLICATION_MARK_STATE: markState,
+      });
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+      expect(readFileSync(markLog, "utf-8").split("\n").filter(Boolean)
+        .filter((line) => line.startsWith("publication mark-reviewing"))).toHaveLength(1);
+      const observedAtMark = JSON.parse(readFileSync(markState, "utf-8")) as { status: string; phases: { phase: string }[] };
+      expect(observedAtMark.status).toBe("in_progress");
+      expect(observedAtMark.phases.map((phase) => phase.phase)).toContain("pr_observed");
+      expect(observedAtMark.phases.map((phase) => phase.phase)).not.toContain("complete");
+      expect(readJournal(onlyJournal(fixture, "ship")).phases).toEqual([
+        "prepared", "gate_sealed", "pushed", "publication_create_intent", "pr_observed", "complete",
+      ]);
+    });
+  }, 30_000);
+
+  test("a typed review-entry failure leaves ship in_progress and no reviewing success carrier", () => {
+    withTempRepo("closeout-journal-ship-review-entry-failure", (container) => {
+      const fixture = installShipFixture(container);
+      const markState = join(container, "publication-mark-state.json");
+      const pointer = join(container, "publication-pointer");
+      const result = runHelper("scripts/ship-worktrees.sh", ["--target", "main", "--remote", "origin"], fixture.linked, {
+        REPO_HARNESS_GH_BIN: fixture.ghBin,
+        GH_LOG: fixture.ghLog,
+        FAULT_ON_MARK_REVIEWING: "1",
+        PUBLICATION_MARK_STATE: markState,
+        PUBLICATION_MARK_POINTER: pointer,
+      });
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("publication review entry failed");
+      const journal = readJournal(onlyJournal(fixture, "ship"));
+      expect(journal.status).toBe("in_progress");
+      expect(journal.phases).toEqual(["prepared", "gate_sealed", "pushed", "publication_create_intent", "pr_observed"]);
+      expect(existsSync(pointer)).toBe(false);
+      expect(JSON.parse(readFileSync(markState, "utf-8")).status).toBe("in_progress");
     });
   }, 30_000);
 
@@ -1106,6 +1167,8 @@ describe("ship-worktrees closeout journal", () => {
     withTempRepo("closeout-journal-ship-pr-observed", (container) => {
       const fixture = installShipFixture(container);
       const shimDir = join(container, "dd-shim");
+      const markLog = join(container, "publication-mark.log");
+      const leaseState = join(container, "publication-lease-state");
       mkdirSync(shimDir, { recursive: true });
       writeExecutable(join(shimDir, "dd"), FAKE_DD);
 
@@ -1122,6 +1185,8 @@ describe("ship-worktrees closeout journal", () => {
           PATH: `${shimDir}:${process.env.PATH ?? ""}`,
           REPO_HARNESS_GH_BIN: fixture.ghBin,
           GH_LOG: fixture.ghLog,
+          PUBLICATION_CLI_LOG: markLog,
+          PUBLICATION_LEASE_STATE: leaseState,
         },
       );
       expect(crashed.status).not.toBe(0);
@@ -1131,6 +1196,12 @@ describe("ship-worktrees closeout journal", () => {
       expect(journal.status).toBe("in_progress");
       expect(journal.phases).toEqual(["prepared", "gate_sealed", "pushed", "publication_create_intent", "pr_observed"]);
       expect(journal.phases).not.toContain("complete");
+      expect(readFileSync(markLog, "utf-8").split("\n").filter(Boolean)
+        .filter((line) => line.startsWith("publication mark-reviewing"))).toHaveLength(1);
+      // The successful review entry makes the lease reviewing before the
+      // atomic complete write crashes. A completing-only receipt ensure would
+      // now reject recovery, so reconcile must replay review entry directly.
+      expect(readFileSync(leaseState, "utf-8").trim()).toBe("reviewing");
       const raw = JSON.parse(readFileSync(join(dir, "status.json"), "utf-8")) as {
         phases: { phase: string; publication?: Record<string, unknown> }[];
       };
@@ -1159,6 +1230,8 @@ describe("ship-worktrees closeout journal", () => {
       const blocked = runHelper("scripts/ship-worktrees.sh", ["--target", "main", "--remote", "origin"], fixture.linked, {
         REPO_HARNESS_GH_BIN: fixture.ghBin,
         GH_LOG: fixture.ghLog,
+        PUBLICATION_CLI_LOG: markLog,
+        PUBLICATION_LEASE_STATE: leaseState,
       });
       expect(blocked.status).toBe(1);
       expect(blocked.stderr).toContain("unfinished ship journal blocks this ship");
@@ -1173,6 +1246,8 @@ describe("ship-worktrees closeout journal", () => {
       const reconcile = runHelper("scripts/ship-worktrees.sh", ["--recover", "reconcile"], fixture.linked, {
         REPO_HARNESS_GH_BIN: fixture.ghBin,
         GH_LOG: fixture.ghLog,
+        PUBLICATION_CLI_LOG: markLog,
+        PUBLICATION_LEASE_STATE: leaseState,
       });
       expect(reconcile.status, `${reconcile.stdout}\n${reconcile.stderr}`).toBe(0);
       expect(reconcile.stdout).toContain("the push was already applied");
@@ -1187,6 +1262,9 @@ describe("ship-worktrees closeout journal", () => {
       const done = readJournal(dir);
       expect(done.status).toBe("complete");
       expect(done.phases).toEqual(["prepared", "gate_sealed", "pushed", "publication_create_intent", "pr_observed", "complete"]);
+      expect(readFileSync(markLog, "utf-8").split("\n").filter(Boolean)
+        .filter((line) => line.startsWith("publication mark-reviewing"))).toHaveLength(2);
+      expect(readFileSync(leaseState, "utf-8").trim()).toBe("reviewing");
       expect(existsSync(join(dir, "snapshot"))).toBe(false);
     });
   }, 30_000);

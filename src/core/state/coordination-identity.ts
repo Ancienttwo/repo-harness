@@ -204,10 +204,12 @@ export const PERSISTED_LEASE_STATES = [
   'reserving',
   'bound',
   'completing',
+  'reviewing',
   'released',
 ] as const;
 
 export type PersistedLeaseState = (typeof PERSISTED_LEASE_STATES)[number];
+export type NonReviewingPersistedLeaseState = Exclude<PersistedLeaseState, 'reviewing'>;
 
 /** The full lifecycle, including the no-lease state the store reports. */
 export type LeaseState = 'available' | PersistedLeaseState;
@@ -226,7 +228,7 @@ export interface LeaseStolenFrom {
 /** The first `generation` a fresh claim mints; every steal increments it. */
 export const FIRST_LEASE_GENERATION = 1;
 
-export interface LeaseOwnerRecordV1 {
+interface LeaseOwnerRecordFields {
   readonly protocol: typeof COORDINATION_PROTOCOL;
   readonly kind: typeof LEASE_OWNER_KIND;
   readonly claim_id: string;
@@ -246,7 +248,6 @@ export interface LeaseOwnerRecordV1 {
    * and what a stale reader cannot forge by re-minting a uuid.
    */
   readonly generation: number;
-  readonly state: PersistedLeaseState;
   readonly claimed_by: LeaseClaimedBy;
   readonly execution_worktree: string | null;
   readonly branch: string | null;
@@ -261,6 +262,50 @@ export interface LeaseOwnerRecordV1 {
   /** Who this lease was taken from, and why. Never inferred; only `steal` sets it. */
   readonly stolen_from: LeaseStolenFrom | null;
 }
+
+/** Schema 1 deliberately has no review lifecycle fields. */
+export interface LeaseOwnerRecordV1 extends LeaseOwnerRecordFields {
+  readonly state: NonReviewingPersistedLeaseState;
+}
+
+/**
+ * The record schema is independent from `COORDINATION_PROTOCOL`: the latter
+ * contributes to task-identity digest preimages and must never be bumped to
+ * version an owner record. Schema 2 adds the only authority for "current"
+ * publication identity.
+ */
+export const LEASE_OWNER_RECORD_SCHEMA_V2 = 2 as const;
+
+export interface CurrentPublicationPointerV1 {
+  readonly publication_id: string;
+  readonly receipt_sha256: string;
+  readonly head_sha: string;
+  /** Ship closeout journal key, never the contract-finish journal key. */
+  readonly ship_transaction_key: string;
+}
+
+interface LeaseOwnerRecordV2Base extends Omit<LeaseOwnerRecordFields, 'finish_transaction_key'> {
+  readonly record_schema: typeof LEASE_OWNER_RECORD_SCHEMA_V2;
+}
+
+/**
+ * Schema 2 is deliberately a discriminated tuple. A review pointer cannot be
+ * represented without clearing the unrelated finish transaction domain, and
+ * a non-review record cannot retain publication authority.
+ */
+export type LeaseOwnerRecordV2 =
+  | (LeaseOwnerRecordV2Base & {
+    readonly state: 'reviewing';
+    readonly finish_transaction_key: null;
+    readonly current_publication: CurrentPublicationPointerV1;
+  })
+  | (LeaseOwnerRecordV2Base & {
+    readonly state: NonReviewingPersistedLeaseState;
+    readonly finish_transaction_key: string | null;
+    readonly current_publication: null;
+  });
+
+export type LeaseOwnerRecord = LeaseOwnerRecordV1 | LeaseOwnerRecordV2;
 
 export interface BuildLeaseOwnerInput {
   readonly claimId: string;
@@ -295,7 +340,7 @@ export function buildLeaseOwnerRecord(input: BuildLeaseOwnerInput): LeaseOwnerRe
   };
 }
 
-export function serializeLeaseOwnerRecord(record: LeaseOwnerRecordV1): string {
+export function serializeLeaseOwnerRecord(record: LeaseOwnerRecord): string {
   return `${JSON.stringify(record, null, 2)}\n`;
 }
 
@@ -307,13 +352,27 @@ function nullableString(value: unknown): value is string | null {
   return value === null || nonEmptyString(value);
 }
 
+const LEASE_OWNER_RECORD_V1_FIELDS = [
+  'protocol', 'kind', 'claim_id', 'task_id', 'task_revision', 'sprint_path',
+  'target_ref', 'generation', 'state', 'claimed_by', 'execution_worktree',
+  'branch', 'unit_ref', 'finish_transaction_key', 'stolen_from',
+] as const;
+const LEASE_OWNER_RECORD_V2_FIELDS = [
+  ...LEASE_OWNER_RECORD_V1_FIELDS,
+  'record_schema', 'current_publication',
+] as const;
+
+function hasExactFields(value: Record<string, unknown>, fields: readonly string[]): boolean {
+  return JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...fields].sort());
+}
+
 /**
  * Parse one owner record. `null` means the bytes are not a valid record, which
  * the store classifies `unknown`; it never means "assume a default". Every
  * field is checked, so a truncated or hand-edited record fails closed instead
  * of being partially trusted.
  */
-export function parseLeaseOwnerRecord(raw: string): LeaseOwnerRecordV1 | null {
+export function parseLeaseOwnerRecord(raw: string): LeaseOwnerRecord | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -322,6 +381,10 @@ export function parseLeaseOwnerRecord(raw: string): LeaseOwnerRecordV1 | null {
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
   const value = parsed as Record<string, unknown>;
+
+  const schema2 = value.record_schema === LEASE_OWNER_RECORD_SCHEMA_V2;
+  if (value.record_schema !== undefined && !schema2) return null;
+  if (!hasExactFields(value, schema2 ? LEASE_OWNER_RECORD_V2_FIELDS : LEASE_OWNER_RECORD_V1_FIELDS)) return null;
 
   if (value.protocol !== COORDINATION_PROTOCOL) return null;
   if (value.kind !== LEASE_OWNER_KIND) return null;
@@ -346,6 +409,8 @@ export function parseLeaseOwnerRecord(raw: string): LeaseOwnerRecordV1 | null {
     || !(PERSISTED_LEASE_STATES as readonly string[]).includes(value.state)
   ) return null;
 
+  if (!schema2 && value.state === 'reviewing') return null;
+
   const claimedBy = value.claimed_by;
   if (typeof claimedBy !== 'object' || claimedBy === null || Array.isArray(claimedBy)) return null;
   const claimedByValue = claimedBy as Record<string, unknown>;
@@ -355,6 +420,19 @@ export function parseLeaseOwnerRecord(raw: string): LeaseOwnerRecordV1 | null {
   if (!nullableString(value.execution_worktree)) return null;
   if (!nullableString(value.branch)) return null;
   if (!nullableString(value.unit_ref)) return null;
+
+  const boundExecution = nonEmptyString(value.execution_worktree)
+    && nonEmptyString(value.branch)
+    && nonEmptyString(value.unit_ref);
+  const clearedExecution = value.execution_worktree === null
+    && value.branch === null
+    && value.unit_ref === null;
+  if (schema2) {
+    if (!boundExecution && !clearedExecution) return null;
+    if (value.state === 'reserving' && (!clearedExecution || value.finish_transaction_key !== null)) return null;
+    if ((value.state === 'bound' || value.state === 'completing' || value.state === 'reviewing') && !boundExecution) return null;
+    if (value.state === 'released' && value.finish_transaction_key !== null) return null;
+  }
 
   let stolenFrom: LeaseStolenFrom | null = null;
   if (value.stolen_from !== null && value.stolen_from !== undefined) {
@@ -366,7 +444,7 @@ export function parseLeaseOwnerRecord(raw: string): LeaseOwnerRecordV1 | null {
     stolenFrom = { claim_id: candidateValue.claim_id, reason: candidateValue.reason };
   }
 
-  return {
+  const common: LeaseOwnerRecordFields & { readonly state: PersistedLeaseState } = {
     protocol: COORDINATION_PROTOCOL,
     kind: LEASE_OWNER_KIND,
     claim_id: value.claim_id,
@@ -386,13 +464,52 @@ export function parseLeaseOwnerRecord(raw: string): LeaseOwnerRecordV1 | null {
     finish_transaction_key: value.finish_transaction_key as string | null,
     stolen_from: stolenFrom,
   };
+  if (!schema2) return { ...common, state: value.state as NonReviewingPersistedLeaseState };
+
+  const pointer = value.current_publication;
+  if (value.state === 'reviewing') {
+    if (value.finish_transaction_key !== null) return null;
+    const parsedPointer = parseCurrentPublicationPointer(pointer);
+    if (parsedPointer === null) return null;
+    return {
+      ...common,
+      record_schema: LEASE_OWNER_RECORD_SCHEMA_V2,
+      state: 'reviewing',
+      finish_transaction_key: null,
+      current_publication: parsedPointer,
+    };
+  }
+  if (pointer !== null) return null;
+  return {
+    ...common,
+    record_schema: LEASE_OWNER_RECORD_SCHEMA_V2,
+    state: value.state as Exclude<PersistedLeaseState, 'reviewing'>,
+    current_publication: null,
+  };
+}
+
+function parseCurrentPublicationPointer(value: unknown): CurrentPublicationPointerV1 | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const pointer = value as Record<string, unknown>;
+  if (!nonEmptyString(pointer.publication_id) || !/^sha256:[0-9a-f]{64}$/.test(pointer.publication_id)) return null;
+  if (!nonEmptyString(pointer.receipt_sha256) || !/^sha256:[0-9a-f]{64}$/.test(pointer.receipt_sha256)) return null;
+  if (!nonEmptyString(pointer.head_sha) || !/^[0-9a-f]{40,64}$/.test(pointer.head_sha)) return null;
+  if (!nonEmptyString(pointer.ship_transaction_key)) return null;
+  const expected = ['publication_id', 'receipt_sha256', 'head_sha', 'ship_transaction_key'].sort();
+  if (JSON.stringify(Object.keys(pointer).sort()) !== JSON.stringify(expected)) return null;
+  return {
+    publication_id: pointer.publication_id,
+    receipt_sha256: pointer.receipt_sha256,
+    head_sha: pointer.head_sha,
+    ship_transaction_key: pointer.ship_transaction_key,
+  };
 }
 
 export type LeaseTransition =
-  | { readonly ok: true; readonly record: LeaseOwnerRecordV1 }
+  | { readonly ok: true; readonly record: LeaseOwnerRecord }
   | { readonly ok: false; readonly error: string };
 
-function claimMismatch(record: LeaseOwnerRecordV1, claimId: string): string {
+function claimMismatch(record: LeaseOwnerRecord, claimId: string): string {
   return `claim id mismatch for task ${record.task_id}: lease is owned by ${record.claim_id}, not ${claimId}`;
 }
 
@@ -410,7 +527,7 @@ export interface BindLeaseInput {
  * move ownership without any record of the transfer.
  */
 export function bindLeaseRecord(
-  record: LeaseOwnerRecordV1,
+  record: LeaseOwnerRecord,
   input: BindLeaseInput,
 ): LeaseTransition {
   if (record.claim_id !== input.claimId) {
@@ -459,7 +576,7 @@ export interface BeginCompletionInput {
  * from the same worktree must not be refused for having already passed.
  */
 export function beginLeaseCompletionRecord(
-  record: LeaseOwnerRecordV1,
+  record: LeaseOwnerRecord,
   input: BeginCompletionInput,
 ): LeaseTransition {
   if (record.claim_id !== input.claimId) {
@@ -503,7 +620,7 @@ export interface AbortCompletionInput {
  * the closeout journal as aborted. No other `bound` shape is accepted.
  */
 export function abortLeaseCompletionRecord(
-  record: LeaseOwnerRecordV1,
+  record: LeaseOwnerRecord,
   input: AbortCompletionInput,
 ): LeaseTransition {
   if (record.claim_id !== input.claimId) {
@@ -550,7 +667,7 @@ const RELEASABLE_LEASE_STATES: readonly PersistedLeaseState[] = ['reserving', 'b
  * finish journal is still open.
  */
 export function releaseLeaseRecord(
-  record: LeaseOwnerRecordV1,
+  record: LeaseOwnerRecord,
   claimId: string,
 ): LeaseTransition {
   if (record.claim_id !== claimId) {
@@ -588,13 +705,19 @@ export interface StealLeaseInput {
  * pending-looking row whose work is in fact already published.
  */
 export function stealLeaseRecord(
-  record: LeaseOwnerRecordV1,
+  record: LeaseOwnerRecord,
   input: StealLeaseInput,
 ): LeaseTransition {
   if (record.claim_id !== input.expectedClaimId) {
     return {
       ok: false,
       error: `expected claim id ${input.expectedClaimId} for task ${record.task_id}, but the lease is owned by ${record.claim_id}`,
+    };
+  }
+  if (record.state === 'reviewing') {
+    return {
+      ok: false,
+      error: `cannot steal a lease in state reviewing for task ${record.task_id}; use publication takeover`,
     };
   }
   if (record.state === 'completing') {
@@ -623,4 +746,168 @@ export function stealLeaseRecord(
       }),
     },
   };
+}
+
+function schema2Record(
+  record: LeaseOwnerRecord,
+  state: Exclude<PersistedLeaseState, 'reviewing'>,
+): LeaseOwnerRecordV2 {
+  return {
+    ...record,
+    record_schema: LEASE_OWNER_RECORD_SCHEMA_V2,
+    state,
+    finish_transaction_key: null,
+    current_publication: null,
+  };
+}
+
+export interface EnterReviewingInput {
+  readonly claimId: string;
+  readonly publication: CurrentPublicationPointerV1;
+}
+
+/**
+ * The pure half of the only normal `completing -> reviewing` transition. The
+ * effect layer proves receipt, marker, provider and journal facts; this layer
+ * only preserves the fenced lease shape and records the exact pointer.
+ */
+export function enterReviewingLeaseRecord(
+  record: LeaseOwnerRecord,
+  input: EnterReviewingInput,
+): LeaseTransition {
+  if (record.claim_id !== input.claimId) return { ok: false, error: claimMismatch(record, input.claimId) };
+  if (record.state !== 'completing') {
+    return { ok: false, error: `cannot enter reviewing from lease state ${record.state}; expected completing` };
+  }
+  const pointer = parseCurrentPublicationPointer(input.publication);
+  if (pointer === null) return { ok: false, error: 'current publication pointer is invalid' };
+  return {
+    ok: true,
+    record: {
+      ...record,
+      record_schema: LEASE_OWNER_RECORD_SCHEMA_V2,
+      state: 'reviewing',
+      finish_transaction_key: null,
+      current_publication: pointer,
+    },
+  };
+}
+
+export interface ReopenPublicationLeaseInput {
+  readonly claimId: string;
+  readonly expectedGeneration: number;
+  readonly expectedPublicationId: string;
+  readonly expectedHeadSha: string;
+}
+
+/** Same-owner repair returns through the existing bind-declared fields. */
+export function reopenPublicationLeaseRecord(
+  record: LeaseOwnerRecord,
+  input: ReopenPublicationLeaseInput,
+): LeaseTransition {
+  if (record.claim_id !== input.claimId) return { ok: false, error: claimMismatch(record, input.claimId) };
+  if (record.generation !== input.expectedGeneration) {
+    return { ok: false, error: `publication_pointer_mismatch: expected generation ${input.expectedGeneration}, lease holds ${record.generation}` };
+  }
+  if (record.state !== 'reviewing' || !('current_publication' in record) || record.current_publication === null) {
+    return { ok: false, error: `cannot reopen a lease in state ${record.state}; expected reviewing` };
+  }
+  if (record.current_publication.publication_id !== input.expectedPublicationId) {
+    return { ok: false, error: 'publication_pointer_mismatch' };
+  }
+  if (record.current_publication.head_sha !== input.expectedHeadSha) {
+    return { ok: false, error: 'publication_pointer_mismatch' };
+  }
+  if (record.execution_worktree === null || record.branch === null || record.unit_ref === null) {
+    return { ok: false, error: 'reviewing lease has no bind-declared execution fields' };
+  }
+  return { ok: true, record: schema2Record(record, 'bound') };
+}
+
+export interface TakeoverPublicationLeaseInput {
+  readonly expectedClaimId: string;
+  readonly expectedGeneration: number;
+  readonly expectedPublicationId: string;
+  readonly expectedHeadSha: string;
+  readonly reason: string;
+  readonly newClaimId: string;
+  readonly sessionId: string;
+  readonly sourceWorktree: string;
+}
+
+/**
+ * A review takeover deliberately ends at reserving. `bindLeaseRecord` stays
+ * the unique writer of fresh bound execution fields and appends resumed proof.
+ */
+export function takeoverPublicationLeaseRecord(
+  record: LeaseOwnerRecord,
+  input: TakeoverPublicationLeaseInput,
+): LeaseTransition {
+  if (record.claim_id !== input.expectedClaimId) {
+    return { ok: false, error: `publication_claim_mismatch: expected ${input.expectedClaimId}, lease holds ${record.claim_id}` };
+  }
+  if (record.generation !== input.expectedGeneration) {
+    return { ok: false, error: `publication_pointer_mismatch: expected generation ${input.expectedGeneration}, lease holds ${record.generation}` };
+  }
+  if (record.state !== 'reviewing' || !('current_publication' in record) || record.current_publication === null) {
+    return { ok: false, error: `cannot take over a lease in state ${record.state}; expected reviewing` };
+  }
+  if (record.current_publication.publication_id !== input.expectedPublicationId) {
+    return { ok: false, error: 'publication_pointer_mismatch' };
+  }
+  if (record.current_publication.head_sha !== input.expectedHeadSha) {
+    return { ok: false, error: 'publication_pointer_mismatch' };
+  }
+  if (!nonEmptyString(input.reason)) return { ok: false, error: 'takeover reason is required' };
+  if (!nonEmptyString(input.newClaimId) || input.newClaimId === record.claim_id) {
+    return { ok: false, error: 'publication takeover must mint a new claim id' };
+  }
+  return {
+    ok: true,
+    record: {
+      record_schema: LEASE_OWNER_RECORD_SCHEMA_V2,
+      ...buildLeaseOwnerRecord({
+        claimId: input.newClaimId,
+        taskId: record.task_id,
+        taskRevision: record.task_revision,
+        sprintPath: record.sprint_path,
+        targetRef: record.target_ref,
+        generation: record.generation + 1,
+        sessionId: input.sessionId,
+        sourceWorktree: input.sourceWorktree,
+        stolenFrom: { claim_id: record.claim_id, reason: input.reason },
+      }),
+      current_publication: null,
+    },
+  };
+}
+
+export interface AbandonPublicationLeaseInput {
+  readonly expectedClaimId: string;
+  readonly expectedGeneration: number;
+  readonly expectedPublicationId: string;
+  readonly expectedHeadSha: string;
+}
+
+/** The effect writes lineage before persisting/removing this released record. */
+export function abandonPublicationLeaseRecord(
+  record: LeaseOwnerRecord,
+  input: AbandonPublicationLeaseInput,
+): LeaseTransition {
+  if (record.claim_id !== input.expectedClaimId) {
+    return { ok: false, error: `publication_claim_mismatch: expected ${input.expectedClaimId}, lease holds ${record.claim_id}` };
+  }
+  if (record.generation !== input.expectedGeneration) {
+    return { ok: false, error: `publication_pointer_mismatch: expected generation ${input.expectedGeneration}, lease holds ${record.generation}` };
+  }
+  if (record.state !== 'reviewing' || !('current_publication' in record) || record.current_publication === null) {
+    return { ok: false, error: `cannot abandon a lease in state ${record.state}; expected reviewing` };
+  }
+  if (record.current_publication.publication_id !== input.expectedPublicationId) {
+    return { ok: false, error: 'publication_pointer_mismatch' };
+  }
+  if (record.current_publication.head_sha !== input.expectedHeadSha) {
+    return { ok: false, error: 'publication_pointer_mismatch' };
+  }
+  return { ok: true, record: schema2Record(record, 'released') };
 }

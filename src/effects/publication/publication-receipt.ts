@@ -63,6 +63,13 @@ export interface ProviderPullRequestV1 {
   readonly created_at: string;
 }
 
+/** A live provider state observation used only by explicit close-out verbs. */
+export interface ProviderPullRequestStateV1 {
+  readonly pr_number: number;
+  readonly state: string;
+  readonly merged_at: string | null;
+}
+
 export interface MergeSealEvidenceV1 {
   readonly path: string;
   readonly sha256: string;
@@ -195,6 +202,34 @@ function observeProviderPrByNumber(repoRoot: string, ghBin: string, number: numb
     ghJson(repoRoot, ghBin, ['pr', 'view', String(number), '--json', 'number,url,headRefOid,headRefName,baseRefName,baseRefOid,body,createdAt']),
     number,
   );
+}
+
+/**
+ * Read the provider's current closure state independently of immutable receipt
+ * facts. A receipt describes publication identity; it is never evidence that
+ * a PR remains closed and unmerged now.
+ */
+export function observeProviderPullRequestState(
+  repoRoot: string,
+  prNumber: number,
+  ghBin = process.env.REPO_HARNESS_GH_BIN ?? 'gh',
+): ProviderPullRequestStateV1 {
+  try {
+    if (!Number.isInteger(prNumber) || prNumber < 1) throw incomplete('PR number is invalid');
+    const value = asRecord(
+      ghJson(repoRoot, ghBin, ['pr', 'view', String(prNumber), '--json', 'number,state,mergedAt']),
+      'provider PR state',
+    );
+    if (value.number !== prNumber) throw incomplete('provider PR number changed during state observation');
+    const state = requiredString(value.state, 'provider PR state');
+    if (value.mergedAt !== null && typeof value.mergedAt !== 'string') {
+      throw incomplete('provider PR mergedAt is invalid');
+    }
+    return Object.freeze({ pr_number: prNumber, state, merged_at: value.mergedAt as string | null });
+  } catch (error) {
+    if (error instanceof PublicationReceiptError) throw error;
+    throw incomplete('provider PR state observation failed', error);
+  }
 }
 
 function updateProviderBody(repoRoot: string, ghBin: string, number: number, body: string): void {

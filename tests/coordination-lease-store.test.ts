@@ -30,6 +30,7 @@ import {
   projectCanonicalTasks,
   serializeLeaseOwnerRecord,
   type LeaseOwnerRecordV1,
+  type LeaseOwnerRecordV2,
 } from '../src/core/state/coordination-identity';
 import {
   abortCompletionSprintCommand,
@@ -796,6 +797,33 @@ describe('claim verbs', () => {
       action: 'none',
     });
     expect(existsSync(leaseDirectory(repo, taskId))).toBe(true);
+  });
+
+  test('reconcile refuses reviewing leases instead of bypassing publication reconciliation', () => {
+    const repo = repoWithSprint();
+    const taskId = canonicalTask(repo, 'wire the claim verbs').task_id;
+    expect(claimSprintCommand(claimOptions(repo, 'wire the claim verbs'), deps(repo)).exitCode).toBe(0);
+    expect(bindSprintCommand(
+      { claimId: 'claim-1', worktree: '/tmp/wt', branch: 'codex/example', unitRef: 'plans/plan-x.md' },
+      deps(repo),
+    ).exitCode).toBe(0);
+    const reviewing: LeaseOwnerRecordV2 = {
+      ...readLease(repo, taskId).record!,
+      record_schema: 2,
+      state: 'reviewing',
+      finish_transaction_key: null,
+      current_publication: {
+        publication_id: `sha256:${'a'.repeat(64)}`,
+        receipt_sha256: `sha256:${'b'.repeat(64)}`,
+        head_sha: 'c'.repeat(40),
+        ship_transaction_key: 'ship/reconcile-fixture',
+      },
+    };
+    writeLeaseOwnerDurably(repo, taskId, reviewing);
+    const outcome = reconcileSprintCommand({ taskId, targetRef: 'main' }, deps(repo));
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.stderr).toContain('cannot reconcile a reviewing lease');
+    expect(readLease(repo, taskId).record).toEqual(reviewing);
   });
 
   test('malformed and missing options are usage errors, not refusals', () => {

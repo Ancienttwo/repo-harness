@@ -1063,13 +1063,17 @@ resolve_publication_claim_token() {
 }
 
 publication_cli() {
+  publication_command_cli receipt "$@"
+}
+
+publication_command_cli() {
   if [[ -n "${REPO_HARNESS_CLI_BIN:-}" ]]; then
     is_trusted_executable "$REPO_HARNESS_CLI_BIN" || return 1
-    "$REPO_HARNESS_CLI_BIN" publication receipt "$@"
+    "$REPO_HARNESS_CLI_BIN" publication "$@"
   elif [[ -n "$BUN_BIN" ]] && is_trusted_executable "$BUN_BIN" && [[ -f "src/cli/index.ts" ]]; then
-    "$BUN_BIN" "src/cli/index.ts" publication receipt "$@"
+    "$BUN_BIN" "src/cli/index.ts" publication "$@"
   elif command -v repo-harness >/dev/null 2>&1; then
-    repo-harness publication receipt "$@"
+    repo-harness publication "$@"
   else
     return 1
   fi
@@ -1197,6 +1201,30 @@ ensure_publication_receipt() {
   publication_journal_payload="$validated"
 }
 
+# This is deliberately after durable pr_observed and before complete. The raw
+# finish command runs before provider facts exist and remains completing.
+enter_publication_reviewing() {
+  local output key
+  [[ -n "$publication_task_id" && -n "$publication_claim_id" ]] || {
+    printf '%s\n' '{"ok":false,"error":"publication_incomplete","message":"publication claim token is unavailable for review entry"}' >&2
+    return 1
+  }
+  [[ -n "$closeout_journal_dir" && -f "$closeout_journal_dir/status.json" ]] || {
+    printf '%s\n' '{"ok":false,"error":"publication_incomplete","message":"ship journal is unavailable for review entry"}' >&2
+    return 1
+  }
+  key="$(basename "$closeout_journal_dir")"
+  if ! output="$(publication_command_cli mark-reviewing \
+    --task-id "$publication_task_id" \
+    --claim-id "$publication_claim_id" \
+    --ship-transaction-key "$key" \
+    --ship-journal "$closeout_journal_dir/status.json")"; then
+    return 1
+  fi
+  [[ -n "$output" ]] || return 1
+  printf '%s\n' "$output"
+}
+
 ship_linked_pr() {
   local branch gate_base_ref verified_sha
   branch="$(current_branch)"
@@ -1231,6 +1259,7 @@ ship_linked_pr() {
   if [[ "$DRY_RUN" -eq 0 ]]; then
     ensure_publication_receipt "$branch" || fail "publication receipt persistence failed (publication_incomplete)"
     ship_transaction_phase pr_observed "$verified_sha" "$publication_journal_payload"
+    enter_publication_reviewing || fail "publication review entry failed (publication_incomplete)"
   fi
   ship_transaction_complete "$verified_sha"
 }
@@ -1491,20 +1520,26 @@ recover_ship() {
         || fail "no landed push to reconcile (last phase: $last_phase); run '--recover abort' instead"
       verified="$(closeout_journal_phase_ref "$dir" gate_sealed)"
       closeout_journal_has_phase "$dir" pushed || closeout_journal_record "$dir" in_progress pushed "$verified"
-      if closeout_journal_has_phase "$dir" publication_create_intent; then
-        load_publication_create_intent "$dir" || fail "journal publication create intent is invalid (publication_incomplete)"
-      else
-        prepare_publication_receipt "$branch" || fail "publication receipt preparation failed (publication_incomplete)"
-        if [[ -n "$publication_create_intent" ]]; then
-          closeout_journal_record "$dir" in_progress publication_create_intent "$verified" "$publication_create_intent"
-          publication_create_intent_journal="$dir/status.json"
-        fi
-      fi
-      create_or_report_pr "$branch"
-      ensure_publication_receipt "$branch" || fail "publication receipt persistence failed (publication_incomplete)"
       if ! closeout_journal_has_phase "$dir" pr_observed; then
+        if closeout_journal_has_phase "$dir" publication_create_intent; then
+          load_publication_create_intent "$dir" || fail "journal publication create intent is invalid (publication_incomplete)"
+        else
+          prepare_publication_receipt "$branch" || fail "publication receipt preparation failed (publication_incomplete)"
+          if [[ -n "$publication_create_intent" ]]; then
+            closeout_journal_record "$dir" in_progress publication_create_intent "$verified" "$publication_create_intent"
+            publication_create_intent_journal="$dir/status.json"
+          fi
+        fi
+        create_or_report_pr "$branch"
+        ensure_publication_receipt "$branch" || fail "publication receipt persistence failed (publication_incomplete)"
         closeout_journal_record "$dir" in_progress pr_observed "$verified" "$publication_journal_payload"
       fi
+      # Once pr_observed exists the lease may already be reviewing: replay the
+      # lifecycle proof directly instead of calling the completing-only receipt
+      # writer again. The transition is idempotent for the same pointer/key.
+      resolve_publication_claim_token || fail "publication claim token is unavailable for review recovery (publication_incomplete)"
+      closeout_journal_dir="$dir"
+      enter_publication_reviewing || fail "publication review entry failed (publication_incomplete)"
       closeout_journal_record "$dir" complete complete "$verified"
       rm -rf "$dir/snapshot"
       closeout_claim_release

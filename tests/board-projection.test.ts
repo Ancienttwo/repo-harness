@@ -20,6 +20,7 @@ import type { AttemptLedgerRead } from '../src/core/state/attempt-ledger';
 import {
   deriveTaskId,
   deriveTaskRevision,
+  type LeaseOwnerRecordV2,
   type LeaseOwnerRecordV1,
 } from '../src/core/state/coordination-identity';
 import {
@@ -167,6 +168,21 @@ function leaseFor(lease: BoardLeaseState): BoardLeaseInput {
   }
   if (lease === 'unknown') {
     return { classification: 'unknown', unknown_reason: 'owner_record_missing', record: null };
+  }
+  if (lease === 'reviewing') {
+    const reviewing: LeaseOwnerRecordV2 = {
+      ...ownerRecord(),
+      record_schema: 2,
+      state: 'reviewing',
+      finish_transaction_key: null,
+      current_publication: {
+        publication_id: `sha256:${'a'.repeat(64)}`,
+        receipt_sha256: `sha256:${'b'.repeat(64)}`,
+        head_sha: 'c'.repeat(40),
+        ship_transaction_key: 'ship/lease-for-fixture',
+      },
+    };
+    return { classification: lease, unknown_reason: null, record: reviewing };
   }
   const base = lease === 'reserving'
     // A reserving lease has no execution worktree yet: `claim` precedes
@@ -463,9 +479,41 @@ describe('actions', () => {
     expect(card.actions.release).toBeNull();
   });
 
+  test('a reviewing lease is doing but offers no sprint mutation or reconcile bypass', () => {
+    const reviewing: LeaseOwnerRecordV2 = {
+      ...ownerRecord(),
+      record_schema: 2,
+      state: 'reviewing',
+      finish_transaction_key: null,
+      current_publication: {
+        publication_id: `sha256:${'a'.repeat(64)}`,
+        receipt_sha256: `sha256:${'b'.repeat(64)}`,
+        head_sha: 'c'.repeat(40),
+        ship_transaction_key: 'ship/board-fixture',
+      },
+    };
+    const base = taskInput('pending', 'bound', 'active');
+    const card = projectBoard(boardInputs([{
+      ...base,
+      lease: { classification: 'reviewing', unknown_reason: null, record: reviewing },
+    }])).cards[0];
+    expect(card.lease_state).toBe('reviewing');
+    expect(card.column).toBe('doing');
+    expect(card.claim?.current_publication).toEqual(reviewing.current_publication);
+    expect(card.actions).toEqual({
+      release: null, steal: null, reconcile: null,
+      publication_reopen: `repo-harness publication reopen --task-id ${TASK_ID} --claim-id claim-1 --expected-generation 1 --publication-id ${reviewing.current_publication.publication_id} --expected-head-sha ${reviewing.current_publication.head_sha}`,
+      publication_takeover: `repo-harness publication takeover --task-id ${TASK_ID} --expected-claim-id claim-1 --expected-generation 1 --publication-id ${reviewing.current_publication.publication_id} --expected-head-sha ${reviewing.current_publication.head_sha} --reason '<reason>' --session-id '<session-id>'`,
+      publication_abandon: `repo-harness publication abandon --task-id ${TASK_ID} --expected-claim-id claim-1 --expected-generation 1 --publication-id ${reviewing.current_publication.publication_id} --expected-head-sha ${reviewing.current_publication.head_sha} --reason '<reason>'`,
+    });
+  });
+
   test('a card with no lease offers nothing', () => {
     const card = cardFor('pending', 'available', 'not_observed');
-    expect(card.actions).toEqual({ release: null, steal: null, reconcile: null });
+    expect(card.actions).toEqual({
+      release: null, steal: null, reconcile: null,
+      publication_reopen: null, publication_takeover: null, publication_abandon: null,
+    });
   });
 });
 

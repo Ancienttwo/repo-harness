@@ -8,6 +8,7 @@ import type {
   LeaseState,
   LeaseStolenFrom,
   PersistedLeaseState,
+  CurrentPublicationPointerV1,
 } from './coordination-identity';
 
 export type SnapshotPlanState =
@@ -247,6 +248,8 @@ export interface BoardClaimV1 {
   readonly source_worktree: string;
   readonly target_ref: string;
   readonly finish_transaction_key: string | null;
+  /** The reviewing lease's sole current-publication authority, otherwise null. */
+  readonly current_publication: CurrentPublicationPointerV1 | null;
   readonly stolen_from: LeaseStolenFrom | null;
 }
 
@@ -283,6 +286,9 @@ export interface BoardActionsV1 {
   readonly release: string | null;
   readonly steal: string | null;
   readonly reconcile: string | null;
+  readonly publication_reopen: string | null;
+  readonly publication_takeover: string | null;
+  readonly publication_abandon: string | null;
 }
 
 export interface BoardCardV1 {

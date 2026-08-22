@@ -47,7 +47,7 @@ import { evaluateAttemptStall, type AttemptLedgerRead } from './attempt-ledger';
 import {
   COMPLETED_ROW_STATUS_PATTERN,
   PENDING_ROW_STATUS,
-  type LeaseOwnerRecordV1,
+  type LeaseOwnerRecord,
 } from './coordination-identity';
 import type { BacklogRow } from './sprint-backlog-rows';
 import type {
@@ -111,7 +111,7 @@ export interface BoardLeaseInput {
   readonly classification: BoardLeaseState;
   /** The store's own `unknown_reason`, passed through verbatim. */
   readonly unknown_reason: string | null;
-  readonly record: LeaseOwnerRecordV1 | null;
+  readonly record: LeaseOwnerRecord | null;
 }
 
 /**
@@ -178,6 +178,7 @@ export const ACTIVE_LEASE_STATES: ReadonlySet<BoardLeaseState> = new Set<BoardLe
   'reserving',
   'bound',
   'completing',
+  'reviewing',
 ]);
 
 /** Lease states a fencing token may still give up or have taken from it. */
@@ -291,8 +292,19 @@ export function deriveActions(
 ): BoardActionsV1 {
   const record = task.lease.record;
   const givable = record !== null && GIVABLE_LEASE_STATES.has(record.state);
-  const reconcilable = diagnostics.lease_cleanup_required
-    || (column === 'blocked' && lease !== 'available');
+  // Provider-backed closure is deliberately not the sprint reconcile domain.
+  // A reviewing lease must name publication lifecycle commands only, never a
+  // board action that the verb would refuse or that could clear it locally.
+  const reconcilable = lease !== 'reviewing' && (diagnostics.lease_cleanup_required
+    || (column === 'blocked' && lease !== 'available'));
+  const publication = record !== null && record.state === 'reviewing'
+    && 'current_publication' in record && record.current_publication !== null
+    ? record.current_publication
+    : null;
+  const lifecycleBase = publication === null || record === null ? null
+    : `--task-id ${task.task_id} --expected-claim-id ${record.claim_id}`
+      + ` --expected-generation ${record.generation} --publication-id ${publication.publication_id}`
+      + ` --expected-head-sha ${publication.head_sha}`;
   return {
     release: givable
       ? `repo-harness sprint release --claim-id ${record.claim_id}`
@@ -304,10 +316,21 @@ export function deriveActions(
     reconcile: reconcilable
       ? `repo-harness sprint reconcile --task-id ${task.task_id} --target-ref ${canonicalRef}`
       : null,
+    publication_reopen: publication === null || record === null
+      ? null
+      : `repo-harness publication reopen --task-id ${task.task_id} --claim-id ${record.claim_id}`
+        + ` --expected-generation ${record.generation} --publication-id ${publication.publication_id}`
+        + ` --expected-head-sha ${publication.head_sha}`,
+    publication_takeover: lifecycleBase === null
+      ? null
+      : `repo-harness publication takeover ${lifecycleBase} --reason '<reason>' --session-id '<session-id>'`,
+    publication_abandon: lifecycleBase === null
+      ? null
+      : `repo-harness publication abandon ${lifecycleBase} --reason '<reason>'`,
   };
 }
 
-export function deriveClaim(record: LeaseOwnerRecordV1 | null): BoardClaimV1 | null {
+export function deriveClaim(record: LeaseOwnerRecord | null): BoardClaimV1 | null {
   if (record === null) return null;
   return {
     claim_id: record.claim_id,
@@ -320,6 +343,10 @@ export function deriveClaim(record: LeaseOwnerRecordV1 | null): BoardClaimV1 | n
     source_worktree: record.claimed_by.source_worktree,
     target_ref: record.target_ref,
     finish_transaction_key: record.finish_transaction_key,
+    current_publication: record.state === 'reviewing'
+      && 'current_publication' in record
+      ? record.current_publication
+      : null,
     stolen_from: record.stolen_from,
   };
 }

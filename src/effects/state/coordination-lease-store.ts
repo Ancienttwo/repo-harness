@@ -44,7 +44,7 @@ import {
   TASK_DIGEST_PATTERN,
   parseLeaseOwnerRecord,
   serializeLeaseOwnerRecord,
-  type LeaseOwnerRecordV1,
+  type LeaseOwnerRecord,
   type LeaseState,
 } from '../../core/state/coordination-identity';
 import { writeFileDurably } from '../evidence/atomic-append';
@@ -72,7 +72,7 @@ export type LeaseClassification = LeaseState | 'unknown';
 export interface LeaseRead {
   readonly task_id: string;
   readonly classification: LeaseClassification;
-  readonly record: LeaseOwnerRecordV1 | null;
+  readonly record: LeaseOwnerRecord | null;
   /** Non-null only when `classification` is `unknown`. */
   readonly unknown_reason: LeaseUnknownReason | null;
   /**
@@ -173,7 +173,7 @@ export function createLeaseDirectory(cwd: string, taskId: string): boolean {
 export function writeLeaseOwnerDurably(
   cwd: string,
   taskId: string,
-  record: LeaseOwnerRecordV1,
+  record: LeaseOwnerRecord,
 ): void {
   if (record.task_id !== taskId) {
     throw new Error(
@@ -263,7 +263,7 @@ export function readLease(cwd: string, taskId: string): LeaseRead {
 
 export interface LeaseByClaimId {
   readonly task_id: string;
-  readonly record: LeaseOwnerRecordV1;
+  readonly record: LeaseOwnerRecord;
 }
 
 export type LeaseClaimLookup =

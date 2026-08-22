@@ -9,19 +9,24 @@ import { describe, expect, test } from 'bun:test';
 import {
   COORDINATION_PROTOCOL,
   FIRST_LEASE_GENERATION,
+  LEASE_OWNER_RECORD_SCHEMA_V2,
   TASK_DIGEST_PATTERN,
   abortLeaseCompletionRecord,
   beginLeaseCompletionRecord,
   bindLeaseRecord,
   buildLeaseOwnerRecord,
+  abandonPublicationLeaseRecord,
   deriveTaskId,
   deriveTaskRevision,
   lookupCanonicalTask,
   parseLeaseOwnerRecord,
   projectCanonicalTasks,
   releaseLeaseRecord,
+  reopenPublicationLeaseRecord,
   serializeLeaseOwnerRecord,
   stealLeaseRecord,
+  takeoverPublicationLeaseRecord,
+  enterReviewingLeaseRecord,
   type LeaseOwnerRecordV1,
 } from '../src/core/state/coordination-identity';
 
@@ -307,6 +312,20 @@ describe('owner record schema', () => {
       .toBeNull();
   });
 
+  test('schema-1 retains its existing field-level compatibility while rejecting schema-2 carriers', () => {
+    const legacy = {
+      ...owner(),
+      state: 'reserving' as const,
+      execution_worktree: null,
+      branch: null,
+      // Schema 1 historically validates fields, not cross-state execution tuples.
+      unit_ref: 'plans/legacy-boundary.md',
+    };
+    expect(parseLeaseOwnerRecord(serializeLeaseOwnerRecord(legacy))).toEqual(legacy);
+    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...legacy, current_publication: null })}\n`)).toBeNull();
+    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...legacy, unknown_outer_field: true })}\n`)).toBeNull();
+  });
+
   test('begin-completion records the closeout journal key it was handed', () => {
     const bound = bindLeaseRecord(owner(), {
       claimId: 'claim-1',
@@ -489,5 +508,99 @@ describe('lease state guards', () => {
       expect(outcome.ok).toBe(false);
       if (!outcome.ok) expect(outcome.error).not.toContain('state completing');
     }
+  });
+});
+
+describe('lease owner record schema 2 publication lifecycle', () => {
+  const TASK = taskByCell(sprint([ROW_A, ROW_B]), 'build the lease store');
+  const pointer = {
+    publication_id: `sha256:${'a'.repeat(64)}`,
+    receipt_sha256: `sha256:${'b'.repeat(64)}`,
+    head_sha: 'c'.repeat(40),
+    ship_transaction_key: 'ship/fixture-key',
+  } as const;
+
+  function completing() {
+    const reserved = buildLeaseOwnerRecord({
+      claimId: 'claim-1', taskId: TASK.task_id, taskRevision: TASK.task_revision,
+      sprintPath: SPRINT_PATH, targetRef: 'main', generation: 1,
+      sessionId: 'session-1', sourceWorktree: '/tmp/source',
+    });
+    const bound = bindLeaseRecord(reserved, {
+      claimId: 'claim-1', executionWorktree: '/tmp/review-wt', branch: 'codex/review', unitRef: 'plans/review.md',
+    });
+    if (!bound.ok) throw new Error(bound.error);
+    const complete = beginLeaseCompletionRecord(bound.record, {
+      claimId: 'claim-1', executionWorktree: '/tmp/review-wt', finishTransactionKey: 'finish/fixture-key',
+    });
+    if (!complete.ok) throw new Error(complete.error);
+    return complete.record;
+  }
+
+  test('writes a strict schema-2 reviewing pointer without touching coordination digests', () => {
+    const entered = enterReviewingLeaseRecord(completing(), { claimId: 'claim-1', publication: pointer });
+    expect(entered.ok).toBe(true);
+    if (!entered.ok) return;
+    expect(entered.record).toMatchObject({
+      record_schema: LEASE_OWNER_RECORD_SCHEMA_V2,
+      state: 'reviewing',
+      current_publication: pointer,
+      finish_transaction_key: null,
+    });
+    expect(parseLeaseOwnerRecord(serializeLeaseOwnerRecord(entered.record))).toEqual(entered.record);
+    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...entered.record, current_publication: { ...pointer, extra: true } })}\n`)).toBeNull();
+    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...entered.record, record_schema: 3 })}\n`)).toBeNull();
+    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...entered.record, record_schema: undefined })}\n`)).toBeNull();
+    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...entered.record, unexpected: true })}\n`)).toBeNull();
+    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...entered.record, finish_transaction_key: 'finish/mixed-domains' })}\n`)).toBeNull();
+    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...entered.record, execution_worktree: null, branch: null, unit_ref: null })}\n`)).toBeNull();
+    const reopened = reopenPublicationLeaseRecord(entered.record, {
+      claimId: 'claim-1', expectedGeneration: 1, expectedPublicationId: pointer.publication_id, expectedHeadSha: pointer.head_sha,
+    });
+    if (!reopened.ok) throw new Error(reopened.error);
+    expect(parseLeaseOwnerRecord(`${JSON.stringify({ ...reopened.record, current_publication: pointer })}\n`)).toBeNull();
+    expect(COORDINATION_PROTOCOL).toBe(1);
+  });
+
+  test('reviewing refuses ordinary steal and only lifecycle transitions clear its pointer', () => {
+    const entered = enterReviewingLeaseRecord(completing(), { claimId: 'claim-1', publication: pointer });
+    if (!entered.ok) throw new Error(entered.error);
+    const stolen = stealLeaseRecord(entered.record, {
+      expectedClaimId: 'claim-1', reason: 'repair', newClaimId: 'claim-2', sessionId: 'session-2', sourceWorktree: '/tmp/two',
+    });
+    expect(stolen.ok).toBe(false);
+    if (!stolen.ok) expect(stolen.error).toContain('publication takeover');
+
+    const reopened = reopenPublicationLeaseRecord(entered.record, {
+      claimId: 'claim-1', expectedGeneration: 1, expectedPublicationId: pointer.publication_id, expectedHeadSha: pointer.head_sha,
+    });
+    expect(reopened.ok).toBe(true);
+    if (reopened.ok) expect(reopened.record).toMatchObject({ state: 'bound', current_publication: null, record_schema: 2 });
+
+    const taken = takeoverPublicationLeaseRecord(entered.record, {
+      expectedClaimId: 'claim-1', expectedGeneration: 1, expectedPublicationId: pointer.publication_id,
+      expectedHeadSha: pointer.head_sha,
+      reason: 'repair', newClaimId: 'claim-2', sessionId: 'session-2', sourceWorktree: '/tmp/two',
+    });
+    expect(taken.ok).toBe(true);
+    if (taken.ok) expect(taken.record).toMatchObject({
+      state: 'reserving', generation: 2, claim_id: 'claim-2', execution_worktree: null, branch: null, unit_ref: null, current_publication: null,
+    });
+    const abandoned = abandonPublicationLeaseRecord(entered.record, {
+      expectedClaimId: 'claim-1', expectedGeneration: 1, expectedPublicationId: pointer.publication_id,
+      expectedHeadSha: pointer.head_sha,
+    });
+    expect(abandoned.ok).toBe(true);
+    if (abandoned.ok) expect(abandoned.record).toMatchObject({ state: 'released', current_publication: null });
+
+    const staleGeneration = reopenPublicationLeaseRecord(entered.record, {
+      claimId: 'claim-1', expectedGeneration: 2, expectedPublicationId: pointer.publication_id, expectedHeadSha: pointer.head_sha,
+    });
+    expect(staleGeneration).toEqual({ ok: false, error: expect.stringContaining('expected generation') });
+    const staleHead = takeoverPublicationLeaseRecord(entered.record, {
+      expectedClaimId: 'claim-1', expectedGeneration: 1, expectedPublicationId: pointer.publication_id,
+      expectedHeadSha: 'd'.repeat(40), reason: 'repair', newClaimId: 'claim-2', sessionId: 'session-2', sourceWorktree: '/tmp/two',
+    });
+    expect(staleHead).toEqual({ ok: false, error: 'publication_pointer_mismatch' });
   });
 });

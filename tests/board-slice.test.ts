@@ -33,7 +33,7 @@ import {
   deriveTaskRevision,
   serializeLeaseOwnerRecord,
   type LeaseOwnerRecordV1,
-  type PersistedLeaseState,
+  type NonReviewingPersistedLeaseState,
 } from '../src/core/state/coordination-identity';
 import { projectBoardSlice } from '../src/core/state/project-board-slice';
 import type { BoardOwnershipInput } from '../src/core/state/project-board';
@@ -217,7 +217,7 @@ function ownerRecord(
     sprint_path: SPRINT_PATH,
     target_ref: 'main',
     generation: 1,
-    state: 'bound' as PersistedLeaseState,
+    state: 'bound' as NonReviewingPersistedLeaseState,
     claimed_by: { session_id: 'session-wp3', source_worktree: fixture.primary },
     execution_worktree: fixture.worktree,
     branch: BRANCH,

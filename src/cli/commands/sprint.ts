@@ -37,7 +37,7 @@ import {
   resolveCanonicalTaskRef,
   stealLeaseRecord,
   type CanonicalTask,
-  type LeaseOwnerRecordV1,
+  type LeaseOwnerRecord,
 } from '../../core/state/coordination-identity';
 import {
   readCanonicalSprint,
@@ -71,7 +71,7 @@ export interface CoordinationPort {
   readonly withTaskLock: <T>(taskId: string, run: () => T) => T;
   readonly readLease: (taskId: string) => LeaseRead;
   readonly createLeaseDirectory: (taskId: string) => boolean;
-  readonly writeLeaseOwner: (taskId: string, record: LeaseOwnerRecordV1) => void;
+  readonly writeLeaseOwner: (taskId: string, record: LeaseOwnerRecord) => void;
   readonly removeLease: (taskId: string, claimId: string) => void;
   readonly rollbackOwnLease: (taskId: string, claimId: string) => void;
   readonly findLeaseByClaimId: (claimId: string) => LeaseClaimLookup;
@@ -324,7 +324,7 @@ function withOwnedLease(
 function lockedRecord(
   deps: SprintCommandDependencies,
   taskId: string,
-): LeaseOwnerRecordV1 | CommandOutcome {
+): LeaseOwnerRecord | CommandOutcome {
   const read = deps.coordination.readLease(taskId);
   if (read.record === null) {
     return refuse(
@@ -418,7 +418,7 @@ export interface AbortCompletionCommandOptions {
  * is pending on the caller's ref says nothing about the ref the lease protects,
  * so the check fails closed rather than silently switching authority.
  */
-function targetRefDrift(record: LeaseOwnerRecordV1, targetRef: string): string | null {
+function targetRefDrift(record: LeaseOwnerRecord, targetRef: string): string | null {
   if (record.target_ref === targetRef) return null;
   return `lease for task ${record.task_id} was claimed against ${record.target_ref}, not ${targetRef}`;
 }
@@ -699,6 +699,11 @@ export function reconcileSprintCommand(
           return refuse(
             `claim id mismatch for task ${taskId}: lease is owned by ${read.record.claim_id}, `
             + `not ${options.expectedClaimId}`,
+          );
+        }
+        if (read.record.state === 'reviewing') {
+          return refuse(
+            `cannot reconcile a reviewing lease for task ${taskId}; use publication reconcile after provider-backed verification`,
           );
         }
         if (read.record.state === 'released') {
