@@ -1,10 +1,13 @@
 /** Durable, task-locked publication review lifecycle effects. */
 import { execFileSync } from 'child_process';
+import { randomUUID } from 'crypto';
 import { readFileSync, realpathSync } from 'fs';
 import { dirname, join } from 'path';
 
 import {
   canonicalPublicationJournalEvidenceBytes,
+  canonicalPublicationReceiptBytes,
+  decodePublicationMarker,
   publicationReceiptDigest,
   validatePublicationJournalEvidence,
   type PublicationJournalEvidenceV1,
@@ -12,14 +15,19 @@ import {
 } from '../../core/publication/publication-receipt';
 import {
   PublicationLifecycleError,
+  buildPublicationIntegrationObservation,
+  canonicalPublicationIntegrationObservationBytes,
   canonicalPublicationLineageBytes,
   publicationLineageFromPointer,
   publicationPointerFromReceipt,
   type PublicationLifecycleErrorCode,
+  type PublicationIntegrationObservationV1,
+  type PublicationIntegrationState,
   type PublicationLineageV1,
 } from '../../core/publication/publication-lifecycle';
 import {
   abandonPublicationLeaseRecord,
+  COMPLETED_ROW_STATUS_PATTERN,
   enterReviewingLeaseRecord,
   lookupCanonicalTask,
   reopenPublicationLeaseRecord,
@@ -31,19 +39,28 @@ import { createFileExclusiveDurably } from '../evidence/atomic-append';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { readWorktreeTopology } from '../git/worktree-topology';
 import {
+  observeProviderPullRequestIntegration,
   observeProviderPullRequestState,
   readPublicationReceiptCache,
   rebuildPublicationReceipt,
+  writePublicationReceiptCache,
   PublicationReceiptError,
+  type ProviderPullRequestIntegrationV1,
 } from './publication-receipt';
 import { readCanonicalSprint, resolveRepoIdentity } from '../state/coordination-canonical-source';
 import { readLease, removeLease, withTaskLock, writeLeaseOwnerDurably } from '../state/coordination-lease-store';
 
 const LINEAGE_RELATIVE_PATH = 'repo-harness/publications/v1/lineage';
+const INTEGRATION_RELATIVE_PATH = 'repo-harness/publications/v1/integration';
 const SHIP_TRANSACTIONS_RELATIVE_PATH = 'repo-harness/transactions/ship';
 
-function failure(code: PublicationLifecycleErrorCode, message: string, cause?: unknown): PublicationLifecycleError {
-  return new PublicationLifecycleError(code, message, cause);
+function failure(
+  code: PublicationLifecycleErrorCode,
+  message: string,
+  cause?: unknown,
+  details?: Readonly<Record<string, string>>,
+): PublicationLifecycleError {
+  return new PublicationLifecycleError(code, message, cause, details);
 }
 
 function asLifecycleError(error: unknown, fallback: string): PublicationLifecycleError {
@@ -525,6 +542,311 @@ export function abandonPublication(input: AbandonPublicationInput): PublicationL
     });
   } catch (error) {
     throw asLifecycleError(error, 'cannot abandon publication');
+  }
+}
+
+type PublicationMergeMode = 'ancestor' | 'absorbed' | 'unmerged';
+
+export interface ReconcilePublicationInput extends PublicationValidationEnvironment {
+  readonly repo_root: string;
+  readonly task_id: string;
+  readonly expected_claim_id: string;
+  readonly expected_generation: number;
+  readonly publication_id: string;
+  readonly expected_head_sha: string;
+  readonly remote: string;
+}
+
+export interface ReconcilePublicationResult {
+  readonly classification: 'integrated';
+  readonly integration_state: PublicationIntegrationState;
+  readonly attention: 'superseded_attention' | null;
+  readonly fetched_target_oid: string;
+  readonly observation_ref: string;
+  readonly evidence: PublicationIntegrationObservationV1;
+}
+
+function integrationJournalProof(
+  repoRoot: string,
+  pointer: CurrentPublicationPointerV1,
+  gitBin?: string,
+): ShipJournalProof {
+  const statusPath = join(
+    resolveGitCommonDirectory(repoRoot, gitBin),
+    SHIP_TRANSACTIONS_RELATIVE_PATH,
+    pointer.ship_transaction_key,
+    'status.json',
+  );
+  return readShipJournalProof(repoRoot, statusPath, pointer.ship_transaction_key, 'complete', gitBin);
+}
+
+function assertProviderReceiptIdentity(
+  provider: ProviderPullRequestIntegrationV1,
+  receipt: PublicationReceiptV1,
+): void {
+  let marker: PublicationReceiptV1 | null;
+  try { marker = decodePublicationMarker(provider.body); } catch (error) {
+    throw failure('publication_pointer_mismatch', 'provider publication marker is invalid', error);
+  }
+  if (marker === null || canonicalPublicationReceiptBytes(marker) !== canonicalPublicationReceiptBytes(receipt)) {
+    throw failure('publication_pointer_mismatch', 'provider publication marker does not match the current receipt');
+  }
+  if (
+    provider.provider_repo_id !== receipt.provider_repo_id
+    || provider.pr_number !== receipt.pr_number
+    || provider.pr_url !== receipt.pr_url
+    || provider.head_sha !== receipt.head_sha
+    || provider.head_ref !== receipt.branch
+    || provider.base_ref !== receipt.target_ref
+    || provider.created_at !== receipt.created_at
+  ) {
+    throw failure('publication_claim_mismatch', 'live provider identity does not match the current receipt');
+  }
+  if (!['OPEN', 'CLOSED', 'MERGED'].includes(provider.state)) {
+    throw failure('provider_unavailable', `unsupported provider PR state: ${provider.state}`);
+  }
+}
+
+function integrationReceiptAndProvider(
+  repoRoot: string,
+  pointer: CurrentPublicationPointerV1,
+  environment: PublicationValidationEnvironment,
+): { readonly receipt: PublicationReceiptV1; readonly provider: ProviderPullRequestIntegrationV1 } {
+  let receipt = readPublicationReceiptCache(repoRoot, pointer.publication_id, environment.git_bin ?? 'git');
+  const proof = receipt === null ? integrationJournalProof(repoRoot, pointer, environment.git_bin) : null;
+  const prNumber = receipt?.pr_number ?? proof!.evidence.provider_pr_number;
+  const provider = observeProviderPullRequestIntegration(repoRoot, prNumber, environment.gh_bin);
+  if (receipt === null) {
+    let marker: PublicationReceiptV1 | null;
+    try { marker = decodePublicationMarker(provider.body); } catch (error) {
+      throw failure('publication_pointer_mismatch', 'provider publication marker is invalid', error);
+    }
+    if (marker === null) throw failure('publication_incomplete', 'provider publication marker is missing');
+    assertReceiptMatchesEvidence(marker, proof!.evidence);
+    writePublicationReceiptCache(repoRoot, marker, environment.git_bin ?? 'git');
+    receipt = marker;
+  }
+  if (publicationReceiptDigest(receipt) !== pointer.receipt_sha256 || receipt.publication_id !== pointer.publication_id) {
+    throw failure('publication_pointer_mismatch', 'receipt does not match the current publication pointer');
+  }
+  assertProviderReceiptIdentity(provider, receipt);
+  return { receipt, provider };
+}
+
+function gitOutput(repoRoot: string, gitBin: string, args: readonly string[], message: string): string {
+  try {
+    return execFileSync(gitBin, [...args], {
+      cwd: repoRoot,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      maxBuffer: 64 * 1024 * 1024,
+    }).trim();
+  } catch (error) {
+    throw failure('provider_unavailable', message, error);
+  }
+}
+
+function fetchProviderTarget(
+  repoRoot: string,
+  remote: string,
+  targetRef: string,
+  publicationId: string,
+  gitBin = 'git',
+): { readonly fetchedOid: string; readonly observationRef: string } {
+  if (remote.trim() === '' || remote.startsWith('-') || /[\0\r\n]/u.test(remote)) {
+    throw failure('publication_incomplete', 'remote is unsafe');
+  }
+  try {
+    execFileSync(gitBin, ['check-ref-format', '--branch', targetRef], { cwd: repoRoot, stdio: 'ignore' });
+  } catch (error) {
+    throw failure('publication_incomplete', `target ref is unsafe: ${targetRef}`, error);
+  }
+  const publicationKey = publicationId.slice('sha256:'.length);
+  const temporaryRef = `refs/repo-harness/observations/tmp/${publicationKey}/${randomUUID()}`;
+  gitOutput(
+    repoRoot,
+    gitBin,
+    ['fetch', '--no-tags', '--no-write-fetch-head', remote, `+refs/heads/${targetRef}:${temporaryRef}`],
+    `cannot fetch provider target ${remote}/${targetRef}`,
+  );
+  const fetchedOid = gitOutput(
+    repoRoot,
+    gitBin,
+    ['rev-parse', '--verify', '--end-of-options', `${temporaryRef}^{commit}`],
+    'fetched provider target does not resolve to a commit',
+  );
+  if (!/^[0-9a-f]{40,64}$/u.test(fetchedOid)) {
+    throw failure('provider_unavailable', `fetched provider target resolved to an invalid OID: ${fetchedOid}`);
+  }
+  const observationRef = `refs/repo-harness/observations/publication/${publicationKey}/${fetchedOid}`;
+  try {
+    execFileSync(gitBin, ['update-ref', observationRef, fetchedOid, ''], { cwd: repoRoot, stdio: 'ignore' });
+  } catch {
+    const existing = gitOutput(repoRoot, gitBin, ['rev-parse', '--verify', '--end-of-options', observationRef], 'observation ref collision');
+    if (existing !== fetchedOid) throw failure('provider_unavailable', `observation ref collision: ${observationRef}`);
+  }
+  try {
+    execFileSync(gitBin, ['update-ref', '-d', temporaryRef, fetchedOid], { cwd: repoRoot, stdio: 'ignore' });
+  } catch (error) {
+    throw failure('provider_unavailable', `cannot retire temporary observation ref ${temporaryRef}`, error);
+  }
+  return { fetchedOid, observationRef };
+}
+
+function classifyPublicationMerge(
+  repoRoot: string,
+  headSha: string,
+  targetOid: string,
+): PublicationMergeMode {
+  try {
+    execFileSync('git', ['cat-file', '-e', `${headSha}^{commit}`], { cwd: repoRoot, stdio: 'ignore' });
+  } catch (error) {
+    throw failure('publication_head_unavailable', `publication head object is unavailable: ${headSha}`, error);
+  }
+  let output: string;
+  try {
+    output = execFileSync('/bin/bash', [join(repoRoot, 'scripts/worktree-merge-lib.sh'), '--target', targetOid, headSha], {
+      cwd: repoRoot,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+  } catch (error) {
+    throw failure('integration_unproven', 'worktree merge classification failed', error);
+  }
+  const expectedPrefix = `${headSha}\t`;
+  if (!output.startsWith(expectedPrefix)) throw failure('integration_unproven', 'worktree merge classification returned invalid output');
+  const mode = output.slice(expectedPrefix.length);
+  if (mode !== 'ancestor' && mode !== 'absorbed' && mode !== 'unmerged') {
+    throw failure('integration_unproven', `worktree merge classification returned invalid mode: ${mode}`);
+  }
+  return mode;
+}
+
+function assertCanonicalCompletedAt(repoRoot: string, record: LeaseOwnerRecord, fetchedOid: string): void {
+  const canonical = readCanonicalSprint(repoRoot, { targetRef: fetchedOid, sprintPath: record.sprint_path });
+  if (!canonical.ok) throw failure('canonical_row_incomplete', canonical.error, undefined, { fetched_target_oid: fetchedOid });
+  const lookup = lookupCanonicalTask({
+    repoIdentity: resolveRepoIdentity(repoRoot),
+    sprintPath: record.sprint_path,
+    sprintText: canonical.text,
+  }, record.task_id);
+  if (!lookup.ok) throw failure('canonical_row_incomplete', lookup.error, undefined, { fetched_target_oid: fetchedOid });
+  if (lookup.task.task_revision !== record.task_revision) {
+    throw failure('task_revision_mismatch', `canonical task revision is ${lookup.task.task_revision}, lease holds ${record.task_revision}`, undefined, { fetched_target_oid: fetchedOid });
+  }
+  if (!COMPLETED_ROW_STATUS_PATTERN.test(lookup.task.row.status)) {
+    throw failure('canonical_row_incomplete', `canonical task is not completed at ${fetchedOid}: ${lookup.task.row.status || '(empty)'}`, undefined, { fetched_target_oid: fetchedOid });
+  }
+}
+
+function integrationObservationPath(repoRoot: string, observation: PublicationIntegrationObservationV1): string {
+  return join(
+    resolveGitCommonDirectory(repoRoot),
+    INTEGRATION_RELATIVE_PATH,
+    observation.publication_id.slice('sha256:'.length),
+    `${observation.observation_id.slice('sha256:'.length)}.json`,
+  );
+}
+
+function persistIntegrationObservation(repoRoot: string, observation: PublicationIntegrationObservationV1): void {
+  const path = integrationObservationPath(repoRoot, observation);
+  const bytes = `${canonicalPublicationIntegrationObservationBytes(observation)}\n`;
+  try {
+    createFileExclusiveDurably(path, Buffer.from(bytes));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+      throw failure('publication_incomplete', 'cannot persist integration observation', error);
+    }
+    let current: string;
+    try { current = readFileSync(path, 'utf-8'); } catch (readError) {
+      throw failure('publication_incomplete', 'existing integration observation is unreadable', readError);
+    }
+    if (current !== bytes) throw failure('publication_pointer_mismatch', 'existing integration observation conflicts with reconcile');
+  }
+}
+
+/** Provider-OID-fenced closeout for one exact reviewing publication. */
+export function reconcilePublication(input: ReconcilePublicationInput): ReconcilePublicationResult {
+  try {
+    const initial = currentReviewingRecord(input.repo_root, input.task_id);
+    const initialPointer = initial.current_publication;
+    const initialLive = integrationReceiptAndProvider(input.repo_root, initialPointer, input);
+    assertLeaseMatchesReceipt(initial, initialLive.receipt, initialPointer);
+    if (
+      initial.claim_id !== input.expected_claim_id
+      || initial.generation !== input.expected_generation
+      || initialPointer.publication_id !== input.publication_id
+      || initialPointer.head_sha !== input.expected_head_sha
+    ) {
+      throw failure('publication_claim_mismatch', 'reconcile input does not match the current reviewing publication');
+    }
+    const fetched = fetchProviderTarget(
+      input.repo_root,
+      input.remote,
+      initialLive.receipt.target_ref,
+      initialLive.receipt.publication_id,
+      input.git_bin ?? 'git',
+    );
+    const mergeMode = classifyPublicationMerge(input.repo_root, initialLive.receipt.head_sha, fetched.fetchedOid);
+
+    return withTaskLock(input.repo_root, input.task_id, () => {
+      const record = currentReviewingRecord(input.repo_root, input.task_id);
+      const pointer = record.current_publication;
+      const live = integrationReceiptAndProvider(input.repo_root, pointer, input);
+      assertLeaseMatchesReceipt(record, live.receipt, pointer);
+      if (
+        record.claim_id !== input.expected_claim_id
+        || record.generation !== input.expected_generation
+        || pointer.publication_id !== input.publication_id
+        || pointer.head_sha !== input.expected_head_sha
+        || record.task_revision !== initial.task_revision
+        || pointer.receipt_sha256 !== initialPointer.receipt_sha256
+        || pointer.ship_transaction_key !== initialPointer.ship_transaction_key
+      ) {
+        throw failure('publication_claim_mismatch', 'reviewing publication changed before reconcile mutation');
+      }
+      if (live.provider.base_sha !== fetched.fetchedOid) {
+        throw failure('provider_unavailable', `provider target moved after fetch: observed ${live.provider.base_sha}, fetched ${fetched.fetchedOid}`, undefined, { fetched_target_oid: fetched.fetchedOid });
+      }
+      assertCanonicalCompletedAt(input.repo_root, record, fetched.fetchedOid);
+      if (mergeMode === 'unmerged') {
+        if (live.provider.state === 'CLOSED' && live.provider.merged_at === null) {
+          throw failure('closed_unmerged', 'provider PR is closed without integration proof; retain reviewing and use publication abandon or reopen', undefined, { fetched_target_oid: fetched.fetchedOid });
+        }
+        throw failure('integration_unproven', 'publication head is not integrated into the fetched provider target', undefined, { fetched_target_oid: fetched.fetchedOid });
+      }
+      const integrationState: PublicationIntegrationState = (
+        live.provider.state === 'MERGED' || live.provider.merged_at !== null
+      ) ? 'merged' : mergeMode;
+      const evidence = buildPublicationIntegrationObservation({
+        publication_id: live.receipt.publication_id,
+        receipt_sha256: pointer.receipt_sha256,
+        task_id: live.receipt.task_id,
+        task_revision: live.receipt.task_revision,
+        claim_id: live.receipt.claim_id,
+        generation: live.receipt.generation,
+        head_sha: live.receipt.head_sha,
+        target_ref: live.receipt.target_ref,
+        fetched_target_oid: fetched.fetchedOid,
+        observation_ref: fetched.observationRef,
+        provider_pr_number: live.receipt.pr_number,
+        provider_state: live.provider.state,
+        provider_merged_at: live.provider.merged_at,
+        integration_state: integrationState,
+      });
+      persistIntegrationObservation(input.repo_root, evidence);
+      removeLease(input.repo_root, input.task_id, input.expected_claim_id);
+      return Object.freeze({
+        classification: 'integrated' as const,
+        integration_state: integrationState,
+        attention: live.provider.state === 'OPEN' && mergeMode === 'absorbed' ? 'superseded_attention' as const : null,
+        fetched_target_oid: fetched.fetchedOid,
+        observation_ref: fetched.observationRef,
+        evidence,
+      });
+    });
+  } catch (error) {
+    throw asLifecycleError(error, 'cannot reconcile publication integration');
   }
 }
 

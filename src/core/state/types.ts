@@ -286,6 +286,8 @@ export interface BoardActionsV1 {
   readonly release: string | null;
   readonly steal: string | null;
   readonly reconcile: string | null;
+  readonly publication_reconcile: string | null;
+  readonly publication_recover: string | null;
   readonly publication_reopen: string | null;
   readonly publication_takeover: string | null;
   readonly publication_abandon: string | null;
