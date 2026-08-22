@@ -59,7 +59,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ## Change Assessment
 
 ```json
-{"protocol":1,"oracles":[]}
+{"protocol":1,"oracles":[{"id":"publication-receipt-deterministic-contract","kind":"deterministic_test","paths":["src/core/publication/publication-receipt.ts","src/effects/publication/publication-receipt.ts","tests/unit/publication-receipt.test.ts"]},{"id":"publication-receipt-runtime-readback","kind":"runtime_readback","paths":["src/core/publication/publication-receipt.ts","src/effects/publication/publication-receipt.ts","tests/unit/publication-receipt.test.ts"]}]}
 ```
 
 ## Acceptance Policy
