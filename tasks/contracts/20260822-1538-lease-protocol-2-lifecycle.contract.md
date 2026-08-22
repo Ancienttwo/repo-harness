@@ -58,7 +58,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ## Change Assessment
 
 ```json
-{"protocol":1,"oracles":[{"id":"lease-protocol-2-deterministic-transitions","kind":"deterministic_test","paths":["src/core/state/coordination-identity.ts","src/core/publication/publication-lifecycle.ts","tests/coordination-identity.test.ts","tests/unit/publication-lifecycle.test.ts"]},{"id":"publication-reviewing-runtime-readback","kind":"runtime_readback","paths":["src/effects/publication/publication-lifecycle.ts","src/cli/commands/publication.ts","scripts/ship-worktrees.sh","tests/contract-worktree-closeout-journal.test.ts"]}]}
+{"protocol":1,"oracles":[{"id":"lease-protocol-2-deterministic-transitions","kind":"deterministic_test","paths":["src/core/publication/publication-lifecycle.ts","src/core/publication/publication-receipt.ts","src/core/state/coordination-identity.ts","src/effects/publication/publication-lifecycle.ts","src/effects/publication/publication-receipt.ts","tests/unit/publication-lifecycle.test.ts","tests/unit/publication-receipt.test.ts"]},{"id":"publication-reviewing-runtime-readback","kind":"runtime_readback","paths":["src/effects/publication/publication-lifecycle.ts","src/cli/commands/publication.ts","scripts/ship-worktrees.sh","tests/contract-worktree-closeout-journal.test.ts"]}]}
 ```
 
 ## Acceptance Policy
