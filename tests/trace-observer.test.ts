@@ -75,6 +75,7 @@ describe('runTraceObserver', () => {
       const result = runTraceObserver({
         repoRoot,
         input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'mcp__codegraph__context', session_id: 'codex-session' }),
+        env: {},
         dependencies: {
           runGit: () => ' M plans/plan-20260721-1200-example.md\n',
           now: () => new Date('2026-07-21T12:34:56.000Z'),
@@ -87,6 +88,7 @@ describe('runTraceObserver', () => {
       const annotation = runTraceObserver({
         repoRoot,
         input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'apply_patch', session_id: 'codex-session' }),
+        env: {},
         dependencies: { runGit: () => ' M plans/plan-20260721-1200-example.md\n' },
       });
       expect(annotation.exitCode).toBe(0);
@@ -104,6 +106,7 @@ describe('runTraceObserver', () => {
       const first = runTraceObserver({
         repoRoot,
         input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' }),
+        env: {},
         dependencies: { now: () => new Date('2026-07-21T12:34:56.000Z') },
       });
       expect(first).toMatchObject({ exitCode: 0, reason: 'ok', stdout: '', stderr: '' });
@@ -114,6 +117,7 @@ describe('runTraceObserver', () => {
       const second = runTraceObserver({
         repoRoot,
         input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' }),
+        env: {},
         dependencies: { now: () => new Date('2026-07-21T12:35:56.000Z') },
       });
       expect(second.exitCode).toBe(0);
@@ -170,6 +174,7 @@ describe('runTraceObserver', () => {
           session_id: 'external-session',
           source: 'other-host',
         }),
+        env: {},
       });
       expect(result.exitCode).toBe(0);
       expect(traceRecords(repoRoot)[0]).toMatchObject({
@@ -191,6 +196,7 @@ describe('runTraceObserver', () => {
       const ordinary = runTraceObserver({
         repoRoot,
         input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read', session_id: 'session ordinary' }),
+        env: {},
         dependencies: { runGit: (args) => { gitCalls.push([...args]); return ''; } },
       });
       expect(ordinary.exitCode).toBe(0);
@@ -199,6 +205,7 @@ describe('runTraceObserver', () => {
       const codegraph = runTraceObserver({
         repoRoot,
         input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'mcp__codegraph__context', session_id: 'session/ordinary' }),
+        env: {},
       });
       expect(codegraph.exitCode).toBe(0);
       expect(existsSync(join(repoRoot, '.claude/.codegraph-state/session_ordinary.used'))).toBe(true);
@@ -218,6 +225,7 @@ describe('runTraceObserver', () => {
       const result = runTraceObserver({
         repoRoot,
         input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read', session_id: 'rotation-session' }),
+        env: {},
       });
       expect(result.exitCode).toBe(0);
       const lines = readFileSync(join(repoRoot, '.claude/.trace.jsonl'), 'utf8').trim().split('\n');
@@ -235,6 +243,7 @@ describe('runTraceObserver', () => {
       const result = runTraceObserver({
         repoRoot,
         input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'apply_patch', session_id: 'session-git-error' }),
+        env: {},
         dependencies: { runGit: () => { throw new Error('git unavailable'); } },
       });
       expect(result).toMatchObject({ exitCode: 0, stdout: '', stderr: '', reason: 'ok' });
@@ -250,6 +259,7 @@ describe('runTraceObserver', () => {
       const malformed = runTraceObserver({
         repoRoot,
         input: 'not json',
+        env: {},
         dependencies: { now: () => new Date('2026-07-21T12:34:56.000Z') },
       });
       expect(malformed.exitCode).toBe(0);
@@ -268,6 +278,7 @@ describe('runTraceObserver', () => {
       const failed = runTraceObserver({
         repoRoot,
         input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' }),
+        env: {},
         dependencies: { fs: fsApi },
       });
       expect(failed.exitCode).toBe(1);

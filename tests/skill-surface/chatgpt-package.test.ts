@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
@@ -13,6 +13,7 @@ import {
   SKILL_SURFACE_PROFILES,
 } from "../../src/core/skill-surface/catalog";
 import { PROFILE_COMPONENTS } from "../../src/cli/installer/install-profile";
+import { validateCanonicalChatgptSkillRoot } from "../../src/cli/chatgpt-skill/source";
 import { runMcpInstallSkill } from "../../src/cli/mcp/setup";
 import { assertChatGptMcpContract } from "../helpers/chatgpt-mcp-contract";
 
@@ -33,14 +34,21 @@ const PACKAGE_DIR = "repo-harness-chatgpt";
 const SKILLS_ROOT = join(ROOT, "assets", "skills");
 const PACKAGE_ROOT = join(SKILLS_ROOT, PACKAGE_DIR);
 const MANIFEST_PATH = join(ROOT, "assets", "skill-commands", "manifest.json");
-// Raised from 2048 when the 6th mode (delegate, references/delegate.md) added
-// one Mode Selection line, one when_to_use trigger clause, and one Boundaries
-// note to the router body (chatgpt-delegate-mode). Kept as a small, deliberate
-// step rather than a round jump so the router stays a compact link list, not
-// a place to inline protocol.
+// Raised from 2048 when the 6th mode (delegate, references/delegate.md) and
+// the 7th mode (orchestrate, references/orchestrate.md) added routing and
+// boundary clauses. Kept as a small, deliberate step rather than a round jump
+// so the router stays a compact link list, not a place to inline protocol.
 const ROUTER_BODY_BYTE_LIMIT = 2560;
 
-const REFERENCES = ["setup.md", "consult.md", "continue.md", "read-back.md", "bridge.md", "delegate.md"] as const;
+const REFERENCES = [
+  "setup.md",
+  "consult.md",
+  "continue.md",
+  "read-back.md",
+  "bridge.md",
+  "delegate.md",
+  "orchestrate.md",
+] as const;
 
 function readSkill(): string {
   return readFileSync(join(PACKAGE_ROOT, "SKILL.md"), "utf-8");
@@ -48,6 +56,10 @@ function readSkill(): string {
 
 function frontmatterOf(body: string): string {
   return body.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? "";
+}
+
+function normalizeMarkdownWhitespace(body: string): string {
+  return body.replace(/\s+/gu, " ").trim();
 }
 
 describe("repo-harness-chatgpt canonical package: router frontmatter and size", () => {
@@ -98,6 +110,31 @@ describe("repo-harness-chatgpt canonical package: every reference is reachable",
   });
 });
 
+describe("repo-harness-chatgpt canonical package: installer preflight", () => {
+  test("installer preflight fails closed when orchestrate.md is absent", () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), "repo-harness-chatgpt-preflight-"));
+    const packageRoot = join(sourceRoot, "assets", "skills", PACKAGE_DIR);
+    const referencesRoot = join(packageRoot, "references");
+    mkdirSync(referencesRoot, { recursive: true });
+    copyFileSync(join(PACKAGE_ROOT, "SKILL.md"), join(packageRoot, "SKILL.md"));
+    for (const reference of REFERENCES) {
+      if (reference === "orchestrate.md") continue;
+      copyFileSync(join(PACKAGE_ROOT, "references", reference), join(referencesRoot, reference));
+    }
+
+    const previousSourceRoot = process.env.REPO_HARNESS_SOURCE_ROOT;
+    process.env.REPO_HARNESS_SOURCE_ROOT = sourceRoot;
+    try {
+      expect(() => validateCanonicalChatgptSkillRoot()).toThrow(/orchestrate\.md/);
+    } finally {
+      if (previousSourceRoot === undefined) delete process.env.REPO_HARNESS_SOURCE_ROOT;
+      else process.env.REPO_HARNESS_SOURCE_ROOT = previousSourceRoot;
+      rmSync(sourceRoot, { recursive: true, force: true });
+    }
+  });
+
+});
+
 describe("repo-harness-chatgpt canonical package: read-back.md is bound to the code/test Connector-invocation contract", () => {
   // SSD-04/05 wave-acceptance intake finding (carried to SSD-06, MEDIUM
   // safe_auto): read-back.md is the declared single source of the Connector
@@ -107,6 +144,71 @@ describe("repo-harness-chatgpt canonical package: read-back.md is bound to the c
   test("assertChatGptMcpContract accepts read-back.md's Connector Invocation Evidence content", () => {
     const readBack = readFileSync(join(PACKAGE_ROOT, "references", "read-back.md"), "utf-8");
     assertChatGptMcpContract(readBack);
+  });
+});
+
+describe("repo-harness-chatgpt canonical package: orchestrate mode is advisory and explicitly enabled", () => {
+  const orchestrate = readFileSync(join(PACKAGE_ROOT, "references", "orchestrate.md"), "utf-8");
+  const setup = readFileSync(join(PACKAGE_ROOT, "references", "setup.md"), "utf-8");
+  const semanticOrchestrate = normalizeMarkdownWhitespace(orchestrate);
+  const semanticSetup = normalizeMarkdownWhitespace(setup);
+
+  test("orchestrate.md binds remote SHA, local delta, MCP evidence, and same-conversation review", () => {
+    for (const marker of [
+      "explicitly enabled",
+      "remote.sha",
+      "local.delta",
+      "bundle_only",
+      "unverified",
+      "browser-followup",
+      "same conversation",
+      "--secret-scan",
+      "canonical JSON array",
+      "tracked-diff hash alone is insufficient",
+      "read the pushed branch head at its exact commit SHA",
+      "local-bundle review",
+    ]) {
+      expect(semanticOrchestrate).toContain(marker);
+    }
+    expect(semanticOrchestrate).toMatch(/(?:^|\s)- `verified`:/);
+    expect(semanticOrchestrate).not.toContain("bundle-only");
+    for (const marker of [
+      "compact UTF-8 JSON",
+      "no BOM",
+      "exact tracked",
+      "sha256(trackedDiffBytes || manifestBytes)",
+      "no delimiter",
+      "manifest's final LF",
+      "both staged and unstaged changes",
+      "raw stdout bytes",
+    ]) {
+      expect(semanticOrchestrate).toContain(marker);
+    }
+  });
+
+  test("orchestrate.md keeps GPT Pro outside local control-plane authority", () => {
+    for (const marker of [
+      "claim/release/steal a lease",
+      "authorize commit/push/PR/merge/deploy",
+      "Do not automatically spawn",
+      "it cannot approve the",
+      "Never turn GPT Pro's plan or",
+    ]) {
+      expect(semanticOrchestrate).toContain(marker);
+    }
+  });
+
+  test("setup.md provides a bounded explicit orchestration configuration guide", () => {
+    for (const marker of [
+      "Advisory Orchestration Enablement (Explicit Opt-In)",
+      "browser-doctor --repo <repo> --provider oracle --json",
+      "GitHub Connector",
+      "repo-harness mcp doctor --repo <repo> --json",
+      "--dry-run --secret-scan",
+      "references/orchestrate.md",
+    ]) {
+      expect(semanticSetup).toContain(marker);
+    }
   });
 });
 

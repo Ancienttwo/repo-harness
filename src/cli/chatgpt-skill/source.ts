@@ -11,6 +11,7 @@ const REQUIRED_REFERENCES = [
   'read-back.md',
   'bridge.md',
   'delegate.md',
+  'orchestrate.md',
 ] as const;
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));

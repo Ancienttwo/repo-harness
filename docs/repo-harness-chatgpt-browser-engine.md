@@ -89,6 +89,49 @@ The old experimental Chrome extension flow has been removed from the product sur
 
 Do not use the default Chrome data directory for native CDP validation. Chrome 136+ no longer honors remote-debugging switches against the current user's default Chrome data directory; it requires a non-standard `--user-data-dir`. Existing signed-in real Chrome profiles should use Oracle instead of native CDP.
 
+## Advisory GPT Pro Orchestration
+
+The canonical `repo-harness-chatgpt` Skill has an explicit `orchestrate` mode
+for a user-authorized plan -> local implementation -> same-conversation review
+loop. It is a policy composition over the existing browser/session commands,
+not a managed `agent-fleet` role, a parallel Skill, a runtime adapter, or a new
+evidence schema. Enablement is task-scoped: project the Skill, verify the
+browser and visible Pro model, select the user's authorized GitHub Connector,
+pin the target repository/ref/SHA, and pass the exact local context through the
+existing secret-scanned prompt path. The full operator checklist is in
+`assets/skills/repo-harness-chatgpt/references/setup.md`; the protocol is in
+`assets/skills/repo-harness-chatgpt/references/orchestrate.md`.
+
+The authority split is deliberate. GPT Pro may propose work and review the
+returned diff, but it cannot edit the local worktree, run local commands,
+claim or release leases, widen allowed paths, assert check results, or approve
+commit/push/PR/merge/deploy. Local Codex and repo-harness remain accountable
+for task state, execution, verification, and acceptance. ChatGPT Web is not a
+source of local truth, and the GitHub Connector cannot describe uncommitted
+local changes.
+
+For each round, record the exact remote repository/ref/SHA separately from the
+local base commit and the SHA-256 identity of the tracked-diff/untracked-file
+bundle. Classify GitHub Connector evidence from observable browser/tool
+read-back, never from model self-report:
+
+- `verified`: the Connector invocation and exact repository/SHA are visible;
+- `bundle_only`: exact remote facts were supplied in the scanned bundle, but no
+  invocation is visible; this is not GitHub MCP proof;
+- `unverified`: invocation or revision evidence is absent, stale, or
+  conflicting and blocks adoption.
+
+The initial plan and implementation review must use the same browser
+conversation/session. Before each submission, run the exact prompt and
+attachments through `browser-consult --dry-run --secret-scan`, compare the
+saved prompt hash with its receipt, and do not paste or attach changed local
+content afterward. The canary is complete only when the visible Pro model,
+conversation URL/handle, generation completion, remote SHA, GitHub evidence
+classification, local-delta identity, same-conversation review, actual local
+checks, and local acceptance outcome are all inspectable. A missing login,
+Connector, attachment, completion state, stale SHA, failed scan, or failed
+continuation is a blocked run; do not switch transport or infer success.
+
 ## Dry Run
 
 ```bash
