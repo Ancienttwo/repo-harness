@@ -5,7 +5,7 @@ ORIGINAL_PATH="${PATH:-}"
 
 PACKAGE_NAME="repo-harness"
 PACKAGE_VERSION="${REPO_HARNESS_VERSION:-latest}"
-MIN_BUN_VERSION="1.1.35"
+MIN_BUN_VERSION="1.4.0"
 
 log() {
   printf '%s\n' "$*"

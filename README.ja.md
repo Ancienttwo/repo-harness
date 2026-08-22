@@ -8,7 +8,7 @@
 
 [![npm version](https://img.shields.io/npm/v/repo-harness.svg)](https://www.npmjs.com/package/repo-harness)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Runtime: Bun](https://img.shields.io/badge/runtime-Bun%20%E2%89%A5%201.1.35-black.svg)](https://bun.sh)
+[![Runtime: Bun](https://img.shields.io/badge/runtime-Bun%20%E2%89%A5%201.4.0-black.svg)](https://bun.sh)
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Français](README.fr.md) | [Español](README.es.md)
 
@@ -42,7 +42,7 @@
 ### 1. CLI をインストールする
 
 前提条件は Git working tree、`bash`、`bun` です。`jq` は任意です。Node.js は
-不要です — installer は runtime として Bun >= 1.1.35 を使用し、必要であれば
+不要です — installer は runtime として Bun >= 1.4.0 を使用し、必要であれば
 先に Bun のインストールまたはアップグレードを行います。
 
 ```bash
@@ -53,7 +53,7 @@ curl -fsSL https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/instal
 irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 | iex
 ```
 
-Bun >= 1.1.35 がすでに PATH 上にある場合は、shell installer をスキップできます。
+Bun >= 1.4.0 がすでに PATH 上にある場合は、shell installer をスキップできます。
 Package manager が所有する Bun のインストールでは、manager が管理するファイルを
 上書きする代わりに、対応する upgrade コマンド(`brew upgrade bun`)を伴って
 fail closed します。

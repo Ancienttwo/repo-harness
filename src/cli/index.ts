@@ -33,7 +33,13 @@ import { buildSprintCommand } from './commands/sprint';
 import { buildPublicationCommand } from './commands/publication';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
-import { runGlobalRuntimeSetup, type GlobalRuntimeOptions, type GlobalRuntimeResult } from './commands/global-runtime';
+import {
+  MIN_BUN_VERSION,
+  bunVersionIsSupported,
+  runGlobalRuntimeSetup,
+  type GlobalRuntimeOptions,
+  type GlobalRuntimeResult,
+} from './commands/global-runtime';
 import { windowsProtectedHelperConfigPath } from './runtime/protected-helper-platform';
 import {
   applyInstallProfile,
@@ -819,6 +825,12 @@ export function buildProgram(): Command {
 }
 
 export async function runCli(argv: string[] = process.argv): Promise<void> {
+  const bunVersion = process.versions.bun;
+  if (!bunVersionIsSupported(bunVersion)) {
+    throw new Error(
+      `repo-harness requires Bun >= ${MIN_BUN_VERSION}; found ${bunVersion ?? 'unknown'}. Upgrade Bun and retry.`,
+    );
+  }
   const args = argv.slice(2);
   if (args.length === 1 && (args[0] === '--version' || args[0] === '-V')) {
     console.log(CLI_VERSION);

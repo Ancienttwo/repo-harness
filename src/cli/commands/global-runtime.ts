@@ -63,11 +63,17 @@ export interface GlobalRuntimeResult {
 }
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const MIN_BUN_VERSION = "1.1.35";
+export const MIN_BUN_VERSION = "1.4.0";
 const CODEGRAPH_VERSION = productVersionManifest().runtime.codeGraph.requiredVersion;
 const CODEGRAPH_PACKAGE = `@colbymchenry/codegraph@${CODEGRAPH_VERSION}`;
 const ARCHCTX_PACKAGES = ["archctx", "archctx-contracts"] as const;
 const WAZA_SHARED_RULES = ["anti-patterns.md", "chinese.md", "durable-context.md", "english.md"] as const;
+
+export function bunVersionIsSupported(version: string | undefined): boolean {
+  if (!version) return false;
+  const comparison = compareVersions(version, MIN_BUN_VERSION);
+  return comparison !== null && comparison >= 0;
+}
 
 /**
  * Reads and parses sourceRoot's skill-surface manifest. Parameterized by
@@ -188,7 +194,7 @@ function ensureSupportedBunRuntime(
   const current = runProcess(bunExecutable, ["--version"], cwd, env);
   const currentVersion = current.stdout?.trim().split(/\s+/)[0] ?? "";
   const comparison = compareVersions(currentVersion, MIN_BUN_VERSION);
-  if (current.status === "ok" && comparison !== null && comparison >= 0) {
+  if (current.status === "ok" && bunVersionIsSupported(currentVersion)) {
     return {
       ...current,
       step: "ensure Bun runtime",

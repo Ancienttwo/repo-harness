@@ -8,7 +8,7 @@
 
 [![npm version](https://img.shields.io/npm/v/repo-harness.svg)](https://www.npmjs.com/package/repo-harness)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Runtime: Bun](https://img.shields.io/badge/runtime-Bun%20%E2%89%A5%201.1.35-black.svg)](https://bun.sh)
+[![Runtime: Bun](https://img.shields.io/badge/runtime-Bun%20%E2%89%A5%201.4.0-black.svg)](https://bun.sh)
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Français](README.fr.md) | [Español](README.es.md)
 
@@ -44,7 +44,7 @@ with a tasks-first agent contract that keeps Claude and Codex aligned.
 Prerequisites: a Git working tree and `bun`; macOS/Linux also require `bash`,
 while Windows requires Git for Windows (including its Bash and `usr/bin`
 tools). `jq` is optional. No Node.js required — the installer uses Bun >=
-1.1.35 as the runtime, installing or upgrading Bun first when needed.
+1.4.0 as the runtime, installing or upgrading Bun first when needed.
 
 ```bash
 # macOS / Linux
@@ -54,7 +54,7 @@ curl -fsSL https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/instal
 irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 | iex
 ```
 
-With Bun >= 1.1.35 already on PATH, skip the shell installer. Package-manager-owned
+With Bun >= 1.4.0 already on PATH, skip the shell installer. Package-manager-owned
 Bun installs fail closed with the matching upgrade command (`brew upgrade bun`)
 instead of overwriting manager-owned files.
 

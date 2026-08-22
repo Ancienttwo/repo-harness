@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-21T15:47:50+0800 -->
+<!-- updated_at: 2026-08-23T00:48:17+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Idle
-> **Updated At**: 2026-08-21T15:47:50+0800
-> **Source Branch**: main
-> **Source Commit**: cc70bf0d
+> **Status**: ManualClearedWithActiveWork
+> **Updated At**: 2026-08-23T00:48:17+0800
+> **Source Branch**: codex/issue-216-bun-runtime-floor
+> **Source Commit**: 393e7d46
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -17,11 +17,11 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Current Focus
 
-- Status: Idle
+- Status: ManualClearedWithActiveWork
 - Active Plan: (none)
 - Plan Status: (none)
-- Next Task: (none)
-- Clear Note: (none)
+- Next Task: inspect active worktree marker(s)
+- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
 
 ## Mainline Snapshot Reading
 
@@ -31,7 +31,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- (none)
+- /private/tmp/repo-harness-gpt-pro-orchestrate: plans/plan-20260822-1240-gpt-pro-orchestrate-mode.md
+- /private/tmp/repo-harness-gpt-pro-orchestrate: active-worktree owner -> /private/tmp/repo-harness-gpt-pro-orchestrate
+- /Users/ancienttwo/Projects/repo-harness-wt-merge-readiness-v1: plans/plan-20260822-2240-merge-readiness-v1.md
+- /Users/ancienttwo/Projects/repo-harness-wt-merge-readiness-v1: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-merge-readiness-v1
 ## Active Sprint
 
 - Sprint: (none)
@@ -47,7 +50,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=completed, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: Stage the completed module diff first; then run /check and let canonical workflow gates determine whether review, external acceptance, verification, or worktree finish is next. Command: /check
+- Exact Next Step: (none)
 
 ## Checks
 
@@ -55,18 +58,19 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 9 changed/untracked path(s)
+- Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260821-1317-restamp-deletion-proof.md
- D tasks/contracts/20260821-1317-restamp-deletion-proof.contract.md
- D tasks/notes/20260821-1317-restamp-deletion-proof.notes.md
- D tasks/reviews/20260821-1317-restamp-deletion-proof.review.md
-?? plans/archive/plan-20260821-1317-restamp-deletion-proof.md
-?? tasks/archive/contract-20260821-1547-restamp-deletion-proof.md
-?? tasks/archive/notes-20260821-1547-restamp-deletion-proof.md
-?? tasks/archive/review-20260821-1547-restamp-deletion-proof.md
-?? tasks/archive/todo-20260821-1547-restamp-deletion-proof.md
+ D plans/plan-20260822-2346-issue-216-bun-runtime-floor.md
+ D tasks/contracts/20260822-2346-issue-216-bun-runtime-floor.contract.md
+ D tasks/notes/20260822-2346-issue-216-bun-runtime-floor.notes.md
+ D tasks/reviews/20260822-2346-issue-216-bun-runtime-floor.review.md
+ M tasks/todos.md
+?? plans/archive/plan-20260822-2346-issue-216-bun-runtime-floor.md
+?? tasks/archive/contract-20260823-0048-issue-216-bun-runtime-floor.md
+?? tasks/archive/notes-20260823-0048-issue-216-bun-runtime-floor.md
+?? tasks/archive/review-20260823-0048-issue-216-bun-runtime-floor.md
+?? tasks/archive/todo-20260823-0048-issue-216-bun-runtime-floor.md
 ```
 
 ## Source Artifacts

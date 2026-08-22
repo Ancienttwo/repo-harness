@@ -6,7 +6,7 @@ import { spawnSync } from 'child_process';
 import { PassThrough, Writable } from 'stream';
 import { createHash } from 'crypto';
 import { runGlobalRuntimeSetup } from '../../src/cli/commands/global-runtime';
-import { resolveOptionalRuntimeDeps, runTransactionalRuntimeRefresh } from '../../src/cli/index';
+import { resolveOptionalRuntimeDeps, runCli, runTransactionalRuntimeRefresh } from '../../src/cli/index';
 
 const ROOT = join(import.meta.dir, '..', '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -169,6 +169,18 @@ function setupManagedRuntimeReadback(home: string, fakeBin: string, harnessVersi
 }
 
 describe('install command global runtime bootstrap', () => {
+  test('the CLI rejects Bun 1.3.14 before command dispatch', async () => {
+    const originalVersion = process.versions.bun;
+    Object.defineProperty(process.versions, 'bun', { value: '1.3.14', configurable: true, writable: true });
+    try {
+      await expect(runCli(['bun', CLI, '--version'])).rejects.toThrow(
+        'repo-harness requires Bun >= 1.4.0; found 1.3.14. Upgrade Bun and retry.',
+      );
+    } finally {
+      Object.defineProperty(process.versions, 'bun', { value: originalVersion, configurable: true, writable: true });
+    }
+  });
+
   test('upgrades an old Bun runtime before any global install or update steps', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-init-bun-floor-'));
     const home = join(tmp, 'home');
@@ -186,7 +198,7 @@ describe('install command global runtime bootstrap', () => {
           '#!/bin/bash',
           `printf '%s\n' "$*" >> "${bunLog}"`,
           `if [[ "\${1:-}" == "upgrade" ]]; then touch "${upgradedMarker}"; exit 0; fi`,
-          `if [[ "\${1:-}" == "--version" ]]; then [[ -f "${upgradedMarker}" ]] && echo "1.1.35" || echo "1.1.34"; exit 0; fi`,
+          `if [[ "\${1:-}" == "--version" ]]; then [[ -f "${upgradedMarker}" ]] && echo "1.4.0" || echo "1.3.14"; exit 0; fi`,
           'exit 99',
           '',
         ].join('\n'),
@@ -212,7 +224,7 @@ describe('install command global runtime bootstrap', () => {
       expect(result.steps[0]).toMatchObject({
         step: 'ensure Bun runtime',
         status: 'ok',
-        detail: 'upgraded=1.1.35; minimum=1.1.35',
+        detail: 'upgraded=1.4.0; minimum=1.4.0',
       });
       expect(readFileSync(bunLog, 'utf-8')).toBe('--version\nupgrade\n--version\n');
     } finally {
@@ -224,7 +236,7 @@ describe('install command global runtime bootstrap', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-init-managed-bun-'));
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
-    const fakeBin = join(tmp, 'Cellar', 'bun', '1.1.34', 'bin');
+    const fakeBin = join(tmp, 'Cellar', 'bun', '1.3.14', 'bin');
     const bunLog = join(tmp, 'bun.log');
     try {
       mkdirSync(home, { recursive: true });
@@ -235,7 +247,7 @@ describe('install command global runtime bootstrap', () => {
         [
           '#!/bin/bash',
           `printf '%s\n' "$*" >> "${bunLog}"`,
-          'if [[ "${1:-}" == "--version" ]]; then echo "1.1.34"; exit 0; fi',
+          'if [[ "${1:-}" == "--version" ]]; then echo "1.3.14"; exit 0; fi',
           'exit 99',
           '',
         ].join('\n'),
@@ -338,7 +350,7 @@ describe('install command global runtime bootstrap', () => {
       writeFileSync(join(home, '.agents', 'rules', 'durable-context.md'), 'durable\n');
       writeFileSync(join(home, '.agents', 'rules', 'english.md'), 'en\n');
       writeFakeCodegraph(fakeBin, codegraphLog);
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n`);
       // The install/init provider-driven external-skills bootstrap invokes
       // `bunx skills add ...` directly. The CodeGraph MCP configure step shells
       // out to the real scripts/check-agent-tooling.sh, whose Waza status probe
@@ -413,7 +425,7 @@ describe('install command global runtime bootstrap', () => {
       mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
       setObsidianSkillIntegrities(source);
-      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n');
+      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n');
       writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash
 printf '%s\n' "$*" >> "${bunxLog}"
@@ -537,7 +549,7 @@ exit 0
         writeFileSync(join(home, '.codex', 'rules', rule), '# stale rule\n');
       }
       writeFakeCodegraph(fakeBin, codegraphLog);
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n`);
       writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nif [[ " $* " == *" tw93/Waza "* ]]; then for rule in anti-patterns.md chinese.md durable-context.md english.md; do printf '# refreshed rule\\n' > "$HOME/.agents/rules/$rule"; done; fi\nexit 0\n`);
 
@@ -594,7 +606,7 @@ exit 0
       writeExecutable(join(fakeBin, 'bun'), [
         '#!/bin/bash',
         `printf '%s\\n' "$*" >> "${bunLog}"`,
-        'if [[ "${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi',
+        'if [[ "${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi',
         'exit 0',
         '',
       ].join('\n'));
@@ -647,7 +659,7 @@ exit 0
       mkdirSync(hostileBunInstall, { recursive: true });
       writeExecutable(
         join(fakeBin, 'bun'),
-        '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n',
+        '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n',
       );
       writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash
@@ -1015,7 +1027,7 @@ exit 0
           '#!/bin/bash',
           'set -euo pipefail',
           `printf '%s\\n' "$*" >> "${bunLog}"`,
-          'if [[ "${1:-}" == "--version" ]]; then echo "1.3.14"; exit 0; fi',
+          'if [[ "${1:-}" == "--version" ]]; then echo "1.4.0"; exit 0; fi',
           `if [[ "$*" == "add -g ${source}" ]]; then`,
           '  echo "error: DependencyLoop" >&2',
           '  echo "Resolution: repo-harness@../../../Projects/repo-harness" >&2',
@@ -1120,7 +1132,7 @@ exit 0
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
-      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nexit 0\n');
+      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 0\n');
       writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash
 if [[ "\${1:-}" == "skills" && "\${2:-}" == "add" ]]; then
@@ -1184,7 +1196,7 @@ exit 0
       }
       mkdirSync(join(home, '.codex', 'skills', 'think'), { recursive: true });
       writeFileSync(join(home, '.codex', 'skills', 'think', 'SKILL.md'), '# think\n');
-      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nexit 0\n');
+      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 0\n');
 
       const result = runGlobalRuntimeSetup({
         sourceRoot: ROOT,
@@ -1222,7 +1234,7 @@ exit 0
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       setupManagedRuntimeReadback(home, fakeBin, '9.9.8');
-      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n');
+      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n');
 
       const result = runGlobalRuntimeSetup({
         sourceRoot: ROOT,
@@ -1304,7 +1316,7 @@ exit 0
       mkdirSync(home, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
-      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n');
+      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n');
       writeExecutable(join(fakeBin, 'npx'), '#!/bin/bash\nexit 0\n');
 
       const result = runGlobalRuntimeSetup({
@@ -1342,7 +1354,7 @@ exit 0
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nexit 42\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 42\n`);
       writeExecutable(join(fakeBin, 'npm'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${npmLog}"\nexit 42\n`);
 
       const result = runGlobalRuntimeSetup({
@@ -1386,7 +1398,7 @@ exit 0
       mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
       symlinkSync(source, globalPackage, 'dir');
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nexit 42\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 42\n`);
 
       const result = runGlobalRuntimeSetup({
         sourceRoot: source,
@@ -1425,7 +1437,7 @@ exit 0
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nexit 42\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 42\n`);
 
       const result = runGlobalRuntimeSetup({
         sourceRoot: source,
@@ -1471,7 +1483,7 @@ exit 0
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nexit 42\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 42\n`);
 
       const baseEnv: NodeJS.ProcessEnv = {
         ...sanitizedChildEnv(),
@@ -1543,7 +1555,7 @@ exit 0
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
-      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nexit 0\n');
+      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 0\n');
       writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" > "${bunxLog}"\nexit 0\n`);
 
@@ -1610,7 +1622,7 @@ exit 0
         ownership_manifest: [],
         previous: null,
       })}\n`);
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 0\n`);
 
       const res = spawnSync(
         process.execPath,
@@ -1732,7 +1744,7 @@ exit 0
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       setupManagedRuntimeReadback(home, fakeBin);
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n`);
 
       const res = spawnSync(
         process.execPath,
@@ -1791,7 +1803,7 @@ exit 0
         ownership_manifest: [],
         previous: null,
       })}\n`);
-      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n');
+      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n');
 
       const res = spawnSync(process.execPath, [
         CLI,
@@ -1892,7 +1904,7 @@ exit 0
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       writeFakeCodegraph(fakeBin, codegraphLog);
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nif [[ "\${1:-}" == "-" ]]; then exec "${process.execPath}" "$@"; fi\nif [[ " $* " == *" add -g "* ]]; then mkdir -p "$HOME/.bun/bin"; printf '#!/bin/sh\\n' > "$HOME/.bun/bin/repo-harness"; chmod +x "$HOME/.bun/bin/repo-harness"; fi\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == "-" ]]; then exec "${process.execPath}" "$@"; fi\nif [[ " $* " == *" add -g "* ]]; then mkdir -p "$HOME/.bun/bin"; printf '#!/bin/sh\\n' > "$HOME/.bun/bin/repo-harness"; chmod +x "$HOME/.bun/bin/repo-harness"; fi\nexit 0\n`);
       writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash
 printf '%s\\n' "$*" >> "${bunxLog}"

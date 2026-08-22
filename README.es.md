@@ -8,7 +8,7 @@
 
 [![npm version](https://img.shields.io/npm/v/repo-harness.svg)](https://www.npmjs.com/package/repo-harness)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Runtime: Bun](https://img.shields.io/badge/runtime-Bun%20%E2%89%A5%201.1.35-black.svg)](https://bun.sh)
+[![Runtime: Bun](https://img.shields.io/badge/runtime-Bun%20%E2%89%A5%201.4.0-black.svg)](https://bun.sh)
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Français](README.fr.md) | [Español](README.es.md)
 
@@ -43,7 +43,7 @@ de agente tasks-first que mantiene alineados a Claude y Codex.
 ### 1. Instalar el CLI
 
 Prerrequisitos: un Git working tree, `bash` y `bun`; `jq` es opcional. No se
-necesita Node.js — el instalador usa Bun >= 1.1.35 como runtime, instalando o
+necesita Node.js — el instalador usa Bun >= 1.4.0 como runtime, instalando o
 actualizando Bun primero si hace falta.
 
 ```bash
@@ -54,7 +54,7 @@ curl -fsSL https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/instal
 irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 | iex
 ```
 
-Si ya tienes Bun >= 1.1.35 en el PATH, omite el instalador de shell. Las
+Si ya tienes Bun >= 1.4.0 en el PATH, omite el instalador de shell. Las
 instalaciones de Bun gestionadas por un gestor de paquetes fallan de forma
 cerrada (fail closed) con el comando de actualización correspondiente
 (`brew upgrade bun`), en lugar de sobrescribir archivos que pertenecen a ese

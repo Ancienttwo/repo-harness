@@ -598,7 +598,7 @@ describe("install-agent-fleet", () => {
   test("the installer declares Bun as its only semantic parser runtime", () => {
     const source = readFileSync(SCRIPT, "utf-8");
     expect(source).toContain("install-agent-fleet.sh requires bun");
-    expect(source).toContain('MIN_BUN_VERSION="1.1.35"');
+    expect(source).toContain('MIN_BUN_VERSION="1.4.0"');
     expect(source).toContain("Bun.TOML.parse(");
     expect(source).not.toContain("install-agent-fleet.sh requires node or bun");
     expect(source).toContain('AGENT_FLEET_SOURCE_DIR="$package_root/agents/fleet"');
@@ -616,7 +616,7 @@ describe("install-agent-fleet", () => {
       mkdirSync(fakeBin, { recursive: true });
       writeFileSync(
         fakeBun,
-        ['#!/bin/sh', 'if [ "$1" = "--version" ]; then', "  echo 1.0.0", "  exit 0", "fi", "exit 99", ""].join("\n"),
+        ['#!/bin/sh', 'if [ "$1" = "--version" ]; then', "  echo 1.3.14", "  exit 0", "fi", "exit 99", ""].join("\n"),
       );
       chmodSync(fakeBun, 0o755);
       const res = spawnSync("bash", [SCRIPT], {
@@ -629,7 +629,7 @@ describe("install-agent-fleet", () => {
         },
       });
       expect(res.status).not.toBe(0);
-      expect(res.stderr).toContain("requires Bun >= 1.1.35 (found: 1.0.0)");
+      expect(res.stderr).toContain("requires Bun >= 1.4.0 (found: 1.3.14)");
       expect(existsSync(join(home, ".claude"))).toBe(false);
       expect(existsSync(join(home, ".codex"))).toBe(false);
     } finally {
@@ -647,14 +647,14 @@ describe("install-agent-fleet", () => {
       mkdirSync(join(home, ".bun/bin"), { recursive: true });
       writeFileSync(
         oldBun,
-        ['#!/bin/sh', 'if [ "$1" = "--version" ]; then', "  echo 1.0.0", "  exit 0", "fi", "exit 99", ""].join("\n"),
+        ['#!/bin/sh', 'if [ "$1" = "--version" ]; then', "  echo 1.3.14", "  exit 0", "fi", "exit 99", ""].join("\n"),
       );
       writeFileSync(
         homeBun,
         [
           "#!/bin/sh",
           'if [ "$1" = "--version" ]; then',
-          "  echo 1.1.35",
+          "  echo 1.4.0",
           "  exit 0",
           "fi",
           `exec ${JSON.stringify(process.execPath)} "$@"`,

@@ -1,14 +1,17 @@
 #!/bin/bash
 set -euo pipefail
 
-MIN_BUN_VERSION="1.1.35"
+MIN_BUN_VERSION="1.4.0"
 
 bun_version_is_supported() {
   local version="$1"
-  [[ "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+) ]] &&
-    (( BASH_REMATCH[1] > 1 ||
-      (BASH_REMATCH[1] == 1 && BASH_REMATCH[2] > 1) ||
-      (BASH_REMATCH[1] == 1 && BASH_REMATCH[2] == 1 && BASH_REMATCH[3] >= 35) ))
+  [[ "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+) ]] || return 1
+  local major="${BASH_REMATCH[1]}" minor="${BASH_REMATCH[2]}" patch="${BASH_REMATCH[3]}"
+  local minimum_major minimum_minor minimum_patch
+  IFS=. read -r minimum_major minimum_minor minimum_patch <<< "$MIN_BUN_VERSION"
+  (( major > minimum_major ||
+    (major == minimum_major && minor > minimum_minor) ||
+    (major == minimum_major && minor == minimum_minor && patch >= minimum_patch) ))
 }
 
 RUNTIME_BIN=""

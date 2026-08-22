@@ -712,9 +712,9 @@ six source files before mutating any target; a missing, malformed, mismatched,
 or unmapped source makes the whole run fail closed and leaves installed files
 untouched.
 
-The installer requires Bun >= 1.1.35, matching repo-harness's package runtime
-contract and the first supported `Bun.TOML.parse` behavior for the generated
-multiline agent files.
+The installer requires Bun >= 1.4.0, matching repo-harness's package runtime
+contract and its verified subprocess environment-inheritance behavior.
+The CLI entry rejects older or unparseable Bun runtimes before command dispatch.
 The top-level Unix and Windows bootstrap installers upgrade an older detected
 Bun before installing repo-harness, rather than relying on package-engine
 metadata that older Bun releases do not enforce.

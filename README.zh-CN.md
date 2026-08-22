@@ -8,7 +8,7 @@
 
 [![npm version](https://img.shields.io/npm/v/repo-harness.svg)](https://www.npmjs.com/package/repo-harness)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Runtime: Bun](https://img.shields.io/badge/runtime-Bun%20%E2%89%A5%201.1.35-black.svg)](https://bun.sh)
+[![Runtime: Bun](https://img.shields.io/badge/runtime-Bun%20%E2%89%A5%201.4.0-black.svg)](https://bun.sh)
 
 [English](README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Français](README.fr.md) | [Español](README.es.md)
 
@@ -43,7 +43,7 @@ checks 和 review evidence 写回项目文件，让下一个 agent 会话从文�
 
 前置条件：一个 Git working tree 和 `bun`；macOS/Linux 还需要 `bash`，
 Windows 则需要 Git for Windows（包括其 Bash 与 `usr/bin` 工具）。`jq`
-可选。不需要 Node.js——installer 使用 Bun >= 1.1.35 作为 runtime，需要时会
+可选。不需要 Node.js——installer 使用 Bun >= 1.4.0 作为 runtime，需要时会
 先安装或升级 Bun。
 
 ```bash
@@ -54,7 +54,7 @@ curl -fsSL https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/instal
 irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 | iex
 ```
 
-如果 Bun >= 1.1.35 已经在 PATH 上，可以跳过 shell installer。由包管理器
+如果 Bun >= 1.4.0 已经在 PATH 上，可以跳过 shell installer。由包管理器
 安装的 Bun 会 fail closed，并提示对应的升级命令（如 `brew upgrade bun`），
 而不是覆盖包管理器管理的文件。
 
