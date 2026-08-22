@@ -1859,6 +1859,71 @@ describe("Workflow helper scripts", () => {
     }
   }, 15000);
 
+  test("contract-worktree start emits one structured result and --fresh rejects residual branch state", () => {
+    const cwd = tmpWorkspace("helper-contract-start-json");
+    const worktreePath = `${cwd}-wt-acquire`;
+    const planPath = "plans/plan-20260823-0202-acquire-fixture.md";
+    try {
+      copyHelpers(cwd);
+      initGitRepo(cwd);
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      writeFileSync(join(cwd, planPath), "# Acquire fixture\n");
+      commitAll(cwd, "seed structured start");
+
+      mkdirSync(join(cwd, ".ai/harness/worktrees"), { recursive: true });
+      writeFileSync(join(cwd, ".ai/harness/worktrees/acquire-fixture.json"), "{}\n");
+      const metadataResidual = run("bash", [
+        "scripts/contract-worktree.sh", "start",
+        "--plan", planPath,
+        "--path", worktreePath,
+        "--branch", "codex/acquire-fixture",
+        "--fresh",
+        "--json",
+        "--no-plan-to-todo",
+      ], cwd);
+      expect(metadataResidual.status).toBe(1);
+      expect(metadataResidual.stderr).toContain("--fresh refuses residual worktree metadata");
+      rmSync(join(cwd, ".ai/harness/worktrees/acquire-fixture.json"));
+
+      const started = run("bash", [
+        "scripts/contract-worktree.sh", "start",
+        "--plan", planPath,
+        "--path", worktreePath,
+        "--branch", "codex/acquire-fixture",
+        "--fresh",
+        "--json",
+        "--no-plan-to-todo",
+      ], cwd);
+      expect(started.status, `${started.stdout}\n${started.stderr}`).toBe(0);
+      const result = JSON.parse(started.stdout);
+      expect(result).toEqual({
+        protocol: 1,
+        kind: "repo-harness-contract-worktree-start",
+        worktree_path: realpathSync(worktreePath),
+        branch: "codex/acquire-fixture",
+        plan_path: `${realpathSync(worktreePath)}/${planPath}`,
+        disposition: "created",
+      });
+      expect(started.stdout.trim().split("\n")).toHaveLength(1);
+
+      const residual = run("bash", [
+        "scripts/contract-worktree.sh", "start",
+        "--plan", planPath,
+        "--path", worktreePath,
+        "--branch", "codex/acquire-fixture",
+        "--fresh",
+        "--json",
+        "--no-plan-to-todo",
+      ], cwd);
+      expect(residual.status).toBe(1);
+      expect(residual.stderr).toContain("--fresh refuses residual worktree path");
+    } finally {
+      run("git", ["worktree", "remove", "--force", worktreePath], cwd);
+      rmSync(worktreePath, { recursive: true, force: true });
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 15000);
+
   test("contract-worktree cleanup should repair stale gitdir before removing a merged worktree", () => {
     const cwd = tmpWorkspace("helper-contract-cleanup-repair");
     const worktreePath = `${cwd}-wt-demo`;

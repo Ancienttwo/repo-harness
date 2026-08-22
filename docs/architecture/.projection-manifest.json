@@ -5,12 +5,12 @@
   "sourceDigest": "sha256:dfeee72dd6b65c11c5410cf52261499a156ed11386d32cb5121711b63684470d",
   "provenance": {
     "schemaVersion": "archcontext.architecture-docs-projection-provenance/v1",
-    "baseHeadSha": "6e48948bff83bb5f2ed61173901261a609bb8f51",
-    "worktreeDigest": "sha256:423cdb085499e70336da2b730a816085977d3a472c57e9d8fd15638faf49fccd",
-    "sourceTreeDigest": "sha256:c57e76e5a455bb89aa64bfdc5a5eb501e4f7fd8d9f352ca7aaa611ecf2b82f6d",
+    "baseHeadSha": "d59d304ba95f33868cc4003fe81ab5edc5b7a3ff",
+    "worktreeDigest": "sha256:e9da1314e5fef593185767a6e21c6540071c1b058104578d84e14bf1ad45f9f8",
+    "sourceTreeDigest": "sha256:325219de22ebec6f8431199ee68b355025fb90bf61e75823198e4b05cf298706",
     "modelDigest": "sha256:e7e1a02e1fb8c6e0732999db19c5ab1541d8529ffb270b2be1eb96af579fa4cb",
-    "codeGraphDigest": "sha256:0082909e5a2b5396258b40d7a3415c43bb8c2f857301ae487d14e4ad1b944676",
-    "indexedWorktreeDigest": "sha256:6b464de56a72dc3c8f7481f9d8e86058c9b8240b3c9ebe52c663e3baa6f015b5",
+    "codeGraphDigest": "sha256:940d6247cc251fc950265bd535c4b35b0417ab0f325edca41ee6332e3407226a",
+    "indexedWorktreeDigest": "sha256:b8ee76a27f6d404f55f25bf967f955ba61a8b6e2f0b34881d7db4555b6dfe05c",
     "rendererVersion": "archcontext.docs-renderer/v4",
     "layoutVersion": "archcontext.docs-layout/v1",
     "generatedFrom": {
@@ -19,9 +19,9 @@
       "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
       "codeGraphStatus": "ready"
     },
-    "projectionInputDigest": "sha256:2f27f4c69b9fbc2d0303b3186b1612205a913229114ccb4407afbeab27be2944"
+    "projectionInputDigest": "sha256:36b464b38f6b01df2d353d84c89b4c102dfd71baf445f3def785759ac1bacdf0"
   },
-  "projectionDigest": "sha256:2458b67e95397b08206df21037c5235f220e12a4d226a9ff23b76ce815c0a212",
+  "projectionDigest": "sha256:1768826b62896c4a2090cb3b2f147ba93675b80a2d4a8416810dfc4bbaad29f3",
   "semanticBaseline": {
     "semanticState": {
       "schemaVersion": "archcontext.architecture-semantic-state/v1",
@@ -307,12 +307,12 @@
     },
     "digests": {
       "modelDigest": "sha256:e7e1a02e1fb8c6e0732999db19c5ab1541d8529ffb270b2be1eb96af579fa4cb",
-      "sourceTreeDigest": "sha256:c57e76e5a455bb89aa64bfdc5a5eb501e4f7fd8d9f352ca7aaa611ecf2b82f6d",
+      "sourceTreeDigest": "sha256:325219de22ebec6f8431199ee68b355025fb90bf61e75823198e4b05cf298706",
       "flowProofDigest": "sha256:f61c06c8566ec4ff22ec096ee22c06e91a046ceefa8fcd2f1d9faf436763a457",
-      "projectionDigest": "sha256:2458b67e95397b08206df21037c5235f220e12a4d226a9ff23b76ce815c0a212"
+      "projectionDigest": "sha256:1768826b62896c4a2090cb3b2f147ba93675b80a2d4a8416810dfc4bbaad29f3"
     }
   },
-  "receiptDigest": "sha256:06a9c605b14f0de7612af873c9ebc60dedf2d1b3f58d281fa12b9e56524f03eb",
+  "receiptDigest": "sha256:e8e3766df5f6fb2153bd93d61f6aad31b7da4aa51161073664e3fff835f1c9b7",
   "refreshSignalIds": [],
   "targetCount": 17,
   "fileCount": 17,
@@ -445,9 +445,9 @@
       "sourceDigest": "sha256:8e2ba45e941e3259fe9e2346d1460a18e2c199dc7017e55531370c09bc5b4731",
       "outputDigest": "sha256:a941fe11388c621fe51eaee5dc2b143d4b24ef7f2a9fd3114a5ac15baa12cb11",
       "verifiedAgainst": {
-        "branch": "codex/merge-readiness-v1",
-        "commit": "6e48948bff83bb5f2ed61173901261a609bb8f51",
-        "committedAt": "2026-08-23T01:24:35+08:00"
+        "branch": "codex/fleet-offer-acquire",
+        "commit": "d59d304ba95f33868cc4003fe81ab5edc5b7a3ff",
+        "committedAt": "2026-08-23T03:39:50+08:00"
       }
     },
     {
@@ -465,9 +465,9 @@
       "sourceDigest": "sha256:42b8f1e808805a06b5f8a604796875cd15075125ad6aae37781b919fc795e9e0",
       "outputDigest": "sha256:88c96e6dda01a1222e85a989f6049b5b6b0018f769029b42e4f6029f49e66d72",
       "verifiedAgainst": {
-        "branch": "codex/merge-readiness-v1",
-        "commit": "6e48948bff83bb5f2ed61173901261a609bb8f51",
-        "committedAt": "2026-08-23T01:24:35+08:00"
+        "branch": "codex/fleet-offer-acquire",
+        "commit": "d59d304ba95f33868cc4003fe81ab5edc5b7a3ff",
+        "committedAt": "2026-08-23T03:39:50+08:00"
       }
     },
     {
@@ -505,9 +505,9 @@
       "sourceDigest": "sha256:2b41a1b3f03e0f2a17b8e83607c353f16dc1370b0d6cfada99502c1048e2c342",
       "outputDigest": "sha256:66d4b7068ff03b389eb468fcfeb98d6146109c54d1e89eaf119a8f278ac9a5e4",
       "verifiedAgainst": {
-        "branch": "codex/merge-readiness-v1",
-        "commit": "6e48948bff83bb5f2ed61173901261a609bb8f51",
-        "committedAt": "2026-08-23T01:24:35+08:00"
+        "branch": "codex/fleet-offer-acquire",
+        "commit": "d59d304ba95f33868cc4003fe81ab5edc5b7a3ff",
+        "committedAt": "2026-08-23T03:39:50+08:00"
       }
     },
     {
@@ -525,9 +525,9 @@
       "sourceDigest": "sha256:7ee8ed6740da71e8140f0ab2ff708ec8756622821b0875aa230a6a3f019780fe",
       "outputDigest": "sha256:aa161d6f10d15d68a3af9439d8bdbbd7e32b81781e3747645d4ccee5020cd79a",
       "verifiedAgainst": {
-        "branch": "codex/merge-readiness-v1",
-        "commit": "6e48948bff83bb5f2ed61173901261a609bb8f51",
-        "committedAt": "2026-08-23T01:24:35+08:00"
+        "branch": "codex/fleet-offer-acquire",
+        "commit": "d59d304ba95f33868cc4003fe81ab5edc5b7a3ff",
+        "committedAt": "2026-08-23T03:39:50+08:00"
       }
     },
     {

@@ -376,6 +376,8 @@ describe("sprint-backlog helper", () => {
       const planPath = start.stdout.match(/Captured plan: (plans\/plan-[^\s]+\.md)/)?.[1] ?? "";
       expect(planPath).toMatch(/^plans\/plan-\d{8}-\d{4}-task-a\.md$/);
       expect(start.stdout).toContain("stays (pending)");
+      expect(start.stderr).toContain("stays reserving without a token");
+      expect(existsSync(join(cwd, ".ai/harness/sprint/claims"))).toBe(false);
 
       const plan = readFileSync(join(cwd, planPath), "utf-8");
       expect(plan).toContain("> **Status**: Approved");
@@ -437,7 +439,7 @@ describe("sprint-backlog helper", () => {
     }
   }, 30_000);
 
-  test("a duplicate start-task is refused by the lease, and completion releases it", () => {
+  test("a duplicate contract start-task is refused by the reservation, which is explicitly released before bind", () => {
     // The retired per-worktree in-flight marker and `--force` are gone: the
     // shared lease is the only thing that says a row is being worked, and a
     // second start-task is refused by the lease rather than by a local file.
@@ -449,9 +451,9 @@ describe("sprint-backlog helper", () => {
 
       const first = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a"], cwd);
       expect(first.status, `${first.stdout}\n${first.stderr}`).toBe(0);
-      const claims = readdirSync(join(cwd, ".ai/harness/sprint/claims"));
-      expect(claims).toHaveLength(1);
-      expect(claims[0]).toMatch(/^[0-9a-f]{64}\.claim$/);
+      const claimId = first.stdout.match(/as claim ([^\s]+)/)?.[1] ?? "";
+      expect(claimId).toMatch(/^[0-9a-f-]{36}$/);
+      expect(existsSync(join(cwd, ".ai/harness/sprint/claims"))).toBe(false);
 
       const dup = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a"], cwd);
       expect(dup.status).toBe(1);
@@ -467,9 +469,11 @@ describe("sprint-backlog helper", () => {
       expect(force.stderr).toContain("unknown start-task argument: --force");
 
       const complete = run("bash", ["scripts/sprint-backlog.sh", "complete-task", "--task", "task-a"], cwd);
-      expect(complete.status, `${complete.stdout}\n${complete.stderr}`).toBe(0);
-      expect(complete.stdout).toContain("Released lease for 'task-a'");
-      expect(readdirSync(join(cwd, ".ai/harness/sprint/claims"))).toHaveLength(0);
+      expect(complete.status).toBe(1);
+      expect(complete.stderr).toContain("holds no claim token");
+
+      const release = run(CLI_WRAPPER, ["sprint", "release", "--claim-id", claimId], cwd);
+      expect(release.status, `${release.stdout}\n${release.stderr}`).toBe(0);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -489,7 +493,14 @@ describe("sprint-backlog helper", () => {
       // plane, which is what keeps the single-agent flow unchanged.
       expect(existsSync(join(cwd, ".git/repo-harness/coordination/v1/leases"))).toBe(false);
 
-      const start = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a"], cwd);
+      const contract = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a"], cwd);
+      expect(contract.status, `${contract.stdout}\n${contract.stderr}`).toBe(0);
+      const contractClaimId = contract.stdout.match(/as claim ([^\s]+)/)?.[1] ?? "";
+      expect(contractClaimId).toMatch(/^[0-9a-f-]{36}$/);
+      const releaseContract = run(CLI_WRAPPER, ["sprint", "release", "--claim-id", contractClaimId], cwd);
+      expect(releaseContract.status, `${releaseContract.stdout}\n${releaseContract.stderr}`).toBe(0);
+
+      const start = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-b"], cwd);
       expect(start.status, `${start.stdout}\n${start.stderr}`).toBe(0);
       const claimsDir = join(cwd, ".ai/harness/sprint/claims");
       const token = join(claimsDir, readdirSync(claimsDir)[0]);
@@ -500,31 +511,31 @@ describe("sprint-backlog helper", () => {
       // A tree holding no token for the row is refused, and the refusal names
       // the claim that owns it rather than reporting a generic conflict.
       rmSync(token);
-      const foreign = run("bash", ["scripts/sprint-backlog.sh", "complete-task", "--task", "task-a"], cwd);
+      const foreign = run("bash", ["scripts/sprint-backlog.sh", "complete-task", "--task", "task-b"], cwd);
       expect(foreign.status).toBe(1);
       expect(foreign.stderr).toContain(`is claimed by ${claimId}`);
       expect(foreign.stderr).toContain("holds no claim token");
-      expect(readFileSync(join(cwd, sprintPath), "utf-8")).toContain("| 1 | [ ] | task-a |");
+      expect(readFileSync(join(cwd, sprintPath), "utf-8")).toContain("| 2 | [ ] | task-b |");
 
       // A stolen-from tree keeps its old token; the comparison is against the
       // owner record, so the stale token is refused too.
       writeFileSync(token, ownerToken.replace(claimId, "claim-that-was-stolen-from"));
-      const stale = run("bash", ["scripts/sprint-backlog.sh", "complete-task", "--task", "task-a"], cwd);
+      const stale = run("bash", ["scripts/sprint-backlog.sh", "complete-task", "--task", "task-b"], cwd);
       expect(stale.status).toBe(1);
       expect(stale.stderr).toContain("the claim moved");
-      expect(readFileSync(join(cwd, sprintPath), "utf-8")).toContain("| 1 | [ ] | task-a |");
+      expect(readFileSync(join(cwd, sprintPath), "utf-8")).toContain("| 2 | [ ] | task-b |");
 
       // A row with no lease of its own completes unchanged, even though the
       // lease store is live for a sibling row.
-      const unclaimed = run("bash", ["scripts/sprint-backlog.sh", "complete-task", "--task", "task-b"], cwd);
+      const unclaimed = run("bash", ["scripts/sprint-backlog.sh", "complete-task", "--task", "task-a"], cwd);
       expect(unclaimed.status, `${unclaimed.stdout}\n${unclaimed.stderr}`).toBe(0);
-      expect(readFileSync(join(cwd, sprintPath), "utf-8")).toMatch(/\|\s*2\s*\|\s*\[x\]\s*\|\s*task-b/);
+      expect(readFileSync(join(cwd, sprintPath), "utf-8")).toMatch(/\|\s*1\s*\|\s*\[x\]\s*\|\s*task-a/);
 
       // And the owning token still completes its own row and releases it.
       writeFileSync(token, ownerToken);
-      const owner = run("bash", ["scripts/sprint-backlog.sh", "complete-task", "--task", "task-a"], cwd);
+      const owner = run("bash", ["scripts/sprint-backlog.sh", "complete-task", "--task", "task-b"], cwd);
       expect(owner.status, `${owner.stdout}\n${owner.stderr}`).toBe(0);
-      expect(owner.stdout).toContain("Released lease for 'task-a'");
+      expect(owner.stdout).toContain("Released lease for 'task-b'");
       expect(readdirSync(claimsDir)).toHaveLength(0);
     } finally {
       rmSync(cwd, { recursive: true, force: true });

@@ -60,7 +60,7 @@ worktree_merge_lib="$helper_dir/worktree-merge-lib.sh"
 usage() {
   cat <<'USAGE_EOF'
 Usage:
-  repo-harness run contract-worktree start --plan <plan-file> [--path <worktree-path>] [--branch <branch-name>]
+  repo-harness run contract-worktree start --plan <plan-file> [--path <worktree-path>] [--branch <branch-name>] [--fresh] [--json]
   repo-harness run contract-worktree finish [--merge|--no-merge] [--target <branch>] [--gate-base <ref>] [--message <commit-message>]
   repo-harness run contract-worktree cleanup --slug <slug> [--target <branch>] [--dry-run]
   repo-harness run contract-worktree status
@@ -76,6 +76,19 @@ json_escape() {
   value="${value//$'\r'/\\r}"
   value="${value//$'\t'/\\t}"
   printf '%s' "$value"
+}
+
+start_notice() {
+  [[ "${contract_worktree_start_json:-0}" -eq 1 ]] || printf '%s\n' "$*"
+}
+
+write_start_json() {
+  local worktree_path="$1" branch_name="$2" plan_file="$3" disposition="$4"
+  printf '{"protocol":1,"kind":"repo-harness-contract-worktree-start","worktree_path":"%s","branch":"%s","plan_path":"%s","disposition":"%s"}\n' \
+    "$(json_escape "$worktree_path")" \
+    "$(json_escape "$branch_name")" \
+    "$(json_escape "$plan_file")" \
+    "$(json_escape "$disposition")"
 }
 
 now_ms() {
@@ -376,7 +389,7 @@ remove_copied_untracked_source_plan() {
   if git ls-files --others --exclude-standard -- "$plan_file" | grep -Fxq "$plan_file" \
     && cmp -s "$plan_file" "$worktree_path/$plan_file"; then
     rm -f "$plan_file"
-    echo "[ContractWorktree] Moved untracked source plan into contract worktree: $plan_file"
+    start_notice "[ContractWorktree] Moved untracked source plan into contract worktree: $plan_file"
   fi
 }
 
@@ -395,7 +408,7 @@ clear_primary_markers_for_transferred_plan() {
 
   if marker_points_to_plan "$ACTIVE_PLAN_MARKER" "$plan_file"; then
     rm -f "$ACTIVE_PLAN_MARKER" "$ACTIVE_WORKTREE_MARKER"
-    echo "[ContractWorktree] Cleared primary active markers for transferred plan: $plan_file"
+    start_notice "[ContractWorktree] Cleared primary active markers for transferred plan: $plan_file"
   fi
 }
 
@@ -415,7 +428,8 @@ bootstrap_worktree_runtime() {
     && { [[ -f "$worktree_path/bun.lock" ]] || [[ -f "$worktree_path/bun.lockb" ]]; } \
     && command -v bun >/dev/null 2>&1 \
     && [[ ! -d "$worktree_path/node_modules" ]]; then
-    echo "[ContractWorktree] Installing dependencies (gates resolve archctx package-locally)"
+    [[ "${contract_worktree_start_json:-0}" -eq 1 ]] \
+      || printf '%s\n' "[ContractWorktree] Installing dependencies (gates resolve archctx package-locally)"
     if ! (cd "$worktree_path" && bun install --frozen-lockfile >/dev/null); then
       echo "[ContractWorktree] bun install --frozen-lockfile failed; no verification gate can run in this worktree" >&2
       return 1
@@ -428,7 +442,8 @@ bootstrap_worktree_runtime() {
   if [[ -d "$REPO_ROOT/.codegraph" ]] \
     && command -v codegraph >/dev/null 2>&1 \
     && [[ ! -f "$worktree_path/.codegraph/codegraph.db" ]]; then
-    echo "[ContractWorktree] Indexing CodeGraph (architecture projection requires code facts)"
+    [[ "${contract_worktree_start_json:-0}" -eq 1 ]] \
+      || printf '%s\n' "[ContractWorktree] Indexing CodeGraph (architecture projection requires code facts)"
     if ! (cd "$worktree_path" && codegraph init >/dev/null 2>&1); then
       echo "[ContractWorktree] codegraph init failed; architecture projection will report unresolved-major-change for every capability" >&2
       return 1
@@ -443,6 +458,8 @@ start_worktree() {
   local worktree_path=""
   local branch_name=""
   local run_plan_to_todo=1
+  local require_fresh=0
+  local output_json=0
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -465,6 +482,14 @@ start_worktree() {
         run_plan_to_todo=0
         shift
         ;;
+      --fresh)
+        require_fresh=1
+        shift
+        ;;
+      --json)
+        output_json=1
+        shift
+        ;;
       --help|-h)
         usage
         exit 0
@@ -480,36 +505,78 @@ start_worktree() {
   [[ -n "$plan_file" ]] || { echo "contract-worktree: start requires --plan" >&2; exit 2; }
   [[ -f "$plan_file" ]] || { echo "contract-worktree: plan file not found: $plan_file" >&2; exit 2; }
 
+  contract_worktree_start_json="$output_json"
+
   if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     echo "contract-worktree: not inside a git repository" >&2
     exit 2
   fi
 
   if is_linked_worktree; then
-    echo "[ContractWorktree] Already in a linked worktree: $REPO_ROOT"
+    if [[ "$require_fresh" -eq 1 ]]; then
+      echo "contract-worktree: --fresh refuses to reuse the current linked worktree: $REPO_ROOT" >&2
+      return 1
+    fi
+    if [[ "$output_json" -eq 1 ]]; then
+      write_start_json "$(pwd -P)" "$(git branch --show-current 2>/dev/null || true)" \
+        "$(pwd -P)/$plan_file" "already_linked"
+    else
+      echo "[ContractWorktree] Already in a linked worktree: $REPO_ROOT"
+    fi
     return 0
   fi
 
-  local slug branch_prefix base_branch existing_worktree base_commit source_commit new_branch=0
+  local slug branch_prefix base_branch existing_worktree base_commit source_commit new_branch=0 disposition metadata_file
   slug="$(derive_slug_from_plan "$plan_file")"
   branch_prefix="$(policy_get '.worktree_strategy.branch_prefix' 'codex/')"
   base_branch="$(policy_get '.worktree_strategy.base_branch' 'main')"
   source_commit="$(git rev-parse HEAD)"
   branch_name="${branch_name:-${branch_prefix}${slug}}"
   worktree_path="${worktree_path:-$(default_worktree_path "$slug")}"
+  metadata_file="$REPO_ROOT/.ai/harness/worktrees/${slug}.json"
+
+  if [[ "$require_fresh" -eq 1 && ( -e "$metadata_file" || -L "$metadata_file" ) ]]; then
+    echo "contract-worktree: --fresh refuses residual worktree metadata: $metadata_file" >&2
+    return 1
+  fi
+  if [[ "$require_fresh" -eq 1 && ( -e "$worktree_path" || -L "$worktree_path" ) ]]; then
+    echo "contract-worktree: --fresh refuses residual worktree path: $worktree_path" >&2
+    return 1
+  fi
 
   existing_worktree="$(find_worktree_for_branch "$branch_name" || true)"
   if [[ -n "$existing_worktree" ]]; then
+    if [[ "$require_fresh" -eq 1 ]]; then
+      echo "contract-worktree: --fresh refuses existing worktree for branch $branch_name: $existing_worktree" >&2
+      return 1
+    fi
     worktree_path="$existing_worktree"
-    echo "[ContractWorktree] Reusing existing worktree: $worktree_path"
+    disposition="reused_existing_worktree"
+    start_notice "[ContractWorktree] Reusing existing worktree: $worktree_path"
   elif git show-ref --verify --quiet "refs/heads/$branch_name"; then
-    git worktree add "$worktree_path" "$branch_name"
-    echo "[ContractWorktree] Added worktree for existing branch: $worktree_path"
+    if [[ "$require_fresh" -eq 1 ]]; then
+      echo "contract-worktree: --fresh refuses existing branch: $branch_name" >&2
+      return 1
+    fi
+    if [[ "$output_json" -eq 1 ]]; then
+      git worktree add "$worktree_path" "$branch_name" >&2
+    else
+      git worktree add "$worktree_path" "$branch_name"
+    fi
+    disposition="attached_existing_branch"
+    start_notice "[ContractWorktree] Added worktree for existing branch: $worktree_path"
   else
-    git worktree add "$worktree_path" -b "$branch_name" HEAD
+    if [[ "$output_json" -eq 1 ]]; then
+      git worktree add "$worktree_path" -b "$branch_name" HEAD >&2
+    else
+      git worktree add "$worktree_path" -b "$branch_name" HEAD
+    fi
     new_branch=1
-    echo "[ContractWorktree] Created worktree: $worktree_path"
+    disposition="created"
+    start_notice "[ContractWorktree] Created worktree: $worktree_path"
   fi
+
+  worktree_path="$(cd "$worktree_path" && pwd -P)"
 
   bootstrap_worktree_runtime "$worktree_path"
   copy_plan_into_worktree "$plan_file" "$worktree_path"
@@ -526,12 +593,20 @@ start_worktree() {
     cd "$worktree_path"
     write_start_metadata "$slug" "$plan_file" "$branch_name" "$worktree_path" "$base_branch" "$base_commit"
     if [[ "$run_plan_to_todo" -eq 1 && -f "$helper_dir/plan-to-todo.sh" ]]; then
-      REPO_HARNESS_TARGET_REPO_ROOT="$worktree_path" REPO_HARNESS_CONTRACT_WORKTREE=1 bash "$helper_dir/plan-to-todo.sh" --plan "$plan_file"
+      if [[ "$output_json" -eq 1 ]]; then
+        REPO_HARNESS_TARGET_REPO_ROOT="$worktree_path" REPO_HARNESS_CONTRACT_WORKTREE=1 bash "$helper_dir/plan-to-todo.sh" --plan "$plan_file" >&2
+      else
+        REPO_HARNESS_TARGET_REPO_ROOT="$worktree_path" REPO_HARNESS_CONTRACT_WORKTREE=1 bash "$helper_dir/plan-to-todo.sh" --plan "$plan_file"
+      fi
     fi
   )
 
-  echo "[ContractWorktree] Branch: $branch_name"
-  echo "[ContractWorktree] Plan: $worktree_path/$plan_file"
+  if [[ "$output_json" -eq 1 ]]; then
+    write_start_json "$worktree_path" "$branch_name" "$worktree_path/$plan_file" "$disposition"
+  else
+    echo "[ContractWorktree] Branch: $branch_name"
+    echo "[ContractWorktree] Plan: $worktree_path/$plan_file"
+  fi
 }
 
 status_worktree() {

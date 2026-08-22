@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-23T01:45:39+0800 -->
+<!-- updated_at: 2026-08-23T04:42:40+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-23T01:45:39+0800
-> **Source Branch**: codex/merge-readiness-v1
-> **Source Commit**: 53242a5c
+> **Updated At**: 2026-08-23T04:42:40+0800
+> **Source Branch**: codex/fleet-offer-acquire
+> **Source Commit**: f33f0582
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -56,18 +56,19 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 9 changed/untracked path(s)
+- Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260822-2240-merge-readiness-v1.md
- D tasks/contracts/20260822-2240-merge-readiness-v1.contract.md
- D tasks/notes/20260822-2240-merge-readiness-v1.notes.md
- D tasks/reviews/20260822-2240-merge-readiness-v1.review.md
-?? plans/archive/plan-20260822-2240-merge-readiness-v1.md
-?? tasks/archive/contract-20260823-0145-merge-readiness-v1.md
-?? tasks/archive/notes-20260823-0145-merge-readiness-v1.md
-?? tasks/archive/review-20260823-0145-merge-readiness-v1.md
-?? tasks/archive/todo-20260823-0145-merge-readiness-v1.md
+ D plans/plan-20260823-0202-fleet-offer-acquire.md
+ D tasks/contracts/20260823-0202-fleet-offer-acquire.contract.md
+ D tasks/notes/20260823-0202-fleet-offer-acquire.notes.md
+ D tasks/reviews/20260823-0202-fleet-offer-acquire.review.md
+ M tasks/todos.md
+?? plans/archive/plan-20260823-0202-fleet-offer-acquire.md
+?? tasks/archive/contract-20260823-0442-fleet-offer-acquire.md
+?? tasks/archive/notes-20260823-0442-fleet-offer-acquire.md
+?? tasks/archive/review-20260823-0442-fleet-offer-acquire.md
+?? tasks/archive/todo-20260823-0442-fleet-offer-acquire.md
 ```
 
 ## Source Artifacts

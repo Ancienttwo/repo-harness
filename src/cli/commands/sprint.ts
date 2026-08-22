@@ -1,5 +1,5 @@
 /**
- * `repo-harness sprint <claim|bind|begin-completion|abort-completion|release|steal|reconcile>`: the ownership
+ * `repo-harness sprint <claim|bind|write-claim-token|begin-completion|abort-completion|release|steal|reconcile>`: the ownership
  * verbs of the shared lease protocol.
  *
  * Every verb below is a pure command projection returning `CommandOutcome`;
@@ -48,6 +48,11 @@ import {
 import { appendAttemptReceipt } from '../../effects/state/attempt-ledger-store';
 import { legacyCutoverRefusal } from '../../effects/state/coordination-cutover';
 import {
+  writeClaimTokenForBoundLease,
+  type ClaimTokenV1,
+  type ClaimTokenWriteInput,
+} from '../../effects/state/coordination-claim-token';
+import {
   createLeaseDirectory,
   findLeaseByClaimId,
   readLease,
@@ -75,6 +80,7 @@ export interface CoordinationPort {
   readonly removeLease: (taskId: string, claimId: string) => void;
   readonly rollbackOwnLease: (taskId: string, claimId: string) => void;
   readonly findLeaseByClaimId: (claimId: string) => LeaseClaimLookup;
+  readonly writeClaimToken: (input: ClaimTokenWriteInput) => ClaimTokenV1;
   /**
    * Append one `resumed` attempt receipt to the execution worktree's own
    * ignored runtime ledger. Throws on failure; `bind` fails closed on it.
@@ -340,6 +346,52 @@ export interface BindCommandOptions {
   readonly worktree?: string;
   readonly branch?: string;
   readonly unitRef?: string;
+}
+
+export interface WriteClaimTokenCommandOptions {
+  readonly taskId?: string;
+  readonly claimId?: string;
+  readonly worktree?: string;
+  readonly sprintPath?: string;
+  readonly task?: string;
+  readonly unitRef?: string;
+}
+
+/**
+ * Publish a worktree-local capability only after the lease is already bound.
+ * This deliberately follows `bind` rather than participating in it: the
+ * token is a projection for shell/hooks, never lease authority, and failure
+ * leaves the bound lease intact for explicit compensation by its caller.
+ */
+export function writeClaimTokenSprintCommand(
+  options: WriteClaimTokenCommandOptions,
+  deps: SprintCommandDependencies,
+): CommandOutcome {
+  const taskId = requireOption(options.taskId, '--task-id');
+  if (isOutcome(taskId)) return taskId;
+  const claimId = requireOption(options.claimId, '--claim-id');
+  if (isOutcome(claimId)) return claimId;
+  const worktree = requireOption(options.worktree, '--worktree');
+  if (isOutcome(worktree)) return worktree;
+  const sprintPath = requireOption(options.sprintPath, '--sprint-path');
+  if (isOutcome(sprintPath)) return sprintPath;
+  const task = requireOption(options.task, '--task');
+  if (isOutcome(task)) return task;
+  const unitRef = requireOption(options.unitRef, '--unit-ref');
+  if (isOutcome(unitRef)) return unitRef;
+
+  try {
+    return ok(deps.coordination.writeClaimToken({
+      task_id: taskId,
+      claim_id: claimId,
+      worktree,
+      sprint: sprintPath,
+      task,
+      unit_ref: unitRef,
+    }));
+  } catch (error) {
+    return operationalFailure(error);
+  }
 }
 
 /**
@@ -769,6 +821,7 @@ export function processSprintDependencies(cwd: string): SprintCommandDependencie
       removeLease: (taskId, claimId) => removeLease(cwd, taskId, claimId),
       rollbackOwnLease: (taskId, claimId) => removeOwnLeaseAfterFailedClaim(cwd, taskId, claimId),
       findLeaseByClaimId: (claimId) => findLeaseByClaimId(cwd, claimId),
+      writeClaimToken: (input) => writeClaimTokenForBoundLease(cwd, input),
       appendResumedReceipt: (worktree, unitRef) => {
         // The ledger is the execution worktree's own ignored runtime evidence,
         // which is the only ledger `evaluateAttemptStall` is ever pointed at
@@ -828,6 +881,19 @@ export function buildSprintCommand(): Command {
     .requiredOption('--unit-ref <ref>', 'Plan or sprint ref the worktree executes')
     .action((opts: BindCommandOptions) => {
       writeOutcome(bindSprintCommand(opts, processSprintDependencies(process.cwd())));
+    });
+
+  sprint
+    .command('write-claim-token')
+    .description('Write a worktree claim token only for the exact current bound lease')
+    .requiredOption('--task-id <id>', 'Coordination task id')
+    .requiredOption('--claim-id <id>', 'Fencing token returned by claim')
+    .requiredOption('--worktree <path>', 'Bound execution worktree')
+    .requiredOption('--sprint-path <path>', 'Canonical sprint path')
+    .requiredOption('--task <task>', 'Exact canonical Task cell')
+    .requiredOption('--unit-ref <ref>', 'Bound plan or inline unit ref')
+    .action((opts: WriteClaimTokenCommandOptions) => {
+      writeOutcome(writeClaimTokenSprintCommand(opts, processSprintDependencies(process.cwd())));
     });
 
   sprint

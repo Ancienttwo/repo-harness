@@ -301,6 +301,18 @@ interface PublicationValidationEnvironment {
   readonly git_bin?: string;
   readonly merge_seal_path?: string;
   readonly checks_path?: string;
+  /** Optional transport-owned authorization recheck at the mutation boundary. */
+  readonly authorization_fence?: () => void;
+}
+
+function assertAuthorizationFence(environment: PublicationValidationEnvironment): void {
+  if (environment.authorization_fence === undefined) return;
+  try {
+    environment.authorization_fence();
+  } catch (error) {
+    if (error instanceof PublicationLifecycleError) throw error;
+    throw failure('publication_claim_mismatch', 'publication authorization changed before mutation', error);
+  }
 }
 
 function rebuildReceiptForPointer(
@@ -419,6 +431,7 @@ export function reopenPublication(input: ReopenPublicationInput): LeaseOwnerReco
         expectedHeadSha: input.expected_head_sha,
       });
       if (!transition.ok) throw failure(transition.error === 'publication_pointer_mismatch' ? 'publication_pointer_mismatch' : 'publication_claim_mismatch', transition.error);
+      assertAuthorizationFence(input);
       writeLeaseOwnerDurably(input.repo_root, input.task_id, transition.record);
       return transition.record;
     });
@@ -478,6 +491,7 @@ export function takeoverPublication(input: TakeoverPublicationInput): LeaseOwner
         const code = transition.error.includes('claim') ? 'publication_claim_mismatch' : 'publication_pointer_mismatch';
         throw failure(code, transition.error);
       }
+      assertAuthorizationFence(input);
       writeLeaseOwnerDurably(input.repo_root, input.task_id, transition.record);
       return transition.record;
     });

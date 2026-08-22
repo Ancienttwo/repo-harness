@@ -19,6 +19,7 @@ import type { McpProcessSessionManager } from './process-sessions';
 import { currentGitBranch, isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
 import { redactMcpText } from './redaction';
 import { buildStateToolDefinitions, callStateTool, isStateTool } from './state-tools';
+import { buildFleetToolDefinitions, callFleetTool, fleetToolArgumentError, isFleetTool } from './fleet-tools';
 import type { McpAgentRunnerName, McpPolicy } from './types';
 import type { WorkspaceManager } from './workspaces';
 
@@ -1042,6 +1043,7 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
     { name: 'list_prds', description: 'List PRD artifacts under plans/prds.', inputSchema: optionalRepoSchema, annotations: readOnly },
     { name: 'list_sprints', description: 'List sprint artifacts under plans/sprints.', inputSchema: optionalRepoSchema, annotations: readOnly },
     ...buildStateToolDefinitions(),
+    ...buildFleetToolDefinitions(),
     { name: 'write_prd', description: 'Write a PRD under plans/prds/*.prd.md.', inputSchema: markdownWriterSchema, annotations: write },
     { name: 'write_prd_from_idea', description: 'Turn a product idea into a strict-compatible draft PRD under plans/prds/*.prd.md.', inputSchema: ideaPrdSchema, annotations: write },
     { name: 'write_sprint', description: 'Write a sprint under plans/sprints/*.sprint.md.', inputSchema: markdownWriterSchema, annotations: write },
@@ -1159,6 +1161,11 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
       }, name);
       audit(ctx, name, 'ok', args);
       return textResult(result);
+    }
+    if (isFleetTool(name)) {
+      const argumentError = fleetToolArgumentError(name, args);
+      if (argumentError !== undefined) return errorResult('INVALID_ARGUMENT', argumentError);
+      return callFleetTool({ repoRoot: ctx.repoRoot, policy: ctx.policy }, name, args);
     }
     if (GUARDED_WRITE_TOOLS.includes(name)) {
       // The low-level SDK dispatch does not enforce per-tool inputSchema, so an

@@ -13,6 +13,7 @@ import {
   reopenPublication,
   takeoverPublication,
 } from '../../src/effects/publication/publication-lifecycle';
+import { PublicationLifecycleError } from '../../src/core/publication/publication-lifecycle';
 import { preparePublicationReceipt, ensurePublicationReceipt } from '../../src/effects/publication/publication-receipt';
 import { beginLeaseCompletionRecord, bindLeaseRecord, buildLeaseOwnerRecord, deriveTaskId, deriveTaskRevision } from '../../src/core/state/coordination-identity';
 import { createLeaseDirectory, readLease, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
@@ -179,6 +180,23 @@ describe('task-locked publication lifecycle', () => {
     expect(reopened).toMatchObject({ record_schema: 2, state: 'bound', current_publication: null, claim_id: CLAIM });
   }));
 
+  test('reopen authorization fence blocks the lease write after transport entry authorization is revoked', () => withFixture((fixture) => {
+    const receipt = createReceiptAndJournal(fixture);
+    const enterInput = { repo_root: fixture.root, task_id: fixture.taskId, claim_id: CLAIM, ship_transaction_key: fixture.shipKey, ship_journal_path: fixture.journal, gh_bin: fixture.gh, merge_seal_path: fixture.seal, checks_path: fixture.checks };
+    enterPublicationReviewing(enterInput);
+    const before = readLease(fixture.root, fixture.taskId).raw;
+    expect(() => reopenPublication({
+      ...enterInput,
+      expected_generation: 1,
+      publication_id: receipt.publication_id,
+      expected_head_sha: receipt.head_sha,
+      authorization_fence: () => {
+        throw new PublicationLifecycleError('publication_claim_mismatch', 'authorization was revoked before reopen mutation');
+      },
+    })).toThrow('authorization was revoked before reopen mutation');
+    expect(readLease(fixture.root, fixture.taskId).raw).toBe(before);
+  }));
+
   test('takeover writes reserving and abandon persists lineage before removing the lease', () => withFixture((fixture) => {
     const receipt = createReceiptAndJournal(fixture);
     enterPublicationReviewing({ repo_root: fixture.root, task_id: fixture.taskId, claim_id: CLAIM, ship_transaction_key: fixture.shipKey, ship_journal_path: fixture.journal, gh_bin: fixture.gh, merge_seal_path: fixture.seal, checks_path: fixture.checks });
@@ -212,6 +230,32 @@ describe('task-locked publication lifecycle', () => {
       expect(existsSync(lineagePath)).toBe(true);
       expect(JSON.parse(readFileSync(lineagePath, 'utf-8')).reason).toBe('closed unmerged');
     } finally { process.env = previous; rmSync(second.root, { recursive: true, force: true }); }
+  }));
+
+  test('takeover authorization fence blocks the lease write after transport entry authorization is revoked', () => withFixture((fixture) => {
+    const receipt = createReceiptAndJournal(fixture);
+    const enterInput = { repo_root: fixture.root, task_id: fixture.taskId, claim_id: CLAIM, ship_transaction_key: fixture.shipKey, ship_journal_path: fixture.journal, gh_bin: fixture.gh, merge_seal_path: fixture.seal, checks_path: fixture.checks };
+    enterPublicationReviewing(enterInput);
+    const before = readLease(fixture.root, fixture.taskId).raw;
+    expect(() => takeoverPublication({
+      repo_root: fixture.root,
+      task_id: fixture.taskId,
+      expected_claim_id: CLAIM,
+      expected_generation: 1,
+      publication_id: receipt.publication_id,
+      expected_head_sha: receipt.head_sha,
+      reason: 'CI repair',
+      session_id: 'session-two',
+      new_claim_id: 'claim-two',
+      source_worktree: fixture.root,
+      gh_bin: fixture.gh,
+      merge_seal_path: fixture.seal,
+      checks_path: fixture.checks,
+      authorization_fence: () => {
+        throw new PublicationLifecycleError('publication_claim_mismatch', 'authorization was revoked before takeover mutation');
+      },
+    })).toThrow('authorization was revoked before takeover mutation');
+    expect(readLease(fixture.root, fixture.taskId).raw).toBe(before);
   }));
 
   test('reopen revalidates the live marker/provider receipt before any lease mutation', () => withFixture((fixture) => {

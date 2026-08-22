@@ -714,16 +714,22 @@ claim_token_field() {
 }
 
 write_claim_token() {
-  local tree="$1" task_id="$2" claim_id="$3" sprint_path="$4" task_cell="$5" unit_ref="$6"
-  local dir="$tree/$(claim_token_dir)"
-  mkdir -p "$dir"
-  {
-    printf 'claim_id=%s\n' "$claim_id"
-    printf 'task_id=%s\n' "$task_id"
-    printf 'sprint=%s\n' "$sprint_path"
-    printf 'task=%s\n' "$task_cell"
-    printf 'unit_ref=%s\n' "$unit_ref"
-  } > "$dir/${task_id}.claim"
+  local tree="$1" task_id="$2" claim_id="$3" sprint_path="$4" task_cell="$5" unit_ref="$6" output
+  # Token bytes are a worktree-local capability, but their publication must
+  # still prove the shared lease's exact bound owner under the task lock. The
+  # CLI is the one writer; a shell redirect here would reopen a stale-token
+  # TOCTOU between bind and the hook projection.
+  if ! output="$(sprint_lease write-claim-token \
+    --task-id "$task_id" \
+    --claim-id "$claim_id" \
+    --worktree "$tree" \
+    --sprint-path "$sprint_path" \
+    --task "$task_cell" \
+    --unit-ref "$unit_ref" 2>&1)"; then
+    printf '%s\n' "$output" >&2
+    echo "sprint-backlog: could not write the lock-checked claim token for '${task_cell}'" >&2
+    return 1
+  fi
 }
 
 # 0 with the token path on stdout, 1 when this tree holds none, 2 when more
@@ -881,7 +887,7 @@ bind_claim() {
   if ! output="$(sprint_lease bind --claim-id "$claim_id" --worktree "$worktree" --branch "$branch" --unit-ref "$unit_ref" 2>&1)"; then
     printf '%s\n' "$output" >&2
     echo "sprint-backlog: could not bind claim ${claim_id} to ${worktree}" >&2
-    exit 1
+    return 1
   fi
 }
 
@@ -1091,10 +1097,16 @@ BODY_EOF
     printf '%s\n' "$capture_output"
     # Inline work executes here, so this tree is the execution worktree and the
     # bind can happen immediately.
-    bind_claim "$claim_id" "$(pwd -P)" "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || printf 'HEAD')" \
-      "inline:${sprint_file}#${target_index}"
-    write_claim_token "." "$task_id" "$claim_id" "$sprint_file" "$target_task" \
-      "inline:${sprint_file}#${target_index}"
+    if ! bind_claim "$claim_id" "$(pwd -P)" "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || printf 'HEAD')" \
+      "inline:${sprint_file}#${target_index}"; then
+      rollback_claim "$claim_id"
+      exit 1
+    fi
+    if ! write_claim_token "." "$task_id" "$claim_id" "$sprint_file" "$target_task" \
+      "inline:${sprint_file}#${target_index}"; then
+      rollback_claim "$claim_id"
+      exit 1
+    fi
     echo "Backlog row ${target_index} ('${target_task}') is inline; appended checklist row(s) to the active plan without plan/contract/review/notes projection."
     return 0
   fi
@@ -1159,17 +1171,24 @@ BODY_EOF
 
   # Bind the reservation to the execution worktree once it exists. Without
   # --execute (or with worktree creation disabled by policy) there is no
-  # worktree to name, so the lease stays `reserving` and the token stays here.
+  # worktree to name, so the lease deliberately stays `reserving` with no
+  # claim token. A token is a bound-worktree capability, never evidence that a
+  # primary-tree reservation may execute or complete the contract row.
   local worktree_path worktree_branch worktree_abs
   worktree_path="$(printf '%s\n' "$capture_output" | sed -nE 's/^\[ContractWorktree\] (Created worktree|Added worktree for existing branch|Reusing existing worktree): (.+)$/\2/p' | tail -1)"
   worktree_branch="$(printf '%s\n' "$capture_output" | sed -nE 's/^\[ContractWorktree\] Branch: (.+)$/\1/p' | tail -1)"
   if [[ -n "$worktree_path" && -n "$worktree_branch" && -d "$worktree_path" ]]; then
     worktree_abs="$(cd "$worktree_path" && pwd -P)"
-    bind_claim "$claim_id" "$worktree_abs" "$worktree_branch" "$plan_path"
-    write_claim_token "$worktree_abs" "$task_id" "$claim_id" "$sprint_file" "$target_task" "$plan_path"
+    if ! bind_claim "$claim_id" "$worktree_abs" "$worktree_branch" "$plan_path"; then
+      rollback_claim "$claim_id"
+      exit 1
+    fi
+    if ! write_claim_token "$worktree_abs" "$task_id" "$claim_id" "$sprint_file" "$target_task" "$plan_path"; then
+      rollback_claim "$claim_id"
+      exit 1
+    fi
   else
-    write_claim_token "." "$task_id" "$claim_id" "$sprint_file" "$target_task" "$plan_path"
-    echo "sprint-backlog: no execution worktree was created; claim ${claim_id} stays reserving until 'repo-harness sprint bind' names one" >&2
+    echo "sprint-backlog: no execution worktree was created; claim ${claim_id} stays reserving without a token until 'repo-harness sprint bind' names one" >&2
   fi
 
   # Contract mode: the plan moves into a worktree branched from HEAD, so

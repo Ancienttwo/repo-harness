@@ -57,6 +57,18 @@ export interface RepoHarnessRegistryBatchResult {
   readonly repos: readonly RepoHarnessRegisteredRepo[];
 }
 
+/**
+ * One read of the registry authority.  `repos` and
+ * `authorizationRevision` come from the same atomically replaced file, so a
+ * caller cannot accidentally pair an authorization fence from one revision
+ * with repository rows from another.
+ */
+export interface RepoHarnessRegistrySnapshot {
+  readonly registryPath: string;
+  readonly authorizationRevision: number;
+  readonly repos: readonly RepoHarnessRegisteredRepo[];
+}
+
 function repoHarnessHome(env: NodeJS.ProcessEnv = process.env): string {
   return resolve(env.REPO_HARNESS_HOME ?? join(env.HOME ?? env.USERPROFILE ?? homedir(), ".repo-harness"));
 }
@@ -239,11 +251,30 @@ export function readRegisteredRepoHarnessRepos(opts: {
   readonly env?: NodeJS.ProcessEnv;
   readonly adoptedOnly?: boolean;
 } = {}): RepoHarnessRegisteredRepo[] {
-  const path = repoHarnessRegisteredReposPath(opts.env);
-  const repos = dedupeRepos(readRegistryFile(path).repos);
-  return opts.adoptedOnly === true
-    ? repos.filter((repo) => isRepoHarnessAdoptedPath(repo.path))
-    : repos;
+  return [...readRepoHarnessRegistrySnapshot(opts).repos];
+}
+
+/**
+ * Read the registry once and return a coherent authorization snapshot.  The
+ * registry writer uses temp+rename, so `readFileSync` observes either the old
+ * complete document or the new complete document, never a partially-written
+ * one.  Filtering adopted repos happens after the parse but remains part of
+ * this one returned snapshot.
+ */
+export function readRepoHarnessRegistrySnapshot(opts: {
+  readonly env?: NodeJS.ProcessEnv;
+  readonly adoptedOnly?: boolean;
+} = {}): RepoHarnessRegistrySnapshot {
+  const registryPath = repoHarnessRegisteredReposPath(opts.env);
+  const registry = readRegistryFile(registryPath);
+  const repos = dedupeRepos(registry.repos).filter((repo) => (
+    opts.adoptedOnly !== true || isRepoHarnessAdoptedPath(repo.path)
+  ));
+  return Object.freeze({
+    registryPath,
+    authorizationRevision: registry.authorizationRevision,
+    repos: Object.freeze(repos.map((repo) => Object.freeze({ ...repo }))),
+  });
 }
 
 export function repoHarnessAuthorizationRevision(env: NodeJS.ProcessEnv = process.env): number {

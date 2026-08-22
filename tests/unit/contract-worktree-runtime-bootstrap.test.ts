@@ -78,6 +78,13 @@ describe("contract-worktree runtime bootstrap: wiring", () => {
     expect(body).toContain("no verification gate can run in this worktree");
     expect(body).toContain("unresolved-major-change for every capability");
   });
+
+  test("the extracted bootstrap has no dependency on the surrounding start helper", () => {
+    const body = sourceOf(COPIES[0]);
+    const bootstrap = body.match(/^bootstrap_worktree_runtime\(\) \{[\s\S]*?^}/m)?.[0] ?? "";
+    expect(bootstrap).not.toContain("start_notice");
+    expect(bootstrap).toContain("contract_worktree_start_json");
+  });
 });
 
 describe("contract-worktree runtime bootstrap: behavior", () => {
@@ -117,6 +124,7 @@ describe("contract-worktree runtime bootstrap: behavior", () => {
       writeFileSync(join(shim, "codegraph"), "#!/bin/sh\nmkdir -p .codegraph\ntouch .codegraph/codegraph.db\n", { mode: 0o755 });
       const result = runBootstrap(COPIES[0], worktree, repoRoot, `${shim}:${process.env.PATH ?? ""}`);
       expect(result.status).toBe(0);
+      expect(result.stdout).toContain("[ContractWorktree] Indexing CodeGraph");
       expect(existsSync(join(worktree, ".codegraph", "codegraph.db"))).toBe(true);
     } finally {
       rmSync(shim, { recursive: true, force: true });
