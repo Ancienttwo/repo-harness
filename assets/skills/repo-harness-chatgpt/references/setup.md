@@ -13,6 +13,72 @@ source.
 - ChatGPT Pro Web access is not OpenAI API quota or an API key substitute;
   never create API keys or billing projects from a ChatGPT Pro subscription.
 
+## Advisory Orchestration Enablement (Explicit Opt-In)
+
+Use this lane only after the user explicitly enables GPT Pro orchestration for
+the current repository and task. Enablement is task-scoped guidance, not a new
+install profile, managed fleet role, persistent schema, or grant of local
+write/lease/acceptance authority. Do not start an orchestration conversation
+until every prerequisite below is observable; a missing prerequisite returns
+to this guide and stops closed.
+
+1. Project the canonical Skill from a durable checkout, if it is not already
+   discoverable:
+
+   ```bash
+   repo-harness chatgpt install-skill --target both
+   ```
+
+   Use `--dry-run` first when inspecting an unfamiliar host. A projection from
+   a contract worktree is verification-only because worktree cleanup can leave
+   a dangling symlink; re-project from the durable checkout before use.
+2. Check the selected ChatGPT Web browser path (including the Codex built-in
+   browser/IAB when that is the transport) and the visible Pro model. For
+   Oracle, run:
+
+   ```bash
+   repo-harness chatgpt browser-doctor --repo <repo> --provider oracle --json
+   ```
+
+   The user must resolve sign-in, captcha, SSO, or model-plan prompts in the
+   browser. Never request credentials or switch silently to native/CDP.
+3. If the orchestration prompt needs the repo-harness ChatGPT Connector,
+   configure and verify that local server separately:
+
+   ```bash
+   repo-harness mcp setup chatgpt --repo <repo> --server-name <name>
+   repo-harness mcp doctor --repo <repo> --json
+   ```
+
+   `chatgpt.serverNameConfigured:true` and the expected server name are
+   required before starting a sidecar. This local Connector is not a substitute
+   for the user's separately authorized GitHub Connector in ChatGPT Web.
+4. In ChatGPT Web, select the user's authorized GitHub Connector for the new
+   conversation. Record the canonical repository, target ref, and exact remote
+   commit SHA that the task is allowed to use. A model claim that it used
+   GitHub MCP is not invocation evidence; the orchestration protocol classifies
+   observable use as `verified`, exact supplied context as `bundle_only`, and
+   everything else as `unverified`.
+5. Snapshot the local worktree separately from the remote facts. Include the
+   current base commit, tracked diff, and hashed untracked-file manifest only
+   through the existing policy-checked bundle path; this is the local delta
+   identity used by the review loop. Before any real submission,
+   run the exact prompt through the fail-closed secret gate:
+
+   ```bash
+   repo-harness chatgpt browser-consult \
+     --repo <repo> --provider oracle --dry-run --secret-scan \
+     --prompt "<orchestration brief>" --file <safe-context-file>
+   ```
+
+   Compare the saved `prompt.md` hash with the scan receipt; do not add an
+   unscanned attachment or paste a changed local delta into the browser.
+6. Only after the checklist passes, read `references/orchestrate.md` and start
+   the plan/review loop. If the remote SHA, local-delta hash, Connector
+   visibility, Pro model, attachment, generation completion, or conversation
+   handle cannot be verified, stop without transport fallback or inferred
+   success.
+
 ## Host Skill Projection
 
 The canonical package remains under
