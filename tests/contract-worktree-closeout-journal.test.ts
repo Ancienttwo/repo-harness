@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from "fs";
 import { tmpdir } from "os";
-import { join } from "path";
+import { dirname, join } from "path";
 import { spawn, spawnSync } from "child_process";
 import { withRepo, resolveFixtureState } from "./state/effective-state-fixture";
 
@@ -52,6 +52,11 @@ function runProcess(command: string, args: string[], cwd: string, env: NodeJS.Pr
   return spawnSync(command, args, { cwd, encoding: "utf-8", env: fixtureEnv(env) });
 }
 
+function fixtureCliEnv(cwd: string): NodeJS.ProcessEnv {
+  const cli = join(dirname(cwd), "fixture-publication-cli.sh");
+  return existsSync(cli) ? { REPO_HARNESS_CLI_BIN: cli } : {};
+}
+
 function runHelper(script: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = {}) {
   return spawnSync("bash", [script, ...args], {
     cwd,
@@ -59,6 +64,7 @@ function runHelper(script: string, args: string[], cwd: string, env: NodeJS.Proc
     env: fixtureEnv({
       REPO_HARNESS_BUN_BIN: process.execPath,
       REPO_HARNESS_WORKFLOW_STATE_LIB: join(cwd, ".ai/hooks/lib/workflow-state.sh"),
+      ...fixtureCliEnv(cwd),
       ...env,
     }),
   });
@@ -71,6 +77,7 @@ function runHelperAsync(script: string, args: string[], cwd: string, env: NodeJS
       env: fixtureEnv({
         REPO_HARNESS_BUN_BIN: process.execPath,
         REPO_HARNESS_WORKFLOW_STATE_LIB: join(cwd, ".ai/hooks/lib/workflow-state.sh"),
+        ...fixtureCliEnv(cwd),
         ...env,
       }),
     });
@@ -101,6 +108,7 @@ function runHelperWithFault(
       env: fixtureEnv({
         REPO_HARNESS_BUN_BIN: process.execPath,
         REPO_HARNESS_WORKFLOW_STATE_LIB: join(cwd, ".ai/hooks/lib/workflow-state.sh"),
+        ...fixtureCliEnv(cwd),
         FAULT_PID_FILE: pidFile,
         ...env,
       }),
@@ -323,6 +331,7 @@ function installFixture(container: string): Fixture {
       "",
       "```yaml",
       "allowed_paths:",
+      "  - .ai/harness/",
       "  - plans/",
       "  - tasks/",
       "```",
@@ -919,6 +928,38 @@ describe("ship-worktrees closeout journal", () => {
 
   function installShipFixture(container: string): ShipFixture {
     const fixture = installFixture(container);
+    mkdirSync(join(fixture.linked, ".ai/harness/sprint/claims"), { recursive: true });
+    writeFileSync(
+      join(fixture.linked, ".ai/harness/sprint/claims/demo.claim"),
+      `claim_id=fixture-claim\ntask_id=${"a".repeat(64)}\nsprint=${SPRINT}\ntask=demo\nunit_ref=${PLAN}\n`,
+    );
+    writeExecutable(
+      join(container, "fixture-publication-cli.sh"),
+      [
+        "#!/bin/bash",
+        "set -euo pipefail",
+        'if [[ "${1:-}" == "sprint" ]]; then printf \'{"ok":true}\\n\'; exit 0; fi',
+        'if [[ "${1:-}" == "publication" && "${2:-}" == "receipt" && "${3:-}" == "prepare" ]]; then',
+        `  printf '%s\\n' '{"action":"create","create_intent":{"claim_id":"fixture-claim","generation":1,"head_sha":"${"c".repeat(40)}","kind":"repo-harness-publication-create-intent","protocol":1,"provider_repo_id":"R_fixture","publication_id":"sha256:${"a".repeat(64)}","task_id":"${"a".repeat(64)}"},"kind":"repo-harness-publication-prepare","protocol":1}'`,
+        "  exit 0",
+        "fi",
+        'if [[ "${1:-}" == "publication" && "${2:-}" == "receipt" && "${3:-}" == "validate-journal-envelope" ]]; then',
+        '  [[ "${4:-}" == "--kind" && "${6:-}" == "--json" ]] || exit 2',
+        '  [[ "$7" != *"fixture-log-noise"* ]] || { echo "invalid journal envelope" >&2; exit 41; }',
+        '  printf \'%s\\n\' "$7"',
+        "  exit 0",
+        "fi",
+        'if [[ "${1:-}" == "publication" && "${2:-}" == "receipt" && "${3:-}" == "ensure" ]]; then',
+        '  if [[ "${FAULT_ON_PUBLICATION_ENSURE:-0}" == "1" && -n "${FAULT_PID_FILE:-}" && -f "$FAULT_PID_FILE" ]]; then kill -9 "$(cat "$FAULT_PID_FILE")" 2>/dev/null || true; exit 137; fi',
+        '  [[ "${FIXTURE_PUBLICATION_ENSURE_LOG_NOISE:-0}" != "1" ]] || printf \'fixture-log-noise\\n\'',
+        `  printf '%s\\n' '{"provider_repo_id":"R_fixture","provider_pr_number":1,"publication_id":"sha256:${"a".repeat(64)}","receipt_digest":"sha256:${"b".repeat(64)}"}'`,
+        "  exit 0",
+        "fi",
+        'echo "unexpected fixture CLI invocation: $*" >&2',
+        "exit 2",
+        "",
+      ].join("\n"),
+    );
     const remote = join(container, "remote.git");
     expect(runProcess("git", ["init", "--bare", "-b", "main", remote], container).status).toBe(0);
     expect(runProcess("git", ["remote", "add", "origin", remote], fixture.primary).status).toBe(0);
@@ -1088,8 +1129,17 @@ describe("ship-worktrees closeout journal", () => {
       const dir = onlyJournal(fixture, "ship");
       const journal = readJournal(dir);
       expect(journal.status).toBe("in_progress");
-      expect(journal.phases).toEqual(["prepared", "gate_sealed", "pushed", "pr_observed"]);
+      expect(journal.phases).toEqual(["prepared", "gate_sealed", "pushed", "publication_create_intent", "pr_observed"]);
       expect(journal.phases).not.toContain("complete");
+      const raw = JSON.parse(readFileSync(join(dir, "status.json"), "utf-8")) as {
+        phases: { phase: string; publication?: Record<string, unknown> }[];
+      };
+      expect(raw.phases.find((entry) => entry.phase === "pr_observed")?.publication).toEqual({
+        provider_repo_id: "R_fixture",
+        provider_pr_number: 1,
+        publication_id: `sha256:${"a".repeat(64)}`,
+        receipt_digest: `sha256:${"b".repeat(64)}`,
+      });
 
       // Both external effects already happened: the push landed and the PR exists.
       const remoteSha = runProcess("git", ["rev-parse", "refs/heads/codex/demo"], fixture.remote).stdout.trim();
@@ -1136,8 +1186,78 @@ describe("ship-worktrees closeout journal", () => {
 
       const done = readJournal(dir);
       expect(done.status).toBe("complete");
-      expect(done.phases).toEqual(["prepared", "gate_sealed", "pushed", "pr_observed", "complete"]);
+      expect(done.phases).toEqual(["prepared", "gate_sealed", "pushed", "publication_create_intent", "pr_observed", "complete"]);
       expect(existsSync(join(dir, "snapshot"))).toBe(false);
+    });
+  }, 30_000);
+
+  test("crash after PR creation before first marker reuses only the durable create intent", () => {
+    withTempRepo("closeout-journal-ship-publication-intent", (container) => {
+      const fixture = installShipFixture(container);
+      const crashed = runHelperWithFault(
+        "scripts/ship-worktrees.sh",
+        ["--target", "main", "--remote", "origin"],
+        fixture.linked,
+        fixture.pidFile,
+        {
+          REPO_HARNESS_GH_BIN: fixture.ghBin,
+          GH_LOG: fixture.ghLog,
+          FAULT_ON_PUBLICATION_ENSURE: "1",
+        },
+      );
+      expect(crashed.status).not.toBe(0);
+
+      const dir = onlyJournal(fixture, "ship");
+      const before = JSON.parse(readFileSync(join(dir, "status.json"), "utf-8")) as {
+        phases: { phase: string; publication?: Record<string, unknown> }[];
+      };
+      expect(before.phases.map((phase) => phase.phase)).toEqual([
+        "prepared", "gate_sealed", "pushed", "publication_create_intent",
+      ]);
+      expect(before.phases.find((phase) => phase.phase === "publication_create_intent")?.publication).toEqual({
+        action: "create",
+        create_intent: {
+          claim_id: "fixture-claim",
+          generation: 1,
+          head_sha: "c".repeat(40),
+          kind: "repo-harness-publication-create-intent",
+          protocol: 1,
+          provider_repo_id: "R_fixture",
+          publication_id: `sha256:${"a".repeat(64)}`,
+          task_id: "a".repeat(64),
+        },
+        kind: "repo-harness-publication-prepare",
+        protocol: 1,
+      });
+
+      const reconciled = runHelper("scripts/ship-worktrees.sh", ["--recover", "reconcile"], fixture.linked, {
+        REPO_HARNESS_GH_BIN: fixture.ghBin,
+        GH_LOG: fixture.ghLog,
+      });
+      expect(reconciled.status, `${reconciled.stdout}\n${reconciled.stderr}`).toBe(0);
+      expect(readFileSync(fixture.ghLog, "utf-8").split("\n").filter((line) => line.startsWith("pr create"))).toHaveLength(1);
+      expect(readJournal(dir).phases).toEqual([
+        "prepared", "gate_sealed", "pushed", "publication_create_intent", "pr_observed", "complete",
+      ]);
+    });
+  }, 30_000);
+
+  test("rejects malformed publication CLI stdout instead of embedding tool noise in the journal", () => {
+    withTempRepo("closeout-journal-ship-publication-noise", (container) => {
+      const fixture = installShipFixture(container);
+      const failed = runHelper("scripts/ship-worktrees.sh", ["--target", "main", "--remote", "origin"], fixture.linked, {
+        REPO_HARNESS_GH_BIN: fixture.ghBin,
+        GH_LOG: fixture.ghLog,
+        FIXTURE_PUBLICATION_ENSURE_LOG_NOISE: "1",
+      });
+      expect(failed.status).toBe(1);
+      expect(failed.stderr).toContain("publication ensure output is not one canonical journal envelope");
+      const dir = onlyJournal(fixture, "ship");
+      const raw = readFileSync(join(dir, "status.json"), "utf-8");
+      expect(raw).not.toContain("fixture-log-noise");
+      expect(readJournal(dir).phases).toEqual([
+        "prepared", "gate_sealed", "pushed", "publication_create_intent",
+      ]);
     });
   }, 30_000);
 
@@ -1161,7 +1281,7 @@ describe("ship-worktrees closeout journal", () => {
       const dir = onlyJournal(fixture, "ship");
       const journal = readJournal(dir);
       expect(journal.status).toBe("in_progress");
-      expect(journal.phases).toEqual(["prepared", "gate_sealed", "pushed"]);
+      expect(journal.phases).toEqual(["prepared", "gate_sealed", "pushed", "publication_create_intent"]);
 
       // The external effect is real: the branch is on the remote already.
       const remoteSha = runProcess("git", ["rev-parse", "refs/heads/codex/demo"], fixture.remote).stdout.trim();
@@ -1170,7 +1290,7 @@ describe("ship-worktrees closeout journal", () => {
 
       const inspect = runHelper("scripts/ship-worktrees.sh", ["--recover", "inspect"], fixture.linked);
       expect(inspect.status, `${inspect.stdout}\n${inspect.stderr}`).toBe(0);
-      expect(inspect.stdout).toContain("last phase: pushed");
+      expect(inspect.stdout).toContain("last phase: publication_create_intent");
       expect(inspect.stdout).toContain(dir);
 
       // A plain rerun fails closed, and abort is refused after the push.
@@ -1202,7 +1322,7 @@ describe("ship-worktrees closeout journal", () => {
 
       const done = readJournal(dir);
       expect(done.status).toBe("complete");
-      expect(done.phases).toEqual(["prepared", "gate_sealed", "pushed", "pr_observed", "complete"]);
+      expect(done.phases).toEqual(["prepared", "gate_sealed", "pushed", "publication_create_intent", "pr_observed", "complete"]);
     });
   }, 30_000);
 
@@ -1253,7 +1373,7 @@ describe("ship-worktrees closeout journal", () => {
       });
       expect(reconcile.status, `${reconcile.stdout}\n${reconcile.stderr}`).toBe(0);
       expect(reconcile.stdout).not.toContain("git push");
-      expect(readJournal(dir).phases).toEqual(["prepared", "gate_sealed", "pushed", "pr_observed", "complete"]);
+      expect(readJournal(dir).phases).toEqual(["prepared", "gate_sealed", "pushed", "publication_create_intent", "pr_observed", "complete"]);
       expect(runProcess("git", ["rev-parse", "refs/heads/codex/demo"], fixture.remote).stdout.trim()).toBe(remoteSha);
     });
   }, 30_000);

@@ -380,13 +380,22 @@ closeout_journal_has_phase() {
 closeout_journal_phase_ref() {
   local file="$1/status.json" name="$2"
   [[ -f "$file" ]] || return 1
-  sed -n "s/^    {\"phase\": \"${name}\", \"at\": \"[^\"]*\", \"ref\": \"\([^\"]*\)\"}.*\$/\1/p" "$file" | tail -1
+  sed -n "s/^    {\"phase\": \"${name}\", \"at\": \"[^\"]*\", \"ref\": \"\([^\"]*\)\".*\$/\1/p" "$file" | tail -1
+}
+
+# Publication payloads are emitted as one canonical JSON line by the trusted
+# CLI. This reads only that durable carrier; validation happens in the CLI
+# before any retry is allowed to reuse it.
+closeout_journal_phase_publication() {
+  local file="$1/status.json" name="$2"
+  [[ -f "$file" ]] || return 1
+  sed -n "/^    {\"phase\": \"${name}\", / { s/^.*\"publication\": //; s/,$//; s/}$//; p; }" "$file" | tail -1
 }
 
 # Rewrites the whole status document so the phase list has exactly one authority
 # and lands in one atomic rename. An empty phase name only flips the status.
 closeout_journal_record() {
-  local dir="$1" status_value="$2" name="$3" ref="${4:-}"
+  local dir="$1" status_value="$2" name="$3" ref="${4:-}" publication="${5:-}"
   local file="$dir/status.json"
   local -a lines=()
   local line stamp index
@@ -398,7 +407,13 @@ closeout_journal_record() {
   fi
   stamp="$(date '+%Y-%m-%dT%H:%M:%S%z')"
   if [[ -n "$name" ]]; then
-    lines+=("{\"phase\": \"$(json_escape "$name")\", \"at\": \"$stamp\", \"ref\": \"$(json_escape "$ref")\"}")
+    if [[ -n "$publication" ]]; then
+      # The trusted publication CLI emits this canonical JSON object. It is
+      # journal evidence, not workflow state, and supports crash convergence.
+      lines+=("{\"phase\": \"$(json_escape "$name")\", \"at\": \"$stamp\", \"ref\": \"$(json_escape "$ref")\", \"publication\": $publication}")
+    else
+      lines+=("{\"phase\": \"$(json_escape "$name")\", \"at\": \"$stamp\", \"ref\": \"$(json_escape "$ref")\"}")
+    fi
   fi
   {
     printf '{\n'
@@ -665,7 +680,7 @@ ship_transaction_begin() {
 # rollback, because by then the push is already an external effect.
 ship_transaction_phase() {
   [[ -n "$closeout_journal_dir" ]] || return 0
-  closeout_journal_record "$closeout_journal_dir" in_progress "$1" "${2:-}"
+  closeout_journal_record "$closeout_journal_dir" in_progress "$1" "${2:-}" "${3:-}"
 }
 
 ship_transaction_complete() {
@@ -1018,6 +1033,170 @@ create_or_report_pr() {
   fail "gh pr create failed for $branch (exit $status)"
 }
 
+# A claim token is only a locator. The publication CLI re-reads the shared
+# common-dir lease owner record before it reads task_revision or generation.
+publication_claim_id=""
+publication_task_id=""
+publication_journal_payload=""
+publication_create_intent=""
+publication_create_intent_journal=""
+publication_cli_stdout=""
+publication_cli_stderr=""
+
+resolve_publication_claim_token() {
+  local marker dir token
+  publication_claim_id=""
+  publication_task_id=""
+  publication_token_file=""
+  marker="$(policy_get '.sprints.active_marker_file' '.ai/harness/sprint/active-sprint')"
+  dir="$(dirname "$marker")/claims"
+  [[ -d "$dir" ]] || return 1
+  for token in "$dir"/*.claim; do
+    [[ -f "$token" ]] || continue
+    [[ -z "$publication_token_file" ]] || return 1
+    publication_token_file="$token"
+  done
+  [[ -n "$publication_token_file" ]] || return 1
+  publication_claim_id="$(sed -n 's/^claim_id=//p' "$publication_token_file" | head -1)"
+  publication_task_id="$(sed -n 's/^task_id=//p' "$publication_token_file" | head -1)"
+  [[ -n "$publication_claim_id" && -n "$publication_task_id" ]]
+}
+
+publication_cli() {
+  if [[ -n "${REPO_HARNESS_CLI_BIN:-}" ]]; then
+    is_trusted_executable "$REPO_HARNESS_CLI_BIN" || return 1
+    "$REPO_HARNESS_CLI_BIN" publication receipt "$@"
+  elif [[ -n "$BUN_BIN" ]] && is_trusted_executable "$BUN_BIN" && [[ -f "src/cli/index.ts" ]]; then
+    "$BUN_BIN" "src/cli/index.ts" publication receipt "$@"
+  elif command -v repo-harness >/dev/null 2>&1; then
+    repo-harness publication receipt "$@"
+  else
+    return 1
+  fi
+}
+
+# Keep trusted CLI stdout separate from diagnostics. The journal consumes only
+# a revalidated single JSON envelope; provider/tool log noise is never embedded.
+publication_cli_capture() {
+  local stdout_file stderr_file status
+  publication_cli_stdout=""
+  publication_cli_stderr=""
+  stdout_file="$(mktemp "${TMPDIR:-/tmp}/repo-harness-publication.stdout.XXXXXX")" || return 1
+  stderr_file="$(mktemp "${TMPDIR:-/tmp}/repo-harness-publication.stderr.XXXXXX")" || {
+    rm -f "$stdout_file"
+    return 1
+  }
+  if publication_cli "$@" >"$stdout_file" 2>"$stderr_file"; then
+    status=0
+  else
+    status=$?
+  fi
+  publication_cli_stdout="$(<"$stdout_file")"
+  publication_cli_stderr="$(<"$stderr_file")"
+  rm -f "$stdout_file" "$stderr_file"
+  return "$status"
+}
+
+validate_publication_journal_envelope() {
+  local kind="$1" payload="$2"
+  [[ -n "$payload" ]] || return 1
+  if ! publication_cli_capture validate-journal-envelope --kind "$kind" --json "$payload"; then
+    [[ -z "$publication_cli_stderr" ]] || printf '%s\n' "$publication_cli_stderr" >&2
+    return 1
+  fi
+  [[ -z "$publication_cli_stderr" ]] || printf '%s\n' "$publication_cli_stderr" >&2
+  [[ -n "$publication_cli_stdout" ]] || return 1
+  printf '%s' "$publication_cli_stdout"
+}
+
+prepare_publication_receipt() {
+  local branch="$1" output validated
+  publication_create_intent=""
+  publication_create_intent_journal=""
+  if ! resolve_publication_claim_token; then
+    printf '%s\n' '{"ok":false,"error":"publication_incomplete","message":"no unique local claim token can locate publication authority"}' >&2
+    return 1
+  fi
+  if ! publication_cli_capture prepare \
+    --task-id "$publication_task_id" \
+    --claim-id "$publication_claim_id" \
+    --branch "$branch" \
+    --target "$TARGET_BRANCH"; then
+    [[ -z "$publication_cli_stderr" ]] || printf '%s\n' "$publication_cli_stderr" >&2
+    return 1
+  fi
+  [[ -z "$publication_cli_stderr" ]] || printf '%s\n' "$publication_cli_stderr" >&2
+  output="$publication_cli_stdout"
+  if ! validated="$(validate_publication_journal_envelope prepare "$output")"; then
+    printf '%s\n' '{"ok":false,"error":"publication_incomplete","message":"publication prepare output is not one canonical journal envelope"}' >&2
+    return 1
+  fi
+  case "$validated" in
+    '{"action":"create","create_intent":{'*) publication_create_intent="$validated" ;;
+    '{"action":"existing","create_intent":null,'*) ;;
+    *)
+      printf '%s\n' '{"ok":false,"error":"publication_incomplete","message":"publication prepare envelope action is invalid"}' >&2
+      return 1
+      ;;
+  esac
+}
+
+load_publication_create_intent() {
+  local dir="$1" payload validated
+  publication_create_intent=""
+  publication_create_intent_journal=""
+  payload="$(closeout_journal_phase_publication "$dir" publication_create_intent)" || return 1
+  if ! validated="$(validate_publication_journal_envelope prepare "$payload")"; then
+    printf '%s\n' '{"ok":false,"error":"publication_incomplete","message":"journal publication create intent is malformed"}' >&2
+    return 1
+  fi
+  case "$validated" in
+    '{"action":"create","create_intent":{'*)
+      publication_create_intent="$validated"
+      publication_create_intent_journal="$dir/status.json"
+      ;;
+    *)
+      printf '%s\n' '{"ok":false,"error":"publication_incomplete","message":"journal publication create intent does not authorize creation"}' >&2
+      return 1
+      ;;
+  esac
+}
+
+# Cache first, then marker. Any failure after the PR exists stays an explicit,
+# non-zero publication_incomplete outcome; recover reconcile retries this path.
+ensure_publication_receipt() {
+  local branch="$1" output validated
+  local -a args
+  publication_journal_payload=""
+  if ! resolve_publication_claim_token; then
+    printf '%s\n' '{"ok":false,"error":"publication_incomplete","message":"no unique local claim token can locate publication authority"}' >&2
+    return 1
+  fi
+  args=(ensure --task-id "$publication_task_id" --claim-id "$publication_claim_id" --branch "$branch" --target "$TARGET_BRANCH")
+  if [[ -n "$publication_create_intent" ]]; then
+    [[ -n "$publication_create_intent_journal" ]] || {
+      printf '%s\n' '{"ok":false,"error":"publication_incomplete","message":"publication create intent lacks its durable journal"}' >&2
+      return 1
+    }
+    args+=(--create-intent "$publication_create_intent" --create-intent-journal "$publication_create_intent_journal")
+  fi
+  if ! publication_cli_capture "${args[@]}"; then
+    [[ -z "$publication_cli_stderr" ]] || printf '%s\n' "$publication_cli_stderr" >&2
+    return 1
+  fi
+  [[ -z "$publication_cli_stderr" ]] || printf '%s\n' "$publication_cli_stderr" >&2
+  output="$publication_cli_stdout"
+  [[ -n "$output" ]] || {
+    printf '%s\n' '{"ok":false,"error":"publication_incomplete","message":"publication CLI returned no journal evidence"}' >&2
+    return 1
+  }
+  if ! validated="$(validate_publication_journal_envelope evidence "$output")"; then
+    printf '%s\n' '{"ok":false,"error":"publication_incomplete","message":"publication ensure output is not one canonical journal envelope"}' >&2
+    return 1
+  fi
+  publication_journal_payload="$validated"
+}
+
 ship_linked_pr() {
   local branch gate_base_ref verified_sha
   branch="$(current_branch)"
@@ -1041,8 +1220,18 @@ ship_linked_pr() {
   push_branch "$branch" "$verified_sha"
   ship_transaction_phase pushed "$verified_sha"
   ship_transaction_commit
+  if [[ "$DRY_RUN" -eq 0 ]]; then
+    prepare_publication_receipt "$branch" || fail "publication receipt preparation failed (publication_incomplete)"
+    if [[ -n "$publication_create_intent" ]]; then
+      ship_transaction_phase publication_create_intent "$verified_sha" "$publication_create_intent"
+      publication_create_intent_journal="$closeout_journal_dir/status.json"
+    fi
+  fi
   create_or_report_pr "$branch"
-  ship_transaction_phase pr_observed "$verified_sha"
+  if [[ "$DRY_RUN" -eq 0 ]]; then
+    ensure_publication_receipt "$branch" || fail "publication receipt persistence failed (publication_incomplete)"
+    ship_transaction_phase pr_observed "$verified_sha" "$publication_journal_payload"
+  fi
   ship_transaction_complete "$verified_sha"
 }
 
@@ -1302,9 +1491,19 @@ recover_ship() {
         || fail "no landed push to reconcile (last phase: $last_phase); run '--recover abort' instead"
       verified="$(closeout_journal_phase_ref "$dir" gate_sealed)"
       closeout_journal_has_phase "$dir" pushed || closeout_journal_record "$dir" in_progress pushed "$verified"
+      if closeout_journal_has_phase "$dir" publication_create_intent; then
+        load_publication_create_intent "$dir" || fail "journal publication create intent is invalid (publication_incomplete)"
+      else
+        prepare_publication_receipt "$branch" || fail "publication receipt preparation failed (publication_incomplete)"
+        if [[ -n "$publication_create_intent" ]]; then
+          closeout_journal_record "$dir" in_progress publication_create_intent "$verified" "$publication_create_intent"
+          publication_create_intent_journal="$dir/status.json"
+        fi
+      fi
+      create_or_report_pr "$branch"
+      ensure_publication_receipt "$branch" || fail "publication receipt persistence failed (publication_incomplete)"
       if ! closeout_journal_has_phase "$dir" pr_observed; then
-        create_or_report_pr "$branch"
-        closeout_journal_record "$dir" in_progress pr_observed "$verified"
+        closeout_journal_record "$dir" in_progress pr_observed "$verified" "$publication_journal_payload"
       fi
       closeout_journal_record "$dir" complete complete "$verified"
       rm -rf "$dir/snapshot"

@@ -30,6 +30,7 @@ import { buildChatgptCommand } from './commands/chatgpt';
 import { buildRunCommand } from './commands/run';
 import { buildStateCommand } from './commands/state';
 import { buildSprintCommand } from './commands/sprint';
+import { buildPublicationCommand } from './commands/publication';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
 import { runGlobalRuntimeSetup, type GlobalRuntimeOptions, type GlobalRuntimeResult } from './commands/global-runtime';
@@ -92,6 +93,7 @@ export const SUBCOMMANDS = [
   'mcp',
   'chatgpt',
   'state',
+  'publication',
   'architecture-projection',
 ] as const;
 export type Subcommand = (typeof SUBCOMMANDS)[number];
@@ -738,6 +740,7 @@ export function buildProgram(): Command {
   program.addCommand(buildRunCommand());
   program.addCommand(buildStateCommand());
   program.addCommand(buildSprintCommand());
+  program.addCommand(buildPublicationCommand());
   program.addCommand(buildArchitectureProjectionCommand());
   program
     .command('circuit-breaker-record', { hidden: true })
