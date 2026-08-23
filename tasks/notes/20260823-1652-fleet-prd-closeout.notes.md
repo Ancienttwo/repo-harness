@@ -16,7 +16,8 @@
 
 ## Deviations From Plan Or Spec
 
-- None recorded.
+- The frozen reviewer for WP0-B, WP0-C, and GPT Pro was Claude, but the external CLI disclosure gate rejected sending repository contents without a new destination-specific authorization. The already-approved contract owner waiver was recorded through typed `UserWaiverGrant` and `AcceptanceReceipt` authorities instead; no external disclosure or reviewer substitution occurred.
+- GPT Pro's obsolete branch was removed only after `git diff main...codex/gpt-pro-orchestrate-mode` proved its remaining tree delta was the architecture projection manifest and commit `63cebdbe` was an ancestor of `main`.
 
 ## Tradeoffs Considered
 
@@ -34,6 +35,11 @@
 
 - Checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
+- WP0-A: 18/18 current-target criteria passed; archive commit `d75133f7`.
+- GPT Pro: 20/20 current-target criteria passed; archive commit `cd442e7e`, published by merge `d54c6087`.
+- WP0-B: 29/29 current-target criteria passed; archive commit `a3f30e09`.
+- WP0-C: 24/24 current-target criteria passed; archive commit `b775b673`.
+- Full-suite timing falsifiers were rerun without concurrent verifier load: HRD-09 passed in 94.7 seconds and the fleet provider limiter passed in 6.51 seconds; the final formal WP0-C run then passed unchanged.
 
 ## Promotion Filter
 

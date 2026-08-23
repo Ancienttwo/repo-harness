@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-23T19:36:31+0800 -->
+<!-- updated_at: 2026-08-23T19:45:00+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-08-23T19:36:31+0800
+> **Updated At**: 2026-08-23T19:45:00+0800
 > **Source Branch**: codex/fleet-prd-closeout
-> **Source Commit**: 08088992
+> **Source Commit**: 1b19a526
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: manual
+> **Reason**: ledger-closeout-review
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -20,7 +20,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Status: Active
 - Active Plan: plans/plan-20260823-1652-fleet-prd-closeout.md
 - Plan Status: Executing
-- Next Task: Freeze a self-sufficient ledger-closeout contract and exact allowed paths.
+- Next Task: Independently gate the final artifact-only diff, close this closeout workflow, merge, push, and confirm Required/CI.
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -56,30 +56,14 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 21 changed/untracked path(s)
+- Summary: 5 changed/untracked path(s)
 
 ```
-R  plans/plan-20260822-1222-publication-receipt.md -> plans/archive/plan-20260822-1222-publication-receipt.md
-R  plans/plan-20260822-1240-gpt-pro-orchestrate-mode.md -> plans/archive/plan-20260822-1240-gpt-pro-orchestrate-mode.md
-R  plans/plan-20260822-1538-lease-protocol-2-lifecycle.md -> plans/archive/plan-20260822-1538-lease-protocol-2-lifecycle.md
-R  plans/plan-20260822-1915-publication-recovery-reconcile.md -> plans/archive/plan-20260822-1915-publication-recovery-reconcile.md
-R  tasks/contracts/20260822-1222-publication-receipt.contract.md -> tasks/archive/contract-20260823-1745-publication-receipt.md
-R  tasks/contracts/20260822-1240-gpt-pro-orchestrate-mode.contract.md -> tasks/archive/contract-20260823-1821-gpt-pro-orchestrate-mode.md
-R  tasks/contracts/20260822-1538-lease-protocol-2-lifecycle.contract.md -> tasks/archive/contract-20260823-1850-lease-protocol-2-lifecycle.md
-R  tasks/contracts/20260822-1915-publication-recovery-reconcile.contract.md -> tasks/archive/contract-20260823-1934-publication-recovery-reconcile.md
-R  tasks/notes/20260822-1222-publication-receipt.notes.md -> tasks/archive/notes-20260823-1745-publication-receipt.md
-R  tasks/notes/20260822-1240-gpt-pro-orchestrate-mode.notes.md -> tasks/archive/notes-20260823-1821-gpt-pro-orchestrate-mode.md
-R  tasks/notes/20260822-1538-lease-protocol-2-lifecycle.notes.md -> tasks/archive/notes-20260823-1850-lease-protocol-2-lifecycle.md
-R  tasks/notes/20260822-1915-publication-recovery-reconcile.notes.md -> tasks/archive/notes-20260823-1934-publication-recovery-reconcile.md
-R  tasks/reviews/20260822-1222-publication-receipt.review.md -> tasks/archive/review-20260823-1745-publication-receipt.md
-R  tasks/reviews/20260822-1240-gpt-pro-orchestrate-mode.review.md -> tasks/archive/review-20260823-1821-gpt-pro-orchestrate-mode.md
-R  tasks/reviews/20260822-1538-lease-protocol-2-lifecycle.review.md -> tasks/archive/review-20260823-1850-lease-protocol-2-lifecycle.md
-R  tasks/reviews/20260822-1915-publication-recovery-reconcile.review.md -> tasks/archive/review-20260823-1934-publication-recovery-reconcile.md
-A  tasks/archive/todo-20260823-1745-publication-receipt.md
-A  tasks/archive/todo-20260823-1821-gpt-pro-orchestrate-mode.md
-A  tasks/archive/todo-20260823-1850-lease-protocol-2-lifecycle.md
-A  tasks/archive/todo-20260823-1934-publication-recovery-reconcile.md
-UU tasks/current.md
+ M plans/plan-20260823-1652-fleet-prd-closeout.md
+ M tasks/archive/review-20260823-1821-gpt-pro-orchestrate-mode.md
+ M tasks/current.md
+ M tasks/notes/20260823-1652-fleet-prd-closeout.notes.md
+ M tasks/reviews/20260823-1652-fleet-prd-closeout.review.md
 ```
 
 ## Source Artifacts

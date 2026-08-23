@@ -138,20 +138,20 @@ Use one isolated ledger-closeout work-package, but preserve three separate verif
 
 ## Task Breakdown
 
-- [ ] Freeze a self-sufficient ledger-closeout contract and exact allowed paths.
-- [ ] Reverify and archive WP0-A PublicationReceipt.
-- [ ] Reverify and archive WP0-B Lease Protocol 2 + lifecycle.
-- [ ] Reverify and archive WP0-C Recovery + Reconcile.
-- [ ] Reverify and archive the already-merged GPT Pro orchestration workflow; remove its obsolete worktree/branch after absorption is proven.
+- [x] Freeze a self-sufficient ledger-closeout contract and exact allowed paths.
+- [x] Reverify and archive WP0-A PublicationReceipt.
+- [x] Reverify and archive WP0-B Lease Protocol 2 + lifecycle.
+- [x] Reverify and archive WP0-C Recovery + Reconcile.
+- [x] Reverify and archive the already-merged GPT Pro orchestration workflow; remove its obsolete worktree/branch after absorption is proven.
 - [ ] Independently gate the final artifact-only diff, close this closeout workflow, merge, push, and confirm Required/CI.
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] Freeze a self-sufficient ledger-closeout contract and exact allowed paths.
-- [ ] Reverify and archive WP0-A PublicationReceipt.
-- [ ] Reverify and archive WP0-B Lease Protocol 2 + lifecycle.
-- [ ] Reverify and archive WP0-C Recovery + Reconcile.
-- [ ] Reverify and archive the already-merged GPT Pro orchestration workflow; remove its obsolete worktree/branch after absorption is proven.
+- [x] Freeze a self-sufficient ledger-closeout contract and exact allowed paths.
+- [x] Reverify and archive WP0-A PublicationReceipt.
+- [x] Reverify and archive WP0-B Lease Protocol 2 + lifecycle.
+- [x] Reverify and archive WP0-C Recovery + Reconcile.
+- [x] Reverify and archive the already-merged GPT Pro orchestration workflow; remove its obsolete worktree/branch after absorption is proven.
 - [ ] Independently gate the final artifact-only diff, close this closeout workflow, merge, push, and confirm Required/CI.
