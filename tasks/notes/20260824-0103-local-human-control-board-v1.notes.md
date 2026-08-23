@@ -39,6 +39,10 @@
   `tests/unit/hook-entry-single-file-bundle.test.ts`: it still required the old
   hook-only `prepack` command. The assertion now protects stdout redirection for
   both required builds and exactly matches the shipped hook-plus-operator command.
+- The first acceptance freeze exposed that Change Assessment oracle `paths` are
+  literal final-subject paths, not directory prefixes. The contract now binds
+  its deterministic and runtime oracles to the five selected source files; no
+  verifier semantics or product scope changed.
 
 ## Tradeoffs Considered
 

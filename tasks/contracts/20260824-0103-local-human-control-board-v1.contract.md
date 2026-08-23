@@ -83,7 +83,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ## Change Assessment
 
 ```json
-{"protocol":1,"oracles":[{"id":"operator-contract-and-server-tests","kind":"deterministic_test","paths":["src/core/operator/","src/effects/operator/","src/cli/commands/operator.ts","tests/unit/operator-fleet-snapshot.test.ts","tests/cli/operator-serve.test.ts"]},{"id":"operator-browser-acceptance","kind":"runtime_readback","paths":["src/operator-web/","tests/operator-web/"]},{"id":"package-runtime-smoke","kind":"runtime_readback","paths":["package.json","vite.operator.config.ts","dist/operator-ui/"]}]}
+{"protocol":1,"oracles":[{"id":"operator-contract-and-server-tests","kind":"deterministic_test","paths":["src/cli/commands/operator.ts","src/core/operator/fleet-snapshot.ts","src/effects/operator/server.ts","src/operator-web/App.tsx","src/operator-web/types.ts"]},{"id":"operator-browser-acceptance","kind":"runtime_readback","paths":["src/operator-web/App.tsx","src/operator-web/types.ts"]},{"id":"package-runtime-smoke","kind":"runtime_readback","paths":["package.json","vite.operator.config.ts"]}]}
 ```
 
 ## Acceptance Policy
