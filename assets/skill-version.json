@@ -1,11 +1,11 @@
 {
-  "version": "0.16.2",
-  "templateVersion": "0.16.2",
+  "version": "0.17.0",
+  "templateVersion": "0.17.0",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "compatibility": {
     "minClaudeCodeVersion": "1.0.0",
-    "minBunVersion": "1.0.0"
+    "minBunVersion": "1.4.0"
   },
   "breakingChanges": [
     {
@@ -263,6 +263,10 @@
     {
       "version": "0.16.2",
       "description": "Fixes MCP runtime issues from #204, binds MCP HTTP sessions to the startup profile with fail-closed config-flip handling, publishes the architecture queue lock owner record atomically via staged hard-link creation, requires and fail-closed-validates sandbox_mode in Codex custom-agent TOMLs with EXECUTION_BOUNDARY persona de-duplication, and adds artifact-hygiene rules (final-diff-only comments and PR text) to the global working rules and generated agent contracts"
+    },
+    {
+      "version": "0.17.0",
+      "description": "Adds the Git-backed Fleet control plane: immutable PublicationReceiptV1 identity and recovery, Lease protocol 2 reviewing/reopen/takeover lifecycle, fenced merge readiness and integration reconcile, deterministic cross-repo offers/acquire and FleetBoardSnapshotV1/watch, immutable provider feedback and task inbox delivery, GPT Pro advisory orchestration, Fleet MCP mirrors, and a Bun 1.4 runtime floor"
     }
   ],
   "generatedProjectStamp": {
