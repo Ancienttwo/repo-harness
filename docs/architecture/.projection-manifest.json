@@ -5,12 +5,12 @@
   "sourceDigest": "sha256:dfeee72dd6b65c11c5410cf52261499a156ed11386d32cb5121711b63684470d",
   "provenance": {
     "schemaVersion": "archcontext.architecture-docs-projection-provenance/v1",
-    "baseHeadSha": "527c488f509af1bec43bf3e381768c3add461714",
-    "worktreeDigest": "sha256:82cbdbc17ecf7c4b8db509bc761aa870d763cac41aaa3282f2ce26e406ce4119",
+    "baseHeadSha": "26f41885d3eeb3540a59a102c4bded97ea517ad0",
+    "worktreeDigest": "sha256:fb4c186198bb11e52c9ea7ed3cb8a3a7b2c73306f56832fd8182b3068650cdc8",
     "sourceTreeDigest": "sha256:52435f2918597cb12e131e897aa7f07d5104794ce38e5a711b21665cca558324",
     "modelDigest": "sha256:e7e1a02e1fb8c6e0732999db19c5ab1541d8529ffb270b2be1eb96af579fa4cb",
-    "codeGraphDigest": "sha256:d4d27e7b33877f474842864cbde19e3fa458e1ba41f473c200b7cb14455e5eae",
-    "indexedWorktreeDigest": "sha256:2087e9dbd84e94b373bbc68e3e1d5bd5a173f0bf7b6a1a31d8fad0d7d7cf3981",
+    "codeGraphDigest": "sha256:9ad81796041fef43d2ebb54d05ce915b185b2be88051b2b4ddd9a790857e59b0",
+    "indexedWorktreeDigest": "sha256:3e0bd3c0dffe9ec7a57a646505b98954f9feaacf82b10212ae7548ba5c7c26b1",
     "rendererVersion": "archcontext.docs-renderer/v4",
     "layoutVersion": "archcontext.docs-layout/v1",
     "generatedFrom": {
@@ -19,9 +19,9 @@
       "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
       "codeGraphStatus": "ready"
     },
-    "projectionInputDigest": "sha256:e9b633bfe175202c55dfa3450d220c087bde1ea1cc12f7015ed425720aa9162b"
+    "projectionInputDigest": "sha256:dcd05ed07d2a441a03898acd0d9494d9604f42a699384527a0955b9ec0b1fc0b"
   },
-  "projectionDigest": "sha256:4b328454281ef1b62796b28ba9382eeeb22faa2ee807cac81ab63c1aebf2bde4",
+  "projectionDigest": "sha256:1b50eae77b50b3985c4e10e16a2630e11005a09c3dacef316da102d2420d47c7",
   "semanticBaseline": {
     "semanticState": {
       "schemaVersion": "archcontext.architecture-semantic-state/v1",
@@ -309,10 +309,10 @@
       "modelDigest": "sha256:e7e1a02e1fb8c6e0732999db19c5ab1541d8529ffb270b2be1eb96af579fa4cb",
       "sourceTreeDigest": "sha256:52435f2918597cb12e131e897aa7f07d5104794ce38e5a711b21665cca558324",
       "flowProofDigest": "sha256:f61c06c8566ec4ff22ec096ee22c06e91a046ceefa8fcd2f1d9faf436763a457",
-      "projectionDigest": "sha256:4b328454281ef1b62796b28ba9382eeeb22faa2ee807cac81ab63c1aebf2bde4"
+      "projectionDigest": "sha256:1b50eae77b50b3985c4e10e16a2630e11005a09c3dacef316da102d2420d47c7"
     }
   },
-  "receiptDigest": "sha256:8849838a93fdf918952102f00eb83818a4a2026d66b04cfd59356fd1d6b8c4b5",
+  "receiptDigest": "sha256:380c6ae021da5163ef62aab255a88e2226832ef03401748651e7c32cf1438594",
   "refreshSignalIds": [],
   "targetCount": 17,
   "fileCount": 17,
@@ -345,9 +345,9 @@
       "sourceDigest": "sha256:6c1d5494a41634fd28f9685b325b1d79d2bb95fac249f5c57dc5519e35c5c307",
       "outputDigest": "sha256:5c61debb2a48e091cde2de1f88b22066a8e4fb7b2e6fc18e4e98fbc2e1f0aa56",
       "verifiedAgainst": {
-        "branch": "codex/merge-readiness-v1",
-        "commit": "6e48948bff83bb5f2ed61173901261a609bb8f51",
-        "committedAt": "2026-08-23T01:24:35+08:00"
+        "branch": "main",
+        "commit": "1e52070b041b2081326777312b5fe6aabf4f59ac",
+        "committedAt": "2026-08-23T23:20:54+08:00"
       }
     },
     {
@@ -365,9 +365,9 @@
       "sourceDigest": "sha256:70f7c537b3943cfc93d02e71670d31413d6676835a0e7d7d51b9ba81083b9397",
       "outputDigest": "sha256:8cdc5490865571f4fc7682b1fcd6f5a75cd436fb08df42f8c5c18da2e8794afe",
       "verifiedAgainst": {
-        "branch": "codex/merge-readiness-v1",
-        "commit": "6e48948bff83bb5f2ed61173901261a609bb8f51",
-        "committedAt": "2026-08-23T01:24:35+08:00"
+        "branch": "main",
+        "commit": "1e52070b041b2081326777312b5fe6aabf4f59ac",
+        "committedAt": "2026-08-23T23:20:54+08:00"
       }
     },
     {
@@ -386,8 +386,8 @@
       "outputDigest": "sha256:ae0761f94d159619eca95cc0e65038bb547c0d31d085c4f9c4f9095d639f0db1",
       "verifiedAgainst": {
         "branch": "codex/local-human-control-board-v1",
-        "commit": "35ba75aa3add03415af721e6ad32f631ce5c8d5f",
-        "committedAt": "2026-08-24T02:42:27+08:00"
+        "commit": "26f41885d3eeb3540a59a102c4bded97ea517ad0",
+        "committedAt": "2026-08-24T04:37:37+08:00"
       }
     },
     {
@@ -406,8 +406,8 @@
       "outputDigest": "sha256:2e93a1f59017a07da7860cf0073e6911d9f75032b5af8be503c56087f394466a",
       "verifiedAgainst": {
         "branch": "codex/local-human-control-board-v1",
-        "commit": "35ba75aa3add03415af721e6ad32f631ce5c8d5f",
-        "committedAt": "2026-08-24T02:42:27+08:00"
+        "commit": "26f41885d3eeb3540a59a102c4bded97ea517ad0",
+        "committedAt": "2026-08-24T04:37:37+08:00"
       }
     },
     {
@@ -425,9 +425,9 @@
       "sourceDigest": "sha256:c5528c7ff9467b71364ce083ab4d0bbaff0729765c1e1f8b511ae54319a88e94",
       "outputDigest": "sha256:235db05ad6aca5f3bd47ce84257904865e2b41f0b69c00c2f50989b6e7e61313",
       "verifiedAgainst": {
-        "branch": "codex/task-inbox-v1",
-        "commit": "c17e5f547ab2261cde19ff10508bd74bca790ace",
-        "committedAt": "2026-08-23T12:27:44+08:00"
+        "branch": "main",
+        "commit": "1e52070b041b2081326777312b5fe6aabf4f59ac",
+        "committedAt": "2026-08-23T23:20:54+08:00"
       }
     },
     {
@@ -445,9 +445,9 @@
       "sourceDigest": "sha256:8e2ba45e941e3259fe9e2346d1460a18e2c199dc7017e55531370c09bc5b4731",
       "outputDigest": "sha256:a941fe11388c621fe51eaee5dc2b143d4b24ef7f2a9fd3114a5ac15baa12cb11",
       "verifiedAgainst": {
-        "branch": "codex/fleet-board-projection",
-        "commit": "69d8e6ea36d405a05ae6086930399addbe4decc6",
-        "committedAt": "2026-08-23T14:21:09+08:00"
+        "branch": "main",
+        "commit": "1e52070b041b2081326777312b5fe6aabf4f59ac",
+        "committedAt": "2026-08-23T23:20:54+08:00"
       }
     },
     {
@@ -465,9 +465,9 @@
       "sourceDigest": "sha256:42b8f1e808805a06b5f8a604796875cd15075125ad6aae37781b919fc795e9e0",
       "outputDigest": "sha256:88c96e6dda01a1222e85a989f6049b5b6b0018f769029b42e4f6029f49e66d72",
       "verifiedAgainst": {
-        "branch": "codex/fleet-offer-acquire",
-        "commit": "d59d304ba95f33868cc4003fe81ab5edc5b7a3ff",
-        "committedAt": "2026-08-23T03:39:50+08:00"
+        "branch": "main",
+        "commit": "1e52070b041b2081326777312b5fe6aabf4f59ac",
+        "committedAt": "2026-08-23T23:20:54+08:00"
       }
     },
     {
@@ -485,9 +485,9 @@
       "sourceDigest": "sha256:d7227e9a523c174482329de071e53fca93c9d0936dbdcc5be70065a006d7783f",
       "outputDigest": "sha256:385eae056b2e6fa98d5d9d85d6acd36191d5a705c20f9dcfd0bb5d5d2ad2e8f1",
       "verifiedAgainst": {
-        "branch": "codex/merge-readiness-v1",
-        "commit": "6e48948bff83bb5f2ed61173901261a609bb8f51",
-        "committedAt": "2026-08-23T01:24:35+08:00"
+        "branch": "main",
+        "commit": "1e52070b041b2081326777312b5fe6aabf4f59ac",
+        "committedAt": "2026-08-23T23:20:54+08:00"
       }
     },
     {
@@ -506,8 +506,8 @@
       "outputDigest": "sha256:66d4b7068ff03b389eb468fcfeb98d6146109c54d1e89eaf119a8f278ac9a5e4",
       "verifiedAgainst": {
         "branch": "codex/local-human-control-board-v1",
-        "commit": "527c488f509af1bec43bf3e381768c3add461714",
-        "committedAt": "2026-08-24T03:47:25+08:00"
+        "commit": "26f41885d3eeb3540a59a102c4bded97ea517ad0",
+        "committedAt": "2026-08-24T04:37:37+08:00"
       }
     },
     {
@@ -525,9 +525,9 @@
       "sourceDigest": "sha256:7ee8ed6740da71e8140f0ab2ff708ec8756622821b0875aa230a6a3f019780fe",
       "outputDigest": "sha256:aa161d6f10d15d68a3af9439d8bdbbd7e32b81781e3747645d4ccee5020cd79a",
       "verifiedAgainst": {
-        "branch": "codex/fleet-offer-acquire",
-        "commit": "d59d304ba95f33868cc4003fe81ab5edc5b7a3ff",
-        "committedAt": "2026-08-23T03:39:50+08:00"
+        "branch": "main",
+        "commit": "1e52070b041b2081326777312b5fe6aabf4f59ac",
+        "committedAt": "2026-08-23T23:20:54+08:00"
       }
     },
     {
@@ -545,9 +545,9 @@
       "sourceDigest": "sha256:654f7236e2e51fd19e64129d48fe05f974f3172f6f69c671a78f31ba896198ae",
       "outputDigest": "sha256:a148fc8868cf1e59ce9fe25484555aff2c06e611ed559c709c045b9cde19ab0a",
       "verifiedAgainst": {
-        "branch": "codex/merge-readiness-v1",
-        "commit": "6e48948bff83bb5f2ed61173901261a609bb8f51",
-        "committedAt": "2026-08-23T01:24:35+08:00"
+        "branch": "main",
+        "commit": "1e52070b041b2081326777312b5fe6aabf4f59ac",
+        "committedAt": "2026-08-23T23:20:54+08:00"
       }
     },
     {
