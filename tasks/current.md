@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-23T20:49:02+0800 -->
+<!-- updated_at: 2026-08-23T21:07:54+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-08-23T20:49:02+0800
+> **Updated At**: 2026-08-23T21:07:54+0800
 > **Source Branch**: main
-> **Source Commit**: f942620b
+> **Source Commit**: 2dc6b8f1
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: fleet-closeout-audit-note
+> **Reason**: fleet-closeout-audit-published
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -55,11 +55,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 2 changed/untracked path(s)
+- Summary: clean
 
 ```
- M docs/architecture/.projection-manifest.json
-?? tasks/archive/notes-20260823-2046-fleet-closeout-audit.md
+(none)
 ```
 
 ## Source Artifacts
