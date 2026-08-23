@@ -1,6 +1,6 @@
 # Plan: Local Human Control Board v1
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260824-0103
 > **Slug**: local-human-control-board-v1
 > **Planning Source**: codex-plan

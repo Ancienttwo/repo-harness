@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-24T04:25:07+0800 -->
+<!-- updated_at: 2026-08-24T04:25:55+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Active
-> **Updated At**: 2026-08-24T04:25:07+0800
+> **Status**: ManualClearedWithActiveWork
+> **Updated At**: 2026-08-24T04:25:55+0800
 > **Source Branch**: codex/local-human-control-board-v1
-> **Source Commit**: 058630ff
+> **Source Commit**: ae0e15f6
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: manual
+> **Reason**: archive-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Active
-- Active Plan: plans/plan-20260824-0103-local-human-control-board-v1.md
-- Plan Status: Executing
-- Next Task: Run focused, browser desktop/mobile, full repository, package, workflow and independent review gates; record evidence and close the work package.
-- Clear Note: (none)
+- Status: ManualClearedWithActiveWork
+- Active Plan: (none)
+- Plan Status: (none)
+- Next Task: inspect active worktree marker(s)
+- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
 
 ## Mainline Snapshot Reading
 
@@ -31,8 +31,6 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- .: plans/plan-20260824-0103-local-human-control-board-v1.md
-- .: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-local-human-control-board-v1
 - /Users/ancienttwo/Projects/repo-harness-wt-release-0-17-0: plans/plan-20260823-2134-release-0-17-0.md
 - /Users/ancienttwo/Projects/repo-harness-wt-release-0-17-0: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-release-0-17-0
 ## Active Sprint
@@ -58,12 +56,19 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 3 changed/untracked path(s)
+- Summary: 10 changed/untracked path(s)
 
 ```
- M tasks/current.md
- M tasks/notes/20260824-0103-local-human-control-board-v1.notes.md
- M tasks/reviews/20260824-0103-local-human-control-board-v1.review.md
+ D plans/plan-20260824-0103-local-human-control-board-v1.md
+ D tasks/contracts/20260824-0103-local-human-control-board-v1.contract.md
+ D tasks/notes/20260824-0103-local-human-control-board-v1.notes.md
+ D tasks/reviews/20260824-0103-local-human-control-board-v1.review.md
+ M tasks/todos.md
+?? plans/archive/plan-20260824-0103-local-human-control-board-v1.md
+?? tasks/archive/contract-20260824-0425-local-human-control-board-v1.md
+?? tasks/archive/notes-20260824-0425-local-human-control-board-v1.md
+?? tasks/archive/review-20260824-0425-local-human-control-board-v1.md
+?? tasks/archive/todo-20260824-0425-local-human-control-board-v1.md
 ```
 
 ## Source Artifacts
