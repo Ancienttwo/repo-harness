@@ -1,6 +1,6 @@
 # Plan: Close Fleet PRD workflow artifacts
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260823-1652
 > **Slug**: fleet-prd-closeout
 > **Planning Source**: codex-plan

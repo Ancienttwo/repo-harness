@@ -1,26 +1,26 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-23T19:47:38+0800 -->
+<!-- updated_at: 2026-08-23T19:49:28+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Active
-> **Updated At**: 2026-08-23T19:47:38+0800
+> **Status**: Idle
+> **Updated At**: 2026-08-23T19:49:28+0800
 > **Source Branch**: codex/fleet-prd-closeout
-> **Source Commit**: e7e00ca5
+> **Source Commit**: 3c04044b
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: aggregate-projection-materialized
+> **Reason**: archive-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Active
-- Active Plan: plans/plan-20260823-1652-fleet-prd-closeout.md
-- Plan Status: Executing
-- Next Task: Independently gate the final artifact-only diff, close this closeout workflow, merge, push, and confirm Required/CI.
+- Status: Idle
+- Active Plan: (none)
+- Plan Status: (none)
+- Next Task: (none)
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,8 +31,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- .: plans/plan-20260823-1652-fleet-prd-closeout.md
-- .: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-fleet-prd-closeout
+- (none)
 ## Active Sprint
 
 - Sprint: (none)
@@ -52,14 +51,23 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=fail, source=verify-sprint, exit_code=1, file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 1 changed/untracked path(s)
+- Summary: 10 changed/untracked path(s)
 
 ```
- M docs/architecture/.projection-manifest.json
+ D plans/plan-20260823-1652-fleet-prd-closeout.md
+ D tasks/contracts/20260823-1652-fleet-prd-closeout.contract.md
+ D tasks/notes/20260823-1652-fleet-prd-closeout.notes.md
+ D tasks/reviews/20260823-1652-fleet-prd-closeout.review.md
+ M tasks/todos.md
+?? plans/archive/plan-20260823-1652-fleet-prd-closeout.md
+?? tasks/archive/contract-20260823-1949-fleet-prd-closeout.md
+?? tasks/archive/notes-20260823-1949-fleet-prd-closeout.md
+?? tasks/archive/review-20260823-1949-fleet-prd-closeout.md
+?? tasks/archive/todo-20260823-1949-fleet-prd-closeout.md
 ```
 
 ## Source Artifacts

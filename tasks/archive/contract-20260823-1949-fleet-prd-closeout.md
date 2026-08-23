@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-23 19:49
+> **Related Plan**: plans/archive/plan-20260823-1652-fleet-prd-closeout.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260823-1949
+
 # Task Contract: fleet-prd-closeout
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260823-1652-fleet-prd-closeout.md
 > **Task Profile**: ledger-closeout
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
