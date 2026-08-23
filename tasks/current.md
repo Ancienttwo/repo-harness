@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-23T19:49:28+0800 -->
+<!-- updated_at: 2026-08-23T19:51:10+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-08-23T19:49:28+0800
+> **Updated At**: 2026-08-23T19:51:10+0800
 > **Source Branch**: codex/fleet-prd-closeout
-> **Source Commit**: 3c04044b
+> **Source Commit**: 6b48ff5f
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive-workflow
+> **Reason**: aggregate-archive-published
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -55,19 +55,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: clean
 
 ```
- D plans/plan-20260823-1652-fleet-prd-closeout.md
- D tasks/contracts/20260823-1652-fleet-prd-closeout.contract.md
- D tasks/notes/20260823-1652-fleet-prd-closeout.notes.md
- D tasks/reviews/20260823-1652-fleet-prd-closeout.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260823-1652-fleet-prd-closeout.md
-?? tasks/archive/contract-20260823-1949-fleet-prd-closeout.md
-?? tasks/archive/notes-20260823-1949-fleet-prd-closeout.md
-?? tasks/archive/review-20260823-1949-fleet-prd-closeout.md
-?? tasks/archive/todo-20260823-1949-fleet-prd-closeout.md
+(none)
 ```
 
 ## Source Artifacts
