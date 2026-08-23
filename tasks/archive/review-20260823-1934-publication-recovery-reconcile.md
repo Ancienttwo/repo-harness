@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-23 19:34
+> **Related Plan**: plans/archive/plan-20260822-1915-publication-recovery-reconcile.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260823-1934
+
 # Task Review: publication-recovery-reconcile
 
 > **Status**: Complete
@@ -44,13 +50,13 @@
 > **Reviewer**: User
 > **Source**: user-waiver
 > **Actor**: ancienttwo
-> **Reviewed Subject SHA256**: sha256:4f1265379c6f29a2228cd85427d8e2aa6716c0463fdf0a76443e14f34f806b96
+> **Reviewed Subject SHA256**: sha256:8a48a87d4183098e73ae4f89c74fed8f1767410bd1f5272e245d4ec977b74183
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: 63cebdbe015b5c0b41af1dc63c8a61b56a78560f
-> **Verification Evidence SHA256**: sha256:2aea1c7123c300245b76c09909957a27078daf87aee9f4221ccd4c11779e4f5c
-> **Issued At**: 2026-08-22T14:28:57.121Z
+> **Reviewed Target Revision**: a3f30e093f2489bac266046015480022f6586c2d
+> **Verification Evidence SHA256**: sha256:1fcb3ec78474e847965f9bb118ccccf51b70393d13030e7f8acee0f045278082
+> **Issued At**: 2026-08-23T11:34:13.447Z
 
-- Summary: User explicitly approved the exact-subject WP0-C acceptance waiver; no repository diff is sent to an external reviewer.
+- Summary: User explicitly approved user waiver for workflow closeout in this task thread.
 - Findings: none
 
 ## Behavior Diff Notes

@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-23 19:34
+> **Related Plan**: plans/archive/plan-20260822-1915-publication-recovery-reconcile.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260823-1934
+
 # Implementation Notes: publication-recovery-reconcile
 
 > **Status**: Active

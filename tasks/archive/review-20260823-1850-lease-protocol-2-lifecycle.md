@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-23 18:50
+> **Related Plan**: plans/archive/plan-20260822-1538-lease-protocol-2-lifecycle.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260823-1850
+
 # Task Review: lease-protocol-2-lifecycle
 
 > **Status**: Complete
@@ -40,17 +46,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: external_pass
-> **Reviewer**: Claude
-> **Source**: claude-review
-> **Actor**: not-applicable
-> **Reviewed Subject SHA256**: sha256:d97ccf07a98485d63a354b09f346085caa5329075ee622fa4eff6242bfdbcdab
+> **Disposition**: user_waiver
+> **Reviewer**: User
+> **Source**: user-waiver
+> **Actor**: ancienttwo
+> **Reviewed Subject SHA256**: sha256:8a48a87d4183098e73ae4f89c74fed8f1767410bd1f5272e245d4ec977b74183
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: c205d647ada9177279ef6cafeda97643546feb9a
-> **Verification Evidence SHA256**: sha256:0552f846dc4bee9fda9d50c3f47ef89d75e433497b376efe87714f010815cd21
-> **Issued At**: 2026-08-22T10:11:28.295Z
+> **Reviewed Target Revision**: d54c608735e78fa6c64f8101fc31f0e10e7acad7
+> **Verification Evidence SHA256**: sha256:b17c74466d4779658164a5b61f6a591daec7855673240e617474c816cd79b368
+> **Issued At**: 2026-08-23T10:49:45.642Z
 
-- Summary: Independent gatekeeper verified WP0-B schema, lifecycle fencing, crash recovery, board projection, and full contract exit criteria; no blocking findings remain.
+- Summary: User explicitly approved user waiver for workflow closeout in this task thread.
 - Findings: none
 
 ## Behavior Diff Notes

@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-23 17:45
+> **Related Plan**: plans/archive/plan-20260822-1222-publication-receipt.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260823-1745
+
 # Implementation Notes: publication-receipt
 
 > **Status**: Active

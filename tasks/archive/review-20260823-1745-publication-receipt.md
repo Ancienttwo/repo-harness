@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-23 17:45
+> **Related Plan**: plans/archive/plan-20260822-1222-publication-receipt.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260823-1745
+
 # Task Review: publication-receipt
 
 > **Status**: Complete
@@ -44,13 +50,13 @@
 > **Reviewer**: Codex
 > **Source**: codex-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: sha256:5c69c30edf6887d3e423121839a5f24629a70390d0ecde2bd356b8083062d661
+> **Reviewed Subject SHA256**: sha256:8a48a87d4183098e73ae4f89c74fed8f1767410bd1f5272e245d4ec977b74183
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: c205d647ada9177279ef6cafeda97643546feb9a
-> **Verification Evidence SHA256**: sha256:52c3e1dbfd33b963c9172a6817caf6eed3d702e4a1297d18e6e383cef262597b
-> **Issued At**: 2026-08-22T07:17:53.790Z
+> **Reviewed Target Revision**: d742cede131e7b3175748889529c4fe6a1fc3050
+> **Verification Evidence SHA256**: sha256:28ec08724dbbbac3ed278103730cc14149bc6b3538caa04931dc7178140cf6a7
+> **Issued At**: 2026-08-23T09:43:41.599Z
 
-- Summary: PublicationReceiptV1 final subject passed external review and full repository verification.
+- Summary: WP0-A current-target implementation and full verification passed independent Codex gate review.
 - Findings: none
 
 ## Behavior Diff Notes
