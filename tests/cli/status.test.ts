@@ -41,15 +41,15 @@ function writeInstalledProfileFixture(profile: InstallProfile): void {
 }
 
 describe('status command (Phase 1C)', () => {
-  test('reports CLI version + 11 routes with correct per-event breakdown', () => {
+  test('reports CLI version + 12 routes with correct per-event breakdown', () => {
     withTempHome(() => {
       const r = runStatus();
       expect(r.cli.version).toBeTruthy();
-      expect(r.routes.total).toBe(11);
+      expect(r.routes.total).toBe(12);
       expect(r.routes.byEvent.PreToolUse).toBe(2);
       expect(r.routes.byEvent.PostToolUse).toBe(3);
       expect(r.routes.byEvent.SessionStart).toBe(1);
-      expect(r.routes.byEvent.UserPromptSubmit).toBe(2);
+      expect(r.routes.byEvent.UserPromptSubmit).toBe(3);
       expect(r.routes.byEvent.SubagentStart).toBe(1);
       expect(r.routes.byEvent.SubagentStop).toBe(1);
       expect(r.routes.byEvent.Stop).toBe(1);
@@ -74,17 +74,17 @@ describe('status command (Phase 1C)', () => {
       const codex = r.targets.find((t) => t.id === 'codex')!;
       expect(codex.alreadyConfigured).toBe(true);
       expect(codex.managedEntryCount).toBe(codex.expectedEntryCount);
-      expect(codex.managedEntryCount).toBe(11);
+      expect(codex.managedEntryCount).toBe(12);
       const claude = r.targets.find((t) => t.id === 'claude')!;
       expect(claude.managedEntryCount).toBe(claude.expectedEntryCount);
-      expect(claude.managedEntryCount).toBe(8);
+      expect(claude.managedEntryCount).toBe(9);
     });
   });
 
   test('uses the recorded install profile for expected managed entry count', () => {
     const cases: ReadonlyArray<readonly [InstallProfile, number]> = [
-      ['minimal', 7],
-      ['full', 11],
+      ['minimal', 8],
+      ['full', 12],
     ];
 
     for (const [profile, expectedCount] of cases) {
@@ -191,7 +191,7 @@ describe('status command (Phase 1C)', () => {
       expect(() => JSON.parse(json)).not.toThrow();
       const parsed = JSON.parse(json);
       expect(parsed.cli).toBeDefined();
-      expect(parsed.routes.total).toBe(11);
+      expect(parsed.routes.total).toBe(12);
     });
   });
 
@@ -199,7 +199,7 @@ describe('status command (Phase 1C)', () => {
     withTempHome(() => {
       const r = runStatus();
       expect(r.installedProfile).toEqual({ recorded: false });
-      expect(r.targets.find((target) => target.id === 'codex')?.expectedEntryCount).toBe(11);
+      expect(r.targets.find((target) => target.id === 'codex')?.expectedEntryCount).toBe(12);
       const text = formatStatus(r, false);
       expect(text).toContain('Installed profile:');
       expect(text).toContain('(not recorded)');
@@ -237,7 +237,7 @@ describe('status command (Phase 1C)', () => {
       expect(r.installedProfile.recorded).toBe('invalid');
       expect(r.installedProfile).toMatchObject({ kind: 'corrupt_current' });
       expect(r.installedProfile).not.toEqual({ recorded: false });
-      expect(r.targets.find((target) => target.id === 'codex')?.expectedEntryCount).toBe(11);
+      expect(r.targets.find((target) => target.id === 'codex')?.expectedEntryCount).toBe(12);
       const text = formatStatus(r, false);
       expect(text).toContain('(invalid)');
       expect(text).not.toContain('(not recorded)');

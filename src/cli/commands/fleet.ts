@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { randomUUID } from 'crypto';
-import { lstatSync, realpathSync, readdirSync } from 'fs';
+import { lstatSync, realpathSync, readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 
 import {
@@ -12,6 +12,22 @@ import {
   collectFleetOffers,
   FleetOffersError,
 } from '../../effects/fleet/acquire';
+import {
+  ackTaskInbox,
+  deliverTaskInbox,
+  listTaskInbox,
+  sendTaskMessage,
+  TaskInboxError,
+} from '../../effects/fleet/task-inbox';
+import {
+  buildTaskMessageEvent,
+  TaskMessageError,
+  type TaskMessageEventInput,
+  type TaskMessageRecipient,
+} from '../../core/fleet/task-message';
+import { readActiveSprintPath, readCanonicalTargetRef } from '../../effects/state/collect-board-inputs';
+import { readCanonicalSprint, resolveRepoIdentity } from '../../effects/state/coordination-canonical-source';
+import { lookupCanonicalTask } from '../../core/state/coordination-identity';
 import {
   FeedbackError,
   intakeGitHubFeedback,
@@ -36,6 +52,8 @@ function outputError(error: unknown): void {
     || error instanceof FleetOffersError
     || error instanceof FeedbackError
     || error instanceof FeedbackStoreError
+    || error instanceof TaskInboxError
+    || error instanceof TaskMessageError
     ? error.code
     : 'provider_unavailable';
   const message = error instanceof Error ? error.message : String(error);
@@ -67,6 +85,85 @@ function feedbackEnvironment() {
     merge_seal_path: process.env.REPO_HARNESS_PUBLICATION_SEAL_PATH,
     checks_path: process.env.REPO_HARNESS_PUBLICATION_CHECKS_PATH,
   } as const;
+}
+
+function outputTaskInboxError(error: unknown): void {
+  const code = error instanceof TaskInboxError || error instanceof TaskMessageError
+    ? error.code
+    : 'invalid_argument';
+  const message = error instanceof Error ? error.message : String(error);
+  process.stderr.write(`${JSON.stringify({ ok: false, error: code, message })}\n`);
+  process.exitCode = 1;
+}
+
+type TaskMessageScope = 'task' | 'claim';
+type TaskMessageAudience = 'owner' | 'orchestrator' | 'user';
+
+interface CanonicalInboxContext {
+  readonly source: { readonly targetRef: string; readonly sprintPath: string };
+  readonly taskId: string;
+  readonly taskRevision: string;
+}
+
+function canonicalInboxContext(repoRoot: string, taskId: string): CanonicalInboxContext {
+  const sprintPath = readActiveSprintPath(repoRoot);
+  if (!sprintPath) throw new Error('no active canonical sprint');
+  const targetRef = readCanonicalTargetRef(repoRoot);
+  const source = { targetRef, sprintPath };
+  const canonical = readCanonicalSprint(repoRoot, source);
+  if (!canonical.ok) throw new Error(canonical.error);
+  const task = lookupCanonicalTask({
+    repoIdentity: resolveRepoIdentity(repoRoot),
+    sprintPath,
+    sprintText: canonical.text,
+  }, taskId);
+  if (!task.ok) throw new Error(task.error);
+  return { source, taskId, taskRevision: task.task.task_revision };
+}
+
+function taskLease(repoRoot: string, taskId: string): NonNullable<ReturnType<typeof readLease>['record']> {
+  const lease = readLease(repoRoot, taskId);
+  if (!lease.record) throw new Error(`task ${taskId} has no current owner lease`);
+  return lease.record;
+}
+
+function resolveOwnerRecipient(repoRoot: string, taskId: string): Extract<TaskMessageRecipient, { readonly kind: 'claim' }> {
+  const lease = taskLease(repoRoot, taskId);
+  return { kind: 'claim', claim_id: lease.claim_id, generation: lease.generation };
+}
+
+function readMessageBody(bodyFile: string): string {
+  return readFileSync(bodyFile).toString('utf8');
+}
+
+function messageInput(
+  options: {
+    readonly taskId: string;
+    readonly scope: TaskMessageScope;
+    readonly audience: TaskMessageAudience;
+    readonly body: string;
+    readonly messageId?: string;
+    readonly inReplyTo?: string;
+  },
+  context: CanonicalInboxContext,
+  lease: NonNullable<ReturnType<typeof readLease>['record']> | null,
+): TaskMessageEventInput {
+  if (options.scope === 'claim' && lease === null) throw new Error('claim-scoped message requires a current owner lease');
+  return {
+    message_id: options.messageId ?? randomUUID(),
+    task_id: context.taskId,
+    task_revision: context.taskRevision,
+    scope: options.scope,
+    target_claim_id: options.scope === 'claim' ? lease?.claim_id ?? null : null,
+    target_generation: options.scope === 'claim' ? lease?.generation ?? null : null,
+    sender_kind: 'user',
+    sender_id: null,
+    sender_trust: 'local_operator',
+    audience: options.audience,
+    body: options.body,
+    created_at: new Date().toISOString(),
+    in_reply_to: options.inReplyTo ?? null,
+  } as TaskMessageEventInput;
 }
 
 function optionalStringOption(value: string | undefined, name: string): string | undefined {
@@ -591,6 +688,126 @@ export function buildFleetCommand(): Command {
         }));
       } catch (error) {
         outputError(error);
+      }
+    });
+
+  const message = fleet
+    .command('message')
+    .description('Send one bounded task-addressed message');
+  message
+    .command('send')
+    .description('Create one immutable task message event')
+    .requiredOption('--json', 'Output the task message result as JSON')
+    .requiredOption('--task-id <taskId>', 'Canonical coordination task id')
+    .requiredOption('--scope <scope>', 'Message scope: task or claim')
+    .requiredOption('--audience <audience>', 'Message audience: owner, orchestrator, or user')
+    .requiredOption('--body-file <path>', 'UTF-8 file containing the untrusted message body')
+    .option('--message-id <messageId>', 'Stable UUID for an idempotent retry')
+    .option('--in-reply-to <messageId>', 'Prior message UUID')
+    .action((options: {
+      readonly taskId: string;
+      readonly scope: string;
+      readonly audience: string;
+      readonly bodyFile: string;
+      readonly messageId?: string;
+      readonly inReplyTo?: string;
+    }) => {
+      try {
+        if (options.scope !== 'task' && options.scope !== 'claim') throw new Error('--scope must be task or claim');
+        if (options.audience !== 'owner' && options.audience !== 'orchestrator' && options.audience !== 'user') {
+          throw new Error('--audience must be owner, orchestrator, or user');
+        }
+        const taskId = optionalStringOption(options.taskId, 'task-id');
+        const bodyFile = optionalStringOption(options.bodyFile, 'body-file');
+        if (!taskId || !bodyFile) throw new Error('--task-id and --body-file must be non-empty strings');
+        const context = canonicalInboxContext(process.cwd(), taskId);
+        const lease = options.scope === 'claim' ? taskLease(process.cwd(), taskId) : null;
+        const event = buildTaskMessageEvent(messageInput({
+          taskId,
+          scope: options.scope,
+          audience: options.audience,
+          body: readMessageBody(bodyFile),
+          messageId: optionalStringOption(options.messageId, 'message-id'),
+          inReplyTo: optionalStringOption(options.inReplyTo, 'in-reply-to'),
+        }, context, lease));
+        const result = sendTaskMessage({
+          repo_root: process.cwd(),
+          canonical_source: context.source,
+          event,
+        });
+        process.stdout.write(`${JSON.stringify(result)}\n`);
+      } catch (error) {
+        outputTaskInboxError(error);
+      }
+    });
+
+  const inbox = fleet
+    .command('inbox')
+    .description('Inspect and acknowledge task-message delivery receipts');
+
+  inbox
+    .command('list')
+    .description('Deliver and list messages for the current bound owner')
+    .requiredOption('--json', 'Output inbox state as JSON')
+    .requiredOption('--task-id <taskId>', 'Canonical coordination task id')
+    .action((options: {
+      readonly taskId: string;
+    }) => {
+      try {
+        const taskId = optionalStringOption(options.taskId, 'task-id');
+        if (!taskId) throw new Error('--task-id must be a non-empty string');
+        const context = canonicalInboxContext(process.cwd(), taskId);
+        const recipient = resolveOwnerRecipient(process.cwd(), taskId);
+        deliverTaskInbox({
+          repo_root: process.cwd(),
+          task_id: taskId,
+          canonical_source: context.source,
+          recipient,
+          execution_worktree: process.cwd(),
+          delivery_channel: 'manual',
+          delivered_at: new Date().toISOString(),
+        });
+        const result = listTaskInbox({
+          repo_root: process.cwd(),
+          task_id: taskId,
+          canonical_source: context.source,
+          recipient,
+          execution_worktree: process.cwd(),
+        });
+        process.stdout.write(`${JSON.stringify(result)}\n`);
+      } catch (error) {
+        outputTaskInboxError(error);
+      }
+    });
+
+  inbox
+    .command('ack')
+    .description('Acknowledge one message for the current bound owner')
+    .requiredOption('--json', 'Output the acknowledgement result as JSON')
+    .requiredOption('--task-id <taskId>', 'Canonical coordination task id')
+    .requiredOption('--message-id <messageId>', 'Message UUID to acknowledge')
+    .action((options: {
+      readonly taskId: string;
+      readonly messageId: string;
+    }) => {
+      try {
+        const taskId = optionalStringOption(options.taskId, 'task-id');
+        const messageId = optionalStringOption(options.messageId, 'message-id');
+        if (!taskId || !messageId) throw new Error('--task-id and --message-id must be non-empty strings');
+        const context = canonicalInboxContext(process.cwd(), taskId);
+        const recipient = resolveOwnerRecipient(process.cwd(), taskId);
+        const result = ackTaskInbox({
+          repo_root: process.cwd(),
+          task_id: taskId,
+          canonical_source: context.source,
+          message_id: messageId,
+          recipient,
+          execution_worktree: process.cwd(),
+          acknowledged_at: new Date().toISOString(),
+        });
+        process.stdout.write(`${JSON.stringify(result)}\n`);
+      } catch (error) {
+        outputTaskInboxError(error);
       }
     });
   return fleet;

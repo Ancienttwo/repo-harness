@@ -107,7 +107,7 @@ describe("hook dispatch diet report", () => {
     const report = reportFor();
     expect(report.protocol).toBe("loop-engine-hook-diet-report/v3");
     expect(report.dispatch.script_invocation_count).toBe(0);
-    expect(report.dispatch.typed_handler_count).toBe(8);
+    expect(report.dispatch.typed_handler_count).toBe(9);
     expect(report.dispatch.routes.every((route) => typeof route.handler === "string")).toBe(true);
     expect(report.dispatch.previous_count).toBe(13);
     expect(report.dispatch.current_count).toBeLessThanOrEqual(TARGET_DISPATCH_MAX);

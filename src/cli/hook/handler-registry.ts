@@ -6,6 +6,7 @@ import { runPromptHandler } from './prompt-handler';
 import { runSubagentHandler } from './subagent-handler';
 import { runCommandObserved } from './command-observed';
 import { runTraceObserver } from './trace-observer';
+import { runTaskInboxHandler } from './task-inbox-handler';
 import { getRoute, ROUTES, type HookEvent, type HookHandlerId, type Route, type RouteId } from './route-registry';
 import type { HookEffectContract, HookHandlerContext, HookHandlerResult, TypedHookHandler } from './handler-contract';
 import { architectureProjectionQueueState } from '../../effects/architecture/projection-jobs';
@@ -151,6 +152,17 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
         repoRoot: context.repoRoot,
         input: context.input,
         env: context.env,
+      }));
+    },
+  },
+  'task-inbox': {
+    id: 'task-inbox',
+    run(context: HookHandlerContext): HookHandlerResult {
+      return result(runTaskInboxHandler({
+        repoRoot: context.repoRoot,
+        input: context.input,
+        env: context.env,
+        now: () => context.now,
       }));
     },
   },

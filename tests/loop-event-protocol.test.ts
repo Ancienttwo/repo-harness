@@ -40,12 +40,12 @@ function listFilesRecursive(root: string): readonly string[] {
 }
 
 describe('loop-event-protocol route mapping', () => {
-  test('routeToLoopEvent covers exactly the 11 registry route tuples, no extras, no duplicates', () => {
+  test('routeToLoopEvent covers exactly the 12 registry route tuples, no extras, no duplicates', () => {
     const registryKeys = ROUTES.map(routeKey).sort();
     const mappedKeys = routeToLoopEvent.map(routeKey).sort();
 
-    expect(ROUTES.length).toBe(11);
-    expect(routeToLoopEvent.length).toBe(11);
+    expect(ROUTES.length).toBe(12);
+    expect(routeToLoopEvent.length).toBe(12);
     expect(new Set(mappedKeys).size).toBe(routeToLoopEvent.length);
     expect(mappedKeys).toEqual(registryKeys);
   });

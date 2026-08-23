@@ -19,7 +19,7 @@ The boundary has four layers:
    `.ai/harness/workflow-contract.json`, and invokes the hook-only CLI entry
    point (with the full CLI as the install-time command fallback when the
    small binary is unavailable).
-3. `ROUTES` contains the 11 public `(event, routeId, matcher)` tuples. Every
+3. `ROUTES` contains the 12 public `(event, routeId, matcher)` tuples. Every
    tuple has exactly one `handler`; there is no `scripts` field and no Bash
    host-event dispatcher.
 4. `handler-registry.ts` runs one typed in-process handler. `runtime.ts` owns
@@ -64,14 +64,17 @@ The public route inventory is:
 | `PostToolUse` | `bash` | `Bash` | `command-observed` |
 | `PostToolUse` | `always` | all | `trace-observer` |
 | `UserPromptSubmit` | `default` | all | `prompt` |
+| `UserPromptSubmit` | `inbox` | all | `task-inbox` |
 | `UserPromptSubmit` | `delegation` | Codex only | `subagent` |
 | `SubagentStart` | `context` | Codex only | `subagent` |
 | `SubagentStop` | `quality` | Codex only | `subagent` |
 | `Stop` | `default` | all | `stop` |
 
 The tuple order and membership are a stable public contract that Codex trust-
-hashes, so a capability is added inside an existing handler, never as a new or
-reordered row. Three rows above carry the WP3 coordination surface that way:
+hashes, so additions require an explicit installer projection and trust
+transition. Task Inbox uses a dedicated `UserPromptSubmit.inbox` row because
+peer bodies are untrusted and must remain outside prompt classification and
+authorization. Three pre-existing rows carry the earlier coordination surface:
 
 | Route | WP3 addition | Failure mode |
 | --- | --- | --- |

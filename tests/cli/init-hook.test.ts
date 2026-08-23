@@ -40,8 +40,8 @@ function baseStatusReport(overrides: Partial<StatusReport['targets'][number]> = 
         installed: true,
         alreadyConfigured: true,
         configPath: '/tmp/.codex/hooks.json',
-        managedEntryCount: 11,
-        expectedEntryCount: 11,
+        managedEntryCount: 12,
+        expectedEntryCount: 12,
         ...overrides,
       },
       {
@@ -51,8 +51,8 @@ function baseStatusReport(overrides: Partial<StatusReport['targets'][number]> = 
         installed: true,
         alreadyConfigured: true,
         configPath: '/tmp/.claude/settings.json',
-        managedEntryCount: 11,
-        expectedEntryCount: 11,
+        managedEntryCount: 9,
+        expectedEntryCount: 9,
       },
     ],
     repo: {
@@ -62,12 +62,12 @@ function baseStatusReport(overrides: Partial<StatusReport['targets'][number]> = 
       optInMarker: '.ai/harness/workflow-contract.json',
     },
     routes: {
-      total: 11,
+      total: 12,
       byEvent: {
         SessionStart: 1,
         PreToolUse: 2,
         PostToolUse: 3,
-        UserPromptSubmit: 2,
+        UserPromptSubmit: 3,
         SubagentStart: 1,
         SubagentStop: 1,
         Stop: 1,
@@ -207,8 +207,8 @@ describe('init-hook command', () => {
         target: 'codex',
         env: { ...process.env, HOME: home },
         statusReport: baseStatusReport({
-          managedEntryCount: 7,
-          expectedEntryCount: 7,
+          managedEntryCount: 8,
+          expectedEntryCount: 8,
         }),
         doctorReport: baseDoctorReport(),
         toolingReport: baseToolingReport(),
@@ -217,7 +217,7 @@ describe('init-hook command', () => {
       const adapter = report.checks.find((entry) => entry.id === 'status.adapter.codex');
       const action = report.agent_actions.find((entry) => entry.id === 'adapter.codex.install');
       expect(adapter?.status).toBe('ok');
-      expect(adapter?.detail).toContain('7/7 managed entries');
+      expect(adapter?.detail).toContain('8/8 managed entries');
       expect(action).toBeUndefined();
     });
   });

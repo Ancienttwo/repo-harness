@@ -21,6 +21,7 @@ function fixtureInput(event: HookEvent, routeId: RouteId): FixtureRoute {
     case 'PostToolUse.bash': return { host: 'claude', input: JSON.stringify({ tool_input: { command: 'echo hello' }, tool_output: 'hello\n', exit_code: 0 }) };
     case 'PostToolUse.always': return { host: 'claude', input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' }) };
     case 'UserPromptSubmit.default': return { host: 'claude', input: JSON.stringify({ prompt: 'Please review this function for correctness.' }) };
+    case 'UserPromptSubmit.inbox': return { host: 'claude', input: JSON.stringify({ prompt: 'Check the task inbox.' }) };
     case 'UserPromptSubmit.delegation': return { host: 'codex', input: JSON.stringify({ session_id: 'characterization-session', prompt: 'implement the next sequential task' }) };
     case 'SubagentStart.context': return { host: 'codex', input: JSON.stringify({ hook_event_name: 'SubagentStart', session_id: 'characterization-session' }) };
     case 'SubagentStop.quality': return { host: 'codex', input: JSON.stringify({ hook_event_name: 'SubagentStop', final_message: 'Inspected src/cli/hook/runtime.ts. Evidence: ran bun test tests/cli/hook.test.ts. Risk: none identified.' }) };
@@ -51,7 +52,7 @@ function telemetry(root: string): Record<string, unknown>[] {
 }
 
 describe('HRD-09 typed runtime characterization', () => {
-  test('all eleven public routes use one valid in-process telemetry step with no opaque runtime', () => {
+  test('all twelve public routes use one valid in-process telemetry step with no opaque runtime', () => {
     const root = fixtureRepo();
     try {
       for (const route of ROUTES) {

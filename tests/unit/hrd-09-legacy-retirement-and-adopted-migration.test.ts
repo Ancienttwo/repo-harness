@@ -42,6 +42,7 @@ function routeInput(event: HookEvent, routeId: RouteId): { readonly host: 'claud
     case 'PostToolUse.bash': return { host: 'claude', input: JSON.stringify({ tool_input: { command: 'echo fixture' }, tool_output: 'fixture\n', exit_code: 0 }) };
     case 'PostToolUse.always': return { host: 'claude', input: JSON.stringify({ hook_event_name: 'PostToolUse', tool_name: 'Read' }) };
     case 'UserPromptSubmit.default': return { host: 'claude', input: JSON.stringify({ prompt: 'status update' }) };
+    case 'UserPromptSubmit.inbox': return { host: 'claude', input: JSON.stringify({ prompt: 'check task inbox' }) };
     case 'UserPromptSubmit.delegation': return { host: 'codex', input: JSON.stringify({ session_id: 'hrd09-fixture', prompt: 'implement the next sequential task' }) };
     case 'SubagentStart.context': return { host: 'codex', input: JSON.stringify({ hook_event_name: 'SubagentStart', session_id: 'hrd09-fixture' }) };
     case 'SubagentStop.quality': return { host: 'codex', input: JSON.stringify({ hook_event_name: 'SubagentStop', final_message: 'Inspected src/example.ts. Evidence: fixture assertion passed. Risk: none. Recommended action: continue.' }) };
@@ -59,7 +60,7 @@ function readEventRecords(repo: string): unknown[] {
 }
 
 describe('HRD-09 terminal runtime migration', () => {
-  test('one adoption transaction retires the exact Bash runtime and all eleven routes stay on one typed authority', () => {
+  test('one adoption transaction retires the exact Bash runtime and all twelve routes stay on one typed authority', () => {
     const repo = mkdtempSync(join(tmpdir(), 'hrd09-integrated-'));
     try {
       cpSync(join(LEGACY_FIXTURE, '.ai'), join(repo, '.ai'), { recursive: true });

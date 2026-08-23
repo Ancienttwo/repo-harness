@@ -61,6 +61,7 @@ function routeInProfile(route: Route, profile: InstallProfile): boolean {
   const minimal = new Set([
     'SessionStart.default',
     'UserPromptSubmit.default',
+    'UserPromptSubmit.inbox',
     'PreToolUse.edit',
     'PostToolUse.edit',
     'PostToolUse.bash',

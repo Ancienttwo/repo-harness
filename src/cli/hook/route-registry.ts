@@ -35,6 +35,7 @@ export type RouteId =
   | 'bash'
   | 'always'
   | 'delegation'
+  | 'inbox'
   | 'context'
   | 'quality';
 
@@ -47,6 +48,7 @@ export type HookHandlerId =
   | 'command-observed'
   | 'trace-observer'
   | 'prompt'
+  | 'task-inbox'
   | 'stop';
 
 export interface Route {
@@ -106,6 +108,14 @@ export const ROUTES: readonly Route[] = Object.freeze([
     event: 'UserPromptSubmit' as const,
     routeId: 'default' as const,
     handler: 'prompt',
+  }),
+  Object.freeze({
+    event: 'UserPromptSubmit' as const,
+    routeId: 'inbox' as const,
+    // Task messages are an independent turn-boundary route. Keeping this
+    // separate from prompt classification prevents untrusted peer content
+    // from becoming routing or authorization input.
+    handler: 'task-inbox',
   }),
   Object.freeze({
     event: 'UserPromptSubmit' as const,

@@ -30,13 +30,13 @@ describe('install command (Phase 1B)', () => {
     withTempHome((home) => {
       runInstall({ target: 'codex', location: 'global', profile: 'minimal' });
       let hooks = JSON.parse(fs.readFileSync(path.join(home, '.codex/hooks.json'), 'utf-8')).hooks;
-      expect(Object.values(hooks as Record<string, unknown[]>).flat()).toHaveLength(7);
-      expect(hooks.UserPromptSubmit).toHaveLength(1);
+      expect(Object.values(hooks as Record<string, unknown[]>).flat()).toHaveLength(8);
+      expect(hooks.UserPromptSubmit).toHaveLength(2);
       expect(hooks.SubagentStart).toBeUndefined();
 
       runInstall({ target: 'codex', location: 'global', profile: 'full' as never });
       hooks = JSON.parse(fs.readFileSync(path.join(home, '.codex/hooks.json'), 'utf-8')).hooks;
-      expect(Object.values(hooks as Record<string, unknown[]>).flat()).toHaveLength(11);
+      expect(Object.values(hooks as Record<string, unknown[]>).flat()).toHaveLength(12);
       expect(hooks.SubagentStart).toHaveLength(1);
     });
   });
@@ -101,7 +101,7 @@ describe('install command (Phase 1B)', () => {
     });
   });
 
-  test('codex --location global creates ~/.codex/hooks.json with 11 matcher-grouped entries', () => {
+  test('codex --location global creates ~/.codex/hooks.json with 12 matcher-grouped entries', () => {
     withTempHome((home) => {
       const result = runInstall({ target: 'codex', location: 'global' });
       expect(result.exitCode).toBe(0);
@@ -113,7 +113,7 @@ describe('install command (Phase 1B)', () => {
       const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
       const entries = data.hooks;
       const total = Object.values(entries as Record<string, unknown[]>).flat().length;
-      expect(total).toBe(11);
+      expect(total).toBe(12);
 
       // PostToolUse must have 3 matcher-disjoint entries
       expect((entries.PostToolUse as { matcher?: string }[]).map((e) => e.matcher)).toEqual([
@@ -127,10 +127,10 @@ describe('install command (Phase 1B)', () => {
         'Task|Agent|SendUserMessage',
       ]);
       // SessionStart / Stop / SubagentStart / SubagentStop have 1 matcher-less entry each;
-      // UserPromptSubmit has default + delegation.
+      // UserPromptSubmit has default + inbox + delegation.
       expect(entries.SessionStart.length).toBe(1);
       expect(entries.Stop.length).toBe(1);
-      expect(entries.UserPromptSubmit.length).toBe(2);
+      expect(entries.UserPromptSubmit.length).toBe(3);
       expect(entries.SubagentStart.length).toBe(1);
       expect(entries.SubagentStop.length).toBe(1);
     });
@@ -197,7 +197,7 @@ describe('install command (Phase 1B)', () => {
     });
   });
 
-  test('claude --location global creates ~/.claude/settings.json with 8 shared hooks', () => {
+  test('claude --location global creates ~/.claude/settings.json with 9 shared hooks', () => {
     withTempHome((home) => {
       const result = runInstall({ target: 'claude', location: 'global' });
       expect(result.exitCode).toBe(0);
@@ -205,8 +205,8 @@ describe('install command (Phase 1B)', () => {
         fs.readFileSync(path.join(home, '.claude/settings.json'), 'utf-8'),
       );
       const total = Object.values(data.hooks as Record<string, unknown[]>).flat().length;
-      expect(total).toBe(8);
-      expect(data.hooks.UserPromptSubmit.length).toBe(1);
+      expect(total).toBe(9);
+      expect(data.hooks.UserPromptSubmit.length).toBe(2);
       expect(data.hooks.SubagentStart).toBeUndefined();
       expect(data.hooks.SubagentStop).toBeUndefined();
       for (const [event, entries] of Object.entries(data.hooks) as [string, { hooks: { command: string; timeout?: number }[] }[]][]) {
@@ -218,7 +218,7 @@ describe('install command (Phase 1B)', () => {
     });
   });
 
-  test('claude install self-heals legacy Codex-only managed entries back to 8 shared hooks', () => {
+  test('claude install self-heals legacy Codex-only managed entries back to 9 shared hooks', () => {
     withTempHome((home) => {
       const filePath = path.join(home, '.claude/settings.json');
       fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -243,8 +243,8 @@ describe('install command (Phase 1B)', () => {
       expect(result.exitCode).toBe(0);
       const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
       const total = Object.values(data.hooks as Record<string, unknown[]>).flat().length;
-      expect(total).toBe(8);
-      expect(data.hooks.UserPromptSubmit.length).toBe(1);
+      expect(total).toBe(9);
+      expect(data.hooks.UserPromptSubmit.length).toBe(2);
       expect(data.hooks.SubagentStart).toBeUndefined();
       expect(data.hooks.SubagentStop).toBeUndefined();
     });
@@ -293,7 +293,7 @@ describe('install command (Phase 1B)', () => {
       runInstall({ target: 'claude', location: 'global' });
       const beforeUninstall = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
       expect(beforeUninstall.theme).toBe('dark');
-      expect(beforeUninstall.hooks.UserPromptSubmit.length).toBe(2);
+      expect(beforeUninstall.hooks.UserPromptSubmit.length).toBe(3);
 
       const uninstall = runUninstall({ target: 'claude', location: 'global' });
       expect(uninstall.exitCode).toBe(0);

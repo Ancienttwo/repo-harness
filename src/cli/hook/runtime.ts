@@ -139,6 +139,7 @@ function hostOutput(
   const structuredRoute =
     (opts.event === 'PreToolUse' && opts.routeId === 'subagent') ||
     (opts.event === 'UserPromptSubmit' && opts.routeId === 'delegation') ||
+    (opts.event === 'UserPromptSubmit' && opts.routeId === 'inbox') ||
     (opts.event === 'SubagentStart' && opts.routeId === 'context') ||
     (opts.event === 'SubagentStop' && opts.routeId === 'quality');
   if (structuredRoute && structuredSuccess) writeText(1, result.stdout);

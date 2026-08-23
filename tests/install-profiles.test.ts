@@ -97,13 +97,13 @@ function writeManagedHostSurfaces(
 }
 
 describe('install profiles', () => {
-  test('steady-state vocabulary is minimal/full with protocol 2 and exact 7/11 hook projections', () => withHome((env) => {
+  test('steady-state vocabulary is minimal/full with protocol 2 and exact 8/12 hook projections', () => withHome((env) => {
     expect(INSTALL_PROFILES).toEqual(['minimal', 'full']);
     expect(Object.keys(PROFILE_COMPONENTS)).toEqual(['minimal', 'full']);
     const minimal = assertInstallProfile('minimal');
     const full = assertInstallProfile('full');
-    expect(Object.values(buildManagedHooks('codex', minimal)).flat()).toHaveLength(7);
-    expect(Object.values(buildManagedHooks('codex', full)).flat()).toHaveLength(11);
+    expect(Object.values(buildManagedHooks('codex', minimal)).flat()).toHaveLength(8);
+    expect(Object.values(buildManagedHooks('codex', full)).flat()).toHaveLength(12);
     expect(planInstallProfile(full, null, env).protocol).toBe(2);
   }));
 

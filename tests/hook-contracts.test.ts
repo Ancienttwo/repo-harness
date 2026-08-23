@@ -31,6 +31,24 @@ describe("Hook contracts", () => {
     expect(existsSync(join(ROOT, "assets/hooks/run-hook.sh"))).toBe(false);
   });
 
+  test("task inbox is an independent UserPromptSubmit route with bounded untrusted output", () => {
+    const routes = read("src/cli/hook/route-registry.ts");
+    const registry = read("src/cli/hook/handler-registry.ts");
+    const handler = read("src/cli/hook/task-inbox-handler.ts");
+    const protocol = read("src/core/fleet/task-message.ts");
+    const runtime = read("src/cli/hook/runtime.ts");
+    expect(routes).toContain("routeId: 'inbox'");
+    expect(routes).toContain("handler: 'task-inbox'");
+    expect(registry).toContain("runTaskInboxHandler");
+    expect(runtime).toContain("opts.routeId === 'inbox'");
+    expect(handler).toContain("renderTaskMessageUntrustedContext");
+    expect(protocol).toContain("TaskInboxUntrustedPeerMessages");
+    expect(protocol).toContain("untrusted data");
+    expect(handler).not.toContain("transcript");
+    expect(handler).not.toContain("pty");
+    expect(handler).not.toContain("resume");
+  });
+
   test("typed hook input parser owns prompt, session, run, tool, and path accessors", () => {
     const parser = read("src/cli/hook/hook-input.ts");
     expect(parser).toContain("getPrompt");

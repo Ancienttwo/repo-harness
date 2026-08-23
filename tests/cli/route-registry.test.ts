@@ -12,7 +12,7 @@ import { getHandlerForRoute, handlerIdForRoute, listHandlerBindings } from '../.
 describe('typed hook route registry', () => {
   test('routes are frozen, ordered, and carry no legacy script field', () => {
     expect(Object.isFrozen(ROUTES)).toBe(true);
-    expect(ROUTES).toHaveLength(11);
+    expect(ROUTES).toHaveLength(12);
     for (const route of ROUTES) {
       expect(Object.isFrozen(route)).toBe(true);
       expect('scripts' in route).toBe(false);
@@ -21,7 +21,7 @@ describe('typed hook route registry', () => {
   });
 
   test('host-scoped route views preserve the public adapter contract', () => {
-    expect(routesForHost('codex')).toHaveLength(11);
+    expect(routesForHost('codex')).toHaveLength(12);
     expect(routesForHost('claude').map((route) => `${route.event}.${route.routeId}`)).toEqual([
       'SessionStart.default',
       'PreToolUse.edit',
@@ -30,6 +30,7 @@ describe('typed hook route registry', () => {
       'PostToolUse.bash',
       'PostToolUse.always',
       'UserPromptSubmit.default',
+      'UserPromptSubmit.inbox',
       'Stop.default',
     ]);
     expect(routeSupportsHost(getRoute('UserPromptSubmit', 'delegation')!, 'codex')).toBe(true);
@@ -43,7 +44,7 @@ describe('typed hook route registry', () => {
 
   test('every route has exactly one exhaustive typed handler binding', () => {
     const bindings = listHandlerBindings();
-    expect(Object.keys(bindings)).toHaveLength(11);
+    expect(Object.keys(bindings)).toHaveLength(12);
     for (const route of ROUTES) {
       const key = `${route.event}.${route.routeId}`;
       expect(handlerIdForRoute(route.event, route.routeId)).toBe(route.handler);
