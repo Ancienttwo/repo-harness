@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-23 17:45
+> **Related Plan**: plans/archive/plan-20260822-1222-publication-receipt.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260823-1745
+
 # Task Contract: publication-receipt
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260822-1222-publication-receipt.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->

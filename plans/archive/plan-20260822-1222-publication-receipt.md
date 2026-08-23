@@ -1,6 +1,6 @@
 # Plan: Publication Receipt V1
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260822-1222
 > **Slug**: publication-receipt
 > **Planning Source**: user-approved-plan
