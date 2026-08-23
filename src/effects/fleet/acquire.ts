@@ -39,8 +39,8 @@ import {
   processSprintDependencies,
   releaseSprintCommand,
   type SprintCommandDependencies,
-} from '../../cli/commands/sprint';
-import type { CommandOutcome } from '../../cli/commands/state';
+} from '../state/coordination-sprint';
+import type { CommandOutcome } from '../../core/state/command-outcome';
 import { readWorktreeTopology, type WorktreeTopology } from '../git/worktree-topology';
 import {
   readRepoHarnessRegistrySnapshot,

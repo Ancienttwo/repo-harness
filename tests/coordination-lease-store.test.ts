@@ -42,7 +42,7 @@ import {
   releaseSprintCommand,
   stealSprintCommand,
   type SprintCommandDependencies,
-} from '../src/cli/commands/sprint';
+} from '../src/effects/state/coordination-sprint';
 import {
   COORDINATION_BACKLOG_LOCK_RELATIVE_PATH,
   COORDINATION_ROOT_RELATIVE_PATH,

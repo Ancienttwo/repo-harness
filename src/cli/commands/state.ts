@@ -10,6 +10,7 @@ import type {
   EffectiveState,
   EffectiveStateRiskInput,
 } from '../../core/state/types';
+import type { CommandOutcome } from '../../core/state/command-outcome';
 import type { WorkflowOperationKind, WorkflowProfile } from '../../core/workflow/profile';
 import { appendAttemptReceipt } from '../../effects/state/attempt-ledger-store';
 import {
@@ -21,12 +22,6 @@ import { resolveBoard } from '../../effects/state/resolve-board';
 import { resolveContinuationEnvelope } from '../../effects/state/resolve-continuation-envelope';
 import { resolveEffectiveState } from '../../effects/state/resolve-effective-state';
 import { migrateLegacyActivePlan } from '../hook/legacy-active-plan-migration';
-
-export interface CommandOutcome {
-  readonly exitCode: 0 | 1 | 2;
-  readonly stdout: string;
-  readonly stderr: string;
-}
 
 export interface StateCommandOptions {
   readonly targetPath?: readonly string[];

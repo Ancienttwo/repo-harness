@@ -34,7 +34,7 @@ import {
 import type { RepoHarnessRegisteredRepo, RepoHarnessRegistrySnapshot } from '../src/effects/repo-registry';
 import { resolveRepoIdentity } from '../src/effects/state/coordination-canonical-source';
 import { readLease, type LeaseRead } from '../src/effects/state/coordination-lease-store';
-import type { SprintCommandDependencies } from '../src/cli/commands/sprint';
+import type { SprintCommandDependencies } from '../src/effects/state/coordination-sprint';
 
 const ROOT = join(import.meta.dir, '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
