@@ -12,6 +12,7 @@ import {
   migrateLegacyPublication,
   reopenPublication,
   takeoverPublication,
+  verifyPublicationShipJournalComplete,
 } from '../../src/effects/publication/publication-lifecycle';
 import { PublicationLifecycleError } from '../../src/core/publication/publication-lifecycle';
 import { preparePublicationReceipt, ensurePublicationReceipt } from '../../src/effects/publication/publication-receipt';
@@ -173,6 +174,15 @@ describe('task-locked publication lifecycle', () => {
     expect(pointer.publication_id).toBe(receipt.publication_id);
     expect(readLease(fixture.root, fixture.taskId).record).toMatchObject({ record_schema: 2, state: 'reviewing', current_publication: pointer });
     expect(enterPublicationReviewing(enterInput)).toEqual(pointer);
+    const reviewing = readLease(fixture.root, fixture.taskId).record;
+    if (reviewing === null || reviewing.state !== 'reviewing') throw new Error('fixture expected reviewing lease');
+    expect(() => verifyPublicationShipJournalComplete({
+      repo_root: fixture.root, receipt, reviewing_record: reviewing, current_publication: pointer,
+    })).toThrow('required complete ship transaction');
+    completeLegacyJournal(fixture, receipt);
+    expect(() => verifyPublicationShipJournalComplete({
+      repo_root: fixture.root, receipt, reviewing_record: reviewing, current_publication: pointer,
+    })).not.toThrow();
     expect(() => reopenPublication({ ...enterInput, expected_generation: 2, publication_id: receipt.publication_id, expected_head_sha: receipt.head_sha }))
       .toThrow('expected generation 2');
     expect(readLease(fixture.root, fixture.taskId).record?.state).toBe('reviewing');

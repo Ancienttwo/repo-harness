@@ -594,6 +594,42 @@ function integrationJournalProof(
   return readShipJournalProof(repoRoot, statusPath, pointer.ship_transaction_key, 'complete', gitBin);
 }
 
+/**
+ * Read-only verifier for a reviewing publication's already-completed ship.
+ * It intentionally reuses the lifecycle journal/receipt/lease join and does
+ * not perform a lease transition or accept a caller-supplied journal path.
+ */
+export function verifyPublicationShipJournalComplete(input: {
+  readonly repo_root: string;
+  readonly receipt: PublicationReceiptV1;
+  readonly reviewing_record: LeaseOwnerRecord;
+  readonly current_publication: CurrentPublicationPointerV1;
+  readonly git_bin?: string;
+}): void {
+  try {
+    const { reviewing_record: record, current_publication: pointer, receipt } = input;
+    if (record.state !== 'reviewing' || !('current_publication' in record) || record.current_publication === null) {
+      throw failure('publication_claim_mismatch', 'ship completion verifier requires a reviewing publication');
+    }
+    if (
+      record.current_publication.publication_id !== pointer.publication_id
+      || record.current_publication.receipt_sha256 !== pointer.receipt_sha256
+      || record.current_publication.head_sha !== pointer.head_sha
+      || record.current_publication.ship_transaction_key !== pointer.ship_transaction_key
+    ) {
+      throw failure('publication_pointer_mismatch', 'ship completion verifier pointer does not match the reviewing lease');
+    }
+    if (receipt.publication_id !== pointer.publication_id || publicationReceiptDigest(receipt) !== pointer.receipt_sha256) {
+      throw failure('publication_pointer_mismatch', 'ship completion verifier receipt does not match the current publication pointer');
+    }
+    const proof = integrationJournalProof(input.repo_root, pointer, input.git_bin);
+    assertLeaseMatchesReceipt(record, receipt, pointer);
+    assertShipJournalContext(proof, record, receipt);
+  } catch (error) {
+    throw asLifecycleError(error, 'cannot verify completed publication ship journal');
+  }
+}
+
 function assertProviderReceiptIdentity(
   provider: ProviderPullRequestIntegrationV1,
   receipt: PublicationReceiptV1,

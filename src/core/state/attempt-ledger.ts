@@ -31,10 +31,8 @@
  * silently drops lines can mask a real stall, which is exactly the failure this
  * work package exists to prevent.
  */
+import { evaluateNoProgress } from './no-progress';
 import type { AttemptOutcome, AttemptReceiptV1 } from './types';
-
-/** Two consecutive no-progress turns are the stall proof. */
-const NO_PROGRESS_THRESHOLD = 2;
 
 const ATTEMPT_OUTCOMES: ReadonlySet<string> = new Set<AttemptOutcome>([
   'completed',
@@ -202,7 +200,8 @@ export function parseAttemptLedger(text: string | null): AttemptLedgerRead {
 
 /**
  * The stall verdict for one unit at one token. Deterministic in the ledger's
- * bytes and the current token; reads nothing else.
+ * bytes and the current token; reads nothing else.  Its receipt wire shape is
+ * unchanged; only the trailing-two calculation is shared with repair loops.
  */
 export function evaluateAttemptStall(
   ledger: AttemptLedgerRead,
@@ -213,14 +212,12 @@ export function evaluateAttemptStall(
   if (unitRef === null) return 'none';
 
   const forUnit = ledger.receipts.filter((receipt) => receipt.unit_ref === unitRef);
-  let trailing = 0;
-  for (let index = forUnit.length - 1; index >= 0; index -= 1) {
-    const receipt = forUnit[index];
-    const stalled = receipt.outcome === 'completed'
-      && receipt.before_progress_token === currentProgressToken
-      && receipt.after_progress_token === currentProgressToken;
-    if (!stalled) break;
-    trailing += 1;
-  }
-  return trailing >= NO_PROGRESS_THRESHOLD ? 'no_progress' : 'none';
+  return evaluateNoProgress(
+    forUnit.map((receipt) => ({
+      outcome: receipt.outcome,
+      before_token: receipt.before_progress_token,
+      after_token: receipt.after_progress_token,
+    })),
+    currentProgressToken,
+  );
 }
