@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-23T19:45:00+0800 -->
+<!-- updated_at: 2026-08-23T19:47:38+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-08-23T19:45:00+0800
+> **Updated At**: 2026-08-23T19:47:38+0800
 > **Source Branch**: codex/fleet-prd-closeout
-> **Source Commit**: 1b19a526
+> **Source Commit**: e7e00ca5
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: ledger-closeout-review
+> **Reason**: aggregate-projection-materialized
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -52,18 +52,14 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
+- status=fail, source=verify-sprint, exit_code=1, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 5 changed/untracked path(s)
+- Summary: 1 changed/untracked path(s)
 
 ```
- M plans/plan-20260823-1652-fleet-prd-closeout.md
- M tasks/archive/review-20260823-1821-gpt-pro-orchestrate-mode.md
- M tasks/current.md
- M tasks/notes/20260823-1652-fleet-prd-closeout.notes.md
- M tasks/reviews/20260823-1652-fleet-prd-closeout.review.md
+ M docs/architecture/.projection-manifest.json
 ```
 
 ## Source Artifacts
