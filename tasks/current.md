@@ -1,26 +1,26 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-23T21:07:54+0800 -->
+<!-- updated_at: 2026-08-24T04:25:07+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Idle
-> **Updated At**: 2026-08-23T21:07:54+0800
-> **Source Branch**: main
-> **Source Commit**: 2dc6b8f1
+> **Status**: Active
+> **Updated At**: 2026-08-24T04:25:07+0800
+> **Source Branch**: codex/local-human-control-board-v1
+> **Source Commit**: 058630ff
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: fleet-closeout-audit-published
+> **Reason**: manual
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Idle
-- Active Plan: (none)
-- Plan Status: (none)
-- Next Task: (none)
+- Status: Active
+- Active Plan: plans/plan-20260824-0103-local-human-control-board-v1.md
+- Plan Status: Executing
+- Next Task: Run focused, browser desktop/mobile, full repository, package, workflow and independent review gates; record evidence and close the work package.
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,7 +31,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- (none)
+- .: plans/plan-20260824-0103-local-human-control-board-v1.md
+- .: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-local-human-control-board-v1
+- /Users/ancienttwo/Projects/repo-harness-wt-release-0-17-0: plans/plan-20260823-2134-release-0-17-0.md
+- /Users/ancienttwo/Projects/repo-harness-wt-release-0-17-0: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-release-0-17-0
 ## Active Sprint
 
 - Sprint: (none)
@@ -55,10 +58,12 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: clean
+- Summary: 3 changed/untracked path(s)
 
 ```
-(none)
+ M tasks/current.md
+ M tasks/notes/20260824-0103-local-human-control-board-v1.notes.md
+ M tasks/reviews/20260824-0103-local-human-control-board-v1.review.md
 ```
 
 ## Source Artifacts
