@@ -99,17 +99,17 @@ See captured planning output.
 
 ## Goal
 
-Close the already-landed Fleet Acquire + Publication Readiness WP0-A, WP0-B, and WP0-C workflow artifacts against current `main`, without changing product code or starting deferred WP5.
+Close the already-landed Fleet Acquire + Publication Readiness WP0-A, WP0-B, and WP0-C workflow artifacts plus the already-merged GPT Pro advisory orchestration workflow against current `main`, without changing product code or starting deferred WP5.
 
 ## P1 architecture
 
-- Product implementation WP0-A through WP4 is already on `main`; only three early workflow families remain unarchived.
+- Product implementation WP0-A through WP4 and GPT Pro orchestration commit `63cebdbe` are already on `main`; four workflow families remain unarchived.
 - Each old contract owns its own verification and AcceptanceReceipt authority; the global current receipt cannot authorize another contract.
 - `archive-workflow` is the only owner of terminal artifact moves and current-status refresh.
 
 ## P2 trace
 
-For each of WP0-A, WP0-B, and WP0-C in order: re-run exact contract verification on current target -> prepare Change Assessment -> record a contract-allowed user-waiver AcceptanceReceipt after independent gate evidence -> finalize verify-sprint -> archive as Completed. Then verify no active Fleet plan/sprint markers remain and main is clean.
+For WP0-A, WP0-B, WP0-C, and GPT Pro orchestration in order: re-run exact contract verification on current target -> prepare Change Assessment -> record the policy-matching typed AcceptanceReceipt after independent gate evidence -> finalize verify-sprint -> archive as Completed. Then verify no related active markers remain and main is clean.
 
 ## P3 decision
 
@@ -117,14 +117,14 @@ Use one isolated ledger-closeout work-package, but preserve three separate verif
 
 ## Scope
 
-- Rebind WP0-A/B/C verification and typed receipts to current `main`.
+- Rebind WP0-A/B/C and GPT Pro orchestration verification and typed receipts to current `main`.
 - Promote any still-Active old contracts through the canonical archive workflow.
 - Archive the three plan/contract/review/notes/todo families and refresh `tasks/current.md`.
 - Verify WP0-A through WP4 remain present and Required/CI remains green after publication.
 
 ## Out of scope
 
-- Product source or tests, WP1-WP4 historical review projection rewrites, deferred WP5, PRD lifecycle vocabulary changes, and the unrelated GPT Pro worktree.
+- Product source or tests, WP1-WP4 historical review projection rewrites, deferred WP5, and PRD lifecycle vocabulary changes.
 
 ## Verification
 
@@ -142,6 +142,7 @@ Use one isolated ledger-closeout work-package, but preserve three separate verif
 - [ ] Reverify and archive WP0-A PublicationReceipt.
 - [ ] Reverify and archive WP0-B Lease Protocol 2 + lifecycle.
 - [ ] Reverify and archive WP0-C Recovery + Reconcile.
+- [ ] Reverify and archive the already-merged GPT Pro orchestration workflow; remove its obsolete worktree/branch after absorption is proven.
 - [ ] Independently gate the final artifact-only diff, close this closeout workflow, merge, push, and confirm Required/CI.
 
 ## Annotations

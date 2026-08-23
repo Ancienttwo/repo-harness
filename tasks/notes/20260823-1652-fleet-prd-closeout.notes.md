@@ -12,6 +12,7 @@
 - Keep the PRD `Approved`: repository policy defines PRD lifecycle as `Draft -> Approved -> Superseded`, with no `Complete` state.
 - Reverify WP0-A/B/C separately because AcceptanceReceipt is a single exact contract/target authority and later workflows replaced the current receipt.
 - Use `archive-workflow --outcome Completed` as the sole owner of status promotion, artifact moves, and current-status projection.
+- GPT Pro orchestration product bytes already landed on `main` as `63cebdbe`; its stale worktree is a closeout carrier, not unpublished implementation.
 
 ## Deviations From Plan Or Spec
 

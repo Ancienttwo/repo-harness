@@ -17,11 +17,11 @@ WP0-A through WP0-C shipped and passed their historical reviews, but their live 
 
 ## Goal
 
-Rebind each of WP0-A, WP0-B, and WP0-C to current-target verification and its own typed AcceptanceReceipt, archive each family as `Completed` through the canonical workflow, and leave the Fleet PRD legally `Approved` with no Fleet active plan or sprint marker.
+Rebind WP0-A, WP0-B, WP0-C, and the already-merged GPT Pro orchestration work package to current-target verification and their own typed AcceptanceReceipts, archive each family as `Completed`, and leave the Fleet PRD legally `Approved` with no related active marker.
 
 ## Scope
 
-- In scope: the three historical workflow families, their current-target evidence/receipt projections, canonical archive moves, the closeout workflow family, and derived `tasks/current.md`/`tasks/todos.md` projections.
+- In scope: the four historical workflow families, their current-target evidence/receipt projections, canonical archive moves, cleanup of the absorbed GPT Pro worktree/branch, the closeout workflow family, and derived `tasks/current.md`/`tasks/todos.md` projections.
 - Out of scope: product source/tests, WP1-WP4 historical review reconstruction, deferred WP5, PRD lifecycle vocabulary changes, and `gpt-pro-orchestrate-mode`.
 - Taste constraints: preserve three separate contract/receipt authorities; no synthetic evidence, compatibility path, or bulk status rewrite.
 - Taste constraints: <!-- advisory only, no run gate; default style/taste lives in AGENTS.md and the minimal-change policy, use this to record a per-task override -->
@@ -157,7 +157,7 @@ exit_criteria:
 ## Acceptance Notes (Human Review)
 
 - Functional behavior: no product behavior changes; three already-landed work packages become truthful terminal workflow artifacts.
-- Edge cases: each receipt must bind its own contract and current target; WP5 remains deferred; the unrelated GPT Pro worktree remains untouched.
+- Edge cases: each receipt must bind its own contract and current target; WP5 remains deferred; the obsolete GPT Pro worktree is removed only after its landed tree is proven on `main`.
 - Regression risks: archiving the wrong family or projecting one receipt across contracts; canonical `archive-workflow` and per-contract verification prevent both.
 
 ## Rollback Point
