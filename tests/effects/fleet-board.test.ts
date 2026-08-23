@@ -306,7 +306,7 @@ describe('fleet board collector', () => {
         read_registry: () => registry([fixture.repo]),
         collect_repository: productionFleetBoardDependencies.collect_repository,
       };
-      const result = await collectFleetBoard({ max_concurrency: 2, timeout_ms: 10_000 }, dependencies);
+      const result = await collectFleetBoard({ max_concurrency: 2, timeout_ms: 30_000 }, dependencies);
       expect(result.repositories[0]).toMatchObject({ status: 'ok' });
       expect(result.repositories[0]?.cards).toHaveLength(4);
       expect(Number.parseInt(readFileSync(join(fixture.counter_dir, 'maximum'), 'utf8'), 10)).toBe(2);
@@ -318,7 +318,7 @@ describe('fleet board collector', () => {
       else process.env.FLEET_PROVIDER_COUNTER_DIR = previousCounter;
       rmSync(root, { recursive: true, force: true });
     }
-  }, 10_000);
+  }, 30_000);
 
   test('does not start a repository observation after the outer signal wins before synchronous collection', async () => {
     const controller = new AbortController();

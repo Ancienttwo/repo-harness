@@ -43,6 +43,15 @@
   literal final-subject paths, not directory prefixes. The contract now binds
   its deterministic and runtime oracles to the five selected source files; no
   verifier semantics or product scope changed.
+- The frozen reviewer was changed from Claude to Codex after the managed
+  security boundary correctly rejected sending the private branch diff to the
+  external Claude service. The existing read-only gatekeeper review therefore
+  remains the acceptance authority without misrepresenting reviewer provenance.
+- A later full-suite run exposed an environment-sensitive 10-second ceiling in
+  the existing real-provider concurrency test. Direct measurement isolated
+  276ms of fixture setup and 9.7-10.8s of collection across 48 fake provider
+  child invocations; the test deadline is now 30 seconds while the production
+  Fleet deadline and the asserted maximum concurrency of two are unchanged.
 
 ## Tradeoffs Considered
 
