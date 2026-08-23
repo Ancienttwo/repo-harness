@@ -2,6 +2,93 @@
 
 All notable changes to this skill are documented here.
 
+## [0.17.0] - 2026-08-23
+
+### Added
+
+- **Git-backed publication identity and recovery.** Successful PR publication
+  now produces a deterministic immutable `PublicationReceiptV1` that binds the
+  canonical task revision, claim/generation, verified candidate, provider repo,
+  PR, and exact Head SHA. A bounded PR marker carries the complete canonical
+  receipt for cross-clone rebuild, while the git-common-dir copy remains a
+  local recovery cache. Ship retries converge on the same publication ID;
+  incomplete receipt/marker writes return typed `publication_incomplete`
+  failures instead of reporting success.
+- **Lease protocol 2 PR review lifecycle.** Leases can move from the short
+  `completing` transaction window into `reviewing` with one task-lock-protected
+  `current_publication` pointer. Same-owner reopen revalidates the existing
+  worktree binding; takeover creates a new reserving generation that must pass
+  normal bind before becoming bound; raw sprint steal rejects reviewing leases.
+  Legacy protocol-1 owner records remain readable and upgrade only at the
+  reviewing boundary, while older clients fail closed on protocol 2.
+- **Publication recovery, integration reconcile, and merge readiness.** New
+  publication commands inspect and retry crash-window state, rebuild missing
+  receipts, and reconcile merged/ancestor/absorbed candidates only after
+  fetching the provider target to an isolated observation ref and proving the
+  canonical task row complete. `publication readiness` and `fleet ready`
+  double-read live provider facts and fence PR draft state, Head SHA, base
+  movement, local verification evidence, current publication, and Lease claim.
+- **Deterministic Fleet offer and acquisition protocol.** `fleet offers` scans
+  the adopted repo registry for stable `execution_ready` tasks. `fleet acquire`
+  revalidates registry authorization, task/offer revisions, races the canonical
+  Lease claim, creates a fresh contract worktree, binds it, and returns a
+  `WorkEnvelopeV1`. Claim-race losers retry deterministically and never receive
+  a partially bound envelope.
+- **Cross-repository Fleet Board.** `fleet board --json` emits the versioned
+  `FleetBoardSnapshotV1` projection across registered repositories, including
+  repository health, execution readiness, Lease/publication state, exact merge
+  blockers, feedback, task inbox, no-progress, and orthogonal
+  `attention_owner`. `fleet watch --format jsonl` emits immediate,
+  non-overlapping snapshots with bounded provider concurrency and collection
+  deadlines. Both surfaces remain read-only projections.
+- **Immutable provider feedback and repair redispatch.** GitHub check failures
+  and review threads are stored as idempotent `FeedbackEventV1` observations;
+  mutable delivery state lives in separate `FeedbackDeliveryReceiptV1`
+  records. Repair offers preserve the original task/publication lineage,
+  reopen or take over through fenced lifecycle commands, and use durable
+  reaction receipts to escalate two completed same-token attempts as
+  `no_progress` without treating polling as progress.
+- **Task-addressed cross-agent inbox.** `fleet message send` creates immutable
+  task- or claim-scoped messages, and inbox list/ack tracks per-recipient
+  delivery without mutating Lease authority. Claude and Codex turn hooks inject
+  only bounded untrusted messages for the current owner; stale claim-scoped
+  messages become superseded after takeover.
+- **Fleet MCP mirrors.** The coding MCP profile exposes fenced
+  `fleet_offers`, `fleet_acquire`, `publication_readiness`,
+  `publication_reopen`, and `publication_takeover` tools. Mutation calls require
+  an adopted `read_write` repository and the current registry authorization
+  revision before entering the same core/effects paths as the CLI.
+- **GPT Pro advisory orchestration mode.** The ChatGPT browser skill can prepare
+  a commit-bound planning or review bundle for GPT Pro, while local Codex keeps
+  execution, evidence, commit, push, merge, and deployment authority. Returned
+  prose is advisory and cannot expand contracts or attest to local checks.
+
+### Changed
+
+- **Bun 1.4 is the package runtime floor.** Package engines, installers, global
+  runtime checks, and helper bootstrap diagnostics now require Bun `>=1.4.0`
+  so candidate and installed runtimes use the tested process and test-runner
+  behavior.
+- **Contract worktrees use package-owned execution dependencies.** Verification
+  resolves the declared task test runner and packaged helper siblings from the
+  contract worktree/package instead of silently relying on a source checkout or
+  ambient global install. Gatekeeper acceptance also adds structural-quality
+  hard stops for duplication, placement, and boundary regressions.
+- **Human control and Agent factory direction is documented.** The stable
+  Fleet JSON/JSONL read model is the future Web/TUI component boundary; UI and
+  optional operators remain projections and command routers, never workflow
+  state owners.
+
+### Fixed
+
+- **Fleet acquire no longer leaks source-worktree workflow state.** Acquire
+  passes the task identity into contract-worktree start and writes active plan,
+  contract, and claim-token state only inside the newly created execution
+  worktree, preserving isolation between the dispatcher checkout and worker.
+- **Packaged handoff and contract test-runner resolution.** Installed helpers
+  now resolve their package-owned siblings and declared runner paths correctly
+  when downstream repositories do not vendor the source tree.
+
 ## [0.16.2] - 2026-08-21
 
 ### Fixed
