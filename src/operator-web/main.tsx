@@ -11,4 +11,3 @@ createRoot(root).render(
     <OperatorApp />
   </StrictMode>,
 );
-
