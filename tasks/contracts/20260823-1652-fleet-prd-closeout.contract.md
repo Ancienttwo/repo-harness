@@ -22,8 +22,8 @@ Rebind WP0-A, WP0-B, WP0-C, and the already-merged GPT Pro orchestration work pa
 ## Scope
 
 - In scope: the four historical workflow families, their current-target evidence/receipt projections, canonical archive moves, cleanup of the absorbed GPT Pro worktree/branch, the closeout workflow family, and derived `tasks/current.md`/`tasks/todos.md` projections.
-- Out of scope: product source/tests, WP1-WP4 historical review reconstruction, deferred WP5, PRD lifecycle vocabulary changes, and `gpt-pro-orchestrate-mode`.
-- Taste constraints: preserve three separate contract/receipt authorities; no synthetic evidence, compatibility path, or bulk status rewrite.
+- Out of scope: product source/tests, WP1-WP4 historical review reconstruction, deferred WP5, and PRD lifecycle vocabulary changes.
+- Taste constraints: preserve four separate contract/receipt authorities; no synthetic evidence, compatibility path, or bulk status rewrite.
 - Taste constraints: <!-- advisory only, no run gate; default style/taste lives in AGENTS.md and the minimal-change policy, use this to record a per-task override -->
 
 ## Stop Conditions
@@ -143,6 +143,7 @@ exit_criteria:
     - plans/archive/plan-20260822-1222-publication-receipt.md
     - plans/archive/plan-20260822-1538-lease-protocol-2-lifecycle.md
     - plans/archive/plan-20260822-1915-publication-recovery-reconcile.md
+    - plans/archive/plan-20260822-1240-gpt-pro-orchestrate-mode.md
   artifacts_exist:
     - .ai/harness/checks/latest.json
     - tasks/notes/20260823-1652-fleet-prd-closeout.notes.md

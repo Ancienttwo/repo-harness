@@ -8,7 +8,7 @@
 > **Source Ref**: (none)
 > **Artifact Level**: work-package
 > **Promotion Reason**: verification_boundary
-> **Verification Boundary**: Three separately rebound contract verifications and receipts plus archive-workflow closeout
+> **Verification Boundary**: Four separately rebound contract verifications and receipts plus archive-workflow closeout
 > **Rollback Surface**: Revert the single ledger-closeout publication commit
 > **Spec**: `docs/spec.md`
 > **Research**: See `docs/researches/`
@@ -119,7 +119,7 @@ Use one isolated ledger-closeout work-package, but preserve three separate verif
 
 - Rebind WP0-A/B/C and GPT Pro orchestration verification and typed receipts to current `main`.
 - Promote any still-Active old contracts through the canonical archive workflow.
-- Archive the three plan/contract/review/notes/todo families and refresh `tasks/current.md`.
+- Archive the four plan/contract/review/notes/todo families and refresh `tasks/current.md`.
 - Verify WP0-A through WP4 remain present and Required/CI remains green after publication.
 
 ## Out of scope
@@ -153,4 +153,5 @@ Use one isolated ledger-closeout work-package, but preserve three separate verif
 - [ ] Reverify and archive WP0-A PublicationReceipt.
 - [ ] Reverify and archive WP0-B Lease Protocol 2 + lifecycle.
 - [ ] Reverify and archive WP0-C Recovery + Reconcile.
+- [ ] Reverify and archive the already-merged GPT Pro orchestration workflow; remove its obsolete worktree/branch after absorption is proven.
 - [ ] Independently gate the final artifact-only diff, close this closeout workflow, merge, push, and confirm Required/CI.
