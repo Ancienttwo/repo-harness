@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-23 18:50
+> **Related Plan**: plans/archive/plan-20260822-1538-lease-protocol-2-lifecycle.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260823-1850
+
 # Task Contract: lease-protocol-2-lifecycle
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260822-1538-lease-protocol-2-lifecycle.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->

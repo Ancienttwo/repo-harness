@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-23 18:50
+> **Related Plan**: plans/archive/plan-20260822-1538-lease-protocol-2-lifecycle.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260823-1850
+
 # Implementation Notes: lease-protocol-2-lifecycle
 
 ## Frozen decisions

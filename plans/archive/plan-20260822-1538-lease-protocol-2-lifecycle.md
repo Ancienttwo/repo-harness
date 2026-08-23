@@ -1,6 +1,6 @@
 # Plan: Lease Protocol 2 and PR Review Lifecycle
 
-> **Status**: Review
+> **Status**: Archived
 > **Created**: 20260822-1538
 > **Slug**: lease-protocol-2-lifecycle
 > **Planning Source**: user-approved-plan
