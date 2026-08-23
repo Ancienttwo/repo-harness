@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "crypto";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "fs";
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "fs";
 import { homedir } from "os";
-import { dirname, join, resolve } from "path";
+import { dirname, isAbsolute, join, resolve } from "path";
 
 export type RepoHarnessRegistrySource = "adopt" | "init" | "mcp-setup" | "manual" | "discovery"; // "adopt": legacy-read-only, no current writers
 export type RepoHarnessAccessMode = "read_only" | "read_write";
@@ -67,6 +67,30 @@ export interface RepoHarnessRegistrySnapshot {
   readonly registryPath: string;
   readonly authorizationRevision: number;
   readonly repos: readonly RepoHarnessRegisteredRepo[];
+}
+
+/**
+ * The normal registry reader predates the fleet projection and intentionally
+ * turns a malformed optional registry into an empty list for legacy callers.
+ * Fleet enumeration is an authority boundary instead: silently treating bad
+ * authorization bytes as zero repositories would make a successful board
+ * indistinguishable from a lost registry.  Keep that stricter policy here,
+ * beside the only registry parser, rather than teaching fleet a second parser.
+ */
+export type RepoHarnessRegistryStrictErrorCode =
+  | 'fleet_registry_unavailable'
+  | 'fleet_registry_invalid';
+
+export class RepoHarnessRegistryStrictError extends Error {
+  constructor(readonly code: RepoHarnessRegistryStrictErrorCode, message: string, readonly cause?: unknown) {
+    super(message);
+    this.name = 'RepoHarnessRegistryStrictError';
+  }
+}
+
+export interface RepoHarnessRegistryStrictSnapshot extends RepoHarnessRegistrySnapshot {
+  /** Digest of the exact authority bytes observed for this enumeration. */
+  readonly registryRevision: string;
 }
 
 function repoHarnessHome(env: NodeJS.ProcessEnv = process.env): string {
@@ -274,6 +298,114 @@ export function readRepoHarnessRegistrySnapshot(opts: {
     registryPath,
     authorizationRevision: registry.authorizationRevision,
     repos: Object.freeze(repos.map((repo) => Object.freeze({ ...repo }))),
+  });
+}
+
+function strictRegistryEntry(value: unknown, index: number): RepoHarnessRegisteredRepo {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new RepoHarnessRegistryStrictError('fleet_registry_invalid', `registry repo ${index} must be an object`);
+  }
+  const entry = value as Record<string, unknown>;
+  const expected = ['accessMode', 'id', 'lastSeenAt', 'path', 'registeredAt', 'source'];
+  const keys = Object.keys(entry).sort();
+  if (JSON.stringify(keys) !== JSON.stringify(expected)) {
+    throw new RepoHarnessRegistryStrictError('fleet_registry_invalid', `registry repo ${index} fields are invalid`);
+  }
+  if (typeof entry.id !== 'string' || entry.id.trim() === '') {
+    throw new RepoHarnessRegistryStrictError('fleet_registry_invalid', `registry repo ${index} id is invalid`);
+  }
+  if (typeof entry.path !== 'string' || entry.path.trim() === '' || !isAbsolute(entry.path) || resolve(entry.path) !== entry.path) {
+    throw new RepoHarnessRegistryStrictError('fleet_registry_invalid', `registry repo ${index} path is invalid`);
+  }
+  if (entry.accessMode !== 'read_only' && entry.accessMode !== 'read_write') {
+    throw new RepoHarnessRegistryStrictError('fleet_registry_invalid', `registry repo ${index} access mode is invalid`);
+  }
+  if (entry.source !== 'adopt' && entry.source !== 'init' && entry.source !== 'mcp-setup'
+    && entry.source !== 'manual' && entry.source !== 'discovery') {
+    throw new RepoHarnessRegistryStrictError('fleet_registry_invalid', `registry repo ${index} source is invalid`);
+  }
+  if (typeof entry.registeredAt !== 'string' || entry.registeredAt.trim() === ''
+    || typeof entry.lastSeenAt !== 'string' || entry.lastSeenAt.trim() === '') {
+    throw new RepoHarnessRegistryStrictError('fleet_registry_invalid', `registry repo ${index} timestamps are invalid`);
+  }
+  return Object.freeze({
+    id: entry.id,
+    path: entry.path,
+    accessMode: entry.accessMode,
+    source: entry.source,
+    registeredAt: entry.registeredAt,
+    lastSeenAt: entry.lastSeenAt,
+  });
+}
+
+/**
+ * Read every authorized row once without the legacy empty-registry fallback.
+ * This does not touch repository paths: a missing or unsafe individual root
+ * is a repository-local fleet result, while malformed enumeration authority is
+ * fatal before a collector can claim it saw all authorized repositories.
+ */
+export function readRepoHarnessRegistryStrictSnapshot(opts: {
+  readonly env?: NodeJS.ProcessEnv;
+  readonly adoptedOnly?: false;
+} = {}): RepoHarnessRegistryStrictSnapshot {
+  const registryPath = repoHarnessRegisteredReposPath(opts.env);
+  let stat;
+  try {
+    stat = lstatSync(registryPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return Object.freeze({
+        registryPath,
+        authorizationRevision: 0,
+        registryRevision: `sha256:${createHash('sha256').update('repo-harness-registry-v1:empty', 'utf-8').digest('hex')}`,
+        repos: Object.freeze([]),
+      });
+    }
+    throw new RepoHarnessRegistryStrictError('fleet_registry_unavailable', `cannot inspect registry authority: ${registryPath}`, error);
+  }
+  if (stat.isSymbolicLink() || !stat.isFile()) {
+    throw new RepoHarnessRegistryStrictError('fleet_registry_invalid', `registry authority is not a regular file: ${registryPath}`);
+  }
+  let raw: string;
+  try {
+    raw = readFileSync(registryPath, 'utf-8');
+  } catch (error) {
+    throw new RepoHarnessRegistryStrictError('fleet_registry_unavailable', `cannot read registry authority: ${registryPath}`, error);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new RepoHarnessRegistryStrictError('fleet_registry_invalid', `registry authority is not valid JSON: ${registryPath}`, error);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new RepoHarnessRegistryStrictError('fleet_registry_invalid', 'registry authority must be an object');
+  }
+  const record = parsed as Record<string, unknown>;
+  if (JSON.stringify(Object.keys(record).sort()) !== JSON.stringify(['authorizationRevision', 'repos', 'version'])) {
+    throw new RepoHarnessRegistryStrictError('fleet_registry_invalid', 'registry authority fields are invalid');
+  }
+  if (record.version !== 1 || !Number.isInteger(record.authorizationRevision) || (record.authorizationRevision as number) < 0) {
+    throw new RepoHarnessRegistryStrictError('fleet_registry_invalid', 'registry authority version or revision is invalid');
+  }
+  if (!Array.isArray(record.repos)) {
+    throw new RepoHarnessRegistryStrictError('fleet_registry_invalid', 'registry authority repos must be an array');
+  }
+  const repos = record.repos.map(strictRegistryEntry);
+  const ids = new Set<string>();
+  const paths = new Set<string>();
+  for (const repo of repos) {
+    if (ids.has(repo.id) || paths.has(repo.path)) {
+      throw new RepoHarnessRegistryStrictError('fleet_registry_invalid', 'registry authority has duplicate repository identities');
+    }
+    ids.add(repo.id);
+    paths.add(repo.path);
+  }
+  return Object.freeze({
+    registryPath,
+    authorizationRevision: record.authorizationRevision as number,
+    registryRevision: `sha256:${createHash('sha256').update(raw, 'utf-8').digest('hex')}`,
+    repos: Object.freeze([...repos].sort((left, right) => left.id.localeCompare(right.id))),
   });
 }
 

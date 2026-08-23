@@ -8,6 +8,8 @@ import {
 } from '../../src/core/publication/publication-receipt';
 import {
   MergeReadinessError,
+  observeProviderReadinessFactsAbortable,
+  observeProviderReadinessIdentityAbortable,
   observeProviderReadinessFacts,
   observeProviderReadinessIdentity,
   resolveFleetReadiness,
@@ -263,6 +265,23 @@ describe('MergeReadinessV1 effect', () => {
     expect(identity.head_sha).toBe(HEAD);
     expect(facts.checks).toEqual([{ bucket: 'pending' }]);
     expect(facts.unresolved_thread_count).toBe(1);
+  });
+
+  test('abortable provider adapter shares the synchronous parser and fails closed before a provider child starts', async () => {
+    const synchronous = fakeGh();
+    const asyncInput = {
+      ...input,
+      gh_runner_async: async (args: readonly string[]) => synchronous(args),
+    };
+    const identity = await observeProviderReadinessIdentityAbortable(receipt, asyncInput);
+    const facts = await observeProviderReadinessFactsAbortable(identity, receipt, asyncInput);
+    expect(identity.head_sha).toBe(HEAD);
+    expect(facts.checks).toEqual([{ bucket: 'pending' }]);
+
+    const controller = new AbortController();
+    controller.abort();
+    await expect(observeProviderReadinessIdentityAbortable(receipt, { ...asyncInput, signal: controller.signal }))
+      .rejects.toMatchObject({ code: 'provider_unavailable' });
   });
 
   test('production fake-gh adapter fails closed when review-thread pagination is not exhausted', () => {

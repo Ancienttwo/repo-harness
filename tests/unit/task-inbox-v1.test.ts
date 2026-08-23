@@ -12,6 +12,7 @@ import {
   deliverTaskInbox,
   listTaskInbox,
   sendTaskMessage,
+  summarizeTaskInboxForFleet,
 } from '../../src/effects/fleet/task-inbox';
 import { readLease, createLeaseDirectory, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
 import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
@@ -105,6 +106,29 @@ function withFixture(run: (value: Fixture) => void): void {
 }
 
 describe('Task Inbox V1 common-directory effects', () => {
+  test('projects a lock-free body-free fleet summary without creating delivery receipts or changing the lease', () => withFixture((value) => {
+    bind(value, CLAIM_ONE, 1);
+    const event = message(value, '123e4567-e89b-42d3-a456-426614174009', 'claim', 'never expose this body');
+    sendTaskMessage({ repo_root: value.root, canonical_source: value.source, event });
+    const leaseBefore = readLease(value.root, value.task_id).raw;
+    const summary = summarizeTaskInboxForFleet({
+      repo_root: value.root,
+      task_id: value.task_id,
+      task_revision: value.task_revision,
+      current_claim: { claim_id: CLAIM_ONE, generation: 1 },
+    });
+    expect(summary).toEqual({ unread_count: 1, addressed_to_current_claim: true, snapshot_consistency: 'stable' });
+    expect(JSON.stringify(summary)).not.toContain(event.body);
+    expect(readLease(value.root, value.task_id).raw).toBe(leaseBefore);
+    expect(listTaskInbox({
+      repo_root: value.root,
+      task_id: value.task_id,
+      canonical_source: value.source,
+      recipient: { kind: 'claim', claim_id: CLAIM_ONE, generation: 1 },
+      execution_worktree: realpathSync(value.root),
+    }).entries[0]?.receipt).toBeNull();
+  }));
+
   test('creates immutable messages idempotently without writing the lease', () => withFixture((value) => {
     bind(value, CLAIM_ONE, 1);
     const event = message(value, '123e4567-e89b-42d3-a456-426614174010', 'claim', 'private for C1');

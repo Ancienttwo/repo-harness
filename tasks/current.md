@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-23T13:07:31+0800 -->
+<!-- updated_at: 2026-08-23T14:43:46+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-23T13:07:31+0800
-> **Source Branch**: codex/task-inbox-v1
-> **Source Commit**: 3e57b0de
+> **Updated At**: 2026-08-23T14:43:46+0800
+> **Source Branch**: codex/fleet-board-projection
+> **Source Commit**: 45b2e4c1
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -33,8 +33,6 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 - /private/tmp/repo-harness-gpt-pro-orchestrate: plans/plan-20260822-1240-gpt-pro-orchestrate-mode.md
 - /private/tmp/repo-harness-gpt-pro-orchestrate: active-worktree owner -> /private/tmp/repo-harness-gpt-pro-orchestrate
-- /Users/ancienttwo/Projects/repo-harness-wt-fleet-board-projection: plans/plan-20260823-1049-fleet-board-projection.md
-- /Users/ancienttwo/Projects/repo-harness-wt-fleet-board-projection: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-fleet-board-projection
 ## Active Sprint
 
 - Sprint: (none)
@@ -61,16 +59,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260823-0454-task-inbox-v1.md
- D tasks/contracts/20260823-0454-task-inbox-v1.contract.md
- D tasks/notes/20260823-0454-task-inbox-v1.notes.md
- D tasks/reviews/20260823-0454-task-inbox-v1.review.md
+ D plans/plan-20260823-1049-fleet-board-projection.md
+ D tasks/contracts/20260823-1049-fleet-board-projection.contract.md
+ D tasks/notes/20260823-1049-fleet-board-projection.notes.md
+ D tasks/reviews/20260823-1049-fleet-board-projection.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260823-0454-task-inbox-v1.md
-?? tasks/archive/contract-20260823-1307-task-inbox-v1.md
-?? tasks/archive/notes-20260823-1307-task-inbox-v1.md
-?? tasks/archive/review-20260823-1307-task-inbox-v1.md
-?? tasks/archive/todo-20260823-1307-task-inbox-v1.md
+?? plans/archive/plan-20260823-1049-fleet-board-projection.md
+?? tasks/archive/contract-20260823-1443-fleet-board-projection.md
+?? tasks/archive/notes-20260823-1443-fleet-board-projection.md
+?? tasks/archive/review-20260823-1443-fleet-board-projection.md
+?? tasks/archive/todo-20260823-1443-fleet-board-projection.md
 ```
 
 ## Source Artifacts

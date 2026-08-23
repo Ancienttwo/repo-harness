@@ -13,6 +13,11 @@ import {
   FleetOffersError,
 } from '../../effects/fleet/acquire';
 import {
+  collectFleetBoard,
+  FleetBoardError,
+  watchFleetBoard,
+} from '../../effects/fleet/board';
+import {
   ackTaskInbox,
   deliverTaskInbox,
   listTaskInbox,
@@ -50,6 +55,7 @@ import { coordinationRoot, readLease } from '../../effects/state/coordination-le
 function outputError(error: unknown): void {
   const code = error instanceof MergeReadinessError
     || error instanceof FleetOffersError
+    || error instanceof FleetBoardError
     || error instanceof FeedbackError
     || error instanceof FeedbackStoreError
     || error instanceof TaskInboxError
@@ -368,6 +374,88 @@ export function buildFleetCommand(): Command {
         process.stdout.write(`${JSON.stringify(result)}\n`);
       } catch (error) {
         outputError(error);
+      }
+    });
+
+  fleet
+    .command('board')
+    .description('Project every authorized repository as one deterministic fleet board snapshot')
+    .requiredOption('--json', 'Output the FleetBoardSnapshotV1 document as JSON')
+    .option('--max-concurrency <count>', 'Bounded repository collection concurrency (1-16)', '4')
+    .option('--timeout-ms <milliseconds>', 'Per-repository provider collection deadline (1000-30000)', '30000')
+    .action(async (options: { readonly json?: boolean; readonly maxConcurrency?: string; readonly timeoutMs?: string }) => {
+      let maxConcurrency: number | undefined;
+      let timeoutMs: number | undefined;
+      try {
+        requireJson(options.json);
+        maxConcurrency = integerOption(options.maxConcurrency, 'max-concurrency', 1, 16);
+        timeoutMs = integerOption(options.timeoutMs, 'timeout-ms', 1_000, 30_000);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        process.stderr.write(`${JSON.stringify({ ok: false, error: 'fleet_board_argument_invalid', message })}\n`);
+        process.exitCode = 2;
+        return;
+      }
+      try {
+        const snapshot = await collectFleetBoard({
+          env: process.env,
+          max_concurrency: maxConcurrency,
+          timeout_ms: timeoutMs,
+        });
+        process.stdout.write(`${JSON.stringify(snapshot)}\n`);
+      } catch (error) {
+        outputError(error);
+      }
+    });
+
+  fleet
+    .command('watch')
+    .description('Emit immediate, non-overlapping fleet board snapshots as JSONL')
+    .requiredOption('--format <format>', 'Output format (jsonl)')
+    .option('--interval-ms <milliseconds>', 'Delay after each completed round (1000-300000)', '30000')
+    .option('--max-concurrency <count>', 'Bounded repository collection concurrency (1-16)', '4')
+    .option('--timeout-ms <milliseconds>', 'Per-repository provider collection deadline (1000-30000)', '30000')
+    .action(async (options: {
+      readonly format?: string;
+      readonly intervalMs?: string;
+      readonly maxConcurrency?: string;
+      readonly timeoutMs?: string;
+    }) => {
+      let intervalMs: number | undefined;
+      let maxConcurrency: number | undefined;
+      let timeoutMs: number | undefined;
+      try {
+        if (options.format !== 'jsonl') throw new Error('--format must be jsonl');
+        intervalMs = integerOption(options.intervalMs, 'interval-ms', 1_000, 300_000);
+        maxConcurrency = integerOption(options.maxConcurrency, 'max-concurrency', 1, 16);
+        timeoutMs = integerOption(options.timeoutMs, 'timeout-ms', 1_000, 30_000);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        process.stderr.write(`${JSON.stringify({ ok: false, error: 'fleet_board_argument_invalid', message })}\n`);
+        process.exitCode = 2;
+        return;
+      }
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      process.once('SIGINT', abort);
+      process.once('SIGTERM', abort);
+      let emitted = 0;
+      try {
+        for await (const snapshot of watchFleetBoard({
+          env: process.env,
+          interval_ms: intervalMs,
+          max_concurrency: maxConcurrency,
+          timeout_ms: timeoutMs,
+          signal: controller.signal,
+        })) {
+          process.stdout.write(`${JSON.stringify(snapshot)}\n`);
+          emitted += 1;
+        }
+      } catch (error) {
+        if (!controller.signal.aborted || emitted === 0) outputError(error);
+      } finally {
+        process.removeListener('SIGINT', abort);
+        process.removeListener('SIGTERM', abort);
       }
     });
 
