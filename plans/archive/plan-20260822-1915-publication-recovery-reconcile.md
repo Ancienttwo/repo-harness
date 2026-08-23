@@ -1,6 +1,6 @@
 # Plan: Publication Recovery and Integration Reconcile
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260822-1915
 > **Slug**: publication-recovery-reconcile
 > **Planning Source**: codex-plan

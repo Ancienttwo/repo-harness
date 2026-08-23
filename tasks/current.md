@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-23T18:50:09+0800 -->
+<!-- updated_at: 2026-08-23T19:34:32+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-23T18:50:09+0800
-> **Source Branch**: codex/wp0b-closeout
-> **Source Commit**: d54c6087
+> **Updated At**: 2026-08-23T19:34:32+0800
+> **Source Branch**: codex/wp0c-closeout
+> **Source Commit**: a3f30e09
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -59,15 +59,15 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 9 changed/untracked path(s)
 
 ```
- D plans/plan-20260822-1538-lease-protocol-2-lifecycle.md
- D tasks/contracts/20260822-1538-lease-protocol-2-lifecycle.contract.md
- D tasks/notes/20260822-1538-lease-protocol-2-lifecycle.notes.md
- D tasks/reviews/20260822-1538-lease-protocol-2-lifecycle.review.md
-?? plans/archive/plan-20260822-1538-lease-protocol-2-lifecycle.md
-?? tasks/archive/contract-20260823-1850-lease-protocol-2-lifecycle.md
-?? tasks/archive/notes-20260823-1850-lease-protocol-2-lifecycle.md
-?? tasks/archive/review-20260823-1850-lease-protocol-2-lifecycle.md
-?? tasks/archive/todo-20260823-1850-lease-protocol-2-lifecycle.md
+ D plans/plan-20260822-1915-publication-recovery-reconcile.md
+ D tasks/contracts/20260822-1915-publication-recovery-reconcile.contract.md
+ D tasks/notes/20260822-1915-publication-recovery-reconcile.notes.md
+ D tasks/reviews/20260822-1915-publication-recovery-reconcile.review.md
+?? plans/archive/plan-20260822-1915-publication-recovery-reconcile.md
+?? tasks/archive/contract-20260823-1934-publication-recovery-reconcile.md
+?? tasks/archive/notes-20260823-1934-publication-recovery-reconcile.md
+?? tasks/archive/review-20260823-1934-publication-recovery-reconcile.md
+?? tasks/archive/todo-20260823-1934-publication-recovery-reconcile.md
 ```
 
 ## Source Artifacts

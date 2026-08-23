@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-23 19:34
+> **Related Plan**: plans/archive/plan-20260822-1915-publication-recovery-reconcile.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260823-1934
+
 # Task Contract: publication-recovery-reconcile
 
 > **Status**: Fulfilled
