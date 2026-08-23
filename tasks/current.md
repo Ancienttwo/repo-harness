@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-23T17:45:25+0800 -->
+<!-- updated_at: 2026-08-23T18:22:35+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-23T17:45:25+0800
-> **Source Branch**: codex/wp0a-closeout
-> **Source Commit**: d742cede
+> **Status**: Active
+> **Updated At**: 2026-08-23T18:22:35+0800
+> **Source Branch**: main
+> **Source Commit**: d75133f7
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive-workflow
+> **Reason**: manual
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
+- Status: Active
 - Active Plan: (none)
 - Plan Status: (none)
 - Next Task: inspect active worktree marker(s)
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -58,18 +58,15 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 9 changed/untracked path(s)
+- Summary: 6 changed/untracked path(s)
 
 ```
- D plans/plan-20260822-1222-publication-receipt.md
- D tasks/contracts/20260822-1222-publication-receipt.contract.md
- D tasks/notes/20260822-1222-publication-receipt.notes.md
- D tasks/reviews/20260822-1222-publication-receipt.review.md
-?? plans/archive/plan-20260822-1222-publication-receipt.md
-?? tasks/archive/contract-20260823-1745-publication-receipt.md
-?? tasks/archive/notes-20260823-1745-publication-receipt.md
-?? tasks/archive/review-20260823-1745-publication-receipt.md
-?? tasks/archive/todo-20260823-1745-publication-receipt.md
+R  plans/plan-20260822-1240-gpt-pro-orchestrate-mode.md -> plans/archive/plan-20260822-1240-gpt-pro-orchestrate-mode.md
+R  tasks/contracts/20260822-1240-gpt-pro-orchestrate-mode.contract.md -> tasks/archive/contract-20260823-1821-gpt-pro-orchestrate-mode.md
+R  tasks/notes/20260822-1240-gpt-pro-orchestrate-mode.notes.md -> tasks/archive/notes-20260823-1821-gpt-pro-orchestrate-mode.md
+R  tasks/reviews/20260822-1240-gpt-pro-orchestrate-mode.review.md -> tasks/archive/review-20260823-1821-gpt-pro-orchestrate-mode.md
+A  tasks/archive/todo-20260823-1821-gpt-pro-orchestrate-mode.md
+UU tasks/current.md
 ```
 
 ## Source Artifacts
