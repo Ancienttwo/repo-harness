@@ -40,6 +40,7 @@ const required = [
   "assets/templates/helpers/runtime-evidence-receipt.ts",
   "interfaces/effective-state-v1.ts",
   "interfaces/types.ts",
+  "dist/operator-ui/index.html",
 ];
 const retired = [
   "assets/hooks/prompt-guard.sh",
@@ -50,7 +51,11 @@ const retired = [
 const missing = required.filter((file) => !files.has(file));
 const leaked = retired.filter((file) => files.has(file));
 const aiHooks = [...files].filter((file) => file.startsWith(".ai/hooks/"));
-if (missing.length > 0 || leaked.length > 0 || aiHooks.length > 0) {
+const operatorAssets = [...files].filter((file) => file.startsWith("dist/operator-ui/assets/"));
+const missingOperatorAssetKinds = [".js", ".css", ".woff2"].filter(
+  (extension) => !operatorAssets.some((file) => file.endsWith(extension)),
+);
+if (missing.length > 0 || leaked.length > 0 || aiHooks.length > 0 || missingOperatorAssetKinds.length > 0) {
   if (missing.length > 0) {
     console.error(`[tarball-smoke] ERROR: package is missing hook assets: ${missing.join(", ")}`);
   }
@@ -59,6 +64,9 @@ if (missing.length > 0 || leaked.length > 0 || aiHooks.length > 0) {
   }
   if (aiHooks.length > 0) {
     console.error(`[tarball-smoke] ERROR: package should not depend on .ai/hooks assets: ${aiHooks.join(", ")}`);
+  }
+  if (missingOperatorAssetKinds.length > 0) {
+    console.error(`[tarball-smoke] ERROR: package is missing operator asset kinds: ${missingOperatorAssetKinds.join(", ")}`);
   }
   process.exit(1);
 }
@@ -77,6 +85,11 @@ HOOK="$APP_DIR/node_modules/.bin/repo-harness-hook"
 VERSION="$("$CLI" --version)"
 if [[ "$VERSION" != "$PACKAGE_VERSION" ]]; then
   echo "[tarball-smoke] ERROR: repo-harness --version returned $VERSION, expected $PACKAGE_VERSION" >&2
+  exit 1
+fi
+
+if ! "$CLI" operator serve --help >/dev/null; then
+  echo "[tarball-smoke] ERROR: packaged operator command is unavailable" >&2
   exit 1
 fi
 

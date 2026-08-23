@@ -137,9 +137,9 @@ describe('hook-entry single-file bundle', () => {
     };
     expect(pkg.bin['repo-harness-hook']).toBe('dist/hook-entry.js');
     expect(pkg.files).toContain('dist/hook-entry.js');
-    // `1>&2` is load-bearing: `npm pack --json` parses prepack's stdout as part
-    // of its own JSON, so build chatter on stdout breaks the release tooling.
-    expect(pkg.scripts.prepack).toBe('bun run build:hook-bundle 1>&2');
+    // Both redirects are load-bearing: `npm pack --json` parses prepack's stdout
+    // as part of its own JSON, so either build's chatter would break release tooling.
+    expect(pkg.scripts.prepack).toBe('bun run build:hook-bundle 1>&2 && bun run build:operator-web 1>&2');
     expect(pkg.scripts['build:hook-bundle']).toContain('--define REPO_HARNESS_BUNDLED_CLI_VERSION');
     expect(readFileSync(join(ROOT, '.gitignore'), 'utf-8')).toMatch(/^dist\/$/m);
   });
