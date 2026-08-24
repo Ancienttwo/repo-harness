@@ -6,6 +6,8 @@
 > **Amendment (2026-08-24)**: Engineer Binding 的 current authority 是 ME-0A 定义的共享 `<git-common-dir>/repo-harness/engineers/v1/` store。任何下文中的 worktree-local binding path 都已被取代；实施必须以对应 child PRD 的 closed schema、依赖和 approval state 为准。
 > **External Review (2026-08-24)**: GPT Git Connector 对 `d29ecce2` 的裁决为 `Request Changes`：umbrella 继续 Approved，12 个 child 全部保持 Draft。完整裁决归档于 `tasks/reviews/20260824-1949-persistent-module-engineer-gpt-review.review.md`；ME-0A 只有在 closed event/current publication protocol 再获外部批准后才成为首个实施切片。
 > **Focused Re-review (2026-08-24)**: GPT GitHub Connector 对 `b54a43d8` 的裁决为 `Approve`：umbrella 保持 Approved，ME-0A 的 closed、幂等、crash-consistent event/current publication protocol 通过外部 gate，ME-0A 成为当前唯一 implementation-ready child；其余 child 继续保持 Draft。完整裁决归档于 `tasks/reviews/20260824-2050-persistent-module-engineer-me0a-approval.review.md`。
+>
+> **ME-0B Carrier Closure (2026-08-25)**: Codex App Server、Claude hook 与 MCP OAuth 三路 canary 已完成。P0 唯一 principal carrier 冻结为 restricted MCP OAuth `authorizationId`；新增 Engineer profile 必须无 shell、workspace coder、agent runner 和 generic Fleet mutation。Provider Thread/hook session 继续只作 observation。完整证据与决策见 `docs/researches/20260825-me0b-principal-carrier-canary.md`。
 > **Session/Kanban Amendment (2026-08-24)**: Codex Session Chat 被冻结为 persist-first delivery accelerator；Work Package Graph、EngineerOffer/acquire bridge、三视图 CLI Kanban 与 Codex App Server transport 的权威边界已同步进 umbrella、ME-1A/1B/1C/3 child PRD，未改变任何 child approval state。
 
 ## 结论
@@ -517,7 +519,7 @@ Gatekeeper 不读取 Engineer 的自我结论作为事实，不继承完整 pare
 - immutable `ClaimActorReceiptV1`；
 - binding 与 Lease generation 的独立 fencing。
 
-当前 MCP OAuth `authorizationId` 证明 client authorization，不天然证明 Provider Thread identity。具体 principal carrier 必须在该 work-package 内通过 canary 冻结，不能由命令参数替代。
+MCP OAuth `authorizationId` 证明 client authorization，不证明 Provider Thread identity。ME-0B canary 已选择该 authorization 作为独立 credential carrier，并要求专用无 shell Engineer profile；Provider Thread 继续为 nullable observation，命令参数永远不能替代 verified auth subject。
 
 ### ME-1A：Scheduling Schema
 

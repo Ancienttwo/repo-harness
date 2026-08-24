@@ -3,7 +3,7 @@
 > **Status**: Approved
 > **Slug**: `persistent-module-engineer-organization`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T22:00:24+0800
+> **Updated**: 2026-08-25T00:20:00+0800
 > **Source Spec**: `docs/spec.md`
 > **Related Research**: `docs/researches/20260824-persistent-module-engineer-organization.md`
 > **Tier**: standard
@@ -19,9 +19,9 @@
 - **Core metric**: Engineer 岗位、SOP 与 repo-grounded knowledge 跨 Session/Provider 延续，同时 task identity、Lease、Publication、Acceptance 与 Human merge 权威完全不变。
 - **Hard constraint**: Capability、Engineer、Binding、Claim、Delegation、Acceptance 六种身份不得合并；Provider Thread ID 不得充当 task/owner/lease/module identity；任何 Session chat、Memory、Worker result 或 UI projection 都不能成为 task/merge authority。
 - **Key risk**: 只有可信 principal、Claim actor receipt 和 mutation-time writer grant 能把“旧 Session 不再有权”“同一 worktree 只有一个 writer”从提示词变成技术事实。
-- **Unknowns**: 当前 MCP OAuth authorization 不能证明 Provider Thread identity；具体 binding principal carrier 必须在 ME-0B canary 中冻结。
+- **Unknowns**: ME-0B 已冻结 restricted MCP OAuth authorization carrier；Provider Thread identity 仍不可作为 principal，只保留 nullable observation。
 - **Acceptance scenarios**: 单 active binding、旧 principal 拒绝、Claim actor 可追溯、无第二 Lease、单 writer actor、persist-first message、verified-only next context、Fleet column 不受 runtime state 影响。
-- **Suggested next step**: ME-0A 已通过 `b54a43d8` focused external review，成为当前唯一 implementation-ready child；按其 Developer Handoff 启动首个实现切片，其余 child 继续保持 Draft。
+- **Suggested next step**: ME-0A 已完成；ME-0B 的三路 identity canary 已关闭阻断并获 Human Approval，成为当前唯一 implementation-ready child。其余 child 继续保持 Draft。
 
 ## Problem
 
@@ -111,8 +111,8 @@ Freedoms:
 ### Feasibility Boundary
 
 - **Confirmed**: git-common-dir stores, per-task locks, atomic rename patterns, exact task/Lease fences, Codex native role observation, 1,500-token SessionStart budget and MCP authorization-scoped runtimes already exist as reusable precedent.
-- **[UNKNOWN]**: whether Codex/Claude expose a stable Provider Thread identity to the local command boundary. MCP session ID and OAuth authorization ID alone do not prove a Provider Thread.
-- **[UNVERIFIED]**: production-quality per-binding credential injection for manually created Provider Sessions. ME-0B must select and verify one server-derived carrier before approval.
+- **Confirmed for ME-0B**: restricted MCP OAuth `authorizationId` is the selected server-derived credential carrier；it intentionally proves authorization, not Provider Thread identity。The Engineer profile exposes no shell or generic mutation surface。
+- **[UNVERIFIED]**: whether Codex/Claude expose a stable Provider Thread identity to the local command boundary；this affects audit/delivery only and does not block the independent OAuth principal carrier。
 
 ## Users
 
@@ -248,7 +248,7 @@ No digest preimage may silently add engineer, binding or Provider identity to cu
 
 | Item | Impact | Resolution Path | Owner |
 |---|---|---|---|
-| Trusted per-Provider Session principal carrier | Blocks engineer-scoped mutation | ME-0B Provider/MCP canary; fail closed until selected | Runtime maintainer |
+| Trusted Engineer principal carrier | Closed for P0 | restricted MCP OAuth authorization plus live Binding revalidation；see `docs/researches/20260825-me0b-principal-carrier-canary.md` | Runtime maintainer |
 | Managed Parent and child identity at every mutation boundary | Blocks writable delegation | ME-3 Host plus ME-2B sandbox canary | Delegation owner |
 | Active dirty task takeover semantics | Blocks transparent rotation | ME-4A keeps takeover disabled pending carrier/election PRD | State owner |
 | Cross-repo stable Work Package identity | Scheduling schema migration | ME-1A content/identity tests | Planning owner |
