@@ -3,7 +3,7 @@
 > **Status**: Approved
 > **Slug**: `persistent-module-engineer-organization`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T19:49:19+0800
+> **Updated**: 2026-08-24T20:50:06+0800
 > **Source Spec**: `docs/spec.md`
 > **Related Research**: `docs/researches/20260824-persistent-module-engineer-organization.md`
 > **Tier**: standard
@@ -15,13 +15,13 @@
 - **Problem**: repo-harness 有 canonical Task、Lease、WorkEnvelope、Publication、Acceptance 与临时 fleet roles，但没有跨 Session 持续存在的模块工程师岗位、可信 Session binding、父 Claim 内 delegation、verified-context inner loop 和组织级 read model。
 - **Users**: Maintainer、Program Orchestrator、Module Engineer、临时 Worker、独立 Acceptance Plane。
 - **Platform**: repo-harness CLI/MCP、git-common-dir coordination plane、Codex/Claude Provider adapters、本地 Worker Host；远端访问延后。
-- **P0 surface**: 先批准 Profile/Binding read model，再交付 Binding authority/principal；随后按独立 rollback boundary 推进 scheduling core、overlay、messages、read-only delegation、verified context、Worker Host、writer grant、freeze/handoff、interface change 和 integration。
+- **P0 surface**: 先交付已批准的 Profile/Binding read model，再批准并交付 Binding authority/principal；随后按独立 rollback boundary 推进 scheduling core、overlay、messages、read-only delegation、verified context、Worker Host、writer grant、freeze/handoff、interface change 和 integration。
 - **Core metric**: Engineer 岗位、SOP 与 repo-grounded knowledge 跨 Session/Provider 延续，同时 task identity、Lease、Publication、Acceptance 与 Human merge 权威完全不变。
 - **Hard constraint**: Capability、Engineer、Binding、Claim、Delegation、Acceptance 六种身份不得合并；任何 Session、Memory、Worker result 或 UI projection 都不能成为 task/merge authority。
 - **Key risk**: 只有可信 principal、Claim actor receipt 和 mutation-time writer grant 能把“旧 Session 不再有权”“同一 worktree 只有一个 writer”从提示词变成技术事实。
 - **Unknowns**: 当前 MCP OAuth authorization 不能证明 Provider Thread identity；具体 binding principal carrier 必须在 ME-0B canary 中冻结。
 - **Acceptance scenarios**: 单 active binding、旧 principal 拒绝、Claim actor 可追溯、无第二 Lease、单 writer actor、persist-first message、verified-only next context、Fleet column 不受 runtime state 影响。
-- **Suggested next step**: ME-0A 暂时保持 Draft；closed event/current publication semantics 已吸收，下一步只做外部 schema/fixture 复审，未明确恢复 Approved 前不进入实施。
+- **Suggested next step**: ME-0A 已通过 `b54a43d8` focused external review，成为当前唯一 implementation-ready child；按其 Developer Handoff 启动首个实现切片，其余 child 继续保持 Draft。
 
 ## Problem
 
@@ -229,7 +229,7 @@ No digest preimage may silently add engineer, binding or Provider identity to cu
 
 This umbrella is architecture authority, not an implementation task.
 
-- **Build first**: no child is currently implementation-ready. After its closed event/current publication protocol is externally re-reviewed and its status becomes Approved, ME-0A is the first implementation slice.
+- **Build first**: ME-0A is the only implementation-ready child after the focused external approval archived at `tasks/reviews/20260824-2050-persistent-module-engineer-me0a-approval.review.md`; all other children remain Draft.
 - **Do not reinterpret**: no new Module Graph; no Session self-declared principal; no writer based on prompt-only paths; no active dirty-task transparent transfer; no UI-owned status.
 - **Promotion rule**: a child PRD becomes Approved only after its authority, principal, state transitions, failure paths and acceptance evidence are decision-complete.
 - **Verify with**: child-specific tests plus `repo-harness run check-task-workflow --strict`, architecture sync and task sync.
@@ -239,7 +239,7 @@ This umbrella is architecture authority, not an implementation task.
 1. Validate every child PRD filename/status/required sections through the strict workflow check.
 2. Confirm no proposed tracked path creates a second capability or memory authority.
 3. Confirm the ordered dependency graph contains no forward type dependency.
-4. Confirm no child is currently implementation-ready; ME-0A is first in ordering but remains blocked while Draft, and all other unknown-bearing children remain Draft.
+4. Confirm ME-0A is the only Approved implementation child and every other unknown-bearing child remains Draft.
 
 ## Adjacent Patterns
 

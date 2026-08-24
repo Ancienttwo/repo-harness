@@ -1,9 +1,10 @@
 # PRD: Engineer Profile and Shared Binding Projection (ME-0A)
 
-> **Status**: Draft
+> **Status**: Approved
 > **Slug**: `engineer-profile-binding-projection`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T19:49:19+0800
+> **Updated**: 2026-08-24T20:50:06+0800
+> **External Approval**: GPT GitHub Connector focused review of `b54a43d88cbae5e8c71db1de1ee5605b2ec1403e`; archived at `tasks/reviews/20260824-2050-persistent-module-engineer-me0a-approval.review.md`
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
 > **Related Research**: `docs/researches/20260824-persistent-module-engineer-organization.md`
@@ -19,9 +20,9 @@
 - **Core metric**: N 个 worktrees 对同一 Engineer 只看到 0 或 1 个 current binding；Profile 不复制 capability 权威。
 - **Hard constraint**: 本切片不开放任何 Session 发起的 engineer-scoped mutation，也不声称旧 Thread 已被技术 fencing。
 - **Key risk**: 把 read-only manual canary 误报成 authenticated authorization。
-- **Unknowns**: genesis/current corruption、transitive revision 与 closed event/current publication semantics 已冻结；重新批准仍需外部 schema/fixture review。
+- **Unknowns**: genesis/current corruption、transitive revision 与 closed event/current publication semantics 已冻结并通过外部 schema/fixture review；Provider reachability 仍只作非权威 observation。
 - **Acceptance scenarios**: Profile 引用 canonical capability、N-way binding CAS 只有一个 winner、genesis 与 missing-current 可判定、dangling event 不成为 current、所有 worktrees 读到同一 current。
-- **Suggested next step**: 先实现纯 schema/fixture proof 并重新审阅本 PRD；未恢复 Approved 前不得进入 Sprint。
+- **Suggested next step**: 作为当前唯一 implementation-ready child，按 Developer Handoff 实施 schema/fixture、shared store、operator CLI/read projection 与 canary Profile/SOP。
 
 ## Problem
 
@@ -211,7 +212,6 @@ Store:
 | Item | Impact | Resolution Path | Owner |
 |---|---|---|---|
 | Provider reachability observation accuracy | Display only | keep `unknown` and never infer liveness | Runtime owner |
-| ME-0A approval after amendment | Blocks implementation | external review of the closed event/current protocol plus crash/genesis fixture plan | Maintainer |
 
 ## Developer Handoff
 

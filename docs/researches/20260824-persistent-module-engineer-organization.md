@@ -5,6 +5,7 @@
 > **Implementation Authority**: None
 > **Amendment (2026-08-24)**: Engineer Binding 的 current authority 是 ME-0A 定义的共享 `<git-common-dir>/repo-harness/engineers/v1/` store。任何下文中的 worktree-local binding path 都已被取代；实施必须以对应 child PRD 的 closed schema、依赖和 approval state 为准。
 > **External Review (2026-08-24)**: GPT Git Connector 对 `d29ecce2` 的裁决为 `Request Changes`：umbrella 继续 Approved，12 个 child 全部保持 Draft。完整裁决归档于 `tasks/reviews/20260824-1949-persistent-module-engineer-gpt-review.review.md`；ME-0A 只有在 closed event/current publication protocol 再获外部批准后才成为首个实施切片。
+> **Focused Re-review (2026-08-24)**: GPT GitHub Connector 对 `b54a43d8` 的裁决为 `Approve`：umbrella 保持 Approved，ME-0A 的 closed、幂等、crash-consistent event/current publication protocol 通过外部 gate，ME-0A 成为当前唯一 implementation-ready child；其余 child 继续保持 Draft。完整裁决归档于 `tasks/reviews/20260824-2050-persistent-module-engineer-me0a-approval.review.md`。
 
 ## 结论
 
