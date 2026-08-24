@@ -7,7 +7,27 @@ cd "$ROOT"
 PACKAGE_NAME="$(bun -e 'const pkg = await Bun.file("package.json").json(); console.log(pkg.name)')"
 PACKAGE_VERSION="$(bun -e 'const pkg = await Bun.file("package.json").json(); console.log(pkg.version)')"
 TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "$TMP_DIR"' EXIT
+OPERATOR_PID=""
+
+cleanup() {
+  local exit_code=$?
+  if [[ -n "$OPERATOR_PID" ]]; then
+    if kill -0 "$OPERATOR_PID" 2>/dev/null; then
+      kill -TERM "$OPERATOR_PID" 2>/dev/null || true
+      for _ in $(seq 1 100); do
+        kill -0 "$OPERATOR_PID" 2>/dev/null || break
+        sleep 0.05
+      done
+      if kill -0 "$OPERATOR_PID" 2>/dev/null; then
+        kill -KILL "$OPERATOR_PID" 2>/dev/null || true
+      fi
+    fi
+    wait "$OPERATOR_PID" 2>/dev/null || true
+  fi
+  rm -rf "$TMP_DIR"
+  exit "$exit_code"
+}
+trap cleanup EXIT
 
 PACK_JSON="$TMP_DIR/pack.json"
 npm pack --json --pack-destination "$TMP_DIR" >"$PACK_JSON"
@@ -40,6 +60,7 @@ const required = [
   "assets/templates/helpers/runtime-evidence-receipt.ts",
   "interfaces/effective-state-v1.ts",
   "interfaces/types.ts",
+  "dist/operator-ui/index.html",
 ];
 const retired = [
   "assets/hooks/prompt-guard.sh",
@@ -50,7 +71,11 @@ const retired = [
 const missing = required.filter((file) => !files.has(file));
 const leaked = retired.filter((file) => files.has(file));
 const aiHooks = [...files].filter((file) => file.startsWith(".ai/hooks/"));
-if (missing.length > 0 || leaked.length > 0 || aiHooks.length > 0) {
+const operatorAssets = [...files].filter((file) => file.startsWith("dist/operator-ui/assets/"));
+const missingOperatorAssetKinds = [".js", ".css", ".woff2"].filter(
+  (extension) => !operatorAssets.some((file) => file.endsWith(extension)),
+);
+if (missing.length > 0 || leaked.length > 0 || aiHooks.length > 0 || missingOperatorAssetKinds.length > 0) {
   if (missing.length > 0) {
     console.error(`[tarball-smoke] ERROR: package is missing hook assets: ${missing.join(", ")}`);
   }
@@ -59,6 +84,9 @@ if (missing.length > 0 || leaked.length > 0 || aiHooks.length > 0) {
   }
   if (aiHooks.length > 0) {
     console.error(`[tarball-smoke] ERROR: package should not depend on .ai/hooks assets: ${aiHooks.join(", ")}`);
+  }
+  if (missingOperatorAssetKinds.length > 0) {
+    console.error(`[tarball-smoke] ERROR: package is missing operator asset kinds: ${missingOperatorAssetKinds.join(", ")}`);
   }
   process.exit(1);
 }
@@ -73,12 +101,119 @@ bun add "$TARBALL_PATH" >/dev/null
 
 CLI="$APP_DIR/node_modules/.bin/repo-harness"
 HOOK="$APP_DIR/node_modules/.bin/repo-harness-hook"
+OPERATOR_HOME="$TMP_DIR/operator-home"
+OPERATOR_REGISTRY="$OPERATOR_HOME/.repo-harness"
+OPERATOR_STDOUT="$TMP_DIR/operator-stdout.log"
+OPERATOR_STDERR="$TMP_DIR/operator-stderr.log"
+OPERATOR_URL=""
+
+start_operator_smoke() {
+  mkdir -p "$OPERATOR_HOME"
+  (
+    cd "$APP_DIR"
+    exec env HOME="$OPERATOR_HOME" REPO_HARNESS_HOME="$OPERATOR_REGISTRY" \
+      "$CLI" operator serve --host 127.0.0.1 --port 0
+  ) >"$OPERATOR_STDOUT" 2>"$OPERATOR_STDERR" &
+  OPERATOR_PID=$!
+
+  for _ in $(seq 1 100); do
+    OPERATOR_URL="$(awk '/^http:\/\/127\.0\.0\.1:[0-9]+$/ { print; exit }' "$OPERATOR_STDOUT" 2>/dev/null || true)"
+    if [[ -n "$OPERATOR_URL" ]] && bun - "$OPERATOR_URL/healthz" >/dev/null 2>&1 <<'JS_EOF'
+const [, , url] = process.argv;
+try {
+  const response = await fetch(url);
+  if (!response.ok) process.exit(1);
+} catch {
+  process.exit(1);
+}
+JS_EOF
+    then
+      return 0
+    fi
+    if ! kill -0 "$OPERATOR_PID" 2>/dev/null; then
+      echo "[tarball-smoke] ERROR: packaged operator server exited before readiness" >&2
+      cat "$OPERATOR_STDOUT" >&2 || true
+      cat "$OPERATOR_STDERR" >&2 || true
+      return 1
+    fi
+    sleep 0.05
+  done
+
+  echo "[tarball-smoke] ERROR: packaged operator server did not become ready" >&2
+  cat "$OPERATOR_STDOUT" >&2 || true
+  cat "$OPERATOR_STDERR" >&2 || true
+  return 1
+}
+
+assert_operator_runtime() {
+  bun - "$OPERATOR_URL" "$OPERATOR_HOME" <<'JS_EOF'
+const [, , baseUrl, isolatedHome] = process.argv;
+const fail = (message) => {
+  console.error(`[tarball-smoke] ERROR: ${message}`);
+  process.exit(1);
+};
+const origin = new URL(baseUrl).origin;
+const health = await fetch(`${baseUrl}/healthz`);
+if (!health.ok) fail(`/healthz returned ${health.status}`);
+const healthBody = await health.json();
+if (healthBody?.ok !== true || healthBody?.service !== 'repo-harness-operator' || healthBody?.protocol !== 1) {
+  fail('/healthz did not return the operator health contract');
+}
+const page = await fetch(`${baseUrl}/`);
+if (!page.ok || !page.headers.get('content-type')?.includes('text/html')) fail('operator HTML entrypoint is unavailable');
+const html = await page.text();
+const assetRef = html.match(/(?:src|href)=["']([^"']*assets\/[^"']+\.(?:js|css))["']/u)?.[1];
+if (!assetRef) fail('operator HTML did not reference a bundled static asset');
+const assetUrl = new URL(assetRef, `${baseUrl}/`);
+if (assetUrl.origin !== origin) fail('operator HTML referenced a cross-origin static asset');
+const asset = await fetch(assetUrl);
+if (!asset.ok || (await asset.arrayBuffer()).byteLength === 0) fail('operator static asset is unavailable');
+const snapshot = await fetch(`${baseUrl}/api/v1/fleet/snapshot`);
+if (!snapshot.ok) fail(`operator Fleet API returned ${snapshot.status}`);
+const payload = await snapshot.json();
+if (payload?.protocol !== 1 || payload?.kind !== 'operator_fleet_snapshot' || !Array.isArray(payload?.repositories)
+  || typeof payload?.source_snapshot_sha256 !== 'string') {
+  fail('operator Fleet API did not return OperatorFleetSnapshotV1');
+}
+const serialized = JSON.stringify(payload);
+for (const forbidden of ['repo_root', 'cause', 'stderr', 'stack', isolatedHome]) {
+  if (serialized.includes(forbidden)) fail(`operator Fleet payload exposed ${forbidden}`);
+}
+JS_EOF
+}
+
+stop_operator_smoke() {
+  [[ -n "$OPERATOR_PID" ]] || return 0
+  if ! kill -TERM "$OPERATOR_PID" 2>/dev/null; then
+    echo "[tarball-smoke] ERROR: packaged operator server was not running before SIGTERM" >&2
+    OPERATOR_PID=""
+    return 1
+  fi
+  if wait "$OPERATOR_PID"; then
+    OPERATOR_PID=""
+    return 0
+  else
+    local exit_code=$?
+    echo "[tarball-smoke] ERROR: packaged operator server did not exit cleanly after SIGTERM" >&2
+    OPERATOR_PID=""
+    return "$exit_code"
+  fi
+}
 
 VERSION="$("$CLI" --version)"
 if [[ "$VERSION" != "$PACKAGE_VERSION" ]]; then
   echo "[tarball-smoke] ERROR: repo-harness --version returned $VERSION, expected $PACKAGE_VERSION" >&2
   exit 1
 fi
+
+if ! "$CLI" operator serve --help >/dev/null; then
+  echo "[tarball-smoke] ERROR: packaged operator command is unavailable" >&2
+  exit 1
+fi
+
+start_operator_smoke
+assert_operator_runtime
+stop_operator_smoke
 
 for doc_id in harness-overview agentic-development-flow; do
   if ! "$CLI" docs show "$doc_id" >/dev/null; then
@@ -262,4 +397,4 @@ if (result.capability_id !== "apps-web") {
 }
 JS_EOF
 
-echo "[tarball-smoke] OK: ${PACKAGE_NAME}-${PACKAGE_VERSION}.tgz installs and packaged CLI bins start."
+echo "[tarball-smoke] OK: ${PACKAGE_NAME}-${PACKAGE_VERSION}.tgz installs, serves the packaged Operator, and packaged CLI bins start."

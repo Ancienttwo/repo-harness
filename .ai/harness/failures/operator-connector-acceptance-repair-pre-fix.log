@@ -1,0 +1,28 @@
+bun test v1.4.0 (34cbb9a40)
+
+tests/unit/operator-fleet-snapshot.test.ts:
+(pass) OperatorFleetSnapshotV1 browser projection > UX-local-human-control-board-v1-N1 removes local paths and preserves Fleet facts [0.66ms]
+(pass) OperatorFleetSnapshotV1 browser projection > returns an immutable transport view without reclassifying cards or counts [0.17ms]
+(pass) OperatorFleetSnapshotV1 browser projection > rejects an unsupported Fleet protocol before crossing the browser boundary [0.11ms]
+108 |     Object.defineProperty(card, 'future_control', { value: 'line\u0000break', enumerable: true });
+109 |     Object.defineProperty(card, 'future_windows_path', { value: 'C:\\Users\\operator\\token.txt', enumerable: true });
+110 |
+111 |     const projected = projectOperatorFleetSnapshot(source);
+112 |     const rendered = JSON.stringify(projected);
+113 |     expect(rendered).not.toContain('future_env');
+                               ^
+error: expect(received).not.toContain(expected)
+
+Expected to not contain: "future_env"
+Received: "{\"protocol\":1,\"kind\":\"operator_fleet_snapshot\",\"registry_revision\":\"sha256:registry\",\"snapshot_consistency\":\"degraded\",\"repositories\":[{\"repository_id\":\"repo-a\",\"access_mode\":\"read_write\",\"status\":\"ok\",\"snapshot_consistency\":\"changed_during_read\",\"cards\":[{\"repository_id\":\"repo-a\",\"task_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"task_revision\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"claim_id\":null,\"generation\":null,\"column\":\"available\",\"attention_owner\":\"none\",\"execution_readiness\":\"execution_ready\",\"lease_state\":\"available\",\"publication_id\":null,\"head_sha\":null,\"merge_readiness\":null,\"blocker_codes\":[],\"feedback\":{\"pending_count\":1,\"no_progress\":false,\"repair_actions\":[]},\"inbox\":{\"unread_count\":2,\"addressed_to_current_claim\":false},\"snapshot_consistency\":\"changed_during_read\",\"future_control\":\"line\\u0000break\",\"future_windows_path\":\"C:\\\\Users\\\\operator\\\\token.txt\"}],\"future_unix_path\":\"/Users/operator/.ssh/id_rsa\",\"error\":null},{\"repository_id\":\"repo-unreadable\",\"access_mode\":\"read_only\",\"status\":\"unreadable\",\"snapshot_consistency\":\"degraded\",\"cards\":[],\"error\":{\"code\":\"repo_unreadable\",\"message\":\"repository authority cannot be read\"}}],\"counts\":{\"available\":1,\"working\":0,\"in_review\":0,\"ready_to_merge\":0,\"done\":0,\"unreadable\":1},\"sequence\":7,\"observed_at\":\"2026-08-24T01:03:00.000Z\",\"future_env\":\"REPO_HARNESS_TOKEN=secret\",\"source_snapshot_sha256\":\"sha256:a1cceaa67b9b05507e1f073432439bbf547fd05c15e8672380f705734a2012a7\"}"
+
+      at <anonymous> (<pre-fix-worktree>/tests/unit/operator-fleet-snapshot.test.ts:113:26)
+(fail) OperatorFleetSnapshotV1 browser projection > UX-local-human-control-board-v1-N1 allowlists every DTO level against hostile identity-shaped extras [0.54ms]
+
+ 3 pass
+ 1 fail
+ 14 expect() calls
+Ran 4 tests across 1 file. [16.00ms]
+
+REGRESSION_GUARD=tests/unit/operator-fleet-snapshot.test.ts
+PRE_FIX_EXIT=1

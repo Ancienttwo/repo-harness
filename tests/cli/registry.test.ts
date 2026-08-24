@@ -15,6 +15,7 @@ import {
   readRepoHarnessRegistryStrictSnapshot,
   RepoHarnessRegistryStrictError,
   repoHarnessAuthorizationRevision,
+  repoHarnessRepoIdFor,
 } from '../../src/effects/repo-registry';
 
 describe('installer target registry', () => {
@@ -91,18 +92,90 @@ describe('repo registration persistence', () => {
     try {
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
+      const canonicalRepo = realpathSync(repo);
       writeFileSync(join(home, 'registered-repos.json'), `${JSON.stringify({
         version: 1,
         authorizationRevision: 4,
         repos: [{
-          id: 'repo_fixture', path: repo, accessMode: 'read_only', source: 'manual',
+          id: repoHarnessRepoIdFor(canonicalRepo), path: canonicalRepo, accessMode: 'read_only', source: 'manual',
           registeredAt: '2026-08-23T00:00:00.000Z', lastSeenAt: '2026-08-23T00:00:00.000Z',
         }],
       })}\n`);
       const snapshot = readRepoHarnessRegistryStrictSnapshot({ env, adoptedOnly: false });
       expect(snapshot.authorizationRevision).toBe(4);
-      expect(snapshot.repos).toEqual([expect.objectContaining({ id: 'repo_fixture', path: repo })]);
+      expect(snapshot.repos).toEqual([expect.objectContaining({ id: repoHarnessRepoIdFor(canonicalRepo), path: canonicalRepo })]);
       expect(snapshot.registryRevision).toMatch(/^sha256:[0-9a-f]{64}$/u);
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('fleet strict registry reader rejects repository ids that are not derived from the canonical path', () => {
+    const rejectedIds = [
+      '/Users/alice/private-client/repository',
+      String.raw`C:\Users\alice\private-client\repository`,
+      'repo_safe\ncontrol',
+      'token=secret-value',
+      '${HOME}/private-client/repository',
+    ];
+
+    for (const [index, id] of rejectedIds.entries()) {
+      const fixtureRoot = mkdtempSync(join(tmpdir(), `repo-harness-registry-id-${index}-`));
+      const home = join(fixtureRoot, 'home');
+      const repo = join(fixtureRoot, 'repo');
+      const env = { ...process.env, REPO_HARNESS_HOME: home };
+      try {
+        mkdirSync(home, { recursive: true });
+        mkdirSync(repo, { recursive: true });
+        const canonicalRepo = realpathSync(repo);
+        writeFileSync(join(home, 'registered-repos.json'), `${JSON.stringify({
+          version: 1,
+          authorizationRevision: 0,
+          repos: [{
+            id,
+            path: canonicalRepo,
+            accessMode: 'read_only',
+            source: 'manual',
+            registeredAt: '2026-08-23T00:00:00.000Z',
+            lastSeenAt: '2026-08-23T00:00:00.000Z',
+          }],
+        })}\n`);
+
+        expect(() => readRepoHarnessRegistryStrictSnapshot({ env, adoptedOnly: false })).toThrow(RepoHarnessRegistryStrictError);
+      } finally {
+        rmSync(fixtureRoot, { recursive: true, force: true });
+      }
+    }
+  });
+
+  test('registry writers replace a persisted non-derived id with the canonical derived id', () => {
+    const fixtureRoot = mkdtempSync(join(tmpdir(), 'repo-harness-registry-id-write-'));
+    const home = join(fixtureRoot, 'home');
+    const repo = join(fixtureRoot, 'repo');
+    const env = { ...process.env, REPO_HARNESS_HOME: home };
+    try {
+      mkdirSync(join(repo, '.ai', 'harness'), { recursive: true });
+      writeFileSync(join(repo, '.ai', 'harness', 'policy.json'), '{}\n');
+      mkdirSync(home, { recursive: true });
+      writeFileSync(join(home, 'registered-repos.json'), `${JSON.stringify({
+        version: 1,
+        authorizationRevision: 0,
+        repos: [{
+          id: '/Users/alice/private-client/repository',
+          path: repo,
+          accessMode: 'read_only',
+          source: 'manual',
+          registeredAt: '2026-08-23T00:00:00.000Z',
+          lastSeenAt: '2026-08-23T00:00:00.000Z',
+        }],
+      })}\n`);
+
+      applyRepoHarnessRegistryBatch([{ repoRoot: repo, source: 'manual', accessMode: 'read_write' }], { env });
+      const persisted = JSON.parse(readFileSync(join(home, 'registered-repos.json'), 'utf-8')) as {
+        repos: Array<{ id: string; path: string }>;
+      };
+      expect(persisted.repos).toEqual([{ id: repoHarnessRepoIdFor(realpathSync(repo)), path: realpathSync(repo) }].map((expected) => expect.objectContaining(expected)));
+      expect(readRepoHarnessRegistryStrictSnapshot({ env, adoptedOnly: false }).repos[0].id).toBe(repoHarnessRepoIdFor(realpathSync(repo)));
     } finally {
       rmSync(fixtureRoot, { recursive: true, force: true });
     }

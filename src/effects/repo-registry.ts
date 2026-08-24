@@ -185,7 +185,15 @@ function dedupeRepos(repos: readonly RepoHarnessRegisteredRepo[]): RepoHarnessRe
 function writeRegistryFile(path: string, repos: readonly RepoHarnessRegisteredRepo[], authorizationRevision: number): void {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const temporary = `${path}.${process.pid}.${Date.now()}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify({ version: 1, authorizationRevision, repos: dedupeRepos(repos) }, null, 2)}\n`, {
+  const canonicalRepos = dedupeRepos(repos).map((repo): RepoHarnessRegisteredRepo => ({
+    id: repoHarnessRepoIdFor(repo.path),
+    path: repo.path,
+    accessMode: repo.accessMode,
+    source: repo.source,
+    registeredAt: repo.registeredAt,
+    lastSeenAt: repo.lastSeenAt,
+  }));
+  writeFileSync(temporary, `${JSON.stringify({ version: 1, authorizationRevision, repos: canonicalRepos }, null, 2)}\n`, {
     encoding: "utf-8",
     mode: 0o600,
   });
@@ -316,6 +324,13 @@ function strictRegistryEntry(value: unknown, index: number): RepoHarnessRegister
   }
   if (typeof entry.path !== 'string' || entry.path.trim() === '' || !isAbsolute(entry.path) || resolve(entry.path) !== entry.path) {
     throw new RepoHarnessRegistryStrictError('fleet_registry_invalid', `registry repo ${index} path is invalid`);
+  }
+  const canonicalPath = canonicalRepoPath(entry.path);
+  if (canonicalPath !== entry.path) {
+    throw new RepoHarnessRegistryStrictError('fleet_registry_invalid', `registry repo ${index} path is not canonical`);
+  }
+  if (entry.id !== repoHarnessRepoIdFor(canonicalPath)) {
+    throw new RepoHarnessRegistryStrictError('fleet_registry_invalid', `registry repo ${index} id does not match its canonical path`);
   }
   if (entry.accessMode !== 'read_only' && entry.accessMode !== 'read_write') {
     throw new RepoHarnessRegistryStrictError('fleet_registry_invalid', `registry repo ${index} access mode is invalid`);
@@ -449,7 +464,7 @@ export function applyRepoHarnessRegistryBatch(
       const accessMode = entry.accessMode ?? previous?.accessMode ?? 'read_only';
       if (accessMode !== (previous?.accessMode ?? 'read_only')) accessChanged = true;
       const next: RepoHarnessRegisteredRepo = {
-        id: previous?.id ?? repoHarnessRepoIdFor(entry.repoRoot),
+        id: repoHarnessRepoIdFor(entry.repoRoot),
         path: entry.repoRoot,
         accessMode,
         source: entry.source,
@@ -512,7 +527,7 @@ export function registerRepoHarnessRepo(
     const existing = dedupeRepos(registry.repos);
     const previous = existing.find((repo) => repo.path === canonical);
     const nextEntry: RepoHarnessRegisteredRepo = {
-      id: previous?.id ?? repoHarnessRepoIdFor(canonical),
+      id: repoHarnessRepoIdFor(canonical),
       path: canonical,
       accessMode: previous?.accessMode ?? "read_only",
       source,

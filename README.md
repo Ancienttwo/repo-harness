@@ -302,6 +302,19 @@ claimed before the contract passed), and `WorktreeGuard` (writes from the wrong
 worktree). Full playbook:
 [`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md).
 
+## Local Human Control Board
+
+Run the read-only operator view on the same machine as the adopted repositories:
+
+```bash
+repo-harness operator serve
+```
+
+The command binds to loopback only and prints the local URL. The browser shows
+the canonical Fleet summary, five columns, attention owners, task details, and
+degraded snapshot states. Refresh is explicit; this surface does not acquire
+tasks, mutate workflow state, launch agents, or expose repository paths.
+
 ## MCP Connector
 
 As an optional sidecar, `repo-harness mcp` exposes workflow artifacts to MCP

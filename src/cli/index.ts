@@ -32,6 +32,7 @@ import { buildStateCommand } from './commands/state';
 import { buildSprintCommand } from './commands/sprint';
 import { buildPublicationCommand } from './commands/publication';
 import { buildFleetCommand } from './commands/fleet';
+import { buildOperatorCommand } from './commands/operator';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
 import {
@@ -750,6 +751,7 @@ export function buildProgram(): Command {
   program.addCommand(buildSprintCommand());
   program.addCommand(buildPublicationCommand());
   program.addCommand(buildFleetCommand());
+  program.addCommand(buildOperatorCommand());
   program.addCommand(buildArchitectureProjectionCommand());
   program
     .command('circuit-breaker-record', { hidden: true })

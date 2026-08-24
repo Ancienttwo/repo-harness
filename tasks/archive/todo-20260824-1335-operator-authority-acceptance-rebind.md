@@ -1,7 +1,13 @@
+> **Archived**: 2026-08-24 13:35
+> **Related Plan**: plans/archive/plan-20260824-1252-operator-authority-acceptance-rebind.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260824-1335
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-08-24 12:52
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

@@ -1,0 +1,28 @@
+bun test v1.4.0 (34cbb9a40)
+
+tests/cli/operator-serve.test.ts:
+(pass) operator serve command and HTTP boundary > keeps serve options loopback-only and validates bounded collector settings [3.92ms]
+62 |       expect(collectCalls).toBe(0);
+63 |
+64 |       const rejectedHost = await fetch(`${server.url}/api/v1/fleet/snapshot`, {
+65 |         headers: { Host: 'attacker.example' },
+66 |       });
+67 |       expect(rejectedHost.status).toBe(421);
+                                       ^
+error: expect(received).toBe(expected)
+
+Expected: 421
+Received: 200
+
+      at <anonymous> (/private/tmp/operator-authority-prefx.bEddfe/repo/tests/cli/operator-serve.test.ts:67:35)
+(fail) operator serve command and HTTP boundary > UX-local-human-control-board-v1-P1 serves health, browser-safe Fleet snapshot, and static fallback [39.45ms]
+(pass) operator serve command and HTTP boundary > UX-local-human-control-board-v1-F1 fails closed when Fleet authority is unavailable [4.63ms]
+(pass) operator serve command and HTTP boundary > refuses static assets that escape through an intermediate symlink [4.70ms]
+
+ 3 pass
+ 1 fail
+ 18 expect() calls
+Ran 4 tests across 1 file. [113.00ms]
+
+REGRESSION_GUARD=tests/cli/operator-serve.test.ts
+PRE_FIX_EXIT=1

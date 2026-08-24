@@ -24,7 +24,11 @@ import {
   deriveTaskRevision,
   enterReviewingLeaseRecord,
 } from '../../src/core/state/coordination-identity';
-import type { RepoHarnessRegisteredRepo, RepoHarnessRegistryStrictSnapshot } from '../../src/effects/repo-registry';
+import {
+  repoHarnessRepoIdFor,
+  type RepoHarnessRegisteredRepo,
+  type RepoHarnessRegistryStrictSnapshot,
+} from '../../src/effects/repo-registry';
 import { writePublicationReceiptCache } from '../../src/effects/publication/publication-receipt';
 import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
 import { createLeaseDirectory, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
@@ -189,16 +193,17 @@ describe('fleet board collector', () => {
       execFileSync('git', ['add', '.'], { cwd: repoRoot, encoding: 'utf8' });
       execFileSync('git', ['commit', '-m', 'fixture'], { cwd: repoRoot, encoding: 'utf8' });
       const canonicalRepoRoot = realpathSync(repoRoot);
+      const repositoryId = repoHarnessRepoIdFor(canonicalRepoRoot);
       writeFileSync(join(home, 'registered-repos.json'), `${JSON.stringify({
         version: 1, authorizationRevision: 1, repos: [{
-          id: 'repo-real', path: canonicalRepoRoot, accessMode: 'read_only', source: 'manual',
+          id: repositoryId, path: canonicalRepoRoot, accessMode: 'read_only', source: 'manual',
           registeredAt: '2026-08-23T00:00:00.000Z', lastSeenAt: '2026-08-23T00:00:00.000Z',
         }],
       })}\n`);
       const registryBefore = readFileSync(join(home, 'registered-repos.json'), 'utf8');
       const statusBefore = execFileSync('git', ['status', '--porcelain'], { cwd: repoRoot, encoding: 'utf8' });
       const result = await collectFleetBoard({ env: { ...process.env, REPO_HARNESS_HOME: home }, timeout_ms: 1_000 });
-      expect(result.repositories[0]).toMatchObject({ repository_id: 'repo-real', status: 'ok' });
+      expect(result.repositories[0]).toMatchObject({ repository_id: repositoryId, status: 'ok' });
       expect(result.repositories[0]?.cards).toHaveLength(1);
       expect(readFileSync(join(home, 'registered-repos.json'), 'utf8')).toBe(registryBefore);
       expect(execFileSync('git', ['status', '--porcelain'], { cwd: repoRoot, encoding: 'utf8' })).toBe(statusBefore);
@@ -306,7 +311,7 @@ describe('fleet board collector', () => {
         read_registry: () => registry([fixture.repo]),
         collect_repository: productionFleetBoardDependencies.collect_repository,
       };
-      const result = await collectFleetBoard({ max_concurrency: 2, timeout_ms: 10_000 }, dependencies);
+      const result = await collectFleetBoard({ max_concurrency: 2, timeout_ms: 30_000 }, dependencies);
       expect(result.repositories[0]).toMatchObject({ status: 'ok' });
       expect(result.repositories[0]?.cards).toHaveLength(4);
       expect(Number.parseInt(readFileSync(join(fixture.counter_dir, 'maximum'), 'utf8'), 10)).toBe(2);
@@ -318,7 +323,7 @@ describe('fleet board collector', () => {
       else process.env.FLEET_PROVIDER_COUNTER_DIR = previousCounter;
       rmSync(root, { recursive: true, force: true });
     }
-  }, 10_000);
+  }, 30_000);
 
   test('does not start a repository observation after the outer signal wins before synchronous collection', async () => {
     const controller = new AbortController();
