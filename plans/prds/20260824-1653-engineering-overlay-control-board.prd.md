@@ -3,7 +3,7 @@
 > **Status**: Draft
 > **Slug**: `engineering-overlay-control-board`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T18:30:00+0800
+> **Updated**: 2026-08-24T19:49:19+0800
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
 > **Depends On**: ME-0A binding read model; later fields activate only when their owning PRD ships
@@ -124,7 +124,10 @@ EngineeringOverlaySnapshotV1:
   engineers:
     - engineer_id: string
       capability_id: string
-      binding: {binding_id: uuid, binding_generation: 7, observation: unknown}
+      binding:
+        support: available|unreadable
+        state: unbound|active|retired|null
+        value: null|{binding_id: uuid, binding_generation: integer, engineer_contract_revision: sha256, observation: unknown|reachable|unreachable}
       active_claim: {support: unsupported|available|unreadable, value: null|object}
       delegations: {support: unsupported|available|unreadable, active_readers: null|integer, writer_actor: null|string, blocked_count: null|integer}
       messages: {support: unsupported|available|unreadable, pending: null|integer, delivery_failed: null|integer}
@@ -137,6 +140,8 @@ EngineeringOverlaySnapshotV1:
 ```
 
 Unsupported, unreadable and healthy-empty are distinct closed states. P0 may ship Engineering Overlay and Organization Attention separately; a composite snapshot may claim `stable` only when every component's before/after marker matches. Partial read failure produces `degraded` and preserves each readable component's own revision/digest.
+
+Binding invariants are exact: `support: unreadable` requires `state/value: null`; `available + unbound` requires `value: null`; `available + active` requires a non-null current value; `available + retired` may expose only the current retired pointer value. Because ME-1B depends on ME-0A, `unsupported` is not a legal binding value for an emitted overlay.
 
 ## Performance Targets
 
@@ -166,6 +171,7 @@ Do not start UI before JSON read models and consistency fixtures are Approved.
 2. Mutate binding generation mid-read and assert non-stable consistency.
 3. Render an Engineer with no task but active organization attention.
 4. Inventory routes and assert no mutation endpoint.
+5. Emit `available/unbound`, `available/active`, `available/retired` and `unreadable` binding fixtures; reject every illegal state/value combination.
 
 ## Frontend Perspective
 

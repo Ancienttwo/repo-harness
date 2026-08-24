@@ -3,7 +3,7 @@
 > **Status**: Approved
 > **Slug**: `persistent-module-engineer-organization`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T18:30:00+0800
+> **Updated**: 2026-08-24T19:49:19+0800
 > **Source Spec**: `docs/spec.md`
 > **Related Research**: `docs/researches/20260824-persistent-module-engineer-organization.md`
 > **Tier**: standard
@@ -21,7 +21,7 @@
 - **Key risk**: 只有可信 principal、Claim actor receipt 和 mutation-time writer grant 能把“旧 Session 不再有权”“同一 worktree 只有一个 writer”从提示词变成技术事实。
 - **Unknowns**: 当前 MCP OAuth authorization 不能证明 Provider Thread identity；具体 binding principal carrier 必须在 ME-0B canary 中冻结。
 - **Acceptance scenarios**: 单 active binding、旧 principal 拒绝、Claim actor 可追溯、无第二 Lease、单 writer actor、persist-first message、verified-only next context、Fleet column 不受 runtime state 影响。
-- **Suggested next step**: ME-0A 暂时保持 Draft，先冻结 genesis/current recovery、transitive engineer contract revision 与 event publication semantics；未重新批准前不进入实施。
+- **Suggested next step**: ME-0A 暂时保持 Draft；closed event/current publication semantics 已吸收，下一步只做外部 schema/fixture 复审，未明确恢复 Approved 前不进入实施。
 
 ## Problem
 
@@ -229,7 +229,7 @@ No digest preimage may silently add engineer, binding or Provider identity to cu
 
 This umbrella is architecture authority, not an implementation task.
 
-- **Build first**: only the first Approved child PRD, ME-0A.
+- **Build first**: no child is currently implementation-ready. After its closed event/current publication protocol is externally re-reviewed and its status becomes Approved, ME-0A is the first implementation slice.
 - **Do not reinterpret**: no new Module Graph; no Session self-declared principal; no writer based on prompt-only paths; no active dirty-task transparent transfer; no UI-owned status.
 - **Promotion rule**: a child PRD becomes Approved only after its authority, principal, state transitions, failure paths and acceptance evidence are decision-complete.
 - **Verify with**: child-specific tests plus `repo-harness run check-task-workflow --strict`, architecture sync and task sync.
@@ -239,7 +239,7 @@ This umbrella is architecture authority, not an implementation task.
 1. Validate every child PRD filename/status/required sections through the strict workflow check.
 2. Confirm no proposed tracked path creates a second capability or memory authority.
 3. Confirm the ordered dependency graph contains no forward type dependency.
-4. Confirm only ME-0A is implementation-ready; all unknown-bearing children remain Draft.
+4. Confirm no child is currently implementation-ready; ME-0A is first in ordering but remains blocked while Draft, and all other unknown-bearing children remain Draft.
 
 ## Adjacent Patterns
 

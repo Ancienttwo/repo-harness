@@ -3,7 +3,7 @@
 > **Status**: Draft
 > **Slug**: `engineer-binding-principal-claim-actor`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T18:30:00+0800
+> **Updated**: 2026-08-24T19:49:19+0800
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
 > **Depends On**: `plans/prds/20260824-1653-engineer-profile-binding-projection.prd.md`
@@ -125,10 +125,10 @@ ClaimActorReceiptV1:
   engineer_id: string
   binding_id: uuid
   binding_generation: integer
-  repository_id: string
-  authorization_revision: sha256
+  repository_id: string # exact WorkEnvelopeV1.repo_id
+  authorization_revision: integer # exact WorkEnvelopeV1.authorization_revision
   work_envelope_sha256: sha256
-  worktree_ref: string
+  worktree_path: string # exact WorkEnvelopeV1.worktree_path
   branch: string
   unit_ref: string
   engineer_contract_revision: sha256
@@ -163,7 +163,7 @@ Do not implement until the principal carrier decision is frozen and this PRD bec
 ### Acceptance Scripts
 
 1. Prove the selected carrier uniquely maps one live connection to one current Binding.
-2. Bind ClaimActorReceipt to repository, authorization revision, exact WorkEnvelope digest, worktree/branch/unit and engineer contract revision.
+2. Bind ClaimActorReceipt `repository_id`, `authorization_revision`, `worktree_path`, branch and unit byte-for-byte to the exact WorkEnvelope fields, plus WorkEnvelope and engineer contract digests.
 3. Allow generic/non-engineer Fleet acquire without ClaimActorReceipt; require it for every engineer-originated acquire.
 4. Fault receipt persistence after acquire; release only the Claim created by this transaction and retain any created worktree as a typed recoverable residual.
 5. Replay retired credentials and spoof payload fields; assert typed refusal.

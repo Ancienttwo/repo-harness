@@ -3,7 +3,7 @@
 > **Status**: Draft
 > **Slug**: `engineer-profile-binding-projection`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T18:30:00+0800
+> **Updated**: 2026-08-24T19:49:19+0800
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
 > **Related Research**: `docs/researches/20260824-persistent-module-engineer-organization.md`
@@ -15,11 +15,11 @@
 - **Problem**: Module Engineer 目前没有 capability-backed Profile/SOP，也没有所有 linked worktrees 共享的 current Session binding read model。
 - **Users**: Maintainer 和只读观察 Engineer 组织的 Program Orchestrator。
 - **Platform**: tracked `agents/engineers/` artifacts、git-common-dir binding store、operator-only CLI、compact bootstrap capsule。
-- **P0 surface**: `ModuleEngineerProfileV1`、两个 canary Profile/SOP、`EngineerBindingV1` store/events/lock、bind/status/retire/bootstrap-prompt。
+- **P0 surface**: `ModuleEngineerProfileV1`、两个 canary Profile/SOP、`EngineerBindingV1`、`EngineerBindingEventV1`、`EngineerBindingCurrentV1`、shared store/lock、bind/status/retire/bootstrap-prompt。
 - **Core metric**: N 个 worktrees 对同一 Engineer 只看到 0 或 1 个 current binding；Profile 不复制 capability 权威。
 - **Hard constraint**: 本切片不开放任何 Session 发起的 engineer-scoped mutation，也不声称旧 Thread 已被技术 fencing。
 - **Key risk**: 把 read-only manual canary 误报成 authenticated authorization。
-- **Unknowns**: genesis/current corruption、transitive revision 与 event publication semantics 已在本修订冻结；重新批准仍需 schema/fixture review。
+- **Unknowns**: genesis/current corruption、transitive revision 与 closed event/current publication semantics 已冻结；重新批准仍需外部 schema/fixture review。
 - **Acceptance scenarios**: Profile 引用 canonical capability、N-way binding CAS 只有一个 winner、genesis 与 missing-current 可判定、dangling event 不成为 current、所有 worktrees 读到同一 current。
 - **Suggested next step**: 先实现纯 schema/fixture proof 并重新审阅本 PRD；未恢复 Approved 前不得进入 Sprint。
 
@@ -111,12 +111,13 @@ Hard Constraints:
 ### Module 2: Shared Binding Store
 
 - **Purpose**: maintain one current binding across linked worktrees.
-- **Normal path**: lock Engineer → classify genesis/current → validate expected current and contract revision → append immutable event → atomically replace current pointer.
+- **Normal path**: lock Engineer → classify genesis/current → validate expected current and contract revision → create-if-absent immutable event by deterministic transition ID → fsync event → CAS current pointer to that exact event digest → fsync directory → return success.
 - **Failure path**: stale expectation, symlink, malformed file, lock timeout, events-without-current or current/event digest mismatch produces typed refusal.
-- **States**: `active → retiring → retired`; a new active generation requires the old current to be retired in the same locked transition.
+- **Transitions**: `initialize|bind|retire|replace`; a replacement publishes the old active binding as retired and the new active generation in one event/current transition under the same lock.
 - **Current authority**: `current.json` is the only current-state authority. Events are immutable audit history; a future/dangling event is never auto-promoted or selected by timestamp.
 - **Genesis rule**: no engineer directory or no events plus no current means generation 0 `unbound`; any events plus missing current is corruption and fails closed.
-- **Crash/retry rule**: crash after event append but before pointer replacement leaves a diagnosable unpublished event. Retry reuses the same deterministic event digest when transition inputs are identical; otherwise it creates a new event, but neither is current until pointer CAS publishes it.
+- **Idempotency rule**: caller supplies one stable `idempotency_key`; `transition_id = sha256(protocol + engineer_id + idempotency_key)`. The operation fingerprint covers the complete transition request excluding derived digests. Create-if-absent at the transition path accepts byte-identical retry and rejects the same key with a different fingerprint as `idempotency_conflict`.
+- **Crash/retry rule**: before event persistence, retry begins normally. After event fsync but before current publication, current remains authoritative and the same key/input resumes only that event's pointer CAS. After current fsync but before response, the same key returns the already-published result. A different key may create a distinct dangling event but cannot publish from a stale expected current. No recovery path scans by timestamp or promotes an unrelated event.
 
 ### Module 3: Operator/Projection Surface
 
@@ -157,6 +158,22 @@ EngineerBindingV1:
   bound_at: datetime
   retired_at: null
 
+EngineerBindingEventV1:
+  protocol: 1
+  kind: repo-harness-engineer-binding-event
+  transition_id: sha256(protocol + engineer_id + idempotency_key)
+  idempotency_key: bounded-opaque
+  operation_fingerprint: sha256(canonical transition request)
+  engineer_id: engineer:capability.verification.evals-checks
+  transition: initialize|bind|retire|replace
+  expected_current_digest: sha256|null
+  expected_binding_generation: integer
+  previous_binding_id: uuid|null
+  next_binding: EngineerBindingV1|null
+  next_current_payload_sha256: sha256
+  created_at: datetime
+  event_digest: sha256(canonical event fields excluding event_digest)
+
 EngineerBindingCurrentV1:
   protocol: 1
   kind: repo-harness-engineer-binding-current
@@ -164,9 +181,13 @@ EngineerBindingCurrentV1:
   binding_generation: 0
   state: unbound|active|retired
   current_binding_id: null
+  current_transition_id: sha256|null
   current_event_digest: null
   engineer_contract_revision: sha256:...
+  current_digest: sha256(canonical current fields excluding current_digest)
 ```
+
+`next_current_payload_sha256` covers the next current fields except `current_transition_id`, `current_event_digest` and `current_digest`; this avoids a circular event/current digest. `current.json` binds the published transition and event digests and then hashes its complete non-self digest fields. `binding_id`, `created_at` and all other non-derived request fields are frozen in the first event bytes and must be reused by an idempotent retry.
 
 Store:
 
@@ -174,7 +195,7 @@ Store:
 <git-common-dir>/repo-harness/engineers/v1/
   locks/<engineer-key>.lock/
   <engineer-key>/current.json
-  <engineer-key>/events/<event-digest>.json
+  <engineer-key>/events/<transition-id>.json
 ```
 
 ## Performance Targets
@@ -190,7 +211,7 @@ Store:
 | Item | Impact | Resolution Path | Owner |
 |---|---|---|---|
 | Provider reachability observation accuracy | Display only | keep `unknown` and never infer liveness | Runtime owner |
-| ME-0A approval after amendment | Blocks implementation | schema review plus crash/genesis fixture evidence | Maintainer |
+| ME-0A approval after amendment | Blocks implementation | external review of the closed event/current protocol plus crash/genesis fixture plan | Maintainer |
 
 ## Developer Handoff
 
@@ -208,6 +229,8 @@ Store:
 5. Remove current with no events and assert genesis/unbound; remove current with events and assert corruption/fail-closed.
 6. Crash after event append; assert current remains authoritative, dangling event is diagnostic only, and deterministic retry publishes exactly one transition.
 7. Change only SOP bytes and then only capability revision; assert `engineer_contract_revision` changes and stale expected revision loses CAS.
+8. Retry one published operation with the same key and bytes; assert identical success and no new event/generation. Retry the same key with one changed field; assert `idempotency_conflict`.
+9. Inject crashes before event, after event fsync, after current fsync and before response; assert the unique outcomes defined by the publication protocol.
 
 ## Backend Perspective
 

@@ -3,7 +3,7 @@
 > **Status**: Draft
 > **Slug**: `engineer-coordination-messages`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T18:30:00+0800
+> **Updated**: 2026-08-24T19:49:19+0800
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
 > **Depends On**: ME-0B trusted principal and binding fences
@@ -142,16 +142,29 @@ ModuleMessageDeliveryReceiptV1:
   message_event_digest: sha256
   recipient_engineer_id: string
   target_binding_generation: integer|null
-  delivery_state: pending|delivered|failed|acknowledged|superseded
+  delivery_state: pending|delivered|acknowledged|superseded
   attempt: integer
-  observation_digest: sha256|null
-  error_code: closed-enum|null
+  latest_observation_digest: sha256|null
   acknowledged_by_binding_generation: integer|null
   transition_revision: integer
   receipt_digest: sha256
+
+ModuleMessageDeliveryObservationV1:
+  protocol: 1
+  message_event_digest: sha256
+  recipient_engineer_id: string
+  target_binding_generation: integer|null
+  attempt: integer
+  outcome: delivered|transport_error|recipient_unavailable|binding_stale|adapter_unavailable
+  provider_delivery_ref: opaque|null
+  observed_at: datetime
+  previous_observation_digest: sha256|null
+  observation_digest: sha256
 ```
 
 Each subject kind invokes its owning validator; the message store never validates domain meaning from body text. Module-scope acknowledgement is satisfied by the first current Binding that acknowledges the exact event digest and remains durable across later Engineer replacement; assignment-scope events may instead be superseded by a binding rotation transition.
+
+Delivery failure never changes the receipt out of `pending`; it appends one observation and increments `attempt` under the recipient lock. `pending → delivered → acknowledged` and `pending|delivered → superseded` are the only transitions. A later attempt may append `delivered` after any number of error observations. ACK from pending is forbidden; assignment rotation supersedes pending/delivered receipts for the old binding, while module-scope pending survives rotation and is retargeted by a new receipt transition.
 
 ## Performance Targets
 
@@ -181,3 +194,4 @@ Do not implement before ME-0B principal is Approved.
 3. Fault native send and consume pending message after rebinding.
 4. Reference a Decision/Interface subject and assert its authority bytes remain unchanged.
 5. Validate every delivery/ack/supersede transition under lock and reject unknown sender/subject kinds.
+6. Append transport, unavailable, stale and adapter observations; assert receipt stays pending, attempt is monotonic, unknown outcomes fail schema validation and later delivery may succeed.

@@ -3,7 +3,7 @@
 > **Status**: Draft
 > **Slug**: `read-only-delegation-admission`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T18:30:00+0800
+> **Updated**: 2026-08-24T19:49:19+0800
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
 > **Depends On**: ME-0B Principal/ClaimActorReceipt and active canonical Contract/Lease/WorkEnvelope
@@ -108,10 +108,37 @@ DelegationEnvelopeV1:
   return_contract: WorkerResultV1
   envelope_sha256: sha256
 
+DelegationAdmissionReceiptV1:
+  protocol: 1
+  kind: repo-harness-delegation-admission-receipt
+  delegation_id: uuid
+  envelope_sha256: sha256
+  decision: admitted|rejected
+  rejection_reason: null|parent_stale|binding_stale|role_unavailable|mode_unsupported|budget_invalid|sandbox_unverified
+  admitted_role: closed-installed-agent-type|null
+  admitted_mode: read_only|null
+  admitted_sandbox_policy_sha256: sha256|null
+  expected_runtime_observation_sha256: sha256|null
+  decided_at: datetime
+  admission_receipt_sha256: sha256
+
+WorkerRunRefV1:
+  protocol: 1
+  kind: repo-harness-worker-run-ref
+  worker_run_id: uuid
+  delegation_id: uuid
+  admission_receipt_sha256: sha256
+  observed_role: closed-installed-agent-type
+  runtime_principal_ref: opaque
+  subagent_start_observation_sha256: sha256
+  read_only_sandbox_receipt_sha256: sha256
+  run_ref_sha256: sha256
+
 WorkerResultV1:
   protocol: 1
   delegation_id: uuid
   worker_run_id: uuid
+  worker_run_ref_sha256: sha256
   observed_role: string
   runtime_observation_sha256: sha256
   read_only_sandbox_receipt_sha256: sha256
@@ -119,6 +146,8 @@ WorkerResultV1:
   untrusted_claims: [bounded-utf8]
   result_sha256: sha256
 ```
+
+Only an `admitted` receipt can produce a `WorkerRunRefV1`. Its admitted role/mode/sandbox digest must match the exact `SubagentStart` observation and runtime sandbox receipt before result collection. A rejected admission is terminal and cannot be translated to a different role or adapter.
 
 ## Known Unknowns
 
@@ -136,3 +165,4 @@ Do not implement until ME-0B is Approved and one adapter proof is frozen. No wri
 2. Request missing role and assert no child starts.
 3. Attempt write/shell side effect and assert sandbox denial plus byte-identical repo state.
 4. Return `completed` prose and assert no Task/Acceptance transition.
+5. Change admitted role, sandbox digest or observed run identity after admission; assert no `WorkerRunRefV1` or result is accepted.

@@ -3,7 +3,7 @@
 > **Status**: Draft
 > **Slug**: `engineer-scheduling-schema`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T18:30:00+0800
+> **Updated**: 2026-08-24T19:49:19+0800
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
 > **Depends On**: ME-0A for schema/projection; ME-0B only for engineer-scoped acquire mutation
@@ -30,7 +30,7 @@ Dependencies cannot safely point only at content-addressed `task_id`, because ed
 
 - `work_package_id` is stable logical identity; task revision remains current content version.
 - Dependency targets `work_package_id + required_state`.
-- Each work package has one `primary_capability` and zero or more `required_capabilities` referencing canonical ArchContext node IDs.
+- Each P0 work package has exactly one `primary_capability` referencing a canonical ArchContext node ID. Cross-capability prerequisites are explicit `depends_on` Work Package edges; P0 has no multi-capability Engineer qualification field.
 - Concurrency key includes `scope = repo|capability|fleet` and normalized key.
 - Legacy v1 tasks remain explicitly generic and are never module-routed; migration is explicit and never inferred from prose/path.
 
@@ -111,8 +111,6 @@ work_package_id: wp-publication-reconcile
 work_package_revision: sha256
 work_graph_revision: sha256
 primary_capability: capability.workflow-engine.contract-assets
-required_capabilities:
-  - capability.verification.evals-checks
 depends_on:
   - repository_id: repo-harness
     work_package_id: wp-provider-receipt
@@ -132,7 +130,7 @@ Closed dependency states and their sole authorities:
 - `publication_integrated`: existing Publication receipt/state authority;
 - `product_accepted`: ME-4C product Acceptance receipt.
 
-P0 `required_capabilities` means one routed Engineer must be qualified for every listed capability reference. It does not model a multi-Engineer team. Fleet-scoped concurrency is rejected until a separate shared permit authority is Approved.
+P0 accepts only `concurrency.scope: repo`. `capability|fleet` values and an unknown `required_capabilities` key are schema errors until a separate qualification/permit authority is Approved. A dependency owned by another capability is represented only through its repository-qualified Work Package edge and closed required state.
 
 ## Performance Targets
 
@@ -147,6 +145,7 @@ P0 `required_capabilities` means one routed Engineer must be qualified for every
 |---|---|---|---|
 | Sprint column vs referenced graph carrier | Blocks approval | compare digest/migration blast radius | State owner |
 | Explicit legacy window/removal trigger | Compatibility scope | freeze migration contract | Maintainer |
+| Multi-capability Engineer qualification | Deferred outside P0 | separate qualification authority PRD; do not infer from capability graph | Architecture owner |
 
 ## Developer Handoff
 
@@ -163,3 +162,4 @@ Do not implement until the canonical carrier and bounded legacy migration are fr
 3. Exercise repo-scoped concurrency and reject fleet scope as unsupported.
 4. Confirm generic-v1 tasks never enter module routing.
 5. Change only scheduling metadata; assert `work_package_revision/work_graph_revision` change and stale Offer/acquire preconditions fail.
+6. Add `required_capabilities` or `concurrency.scope: capability|fleet`; assert exact schema refusal rather than inferred qualification or a synthetic permit.

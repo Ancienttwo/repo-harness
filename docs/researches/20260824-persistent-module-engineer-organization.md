@@ -4,6 +4,7 @@
 > **Document Type**: Umbrella Research / Architecture Brief
 > **Implementation Authority**: None
 > **Amendment (2026-08-24)**: Engineer Binding 的 current authority 是 ME-0A 定义的共享 `<git-common-dir>/repo-harness/engineers/v1/` store。任何下文中的 worktree-local binding path 都已被取代；实施必须以对应 child PRD 的 closed schema、依赖和 approval state 为准。
+> **External Review (2026-08-24)**: GPT Git Connector 对 `d29ecce2` 的裁决为 `Request Changes`：umbrella 继续 Approved，12 个 child 全部保持 Draft。完整裁决归档于 `tasks/reviews/20260824-1949-persistent-module-engineer-gpt-review.review.md`；ME-0A 只有在 closed event/current publication protocol 再获外部批准后才成为首个实施切片。
 
 ## 结论
 
@@ -277,7 +278,7 @@ binding_generation: 7
 provider: codex
 provider_thread_id: thread_abc123
 host_id: local
-  engineer_contract_revision: sha256:...
+engineer_contract_revision: sha256:...
 state: active
 bound_at: 2026-08-24T00:00:00Z
 retired_at: null
@@ -488,6 +489,7 @@ Gatekeeper 不读取 Engineer 的自我结论作为事实，不继承完整 pare
 - generic Module Engineer persona；
 - `ModuleEngineerProfileV1`；
 - git-common-dir `EngineerBindingV1` store、event 与 per-engineer lock；
+- closed `EngineerBindingEventV1 → EngineerBindingCurrentV1` idempotent publication protocol；
 - operator-only `engineer bind/status/retire/bootstrap-prompt`；
 - 两个 profile/SOP；
 - compact SessionStart engineer capsule；
@@ -510,7 +512,7 @@ Gatekeeper 不读取 Engineer 的自我结论作为事实，不继承完整 pare
 - Work Package/Sprint 加入 repository-qualified Work Package identity、independent scheduling/graph revisions、capability、dependency、priority、repo-scoped concurrency key；
 - deterministic engineer offer matching；
 
-增加稳定 `repository_id + work_package_id`，dependency 指向逻辑 Work Package；task revision 继续表达当前内容版本，`work_package_revision/work_graph_revision` 单独 fence scheduling metadata。P0 的 `required_capabilities` 表达 routing qualification，不表达多人协作；fleet-wide concurrency authority 延后，legacy task 不从 prose 推断字段。
+增加稳定 `repository_id + work_package_id`，dependency 指向逻辑 Work Package；task revision 继续表达当前内容版本，`work_package_revision/work_graph_revision` 单独 fence scheduling metadata。P0 只有一个 `primary_capability`，跨 capability 前置关系使用 repository-qualified Work Package dependency；`required_capabilities`、capability/fleet-wide concurrency authority 延后，legacy task 不从 prose 推断字段。
 
 ### ME-1B：Engineering Overlay
 
@@ -529,6 +531,8 @@ Gatekeeper 不读取 Engineer 的自我结论作为事实，不继承完整 pare
 ### ME-2A：Read-only Delegation
 
 - `DelegationEnvelopeV1`；
+- `DelegationAdmissionReceiptV1`；
+- `WorkerRunRefV1`；
 - `WorkerResultV1`；
 - native role observation 与 result collection。
 
@@ -537,6 +541,7 @@ Gatekeeper 不读取 Engineer 的自我结论作为事实，不继承完整 pare
 ### ME-2B：Single-writer Grant
 
 - `DelegatedMutationGrantV1`；
+- `WriterActorCurrentV1` 与 Parent-freeze/Worker-active/settlement 中间状态；
 - exclusive `writer_actor = engineer:<binding-id> | worker:<run-id>`；
 - parent write freeze；
 - host-observed before/after Git state；
@@ -551,7 +556,8 @@ Gatekeeper 不读取 Engineer 的自我结论作为事实，不继承完整 pare
 - `EngineerStepProposalV1`；
 - `WorkerRoundReceiptV1`；
 - evidence-chain-bound `SemanticVerificationAssertionV1`；
-- `DecisionRequestV1`、`RuntimeFailureV1` 与 `ExecutionBudgetV1`。
+- `DecisionRequestV1`、`RuntimeFailureV1` 与 `ExecutionBudgetV1`；
+- `DecisionRequestEventV1/CurrentV1` 的 actor-fenced crash publication。
 
 独立 PRD：`plans/prds/20260824-1653-verified-context-contracts.prd.md`。
 
@@ -560,6 +566,7 @@ Gatekeeper 不读取 Engineer 的自我结论作为事实，不继承完整 pare
 - PersistentThreadTransport adapters；
 - WorkerRuntimeAdapter adapters；
 - acquire/dispatch/observe/collect loop；
+- immutable `WorkerDispatchIntentV1`、runtime receipt chain 与 current pointer；
 - explicit retry policy，区分 infrastructure failure 与 semantic failure；
 - Session rotation recommendation 与 Human-controlled rebinding。
 
@@ -581,6 +588,7 @@ Gatekeeper 不读取 Engineer 的自我结论作为事实，不继承完整 pare
 
 - dependency-ready module publications；
 - Integration Contract/Envelope；
+- selected publication 绑定 immutable receipt、current-publication pointer、status observation 与 exact head/tree，不创建 `publication_revision`；
 - cross-module Acceptance Matrix；
 - original approved requirement authority 与 exact combined candidate；
 - independent system-level verification。

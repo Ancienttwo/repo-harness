@@ -3,7 +3,7 @@
 > **Status**: Draft
 > **Slug**: `writable-worker-grant`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T18:30:00+0800
+> **Updated**: 2026-08-24T19:49:19+0800
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
 > **Depends On**: ME-0B, ME-2A and ME-3 Worker Host; current Contract/Lease/WorkEnvelope
@@ -14,7 +14,7 @@
 - **Problem**: a writable Worker needs mutation-time authority while Parent Engineer and every other child are provably unable to write the same worktree.
 - **Users**: managed Module Engineer, writable Worker, Worker Host operator and Acceptance Plane.
 - **Platform**: Worker Host-controlled Parent/child processes, exclusive writer actor, OS sandbox and host-observed Git state.
-- **P0 surface**: `DelegatedMutationGrantV1`, host-enforced Parent freeze, writer actor CAS, mutation guard, settlement and crash recovery.
+- **P0 surface**: `WriterActorCurrentV1`, `DelegatedMutationGrantV1`, host-enforced Parent freeze, writer actor CAS, mutation guard, settlement and crash recovery.
 - **Core metric**: writer overlap 0; path/policy escape 0; publication before settlement 0.
 - **Hard constraint**: unmanaged Provider Sessions remain read-only; prompt text or a store flag cannot freeze their filesystem permissions.
 - **Key risk**: Parent retains shell/edit authority after the store says Worker owns the slot.
@@ -80,7 +80,7 @@ Grant is revoked between command admission and effect. The effect boundary reval
 
 ### Module 1: Writer Election
 
-Under one lock, validate Parent Claim/Host principal, freeze Parent, CAS `writer_actor`, then issue an immutable grant.
+Under one lock, validate Parent Claim/Host principal, publish `freezing_parent`, drain/revoke Parent mutation, publish `worker_pending`, activate/observe the child sandbox, then publish `worker_active` and the immutable grant.
 
 ### Module 2: Mutation and Settlement
 
@@ -89,6 +89,23 @@ Every effect revalidates Lease, grant epoch/state, runtime principal, actor and 
 ## Data Model
 
 ```yaml
+WriterActorCurrentV1:
+  protocol: 1
+  kind: repo-harness-writer-actor-current
+  writer_epoch: integer
+  worktree_path: string
+  branch: string
+  unit_ref: string
+  parent: {engineer_id: string, binding_id: uuid, binding_generation: integer, claim_id: uuid, lease_generation: integer}
+  state: engineer_active|freezing_parent|worker_pending|worker_active|settling|engineer_restoring|recovery_required
+  writer_actor: engineer:<binding-id>|worker:<worker-run-id>|none
+  worker_run_id: uuid|null
+  grant_id: uuid|null
+  parent_freeze_receipt_sha256: sha256|null
+  worker_runtime_observation_sha256: sha256|null
+  previous_current_digest: sha256|null
+  current_digest: sha256
+
 DelegatedMutationGrantV1:
   protocol: 1
   grant_id: uuid
@@ -113,6 +130,20 @@ DelegatedMutationGrantV1:
   grant_sha256: sha256
 ```
 
+The current writer-slot protocol is ordered and fail closed:
+
+```text
+engineer_active
+→ freezing_parent
+→ worker_pending
+→ worker_active
+→ settling
+→ engineer_restoring
+→ engineer_active
+```
+
+Every mutation broker revalidates `WriterActorCurrentV1` immediately before effect. `freezing_parent`, `worker_pending`, `settling`, `engineer_restoring` and `recovery_required` admit no mutation or publication. Crash before Parent freeze is proven returns `freezing_parent`; Host restart must stop/drain Parent and either continue or enter recovery. A child activated before `worker_active` is denied by the broker. Crash after `worker_active` preserves only the exact Worker grant. Settlement first revokes/drains Worker, publishes `settling`, observes Git state, publishes `engineer_restoring`, restores/observes Parent, then CAS-publishes `engineer_active`. Any unverifiable external effect enters `recovery_required` and requires Human-directed reconciliation.
+
 ## Known Unknowns
 
 | Item | Impact | Resolution Path | Owner |
@@ -131,3 +162,4 @@ Do not implement before ME-3 is Approved. No unmanaged Session compatibility mod
 3. Revoke between admission/effect and assert no mutation.
 4. Crash after dirtying files; assert recovery lock and host-observed diff.
 5. Attempt publication before settlement; assert typed refusal.
+6. Inject a crash at every boundary between current CAS, Parent revoke, child activation, Worker revoke and Parent restore; assert no overlap and the unique recovery state above.

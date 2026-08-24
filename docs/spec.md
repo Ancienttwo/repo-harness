@@ -98,6 +98,10 @@ repos.
 - A Module Engineer binding is shared git-common-dir authorization state for
   engineer-scoped commands only. It cannot create, transfer, or replace task
   Lease, Publication, Acceptance, or merge authority.
+- Engineer binding transitions publish an immutable idempotency-fenced event
+  before CAS-replacing the sole current pointer. Dangling events remain audit
+  evidence only; retries cannot select by time, change payload under one key,
+  or fabricate current state after a crash.
 - Engineer identity is derived by an authenticated runtime boundary; an LLM may
   not gain authority by supplying `engineer_id` or binding generation as command
   arguments.
@@ -106,6 +110,9 @@ repos.
   enforced child grant and settle it before publication. Writable delegation
   is available only when a Worker Host controls both Parent and child mutation
   capability; unmanaged Provider Sessions remain read-only.
+- Parent freeze, Worker activation, settlement, and Parent restoration are
+  separate crash-recoverable writer-slot states. Transitional or unverifiable
+  states admit no mutation or publication and never silently restore a writer.
 - Provider threads, transcripts, auto memory, and context summaries are caches.
   Durable module knowledge remains in architecture, research, lessons,
   workstreams, and task-local notes, with any engineer memory kept as a

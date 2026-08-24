@@ -3,7 +3,7 @@
 > **Status**: Draft
 > **Slug**: `integration-product-acceptance`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T18:30:00+0800
+> **Updated**: 2026-08-24T19:49:19+0800
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
 > **Depends On**: ME-1A, ME-2C, ME-3 and existing Publication/Acceptance; interface-driven work additionally references ME-4B
@@ -100,7 +100,7 @@ IntegrationContractV1:
 IntegrationEnvelopeV1:
   protocol: 1
   integration_contract_sha256: sha256
-  selected_publications: [{publication_id: string, publication_revision: integer, receipt_sha256: sha256, commit_sha: sha, tree_sha: sha}]
+  selected_publications: [{publication_id: string, receipt_sha256: sha256, current_publication_pointer_digest: sha256, publication_status_observation_digest: sha256, head_sha: sha, tree_sha: sha}]
   base_sha: sha
   final_head_sha: sha
   final_tree_sha: sha
@@ -133,3 +133,4 @@ Do not implement until candidate carrier and Acceptance extension are Approved. 
 3. Omit one matrix constraint and assert product gate blocked.
 4. Change final Head after verification and assert receipt mismatch.
 5. Inventory routes and assert no automatic Human merge.
+6. Change the current-publication pointer or status observation without changing immutable receipt bytes; assert envelope refusal.

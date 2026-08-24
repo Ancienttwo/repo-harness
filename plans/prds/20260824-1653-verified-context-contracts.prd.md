@@ -3,7 +3,7 @@
 > **Status**: Draft
 > **Slug**: `verified-context-contracts`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T18:30:00+0800
+> **Updated**: 2026-08-24T19:49:19+0800
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
 > **Depends On**: ME-2A read-only delegation and canonical Contract/check/verification evidence
@@ -89,6 +89,37 @@ Select canonical Contract plus the latest unique continuous assertion chain and 
 ## Data Model
 
 ```yaml
+EngineerStepProposalV1:
+  protocol: 1
+  kind: repo-harness-engineer-step-proposal
+  proposal_id: uuid
+  task: {task_id: sha256, task_revision: sha256, claim_id: uuid, lease_generation: integer}
+  binding: {engineer_id: string, binding_id: uuid, binding_generation: integer, engineer_contract_revision: sha256}
+  round_index: integer
+  previous_assertion_sha256: sha256|null
+  contract_sha256: sha256
+  context_packet_sha256: sha256
+  action_kind: analyze|diagnose|implement|verify|request_decision
+  target_constraint_ids: [contract-constraint-id]
+  input_evidence_refs: [{ref: string, sha256: sha256}]
+  proposal_sha256: sha256
+
+WorkerRoundReceiptV1:
+  protocol: 1
+  kind: repo-harness-worker-round-receipt
+  worker_run_id: uuid
+  worker_run_ref_sha256: sha256
+  worker_runtime_receipt_sha256: sha256
+  delegation_id: uuid
+  round_index: integer
+  proposal_sha256: sha256
+  result_sha256: sha256
+  candidate: null|{commit_sha: sha, tree_sha: sha, subject_sha256: sha256}
+  before_state_sha256: sha256
+  after_state_sha256: sha256
+  evidence_refs: [{ref: string, sha256: sha256}]
+  round_receipt_sha256: sha256
+
 SemanticVerificationAssertionV1:
   protocol: 1
   assertion_id: uuid
@@ -102,9 +133,9 @@ SemanticVerificationAssertionV1:
   check_receipt_sha256: sha256
   verifier_receipt_sha256: sha256
   verifier_profile_revision: sha256
-  satisfied_constraints: [string]
-  unsatisfied_constraints: [string]
-  blocked_constraints: [string]
+  satisfied_constraints: [contract-constraint-id]
+  unsatisfied_constraints: [contract-constraint-id]
+  blocked_constraints: [contract-constraint-id]
   integrity_findings: [string]
   untrusted_claims: [string]
   evidence_refs: [{ref: string, sha256: sha256}]
@@ -112,17 +143,43 @@ SemanticVerificationAssertionV1:
 
 DecisionRequestV1:
   protocol: 1
+  kind: repo-harness-decision-request
   decision_id: uuid
-  revision: integer
   task_fence: {task_id: sha256, task_revision: sha256, claim_id: uuid, lease_generation: integer}
-  binding_fence: {engineer_id: string, binding_generation: integer}
+  binding_fence: {engineer_id: string, binding_id: uuid, binding_generation: integer, engineer_contract_revision: sha256}
+  previous_assertion_sha256: sha256|null
   question: bounded-utf8
+  request_sha256: sha256
+
+DecisionRequestEventV1:
+  protocol: 1
+  kind: repo-harness-decision-request-event
+  transition_id: sha256(decision_id + idempotency_key)
+  idempotency_key: bounded-opaque
+  operation_fingerprint: sha256(canonical transition request)
+  decision_id: uuid
+  request_sha256: sha256
+  transition: open|answer|cancel|supersede
+  expected_current_digest: sha256|null
+  actor: {kind: engineer|human, principal_ref: opaque, binding_generation: integer|null}
+  next_state: open|answered|cancelled|superseded
+  answer: bounded-utf8|null
+  event_sha256: sha256
+
+DecisionRequestCurrentV1:
+  protocol: 1
+  kind: repo-harness-decision-request-current
+  decision_id: uuid
+  request_sha256: sha256
+  current_event_sha256: sha256
   state: open|answered|cancelled|superseded
   answer: bounded-utf8|null
   answered_by: human-principal|null
-  answer_revision: integer|null
-  record_sha256: sha256
+  previous_current_digest: sha256|null
+  current_digest: sha256
 ```
+
+Constraint lists accept only IDs present in the exact `contract_sha256`; labels or free prose are invalid. A current Engineer Principal may open a request under the exact task/binding fences. Only a Human principal may answer. The opening Engineer or Human may cancel while open; only a current Engineer may supersede an open request after a fenced task/binding/contract change. All transitions use a per-decision lock, immutable create-if-absent event, same-key fingerprint conflict, event fsync, expected-current CAS and current-directory fsync. Crash after event but before current leaves an unpublished event; same-key retry resumes it, while a different/stale actor cannot promote it.
 
 ## Known Unknowns
 
@@ -142,3 +199,5 @@ Implement pure schemas/compiler only after Contract carrier decision. Do not int
 3. Change evidence bytes behind a ref and assert digest failure.
 4. Open a DecisionRequest and prove no next round until fenced Human answer.
 5. Assert no semantic record can invoke Task/Lease/Publication/Acceptance transitions.
+6. Validate proposal → Worker round → assertion digests end to end and reject a result whose observed run, candidate or Contract constraint IDs differ.
+7. Inject Decision open/answer crashes before event, between event/current and after current; assert idempotent retry, actor matrix enforcement and no timestamp-based recovery.
