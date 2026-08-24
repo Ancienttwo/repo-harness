@@ -40,17 +40,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Codex
+> **Source**: codex-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:0e8ce0e682271ebd683676882ec546b8a79c67849b7516d7214ebe6b9878b388
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: e13bb3fd68592172fbda2d236b3e78f7474e3136
+> **Verification Evidence SHA256**: sha256:5ab19a922a1eb17a3f4f9ca65ecd06b9ac5b970f097f4ff5d39210e9d75f0d19
+> **Issued At**: 2026-08-24T19:15:26.470Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: Architecture Acceptance approved; authenticated Engineer principal, exact MCP acquire flow, immutable ClaimActor receipt, and fail-closed carrier/store boundaries verified with no remaining P0-P3 findings.
 - Findings: none
 
 ## Behavior Diff Notes
