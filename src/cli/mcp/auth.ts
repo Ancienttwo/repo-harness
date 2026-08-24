@@ -43,6 +43,9 @@ export interface McpLocalConfig {
     environmentAllowlist?: string[];
     worktreeRoot?: string;
   };
+  engineer?: {
+    enabled?: boolean;
+  };
   devMode?: {
     agentRunner?: boolean;
     allowedAgents?: string[];

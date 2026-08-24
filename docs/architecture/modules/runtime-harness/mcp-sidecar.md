@@ -1,5 +1,5 @@
 # runtime-harness/mcp-sidecar 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:8e2ba45e941e3259fe9e2346d1460a18e2c199dc7017e55531370c09bc5b4731" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:a941fe11388c621fe51eaee5dc2b143d4b24ef7f2a9fd3114a5ac15baa12cb11" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:c8f9664c5ec8aba49ef80fe504459dfe9c96e0519dd01bc3fb1067a99d664452" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:8d3e591e8757b575ea10100f9aa4d12c5b7de82ae61f46c688964abe02e61f51" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.mcp-sidecar`(kind `capability`)
 > **Matched Prefixes**:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`、`src/cli/chatgpt-browser/file-policy.ts`、`src/effects/repo-registry.ts`、`docs/repo-harness-chatgpt-mcp-setup.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`docs/researches/20260711-devspace-chatgpt-local-control.md`
@@ -14,8 +14,10 @@ Provides the local MCP sidecar and its repository access policy boundary.
 
 ```mermaid
 flowchart LR
+  p1_capability_runtime_harness_engineer_bindings_34c00f72["Engineer Bindings"]:::component
   p1_capability_runtime_harness_mcp_sidecar_4e12aaf3["MCP Sidecar"]:::component
   p1_component_mcp_sidecar_primary_8f9b418c["MCP Tool Dispatcher"]:::component
+  p1_capability_runtime_harness_mcp_sidecar_4e12aaf3 -->|"Resolve a verified OAuth authorization to the current Engineer Binding before acquiring a Fleet Claim"| p1_capability_runtime_harness_engineer_bindings_34c00f72
   p1_capability_runtime_harness_mcp_sidecar_4e12aaf3 -->|"Dispatch an MCP tool call"| p1_component_mcp_sidecar_primary_8f9b418c
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
@@ -23,14 +25,16 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:b7f930f382d4eb7627cbcc6f0abad1c7022e4785f751fe3154f2a6f10677d197`).
-- Semantic nodes: `2`; declared relations: `1`.
+- Proof: `proven` (`sha256:6d2d89b7c48473e0ab1c12576009eb3d46b8563a1942f0dc0723c2be5edfbb8e`).
+- Semantic nodes: `3`; declared relations: `2`.
 
 ### 1.2 模組職責表
 
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
 | `entrypoint.mcp-sidecar.primary` | `src/cli/mcp/server.ts#createRepoHarnessMcpServer` | `sink.mcp-sidecar.primary` → `src/cli/mcp/tools.ts#callMcpTool` |
+| `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#callEngineerTool` | `sink.mcp-sidecar.engineer-principal` → `src/effects/engineers/principal.ts#resolveEngineerPrincipal` |
+| `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#acquireAsEngineer` | `sink.mcp-sidecar.engineer-acquire` → `src/effects/engineers/acquire.ts#acquireEngineerTask` |
 
 ### 1.3 規模信號
 
@@ -42,6 +46,7 @@ flowchart LR
 
 出向關係:
 
+- `calls` → `capability.runtime-harness.engineer-bindings` — Resolve a verified OAuth authorization to the current Engineer Binding before acquiring a Fleet Claim
 - `calls` → `component.mcp-sidecar.primary` — Dispatch an MCP tool call
 
 入向關係:
@@ -50,7 +55,23 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:b7f930f382d4eb7627cbcc6f0abad1c7022e4785f751fe3154f2a6f10677d197`); selectors `1/1`.
+> **Proof**: `proven` (`sha256:6d2d89b7c48473e0ab1c12576009eb3d46b8563a1942f0dc0723c2be5edfbb8e`); selectors `2/2`.
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
+sequenceDiagram
+  autonumber
+  participant p2_engineer_mcp_97bc42c0 as MCP Sidecar
+  participant p2_engineer_authority_fd9ce331 as Engineer Bindings
+  p2_engineer_mcp_97bc42c0->>p2_engineer_authority_fd9ce331: Reuse Fleet acquire and publish immutable Claim actor provenance
+  alt Exact WorkEnvelope and ClaimActorReceipt are returned
+  p2_engineer_mcp_97bc42c0->>p2_engineer_authority_fd9ce331: Return the live-validated envelope and immutable receipt
+    Note over p2_engineer_mcp_97bc42c0: Return authenticated acquire result
+  else Authorization， Binding， offer， receipt， or compensation validation fails
+  p2_engineer_mcp_97bc42c0->>p2_engineer_authority_fd9ce331: Return typed refusal and never release a foreign Claim
+    Note over p2_engineer_mcp_97bc42c0: Return typed fail-closed error
+  end
+```
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -74,7 +95,7 @@ sequenceDiagram
 
 1. **单一存储权威。** MCP 的配置与凭证只有 `mcpStorageDir()` 一个来源。#167 之所以选择「迁移时轮换凭证而非搬运凭证」，是因为 repo-scope 的 bearer token 与 passphrase 曾经躺在 git 工作树里，可能已进入备份或历史；搬运会把一个已经泄露风险未知的秘密延寿（`setup.ts:765` 的注释即此判断）。删除 repo-scope OAuth token store 强制恰好一次重新授权，是这条决策的可观测代价。
 2. **授权真相在注册表，不在 MCP 配置。** `read_write` 授权与 `authorizationRevision` 都由 `registered-repos.json` 持有，写入走文件锁 + 原子 rename（`repo-registry.ts:183`、`:149`）。MCP 配置里的 `authorizationRevision` 只是一份必须与注册表相等的副本，不相等就整体拒绝服务。
-3. **coding 面默认关闭且需要三重显式条件**：v3 配置里 `profile: coding` + `coding.enabled: true`、至少一个 `read_write` 注册 repo、OAuth 认证。任意一条随时失效都立即拆掉运行时。
+3. **authorization-scoped profile 默认关闭且各自闭合。** coding 需要 v3 配置里 `profile: coding` + `coding.enabled: true`、至少一个 `read_write` 注册 repo、OAuth 认证；Engineer 需要 `profile: engineer`、独立的 `repo-harness.engineer` scope、当前 repo `read_write` grant，以及 exact two-tool inventory。任意 live grant/revision/scope 条件失效都立即拒绝；只有 coding 建立 shell runtime。
 4. **worktree-first。** `open_workspace` 默认建独立 worktree，`checkout` 必须显式指定。这让远端代理的失败落在一根可丢弃的分支上，而不是用户的工作树。
 5. **grant 选工作区，不等于 shell 沙箱。** 授权页文案直说 `exec_command` 能触达本地用户能触达的一切（`http.ts:220`）。文档与 UI 都不得反向承诺「allowed roots 沙箱化了 Bash」。
 6. **MCP 只投影状态，不解释状态。** `summarize_repo_harness_state` 复用与 CLI、Stop hook 相同的解析器；保留的 `current` 预览被两处字段显式标注为非权威。
@@ -102,3 +123,9 @@ sequenceDiagram
 重写前的 `docs/architecture/modules/runtime-harness/mcp-sidecar.md` 全文为无日期的 P1/P2/P3 叙述段落，**不含任何带日期的章节**，因此本节当前没有需要逐字保留的条目。
 
 后续带日期的决策请在此追加，只增不改。
+
+### 2026-08-25 ME-0B restricted Engineer carrier
+
+- Engineer 与 coding 复用 OAuth 的授权生命周期机制，但使用不同 scope、不同 exact tool inventory 与不同 runtime policy；coding grant 不蕴含 Engineer authority，Engineer grant 也不创建 coding runtime。
+- HTTP transport 将 MCP session 绑定到 verified `authorizationId`。payload 里的 Engineer/Binding/session/thread 字段只能作为 fence 或 observation，不能选择 principal；另一 authorization 复用 session 会得到 404。
+- Engineer profile 必须在 generic tool builders 之前按 exact profile 分派，避免 broad capability flag 将 reader/writer/shell/Fleet mutation 扩散进 restricted surface。

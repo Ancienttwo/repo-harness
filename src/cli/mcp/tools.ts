@@ -20,6 +20,7 @@ import { currentGitBranch, isRepoHarnessAdopted, resolveMcpRepoRoot } from './re
 import { redactMcpText } from './redaction';
 import { buildStateToolDefinitions, callStateTool, isStateTool } from './state-tools';
 import { buildFleetToolDefinitions, callFleetTool, fleetToolArgumentError, isFleetTool } from './fleet-tools';
+import { buildEngineerToolDefinitions, callEngineerTool, isEngineerTool } from './engineer-tools';
 import type { McpAgentRunnerName, McpPolicy } from './types';
 import type { WorkspaceManager } from './workspaces';
 
@@ -32,6 +33,7 @@ export interface McpToolContext {
   processManager?: McpProcessSessionManager;
   sessionOwnerId?: string;
   codeGraphAdapter?: GeneralRepoCodeGraphAdapter;
+  engineerAuthorizationId?: string;
 }
 
 function codingContext(ctx: McpToolContext): CodingToolContext {
@@ -899,6 +901,7 @@ function parseNativeBrowserChannel(value: unknown): NativeBrowserChannel | undef
 }
 
 export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgptBrowser?: boolean } = {}): McpToolDefinition[] {
+  if (policy.profile === 'engineer') return buildEngineerToolDefinitions();
   const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
   const write = { readOnlyHint: false, openWorldHint: false, destructiveHint: false };
   const optionalRepoSchema = {
@@ -1143,6 +1146,10 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
 
 export async function callMcpTool(ctx: McpToolContext, name: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
   try {
+    if (ctx.policy.profile === 'engineer') {
+      if (!isEngineerTool(name)) return errorResult('TOOL_NOT_AVAILABLE', `tool is not available in the engineer profile: ${name}`);
+      return callEngineerTool({ repoRoot: ctx.repoRoot, authorizationId: ctx.engineerAuthorizationId }, name, args);
+    }
     if (isCodingTool(name) && ctx.policy.capabilities.workspaceCoder) {
       return callCodingTool(codingContext(ctx), name, args);
     }

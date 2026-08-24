@@ -922,6 +922,167 @@ describe('mcp http transport', () => {
     }
   }, 30_000);
 
+  test('engineer OAuth E2E binds sessions to authorization and exposes only the exact Engineer tools', async () => {
+    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-mcp-engineer-e2e-')));
+    const port = await freePort();
+    const restoreRegistryHome = useTempRegistryHome();
+    let proc: Bun.Subprocess | null = null;
+    try {
+      mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
+      writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
+      const runGit = (...args: string[]) => {
+        const result = Bun.spawnSync(['git', '-C', repoRoot, ...args], { stdout: 'pipe', stderr: 'pipe' });
+        if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+      };
+      runGit('init', '-b', 'main');
+      runGit('config', 'user.email', 'tests@example.com');
+      runGit('config', 'user.name', 'Repo Harness Tests');
+      runGit('add', '.');
+      runGit('commit', '-m', 'fixture');
+      runMcpSetupChatgpt({
+        repo: repoRoot,
+        profile: 'engineer',
+        grantReadWrite: [repoRoot],
+        endpoint: 'https://engineer.test/mcp',
+        port: String(port),
+      });
+      const passphrase = (await Bun.file(join(process.env.REPO_HARNESS_HOME!, 'mcp.oauth.json')).json()).passphrase as string;
+      await expect(startMcpHttp({
+        repo: repoRoot,
+        host: '127.0.0.1',
+        port,
+        profile: 'engineer',
+        auth: 'bearer',
+        authToken: 'must-not-bypass-engineer-oauth',
+      })).rejects.toThrow('engineer profile requires OAuth authentication');
+
+      proc = Bun.spawn([
+        'bun', 'src/cli/index.ts', 'mcp', 'serve',
+        '--repo', repoRoot,
+        '--transport', 'http',
+        '--host', '127.0.0.1',
+        '--port', String(port),
+        '--profile', 'engineer',
+      ], { cwd: process.cwd(), stdout: 'ignore', stderr: 'pipe', env: { ...process.env } });
+      await waitForHealth(port);
+      const health = await fetch(`http://127.0.0.1:${port}/health`, { headers: { origin: 'https://chatgpt.com' } });
+      expect(await health.json()).toMatchObject({
+        profile: 'engineer',
+        capabilities: { workspaceReader: false, workspaceCoder: false, workflowExecutor: false, agentRunner: false },
+      });
+      const metadata = await fetch(`http://127.0.0.1:${port}/.well-known/oauth-protected-resource/mcp`);
+      const metadataJson = await metadata.json() as { scopes_supported: string[] };
+      expect(metadataJson.scopes_supported).toEqual(['repo-harness', 'repo-harness.engineer', 'offline_access']);
+
+      const registered = await fetch(`http://127.0.0.1:${port}/register`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          redirect_uris: ['https://chatgpt.com/connector/callback'],
+          token_endpoint_auth_method: 'none',
+          grant_types: ['authorization_code', 'refresh_token'],
+          response_types: ['code'],
+        }),
+      });
+      const client = await registered.json() as { client_id: string };
+      const verifier = randomBytes(32).toString('base64url');
+      const challenge = createHash('sha256').update(verifier).digest('base64url');
+      const authorize = async (scope = 'repo-harness repo-harness.engineer offline_access') => fetch(`http://127.0.0.1:${port}/authorize`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          passphrase,
+          client_id: client.client_id,
+          redirect_uri: 'https://chatgpt.com/connector/callback',
+          response_type: 'code',
+          code_challenge: challenge,
+          code_challenge_method: 'S256',
+          scope,
+        }),
+        redirect: 'manual',
+      });
+      const missingScope = await authorize('repo-harness offline_access');
+      expect(missingScope.status).toBe(400);
+      expect(await missingScope.json()).toMatchObject({ error: 'invalid_scope' });
+      const consent = await fetch(`http://127.0.0.1:${port}/authorize?${new URLSearchParams({
+        client_id: client.client_id,
+        redirect_uri: 'https://chatgpt.com/connector/callback',
+        response_type: 'code',
+        code_challenge: challenge,
+        code_challenge_method: 'S256',
+        scope: 'repo-harness repo-harness.engineer offline_access',
+      })}`);
+      const consentHtml = await consent.text();
+      expect(consentHtml).toContain('no shell, generic file write, Binding mutation, Publication, or Acceptance tools');
+      expect(consentHtml).toContain('repo-harness-mcp-engineer-e2e-');
+      expect(consentHtml).not.toContain(repoRoot);
+
+      const issueToken = async (): Promise<string> => {
+        const authorized = await authorize();
+        expect(authorized.status).toBe(302);
+        const code = new URL(authorized.headers.get('location') ?? '').searchParams.get('code') ?? '';
+        const response = await fetch(`http://127.0.0.1:${port}/token`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'authorization_code',
+            client_id: client.client_id,
+            code,
+            code_verifier: verifier,
+            redirect_uri: 'https://chatgpt.com/connector/callback',
+          }),
+        });
+        const token = await response.json() as { access_token: string; expires_in: number; scope: string };
+        expect(token).toMatchObject({ expires_in: 3600, scope: 'repo-harness repo-harness.engineer offline_access' });
+        return token.access_token;
+      };
+      const initialize = async (accessToken: string): Promise<Record<string, string>> => {
+        const headers: Record<string, string> = {
+          authorization: `Bearer ${accessToken}`,
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+        };
+        const response = await fetch(`http://127.0.0.1:${port}/mcp`, { method: 'POST', headers, body: initializeBody() });
+        expect(response.status).toBe(200);
+        headers['mcp-session-id'] = response.headers.get('mcp-session-id') ?? '';
+        await fetch(`http://127.0.0.1:${port}/mcp`, {
+          method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+        });
+        return headers;
+      };
+      const firstHeaders = await initialize(await issueToken());
+      const call = async (headers: Record<string, string>, id: number, method: string, params?: Record<string, unknown>) => {
+        const response = await fetch(`http://127.0.0.1:${port}/mcp`, {
+          method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method, ...(params ? { params } : {}) }),
+        });
+        expect(response.status).toBe(200);
+        return parseMcpResponse(await response.text());
+      };
+      const tools = (await call(firstHeaders, 2, 'tools/list')).result.tools as Array<{ name: string }>;
+      expect(tools.map((tool) => tool.name)).toEqual(['engineer_status', 'engineer_acquire']);
+      const unmapped = await call(firstHeaders, 3, 'tools/call', { name: 'engineer_status', arguments: {} });
+      expect(JSON.parse(unmapped.result.content[0].text)).toMatchObject({ error: { code: 'engineer_principal_unmapped' } });
+
+      const secondHeaders = await initialize(await issueToken());
+      const hijacked = await fetch(`http://127.0.0.1:${port}/mcp`, {
+        method: 'POST',
+        headers: { ...secondHeaders, 'mcp-session-id': firstHeaders['mcp-session-id']! },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/list' }),
+      });
+      expect(hijacked.status).toBe(404);
+
+      setRepoHarnessAccessMode(repoRoot, 'read_only');
+      const disabled = await fetch(`http://127.0.0.1:${port}/health`, { headers: { origin: 'https://chatgpt.com' } });
+      expect(disabled.status).toBe(503);
+      expect(await disabled.json()).toEqual({ error: 'engineer_disabled' });
+    } finally {
+      proc?.kill();
+      await proc?.exited.catch(() => undefined);
+      restoreRegistryHome();
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  }, 15_000);
+
   test('coding OAuth E2E enforces Host/CORS/redirect boundaries and exposes the exact direct-coding schema', async () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-coding-e2e-'));
     const port = await freePort();

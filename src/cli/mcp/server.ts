@@ -31,6 +31,7 @@ export interface McpServerOptions {
   devRunnerAgents?: string;
   devRunnerTimeoutMs?: number;
   codingRuntime?: McpCodingRuntime | null;
+  engineerAuthorizationId?: string;
 }
 
 export interface McpCodingRuntime {
@@ -182,15 +183,17 @@ export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
   const config = loadMcpLocalConfig();
   const requestedProfile = opts.profile ?? config?.profile ?? 'planner';
   const profile = parseMcpProfile(requestedProfile === 'reader' ? 'planner' : requestedProfile);
-  if (profile === 'coding') {
-    if (config?.version !== 3 || config.profile !== 'coding' || config.coding?.enabled !== true) {
-      throw new Error('coding MCP is disabled; run setup with profile coding and an explicit read-write grant');
+  const authorizationScoped = profile === 'coding' || profile === 'engineer';
+  if (authorizationScoped) {
+    const enabled = profile === 'coding' ? config?.coding?.enabled === true : config?.engineer?.enabled === true;
+    if (config?.version !== 3 || config.profile !== profile || !enabled) {
+      throw new Error(`${profile} MCP is disabled; run setup with profile ${profile} and an explicit read-write grant`);
     }
     if (!readRegisteredRepoHarnessRepos({ adoptedOnly: true }).some((repo) => repo.accessMode === 'read_write')) {
-      throw new Error('coding MCP requires at least one adopted repo with an explicit read_write grant');
+      throw new Error(`${profile} MCP requires at least one adopted repo with an explicit read_write grant`);
     }
     if (config.authorizationRevision !== repoHarnessAuthorizationRevision()) {
-      throw new Error('coding MCP authorization revision is stale; rerun coding setup');
+      throw new Error(`${profile} MCP authorization revision is stale; rerun ${profile} setup`);
     }
   }
   const envDevRunner = parseBooleanSetting(process.env.REPO_HARNESS_MCP_DEV_RUNNER);
@@ -250,6 +253,7 @@ export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
     policy,
     workspaceManager: readerEnabled ? new WorkspaceManager({ allowedRoots: policyAllowedRoots, policy }) : undefined,
     enableChatgptBrowser: opts.enableChatgptBrowser === true,
+    engineerAuthorizationId: profile === 'engineer' ? opts.engineerAuthorizationId : undefined,
   };
   if (profile === 'coding') {
     if (opts.codingRuntime !== null) {
@@ -272,6 +276,7 @@ export function createRepoHarnessMcpServer(opts: McpServerOptions): Server {
       instructions: buildMcpServerInstructions({
         readerEnabled: ctx.policy.capabilities.workspaceReader,
         codingEnabled: ctx.policy.capabilities.workspaceCoder,
+        engineerEnabled: ctx.policy.profile === 'engineer',
       }),
     },
   );

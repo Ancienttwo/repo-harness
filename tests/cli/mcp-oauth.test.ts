@@ -181,6 +181,75 @@ describe('mcp oauth provider', () => {
     }
   });
 
+  test('engineer tokens require their distinct scope and preserve one server-minted subject across refresh only', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-oauth-engineer-'));
+    try {
+      let now = 30_000;
+      let authorizationRevision = 11;
+      const revoked: string[] = [];
+      const store = new McpOAuthTokenStore(join(root, 'tokens.json'));
+      const engineer = createMcpOAuthProvider(store, {
+        nowSeconds: () => now,
+        profile: 'engineer',
+        authorizationRevision: () => authorizationRevision,
+        accessTokenTtlSeconds: 60 * 60,
+        refreshTokenTtlSeconds: 30 * 24 * 60 * 60,
+        onAuthorizationRevoked: (authorizationId) => { revoked.push(authorizationId); },
+      });
+      const client = store.registerClient({
+        redirect_uris: ['https://chatgpt.com/connector/callback'],
+        token_endpoint_auth_method: 'none',
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code'],
+      });
+      const missing = redirectRecorder();
+      await expect(engineer.authorize(client, {
+        scopes: ['repo-harness', 'repo-harness.coding', 'offline_access'],
+        redirectUri: client.redirect_uris[0]!,
+        codeChallenge: 'missing-engineer-scope',
+      }, missing.response as never)).rejects.toBeInstanceOf(InvalidScopeError);
+
+      const authorize = async (challenge: string) => {
+        const redirect = redirectRecorder();
+        await engineer.authorize(client, {
+          scopes: ['repo-harness', 'repo-harness.engineer', 'offline_access'],
+          redirectUri: client.redirect_uris[0]!,
+          codeChallenge: challenge,
+        }, redirect.response as never);
+        const code = new URL(redirect.state.url).searchParams.get('code') ?? '';
+        return engineer.exchangeAuthorizationCode(client, code, 'verifier', client.redirect_uris[0]);
+      };
+
+      const first = await authorize('engineer-1');
+      expect(first).toMatchObject({ expires_in: 3600, scope: 'repo-harness repo-harness.engineer offline_access' });
+      const firstInfo = await engineer.verifyAccessToken(first.access_token) as { authorizationId?: string };
+      expect(firstInfo).toMatchObject({ profile: 'engineer', authorizationRevision: 11 });
+      const firstAuthorization = firstInfo.authorizationId!;
+      expect(store.listAuthorizations('engineer')).toEqual([
+        expect.objectContaining({ authorizationId: firstAuthorization, profile: 'engineer' }),
+      ]);
+
+      now += 3601;
+      const refreshed = await engineer.exchangeRefreshToken(client, first.refresh_token ?? '');
+      expect(await engineer.verifyAccessToken(refreshed.access_token)).toMatchObject({ authorizationId: firstAuthorization });
+      const second = await authorize('engineer-2');
+      const secondInfo = await engineer.verifyAccessToken(second.access_token) as { authorizationId?: string };
+      const secondAuthorization = secondInfo.authorizationId!;
+      expect(secondAuthorization).not.toBe(firstAuthorization);
+
+      const coding = createMcpOAuthProvider(store, { nowSeconds: () => now, profile: 'coding', authorizationRevision: () => authorizationRevision });
+      await expect(coding.verifyAccessToken(refreshed.access_token)).rejects.toBeInstanceOf(InvalidTokenError);
+      await engineer.revokeToken?.(client, { token: second.refresh_token ?? '' });
+      expect(revoked).toEqual([secondAuthorization]);
+
+      authorizationRevision = 12;
+      await expect(engineer.verifyAccessToken(refreshed.access_token)).rejects.toBeInstanceOf(InvalidTokenError);
+      expect(revoked).toEqual([secondAuthorization, firstAuthorization]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test('dynamic client and refresh token survive server restart (issue #161)', async () => {
     const root = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-oauth-restart-'));
     try {

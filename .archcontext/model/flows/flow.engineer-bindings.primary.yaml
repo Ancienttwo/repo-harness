@@ -1,50 +1,50 @@
 schemaVersion: archcontext.flow/v1
 id: flow.engineer-bindings.primary
 capabilityId: capability.runtime-harness.engineer-bindings
-name: Publish an Engineer binding transition
+name: Resolve an authenticated Engineer principal against the current Binding
 applicability: required
 participants:
-  - id: operator-cli
+  - id: engineer-authority
     nodeId: capability.runtime-harness.engineer-bindings
   - id: binding-store
     nodeId: component.engineer-bindings.primary
 steps:
-  - id: validate-and-publish
-    from: operator-cli
+  - id: resolve-current-binding
+    from: engineer-authority
     to: binding-store
-    label: Validate Profile and publish event before current
+    label: Join the authorization mapping to the exact current Binding
     evidence:
-      entrypointId: entrypoint.engineer-bindings.operator-cli
-      sourceSymbol: buildEngineerCommand
-      sinkId: sink.engineer-bindings.shared-store
+      entrypointId: entrypoint.engineer-bindings.principal-resolution
+      sourceSymbol: resolveEngineerPrincipal
+      sinkId: sink.engineer-bindings.current-binding
 outcomes:
   - id: success
     kind: success
-    label: Binding current is durably published
+    label: The mapping and current Binding match every exact fence
     steps:
-      - id: return-current
-        from: operator-cli
+      - id: return-principal
+        from: engineer-authority
         to: binding-store
-        label: Return the exact current projection
+        label: Return the server-derived Engineer principal
         evidence:
-          entrypointId: entrypoint.engineer-bindings.operator-cli
-          sourceSymbol: buildEngineerCommand
-          sinkId: sink.engineer-bindings.shared-store
+          entrypointId: entrypoint.engineer-bindings.principal-resolution
+          sourceSymbol: resolveEngineerPrincipal
+          sinkId: sink.engineer-bindings.current-binding
     terminal:
-      participant: operator-cli
-      label: Emit operator result
+      participant: engineer-authority
+      label: Return authenticated principal
   - id: error
     kind: error
-    label: Validation, CAS, lock, or durability check fails
+    label: Mapping, Profile, Binding, or exact fence validation fails
     steps:
       - id: return-refusal
-        from: operator-cli
+        from: engineer-authority
         to: binding-store
         label: Propagate typed fail-closed refusal
         evidence:
-          entrypointId: entrypoint.engineer-bindings.operator-cli
-          sourceSymbol: buildEngineerCommand
-          sinkId: sink.engineer-bindings.shared-store
+          entrypointId: entrypoint.engineer-bindings.principal-resolution
+          sourceSymbol: resolveEngineerPrincipal
+          sinkId: sink.engineer-bindings.current-binding
     terminal:
-      participant: operator-cli
-      label: Emit typed error without current mutation
+      participant: engineer-authority
+      label: Return typed error without acquiring a Claim

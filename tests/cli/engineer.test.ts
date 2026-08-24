@@ -1,13 +1,16 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { appendFileSync, cpSync, mkdirSync, mkdtempSync, rmSync } from 'fs';
+import { appendFileSync, cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
+import { mcpOAuthTokenStorePath } from '../../src/cli/mcp/auth';
+import { McpOAuthTokenStore } from '../../src/cli/mcp/oauth';
 
 const cli = resolve(process.cwd(), 'src/cli/index.ts');
 const sourceRoot = process.cwd();
 const tempRoots: string[] = [];
 const engineerId = 'engineer:capability.verification.evals-checks';
+const previousRepoHarnessHome = process.env.REPO_HARNESS_HOME;
 
 function fixture(): string {
   const root = mkdtempSync(join(tmpdir(), 'repo-harness-engineer-cli-'));
@@ -22,7 +25,7 @@ function fixture(): string {
 }
 
 function run(root: string, args: string[]): { readonly exitCode: number; readonly stdout: string; readonly stderr: string } {
-  const result = Bun.spawnSync([process.execPath, cli, ...args], { cwd: root, stdout: 'pipe', stderr: 'pipe' });
+  const result = Bun.spawnSync([process.execPath, cli, ...args], { cwd: root, stdout: 'pipe', stderr: 'pipe', env: { ...process.env } });
   return {
     exitCode: result.exitCode,
     stdout: result.stdout.toString(),
@@ -31,6 +34,8 @@ function run(root: string, args: string[]): { readonly exitCode: number; readonl
 }
 
 afterEach(() => {
+  if (previousRepoHarnessHome === undefined) delete process.env.REPO_HARNESS_HOME;
+  else process.env.REPO_HARNESS_HOME = previousRepoHarnessHome;
   while (tempRoots.length > 0) rmSync(tempRoots.pop()!, { recursive: true, force: true });
 });
 
@@ -106,13 +111,73 @@ describe('repo-harness engineer CLI', () => {
     expect(JSON.parse(retired.stdout).state).toBe('retired');
   });
 
-  test('exposes no Session-authenticated Engineer mutation route', () => {
+  test('exposes operator principal mapping but no CLI Engineer acquire route', () => {
     const root = fixture();
     const help = run(root, ['engineer', '--help']);
     expect(help.exitCode).toBe(0);
     expect(help.stdout).toContain('local Human-operator binding transitions');
     expect(help.stdout).not.toContain('session-bind');
-    expect(help.stdout).not.toContain('principal');
+    expect(help.stdout).toContain('principal');
     expect(help.stdout).not.toContain('claim');
+    expect(help.stdout).not.toContain('acquire');
+    const principalHelp = run(root, ['engineer', 'principal', '--help']);
+    expect(principalHelp.stdout).toContain('list');
+    expect(principalHelp.stdout).toContain('enroll');
+    expect(principalHelp.stdout).toContain('revoke');
+    expect(principalHelp.stdout).toContain('status');
+    expect(principalHelp.stdout).not.toContain('acquire');
+  });
+
+  test('lists, enrolls, reads, and revokes an issued Engineer authorization without exposing bearer tokens', () => {
+    const root = fixture();
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-engineer-cli-home-')));
+    tempRoots.push(home);
+    process.env.REPO_HARNESS_HOME = home;
+    const profiles = JSON.parse(run(root, ['engineer', 'profile', 'list', '--json']).stdout) as Array<{
+      engineer_id: string;
+      engineer_contract_revision: string;
+    }>;
+    const revision = profiles.find((item) => item.engineer_id === engineerId)!.engineer_contract_revision;
+    const bound = run(root, [
+      'engineer', 'binding', 'bind', '--engineer-id', engineerId,
+      '--idempotency-key', 'principal-bind-1', '--provider', 'codex',
+      '--provider-thread-id', 'thread-principal', '--host-id', 'local',
+      '--expected-current-digest', 'null', '--expected-binding-generation', '0',
+      '--expected-binding-id', 'null', '--expected-engineer-contract-revision', revision, '--json',
+    ]);
+    expect(bound.exitCode).toBe(0);
+    const current = JSON.parse(bound.stdout) as { current_binding_id: string; binding_generation: number };
+    const authorizationId = '22222222-2222-4222-8222-222222222222';
+    const bearer = 'must-never-appear-in-operator-output';
+    const tokenStore = new McpOAuthTokenStore(mcpOAuthTokenStorePath());
+    tokenStore.setAccessToken(bearer, {
+      token: bearer,
+      clientId: 'client-engineer-cli-test',
+      scopes: ['repo-harness', 'repo-harness.engineer', 'offline_access'],
+      profile: 'engineer',
+      authorizationRevision: 1,
+      authorizationId,
+      expiresAt: Math.floor(Date.now() / 1000) + 3600,
+    });
+
+    const listed = run(root, ['engineer', 'principal', 'list', '--json']);
+    expect(listed.exitCode).toBe(0);
+    expect(listed.stdout).toContain(authorizationId);
+    expect(listed.stdout).toContain('"mapping": null');
+    expect(listed.stdout).not.toContain(bearer);
+    const enrolled = run(root, [
+      'engineer', 'principal', 'enroll', '--authorization-id', authorizationId,
+      '--engineer-id', engineerId,
+      '--expected-binding-id', current.current_binding_id,
+      '--expected-binding-generation', String(current.binding_generation),
+      '--expected-engineer-contract-revision', revision, '--json',
+    ]);
+    expect(enrolled.exitCode).toBe(0);
+    expect(JSON.parse(enrolled.stdout)).toMatchObject({ authorization_id: authorizationId, state: 'active', engineer_id: engineerId });
+    expect(enrolled.stdout).not.toContain(bearer);
+    const status = run(root, ['engineer', 'principal', 'status', '--authorization-id', authorizationId, '--json']);
+    expect(JSON.parse(status.stdout)).toMatchObject({ mapping: { state: 'active', binding_id: current.current_binding_id } });
+    const revoked = run(root, ['engineer', 'principal', 'revoke', '--authorization-id', authorizationId, '--json']);
+    expect(JSON.parse(revoked.stdout)).toMatchObject({ state: 'revoked', authorization_id: authorizationId });
   });
 });

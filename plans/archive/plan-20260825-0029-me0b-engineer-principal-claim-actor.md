@@ -1,6 +1,6 @@
 # Plan: ME-0B Engineer Principal and Claim Actor
 
-> **Status**: Approved
+> **Status**: Archived
 > **Created**: 20260825-0029
 > **Slug**: me0b-engineer-principal-claim-actor
 > **Planning Source**: codex-plan
@@ -211,18 +211,18 @@ At 10× P0 scale, the single user-level mapping lock and linear lookup fail firs
 
 ## Task Breakdown
 
-- [ ] Freeze exact schemas, profile/scope/tool inventory, allowed paths and architecture relations.
-- [ ] Implement restricted Engineer OAuth profile plus principal mapping/enrollment/revocation.
-- [ ] Implement principal resolution and stale/mismatch replay matrix.
-- [ ] Implement ClaimActorReceipt store, engineer acquire wrapper and own-Claim compensation.
+- [x] Freeze exact schemas, profile/scope/tool inventory, allowed paths and architecture relations.
+- [x] Implement restricted Engineer OAuth profile plus principal mapping/enrollment/revocation.
+- [x] Implement principal resolution and stale/mismatch replay matrix.
+- [x] Implement ClaimActorReceipt store, engineer acquire wrapper and own-Claim compensation.
 - [ ] Add MCP Engineer tools/E2E evidence, run full verification and independent acceptance, then close the contract worktree.
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] Freeze exact schemas, profile/scope/tool inventory, allowed paths and architecture relations.
-- [ ] Implement restricted Engineer OAuth profile plus principal mapping/enrollment/revocation.
-- [ ] Implement principal resolution and stale/mismatch replay matrix.
-- [ ] Implement ClaimActorReceipt store, engineer acquire wrapper and own-Claim compensation.
+- [x] Freeze exact schemas, profile/scope/tool inventory, allowed paths and architecture relations.
+- [x] Implement restricted Engineer OAuth profile plus principal mapping/enrollment/revocation.
+- [x] Implement principal resolution and stale/mismatch replay matrix.
+- [x] Implement ClaimActorReceipt store, engineer acquire wrapper and own-Claim compensation.
 - [ ] Add MCP Engineer tools/E2E evidence, run full verification and independent acceptance, then close the contract worktree.

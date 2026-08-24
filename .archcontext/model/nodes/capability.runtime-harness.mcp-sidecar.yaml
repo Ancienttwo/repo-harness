@@ -6,6 +6,7 @@ status: active
 summary: Provides the local MCP sidecar and its repository access policy boundary.
 responsibilities:
   - Own MCP lifecycle, workspace registration, access policy, and local browser integration.
+  - Bind authorization-scoped MCP sessions to verified OAuth authorization IDs and expose the closed Engineer tool inventory without a coding runtime.
 source:
   include:
     - "src/cli/mcp/**"
@@ -24,12 +25,25 @@ source:
             - id: sink.mcp-sidecar.primary
               path: "src/cli/mcp/tools.ts"
               symbol: "callMcpTool"
+    - id: entrypoint.mcp-sidecar.engineer-tools
+      path: "src/cli/mcp/engineer-tools.ts"
+      symbols:
+        - name: "callEngineerTool"
+          sinks:
+            - id: sink.mcp-sidecar.engineer-principal
+              path: "src/effects/engineers/principal.ts"
+              symbol: "resolveEngineerPrincipal"
+        - name: "acquireAsEngineer"
+          sinks:
+            - id: sink.mcp-sidecar.engineer-acquire
+              path: "src/effects/engineers/acquire.ts"
+              symbol: "acquireEngineerTask"
 extensions:
   contractFiles:
     agents: "AGENTS.md"
     claude: "CLAUDE.md"
   lspProfile: "typescript-lsp"
   verification:
-    - "bun test tests/cli/mcp*.test.ts"
+    - "bun test tests/cli/mcp*.test.ts tests/cli/engineer.test.ts"
     - "bun run check:type"
     - "repo-harness mcp doctor --repo . --live"

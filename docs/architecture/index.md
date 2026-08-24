@@ -282,7 +282,7 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 - Treat user-level `~/.codex/hooks.json` and `~/.claude/settings.json` as host adapters. Keep hook implementation under `.ai/hooks/`, and treat repo-local `.claude/settings.json` / `.codex/hooks.json` hook adapters as retired legacy config.
 - Consider adding `bun scripts/capability-resolver.ts validate --format text` to the strict workflow gate after the architecture registry has been used through one more real slice.
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:83f3be6803ed4fd0f59a16af708f64901d9f35446602fc5b3352415430230fbc" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:d245379e3f23acecccd564270693be921e97fdcc03ab1615f94b8a1ed43bb70c" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:626f47ba29a0a8226cc68ad511647a6bddfea55a0149eb77649ecc54504a9404" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:f6565756f3a77525db533eddc2be03608fa8a7c668cbde61e6a52febd9ad5155" -->
 # Architecture Index
 
 Generated: 1970-01-01T00:00:00.000Z
@@ -314,6 +314,7 @@ Generated: 1970-01-01T00:00:00.000Z
 - capability.runtime-harness.global-runtime-reconciliation -> component.global-runtime-reconciliation.primary — calls
 - capability.runtime-harness.hook-adapters -> component.hook-adapters.primary — calls
 - capability.workflow-engine.inspection-migration -> component.inspection-migration.primary — calls
+- capability.runtime-harness.mcp-sidecar -> capability.runtime-harness.engineer-bindings — calls
 - capability.runtime-harness.mcp-sidecar -> component.mcp-sidecar.primary — calls
 - capability.public-surface.root-router -> component.root-router.primary — calls
 

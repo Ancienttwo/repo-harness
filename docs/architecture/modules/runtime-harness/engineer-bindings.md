@@ -1,13 +1,13 @@
 # runtime-harness/engineer-bindings 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" sourceDigest="sha256:a7183fb58363e18c568254338cd289f4d11e0596a6c818d882c47af5d9aaabdd" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:5730280e97652d810b2bce1642909d63639f83a864cb2d0fbe6e5767c77310d6" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" sourceDigest="sha256:ea3490fe438e5535acc18d1615b607ab4c4f06aaa0fb8205600c4a12ab2d8cb1" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:6d768bdb78fc24bdddb308326591d6c2ef554926b93f89c9078af0015322c598" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-bindings`(kind `capability`)
 > **Matched Prefixes**:`agents/engineers/**`、`src/core/engineers/**`、`src/effects/engineers/**`、`src/cli/commands/engineer.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Defines tracked Module Engineer behavior contracts and one crash-consistent binding authority shared by linked worktrees.
+Defines tracked Module Engineer contracts, current Binding authority, authenticated principal mapping, and immutable Claim actor provenance.
 
 ## 1. P1:能力架構地圖
 
@@ -24,7 +24,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:4c7a86d77605dcb7e7072f722d8eeb023a341439733379647f6b543a35607406`).
+- Proof: `proven` (`sha256:3f16adb4df18e2b882df1fd090378ce0b09a3ee5dc4552d6104cbe2a3b92341b`).
 - Semantic nodes: `2`; declared relations: `1`.
 
 ### 1.2 模組職責表
@@ -32,10 +32,12 @@ flowchart LR
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
 | `entrypoint.engineer-bindings.operator-cli` | `src/cli/commands/engineer.ts#buildEngineerCommand` | `sink.engineer-bindings.shared-store` → `src/effects/engineers/binding-store.ts#bindEngineer` |
+| `entrypoint.engineer-bindings.principal-resolution` | `src/effects/engineers/principal.ts#resolveEngineerPrincipal` | `sink.engineer-bindings.current-binding` → `src/effects/engineers/binding-store.ts#readEngineerBindingStatus` |
+| `entrypoint.engineer-bindings.acquire` | `src/effects/engineers/acquire.ts#acquireEngineerTask` | `sink.engineer-bindings.fleet-acquire` → `src/effects/fleet/acquire.ts#acquireFleetTask`、`sink.engineer-bindings.claim-actor-receipt` → `src/effects/engineers/claim-actor-store.ts#publishClaimActorReceipt` |
 
 ### 1.3 規模信號
 
-- 規模量級:`5–10` 個文件 / `1000–2000` 行
+- 規模量級:`10–20` 個文件 / `2000–5000` 行
 - 匹配前綴:`agents/engineers/**`、`src/core/engineers/**`、`src/effects/engineers/**`、`src/cli/commands/engineer.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
@@ -47,25 +49,25 @@ flowchart LR
 
 入向關係:
 
-- 無。
+- `calls` ← `capability.runtime-harness.mcp-sidecar` — Resolve a verified OAuth authorization to the current Engineer Binding before acquiring a Fleet Claim
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:4c7a86d77605dcb7e7072f722d8eeb023a341439733379647f6b543a35607406`); selectors `1/1`.
+> **Proof**: `proven` (`sha256:3f16adb4df18e2b882df1fd090378ce0b09a3ee5dc4552d6104cbe2a3b92341b`); selectors `1/1`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
 sequenceDiagram
   autonumber
-  participant p2_operator_cli_c483b9c5 as Engineer Bindings
+  participant p2_engineer_authority_fd9ce331 as Engineer Bindings
   participant p2_binding_store_8e904230 as Shared Engineer Binding Store
-  p2_operator_cli_c483b9c5->>p2_binding_store_8e904230: Validate Profile and publish event before current
-  alt Binding current is durably published
-  p2_operator_cli_c483b9c5->>p2_binding_store_8e904230: Return the exact current projection
-    Note over p2_operator_cli_c483b9c5: Emit operator result
-  else Validation， CAS， lock， or durability check fails
-  p2_operator_cli_c483b9c5->>p2_binding_store_8e904230: Propagate typed fail-closed refusal
-    Note over p2_operator_cli_c483b9c5: Emit typed error without current mutation
+  p2_engineer_authority_fd9ce331->>p2_binding_store_8e904230: Join the authorization mapping to the exact current Binding
+  alt The mapping and current Binding match every exact fence
+  p2_engineer_authority_fd9ce331->>p2_binding_store_8e904230: Return the server-derived Engineer principal
+    Note over p2_engineer_authority_fd9ce331: Return authenticated principal
+  else Mapping， Profile， Binding， or exact fence validation fails
+  p2_engineer_authority_fd9ce331->>p2_binding_store_8e904230: Propagate typed fail-closed refusal
+    Note over p2_engineer_authority_fd9ce331: Return typed error without acquiring a Claim
   end
 ```
 <!-- END ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" -->
@@ -90,6 +92,13 @@ sequenceDiagram
 
 P0 选择每个 Engineer 一个目录与 Profile/node 全量扫描，换取简单、可审计、无需第二索引权威；一次 list 只批量读取一次 Git index 并解析一次 ArchContext registry。10x 时先遇到的是 Profile/node 扫描与目录数量，而非 lock/CAS 正确性；在出现可测量压力前不引入 database、cache authority、background repair 或 batch protocol。
 
+### ME-0B principal and claim provenance
+
+- OAuth `authorizationId` 只选择 user-level principal mapping 候选；每次 Engineer 命令都重新读取并核对当前 ME-0A Binding 的 repository、Engineer ID、binding ID、generation 与 contract revision。mapping 无权延长已撤销或已替换 Binding 的生命周期。
+- Lease 继续回答“当前谁拥有 task execution”，独立的 immutable `ClaimActorReceiptV1` 回答“哪个 authenticated Engineer principal 触发了这次 Claim”。receipt 必须与完整 canonical WorkEnvelope digest 和 live Lease 的 claim ID/generation/task revision/worktree/branch/unit 一致。
+- Engineer acquire 复用 canonical Fleet acquire。receipt publication 失败时只释放刚返回且仍为 live 的 exact Claim；Claim 已被替换或 release 失败均 fail closed，并保留 provisioned worktree 供恢复。
+- P0 的 user-level mapping store 使用单锁与线性扫描。10x 时先出现授权查找与锁竞争；在真实 contention 证据出现前不引入 database、cache 或 background reconciler。
+
 ## 4. 歷史決策記錄(append-only)
 
 ### 2026-08-24 ME-0A authority foundation
@@ -97,5 +106,11 @@ P0 选择每个 Engineer 一个目录与 Profile/node 全量扫描，换取简�
 - Approved work-package: `plans/plan-20260824-2126-me0a-engineer-profile-binding.md`.
 - Accepted architecture change: `changeset.plan-20260824-2126-me0a-engineer-profile-binding`, bound to archived external approval `event.review-20260824-2050-persistent-module-engineer-me0a-approval`.
 - EngineerPrincipal, Session mutation, ClaimActorReceipt, delegation, messaging, Worker Host, Provider lifecycle, handoff, Human Board, and remote access remain separate Draft children and receive no authority from this module.
+
+### 2026-08-25 ME-0B principal and claim actor
+
+- Approved work-package: `plans/plan-20260825-0029-me0b-engineer-principal-claim-actor.md`.
+- Accepted architecture change: `changeset.plan-20260825-0029-me0b-engineer-principal-claim-actor`, bound to Human approval `event.review-20260825-0029-me0b-engineer-principal-claim-actor-approval`; the final residual refresh covered `verified-flow-proof-changed` for `capability.runtime-harness.engineer-bindings` and `capability.runtime-harness.mcp-sidecar`.
+- EngineerPrincipal and ClaimActorReceipt are now in scope; Provider adapters, Session lifecycle, Worker Host, Work Package Graph, delegation, messaging, writer grant, handoff, interface request, Human Board, and remote access remain separate children.
 
 ## Optimization Backlog

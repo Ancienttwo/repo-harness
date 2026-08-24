@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.engineer-principal
+kind: calls
+source: capability.runtime-harness.mcp-sidecar
+target: capability.runtime-harness.engineer-bindings
+intent: Resolve a verified OAuth authorization to the current Engineer Binding before acquiring a Fleet Claim

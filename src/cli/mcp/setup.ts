@@ -25,6 +25,7 @@ import {
 import { sensitiveAllowedRootReason } from './policy';
 import { parseMcpProfile } from './policy';
 import { buildCodingToolDefinitions } from './coding-tools';
+import { buildEngineerToolDefinitions } from './engineer-tools';
 import { isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
 import { repoHarnessPackageVersion } from './version';
 import { readCanonicalChatgptReference } from '../chatgpt-skill/source';
@@ -647,12 +648,16 @@ export function runMcpSetupChatgpt(opts: {
   const existingConfig = loadMcpLocalConfig();
   const requestedProfile = parseMcpProfile(opts.profile ?? existingConfig?.profile ?? 'planner');
   const grantReadWrite = Array.from(new Set((opts.grantReadWrite ?? []).map((entry) => resolve(entry)).filter(Boolean)));
-  if (requestedProfile === 'coding' && existingConfig?.coding?.enabled !== true && grantReadWrite.length === 0) {
-    throw new Error('coding profile setup requires at least one explicit --grant-read-write <repo>');
+  const authorizationScoped = requestedProfile === 'coding' || requestedProfile === 'engineer';
+  const existingAuthorizationEnabled = requestedProfile === 'coding'
+    ? existingConfig?.coding?.enabled === true
+    : requestedProfile === 'engineer' ? existingConfig?.engineer?.enabled === true : false;
+  if (authorizationScoped && !existingAuthorizationEnabled && grantReadWrite.length === 0) {
+    throw new Error(`${requestedProfile} profile setup requires at least one explicit --grant-read-write <repo>`);
   }
   for (const grantRoot of grantReadWrite) {
     if (!isRepoHarnessAdopted(grantRoot)) {
-      throw new Error(`cannot grant coding access: repo is not repo-harness adopted: ${grantRoot}`);
+      throw new Error(`cannot grant ${requestedProfile} access: repo is not repo-harness adopted: ${grantRoot}`);
     }
   }
   const requestedRoots = normalizeAllowedRoots(opts.allowRoot ?? []);
@@ -665,7 +670,7 @@ export function runMcpSetupChatgpt(opts: {
   const registeredRepoCount = existingRegisteredRepos.length + (
     currentRepoAdopted && !existingRegisteredRepos.some((entry) => entry.path === repoRoot) ? 1 : 0
   );
-  const readerEnabled = requestedProfile !== 'coding' && opts.enableReader !== false && (
+  const readerEnabled = !authorizationScoped && opts.enableReader !== false && (
     allowedRoots.length > 0 ||
     currentRepoAdopted ||
     registeredRepoCount > 0 ||
@@ -690,7 +695,10 @@ export function runMcpSetupChatgpt(opts: {
     allowedRedirectHosts: existingConfig?.auth?.allowedRedirectHosts ?? defaultRedirectHosts,
   };
   const profile = requestedProfile;
-  const profileAuthorizationChanged = (existingConfig?.coding?.enabled === true) !== (profile === 'coding');
+  const existingAuthorizationProfile = existingConfig?.coding?.enabled === true
+    ? 'coding' : existingConfig?.engineer?.enabled === true ? 'engineer' : null;
+  const nextAuthorizationProfile = profile === 'coding' || profile === 'engineer' ? profile : null;
+  const profileAuthorizationChanged = existingAuthorizationProfile !== nextAuthorizationProfile;
   const { reader: _legacyReader, ...existingCapabilities } = existingConfig?.capabilities ?? {};
   const config = {
     version: 3,
@@ -722,6 +730,10 @@ export function runMcpSetupChatgpt(opts: {
       ...existingConfig?.coding,
       enabled: profile === 'coding',
       environmentAllowlist: existingConfig?.coding?.environmentAllowlist ?? [],
+    },
+    engineer: {
+      ...existingConfig?.engineer,
+      enabled: profile === 'engineer',
     },
     devMode: existingConfig?.devMode ?? {
       agentRunner: false,
@@ -804,8 +816,8 @@ export function runMcpMigrateScope(opts: { repo?: string }): McpMigrateScopeResu
   }
 
   const legacyConfig = readMcpLocalConfigFile(legacy.config);
-  if (legacyConfig?.profile === 'coding') {
-    throw new Error(`refusing to migrate ${legacy.config}: the coding profile was never valid in repo scope; run repo-harness mcp setup chatgpt --profile coding with an explicit --grant-read-write instead`);
+  if (legacyConfig?.profile === 'coding' || legacyConfig?.profile === 'engineer') {
+    throw new Error(`refusing to migrate ${legacy.config}: the ${legacyConfig.profile} profile was never valid in repo scope; run repo-harness mcp setup chatgpt --profile ${legacyConfig.profile} with an explicit --grant-read-write instead`);
   }
 
   const changed: string[] = [];
@@ -1186,17 +1198,23 @@ export async function runMcpLiveDoctor(opts: { repo?: string; json?: boolean }):
   const publicEndpoint = config?.chatgpt?.endpoint;
   const publicOrigin = publicEndpoint ? new URL(publicEndpoint).origin : undefined;
   const coding = config?.profile === 'coding';
+  const engineer = config?.profile === 'engineer';
+  const authorizationScoped = coding || engineer;
+  const requiredScope = coding ? 'repo-harness.coding' : engineer ? 'repo-harness.engineer' : null;
   const readWriteRepos = readRegisteredRepoHarnessRepos({ adoptedOnly: true }).filter((repo) => repo.accessMode === 'read_write');
   const layers: LiveLayer[] = [];
-  const configReady = config?.version === 3 && config?.auth?.mode === 'oauth' && Boolean(publicEndpoint) && (!coding || (
-    config.capabilities?.workspaceCoder === true && readWriteRepos.length > 0
-  ));
+  const authorizationEnabled = coding ? config?.coding?.enabled === true : engineer ? config?.engineer?.enabled === true : true;
+  const configReady = config?.version === 3
+    && config?.auth?.mode === 'oauth'
+    && Boolean(publicEndpoint)
+    && (!authorizationScoped || (authorizationEnabled && readWriteRepos.length > 0))
+    && (!coding || config.capabilities?.workspaceCoder === true);
   layers.push({
     name: 'config_ready',
     ok: configReady,
     detail: configReady
       ? `profile=${config?.profile ?? 'planner'} config=v3 authorization_revision=${repoHarnessAuthorizationRevision()}`
-      : 'run setup with a stable endpoint and explicit coding grant',
+      : `run setup with a stable endpoint${authorizationScoped ? ` and explicit ${config?.profile} grant` : ''}`,
   });
 
   let localReady = false;
@@ -1256,7 +1274,7 @@ export async function runMcpLiveDoctor(opts: { repo?: string; json?: boolean }):
       if (!clientId) throw new Error('OAuth registration omitted client_id');
       const verifier = randomBytes(32).toString('base64url');
       const challenge = createHash('sha256').update(verifier).digest('base64url');
-      const scope = ['repo-harness', ...(coding ? ['repo-harness.coding'] : []), 'offline_access'].join(' ');
+      const scope = ['repo-harness', ...(requiredScope ? [requiredScope] : []), 'offline_access'].join(' ');
       const authorize = new URLSearchParams({
         passphrase,
         response_type: 'code',
@@ -1292,11 +1310,11 @@ export async function runMcpLiveDoctor(opts: { repo?: string; json?: boolean }):
       if (!tokenResponse.ok) throw new Error(`OAuth token exchange returned ${tokenResponse.status}`);
       const token = await tokenResponse.json() as { access_token?: string; scope?: string };
       accessToken = token.access_token ?? '';
-      if (!accessToken || (coding && !String(token.scope ?? '').split(' ').includes('repo-harness.coding'))) {
-        throw new Error('OAuth token is missing the required coding scope');
+      if (!accessToken || (requiredScope !== null && !String(token.scope ?? '').split(' ').includes(requiredScope))) {
+        throw new Error(`OAuth token is missing the required ${config?.profile} scope`);
       }
       oauthReady = true;
-      layers.push({ name: 'oauth_ready', ok: true, detail: `DCR + PKCE succeeded${coding ? ' with repo-harness.coding' : ''}` });
+      layers.push({ name: 'oauth_ready', ok: true, detail: `DCR + PKCE succeeded${requiredScope ? ` with ${requiredScope}` : ''}` });
 
       const initializeResponse = await fetchWithTimeout(`${probeOrigin}/mcp`, {
         method: 'POST',
@@ -1318,19 +1336,23 @@ export async function runMcpLiveDoctor(opts: { repo?: string; json?: boolean }):
       const toolsPayload = jsonFromMcpResponse(await toolsResponse.text());
       const tools = (toolsPayload?.result as { tools?: Array<{ name?: string }> } | undefined)?.tools ?? [];
       toolNames = tools.map((tool) => tool.name ?? '').filter(Boolean);
-      const required = coding ? ['open_workspace', 'read', 'apply_patch', 'exec_command', 'write_stdin'] : REQUIRED_CODEX_TOOLS;
+      const expectedSpecialTools = coding
+        ? buildCodingToolDefinitions()
+        : engineer ? buildEngineerToolDefinitions() : null;
+      const required = expectedSpecialTools ? expectedSpecialTools.map((tool) => tool.name) : REQUIRED_CODEX_TOOLS;
       const missing = required.filter((name) => !toolNames.includes(name));
-      const codingSchemaMatches = !coding || JSON.stringify(tools
+      const specialSchemaMatches = expectedSpecialTools === null || JSON.stringify(tools
         .filter((tool) => required.includes(tool.name ?? ''))
-        .map((tool) => ({ name: tool.name, inputSchema: (tool as Record<string, unknown>).inputSchema, annotations: (tool as Record<string, unknown>).annotations }))) === JSON.stringify(buildCodingToolDefinitions()
+        .map((tool) => ({ name: tool.name, inputSchema: (tool as Record<string, unknown>).inputSchema, annotations: (tool as Record<string, unknown>).annotations }))) === JSON.stringify(expectedSpecialTools
         .map((tool) => ({ name: tool.name, inputSchema: tool.inputSchema, annotations: tool.annotations })));
-      mcpReady = toolsResponse.ok && missing.length === 0 && codingSchemaMatches;
+      const exactInventoryMatches = !engineer || JSON.stringify(toolNames) === JSON.stringify(required);
+      mcpReady = toolsResponse.ok && missing.length === 0 && specialSchemaMatches && exactInventoryMatches;
       layers.push({
         name: 'mcp_ready',
         ok: mcpReady,
         detail: mcpReady
           ? `initialize + exact tools/list schema succeeded (${toolNames.length} tools)`
-          : missing.length > 0 ? `missing tools: ${missing.join(', ')}` : 'coding tool schema mismatch',
+          : missing.length > 0 ? `missing tools: ${missing.join(', ')}` : `${config?.profile ?? 'MCP'} tool schema mismatch`,
       });
       await fetchWithTimeout(`${probeOrigin}/mcp`, {
         method: 'DELETE',
