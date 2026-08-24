@@ -491,8 +491,8 @@
       "outputDigest": "sha256:8d3e591e8757b575ea10100f9aa4d12c5b7de82ae61f46c688964abe02e61f51",
       "verifiedAgainst": {
         "branch": "codex/me0b-engineer-principal-claim-actor",
-        "commit": "b83fc80db3ce8b98b581d1e08f87363f55f0bd8a",
-        "committedAt": "2026-08-25T02:17:38+08:00"
+        "commit": "15da4a00e0f422fa20281aea6e2a0c29c92babda",
+        "committedAt": "2026-08-25T02:31:59+08:00"
       }
     },
     {
@@ -571,8 +571,8 @@
       "outputDigest": "sha256:aa5aac73ff819f8ad0c053a57d5b1627faf2fc5bdbc18e8ab4722de0ab085d59",
       "verifiedAgainst": {
         "branch": "codex/me0b-engineer-principal-claim-actor",
-        "commit": "b83fc80db3ce8b98b581d1e08f87363f55f0bd8a",
-        "committedAt": "2026-08-25T02:17:38+08:00"
+        "commit": "15da4a00e0f422fa20281aea6e2a0c29c92babda",
+        "committedAt": "2026-08-25T02:31:59+08:00"
       }
     },
     {
