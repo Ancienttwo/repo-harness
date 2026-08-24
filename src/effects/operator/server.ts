@@ -243,6 +243,13 @@ function safePathRoot(root: string): string {
   return resolve(root);
 }
 
+function expectedRequestAuthority(host: OperatorServerHost, request: IncomingMessage): string | null {
+  const localPort = request.socket.localPort;
+  if (!Number.isSafeInteger(localPort)) return null;
+  const authorityHost = host === '::1' ? `[${host}]` : host;
+  return `${authorityHost}:${localPort}`;
+}
+
 export async function startOperatorServer(
   options: OperatorServerOptions = {},
 ): Promise<OperatorServerHandle> {
@@ -272,6 +279,17 @@ export async function startOperatorServer(
   const handleRequest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     const method = request.method ?? 'GET';
     const headOnly = method === 'HEAD';
+    const expectedAuthority = expectedRequestAuthority(host, request);
+    const requestHost = request.headers.host?.trim().toLowerCase();
+    if (expectedAuthority === null || requestHost !== expectedAuthority) {
+      sendJson(response, 421, errorBody('host_not_allowed', 'The request Host is not allowed.'), headOnly);
+      return;
+    }
+    const requestOrigin = request.headers.origin;
+    if (requestOrigin !== undefined && requestOrigin !== `http://${expectedAuthority}`) {
+      sendJson(response, 403, errorBody('origin_not_allowed', 'The request Origin is not allowed.'), headOnly);
+      return;
+    }
     if (method !== 'GET' && method !== 'HEAD') {
       sendJson(response, 405, errorBody('method_not_allowed', 'Only GET and HEAD are supported.'), false);
       return;

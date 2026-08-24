@@ -61,6 +61,20 @@ describe('operator serve command and HTTP boundary', () => {
       expect(await health.json()).toEqual({ ok: true, service: 'repo-harness-operator', protocol: 1 });
       expect(collectCalls).toBe(0);
 
+      const rejectedHost = await fetch(`${server.url}/api/v1/fleet/snapshot`, {
+        headers: { Host: 'attacker.example' },
+      });
+      expect(rejectedHost.status).toBe(421);
+      expect(await rejectedHost.json()).toMatchObject({ error: { code: 'host_not_allowed' } });
+      expect(collectCalls).toBe(0);
+
+      const rejectedOrigin = await fetch(`${server.url}/api/v1/fleet/snapshot`, {
+        headers: { Origin: 'http://attacker.example' },
+      });
+      expect(rejectedOrigin.status).toBe(403);
+      expect(await rejectedOrigin.json()).toMatchObject({ error: { code: 'origin_not_allowed' } });
+      expect(collectCalls).toBe(0);
+
       const [first, second] = await Promise.all([
         fetch(`${server.url}/api/v1/fleet/snapshot`),
         fetch(`${server.url}/api/v1/fleet/snapshot`),
