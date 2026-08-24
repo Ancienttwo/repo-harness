@@ -58,7 +58,74 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ## Change Assessment
 
 ```json
-{"protocol":1,"oracles":[{"id":"me0b-principal-claim-deterministic-tests","kind":"deterministic_test","paths":["src/core/engineers/principal-claim.ts","src/effects/engineers/principal-store.ts","src/effects/engineers/principal.ts","src/effects/engineers/claim-actor-store.ts","src/effects/engineers/acquire.ts","src/cli/mcp/engineer-tools.ts"]},{"id":"me0b-engineer-mcp-runtime-readback","kind":"runtime_readback","paths":["src/core/engineers/principal-claim.ts","src/effects/engineers/principal-store.ts","src/effects/engineers/principal.ts","src/effects/engineers/claim-actor-store.ts","src/effects/engineers/acquire.ts","src/cli/mcp/engineer-tools.ts"]}]}
+{
+  "protocol": 1,
+  "oracles": [
+    {
+      "id": "me0b-final-subject-deterministic-tests",
+      "kind": "deterministic_test",
+      "paths": [
+        ".archcontext/model/flows/flow.engineer-bindings.primary.yaml",
+        ".archcontext/model/flows/flow.mcp-sidecar.engineer-acquire.yaml",
+        ".archcontext/model/nodes/capability.runtime-harness.engineer-bindings.yaml",
+        ".archcontext/model/nodes/capability.runtime-harness.mcp-sidecar.yaml",
+        ".archcontext/model/relations/relation.mcp-sidecar.engineer-principal.yaml",
+        "AGENTS.md",
+        "CLAUDE.md",
+        "docs/architecture/.projection-manifest.json",
+        "docs/architecture/changelog.md",
+        "docs/architecture/decisions/index.md",
+        "docs/architecture/diagrams/architecture.likec4",
+        "docs/architecture/diagrams/architecture.mmd",
+        "docs/architecture/diagrams/architecture.structurizr.json",
+        "docs/architecture/index.md",
+        "docs/architecture/modules/runtime-harness/engineer-bindings.md",
+        "docs/architecture/modules/runtime-harness/mcp-sidecar.md",
+        "docs/architecture/requests/archive/2026/runtime-harness-mcp-sidecar.md",
+        "src/cli/commands/engineer.ts",
+        "src/cli/commands/mcp.ts",
+        "src/cli/mcp/auth.ts",
+        "src/cli/mcp/engineer-tools.ts",
+        "src/cli/mcp/instructions.ts",
+        "src/cli/mcp/oauth.ts",
+        "src/cli/mcp/policy.ts",
+        "src/cli/mcp/server.ts",
+        "src/cli/mcp/setup.ts",
+        "src/cli/mcp/tools.ts",
+        "src/cli/mcp/transports/http.ts",
+        "src/cli/mcp/transports/stdio.ts",
+        "src/cli/mcp/types.ts",
+        "src/core/engineers/principal-claim.ts",
+        "src/effects/engineers/acquire.ts",
+        "src/effects/engineers/claim-actor-store.ts",
+        "src/effects/engineers/principal-store.ts",
+        "src/effects/engineers/principal.ts",
+        "tasks/workstreams/runtime-harness/engineer-bindings/me0b-principal-claim-actor.md",
+        "tests/architecture-projection-e2e.test.ts",
+        "tests/cli/engineer.test.ts",
+        "tests/cli/mcp-engineer-tools.test.ts",
+        "tests/cli/mcp-http.test.ts",
+        "tests/cli/mcp-oauth.test.ts",
+        "tests/cli/mcp-setup.test.ts",
+        "tests/unit/me0b-engineer-acquire.test.ts",
+        "tests/unit/me0b-engineer-principal-claim-actor.test.ts",
+        "tests/unit/me0b-principal-store.test.ts"
+      ]
+    },
+    {
+      "id": "me0b-engineer-mcp-runtime-readback",
+      "kind": "runtime_readback",
+      "paths": [
+        "src/core/engineers/principal-claim.ts",
+        "src/effects/engineers/principal-store.ts",
+        "src/effects/engineers/principal.ts",
+        "src/effects/engineers/claim-actor-store.ts",
+        "src/effects/engineers/acquire.ts",
+        "src/cli/mcp/engineer-tools.ts"
+      ]
+    }
+  ]
+}
 ```
 
 ## Acceptance Policy
