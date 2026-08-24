@@ -28,6 +28,14 @@ export type McpStoredAuthInfo = AuthInfo & {
   authorizationId?: string;
 };
 
+export interface McpAuthorizationSummary {
+  readonly authorizationId: string;
+  readonly clientId: string;
+  readonly profile: string;
+  readonly scopes: readonly string[];
+  readonly expiresAt: number | null;
+}
+
 function nowSeconds(): number {
   return Math.floor(Date.now() / 1000);
 }
@@ -37,7 +45,12 @@ function issueToken(): string {
 }
 
 function normalizeScopes(scopes: string[] | undefined, profile = 'planner'): string[] {
-  const allowed = new Set(['repo-harness', 'offline_access', ...(profile === 'coding' ? ['repo-harness.coding'] : [])]);
+  const allowed = new Set([
+    'repo-harness',
+    'offline_access',
+    ...(profile === 'coding' ? ['repo-harness.coding'] : []),
+    ...(profile === 'engineer' ? ['repo-harness.engineer'] : []),
+  ]);
   const normalized = (scopes ?? [])
     .flatMap((scope) => scope.split(' '))
     .map((scope) => scope.trim())
@@ -76,6 +89,27 @@ export class McpOAuthTokenStore implements OAuthRegisteredClientsStore {
 
   setClock(clock: () => number): void {
     this.clock = clock;
+  }
+
+  listAuthorizations(profile: string): readonly McpAuthorizationSummary[] {
+    const byAuthorization = new Map<string, McpAuthorizationSummary>();
+    const now = this.clock();
+    for (const [accessToken, info] of this.accessTokens) {
+      if (info.profile !== profile || typeof info.authorizationId !== 'string' || !info.authorizationId.trim()) continue;
+      const accessLive = info.expiresAt === undefined || info.expiresAt > now;
+      const refreshLive = [...this.refreshTokens.values()].some((record) => (
+        record.accessToken === accessToken && (record.expiresAt === undefined || record.expiresAt > now)
+      ));
+      if (!accessLive && !refreshLive) continue;
+      byAuthorization.set(info.authorizationId, {
+        authorizationId: info.authorizationId,
+        clientId: info.clientId,
+        profile,
+        scopes: Object.freeze([...info.scopes].sort()),
+        expiresAt: info.expiresAt ?? null,
+      });
+    }
+    return Object.freeze([...byAuthorization.values()].sort((left, right) => left.authorizationId.localeCompare(right.authorizationId)));
   }
 
   private hasActiveTokens(clientId: string, now: number): boolean {
@@ -261,9 +295,11 @@ export function createMcpOAuthProvider(
   const accessTokenTtlSeconds = opts.accessTokenTtlSeconds ?? 30 * 24 * 60 * 60;
   const refreshTokenTtlSeconds = opts.refreshTokenTtlSeconds ?? 30 * 24 * 60 * 60;
   const profile = opts.profile ?? 'planner';
+  const authorizationScoped = profile === 'coding' || profile === 'engineer';
+  const requiredScope = profile === 'coding' ? 'repo-harness.coding' : profile === 'engineer' ? 'repo-harness.engineer' : null;
   const revisionOption = opts.authorizationRevision;
   const notifyAuthorizationRevoked = (info: McpStoredAuthInfo | undefined): void => {
-    if (profile !== 'coding' || !info?.authorizationId) return;
+    if (!authorizationScoped || !info?.authorizationId) return;
     try {
       void Promise.resolve(opts.onAuthorizationRevoked?.(info.authorizationId)).catch(() => undefined);
     } catch (_error) {
@@ -273,7 +309,7 @@ export function createMcpOAuthProvider(
   const currentAuthorizationRevision: () => number = typeof revisionOption === 'function'
     ? revisionOption
     : () => revisionOption ?? 0;
-  if (profile === 'coding') store.revokeMismatchedAuthorization(profile, currentAuthorizationRevision());
+  if (authorizationScoped) store.revokeMismatchedAuthorization(profile, currentAuthorizationRevision());
 
   const cleanupExpiredAuthorizationCodes = (): void => {
     const now = clock();
@@ -302,8 +338,8 @@ export function createMcpOAuthProvider(
     async authorize(client: OAuthClientInformationFull, params: AuthorizationParams, res): Promise<void> {
       cleanupExpiredAuthorizationCodes();
       const scopes = normalizeScopes(params.scopes, profile);
-      if (profile === 'coding' && !scopes.includes('repo-harness.coding')) {
-        throw new InvalidScopeError('The repo-harness.coding scope is required for coding authorization');
+      if (requiredScope && !scopes.includes(requiredScope)) {
+        throw new InvalidScopeError(`The ${requiredScope} scope is required for ${profile} authorization`);
       }
       const code = issueToken();
       const createdAt = clock();
@@ -344,7 +380,7 @@ export function createMcpOAuthProvider(
       const expiresAt = clock() + expiresIn;
       const scopes = normalizeScopes(stored.scopes, profile);
       const authorizationRevision = currentAuthorizationRevision();
-      const authorizationId = profile === 'coding' ? randomUUID() : undefined;
+      const authorizationId = authorizationScoped ? randomUUID() : undefined;
       store.setAccessToken(accessToken, {
         token: accessToken,
         clientId: client.client_id,
@@ -383,10 +419,11 @@ export function createMcpOAuthProvider(
       const authorizationRevision = currentAuthorizationRevision();
       if (
         (existing.profile ?? 'planner') !== profile ||
-        (profile === 'coding' && (
+        (authorizationScoped && (
           existing.authorizationRevision !== authorizationRevision ||
           typeof existing.authorizationId !== 'string' ||
-          !existing.authorizationId.trim()
+          !existing.authorizationId.trim() ||
+          (requiredScope !== null && !existing.scopes.includes(requiredScope))
         ))
       ) {
         notifyAuthorizationRevoked(existing);
@@ -407,9 +444,9 @@ export function createMcpOAuthProvider(
       const info = store.getAccessToken(token);
       if (!info) throw new InvalidTokenError('Token not found');
       if ((info.profile ?? 'planner') !== profile) throw new InvalidTokenError('Token profile mismatch');
-      if (profile === 'coding' && (
+      if (authorizationScoped && (
         info.authorizationRevision !== currentAuthorizationRevision() ||
-        !info.scopes.includes('repo-harness.coding') ||
+        (requiredScope !== null && !info.scopes.includes(requiredScope)) ||
         typeof info.authorizationId !== 'string' ||
         !info.authorizationId.trim()
       )) {
@@ -417,7 +454,7 @@ export function createMcpOAuthProvider(
         if (refreshToken) store.deleteRefreshToken(refreshToken);
         store.deleteAccessToken(token);
         notifyAuthorizationRevoked(info);
-        throw new InvalidTokenError('Coding authorization is stale or missing');
+        throw new InvalidTokenError(`${profile} authorization is stale or missing`);
       }
       if (info.expiresAt && info.expiresAt < clock()) {
         if (!store.findRefreshTokenByAccessToken(token)) {

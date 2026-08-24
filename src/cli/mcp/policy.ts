@@ -212,10 +212,24 @@ export function getMcpPolicy(profile: McpProfileName, opts: McpPolicyOptions = {
     };
   }
 
+  if (profile === 'engineer') {
+    return {
+      profile,
+      allowedRoots: [],
+      discoveryRoots: [],
+      capabilities: capabilities(),
+      readGlobs: [],
+      writeGlobs: [],
+      denyGlobs: ['**'],
+      maxFileBytes: 0,
+      execution: executionPolicy(),
+    };
+  }
+
   throw new Error(`unknown MCP profile: ${String(profile)}`);
 }
 
 export function parseMcpProfile(value: string): McpProfileName {
-  if (value === 'planner' || value === 'executor' || value === 'orchestrator' || value === 'coding') return value;
-  throw new Error(`invalid MCP profile "${value}" (expected: planner, executor, orchestrator, coding)`);
+  if (value === 'planner' || value === 'executor' || value === 'orchestrator' || value === 'coding' || value === 'engineer') return value;
+  throw new Error(`invalid MCP profile "${value}" (expected: planner, executor, orchestrator, coding, engineer)`);
 }

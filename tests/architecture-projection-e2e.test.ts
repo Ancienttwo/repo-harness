@@ -18,7 +18,7 @@ function yamlFiles(directory: string): Record<string, unknown>[] {
 }
 
 describe("AXR7 repo-harness architecture consumer", () => {
-  test("has one reviewed component, relation, and required flow for every capability", () => {
+  test("has one reviewed component and at least one reviewed relation/required flow for every capability", () => {
     const modelRoot = join(ROOT, ".archcontext", "model");
     const nodes = yamlFiles(join(modelRoot, "nodes"));
     const capabilities = nodes.filter((node) => node.kind === "capability");
@@ -28,8 +28,8 @@ describe("AXR7 repo-harness architecture consumer", () => {
 
     expect(capabilities).toHaveLength(12);
     expect(components).toHaveLength(12);
-    expect(relations).toHaveLength(12);
-    expect(flows).toHaveLength(12);
+    expect(relations).toHaveLength(13);
+    expect(flows).toHaveLength(13);
     expect(flows.every((flow) => flow.schemaVersion === "archcontext.flow/v1")).toBe(true);
     expect(flows.every((flow) => flow.applicability === "required")).toBe(true);
     expect(new Set(flows.map((flow) => flow.capabilityId))).toEqual(new Set(capabilities.map((node) => node.id)));
@@ -44,9 +44,9 @@ describe("AXR7 repo-harness architecture consumer", () => {
     expect(html.map((path) => relative(ROOT, path))).toEqual([]);
     for (const path of moduleDocs) {
       const body = readFileSync(path, "utf8");
-      expect(body.match(/^```mermaid$/gm)).toHaveLength(2);
+      expect(body.match(/^```mermaid$/gm)?.length ?? 0).toBeGreaterThanOrEqual(2);
       expect(body.match(/^flowchart (?:LR|TD)$/gm)).toHaveLength(1);
-      expect(body.match(/^sequenceDiagram$/gm)).toHaveLength(1);
+      expect(body.match(/^sequenceDiagram$/gm)?.length ?? 0).toBeGreaterThanOrEqual(1);
       expect(body).toContain('"actorTextColor":"#ffffff"');
       expect(body).toContain('"signalTextColor":"#e5e7eb"');
       expect(body).toContain("- Proof: `proven`");

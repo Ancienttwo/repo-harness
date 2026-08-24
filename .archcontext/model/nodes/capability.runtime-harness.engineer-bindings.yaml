@@ -3,11 +3,13 @@ id: capability.runtime-harness.engineer-bindings
 kind: capability
 name: Engineer Bindings
 status: active
-summary: Defines tracked Module Engineer behavior contracts and one crash-consistent binding authority shared by linked worktrees.
+summary: Defines tracked Module Engineer contracts, current Binding authority, authenticated principal mapping, and immutable Claim actor provenance.
 responsibilities:
   - Validate capability-backed Engineer Profile and SOP contracts without copying capability authority.
   - Publish immutable Engineer binding events and one current projection below the Git common directory.
   - Expose local Human-operator binding commands and bounded read-only bootstrap projections.
+  - Map server-minted Engineer OAuth authorizations to exact current Bindings in user-level state without storing bearer tokens.
+  - Revalidate the current Binding before Engineer mutation and publish immutable ClaimActor receipts beside the shared coordination authority.
 source:
   include:
     - "agents/engineers/**"
@@ -23,11 +25,30 @@ source:
             - id: sink.engineer-bindings.shared-store
               path: "src/effects/engineers/binding-store.ts"
               symbol: "bindEngineer"
+    - id: entrypoint.engineer-bindings.principal-resolution
+      path: "src/effects/engineers/principal.ts"
+      symbols:
+        - name: "resolveEngineerPrincipal"
+          sinks:
+            - id: sink.engineer-bindings.current-binding
+              path: "src/effects/engineers/binding-store.ts"
+              symbol: "readEngineerBindingStatus"
+    - id: entrypoint.engineer-bindings.acquire
+      path: "src/effects/engineers/acquire.ts"
+      symbols:
+        - name: "acquireEngineerTask"
+          sinks:
+            - id: sink.engineer-bindings.fleet-acquire
+              path: "src/effects/fleet/acquire.ts"
+              symbol: "acquireFleetTask"
+            - id: sink.engineer-bindings.claim-actor-receipt
+              path: "src/effects/engineers/claim-actor-store.ts"
+              symbol: "publishClaimActorReceipt"
 extensions:
   contractFiles:
     agents: "AGENTS.md"
     claude: "CLAUDE.md"
   lspProfile: "typescript-lsp"
   verification:
-    - "bun test tests/unit/engineer-profile-binding-v1.test.ts tests/unit/engineer-binding-store.test.ts tests/cli/engineer.test.ts --timeout 60000"
+    - "bun test tests/unit/engineer-profile-binding-v1.test.ts tests/unit/engineer-binding-store.test.ts tests/unit/me0b-engineer-principal-claim-actor.test.ts tests/unit/me0b-principal-store.test.ts tests/unit/me0b-engineer-acquire.test.ts tests/cli/engineer.test.ts tests/cli/mcp-engineer-tools.test.ts --timeout 60000"
     - "bun run check:type"

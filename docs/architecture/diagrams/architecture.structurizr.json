@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:83f3be6803ed4fd0f59a16af708f64901d9f35446602fc5b3352415430230fbc" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:6c113541d9be98ed82c54357f0af4a540af7898fce028e88fb2c3fadf2e73897" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:e1e4d340068eaa99a6373fb5b755e3a27a6d597f8eee6bd0af6ade18c51d9dfb" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:a15ddc44333249140e1f1a2b272381a92f4cdd8e5802314ffc860c6ba72ce098" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
@@ -256,6 +256,12 @@
         "id": "relation.inspection-migration.primary",
         "sourceId": "capability.workflow-engine.inspection-migration",
         "destinationId": "component.inspection-migration.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.engineer-principal",
+        "sourceId": "capability.runtime-harness.mcp-sidecar",
+        "destinationId": "capability.runtime-harness.engineer-bindings",
         "description": "calls"
       },
       {

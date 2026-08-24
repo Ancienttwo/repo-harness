@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.mcp-sidecar.engineer-acquire
+capabilityId: capability.runtime-harness.mcp-sidecar
+name: Acquire a Fleet task as an authenticated Module Engineer
+applicability: required
+participants:
+  - id: engineer-mcp
+    nodeId: capability.runtime-harness.mcp-sidecar
+  - id: engineer-authority
+    nodeId: capability.runtime-harness.engineer-bindings
+steps:
+  - id: acquire-and-publish
+    from: engineer-mcp
+    to: engineer-authority
+    label: Reuse Fleet acquire and publish immutable Claim actor provenance
+    evidence:
+      entrypointId: entrypoint.mcp-sidecar.engineer-tools
+      sourceSymbol: callEngineerTool
+      sinkId: sink.mcp-sidecar.engineer-acquire
+outcomes:
+  - id: success
+    kind: success
+    label: Exact WorkEnvelope and ClaimActorReceipt are returned
+    steps:
+      - id: return-receipt
+        from: engineer-mcp
+        to: engineer-authority
+        label: Return the live-validated envelope and immutable receipt
+        evidence:
+          entrypointId: entrypoint.mcp-sidecar.engineer-tools
+          sourceSymbol: callEngineerTool
+          sinkId: sink.mcp-sidecar.engineer-acquire
+    terminal:
+      participant: engineer-mcp
+      label: Return authenticated acquire result
+  - id: error
+    kind: error
+    label: Authorization, Binding, offer, receipt, or compensation validation fails
+    steps:
+      - id: fail-closed
+        from: engineer-mcp
+        to: engineer-authority
+        label: Return typed refusal and never release a foreign Claim
+        evidence:
+          entrypointId: entrypoint.mcp-sidecar.engineer-tools
+          sourceSymbol: callEngineerTool
+          sinkId: sink.mcp-sidecar.engineer-acquire
+    terminal:
+      participant: engineer-mcp
+      label: Return typed fail-closed error
