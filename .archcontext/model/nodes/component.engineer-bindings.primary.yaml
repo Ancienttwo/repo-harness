@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: component.engineer-bindings.primary
+kind: component
+name: Shared Engineer Binding Store
+status: active
+parent: capability.runtime-harness.engineer-bindings
+summary: Resolves tracked Engineer contracts and durably publishes event-before-current binding transitions under one per-Engineer lock.

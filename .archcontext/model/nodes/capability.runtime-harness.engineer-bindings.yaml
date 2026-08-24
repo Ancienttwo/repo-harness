@@ -1,0 +1,33 @@
+schemaVersion: archcontext.node/v2
+id: capability.runtime-harness.engineer-bindings
+kind: capability
+name: Engineer Bindings
+status: active
+summary: Defines tracked Module Engineer behavior contracts and one crash-consistent binding authority shared by linked worktrees.
+responsibilities:
+  - Validate capability-backed Engineer Profile and SOP contracts without copying capability authority.
+  - Publish immutable Engineer binding events and one current projection below the Git common directory.
+  - Expose local Human-operator binding commands and bounded read-only bootstrap projections.
+source:
+  include:
+    - "agents/engineers/**"
+    - "src/core/engineers/**"
+    - "src/effects/engineers/**"
+    - "src/cli/commands/engineer.ts"
+  entrypoints:
+    - id: entrypoint.engineer-bindings.operator-cli
+      path: "src/cli/commands/engineer.ts"
+      symbols:
+        - name: "buildEngineerCommand"
+          sinks:
+            - id: sink.engineer-bindings.shared-store
+              path: "src/effects/engineers/binding-store.ts"
+              symbol: "bindEngineer"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun test tests/unit/engineer-profile-binding-v1.test.ts tests/unit/engineer-binding-store.test.ts tests/cli/engineer.test.ts --timeout 60000"
+    - "bun run check:type"

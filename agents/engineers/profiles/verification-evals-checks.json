@@ -1,0 +1,18 @@
+{
+  "protocol": 1,
+  "kind": "repo-harness-module-engineer-profile",
+  "engineer_id": "engineer:capability.verification.evals-checks",
+  "capability_id": "capability.verification.evals-checks",
+  "sop_ref": "agents/engineers/sops/verification-evals-checks.md",
+  "delegation_policy": {
+    "allowed_roles": ["explorer", "root-cause-prover", "fast-worker", "deep-worker", "gatekeeper"],
+    "max_depth": 1,
+    "max_parallel_readers": 3,
+    "max_parallel_writers": 1
+  },
+  "max_active_claims": 1,
+  "escalation_policy": {
+    "cross_capability_change": "interface_request",
+    "acceptance": "independent_plane"
+  }
+}

@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.engineer-bindings.primary
+capabilityId: capability.runtime-harness.engineer-bindings
+name: Publish an Engineer binding transition
+applicability: required
+participants:
+  - id: operator-cli
+    nodeId: capability.runtime-harness.engineer-bindings
+  - id: binding-store
+    nodeId: component.engineer-bindings.primary
+steps:
+  - id: validate-and-publish
+    from: operator-cli
+    to: binding-store
+    label: Validate Profile and publish event before current
+    evidence:
+      entrypointId: entrypoint.engineer-bindings.operator-cli
+      sourceSymbol: buildEngineerCommand
+      sinkId: sink.engineer-bindings.shared-store
+outcomes:
+  - id: success
+    kind: success
+    label: Binding current is durably published
+    steps:
+      - id: return-current
+        from: operator-cli
+        to: binding-store
+        label: Return the exact current projection
+        evidence:
+          entrypointId: entrypoint.engineer-bindings.operator-cli
+          sourceSymbol: buildEngineerCommand
+          sinkId: sink.engineer-bindings.shared-store
+    terminal:
+      participant: operator-cli
+      label: Emit operator result
+  - id: error
+    kind: error
+    label: Validation, CAS, lock, or durability check fails
+    steps:
+      - id: return-refusal
+        from: operator-cli
+        to: binding-store
+        label: Propagate typed fail-closed refusal
+        evidence:
+          entrypointId: entrypoint.engineer-bindings.operator-cli
+          sourceSymbol: buildEngineerCommand
+          sinkId: sink.engineer-bindings.shared-store
+    terminal:
+      participant: operator-cli
+      label: Emit typed error without current mutation

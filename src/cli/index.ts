@@ -33,6 +33,7 @@ import { buildSprintCommand } from './commands/sprint';
 import { buildPublicationCommand } from './commands/publication';
 import { buildFleetCommand } from './commands/fleet';
 import { buildOperatorCommand } from './commands/operator';
+import { buildEngineerCommand } from './commands/engineer';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
 import {
@@ -103,6 +104,7 @@ export const SUBCOMMANDS = [
   'state',
   'publication',
   'fleet',
+  'engineer',
   'architecture-projection',
 ] as const;
 export type Subcommand = (typeof SUBCOMMANDS)[number];
@@ -752,6 +754,7 @@ export function buildProgram(): Command {
   program.addCommand(buildPublicationCommand());
   program.addCommand(buildFleetCommand());
   program.addCommand(buildOperatorCommand());
+  program.addCommand(buildEngineerCommand());
   program.addCommand(buildArchitectureProjectionCommand());
   program
     .command('circuit-breaker-record', { hidden: true })

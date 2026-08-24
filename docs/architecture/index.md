@@ -98,7 +98,7 @@ Project
 
 ## Capability 地图
 
-`.ai/harness/policy.json#context.capability_source` 选中的 capability 权威声明 11 个 capability，分属 5 个 architecture domain；本仓库的权威是 `.archcontext/model/nodes/*.yaml`。
+`.ai/harness/policy.json#context.capability_source` 选中的 capability 权威声明 12 个 capability，分属 5 个 architecture domain；本仓库的权威是 `.archcontext/model/nodes/*.yaml`。
 下图按 domain 分组，只画在源码里核实过的强依赖边（import 或运行时调用），
 虚线是 verification 的 gate 关系而非代码依赖。
 
@@ -126,6 +126,7 @@ flowchart LR
   subgraph RH["runtime-harness"]
     direction TB
     GlobalRuntime(["global-runtime-reconciliation<br/>全局 runtime closure 与显式外部工具刷新"]):::harness
+    EngineerBindings(["engineer-bindings<br/>tracked Engineer 契约与 shared binding authority"]):::harness
     HookAdapters(["hook-adapters<br/>宿主 hook 路由与安装器"]):::harness
     McpSidecar(["mcp-sidecar<br/>本地 MCP 服务与仓库注册表"]):::harness
   end
@@ -163,6 +164,7 @@ flowchart LR
   EvalsChecks -.->|gate| InspectionMigration
   EvalsChecks -.->|gate| ContractAssets
   EvalsChecks -.->|gate| GlobalRuntime
+  EvalsChecks -.->|gate| EngineerBindings
   EvalsChecks -.->|gate| HookAdapters
   EvalsChecks -.->|gate| McpSidecar
   EvalsChecks -.->|gate| GeneralRepoAccess
@@ -214,6 +216,7 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 | `workflow-engine-contract-assets` | `assets/workflow-contract.v1.json` | 工作流契约、策略、模板与 capability 注册表的权威面 | [contract-assets](modules/workflow-engine/contract-assets.md) |
 | `runtime-harness-hook-adapters` | `assets/hooks` | 宿主 hook 事件的进程内路由、handler 与安装器 | [hook-adapters](modules/runtime-harness/hook-adapters.md) |
 | `runtime-harness-global-runtime-reconciliation` | `package.json` | 校验 package-local ArchContext closure，并只在显式选择时刷新 mutable provider | [global-runtime-reconciliation](modules/runtime-harness/global-runtime-reconciliation.md) |
+| `runtime-harness-engineer-bindings` | `agents/engineers` | tracked Engineer 行为契约、shared binding authority 与 operator-only projection | [engineer-bindings](modules/runtime-harness/engineer-bindings.md) |
 | `runtime-harness-mcp-sidecar` | `src/cli/mcp` | 本地 MCP sidecar 的传输、策略、审计与仓库注册表 | [mcp-sidecar](modules/runtime-harness/mcp-sidecar.md) |
 | `runtime-mcp-general-repo-access` | `src/cli/mcp/general-repo-access.ts` | 受策略与授权约束的通用仓库读写工具面 | [general-repo-access](modules/runtime-mcp/general-repo-access.md) |
 | `verification-codegraph-readiness` | `scripts/ensure-codegraph.sh` | CodeGraph 可用性探测、解析与 MCP 适配 | [codegraph-readiness](modules/verification/codegraph-readiness.md) |
@@ -279,7 +282,7 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 - Treat user-level `~/.codex/hooks.json` and `~/.claude/settings.json` as host adapters. Keep hook implementation under `.ai/hooks/`, and treat repo-local `.claude/settings.json` / `.codex/hooks.json` hook adapters as retired legacy config.
 - Consider adding `bun scripts/capability-resolver.ts validate --format text` to the strict workflow gate after the architecture registry has been used through one more real slice.
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:dfeee72dd6b65c11c5410cf52261499a156ed11386d32cb5121711b63684470d" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:b06c6e04a526077cd1c45aed4cac83fbbab0e57227b7d8a2a0d06329ef2cd392" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:83f3be6803ed4fd0f59a16af708f64901d9f35446602fc5b3352415430230fbc" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:d245379e3f23acecccd564270693be921e97fdcc03ab1615f94b8a1ed43bb70c" -->
 # Architecture Index
 
 Generated: 1970-01-01T00:00:00.000Z
@@ -289,6 +292,7 @@ Generated: 1970-01-01T00:00:00.000Z
 - [Action Commands](modules/public-surface/action-commands.md) — capability / active
 - [Adoption](modules/public-surface/adoption.md) — capability / active
 - [Root Router](modules/public-surface/root-router.md) — capability / active
+- [Engineer Bindings](modules/runtime-harness/engineer-bindings.md) — capability / active
 - [Global Runtime Reconciliation](modules/runtime-harness/global-runtime-reconciliation.md) — capability / active
 - [Hook Adapters](modules/runtime-harness/hook-adapters.md) — capability / active
 - [MCP Sidecar](modules/runtime-harness/mcp-sidecar.md) — capability / active
@@ -304,6 +308,7 @@ Generated: 1970-01-01T00:00:00.000Z
 - capability.public-surface.adoption -> component.adoption.primary — calls
 - capability.verification.codegraph-readiness -> component.codegraph-readiness.primary — calls
 - capability.workflow-engine.contract-assets -> component.contract-assets.primary — calls
+- capability.runtime-harness.engineer-bindings -> component.engineer-bindings.primary — calls
 - capability.verification.evals-checks -> component.evals-checks.primary — calls
 - capability.runtime-mcp.general-repo-access -> component.general-repo-access.primary — calls
 - capability.runtime-harness.global-runtime-reconciliation -> component.global-runtime-reconciliation.primary — calls

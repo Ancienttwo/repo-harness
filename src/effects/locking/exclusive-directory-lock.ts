@@ -68,6 +68,7 @@ export interface ExclusiveDirectoryLockHandle {
 }
 
 export interface ExclusiveDirectoryLockOptions {
+  readonly reclaimStaleEmptyDirectory?: boolean;
   readonly reclaimStaleOwner?: boolean;
   readonly waitTimeoutMs?: number;
 }
@@ -232,13 +233,18 @@ function ownsExclusiveToken(
   }
 }
 
-function reclaimStaleLockDirectory(location: LockLocation): boolean {
+function reclaimStaleLockDirectory(
+  location: LockLocation,
+  reclaimStaleEmptyDirectory: boolean,
+): boolean {
   assertLockAncestors(location);
   let observedDirectoryIdentity: FileIdentity;
+  let observedDirectoryMtimeMs: number;
   try {
     const observedDirectory = lstatSync(location.lockPath);
     if (!observedDirectory.isDirectory()) return false;
     observedDirectoryIdentity = fileIdentity(observedDirectory);
+    observedDirectoryMtimeMs = observedDirectory.mtimeMs;
   } catch {
     return false;
   }
@@ -248,9 +254,26 @@ function reclaimStaleLockDirectory(location: LockLocation): boolean {
   } catch {
     return false;
   }
-  // An empty directory cannot distinguish a crashed creator from a live
-  // creator paused between mkdir and token publication. Preserve it and fail
-  // closed; operator cleanup is required after verifying no creator is live.
+  if (entries.length === 0 && reclaimStaleEmptyDirectory) {
+    if (Date.now() - observedDirectoryMtimeMs <= LOCK_STALE_MS) return false;
+    try {
+      assertLockAncestors(location);
+      const currentDirectory = lstatSync(location.lockPath);
+      if (!currentDirectory.isDirectory()
+        || !sameFileIdentity(fileIdentity(currentDirectory), observedDirectoryIdentity)
+        || readdirSync(location.lockPath).length !== 0) return false;
+      // rmdir is the publication fence: a paused creator that publishes a
+      // token first makes removal fail, while a creator resumed after removal
+      // must still win the normal single-token ownership check before running.
+      rmdirSync(location.lockPath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  // The default remains fail closed for ownerless directories. Callers may
+  // opt in only when their protocol permits a stale paused creator to lose the
+  // acquisition and retry through the normal ownership check.
   if (entries.length !== 1) return false;
 
   const entry = entries[0];
@@ -333,7 +356,9 @@ export function acquireExclusiveDirectoryLock(
         if ((pathError as NodeJS.ErrnoException).code === 'ENOENT') continue;
         throw pathError;
       }
-      if (options.reclaimStaleOwner !== false) reclaimStaleLockDirectory(location);
+      if (options.reclaimStaleOwner !== false) {
+        reclaimStaleLockDirectory(location, options.reclaimStaleEmptyDirectory === true);
+      }
       if (Date.now() >= deadline) {
         throw new ExclusiveLockContentionError(
           `timed out waiting for exclusive lock ${location.lockPath}; `
