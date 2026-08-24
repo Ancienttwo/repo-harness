@@ -176,6 +176,30 @@ function resolvePrincipal(ctx: EngineerMcpToolContext, args: Record<string, unkn
   return principal;
 }
 
+function acquireAsEngineer(
+  ctx: EngineerMcpToolContext,
+  args: Record<string, unknown>,
+  principal: ReturnType<typeof resolvePrincipal>,
+): EngineerMcpToolResult {
+  const maxAttempts = optionalInteger(args, 'max_attempts', 1);
+  if (maxAttempts !== undefined && maxAttempts > 16) {
+    throw new EngineerMcpError('INVALID_ARGUMENT', 'max_attempts must be an integer from 1 through 16');
+  }
+  const result = acquireEngineerTask({
+    repo_root: ctx.repoRoot,
+    principal,
+    assertion: {
+      repo_id: requiredString(args, 'repo_id'),
+      task_id: requiredString(args, 'task_id'),
+      offer_revision: requiredString(args, 'offer_revision'),
+      authorization_revision: requiredInteger(args, 'authorization_revision', 0),
+    },
+    max_attempts: maxAttempts,
+  });
+  audit(ctx, 'engineer_acquire', result.ok ? 'ok' : 'failed', args, result.ok ? undefined : result.message);
+  return result.ok ? textResult(result) : errorResult(result.error, result.message);
+}
+
 export function callEngineerTool(
   ctx: EngineerMcpToolContext,
   name: EngineerMcpToolName,
@@ -189,23 +213,7 @@ export function callEngineerTool(
       audit(ctx, name, 'ok', args);
       return textResult(result);
     }
-    const maxAttempts = optionalInteger(args, 'max_attempts', 1);
-    if (maxAttempts !== undefined && maxAttempts > 16) {
-      throw new EngineerMcpError('INVALID_ARGUMENT', 'max_attempts must be an integer from 1 through 16');
-    }
-    const result = acquireEngineerTask({
-      repo_root: ctx.repoRoot,
-      principal,
-      assertion: {
-        repo_id: requiredString(args, 'repo_id'),
-        task_id: requiredString(args, 'task_id'),
-        offer_revision: requiredString(args, 'offer_revision'),
-        authorization_revision: requiredInteger(args, 'authorization_revision', 0),
-      },
-      max_attempts: maxAttempts,
-    });
-    audit(ctx, name, result.ok ? 'ok' : 'failed', args, result.ok ? undefined : result.message);
-    return result.ok ? textResult(result) : errorResult(result.error, result.message);
+    return acquireAsEngineer(ctx, args, principal);
   } catch (error) {
     const code = error instanceof EngineerPrincipalError || error instanceof EngineerMcpError
       ? error.code

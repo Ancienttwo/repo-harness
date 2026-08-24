@@ -6,7 +6,7 @@
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: runtime-harness-engineer-bindings
-> **Last Updated**: 2026-08-25 00:29
+> **Last Updated**: 2026-08-25 02:29
 > **Review File**: `tasks/reviews/20260825-0029-me0b-engineer-principal-claim-actor.review.md`
 > **Notes File**: `tasks/notes/20260825-0029-me0b-engineer-principal-claim-actor.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
@@ -71,6 +71,8 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ```yaml
 allowed_paths:
+  - AGENTS.md
+  - CLAUDE.md
   - plans/plan-20260825-0029-me0b-engineer-principal-claim-actor.md
   - tasks/todos.md
   - tasks/current.md
@@ -91,6 +93,7 @@ allowed_paths:
   - docs/architecture/index.md
   - docs/architecture/modules/runtime-harness/engineer-bindings.md
   - docs/architecture/modules/runtime-harness/mcp-sidecar.md
+  - docs/architecture/requests/archive/2026/runtime-harness-mcp-sidecar.md
   - src/core/engineers/principal-claim.ts
   - src/effects/engineers/principal-store.ts
   - src/effects/engineers/principal.ts

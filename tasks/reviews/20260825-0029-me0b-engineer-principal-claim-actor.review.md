@@ -5,7 +5,7 @@
 > **Contract**: tasks/contracts/20260825-0029-me0b-engineer-principal-claim-actor.contract.md
 > **Notes File**: tasks/notes/20260825-0029-me0b-engineer-principal-claim-actor.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-08-25 02:14
+> **Last Updated**: 2026-08-25 02:27
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: pending
@@ -31,7 +31,7 @@
 
 ## Verification Evidence
 
-- Waza `/check` run: deep diff review completed; two carrier/path hardening gaps found and fixed before the final subject.
+- Waza `/check` run: deep diff review completed; two carrier/path hardening gaps were fixed, and the acceptance projection additionally forced the acquire stage onto a non-truncated exact-selector boundary before the final subject.
 - Commands run: `bun run check:type`; `bun test --timeout 60000`; contract focused suite; `bash scripts/check-deploy-sql-order.sh`; `bash scripts/check-architecture-sync.sh`; `bash scripts/check-task-sync.sh`; `repo-harness run check-task-workflow --strict`; state inspector; init dry-run.
 - Manual checks: CLI help exposes operator principal commands but no CLI acquire; Engineer profile exposes exactly `engineer_status` and `engineer_acquire`; stdio and non-OAuth HTTP carriers fail closed.
 - Supporting artifacts: accepted architecture projection, `.ai/harness/checks/latest.json`, and `.ai/harness/runs/`.

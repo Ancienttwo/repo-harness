@@ -33,6 +33,8 @@ source:
             - id: sink.mcp-sidecar.engineer-principal
               path: "src/effects/engineers/principal.ts"
               symbol: "resolveEngineerPrincipal"
+        - name: "acquireAsEngineer"
+          sinks:
             - id: sink.mcp-sidecar.engineer-acquire
               path: "src/effects/engineers/acquire.ts"
               symbol: "acquireEngineerTask"

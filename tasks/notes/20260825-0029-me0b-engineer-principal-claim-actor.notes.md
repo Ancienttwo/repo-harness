@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260825-0029-me0b-engineer-principal-claim-actor.md
 > **Contract**: tasks/contracts/20260825-0029-me0b-engineer-principal-claim-actor.contract.md
 > **Review**: tasks/reviews/20260825-0029-me0b-engineer-principal-claim-actor.review.md
-> **Last Updated**: 2026-08-25 02:14
+> **Last Updated**: 2026-08-25 02:27
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -15,7 +15,9 @@
 - ClaimActorReceipt remains separate from Lease；engineer acquire wraps, rather than modifies, canonical Fleet acquire.
 - The Engineer transport prohibition is evaluated from the effective profile, including user-level config fallback, so an omitted programmatic profile cannot open the OAuth-only surface over stdio.
 - Principal mapping storage inherits the shared exclusive-directory lock's canonical-root and ancestor-identity fences; a symlinked `engineer-principals` ancestor is rejected before any mapping bytes are published.
-- The accepted ArchContext change set is `changeset.plan-20260825-0029-me0b-engineer-principal-claim-actor`, bound to `event.review-20260825-0029-me0b-engineer-principal-claim-actor-approval`; the fixed-point projection proves both authenticated principal resolution and MCP Engineer acquire flows.
+- `acquireAsEngineer` is the single internal acquire execution boundary. This keeps the ArchContext selector exact and non-truncated while `callEngineerTool` remains the public MCP dispatcher; it adds no alternate mutation authority.
+- The accepted ArchContext change set is `changeset.plan-20260825-0029-me0b-engineer-principal-claim-actor`, bound to `event.review-20260825-0029-me0b-engineer-principal-claim-actor-approval`; the fixed-point projection accepts `entrypoint-changed` plus `verified-flow-proof-changed` for `mcp-sidecar` and proves both authenticated principal resolution and MCP Engineer acquire flows.
+- The canonical refresh projected the `mcp-sidecar` context block into root `AGENTS.md` / `CLAUDE.md`; its low-severity queue card was resolved against the generated module and archived under `docs/architecture/requests/archive/2026/`.
 
 ## Deviations From Plan Or Spec
 

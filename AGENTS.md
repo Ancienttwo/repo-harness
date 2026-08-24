@@ -71,37 +71,34 @@ bun src/cli/index.ts init --repo . --dry-run
 <!-- BEGIN ARCHITECTURE CONTRACT -->
 ## Architecture Contract
 
-- Functional block: `scripts/verify-sprint.sh`
-- Capability ID: `verification-evals-checks`
-- Matched prefix: `scripts/verify-sprint.sh`
-- Architecture domain: `verification`
-- Architecture capability: `evals-checks`
-- Architecture module: `docs/architecture/modules/verification/evals-checks.md`
-- Last architecture event: 2026-08-05T00:46:11+0800
-- Last changed path: `tasks/workstreams/verification/evals-checks/github-issues-158-159.md`
-- Severity: medium
-- Change type: workstream-sync
+- Functional block: `src/cli/mcp`
+- Capability ID: `runtime-harness-mcp-sidecar`
+- Matched prefix: `src/cli/mcp`
+- Architecture domain: `runtime-harness`
+- Architecture capability: `mcp-sidecar`
+- Architecture module: `docs/architecture/modules/runtime-harness/mcp-sidecar.md`
+- Last architecture event: 2026-08-25T02:27:20+0800
+- Last changed path: `src/cli/mcp/engineer-tools.ts`
+- Severity: low
+- Change type: source-change
 - Module responsibility: Keep this block aligned with the local boundary described by surrounding human-owned context.
-- Entrypoints: `scripts/verify-sprint.sh`
+- Entrypoints: `src/cli/mcp`
 - Allowed dependencies: Follow root `AGENTS.md` / `CLAUDE.md` and this local contract.
 - Forbidden dependencies: Do not cross sibling app/service/package boundaries without an architecture snapshot or explicit plan.
-- Runtime path: `scripts/verify-sprint.sh`
+- Runtime path: `src/cli/mcp`
 - LSP/tooling profile: `typescript-lsp`
 - Verification: Use root required checks plus local commands recorded in this capability contract.
 - Latest snapshot: `(none yet)`
-- Semantic diagram source: `docs/architecture/modules/verification/evals-checks.md`
+- Semantic diagram source: `docs/architecture/modules/runtime-harness/mcp-sidecar.md`
 - Pending architecture request: `(none)`
 
 ## Active Workstreams
 
-- `tasks/workstreams/verification/evals-checks/github-issues-158-159.md`
-  - status: completed
-  - current_slice: completed-20260805-deployed-emitter-binding
-  - source_plan: plans/plan-20260805-0001-github-issues-158-159.md
+- (none yet)
 
 ## Current Session Projection
 
-- Durable progress lives under `tasks/workstreams/verification/evals-checks`.
+- Durable progress lives under `tasks/workstreams/runtime-harness/mcp-sidecar`.
 - `tasks/current.md` is the tracked derived status snapshot; it is not a live lock or task source.
 - `tasks/todos.md` is the deferred-goal ledger; current execution slices stay in the active plan's `## Task Breakdown`.
 <!-- END ARCHITECTURE CONTRACT -->

@@ -1,5 +1,5 @@
 # runtime-harness/mcp-sidecar 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:16ffe1201e58390267e57996cb3f3f66b5fc30f8cb4329797a25f130ee6c19f0" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:b58b034673480df0ac84e3155e3c90213e88f49f539046becf5c5d229b2332b4" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:c8f9664c5ec8aba49ef80fe504459dfe9c96e0519dd01bc3fb1067a99d664452" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:8d3e591e8757b575ea10100f9aa4d12c5b7de82ae61f46c688964abe02e61f51" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.mcp-sidecar`(kind `capability`)
 > **Matched Prefixes**:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`、`src/cli/chatgpt-browser/file-policy.ts`、`src/effects/repo-registry.ts`、`docs/repo-harness-chatgpt-mcp-setup.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`docs/researches/20260711-devspace-chatgpt-local-control.md`
@@ -25,7 +25,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:abfa08bba593beffcb4a676f2332a3f1f94686d3351ae93c5a34df8a686880d3`).
+- Proof: `proven` (`sha256:6d2d89b7c48473e0ab1c12576009eb3d46b8563a1942f0dc0723c2be5edfbb8e`).
 - Semantic nodes: `3`; declared relations: `2`.
 
 ### 1.2 模組職責表
@@ -33,7 +33,8 @@ flowchart LR
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
 | `entrypoint.mcp-sidecar.primary` | `src/cli/mcp/server.ts#createRepoHarnessMcpServer` | `sink.mcp-sidecar.primary` → `src/cli/mcp/tools.ts#callMcpTool` |
-| `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#callEngineerTool` | `sink.mcp-sidecar.engineer-principal` → `src/effects/engineers/principal.ts#resolveEngineerPrincipal`、`sink.mcp-sidecar.engineer-acquire` → `src/effects/engineers/acquire.ts#acquireEngineerTask` |
+| `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#callEngineerTool` | `sink.mcp-sidecar.engineer-principal` → `src/effects/engineers/principal.ts#resolveEngineerPrincipal` |
+| `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#acquireAsEngineer` | `sink.mcp-sidecar.engineer-acquire` → `src/effects/engineers/acquire.ts#acquireEngineerTask` |
 
 ### 1.3 規模信號
 
@@ -54,7 +55,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:abfa08bba593beffcb4a676f2332a3f1f94686d3351ae93c5a34df8a686880d3`); selectors `2/2`.
+> **Proof**: `proven` (`sha256:6d2d89b7c48473e0ab1c12576009eb3d46b8563a1942f0dc0723c2be5edfbb8e`); selectors `2/2`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
