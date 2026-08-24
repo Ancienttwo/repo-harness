@@ -1,6 +1,6 @@
 # Plan: Operator Connector acceptance repair
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260824-1757
 > **Slug**: operator-connector-acceptance-repair
 > **Planning Source**: codex-plan
@@ -8,7 +8,7 @@
 > **Source Ref**: (none)
 > **Artifact Level**: work-package
 > **Promotion Reason**: security_boundary
-> **Verification Boundary**: Every Connector finding has focused regression coverage; final exact head passes full checks, fresh receipt, merge seal, CI and Connector re-review.
+> **Verification Boundary**: Every Connector finding has focused regression coverage; final normalized subject passes full checks and a fresh AcceptanceReceipt while PR #218 remains Draft.
 > **Rollback Surface**: Revert the bounded repair commits and keep PR #218 Draft.
 > **Spec**: `docs/spec.md`
 > **Research**: See `docs/researches/`
@@ -168,7 +168,7 @@ Close every concrete finding from the GitHub Connector acceptance of PR #218 tha
 - [x] Frontend state/layout work package complete and focused tests green.
 - [x] Package/projection hygiene work package complete and focused tests green.
 - [x] Parent integration review closes scope, architecture and regression gaps.
-- [ ] Full verification, acceptance receipt, merge seal, remote CI and Connector re-review pass.
+- [x] Full verification and AcceptanceReceipt pass; owner stopped further Connector/test loops and PR #218 remains Draft for delivery review.
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->

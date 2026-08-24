@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-24 22:16
+> **Related Plan**: plans/archive/plan-20260824-1757-operator-connector-acceptance-repair.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260824-2216
+
 # Task Review: operator-connector-acceptance-repair
 
 > **Status**: Reviewed
@@ -44,13 +50,13 @@
 > **Reviewer**: Codex
 > **Source**: codex-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: sha256:b7653139d575d35bd81ed4a99898cc09446549d31ad715ea17540cf1e5095f2a
+> **Reviewed Subject SHA256**: sha256:8fe55a74007263792e3a9129cb1eca99fabbabcc6120a22966389c96b188016d
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: 75f50b909d50e980f8a372208f55aa42665a2db9
-> **Verification Evidence SHA256**: sha256:0ca0571acad30097224cf6d0498a97da7022c3200199c5983f42dd64d370f7e8
-> **Issued At**: 2026-08-24T12:16:11.710Z
+> **Verification Evidence SHA256**: sha256:8abaf81598ed06b8ba9cb5b37d369a13bac90b7df438a84deb61b264b6e279b0
+> **Issued At**: 2026-08-24T14:13:28.860Z
 
-- Summary: Operator control board 保持 loopback-only、read-only 语义，以严格派生 registry ID、全层 DTO allowlist、IPv6/static confinement、runtime decoder/drawer exact-key 一致性及安装包运行时证明关闭全部 Connector finding。
+- Summary: Connector follow-up P3 closure is coherent: browser Fleet decoding reconstructs a closed allowlisted graph with digest/OID validation, wide drawer semantics are non-modal at the owning breakpoint, and POSIX/drive/UNC marker paths project only repo-relative or opaque references; 32/32 contract criteria pass.
 - Findings: none
 
 ## Behavior Diff Notes

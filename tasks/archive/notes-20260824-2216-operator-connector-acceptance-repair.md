@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-24 22:16
+> **Related Plan**: plans/archive/plan-20260824-1757-operator-connector-acceptance-repair.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260824-2216
+
 # Implementation Notes: operator-connector-acceptance-repair
 
 > **Status**: Active
@@ -55,6 +61,7 @@
 - Packaged runtime: `bash scripts/check-tarball-install-smoke.sh` booted the clean-installed tarball, read health/HTML/asset/Fleet API, and observed clean SIGTERM exit.
 - Browser layout readback: at `1440x1000`, computed boxes were rail `248px`, workspace `832px`, drawer `360px` with `position: sticky` and hidden scrim; at `1000x800`, drawer was `position: fixed`, `360px`, with a visible full-viewport scrim. The real dialog retained focus semantics and current task facts.
 - Connector follow-up regressions first failed on retained nested fields, wide-screen modal semantics, and Windows drive path disclosure. After repair, Operator interaction tests pass 9/9, targeted path/sprint tests pass 3/3, typecheck passes, the Operator web production build succeeds, and the loopback Operator server suite passes 5/5 outside the network-restricted sandbox.
+- Follow-up acceptance preparation proved 31/32 criteria, including the 3013-test full suite and packaged runtime smoke. The sole failure was the expected automatic architecture projection restamp preceding `check-task-sync`; synchronized task evidence was refreshed before the bounded rerun.
 
 ## Promotion Filter
 

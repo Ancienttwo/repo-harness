@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-24T21:33:30+0800 -->
+<!-- updated_at: 2026-08-24T22:16:27+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Active
-> **Updated At**: 2026-08-24T21:33:30+0800
+> **Status**: ManualClearedWithActiveWork
+> **Updated At**: 2026-08-24T22:16:27+0800
 > **Source Branch**: codex/local-human-control-board-v1
-> **Source Commit**: b05c86e5
+> **Source Commit**: 7f394a03
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: connector-follow-up-p3
+> **Reason**: archive-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Active
-- Active Plan: plans/plan-20260824-1757-operator-connector-acceptance-repair.md
-- Plan Status: Executing
-- Next Task: Full verification, acceptance receipt, merge seal, remote CI and Connector re-review pass.
-- Clear Note: (none)
+- Status: ManualClearedWithActiveWork
+- Active Plan: (none)
+- Plan Status: (none)
+- Next Task: inspect active worktree marker(s)
+- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
 
 ## Mainline Snapshot Reading
 
@@ -31,8 +31,6 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- .: plans/plan-20260824-1757-operator-connector-acceptance-repair.md
-- .: active-worktree owner -> self
 - linked-worktree-176dccaa21cd: plans/plan-20260824-2126-me0a-engineer-profile-binding.md
 - linked-worktree-176dccaa21cd: active-worktree owner -> self
 - linked-worktree-4b80f284a890: plans/plan-20260823-2134-release-0-17-0.md
@@ -60,10 +58,22 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 1 changed/untracked path(s)
+- Summary: 13 changed/untracked path(s)
 
 ```
+ M docs/architecture/.projection-manifest.json
+ D plans/plan-20260824-1757-operator-connector-acceptance-repair.md
+ D tasks/contracts/20260824-1757-operator-connector-acceptance-repair.contract.md
  M tasks/current.md
+ D tasks/notes/20260824-1757-operator-connector-acceptance-repair.notes.md
+ D tasks/reviews/20260824-1757-operator-connector-acceptance-repair.review.md
+ M tasks/todos.md
+?? plans/archive/plan-20260824-1757-operator-connector-acceptance-repair.md
+?? plans/plan-20260824-2214-verify-sprint-incremental-retry.md
+?? tasks/archive/contract-20260824-2216-operator-connector-acceptance-repair.md
+?? tasks/archive/notes-20260824-2216-operator-connector-acceptance-repair.md
+?? tasks/archive/review-20260824-2216-operator-connector-acceptance-repair.md
+?? tasks/archive/todo-20260824-2216-operator-connector-acceptance-repair.md
 ```
 
 ## Source Artifacts
