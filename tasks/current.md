@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-24T19:55:14+0800 -->
+<!-- updated_at: 2026-08-24T21:33:30+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-08-24T19:55:14+0800
+> **Updated At**: 2026-08-24T21:33:30+0800
 > **Source Branch**: codex/local-human-control-board-v1
-> **Source Commit**: fe8a97a1
+> **Source Commit**: b05c86e5
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: connector-acceptance-repair
+> **Reason**: connector-follow-up-p3
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -33,6 +33,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 - .: plans/plan-20260824-1757-operator-connector-acceptance-repair.md
 - .: active-worktree owner -> self
+- linked-worktree-176dccaa21cd: plans/plan-20260824-2126-me0a-engineer-profile-binding.md
+- linked-worktree-176dccaa21cd: active-worktree owner -> self
 - linked-worktree-4b80f284a890: plans/plan-20260823-2134-release-0-17-0.md
 - linked-worktree-4b80f284a890: active-worktree owner -> self
 ## Active Sprint
@@ -54,16 +56,14 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=fail, source=verify-sprint, exit_code=1, file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 3 changed/untracked path(s)
+- Summary: 1 changed/untracked path(s)
 
 ```
- M docs/architecture/.projection-manifest.json
- M tasks/contracts/20260824-1757-operator-connector-acceptance-repair.contract.md
- M tasks/notes/20260824-1757-operator-connector-acceptance-repair.notes.md
+ M tasks/current.md
 ```
 
 ## Source Artifacts
