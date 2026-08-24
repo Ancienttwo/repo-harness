@@ -135,20 +135,65 @@ append_unique_line() {
   fi
 }
 
+opaque_worktree_label() {
+  local value="$1"
+  local digest
+  digest="$(printf '%s' "$value" | git hash-object --stdin 2>/dev/null)"
+  [[ "$digest" =~ ^[0-9a-f]{40}$ ]] || {
+    echo "refresh-current-status: cannot derive opaque worktree label" >&2
+    return 1
+  }
+  printf 'linked-worktree-%s' "${digest:0:12}"
+}
+
+safe_plan_ref() {
+  local worktree="$1"
+  local plan_path="$2"
+  local relative
+
+  if [[ "$plan_path" == /* ]]; then
+    if [[ "$plan_path" == "$worktree/"* ]]; then
+      relative="${plan_path#"$worktree/"}"
+    else
+      printf 'opaque-plan-%s' "$(opaque_worktree_label "$plan_path" | sed 's/^linked-worktree-//')"
+      return 0
+    fi
+  else
+    relative="${plan_path#./}"
+  fi
+
+  if [[ -z "$relative" || "$relative" == .. || "$relative" == ../* || "$relative" == */../* ]]; then
+    printf 'opaque-plan-%s' "$(opaque_worktree_label "$plan_path" | sed 's/^linked-worktree-//')"
+    return 0
+  fi
+  printf '%s' "$relative"
+}
+
+safe_owner_ref() {
+  local worktree="$1"
+  local owner="$2"
+  if [[ "$owner" == "$worktree" ]]; then
+    printf 'self'
+    return 0
+  fi
+  printf 'opaque-owner-%s' "$(opaque_worktree_label "$owner" | sed 's/^linked-worktree-//')"
+}
+
 inspect_worktree_active_state() {
   local worktree="$1"
-  local rel_worktree="$2"
-  local marker plan_path plan_abs owner
+  local worktree_label="$2"
+  local marker plan_path plan_abs plan_ref owner
 
   marker=".ai/harness/active-plan"
   if [[ -f "$worktree/$marker" ]]; then
     plan_path="$(cat "$worktree/$marker" 2>/dev/null | xargs || true)"
     if [[ -n "$plan_path" ]]; then
       plan_abs="$(normalize_plan_path "$worktree" "$plan_path")"
+      plan_ref="$(safe_plan_ref "$worktree" "$plan_path")"
       if [[ -f "$plan_abs" ]]; then
-        append_unique_line "- ${rel_worktree}: ${plan_path}"
+        append_unique_line "- ${worktree_label}: ${plan_ref}"
       else
-        append_unique_line "- ${rel_worktree}: stale active-plan marker -> ${plan_path}"
+        append_unique_line "- ${worktree_label}: stale active-plan marker -> ${plan_ref}"
       fi
     fi
   fi
@@ -156,13 +201,13 @@ inspect_worktree_active_state() {
   if [[ -f "$worktree/.ai/harness/active-worktree" ]]; then
     owner="$(cat "$worktree/.ai/harness/active-worktree" 2>/dev/null | xargs || true)"
     if [[ -n "$owner" ]]; then
-      append_unique_line "- ${rel_worktree}: active-worktree owner -> ${owner}"
+      append_unique_line "- ${worktree_label}: active-worktree owner -> $(safe_owner_ref "$worktree" "$owner")"
     fi
   fi
 }
 
 collect_active_work_refs() {
-  local root current_path worktree_path
+  local current_path worktree_path worktree_label
   active_refs=""
   current_path="$(pwd -P 2>/dev/null || pwd)"
   inspect_worktree_active_state "$current_path" "."
@@ -171,7 +216,8 @@ collect_active_work_refs() {
     while IFS= read -r worktree_path; do
       [[ -n "$worktree_path" ]] || continue
       [[ "$worktree_path" == "$current_path" ]] && continue
-      inspect_worktree_active_state "$worktree_path" "$worktree_path"
+      worktree_label="$(opaque_worktree_label "$worktree_path")"
+      inspect_worktree_active_state "$worktree_path" "$worktree_label"
     done < <(git worktree list --porcelain 2>/dev/null | awk '$1 == "worktree" { sub(/^worktree /, ""); print }')
   fi
 

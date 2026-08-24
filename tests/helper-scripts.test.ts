@@ -2810,6 +2810,59 @@ describe("Workflow helper scripts", () => {
     }
   }, 30_000);
 
+  test("refresh-current-status should keep linked worktree paths and owners out of tracked output", () => {
+    const cwd = tmpWorkspace("helper-current-linked-worktree");
+    const linkedWorktree = `${cwd}-linked`;
+    try {
+      expect(readFileSync(join(ROOT, "scripts/refresh-current-status.sh"), "utf-8")).toBe(
+        readFileSync(join(HELPER_DIR, "refresh-current-status.sh"), "utf-8")
+      );
+      initGitRepo(cwd);
+      copyHelpers(cwd);
+      mkdirSync(join(cwd, "tasks"), { recursive: true });
+      writeFileSync(join(cwd, "README.md"), "fixture\n");
+      commitAll(cwd, "fixture");
+      expect(run("git", ["worktree", "add", "-b", "linked-current-status", linkedWorktree], cwd).status).toBe(0);
+
+      const linkedPlan = join(linkedWorktree, "plans/plan-20260824-0100-linked.md");
+      mkdirSync(join(linkedWorktree, "plans"), { recursive: true });
+      mkdirSync(join(linkedWorktree, ".ai/harness"), { recursive: true });
+      writeFileSync(linkedPlan, "# Plan: linked\n\n> **Status**: Executing\n");
+      writeFileSync(join(linkedWorktree, ".ai/harness/active-plan"), `${linkedPlan}\n`);
+      writeFileSync(
+        join(linkedWorktree, ".ai/harness/active-worktree"),
+        "/Users/macos-local-user/Library/Application Support/repo-harness\n"
+      );
+
+      const macos = run("bash", ["scripts/refresh-current-status.sh", "--write", "--reason", "path-sanitization"], cwd);
+      expect(macos.status, macos.stderr).toBe(0);
+      const macosCurrent = readFileSync(join(cwd, "tasks/current.md"), "utf-8");
+      expect(macosCurrent).toContain("linked-worktree-");
+      expect(macosCurrent).toContain("plans/plan-20260824-0100-linked.md");
+      expect(macosCurrent).toContain("opaque-owner-");
+      expect(macosCurrent).not.toContain(linkedWorktree);
+      expect(macosCurrent).not.toContain("/Users/");
+      expect(macosCurrent).not.toContain("macos-local-user");
+
+      writeFileSync(join(linkedWorktree, ".ai/harness/active-plan"), "/home/unix-local-user/private/plan.md\n");
+      writeFileSync(join(linkedWorktree, ".ai/harness/active-worktree"), "/home/unix-local-user/worktrees/repo\n");
+      const unix = run("bash", ["scripts/refresh-current-status.sh", "--write", "--reason", "path-sanitization"], cwd);
+      expect(unix.status, unix.stderr).toBe(0);
+      const unixCurrent = readFileSync(join(cwd, "tasks/current.md"), "utf-8");
+      expect(unixCurrent).toContain("opaque-plan-");
+      expect(unixCurrent).toContain("opaque-owner-");
+      expect(unixCurrent).not.toContain("/home/");
+      expect(unixCurrent).not.toContain("unix-local-user");
+      expect(unixCurrent).not.toContain(linkedWorktree);
+    } finally {
+      if (existsSync(join(cwd, ".git")) && existsSync(linkedWorktree)) {
+        run("git", ["worktree", "remove", "--force", linkedWorktree], cwd);
+      }
+      rmSync(cwd, { recursive: true, force: true });
+      rmSync(linkedWorktree, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test("archive-workflow should set plan status to Abandoned for abandoned outcome", () => {
     const cwd = tmpWorkspace("helper-archive-abandoned");
     try {

@@ -267,13 +267,33 @@ code, .mono-value { font-family: var(--font-mono); }
 .loading-board__column span:nth-child(3) { animation-delay: 240ms; }
 @keyframes shimmer { 0%, 100% { opacity: .48; } 50% { opacity: .9; } }
 
-@media (max-width: 1180px) {
+@media (max-width: 1100px) {
   .operator-app { grid-template-columns: 214px minmax(0, 1fr); }
   .summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .summary-card:last-child { grid-column: span 1; }
   .attention-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .board-columns { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .board-column:nth-child(n+4) { margin-top: 0; }
+}
+
+@media (min-width: 1101px) {
+  .operator-app.has-drawer { grid-template-columns: 248px minmax(0, 1fr) 360px; }
+  .operator-app.has-drawer .operator-workspace { grid-column: 2; }
+  .operator-app.has-drawer .task-drawer {
+    position: sticky;
+    z-index: 1;
+    top: 0;
+    right: auto;
+    bottom: auto;
+    grid-column: 3;
+    grid-row: 1;
+    width: 360px;
+    height: 100vh;
+    border-left: 1px solid var(--border-default);
+    box-shadow: none;
+    animation: none;
+  }
+  .operator-app.has-drawer .drawer-scrim { display: none; }
 }
 
 @media (max-width: 760px) {

@@ -3,9 +3,9 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
 
-import { copyOperatorIdentifier, OperatorApp } from '../../src/operator-web/App';
+import { asApiError, copyOperatorIdentifier, fetchOperatorSnapshot, OperatorApp } from '../../src/operator-web/App';
 import { stableSnapshot } from '../../src/operator-web/fixture';
-import { projectSnapshotViewState } from '../../src/operator-web/types';
+import { decodeOperatorFleetSnapshot, projectSnapshotViewState, type OperatorFleetSnapshotV1 } from '../../src/operator-web/types';
 
 let root: Root | null = null;
 let window: Window;
@@ -107,5 +107,86 @@ describe('operator web interactions', () => {
   test('clipboard failure is explicit and fail-closed', async () => {
     expect(await copyOperatorIdentifier('task-1', null)).toBe(false);
     expect(await copyOperatorIdentifier('task-1', { writeText: async () => { throw new Error('denied'); } })).toBe(false);
+  });
+
+  test('preserves typed 503 direct and envelope errors without semantic guessing', async () => {
+    const direct = {
+      code: 'operator_api_unavailable',
+      message: 'Fleet provider is offline',
+      next_action: 'Start the provider, then retry.',
+    } as const;
+    expect(asApiError(direct)).toBe(direct);
+    expect(asApiError({ error: direct })).toBe(direct);
+    expect(asApiError({ message: 'not a typed API error' }).code).toBe('operator_api_unavailable');
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(JSON.stringify({ error: direct }), {
+      status: 503,
+      headers: { 'content-type': 'application/json' },
+    })) as unknown as typeof fetch;
+    try {
+      await expect(fetchOperatorSnapshot()).rejects.toMatchObject(direct);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('rejects malformed nested payloads before they reach React rendering', async () => {
+    const malformed = structuredClone(stableSnapshot) as unknown as Record<string, unknown>;
+    const repositories = malformed.repositories as Array<Record<string, unknown>>;
+    const cards = repositories[0].cards as Array<Record<string, unknown>>;
+    const feedback = cards[0].feedback as Record<string, unknown>;
+    feedback.pending_count = 'one';
+    expect(() => decodeOperatorFleetSnapshot(malformed)).toThrow('Fleet snapshot response is invalid');
+
+    const container = document.createElement('div');
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => root?.render(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} fetchSnapshot={async () => decodeOperatorFleetSnapshot(malformed)} />));
+    await act(async () => buttonWithText('Refresh').click());
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    });
+    expect(document.querySelector('[data-state="stale"]')).not.toBeNull();
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain('Fleet snapshot response is invalid');
+  });
+
+  test('closes the drawer when refresh removes the selected task or changes its revision', async () => {
+    const nextSnapshot = (revision: string | null): OperatorFleetSnapshotV1 => ({
+      ...stableSnapshot,
+      sequence: stableSnapshot.sequence + 1,
+      repositories: stableSnapshot.repositories.map((repository) => ({
+        ...repository,
+        cards: repository.cards.flatMap((card) => {
+          if (card.task_id !== 'task-review') return [card];
+          if (revision === null) return [];
+          return [{ ...card, task_revision: revision }];
+        }),
+      })),
+    });
+
+    for (const revision of [null, 'rev-task-review-next']) {
+      const container = document.createElement('div');
+      document.body.append(container);
+      root = createRoot(container);
+      await act(async () => root?.render(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} fetchSnapshot={async () => nextSnapshot(revision)} />));
+      await act(async () => buttonWithText('task-review').click());
+      expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+      await act(async () => buttonWithText('Refresh').click());
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+      await act(async () => root?.unmount());
+      root = null;
+      container.remove();
+    }
+  });
+
+  test('keeps the desktop drawer in a 248px rail plus fluid board plus 360px side column', async () => {
+    const css = await Bun.file('src/operator-web/styles.css').text();
+    expect(css).toContain('@media (min-width: 1101px)');
+    expect(css).toContain('.operator-app.has-drawer { grid-template-columns: 248px minmax(0, 1fr) 360px; }');
+    expect(css).toContain('.operator-app.has-drawer .drawer-scrim { display: none; }');
+    expect(css).toContain('@media (max-width: 1100px)');
   });
 });

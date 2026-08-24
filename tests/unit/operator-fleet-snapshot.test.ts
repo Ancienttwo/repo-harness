@@ -97,4 +97,32 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
     const invalid = { ...sourceSnapshot(), protocol: 99 } as unknown as FleetBoardSnapshotV1;
     expect(() => projectOperatorFleetSnapshot(invalid)).toThrow('unsupported Fleet snapshot protocol');
   });
+
+  test('UX-local-human-control-board-v1-N1 allowlists every DTO level against hostile identity-shaped extras', () => {
+    const source = JSON.parse(JSON.stringify(sourceSnapshot())) as FleetBoardSnapshotV1 & Record<string, unknown>;
+    const repository = source.repositories[0] as FleetBoardSnapshotV1['repositories'][number] & Record<string, unknown>;
+    const card = repository.cards[0] as FleetBoardSnapshotV1['repositories'][number]['cards'][number] & Record<string, unknown>;
+    Object.defineProperty(source, 'future_env', { value: 'REPO_HARNESS_TOKEN=secret', enumerable: true });
+    Object.defineProperty(repository, 'repo_root', { value: 'C:\\Users\\operator\\private', enumerable: true });
+    Object.defineProperty(repository, 'future_unix_path', { value: '/Users/operator/.ssh/id_rsa', enumerable: true });
+    Object.defineProperty(card, 'future_control', { value: 'line\u0000break', enumerable: true });
+    Object.defineProperty(card, 'future_windows_path', { value: 'C:\\Users\\operator\\token.txt', enumerable: true });
+
+    const projected = projectOperatorFleetSnapshot(source);
+    const rendered = JSON.stringify(projected);
+    expect(rendered).not.toContain('future_env');
+    expect(rendered).not.toContain('REPO_HARNESS_TOKEN=secret');
+    expect(rendered).not.toContain('future_unix_path');
+    expect(rendered).not.toContain('/Users/operator/.ssh/id_rsa');
+    expect(rendered).not.toContain('future_control');
+    expect(rendered).not.toContain('future_windows_path');
+    expect(rendered).not.toContain('C:\\Users\\operator\\token.txt');
+    expect(Object.keys(projected).sort()).toEqual([
+      'counts', 'kind', 'observed_at', 'protocol', 'registry_revision',
+      'repositories', 'sequence', 'snapshot_consistency', 'source_snapshot_sha256',
+    ]);
+    expect(Object.keys(projected.repositories[0] ?? {}).sort()).toEqual([
+      'access_mode', 'cards', 'error', 'repository_id', 'snapshot_consistency', 'status',
+    ]);
+  });
 });

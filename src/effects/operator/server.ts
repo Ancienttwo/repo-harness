@@ -141,20 +141,6 @@ function sendJson(
   else response.end(payload);
 }
 
-function sendText(
-  response: ServerResponse,
-  status: number,
-  body: string,
-  headOnly = false,
-): void {
-  response.writeHead(status, {
-    ...staticHeaders('text/plain; charset=utf-8'),
-    'Content-Length': Buffer.byteLength(body).toString(),
-  });
-  if (headOnly) response.end();
-  else response.end(body);
-}
-
 function errorBody(
   code: string,
   message: string,
@@ -285,8 +271,9 @@ export async function startOperatorServer(
       sendJson(response, 421, errorBody('host_not_allowed', 'The request Host is not allowed.'), headOnly);
       return;
     }
+    const expectedOrigin = `http://${expectedAuthority}`;
     const requestOrigin = request.headers.origin;
-    if (requestOrigin !== undefined && requestOrigin !== `http://${expectedAuthority}`) {
+    if (requestOrigin !== undefined && requestOrigin !== expectedOrigin) {
       sendJson(response, 403, errorBody('origin_not_allowed', 'The request Origin is not allowed.'), headOnly);
       return;
     }
@@ -297,7 +284,11 @@ export async function startOperatorServer(
 
     let url: URL;
     try {
-      url = new URL(request.url ?? '/', `http://${host}`);
+      url = new URL(request.url ?? '/', expectedOrigin);
+      if (url.origin !== expectedOrigin) {
+        sendJson(response, 421, errorBody('host_not_allowed', 'The request URL authority is not allowed.'), headOnly);
+        return;
+      }
     } catch (_error) {
       sendJson(response, 400, errorBody('invalid_request', 'The request URL is invalid.'), headOnly);
       return;

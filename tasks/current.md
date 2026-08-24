@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-24T13:36:04+0800 -->
+<!-- updated_at: 2026-08-24T18:25:51+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-24T13:36:04+0800
+> **Status**: Active
+> **Updated At**: 2026-08-24T18:25:51+0800
 > **Source Branch**: codex/local-human-control-board-v1
-> **Source Commit**: 9844a99d
+> **Source Commit**: 9eda600b
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive-workflow
+> **Reason**: connector-acceptance-repair
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
-- Active Plan: (none)
-- Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Status: Active
+- Active Plan: plans/plan-20260824-1757-operator-connector-acceptance-repair.md
+- Plan Status: Executing
+- Next Task: Full verification, acceptance receipt, merge seal, remote CI and Connector re-review pass.
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -31,8 +31,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/ancienttwo/Projects/repo-harness-wt-release-0-17-0: plans/plan-20260823-2134-release-0-17-0.md
-- /Users/ancienttwo/Projects/repo-harness-wt-release-0-17-0: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-release-0-17-0
+- .: plans/plan-20260824-1757-operator-connector-acceptance-repair.md
+- .: active-worktree owner -> self
+- linked-worktree-4b80f284a890: plans/plan-20260823-2134-release-0-17-0.md
+- linked-worktree-4b80f284a890: active-worktree owner -> self
 ## Active Sprint
 
 - Sprint: (none)
@@ -56,19 +58,30 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: 21 changed/untracked path(s)
 
 ```
- D plans/plan-20260824-1252-operator-authority-acceptance-rebind.md
- D tasks/contracts/20260824-1252-operator-authority-acceptance-rebind.contract.md
- D tasks/notes/20260824-1252-operator-authority-acceptance-rebind.notes.md
- D tasks/reviews/20260824-1252-operator-authority-acceptance-rebind.review.md
+ M assets/templates/helpers/refresh-current-status.sh
+ M scripts/check-tarball-install-smoke.sh
+ M scripts/refresh-current-status.sh
+ M src/core/operator/fleet-snapshot.ts
+ M src/effects/operator/server.ts
+ M src/effects/repo-registry.ts
+ M src/operator-web/App.tsx
+ M src/operator-web/styles.css
+ M src/operator-web/types.ts
+ M tasks/current.md
  M tasks/todos.md
-?? plans/archive/plan-20260824-1252-operator-authority-acceptance-rebind.md
-?? tasks/archive/contract-20260824-1335-operator-authority-acceptance-rebind.md
-?? tasks/archive/notes-20260824-1335-operator-authority-acceptance-rebind.md
-?? tasks/archive/review-20260824-1335-operator-authority-acceptance-rebind.md
-?? tasks/archive/todo-20260824-1335-operator-authority-acceptance-rebind.md
+ M tests/cli/operator-serve.test.ts
+ M tests/cli/registry.test.ts
+ M tests/helper-scripts.test.ts
+ M tests/operator-web/operator-interactions.test.tsx
+ M tests/unit/operator-fleet-snapshot.test.ts
+?? .ai/harness/failures/operator-connector-acceptance-repair-pre-fix.log
+?? plans/plan-20260824-1757-operator-connector-acceptance-repair.md
+?? tasks/contracts/20260824-1757-operator-connector-acceptance-repair.contract.md
+?? tasks/notes/20260824-1757-operator-connector-acceptance-repair.notes.md
+?? tasks/reviews/20260824-1757-operator-connector-acceptance-repair.review.md
 ```
 
 ## Source Artifacts

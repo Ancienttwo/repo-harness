@@ -101,6 +101,46 @@ describe('operator serve command and HTTP boundary', () => {
     }
   });
 
+  test('uses the bracketed IPv6 authority for real ::1 health/API/static requests', async () => {
+    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-ipv6-'));
+    writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>ipv6</main>');
+    let server: Awaited<ReturnType<typeof startOperatorServer>> | undefined;
+    try {
+      try {
+        server = await startOperatorServer({
+          host: '::1',
+          port: 0,
+          static_root: staticRoot,
+          collect_fleet_board: async () => snapshot(),
+        });
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === 'EAFNOSUPPORT' || code === 'EADDRNOTAVAIL') return;
+        throw error;
+      }
+      const health = await fetch(`${server.url}/healthz`, {
+        headers: { Origin: server.url },
+      });
+      expect(health.status).toBe(200);
+      expect(await health.json()).toEqual({ ok: true, service: 'repo-harness-operator', protocol: 1 });
+
+      const api = await fetch(`${server.url}/api/v1/fleet/snapshot`, {
+        headers: { Host: `[::1]:${server.port}`, Origin: server.url },
+      });
+      expect(api.status).toBe(200);
+      expect(await api.json()).toMatchObject({ kind: 'operator_fleet_snapshot' });
+
+      const html = await fetch(`${server.url}/dashboard`, {
+        headers: { Host: `[::1]:${server.port}`, Origin: server.url, Accept: 'text/html' },
+      });
+      expect(html.status).toBe(200);
+      expect(await html.text()).toContain('ipv6');
+    } finally {
+      await server?.close();
+      rmSync(staticRoot, { recursive: true, force: true });
+    }
+  });
+
   test('UX-local-human-control-board-v1-F1 fails closed when Fleet authority is unavailable', async () => {
     const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-failure-'));
     writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');

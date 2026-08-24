@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { Icon } from './icons';
 import {
   allCards,
   attentionCards,
   cardsForColumn,
+  decodeOperatorFleetSnapshot,
   formatObservedAt,
   OPERATOR_COLUMNS,
+  OPERATOR_PAYLOAD_INVALID_ERROR,
   projectSnapshotViewState,
   snapshotViewKind,
   type OperatorApiErrorV1,
@@ -31,29 +33,22 @@ const DEFAULT_API_ERROR: OperatorApiErrorV1 = {
   next_action: 'Run `repo-harness fleet board --json` for diagnostics, then retry.',
 };
 
-function asApiError(value: unknown, fallback = DEFAULT_API_ERROR): OperatorApiErrorV1 {
-  if (!value || typeof value !== 'object') return fallback;
-  const envelope = value as { error?: Partial<OperatorApiErrorV1> };
-  if (!envelope.error || typeof envelope.error !== 'object') return fallback;
-  return {
-    code: typeof envelope.error.code === 'string' ? envelope.error.code : fallback.code,
-    message: typeof envelope.error.message === 'string' ? envelope.error.message : fallback.message,
-    next_action: typeof envelope.error.next_action === 'string' ? envelope.error.next_action : fallback.next_action,
-  };
+function isTypedApiError(value: unknown): value is OperatorApiErrorV1 {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<OperatorApiErrorV1>;
+  return typeof candidate.code === 'string' && candidate.code.trim().length > 0
+    && typeof candidate.message === 'string' && candidate.message.trim().length > 0
+    && typeof candidate.next_action === 'string' && candidate.next_action.trim().length > 0;
 }
 
-function isOperatorSnapshot(value: unknown): value is OperatorFleetSnapshotV1 {
-  if (!value || typeof value !== 'object') return false;
-  const candidate = value as Record<string, unknown>;
-  if (candidate.protocol !== 1 || candidate.kind !== 'operator_fleet_snapshot') return false;
-  if (typeof candidate.registry_revision !== 'string' || typeof candidate.observed_at !== 'string') return false;
-  if (!Number.isSafeInteger(candidate.sequence) || Number(candidate.sequence) < 1) return false;
-  if (!['stable', 'changed_during_read', 'degraded'].includes(String(candidate.snapshot_consistency))) return false;
-  if (!Array.isArray(candidate.repositories) || !candidate.counts || typeof candidate.counts !== 'object') return false;
-  const counts = candidate.counts as Record<string, unknown>;
-  return ['available', 'working', 'in_review', 'ready_to_merge', 'done', 'unreadable'].every((key) =>
-    Number.isSafeInteger(counts[key]) && Number(counts[key]) >= 0,
-  );
+/** Accept only the two typed transport forms. Unknown values use the safe default. */
+export function asApiError(value: unknown, fallback = DEFAULT_API_ERROR): OperatorApiErrorV1 {
+  if (isTypedApiError(value)) return value;
+  if (value && typeof value === 'object') {
+    const envelope = value as { readonly error?: unknown };
+    if (isTypedApiError(envelope.error)) return envelope.error;
+  }
+  return fallback;
 }
 
 async function fetchOperatorSnapshot(): Promise<OperatorFleetSnapshotV1> {
@@ -68,14 +63,12 @@ async function fetchOperatorSnapshot(): Promise<OperatorFleetSnapshotV1> {
     body = null;
   }
   if (!response.ok) throw asApiError(body);
-  if (!isOperatorSnapshot(body)) {
-    throw {
-      code: 'operator_payload_invalid',
-      message: 'Fleet snapshot response is invalid',
-      next_action: 'Run `repo-harness fleet board --json` for diagnostics, then retry.',
-    } satisfies OperatorApiErrorV1;
+  try {
+    return decodeOperatorFleetSnapshot(body);
+  } catch (error) {
+    if (error instanceof Error && error.name === 'OperatorPayloadError') throw error;
+    throw OPERATOR_PAYLOAD_INVALID_ERROR;
   }
-  return body as OperatorFleetSnapshotV1;
 }
 
 function stateFromSnapshot(snapshot: OperatorFleetSnapshotV1): OperatorSnapshotViewState {
@@ -551,7 +544,11 @@ export function OperatorApp({ initialState, initialSnapshot, fetchSnapshot = fet
     const previous = snapshotForState(state);
     setState({ kind: 'loading', previous });
     try {
-      setState(stateFromSnapshot(await fetchSnapshot()));
+      const nextSnapshot = await fetchSnapshot();
+      setSelectedTask((current) => current === null
+        ? null
+        : allCards(nextSnapshot).find((card) => taskKey(card) === taskKey(current)) ?? null);
+      setState(stateFromSnapshot(nextSnapshot));
     } catch (error) {
       const apiError = asApiError(error);
       setState(previous ? { kind: 'stale', snapshot: previous, error: apiError } : { kind: 'fatal', error: apiError });
@@ -569,13 +566,12 @@ export function OperatorApp({ initialState, initialSnapshot, fetchSnapshot = fet
   }, []);
 
   const selectedKey = selectedTask ? taskKey(selectedTask) : null;
-  const visibleSelectedTask = useMemo(() => {
-    if (!selectedKey || !snapshot) return null;
-    return allCards(snapshot).find((card) => taskKey(card) === selectedKey) ?? selectedTask;
-  }, [selectedKey, selectedTask, snapshot]);
+  const visibleSelectedTask = selectedKey && snapshot
+    ? allCards(snapshot).find((card) => taskKey(card) === selectedKey) ?? null
+    : null;
 
   return (
-    <div className={`operator-app ${mobileMenuOpen ? 'mobile-menu-open' : ''}`} data-state={stateKind}>
+    <div className={`operator-app ${mobileMenuOpen ? 'mobile-menu-open' : ''} ${visibleSelectedTask ? 'has-drawer' : ''}`} data-state={stateKind}>
       <AppRail state={state} repositoryCount={repositoryCount} />
       <div className="operator-workspace">
         <Topbar state={state} busy={busy} onRefresh={() => void refresh()} />
