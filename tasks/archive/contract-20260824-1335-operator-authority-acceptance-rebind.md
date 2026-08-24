@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-24 13:35
+> **Related Plan**: plans/archive/plan-20260824-1252-operator-authority-acceptance-rebind.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260824-1335
+
 # Task Contract: operator-authority-acceptance-rebind
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260824-1252-operator-authority-acceptance-rebind.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->

@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-24 13:35
+> **Related Plan**: plans/archive/plan-20260824-1252-operator-authority-acceptance-rebind.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260824-1335
+
 # Task Review: operator-authority-acceptance-rebind
 
 > **Status**: Passed

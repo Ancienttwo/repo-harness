@@ -1,6 +1,6 @@
 # Plan: Operator authority acceptance rebind
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260824-1252
 > **Slug**: operator-authority-acceptance-rebind
 > **Planning Source**: codex-plan

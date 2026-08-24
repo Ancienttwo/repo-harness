@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-24T04:25:55+0800 -->
+<!-- updated_at: 2026-08-24T13:36:04+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-24T04:25:55+0800
+> **Updated At**: 2026-08-24T13:36:04+0800
 > **Source Branch**: codex/local-human-control-board-v1
-> **Source Commit**: ae0e15f6
+> **Source Commit**: 9844a99d
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -59,16 +59,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260824-0103-local-human-control-board-v1.md
- D tasks/contracts/20260824-0103-local-human-control-board-v1.contract.md
- D tasks/notes/20260824-0103-local-human-control-board-v1.notes.md
- D tasks/reviews/20260824-0103-local-human-control-board-v1.review.md
+ D plans/plan-20260824-1252-operator-authority-acceptance-rebind.md
+ D tasks/contracts/20260824-1252-operator-authority-acceptance-rebind.contract.md
+ D tasks/notes/20260824-1252-operator-authority-acceptance-rebind.notes.md
+ D tasks/reviews/20260824-1252-operator-authority-acceptance-rebind.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260824-0103-local-human-control-board-v1.md
-?? tasks/archive/contract-20260824-0425-local-human-control-board-v1.md
-?? tasks/archive/notes-20260824-0425-local-human-control-board-v1.md
-?? tasks/archive/review-20260824-0425-local-human-control-board-v1.md
-?? tasks/archive/todo-20260824-0425-local-human-control-board-v1.md
+?? plans/archive/plan-20260824-1252-operator-authority-acceptance-rebind.md
+?? tasks/archive/contract-20260824-1335-operator-authority-acceptance-rebind.md
+?? tasks/archive/notes-20260824-1335-operator-authority-acceptance-rebind.md
+?? tasks/archive/review-20260824-1335-operator-authority-acceptance-rebind.md
+?? tasks/archive/todo-20260824-1335-operator-authority-acceptance-rebind.md
 ```
 
 ## Source Artifacts
