@@ -386,8 +386,8 @@
       "outputDigest": "sha256:ae0761f94d159619eca95cc0e65038bb547c0d31d085c4f9c4f9095d639f0db1",
       "verifiedAgainst": {
         "branch": "codex/persistent-module-engineer-prd-review",
-        "commit": "a3afa3c3df126f979bb8aa1311f706373b02cfb1",
-        "committedAt": "2026-08-24T18:04:22+08:00"
+        "commit": "d29ecce2cf064d65116fa999e642b99ea20014aa",
+        "committedAt": "2026-08-24T18:53:28+08:00"
       }
     },
     {
