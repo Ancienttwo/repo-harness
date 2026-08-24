@@ -1,9 +1,9 @@
 # PRD: Engineer Profile and Shared Binding Projection (ME-0A)
 
-> **Status**: Approved
+> **Status**: Draft
 > **Slug**: `engineer-profile-binding-projection`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T16:53:00+0800
+> **Updated**: 2026-08-24T18:30:00+0800
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
 > **Related Research**: `docs/researches/20260824-persistent-module-engineer-organization.md`
@@ -16,12 +16,12 @@
 - **Users**: Maintainer 和只读观察 Engineer 组织的 Program Orchestrator。
 - **Platform**: tracked `agents/engineers/` artifacts、git-common-dir binding store、operator-only CLI、compact bootstrap capsule。
 - **P0 surface**: `ModuleEngineerProfileV1`、两个 canary Profile/SOP、`EngineerBindingV1` store/events/lock、bind/status/retire/bootstrap-prompt。
-- **Core metric**: N 个 worktrees 对同一 Engineer 只看到一个 current binding；Profile 不复制 capability 权威。
+- **Core metric**: N 个 worktrees 对同一 Engineer 只看到 0 或 1 个 current binding；Profile 不复制 capability 权威。
 - **Hard constraint**: 本切片不开放任何 Session 发起的 engineer-scoped mutation，也不声称旧 Thread 已被技术 fencing。
 - **Key risk**: 把 read-only manual canary 误报成 authenticated authorization。
-- **Unknowns**: 无阻断 unknown；Provider Thread ID 在本切片是 operator-recorded opaque observation。
-- **Acceptance scenarios**: Profile 引用 canonical capability、N-way binding CAS 只有一个 winner、所有 worktrees 读到同一 current、删除/损坏 store fail closed。
-- **Suggested next step**: 交付后以 `capability.verification.evals-checks` 和 `capability.runtime-harness.hook-adapters` 做人工 Codex canary。
+- **Unknowns**: genesis/current corruption、transitive revision 与 event publication semantics 已在本修订冻结；重新批准仍需 schema/fixture review。
+- **Acceptance scenarios**: Profile 引用 canonical capability、N-way binding CAS 只有一个 winner、genesis 与 missing-current 可判定、dangling event 不成为 current、所有 worktrees 读到同一 current。
+- **Suggested next step**: 先实现纯 schema/fixture proof 并重新审阅本 PRD；未恢复 Approved 前不得进入 Sprint。
 
 ## Problem
 
@@ -31,14 +31,14 @@
 
 - Profile 是 tracked behavior/routing contract，引用 ArchContext `capability_id`、SOP 和 delegation policy。
 - Binding current/event/lock 位于 `<git-common-dir>/repo-harness/engineers/v1/`。
-- 所有 bind/retire 操作由本地 Human operator CLI 发起，并使用 expected binding ID/generation/profile revision CAS。
+- 所有 bind/retire 操作由本地 Human operator CLI 发起，并使用 expected binding ID/generation/engineer contract revision CAS。
 - Session 只接收 bootstrap capsule 并读取 status；没有 engineer mutation command。
 
 Hard Constraints:
 
 - 不创建 `ModuleGraphV1`、`engineering/modules/` 或 copied `owned_paths`。
 - 一个 Engineer 最多一个 current active binding。
-- missing/corrupt current record fail closed；不得从 Provider history 自动重建 active binding。
+- no events + no current 是 generation 0 genesis/unbound；有 events + missing/corrupt current fail closed；不得从 Provider history 或 newest event 自动重建 active binding。
 - Binding rotation 不修改 Lease、Claim token、Publication 或 task rows。
 - `binding_generation` 与 Lease `generation` 永远是不同字段。
 
@@ -104,16 +104,19 @@ Hard Constraints:
 ### Module 1: Profile/SOP
 
 - **Purpose**: define stable Engineer behavior without duplicating capability authority.
-- **Normal path**: validate Profile → resolve capability → hash Profile/SOP → produce compact bootstrap refs.
+- **Normal path**: validate Profile → resolve capability revision → hash canonical Profile bytes + SOP bytes + capability revision into `engineer_contract_revision` → produce compact bootstrap refs.
 - **Failure path**: missing capability, invalid role, missing SOP or digest mismatch fails closed.
 - **Dependencies**: ArchContext resolver and tracked Git files.
 
 ### Module 2: Shared Binding Store
 
 - **Purpose**: maintain one current binding across linked worktrees.
-- **Normal path**: lock Engineer → validate expected current → append immutable event → atomically replace current pointer.
-- **Failure path**: stale expectation, symlink, malformed file, lock timeout or missing current target produces typed refusal.
+- **Normal path**: lock Engineer → classify genesis/current → validate expected current and contract revision → append immutable event → atomically replace current pointer.
+- **Failure path**: stale expectation, symlink, malformed file, lock timeout, events-without-current or current/event digest mismatch produces typed refusal.
 - **States**: `active → retiring → retired`; a new active generation requires the old current to be retired in the same locked transition.
+- **Current authority**: `current.json` is the only current-state authority. Events are immutable audit history; a future/dangling event is never auto-promoted or selected by timestamp.
+- **Genesis rule**: no engineer directory or no events plus no current means generation 0 `unbound`; any events plus missing current is corruption and fails closed.
+- **Crash/retry rule**: crash after event append but before pointer replacement leaves a diagnosable unpublished event. Retry reuses the same deterministic event digest when transition inputs are identical; otherwise it creates a new event, but neither is current until pointer CAS publishes it.
 
 ### Module 3: Operator/Projection Surface
 
@@ -148,11 +151,21 @@ EngineerBindingV1:
   provider: codex
   provider_thread_id: opaque
   host_id: local
-  profile_revision: sha256:...
+  engineer_contract_revision: sha256:...
   state: active
   previous_binding_id: null
   bound_at: datetime
   retired_at: null
+
+EngineerBindingCurrentV1:
+  protocol: 1
+  kind: repo-harness-engineer-binding-current
+  engineer_id: engineer:capability.verification.evals-checks
+  binding_generation: 0
+  state: unbound|active|retired
+  current_binding_id: null
+  current_event_digest: null
+  engineer_contract_revision: sha256:...
 ```
 
 Store:
@@ -177,23 +190,25 @@ Store:
 | Item | Impact | Resolution Path | Owner |
 |---|---|---|---|
 | Provider reachability observation accuracy | Display only | keep `unknown` and never infer liveness | Runtime owner |
+| ME-0A approval after amendment | Blocks implementation | schema review plus crash/genesis fixture evidence | Maintainer |
 
 ## Developer Handoff
 
 - **Build first**: pure schemas/canonical bytes, git-common-dir paths, lock/CAS store, then CLI/projection and two canary profiles/SOPs.
-- **Do not reinterpret**: no Session mutation, no self-declared principal, no copied paths/checks, no automatic Session lifecycle.
+- **Do not reinterpret**: no Session mutation, no self-declared principal, no copied paths/checks, no automatic Session lifecycle, no reconstruction of current from the newest event.
 - **You may improve**: operator text rendering and Profile/SOP prose without changing closed schemas.
 - **Verify with**: unit schema/store tests, linked-worktree race fixtures, bootstrap budget fixture, Lease digest equality and repo required checks.
 
 ### Acceptance Scripts
 
-1. Validate both canary capabilities and Profile/SOP revisions.
-2. Race N binds; assert exactly one current binding.
+1. Validate both canary capabilities and transitive engineer contract revisions.
+2. Race N binds from generation 0; assert exactly one current binding and explicit unbound genesis before the race.
 3. Read current from two linked worktrees; assert canonical bytes match.
 4. Retire/rebind; assert generation increments and Lease tree digest is unchanged.
-5. Corrupt/delete current; assert status/action fail closed and no Provider-derived reconstruction occurs.
+5. Remove current with no events and assert genesis/unbound; remove current with events and assert corruption/fail-closed.
+6. Crash after event append; assert current remains authoritative, dangling event is diagnostic only, and deterministic retry publishes exactly one transition.
+7. Change only SOP bytes and then only capability revision; assert `engineer_contract_revision` changes and stale expected revision loses CAS.
 
 ## Backend Perspective
 
 Core owns closed schemas, canonicalization and transitions. Effects own Git common-dir resolution, lock, safe paths and atomic files. CLI owns operator intent only; no Provider adapter is introduced in ME-0A.
-

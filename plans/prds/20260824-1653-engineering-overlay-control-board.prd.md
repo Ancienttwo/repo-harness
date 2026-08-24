@@ -3,7 +3,7 @@
 > **Status**: Draft
 > **Slug**: `engineering-overlay-control-board`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T16:53:00+0800
+> **Updated**: 2026-08-24T18:30:00+0800
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
 > **Depends On**: ME-0A binding read model; later fields activate only when their owning PRD ships
@@ -14,7 +14,7 @@
 - **Problem**: existing Fleet Board 正确表达 task lifecycle，但没有 Engineer、Binding、delegation、message、memory freshness 和组织级 attention 的稳定 read model。
 - **Users**: Maintainer、Program Orchestrator、Reviewer。
 - **Platform**: CLI/JSON read models first；localhost Human Board second。
-- **P0 surface**: `EngineeringOverlaySnapshotV1`、`OrganizationAttentionSnapshotV1`、component revisions/consistency、Organization View 和 Task Drawer projection。
+- **P0 surface**: capability-bearing `EngineeringOverlaySnapshotV1`、`OrganizationAttentionSnapshotV1`、component revisions/consistency；composite `HumanControlSnapshotV1` and UI follow after join semantics pass fixtures。
 - **Core metric**: Session/Worker 状态变化导致 Fleet column 变化 0 次；mixed-generation snapshot 输出 0 次。
 - **Hard constraint**: UI 不保存 status/current owner，不推导 Fleet column，不提供 mutation endpoint in first slice。
 - **Key risk**: 把四个不同时间点的 snapshot 拼成看似原子的事实。
@@ -105,7 +105,7 @@ HumanControlSnapshotV1          → component refs + consistency, not new author
 
 ### Module 2: Organization Attention
 
-- closed reasons include `binding_missing`, `binding_stale`, `profile_revision_changed`, `provider_auth_failed`, `message_delivery_failed`, `memory_index_stale`;
+- closed reasons include `binding_missing`, `binding_stale`, `engineer_contract_revision_changed`, `provider_auth_failed`, `message_delivery_failed`, `memory_index_stale`;
 - each reason names owner and source revision.
 
 ### Module 3: Local Board
@@ -125,13 +125,18 @@ EngineeringOverlaySnapshotV1:
     - engineer_id: string
       capability_id: string
       binding: {binding_id: uuid, binding_generation: 7, observation: unknown}
-      active_claim: null
-      delegations: {active_readers: 0, writer_actor: null, blocked_count: 0}
-      messages: {pending: 0, delivery_failed: 0}
-      memory: {index_revision: sha256, stale_entries: 0}
-  component_digests: {}
+      active_claim: {support: unsupported|available|unreadable, value: null|object}
+      delegations: {support: unsupported|available|unreadable, active_readers: null|integer, writer_actor: null|string, blocked_count: null|integer}
+      messages: {support: unsupported|available|unreadable, pending: null|integer, delivery_failed: null|integer}
+      memory: {support: unsupported|available|unreadable, index_revision: null|sha256, stale_entries: null|integer}
+  components:
+    fleet: {protocol: integer, revision: string, digest: sha256, observation_before: string, observation_after: string}
+    engineering: {protocol: integer, revision: string, digest: sha256, observation_before: string, observation_after: string}
+    organization_attention: {protocol: integer, revision: string, digest: sha256, observation_before: string, observation_after: string}
   snapshot_consistency: stable|changed_during_read|degraded
 ```
+
+Unsupported, unreadable and healthy-empty are distinct closed states. P0 may ship Engineering Overlay and Organization Attention separately; a composite snapshot may claim `stable` only when every component's before/after marker matches. Partial read failure produces `degraded` and preserves each readable component's own revision/digest.
 
 ## Performance Targets
 

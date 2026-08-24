@@ -3,7 +3,7 @@
 > **Status**: Approved
 > **Slug**: `persistent-module-engineer-organization`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T16:53:00+0800
+> **Updated**: 2026-08-24T18:30:00+0800
 > **Source Spec**: `docs/spec.md`
 > **Related Research**: `docs/researches/20260824-persistent-module-engineer-organization.md`
 > **Tier**: standard
@@ -15,13 +15,13 @@
 - **Problem**: repo-harness 有 canonical Task、Lease、WorkEnvelope、Publication、Acceptance 与临时 fleet roles，但没有跨 Session 持续存在的模块工程师岗位、可信 Session binding、父 Claim 内 delegation、verified-context inner loop 和组织级 read model。
 - **Users**: Maintainer、Program Orchestrator、Module Engineer、临时 Worker、独立 Acceptance Plane。
 - **Platform**: repo-harness CLI/MCP、git-common-dir coordination plane、Codex/Claude Provider adapters、本地 Worker Host；远端访问延后。
-- **P0 surface**: 先交付 Profile/Binding read model，再交付 Binding authority/principal；随后独立推进 scheduling、overlay、messages、read-only delegation、writer grant、verified context、Worker Host 和 integration。
+- **P0 surface**: 先批准 Profile/Binding read model，再交付 Binding authority/principal；随后按独立 rollback boundary 推进 scheduling core、overlay、messages、read-only delegation、verified context、Worker Host、writer grant、freeze/handoff、interface change 和 integration。
 - **Core metric**: Engineer 岗位、SOP 与 repo-grounded knowledge 跨 Session/Provider 延续，同时 task identity、Lease、Publication、Acceptance 与 Human merge 权威完全不变。
 - **Hard constraint**: Capability、Engineer、Binding、Claim、Delegation、Acceptance 六种身份不得合并；任何 Session、Memory、Worker result 或 UI projection 都不能成为 task/merge authority。
 - **Key risk**: 只有可信 principal、Claim actor receipt 和 mutation-time writer grant 能把“旧 Session 不再有权”“同一 worktree 只有一个 writer”从提示词变成技术事实。
 - **Unknowns**: 当前 MCP OAuth authorization 不能证明 Provider Thread identity；具体 binding principal carrier 必须在 ME-0B canary 中冻结。
 - **Acceptance scenarios**: 单 active binding、旧 principal 拒绝、Claim actor 可追溯、无第二 Lease、单 writer actor、persist-first message、verified-only next context、Fleet column 不受 runtime state 影响。
-- **Suggested next step**: 实施已批准的 ME-0A，只建立 capability-backed profile、shared binding store、operator-only CAS 和 read-only bootstrap/status；不开放 Session mutation。
+- **Suggested next step**: ME-0A 暂时保持 Draft，先冻结 genesis/current recovery、transitive engineer contract revision 与 event publication semantics；未重新批准前不进入实施。
 
 ## Problem
 
@@ -36,7 +36,7 @@ ArchContext Capability
   → ModuleEngineerProfile
   → EngineerBinding authority + authenticated EngineerPrincipal
   → canonical Task Claim + ClaimActorReceipt
-  → DelegationEnvelope / optional DelegatedWorkerGrant
+  → DelegationEnvelope / optional DelegatedMutationGrant
   → WorkerResult / WorkerRoundReceipt
   → independent AcceptanceReceipt
   → Human merge
@@ -52,7 +52,7 @@ Hard Constraints:
 - 一个 claimed worktree 的 `writer_actor` 同时覆盖 Parent Engineer 和 Worker。
 - Native messaging 只是 delivery accelerator；durable event 必须先持久化。
 - Formal Gatekeeper 位于独立 Acceptance Plane，不继承 Engineer 的自我结论或写权限。
-- Verified context 只消费 evidence-bound delta；Worker prose 与 Provider transcript 默认不可信。
+- Verified context 只消费 continuous evidence-bound `SemanticVerificationAssertion` chain；Worker prose 与 Provider transcript 默认不可信。
 
 Recommended Defaults:
 
@@ -80,7 +80,7 @@ Freedoms:
 | Canonical task identity/completion | Sprint row + task revision |
 | Temporary task execution right | Lease claim ID + lease generation |
 | Claim-to-engineer provenance | Immutable ClaimActorReceipt |
-| Child read/write permission | DelegationEnvelope + optional active DelegatedWorkerGrant |
+| Child read/write permission | DelegationEnvelope + optional active DelegatedMutationGrant |
 | Candidate/publication | PublicationReceipt + current-publication pointer |
 | Acceptance | Existing typed independent gates |
 | Provider facts | Provider API/runtime observation |
@@ -112,7 +112,7 @@ Freedoms:
 
 | Metric | Target | Measurement Method | Degradation Threshold |
 |---|---:|---|---:|
-| Simultaneous active binding per Engineer | 1 | N-way CAS race test | any duplicate |
+| Simultaneous active binding per Engineer | ≤1 | N-way CAS race and unbound/retired fixtures | any duplicate |
 | Retired binding engineer mutation | 0 successes | stale principal test | any success |
 | Task/Lease bytes changed by binding rotation | 0 | byte comparison | any change |
 | Native send without durable event | 0 | provider failure fixtures | any occurrence |
@@ -142,7 +142,7 @@ Freedoms:
 ### Scenario 3: Bound dirty task does not transparently move
 
 - **Given**: current Engineer owns a bound claim whose worktree has dirty or unverified state.
-- **When**: rotation is requested before TaskHandoffReceipt/execution takeover exists.
+- **When**: rotation is requested while ME-4A execution takeover remains disabled.
 - **Then**: rotation may be recommended, but mutation handoff is blocked and no release/reacquire is synthesized.
 - **Machine-checkable evidence**: typed refusal, unchanged Lease and preserved worktree topology.
 
@@ -176,14 +176,18 @@ Freedoms:
 |---:|---|---|
 | 0A | `20260824-1653-engineer-profile-binding-projection.prd.md` | Capability-backed Profile/SOP, shared binding store, operator-only CAS, read-only status/bootstrap |
 | 0B | `20260824-1653-engineer-binding-principal-claim-actor.prd.md` | Authenticated principal, old-binding rejection, ClaimActorReceipt |
-| 1A | `20260824-1653-engineer-scheduling-schema.prd.md` | stable Work Package ID, capability/dependency/concurrency semantics |
-| 1B | `20260824-1653-engineering-overlay-control-board.prd.md` | read-only engineering/attention projections and Human Board consumption |
-| 1C | `20260824-1653-engineer-coordination-messages.prd.md` | shared message mechanics, closed Module message schema, binding-fenced delivery |
-| 2A/B | `20260824-1653-engineer-delegation-grants.prd.md` | read-only delegation then exclusive writer actor and enforced grant |
-| 2C/3 | `20260824-1653-verified-context-worker-host.prd.md` | verified inner loop and separated Provider/Worker adapters |
-| 4 | `20260824-1653-bound-task-handoff-integration.prd.md` | explicit handoff/takeover, interface change and product integration |
+| 1A | `20260824-1653-engineer-scheduling-schema.prd.md` | repository-qualified Work Package identity, scheduling revisions, dependency states and repo-scoped concurrency |
+| 1B | `20260824-1653-engineering-overlay-control-board.prd.md` | read-only capability-bearing engineering/attention projections; composite Board later |
+| 1C | `20260824-1653-engineer-coordination-messages.prd.md` | shared message mechanics, closed event/receipt/transition schemas, binding-fenced delivery |
+| 2A | `20260824-1653-read-only-delegation-admission.prd.md` | exact parent fences, native role admission, read-only proof and WorkerResult |
+| 2C | `20260824-1653-verified-context-contracts.prd.md` | verified evidence chain, DecisionRequest lifecycle and context compiler |
+| 3 | `20260824-1653-worker-host.prd.md` | Provider process lifecycle, runtime adapters, receipts, retry/cancel/collect |
+| 2B | `20260824-1653-writable-worker-grant.prd.md` | host-enforced Parent freeze, exclusive writer actor, sandbox and settlement |
+| 4A | `20260824-1653-bound-task-freeze-handoff.prd.md` | freeze/inspect/refuse unsafe dirty-bound rotation; takeover remains disabled |
+| 4B | `20260824-1653-interface-change-request.prd.md` | interface request authority, transitions and Work Package projection |
+| 4C | `20260824-1653-integration-product-acceptance.prd.md` | exact combined candidate, requirement authority and independent product gate |
 
-Each child PRD is a separate rollback and verification boundary. Draft children cannot be pulled into a Sprint merely because this umbrella is Approved.
+Each table row is one child PRD and one separate rollback/verification boundary. Draft children cannot be pulled into a Sprint merely because this umbrella is Approved. ME-2B depends on ME-3; no writable worker may be enabled before the Host can enforce Parent freeze, runtime identity and sandbox policy.
 
 ## Data Model
 
@@ -216,8 +220,8 @@ No digest preimage may silently add engineer, binding or Provider identity to cu
 | Item | Impact | Resolution Path | Owner |
 |---|---|---|---|
 | Trusted per-Provider Session principal carrier | Blocks engineer-scoped mutation | ME-0B Provider/MCP canary; fail closed until selected | Runtime maintainer |
-| Child identity at every mutation boundary | Blocks writable delegation | ME-2B hook/sandbox canary | Delegation owner |
-| Active dirty task takeover semantics | Blocks transparent rotation | ME-4 TaskHandoffReceipt design | State owner |
+| Managed Parent and child identity at every mutation boundary | Blocks writable delegation | ME-3 Host plus ME-2B sandbox canary | Delegation owner |
+| Active dirty task takeover semantics | Blocks transparent rotation | ME-4A keeps takeover disabled pending carrier/election PRD | State owner |
 | Cross-repo stable Work Package identity | Scheduling schema migration | ME-1A content/identity tests | Planning owner |
 | Independent semantic verifier cost | Inner-loop budget | ME-2C measured policy tiers | Verification owner |
 

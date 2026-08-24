@@ -3,10 +3,10 @@
 > **Status**: Draft
 > **Slug**: `engineer-scheduling-schema`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T16:53:00+0800
+> **Updated**: 2026-08-24T18:30:00+0800
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
-> **Depends On**: `plans/prds/20260824-1653-engineer-binding-principal-claim-actor.prd.md`
+> **Depends On**: ME-0A for schema/projection; ME-0B only for engineer-scoped acquire mutation
 > **Tier**: compact
 
 ## AI Quick-Read Card
@@ -14,11 +14,11 @@
 - **Problem**: current task identity is content-addressed and Fleet offers have no stable Work Package dependency/capability/concurrency schema; LLM prose cannot be scheduler authority。
 - **Users**: Program Orchestrator、Module Engineer、Fleet scheduler。
 - **Platform**: canonical Sprint/Work Package artifacts、task projection、Fleet offer/acquire。
-- **P0 surface**: stable `work_package_id`、primary/required capabilities、typed dependencies、priority、scoped concurrency key、cycle validation、deterministic matching。
+- **P0 surface**: stable `repository_id + work_package_id`、independent Work Package/graph revisions、primary/required routing capabilities、typed dependency states、priority、repo-scoped concurrency key、cycle validation、deterministic matching。
 - **Core metric**: identical canonical bytes produce identical eligible Engineer/offer set；missing structured fields never从 prose 推断。
 - **Hard constraint**: `task_id/task_revision` semantics remain unchanged；`work_package_id` is a new logical reference, not a replacement Lease identity。
 - **Key risk**: implicit legacy defaults would create a shadow semantic parser。
-- **Unknowns**: exact migration carrier in Sprint markdown/schema remains to be frozen。
+- **Unknowns**: exact migration carrier in Sprint markdown/schema remains to be frozen；fleet-wide concurrency authority is outside P0。
 - **Acceptance scenarios**: stable dependency across task revisions、multi-capability task、scoped concurrency conflict、cycle rejection、explicit legacy lane。
 - **Suggested next step**: first freeze canonical schema and one-shot migration fixture；do not combine with messages or UI。
 
@@ -106,13 +106,17 @@ Dependencies cannot safely point only at content-addressed `task_id`, because ed
 ## Data Model
 
 ```yaml
+repository_id: repo-harness
 work_package_id: wp-publication-reconcile
+work_package_revision: sha256
+work_graph_revision: sha256
 primary_capability: capability.workflow-engine.contract-assets
 required_capabilities:
   - capability.verification.evals-checks
 depends_on:
-  - work_package_id: wp-provider-receipt
-    required_state: accepted
+  - repository_id: repo-harness
+    work_package_id: wp-provider-receipt
+    required_state: module_accepted
 priority: 50
 concurrency:
   scope: repo
@@ -120,6 +124,15 @@ concurrency:
 execution_surface: cli
 integration_group: fleet-publication
 ```
+
+Closed dependency states and their sole authorities:
+
+- `canonical_done`: canonical task/Sprint state authority;
+- `module_accepted`: existing exact-subject AcceptanceReceipt;
+- `publication_integrated`: existing Publication receipt/state authority;
+- `product_accepted`: ME-4C product Acceptance receipt.
+
+P0 `required_capabilities` means one routed Engineer must be qualified for every listed capability reference. It does not model a multi-Engineer team. Fleet-scoped concurrency is rejected until a separate shared permit authority is Approved.
 
 ## Performance Targets
 
@@ -147,6 +160,6 @@ Do not implement until the canonical carrier and bounded legacy migration are fr
 
 1. Validate 100-node acyclic graph and reject one introduced cycle.
 2. Revise a task while retaining Work Package identity and dependency semantics.
-3. Exercise repo/capability/fleet concurrency scopes.
+3. Exercise repo-scoped concurrency and reject fleet scope as unsupported.
 4. Confirm generic-v1 tasks never enter module routing.
-
+5. Change only scheduling metadata; assert `work_package_revision/work_graph_revision` change and stale Offer/acquire preconditions fail.

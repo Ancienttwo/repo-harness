@@ -103,7 +103,9 @@ repos.
   arguments.
 - One claimed worktree has at most one writer actor, including the parent
   Engineer itself. A writable delegated worker must hold an independently
-  enforced child grant and settle it before publication.
+  enforced child grant and settle it before publication. Writable delegation
+  is available only when a Worker Host controls both Parent and child mutation
+  capability; unmanaged Provider Sessions remain read-only.
 - Provider threads, transcripts, auto memory, and context summaries are caches.
   Durable module knowledge remains in architecture, research, lessons,
   workstreams, and task-local notes, with any engineer memory kept as a
@@ -171,8 +173,10 @@ AcceptanceReceipt field.
   canonical capability and a reviewed SOP. It is not a Session, task owner,
   Lease, or acceptance identity.
 - **Engineer binding**: The current shared, generation-fenced association between
-  a Module Engineer and one Provider Session. It authorizes only explicitly
-  engineer-scoped runtime commands issued through a trusted principal boundary.
+  a Module Engineer and one Provider Session. Its contract revision covers the
+  canonical Profile bytes, SOP bytes, and capability revision. It authorizes
+  only explicitly engineer-scoped runtime commands issued through a trusted
+  principal boundary.
 - **Delegated worker grant**: A non-transferable child mutation permit under one
   current task claim and one exclusive worktree writer slot. It is not a second
   task Lease and cannot authorize publication or acceptance.

@@ -3,7 +3,7 @@
 > **Status**: Draft
 > **Slug**: `engineer-binding-principal-claim-actor`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T16:53:00+0800
+> **Updated**: 2026-08-24T18:30:00+0800
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
 > **Depends On**: `plans/prds/20260824-1653-engineer-profile-binding-projection.prd.md`
@@ -18,7 +18,7 @@
 - **Core metric**: 旧 binding mutation 成功 0 次；每个 engineer-originated Claim 都有 exact actor receipt。
 - **Hard constraint**: command payload 中的 engineer/binding fields 只能是 fences，不能成为 principal source。
 - **Key risk**: 当前 MCP OAuth authorization ID 证明 client authorization，不证明 Provider Thread；不能把两者等同。
-- **Unknowns**: per-binding authenticated carrier 尚未 canary，是本 PRD 保持 Draft 的唯一阻断决策。
+- **Unknowns**: per-binding authenticated carrier 与 principal-mapping store 尚未 canary，是本 PRD 保持 Draft 的阻断决策。
 - **Acceptance scenarios**: mismatched connection/payload 拒绝、retired principal 拒绝、Claim receipt 与 Lease exact match、receipt write failure 补偿 own Claim。
 - **Suggested next step**: 对 Codex App Server、Claude local process 和 MCP OAuth 各做一个只读 identity canary，选择单一 principal carrier 后再批准。
 
@@ -110,7 +110,7 @@ EngineerPrincipalV1:
   engineer_id: string
   binding_id: uuid
   binding_generation: integer
-  profile_revision: sha256
+  engineer_contract_revision: sha256
   auth_subject: opaque-server-derived
   provider: codex|claude|worker_host
   provider_thread_id: opaque|null
@@ -125,8 +125,16 @@ ClaimActorReceiptV1:
   engineer_id: string
   binding_id: uuid
   binding_generation: integer
+  repository_id: string
+  authorization_revision: sha256
+  work_envelope_sha256: sha256
+  worktree_ref: string
+  branch: string
+  unit_ref: string
+  engineer_contract_revision: sha256
   session_id: opaque|null
   bound_at: datetime
+  receipt_sha256: sha256
 ```
 
 ## Performance Targets
@@ -141,6 +149,7 @@ ClaimActorReceiptV1:
 | Item | Impact | Resolution Path | Owner |
 |---|---|---|---|
 | Per-binding authenticated carrier | Blocks approval | Provider/MCP identity canary and security review | Runtime maintainer |
+| Principal mapping store and revocation transaction | Blocks approval | choose one server-owned store bound to authenticated carrier lifecycle | Runtime maintainer |
 | Provider Thread ID availability | Affects audit detail only if carrier is independent | keep nullable; never infer | Adapter owner |
 
 ## Developer Handoff
@@ -148,15 +157,17 @@ ClaimActorReceiptV1:
 Do not implement until the principal carrier decision is frozen and this PRD becomes Approved.
 
 - **Build first after approval**: pure principal validation and Binding revalidation, then authenticated adapter, then ClaimActorReceipt/acquire compensation.
-- **Do not reinterpret**: caller parameters are never identity; OAuth authorization ID is not automatically a Thread ID; receipt is not a Lease.
+- **Do not reinterpret**: caller parameters are never identity; OAuth authorization ID is not automatically a Thread ID; receipt is not a Lease; direct CLI cannot perform engineer-scoped mutation unless it reaches the same authenticated broker.
 - **Verify with**: auth mismatch matrix, retired-generation replay, acquire fault injection and Lease digest/ownership checks.
 
 ### Acceptance Scripts
 
 1. Prove the selected carrier uniquely maps one live connection to one current Binding.
-2. Replay retired credentials and spoof payload fields; assert typed refusal.
-3. Acquire one task and validate ClaimActorReceipt against live Lease/WorkEnvelope.
-4. Inject receipt write failure and prove own-claim compensation.
+2. Bind ClaimActorReceipt to repository, authorization revision, exact WorkEnvelope digest, worktree/branch/unit and engineer contract revision.
+3. Allow generic/non-engineer Fleet acquire without ClaimActorReceipt; require it for every engineer-originated acquire.
+4. Fault receipt persistence after acquire; release only the Claim created by this transaction and retain any created worktree as a typed recoverable residual.
+5. Replay retired credentials and spoof payload fields; assert typed refusal.
+6. Acquire one task and validate ClaimActorReceipt against live Lease/WorkEnvelope.
 
 ## Backend Perspective
 

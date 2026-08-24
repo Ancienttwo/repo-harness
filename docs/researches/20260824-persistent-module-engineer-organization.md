@@ -1,5 +1,10 @@
 # Persistent Module Engineer：以 Repo 为记忆、以 Session 为运行绑定的工程组织
 
+> **Status**: Architecture Accepted with Required Revisions
+> **Document Type**: Umbrella Research / Architecture Brief
+> **Implementation Authority**: None
+> **Amendment (2026-08-24)**: Engineer Binding 的 current authority 是 ME-0A 定义的共享 `<git-common-dir>/repo-harness/engineers/v1/` store。任何下文中的 worktree-local binding path 都已被取代；实施必须以对应 child PRD 的 closed schema、依赖和 approval state 为准。
+
 ## 结论
 
 GPT 建议的主方向成立，而且比“一个总控 Agent 不断生成临时 Worker”更接近可持续的软件工程组织：
@@ -272,13 +277,13 @@ binding_generation: 7
 provider: codex
 provider_thread_id: thread_abc123
 host_id: local
-profile_revision: sha256:...
+  engineer_contract_revision: sha256:...
 state: active
 bound_at: 2026-08-24T00:00:00Z
 retired_at: null
 ```
 
-`binding_generation` 与 Lease `generation` 是不同 fencing domain。任何 engineer-scoped native delivery 都必须同时匹配 engineer ID、binding generation 和 profile revision。
+`engineer_contract_revision` 是 Profile canonical bytes、SOP bytes 与 capability revision 的传递闭包 digest。`binding_generation` 与 Lease `generation` 是不同 fencing domain。任何 engineer-scoped native delivery 都必须同时匹配 engineer ID、binding generation 和 engineer contract revision。
 
 #### DelegationEnvelopeV1
 
@@ -308,7 +313,7 @@ budget:
 return_contract: WorkerResultV1
 ```
 
-写入 mode 还需要一个不可转授的 `DelegatedWorkerGrantV1`：绑定 parent claim、delegation ID、worker run ID、worktree、allowed-path digest 和 expiry/settled state。它是父 Lease 下的 actor grant，不是第二个 task Lease，也不能用于 publication/takeover/acceptance。
+写入 mode 还需要一个不可转授的 `DelegatedMutationGrantV1`：绑定 parent claim、delegation ID、worker run ID、worktree、allowed-path digest 和 expiry/settled state。它是父 Lease 下的 actor grant，不是第二个 task Lease，也不能用于 publication/takeover/acceptance。
 
 #### EngineerContextPacketV1
 
@@ -502,10 +507,10 @@ Gatekeeper 不读取 Engineer 的自我结论作为事实，不继承完整 pare
 
 ### ME-1A：Scheduling Schema
 
-- Work Package/Sprint 加入 capability、dependency、priority、concurrency key；
+- Work Package/Sprint 加入 repository-qualified Work Package identity、independent scheduling/graph revisions、capability、dependency、priority、repo-scoped concurrency key；
 - deterministic engineer offer matching；
 
-增加稳定 `work_package_id`，dependency 指向逻辑 Work Package；task revision 继续表达当前内容版本。Capability 支持 primary 与 required 集合，concurrency key 必须带 repo/capability/fleet scope，legacy task 不从 prose 推断字段。
+增加稳定 `repository_id + work_package_id`，dependency 指向逻辑 Work Package；task revision 继续表达当前内容版本，`work_package_revision/work_graph_revision` 单独 fence scheduling metadata。P0 的 `required_capabilities` 表达 routing qualification，不表达多人协作；fleet-wide concurrency authority 延后，legacy task 不从 prose 推断字段。
 
 ### ME-1B：Engineering Overlay
 
@@ -527,22 +532,28 @@ Gatekeeper 不读取 Engineer 的自我结论作为事实，不继承完整 pare
 - `WorkerResultV1`；
 - native role observation 与 result collection。
 
+独立 PRD：`plans/prds/20260824-1653-read-only-delegation-admission.prd.md`。
+
 ### ME-2B：Single-writer Grant
 
-- `DelegatedWorkerGrantV1`；
+- `DelegatedMutationGrantV1`；
 - exclusive `writer_actor = engineer:<binding-id> | worker:<run-id>`；
 - parent write freeze；
 - host-observed before/after Git state；
 - sandbox/network/command/git policy；
 - settlement 与 crash recovery。
 
+独立 PRD：`plans/prds/20260824-1653-writable-worker-grant.prd.md`；依赖 ME-3 Worker Host，不能依赖手工 Provider Session 的提示词自律来冻结 Parent writer。
+
 ### ME-2C：Verified Context Inner Loop
 
-- canonical Contract 内的 `TaskSemanticContractV1` section；
+- canonical Contract semantic fields 或 exact-source projection；
 - `EngineerStepProposalV1`；
 - `WorkerRoundReceiptV1`；
-- evidence-bound `VerifiedStateDeltaV1`；
+- evidence-chain-bound `SemanticVerificationAssertionV1`；
 - `DecisionRequestV1`、`RuntimeFailureV1` 与 `ExecutionBudgetV1`。
+
+独立 PRD：`plans/prds/20260824-1653-verified-context-contracts.prd.md`。
 
 ### ME-3：Worker Host
 
@@ -552,13 +563,26 @@ Gatekeeper 不读取 Engineer 的自我结论作为事实，不继承完整 pare
 - explicit retry policy，区分 infrastructure failure 与 semantic failure；
 - Session rotation recommendation 与 Human-controlled rebinding。
 
-### ME-4：Bound-task Handoff + Integration Plane
+独立 PRD：`plans/prds/20260824-1653-worker-host.prd.md`。
 
-- `InterfaceChangeRequestV1`；
-- `TaskHandoffReceiptV1` 与 explicit execution takeover；
+### ME-4A：Bound-task Freeze and Handoff
+
+- `TaskFreezeReceiptV1` 与 explicit dirty-bound refusal；
+- 未跟踪内容没有 carrier 时不宣称无损 takeover；
+- execution takeover 继续 disabled，直到 exact carrier/election protocol 单独 Approved。
+
+### ME-4B：Interface Change Request
+
+- closed `InterfaceChangeRequestV1` schema/store/revision；
+- actor authority 与 transition lock；
+- accepted request 到 canonical Work Package 的显式投影。
+
+### ME-4C：Integration and Product Acceptance
+
 - dependency-ready module publications；
 - Integration Contract/Envelope；
 - cross-module Acceptance Matrix；
+- original approved requirement authority 与 exact combined candidate；
 - independent system-level verification。
 
 Human Board 的 Organization View 应最后消费这些稳定 contracts，而不是先发明 `engineer.status = busy` 一类第二权威。

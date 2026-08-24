@@ -3,7 +3,7 @@
 > **Status**: Draft
 > **Slug**: `engineer-coordination-messages`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T16:53:00+0800
+> **Updated**: 2026-08-24T18:30:00+0800
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
 > **Depends On**: ME-0B trusted principal and binding fences
@@ -14,7 +14,7 @@
 - **Problem**: Task Inbox 只有 task/claim scope；长期 Engineer 需要跨 Session 存续的 module/assignment communication，但不能复制四套 inbox mechanics 或把聊天消息当 Decision/Interface authority。
 - **Users**: Program Orchestrator、Module Engineer、Maintainer。
 - **Platform**: shared immutable-message mechanics、closed event schemas、git-common-dir durable inbox、optional Provider delivery adapter。
-- **P0 surface**: reusable event/receipt/transition primitives、`ModuleMessageEventV1`、binding-fenced recipient、persist-first delivery、ack/supersede；Task Inbox wire format unchanged。
+- **P0 surface**: reusable event/receipt/transition primitives、closed `ModuleMessageEventV1`、`ModuleMessageDeliveryReceiptV1`、delivery observations/errors、binding-fenced recipient、persist-first delivery、ack/supersede；Task Inbox wire format unchanged。
 - **Core metric**: important message durable-before-native 100%；旧 binding 接收新 assignment message 0 次。
 - **Hard constraint**: common core abstracts mechanics, not an `anything` subject/payload schema；Decision and Interface records remain separate authorities。
 - **Key risk**: native success without durable event or message body influencing routing/authorization。
@@ -125,15 +125,33 @@ ModuleMessageEventV1:
   scope: module|assignment
   target_binding_id: uuid|null
   target_binding_generation: integer|null
-  target_profile_revision: sha256|null
+  target_engineer_contract_revision: sha256|null
   message_type: closed-enum
-  subject_ref: {kind: string, id: string, revision: string}|null
-  sender_principal_ref: string
+  subject_ref: {kind: decision_request|interface_change_request|task|publication|integration, id: string, revision: string}|null
+  sender:
+    kind: engineer|program_orchestrator|human
+    principal_ref: string
+    binding_generation: integer|null
   body: bounded-utf8
   body_sha256: sha256
   created_at: datetime
   event_digest: sha256
+
+ModuleMessageDeliveryReceiptV1:
+  protocol: 1
+  message_event_digest: sha256
+  recipient_engineer_id: string
+  target_binding_generation: integer|null
+  delivery_state: pending|delivered|failed|acknowledged|superseded
+  attempt: integer
+  observation_digest: sha256|null
+  error_code: closed-enum|null
+  acknowledged_by_binding_generation: integer|null
+  transition_revision: integer
+  receipt_digest: sha256
 ```
+
+Each subject kind invokes its owning validator; the message store never validates domain meaning from body text. Module-scope acknowledgement is satisfied by the first current Binding that acknowledges the exact event digest and remains durable across later Engineer replacement; assignment-scope events may instead be superseded by a binding rotation transition.
 
 ## Performance Targets
 
@@ -162,4 +180,4 @@ Do not implement before ME-0B principal is Approved.
 2. Fault event persistence and assert no native send.
 3. Fault native send and consume pending message after rebinding.
 4. Reference a Decision/Interface subject and assert its authority bytes remain unchanged.
-
+5. Validate every delivery/ack/supersede transition under lock and reject unknown sender/subject kinds.
