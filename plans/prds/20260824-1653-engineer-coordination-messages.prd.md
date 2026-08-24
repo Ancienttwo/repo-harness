@@ -3,7 +3,7 @@
 > **Status**: Draft
 > **Slug**: `engineer-coordination-messages`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T19:49:19+0800
+> **Updated**: 2026-08-24T22:00:24+0800
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
 > **Depends On**: ME-0B trusted principal and binding fences
@@ -16,10 +16,10 @@
 - **Platform**: shared immutable-message mechanics、closed event schemas、git-common-dir durable inbox、optional Provider delivery adapter。
 - **P0 surface**: reusable event/receipt/transition primitives、closed `ModuleMessageEventV1`、`ModuleMessageDeliveryReceiptV1`、delivery observations/errors、binding-fenced recipient、persist-first delivery、ack/supersede；Task Inbox wire format unchanged。
 - **Core metric**: important message durable-before-native 100%；旧 binding 接收新 assignment message 0 次。
-- **Hard constraint**: common core abstracts mechanics, not an `anything` subject/payload schema；Decision and Interface records remain separate authorities。
+- **Hard constraint**: common core abstracts mechanics, not an `anything` subject/payload schema；Decision and Interface records remain separate authorities；Provider chat contains only bounded summary + typed/content-addressed refs。
 - **Key risk**: native success without durable event or message body influencing routing/authorization。
 - **Unknowns**: stable Provider native send APIs remain optional and cannot block correctness。
-- **Acceptance scenarios**: persist fault prevents native send、native fault leaves pending、rotation supersedes assignment message、module message survives rotation、typed subject notification。
+- **Acceptance scenarios**: persist fault prevents native send、native fault leaves pending、rotation supersedes assignment message、module message survives rotation、typed subject notification、summary-and-reference fetch。
 - **Suggested next step**: first extract mechanics under existing Task Inbox golden tests, then add Module schema/store without changing Task wire bytes。
 
 ## Problem
@@ -41,6 +41,8 @@ validate closed event
 - `assignment` scope binds exact engineer ID, binding ID/generation and profile revision.
 - Message notification may reference `DecisionRequestV1` or `InterfaceChangeRequestV1`; it cannot carry their authoritative state transition.
 - Native delivery error remains explicit pending/attention; there is no semantic fallback runner.
+- Full Contract、WorkEnvelope、SOP、capability/verified context 和 evidence are fetched on demand from their owning CLI/MCP resource after digest validation; message bodies and Provider-native notifications never inline those artifacts or raw transcripts.
+- Provider-native send is an accelerator over an already-persisted event. The transport receives the event digest/attempt and returns only a typed delivery observation; it cannot mutate Lease, Binding, Decision, Interface or Acceptance state.
 
 ### Feasibility Boundary
 
@@ -91,12 +93,20 @@ validate closed event
 - **Then**: message carries typed subject ref/R but cannot update request state.
 - **Machine-checkable evidence**: unchanged request bytes after message lifecycle.
 
+### Scenario 4: Summary-and-reference delivery
+
+- **Given**: a work request referencing exact Work Package, Contract and WorkEnvelope digests.
+- **When**: the target Session receives the Provider-native notification.
+- **Then**: it receives only bounded summary and refs, fetches full bytes through the declared CLI/MCP resource, and rejects a digest mismatch without acknowledging the message.
+- **Machine-checkable evidence**: transport payload snapshot, resource fetch spy and pending receipt after mismatch.
+
 ## Non-goals
 
 - Changing TaskMessageEventV1 wire format in this PRD.
 - Generic arbitrary payload event.
 - Message-triggered Lease, binding, Decision or Interface mutation.
 - Session wake, PTY injection or raw transcript exchange.
+- Full Contract/WorkEnvelope/context/evidence copies in message bodies or Provider notifications.
 
 ## Module Behaviors (P0)
 
@@ -109,9 +119,10 @@ validate closed event
 
 ### Module 2: Module Message
 
-- closed message kinds: `work_request|status_update|review_request|handoff|blocker|integration_ready|incident|subject_notification`;
+- closed message kinds: `work_request|status_update|blocker|decision_request|review_request|handoff|integration_ready|incident|subject_notification`;
 - module vs assignment scope and rotation supersession;
 - sender principal derived from invocation channel.
+- optional native adapter renders only bounded summary/refs from persisted canonical bytes and appends delivery observations; it never accepts an ad-hoc chat payload.
 
 ## Data Model
 
@@ -127,7 +138,8 @@ ModuleMessageEventV1:
   target_binding_generation: integer|null
   target_engineer_contract_revision: sha256|null
   message_type: closed-enum
-  subject_ref: {kind: decision_request|interface_change_request|task|publication|integration, id: string, revision: string}|null
+  subject_ref: {kind: work_package|decision_request|interface_change_request|task|claim|publication|integration|acceptance_receipt, id: string, revision: string}|null
+  resource_refs: bounded-array<{kind: contract|work_envelope|capability_context|verified_context|evidence, locator: bounded-string, sha256: sha256}>
   sender:
     kind: engineer|program_orchestrator|human
     principal_ref: string
@@ -162,7 +174,7 @@ ModuleMessageDeliveryObservationV1:
   observation_digest: sha256
 ```
 
-Each subject kind invokes its owning validator; the message store never validates domain meaning from body text. Module-scope acknowledgement is satisfied by the first current Binding that acknowledges the exact event digest and remains durable across later Engineer replacement; assignment-scope events may instead be superseded by a binding rotation transition.
+Each subject/resource kind invokes its owning validator; locators are resolved only through declared repo-local CLI/MCP channels and the fetched bytes must match `sha256`. The message store never validates domain meaning from body text. Module-scope acknowledgement is satisfied by the first current Binding that acknowledges the exact event digest and remains durable across later Engineer replacement; assignment-scope events may instead be superseded by a binding rotation transition.
 
 Delivery failure never changes the receipt out of `pending`; it appends one observation and increments `attempt` under the recipient lock. `pending → delivered → acknowledged` and `pending|delivered → superseded` are the only transitions. A later attempt may append `delivered` after any number of error observations. ACK from pending is forbidden; assignment rotation supersedes pending/delivered receipts for the old binding, while module-scope pending survives rotation and is retargeted by a new receipt transition.
 
@@ -195,3 +207,4 @@ Do not implement before ME-0B principal is Approved.
 4. Reference a Decision/Interface subject and assert its authority bytes remain unchanged.
 5. Validate every delivery/ack/supersede transition under lock and reject unknown sender/subject kinds.
 6. Append transport, unavailable, stale and adapter observations; assert receipt stays pending, attempt is monotonic, unknown outcomes fail schema validation and later delivery may succeed.
+7. Snapshot a Provider notification and prove it contains bounded summary/refs only; corrupt a referenced resource and assert no ACK or downstream command executes.

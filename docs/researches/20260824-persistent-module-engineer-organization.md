@@ -6,6 +6,7 @@
 > **Amendment (2026-08-24)**: Engineer Binding 的 current authority 是 ME-0A 定义的共享 `<git-common-dir>/repo-harness/engineers/v1/` store。任何下文中的 worktree-local binding path 都已被取代；实施必须以对应 child PRD 的 closed schema、依赖和 approval state 为准。
 > **External Review (2026-08-24)**: GPT Git Connector 对 `d29ecce2` 的裁决为 `Request Changes`：umbrella 继续 Approved，12 个 child 全部保持 Draft。完整裁决归档于 `tasks/reviews/20260824-1949-persistent-module-engineer-gpt-review.review.md`；ME-0A 只有在 closed event/current publication protocol 再获外部批准后才成为首个实施切片。
 > **Focused Re-review (2026-08-24)**: GPT GitHub Connector 对 `b54a43d8` 的裁决为 `Approve`：umbrella 保持 Approved，ME-0A 的 closed、幂等、crash-consistent event/current publication protocol 通过外部 gate，ME-0A 成为当前唯一 implementation-ready child；其余 child 继续保持 Draft。完整裁决归档于 `tasks/reviews/20260824-2050-persistent-module-engineer-me0a-approval.review.md`。
+> **Session/Kanban Amendment (2026-08-24)**: Codex Session Chat 被冻结为 persist-first delivery accelerator；Work Package Graph、EngineerOffer/acquire bridge、三视图 CLI Kanban 与 Codex App Server transport 的权威边界已同步进 umbrella、ME-1A/1B/1C/3 child PRD，未改变任何 child approval state。
 
 ## 结论
 
@@ -28,6 +29,10 @@ GPT 建议的主方向成立，而且比“一个总控 Agent 不断生成临时
 8. Engineer 与现有 Claim 的关系通过不可变 `ClaimActorReceiptV1` 记录，避免再次扩展 Lease schema；它不进入 task identity，也不替代 Lease。
 9. 第一版不承诺 active bound dirty task 的透明 Session 迁移。没有 frozen handoff receipt 时，rotation 只能被建议，mutation handoff 必须阻塞。
 10. one-writer 约束必须覆盖 Parent Engineer 与所有 Worker；writer slot 是 worktree actor lock，不是“最多一个 writable Subagent”的提示词规则。
+11. Provider Thread 只是 `EngineerBinding` 的运行载体，不能充当 Work Package、Task、owner、Lease 或 module identity。
+12. `EngineerOfferV1` 是 Work Package Graph、Binding 与 Fleet readiness 的精确 revision-fenced 投影；`engineer acquire` 必须复用现有 Fleet claim/worktree/WorkEnvelope 与 ME-0B receipt/compensation 边界。
+13. Provider chat 只发送有界摘要和 content-addressed refs；完整 Contract、WorkEnvelope、context 和 evidence 由目标 Session 按 digest 通过 CLI/MCP 获取。
+14. CLI Kanban 分成 Planning Graph、Delivery Kanban、Organization/Attention 三个只读视图；Session/Worker observation 只能改变 overlay/attention，不能移动现有五列。
 
 因此推荐的稳定关系是：
 
@@ -397,16 +402,20 @@ Task Inbox v1 应保持 task/claim 语义，避免在同一 protocol 中直接�
 
 Native transport 失败时：event 保持 pending，Board 显示 `attention_owner` 与 delivery error；不得把未送达当成 Session 死亡，更不得据此 steal Lease。
 
+Native payload 只包含有界摘要与 typed/content-addressed refs。完整 Contract、WorkEnvelope、SOP、capability/verified context 和 evidence 必须经 owning CLI/MCP resource 获取并校验 digest；raw transcript 和完整 contract 不进入消息正文。
+
 ### 5. Runtime Adapter 边界
 
 推荐拆分：
 
 ```ts
 interface PersistentThreadTransport {
-  createBinding(input: SessionBootstrap): Promise<ThreadRef>;
-  send(input: BoundEngineerMessage): Promise<DeliveryObservation>;
+  create(input: SessionBootstrap): Promise<ThreadRef>;
+  resume(input: ThreadRef): Promise<ThreadObservation>;
   read(input: ThreadRef): Promise<ThreadObservation>;
-  requestStop(input: ThreadRef): Promise<StopObservation>;
+  send(input: PersistedMessageRef): Promise<DeliveryObservation>;
+  observe(input: ThreadRef): Promise<ThreadObservation>;
+  archive(input: ThreadRef): Promise<ArchiveObservation>;
 }
 
 interface WorkerRuntimeAdapter {
@@ -418,6 +427,8 @@ interface WorkerRuntimeAdapter {
 ```
 
 Provider adapter 只翻译 lifecycle 和 transport，不选择 role、scope、runner、Lease 或 retry。Deterministic scheduler 先验证 policy，再选择 adapter。
+
+Codex App Server 是首个 `PersistentThreadTransport` canary：它提供持久 Thread lifecycle/history 与双向事件流，但 adapter 只能消费已持久化的 ME-1C message ref。create/resume/read/send/observe/archive 的 lost-ack 都必须进入 exact Thread/turn reconciliation，不能盲目重放 Provider effect。
 
 对于 Codex native child，现有 contract 明确要求 exact installed `agent_type`、`fork_turns=none` 和 `SubagentStart` observation；缺失或 mismatch 必须 fail closed，不得退回 App Thread、main thread 或其他 runner。Persistent Module Engineer Thread 因此不能被宣称为 `fast-worker`、`gatekeeper` 等 fleet role。
 
