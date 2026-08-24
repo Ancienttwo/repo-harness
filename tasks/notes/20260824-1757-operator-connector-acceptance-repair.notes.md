@@ -45,6 +45,8 @@
 - Fleet regression discovered by the first full-suite run: `tests/effects/fleet-board.test.ts` now passes 8 / 8 with its real registry fixture bound to the derived ID contract.
 - Full repository suite after that correction: 3013 passed / 2 platform skips / 0 failed across 237 files, with 22594 assertions.
 - Root gates passed: typecheck, Operator web build, deploy SQL order, architecture sync, task sync, strict task workflow, project-state inspection, and source-checkout init dry-run.
+- The first committed-authority acceptance preparation passed 31 of 32 contract checks; automatic architecture materialization restamped the tracked projection manifest before `check-task-sync`, so the status projection was refreshed and the gate was rerun with synchronized task evidence.
+- The next preparation proved every deterministic check but exposed that the linked worktree's immutable diff base is `origin/main`, so allowed-path validation correctly evaluates the complete PR #218 surface rather than only the repair commit. The contract now enumerates the already-reviewed pre-repair Operator files and archived workflow evidence needed for exact-head PR acceptance; no new implementation path was added.
 - Packaged runtime: `bash scripts/check-tarball-install-smoke.sh` booted the clean-installed tarball, read health/HTML/asset/Fleet API, and observed clean SIGTERM exit.
 - Browser layout readback: at `1440x1000`, computed boxes were rail `248px`, workspace `832px`, drawer `360px` with `position: sticky` and hidden scrim; at `1000x800`, drawer was `position: fixed`, `360px`, with a visible full-viewport scrim. The real dialog retained focus semantics and current task facts.
 

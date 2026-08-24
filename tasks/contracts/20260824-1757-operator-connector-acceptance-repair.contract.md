@@ -78,16 +78,24 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ```yaml
 allowed_paths:
+  - .ai/harness/failures/operator-authority-pre-fix.log
   - .ai/harness/failures/operator-connector-acceptance-repair-pre-fix.log
+  - README.md
   - assets/templates/helpers/refresh-current-status.sh
+  - bun.lock
   - docs/architecture/.projection-manifest.json
+  - docs/design/DESIGN-local-human-control-board-v1.md
+  - package.json
   - plans/
   - scripts/check-tarball-install-smoke.sh
   - scripts/refresh-current-status.sh
+  - src/cli/commands/operator.ts
+  - src/cli/index.ts
   - src/core/operator/fleet-snapshot.ts
   - src/effects/operator/server.ts
   - src/effects/repo-registry.ts
   - src/operator-web/
+  - tasks/archive/
   - tasks/current.md
   - tasks/lessons.md
   - tasks/todos.md
@@ -99,7 +107,10 @@ allowed_paths:
   - tests/effects/fleet-board.test.ts
   - tests/helper-scripts.test.ts
   - tests/operator-web/
+  - tests/unit/hook-entry-single-file-bundle.test.ts
   - tests/unit/operator-fleet-snapshot.test.ts
+  - tsconfig.json
+  - vite.operator.config.ts
 ```
 
 ## Evidence Requirements

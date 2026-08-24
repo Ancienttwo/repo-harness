@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-24T18:25:51+0800 -->
+<!-- updated_at: 2026-08-24T19:55:14+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-08-24T18:25:51+0800
+> **Updated At**: 2026-08-24T19:55:14+0800
 > **Source Branch**: codex/local-human-control-board-v1
-> **Source Commit**: 9eda600b
+> **Source Commit**: fe8a97a1
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: connector-acceptance-repair
@@ -54,34 +54,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
+- status=fail, source=verify-sprint, exit_code=1, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 21 changed/untracked path(s)
+- Summary: 3 changed/untracked path(s)
 
 ```
- M assets/templates/helpers/refresh-current-status.sh
- M scripts/check-tarball-install-smoke.sh
- M scripts/refresh-current-status.sh
- M src/core/operator/fleet-snapshot.ts
- M src/effects/operator/server.ts
- M src/effects/repo-registry.ts
- M src/operator-web/App.tsx
- M src/operator-web/styles.css
- M src/operator-web/types.ts
- M tasks/current.md
- M tasks/todos.md
- M tests/cli/operator-serve.test.ts
- M tests/cli/registry.test.ts
- M tests/helper-scripts.test.ts
- M tests/operator-web/operator-interactions.test.tsx
- M tests/unit/operator-fleet-snapshot.test.ts
-?? .ai/harness/failures/operator-connector-acceptance-repair-pre-fix.log
-?? plans/plan-20260824-1757-operator-connector-acceptance-repair.md
-?? tasks/contracts/20260824-1757-operator-connector-acceptance-repair.contract.md
-?? tasks/notes/20260824-1757-operator-connector-acceptance-repair.notes.md
-?? tasks/reviews/20260824-1757-operator-connector-acceptance-repair.review.md
+ M docs/architecture/.projection-manifest.json
+ M tasks/contracts/20260824-1757-operator-connector-acceptance-repair.contract.md
+ M tasks/notes/20260824-1757-operator-connector-acceptance-repair.notes.md
 ```
 
 ## Source Artifacts
