@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-25T03:27:48+0800 -->
+<!-- updated_at: 2026-08-25T03:28:37+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-08-25T03:27:48+0800
+> **Updated At**: 2026-08-25T03:28:37+0800
 > **Source Branch**: codex/me0b-engineer-principal-claim-actor-landing
-> **Source Commit**: e13bb3fd
+> **Source Commit**: 374d97cb
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: merge-landing
+> **Reason**: merged-me0b
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -56,49 +56,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 51 changed/untracked path(s)
+- Summary: clean
 
 ```
-M  .archcontext/model/flows/flow.engineer-bindings.primary.yaml
-A  .archcontext/model/flows/flow.mcp-sidecar.engineer-acquire.yaml
-M  .archcontext/model/nodes/capability.runtime-harness.engineer-bindings.yaml
-M  .archcontext/model/nodes/capability.runtime-harness.mcp-sidecar.yaml
-A  .archcontext/model/relations/relation.mcp-sidecar.engineer-principal.yaml
-M  AGENTS.md
-M  CLAUDE.md
-MM docs/architecture/.projection-manifest.json
-M  docs/architecture/changelog.md
-M  docs/architecture/decisions/index.md
-M  docs/architecture/diagrams/architecture.likec4
-M  docs/architecture/diagrams/architecture.mmd
-M  docs/architecture/diagrams/architecture.structurizr.json
-M  docs/architecture/index.md
-M  docs/architecture/modules/runtime-harness/engineer-bindings.md
-M  docs/architecture/modules/runtime-harness/mcp-sidecar.md
-A  docs/architecture/requests/archive/2026/runtime-harness-mcp-sidecar.md
-R  plans/plan-20260825-0029-me0b-engineer-principal-claim-actor.md -> plans/archive/plan-20260825-0029-me0b-engineer-principal-claim-actor.md
-M  src/cli/commands/engineer.ts
-M  src/cli/commands/mcp.ts
-M  src/cli/mcp/auth.ts
-A  src/cli/mcp/engineer-tools.ts
-M  src/cli/mcp/instructions.ts
-M  src/cli/mcp/oauth.ts
-M  src/cli/mcp/policy.ts
-M  src/cli/mcp/server.ts
-M  src/cli/mcp/setup.ts
-M  src/cli/mcp/tools.ts
-M  src/cli/mcp/transports/http.ts
-M  src/cli/mcp/transports/stdio.ts
-M  src/cli/mcp/types.ts
-A  src/core/engineers/principal-claim.ts
-A  src/effects/engineers/acquire.ts
-A  src/effects/engineers/claim-actor-store.ts
-A  src/effects/engineers/principal-store.ts
-A  src/effects/engineers/principal.ts
-A  tasks/archive/contract-20260825-0316-me0b-engineer-principal-claim-actor.md
-A  tasks/archive/notes-20260825-0316-me0b-engineer-principal-claim-actor.md
-A  tasks/archive/review-20260825-0316-me0b-engineer-principal-claim-actor.md
-A  tasks/archive/todo-20260825-0316-me0b-engineer-principal-claim-actor.md
+(none)
 ```
 
 ## Source Artifacts
