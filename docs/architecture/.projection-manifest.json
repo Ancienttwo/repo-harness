@@ -431,8 +431,8 @@
       "outputDigest": "sha256:6d768bdb78fc24bdddb308326591d6c2ef554926b93f89c9078af0015322c598",
       "verifiedAgainst": {
         "branch": "codex/me0b-engineer-principal-claim-actor-landing",
-        "commit": "e13bb3fd68592172fbda2d236b3e78f7474e3136",
-        "committedAt": "2026-08-25T01:52:29+08:00"
+        "commit": "374d97cb380bf6f8b01b456a658b266d58a961ec",
+        "committedAt": "2026-08-25T03:28:22+08:00"
       }
     },
     {
@@ -491,8 +491,8 @@
       "outputDigest": "sha256:8d3e591e8757b575ea10100f9aa4d12c5b7de82ae61f46c688964abe02e61f51",
       "verifiedAgainst": {
         "branch": "codex/me0b-engineer-principal-claim-actor-landing",
-        "commit": "e13bb3fd68592172fbda2d236b3e78f7474e3136",
-        "committedAt": "2026-08-25T01:52:29+08:00"
+        "commit": "374d97cb380bf6f8b01b456a658b266d58a961ec",
+        "committedAt": "2026-08-25T03:28:22+08:00"
       }
     },
     {
@@ -551,8 +551,8 @@
       "outputDigest": "sha256:66d4b7068ff03b389eb468fcfeb98d6146109c54d1e89eaf119a8f278ac9a5e4",
       "verifiedAgainst": {
         "branch": "codex/me0b-engineer-principal-claim-actor-landing",
-        "commit": "e13bb3fd68592172fbda2d236b3e78f7474e3136",
-        "committedAt": "2026-08-25T01:52:29+08:00"
+        "commit": "374d97cb380bf6f8b01b456a658b266d58a961ec",
+        "committedAt": "2026-08-25T03:28:22+08:00"
       }
     },
     {
@@ -571,8 +571,8 @@
       "outputDigest": "sha256:aa5aac73ff819f8ad0c053a57d5b1627faf2fc5bdbc18e8ab4722de0ab085d59",
       "verifiedAgainst": {
         "branch": "codex/me0b-engineer-principal-claim-actor-landing",
-        "commit": "e13bb3fd68592172fbda2d236b3e78f7474e3136",
-        "committedAt": "2026-08-25T01:52:29+08:00"
+        "commit": "374d97cb380bf6f8b01b456a658b266d58a961ec",
+        "committedAt": "2026-08-25T03:28:22+08:00"
       }
     },
     {
