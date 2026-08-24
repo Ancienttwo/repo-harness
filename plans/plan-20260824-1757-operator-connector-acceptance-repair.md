@@ -147,6 +147,12 @@ Close every concrete finding from the GitHub Connector acceptance of PR #218 tha
 - Redact absolute worktree paths in tracked current-status generation and test the owning producer.
 - Extend tarball smoke to boot the installed Operator and request health, HTML, hashed assets, Fleet API, then terminate cleanly.
 
+### Connector follow-up P3 closure
+
+- Reconstruct every decoded Fleet transport level from allowlisted fields; validate registry/source digests and 40/64-character Git OIDs.
+- Bind drawer semantics to the same 1101px breakpoint as layout: wide detail is complementary and non-modal; narrow detail keeps dialog focus containment.
+- Classify POSIX, Windows drive and UNC marker paths before projection, preserve path bytes with `read -r`, and emit only repo-relative or opaque references.
+
 ## Verification
 
 - Focused red-green tests for every Connector finding.

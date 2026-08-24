@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
 
 import { asApiError, copyOperatorIdentifier, fetchOperatorSnapshot, OperatorApp } from '../../src/operator-web/App';
-import { stableSnapshot } from '../../src/operator-web/fixture';
+import { degradedSnapshot, stableSnapshot } from '../../src/operator-web/fixture';
 import { decodeOperatorFleetSnapshot, projectSnapshotViewState, type OperatorFleetSnapshotV1 } from '../../src/operator-web/types';
 
 let root: Root | null = null;
@@ -153,6 +153,52 @@ describe('operator web interactions', () => {
     expect(document.querySelector('[role="alert"]')?.textContent).toContain('Fleet snapshot response is invalid');
   });
 
+  test('reconstructs a closed browser payload and rejects malformed digest and Git OID fields', () => {
+    const withExtras = structuredClone(stableSnapshot) as unknown as Record<string, unknown>;
+    const repositories = withExtras.repositories as Array<Record<string, unknown>>;
+    const cards = repositories[0].cards as Array<Record<string, unknown>>;
+    const readiness = cards[2].merge_readiness as Record<string, unknown>;
+    const blockers = readiness.blockers as Array<Record<string, unknown>>;
+    const counts = withExtras.counts as Record<string, unknown>;
+    const feedback = cards[2].feedback as Record<string, unknown>;
+    const inbox = cards[2].inbox as Record<string, unknown>;
+    withExtras.future_secret = 'root-secret';
+    repositories[0].future_secret = 'repository-secret';
+    cards[2].future_secret = 'card-secret';
+    readiness.future_secret = 'readiness-secret';
+    blockers[0].future_secret = 'blocker-secret';
+    counts.future_secret = 'counts-secret';
+    feedback.future_secret = 'feedback-secret';
+    inbox.future_secret = 'inbox-secret';
+
+    const decoded = decodeOperatorFleetSnapshot(withExtras);
+    expect(JSON.stringify(decoded)).not.toContain('future_secret');
+    expect(decoded).not.toBe(withExtras);
+    expect(decoded.repositories[0]).not.toBe(repositories[0]);
+    expect(decoded.repositories[0]?.cards[2]).not.toBe(cards[2]);
+
+    const degradedWithExtra = structuredClone(degradedSnapshot) as unknown as Record<string, unknown>;
+    const degradedRepositories = degradedWithExtra.repositories as Array<Record<string, unknown>>;
+    (degradedRepositories.at(-1)?.error as Record<string, unknown>).future_secret = 'error-secret';
+    expect(JSON.stringify(decodeOperatorFleetSnapshot(degradedWithExtra))).not.toContain('error-secret');
+
+    for (const mutate of [
+      (payload: Record<string, unknown>) => { payload.registry_revision = 'registry-not-a-digest'; },
+      (payload: Record<string, unknown>) => {
+        const nestedCards = ((payload.repositories as Array<Record<string, unknown>>)[0].cards as Array<Record<string, unknown>>);
+        nestedCards[2].head_sha = 'not-a-git-oid';
+      },
+      (payload: Record<string, unknown>) => {
+        const nestedCards = ((payload.repositories as Array<Record<string, unknown>>)[0].cards as Array<Record<string, unknown>>);
+        (nestedCards[2].merge_readiness as Record<string, unknown>).expected_base_sha = 'short';
+      },
+    ]) {
+      const malformed = structuredClone(stableSnapshot) as unknown as Record<string, unknown>;
+      mutate(malformed);
+      expect(() => decodeOperatorFleetSnapshot(malformed)).toThrow('Fleet snapshot response is invalid');
+    }
+  });
+
   test('closes the drawer when refresh removes the selected task or changes its revision', async () => {
     const nextSnapshot = (revision: string | null): OperatorFleetSnapshotV1 => ({
       ...stableSnapshot,
@@ -188,5 +234,35 @@ describe('operator web interactions', () => {
     expect(css).toContain('.operator-app.has-drawer { grid-template-columns: 248px minmax(0, 1fr) 360px; }');
     expect(css).toContain('.operator-app.has-drawer .drawer-scrim { display: none; }');
     expect(css).toContain('@media (max-width: 1100px)');
+  });
+
+  test('uses a non-modal complementary detail region on wide screens', async () => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({
+        matches: true,
+        media: '(min-width: 1101px)',
+        onchange: null,
+        addEventListener() {},
+        removeEventListener() {},
+        addListener() {},
+        removeListener() {},
+        dispatchEvent: () => true,
+      }),
+    });
+    const container = document.createElement('div');
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => root?.render(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} />));
+
+    const trigger = buttonWithText('task-review');
+    trigger.focus();
+    await act(async () => trigger.click());
+
+    const detail = document.querySelector('[role="complementary"]');
+    expect(detail?.getAttribute('aria-modal')).toBeNull();
+    expect(detail?.getAttribute('aria-labelledby')).toBe('task-drawer-title');
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
   });
 });

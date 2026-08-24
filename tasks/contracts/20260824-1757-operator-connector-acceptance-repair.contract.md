@@ -6,7 +6,7 @@
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
-> **Last Updated**: 2026-08-24 17:57
+> **Last Updated**: 2026-08-24 21:31
 > **Review File**: `tasks/reviews/20260824-1757-operator-connector-acceptance-repair.review.md`
 > **Notes File**: `tasks/notes/20260824-1757-operator-connector-acceptance-repair.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
@@ -15,9 +15,11 @@
 
 GitHub Connector 对 PR #218 的独立验收发现 2 个 P1、2 个 P2 和 4 个 P3：浏览器 DTO 仍可能泄露路径形态的 registry identity，IPv6 loopback 服务无法解析请求 URL，前端错误/选中态/深层 payload 边界不闭合，桌面 drawer、tracked status 与安装包 smoke 也未满足已批准设计和运行时验收。若不修复，当前 Draft PR 不能进入 Ready 或合并状态。
 
+首次修复通过 exact-head CI 与 Connector 复验后，Connector 追加了 3 个非阻断 P3：decoder 仍返回原始对象、宽屏 drawer 仍声明 modal、Windows/UNC marker path 仍可能进入 tracked status。本 work-package 继续闭合这三个同一信任边界内的 follow-up，不扩展产品能力。
+
 ## Goal
 
-关闭 Connector 报告中的全部 8 项 finding，并用负向安全测试、IPv6 真服务测试、前端交互/解码测试、tracked projection 测试和 clean-installed tarball runtime smoke 证明修复；完成新的 Codex acceptance 后才允许恢复 PR Ready。
+关闭 Connector 报告中的全部 8 项 finding及复验追加的 3 个 P3，并用负向安全测试、IPv6 真服务测试、前端交互/解码测试、tracked projection 测试和 clean-installed tarball runtime smoke 证明修复；完成新的 Codex acceptance 后才允许恢复 PR Ready。
 
 ## Scope
 

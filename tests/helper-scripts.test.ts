@@ -2854,6 +2854,33 @@ describe("Workflow helper scripts", () => {
       expect(unixCurrent).not.toContain("/home/");
       expect(unixCurrent).not.toContain("unix-local-user");
       expect(unixCurrent).not.toContain(linkedWorktree);
+
+      const foreignPaths = [
+        ["C:/Users/windows-local/private/plan.md", "C:/Users/windows-local/worktrees/repo"],
+        [String.raw`C:\Users\windows-local\private\plan.md`, String.raw`C:\Users\windows-local\worktrees\repo`],
+        [String.raw`\\server\share\private\plan.md`, String.raw`\\server\share\worktrees\repo`],
+        ["//server/share/private/plan.md", "//server/share/worktrees/repo"],
+      ] as const;
+      for (const [planPath, ownerPath] of foreignPaths) {
+        writeFileSync(join(linkedWorktree, ".ai/harness/active-plan"), `${planPath}\n`);
+        writeFileSync(join(linkedWorktree, ".ai/harness/active-worktree"), `${ownerPath}\n`);
+        const foreign = run("bash", ["scripts/refresh-current-status.sh", "--write", "--reason", "path-sanitization"], cwd);
+        expect(foreign.status, foreign.stderr).toBe(0);
+        const foreignCurrent = readFileSync(join(cwd, "tasks/current.md"), "utf-8");
+        expect(foreignCurrent).toContain("opaque-plan-");
+        expect(foreignCurrent).toContain("opaque-owner-");
+        expect(foreignCurrent).not.toContain(planPath);
+        expect(foreignCurrent).not.toContain(ownerPath);
+      }
+
+      mkdirSync(join(cwd, ".ai/harness/sprint"), { recursive: true });
+      const foreignSprint = String.raw`\\server\share\private\sprint.md`;
+      writeFileSync(join(cwd, ".ai/harness/sprint/active-sprint"), `${foreignSprint}\n`);
+      const sprint = run("bash", ["scripts/refresh-current-status.sh", "--write", "--reason", "path-sanitization"], cwd);
+      expect(sprint.status, sprint.stderr).toBe(0);
+      const sprintCurrent = readFileSync(join(cwd, "tasks/current.md"), "utf-8");
+      expect(sprintCurrent).toContain("stale active-sprint marker -> opaque-sprint-");
+      expect(sprintCurrent).not.toContain(foreignSprint);
     } finally {
       if (existsSync(join(cwd, ".git")) && existsSync(linkedWorktree)) {
         run("git", ["worktree", "remove", "--force", linkedWorktree], cwd);

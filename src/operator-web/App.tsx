@@ -428,7 +428,24 @@ function RepositoryList({ snapshot }: { readonly snapshot: OperatorFleetSnapshot
   );
 }
 
-function TaskDrawer({ card, onClose }: { readonly card: OperatorFleetCardV1 | null; readonly onClose: () => void }) {
+const WIDE_DRAWER_QUERY = '(min-width: 1101px)';
+
+function useWideDrawerLayout(): boolean {
+  const [wide, setWide] = useState(() => typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia(WIDE_DRAWER_QUERY).matches);
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const query = window.matchMedia(WIDE_DRAWER_QUERY);
+    const update = (event: MediaQueryListEvent) => setWide(event.matches);
+    setWide(query.matches);
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+  return wide;
+}
+
+function TaskDrawer({ card, modal, onClose }: { readonly card: OperatorFleetCardV1 | null; readonly modal: boolean; readonly onClose: () => void }) {
   const dialogRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
@@ -436,15 +453,17 @@ function TaskDrawer({ card, onClose }: { readonly card: OperatorFleetCardV1 | nu
 
   useEffect(() => {
     if (!cardKey || typeof document === 'undefined') return;
-    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    closeButtonRef.current?.focus();
+    if (modal) {
+      returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      closeButtonRef.current?.focus();
+    }
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
         onClose();
         return;
       }
-      if (event.key !== 'Tab') return;
+      if (!modal || event.key !== 'Tab') return;
       const dialog = dialogRef.current;
       if (!dialog) return;
       const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
@@ -468,18 +487,25 @@ function TaskDrawer({ card, onClose }: { readonly card: OperatorFleetCardV1 | nu
     document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
-      returnFocusRef.current?.focus();
+      if (modal) returnFocusRef.current?.focus();
       returnFocusRef.current = null;
     };
-    // The task identity, not incidental card object replacement, owns one modal lifecycle.
+    // Task identity and responsive modality own the focus lifecycle; incidental
+    // card replacement does not restart it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cardKey]);
+  }, [cardKey, modal]);
 
   if (!card) return null;
   return (
     <>
       <button className="drawer-scrim" type="button" tabIndex={-1} aria-label="Close task details" onClick={onClose} />
-      <aside ref={dialogRef} className="task-drawer" role="dialog" aria-modal="true" aria-labelledby="task-drawer-title">
+      <aside
+        ref={dialogRef}
+        className="task-drawer"
+        role={modal ? 'dialog' : 'complementary'}
+        aria-modal={modal ? 'true' : undefined}
+        aria-labelledby="task-drawer-title"
+      >
         <div className="task-drawer__header">
           <div><p className="operator-eyebrow">task detail</p><h2 id="task-drawer-title">{card.task_id}</h2></div>
           <button ref={closeButtonRef} className="icon-button" type="button" onClick={onClose} aria-label="Close task details"><Icon name="close" size={19} /></button>
@@ -532,6 +558,7 @@ export function OperatorApp({ initialState, initialSnapshot, fetchSnapshot = fet
   const [state, setState] = useState<OperatorSnapshotViewState>(initial);
   const [selectedTask, setSelectedTask] = useState<OperatorFleetCardV1 | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const wideDrawerLayout = useWideDrawerLayout();
   const refreshInFlight = useRef(false);
   const snapshot = snapshotForState(state);
   const busy = state.kind === 'loading';
@@ -591,7 +618,7 @@ export function OperatorApp({ initialState, initialSnapshot, fetchSnapshot = fet
         </main>
         <footer className="operator-footer"><span>repo-harness operator</span><span>protocol 1 · sequence {snapshot?.sequence ?? '—'}</span><span className="operator-footer__right">read-only / localhost</span></footer>
       </div>
-      <TaskDrawer card={visibleSelectedTask} onClose={() => setSelectedTask(null)} />
+      <TaskDrawer card={visibleSelectedTask} modal={!wideDrawerLayout} onClose={() => setSelectedTask(null)} />
     </div>
   );
 }

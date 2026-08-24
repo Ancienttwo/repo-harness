@@ -174,6 +174,7 @@ const MERGE_BLOCKERS = [
 const MERGE_ATTENTION_OWNERS = ['agent', 'user', 'external'] as const;
 const MERGE_INTEGRATION_MODES = ['unmerged', 'ancestor', 'absorbed', 'unavailable'] as const;
 const SHA256_PATTERN = /^sha256:[0-9a-f]{64}$/u;
+const GIT_OID_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u;
 
 function requireRecord(value: unknown): UnknownRecord {
   if (!isRecord(value)) throw new OperatorPayloadError();
@@ -182,6 +183,38 @@ function requireRecord(value: unknown): UnknownRecord {
 
 function requireString(value: unknown): string {
   if (!hasRequiredString(value)) throw new OperatorPayloadError();
+  return value;
+}
+
+function requireSha256(value: unknown): string {
+  const digest = requireString(value);
+  if (!SHA256_PATTERN.test(digest)) throw new OperatorPayloadError();
+  return digest;
+}
+
+function requireGitOid(value: unknown): string {
+  const oid = requireString(value);
+  if (!GIT_OID_PATTERN.test(oid)) throw new OperatorPayloadError();
+  return oid;
+}
+
+function requireNullableString(value: unknown): string | null {
+  if (!isNullableString(value)) throw new OperatorPayloadError();
+  return value;
+}
+
+function requireNonNegativeInteger(value: unknown): number {
+  if (!isSafeNonNegativeInteger(value)) throw new OperatorPayloadError();
+  return value;
+}
+
+function requirePositiveInteger(value: unknown): number {
+  if (!isSafePositiveInteger(value)) throw new OperatorPayloadError();
+  return value;
+}
+
+function requireOneOf<T extends string>(value: unknown, choices: readonly T[]): T {
+  if (!isOneOf(value, choices)) throw new OperatorPayloadError();
   return value;
 }
 
@@ -195,73 +228,146 @@ function requireArray(value: unknown): readonly unknown[] {
   return value;
 }
 
-function decodeError(value: unknown): void {
-  if (value === null) return;
+function decodeError(value: unknown): OperatorFleetRepositoryV1['error'] {
+  if (value === null) return null;
   const error = requireRecord(value);
   if (!isOneOf(error.code, ERROR_CODES) || !hasRequiredString(error.message)) throw new OperatorPayloadError();
+  return Object.freeze({ code: error.code, message: error.message });
 }
 
-function decodeMergeReadiness(value: unknown): void {
-  if (value === null) return;
+function decodeMergeReadiness(value: unknown): OperatorFleetCardV1['merge_readiness'] {
+  if (value === null) return null;
   const readiness = requireRecord(value);
   if (readiness.protocol !== 1 || readiness.kind !== 'repo-harness-merge-readiness') throw new OperatorPayloadError();
-  if (!hasRequiredString(readiness.publication_id) || typeof readiness.ready !== 'boolean') throw new OperatorPayloadError();
-  if (!hasRequiredString(readiness.expected_head_sha) || !hasRequiredString(readiness.expected_base_sha)) throw new OperatorPayloadError();
-  if (!isOneOf(readiness.integration_mode, MERGE_INTEGRATION_MODES)) throw new OperatorPayloadError();
-  if (!isOneOf(readiness.attention_owner, ATTENTION_OWNERS)) throw new OperatorPayloadError();
+  const publicationId = requireString(readiness.publication_id);
+  const ready = requireBoolean(readiness.ready);
+  const expectedHeadSha = requireGitOid(readiness.expected_head_sha);
+  const expectedBaseSha = requireGitOid(readiness.expected_base_sha);
+  const integrationMode = requireOneOf(readiness.integration_mode, MERGE_INTEGRATION_MODES);
+  const attentionOwner = requireOneOf(readiness.attention_owner, ATTENTION_OWNERS);
+  const blockers: Array<NonNullable<OperatorFleetCardV1['merge_readiness']>['blockers'][number]> = [];
   for (const blockerValue of requireArray(readiness.blockers)) {
     const blocker = requireRecord(blockerValue);
     if (!isOneOf(blocker.code, MERGE_BLOCKERS) || !isOneOf(blocker.attention_owner, MERGE_ATTENTION_OWNERS)) {
       throw new OperatorPayloadError();
     }
+    blockers.push(Object.freeze({ code: blocker.code, attention_owner: blocker.attention_owner }));
   }
+  return Object.freeze({
+    protocol: 1,
+    kind: 'repo-harness-merge-readiness',
+    publication_id: publicationId,
+    ready,
+    expected_head_sha: expectedHeadSha,
+    expected_base_sha: expectedBaseSha,
+    integration_mode: integrationMode,
+    attention_owner: attentionOwner,
+    blockers: Object.freeze(blockers),
+  });
 }
 
-function decodeCard(value: unknown, repositoryId: string): void {
+function decodeCard(value: unknown, repositoryId: string): OperatorFleetCardV1 {
   const card = requireRecord(value);
   if (!hasRequiredString(card.repository_id) || card.repository_id !== repositoryId) throw new OperatorPayloadError();
-  if (!hasRequiredString(card.task_id) || !hasRequiredString(card.task_revision)) throw new OperatorPayloadError();
-  if (!isNullableString(card.claim_id) || !(card.generation === null || isSafeNonNegativeInteger(card.generation))) throw new OperatorPayloadError();
-  if (!(card.column === null || isOneOf(card.column, COLUMNS))) throw new OperatorPayloadError();
-  if (!isOneOf(card.attention_owner, ATTENTION_OWNERS)) throw new OperatorPayloadError();
-  if (!(card.execution_readiness === null || isOneOf(card.execution_readiness, EXECUTION_READINESS))) throw new OperatorPayloadError();
-  if (!isOneOf(card.lease_state, LEASE_STATES)) throw new OperatorPayloadError();
-  if (!isNullableString(card.publication_id) || !isNullableString(card.head_sha)) throw new OperatorPayloadError();
-  decodeMergeReadiness(card.merge_readiness);
-  if (!Array.isArray(card.blocker_codes) || card.blocker_codes.some((code) => !isOneOf(code, MERGE_BLOCKERS))) throw new OperatorPayloadError();
+  const taskId = requireString(card.task_id);
+  const taskRevision = requireString(card.task_revision);
+  const claimId = requireNullableString(card.claim_id);
+  const generation = card.generation === null ? null : requireNonNegativeInteger(card.generation);
+  const column = card.column === null ? null : requireOneOf(card.column, COLUMNS);
+  const attentionOwner = requireOneOf(card.attention_owner, ATTENTION_OWNERS);
+  const executionReadiness = card.execution_readiness === null
+    ? null
+    : requireOneOf(card.execution_readiness, EXECUTION_READINESS);
+  const leaseState = requireOneOf(card.lease_state, LEASE_STATES);
+  const publicationId = requireNullableString(card.publication_id);
+  const headSha = card.head_sha === null ? null : requireGitOid(card.head_sha);
+  const mergeReadiness = decodeMergeReadiness(card.merge_readiness);
+  const blockerCodes = requireArray(card.blocker_codes).map((code) => requireOneOf(code, MERGE_BLOCKERS));
   const feedback = requireRecord(card.feedback);
-  if (!isSafeNonNegativeInteger(feedback.pending_count) || typeof feedback.no_progress !== 'boolean') throw new OperatorPayloadError();
-  if (!Array.isArray(feedback.repair_actions) || feedback.repair_actions.some((repair) => !isOneOf(repair, FEEDBACK_REPAIRS))) throw new OperatorPayloadError();
+  const pendingCount = requireNonNegativeInteger(feedback.pending_count);
+  const noProgress = requireBoolean(feedback.no_progress);
+  const repairActions = requireArray(feedback.repair_actions).map((repair) => requireOneOf(repair, FEEDBACK_REPAIRS));
   const inbox = requireRecord(card.inbox);
-  if (!isSafeNonNegativeInteger(inbox.unread_count) || typeof inbox.addressed_to_current_claim !== 'boolean') throw new OperatorPayloadError();
-  if (!isOneOf(card.snapshot_consistency, ['stable', 'changed_during_read'] as const)) throw new OperatorPayloadError();
+  const unreadCount = requireNonNegativeInteger(inbox.unread_count);
+  const addressedToCurrentClaim = requireBoolean(inbox.addressed_to_current_claim);
+  const snapshotConsistency = requireOneOf(card.snapshot_consistency, ['stable', 'changed_during_read'] as const);
+  return Object.freeze({
+    repository_id: repositoryId,
+    task_id: taskId,
+    task_revision: taskRevision,
+    claim_id: claimId,
+    generation,
+    column,
+    attention_owner: attentionOwner,
+    execution_readiness: executionReadiness,
+    lease_state: leaseState,
+    publication_id: publicationId,
+    head_sha: headSha,
+    merge_readiness: mergeReadiness,
+    blocker_codes: Object.freeze(blockerCodes),
+    feedback: Object.freeze({
+      pending_count: pendingCount,
+      no_progress: noProgress,
+      repair_actions: Object.freeze(repairActions),
+    }),
+    inbox: Object.freeze({
+      unread_count: unreadCount,
+      addressed_to_current_claim: addressedToCurrentClaim,
+    }),
+    snapshot_consistency: snapshotConsistency,
+  });
 }
 
-function decodeRepository(value: unknown): void {
+function decodeRepository(value: unknown): OperatorFleetRepositoryV1 {
   const repository = requireRecord(value);
-  if (!hasRequiredString(repository.repository_id)) throw new OperatorPayloadError();
-  if (!isOneOf(repository.access_mode, ['read_only', 'read_write'] as const)) throw new OperatorPayloadError();
-  if (!isOneOf(repository.status, ['ok', 'unreadable'] as const)) throw new OperatorPayloadError();
-  if (!isOneOf(repository.snapshot_consistency, SNAPSHOT_CONSISTENCIES)) throw new OperatorPayloadError();
-  decodeError(repository.error);
-  for (const card of requireArray(repository.cards)) decodeCard(card, repository.repository_id);
+  const repositoryId = requireString(repository.repository_id);
+  const accessMode = requireOneOf(repository.access_mode, ['read_only', 'read_write'] as const);
+  const status = requireOneOf(repository.status, ['ok', 'unreadable'] as const);
+  const snapshotConsistency = requireOneOf(repository.snapshot_consistency, SNAPSHOT_CONSISTENCIES);
+  const error = decodeError(repository.error);
+  const cards = requireArray(repository.cards).map((card) => decodeCard(card, repositoryId));
   if (repository.status === 'unreadable' && repository.error === null) throw new OperatorPayloadError();
+  return Object.freeze({
+    repository_id: repositoryId,
+    access_mode: accessMode,
+    status,
+    snapshot_consistency: snapshotConsistency,
+    cards: Object.freeze(cards),
+    error,
+  });
 }
 
 /** Decode the complete browser payload before any component receives it. */
 export function decodeOperatorFleetSnapshot(value: unknown): OperatorFleetSnapshotV1 {
   const snapshot = requireRecord(value);
   if (snapshot.protocol !== 1 || snapshot.kind !== 'operator_fleet_snapshot') throw new OperatorPayloadError();
-  if (!hasRequiredString(snapshot.registry_revision) || !isSafePositiveInteger(snapshot.sequence)) throw new OperatorPayloadError();
-  if (!hasRequiredString(snapshot.observed_at) || Number.isNaN(Date.parse(snapshot.observed_at))) throw new OperatorPayloadError();
-  if (!isOneOf(snapshot.snapshot_consistency, SNAPSHOT_CONSISTENCIES)) throw new OperatorPayloadError();
-  if (!SHA256_PATTERN.test(requireString(snapshot.source_snapshot_sha256))) throw new OperatorPayloadError();
+  const registryRevision = requireSha256(snapshot.registry_revision);
+  const sequence = requirePositiveInteger(snapshot.sequence);
+  const observedAt = requireString(snapshot.observed_at);
+  if (Number.isNaN(Date.parse(observedAt))) throw new OperatorPayloadError();
+  const snapshotConsistency = requireOneOf(snapshot.snapshot_consistency, SNAPSHOT_CONSISTENCIES);
+  const sourceSnapshotSha256 = requireSha256(snapshot.source_snapshot_sha256);
   const counts = requireRecord(snapshot.counts);
-  for (const key of ['available', 'working', 'in_review', 'ready_to_merge', 'done', 'unreadable'] as const) {
-    if (!isSafeNonNegativeInteger(counts[key])) throw new OperatorPayloadError();
-  }
-  for (const repository of requireArray(snapshot.repositories)) decodeRepository(repository);
-  return snapshot as unknown as OperatorFleetSnapshotV1;
+  const decodedCounts = Object.freeze({
+    available: requireNonNegativeInteger(counts.available),
+    working: requireNonNegativeInteger(counts.working),
+    in_review: requireNonNegativeInteger(counts.in_review),
+    ready_to_merge: requireNonNegativeInteger(counts.ready_to_merge),
+    done: requireNonNegativeInteger(counts.done),
+    unreadable: requireNonNegativeInteger(counts.unreadable),
+  });
+  const repositories = requireArray(snapshot.repositories).map(decodeRepository);
+  return Object.freeze({
+    protocol: 1,
+    kind: 'operator_fleet_snapshot',
+    registry_revision: registryRevision,
+    sequence,
+    observed_at: observedAt,
+    snapshot_consistency: snapshotConsistency,
+    repositories: Object.freeze(repositories),
+    counts: decodedCounts,
+    source_snapshot_sha256: sourceSnapshotSha256,
+  });
 }
 
 export function formatObservedAt(value: string): string {

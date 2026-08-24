@@ -98,15 +98,40 @@ timestamp_now() {
 file_metadata_value() {
   local file="$1"
   local label="$2"
+  local value
   [[ -f "$file" ]] || return 1
-  awk -v label="$label" '
+  value="$(awk -v label="$label" '
     $0 ~ "^> \\*\\*" label "\\*\\*:" {
       sub("^> \\*\\*" label "\\*\\*: *", "")
       gsub(/\r/, "")
       print
       exit
     }
-  ' "$file" | xargs
+  ' "$file")"
+  trim_value "$value"
+}
+
+trim_value() {
+  local value="$1"
+  value="${value%$'\r'}"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value"
+}
+
+read_marker_value() {
+  local file="$1"
+  local value=""
+  IFS= read -r value < "$file" || [[ -n "$value" ]] || return 1
+  trim_value "$value"
+}
+
+is_absolute_path() {
+  local value="$1"
+  case "$value" in
+    /*|[[:alpha:]]:[\\/]*|\\\\*) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 read_plan_status() {
@@ -120,7 +145,7 @@ normalize_plan_path() {
   if [[ -z "$plan_path" ]]; then
     return 1
   fi
-  if [[ "$plan_path" == /* ]]; then
+  if is_absolute_path "$plan_path"; then
     printf '%s' "$plan_path"
   else
     printf '%s/%s' "$worktree" "$plan_path"
@@ -146,27 +171,36 @@ opaque_worktree_label() {
   printf 'linked-worktree-%s' "${digest:0:12}"
 }
 
-safe_plan_ref() {
+safe_repo_ref() {
   local worktree="$1"
-  local plan_path="$2"
+  local value="$2"
+  local label="$3"
   local relative
 
-  if [[ "$plan_path" == /* ]]; then
-    if [[ "$plan_path" == "$worktree/"* ]]; then
-      relative="${plan_path#"$worktree/"}"
+  if is_absolute_path "$value"; then
+    if [[ "$value" == "$worktree/"* ]]; then
+      relative="${value#"$worktree/"}"
     else
-      printf 'opaque-plan-%s' "$(opaque_worktree_label "$plan_path" | sed 's/^linked-worktree-//')"
+      printf 'opaque-%s-%s' "$label" "$(opaque_worktree_label "$value" | sed 's/^linked-worktree-//')"
       return 0
     fi
   else
-    relative="${plan_path#./}"
+    relative="${value#./}"
   fi
 
   if [[ -z "$relative" || "$relative" == .. || "$relative" == ../* || "$relative" == */../* ]]; then
-    printf 'opaque-plan-%s' "$(opaque_worktree_label "$plan_path" | sed 's/^linked-worktree-//')"
+    printf 'opaque-%s-%s' "$label" "$(opaque_worktree_label "$value" | sed 's/^linked-worktree-//')"
     return 0
   fi
   printf '%s' "$relative"
+}
+
+safe_plan_ref() {
+  safe_repo_ref "$1" "$2" 'plan'
+}
+
+safe_sprint_ref() {
+  safe_repo_ref "$1" "$2" 'sprint'
 }
 
 safe_owner_ref() {
@@ -186,7 +220,7 @@ inspect_worktree_active_state() {
 
   marker=".ai/harness/active-plan"
   if [[ -f "$worktree/$marker" ]]; then
-    plan_path="$(cat "$worktree/$marker" 2>/dev/null | xargs || true)"
+    plan_path="$(read_marker_value "$worktree/$marker" 2>/dev/null || true)"
     if [[ -n "$plan_path" ]]; then
       plan_abs="$(normalize_plan_path "$worktree" "$plan_path")"
       plan_ref="$(safe_plan_ref "$worktree" "$plan_path")"
@@ -199,7 +233,7 @@ inspect_worktree_active_state() {
   fi
 
   if [[ -f "$worktree/.ai/harness/active-worktree" ]]; then
-    owner="$(cat "$worktree/.ai/harness/active-worktree" 2>/dev/null | xargs || true)"
+    owner="$(read_marker_value "$worktree/.ai/harness/active-worktree" 2>/dev/null || true)"
     if [[ -n "$owner" ]]; then
       append_unique_line "- ${worktree_label}: active-worktree owner -> $(safe_owner_ref "$worktree" "$owner")"
     fi
@@ -229,7 +263,7 @@ read_current_active_plan() {
   current_path="$(pwd -P 2>/dev/null || pwd)"
   marker=".ai/harness/active-plan"
   [[ -f "$marker" ]] || return 1
-  plan_path="$(cat "$marker" 2>/dev/null | xargs || true)"
+  plan_path="$(read_marker_value "$marker" 2>/dev/null || true)"
   [[ -n "$plan_path" ]] || return 1
   plan_abs="$(normalize_plan_path "$current_path" "$plan_path")"
   if [[ -f "$plan_abs" ]]; then
@@ -344,21 +378,28 @@ sprint_next_task() {
 }
 
 sprint_summary() {
-  local marker sprint_file status
+  local marker sprint_path sprint_file sprint_ref status current_path
   marker="$(json_get '.sprints.active_marker_file' '.ai/harness/sprint/active-sprint')"
   if [[ ! -f "$marker" ]]; then
     printf -- '- Sprint: (none)\n'
     return 0
   fi
 
-  sprint_file="$(cat "$marker" 2>/dev/null | xargs || true)"
-  if [[ -z "$sprint_file" || ! -f "$sprint_file" ]]; then
-    printf -- '- Sprint: stale active-sprint marker -> %s\n' "${sprint_file:-(empty)}"
+  current_path="$(pwd -P 2>/dev/null || pwd)"
+  sprint_path="$(read_marker_value "$marker" 2>/dev/null || true)"
+  if [[ -z "$sprint_path" ]]; then
+    printf -- '- Sprint: stale active-sprint marker -> (empty)\n'
+    return 0
+  fi
+  sprint_file="$(normalize_plan_path "$current_path" "$sprint_path")"
+  sprint_ref="$(safe_sprint_ref "$current_path" "$sprint_path")"
+  if [[ ! -f "$sprint_file" ]]; then
+    printf -- '- Sprint: stale active-sprint marker -> %s\n' "$sprint_ref"
     return 0
   fi
 
   status="$(file_metadata_value "$sprint_file" "Status" || printf 'unknown')"
-  printf -- '- Sprint: `%s`\n' "$sprint_file"
+  printf -- '- Sprint: `%s`\n' "$sprint_ref"
   printf -- '- Sprint Status: %s\n' "${status:-unknown}"
   printf -- '- Backlog: %s\n' "$(sprint_backlog_progress "$sprint_file")"
   printf -- '- Next Sprint Task: %s\n' "$(sprint_next_task "$sprint_file")"

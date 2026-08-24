@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260824-1757-operator-connector-acceptance-repair.md
 > **Contract**: tasks/contracts/20260824-1757-operator-connector-acceptance-repair.contract.md
 > **Review**: tasks/reviews/20260824-1757-operator-connector-acceptance-repair.review.md
-> **Last Updated**: 2026-08-24 18:59
+> **Last Updated**: 2026-08-24 21:31
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -15,6 +15,9 @@
 - A drawer may display only an exact task key from the current successful snapshot. Removed or revised tasks close instead of retaining old facts.
 - Runtime payload validation is structural transport validation only; it rejects malformed nested data and does not synthesize domain values.
 - Tracked current-status redaction is fixed in the owning generator and packaged twin. Installed-package evidence must boot the real server and traverse health, UI assets and Fleet API.
+- The browser decoder returns a newly constructed frozen graph at every DTO level. Unknown fields are dropped by construction; `registry_revision`/source digests and publication Git OIDs use the same closed formats as their server authorities.
+- The 1101px layout breakpoint also owns drawer accessibility semantics. Wide layout is a non-modal `complementary` region with no focus capture or Tab trap; narrow layout remains a modal dialog with focus containment and restoration.
+- Workflow marker reads preserve literal backslashes and spaces with `IFS= read -r`. POSIX absolute, drive-letter and UNC paths are classified before resolution, then rendered as repo-relative or opaque plan/sprint/owner references.
 
 ## Deviations From Plan Or Spec
 
@@ -30,6 +33,8 @@
 | Delete a list of sensitive DTO fields | Rejected | A denylist reopens whenever upstream adds a field. |
 | Accept legacy IDs during a migration window | Rejected | No approved compatibility contract exists; fail-closed behavior is required. |
 | Preserve selected task object across a successful refresh | Rejected | It mixes facts from two snapshot revisions. |
+| Reject every unknown browser DTO key | Rejected | Reconstructing allowlisted output closes the transport boundary without coupling the browser to harmless producer additions. |
+| Keep modal ARIA semantics for the in-flow desktop column | Rejected | Visual layout and assistive interaction would describe different UI models. |
 
 ## Open Questions
 
@@ -49,6 +54,7 @@
 - The next preparation proved every deterministic check but exposed that the linked worktree's immutable diff base is `origin/main`, so allowed-path validation correctly evaluates the complete PR #218 surface rather than only the repair commit. The contract now enumerates the already-reviewed pre-repair Operator files and archived workflow evidence needed for exact-head PR acceptance; no new implementation path was added.
 - Packaged runtime: `bash scripts/check-tarball-install-smoke.sh` booted the clean-installed tarball, read health/HTML/asset/Fleet API, and observed clean SIGTERM exit.
 - Browser layout readback: at `1440x1000`, computed boxes were rail `248px`, workspace `832px`, drawer `360px` with `position: sticky` and hidden scrim; at `1000x800`, drawer was `position: fixed`, `360px`, with a visible full-viewport scrim. The real dialog retained focus semantics and current task facts.
+- Connector follow-up regressions first failed on retained nested fields, wide-screen modal semantics, and Windows drive path disclosure. After repair, Operator interaction tests pass 9/9, targeted path/sprint tests pass 3/3, typecheck passes, the Operator web production build succeeds, and the loopback Operator server suite passes 5/5 outside the network-restricted sandbox.
 
 ## Promotion Filter
 

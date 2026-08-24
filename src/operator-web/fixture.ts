@@ -111,7 +111,7 @@ const stableRepositories: readonly OperatorFleetRepositoryV1[] = [
 export const stableSnapshot: OperatorFleetSnapshotV1 = {
   protocol: 1,
   kind: 'operator_fleet_snapshot',
-  registry_revision: 'registry-20260824-01',
+  registry_revision: `sha256:${'e'.repeat(64)}`,
   sequence: 18,
   observed_at: '2026-08-24T01:10:00.000Z',
   snapshot_consistency: 'stable',
@@ -129,7 +129,7 @@ export const stableSnapshot: OperatorFleetSnapshotV1 = {
 
 export const emptySnapshot: OperatorFleetSnapshotV1 = {
   ...stableSnapshot,
-  registry_revision: 'registry-empty',
+  registry_revision: `sha256:${'f'.repeat(64)}`,
   sequence: 19,
   repositories: [],
   counts: { available: 0, working: 0, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0 },
@@ -138,7 +138,7 @@ export const emptySnapshot: OperatorFleetSnapshotV1 = {
 
 export const changedDuringReadSnapshot: OperatorFleetSnapshotV1 = {
   ...stableSnapshot,
-  registry_revision: 'registry-changed',
+  registry_revision: `sha256:${'1'.repeat(64)}`,
   sequence: 20,
   snapshot_consistency: 'changed_during_read',
   repositories: [
@@ -156,7 +156,7 @@ export const changedDuringReadSnapshot: OperatorFleetSnapshotV1 = {
 
 export const degradedSnapshot: OperatorFleetSnapshotV1 = {
   ...stableSnapshot,
-  registry_revision: 'registry-degraded',
+  registry_revision: `sha256:${'2'.repeat(64)}`,
   sequence: 21,
   snapshot_consistency: 'degraded',
   repositories: [
