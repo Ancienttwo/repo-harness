@@ -1,0 +1,14 @@
+Regression guard: tests/helper-scripts.test.ts
+Command: bun test tests/helper-scripts.test.ts --test-name-pattern "verify-contract reuses a passing expensive criterion"
+
+bun test v1.4.0 (34cbb9a40)
+
+Expected expensive invocation count: 1
+Observed expensive invocation count: 2
+
+Failure:
+expect(received).toHaveLength(expected)
+Expected length: 1
+Received length: 2
+
+PRE_FIX_EXIT=1

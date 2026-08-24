@@ -1,10 +1,13 @@
 # Plan: Verify-sprint incremental retry and expensive-run fuse
 
-> **Status**: Draft
+> **Status**: Archived
 > **Created**: 20260824-2214
 > **Slug**: verify-sprint-incremental-retry
 > **Planning Source**: operator-closeout-handoff
 > **Artifact Level**: work-package
+> **Task Profile**: bugfix
+> **Capability ID**: verification-evals-checks
+> **Execution Mode**: contract-worktree
 > **Promotion Reason**: verification_boundary
 > **Verification Boundary**: One frozen subject executes each expensive criterion at most once unless an explicit force reason is recorded.
 > **Rollback Surface**: Revert the scheduler/cache change; existing verification semantics remain authoritative.
@@ -67,9 +70,10 @@ Preserve exact-subject correctness while making retries criterion-addressable.
    - contract and goal authority digests;
    - exact criterion kind/name/command;
    - relevant verification environment/toolchain fingerprint.
-4. On retry with an identical key, reuse only prior `pass` results. Rerun failed, missing, timed-out, or invalidated criteria.
-5. Add an expensive-run fuse: a second execution of the same expensive criterion for the same key fails closed unless `--force-expensive-rerun --reason <non-empty>` is supplied and recorded in evidence.
-6. The final AcceptanceReceipt must bind the composed evidence bundle and show which criterion results were executed versus reused.
+4. Reuse is opt-in through exact contract metadata; unknown or runtime/external-state criteria execute and are never cached by default.
+5. On retry with an identical key, reuse only prior eligible `pass` results. Rerun failed, missing, timed-out, ineligible, or invalidated criteria.
+6. Add an expensive-run fuse: a second execution of the same expensive criterion for the same key fails closed unless `--force-expensive-rerun --reason <non-empty>` is supplied and recorded in evidence.
+7. The final AcceptanceReceipt must bind the composed evidence bundle and show which criterion results were executed, reused, or forced.
 
 ### Invariants
 
@@ -84,22 +88,24 @@ Without this change, full-suite cost grows linearly with every cheap closeout fa
 
 ## Task Breakdown
 
-- [ ] Capture a pre-fix regression proving one automatic projection plus one late sync failure invokes the expensive runner twice across retry.
-- [ ] Extract or add a typed criterion-result identity and exact invalidation fingerprint.
-- [ ] Move automatic projection and cheap sync/scope gates ahead of expensive criteria.
-- [ ] Implement same-subject pass reuse and the explicit expensive-rerun fuse.
-- [ ] Emit executed/reused provenance in run snapshots and checks projection.
-- [ ] Verify source/contract/goal/target/command/toolchain changes invalidate cached results.
-- [ ] Run the full suite once, then prove a same-subject retry does not invoke it again.
+- [x] Capture a pre-fix regression proving one automatic projection plus one late sync failure invokes the expensive runner twice across retry.
+- [x] Extract or add a typed criterion-result identity and exact invalidation fingerprint.
+- [x] Move automatic projection and cheap sync/scope gates ahead of expensive criteria.
+- [x] Implement same-subject pass reuse and the explicit expensive-rerun fuse.
+- [x] Emit executed/reused/forced provenance in run snapshots and checks projection.
+- [x] Verify source/contract/goal/target/command/toolchain changes invalidate cached results.
+- [x] Run the full suite once, then prove a same-subject retry does not invoke it again.
 
 ## Acceptance Tests
 
 - Automatic projection changes the manifest before the retry key is frozen.
-- A late cheap-gate failure followed by correction reruns only that gate.
+- An acceptance cheap-gate failure produces structured evidence with expensive invocation count `0`; after fixing only that gate, the expensive invocation count becomes `1`.
+- A cheap-gate failure followed by correction reruns cheap preflight while keeping every prior eligible expensive pass monotonic.
 - A passing `bun test --timeout 60000` is invoked once across same-subject retry.
 - A source byte change invalidates the cached pass.
 - Contract, goal, target revision, command, or toolchain fingerprint changes invalidate the cached pass.
 - A timeout/failure is never reused.
+- A criterion absent from explicit reuse metadata executes on every invocation and carries no cache key.
 - A second identical expensive execution without explicit force reason is rejected before process spawn.
 - Forced rerun evidence records the reason and does not alter AcceptanceReceipt subject semantics.
 
@@ -108,6 +114,23 @@ Without this change, full-suite cost grows linearly with every cheap closeout fa
 - Focused `tests/helper-scripts.test.ts` regression suite.
 - One disposable fixture proving the expensive command invocation count is exactly one across retry.
 - Root required checks, with the root full suite invoked once for this work-package.
+
+## Evidence Contract
+
+- **State/progress path**: `plans/plan-20260824-2214-verify-sprint-incremental-retry.md` and its projected task contract.
+- **Verification evidence**: focused `tests/helper-scripts.test.ts` regressions, `.ai/harness/runs/`, and the root required checks.
+- **Evaluator rubric**: every cache identity dimension invalidates exactly, passing criteria carry executed/reused/forced provenance, and a same-key expensive pass cannot spawn twice without a recorded force reason.
+- **Stop condition**: stop if exact-subject identity cannot bind repository, subject, target, contract, goal, command, and toolchain authorities without a semantic fallback.
+- **Rollback surface**: revert the criterion scheduler/cache changes and their evidence fields; existing full-run verification remains the rollback behavior.
+
+## Promotion Gate
+
+- **Merge/PR unit**: one verification scheduler/cache change spanning `verify-sprint`, `verify-contract`, runtime evidence, and focused regressions.
+- **Rollback surface**: criterion cache protocol, command ordering, force-rerun CLI, and executed/reused/forced evidence fields roll back together.
+- **Verification boundary**: one frozen subject executes each expensive criterion at most once unless an explicit force reason is recorded.
+- **Review/acceptance boundary**: exact subject and AcceptanceReceipt bindings remain unchanged while composed criterion evidence becomes reviewable.
+- **High-risk surface**: stale pass reuse could falsely certify unexecuted code, so every declared authority and toolchain dimension must fail closed.
+- **Why not checklist row**: this changes the shared verification contract and requires independent cache-invalidation and acceptance-evidence review.
 
 ## Non-scope
 

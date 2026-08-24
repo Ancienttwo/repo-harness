@@ -94,6 +94,14 @@ sequenceDiagram
 
 **10x 规模下先垮的点。** 不是 verifier，而是全量测试成本与证据生产延迟：183 个测试文件 / 66,345 LOC 已是 `bun test` 的主要壁钟成本，而 3×9 矩阵单次授权跑受 50 分钟绝对预算约束。当前拆分让小切片跑聚焦测试、release/pre-merge 才跑全量 gate；再放大一个量级时，先撑不住的是 benchmark 的 evidence-production latency 与 expensive lane 的串行度，而不是有界验证本身。
 
+### Frozen-subject criterion retry
+
+`verify-sprint --prepare-acceptance` 在自动 architecture 投影完成后冻结 criterion context；该 context 同时绑定 repository、normalized subject、target revision、contract、goal 与 toolchain。`verify-contract` 再把 exact kind/target/command 加入 key，只持久化 contract 在 `criterion_reuse` 中显式声明的 pass、non-timeout、exit-0 结果。未声明或依赖 runtime/external state 的 criterion 默认每次执行；失败、超时、malformed cache 与并发 exact-key 执行均不复用。
+
+`verify-sprint` 计算的 `allowed_paths` scope preflight 与 known task/architecture/workflow sync commands 均先于 tests 与其余 commands；acceptance preflight 任一失败时，scheduler 不 spawn tests 或其余 commands。Cheap gates 的输入可包含 normalized subject 之外的 workflow state，因此每次 retry 都重新执行，不进入 reuse 集合。这个短路只在 `verify-sprint` 提供内部 preflight transaction 时生效，direct `verify-contract` 仍保持独立、无缓存的全执行语义；内部 context/preflight 环境变量也在 bounded process 边界清除，不能泄漏给 criterion 或嵌套 verifier。命令排序本身不把名称当作 deterministic/cost 权威；`expensive` 由显式 eligible criterion 首次通过的实测 duration 与冻结 threshold 判定。相同 expensive pass 的再次执行必须显式传入 `--force-expensive-rerun --reason`，其 disposition 为 `forced` 且原因进入 canonical run `commands` evidence；默认路径只复用，不再 spawn。
+
+criterion 执行结束后，`verify-sprint` 重新计算完整 context。若 command 在执行期间改变 source、target、contract、goal 或 toolchain，独立 `criterion_context` guard fail-closed，不能以新 subject 配旧执行结果生成 AcceptanceReceipt。10x 下 cache 文件数量随 exact subject × criterion 线性增长，最先需要治理的是 ignored runtime evidence retention，而不是正确性边界；跨 repository/remote cache 仍明确不在此模块职责内。
+
 ### Hidden-ground-truth debug evaluation v1
 
 `scripts/run-debug-ground-truth-eval.ts` owns a second, eval-only diagnostic profile. It is intentionally separate from both the immutable 3×9 profile benchmark and `run-skill-evals.ts`: public scenarios and trusted fixtures enter a disposable workspace assigned to the trusted stub, while `evals/debug-hunt/ground-truth.json` is omitted from its callback arguments and workspace. The deterministic grader copies the original fixture again before replaying the oracle, so workspace edits cannot turn a diagnostic claim into a pass. Per-case `provider_status` (`submitted`, `no_submission`, `error`) remains distinct from `grading_status` (`pass`, `fail`, `ungraded`, `error`, `no_submission`), with hashes binding the runner, public scenarios, fixture set, hidden truth, submission, and grader inputs.

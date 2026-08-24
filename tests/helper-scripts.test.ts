@@ -16,7 +16,7 @@ import {
 } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { spawnSync } from "child_process";
+import { spawn, spawnSync } from "child_process";
 import { ROOT_CAUSE_FIXTURE_CASES } from "./fixtures/root-cause/expected-results";
 import { defaultPolicy } from "../src/core/adoption/standard-plan";
 
@@ -347,7 +347,10 @@ function humanReviewCard(verdict = "pass", externalAcceptance = "pass"): string 
   ].join("\n");
 }
 
-function installAutomaticProjectionVerifyFixture(cwd: string): string {
+function installAutomaticProjectionVerifyFixture(
+  cwd: string,
+  options: { gatedTaskSync?: boolean } = {},
+): string {
   for (const dir of [
     ".ai/hooks/lib",
     "bin",
@@ -363,6 +366,13 @@ function installAutomaticProjectionVerifyFixture(cwd: string): string {
     join(ROOT, "assets/hooks/lib/workflow-state.sh"),
     join(cwd, ".ai/hooks/lib/workflow-state.sh"),
   );
+  if (options.gatedTaskSync) {
+    writeFileSync(
+      join(cwd, "scripts/check-task-sync.sh"),
+      "#!/bin/bash\ntest -f .ai/harness/task-sync-ready\n",
+    );
+    chmodSync(join(cwd, "scripts/check-task-sync.sh"), 0o755);
+  }
   writeFileSync(
     join(cwd, ".ai/harness/policy.json"),
     `${JSON.stringify({
@@ -484,6 +494,20 @@ function extractHeredocBody(source: string, openToken: string, closeToken: strin
 }
 
 describe("Workflow helper scripts", () => {
+  test("verify-sprint documents the expensive rerun audit contract", () => {
+    const cwd = tmpWorkspace("helper-verify-sprint-help");
+    try {
+      copyHelpers(cwd);
+      const result = run("bash", ["scripts/verify-sprint.sh", "--help"], cwd);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("--force-expensive-rerun");
+      expect(result.stdout).toContain("--reason <text>");
+      expect(result.stdout).toContain("--prepare-acceptance");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("capability resolver rejects missing registry instead of synthesizing legacy discovery", () => {
     const cwd = tmpWorkspace("helper-capability-worktrees");
     try {
@@ -3374,6 +3398,518 @@ describe("Workflow helper scripts", () => {
     }
   }, 30_000);
 
+  test("verify-contract reuses a passing expensive criterion when only a cheap gate failed", () => {
+    const cwd = tmpWorkspace("helper-verify-contract-incremental-retry");
+    try {
+      mkdirSync(join(cwd, "scripts"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+      copyHelpers(cwd);
+      installHooks(cwd);
+
+      writeFileSync(
+        join(cwd, "scripts/expensive-fixture.sh"),
+        "#!/bin/bash\nprintf 'run\\n' >> .ai/harness/expensive-count\ntest ! -f .ai/harness/force-fail\n",
+      );
+      writeFileSync(
+        join(cwd, "scripts/check-task-sync.sh"),
+        "#!/bin/bash\ntest -f .ai/harness/gate-ready\n",
+      );
+      chmodSync(join(cwd, "scripts/expensive-fixture.sh"), 0o755);
+      chmodSync(join(cwd, "scripts/check-task-sync.sh"), 0o755);
+      writeFileSync(
+        join(cwd, "task.contract.md"),
+        [
+          "# Task Contract: incremental-retry",
+          "",
+          "> **Status**: Active",
+          "> **Task Profile**: code-change",
+          "",
+          "```yaml",
+          "exit_criteria:",
+          "  commands_succeed:",
+          "    - bash scripts/expensive-fixture.sh",
+          "    - bash scripts/check-task-sync.sh",
+          "criterion_reuse:",
+          "  commands_succeed:",
+          "    - bash scripts/expensive-fixture.sh",
+          "    - bash scripts/check-task-sync.sh",
+          "```",
+          "",
+          "## Evidence Requirements",
+          "",
+          "```yaml",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
+          "```",
+          "",
+        ].join("\n"),
+      );
+      const contextPath = join(cwd, ".ai/harness/criterion-context.json");
+      writeFileSync(
+        contextPath,
+        `${JSON.stringify({
+          schema: "repo-harness-criterion-context.v1",
+          repository_root: realpathSync(cwd),
+          subject_sha256: `sha256:${"1".repeat(64)}`,
+          target_revision: "a".repeat(40),
+          contract_sha256: `sha256:${"2".repeat(64)}`,
+          goal_sha256: `sha256:${"3".repeat(64)}`,
+          toolchain_fingerprint: `sha256:${"4".repeat(64)}`,
+        }, null, 2)}\n`,
+      );
+      const env = {
+        REPO_HARNESS_VERIFICATION_CONTEXT_FILE: contextPath,
+        REPO_HARNESS_EXPENSIVE_CRITERION_MS: "0",
+      };
+
+      const first = run(
+        "bash",
+        ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict", "--read-only", "--report-file", "first.json"],
+        cwd,
+        env,
+      );
+      expect(first.status).toBe(1);
+      writeFileSync(join(cwd, ".ai/harness/gate-ready"), "ready\n");
+      const second = run(
+        "bash",
+        ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict", "--read-only", "--report-file", "second.json"],
+        cwd,
+        env,
+      );
+      expect(second.status, `${second.stdout}\n${second.stderr}`).toBe(0);
+      expect(readFileSync(join(cwd, ".ai/harness/expensive-count"), "utf-8").trim().split("\n")).toHaveLength(1);
+      const report = JSON.parse(readFileSync(join(cwd, "second.json"), "utf-8"));
+      const expensive = report.results.find((entry: any) => entry.target === "bash scripts/expensive-fixture.sh");
+      const cheap = report.results.find((entry: any) => entry.target === "bash scripts/check-task-sync.sh");
+      expect(expensive.execution).toBe("reused");
+      expect(cheap.execution).toBe("executed");
+      expect(report.results.indexOf(cheap)).toBeLessThan(report.results.indexOf(expensive));
+      expect(expensive.cache_key).toMatch(/^sha256:[0-9a-f]{64}$/);
+
+      const forced = run(
+        "bash",
+        [
+          "scripts/verify-contract.sh",
+          "--contract",
+          "task.contract.md",
+          "--strict",
+          "--read-only",
+          "--report-file",
+          "forced.json",
+          "--force-expensive-rerun",
+          "--reason",
+          "investigate deterministic flake",
+        ],
+        cwd,
+        env,
+      );
+      expect(forced.status, `${forced.stdout}\n${forced.stderr}`).toBe(0);
+      expect(readFileSync(join(cwd, ".ai/harness/expensive-count"), "utf-8").trim().split("\n")).toHaveLength(2);
+      const forcedReport = JSON.parse(readFileSync(join(cwd, "forced.json"), "utf-8"));
+      const forcedExpensive = forcedReport.results.find((entry: any) => entry.target === "bash scripts/expensive-fixture.sh");
+      expect(forcedExpensive.execution).toBe("forced");
+      expect(forcedExpensive.force_reason).toBe("investigate deterministic flake");
+
+      writeFileSync(join(cwd, ".ai/harness/force-fail"), "fail\n");
+      const forcedFailure = run(
+        "bash",
+        [
+          "scripts/verify-contract.sh",
+          "--contract",
+          "task.contract.md",
+          "--strict",
+          "--read-only",
+          "--report-file",
+          "forced-failure.json",
+          "--force-expensive-rerun",
+          "--reason",
+          "validate cached pass after forced failure",
+        ],
+        cwd,
+        env,
+      );
+      expect(forcedFailure.status).toBe(1);
+      const forcedFailureCriterion = JSON.parse(readFileSync(join(cwd, "forced-failure.json"), "utf-8")).results
+        .find((entry: any) => entry.target === "bash scripts/expensive-fixture.sh");
+      expect(forcedFailureCriterion.execution).toBe("forced");
+      rmSync(join(cwd, ".ai/harness/force-fail"));
+      const afterForcedFailure = run(
+        "bash",
+        ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict", "--read-only", "--report-file", "after-forced-failure.json"],
+        cwd,
+        env,
+      );
+      expect(afterForcedFailure.status, `${afterForcedFailure.stdout}\n${afterForcedFailure.stderr}`).toBe(0);
+      const afterForcedFailureCriterion = JSON.parse(readFileSync(join(cwd, "after-forced-failure.json"), "utf-8")).results
+        .find((entry: any) => entry.target === "bash scripts/expensive-fixture.sh");
+      expect(afterForcedFailureCriterion.execution).toBe("executed");
+      expect(readFileSync(join(cwd, ".ai/harness/expensive-count"), "utf-8").trim().split("\n")).toHaveLength(4);
+
+      const baseContext = JSON.parse(readFileSync(contextPath, "utf-8"));
+      for (const [index, field] of [
+        "subject_sha256",
+        "target_revision",
+        "contract_sha256",
+        "goal_sha256",
+        "toolchain_fingerprint",
+      ].entries()) {
+        const next = { ...baseContext } as Record<string, string>;
+        next[field] = field === "target_revision"
+          ? String(index + 5).repeat(40)
+          : `sha256:${String(index + 5).repeat(64)}`;
+        writeFileSync(contextPath, `${JSON.stringify(next, null, 2)}\n`);
+        const invalidated = run(
+          "bash",
+          ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict", "--read-only"],
+          cwd,
+          env,
+        );
+        expect(invalidated.status, `${field}\n${invalidated.stdout}\n${invalidated.stderr}`).toBe(0);
+      }
+      expect(readFileSync(join(cwd, ".ai/harness/expensive-count"), "utf-8").trim().split("\n")).toHaveLength(9);
+
+      writeFileSync(contextPath, `${JSON.stringify(baseContext, null, 2)}\n`);
+      const malformedRepositoryContext = { ...baseContext, repository_root: join(cwd, "other") };
+      writeFileSync(contextPath, `${JSON.stringify(malformedRepositoryContext, null, 2)}\n`);
+      const crossRepository = run(
+        "bash",
+        ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict", "--read-only"],
+        cwd,
+        env,
+      );
+      expect(crossRepository.status).toBe(1);
+      expect(readFileSync(join(cwd, ".ai/harness/expensive-count"), "utf-8").trim().split("\n")).toHaveLength(9);
+
+      writeFileSync(contextPath, `${JSON.stringify(baseContext, null, 2)}\n`);
+      const contract = readFileSync(join(cwd, "task.contract.md"), "utf-8")
+        .replaceAll("bash scripts/expensive-fixture.sh", "bash scripts/expensive-fixture.sh changed-command");
+      writeFileSync(join(cwd, "task.contract.md"), contract);
+      const commandChanged = run(
+        "bash",
+        ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict", "--read-only"],
+        cwd,
+        env,
+      );
+      expect(commandChanged.status, `${commandChanged.stdout}\n${commandChanged.stderr}`).toBe(0);
+      expect(readFileSync(join(cwd, ".ai/harness/expensive-count"), "utf-8").trim().split("\n")).toHaveLength(10);
+
+      const missingReason = run(
+        "bash",
+        ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict", "--read-only", "--force-expensive-rerun"],
+        cwd,
+        env,
+      );
+      expect(missingReason.status).toBe(2);
+      expect(missingReason.stderr).toContain("requires --reason");
+      expect(readFileSync(join(cwd, ".ai/harness/expensive-count"), "utf-8").trim().split("\n")).toHaveLength(10);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("verify-contract never reuses a failure or timeout", () => {
+    const cwd = tmpWorkspace("helper-verify-contract-nonpass-retry");
+    try {
+      mkdirSync(join(cwd, "scripts"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+      copyHelpers(cwd);
+      installHooks(cwd);
+      writeFileSync(
+        join(cwd, "scripts/failing-fixture.sh"),
+        "#!/bin/bash\nprintf 'run\\n' >> .ai/harness/failure-count\nexit 9\n",
+      );
+      chmodSync(join(cwd, "scripts/failing-fixture.sh"), 0o755);
+      const writeContract = (command: string) => writeFileSync(
+        join(cwd, "task.contract.md"),
+        [
+          "# Task Contract: nonpass-retry",
+          "",
+          "> **Status**: Active",
+          "> **Task Profile**: code-change",
+          "",
+          "```yaml",
+          "exit_criteria:",
+          "  commands_succeed:",
+          `    - ${command}`,
+          "criterion_reuse:",
+          "  commands_succeed:",
+          `    - ${command}`,
+          "```",
+          "",
+          "## Evidence Requirements",
+          "",
+          "```yaml",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
+          "```",
+          "",
+        ].join("\n"),
+      );
+      writeContract("bash scripts/failing-fixture.sh");
+      const contextPath = join(cwd, ".ai/harness/criterion-context.json");
+      writeFileSync(contextPath, `${JSON.stringify({
+        schema: "repo-harness-criterion-context.v1",
+        repository_root: realpathSync(cwd),
+        subject_sha256: `sha256:${"1".repeat(64)}`,
+        target_revision: "a".repeat(40),
+        contract_sha256: `sha256:${"2".repeat(64)}`,
+        goal_sha256: `sha256:${"3".repeat(64)}`,
+        toolchain_fingerprint: `sha256:${"4".repeat(64)}`,
+      }, null, 2)}\n`);
+      const env = { REPO_HARNESS_VERIFICATION_CONTEXT_FILE: contextPath };
+
+      for (const report of ["failure-one.json", "failure-two.json"]) {
+        const result = run(
+          "bash",
+          ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict", "--read-only", "--report-file", report],
+          cwd,
+          env,
+        );
+        expect(result.status).toBe(1);
+        const criterion = JSON.parse(readFileSync(join(cwd, report), "utf-8")).results
+          .find((entry: any) => entry.target === "bash scripts/failing-fixture.sh");
+        expect(criterion.execution).toBe("executed");
+      }
+      expect(readFileSync(join(cwd, ".ai/harness/failure-count"), "utf-8").trim().split("\n")).toHaveLength(2);
+
+      writeFileSync(
+        join(cwd, "scripts/run-bounded-verifier-command.ts"),
+        [
+          'import { appendFileSync, writeFileSync } from "node:fs";',
+          'const args = process.argv.slice(2);',
+          'const resultPath = args[args.indexOf("--result") + 1];',
+          'const logPath = args[args.indexOf("--log") + 1];',
+          'appendFileSync(".ai/harness/timeout-count", "run\\n");',
+          'writeFileSync(logPath, "timed out\\n");',
+          'writeFileSync(resultPath, JSON.stringify({duration_ms:1,timed_out:true,exit_code:124,signal:"SIGTERM"}));',
+          'process.exit(124);',
+          '',
+        ].join("\n"),
+      );
+      writeContract("bash scripts/timeout-fixture.sh");
+      for (const report of ["timeout-one.json", "timeout-two.json"]) {
+        const result = run(
+          "bash",
+          ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict", "--read-only", "--report-file", report],
+          cwd,
+          env,
+        );
+        expect(result.status).toBe(1);
+        const criterion = JSON.parse(readFileSync(join(cwd, report), "utf-8")).results
+          .find((entry: any) => entry.target === "bash scripts/timeout-fixture.sh");
+        expect(criterion.execution).toBe("executed");
+        expect(criterion.timed_out).toBe(true);
+      }
+      expect(readFileSync(join(cwd, ".ai/harness/timeout-count"), "utf-8").trim().split("\n")).toHaveLength(2);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("verify-contract executes an unlisted criterion on every run", () => {
+    const cwd = tmpWorkspace("helper-verify-contract-reuse-opt-in");
+    try {
+      mkdirSync(join(cwd, "scripts"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+      copyHelpers(cwd);
+      installHooks(cwd);
+      writeFileSync(
+        join(cwd, "scripts/unlisted-fixture.sh"),
+        [
+          "#!/bin/bash",
+          "[[ -z \"${REPO_HARNESS_VERIFICATION_CONTEXT_FILE:-}\" ]] || exit 18",
+          "[[ -z \"${REPO_HARNESS_VERIFICATION_PREFLIGHT_FILE:-}\" ]] || exit 19",
+          "printf 'run\\n' >> .ai/harness/unlisted-count",
+          "",
+        ].join("\n"),
+      );
+      chmodSync(join(cwd, "scripts/unlisted-fixture.sh"), 0o755);
+      writeFileSync(
+        join(cwd, "task.contract.md"),
+        [
+          "# Task Contract: reuse-opt-in",
+          "",
+          "> **Status**: Active",
+          "> **Task Profile**: code-change",
+          "",
+          "```yaml",
+          "exit_criteria:",
+          "  commands_succeed:",
+          "    - bash scripts/unlisted-fixture.sh",
+          "```",
+          "",
+          "## Evidence Requirements",
+          "",
+          "```yaml",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
+          "```",
+          "",
+        ].join("\n"),
+      );
+      const contextPath = join(cwd, ".ai/harness/criterion-context.json");
+      const preflightPath = join(cwd, ".ai/harness/preflight.json");
+      writeFileSync(preflightPath, '{"status":"pass"}\n');
+      writeFileSync(contextPath, `${JSON.stringify({
+        schema: "repo-harness-criterion-context.v1",
+        repository_root: realpathSync(cwd),
+        subject_sha256: `sha256:${"1".repeat(64)}`,
+        target_revision: "a".repeat(40),
+        contract_sha256: `sha256:${"2".repeat(64)}`,
+        goal_sha256: `sha256:${"3".repeat(64)}`,
+        toolchain_fingerprint: `sha256:${"4".repeat(64)}`,
+      }, null, 2)}\n`);
+      const env = {
+        REPO_HARNESS_VERIFICATION_CONTEXT_FILE: contextPath,
+        REPO_HARNESS_VERIFICATION_PREFLIGHT_FILE: preflightPath,
+      };
+
+      for (const report of ["unlisted-first.json", "unlisted-second.json"]) {
+        const result = run(
+          "bash",
+          ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict", "--read-only", "--report-file", report],
+          cwd,
+          env,
+        );
+        expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+        const criterion = JSON.parse(readFileSync(join(cwd, report), "utf-8")).results
+          .find((entry: any) => entry.target === "bash scripts/unlisted-fixture.sh");
+        expect(criterion.execution).toBe("executed");
+        expect(criterion.cache_key).toBe("");
+      }
+      expect(readFileSync(join(cwd, ".ai/harness/unlisted-count"), "utf-8").trim().split("\n")).toHaveLength(2);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("verify-contract rejects malformed cache records and concurrent exact-key execution", async () => {
+    const cwd = tmpWorkspace("helper-verify-contract-cache-guards");
+    let active: ReturnType<typeof spawn> | undefined;
+    try {
+      mkdirSync(join(cwd, "scripts"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+      copyHelpers(cwd);
+      installHooks(cwd);
+      writeFileSync(
+        join(cwd, "scripts/cache-fixture.sh"),
+        "#!/bin/bash\nprintf 'run\\n' >> .ai/harness/cache-count\n",
+      );
+      chmodSync(join(cwd, "scripts/cache-fixture.sh"), 0o755);
+      writeFileSync(
+        join(cwd, "task.contract.md"),
+        [
+          "# Task Contract: cache-guards",
+          "",
+          "> **Status**: Active",
+          "> **Task Profile**: code-change",
+          "",
+          "```yaml",
+          "exit_criteria:",
+          "  commands_succeed:",
+          "    - bash scripts/cache-fixture.sh",
+          "criterion_reuse:",
+          "  commands_succeed:",
+          "    - bash scripts/cache-fixture.sh",
+          "```",
+          "",
+          "## Evidence Requirements",
+          "",
+          "```yaml",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
+          "```",
+          "",
+        ].join("\n"),
+      );
+      const contextPath = join(cwd, ".ai/harness/criterion-context.json");
+      writeFileSync(contextPath, `${JSON.stringify({
+        schema: "repo-harness-criterion-context.v1",
+        repository_root: realpathSync(cwd),
+        subject_sha256: `sha256:${"1".repeat(64)}`,
+        target_revision: "a".repeat(40),
+        contract_sha256: `sha256:${"2".repeat(64)}`,
+        goal_sha256: `sha256:${"3".repeat(64)}`,
+        toolchain_fingerprint: `sha256:${"4".repeat(64)}`,
+      }, null, 2)}\n`);
+      const env = { REPO_HARNESS_VERIFICATION_CONTEXT_FILE: contextPath };
+      const outsideCache = join(cwd, "outside-cache");
+      mkdirSync(join(cwd, ".ai/harness/runs"), { recursive: true });
+      mkdirSync(outsideCache, { recursive: true });
+      symlinkSync(outsideCache, join(cwd, ".ai/harness/runs/criteria"));
+      const unsafeCache = run(
+        "bash",
+        ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict", "--read-only", "--report-file", "unsafe-cache.json"],
+        cwd,
+        env,
+      );
+      expect(unsafeCache.status).toBe(1);
+      expect(unsafeCache.stderr).toContain("criterion cache path is not a trusted directory");
+      expect(existsSync(join(cwd, ".ai/harness/cache-count"))).toBe(false);
+      expect(readdirSync(outsideCache)).toHaveLength(0);
+      rmSync(join(cwd, ".ai/harness/runs/criteria"));
+
+      const first = run(
+        "bash",
+        ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict", "--read-only", "--report-file", "first.json"],
+        cwd,
+        env,
+      );
+      expect(first.status).toBe(0);
+      const firstCriterion = JSON.parse(readFileSync(join(cwd, "first.json"), "utf-8")).results
+        .find((entry: any) => entry.target === "bash scripts/cache-fixture.sh");
+      const cacheRecord = join(cwd, ".ai/harness/runs/criteria", `${firstCriterion.cache_key.slice("sha256:".length)}.json`);
+      writeFileSync(cacheRecord, "{}\n");
+      const malformed = run(
+        "bash",
+        ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict", "--read-only", "--report-file", "malformed.json"],
+        cwd,
+        env,
+      );
+      expect(malformed.status).toBe(0);
+      expect(JSON.parse(readFileSync(join(cwd, "malformed.json"), "utf-8")).results
+        .find((entry: any) => entry.target === "bash scripts/cache-fixture.sh")?.execution).toBe("executed");
+      expect(readFileSync(join(cwd, ".ai/harness/cache-count"), "utf-8").trim().split("\n")).toHaveLength(2);
+
+      writeFileSync(
+        join(cwd, "scripts/concurrent-fixture.sh"),
+        "#!/bin/bash\nprintf 'run\\n' >> .ai/harness/concurrent-count\ntouch .ai/harness/concurrent-started\nsleep 1\n",
+      );
+      chmodSync(join(cwd, "scripts/concurrent-fixture.sh"), 0o755);
+      writeFileSync(
+        join(cwd, "task.contract.md"),
+        readFileSync(join(cwd, "task.contract.md"), "utf-8")
+          .replaceAll("bash scripts/cache-fixture.sh", "bash scripts/concurrent-fixture.sh"),
+      );
+      active = spawn(
+        "bash",
+        ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict", "--read-only", "--report-file", "concurrent-first.json"],
+        { cwd, env: sandboxEnv(env) },
+      );
+      for (let attempt = 0; attempt < 100 && !existsSync(join(cwd, ".ai/harness/concurrent-started")); attempt += 1) {
+        await Bun.sleep(20);
+      }
+      expect(existsSync(join(cwd, ".ai/harness/concurrent-started"))).toBe(true);
+      const concurrent = run(
+        "bash",
+        ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict", "--read-only", "--report-file", "concurrent-second.json"],
+        cwd,
+        env,
+      );
+      expect(concurrent.status).toBe(1);
+      const concurrentCriterion = JSON.parse(readFileSync(join(cwd, "concurrent-second.json"), "utf-8")).results
+        .find((entry: any) => entry.target === "bash scripts/concurrent-fixture.sh");
+      expect(concurrentCriterion.execution).toBe("blocked");
+      expect(concurrentCriterion.message).toContain("already in progress");
+      const activeExit = await new Promise<number | null>((resolve) => active?.once("exit", resolve));
+      expect(activeExit).toBe(0);
+      expect(readFileSync(join(cwd, ".ai/harness/concurrent-count"), "utf-8").trim().split("\n")).toHaveLength(1);
+    } finally {
+      active?.kill("SIGKILL");
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test("verify-contract quiet mode should emit only summary and report file", () => {
     const cwd = tmpWorkspace("helper-verify-contract-quiet");
     try {
@@ -3905,6 +4441,215 @@ describe("Workflow helper scripts", () => {
       expect(checks.allowed_paths_check.status).toBe("pass");
       expect(checks.contract.allowed_paths).not.toContain("docs/architecture/.projection-manifest.json");
       expect(checks.review_subject_sha256).toBe(currentReviewBinding(cwd).subject);
+      expect(checks.contract.retry_context.subject_sha256).toBe(checks.review_subject_sha256);
+      expect(checks.contract.retry_context.target_revision).toBe(currentReviewBinding(cwd).targetRevision);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("verify-sprint blocks expensive criteria when a cheap acceptance preflight fails", () => {
+    const cwd = tmpWorkspace("helper-verify-sprint-cheap-preflight");
+    try {
+      const fakeCli = installAutomaticProjectionVerifyFixture(cwd, { gatedTaskSync: true });
+      const fakeBin = join(cwd, "fake-bin");
+      mkdirSync(fakeBin, { recursive: true });
+      writeFileSync(
+        join(fakeBin, "bun"),
+        [
+          "#!/bin/bash",
+          "if [[ \"$*\" == \"test --timeout 60000\" ]]; then",
+          "  printf 'run\\n' >> .ai/harness/runs/expensive-count",
+          "  exit 0",
+          "fi",
+          `exec ${JSON.stringify(process.execPath)} "$@"`,
+          "",
+        ].join("\n"),
+      );
+      chmodSync(join(fakeBin, "bun"), 0o755);
+      writeFileSync(join(cwd, ".git/info/exclude"), ".ai/harness/checks/\n.ai/harness/runs/\n.ai/harness/task-sync-ready\nfake-bin/\n");
+      const contractPath = join(cwd, "tasks/contracts/projection-fixture.contract.md");
+      writeFileSync(
+        contractPath,
+        readFileSync(contractPath, "utf-8").replace(
+          "  files_exist:\n    - docs/spec.md\n",
+          "  files_exist:\n    - docs/spec.md\n  commands_succeed:\n    - bun test --timeout 60000\n    - bash scripts/check-task-sync.sh\ncriterion_reuse:\n  commands_succeed:\n    - bun test --timeout 60000\n",
+        ),
+      );
+      const baseEnv = {
+        PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+        BUN_BIN: process.execPath,
+        REPO_HARNESS_BUN_BIN: process.execPath,
+        REPO_HARNESS_WORKFLOW_STATE_LIB: join(cwd, ".ai/hooks/lib/workflow-state.sh"),
+        REPO_HARNESS_CLI_BIN: fakeCli,
+        REPO_HARNESS_EXPENSIVE_CRITERION_MS: "0",
+        HOOK_HOST: "claude",
+        REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
+      };
+
+      const first = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd, {
+        ...baseEnv,
+        HOOK_RUN_ID: "fixture-preflight-first",
+      });
+      expect(first.status).toBe(1);
+      expect(existsSync(join(cwd, ".ai/harness/runs/expensive-count"))).toBe(false);
+      const firstChecks = runSnapshotById(cwd, "fixture-preflight-first", "projection-fixture").content;
+      expect(firstChecks.commands.some((entry: any) => entry.command === "bun test --timeout 60000")).toBe(false);
+      expect(firstChecks.commands.find((entry: any) => entry.command === "bash scripts/check-task-sync.sh")?.status).toBe("fail");
+
+      writeFileSync(join(cwd, ".ai/harness/task-sync-ready"), "ready\n");
+      const second = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd, {
+        ...baseEnv,
+        HOOK_RUN_ID: "fixture-preflight-second",
+      });
+      expect(second.status, `${second.stdout}\n${second.stderr}`).toBe(0);
+      expect(readFileSync(join(cwd, ".ai/harness/runs/expensive-count"), "utf-8").trim().split("\n")).toHaveLength(1);
+      const secondChecks = runSnapshotById(cwd, "fixture-preflight-second", "projection-fixture").content;
+      expect(secondChecks.commands.find((entry: any) => entry.command === "bun test --timeout 60000")?.execution).toBe("executed");
+      expect(secondChecks.review_subject_sha256).toBe(firstChecks.review_subject_sha256);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("verify-sprint composes executed and reused criteria into frozen acceptance evidence", () => {
+    const cwd = tmpWorkspace("helper-verify-sprint-criterion-retry");
+    try {
+      const fakeCli = installAutomaticProjectionVerifyFixture(cwd);
+      const fakeBin = join(cwd, "fake-bin");
+      mkdirSync(fakeBin, { recursive: true });
+      writeFileSync(
+        join(fakeBin, "bun"),
+        [
+          "#!/bin/bash",
+          "if [[ \"$*\" == \"test --timeout 60000\" ]]; then",
+          "  printf 'run\\n' >> .ai/harness/runs/expensive-count",
+          "  exit 0",
+          "fi",
+          `exec ${JSON.stringify(process.execPath)} \"$@\"`,
+          "",
+        ].join("\n"),
+      );
+      chmodSync(join(fakeBin, "bun"), 0o755);
+      writeFileSync(
+        join(cwd, ".git/info/exclude"),
+        ".ai/harness/checks/\n.ai/harness/runs/\nfake-bin/\n",
+      );
+      const contractPath = join(cwd, "tasks/contracts/projection-fixture.contract.md");
+      writeFileSync(
+        contractPath,
+        readFileSync(contractPath, "utf-8").replace(
+          "  files_exist:\n    - docs/spec.md\n",
+          "  files_exist:\n    - docs/spec.md\n  commands_succeed:\n    - bun test --timeout 60000\ncriterion_reuse:\n  commands_succeed:\n    - bun test --timeout 60000\n",
+        ),
+      );
+      const baseEnv = {
+        PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+        BUN_BIN: process.execPath,
+        REPO_HARNESS_BUN_BIN: process.execPath,
+        REPO_HARNESS_WORKFLOW_STATE_LIB: join(cwd, ".ai/hooks/lib/workflow-state.sh"),
+        REPO_HARNESS_CLI_BIN: fakeCli,
+        REPO_HARNESS_EXPENSIVE_CRITERION_MS: "0",
+        HOOK_HOST: "claude",
+        REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
+      };
+
+      const first = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd, {
+        ...baseEnv,
+        HOOK_RUN_ID: "fixture-criterion-first",
+      });
+      expect(first.status, `${first.stdout}\n${first.stderr}`).toBe(0);
+      const firstChecks = runSnapshotById(cwd, "fixture-criterion-first", "projection-fixture").content;
+      const firstCriterion = firstChecks.commands.find((entry: any) => entry.name.startsWith("criterion:commands_succeed:"));
+      expect(firstCriterion.execution).toBe("executed");
+      expect(firstChecks.contract.retry_context.subject_sha256).toBe(firstChecks.review_subject_sha256);
+
+      const second = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd, {
+        ...baseEnv,
+        HOOK_RUN_ID: "fixture-criterion-second",
+      });
+      const secondChecks = runSnapshotById(cwd, "fixture-criterion-second", "projection-fixture").content;
+      expect(second.status, `${second.stdout}\n${second.stderr}\n${JSON.stringify(secondChecks, null, 2)}`).toBe(0);
+      expect(readFileSync(join(cwd, ".ai/harness/runs/expensive-count"), "utf-8").trim().split("\n")).toHaveLength(1);
+      const secondCriterion = secondChecks.commands.find((entry: any) => entry.name.startsWith("criterion:commands_succeed:"));
+      expect(secondCriterion.execution).toBe("reused");
+      expect(secondCriterion.cache_key).toBe(firstCriterion.cache_key);
+
+      const forced = run(
+        "bash",
+        [
+          "scripts/verify-sprint.sh",
+          "--prepare-acceptance",
+          "--force-expensive-rerun",
+          "--reason",
+          "reproduce provider flake",
+        ],
+        cwd,
+        { ...baseEnv, HOOK_RUN_ID: "fixture-criterion-forced" },
+      );
+      expect(forced.status, `${forced.stdout}\n${forced.stderr}`).toBe(0);
+      expect(readFileSync(join(cwd, ".ai/harness/runs/expensive-count"), "utf-8").trim().split("\n")).toHaveLength(2);
+      const forcedChecks = runSnapshotById(cwd, "fixture-criterion-forced", "projection-fixture").content;
+      const forcedCriterion = forcedChecks.commands.find((entry: any) => entry.name.startsWith("criterion:commands_succeed:"));
+      expect(forcedCriterion.execution).toBe("forced");
+      expect(forcedCriterion.force_reason).toBe("reproduce provider flake");
+      expect(forcedChecks.review_subject_sha256).toBe(secondChecks.review_subject_sha256);
+
+      const toolchainChanged = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd, {
+        ...baseEnv,
+        REPO_HARNESS_VERIFICATION_TOOLCHAIN_FINGERPRINT: "fixture-toolchain-v2",
+        HOOK_RUN_ID: "fixture-criterion-toolchain",
+      });
+      expect(toolchainChanged.status, `${toolchainChanged.stdout}\n${toolchainChanged.stderr}`).toBe(0);
+      expect(readFileSync(join(cwd, ".ai/harness/runs/expensive-count"), "utf-8").trim().split("\n")).toHaveLength(3);
+      const toolchainChecks = runSnapshotById(cwd, "fixture-criterion-toolchain", "projection-fixture").content;
+      const toolchainCriterion = toolchainChecks.commands.find((entry: any) => entry.name.startsWith("criterion:commands_succeed:"));
+      expect(toolchainCriterion.execution).toBe("executed");
+      expect(toolchainCriterion.cache_key).not.toBe(forcedCriterion.cache_key);
+
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n\nSource byte changed.\n");
+      const sourceChanged = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd, {
+        ...baseEnv,
+        HOOK_RUN_ID: "fixture-criterion-source",
+      });
+      expect(sourceChanged.status, `${sourceChanged.stdout}\n${sourceChanged.stderr}`).toBe(0);
+      expect(readFileSync(join(cwd, ".ai/harness/runs/expensive-count"), "utf-8").trim().split("\n")).toHaveLength(4);
+      const sourceChecks = runSnapshotById(cwd, "fixture-criterion-source", "projection-fixture").content;
+      const sourceCriterion = sourceChecks.commands.find((entry: any) => entry.name.startsWith("criterion:commands_succeed:"));
+      expect(sourceCriterion.execution).toBe("executed");
+      expect(sourceChecks.review_subject_sha256).not.toBe(secondChecks.review_subject_sha256);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("verify-sprint rejects a criterion that changes the frozen retry authority while it runs", () => {
+    const cwd = tmpWorkspace("helper-verify-sprint-criterion-context-drift");
+    try {
+      const fakeCli = installAutomaticProjectionVerifyFixture(cwd);
+      const contractPath = join(cwd, "tasks/contracts/projection-fixture.contract.md");
+      writeFileSync(
+        contractPath,
+        readFileSync(contractPath, "utf-8").replace(
+          "  files_exist:\n    - docs/spec.md\n",
+          "  files_exist:\n    - docs/spec.md\n  commands_succeed:\n    - printf 'mutated during verification\\n' >> docs/spec.md\n",
+        ),
+      );
+
+      const result = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd, {
+        REPO_HARNESS_CLI_BIN: fakeCli,
+        HOOK_RUN_ID: "fixture-criterion-context-drift",
+        HOOK_HOST: "claude",
+        REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
+      });
+      const checks = runSnapshotById(cwd, "fixture-criterion-context-drift", "projection-fixture").content;
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("changed during contract execution");
+      expect(checks.contract.report.failed).toBe(0);
+      expect(checks.contract.retry_context_guard.status).toBe("fail");
+      expect(checks.guards.find((entry: any) => entry.name === "criterion_context")?.status).toBe("fail");
+      expect(checks.failure_class).toBe("criterion_context");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -4181,6 +4926,8 @@ describe("Workflow helper scripts", () => {
           "exit_criteria:",
           "  files_exist:",
           "    - docs/spec.md",
+          "  commands_succeed:",
+          "    - printf expensive-ran > .expensive-ran",
           "evidence_requirements:",
           "  benchmark: not_applicable",
           "```",
@@ -4228,6 +4975,8 @@ describe("Workflow helper scripts", () => {
       expect(checks.files_changed).toContain("src/outside.ts");
       expect(checks.allowed_paths_check.status).toBe("fail");
       expect(checks.allowed_paths_check.outside).toContain("src/outside.ts");
+      expect(existsSync(join(cwd, ".expensive-ran"))).toBe(false);
+      expect(checks.commands.some((entry: any) => entry.command.includes("expensive-ran"))).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

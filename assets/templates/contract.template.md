@@ -136,6 +136,13 @@ exit_criteria:
     - path: tests/unit/{{TASK_SLUG}}.test.ts
   commands_succeed:
     - bun run check:type
+# Optional exact-subject reuse is fail-closed and opt-in. List only deterministic
+# criteria whose inputs are fully bound by the frozen subject/toolchain context.
+# criterion_reuse:
+#   tests_pass:
+#     - path/to/deterministic.test.ts
+#   commands_succeed:
+#     - bun test --timeout 60000
 ```
 
 ## Acceptance Notes (Human Review)
