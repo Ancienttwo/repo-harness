@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-25 03:16
+> **Related Plan**: plans/archive/plan-20260825-0029-me0b-engineer-principal-claim-actor.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260825-0316
+
 # Task Contract: me0b-engineer-principal-claim-actor
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260825-0029-me0b-engineer-principal-claim-actor.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->

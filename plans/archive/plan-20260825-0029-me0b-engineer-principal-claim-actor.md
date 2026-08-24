@@ -1,6 +1,6 @@
 # Plan: ME-0B Engineer Principal and Claim Actor
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260825-0029
 > **Slug**: me0b-engineer-principal-claim-actor
 > **Planning Source**: codex-plan
