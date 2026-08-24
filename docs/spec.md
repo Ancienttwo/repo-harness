@@ -12,6 +12,11 @@ or a future agent an approved plan or sprint, let it work in an isolated branch
 or worktree, and review completion from files: plan, contract, notes, checks,
 trace, review, and handoff.
 
+The same authority model may support persistent logical Module Engineers. The
+engineer is a repo-defined role with a reviewed SOP and repo-grounded knowledge;
+a Codex or Claude Session is only its replaceable runtime binding, while native
+Subagents remain bounded workers under one canonical task claim.
+
 ## Primary Users
 
 - Maintainers adopting an existing repository that already has product code.
@@ -90,6 +95,28 @@ repos.
   output override summaries.
 - Delegated work remains parent-owned: explorer and verifier are read-only;
   worker edits are constrained to contract `allowed_paths`.
+- A Module Engineer binding is shared git-common-dir authorization state for
+  engineer-scoped commands only. It cannot create, transfer, or replace task
+  Lease, Publication, Acceptance, or merge authority.
+- Engineer binding transitions publish an immutable idempotency-fenced event
+  before CAS-replacing the sole current pointer. Dangling events remain audit
+  evidence only; retries cannot select by time, change payload under one key,
+  or fabricate current state after a crash.
+- Engineer identity is derived by an authenticated runtime boundary; an LLM may
+  not gain authority by supplying `engineer_id` or binding generation as command
+  arguments.
+- One claimed worktree has at most one writer actor, including the parent
+  Engineer itself. A writable delegated worker must hold an independently
+  enforced child grant and settle it before publication. Writable delegation
+  is available only when a Worker Host controls both Parent and child mutation
+  capability; unmanaged Provider Sessions remain read-only.
+- Parent freeze, Worker activation, settlement, and Parent restoration are
+  separate crash-recoverable writer-slot states. Transitional or unverifiable
+  states admit no mutation or publication and never silently restore a writer.
+- Provider threads, transcripts, auto memory, and context summaries are caches.
+  Durable module knowledge remains in architecture, research, lessons,
+  workstreams, and task-local notes, with any engineer memory kept as a
+  rebuildable index.
 
 ## Human Review Expectations
 
@@ -149,6 +176,17 @@ AcceptanceReceipt field.
   selected by `.ai/harness/policy.json#context.capability_source` and resolved
   by longest-prefix path match, owning local agent context and ownership
   boundaries for the files under it.
+- **Module Engineer**: A stable logical engineering role that references one
+  canonical capability and a reviewed SOP. It is not a Session, task owner,
+  Lease, or acceptance identity.
+- **Engineer binding**: The current shared, generation-fenced association between
+  a Module Engineer and one Provider Session. Its contract revision covers the
+  canonical Profile bytes, SOP bytes, and capability revision. It authorizes
+  only explicitly engineer-scoped runtime commands issued through a trusted
+  principal boundary.
+- **Delegated worker grant**: A non-transferable child mutation permit under one
+  current task claim and one exclusive worktree writer slot. It is not a second
+  task Lease and cannot authorize publication or acceptance.
 - **Task profile**: The declared execution shape of a contract (for example
   `code-change`) that determines which verification and delegation rules
   apply to that task.
