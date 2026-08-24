@@ -56,17 +56,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Codex
+> **Source**: codex-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:3a0c8a8209c4b68bd9c8b60eefdbb572a2aaaf2f481559a4ae9ab58a06e4302e
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 75f50b909d50e980f8a372208f55aa42665a2db9
+> **Verification Evidence SHA256**: sha256:341d05517e1d74103f9afd9fabf1d402b453dab949f6bafdf234b604d7aac9e6
+> **Issued At**: 2026-08-24T05:35:16.756Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: Post-fix adversarial review passed: exact Host and supplied Origin are pinned before routing and Fleet collection; hostile requests fail closed, valid authority succeeds, pre-fix regression evidence and all contract checks pass, with no P0 or P1 findings.
 - Findings: none
 
 ## Behavior Diff Notes
