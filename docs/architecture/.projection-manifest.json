@@ -5,12 +5,12 @@
   "sourceDigest": "sha256:626f47ba29a0a8226cc68ad511647a6bddfea55a0149eb77649ecc54504a9404",
   "provenance": {
     "schemaVersion": "archcontext.architecture-docs-projection-provenance/v1",
-    "baseHeadSha": "6879a5229e5c6591b9fb72b22acf362f4b03ed14",
-    "worktreeDigest": "sha256:5c372475f746a74a77c1a26af8b6b7fb1b32d5de9fc2489194391c2d389826f1",
-    "sourceTreeDigest": "sha256:b9962a67c69c1933b1b7e6f1f3ce38a1a468cdcd12a8be750174c5a9c3d65e8d",
+    "baseHeadSha": "603f7de33a018c69c42905a1be78f924cbabb825",
+    "worktreeDigest": "sha256:20a97b04882013666a4f1abc64b208b428d5ee816f0f617b4356422fee747bc0",
+    "sourceTreeDigest": "sha256:4c048997af67ac136eabd29a7bc2a80bbaaaa54775b8603e681346dea630a3e2",
     "modelDigest": "sha256:89e69d250312f587609c102e7bbf16dc6c33939b15b73da9d16a8046bbc3475b",
-    "codeGraphDigest": "sha256:e797493a1dffa887c853d0e06df2e9aeec37f0b86c43cc82295e0764c0810e94",
-    "indexedWorktreeDigest": "sha256:342d3111e0adb51b3d1937364c7c83faf4b740e56ce6557d10ee20369045d340",
+    "codeGraphDigest": "sha256:39bbc12f5acea0cfdb2444840c806f4e646248de0e86ef18acd72e0c9840facc",
+    "indexedWorktreeDigest": "sha256:452cf8467e08b1c433ab75ba1a2fe8ed12c3cd689e0771f53857f56fba43e99a",
     "rendererVersion": "archcontext.docs-renderer/v4",
     "layoutVersion": "archcontext.docs-layout/v1",
     "generatedFrom": {
@@ -19,9 +19,9 @@
       "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
       "codeGraphStatus": "ready"
     },
-    "projectionInputDigest": "sha256:614cb3eabc8d0ad62eb520235dedda46537d51e9c4cada0929d6d04d49656834"
+    "projectionInputDigest": "sha256:2d0e0e74c3e280d3756850585bffd17f592525f6d96a7915db140ab33dbc0d3d"
   },
-  "projectionDigest": "sha256:fbc42ab77fbe0900cfb1f56df9fb320cededd9091d8848cee55b51a27c9de79f",
+  "projectionDigest": "sha256:4f70d8ad9a2b84435e2ba57993590cbcf710ae0f932d6da453ed758502fcdeff",
   "semanticBaseline": {
     "semanticState": {
       "schemaVersion": "archcontext.architecture-semantic-state/v1",
@@ -332,12 +332,12 @@
     },
     "digests": {
       "modelDigest": "sha256:89e69d250312f587609c102e7bbf16dc6c33939b15b73da9d16a8046bbc3475b",
-      "sourceTreeDigest": "sha256:b9962a67c69c1933b1b7e6f1f3ce38a1a468cdcd12a8be750174c5a9c3d65e8d",
+      "sourceTreeDigest": "sha256:4c048997af67ac136eabd29a7bc2a80bbaaaa54775b8603e681346dea630a3e2",
       "flowProofDigest": "sha256:85a0e701685fdaf37b7cc8ba464cf381b05b901bc7607972e50b5d1c315b611b",
-      "projectionDigest": "sha256:fbc42ab77fbe0900cfb1f56df9fb320cededd9091d8848cee55b51a27c9de79f"
+      "projectionDigest": "sha256:4f70d8ad9a2b84435e2ba57993590cbcf710ae0f932d6da453ed758502fcdeff"
     }
   },
-  "receiptDigest": "sha256:99f31ef88aee589624edf6d50cbe24120db634e45089d3dd9649d70015364ca8",
+  "receiptDigest": "sha256:c492420efba245debae1d7e8eb1a8c9c29ea20670468340f299f17227752ed0b",
   "refreshSignalIds": [],
   "targetCount": 18,
   "fileCount": 18,
@@ -370,9 +370,9 @@
       "sourceDigest": "sha256:6c1d5494a41634fd28f9685b325b1d79d2bb95fac249f5c57dc5519e35c5c307",
       "outputDigest": "sha256:5c61debb2a48e091cde2de1f88b22066a8e4fb7b2e6fc18e4e98fbc2e1f0aa56",
       "verifiedAgainst": {
-        "branch": "codex/me0a-engineer-profile-binding",
-        "commit": "2adfa629e1f99a7c496b8fc0bd348f1e304a38d5",
-        "committedAt": "2026-08-24T21:08:59+08:00"
+        "branch": "codex/official-codex-plugin-outside-review",
+        "commit": "603f7de33a018c69c42905a1be78f924cbabb825",
+        "committedAt": "2026-08-25T14:13:39+08:00"
       }
     },
     {
@@ -410,9 +410,9 @@
       "sourceDigest": "sha256:4b156de6b1c762fba52333c97bc1928eb8ccdfa64972fe4c9034249d5b66a22c",
       "outputDigest": "sha256:ae0761f94d159619eca95cc0e65038bb547c0d31d085c4f9c4f9095d639f0db1",
       "verifiedAgainst": {
-        "branch": "codex/me0a-engineer-profile-binding",
-        "commit": "b8f5ce2776f2648dfc0ad1a480b9633b36acfcde",
-        "committedAt": "2026-08-24T23:37:10+08:00"
+        "branch": "codex/official-codex-plugin-outside-review",
+        "commit": "603f7de33a018c69c42905a1be78f924cbabb825",
+        "committedAt": "2026-08-25T14:13:39+08:00"
       }
     },
     {
@@ -450,9 +450,9 @@
       "sourceDigest": "sha256:183d7a9ef531bb200e573b337911d503eac0d86741a87b02d5d0b60896930782",
       "outputDigest": "sha256:2e93a1f59017a07da7860cf0073e6911d9f75032b5af8be503c56087f394466a",
       "verifiedAgainst": {
-        "branch": "codex/me0a-engineer-profile-binding",
-        "commit": "b8f5ce2776f2648dfc0ad1a480b9633b36acfcde",
-        "committedAt": "2026-08-24T23:37:10+08:00"
+        "branch": "codex/official-codex-plugin-outside-review",
+        "commit": "603f7de33a018c69c42905a1be78f924cbabb825",
+        "committedAt": "2026-08-25T14:13:39+08:00"
       }
     },
     {
@@ -470,9 +470,9 @@
       "sourceDigest": "sha256:c5528c7ff9467b71364ce083ab4d0bbaff0729765c1e1f8b511ae54319a88e94",
       "outputDigest": "sha256:235db05ad6aca5f3bd47ce84257904865e2b41f0b69c00c2f50989b6e7e61313",
       "verifiedAgainst": {
-        "branch": "codex/me0a-engineer-profile-binding",
-        "commit": "2adfa629e1f99a7c496b8fc0bd348f1e304a38d5",
-        "committedAt": "2026-08-24T21:08:59+08:00"
+        "branch": "codex/official-codex-plugin-outside-review",
+        "commit": "603f7de33a018c69c42905a1be78f924cbabb825",
+        "committedAt": "2026-08-25T14:13:39+08:00"
       }
     },
     {
@@ -550,9 +550,9 @@
       "sourceDigest": "sha256:2b41a1b3f03e0f2a17b8e83607c353f16dc1370b0d6cfada99502c1048e2c342",
       "outputDigest": "sha256:66d4b7068ff03b389eb468fcfeb98d6146109c54d1e89eaf119a8f278ac9a5e4",
       "verifiedAgainst": {
-        "branch": "codex/me0b-engineer-principal-claim-actor-landing",
-        "commit": "374d97cb380bf6f8b01b456a658b266d58a961ec",
-        "committedAt": "2026-08-25T03:28:22+08:00"
+        "branch": "codex/official-codex-plugin-outside-review",
+        "commit": "603f7de33a018c69c42905a1be78f924cbabb825",
+        "committedAt": "2026-08-25T14:13:39+08:00"
       }
     },
     {
@@ -570,9 +570,9 @@
       "sourceDigest": "sha256:dc2faa5abe1e85c162bcc9a126ee79a0178c75d03c20ff97519b8b463cc2ee44",
       "outputDigest": "sha256:aa5aac73ff819f8ad0c053a57d5b1627faf2fc5bdbc18e8ab4722de0ab085d59",
       "verifiedAgainst": {
-        "branch": "codex/me0b-engineer-principal-claim-actor-landing",
-        "commit": "374d97cb380bf6f8b01b456a658b266d58a961ec",
-        "committedAt": "2026-08-25T03:28:22+08:00"
+        "branch": "codex/official-codex-plugin-outside-review",
+        "commit": "603f7de33a018c69c42905a1be78f924cbabb825",
+        "committedAt": "2026-08-25T14:13:39+08:00"
       }
     },
     {
@@ -590,9 +590,9 @@
       "sourceDigest": "sha256:654f7236e2e51fd19e64129d48fe05f974f3172f6f69c671a78f31ba896198ae",
       "outputDigest": "sha256:a148fc8868cf1e59ce9fe25484555aff2c06e611ed559c709c045b9cde19ab0a",
       "verifiedAgainst": {
-        "branch": "codex/me0a-engineer-profile-binding",
-        "commit": "2adfa629e1f99a7c496b8fc0bd348f1e304a38d5",
-        "committedAt": "2026-08-24T21:08:59+08:00"
+        "branch": "codex/official-codex-plugin-outside-review",
+        "commit": "603f7de33a018c69c42905a1be78f924cbabb825",
+        "committedAt": "2026-08-25T14:13:39+08:00"
       }
     },
     {

@@ -14,6 +14,7 @@
 - Official severities are translated at the provider boundary: `critical|high -> P1`, `medium|low -> P2`. The existing CrossReviewResult remains the internal contract.
 - New acceptance-policy protocol 2 freezes both reviewer and source. Protocol 1 remains readable solely for historical receipts; it does not select an active Claude provider.
 - Review Gate remains disabled. Setup installs/enables only the official plugin capability required by explicit outside-review invocation.
+- `check-task-sync` ignores only `docs/architecture/.projection-manifest.json`, matching `verify-sprint`'s existing workflow-owned publication rule. This prevents the acceptance-time digest restamp from demanding a fabricated task narrative while sibling architecture documents remain substantive and gated.
 
 ## Deviations From Plan Or Spec
 
@@ -37,6 +38,7 @@
 - Checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Local official plugin inspected: `codex@openai-codex` 1.0.6.
+- Projection/task-sync regression: `tests/check-task-sync.test.ts` proves the exact manifest exemption and rejects sibling architecture-doc changes without task synchronization.
 - Live proof root: `/private/tmp/repo-harness-codex-plugin-proof-20260825` (temporary, non-durable evidence).
 
 ## Promotion Filter
