@@ -1,9 +1,9 @@
 # PRD: Engineer Coordination Messages (ME-1C)
 
-> **Status**: Draft
+> **Status**: Approved
 > **Slug**: `engineer-coordination-messages`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T22:00:24+0800
+> **Updated**: 2026-08-25T14:43:00+0800
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
 > **Depends On**: ME-0B trusted principal and binding fences
@@ -18,9 +18,9 @@
 - **Core metric**: important message durable-before-native 100%；旧 binding 接收新 assignment message 0 次。
 - **Hard constraint**: common core abstracts mechanics, not an `anything` subject/payload schema；Decision and Interface records remain separate authorities；Provider chat contains only bounded summary + typed/content-addressed refs。
 - **Key risk**: native success without durable event or message body influencing routing/authorization。
-- **Unknowns**: stable Provider native send APIs remain optional and cannot block correctness。
+- **Unknowns**: stable Provider native send APIs remain optional and cannot block correctness; ME-3A owns the first concrete Codex transport activation.
 - **Acceptance scenarios**: persist fault prevents native send、native fault leaves pending、rotation supersedes assignment message、module message survives rotation、typed subject notification、summary-and-reference fetch。
-- **Suggested next step**: first extract mechanics under existing Task Inbox golden tests, then add Module schema/store without changing Task wire bytes。
+- **Approved implementation**: extract mechanics under existing Task Inbox golden tests, then add Module schema/store without changing Task wire bytes; native transport stays an injected optional accelerator until ME-3A.
 
 ## Problem
 

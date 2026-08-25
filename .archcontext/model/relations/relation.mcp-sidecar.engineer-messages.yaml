@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.engineer-messages
+kind: calls
+source: capability.runtime-harness.mcp-sidecar
+target: capability.runtime-harness.engineer-messages
+intent: Expose authenticated Engineer message send, list and acknowledgement without granting generic Fleet or Provider authority

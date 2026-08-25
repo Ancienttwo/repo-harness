@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:2c66982839b84e8a6cd08274a15de7cdac83e007919bdae966f519b67fdc94f4" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:32213dd52d7be6e055a286fb2c17256b7ce8bffa744b6630d294aabc9a35091a" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:ee1c70b29473945d1207aafe13282eedde74c3dcecdc0c23de5dfdaa175086c5" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:8e0f0443e4a21227dbb21ed9f64a287d10e0d91fefb7e67f362169de48e55dc1" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
@@ -31,6 +31,14 @@
       {
         "id": "capability.runtime-harness.engineer-bindings",
         "name": "Engineer Bindings",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "capability.runtime-harness.engineer-messages",
+        "name": "Engineer Messages",
         "type": "Software System",
         "tags": [
           "capability"
@@ -149,6 +157,14 @@
         ]
       },
       {
+        "id": "component.engineer-messages.primary",
+        "name": "Module Engineer Durable Inbox",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
         "id": "component.engineer-scheduling.primary",
         "name": "Engineer Offer Projector",
         "type": "Component",
@@ -245,6 +261,12 @@
         "description": "calls"
       },
       {
+        "id": "relation.engineer-messages.engineer-bindings",
+        "sourceId": "capability.runtime-harness.engineer-messages",
+        "destinationId": "capability.runtime-harness.engineer-bindings",
+        "description": "calls"
+      },
+      {
         "id": "relation.engineer-scheduling.engineer-bindings",
         "sourceId": "capability.runtime-harness.engineer-scheduling",
         "destinationId": "capability.runtime-harness.engineer-bindings",
@@ -281,6 +303,12 @@
         "description": "calls"
       },
       {
+        "id": "relation.mcp-sidecar.engineer-messages",
+        "sourceId": "capability.runtime-harness.mcp-sidecar",
+        "destinationId": "capability.runtime-harness.engineer-messages",
+        "description": "calls"
+      },
+      {
         "id": "relation.mcp-sidecar.engineer-principal",
         "sourceId": "capability.runtime-harness.mcp-sidecar",
         "destinationId": "capability.runtime-harness.engineer-bindings",
@@ -314,6 +342,7 @@
         "capability.public-surface.adoption",
         "capability.public-surface.root-router",
         "capability.runtime-harness.engineer-bindings",
+        "capability.runtime-harness.engineer-messages",
         "capability.runtime-harness.engineer-scheduling",
         "capability.runtime-harness.global-runtime-reconciliation",
         "capability.runtime-harness.hook-adapters",
@@ -328,6 +357,7 @@
         "component.codegraph-readiness.primary",
         "component.contract-assets.primary",
         "component.engineer-bindings.primary",
+        "component.engineer-messages.primary",
         "component.engineer-scheduling.primary",
         "component.evals-checks.primary",
         "component.general-repo-access.primary",

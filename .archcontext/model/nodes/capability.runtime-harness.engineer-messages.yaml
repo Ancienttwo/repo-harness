@@ -1,0 +1,50 @@
+schemaVersion: archcontext.node/v2
+id: capability.runtime-harness.engineer-messages
+kind: capability
+name: Engineer Messages
+status: active
+summary: Persists closed Module Engineer messages and binding-fenced delivery state before any optional Provider transport observation.
+responsibilities:
+  - Preserve existing TaskMessageV1 wire bytes while reusing closed canonical message mechanics.
+  - Validate ModuleMessage event, delivery receipt and immutable transport observation schemas.
+  - Persist immutable events and pending receipts in the git-common-dir before transport effects.
+  - Keep module-scope messages durable across Binding rotation and supersede stale assignment-scope deliveries.
+  - Verify content-addressed resource bytes before acknowledgement without mutating the resource's owning authority.
+source:
+  include:
+    - "src/core/messages/mechanics.ts"
+    - "src/core/engineers/module-message.ts"
+    - "src/effects/engineers/module-inbox.ts"
+  entrypoints:
+    - id: entrypoint.engineer-messages.send
+      path: "src/effects/engineers/module-inbox.ts"
+      symbols:
+        - name: "sendModuleMessage"
+          sinks:
+            - id: sink.engineer-messages.current-binding
+              path: "src/effects/engineers/binding-store.ts"
+              symbol: "readEngineerBindingStatus"
+    - id: entrypoint.engineer-messages.acknowledge
+      path: "src/effects/engineers/module-inbox.ts"
+      symbols:
+        - name: "acknowledgeModuleMessage"
+          sinks:
+            - id: sink.engineer-messages.resource-bytes
+              path: "src/effects/engineers/module-inbox.ts"
+              symbol: "verifyModuleMessageResources"
+    - id: entrypoint.engineer-messages.binding-fence
+      path: "src/effects/engineers/module-inbox.ts"
+      symbols:
+        - name: "validateTarget"
+          sinks:
+            - id: sink.engineer-messages.binding-fence
+              path: "src/effects/engineers/binding-store.ts"
+              symbol: "readEngineerBindingStatus"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun test tests/unit/task-message-v1.test.ts tests/unit/task-inbox-v1.test.ts tests/unit/me1c-module-message.test.ts tests/unit/me1c-module-inbox.test.ts tests/cli/engineer.test.ts tests/cli/mcp-engineer-tools.test.ts tests/cli/mcp-http.test.ts --timeout 60000"
+    - "bun run check:type"

@@ -42,7 +42,14 @@ describe('restricted Engineer MCP tools', () => {
   test('profile inventory is exact and contains no generic authority surfaces', () => {
     const policy = getMcpPolicy('engineer');
     const names = buildMcpToolDefinitions(policy, { enableChatgptBrowser: true }).map((tool) => tool.name);
-    expect(names).toEqual(['engineer_status', 'engineer_offers', 'engineer_acquire']);
+    expect(names).toEqual([
+      'engineer_status',
+      'engineer_offers',
+      'engineer_acquire',
+      'engineer_messages',
+      'engineer_message_send',
+      'engineer_message_ack',
+    ]);
     expect(names.some((name) => /shell|read|write|fleet|publication|acceptance|binding|browser|agent/.test(name))).toBe(false);
   });
 
@@ -76,6 +83,39 @@ describe('restricted Engineer MCP tools', () => {
     });
     expect(status.isError).toBeUndefined();
     expect(status.structuredContent).toMatchObject({ ok: true, principal: { auth_subject: authorizationId, binding_id: current.current_binding_id } });
+
+    const sent = await callMcpTool(context, 'engineer_message_send', {
+      message_id: '55555555-5555-4555-8555-555555555555',
+      capability_id: 'capability.verification.evals-checks',
+      target_engineer_id: engineerId,
+      scope: 'module',
+      target_binding_id: null,
+      target_binding_generation: null,
+      target_engineer_contract_revision: null,
+      message_type: 'status_update',
+      subject_ref: null,
+      resource_refs: [],
+      body: 'MCP-derived sender identity.',
+      created_at: '2026-08-25T00:30:00.000Z',
+    });
+    expect(sent).toMatchObject({
+      structuredContent: {
+        event: { sender: { kind: 'engineer', principal_ref: engineerId, binding_generation: 1 } },
+        receipt: { delivery_state: 'pending' },
+      },
+    });
+    const messages = await callMcpTool(context, 'engineer_messages', {});
+    expect(messages).toMatchObject({
+      structuredContent: {
+        entries: [{ event: { message_id: '55555555-5555-4555-8555-555555555555' }, receipt: { delivery_state: 'delivered' } }],
+      },
+    });
+    const acknowledged = await callMcpTool(context, 'engineer_message_ack', {
+      message_id: '55555555-5555-4555-8555-555555555555',
+    });
+    expect(acknowledged).toMatchObject({
+      structuredContent: { receipt: { delivery_state: 'acknowledged', acknowledged_by_binding_generation: 1 } },
+    });
 
     const mismatchedFence = await callMcpTool(context, 'engineer_status', { binding_generation: current.binding_generation + 1 });
     expect(mismatchedFence).toMatchObject({ isError: true, structuredContent: { error: { code: 'engineer_principal_mismatch' } } });

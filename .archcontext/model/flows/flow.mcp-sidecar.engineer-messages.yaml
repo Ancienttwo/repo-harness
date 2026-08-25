@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.mcp-sidecar.engineer-messages
+capabilityId: capability.runtime-harness.mcp-sidecar
+name: Consume Module messages as an authenticated Engineer
+applicability: required
+participants:
+  - id: engineer-mcp
+    nodeId: capability.runtime-harness.mcp-sidecar
+  - id: message-authority
+    nodeId: capability.runtime-harness.engineer-messages
+steps:
+  - id: call-message-authority
+    from: engineer-mcp
+    to: message-authority
+    label: Derive sender or recipient from the verified Engineer principal and revalidate message fences
+    evidence:
+      entrypointId: entrypoint.mcp-sidecar.engineer-tools
+      sourceSymbol: messageSendAsEngineer
+      sinkId: sink.mcp-sidecar.engineer-messages
+outcomes:
+  - id: success
+    kind: success
+    label: Return canonical message or acknowledgement state
+    steps:
+      - id: return-message-state
+        from: engineer-mcp
+        to: message-authority
+        label: Return the persisted event and receipt projection
+        evidence:
+          entrypointId: entrypoint.mcp-sidecar.engineer-tools
+          sourceSymbol: messageSendAsEngineer
+          sinkId: sink.mcp-sidecar.engineer-messages
+    terminal:
+      participant: engineer-mcp
+      label: Return authenticated message result
+  - id: error
+    kind: error
+    label: Principal, Binding, resource or transition validation fails closed
+    steps:
+      - id: return-message-refusal
+        from: engineer-mcp
+        to: message-authority
+        label: Return a typed refusal without acknowledging or mutating another authority
+        evidence:
+          entrypointId: entrypoint.mcp-sidecar.engineer-tools
+          sourceSymbol: messageSendAsEngineer
+          sinkId: sink.mcp-sidecar.engineer-messages
+    terminal:
+      participant: engineer-mcp
+      label: Return typed refusal
