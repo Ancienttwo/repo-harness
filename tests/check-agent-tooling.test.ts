@@ -71,6 +71,18 @@ function setupFakeEnvironment(prefix: string) {
       "",
     ].join("\n")
   );
+  writeExecutable(
+    join(fakeBin, "claude"),
+    [
+      "#!/bin/bash",
+      "if [[ \"$*\" == \"plugin list --json\" ]]; then",
+      `  printf '%s\\n' '${JSON.stringify([{ id: "codex@openai-codex", version: "1.0.6", enabled: true, installPath: join(home, ".claude/plugins/cache/openai-codex/codex/1.0.6") }])}'`,
+      "  exit 0",
+      "fi",
+      "exit 9",
+      "",
+    ].join("\n")
+  );
 
   return { root, home, fakeBin };
 }
@@ -404,6 +416,13 @@ describe("check-agent-tooling", () => {
         architecture_diagram: "mermaid",
       });
       expect(report.tools.codex_automation_profile.vendoring_policy).toBe("do-not-vendor-skill-body");
+      expect(report.tools.official_codex_plugin).toMatchObject({
+        status: "present",
+        required: true,
+        plugin_id: "codex@openai-codex",
+        version: "1.0.6",
+        review_gate: "not-enabled-by-repo-harness",
+      });
       expect(report.tools.obsidian_runtime_skills.required_skills).toEqual(["obsidian-markdown", "obsidian-cli"]);
       expect(report.tools.obsidian_runtime_skills.mode).toBe("catalog-dependency-closure");
       expect(report.tools.obsidian_runtime_skills.readiness).toBe("advisory");
@@ -432,6 +451,7 @@ describe("check-agent-tooling", () => {
       expect(textRes.status).toBe(0);
       expect(textRes.stdout.toLowerCase()).not.toContain("gstack");
       expect(textRes.stdout).toContain("Waza [present]");
+      expect(textRes.stdout).toContain("Official Codex plugin [present]");
       expect(textRes.stdout).toContain("repo-harness install --target both --with-obsidian-skills");
     } finally {
       rmSync(envRoot.root, { recursive: true, force: true });

@@ -1,21 +1,21 @@
 ---
 name: repo-harness-cross-review
-description: Independent cross-model review of the current review scope (branch diff plus staged, unstaged, untracked changes) from the opposite vendor's model. Catches spec drift, missing edge cases, and fake tests self-review cannot see. Use before merging, after a tricky change, or a debug second opinion.
-when_to_use: "cross review, second opinion, outside voice, claude review, codex review, 让 claude 审, 让 codex 审, 找外部意见, 二审"
+description: Independent outside review of the current review scope (branch diff plus staged, unstaged, untracked changes). Claude hosts use direct Codex; Codex hosts use OpenAI's official Claude Code Codex plugin app-server runtime. Use before merging, after a tricky change, or for a debug second opinion.
+when_to_use: "cross review, second opinion, outside voice, codex plugin review, codex review, 让 codex 审, 找外部意见, 二审"
 ---
 
 # repo-harness-cross-review
 
-Canonical rule owner for opposite-provider review. Scope capture, provider
-invocation, timeout, transcript recovery, and error classification live in
+Canonical rule owner for independent outside review. Scope capture, provider
+invocation, timeout, structured-output validation, and error classification live in
 code (`src/core/review`, `src/effects/review`,
 `src/cli/commands/cross-review.ts`); this package owns only when to invoke,
 how to interpret findings, and the boundaries below.
 
 ## Mode Selection
 
-- Inside Claude Code -> Codex's outside opinion: `references/codex-mode.md`.
-- Inside Codex -> Claude's outside opinion: `references/claude-mode.md`.
+- Inside Claude Code -> direct Codex outside opinion: `references/codex-mode.md`.
+- Inside Codex -> official `codex@openai-codex` plugin app-server outside opinion: `references/codex-plugin-mode.md`.
 - An explicit provider name request always wins over the host default.
 
 ## When to use
@@ -32,6 +32,6 @@ how to interpret findings, and the boundaries below.
 
 ## Boundaries
 
-- Read-only: the provider never edits code (no Bash/Edit/Write for Claude; read-only sandbox for Codex).
+- Read-only: direct Codex and the official plugin app-server both use a read-only sandbox.
 - Bounded: 2 provider attempts, then `SKIPPED` -- advisory, non-blocking (exit 0). Do not re-run it or narrow the diff to retry. Only `degraded_scope` blocks (exit 1). Never a synthesized pass.
 - Never produces or verifies a `merge-gate` receipt; that judge is separate.

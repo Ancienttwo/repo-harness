@@ -507,7 +507,7 @@
     {
       "name": "claude-review",
       "replacement": "repo-harness-cross-review",
-      "note": "Consolidated into repo-harness-cross-review's claude-mode reference; installed on the Codex host."
+      "note": "Retired from active review. Codex hosts use repo-harness-cross-review's official codex-plugin mode."
     },
     {
       "name": "repo-harness-chatgpt-bridge",

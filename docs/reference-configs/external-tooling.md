@@ -30,10 +30,11 @@ Codex/Claude hook adapters, Waza (`think`, `hunt`, `check`, `health`), brain
 root persistence, Mermaid, and CodeGraph CLI/MCP configuration.
 `repo-harness init` remains a compatibility alias for existing automation. The
 bootstrap path must not silently install unrelated toolchains or Claude
-marketplace plugins.
+marketplace plugins. The one explicit exception is OpenAI's official
+`codex@openai-codex` plugin for the Codex-host outside-review capability.
 
 `repo-harness uninstall` removes repo-harness managed Codex/Claude hook
-adapters. It intentionally does not uninstall Waza, Mermaid, Reverse Skill, CodeGraph,
+adapters. It intentionally does not uninstall Waza, Mermaid, Reverse Skill, the official Codex plugin, CodeGraph,
 brain config, package-manager globals, or user-authored sibling hook entries.
 
 `repo-harness update` is a reconciliation command, not a best-effort package
@@ -48,16 +49,19 @@ Waza and Mermaid providers remain behind explicit `--with-external-skills`;
 Repo-local workflow refresh stays on `repo-harness init`; `setup check
 --check-updates` remains the read-only advisory surface.
 
-The cross-review skill is **harness-owned and self-contained** — its source
-lives in `assets/skills/repo-harness-cross-review/` and it wraps the peer CLI
-(`codex exec` / `claude -p`) in a read-only sandbox with no external
-planning-provider runtime, so installing it is a workflow-owned runtime
-concern, not an unrelated toolchain. `repo-harness-cross-review` installs
+The cross-review skill is **harness-owned** — its routing source lives in
+`assets/skills/repo-harness-cross-review/`. Claude hosts wrap `codex exec` in a
+read-only sandbox. Codex hosts discover and invoke OpenAI's official
+`codex@openai-codex` plugin companion/app-server runtime; they never launch
+Claude as the reviewer and never fall back when the plugin is unavailable.
+Installing that single plugin is therefore a workflow-owned runtime concern,
+not an unrelated toolchain. `repo-harness-cross-review` installs
 host-aware during `repo-harness install`/`init` and explicit external-skill
 refreshes: it installs into **both** `~/.claude/skills` (a Claude session
 asking Codex for an independent review, via its Codex provider mode) and
-`~/.codex/skills` (a Codex session asking Claude for a review, via its Claude
-provider mode) for the full profile. `claude-plan` installs only into
+`~/.codex/skills` (a Codex session asking Codex through the official plugin,
+via its `codex-plugin` provider mode) for the full profile. Review Gate is not
+enabled. `claude-plan` installs only into
 `~/.codex/skills` (a Codex session using Claude's headless plan mode for a
 plan consult on a mid-execution design fork) and is unaffected by this
 package's host-aware installation. These harness skills ship with the full

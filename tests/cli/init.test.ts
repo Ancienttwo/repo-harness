@@ -47,6 +47,22 @@ function writeFakeSkillsCli(fakeBin: string): void {
   );
 }
 
+function writeReadyOfficialCodexPluginCli(fakeBin: string, home: string): string {
+  const pluginRoot = join(home, '.claude', 'plugins', 'cache', 'openai-codex', 'codex', '1.0.6');
+  mkdirSync(pluginRoot, { recursive: true });
+  const claude = join(fakeBin, 'claude');
+  makeExecutable(claude, [
+    '#!/bin/bash',
+    'if [[ "$*" == "plugin list --json" ]]; then',
+    `  printf '%s\\n' '${JSON.stringify([{ id: 'codex@openai-codex', version: '1.0.6', enabled: true, installPath: pluginRoot }])}'`,
+    '  exit 0',
+    'fi',
+    'exit 9',
+    '',
+  ].join('\n'));
+  return claude;
+}
+
 function setupFakeSource(root: string): void {
   mkdirSync(join(root, "scripts"), { recursive: true });
   mkdirSync(join(root, "assets"), { recursive: true });
@@ -256,6 +272,7 @@ describe("init command", () => {
       writeFileSync(join(home, ".agents", "rules", "durable-context.md"), "durable\n");
       writeFileSync(join(home, ".agents", "rules", "english.md"), "en\n");
       writeFakeSkillsCli(fakeBin);
+      const claude = writeReadyOfficialCodexPluginCli(fakeBin, home);
       makeExecutable(
         join(fakeBin, "bunx"),
         `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nexit 0\n`,
@@ -272,6 +289,7 @@ describe("init command", () => {
           ...process.env,
           HOME: home,
           PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+          REPO_HARNESS_CLAUDE_EXECUTABLE: claude,
         },
       });
 
@@ -1199,7 +1217,10 @@ describe("bundled host runtimes", () => {
       mkdirSync(home, { recursive: true });
       makeSource(source);
 
-      const steps = syncCrossReviewSkills(source, "both", { ...process.env, HOME: home });
+      const fakeBin = join(tmp, 'bin');
+      mkdirSync(fakeBin, { recursive: true });
+      const claude = writeReadyOfficialCodexPluginCli(fakeBin, home);
+      const steps = syncCrossReviewSkills(source, "both", { ...process.env, HOME: home, REPO_HARNESS_CLAUDE_EXECUTABLE: claude });
 
       expect(steps.every((s) => s.status === "ok")).toBe(true);
       expect(existsSync(join(home, ".claude", "skills", "repo-harness-cross-review", "SKILL.md"))).toBe(true);
@@ -1208,8 +1229,53 @@ describe("bundled host runtimes", () => {
       expect(existsSync(join(home, ".claude", "skills", "claude-plan", "SKILL.md"))).toBe(false);
       expect(existsSync(join(home, ".claude", "skills", "merge-gate", "SKILL.md"))).toBe(false);
 
-      const again = syncCrossReviewSkills(source, "both", { ...process.env, HOME: home });
+      const again = syncCrossReviewSkills(source, "both", { ...process.env, HOME: home, REPO_HARNESS_CLAUDE_EXECUTABLE: claude });
       expect(again.some((s) => /already present/.test(s.detail ?? ""))).toBe(true);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("Codex target installs the official OpenAI plugin without enabling Review Gate", () => {
+    const tmp = join(tmpdir(), `cross-review-plugin-install-${Date.now()}`);
+    const source = join(tmp, "source");
+    const home = join(tmp, "home");
+    const fakeBin = join(tmp, "bin");
+    const claude = join(fakeBin, "claude");
+    const installed = join(tmp, "installed");
+    const log = join(tmp, "claude.log");
+    const pluginRoot = join(home, ".claude", "plugins", "cache", "openai-codex", "codex", "1.0.6");
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(home, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      makeSource(source);
+      makeExecutable(claude, [
+        "#!/bin/bash",
+        "set -euo pipefail",
+        `printf '%s\\n' "$*" >> "${log}"`,
+        'case "$*" in',
+        '  "plugin list --json")',
+        `    if [[ -f "${installed}" ]]; then printf '%s\\n' '${JSON.stringify([{ id: 'codex@openai-codex', version: '1.0.6', enabled: true, installPath: pluginRoot }])}'; else echo '[]'; fi`,
+        '    ;;',
+        '  "plugin marketplace list --json") echo "[]" ;;',
+        '  "plugin marketplace add openai/codex-plugin-cc") ;;',
+        `  "plugin install codex@openai-codex -s user -y") touch "${installed}" ;;`,
+        '  *) exit 9 ;;',
+        'esac',
+        '',
+      ].join("\n"));
+      const steps = syncCrossReviewSkills(source, "codex", {
+        ...process.env,
+        HOME: home,
+        REPO_HARNESS_CLAUDE_EXECUTABLE: claude,
+      });
+      expect(steps.find((step) => step.step === "official Codex plugin")?.status).toBe("ok");
+      const commands = readFileSync(log, "utf-8");
+      expect(commands).toContain("plugin marketplace add openai/codex-plugin-cc");
+      expect(commands).toContain("plugin install codex@openai-codex -s user -y");
+      expect(commands).not.toContain("review-gate");
+      expect(commands).not.toContain("setup");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -1244,7 +1310,10 @@ describe("bundled host runtimes", () => {
       expect(existsSync(join(claudeHome, ".codex", "skills", "repo-harness-cross-review", "SKILL.md"))).toBe(false);
       expect(existsSync(join(claudeHome, ".codex", "skills", "claude-plan", "SKILL.md"))).toBe(false);
 
-      syncCrossReviewSkills(source, "codex", { ...process.env, HOME: codexHome });
+      const fakeBin = join(tmp, 'bin');
+      mkdirSync(fakeBin, { recursive: true });
+      const claude = writeReadyOfficialCodexPluginCli(fakeBin, codexHome);
+      syncCrossReviewSkills(source, "codex", { ...process.env, HOME: codexHome, REPO_HARNESS_CLAUDE_EXECUTABLE: claude });
       expect(existsSync(join(codexHome, ".codex", "skills", "repo-harness-cross-review", "SKILL.md"))).toBe(true);
       expect(existsSync(join(codexHome, ".codex", "skills", "claude-plan", "SKILL.md"))).toBe(true);
       expect(existsSync(join(codexHome, ".claude", "skills", "repo-harness-cross-review", "SKILL.md"))).toBe(false);
@@ -1271,7 +1340,10 @@ describe("bundled host runtimes", () => {
         join(source, "assets", "skill-commands", "manifest.json"),
       );
 
-      const steps = syncCrossReviewSkills(source, "both", { ...process.env, HOME: home });
+      const fakeBin = join(tmp, 'bin');
+      mkdirSync(fakeBin, { recursive: true });
+      const claude = writeReadyOfficialCodexPluginCli(fakeBin, home);
+      const steps = syncCrossReviewSkills(source, "both", { ...process.env, HOME: home, REPO_HARNESS_CLAUDE_EXECUTABLE: claude });
       expect(steps.every((s) => s.status !== "failed")).toBe(true);
       expect(steps.some((s) => s.status === "skipped")).toBe(true);
     } finally {

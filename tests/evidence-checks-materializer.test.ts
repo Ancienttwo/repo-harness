@@ -617,6 +617,14 @@ describe("checks-materializer: parseAcceptancePolicySummary", () => {
       present: true,
       userWaiverAllowed: false,
     });
+    expect(parseAcceptancePolicySummary(contractWithPolicy('{"protocol":2,"reviewer":"Codex","source":"codex-plugin","user_waiver":"allowed"}'))).toEqual({
+      present: true,
+      userWaiverAllowed: true,
+    });
+    expect(parseAcceptancePolicySummary(contractWithPolicy('{"protocol":2,"reviewer":"Claude","source":"codex-plugin","user_waiver":"allowed"}'))).toEqual({
+      present: false,
+      userWaiverAllowed: false,
+    });
     expect(parseAcceptancePolicySummary(contractWithPolicy(null))).toEqual({ present: false, userWaiverAllowed: false });
     expect(parseAcceptancePolicySummary(contractWithPolicy('{"protocol":1,"reviewer":"Claude","user_waiver":"maybe"}'))).toEqual({
       present: false,

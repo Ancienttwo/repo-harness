@@ -86,11 +86,6 @@ const FILE_ALLOWLIST: Record<string, string> = {
   // specially handled (historical, not a live reference).
   "src/cli/installer/install-profile.ts":
     "explanatory comments documenting the retired repo-harness-handoff facade",
-  // R1: source stays the acceptance-receipt AcceptanceReceipt.source
-  // provenance enum value (permanent data-schema vocabulary); command/skill
-  // suggestion strings on the same lines were already migrated.
-  "src/cli/hook/prompt-handler.ts":
-    "R1 provenance-enum value (AcceptanceReceipt.source)",
   // Same acceptance-receipt source-enum concept as R1, implemented as a
   // bash sibling of scripts/acceptance-receipt.ts's TS enum.
   "assets/hooks/lib/workflow-state.sh":
@@ -113,21 +108,29 @@ const FILE_ALLOWLIST: Record<string, string> = {
 // vocabulary (claude-review/codex-review as AcceptanceReceipt.source;
 // repo-harness-sprint/repo-harness-plan as plan-capture --source). Each has
 // a byte-synced assets/templates/helpers/ mirror (package.json's
-// sync:helpers/check:helpers), exempted for the same reason.
+// sync:helpers/check:helpers), exempted for the same reason. Contract seeds,
+// evidence materialization, and the sprint-contract reference also carry the
+// same frozen source vocabulary rather than a runnable Skill reference.
 const R1_PROVENANCE_ENUM_FILES = [
   "scripts/acceptance-receipt.ts",
   "scripts/classify-historical-plans.ts",
+  "scripts/ensure-task-workflow.sh",
   "scripts/harness-trace-grade.sh",
   "scripts/sprint-backlog.sh",
   "scripts/plan-to-todo.sh",
   "scripts/capture-plan.sh",
   "scripts/lib/project-init-lib.sh",
+  "src/effects/evidence/checks-materializer.ts",
+  "assets/templates/contract.template.md",
   "assets/templates/helpers/acceptance-receipt.ts",
   "assets/templates/helpers/classify-historical-plans.ts",
+  "assets/templates/helpers/ensure-task-workflow.sh",
   "assets/templates/helpers/harness-trace-grade.sh",
   "assets/templates/helpers/sprint-backlog.sh",
   "assets/templates/helpers/plan-to-todo.sh",
   "assets/templates/helpers/capture-plan.sh",
+  "assets/reference-configs/sprint-contracts.md",
+  "docs/reference-configs/sprint-contracts.md",
 ];
 
 // Discovered during the SSD-06 sweep, originally outside this contract's

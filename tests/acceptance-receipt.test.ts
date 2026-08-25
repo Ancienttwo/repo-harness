@@ -177,8 +177,51 @@ async function externalPass(root: string, home: string) {
 describe('AcceptanceReceipt', () => {
   test('strictly parses the contract-frozen reviewer and waiver policy', () => {
     expect(parseAcceptancePolicy(contract())).toEqual({ protocol: 1, reviewer: 'Claude', user_waiver: 'allowed' });
+    expect(parseAcceptancePolicy(contract().replace(
+      '{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}',
+      '{"protocol":2,"reviewer":"Codex","source":"codex-plugin","user_waiver":"allowed"}',
+    ))).toEqual({ protocol: 2, reviewer: 'Codex', source: 'codex-plugin', user_waiver: 'allowed' });
     expect(() => parseAcceptancePolicy(contract().replace('"allowed"', '"maybe"'))).toThrow('user_waiver');
   });
+
+  test('protocol 2 truthfully binds Codex-host acceptance to source=codex-plugin', async () => {
+    const { root, home } = makeFixture();
+    const contractPath = join(root, 'tasks', 'contracts', 'demo.contract.md');
+    writeFileSync(contractPath, contract().replace(
+      '{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}',
+      '{"protocol":2,"reviewer":"Codex","source":"codex-plugin","user_waiver":"allowed"}',
+    ));
+    commit(root, 'freeze Codex plugin acceptance policy');
+    writePassingChecks(root);
+
+    await expect(recordAcceptance({
+      root,
+      authorityHome: home,
+      contract: 'tasks/contracts/demo.contract.md',
+      verification: '.ai/harness/checks/latest.json',
+      disposition: 'external_pass',
+      reviewer: 'Codex',
+      source: 'codex-review',
+      actor: null,
+      summary: 'wrong transport',
+      findings: [],
+    })).rejects.toThrow('frozen contract reviewer');
+
+    const receipt = await recordAcceptance({
+      root,
+      authorityHome: home,
+      contract: 'tasks/contracts/demo.contract.md',
+      verification: '.ai/harness/checks/latest.json',
+      disposition: 'external_pass',
+      reviewer: 'Codex',
+      source: 'codex-plugin',
+      actor: null,
+      summary: 'official plugin review passed',
+      findings: [],
+    });
+    expect(receipt).toMatchObject({ reviewer: 'Codex', source: 'codex-plugin', expected_reviewer: 'Codex' });
+    expect((await verifyAcceptance({ root, authorityHome: home })).source).toBe('codex-plugin');
+  }, 30_000);
 
   test('review projection changes do not invalidate acceptance, semantic changes do', async () => {
     const { root, home } = makeFixture();

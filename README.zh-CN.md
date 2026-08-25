@@ -379,7 +379,7 @@ Canonical 的 rule-owner package 放在 `assets/skills/` 和
 | `repo-harness-check` | Workflow 和 release check，附带 deploy-readiness reference |
 | `repo-harness-ship` | 校验完成的 worktree，push 分支并开 PR |
 | `repo-harness-architecture` | Architecture 文档、drift request 和图表，不需要完整刷新 harness |
-| `repo-harness-cross-review` | Host-aware 的 Claude/Codex 独立 cross-model review |
+| `repo-harness-cross-review` | 独立 outside review：Claude 环境直连 Codex；Codex 环境走 OpenAI 官方 `codex@openai-codex` plugin app-server runtime |
 | `claude-plan` | Codex 端 provider skill：面向设计分叉或高风险决策的独立 Claude plan mode consult；不是用户直呼入口 |
 | `repo-harness-chatgpt` | Oracle browser/GPT Pro consult、MCP Connector setup 和 bridge handoff；仅限显式 setup |
 | `merge-gate`（外部） | Exact-candidate 的 final gate；repo-harness 本身不附带 merge-gate Skill——见 [external tooling](docs/reference-configs/external-tooling.md) |

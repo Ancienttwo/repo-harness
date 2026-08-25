@@ -12,16 +12,18 @@ import { runCrossReviewCommand, formatCrossReviewResult } from "../../src/cli/co
 import {
   buildRecommendation,
   classifyCrossReviewOutcome,
-  matchesClaudeCapacityFailureSignal,
   matchesAuthFailureSignal,
   parseFindings,
-  selectRecoveredTranscript,
   type ProviderInvocationOutcome,
-  type TranscriptRecoveryOutcome,
 } from "../../src/core/review/cross-review";
+import {
+  buildOfficialPluginFocus,
+  discoverOfficialCodexPlugin,
+  parseOfficialCodexPluginReview,
+} from "../../src/effects/review/codex-plugin-provider";
 
 // SSD-04: tests/cli/cross-review.test.ts. Every case uses a fixture provider
-// script standing in for the real `claude`/`codex` binary -- no real
+// script standing in for the real `codex`/official-plugin binaries -- no real
 // provider or network call is ever invoked (RunCrossReviewInput.providerCommand
 // is the test seam). Scope-only tests (clean/staged/unstaged/untracked/
 // degraded/exact-base) invoke captureCrossReviewScope directly without a
@@ -75,7 +77,7 @@ function activateWorkPackage(repo: string): void {
   writeFileSync(join(repo, ".ai", "harness", "active-worktree"), `${repo}\n`);
 }
 
-// A tiny stand-in for the claude/codex CLI: behavior selected by the
+// A tiny stand-in for the direct Codex CLI: behavior selected by the
 // CROSS_REVIEW_FIXTURE_MODE env var so one script covers every provider
 // outcome case. Never invokes anything real.
 const FIXTURE_PROVIDER_LINES = [
@@ -91,12 +93,6 @@ const FIXTURE_PROVIDER_LINES = [
   '  echo "$count" > "$CROSS_REVIEW_COUNTER_FILE"',
   "fi",
   'mode="${CROSS_REVIEW_FIXTURE_MODE:-success}"',
-  'if [ "$mode" = "fable-limit" ]; then',
-  '  case " $* " in',
-  '    *" --model fable "*) echo "You have reached your Fable limit."; echo "Run /usage-credits to continue."; exit 1 ;;',
-  '    *) echo "[P2] reviewed on opus after bounded fallback."; exit 0 ;;',
-  '  esac',
-  'fi',
   'case "$mode" in',
   "  success)",
   '    echo "[P2] minor: consider renaming this helper for clarity."',
@@ -120,12 +116,6 @@ const FIXTURE_PROVIDER_LINES = [
   "  nonzero)",
   '    echo "boom: internal error" 1>&2',
   "    exit 3",
-  "    ;;",
-  // Reports the provider's explicit capacity-limit signal on every attempt.
-  "  capacity)",
-  '    echo "You have reached your Fable limit."',
-  '    echo "Run /usage-credits to continue."',
-  "    exit 1",
   "    ;;",
   // Fails the first invocation, succeeds on every later one -- drives the
   // "attempt 1 fails, attempt 2 succeeds" bounded-retry case.
@@ -161,6 +151,98 @@ function withFixture(fn: (repo: string, provider: string) => void): void {
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(providerDir, { recursive: true, force: true });
+  }
+}
+
+function officialPluginPayload(
+  findings: readonly Record<string, unknown>[] = [{
+    severity: "high",
+    title: "Swallowed failure",
+    body: "The error path reports success.",
+    file: "src/example.ts",
+    line_start: 12,
+    line_end: 12,
+    confidence: 0.98,
+    recommendation: "Return the failure.",
+  }],
+): string {
+  const result = {
+    verdict: findings.length > 0 ? "needs-attention" : "approve",
+    summary: findings.length > 0 ? "Material findings found." : "No material findings.",
+    findings,
+    next_steps: findings.length > 0 ? ["Address the findings."] : [],
+  };
+  const rawOutput = JSON.stringify(result);
+  return JSON.stringify({
+    codex: { status: 0, stderr: "", stdout: rawOutput, reasoning: "" },
+    result,
+    rawOutput,
+    parseError: null,
+    reasoningSummary: "",
+  });
+}
+
+function withOfficialPluginFixture(
+  fn: (fixture: {
+    repo: string;
+    home: string;
+    pluginRoot: string;
+    claudeCommand: string;
+    runtimeCommand: string;
+    env: NodeJS.ProcessEnv;
+  }) => void,
+): void {
+  const repo = initRepo();
+  const root = mkdtempSync(join(tmpdir(), "cross-review-official-plugin-"));
+  const home = join(root, "home");
+  const pluginRoot = join(root, "plugin", "1.0.6");
+  mkdirSync(join(pluginRoot, "scripts"), { recursive: true });
+  mkdirSync(join(pluginRoot, "schemas"), { recursive: true });
+  mkdirSync(join(pluginRoot, ".claude-plugin"), { recursive: true });
+  mkdirSync(home, { recursive: true });
+  writeFileSync(join(pluginRoot, "scripts", "codex-companion.mjs"), "// official companion fixture\n");
+  writeFileSync(join(pluginRoot, ".claude-plugin", "plugin.json"), JSON.stringify({
+    name: "codex",
+    version: "1.0.6",
+    author: { name: "OpenAI" },
+  }));
+  writeFileSync(join(pluginRoot, "schemas", "review-output.schema.json"), JSON.stringify({
+    required: ["verdict", "summary", "findings", "next_steps"],
+    properties: {
+      verdict: { enum: ["approve", "needs-attention"] },
+      findings: { items: { properties: { severity: { enum: ["critical", "high", "medium", "low"] } } } },
+    },
+  }));
+  const claudeCommand = join(root, "fake-claude.sh");
+  writeFileSync(claudeCommand, [
+    "#!/bin/sh",
+    'printf "%s\\n" "$CODEX_PLUGIN_INVENTORY"',
+  ].join("\n"));
+  chmodSync(claudeCommand, 0o755);
+  const runtimeCommand = join(root, "fake-node.sh");
+  writeFileSync(runtimeCommand, [
+    "#!/bin/sh",
+    'if [ -n "${CROSS_REVIEW_ARGS_FILE:-}" ]; then printf "%s\\n" "$@" > "$CROSS_REVIEW_ARGS_FILE"; fi',
+    'if [ -n "${CROSS_REVIEW_COUNTER_FILE:-}" ]; then count=0; [ -f "$CROSS_REVIEW_COUNTER_FILE" ] && count=$(cat "$CROSS_REVIEW_COUNTER_FILE"); echo $((count + 1)) > "$CROSS_REVIEW_COUNTER_FILE"; fi',
+    'printf "%s\\n" "$CROSS_REVIEW_PLUGIN_PAYLOAD"',
+  ].join("\n"));
+  chmodSync(runtimeCommand, 0o755);
+  const env = {
+    ...process.env,
+    HOME: home,
+    CODEX_PLUGIN_INVENTORY: JSON.stringify([{
+      id: "codex@openai-codex",
+      version: "1.0.6",
+      enabled: true,
+      installPath: pluginRoot,
+    }]),
+    CROSS_REVIEW_PLUGIN_PAYLOAD: officialPluginPayload(),
+  };
+  try {
+    fn({ repo, home, pluginRoot, claudeCommand, runtimeCommand, env });
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
   }
 }
 
@@ -389,6 +471,150 @@ describe("runCrossReview (codex mode, fixture provider process)", () => {
   }, 30_000);
 });
 
+describe("runCrossReview (official codex-plugin mode)", () => {
+  test("discovers the enabled official install and binds the app-server request to the exact combined subject", () => {
+    withOfficialPluginFixture(({ repo, pluginRoot, claudeCommand, runtimeCommand, env }) => {
+      writeFileSync(join(repo, "untracked.txt"), "new file\n");
+      const scope = captureCrossReviewScope(repo, { baseRevision: "HEAD" });
+      expect(scope.status).toBe("ok");
+      if (scope.status !== "ok") throw new Error("expected ok scope");
+      const discovery = discoverOfficialCodexPlugin(repo, scope, {
+        env,
+        claudeCommand,
+        nodeCommand: runtimeCommand,
+      });
+      expect(discovery.status).toBe("ok");
+      if (discovery.status !== "ok") throw new Error(discovery.message);
+      expect(discovery.invocation.version).toBe("1.0.6");
+      expect(discovery.invocation.args[0]).toBe(realpathSync(join(pluginRoot, "scripts", "codex-companion.mjs")));
+      expect(discovery.invocation.args).toContain("adversarial-review");
+      expect(discovery.invocation.args).toContain("--json");
+      expect(discovery.invocation.args).toContain("--base");
+      expect(discovery.invocation.args).toContain(scope.baseRev);
+      const focus = discovery.invocation.args.at(-1) ?? "";
+      expect(focus).toContain(scope.reviewSubjectSha256);
+      expect(focus).toContain(JSON.stringify(scope.paths));
+      expect(focus).toContain("git diff --cached");
+      expect(focus).toContain("git ls-files --others --exclude-standard");
+      expect(discovery.invocation.env.CLAUDE_PLUGIN_DATA).toContain("codex-openai-codex");
+      expect(buildOfficialPluginFocus(scope)).toBe(focus);
+    });
+  });
+
+  test("maps official critical/high to P1 and medium/low to P2 while preserving the verbatim Codex transcript", () => {
+    withOfficialPluginFixture(({ repo, claudeCommand, runtimeCommand, env }) => {
+      const findings = [
+        {
+          severity: "high",
+          title: "High risk",
+          body: "The operation can lose data.",
+          file: "src/high.ts",
+          line_start: 8,
+          line_end: 9,
+          confidence: 0.99,
+          recommendation: "Make the write atomic.",
+        },
+        {
+          severity: "medium",
+          title: "Missing assertion",
+          body: "The test does not prove the failure path.",
+          file: "tests/example.test.ts",
+          line_start: 20,
+          line_end: 20,
+          confidence: 0.8,
+          recommendation: "Assert the error result.",
+        },
+      ];
+      const payload = officialPluginPayload(findings);
+      const counterFile = join(repo, "plugin-counter.txt");
+      const result = runCrossReview({
+        repoRoot: repo,
+        provider: "codex-plugin",
+        providerCommand: runtimeCommand,
+        claudeCommand,
+        timeoutMs: 5000,
+        env: { ...env, CROSS_REVIEW_PLUGIN_PAYLOAD: payload, CROSS_REVIEW_COUNTER_FILE: counterFile },
+      });
+      expect(result.status).toBe("ok");
+      if (result.status !== "ok") throw new Error(result.message);
+      expect(result.findings.map((finding) => finding.severity)).toEqual(["P1", "P2"]);
+      expect(result.transcript).toBe(JSON.parse(payload).codex.stdout);
+      expect(result.recommendation).toContain("FAIL");
+      expect(result.usedTranscriptRecovery).toBe(false);
+      expect(readFileSync(counterFile, "utf-8").trim()).toBe("1");
+    });
+  });
+
+  test("missing or disabled official plugin fails explicitly after the bounded budget and never runs a fallback", () => {
+    withOfficialPluginFixture(({ repo, claudeCommand, runtimeCommand, env }) => {
+      const counterFile = join(repo, "plugin-counter.txt");
+      const result = runCrossReview({
+        repoRoot: repo,
+        provider: "codex-plugin",
+        providerCommand: runtimeCommand,
+        claudeCommand,
+        timeoutMs: 5000,
+        env: {
+          ...env,
+          CODEX_PLUGIN_INVENTORY: JSON.stringify([{
+            id: "codex@openai-codex",
+            version: "1.0.6",
+            enabled: false,
+            installPath: "/ignored",
+          }]),
+          CROSS_REVIEW_COUNTER_FILE: counterFile,
+        },
+      });
+      expect(result.status).toBe("skipped");
+      if (result.status !== "skipped") throw new Error("expected skipped");
+      expect(result.attempts).toBe(2);
+      expect(result.message).toContain("installed but disabled");
+      expect(() => readFileSync(counterFile, "utf-8")).toThrow();
+    });
+  });
+
+  test("malformed official structured output fails closed instead of parsing prose", () => {
+    withOfficialPluginFixture(({ repo, claudeCommand, runtimeCommand, env }) => {
+      const result = runCrossReview({
+        repoRoot: repo,
+        provider: "codex-plugin",
+        providerCommand: runtimeCommand,
+        claudeCommand,
+        timeoutMs: 5000,
+        env: { ...env, CROSS_REVIEW_PLUGIN_PAYLOAD: '{"result":"not-the-schema"}' },
+      });
+      expect(result.status).toBe("skipped");
+      if (result.status === "skipped") expect(result.code).toBe("malformed_transcript");
+    });
+  });
+
+  test("structured parser rejects unsafe finding paths", () => {
+    const payload = officialPluginPayload([{
+      severity: "low",
+      title: "Unsafe path",
+      body: "Path escaped the repository.",
+      file: "../outside.ts",
+      line_start: 1,
+      line_end: 1,
+      confidence: 0.5,
+      recommendation: "Use a repository-relative path.",
+    }]);
+    expect(parseOfficialCodexPluginReview(payload)).toEqual({
+      status: "failed",
+      message: "official Codex plugin returned an unsupported review result shape",
+    });
+  });
+
+  test("structured parser rejects wrapper fields that disagree with the verbatim Codex transcript", () => {
+    const payload = JSON.parse(officialPluginPayload()) as Record<string, unknown>;
+    payload.result = { verdict: "approve", summary: "tampered", findings: [], next_steps: [] };
+    expect(parseOfficialCodexPluginReview(JSON.stringify(payload))).toEqual({
+      status: "failed",
+      message: "official Codex plugin payload disagrees with the verbatim Codex transcript",
+    });
+  });
+});
+
 describe("bounded attempt budget: 2 attempts, then a non-blocking skip", () => {
   test("timeout on both attempts -> skipped after 2 attempts with exit code 0", () => {
     withFixture((repo, provider) => {
@@ -441,38 +667,6 @@ describe("bounded attempt budget: 2 attempts, then a non-blocking skip", () => {
     });
   }, 30_000);
 
-  test("claude mode: attempt 1 fails, attempt 2 runs on opus and succeeds", () => {
-    withFixture((repo, provider) => {
-      const counterFile = `${provider}.count`;
-      const argsLog = `${provider}.args`;
-      const command = runCrossReviewCommand({
-        repoRoot: repo,
-        provider: "claude",
-        providerCommand: provider,
-        timeoutMs: 5000,
-        env: {
-          ...process.env,
-          CROSS_REVIEW_FIXTURE_MODE: "fail-once",
-          CROSS_REVIEW_COUNTER_FILE: counterFile,
-          CROSS_REVIEW_ARGS_LOG: argsLog,
-        },
-      });
-      expect(command.result.status).toBe("ok");
-      if (command.result.status === "ok") {
-        expect(command.result.transcript).toContain("reviewed on attempt 2");
-      }
-      expect(command.exitCode).toBe(0);
-      expect(readFileSync(counterFile, "utf8").trim()).toBe("2");
-
-      // The second attempt is the opus route; the first stays on fable.
-      const attempts = readFileSync(argsLog, "utf8").split("--- attempt ---").filter((chunk) => chunk.trim() !== "");
-      expect(attempts).toHaveLength(2);
-      expect(attempts[0].split("\n")).toContain("fable");
-      expect(attempts[1].split("\n")).toContain("--model");
-      expect(attempts[1].split("\n")).toContain("opus");
-    });
-  }, 30_000);
-
   test("happy path spends exactly one attempt (no gratuitous second invocation)", () => {
     withFixture((repo, provider) => {
       const counterFile = `${provider}.count`;
@@ -493,24 +687,6 @@ describe("bounded attempt budget: 2 attempts, then a non-blocking skip", () => {
     });
   }, 30_000);
 
-  test("a capacity signal on the final attempt is folded into the skip message", () => {
-    withFixture((repo, provider) => {
-      const command = runCrossReviewCommand({
-        repoRoot: repo,
-        provider: "claude",
-        providerCommand: provider,
-        timeoutMs: 5000,
-        env: { ...process.env, CROSS_REVIEW_FIXTURE_MODE: "capacity" },
-      });
-      expect(command.result.status).toBe("skipped");
-      if (command.result.status === "skipped") {
-        expect(command.result.attempts).toBe(2);
-        expect(command.result.message).toContain("capacity limit");
-      }
-      expect(command.exitCode).toBe(0);
-    });
-  }, 30_000);
-
   test("degraded_scope stays a blocking failure with exit code 1 (never skipped)", () => {
     withFixture((repo) => {
       const command = runCrossReviewCommand({
@@ -527,85 +703,6 @@ describe("bounded attempt budget: 2 attempts, then a non-blocking skip", () => {
   }, 30_000);
 });
 
-describe("runCrossReview (claude mode: transcript recovery)", () => {
-  test("malformed_transcript: a recovered session file exists but yields no usable assistant text", () => {
-    withFixture((repo, provider) => {
-      const claudeConfigDir = mkdtempSync(join(tmpdir(), "cross-review-claude-home-"));
-      try {
-        const projectDir = join(claudeConfigDir, "projects", repo.replace(/[\\/]/g, "-"));
-        mkdirSync(projectDir, { recursive: true });
-        writeFileSync(
-          join(projectDir, "session-1.jsonl"),
-          ["not valid json at all", '{"type":"user","message":{"content":"hi"}}', ""].join("\n"),
-        );
-
-        const result = runCrossReview({
-          repoRoot: repo,
-          provider: "claude",
-          providerCommand: provider,
-          claudeConfigDir,
-          timeoutMs: 5000,
-          env: { ...process.env, CROSS_REVIEW_FIXTURE_MODE: "empty" },
-        });
-        expect(result.status).toBe("skipped");
-        if (result.status === "skipped") expect(result.code).toBe("malformed_transcript");
-      } finally {
-        rmSync(claudeConfigDir, { recursive: true, force: true });
-      }
-    });
-  }, 30_000);
-
-  test("empty_output: claude mode with no recoverable session file at all", () => {
-    withFixture((repo, provider) => {
-      const claudeConfigDir = mkdtempSync(join(tmpdir(), "cross-review-claude-home-empty-"));
-      try {
-        const result = runCrossReview({
-          repoRoot: repo,
-          provider: "claude",
-          providerCommand: provider,
-          claudeConfigDir,
-          timeoutMs: 5000,
-          env: { ...process.env, CROSS_REVIEW_FIXTURE_MODE: "empty" },
-        });
-        expect(result.status).toBe("skipped");
-        if (result.status === "skipped") expect(result.code).toBe("empty_output");
-      } finally {
-        rmSync(claudeConfigDir, { recursive: true, force: true });
-      }
-    });
-  }, 30_000);
-
-  test("claude mode success embeds diff text without crashing on a populated scope", () => {
-    withFixture((repo, provider) => {
-      writeFileSync(join(repo, "untracked.txt"), "new file\n");
-      const argsFile = join(repo, "provider-args.txt");
-      const result = runCrossReview({
-        repoRoot: repo,
-        provider: "claude",
-        providerCommand: provider,
-        timeoutMs: 5000,
-        env: { ...process.env, CROSS_REVIEW_FIXTURE_MODE: "success", CROSS_REVIEW_ARGS_FILE: argsFile },
-      });
-      expect(result.status).toBe("ok");
-      expect(readFileSync(argsFile, "utf8").split("\n")).toContain("--safe-mode");
-    });
-  }, 30_000);
-
-  test("claude mode retries once on opus when fable returns a capacity error on stdout", () => {
-    withFixture((repo, provider) => {
-      const result = runCrossReview({
-        repoRoot: repo,
-        provider: "claude",
-        providerCommand: provider,
-        timeoutMs: 5000,
-        env: { ...process.env, CROSS_REVIEW_FIXTURE_MODE: "fable-limit" },
-      });
-      expect(result.status).toBe("ok");
-      if (result.status === "ok") expect(result.transcript).toContain("reviewed on opus");
-    });
-  }, 30_000);
-});
-
 describe("pure classification and parsing helpers (src/core/review/cross-review.ts)", () => {
   const baseInvocation: ProviderInvocationOutcome = {
     ok: true,
@@ -615,24 +712,19 @@ describe("pure classification and parsing helpers (src/core/review/cross-review.
     stderr: "",
     error: "",
   };
-  const noRecovery: TranscriptRecoveryOutcome = { attempted: false, text: "", malformed: false };
-
-  test("classifyCrossReviewOutcome: timeout wins even if a transcript was recoverable (never a synthesized pass)", () => {
+  test("classifyCrossReviewOutcome: timeout is explicit", () => {
     const outcome = classifyCrossReviewOutcome(
       { ...baseInvocation, ok: false, timedOut: true, status: 124 },
-      { attempted: true, text: "partial recovered text", malformed: false },
     );
     expect(outcome.kind).toBe("failed");
     if (outcome.kind === "failed") {
       expect(outcome.code).toBe("timeout");
-      expect(outcome.recoveredTranscript).toBe("partial recovered text");
     }
   });
 
   test("classifyCrossReviewOutcome: nonzero + auth signal -> auth_failure", () => {
     const outcome = classifyCrossReviewOutcome(
       { ...baseInvocation, ok: false, status: 1, stderr: "please sign in to continue" },
-      noRecovery,
     );
     expect(outcome.kind).toBe("failed");
     if (outcome.kind === "failed") expect(outcome.code).toBe("auth_failure");
@@ -641,7 +733,6 @@ describe("pure classification and parsing helpers (src/core/review/cross-review.
   test("classifyCrossReviewOutcome: nonzero without auth signal -> provider_nonzero", () => {
     const outcome = classifyCrossReviewOutcome(
       { ...baseInvocation, ok: false, status: 2, stderr: "boom" },
-      noRecovery,
     );
     expect(outcome.kind).toBe("failed");
     if (outcome.kind === "failed") expect(outcome.code).toBe("provider_nonzero");
@@ -650,7 +741,6 @@ describe("pure classification and parsing helpers (src/core/review/cross-review.
   test("classifyCrossReviewOutcome does not treat review stdout as an auth signal", () => {
     const outcome = classifyCrossReviewOutcome(
       { ...baseInvocation, ok: false, status: 2, stdout: "The reviewed code says not logged in", stderr: "boom" },
-      noRecovery,
     );
     expect(outcome.kind).toBe("failed");
     if (outcome.kind === "failed") expect(outcome.code).toBe("provider_nonzero");
@@ -659,7 +749,6 @@ describe("pure classification and parsing helpers (src/core/review/cross-review.
   test("classifyCrossReviewOutcome recognizes the exact Claude stdout login failure", () => {
     const outcome = classifyCrossReviewOutcome(
       { ...baseInvocation, ok: false, status: 1, stdout: "Not logged in · Please run /login" },
-      noRecovery,
     );
     expect(outcome.kind).toBe("failed");
     if (outcome.kind === "failed") expect(outcome.code).toBe("auth_failure");
@@ -668,14 +757,13 @@ describe("pure classification and parsing helpers (src/core/review/cross-review.
   test("classifyCrossReviewOutcome recognizes the exact Claude login line around banners", () => {
     const outcome = classifyCrossReviewOutcome(
       { ...baseInvocation, ok: false, status: 1, stdout: "Claude Code\nNot logged in · Please run /login\nGoodbye" },
-      noRecovery,
     );
     expect(outcome.kind).toBe("failed");
     if (outcome.kind === "failed") expect(outcome.code).toBe("auth_failure");
   });
 
   test("classifyCrossReviewOutcome: clean exit + stdout -> success, no recovery used", () => {
-    const outcome = classifyCrossReviewOutcome({ ...baseInvocation, stdout: "[P2] fine" }, noRecovery);
+    const outcome = classifyCrossReviewOutcome({ ...baseInvocation, stdout: "[P2] fine" });
     expect(outcome.kind).toBe("success");
     if (outcome.kind === "success") {
       expect(outcome.transcript).toBe("[P2] fine");
@@ -683,25 +771,10 @@ describe("pure classification and parsing helpers (src/core/review/cross-review.
     }
   });
 
-  test("classifyCrossReviewOutcome: clean exit + empty stdout + no recovery attempted -> empty_output", () => {
-    const outcome = classifyCrossReviewOutcome(baseInvocation, noRecovery);
+  test("classifyCrossReviewOutcome: clean exit + empty stdout -> empty_output", () => {
+    const outcome = classifyCrossReviewOutcome(baseInvocation);
     expect(outcome.kind).toBe("failed");
     if (outcome.kind === "failed") expect(outcome.code).toBe("empty_output");
-  });
-
-  test("classifyCrossReviewOutcome: clean exit + empty stdout + malformed recovery -> malformed_transcript", () => {
-    const outcome = classifyCrossReviewOutcome(baseInvocation, { attempted: true, text: "", malformed: true });
-    expect(outcome.kind).toBe("failed");
-    if (outcome.kind === "failed") expect(outcome.code).toBe("malformed_transcript");
-  });
-
-  test("classifyCrossReviewOutcome: clean exit + empty stdout + successful recovery -> success with usedRecovery", () => {
-    const outcome = classifyCrossReviewOutcome(baseInvocation, { attempted: true, text: "[P1] recovered", malformed: false });
-    expect(outcome.kind).toBe("success");
-    if (outcome.kind === "success") {
-      expect(outcome.transcript).toBe("[P1] recovered");
-      expect(outcome.usedRecovery).toBe(true);
-    }
   });
 
   test("matchesAuthFailureSignal recognizes known auth signals and rejects generic errors", () => {
@@ -734,14 +807,6 @@ describe("pure classification and parsing helpers (src/core/review/cross-review.
     ]);
   });
 
-  test("matchesClaudeCapacityFailureSignal accepts the pinned route limit only", () => {
-    expect(matchesClaudeCapacityFailureSignal("You've reached your Fable 5 limit. Run /usage-credits to continue.")).toBe(true);
-    expect(matchesClaudeCapacityFailureSignal("Warning: route busy\nYou’ve reached your Fable 5 limit. Run /usage-credits to continue.")).toBe(true);
-    expect(matchesClaudeCapacityFailureSignal("You've reached your Fable 5 limit.\nRun /usage-credits to continue.\n(node:1) warning")).toBe(true);
-    expect(matchesClaudeCapacityFailureSignal("Review mentions /usage-credits in ordinary prose.")).toBe(false);
-    expect(matchesClaudeCapacityFailureSignal("boom: internal error")).toBe(false);
-  });
-
   test("buildRecommendation: any P1 drives FAIL regardless of P2 count", () => {
     const rec = buildRecommendation([
       { severity: "P2", text: "minor" },
@@ -755,25 +820,13 @@ describe("pure classification and parsing helpers (src/core/review/cross-review.
     expect(buildRecommendation([])).toContain("PASS");
   });
 
-  test("selectRecoveredTranscript: malformed only when candidate files exist but yield no usable text", () => {
-    const cwd = new Set(["/repo"]);
-    expect(selectRecoveredTranscript([], cwd)).toEqual({ text: "", malformed: false });
-    expect(
-      selectRecoveredTranscript([{ mtimeMs: 1, lines: ["not json"] }], cwd),
-    ).toEqual({ text: "", malformed: true });
-    expect(
-      selectRecoveredTranscript(
-        [{ mtimeMs: 1, lines: ['{"type":"assistant","cwd":"/repo","message":{"content":"hi"}}'] }],
-        cwd,
-      ),
-    ).toEqual({ text: "hi", malformed: false });
-  });
 });
 
 describe("no-merge-gate reachability (hard constraint 3)", () => {
   const ROOT = join(import.meta.dir, "..", "..");
   const NEW_MODULE_PATHS = [
     "src/core/review/cross-review.ts",
+    "src/effects/review/codex-plugin-provider.ts",
     "src/effects/review/cross-review-runner.ts",
     "src/cli/commands/cross-review.ts",
   ];

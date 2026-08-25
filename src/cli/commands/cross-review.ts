@@ -1,5 +1,5 @@
 /**
- * `repo-harness cross-review` -- deterministic opposite-provider code review
+ * `repo-harness cross-review` -- deterministic independent-provider code review
  * (SSD-04).
  *
  * NOT YET REGISTERED in src/cli/index.ts: per the plan's "File ownership by
@@ -27,12 +27,11 @@ export interface CrossReviewCommandOptions {
   readonly baseRevision?: string;
   readonly timeoutMs?: number;
   readonly json?: boolean;
-  /** Test seam: overrides the executable invoked in place of the real `claude`/`codex` binary. */
+  /** Test/config seam: direct Codex executable, or Node executable for codex-plugin. */
   readonly providerCommand?: string;
-  /** Test seam: overrides the directory transcript recovery reads instead of the real `~/.claude`. */
-  readonly claudeConfigDir?: string;
+  /** Test/config seam for Claude Code's public plugin inventory command. */
+  readonly claudeCommand?: string;
   readonly env?: NodeJS.ProcessEnv;
-  readonly now?: () => number;
 }
 
 export interface CrossReviewCommandResult {
@@ -121,9 +120,8 @@ export function runCrossReviewCommand(opts: CrossReviewCommandOptions): CrossRev
     baseRevision: opts.baseRevision,
     timeoutMs: opts.timeoutMs,
     providerCommand: opts.providerCommand,
-    claudeConfigDir: opts.claudeConfigDir,
+    claudeCommand: opts.claudeCommand,
     env: opts.env,
-    now: opts.now,
     admitProviderInvocation: () => {
       if (authority.status === "standalone") return { allowed: true };
       if (authority.status === "invalid") {
@@ -168,25 +166,11 @@ export function formatCrossReviewResult(result: CrossReviewResult, asJson = fals
       `[cross-review:${result.provider}] SKIPPED after ${result.attempts}/${MAX_ATTEMPTS} attempts (${result.code}): ${result.message}`,
       "The external opinion is advisory and unavailable; proceed on your own review. Do not re-run this review or narrow the diff to retry it.",
     ];
-    if (result.recoveredTranscript) {
-      lines.push(
-        "",
-        "--- recovered session transcript (informational only; result remains skipped) ---",
-        result.recoveredTranscript,
-      );
-    }
     return lines.join("\n");
   }
 
   if (result.status === "failed") {
     const lines = [`[cross-review:${result.provider}] FAILED (${result.code}): ${result.message}`];
-    if (result.recoveredTranscript) {
-      lines.push(
-        "",
-        "--- recovered session transcript (informational only; result remains failed) ---",
-        result.recoveredTranscript,
-      );
-    }
     return lines.join("\n");
   }
 

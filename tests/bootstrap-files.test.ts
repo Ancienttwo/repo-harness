@@ -492,25 +492,21 @@ describe("Bootstrap Script Contracts", () => {
   // tests/cli/cross-review.test.ts, not by scanning Skill Markdown for
   // embedded shell variable assignments. This test now checks the one
   // canonical repo-harness-cross-review package's own prose properties:
-  // read-only provider boundaries, model/timeout budgets, transcript
-  // recovery, and the no-merge-gate guarantee.
-  test("repo-harness-cross-review documents read-only scope, timeouts, transcript recovery, and no-merge-gate boundaries", () => {
-    const claudeMode = read("assets/skills/repo-harness-cross-review/references/claude-mode.md");
+  // read-only provider boundaries, model/timeout budgets, structured plugin
+  // validation, and the no-merge-gate guarantee.
+  test("repo-harness-cross-review documents direct and official-plugin read-only review boundaries", () => {
+    const pluginMode = read("assets/skills/repo-harness-cross-review/references/codex-plugin-mode.md");
     const codexMode = read("assets/skills/repo-harness-cross-review/references/codex-mode.md");
 
-    expect(claudeMode).toContain("read-only reviewer");
-    expect(claudeMode).toContain("no `Bash`/`Edit`/`Write`");
-    expect(claudeMode).toContain("Pinned to the `fable` alias");
-    expect(claudeMode).toContain("Exactly two attempts");
-    expect(claudeMode).toContain("attempt 2 always re-runs on `opus`");
-    expect(claudeMode).toContain("`skipped`: advisory and\n  non-blocking (exit 0)");
-    expect(claudeMode).toContain("do not re-run the review");
-    expect(claudeMode).toContain("330 seconds");
-    expect(claudeMode).toContain("~/.claude/projects/<project>/<session-id>.jsonl");
-    expect(claudeMode).toContain("malformed_transcript");
-    expect(claudeMode).toContain("repo-harness cross-review --provider claude");
-    expect(claudeMode).toContain("No merge-gate");
-    expect(claudeMode).toContain("silently retried against Codex");
+    expect(pluginMode).toContain("official Claude Code");
+    expect(pluginMode).toContain("claude plugin list --json");
+    expect(pluginMode).toContain("adversarial-review --json");
+    expect(pluginMode).toContain("read-only sandbox");
+    expect(pluginMode).toContain("critical|high -> P1");
+    expect(pluginMode).toContain("repo-harness cross-review --provider codex-plugin");
+    expect(pluginMode).toContain("Review Gate stays disabled");
+    expect(pluginMode).toContain("No merge-gate");
+    expect(pluginMode).toContain("source=codex-plugin");
 
     expect(codexMode).toContain("read-only reviewer");
     expect(codexMode).toContain("read-only Bash access");

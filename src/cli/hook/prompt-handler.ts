@@ -57,7 +57,7 @@ import { renderMinimalChangePromptAdvice } from './minimal-change-context';
 import { loadMinimalChangePolicy } from './minimal-change-policy';
 import { renderReviewRubric } from './review-rubric';
 import { parseHookInput, readHookText, type HookInputFs } from './hook-input';
-import { parseAcceptancePolicy } from '../../../scripts/acceptance-receipt';
+import { acceptancePolicySource, parseAcceptancePolicy } from '../../../scripts/acceptance-receipt';
 import type { CircuitAttempt, CircuitDecision } from './circuit-breaker';
 
 /** A command result is intentionally structural so tests can inject a direct,
@@ -502,13 +502,9 @@ function emitReviewHints(
       const contract = text(fsApi, repoRoot, state.contractFile) ?? '';
       try {
         const policy = parseAcceptancePolicy(contract);
-        // source stays the acceptance-receipt AcceptanceReceipt.source
-        // provenance enum value (permanent data-schema vocabulary, R1;
-        // scripts/acceptance-receipt.ts owns the type). command is a
-        // skill-invocation suggestion, not a provenance value, and migrates
-        // to the one host-aware repo-harness-cross-review package (its
-        // Claude/Codex provider modes select automatically).
-        const source = policy.reviewer === 'Claude' ? 'claude-review' : 'codex-review';
+        // The contract freezes the source. Protocol 1 remains readable for
+        // historical receipts; protocol 2 names the host-specific Codex path.
+        const source = acceptancePolicySource(policy);
         const command = 'repo-harness-cross-review';
         out.push('[ExternalAcceptance] Review/release intent detected. Start peer acceptance in parallel with local /check.\n');
         out.push(`[ExternalAcceptance] Current active plan: ${state.activePlan ?? '(none)'}\n`);

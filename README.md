@@ -388,7 +388,7 @@ hooks own execution.
 | `repo-harness-check` | Workflow and release checks plus a deploy-readiness reference |
 | `repo-harness-ship` | Validate finished worktrees, push branches, and open PRs |
 | `repo-harness-architecture` | Architecture docs, drift requests, and diagrams without a full harness refresh |
-| `repo-harness-cross-review` | Host-aware Claude/Codex independent cross-model review |
+| `repo-harness-cross-review` | Independent outside review: Claude hosts use direct Codex; Codex hosts use OpenAI's official `codex@openai-codex` plugin app-server runtime |
 | `claude-plan` | Codex-side provider skill: independent Claude plan-mode consult for a design fork or high-stakes decision; not a direct user entrypoint |
 | `repo-harness-chatgpt` | Oracle browser/GPT Pro consults, MCP Connector setup, and bridge handoff; explicit setup only |
 | `merge-gate` (external) | Exact-candidate final gate; repo-harness ships no merge-gate Skill — see [external tooling](docs/reference-configs/external-tooling.md) |

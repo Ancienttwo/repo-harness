@@ -778,6 +778,9 @@ describe("Workflow helper scripts", () => {
       expect(content, `${label} restores an alternate fleet runner`).toContain(
         "preferred:\n      - subagent\n    fallback: null",
       );
+      expect(content, `${label} must default non-Codex sessions to direct Codex review`).toContain(
+        '{"protocol":2,"reviewer":"Codex","source":"codex-review","user_waiver":"allowed"}',
+      );
     }
   });
 
@@ -1473,7 +1476,12 @@ describe("Workflow helper scripts", () => {
       );
       writeFileSync(join(cwd, "tasks/todos.md"), "old todo content\n");
 
-      const res = run("bash", ["scripts/plan-to-todo.sh", "--plan", "plans/plan-20260304-1400-demo.md"], cwd);
+      const res = run(
+        "bash",
+        ["scripts/plan-to-todo.sh", "--plan", "plans/plan-20260304-1400-demo.md"],
+        cwd,
+        { CODEX_SESSION_ID: "codex-host-fixture", CLAUDE_SESSION_ID: undefined },
+      );
       expect(res.status).toBe(0);
       expect(res.stdout).toContain("[BriefPreflight]");
       expect(res.stdout).toContain("contract brief is not yet self-sufficient");
@@ -1502,6 +1510,7 @@ describe("Workflow helper scripts", () => {
       expect(contract).toContain("## Why");
       expect(contract).toContain("## Stop Conditions");
       expect(contract).toContain("## Falsifier");
+      expect(contract).toContain('{"protocol":2,"reviewer":"Codex","source":"codex-plugin","user_waiver":"allowed"}');
       expect(existsSync(join(cwd, "tasks/notes/20260304-1400-demo.notes.md"))).toBe(true);
       expect(readFileSync(join(cwd, "tasks/notes/20260304-1400-demo.notes.md"), "utf-8")).toContain("## Design Decisions");
       expect(readFileSync(join(cwd, "tasks/reviews/20260304-1400-demo.review.md"), "utf-8")).toContain("tasks/notes/20260304-1400-demo.notes.md");

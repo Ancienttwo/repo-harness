@@ -42,6 +42,12 @@ import {
 } from "./brain-root";
 import { configureCodegraph, ensureCodegraph } from "../tools/codegraph";
 import { runProcess as runBoundedProcess } from "../../effects/process-runner";
+import {
+  inspectOfficialCodexPluginInventory,
+  OFFICIAL_CODEX_MARKETPLACE,
+  OFFICIAL_CODEX_MARKETPLACE_NAME,
+  OFFICIAL_CODEX_PLUGIN_ID,
+} from "../../effects/review/codex-plugin-provider";
 import { askConfirm, writeLine } from "../tty-prompt";
 import { validateRepoAdoptionTarget } from "../repo-adoption/target";
 import { runAdoptionApply, runAdoptionPlan } from "./adoption-plan";
@@ -70,9 +76,8 @@ export interface GlobalContextOptions {
 }
 
 /**
- * Host-scoped skills bundled under `assets/skills/<skill>`. Cross-model skills
- * (repo-harness-cross-review's opposite-provider review, plus the claude-plan
- * external-brain plan consult) install on the opposite host.
+ * Host-scoped skills bundled under `assets/skills/<skill>`. The cross-review
+ * skill is host-aware; claude-plan remains a Codex-host external-brain consult.
  */
 type BundledHostSkill = { skill: string; host: "claude" | "codex"; step: string };
 type BundledHostAgent = { source: string; agent: string; host: "claude" | "codex"; step: string };
@@ -475,7 +480,74 @@ export function syncCrossReviewSkills(
   env?: NodeJS.ProcessEnv,
 ): InitStep[] {
   const catalog = loadSkillSurfaceCatalog(sourceRoot);
-  return syncBundledItemsAtHome(sourceRoot, target, homeDir(env), crossReviewSkillsFromCatalog(catalog), []);
+  const steps = syncBundledItemsAtHome(sourceRoot, target, homeDir(env), crossReviewSkillsFromCatalog(catalog), []);
+  if (target === "codex" || target === "both") steps.push(ensureOfficialCodexPlugin(sourceRoot, env));
+  return steps;
+}
+
+function marketplaceConfigured(stdout: string): boolean | null {
+  try {
+    const value: unknown = JSON.parse(stdout);
+    if (!Array.isArray(value)) return null;
+    const matches = value.filter((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false;
+      const item = entry as { name?: unknown; repo?: unknown };
+      return item.name === OFFICIAL_CODEX_MARKETPLACE_NAME;
+    });
+    if (matches.length > 1) return null;
+    if (matches.length === 0) return false;
+    return (matches[0] as { repo?: unknown }).repo === OFFICIAL_CODEX_MARKETPLACE;
+  } catch {
+    return null;
+  }
+}
+
+function ensureOfficialCodexPlugin(cwd: string, env?: NodeJS.ProcessEnv): InitStep {
+  const claudeCommand = env?.REPO_HARNESS_CLAUDE_EXECUTABLE ?? "claude";
+  let inspection = inspectOfficialCodexPluginInventory(cwd, { env, claudeCommand });
+  if (inspection.status === "failed") {
+    return {
+      step: "official Codex plugin",
+      status: "failed",
+      command: [...inspection.invocation.command],
+      stderr: inspection.message,
+    };
+  }
+  if (inspection.status === "missing") {
+    const marketplaces = runProcess(claudeCommand, ["plugin", "marketplace", "list", "--json"], cwd, env);
+    if (marketplaces.status === "failed") return withStepName(marketplaces, "official Codex plugin", "marketplace inventory failed");
+    const configured = marketplaceConfigured(marketplaces.stdout ?? "");
+    if (configured === null) {
+      return {
+        step: "official Codex plugin",
+        status: "failed",
+        command: marketplaces.command,
+        stderr: `marketplace ${OFFICIAL_CODEX_MARKETPLACE_NAME} is duplicated, malformed, or does not point to ${OFFICIAL_CODEX_MARKETPLACE}`,
+      };
+    }
+    if (!configured) {
+      const added = runProcess(claudeCommand, ["plugin", "marketplace", "add", OFFICIAL_CODEX_MARKETPLACE], cwd, env);
+      if (added.status === "failed") return withStepName(added, "official Codex plugin", "marketplace add failed");
+    }
+    const installed = runProcess(claudeCommand, ["plugin", "install", OFFICIAL_CODEX_PLUGIN_ID, "-s", "user", "-y"], cwd, env);
+    if (installed.status === "failed") return withStepName(installed, "official Codex plugin", "install failed");
+    inspection = inspectOfficialCodexPluginInventory(cwd, { env, claudeCommand });
+  }
+  if (inspection.status === "disabled") {
+    const enabled = runProcess(claudeCommand, ["plugin", "enable", OFFICIAL_CODEX_PLUGIN_ID, "-s", "user"], cwd, env);
+    if (enabled.status === "failed") return withStepName(enabled, "official Codex plugin", "enable failed");
+    inspection = inspectOfficialCodexPluginInventory(cwd, { env, claudeCommand });
+  }
+  if (inspection.status !== "ready") {
+    const detail = inspection.status === "failed" ? inspection.message : `readback status=${inspection.status}`;
+    return { step: "official Codex plugin", status: "failed", detail, stderr: detail };
+  }
+  return {
+    step: "official Codex plugin",
+    status: "ok",
+    command: [...inspection.invocation.command],
+    detail: `enabled ${OFFICIAL_CODEX_PLUGIN_ID} version=${String(inspection.plugin.version)}`,
+  };
 }
 
 function syncWazaSharedRules(target: InstallTargetSpec, env?: NodeJS.ProcessEnv): InitStep {
