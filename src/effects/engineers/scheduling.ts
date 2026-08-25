@@ -28,6 +28,7 @@ import { collectFleetOffers, type FleetOffersOptions } from '../fleet/acquire';
 import { readActiveSprintPath, readCanonicalTargetRef } from '../state/collect-board-inputs';
 import { readCanonicalSprint, resolveRepoIdentity } from '../state/coordination-canonical-source';
 import { readLease, type LeaseRead } from '../state/coordination-lease-store';
+import { resolveGitCommonDirectory } from '../git/common-directory';
 import {
   readRepoHarnessRegistrySnapshot,
   type RepoHarnessRegisteredRepo,
@@ -74,6 +75,20 @@ export interface CollectEngineerOffersOptions {
   readonly registry_snapshot?: RepoHarnessRegistrySnapshot;
   readonly fleet_options?: Pick<FleetOffersOptions, 'board_reader' | 'plan_reader'>;
   readonly dependencies?: Partial<EngineerSchedulingDependencies>;
+}
+
+export function resolveRegisteredRepoForWorktree(
+  repoRoot: string,
+  registry: RepoHarnessRegistrySnapshot,
+): RepoHarnessRegisteredRepo {
+  const common = realpathSync(resolveGitCommonDirectory(repoRoot));
+  const matches = registry.repos.filter((repo) => {
+    try { return realpathSync(resolveGitCommonDirectory(repo.path)) === common; } catch { return false; }
+  });
+  if (matches.length !== 1) {
+    fail('engineer_offer_stale', 'current worktree must resolve to exactly one registered repository');
+  }
+  return matches[0];
 }
 
 function fail(code: EngineerSchedulingError['code'], message: string, cause?: unknown): never {
@@ -163,6 +178,14 @@ export function readProjectedWorkGraph(
 ): ProjectedGraphRead {
   const sprintPath = deps.readActiveSprintPath(repo.path);
   if (sprintPath === null) return Object.freeze({ repo, commit: null, lane: 'unclassified', graph: null });
+  return readProjectedWorkGraphAt(repo, sprintPath, deps);
+}
+
+export function readProjectedWorkGraphAt(
+  repo: RepoHarnessRegisteredRepo,
+  sprintPath: string,
+  deps: EngineerSchedulingDependencies = dependencies(),
+): ProjectedGraphRead {
   const targetRef = deps.readCanonicalTargetRef(repo.path);
   const sprint = deps.readCanonicalSprint(repo.path, { targetRef, sprintPath });
   if (!sprint.ok) fail('work_graph_unclassified', sprint.error);

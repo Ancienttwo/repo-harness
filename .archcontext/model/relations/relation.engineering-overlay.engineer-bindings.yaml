@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.engineering-overlay.engineer-bindings
+kind: calls
+source: capability.runtime-harness.engineering-overlay
+target: capability.runtime-harness.engineer-bindings
+intent: Observe exact current Profile, Binding and live ClaimActor revisions without mutating their stores

@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:d8c54d2793099b41eb69b7d549e713ffa31bdeb55adcf4d5973169644da402f9" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:63308f8b55f874afeb02a63da66ba0f2709b4c1383f90b9ba0efb13f9b9023fe" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:8b44ff5928cb0cb0db2c2dc6fa85087d56721c89c6e158718a0d5ce691004206" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:0cfa0ea97f85a80d35ef7b38358ede3e2883aa96cbf9a176726dc75b8ef784dd" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
@@ -47,6 +47,14 @@
       {
         "id": "capability.runtime-harness.engineer-scheduling",
         "name": "Engineer Scheduling",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "capability.runtime-harness.engineering-overlay",
+        "name": "Engineering Overlay",
         "type": "Software System",
         "tags": [
           "capability"
@@ -181,6 +189,14 @@
         ]
       },
       {
+        "id": "component.engineering-overlay.primary",
+        "name": "Engineering Overlay Read Model",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
         "id": "component.evals-checks.primary",
         "name": "Review Outcome Classifier",
         "type": "Component",
@@ -289,6 +305,30 @@
         "description": "calls"
       },
       {
+        "id": "relation.engineering-overlay.engineer-bindings",
+        "sourceId": "capability.runtime-harness.engineering-overlay",
+        "destinationId": "capability.runtime-harness.engineer-bindings",
+        "description": "calls"
+      },
+      {
+        "id": "relation.engineering-overlay.engineer-messages",
+        "sourceId": "capability.runtime-harness.engineering-overlay",
+        "destinationId": "capability.runtime-harness.engineer-messages",
+        "description": "calls"
+      },
+      {
+        "id": "relation.engineering-overlay.primary",
+        "sourceId": "capability.runtime-harness.engineering-overlay",
+        "destinationId": "component.engineering-overlay.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.engineering-overlay.provider-thread-effects",
+        "sourceId": "capability.runtime-harness.engineering-overlay",
+        "destinationId": "capability.runtime-harness.provider-thread-effects",
+        "description": "calls"
+      },
+      {
         "id": "relation.evals-checks.primary",
         "sourceId": "capability.verification.evals-checks",
         "destinationId": "component.evals-checks.primary",
@@ -384,6 +424,7 @@
         "capability.runtime-harness.engineer-bindings",
         "capability.runtime-harness.engineer-messages",
         "capability.runtime-harness.engineer-scheduling",
+        "capability.runtime-harness.engineering-overlay",
         "capability.runtime-harness.global-runtime-reconciliation",
         "capability.runtime-harness.hook-adapters",
         "capability.runtime-harness.mcp-sidecar",
@@ -400,6 +441,7 @@
         "component.engineer-bindings.primary",
         "component.engineer-messages.primary",
         "component.engineer-scheduling.primary",
+        "component.engineering-overlay.primary",
         "component.evals-checks.primary",
         "component.general-repo-access.primary",
         "component.global-runtime-reconciliation.primary",

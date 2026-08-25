@@ -99,6 +99,12 @@ export interface ModuleInboxListResult {
   readonly superseded_count: number;
 }
 
+export interface ModuleInboxObservationSummary {
+  readonly pending: number;
+  readonly delivery_failed: number;
+  readonly revision: string;
+}
+
 export interface SendModuleMessageResult extends ModuleInboxEntry {
   readonly event_path: string;
   readonly created: boolean;
@@ -604,6 +610,39 @@ function entriesFor(paths: EngineerInboxPaths): ModuleInboxEntry[] {
     return { event, receipt };
   }).sort((left, right) => left.event.created_at.localeCompare(right.event.created_at)
     || left.event.message_id.localeCompare(right.event.message_id));
+}
+
+/** Pure read model for operator projections. It never creates inbox or lock
+ * paths; concurrent mutation is detected by the caller's double read. */
+export function observeModuleInboxSummary(repoRoot: string, engineerId: string): ModuleInboxObservationSummary {
+  const paths = pathsFor(repoRoot, engineerId);
+  const entries = entriesFor(paths);
+  let deliveryFailed = 0;
+  const revisions = entries.map(({ event, receipt }) => {
+    let latestOutcome: ModuleMessageDeliveryOutcome | null = null;
+    let latestObservationDigest: string | null = null;
+    if (receipt.attempt > 0) {
+      const observation = readObservation(observationPath(paths, event.message_id, receipt.attempt));
+      if (observation.observation_digest !== receipt.latest_observation_digest) {
+        fail('module_message_unreadable', 'message receipt does not match its latest observation');
+      }
+      latestOutcome = observation.outcome;
+      latestObservationDigest = observation.observation_digest;
+      if (observation.outcome !== 'delivered') deliveryFailed += 1;
+    }
+    return {
+      message_id: event.message_id,
+      event_digest: event.event_digest,
+      receipt_digest: receipt.receipt_digest,
+      latest_observation_digest: latestObservationDigest,
+      latest_outcome: latestOutcome,
+    };
+  });
+  return Object.freeze({
+    pending: entries.filter(({ receipt }) => receipt.delivery_state === 'pending').length,
+    delivery_failed: deliveryFailed,
+    revision: `sha256:${createHash('sha256').update(JSON.stringify(revisions)).digest('hex')}`,
+  });
 }
 
 export function listModuleInbox(input: { readonly repo_root: string; readonly principal: EngineerPrincipalV1 }): ModuleInboxListResult {

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.engineering-overlay.primary
+kind: calls
+source: capability.runtime-harness.engineering-overlay
+target: component.engineering-overlay.primary
+intent: Validate and content-address the read-only Engineer and organization-attention projections

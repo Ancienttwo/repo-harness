@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: component.engineering-overlay.primary
+kind: component
+name: Engineering Overlay Read Model
+status: active
+parent: capability.runtime-harness.engineering-overlay
+summary: Owns canonical read-only Engineer and organization-attention snapshots plus component consistency fences; it stores no mutable status.

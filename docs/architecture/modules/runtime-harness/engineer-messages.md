@@ -1,6 +1,6 @@
 # runtime-harness/engineer-messages 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-messages" sourceDigest="sha256:4d998315e68eb7ad5249b4fa482da2c560efc6587feeefd38f8217100538d19d" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:cf463aeaf208c3b27340dff80704b814c4fc47d300fae8e1c319e711f8601182" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-messages" sourceDigest="sha256:1f285db336070934b1a2f2c10210cbf64c20cb30dfa04526fb3ea004ec8c94b1" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:4e8a5e42ed0f4d1f9dddbe9bc33cda384ddb20a14111106ac083e013734e4c8e" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-messages`(kind `capability`)
 > **Matched Prefixes**:`src/core/messages/mechanics.ts`、`src/core/engineers/module-message.ts`、`src/effects/engineers/module-inbox.ts`
@@ -51,6 +51,7 @@ flowchart LR
 
 入向關係:
 
+- `calls` ← `capability.runtime-harness.engineering-overlay` — Observe pending and failed delivery facts from the existing ME-1C event and receipt authority
 - `calls` ← `capability.runtime-harness.mcp-sidecar` — Expose authenticated Engineer message send, list and acknowledgement without granting generic Fleet or Provider authority
 - `calls` ← `capability.runtime-harness.provider-thread-effects` — Consume one persisted ModuleMessage and idempotently project exact positive Provider delivery evidence
 

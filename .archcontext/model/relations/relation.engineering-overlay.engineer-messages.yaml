@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.engineering-overlay.engineer-messages
+kind: calls
+source: capability.runtime-harness.engineering-overlay
+target: capability.runtime-harness.engineer-messages
+intent: Observe pending and failed delivery facts from the existing ME-1C event and receipt authority

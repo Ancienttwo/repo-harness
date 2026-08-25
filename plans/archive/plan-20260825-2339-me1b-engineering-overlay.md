@@ -1,6 +1,6 @@
 # Plan: ME-1B Engineering Overlay
 
-> **Status**: Approved
+> **Status**: Archived
 > **Created**: 20260825-2339
 > **Slug**: me1b-engineering-overlay
 > **Planning Source**: codex-plan
@@ -124,18 +124,18 @@ The smallest coherent slice is separate pure read models and CLI commands. It pr
 
 ## Task Breakdown
 
-- [ ] Promote the ME-1B PRD to Approved with the minimal CLI/JSON boundary and closed support states.
-- [ ] Add exact overlay/attention schemas, canonical digests, and illegal-state validation.
-- [ ] Add effect-owned double-read projection over Profile/Binding/Claim/message/Provider observations.
-- [ ] Add `sprint graph` and `engineer board` JSON/text read commands while preserving Fleet semantics.
-- [ ] Add fault, consistency, semantic-independence, route-inventory, and performance fixtures.
-- [ ] Register the ArchContext capability and project workflow/architecture evidence.
-- [ ] Run focused and full repository verification, obtain acceptance, archive, and merge.
+- [x] Promote the ME-1B PRD to Approved with the minimal CLI/JSON boundary and closed support states.
+- [x] Add exact overlay/attention schemas, canonical digests, and illegal-state validation.
+- [x] Add effect-owned double-read projection over Profile/Binding/Claim/message/Provider observations.
+- [x] Add `sprint graph` and `engineer board` JSON/text read commands while preserving Fleet semantics.
+- [x] Add fault, consistency, semantic-independence, route-inventory, and performance fixtures.
+- [x] Register the ArchContext capability and project workflow/architecture evidence.
+- [x] Run focused and full repository verification, obtain acceptance, archive, and merge.
 
 ## Verification
 
 - `bun test tests/unit/me1b-engineering-overlay.test.ts tests/cli/engineer.test.ts tests/cli/sprint.test.ts tests/cli/fleet.test.ts --timeout 60000`
-- `bun run typecheck`
+- `bun run check:type`
 - root required checks from `AGENTS.md`
 - full `bun test --timeout 60000`
 
@@ -143,10 +143,10 @@ The smallest coherent slice is separate pure read models and CLI commands. It pr
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] Promote the ME-1B PRD to Approved with the minimal CLI/JSON boundary and closed support states.
-- [ ] Add exact overlay/attention schemas, canonical digests, and illegal-state validation.
-- [ ] Add effect-owned double-read projection over Profile/Binding/Claim/message/Provider observations.
-- [ ] Add `sprint graph` and `engineer board` JSON/text read commands while preserving Fleet semantics.
-- [ ] Add fault, consistency, semantic-independence, route-inventory, and performance fixtures.
-- [ ] Register the ArchContext capability and project workflow/architecture evidence.
-- [ ] Run focused and full repository verification, obtain acceptance, archive, and merge.
+- [x] Promote the ME-1B PRD to Approved with the minimal CLI/JSON boundary and closed support states.
+- [x] Add exact overlay/attention schemas, canonical digests, and illegal-state validation.
+- [x] Add effect-owned double-read projection over Profile/Binding/Claim/message/Provider observations.
+- [x] Add `sprint graph` and `engineer board` JSON/text read commands while preserving Fleet semantics.
+- [x] Add fault, consistency, semantic-independence, route-inventory, and performance fixtures.
+- [x] Register the ArchContext capability and project workflow/architecture evidence.
+- [x] Run focused and full repository verification, obtain acceptance, archive, and merge.

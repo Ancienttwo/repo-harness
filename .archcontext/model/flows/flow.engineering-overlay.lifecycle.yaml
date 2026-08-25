@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.engineering-overlay.lifecycle
+capabilityId: capability.runtime-harness.engineering-overlay
+name: Project a consistency-fenced Engineering Overlay
+applicability: required
+participants:
+  - id: overlay
+    nodeId: capability.runtime-harness.engineering-overlay
+  - id: schema
+    nodeId: component.engineering-overlay.primary
+steps:
+  - id: project-overlay
+    from: overlay
+    to: schema
+    label: Validate and content-address the double-read result with explicit component fences
+    evidence:
+      entrypointId: entrypoint.engineering-overlay.collect
+      sourceSymbol: collectEngineeringBoard
+      sinkId: sink.engineering-overlay.schema
+outcomes:
+  - id: read-model
+    kind: success
+    label: Return stable, changed_during_read or degraded without changing an observed authority
+    steps:
+      - id: derive-organization-attention
+        from: overlay
+        to: schema
+        label: Validate and content-address organization attention from the exact overlay snapshot
+        evidence:
+          entrypointId: entrypoint.engineering-overlay.attention
+          sourceSymbol: projectOrganizationAttention
+          sinkId: sink.engineering-overlay.attention-schema
+    terminal:
+      participant: overlay
+      label: Return read-only JSON/text projection with no authority mutation
+  - id: invalid-projection
+    kind: error
+    label: Reject an illegal overlay shape or digest instead of inventing a compatible projection
+    steps:
+      - id: validate-overlay-schema
+        from: overlay
+        to: schema
+        label: Validate the closed overlay schema and content digest before returning bytes
+        evidence:
+          entrypointId: entrypoint.engineering-overlay.overlay-schema
+          sourceSymbol: buildEngineeringOverlaySnapshot
+          sinkId: sink.engineering-overlay.overlay-validation
+    terminal:
+      participant: overlay
+      label: Return a typed projection error with every observed authority unchanged

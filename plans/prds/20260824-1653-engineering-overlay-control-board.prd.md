@@ -1,9 +1,10 @@
 # PRD: Engineering Overlay and Human Control Board (ME-1B)
 
-> **Status**: Draft
+> **Status**: Approved
 > **Slug**: `engineering-overlay-control-board`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T22:00:24+0800
+> **Updated**: 2026-08-25T23:39:00+0800
+> **Human Approval**: User authorized continuous implementation through ME-2A/2B on 2026-08-25; this approval covers the minimal CLI/JSON ME-1B boundary frozen below
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
 > **Depends On**: ME-0A binding read model; later fields activate only when their owning PRD ships
@@ -13,14 +14,14 @@
 
 - **Problem**: existing Fleet Board 正确表达 task lifecycle，但没有 Engineer、Binding、delegation、message、memory freshness 和组织级 attention 的稳定 read model。
 - **Users**: Maintainer、Program Orchestrator、Reviewer。
-- **Platform**: CLI/JSON read models first；localhost Human Board second。
-- **P0 surface**: capability-bearing `EngineeringOverlaySnapshotV1`、`OrganizationAttentionSnapshotV1`、component revisions/consistency；CLI exposes separate Planning Graph、Delivery Kanban、Organization/Attention views；composite `HumanControlSnapshotV1` and UI follow after join semantics pass fixtures。
+- **Platform**: CLI/JSON read models；localhost Human Board remains a later independently approved presentation slice。
+- **P0 surface**: capability-bearing `EngineeringOverlaySnapshotV1`、`OrganizationAttentionSnapshotV1`、per-component double-read revisions/consistency；CLI exposes separate Planning Graph、Delivery Kanban、Organization/Attention views。Composite `HumanControlSnapshotV1` and UI are not part of this minimal approval。
 - **Core metric**: Session/Worker 状态变化导致 Fleet column 变化 0 次；mixed-generation snapshot 输出 0 次。
 - **Hard constraint**: UI 不保存 status/current owner，不推导 Fleet column，不提供 mutation endpoint in first slice。
 - **Key risk**: 把四个不同时间点的 snapshot 拼成看似原子的事实。
-- **Unknowns**: frontend stack 和 WebSocket transport 不影响 P0 read-model approval，标记为 later choice。
+- **Unknowns**: frontend stack、WebSocket transport and composite join remain later presentation choices and do not affect this approved read-model boundary。
 - **Acceptance scenarios**: binding change only alters overlay、organization attention without task、changed-during-read、degraded repo isolation、three-view semantic independence。
-- **Suggested next step**: 先交付 CLI JSON schema/fixtures；页面只消费相同 read model。
+- **Suggested next step**: execute `plans/plan-20260825-2339-me1b-engineering-overlay.md`；页面不得先于相同 read model 的独立 approval。
 
 ## Problem
 
@@ -109,26 +110,25 @@ HumanControlSnapshotV1          → component refs + consistency, not new author
 
 ### Module 1: Engineering Overlay
 
-- projects Profile/Binding and optional ClaimActor, delegation/message/memory refs;
-- absent later protocols produce explicit `unsupported`, not invented empty success;
-- task column is copied from Fleet only by the consuming composite, never recalculated.
+- projects tracked Profile plus current Binding, ClaimActor, ME-1C message and ME-3A Provider-effect observations;
+- delegation and memory remain explicit `unsupported`, not invented empty success;
+- never reads, copies or recalculates a Fleet task column.
 
 ### Module 2: Organization Attention
 
-- closed reasons include `binding_missing`, `binding_stale`, `engineer_contract_revision_changed`, `provider_auth_failed`, `message_delivery_failed`, `memory_index_stale`;
+- closed reasons are `binding_missing`, `binding_stale`, `engineer_contract_revision_changed`, `message_delivery_failed`, and `provider_reconciliation_required`;
 - each reason names owner and source revision.
 
-### Module 3: Local Board
+### Module 3: Local Board (Deferred)
 
-- read-only Fleet, Organization, Task Drawer, Attention and Evidence views;
-- localhost bind, safe artifact rendering and responsive layout;
-- exact component fences visible.
+- The minimal Approved slice exposes no web route or frontend bundle.
+- A later Board may consume the exact CLI/JSON schemas but cannot add cached authority or mutation endpoints.
 
 ### Module 4: CLI View Contract
 
-- `repo-harness sprint graph --sprint <path> --format json|text` reads ME-1A graph projection and may report `unsupported` until ME-1A ships;
-- `repo-harness engineer board --format json|text` is the first ME-0A-backed canary surface;
-- `repo-harness fleet board --with-engineering --format json|text` joins exact overlay refs without changing existing Fleet card/column authority;
+- `repo-harness sprint graph --sprint <path> --format json|text` reads the exact canonical ME-1A graph projection and reports an absent graph without synthesizing one;
+- `repo-harness engineer board --format json|text` emits Engineering Overlay plus Organization Attention;
+- the existing Fleet Board command remains independent and gains no Engineering join or new status semantics;
 - every command is read-only; later mutation commands call their owning domain protocol rather than editing projection state.
 
 ## Data Model
@@ -136,7 +136,9 @@ HumanControlSnapshotV1          → component refs + consistency, not new author
 ```yaml
 EngineeringOverlaySnapshotV1:
   protocol: 1
-  registry_revision: string
+  kind: repo-harness-engineering-overlay-snapshot
+  repository_id: repo-id
+  registry_revision: sha256
   observed_at: datetime
   engineers:
     - engineer_id: string
@@ -145,15 +147,24 @@ EngineeringOverlaySnapshotV1:
         support: available|unreadable
         state: unbound|active|retired|null
         value: null|{binding_id: uuid, binding_generation: integer, engineer_contract_revision: sha256, observation: unknown|reachable|unreachable}
-      active_claim: {support: unsupported|available|unreadable, value: null|object}
-      delegations: {support: unsupported|available|unreadable, active_readers: null|integer, writer_actor: null|string, blocked_count: null|integer}
-      messages: {support: unsupported|available|unreadable, pending: null|integer, delivery_failed: null|integer}
-      memory: {support: unsupported|available|unreadable, index_revision: null|sha256, stale_entries: null|integer}
-  components:
-    fleet: {protocol: integer, revision: string, digest: sha256, observation_before: string, observation_after: string}
-    engineering: {protocol: integer, revision: string, digest: sha256, observation_before: string, observation_after: string}
-    organization_attention: {protocol: integer, revision: string, digest: sha256, observation_before: string, observation_after: string}
+      active_claim: {support: available|unreadable, value: null|object}
+      delegations: {support: unsupported, value: null}
+      messages: {support: available|unreadable, pending: null|integer, delivery_failed: null|integer, revision: null|sha256}
+      provider_effects: {support: available|unreadable, active: null|integer, reconciliation_required: null|integer, failed: null|integer, revision: null|sha256}
+      memory: {support: unsupported, value: null}
+  components: [{component: profiles|bindings|claims|messages|provider_effects, support: available|unreadable, observation_before: null|sha256, observation_after: null|sha256}]
   snapshot_consistency: stable|changed_during_read|degraded
+  snapshot_sha256: sha256
+
+OrganizationAttentionSnapshotV1:
+  protocol: 1
+  kind: repo-harness-organization-attention-snapshot
+  repository_id: repo-id
+  overlay_snapshot_sha256: sha256
+  observed_at: datetime
+  attention: [{engineer_id: string, reason: closed-enum, owner: maintainer|module_engineer|runtime_operator, source_revision: sha256}]
+  snapshot_consistency: stable|changed_during_read|degraded
+  snapshot_sha256: sha256
 ```
 
 Unsupported, unreadable and healthy-empty are distinct closed states. P0 may ship Engineering Overlay and Organization Attention separately; a composite snapshot may claim `stable` only when every component's before/after marker matches. Partial read failure produces `degraded` and preserves each readable component's own revision/digest.
@@ -165,7 +176,6 @@ Binding invariants are exact: `support: unreadable` requires `state/value: null`
 | Target | Number | Measurement Method | Degradation Threshold |
 |---|---:|---|---:|
 | JSON overlay, 10 Engineers | p95 ≤3 s | local benchmark | 10 s |
-| First paint after JSON available | ≤2 s | browser fixture | 5 s |
 
 ## Known Unknowns
 
@@ -174,13 +184,20 @@ Binding invariants are exact: `support: unreadable` requires `state/value: null`
 | Frontend stack | implementation only | choose after schema fixture | UI owner |
 | Streaming vs polling | freshness/cost | measure local change rate | Runtime owner |
 
+## Approval Closure
+
+- The approved candidate is CLI/JSON only; there is no UI or composite consistency authority in this slice.
+- Profile/Binding, ClaimActor, ME-1C inbox and ME-3A effect observations are read independently and twice. Any unreadable component degrades the snapshot；any revision change prevents `stable`。
+- Delegation and memory are emitted as exact `unsupported` states until their owning PRDs ship；they are not healthy-empty placeholders。
+- Planning Graph and Fleet Board retain their existing authorities and are never recomputed from the overlay。
+
 ## Developer Handoff
 
-Do not start UI before JSON read models and consistency fixtures are Approved.
+Do not infer UI authority from this approval. The delivered boundary is the frozen JSON/read-command surface and its consistency fixtures.
 
-- **Build first after approval**: pure overlay/attention schemas and projections, CLI JSON, then fixture-driven local Board.
+- **Delivered order**: pure overlay/attention schemas and projections, then independent CLI JSON/text commands.
 - **Do not reinterpret**: absent sources are unsupported/degraded, not healthy defaults; UI never computes authority.
-- **Verify with**: byte-identical Fleet fixtures, mutation-during-read, degraded repo and accessibility/responsive tests.
+- **Verify with**: byte-identical Fleet fixtures, mutation-during-read, degraded authority, route inventory and ten-Engineer timing tests.
 
 ### Acceptance Scripts
 
@@ -189,7 +206,7 @@ Do not start UI before JSON read models and consistency fixtures are Approved.
 3. Render an Engineer with no task but active organization attention.
 4. Inventory routes and assert no mutation endpoint.
 5. Emit `available/unbound`, `available/active`, `available/retired` and `unreadable` binding fixtures; reject every illegal state/value combination.
-6. Render Planning Graph, Fleet Board and Engineer Board from one fixture; toggle dependency, Session reachability and Lease state independently and prove only the owning view semantics change.
+6. Render Planning Graph, Fleet Board and Engineer Board from one fixture; rotate only Binding state and prove Fleet bytes remain unchanged.
 
 ## Frontend Perspective
 

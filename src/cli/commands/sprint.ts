@@ -1,6 +1,11 @@
 /** CLI adapter for the effect-owned sprint coordination verbs. */
 import { Command } from 'commander';
 import type { CommandOutcome } from '../../core/state/command-outcome';
+import { readRepoHarnessRegistryStrictSnapshot } from '../../effects/repo-registry';
+import {
+  readProjectedWorkGraphAt,
+  resolveRegisteredRepoForWorktree,
+} from '../../effects/engineers/scheduling';
 import {
   abortCompletionSprintCommand,
   beginCompletionSprintCommand,
@@ -32,6 +37,36 @@ function writeOutcome(outcome: CommandOutcome): void {
 export function buildSprintCommand(): Command {
   const sprint = new Command('sprint')
     .description('Own sprint execution on the shared coordination plane');
+
+  sprint
+    .command('graph')
+    .description('Project one canonical ME-1A Work Package Graph without mutating scheduling authority')
+    .requiredOption('--sprint <path>', 'Exact repo-relative canonical sprint path')
+    .requiredOption('--format <format>', 'Output format (json or text)')
+    .action((options: { sprint: string; format: string }) => {
+      try {
+        if (options.format !== 'json' && options.format !== 'text') throw new Error('--format must be json or text');
+        const registry = readRepoHarnessRegistryStrictSnapshot({ env: process.env });
+        const repo = resolveRegisteredRepoForWorktree(process.cwd(), registry);
+        const result = readProjectedWorkGraphAt(repo, options.sprint);
+        if (options.format === 'json') {
+          process.stdout.write(`${JSON.stringify(result)}\n`);
+          return;
+        }
+        if (!result.graph) {
+          process.stdout.write(`${result.repo.id} ${result.lane} no-work-graph\n`);
+          return;
+        }
+        process.stdout.write(`${[
+          `${result.graph.repository_id} ${result.graph.sprint_path} revision=${result.graph.work_graph_revision}`,
+          ...result.graph.work_packages.map((item) => `${item.work_package_id} task=${item.task_id} status=${item.task_status} capability=${item.primary_capability} depends=${item.depends_on.length}`),
+        ].join('\n')}\n`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        process.stderr.write(`${JSON.stringify({ ok: false, error: 'work_graph_invalid', message })}\n`);
+        process.exitCode = 1;
+      }
+    });
 
   sprint
     .command('identify')

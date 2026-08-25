@@ -1,0 +1,62 @@
+schemaVersion: archcontext.node/v2
+id: capability.runtime-harness.engineering-overlay
+kind: capability
+name: Engineering Overlay
+status: active
+summary: Projects Profile, Binding, Claim, message and Provider observations into exact read-only Engineer and organization-attention views without changing Fleet lifecycle authority.
+responsibilities:
+  - Validate closed EngineeringOverlaySnapshotV1 and OrganizationAttentionSnapshotV1 schemas with content-addressed snapshots.
+  - Read tracked Profiles plus independent Binding, ClaimActor, ME-1C inbox and ME-3A effect observations without creating a second authority.
+  - Double-read every component revision and expose stable, changed_during_read or degraded explicitly.
+  - Keep absent later delegation and memory protocols unsupported rather than translating them into healthy-empty data.
+  - Expose CLI/JSON read models only; exclude web UI, mutation routes, cached status and HumanControl composite state.
+  - Preserve Planning Graph, Fleet Board, Task, Lease, Publication and Acceptance bytes and semantics.
+source:
+  include:
+    - "src/core/engineers/engineering-overlay.ts"
+    - "src/effects/engineers/engineering-overlay.ts"
+  entrypoints:
+    - id: entrypoint.engineering-overlay.collect
+      path: "src/effects/engineers/engineering-overlay.ts"
+      symbols:
+        - name: "collectEngineeringBoard"
+          sinks:
+            - id: sink.engineering-overlay.binding
+              path: "src/effects/engineers/binding-store.ts"
+              symbol: "readEngineerBindingStatus"
+            - id: sink.engineering-overlay.claim
+              path: "src/effects/engineers/claim-actor-store.ts"
+              symbol: "listLiveClaimActorReceiptsForEngineer"
+            - id: sink.engineering-overlay.messages
+              path: "src/effects/engineers/module-inbox.ts"
+              symbol: "observeModuleInboxSummary"
+            - id: sink.engineering-overlay.provider-effects
+              path: "src/effects/engineers/provider-thread-effect-store.ts"
+              symbol: "observeProviderThreadEffects"
+            - id: sink.engineering-overlay.schema
+              path: "src/core/engineers/engineering-overlay.ts"
+              symbol: "buildEngineeringOverlaySnapshot"
+    - id: entrypoint.engineering-overlay.attention
+      path: "src/core/engineers/engineering-overlay.ts"
+      symbols:
+        - name: "projectOrganizationAttention"
+          sinks:
+            - id: sink.engineering-overlay.attention-schema
+              path: "src/core/engineers/engineering-overlay.ts"
+              symbol: "validateOrganizationAttentionSnapshot"
+    - id: entrypoint.engineering-overlay.overlay-schema
+      path: "src/core/engineers/engineering-overlay.ts"
+      symbols:
+        - name: "buildEngineeringOverlaySnapshot"
+          sinks:
+            - id: sink.engineering-overlay.overlay-validation
+              path: "src/core/engineers/engineering-overlay.ts"
+              symbol: "validateEngineeringOverlaySnapshot"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun test tests/unit/me1b-engineering-overlay.test.ts tests/cli/engineer.test.ts tests/cli/sprint.test.ts --timeout 60000"
+    - "bun run check:type"

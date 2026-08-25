@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { appendFileSync, cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from 'fs';
+import { appendFileSync, cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import { mcpOAuthTokenStorePath } from '../../src/cli/mcp/auth';
 import { McpOAuthTokenStore } from '../../src/cli/mcp/oauth';
+import { registerRepoHarnessRepo } from '../../src/effects/repo-registry';
 
 const cli = resolve(process.cwd(), 'src/cli/index.ts');
 const sourceRoot = process.cwd();
@@ -40,6 +41,32 @@ afterEach(() => {
 });
 
 describe('repo-harness engineer CLI', () => {
+  test('projects the read-only Engineering Overlay and Organization Attention board', () => {
+    const root = fixture();
+    const registryHome = mkdtempSync(join(tmpdir(), 'repo-harness-engineer-board-home-'));
+    tempRoots.push(registryHome);
+    process.env.REPO_HARNESS_HOME = registryHome;
+    mkdirSync(join(root, 'tasks'), { recursive: true });
+    writeFileSync(join(root, 'tasks/current.md'), '# Current\n');
+    registerRepoHarnessRepo(root, 'manual', { env: process.env, requireAdopted: false });
+
+    const rendered = run(root, ['engineer', 'board', '--format', 'json']);
+    expect({ exitCode: rendered.exitCode, stderr: rendered.stderr }).toEqual({ exitCode: 0, stderr: '' });
+    const board = JSON.parse(rendered.stdout) as {
+      overlay: { snapshot_consistency: string; engineers: Array<{ binding: { state: string } }> };
+      organization_attention: { attention: Array<{ reason: string }> };
+    };
+    expect(board.overlay.snapshot_consistency).toBe('stable');
+    expect(board.overlay.engineers).toHaveLength(2);
+    expect(board.overlay.engineers.every((item) => item.binding.state === 'unbound')).toBeTrue();
+    expect(board.organization_attention.attention.filter((item) => item.reason === 'binding_missing')).toHaveLength(2);
+
+    const text = run(root, ['engineer', 'board', '--format', 'text']);
+    expect(text.exitCode).toBe(0);
+    expect(text.stdout).toContain('consistency: stable');
+    expect(run(root, ['engineer', 'board', '--format', 'yaml']).exitCode).toBe(1);
+  });
+
   test('lists and shows capability-backed tracked Profiles', () => {
     const root = fixture();
     const listed = run(root, ['engineer', 'profile', 'list', '--json']);

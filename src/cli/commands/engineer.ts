@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { realpathSync } from 'fs';
 
 import { EngineerProfileBindingError } from '../../core/engineers/profile-binding';
+import { EngineeringOverlayError } from '../../core/engineers/engineering-overlay';
 import { EngineerPrincipalError } from '../../core/engineers/principal-claim';
 import { EngineerSchedulingError } from '../../core/engineers/scheduling';
 import {
@@ -39,6 +40,10 @@ import { repoHarnessRepoIdFor } from '../../effects/repo-registry';
 import { resolveEngineerPrincipal } from '../../effects/engineers/principal';
 import { collectEngineerOffers } from '../../effects/engineers/scheduling';
 import {
+  EngineeringOverlayProjectionError,
+  collectEngineeringBoard,
+} from '../../effects/engineers/engineering-overlay';
+import {
   ModuleInboxError,
   acknowledgeModuleMessage,
   receiveModuleInbox,
@@ -64,6 +69,7 @@ function emitError(error: unknown): void {
   const code = error instanceof EngineerProfileBindingError || error instanceof EngineerPrincipalError
     || error instanceof EngineerSchedulingError || error instanceof ModuleMessageError || error instanceof ModuleInboxError
     || error instanceof ProviderThreadEffectError || error instanceof ProviderThreadEffectStoreError
+    || error instanceof EngineeringOverlayError || error instanceof EngineeringOverlayProjectionError
     ? error.code
     : 'engineer_binding_invalid';
   const message = error instanceof Error ? error.message : String(error);
@@ -118,6 +124,32 @@ interface CommonExpectedOptions {
 
 export function buildEngineerCommand(): Command {
   const engineer = new Command('engineer').description('Manage repository-backed Module Engineer Profiles and operator bindings');
+
+  engineer
+    .command('board')
+    .description('Project the read-only Engineering Overlay and Organization Attention views')
+    .requiredOption('--format <format>', 'Output format (json or text)')
+    .action((options: { format: string }) => run(() => {
+      if (options.format !== 'json' && options.format !== 'text') throw new EngineeringOverlayError('engineering_overlay_invalid', '--format must be json or text');
+      const board = collectEngineeringBoard({ repo_root: process.cwd(), env: process.env });
+      if (options.format === 'json') {
+        process.stdout.write(`${JSON.stringify(board)}\n`);
+        return;
+      }
+      const lines = [
+        `repository: ${board.overlay.repository_id}`,
+        `consistency: ${board.overlay.snapshot_consistency}`,
+        ...board.overlay.engineers.map((item) => [
+          item.engineer_id,
+          `binding=${item.binding.support === 'available' ? item.binding.state : 'unreadable'}`,
+          `claim=${item.active_claim.support === 'available' && item.active_claim.value ? item.active_claim.value.claim_id : item.active_claim.support === 'available' ? 'none' : 'unreadable'}`,
+          `pending=${item.messages.support === 'available' ? item.messages.pending : 'unreadable'}`,
+          `reconcile=${item.provider_effects.support === 'available' ? item.provider_effects.reconciliation_required : 'unreadable'}`,
+        ].join(' ')),
+        ...board.organization_attention.attention.map((item) => `attention ${item.engineer_id} ${item.reason} owner=${item.owner}`),
+      ];
+      process.stdout.write(`${lines.join('\n')}\n`);
+    }));
 
   const profile = new Command('profile').description('Inspect tracked Module Engineer Profiles');
   profile

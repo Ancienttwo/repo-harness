@@ -296,7 +296,7 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 - Treat user-level `~/.codex/hooks.json` and `~/.claude/settings.json` as host adapters. Keep hook implementation under `.ai/hooks/`, and treat repo-local `.claude/settings.json` / `.codex/hooks.json` hook adapters as retired legacy config.
 - Consider adding `bun scripts/capability-resolver.ts validate --format text` to the strict workflow gate after the architecture registry has been used through one more real slice.
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:d8c54d2793099b41eb69b7d549e713ffa31bdeb55adcf4d5973169644da402f9" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:b8e2fcf7f84fb64a06354f221ede62bc9da53789e6892e835b7e77b481db1f2e" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:8b44ff5928cb0cb0db2c2dc6fa85087d56721c89c6e158718a0d5ce691004206" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:d0f762f020e12ba8444412b1d5d76ad683993255ee6363131d06cadd5f1503c1" -->
 # Architecture Index
 
 Generated: 1970-01-01T00:00:00.000Z
@@ -309,6 +309,7 @@ Generated: 1970-01-01T00:00:00.000Z
 - [Engineer Bindings](modules/runtime-harness/engineer-bindings.md) — capability / active
 - [Engineer Messages](modules/runtime-harness/engineer-messages.md) — capability / active
 - [Engineer Scheduling](modules/runtime-harness/engineer-scheduling.md) — capability / active
+- [Engineering Overlay](modules/runtime-harness/engineering-overlay.md) — capability / active
 - [Global Runtime Reconciliation](modules/runtime-harness/global-runtime-reconciliation.md) — capability / active
 - [Hook Adapters](modules/runtime-harness/hook-adapters.md) — capability / active
 - [MCP Sidecar](modules/runtime-harness/mcp-sidecar.md) — capability / active
@@ -328,6 +329,10 @@ Generated: 1970-01-01T00:00:00.000Z
 - capability.runtime-harness.engineer-bindings -> component.engineer-bindings.primary — calls
 - capability.runtime-harness.engineer-messages -> capability.runtime-harness.engineer-bindings — calls
 - capability.runtime-harness.engineer-scheduling -> capability.runtime-harness.engineer-bindings — calls
+- capability.runtime-harness.engineering-overlay -> capability.runtime-harness.engineer-bindings — calls
+- capability.runtime-harness.engineering-overlay -> capability.runtime-harness.engineer-messages — calls
+- capability.runtime-harness.engineering-overlay -> component.engineering-overlay.primary — calls
+- capability.runtime-harness.engineering-overlay -> capability.runtime-harness.provider-thread-effects — calls
 - capability.verification.evals-checks -> component.evals-checks.primary — calls
 - capability.runtime-mcp.general-repo-access -> component.general-repo-access.primary — calls
 - capability.runtime-harness.global-runtime-reconciliation -> component.global-runtime-reconciliation.primary — calls

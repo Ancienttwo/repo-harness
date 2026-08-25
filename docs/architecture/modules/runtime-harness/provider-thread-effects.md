@@ -1,6 +1,6 @@
 # runtime-harness/provider-thread-effects 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-provider-thread-effects" sourceDigest="sha256:788b0a687baf7e2990b75422a6713f9d8b0da3fe5156e3cf1148a70319056b4e" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:9b9dfd6df1ab91695f27b38dd6031bd56185771b1e3183188ad4e780c15f56b4" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-provider-thread-effects" sourceDigest="sha256:acfe1e16369d7e4379bb79e370321b19d6cb0af38469b60218c3f3a06c3d2038" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:15040c9c841005c63d4ea09fd3306aa522bab84608152f715e285f5e61ebce58" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.provider-thread-effects`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/provider-thread-effect.ts`、`src/effects/engineers/provider-thread-effect-store.ts`
@@ -58,6 +58,7 @@ flowchart LR
 
 入向關係:
 
+- `calls` ← `capability.runtime-harness.engineering-overlay` — Observe exact current Provider effect and reconciliation states without executing or repairing an effect
 - `calls` ← `capability.runtime-harness.mcp-sidecar` — Expose read-only capability and current effect projections to the authenticated Engineer without Provider mutation authority
 
 ## 2. P2:端到端數據流

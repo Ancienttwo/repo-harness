@@ -1,6 +1,6 @@
 # runtime-harness/engineer-bindings 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" sourceDigest="sha256:f5650168f5fb4e82ec4f1135da03a2a092105a0d02e4ff3965494bc55d3117b4" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:71d132fccedb8fd526aeb1f60f6956f3b2ee32fdd126f5727c8f46a5bb037f12" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" sourceDigest="sha256:cfd35b00291b687267c589d2a45865ab72df5b513dde6365ab17de5a8f92c83a" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:bc3e27e710419809009b9a2952da50a5587e41ba20520b2dfef19c32ddff48ae" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-bindings`(kind `capability`)
 > **Matched Prefixes**:`agents/engineers/**`、`src/core/engineers/**`、`src/effects/engineers/**`、`src/cli/commands/engineer.ts`
@@ -51,6 +51,7 @@ flowchart LR
 
 - `calls` ← `capability.runtime-harness.engineer-messages` — Revalidate the exact target Engineer and current Binding before assignment delivery, transport and acknowledgement
 - `calls` ← `capability.runtime-harness.engineer-scheduling` — Revalidate the exact current Engineer contract and delegate the elected offer to the existing Engineer acquire authority
+- `calls` ← `capability.runtime-harness.engineering-overlay` — Observe exact current Profile, Binding and live ClaimActor revisions without mutating their stores
 - `calls` ← `capability.runtime-harness.mcp-sidecar` — Resolve a verified OAuth authorization to the current Engineer Binding before acquiring a Fleet Claim
 - `calls` ← `capability.runtime-harness.provider-thread-effects` — Revalidate the exact current Codex Engineer Binding before preparing or admitting one host action
 
