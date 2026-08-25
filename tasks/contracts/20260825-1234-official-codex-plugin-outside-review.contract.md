@@ -64,7 +64,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ## Change Assessment
 
 ```json
-{"protocol":1,"oracles":[]}
+{"protocol":1,"oracles":[{"id":"official-plugin-contract-tests","kind":"deterministic_test","paths":["*"]},{"id":"official-plugin-live-readback","kind":"runtime_readback","paths":["*"]}]}
 ```
 
 ## Acceptance Policy
@@ -88,6 +88,7 @@ allowed_paths:
   - tasks/reviews/20260825-1234-official-codex-plugin-outside-review.review.md
   - tasks/notes/20260825-1234-official-codex-plugin-outside-review.notes.md
   - .ai/context/capabilities.json
+  - .ai/hooks/.projection.json
   - .ai/hooks/lib/workflow-state.sh
   - .ai/harness/architecture-events/
   - .ai/harness/architecture-requests/

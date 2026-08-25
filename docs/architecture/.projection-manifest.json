@@ -551,8 +551,8 @@
       "outputDigest": "sha256:66d4b7068ff03b389eb468fcfeb98d6146109c54d1e89eaf119a8f278ac9a5e4",
       "verifiedAgainst": {
         "branch": "codex/official-codex-plugin-outside-review",
-        "commit": "603f7de33a018c69c42905a1be78f924cbabb825",
-        "committedAt": "2026-08-25T14:13:39+08:00"
+        "commit": "c59697db328bfafe1fda5e0317de01eb79106b54",
+        "committedAt": "2026-08-25T14:39:19+08:00"
       }
     },
     {
@@ -571,8 +571,8 @@
       "outputDigest": "sha256:aa5aac73ff819f8ad0c053a57d5b1627faf2fc5bdbc18e8ab4722de0ab085d59",
       "verifiedAgainst": {
         "branch": "codex/official-codex-plugin-outside-review",
-        "commit": "603f7de33a018c69c42905a1be78f924cbabb825",
-        "committedAt": "2026-08-25T14:13:39+08:00"
+        "commit": "c59697db328bfafe1fda5e0317de01eb79106b54",
+        "committedAt": "2026-08-25T14:39:19+08:00"
       }
     },
     {
