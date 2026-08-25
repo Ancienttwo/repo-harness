@@ -1,6 +1,6 @@
 # PRD: Engineer Coordination Messages (ME-1C)
 
-> **Status**: Approved
+> **Status**: Draft
 > **Slug**: `engineer-coordination-messages`
 > **Created**: 2026-08-24T16:53:00+0800
 > **Updated**: 2026-08-25T14:43:00+0800

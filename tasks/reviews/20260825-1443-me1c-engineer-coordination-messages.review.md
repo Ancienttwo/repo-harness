@@ -1,12 +1,12 @@
 # Task Review: me1c-engineer-coordination-messages
 
-> **Status**: Review
+> **Status**: Pending
 > **Plan**: plans/plan-20260825-1443-me1c-engineer-coordination-messages.md
 > **Contract**: tasks/contracts/20260825-1443-me1c-engineer-coordination-messages.contract.md
 > **Notes File**: tasks/notes/20260825-1443-me1c-engineer-coordination-messages.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-08-25 14:43
-> **Recommendation**: pass
+> **Recommendation**: fail
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: pending
 > **Reviewed Subject Scope**: normalized-final-content
@@ -14,13 +14,13 @@
 
 ## Human Review Card
 
-- Verdict: pass pending typed AcceptanceReceipt projection
+- Verdict: implementation candidate passes deterministic checks; product acceptance is blocked by the mandatory Runtime Admission Canary
 - Change type: code-change
 - Intended files changed: ME-1C protocol/store/CLI/MCP/tests/ArchContext/workflow artifacts only
 - Actual files changed: closed message mechanics; Module message schema and git-common-dir inbox; Engineer CLI/MCP message surfaces; architecture projections and focused tests
 - Commands passed: focused 34-test message/CLI/MCP set; MCP HTTP 15/15; typecheck; architecture/task/workflow/state/init gates; full repository suite 3,087 pass / 2 platform skips / 0 fail
 - Residual risks: recipient inbox scan is linear at 10x; Provider transport lifecycle remains explicitly owned by ME-3A
-- Reviewer action required: record the already-approved user waiver against the frozen subject, then reverify
+- Reviewer action required: do not record AcceptanceReceipt or merge; first complete the Runtime Admission Canary against this candidate
 - Rollback: revert the single ME-1C publication commit; no existing TaskMessage bytes or store migration changed
 
 ## Mode Evidence
@@ -84,4 +84,4 @@
 
 ## Summary
 
-- ME-1C is implementation-complete and deterministic gates are green. Acceptance is pending only the frozen-subject receipt workflow.
+- ME-1C core is an implementation-complete, fully tested candidate. The control-plane amendment blocks approval and merge until the Runtime Admission Canary proves the Provider effect boundary without duplicate turns or Task/Lease/Fleet mutation.

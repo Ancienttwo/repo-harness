@@ -1,9 +1,9 @@
 # Workstream: ME-1C Engineer Coordination Messages
 
-> **Status**: review
+> **Status**: blocked
 > **Capability ID**: runtime-harness-engineer-messages
 > **Source Plan**: plans/plan-20260825-1443-me1c-engineer-coordination-messages.md
-> **Current Slice**: acceptance-and-publication
+> **Current Slice**: runtime-admission-canary
 
 ## Durable Progress
 
@@ -16,4 +16,4 @@
 
 - Focused schema/store/CLI/MCP fault matrix, Task byte goldens, typecheck, architecture/task/workflow gates, project-state inspection and init dry-run pass.
 - Full suite passes 3,087 / 3,089 tests with two platform skips and zero failures after replacing the worktree-only dependency symlink with a real local install.
-- Pending exact-subject AcceptanceReceipt and publication.
+- Acceptance and publication are intentionally blocked until the Runtime Admission Canary proves exactly one Codex turn, lost-ack reconciliation and byte-identical Task/Lease/Fleet authorities.

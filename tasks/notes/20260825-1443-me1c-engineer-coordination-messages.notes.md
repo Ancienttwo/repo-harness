@@ -1,6 +1,6 @@
 # Implementation Notes: me1c-engineer-coordination-messages
 
-> **Status**: Review
+> **Status**: Blocked
 > **Plan**: plans/plan-20260825-1443-me1c-engineer-coordination-messages.md
 > **Contract**: tasks/contracts/20260825-1443-me1c-engineer-coordination-messages.contract.md
 > **Review**: tasks/reviews/20260825-1443-me1c-engineer-coordination-messages.review.md
@@ -39,7 +39,7 @@
 
 ## Deviations From Plan Or Spec
 
-- None recorded.
+- The 2026-08-25 control-plane amendment inserted a mandatory non-authoritative Runtime Admission Canary before ME-1C approval. The core implementation remains within the amended authority boundary, but its premature PRD promotion and acceptance path are reversed; the branch stays unmerged until the canary freezes exact Codex Thread/turn correlation and lost-ack reconciliation evidence.
 
 ## Tradeoffs Considered
 
