@@ -226,9 +226,9 @@ Freedoms:
 | 3A | `20260825-1551-provider-thread-effect-adapter.prd.md` | Codex-first persistent Thread effects、intent-first idempotency、typed observation 与 lost-ack reconciliation；不拥有 Agent loop |
 | 1B | `20260824-1653-engineering-overlay-control-board.prd.md` | Planning Graph、Delivery Kanban、Engineer/Attention 的分离只读投影；只展示已落地的 authoritative/observed facts |
 | 4C | `20260824-1653-integration-product-acceptance.prd.md` | exact combined candidate、requirement authority 与 independent product gate；不依赖 Worker runtime |
-| 2A | `20260824-1653-read-only-delegation-admission.prd.md` | exact parent fences, native role admission, read-only proof and WorkerResult |
+| 2A | `20260824-1653-read-only-delegation-admission.prd.md` | exact parent fences, logical Role Profile admission, Host-derived read-only proof and untrusted WorkerResult；native child P0 admission remains rejected |
 | 2C | `20260824-1653-verified-context-contracts.prd.md` | candidate-bound evidence projection、DecisionRequest lifecycle 与 content-addressed context；不接管 per-turn inner loop |
-| 3B | `20260825-1551-delegated-run-adapter.prd.md` | temporary run dispatch/observe/cancel/collect；只有 native child canary 证明需要时才激活 |
+| 3B | `20260825-1551-delegated-run-adapter.prd.md` | conditional one-shot run dispatch/observe/collect with lost-ACK reconciliation；P0 has no cancel surface |
 | 4A | `20260824-1653-bound-task-freeze-handoff.prd.md` | freeze/inspect/refuse unsafe dirty-bound rotation; takeover remains disabled |
 | 4B | `20260824-1653-interface-change-request.prd.md` | interface request authority, transitions and Work Package projection |
 | 2B | `20260824-1653-writable-worker-grant.prd.md` | runtime-enforced Parent freeze, exclusive writer actor, sandbox and settlement；Provider 不能证明时保持 disabled |
@@ -281,7 +281,7 @@ This umbrella is architecture authority, not an implementation task.
 - **Delivered baseline**: ME-0A、ME-0B 与 ME-1A 已合入 main；它们保留为控制平面历史合同，不因本次 reframe 重写 identity 或 wire semantics。
 - **Do not reinterpret**: no new Module Graph; no Session self-declared principal; no writer based on prompt-only paths; no active dirty-task transparent transfer; no UI-owned status.
 - **Promotion rule**: a child PRD becomes Approved only after its authority, principal, state transitions, failure paths and acceptance evidence are decision-complete.
-- **Canary order**: delivered ME-0A/0B/1A → Runtime Admission Canary (passed at `ef731e6a`) → ME-1C core → ME-3A Codex Thread Effect Adapter → minimal ME-1B Control Board → ME-4C → ME-2A → narrowed ME-2C → conditional ME-3B → ME-4A/B → ME-2B last. This is dependency order, not permission to implement Draft work.
+- **Canary order**: delivered ME-0A/0B/1A → Runtime Admission Canary (passed at `ef731e6a`) → ME-1C core → ME-3A Codex Thread Effect Adapter → minimal ME-1B Control Board → ME-4C → ME-2A native-child canary → conditional ME-3B capability proof/effect jointly closes ME-2A → narrowed ME-2C → ME-4A/B → ME-2B last. The 2026-08-26 canary proved native child writable and Codex CLI Seatbelt read-only, so conditional ME-3B is activated without making ME-2C a prerequisite for untrusted result collection.
 - **Verify with**: child-specific tests plus `repo-harness run check-task-workflow --strict`, architecture sync and task sync.
 
 ### Acceptance Scripts

@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: component.delegated-runs.primary
+kind: component
+name: Read-only Delegated Run Journal
+status: active
+parent: capability.runtime-harness.delegated-runs
+summary: Owns immutable admission, intent, launch, observation and untrusted result receipts around one externally executed Codex CLI action.

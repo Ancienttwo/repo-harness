@@ -296,7 +296,7 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 - Treat user-level `~/.codex/hooks.json` and `~/.claude/settings.json` as host adapters. Keep hook implementation under `.ai/hooks/`, and treat repo-local `.claude/settings.json` / `.codex/hooks.json` hook adapters as retired legacy config.
 - Consider adding `bun scripts/capability-resolver.ts validate --format text` to the strict workflow gate after the architecture registry has been used through one more real slice.
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:3d2eff6cf3049e00f467e8885324ba05e973d7d792e8025c7757b08fe6435abb" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:248f352e0dab8ea39d92171a0462c5376959749650ebe800e3b8ff8b3ba82697" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:667c06e02f8eecd0f22b783bc5b861dfc664e1a66e13dd0e3872eeb4f4e6c880" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:7bd6a3859f229a6b0ac1f53647537866f3634851ad59a6d8869a2deccb04ff95" -->
 # Architecture Index
 
 Generated: 1970-01-01T00:00:00.000Z
@@ -306,6 +306,7 @@ Generated: 1970-01-01T00:00:00.000Z
 - [Action Commands](modules/public-surface/action-commands.md) — capability / active
 - [Adoption](modules/public-surface/adoption.md) — capability / active
 - [Root Router](modules/public-surface/root-router.md) — capability / active
+- [Read-only Delegated Runs](modules/runtime-harness/delegated-runs.md) — capability / active
 - [Engineer Bindings](modules/runtime-harness/engineer-bindings.md) — capability / active
 - [Engineer Messages](modules/runtime-harness/engineer-messages.md) — capability / active
 - [Engineer Scheduling](modules/runtime-harness/engineer-scheduling.md) — capability / active
@@ -327,6 +328,8 @@ Generated: 1970-01-01T00:00:00.000Z
 - capability.public-surface.adoption -> component.adoption.primary — calls
 - capability.verification.codegraph-readiness -> component.codegraph-readiness.primary — calls
 - capability.workflow-engine.contract-assets -> component.contract-assets.primary — calls
+- capability.runtime-harness.delegated-runs -> capability.runtime-harness.engineer-bindings — calls
+- capability.runtime-harness.delegated-runs -> component.delegated-runs.primary — calls
 - capability.runtime-harness.engineer-bindings -> component.engineer-bindings.primary — calls
 - capability.runtime-harness.engineer-messages -> capability.runtime-harness.engineer-bindings — calls
 - capability.runtime-harness.engineer-scheduling -> capability.runtime-harness.engineer-bindings — calls

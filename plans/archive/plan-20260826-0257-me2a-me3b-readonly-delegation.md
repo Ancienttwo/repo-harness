@@ -1,6 +1,6 @@
 # Plan: ME-2A Read-only Admission and Conditional ME-3B Adapter
 
-> **Status**: Approved
+> **Status**: Archived
 > **Created**: 20260826-0257
 > **Slug**: me2a-me3b-readonly-delegation
 > **Planning Source**: codex-plan
@@ -99,7 +99,7 @@ See captured planning output.
 
 ## Decision Summary
 
-Deliver the first supported read-only delegation path as two explicit control-plane boundaries: ME-2A admits an exact logical Role Profile and frozen Codex read-only capability receipt; conditional ME-3B performs exactly one `codex exec --sandbox read-only` subprocess effect behind an immutable intent. The current native `SubagentStart` path remains observable but is rejected for read-only admission because the real canary wrote a sentinel despite `sandbox_mode = "read-only"` in TOML. The Codex CLI canary is the supported proof carrier because Seatbelt denied the same mutation and left the protected repository unchanged.
+Deliver the first supported read-only delegation path as two explicit control-plane boundaries: ME-2A admits an exact logical Role Profile and frozen Codex read-only capability receipt; conditional ME-3B performs exactly one `codex exec --sandbox read-only` subprocess effect behind an immutable intent. The current native `SubagentStart` path remains observable but is rejected for read-only admission because the real canary wrote a sentinel despite `sandbox_mode = "read-only"` in TOML. The capability proof is a model-free Host action: the frozen Codex executable runs `codex sandbox --permission-profile :read-only --include-managed-config` around one exact `/usr/bin/touch` against worktree and Git-common sentinels; both mutations must fail and the protected snapshot must remain unchanged.
 
 ## P1 Architecture Map
 
@@ -116,7 +116,7 @@ Deliver the first supported read-only delegation path as two explicit control-pl
 1. The caller supplies exact canonical Task revision, current Lease claim/generation and WorkEnvelope digest plus current Engineer Binding and ClaimActorReceipt digest.
 2. Admission re-reads every authoritative parent byte, loads one tracked read-only logical Role Profile, and joins it to one frozen Codex CLI capability receipt whose mutation matrix and protected-snapshot digests prove effective read-only enforcement.
 3. Any stale parent, unavailable profile, non-read-only profile, stale CLI/version/template or unsupported sandbox scope produces a terminal rejected receipt and no subprocess intent.
-4. An admitted envelope persists one content-addressed DelegatedRunIntent before effect. The adapter atomically claims launch, invokes exactly one `codex exec --sandbox read-only --ephemeral --ignore-user-config --json` action with an explicit model/profile packet, and records raw JSONL/stdout/stderr/exit/snapshot evidence.
+4. An admitted envelope persists one content-addressed DelegatedRunIntent before effect. The adapter atomically claims launch, invokes exactly one `codex exec --sandbox read-only --ephemeral --ignore-user-config --json` action with an explicit model/profile packet, and records bounded/redacted stdout/stderr/error plus exit/snapshot evidence. Provider output remains untrusted and is never parsed into authority.
 5. If acknowledgement is lost after launch claim, reconciliation never respawns; it records `reconciliation_required`. The P0 guarantee is at-most-once host action, not exactly-once successful completion.
 6. A completed run produces WorkerRunRef and WorkerResult bytes only after role-profile, capability, sandbox scope, process receipt and before/after protected snapshots revalidate. Result prose remains untrusted and cannot advance any authority.
 
@@ -127,17 +127,17 @@ The provider-native child path is rejected because observed role configuration i
 ## Canary Evidence To Freeze
 
 - Native child canary at main `03db824da319ece33155fcca1e08303da5751d36`: `explorer` ran exact `touch .me2a-native-readonly-canary`, exit 0, sentinel existed. The controlled sentinel was then removed; unrelated `docs/researches/20260824-TDD-audit.md` remained untouched.
-- Codex CLI 0.147.0 canary: exact `touch .me2a-cli-readonly-canary` under `codex exec --sandbox read-only --ephemeral --ignore-user-config --json` produced Seatbelt `operation_not_permitted`, command exit 1, sentinel absent.
+- Codex CLI 0.147.0 established feasibility through `codex exec`. The current 0.149.0 proof removes the model from the trust path: exact Host argv `codex sandbox --permission-profile :read-only --include-managed-config --cd <repo> /usr/bin/touch -- <worktree-sentinel> <git-common-sentinel>` returned exit 1, reported both exact `Operation not permitted` paths, and left both sentinels absent.
 
 ## Task Breakdown
 
-- [ ] Amend ME-2A/ME-3B PRDs and research with the frozen canary evidence, logical Role Profile semantics, protected-snapshot scope and at-most-once lost-ACK contract; mark both Approved only after the schemas are decision-complete.
-- [ ] Add closed ME-2A/ME-3B schemas, canonical validation/digests and fail-closed transition rules.
-- [ ] Add immutable git-common-dir admission/run stores with symlink-safe write-once persistence, launch claim and observation reconciliation.
-- [ ] Add Codex CLI capability receipt plus one-shot read-only adapter with exact executable/version/argv/profile/sandbox/snapshot evidence and no fallback.
-- [ ] Add bounded CLI commands for capability/admit/dispatch/observe/collect/read; no Task/Lease/Publication/Acceptance mutation routes.
-- [ ] Add deterministic fixtures for stale parent/profile/capability, native-path rejection, sandbox mutation denial, role mismatch, lost ACK, changed protected snapshot and untrusted WorkerResult.
-- [ ] Register ArchContext capability/workstream and complete focused, full, architecture, workflow and exact-subject acceptance gates.
+- [x] Amend ME-2A/ME-3B PRDs and research with the frozen canary evidence, logical Role Profile semantics, protected-snapshot scope and at-most-once lost-ACK contract; mark both Approved only after the schemas are decision-complete.
+- [x] Add closed ME-2A/ME-3B schemas, canonical validation/digests and fail-closed transition rules.
+- [x] Add immutable git-common-dir admission/run stores with symlink-safe write-once persistence, launch claim and observation reconciliation.
+- [x] Add Codex CLI capability receipt plus one-shot read-only adapter with exact executable/version/argv/profile/sandbox/snapshot evidence and no fallback.
+- [x] Add bounded CLI commands for capability/admit/dispatch/observe/collect/read; no Task/Lease/Publication/Acceptance mutation routes.
+- [x] Add deterministic fixtures for stale parent/profile/capability, native-path rejection, sandbox mutation denial, role mismatch, lost ACK, changed protected snapshot and untrusted WorkerResult.
+- [x] Register ArchContext capability/workstream and complete focused, full, architecture, workflow and exact-subject acceptance gates.
 
 ## Verification
 
@@ -155,10 +155,10 @@ Revert the single ME-2A/ME-3B publication commit. Immutable evidence has no muta
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] Amend ME-2A/ME-3B PRDs and research with the frozen canary evidence, logical Role Profile semantics, protected-snapshot scope and at-most-once lost-ACK contract; mark both Approved only after the schemas are decision-complete.
-- [ ] Add closed ME-2A/ME-3B schemas, canonical validation/digests and fail-closed transition rules.
-- [ ] Add immutable git-common-dir admission/run stores with symlink-safe write-once persistence, launch claim and observation reconciliation.
-- [ ] Add Codex CLI capability receipt plus one-shot read-only adapter with exact executable/version/argv/profile/sandbox/snapshot evidence and no fallback.
-- [ ] Add bounded CLI commands for capability/admit/dispatch/observe/collect/read; no Task/Lease/Publication/Acceptance mutation routes.
-- [ ] Add deterministic fixtures for stale parent/profile/capability, native-path rejection, sandbox mutation denial, role mismatch, lost ACK, changed protected snapshot and untrusted WorkerResult.
-- [ ] Register ArchContext capability/workstream and complete focused, full, architecture, workflow and exact-subject acceptance gates.
+- [x] Amend ME-2A/ME-3B PRDs and research with the frozen canary evidence, logical Role Profile semantics, protected-snapshot scope and at-most-once lost-ACK contract; mark both Approved only after the schemas are decision-complete.
+- [x] Add closed ME-2A/ME-3B schemas, canonical validation/digests and fail-closed transition rules.
+- [x] Add immutable git-common-dir admission/run stores with symlink-safe write-once persistence, launch claim and observation reconciliation.
+- [x] Add Codex CLI capability receipt plus one-shot read-only adapter with exact executable/version/argv/profile/sandbox/snapshot evidence and no fallback.
+- [x] Add bounded CLI commands for capability/admit/dispatch/observe/collect/read; no Task/Lease/Publication/Acceptance mutation routes.
+- [x] Add deterministic fixtures for stale parent/profile/capability, native-path rejection, sandbox mutation denial, role mismatch, lost ACK, changed protected snapshot and untrusted WorkerResult.
+- [x] Register ArchContext capability/workstream and complete focused, full, architecture, workflow and exact-subject acceptance gates.

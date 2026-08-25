@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-26T02:46:15+0800 -->
+<!-- updated_at: 2026-08-26T07:03:09+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-08-26T02:46:15+0800
-> **Source Branch**: codex/me4c-integration-product-acceptance
-> **Source Commit**: 414c4e2d
+> **Updated At**: 2026-08-26T07:03:09+0800
+> **Source Branch**: codex/me2a-me3b-readonly-delegation
+> **Source Commit**: ac4f6850
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -58,16 +58,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260826-0115-me4c-integration-product-acceptance.md
- D tasks/contracts/20260826-0115-me4c-integration-product-acceptance.contract.md
- D tasks/notes/20260826-0115-me4c-integration-product-acceptance.notes.md
- D tasks/reviews/20260826-0115-me4c-integration-product-acceptance.review.md
+ D plans/plan-20260826-0257-me2a-me3b-readonly-delegation.md
+ D tasks/contracts/20260826-0257-me2a-me3b-readonly-delegation.contract.md
+ D tasks/notes/20260826-0257-me2a-me3b-readonly-delegation.notes.md
+ D tasks/reviews/20260826-0257-me2a-me3b-readonly-delegation.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260826-0115-me4c-integration-product-acceptance.md
-?? tasks/archive/contract-20260826-0246-me4c-integration-product-acceptance.md
-?? tasks/archive/notes-20260826-0246-me4c-integration-product-acceptance.md
-?? tasks/archive/review-20260826-0246-me4c-integration-product-acceptance.md
-?? tasks/archive/todo-20260826-0246-me4c-integration-product-acceptance.md
+?? plans/archive/plan-20260826-0257-me2a-me3b-readonly-delegation.md
+?? tasks/archive/contract-20260826-0703-me2a-me3b-readonly-delegation.md
+?? tasks/archive/notes-20260826-0703-me2a-me3b-readonly-delegation.md
+?? tasks/archive/review-20260826-0703-me2a-me3b-readonly-delegation.md
+?? tasks/archive/todo-20260826-0703-me2a-me3b-readonly-delegation.md
 ```
 
 ## Source Artifacts

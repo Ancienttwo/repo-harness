@@ -1,0 +1,60 @@
+schemaVersion: archcontext.node/v2
+id: capability.runtime-harness.delegated-runs
+kind: capability
+name: Read-only Delegated Runs
+status: active
+summary: Admits one logical Role Profile against current Engineer authority and journals at most one Codex CLI read-only host action as untrusted evidence.
+responsibilities:
+  - Freeze the exact tracked logical Role Profile, Codex executable, model, argv, one-turn packet and protected path scope without claiming Provider-native agent identity.
+  - Derive a non-authoritative runtime capability receipt from one real Seatbelt mutation canary, bounded/redacted immutable process evidence and byte-identical protected snapshots.
+  - Revalidate current ClaimActorReceipt, WorkEnvelope and Engineer Binding fences before persisting an admitted delegation.
+  - Persist immutable intent and launch claim before invoking at most one Codex CLI host action.
+  - Reconcile any lost acknowledgement or pre-observation crash without retry, resume, Provider substitution or inferred success.
+  - Collect only receipt-bound WorkerResult evidence while leaving Task, Lease, Publication and Acceptance authorities unchanged.
+  - Exclude writable delegation, scheduler, daemon, model/tool loop, history, compaction, Provider fallback and generic Worker Host behavior.
+source:
+  include:
+    - "src/core/engineers/delegation.ts"
+    - "src/effects/engineers/delegated-run-store.ts"
+    - "src/cli/commands/delegation.ts"
+  entrypoints:
+    - id: entrypoint.delegated-runs.parent-authority
+      path: "src/effects/engineers/delegated-run-store.ts"
+      symbols:
+        - name: "validateDelegationParent"
+          sinks:
+            - id: sink.delegated-runs.parent-authority
+              path: "src/effects/engineers/claim-actor-store.ts"
+              symbol: "validateClaimActorReceiptLive"
+    - id: entrypoint.delegated-runs.intent
+      path: "src/effects/engineers/delegated-run-store.ts"
+      symbols:
+        - name: "persistIntent"
+          sinks:
+            - id: sink.delegated-runs.intent-schema
+              path: "src/core/engineers/delegation.ts"
+              symbol: "canonicalDelegatedRunIntentBytes"
+    - id: entrypoint.delegated-runs.observation
+      path: "src/effects/engineers/delegated-run-store.ts"
+      symbols:
+        - name: "appendObservation"
+          sinks:
+            - id: sink.delegated-runs.observation
+              path: "src/core/engineers/delegation.ts"
+              symbol: "buildDelegatedRunObservation"
+    - id: entrypoint.delegated-runs.result
+      path: "src/effects/engineers/delegated-run-store.ts"
+      symbols:
+        - name: "persistResult"
+          sinks:
+            - id: sink.delegated-runs.worker-result
+              path: "src/core/engineers/delegation.ts"
+              symbol: "canonicalWorkerResultBytes"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun test tests/unit/me2a-me3b-readonly-delegation.test.ts tests/cli/delegation.test.ts --timeout 60000"
+    - "bun run check:type"

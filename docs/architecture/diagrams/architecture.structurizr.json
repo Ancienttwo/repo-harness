@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:3d2eff6cf3049e00f467e8885324ba05e973d7d792e8025c7757b08fe6435abb" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:ab344c31554f36788ef899540fb91a1083c8e1be0d322587f39aae1e81501748" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:667c06e02f8eecd0f22b783bc5b861dfc664e1a66e13dd0e3872eeb4f4e6c880" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:89716347f61d4895408aeda95cadc83ca6f309419c0220d3129de404ebb28b94" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
@@ -23,6 +23,14 @@
       {
         "id": "capability.public-surface.root-router",
         "name": "Root Router",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "capability.runtime-harness.delegated-runs",
+        "name": "Read-only Delegated Runs",
         "type": "Software System",
         "tags": [
           "capability"
@@ -173,6 +181,14 @@
         ]
       },
       {
+        "id": "component.delegated-runs.primary",
+        "name": "Read-only Delegated Run Journal",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
         "id": "component.engineer-bindings.primary",
         "name": "Shared Engineer Binding Store",
         "type": "Component",
@@ -300,6 +316,18 @@
         "id": "relation.contract-assets.primary",
         "sourceId": "capability.workflow-engine.contract-assets",
         "destinationId": "component.contract-assets.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.delegated-runs.engineer-bindings",
+        "sourceId": "capability.runtime-harness.delegated-runs",
+        "destinationId": "capability.runtime-harness.engineer-bindings",
+        "description": "calls"
+      },
+      {
+        "id": "relation.delegated-runs.primary",
+        "sourceId": "capability.runtime-harness.delegated-runs",
+        "destinationId": "component.delegated-runs.primary",
         "description": "calls"
       },
       {
@@ -443,6 +471,7 @@
         "capability.public-surface.action-commands",
         "capability.public-surface.adoption",
         "capability.public-surface.root-router",
+        "capability.runtime-harness.delegated-runs",
         "capability.runtime-harness.engineer-bindings",
         "capability.runtime-harness.engineer-messages",
         "capability.runtime-harness.engineer-scheduling",
@@ -461,6 +490,7 @@
         "component.adoption.primary",
         "component.codegraph-readiness.primary",
         "component.contract-assets.primary",
+        "component.delegated-runs.primary",
         "component.engineer-bindings.primary",
         "component.engineer-messages.primary",
         "component.engineer-scheduling.primary",

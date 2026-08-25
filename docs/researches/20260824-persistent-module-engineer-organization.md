@@ -599,6 +599,20 @@ MCP OAuth `authorizationId` 证明 client authorization，不证明 Provider Thr
 
 独立 PRD：`plans/prds/20260825-1551-delegated-run-adapter.prd.md`。原 `plans/prds/20260824-1653-worker-host.prd.md` 已标记 Superseded。
 
+#### 2026-08-26 Read-only Admission Canary 裁决
+
+在 main `03db824da319ece33155fcca1e08303da5751d36` 上，同一类 sentinel mutation 得到两个不同结果：
+
+- native `explorer` 的 `.codex/agents/explorer.toml` 虽声明 `sandbox_mode = "read-only"`，但精确 `touch .me2a-native-readonly-canary` exit `0` 且文件存在；这证明当前 `SubagentStart` 中从 TOML 扫描得到的 sandbox 字段只是 configuration observation，不是 effective permission receipt。受控 sentinel 随后删除，用户未跟踪的 `docs/researches/20260824-TDD-audit.md` 未被改动。
+- 初始 `codex-cli 0.147.0` 探针以 `codex exec --sandbox read-only --ephemeral --ignore-user-config --json` 验证了 Seatbelt 可拒绝 mutation。2026-08-26 的 `codex-cli 0.149.0` 复核把 model/self-report 从 capability trust path 删除：Host 冻结 executable realpath/version/bytes 后，执行 exact `codex sandbox --permission-profile :read-only --include-managed-config --cd <repo> /usr/bin/touch -- <worktree-sentinel> <git-common-sentinel>`；process exit `1`，bounded/redacted stderr 精确列出两个 `Operation not permitted` path，两 sentinel 均 absent，protected snapshot byte-identical。失败尝试也先持久化 process receipt，只有完整证明才发布 capability receipt。
+- 同一实现通过真实 CLI readback：capability `sha256:f1981b75d3c11bda1edd96e96bed0b9b0c5ae22970dd842381a2f5f4a412974a` 绑定 process receipt `sha256:7b7eb995778ffb3edb583d2bbbfd1ba8dc4a5e421d6103a38ba6571bf5f931f9`，before/after snapshot 同为 `sha256:9d8e8e2289cbdb35fbb9c9910a5448c637434e35673782c895bf1996ba5dfdd0`；临时输入已删除，sentinel 无残留。
+- Capability admission 不接受 caller-provided executable、version、model、scope 或 canary process。它从 Host PATH 解析 `codex` realpath/bytes/version，从 tracked logical Role Profile 派生 model，并实际执行 fixed canary。该 receipt 是 Host evidence，不是 Provider 签名，也不能进入 Task、Lease、Publication 或 Acceptance authority。
+- `allowed_read_paths` 只是 immutable context metadata，不是 runtime read permission；Codex read-only sandbox 当前没有 read-path allowlist。Worker process blobs 是 existing process runner 的 bounded/redacted capture，不是无限 raw transcript。
+
+因此 ME-2A 不再把 native `agent_type` 当作第一版只读执行 carrier。第一版 admission 绑定的是 tracked TOML/SOP 投影出的 immutable logical Role Profile、rendered execution packet 和 frozen Codex CLI capability receipt；ME-3B 只负责 `immutable intent → launch claim → one Codex CLI action → observation/collect/reconciliation_required`。它不得声称 CLI run 是 Provider-native `agent_type`，不得 lost-ACK 后重发，也不得引入 daemon、generic Worker Host、query loop、history、compaction、Provider fallback 或 writable path。WorkerResult 保持 untrusted，直到后续 ME-2C checkpoint 或既有 deterministic verifier 绑定 exact candidate。
+
+Architecture Acceptance 已绑定到 `changeset.docs-projection-c78a52213ee113d1` / `event.user-approval-20260825-me1b-through-me2b`。ArchContext 对新增 delegated-runs capability 的 P1/P2 均给出 `proven`，required flow selectors 为 `4/4`；accepted delta 仅为 `node-added,relation-changed`，受影响节点是 `capability.runtime-harness.delegated-runs` 与既有 `capability.runtime-harness.engineer-bindings`。这项 acceptance 批准上述控制面边界，不扩大到 writable delegation、daemon、query loop、Provider fallback、Task/Lease/Publication/Acceptance mutation 或 ME-2B。
+
 ### ME-4A：Bound-task Freeze and Handoff
 
 - `TaskFreezeReceiptV1` 与 explicit dirty-bound refusal；

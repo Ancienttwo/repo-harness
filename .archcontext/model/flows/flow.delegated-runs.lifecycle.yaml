@@ -1,0 +1,60 @@
+schemaVersion: archcontext.flow/v1
+id: flow.delegated-runs.lifecycle
+capabilityId: capability.runtime-harness.delegated-runs
+name: Admit and reconcile one read-only delegated run
+applicability: required
+participants:
+  - id: delegated-run-journal
+    nodeId: capability.runtime-harness.delegated-runs
+  - id: binding-authority
+    nodeId: capability.runtime-harness.engineer-bindings
+  - id: delegated-run-schema
+    nodeId: component.delegated-runs.primary
+steps:
+  - id: revalidate-parent
+    from: delegated-run-journal
+    to: binding-authority
+    label: Revalidate current Task, Lease, WorkEnvelope, Engineer Binding and ClaimActorReceipt fences before admission
+    evidence:
+      entrypointId: entrypoint.delegated-runs.parent-authority
+      sourceSymbol: validateDelegationParent
+      sinkId: sink.delegated-runs.parent-authority
+  - id: persist-intent
+    from: delegated-run-journal
+    to: delegated-run-schema
+    label: Canonicalize and persist the immutable admitted run intent before any Host action
+    evidence:
+      entrypointId: entrypoint.delegated-runs.intent
+      sourceSymbol: persistIntent
+      sinkId: sink.delegated-runs.intent-schema
+outcomes:
+  - id: completed
+    kind: success
+    label: One immutable launch claim admits at most one read-only host action and returns only untrusted receipt-bound evidence
+    steps:
+      - id: collect-untrusted-result
+        from: delegated-run-journal
+        to: delegated-run-schema
+        label: Bind the completed observation and bounded/redacted immutable process evidence into WorkerResult without authority mutation
+        evidence:
+          entrypointId: entrypoint.delegated-runs.result
+          sourceSymbol: persistResult
+          sinkId: sink.delegated-runs.worker-result
+    terminal:
+      participant: delegated-run-journal
+      label: Return completed observation and untrusted result; no Task or Acceptance transition
+  - id: reconcile
+    kind: error
+    label: Lost acknowledgement, stale authority or protected-state drift fails closed without another host action
+    steps:
+      - id: persist-reconciliation
+        from: delegated-run-journal
+        to: delegated-run-schema
+        label: Append reconciliation_required or failed observation under the existing launch claim
+        evidence:
+          entrypointId: entrypoint.delegated-runs.observation
+          sourceSymbol: appendObservation
+          sinkId: sink.delegated-runs.observation
+    terminal:
+      participant: delegated-run-journal
+      label: Return reconcile-only state and never retry or substitute a runtime

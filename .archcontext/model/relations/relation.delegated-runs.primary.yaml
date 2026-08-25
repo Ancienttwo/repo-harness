@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.delegated-runs.primary
+kind: calls
+source: capability.runtime-harness.delegated-runs
+target: component.delegated-runs.primary
+intent: Persist immutable capability, admission, launch, process and result evidence without creating runtime or task authority
