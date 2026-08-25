@@ -13,6 +13,7 @@ instead of becoming separate hook sources of truth.
 
 - `runtime-harness-hook-adapters` -> `docs/architecture/modules/runtime-harness/hook-adapters.md`
 - `runtime-harness-mcp-sidecar` -> `docs/architecture/modules/runtime-harness/mcp-sidecar.md`
+- `runtime-harness-provider-thread-effects` -> `docs/architecture/modules/runtime-harness/provider-thread-effects.md`
 
 ## Stable Rules
 

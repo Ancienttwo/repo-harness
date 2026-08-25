@@ -9,6 +9,10 @@ import { buildMcpToolDefinitions, callMcpTool } from '../../src/cli/mcp/tools';
 import { bindEngineer, readEngineerBindingStatus, retireEngineer } from '../../src/effects/engineers/binding-store';
 import { enrollEngineerPrincipal, revokeEngineerPrincipal } from '../../src/effects/engineers/principal-store';
 import { loadEngineerProfile } from '../../src/effects/engineers/profile-store';
+import {
+  prepareProviderThreadEffect,
+  recordProviderThreadCapability,
+} from '../../src/effects/engineers/provider-thread-effect-store';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 
 const roots: string[] = [];
@@ -49,8 +53,11 @@ describe('restricted Engineer MCP tools', () => {
       'engineer_messages',
       'engineer_message_send',
       'engineer_message_ack',
+      'engineer_thread_effect_capability',
+      'engineer_thread_effect_status',
     ]);
-    expect(names.some((name) => /shell|read|write|fleet|publication|acceptance|binding|browser|agent/.test(name))).toBe(false);
+    expect(names.some((name) =>
+      /(?:^|_)(shell|read|write|fleet|publication|acceptance|binding|browser|agent)(?:_|$)/u.test(name))).toBe(false);
   });
 
   test('status derives the principal from verified authorization and rejects another subject or generic tool', async () => {
@@ -103,6 +110,33 @@ describe('restricted Engineer MCP tools', () => {
         event: { sender: { kind: 'engineer', principal_ref: engineerId, binding_generation: 1 } },
         receipt: { delivery_state: 'pending' },
       },
+    });
+    const capability = recordProviderThreadCapability(repoRoot, {
+      host_id: 'local',
+      operations: { send: 'supported', resume: 'unverifiable', observe: 'supported', stop: 'unsupported' },
+      evidence_refs: [{ ref: 'canary', sha256: `sha256:${'a'.repeat(64)}` }],
+      observed_at: '2026-08-25T00:31:00.000Z',
+    });
+    const sentEvent = (sent.structuredContent as { event: { message_id: string } }).event;
+    const effect = prepareProviderThreadEffect({
+      repo_root: repoRoot,
+      engineer_id: engineerId,
+      message_id: sentEvent.message_id,
+      idempotency_key: 'mcp-read-only-effect',
+      operation: 'send',
+      expected_binding_id: binding.binding_id,
+      expected_binding_generation: binding.binding_generation,
+      expected_engineer_contract_revision: binding.engineer_contract_revision,
+      expected_capability_sha256: capability.capability_sha256,
+      created_at: '2026-08-25T00:32:00.000Z',
+    });
+    const capabilityView = await callMcpTool(context, 'engineer_thread_effect_capability', { operation: 'send' });
+    expect(capabilityView).toMatchObject({
+      structuredContent: { status: 'supported', capability: { capability_sha256: capability.capability_sha256 } },
+    });
+    const effectView = await callMcpTool(context, 'engineer_thread_effect_status', { effect_id: effect.intent.effect_id });
+    expect(effectView).toMatchObject({
+      structuredContent: { intent: { effect_id: effect.intent.effect_id }, current: { state: 'intent_persisted' } },
     });
     const messages = await callMcpTool(context, 'engineer_messages', {});
     expect(messages).toMatchObject({

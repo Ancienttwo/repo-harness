@@ -1,0 +1,60 @@
+schemaVersion: archcontext.node/v2
+id: capability.runtime-harness.provider-thread-effects
+kind: capability
+name: Provider Thread Effects
+status: active
+summary: Journals one host-owned Codex Thread action from an exact persisted ModuleMessage and reconciles Provider evidence without owning an Agent runtime.
+responsibilities:
+  - Validate closed Provider capability, effect intent, host action, observation and current schemas.
+  - Bind each effect to one persisted ME-1C event, current Engineer Binding and operator-observed host capability.
+  - Persist intent and effect_started before admitting at most one host action.
+  - Reconcile lost acknowledgements only from exact Codex host, Thread, turn, user-message and assistant-message correlation.
+  - Project positive send evidence idempotently into the existing ME-1C receipt while leaving Task, Lease, Fleet and Acceptance authorities unchanged.
+  - Exclude Provider query loops, tool parsing, history, compaction, daemon lifecycle, Provider fallback and automatic Thread creation.
+source:
+  include:
+    - "src/core/engineers/provider-thread-effect.ts"
+    - "src/effects/engineers/provider-thread-effect-store.ts"
+  entrypoints:
+    - id: entrypoint.provider-thread-effects.prepare
+      path: "src/effects/engineers/provider-thread-effect-store.ts"
+      symbols:
+        - name: "assertCurrentBinding"
+          sinks:
+            - id: sink.provider-thread-effects.current-binding
+              path: "src/effects/engineers/binding-store.ts"
+              symbol: "readEngineerBindingStatus"
+        - name: "assertPendingMessage"
+          sinks:
+            - id: sink.provider-thread-effects.persisted-message
+              path: "src/effects/engineers/module-inbox.ts"
+              symbol: "readModuleMessageDelivery"
+    - id: entrypoint.provider-thread-effects.start
+      path: "src/effects/engineers/provider-thread-effect-store.ts"
+      symbols:
+        - name: "startProviderThreadEffect"
+          sinks:
+            - id: sink.provider-thread-effects.started-observation
+              path: "src/core/engineers/provider-thread-effect.ts"
+              symbol: "buildProviderThreadEffectObservation"
+    - id: entrypoint.provider-thread-effects.observe
+      path: "src/effects/engineers/provider-thread-effect-store.ts"
+      symbols:
+        - name: "observeProviderThreadEffect"
+          sinks:
+            - id: sink.provider-thread-effects.reconciliation-observation
+              path: "src/core/engineers/provider-thread-effect.ts"
+              symbol: "buildProviderThreadEffectObservation"
+        - name: "projectSuccessfulDelivery"
+          sinks:
+            - id: sink.provider-thread-effects.delivery-observation
+              path: "src/effects/engineers/module-inbox.ts"
+              symbol: "recordModuleMessageDeliveryObservation"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun test tests/unit/me3a-provider-thread-effect.test.ts tests/unit/me1c-module-inbox.test.ts tests/cli/engineer.test.ts tests/cli/mcp-engineer-tools.test.ts --timeout 60000"
+    - "bun run check:type"

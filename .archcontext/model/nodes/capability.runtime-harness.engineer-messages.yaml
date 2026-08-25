@@ -10,6 +10,7 @@ responsibilities:
   - Persist immutable events and pending receipts in the git-common-dir before transport effects.
   - Keep module-scope messages durable across Binding rotation and supersede stale assignment-scope deliveries.
   - Verify content-addressed resource bytes before acknowledgement without mutating the resource's owning authority.
+  - Accept exact idempotent external delivery observations from the Provider Thread effect journal without changing TaskMessage wire bytes.
 source:
   include:
     - "src/core/messages/mechanics.ts"
@@ -40,6 +41,14 @@ source:
             - id: sink.engineer-messages.binding-fence
               path: "src/effects/engineers/binding-store.ts"
               symbol: "readEngineerBindingStatus"
+    - id: entrypoint.engineer-messages.external-delivery-observation
+      path: "src/effects/engineers/module-inbox.ts"
+      symbols:
+        - name: "recordModuleMessageDeliveryObservation"
+          sinks:
+            - id: sink.engineer-messages.delivery-receipt
+              path: "src/core/engineers/module-message.ts"
+              symbol: "applyModuleMessageObservation"
 extensions:
   contractFiles:
     agents: "AGENTS.md"

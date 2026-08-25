@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.provider-thread-effects
+kind: calls
+source: capability.runtime-harness.mcp-sidecar
+target: capability.runtime-harness.provider-thread-effects
+intent: Expose read-only capability and current effect projections to the authenticated Engineer without Provider mutation authority

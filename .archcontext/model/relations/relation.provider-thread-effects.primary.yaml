@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.provider-thread-effects.primary
+kind: calls
+source: capability.runtime-harness.provider-thread-effects
+target: component.provider-thread-effects.primary
+intent: Persist immutable effect intents and observations before returning one host action or reconcile-only state

@@ -1,6 +1,6 @@
 # runtime-harness/engineer-messages 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-messages" sourceDigest="sha256:df774446ad4c71c9cf53661368cac6235e624ccb858d40d4fe4934b7862931d0" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:4670b5c9de8566346eb3eddfab86672b5c430ee2c096caafa6c707e150c4b10c" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-messages" sourceDigest="sha256:4d998315e68eb7ad5249b4fa482da2c560efc6587feeefd38f8217100538d19d" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:cf463aeaf208c3b27340dff80704b814c4fc47d300fae8e1c319e711f8601182" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-messages`(kind `capability`)
 > **Matched Prefixes**:`src/core/messages/mechanics.ts`、`src/core/engineers/module-message.ts`、`src/effects/engineers/module-inbox.ts`
@@ -35,6 +35,7 @@ flowchart LR
 | `entrypoint.engineer-messages.send` | `src/effects/engineers/module-inbox.ts#sendModuleMessage` | `sink.engineer-messages.current-binding` → `src/effects/engineers/binding-store.ts#readEngineerBindingStatus` |
 | `entrypoint.engineer-messages.acknowledge` | `src/effects/engineers/module-inbox.ts#acknowledgeModuleMessage` | `sink.engineer-messages.resource-bytes` → `src/effects/engineers/module-inbox.ts#verifyModuleMessageResources` |
 | `entrypoint.engineer-messages.binding-fence` | `src/effects/engineers/module-inbox.ts#validateTarget` | `sink.engineer-messages.binding-fence` → `src/effects/engineers/binding-store.ts#readEngineerBindingStatus` |
+| `entrypoint.engineer-messages.external-delivery-observation` | `src/effects/engineers/module-inbox.ts#recordModuleMessageDeliveryObservation` | `sink.engineer-messages.delivery-receipt` → `src/core/engineers/module-message.ts#applyModuleMessageObservation` |
 
 ### 1.3 規模信號
 
@@ -51,6 +52,7 @@ flowchart LR
 入向關係:
 
 - `calls` ← `capability.runtime-harness.mcp-sidecar` — Expose authenticated Engineer message send, list and acknowledgement without granting generic Fleet or Provider authority
+- `calls` ← `capability.runtime-harness.provider-thread-effects` — Consume one persisted ModuleMessage and idempotently project exact positive Provider delivery evidence
 
 ## 2. P2:端到端數據流
 

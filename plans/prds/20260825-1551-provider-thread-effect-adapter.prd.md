@@ -1,9 +1,9 @@
 # PRD: Provider Thread Effect Adapter (ME-3A)
 
-> **Status**: Draft
+> **Status**: Approved
 > **Slug**: `provider-thread-effect-adapter`
 > **Created**: 2026-08-25T15:51:15+0800
-> **Updated**: 2026-08-25T21:03:47+0800
+> **Updated**: 2026-08-25T21:28:00+0800
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
 > **Depends On**: ME-1C durable message core and the Runtime Admission Canary
@@ -19,9 +19,9 @@
 - **Core metric**: duplicate Provider turn 0；runtime-only Task/Lease/Fleet mutation 0；unknown effect blind retry 0。
 - **Hard constraint**: the adapter does not implement an Agent query loop、tool-call parser、streaming protocol、context compaction、Provider history store、semantic completion or automatic Provider fallback。
 - **Key risk**: Provider effect succeeds but acknowledgement is lost, causing a duplicate turn on retry。
-- **Unknowns**: Runtime Admission Canary 已冻结 ME-3A 所需的 exact Codex Thread/turn correlation 与 lost-ack reconciliation；ME-3A 实施仍需在自身 approval boundary 冻结生产 effect schema、restart observation store 和 failure taxonomy。
+- **Unknowns**: Runtime Admission Canary 已冻结 exact Codex Thread/turn correlation；生产 schema、restart journal 与 failure taxonomy 已在本 approval boundary 冻结。第二 Provider 的 taxonomy fit 仍是后续 read-only conformance unknown，不扩大 P0。
 - **Acceptance scenarios**: persist-first delivery、lost ACK、binding rotation、adapter unavailable、restart reconciliation and unchanged control-plane authorities。
-- **Suggested next step**: consume the passed canary evidence at `codex/me1c-engineer-inbox@ef731e6a`；在 ME-1C 合入后完成本 PRD 的独立 approval，不扩大到 daemon、query loop 或 Provider fallback。
+- **Suggested next step**: execute `plans/plan-20260825-2120-me3a-provider-thread-effect.md` against merged ME-1C，严格保持 host-executed action/evidence bridge，不扩大到 daemon、query loop 或 Provider fallback。
 
 ## Problem
 
@@ -101,34 +101,75 @@ Read Provider facts for the exact Thread/effect fingerprint. Positive exact corr
 ## Data Model
 
 ```yaml
+ProviderThreadCapabilityObservationV1:
+  protocol: 1
+  kind: repo-harness-provider-thread-capability-observation
+  adapter_kind: codex-app-thread
+  host_id: bounded-opaque
+  operations: {send: status, resume: status, observe: status, stop: status}
+  # status = supported|unsupported|unavailable|unverifiable
+  evidence_refs: [{ref: bounded-opaque, sha256: sha256}]
+  observed_at: RFC3339
+  capability_sha256: sha256
+
 ProviderThreadEffectIntentV1:
   protocol: 1
   kind: repo-harness-provider-thread-effect-intent
   effect_id: sha256(adapter_kind + idempotency_key)
   idempotency_key: bounded-opaque
   operation_fingerprint: sha256
+  message_id: uuid
   message_event_digest: sha256
-  delivery_attempt: integer
+  delivery_attempt: positive-integer
   engineer_id: string
   binding_id: uuid
-  binding_generation: integer
-  adapter_kind: closed-enum
+  binding_generation: positive-integer
+  engineer_contract_revision: sha256
+  adapter_kind: codex-app-thread
   operation: send|resume|observe|stop
-  resource_refs: [{ref: string, sha256: sha256}]
+  host_id: bounded-opaque
+  provider_thread_id: bounded-opaque
+  capability_sha256: sha256
+  payload: bounded-canonical-ME-1C-transport-payload
+  payload_sha256: sha256
+  created_at: RFC3339
   intent_sha256: sha256
+
+ProviderThreadHostActionV1:
+  protocol: 1
+  kind: repo-harness-provider-thread-host-action
+  effect_id: sha256
+  intent_sha256: sha256
+  adapter_kind: codex-app-thread
+  operation: send|resume|observe|stop
+  host_id: bounded-opaque
+  provider_thread_id: bounded-opaque
+  payload: bounded-canonical-ME-1C-transport-payload
+  message_event_digest: sha256
+  delivery_attempt: positive-integer
+  action_sha256: sha256
 
 ProviderThreadEffectObservationV1:
   protocol: 1
+  kind: repo-harness-provider-thread-effect-observation
   effect_id: sha256
   intent_sha256: sha256
+  sequence: non-negative-integer
   state: intent_persisted|effect_started|observed_success|observed_failure|reconciliation_required|stopped
-  provider_thread_ref: opaque
-  provider_effect_ref: opaque|null
-  failure_class: none|binding_stale|adapter_unavailable|provider|unknown
+  host_id: bounded-opaque
+  provider_thread_id: bounded-opaque
+  provider_turn_id: bounded-opaque|null
+  provider_user_message_id: bounded-opaque|null
+  provider_assistant_message_id: bounded-opaque|null
+  provider_effect_ref: bounded-opaque|null
+  failure_class: none|binding_stale|capability_unsupported|adapter_unavailable|provider|unknown
   usage: {authority: provider|unavailable, input_tokens: integer|null, cached_input_tokens: integer|null, output_tokens: integer|null}
+  observed_at: RFC3339
   previous_observation_sha256: sha256|null
   observation_sha256: sha256
 ```
+
+Positive `observed_success` 必须同时匹配 intent 的 `host_id`、`provider_thread_id`、`message_event_digest`，并提供 canary 冻结的 `provider_turn_id + provider_user_message_id + provider_assistant_message_id`。任何字段缺失、Thread 不符或 evidence ambiguity 都只能产生 `reconciliation_required`。`effect_started` 在 host action 返回前写入；因此其后永不产生第二 action。
 
 Usage is observational economics evidence only. It cannot alter routing、Task identity、Acceptance or Publication readiness. Provider-owned fields remain null when unavailable；repo-harness does not estimate them。
 
@@ -144,12 +185,12 @@ Usage is observational economics evidence only. It cannot alter routing、Task i
 | Item | Impact | Resolution Path | Owner |
 |---|---|---|---|
 | Codex exact Thread/turn correlation | Closed by admission canary | `codex/me1c-engineer-inbox@ef731e6a` | Provider owner |
-| Production restart observation completeness | Blocks ME-3A approval, not ME-1C merge | freeze the intent/observation store and kill/restart acceptance fixture before selecting process shape | Runtime owner |
+| Production restart observation completeness | Closed for P0 by immutable per-effect journal plus deterministic current repair | kill/restart acceptance fixture must prove recovery before merge | Runtime owner |
 | Second Provider taxonomy fit | Guards false portability | one read-only conformance implementation after Codex | Adapter owner |
 
 ## Developer Handoff
 
-Runtime Admission Canary has frozen the Codex effect correlation contract at `codex/me1c-engineer-inbox@ef731e6a`. Do not treat that evidence as approval of this Draft PRD. After ME-1C lands and this PRD independently closes its production schemas, build one Codex send/observe path first；do not create a generic model gateway、daemon or fallback adapter。
+Runtime Admission Canary has frozen the Codex effect correlation contract at `codex/me1c-engineer-inbox@ef731e6a`. Human approval `event.user-approval-20260825-control-plane-me3a` accepts the associated major architecture changeset `changeset.docs-projection-f646e47931537512` and this production schema boundary。Build one Codex send/observe path first；do not create a generic model gateway、daemon or fallback adapter。
 
 ### Acceptance Scripts
 

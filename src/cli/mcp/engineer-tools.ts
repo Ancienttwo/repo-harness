@@ -8,11 +8,23 @@ import {
   type ModuleMessageType,
 } from '../../core/engineers/module-message';
 import {
+  ProviderThreadEffectError,
+  type ProviderThreadOperation,
+} from '../../core/engineers/provider-thread-effect';
+import {
   ModuleInboxError,
   acknowledgeModuleMessage,
   receiveModuleInbox,
   sendModuleMessage,
 } from '../../effects/engineers/module-inbox';
+import { readEngineerBindingStatus } from '../../effects/engineers/binding-store';
+import { loadEngineerProfile } from '../../effects/engineers/profile-store';
+import {
+  ProviderThreadEffectStoreError,
+  listProviderThreadEffects,
+  providerThreadCapabilityStatusFor,
+  readProviderThreadEffectStatus,
+} from '../../effects/engineers/provider-thread-effect-store';
 import { resolveEngineerPrincipal, type EngineerPrincipalFences } from '../../effects/engineers/principal';
 import { collectEngineerOffers } from '../../effects/engineers/scheduling';
 import { acquireScheduledEngineerTask } from '../../effects/engineers/scheduling-acquire';
@@ -26,6 +38,8 @@ export const ENGINEER_MCP_TOOL_NAMES = [
   'engineer_messages',
   'engineer_message_send',
   'engineer_message_ack',
+  'engineer_thread_effect_capability',
+  'engineer_thread_effect_status',
 ] as const;
 export type EngineerMcpToolName = typeof ENGINEER_MCP_TOOL_NAMES[number];
 
@@ -77,6 +91,12 @@ const PARAMETER_NAMES: Readonly<Record<EngineerMcpToolName, readonly string[]>> 
     'binding_generation',
     'engineer_contract_revision',
     'message_id',
+  ],
+  engineer_thread_effect_capability: [
+    'repo_id', 'engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision', 'operation',
+  ],
+  engineer_thread_effect_status: [
+    'repo_id', 'engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision', 'effect_id',
   ],
 });
 
@@ -216,6 +236,33 @@ export function buildEngineerToolDefinitions(): EngineerMcpToolDefinition[] {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    {
+      name: 'engineer_thread_effect_capability',
+      description: 'Read the operator-observed Provider Thread capability for this exact current Engineer Binding.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ...principalFenceProperties,
+          operation: { type: 'string', enum: ['send', 'resume', 'observe', 'stop'] },
+        },
+        required: ['operation'],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    {
+      name: 'engineer_thread_effect_status',
+      description: 'Read immutable Provider Thread effect intent/current observations for this Engineer; never starts or observes an effect.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ...principalFenceProperties,
+          effect_id: { type: 'string', pattern: '^sha256:[0-9a-f]{64}$' },
+        },
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
   ];
 }
@@ -387,6 +434,22 @@ function acquireAsEngineer(
   return result.ok ? textResult(result) : errorResult(result.error, result.message);
 }
 
+function currentBindingForPrincipal(
+  ctx: EngineerMcpToolContext,
+  principal: ReturnType<typeof resolvePrincipal>,
+) {
+  const profile = loadEngineerProfile(ctx.repoRoot, principal.engineer_id);
+  const status = readEngineerBindingStatus(ctx.repoRoot, principal.engineer_id, profile.engineer_contract_revision);
+  const binding = status.binding;
+  if (!binding || binding.state !== 'active' || status.current.state !== 'active'
+    || binding.binding_id !== principal.binding_id
+    || binding.binding_generation !== principal.binding_generation
+    || binding.engineer_contract_revision !== principal.engineer_contract_revision) {
+    throw new EngineerPrincipalError('engineer_principal_stale', 'current Provider Thread Binding no longer matches authenticated principal');
+  }
+  return binding;
+}
+
 export function callEngineerTool(
   ctx: EngineerMcpToolContext,
   name: EngineerMcpToolName,
@@ -420,10 +483,32 @@ export function callEngineerTool(
       audit(ctx, name, 'ok', args);
       return textResult(result);
     }
+    if (name === 'engineer_thread_effect_capability') {
+      const binding = currentBindingForPrincipal(ctx, principal);
+      const operation = requiredString(args, 'operation') as ProviderThreadOperation;
+      const result = providerThreadCapabilityStatusFor(ctx.repoRoot, binding.host_id, operation);
+      audit(ctx, name, 'ok', args);
+      return textResult(result);
+    }
+    if (name === 'engineer_thread_effect_status') {
+      const effectId = optionalString(args, 'effect_id');
+      if (effectId === undefined) {
+        const result = listProviderThreadEffects(ctx.repoRoot, principal.engineer_id);
+        audit(ctx, name, 'ok', args);
+        return textResult(result);
+      }
+      const result = readProviderThreadEffectStatus(ctx.repoRoot, effectId);
+      if (result.intent.engineer_id !== principal.engineer_id) {
+        throw new EngineerPrincipalError('engineer_principal_mismatch', 'effect does not belong to authenticated Engineer');
+      }
+      audit(ctx, name, 'ok', args);
+      return textResult(result);
+    }
     return messageSendAsEngineer(ctx, args, principal);
   } catch (error) {
     const code = error instanceof EngineerPrincipalError || error instanceof EngineerMcpError
       || error instanceof EngineerSchedulingError || error instanceof ModuleInboxError
+      || error instanceof ProviderThreadEffectError || error instanceof ProviderThreadEffectStoreError
       ? error.code
       : 'ENGINEER_TOOL_FAILED';
     const message = error instanceof Error ? error.message : String(error);

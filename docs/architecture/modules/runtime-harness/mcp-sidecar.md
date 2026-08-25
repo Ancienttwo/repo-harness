@@ -1,5 +1,5 @@
 # runtime-harness/mcp-sidecar 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:516232395301b2476ccd73bee9592200e4cdf6e820876375733d0108fe9eca87" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:b0a51735b29a824a8d291d85acdea66eb20d977c1020bdab240c56f3493e4590" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:1c90870e4e98d9db74f04a3724603e86c588b79c5c71fa956cb86c9dad83aff8" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:c7a50a0ef4f389773ae1372d66350e7b7cc88e237babac08b03023ba75286102" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.mcp-sidecar`(kind `capability`)
 > **Matched Prefixes**:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`、`src/cli/chatgpt-browser/file-policy.ts`、`src/effects/repo-registry.ts`、`docs/repo-harness-chatgpt-mcp-setup.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`docs/researches/20260711-devspace-chatgpt-local-control.md`
@@ -38,6 +38,7 @@ flowchart LR
 | `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#callEngineerTool` | `sink.mcp-sidecar.engineer-principal` → `src/effects/engineers/principal.ts#resolveEngineerPrincipal`、`sink.mcp-sidecar.engineer-offers` → `src/effects/engineers/scheduling.ts#collectEngineerOffers` |
 | `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#messageSendAsEngineer` | `sink.mcp-sidecar.engineer-messages` → `src/effects/engineers/module-inbox.ts#sendModuleMessage` |
 | `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#acquireAsEngineer` | `sink.mcp-sidecar.engineer-acquire` → `src/effects/engineers/scheduling-acquire.ts#acquireScheduledEngineerTask` |
+| `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#callEngineerTool` | `sink.mcp-sidecar.provider-thread-effect-status` → `src/effects/engineers/provider-thread-effect-store.ts#readProviderThreadEffectStatus` |
 
 ### 1.3 規模信號
 
@@ -53,6 +54,7 @@ flowchart LR
 - `calls` → `capability.runtime-harness.engineer-bindings` — Resolve a verified OAuth authorization to the current Engineer Binding before acquiring a Fleet Claim
 - `calls` → `capability.runtime-harness.engineer-scheduling` — Project and acquire exact revision-fenced Engineer offers for a verified OAuth principal
 - `calls` → `component.mcp-sidecar.primary` — Dispatch an MCP tool call
+- `calls` → `capability.runtime-harness.provider-thread-effects` — Expose read-only capability and current effect projections to the authenticated Engineer without Provider mutation authority
 
 入向關係:
 

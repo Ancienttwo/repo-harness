@@ -296,7 +296,7 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 - Treat user-level `~/.codex/hooks.json` and `~/.claude/settings.json` as host adapters. Keep hook implementation under `.ai/hooks/`, and treat repo-local `.claude/settings.json` / `.codex/hooks.json` hook adapters as retired legacy config.
 - Consider adding `bun scripts/capability-resolver.ts validate --format text` to the strict workflow gate after the architecture registry has been used through one more real slice.
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:ee1c70b29473945d1207aafe13282eedde74c3dcecdc0c23de5dfdaa175086c5" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:0c66c983a7d98ac2d283252125eb1a2f27dd54fff306552e589313956871b80b" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:d8c54d2793099b41eb69b7d549e713ffa31bdeb55adcf4d5973169644da402f9" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:b8e2fcf7f84fb64a06354f221ede62bc9da53789e6892e835b7e77b481db1f2e" -->
 # Architecture Index
 
 Generated: 1970-01-01T00:00:00.000Z
@@ -312,6 +312,7 @@ Generated: 1970-01-01T00:00:00.000Z
 - [Global Runtime Reconciliation](modules/runtime-harness/global-runtime-reconciliation.md) — capability / active
 - [Hook Adapters](modules/runtime-harness/hook-adapters.md) — capability / active
 - [MCP Sidecar](modules/runtime-harness/mcp-sidecar.md) — capability / active
+- [Provider Thread Effects](modules/runtime-harness/provider-thread-effects.md) — capability / active
 - [General Repository Access](modules/runtime-mcp/general-repo-access.md) — capability / active
 - [CodeGraph Readiness](modules/verification/codegraph-readiness.md) — capability / active
 - [Evals And Checks](modules/verification/evals-checks.md) — capability / active
@@ -336,6 +337,10 @@ Generated: 1970-01-01T00:00:00.000Z
 - capability.runtime-harness.mcp-sidecar -> capability.runtime-harness.engineer-bindings — calls
 - capability.runtime-harness.mcp-sidecar -> capability.runtime-harness.engineer-scheduling — calls
 - capability.runtime-harness.mcp-sidecar -> component.mcp-sidecar.primary — calls
+- capability.runtime-harness.mcp-sidecar -> capability.runtime-harness.provider-thread-effects — calls
+- capability.runtime-harness.provider-thread-effects -> capability.runtime-harness.engineer-bindings — calls
+- capability.runtime-harness.provider-thread-effects -> capability.runtime-harness.engineer-messages — calls
+- capability.runtime-harness.provider-thread-effects -> component.provider-thread-effects.primary — calls
 - capability.public-surface.root-router -> component.root-router.primary — calls
 
 ## Projections

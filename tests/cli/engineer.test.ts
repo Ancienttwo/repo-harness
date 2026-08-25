@@ -105,9 +105,61 @@ describe('repo-harness engineer CLI', () => {
       '--json',
     ]);
     expect(sent.exitCode).toBe(0);
-    expect(JSON.parse(sent.stdout)).toMatchObject({
+    const sentMessage = JSON.parse(sent.stdout) as {
+      event: { event_digest: string; sender: { kind: string; principal_ref: string } };
+      receipt: { delivery_state: string };
+    };
+    expect(sentMessage).toMatchObject({
       event: { sender: { kind: 'program_orchestrator', principal_ref: 'human:cli-test' } },
       receipt: { delivery_state: 'pending' },
+    });
+
+    const observedCapability = run(root, [
+      'engineer', 'thread-effect', 'capability',
+      '--host-id', 'local',
+      '--operations-json', JSON.stringify({ send: 'supported', resume: 'unverifiable', observe: 'supported', stop: 'unsupported' }),
+      '--evidence-refs-json', JSON.stringify([{ ref: 'canary', sha256: `sha256:${'a'.repeat(64)}` }]),
+      '--observed-at', '2026-08-25T00:31:00.000Z',
+      '--json',
+    ]);
+    expect(observedCapability.exitCode).toBe(0);
+    const capability = JSON.parse(observedCapability.stdout) as { capability_sha256: string };
+    const preparedEffect = run(root, [
+      'engineer', 'thread-effect', 'prepare',
+      '--engineer-id', engineerId,
+      '--message-id', '33333333-3333-4333-8333-333333333333',
+      '--idempotency-key', 'cli-effect-1',
+      '--operation', 'send',
+      '--expected-binding-id', active.current_binding_id,
+      '--expected-binding-generation', String(active.binding_generation),
+      '--expected-engineer-contract-revision', revision,
+      '--expected-capability-sha256', capability.capability_sha256,
+      '--created-at', '2026-08-25T00:32:00.000Z',
+      '--json',
+    ]);
+    expect(preparedEffect.exitCode).toBe(0);
+    const effect = JSON.parse(preparedEffect.stdout) as { intent: { effect_id: string }; current: { state: string } };
+    expect(effect.current.state).toBe('intent_persisted');
+    const startedEffect = run(root, [
+      'engineer', 'thread-effect', 'start',
+      '--effect-id', effect.intent.effect_id,
+      '--started-at', '2026-08-25T00:33:00.000Z',
+      '--json',
+    ]);
+    expect(JSON.parse(startedEffect.stdout)).toMatchObject({ current: { state: 'effect_started' }, action: { operation: 'send' } });
+    const duplicateStart = run(root, [
+      'engineer', 'thread-effect', 'start',
+      '--effect-id', effect.intent.effect_id,
+      '--started-at', '2026-08-25T00:34:00.000Z',
+      '--json',
+    ]);
+    expect(JSON.parse(duplicateStart.stdout)).toMatchObject({ current: { state: 'reconciliation_required' }, action: null });
+    const effectStatus = run(root, [
+      'engineer', 'thread-effect', 'status', '--effect-id', effect.intent.effect_id, '--json',
+    ]);
+    expect(JSON.parse(effectStatus.stdout)).toMatchObject({
+      intent: { message_event_digest: sentMessage.event.event_digest },
+      current: { state: 'reconciliation_required' },
     });
 
     const capsuleResult = run(root, ['engineer', 'bootstrap-prompt', '--engineer-id', engineerId, '--json']);
@@ -144,6 +196,7 @@ describe('repo-harness engineer CLI', () => {
     expect(help.stdout).toContain('principal');
     expect(help.stdout).toContain('offers');
     expect(help.stdout).toContain('message');
+    expect(help.stdout).toContain('thread-effect');
     expect(help.stdout).not.toContain('claim');
     expect(help.stdout).not.toContain('acquire');
     const offersHelp = run(root, ['engineer', 'offers', '--help']);

@@ -13,6 +13,13 @@ import {
   type ModuleMessageType,
 } from '../../core/engineers/module-message';
 import {
+  ProviderThreadEffectError,
+  type ProviderThreadCapabilityStatus,
+  type ProviderThreadFailureClass,
+  type ProviderThreadOperation,
+  type ProviderThreadUsageV1,
+} from '../../core/engineers/provider-thread-effect';
+import {
   bindEngineer,
   readEngineerBindingStatus,
   retireEngineer,
@@ -37,6 +44,15 @@ import {
   receiveModuleInbox,
   sendModuleMessage,
 } from '../../effects/engineers/module-inbox';
+import {
+  ProviderThreadEffectStoreError,
+  listProviderThreadEffects,
+  observeProviderThreadEffect,
+  prepareProviderThreadEffect,
+  readProviderThreadEffectStatus,
+  recordProviderThreadCapability,
+  startProviderThreadEffect,
+} from '../../effects/engineers/provider-thread-effect-store';
 import { mcpOAuthTokenStorePath } from '../mcp/auth';
 import { McpOAuthTokenStore } from '../mcp/oauth';
 
@@ -47,6 +63,7 @@ function emit(value: unknown, json: boolean | undefined, human: string): void {
 function emitError(error: unknown): void {
   const code = error instanceof EngineerProfileBindingError || error instanceof EngineerPrincipalError
     || error instanceof EngineerSchedulingError || error instanceof ModuleMessageError || error instanceof ModuleInboxError
+    || error instanceof ProviderThreadEffectError || error instanceof ProviderThreadEffectStoreError
     ? error.code
     : 'engineer_binding_invalid';
   const message = error instanceof Error ? error.message : String(error);
@@ -305,6 +322,154 @@ export function buildEngineerCommand(): Command {
       emit(result, options.json, `${result.receipt.delivery_state} ${result.event.message_id}`);
     }));
   engineer.addCommand(message);
+
+  const threadEffect = new Command('thread-effect')
+    .description('Journal host-owned Provider Thread effects without executing a Provider runtime');
+  threadEffect
+    .command('capability')
+    .requiredOption('--host-id <id>', 'Exact host ID')
+    .requiredOption('--operations-json <json>', 'Closed send/resume/observe/stop capability statuses')
+    .requiredOption('--evidence-refs-json <json>', 'Bounded capability evidence references')
+    .requiredOption('--observed-at <timestamp>', 'Stable RFC3339 observation time')
+    .option('--json', 'Output JSON')
+    .action((options: {
+      hostId: string;
+      operationsJson: string;
+      evidenceRefsJson: string;
+      observedAt: string;
+      json?: boolean;
+    }) => run(() => {
+      const observation = recordProviderThreadCapability(realpathSync(process.cwd()), {
+        host_id: options.hostId,
+        operations: jsonOption<Readonly<Record<ProviderThreadOperation, ProviderThreadCapabilityStatus>>>(
+          options.operationsJson,
+          'operations-json',
+        ),
+        evidence_refs: jsonOption<readonly { readonly ref: string; readonly sha256: string }[]>(
+          options.evidenceRefsJson,
+          'evidence-refs-json',
+        ),
+        observed_at: options.observedAt,
+      });
+      emit(observation, options.json, `${observation.host_id} ${observation.capability_sha256}`);
+    }));
+  threadEffect
+    .command('prepare')
+    .requiredOption('--engineer-id <id>', 'Exact engineer_id')
+    .requiredOption('--message-id <id>', 'Exact persisted ME-1C message UUID')
+    .requiredOption('--idempotency-key <key>', 'Stable effect retry key')
+    .requiredOption('--operation <operation>', 'send, resume, observe, or stop')
+    .requiredOption('--expected-binding-id <id>', 'Exact current Binding UUID')
+    .requiredOption('--expected-binding-generation <n>', 'Exact current Binding generation')
+    .requiredOption('--expected-engineer-contract-revision <digest>', 'Exact Engineer contract revision')
+    .requiredOption('--expected-capability-sha256 <digest>', 'Exact capability observation digest')
+    .requiredOption('--created-at <timestamp>', 'Stable RFC3339 intent creation time')
+    .option('--json', 'Output JSON')
+    .action((options: {
+      engineerId: string;
+      messageId: string;
+      idempotencyKey: string;
+      operation: string;
+      expectedBindingId: string;
+      expectedBindingGeneration: string;
+      expectedEngineerContractRevision: string;
+      expectedCapabilitySha256: string;
+      createdAt: string;
+      json?: boolean;
+    }) => run(() => {
+      const status = prepareProviderThreadEffect({
+        repo_root: realpathSync(process.cwd()),
+        engineer_id: options.engineerId,
+        message_id: options.messageId,
+        idempotency_key: options.idempotencyKey,
+        operation: options.operation as ProviderThreadOperation,
+        expected_binding_id: options.expectedBindingId,
+        expected_binding_generation: integerOption(options.expectedBindingGeneration, 'expected-binding-generation'),
+        expected_engineer_contract_revision: options.expectedEngineerContractRevision,
+        expected_capability_sha256: options.expectedCapabilitySha256,
+        created_at: options.createdAt,
+      });
+      emit(status, options.json, `${status.current.state} ${status.intent.effect_id}`);
+    }));
+  threadEffect
+    .command('start')
+    .requiredOption('--effect-id <digest>', 'Exact prepared effect ID')
+    .requiredOption('--started-at <timestamp>', 'Stable RFC3339 admission time')
+    .option('--json', 'Output JSON')
+    .action((options: { effectId: string; startedAt: string; json?: boolean }) => run(() => {
+      const result = startProviderThreadEffect({
+        repo_root: realpathSync(process.cwd()),
+        effect_id: options.effectId,
+        started_at: options.startedAt,
+      });
+      emit(result, options.json, result.action
+        ? `host-action ${result.action.action_sha256}`
+        : `${result.current.state} no-action`);
+    }));
+  threadEffect
+    .command('observe')
+    .requiredOption('--effect-id <digest>', 'Exact started effect ID')
+    .requiredOption('--state <state>', 'observed_success, observed_failure, reconciliation_required, or stopped')
+    .requiredOption('--message-event-digest <digest>', 'Exact persisted ME-1C event digest')
+    .requiredOption('--host-id <id>', 'Exact host ID')
+    .requiredOption('--provider-thread-id <id>', 'Exact Provider Thread ID')
+    .requiredOption('--provider-turn-id <id>', 'Exact Provider turn ID or null')
+    .requiredOption('--provider-user-message-id <id>', 'Exact Provider user message ID or null')
+    .requiredOption('--provider-assistant-message-id <id>', 'Exact Provider assistant message ID or null')
+    .requiredOption('--provider-effect-ref <ref>', 'Provider effect reference or null')
+    .requiredOption('--failure-class <class>', 'Closed failure class')
+    .requiredOption('--usage-json <json>', 'Provider usage object; unavailable values stay null')
+    .requiredOption('--observed-at <timestamp>', 'Stable RFC3339 observation time')
+    .option('--json', 'Output JSON')
+    .action((options: {
+      effectId: string;
+      state: 'observed_success' | 'observed_failure' | 'reconciliation_required' | 'stopped';
+      messageEventDigest: string;
+      hostId: string;
+      providerThreadId: string;
+      providerTurnId: string;
+      providerUserMessageId: string;
+      providerAssistantMessageId: string;
+      providerEffectRef: string;
+      failureClass: ProviderThreadFailureClass;
+      usageJson: string;
+      observedAt: string;
+      json?: boolean;
+    }) => run(() => {
+      const status = observeProviderThreadEffect({
+        repo_root: realpathSync(process.cwd()),
+        effect_id: options.effectId,
+        state: options.state,
+        message_event_digest: options.messageEventDigest,
+        host_id: options.hostId,
+        provider_thread_id: options.providerThreadId,
+        provider_turn_id: nullableOption(options.providerTurnId, 'provider-turn-id'),
+        provider_user_message_id: nullableOption(options.providerUserMessageId, 'provider-user-message-id'),
+        provider_assistant_message_id: nullableOption(options.providerAssistantMessageId, 'provider-assistant-message-id'),
+        provider_effect_ref: nullableOption(options.providerEffectRef, 'provider-effect-ref'),
+        failure_class: options.failureClass,
+        usage: jsonOption<ProviderThreadUsageV1>(options.usageJson, 'usage-json'),
+        observed_at: options.observedAt,
+      });
+      emit(status, options.json, `${status.current.state} ${status.intent.effect_id}`);
+    }));
+  threadEffect
+    .command('status')
+    .option('--effect-id <digest>', 'Exact effect ID')
+    .option('--engineer-id <id>', 'Filter effects by exact Engineer ID')
+    .option('--json', 'Output JSON')
+    .action((options: { effectId?: string; engineerId?: string; json?: boolean }) => run(() => {
+      const repoRoot = realpathSync(process.cwd());
+      if (options.effectId) {
+        const result = readProviderThreadEffectStatus(repoRoot, options.effectId);
+        emit(result, options.json, `${result.current.state} ${result.intent.effect_id}`);
+        return;
+      }
+      const result = listProviderThreadEffects(repoRoot, options.engineerId);
+      emit(result, options.json, result.map((item) =>
+        `${item.current.state} ${item.intent.effect_id}`).join('\n'));
+    }));
+  engineer.addCommand(threadEffect);
 
   const principal = new Command('principal').description('Manage OAuth authorization mappings to current Module Engineer Bindings');
   principal

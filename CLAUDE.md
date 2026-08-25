@@ -71,34 +71,37 @@ bun src/cli/index.ts init --repo . --dry-run
 <!-- BEGIN ARCHITECTURE CONTRACT -->
 ## Architecture Contract
 
-- Functional block: `src/cli/mcp`
-- Capability ID: `runtime-harness-mcp-sidecar`
-- Matched prefix: `src/cli/mcp`
+- Functional block: `src/effects/engineers/provider-thread-effect-store.ts`
+- Capability ID: `runtime-harness-provider-thread-effects`
+- Matched prefix: `src/effects/engineers/provider-thread-effect-store.ts`
 - Architecture domain: `runtime-harness`
-- Architecture capability: `mcp-sidecar`
-- Architecture module: `docs/architecture/modules/runtime-harness/mcp-sidecar.md`
-- Last architecture event: 2026-08-25T02:27:20+0800
-- Last changed path: `src/cli/mcp/engineer-tools.ts`
-- Severity: low
-- Change type: source-change
+- Architecture capability: `provider-thread-effects`
+- Architecture module: `docs/architecture/modules/runtime-harness/provider-thread-effects.md`
+- Last architecture event: 2026-08-25T21:44:42+0800
+- Last changed path: `tasks/workstreams/runtime-harness/provider-thread-effects/me3a-provider-thread-effect.md`
+- Severity: medium
+- Change type: workstream-sync
 - Module responsibility: Keep this block aligned with the local boundary described by surrounding human-owned context.
-- Entrypoints: `src/cli/mcp`
+- Entrypoints: `src/effects/engineers/provider-thread-effect-store.ts`
 - Allowed dependencies: Follow root `AGENTS.md` / `CLAUDE.md` and this local contract.
 - Forbidden dependencies: Do not cross sibling app/service/package boundaries without an architecture snapshot or explicit plan.
-- Runtime path: `src/cli/mcp`
+- Runtime path: `src/effects/engineers/provider-thread-effect-store.ts`
 - LSP/tooling profile: `typescript-lsp`
 - Verification: Use root required checks plus local commands recorded in this capability contract.
 - Latest snapshot: `(none yet)`
-- Semantic diagram source: `docs/architecture/modules/runtime-harness/mcp-sidecar.md`
+- Semantic diagram source: `docs/architecture/modules/runtime-harness/provider-thread-effects.md`
 - Pending architecture request: `(none)`
 
 ## Active Workstreams
 
-- (none yet)
+- `tasks/workstreams/runtime-harness/provider-thread-effects/me3a-provider-thread-effect.md`
+  - status: active
+  - current_slice: todo-01
+  - source_plan: plans/plan-20260825-2120-me3a-provider-thread-effect.md
 
 ## Current Session Projection
 
-- Durable progress lives under `tasks/workstreams/runtime-harness/mcp-sidecar`.
+- Durable progress lives under `tasks/workstreams/runtime-harness/provider-thread-effects`.
 - `tasks/current.md` is the tracked derived status snapshot; it is not a live lock or task source.
 - `tasks/todos.md` is the deferred-goal ledger; current execution slices stay in the active plan's `## Task Breakdown`.
 <!-- END ARCHITECTURE CONTRACT -->

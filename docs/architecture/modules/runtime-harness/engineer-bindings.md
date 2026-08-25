@@ -1,6 +1,6 @@
 # runtime-harness/engineer-bindings 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" sourceDigest="sha256:2e85e217dc4b83ea6a757a68f3162e54c354578b9d55eba5266c9b7be7168d59" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:f47ee24ae20d66fc139417b964deb09533ec0925b06f8a1b7dd13bc8b6d6e9f3" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" sourceDigest="sha256:f5650168f5fb4e82ec4f1135da03a2a092105a0d02e4ff3965494bc55d3117b4" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:71d132fccedb8fd526aeb1f60f6956f3b2ee32fdd126f5727c8f46a5bb037f12" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-bindings`(kind `capability`)
 > **Matched Prefixes**:`agents/engineers/**`、`src/core/engineers/**`、`src/effects/engineers/**`、`src/cli/commands/engineer.ts`
@@ -37,7 +37,7 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`10–20` 個文件 / `5000–10000` 行
+- 規模量級:`20–50` 個文件 / `5000–10000` 行
 - 匹配前綴:`agents/engineers/**`、`src/core/engineers/**`、`src/effects/engineers/**`、`src/cli/commands/engineer.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
@@ -52,6 +52,7 @@ flowchart LR
 - `calls` ← `capability.runtime-harness.engineer-messages` — Revalidate the exact target Engineer and current Binding before assignment delivery, transport and acknowledgement
 - `calls` ← `capability.runtime-harness.engineer-scheduling` — Revalidate the exact current Engineer contract and delegate the elected offer to the existing Engineer acquire authority
 - `calls` ← `capability.runtime-harness.mcp-sidecar` — Resolve a verified OAuth authorization to the current Engineer Binding before acquiring a Fleet Claim
+- `calls` ← `capability.runtime-harness.provider-thread-effects` — Revalidate the exact current Codex Engineer Binding before preparing or admitting one host action
 
 ## 2. P2:端到端數據流
 

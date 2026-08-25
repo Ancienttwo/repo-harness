@@ -105,6 +105,15 @@ export interface SendModuleMessageResult extends ModuleInboxEntry {
   readonly observation: ModuleMessageDeliveryObservationV1 | null;
 }
 
+export interface RecordModuleMessageDeliveryObservationInput {
+  readonly repo_root: string;
+  readonly engineer_id: string;
+  readonly message_id: string;
+  readonly expected_message_event_digest: string;
+  readonly expected_attempt: number;
+  readonly result: ModuleMessageTransportResult;
+}
+
 interface EngineerInboxPaths {
   readonly common: string;
   readonly root: string;
@@ -258,6 +267,19 @@ function readReceipt(path: string): ModuleMessageDeliveryReceiptV1 {
   }
 }
 
+function readObservation(path: string): ModuleMessageDeliveryObservationV1 {
+  try {
+    const raw = readCanonical(path, 'module message observation');
+    const observation = validateModuleMessageDeliveryObservation(JSON.parse(raw));
+    if (canonicalModuleMessageDeliveryObservationBytes(observation) !== raw) {
+      fail('module_message_unreadable', `module message observation is non-canonical: ${path}`);
+    }
+    return observation;
+  } catch (error) {
+    throw asInboxError(error, 'module_message_unreadable', `module message observation is malformed: ${path}`);
+  }
+}
+
 function writeAll(fd: number, data: Buffer): void {
   let offset = 0;
   while (offset < data.length) offset += writeSync(fd, data, offset, data.length - offset);
@@ -390,12 +412,53 @@ function appendObservation(
   event: ModuleMessageEventV1,
   receipt: ModuleMessageDeliveryReceiptV1,
   result: ModuleMessageTransportResult,
+  expectedAttempt = receipt.attempt + 1,
 ): { receipt: ModuleMessageDeliveryReceiptV1; observation: ModuleMessageDeliveryObservationV1 } {
+  validateTransportResult(result);
+  if (!Number.isSafeInteger(expectedAttempt) || expectedAttempt < 1) {
+    fail('module_message_invalid', 'expected delivery attempt is invalid');
+  }
+  const target = observationPath(paths, event.message_id, expectedAttempt);
+  if (existsSync(target)) {
+    const existing = readObservation(target);
+    const expectedPrevious = receipt.attempt === expectedAttempt
+      ? existing.previous_observation_digest
+      : receipt.latest_observation_digest;
+    const expected = buildModuleMessageDeliveryObservation({
+      message_event_digest: event.event_digest,
+      recipient_engineer_id: event.target_engineer_id,
+      target_binding_generation: event.target_binding_generation,
+      attempt: expectedAttempt,
+      outcome: result.outcome,
+      provider_delivery_ref: result.provider_delivery_ref,
+      observed_at: result.observed_at,
+      previous_observation_digest: expectedPrevious,
+    });
+    if (canonicalModuleMessageDeliveryObservationBytes(existing)
+      !== canonicalModuleMessageDeliveryObservationBytes(expected)) {
+      fail('module_message_conflict', `delivery attempt ${expectedAttempt} already names different immutable bytes`);
+    }
+    if (receipt.attempt === expectedAttempt) {
+      if (receipt.latest_observation_digest !== existing.observation_digest) {
+        fail('module_message_unreadable', 'receipt does not reference its persisted observation');
+      }
+      return { receipt, observation: existing };
+    }
+    if (receipt.attempt !== expectedAttempt - 1) {
+      fail('module_message_transition_invalid', 'delivery observation does not continue the receipt attempt chain');
+    }
+    const recovered = applyModuleMessageObservation(receipt, existing);
+    replaceCanonical(receiptPath(paths, event.message_id), canonicalModuleMessageDeliveryReceiptBytes(recovered), 'module message receipt');
+    return { receipt: recovered, observation: existing };
+  }
+  if (receipt.attempt !== expectedAttempt - 1) {
+    fail('module_message_transition_invalid', 'delivery observation does not continue the receipt attempt chain');
+  }
   const observation = buildModuleMessageDeliveryObservation({
     message_event_digest: event.event_digest,
     recipient_engineer_id: event.target_engineer_id,
     target_binding_generation: event.target_binding_generation,
-    attempt: receipt.attempt + 1,
+    attempt: expectedAttempt,
     outcome: result.outcome,
     provider_delivery_ref: result.provider_delivery_ref,
     observed_at: result.observed_at,
@@ -404,7 +467,7 @@ function appendObservation(
   const directory = join(paths.observations, event.message_id);
   safeDirectoryChain(paths.common, directory, true, 'module message observation chain');
   if (!writeExclusive(
-    observationPath(paths, event.message_id, observation.attempt),
+    target,
     canonicalModuleMessageDeliveryObservationBytes(observation),
     'module message observation',
   )) {
@@ -482,6 +545,42 @@ export function sendModuleMessage(input: SendModuleMessageInput): SendModuleMess
       ));
     }
     return { event: readEvent(eventPath(paths, event.message_id)), receipt, observation, event_path: eventPath(paths, event.message_id), created: persisted.created };
+  });
+}
+
+export function readModuleMessageDelivery(input: {
+  readonly repo_root: string;
+  readonly engineer_id: string;
+  readonly message_id: string;
+}): ModuleInboxEntry {
+  const paths = pathsFor(input.repo_root, input.engineer_id);
+  return withInboxLock(paths, () => {
+    const event = readEvent(eventPath(paths, input.message_id));
+    if (event.target_engineer_id !== input.engineer_id) {
+      fail('module_message_invalid', 'message does not belong to the requested Engineer inbox');
+    }
+    validateTarget(input.repo_root, event);
+    const receipt = readReceipt(receiptPath(paths, event.message_id));
+    if (receipt.message_event_digest !== event.event_digest) {
+      fail('module_message_unreadable', 'receipt event digest is mismatched');
+    }
+    return { event, receipt };
+  });
+}
+
+export function recordModuleMessageDeliveryObservation(
+  input: RecordModuleMessageDeliveryObservationInput,
+): ModuleInboxEntry & { readonly observation: ModuleMessageDeliveryObservationV1 } {
+  const paths = pathsFor(input.repo_root, input.engineer_id);
+  return withInboxLock(paths, () => {
+    const event = readEvent(eventPath(paths, input.message_id));
+    if (event.target_engineer_id !== input.engineer_id
+      || event.event_digest !== input.expected_message_event_digest) {
+      fail('module_message_conflict', 'external delivery observation does not match the exact persisted event');
+    }
+    const receipt = readReceipt(receiptPath(paths, event.message_id));
+    const recorded = appendObservation(paths, event, receipt, input.result, input.expected_attempt);
+    return { event, receipt: recorded.receipt, observation: recorded.observation };
   });
 }
 

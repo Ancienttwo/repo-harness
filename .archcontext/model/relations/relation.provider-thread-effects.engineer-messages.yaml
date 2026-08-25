@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.provider-thread-effects.engineer-messages
+kind: calls
+source: capability.runtime-harness.provider-thread-effects
+target: capability.runtime-harness.engineer-messages
+intent: Consume one persisted ModuleMessage and idempotently project exact positive Provider delivery evidence
