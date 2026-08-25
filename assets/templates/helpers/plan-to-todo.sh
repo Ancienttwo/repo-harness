@@ -405,6 +405,22 @@ rewrite_plan_artifact_references() {
   mv "$tmp_file" "$plan_file"
 }
 
+contract_acceptance_policy_json() {
+  local codex_host=0
+  local claude_host=0
+  [[ -n "${CODEX_SESSION_ID:-}" ]] && codex_host=1
+  [[ -n "${CLAUDE_SESSION_ID:-}" ]] && claude_host=1
+  if [[ "$codex_host" -eq 1 && "$claude_host" -eq 1 ]]; then
+    echo "[PlanToTodo] ambiguous host identity: both CODEX_SESSION_ID and CLAUDE_SESSION_ID are set" >&2
+    return 1
+  fi
+  if [[ "$codex_host" -eq 1 ]]; then
+    printf '%s' '{"protocol":2,"reviewer":"Codex","source":"codex-plugin","user_waiver":"allowed"}'
+  else
+    printf '%s' '{"protocol":2,"reviewer":"Codex","source":"codex-review","user_waiver":"allowed"}'
+  fi
+}
+
 render_contract_file() {
   local plan_file="$1"
   local contract_file="$2"
@@ -415,10 +431,12 @@ render_contract_file() {
   local capability_id="$7"
   local owner="${USER:-AI Agent}"
   local task_profile
+  local acceptance_policy
   local template_file=".claude/templates/contract.template.md"
   local tmp_file
 
   task_profile="$(plan_task_profile_from_file "$plan_file")"
+  acceptance_policy="$(contract_acceptance_policy_json)"
 
   if [[ ! -f "$template_file" ]]; then
     mkdir -p .claude/templates
@@ -489,7 +507,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ## Acceptance Policy
 
 ```json
-{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}
+{"protocol":2,"reviewer":"Codex","source":"codex-review","user_waiver":"allowed"}
 ```
 
 ## Allowed Paths
@@ -593,6 +611,10 @@ CONTRACT_TEMPLATE_EOF
       -e "s|tasks/reviews/${slug}\\.review\\.md|${review_file}|g" \
       -e "s|tasks/notes/${slug}\\.notes\\.md|${notes_file}|g" \
       > "$tmp_file"
+  mv "$tmp_file" "$contract_file"
+  tmp_file="$(mktemp)"
+  sed "s|^{\"protocol\":2,\"reviewer\":\"Codex\",\"source\":\"codex-review\",\"user_waiver\":\"allowed\"}$|${acceptance_policy}|" \
+    "$contract_file" > "$tmp_file"
   mv "$tmp_file" "$contract_file"
 }
 

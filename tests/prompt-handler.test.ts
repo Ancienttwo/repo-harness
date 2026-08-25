@@ -18,6 +18,7 @@ type FixtureOptions = {
   readonly checks?: unknown;
   readonly review?: string;
   readonly minimalChange?: 'off' | 'advice';
+  readonly acceptancePolicy?: string;
 };
 
 type Invocation = {
@@ -99,7 +100,7 @@ function fixture(options: FixtureOptions = {}): { root: string; cleanup(): void 
       '## Acceptance Policy',
       '',
       '```json',
-      '{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}',
+      options.acceptancePolicy ?? '{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}',
       '```',
       '',
     ].join('\n'));
@@ -173,6 +174,21 @@ describe('typed UserPromptSubmit.default handler', () => {
       expect(result.stdout).toContain('Do not ask the owner to quote or track a subject hash');
       expect(result.stdout).toContain('without asking the owner again');
       expect(result.stdout).toContain('never authorizes provider disclosure or merge');
+    } finally {
+      repo.cleanup();
+    }
+  }, 30_000);
+
+  test('protocol 2 Codex-host guidance records source=codex-plugin', () => {
+    const repo = fixture({
+      contract: true,
+      acceptancePolicy: '{"protocol":2,"reviewer":"Codex","source":"codex-plugin","user_waiver":"allowed"}',
+    });
+    try {
+      const { result } = invoke(repo.root, '/check', { env: { HOOK_HOST: 'codex' } });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('Peer reviewer: Codex via repo-harness-cross-review');
+      expect(result.stdout).toContain('--reviewer "Codex" --source "codex-plugin"');
     } finally {
       repo.cleanup();
     }

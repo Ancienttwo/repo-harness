@@ -117,6 +117,8 @@ const SKILLS_CLI_COMMAND = "skills";
 const SKILLS_CLI_PROBE_ARGS = ["ls", "-g", "--json"];
 const SKILLS_CLI_PROBE_TIMEOUT_MS = 45000;
 const CODEX_AUTOMATION_SKILLS = ["health", "check", "mermaid"];
+const OFFICIAL_CODEX_PLUGIN_ID = "codex@openai-codex";
+const OFFICIAL_CODEX_PLUGIN_INSTALL_COMMAND = "claude plugin marketplace add openai/codex-plugin-cc && claude plugin install codex@openai-codex -s user -y && claude plugin enable codex@openai-codex -s user";
 const OBSIDIAN_RUNTIME_CONSUMER = "obsidian-memory";
 const AGENT_FLEET_SOURCE_DIR = process.env.REPO_HARNESS_AGENT_FLEET_SOURCE_DIR;
 const PACKAGE_ROOT = path.dirname(path.dirname(AGENT_FLEET_SOURCE_DIR));
@@ -1788,6 +1790,146 @@ function detectArchctx() {
   };
 }
 
+function detectOfficialCodexPlugin() {
+  const required = SELECTED_HOSTS.includes("codex");
+  if (!required) {
+    return {
+      name: "official_codex_plugin",
+      status: "not-applicable",
+      required: false,
+      reason: "The requested host set does not include Codex.",
+      plugin_id: OFFICIAL_CODEX_PLUGIN_ID,
+      install_command: OFFICIAL_CODEX_PLUGIN_INSTALL_COMMAND,
+      review_gate: "not-enabled-by-repo-harness",
+    };
+  }
+  const claude = resolvePathCommand("claude");
+  if (!claude) {
+    return {
+      name: "official_codex_plugin",
+      status: "missing",
+      required: true,
+      reason: "Claude Code CLI is unavailable, so the official plugin inventory cannot be read.",
+      plugin_id: OFFICIAL_CODEX_PLUGIN_ID,
+      install_command: OFFICIAL_CODEX_PLUGIN_INSTALL_COMMAND,
+      review_gate: "not-enabled-by-repo-harness",
+    };
+  }
+  const inventory = run(claude, ["plugin", "list", "--json"], { timeoutMs: 30000 });
+  if (!inventory.ok) {
+    return {
+      name: "official_codex_plugin",
+      status: "unavailable",
+      required: true,
+      reason: inventory.stderr.trim() || "Claude Code plugin inventory failed.",
+      plugin_id: OFFICIAL_CODEX_PLUGIN_ID,
+      install_command: OFFICIAL_CODEX_PLUGIN_INSTALL_COMMAND,
+      review_gate: "not-enabled-by-repo-harness",
+    };
+  }
+  let entries;
+  try {
+    entries = JSON.parse(inventory.stdout);
+  } catch (_error) {
+    entries = null;
+  }
+  if (!Array.isArray(entries)) {
+    return {
+      name: "official_codex_plugin",
+      status: "invalid",
+      required: true,
+      reason: "Claude Code plugin inventory returned malformed JSON.",
+      plugin_id: OFFICIAL_CODEX_PLUGIN_ID,
+      install_command: OFFICIAL_CODEX_PLUGIN_INSTALL_COMMAND,
+      review_gate: "not-enabled-by-repo-harness",
+    };
+  }
+  const matches = entries.filter((entry) => entry?.id === OFFICIAL_CODEX_PLUGIN_ID);
+  const plugin = matches.length === 1 ? matches[0] : null;
+  let installProblem = null;
+  if (plugin?.enabled === true) {
+    const version = typeof plugin.version === "string" && plugin.version.trim() ? plugin.version : null;
+    const installPath = typeof plugin.installPath === "string" && path.isAbsolute(plugin.installPath)
+      ? plugin.installPath
+      : null;
+    let root = null;
+    try {
+      if (!installPath || fs.lstatSync(installPath).isSymbolicLink() || !fs.statSync(installPath).isDirectory()) {
+        installProblem = `${OFFICIAL_CODEX_PLUGIN_ID} installPath is missing, unsafe, or not a directory.`;
+      } else {
+        root = fs.realpathSync(installPath);
+      }
+    } catch (error) {
+      installProblem = `${OFFICIAL_CODEX_PLUGIN_ID} installPath is unavailable: ${String(error?.message || error)}`;
+    }
+    const safeFile = (relativePath) => {
+      if (!root) return null;
+      const candidate = path.resolve(root, relativePath);
+      const rel = path.relative(root, candidate);
+      if (rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return null;
+      try {
+        if (fs.lstatSync(candidate).isSymbolicLink() || !fs.statSync(candidate).isFile()) return null;
+        const canonical = fs.realpathSync(candidate);
+        const canonicalRel = path.relative(root, canonical);
+        return canonicalRel !== ".." && !canonicalRel.startsWith(`..${path.sep}`) && !path.isAbsolute(canonicalRel)
+          ? canonical
+          : null;
+      } catch (_error) {
+        return null;
+      }
+    };
+    if (!installProblem) {
+      const companion = safeFile("scripts/codex-companion.mjs");
+      const manifestPath = safeFile(".claude-plugin/plugin.json");
+      const schemaPath = safeFile("schemas/review-output.schema.json");
+      const manifest = manifestPath ? readJson(manifestPath) : null;
+      const schema = schemaPath ? readJson(schemaPath) : null;
+      const schemaRequired = schema?.required;
+      const verdicts = schema?.properties?.verdict?.enum;
+      const severities = schema?.properties?.findings?.items?.properties?.severity?.enum;
+      if (!version || !companion || !manifestPath || !schemaPath) {
+        installProblem = `${OFFICIAL_CODEX_PLUGIN_ID} install is missing a version, companion, manifest, or review schema.`;
+      } else if (manifest?.name !== "codex" || manifest?.version !== version || manifest?.author?.name !== "OpenAI") {
+        installProblem = `${OFFICIAL_CODEX_PLUGIN_ID} manifest identity/version does not match public inventory.`;
+      } else if (
+        !Array.isArray(schemaRequired)
+        || !["verdict", "summary", "findings", "next_steps"].every((key) => schemaRequired.includes(key))
+        || JSON.stringify(verdicts) !== JSON.stringify(["approve", "needs-attention"])
+        || JSON.stringify(severities) !== JSON.stringify(["critical", "high", "medium", "low"])
+      ) {
+        installProblem = `${OFFICIAL_CODEX_PLUGIN_ID} review schema is unsupported.`;
+      }
+    }
+  }
+  const status = matches.length === 0
+    ? "missing"
+    : matches.length > 1
+      ? "invalid"
+      : plugin.enabled !== true
+        ? "disabled"
+        : installProblem
+          ? "invalid"
+          : "present";
+  return {
+    name: "official_codex_plugin",
+    status,
+    required: true,
+    reason: status === "present"
+      ? `Detected enabled ${OFFICIAL_CODEX_PLUGIN_ID} version ${plugin.version}.`
+      : status === "disabled"
+        ? `${OFFICIAL_CODEX_PLUGIN_ID} is installed but disabled.`
+        : status === "invalid"
+          ? installProblem ?? `Expected one ${OFFICIAL_CODEX_PLUGIN_ID} entry; found ${matches.length}.`
+          : `${OFFICIAL_CODEX_PLUGIN_ID} is not installed.`,
+    plugin_id: OFFICIAL_CODEX_PLUGIN_ID,
+    version: plugin?.version ?? null,
+    enabled: plugin?.enabled === true,
+    install_path: typeof plugin?.installPath === "string" ? plugin.installPath : null,
+    install_command: OFFICIAL_CODEX_PLUGIN_INSTALL_COMMAND,
+    review_gate: "not-enabled-by-repo-harness",
+  };
+}
+
 const wazaReport = detectWaza();
 const report = {
   generated_at: new Date().toISOString(),
@@ -1798,6 +1940,7 @@ const report = {
   tools: {
     waza: wazaReport,
     codex_automation_profile: detectCodexAutomationProfile(),
+    official_codex_plugin: detectOfficialCodexPlugin(),
     obsidian_runtime_skills: detectObsidianRuntimeSkills(),
     agent_fleet: detectAgentFleet(),
     codegraph: detectCodeGraph(),
@@ -1811,6 +1954,10 @@ if (strictReadiness && ["missing", "partial"].includes(report.tools.codegraph.st
 }
 if (strictReadiness && ["missing", "partial"].includes(report.tools.agent_fleet.status)) {
   strictFailures.push(`Agent fleet readiness is ${report.tools.agent_fleet.status}: ${report.tools.agent_fleet.reason}`);
+}
+if (strictReadiness && !["present", "not-applicable"].includes(report.tools.official_codex_plugin.status)) {
+  const plugin = report.tools.official_codex_plugin;
+  strictFailures.push(`Official Codex plugin readiness is ${plugin.status}: ${plugin.reason}`);
 }
 if (
   strictReadiness
@@ -1895,6 +2042,14 @@ function printText(result) {
   }
   console.log(`  - Routes: health=${codexAutomation.routes.workflow_health}, check=${codexAutomation.routes.review_gate}, diagram=${codexAutomation.routes.architecture_diagram}`);
   console.log(`  - Vendoring: ${codexAutomation.vendoring_policy}`);
+  console.log("");
+
+  const officialPlugin = result.tools.official_codex_plugin;
+  console.log(`Official Codex plugin [${officialPlugin.status}]`);
+  console.log(`  - Required: ${officialPlugin.required}`);
+  console.log(`  - Plugin: ${officialPlugin.plugin_id}${officialPlugin.version ? `@${officialPlugin.version}` : ""}`);
+  console.log(`  - Review Gate: ${officialPlugin.review_gate}`);
+  console.log(`  - Install: ${officialPlugin.install_command}`);
   console.log("");
 
   const obsidianRuntime = result.tools.obsidian_runtime_skills;

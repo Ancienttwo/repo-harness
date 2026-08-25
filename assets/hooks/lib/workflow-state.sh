@@ -1443,7 +1443,7 @@ workflow_current_review_target_revision() {
   printf '%s' "$target_rev"
 }
 
-workflow_acceptance_expected_reviewer() {
+workflow_acceptance_policy_json() {
   local contract_file="${1:-}" policy_json
   contract_file="${contract_file:-$(workflow_active_contract 2>/dev/null || true)}"
   [[ -n "$contract_file" && -f "$contract_file" ]] || return 1
@@ -1454,11 +1454,19 @@ workflow_acceptance_expected_reviewer() {
     block { print }
   ' "$contract_file")"
   [[ -n "$policy_json" ]] || return 1
+  printf '%s' "$policy_json"
+}
+
+workflow_acceptance_expected_reviewer() {
+  local policy_json
+  policy_json="$(workflow_acceptance_policy_json "${1:-}")" || return 1
   if command -v jq >/dev/null 2>&1; then
     printf '%s' "$policy_json" | jq -er '
-      select(.protocol == 1)
-      | select((keys | sort) == ["protocol", "reviewer", "user_waiver"])
-      | select(.reviewer == "Claude" or .reviewer == "Codex")
+      select(
+        (.protocol == 1 and (keys | sort) == ["protocol", "reviewer", "user_waiver"] and (.reviewer == "Claude" or .reviewer == "Codex"))
+        or
+        (.protocol == 2 and (keys | sort) == ["protocol", "reviewer", "source", "user_waiver"] and .reviewer == "Codex" and (.source == "codex-review" or .source == "codex-plugin"))
+      )
       | select(.user_waiver == "allowed" or .user_waiver == "forbidden")
       | .reviewer
     ' 2>/dev/null
@@ -1476,9 +1484,17 @@ workflow_acceptance_source_for_reviewer() {
 }
 
 workflow_acceptance_expected_source() {
-  local reviewer="${1:-}"
-  reviewer="${reviewer:-$(workflow_acceptance_expected_reviewer)}"
-  workflow_acceptance_source_for_reviewer "$reviewer"
+  local policy_json
+  policy_json="$(workflow_acceptance_policy_json)" || return 1
+  command -v jq >/dev/null 2>&1 || return 1
+  printf '%s' "$policy_json" | jq -er '
+    select(.user_waiver == "allowed" or .user_waiver == "forbidden")
+    | if .protocol == 1 and (keys | sort) == ["protocol", "reviewer", "user_waiver"] then
+        if .reviewer == "Claude" then "claude-review" elif .reviewer == "Codex" then "codex-review" else empty end
+      elif .protocol == 2 and (keys | sort) == ["protocol", "reviewer", "source", "user_waiver"] and .reviewer == "Codex" and (.source == "codex-review" or .source == "codex-plugin") then
+        .source
+      else empty end
+  ' 2>/dev/null
 }
 
 # Parses the contract's fenced yaml block that declares `evidence_requirements:`

@@ -124,6 +124,12 @@ describe('HRD-09 terminal runtime migration', () => {
         const shim = join(fakeBin, provider);
         writeFileSync(shim, [
           '#!/bin/sh',
+          ...(provider === 'claude' ? [
+            'if [ "$1" = "plugin" ] && [ "$2" = "list" ] && [ "$3" = "--json" ]; then',
+            "  printf '[]\\n'",
+            '  exit 0',
+            'fi',
+          ] : []),
           'case "$*" in',
           `  --version|-V) printf '%s\\n' '${provider}-fixture 1.0.0'; exit 0 ;;`,
           `  *) printf '%s\\n' ${provider} >> ${JSON.stringify(providerLog)}; exit 99 ;;`,

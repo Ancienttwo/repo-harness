@@ -500,7 +500,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ## Acceptance Policy
 
 ```json
-{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}
+{"protocol":2,"reviewer":"Codex","source":"codex-review","user_waiver":"allowed"}
 ```
 
 ## Allowed Paths

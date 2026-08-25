@@ -2,7 +2,7 @@
 //
 // House style matches src/core/capabilities/registry.ts: no fs, no process
 // execution, no throw-on-data-problem. Git scope capture, provider process
-// invocation, and transcript recovery are effects
+// invocation and external structured-output validation are effects
 // (src/effects/review/cross-review-runner.ts); this module only shapes their
 // inputs/outputs and normalizes/classifies already-collected text and
 // process-outcome facts.
@@ -12,7 +12,7 @@
 // buildReviewSubject rather than adding a third Git scope parser. This file
 // only defines the shape that reused output is projected into.
 
-export const CROSS_REVIEW_PROVIDER_MODES = ["claude", "codex"] as const;
+export const CROSS_REVIEW_PROVIDER_MODES = ["codex", "codex-plugin"] as const;
 export type CrossReviewProviderMode = (typeof CROSS_REVIEW_PROVIDER_MODES)[number];
 
 // Closed error-code union (plan "Trace C" + SSD-04 acceptance): every
@@ -25,6 +25,7 @@ export const CROSS_REVIEW_ERROR_CODES = [
   "auth_failure",
   "provider_nonzero",
   "degraded_scope",
+  "stale_scope",
   "review_budget_exhausted",
 ] as const;
 export type CrossReviewErrorCode = (typeof CROSS_REVIEW_ERROR_CODES)[number];
@@ -70,12 +71,6 @@ export interface CrossReviewFailure {
   readonly scope: CrossReviewScope | null;
   readonly code: CrossReviewErrorCode;
   readonly message: string;
-  /**
-   * Informational only. A timed-out or nonzero-exit run never becomes a
-   * success just because some text was recoverable -- this field lets a
-   * human inspect what was recovered without the result status changing.
-   */
-  readonly recoveredTranscript?: string;
 }
 
 /**
@@ -97,8 +92,6 @@ export interface CrossReviewSkipped {
   readonly attempts: number;
   readonly code: CrossReviewErrorCode;
   readonly message: string;
-  /** Informational only; recovered text never promotes a skipped run to a pass. */
-  readonly recoveredTranscript?: string;
 }
 
 export type CrossReviewResult = CrossReviewSuccess | CrossReviewFailure | CrossReviewSkipped;
@@ -158,14 +151,6 @@ export function matchesAuthFailureSignal(text: string): boolean {
   return AUTH_FAILURE_SIGNAL_PATTERNS.some((pattern) => pattern.test(text));
 }
 
-const CLAUDE_CAPACITY_FAILURE_PATTERNS: readonly RegExp[] = [
-  /(?:^|\n)\s*You(?:['’]ve| have) reached your Fable(?:\s+\d+)?\s+limit\.[\s\S]{0,500}?\/usage-credits(?:\s|$)/i,
-];
-
-export function matchesClaudeCapacityFailureSignal(text: string): boolean {
-  return CLAUDE_CAPACITY_FAILURE_PATTERNS.some((pattern) => pattern.test(text));
-}
-
 // --- Outcome classification (pure decision table) ---------------------------
 
 /**
@@ -182,43 +167,27 @@ export interface ProviderInvocationOutcome {
   readonly error: string;
 }
 
-export interface TranscriptRecoveryOutcome {
-  readonly attempted: boolean;
-  readonly text: string;
-  /** true only when recovery was attempted, found candidate file(s), and extracted no usable text from any of them. */
-  readonly malformed: boolean;
-}
-
 export type CrossReviewClassification =
   | { readonly kind: "success"; readonly transcript: string; readonly usedRecovery: boolean }
   | {
       readonly kind: "failed";
       readonly code: CrossReviewErrorCode;
       readonly message: string;
-      readonly recoveredTranscript?: string;
     };
 
 /**
- * The single place that decides which of the six closed error codes (or
- * success) an already-completed provider invocation maps to. Deliberately
- * stricter than the two source shell skills it replaces: a timeout or
- * nonzero exit is always reported as that explicit failure, even when a
- * transcript was separately recoverable -- recovered text is attached for
- * transparency but never promotes a failed run to a passing one. Never
- * throws; every input shape maps to exactly one output.
+ * Maps already-completed process facts to a closed process-level result.
+ * Provider-specific structured output is validated at its external boundary;
+ * a timeout or nonzero exit can never become a synthesized pass.
  */
 export function classifyCrossReviewOutcome(
   invocation: ProviderInvocationOutcome,
-  recovery: TranscriptRecoveryOutcome,
 ): CrossReviewClassification {
-  const recoveredTranscript = recovery.text.trim() !== "" ? recovery.text : undefined;
-
   if (invocation.timedOut) {
     return {
       kind: "failed",
       code: "timeout",
       message: "provider process timed out",
-      recoveredTranscript,
     };
   }
 
@@ -232,7 +201,6 @@ export function classifyCrossReviewOutcome(
       kind: "failed",
       code,
       message: invocation.error || invocation.stderr || invocation.stdout || `provider exited with status ${invocation.status}`,
-      recoveredTranscript,
     };
   }
 
@@ -240,103 +208,5 @@ export function classifyCrossReviewOutcome(
     return { kind: "success", transcript: invocation.stdout, usedRecovery: false };
   }
 
-  // Clean exit, empty stdout: recovery (claude mode only) decides between
-  // empty_output and malformed_transcript. Codex mode never attempts
-  // recovery (matching its source skill, which has no transcript-recovery
-  // step), so recovery.attempted is always false there.
-  if (!recovery.attempted) {
-    return { kind: "failed", code: "empty_output", message: "provider produced no stdout" };
-  }
-  if (recovery.malformed) {
-    return {
-      kind: "failed",
-      code: "malformed_transcript",
-      message: "provider produced no stdout; the recovered session transcript could not be parsed",
-    };
-  }
-  if (recovery.text.trim() === "") {
-    return {
-      kind: "failed",
-      code: "empty_output",
-      message: "provider produced no stdout and no recoverable session transcript was found",
-    };
-  }
-  return { kind: "success", transcript: recovery.text, usedRecovery: true };
-}
-
-// --- JSONL session-transcript recovery (pure parsing; fs reads are the effect) ---
-
-function textFromContentBlocks(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  const parts: string[] = [];
-  for (const block of content) {
-    if (block && typeof block === "object") {
-      const typed = block as { type?: unknown; text?: unknown };
-      if (typed.type === "text" && typeof typed.text === "string") parts.push(typed.text);
-    }
-  }
-  return parts.join("\n");
-}
-
-/**
- * Parses one line of a Claude Code print-mode session `.jsonl` file. Returns
- * the assistant text if the line is a usable assistant-message entry scoped
- * to one of the given candidate cwd values, or null otherwise (including on
- * a JSON parse failure) -- a null here never throws, it just contributes no
- * text to the candidate's aggregate.
- */
-export function parseJsonlAssistantLine(line: string, cwdCandidates: ReadonlySet<string>): string | null {
-  const trimmed = line.trim();
-  if (!trimmed) return null;
-  let entry: unknown;
-  try {
-    entry = JSON.parse(trimmed);
-  } catch {
-    return null;
-  }
-  if (!entry || typeof entry !== "object") return null;
-  const record = entry as { type?: unknown; cwd?: unknown; message?: unknown };
-  if (record.type !== "assistant") return null;
-  if (typeof record.cwd === "string" && !cwdCandidates.has(record.cwd)) return null;
-  const message = record.message && typeof record.message === "object"
-    ? (record.message as { content?: unknown })
-    : undefined;
-  const text = textFromContentBlocks(message?.content);
-  return text.trim() ? text : null;
-}
-
-export interface RecoveryCandidateFile {
-  readonly mtimeMs: number;
-  readonly lines: readonly string[];
-}
-
-/**
- * Aggregates already-read candidate session files into one recovery outcome:
- * the last usable assistant text from the most recently modified candidate
- * that has any, or `malformed: true` when candidate files existed but none
- * yielded usable text (distinct from no candidates at all, which the caller
- * treats as empty_output rather than malformed_transcript).
- */
-export function selectRecoveredTranscript(
-  candidates: readonly RecoveryCandidateFile[],
-  cwdCandidates: ReadonlySet<string>,
-): { readonly text: string; readonly malformed: boolean } {
-  let best: { readonly mtimeMs: number; readonly text: string } | null = null;
-  for (const candidate of candidates) {
-    let lastText = "";
-    for (const line of candidate.lines) {
-      const text = parseJsonlAssistantLine(line, cwdCandidates);
-      if (text) lastText = text;
-    }
-    if (lastText && (!best || candidate.mtimeMs > best.mtimeMs)) {
-      best = { mtimeMs: candidate.mtimeMs, text: lastText };
-    }
-  }
-  if (best) return { text: best.text, malformed: false };
-  return { text: "", malformed: candidates.length > 0 };
-}
-
-export function toClaudeProjectKey(cwdPath: string): string {
-  return cwdPath.replace(/[\\/]/g, "-");
+  return { kind: "failed", code: "empty_output", message: "provider produced no stdout" };
 }

@@ -26,7 +26,7 @@ const SKILLS_ROOT = join(ROOT, "assets", "skills");
 const MANIFEST_PATH = join(ROOT, "assets", "skill-commands", "manifest.json");
 const PACKAGE_DIR = "repo-harness-cross-review";
 const ROUTER_BODY_BYTE_LIMIT = 2048;
-const REFERENCES = ["claude-mode.md", "codex-mode.md"] as const;
+const REFERENCES = ["codex-plugin-mode.md", "codex-mode.md"] as const;
 
 function readSkill(): string {
   return readFileSync(join(SKILLS_ROOT, PACKAGE_DIR, "SKILL.md"), "utf-8");

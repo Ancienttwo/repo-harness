@@ -23,6 +23,7 @@ function setupRepo(): string {
   mkdirSync(join(cwd, "src"), { recursive: true });
   mkdirSync(join(cwd, "tasks", "archive"), { recursive: true });
   mkdirSync(join(cwd, "docs", "researches"), { recursive: true });
+  mkdirSync(join(cwd, "docs", "architecture"), { recursive: true });
   mkdirSync(join(cwd, "evals", "harness", "reports"), { recursive: true });
   mkdirSync(join(cwd, "scripts"), { recursive: true });
 
@@ -36,6 +37,7 @@ function setupRepo(): string {
   writeFileSync(join(cwd, "tasks", "todos.md"), "# Task Execution Checklist (Primary)\n");
   writeFileSync(join(cwd, "tasks", "lessons.md"), "# Lessons Learned (Self-Improvement Loop)\n");
   writeFileSync(join(cwd, "docs", "researches", "README.md"), "# Research Reports\n");
+  writeFileSync(join(cwd, "docs", "architecture", ".projection-manifest.json"), "{}\n");
   writeFileSync(join(cwd, "evals", "harness", "reports", "profile-comparison.json"), "{}\n");
   writeFileSync(join(cwd, "evals", "harness", "reports", "profile-comparison.md"), "# Report\n");
 
@@ -140,6 +142,30 @@ describe("check-task-sync helper", () => {
       const res = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
       expect(res.status).toBe(0);
       expect(res.stdout).toContain("No substantive repo changes detected");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("ignores the automatic architecture projection manifest as workflow-owned output", () => {
+    const cwd = setupRepo();
+    try {
+      writeFileSync(join(cwd, "docs", "architecture", ".projection-manifest.json"), '{"restamped":true}\n');
+      const res = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("No substantive repo changes detected");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("does not broaden the architecture projection exclusion to sibling docs", () => {
+    const cwd = setupRepo();
+    try {
+      writeFileSync(join(cwd, "docs", "architecture", "index.md"), "# Changed architecture\n");
+      const res = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
+      expect(res.status).toBe(1);
+      expect(res.stdout).toContain("without tasks/ synchronization");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

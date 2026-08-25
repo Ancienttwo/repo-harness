@@ -705,7 +705,7 @@ export function buildProgram(): Command {
 
   program
     .command('cross-review')
-    .description('Deterministic opposite-provider review of the current review scope (repo-harness-cross-review)')
+    .description('Deterministic independent review of the current review scope (repo-harness-cross-review)')
     .requiredOption('--provider <mode>', `Provider to run: ${CROSS_REVIEW_PROVIDER_MODES.join('|')}`)
     .option('--repo <path>', 'Target repo root (defaults to cwd)')
     .option('--base <revision>', 'Base revision to diff against (defaults to the review-subject default base)')

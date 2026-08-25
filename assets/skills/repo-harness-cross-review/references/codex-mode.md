@@ -1,6 +1,7 @@
 # Codex provider mode
 
 Runs the Codex CLI (`codex exec -s read-only`) as a read-only reviewer.
+This is the Claude-host route; Codex hosts use `codex-plugin-mode.md`.
 Codex has its own read-only Bash access, so it re-derives the diff itself
 against the exact pinned base revision (a resolved commit SHA, never a
 floating branch name) rather than receiving embedded diff text -- this

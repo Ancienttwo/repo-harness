@@ -20,11 +20,20 @@ import { spawnSync } from 'child_process';
 
 export type AcceptanceDisposition = 'external_pass' | 'user_waiver' | 'reject';
 
-export type AcceptancePolicy = {
+export type AcceptancePolicyV1 = {
   protocol: 1;
   reviewer: 'Claude' | 'Codex';
   user_waiver: 'allowed' | 'forbidden';
 };
+
+export type AcceptancePolicyV2 = {
+  protocol: 2;
+  reviewer: 'Codex';
+  source: 'codex-review' | 'codex-plugin';
+  user_waiver: 'allowed' | 'forbidden';
+};
+
+export type AcceptancePolicy = AcceptancePolicyV1 | AcceptancePolicyV2;
 
 export type AcceptanceFinding = {
   severity: 'P0' | 'P1' | 'P2' | 'P3';
@@ -50,7 +59,7 @@ export type AcceptanceReceipt = {
   disposition: AcceptanceDisposition;
   expected_reviewer: 'Claude' | 'Codex';
   reviewer: 'Claude' | 'Codex' | 'User';
-  source: 'claude-review' | 'codex-review' | 'user-waiver';
+  source: 'claude-review' | 'codex-review' | 'codex-plugin' | 'user-waiver';
   actor: string | null;
   summary: string;
   findings: AcceptanceFinding[];
@@ -236,16 +245,31 @@ export function parseAcceptancePolicy(contractText: string): AcceptancePolicy {
   } catch (error) {
     fail(`contract Acceptance Policy is invalid JSON: ${(error as Error).message}`);
   }
-  if (!isRecord(value) || value.protocol !== 1) fail('acceptance policy protocol must be 1');
-  if (value.reviewer !== 'Claude' && value.reviewer !== 'Codex') fail('acceptance policy reviewer must be Claude or Codex');
+  if (!isRecord(value) || (value.protocol !== 1 && value.protocol !== 2)) fail('acceptance policy protocol must be 1 or 2');
   if (value.user_waiver !== 'allowed' && value.user_waiver !== 'forbidden') {
     fail('acceptance policy user_waiver must be allowed or forbidden');
   }
   const keys = Object.keys(value).sort();
-  if (JSON.stringify(keys) !== JSON.stringify(['protocol', 'reviewer', 'user_waiver'])) {
-    fail('acceptance policy contains unknown fields');
+  if (value.protocol === 1) {
+    if (value.reviewer !== 'Claude' && value.reviewer !== 'Codex') fail('acceptance policy reviewer must be Claude or Codex');
+    if (JSON.stringify(keys) !== JSON.stringify(['protocol', 'reviewer', 'user_waiver'])) {
+      fail('acceptance policy protocol 1 contains unknown fields');
+    }
+    return value as AcceptancePolicyV1;
   }
-  return value as AcceptancePolicy;
+  if (value.reviewer !== 'Codex') fail('acceptance policy protocol 2 reviewer must be Codex');
+  if (value.source !== 'codex-review' && value.source !== 'codex-plugin') {
+    fail('acceptance policy protocol 2 source must be codex-review or codex-plugin');
+  }
+  if (JSON.stringify(keys) !== JSON.stringify(['protocol', 'reviewer', 'source', 'user_waiver'])) {
+    fail('acceptance policy protocol 2 contains unknown fields');
+  }
+  return value as AcceptancePolicyV2;
+}
+
+export function acceptancePolicySource(policy: AcceptancePolicy): 'claude-review' | 'codex-review' | 'codex-plugin' {
+  if (policy.protocol === 2) return policy.source;
+  return policy.reviewer === 'Claude' ? 'claude-review' : 'codex-review';
 }
 
 async function currentSubject(root: string, targetRef?: string): Promise<ReviewSubject> {
@@ -447,7 +471,7 @@ function validateDisposition(
   findings: AcceptanceFinding[],
 ): void {
   if (disposition === 'external_pass') {
-    const expectedSource = policy.reviewer === 'Claude' ? 'claude-review' : 'codex-review';
+    const expectedSource = acceptancePolicySource(policy);
     if (reviewer !== policy.reviewer || source !== expectedSource || actor !== null) {
       fail('external_pass reviewer/source must match the frozen contract reviewer');
     }
@@ -463,7 +487,7 @@ function validateDisposition(
     }
     return;
   }
-  if (reviewer !== policy.reviewer || source !== (policy.reviewer === 'Claude' ? 'claude-review' : 'codex-review')) {
+  if (reviewer !== policy.reviewer || source !== acceptancePolicySource(policy)) {
     fail('reject reviewer/source must match the frozen contract reviewer');
   }
   if (findings.length === 0) fail('reject requires at least one finding');
@@ -492,7 +516,7 @@ function readReceipt(path: string): AcceptanceReceipt {
   if (!['external_pass', 'user_waiver', 'reject'].includes(String(value.disposition))) fail('AcceptanceReceipt disposition is invalid');
   if (!['Claude', 'Codex'].includes(String(value.expected_reviewer))) fail('AcceptanceReceipt expected_reviewer is invalid');
   if (!['Claude', 'Codex', 'User'].includes(String(value.reviewer))) fail('AcceptanceReceipt reviewer is invalid');
-  if (!['claude-review', 'codex-review', 'user-waiver'].includes(String(value.source))) fail('AcceptanceReceipt source is invalid');
+  if (!['claude-review', 'codex-review', 'codex-plugin', 'user-waiver'].includes(String(value.source))) fail('AcceptanceReceipt source is invalid');
   if (value.actor !== null && (typeof value.actor !== 'string' || value.actor.trim() === '')) fail('AcceptanceReceipt actor is invalid');
   if (value.waiver_grant_sha256 !== null && !/^sha256:[0-9a-f]{64}$/.test(String(value.waiver_grant_sha256))) {
     fail('AcceptanceReceipt waiver_grant_sha256 is invalid');

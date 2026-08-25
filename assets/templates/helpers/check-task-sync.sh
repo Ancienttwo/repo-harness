@@ -31,6 +31,10 @@ has_task_sync_change=0
 
 for file in "${changed_files[@]}"; do
   case "$file" in
+    docs/architecture/.projection-manifest.json)
+      # Automatic architecture projection owns this exact publication receipt.
+      # A digest restamp must not require an unrelated tasks/ narrative edit.
+      ;;
     evals/harness/reports/profile-comparison.json|evals/harness/reports/profile-comparison.md)
       # Generated benchmark evidence is independently byte-bound by
       # verify-sprint. Regeneration must not manufacture a tasks/ narrative

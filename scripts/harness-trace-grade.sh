@@ -118,7 +118,7 @@ if [[ "$acceptance_disposition" == "user_waiver" ]]; then
   else
     record "acceptance_receipt.identity" false "typed user waiver identity is invalid"
   fi
-elif [[ ( "$acceptance_reviewer" == "Claude" && "$acceptance_source" == "claude-review" ) || ( "$acceptance_reviewer" == "Codex" && "$acceptance_source" == "codex-review" ) ]]; then
+elif [[ ( "$acceptance_reviewer" == "Claude" && "$acceptance_source" == "claude-review" ) || ( "$acceptance_reviewer" == "Codex" && ( "$acceptance_source" == "codex-review" || "$acceptance_source" == "codex-plugin" ) ) ]]; then
   record "acceptance_receipt.identity" true "external acceptance identity is valid"
 else
   record "acceptance_receipt.identity" false "external acceptance identity is invalid"
