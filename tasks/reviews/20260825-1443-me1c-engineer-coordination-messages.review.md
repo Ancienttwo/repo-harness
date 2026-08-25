@@ -1,12 +1,12 @@
 # Task Review: me1c-engineer-coordination-messages
 
-> **Status**: Pending
+> **Status**: Review
 > **Plan**: plans/plan-20260825-1443-me1c-engineer-coordination-messages.md
 > **Contract**: tasks/contracts/20260825-1443-me1c-engineer-coordination-messages.contract.md
 > **Notes File**: tasks/notes/20260825-1443-me1c-engineer-coordination-messages.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-08-25 14:43
-> **Recommendation**: fail
+> **Last Updated**: 2026-08-25 21:05
+> **Recommendation**: pass
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: pending
 > **Reviewed Subject Scope**: normalized-final-content
@@ -14,13 +14,13 @@
 
 ## Human Review Card
 
-- Verdict: implementation candidate passes deterministic checks; product acceptance is blocked by the mandatory Runtime Admission Canary
+- Verdict: pass pending exact-subject AcceptanceReceipt projection
 - Change type: code-change
 - Intended files changed: ME-1C protocol/store/CLI/MCP/tests/ArchContext/workflow artifacts only
 - Actual files changed: closed message mechanics; Module message schema and git-common-dir inbox; Engineer CLI/MCP message surfaces; architecture projections and focused tests
 - Commands passed: focused 34-test message/CLI/MCP set; MCP HTTP 15/15; typecheck; architecture/task/workflow/state/init gates; full repository suite 3,087 pass / 2 platform skips / 0 fail
 - Residual risks: recipient inbox scan is linear at 10x; Provider transport lifecycle remains explicitly owned by ME-3A
-- Reviewer action required: do not record AcceptanceReceipt or merge; first complete the Runtime Admission Canary against this candidate
+- Reviewer action required: freeze the final subject, record the already-authorized acceptance evidence, and reverify before merge
 - Rollback: revert the single ME-1C publication commit; no existing TaskMessage bytes or store migration changed
 
 ## Mode Evidence
@@ -34,7 +34,7 @@
 - Waza `/check` run: equivalent strict repository gate set passed; typed acceptance preparation is next
 - Commands run: contract exit criteria plus `bun test --timeout 60000`
 - Manual checks: reviewed exact-key schemas, resource-root checks, current-principal derivation, Binding rotation, persist-before-transport ordering and absence of Task/Lease mutation
-- Supporting artifacts: `.ai/harness/checks/latest.json`, architecture projection manifest, focused unit/CLI/MCP tests
+- Supporting artifacts: `.ai/harness/checks/latest.json`, architecture projection manifest, focused unit/CLI/MCP tests, `docs/researches/20260825-runtime-admission-canary.md`
 - Implementation notes reviewed: yes
 - Run snapshot: full suite 3,087 pass / 2 skip / 0 fail
 
@@ -61,7 +61,7 @@
 
 ## Residual Risks / Follow-ups
 
-- Provider session delivery, wake/reconciliation and transport idempotency are not simulated here; they remain the ME-3A boundary.
+- Codex send/reconciliation was admitted by the first Runtime Admission Canary proof point; durable Provider intent/observation publication, restart faults and lifecycle automation remain the ME-3A boundary.
 - Inbox scanning is deliberately unindexed until measurement shows the 10x pressure point.
 
 ## Scorecard
@@ -84,4 +84,4 @@
 
 ## Summary
 
-- ME-1C core is an implementation-complete, fully tested candidate. The control-plane amendment blocks approval and merge until the Runtime Admission Canary proves the Provider effect boundary without duplicate turns or Task/Lease/Fleet mutation.
+- ME-1C is implementation-complete, fully tested and admitted by the Runtime Admission Canary. Acceptance now requires only the frozen-subject receipt workflow and final reverify.

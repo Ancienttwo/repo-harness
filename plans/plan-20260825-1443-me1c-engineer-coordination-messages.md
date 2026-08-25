@@ -1,6 +1,6 @@
 # Plan: ME-1C Engineer Coordination Messages
 
-> **Status**: Blocked
+> **Status**: Review
 > **Created**: 20260825-1443
 > **Slug**: me1c-engineer-coordination-messages
 > **Planning Source**: codex-plan
@@ -124,7 +124,7 @@ The smallest coherent change is a dedicated module protocol/store that reuses ex
 
 ## Task Breakdown
 
-- [ ] Promote the ME-1C PRD only after the Runtime Admission Canary freezes the Codex effect-correlation contract.
+- [x] Promote the ME-1C PRD after the Runtime Admission Canary freezes the Codex effect-correlation contract.
 - [x] Extract shared closed message mechanics while preserving Task Inbox canonical byte goldens.
 - [x] Implement ModuleMessage event, receipt and observation schemas with strict canonical validation.
 - [x] Implement git-common-dir store, binding-fenced send/list/ack/supersede and resource digest checks.
@@ -142,13 +142,13 @@ The smallest coherent change is a dedicated module protocol/store that reuses ex
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] Promote the ME-1C PRD only after the Runtime Admission Canary freezes the Codex effect-correlation contract.
+- [x] Promote the ME-1C PRD after the Runtime Admission Canary freezes the Codex effect-correlation contract.
 - [x] Extract shared closed message mechanics while preserving Task Inbox canonical byte goldens.
 - [x] Implement ModuleMessage event, receipt and observation schemas with strict canonical validation.
 - [x] Implement git-common-dir store, binding-fenced send/list/ack/supersede and resource digest checks.
 - [x] Add CLI/MCP surfaces and a transport interface that receives only persisted bounded summaries/refs.
 - [x] Add fault, rotation, resource-integrity, transition, byte-golden and full repository verification.
 
-## Current Blocker
+## Runtime Admission Evidence
 
-The 2026-08-25 control-plane amendment places the non-authoritative Runtime Admission Canary before ME-1C approval. The durable message core is retained as a verified candidate, but this plan cannot enter acceptance or merge until the canary proves `persisted event -> exactly one Codex turn -> lost-ack reconciliation` with byte-identical Task, Lease and Fleet authorities.
+`docs/researches/20260825-runtime-admission-canary.md` records the passed first proof point: one persisted event produced exactly one Codex turn; two read-only observations reconciled the same Thread/turn/message tuple after a deliberately unprojected acknowledgement; Task, Lease and repo-harness Fleet projection bytes remained identical. The plan may enter exact-subject acceptance, while Provider intent/observation implementation remains ME-3A.

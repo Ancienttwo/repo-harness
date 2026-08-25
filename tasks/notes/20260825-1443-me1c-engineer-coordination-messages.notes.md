@@ -1,10 +1,10 @@
 # Implementation Notes: me1c-engineer-coordination-messages
 
-> **Status**: Blocked
+> **Status**: Review
 > **Plan**: plans/plan-20260825-1443-me1c-engineer-coordination-messages.md
 > **Contract**: tasks/contracts/20260825-1443-me1c-engineer-coordination-messages.contract.md
 > **Review**: tasks/reviews/20260825-1443-me1c-engineer-coordination-messages.review.md
-> **Last Updated**: 2026-08-25 14:43
+> **Last Updated**: 2026-08-25 21:05
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -39,7 +39,7 @@
 
 ## Deviations From Plan Or Spec
 
-- The 2026-08-25 control-plane amendment inserted a mandatory non-authoritative Runtime Admission Canary before ME-1C approval. The core implementation remains within the amended authority boundary, but its premature PRD promotion and acceptance path are reversed; the branch stays unmerged until the canary freezes exact Codex Thread/turn correlation and lost-ack reconciliation evidence.
+- The 2026-08-25 control-plane amendment inserted a mandatory non-authoritative Runtime Admission Canary before ME-1C approval. The canary subsequently passed with one persisted event, one Codex turn, stable read-only reconciliation and unchanged Task/Lease/Fleet projection; exact evidence and the ME-3A effect-correlation contract are recorded in `docs/researches/20260825-runtime-admission-canary.md`.
 
 ## Tradeoffs Considered
 
@@ -61,6 +61,7 @@
 - Focused message/CLI/MCP tests: 34 passing.
 - HTTP Engineer OAuth E2E: 15 passing.
 - Full repository suite: 3,087 passing, two platform skips, zero failures. The first run exposed a worktree-only `node_modules` symlink escaping the benchmark source root; installing a real worktree-local dependency tree made the affected benchmark file pass 31/31 and the subsequent complete run green.
+- Runtime Admission Canary: passed first proof point with exactly one Codex turn, zero turn tool calls, stable repeated observation and byte-identical Task/Lease/Fleet projection.
 
 ## Promotion Filter
 
