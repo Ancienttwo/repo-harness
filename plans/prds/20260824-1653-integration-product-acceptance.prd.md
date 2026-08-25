@@ -1,9 +1,9 @@
 # PRD: Integration and Product Acceptance (ME-4C)
 
-> **Status**: Draft
+> **Status**: Approved
 > **Slug**: `integration-product-acceptance`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-25T15:51:15+0800
+> **Updated**: 2026-08-26T01:15:00+0800
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
 > **Depends On**: ME-1A and existing Publication/Acceptance; interface-driven work additionally references ME-4B. ME-2C assertions may be consumed as optional evidence but are not authority or an approval prerequisite.
@@ -18,9 +18,9 @@
 - **Core metric**: product acceptance without exact requirement/candidate 0; module evidence reused across wrong candidate 0.
 - **Hard constraint**: module Acceptance, integration verification and product Acceptance are distinct receipts; Human merge remains final.
 - **Key risk**: selecting “current” module publications without frozen revisions/base/head.
-- **Unknowns**: exact combined candidate carrier and product receipt integration with the existing Acceptance Plane remain blockers.
+- **Closed decisions**: the combined candidate is one existing exact Git commit/tree in the integration worktree; product verdict remains the existing verified `AcceptanceReceipt`, projected but never re-issued by ME-4C.
 - **Acceptance scenarios**: requirement closure, publication selection, stale candidate, missing matrix row and independent product gate.
-- **Suggested next step**: advance before temporary/writable Worker automation；freeze one two-module combined candidate fixture using existing deterministic checks and Acceptance receipts。
+- **Build first**: pure closed schemas, exact Git/publication revalidation, immutable content-addressed projections and CLI JSON; no merge builder or new Acceptance authority.
 
 ## Problem
 
@@ -32,10 +32,13 @@ The original requirement subject is an existing Approved work-package PRD plus i
 
 This control-plane capability is independent of how implementation was executed. A candidate produced by a Human、persistent Codex Thread、native child or future Provider adapter enters the same exact-subject gate；ME-3 runtime receipts and ME-2C semantic assertions may supply evidence refs but cannot become prerequisites or acceptance authority。
 
+The P0 combined-candidate carrier is an already-existing Git commit in the current integration worktree. `base_sha` must be an ancestor of `final_head_sha`; every selected publication `head_sha` must also be an ancestor of that final head; `final_tree_sha` is resolved from the commit. ME-4C does not synthesize a merge commit or choose merge order. Candidate construction remains Git/operator authority.
+
+The product verdict is the existing protocol-2 `AcceptanceReceipt` verified by the installed acceptance helper against the same current repository, target revision and normalized final content. ME-4C emits only `ProductAcceptanceProjectionV1`, a content-addressed projection of that already-verified receipt plus the exact envelope/matrix. It cannot sign, waive, replace or reinterpret Acceptance.
+
 ### Feasibility Boundary
 
-- **Confirmed**: exact Git subjects, Publication and Acceptance receipts exist.
-- **[UNKNOWN]**: combined candidate carrier/worktree strategy and existing Acceptance Plane extension point.
+- **Confirmed**: exact Git subjects, Publication and Acceptance receipts exist; an exact existing commit/tree is sufficient as the combined candidate carrier; the existing Acceptance helper is the only verdict authority.
 - **Fail closed**: missing Approved requirement, stale publication, base/head drift or matrix gap blocks product gate.
 
 ## Users
@@ -116,18 +119,33 @@ AcceptanceMatrixV1:
   rows: [{constraint_id: string, evidence_ref: string, evidence_sha256: sha256, result: pass|fail|blocked}]
   verifier_receipt_sha256: sha256
   matrix_sha256: sha256
+
+ProductAcceptanceProjectionV1:
+  protocol: 1
+  kind: repo-harness-product-acceptance-projection
+  envelope_sha256: sha256
+  matrix_sha256: sha256
+  acceptance_receipt_sha256: sha256
+  acceptance_subject_sha256: sha256
+  acceptance_target_revision: sha
+  acceptance_disposition: external_pass|user_waiver
+  projection_sha256: sha256
 ```
+
+`current_publication_pointer_digest` is the canonical digest of the exact lease-owned `CurrentPublicationPointerV1` observed for the selected task. `publication_status_observation_digest` is the digest of the exact canonical lease bytes containing that pointer and status at freeze time. Both are re-read before product projection. ME-4C does not invent a `publication_revision`, infer a pointer from branch/PR facts or translate a missing current pointer into an older publication.
+
+Contracts, envelopes, matrices and product projections are immutable content-addressed evidence under the existing git-common-dir `repo-harness` authority root. They have no mutable `current` pointer and cannot transition Task, Lease, Publication or Acceptance state.
 
 ## Known Unknowns
 
 | Item | Impact | Resolution Path | Owner |
 |---|---|---|---|
-| Combined candidate strategy | Blocks approval | compare integration worktree/merge-tree carriers | Git owner |
-| Product Acceptance receipt hook | Blocks approval | extend existing exact-subject plane, no parallel authority | Acceptance owner |
+| Combined candidate strategy | Resolved | existing exact integration-worktree commit/tree; ancestor checks only | Git owner |
+| Product Acceptance receipt hook | Resolved | verify and project the existing protocol-2 `AcceptanceReceipt`; no new verdict | Acceptance owner |
 
 ## Developer Handoff
 
-Do not implement until candidate carrier and Acceptance extension are Approved. No new requirement or acceptance authority is allowed.
+Implement only the approved existing-commit carrier and non-authoritative product projection. No merge builder, requirement database or acceptance authority is allowed.
 
 ### Acceptance Scripts
 
