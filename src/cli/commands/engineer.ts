@@ -5,6 +5,14 @@ import { EngineerProfileBindingError } from '../../core/engineers/profile-bindin
 import { EngineerPrincipalError } from '../../core/engineers/principal-claim';
 import { EngineerSchedulingError } from '../../core/engineers/scheduling';
 import {
+  ModuleMessageError,
+  buildModuleMessageEvent,
+  type ModuleMessageResourceRefV1,
+  type ModuleMessageScope,
+  type ModuleMessageSubjectRefV1,
+  type ModuleMessageType,
+} from '../../core/engineers/module-message';
+import {
   bindEngineer,
   readEngineerBindingStatus,
   retireEngineer,
@@ -23,6 +31,12 @@ import {
 import { repoHarnessRepoIdFor } from '../../effects/repo-registry';
 import { resolveEngineerPrincipal } from '../../effects/engineers/principal';
 import { collectEngineerOffers } from '../../effects/engineers/scheduling';
+import {
+  ModuleInboxError,
+  acknowledgeModuleMessage,
+  receiveModuleInbox,
+  sendModuleMessage,
+} from '../../effects/engineers/module-inbox';
 import { mcpOAuthTokenStorePath } from '../mcp/auth';
 import { McpOAuthTokenStore } from '../mcp/oauth';
 
@@ -31,7 +45,8 @@ function emit(value: unknown, json: boolean | undefined, human: string): void {
 }
 
 function emitError(error: unknown): void {
-  const code = error instanceof EngineerProfileBindingError || error instanceof EngineerPrincipalError || error instanceof EngineerSchedulingError
+  const code = error instanceof EngineerProfileBindingError || error instanceof EngineerPrincipalError
+    || error instanceof EngineerSchedulingError || error instanceof ModuleMessageError || error instanceof ModuleInboxError
     ? error.code
     : 'engineer_binding_invalid';
   const message = error instanceof Error ? error.message : String(error);
@@ -57,6 +72,21 @@ function nullableOption(value: string, field: string): string | null {
   if (value === 'null') return null;
   if (value.length === 0) throw new Error(`--${field} must be a non-empty value or null`);
   return value;
+}
+
+function nullableIntegerOption(value: string, field: string): number | null {
+  if (value === 'null') return null;
+  const parsed = integerOption(value, field);
+  if (parsed < 1) throw new Error(`--${field} must be a positive integer or null`);
+  return parsed;
+}
+
+function jsonOption<T>(value: string, field: string): T {
+  try {
+    return JSON.parse(value) as T;
+  } catch (error) {
+    throw new Error(`--${field} must be valid JSON`, { cause: error });
+  }
 }
 
 interface CommonExpectedOptions {
@@ -195,6 +225,86 @@ export function buildEngineerCommand(): Command {
         ? `${offers.lane}: no eligible Work Packages`
         : offers.offers.map((offer) => `${offer.work_package_id} ${offer.offer_revision}`).join('\n'));
     }));
+
+  const message = new Command('message').description('Persist and consume closed Module Engineer coordination messages');
+  message
+    .command('send')
+    .requiredOption('--message-id <id>', 'Stable message UUID')
+    .requiredOption('--capability-id <id>', 'Exact target capability_id')
+    .requiredOption('--target-engineer-id <id>', 'Exact target engineer_id')
+    .requiredOption('--scope <scope>', 'module or assignment')
+    .requiredOption('--target-binding-id <id>', 'Exact target Binding UUID or null')
+    .requiredOption('--target-binding-generation <n>', 'Exact target Binding generation or null')
+    .requiredOption('--target-engineer-contract-revision <digest>', 'Exact target Engineer contract revision or null')
+    .requiredOption('--message-type <type>', 'Closed ModuleMessage type')
+    .requiredOption('--subject-ref-json <json>', 'Closed subject_ref object or null')
+    .requiredOption('--resource-refs-json <json>', 'Bounded typed resource_refs array')
+    .requiredOption('--sender-kind <kind>', 'program_orchestrator or human')
+    .requiredOption('--sender-principal <ref>', 'Authenticated local sender principal reference')
+    .requiredOption('--body <summary>', 'Bounded untrusted summary')
+    .requiredOption('--created-at <timestamp>', 'Stable RFC3339 creation time')
+    .option('--json', 'Output JSON')
+    .action((options: {
+      messageId: string;
+      capabilityId: string;
+      targetEngineerId: string;
+      scope: string;
+      targetBindingId: string;
+      targetBindingGeneration: string;
+      targetEngineerContractRevision: string;
+      messageType: string;
+      subjectRefJson: string;
+      resourceRefsJson: string;
+      senderKind: string;
+      senderPrincipal: string;
+      body: string;
+      createdAt: string;
+      json?: boolean;
+    }) => run(() => {
+      if (options.senderKind !== 'program_orchestrator' && options.senderKind !== 'human') {
+        throw new Error('--sender-kind must be program_orchestrator or human');
+      }
+      const event = buildModuleMessageEvent({
+        message_id: options.messageId,
+        capability_id: options.capabilityId,
+        target_engineer_id: options.targetEngineerId,
+        scope: options.scope as ModuleMessageScope,
+        target_binding_id: nullableOption(options.targetBindingId, 'target-binding-id'),
+        target_binding_generation: nullableIntegerOption(options.targetBindingGeneration, 'target-binding-generation'),
+        target_engineer_contract_revision: nullableOption(options.targetEngineerContractRevision, 'target-engineer-contract-revision'),
+        message_type: options.messageType as ModuleMessageType,
+        subject_ref: jsonOption<ModuleMessageSubjectRefV1 | null>(options.subjectRefJson, 'subject-ref-json'),
+        resource_refs: jsonOption<readonly ModuleMessageResourceRefV1[]>(options.resourceRefsJson, 'resource-refs-json'),
+        sender: { kind: options.senderKind, principal_ref: options.senderPrincipal, binding_generation: null },
+        body: options.body,
+        created_at: options.createdAt,
+      });
+      const result = sendModuleMessage({ repo_root: realpathSync(process.cwd()), event });
+      emit(result, options.json, `${result.receipt.delivery_state} ${result.event.message_id} ${result.event.event_digest}`);
+    }));
+  message
+    .command('receive')
+    .requiredOption('--authorization-id <id>', 'Server-minted Engineer OAuth authorization ID')
+    .option('--json', 'Output JSON')
+    .action((options: { authorizationId: string; json?: boolean }) => run(() => {
+      const repoRoot = realpathSync(process.cwd());
+      const principal = resolveEngineerPrincipal({ repo_root: repoRoot, authorization_id: options.authorizationId });
+      const result = receiveModuleInbox({ repo_root: repoRoot, principal });
+      emit(result, options.json, result.entries.map((entry) =>
+        `${entry.receipt.delivery_state} ${entry.event.message_id} ${entry.event.message_type}`).join('\n'));
+    }));
+  message
+    .command('ack')
+    .requiredOption('--authorization-id <id>', 'Server-minted Engineer OAuth authorization ID')
+    .requiredOption('--message-id <id>', 'Exact message UUID')
+    .option('--json', 'Output JSON')
+    .action((options: { authorizationId: string; messageId: string; json?: boolean }) => run(() => {
+      const repoRoot = realpathSync(process.cwd());
+      const principal = resolveEngineerPrincipal({ repo_root: repoRoot, authorization_id: options.authorizationId });
+      const result = acknowledgeModuleMessage({ repo_root: repoRoot, principal, message_id: options.messageId });
+      emit(result, options.json, `${result.receipt.delivery_state} ${result.event.message_id}`);
+    }));
+  engineer.addCommand(message);
 
   const principal = new Command('principal').description('Manage OAuth authorization mappings to current Module Engineer Bindings');
   principal

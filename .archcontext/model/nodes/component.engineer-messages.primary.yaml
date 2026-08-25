@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: component.engineer-messages.primary
+kind: component
+name: Module Engineer Durable Inbox
+status: active
+parent: capability.runtime-harness.engineer-messages
+summary: Owns immutable module/assignment events, delivery receipts, transport observations and digest-gated acknowledgement.

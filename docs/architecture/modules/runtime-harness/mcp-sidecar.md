@@ -1,5 +1,5 @@
 # runtime-harness/mcp-sidecar 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:51ebd9fe33aa9e3963adab694b47d6b43583bfc9b6d9b2a5228718dcda81fbcc" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:296e8b5e44ab88a526cf1726628f371a066cdb971bccde31e49f3a95c27991fb" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:516232395301b2476ccd73bee9592200e4cdf6e820876375733d0108fe9eca87" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:b0a51735b29a824a8d291d85acdea66eb20d977c1020bdab240c56f3493e4590" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.mcp-sidecar`(kind `capability`)
 > **Matched Prefixes**:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`、`src/cli/chatgpt-browser/file-policy.ts`、`src/effects/repo-registry.ts`、`docs/repo-harness-chatgpt-mcp-setup.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`docs/researches/20260711-devspace-chatgpt-local-control.md`
@@ -14,9 +14,11 @@ Provides the local MCP sidecar and its repository access policy boundary.
 
 ```mermaid
 flowchart LR
+  p1_capability_runtime_harness_engineer_messages_f10d1d17["Engineer Messages"]:::component
   p1_capability_runtime_harness_engineer_scheduling_022bd8e0["Engineer Scheduling"]:::component
   p1_capability_runtime_harness_mcp_sidecar_4e12aaf3["MCP Sidecar"]:::component
   p1_component_mcp_sidecar_primary_8f9b418c["MCP Tool Dispatcher"]:::component
+  p1_capability_runtime_harness_mcp_sidecar_4e12aaf3 -->|"Expose authenticated Engineer message send， list and acknowledgement without granting generic Fleet or Provider authority"| p1_capability_runtime_harness_engineer_messages_f10d1d17
   p1_capability_runtime_harness_mcp_sidecar_4e12aaf3 -->|"Project and acquire exact revision-fenced Engineer offers for a verified OAuth principal"| p1_capability_runtime_harness_engineer_scheduling_022bd8e0
   p1_capability_runtime_harness_mcp_sidecar_4e12aaf3 -->|"Dispatch an MCP tool call"| p1_component_mcp_sidecar_primary_8f9b418c
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
@@ -25,8 +27,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:6c69c26eaae1716ac511997c36d8db3271be90deaa57b3d191ffffa6e1235351`).
-- Semantic nodes: `3`; declared relations: `2`.
+- Proof: `proven` (`sha256:b2f533221d0f4381ab78d10170b30b1d5d04fb5a17487c4901f4d76dcfca14b4`).
+- Semantic nodes: `4`; declared relations: `3`.
 
 ### 1.2 模組職責表
 
@@ -34,6 +36,7 @@ flowchart LR
 | --- | --- | --- |
 | `entrypoint.mcp-sidecar.primary` | `src/cli/mcp/server.ts#createRepoHarnessMcpServer` | `sink.mcp-sidecar.primary` → `src/cli/mcp/tools.ts#callMcpTool` |
 | `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#callEngineerTool` | `sink.mcp-sidecar.engineer-principal` → `src/effects/engineers/principal.ts#resolveEngineerPrincipal`、`sink.mcp-sidecar.engineer-offers` → `src/effects/engineers/scheduling.ts#collectEngineerOffers` |
+| `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#messageSendAsEngineer` | `sink.mcp-sidecar.engineer-messages` → `src/effects/engineers/module-inbox.ts#sendModuleMessage` |
 | `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#acquireAsEngineer` | `sink.mcp-sidecar.engineer-acquire` → `src/effects/engineers/scheduling-acquire.ts#acquireScheduledEngineerTask` |
 
 ### 1.3 規模信號
@@ -46,6 +49,7 @@ flowchart LR
 
 出向關係:
 
+- `calls` → `capability.runtime-harness.engineer-messages` — Expose authenticated Engineer message send, list and acknowledgement without granting generic Fleet or Provider authority
 - `calls` → `capability.runtime-harness.engineer-bindings` — Resolve a verified OAuth authorization to the current Engineer Binding before acquiring a Fleet Claim
 - `calls` → `capability.runtime-harness.engineer-scheduling` — Project and acquire exact revision-fenced Engineer offers for a verified OAuth principal
 - `calls` → `component.mcp-sidecar.primary` — Dispatch an MCP tool call
@@ -56,7 +60,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:6c69c26eaae1716ac511997c36d8db3271be90deaa57b3d191ffffa6e1235351`); selectors `2/2`.
+> **Proof**: `proven` (`sha256:b2f533221d0f4381ab78d10170b30b1d5d04fb5a17487c4901f4d76dcfca14b4`); selectors `3/3`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -71,6 +75,22 @@ sequenceDiagram
   else Authorization， graph， dependency， concurrency， Binding， offer， receipt， or compensation validation fails
   p2_engineer_mcp_97bc42c0->>p2_scheduling_authority_0fce7315: Return typed refusal and never release a foreign Claim
     Note over p2_engineer_mcp_97bc42c0: Return typed fail-closed error
+  end
+```
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
+sequenceDiagram
+  autonumber
+  participant p2_engineer_mcp_97bc42c0 as MCP Sidecar
+  participant p2_message_authority_43d726e6 as Engineer Messages
+  p2_engineer_mcp_97bc42c0->>p2_message_authority_43d726e6: Derive sender or recipient from the verified Engineer principal and revalidate message fences
+  alt Return canonical message or acknowledgement state
+  p2_engineer_mcp_97bc42c0->>p2_message_authority_43d726e6: Return the persisted event and receipt projection
+    Note over p2_engineer_mcp_97bc42c0: Return authenticated message result
+  else Principal， Binding， resource or transition validation fails closed
+  p2_engineer_mcp_97bc42c0->>p2_message_authority_43d726e6: Return a typed refusal without acknowledging or mutating another authority
+    Note over p2_engineer_mcp_97bc42c0: Return typed refusal
   end
 ```
 

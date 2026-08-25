@@ -86,6 +86,30 @@ describe('repo-harness engineer CLI', () => {
     expect(status.exitCode).toBe(0);
     expect(JSON.parse(status.stdout).current.current_digest).toBe(active.current_digest);
 
+    const sent = run(root, [
+      'engineer', 'message', 'send',
+      '--message-id', '33333333-3333-4333-8333-333333333333',
+      '--capability-id', 'capability.verification.evals-checks',
+      '--target-engineer-id', engineerId,
+      '--scope', 'assignment',
+      '--target-binding-id', active.current_binding_id,
+      '--target-binding-generation', String(active.binding_generation),
+      '--target-engineer-contract-revision', revision,
+      '--message-type', 'work_request',
+      '--subject-ref-json', 'null',
+      '--resource-refs-json', '[]',
+      '--sender-kind', 'program_orchestrator',
+      '--sender-principal', 'human:cli-test',
+      '--body', 'CLI durable message',
+      '--created-at', '2026-08-25T00:30:00.000Z',
+      '--json',
+    ]);
+    expect(sent.exitCode).toBe(0);
+    expect(JSON.parse(sent.stdout)).toMatchObject({
+      event: { sender: { kind: 'program_orchestrator', principal_ref: 'human:cli-test' } },
+      receipt: { delivery_state: 'pending' },
+    });
+
     const capsuleResult = run(root, ['engineer', 'bootstrap-prompt', '--engineer-id', engineerId, '--json']);
     expect(capsuleResult.exitCode).toBe(0);
     const capsule = JSON.parse(capsuleResult.stdout) as { prompt: string; estimated_tokens: number };
@@ -119,6 +143,7 @@ describe('repo-harness engineer CLI', () => {
     expect(help.stdout).not.toContain('session-bind');
     expect(help.stdout).toContain('principal');
     expect(help.stdout).toContain('offers');
+    expect(help.stdout).toContain('message');
     expect(help.stdout).not.toContain('claim');
     expect(help.stdout).not.toContain('acquire');
     const offersHelp = run(root, ['engineer', 'offers', '--help']);

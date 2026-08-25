@@ -1,12 +1,32 @@
 import { EngineerPrincipalError } from '../../core/engineers/principal-claim';
 import { EngineerSchedulingError } from '../../core/engineers/scheduling';
+import {
+  buildModuleMessageEvent,
+  type ModuleMessageResourceRefV1,
+  type ModuleMessageScope,
+  type ModuleMessageSubjectRefV1,
+  type ModuleMessageType,
+} from '../../core/engineers/module-message';
+import {
+  ModuleInboxError,
+  acknowledgeModuleMessage,
+  receiveModuleInbox,
+  sendModuleMessage,
+} from '../../effects/engineers/module-inbox';
 import { resolveEngineerPrincipal, type EngineerPrincipalFences } from '../../effects/engineers/principal';
 import { collectEngineerOffers } from '../../effects/engineers/scheduling';
 import { acquireScheduledEngineerTask } from '../../effects/engineers/scheduling-acquire';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { redactMcpText } from './redaction';
 
-export const ENGINEER_MCP_TOOL_NAMES = ['engineer_status', 'engineer_offers', 'engineer_acquire'] as const;
+export const ENGINEER_MCP_TOOL_NAMES = [
+  'engineer_status',
+  'engineer_offers',
+  'engineer_acquire',
+  'engineer_messages',
+  'engineer_message_send',
+  'engineer_message_ack',
+] as const;
 export type EngineerMcpToolName = typeof ENGINEER_MCP_TOOL_NAMES[number];
 
 const PARAMETER_NAMES: Readonly<Record<EngineerMcpToolName, readonly string[]>> = Object.freeze({
@@ -29,6 +49,34 @@ const PARAMETER_NAMES: Readonly<Record<EngineerMcpToolName, readonly string[]>> 
     'fleet_offer_revision',
     'authorization_revision',
     'max_attempts',
+  ],
+  engineer_messages: ['repo_id', 'engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision'],
+  engineer_message_send: [
+    'repo_id',
+    'engineer_id',
+    'binding_id',
+    'binding_generation',
+    'engineer_contract_revision',
+    'message_id',
+    'capability_id',
+    'target_engineer_id',
+    'scope',
+    'target_binding_id',
+    'target_binding_generation',
+    'target_engineer_contract_revision',
+    'message_type',
+    'subject_ref',
+    'resource_refs',
+    'body',
+    'created_at',
+  ],
+  engineer_message_ack: [
+    'repo_id',
+    'engineer_id',
+    'binding_id',
+    'binding_generation',
+    'engineer_contract_revision',
+    'message_id',
   ],
 });
 
@@ -116,6 +164,59 @@ export function buildEngineerToolDefinitions(): EngineerMcpToolDefinition[] {
       },
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     },
+    {
+      name: 'engineer_messages',
+      description: 'Consume durable Module Engineer messages for this exact current Binding and persist delivery before returning.',
+      inputSchema: {
+        type: 'object',
+        properties: principalFenceProperties,
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    {
+      name: 'engineer_message_send',
+      description: 'Persist one closed Module or assignment message before any optional transport.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ...principalFenceProperties,
+          message_id: { type: 'string', format: 'uuid' },
+          capability_id: { type: 'string', pattern: '^capability\\.[a-z0-9][a-z0-9-]*\\.[a-z0-9][a-z0-9-]*$' },
+          target_engineer_id: { type: 'string' },
+          scope: { type: 'string', enum: ['module', 'assignment'] },
+          target_binding_id: { type: ['string', 'null'], format: 'uuid' },
+          target_binding_generation: { type: ['number', 'null'], minimum: 1 },
+          target_engineer_contract_revision: { type: ['string', 'null'], pattern: '^sha256:[0-9a-f]{64}$' },
+          message_type: {
+            type: 'string',
+            enum: ['work_request', 'status_update', 'blocker', 'decision_request', 'review_request', 'handoff', 'integration_ready', 'incident', 'subject_notification'],
+          },
+          subject_ref: { type: ['object', 'null'] },
+          resource_refs: { type: 'array', maxItems: 8 },
+          body: { type: 'string', maxLength: 8192 },
+          created_at: { type: 'string' },
+        },
+        required: [
+          'message_id', 'capability_id', 'target_engineer_id', 'scope', 'target_binding_id',
+          'target_binding_generation', 'target_engineer_contract_revision', 'message_type',
+          'subject_ref', 'resource_refs', 'body', 'created_at',
+        ],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    {
+      name: 'engineer_message_ack',
+      description: 'Acknowledge one delivered message only after every typed resource matches its declared digest.',
+      inputSchema: {
+        type: 'object',
+        properties: { ...principalFenceProperties, message_id: { type: 'string', format: 'uuid' } },
+        required: ['message_id'],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
   ];
 }
 
@@ -186,6 +287,51 @@ function requiredInteger(args: Record<string, unknown>, name: string, minimum: n
   const value = optionalInteger(args, name, minimum);
   if (value === undefined) throw new EngineerMcpError('INVALID_ARGUMENT', `${name} is required`);
   return value;
+}
+
+function requiredNullableString(args: Record<string, unknown>, name: string): string | null {
+  if (!(name in args)) throw new EngineerMcpError('INVALID_ARGUMENT', `${name} is required`);
+  if (args[name] === null) return null;
+  return requiredString(args, name);
+}
+
+function requiredNullableInteger(args: Record<string, unknown>, name: string): number | null {
+  if (!(name in args)) throw new EngineerMcpError('INVALID_ARGUMENT', `${name} is required`);
+  if (args[name] === null) return null;
+  return requiredInteger(args, name, 1);
+}
+
+function messageSendAsEngineer(
+  ctx: EngineerMcpToolContext,
+  args: Record<string, unknown>,
+  principal: ReturnType<typeof resolvePrincipal>,
+): EngineerMcpToolResult {
+  if (!Array.isArray(args.resource_refs)) throw new EngineerMcpError('INVALID_ARGUMENT', 'resource_refs must be an array');
+  if (args.subject_ref !== null && (typeof args.subject_ref !== 'object' || Array.isArray(args.subject_ref))) {
+    throw new EngineerMcpError('INVALID_ARGUMENT', 'subject_ref must be an object or null');
+  }
+  const event = buildModuleMessageEvent({
+    message_id: requiredString(args, 'message_id'),
+    capability_id: requiredString(args, 'capability_id'),
+    target_engineer_id: requiredString(args, 'target_engineer_id'),
+    scope: requiredString(args, 'scope') as ModuleMessageScope,
+    target_binding_id: requiredNullableString(args, 'target_binding_id'),
+    target_binding_generation: requiredNullableInteger(args, 'target_binding_generation'),
+    target_engineer_contract_revision: requiredNullableString(args, 'target_engineer_contract_revision'),
+    message_type: requiredString(args, 'message_type') as ModuleMessageType,
+    subject_ref: args.subject_ref as ModuleMessageSubjectRefV1 | null,
+    resource_refs: args.resource_refs as readonly ModuleMessageResourceRefV1[],
+    sender: {
+      kind: 'engineer',
+      principal_ref: principal.engineer_id,
+      binding_generation: principal.binding_generation,
+    },
+    body: requiredString(args, 'body'),
+    created_at: requiredString(args, 'created_at'),
+  });
+  const result = sendModuleMessage({ repo_root: ctx.repoRoot, event });
+  audit(ctx, 'engineer_message_send', 'ok', args);
+  return textResult(result);
 }
 
 function resolvePrincipal(ctx: EngineerMcpToolContext, args: Record<string, unknown>) {
@@ -259,9 +405,25 @@ export function callEngineerTool(
       audit(ctx, name, 'ok', args);
       return textResult(result);
     }
-    return acquireAsEngineer(ctx, args, principal);
+    if (name === 'engineer_acquire') return acquireAsEngineer(ctx, args, principal);
+    if (name === 'engineer_messages') {
+      const result = receiveModuleInbox({ repo_root: ctx.repoRoot, principal });
+      audit(ctx, name, 'ok', args);
+      return textResult(result);
+    }
+    if (name === 'engineer_message_ack') {
+      const result = acknowledgeModuleMessage({
+        repo_root: ctx.repoRoot,
+        principal,
+        message_id: requiredString(args, 'message_id'),
+      });
+      audit(ctx, name, 'ok', args);
+      return textResult(result);
+    }
+    return messageSendAsEngineer(ctx, args, principal);
   } catch (error) {
-    const code = error instanceof EngineerPrincipalError || error instanceof EngineerMcpError || error instanceof EngineerSchedulingError
+    const code = error instanceof EngineerPrincipalError || error instanceof EngineerMcpError
+      || error instanceof EngineerSchedulingError || error instanceof ModuleInboxError
       ? error.code
       : 'ENGINEER_TOOL_FAILED';
     const message = error instanceof Error ? error.message : String(error);

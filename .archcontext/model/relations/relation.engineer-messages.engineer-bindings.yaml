@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.engineer-messages.engineer-bindings
+kind: calls
+source: capability.runtime-harness.engineer-messages
+target: capability.runtime-harness.engineer-bindings
+intent: Revalidate the exact target Engineer and current Binding before assignment delivery, transport and acknowledgement

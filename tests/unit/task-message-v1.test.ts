@@ -45,6 +45,7 @@ describe('TaskMessageEventV1', () => {
     expect(first.body_sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(first.event_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(canonicalTaskMessageEventBytes(first)).toBe(canonicalTaskMessageEventBytes(second));
+    expect(canonicalTaskMessageEventBytes(first)).toBe('{"audience":"owner","body":"please inspect the latest failure","body_sha256":"sha256:750ebf42b1a6653cc247446675bb8e14593ee22e32bdb6494bcdcbdb3816cf61","created_at":"2026-08-23T04:55:00Z","event_digest":"sha256:505203254133b43e5f1694402e2ecd399d04479a1bb1d9cd0113da9940aed9c7","in_reply_to":null,"kind":"repo-harness-task-message-event","message_id":"123e4567-e89b-42d3-a456-426614174000","protocol":1,"scope":"task","sender_id":"alice","sender_kind":"user","sender_trust":"local_operator","target_claim_id":null,"target_generation":null,"task_id":"1111111111111111111111111111111111111111111111111111111111111111","task_revision":"2222222222222222222222222222222222222222222222222222222222222222"}');
     expect(validateTaskMessageEvent(JSON.parse(canonicalTaskMessageEventBytes(first)))).toEqual(first);
   });
 

@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.engineer-messages.lifecycle
+capabilityId: capability.runtime-harness.engineer-messages
+name: Persist and consume one binding-fenced Module Engineer message
+applicability: required
+participants:
+  - id: message-authority
+    nodeId: capability.runtime-harness.engineer-messages
+  - id: binding-authority
+    nodeId: capability.runtime-harness.engineer-bindings
+steps:
+  - id: revalidate-binding
+    from: message-authority
+    to: binding-authority
+    label: Resolve the exact current Engineer and assignment Binding fences
+    evidence:
+      entrypointId: entrypoint.engineer-messages.binding-fence
+      sourceSymbol: validateTarget
+      sinkId: sink.engineer-messages.binding-fence
+outcomes:
+  - id: success
+    kind: success
+    label: Immutable event and pending receipt exist before optional delivery and digest-gated acknowledgement
+    steps:
+      - id: persist-and-return
+        from: message-authority
+        to: binding-authority
+        label: Persist canonical event and receipt before returning the current delivery state
+        evidence:
+          entrypointId: entrypoint.engineer-messages.binding-fence
+          sourceSymbol: validateTarget
+          sinkId: sink.engineer-messages.binding-fence
+    terminal:
+      participant: message-authority
+      label: Return canonical event and current receipt
+  - id: error
+    kind: error
+    label: Stale Binding, persistence, transport observation, resource digest or transition validation fails closed
+    steps:
+      - id: preserve-state
+        from: message-authority
+        to: binding-authority
+        label: Preserve the last durable state and return typed refusal
+        evidence:
+          entrypointId: entrypoint.engineer-messages.binding-fence
+          sourceSymbol: validateTarget
+          sinkId: sink.engineer-messages.binding-fence
+    terminal:
+      participant: message-authority
+      label: Preserve durable state and return typed refusal
