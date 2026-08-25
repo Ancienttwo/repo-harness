@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.engineer-scheduling.acquire
+capabilityId: capability.runtime-harness.engineer-scheduling
+name: Delegate one revalidated Engineer Work Package offer
+applicability: required
+participants:
+  - id: scheduling-authority
+    nodeId: capability.runtime-harness.engineer-scheduling
+  - id: engineer-authority
+    nodeId: capability.runtime-harness.engineer-bindings
+steps:
+  - id: delegate-acquire
+    from: scheduling-authority
+    to: engineer-authority
+    label: Delegate the current offer to the existing Engineer and Fleet acquire path
+    evidence:
+      entrypointId: entrypoint.engineer-scheduling.acquire
+      sourceSymbol: delegateScheduledEngineerAcquire
+      sinkId: sink.engineer-scheduling.engineer-acquire
+outcomes:
+  - id: success
+    kind: success
+    label: The existing WorkEnvelope and immutable ClaimActorReceipt are returned unchanged
+    steps:
+      - id: return-acquire-result
+        from: scheduling-authority
+        to: engineer-authority
+        label: Preserve the delegated WorkEnvelope and ClaimActorReceipt result
+        evidence:
+          entrypointId: entrypoint.engineer-scheduling.acquire
+          sourceSymbol: delegateScheduledEngineerAcquire
+          sinkId: sink.engineer-scheduling.engineer-acquire
+    terminal:
+      participant: scheduling-authority
+      label: Return the scheduled acquire result
+  - id: error
+    kind: error
+    label: The existing Engineer or Fleet acquire authority refuses the revalidated offer
+    steps:
+      - id: propagate-refusal
+        from: scheduling-authority
+        to: engineer-authority
+        label: Propagate the delegated typed refusal without adding a second rollback path
+        evidence:
+          entrypointId: entrypoint.engineer-scheduling.acquire
+          sourceSymbol: delegateScheduledEngineerAcquire
+          sinkId: sink.engineer-scheduling.engineer-acquire
+    terminal:
+      participant: scheduling-authority
+      label: Return typed fail-closed error

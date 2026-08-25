@@ -1059,7 +1059,7 @@ describe('mcp http transport', () => {
         return parseMcpResponse(await response.text());
       };
       const tools = (await call(firstHeaders, 2, 'tools/list')).result.tools as Array<{ name: string }>;
-      expect(tools.map((tool) => tool.name)).toEqual(['engineer_status', 'engineer_acquire']);
+      expect(tools.map((tool) => tool.name)).toEqual(['engineer_status', 'engineer_offers', 'engineer_acquire']);
       const unmapped = await call(firstHeaders, 3, 'tools/call', { name: 'engineer_status', arguments: {} });
       expect(JSON.parse(unmapped.result.content[0].text)).toMatchObject({ error: { code: 'engineer_principal_unmapped' } });
 

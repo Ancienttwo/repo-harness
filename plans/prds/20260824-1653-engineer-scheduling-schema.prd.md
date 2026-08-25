@@ -1,9 +1,10 @@
 # PRD: Engineer Scheduling Schema (ME-1A)
 
-> **Status**: Draft
+> **Status**: Approved
 > **Slug**: `engineer-scheduling-schema`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T22:00:24+0800
+> **Updated**: 2026-08-25T11:49:00+0800
+> **Human Approval**: User approved ME-1A execution on 2026-08-25
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
 > **Depends On**: ME-0A for schema/projection; ME-0B only for engineer-scoped acquire mutation
@@ -18,9 +19,9 @@
 - **Core metric**: identical canonical bytes produce identical eligible Engineer/offer set；missing structured fields never从 prose 推断。
 - **Hard constraint**: `task_id/task_revision` semantics remain unchanged；`work_package_id` is a new logical reference, not a replacement Lease identity。
 - **Key risk**: implicit legacy defaults would create a shadow semantic parser。
-- **Unknowns**: exact migration carrier in Sprint markdown/schema remains to be frozen；fleet-wide concurrency authority is outside P0。
+- **Unknowns**: blocking unknowns closed；future product-acceptance authority and capability/fleet concurrency remain explicitly unavailable outside P0。
 - **Acceptance scenarios**: stable dependency across task revisions、cross-capability dependency、stale Engineer offer、scoped concurrency conflict、cycle rejection、explicit legacy lane。
-- **Suggested next step**: first freeze canonical schema and one-shot migration fixture；do not combine with messages or UI。
+- **Suggested next step**: execute `plans/plan-20260825-1149-me1a-engineer-scheduling-schema.md`；do not combine with messages or UI。
 
 ## Problem
 
@@ -29,18 +30,19 @@ Dependencies cannot safely point only at content-addressed `task_id`, because ed
 ### Product Direction
 
 - `work_package_id` is stable logical identity; task revision remains current content version.
+- The canonical carrier is the deterministic same-commit sibling obtained by replacing `.sprint.md` with `.work-graph.v1.json`; absence is `unclassified`, never an inferred legacy lane.
 - Dependency targets `work_package_id + required_state`.
 - Each P0 work package has exactly one `primary_capability` referencing a canonical ArchContext node ID. Cross-capability prerequisites are explicit `depends_on` Work Package edges; P0 has no multi-capability Engineer qualification field.
-- Concurrency key includes `scope = repo|capability|fleet` and normalized key.
+- P0 concurrency is repository-scoped with a normalized key. `capability` and `fleet` scopes are reserved and rejected until their authorities exist.
 - Required acceptance and rollback boundary are explicit revision-fenced refs to their owning contracts; the scheduler validates presence/revisions but never invents gate semantics.
 - Legacy v1 tasks remain explicitly generic and are never module-routed; migration is explicit and never inferred from prose/path.
 - `EngineerOfferV1` is a rebuildable candidate, not an assignment or Lease. It binds one eligible Engineer to exact graph/work-package/task/binding/Fleet offer revisions; Program Orchestrator may select only from emitted offers.
-- `repo-harness engineer acquire` revalidates those revisions under the existing Fleet acquire boundary, then delegates Claim/worktree/WorkEnvelope creation to `fleet acquire` and invokes ME-0B's receipt/compensation boundary. It never creates a second claim protocol.
+- Authenticated MCP `engineer_acquire` revalidates those revisions under the existing Fleet acquire boundary, then delegates Claim/worktree/WorkEnvelope creation to `fleet acquire` and invokes ME-0B's receipt/compensation boundary. It never creates a second claim protocol.
 
 ### Feasibility Boundary
 
 - **Confirmed**: current task identity/digest and canonical Sprint parsing are deterministic.
-- **[UNKNOWN]**: whether fields live in Sprint columns or a referenced tracked graph while preserving current row identity.
+- **Confirmed**: scheduling fields live in a referenced same-commit JSON graph sibling. Sprint Backlog columns and `task_id/task_revision` derivation remain byte-compatible.
 - **[UNVERIFIED]**: fleet-global concurrency behavior across registered repos under race.
 
 ## Users
@@ -91,7 +93,7 @@ Dependencies cannot safely point only at content-addressed `task_id`, because ed
 
 - **Given**: an offer for graph revision G, binding generation B and Fleet offer revision F.
 - **When**: a dependency, task revision, Binding or Fleet eligibility changes before acquire.
-- **Then**: `engineer acquire` fails with a typed stale-precondition reason and does not call the mutating Fleet acquire path.
+- **Then**: `engineer_acquire` fails with a typed stale-precondition reason and does not call the mutating Fleet acquire path.
 - **Machine-checkable evidence**: adapter spy count zero and unchanged Lease store.
 
 ## Non-goals
@@ -106,7 +108,9 @@ Dependencies cannot safely point only at content-addressed `task_id`, because ed
 
 - validates IDs, capabilities, dependency states, priority, concurrency scope, required acceptance refs and rollback boundary refs;
 - detects missing target, duplicate logical ID and cycle;
-- version/migration decision remains open until the tracked carrier is selected.
+- reads only `<sprint-stem>.work-graph.v1.json` from the same canonical commit as the Sprint;
+- classifies a missing carrier as `unclassified`; `generic-v1` requires zero Work Packages and `engineering-v2` requires exact full Sprint-row coverage;
+- derives Work Package and graph revisions from canonical bytes rather than accepting authored revision fields.
 
 ### Module 2: Deterministic Offer Matching
 
@@ -135,15 +139,17 @@ priority: 50
 concurrency:
   scope: repo
   key: publication-state
-execution_surface: cli
+execution_surface: contract
 integration_group: fleet-publication
 required_acceptance:
   - gate: module
     policy_id: module-default
+    policy_ref: plans/policies/module-default.json
     policy_revision: sha256
 rollback_boundary:
   kind: work_package
   boundary_id: repo-harness:wp-publication-reconcile
+  boundary_ref: plans/rollback/repo-harness-wp-publication-reconcile.json
   boundary_revision: sha256
 
 EngineerOfferV1:
@@ -166,6 +172,8 @@ EngineerOfferV1:
 
 `EngineerOfferV1` contains no Provider Thread ID and grants no authority. The acquire request supplies only `offer_revision` plus exact expected revisions/generation; caller identity is server-derived by ME-0B. A successful bridge returns existing Fleet acquire output and ClaimActorReceipt, not a parallel Engineer lease.
 
+The restricted MCP inventory becomes exactly `engineer_status`, `engineer_offers`, and `engineer_acquire`. `engineer_acquire` requires an exact `EngineerOfferV1` revision and has no compatibility fallback to a bare Fleet offer. Local CLI surfaces are read-only; no unauthenticated CLI acquire route is introduced.
+
 Closed dependency states and their sole authorities:
 
 - `canonical_done`: canonical task/Sprint state authority;
@@ -173,7 +181,7 @@ Closed dependency states and their sole authorities:
 - `publication_integrated`: existing Publication receipt/state authority;
 - `product_accepted`: ME-4C product Acceptance receipt.
 
-P0 accepts only `concurrency.scope: repo`. `capability|fleet` values and an unknown `required_capabilities` key are schema errors until a separate qualification/permit authority is Approved. A dependency owned by another capability is represented only through its repository-qualified Work Package edge and closed required state.
+P0 accepts only `concurrency.scope: repo`. `capability|fleet` values and an unknown `required_capabilities` key are schema errors until a separate qualification/permit authority is Approved. A dependency owned by another capability is represented only through its repository-qualified Work Package edge and closed required state. Offer-time filtering is not the election authority: acquire holds one Git-common-dir exclusive lock for the normalized repository-scoped key across final offer revalidation and the synchronous ME-0B/Fleet acquire call, so different Task locks cannot admit two winners.
 
 ## Performance Targets
 
@@ -186,13 +194,13 @@ P0 accepts only `concurrency.scope: repo`. `capability|fleet` values and an unkn
 
 | Item | Impact | Resolution Path | Owner |
 |---|---|---|---|
-| Sprint column vs referenced graph carrier | Blocks approval | compare digest/migration blast radius | State owner |
-| Explicit legacy window/removal trigger | Compatibility scope | freeze migration contract | Maintainer |
 | Multi-capability Engineer qualification | Deferred outside P0 | separate qualification authority PRD; do not infer from capability graph | Architecture owner |
+| Product Acceptance authority | Deferred outside P0 | ME-4C receipt authority; return `authority_unavailable` until it exists | Acceptance owner |
+| Capability/fleet concurrency | Deferred outside P0 | separate permit authority; schema rejects these scopes | Scheduling owner |
 
 ## Developer Handoff
 
-Do not implement until the canonical carrier and bounded legacy migration are frozen.
+The canonical carrier and bounded legacy migration are frozen by the Approved decisions below.
 
 - **Build first after approval**: pure schema/graph validation, then deterministic projection, then acquire revalidation.
 - **Do not reinterpret**: no prose inference; no task digest change without explicit migration design.
@@ -208,3 +216,13 @@ Do not implement until the canonical carrier and bounded legacy migration are fr
 6. Add `required_capabilities` or `concurrency.scope: capability|fleet`; assert exact schema refusal rather than inferred qualification or a synthetic permit.
 7. Change graph, task, binding and Fleet-offer revisions one at a time; assert every stale offer fails before Fleet mutation, while one current offer produces exactly one canonical Claim and WorkEnvelope.
 8. Remove or stale an acceptance-policy/rollback-boundary ref and assert graph validation fails before offer projection.
+
+## Approved Carrier and Migration Contract
+
+- For `plans/sprints/<name>.sprint.md`, the only scheduling carrier is `plans/sprints/<name>.work-graph.v1.json` at the exact commit returned by the canonical Sprint read. Headers, Plan cells, filenames outside this deterministic relation, local working-tree bytes and Provider context cannot redirect it.
+- A missing carrier is typed `unclassified` and excluded from Module Engineer routing. It is not treated as legacy, empty, or ready.
+- `lane: generic-v1` is the sole legacy marker and requires an empty Work Package list. Generic Fleet continues unchanged, but Module Engineer routing emits no offers for the lane.
+- `lane: engineering-v2` requires every canonical Backlog row to match exactly one `task_ref`, and every node to match one row. Partial migration fails closed.
+- Migration is an explicit tracked artifact change. No command synthesizes capability, dependency, concurrency, acceptance, rollback or Work Package identity from prose or paths.
+- The legacy lane removal trigger is a release audit over all registered repositories reporting zero `generic-v1` carriers. Until that observable trigger, the parser accepts the lane but never routes it.
+- Required acceptance and rollback references carry safe repo-relative `*_ref` plus exact SHA-256 revision. The scheduler validates same-commit bytes; missing or stale references block the graph before offer projection.

@@ -33,11 +33,14 @@ source:
             - id: sink.mcp-sidecar.engineer-principal
               path: "src/effects/engineers/principal.ts"
               symbol: "resolveEngineerPrincipal"
+            - id: sink.mcp-sidecar.engineer-offers
+              path: "src/effects/engineers/scheduling.ts"
+              symbol: "collectEngineerOffers"
         - name: "acquireAsEngineer"
           sinks:
             - id: sink.mcp-sidecar.engineer-acquire
-              path: "src/effects/engineers/acquire.ts"
-              symbol: "acquireEngineerTask"
+              path: "src/effects/engineers/scheduling-acquire.ts"
+              symbol: "acquireScheduledEngineerTask"
 extensions:
   contractFiles:
     agents: "AGENTS.md"

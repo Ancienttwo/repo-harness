@@ -42,7 +42,7 @@ describe('restricted Engineer MCP tools', () => {
   test('profile inventory is exact and contains no generic authority surfaces', () => {
     const policy = getMcpPolicy('engineer');
     const names = buildMcpToolDefinitions(policy, { enableChatgptBrowser: true }).map((tool) => tool.name);
-    expect(names).toEqual(['engineer_status', 'engineer_acquire']);
+    expect(names).toEqual(['engineer_status', 'engineer_offers', 'engineer_acquire']);
     expect(names.some((name) => /shell|read|write|fleet|publication|acceptance|binding|browser|agent/.test(name))).toBe(false);
   });
 

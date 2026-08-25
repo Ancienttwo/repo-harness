@@ -6,13 +6,13 @@ applicability: required
 participants:
   - id: engineer-mcp
     nodeId: capability.runtime-harness.mcp-sidecar
-  - id: engineer-authority
-    nodeId: capability.runtime-harness.engineer-bindings
+  - id: scheduling-authority
+    nodeId: capability.runtime-harness.engineer-scheduling
 steps:
   - id: acquire-and-publish
     from: engineer-mcp
-    to: engineer-authority
-    label: Reuse Fleet acquire and publish immutable Claim actor provenance
+    to: scheduling-authority
+    label: Revalidate the exact Engineer offer before delegated Fleet acquisition
     evidence:
       entrypointId: entrypoint.mcp-sidecar.engineer-tools
       sourceSymbol: acquireAsEngineer
@@ -24,7 +24,7 @@ outcomes:
     steps:
       - id: return-receipt
         from: engineer-mcp
-        to: engineer-authority
+        to: scheduling-authority
         label: Return the live-validated envelope and immutable receipt
         evidence:
           entrypointId: entrypoint.mcp-sidecar.engineer-tools
@@ -35,11 +35,11 @@ outcomes:
       label: Return authenticated acquire result
   - id: error
     kind: error
-    label: Authorization, Binding, offer, receipt, or compensation validation fails
+    label: Authorization, graph, dependency, concurrency, Binding, offer, receipt, or compensation validation fails
     steps:
       - id: fail-closed
         from: engineer-mcp
-        to: engineer-authority
+        to: scheduling-authority
         label: Return typed refusal and never release a foreign Claim
         evidence:
           entrypointId: entrypoint.mcp-sidecar.engineer-tools

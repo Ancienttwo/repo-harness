@@ -1,6 +1,6 @@
 # runtime-harness/engineer-bindings 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" sourceDigest="sha256:ea3490fe438e5535acc18d1615b607ab4c4f06aaa0fb8205600c4a12ab2d8cb1" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:6d768bdb78fc24bdddb308326591d6c2ef554926b93f89c9078af0015322c598" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" sourceDigest="sha256:e18d24b7521087fda90d63d0831a6b3b8090ac77c6d8d944fe8e9b0ce11ee71b" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:eca9c0e1cdfae5e87b3fc3aab9b8ca5ac024351e787628c4755cacd4d1fc3381" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-bindings`(kind `capability`)
 > **Matched Prefixes**:`agents/engineers/**`、`src/core/engineers/**`、`src/effects/engineers/**`、`src/cli/commands/engineer.ts`
@@ -49,6 +49,7 @@ flowchart LR
 
 入向關係:
 
+- `calls` ← `capability.runtime-harness.engineer-scheduling` — Revalidate the exact current Engineer contract and delegate the elected offer to the existing Engineer acquire authority
 - `calls` ← `capability.runtime-harness.mcp-sidecar` — Resolve a verified OAuth authorization to the current Engineer Binding before acquiring a Fleet Claim
 
 ## 2. P2:端到端數據流

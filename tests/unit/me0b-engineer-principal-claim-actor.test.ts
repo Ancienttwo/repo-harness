@@ -17,6 +17,7 @@ import {
 } from '../../src/core/engineers/principal-claim';
 import { engineerSha256, type EngineerBindingV1 } from '../../src/core/engineers/profile-binding';
 import {
+  listLiveClaimActorReceiptsForEngineer,
   publishClaimActorReceipt,
   readClaimActorReceipt,
   validateClaimActorReceiptLive,
@@ -167,6 +168,43 @@ describe('ME-0B principal and claim actor protocols', () => {
           unit_ref: work.unit_ref,
         },
       } as never))).toThrow('does not match live Lease');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('live receipt listing counts only the exact current Lease owner', () => {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-me1a-live-receipts-'));
+    try {
+      execFileSync('git', ['init', '-q'], { cwd: root });
+      const work = envelope();
+      const receipt = buildClaimActorReceipt({ envelope: work, principal: principal(), session_id: null, bound_at: '2026-08-25T00:02:00.000Z' });
+      publishClaimActorReceipt(root, receipt);
+      const live = listLiveClaimActorReceiptsForEngineer(root, engineerId, () => ({
+        record: {
+          claim_id: work.claim_id,
+          generation: work.generation,
+          task_revision: work.task_revision,
+          state: 'bound',
+        },
+      } as never));
+      expect(live).toEqual([receipt]);
+      expect(listLiveClaimActorReceiptsForEngineer(root, engineerId, () => ({
+        record: {
+          claim_id: work.claim_id,
+          generation: work.generation,
+          task_revision: work.task_revision,
+          state: 'released',
+        },
+      } as never))).toEqual([]);
+      expect(listLiveClaimActorReceiptsForEngineer(root, engineerId, () => ({
+        record: {
+          claim_id: '44444444-4444-4444-8444-444444444444',
+          generation: work.generation + 1,
+          task_revision: work.task_revision,
+          state: 'bound',
+        },
+      } as never))).toEqual([]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

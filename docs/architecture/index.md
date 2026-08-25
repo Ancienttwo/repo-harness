@@ -98,7 +98,7 @@ Project
 
 ## Capability 地图
 
-`.ai/harness/policy.json#context.capability_source` 选中的 capability 权威声明 12 个 capability，分属 5 个 architecture domain；本仓库的权威是 `.archcontext/model/nodes/*.yaml`。
+`.ai/harness/policy.json#context.capability_source` 选中的 capability 权威声明 13 个 capability，分属 5 个 architecture domain；本仓库的权威是 `.archcontext/model/nodes/*.yaml`。
 下图按 domain 分组，只画在源码里核实过的强依赖边（import 或运行时调用），
 虚线是 verification 的 gate 关系而非代码依赖。
 
@@ -127,6 +127,7 @@ flowchart LR
     direction TB
     GlobalRuntime(["global-runtime-reconciliation<br/>全局 runtime closure 与显式外部工具刷新"]):::harness
     EngineerBindings(["engineer-bindings<br/>tracked Engineer 契约与 shared binding authority"]):::harness
+    EngineerScheduling(["engineer-scheduling<br/>Work Graph、Engineer Offer 与 acquire fence"]):::harness
     HookAdapters(["hook-adapters<br/>宿主 hook 路由与安装器"]):::harness
     McpSidecar(["mcp-sidecar<br/>本地 MCP 服务与仓库注册表"]):::harness
   end
@@ -153,6 +154,8 @@ flowchart LR
   Adoption --> McpSidecar
   HookAdapters --> ContractAssets
   HookAdapters --> ActionCommands
+  EngineerScheduling --> EngineerBindings
+  McpSidecar --> EngineerScheduling
   McpSidecar --> ContractAssets
   McpSidecar --> CodegraphReadiness
   GeneralRepoAccess --> McpSidecar
@@ -165,6 +168,7 @@ flowchart LR
   EvalsChecks -.->|gate| ContractAssets
   EvalsChecks -.->|gate| GlobalRuntime
   EvalsChecks -.->|gate| EngineerBindings
+  EvalsChecks -.->|gate| EngineerScheduling
   EvalsChecks -.->|gate| HookAdapters
   EvalsChecks -.->|gate| McpSidecar
   EvalsChecks -.->|gate| GeneralRepoAccess
@@ -192,6 +196,8 @@ flowchart LR
 | adoption -> mcp-sidecar | `src/cli/commands/adoption-plan.ts` 导入 `../../effects/repo-registry` 的 `registerRepoHarnessRepo` |
 | hook-adapters -> contract-assets | `src/cli/hook/mutation-observed.ts` 以 `capability-context request` 驱动 context-contract-sync 级联，而不是自带第二份 capability-resolver |
 | hook-adapters -> action-commands | `src/cli/installer/install-profile.ts` 读取 `assets/skill-commands/manifest.json` 并按名取用各命令源目录 |
+| engineer-scheduling -> engineer-bindings | `src/effects/engineers/scheduling-acquire.ts` 重验精确 Engineer 合同后，通过 `delegateScheduledEngineerAcquire` 调用既有 ME-0B acquire authority |
+| mcp-sidecar -> engineer-scheduling | `src/cli/mcp/engineer-tools.ts` 调用 scheduling effects 投影并获取带 revision fence 的 Engineer offer |
 | mcp-sidecar -> contract-assets | `src/cli/mcp/tools.ts` 导入 `../runtime/helper-runner` 的 `runHelper` |
 | mcp-sidecar -> codegraph-readiness | `src/cli/mcp/server.ts`、`coding-tools.ts`、`reader-tools.ts` 导入 `./codegraph-adapter` |
 | general-repo-access -> mcp-sidecar | `src/cli/mcp/general-repo-access.ts` 导入同目录的 `./types` / `./paths` / `./audit` / `./redaction` 与 `../../effects/repo-registry` |
@@ -217,6 +223,7 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 | `runtime-harness-hook-adapters` | `assets/hooks` | 宿主 hook 事件的进程内路由、handler 与安装器 | [hook-adapters](modules/runtime-harness/hook-adapters.md) |
 | `runtime-harness-global-runtime-reconciliation` | `package.json` | 校验 package-local ArchContext closure，并只在显式选择时刷新 mutable provider | [global-runtime-reconciliation](modules/runtime-harness/global-runtime-reconciliation.md) |
 | `runtime-harness-engineer-bindings` | `agents/engineers` | tracked Engineer 行为契约、shared binding authority 与 operator-only projection | [engineer-bindings](modules/runtime-harness/engineer-bindings.md) |
+| `runtime-harness-engineer-scheduling` | `src/core/engineers/scheduling.ts` | 显式 Work Graph、确定性 Engineer Offer、repo concurrency fence 与 ME-0B acquire bridge | [engineer-scheduling](modules/runtime-harness/engineer-scheduling.md) |
 | `runtime-harness-mcp-sidecar` | `src/cli/mcp` | 本地 MCP sidecar 的传输、策略、审计与仓库注册表 | [mcp-sidecar](modules/runtime-harness/mcp-sidecar.md) |
 | `runtime-mcp-general-repo-access` | `src/cli/mcp/general-repo-access.ts` | 受策略与授权约束的通用仓库读写工具面 | [general-repo-access](modules/runtime-mcp/general-repo-access.md) |
 | `verification-codegraph-readiness` | `scripts/ensure-codegraph.sh` | CodeGraph 可用性探测、解析与 MCP 适配 | [codegraph-readiness](modules/verification/codegraph-readiness.md) |
@@ -282,7 +289,7 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 - Treat user-level `~/.codex/hooks.json` and `~/.claude/settings.json` as host adapters. Keep hook implementation under `.ai/hooks/`, and treat repo-local `.claude/settings.json` / `.codex/hooks.json` hook adapters as retired legacy config.
 - Consider adding `bun scripts/capability-resolver.ts validate --format text` to the strict workflow gate after the architecture registry has been used through one more real slice.
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:626f47ba29a0a8226cc68ad511647a6bddfea55a0149eb77649ecc54504a9404" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:f6565756f3a77525db533eddc2be03608fa8a7c668cbde61e6a52febd9ad5155" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:2c66982839b84e8a6cd08274a15de7cdac83e007919bdae966f519b67fdc94f4" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:fea1126d2c0b51fff64b3ad2a6f3f8eebbece952ca30576a87a31aedfb346c5b" -->
 # Architecture Index
 
 Generated: 1970-01-01T00:00:00.000Z
@@ -293,6 +300,7 @@ Generated: 1970-01-01T00:00:00.000Z
 - [Adoption](modules/public-surface/adoption.md) — capability / active
 - [Root Router](modules/public-surface/root-router.md) — capability / active
 - [Engineer Bindings](modules/runtime-harness/engineer-bindings.md) — capability / active
+- [Engineer Scheduling](modules/runtime-harness/engineer-scheduling.md) — capability / active
 - [Global Runtime Reconciliation](modules/runtime-harness/global-runtime-reconciliation.md) — capability / active
 - [Hook Adapters](modules/runtime-harness/hook-adapters.md) — capability / active
 - [MCP Sidecar](modules/runtime-harness/mcp-sidecar.md) — capability / active
@@ -309,12 +317,14 @@ Generated: 1970-01-01T00:00:00.000Z
 - capability.verification.codegraph-readiness -> component.codegraph-readiness.primary — calls
 - capability.workflow-engine.contract-assets -> component.contract-assets.primary — calls
 - capability.runtime-harness.engineer-bindings -> component.engineer-bindings.primary — calls
+- capability.runtime-harness.engineer-scheduling -> capability.runtime-harness.engineer-bindings — calls
 - capability.verification.evals-checks -> component.evals-checks.primary — calls
 - capability.runtime-mcp.general-repo-access -> component.general-repo-access.primary — calls
 - capability.runtime-harness.global-runtime-reconciliation -> component.global-runtime-reconciliation.primary — calls
 - capability.runtime-harness.hook-adapters -> component.hook-adapters.primary — calls
 - capability.workflow-engine.inspection-migration -> component.inspection-migration.primary — calls
 - capability.runtime-harness.mcp-sidecar -> capability.runtime-harness.engineer-bindings — calls
+- capability.runtime-harness.mcp-sidecar -> capability.runtime-harness.engineer-scheduling — calls
 - capability.runtime-harness.mcp-sidecar -> component.mcp-sidecar.primary — calls
 - capability.public-surface.root-router -> component.root-router.primary — calls
 
