@@ -3,6 +3,7 @@ import { realpathSync } from 'fs';
 
 import { EngineerProfileBindingError } from '../../core/engineers/profile-binding';
 import { EngineerPrincipalError } from '../../core/engineers/principal-claim';
+import { EngineerSchedulingError } from '../../core/engineers/scheduling';
 import {
   bindEngineer,
   readEngineerBindingStatus,
@@ -20,6 +21,8 @@ import {
   revokeEngineerPrincipal,
 } from '../../effects/engineers/principal-store';
 import { repoHarnessRepoIdFor } from '../../effects/repo-registry';
+import { resolveEngineerPrincipal } from '../../effects/engineers/principal';
+import { collectEngineerOffers } from '../../effects/engineers/scheduling';
 import { mcpOAuthTokenStorePath } from '../mcp/auth';
 import { McpOAuthTokenStore } from '../mcp/oauth';
 
@@ -28,7 +31,7 @@ function emit(value: unknown, json: boolean | undefined, human: string): void {
 }
 
 function emitError(error: unknown): void {
-  const code = error instanceof EngineerProfileBindingError || error instanceof EngineerPrincipalError
+  const code = error instanceof EngineerProfileBindingError || error instanceof EngineerPrincipalError || error instanceof EngineerSchedulingError
     ? error.code
     : 'engineer_binding_invalid';
   const message = error instanceof Error ? error.message : String(error);
@@ -175,6 +178,23 @@ export function buildEngineerCommand(): Command {
       emit(current, options.json, `${current.state} ${current.current_binding_id} generation=${current.binding_generation}`);
     }));
   engineer.addCommand(binding);
+
+  engineer
+    .command('offers')
+    .description('Inspect deterministic Work Package offers for one enrolled Engineer authorization')
+    .requiredOption('--authorization-id <id>', 'Server-minted Engineer OAuth authorization ID')
+    .option('--json', 'Output JSON')
+    .action((options: { authorizationId: string; json?: boolean }) => run(() => {
+      const repoRoot = realpathSync(process.cwd());
+      const principal = resolveEngineerPrincipal({
+        repo_root: repoRoot,
+        authorization_id: options.authorizationId,
+      });
+      const offers = collectEngineerOffers({ repo_root: repoRoot, principal });
+      emit(offers, options.json, offers.offers.length === 0
+        ? `${offers.lane}: no eligible Work Packages`
+        : offers.offers.map((offer) => `${offer.work_package_id} ${offer.offer_revision}`).join('\n'));
+    }));
 
   const principal = new Command('principal').description('Manage OAuth authorization mappings to current Module Engineer Bindings');
   principal

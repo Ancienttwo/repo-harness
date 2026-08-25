@@ -1,22 +1,32 @@
 import { EngineerPrincipalError } from '../../core/engineers/principal-claim';
-import { acquireEngineerTask } from '../../effects/engineers/acquire';
+import { EngineerSchedulingError } from '../../core/engineers/scheduling';
 import { resolveEngineerPrincipal, type EngineerPrincipalFences } from '../../effects/engineers/principal';
+import { collectEngineerOffers } from '../../effects/engineers/scheduling';
+import { acquireScheduledEngineerTask } from '../../effects/engineers/scheduling-acquire';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { redactMcpText } from './redaction';
 
-export const ENGINEER_MCP_TOOL_NAMES = ['engineer_status', 'engineer_acquire'] as const;
+export const ENGINEER_MCP_TOOL_NAMES = ['engineer_status', 'engineer_offers', 'engineer_acquire'] as const;
 export type EngineerMcpToolName = typeof ENGINEER_MCP_TOOL_NAMES[number];
 
 const PARAMETER_NAMES: Readonly<Record<EngineerMcpToolName, readonly string[]>> = Object.freeze({
   engineer_status: ['repo_id', 'engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision'],
+  engineer_offers: ['repo_id', 'engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision'],
   engineer_acquire: [
     'repo_id',
     'engineer_id',
     'binding_id',
     'binding_generation',
     'engineer_contract_revision',
+    'work_package_id',
+    'work_package_revision',
+    'work_graph_revision',
     'task_id',
+    'task_revision',
     'offer_revision',
+    'dependency_revision',
+    'concurrency_revision',
+    'fleet_offer_revision',
     'authorization_revision',
     'max_attempts',
   ],
@@ -68,18 +78,40 @@ export function buildEngineerToolDefinitions(): EngineerMcpToolDefinition[] {
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     {
+      name: 'engineer_offers',
+      description: 'Project deterministic Work Package offers for this exact authenticated Module Engineer.',
+      inputSchema: {
+        type: 'object',
+        properties: principalFenceProperties,
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    {
       name: 'engineer_acquire',
-      description: 'Acquire one exact Fleet offer as this authenticated Module Engineer and publish immutable claim provenance.',
+      description: 'Acquire one exact Engineer Work Package offer and publish immutable claim provenance.',
       inputSchema: {
         type: 'object',
         properties: {
           ...principalFenceProperties,
+          work_package_id: { type: 'string', pattern: '^[a-z0-9][a-z0-9-]{0,127}$' },
+          work_package_revision: { type: 'string', pattern: '^sha256:[0-9a-f]{64}$' },
+          work_graph_revision: { type: 'string', pattern: '^sha256:[0-9a-f]{64}$' },
           task_id: { type: 'string', pattern: '^[0-9a-f]{64}$' },
+          task_revision: { type: 'string', pattern: '^[0-9a-f]{64}$' },
           offer_revision: { type: 'string', pattern: '^sha256:[0-9a-f]{64}$' },
+          dependency_revision: { type: 'string', pattern: '^sha256:[0-9a-f]{64}$' },
+          concurrency_revision: { type: 'string', pattern: '^sha256:[0-9a-f]{64}$' },
+          fleet_offer_revision: { type: 'string', pattern: '^sha256:[0-9a-f]{64}$' },
           authorization_revision: { type: 'number', minimum: 0 },
           max_attempts: { type: 'number', minimum: 1, maximum: 16 },
         },
-        required: ['repo_id', 'task_id', 'offer_revision', 'authorization_revision'],
+        required: [
+          'repo_id', 'engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision',
+          'work_package_id', 'work_package_revision', 'work_graph_revision', 'task_id', 'task_revision',
+          'offer_revision', 'dependency_revision', 'concurrency_revision', 'fleet_offer_revision',
+          'authorization_revision',
+        ],
         additionalProperties: false,
       },
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
@@ -185,13 +217,22 @@ function acquireAsEngineer(
   if (maxAttempts !== undefined && maxAttempts > 16) {
     throw new EngineerMcpError('INVALID_ARGUMENT', 'max_attempts must be an integer from 1 through 16');
   }
-  const result = acquireEngineerTask({
+  const result = acquireScheduledEngineerTask({
     repo_root: ctx.repoRoot,
     principal,
     assertion: {
-      repo_id: requiredString(args, 'repo_id'),
-      task_id: requiredString(args, 'task_id'),
       offer_revision: requiredString(args, 'offer_revision'),
+      work_package_id: requiredString(args, 'work_package_id'),
+      work_package_revision: requiredString(args, 'work_package_revision'),
+      work_graph_revision: requiredString(args, 'work_graph_revision'),
+      task_id: requiredString(args, 'task_id'),
+      task_revision: requiredString(args, 'task_revision'),
+      dependency_revision: requiredString(args, 'dependency_revision'),
+      concurrency_revision: requiredString(args, 'concurrency_revision'),
+      binding_id: requiredString(args, 'binding_id'),
+      binding_generation: requiredInteger(args, 'binding_generation', 1),
+      engineer_contract_revision: requiredString(args, 'engineer_contract_revision'),
+      fleet_offer_revision: requiredString(args, 'fleet_offer_revision'),
       authorization_revision: requiredInteger(args, 'authorization_revision', 0),
     },
     max_attempts: maxAttempts,
@@ -213,9 +254,14 @@ export function callEngineerTool(
       audit(ctx, name, 'ok', args);
       return textResult(result);
     }
+    if (name === 'engineer_offers') {
+      const result = collectEngineerOffers({ repo_root: ctx.repoRoot, principal });
+      audit(ctx, name, 'ok', args);
+      return textResult(result);
+    }
     return acquireAsEngineer(ctx, args, principal);
   } catch (error) {
-    const code = error instanceof EngineerPrincipalError || error instanceof EngineerMcpError
+    const code = error instanceof EngineerPrincipalError || error instanceof EngineerMcpError || error instanceof EngineerSchedulingError
       ? error.code
       : 'ENGINEER_TOOL_FAILED';
     const message = error instanceof Error ? error.message : String(error);

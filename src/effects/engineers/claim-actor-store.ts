@@ -1,4 +1,4 @@
-import { constants, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'fs';
+import { constants, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, writeFileSync } from 'fs';
 import { dirname, join, relative, resolve, sep } from 'path';
 
 import {
@@ -15,6 +15,7 @@ import { readLease, type LeaseRead } from '../state/coordination-lease-store';
 const RECEIPT_ROOT = 'repo-harness/engineers/v1/claim-actors';
 const TASK_ID = /^[0-9a-f]{64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const ENGINEER_ID = /^engineer:capability\.[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*$/;
 
 function pathFor(cwd: string, taskId: string, claimId: string): { common: string; root: string; task: string; receipt: string } {
   if (!TASK_ID.test(taskId) || !UUID.test(claimId)) throw new EngineerPrincipalError('claim_actor_receipt_invalid', 'unsafe claim actor receipt identity');
@@ -138,4 +139,46 @@ export function validateClaimActorReceiptLive<TEnvelope extends ClaimActorEnvelo
     throw new EngineerPrincipalError('claim_actor_receipt_invalid', 'claim actor receipt does not match live Lease');
   }
   return receipt;
+}
+
+/**
+ * Read immutable actor receipts and retain only Claims that are still the live
+ * Lease owner. Historical receipts never count toward Profile concurrency.
+ */
+export function listLiveClaimActorReceiptsForEngineer(
+  cwd: string,
+  engineerId: string,
+  leaseReader: (cwd: string, taskId: string) => LeaseRead = readLease,
+): readonly ClaimActorReceiptV1[] {
+  if (!ENGINEER_ID.test(engineerId)) {
+    throw new EngineerPrincipalError('claim_actor_receipt_invalid', 'engineer_id is invalid for Claim actor listing');
+  }
+  const common = resolve(resolveGitCommonDirectory(cwd));
+  const root = join(common, RECEIPT_ROOT);
+  if (!safeDirectoryExists(common, root)) return Object.freeze([]);
+  const receipts: ClaimActorReceiptV1[] = [];
+  for (const taskId of readdirSync(root).sort()) {
+    if (!TASK_ID.test(taskId)) throw new EngineerPrincipalError('claim_actor_receipt_invalid', `unexpected Claim actor task entry: ${taskId}`);
+    const taskPath = join(root, taskId);
+    const taskStat = lstatSync(taskPath);
+    if (!taskStat.isDirectory() || taskStat.isSymbolicLink()) {
+      throw new EngineerPrincipalError('claim_actor_receipt_invalid', `unsafe Claim actor task directory: ${taskId}`);
+    }
+    for (const entry of readdirSync(taskPath).sort()) {
+      const claimId = entry.endsWith('.json') ? entry.slice(0, -'.json'.length) : '';
+      if (!UUID.test(claimId)) throw new EngineerPrincipalError('claim_actor_receipt_invalid', `unexpected Claim actor receipt entry: ${entry}`);
+      const path = join(taskPath, entry);
+      const stat = lstatSync(path);
+      if (!stat.isFile() || stat.isSymbolicLink()) throw new EngineerPrincipalError('claim_actor_receipt_invalid', `unsafe Claim actor receipt: ${entry}`);
+      const receipt = parse(readFileSync(path, 'utf8'));
+      if (receipt.task_id !== taskId || receipt.claim_id !== claimId) {
+        throw new EngineerPrincipalError('claim_actor_receipt_invalid', `Claim actor receipt identity does not match path: ${entry}`);
+      }
+      if (receipt.engineer_id !== engineerId) continue;
+      const lease = leaseReader(cwd, taskId).record;
+      if (lease && lease.claim_id === claimId && lease.generation === receipt.lease_generation
+        && lease.task_revision === receipt.task_revision && lease.state !== 'released') receipts.push(receipt);
+    }
+  }
+  return Object.freeze(receipts);
 }

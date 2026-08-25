@@ -1,5 +1,5 @@
 # runtime-harness/mcp-sidecar 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:c8f9664c5ec8aba49ef80fe504459dfe9c96e0519dd01bc3fb1067a99d664452" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:8d3e591e8757b575ea10100f9aa4d12c5b7de82ae61f46c688964abe02e61f51" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:51ebd9fe33aa9e3963adab694b47d6b43583bfc9b6d9b2a5228718dcda81fbcc" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:296e8b5e44ab88a526cf1726628f371a066cdb971bccde31e49f3a95c27991fb" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.mcp-sidecar`(kind `capability`)
 > **Matched Prefixes**:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`、`src/cli/chatgpt-browser/file-policy.ts`、`src/effects/repo-registry.ts`、`docs/repo-harness-chatgpt-mcp-setup.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`docs/researches/20260711-devspace-chatgpt-local-control.md`
@@ -14,10 +14,10 @@ Provides the local MCP sidecar and its repository access policy boundary.
 
 ```mermaid
 flowchart LR
-  p1_capability_runtime_harness_engineer_bindings_34c00f72["Engineer Bindings"]:::component
+  p1_capability_runtime_harness_engineer_scheduling_022bd8e0["Engineer Scheduling"]:::component
   p1_capability_runtime_harness_mcp_sidecar_4e12aaf3["MCP Sidecar"]:::component
   p1_component_mcp_sidecar_primary_8f9b418c["MCP Tool Dispatcher"]:::component
-  p1_capability_runtime_harness_mcp_sidecar_4e12aaf3 -->|"Resolve a verified OAuth authorization to the current Engineer Binding before acquiring a Fleet Claim"| p1_capability_runtime_harness_engineer_bindings_34c00f72
+  p1_capability_runtime_harness_mcp_sidecar_4e12aaf3 -->|"Project and acquire exact revision-fenced Engineer offers for a verified OAuth principal"| p1_capability_runtime_harness_engineer_scheduling_022bd8e0
   p1_capability_runtime_harness_mcp_sidecar_4e12aaf3 -->|"Dispatch an MCP tool call"| p1_component_mcp_sidecar_primary_8f9b418c
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
@@ -25,7 +25,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:6d2d89b7c48473e0ab1c12576009eb3d46b8563a1942f0dc0723c2be5edfbb8e`).
+- Proof: `proven` (`sha256:6c69c26eaae1716ac511997c36d8db3271be90deaa57b3d191ffffa6e1235351`).
 - Semantic nodes: `3`; declared relations: `2`.
 
 ### 1.2 模組職責表
@@ -33,8 +33,8 @@ flowchart LR
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
 | `entrypoint.mcp-sidecar.primary` | `src/cli/mcp/server.ts#createRepoHarnessMcpServer` | `sink.mcp-sidecar.primary` → `src/cli/mcp/tools.ts#callMcpTool` |
-| `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#callEngineerTool` | `sink.mcp-sidecar.engineer-principal` → `src/effects/engineers/principal.ts#resolveEngineerPrincipal` |
-| `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#acquireAsEngineer` | `sink.mcp-sidecar.engineer-acquire` → `src/effects/engineers/acquire.ts#acquireEngineerTask` |
+| `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#callEngineerTool` | `sink.mcp-sidecar.engineer-principal` → `src/effects/engineers/principal.ts#resolveEngineerPrincipal`、`sink.mcp-sidecar.engineer-offers` → `src/effects/engineers/scheduling.ts#collectEngineerOffers` |
+| `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#acquireAsEngineer` | `sink.mcp-sidecar.engineer-acquire` → `src/effects/engineers/scheduling-acquire.ts#acquireScheduledEngineerTask` |
 
 ### 1.3 規模信號
 
@@ -47,6 +47,7 @@ flowchart LR
 出向關係:
 
 - `calls` → `capability.runtime-harness.engineer-bindings` — Resolve a verified OAuth authorization to the current Engineer Binding before acquiring a Fleet Claim
+- `calls` → `capability.runtime-harness.engineer-scheduling` — Project and acquire exact revision-fenced Engineer offers for a verified OAuth principal
 - `calls` → `component.mcp-sidecar.primary` — Dispatch an MCP tool call
 
 入向關係:
@@ -55,20 +56,20 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:6d2d89b7c48473e0ab1c12576009eb3d46b8563a1942f0dc0723c2be5edfbb8e`); selectors `2/2`.
+> **Proof**: `proven` (`sha256:6c69c26eaae1716ac511997c36d8db3271be90deaa57b3d191ffffa6e1235351`); selectors `2/2`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
 sequenceDiagram
   autonumber
   participant p2_engineer_mcp_97bc42c0 as MCP Sidecar
-  participant p2_engineer_authority_fd9ce331 as Engineer Bindings
-  p2_engineer_mcp_97bc42c0->>p2_engineer_authority_fd9ce331: Reuse Fleet acquire and publish immutable Claim actor provenance
+  participant p2_scheduling_authority_0fce7315 as Engineer Scheduling
+  p2_engineer_mcp_97bc42c0->>p2_scheduling_authority_0fce7315: Revalidate the exact Engineer offer before delegated Fleet acquisition
   alt Exact WorkEnvelope and ClaimActorReceipt are returned
-  p2_engineer_mcp_97bc42c0->>p2_engineer_authority_fd9ce331: Return the live-validated envelope and immutable receipt
+  p2_engineer_mcp_97bc42c0->>p2_scheduling_authority_0fce7315: Return the live-validated envelope and immutable receipt
     Note over p2_engineer_mcp_97bc42c0: Return authenticated acquire result
-  else Authorization， Binding， offer， receipt， or compensation validation fails
-  p2_engineer_mcp_97bc42c0->>p2_engineer_authority_fd9ce331: Return typed refusal and never release a foreign Claim
+  else Authorization， graph， dependency， concurrency， Binding， offer， receipt， or compensation validation fails
+  p2_engineer_mcp_97bc42c0->>p2_scheduling_authority_0fce7315: Return typed refusal and never release a foreign Claim
     Note over p2_engineer_mcp_97bc42c0: Return typed fail-closed error
   end
 ```

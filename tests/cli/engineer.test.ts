@@ -118,8 +118,13 @@ describe('repo-harness engineer CLI', () => {
     expect(help.stdout).toContain('local Human-operator binding transitions');
     expect(help.stdout).not.toContain('session-bind');
     expect(help.stdout).toContain('principal');
+    expect(help.stdout).toContain('offers');
     expect(help.stdout).not.toContain('claim');
     expect(help.stdout).not.toContain('acquire');
+    const offersHelp = run(root, ['engineer', 'offers', '--help']);
+    expect(offersHelp.exitCode).toBe(0);
+    expect(offersHelp.stdout).toContain('--authorization-id');
+    expect(offersHelp.stdout).not.toContain('acquire');
     const principalHelp = run(root, ['engineer', 'principal', '--help']);
     expect(principalHelp.stdout).toContain('list');
     expect(principalHelp.stdout).toContain('enroll');

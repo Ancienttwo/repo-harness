@@ -2,7 +2,7 @@ export function buildMcpServerInstructions(opts: { readerEnabled?: boolean; codi
   if (opts.engineerEnabled === true) {
     return [
       'repo-harness is serving the restricted Engineer profile for one verified OAuth authorization.',
-      'Use engineer_status to confirm the server-derived principal and engineer_acquire only with exact Fleet offer fences.',
+      'Use engineer_status to confirm the server-derived principal, engineer_offers to read exact Work Package candidates, and engineer_acquire only with every returned scheduling fence.',
       'Tool payload identity fields are optimistic fences and never select the authenticated Engineer principal.',
       'This profile has no shell, generic file read/write, Binding mutation, generic Fleet mutation, Publication, Acceptance, browser, or agent-runner authority.',
     ].join(' ');

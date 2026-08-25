@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.engineer-scheduling
+kind: calls
+source: capability.runtime-harness.mcp-sidecar
+target: capability.runtime-harness.engineer-scheduling
+intent: Project and acquire exact revision-fenced Engineer offers for a verified OAuth principal

@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-25T03:28:37+0800 -->
+<!-- updated_at: 2026-08-25T14:37:25+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Active
-> **Updated At**: 2026-08-25T03:28:37+0800
-> **Source Branch**: codex/me0b-engineer-principal-claim-actor-landing
-> **Source Commit**: 374d97cb
+> **Status**: ManualClearedWithActiveWork
+> **Updated At**: 2026-08-25T14:37:25+0800
+> **Source Branch**: codex/me1a-engineer-scheduling-schema
+> **Source Commit**: ff1ee50b
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: merged-me0b
+> **Reason**: archive-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Active
+- Status: ManualClearedWithActiveWork
 - Active Plan: (none)
 - Plan Status: (none)
 - Next Task: inspect active worktree marker(s)
-- Clear Note: (none)
+- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
 
 ## Mainline Snapshot Reading
 
@@ -31,8 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/ancienttwo/Projects/repo-harness-wt-release-0-17-0: plans/plan-20260823-2134-release-0-17-0.md
-- /Users/ancienttwo/Projects/repo-harness-wt-release-0-17-0: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-release-0-17-0
+- /Users/ancienttwo/Projects/repo-harness-wt-official-codex-plugin-outside-review: plans/plan-20260825-1234-official-codex-plugin-outside-review.md
+- /Users/ancienttwo/Projects/repo-harness-wt-official-codex-plugin-outside-review: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-official-codex-plugin-outside-review
 ## Active Sprint
 
 - Sprint: (none)
@@ -40,26 +40,35 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 - `tasks/workstreams/runtime-harness/engineer-bindings/me0a-profile-binding.md`: status=completed, current_slice=completed-20260824-me0a-profile-binding, source_plan=`plans/plan-20260824-2126-me0a-engineer-profile-binding.md`
 - `tasks/workstreams/runtime-harness/engineer-bindings/me0b-principal-claim-actor.md`: status=completed, current_slice=completed-20260825-me0b-principal-claim-actor, source_plan=`plans/plan-20260825-0029-me0b-engineer-principal-claim-actor.md`
+- `tasks/workstreams/runtime-harness/engineer-scheduling/me1a-scheduling-schema.md`: status=active, current_slice=verifying-20260825-me1a-scheduling-schema, source_plan=`plans/plan-20260825-1149-me1a-engineer-scheduling-schema.md`
 - `tasks/workstreams/runtime-harness/hook-adapters/github-issues-158-159.md`: status=completed, current_slice=completed-20260805-contract-scoped-check-repair, source_plan=plans/plan-20260805-0001-github-issues-158-159.md
 - `tasks/workstreams/verification/evals-checks/github-issues-158-159.md`: status=completed, current_slice=completed-20260805-deployed-emitter-binding, source_plan=plans/plan-20260805-0001-github-issues-158-159.md
 - `tasks/workstreams/verification/evals-checks/verify-sprint-incremental-retry.md`: status=active, current_slice=verify-exact-subject-retry, source_plan=plans/plan-20260824-2214-verify-sprint-incremental-retry.md
 - `tasks/workstreams/workflow-engine/contract-assets/20260712-contract-assets.md`: status=completed, current_slice=completed-20260712-repo-owned-agent-fleet, source_plan=`plans/archive/plan-20260712-2053-repo-owned-agent-fleet.md`
 - `tasks/workstreams/workflow-engine/contract-assets/20260714-merge-gate-enforcement.md`: status=completed, current_slice=completed-20260715-merge-gate-enforcement, source_plan=`plans/archive/plan-20260714-1713-merge-gate-enforcement.md`
-- `tasks/workstreams/workflow-engine/contract-assets/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-specialist-roles, source_plan=`plans/archive/plan-20260712-2215-agent-fleet-specialists.md`
 ## Handoff
 
 - Exact Next Step: (none)
 
 ## Checks
 
-- status=(none), source=(none), file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: clean
+- Summary: 10 changed/untracked path(s)
 
 ```
-(none)
+ D plans/plan-20260825-1149-me1a-engineer-scheduling-schema.md
+ D tasks/contracts/20260825-1149-me1a-engineer-scheduling-schema.contract.md
+ D tasks/notes/20260825-1149-me1a-engineer-scheduling-schema.notes.md
+ D tasks/reviews/20260825-1149-me1a-engineer-scheduling-schema.review.md
+ M tasks/todos.md
+?? plans/archive/plan-20260825-1149-me1a-engineer-scheduling-schema.md
+?? tasks/archive/contract-20260825-1437-me1a-engineer-scheduling-schema.md
+?? tasks/archive/notes-20260825-1437-me1a-engineer-scheduling-schema.md
+?? tasks/archive/review-20260825-1437-me1a-engineer-scheduling-schema.md
+?? tasks/archive/todo-20260825-1437-me1a-engineer-scheduling-schema.md
 ```
 
 ## Source Artifacts
