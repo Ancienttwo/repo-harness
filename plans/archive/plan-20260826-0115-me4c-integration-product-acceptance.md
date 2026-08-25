@@ -1,6 +1,6 @@
 # Plan: ME-4C Integration Product Acceptance
 
-> **Status**: Approved
+> **Status**: Archived
 > **Created**: 20260826-0115
 > **Slug**: me4c-integration-product-acceptance
 > **Planning Source**: codex-plan
@@ -126,12 +126,12 @@ An existing Git commit is the smallest sufficient combined-candidate carrier: co
 
 ## Task Breakdown
 
-- [ ] Promote ME-4C PRD to Approved with existing-commit carrier and AcceptanceReceipt projection decisions.
-- [ ] Add closed IntegrationContract, IntegrationEnvelope, AcceptanceMatrix and ProductAcceptanceProjection schemas and canonical digests.
-- [ ] Add strict Git/publication/requirement/evidence revalidation and immutable git-common-dir evidence storage.
-- [ ] Add local integration CLI JSON/text build/read/accept commands with no authority mutations.
-- [ ] Add two-publication, stale-fence, matrix-completeness, receipt-authority and route-inventory fixtures.
-- [ ] Register the ArchContext capability/workstream and run focused plus complete repository verification.
+- [x] Promote ME-4C PRD to Approved with existing-commit carrier and AcceptanceReceipt projection decisions.
+- [x] Add closed IntegrationContract, IntegrationEnvelope, AcceptanceMatrix and ProductAcceptanceProjection schemas and canonical digests.
+- [x] Add strict Git/publication/requirement/evidence revalidation and immutable git-common-dir evidence storage.
+- [x] Add local integration CLI JSON/text build/read/accept commands with no authority mutations.
+- [x] Add two-publication, stale-fence, matrix-completeness, receipt-authority and route-inventory fixtures.
+- [x] Register the ArchContext capability/workstream and run focused plus complete repository verification.
 
 ## Verification
 
@@ -145,9 +145,9 @@ An existing Git commit is the smallest sufficient combined-candidate carrier: co
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] Promote ME-4C PRD to Approved with existing-commit carrier and AcceptanceReceipt projection decisions.
-- [ ] Add closed IntegrationContract, IntegrationEnvelope, AcceptanceMatrix and ProductAcceptanceProjection schemas and canonical digests.
-- [ ] Add strict Git/publication/requirement/evidence revalidation and immutable git-common-dir evidence storage.
-- [ ] Add local integration CLI JSON/text build/read/accept commands with no authority mutations.
-- [ ] Add two-publication, stale-fence, matrix-completeness, receipt-authority and route-inventory fixtures.
-- [ ] Register the ArchContext capability/workstream and run focused plus complete repository verification.
+- [x] Promote ME-4C PRD to Approved with existing-commit carrier and AcceptanceReceipt projection decisions.
+- [x] Add closed IntegrationContract, IntegrationEnvelope, AcceptanceMatrix and ProductAcceptanceProjection schemas and canonical digests.
+- [x] Add strict Git/publication/requirement/evidence revalidation and immutable git-common-dir evidence storage.
+- [x] Add local integration CLI JSON/text build/read/accept commands with no authority mutations.
+- [x] Add two-publication, stale-fence, matrix-completeness, receipt-authority and route-inventory fixtures.
+- [x] Register the ArchContext capability/workstream and run focused plus complete repository verification.

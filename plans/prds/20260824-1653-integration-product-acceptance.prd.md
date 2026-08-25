@@ -99,7 +99,7 @@ IntegrationContractV1:
   requirement: {approved_prd_ref: string, approved_prd_sha256: sha256, source_spec_ref: string, source_spec_sha256: sha256}
   repository_id: string
   integration_group: string
-  required_work_packages: [{work_package_id: string, work_package_revision: sha256}]
+  required_work_packages: [{work_package_id: task-digest, work_package_revision: task-digest}]
   required_constraints: [closed-id]
   contract_sha256: sha256
 
@@ -117,6 +117,7 @@ AcceptanceMatrixV1:
   protocol: 1
   envelope_sha256: sha256
   rows: [{constraint_id: string, evidence_ref: string, evidence_sha256: sha256, result: pass|fail|blocked}]
+  verifier_receipt_ref: string
   verifier_receipt_sha256: sha256
   matrix_sha256: sha256
 

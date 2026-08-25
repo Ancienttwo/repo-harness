@@ -1,0 +1,66 @@
+schemaVersion: archcontext.flow/v1
+id: flow.integration-acceptance.lifecycle
+capabilityId: capability.runtime-harness.integration-acceptance
+name: Freeze and revalidate one exact combined candidate
+applicability: required
+participants:
+  - id: integration-plane
+    nodeId: capability.runtime-harness.integration-acceptance
+  - id: evidence-schema
+    nodeId: component.integration-acceptance.primary
+steps:
+  - id: freeze-requirement
+    from: integration-plane
+    to: evidence-schema
+    label: Digest one Approved PRD and source spec into an immutable IntegrationContract
+    evidence:
+      entrypointId: entrypoint.integration-acceptance.contract-canonical
+      sourceSymbol: buildIntegrationContract
+      sinkId: sink.integration-acceptance.contract-canonical
+  - id: freeze-candidate
+    from: integration-plane
+    to: evidence-schema
+    label: Join exact current reviewing publications into one existing Git head and tree
+    evidence:
+      entrypointId: entrypoint.integration-acceptance.envelope-canonical
+      sourceSymbol: buildIntegrationEnvelope
+      sinkId: sink.integration-acceptance.envelope-canonical
+  - id: freeze-matrix
+    from: integration-plane
+    to: evidence-schema
+    label: Require exactly one passing immutable evidence row for every contract constraint
+    evidence:
+      entrypointId: entrypoint.integration-acceptance.matrix-canonical
+      sourceSymbol: buildAcceptanceMatrix
+      sinkId: sink.integration-acceptance.matrix-canonical
+outcomes:
+  - id: success
+    kind: success
+    label: Current authority bytes and the existing passing AcceptanceReceipt project onto the exact candidate
+    steps:
+      - id: project-acceptance
+        from: integration-plane
+        to: evidence-schema
+        label: Revalidate every fence and content-address the existing product verdict
+        evidence:
+          entrypointId: entrypoint.integration-acceptance.product-canonical
+          sourceSymbol: buildProductAcceptanceProjection
+          sinkId: sink.integration-acceptance.product-canonical
+    terminal:
+      participant: integration-plane
+      label: Return immutable ProductAcceptanceProjectionV1 with every authority unchanged
+  - id: stale
+    kind: error
+    label: Any stale requirement, publication, candidate, matrix, evidence or receipt fails closed
+    steps:
+      - id: reject-stale-authority
+        from: integration-plane
+        to: evidence-schema
+        label: Reject the mismatched authority before persisting a product projection
+        evidence:
+          entrypointId: entrypoint.integration-acceptance.product-canonical
+          sourceSymbol: buildProductAcceptanceProjection
+          sinkId: sink.integration-acceptance.product-canonical
+    terminal:
+      participant: integration-plane
+      label: Return a typed integration error without mutation or fallback

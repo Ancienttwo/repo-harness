@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: component.integration-acceptance.primary
+kind: component
+name: Integration Acceptance Evidence Plane
+status: active
+parent: capability.runtime-harness.integration-acceptance
+summary: Owns canonical immutable integration evidence and strict current-authority revalidation; it owns neither merge construction nor product verdicts.

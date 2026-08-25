@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:8b44ff5928cb0cb0db2c2dc6fa85087d56721c89c6e158718a0d5ce691004206" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:0cfa0ea97f85a80d35ef7b38358ede3e2883aa96cbf9a176726dc75b8ef784dd" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:3d2eff6cf3049e00f467e8885324ba05e973d7d792e8025c7757b08fe6435abb" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:ab344c31554f36788ef899540fb91a1083c8e1be0d322587f39aae1e81501748" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
@@ -71,6 +71,14 @@
       {
         "id": "capability.runtime-harness.hook-adapters",
         "name": "Hook Adapters",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "capability.runtime-harness.integration-acceptance",
+        "name": "Integration Product Acceptance",
         "type": "Software System",
         "tags": [
           "capability"
@@ -237,6 +245,14 @@
         ]
       },
       {
+        "id": "component.integration-acceptance.primary",
+        "name": "Integration Acceptance Evidence Plane",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
         "id": "component.mcp-sidecar.primary",
         "name": "MCP Tool Dispatcher",
         "type": "Component",
@@ -359,6 +375,12 @@
         "description": "calls"
       },
       {
+        "id": "relation.integration-acceptance.primary",
+        "sourceId": "capability.runtime-harness.integration-acceptance",
+        "destinationId": "component.integration-acceptance.primary",
+        "description": "calls"
+      },
+      {
         "id": "relation.mcp-sidecar.engineer-messages",
         "sourceId": "capability.runtime-harness.mcp-sidecar",
         "destinationId": "capability.runtime-harness.engineer-messages",
@@ -427,6 +449,7 @@
         "capability.runtime-harness.engineering-overlay",
         "capability.runtime-harness.global-runtime-reconciliation",
         "capability.runtime-harness.hook-adapters",
+        "capability.runtime-harness.integration-acceptance",
         "capability.runtime-harness.mcp-sidecar",
         "capability.runtime-harness.provider-thread-effects",
         "capability.runtime-mcp.general-repo-access",
@@ -447,6 +470,7 @@
         "component.global-runtime-reconciliation.primary",
         "component.hook-adapters.primary",
         "component.inspection-migration.primary",
+        "component.integration-acceptance.primary",
         "component.mcp-sidecar.primary",
         "component.provider-thread-effects.primary",
         "component.root-router.primary"

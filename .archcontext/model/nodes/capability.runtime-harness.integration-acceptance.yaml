@@ -1,0 +1,98 @@
+schemaVersion: archcontext.node/v2
+id: capability.runtime-harness.integration-acceptance
+kind: capability
+name: Integration Product Acceptance
+status: active
+summary: Binds Approved requirement bytes, current module publications, one existing Git candidate, exact evidence and the existing AcceptanceReceipt into immutable product-acceptance projections without creating merge or verdict authority.
+responsibilities:
+  - Validate closed IntegrationContractV1, IntegrationEnvelopeV1, AcceptanceMatrixV1 and ProductAcceptanceProjectionV1 schemas with canonical content digests.
+  - Freeze only current reviewing Publication pointers whose immutable receipts are contained in one exact existing Git commit and tree.
+  - Revalidate Approved requirement, lease observation, publication, candidate and evidence bytes before projecting product acceptance.
+  - Reuse the existing protocol-2 AcceptanceReceipt as the sole product verdict and persist only a non-authoritative content-addressed projection.
+  - Expose bounded local CLI build, read and accept commands without constructing merges or mutating Task, Lease, Publication or Acceptance state.
+source:
+  include:
+    - "src/core/integration/product-acceptance.ts"
+    - "src/effects/integration/product-acceptance.ts"
+  entrypoints:
+    - id: entrypoint.integration-acceptance.contract
+      path: "src/effects/integration/product-acceptance.ts"
+      symbols:
+        - name: "createIntegrationContract"
+          sinks:
+            - id: sink.integration-acceptance.contract-schema
+              path: "src/core/integration/product-acceptance.ts"
+              symbol: "buildIntegrationContract"
+    - id: entrypoint.integration-acceptance.envelope
+      path: "src/effects/integration/product-acceptance.ts"
+      symbols:
+        - name: "createIntegrationEnvelope"
+          sinks:
+            - id: sink.integration-acceptance.lease
+              path: "src/effects/state/coordination-lease-store.ts"
+              symbol: "readLease"
+            - id: sink.integration-acceptance.publication
+              path: "src/effects/publication/publication-receipt.ts"
+              symbol: "readPublicationReceiptCache"
+            - id: sink.integration-acceptance.envelope-schema
+              path: "src/core/integration/product-acceptance.ts"
+              symbol: "buildIntegrationEnvelope"
+    - id: entrypoint.integration-acceptance.matrix
+      path: "src/effects/integration/product-acceptance.ts"
+      symbols:
+        - name: "createAcceptanceMatrix"
+          sinks:
+            - id: sink.integration-acceptance.matrix-schema
+              path: "src/core/integration/product-acceptance.ts"
+              symbol: "assertCompletePassingMatrix"
+    - id: entrypoint.integration-acceptance.product
+      path: "src/effects/integration/product-acceptance.ts"
+      symbols:
+        - name: "createProductAcceptanceProjection"
+          sinks:
+            - id: sink.integration-acceptance.acceptance
+              path: "scripts/acceptance-receipt.ts"
+              symbol: "verifyAcceptance"
+            - id: sink.integration-acceptance.product-schema
+              path: "src/core/integration/product-acceptance.ts"
+              symbol: "buildProductAcceptanceProjection"
+    - id: entrypoint.integration-acceptance.contract-canonical
+      path: "src/core/integration/product-acceptance.ts"
+      symbols:
+        - name: "buildIntegrationContract"
+          sinks:
+            - id: sink.integration-acceptance.contract-canonical
+              path: "src/core/publication/publication-receipt.ts"
+              symbol: "stablePublicationJson"
+    - id: entrypoint.integration-acceptance.envelope-canonical
+      path: "src/core/integration/product-acceptance.ts"
+      symbols:
+        - name: "buildIntegrationEnvelope"
+          sinks:
+            - id: sink.integration-acceptance.envelope-canonical
+              path: "src/core/publication/publication-receipt.ts"
+              symbol: "stablePublicationJson"
+    - id: entrypoint.integration-acceptance.matrix-canonical
+      path: "src/core/integration/product-acceptance.ts"
+      symbols:
+        - name: "buildAcceptanceMatrix"
+          sinks:
+            - id: sink.integration-acceptance.matrix-canonical
+              path: "src/core/publication/publication-receipt.ts"
+              symbol: "stablePublicationJson"
+    - id: entrypoint.integration-acceptance.product-canonical
+      path: "src/core/integration/product-acceptance.ts"
+      symbols:
+        - name: "buildProductAcceptanceProjection"
+          sinks:
+            - id: sink.integration-acceptance.product-canonical
+              path: "src/core/publication/publication-receipt.ts"
+              symbol: "stablePublicationJson"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun test tests/unit/me4c-integration-product-acceptance.test.ts tests/cli/integration.test.ts --timeout 60000"
+    - "bun run check:type"

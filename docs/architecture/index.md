@@ -296,7 +296,7 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 - Treat user-level `~/.codex/hooks.json` and `~/.claude/settings.json` as host adapters. Keep hook implementation under `.ai/hooks/`, and treat repo-local `.claude/settings.json` / `.codex/hooks.json` hook adapters as retired legacy config.
 - Consider adding `bun scripts/capability-resolver.ts validate --format text` to the strict workflow gate after the architecture registry has been used through one more real slice.
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:8b44ff5928cb0cb0db2c2dc6fa85087d56721c89c6e158718a0d5ce691004206" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:d0f762f020e12ba8444412b1d5d76ad683993255ee6363131d06cadd5f1503c1" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:3d2eff6cf3049e00f467e8885324ba05e973d7d792e8025c7757b08fe6435abb" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:248f352e0dab8ea39d92171a0462c5376959749650ebe800e3b8ff8b3ba82697" -->
 # Architecture Index
 
 Generated: 1970-01-01T00:00:00.000Z
@@ -312,6 +312,7 @@ Generated: 1970-01-01T00:00:00.000Z
 - [Engineering Overlay](modules/runtime-harness/engineering-overlay.md) — capability / active
 - [Global Runtime Reconciliation](modules/runtime-harness/global-runtime-reconciliation.md) — capability / active
 - [Hook Adapters](modules/runtime-harness/hook-adapters.md) — capability / active
+- [Integration Product Acceptance](modules/runtime-harness/integration-acceptance.md) — capability / active
 - [MCP Sidecar](modules/runtime-harness/mcp-sidecar.md) — capability / active
 - [Provider Thread Effects](modules/runtime-harness/provider-thread-effects.md) — capability / active
 - [General Repository Access](modules/runtime-mcp/general-repo-access.md) — capability / active
@@ -338,6 +339,7 @@ Generated: 1970-01-01T00:00:00.000Z
 - capability.runtime-harness.global-runtime-reconciliation -> component.global-runtime-reconciliation.primary — calls
 - capability.runtime-harness.hook-adapters -> component.hook-adapters.primary — calls
 - capability.workflow-engine.inspection-migration -> component.inspection-migration.primary — calls
+- capability.runtime-harness.integration-acceptance -> component.integration-acceptance.primary — calls
 - capability.runtime-harness.mcp-sidecar -> capability.runtime-harness.engineer-messages — calls
 - capability.runtime-harness.mcp-sidecar -> capability.runtime-harness.engineer-bindings — calls
 - capability.runtime-harness.mcp-sidecar -> capability.runtime-harness.engineer-scheduling — calls

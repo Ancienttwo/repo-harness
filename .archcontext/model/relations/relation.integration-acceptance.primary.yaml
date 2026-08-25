@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.integration-acceptance.primary
+kind: calls
+source: capability.runtime-harness.integration-acceptance
+target: component.integration-acceptance.primary
+intent: Validate and persist immutable exact-subject integration evidence before returning a non-authoritative projection
