@@ -20,8 +20,9 @@ It does not launch Claude as a reviewer.
 
 ## Review subject
 
-The runner captures one subject before provider admission and pins the plugin
-request to its resolved base SHA. The focus text requires the union of:
+The runner captures one subject before provider admission, materializes its
+final content in a private temporary Git snapshot, and pins the plugin request
+to both its resolved base and HEAD SHAs. The focus text requires the union of:
 
 - committed branch changes against the pinned base;
 - staged changes;
@@ -31,7 +32,11 @@ request to its resolved base SHA. The focus text requires the union of:
 
 The plugin app-server uses a read-only sandbox. Official severities map at the
 provider boundary: `critical|high -> P1`, `medium|low -> P2`. The verbatim Codex
-structured transcript is preserved in the existing cross-review result.
+structured transcript is preserved in the existing cross-review result. The
+source subject is recomputed after the provider exits; a concurrent source
+change returns blocking `stale_scope` instead of attaching the result to newer
+bytes. Inconsistent `approve`/`needs-attention` and findings combinations fail
+closed.
 
 ## Command
 
@@ -46,5 +51,5 @@ repo-harness cross-review --provider codex-plugin
 - Exactly two identical provider attempts, never a third and never a provider
   fallback. Exhaustion is `SKIPPED`, not a pass.
 - No merge-gate: this mode never produces or verifies a `merge-gate` receipt.
-- Only `degraded_scope` is blocking at command level. A successful acceptance
+- `degraded_scope` and `stale_scope` are blocking at command level. A successful acceptance
   receipt must truthfully record `reviewer=Codex, source=codex-plugin`.

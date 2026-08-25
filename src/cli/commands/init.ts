@@ -44,6 +44,7 @@ import { configureCodegraph, ensureCodegraph } from "../tools/codegraph";
 import { runProcess as runBoundedProcess } from "../../effects/process-runner";
 import {
   inspectOfficialCodexPluginInventory,
+  inspectOfficialCodexPluginReadiness,
   OFFICIAL_CODEX_MARKETPLACE,
   OFFICIAL_CODEX_MARKETPLACE_NAME,
   OFFICIAL_CODEX_PLUGIN_ID,
@@ -538,15 +539,18 @@ function ensureOfficialCodexPlugin(cwd: string, env?: NodeJS.ProcessEnv): InitSt
     if (enabled.status === "failed") return withStepName(enabled, "official Codex plugin", "enable failed");
     inspection = inspectOfficialCodexPluginInventory(cwd, { env, claudeCommand });
   }
-  if (inspection.status !== "ready") {
-    const detail = inspection.status === "failed" ? inspection.message : `readback status=${inspection.status}`;
+  const readiness = inspection.status === "ready"
+    ? inspectOfficialCodexPluginReadiness(cwd, { env, claudeCommand })
+    : inspection;
+  if (readiness.status !== "ready") {
+    const detail = readiness.status === "failed" ? readiness.message : `readback status=${readiness.status}`;
     return { step: "official Codex plugin", status: "failed", detail, stderr: detail };
   }
   return {
     step: "official Codex plugin",
     status: "ok",
-    command: [...inspection.invocation.command],
-    detail: `enabled ${OFFICIAL_CODEX_PLUGIN_ID} version=${String(inspection.plugin.version)}`,
+    command: [...readiness.invocation.command],
+    detail: `enabled ${OFFICIAL_CODEX_PLUGIN_ID} version=${String(readiness.plugin.version)}`,
   };
 }
 

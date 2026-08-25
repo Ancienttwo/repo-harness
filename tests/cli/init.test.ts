@@ -47,9 +47,28 @@ function writeFakeSkillsCli(fakeBin: string): void {
   );
 }
 
+function writeOfficialCodexPluginFixture(pluginRoot: string): void {
+  mkdirSync(join(pluginRoot, "scripts"), { recursive: true });
+  mkdirSync(join(pluginRoot, ".claude-plugin"), { recursive: true });
+  mkdirSync(join(pluginRoot, "schemas"), { recursive: true });
+  writeFileSync(join(pluginRoot, "scripts", "codex-companion.mjs"), "// fixture\n");
+  writeFileSync(join(pluginRoot, ".claude-plugin", "plugin.json"), JSON.stringify({
+    name: "codex",
+    version: "1.0.6",
+    author: { name: "OpenAI" },
+  }));
+  writeFileSync(join(pluginRoot, "schemas", "review-output.schema.json"), JSON.stringify({
+    required: ["verdict", "summary", "findings", "next_steps"],
+    properties: {
+      verdict: { enum: ["approve", "needs-attention"] },
+      findings: { items: { properties: { severity: { enum: ["critical", "high", "medium", "low"] } } } },
+    },
+  }));
+}
+
 function writeReadyOfficialCodexPluginCli(fakeBin: string, home: string): string {
   const pluginRoot = join(home, '.claude', 'plugins', 'cache', 'openai-codex', 'codex', '1.0.6');
-  mkdirSync(pluginRoot, { recursive: true });
+  writeOfficialCodexPluginFixture(pluginRoot);
   const claude = join(fakeBin, 'claude');
   makeExecutable(claude, [
     '#!/bin/bash',
@@ -1249,6 +1268,7 @@ describe("bundled host runtimes", () => {
       mkdirSync(source, { recursive: true });
       mkdirSync(home, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
+      writeOfficialCodexPluginFixture(pluginRoot);
       makeSource(source);
       makeExecutable(claude, [
         "#!/bin/bash",
@@ -1276,6 +1296,30 @@ describe("bundled host runtimes", () => {
       expect(commands).toContain("plugin install codex@openai-codex -s user -y");
       expect(commands).not.toContain("review-gate");
       expect(commands).not.toContain("setup");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("Codex target fails readiness when the enabled official plugin install is incomplete", () => {
+    const tmp = join(tmpdir(), `cross-review-plugin-invalid-${Date.now()}`);
+    const source = join(tmp, "source");
+    const home = join(tmp, "home");
+    const fakeBin = join(tmp, "bin");
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      makeSource(source);
+      const claude = writeReadyOfficialCodexPluginCli(fakeBin, home);
+      rmSync(join(home, ".claude", "plugins", "cache", "openai-codex", "codex", "1.0.6", "scripts", "codex-companion.mjs"));
+      const steps = syncCrossReviewSkills(source, "codex", {
+        ...process.env,
+        HOME: home,
+        REPO_HARNESS_CLAUDE_EXECUTABLE: claude,
+      });
+      const plugin = steps.find((step) => step.step === "official Codex plugin");
+      expect(plugin?.status).toBe("failed");
+      expect(plugin?.detail ?? plugin?.stderr).toContain("missing safely-contained companion");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

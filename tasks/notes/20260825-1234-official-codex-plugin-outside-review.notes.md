@@ -15,10 +15,12 @@
 - New acceptance-policy protocol 2 freezes both reviewer and source. Protocol 1 remains readable solely for historical receipts; it does not select an active Claude provider.
 - Review Gate remains disabled. Setup installs/enables only the official plugin capability required by explicit outside-review invocation.
 - `check-task-sync` ignores only `docs/architecture/.projection-manifest.json`, matching `verify-sprint`'s existing workflow-owned publication rule. This prevents the acceptance-time digest restamp from demanding a fabricated task narrative while sibling architecture documents remain substantive and gated.
+- The official provider runs against a private temporary Git clone pinned to the captured HEAD, with the captured final content overlaid and re-fingerprinted before invocation. The source subject is re-fingerprinted after the process exits; source drift is blocking `stale_scope` and never triggers a second semantic review.
+- Official output is accepted only when `approve` has no findings or `needs-attention` has at least one finding. Init, runtime discovery, and tooling readiness now all require the contained companion, matching OpenAI manifest/version, and supported review schema.
 
 ## Deviations From Plan Or Spec
 
-- None recorded.
+- The single live official-plugin review of subject `sha256:a37fea8a05e598e302091b7b19e5e41ae4bf91f47b1be5d33fbe7819e6d57c94` returned two P1 findings and one P2 finding instead of a pass. All three were repaired locally: verdict/findings inconsistency now fails closed, the provider reviews an immutable pinned snapshot and rejects source drift, and setup/readiness validates the full install. The one-review circuit breaker forbids a second semantic review of the repaired subject; acceptance therefore requires an explicit policy-authorized human waiver rather than fabricated external-pass attribution.
 
 ## Tradeoffs Considered
 
@@ -28,6 +30,8 @@
 | Direct `codex exec` on Codex host | Rejected | It bypasses the official plugin integration the user explicitly selected and cannot truthfully produce `source=codex-plugin`. |
 | Official companion runtime | Selected | It is the plugin-owned app-server execution path and returns machine-readable structured findings. |
 | Claude fallback when plugin fails | Rejected | It changes reviewer identity and would make receipt attribution untrustworthy. |
+| Live-tree review with only a post-run hash check | Rejected | It cannot prove which bytes were inspected if content changes and changes back during a long review. |
+| Immutable temporary Git snapshot | Selected | It pins committed and dirty final content while preserving the plugin's normal repository/app-server path; the source is rechecked before returning. |
 
 ## Open Questions
 
@@ -40,6 +44,7 @@
 - Local official plugin inspected: `codex@openai-codex` 1.0.6.
 - Projection/task-sync regression: `tests/check-task-sync.test.ts` proves the exact manifest exemption and rejects sibling architecture-doc changes without task synchronization.
 - Live proof root: `/private/tmp/repo-harness-codex-plugin-proof-20260825` (temporary, non-durable evidence).
+- Official review thread: `01a037d2-c4f5-7e60-a071-ee9c41650dc5`; findings are covered by regression tests in `tests/cli/cross-review.test.ts`, `tests/cli/init.test.ts`, and `tests/check-agent-tooling.test.ts`.
 
 ## Promotion Filter
 

@@ -1846,7 +1846,70 @@ function detectOfficialCodexPlugin() {
   }
   const matches = entries.filter((entry) => entry?.id === OFFICIAL_CODEX_PLUGIN_ID);
   const plugin = matches.length === 1 ? matches[0] : null;
-  const status = matches.length === 0 ? "missing" : matches.length > 1 ? "invalid" : plugin.enabled === true ? "present" : "disabled";
+  let installProblem = null;
+  if (plugin?.enabled === true) {
+    const version = typeof plugin.version === "string" && plugin.version.trim() ? plugin.version : null;
+    const installPath = typeof plugin.installPath === "string" && path.isAbsolute(plugin.installPath)
+      ? plugin.installPath
+      : null;
+    let root = null;
+    try {
+      if (!installPath || fs.lstatSync(installPath).isSymbolicLink() || !fs.statSync(installPath).isDirectory()) {
+        installProblem = `${OFFICIAL_CODEX_PLUGIN_ID} installPath is missing, unsafe, or not a directory.`;
+      } else {
+        root = fs.realpathSync(installPath);
+      }
+    } catch (error) {
+      installProblem = `${OFFICIAL_CODEX_PLUGIN_ID} installPath is unavailable: ${String(error?.message || error)}`;
+    }
+    const safeFile = (relativePath) => {
+      if (!root) return null;
+      const candidate = path.resolve(root, relativePath);
+      const rel = path.relative(root, candidate);
+      if (rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return null;
+      try {
+        if (fs.lstatSync(candidate).isSymbolicLink() || !fs.statSync(candidate).isFile()) return null;
+        const canonical = fs.realpathSync(candidate);
+        const canonicalRel = path.relative(root, canonical);
+        return canonicalRel !== ".." && !canonicalRel.startsWith(`..${path.sep}`) && !path.isAbsolute(canonicalRel)
+          ? canonical
+          : null;
+      } catch (_error) {
+        return null;
+      }
+    };
+    if (!installProblem) {
+      const companion = safeFile("scripts/codex-companion.mjs");
+      const manifestPath = safeFile(".claude-plugin/plugin.json");
+      const schemaPath = safeFile("schemas/review-output.schema.json");
+      const manifest = manifestPath ? readJson(manifestPath) : null;
+      const schema = schemaPath ? readJson(schemaPath) : null;
+      const schemaRequired = schema?.required;
+      const verdicts = schema?.properties?.verdict?.enum;
+      const severities = schema?.properties?.findings?.items?.properties?.severity?.enum;
+      if (!version || !companion || !manifestPath || !schemaPath) {
+        installProblem = `${OFFICIAL_CODEX_PLUGIN_ID} install is missing a version, companion, manifest, or review schema.`;
+      } else if (manifest?.name !== "codex" || manifest?.version !== version || manifest?.author?.name !== "OpenAI") {
+        installProblem = `${OFFICIAL_CODEX_PLUGIN_ID} manifest identity/version does not match public inventory.`;
+      } else if (
+        !Array.isArray(schemaRequired)
+        || !["verdict", "summary", "findings", "next_steps"].every((key) => schemaRequired.includes(key))
+        || JSON.stringify(verdicts) !== JSON.stringify(["approve", "needs-attention"])
+        || JSON.stringify(severities) !== JSON.stringify(["critical", "high", "medium", "low"])
+      ) {
+        installProblem = `${OFFICIAL_CODEX_PLUGIN_ID} review schema is unsupported.`;
+      }
+    }
+  }
+  const status = matches.length === 0
+    ? "missing"
+    : matches.length > 1
+      ? "invalid"
+      : plugin.enabled !== true
+        ? "disabled"
+        : installProblem
+          ? "invalid"
+          : "present";
   return {
     name: "official_codex_plugin",
     status,
@@ -1856,7 +1919,7 @@ function detectOfficialCodexPlugin() {
       : status === "disabled"
         ? `${OFFICIAL_CODEX_PLUGIN_ID} is installed but disabled.`
         : status === "invalid"
-          ? `Expected one ${OFFICIAL_CODEX_PLUGIN_ID} entry; found ${matches.length}.`
+          ? installProblem ?? `Expected one ${OFFICIAL_CODEX_PLUGIN_ID} entry; found ${matches.length}.`
           : `${OFFICIAL_CODEX_PLUGIN_ID} is not installed.`,
     plugin_id: OFFICIAL_CODEX_PLUGIN_ID,
     version: plugin?.version ?? null,

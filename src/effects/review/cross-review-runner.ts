@@ -1,4 +1,17 @@
 import { execFileSync } from "child_process";
+import {
+  chmodSync,
+  copyFileSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  readlinkSync,
+  rmSync,
+  symlinkSync,
+} from "fs";
+import { tmpdir } from "os";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "path";
 import { buildReviewSubject } from "./diff-fingerprint";
 import { runProcess, type ProcessRunResult } from "../process-runner";
 import {
@@ -114,11 +127,106 @@ interface AttemptResult {
   readonly transcript?: string;
 }
 
+type ImmutableReviewSnapshot =
+  | { readonly status: "ok"; readonly repoRoot: string; readonly cleanupRoot: string }
+  | { readonly status: "failed"; readonly message: string; readonly cleanupRoot: string | null };
+
+function pathIsWithin(candidate: string, root: string): boolean {
+  const rel = relative(root, candidate);
+  return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+}
+
+function copyFinalSubjectPath(sourceRoot: string, snapshotRoot: string, path: string): void {
+  if (!path) throw new Error("empty review subject path");
+  const source = resolve(sourceRoot, path);
+  const target = resolve(snapshotRoot, path);
+  if (!pathIsWithin(source, sourceRoot) || !pathIsWithin(target, snapshotRoot)) {
+    throw new Error(`unsafe review subject path: ${path}`);
+  }
+  let stat: ReturnType<typeof lstatSync>;
+  try {
+    stat = lstatSync(source);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    rmSync(target, { recursive: true, force: true });
+    return;
+  }
+  rmSync(target, { recursive: true, force: true });
+  mkdirSync(dirname(target), { recursive: true });
+  if (stat.isSymbolicLink()) {
+    symlinkSync(readlinkSync(source, { encoding: "buffer" }), target);
+    return;
+  }
+  if (!stat.isFile()) throw new Error(`unsupported review subject entry type: ${path}`);
+  copyFileSync(source, target);
+  chmodSync(target, (stat.mode & 0o111) !== 0 ? 0o755 : 0o644);
+}
+
+function createImmutableReviewSnapshot(repoRoot: string, scope: CrossReviewScope): ImmutableReviewSnapshot {
+  let cleanupRoot: string | null = null;
+  try {
+    const sourceRoot = realpathSync(repoRoot);
+    cleanupRoot = mkdtempSync(join(tmpdir(), "repo-harness-cross-review-"));
+    const snapshotRoot = join(cleanupRoot, "repo");
+    execFileSync("git", ["clone", "--shared", "--no-checkout", "--quiet", sourceRoot, snapshotRoot], {
+      stdio: ["ignore", "ignore", "pipe"],
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    execFileSync("git", ["-C", snapshotRoot, "checkout", "--detach", "--quiet", scope.headRev], {
+      stdio: ["ignore", "ignore", "pipe"],
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    for (const path of scope.paths) copyFinalSubjectPath(sourceRoot, snapshotRoot, path);
+    const materialized = buildReviewSubject(snapshotRoot, { targetRef: scope.baseRev });
+    if (
+      materialized.status !== "ok"
+      || materialized.head_rev !== scope.headRev
+      || materialized.review_subject_sha256 !== scope.reviewSubjectSha256
+      || JSON.stringify(materialized.paths) !== JSON.stringify(scope.paths)
+    ) {
+      throw new Error("immutable review snapshot does not match the captured review subject");
+    }
+    return { status: "ok", repoRoot: snapshotRoot, cleanupRoot };
+  } catch (error) {
+    return {
+      status: "failed",
+      message: error instanceof Error ? error.message : String(error),
+      cleanupRoot,
+    };
+  }
+}
+
+function reviewScopeStillCurrent(repoRoot: string, scope: CrossReviewScope): boolean {
+  const current = captureCrossReviewScope(repoRoot, { baseRevision: scope.baseRev });
+  return current.status === "ok"
+    && current.baseRev === scope.baseRev
+    && current.headRev === scope.headRev
+    && current.reviewSubjectSha256 === scope.reviewSubjectSha256
+    && JSON.stringify(current.paths) === JSON.stringify(scope.paths);
+}
+
 function syntheticDiscoveryFailure(invocation: ProcessRunResult, message: string): ProcessRunResult {
   return {
     ...invocation,
     ok: false,
     status: invocation.status === 0 ? 1 : invocation.status,
+    error: message,
+  };
+}
+
+function syntheticInvocationFailure(
+  command: string,
+  args: readonly string[],
+  message: string,
+): ProcessRunResult {
+  return {
+    ok: false,
+    status: 1,
+    signal: null,
+    timedOut: false,
+    command: [command, ...args],
+    stdout: "",
+    stderr: "",
     error: message,
   };
 }
@@ -156,13 +264,47 @@ function invokeProvider(input: RunCrossReviewInput, scope: CrossReviewScope, tim
     const invocation = syntheticDiscoveryFailure(discovery.invocation, discovery.message);
     return { invocation, classification: classifyCrossReviewOutcome(invocation) };
   }
-  const invocation = runProcess(discovery.invocation.command, discovery.invocation.args, {
-    cwd: input.repoRoot,
-    timeoutMs,
-    maxOutputBytes: 2 * 1024 * 1024,
-    stdio: "pipe",
-    env: discovery.invocation.env,
-  });
+  const snapshot = createImmutableReviewSnapshot(input.repoRoot, scope);
+  if (snapshot.status === "failed") {
+    if (snapshot.cleanupRoot) rmSync(snapshot.cleanupRoot, { recursive: true, force: true });
+    const invocation = syntheticInvocationFailure(
+      discovery.invocation.command,
+      discovery.invocation.args,
+      `immutable review snapshot failed: ${snapshot.message}`,
+    );
+    return {
+      invocation,
+      classification: { kind: "failed", code: "degraded_scope", message: invocation.error },
+    };
+  }
+  const snapshotArgs = discovery.invocation.args.map((arg, index, args) => (
+    index > 0 && args[index - 1] === "--cwd" ? snapshot.repoRoot : arg
+  ));
+  let invocation: ProcessRunResult;
+  try {
+    invocation = runProcess(discovery.invocation.command, snapshotArgs, {
+      cwd: snapshot.repoRoot,
+      timeoutMs,
+      maxOutputBytes: 2 * 1024 * 1024,
+      stdio: "pipe",
+      env: {
+        ...discovery.invocation.env,
+        CLAUDE_PLUGIN_DATA: join(snapshot.cleanupRoot, "plugin-data"),
+      },
+    });
+  } finally {
+    rmSync(snapshot.cleanupRoot, { recursive: true, force: true });
+  }
+  if (!reviewScopeStillCurrent(input.repoRoot, scope)) {
+    return {
+      invocation,
+      classification: {
+        kind: "failed",
+        code: "stale_scope",
+        message: "review subject changed while the official Codex plugin was running",
+      },
+    };
+  }
   const processClassification = classifyCrossReviewOutcome(invocation);
   if (processClassification.kind === "failed") return { invocation, classification: processClassification };
   const parsed = parseOfficialCodexPluginReview(processClassification.transcript);
@@ -207,6 +349,16 @@ export function runCrossReview(input: RunCrossReviewInput): CrossReviewResult {
   let lastClassification: Extract<CrossReviewClassification, { kind: "failed" }> | null = null;
   for (let attempts = 1; attempts <= MAX_ATTEMPTS; attempts += 1) {
     const attempt = invokeProvider(input, scope, timeoutMs);
+    if (attempt.classification.kind === "failed"
+      && (attempt.classification.code === "degraded_scope" || attempt.classification.code === "stale_scope")) {
+      return {
+        status: "failed",
+        provider: input.provider,
+        scope,
+        code: attempt.classification.code,
+        message: attempt.classification.message,
+      };
+    }
     if (attempt.classification.kind === "success" && attempt.transcript && attempt.findings) {
       return {
         status: "ok",

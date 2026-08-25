@@ -25,6 +25,7 @@ export const CROSS_REVIEW_ERROR_CODES = [
   "auth_failure",
   "provider_nonzero",
   "degraded_scope",
+  "stale_scope",
   "review_budget_exhausted",
 ] as const;
 export type CrossReviewErrorCode = (typeof CROSS_REVIEW_ERROR_CODES)[number];

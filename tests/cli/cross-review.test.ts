@@ -222,8 +222,10 @@ function withOfficialPluginFixture(
   const runtimeCommand = join(root, "fake-node.sh");
   writeFileSync(runtimeCommand, [
     "#!/bin/sh",
+    'if [ -n "${CROSS_REVIEW_CWD_FILE:-}" ]; then pwd > "$CROSS_REVIEW_CWD_FILE"; fi',
     'if [ -n "${CROSS_REVIEW_ARGS_FILE:-}" ]; then printf "%s\\n" "$@" > "$CROSS_REVIEW_ARGS_FILE"; fi',
     'if [ -n "${CROSS_REVIEW_COUNTER_FILE:-}" ]; then count=0; [ -f "$CROSS_REVIEW_COUNTER_FILE" ] && count=$(cat "$CROSS_REVIEW_COUNTER_FILE"); echo $((count + 1)) > "$CROSS_REVIEW_COUNTER_FILE"; fi',
+    'if [ -n "${CROSS_REVIEW_MUTATE_FILE:-}" ]; then printf "changed during review\\n" >> "$CROSS_REVIEW_MUTATE_FILE"; fi',
     'printf "%s\\n" "$CROSS_REVIEW_PLUGIN_PAYLOAD"',
   ].join("\n"));
   chmodSync(runtimeCommand, 0o755);
@@ -493,6 +495,7 @@ describe("runCrossReview (official codex-plugin mode)", () => {
       expect(discovery.invocation.args).toContain(scope.baseRev);
       const focus = discovery.invocation.args.at(-1) ?? "";
       expect(focus).toContain(scope.reviewSubjectSha256);
+      expect(focus).toContain(`git diff ${scope.baseRev}...${scope.headRev}`);
       expect(focus).toContain(JSON.stringify(scope.paths));
       expect(focus).toContain("git diff --cached");
       expect(focus).toContain("git ls-files --others --exclude-standard");
@@ -502,7 +505,7 @@ describe("runCrossReview (official codex-plugin mode)", () => {
   });
 
   test("maps official critical/high to P1 and medium/low to P2 while preserving the verbatim Codex transcript", () => {
-    withOfficialPluginFixture(({ repo, claudeCommand, runtimeCommand, env }) => {
+    withOfficialPluginFixture(({ repo, home, claudeCommand, runtimeCommand, env }) => {
       const findings = [
         {
           severity: "high",
@@ -526,7 +529,7 @@ describe("runCrossReview (official codex-plugin mode)", () => {
         },
       ];
       const payload = officialPluginPayload(findings);
-      const counterFile = join(repo, "plugin-counter.txt");
+      const counterFile = join(home, "plugin-counter.txt");
       const result = runCrossReview({
         repoRoot: repo,
         provider: "codex-plugin",
@@ -545,9 +548,37 @@ describe("runCrossReview (official codex-plugin mode)", () => {
     });
   });
 
+  test("runs the official reviewer against an immutable snapshot and fails if the source subject changes", () => {
+    withOfficialPluginFixture(({ repo, home, claudeCommand, runtimeCommand, env }) => {
+      writeFileSync(join(repo, "README.md"), "# fixture\nreview me\n");
+      const cwdFile = join(home, "provider-cwd.txt");
+      const counterFile = join(home, "provider-count.txt");
+      const result = runCrossReview({
+        repoRoot: repo,
+        provider: "codex-plugin",
+        providerCommand: runtimeCommand,
+        claudeCommand,
+        timeoutMs: 5000,
+        env: {
+          ...env,
+          CROSS_REVIEW_CWD_FILE: cwdFile,
+          CROSS_REVIEW_COUNTER_FILE: counterFile,
+          CROSS_REVIEW_MUTATE_FILE: join(repo, "README.md"),
+        },
+      });
+      expect(result.status).toBe("failed");
+      if (result.status !== "failed") throw new Error("expected stale scope failure");
+      expect(result.code).toBe("stale_scope");
+      expect(result.message).toContain("changed while");
+      expect(readFileSync(counterFile, "utf-8").trim()).toBe("1");
+      expect(readFileSync(cwdFile, "utf-8").trim()).not.toBe(repo);
+      expect(readFileSync(cwdFile, "utf-8")).toContain("repo-harness-cross-review-");
+    });
+  });
+
   test("missing or disabled official plugin fails explicitly after the bounded budget and never runs a fallback", () => {
-    withOfficialPluginFixture(({ repo, claudeCommand, runtimeCommand, env }) => {
-      const counterFile = join(repo, "plugin-counter.txt");
+    withOfficialPluginFixture(({ repo, home, claudeCommand, runtimeCommand, env }) => {
+      const counterFile = join(home, "plugin-counter.txt");
       const result = runCrossReview({
         repoRoot: repo,
         provider: "codex-plugin",
@@ -612,6 +643,35 @@ describe("runCrossReview (official codex-plugin mode)", () => {
       status: "failed",
       message: "official Codex plugin payload disagrees with the verbatim Codex transcript",
     });
+  });
+
+  test("structured parser rejects verdict/findings combinations that could synthesize a false pass", () => {
+    for (const [verdict, findings] of [
+      ["needs-attention", []],
+      ["approve", [{
+        severity: "low",
+        title: "Advisory",
+        body: "A finding exists.",
+        file: "src/example.ts",
+        line_start: 1,
+        line_end: 1,
+        confidence: 0.8,
+        recommendation: "Address it.",
+      }]],
+    ] as const) {
+      const result = { verdict, summary: "inconsistent", findings, next_steps: [] };
+      const payload = JSON.stringify({
+        codex: { status: 0, stderr: "", stdout: JSON.stringify(result), reasoning: "" },
+        result,
+        rawOutput: JSON.stringify(result),
+        parseError: null,
+        reasoningSummary: "",
+      });
+      expect(parseOfficialCodexPluginReview(payload)).toEqual({
+        status: "failed",
+        message: "official Codex plugin returned an unsupported review result shape",
+      });
+    }
   });
 });
 

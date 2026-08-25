@@ -33,5 +33,5 @@ how to interpret findings, and the boundaries below.
 ## Boundaries
 
 - Read-only: direct Codex and the official plugin app-server both use a read-only sandbox.
-- Bounded: 2 provider attempts, then `SKIPPED` -- advisory, non-blocking (exit 0). Do not re-run it or narrow the diff to retry. Only `degraded_scope` blocks (exit 1). Never a synthesized pass.
+- Bounded: 2 provider attempts, then `SKIPPED` -- advisory, non-blocking (exit 0). Do not re-run it or narrow the diff to retry. `degraded_scope` and `stale_scope` block (exit 1). Never a synthesized pass.
 - Never produces or verifies a `merge-gate` receipt; that judge is separate.

@@ -53,6 +53,25 @@ function writeExecutable(filePath: string, content: string) {
   chmodSync(filePath, 0o755);
 }
 
+function writeOfficialCodexPluginFixture(pluginRoot: string) {
+  mkdirSync(join(pluginRoot, "scripts"), { recursive: true });
+  mkdirSync(join(pluginRoot, ".claude-plugin"), { recursive: true });
+  mkdirSync(join(pluginRoot, "schemas"), { recursive: true });
+  writeFileSync(join(pluginRoot, "scripts", "codex-companion.mjs"), "// fixture\n");
+  writeFileSync(join(pluginRoot, ".claude-plugin", "plugin.json"), JSON.stringify({
+    name: "codex",
+    version: "1.0.6",
+    author: { name: "OpenAI" },
+  }));
+  writeFileSync(join(pluginRoot, "schemas", "review-output.schema.json"), JSON.stringify({
+    required: ["verdict", "summary", "findings", "next_steps"],
+    properties: {
+      verdict: { enum: ["approve", "needs-attention"] },
+      findings: { items: { properties: { severity: { enum: ["critical", "high", "medium", "low"] } } } },
+    },
+  }));
+}
+
 function setupFakeEnvironment(prefix: string) {
   const root = mkdtempSync(join(tmpdir(), `${prefix}-`));
   const home = join(root, "home");
@@ -60,6 +79,7 @@ function setupFakeEnvironment(prefix: string) {
 
   mkdirSync(home, { recursive: true });
   mkdirSync(fakeBin, { recursive: true });
+  writeOfficialCodexPluginFixture(join(home, ".claude/plugins/cache/openai-codex/codex/1.0.6"));
   writeExecutable(
     join(fakeBin, "timeout"),
     [
@@ -453,6 +473,29 @@ describe("check-agent-tooling", () => {
       expect(textRes.stdout).toContain("Waza [present]");
       expect(textRes.stdout).toContain("Official Codex plugin [present]");
       expect(textRes.stdout).toContain("repo-harness install --target both --with-obsidian-skills");
+    } finally {
+      rmSync(envRoot.root, { recursive: true, force: true });
+    }
+  }, 15000);
+
+  test("reports an enabled but incomplete official plugin as invalid", () => {
+    const envRoot = setupFakeEnvironment("check-agent-tooling-invalid-plugin");
+    try {
+      rmSync(join(envRoot.home, ".claude/plugins/cache/openai-codex/codex/1.0.6/scripts/codex-companion.mjs"));
+      const result = spawnSync("bash", [SCRIPT, "--host", "codex", "--json"], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: envRoot.home,
+          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
+        },
+      });
+      expect(result.status).toBe(0);
+      const report = JSON.parse(result.stdout);
+      expect(report.tools.official_codex_plugin.status).toBe("invalid");
+      expect(report.tools.official_codex_plugin.reason).toContain("missing a version, companion, manifest, or review schema");
     } finally {
       rmSync(envRoot.root, { recursive: true, force: true });
     }

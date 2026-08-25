@@ -59,6 +59,15 @@ export type OfficialCodexPluginInventoryInspection =
   | { readonly status: "disabled"; readonly plugin: PluginInventoryEntry; readonly invocation: ProcessRunResult }
   | { readonly status: "failed"; readonly message: string; readonly invocation: ProcessRunResult };
 
+export type OfficialCodexPluginReadinessInspection =
+  | {
+      readonly status: "ready";
+      readonly plugin: PluginInventoryEntry;
+      readonly invocation: ProcessRunResult;
+      readonly companion: string;
+    }
+  | Exclude<OfficialCodexPluginInventoryInspection, { readonly status: "ready" }>;
+
 function failure(message: string, invocation: ProcessRunResult): OfficialCodexPluginDiscovery {
   return { status: "failed", message, invocation };
 }
@@ -170,12 +179,72 @@ function validOfficialReviewSchema(path: string): boolean {
   }
 }
 
+function validateOfficialCodexPluginInstall(
+  plugin: PluginInventoryEntry,
+): { readonly status: "ready"; readonly companion: string } | { readonly status: "failed"; readonly message: string } {
+  if (typeof plugin.version !== "string" || plugin.version.trim() === "") {
+    return { status: "failed", message: `${OFFICIAL_CODEX_PLUGIN_ID} inventory entry is missing a version` };
+  }
+  if (typeof plugin.installPath !== "string" || !isAbsolute(plugin.installPath)) {
+    return { status: "failed", message: `${OFFICIAL_CODEX_PLUGIN_ID} inventory entry has an invalid installPath` };
+  }
+
+  let root: string;
+  try {
+    if (lstatSync(plugin.installPath).isSymbolicLink()) {
+      return { status: "failed", message: `${OFFICIAL_CODEX_PLUGIN_ID} installPath must not be a symlink` };
+    }
+    root = realpathSync(plugin.installPath);
+    if (!statSync(root).isDirectory()) {
+      return { status: "failed", message: `${OFFICIAL_CODEX_PLUGIN_ID} installPath is not a directory` };
+    }
+  } catch (error) {
+    return { status: "failed", message: `${OFFICIAL_CODEX_PLUGIN_ID} installPath is unavailable: ${errorText(error)}` };
+  }
+  const companion = safeRegularFile(root, "scripts/codex-companion.mjs");
+  const manifest = safeRegularFile(root, ".claude-plugin/plugin.json");
+  const schema = safeRegularFile(root, "schemas/review-output.schema.json");
+  if (!companion || !manifest || !schema) {
+    return {
+      status: "failed",
+      message: `${OFFICIAL_CODEX_PLUGIN_ID} install is missing safely-contained companion, manifest, or schema files`,
+    };
+  }
+  if (!validOfficialManifest(manifest, plugin.version)) {
+    return {
+      status: "failed",
+      message: `${OFFICIAL_CODEX_PLUGIN_ID} manifest identity/version does not match public inventory`,
+    };
+  }
+  if (!validOfficialReviewSchema(schema)) {
+    return { status: "failed", message: `${OFFICIAL_CODEX_PLUGIN_ID} review schema is unsupported` };
+  }
+  return { status: "ready", companion };
+}
+
+export function inspectOfficialCodexPluginReadiness(
+  cwd: string,
+  opts: {
+    readonly env?: NodeJS.ProcessEnv;
+    readonly claudeCommand?: string;
+    readonly timeoutMs?: number;
+  } = {},
+): OfficialCodexPluginReadinessInspection {
+  const inspection = inspectOfficialCodexPluginInventory(cwd, opts);
+  if (inspection.status !== "ready") return inspection;
+  const validation = validateOfficialCodexPluginInstall(inspection.plugin);
+  if (validation.status === "failed") {
+    return { status: "failed", message: validation.message, invocation: inspection.invocation };
+  }
+  return { ...inspection, companion: validation.companion };
+}
+
 export function buildOfficialPluginFocus(scope: CrossReviewScope): string {
   return [
     `Review subject sha256: ${scope.reviewSubjectSha256}.`,
     `Use the exact pinned base commit ${scope.baseRev}; do not replace it with a floating ref.`,
     "Review the union of all four sources below, restricted to the exact path set encoded as JSON:",
-    `1. committed branch changes: git diff ${scope.baseRev}...HEAD -- <paths>`,
+    `1. committed branch changes: git diff ${scope.baseRev}...${scope.headRev} -- <paths>`,
     "2. staged changes: git diff --cached -- <paths>",
     "3. unstaged tracked changes: git diff -- <paths>",
     "4. untracked files: git ls-files --others --exclude-standard, intersected with <paths>, then inspect each file",
@@ -196,7 +265,7 @@ export function discoverOfficialCodexPlugin(
   } = {},
 ): OfficialCodexPluginDiscovery {
   const env = { ...process.env, ...(opts.env ?? {}) };
-  const inspection = inspectOfficialCodexPluginInventory(repoRoot, {
+  const inspection = inspectOfficialCodexPluginReadiness(repoRoot, {
     env,
     claudeCommand: opts.claudeCommand,
     timeoutMs: opts.inventoryTimeoutMs,
@@ -208,36 +277,7 @@ export function discoverOfficialCodexPlugin(
   if (inspection.status === "disabled") {
     return failure(`${OFFICIAL_CODEX_PLUGIN_ID} is installed but disabled`, inspection.invocation);
   }
-  const { plugin, invocation: inventory } = inspection;
-  if (typeof plugin.version !== "string" || plugin.version.trim() === "") {
-    return failure(`${OFFICIAL_CODEX_PLUGIN_ID} inventory entry is missing a version`, inventory);
-  }
-  if (typeof plugin.installPath !== "string" || !isAbsolute(plugin.installPath)) {
-    return failure(`${OFFICIAL_CODEX_PLUGIN_ID} inventory entry has an invalid installPath`, inventory);
-  }
-
-  let root: string;
-  try {
-    if (lstatSync(plugin.installPath).isSymbolicLink()) {
-      return failure(`${OFFICIAL_CODEX_PLUGIN_ID} installPath must not be a symlink`, inventory);
-    }
-    root = realpathSync(plugin.installPath);
-    if (!statSync(root).isDirectory()) return failure(`${OFFICIAL_CODEX_PLUGIN_ID} installPath is not a directory`, inventory);
-  } catch (error) {
-    return failure(`${OFFICIAL_CODEX_PLUGIN_ID} installPath is unavailable: ${errorText(error)}`, inventory);
-  }
-  const companion = safeRegularFile(root, "scripts/codex-companion.mjs");
-  const manifest = safeRegularFile(root, ".claude-plugin/plugin.json");
-  const schema = safeRegularFile(root, "schemas/review-output.schema.json");
-  if (!companion || !manifest || !schema) {
-    return failure(`${OFFICIAL_CODEX_PLUGIN_ID} install is missing safely-contained companion, manifest, or schema files`, inventory);
-  }
-  if (!validOfficialManifest(manifest, plugin.version)) {
-    return failure(`${OFFICIAL_CODEX_PLUGIN_ID} manifest identity/version does not match public inventory`, inventory);
-  }
-  if (!validOfficialReviewSchema(schema)) {
-    return failure(`${OFFICIAL_CODEX_PLUGIN_ID} review schema is unsupported`, inventory);
-  }
+  const { plugin, companion } = inspection;
 
   const home = env.HOME ?? env.USERPROFILE ?? homedir();
   const pluginData = env.CLAUDE_PLUGIN_DATA ?? join(home, ".claude", "plugins", "data", "codex-openai-codex");
@@ -255,7 +295,7 @@ export function discoverOfficialCodexPlugin(
       command: opts.nodeCommand ?? env.REPO_HARNESS_NODE_EXECUTABLE ?? "node",
       args,
       env: { ...env, CLAUDE_PLUGIN_DATA: pluginData },
-      version: plugin.version,
+      version: plugin.version as string,
     },
   };
 }
@@ -301,6 +341,7 @@ function parseOfficialResult(value: unknown): OfficialReviewResult | null {
   const findings = result.findings.map(parseOfficialFinding);
   if (findings.some((finding) => finding === null)) return null;
   if (!result.next_steps.every(nonEmptyString)) return null;
+  if ((result.verdict === "approve") !== (findings.length === 0)) return null;
   return {
     verdict: result.verdict,
     summary: result.summary,
