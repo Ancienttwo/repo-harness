@@ -1,9 +1,9 @@
-# PRD: Verified Context Contracts (ME-2C)
+# PRD: Verified Evidence Context Projection (ME-2C)
 
 > **Status**: Draft
 > **Slug**: `verified-context-contracts`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T19:49:19+0800
+> **Updated**: 2026-08-25T15:51:15+0800
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
 > **Depends On**: ME-2A read-only delegation and canonical Contract/check/verification evidence
@@ -11,24 +11,24 @@
 
 ## AI Quick-Read Card
 
-- **Problem**: long-running Engineers may promote Worker prose or stale transcript into next-round truth without an exact evidence chain.
+- **Problem**: Provider compaction/transcript 与 Worker prose 可能被误当成跨轮可信事实；repo-harness 需要在候选、验证和 Human decision 边界投影 exact evidence，而不是接管 Provider 的每轮对话循环。
 - **Users**: Module Engineer, read-only Worker, semantic verifier and Human decision owner.
 - **Platform**: canonical Contract or exact-source projection, content-addressed context compiler and independent verifier receipts.
-- **P0 surface**: `EngineerStepProposalV1`, `WorkerRoundReceiptV1`, `SemanticVerificationAssertionV1`, `DecisionRequestV1`, runtime failure/budget and context selection.
+- **P0 surface**: candidate-bound `WorkerRoundReceiptV1`、checkpoint `SemanticVerificationAssertionV1`、`DecisionRequestV1` 和 content-addressed trusted/untrusted context projection；`EngineerStepProposalV1` 只在显式 bounded worker checkpoint 使用，不映射每个 Provider turn。
 - **Core metric**: unverified claims in trusted next context 0; ambiguous latest assertion selection 0.
 - **Hard constraint**: semantic assertion cannot mark Task done, modify Lease, sign Acceptance or enter Publication readiness.
 - **Key risk**: selecting “latest” by timestamp/file order or trusting mutable evidence refs.
 - **Unknowns**: semantic verifier cost/profile policy remains Draft but does not change authority.
-- **Acceptance scenarios**: continuous evidence chain, broken-chain refusal, decision stop, mutable-ref rejection and Acceptance independence.
-- **Suggested next step**: freeze one read-only two-round fixture with an answered DecisionRequest.
+- **Acceptance scenarios**: checkpoint evidence chain、broken-chain refusal、decision stop、mutable-ref rejection、Provider compaction independence and Acceptance independence。
+- **Suggested next step**: freeze one candidate → verifier checkpoint → answered DecisionRequest fixture；证明 Provider transcript/compaction bytes 改变不会改变 trusted projection。
 
 ## Problem
 
-The next round needs canonical task intent plus verified candidate evidence, not the full trajectory. Every assertion must bind exact candidate, checks and verifier receipts and form a continuous chain.
+The next bounded execution checkpoint needs canonical task intent plus verified candidate evidence, not the full trajectory. Every assertion binds exact candidate, checks and verifier receipts and forms a continuous checkpoint chain；ordinary Provider turns remain Provider-owned runtime history。
 
 ### Product Direction
 
-Prefer adding semantic fields to the existing canonical Contract. If that schema is not yet changed, `SemanticContractProjectionV1` may only project an exact Contract path/revision/digest and never override it. The context compiler selects the highest continuous, subject-matching assertion chain; no timestamp heuristic exists.
+Prefer adding semantic fields to the existing canonical Contract. If that schema is not yet changed, `SemanticContractProjectionV1` may only project an exact Contract path/revision/digest and never override it. The projection selects the highest continuous, subject-matching checkpoint chain; no timestamp heuristic exists. Provider transcript、history、compaction summary 与 turn state 永不进入 trusted authority，也不要求 repo-harness 为每个 turn 生成记录。
 
 ### Feasibility Boundary
 
@@ -75,6 +75,8 @@ Open DecisionRequest stops execution. Only an authorized, revision-fenced answer
 - Worker process lifecycle, retry or cancellation.
 - Writable grants, task completion, Publication or Acceptance.
 - Full transcript ingestion or autonomous guessing.
+- Provider query loop、tool-call parser、streaming、history persistence 或 context compaction。
+- Requiring one repo-harness round/assertion for every Provider turn。
 
 ## Module Behaviors (P0)
 
@@ -82,9 +84,9 @@ Open DecisionRequest stops execution. Only an authorized, revision-fenced answer
 
 Canonicalize round/proposal/assertion/decision records under exact task, claim, candidate and previous-chain fences.
 
-### Module 2: Context Compiler
+### Module 2: Evidence Context Projection
 
-Select canonical Contract plus the latest unique continuous assertion chain and answered decisions. Preserve Worker claims only in an explicitly untrusted section.
+Select canonical Contract plus the latest unique continuous checkpoint chain and answered decisions. Emit content-addressed references split into trusted evidence and explicitly untrusted claims；leave prompt assembly、history and compaction to the selected Provider runtime。
 
 ## Data Model
 
@@ -190,7 +192,7 @@ Constraint lists accept only IDs present in the exact `contract_sha256`; labels 
 
 ## Developer Handoff
 
-Implement pure schemas/compiler only after Contract carrier decision. Do not introduce Worker Host effects here.
+Implement pure schemas/projection only after Contract carrier decision. Do not introduce Provider or delegated-run effects here.
 
 ### Acceptance Scripts
 

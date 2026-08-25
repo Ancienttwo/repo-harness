@@ -3,24 +3,24 @@
 > **Status**: Draft
 > **Slug**: `writable-worker-grant`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T19:49:19+0800
+> **Updated**: 2026-08-25T15:51:15+0800
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
-> **Depends On**: ME-0B, ME-2A and ME-3 Worker Host; current Contract/Lease/WorkEnvelope
+> **Depends On**: ME-0B, ME-2A, an Approved ME-3B Delegated Run Adapter, and a separate managed-Parent/sandbox canary; current Contract/Lease/WorkEnvelope
 > **Tier**: compact
 
 ## AI Quick-Read Card
 
 - **Problem**: a writable Worker needs mutation-time authority while Parent Engineer and every other child are provably unable to write the same worktree.
-- **Users**: managed Module Engineer, writable Worker, Worker Host operator and Acceptance Plane.
-- **Platform**: Worker Host-controlled Parent/child processes, exclusive writer actor, OS sandbox and host-observed Git state.
+- **Users**: managed Module Engineer, writable Worker, runtime operator and Acceptance Plane.
+- **Platform**: runtime-controlled Parent/child processes, exclusive writer actor, OS sandbox and runtime-observed Git state；no generic Agent loop。
 - **P0 surface**: `WriterActorCurrentV1`, `DelegatedMutationGrantV1`, host-enforced Parent freeze, writer actor CAS, mutation guard, settlement and crash recovery.
 - **Core metric**: writer overlap 0; path/policy escape 0; publication before settlement 0.
 - **Hard constraint**: unmanaged Provider Sessions remain read-only; prompt text or a store flag cannot freeze their filesystem permissions.
 - **Key risk**: Parent retains shell/edit authority after the store says Worker owns the slot.
-- **Unknowns**: dynamic Parent permission revocation and child runtime principal require Worker Host canary.
+- **Unknowns**: dynamic Parent permission revocation and child runtime principal require a dedicated runtime/security canary.
 - **Acceptance scenarios**: Parent-to-Worker handoff, second writer refusal, mutation-time revalidation, crash recovery and observed diff.
-- **Suggested next step**: approve only after ME-3 demonstrates managed Parent freeze and sandbox receipts.
+- **Suggested next step**: keep disabled until ME-3B and the separate security canary demonstrate managed Parent freeze and sandbox receipts；do not block ME-4C Product Acceptance on this feature.
 
 ## Problem
 
@@ -28,7 +28,7 @@
 
 ### Product Direction
 
-Writable delegation is enabled only for an Engineer Session managed by ME-3 Worker Host. The Host freezes Parent write capability before activating the Worker grant, revalidates grant epoch and parent Lease at mutation boundaries, observes actual Git state, and blocks publication/new writers until settlement.
+Writable delegation is enabled only for an Engineer Session whose execution boundary is managed by an Approved ME-3B adapter plus a proven OS/process sandbox. The runtime boundary freezes Parent write capability before activating the Worker grant, revalidates grant epoch and parent Lease at mutation boundaries, observes actual Git state, and blocks publication/new writers until settlement.
 
 ### Feasibility Boundary
 
@@ -41,7 +41,7 @@ Writable delegation is enabled only for an Engineer Session managed by ME-3 Work
 ### Primary Users
 
 - Managed Module Engineer delegating one bounded mutation unit.
-- Worker Host enforcing the writer domain.
+- Managed runtime/security boundary enforcing the writer domain.
 
 ### Secondary Users
 
@@ -148,12 +148,12 @@ Every mutation broker revalidates `WriterActorCurrentV1` immediately before effe
 
 | Item | Impact | Resolution Path | Owner |
 |---|---|---|---|
-| Managed Parent permission revocation | Blocks approval | ME-3 process/sandbox canary | Host owner |
+| Managed Parent permission revocation | Blocks approval | ME-3B plus dedicated process/sandbox canary | Runtime owner |
 | Child principal at every effect | Blocks approval | runtime identity matrix | Security owner |
 
 ## Developer Handoff
 
-Do not implement before ME-3 is Approved. No unmanaged Session compatibility mode is allowed.
+Do not implement before ME-3B and the dedicated security canary are Approved. No unmanaged Session compatibility mode is allowed；absence of enforcement means read-only, not a fallback writer path。
 
 ### Acceptance Scripts
 

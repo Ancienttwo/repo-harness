@@ -3,10 +3,10 @@
 > **Status**: Draft
 > **Slug**: `integration-product-acceptance`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T19:49:19+0800
+> **Updated**: 2026-08-25T15:51:15+0800
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
-> **Depends On**: ME-1A, ME-2C, ME-3 and existing Publication/Acceptance; interface-driven work additionally references ME-4B
+> **Depends On**: ME-1A and existing Publication/Acceptance; interface-driven work additionally references ME-4B. ME-2C assertions may be consumed as optional evidence but are not authority or an approval prerequisite.
 > **Tier**: compact
 
 ## AI Quick-Read Card
@@ -20,7 +20,7 @@
 - **Key risk**: selecting “current” module publications without frozen revisions/base/head.
 - **Unknowns**: exact combined candidate carrier and product receipt integration with the existing Acceptance Plane remain blockers.
 - **Acceptance scenarios**: requirement closure, publication selection, stale candidate, missing matrix row and independent product gate.
-- **Suggested next step**: freeze one two-module combined candidate fixture before approval.
+- **Suggested next step**: advance before temporary/writable Worker automation；freeze one two-module combined candidate fixture using existing deterministic checks and Acceptance receipts。
 
 ## Problem
 
@@ -29,6 +29,8 @@ Integration must prove an Approved requirement against exact module publications
 ### Product Direction
 
 The original requirement subject is an existing Approved work-package PRD plus its exact Source Spec revision/digest; no new Requirement database is created. Integration selects exact accepted publication receipts, constructs one content-addressed candidate, verifies a closed matrix, and asks the existing independent Acceptance Plane to issue a product-level receipt.
+
+This control-plane capability is independent of how implementation was executed. A candidate produced by a Human、persistent Codex Thread、native child or future Provider adapter enters the same exact-subject gate；ME-3 runtime receipts and ME-2C semantic assertions may supply evidence refs but cannot become prerequisites or acceptance authority。
 
 ### Feasibility Boundary
 
@@ -74,6 +76,7 @@ All matrix constraints pass for exact final head/tree. Independent Acceptance Pl
 
 - Module implementation, interface-request transitions, automatic merge/release or new Kanban state.
 - Treating Worker/Verifier prose as Acceptance.
+- Depending on Provider Session、Worker Host、runtime lifecycle or model-routing state to define the combined candidate or product verdict。
 
 ## Module Behaviors (P0)
 

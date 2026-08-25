@@ -1,27 +1,29 @@
-# PRD: Persistent Module Engineer Organization
+# PRD: Agent Engineering Control Plane
 
 > **Status**: Approved
 > **Slug**: `persistent-module-engineer-organization`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-25T00:20:00+0800
+> **Updated**: 2026-08-25T21:03:47+0800
+> **Human Direction Amendment**: User approved the control-plane reframe, runtime-adapter split and roadmap correction on 2026-08-25
 > **Source Spec**: `docs/spec.md`
 > **Related Research**: `docs/researches/20260824-persistent-module-engineer-organization.md`
 > **Tier**: standard
-> **Artifact Role**: umbrella architecture; not a single implementation Sprint
+> **Artifact Role**: umbrella control-plane architecture; Persistent Module Engineer is one organization projection, not the runtime owner
 > **Target Baseline**: `main@75f50b909d50e980f8a372208f55aa42665a2db9`
+> **Amendment Baseline**: `main@a8a0c983`
 
 ## AI Quick-Read Card
 
-- **Problem**: repo-harness 有 canonical Task、Lease、WorkEnvelope、Publication、Acceptance 与临时 fleet roles，但没有跨 Session 持续存在的模块工程师岗位、可信 Session binding、父 Claim 内 delegation、verified-context inner loop 和组织级 read model。
+- **Problem**: repo-harness 已有 canonical Task、Lease、WorkEnvelope、Publication、Acceptance，以及已落地的 Engineer Profile/Binding、可信 Principal/ClaimActorReceipt 和 Work Package scheduling；尚缺的是在不重建 Agent query loop 的前提下，把持久逻辑岗位、Provider effects、durable coordination、verified evidence 和组织 read model 连成可恢复控制平面。
 - **Users**: Maintainer、Program Orchestrator、Module Engineer、临时 Worker、独立 Acceptance Plane。
-- **Platform**: repo-harness CLI/MCP、git-common-dir coordination plane、Codex App Server/Claude Provider adapters、本地 Worker Host；远端访问延后。
-- **P0 surface**: 先交付已批准的 Profile/Binding read model 和最小只读 Engineer Board；再批准 Binding principal、Work Package Graph/Engineer Offer、persist-first messages 与 Codex persistent-thread transport；随后按独立 rollback boundary 推进 delegation、verified context、writer grant、freeze/handoff、interface change 和 integration。
+- **Platform**: repo-harness CLI/MCP、git-common-dir coordination plane、Codex-first thin Provider adapters；local Host/daemon 只有在 capability canary 证明 CLI/MCP sidecar 无法承担 effect journal 或 reconciliation 时才进入产品面。
+- **P0 surface**: 保留已交付的 ME-0A/0B/1A；Runtime Admission Canary 已通过；下一步依次完成 persist-first messages、Codex Thread Effect Adapter、最小只读 Control Board 和 exact combined-candidate Product Acceptance；read-only delegation 与 evidence projection 随后推进，temporary-run adapter 按实测需要启用，writable delegation 最后且默认关闭。
 - **Core metric**: Engineer 岗位、SOP 与 repo-grounded knowledge 跨 Session/Provider 延续，同时 task identity、Lease、Publication、Acceptance 与 Human merge 权威完全不变。
 - **Hard constraint**: Capability、Engineer、Binding、Claim、Delegation、Acceptance 六种身份不得合并；Provider Thread ID 不得充当 task/owner/lease/module identity；任何 Session chat、Memory、Worker result 或 UI projection 都不能成为 task/merge authority。
-- **Key risk**: 只有可信 principal、Claim actor receipt 和 mutation-time writer grant 能把“旧 Session 不再有权”“同一 worktree 只有一个 writer”从提示词变成技术事实。
+- **Key risk**: 把 Provider lifecycle、每轮对话或模型路由误做成 repo-harness authority，会把控制平面重新耦合成自建 Agent Runtime；只有可信 principal、Claim actor receipt 和 mutation-time writer grant 才能把权限从提示词变成技术事实。
 - **Unknowns**: ME-0B 已冻结 restricted MCP OAuth authorization carrier；Provider Thread identity 仍不可作为 principal，只保留 nullable observation。
 - **Acceptance scenarios**: 单 active binding、旧 principal 拒绝、Claim actor 可追溯、无第二 Lease、单 writer actor、persist-first message、verified-only next context、Fleet column 不受 runtime state 影响。
-- **Suggested next step**: ME-0A 已完成；ME-0B 的三路 identity canary 已关闭阻断并获 Human Approval，成为当前唯一 implementation-ready child。其余 child 继续保持 Draft。
+- **Suggested next step**: Runtime Admission Canary 已在 `codex/me1c-engineer-inbox@ef731e6a` 通过；ME-1C 候选可沿其独立 acceptance/merge 边界推进。ME-3A 仍保持 Draft，必须等待 ME-1C 合入且自身决策闭合后再晋级。
 
 ## Problem
 
@@ -29,13 +31,15 @@
 
 ### Product Direction
 
-系统固定为三个互不替代的平面：
+系统固定为三个互不替代的平面。Agent query loop、tool-call protocol、streaming、Provider history、context compaction 和 native child lifecycle 属于 Provider runtime；repo-harness 不以兼容层或 shadow implementation 重建它们：
 
 | Plane | Responsibility | Explicitly not authority for |
 |---|---|---|
 | Provider runtime | Codex/Claude persistent Session 的即时通知、运行事件和可达性 observation | Sprint 拆解、Task/Lease、Acceptance、Kanban column |
 | repo-harness control | Work Package Graph、Engineer Binding、Lease、WorkEnvelope、durable inbox、Evidence、Publication、Acceptance | Provider transcript 或 UI 本地状态 |
 | CLI Kanban projection | Planning Graph、Delivery Kanban、Organization/Attention 三个只读视图 | 任何状态迁移或执行权转移 |
+
+`ModuleEngineerProfile` 表达持久逻辑岗位；当前 Codex/Claude Session 只是 `EngineerBinding` 的可替换运行载体。系统目标不是运营一支 repo-harness-owned Agent 军团，而是让不同 Runtime 在相同 Task、Lease、Evidence、Acceptance 和 Human-control contract 下可替换地执行。
 
 规范派工路径是：Program Orchestrator 提出结构化 Work Package Graph；repo-harness 确定性验证 capability、依赖、priority、concurrency、acceptance 和 rollback boundary；由该图、Binding 与 Fleet readiness 派生 `EngineerOfferV1`；选中的 Module Engineer 以精确 graph/offer/binding fences 调用 `engineer acquire`，内部复用现有 `fleet acquire` 产生 Claim、worktree 和 WorkEnvelope，并按 ME-0B 事务边界持久化 ClaimActorReceipt，receipt 失败则只补偿释放本次 Claim；任务通知先写 durable module inbox，再由 Provider transport 尝试即时送达；Module Gate、Integration Gate 和 Product Gate 最终消费结构化 evidence，而不是各 Session 的 `DONE` 声明。
 
@@ -68,6 +72,8 @@ Hard Constraints:
 - Planning Graph、Delivery Kanban 与 Organization/Attention 分别回答拆解依赖、任务生命周期和运行注意力；三者不得压成一个 `status`。
 - Formal Gatekeeper 位于独立 Acceptance Plane，不继承 Engineer 的自我结论或写权限。
 - Verified context 只消费 continuous evidence-bound `SemanticVerificationAssertion` chain；Worker prose 与 Provider transcript 默认不可信。
+- Runtime adapters 只接收已经通过控制平面 admission 且已持久化的 effect reference；不得接收自由文本后自行创建 Task、Claim、message 或 completion state。
+- Provider/model selection 是可观测执行策略，不进入 task、claim、acceptance 或 publication identity；在两个真实 consumer 和可比较证据出现前，不产品化通用 ExecutionPolicy。
 
 Recommended Defaults:
 
@@ -102,7 +108,7 @@ Freedoms:
 | Acceptance | Existing typed independent gates |
 | Provider facts | Provider API/runtime observation |
 | Durable engineer communication | ModuleMessageEvent + delivery receipt/observation in git-common-dir |
-| Provider message delivery | PersistentThreadTransport observation only |
+| Provider message delivery | ME-3A ProviderThreadEffectObservation only |
 | Kanban column | FleetBoardSnapshot pure projection |
 | Engineer/session/worker display | EngineeringOverlaySnapshot pure projection |
 | Durable knowledge | Existing architecture/research/lessons/workstream/notes files |
@@ -197,6 +203,18 @@ Freedoms:
 - Multi-machine claim protocol, recursive delegation, GUI/computer-use runtime or automatic final merge.
 - Cross-device Cloudflare/Remote MCP until the local authority and read models pass canary.
 
+## Runtime Admission Gate
+
+在任何 runtime child PRD 从 Draft 晋级前，先执行一个非权威 canary。Canary 不创建新的任务、执行或验收 authority，只冻结 Provider capability observation 与 adapter conformance evidence：
+
+> **Result (2026-08-25)**: Passed at `codex/me1c-engineer-inbox@ef731e6a`. The evidence covers the exact Engineer/thread binding, persist-first delivery, lost-ack reconciliation and unchanged Task/Lease authorities. This result admits ME-1C to its separate merge gate and removes the runtime-admission blocker from ME-3A；it does not approve ME-3A or authorize daemon/query-loop scope.
+
+- Codex-first；第二个 Provider 只用于检验 adapter taxonomy，不要求 P0 同时支持；
+- 覆盖 create/resume/send/observe/stop、lost acknowledgement、restart/reconciliation、usage evidence 和可证明的 sandbox/principal carrier；
+- 同一 idempotency key 的未知结果不得 blind retry 或切换 Provider；
+- 第一证明点是一个已持久化的 ME-1C event 触发恰好一个 Codex Thread turn，lost ACK 后 reconcile 回同一 effect，且 Task/Lease bytes 不变；
+- 复用现有 benchmark evidence producer；在真实 role-runtime mapping 出现前，不新增通用 runtime benchmark authority、model gateway 或 economics dashboard。
+
 ## Module Behaviors (P0)
 
 | Order | Child PRD | Boundary |
@@ -204,17 +222,18 @@ Freedoms:
 | 0A | `20260824-1653-engineer-profile-binding-projection.prd.md` | Capability-backed Profile/SOP, shared binding store, operator-only CAS, read-only status/bootstrap |
 | 0B | `20260824-1653-engineer-binding-principal-claim-actor.prd.md` | Authenticated principal, old-binding rejection, ClaimActorReceipt |
 | 1A | `20260824-1653-engineer-scheduling-schema.prd.md` | repository-qualified Work Package identity, scheduling revisions, dependency states and repo-scoped concurrency |
-| 1B | `20260824-1653-engineering-overlay-control-board.prd.md` | Planning Graph、Delivery Kanban、Engineer/Attention 的分离只读投影；ME-0A 后可先交付最小 Engineer Board |
 | 1C | `20260824-1653-engineer-coordination-messages.prd.md` | shared message mechanics, closed event/receipt/transition schemas, binding-fenced delivery |
+| 3A | `20260825-1551-provider-thread-effect-adapter.prd.md` | Codex-first persistent Thread effects、intent-first idempotency、typed observation 与 lost-ack reconciliation；不拥有 Agent loop |
+| 1B | `20260824-1653-engineering-overlay-control-board.prd.md` | Planning Graph、Delivery Kanban、Engineer/Attention 的分离只读投影；只展示已落地的 authoritative/observed facts |
+| 4C | `20260824-1653-integration-product-acceptance.prd.md` | exact combined candidate、requirement authority 与 independent product gate；不依赖 Worker runtime |
 | 2A | `20260824-1653-read-only-delegation-admission.prd.md` | exact parent fences, native role admission, read-only proof and WorkerResult |
-| 2C | `20260824-1653-verified-context-contracts.prd.md` | verified evidence chain, DecisionRequest lifecycle and context compiler |
-| 3 | `20260824-1653-worker-host.prd.md` | Codex persistent-thread transport + temporary Worker runtime adapters、receipts、reconcile/cancel/collect |
-| 2B | `20260824-1653-writable-worker-grant.prd.md` | host-enforced Parent freeze, exclusive writer actor, sandbox and settlement |
+| 2C | `20260824-1653-verified-context-contracts.prd.md` | candidate-bound evidence projection、DecisionRequest lifecycle 与 content-addressed context；不接管 per-turn inner loop |
+| 3B | `20260825-1551-delegated-run-adapter.prd.md` | temporary run dispatch/observe/cancel/collect；只有 native child canary 证明需要时才激活 |
 | 4A | `20260824-1653-bound-task-freeze-handoff.prd.md` | freeze/inspect/refuse unsafe dirty-bound rotation; takeover remains disabled |
 | 4B | `20260824-1653-interface-change-request.prd.md` | interface request authority, transitions and Work Package projection |
-| 4C | `20260824-1653-integration-product-acceptance.prd.md` | exact combined candidate, requirement authority and independent product gate |
+| 2B | `20260824-1653-writable-worker-grant.prd.md` | runtime-enforced Parent freeze, exclusive writer actor, sandbox and settlement；Provider 不能证明时保持 disabled |
 
-Each table row is one child PRD and one separate rollback/verification boundary. Draft children cannot be pulled into a Sprint merely because this umbrella is Approved. ME-2B depends on ME-3; no writable worker may be enabled before the Host can enforce Parent freeze, runtime identity and sandbox policy.
+Each table row is one child PRD and one separate rollback/verification boundary. Draft children cannot be pulled into a Sprint merely because this umbrella is Approved. The former combined ME-3 Worker Host draft is Superseded by ME-3A and ME-3B. ME-2B depends on an Approved ME-3B plus a separate managed-Parent/sandbox canary；no writable worker may be enabled before the runtime boundary can enforce Parent freeze, runtime identity and sandbox policy.
 
 ## Data Model
 
@@ -249,20 +268,20 @@ No digest preimage may silently add engineer, binding or Provider identity to cu
 | Item | Impact | Resolution Path | Owner |
 |---|---|---|---|
 | Trusted Engineer principal carrier | Closed for P0 | restricted MCP OAuth authorization plus live Binding revalidation；see `docs/researches/20260825-me0b-principal-carrier-canary.md` | Runtime maintainer |
-| Managed Parent and child identity at every mutation boundary | Blocks writable delegation | ME-3 Host plus ME-2B sandbox canary | Delegation owner |
+| Managed Parent and child identity at every mutation boundary | Blocks writable delegation | ME-3B plus ME-2B sandbox canary | Delegation owner |
 | Active dirty task takeover semantics | Blocks transparent rotation | ME-4A keeps takeover disabled pending carrier/election PRD | State owner |
 | Cross-repo stable Work Package identity | Scheduling schema migration | ME-1A content/identity tests | Planning owner |
-| Codex App Server lifecycle/idempotency parity | Blocks automatic create/send/read/resume/archive | ME-3 persistent-thread transport canary; unknown effects reconcile | Runtime owner |
-| Independent semantic verifier cost | Inner-loop budget | ME-2C measured policy tiers | Verification owner |
+| Codex App Server lifecycle/idempotency parity | Blocks automatic create/send/read/resume/archive | Runtime Admission Canary then ME-3A; unknown effects reconcile | Runtime owner |
+| Independent semantic verifier cost | Evidence projection budget | ME-2C measured checkpoints; no per-turn requirement | Verification owner |
 
 ## Developer Handoff
 
 This umbrella is architecture authority, not an implementation task.
 
-- **Build first**: ME-0A is the only implementation-ready child after the focused external approval archived at `tasks/reviews/20260824-2050-persistent-module-engineer-me0a-approval.review.md`; all other children remain Draft.
+- **Delivered baseline**: ME-0A、ME-0B 与 ME-1A 已合入 main；它们保留为控制平面历史合同，不因本次 reframe 重写 identity 或 wire semantics。
 - **Do not reinterpret**: no new Module Graph; no Session self-declared principal; no writer based on prompt-only paths; no active dirty-task transparent transfer; no UI-owned status.
 - **Promotion rule**: a child PRD becomes Approved only after its authority, principal, state transitions, failure paths and acceptance evidence are decision-complete.
-- **Canary order**: ME-0A → minimal read-only ME-1B Engineer Board → ME-0B → ME-1A → ME-1C → ME-3A Codex persistent-thread transport → ME-2A/2C → ME-3B temporary Worker runtime → ME-2B → ME-4A/B/C. `3A/3B` are staged activation gates inside Draft ME-3, not independently Approved children；this is dependency order, not permission to implement Draft work.
+- **Canary order**: delivered ME-0A/0B/1A → Runtime Admission Canary (passed at `ef731e6a`) → ME-1C core → ME-3A Codex Thread Effect Adapter → minimal ME-1B Control Board → ME-4C → ME-2A → narrowed ME-2C → conditional ME-3B → ME-4A/B → ME-2B last. This is dependency order, not permission to implement Draft work.
 - **Verify with**: child-specific tests plus `repo-harness run check-task-workflow --strict`, architecture sync and task sync.
 
 ### Acceptance Scripts
@@ -270,8 +289,9 @@ This umbrella is architecture authority, not an implementation task.
 1. Validate every child PRD filename/status/required sections through the strict workflow check.
 2. Confirm no proposed tracked path creates a second capability or memory authority.
 3. Confirm the ordered dependency graph contains no forward type dependency.
-4. Confirm ME-0A is the only Approved implementation child and every other unknown-bearing child remains Draft.
-5. Compose one fixture from Work Package Graph → EngineerOffer → Fleet acquire → ClaimActorReceipt → persist-first message → Provider observation → unchanged Fleet column.
+4. Confirm ME-0A/0B/1A remain the delivered control-plane baseline and no Draft runtime child is treated as implemented.
+5. Compose one fixture from Work Package Graph → EngineerOffer → Fleet acquire → ClaimActorReceipt → persist-first message → exactly one Provider effect after lost-ack reconciliation → unchanged Task/Lease/Fleet column.
+6. Prove ME-4C can freeze and accept an exact combined candidate without importing ME-2C or ME-3 runtime authority.
 
 ## Adjacent Patterns
 

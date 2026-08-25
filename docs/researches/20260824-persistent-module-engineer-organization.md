@@ -9,6 +9,7 @@
 >
 > **ME-0B Carrier Closure (2026-08-25)**: Codex App Server、Claude hook 与 MCP OAuth 三路 canary 已完成。P0 唯一 principal carrier 冻结为 restricted MCP OAuth `authorizationId`；新增 Engineer profile 必须无 shell、workspace coder、agent runner 和 generic Fleet mutation。Provider Thread/hook session 继续只作 observation。完整证据与决策见 `docs/researches/20260825-me0b-principal-carrier-canary.md`。
 > **Session/Kanban Amendment (2026-08-24)**: Codex Session Chat 被冻结为 persist-first delivery accelerator；Work Package Graph、EngineerOffer/acquire bridge、三视图 CLI Kanban 与 Codex App Server transport 的权威边界已同步进 umbrella、ME-1A/1B/1C/3 child PRD，未改变任何 child approval state。
+> **Control-plane Amendment (2026-08-25)**: 用户批准将目标架构从“建设持久 Agent 组织及本地 Worker Host”重构为 “Agent Engineering Control Plane”。ME-0A/0B/1A 保留为已交付控制面；combined ME-3 draft 被 ME-3A Provider Thread Effect Adapter 与 conditional ME-3B Delegated Run Adapter 取代；ME-2C 收窄为 checkpoint evidence projection；ME-4C 脱离 Worker runtime 前置依赖并提前。Runtime Admission Canary 已在 `codex/me1c-engineer-inbox@ef731e6a` 通过，解除了 ME-1C 独立合并边界及 ME-3A 后续设计的 admission blocker；它不批准 ME-3A，也不授权 Provider query loop、history、compaction、model gateway 或 daemon scope。
 
 ## 结论
 
@@ -451,6 +452,8 @@ Gatekeeper 不读取 Engineer 的自我结论作为事实，不继承完整 pare
 
 ## Canary 设计
 
+> **Execution result (2026-08-25)**: the bounded Runtime Admission Canary passed at `codex/me1c-engineer-inbox@ef731e6a`. It proved exact Engineer/thread binding, persist-first delivery, lost-ack reconciliation and unchanged Task/Lease authority. The result is admission evidence only；ME-1C keeps its own merge boundary and ME-3A remains Draft pending its production schema and restart-observation acceptance contract.
+
 第一版应控制在：
 
 - 1 个 Program Orchestrator；
@@ -562,7 +565,7 @@ MCP OAuth `authorizationId` 证明 client authorization，不证明 Provider Thr
 - sandbox/network/command/git policy；
 - settlement 与 crash recovery。
 
-独立 PRD：`plans/prds/20260824-1653-writable-worker-grant.prd.md`；依赖 ME-3 Worker Host，不能依赖手工 Provider Session 的提示词自律来冻结 Parent writer。
+独立 PRD：`plans/prds/20260824-1653-writable-worker-grant.prd.md`；依赖 Approved ME-3B 与独立 managed-Parent/sandbox canary，不能依赖手工 Provider Session 的提示词自律来冻结 Parent writer。
 
 ### ME-2C：Verified Context Inner Loop
 
@@ -575,16 +578,26 @@ MCP OAuth `authorizationId` 证明 client authorization，不证明 Provider Thr
 
 独立 PRD：`plans/prds/20260824-1653-verified-context-contracts.prd.md`。
 
-### ME-3：Worker Host
+### ME-3A：Provider Thread Effect Adapter
 
-- PersistentThreadTransport adapters；
-- WorkerRuntimeAdapter adapters；
-- acquire/dispatch/observe/collect loop；
-- immutable `WorkerDispatchIntentV1`、runtime receipt chain 与 current pointer；
-- explicit retry policy，区分 infrastructure failure 与 semantic failure；
-- Session rotation recommendation 与 Human-controlled rebinding。
+- 只消费已持久化的 ME-1C event/attempt 与 current Binding fence；
+- Codex-first send/observe/resume/stop effect；
+- intent-first idempotency 与 exact Thread/turn lost-ack reconciliation；
+- runtime/usage facts 只作 observation；
+- 不实现 Agent query loop、history store、compaction、semantic completion、model gateway 或 Provider fallback；
+- CLI/MCP sidecar first，只有 restart/reconciliation canary 证明必要时才引入 daemon。
 
-独立 PRD：`plans/prds/20260824-1653-worker-host.prd.md`。
+独立 PRD：`plans/prds/20260825-1551-provider-thread-effect-adapter.prd.md`。
+
+### ME-3B：Conditional Delegated Run Adapter
+
+- 先验证 Provider-native child 是否已经满足 ME-2A admission/observe/collect；
+- 只有真实角色缺少 lifecycle/recovery capability 时，才实现 dispatch/observe/cancel/collect adapter；
+- 优先复用现有 process supervision；不默认建设通用 Worker Host；
+- Worker result 仍是 untrusted evidence，不能改变 Task、Lease 或 Acceptance；
+- writable Parent freeze/sandbox 留在 ME-2B 的独立 security boundary。
+
+独立 PRD：`plans/prds/20260825-1551-delegated-run-adapter.prd.md`。原 `plans/prds/20260824-1653-worker-host.prd.md` 已标记 Superseded。
 
 ### ME-4A：Bound-task Freeze and Handoff
 
@@ -606,6 +619,8 @@ MCP OAuth `authorizationId` 证明 client authorization，不证明 Provider Thr
 - cross-module Acceptance Matrix；
 - original approved requirement authority 与 exact combined candidate；
 - independent system-level verification。
+
+ME-4C 不再依赖 ME-2C 或 ME-3。Human、persistent Thread、native child 或未来 adapter 产生的 candidate 都进入同一个 exact-subject gate；runtime/semantic receipts 只能提供 evidence refs，不能成为 combined candidate 或 product verdict authority。因此 ME-4C 应在 temporary/writable Worker 自动化之前推进。
 
 Human Board 的 Organization View 应最后消费这些稳定 contracts，而不是先发明 `engineer.status = busy` 一类第二权威。
 
@@ -630,6 +645,23 @@ Human Board 的 Organization View 应最后消费这些稳定 contracts，而不
 
 这套结构能横向增加 Module Engineer，而不会让 Session、Task、Lease 和 Memory 合并成一个不可恢复的 actor blob。
 
+## 2026-08-25 控制平面重构裁决
+
+从零开始时，产品不会被命名为“持久 Agent 组织”，而会被定义为：
+
+> Agent Engineering Control Plane：在可替换 Provider Runtime 之上，稳定掌握 Work Package、执行权、durable coordination、evidence、Acceptance 和 Human control。
+
+这暴露出当前方案中应删除或收窄的四个概念：
+
+1. 删除 Local Worker Host 作为 P0 平台前提；Host 是 canary 后的可选 process shape。
+2. 拆开 persistent Thread effects 与 temporary delegated runs；两者不共享 identity、retry 或 activation gate。
+3. 把 ME-2C 从 per-turn verified inner loop 收窄为 candidate/verifier/decision checkpoint projection。
+4. 把 ME-4C 从 runtime dependent tail feature 提前为控制平面主价值。
+
+Runtime/model routing 不在第一轮产品化。现有 benchmark producer 已有 provider usage、duration 与 deterministic grader evidence；先用它评估 `tokens per accepted Work Package`、`human minutes per merged PR`、first-pass acceptance、rework 和 no-progress，再决定是否存在两个真实 consumer，足以支持 shared ExecutionPolicy 抽象。
+
+第一证明点固定为：一个 exact EngineerOffer/acquire 产生 Claim/WorkEnvelope；ME-1C event 先持久化；Codex turn 成功但 ACK 丢失；ME-3A reconcile 回同一 effect；Task/Lease/Fleet bytes 不变；exact candidate 仍由独立 Acceptance 处理。若 Provider 无法提供 exact correlation，则结论是需要更厚的 effect journal/sidecar，不是自行实现 Agent query loop。
+
 ## 最终裁决
 
 GPT 建议的五个核心判断应保留：
@@ -640,9 +672,9 @@ GPT 建议的五个核心判断应保留：
 4. Subagent 是父 Claim 内的临时 Worker；
 5. Gatekeeper 必须独立。
 
-repo-harness 的最终形态不应是“多个聪明聊天窗口互相相信”，而应是：
+repo-harness 的最终形态不应是“多个聪明聊天窗口互相相信”，也不应是另一个自建 Agent Runtime，而应是：
 
-> 多个有固定 SOP、可替换 Session、repo-grounded memory 的逻辑工程师，在确定性 capability、Lease、worktree、delegation 和 acceptance contracts 下协作。
+> 多个有固定 SOP、可替换 Session、repo-grounded memory 的逻辑工程师，复用成熟 Provider Runtime，并在确定性 capability、Lease、worktree、delegation、evidence 和 acceptance contracts 下协作。
 
 ## Sources
 

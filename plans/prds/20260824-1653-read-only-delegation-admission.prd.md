@@ -3,7 +3,7 @@
 > **Status**: Draft
 > **Slug**: `read-only-delegation-admission`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T19:49:19+0800
+> **Updated**: 2026-08-25T15:51:15+0800
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
 > **Depends On**: ME-0B Principal/ClaimActorReceipt and active canonical Contract/Lease/WorkEnvelope
@@ -79,7 +79,7 @@ Admission validates the exact parent Claim/WorkEnvelope, current Engineer Princi
 ## Non-goals
 
 - Writable Worker, writer slot, Parent freeze or grant settlement.
-- Worker Host process lifecycle.
+- Provider/delegated-run process lifecycle.
 - Recursive delegation, second Lease, publication or acceptance.
 
 ## Module Behaviors (P0)
