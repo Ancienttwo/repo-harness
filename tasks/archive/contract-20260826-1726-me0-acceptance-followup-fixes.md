@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-26 17:26
+> **Related Plan**: plans/archive/plan-20260826-1609-me0-acceptance-followup-fixes.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260826-1726
+
 # Task Contract: me0-acceptance-followup-fixes
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260826-1609-me0-acceptance-followup-fixes.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->

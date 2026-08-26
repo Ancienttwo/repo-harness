@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-26 17:26
+> **Related Plan**: plans/archive/plan-20260826-1609-me0-acceptance-followup-fixes.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260826-1726
+
 # Implementation Notes: me0-acceptance-followup-fixes
 
 > **Status**: Active
