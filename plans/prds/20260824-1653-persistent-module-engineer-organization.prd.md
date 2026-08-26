@@ -17,13 +17,13 @@
 - **Problem**: repo-harness 已有 canonical Task、Lease、WorkEnvelope、Publication、Acceptance，以及已落地的 Engineer Profile/Binding、可信 Principal/ClaimActorReceipt 和 Work Package scheduling；尚缺的是在不重建 Agent query loop 的前提下，把持久逻辑岗位、Provider effects、durable coordination、verified evidence 和组织 read model 连成可恢复控制平面。
 - **Users**: Maintainer、Program Orchestrator、Module Engineer、临时 Worker、独立 Acceptance Plane。
 - **Platform**: repo-harness CLI/MCP、git-common-dir coordination plane、Codex-first thin Provider adapters；local Host/daemon 只有在 capability canary 证明 CLI/MCP sidecar 无法承担 effect journal 或 reconciliation 时才进入产品面。
-- **P0 surface**: 保留已交付的 ME-0A/0B/1A；Runtime Admission Canary 已通过；下一步依次完成 persist-first messages、Codex Thread Effect Adapter、最小只读 Control Board 和 exact combined-candidate Product Acceptance；read-only delegation 与 evidence projection 随后推进，temporary-run adapter 按实测需要启用，writable delegation 最后且默认关闭。
+- **P0 surface**: 保留已交付控制面与 read-only ME-2A/conditional ME-3B；writable ME-2B 的独立 security canary 已返回 runtime-not-admitted，因此当前产品面终止于 read-only delegation，不创建 writer grant 或 Agent Runtime。
 - **Core metric**: Engineer 岗位、SOP 与 repo-grounded knowledge 跨 Session/Provider 延续，同时 task identity、Lease、Publication、Acceptance 与 Human merge 权威完全不变。
 - **Hard constraint**: Capability、Engineer、Binding、Claim、Delegation、Acceptance 六种身份不得合并；Provider Thread ID 不得充当 task/owner/lease/module identity；任何 Session chat、Memory、Worker result 或 UI projection 都不能成为 task/merge authority。
 - **Key risk**: 把 Provider lifecycle、每轮对话或模型路由误做成 repo-harness authority，会把控制平面重新耦合成自建 Agent Runtime；只有可信 principal、Claim actor receipt 和 mutation-time writer grant 才能把权限从提示词变成技术事实。
 - **Unknowns**: ME-0B 已冻结 restricted MCP OAuth authorization carrier；Provider Thread identity 仍不可作为 principal，只保留 nullable observation。
 - **Acceptance scenarios**: 单 active binding、旧 principal 拒绝、Claim actor 可追溯、无第二 Lease、单 writer actor、persist-first message、verified-only next context、Fleet column 不受 runtime state 影响。
-- **Suggested next step**: Runtime Admission Canary 已在 `codex/me1c-engineer-inbox@ef731e6a` 通过；ME-1C 候选可沿其独立 acceptance/merge 边界推进。ME-3A 仍保持 Draft，必须等待 ME-1C 合入且自身决策闭合后再晋级。
+- **Suggested next step**: 继续完成各已批准控制面 slice 的独立 acceptance/merge；ME-2B 只有在 Host 新增 live Parent sandbox replacement 与 effect-time runtime principal/epoch receipt 后才重开。
 
 ## Problem
 
@@ -268,7 +268,7 @@ No digest preimage may silently add engineer, binding or Provider identity to cu
 | Item | Impact | Resolution Path | Owner |
 |---|---|---|---|
 | Trusted Engineer principal carrier | Closed for P0 | restricted MCP OAuth authorization plus live Binding revalidation；see `docs/researches/20260825-me0b-principal-carrier-canary.md` | Runtime maintainer |
-| Managed Parent and child identity at every mutation boundary | Blocks writable delegation | ME-3B plus ME-2B sandbox canary | Delegation owner |
+| Managed Parent and child identity at every mutation boundary | Canary no-go；writable delegation disabled | Host 提供 live Parent sandbox replacement + effect-time principal/epoch receipt 后重跑 ME-2B canary | Delegation owner |
 | Active dirty task takeover semantics | Blocks transparent rotation | ME-4A keeps takeover disabled pending carrier/election PRD | State owner |
 | Cross-repo stable Work Package identity | Scheduling schema migration | ME-1A content/identity tests | Planning owner |
 | Codex App Server lifecycle/idempotency parity | Blocks automatic create/send/read/resume/archive | Runtime Admission Canary then ME-3A; unknown effects reconcile | Runtime owner |
@@ -281,7 +281,7 @@ This umbrella is architecture authority, not an implementation task.
 - **Delivered baseline**: ME-0A、ME-0B 与 ME-1A 已合入 main；它们保留为控制平面历史合同，不因本次 reframe 重写 identity 或 wire semantics。
 - **Do not reinterpret**: no new Module Graph; no Session self-declared principal; no writer based on prompt-only paths; no active dirty-task transparent transfer; no UI-owned status.
 - **Promotion rule**: a child PRD becomes Approved only after its authority, principal, state transitions, failure paths and acceptance evidence are decision-complete.
-- **Canary order**: delivered ME-0A/0B/1A → Runtime Admission Canary (passed at `ef731e6a`) → ME-1C core → ME-3A Codex Thread Effect Adapter → minimal ME-1B Control Board → ME-4C → ME-2A native-child canary → conditional ME-3B capability proof/effect jointly closes ME-2A → narrowed ME-2C → ME-4A/B → ME-2B last. The 2026-08-26 canary proved native child writable and Codex CLI Seatbelt read-only, so conditional ME-3B is activated without making ME-2C a prerequisite for untrusted result collection.
+- **Canary order**: delivered ME-0A/0B/1A → Runtime Admission Canary (passed at `ef731e6a`) → ME-1C → ME-3A → minimal ME-1B → ME-4C → ME-2A/conditional ME-3B → narrowed ME-2C → ME-4A/B → ME-2B last. The final ME-2B canary on Codex CLI 0.149.0 proved static read-only/workspace profiles, while its version-pinned launch-only adapter had no dynamic Parent-revocation or effect-time child-principal probe. Positive admission evidence is therefore unavailable, so writable delegation is closed as runtime-not-admitted and remains disabled.
 - **Verify with**: child-specific tests plus `repo-harness run check-task-workflow --strict`, architecture sync and task sync.
 
 ### Acceptance Scripts

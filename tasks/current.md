@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-27T00:08:40+0800 -->
+<!-- updated_at: 2026-08-27T00:18:11+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-27T00:08:40+0800
-> **Source Branch**: codex/me1-acceptance-followup
-> **Source Commit**: 90a12db9
+> **Updated At**: 2026-08-27T00:18:11+0800
+> **Source Branch**: main
+> **Source Commit**: 50a127ad
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive-workflow
+> **Reason**: me2b-merge
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -18,9 +18,9 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 ## Current Focus
 
 - Status: ManualClearedWithActiveWork
-- Active Plan: (none)
-- Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
+- Active Plan: plans/plan-20260825-1443-me1c-engineer-coordination-messages.md
+- Plan Status: Review
+- Next Task: (none)
 - Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
 
 ## Mainline Snapshot Reading
@@ -31,8 +31,12 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
+- .: plans/plan-20260825-1443-me1c-engineer-coordination-messages.md
+- .: active-worktree owner -> self
 - linked-worktree-6f1bc1db12bd: plans/plan-20260826-1617-me4b-interface-change-request.md
 - linked-worktree-6f1bc1db12bd: active-worktree owner -> self
+- linked-worktree-1eb1fd41d8a9: plans/plan-20260825-1443-me1c-engineer-coordination-messages.md
+- linked-worktree-1eb1fd41d8a9: active-worktree owner -> self
 ## Active Sprint
 
 - Sprint: (none)
@@ -48,27 +52,30 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/runtime-harness/integration-acceptance/me4c-integration-product-acceptance.md`: status=active, current_slice=exact-subject-publication, source_plan=plans/plan-20260826-0115-me4c-integration-product-acceptance.md
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Part 1: fix the four runtime/error-code defects with regression tests.
+- Exact Next Step: Stage the completed module diff first; then run /check and let canonical workflow gates determine whether review, external acceptance, verification, or worktree finish is next. Command: /check
 
 ## Checks
 
-- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
+- status=fail, source=verify-sprint, exit_code=1, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: 13 changed/untracked path(s)
 
 ```
- D plans/plan-20260826-2233-me1-acceptance-followup.md
- D tasks/contracts/20260826-2233-me1-acceptance-followup.contract.md
- D tasks/notes/20260826-2233-me1-acceptance-followup.notes.md
- D tasks/reviews/20260826-2233-me1-acceptance-followup.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260826-2233-me1-acceptance-followup.md
-?? tasks/archive/contract-20260827-0008-me1-acceptance-followup.md
-?? tasks/archive/notes-20260827-0008-me1-acceptance-followup.md
-?? tasks/archive/review-20260827-0008-me1-acceptance-followup.md
-?? tasks/archive/todo-20260827-0008-me1-acceptance-followup.md
+M  docs/researches/20260824-persistent-module-engineer-organization.md
+A  docs/researches/20260826-me2b-managed-parent-sandbox-canary.md
+A  plans/archive/plan-20260826-1716-me2b-managed-parent-sandbox-canary.md
+M  plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md
+M  plans/prds/20260824-1653-writable-worker-grant.prd.md
+A  scripts/me2b-runtime-admission-canary.ts
+A  tasks/archive/contract-20260827-0008-me2b-managed-parent-sandbox-canary.md
+A  tasks/archive/notes-20260827-0008-me2b-managed-parent-sandbox-canary.md
+A  tasks/archive/review-20260827-0008-me2b-managed-parent-sandbox-canary.md
+A  tasks/archive/todo-20260827-0008-me2b-managed-parent-sandbox-canary.md
+M  tasks/todos.md
+A  tests/me2b-runtime-admission-canary.test.ts
+?? docs/researches/20260824-TDD-audit.md
 ```
 
 ## Source Artifacts
