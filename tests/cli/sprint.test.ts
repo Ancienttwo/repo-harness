@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 
@@ -117,5 +117,25 @@ describe('repo-harness sprint graph CLI', () => {
     const unreadableRegistry = run(root, ['sprint', 'graph', '--sprint', sprintPath, '--format', 'json']);
     expect(unreadableRegistry.exitCode).toBe(1);
     expect(JSON.parse(unreadableRegistry.stderr)).toMatchObject({ ok: false, error: 'fleet_registry_invalid' });
+  });
+
+  test('a carrier naming an unresolvable primary_capability reports a domain code', () => {
+    const { root } = fixture();
+    const carrier = join(root, 'plans/sprints/demo.work-graph.v1.json');
+    const graph = JSON.parse(readFileSync(carrier, 'utf8')) as {
+      work_packages: Array<{ primary_capability: string }>;
+    };
+    // Well-formed capability_id that no capability node declares, so the carrier
+    // passes work-graph shape validation and fails at capability resolution.
+    graph.work_packages[0]!.primary_capability = 'capability.absent.not-a-capability';
+    writeFileSync(carrier, `${JSON.stringify(graph)}\n`);
+    execFileSync('git', ['add', '.'], { cwd: root });
+    execFileSync('git', ['commit', '-qm', 'unresolvable capability'], { cwd: root });
+
+    const projected = run(root, ['sprint', 'graph', '--sprint', sprintPath, '--format', 'json']);
+    expect(projected.exitCode).toBe(1);
+    const failure = JSON.parse(projected.stderr) as { ok: boolean; error: string };
+    expect(failure.ok).toBeFalse();
+    expect(failure.error).toBe('work_graph_invalid');
   });
 });

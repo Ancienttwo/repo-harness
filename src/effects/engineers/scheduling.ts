@@ -20,6 +20,7 @@ import {
   type WorkPackageDependencyV1,
 } from '../../core/engineers/scheduling';
 import {
+  EngineerProfileBindingError,
   canonicalEngineerJson,
   engineerSha256,
 } from '../../core/engineers/profile-binding';
@@ -203,7 +204,22 @@ export function readProjectedWorkGraphAt(
     fail('work_graph_invalid', `work graph identity does not match ${repo.id}:${sprintPath}`);
   }
   validateReferencedAuthorities(repo.path, sprint.commit, graph, deps.readFileAtCommit);
-  for (const item of graph.work_packages) deps.resolveCapability(repo.path, item.primary_capability);
+  for (const item of graph.work_packages) {
+    // A carrier naming a capability the authority cannot resolve is an invalid
+    // work graph, not a Profile failure: the Profile domain error would
+    // otherwise escape this projection and reach callers as an unclassified
+    // failure.
+    try {
+      deps.resolveCapability(repo.path, item.primary_capability);
+    } catch (error) {
+      if (!(error instanceof EngineerProfileBindingError)) throw error;
+      fail(
+        'work_graph_invalid',
+        `work graph ${carrierPath} references an unresolvable capability: ${item.primary_capability}`,
+        error,
+      );
+    }
+  }
   const canonicalTasks = projectCanonicalTasks({
     repoIdentity: deps.repoIdentity(repo.path),
     sprintPath,
