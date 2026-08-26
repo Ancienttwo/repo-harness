@@ -828,6 +828,36 @@ export function renderAcceptanceProjection(receipt: AcceptanceReceipt): string {
   ].join('\n');
 }
 
+/**
+ * The review file header carries the same four review-binding fields the
+ * receipt already owns (`Status`, `Recommendation`, `Reviewed Subject
+ * SHA256`, `Reviewed Target Revision`), authored as placeholders by the
+ * review template. Projecting only the receipt section left every accepted
+ * review contradicting its own receipt until a human patched the header by
+ * hand. This syncs a placeholder to the receipt value and nothing else: a
+ * header a reviewer already filled in stays authored, and a `reject`
+ * disposition leaves `Pending`/`fail` alone because those placeholders are
+ * already the truthful values for it.
+ */
+function syncReviewHeader(source: string, receipt: AcceptanceReceipt): string {
+  const boundary = source.search(/^##[ \t]/m);
+  let header = boundary === -1 ? source : source.slice(0, boundary);
+  const rest = boundary === -1 ? '' : source.slice(boundary);
+  const syncField = (field: string, placeholder: string, value: string): void => {
+    header = header.replace(
+      new RegExp(`^(> \\*\\*${field}\\*\\*:[ \\t]*)(.+)$`, 'm'),
+      (whole, prefix: string, current: string) => (current.trim() === placeholder ? `${prefix}${value}` : whole),
+    );
+  };
+  syncField('Reviewed Subject SHA256', 'pending', receipt.subject_sha256);
+  syncField('Reviewed Target Revision', 'pending', receipt.target_revision);
+  if (receipt.disposition === 'external_pass' || receipt.disposition === 'user_waiver') {
+    syncField('Recommendation', 'fail', 'pass');
+    syncField('Status', 'Pending', 'Accepted');
+  }
+  return `${header}${rest}`;
+}
+
 export function projectAcceptance(reviewPath: string, receipt: AcceptanceReceipt): void {
   const source = readFileSync(reviewPath, 'utf-8');
   const projection = renderAcceptanceProjection(receipt);
@@ -835,7 +865,7 @@ export function projectAcceptance(reviewPath: string, receipt: AcceptanceReceipt
   const next = pattern.test(source)
     ? source.replace(pattern, `${projection}\n\n`)
     : `${source.trimEnd()}\n\n${projection}\n`;
-  writeFileSync(reviewPath, next, 'utf-8');
+  writeFileSync(reviewPath, syncReviewHeader(next, receipt), 'utf-8');
 }
 
 /**

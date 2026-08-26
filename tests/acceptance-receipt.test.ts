@@ -251,6 +251,57 @@ describe('AcceptanceReceipt', () => {
     await expect(verifyAcceptance({ root, authorityHome: home })).rejects.toThrow('semantic subject is stale');
   }, 30_000);
 
+  test('projection syncs placeholder review-binding headers to the receipt and leaves authored headers alone', async () => {
+    const { root, home } = makeFixture();
+    const receipt = await externalPass(root, home);
+    const reviewPath = join(root, 'tasks', 'reviews', 'demo.review.md');
+    const header = (status: string, recommendation: string, subject: string, target: string): string => [
+      '# Task Review: demo',
+      '',
+      `> **Status**: ${status}`,
+      '> **Contract**: tasks/contracts/demo.contract.md',
+      `> **Recommendation**: ${recommendation}`,
+      '> **Review Rubric Version**: 2',
+      `> **Reviewed Subject SHA256**: ${subject}`,
+      '> **Reviewed Subject Scope**: normalized-final-content',
+      `> **Reviewed Target Revision**: ${target}`,
+      '',
+      '## Human Review Card',
+      '',
+      '- Verdict: pending',
+      '',
+    ].join('\n');
+
+    writeFileSync(reviewPath, header('Pending', 'fail', 'pending', 'pending'));
+    projectAcceptance(reviewPath, receipt);
+    const synced = readFileSync(reviewPath, 'utf-8');
+    expect(synced).toContain('> **Status**: Accepted');
+    expect(synced).toContain('> **Recommendation**: pass');
+    expect(synced).toContain(`> **Reviewed Subject SHA256**: ${receipt.subject_sha256}`);
+    expect(synced).toContain(`> **Reviewed Target Revision**: ${receipt.target_revision}`);
+    expect(synced).not.toMatch(/^> \*\*Reviewed (?:Subject SHA256|Target Revision)\*\*: pending$/m);
+
+    // The projected receipt section and the synced header now agree field by field.
+    const headerBlock = synced.slice(0, synced.indexOf('## Human Review Card'));
+    const projectionBlock = synced.slice(synced.indexOf('## Acceptance Receipt Projection'));
+    for (const field of ['Reviewed Subject SHA256', 'Reviewed Subject Scope', 'Reviewed Target Revision']) {
+      const read = (text: string): string | undefined =>
+        text.match(new RegExp(`^> \\*\\*${field}\\*\\*: (.+)$`, 'm'))?.[1];
+      expect(read(headerBlock)).toBe(read(projectionBlock));
+    }
+
+    projectAcceptance(reviewPath, receipt);
+    const reprojected = readFileSync(reviewPath, 'utf-8');
+    expect(reprojected.slice(0, reprojected.indexOf('## Human Review Card'))).toBe(headerBlock);
+
+    writeFileSync(reviewPath, header('Reviewed', 'pass', 'sha256:authored', 'authored-rev'));
+    projectAcceptance(reviewPath, receipt);
+    const authored = readFileSync(reviewPath, 'utf-8');
+    expect(authored).toContain('> **Status**: Reviewed');
+    expect(authored).toContain('> **Reviewed Subject SHA256**: sha256:authored');
+    expect(authored).toContain('> **Reviewed Target Revision**: authored-rev');
+  }, 30_000);
+
   test('rejects a self-consistent forged Change Assessment and invalidates a receipt when a disagreement overlay changes canonical evidence', async () => {
     const { root, home } = makeFixture();
     const subject = buildReviewSubject(root, { targetRef: 'main' });
