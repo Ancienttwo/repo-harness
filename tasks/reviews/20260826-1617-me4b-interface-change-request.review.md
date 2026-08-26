@@ -19,7 +19,7 @@
 - Intended files changed: ME-4B core/store, restricted Engineer MCP and Human CLI adapters, focused tests, architecture projection, PRD/research and workflow evidence.
 - Actual files changed: 42 files relative to current main, 2,807 insertions and 76 deletions before final evidence closeout.
 - Commands passed: focused ME-4B/MCP suite 27/27; typecheck; architecture projection suite 7/7; deploy SQL order; architecture sync; task sync; strict workflow; project-state inspection; init dry-run; CLI help; diff check.
-- Residual risks: Protocol-2 acceptance is not yet issued. The pre-rebase full suite reached 3,173 pass / 2 skip / 2 timeout failures; ME-2A passed 9/9 in isolation, and the independent HRD-09 fix is now on main and passes its isolated 234-expectation test after rebase. Final full-suite replay remains part of subject freeze.
+- Residual risks: Protocol-2 acceptance is not yet issued. The first strict post-rebase full suite reached 3,174 pass / 2 skip / 1 unrelated fleet-board deadline failure; the exact failed case immediately passed in isolation. Final strict replay on the corrected contract remains the subject-freeze gate.
 - Reviewer action required: review the frozen final subject through the official Codex plugin or issue an exact-subject Human waiver.
 - Rollback: revert the ME-4B core/store/adapters/tests and capability projection plus the narrow scheduling validator export as one unit.
 
@@ -79,7 +79,7 @@
 
 - No finding in the ME-4B implementation diff.
 - Closeout-only: exact-subject AcceptanceReceipt is unavailable.
-- Verification-only: final post-rebase full-suite replay is still pending; both prior timeout sites pass when run against their corrected isolated conditions.
+- Verification-only: final strict replay must replace the first run's host-load fleet-board deadline failure; the exact failed case and both earlier timeout sites pass in isolation.
 
 ## Retest Steps
 

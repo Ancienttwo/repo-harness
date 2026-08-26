@@ -178,7 +178,7 @@ exit_criteria:
     - path: src/effects/engineers/interface-change-store.ts
       pattern: projectWorkGraph
     - path: plans/prds/20260824-1653-interface-change-request.prd.md
-      pattern: "Status**: Approved"
+      pattern: "^> \*\*Status\*\*: Approved$"
 # Optional exact-subject reuse is fail-closed and opt-in. List only deterministic
 # criteria whose inputs are fully bound by the frozen subject/toolchain context.
 # criterion_reuse:
