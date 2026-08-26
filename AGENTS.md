@@ -77,7 +77,7 @@ bun src/cli/index.ts init --repo . --dry-run
 - Architecture domain: `runtime-harness`
 - Architecture capability: `mcp-sidecar`
 - Architecture module: `docs/architecture/modules/runtime-harness/mcp-sidecar.md`
-- Last architecture event: 2026-08-27T02:13:48+0800
+- Last architecture event: 2026-08-27T03:12:23+0800
 - Last changed path: `src/cli/mcp/engineer-tools.ts`
 - Severity: low
 - Change type: source-change
