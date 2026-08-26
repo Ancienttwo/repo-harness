@@ -83,6 +83,28 @@ describe('repo-harness engineer CLI', () => {
     expect(result.capability.prefixes).toContain('tests');
   });
 
+  test('reports argument validation failures without reusing a protocol domain error code', () => {
+    const root = fixture();
+    const profiles = JSON.parse(run(root, ['engineer', 'profile', 'list', '--json']).stdout) as Array<{
+      engineer_id: string;
+      engineer_contract_revision: string;
+    }>;
+    const revision = profiles.find((item) => item.engineer_id === engineerId)!.engineer_contract_revision;
+    const invalid = run(root, [
+      'engineer', 'binding', 'bind', '--engineer-id', engineerId,
+      '--idempotency-key', 'cli-bind-invalid', '--provider', 'codex',
+      '--provider-thread-id', 'thread-cli', '--host-id', 'local',
+      '--expected-current-digest', 'null', '--expected-binding-generation', 'abc',
+      '--expected-binding-id', 'null', '--expected-engineer-contract-revision', revision,
+      '--json',
+    ]);
+    expect(invalid.exitCode).toBe(1);
+    const failure = JSON.parse(invalid.stderr) as { ok: boolean; error: string; message: string };
+    expect(failure.ok).toBeFalse();
+    expect(failure.error).toBe('invalid_argument');
+    expect(failure.message).toContain('--expected-binding-generation');
+  });
+
   test('binds, reports status, retries, retires, and renders a bounded read-only capsule', () => {
     const root = fixture();
     const profiles = JSON.parse(run(root, ['engineer', 'profile', 'list', '--json']).stdout) as Array<{

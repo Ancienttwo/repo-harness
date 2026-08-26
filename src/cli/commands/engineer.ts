@@ -71,6 +71,8 @@ function emit(value: unknown, json: boolean | undefined, human: string): void {
   process.stdout.write(json === true ? `${JSON.stringify(value, null, 2)}\n` : `${human}\n`);
 }
 
+class CliArgumentError extends Error {}
+
 function emitError(error: unknown): void {
   const code = error instanceof EngineerProfileBindingError || error instanceof EngineerPrincipalError
     || error instanceof EngineerSchedulingError || error instanceof ModuleMessageError || error instanceof ModuleInboxError
@@ -78,7 +80,9 @@ function emitError(error: unknown): void {
     || error instanceof TaskFreezeError
     || error instanceof EngineeringOverlayError || error instanceof EngineeringOverlayProjectionError
     ? error.code
-    : 'engineer_binding_invalid';
+    : error instanceof CliArgumentError
+      ? 'invalid_argument'
+      : 'internal_error';
   const message = error instanceof Error ? error.message : String(error);
   process.stderr.write(`${JSON.stringify({ ok: false, error: code, message })}\n`);
   process.exitCode = 1;
@@ -94,20 +98,20 @@ function run(action: () => void): void {
 
 function integerOption(value: string, field: string): number {
   const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed < 0) throw new Error(`--${field} must be a non-negative integer`);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) throw new CliArgumentError(`--${field} must be a non-negative integer`);
   return parsed;
 }
 
 function nullableOption(value: string, field: string): string | null {
   if (value === 'null') return null;
-  if (value.length === 0) throw new Error(`--${field} must be a non-empty value or null`);
+  if (value.length === 0) throw new CliArgumentError(`--${field} must be a non-empty value or null`);
   return value;
 }
 
 function nullableIntegerOption(value: string, field: string): number | null {
   if (value === 'null') return null;
   const parsed = integerOption(value, field);
-  if (parsed < 1) throw new Error(`--${field} must be a positive integer or null`);
+  if (parsed < 1) throw new CliArgumentError(`--${field} must be a positive integer or null`);
   return parsed;
 }
 
@@ -115,7 +119,7 @@ function jsonOption<T>(value: string, field: string): T {
   try {
     return JSON.parse(value) as T;
   } catch (error) {
-    throw new Error(`--${field} must be valid JSON`, { cause: error });
+    throw new CliArgumentError(`--${field} must be valid JSON`, { cause: error });
   }
 }
 
@@ -252,7 +256,7 @@ export function buildEngineerCommand(): Command {
       loadEngineerProfile(process.cwd(), options.engineerId);
       const currentDigest = nullableOption(options.expectedCurrentDigest, 'expected-current-digest');
       const bindingId = nullableOption(options.expectedBindingId, 'expected-binding-id');
-      if (currentDigest === null || bindingId === null) throw new Error('retire requires non-null expected current and binding IDs');
+      if (currentDigest === null || bindingId === null) throw new CliArgumentError('retire requires non-null expected current and binding IDs');
       const current = retireEngineer(process.cwd(), {
         engineer_id: options.engineerId,
         idempotency_key: options.idempotencyKey,
@@ -346,7 +350,7 @@ export function buildEngineerCommand(): Command {
       json?: boolean;
     }) => run(() => {
       if (options.senderKind !== 'program_orchestrator' && options.senderKind !== 'human') {
-        throw new Error('--sender-kind must be program_orchestrator or human');
+        throw new CliArgumentError('--sender-kind must be program_orchestrator or human');
       }
       const event = buildModuleMessageEvent({
         message_id: options.messageId,

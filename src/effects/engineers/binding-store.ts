@@ -22,6 +22,7 @@ import {
   buildEngineerBindingCurrent,
   buildEngineerBindingEvent,
   buildEngineerGenesisCurrent,
+  canonicalEngineerBindingBytes,
   canonicalEngineerBindingCurrentBytes,
   canonicalEngineerBindingEventBytes,
   deriveEngineerTransitionId,
@@ -415,9 +416,17 @@ function currentForExistingEvent(
     assertNoLiveClaimForBindingRotation(cwd, request.engineer_id, before.status.current.current_binding_id);
   }
   if (request.transition === 'retire' && before.status.binding !== null) {
-    const expectedRetired = { ...before.status.binding, state: 'retired', retired_at: event.next_binding?.retired_at };
-    if (JSON.stringify(event.next_binding) !== JSON.stringify(expectedRetired)) {
-      fail('binding_state_corrupt', 'retire event does not preserve the active binding fields');
+    const nextBinding = event.next_binding;
+    if (nextBinding === null) fail('binding_state_corrupt', 'retire event does not preserve the active binding fields');
+    const activeBinding = before.status.binding;
+    try {
+      const expectedRetired = { ...activeBinding, state: 'retired' as const, retired_at: nextBinding.retired_at };
+      if (canonicalEngineerBindingBytes(nextBinding) !== canonicalEngineerBindingBytes(expectedRetired)) {
+        fail('binding_state_corrupt', 'retire event does not preserve the active binding fields');
+      }
+    } catch (error) {
+      if (error instanceof EngineerProfileBindingError && error.code === 'binding_state_corrupt') throw error;
+      fail('binding_state_corrupt', 'retire event does not preserve the active binding fields', error);
     }
   }
   const next = buildEngineerBindingCurrent(event);

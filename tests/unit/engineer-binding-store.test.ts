@@ -5,7 +5,18 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'os';
 import { dirname, join, resolve } from 'path';
 
-import { EngineerProfileBindingError, canonicalEngineerBindingCurrentBytes, engineerSha256 } from '../../src/core/engineers/profile-binding';
+import {
+  ENGINEER_BINDING_CURRENT_KIND,
+  ENGINEER_PROFILE_PROTOCOL,
+  EngineerProfileBindingError,
+  buildEngineerBindingEvent,
+  canonicalEngineerBindingCurrentBytes,
+  canonicalEngineerBindingEventBytes,
+  deriveEngineerTransitionId,
+  engineerCurrentPayloadSha256,
+  engineerOperationFingerprint,
+  engineerSha256,
+} from '../../src/core/engineers/profile-binding';
 import { buildLeaseOwnerRecord, bindLeaseRecord } from '../../src/core/state/coordination-identity';
 import {
   bindEngineer,
@@ -200,6 +211,72 @@ describe('Engineer binding shared store', () => {
     expect(rebound.binding_generation).toBe(2);
     expect(rebound.current_binding_id).not.toBe(active.current_binding_id);
     expect(treeDigest(join(common, 'repo-harness/coordination'))).toBe(beforeLease);
+  });
+
+  test('a retire event whose binding window precedes the active bound_at reports binding_state_corrupt', () => {
+    const root = repository();
+    const active = bindEngineer(root, baseInput());
+    const store = engineerBindingStoreRoot(root);
+    const engineerDir = readdirSync(store).find((entry) => entry !== 'locks')!;
+    const events = join(store, engineerDir, 'events');
+    const activeEvent = JSON.parse(readFileSync(
+      join(events, `${active.current_transition_id!.slice('sha256:'.length)}.json`),
+      'utf8',
+    )) as { next_binding: Record<string, unknown> };
+
+    // Each half is internally valid; only the cross-event pairing is corrupt, so the
+    // projection the store builds to compare them is what fails validation.
+    const forgedBinding = {
+      ...activeEvent.next_binding,
+      state: 'retired',
+      bound_at: '2026-08-24T10:00:00.000Z',
+      retired_at: '2026-08-24T11:00:00.000Z',
+    };
+    const request = {
+      engineer_id: engineerId,
+      idempotency_key: 'retire-corrupt-window',
+      transition: 'retire' as const,
+      expected_current_digest: active.current_digest,
+      expected_binding_generation: 1,
+      expected_binding_id: active.current_binding_id,
+      expected_engineer_contract_revision: revision,
+      engineer_contract_revision: revision,
+      provider: null,
+      provider_thread_id: null,
+      host_id: null,
+    };
+    const transitionId = deriveEngineerTransitionId(engineerId, request.idempotency_key);
+    const forgedEvent = buildEngineerBindingEvent({
+      transition_id: transitionId,
+      idempotency_key: request.idempotency_key,
+      operation_fingerprint: engineerOperationFingerprint(request),
+      engineer_id: engineerId,
+      transition: 'retire',
+      expected_current_digest: request.expected_current_digest,
+      expected_binding_generation: request.expected_binding_generation,
+      previous_binding_id: active.current_binding_id,
+      next_binding: forgedBinding as never,
+      next_current_payload_sha256: engineerCurrentPayloadSha256({
+        protocol: ENGINEER_PROFILE_PROTOCOL,
+        kind: ENGINEER_BINDING_CURRENT_KIND,
+        engineer_id: engineerId,
+        binding_generation: 1,
+        state: 'retired',
+        current_binding_id: active.current_binding_id,
+        engineer_contract_revision: revision,
+      }),
+      created_at: '2026-08-24T13:00:00.000Z',
+    });
+    writeFileSync(join(events, `${transitionId.slice('sha256:'.length)}.json`), canonicalEngineerBindingEventBytes(forgedEvent));
+
+    expect(errorCode(() => retireEngineer(root, {
+      engineer_id: engineerId,
+      idempotency_key: request.idempotency_key,
+      expected_current_digest: active.current_digest,
+      expected_binding_generation: 1,
+      expected_binding_id: active.current_binding_id!,
+      expected_engineer_contract_revision: revision,
+    }))).toBe('binding_state_corrupt');
   });
 
   test('replace event atomically retires the previous binding and publishes the next generation', () => {
