@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-26T22:41:03+0800 -->
+<!-- updated_at: 2026-08-27T00:08:40+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-26T22:41:03+0800
-> **Source Branch**: codex/archctx-v2-provider-acceptance
-> **Source Commit**: 7761d968
+> **Updated At**: 2026-08-27T00:08:40+0800
+> **Source Branch**: codex/me1-acceptance-followup
+> **Source Commit**: 90a12db9
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -31,12 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- linked-worktree-60cd54905904: plans/plan-20260826-1716-me2b-managed-parent-sandbox-canary.md
-- linked-worktree-60cd54905904: active-worktree owner -> self
 - linked-worktree-6f1bc1db12bd: plans/plan-20260826-1617-me4b-interface-change-request.md
 - linked-worktree-6f1bc1db12bd: active-worktree owner -> self
-- linked-worktree-1eb1fd41d8a9: plans/plan-20260826-2233-me1-acceptance-followup.md
-- linked-worktree-1eb1fd41d8a9: active-worktree owner -> self
 ## Active Sprint
 
 - Sprint: (none)
@@ -52,7 +48,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/runtime-harness/integration-acceptance/me4c-integration-product-acceptance.md`: status=active, current_slice=exact-subject-publication, source_plan=plans/plan-20260826-0115-me4c-integration-product-acceptance.md
 ## Handoff
 
-- Exact Next Step: (none)
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Part 1: fix the four runtime/error-code defects with regression tests.
 
 ## Checks
 
@@ -60,18 +56,19 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 9 changed/untracked path(s)
+- Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260826-1558-archctx-v2-provider-acceptance.md
- D tasks/contracts/20260826-1558-archctx-v2-provider-acceptance.contract.md
- D tasks/notes/20260826-1558-archctx-v2-provider-acceptance.notes.md
- D tasks/reviews/20260826-1558-archctx-v2-provider-acceptance.review.md
-?? plans/archive/plan-20260826-1558-archctx-v2-provider-acceptance.md
-?? tasks/archive/contract-20260826-2240-archctx-v2-provider-acceptance.md
-?? tasks/archive/notes-20260826-2240-archctx-v2-provider-acceptance.md
-?? tasks/archive/review-20260826-2240-archctx-v2-provider-acceptance.md
-?? tasks/archive/todo-20260826-2240-archctx-v2-provider-acceptance.md
+ D plans/plan-20260826-2233-me1-acceptance-followup.md
+ D tasks/contracts/20260826-2233-me1-acceptance-followup.contract.md
+ D tasks/notes/20260826-2233-me1-acceptance-followup.notes.md
+ D tasks/reviews/20260826-2233-me1-acceptance-followup.review.md
+ M tasks/todos.md
+?? plans/archive/plan-20260826-2233-me1-acceptance-followup.md
+?? tasks/archive/contract-20260827-0008-me1-acceptance-followup.md
+?? tasks/archive/notes-20260827-0008-me1-acceptance-followup.md
+?? tasks/archive/review-20260827-0008-me1-acceptance-followup.md
+?? tasks/archive/todo-20260827-0008-me1-acceptance-followup.md
 ```
 
 ## Source Artifacts

@@ -1,6 +1,6 @@
 # Plan: ME-1 acceptance follow-up fixes
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260826-2233
 > **Slug**: me1-acceptance-followup
 > **Planning Source**: repo-harness-plan
