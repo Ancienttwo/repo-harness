@@ -58,7 +58,24 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ## Change Assessment
 
 ```json
-{"protocol":1,"oracles":[]}
+{
+  "protocol": 1,
+  "oracles": [
+    {
+      "id": "me4b-interface-change-deterministic-tests",
+      "kind": "deterministic_test",
+      "paths": [
+        "src/cli/commands/interface-change.ts",
+        "src/cli/index.ts",
+        "src/cli/mcp/engineer-tools.ts",
+        "src/core/engineers/interface-change.ts",
+        "src/effects/engineers/interface-change-store.ts",
+        "tests/cli/interface-change.test.ts",
+        "tests/unit/me4b-interface-change-request.test.ts"
+      ]
+    }
+  ]
+}
 ```
 
 ## Acceptance Policy
