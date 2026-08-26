@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.verified-context.engineer-bindings
+kind: calls
+source: capability.runtime-harness.verified-context
+target: capability.runtime-harness.engineer-bindings
+intent: Revalidate Engineer decision actors against the exact current active Binding fence

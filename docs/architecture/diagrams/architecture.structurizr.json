@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:667c06e02f8eecd0f22b783bc5b861dfc664e1a66e13dd0e3872eeb4f4e6c880" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:89716347f61d4895408aeda95cadc83ca6f309419c0220d3129de404ebb28b94" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:d7d477f97bd2340cf8683841c1766644e95bb599e4f52598807790501db5a4a7" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:8e529d557694947f6621d4ee819c2edb644ae9d7aac10f529042a1226e980d79" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
@@ -103,6 +103,14 @@
       {
         "id": "capability.runtime-harness.provider-thread-effects",
         "name": "Provider Thread Effects",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "capability.runtime-harness.verified-context",
+        "name": "Verified Evidence Context",
         "type": "Software System",
         "tags": [
           "capability"
@@ -291,6 +299,14 @@
         "tags": [
           "component"
         ]
+      },
+      {
+        "id": "component.verified-context.primary",
+        "name": "Verified Checkpoint Evidence Store",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
       }
     ],
     "relationships": [
@@ -461,6 +477,24 @@
         "sourceId": "capability.public-surface.root-router",
         "destinationId": "component.root-router.primary",
         "description": "calls"
+      },
+      {
+        "id": "relation.verified-context.delegated-runs",
+        "sourceId": "capability.runtime-harness.verified-context",
+        "destinationId": "capability.runtime-harness.delegated-runs",
+        "description": "calls"
+      },
+      {
+        "id": "relation.verified-context.engineer-bindings",
+        "sourceId": "capability.runtime-harness.verified-context",
+        "destinationId": "capability.runtime-harness.engineer-bindings",
+        "description": "calls"
+      },
+      {
+        "id": "relation.verified-context.primary",
+        "sourceId": "capability.runtime-harness.verified-context",
+        "destinationId": "component.verified-context.primary",
+        "description": "calls"
       }
     ]
   },
@@ -481,6 +515,7 @@
         "capability.runtime-harness.integration-acceptance",
         "capability.runtime-harness.mcp-sidecar",
         "capability.runtime-harness.provider-thread-effects",
+        "capability.runtime-harness.verified-context",
         "capability.runtime-mcp.general-repo-access",
         "capability.verification.codegraph-readiness",
         "capability.verification.evals-checks",
@@ -503,7 +538,8 @@
         "component.integration-acceptance.primary",
         "component.mcp-sidecar.primary",
         "component.provider-thread-effects.primary",
-        "component.root-router.primary"
+        "component.root-router.primary",
+        "component.verified-context.primary"
       ]
     }
   }

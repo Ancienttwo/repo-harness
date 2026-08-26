@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: component.verified-context.primary
+kind: component
+name: Verified Checkpoint Evidence Store
+status: active
+parent: capability.runtime-harness.verified-context
+summary: Owns immutable Contract, proposal, round, assertion, context and DecisionRequest evidence without an authority-transition pointer.

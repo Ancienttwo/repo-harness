@@ -1,0 +1,70 @@
+schemaVersion: archcontext.flow/v1
+id: flow.verified-context.checkpoint
+capabilityId: capability.runtime-harness.verified-context
+name: Compile one exact verified checkpoint context
+applicability: required
+participants:
+  - id: verified-context
+    nodeId: capability.runtime-harness.verified-context
+  - id: delegated-runs
+    nodeId: capability.runtime-harness.delegated-runs
+  - id: checkpoint-store
+    nodeId: component.verified-context.primary
+  - id: engineer-bindings
+    nodeId: capability.runtime-harness.engineer-bindings
+steps:
+  - id: project-contract
+    from: verified-context
+    to: checkpoint-store
+    label: Bind semantic constraint IDs to one exact tracked Contract commit, blob and byte digest
+    evidence:
+      entrypointId: entrypoint.verified-context.contract
+      sourceSymbol: projectSemanticContract
+      sinkId: sink.verified-context.contract-schema
+  - id: read-worker-evidence
+    from: verified-context
+    to: delegated-runs
+    label: Revalidate immutable Worker run and result evidence while keeping every claim untrusted
+    evidence:
+      entrypointId: entrypoint.verified-context.delegated-evidence
+      sourceSymbol: readVerifiedWorkerResultEvidence
+      sinkId: sink.verified-context.worker-result
+outcomes:
+  - id: compiled
+    kind: success
+    label: One unique continuous exact-subject checkpoint chain produces a content-addressed trusted/untrusted context
+    steps:
+      - id: compile-context
+        from: verified-context
+        to: checkpoint-store
+        label: Validate proposal, round, candidate, assertion, evidence and answered decisions before projection
+        evidence:
+          entrypointId: entrypoint.verified-context.compile
+          sourceSymbol: compileVerifiedCheckpointProjection
+          sinkId: sink.verified-context.compile-schema
+    terminal:
+      participant: verified-context
+      label: Return VerifiedEvidenceContextV1 without any authority transition
+  - id: decision-blocked
+    kind: error
+    label: Open Human decision or ambiguous evidence chain fails closed
+    steps:
+      - id: validate-decision-engineer
+        from: verified-context
+        to: engineer-bindings
+        label: Revalidate an Engineer actor against the exact current active Binding before a decision transition
+        evidence:
+          entrypointId: entrypoint.verified-context.binding-fence
+          sourceSymbol: validateCurrentDecisionEngineerBinding
+          sinkId: sink.verified-context.binding-current
+      - id: persist-decision
+        from: verified-context
+        to: checkpoint-store
+        label: Persist an actor-fenced DecisionRequest event/current transition for explicit Human resolution
+        evidence:
+          entrypointId: entrypoint.verified-context.decision
+          sourceSymbol: buildVerifiedDecisionEvent
+          sinkId: sink.verified-context.decision-schema
+    terminal:
+      participant: verified-context
+      label: Stop before the next bounded round; never infer an answer or latest assertion

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.verified-context.primary
+kind: calls
+source: capability.runtime-harness.verified-context
+target: component.verified-context.primary
+intent: Persist and project exact checkpoint evidence without runtime or task authority

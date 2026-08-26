@@ -1,6 +1,6 @@
 # runtime-harness/engineer-bindings 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" sourceDigest="sha256:b9957fa1dce9d024eb8c954bd05d5561ba14167b73c3edb7504dcb188de5c210" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:b6a1e00cc0b82ec97ef55a2a77fd24d41a1c226ab3172e1d8f13c878f1f8a714" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" sourceDigest="sha256:1f994fe22ed642ef5b32c3f2544a59268877560ca60841697b15b4a59115d83c" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:06f5716c2f69eec55e059e574cc7ed60c0f1a7c9c534a41ee83ae6747c8f04a6" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-bindings`(kind `capability`)
 > **Matched Prefixes**:`agents/engineers/**`、`src/core/engineers/**`、`src/effects/engineers/**`、`src/cli/commands/engineer.ts`
@@ -37,7 +37,7 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`20–50` 個文件 / `5000–10000` 行
+- 規模量級:`20–50` 個文件 / `10k–20k` 行
 - 匹配前綴:`agents/engineers/**`、`src/core/engineers/**`、`src/effects/engineers/**`、`src/cli/commands/engineer.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
@@ -55,6 +55,7 @@ flowchart LR
 - `calls` ← `capability.runtime-harness.engineering-overlay` — Observe exact current Profile, Binding and live ClaimActor revisions without mutating their stores
 - `calls` ← `capability.runtime-harness.mcp-sidecar` — Resolve a verified OAuth authorization to the current Engineer Binding before acquiring a Fleet Claim
 - `calls` ← `capability.runtime-harness.provider-thread-effects` — Revalidate the exact current Codex Engineer Binding before preparing or admitting one host action
+- `calls` ← `capability.runtime-harness.verified-context` — Revalidate Engineer decision actors against the exact current active Binding fence
 
 ## 2. P2:端到端數據流
 

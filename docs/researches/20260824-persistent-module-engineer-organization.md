@@ -10,6 +10,7 @@
 > **ME-0B Carrier Closure (2026-08-25)**: Codex App Server、Claude hook 与 MCP OAuth 三路 canary 已完成。P0 唯一 principal carrier 冻结为 restricted MCP OAuth `authorizationId`；新增 Engineer profile 必须无 shell、workspace coder、agent runner 和 generic Fleet mutation。Provider Thread/hook session 继续只作 observation。完整证据与决策见 `docs/researches/20260825-me0b-principal-carrier-canary.md`。
 > **Session/Kanban Amendment (2026-08-24)**: Codex Session Chat 被冻结为 persist-first delivery accelerator；Work Package Graph、EngineerOffer/acquire bridge、三视图 CLI Kanban 与 Codex App Server transport 的权威边界已同步进 umbrella、ME-1A/1B/1C/3 child PRD，未改变任何 child approval state。
 > **Control-plane Amendment (2026-08-25)**: 用户批准将目标架构从“建设持久 Agent 组织及本地 Worker Host”重构为 “Agent Engineering Control Plane”。ME-0A/0B/1A 保留为已交付控制面；combined ME-3 draft 被 ME-3A Provider Thread Effect Adapter 与 conditional ME-3B Delegated Run Adapter 取代；ME-2C 收窄为 checkpoint evidence projection；ME-4C 脱离 Worker runtime 前置依赖并提前。Runtime Admission Canary 已在 `codex/me1c-engineer-inbox@ef731e6a` 通过，解除了 ME-1C 独立合并边界及 ME-3A 后续设计的 admission blocker；它不批准 ME-3A，也不授权 Provider query loop、history、compaction、model gateway 或 daemon scope。
+> **ME-2C Contract Carrier Closure (2026-08-26)**: semantic constraint authority 冻结在 exact tracked task Contract 内的 strict `Semantic Constraint Catalog` JSON block。`SemanticContractProjectionV1` 只投影 exact commit/blob/bytes/IDs；缺失 catalog、mutable evidence、fork/gap、unreachable subject、subject drift 或 open DecisionRequest 全部 fail closed。WorkerResult prose 永远留在 untrusted projection；assertion/decision store 没有 Task、Lease、Publication 或 Acceptance mutation edge。Architecture Acceptance 为 `changeset.docs-projection-90539fd46a3eccb5` / `event.user-approval-20260826-me2c-architecture`，批准 `entrypoint-changed,relation-changed,verified-flow-proof-changed`，受影响节点仅 `engineer-bindings` 与 `verified-context`；最终 source-only fixed point 不再产生 major delta。
 
 ## 结论
 
@@ -567,16 +568,24 @@ MCP OAuth `authorizationId` 证明 client authorization，不证明 Provider Thr
 
 独立 PRD：`plans/prds/20260824-1653-writable-worker-grant.prd.md`；依赖 Approved ME-3B 与独立 managed-Parent/sandbox canary，不能依赖手工 Provider Session 的提示词自律来冻结 Parent writer。
 
-### ME-2C：Verified Context Inner Loop
+### ME-2C：Verified Evidence Checkpoint Projection
 
-- canonical Contract semantic fields 或 exact-source projection；
+- exact tracked Contract 内的 strict semantic constraint catalog，以及 exact commit/blob/bytes projection；
 - `EngineerStepProposalV1`；
 - `WorkerRoundReceiptV1`；
 - evidence-chain-bound `SemanticVerificationAssertionV1`；
-- `DecisionRequestV1`、`RuntimeFailureV1` 与 `ExecutionBudgetV1`；
+- `DecisionRequestV1` 与 actor-fenced immutable event/current；runtime failure/budget 继续由现有 delegated-run boundary 拥有；
 - `DecisionRequestEventV1/CurrentV1` 的 actor-fenced crash publication。
 
 独立 PRD：`plans/prds/20260824-1653-verified-context-contracts.prd.md`。
+
+#### 2026-08-26 ME-2C 落地裁决
+
+- P1 边界固定为 pure canonical core、Git-common immutable evidence/Decision store、bounded CLI，以及对既有 delegated-run result 和 Engineer Binding current 的只读依赖；三份 production 文件共 1,302 行，没有 Provider、runtime dispatch、Task、Lease、Publication 或 Acceptance mutation import。
+- P2 真实路径为 `exact Contract commit/blob/bytes → proposal → WorkerRunRef/WorkerResult → candidate-bound round → check/verifier assertion → unique continuous chain → VerifiedEvidenceContextV1`。ArchContext 对 required flow 生成了 proven sequence；不再存在 `selector-evidence-truncated` 或 `human-action-required`。
+- 同一 evidence ref 的相同 bytes 在跨 checkpoint record 合并时只保留一个 trusted ref；同一 ref 出现不同 digest 时拒绝。未被选中 chain 消费的 proposal、round、run ref 或 result 也拒绝，避免把 caller 提供的额外记录当作可忽略噪声。
+- Decision actor matrix 在 pure schema 外再读取 exact current Engineer Binding。Engineer 被 replace/retire 后不能 open/cancel/supersede；Human 仍可 answer/cancel。transition-id index 与 event content path 的两段持久化在任一 crash 点可用同一 idempotency key 修复，不靠 timestamp 或目录顺序恢复。
+- Human UI transport 仍是 adapter unknown；CLI 只承载 typed Human principal，不把本地字符串本身宣称为身份认证。未来 UI 必须在调用冻结的 Decision event/current protocol 前完成 principal authentication，不能修改 wire authority。
 
 ### ME-3A：Provider Thread Effect Adapter
 

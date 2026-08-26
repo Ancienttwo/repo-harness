@@ -1,0 +1,68 @@
+schemaVersion: archcontext.node/v2
+id: capability.runtime-harness.verified-context
+kind: capability
+name: Verified Evidence Context
+status: active
+summary: Projects exact Contract constraints, candidate-bound verification checkpoints and Human-fenced decisions into one content-addressed trusted/untrusted context packet.
+responsibilities:
+  - Project semantic constraint IDs only from one exact tracked task Contract commit, blob and byte digest.
+  - Canonicalize bounded proposal, Worker round, candidate and semantic assertion records without interpreting Provider history or Worker prose.
+  - Revalidate immutable delegated-run references and every trusted evidence byte before compiling context.
+  - Select only one continuous subject-matching assertion chain and refuse roots, gaps, forks or duplicate rounds.
+  - Keep Worker and verifier prose explicitly untrusted while projecting exact check/verifier evidence refs.
+  - Persist Human decision requests through actor-fenced immutable event plus current CAS recovery.
+  - Exclude Provider loops, runtime dispatch, writable grants and Task, Lease, Publication or Acceptance transitions.
+source:
+  include:
+    - "src/core/engineers/verified-context.ts"
+    - "src/effects/engineers/verified-context-store.ts"
+    - "src/cli/commands/verified-context.ts"
+  entrypoints:
+    - id: entrypoint.verified-context.contract
+      path: "src/effects/engineers/verified-context-store.ts"
+      symbols:
+        - name: "projectSemanticContract"
+          sinks:
+            - id: sink.verified-context.contract-schema
+              path: "src/core/engineers/verified-context.ts"
+              symbol: "buildSemanticContractProjection"
+    - id: entrypoint.verified-context.delegated-evidence
+      path: "src/effects/engineers/verified-context-store.ts"
+      symbols:
+        - name: "readVerifiedWorkerResultEvidence"
+          sinks:
+            - id: sink.verified-context.worker-result
+              path: "src/effects/engineers/delegated-run-store.ts"
+              symbol: "readDelegatedRunResult"
+    - id: entrypoint.verified-context.compile
+      path: "src/effects/engineers/verified-context-store.ts"
+      symbols:
+        - name: "compileVerifiedCheckpointProjection"
+          sinks:
+            - id: sink.verified-context.compile-schema
+              path: "src/core/engineers/verified-context.ts"
+              symbol: "compileVerifiedEvidenceContext"
+    - id: entrypoint.verified-context.decision
+      path: "src/effects/engineers/verified-context-store.ts"
+      symbols:
+        - name: "buildVerifiedDecisionEvent"
+          sinks:
+            - id: sink.verified-context.decision-schema
+              path: "src/core/engineers/verified-context.ts"
+              symbol: "buildDecisionRequestEvent"
+    - id: entrypoint.verified-context.binding-fence
+      path: "src/effects/engineers/verified-context-store.ts"
+      symbols:
+        - name: "validateCurrentDecisionEngineerBinding"
+          sinks:
+            - id: sink.verified-context.binding-current
+              path: "src/effects/engineers/binding-store.ts"
+              symbol: "readEngineerBindingStatus"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun test tests/unit/me2c-verified-evidence-context.test.ts tests/cli/verified-context.test.ts --timeout 60000"
+    - "bun run check:type"

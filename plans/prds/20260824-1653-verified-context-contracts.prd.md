@@ -1,13 +1,14 @@
 # PRD: Verified Evidence Context Projection (ME-2C)
 
-> **Status**: Draft
+> **Status**: Approved
 > **Slug**: `verified-context-contracts`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-25T15:51:15+0800
+> **Updated**: 2026-08-26T11:46:41+0800
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
 > **Depends On**: ME-2A read-only delegation and canonical Contract/check/verification evidence
 > **Tier**: compact
+> **Architecture Acceptance**: `changeset.docs-projection-90539fd46a3eccb5` / `event.user-approval-20260826-me2c-architecture`; accepted reasons `entrypoint-changed,relation-changed,verified-flow-proof-changed`; affected nodes `capability.runtime-harness.engineer-bindings` and `capability.runtime-harness.verified-context`. Final non-major fixed-point projection: `sha256:a7bbda7efaf7c127b60b9638352bb9c4089541842eed7a74859e51bdd310ec7b`.
 
 ## AI Quick-Read Card
 
@@ -18,7 +19,7 @@
 - **Core metric**: unverified claims in trusted next context 0; ambiguous latest assertion selection 0.
 - **Hard constraint**: semantic assertion cannot mark Task done, modify Lease, sign Acceptance or enter Publication readiness.
 - **Key risk**: selecting “latest” by timestamp/file order or trusting mutable evidence refs.
-- **Unknowns**: semantic verifier cost/profile policy remains Draft but does not change authority.
+- **Unknowns**: semantic verifier cost/profile policy remains deployment policy only and does not change the frozen evidence authority.
 - **Acceptance scenarios**: checkpoint evidence chain、broken-chain refusal、decision stop、mutable-ref rejection、Provider compaction independence and Acceptance independence。
 - **Suggested next step**: freeze one candidate → verifier checkpoint → answered DecisionRequest fixture；证明 Provider transcript/compaction bytes 改变不会改变 trusted projection。
 
@@ -28,12 +29,13 @@ The next bounded execution checkpoint needs canonical task intent plus verified 
 
 ### Product Direction
 
-Prefer adding semantic fields to the existing canonical Contract. If that schema is not yet changed, `SemanticContractProjectionV1` may only project an exact Contract path/revision/digest and never override it. The projection selects the highest continuous, subject-matching checkpoint chain; no timestamp heuristic exists. Provider transcript、history、compaction summary 与 turn state 永不进入 trusted authority，也不要求 repo-harness 为每个 turn 生成记录。
+The canonical Contract carries one optional strict `Semantic Constraint Catalog` JSON block. ME-2C requires that block and projects its exact tracked Git commit、blob OID、Contract SHA-256 and sorted constraint IDs into `SemanticContractProjectionV1`; it never accepts a sidecar、heading-derived ID、label or free-prose replacement. Ordinary Contract execution remains unchanged when the block is absent, while ME-2C fails closed. The context projection selects the only continuous, subject-matching checkpoint chain; no timestamp or file-order heuristic exists. Provider transcript、history、compaction summary 与 turn state 永不进入 trusted authority，也不要求 repo-harness 为每个 turn 生成记录。
 
 ### Feasibility Boundary
 
 - **Confirmed**: exact digests and immutable receipts can be validated deterministically.
-- **[UNKNOWN]**: verifier profile/cost policy and Human answer adapter.
+- **Confirmed**: Contract carrier is the exact tracked Contract itself; no second semantic constraint authority exists.
+- **[UNKNOWN]**: verifier profile/cost policy and Human UI transport. The wire actor remains a typed Human principal and the unknown does not block the store/CLI authority boundary.
 - **Fail closed**: missing/broken/mutable evidence remains untrusted and is excluded.
 
 ## Users
@@ -91,6 +93,16 @@ Select canonical Contract plus the latest unique continuous checkpoint chain and
 ## Data Model
 
 ```yaml
+SemanticContractProjectionV1:
+  protocol: 1
+  kind: repo-harness-semantic-contract-projection
+  contract_ref: repository-relative-contract-path
+  contract_revision: exact-git-commit
+  contract_blob_oid: exact-git-blob
+  contract_sha256: sha256
+  constraints: [{constraint_id: stable-id, statement: bounded-utf8}]
+  projection_sha256: sha256
+
 EngineerStepProposalV1:
   protocol: 1
   kind: repo-harness-engineer-step-proposal
@@ -179,6 +191,21 @@ DecisionRequestCurrentV1:
   answered_by: human-principal|null
   previous_current_digest: sha256|null
   current_digest: sha256
+
+VerifiedEvidenceContextV1:
+  protocol: 1
+  kind: repo-harness-verified-evidence-context
+  task: exact-task-fence
+  binding: exact-binding-fence
+  contract_projection_sha256: sha256
+  contract_sha256: sha256
+  selected_assertion_sha256: sha256|null
+  assertion_chain: [sha256]
+  checkpoints: [candidate-bound-checkpoint]
+  trusted_evidence_refs: [{ref: closed-scheme, sha256: sha256}]
+  untrusted_claims: [bounded-utf8]
+  answered_decisions: [human-fenced-answer]
+  context_packet_sha256: sha256
 ```
 
 Constraint lists accept only IDs present in the exact `contract_sha256`; labels or free prose are invalid. A current Engineer Principal may open a request under the exact task/binding fences. Only a Human principal may answer. The opening Engineer or Human may cancel while open; only a current Engineer may supersede an open request after a fenced task/binding/contract change. All transitions use a per-decision lock, immutable create-if-absent event, same-key fingerprint conflict, event fsync, expected-current CAS and current-directory fsync. Crash after event but before current leaves an unpublished event; same-key retry resumes it, while a different/stale actor cannot promote it.
@@ -187,12 +214,12 @@ Constraint lists accept only IDs present in the exact `contract_sha256`; labels 
 
 | Item | Impact | Resolution Path | Owner |
 |---|---|---|---|
-| Canonical Contract extension vs projection | Blocks approval | choose one migration boundary | Contract owner |
-| Verifier profile/cost policy | Runtime quality | measured canary | Verification owner |
+| Verifier profile/cost policy | Runtime quality only | measured checkpoint canary; never changes schema or authority | Verification owner |
+| Human UI transport | Operator experience only | later adapter over the frozen DecisionRequest event/current protocol | Control-board owner |
 
 ## Developer Handoff
 
-Implement pure schemas/projection only after Contract carrier decision. Do not introduce Provider or delegated-run effects here.
+The Contract carrier decision is frozen: the exact tracked Contract owns a strict JSON semantic constraint catalog and `SemanticContractProjectionV1` is a read-only content-addressed projection. Implement schemas/projection、immutable checkpoint/decision storage and bounded CLI only. Reading existing delegated-run receipts is allowed; dispatching or mutating a delegated run is not. Do not introduce Provider effects、runtime loops or authority transitions.
 
 ### Acceptance Scripts
 

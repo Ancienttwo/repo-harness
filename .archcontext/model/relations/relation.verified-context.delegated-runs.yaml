@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.verified-context.delegated-runs
+kind: calls
+source: capability.runtime-harness.verified-context
+target: capability.runtime-harness.delegated-runs
+intent: Revalidate existing immutable WorkerRunRef, process receipt, WorkerResult and evidence blobs as untrusted checkpoint inputs

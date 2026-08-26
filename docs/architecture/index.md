@@ -296,7 +296,7 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 - Treat user-level `~/.codex/hooks.json` and `~/.claude/settings.json` as host adapters. Keep hook implementation under `.ai/hooks/`, and treat repo-local `.claude/settings.json` / `.codex/hooks.json` hook adapters as retired legacy config.
 - Consider adding `bun scripts/capability-resolver.ts validate --format text` to the strict workflow gate after the architecture registry has been used through one more real slice.
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:667c06e02f8eecd0f22b783bc5b861dfc664e1a66e13dd0e3872eeb4f4e6c880" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:7bd6a3859f229a6b0ac1f53647537866f3634851ad59a6d8869a2deccb04ff95" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:d7d477f97bd2340cf8683841c1766644e95bb599e4f52598807790501db5a4a7" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:3a18bea2df7bbf77e301fe8063bb190f660cf0666e0f23af75d609561c347ce2" -->
 # Architecture Index
 
 Generated: 1970-01-01T00:00:00.000Z
@@ -316,6 +316,7 @@ Generated: 1970-01-01T00:00:00.000Z
 - [Integration Product Acceptance](modules/runtime-harness/integration-acceptance.md) — capability / active
 - [MCP Sidecar](modules/runtime-harness/mcp-sidecar.md) — capability / active
 - [Provider Thread Effects](modules/runtime-harness/provider-thread-effects.md) — capability / active
+- [Verified Evidence Context](modules/runtime-harness/verified-context.md) — capability / active
 - [General Repository Access](modules/runtime-mcp/general-repo-access.md) — capability / active
 - [CodeGraph Readiness](modules/verification/codegraph-readiness.md) — capability / active
 - [Evals And Checks](modules/verification/evals-checks.md) — capability / active
@@ -352,6 +353,9 @@ Generated: 1970-01-01T00:00:00.000Z
 - capability.runtime-harness.provider-thread-effects -> capability.runtime-harness.engineer-messages — calls
 - capability.runtime-harness.provider-thread-effects -> component.provider-thread-effects.primary — calls
 - capability.public-surface.root-router -> component.root-router.primary — calls
+- capability.runtime-harness.verified-context -> capability.runtime-harness.delegated-runs — calls
+- capability.runtime-harness.verified-context -> capability.runtime-harness.engineer-bindings — calls
+- capability.runtime-harness.verified-context -> component.verified-context.primary — calls
 
 ## Projections
 
