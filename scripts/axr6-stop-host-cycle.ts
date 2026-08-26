@@ -131,7 +131,7 @@ try {
     schemaVersion: 'repo-harness.axr6-stop-host-cycle/v1',
     status: 'verified',
     installedPackage: { name: 'repo-harness', tarball: basename(repoHarnessTarball) },
-    provider: { name: 'archctx', version: '0.4.4', packageLocal: true, holdMs: HOLD_MS },
+    provider: { name: 'archctx', version: '0.4.5', packageLocal: true, holdMs: HOLD_MS },
     adapters: {
       codex: { stopTimeoutSeconds: adapters.codex.stop.timeout, nonStopTimeoutSeconds: adapters.codex.postEdit.timeout },
       claude: { stopTimeoutSeconds: adapters.claude.stop.timeout, nonStopTimeoutSeconds: adapters.claude.postEdit.timeout },
@@ -180,7 +180,7 @@ function initializeFixture(root: string): void {
     architecture: {
       projection_provider: 'archctx',
       projection_apply: 'automatic',
-      projection_version: '0.4.4',
+      projection_version: '0.4.5',
       projection_timeout_ms: 120000,
       freshness_gate: 'advisory',
     },
@@ -218,7 +218,7 @@ function writeFakeArchctx(root: string): void {
   mkdirSync(dirname(bin), { recursive: true });
   writeFileSync(join(root, 'package.json'), `${JSON.stringify({
     name: 'archctx',
-    version: '0.4.4',
+    version: '0.4.5',
     type: 'module',
     engines: { node: '>=24 <26' },
     bin: { archctx: './bin/archctx.mjs' },
@@ -231,14 +231,14 @@ const args = process.argv.slice(2);
 if (args[0] === 'capabilities') {
   console.log(JSON.stringify({
     schemaVersion: 'archcontext.capabilities/v1',
-    package: { name: 'archctx', version: '0.4.4' },
+    package: { name: 'archctx', version: '0.4.5' },
     protocols: {
       projectionRequest: 'archcontext.projection-request/v1',
-      projectionResult: 'archcontext.projection-result/v1',
+      projectionResult: 'archcontext.projection-result/v2',
       architectureRefreshSignal: 'archcontext.architecture-refresh-signal/v1',
     },
     renderers: { architectureDocs: 'archcontext.docs-renderer/v4', agentContext: 'archcontext.agent-context/v1' },
-    features: ['architecture-docs-renderer-v2', 'architecture-refresh-signal-v1', 'projection-protocol-v1'],
+    features: ['architecture-docs-renderer-v2', 'architecture-refresh-signal-v1', 'projection-apply-receipt-v1', 'projection-protocol-v2'],
   }));
   process.exit(0);
 }
@@ -264,7 +264,7 @@ const snapshot = {
   },
 };
 const payload = {
-  schemaVersion: 'archcontext.projection-result/v1',
+  schemaVersion: 'archcontext.projection-result/v2',
   requestId: request.requestId,
   status: 'noop',
   inputSnapshot: snapshot,

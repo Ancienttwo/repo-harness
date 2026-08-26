@@ -55,7 +55,7 @@ const SNAPSHOT: ProjectionResultV1['inputSnapshot'] = {
 
 function projectionResult(files: ProjectionResultV1['files']): ProjectionResultV1 {
   const body: Omit<ProjectionResultV1, 'receiptDigest'> = {
-    schemaVersion: 'archcontext.projection-result/v1',
+    schemaVersion: 'archcontext.projection-result/v2',
     requestId: `repo-harness.projection.${JOB_ID}`,
     status: 'applied',
     inputSnapshot: SNAPSHOT,
@@ -243,7 +243,7 @@ describe('Stop-time restamp auto-publication', () => {
   });
 
   test('leaves the strict projection failure gate criteria untouched', () => {
-    const strictPolicy = { architecture: { projection_provider: 'archctx', projection_apply: 'automatic', projection_version: '0.4.4', projection_failure_gate: 'strict' } };
+    const strictPolicy = { architecture: { projection_provider: 'archctx', projection_apply: 'automatic', projection_version: '0.4.5', projection_failure_gate: 'strict' } };
 
     // A publication fault under strict never blocks: it is not a drain failure.
     const faulted = fixture(strictPolicy);
@@ -263,13 +263,13 @@ describe('Stop-time restamp auto-publication', () => {
   });
 
   test('converges: the published restamp keeps the next drain idle without a provider run', () => {
-    const root = fixture({ architecture: { projection_provider: 'archctx', projection_apply: 'automatic', projection_version: '0.4.4' } });
+    const root = fixture({ architecture: { projection_provider: 'archctx', projection_apply: 'automatic', projection_version: '0.4.5' } });
     seedReceipt(root, RESTAMP);
 
     expect(stop(root, drainResult()).exitCode).toBe(0);
     expect(status(root)).toBe('');
 
-    const policy: ArchitectureProjectionPolicy = { provider: 'archctx', applyMode: 'automatic', failureGate: 'advisory', requiredVersion: '0.4.4', timeoutMs: 120_000 };
+    const policy: ArchitectureProjectionPolicy = { provider: 'archctx', applyMode: 'automatic', failureGate: 'advisory', requiredVersion: '0.4.5', timeoutMs: 120_000 };
     const changedSet = computeArchitectureDriftChangedSet(root);
     expect(changedSet.paths).toEqual([ARCHITECTURE_PROJECTION_MANIFEST_PATH]);
     const event = architectureDriftSourceEvent(changedSet);

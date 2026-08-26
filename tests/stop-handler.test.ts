@@ -177,7 +177,7 @@ describe('runStopHandler', () => {
     expect(freshnessOnly.stdout).not.toContain('Strict projection failure gate blocked Stop');
 
     const strictRoot = fixture();
-    writeFileSync(join(strictRoot, '.ai/harness/policy.json'), '{"architecture":{"projection_provider":"archctx","projection_apply":"automatic","projection_version":"0.4.4","projection_failure_gate":"strict"}}\n');
+    writeFileSync(join(strictRoot, '.ai/harness/policy.json'), '{"architecture":{"projection_provider":"archctx","projection_apply":"automatic","projection_version":"0.4.5","projection_failure_gate":"strict"}}\n');
     const strict = runStopHandler({ collector: collector(strictRoot, () => canonicalState()), dependencies: { drainArchitectureProjection: failedDrain } });
     expect(strict.exitCode).toBe(0);
     expect(JSON.parse(strict.stdout).decision).toBe('block');
@@ -190,7 +190,7 @@ describe('runStopHandler', () => {
     expect(deadLetter.stdout).toContain('retry-dead-letter --job-id job-test --json');
 
     const invalidGateRoot = fixture();
-    writeFileSync(join(invalidGateRoot, '.ai/harness/policy.json'), '{"architecture":{"projection_provider":"archctx","projection_apply":"automatic","projection_version":"0.4.4","projection_failure_gate":"block"}}\n');
+    writeFileSync(join(invalidGateRoot, '.ai/harness/policy.json'), '{"architecture":{"projection_provider":"archctx","projection_apply":"automatic","projection_version":"0.4.5","projection_failure_gate":"block"}}\n');
     const invalidGate = runStopHandler({ collector: collector(invalidGateRoot, () => canonicalState()), dependencies: { drainArchitectureProjection: failedDrain } });
     expect(invalidGate.stdout).toContain('Strict projection failure gate blocked Stop');
     expect(invalidGate.stdout).toContain('projection policy invalid');

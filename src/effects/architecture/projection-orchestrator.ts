@@ -9,6 +9,7 @@ import {
   captureArchitectureProjectionSnapshot,
   loadArchitectureProjectionPolicy,
   runArchitectureProjection,
+  type ArchitectureProjectionProviderDiagnostic,
   type ArchctxProviderOptions,
 } from './archctx-provider';
 import {
@@ -30,6 +31,7 @@ import {
 } from './refresh-consumer';
 import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
+import type { AcceptedArchitectureChangeReferenceV1 } from 'archctx-contracts';
 
 export interface ArchitectureProjectionSourceEvent {
   readonly source_key: string;
@@ -39,7 +41,7 @@ export interface ArchitectureProjectionSourceEvent {
 
 export interface ArchitectureProjectionDrainResultV1 {
   schemaVersion: 'repo-harness.architecture-projection-drain/v1';
-  status: 'disabled' | 'idle' | 'succeeded' | 'retry-pending' | 'dead-letter';
+  status: 'disabled' | 'idle' | 'succeeded' | 'reconcile-pending' | 'retry-pending' | 'dead-letter';
   jobId: string | null;
   sourceEventIds: string[];
   resultStatus: ProjectionResultV1['status'] | null;
@@ -52,6 +54,7 @@ export interface ArchitectureProjectionOrchestratorOptions extends ArchctxProvid
   now?: () => Date;
   runRefreshActions?: RunArchitectureRefreshActions;
   sourceEvents?: readonly ArchitectureProjectionSourceEvent[];
+  acceptedChange?: AcceptedArchitectureChangeReferenceV1;
 }
 
 export function drainArchitectureProjectionJobs(
@@ -68,7 +71,7 @@ export function drainArchitectureProjectionJobs(
   try {
     policy = options.policy ?? loadArchitectureProjectionPolicy(root);
   } catch (error) {
-    return failPreflight(root, events, observedPaths, now, error);
+    return failPreflight(root, events, observedPaths, now, error, options.acceptedChange);
   }
   if (policy.provider === 'disabled' || policy.applyMode !== 'automatic') return outcome(root, 'disabled', null, eventIds, null, null, true);
   const clock = options.nowMs ?? Date.now;
@@ -80,18 +83,18 @@ export function drainArchitectureProjectionJobs(
   try {
     owned = architectureProjectionOwnedPaths(root);
   } catch (error) {
-    return failPreflight(root, events, observedPaths, now, error);
+    return failPreflight(root, events, observedPaths, now, error, options.acceptedChange);
   }
   const eligible = events.flatMap((event) => event.changed_paths).filter((path) => !isOwned(path, owned));
   if (events.length > 0 && eligible.length === 0) {
     return outcome(root, 'idle', null, events.map((event) => event.event_id), null, null, true);
   }
-  const aggregateId = architectureProjectionJobId(events.map((event) => event.event_id), eligible);
+  const aggregateId = architectureProjectionJobId(events.map((event) => event.event_id), eligible, options.acceptedChange);
   const aggregateState = architectureProjectionJobState(root, aggregateId);
   if (aggregateState === 'running') return outcome(root, 'idle', aggregateId, events.map((event) => event.event_id), null, null, false);
   if (aggregateState === 'dead-letter') return outcome(root, 'dead-letter', aggregateId, events.map((event) => event.event_id), null, 'job already dead-lettered', false);
   if (aggregateState === 'receipt') return outcome(root, 'idle', aggregateId, events.map((event) => event.event_id), null, null, true);
-  enqueueArchitectureProjectionJob(root, eventIds, sourceKeys, eligible, now);
+  enqueueArchitectureProjectionJob(root, eventIds, sourceKeys, eligible, now, options.acceptedChange);
   const job = claimNextArchitectureProjectionJob(root, now);
   if (!job) return outcome(root, 'idle', null, events.map((event) => event.event_id), null, null, false);
   let completedResultStatus: ProjectionResultV1['status'] | null = null;
@@ -104,8 +107,26 @@ export function drainArchitectureProjectionJobs(
       targets: ['agent-context', 'architecture-docs'],
       changedPaths: job.changedPaths,
       expected: captureArchitectureProjectionSnapshot(root),
+      ...(job.acceptedChange ? { acceptedChange: job.acceptedChange } : {}),
     };
-    const result = runArchitectureProjection(request, root, { ...options, policy, deadlineMs, nowMs: clock });
+    const diagnostics: ArchitectureProjectionProviderDiagnostic[] = [];
+    const result = runArchitectureProjection(request, root, {
+      ...options,
+      policy,
+      deadlineMs,
+      nowMs: clock,
+      onDiagnostic: (diagnostic) => {
+        diagnostics.push(diagnostic);
+        options.onDiagnostic?.(diagnostic);
+      },
+    });
+    if (result.status === 'applied-reconcile-required') {
+      const diagnostic = diagnostics.find((entry) => entry.code === 'post-apply-reconciliation-required');
+      if (!diagnostic) throw new ClassifiedProjectionError('invalid-result', 'archctx returned applied-reconcile-required without provider reconciliation evidence');
+      const transition = failArchitectureProjectionJob(root, job, { kind: 'reconciliation', message: diagnostic.message }, now);
+      if (transition.state !== 'pending') throw new Error('architecture projection reconciliation unexpectedly dead-lettered');
+      return outcome(root, 'reconcile-pending', job.jobId, job.sourceEventIds, result.status, diagnostic.message, false);
+    }
     if (result.status === 'retryable-failure') throw new ClassifiedProjectionError('process', 'archctx returned retryable-failure');
     if (result.status === 'blocked') throw new ClassifiedProjectionError('process', summarizeNonTerminal(result));
     if (result.status !== 'applied' && result.status !== 'noop') {
@@ -164,6 +185,7 @@ function failPreflight(
   changedPaths: readonly string[],
   now: Date,
   error: unknown,
+  acceptedChange?: AcceptedArchitectureChangeReferenceV1,
 ): ArchitectureProjectionDrainResultV1 {
   const eventIds = events.map((event) => event.event_id);
   const sourceKeys = events.map((event) => event.source_key);
@@ -171,8 +193,8 @@ function failPreflight(
   const message = error instanceof Error ? error.message : String(error);
   const blocked = architectureProjectionDeadLetterForSourceKeys(repoRoot, sourceKeys);
   if (blocked) return outcome(repoRoot, 'dead-letter', blocked.job.jobId, blocked.job.sourceEventIds, null, blocked.failure.message, false);
-  const expectedJobId = architectureProjectionJobId(eventIds, changedPaths);
-  const queued = enqueueArchitectureProjectionJob(repoRoot, eventIds, sourceKeys, changedPaths, now);
+  const expectedJobId = architectureProjectionJobId(eventIds, changedPaths, acceptedChange);
+  const queued = enqueueArchitectureProjectionJob(repoRoot, eventIds, sourceKeys, changedPaths, now, acceptedChange);
   if (!queued || queued.jobId !== expectedJobId) {
     return outcome(repoRoot, 'retry-pending', queued?.jobId ?? null, eventIds, null, message, false);
   }

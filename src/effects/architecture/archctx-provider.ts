@@ -15,6 +15,7 @@ import {
   digestProjectionJson,
   projectionRequestIssues,
   readArchitectureProjectionPolicy,
+  sameAcceptedArchitectureChange,
   type ArchitectureProjectionPolicy,
   type ArchitectureProjectionReadinessV1,
   type ArchctxCapabilitiesV1,
@@ -33,7 +34,29 @@ export interface ArchctxProviderOptions {
   trustedNodeCandidateSource?: () => readonly string[];
   deadlineMs?: number;
   nowMs?: () => number;
+  onDiagnostic?: (diagnostic: ArchitectureProjectionProviderDiagnostic) => void;
 }
+
+export type ProjectionSnapshotIdentityField = 'repositoryId' | 'workspaceId' | 'headSha' | 'worktreeDigest';
+
+export type ArchitectureProjectionProviderDiagnostic =
+  | {
+      code: 'post-apply-reconciliation-required';
+      status: 'applied-reconcile-required';
+      applyId: string;
+      lookupKey: string;
+      mismatchedFields: ProjectionSnapshotIdentityField[];
+      providerStderr: string | null;
+      message: string;
+    }
+  | {
+      code: 'apply-receipt-reconciled';
+      status: 'applied' | 'noop';
+      applyId: string;
+      lookupKey: string;
+      refreshDelivery: 'delivered' | 'already-consumed';
+      message: string;
+    };
 
 const PROJECTION_WORKTREE_IGNORE_ROOTS = new Set([
   '.git',
@@ -262,9 +285,44 @@ export function runArchitectureProjection(request: ProjectionRequestV1, repoRoot
   const envelope = parseJson(processResult.stdout, 'archctx projection') as Record<string, unknown>;
   if (envelope.schemaVersion !== 'archcontext.envelope/v1' || envelope.ok !== true || !isRecord(envelope.data)) throw new Error(`archctx projection returned an invalid envelope: ${safeError(envelope)}`);
   const result = assertProjectionResult(envelope.data, request.requestId);
-  assertExpectedSnapshot(request.expected, result.inputSnapshot, 'in provider result input');
-  assertProjectionResultAuthority(request, result, repoRoot, policy);
-  assertExpectedSnapshot(result.outputSnapshot, captureArchitectureProjectionSnapshot(repoRoot), 'after projection');
+  const inputMismatches = snapshotMismatches(request.expected, result.inputSnapshot);
+  const receiptDelivery = inputMismatches.length > 0 && isCorrelatedApplyReceiptDelivery(request, result);
+  if (!receiptDelivery) assertExpectedSnapshot(request.expected, result.inputSnapshot, 'in provider result input');
+  assertProjectionResultAuthority(request, result, repoRoot, policy, receiptDelivery);
+  const actualSnapshot = captureArchitectureProjectionSnapshot(repoRoot);
+  if (result.status === 'applied-reconcile-required') {
+    const mismatchedFields = snapshotMismatches(result.outputSnapshot, actualSnapshot);
+    const providerStderr = processResult.stderr.trim().slice(0, 600) || null;
+    if (mismatchedFields.length === 0 && providerStderr === null) {
+      throw new Error('archctx projection returned applied-reconcile-required without observable post-apply divergence');
+    }
+    const receipt = result.applyReceipt!;
+    const reason = providerStderr ? `; provider: ${providerStderr.replace(/\s+/g, ' ')}` : '';
+    emitProviderDiagnostic(options, {
+      code: 'post-apply-reconciliation-required',
+      status: result.status,
+      applyId: receipt.applyId,
+      lookupKey: receipt.lookupKey,
+      mismatchedFields,
+      providerStderr,
+      message: `architecture projection apply committed but requires reconciliation; post-check mismatches: ${mismatchedFields.join(',') || 'provider-verification-error'}${reason}`,
+    });
+  } else if (receiptDelivery) {
+    assertExpectedSnapshot(request.expected, actualSnapshot, 'after apply receipt reconciliation');
+    const receipt = result.applyReceipt!;
+    emitProviderDiagnostic(options, {
+      code: 'apply-receipt-reconciled',
+      status: result.status as 'applied' | 'noop',
+      applyId: receipt.applyId,
+      lookupKey: receipt.lookupKey,
+      refreshDelivery: result.status === 'applied' ? 'delivered' : 'already-consumed',
+      message: result.status === 'applied'
+        ? 'architecture projection durable apply receipt reconciled; original refresh signals delivered'
+        : 'architecture projection durable apply receipt already reconciled; refresh signals already consumed',
+    });
+  } else {
+    assertExpectedSnapshot(result.outputSnapshot, actualSnapshot, 'after projection');
+  }
   remainingTimeout(options, policy.timeoutMs, 'post-projection validation');
   if (result.inputSnapshot.rendererVersion !== ARCHITECTURE_DOCS_RENDERER_VERSION || result.outputSnapshot.rendererVersion !== ARCHITECTURE_DOCS_RENDERER_VERSION || result.inputSnapshot.layoutVersion !== ARCHITECTURE_DOCS_LAYOUT_VERSION || result.outputSnapshot.layoutVersion !== ARCHITECTURE_DOCS_LAYOUT_VERSION) throw new Error('archctx projection renderer/layout mismatch');
   return result;
@@ -350,15 +408,21 @@ function assertProjectionResultAuthority(
   result: ProjectionResultV1,
   repoRoot: string,
   policy: ArchitectureProjectionPolicy,
+  receiptDelivery = false,
 ): void {
-  if (result.status === 'applied' && request.mode !== 'apply' && request.mode !== 'adopt') {
-    throw new Error(`archctx projection returned applied for non-mutating mode ${request.mode}`);
+  if ((result.status === 'applied' || result.status === 'applied-reconcile-required') && request.mode !== 'apply' && request.mode !== 'adopt') {
+    throw new Error(`archctx projection returned ${result.status} for non-mutating mode ${request.mode}`);
   }
-  if (result.status === 'applied' && policy.applyMode === 'disabled') {
-    throw new Error('archctx projection returned applied while projection apply is disabled');
+  if ((result.status === 'applied' || result.status === 'applied-reconcile-required') && policy.applyMode === 'disabled') {
+    throw new Error(`archctx projection returned ${result.status} while projection apply is disabled`);
   }
-  if (result.outputSnapshot.worktreeDigest !== request.expected.worktreeDigest || result.outputSnapshot.headSha !== request.expected.headSha) {
+  if (!receiptDelivery && (result.outputSnapshot.worktreeDigest !== request.expected.worktreeDigest || result.outputSnapshot.headSha !== request.expected.headSha)) {
     throw new Error('archctx projection wrote outside the projection-owned fixed-point surfaces');
+  }
+  if (result.applyReceipt) {
+    if (request.mode !== 'apply' || !request.acceptedChange) throw new Error('archctx projection apply receipt requires an accepted apply request');
+    if (!sameAcceptedArchitectureChange(request.acceptedChange, result.applyReceipt.acceptedChange)) throw new Error('archctx projection apply receipt accepted change mismatch');
+    if (result.applyReceipt.repositoryId !== request.expected.repositoryId || result.applyReceipt.workspaceId !== request.expected.workspaceId) throw new Error('archctx projection apply receipt repository/workspace mismatch');
   }
   const allowed = new Set<string>();
   if (request.targets.includes('architecture-docs')) allowed.add('docs/architecture');
@@ -388,9 +452,31 @@ function findArchctxPackageRoot(startRoot: string): string | null {
 }
 
 function assertExpectedSnapshot(expected: ProjectionRequestV1['expected'], actual: ProjectionRequestV1['expected'], phase: string): void {
-  for (const field of ['repositoryId', 'workspaceId', 'headSha', 'worktreeDigest'] as const) {
+  for (const field of snapshotMismatches(expected, actual)) {
     if (expected[field] !== actual[field]) throw new Error(`architecture projection expected snapshot mismatch ${phase}: ${field}`);
   }
+}
+
+function snapshotMismatches(expected: ProjectionRequestV1['expected'], actual: ProjectionRequestV1['expected']): ProjectionSnapshotIdentityField[] {
+  return (['repositoryId', 'workspaceId', 'headSha', 'worktreeDigest'] as const).filter((field) => expected[field] !== actual[field]);
+}
+
+function isCorrelatedApplyReceiptDelivery(request: ProjectionRequestV1, result: ProjectionResultV1): boolean {
+  return request.mode === 'apply'
+    && request.acceptedChange !== undefined
+    && result.applyReceipt !== undefined
+    && (result.status === 'applied' || result.status === 'noop')
+    && result.applyReceipt.repositoryId === request.expected.repositoryId
+    && result.applyReceipt.workspaceId === request.expected.workspaceId
+    && sameAcceptedArchitectureChange(request.acceptedChange, result.applyReceipt.acceptedChange);
+}
+
+function emitProviderDiagnostic(options: ArchctxProviderOptions, diagnostic: ArchitectureProjectionProviderDiagnostic): void {
+  if (options.onDiagnostic) {
+    options.onDiagnostic(diagnostic);
+    return;
+  }
+  process.stderr.write(`[ArchitectureProjection] ${diagnostic.message}${diagnostic.code === 'post-apply-reconciliation-required' && diagnostic.providerStderr ? `; provider: ${diagnostic.providerStderr}` : ''}\n`);
 }
 
 function findConsumerRoot(): string {

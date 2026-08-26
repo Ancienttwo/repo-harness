@@ -47,7 +47,7 @@ const SNAPSHOT: ProjectionResultV1['inputSnapshot'] = {
 
 function result(overrides: Partial<Omit<ProjectionResultV1, 'receiptDigest'>> = {}): ProjectionResultV1 {
   const body: Omit<ProjectionResultV1, 'receiptDigest'> = {
-    schemaVersion: 'archcontext.projection-result/v1',
+    schemaVersion: 'archcontext.projection-result/v2',
     requestId: 'repo-harness.projection.job-07e4d2d8fe733699af945715',
     status: 'applied',
     inputSnapshot: SNAPSHOT,

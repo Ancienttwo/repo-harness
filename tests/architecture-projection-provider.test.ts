@@ -10,6 +10,7 @@ import {
   projectionResultReceiptDigest,
   projectionResultIssues,
   type ArchitectureProjectionPolicy,
+  type ArchitectureRefreshSignalV1,
   type ProjectionRequestV1,
 } from '../src/core/architecture/projection';
 import {
@@ -24,6 +25,7 @@ import {
 } from '../src/effects/architecture/archctx-provider';
 import { trustedNodeCandidates } from '../src/effects/runtime/node-candidates';
 import { architectureProjectionExitCode, buildArchitectureProjectionCommand } from '../src/cli/commands/architecture-projection';
+import { consumeArchitectureRefreshSignals } from '../src/effects/architecture/refresh-consumer';
 
 const roots: string[] = [];
 const digest = (value: string) => `sha256:${value.repeat(64).slice(0, 64)}` as const;
@@ -43,14 +45,14 @@ function fixture() {
   mkdirSync(join(repoRoot, '.ai', 'harness'), { recursive: true });
   mkdirSync(join(repoRoot, '.archcontext', 'model', 'nodes'), { recursive: true });
   mkdirSync(join(repoRoot, 'src', 'core'), { recursive: true });
-  writeFileSync(join(packageRoot, 'package.json'), `${JSON.stringify({ name: 'archctx', version: '0.4.4', engines: { node: '>=24 <26' }, bin: { archctx: './bin/archctx' } })}\n`);
+  writeFileSync(join(packageRoot, 'package.json'), `${JSON.stringify({ name: 'archctx', version: '0.4.5', engines: { node: '>=24 <26' }, bin: { archctx: './bin/archctx' } })}\n`);
   const binary = join(packageRoot, 'bin', 'archctx');
   writeFileSync(binary, '#!/bin/sh\nexit 99\n');
   chmodSync(binary, 0o755);
   symlinkSync(join('..', 'archctx', 'bin', 'archctx'), join(binRoot, 'archctx'));
   writeFileSync(join(repoRoot, '.ai', 'harness', 'policy.json'), `${JSON.stringify({
     context: { capability_source: 'archcontext' },
-    architecture: { projection_provider: 'archctx', projection_apply: 'manual', projection_version: '0.4.4', projection_timeout_ms: 120000 },
+    architecture: { projection_provider: 'archctx', projection_apply: 'manual', projection_version: '0.4.5', projection_timeout_ms: 120000 },
   })}\n`);
   writeFileSync(join(repoRoot, '.archcontext', 'model', 'nodes', 'capability.test.core.yaml'), `schemaVersion: archcontext.node/v2
 kind: capability
@@ -91,17 +93,17 @@ function vendorArchctx(root: string, version: string): string {
   return binary;
 }
 
-function capabilities(version = '0.4.4') {
+function capabilities(version = '0.4.5') {
   return {
     schemaVersion: 'archcontext.capabilities/v1',
     package: { name: 'archctx', version },
     protocols: {
       projectionRequest: 'archcontext.projection-request/v1',
-      projectionResult: 'archcontext.projection-result/v1',
+      projectionResult: 'archcontext.projection-result/v2',
       architectureRefreshSignal: 'archcontext.architecture-refresh-signal/v1',
     },
     renderers: { architectureDocs: 'archcontext.docs-renderer/v4', agentContext: 'archcontext.agent-context-renderer/v1' },
-    features: ['architecture-docs-renderer-v2', 'architecture-refresh-signal-v1', 'projection-protocol-v1'],
+    features: ['architecture-docs-renderer-v2', 'architecture-refresh-signal-v1', 'projection-apply-receipt-v1', 'projection-protocol-v2'],
   };
 }
 
@@ -132,7 +134,7 @@ function projectionEnvelope(expected: ProjectionRequestV1['expected']) {
     generatedFrom: { codeGraphPackage: '@colbymchenry/codegraph' as const, codeGraphVersion: '1.5.0' as const, codeGraphBinaryDigest: digest('6'), codeGraphStatus: 'ready' as const },
   };
   const withoutReceipt = {
-    schemaVersion: 'archcontext.projection-result/v1' as const,
+    schemaVersion: 'archcontext.projection-result/v2' as const,
     requestId: 'request.axr5',
     status: 'planned' as const,
     inputSnapshot: { ...snapshot },
@@ -143,6 +145,58 @@ function projectionEnvelope(expected: ProjectionRequestV1['expected']) {
     refreshSignals: [],
   };
   return { schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'projection.run', data: { ...withoutReceipt, receiptDigest: projectionResultReceiptDigest(withoutReceipt) } };
+}
+
+function applyEnvelope(
+  requestId: string,
+  originalExpected: ProjectionRequestV1['expected'],
+  acceptedChange: NonNullable<ProjectionRequestV1['acceptedChange']>,
+  status: 'applied-reconcile-required' | 'applied' | 'noop',
+) {
+  const snapshot = {
+    ...originalExpected,
+    baseHeadSha: originalExpected.headSha,
+    sourceTreeDigest: digest('2'), modelDigest: digest('3'), codeGraphDigest: digest('4'), indexedWorktreeDigest: digest('1'), projectionInputDigest: digest('5'),
+    rendererVersion: 'archcontext.docs-renderer/v4' as const,
+    layoutVersion: 'archcontext.docs-layout/v1' as const,
+    generatedFrom: { codeGraphPackage: '@colbymchenry/codegraph' as const, codeGraphVersion: '1.5.0' as const, codeGraphBinaryDigest: digest('6'), codeGraphStatus: 'ready' as const },
+  };
+  const applyReceipt = {
+    schemaVersion: 'archcontext.projection-apply-identity/v1' as const,
+    applyId: digest('a'), lookupKey: digest('b'), repositoryId: originalExpected.repositoryId, workspaceId: originalExpected.workspaceId,
+    acceptedChange,
+    semanticCommit: { changeSetId: 'changeset.docs-projection-test', idempotencyKey: 'idem_changeset.docs-projection-test' },
+    ownedFilesDigest: digest('c'), refreshSignalsDigest: digest('d'),
+  };
+  const signal: ArchitectureRefreshSignalV1 = {
+    schemaVersion: 'archcontext.architecture-refresh-signal/v1', signalId: digest('e'), idempotencyKey: digest('f'), mode: 'refresh-required',
+    repository: { repositoryId: originalExpected.repositoryId },
+    worktree: { workspaceId: originalExpected.workspaceId, headSha: originalExpected.headSha, worktreeDigest: originalExpected.worktreeDigest },
+    cause: 'accepted-semantic-delta', acceptedChange,
+    reasonCodes: [...acceptedChange.reasonCodes], affectedNodeIds: [...acceptedChange.affectedNodeIds], refreshTargets: ['architecture-readiness'],
+    baseDigests: { modelDigest: digest('0'), sourceTreeDigest: digest('1'), flowProofDigest: digest('2'), projectionDigest: digest('3') },
+    resultingDigests: { modelDigest: digest('4'), sourceTreeDigest: digest('5'), flowProofDigest: digest('6'), projectionDigest: digest('7') },
+    projectionReceiptDigest: digest('0'),
+  };
+  const withoutReceipt = {
+    schemaVersion: 'archcontext.projection-result/v2' as const,
+    requestId,
+    status,
+    inputSnapshot: snapshot,
+    outputSnapshot: snapshot,
+    affectedNodeIds: ['capability.test.core'],
+    files: [{ path: 'docs/architecture/index.md', action: 'update' as const, preimageDigest: digest('8'), outputDigest: digest('9') }],
+    humanActions: [],
+    refreshSignals: status === 'applied' ? [signal] : [],
+    applyReceipt,
+  };
+  const receiptDigest = projectionResultReceiptDigest(withoutReceipt);
+  const data = {
+    ...withoutReceipt,
+    refreshSignals: withoutReceipt.refreshSignals.map((entry) => ({ ...entry, projectionReceiptDigest: receiptDigest })),
+    receiptDigest,
+  };
+  return { schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'projection.run', data };
 }
 
 function runner(calls: Array<{ binary: string; args: readonly string[] }>, docs: ReturnType<typeof projectionEnvelope>): RunArchctxProcess {
@@ -192,7 +246,7 @@ describe('package-local ArchContext projection provider', () => {
     const resolved = resolvePackageLocalArchctx(f.consumerRoot);
     expect(resolved.binaryPath).toBe(realpathSync(f.binary));
     writeFileSync(join(f.consumerRoot, 'node_modules', 'archctx', 'package.json'), '{"name":"archctx","version":"0.3.0"}\n');
-    expect(() => resolvePackageLocalArchctx(f.consumerRoot)).toThrow('expected archctx@0.4.4');
+    expect(() => resolvePackageLocalArchctx(f.consumerRoot)).toThrow('expected archctx@0.4.5');
   });
 
   test('resolves a hoisted package from an installed repo-harness package root', () => {
@@ -432,7 +486,7 @@ describe('package-local ArchContext projection provider', () => {
     expect(manifest.devDependencies?.['archctx-contracts']).toBeUndefined();
     expect(manifest.scripts?.['check:archctx-integration']).toBe('bun scripts/axr5-archctx-clean-room.ts');
     expect(readback.status).toBe('verified');
-    expect(readback.packages.contracts.version).toBe('0.4.4');
+    expect(readback.packages.contracts.version).toBe('0.4.5');
     expect(readback.consumer.authoritativeNodeSchema).toBe('archcontext.node/v2');
     expect(readback.consumer.authoritativeNodeSchemaDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(readback.source.dirtySourceUsed).toBe(false);
@@ -458,5 +512,89 @@ describe('package-local ArchContext projection provider', () => {
     const forged = structuredClone(validEnvelope) as any;
     forged.data.receiptDigest = digest('f');
     expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner([], forged) })).toThrow('receiptDigest mismatch');
+
+    const legacy = structuredClone(validEnvelope) as any;
+    legacy.data.schemaVersion = 'archcontext.projection-result/v1';
+    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run: runner([], legacy) })).toThrow('projection result schemaVersion mismatch');
+  });
+
+  test('distinguishes pre-write failure, committed reconciliation, refresh delivery, and consumed noop', () => {
+    const f = fixture();
+    const acceptedChange: NonNullable<ProjectionRequestV1['acceptedChange']> = {
+      changeSetId: 'changeset.user-accepted', eventId: 'event.user-accepted',
+      reasonCodes: ['responsibility-changed'],
+      affectedNodeIds: ['capability.test.core'],
+    };
+    const initial = request(f.repoRoot);
+    initial.mode = 'apply';
+    initial.requestId = 'request.apply.initial';
+    initial.acceptedChange = acceptedChange;
+    const originalExpected = initial.expected;
+    const diagnostics: Array<{ code: string; message: string }> = [];
+    let projectionCalls = 0;
+    let ownedWrites = 0;
+    let humanAcceptances = 0;
+    const run: RunArchctxProcess = (_binary, args) => {
+      if (args[0] === 'capabilities') return { status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' };
+      projectionCalls += 1;
+      const wireRequest = JSON.parse(args[3]!) as ProjectionRequestV1;
+      if (projectionCalls === 1) {
+        ownedWrites += 1;
+        humanAcceptances += 1;
+        writeFileSync(join(f.repoRoot, 'src', 'core', 'concurrent.ts'), 'export const concurrent = true;\n');
+        return { status: 0, signal: null, stdout: JSON.stringify(applyEnvelope(wireRequest.requestId, originalExpected, acceptedChange, 'applied-reconcile-required')), stderr: 'warning: projection post-apply worktree digest diverged from the accepted snapshot' };
+      }
+      return {
+        status: 0,
+        signal: null,
+        stdout: JSON.stringify(applyEnvelope(wireRequest.requestId, originalExpected, acceptedChange, projectionCalls === 2 ? 'applied' : 'noop')),
+        stderr: '',
+      };
+    };
+
+    const first = runArchitectureProjection(initial, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run, onDiagnostic: (value) => diagnostics.push(value) });
+    expect(first.status).toBe('applied-reconcile-required');
+    expect(first.refreshSignals).toEqual([]);
+    expect(first.applyReceipt?.applyId).toBe(digest('a'));
+    expect(diagnostics[0]).toMatchObject({ code: 'post-apply-reconciliation-required' });
+    expect(diagnostics[0]?.message).toContain('worktreeDigest');
+    expect(diagnostics[0]?.message).toContain('projection post-apply worktree digest diverged');
+
+    const retry = { ...initial, requestId: 'request.apply.retry', expected: captureArchitectureProjectionSnapshot(f.repoRoot) };
+    const second = runArchitectureProjection(retry, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run, onDiagnostic: (value) => diagnostics.push(value) });
+    expect(second.status).toBe('applied');
+    expect(second.refreshSignals).toHaveLength(1);
+    expect(diagnostics[1]).toMatchObject({ code: 'apply-receipt-reconciled' });
+    const mismatchedSignal = structuredClone(second);
+    mismatchedSignal.refreshSignals[0]!.acceptedChange!.eventId = 'event.other-acceptance';
+    const { receiptDigest: _oldReceipt, ...mismatchedPayload } = mismatchedSignal;
+    mismatchedSignal.receiptDigest = projectionResultReceiptDigest(mismatchedPayload);
+    mismatchedSignal.refreshSignals[0]!.projectionReceiptDigest = mismatchedSignal.receiptDigest;
+    expect(projectionResultIssues(mismatchedSignal)).toContain('refreshSignals[0].acceptedChange must match applyReceipt.acceptedChange');
+    let refreshCalls = 0;
+    const refreshRun = () => { refreshCalls += 1; return []; };
+    consumeArchitectureRefreshSignals(f.repoRoot, second.refreshSignals, initial.changedPaths, { run: refreshRun });
+    consumeArchitectureRefreshSignals(f.repoRoot, second.refreshSignals, initial.changedPaths, { run: refreshRun });
+    expect(refreshCalls).toBe(1);
+
+    const third = runArchitectureProjection({ ...retry, requestId: 'request.apply.noop' }, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run, onDiagnostic: (value) => diagnostics.push(value) });
+    expect(third.status).toBe('noop');
+    expect(third.refreshSignals).toEqual([]);
+    expect(diagnostics[2]).toMatchObject({ code: 'apply-receipt-reconciled' });
+    expect(ownedWrites).toBe(1);
+    expect(humanAcceptances).toBe(1);
+  });
+
+  test('pre-write provider failure remains fail-closed and emits no reconciliation diagnostic', () => {
+    const f = fixture();
+    const projectionRequest = request(f.repoRoot);
+    projectionRequest.mode = 'apply';
+    projectionRequest.acceptedChange = { changeSetId: 'changeset.stale', eventId: 'event.stale', reasonCodes: ['responsibility-changed'], affectedNodeIds: ['capability.test.core'] };
+    const diagnostics: unknown[] = [];
+    const run: RunArchctxProcess = (_binary, args) => args[0] === 'capabilities'
+      ? { status: 0, signal: null, stdout: JSON.stringify(capabilities()), stderr: '' }
+      : { status: 1, signal: null, stdout: '', stderr: 'AC_PRECONDITION_FAILED: expected snapshot is stale' };
+    expect(() => runArchitectureProjection(projectionRequest, f.repoRoot, { consumerRoot: f.consumerRoot, policy, run, onDiagnostic: (value) => diagnostics.push(value) })).toThrow('expected snapshot is stale');
+    expect(diagnostics).toEqual([]);
   });
 });

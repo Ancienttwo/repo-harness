@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameS
 import { dirname, join } from 'node:path';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import type { ProjectionResultV1 } from '../../core/architecture/projection';
+import type { AcceptedArchitectureChangeReferenceV1 } from 'archctx-contracts';
 
 export const ARCHITECTURE_PROJECTION_RUNTIME_ROOT = '.ai/harness/architecture-projection';
 const LOCK_PATH = `${ARCHITECTURE_PROJECTION_RUNTIME_ROOT}/locks/store`;
@@ -11,7 +12,7 @@ const MAX_ATTEMPTS = 3;
  * cannot be reclaimed while its orphaned provider may still be running. */
 const RUNNING_STALE_MS = 150_000;
 
-export type ProjectionJobFailureKind = 'preflight' | 'process' | 'timeout' | 'stale-snapshot' | 'invalid-result' | 'refresh' | 'permanent';
+export type ProjectionJobFailureKind = 'preflight' | 'reconciliation' | 'process' | 'timeout' | 'stale-snapshot' | 'invalid-result' | 'refresh' | 'permanent';
 
 export interface ArchitectureProjectionJobV1 {
   schemaVersion: 'repo-harness.architecture-projection-job/v1';
@@ -20,6 +21,7 @@ export interface ArchitectureProjectionJobV1 {
   sourceEventIds: string[];
   sourceKeys: string[];
   changedPaths: string[];
+  acceptedChange?: AcceptedArchitectureChangeReferenceV1;
   attempt: number;
   createdAt: string;
   updatedAt: string;
@@ -33,6 +35,7 @@ export interface ArchitectureProjectionReceiptV1 {
   sourceEventIds: string[];
   sourceKeys: string[];
   changedPaths: string[];
+  acceptedChange?: AcceptedArchitectureChangeReferenceV1;
   attempt: number;
   completedAt: string;
   result: ProjectionResultV1;
@@ -99,9 +102,9 @@ function normalizedIdentity(sourceEventIds: readonly string[], changedPaths: rea
   };
 }
 
-export function architectureProjectionJobId(sourceEventIds: readonly string[], changedPaths: readonly string[]): string {
+export function architectureProjectionJobId(sourceEventIds: readonly string[], changedPaths: readonly string[], acceptedChange?: AcceptedArchitectureChangeReferenceV1): string {
   const { events, paths } = normalizedIdentity(sourceEventIds, changedPaths);
-  const digest = createHash('sha256').update(JSON.stringify({ sourceEventIds: events, changedPaths: paths })).digest('hex');
+  const digest = createHash('sha256').update(JSON.stringify({ sourceEventIds: events, changedPaths: paths, ...(acceptedChange ? { acceptedChange } : {}) })).digest('hex');
   return `job-${digest.slice(0, 24)}`;
 }
 
@@ -159,6 +162,7 @@ export function enqueueArchitectureProjectionJob(
   sourceKeys: readonly string[],
   changedPaths: readonly string[],
   now = new Date(),
+  acceptedChange?: AcceptedArchitectureChangeReferenceV1,
 ): ArchitectureProjectionJobV1 | null {
   if (sourceEventIds.length !== sourceKeys.length) {
     throw new Error('architecture projection source event ids and keys must have equal length');
@@ -178,6 +182,9 @@ export function enqueueArchitectureProjectionJob(
     if (names(repoRoot, 'running').length > 0) return null;
     const existing = jobsByCreatedAt(repoRoot, 'pending')[0];
     if (existing) {
+      if (JSON.stringify(existing.acceptedChange ?? null) !== JSON.stringify(acceptedChange ?? null)) {
+        throw new Error('architecture projection pending job accepted change mismatch');
+      }
       const currentDeliveries = existing.sourceKeys.map((key) => deliveryBySource.get(key));
       if (currentDeliveries.every((eventId): eventId is string => eventId !== undefined)) {
         const refreshedIds = [...new Set(currentDeliveries)].sort();
@@ -189,7 +196,7 @@ export function enqueueArchitectureProjectionJob(
       }
       return existing;
     }
-    const id = architectureProjectionJobId(events, paths);
+    const id = architectureProjectionJobId(events, paths, acceptedChange);
     for (const kind of ['running', 'receipts', 'dead-letter'] as const) {
       const path = pathFor(repoRoot, kind, id);
       if (existsSync(path)) return kind === 'running' ? readJson<ArchitectureProjectionJobV1>(path) : null;
@@ -202,6 +209,7 @@ export function enqueueArchitectureProjectionJob(
       sourceEventIds: events,
       sourceKeys: keys,
       changedPaths: paths,
+      ...(acceptedChange ? { acceptedChange } : {}),
       attempt: 0,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -315,6 +323,7 @@ export function completeArchitectureProjectionJob(
       sourceEventIds: job.sourceEventIds,
       sourceKeys: job.sourceKeys,
       changedPaths: job.changedPaths,
+      ...(job.acceptedChange ? { acceptedChange: job.acceptedChange } : {}),
       attempt: job.attempt,
       completedAt: now.toISOString(),
       result,
@@ -339,12 +348,12 @@ export function failArchitectureProjectionJob(
     const failed: ArchitectureProjectionJobV1 = {
       ...job,
       status: 'pending',
-      attempt: failure.kind === 'preflight' ? Math.max(0, job.attempt - 1) : job.attempt,
+      attempt: failure.kind === 'preflight' || failure.kind === 'reconciliation' ? Math.max(0, job.attempt - 1) : job.attempt,
       ownerPid: undefined,
       updatedAt: now.toISOString(),
       lastFailure: { ...failure, at: now.toISOString() },
     };
-    if (failure.kind !== 'preflight' && (failure.kind === 'permanent' || failed.attempt >= MAX_ATTEMPTS)) {
+    if (failure.kind !== 'preflight' && failure.kind !== 'reconciliation' && (failure.kind === 'permanent' || failed.attempt >= MAX_ATTEMPTS)) {
       const deadLetter: ArchitectureProjectionDeadLetterV1 = {
         schemaVersion: 'repo-harness.architecture-projection-dead-letter/v1',
         job: failed,

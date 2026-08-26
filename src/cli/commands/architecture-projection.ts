@@ -52,7 +52,7 @@ export function buildArchitectureProjectionCommand(): Command {
         advanceArchitectureDriftCursor(root, changedSet.headSha);
       }
       write({ ...result, sourceJournalPending: readPendingPostEditEvents(root).length });
-      if (result.status === 'retry-pending' || result.status === 'dead-letter') process.exitCode = 1;
+      if (result.status === 'reconcile-pending' || result.status === 'retry-pending' || result.status === 'dead-letter') process.exitCode = 1;
     } catch (error) { fail(error); }
   });
   // Manual recovery entry for the Stop-time auto-publication: same classifier,

@@ -69,7 +69,7 @@ const SNAPSHOT: ProjectionResultV1['inputSnapshot'] = {
 
 function projectionResult(files: ProjectionResultV1['files']): ProjectionResultV1 {
   const body: Omit<ProjectionResultV1, 'receiptDigest'> = {
-    schemaVersion: 'archcontext.projection-result/v1',
+    schemaVersion: 'archcontext.projection-result/v2',
     requestId: `repo-harness.projection.${JOB_ID}`,
     status: 'applied',
     inputSnapshot: SNAPSHOT,

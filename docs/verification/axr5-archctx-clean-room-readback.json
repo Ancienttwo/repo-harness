@@ -3,24 +3,24 @@
   "status": "verified",
   "source": {
     "repository": "Ancienttwo/arch-context",
-    "revision": "40609455ffb6a8483ad49b1f4d52a93c880b6650",
+    "revision": "b1b4543994c54fc65d22e2107d27b31bb856780e",
     "archiveMode": "git-archive",
     "dirtySourceUsed": false
   },
   "packages": {
     "contracts": {
       "name": "archctx-contracts",
-      "version": "0.4.4",
-      "file": "archctx-contracts-0.4.4.tgz",
-      "integrity": "sha512-g9qR++xzPyPkSqpaobgl6Ob2dU5bRfZDZfMjtLVVRb3W0oLGNnwIc8JTTGZH8tkL+l9XDNkvDLjFg5dPuvYnCg==",
-      "sha512": "83da91fbec733f23e44aaa5aa1b825e8e6f6754e5b45f64365f323b4b55545bdd6d282c6367c0873c2534c6647f2d90bfa5f570cd92f0cb8c583974fbaf6270a"
+      "version": "0.4.5",
+      "file": "archctx-contracts-0.4.5.tgz",
+      "integrity": "sha512-Y7HHrSp0hJLNJY/FNWyXVGg+YMLOyl7yB4keNp2C7CHauhv32wsmNSfs2HDHB98xinAeVRQYI0vihMfRnW2HDw==",
+      "sha512": "63b1c7ad2a748492cd258fc5356c9754683e60c2ceca5ef207891e369d82ec21daba1bf7db0b263527ecd870c707df318a701e551418234be284c7d19d6d870f"
     },
     "archctx": {
       "name": "archctx",
-      "version": "0.4.4",
-      "file": "archctx-0.4.4.tgz",
-      "integrity": "sha512-uKM9Gzm28+aJcmLgZip1+nF8HropIihUOfoidNQ6bJFggDByd578chKX9EDuqGvx/3YmuZb3MSjubOzdXh58hw==",
-      "sha512": "b8a33d1b39b6f3e6897262e0662a75fa717c1eba2922285439fa2274d43a6c9160803072779efc721297f440eea86bf1ff7626b996f73128ee6cecdd5e1e7c87"
+      "version": "0.4.5",
+      "file": "archctx-0.4.5.tgz",
+      "integrity": "sha512-Tnep8bczD1xDFSbq9c9PNrNgpzHwb4M3+4weRVs6k9XKwpeXnwWZF3cSUZ7q6GaSAjbaV3ibcjVBUkLWJFy47A==",
+      "sha512": "4e77a9f1b7330f5c431526eaf5cf4f36b360a731f06f8337fb8c1e455b3a93d5cac297979f0599177712519eeae866920236da57789b7235415242d6245cb8ec"
     }
   },
   "consumer": {
@@ -35,11 +35,11 @@
       "schemaVersion": "archcontext.capabilities/v1",
       "package": {
         "name": "archctx",
-        "version": "0.4.4"
+        "version": "0.4.5"
       },
       "protocols": {
         "projectionRequest": "archcontext.projection-request/v1",
-        "projectionResult": "archcontext.projection-result/v1",
+        "projectionResult": "archcontext.projection-result/v2",
         "architectureRefreshSignal": "archcontext.architecture-refresh-signal/v1"
       },
       "renderers": {
@@ -49,7 +49,8 @@
       "features": [
         "architecture-docs-renderer-v2",
         "architecture-refresh-signal-v1",
-        "projection-protocol-v1"
+        "projection-apply-receipt-v1",
+        "projection-protocol-v2"
       ]
     },
     "projection": {
@@ -64,7 +65,7 @@
         "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
         "codeGraphStatus": "unavailable"
       },
-      "receiptDigest": "sha256:d2eabb4b74802ae2c1e1204e05b6a9f8011f7e359d6b010ef40d6e76e02fc6d8"
+      "receiptDigest": "sha256:b915a7f1e909f2b4e5d6249ac957c27bbc2da0e3108d0e44fd8440723ba0c2d7"
     }
   }
 }

@@ -3,19 +3,21 @@ import type { AcceptedArchitectureChangeReferenceV1 } from 'archctx-contracts';
 import { canonicalize } from '../evidence/canonical-json';
 
 export const PROJECTION_REQUEST_VERSION = 'archcontext.projection-request/v1' as const;
-export const PROJECTION_RESULT_VERSION = 'archcontext.projection-result/v1' as const;
+export const PROJECTION_RESULT_VERSION = 'archcontext.projection-result/v2' as const;
+export const PROJECTION_APPLY_IDENTITY_VERSION = 'archcontext.projection-apply-identity/v1' as const;
 export const ARCHCTX_CAPABILITIES_VERSION = 'archcontext.capabilities/v1' as const;
 export const ARCHITECTURE_REFRESH_SIGNAL_VERSION = 'archcontext.architecture-refresh-signal/v1' as const;
 export const ARCHITECTURE_DOCS_RENDERER_VERSION = 'archcontext.docs-renderer/v4' as const;
 export const ARCHITECTURE_DOCS_LAYOUT_VERSION = 'archcontext.docs-layout/v1' as const;
-export const ARCHCTX_REQUIRED_VERSION = '0.4.4' as const;
+export const ARCHCTX_REQUIRED_VERSION = '0.4.5' as const;
 export const ARCHCTX_REQUIRED_FEATURES = Object.freeze([
   'architecture-docs-renderer-v2',
   'architecture-refresh-signal-v1',
-  'projection-protocol-v1',
+  'projection-apply-receipt-v1',
+  'projection-protocol-v2',
 ] as const);
 export const PROJECTION_STATUSES = Object.freeze([
-  'adoption-required', 'applied', 'blocked', 'human-action-required', 'noop',
+  'adoption-required', 'applied', 'applied-reconcile-required', 'blocked', 'human-action-required', 'noop',
   'permanent-failure', 'planned', 'retryable-failure',
 ] as const);
 export const ARCHITECTURE_MAJOR_CHANGE_REASONS = Object.freeze([
@@ -36,6 +38,7 @@ export type ProjectionMode = 'check' | 'plan' | 'apply' | 'adopt';
 export type ProjectionStatus =
   | 'adoption-required'
   | 'applied'
+  | 'applied-reconcile-required'
   | 'blocked'
   | 'human-action-required'
   | 'noop'
@@ -101,6 +104,18 @@ export interface ArchitectureRefreshSignalV1 {
   projectionReceiptDigest: Sha256Digest;
 }
 
+export interface ProjectionApplyIdentityV1 {
+  schemaVersion: typeof PROJECTION_APPLY_IDENTITY_VERSION;
+  applyId: Sha256Digest;
+  lookupKey: Sha256Digest;
+  repositoryId: string;
+  workspaceId: string;
+  acceptedChange: AcceptedArchitectureChangeReferenceV1;
+  semanticCommit: { changeSetId: string; idempotencyKey: string };
+  ownedFilesDigest: Sha256Digest;
+  refreshSignalsDigest: Sha256Digest;
+}
+
 export interface ProjectionResultV1 {
   schemaVersion: typeof PROJECTION_RESULT_VERSION;
   requestId: string;
@@ -120,6 +135,7 @@ export interface ProjectionResultV1 {
     requestPayloadDigest: Sha256Digest;
   }>;
   refreshSignals: ArchitectureRefreshSignalV1[];
+  applyReceipt?: ProjectionApplyIdentityV1;
   receiptDigest: Sha256Digest;
 }
 
@@ -244,7 +260,51 @@ export function projectionResultIssues(input: ProjectionResultV1): string[] {
     if (signal.repository.repositoryId !== input.outputSnapshot.repositoryId || signal.worktree.workspaceId !== input.outputSnapshot.workspaceId || signal.worktree.headSha !== input.outputSnapshot.headSha || signal.worktree.worktreeDigest !== input.outputSnapshot.worktreeDigest) issues.push(`signal ${signal.signalId} snapshot mismatch`);
   }
   if ((input.status === 'adoption-required' || input.status === 'human-action-required') !== (input.humanActions.length > 0)) issues.push('human action/status mismatch');
+  if (input.status === 'applied-reconcile-required') {
+    if (!input.applyReceipt) issues.push('applied-reconcile-required requires applyReceipt');
+    if (input.refreshSignals.length > 0) issues.push('applied-reconcile-required cannot deliver refreshSignals');
+  }
+  if (input.applyReceipt) issues.push(...projectionApplyIdentityIssues(input.applyReceipt, input));
+  if (input.applyReceipt) {
+    for (const [index, signal] of input.refreshSignals.entries()) {
+      if (!signal.acceptedChange || !sameAcceptedArchitectureChange(input.applyReceipt.acceptedChange, signal.acceptedChange)) {
+        issues.push(`refreshSignals[${index}].acceptedChange must match applyReceipt.acceptedChange`);
+      }
+    }
+  }
   return issues;
+}
+
+function projectionApplyIdentityIssues(identity: ProjectionApplyIdentityV1, result: ProjectionResultV1): string[] {
+  const issues: string[] = [];
+  if (identity.schemaVersion !== PROJECTION_APPLY_IDENTITY_VERSION) issues.push('applyReceipt.schemaVersion mismatch');
+  for (const field of ['applyId', 'lookupKey', 'ownedFilesDigest', 'refreshSignalsDigest'] as const) {
+    if (!isDigest(identity[field])) issues.push(`applyReceipt.${field} invalid`);
+  }
+  if (identity.repositoryId !== result.outputSnapshot.repositoryId) issues.push('applyReceipt.repositoryId mismatch');
+  if (identity.workspaceId !== result.outputSnapshot.workspaceId) issues.push('applyReceipt.workspaceId mismatch');
+  if (identity.semanticCommit.changeSetId.trim() === '' || identity.semanticCommit.idempotencyKey.trim() === '') issues.push('applyReceipt.semanticCommit invalid');
+  issues.push(...acceptedChangeIssues(identity.acceptedChange, 'applyReceipt.acceptedChange'));
+  return issues;
+}
+
+function acceptedChangeIssues(change: AcceptedArchitectureChangeReferenceV1, label: string): string[] {
+  const issues: string[] = [];
+  if (change.changeSetId.trim() === '' || change.eventId.trim() === '') issues.push(`${label} identity invalid`);
+  if (!sortedUnique(change.reasonCodes) || change.reasonCodes.length === 0) issues.push(`${label}.reasonCodes must be sorted, unique and non-empty`);
+  if (!sortedUnique(change.affectedNodeIds) || change.affectedNodeIds.length === 0) issues.push(`${label}.affectedNodeIds must be sorted, unique and non-empty`);
+  for (const reason of change.reasonCodes) if (!(ARCHITECTURE_MAJOR_CHANGE_REASONS as readonly string[]).includes(reason)) issues.push(`${label}.reasonCodes invalid`);
+  return issues;
+}
+
+export function sameAcceptedArchitectureChange(
+  left: Readonly<{ changeSetId: string; eventId: string; reasonCodes: readonly string[]; affectedNodeIds: readonly string[] }>,
+  right: Readonly<{ changeSetId: string; eventId: string; reasonCodes: readonly string[]; affectedNodeIds: readonly string[] }>,
+): boolean {
+  return left.changeSetId === right.changeSetId
+    && left.eventId === right.eventId
+    && left.reasonCodes.join('\0') === right.reasonCodes.join('\0')
+    && left.affectedNodeIds.join('\0') === right.affectedNodeIds.join('\0');
 }
 
 function refreshSignalIssues(signal: ArchitectureRefreshSignalV1, label: string): string[] {
@@ -292,11 +352,26 @@ export function assertProjectionResult(value: unknown, expectedRequestId?: strin
   }
   if (!Array.isArray(input.refreshSignals)) throw new Error('projection result refreshSignals must be an array');
   for (const [index, signal] of input.refreshSignals.entries()) assertArchitectureRefreshSignal(signal, `projection result refreshSignals[${index}]`);
+  if (input.applyReceipt !== undefined) assertProjectionApplyIdentity(input.applyReceipt, 'projection result applyReceipt');
   if (!isDigest(input.receiptDigest)) throw new Error('projection result receiptDigest invalid');
   const result = input as unknown as ProjectionResultV1;
   const issues = projectionResultIssues(result);
   if (issues.length > 0) throw new Error(`projection result invariant failed: ${issues.join('; ')}`);
   return result;
+}
+
+function assertProjectionApplyIdentity(value: unknown, label: string): void {
+  const identity = record(value, label);
+  if (identity.schemaVersion !== PROJECTION_APPLY_IDENTITY_VERSION) throw new Error(`${label}.schemaVersion mismatch`);
+  for (const field of ['applyId', 'lookupKey', 'ownedFilesDigest', 'refreshSignalsDigest'] as const) if (!isDigest(identity[field])) throw new Error(`${label}.${field} invalid`);
+  if (typeof identity.repositoryId !== 'string' || identity.repositoryId.trim() === '') throw new Error(`${label}.repositoryId invalid`);
+  if (typeof identity.workspaceId !== 'string' || identity.workspaceId.trim() === '') throw new Error(`${label}.workspaceId invalid`);
+  const semanticCommit = record(identity.semanticCommit, `${label}.semanticCommit`);
+  if (typeof semanticCommit.changeSetId !== 'string' || semanticCommit.changeSetId.trim() === '' || typeof semanticCommit.idempotencyKey !== 'string' || semanticCommit.idempotencyKey.trim() === '') throw new Error(`${label}.semanticCommit invalid`);
+  const accepted = record(identity.acceptedChange, `${label}.acceptedChange`);
+  if (typeof accepted.changeSetId !== 'string' || accepted.changeSetId.trim() === '' || typeof accepted.eventId !== 'string' || accepted.eventId.trim() === '') throw new Error(`${label}.acceptedChange identity invalid`);
+  assertStringArray(accepted.reasonCodes, `${label}.acceptedChange.reasonCodes`);
+  assertStringArray(accepted.affectedNodeIds, `${label}.acceptedChange.affectedNodeIds`);
 }
 
 function assertProjectionSnapshot(value: unknown, label: string): void {
