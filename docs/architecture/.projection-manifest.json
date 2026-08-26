@@ -910,9 +910,9 @@
       "sourceDigest": "sha256:2b41a1b3f03e0f2a17b8e83607c353f16dc1370b0d6cfada99502c1048e2c342",
       "outputDigest": "sha256:66d4b7068ff03b389eb468fcfeb98d6146109c54d1e89eaf119a8f278ac9a5e4",
       "verifiedAgainst": {
-        "branch": "codex/me1-acceptance-followup",
-        "commit": "2d83fdec40bdbca833ed5f801c6fc81c7655fb42",
-        "committedAt": "2026-08-26T23:42:23+08:00"
+        "branch": "main",
+        "commit": "7e7e29fbf904c25a5aba6f2ef71aed9dab8f8d0d",
+        "committedAt": "2026-08-27T00:34:09+08:00"
       }
     },
     {
