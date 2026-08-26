@@ -1,16 +1,16 @@
 # Task Review: me0-acceptance-followup-fixes
 
-> **Status**: Pending
+> **Status**: Accepted
 > **Plan**: plans/plan-20260826-1609-me0-acceptance-followup-fixes.md
 > **Contract**: tasks/contracts/20260826-1609-me0-acceptance-followup-fixes.contract.md
 > **Notes File**: tasks/notes/20260826-1609-me0-acceptance-followup-fixes.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-08-26 16:09
-> **Recommendation**: fail
+> **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:05f33d8e35b3c50236d9109a1e6842ba718ae08d396d3eef5d53c01ba6965383
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
+> **Reviewed Target Revision**: 42b8d1e2bc8ce7fd98b8ee6972c1d58240fb9494
 
 ## Human Review Card
 
@@ -40,17 +40,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Codex
+> **Source**: codex-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:05f33d8e35b3c50236d9109a1e6842ba718ae08d396d3eef5d53c01ba6965383
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 42b8d1e2bc8ce7fd98b8ee6972c1d58240fb9494
+> **Verification Evidence SHA256**: sha256:76cc571257725c4783b3ad38ab8233dfc2815081a85423a2c9bd7690df038b94
+> **Issued At**: 2026-08-26T09:19:37.750Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: Independent Codex review of the ME-0 acceptance follow-up final subject passed: engineer CLI three-way error dispatch (domain code / invalid_argument / internal_error) with FleetOffersError routed through the domain whitelist, retire-replay canonical-bytes comparison remapping corrupt cross-event pairings to binding_state_corrupt, and the ME-0A archived review header resynced with its own acceptance receipt. Focused oracles green: 25 tests, typecheck, task-sync.
 - Findings: none
 
 ## Behavior Diff Notes

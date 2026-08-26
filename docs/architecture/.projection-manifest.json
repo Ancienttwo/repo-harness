@@ -5,12 +5,12 @@
   "sourceDigest": "sha256:a669f43e4e7e08464401db1df0b855175f878896e0de0c10e11db3edd71f8704",
   "provenance": {
     "schemaVersion": "archcontext.architecture-docs-projection-provenance/v1",
-    "baseHeadSha": "2df3a38e718001edaac6d78f3e87406d31989c9d",
-    "worktreeDigest": "sha256:7207ce0ef13dac505c4558ddf039d90de6d9b7d9b8b1581599857a7145f52cc5",
-    "sourceTreeDigest": "sha256:e7fdd7804a5f36290b032dde7ae6e145120e6db57bf7b5479f2cc7b07474baf1",
+    "baseHeadSha": "b01eae7879d55409ffad6e3266af2a5a10fecf89",
+    "worktreeDigest": "sha256:0aaf5933bd733584dba3a12148b2f50837bcabdc1714550b6b031bf27b48e55a",
+    "sourceTreeDigest": "sha256:05e821891200da9d0dc5ed57795c95a27a1bcfb30cf171d2069f6052896ce7ea",
     "modelDigest": "sha256:048b21e544412f15d056596cdbda7ab931b329af2b7aa9a77db7cc280bdf0848",
-    "codeGraphDigest": "sha256:9f60fe7c208eca485a2bb0ec1fab7ef2b28555a35fc9b3b7562121d74181ed09",
-    "indexedWorktreeDigest": "sha256:b421c495ace7f91fe49c600cbc65fcffe6ef677882e76a570aeb6a7a1a7b2afb",
+    "codeGraphDigest": "sha256:46051123a652fb28930de429376f72997e4c06fe4e63e1bff82c21ac96481088",
+    "indexedWorktreeDigest": "sha256:f595398a3f50692d5e36593499778f5bcd740bdb594cf782b3dc9a37a9d4198c",
     "rendererVersion": "archcontext.docs-renderer/v4",
     "layoutVersion": "archcontext.docs-layout/v1",
     "generatedFrom": {
@@ -19,9 +19,9 @@
       "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
       "codeGraphStatus": "ready"
     },
-    "projectionInputDigest": "sha256:015b476250f103ab6c04354ae5925dc037620542d2a0c0d1b9f67890c3abf7e5"
+    "projectionInputDigest": "sha256:39fd80a6c6a7809ac1444045cd5fddc25b701cd58bdf2f690c3e9f963caab3b6"
   },
-  "projectionDigest": "sha256:5dfc578f934c7fc3a34b0ee599fd045b6692dc18305d56ca9e83809c8be1600f",
+  "projectionDigest": "sha256:ad97b85456c5339d833322e8d6fb9a159c9e1df62944ec24be311fc66301179c",
   "semanticBaseline": {
     "semanticState": {
       "schemaVersion": "archcontext.architecture-semantic-state/v1",
@@ -532,12 +532,12 @@
     },
     "digests": {
       "modelDigest": "sha256:048b21e544412f15d056596cdbda7ab931b329af2b7aa9a77db7cc280bdf0848",
-      "sourceTreeDigest": "sha256:e7fdd7804a5f36290b032dde7ae6e145120e6db57bf7b5479f2cc7b07474baf1",
+      "sourceTreeDigest": "sha256:05e821891200da9d0dc5ed57795c95a27a1bcfb30cf171d2069f6052896ce7ea",
       "flowProofDigest": "sha256:c94d5fe8b42bfa84f6e8e197246b0a39818b1463c37c750e0d0de0abd4923222",
-      "projectionDigest": "sha256:5dfc578f934c7fc3a34b0ee599fd045b6692dc18305d56ca9e83809c8be1600f"
+      "projectionDigest": "sha256:ad97b85456c5339d833322e8d6fb9a159c9e1df62944ec24be311fc66301179c"
     }
   },
-  "receiptDigest": "sha256:0a3790bde35974868be984bd4d019bf3fa03c428fd5fdc4da0b04984f80ccbfc",
+  "receiptDigest": "sha256:2adf5ddcd12e0607ebeafe7e7721e301ddeb32f86cb392cd85aa5b87e004008d",
   "refreshSignalIds": [],
   "targetCount": 26,
   "fileCount": 26,
@@ -670,9 +670,9 @@
       "sourceDigest": "sha256:be77b7889fe4eeecb95005c5f47a1f3ffad647f4bd9453d831dfbf11166c38a2",
       "outputDigest": "sha256:ec49b0d1d46b88e7e76c726e952a7fbcdcbdb3925fa6fc961db56e4f3b286655",
       "verifiedAgainst": {
-        "branch": "main",
-        "commit": "b65e7535cb7c311b97d9f88fabdfb801fbf5da20",
-        "committedAt": "2026-08-26T16:11:10+08:00"
+        "branch": "codex/me0-acceptance-followup-fixes",
+        "commit": "b01eae7879d55409ffad6e3266af2a5a10fecf89",
+        "committedAt": "2026-08-26T17:11:31+08:00"
       }
     },
     {
@@ -910,9 +910,9 @@
       "sourceDigest": "sha256:2b41a1b3f03e0f2a17b8e83607c353f16dc1370b0d6cfada99502c1048e2c342",
       "outputDigest": "sha256:66d4b7068ff03b389eb468fcfeb98d6146109c54d1e89eaf119a8f278ac9a5e4",
       "verifiedAgainst": {
-        "branch": "main",
-        "commit": "b65e7535cb7c311b97d9f88fabdfb801fbf5da20",
-        "committedAt": "2026-08-26T16:11:10+08:00"
+        "branch": "codex/me0-acceptance-followup-fixes",
+        "commit": "b01eae7879d55409ffad6e3266af2a5a10fecf89",
+        "committedAt": "2026-08-26T17:11:31+08:00"
       }
     },
     {
