@@ -1,4 +1,9 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { execFileSync } from 'child_process';
+import { createHash } from 'crypto';
+import { existsSync, mkdtempSync, realpathSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 
 import {
   buildEngineerOfferCandidate,
@@ -8,10 +13,12 @@ import {
   type EngineerOfferV1,
 } from '../../src/core/engineers/scheduling';
 import type { EngineerPrincipalV1 } from '../../src/core/engineers/principal-claim';
+import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { ExclusiveLockContentionError } from '../../src/effects/locking/exclusive-directory-lock';
 import {
   acquireScheduledEngineerTask,
   type ScheduledEngineerAcquireAssertionV1,
+  type ScheduledEngineerAcquireResult,
 } from '../../src/effects/engineers/scheduling-acquire';
 
 const REPO = 'repo_0123456789abcdef';
@@ -102,7 +109,76 @@ function document(value: EngineerOfferV1) {
   });
 }
 
+const roots: string[] = [];
+
+/** A real repository so the production concurrency lock resolves a real git
+ * common directory instead of a stubbed one. */
+function gitFixture(): string {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'me1a-acquire-lock-')));
+  roots.push(root);
+  execFileSync('git', ['init', '-q'], { cwd: root });
+  return root;
+}
+
+function concurrencyLockPath(root: string, concurrencyKey: string): string {
+  const key = createHash('sha256').update(concurrencyKey, 'utf8').digest('hex');
+  return join(resolveGitCommonDirectory(root), 'repo-harness/engineer-scheduling/v1/concurrency', `${key}.lock`);
+}
+
+afterEach(() => {
+  while (roots.length > 0) rmSync(roots.pop()!, { recursive: true, force: true });
+});
+
 describe('ME-1A scheduled Engineer acquire', () => {
+  test('an N-way election on one repository_id:concurrency_key delegates to ME-0B exactly once', () => {
+    const root = gitFixture();
+    const current = offer();
+    const empty = buildEngineerOffersDocument({
+      repository_id: REPO, engineer_id: ENGINEER, lane: 'engineering-v2',
+      work_graph_revision: current.work_graph_revision, candidates: [],
+    });
+    let claimed = false;
+    let acquireCount = 0;
+    let contended: ScheduledEngineerAcquireResult | null = null;
+
+    // The production `withConcurrencyLock` is deliberately left in place: this
+    // exercises the real exclusive directory lock under the real git common
+    // directory, not an injected serializer.
+    const attempt = (): ScheduledEngineerAcquireResult => acquireScheduledEngineerTask({
+      repo_root: root,
+      principal: principal(),
+      assertion: assertion(current),
+      dependencies: {
+        collectOffers: () => (claimed ? empty : document(current)),
+        acquire: () => {
+          acquireCount += 1;
+          // A competitor that reaches the same key while this holder owns the
+          // lock must be refused before it can reach ME-0B.
+          if (contended === null) contended = attempt();
+          claimed = true;
+          return {
+            ok: true,
+            envelope: { repo_id: REPO } as any,
+            receipt: { repository_id: REPO } as any,
+          };
+        },
+      },
+    });
+
+    const results = Array.from({ length: 8 }, () => attempt());
+
+    expect(acquireCount).toBe(1);
+    expect(results[0]).toMatchObject({ ok: true, offer: { work_package_id: 'wp-a' } });
+    expect(results.slice(1).map((result) => (result.ok ? 'ok' : result.error)))
+      .toEqual(Array.from({ length: 7 }, () => 'engineer_offer_stale'));
+    expect(contended).toMatchObject({ ok: false, error: 'engineer_concurrency_unavailable' });
+
+    const lockPath = concurrencyLockPath(root, `${REPO}:release`);
+    expect(existsSync(join(lockPath, '..'))).toBeTrue();
+    expect(existsSync(lockPath)).toBeFalse();
+  }, 30_000);
+
+
   test('revalidates under the repo-key lock and delegates exactly once to ME-0B', () => {
     const current = offer();
     let collectCount = 0;

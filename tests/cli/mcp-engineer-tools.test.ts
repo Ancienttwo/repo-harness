@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
+import { engineerSha256 } from '../../src/core/engineers/profile-binding';
 import { getMcpPolicy } from '../../src/cli/mcp/policy';
 import { buildMcpToolDefinitions, callMcpTool } from '../../src/cli/mcp/tools';
+import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { bindEngineer, readEngineerBindingStatus, retireEngineer } from '../../src/effects/engineers/binding-store';
 import { enrollEngineerPrincipal, revokeEngineerPrincipal } from '../../src/effects/engineers/principal-store';
 import { loadEngineerProfile } from '../../src/effects/engineers/profile-store';
@@ -35,6 +37,92 @@ function fixture(): { repoRoot: string; home: string } {
   execFileSync('git', ['add', '.'], { cwd: repoRoot });
   execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: repoRoot });
   return { repoRoot, home };
+}
+
+const otherCapability = 'capability.workflow-engine.contract-assets';
+const sprintPath = 'plans/sprints/demo.sprint.md';
+
+/** A registered read_write repository carrying one canonical engineering-v2
+ * work graph, so the scheduling tools run against the real projection chain
+ * instead of an injected offers document. */
+function schedulingFixture(): { repoRoot: string; home: string; repositoryId: string } {
+  const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-me1a-mcp-')));
+  const home = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-me1a-mcp-home-')));
+  roots.push(repoRoot, home);
+  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: repoRoot });
+  execFileSync('git', ['config', 'user.email', 'tests@example.invalid'], { cwd: repoRoot });
+  execFileSync('git', ['config', 'user.name', 'Tests'], { cwd: repoRoot });
+  mkdirSync(join(repoRoot, '.archcontext/model'), { recursive: true });
+  mkdirSync(join(repoRoot, 'agents'), { recursive: true });
+  mkdirSync(join(repoRoot, '.ai/harness/sprint'), { recursive: true });
+  mkdirSync(join(repoRoot, 'plans/sprints'), { recursive: true });
+  mkdirSync(join(repoRoot, 'plans/policies'), { recursive: true });
+  mkdirSync(join(repoRoot, 'plans/rollback'), { recursive: true });
+  cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(repoRoot, '.archcontext/model/nodes'), { recursive: true });
+  cpSync(join(sourceRoot, 'agents/engineers'), join(repoRoot, 'agents/engineers'), { recursive: true });
+  const policyBytes = '{"policy":1}\n';
+  const rollbackA = '{"rollback":"wp-a"}\n';
+  const rollbackB = '{"rollback":"wp-b"}\n';
+  const repositoryId = repoHarnessRepoIdFor(repoRoot);
+  const workPackage = (id: string, taskRef: string, capability: string, rollback: string) => ({
+    work_package_id: id,
+    task_ref: taskRef,
+    primary_capability: capability,
+    depends_on: [],
+    priority: 50,
+    concurrency: { scope: 'repo', key: 'release' },
+    execution_surface: 'contract',
+    integration_group: null,
+    required_acceptance: [{
+      gate: 'module', policy_id: 'module-default',
+      policy_ref: 'plans/policies/module.json', policy_revision: engineerSha256(policyBytes),
+    }],
+    rollback_boundary: {
+      kind: 'work_package', boundary_id: `${repositoryId}:${id}`,
+      boundary_ref: `plans/rollback/${id}.json`, boundary_revision: engineerSha256(rollback),
+    },
+  });
+  writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{"worktree_strategy":{"merge_back":{"target":"main"}}}\n');
+  writeFileSync(join(repoRoot, '.ai/harness/sprint/active-sprint'), `${sprintPath}\n`);
+  writeFileSync(join(repoRoot, sprintPath), [
+    '# Sprint: demo', '', '## Backlog', '',
+    '| # | Status | Task | Mode | Acceptance | Plan |',
+    '|---|---|---|---|---|---|',
+    '| 1 | [ ] | task A | contract | accepted A | (pending) |',
+    '| 2 | [ ] | task B | contract | accepted B | (pending) |', '',
+    '## Execution Log', '',
+  ].join('\n'));
+  writeFileSync(join(repoRoot, 'plans/sprints/demo.work-graph.v1.json'), `${JSON.stringify({
+    protocol: 1,
+    kind: 'repo-harness-work-graph',
+    repository_id: repositoryId,
+    sprint_path: sprintPath,
+    lane: 'engineering-v2',
+    work_packages: [
+      workPackage('wp-a', 'task A', 'capability.verification.evals-checks', rollbackA),
+      workPackage('wp-b', 'task B', otherCapability, rollbackB),
+    ],
+  })}\n`);
+  writeFileSync(join(repoRoot, 'plans/policies/module.json'), policyBytes);
+  writeFileSync(join(repoRoot, 'plans/rollback/wp-a.json'), rollbackA);
+  writeFileSync(join(repoRoot, 'plans/rollback/wp-b.json'), rollbackB);
+  execFileSync('git', ['add', '.'], { cwd: repoRoot });
+  execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: repoRoot });
+  writeFileSync(join(home, 'registered-repos.json'), `${JSON.stringify({
+    version: 1, authorizationRevision: 1, repos: [{
+      id: repositoryId, path: repoRoot, accessMode: 'read_write', source: 'manual',
+      registeredAt: '2026-08-25T00:00:00.000Z', lastSeenAt: '2026-08-25T00:00:00.000Z',
+    }],
+  })}\n`);
+  return { repoRoot, home, repositoryId };
+}
+
+/** Every coordination authority the Fleet acquire path can write lives under
+ * the git common directory, so this listing is the mutation probe. */
+function coordinationState(repoRoot: string): string[] {
+  const root = join(resolveGitCommonDirectory(repoRoot), 'repo-harness');
+  if (!existsSync(root)) return [];
+  return readdirSync(root, { recursive: true }).map((entry) => String(entry)).sort();
 }
 
 afterEach(() => {
@@ -205,4 +293,91 @@ describe('restricted Engineer MCP tools', () => {
     const stale = await callMcpTool({ ...context, engineerAuthorizationId: secondAuthorization }, 'engineer_status', {});
     expect(stale).toMatchObject({ isError: true, structuredContent: { error: { code: 'engineer_principal_stale' } } });
   });
+
+  test('the scheduling tools carry the ME-1A protocol: principal-scoped offers, required fences, and a stale offer that never mutates Fleet', async () => {
+    const { repoRoot, home, repositoryId } = schedulingFixture();
+    process.env.REPO_HARNESS_HOME = home;
+    const profile = loadEngineerProfile(repoRoot, engineerId);
+    bindEngineer(repoRoot, {
+      engineer_id: engineerId,
+      idempotency_key: 'bind-scheduling',
+      provider: 'codex',
+      provider_thread_id: 'thread-scheduling',
+      host_id: 'local',
+      engineer_contract_revision: profile.engineer_contract_revision,
+      expected_current_digest: null,
+      expected_binding_generation: 0,
+      expected_binding_id: null,
+      expected_engineer_contract_revision: profile.engineer_contract_revision,
+      now: () => '2026-08-25T00:00:00.000Z',
+      binding_id: () => '11111111-1111-4111-8111-111111111111',
+    });
+    const binding = readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision).binding!;
+    enrollEngineerPrincipal({ repository_id: repositoryId, authorization_id: authorizationId, binding, env: process.env });
+    const context = { repoRoot, policy: getMcpPolicy('engineer'), engineerAuthorizationId: authorizationId };
+
+    const offers = await callMcpTool(context, 'engineer_offers', {});
+    expect(offers.isError).toBeUndefined();
+    const document = offers.structuredContent as {
+      protocol: number; kind: string; repository_id: string; engineer_id: string; lane: string;
+      work_graph_revision: string | null;
+      offers: Array<{ work_package_id: string; engineer_id: string }>;
+      exclusions: Array<{ work_package_id: string; engineer_id: string; blockers: string[] }>;
+    };
+    expect(document).toMatchObject({
+      protocol: 1,
+      kind: 'repo-harness-engineer-offers',
+      repository_id: repositoryId,
+      engineer_id: engineerId,
+      lane: 'engineering-v2',
+    });
+    expect(document.work_graph_revision).toMatch(/^sha256:[0-9a-f]{64}$/u);
+    expect([...document.offers, ...document.exclusions].every((item) => item.engineer_id === engineerId)).toBeTrue();
+    expect(document.exclusions.find((item) => item.work_package_id === 'wp-b')?.blockers)
+      .toContain('profile_capability_mismatch');
+    expect(document.offers.some((item) => item.work_package_id === 'wp-b')).toBeFalse();
+
+    const fences = {
+      repo_id: repositoryId,
+      engineer_id: engineerId,
+      binding_id: binding.binding_id,
+      binding_generation: binding.binding_generation,
+      engineer_contract_revision: binding.engineer_contract_revision,
+    };
+    const acquireArgs = {
+      ...fences,
+      work_package_id: 'wp-a',
+      work_package_revision: `sha256:${'1'.repeat(64)}`,
+      work_graph_revision: document.work_graph_revision!,
+      task_id: 'a'.repeat(64),
+      task_revision: 'b'.repeat(64),
+      offer_revision: `sha256:${'2'.repeat(64)}`,
+      dependency_revision: `sha256:${'3'.repeat(64)}`,
+      concurrency_revision: `sha256:${'4'.repeat(64)}`,
+      fleet_offer_revision: `sha256:${'5'.repeat(64)}`,
+      authorization_revision: 1,
+    };
+
+    const { work_package_revision: _revision, ...withoutWorkPackageRevision } = acquireArgs;
+    const missingWorkPackageRevision = await callMcpTool(context, 'engineer_acquire', withoutWorkPackageRevision);
+    expect(missingWorkPackageRevision).toMatchObject({
+      isError: true,
+      structuredContent: { error: { code: 'INVALID_ARGUMENT', message: 'work_package_revision is required' } },
+    });
+
+    const { dependency_revision: _dependency, ...withoutDependencyRevision } = acquireArgs;
+    const missingDependencyRevision = await callMcpTool(context, 'engineer_acquire', withoutDependencyRevision);
+    expect(missingDependencyRevision).toMatchObject({
+      isError: true,
+      structuredContent: { error: { code: 'INVALID_ARGUMENT', message: 'dependency_revision is required' } },
+    });
+
+    const before = coordinationState(repoRoot);
+    const staleOffer = await callMcpTool(context, 'engineer_acquire', acquireArgs);
+    expect(staleOffer).toMatchObject({
+      isError: true,
+      structuredContent: { error: { code: 'engineer_offer_stale' } },
+    });
+    expect(coordinationState(repoRoot)).toEqual(before);
+  }, 30_000);
 });

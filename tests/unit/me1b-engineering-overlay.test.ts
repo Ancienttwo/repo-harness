@@ -1,56 +1,115 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { join, relative } from 'path';
 
 import {
   validateEngineeringOverlaySnapshot,
   validateOrganizationAttentionSnapshot,
 } from '../../src/core/engineers/engineering-overlay';
-import { projectFleetBoardSnapshot } from '../../src/core/fleet/board';
+import { engineerSha256 } from '../../src/core/engineers/profile-binding';
 import { bindEngineer, readEngineerBindingStatus } from '../../src/effects/engineers/binding-store';
 import {
   collectEngineeringBoard,
   type EngineeringOverlayDependencies,
 } from '../../src/effects/engineers/engineering-overlay';
+import { readProjectedWorkGraphAt } from '../../src/effects/engineers/scheduling';
+import { collectFleetBoard } from '../../src/effects/fleet/board';
 import { listEngineerProfiles, loadEngineerProfile } from '../../src/effects/engineers/profile-store';
-import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
+import { repoHarnessRepoIdFor, type RepoHarnessRegisteredRepo } from '../../src/effects/repo-registry';
 
 const sourceRoot = process.cwd();
 const roots: string[] = [];
 const engineerId = 'engineer:capability.verification.evals-checks';
+const capabilityId = 'capability.verification.evals-checks';
 const bindingOne = '11111111-1111-4111-8111-111111111111';
 const bindingTwo = '22222222-2222-4222-8222-222222222222';
+const sprintPath = 'plans/sprints/demo.sprint.md';
+const policyBytes = '{"policy":1}\n';
+const rollbackBytes = '{"rollback":"wp-a"}\n';
 
-function fleetBytes(): string {
-  return JSON.stringify(projectFleetBoardSnapshot({
-    registry_revision: `sha256:${'a'.repeat(64)}`,
+/** Read the real Fleet projection of this exact fixture repository. The
+ * observed_at/sequence inputs are pinned so any difference in the returned
+ * bytes comes from repository state, not from the clock. */
+async function fleetBytes(home: string): Promise<string> {
+  return JSON.stringify(await collectFleetBoard({
+    env: { ...process.env, REPO_HARNESS_HOME: home },
     sequence: 1,
     observed_at: '2026-08-25T15:02:00.000Z',
-    repositories: [{
-      repository_id: 'repo_0123456789abcdef', repo_root: '/fixture', access_mode: 'read_write', status: 'ok', snapshot_consistency: 'stable', error: null,
-      cards: [{
-        task_id: 'b'.repeat(64), task_revision: `sha256:${'c'.repeat(64)}`, task_state: 'pending', lease_state: 'bound',
-        claim_id: bindingOne, generation: 1, current_publication: null, merge_readiness: null, execution_readiness: 'execution_ready',
-        feedback: { pending_count: 0, no_progress: false, repair_actions: [] }, inbox: { unread_count: 0, addressed_to_current_claim: false }, snapshot_consistency: 'stable',
-      }],
-    }],
+    timeout_ms: 10_000,
   }));
+}
+
+function registeredRepo(root: string): RepoHarnessRegisteredRepo {
+  return {
+    id: repoHarnessRepoIdFor(root), path: root, accessMode: 'read_write', source: 'manual',
+    registeredAt: '2026-08-25T15:00:00.000Z', lastSeenAt: '2026-08-25T15:00:00.000Z',
+  };
+}
+
+/** A private registry home naming exactly this fixture as a read_write repo. */
+function fleetHome(root: string): string {
+  const home = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-me1b-home-')));
+  roots.push(home);
+  writeFileSync(join(home, 'registered-repos.json'), `${JSON.stringify({
+    version: 1, authorizationRevision: 1, repos: [registeredRepo(root)],
+  })}\n`);
+  return home;
 }
 
 function fixture(): string {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-me1b-overlay-')));
   roots.push(root);
-  execFileSync('git', ['init', '-q'], { cwd: root });
+  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: root });
   execFileSync('git', ['config', 'user.email', 'tests@example.invalid'], { cwd: root });
   execFileSync('git', ['config', 'user.name', 'Tests'], { cwd: root });
   mkdirSync(join(root, '.archcontext/model'), { recursive: true });
   mkdirSync(join(root, 'agents'), { recursive: true });
   mkdirSync(join(root, 'tasks'), { recursive: true });
+  mkdirSync(join(root, '.ai/harness/sprint'), { recursive: true });
+  mkdirSync(join(root, 'plans/sprints'), { recursive: true });
+  mkdirSync(join(root, 'plans/policies'), { recursive: true });
+  mkdirSync(join(root, 'plans/rollback'), { recursive: true });
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(root, '.archcontext/model/nodes'), { recursive: true });
   cpSync(join(sourceRoot, 'agents/engineers'), join(root, 'agents/engineers'), { recursive: true });
   writeFileSync(join(root, 'tasks/current.md'), 'task authority\n');
+  writeFileSync(join(root, '.ai/harness/policy.json'), '{"worktree_strategy":{"merge_back":{"target":"main"}}}\n');
+  writeFileSync(join(root, '.ai/harness/sprint/active-sprint'), `${sprintPath}\n`);
+  writeFileSync(join(root, sprintPath), [
+    '# Sprint: demo', '', '## Backlog', '',
+    '| # | Status | Task | Mode | Acceptance | Plan |',
+    '|---|---|---|---|---|---|',
+    '| 1 | [ ] | task A | contract | accepted A | (pending) |', '',
+    '## Execution Log', '',
+  ].join('\n'));
+  writeFileSync(join(root, 'plans/sprints/demo.work-graph.v1.json'), `${JSON.stringify({
+    protocol: 1,
+    kind: 'repo-harness-work-graph',
+    repository_id: repoHarnessRepoIdFor(root),
+    sprint_path: sprintPath,
+    lane: 'engineering-v2',
+    work_packages: [{
+      work_package_id: 'wp-a',
+      task_ref: 'task A',
+      primary_capability: capabilityId,
+      depends_on: [],
+      priority: 50,
+      concurrency: { scope: 'repo', key: 'release' },
+      execution_surface: 'contract',
+      integration_group: null,
+      required_acceptance: [{
+        gate: 'module', policy_id: 'module-default',
+        policy_ref: 'plans/policies/module.json', policy_revision: engineerSha256(policyBytes),
+      }],
+      rollback_boundary: {
+        kind: 'work_package', boundary_id: `${repoHarnessRepoIdFor(root)}:wp-a`,
+        boundary_ref: 'plans/rollback/wp-a.json', boundary_revision: engineerSha256(rollbackBytes),
+      },
+    }],
+  })}\n`);
+  writeFileSync(join(root, 'plans/policies/module.json'), policyBytes);
+  writeFileSync(join(root, 'plans/rollback/wp-a.json'), rollbackBytes);
   execFileSync('git', ['add', '.'], { cwd: root });
   execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: root });
   return root;
@@ -126,10 +185,11 @@ describe('ME-1B Engineering Overlay', () => {
     expect(execFileSync('git', ['status', '--porcelain=v1'], { cwd: root, encoding: 'utf8' })).toBe(before);
   });
 
-  test('never labels a mixed binding generation stable', () => {
+  test('never labels a mixed binding generation stable', async () => {
     const root = fixture();
+    const home = fleetHome(root);
     const first = bind(root, bindingOne);
-    const fleetBefore = fleetBytes();
+    const fleetBefore = await fleetBytes(home);
     const board = collectEngineeringBoard({
       repo_root: root,
       observed_at: '2026-08-25T15:02:00.000Z',
@@ -141,7 +201,54 @@ describe('ME-1B Engineering Overlay', () => {
     expect(component.observation_before).not.toBe(component.observation_after);
     expect(board.overlay.engineers.find((item) => item.engineer_id === engineerId)?.binding)
       .toMatchObject({ state: 'active', value: { binding_id: bindingTwo, binding_generation: 2 } });
-    expect(fleetBytes()).toBe(fleetBefore);
+    expect(await fleetBytes(home)).toBe(fleetBefore);
+  }, 30_000);
+
+  test('one fixture serves the sprint graph, the Fleet projection, and the Engineer board as independent views', async () => {
+    const root = fixture();
+    const home = fleetHome(root);
+    const first = bind(root, bindingOne);
+
+    const graphBefore = readProjectedWorkGraphAt(registeredRepo(root), sprintPath);
+    const fleetBefore = await fleetBytes(home);
+    const boardBefore = collectEngineeringBoard({
+      repo_root: root, observed_at: '2026-08-25T15:02:00.000Z', dependencies: deps(root),
+    });
+    // A vacuous projection would make the invariance below meaningless.
+    expect(graphBefore.graph?.work_packages.map((item) => item.work_package_id)).toEqual(['wp-a']);
+    expect(JSON.parse(fleetBefore).repositories[0]).toMatchObject({ status: 'ok' });
+    expect(JSON.parse(fleetBefore).repositories[0].cards.length).toBeGreaterThan(0);
+    expect(boardBefore.overlay.engineers.find((item) => item.engineer_id === engineerId)?.binding)
+      .toMatchObject({ state: 'active', value: { binding_id: bindingOne, binding_generation: 1 } });
+
+    bind(root, bindingTwo, first);
+
+    const graphAfter = readProjectedWorkGraphAt(registeredRepo(root), sprintPath);
+    const boardAfter = collectEngineeringBoard({
+      repo_root: root, observed_at: '2026-08-25T15:02:00.000Z', dependencies: deps(root),
+    });
+    expect(graphAfter.graph?.work_graph_revision).toBe(graphBefore.graph!.work_graph_revision);
+    expect(await fleetBytes(home)).toBe(fleetBefore);
+    expect(boardAfter.overlay.engineers.find((item) => item.engineer_id === engineerId)?.binding)
+      .toMatchObject({ state: 'active', value: { binding_id: bindingTwo, binding_generation: 2 } });
+    expect(boardAfter.overlay.snapshot_sha256).not.toBe(boardBefore.overlay.snapshot_sha256);
+  }, 30_000);
+
+  test('the overlay registers no route on the operator server or web surface', () => {
+    const sources = readdirSync(join(sourceRoot, 'src'), { recursive: true })
+      .map((entry) => String(entry))
+      .filter((entry) => entry.endsWith('.ts') || entry.endsWith('.tsx'))
+      .map((entry) => join('src', entry));
+    const importers = sources.filter((entry) => {
+      const text = readFileSync(join(sourceRoot, entry), 'utf8');
+      return /engineers\/engineering-overlay|collectEngineeringBoard/u.test(text);
+    }).map((entry) => relative('src', entry).split('\\').join('/')).sort();
+
+    expect(importers).toEqual([
+      'cli/commands/engineer.ts',
+      'effects/engineers/engineering-overlay.ts',
+    ]);
+    expect(importers.some((entry) => entry.startsWith('operator-web/') || entry.startsWith('effects/operator/'))).toBeFalse();
   });
 
   test('keeps unreadable distinct from healthy empty and rejects illegal binding combinations', () => {

@@ -212,6 +212,41 @@ describe('ME-1A Engineer offer effects', () => {
       .toContain('active_claim_limit');
   });
 
+  test('a generic-v1 carrier is excluded in the effects layer before any Profile or Binding read', () => {
+    const subject = fixture();
+    let profileReads = 0;
+    let bindingReads = 0;
+    let fleetReads = 0;
+    (subject.deps as any).readFileAtCommit = (_repo: string, _commit: string, path: string) => (
+      path.endsWith('.work-graph.v1.json')
+        ? JSON.stringify({
+          protocol: 1,
+          kind: 'repo-harness-work-graph',
+          repository_id: REPO,
+          sprint_path: SPRINT,
+          lane: 'generic-v1',
+          work_packages: [],
+        })
+        : null
+    );
+    (subject.deps as any).loadProfile = () => { profileReads += 1; throw new Error('must not read the Profile authority'); };
+    (subject.deps as any).readBinding = () => { bindingReads += 1; throw new Error('must not read the Binding authority'); };
+    (subject.deps as any).collectFleetOffers = () => { fleetReads += 1; throw new Error('must not read ME-0B Fleet offers'); };
+
+    const result = collectEngineerOffers({
+      repo_root: subject.root,
+      principal: principal(),
+      registry_snapshot: subject.registry,
+      dependencies: subject.deps,
+    });
+
+    expect(result.lane).toBe('generic-v1');
+    expect(result.offers).toEqual([]);
+    expect(result.exclusions).toEqual([]);
+    expect(result.work_graph_revision).toMatch(/^sha256:[0-9a-f]{64}$/u);
+    expect([profileReads, bindingReads, fleetReads]).toEqual([0, 0, 0]);
+  });
+
   test('future dependency authority fails closed until its receipt adapter exists', () => {
     const subject = fixture();
     const baseGraph = graph();
