@@ -1,9 +1,9 @@
 # PRD: Interface Change Request (ME-4B)
 
-> **Status**: Draft
+> **Status**: Approved
 > **Slug**: `interface-change-request`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T18:30:00+0800
+> **Updated**: 2026-08-26T16:17:57+0800
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
 > **Depends On**: ME-1A scheduling schema and ME-1C coordination messages
@@ -13,12 +13,12 @@
 
 - **Problem**: cross-capability interface change is currently prose/message, not a revisioned authority with actor and transition fencing.
 - **Users**: requesting Module Engineer, owning Module Engineer, Program Orchestrator and Human approver.
-- **Platform**: closed record store, per-request transition lock, typed messages and Work Package projection.
+- **Platform**: closed request/event/current store in Git common dir, per-request transition lock, current Engineer Binding fences, typed messages and an immutable planning projection that is materialized only by the existing tracked Sprint/Work Graph authority.
 - **P0 surface**: `InterfaceChangeRequestV1`, lifecycle, actor matrix, acceptance projection and implementation/integration evidence closure.
 - **Core metric**: message-body transition 0; stale revision transition 0.
 - **Hard constraint**: accepted request creates/revises canonical Work Package through an explicit projection; it does not directly change code/task state.
 - **Key risk**: request and generated Work Package drifting as two authorities.
-- **Unknowns**: exact architecture event linkage must match existing queue/snapshot authority before approval.
+- **Architecture decision**: the accepted event is semantic authority. ArchContext architecture events are downstream drift projections keyed by the accepted event digest and never transition the request. No product store calls `architecture-event.ts`.
 - **Acceptance scenarios**: create, stale transition, accept/project, reject, implement/integrate closure and message notification.
 - **Suggested next step**: freeze schema/store plus one acceptance-to-Work-Package fixture.
 
@@ -33,7 +33,7 @@ Persist closed revisions under one request ID. Server-derived principals authori
 ### Feasibility Boundary
 
 - **Confirmed**: immutable records, locks and typed message subjects exist as established patterns.
-- **[UNKNOWN]**: architecture queue/snapshot event chosen as the final interface decision projection.
+- **Confirmed**: the canonical Work Package is a deterministic projection of one tracked Sprint row plus its sibling `WorkGraphV1` carrier. ME-4B may freeze exact proposed carrier bytes and later verify exact tracked materialization, but cannot create a second Work Package store.
 - **Fail closed**: messages and code changes cannot transition the request implicitly.
 
 ## Users
@@ -63,7 +63,7 @@ Two actors transition revision N. One wins under lock; the other receives typed 
 
 ### Scenario 2: Accepted projection
 
-Acceptance creates a deterministic repository-qualified Work Package revision referencing exact request digest.
+Human acceptance creates an immutable `InterfaceWorkPackageProjectionV1` bound to the exact request/current digest, expected carrier revision and proposed `WorkPackageDefinitionV1`. It does not edit the tracked Sprint or Work Graph. A later `materialize` transition succeeds only after the existing planning transaction has committed exact matching carrier bytes.
 
 ### Scenario 3: Closure
 
@@ -82,43 +82,85 @@ Validate actor, expected revision and closed state transition under a per-reques
 
 ### Module 2: Planning Projection
 
-On acceptance, produce/revise one canonical Work Package referencing request ID/revision/digest and send typed notifications through ME-1C.
+On acceptance, persist one immutable planning projection. A separate Human-approved Git planning transaction materializes it into the existing Sprint/Work Graph authority. The request advances to `implementing` only after re-reading the exact commit and proving repository, Sprint path, Work Package ID and Work Package revision match. ME-1C messages use `interface_change_request` subjects as notification only.
+
+## Frozen Actor Matrix
+
+| Transition | Required actor | Additional fence |
+|---|---|---|
+| `propose` | requesting Module Engineer | actor equals source capability's current active Binding and the request's requester fence |
+| `submit` | requesting Module Engineer | exact current digest and current Binding generation |
+| `accept` / `reject` | Human | exact current digest; acceptance includes the complete planning projection |
+| `cancel` | requesting Module Engineer or Human | only before acceptance; Engineer remains Binding-fenced |
+| `materialize` | target Module Engineer | exact current target Binding plus exact tracked Git commit/Sprint/Work Graph proof |
+| `implemented` | target Module Engineer | immutable implementation evidence digest and exact current digest |
+| `integrated` | Human | immutable integration evidence digest; target Engineer cannot self-integrate |
+
+`Program Orchestrator` is a workflow role, not a third mutation principal kind. It acts through an authenticated Human authority or a current Engineer principal. `authorization_id` is only a server-side lookup carrier for an Engineer principal and never appears in the semantic record.
+
+The Human-approved product entrypoints are closed: authenticated Engineer MCP may invoke only `propose`, `submit`, `cancel`, `materialize`, and `implemented`; the server derives the Engineer principal from the existing OAuth authorization carrier and revalidates current Binding. Human CLI may invoke only `accept`, `reject`, `cancel`, and `integrated`. There is no CLI option that accepts an Engineer authorization ID.
 
 ## Data Model
 
 ```yaml
 InterfaceChangeRequestV1:
   protocol: 1
+  kind: repo-harness-interface-change-request
   repository_id: string
   request_id: uuid
-  request_revision: integer
   source_capability_id: string
   target_capability_id: string
+  requester_fence: {engineer_id: string, binding_id: uuid, binding_generation: integer, engineer_contract_revision: sha256}
+  target_engineer_id: string
   interface_ref: string
   proposed_change: bounded-utf8
   compatibility_impact: bounded-utf8
-  requested_by: principal-ref
+  request_sha256: sha256
+
+InterfaceWorkPackageProjectionV1:
+  protocol: 1
+  kind: repo-harness-interface-work-package-projection
+  request_id: uuid
+  request_sha256: sha256
+  accepted_from_current_digest: sha256
+  sprint_ref: repo-relative-path
+  expected_work_graph_revision: sha256|null
+  proposed_work_package: WorkPackageDefinitionV1
+  proposed_work_package_revision: sha256
+  projection_sha256: sha256
+
+InterfaceChangeCurrentV1:
+  protocol: 1
+  kind: repo-harness-interface-change-current
+  request_id: uuid
+  request_sha256: sha256
+  request_revision: integer
   state: proposed|under_review|accepted|rejected|implementing|implemented|integrated|cancelled
-  accepted_work_package_ref: {repository_id: string, work_package_id: string, work_package_revision: sha256}|null
+  current_event_sha256: sha256
+  accepted_projection_sha256: sha256|null
+  materialized_work_package_ref: {repository_id: string, sprint_ref: string, work_graph_revision: sha256, work_package_id: string, work_package_revision: sha256, materialized_commit: git-oid}|null
   implementation_evidence_sha256: sha256|null
   integration_evidence_sha256: sha256|null
-  previous_revision_sha256: sha256|null
-  record_sha256: sha256
+  previous_current_digest: sha256|null
+  current_digest: sha256
 ```
 
-## Known Unknowns
+## Authority and Projection Closure
 
-| Item | Impact | Resolution Path | Owner |
-|---|---|---|---|
-| Architecture event projection | Blocks approval | map to existing architecture queue/snapshot | Architecture owner |
+- `InterfaceChangeRequestV1` plus its immutable event/current chain is the only interface-decision authority.
+- `InterfaceWorkPackageProjectionV1` is a proposal to the existing planning authority, not a schedulable Work Package and not permission to edit code.
+- The tracked Sprint plus sibling `WorkGraphV1` remains the only scheduling authority. `materialize` verifies exact committed bytes; it does not write them.
+- Reverse lookup from canonical Work Package to request is a deterministic index over accepted projections/materialization events. It is not embedded into `WorkPackageDefinitionV1`, so ME-1A wire semantics remain unchanged.
+- ArchContext receives normal architecture drift events after acceptance/materialization. Those events are observability/projection evidence and cannot accept, reject or integrate a request.
 
 ## Developer Handoff
 
-Do not implement until the architecture projection and actor matrix are frozen. No generic payload/state extension is allowed.
+The architecture projection, actor matrix and planning boundary above are frozen. No generic payload/state extension is allowed. Do not add direct Sprint/Work Graph mutation, architecture queue mutation, code mutation, merge, Provider runtime or Task/Lease/Publication/Acceptance authority.
 
 ### Acceptance Scripts
 
 1. Race two revision transitions and assert one winner.
-2. Accept and assert exact Work Package/request digests link both directions.
-3. Send a message saying “accepted” and prove state remains unchanged.
-4. Record implementation without integration and assert request is not `integrated`.
+2. Accept and assert exact request/projection/Work Package definition digests link both directions through the deterministic reverse index.
+3. Refuse `materialize` until an exact tracked Sprint/Work Graph commit contains the projected definition; then accept exactly one matching materialization.
+4. Send a message saying “accepted” and prove state remains unchanged.
+5. Record implementation without integration and assert request is not `integrated`; prove only Human can integrate.

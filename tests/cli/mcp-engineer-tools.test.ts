@@ -155,6 +155,8 @@ describe('restricted Engineer MCP tools', () => {
       'engineer_message_ack',
       'engineer_thread_effect_capability',
       'engineer_thread_effect_status',
+      'engineer_interface_change_propose',
+      'engineer_interface_change_transition',
     ]);
     expect(names.some((name) =>
       /(?:^|_)(shell|read|write|fleet|publication|acceptance|binding|browser|agent)(?:_|$)/u.test(name))).toBe(false);

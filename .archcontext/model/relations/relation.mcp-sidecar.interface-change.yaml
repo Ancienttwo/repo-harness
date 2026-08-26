@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.interface-change
+kind: calls
+source: capability.runtime-harness.mcp-sidecar
+target: capability.runtime-harness.interface-change
+intent: Expose only authenticated Engineer propose, submit, cancel, materialize and implemented mutations through the server-derived OAuth principal

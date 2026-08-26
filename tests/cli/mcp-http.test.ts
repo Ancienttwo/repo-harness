@@ -1068,6 +1068,8 @@ describe('mcp http transport', () => {
         'engineer_message_ack',
         'engineer_thread_effect_capability',
         'engineer_thread_effect_status',
+        'engineer_interface_change_propose',
+        'engineer_interface_change_transition',
       ]);
       const unmapped = await call(firstHeaders, 3, 'tools/call', { name: 'engineer_status', arguments: {} });
       expect(JSON.parse(unmapped.result.content[0].text)).toMatchObject({ error: { code: 'engineer_principal_unmapped' } });

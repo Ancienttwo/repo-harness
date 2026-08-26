@@ -51,6 +51,9 @@ source:
             - id: sink.mcp-sidecar.provider-thread-effect-status
               path: "src/effects/engineers/provider-thread-effect-store.ts"
               symbol: "readProviderThreadEffectStatus"
+            - id: sink.mcp-sidecar.interface-change
+              path: "src/effects/engineers/interface-change-store.ts"
+              symbol: "transitionInterfaceChangeRequest"
 extensions:
   contractFiles:
     agents: "AGENTS.md"

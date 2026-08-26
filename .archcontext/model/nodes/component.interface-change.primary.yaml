@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: component.interface-change.primary
+kind: component
+name: Interface Change Authority Store
+status: active
+parent: capability.runtime-harness.interface-change
+summary: Stores immutable request, event and planning-projection bytes plus one recoverable current pointer under per-request CAS.

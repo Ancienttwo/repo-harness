@@ -14,6 +14,14 @@
 
 ## 结论
 
+### ME-4B Interface Authority Closure（2026-08-26）
+
+ME-4B 的跨 capability 接口决策权威冻结为 git-common-dir 中的 `InterfaceChangeRequestV1 → immutable events → InterfaceChangeCurrentV1`。接受动作只生成 content-addressed `InterfaceWorkPackageProjectionV1`；它包含 exact request/current digest、目标 Sprint、预期 Work Graph revision 和一个已由 ME-1A schema 校验的 `WorkPackageDefinitionV1`，但不会写 Sprint、Work Graph、Task 或代码。
+
+真正可调度的 Work Package 仍只来自 tracked Sprint 加 sibling `WorkGraphV1`。目标 Engineer 的 `materialize` transition 必须读取一个 exact Git commit，复用 ME-1A projection 并证明 Work Package revision 与 accepted projection 完全相同。反向的 Work Package → Interface Request 查询由 accepted/materialized event 的确定性索引提供；不修改已交付的 `WorkPackageDefinitionV1` wire contract，也不建立第二个 Work Package authority。
+
+Actor matrix 同步冻结：source current Engineer 提出/提交，Human 接受或拒绝，target current Engineer 在 exact materialization 后实施并记录 implementation evidence，Human 单独记录 integration evidence。Engineer 动作全部受当前 Binding fence 约束；Program Orchestrator 不是第三种 principal。ME-1C message 和 ArchContext event 都只做 downstream notification/projection，不能转换请求状态。
+
 GPT 建议的主方向成立，而且比“一个总控 Agent 不断生成临时 Worker”更接近可持续的软件工程组织：
 
 > 持久化模块工程师这个逻辑岗位；Session 只是岗位当前的一次运行绑定；Subagent 是父任务内部的一次性 Worker。

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.interface-change.engineer-scheduling
+kind: calls
+source: capability.runtime-harness.interface-change
+target: capability.runtime-harness.engineer-scheduling
+intent: Verify target-Engineer materialization against the exact tracked ME-1A Work Graph projection at one Git commit

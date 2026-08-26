@@ -1,0 +1,60 @@
+schemaVersion: archcontext.node/v2
+id: capability.runtime-harness.interface-change
+kind: capability
+name: Interface Change Requests
+status: active
+summary: Owns revision-fenced cross-capability interface decisions and exact planning materialization evidence without becoming scheduling, code, runtime or acceptance authority.
+responsibilities:
+  - Persist closed InterfaceChangeRequestV1, immutable transition events and one CAS current projection in Git common dir.
+  - Require server-derived current Engineer principals for propose, submit, cancel, materialize and implemented transitions.
+  - Reserve accept, reject and integrated transitions for explicit Human authority.
+  - Freeze an immutable InterfaceWorkPackageProjectionV1 on acceptance without changing tracked Sprint or Work Graph bytes.
+  - Verify materialization from one exact Git commit by reusing the ME-1A WorkGraphV1 and WorkPackageDefinitionV1 projection.
+  - Keep implementation and integration evidence separate and expose deterministic reverse lookup as a rebuildable projection.
+  - Exclude Provider runtime, Task, Lease, code, Publication, Acceptance and architecture-event mutation.
+source:
+  include:
+    - "src/core/engineers/interface-change.ts"
+    - "src/effects/engineers/interface-change-store.ts"
+    - "src/cli/commands/interface-change.ts"
+  entrypoints:
+    - id: entrypoint.interface-change.binding-fence
+      path: "src/effects/engineers/interface-change-store.ts"
+      symbols:
+        - name: "validateEngineerActor"
+          sinks:
+            - id: sink.interface-change.binding
+              path: "src/effects/engineers/binding-store.ts"
+              symbol: "readEngineerBindingStatus"
+    - id: entrypoint.interface-change.event-canonical
+      path: "src/core/engineers/interface-change.ts"
+      symbols:
+        - name: "buildInterfaceChangeEvent"
+          sinks:
+            - id: sink.interface-change.event-digest
+              path: "src/core/messages/mechanics.ts"
+              symbol: "canonicalMessageDigest"
+    - id: entrypoint.interface-change.work-graph
+      path: "src/effects/engineers/interface-change-store.ts"
+      symbols:
+        - name: "projectedGraphAt"
+          sinks:
+            - id: sink.interface-change.work-graph
+              path: "src/core/engineers/scheduling.ts"
+              symbol: "projectWorkGraph"
+    - id: entrypoint.interface-change.reverse-lookup
+      path: "src/effects/engineers/interface-change-store.ts"
+      symbols:
+        - name: "findInterfaceChangesByWorkPackage"
+          sinks:
+            - id: sink.interface-change.accepted-projection
+              path: "src/core/engineers/interface-change.ts"
+              symbol: "validateInterfaceWorkPackageProjection"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun test tests/unit/me4b-interface-change-request.test.ts tests/cli/interface-change.test.ts --timeout 60000"
+    - "bun run check:type"

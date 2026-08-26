@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.interface-change.primary
+kind: calls
+source: capability.runtime-harness.interface-change
+target: component.interface-change.primary
+intent: Persist immutable request and transition evidence plus one recoverable CAS current projection

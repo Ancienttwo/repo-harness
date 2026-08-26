@@ -71,37 +71,37 @@ bun src/cli/index.ts init --repo . --dry-run
 <!-- BEGIN ARCHITECTURE CONTRACT -->
 ## Architecture Contract
 
-- Functional block: `src/effects/engineers/provider-thread-effect-store.ts`
-- Capability ID: `runtime-harness-provider-thread-effects`
-- Matched prefix: `src/effects/engineers/provider-thread-effect-store.ts`
+- Functional block: `src/core/engineers/interface-change.ts`
+- Capability ID: `runtime-harness-interface-change`
+- Matched prefix: `src/core/engineers/interface-change.ts`
 - Architecture domain: `runtime-harness`
-- Architecture capability: `provider-thread-effects`
-- Architecture module: `docs/architecture/modules/runtime-harness/provider-thread-effects.md`
-- Last architecture event: 2026-08-25T21:44:42+0800
-- Last changed path: `tasks/workstreams/runtime-harness/provider-thread-effects/me3a-provider-thread-effect.md`
+- Architecture capability: `interface-change`
+- Architecture module: `docs/architecture/modules/runtime-harness/interface-change.md`
+- Last architecture event: 2026-08-26T16:47:36+0800
+- Last changed path: `tasks/workstreams/runtime-harness/interface-change/me4b-interface-change-request.md`
 - Severity: medium
 - Change type: workstream-sync
 - Module responsibility: Keep this block aligned with the local boundary described by surrounding human-owned context.
-- Entrypoints: `src/effects/engineers/provider-thread-effect-store.ts`
+- Entrypoints: `src/core/engineers/interface-change.ts`
 - Allowed dependencies: Follow root `AGENTS.md` / `CLAUDE.md` and this local contract.
 - Forbidden dependencies: Do not cross sibling app/service/package boundaries without an architecture snapshot or explicit plan.
-- Runtime path: `src/effects/engineers/provider-thread-effect-store.ts`
+- Runtime path: `src/core/engineers/interface-change.ts`
 - LSP/tooling profile: `typescript-lsp`
 - Verification: Use root required checks plus local commands recorded in this capability contract.
 - Latest snapshot: `(none yet)`
-- Semantic diagram source: `docs/architecture/modules/runtime-harness/provider-thread-effects.md`
+- Semantic diagram source: `docs/architecture/modules/runtime-harness/interface-change.md`
 - Pending architecture request: `(none)`
 
 ## Active Workstreams
 
-- `tasks/workstreams/runtime-harness/provider-thread-effects/me3a-provider-thread-effect.md`
+- `tasks/workstreams/runtime-harness/interface-change/me4b-interface-change-request.md`
   - status: active
   - current_slice: todo-01
-  - source_plan: plans/plan-20260825-2120-me3a-provider-thread-effect.md
+  - source_plan: plans/plan-20260826-1617-me4b-interface-change-request.md
 
 ## Current Session Projection
 
-- Durable progress lives under `tasks/workstreams/runtime-harness/provider-thread-effects`.
+- Durable progress lives under `tasks/workstreams/runtime-harness/interface-change`.
 - `tasks/current.md` is the tracked derived status snapshot; it is not a live lock or task source.
 - `tasks/todos.md` is the deferred-goal ledger; current execution slices stay in the active plan's `## Task Breakdown`.
 <!-- END ARCHITECTURE CONTRACT -->

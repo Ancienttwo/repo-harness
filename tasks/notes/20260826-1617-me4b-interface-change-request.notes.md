@@ -1,0 +1,53 @@
+# Implementation Notes: me4b-interface-change-request
+
+## Authority decisions
+
+- Engineer mutation is exposed only by the authenticated MCP tools. The MCP server resolves the existing OAuth authorization carrier to a principal, then the ME-4B store revalidates the exact current Binding and capability before mutation. Authorization IDs never enter request/event bytes or CLI arguments.
+- Human CLI owns only `accept`, `reject`, `cancel`, and `integrated`; Engineer MCP owns only `propose`, `submit`, `cancel`, `materialize`, and `implemented`. The overlap on `cancel` is deliberate and actor-checked by the transition matrix.
+- Acceptance persists an immutable `InterfaceWorkPackageProjectionV1` and does not edit Sprint or Work Graph bytes. `materialize` proves a separate planning transaction by reading one exact Git commit and reusing ME-1A `projectWorkGraph` plus the canonical Work Package revision.
+- `WorkPackageDefinitionV1` remains byte-compatible. Reverse lookup scans accepted projections as a deterministic derived view; at 10x request volume this scan is the first expected pressure point and may later become a rebuildable index without changing semantic authority.
+- Store review tightened three authority boundaries before acceptance: actor legality is validated before any immutable write; Engineer transitions revalidate Binding while holding the existing Binding lock through request CAS; reverse lookup exposes only a canonical, chain-validated materialized Work Package reference, never a merely accepted projection.
+
+## Projection checkpoint
+
+- Adding the primary/Binding/scheduling/MCP relations and required transition flow closed the 21-capability graph shape. ArchContext produced `adoption-required` for signal `sha256:28015af0ed8f2d793f3bf73148de23abdc3adcc3d3422aaa6086714d53ab6f99` (`entrypoint-changed`, `node-added`, `relation-changed`, `verified-flow-proof-changed`), request payload `sha256:103f54ed95d8f1b0b131846d8f5e1216bd4f5344e728b73af3a80f32231ea213`, and candidate projection receipt `sha256:4a69c32efbc4fd4f82905cbe5e01bbea7258a5f668f8acae2bd148512c7d1a07`. Generated documentation remains paused at that Human-owned gate.
+
+> **Status**: Active
+> **Plan**: plans/plan-20260826-1617-me4b-interface-change-request.md
+> **Contract**: tasks/contracts/20260826-1617-me4b-interface-change-request.contract.md
+> **Review**: tasks/reviews/20260826-1617-me4b-interface-change-request.review.md
+> **Last Updated**: 2026-08-26 16:23
+> **Lifecycle**: notes
+
+## Design Decisions
+
+- ...
+
+## Deviations From Plan Or Spec
+
+- None recorded.
+
+## Tradeoffs Considered
+
+| Option | Decision | Reason |
+|--------|----------|--------|
+| ... | ... | ... |
+
+## Open Questions
+
+- None.
+
+## Evidence Links
+
+- Checks: `.ai/harness/checks/latest.json`
+- Run snapshots: `.ai/harness/runs/`
+
+## Promotion Filter
+
+Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset files only when all three hold: hard to reverse, surprising without local context, and a real trade-off existed. If any one is missing, keep it in this notes file instead.
+
+## Promotion Candidates
+
+- Promote to `tasks/lessons.md` only after a repeated correction or failure pattern.
+- Promote to `docs/researches/` only when it is durable repo knowledge with evidence.
+- Promote to harness asset files only after verification across more than one task or fixture.
