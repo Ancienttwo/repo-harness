@@ -281,7 +281,7 @@ This umbrella is architecture authority, not an implementation task.
 - **Delivered baseline**: ME-0A、ME-0B 与 ME-1A 已合入 main；它们保留为控制平面历史合同，不因本次 reframe 重写 identity 或 wire semantics。
 - **Do not reinterpret**: no new Module Graph; no Session self-declared principal; no writer based on prompt-only paths; no active dirty-task transparent transfer; no UI-owned status.
 - **Promotion rule**: a child PRD becomes Approved only after its authority, principal, state transitions, failure paths and acceptance evidence are decision-complete.
-- **Canary order**: delivered ME-0A/0B/1A → Runtime Admission Canary (passed at `ef731e6a`) → ME-1C → ME-3A → minimal ME-1B → ME-4C → ME-2A/conditional ME-3B → narrowed ME-2C → ME-4A/B → ME-2B last. The final ME-2B canary on Codex CLI 0.149.0 proved static read-only/workspace profiles but falsified dynamic Parent revocation and effect-time child principal fencing, so writable delegation is closed as runtime-not-admitted and remains disabled.
+- **Canary order**: delivered ME-0A/0B/1A → Runtime Admission Canary (passed at `ef731e6a`) → ME-1C → ME-3A → minimal ME-1B → ME-4C → ME-2A/conditional ME-3B → narrowed ME-2C → ME-4A/B → ME-2B last. The final ME-2B canary on Codex CLI 0.149.0 proved static read-only/workspace profiles, while its version-pinned launch-only adapter had no dynamic Parent-revocation or effect-time child-principal probe. Positive admission evidence is therefore unavailable, so writable delegation is closed as runtime-not-admitted and remains disabled.
 - **Verify with**: child-specific tests plus `repo-harness run check-task-workflow --strict`, architecture sync and task sync.
 
 ### Acceptance Scripts

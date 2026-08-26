@@ -8,7 +8,8 @@
 
 - The canary uses no model turn. It tests the Host sandbox directly so Provider prose cannot enter the trust path.
 - The repository fixture is disposable. Existing Task, Lease, Binding, Publication, Acceptance and Git working bytes are not canary inputs or outputs.
-- Static read-only denial is only a control. Admission depends on revoking an already-running Parent at a later effect boundary without process replacement.
+- Static read-only denial is only a control. Admission depends on a Host adapter that actually revokes an already-running Parent at a later effect boundary without process replacement.
+- The first independent review correctly rejected the v1 probe because its neutral checkpoint was labelled as revocation and its read-only predicate accepted any non-zero process failure. V2 separates static checkpoint observations from nullable post-revocation evidence, pins the launch-only adapter to Codex CLI 0.149.0, requires the exact exit/signal/stdout/stderr/worktree denial envelope, and exercises both admitted and not-admitted paths through an injected fake Host.
 
 ## Open Questions
 
@@ -17,10 +18,10 @@
 ## Exact Evidence
 
 - Executable: `/opt/homebrew/Caskroom/codex/0.149.0/bin/codex`, `sha256:f4a74117b8142cda581c95ff753abf4508b5636d89682c1ed77e4a9249af8963`.
-- Read-only control: exit 1, sentinel absent, stderr digest `sha256:6520107146fe90b4f424c141da366fdf77c3e3fdb9d3f27d0606b2a1da868977`.
+- Read-only control: exit 1, no signal, empty stdout, sentinel absent, byte-identical empty worktree snapshots, exact normalized stderr `touch: <fixture>/read-only-sentinel: Operation not permitted`.
 - Workspace-write control: exit 0, sentinel present, empty stderr digest `sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
-- Long-lived Parent: wrote before and after revocation checkpoint, exit 0, empty stderr.
-- Decision: `runtime_not_admitted` for exactly `dynamic_parent_revocation_unavailable`, `parent_write_survived_revocation`, and `child_principal_at_effect_unavailable`.
+- Long-lived static Parent: wrote before and after a neutral checkpoint, exit 0, empty stderr; this is not represented as a revocation attempt.
+- Decision: `runtime_not_admitted` for exactly `dynamic_parent_revocation_probe_unavailable` and `child_principal_at_effect_probe_unavailable`.
 
 ## Verification Classification
 

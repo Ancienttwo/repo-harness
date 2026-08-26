@@ -7,7 +7,7 @@
 
 ## Conclusion
 
-The current Codex Host can enforce a sandbox profile when a process starts, but cannot revoke write permission from an already-running Parent Engineer while preserving that Parent as a useful control actor. It also exposes no authenticated child principal plus grant epoch at each filesystem effect. ME-2B therefore remains disabled/read-only and no writer-grant product surface is implemented.
+The examined Codex CLI 0.149.0 surface can enforce a sandbox profile when a process starts, but the version-pinned `codex-cli-0.149.0-launch-only/v1` adapter has no supported probe for revoking write permission from an already-running Parent or authenticating child principal plus grant epoch at each filesystem effect. Because admission requires positive Host evidence, ME-2B remains disabled/read-only and no writer-grant product surface is implemented. This is a fail-closed statement about the examined adapter, not a claim that a neutral checkpoint revoked Host permission.
 
 This is a completed negative feasibility decision, not an incomplete implementation. Building `WriterActorCurrentV1`, `DelegatedMutationGrantV1`, hooks or prompt rules would record intent without enforcing the one-writer invariant.
 
@@ -31,6 +31,7 @@ realpath: /opt/homebrew/Caskroom/codex/0.149.0/bin/codex
 version: codex-cli 0.149.0
 sha256: f4a74117b8142cda581c95ff753abf4508b5636d89682c1ed77e4a9249af8963
 sandbox-help-sha256: 6f07d12fb0614fbca21988b0e2a9165f33d341dbd0899728fcd3b67e19ac7660
+host-adapter: codex-cli-0.149.0-launch-only/v1
 ```
 
 The model-free path was:
@@ -38,13 +39,15 @@ The model-free path was:
 ```text
 mkdtemp Git repository
   → codex sandbox --permission-profile :read-only … /usr/bin/touch
-  → exit 1, Operation not permitted, sentinel absent
+  → exact denial envelope: exit 1, no signal, empty stdout,
+    normalized Operation not permitted stderr, sentinel absent,
+    byte-identical empty worktree snapshots
   → codex sandbox --permission-profile :workspace … /usr/bin/touch
   → exit 0, sentinel present
   → keep one :workspace Parent shell alive
-  → Parent writes before revocation checkpoint
-  → Host publishes checkpoint
-  → same Parent writes after checkpoint
+  → Parent writes before a neutral control checkpoint
+  → harness publishes the neutral checkpoint
+  → same Parent writes after the neutral checkpoint
   → Parent exits 0
 ```
 
@@ -54,11 +57,13 @@ The accepted observation was:
 {
   "read_only_worktree_mutation_denied": true,
   "workspace_write_worktree_mutation_admitted": true,
-  "parent_mutation_before_revocation": true,
-  "parent_mutation_after_revocation": true,
-  "parent_control_alive_after_revocation": true,
-  "dynamic_parent_revocation": "unavailable",
-  "child_principal_at_effect": "unavailable"
+  "static_parent_mutation_before_checkpoint": true,
+  "static_parent_mutation_after_checkpoint": true,
+  "static_parent_control_alive_after_checkpoint": true,
+  "dynamic_parent_revocation": "probe_unavailable",
+  "parent_mutation_after_revocation": null,
+  "parent_control_alive_after_revocation": null,
+  "child_principal_at_effect": "probe_unavailable"
 }
 ```
 
@@ -66,9 +71,8 @@ The decision reasons are exactly:
 
 ```json
 [
-  "dynamic_parent_revocation_unavailable",
-  "parent_write_survived_revocation",
-  "child_principal_at_effect_unavailable"
+  "dynamic_parent_revocation_probe_unavailable",
+  "child_principal_at_effect_probe_unavailable"
 ]
 ```
 
@@ -76,8 +80,8 @@ The decision reasons are exactly:
 
 The non-negotiable invariant is not “one active grant record.” It is “at most one process principal can mutate the claimed worktree at every instant.” The current runtime fails that invariant after revocation:
 
-- Seatbelt permissions are launch-scoped.
-- A checkpoint or CAS change cannot alter the live Parent sandbox.
+- The examined Seatbelt adapter applies permissions at process launch.
+- A neutral checkpoint or CAS change is not represented as a revocation attempt and provides no admission evidence.
 - Suspending or terminating the Parent removes its persistent control role and introduces a process supervisor/Agent Runtime that the accepted architecture explicitly excludes.
 - A writable child process does not cross a repo-harness broker before every filesystem effect, so the broker cannot revalidate grant epoch or principal at the last responsible moment.
 
@@ -100,7 +104,7 @@ Reopen ME-2B only when both conditions are observable:
 1. A Host API replaces the sandbox of a live Parent while preserving non-mutating read/observe/cancel control.
 2. Every child mutation effect carries an authenticated runtime principal and grant epoch enforced by the Host/effect broker.
 
-Then rerun:
+Then add an explicit version-pinned Host probe adapter for those authoritative APIs and rerun:
 
 ```bash
 bun scripts/me2b-runtime-admission-canary.ts

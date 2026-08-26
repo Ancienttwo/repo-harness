@@ -31,9 +31,9 @@ Run the dedicated ME-2B security canary before any writer-grant implementation. 
 
 1. Freeze installed Codex executable path, version and bytes.
 2. Prove `:read-only` denies a disposable worktree mutation and `:workspace-write` admits it.
-3. Keep one workspace-write Parent process alive across a Host-owned `grant revoked` checkpoint.
-4. Attempt a second mutation from the same running Parent after revocation.
-5. Observe whether the Host denies the effect without killing/restarting the Parent and whether a stable child runtime principal/epoch is enforced at that boundary.
+3. Resolve one exact version-pinned Host probe adapter; unknown runtime versions fail closed instead of inheriting launch-only semantics.
+4. Keep one workspace-write Parent alive across a neutral checkpoint to prove the static launch profile persists; never label that checkpoint as revocation.
+5. Only an adapter backed by authoritative Host APIs may attempt revocation and report post-revocation Parent mutation/control plus the effect-time child principal/epoch.
 6. Record exact JSON evidence and decide admission. No model output or self-report is trusted.
 
 ## P3 Decision Rationale
@@ -76,7 +76,7 @@ Run the dedicated ME-2B security canary before any writer-grant implementation. 
 
 ## Verification Boundary
 
-The canary must distinguish: static read-only denial, static workspace-write admission, live Parent mutation after revocation, process termination, and unsupported dynamic sandbox replacement. A passing ME-2B admission requires denial after revocation while the same managed Parent remains available for non-mutating control and one exact child principal is checked at every effect. Any weaker result is no-go.
+The canary must distinguish: exact-envelope static read-only denial, static workspace-write admission, a neutral static-Parent checkpoint, actual Host revocation, process termination, and an unavailable dynamic probe. A passing ME-2B admission requires denial after a real adapter-backed revocation while the same managed Parent remains available for non-mutating control and one exact child principal is checked at every effect. Any weaker or unavailable probe is no-go.
 
 ## Evidence Contract
 

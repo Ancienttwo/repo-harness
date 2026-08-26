@@ -572,9 +572,9 @@ MCP OAuth `authorizationId` 证明 client authorization，不证明 Provider Thr
 
 - model-free Host probe 冻结 `codex-cli 0.149.0` executable realpath/version/bytes；`sha256:f4a74117b8142cda581c95ff753abf4508b5636d89682c1ed77e4a9249af8963`。
 - `:read-only` 控制组对 disposable worktree sentinel exit `1` / `Operation not permitted`；`:workspace` 控制组 exit `0`。这证明当前 Seatbelt profile 能在 process launch 时区分只读与可写。
-- 同一个长期运行的 `:workspace` Parent 在 Host-owned revocation checkpoint 前后均成功写入 sentinel 并 exit `0`。现有 CLI/App Thread surface 没有替换 live process sandbox 的动作；停止/杀死 Parent 也不能满足“保留 persistent Parent 的 read/observe/cancel control role”。
-- sandboxed effect 不携带由 Host 在每次 filesystem effect 重验证的 authenticated child principal + grant epoch。仓库中的 current/grant flag、prompt 或 hook 均不能补出该 OS/runtime identity。
-- Canary 结论为 `runtime_not_admitted`，原因恰为 `dynamic_parent_revocation_unavailable`、`parent_write_survived_revocation`、`child_principal_at_effect_unavailable`。
+- 同一个长期运行的 `:workspace` Parent 在 neutral control checkpoint 前后均成功写入 sentinel 并 exit `0`；该 checkpoint 只证明 launch-scoped profile 持续生效，明确不冒充 Host revocation。版本固定的 `codex-cli-0.149.0-launch-only/v1` adapter 没有替换 live process sandbox 的 probe。
+- 该 adapter 同样没有 Host 在每次 filesystem effect 重验证 authenticated child principal + grant epoch 的 probe。仓库中的 current/grant flag、prompt 或 hook 均不能补出该 OS/runtime identity。
+- Canary 结论为 `runtime_not_admitted`，原因恰为 `dynamic_parent_revocation_probe_unavailable`、`child_principal_at_effect_probe_unavailable`。
 
 因此 ME-2B 在当前 Runtime 上以 negative feasibility decision 收口：PRD 保持 Draft，writer records 仅保留为未来规范，不生成 product code、MCP/CLI mutation、architecture node、daemon 或兼容 fallback。现有支持上限是 ME-2A/ME-3B read-only delegation。重开条件不是时间，而是 Host 同时提供 live Parent permission replacement 与 effect-time principal/epoch receipt；详证见 `docs/researches/20260826-me2b-managed-parent-sandbox-canary.md`。
 

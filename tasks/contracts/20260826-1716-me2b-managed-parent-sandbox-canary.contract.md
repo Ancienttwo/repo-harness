@@ -31,7 +31,7 @@ Produce a reproducible, model-free managed-Parent/sandbox canary and use its exa
 
 ## Falsifier
 
-ME-2B is not admitted if one already-running workspace-write Parent can mutate after the Host-owned revocation checkpoint, or if the only way to stop it is termination/suspension that removes the required Parent control role. The cheapest proof is a model-free long-lived sandboxed process in a disposable Git repository.
+ME-2B is not admitted unless a version-pinned Host adapter can perform a real revocation, prove the already-running Parent cannot mutate afterward, preserve its non-mutating control role, and authenticate the child principal/epoch at the effect boundary. A neutral checkpoint only proves launch-scoped persistence and is never treated as revocation evidence.
 
 ## Workflow Inventory
 

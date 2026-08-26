@@ -19,7 +19,7 @@
 - **Core metric**: writer overlap 0; path/policy escape 0; publication before settlement 0.
 - **Hard constraint**: unmanaged Provider Sessions remain read-only; prompt text or a store flag cannot freeze their filesystem permissions.
 - **Key risk**: Parent retains shell/edit authority after the store says Worker owns the slot.
-- **Closed runtime result**: the dedicated model-free canary proved only launch-scoped sandboxing. An already-running workspace-write Parent retained mutation permission after the Host checkpoint, and no authenticated child principal/epoch is enforced at each effect.
+- **Closed runtime result**: the dedicated model-free canary proved only launch-scoped sandboxing. The version-pinned Codex CLI 0.149.0 adapter has no dynamic revocation or effect-principal probe, so it cannot produce the positive evidence required for writable admission.
 - **Acceptance scenarios**: Parent-to-Worker handoff, second writer refusal, mutation-time revalidation, crash recovery and observed diff.
 - **Suggested next step**: keep disabled/read-only. Reopen only when the Provider/Host exposes dynamic live-Session permission replacement plus an effect-time runtime principal/epoch receipt; do not build a repo-harness Agent runtime to compensate.
 
@@ -34,7 +34,7 @@ Writable delegation is enabled only for an Engineer Session whose execution boun
 ### Feasibility Boundary
 
 - **Confirmed**: store CAS and Git diff observation are available locally.
-- **Not available on the admitted runtime**: Codex CLI 0.149.0 applies `:read-only` or `:workspace` when a process starts, but exposes no Host action that replaces the sandbox of an already-running Parent while preserving its control role.
+- **Not available through the examined adapter**: Codex CLI 0.149.0 applies `:read-only` or `:workspace` when a process starts. The exact version-pinned public CLI adapter has no supported action for replacing the sandbox of an already-running Parent or authenticating principal/epoch at each effect.
 - **Fail closed**: unmanaged/manual Session, unverifiable runtime principal or missing sandbox means read-only only.
 
 ### Runtime Admission Decision (2026-08-26)
@@ -44,9 +44,9 @@ The dedicated canary is complete and returns `runtime_not_admitted`.
 - Runtime: `/opt/homebrew/Caskroom/codex/0.149.0/bin/codex`, executable `sha256:f4a74117b8142cda581c95ff753abf4508b5636d89682c1ed77e4a9249af8963`, version `codex-cli 0.149.0`.
 - Control A: built-in `:read-only` denied the disposable worktree sentinel with exit `1` / `Operation not permitted`.
 - Control B: built-in `:workspace` admitted the same worktree class with exit `0`.
-- Falsifier: one already-running `:workspace` Parent wrote both before and after the Host-owned revocation checkpoint and exited `0`. Sandbox permission remained launch-scoped.
-- Missing authority: the sandbox action carries no authenticated `worker_run_id`/grant epoch that a Host broker revalidates at each filesystem effect. A repo store or prompt field cannot add that kernel/runtime identity after launch.
-- Decision reasons: `dynamic_parent_revocation_unavailable`, `parent_write_survived_revocation`, `child_principal_at_effect_unavailable`.
+- Static control only: one already-running `:workspace` Parent wrote on both sides of a neutral checkpoint and exited `0`. This demonstrates persistence of a launch-scoped profile; the checkpoint is explicitly not represented as a revocation attempt.
+- Missing authority: the `codex-cli-0.149.0-launch-only/v1` adapter has neither a dynamic Parent-revocation probe nor an authenticated `worker_run_id`/grant-epoch probe at the filesystem effect boundary.
+- Decision reasons: `dynamic_parent_revocation_probe_unavailable`, `child_principal_at_effect_probe_unavailable`.
 
 Therefore this PRD remains Draft by design. `WriterActorCurrentV1` and `DelegatedMutationGrantV1` are specification-only; no product code, MCP/CLI mutation, architecture node or fallback writer path is authorized. ME-2B is complete as a negative feasibility decision and does not block the read-only ME-2A/ME-3B path or ME-4C Acceptance.
 
