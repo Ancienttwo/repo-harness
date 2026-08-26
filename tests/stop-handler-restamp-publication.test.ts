@@ -243,7 +243,7 @@ describe('Stop-time restamp auto-publication', () => {
   });
 
   test('leaves the strict projection failure gate criteria untouched', () => {
-    const strictPolicy = { architecture: { projection_provider: 'archctx', projection_apply: 'automatic', projection_version: '0.4.5', projection_failure_gate: 'strict' } };
+    const strictPolicy = { architecture: { projection_provider: 'archctx', projection_apply: 'automatic', projection_version: '0.4.7', projection_failure_gate: 'strict' } };
 
     // A publication fault under strict never blocks: it is not a drain failure.
     const faulted = fixture(strictPolicy);
@@ -263,13 +263,13 @@ describe('Stop-time restamp auto-publication', () => {
   });
 
   test('converges: the published restamp keeps the next drain idle without a provider run', () => {
-    const root = fixture({ architecture: { projection_provider: 'archctx', projection_apply: 'automatic', projection_version: '0.4.5' } });
+    const root = fixture({ architecture: { projection_provider: 'archctx', projection_apply: 'automatic', projection_version: '0.4.7' } });
     seedReceipt(root, RESTAMP);
 
     expect(stop(root, drainResult()).exitCode).toBe(0);
     expect(status(root)).toBe('');
 
-    const policy: ArchitectureProjectionPolicy = { provider: 'archctx', applyMode: 'automatic', failureGate: 'advisory', requiredVersion: '0.4.5', timeoutMs: 120_000 };
+    const policy: ArchitectureProjectionPolicy = { provider: 'archctx', applyMode: 'automatic', failureGate: 'advisory', requiredVersion: '0.4.7', timeoutMs: 120_000 };
     const changedSet = computeArchitectureDriftChangedSet(root);
     expect(changedSet.paths).toEqual([ARCHITECTURE_PROJECTION_MANIFEST_PATH]);
     const event = architectureDriftSourceEvent(changedSet);

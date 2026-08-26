@@ -127,7 +127,7 @@
     "projection_provider": "archctx",
     "projection_apply": "automatic",
     "projection_failure_gate": "strict",
-    "projection_version": "0.4.5",
+    "projection_version": "0.4.7",
     "projection_timeout_ms": 120000,
     "freshness_gate": "strict",
     "gate_min_severity": "medium",

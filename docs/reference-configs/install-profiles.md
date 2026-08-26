@@ -28,7 +28,7 @@ host.
 
 Update also reconciles the installed runtime dependency closure. It requires
 exact package-local `archctx` and `archctx-contracts` versions, ArchContext's
-exact package-local CodeGraph dependency, Node `>=24 <26`, and a successful
+exact package-local CodeGraph dependency, Node `>=22.22 <26`, and a successful
 `archctx capabilities --json` handshake. Both profiles refresh the exact global
 CodeGraph CLI/MCP by default. Waza and Mermaid remain mutable third-party
 providers and refresh only with explicit `--with-external-skills`;

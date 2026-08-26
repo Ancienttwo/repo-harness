@@ -33,7 +33,7 @@
   },
   "engines": {
     "bun": ">=1.4.0",
-    "node": ">=24 <26"
+    "node": ">=22.22 <26"
   },
   "scripts": {
     "benchmark:mcp-reader": "bun scripts/benchmark-general-repo-reader.ts",
@@ -87,8 +87,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "archctx": "0.4.5",
-    "archctx-contracts": "0.4.5",
+    "archctx": "0.4.7",
+    "archctx-contracts": "0.4.7",
     "commander": "^15.0.0",
     "express": "^5.2.1"
   }

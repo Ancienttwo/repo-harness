@@ -65,6 +65,11 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
+- **ArchContext 0.4.7 is the exact managed projection runtime.** The package,
+  contracts package, policy/template defaults, provider handshake, and clean-room
+  evidence now pin `0.4.7`. The shared managed Node range is
+  `>=22.22 <26`, matching the published ArchContext engine contract instead of
+  retaining the former Node 24-only floor.
 - **Bun 1.4 is the package runtime floor.** Package engines, installers, global
   runtime checks, and helper bootstrap diagnostics now require Bun `>=1.4.0`
   so candidate and installed runtimes use the tested process and test-runner
@@ -81,6 +86,10 @@ All notable changes to this skill are documented here.
 
 ### Fixed
 
+- **Tagged ArchContext releases are valid AXR7 producer inputs.** The consumer
+  E2E release preparation is idempotent when the producer already declares the
+  target version, and links producer workspaces from the archived checkout's
+  own manifest instead of the sibling checkout's currently installed scope.
 - **Fleet acquire no longer leaks source-worktree workflow state.** Acquire
   passes the task identity into contract-worktree start and writes active plan,
   contract, and claim-token state only inside the newly created execution

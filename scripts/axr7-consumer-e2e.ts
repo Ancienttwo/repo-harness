@@ -18,8 +18,8 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
-const VERSION = "0.4.5";
-const REPO_HARNESS_VERSION = "0.16.0";
+const VERSION = "0.4.7";
+const REPO_HARNESS_VERSION = "0.17.0";
 const repoRoot = resolve(import.meta.dir, "..");
 const archContextRoot = resolve(flag("--arch-context-root") ?? join(repoRoot, "..", "arch-context"));
 const revision = flag("--arch-context-revision") ?? git(archContextRoot, ["rev-parse", "HEAD"]);
@@ -256,8 +256,10 @@ function prepareReleaseVersion(checkout: string): void {
   }
   const path = join(checkout, "packages", "contracts", "src", "product-version.ts");
   const source = readFileSync(path, "utf8");
+  if (!/export const ARCHCONTEXT_PRODUCT_VERSION = "[^"]+";/.test(source)) {
+    throw new Error("ArchContext product version declaration is missing");
+  }
   const updated = source.replace(/export const ARCHCONTEXT_PRODUCT_VERSION = "[^"]+";/, `export const ARCHCONTEXT_PRODUCT_VERSION = "${VERSION}";`);
-  if (updated === source) throw new Error("ArchContext product version source was not updated");
   writeFileSync(path, updated);
 }
 
@@ -271,10 +273,18 @@ function linkBuildDependencies(checkout: string): void {
   }
   const targetScope = join(targetModules, "@archcontext");
   mkdirSync(targetScope, { recursive: true });
-  for (const name of readdirSync(join(sourceModules, "@archcontext"))) {
-    const sourcePackage = realpathSync(join(sourceModules, "@archcontext", name));
-    if (!inside(sourcePackage, realpathSync(archContextRoot))) throw new Error(`workspace package escapes producer root: ${name}`);
-    symlinkSync(join(checkout, relative(archContextRoot, sourcePackage)), join(targetScope, name), "dir");
+  const workspaces = JSON.parse(readFileSync(join(checkout, "package.json"), "utf8")).workspaces as unknown;
+  if (!Array.isArray(workspaces) || workspaces.length === 0) throw new Error("producer declares no workspaces");
+  const checkoutRoot = realpathSync(checkout);
+  for (const workspaceDir of workspaces) {
+    if (typeof workspaceDir !== "string") throw new Error(`workspace entry is not a string: ${String(workspaceDir)}`);
+    const packageDir = realpathSync(join(checkout, workspaceDir));
+    if (!inside(packageDir, checkoutRoot)) throw new Error(`workspace package escapes producer root: ${workspaceDir}`);
+    const packageName = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")).name as unknown;
+    if (typeof packageName !== "string" || !packageName.startsWith("@archcontext/")) {
+      throw new Error(`unexpected producer workspace package name: ${String(packageName)}`);
+    }
+    symlinkSync(packageDir, join(targetScope, packageName.slice("@archcontext/".length)), "dir");
   }
 }
 

@@ -45,14 +45,14 @@ function fixture() {
   mkdirSync(join(repoRoot, '.ai', 'harness'), { recursive: true });
   mkdirSync(join(repoRoot, '.archcontext', 'model', 'nodes'), { recursive: true });
   mkdirSync(join(repoRoot, 'src', 'core'), { recursive: true });
-  writeFileSync(join(packageRoot, 'package.json'), `${JSON.stringify({ name: 'archctx', version: '0.4.5', engines: { node: '>=24 <26' }, bin: { archctx: './bin/archctx' } })}\n`);
+  writeFileSync(join(packageRoot, 'package.json'), `${JSON.stringify({ name: 'archctx', version: '0.4.7', engines: { node: '>=22.22 <26' }, bin: { archctx: './bin/archctx' } })}\n`);
   const binary = join(packageRoot, 'bin', 'archctx');
   writeFileSync(binary, '#!/bin/sh\nexit 99\n');
   chmodSync(binary, 0o755);
   symlinkSync(join('..', 'archctx', 'bin', 'archctx'), join(binRoot, 'archctx'));
   writeFileSync(join(repoRoot, '.ai', 'harness', 'policy.json'), `${JSON.stringify({
     context: { capability_source: 'archcontext' },
-    architecture: { projection_provider: 'archctx', projection_apply: 'manual', projection_version: '0.4.5', projection_timeout_ms: 120000 },
+    architecture: { projection_provider: 'archctx', projection_apply: 'manual', projection_version: '0.4.7', projection_timeout_ms: 120000 },
   })}\n`);
   writeFileSync(join(repoRoot, '.archcontext', 'model', 'nodes', 'capability.test.core.yaml'), `schemaVersion: archcontext.node/v2
 kind: capability
@@ -86,14 +86,14 @@ extensions:
 function vendorArchctx(root: string, version: string): string {
   const packageRoot = join(root, 'node_modules', 'archctx');
   mkdirSync(join(packageRoot, 'bin'), { recursive: true });
-  writeFileSync(join(packageRoot, 'package.json'), `${JSON.stringify({ name: 'archctx', version, engines: { node: '>=24 <26' }, bin: { archctx: './bin/archctx' } })}\n`);
+  writeFileSync(join(packageRoot, 'package.json'), `${JSON.stringify({ name: 'archctx', version, engines: { node: '>=22.22 <26' }, bin: { archctx: './bin/archctx' } })}\n`);
   const binary = join(packageRoot, 'bin', 'archctx');
   writeFileSync(binary, '#!/bin/sh\nexit 99\n');
   chmodSync(binary, 0o755);
   return binary;
 }
 
-function capabilities(version = '0.4.5') {
+function capabilities(version = '0.4.7') {
   return {
     schemaVersion: 'archcontext.capabilities/v1',
     package: { name: 'archctx', version },
@@ -246,7 +246,7 @@ describe('package-local ArchContext projection provider', () => {
     const resolved = resolvePackageLocalArchctx(f.consumerRoot);
     expect(resolved.binaryPath).toBe(realpathSync(f.binary));
     writeFileSync(join(f.consumerRoot, 'node_modules', 'archctx', 'package.json'), '{"name":"archctx","version":"0.3.0"}\n');
-    expect(() => resolvePackageLocalArchctx(f.consumerRoot)).toThrow('expected archctx@0.4.5');
+    expect(() => resolvePackageLocalArchctx(f.consumerRoot)).toThrow('expected archctx@0.4.7');
   });
 
   test('resolves a hoisted package from an installed repo-harness package root', () => {
@@ -307,7 +307,7 @@ describe('package-local ArchContext projection provider', () => {
     const fakeBin = join(f.root, 'bin');
     mkdirSync(fakeBin, { recursive: true });
     const node = join(fakeBin, 'node');
-    writeFileSync(node, '#!/bin/sh\necho v22.14.0\n');
+    writeFileSync(node, '#!/bin/sh\necho v22.21.0\n');
     chmodSync(node, 0o755);
     const pathOnlyEnv: NodeJS.ProcessEnv = { ...process.env, PATH: fakeBin };
     // An exported runtime authority must not rescue this failure mode.
@@ -319,7 +319,7 @@ describe('package-local ArchContext projection provider', () => {
       trustedNodeCandidateSource: () => [],
     });
     expect(readiness.projectionProvider.state).toBe('error');
-    expect(readiness.projectionProvider.reason).toContain('requires Node >=24 <26');
+    expect(readiness.projectionProvider.reason).toContain('requires Node >=22.22 <26');
     expect(readiness.projectionProvider.reason).toContain('trusted candidates ((none))');
   });
 
@@ -347,11 +347,11 @@ describe('package-local ArchContext projection provider', () => {
     const fakeBin = join(f.root, 'bin');
     mkdirSync(fakeBin, { recursive: true });
     const incompatiblePathNode = join(fakeBin, 'node');
-    writeFileSync(incompatiblePathNode, '#!/bin/sh\necho v22.14.0\n');
+    writeFileSync(incompatiblePathNode, '#!/bin/sh\necho v22.21.0\n');
     chmodSync(incompatiblePathNode, 0o755);
     const home = join(f.root, 'home');
     const nvmRoot = join(home, '.nvm', 'versions', 'node');
-    for (const version of ['v20.11.0', 'v24.18.0']) {
+    for (const version of ['v20.11.0', 'v22.22.0', 'v24.18.0']) {
       mkdirSync(join(nvmRoot, version, 'bin'), { recursive: true });
       const binary = join(nvmRoot, version, 'bin', 'node');
       writeFileSync(binary, `#!/bin/sh\necho ${version}\n`);
@@ -361,7 +361,7 @@ describe('package-local ArchContext projection provider', () => {
     const scrubbedEnv: NodeJS.ProcessEnv = { PATH: fakeBin, HOME: home };
     const scoped = () => trustedNodeCandidates(home).filter((candidate) => candidate.startsWith(`${home}/`));
     expect(resolveCompatibleNodeRuntime(scrubbedEnv, scoped))
-      .toBe(realpathSync(join(nvmRoot, 'v24.18.0', 'bin', 'node')));
+      .toBe(realpathSync(join(nvmRoot, 'v22.22.0', 'bin', 'node')));
   });
 
   test('applies the archctx Node range to trusted candidates and reports every scanned source', () => {
@@ -369,7 +369,7 @@ describe('package-local ArchContext projection provider', () => {
     const fakeBin = join(f.root, 'bin');
     mkdirSync(fakeBin, { recursive: true });
     const incompatiblePathNode = join(fakeBin, 'node');
-    writeFileSync(incompatiblePathNode, '#!/bin/sh\necho v22.14.0\n');
+    writeFileSync(incompatiblePathNode, '#!/bin/sh\necho v22.21.0\n');
     chmodSync(incompatiblePathNode, 0o755);
     const home = join(f.root, 'home');
     const nvmRoot = join(home, '.nvm', 'versions', 'node');
@@ -379,18 +379,23 @@ describe('package-local ArchContext projection provider', () => {
     chmodSync(staleNode, 0o755);
     const scrubbedEnv: NodeJS.ProcessEnv = { PATH: fakeBin, HOME: home };
     const scoped = () => trustedNodeCandidates(home).filter((candidate) => candidate.startsWith(`${home}/`));
-    expect(() => resolveCompatibleNodeRuntime(scrubbedEnv, scoped)).toThrow(/requires Node >=24 <26/);
+    expect(() => resolveCompatibleNodeRuntime(scrubbedEnv, scoped)).toThrow(/requires Node >=22.22 <26/);
     expect(() => resolveCompatibleNodeRuntime(scrubbedEnv, scoped)).toThrow(/REPO_HARNESS_NODE_BIN \(unset\)/);
     expect(() => resolveCompatibleNodeRuntime(scrubbedEnv, scoped)).toThrow(new RegExp(`PATH \\(${fakeBin}\\)`));
     expect(() => resolveCompatibleNodeRuntime(scrubbedEnv, scoped)).toThrow(new RegExp(`trusted candidates \\(${join(home, '.local', 'bin', 'node')}, ${staleNode}\\)`));
   });
 
-  test('uses the protected helper exact Node authority without widening PATH', () => {
+  test('rejects Node 22.21 and uses the protected helper exact Node 22.22 authority without widening PATH', () => {
     const f = fixture();
     const fakeBin = join(f.root, 'protected-node');
     mkdirSync(fakeBin, { recursive: true });
-    const node = join(fakeBin, 'node');
-    writeFileSync(node, '#!/bin/sh\necho v24.18.0\n');
+    const staleNode = join(fakeBin, 'node-22.21');
+    writeFileSync(staleNode, '#!/bin/sh\necho v22.21.0\n');
+    chmodSync(staleNode, 0o755);
+    expect(() => resolveCompatibleNodeRuntime({ PATH: '/usr/bin:/bin', REPO_HARNESS_NODE_BIN: staleNode }))
+      .toThrow('must satisfy Node >=22.22 <26');
+    const node = join(fakeBin, 'node-22.22');
+    writeFileSync(node, '#!/bin/sh\necho v22.22.0\n');
     chmodSync(node, 0o755);
     expect(resolveCompatibleNodeRuntime({ PATH: '/usr/bin:/bin', REPO_HARNESS_NODE_BIN: node })).toBe(realpathSync(node));
     expect(() => resolveCompatibleNodeRuntime({ PATH: '/usr/bin:/bin', REPO_HARNESS_NODE_BIN: 'node' })).toThrow('must be an absolute path');
@@ -486,7 +491,7 @@ describe('package-local ArchContext projection provider', () => {
     expect(manifest.devDependencies?.['archctx-contracts']).toBeUndefined();
     expect(manifest.scripts?.['check:archctx-integration']).toBe('bun scripts/axr5-archctx-clean-room.ts');
     expect(readback.status).toBe('verified');
-    expect(readback.packages.contracts.version).toBe('0.4.5');
+    expect(readback.packages.contracts.version).toBe('0.4.7');
     expect(readback.consumer.authoritativeNodeSchema).toBe('archcontext.node/v2');
     expect(readback.consumer.authoritativeNodeSchemaDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(readback.source.dirtySourceUsed).toBe(false);
