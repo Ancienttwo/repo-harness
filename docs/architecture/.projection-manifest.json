@@ -5,12 +5,12 @@
   "sourceDigest": "sha256:a669f43e4e7e08464401db1df0b855175f878896e0de0c10e11db3edd71f8704",
   "provenance": {
     "schemaVersion": "archcontext.architecture-docs-projection-provenance/v1",
-    "baseHeadSha": "bb176afffba2d8615a56b4fb7beab9a3d72e272b",
-    "worktreeDigest": "sha256:187c54ac954afa73a162a117fa877b35826abe5bdcbe9884ae0fa9cd5a01e160",
+    "baseHeadSha": "b65e7535cb7c311b97d9f88fabdfb801fbf5da20",
+    "worktreeDigest": "sha256:4b1e07ef8f7fc650ceb46672304366546fa4801ead8ae5842433c8cc2da7a480",
     "sourceTreeDigest": "sha256:0c68387fccb8d3ba2b7ec57adf219b0cb7eef87deed9ac063fcb84afd6543c7b",
     "modelDigest": "sha256:048b21e544412f15d056596cdbda7ab931b329af2b7aa9a77db7cc280bdf0848",
-    "codeGraphDigest": "sha256:5a5f8d3b681774f68e3665320fd9ccf7d538cf6de97621a72fe7836a6fba254b",
-    "indexedWorktreeDigest": "sha256:c1ea582a3e040d9856bd91d7933aa51c759793780a9673b1e565279839627319",
+    "codeGraphDigest": "sha256:bc6a14e61eb47888d24c96ffdf4b5efe7db5fd4acc53b2774bf29c11733807d7",
+    "indexedWorktreeDigest": "sha256:216ba1ef13a59ecc18152689095c01bd7dbe9cb3b2d64d6a5ab89444a87aa73a",
     "rendererVersion": "archcontext.docs-renderer/v4",
     "layoutVersion": "archcontext.docs-layout/v1",
     "generatedFrom": {
@@ -19,9 +19,9 @@
       "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
       "codeGraphStatus": "ready"
     },
-    "projectionInputDigest": "sha256:3dde7d3c084bc7e82472a2b5e7a506648e3ce11db9437d926c601514e3060995"
+    "projectionInputDigest": "sha256:b9cb98b83831b0d62c89491f659c77998b86fe25bc2e590bec4034ca8fe4cdb7"
   },
-  "projectionDigest": "sha256:017f6dfb2722a7f80bb3406e1702bb69a8a2870bbd58f75bf36bb945e7589d06",
+  "projectionDigest": "sha256:f2ac6259566c4e6d0207769a80c33403f09b5debf8df66d0016d0c5e59cf13a0",
   "semanticBaseline": {
     "semanticState": {
       "schemaVersion": "archcontext.architecture-semantic-state/v1",
@@ -534,10 +534,10 @@
       "modelDigest": "sha256:048b21e544412f15d056596cdbda7ab931b329af2b7aa9a77db7cc280bdf0848",
       "sourceTreeDigest": "sha256:0c68387fccb8d3ba2b7ec57adf219b0cb7eef87deed9ac063fcb84afd6543c7b",
       "flowProofDigest": "sha256:c94d5fe8b42bfa84f6e8e197246b0a39818b1463c37c750e0d0de0abd4923222",
-      "projectionDigest": "sha256:017f6dfb2722a7f80bb3406e1702bb69a8a2870bbd58f75bf36bb945e7589d06"
+      "projectionDigest": "sha256:f2ac6259566c4e6d0207769a80c33403f09b5debf8df66d0016d0c5e59cf13a0"
     }
   },
-  "receiptDigest": "sha256:3b989bd35476e95fcc1ada263c701031b5a7c3447d648dd91e3a6287737aec6a",
+  "receiptDigest": "sha256:7d97955cee60ab3f1af031d9a6ee853998c93067abe180420eefbd500c8f0949",
   "refreshSignalIds": [],
   "targetCount": 26,
   "fileCount": 26,
@@ -630,9 +630,9 @@
       "sourceDigest": "sha256:52dc355be03ca5be963c88decdd22789e4ff6262ae5c92e1bc74ea8e829fd3e1",
       "outputDigest": "sha256:b59714880f64e65b500e598885766c72d77264c55f62d0d13d393e5ed4dcfd85",
       "verifiedAgainst": {
-        "branch": "codex/me4a-bound-task-freeze-handoff",
-        "commit": "fb7afe68a0a1748177dfaf4938f089f7ee0ca9f1",
-        "committedAt": "2026-08-26T15:32:12+08:00"
+        "branch": "main",
+        "commit": "b65e7535cb7c311b97d9f88fabdfb801fbf5da20",
+        "committedAt": "2026-08-26T16:11:10+08:00"
       }
     },
     {
@@ -670,9 +670,9 @@
       "sourceDigest": "sha256:be77b7889fe4eeecb95005c5f47a1f3ffad647f4bd9453d831dfbf11166c38a2",
       "outputDigest": "sha256:ec49b0d1d46b88e7e76c726e952a7fbcdcbdb3925fa6fc961db56e4f3b286655",
       "verifiedAgainst": {
-        "branch": "codex/me4a-bound-task-freeze-handoff",
-        "commit": "fb7afe68a0a1748177dfaf4938f089f7ee0ca9f1",
-        "committedAt": "2026-08-26T15:32:12+08:00"
+        "branch": "main",
+        "commit": "b65e7535cb7c311b97d9f88fabdfb801fbf5da20",
+        "committedAt": "2026-08-26T16:11:10+08:00"
       }
     },
     {
@@ -910,9 +910,9 @@
       "sourceDigest": "sha256:2b41a1b3f03e0f2a17b8e83607c353f16dc1370b0d6cfada99502c1048e2c342",
       "outputDigest": "sha256:66d4b7068ff03b389eb468fcfeb98d6146109c54d1e89eaf119a8f278ac9a5e4",
       "verifiedAgainst": {
-        "branch": "codex/me4a-bound-task-freeze-handoff",
-        "commit": "fb7afe68a0a1748177dfaf4938f089f7ee0ca9f1",
-        "committedAt": "2026-08-26T15:32:12+08:00"
+        "branch": "main",
+        "commit": "b65e7535cb7c311b97d9f88fabdfb801fbf5da20",
+        "committedAt": "2026-08-26T16:11:10+08:00"
       }
     },
     {
@@ -930,9 +930,9 @@
       "sourceDigest": "sha256:dc2faa5abe1e85c162bcc9a126ee79a0178c75d03c20ff97519b8b463cc2ee44",
       "outputDigest": "sha256:aa5aac73ff819f8ad0c053a57d5b1627faf2fc5bdbc18e8ab4722de0ab085d59",
       "verifiedAgainst": {
-        "branch": "codex/me4a-bound-task-freeze-handoff",
-        "commit": "fb7afe68a0a1748177dfaf4938f089f7ee0ca9f1",
-        "committedAt": "2026-08-26T15:32:12+08:00"
+        "branch": "main",
+        "commit": "b65e7535cb7c311b97d9f88fabdfb801fbf5da20",
+        "committedAt": "2026-08-26T16:11:10+08:00"
       }
     },
     {
