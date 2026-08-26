@@ -59,13 +59,13 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ## Change Assessment
 
 ```json
-{"protocol":1,"oracles":[]}
+{"protocol":1,"oracles":[{"id":"hrd09-single-file","kind":"deterministic_test","paths":["tests/unit/hrd-09-legacy-retirement-and-adopted-migration.test.ts"]},{"id":"typecheck","kind":"deterministic_test","paths":["*"]}]}
 ```
 
 ## Acceptance Policy
 
 ```json
-{"protocol":2,"reviewer":"Codex","source":"codex-review","user_waiver":"allowed"}
+{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}
 ```
 
 ## Allowed Paths
