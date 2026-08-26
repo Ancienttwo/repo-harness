@@ -134,7 +134,7 @@ exit_criteria:
     - .ai/harness/checks/latest.json
     - tasks/notes/20260827-0229-hrd09-fixture-home-isolation.notes.md
   tests_pass:
-    - path: tests/unit/hrd09-fixture-home-isolation.test.ts
+    - path: tests/unit/hrd-09-legacy-retirement-and-adopted-migration.test.ts
   commands_succeed:
     - bun run check:type
 # Optional exact-subject reuse is fail-closed and opt-in. List only deterministic
