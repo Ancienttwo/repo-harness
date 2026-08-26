@@ -157,4 +157,16 @@ describe('ME-4B CLI and authenticated Engineer MCP boundary', () => {
     const read = cli(repoRoot, 'read', '--request-id', REQUEST);
     expect(JSON.parse(read.stdout)).toMatchObject({ current: { state: 'proposed', current_digest: digest } });
   });
+
+  test('classifies malformed Human CLI input separately from domain failures', () => {
+    const { repoRoot } = fixture();
+    writeFileSync(join(repoRoot, 'malformed.json'), '{');
+    const malformed = cli(repoRoot, 'human-transition', '--input', 'malformed.json');
+    expect(malformed.status).toBe(1);
+    expect(JSON.parse(malformed.stderr)).toMatchObject({ ok: false, error: 'cli_argument_invalid' });
+
+    const missing = cli(repoRoot, 'human-transition', '--input', 'missing.json');
+    expect(missing.status).toBe(1);
+    expect(JSON.parse(missing.stderr)).toMatchObject({ ok: false, error: 'cli_argument_invalid' });
+  });
 });
