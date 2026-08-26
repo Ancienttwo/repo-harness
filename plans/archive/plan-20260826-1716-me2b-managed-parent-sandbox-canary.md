@@ -1,6 +1,6 @@
 # Plan: ME-2B Managed Parent/Sandbox Runtime Admission Canary
 
-> **Status**: Approved
+> **Status**: Archived
 > **Created**: 20260826-1716
 > **Slug**: me2b-managed-parent-sandbox-canary
 > **Planning Source**: codex-plan

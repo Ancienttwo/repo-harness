@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-27 00:08
+> **Related Plan**: plans/archive/plan-20260826-1716-me2b-managed-parent-sandbox-canary.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260827-0008
+
 # Task Contract: me2b-managed-parent-sandbox-canary
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260826-1716-me2b-managed-parent-sandbox-canary.md
 > **Task Profile**: eval-only
 > **Owner**: ancienttwo
