@@ -828,6 +828,31 @@ export function renderAcceptanceProjection(receipt: AcceptanceReceipt): string {
   ].join('\n');
 }
 
+/**
+ * The review file header carries the same four review-binding fields the
+ * receipt already owns (`Status`, `Recommendation`, `Reviewed Subject
+ * SHA256`, `Reviewed Target Revision`). The receipt is their single
+ * authority, so each one is projected from it unconditionally: an authored
+ * value that disagrees is stale, not a second opinion to preserve.
+ */
+function syncReviewHeader(source: string, receipt: AcceptanceReceipt): string {
+  const boundary = source.search(/^##[ \t]/m);
+  let header = boundary === -1 ? source : source.slice(0, boundary);
+  const rest = boundary === -1 ? '' : source.slice(boundary);
+  const accepted = receipt.disposition !== 'reject';
+  const syncField = (field: string, value: string): void => {
+    header = header.replace(
+      new RegExp(`^(> \\*\\*${field}\\*\\*:[ \\t]*).+$`, 'm'),
+      (_whole, prefix: string) => `${prefix}${value}`,
+    );
+  };
+  syncField('Reviewed Subject SHA256', receipt.subject_sha256);
+  syncField('Reviewed Target Revision', receipt.target_revision);
+  syncField('Recommendation', accepted ? 'pass' : 'fail');
+  syncField('Status', accepted ? 'Accepted' : 'Pending');
+  return `${header}${rest}`;
+}
+
 export function projectAcceptance(reviewPath: string, receipt: AcceptanceReceipt): void {
   const source = readFileSync(reviewPath, 'utf-8');
   const projection = renderAcceptanceProjection(receipt);
@@ -835,7 +860,7 @@ export function projectAcceptance(reviewPath: string, receipt: AcceptanceReceipt
   const next = pattern.test(source)
     ? source.replace(pattern, `${projection}\n\n`)
     : `${source.trimEnd()}\n\n${projection}\n`;
-  writeFileSync(reviewPath, next, 'utf-8');
+  writeFileSync(reviewPath, syncReviewHeader(next, receipt), 'utf-8');
 }
 
 /**
