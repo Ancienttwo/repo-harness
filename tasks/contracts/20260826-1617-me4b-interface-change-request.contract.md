@@ -6,7 +6,7 @@
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
-> **Last Updated**: 2026-08-26 16:23
+> **Last Updated**: 2026-08-27 02:16
 > **Review File**: `tasks/reviews/20260826-1617-me4b-interface-change-request.review.md`
 > **Notes File**: `tasks/notes/20260826-1617-me4b-interface-change-request.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
@@ -77,7 +77,17 @@ allowed_paths:
   - docs/researches/20260824-persistent-module-engineer-organization.md
   - docs/architecture/.projection-manifest.json
   - docs/architecture/modules/runtime-harness/interface-change.md
+  - docs/architecture/modules/runtime-harness/engineer-bindings.md
+  - docs/architecture/modules/runtime-harness/engineer-scheduling.md
+  - docs/architecture/modules/runtime-harness/mcp-sidecar.md
   - docs/architecture/domains/runtime-harness.md
+  - docs/architecture/index.md
+  - docs/architecture/changelog.md
+  - docs/architecture/decisions/index.md
+  - docs/architecture/diagrams/architecture.likec4
+  - docs/architecture/diagrams/architecture.mmd
+  - docs/architecture/diagrams/architecture.structurizr.json
+  - docs/architecture/requests/archive/2026/20260827-021452-runtime-harness-mcp-sidecar.md
   - plans/
   - tasks/current.md
   - tasks/todos.md

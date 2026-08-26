@@ -10,13 +10,14 @@
 
 ## Projection checkpoint
 
-- Adding the primary/Binding/scheduling/MCP relations and required transition flow closed the 21-capability graph shape. ArchContext produced `adoption-required` for signal `sha256:28015af0ed8f2d793f3bf73148de23abdc3adcc3d3422aaa6086714d53ab6f99` (`entrypoint-changed`, `node-added`, `relation-changed`, `verified-flow-proof-changed`), request payload `sha256:103f54ed95d8f1b0b131846d8f5e1216bd4f5344e728b73af3a80f32231ea213`, and candidate projection receipt `sha256:4a69c32efbc4fd4f82905cbe5e01bbea7258a5f668f8acae2bd148512c7d1a07`. Generated documentation remains paused at that Human-owned gate.
+- Local CodeGraph indexing removed the pre-index false `verified-flow-proof-changed` classification and proved the required interface-change P1/P2 path with selectors `3/3`. Human accepted the resulting exact semantic delta as `changeset.docs-projection-ec265ab39ad694a4` / `event.user-approval-20260827-me4b-architecture-codefacts`: `entrypoint-changed`, `node-added`, and `relation-changed` over only `engineer-bindings`, `engineer-scheduling`, `interface-change`, and `mcp-sidecar`.
+- ArchContext applied receipt `sha256:b274c31facdb8bfe1cc1804fdb40b67ff899867517942fffd5a024893e23c1c3`; the first response was `applied-reconcile-required` after the durable ChangeSet commit, and an idempotent replay delivered the same receipt plus the original refresh signal without a second apply. The generated module is now at a proven fixed point; the MCP drift card emitted by the refresh consumer was resolved against the updated `mcp-sidecar` module.
 
 > **Status**: Active
 > **Plan**: plans/plan-20260826-1617-me4b-interface-change-request.md
 > **Contract**: tasks/contracts/20260826-1617-me4b-interface-change-request.contract.md
 > **Review**: tasks/reviews/20260826-1617-me4b-interface-change-request.review.md
-> **Last Updated**: 2026-08-26 16:23
+> **Last Updated**: 2026-08-27 02:16
 > **Lifecycle**: notes
 
 ## Design Decisions

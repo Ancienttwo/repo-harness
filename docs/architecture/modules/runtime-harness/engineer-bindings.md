@@ -1,6 +1,6 @@
 # runtime-harness/engineer-bindings 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" sourceDigest="sha256:be77b7889fe4eeecb95005c5f47a1f3ffad647f4bd9453d831dfbf11166c38a2" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:ec49b0d1d46b88e7e76c726e952a7fbcdcbdb3925fa6fc961db56e4f3b286655" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" sourceDigest="sha256:806018cefbbd5fbd01b49416d43fef8159c58b0bed8969317237b1d15f72a78e" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:de38b8cb036d2e1a00b8b591cba7e1e4190eb3c1040cab87fa43db0e253a0761" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-bindings`(kind `capability`)
 > **Matched Prefixes**:`agents/engineers/**`、`src/core/engineers/**`、`src/effects/engineers/**`、`src/cli/commands/engineer.ts`
@@ -54,6 +54,7 @@ flowchart LR
 - `calls` ← `capability.runtime-harness.engineer-messages` — Revalidate the exact target Engineer and current Binding before assignment delivery, transport and acknowledgement
 - `calls` ← `capability.runtime-harness.engineer-scheduling` — Revalidate the exact current Engineer contract and delegate the elected offer to the existing Engineer acquire authority
 - `calls` ← `capability.runtime-harness.engineering-overlay` — Observe exact current Profile, Binding and live ClaimActor revisions without mutating their stores
+- `calls` ← `capability.runtime-harness.interface-change` — Revalidate the exact current Binding for every Engineer-owned transition
 - `calls` ← `capability.runtime-harness.mcp-sidecar` — Resolve a verified OAuth authorization to the current Engineer Binding before acquiring a Fleet Claim
 - `calls` ← `capability.runtime-harness.provider-thread-effects` — Revalidate the exact current Codex Engineer Binding before preparing or admitting one host action
 - `calls` ← `capability.runtime-harness.verified-context` — Revalidate Engineer decision actors against the exact current active Binding fence

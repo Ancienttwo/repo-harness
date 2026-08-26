@@ -86,7 +86,7 @@ Deliver ME-4B as a closed cross-capability decision authority. A current source 
 - [x] Implement closed core schemas and transition matrix.
 - [x] Implement immutable store, current CAS, Binding validation, exact Git materialization and reverse lookup.
 - [x] Add bounded CLI and focused tests.
-- [ ] Add ArchContext capability/module projection and obtain Architecture Acceptance if the gate requests it.
+- [x] Add ArchContext capability/module projection and obtain Architecture Acceptance if the gate requests it.
 - [ ] Run focused tests, typecheck, root required checks, full suite and independent acceptance/merge gates.
 
 ## Verification Boundary
