@@ -135,19 +135,28 @@ describe('ME-1A scheduled Engineer acquire', () => {
     const current = offer();
     const ledger = join(root, 'acquire-calls.log');
     const claimedMarker = join(root, 'claimed.marker');
+    const arrivals = join(root, 'arrivals');
+    const outcomes = join(root, 'outcomes');
     const corePath = resolve(process.cwd(), 'src/core/engineers/scheduling.ts');
     const acquirePath = resolve(process.cwd(), 'src/effects/engineers/scheduling-acquire.ts');
 
-    // Eight real processes contend for one key. Each child runs the production
-    // `withConcurrencyLock` over the same git common directory, and the shared
-    // state that decides who is still eligible lives on the filesystem, so the
-    // election is decided by the lock rather than by call order.
+    // Eight real processes contend for one key through the production
+    // `withConcurrencyLock` over one git common directory. The handshake
+    // replaces every sleep with an observed signal: the holder keeps the lock
+    // until it has seen all eight arrivals AND all seven competitors finish,
+    // and it writes the claimed marker only after that. A competitor therefore
+    // cannot reach the marker before it reaches the lock, so the only way for
+    // it to finish is to be refused by the lock itself -- which is what makes
+    // `engineer_concurrency_unavailable` the mutual-exclusion evidence rather
+    // than one of two tolerated outcomes.
     const script = `
-      import { appendFileSync, existsSync, writeFileSync } from 'fs';
+      import { appendFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from 'fs';
       import { buildEngineerOffersDocument } from ${JSON.stringify(corePath)};
       import { acquireScheduledEngineerTask } from ${JSON.stringify(acquirePath)};
-      const [root, ledger, marker, offerJson, principalJson] = process.argv.slice(1);
+      const [root, ledger, marker, arrivals, outcomes, offerJson, principalJson] = process.argv.slice(1);
       const offer = JSON.parse(offerJson);
+      const sleep = (ms) => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); };
+      const count = (dir) => { try { return readdirSync(dir).length; } catch { return 0; } };
       const assertion = {
         offer_revision: offer.offer_revision,
         work_package_id: offer.work_package_id,
@@ -170,6 +179,12 @@ describe('ME-1A scheduled Engineer acquire', () => {
         work_graph_revision: offer.work_graph_revision,
         candidates,
       });
+      // Announced before contending, so the holder can wait for a real arrival
+      // rather than guess at a startup delay.
+      mkdirSync(arrivals, { recursive: true });
+      mkdirSync(outcomes, { recursive: true });
+      writeFileSync(arrivals + '/' + process.pid, '');
+      let record = { ok: false, error: 'unreported' };
       try {
         const result = acquireScheduledEngineerTask({
           repo_root: root,
@@ -179,25 +194,30 @@ describe('ME-1A scheduled Engineer acquire', () => {
             collectOffers: () => document(existsSync(marker) ? [] : [{ eligible: true, offer }]),
             acquire: () => {
               appendFileSync(ledger, process.pid + '\\n');
-              // Hold the lock long enough that the other seven are genuinely
-              // contending rather than arriving after the winner released.
-              const until = Date.now() + 250;
-              while (Date.now() < until);
+              const deadline = Date.now() + 20000;
+              while (count(arrivals) < 8 || count(outcomes) < 7) {
+                if (Date.now() > deadline) {
+                  throw new Error('handshake timeout: arrivals=' + count(arrivals) + ' outcomes=' + count(outcomes));
+                }
+                sleep(25);
+              }
               writeFileSync(marker, 'claimed\\n');
               return { ok: true, envelope: { repo_id: ${JSON.stringify(REPO)} }, receipt: { repository_id: ${JSON.stringify(REPO)} } };
             },
           },
         });
-        console.log(JSON.stringify(result.ok
+        record = result.ok
           ? { ok: true, work_package_id: result.offer.work_package_id }
-          : { ok: false, error: result.error }));
+          : { ok: false, error: result.error };
       } catch (error) {
-        console.log(JSON.stringify({ ok: false, error: 'uncaught:' + String(error) }));
+        record = { ok: false, error: 'uncaught:' + String(error) };
       }
+      writeFileSync(outcomes + '/' + process.pid, JSON.stringify(record));
+      console.log(JSON.stringify(record));
     `;
     const children = Array.from({ length: 8 }, () => Bun.spawn([
       process.execPath, '-e', script, '--',
-      root, ledger, claimedMarker, JSON.stringify(current), JSON.stringify(principal()),
+      root, ledger, claimedMarker, arrivals, outcomes, JSON.stringify(current), JSON.stringify(principal()),
     ], { stdout: 'pipe', stderr: 'pipe' }));
     const outputs = await Promise.all(children.map(async (child) => {
       const output = await new Response(child.stdout).text();
@@ -207,16 +227,17 @@ describe('ME-1A scheduled Engineer acquire', () => {
       return JSON.parse(output.trim()) as { ok: boolean; work_package_id?: string; error?: string };
     }));
 
+    const report = JSON.stringify(outputs);
     const winners = outputs.filter((item) => item.ok);
-    expect(winners).toHaveLength(1);
+    expect(winners, report).toHaveLength(1);
     expect(winners[0]!.work_package_id).toBe('wp-a');
     // ME-0B is reached exactly once across all eight processes.
-    expect(readFileSync(ledger, 'utf8').trim().split('\n')).toHaveLength(1);
+    expect(readFileSync(ledger, 'utf8').trim().split('\n'), report).toHaveLength(1);
+    // Every loser was refused by the lock. A stale-offer refusal here would mean
+    // the competitor saw the claimed marker without ever contending for the
+    // lock, which is exactly the hole this handshake closes.
     const losers = outputs.filter((item) => !item.ok).map((item) => item.error!);
-    expect(losers).toHaveLength(7);
-    for (const error of losers) {
-      expect(['engineer_offer_stale', 'engineer_concurrency_unavailable']).toContain(error);
-    }
+    expect(losers, report).toEqual(Array.from({ length: 7 }, () => 'engineer_concurrency_unavailable'));
 
     const lockPath = concurrencyLockPath(root, `${REPO}:release`);
     expect(existsSync(join(lockPath, '..'))).toBeTrue();
