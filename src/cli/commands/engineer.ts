@@ -40,6 +40,7 @@ import {
 import { repoHarnessRepoIdFor } from '../../effects/repo-registry';
 import { resolveEngineerPrincipal } from '../../effects/engineers/principal';
 import { collectEngineerOffers } from '../../effects/engineers/scheduling';
+import { FleetOffersError } from '../../effects/fleet/acquire';
 import {
   EngineeringOverlayProjectionError,
   collectEngineeringBoard,
@@ -75,7 +76,8 @@ class CliArgumentError extends Error {}
 
 function emitError(error: unknown): void {
   const code = error instanceof EngineerProfileBindingError || error instanceof EngineerPrincipalError
-    || error instanceof EngineerSchedulingError || error instanceof ModuleMessageError || error instanceof ModuleInboxError
+    || error instanceof EngineerSchedulingError || error instanceof FleetOffersError
+    || error instanceof ModuleMessageError || error instanceof ModuleInboxError
     || error instanceof ProviderThreadEffectError || error instanceof ProviderThreadEffectStoreError
     || error instanceof TaskFreezeError
     || error instanceof EngineeringOverlayError || error instanceof EngineeringOverlayProjectionError

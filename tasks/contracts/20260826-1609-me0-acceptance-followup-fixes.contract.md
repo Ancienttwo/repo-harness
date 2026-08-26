@@ -63,7 +63,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ## Change Assessment
 
 ```json
-{"protocol":1,"oracles":["bun test tests/cli/engineer.test.ts tests/unit/engineer-binding-store.test.ts tests/unit/engineer-profile-binding-v1.test.ts --timeout 60000","bun run check:type","bash scripts/check-task-sync.sh"]}
+{"protocol":1,"oracles":[{"id":"focused-engineer-suite","kind":"deterministic_test","paths":["src/cli/commands/engineer.ts","src/effects/engineers/binding-store.ts","tests/cli/engineer.test.ts","tests/unit/engineer-binding-store.test.ts"]},{"id":"typecheck","kind":"deterministic_test","paths":["*"]},{"id":"task-sync","kind":"deterministic_test","paths":["*"]}]}
 ```
 
 ## Acceptance Policy

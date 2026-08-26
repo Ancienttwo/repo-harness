@@ -5,7 +5,9 @@ import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import { mcpOAuthTokenStorePath } from '../../src/cli/mcp/auth';
 import { McpOAuthTokenStore } from '../../src/cli/mcp/oauth';
-import { registerRepoHarnessRepo } from '../../src/effects/repo-registry';
+import { engineerSha256 } from '../../src/core/engineers/profile-binding';
+import { registerRepoHarnessRepo, repoHarnessRepoIdFor, setRepoHarnessAccessMode } from '../../src/effects/repo-registry';
+import { coordinationRoot } from '../../src/effects/state/coordination-lease-store';
 
 const cli = resolve(process.cwd(), 'src/cli/index.ts');
 const sourceRoot = process.cwd();
@@ -22,6 +24,72 @@ function fixture(): string {
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(root, '.archcontext/model/nodes'), { recursive: true });
   cpSync(join(sourceRoot, 'agents/engineers'), join(root, 'agents/engineers'), { recursive: true });
   execFileSync('git', ['add', '.archcontext', 'agents/engineers'], { cwd: root });
+  return root;
+}
+
+/**
+ * A fixture whose committed work graph is valid, so `engineer offers` gets past
+ * the lane gates and actually reaches the Fleet offer collector.
+ */
+function graphFixture(): string {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-engineer-offers-')));
+  tempRoots.push(root);
+  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: root });
+  execFileSync('git', ['config', 'user.email', 'tests@example.invalid'], { cwd: root });
+  execFileSync('git', ['config', 'user.name', 'Tests'], { cwd: root });
+  mkdirSync(join(root, '.archcontext/model'), { recursive: true });
+  mkdirSync(join(root, '.ai/harness/sprint'), { recursive: true });
+  mkdirSync(join(root, 'plans/sprints'), { recursive: true });
+  mkdirSync(join(root, 'plans/policies'), { recursive: true });
+  mkdirSync(join(root, 'plans/rollback'), { recursive: true });
+  mkdirSync(join(root, 'tasks'), { recursive: true });
+  cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(root, '.archcontext/model/nodes'), { recursive: true });
+  cpSync(join(sourceRoot, 'agents/engineers'), join(root, 'agents/engineers'), { recursive: true });
+  const policy = '{"policy":1}\n';
+  const rollback = '{"rollback":"wp-a"}\n';
+  const repositoryId = repoHarnessRepoIdFor(root);
+  writeFileSync(join(root, 'plans/sprints/demo.sprint.md'), `# Sprint: demo
+
+## Backlog
+
+| # | Status | Task | Mode | Acceptance | Plan |
+|---|---|---|---|---|---|
+| 1 | [ ] | task A | contract | accepted A | (pending) |
+
+## Execution Log
+`);
+  writeFileSync(join(root, 'plans/sprints/demo.work-graph.v1.json'), `${JSON.stringify({
+    protocol: 1,
+    kind: 'repo-harness-work-graph',
+    repository_id: repositoryId,
+    sprint_path: 'plans/sprints/demo.sprint.md',
+    lane: 'engineering-v2',
+    work_packages: [{
+      work_package_id: 'wp-a',
+      task_ref: 'task A',
+      primary_capability: 'capability.verification.evals-checks',
+      depends_on: [],
+      priority: 50,
+      concurrency: { scope: 'repo', key: 'demo' },
+      execution_surface: 'contract',
+      integration_group: null,
+      required_acceptance: [{
+        gate: 'module', policy_id: 'module-default',
+        policy_ref: 'plans/policies/module.json', policy_revision: engineerSha256(policy),
+      }],
+      rollback_boundary: {
+        kind: 'work_package', boundary_id: `${repositoryId}:wp-a`,
+        boundary_ref: 'plans/rollback/wp-a.json', boundary_revision: engineerSha256(rollback),
+      },
+    }],
+  })}\n`);
+  writeFileSync(join(root, 'plans/policies/module.json'), policy);
+  writeFileSync(join(root, 'plans/rollback/wp-a.json'), rollback);
+  writeFileSync(join(root, 'tasks/current.md'), '# Current\n');
+  writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({ worktree_strategy: { merge_back: { target: 'main' } } }));
+  writeFileSync(join(root, '.ai/harness/sprint/active-sprint'), 'plans/sprints/demo.sprint.md\n');
+  execFileSync('git', ['add', '.'], { cwd: root });
+  execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: root });
   return root;
 }
 
@@ -258,6 +326,63 @@ describe('repo-harness engineer CLI', () => {
     expect(principalHelp.stdout).toContain('revoke');
     expect(principalHelp.stdout).toContain('status');
     expect(principalHelp.stdout).not.toContain('acquire');
+  });
+
+  test('offers report the Fleet domain error code when the coordination surface is unreadable', () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-engineer-offers-home-')));
+    tempRoots.push(home);
+    process.env.REPO_HARNESS_HOME = home;
+    const root = graphFixture();
+    setRepoHarnessAccessMode(root, 'read_write', { env: process.env, requireAdopted: false });
+
+    const profiles = JSON.parse(run(root, ['engineer', 'profile', 'list', '--json']).stdout) as Array<{
+      engineer_id: string;
+      engineer_contract_revision: string;
+    }>;
+    const revision = profiles.find((item) => item.engineer_id === engineerId)!.engineer_contract_revision;
+    const bound = run(root, [
+      'engineer', 'binding', 'bind', '--engineer-id', engineerId,
+      '--idempotency-key', 'offers-bind-1', '--provider', 'codex',
+      '--provider-thread-id', 'thread-offers', '--host-id', 'local',
+      '--expected-current-digest', 'null', '--expected-binding-generation', '0',
+      '--expected-binding-id', 'null', '--expected-engineer-contract-revision', revision, '--json',
+    ]);
+    expect(bound.exitCode).toBe(0);
+    const current = JSON.parse(bound.stdout) as { current_binding_id: string; binding_generation: number };
+    const authorizationId = '44444444-4444-4444-8444-444444444444';
+    const tokenStore = new McpOAuthTokenStore(mcpOAuthTokenStorePath());
+    tokenStore.setAccessToken('offers-bearer', {
+      token: 'offers-bearer',
+      clientId: 'client-engineer-offers-test',
+      scopes: ['repo-harness', 'repo-harness.engineer', 'offline_access'],
+      profile: 'engineer',
+      authorizationRevision: 1,
+      authorizationId,
+      expiresAt: Math.floor(Date.now() / 1000) + 3600,
+    });
+    expect(run(root, [
+      'engineer', 'principal', 'enroll', '--authorization-id', authorizationId,
+      '--engineer-id', engineerId,
+      '--expected-binding-id', current.current_binding_id,
+      '--expected-binding-generation', String(current.binding_generation),
+      '--expected-engineer-contract-revision', revision, '--json',
+    ]).exitCode).toBe(0);
+
+    // The committed work graph stays readable, so the lane gates pass and the
+    // failure lands inside collectFleetOffers: a regular file where the lease
+    // directories belong makes every lease read fail with ENOTDIR.
+    const leases = join(coordinationRoot(root), 'leases');
+    mkdirSync(join(coordinationRoot(root)), { recursive: true });
+    writeFileSync(leases, 'not-a-directory\n');
+
+    const offers = run(root, ['engineer', 'offers', '--authorization-id', authorizationId, '--json']);
+    expect(offers.exitCode).toBe(1);
+    const failure = JSON.parse(offers.stderr) as { ok: boolean; error: string };
+    expect(failure.ok).toBeFalse();
+    // `canonical_unavailable` and `repo_unavailable` are the two FleetOffersError
+    // codes; either one reaching the caller means the class is on the whitelist.
+    expect(failure.error).toBe('canonical_unavailable');
+    expect(failure.error).not.toBe('internal_error');
   });
 
   test('lists, enrolls, reads, and revokes an issued Engineer authorization without exposing bearer tokens', () => {
