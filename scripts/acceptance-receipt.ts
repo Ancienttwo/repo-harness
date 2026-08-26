@@ -831,30 +831,25 @@ export function renderAcceptanceProjection(receipt: AcceptanceReceipt): string {
 /**
  * The review file header carries the same four review-binding fields the
  * receipt already owns (`Status`, `Recommendation`, `Reviewed Subject
- * SHA256`, `Reviewed Target Revision`), authored as placeholders by the
- * review template. Projecting only the receipt section left every accepted
- * review contradicting its own receipt until a human patched the header by
- * hand. This syncs a placeholder to the receipt value and nothing else: a
- * header a reviewer already filled in stays authored, and a `reject`
- * disposition leaves `Pending`/`fail` alone because those placeholders are
- * already the truthful values for it.
+ * SHA256`, `Reviewed Target Revision`). The receipt is their single
+ * authority, so each one is projected from it unconditionally: an authored
+ * value that disagrees is stale, not a second opinion to preserve.
  */
 function syncReviewHeader(source: string, receipt: AcceptanceReceipt): string {
   const boundary = source.search(/^##[ \t]/m);
   let header = boundary === -1 ? source : source.slice(0, boundary);
   const rest = boundary === -1 ? '' : source.slice(boundary);
-  const syncField = (field: string, placeholder: string, value: string): void => {
+  const accepted = receipt.disposition !== 'reject';
+  const syncField = (field: string, value: string): void => {
     header = header.replace(
-      new RegExp(`^(> \\*\\*${field}\\*\\*:[ \\t]*)(.+)$`, 'm'),
-      (whole, prefix: string, current: string) => (current.trim() === placeholder ? `${prefix}${value}` : whole),
+      new RegExp(`^(> \\*\\*${field}\\*\\*:[ \\t]*).+$`, 'm'),
+      (_whole, prefix: string) => `${prefix}${value}`,
     );
   };
-  syncField('Reviewed Subject SHA256', 'pending', receipt.subject_sha256);
-  syncField('Reviewed Target Revision', 'pending', receipt.target_revision);
-  if (receipt.disposition === 'external_pass' || receipt.disposition === 'user_waiver') {
-    syncField('Recommendation', 'fail', 'pass');
-    syncField('Status', 'Pending', 'Accepted');
-  }
+  syncField('Reviewed Subject SHA256', receipt.subject_sha256);
+  syncField('Reviewed Target Revision', receipt.target_revision);
+  syncField('Recommendation', accepted ? 'pass' : 'fail');
+  syncField('Status', accepted ? 'Accepted' : 'Pending');
   return `${header}${rest}`;
 }
 
