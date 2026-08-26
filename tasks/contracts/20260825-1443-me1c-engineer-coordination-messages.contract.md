@@ -98,6 +98,7 @@ allowed_paths:
   - docs/architecture/modules/runtime-harness/mcp-sidecar.md
   - docs/architecture/requests/archive/2026/
   - docs/architecture/
+  - docs/researches/20260825-runtime-admission-canary.md
   - src/core/messages/mechanics.ts
   - src/core/fleet/task-message.ts
   - src/core/engineers/module-message.ts
