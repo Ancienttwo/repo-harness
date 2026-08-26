@@ -62,6 +62,12 @@ function readEventRecords(repo: string): unknown[] {
 describe('HRD-09 terminal runtime migration', () => {
   test('one adoption transaction retires the exact Bash runtime and all twelve routes stay on one typed authority', () => {
     const repo = mkdtempSync(join(tmpdir(), 'hrd09-integrated-'));
+    // HOME is isolated so no route reads the real ~/.claude or ~/.codex, and it
+    // has to live outside `repo`: Bun writes its transpile cache under
+    // $HOME/Library/Caches/bun, and inside the repo those files land in the
+    // drift scan's untracked set, which spawns one CLI per path and pushes the
+    // Stop route past its budget.
+    const home = mkdtempSync(join(tmpdir(), 'hrd09-home-'));
     try {
       cpSync(join(LEGACY_FIXTURE, '.ai'), join(repo, '.ai'), { recursive: true });
       cpSync(join(LEGACY_FIXTURE, 'scripts'), join(repo, 'scripts'), { recursive: true });
@@ -149,7 +155,7 @@ describe('HRD-09 terminal runtime migration', () => {
           stdio: 'ignore',
           env: {
             ...process.env,
-            HOME: repo,
+            HOME: home,
             PATH: `${fakeBin}${delimiter}${process.env.PATH ?? ''}`,
             HOOK_REPO_ROOT: repo,
             HOOK_HOST: fixture.host,
@@ -185,6 +191,7 @@ describe('HRD-09 terminal runtime migration', () => {
       expect(existsSync(providerLog) ? readFileSync(providerLog, 'utf8') : '').toBe('');
     } finally {
       rmSync(repo, { recursive: true, force: true });
+      rmSync(home, { recursive: true, force: true });
     }
   }, 120000);
 });

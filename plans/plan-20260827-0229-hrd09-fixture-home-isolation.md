@@ -1,6 +1,6 @@
 # Plan: HRD-09 fixture HOME isolation
 
-> **Status**: Approved
+> **Status**: Executing
 > **Created**: 20260827-0229
 > **Slug**: hrd09-fixture-home-isolation
 > **Planning Source**: repo-harness-plan
@@ -119,14 +119,14 @@ Out of scope: any product-code change in `src/`, the per-path cascade redesign i
 
 ## Task Breakdown
 
-- [ ] Move the HRD-09 fixture HOME outside the repo under test with teardown cleanup.
-- [ ] Record the cascade-scalability deferred row in tasks/todos.md.
-- [ ] Run the oracles twice and commit.
+- [x] Move the HRD-09 fixture HOME outside the repo under test with teardown cleanup.
+- [x] Record the cascade-scalability deferred row in tasks/todos.md.
+- [x] Run the oracles twice and commit.
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] Move the HRD-09 fixture HOME outside the repo under test with teardown cleanup.
-- [ ] Record the cascade-scalability deferred row in tasks/todos.md.
-- [ ] Run the oracles twice and commit.
+- [x] Move the HRD-09 fixture HOME outside the repo under test with teardown cleanup.
+- [x] Record the cascade-scalability deferred row in tasks/todos.md.
+- [x] Run the oracles twice and commit.
