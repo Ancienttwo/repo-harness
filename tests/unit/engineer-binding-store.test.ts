@@ -6,6 +6,7 @@ import { tmpdir } from 'os';
 import { dirname, join, resolve } from 'path';
 
 import { EngineerProfileBindingError, canonicalEngineerBindingCurrentBytes, engineerSha256 } from '../../src/core/engineers/profile-binding';
+import { buildLeaseOwnerRecord, bindLeaseRecord } from '../../src/core/state/coordination-identity';
 import {
   bindEngineer,
   engineerBindingStoreRoot,
@@ -13,6 +14,7 @@ import {
   retireEngineer,
   type BindEngineerInput,
 } from '../../src/effects/engineers/binding-store';
+import { createLeaseDirectory, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
 
 const engineerId = 'engineer:capability.verification.evals-checks';
 const revision = engineerSha256('contract-v1');
@@ -78,6 +80,29 @@ function treeDigest(path: string): string {
   };
   walk(path);
   return createHash('sha256').update(files.join('\n')).digest('hex');
+}
+
+function publishBindingLease(root: string, bindingId: string): void {
+  const taskId = 'a'.repeat(64);
+  const claimed = buildLeaseOwnerRecord({
+    claimId: '33333333-3333-4333-8333-333333333333',
+    taskId,
+    taskRevision: 'b'.repeat(64),
+    sprintPath: 'plans/sprints/canary.sprint.md',
+    targetRef: 'main',
+    generation: 1,
+    sessionId: `engineer:${bindingId}`,
+    sourceWorktree: root,
+  });
+  const bound = bindLeaseRecord(claimed, {
+    claimId: claimed.claim_id,
+    executionWorktree: root,
+    branch: 'main',
+    unitRef: 'plans/plan-canary.md',
+  });
+  if (!bound.ok) throw new Error(bound.error);
+  if (!createLeaseDirectory(root, taskId)) throw new Error('lease election failed');
+  writeLeaseOwnerDurably(root, taskId, bound.record);
 }
 
 afterEach(() => {
@@ -196,6 +221,55 @@ describe('Engineer binding shared store', () => {
     expect(status.event?.created_at).toBe('2026-08-24T13:00:00.000Z');
     expect(status.binding?.state).toBe('active');
     expect(storeEvents(root)).toHaveLength(2);
+  });
+
+  test('crash-replayed replace and retire recheck live Lease before publishing current', () => {
+    for (const transition of ['replace', 'retire'] as const) {
+      const root = repository();
+      const active = bindEngineer(root, baseInput());
+      const crash = (boundary: 'before_event' | 'after_event_fsync' | 'after_current_fsync'): void => {
+        if (boundary === 'after_event_fsync') throw new Error('crash:after_event_fsync');
+      };
+      if (transition === 'replace') {
+        expect(() => bindEngineer(root, baseInput({
+          idempotency_key: 'crash-replace',
+          expected_current_digest: active.current_digest,
+          expected_binding_generation: 1,
+          expected_binding_id: active.current_binding_id,
+          binding_id: () => '22222222-2222-4222-8222-222222222222',
+          crash_hook: crash,
+        }))).toThrow('crash:after_event_fsync');
+      } else {
+        expect(() => retireEngineer(root, {
+          engineer_id: engineerId,
+          idempotency_key: 'crash-retire',
+          expected_current_digest: active.current_digest,
+          expected_binding_generation: 1,
+          expected_binding_id: active.current_binding_id!,
+          expected_engineer_contract_revision: revision,
+          crash_hook: crash,
+        })).toThrow('crash:after_event_fsync');
+      }
+      publishBindingLease(root, active.current_binding_id!);
+      const retry = (): unknown => transition === 'replace'
+        ? bindEngineer(root, baseInput({
+            idempotency_key: 'crash-replace',
+            expected_current_digest: active.current_digest,
+            expected_binding_generation: 1,
+            expected_binding_id: active.current_binding_id,
+            binding_id: () => '22222222-2222-4222-8222-222222222222',
+          }))
+        : retireEngineer(root, {
+            engineer_id: engineerId,
+            idempotency_key: 'crash-retire',
+            expected_current_digest: active.current_digest,
+            expected_binding_generation: 1,
+            expected_binding_id: active.current_binding_id!,
+            expected_engineer_contract_revision: revision,
+          });
+      expect(retry).toThrow('inspect/freeze the bound task');
+      expect(readEngineerBindingStatus(root, engineerId, revision).current.current_binding_id).toBe(active.current_binding_id);
+    }
   });
 
   test('all linked worktrees read the exact same current bytes', () => {

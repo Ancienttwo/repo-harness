@@ -261,6 +261,26 @@ export function readLease(cwd: string, taskId: string): LeaseRead {
   return { task_id: taskId, classification: record.state, record, unknown_reason: null, raw };
 }
 
+/**
+ * Enumerate every canonical task lease without inventing ownership for
+ * unrelated filesystem residue. Valid task-id entries are returned even when
+ * their owner record is unknown so safety callers can fail closed.
+ */
+export function listLeaseReads(cwd: string): readonly LeaseRead[] {
+  const leasesRoot = join(coordinationRoot(cwd), 'leases');
+  let entries: string[];
+  try {
+    entries = readdirSync(leasesRoot);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return Object.freeze([]);
+    throw error;
+  }
+  return Object.freeze(entries
+    .filter((entry) => TASK_DIGEST_PATTERN.test(entry))
+    .sort()
+    .map((entry) => readLease(cwd, entry)));
+}
+
 export interface LeaseByClaimId {
   readonly task_id: string;
   readonly record: LeaseOwnerRecord;
@@ -279,23 +299,10 @@ export type LeaseClaimLookup =
  * is an impossible state, so it fails closed instead of picking one.
  */
 export function findLeaseByClaimId(cwd: string, claimId: string): LeaseClaimLookup {
-  const leasesRoot = join(coordinationRoot(cwd), 'leases');
-  let entries: string[];
-  try {
-    entries = readdirSync(leasesRoot);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { ok: false, error: `no lease holds claim id ${claimId}` };
-    }
-    throw error;
-  }
-
   const matches: LeaseByClaimId[] = [];
-  for (const entry of entries.sort()) {
-    if (!TASK_DIGEST_PATTERN.test(entry)) continue;
-    const read = readLease(cwd, entry);
+  for (const read of listLeaseReads(cwd)) {
     if (read.record !== null && read.record.claim_id === claimId) {
-      matches.push({ task_id: entry, record: read.record });
+      matches.push({ task_id: read.task_id, record: read.record });
     }
   }
   if (matches.length === 0) return { ok: false, error: `no lease holds claim id ${claimId}` };

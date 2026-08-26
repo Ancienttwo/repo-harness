@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-26T12:42:45+0800 -->
+<!-- updated_at: 2026-08-26T16:11:08+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Idle
-> **Updated At**: 2026-08-26T12:42:45+0800
-> **Source Branch**: codex/me2c-verified-evidence-context
-> **Source Commit**: dc109ca1
+> **Status**: ManualClearedWithActiveWork
+> **Updated At**: 2026-08-26T16:11:08+0800
+> **Source Branch**: codex/me4a-bound-task-freeze-handoff
+> **Source Commit**: dc51279f
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -17,11 +17,11 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Current Focus
 
-- Status: Idle
+- Status: ManualClearedWithActiveWork
 - Active Plan: (none)
 - Plan Status: (none)
-- Next Task: (none)
-- Clear Note: (none)
+- Next Task: inspect active worktree marker(s)
+- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
 
 ## Mainline Snapshot Reading
 
@@ -31,12 +31,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- (none)
+- linked-worktree-1a6fcf03fd4a: plans/plan-20260826-1558-archctx-v2-provider-acceptance.md
+- linked-worktree-1a6fcf03fd4a: active-worktree owner -> self
+- linked-worktree-73b388b5d22e: plans/plan-20260826-1609-me0-acceptance-followup-fixes.md
+- linked-worktree-73b388b5d22e: active-worktree owner -> self
 ## Active Sprint
 
 - Sprint: (none)
 ## Workstreams
 
+- `tasks/workstreams/runtime-harness/bound-task-freezes/me4a-bound-task-freeze-handoff.md`: status=active, current_slice=todo-01, source_plan=plans/plan-20260826-1247-me4a-bound-task-freeze-handoff.md
 - `tasks/workstreams/runtime-harness/engineer-bindings/me0a-profile-binding.md`: status=completed, current_slice=completed-20260824-me0a-profile-binding, source_plan=`plans/plan-20260824-2126-me0a-engineer-profile-binding.md`
 - `tasks/workstreams/runtime-harness/engineer-bindings/me0b-principal-claim-actor.md`: status=completed, current_slice=completed-20260825-me0b-principal-claim-actor, source_plan=`plans/plan-20260825-0029-me0b-engineer-principal-claim-actor.md`
 - `tasks/workstreams/runtime-harness/engineer-messages/me1c-engineer-coordination-messages.md`: status=review, current_slice=acceptance-and-publication, source_plan=plans/plan-20260825-1443-me1c-engineer-coordination-messages.md
@@ -44,7 +48,6 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/runtime-harness/engineering-overlay/me1b-engineering-overlay.md`: status=active, current_slice=exact-subject-publication, source_plan=plans/plan-20260825-2339-me1b-engineering-overlay.md
 - `tasks/workstreams/runtime-harness/hook-adapters/github-issues-158-159.md`: status=completed, current_slice=completed-20260805-contract-scoped-check-repair, source_plan=plans/plan-20260805-0001-github-issues-158-159.md
 - `tasks/workstreams/runtime-harness/integration-acceptance/me4c-integration-product-acceptance.md`: status=active, current_slice=exact-subject-publication, source_plan=plans/plan-20260826-0115-me4c-integration-product-acceptance.md
-- `tasks/workstreams/runtime-harness/provider-thread-effects/me3a-provider-thread-effect.md`: status=completed, current_slice=completed-20260825-me3a-provider-thread-effect, source_plan=plans/plan-20260825-2120-me3a-provider-thread-effect.md
 ## Handoff
 
 - Exact Next Step: (none)
@@ -58,16 +61,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260826-0707-me2c-verified-evidence-context.md
- D tasks/contracts/20260826-0707-me2c-verified-evidence-context.contract.md
- D tasks/notes/20260826-0707-me2c-verified-evidence-context.notes.md
- D tasks/reviews/20260826-0707-me2c-verified-evidence-context.review.md
+ D plans/plan-20260826-1247-me4a-bound-task-freeze-handoff.md
+ D tasks/contracts/20260826-1247-me4a-bound-task-freeze-handoff.contract.md
+ D tasks/notes/20260826-1247-me4a-bound-task-freeze-handoff.notes.md
+ D tasks/reviews/20260826-1247-me4a-bound-task-freeze-handoff.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260826-0707-me2c-verified-evidence-context.md
-?? tasks/archive/contract-20260826-1242-me2c-verified-evidence-context.md
-?? tasks/archive/notes-20260826-1242-me2c-verified-evidence-context.md
-?? tasks/archive/review-20260826-1242-me2c-verified-evidence-context.md
-?? tasks/archive/todo-20260826-1242-me2c-verified-evidence-context.md
+?? plans/archive/plan-20260826-1247-me4a-bound-task-freeze-handoff.md
+?? tasks/archive/contract-20260826-1610-me4a-bound-task-freeze-handoff.md
+?? tasks/archive/notes-20260826-1610-me4a-bound-task-freeze-handoff.md
+?? tasks/archive/review-20260826-1610-me4a-bound-task-freeze-handoff.md
+?? tasks/archive/todo-20260826-1610-me4a-bound-task-freeze-handoff.md
 ```
 
 ## Source Artifacts

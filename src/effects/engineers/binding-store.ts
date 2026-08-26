@@ -40,6 +40,7 @@ import {
   ExclusiveLockContentionError,
   withExclusiveDirectoryLock,
 } from '../locking/exclusive-directory-lock';
+import { assertNoLiveClaimForBindingRotation } from './bound-task-rotation';
 
 const ENGINEER_STORE_RELATIVE_ROOT = 'repo-harness/engineers/v1';
 
@@ -364,6 +365,7 @@ function readEventForTransition(paths: StorePaths, transitionId: string): { read
 }
 
 function currentForExistingEvent(
+  cwd: string,
   paths: StorePaths,
   event: EngineerBindingEventV1,
   request: EngineerTransitionRequest,
@@ -408,6 +410,10 @@ function currentForExistingEvent(
     };
   }
   assertExpected(before.status.current, request, before.status.genesis);
+  if ((request.transition === 'replace' || request.transition === 'retire')
+    && before.status.current.current_binding_id !== null) {
+    assertNoLiveClaimForBindingRotation(cwd, request.engineer_id, before.status.current.current_binding_id);
+  }
   if (request.transition === 'retire' && before.status.binding !== null) {
     const expectedRetired = { ...before.status.binding, state: 'retired', retired_at: event.next_binding?.retired_at };
     if (JSON.stringify(event.next_binding) !== JSON.stringify(expectedRetired)) {
@@ -487,16 +493,26 @@ function withEngineerLock<T>(
   }
 }
 
+/** Serialize operations whose correctness depends on one Engineer Binding. */
+export function withEngineerBindingLock<T>(
+  cwd: string,
+  engineerId: string,
+  run: () => T,
+  waitTimeoutMs?: number,
+): T {
+  return withEngineerLock(storePaths(cwd, engineerId), waitTimeoutMs, run);
+}
+
 export function bindEngineer(cwd: string, input: BindEngineerInput): EngineerBindingCurrentV1 {
   const paths = storePaths(cwd, input.engineer_id);
-  return withEngineerLock(paths, input.lock_wait_timeout_ms, () => {
+  return withEngineerBindingLock(cwd, input.engineer_id, () => {
     ensureSafeDirectory(paths.root, paths.engineer);
     ensureSafeDirectory(paths.engineer, paths.events);
     const transitionId = deriveEngineerTransitionId(input.engineer_id, input.idempotency_key);
     const existing = readEventForTransition(paths, transitionId);
     if (existing) {
       if (existing.event.transition === 'retire') fail('idempotency_conflict', 'idempotency key belongs to a retire request');
-      return currentForExistingEvent(paths, existing.event, requestForBind(input, existing.event.transition));
+      return currentForExistingEvent(cwd, paths, existing.event, requestForBind(input, existing.event.transition));
     }
 
     const before = readCurrent(paths, input.engineer_id, input.engineer_contract_revision);
@@ -505,6 +521,9 @@ export function bindEngineer(cwd: string, input: BindEngineerInput): EngineerBin
       : before.status.current.state === 'active' ? 'replace' : 'bind';
     const request = requestForBind(input, transition);
     assertExpected(before.status.current, request, before.status.genesis);
+    if (transition === 'replace' && before.status.current.current_binding_id !== null) {
+      assertNoLiveClaimForBindingRotation(cwd, input.engineer_id, before.status.current.current_binding_id);
+    }
     const now = (input.now ?? (() => new Date().toISOString()))();
     const nextBinding: EngineerBindingV1 = Object.freeze({
       protocol: ENGINEER_PROFILE_PROTOCOL,
@@ -522,12 +541,12 @@ export function bindEngineer(cwd: string, input: BindEngineerInput): EngineerBin
       retired_at: null,
     });
     return publishNewEvent(paths, before, request, nextBinding, now, input.crash_hook);
-  });
+  }, input.lock_wait_timeout_ms);
 }
 
 export function retireEngineer(cwd: string, input: RetireEngineerInput): EngineerBindingCurrentV1 {
   const paths = storePaths(cwd, input.engineer_id);
-  return withEngineerLock(paths, input.lock_wait_timeout_ms, () => {
+  return withEngineerBindingLock(cwd, input.engineer_id, () => {
     ensureSafeDirectory(paths.root, paths.engineer);
     ensureSafeDirectory(paths.engineer, paths.events);
     const transitionId = deriveEngineerTransitionId(input.engineer_id, input.idempotency_key);
@@ -535,13 +554,14 @@ export function retireEngineer(cwd: string, input: RetireEngineerInput): Enginee
     const request = requestForRetire(input);
     if (existing) {
       if (existing.event.transition !== 'retire') fail('idempotency_conflict', 'idempotency key belongs to a bind request');
-      return currentForExistingEvent(paths, existing.event, request);
+      return currentForExistingEvent(cwd, paths, existing.event, request);
     }
     const before = readCurrent(paths, input.engineer_id, input.expected_engineer_contract_revision);
     assertExpected(before.status.current, request, before.status.genesis);
     if (before.status.current.state !== 'active' || before.status.binding === null) {
       fail('binding_stale', 'only an active binding can be retired');
     }
+    assertNoLiveClaimForBindingRotation(cwd, input.engineer_id, before.status.binding.binding_id);
     const now = (input.now ?? (() => new Date().toISOString()))();
     const nextBinding: EngineerBindingV1 = Object.freeze({
       ...before.status.binding,
@@ -549,5 +569,5 @@ export function retireEngineer(cwd: string, input: RetireEngineerInput): Enginee
       retired_at: now,
     });
     return publishNewEvent(paths, before, request, nextBinding, now, input.crash_hook);
-  });
+  }, input.lock_wait_timeout_ms);
 }

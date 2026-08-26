@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: component.bound-task-freezes.primary
+kind: component
+name: Immutable Task Freeze Store
+status: active
+parent: capability.runtime-harness.bound-task-freezes
+summary: Stores content-addressed TaskFreezeReceipt bytes without a successor, current pointer or execution transition.

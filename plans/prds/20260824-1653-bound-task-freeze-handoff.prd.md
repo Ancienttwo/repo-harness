@@ -1,9 +1,9 @@
 # PRD: Bound Task Freeze and Handoff (ME-4A)
 
-> **Status**: Draft
+> **Status**: Approved
 > **Slug**: `bound-task-freeze-handoff`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-24T18:30:00+0800
+> **Updated**: 2026-08-26T13:50:00+0800
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
 > **Depends On**: ME-0B and active Contract/Claim/WorkEnvelope; executable takeover additionally requires ME-2B and a later Approved carrier/election revision
@@ -93,7 +93,13 @@ TaskFreezeReceiptV1:
   engineer_id: string
   binding_id: uuid
   binding_generation: integer
+  binding_current_sha256: sha256
+  claim_actor_receipt_sha256: sha256
+  work_envelope_sha256: sha256
+  work_envelope_bytes_sha256: sha256
+  lease_state_sha256: sha256
   worktree: string
+  worktree_topology_sha256: sha256
   branch: string
   unit_ref: string
   head_sha: sha
@@ -118,6 +124,22 @@ TaskFreezeReceiptV1:
 ## Developer Handoff
 
 P0 exposes inspect/freeze/refusal only. No command named takeover may ship from this PRD.
+
+### Approved Source Boundary
+
+- Exact WorkEnvelope bytes come from the existing `.ai/harness/handoff/work-envelope.json` resource and must validate against both the immutable ClaimActorReceipt digest and the live bound Lease. Missing bytes fail closed; narrower Lease/Claim fields cannot reconstruct the envelope.
+- `checks_state_sha256` binds exact `.ai/harness/checks/latest.json` bytes. It is clean only when the record is `pass` and names the exact task Contract derived from `unit_ref`.
+- `unverified_hypotheses_sha256` binds the exact task-local notes `## Open Questions` bytes. Exact `- None.` is the only empty state; any other shape remains unverified.
+- Before ME-2B installs its writer-grant current reader, the writer-grant observation is null by construction. ME-4A creates no grant registry or fallback authority.
+- Binding replace and retire reject every live Claim. A clean freeze only proves the existing explicit Lease release path is safe; it never authorizes an implicit release/reacquire.
+
+### Architecture Acceptance
+
+- Human acceptance event: `event.user-approval-20260826-me4a-architecture`.
+- Applied change set: `changeset.docs-projection-f46a5e9fd9412be0`.
+- Accepted major reasons: `node-added,relation-changed`; affected nodes are `capability.runtime-harness.bound-task-freezes` and `capability.runtime-harness.engineer-bindings` only.
+- ArchContext proves P1 and P2 for the new capability; the required flow selectors are `5/5` and the projection receipt is `sha256:ce46adc4efad598098223e0d7485650786750e376b0b2ad73bb450e29590d394`.
+- Acceptance does not authorize takeover, successor election, untracked-content transport, implicit release/reacquire, writable delegation, Parent freeze or ME-4B/ME-2B scope.
 
 ### Acceptance Scripts
 

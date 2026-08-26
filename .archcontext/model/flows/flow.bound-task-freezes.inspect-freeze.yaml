@@ -1,0 +1,68 @@
+schemaVersion: archcontext.flow/v1
+id: flow.bound-task-freezes.inspect-freeze
+capabilityId: capability.runtime-harness.bound-task-freezes
+name: Inspect and freeze one bound task without takeover
+applicability: required
+participants:
+  - id: bound-task-freezes
+    nodeId: capability.runtime-harness.bound-task-freezes
+  - id: engineer-bindings
+    nodeId: capability.runtime-harness.engineer-bindings
+  - id: freeze-store
+    nodeId: component.bound-task-freezes.primary
+steps:
+  - id: read-bound-authority
+    from: bound-task-freezes
+    to: engineer-bindings
+    label: Resolve one current Binding and one exact live ClaimActorReceipt fenced to the bound Lease and persisted WorkEnvelope
+    evidence:
+      entrypointId: entrypoint.bound-task-freezes.inspect
+      sourceSymbol: readCurrentTaskFreezeBinding
+      sinkId: sink.bound-task-freezes.binding-current
+  - id: build-receipt
+    from: bound-task-freezes
+    to: freeze-store
+    label: Double-read exact Git and control-plane observations before building one canonical TaskFreezeReceipt
+    evidence:
+      entrypointId: entrypoint.bound-task-freezes.inspect
+      sourceSymbol: inspectBoundTaskLocked
+      sinkId: sink.bound-task-freezes.receipt-schema
+outcomes:
+  - id: frozen
+    kind: success
+    label: Stable observations persist one immutable receipt with closed Human choices
+    steps:
+      - id: persist-freeze
+        from: bound-task-freezes
+        to: freeze-store
+        label: Publish content-addressed receipt bytes without Claim, Lease or Binding mutation
+        evidence:
+          entrypointId: entrypoint.bound-task-freezes.persist
+          sourceSymbol: inspectBoundTaskLocked
+          sinkId: sink.bound-task-freezes.immutable-store
+    terminal:
+      participant: bound-task-freezes
+      label: Return clean-release evidence or freeze-required reasons; never elect a successor
+  - id: refused
+    kind: error
+    label: Changed or stale state and active-Claim rotation fail closed
+    steps:
+      - id: refuse-rotation
+        from: bound-task-freezes
+        to: engineer-bindings
+        label: Refuse Binding replace or retire until the live Claim follows its explicit release path
+        evidence:
+          entrypointId: entrypoint.bound-task-freezes.rotation-refusal
+          sourceSymbol: assertNoLiveClaimForBindingRotation
+          sinkId: sink.bound-task-freezes.live-claim
+      - id: reject-stale
+        from: bound-task-freezes
+        to: freeze-store
+        label: Compare every receipt fence with a fresh double-read observation and reject any change
+        evidence:
+          entrypointId: entrypoint.bound-task-freezes.verify
+          sourceSymbol: verifyTaskFreeze
+          sinkId: sink.bound-task-freezes.stale-compare
+    terminal:
+      participant: bound-task-freezes
+      label: Preserve the existing Claim and worktree topology; perform no takeover or implicit release

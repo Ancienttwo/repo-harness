@@ -1,12 +1,16 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'fs';
+import { execFileSync } from 'child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
 import { validateEngineerPrincipal } from '../../src/core/engineers/principal-claim';
 import { engineerSha256 } from '../../src/core/engineers/profile-binding';
+import { buildLeaseOwnerRecord, bindLeaseRecord } from '../../src/core/state/coordination-identity';
 import { acquireEngineerTask, type EngineerAcquireDependencies } from '../../src/effects/engineers/acquire';
+import { bindEngineer, readEngineerBindingStatus, retireEngineer, withEngineerBindingLock } from '../../src/effects/engineers/binding-store';
 import type { WorkEnvelopeV1 } from '../../src/effects/fleet/acquire';
+import { createLeaseDirectory, readLease, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
 
 const roots: string[] = [];
 const repoId = 'repo_0123456789abcdef';
@@ -14,6 +18,12 @@ const repoId = 'repo_0123456789abcdef';
 function fixture(): string {
   const root = mkdtempSync(join(tmpdir(), 'repo-harness-me0b-acquire-'));
   roots.push(root);
+  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: root });
+  execFileSync('git', ['config', 'user.email', 'tests@example.invalid'], { cwd: root });
+  execFileSync('git', ['config', 'user.name', 'Tests'], { cwd: root });
+  writeFileSync(join(root, 'README.md'), 'fixture\n');
+  execFileSync('git', ['add', 'README.md'], { cwd: root });
+  execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: root });
   return root;
 }
 
@@ -66,6 +76,7 @@ function envelope(root: string): WorkEnvelopeV1 {
 
 function dependencies(root: string, overrides: Partial<EngineerAcquireDependencies> = {}): Partial<EngineerAcquireDependencies> {
   const work = envelope(root);
+  const actor = principal();
   return {
     acquire: () => ({ ok: true, envelope: work }),
     readRegistry: () => ({
@@ -77,6 +88,15 @@ function dependencies(root: string, overrides: Partial<EngineerAcquireDependenci
     validateLive: (_cwd, receipt) => receipt,
     readLease: () => ({ record: { claim_id: work.claim_id, generation: work.generation } } as never),
     release: () => ({ exitCode: 0, stdout: '', stderr: '' }),
+    readBinding: () => ({
+      current: {
+        state: 'active',
+        current_binding_id: actor.binding_id,
+        binding_generation: actor.binding_generation,
+        engineer_contract_revision: actor.engineer_contract_revision,
+      },
+    } as never),
+    withBindingLock: (_cwd, _engineerId, run) => run(),
     ...overrides,
   };
 }
@@ -128,5 +148,82 @@ describe('ME-0B engineer acquire composition', () => {
       }),
     });
     expect(rollbackFailed).toMatchObject({ ok: false, error: 'rollback_failed' });
+  });
+
+  test('rollback failure leaves a binding-linked Lease that blocks rotation without a receipt', () => {
+    const root = fixture();
+    const actor = principal();
+    const active = bindEngineer(root, {
+      engineer_id: actor.engineer_id,
+      idempotency_key: 'bind',
+      provider: actor.provider,
+      provider_thread_id: actor.provider_thread_id!,
+      host_id: 'local',
+      engineer_contract_revision: actor.engineer_contract_revision,
+      expected_current_digest: null,
+      expected_binding_generation: 0,
+      expected_binding_id: null,
+      expected_engineer_contract_revision: actor.engineer_contract_revision,
+      binding_id: () => actor.binding_id,
+    });
+    const work = envelope(root);
+    const claimed = buildLeaseOwnerRecord({
+      claimId: work.claim_id,
+      taskId: work.task_id,
+      taskRevision: work.task_revision,
+      sprintPath: work.sprint_path,
+      targetRef: 'main',
+      generation: work.generation,
+      sessionId: `engineer:${actor.binding_id}`,
+      sourceWorktree: root,
+    });
+    const bound = bindLeaseRecord(claimed, {
+      claimId: work.claim_id,
+      executionWorktree: work.worktree_path,
+      branch: work.branch,
+      unitRef: work.unit_ref,
+    });
+    if (!bound.ok) throw new Error(bound.error);
+    if (!createLeaseDirectory(root, work.task_id)) throw new Error('lease election failed');
+    writeLeaseOwnerDurably(root, work.task_id, bound.record);
+
+    const failed = acquireEngineerTask({
+      repo_root: root,
+      principal: actor,
+      dependencies: dependencies(root, {
+        publish: () => { throw new Error('disk full'); },
+        readLease,
+        readBinding: readEngineerBindingStatus,
+        withBindingLock: withEngineerBindingLock,
+        release: () => ({ exitCode: 1, stdout: '', stderr: 'release refused' }),
+      }),
+    });
+    expect(failed).toMatchObject({ ok: false, error: 'rollback_failed' });
+    expect(() => retireEngineer(root, {
+      engineer_id: actor.engineer_id,
+      idempotency_key: 'retire',
+      expected_current_digest: active.current_digest,
+      expected_binding_generation: active.binding_generation,
+      expected_binding_id: active.current_binding_id!,
+      expected_engineer_contract_revision: actor.engineer_contract_revision,
+    })).toThrow('inspect/freeze the bound task');
+  });
+
+  test('holds the Binding lock and rejects a stale principal before Fleet mutation', () => {
+    const root = fixture();
+    const events: string[] = [];
+    let acquires = 0;
+    const result = acquireEngineerTask({
+      repo_root: root,
+      principal: principal(),
+      dependencies: dependencies(root, {
+        withBindingLock: (_cwd, _engineerId, run) => { events.push('lock'); const value = run(); events.push('unlock'); return value; },
+        readBinding: () => ({ current: { state: 'retired' } } as never),
+        acquire: () => { acquires += 1; return { ok: true, envelope: envelope(root) }; },
+      }),
+    });
+    expect(result).toMatchObject({ ok: false, error: 'fleet_acquire_failed', message: 'authenticated Engineer Binding is not current' });
+    expect(events).toEqual(['lock', 'unlock']);
+    expect(acquires).toBe(0);
   });
 });

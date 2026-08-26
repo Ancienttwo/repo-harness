@@ -1,6 +1,6 @@
 # Plan: ME-4A Bound Task Freeze and Handoff
 
-> **Status**: Approved
+> **Status**: Archived
 > **Created**: 20260826-1247
 > **Slug**: me4a-bound-task-freeze-handoff
 > **Planning Source**: codex-plan
@@ -127,11 +127,11 @@ Deliver ME-4A as an inspect/freeze/refusal control-plane slice. A current Engine
 
 ## Task Breakdown
 
-- [ ] Approve the ME-4A PRD with the exact source and actor/refusal boundaries above.
-- [ ] Implement closed canonical core schemas and focused unit tests.
-- [ ] Implement double-read observation, immutable store, stale verification and active-Claim Binding guard.
-- [ ] Add bounded CLI inspect/create/verify surfaces and prove no takeover command exists.
-- [ ] Add ArchContext capability/module projection, contract/workstream evidence and closeout artifacts.
+- [x] Approve the ME-4A PRD with the exact source and actor/refusal boundaries above.
+- [x] Implement closed canonical core schemas and focused unit tests.
+- [x] Implement double-read observation, immutable store, stale verification and active-Claim Binding guard.
+- [x] Add bounded CLI inspect/create/verify surfaces and prove no takeover command exists.
+- [x] Add ArchContext capability/module projection, contract/workstream evidence and closeout artifacts. (Accepted as `changeset.docs-projection-f46a5e9fd9412be0` / `event.user-approval-20260826-me4a-architecture`; P1/P2 proven, selectors `5/5`.)
 - [ ] Run focused tests, typecheck, required repository checks, full suite and independent acceptance/merge gates.
 
 ## Verification Boundary
@@ -150,9 +150,9 @@ Successor election, untracked content transport, automatic release/reacquire, ex
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] Approve the ME-4A PRD with the exact source and actor/refusal boundaries above.
-- [ ] Implement closed canonical core schemas and focused unit tests.
-- [ ] Implement double-read observation, immutable store, stale verification and active-Claim Binding guard.
-- [ ] Add bounded CLI inspect/create/verify surfaces and prove no takeover command exists.
-- [ ] Add ArchContext capability/module projection, contract/workstream evidence and closeout artifacts.
+- [x] Approve the ME-4A PRD with the exact source and actor/refusal boundaries above.
+- [x] Implement closed canonical core schemas and focused unit tests.
+- [x] Implement double-read observation, immutable store, stale verification and active-Claim Binding guard.
+- [x] Add bounded CLI inspect/create/verify surfaces and prove no takeover command exists.
+- [x] Add ArchContext capability/module projection, contract/workstream evidence and closeout artifacts.
 - [ ] Run focused tests, typecheck, required repository checks, full suite and independent acceptance/merge gates.

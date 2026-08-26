@@ -628,6 +628,16 @@ Architecture Acceptance 已绑定到 `changeset.docs-projection-c78a52213ee113d1
 - 未跟踪内容没有 carrier 时不宣称无损 takeover；
 - execution takeover 继续 disabled，直到 exact carrier/election protocol 单独 Approved。
 
+#### 2026-08-26 ME-4A 落地裁决
+
+- P1 边界固定为 closed freeze core、git-common immutable receipt store、现有 Binding/Claim/Lease/WorkEnvelope 的只读重验证和三个 bounded CLI 动作；不新增 successor、current pointer、handoff carrier 或 execution transition。
+- P2 路径为 `current Binding + live ClaimActorReceipt + exact persisted WorkEnvelope + bound Lease → exact Git/check/hypothesis/grant double-read → TaskFreezeReceiptV1 → immutable persist/reverify`。任一 source 在两次读取间变化都不写 receipt；freeze 后任一 fence 变化都 stale。
+- WorkEnvelope 不从 Lease/Claim 窄字段重构；读取 `.ai/harness/handoff/work-envelope.json` exact bytes，并同时绑定 ClaimActorReceipt 的 canonical envelope digest和原始 bytes digest。
+- Binding replace/retire 在存在 live Claim 时 fail closed。clean freeze 只允许 operator 走既有 explicit release，再旋转 Binding；它本身不修改 Task、Lease、Claim 或 Binding。
+- `untracked_inventory_sha256` 只绑定排序后的未跟踪路径 inventory，不承载内容。P0 不存在 takeover 命令；dirty/unverified state 只返回 `keep_binding | retain_frozen_candidate | abandon | manual_recovery`。
+
+Architecture Acceptance 已绑定到 `changeset.docs-projection-f46a5e9fd9412be0` / `event.user-approval-20260826-me4a-architecture`。ArchContext 对新增 bound-task-freezes capability 的 P1/P2 均给出 `proven`，required flow selectors 为 `5/5`；accepted delta 仅为 `node-added,relation-changed`，受影响节点是 `capability.runtime-harness.bound-task-freezes` 与既有 `capability.runtime-harness.engineer-bindings`。该 acceptance 只批准 exact freeze/read/refusal 控制面，不授权 takeover、successor election、untracked-content carrier、implicit release/reacquire、writable delegation、Parent freeze 或 ME-4B/ME-2B。
+
 ### ME-4B：Interface Change Request
 
 - closed `InterfaceChangeRequestV1` schema/store/revision；

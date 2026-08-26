@@ -5,6 +5,7 @@ import { EngineerProfileBindingError } from '../../core/engineers/profile-bindin
 import { EngineeringOverlayError } from '../../core/engineers/engineering-overlay';
 import { EngineerPrincipalError } from '../../core/engineers/principal-claim';
 import { EngineerSchedulingError } from '../../core/engineers/scheduling';
+import { TaskFreezeError } from '../../core/engineers/task-freeze';
 import {
   ModuleMessageError,
   buildModuleMessageEvent,
@@ -58,6 +59,11 @@ import {
   recordProviderThreadCapability,
   startProviderThreadEffect,
 } from '../../effects/engineers/provider-thread-effect-store';
+import {
+  createTaskFreeze,
+  inspectBoundTask,
+  verifyTaskFreeze,
+} from '../../effects/engineers/task-freeze-store';
 import { mcpOAuthTokenStorePath } from '../mcp/auth';
 import { McpOAuthTokenStore } from '../mcp/oauth';
 
@@ -69,6 +75,7 @@ function emitError(error: unknown): void {
   const code = error instanceof EngineerProfileBindingError || error instanceof EngineerPrincipalError
     || error instanceof EngineerSchedulingError || error instanceof ModuleMessageError || error instanceof ModuleInboxError
     || error instanceof ProviderThreadEffectError || error instanceof ProviderThreadEffectStoreError
+    || error instanceof TaskFreezeError
     || error instanceof EngineeringOverlayError || error instanceof EngineeringOverlayProjectionError
     ? error.code
     : 'engineer_binding_invalid';
@@ -257,6 +264,34 @@ export function buildEngineerCommand(): Command {
       emit(current, options.json, `${current.state} ${current.current_binding_id} generation=${current.binding_generation}`);
     }));
   engineer.addCommand(binding);
+
+  const taskFreeze = new Command('task-freeze').description('Inspect and freeze a bound task without transferring execution');
+  taskFreeze
+    .command('inspect')
+    .requiredOption('--engineer-id <id>', 'Exact engineer_id')
+    .option('--json', 'Output JSON')
+    .action((options: { engineerId: string; json?: boolean }) => run(() => {
+      const result = inspectBoundTask(process.cwd(), options.engineerId);
+      emit(result, options.json, `${result.disposition} ${result.receipt.receipt_sha256} reasons=${result.reasons.join(',') || 'none'}`);
+    }));
+  taskFreeze
+    .command('create')
+    .requiredOption('--engineer-id <id>', 'Exact engineer_id')
+    .option('--json', 'Output JSON')
+    .action((options: { engineerId: string; json?: boolean }) => run(() => {
+      const result = createTaskFreeze(process.cwd(), options.engineerId);
+      emit(result, options.json, `frozen ${result.receipt.receipt_sha256} disposition=${result.disposition}`);
+    }));
+  taskFreeze
+    .command('verify')
+    .requiredOption('--task-id <id>', 'Exact canonical task_id')
+    .requiredOption('--receipt-sha256 <digest>', 'Exact freeze receipt digest')
+    .option('--json', 'Output JSON')
+    .action((options: { taskId: string; receiptSha256: string; json?: boolean }) => run(() => {
+      const result = verifyTaskFreeze(process.cwd(), options.taskId, options.receiptSha256);
+      emit(result, options.json, `current ${result.receipt.receipt_sha256}`);
+    }));
+  engineer.addCommand(taskFreeze);
 
   engineer
     .command('offers')

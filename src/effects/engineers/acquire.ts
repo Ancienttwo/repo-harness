@@ -16,6 +16,7 @@ import { readRepoHarnessRegistrySnapshot, type RepoHarnessRegistrySnapshot } fro
 import { readLease, type LeaseRead } from '../state/coordination-lease-store';
 import { processSprintDependencies, releaseSprintCommand } from '../state/coordination-sprint';
 import { publishClaimActorReceipt, validateClaimActorReceiptLive } from './claim-actor-store';
+import { readEngineerBindingStatus, withEngineerBindingLock } from './binding-store';
 
 export type EngineerAcquireFailureCode = 'fleet_acquire_failed' | 'claim_actor_receipt_failed' | 'rollback_failed';
 
@@ -36,6 +37,8 @@ export interface EngineerAcquireDependencies {
   readonly readLease: (cwd: string, taskId: string) => LeaseRead;
   readonly readRegistry: (options?: { readonly env?: NodeJS.ProcessEnv; readonly adoptedOnly?: boolean }) => RepoHarnessRegistrySnapshot;
   readonly release: (repoRoot: string, claimId: string) => CommandOutcome;
+  readonly readBinding: typeof readEngineerBindingStatus;
+  readonly withBindingLock: typeof withEngineerBindingLock;
 }
 
 export interface EngineerAcquireOptions {
@@ -57,6 +60,8 @@ function dependencies(overrides: Partial<EngineerAcquireDependencies> = {}): Eng
     readLease,
     readRegistry: readRepoHarnessRegistrySnapshot,
     release: (repoRoot, claimId) => releaseSprintCommand({ claimId }, processSprintDependencies(repoRoot)),
+    readBinding: readEngineerBindingStatus,
+    withBindingLock: withEngineerBindingLock,
     ...overrides,
   };
 }
@@ -65,8 +70,22 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function acquireEngineerTask(options: EngineerAcquireOptions): EngineerAcquireResult {
-  const deps = dependencies(options.dependencies);
+function acquireEngineerTaskLocked(options: EngineerAcquireOptions, deps: EngineerAcquireDependencies): EngineerAcquireResult {
+  const binding = deps.readBinding(
+    options.repo_root,
+    options.principal.engineer_id,
+    options.principal.engineer_contract_revision,
+  );
+  if (binding.current.state !== 'active'
+    || binding.current.current_binding_id !== options.principal.binding_id
+    || binding.current.binding_generation !== options.principal.binding_generation
+    || binding.current.engineer_contract_revision !== options.principal.engineer_contract_revision) {
+    return Object.freeze({
+      ok: false,
+      error: 'fleet_acquire_failed',
+      message: 'authenticated Engineer Binding is not current',
+    });
+  }
   try {
     const initialRegistry = deps.readRegistry({ env: options.env, adoptedOnly: true });
     const initialRepo = initialRegistry.repos.find((entry) => entry.id === options.principal.repository_id && entry.accessMode === 'read_write');
@@ -130,4 +149,13 @@ export function acquireEngineerTask(options: EngineerAcquireOptions): EngineerAc
     }
     return Object.freeze({ ok: false, error: 'claim_actor_receipt_failed', message: message(error), residual_worktree: envelope.worktree_path });
   }
+}
+
+export function acquireEngineerTask(options: EngineerAcquireOptions): EngineerAcquireResult {
+  const deps = dependencies(options.dependencies);
+  return deps.withBindingLock(
+    options.repo_root,
+    options.principal.engineer_id,
+    () => acquireEngineerTaskLocked(options, deps),
+  );
 }

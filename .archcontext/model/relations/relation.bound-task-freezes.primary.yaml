@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.bound-task-freezes.primary
+kind: calls
+source: capability.runtime-harness.bound-task-freezes
+target: component.bound-task-freezes.primary
+intent: Persist and revalidate immutable exact-state freeze receipts without transferring execution authority

@@ -296,7 +296,7 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 - Treat user-level `~/.codex/hooks.json` and `~/.claude/settings.json` as host adapters. Keep hook implementation under `.ai/hooks/`, and treat repo-local `.claude/settings.json` / `.codex/hooks.json` hook adapters as retired legacy config.
 - Consider adding `bun scripts/capability-resolver.ts validate --format text` to the strict workflow gate after the architecture registry has been used through one more real slice.
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:d7d477f97bd2340cf8683841c1766644e95bb599e4f52598807790501db5a4a7" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:3a18bea2df7bbf77e301fe8063bb190f660cf0666e0f23af75d609561c347ce2" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:a669f43e4e7e08464401db1df0b855175f878896e0de0c10e11db3edd71f8704" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:6460ff5db43fbb3902fe990dfa6de5b1585dac280ac3255c317cbdc161684ea0" -->
 # Architecture Index
 
 Generated: 1970-01-01T00:00:00.000Z
@@ -306,6 +306,7 @@ Generated: 1970-01-01T00:00:00.000Z
 - [Action Commands](modules/public-surface/action-commands.md) — capability / active
 - [Adoption](modules/public-surface/adoption.md) — capability / active
 - [Root Router](modules/public-surface/root-router.md) — capability / active
+- [Bound Task Freezes](modules/runtime-harness/bound-task-freezes.md) — capability / active
 - [Read-only Delegated Runs](modules/runtime-harness/delegated-runs.md) — capability / active
 - [Engineer Bindings](modules/runtime-harness/engineer-bindings.md) — capability / active
 - [Engineer Messages](modules/runtime-harness/engineer-messages.md) — capability / active
@@ -327,6 +328,8 @@ Generated: 1970-01-01T00:00:00.000Z
 
 - capability.public-surface.action-commands -> component.action-commands.primary — calls
 - capability.public-surface.adoption -> component.adoption.primary — calls
+- capability.runtime-harness.bound-task-freezes -> capability.runtime-harness.engineer-bindings — calls
+- capability.runtime-harness.bound-task-freezes -> component.bound-task-freezes.primary — calls
 - capability.verification.codegraph-readiness -> component.codegraph-readiness.primary — calls
 - capability.workflow-engine.contract-assets -> component.contract-assets.primary — calls
 - capability.runtime-harness.delegated-runs -> capability.runtime-harness.engineer-bindings — calls

@@ -1,0 +1,64 @@
+schemaVersion: archcontext.node/v2
+id: capability.runtime-harness.bound-task-freezes
+kind: capability
+name: Bound Task Freezes
+status: active
+summary: Freezes exact live Claim, Binding, WorkEnvelope and Git observations while refusing Session rotation that would imply dirty-task transfer.
+responsibilities:
+  - Resolve exactly one current Engineer live Claim without creating another task or Lease authority.
+  - Revalidate ClaimActorReceipt against the exact persisted WorkEnvelope and live bound Lease.
+  - Double-read Binding, Claim, Lease, WorkEnvelope, topology, HEAD, tree, diff, untracked inventory, checks, hypotheses and writer-grant observations.
+  - Persist immutable content-addressed TaskFreezeReceipt bytes and reject every stale subject.
+  - Refuse Binding replace or retire while a live Claim exists; require the existing explicit Lease release path.
+  - Keep untracked inventory metadata non-transferable and expose no execution takeover surface.
+source:
+  include:
+    - "src/core/engineers/task-freeze.ts"
+    - "src/effects/engineers/task-freeze-store.ts"
+    - "src/effects/engineers/bound-task-rotation.ts"
+  entrypoints:
+    - id: entrypoint.bound-task-freezes.inspect
+      path: "src/effects/engineers/task-freeze-store.ts"
+      symbols:
+        - name: "readCurrentTaskFreezeBinding"
+          sinks:
+            - id: sink.bound-task-freezes.binding-current
+              path: "src/effects/engineers/binding-store.ts"
+              symbol: "readEngineerBindingStatus"
+        - name: "inspectBoundTaskLocked"
+          sinks:
+            - id: sink.bound-task-freezes.receipt-schema
+              path: "src/core/engineers/task-freeze.ts"
+              symbol: "buildTaskFreezeReceipt"
+    - id: entrypoint.bound-task-freezes.persist
+      path: "src/effects/engineers/task-freeze-store.ts"
+      symbols:
+        - name: "inspectBoundTaskLocked"
+          sinks:
+            - id: sink.bound-task-freezes.immutable-store
+              path: "src/effects/engineers/task-freeze-store.ts"
+              symbol: "persistTaskFreezeReceipt"
+    - id: entrypoint.bound-task-freezes.verify
+      path: "src/effects/engineers/task-freeze-store.ts"
+      symbols:
+        - name: "verifyTaskFreeze"
+          sinks:
+            - id: sink.bound-task-freezes.stale-compare
+              path: "src/core/engineers/task-freeze.ts"
+              symbol: "taskFreezeReceiptChangedFields"
+    - id: entrypoint.bound-task-freezes.rotation-refusal
+      path: "src/effects/engineers/bound-task-rotation.ts"
+      symbols:
+        - name: "assertNoLiveClaimForBindingRotation"
+          sinks:
+            - id: sink.bound-task-freezes.live-claim
+              path: "src/effects/engineers/claim-actor-store.ts"
+              symbol: "listLiveClaimActorReceiptsForEngineer"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun test tests/unit/me4a-bound-task-freeze-handoff.test.ts tests/unit/engineer-binding-store.test.ts --timeout 60000"
+    - "bun run check:type"

@@ -26,21 +26,21 @@ describe("AXR7 repo-harness architecture consumer", () => {
     const relations = yamlFiles(join(modelRoot, "relations"));
     const flows = yamlFiles(join(modelRoot, "flows"));
 
-    expect(capabilities).toHaveLength(19);
-    expect(components).toHaveLength(19);
-    expect(relations).toHaveLength(31);
-    expect(flows).toHaveLength(21);
+    expect(capabilities).toHaveLength(20);
+    expect(components).toHaveLength(20);
+    expect(relations).toHaveLength(33);
+    expect(flows).toHaveLength(22);
     expect(flows.every((flow) => flow.schemaVersion === "archcontext.flow/v1")).toBe(true);
     expect(flows.every((flow) => flow.applicability === "required")).toBe(true);
     expect(new Set(flows.map((flow) => flow.capabilityId))).toEqual(new Set(capabilities.map((node) => node.id)));
   });
 
-  test("projects nineteen proven Mermaid-only capability documents and no HTML architecture artifact", () => {
+  test("projects twenty proven Mermaid-only capability documents and no HTML architecture artifact", () => {
     const architectureRoot = join(ROOT, "docs", "architecture");
     const moduleDocs = filesUnder(join(architectureRoot, "modules")).filter((path) => path.endsWith(".md"));
     const html = filesUnder(architectureRoot).filter((path) => path.endsWith(".html"));
 
-    expect(moduleDocs).toHaveLength(19);
+    expect(moduleDocs).toHaveLength(20);
     expect(html.map((path) => relative(ROOT, path))).toEqual([]);
     for (const path of moduleDocs) {
       const body = readFileSync(path, "utf8");
@@ -71,7 +71,7 @@ describe("AXR7 repo-harness architecture consumer", () => {
       };
     };
     expect(manifest.profile).toBe("repo-harness/v1");
-    expect(manifest.targetCount).toBe(25);
+    expect(manifest.targetCount).toBe(26);
     expect(manifest.provenance?.rendererVersion).toBe("archcontext.docs-renderer/v4");
     expect(manifest.provenance?.layoutVersion).toBe("archcontext.docs-layout/v1");
     expect(manifest.provenance?.generatedFrom).toMatchObject({ codeGraphVersion: "1.5.0", codeGraphStatus: "ready" });

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.bound-task-freezes.engineer-bindings
+kind: calls
+source: capability.runtime-harness.bound-task-freezes
+target: capability.runtime-harness.engineer-bindings
+intent: Revalidate the current Binding and exact live ClaimActorReceipt before inspection or rotation refusal

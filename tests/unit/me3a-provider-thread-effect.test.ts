@@ -5,6 +5,7 @@ import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 
 import { buildModuleMessageEvent } from '../../src/core/engineers/module-message';
+import { buildLeaseOwnerRecord, serializeLeaseOwnerRecord } from '../../src/core/state/coordination-identity';
 import {
   buildProviderThreadCapabilityObservation,
   buildProviderThreadEffectIntent,
@@ -60,7 +61,16 @@ function fixture(): string {
   writeFileSync(join(repoRoot, '.ai/harness/acceptance.json'), 'acceptance authority\n');
   const leasePath = leaseOwnerPath(repoRoot, sentinelTaskId);
   mkdirSync(dirname(leasePath), { recursive: true });
-  writeFileSync(leasePath, 'lease authority\n');
+  writeFileSync(leasePath, serializeLeaseOwnerRecord(buildLeaseOwnerRecord({
+    claimId: 'sentinel-claim',
+    taskId: sentinelTaskId,
+    taskRevision: 'c'.repeat(64),
+    sprintPath: 'plans/sprints/sentinel.md',
+    targetRef: 'HEAD',
+    generation: 1,
+    sessionId: 'session-sentinel',
+    sourceWorktree: repoRoot,
+  })));
   execFileSync('git', ['add', '.'], { cwd: repoRoot });
   execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: repoRoot });
   return repoRoot;
