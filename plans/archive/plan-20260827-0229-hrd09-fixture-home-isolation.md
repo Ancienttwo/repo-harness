@@ -1,6 +1,6 @@
 # Plan: HRD-09 fixture HOME isolation
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260827-0229
 > **Slug**: hrd09-fixture-home-isolation
 > **Planning Source**: repo-harness-plan

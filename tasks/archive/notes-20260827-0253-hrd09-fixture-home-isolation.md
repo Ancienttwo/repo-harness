@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-27 02:53
+> **Related Plan**: plans/archive/plan-20260827-0229-hrd09-fixture-home-isolation.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260827-0253
+
 # Implementation Notes: hrd09-fixture-home-isolation
 
 > **Status**: Active

@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-27 02:53
+> **Related Plan**: plans/archive/plan-20260827-0229-hrd09-fixture-home-isolation.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260827-0253
+
 # Task Contract: hrd09-fixture-home-isolation
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260827-0229-hrd09-fixture-home-isolation.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
