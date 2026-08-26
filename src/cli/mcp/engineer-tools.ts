@@ -1,6 +1,7 @@
 import { EngineerPrincipalError } from '../../core/engineers/principal-claim';
 import { EngineerSchedulingError } from '../../core/engineers/scheduling';
 import {
+  ModuleMessageError,
   buildModuleMessageEvent,
   type ModuleMessageResourceRefV1,
   type ModuleMessageScope,
@@ -507,7 +508,8 @@ export function callEngineerTool(
     return messageSendAsEngineer(ctx, args, principal);
   } catch (error) {
     const code = error instanceof EngineerPrincipalError || error instanceof EngineerMcpError
-      || error instanceof EngineerSchedulingError || error instanceof ModuleInboxError
+      || error instanceof EngineerSchedulingError || error instanceof ModuleMessageError
+      || error instanceof ModuleInboxError
       || error instanceof ProviderThreadEffectError || error instanceof ProviderThreadEffectStoreError
       ? error.code
       : 'ENGINEER_TOOL_FAILED';

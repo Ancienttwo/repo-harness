@@ -159,6 +159,25 @@ describe('restricted Engineer MCP tools', () => {
     const generic = await callMcpTool(context, 'fleet_acquire', {});
     expect(generic).toMatchObject({ structuredContent: { error: { code: 'TOOL_NOT_AVAILABLE' } } });
 
+    const invalidMessageType = await callMcpTool(context, 'engineer_message_send', {
+      message_id: '66666666-6666-4666-8666-666666666666',
+      capability_id: 'capability.verification.evals-checks',
+      target_engineer_id: engineerId,
+      scope: 'module',
+      target_binding_id: null,
+      target_binding_generation: null,
+      target_engineer_contract_revision: null,
+      message_type: 'not_a_module_message_type',
+      subject_ref: null,
+      resource_refs: [],
+      body: 'Schema rejection must stay typed across CLI and MCP.',
+      created_at: '2026-08-25T00:40:00.000Z',
+    });
+    expect(invalidMessageType).toMatchObject({
+      isError: true,
+      structuredContent: { error: { code: 'module_message_invalid' } },
+    });
+
     const invalidAttempts = await callMcpTool(context, 'engineer_acquire', {
       repo_id: repoHarnessRepoIdFor(repoRoot),
       task_id: 'a'.repeat(64),

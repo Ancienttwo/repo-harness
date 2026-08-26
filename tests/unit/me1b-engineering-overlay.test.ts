@@ -182,6 +182,45 @@ describe('ME-1B Engineering Overlay', () => {
     })).toThrow('attention owner does not match reason');
   });
 
+  test('converges on the same degraded projection whichever read pass loses the Profile authority', () => {
+    const root = fixture();
+    bind(root, bindingOne);
+    let firstReads = 0;
+    const firstReadFailure = collectEngineeringBoard({
+      repo_root: root,
+      observed_at: '2026-08-25T15:02:00.000Z',
+      dependencies: deps(root, {
+        listProfiles: (cwd) => {
+          firstReads += 1;
+          if (firstReads === 1) throw new Error('profile authority unreadable');
+          return listEngineerProfiles(cwd);
+        },
+      }),
+    });
+    expect(firstReads).toBe(2);
+    expect(firstReadFailure.overlay.snapshot_consistency).toBe('degraded');
+    expect(firstReadFailure.overlay.engineers).toEqual([]);
+    expect(firstReadFailure.overlay.components.every((item) => item.support === 'unreadable')).toBeTrue();
+
+    let secondReads = 0;
+    const secondReadFailure = collectEngineeringBoard({
+      repo_root: root,
+      observed_at: '2026-08-25T15:02:00.000Z',
+      dependencies: deps(root, {
+        listProfiles: (cwd) => {
+          secondReads += 1;
+          if (secondReads === 2) throw new Error('profile authority unreadable');
+          return listEngineerProfiles(cwd);
+        },
+      }),
+    });
+    expect(secondReads).toBe(2);
+    expect(secondReadFailure.overlay.snapshot_consistency).toBe('degraded');
+    expect(secondReadFailure.overlay.engineers).toEqual([]);
+    expect(secondReadFailure.overlay.snapshot_sha256).toBe(firstReadFailure.overlay.snapshot_sha256);
+    expect(firstReadFailure.organization_attention.attention).toEqual(secondReadFailure.organization_attention.attention);
+  });
+
   test('fails closed when the repository registry authority is unreadable', () => {
     const root = fixture();
     expect(() => collectEngineeringBoard({

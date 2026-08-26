@@ -101,4 +101,21 @@ describe('repo-harness sprint graph CLI', () => {
     expect(unreadable.stderr).toContain('registry authority is not valid JSON');
     expect(execFileSync('git', ['status', '--porcelain=v1'], { cwd: root, encoding: 'utf8' })).toBe(before);
   });
+
+  test('reports layered machine error codes instead of flattening every failure to work_graph_invalid', () => {
+    const { root, home } = fixture();
+
+    const badFormat = run(root, ['sprint', 'graph', '--sprint', sprintPath, '--format', 'yaml']);
+    expect(badFormat.exitCode).toBe(1);
+    expect(JSON.parse(badFormat.stderr)).toMatchObject({ ok: false, error: 'invalid_argument' });
+
+    const missingSprint = run(root, ['sprint', 'graph', '--sprint', 'plans/sprints/absent.sprint.md', '--format', 'json']);
+    expect(missingSprint.exitCode).toBe(1);
+    expect(JSON.parse(missingSprint.stderr)).toMatchObject({ ok: false, error: 'work_graph_unclassified' });
+
+    writeFileSync(join(home, 'registered-repos.json'), '{malformed');
+    const unreadableRegistry = run(root, ['sprint', 'graph', '--sprint', sprintPath, '--format', 'json']);
+    expect(unreadableRegistry.exitCode).toBe(1);
+    expect(JSON.parse(unreadableRegistry.stderr)).toMatchObject({ ok: false, error: 'fleet_registry_invalid' });
+  });
 });

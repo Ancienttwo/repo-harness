@@ -1,7 +1,11 @@
 /** CLI adapter for the effect-owned sprint coordination verbs. */
 import { Command } from 'commander';
 import type { CommandOutcome } from '../../core/state/command-outcome';
-import { readRepoHarnessRegistryStrictSnapshot } from '../../effects/repo-registry';
+import { EngineerSchedulingError } from '../../core/engineers/scheduling';
+import {
+  RepoHarnessRegistryStrictError,
+  readRepoHarnessRegistryStrictSnapshot,
+} from '../../effects/repo-registry';
 import {
   readProjectedWorkGraphAt,
   resolveRegisteredRepoForWorktree,
@@ -28,6 +32,19 @@ import {
   type WriteClaimTokenCommandOptions,
 } from '../../effects/state/coordination-sprint';
 
+class CliArgumentError extends Error {}
+
+function emitError(error: unknown): void {
+  const code = error instanceof EngineerSchedulingError || error instanceof RepoHarnessRegistryStrictError
+    ? error.code
+    : error instanceof CliArgumentError
+      ? 'invalid_argument'
+      : 'internal_error';
+  const message = error instanceof Error ? error.message : String(error);
+  process.stderr.write(`${JSON.stringify({ ok: false, error: code, message })}\n`);
+  process.exitCode = 1;
+}
+
 function writeOutcome(outcome: CommandOutcome): void {
   if (outcome.stdout) process.stdout.write(outcome.stdout);
   if (outcome.stderr) process.stderr.write(outcome.stderr);
@@ -45,7 +62,7 @@ export function buildSprintCommand(): Command {
     .requiredOption('--format <format>', 'Output format (json or text)')
     .action((options: { sprint: string; format: string }) => {
       try {
-        if (options.format !== 'json' && options.format !== 'text') throw new Error('--format must be json or text');
+        if (options.format !== 'json' && options.format !== 'text') throw new CliArgumentError('--format must be json or text');
         const registry = readRepoHarnessRegistryStrictSnapshot({ env: process.env });
         const repo = resolveRegisteredRepoForWorktree(process.cwd(), registry);
         const result = readProjectedWorkGraphAt(repo, options.sprint);
@@ -62,9 +79,7 @@ export function buildSprintCommand(): Command {
           ...result.graph.work_packages.map((item) => `${item.work_package_id} task=${item.task_id} status=${item.task_status} capability=${item.primary_capability} depends=${item.depends_on.length}`),
         ].join('\n')}\n`);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        process.stderr.write(`${JSON.stringify({ ok: false, error: 'work_graph_invalid', message })}\n`);
-        process.exitCode = 1;
+        emitError(error);
       }
     });
 

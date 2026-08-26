@@ -173,6 +173,39 @@ describe('git-common-dir Module Engineer inbox', () => {
     });
   });
 
+  test('an assignment receipt already delivered to the previous Binding supersedes on rotation', () => {
+    const repoRoot = fixture();
+    const first = bind(repoRoot, bindingOne);
+    sendModuleMessage({ repo_root: repoRoot, event: message(repoRoot) });
+    const delivered = receiveModuleInbox({
+      repo_root: repoRoot,
+      principal: principal(repoRoot),
+      delivered_at: '2026-08-25T07:05:00.000Z',
+    });
+    expect(delivered.superseded_count).toBe(0);
+    expect(delivered.entries.find((entry) => entry.event.message_id === messageOne)?.receipt.delivery_state)
+      .toBe('delivered');
+
+    bind(repoRoot, bindingTwo, first);
+    const rotated = receiveModuleInbox({
+      repo_root: repoRoot,
+      principal: principal(repoRoot),
+      delivered_at: '2026-08-25T07:11:00.000Z',
+    });
+    expect(rotated.superseded_count).toBe(1);
+    expect(rotated.entries.find((entry) => entry.event.message_id === messageOne)?.receipt)
+      .toMatchObject({ delivery_state: 'superseded', target_binding_generation: 1 });
+
+    const settled = receiveModuleInbox({
+      repo_root: repoRoot,
+      principal: principal(repoRoot),
+      delivered_at: '2026-08-25T07:12:00.000Z',
+    });
+    expect(settled.superseded_count).toBe(0);
+    expect(settled.entries.find((entry) => entry.event.message_id === messageOne)?.receipt.delivery_state)
+      .toBe('superseded');
+  });
+
   test('verifies typed resource bytes before acknowledgement and leaves the receipt unacknowledged on mismatch', () => {
     const repoRoot = fixture();
     bind(repoRoot, bindingOne);

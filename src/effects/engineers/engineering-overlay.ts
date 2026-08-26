@@ -263,11 +263,15 @@ export function collectEngineeringBoard(options: CollectEngineeringOverlayOption
   });
   const degraded = components.some((component) => component.support === 'unreadable');
   const changed = components.some((component) => component.support === 'available' && component.observation_before !== component.observation_after);
+  // The Profile authority names the projection's rows. A pass that lost it saw
+  // no Engineers at all, so a surviving pass must not repopulate the roster:
+  // both read directions converge on the same empty degraded projection.
+  const profilesReadable = before.profiles.support === 'available' && after.profiles.support === 'available';
   const overlay = buildEngineeringOverlaySnapshot({
     repository_id: repo.id,
     registry_revision: registry.registryRevision,
     observed_at: options.observed_at ?? new Date().toISOString(),
-    engineers: after.engineers.map(engineerProjection),
+    engineers: profilesReadable ? after.engineers.map(engineerProjection) : Object.freeze([]),
     components: Object.freeze(components),
     snapshot_consistency: degraded ? 'degraded' : changed ? 'changed_during_read' : 'stable',
   });

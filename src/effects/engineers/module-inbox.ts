@@ -666,10 +666,12 @@ export function receiveModuleInbox(input: {
     let superseded = 0;
     const deliveredAt = input.delivered_at ?? new Date().toISOString();
     const entries = entriesFor(paths).map(({ event, receipt }) => {
-      if (receipt.delivery_state === 'acknowledged' || receipt.delivery_state === 'superseded' || receipt.delivery_state === 'delivered') {
-        return { event, receipt };
-      }
+      // The assignment fence is evaluated before the terminal-state check: a
+      // receipt delivered to the previous Binding is still addressed to a fence
+      // this principal cannot acknowledge, so `pending` and `delivered` both
+      // leave through supersede instead of stranding on rotation.
       if (event.scope === 'assignment'
+        && (receipt.delivery_state === 'pending' || receipt.delivery_state === 'delivered')
         && (event.target_binding_id !== input.principal.binding_id
           || event.target_binding_generation !== input.principal.binding_generation
           || event.target_engineer_contract_revision !== input.principal.engineer_contract_revision)) {
@@ -677,6 +679,9 @@ export function receiveModuleInbox(input: {
         replaceCanonical(receiptPath(paths, event.message_id), canonicalModuleMessageDeliveryReceiptBytes(next), 'module message receipt');
         superseded += 1;
         return { event, receipt: next };
+      }
+      if (receipt.delivery_state === 'acknowledged' || receipt.delivery_state === 'superseded' || receipt.delivery_state === 'delivered') {
+        return { event, receipt };
       }
       const observed = appendObservation(paths, event, receipt, {
         outcome: 'delivered',
