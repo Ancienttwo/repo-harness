@@ -3,11 +3,12 @@
 > **Status**: Draft
 > **Slug**: `writable-worker-grant`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-25T15:51:15+0800
+> **Updated**: 2026-08-26T17:32:00+0800
 > **Source Spec**: `docs/spec.md`
 > **Parent PRD**: `plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md`
 > **Depends On**: ME-0B, ME-2A, an Approved ME-3B Delegated Run Adapter, and a separate managed-Parent/sandbox canary; current Contract/Lease/WorkEnvelope
 > **Tier**: compact
+> **Runtime Admission Decision**: Not admitted on Codex Host/CLI 0.149.0; writable delegation remains disabled and no grant surface is implemented
 
 ## AI Quick-Read Card
 
@@ -18,9 +19,9 @@
 - **Core metric**: writer overlap 0; path/policy escape 0; publication before settlement 0.
 - **Hard constraint**: unmanaged Provider Sessions remain read-only; prompt text or a store flag cannot freeze their filesystem permissions.
 - **Key risk**: Parent retains shell/edit authority after the store says Worker owns the slot.
-- **Unknowns**: dynamic Parent permission revocation and child runtime principal require a dedicated runtime/security canary.
+- **Closed runtime result**: the dedicated model-free canary proved only launch-scoped sandboxing. An already-running workspace-write Parent retained mutation permission after the Host checkpoint, and no authenticated child principal/epoch is enforced at each effect.
 - **Acceptance scenarios**: Parent-to-Worker handoff, second writer refusal, mutation-time revalidation, crash recovery and observed diff.
-- **Suggested next step**: keep disabled until ME-3B and the separate security canary demonstrate managed Parent freeze and sandbox receipts；do not block ME-4C Product Acceptance on this feature.
+- **Suggested next step**: keep disabled/read-only. Reopen only when the Provider/Host exposes dynamic live-Session permission replacement plus an effect-time runtime principal/epoch receipt; do not build a repo-harness Agent runtime to compensate.
 
 ## Problem
 
@@ -33,8 +34,21 @@ Writable delegation is enabled only for an Engineer Session whose execution boun
 ### Feasibility Boundary
 
 - **Confirmed**: store CAS and Git diff observation are available locally.
-- **[UNKNOWN]**: provider process/sandbox controls that revoke Parent writes without terminating useful read/observe/cancel capability.
+- **Not available on the admitted runtime**: Codex CLI 0.149.0 applies `:read-only` or `:workspace` when a process starts, but exposes no Host action that replaces the sandbox of an already-running Parent while preserving its control role.
 - **Fail closed**: unmanaged/manual Session, unverifiable runtime principal or missing sandbox means read-only only.
+
+### Runtime Admission Decision (2026-08-26)
+
+The dedicated canary is complete and returns `runtime_not_admitted`.
+
+- Runtime: `/opt/homebrew/Caskroom/codex/0.149.0/bin/codex`, executable `sha256:f4a74117b8142cda581c95ff753abf4508b5636d89682c1ed77e4a9249af8963`, version `codex-cli 0.149.0`.
+- Control A: built-in `:read-only` denied the disposable worktree sentinel with exit `1` / `Operation not permitted`.
+- Control B: built-in `:workspace` admitted the same worktree class with exit `0`.
+- Falsifier: one already-running `:workspace` Parent wrote both before and after the Host-owned revocation checkpoint and exited `0`. Sandbox permission remained launch-scoped.
+- Missing authority: the sandbox action carries no authenticated `worker_run_id`/grant epoch that a Host broker revalidates at each filesystem effect. A repo store or prompt field cannot add that kernel/runtime identity after launch.
+- Decision reasons: `dynamic_parent_revocation_unavailable`, `parent_write_survived_revocation`, `child_principal_at_effect_unavailable`.
+
+Therefore this PRD remains Draft by design. `WriterActorCurrentV1` and `DelegatedMutationGrantV1` are specification-only; no product code, MCP/CLI mutation, architecture node or fallback writer path is authorized. ME-2B is complete as a negative feasibility decision and does not block the read-only ME-2A/ME-3B path or ME-4C Acceptance.
 
 ## Users
 
@@ -148,12 +162,12 @@ Every mutation broker revalidates `WriterActorCurrentV1` immediately before effe
 
 | Item | Impact | Resolution Path | Owner |
 |---|---|---|---|
-| Managed Parent permission revocation | Blocks approval | ME-3B plus dedicated process/sandbox canary | Runtime owner |
-| Child principal at every effect | Blocks approval | runtime identity matrix | Security owner |
+| Managed Parent permission revocation | Canary returned no-go; blocks activation | Reopen only for a Host API that changes a live Parent sandbox without terminating its control role | Runtime owner |
+| Child principal at every effect | Canary returned no-go; blocks activation | Reopen only for an authenticated runtime principal plus grant epoch enforced at the filesystem/effect broker | Security owner |
 
 ## Developer Handoff
 
-Do not implement before ME-3B and the dedicated security canary are Approved. No unmanaged Session compatibility mode is allowed；absence of enforcement means read-only, not a fallback writer path。
+The dedicated security canary has returned no-go. Do not implement the grant records or any writable adapter on the current runtime. No unmanaged Session compatibility mode is allowed；absence of enforcement means read-only, not a fallback writer path. The exact revisit trigger is recorded in `tasks/todos.md` and `docs/researches/20260826-me2b-managed-parent-sandbox-canary.md`.
 
 ### Acceptance Scripts
 
