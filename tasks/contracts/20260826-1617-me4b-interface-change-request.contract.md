@@ -70,6 +70,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
         "src/cli/mcp/engineer-tools.ts",
         "src/core/engineers/interface-change.ts",
         "src/effects/engineers/interface-change-store.ts",
+        "src/effects/engineers/scheduling.ts",
         "tests/cli/interface-change.test.ts",
         "tests/unit/me4b-interface-change-request.test.ts"
       ]
@@ -197,13 +198,20 @@ exit_criteria:
       pattern: readTrackedWorkGraphProjectionAt
     - path: plans/prds/20260824-1653-interface-change-request.prd.md
       pattern: "^> \*\*Status\*\*: Approved$"
-# Optional exact-subject reuse is fail-closed and opt-in. List only deterministic
-# criteria whose inputs are fully bound by the frozen subject/toolchain context.
-# criterion_reuse:
-#   tests_pass:
-#     - path/to/deterministic.test.ts
-#   commands_succeed:
-#     - bun test --timeout 60000
+criterion_reuse:
+  tests_pass:
+    - tests/unit/me4b-interface-change-request.test.ts
+    - tests/cli/interface-change.test.ts
+  commands_succeed:
+    - bun test tests/unit/me4b-interface-change-request.test.ts tests/cli/interface-change.test.ts --timeout 60000
+    - bun run check:type
+    - bash scripts/check-deploy-sql-order.sh
+    - bash scripts/check-architecture-sync.sh
+    - bash scripts/check-task-sync.sh
+    - repo-harness run check-task-workflow --strict
+    - bun scripts/inspect-project-state.ts --repo . --format text
+    - bun src/cli/index.ts init --repo . --dry-run
+    - bun test --timeout 60000
 ```
 
 ## Acceptance Notes (Human Review)
