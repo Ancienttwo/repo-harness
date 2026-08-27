@@ -1012,6 +1012,7 @@ describe("init command", () => {
       mkdirSync(home, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
+      const claude = writeReadyOfficialCodexPluginCli(fakeBin, home);
       writeFakeCodegraph(fakeBin, codegraphLog);
       writeFakeSkillsCli(fakeBin);
       makeExecutable(join(fakeBin, "bunx"), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nexit 0\n`);
@@ -1044,11 +1045,16 @@ describe("init command", () => {
           ...process.env,
           HOME: home,
           PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+          REPO_HARNESS_CLAUDE_EXECUTABLE: claude,
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
         },
       });
 
       expect(result.exitCode).toBe(0);
+      expect(result.steps.find((step) => step.step === "official Codex plugin")).toMatchObject({
+        status: "ok",
+        detail: expect.stringContaining("version=1.0.6"),
+      });
       expect(result.steps.find((step) => step.step === "global working rules")?.status).toBe("ok");
       expect(result.steps.find((step) => step.step === "ensure brain root")?.detail).toBe(join(home, "Documents", "brain"));
       expect(readFileSync(join(home, ".codex", "AGENTS.md"), "utf-8")).toContain("Use English to report to user.");
