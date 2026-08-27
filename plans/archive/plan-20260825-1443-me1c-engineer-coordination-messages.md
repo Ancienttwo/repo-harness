@@ -1,6 +1,6 @@
 # Plan: ME-1C Engineer Coordination Messages
 
-> **Status**: Review
+> **Status**: Archived
 > **Created**: 20260825-1443
 > **Slug**: me1c-engineer-coordination-messages
 > **Planning Source**: codex-plan

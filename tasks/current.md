@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-27T02:53:43+0800 -->
+<!-- updated_at: 2026-08-28T01:27:24+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-27T02:53:43+0800
-> **Source Branch**: codex/hrd09-fixture-home-isolation
-> **Source Commit**: 419fee31
+> **Updated At**: 2026-08-28T01:27:24+0800
+> **Source Branch**: codex/me1c-engineer-coordination-messages
+> **Source Commit**: e53722fb
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -33,9 +33,6 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 - linked-worktree-6f1bc1db12bd: plans/plan-20260826-1617-me4b-interface-change-request.md
 - linked-worktree-6f1bc1db12bd: active-worktree owner -> self
-- linked-worktree-1eb1fd41d8a9: active-worktree owner -> self
-- linked-worktree-b3f7972628db: plans/plan-20260825-1443-me1c-engineer-coordination-messages.md
-- linked-worktree-b3f7972628db: active-worktree owner -> self
 ## Active Sprint
 
 - Sprint: (none)
@@ -62,16 +59,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260827-0229-hrd09-fixture-home-isolation.md
- D tasks/contracts/20260827-0229-hrd09-fixture-home-isolation.contract.md
- D tasks/notes/20260827-0229-hrd09-fixture-home-isolation.notes.md
- D tasks/reviews/20260827-0229-hrd09-fixture-home-isolation.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260827-0229-hrd09-fixture-home-isolation.md
-?? tasks/archive/contract-20260827-0253-hrd09-fixture-home-isolation.md
-?? tasks/archive/notes-20260827-0253-hrd09-fixture-home-isolation.md
-?? tasks/archive/review-20260827-0253-hrd09-fixture-home-isolation.md
-?? tasks/archive/todo-20260827-0253-hrd09-fixture-home-isolation.md
+ M docs/architecture/.projection-manifest.json
+ D plans/plan-20260825-1443-me1c-engineer-coordination-messages.md
+ D tasks/contracts/20260825-1443-me1c-engineer-coordination-messages.contract.md
+ D tasks/notes/20260825-1443-me1c-engineer-coordination-messages.notes.md
+ D tasks/reviews/20260825-1443-me1c-engineer-coordination-messages.review.md
+?? plans/archive/plan-20260825-1443-me1c-engineer-coordination-messages.md
+?? tasks/archive/contract-20260828-0127-me1c-engineer-coordination-messages.md
+?? tasks/archive/notes-20260828-0127-me1c-engineer-coordination-messages.md
+?? tasks/archive/review-20260828-0127-me1c-engineer-coordination-messages.md
+?? tasks/archive/todo-20260828-0127-me1c-engineer-coordination-messages.md
 ```
 
 ## Source Artifacts

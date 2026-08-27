@@ -1,6 +1,6 @@
 # Workstream: ME-1C Engineer Coordination Messages
 
-> **Status**: review
+> **Status**: completed
 > **Capability ID**: runtime-harness-engineer-messages
 > **Source Plan**: plans/plan-20260825-1443-me1c-engineer-coordination-messages.md
 > **Current Slice**: acceptance-and-publication
