@@ -1,16 +1,16 @@
 # Task Review: me2-acceptance-followup
 
-> **Status**: Pending
+> **Status**: Accepted
 > **Plan**: plans/plan-20260828-0142-me2-acceptance-followup.md
 > **Contract**: tasks/contracts/20260828-0142-me2-acceptance-followup.contract.md
 > **Notes File**: tasks/notes/20260828-0142-me2-acceptance-followup.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-08-28 01:42
-> **Recommendation**: fail
+> **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:7088b57701510739f509a32e8bc72b4d3493eae5ce3ec0b0e31509ee6043d438
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
+> **Reviewed Target Revision**: 4b3a45881cee5c8fc8b464fd091ad52151072783
 
 ## Human Review Card
 
@@ -40,17 +40,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Codex
+> **Source**: codex-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:7088b57701510739f509a32e8bc72b4d3493eae5ce3ec0b0e31509ee6043d438
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 4b3a45881cee5c8fc8b464fd091ad52151072783
+> **Verification Evidence SHA256**: sha256:39ac9c934a1d7b5165f2990d1065b39fdce0320131e2c6d0c5e416a4908906bf
+> **Issued At**: 2026-08-27T18:27:51.492Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: ME-2 acceptance follow-up accepted. Delegated-run child environment is an exact HOME+PATH allowlist with inheritEnv:false at both the canary and dispatch call sites, bound into the process and capability receipts through env_sha256 on both build and validate paths. proof_surface records the sandbox-subcommand-to-exec extrapolation fail-closed through capabilityCanaryVerified. Absent tracked role profiles now yield typed delegated_run_profile_unavailable/role_profile_unavailable with repository-relative paths only, and the three unreachable rejection enums are removed and guarded. Verified-context requires exactly one Semantic Constraint Catalog and distinct check/verifier receipts. Exit criteria 11/11 fulfilled; Codex incremental review returned PASS with no findings.
 - Findings: none
 
 ## Behavior Diff Notes
