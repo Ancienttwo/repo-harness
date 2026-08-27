@@ -5,12 +5,12 @@
   "sourceDigest": "sha256:a669f43e4e7e08464401db1df0b855175f878896e0de0c10e11db3edd71f8704",
   "provenance": {
     "schemaVersion": "archcontext.architecture-docs-projection-provenance/v1",
-    "baseHeadSha": "7c8aa24e0f915d86f6e4ee59366bc62ad44ab8c2",
-    "worktreeDigest": "sha256:fe85f0bd77e5821724eb012fb215ce61ef9af44199c15efa57ea254184ede2e6",
-    "sourceTreeDigest": "sha256:6ff8df421b0cf6f1febbba1a73e2f292bdeb68a073e3ab8aa4d6b3b533aab3d5",
+    "baseHeadSha": "db9db166268fa3e190ca408458a0337194b6c96e",
+    "worktreeDigest": "sha256:e8fde8adcfd919c12d74123e8ba31b40ba13a9f310656ce04404d06ac0e10321",
+    "sourceTreeDigest": "sha256:0e9625b0d05af72207e0d74872c49c468f2be1fe69cdd3f1db7294584ae7243c",
     "modelDigest": "sha256:048b21e544412f15d056596cdbda7ab931b329af2b7aa9a77db7cc280bdf0848",
-    "codeGraphDigest": "sha256:4a53dc56f0fda88609de4dafb797b0e7af13c76b2ca1efe4479fd6af5b61b7a7",
-    "indexedWorktreeDigest": "sha256:83a88eacfc16c4bf212248af1fcc0ada681f8844b94771449fff892c2e11cf1a",
+    "codeGraphDigest": "sha256:45c66efebe27d8d85597eed1f34098382e0d7a948268439cdf57bc43894c34e8",
+    "indexedWorktreeDigest": "sha256:8d645bcbe4542b13267c074e0f6adb2ab06283838fe2e21b328e9f391f0bb795",
     "rendererVersion": "archcontext.docs-renderer/v4",
     "layoutVersion": "archcontext.docs-layout/v1",
     "generatedFrom": {
@@ -19,9 +19,9 @@
       "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
       "codeGraphStatus": "ready"
     },
-    "projectionInputDigest": "sha256:d76e37021612162871cbf2d83c6f315e2afe6b3ab8fdf52f2dd91275435d1c8a"
+    "projectionInputDigest": "sha256:e534e36b86cd31b34c0b4c1de65856f6b44ea72613d7d9821195e0c92dd37da3"
   },
-  "projectionDigest": "sha256:8f09733ce6efeebc0aa8b37aa0926b388dc727747f0594ab558c894104da22d8",
+  "projectionDigest": "sha256:678fe54be1dacb448cd6d853ffae77bb86a68ac8e2f3a7ab94788ca984437a87",
   "semanticBaseline": {
     "semanticState": {
       "schemaVersion": "archcontext.architecture-semantic-state/v1",
@@ -532,12 +532,12 @@
     },
     "digests": {
       "modelDigest": "sha256:048b21e544412f15d056596cdbda7ab931b329af2b7aa9a77db7cc280bdf0848",
-      "sourceTreeDigest": "sha256:6ff8df421b0cf6f1febbba1a73e2f292bdeb68a073e3ab8aa4d6b3b533aab3d5",
+      "sourceTreeDigest": "sha256:0e9625b0d05af72207e0d74872c49c468f2be1fe69cdd3f1db7294584ae7243c",
       "flowProofDigest": "sha256:c94d5fe8b42bfa84f6e8e197246b0a39818b1463c37c750e0d0de0abd4923222",
-      "projectionDigest": "sha256:8f09733ce6efeebc0aa8b37aa0926b388dc727747f0594ab558c894104da22d8"
+      "projectionDigest": "sha256:678fe54be1dacb448cd6d853ffae77bb86a68ac8e2f3a7ab94788ca984437a87"
     }
   },
-  "receiptDigest": "sha256:8a3258e5561d0c5a666e47371e6531f9cf76111df4ea9b89f4d7597474e74b9f",
+  "receiptDigest": "sha256:490412dad286da3f3b9ba5e05dbac219201f0cde86d48ff7c97a5edcc69e47c8",
   "refreshSignalIds": [],
   "targetCount": 26,
   "fileCount": 26,
@@ -750,9 +750,9 @@
       "sourceDigest": "sha256:183d7a9ef531bb200e573b337911d503eac0d86741a87b02d5d0b60896930782",
       "outputDigest": "sha256:2e93a1f59017a07da7860cf0073e6911d9f75032b5af8be503c56087f394466a",
       "verifiedAgainst": {
-        "branch": "codex/archctx-v2-provider-acceptance",
-        "commit": "2d08a542a7471bccc50dcdb236093ceb76eded00",
-        "committedAt": "2026-08-26T22:36:28+08:00"
+        "branch": "main",
+        "commit": "db9db166268fa3e190ca408458a0337194b6c96e",
+        "committedAt": "2026-08-27T23:49:46+08:00"
       }
     },
     {
@@ -910,9 +910,9 @@
       "sourceDigest": "sha256:2b41a1b3f03e0f2a17b8e83607c353f16dc1370b0d6cfada99502c1048e2c342",
       "outputDigest": "sha256:66d4b7068ff03b389eb468fcfeb98d6146109c54d1e89eaf119a8f278ac9a5e4",
       "verifiedAgainst": {
-        "branch": "codex/hrd09-fixture-home-isolation",
-        "commit": "a2d276928dc9291f608b7e31702d23c76d0205d8",
-        "committedAt": "2026-08-27T02:39:27+08:00"
+        "branch": "main",
+        "commit": "db9db166268fa3e190ca408458a0337194b6c96e",
+        "committedAt": "2026-08-27T23:49:46+08:00"
       }
     },
     {
@@ -930,9 +930,9 @@
       "sourceDigest": "sha256:dc2faa5abe1e85c162bcc9a126ee79a0178c75d03c20ff97519b8b463cc2ee44",
       "outputDigest": "sha256:aa5aac73ff819f8ad0c053a57d5b1627faf2fc5bdbc18e8ab4722de0ab085d59",
       "verifiedAgainst": {
-        "branch": "codex/hrd09-fixture-home-isolation",
-        "commit": "a2d276928dc9291f608b7e31702d23c76d0205d8",
-        "committedAt": "2026-08-27T02:39:27+08:00"
+        "branch": "main",
+        "commit": "db9db166268fa3e190ca408458a0337194b6c96e",
+        "committedAt": "2026-08-27T23:49:46+08:00"
       }
     },
     {
@@ -950,9 +950,9 @@
       "sourceDigest": "sha256:654f7236e2e51fd19e64129d48fe05f974f3172f6f69c671a78f31ba896198ae",
       "outputDigest": "sha256:a148fc8868cf1e59ce9fe25484555aff2c06e611ed559c709c045b9cde19ab0a",
       "verifiedAgainst": {
-        "branch": "codex/archctx-v2-provider-acceptance",
-        "commit": "2d08a542a7471bccc50dcdb236093ceb76eded00",
-        "committedAt": "2026-08-26T22:36:28+08:00"
+        "branch": "main",
+        "commit": "db9db166268fa3e190ca408458a0337194b6c96e",
+        "committedAt": "2026-08-27T23:49:46+08:00"
       }
     },
     {
