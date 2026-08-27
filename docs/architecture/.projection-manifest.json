@@ -5,12 +5,12 @@
   "sourceDigest": "sha256:a669f43e4e7e08464401db1df0b855175f878896e0de0c10e11db3edd71f8704",
   "provenance": {
     "schemaVersion": "archcontext.architecture-docs-projection-provenance/v1",
-    "baseHeadSha": "e53722fb47043b51c144ea62409def40e3bfe8de",
-    "worktreeDigest": "sha256:1fc72b77f8c3d66da58e85841111129cbe9718551a07345cb3d2f1abcc83185e",
+    "baseHeadSha": "4b3a45881cee5c8fc8b464fd091ad52151072783",
+    "worktreeDigest": "sha256:9488a2bafbef69ea38c3ab225e245768d9f858cd0f74d309cd161ab5c4e5f8da",
     "sourceTreeDigest": "sha256:9f762c655facaf7beb67894539df05083afc2ac59eb4eb2bfc5a82739f192e08",
     "modelDigest": "sha256:048b21e544412f15d056596cdbda7ab931b329af2b7aa9a77db7cc280bdf0848",
-    "codeGraphDigest": "sha256:6d39e067caf9cef227546e5662c1ed5ff8757abd390a2f9dc0e7619f86c9799b",
-    "indexedWorktreeDigest": "sha256:dbb6d32e3422c3cd4eb4f1c59986165b367bea70488b40fa795f257fcae30eee",
+    "codeGraphDigest": "sha256:8d48ec8b4311173afb56b1245685e2563c6d8b259101924a772237bf3d140610",
+    "indexedWorktreeDigest": "sha256:83ddefa77bfdfab04bda4e5888db04b2712d4e3e5de02e9b011da19d544f5e81",
     "rendererVersion": "archcontext.docs-renderer/v4",
     "layoutVersion": "archcontext.docs-layout/v1",
     "generatedFrom": {
@@ -19,9 +19,9 @@
       "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
       "codeGraphStatus": "ready"
     },
-    "projectionInputDigest": "sha256:0b10cb1581245d298f91c2056c91aca943d88825aeb318458641718355e270ae"
+    "projectionInputDigest": "sha256:65ca08703ce0202643bd30022b4fe26bb2a76448409ad4f1dd12fa661d732c85"
   },
-  "projectionDigest": "sha256:63ce92ed2838fa5c1f1e904f0b3fdf2d01363f574e0b6d35eef1d320dfcadf83",
+  "projectionDigest": "sha256:9a953fcc2d91c5a0b063341d41b5e3d2203cf572c601901ca4ea537e12831b81",
   "semanticBaseline": {
     "semanticState": {
       "schemaVersion": "archcontext.architecture-semantic-state/v1",
@@ -534,10 +534,10 @@
       "modelDigest": "sha256:048b21e544412f15d056596cdbda7ab931b329af2b7aa9a77db7cc280bdf0848",
       "sourceTreeDigest": "sha256:9f762c655facaf7beb67894539df05083afc2ac59eb4eb2bfc5a82739f192e08",
       "flowProofDigest": "sha256:c94d5fe8b42bfa84f6e8e197246b0a39818b1463c37c750e0d0de0abd4923222",
-      "projectionDigest": "sha256:63ce92ed2838fa5c1f1e904f0b3fdf2d01363f574e0b6d35eef1d320dfcadf83"
+      "projectionDigest": "sha256:9a953fcc2d91c5a0b063341d41b5e3d2203cf572c601901ca4ea537e12831b81"
     }
   },
-  "receiptDigest": "sha256:8aba569c091b26d20f673afae3133e7b7cfdb8a999b62fe5f085e7fd27c60100",
+  "receiptDigest": "sha256:ae9cb576663580248983194b1fadf51b65442e102778145fde3656f74edc3145",
   "refreshSignalIds": [],
   "targetCount": 26,
   "fileCount": 26,
