@@ -24,7 +24,7 @@ Deliver ME-4B as a closed cross-capability decision authority. A current source 
 
 - `src/core/engineers/interface-change.ts` owns closed request, actor, event/current and immutable planning-projection schemas.
 - `src/effects/engineers/interface-change-store.ts` owns git-common immutable storage, per-request locking/CAS, current Binding validation, tracked Git materialization proof and deterministic reverse lookup.
-- `src/core/engineers/scheduling.ts` remains Work Package schema authority and exports only its existing exact `WorkPackageDefinitionV1` validator/canonical revision operation.
+- `src/core/engineers/scheduling.ts` remains Work Package schema authority. `src/effects/engineers/scheduling.ts` owns the shared tracked-Git projection that validates referenced authorities and capability resolution before calling that core projection.
 - `src/cli/mcp/engineer-tools.ts` exposes only the Human-approved Engineer transitions (`propose`, `submit`, `cancel`, `materialize`, `implemented`) and derives principal identity from the existing OAuth authorization carrier. `src/cli/commands/interface-change.ts` exposes Human-only `accept|reject|cancel|integrated` plus read/lookup.
 - ME-1C messages and ArchContext events remain downstream notification/projection surfaces. The ME-4B store does not call either as semantic authority.
 
@@ -54,6 +54,7 @@ Deliver ME-4B as a closed cross-capability decision authority. A current source 
 | `src/core/engineers/interface-change.ts` | Add | Closed canonical schemas and transition matrix |
 | `src/effects/engineers/interface-change-store.ts` | Add | Immutable store, CAS, Binding and Git materialization validation |
 | `src/core/engineers/scheduling.ts` | Modify | Export the existing exact Work Package validator/revision calculation |
+| `src/effects/engineers/scheduling.ts` | Modify | Share the complete tracked Sprint/Work Graph authority projection with ME-4B |
 | `src/cli/mcp/engineer-tools.ts` | Modify | Authenticated Engineer-only mutation surface with current Binding fences |
 | `src/cli/commands/interface-change.ts` | Add | Human-only transition plus read/lookup surface |
 | `src/cli/index.ts` | Modify | Register command |

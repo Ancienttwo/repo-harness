@@ -1,6 +1,6 @@
 # runtime-harness/interface-change 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-interface-change" sourceDigest="sha256:5ef9f662f8fad5dd51834d584f8d7e058c95131f6e4d00658cbfd8cff836326c" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:f9dee15f531c04216ddc8fdcb35ec42085d4515e403ace7e5b3aa5b1219a6e62" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-interface-change" sourceDigest="sha256:75efb06638143eb3cefbe43209117391ab0cba8a352cf85bdbd760984c3770c1" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:60a77edc9d80143bba47f685fc5bbd20b4c096e2b732fe6401669c52f50dba3a" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.interface-change`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/interface-change.ts`、`src/effects/engineers/interface-change-store.ts`、`src/cli/commands/interface-change.ts`
@@ -29,7 +29,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:86191bd6f6cb0261a154176a0527a63c9a31a3b09747c90be187e8629786e409`).
+- Proof: `proven` (`sha256:5fe08894ae4d2243fad3a24295426db63eebe8a664b995833390692a8bc17a58`).
 - Semantic nodes: `4`; declared relations: `4`.
 
 ### 1.2 模組職責表
@@ -38,7 +38,7 @@ flowchart LR
 | --- | --- | --- |
 | `entrypoint.interface-change.binding-fence` | `src/effects/engineers/interface-change-store.ts#validateEngineerActor` | `sink.interface-change.binding` → `src/effects/engineers/binding-store.ts#readEngineerBindingStatus` |
 | `entrypoint.interface-change.event-canonical` | `src/core/engineers/interface-change.ts#buildInterfaceChangeEvent` | `sink.interface-change.event-digest` → `src/core/messages/mechanics.ts#canonicalMessageDigest` |
-| `entrypoint.interface-change.work-graph` | `src/effects/engineers/interface-change-store.ts#projectedGraphAt` | `sink.interface-change.work-graph` → `src/core/engineers/scheduling.ts#projectWorkGraph` |
+| `entrypoint.interface-change.work-graph` | `src/effects/engineers/interface-change-store.ts#projectedGraphAt` | `sink.interface-change.work-graph` → `src/effects/engineers/scheduling.ts#readTrackedWorkGraphProjectionAt` |
 | `entrypoint.interface-change.reverse-lookup` | `src/effects/engineers/interface-change-store.ts#findInterfaceChangesByWorkPackage` | `sink.interface-change.accepted-projection` → `src/core/engineers/interface-change.ts#validateInterfaceWorkPackageProjection` |
 
 ### 1.3 規模信號
@@ -61,7 +61,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:86191bd6f6cb0261a154176a0527a63c9a31a3b09747c90be187e8629786e409`); selectors `3/3`.
+> **Proof**: `proven` (`sha256:5fe08894ae4d2243fad3a24295426db63eebe8a664b995833390692a8bc17a58`); selectors `3/3`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -74,7 +74,7 @@ sequenceDiagram
   p2_interface_change_07dfc7ca->>p2_engineer_bindings_4e9749d0: Revalidate the source or target Engineer against the exact current Binding before an Engineer-owned transition
   p2_interface_change_07dfc7ca->>p2_interface_store_f8f9b407: Build immutable event bytes under per-request CAS while keeping Human and Engineer transition sets disjoint
   alt The target Engineer proves the accepted Work Package exists at one exact Git commit
-  p2_interface_change_07dfc7ca->>p2_engineer_scheduling_873d6e50: Project the tracked Sprint and Work Graph through ME-1A and compare exact Work Package revision and target capability
+  p2_interface_change_07dfc7ca->>p2_engineer_scheduling_873d6e50: Read the tracked Sprint and Work Graph through the complete ME-1A authority projection and compare exact Work Package revision and target capability
     Note over p2_interface_change_07dfc7ca: Return immutable materialization evidence without changing Sprint， Work Graph， Task or Lease state
   else Stale CAS， actor mismatch， invalid transition or inexact materialization fails closed
   p2_interface_change_07dfc7ca->>p2_engineer_bindings_4e9749d0: Preserve existing request and control-plane state without fallback mutation

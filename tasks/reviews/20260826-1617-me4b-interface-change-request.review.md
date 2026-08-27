@@ -5,7 +5,7 @@
 > **Contract**: tasks/contracts/20260826-1617-me4b-interface-change-request.contract.md
 > **Notes File**: tasks/notes/20260826-1617-me4b-interface-change-request.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-08-28 00:20
+> **Last Updated**: 2026-08-28 01:15
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: pending
@@ -34,7 +34,7 @@
 - Waza `/check` run: equivalent deep review and root checks executed directly; exact-subject verifier remains pending.
 - Commands run: original subject checks plus corrected-path `bun run check:type` and 29 focused ME-1A/ME-4B/CLI/MCP tests.
 - Manual checks: exact MCP inventory; Human CLI command inventory; no authorization ID in semantic records; no direct Task/Lease/Publication/Acceptance/architecture-event writer; no message-body transition; no compatibility fallback.
-- Supporting artifacts: original Architecture Acceptance `changeset.docs-projection-ec265ab39ad694a4` / `event.user-approval-20260827-me4b-architecture-codefacts`; post-rebase Acceptance `changeset.docs-projection-7c52cca5ad375013` / `event.user-approval-20260827-me4b-post-rebase-architecture`; accepted apply receipt `sha256:01458ca92f7ef20e49774c861b68ae4e2ec351f19b9b87af1b08ca4a3ec669ef`.
+- Supporting artifacts: final Architecture Acceptance `changeset.docs-projection-6cd2b7682023a2b6` / `event.user-approval-20260828-me4b-codex-review-fix-architecture`; accepted apply receipt `sha256:1c587389fc7227dc2369b38dbc9761a772bc8d5db99c73ac6b828476e50e7627`; source-only fixed point `sha256:e0a4869379f4ff639a58ecb35b08177978fb94214338386d79ff1a01105e534c`.
 - Implementation notes reviewed: yes.
 - Run snapshot: `.ai/harness/checks/latest.json` plus command output captured during this review.
 
@@ -88,4 +88,4 @@
 
 ## Summary
 
-- The official semantic review correctly blocked the prior subject. Its P1 is corrected locally; root replay, any resulting architecture gate, corrected-subject freeze and Human owner acceptance remain before merge.
+- The official semantic review correctly blocked the prior subject. Its P1 and the matching ArchContext selector are corrected; root replay, corrected-subject freeze and Human owner acceptance remain before merge.

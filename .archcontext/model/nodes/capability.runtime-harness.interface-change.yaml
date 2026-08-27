@@ -40,8 +40,8 @@ source:
         - name: "projectedGraphAt"
           sinks:
             - id: sink.interface-change.work-graph
-              path: "src/core/engineers/scheduling.ts"
-              symbol: "projectWorkGraph"
+              path: "src/effects/engineers/scheduling.ts"
+              symbol: "readTrackedWorkGraphProjectionAt"
     - id: entrypoint.interface-change.reverse-lookup
       path: "src/effects/engineers/interface-change-store.ts"
       symbols:

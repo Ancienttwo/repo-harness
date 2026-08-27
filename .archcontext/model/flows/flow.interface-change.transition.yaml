@@ -37,7 +37,7 @@ outcomes:
       - id: verify-work-graph
         from: interface-change
         to: engineer-scheduling
-        label: Project the tracked Sprint and Work Graph through ME-1A and compare exact Work Package revision and target capability
+        label: Read the tracked Sprint and Work Graph through the complete ME-1A authority projection and compare exact Work Package revision and target capability
         evidence:
           entrypointId: entrypoint.interface-change.work-graph
           sourceSymbol: projectedGraphAt
