@@ -97,6 +97,7 @@ allowed_paths:
   - docs/architecture/modules/runtime-harness/engineer-bindings.md
   - docs/architecture/modules/runtime-harness/engineer-scheduling.md
   - docs/architecture/modules/runtime-harness/mcp-sidecar.md
+  - docs/architecture/modules/verification/evals-checks.md
   - docs/architecture/domains/runtime-harness.md
   - docs/architecture/index.md
   - docs/architecture/changelog.md
