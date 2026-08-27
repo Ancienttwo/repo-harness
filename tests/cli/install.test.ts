@@ -25,6 +25,39 @@ function withTempHome(fn: (home: string) => void): void {
   }
 }
 
+function writeReadyOfficialCodexPluginCli(home: string): string {
+  const pluginRoot = path.join(home, '.claude', 'plugins', 'cache', 'openai-codex', 'codex', '1.0.6');
+  fs.mkdirSync(path.join(pluginRoot, 'scripts'), { recursive: true });
+  fs.mkdirSync(path.join(pluginRoot, '.claude-plugin'), { recursive: true });
+  fs.mkdirSync(path.join(pluginRoot, 'schemas'), { recursive: true });
+  fs.writeFileSync(path.join(pluginRoot, 'scripts', 'codex-companion.mjs'), '// fixture\n');
+  fs.writeFileSync(path.join(pluginRoot, '.claude-plugin', 'plugin.json'), JSON.stringify({
+    name: 'codex',
+    version: '1.0.6',
+    author: { name: 'OpenAI' },
+  }));
+  fs.writeFileSync(path.join(pluginRoot, 'schemas', 'review-output.schema.json'), JSON.stringify({
+    required: ['verdict', 'summary', 'findings', 'next_steps'],
+    properties: {
+      verdict: { enum: ['approve', 'needs-attention'] },
+      findings: { items: { properties: { severity: { enum: ['critical', 'high', 'medium', 'low'] } } } },
+    },
+  }));
+  const claude = path.join(home, 'bin', 'claude');
+  fs.mkdirSync(path.dirname(claude), { recursive: true });
+  fs.writeFileSync(claude, [
+    '#!/bin/bash',
+    'if [[ "$*" == "plugin list --json" ]]; then',
+    `  printf '%s\\n' '${JSON.stringify([{ id: 'codex@openai-codex', version: '1.0.6', enabled: true, installPath: pluginRoot }])}'`,
+    '  exit 0',
+    'fi',
+    'exit 9',
+    '',
+  ].join('\n'));
+  fs.chmodSync(claude, 0o755);
+  return claude;
+}
+
 describe('install command (Phase 1B)', () => {
   test('install profiles bound host route inventory', () => {
     withTempHome((home) => {
@@ -372,6 +405,7 @@ describe('install command (Phase 1B)', () => {
 
   test('CLI install without required profile components fails closed and compensates adapters', () => {
     withTempHome((home) => {
+      const claude = writeReadyOfficialCodexPluginCli(home);
       const install = spawnSync(
         'bun',
         [
@@ -386,7 +420,7 @@ describe('install command (Phase 1B)', () => {
         ],
         {
           cwd: ROOT,
-          env: { ...process.env, HOME: home },
+          env: { ...process.env, HOME: home, REPO_HARNESS_CLAUDE_EXECUTABLE: claude },
           encoding: 'utf-8',
         },
       );
