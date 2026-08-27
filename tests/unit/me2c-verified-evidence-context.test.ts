@@ -206,6 +206,22 @@ describe('ME-2C verified evidence context', () => {
     expect(() => validateVerifiedEvidenceRef(root, { ref: 'repo:evidence.json', sha256: digest })).toThrow('changed');
   });
 
+  test('refuses a Contract that carries more than one Semantic Constraint Catalog', () => {
+    const root = repositoryFixture();
+    const contractRef = 'tasks/contracts/duplicate.contract.md';
+    mkdirSync(join(root, 'tasks/contracts'), { recursive: true });
+    writeFileSync(join(root, contractRef), `${contractMarkdown()}\n\n${contractMarkdown()}\n`);
+    execFileSync('git', ['add', contractRef], { cwd: root });
+    execFileSync('git', ['commit', '-qm', 'duplicate catalog'], { cwd: root });
+    const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+    expect(() => projectSemanticContract(root, contractRef, revision)).toThrow('exactly one Semantic Constraint Catalog');
+  });
+
+  test('refuses an assertion whose check and verifier receipts name the same artifact', () => {
+    const assertion = chain(1).assertions[0]!;
+    expect(() => buildSemanticVerificationAssertion({ ...assertion, verifier_receipt_sha256: assertion.check_receipt_sha256, assertion_sha256: undefined } as never)).toThrow('distinct artifacts');
+  });
+
   test('has no Task, Lease, Publication or Acceptance transition imports', () => {
     for (const path of ['src/core/engineers/verified-context.ts', 'src/effects/engineers/verified-context-store.ts']) {
       const imports = readFileSync(join(process.cwd(), path), 'utf8').split('\n').filter((line) => line.includes("from '") || line.includes('from "'));

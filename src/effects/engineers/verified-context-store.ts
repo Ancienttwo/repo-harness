@@ -217,10 +217,12 @@ function readImmutable<T>(repoRoot: string, kind: ImmutableKind, digest: string,
 
 function parseConstraintCatalog(contractBytes: Buffer): readonly SemanticConstraintV1[] {
   const markdown = contractBytes.toString('utf8');
-  const section = /(?:^|\n)## Semantic Constraint Catalog\s*\n+```json\s*\n([\s\S]*?)\n```(?:\n|$)/u.exec(markdown);
-  if (!section) fail('verified_context_store_invalid', 'exact Contract lacks Semantic Constraint Catalog JSON');
+  // A lookahead terminator keeps the block separator unconsumed so two adjacent
+  // catalogs are both counted instead of the second hiding behind lastIndex.
+  const sections = [...markdown.matchAll(/(?:^|\n)## Semantic Constraint Catalog\s*\n+```json\s*\n([\s\S]*?)\n```(?=\n|$)/gu)];
+  if (sections.length !== 1) fail('verified_context_store_invalid', 'exact Contract requires exactly one Semantic Constraint Catalog JSON block');
   let parsed: unknown;
-  try { parsed = JSON.parse(section[1]); } catch (error) { return fail('verified_context_store_invalid', 'Semantic Constraint Catalog is invalid JSON', error); }
+  try { parsed = JSON.parse(sections[0]![1]!); } catch (error) { return fail('verified_context_store_invalid', 'Semantic Constraint Catalog is invalid JSON', error); }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) fail('verified_context_store_invalid', 'Semantic Constraint Catalog must be an object');
   const catalog = parsed as Record<string, unknown>;
   if (JSON.stringify(Object.keys(catalog).sort()) !== JSON.stringify(['constraints', 'protocol'])) fail('verified_context_store_invalid', 'Semantic Constraint Catalog fields are invalid');
