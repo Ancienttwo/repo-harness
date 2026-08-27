@@ -181,9 +181,9 @@ exit_criteria:
     - bun scripts/inspect-project-state.ts --repo . --format text
     - bun src/cli/index.ts init --repo . --dry-run
     - bun test --timeout 60000
-  criterion_reuse:
-    commands_succeed:
-      - bun test --timeout 60000
+criterion_reuse:
+  commands_succeed:
+    - bun test --timeout 60000
 ```
 
 ## Acceptance Notes (Human Review)
