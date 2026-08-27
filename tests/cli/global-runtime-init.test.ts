@@ -45,6 +45,39 @@ function writeFakeSkillsCli(fakeBin: string): void {
   );
 }
 
+function writeOfficialCodexPluginFixture(pluginRoot: string): void {
+  mkdirSync(join(pluginRoot, 'scripts'), { recursive: true });
+  mkdirSync(join(pluginRoot, '.claude-plugin'), { recursive: true });
+  mkdirSync(join(pluginRoot, 'schemas'), { recursive: true });
+  writeFileSync(join(pluginRoot, 'scripts', 'codex-companion.mjs'), '// fixture\n');
+  writeFileSync(join(pluginRoot, '.claude-plugin', 'plugin.json'), JSON.stringify({
+    name: 'codex',
+    version: '1.0.6',
+    author: { name: 'OpenAI' },
+  }));
+  writeFileSync(join(pluginRoot, 'schemas', 'review-output.schema.json'), JSON.stringify({
+    required: ['verdict', 'summary', 'findings', 'next_steps'],
+    properties: {
+      verdict: { enum: ['approve', 'needs-attention'] },
+      findings: { items: { properties: { severity: { enum: ['critical', 'high', 'medium', 'low'] } } } },
+    },
+  }));
+}
+
+function writeReadyOfficialCodexPluginCli(fakeBin: string, home: string): void {
+  const pluginRoot = join(home, '.claude', 'plugins', 'cache', 'openai-codex', 'codex', '1.0.6');
+  writeOfficialCodexPluginFixture(pluginRoot);
+  writeExecutable(join(fakeBin, 'claude'), [
+    '#!/bin/bash',
+    'if [[ "$*" == "plugin list --json" ]]; then',
+    `  printf '%s\\n' '${JSON.stringify([{ id: 'codex@openai-codex', version: '1.0.6', enabled: true, installPath: pluginRoot }])}'`,
+    '  exit 0',
+    'fi',
+    'exit 9',
+    '',
+  ].join('\n'));
+}
+
 function sanitizedChildEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
   // Machine shells (zshenv) can export an explicit node runtime authority that
@@ -126,6 +159,7 @@ function writeFakeCodegraph(fakeBin: string, logFile: string): void {
 }
 
 function setupManagedRuntimeReadback(home: string, fakeBin: string, harnessVersion = '9.9.9'): void {
+  writeReadyOfficialCodexPluginCli(fakeBin, home);
   const globalModules = join(home, '.bun', 'install', 'global', 'node_modules');
   const harness = join(globalModules, 'repo-harness');
   const archctx = join(globalModules, 'archctx');
@@ -296,6 +330,7 @@ describe('install command global runtime bootstrap', () => {
         HOME: home,
         BUN_INSTALL: join(home, '.bun'),
         PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+        REPO_HARNESS_CLAUDE_EXECUTABLE: join(fakeBin, 'claude'),
       };
       const harnessVersion = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version as string;
       setupManagedRuntimeReadback(home, fakeBin, harnessVersion);
@@ -322,6 +357,11 @@ describe('install command global runtime bootstrap', () => {
       expect(runtimeStep.status).toBe('skipped');
       expect(runtimeStep.command?.[0]).toBe(process.execPath);
       expect(steps.find((step) => step.step === 'install repo-harness CLI')?.status).toBe('skipped');
+      expect(steps.find((step) => step.step === 'official Codex plugin')).toMatchObject({
+        status: 'ok',
+        detail: 'enabled codex@openai-codex version=1.0.6',
+        command: [join(fakeBin, 'claude'), 'plugin', 'list', '--json'],
+      });
       expect(existsSync(bunLog)).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -343,6 +383,7 @@ describe('install command global runtime bootstrap', () => {
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
+      writeReadyOfficialCodexPluginCli(fakeBin, home);
       setReverseSkillIntegrity(source, REVERSE_FAKE_TREE_INTEGRITY);
       mkdirSync(join(home, '.agents', 'rules'), { recursive: true });
       writeFileSync(join(home, '.agents', 'rules', 'anti-patterns.md'), 'anti\n');
@@ -424,6 +465,7 @@ describe('install command global runtime bootstrap', () => {
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
+      writeReadyOfficialCodexPluginCli(fakeBin, home);
       setObsidianSkillIntegrities(source);
       writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n');
       writeFakeSkillsCli(fakeBin);
@@ -1021,6 +1063,7 @@ exit 0
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
+      writeReadyOfficialCodexPluginCli(fakeBin, home);
       writeExecutable(
         join(fakeBin, 'bun'),
         [
@@ -1316,6 +1359,7 @@ exit 0
       mkdirSync(home, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
+      writeReadyOfficialCodexPluginCli(fakeBin, home);
       writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n');
       writeExecutable(join(fakeBin, 'npx'), '#!/bin/bash\nexit 0\n');
 
@@ -1354,6 +1398,7 @@ exit 0
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
+      writeReadyOfficialCodexPluginCli(fakeBin, home);
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 42\n`);
       writeExecutable(join(fakeBin, 'npm'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${npmLog}"\nexit 42\n`);
 
@@ -1397,6 +1442,7 @@ exit 0
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
+      writeReadyOfficialCodexPluginCli(fakeBin, home);
       symlinkSync(source, globalPackage, 'dir');
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 42\n`);
 
@@ -1437,6 +1483,7 @@ exit 0
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
+      writeReadyOfficialCodexPluginCli(fakeBin, home);
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 42\n`);
 
       const result = runGlobalRuntimeSetup({
@@ -1644,6 +1691,7 @@ exit 0
             BUN_INSTALL: join(home, '.bun'),
             PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
             REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
+            REPO_HARNESS_CLAUDE_EXECUTABLE: join(fakeBin, 'claude'),
           },
         },
       );
@@ -1768,6 +1816,7 @@ exit 0
             BUN_INSTALL: join(home, '.bun'),
             PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
             REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
+            REPO_HARNESS_CLAUDE_EXECUTABLE: join(fakeBin, 'claude'),
           },
         },
       );
@@ -1903,6 +1952,7 @@ exit 0
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
+      writeReadyOfficialCodexPluginCli(fakeBin, home);
       writeFakeCodegraph(fakeBin, codegraphLog);
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == "-" ]]; then exec "${process.execPath}" "$@"; fi\nif [[ " $* " == *" add -g "* ]]; then mkdir -p "$HOME/.bun/bin"; printf '#!/bin/sh\\n' > "$HOME/.bun/bin/repo-harness"; chmod +x "$HOME/.bun/bin/repo-harness"; fi\nexit 0\n`);
       writeFakeSkillsCli(fakeBin);
@@ -1947,6 +1997,7 @@ exit 0
             BUN_INSTALL: join(home, '.bun'),
             PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
             REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
+            REPO_HARNESS_CLAUDE_EXECUTABLE: join(fakeBin, 'claude'),
             AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: '0',
           },
         },
