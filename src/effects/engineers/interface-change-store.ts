@@ -44,19 +44,16 @@ import {
 } from '../../core/engineers/interface-change';
 import { EngineerProfileBindingError } from '../../core/engineers/profile-binding';
 import {
-  projectWorkGraph,
-  schedulingCarrierPath,
-  validateWorkGraph,
   type ProjectedWorkGraphV1,
   type WorkPackageDefinitionV1,
 } from '../../core/engineers/scheduling';
-import { projectCanonicalTasks } from '../../core/state/coordination-identity';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import { repoHarnessRepoIdFor } from '../repo-registry';
-import { resolveRepoIdentity } from '../state/coordination-canonical-source';
+import { readCanonicalTargetRef } from '../state/collect-board-inputs';
 import { readEngineerBindingStatus, withEngineerBindingLock } from './binding-store';
 import { loadEngineerProfile } from './profile-store';
+import { readTrackedWorkGraphProjectionAt } from './scheduling';
 
 const STORE_RELATIVE_ROOT = 'repo-harness/interface-changes/v1';
 type ImmutableKind = 'requests' | 'events' | 'transitions' | 'projections';
@@ -282,27 +279,13 @@ function exactCommit(repoRoot: string, revision: string): string {
   }
 }
 
-function gitText(repoRoot: string, commit: string, path: string): string | null {
-  try { return execFileSync('git', ['show', `${commit}:${path}`], { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }); }
-  catch (error) {
-    const stderr = String((error as { stderr?: unknown }).stderr ?? '');
-    if (/does not exist|exists on disk, but not in|Path .* does not exist/u.test(stderr)) return null;
-    return fail('interface_change_materialization_invalid', `cannot read ${path} at ${commit}`, error);
+function projectedGraphAt(repoRoot: string, repositoryId: string, sprintRef: string, targetRef: string): { readonly commit: string; readonly graph: ProjectedWorkGraphV1 | null } {
+  try {
+    const projected = readTrackedWorkGraphProjectionAt(repoRoot, repositoryId, sprintRef, targetRef);
+    return Object.freeze({ commit: projected.commit, graph: projected.graph });
+  } catch (error) {
+    return fail('interface_change_materialization_invalid', `tracked Work Graph cannot be projected through ME-1A at ${targetRef}`, error);
   }
-}
-
-function projectedGraphAt(repoRoot: string, repositoryId: string, sprintRef: string, commit: string): ProjectedWorkGraphV1 | null {
-  const sprint = gitText(repoRoot, commit, sprintRef);
-  if (sprint === null) fail('interface_change_materialization_invalid', 'tracked Sprint is absent at materialization commit');
-  const carrier = gitText(repoRoot, commit, schedulingCarrierPath(sprintRef));
-  if (carrier === null) return null;
-  let graphValue: unknown;
-  try { graphValue = JSON.parse(carrier); } catch (error) { return fail('interface_change_materialization_invalid', 'tracked Work Graph is invalid JSON', error); }
-  let graph;
-  try { graph = validateWorkGraph(graphValue); } catch (error) { return fail('interface_change_materialization_invalid', 'tracked Work Graph is invalid', error); }
-  if (graph.repository_id !== repositoryId || graph.sprint_path !== sprintRef) fail('interface_change_materialization_invalid', 'tracked Work Graph identity does not match request projection');
-  const tasks = projectCanonicalTasks({ repoIdentity: resolveRepoIdentity(repoRoot), sprintPath: sprintRef, sprintText: sprint }).map((task, index) => Object.freeze({ task_id: task.task_id, task_revision: task.task_revision, task_ref: task.row.task, status: task.row.status, row_order: index + 1 }));
-  try { return projectWorkGraph(graph, tasks); } catch (error) { return fail('interface_change_materialization_invalid', 'tracked Work Graph cannot be projected through ME-1A', error); }
 }
 
 function firstParent(repoRoot: string, commit: string): string | null {
@@ -320,12 +303,15 @@ function verifyMaterialization(
   const parent = firstParent(repoRoot, commit);
   if (projection.expected_work_graph_revision !== null) {
     if (parent === null) fail('interface_change_materialization_invalid', 'materialization commit lacks parent for expected Work Graph fence');
-    const previous = projectedGraphAt(repoRoot, request.repository_id, projection.sprint_ref, parent);
+    const previous = projectedGraphAt(repoRoot, request.repository_id, projection.sprint_ref, parent).graph;
     if (previous?.work_graph_revision !== projection.expected_work_graph_revision) fail('interface_change_materialization_invalid', 'materialization parent Work Graph revision is stale');
-  } else if (parent !== null && projectedGraphAt(repoRoot, request.repository_id, projection.sprint_ref, parent) !== null) {
+  } else if (parent !== null && projectedGraphAt(repoRoot, request.repository_id, projection.sprint_ref, parent).graph !== null) {
     fail('interface_change_materialization_invalid', 'materialization expected no prior Work Graph');
   }
-  const projected = projectedGraphAt(repoRoot, request.repository_id, projection.sprint_ref, commit);
+  const canonicalRef = readCanonicalTargetRef(repoRoot);
+  const canonical = projectedGraphAt(repoRoot, request.repository_id, projection.sprint_ref, canonicalRef);
+  if (canonical.commit !== commit) fail('interface_change_materialization_invalid', 'materialization commit is not the current canonical target');
+  const projected = canonical.graph;
   if (projected === null) fail('interface_change_materialization_invalid', 'materialized Work Graph is absent');
   const matches = projected.work_packages.filter((item) => item.work_package_id === projection.proposed_work_package.work_package_id);
   if (matches.length !== 1) fail('interface_change_materialization_invalid', 'materialized Work Package identity is absent or ambiguous');

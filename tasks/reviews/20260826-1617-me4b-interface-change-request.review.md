@@ -5,7 +5,7 @@
 > **Contract**: tasks/contracts/20260826-1617-me4b-interface-change-request.contract.md
 > **Notes File**: tasks/notes/20260826-1617-me4b-interface-change-request.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-08-27 03:05
+> **Last Updated**: 2026-08-28 00:20
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: pending
@@ -14,13 +14,13 @@
 
 ## Human Review Card
 
-- Verdict: local implementation review passes; the exact-subject Protocol-2 AcceptanceReceipt remains unavailable.
+- Verdict: official Codex plugin found one P1 authority split in the frozen subject; the local correction is implemented and focused verification passes, but the corrected exact-subject Protocol-2 AcceptanceReceipt remains unavailable.
 - Change type: code-change
 - Intended files changed: ME-4B core/store, restricted Engineer MCP and Human CLI adapters, focused tests, architecture projection, PRD/research and workflow evidence.
 - Actual files changed: 42 files relative to current main, 2,807 insertions and 76 deletions before final evidence closeout.
 - Commands passed: focused ME-4B/MCP suite 27/27; typecheck; architecture projection suite 7/7; deploy SQL order; architecture sync; task sync; strict workflow; project-state inspection; init dry-run; CLI help; diff check.
-- Residual risks: Protocol-2 acceptance is not yet issued. The first strict post-rebase full suite reached 3,174 pass / 2 skip / 1 unrelated fleet-board deadline failure; the exact failed case immediately passed in isolation. Final strict replay on the corrected contract remains the subject-freeze gate.
-- Reviewer action required: review the frozen final subject through the official Codex plugin or issue an exact-subject Human waiver.
+- Residual risks: Protocol-2 acceptance is not yet issued. The corrected subject still requires the full root replay and a fresh exact-subject freeze before Human owner acceptance.
+- Reviewer action required: after corrected-subject freeze, issue an exact-subject Human owner waiver; the one-semantic-review budget was consumed by the official plugin finding and must not be retried.
 - Rollback: revert the ME-4B core/store/adapters/tests and capability projection plus the narrow scheduling validator export as one unit.
 
 ## Mode Evidence
@@ -32,7 +32,7 @@
 ## Verification Evidence
 
 - Waza `/check` run: equivalent deep review and root checks executed directly; exact-subject verifier remains pending.
-- Commands run: focused tests, `bun run check:type`, architecture projection tests, every root required check, full suite, and isolated reruns of both timed-out test files.
+- Commands run: original subject checks plus corrected-path `bun run check:type` and 29 focused ME-1A/ME-4B/CLI/MCP tests.
 - Manual checks: exact MCP inventory; Human CLI command inventory; no authorization ID in semantic records; no direct Task/Lease/Publication/Acceptance/architecture-event writer; no message-body transition; no compatibility fallback.
 - Supporting artifacts: original Architecture Acceptance `changeset.docs-projection-ec265ab39ad694a4` / `event.user-approval-20260827-me4b-architecture-codefacts`; post-rebase Acceptance `changeset.docs-projection-7c52cca5ad375013` / `event.user-approval-20260827-me4b-post-rebase-architecture`; accepted apply receipt `sha256:01458ca92f7ef20e49774c861b68ae4e2ec351f19b9b87af1b08ca4a3ec669ef`.
 - Implementation notes reviewed: yes.
@@ -50,14 +50,14 @@
 > **Verification Evidence SHA256**: pending
 > **Issued At**: pending
 
-- Summary: No exact-subject AcceptanceReceipt has been recorded.
-- Findings: none in the ME-4B implementation diff.
+- Summary: No exact-subject AcceptanceReceipt has been recorded for the corrected subject.
+- Findings: official Codex plugin reported that local `projectedGraphAt` could accept a non-canonical commit with missing/stale referenced authorities. The correction removes that shadow projection, shares the ME-1A projection, and requires equality with the current canonical-target commit.
 
 ## Behavior Diff Notes
 
 - Authenticated Engineer MCP adds exactly `propose`, `submit`, `cancel`, `materialize`, and `implemented`; the server derives the principal from the existing OAuth authorization carrier and the store revalidates the current Binding under lock.
 - Human CLI owns only `accept`, `reject`, `cancel`, and `integrated` plus read/lookup. Acceptance writes an immutable Work Package projection but never edits Sprint or Work Graph bytes.
-- `materialize` reads one exact Git commit and reuses ME-1A Work Graph projection; implementation and integration evidence remain separate actor-fenced transitions.
+- `materialize` requires the exact current canonical-target commit and reuses the complete ME-1A Work Graph projection, including referenced-authority and capability validation; implementation and integration evidence remain separate actor-fenced transitions.
 - Malformed Human CLI input now reports `cli_argument_invalid`, domain errors retain their own codes, and unexpected failures report `internal_error`.
 
 ## Residual Risks / Follow-ups
@@ -77,9 +77,9 @@
 
 ## Failing Items
 
-- No finding in the ME-4B implementation diff.
-- Closeout-only: exact-subject AcceptanceReceipt is unavailable.
-- Verification-only: final strict replay must replace the first run's host-load fleet-board deadline failure; the exact failed case and both earlier timeout sites pass in isolation.
+- Corrected: the official plugin P1 authority split in `interface-change-store.ts`; regression coverage now rejects non-canonical commits and stale referenced-authority bytes.
+- Closeout-only: corrected exact-subject AcceptanceReceipt is unavailable.
+- Verification-only: full strict replay must freeze the corrected subject.
 
 ## Retest Steps
 
@@ -88,4 +88,4 @@
 
 ## Summary
 
-- Deep review verdict PASS for the implementation diff. ME-4B is rebased and Architecture-Accepted; exact-subject freeze plus policy-bound external acceptance remain before merge.
+- The official semantic review correctly blocked the prior subject. Its P1 is corrected locally; root replay, any resulting architecture gate, corrected-subject freeze and Human owner acceptance remain before merge.

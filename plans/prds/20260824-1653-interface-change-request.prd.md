@@ -161,6 +161,6 @@ The architecture projection, actor matrix and planning boundary above are frozen
 
 1. Race two revision transitions and assert one winner.
 2. Accept and assert exact request/projection/Work Package definition digests link both directions through the deterministic reverse index.
-3. Refuse `materialize` until an exact tracked Sprint/Work Graph commit contains the projected definition; then accept exactly one matching materialization.
+3. Refuse `materialize` until the current canonical target commit contains the projected definition and passes the complete ME-1A projection, including referenced-authority and capability validation; then accept exactly one matching materialization.
 4. Send a message saying “accepted” and prove state remains unchanged.
 5. Record implementation without integration and assert request is not `integrated`; prove only Human can integrate.

@@ -35,7 +35,7 @@ Deliver ME-4B as a closed cross-capability decision authority. A current source 
 3. The same current source Engineer submits under `expected_current_digest`; stale competitors fail.
 4. Human accepts with one `InterfaceWorkPackageProjectionV1` containing the target Sprint path, expected current Work Graph revision and exact proposed `WorkPackageDefinitionV1`; only immutable projection bytes are written.
 5. The existing planning/Git workflow separately changes the tracked Sprint/Work Graph.
-6. A current target Engineer supplies the exact commit. The store reads the tracked Sprint and sibling carrier at that commit, projects it through ME-1A, and advances only if the exact repository/Work Package revision matches the accepted projection.
+6. A current target Engineer supplies the exact current canonical-target commit. The store delegates Sprint/carrier, referenced-authority and capability validation to the shared ME-1A projection and advances only if the exact repository/Work Package revision matches the accepted projection.
 7. Target Engineer records immutable implementation evidence; Human separately records integration evidence.
 
 ## P3 Decision Rationale

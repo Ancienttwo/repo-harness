@@ -34,6 +34,9 @@ const TARGET_BINDING = '22222222-2222-4222-8222-222222222222';
 const REQUEST = '33333333-3333-4333-8333-333333333333';
 const SPRINT = 'plans/sprints/interface.sprint.md';
 const D = (char: string) => `sha256:${char.repeat(64)}`;
+const POLICY_BYTES = '{"policy":"interface-owner"}\n';
+const ROLLBACK_BYTES = '{"rollback":"interface-contract-v2"}\n';
+const digest = (bytes: string) => `sha256:${createHash('sha256').update(bytes, 'utf8').digest('hex')}`;
 const SPRINT_TEXT = `# Sprint: interface
 
 > **Status**: Approved
@@ -50,15 +53,19 @@ const SPRINT_TEXT = `# Sprint: interface
 function fixture(): string {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-me4b-interface-')));
   roots.push(root);
-  execFileSync('git', ['init', '-q'], { cwd: root });
+  execFileSync('git', ['init', '-q', '--initial-branch=main'], { cwd: root });
   execFileSync('git', ['config', 'user.email', 'tests@example.invalid'], { cwd: root });
   execFileSync('git', ['config', 'user.name', 'Tests'], { cwd: root });
   mkdirSync(join(root, '.archcontext/model'), { recursive: true });
   mkdirSync(join(root, 'agents'), { recursive: true });
   mkdirSync(join(root, 'plans/sprints'), { recursive: true });
+  mkdirSync(join(root, 'plans/policies'), { recursive: true });
+  mkdirSync(join(root, 'plans/rollback'), { recursive: true });
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(root, '.archcontext/model/nodes'), { recursive: true });
   cpSync(join(sourceRoot, 'agents/engineers'), join(root, 'agents/engineers'), { recursive: true });
   writeFileSync(join(root, SPRINT), SPRINT_TEXT);
+  writeFileSync(join(root, 'plans/policies/interface-owner.json'), POLICY_BYTES);
+  writeFileSync(join(root, 'plans/rollback/interface-contract-v2.json'), ROLLBACK_BYTES);
   writeFileSync(join(root, 'README.md'), 'fixture\n');
   execFileSync('git', ['add', '.'], { cwd: root });
   execFileSync('git', ['commit', '-qm', 'base'], { cwd: root });
@@ -119,8 +126,8 @@ function definition() {
     concurrency: { scope: 'repo' as const, key: 'interface-contract' },
     execution_surface: 'contract' as const,
     integration_group: 'interface-contract',
-    required_acceptance: [{ gate: 'module' as const, policy_id: 'interface-owner', policy_ref: 'plans/policies/interface-owner.json', policy_revision: D('a') }],
-    rollback_boundary: { kind: 'work_package' as const, boundary_id: 'interface-contract-v2', boundary_ref: 'plans/rollback/interface-contract-v2.json', boundary_revision: D('b') },
+    required_acceptance: [{ gate: 'module' as const, policy_id: 'interface-owner', policy_ref: 'plans/policies/interface-owner.json', policy_revision: digest(POLICY_BYTES) }],
+    rollback_boundary: { kind: 'work_package' as const, boundary_id: 'interface-contract-v2', boundary_ref: 'plans/rollback/interface-contract-v2.json', boundary_revision: digest(ROLLBACK_BYTES) },
   };
 }
 
@@ -230,6 +237,31 @@ describe('ME-4B Interface Change Request', () => {
     const reverse = findInterfaceChangesByWorkPackage(root, req.repository_id, definition().work_package_id, workPackageRevision(definition()));
     expect(reverse).toHaveLength(1);
     expect(reverse[0].request_id).toBe(req.request_id);
+  });
+
+  test('rejects materialization outside the canonical target or with stale referenced authorities', () => {
+    const branchRoot = fixture();
+    const branchFlow = proposeAndSubmit(branchRoot);
+    const branchAccepted = accept(branchRoot, branchFlow.req, branchFlow.submitted.current.current_digest);
+    execFileSync('git', ['switch', '-q', '-c', 'candidate/materialization'], { cwd: branchRoot });
+    const branchCommit = materializeCommit(branchRoot);
+    expect(() => transition(branchRoot, branchFlow.req, {
+      idempotency_key: 'non-canonical-materialize', transition: 'materialize',
+      expected_current_digest: branchAccepted.current.current_digest,
+      actor: engineerActor(branchRoot, TARGET_ENGINEER), materialization_commit: branchCommit,
+    })).toThrow('materialization commit is not the current canonical target');
+
+    const staleRoot = fixture();
+    const staleFlow = proposeAndSubmit(staleRoot);
+    const staleAccepted = accept(staleRoot, staleFlow.req, staleFlow.submitted.current.current_digest);
+    writeFileSync(join(staleRoot, 'plans/policies/interface-owner.json'), '{"policy":"stale"}\n');
+    execFileSync('git', ['add', 'plans/policies/interface-owner.json'], { cwd: staleRoot });
+    const staleCommit = materializeCommit(staleRoot);
+    expect(() => transition(staleRoot, staleFlow.req, {
+      idempotency_key: 'stale-authority-materialize', transition: 'materialize',
+      expected_current_digest: staleAccepted.current.current_digest,
+      actor: engineerActor(staleRoot, TARGET_ENGINEER), materialization_commit: staleCommit,
+    })).toThrow('tracked Work Graph cannot be projected through ME-1A');
   });
 
   test('records implementation and Human integration as separate evidence transitions', () => {

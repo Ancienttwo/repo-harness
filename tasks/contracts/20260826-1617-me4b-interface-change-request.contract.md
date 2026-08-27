@@ -17,7 +17,7 @@ Cross-capability interface decisions currently exist only as untrusted message/p
 
 ## Goal
 
-Deliver a closed ME-4B request/event/current authority with source Engineer, target Engineer and Human actor separation; immutable accepted Work Package projections; exact tracked Sprint/Work Graph materialization proof; separate implementation/integration evidence; deterministic reverse lookup; and no direct mutation of planning, Task, Lease, Publication, Acceptance or architecture-event authority. Engineer mutations are limited to the Human-approved authenticated MCP verbs `propose|submit|cancel|materialize|implemented`; Human alone owns `accept|reject|integrated`.
+Deliver a closed ME-4B request/event/current authority with source Engineer, target Engineer and Human actor separation; immutable accepted Work Package projections; exact current canonical-target Sprint/Work Graph materialization proof through the complete ME-1A projection; separate implementation/integration evidence; deterministic reverse lookup; and no direct mutation of planning, Task, Lease, Publication, Acceptance or architecture-event authority. Engineer mutations are limited to the Human-approved authenticated MCP verbs `propose|submit|cancel|materialize|implemented`; Human alone owns `accept|reject|integrated`.
 
 ## Scope
 
@@ -193,7 +193,7 @@ exit_criteria:
     - bun test --timeout 60000
   files_contain:
     - path: src/effects/engineers/interface-change-store.ts
-      pattern: projectWorkGraph
+      pattern: readTrackedWorkGraphProjectionAt
     - path: plans/prds/20260824-1653-interface-change-request.prd.md
       pattern: "^> \*\*Status\*\*: Approved$"
 # Optional exact-subject reuse is fail-closed and opt-in. List only deterministic
