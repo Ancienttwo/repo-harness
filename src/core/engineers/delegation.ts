@@ -29,6 +29,15 @@ export const WORKER_RUN_REF_KIND = 'repo-harness-worker-run-ref' as const;
 export const WORKER_RESULT_KIND = 'repo-harness-worker-result' as const;
 export const CODEX_READ_ONLY_ADAPTER_KIND = 'codex_exec_read_only' as const;
 
+/**
+ * The effective read-only proof is taken from the `codex sandbox` subcommand
+ * while dispatch runs the `codex exec` subcommand.  `codex exec` cannot attempt
+ * a mutation without a provider turn, so no credential-free deterministic
+ * denial probe exists on the execution surface; the capability receipt records
+ * that extrapolation instead of implying the two surfaces were both proven.
+ */
+export const CODEX_READ_ONLY_PROOF_SURFACE = 'sandbox_subcommand_extrapolated_to_exec' as const;
+
 export const CODEX_READ_ONLY_ARGV_TEMPLATE = Object.freeze([
   'exec', '--sandbox', 'read-only', '--ephemeral', '--ignore-user-config', '--strict-config', '--json', '--model', '{model}', '-c', '{developer_instructions_config}', '{execution_packet}',
 ] as const);
@@ -47,9 +56,6 @@ export type DelegationRejectionReason =
   | 'role_profile_unavailable'
   | 'role_profile_stale'
   | 'runtime_capability_stale'
-  | 'mode_unsupported'
-  | 'budget_invalid'
-  | 'sandbox_scope_mismatch'
   | 'sandbox_capability_unverified';
 export type DelegatedRunState =
   | 'intent_persisted'
@@ -91,6 +97,10 @@ export interface CodexReadOnlyCapabilityReceiptV1 {
   readonly model: string;
   readonly argv_template: readonly string[];
   readonly sandbox_mode: 'read_only';
+  /** Digest of the exact minimal environment set handed to the child process. */
+  readonly env_sha256: string;
+  /** Which Codex subcommand the read-only proof was taken on. */
+  readonly proof_surface: typeof CODEX_READ_ONLY_PROOF_SURFACE;
   readonly mutation_matrix_sha256: string;
   readonly protected_scope_sha256: string;
   readonly canary_before_snapshot_sha256: string;
@@ -334,7 +344,7 @@ function rejection(value: unknown): DelegationRejectionReason | null {
   if (value === null) return null;
   const allowed: readonly DelegationRejectionReason[] = [
     'parent_stale', 'binding_stale', 'role_profile_unavailable', 'role_profile_stale', 'runtime_capability_stale',
-    'mode_unsupported', 'budget_invalid', 'sandbox_scope_mismatch', 'sandbox_capability_unverified',
+    'sandbox_capability_unverified',
   ];
   if (!allowed.includes(value as DelegationRejectionReason)) invalid('rejection_reason is invalid');
   return value as DelegationRejectionReason;
@@ -396,6 +406,7 @@ function assertCapabilityTemplate(value: unknown): readonly string[] {
 export function buildCodexReadOnlyCapabilityReceipt(input: Omit<CodexReadOnlyCapabilityReceiptV1,
   'protocol' | 'kind' | 'adapter_kind' | 'capability_sha256'>): CodexReadOnlyCapabilityReceiptV1 {
   if (input.sandbox_mode !== 'read_only') invalid('sandbox_mode is invalid');
+  if (input.proof_surface !== CODEX_READ_ONLY_PROOF_SURFACE) invalid('proof_surface is invalid');
   const before = sha(input.canary_before_snapshot_sha256, 'canary_before_snapshot_sha256');
   const after = sha(input.canary_after_snapshot_sha256, 'canary_after_snapshot_sha256');
   if (before !== after) invalid('effective read-only capability requires identical canary snapshots');
@@ -409,6 +420,8 @@ export function buildCodexReadOnlyCapabilityReceipt(input: Omit<CodexReadOnlyCap
     model: opaque(input.model, 'model', 256),
     argv_template: assertCapabilityTemplate(input.argv_template),
     sandbox_mode: 'read_only' as const,
+    env_sha256: sha(input.env_sha256, 'env_sha256'),
+    proof_surface: CODEX_READ_ONLY_PROOF_SURFACE,
     mutation_matrix_sha256: sha(input.mutation_matrix_sha256, 'mutation_matrix_sha256'),
     protected_scope_sha256: sha(input.protected_scope_sha256, 'protected_scope_sha256'),
     canary_before_snapshot_sha256: before,
@@ -422,11 +435,12 @@ export function buildCodexReadOnlyCapabilityReceipt(input: Omit<CodexReadOnlyCap
 
 export function validateCodexReadOnlyCapabilityReceipt(value: unknown): CodexReadOnlyCapabilityReceiptV1 {
   const input = record(value, 'Codex read-only capability');
-  assertMessageExactKeys(input, ['protocol', 'kind', 'adapter_kind', 'executable_path', 'executable_sha256', 'version', 'model', 'argv_template', 'sandbox_mode', 'mutation_matrix_sha256', 'protected_scope_sha256', 'canary_before_snapshot_sha256', 'canary_after_snapshot_sha256', 'canary_process_receipt_sha256', 'evidence_refs', 'observed_at', 'capability_sha256'], 'Codex read-only capability', invalid);
+  assertMessageExactKeys(input, ['protocol', 'kind', 'adapter_kind', 'executable_path', 'executable_sha256', 'version', 'model', 'argv_template', 'sandbox_mode', 'env_sha256', 'proof_surface', 'mutation_matrix_sha256', 'protected_scope_sha256', 'canary_before_snapshot_sha256', 'canary_after_snapshot_sha256', 'canary_process_receipt_sha256', 'evidence_refs', 'observed_at', 'capability_sha256'], 'Codex read-only capability', invalid);
   if (input.protocol !== DELEGATION_PROTOCOL || input.kind !== CODEX_READ_ONLY_CAPABILITY_KIND || input.adapter_kind !== CODEX_READ_ONLY_ADAPTER_KIND) invalid('Codex read-only capability protocol, kind, or adapter is invalid');
   const built = buildCodexReadOnlyCapabilityReceipt({
     executable_path: input.executable_path as string, executable_sha256: input.executable_sha256 as string, version: input.version as string, model: input.model as string,
     argv_template: input.argv_template as readonly string[], sandbox_mode: input.sandbox_mode as 'read_only',
+    env_sha256: input.env_sha256 as string, proof_surface: input.proof_surface as typeof CODEX_READ_ONLY_PROOF_SURFACE,
     mutation_matrix_sha256: input.mutation_matrix_sha256 as string, protected_scope_sha256: input.protected_scope_sha256 as string,
     canary_before_snapshot_sha256: input.canary_before_snapshot_sha256 as string, canary_after_snapshot_sha256: input.canary_after_snapshot_sha256 as string, canary_process_receipt_sha256: input.canary_process_receipt_sha256 as string,
     evidence_refs: input.evidence_refs as readonly { readonly ref: string; readonly sha256: string }[], observed_at: input.observed_at as string,

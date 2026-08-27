@@ -124,7 +124,7 @@ DelegationAdmissionReceiptV1:
   delegation_id: uuid
   envelope_sha256: sha256
   decision: admitted|rejected
-  rejection_reason: null|parent_stale|binding_stale|role_profile_unavailable|role_profile_stale|runtime_capability_stale|mode_unsupported|budget_invalid|sandbox_scope_mismatch|sandbox_capability_unverified
+  rejection_reason: null|parent_stale|binding_stale|role_profile_unavailable|role_profile_stale|runtime_capability_stale|sandbox_capability_unverified
   admitted_role_profile_sha256: sha256|null
   admitted_mode: read_only|null
   admitted_sandbox_policy_sha256: sha256|null

@@ -150,6 +150,7 @@ The process receipt binds immutable refs to bounded/redacted stdout、stderr and
 | Native child effective read-only support | Would allow retiring the adapter later | Provider-issued sandbox receipt plus repeated mutation matrix | Runtime owner |
 | Restart observation after launch claim | P0 outcome may remain unknown | fail closed as `reconciliation_required`; do not add daemon/retry | Adapter owner |
 | Managed Parent revocation | Blocks ME-2B only | separate security canary；not part of read-only ME-3B approval | Security owner |
+| Proof surface is `codex sandbox`, execution surface is `codex exec` | Effective read-only on the execution surface is extrapolated, not directly proven | `codex exec` cannot attempt a mutation without a provider turn, so no credential-free deterministic denial probe exists at admission time; the capability receipt records `proof_surface` instead of implying both surfaces were proven. Revisit when Codex exposes a tool-call dry run or an offline exec transport | Adapter owner |
 
 ## Developer Handoff
 

@@ -16,12 +16,14 @@ import {
   unlinkSync,
   writeSync,
   accessSync,
+  type Stats,
 } from 'fs';
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 
 import {
   CODEX_READ_ONLY_ADAPTER_KIND,
   CODEX_READ_ONLY_ARGV_TEMPLATE,
+  CODEX_READ_ONLY_PROOF_SURFACE,
   DelegationError,
   assertDelegatedRunTransition,
   buildCodexReadOnlyCapabilityReceipt,
@@ -98,6 +100,7 @@ export type DelegatedRunStoreErrorCode =
   | 'delegated_run_conflict'
   | 'delegated_run_admission_rejected'
   | 'delegated_run_parent_stale'
+  | 'delegated_run_profile_unavailable'
   | 'delegated_run_profile_stale'
   | 'delegated_run_capability_stale'
   | 'delegated_run_snapshot_changed'
@@ -118,6 +121,8 @@ export interface CodexProcessReceiptV1 {
   readonly intent_sha256: string;
   readonly executable_path: string;
   readonly argv: readonly string[];
+  /** Digest of the exact minimal environment set handed to the child process. */
+  readonly env_sha256: string;
   readonly exit_code: number;
   readonly timed_out: boolean;
   readonly stdout_sha256: string;
@@ -212,6 +217,30 @@ function assertCapabilityRequest(value: ReadOnlyCapabilityRequest): ReadOnlyCapa
   safeRole(value.logical_role);
   if (!/^\d{4}-\d{2}-\d{2}T/.test(value.observed_at)) fail('delegated_run_invalid', 'observed_at is invalid');
   return value;
+}
+
+/**
+ * Exact environment keys handed to every Codex child process.  Both entries are
+ * required for the CLI to start at all: `PATH` resolves the sandbox launcher and
+ * the tools Codex runs inside it, and `HOME` resolves the default `CODEX_HOME`
+ * that carries authentication state (`--ignore-user-config` suppresses
+ * `config.toml`, not `auth.json`).  No credential key is forwarded: Codex reads
+ * its bearer token from that home file, so the environment never has to carry
+ * one.  Every other parent variable is withheld.
+ */
+const CODEX_CHILD_ENV_KEYS = Object.freeze(['HOME', 'PATH'] as const);
+
+function codexChildEnvironment(): { readonly env: NodeJS.ProcessEnv; readonly sha256: string } {
+  const selected: Record<string, string> = {};
+  for (const key of CODEX_CHILD_ENV_KEYS) {
+    const value = process.env[key];
+    if (typeof value !== 'string') fail('delegated_run_capability_stale', `Host environment lacks required child variable ${key}`);
+    selected[key] = value;
+  }
+  return Object.freeze({
+    env: Object.freeze({ ...selected }),
+    sha256: canonicalMessageDigest({ domain: 'repo-harness-delegated-run-child-env.v1', env: selected }),
+  });
 }
 
 function findCodexOnHostPath(): string {
@@ -379,20 +408,30 @@ function trackedRegularFile(repoRoot: string, relativePath: string): Buffer {
   const lexical = resolve(repoRoot, relativePath);
   const scoped = relative(repoRoot, lexical);
   if (!scoped || scoped === '..' || scoped.startsWith(`..${sep}`) || isAbsolute(scoped)) fail('delegated_run_unsafe_path', 'role profile escapes repository');
+  // Absence is a typed, distinct outcome from a changed profile, and every
+  // message names the repository-relative path only; the Host absolute path is
+  // never surfaced to a caller.
+  const inspect = (path: string): Stats => {
+    try { return lstatSync(path); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') fail('delegated_run_profile_unavailable', `logical Role Profile ${relativePath} is unavailable`);
+      throw new DelegatedRunStoreError('delegated_run_unsafe_path', `logical Role Profile ${relativePath} cannot be inspected`, error);
+    }
+  };
   let current = repoRoot;
   for (const component of scoped.split(sep)) {
     current = join(current, component);
-    const stat = lstatSync(current);
-    if (stat.isSymbolicLink()) fail('delegated_run_unsafe_path', 'role profile path contains a symlink');
+    if (inspect(current).isSymbolicLink()) fail('delegated_run_unsafe_path', 'role profile path contains a symlink');
   }
-  const stat = lstatSync(lexical);
-  if (!stat.isFile()) fail('delegated_run_unsafe_path', 'role profile is not a regular file');
+  if (!inspect(lexical).isFile()) fail('delegated_run_unsafe_path', 'role profile is not a regular file');
   try {
     execFileSync('git', ['ls-files', '--error-unmatch', '--', relativePath], { cwd: repoRoot, stdio: ['ignore', 'ignore', 'ignore'] });
   } catch (error) {
     throw new DelegatedRunStoreError('delegated_run_profile_stale', 'logical Role Profile is not tracked by Git', error);
   }
-  return readFileSync(lexical);
+  try { return readFileSync(lexical); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') fail('delegated_run_profile_unavailable', `logical Role Profile ${relativePath} is unavailable`);
+    throw new DelegatedRunStoreError('delegated_run_profile_stale', `logical Role Profile ${relativePath} is unreadable`, error);
+  }
 }
 
 export function readLogicalRoleInstructions(repoRoot: string, profile: LogicalRoleProfileV1): string {
@@ -467,8 +506,20 @@ function protectedSnapshot(repoRoot: string, paths: readonly string[]): string {
   return canonicalMessageDigest({ domain: 'repo-harness-delegated-run-protected-snapshot.v1', scope, entries });
 }
 
+type ProfileAvailability = 'matches' | 'unavailable' | 'stale';
+
+/** An absent tracked profile is a distinct admission outcome from a changed one. */
+function profileAvailability(repoRoot: string, profile: LogicalRoleProfileV1): ProfileAvailability {
+  try {
+    return loadLogicalReadOnlyRoleProfile(repoRoot, profile.logical_role).role_profile_sha256 === profile.role_profile_sha256
+      && readLogicalRoleInstructions(repoRoot, profile).length > 0 ? 'matches' : 'stale';
+  } catch (error) {
+    return error instanceof DelegatedRunStoreError && error.code === 'delegated_run_profile_unavailable' ? 'unavailable' : 'stale';
+  }
+}
+
 function profileMatchesStored(repoRoot: string, profile: LogicalRoleProfileV1): boolean {
-  try { return loadLogicalReadOnlyRoleProfile(repoRoot, profile.logical_role).role_profile_sha256 === profile.role_profile_sha256 && readLogicalRoleInstructions(repoRoot, profile).length > 0; } catch { return false; }
+  return profileAvailability(repoRoot, profile) === 'matches';
 }
 
 function persistProfile(repoRoot: string, value: LogicalRoleProfileV1): void { persistImmutable(repoRoot, 'profiles', value.role_profile_sha256, canonicalLogicalRoleProfileBytes(value)); }
@@ -553,8 +604,9 @@ export function recordCodexReadOnlyCapability(repoRoot: string, request: ReadOnl
   verifyCapabilityExecutable(executablePath, executableSha256, version);
   const before = protectedSnapshot(root, protectedPaths);
   const argv = canaryArgv(root);
+  const childEnv = codexChildEnvironment();
   let outcome: ProcessRunResult;
-  try { outcome = runProcess(executablePath, argv, { cwd: root, timeoutMs: 120_000 }); } catch (error) { throw new DelegatedRunStoreError('delegated_run_capability_stale', 'read-only canary process failed before evidence', error); }
+  try { outcome = runProcess(executablePath, argv, { cwd: root, timeoutMs: 120_000, env: childEnv.env, inheritEnv: false }); } catch (error) { throw new DelegatedRunStoreError('delegated_run_capability_stale', 'read-only canary process failed before evidence', error); }
   const after = protectedSnapshot(root, protectedPaths);
   const stdout = evidenceBlob(root, outcome.stdout);
   const stderr = evidenceBlob(root, outcome.stderr);
@@ -562,7 +614,7 @@ export function recordCodexReadOnlyCapability(repoRoot: string, request: ReadOnl
   const receipt = processReceiptCanonical({
     dispatch_id: canonicalMessageDigest({ domain: 'repo-harness-read-only-canary-dispatch.v1', executable_path: executablePath, argv_sha256: canonicalMessageDigest({ argv }), protected_scope_sha256: delegatedRunProtectedScopeSha(protectedPaths) }),
     intent_sha256: canonicalMessageDigest({ domain: 'repo-harness-read-only-canary-intent.v1', argv }),
-    executable_path: executablePath, argv, exit_code: outcome.status, timed_out: outcome.timedOut,
+    executable_path: executablePath, argv, env_sha256: childEnv.sha256, exit_code: outcome.status, timed_out: outcome.timedOut,
     stdout_sha256: stdout.sha256, stdout_ref: stdout.ref, stderr_sha256: stderr.sha256, stderr_ref: stderr.ref, error_sha256: processError.sha256, error_ref: processError.ref,
     before_snapshot_sha256: before, after_snapshot_sha256: after, observed_at: input.observed_at,
   });
@@ -580,7 +632,8 @@ export function recordCodexReadOnlyCapability(repoRoot: string, request: ReadOnl
   const capability = buildCodexReadOnlyCapabilityReceipt({
     executable_path: executablePath, executable_sha256: executableSha256, version, model: profile.model,
     argv_template: CODEX_READ_ONLY_ARGV_TEMPLATE,
-    sandbox_mode: 'read_only', mutation_matrix_sha256: canonicalMessageDigest({ domain: 'repo-harness-read-only-canary-mutation.v1', argv }),
+    sandbox_mode: 'read_only', env_sha256: childEnv.sha256, proof_surface: CODEX_READ_ONLY_PROOF_SURFACE,
+    mutation_matrix_sha256: canonicalMessageDigest({ domain: 'repo-harness-read-only-canary-mutation.v1', argv }),
     protected_scope_sha256: delegatedRunProtectedScopeSha(protectedPaths), canary_before_snapshot_sha256: before, canary_after_snapshot_sha256: after,
     canary_process_receipt_sha256: receipt.process_receipt_sha256, evidence_refs: [stdout, stderr, processError], observed_at: input.observed_at,
   });
@@ -598,6 +651,7 @@ function capabilityCanaryVerified(repoRoot: string, capability: CodexReadOnlyCap
     const expectedDispatch = canonicalMessageDigest({ domain: 'repo-harness-read-only-canary-dispatch.v1', executable_path: capability.executable_path, argv_sha256: canonicalMessageDigest({ argv: expectedArgv }), protected_scope_sha256: capability.protected_scope_sha256 });
     const expectedIntent = canonicalMessageDigest({ domain: 'repo-harness-read-only-canary-intent.v1', argv: expectedArgv });
     if (capability.protected_scope_sha256 !== expectedScope || capability.mutation_matrix_sha256 !== expectedMutation
+      || capability.proof_surface !== CODEX_READ_ONLY_PROOF_SURFACE || capability.env_sha256 !== receipt.env_sha256
       || JSON.stringify(capability.argv_template) !== JSON.stringify(CODEX_READ_ONLY_ARGV_TEMPLATE)
       || receipt.dispatch_id !== expectedDispatch || receipt.executable_path !== capability.executable_path || JSON.stringify(receipt.argv) !== JSON.stringify(expectedArgv)
       || receipt.intent_sha256 !== expectedIntent || receipt.exit_code !== 1 || receipt.timed_out || receipt.before_snapshot_sha256 !== receipt.after_snapshot_sha256
@@ -645,12 +699,14 @@ export function admitReadOnlyDelegation(input: AdmitReadOnlyDelegationInput): { 
   let reason: DelegationRejectionReason | null = null;
   try {
     const live = validateDelegationParent(repoRoot, input);
+    const availability = profileAvailability(repoRoot, profile);
     if (live.receipt_sha256 !== envelope.engineer.claim_actor_receipt_sha256
       || live.task_id !== envelope.parent.task_id || live.task_revision !== envelope.parent.task_revision
       || live.claim_id !== envelope.parent.claim_id || live.lease_generation !== envelope.parent.lease_generation
       || live.work_envelope_sha256 !== envelope.parent.work_envelope_sha256) reason = 'parent_stale';
     else if (live.engineer_id !== envelope.engineer.engineer_id || live.binding_id !== envelope.engineer.binding_id || live.binding_generation !== envelope.engineer.binding_generation) reason = 'binding_stale';
-    else if (profile.role_profile_sha256 !== envelope.role_profile_sha256 || profile.logical_role !== envelope.logical_role || !profileMatchesStored(repoRoot, profile)) reason = 'role_profile_stale';
+    else if (availability === 'unavailable') reason = 'role_profile_unavailable';
+    else if (profile.role_profile_sha256 !== envelope.role_profile_sha256 || profile.logical_role !== envelope.logical_role || availability !== 'matches') reason = 'role_profile_stale';
     else if (capability.capability_sha256 !== envelope.runtime_capability_sha256) reason = 'runtime_capability_stale';
     else if (capability.sandbox_mode !== 'read_only' || capability.canary_before_snapshot_sha256 !== capability.canary_after_snapshot_sha256 || !capabilityCanaryVerified(repoRoot, capability)) reason = 'sandbox_capability_unverified';
     else if (packet.packet_sha256 !== envelope.execution_packet_sha256 || packet.delegation_id !== envelope.delegation_id || packet.logical_role !== envelope.logical_role || packet.role_profile_sha256 !== profile.role_profile_sha256 || packet.model !== profile.model || packet.role_instructions !== readLogicalRoleInstructions(repoRoot, profile) || packet.goal !== envelope.goal || JSON.stringify(packet.allowed_read_paths) !== JSON.stringify(envelope.allowed_read_paths) || packet.max_turns !== envelope.budget.max_turns || packet.max_depth !== envelope.budget.max_depth) reason = 'role_profile_stale';
@@ -688,7 +744,7 @@ export function prepareDelegatedRun(input: PrepareDelegatedRunInput): DelegatedR
 }
 
 function processReceiptCanonical(input: Omit<CodexProcessReceiptV1, 'protocol' | 'kind' | 'process_receipt_sha256'>): CodexProcessReceiptV1 {
-  if (!SHA.test(input.dispatch_id) || !SHA.test(input.intent_sha256) || !SHA.test(input.before_snapshot_sha256) || !SHA.test(input.after_snapshot_sha256)) fail('delegated_run_invalid', 'process receipt digest is invalid');
+  if (!SHA.test(input.dispatch_id) || !SHA.test(input.intent_sha256) || !SHA.test(input.env_sha256) || !SHA.test(input.before_snapshot_sha256) || !SHA.test(input.after_snapshot_sha256)) fail('delegated_run_invalid', 'process receipt digest is invalid');
   if (!isAbsolute(input.executable_path) || input.executable_path.includes('\0')
     || !Array.isArray(input.argv) || input.argv.some((part) => typeof part !== 'string' || part.includes('\0'))
     || typeof input.timed_out !== 'boolean') fail('delegated_run_invalid', 'process receipt command is invalid');
@@ -704,9 +760,9 @@ function processReceiptCanonical(input: Omit<CodexProcessReceiptV1, 'protocol' |
 function validateProcessReceipt(value: unknown): CodexProcessReceiptV1 {
   if (!value || typeof value !== 'object' || Array.isArray(value)) fail('delegated_run_invalid', 'process receipt is invalid');
   const record = value as Record<string, unknown>;
-  const expected = ['protocol', 'kind', 'dispatch_id', 'intent_sha256', 'executable_path', 'argv', 'exit_code', 'timed_out', 'stdout_sha256', 'stdout_ref', 'stderr_sha256', 'stderr_ref', 'error_sha256', 'error_ref', 'before_snapshot_sha256', 'after_snapshot_sha256', 'observed_at', 'process_receipt_sha256'].sort();
+  const expected = ['protocol', 'kind', 'dispatch_id', 'intent_sha256', 'executable_path', 'argv', 'env_sha256', 'exit_code', 'timed_out', 'stdout_sha256', 'stdout_ref', 'stderr_sha256', 'stderr_ref', 'error_sha256', 'error_ref', 'before_snapshot_sha256', 'after_snapshot_sha256', 'observed_at', 'process_receipt_sha256'].sort();
   if (JSON.stringify(Object.keys(record).sort()) !== JSON.stringify(expected)) fail('delegated_run_invalid', 'process receipt fields are invalid');
-  const built = processReceiptCanonical({ dispatch_id: record.dispatch_id as string, intent_sha256: record.intent_sha256 as string, executable_path: record.executable_path as string, argv: record.argv as readonly string[], exit_code: record.exit_code as number, timed_out: record.timed_out as boolean, stdout_sha256: record.stdout_sha256 as string, stdout_ref: record.stdout_ref as string, stderr_sha256: record.stderr_sha256 as string, stderr_ref: record.stderr_ref as string, error_sha256: record.error_sha256 as string, error_ref: record.error_ref as string, before_snapshot_sha256: record.before_snapshot_sha256 as string, after_snapshot_sha256: record.after_snapshot_sha256 as string, observed_at: record.observed_at as string });
+  const built = processReceiptCanonical({ dispatch_id: record.dispatch_id as string, intent_sha256: record.intent_sha256 as string, executable_path: record.executable_path as string, argv: record.argv as readonly string[], env_sha256: record.env_sha256 as string, exit_code: record.exit_code as number, timed_out: record.timed_out as boolean, stdout_sha256: record.stdout_sha256 as string, stdout_ref: record.stdout_ref as string, stderr_sha256: record.stderr_sha256 as string, stderr_ref: record.stderr_ref as string, error_sha256: record.error_sha256 as string, error_ref: record.error_ref as string, before_snapshot_sha256: record.before_snapshot_sha256 as string, after_snapshot_sha256: record.after_snapshot_sha256 as string, observed_at: record.observed_at as string });
   if (record.process_receipt_sha256 !== built.process_receipt_sha256) fail('delegated_run_invalid', 'process receipt digest is stale');
   return built;
 }
@@ -807,12 +863,13 @@ export function dispatchDelegatedRun(input: DispatchDelegatedRunInput): Delegate
     });
     const developerInstructionsConfig = `developer_instructions=${JSON.stringify(readLogicalRoleInstructions(repoRoot, beforeState.profile))}`;
     const argv = ['exec', '--sandbox', 'read-only', '--ephemeral', '--ignore-user-config', '--strict-config', '--json', '--model', beforeState.capability.model, '-c', developerInstructionsConfig, canonicalDelegationExecutionPacketBytes(beforeState.packet)];
+    const childEnv = codexChildEnvironment();
     let outcome: ProcessRunResult;
     try {
       current = appendObservation(repoRoot, current, {
         dispatch_id: id, intent_sha256: beforeState.intent.intent_sha256, worker_run_ref: null, runtime_principal_id: null, state: 'running', failure_class: 'none', observed_capabilities_sha256: beforeState.capability.capability_sha256, protected_before_snapshot_sha256: beforeSnapshot, protected_after_snapshot_sha256: null, process_receipt_sha256: null, observed_at: input.observed_at,
       });
-      outcome = runProcess(executable, argv, { cwd: repoRoot, timeoutMs: 120_000, processGroup: true });
+      outcome = runProcess(executable, argv, { cwd: repoRoot, timeoutMs: 120_000, processGroup: true, env: childEnv.env, inheritEnv: false });
       input.crash_hook?.('after_host_action_before_receipt');
     } catch (_error) {
       const unknown = noActionReconciliation(repoRoot, current, input.observed_at);
@@ -822,7 +879,7 @@ export function dispatchDelegatedRun(input: DispatchDelegatedRunInput): Delegate
     const stdout = evidenceBlob(repoRoot, outcome.stdout);
     const stderr = evidenceBlob(repoRoot, outcome.stderr);
     const processError = evidenceBlob(repoRoot, outcome.error);
-    const receipt = processReceiptCanonical({ dispatch_id: id, intent_sha256: beforeState.intent.intent_sha256, executable_path: executable, argv, exit_code: outcome.status, timed_out: outcome.timedOut, stdout_sha256: stdout.sha256, stdout_ref: stdout.ref, stderr_sha256: stderr.sha256, stderr_ref: stderr.ref, error_sha256: processError.sha256, error_ref: processError.ref, before_snapshot_sha256: beforeSnapshot, after_snapshot_sha256: afterSnapshot, observed_at: input.observed_at });
+    const receipt = processReceiptCanonical({ dispatch_id: id, intent_sha256: beforeState.intent.intent_sha256, executable_path: executable, argv, env_sha256: childEnv.sha256, exit_code: outcome.status, timed_out: outcome.timedOut, stdout_sha256: stdout.sha256, stdout_ref: stdout.ref, stderr_sha256: stderr.sha256, stderr_ref: stderr.ref, error_sha256: processError.sha256, error_ref: processError.ref, before_snapshot_sha256: beforeSnapshot, after_snapshot_sha256: afterSnapshot, observed_at: input.observed_at });
     persistProcessReceipt(repoRoot, receipt);
     current = appendObservation(repoRoot, current, {
       dispatch_id: id, intent_sha256: beforeState.intent.intent_sha256, worker_run_ref: null, runtime_principal_id: null, state: 'collecting', failure_class: 'none', observed_capabilities_sha256: beforeState.capability.capability_sha256, protected_before_snapshot_sha256: beforeSnapshot, protected_after_snapshot_sha256: afterSnapshot, process_receipt_sha256: receipt.process_receipt_sha256, observed_at: input.observed_at,

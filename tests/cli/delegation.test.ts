@@ -44,4 +44,13 @@ describe('delegation CLI', () => {
     expect(legacy.status).toBe(1);
     expect(legacy.stderr).toContain('capability input fields are invalid');
   });
+
+  test('reports an absent tracked Role Profile with a typed code and a repository-relative path', () => {
+    const missing = cli('delegation', 'profile', '--role', 'nosuchrole', '--format', 'json');
+    expect(missing.status).toBe(1);
+    const failure = JSON.parse(missing.stderr) as { ok: boolean; error: string; message: string };
+    expect(failure.error).toBe('delegated_run_profile_unavailable');
+    expect(failure.message).toContain('.codex/agents/nosuchrole.toml');
+    expect(failure.message).not.toContain(root);
+  });
 });

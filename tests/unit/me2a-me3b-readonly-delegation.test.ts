@@ -5,11 +5,14 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 
 import {
+  CODEX_READ_ONLY_PROOF_SURFACE,
+  buildDelegationAdmissionReceipt,
   buildDelegationEnvelope,
   buildDelegationExecutionPacket,
   canonicalDelegationEnvelopeBytes,
   validateDelegationEnvelope,
 } from '../../src/core/engineers/delegation';
+import { canonicalMessageDigest } from '../../src/core/messages/mechanics';
 import {
   DelegatedRunStoreError,
   admitReadOnlyDelegation,
@@ -46,7 +49,17 @@ function fixture(): string {
   return realpathSync(root);
 }
 
-function admitted(root: string, options: { parentStale?: boolean; canary?: 'valid' | 'write-success' | 'no-denial' | 'suffix-denial' | 'extra-denial' } = {}) {
+const SHELL_INJECTED_ENV_KEYS = ['PWD', 'SHLVL', '_', 'OLDPWD', 'IFS'];
+
+function childEnvDigest(path: string): string {
+  return canonicalMessageDigest({ domain: 'repo-harness-delegated-run-child-env.v1', env: { HOME: process.env.HOME, PATH: path } });
+}
+
+function dumpedChildEnvKeys(root: string, file: string): Set<string> {
+  return new Set(readFileSync(join(root, file), 'utf8').split('\n').filter(Boolean).map((line) => line.slice(0, line.indexOf('='))));
+}
+
+function admitted(root: string, options: { parentStale?: boolean; removeProfileBeforeAdmit?: boolean; canary?: 'valid' | 'write-success' | 'no-denial' | 'suffix-denial' | 'extra-denial' } = {}) {
   const profile = loadLogicalReadOnlyRoleProfile(root, 'explorer');
   const protectedPaths = ['common:.repo-harness-read-only-canary-common', 'worktree:.repo-harness-read-only-canary-worktree'];
   const fakeBin = join(root, 'fake-bin');
@@ -64,6 +77,7 @@ function admitted(root: string, options: { parentStale?: boolean; canary?: 'vali
   writeFileSync(fakeCodex, `#!/bin/sh
 if [ "$1" = "--version" ]; then printf "codex-cli 0.149.0\\n"; exit 0; fi
 if [ "$1" = "sandbox" ]; then
+  /usr/bin/env > "$PWD/.fake-canary-env"
   previous=""
   last=""
   for argument in "$@"; do previous="$last"; last="$argument"; done
@@ -73,6 +87,7 @@ if [ "$1" = "sandbox" ]; then
 fi
 if [ "$1" = "exec" ]; then
   printf 'call\\n' >> "$PWD/.fake-dispatch-calls"
+  /usr/bin/env > "$PWD/.fake-dispatch-env"
   mode=""
   if [ -f "$PWD/.fake-dispatch-mode" ]; then mode=$(/bin/cat "$PWD/.fake-dispatch-mode"); fi
   if [ "$mode" = "tamper" ]; then printf 'tampered\\n' > "$PWD/.repo-harness-read-only-canary-worktree"; fi
@@ -135,6 +150,7 @@ exit 64
     binding_id: bindingId,
     binding_generation: 1,
   };
+  if (options.removeProfileBeforeAdmit) rmSync(join(root, '.codex/agents/explorer.toml'));
   const result = admitReadOnlyDelegation({
     repo_root: root,
     envelope,
@@ -299,6 +315,62 @@ describe('ME-2A read-only admission and conditional ME-3B adapter', () => {
     });
     expect(retry.current.state).toBe('reconciliation_required');
     expect(dispatchCalls(root)).toBe(0);
+  });
+
+  test('hands both the canary and the dispatch child an exact minimal environment bound into the receipts', () => {
+    const root = fixture();
+    const canaryPath = `${join(root, 'fake-bin')}:${process.env.PATH ?? ''}`;
+    const admission = admitted(root);
+    expect(admission.capability.env_sha256).toBe(childEnvDigest(canaryPath));
+    const canaryReceipt = readCodexProcessReceipt(root, admission.capability.canary_process_receipt_sha256);
+    expect(canaryReceipt.env_sha256).toBe(admission.capability.env_sha256);
+
+    const prepared = prepare(root, admission);
+    const dispatched = dispatchDelegatedRun({
+      repo_root: root,
+      dispatch_id: prepared.intent.dispatch_id,
+      observed_at: '2026-08-26T00:00:03Z',
+      protected_paths: admission.protectedPaths,
+    });
+    const dispatchReceipt = readCodexProcessReceipt(root, dispatched.current.process_receipt_sha256!);
+    expect(dispatchReceipt.env_sha256).toBe(childEnvDigest(process.env.PATH ?? ''));
+
+    for (const file of ['.fake-canary-env', '.fake-dispatch-env']) {
+      const observed = dumpedChildEnvKeys(root, file);
+      expect(observed.has('PATH')).toBe(true);
+      expect(observed.has('HOME')).toBe(true);
+      const inherited = Object.keys(process.env).filter((key) => key !== 'PATH' && key !== 'HOME' && !SHELL_INJECTED_ENV_KEYS.includes(key) && observed.has(key));
+      expect(inherited).toEqual([]);
+    }
+  });
+
+  test('records that the read-only proof is extrapolated from the sandbox subcommand to the exec subcommand', () => {
+    const root = fixture();
+    const admission = admitted(root);
+    expect(admission.capability.proof_surface).toBe(CODEX_READ_ONLY_PROOF_SURFACE);
+    expect(readCodexProcessReceipt(root, admission.capability.canary_process_receipt_sha256).argv[0]).toBe('sandbox');
+    expect(admission.capability.argv_template[0]).toBe('exec');
+  });
+
+  test('reports an absent tracked Role Profile as typed unavailability without a Host absolute path', () => {
+    const root = fixture();
+    let caught: unknown;
+    try { loadLogicalReadOnlyRoleProfile(root, 'nosuchrole'); } catch (error) { caught = error; }
+    expect(caught).toBeInstanceOf(DelegatedRunStoreError);
+    expect((caught as DelegatedRunStoreError).code).toBe('delegated_run_profile_unavailable');
+    expect((caught as Error).message).toContain('.codex/agents/nosuchrole.toml');
+    expect((caught as Error).message).not.toContain(root);
+    expect(admitted(root, { removeProfileBeforeAdmit: true }).receipt).toMatchObject({ decision: 'rejected', rejection_reason: 'role_profile_unavailable' });
+  });
+
+  test('refuses admission rejection reasons that no admission path can produce', () => {
+    for (const reason of ['mode_unsupported', 'budget_invalid', 'sandbox_scope_mismatch']) {
+      expect(() => buildDelegationAdmissionReceipt({
+        delegation_id: delegationId, envelope_sha256: DIGEST, decision: 'rejected', rejection_reason: reason as never,
+        admitted_role_profile_sha256: null, admitted_mode: null, admitted_sandbox_policy_sha256: null,
+        expected_runtime_observation_sha256: null, decided_at: '2026-08-26T00:00:01Z',
+      })).toThrow('rejection_reason is invalid');
+    }
   });
 
   test('requires one turn and explicit worktree plus common regular-or-absent protected paths', () => {
