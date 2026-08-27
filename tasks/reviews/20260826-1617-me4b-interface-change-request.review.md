@@ -34,7 +34,7 @@
 - Waza `/check` run: equivalent deep review and root checks executed directly; exact-subject verifier remains pending.
 - Commands run: original subject checks plus corrected-path `bun run check:type` and 29 focused ME-1A/ME-4B/CLI/MCP tests.
 - Manual checks: exact MCP inventory; Human CLI command inventory; no authorization ID in semantic records; no direct Task/Lease/Publication/Acceptance/architecture-event writer; no message-body transition; no compatibility fallback.
-- Supporting artifacts: final Architecture Acceptance `changeset.docs-projection-6cd2b7682023a2b6` / `event.user-approval-20260828-me4b-codex-review-fix-architecture`; accepted apply receipt `sha256:1c587389fc7227dc2369b38dbc9761a772bc8d5db99c73ac6b828476e50e7627`; source-only fixed point `sha256:e0a4869379f4ff639a58ecb35b08177978fb94214338386d79ff1a01105e534c`.
+- Supporting artifacts: post-ME-1C-rebase Architecture Acceptance `changeset.docs-projection-5bbfa97fa16b8e5e` / `event.user-approval-20260828-me4b-post-me1c-rebase-architecture`; accepted apply receipt `sha256:84f3cfa71f4258b29c5be075cfd594ba742dd7bd5462bd49484326a8eea8b2ab`. The accepted apply changed only the projection manifest; the ME-4B source/model digests and semantic boundary are unchanged.
 - Implementation notes reviewed: yes.
 - Run snapshot: `.ai/harness/checks/latest.json` plus command output captured during this review.
 
