@@ -21,7 +21,7 @@ Rebuild `src/operator-web/` as an attention-first decision surface per the appro
 
 ## Scope
 
-- In scope: `src/core/fleet/board.ts`, `src/effects/fleet/board.ts`, `src/operator-web/**`, `src/effects/operator/server.ts`, and their tests (`tests/operator-web/**`, board/fleet projection tests, operator server tests); the plan's WP-A/WP-B/WP-C task breakdown.
+- In scope: `src/core/fleet/board.ts`, `src/effects/fleet/board.ts`, `src/operator-web/**` (including a new dictionary-based zh/en i18n module `src/operator-web/i18n.ts`, no third-party i18n library, default locale en), `src/effects/operator/server.ts`, and their tests (`tests/operator-web/**`, board/fleet projection tests, operator server tests); the plan's WP-A/WP-B/WP-C task breakdown.
 - Out of scope: `sendTaskMessage` effect internals and the task-message protocol (`src/core/fleet/task-message.ts` semantics stay untouched except reading existing constants); CLI commands; `FleetBoardInboxSummaryV1` receipt-state extension (deferred, recorded in tasks/todos.md); any second write action; SSE/watch endpoints; release/publish.
 - Taste constraints: the accent color marks human-write affordances only; semantic colors (user=amber, agent=neutral blue, external=purple, danger=red for real failures only) are separate from the accent; minimum text size 11px, text contrast ≥ 4.5:1, non-text indicators ≥ 3:1 with a non-color secondary encoding.
 
