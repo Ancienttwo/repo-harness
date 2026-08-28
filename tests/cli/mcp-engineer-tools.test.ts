@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -123,6 +123,18 @@ function coordinationState(repoRoot: string): string[] {
   const root = join(resolveGitCommonDirectory(repoRoot), 'repo-harness');
   if (!existsSync(root)) return [];
   return readdirSync(root, { recursive: true }).map((entry) => String(entry)).sort();
+}
+
+/** Every byte the Provider Thread Effect store owns, so a read path that
+ * creates store or lock directories, or repairs `current.json`, is visible. */
+function providerThreadEffectState(repoRoot: string): string[] {
+  const root = join(resolveGitCommonDirectory(repoRoot), 'repo-harness', 'provider-thread-effects');
+  if (!existsSync(root)) return [];
+  return readdirSync(root, { recursive: true }).map((entry) => {
+    const relative = String(entry);
+    const target = join(root, relative);
+    return statSync(target).isDirectory() ? `${relative}/` : `${relative}=${readFileSync(target, 'utf8')}`;
+  }).sort();
 }
 
 afterEach(() => {
@@ -293,6 +305,105 @@ describe('restricted Engineer MCP tools', () => {
     const stale = await callMcpTool({ ...context, engineerAuthorizationId: secondAuthorization }, 'engineer_status', {});
     expect(stale).toMatchObject({ isError: true, structuredContent: { error: { code: 'engineer_principal_stale' } } });
   });
+
+  test('thread effect status is a pure read: an unknown or foreign effect_id creates no store or lock path and repairs no current.json', async () => {
+    const { repoRoot, home } = fixture();
+    process.env.REPO_HARNESS_HOME = home;
+    const profile = loadEngineerProfile(repoRoot, engineerId);
+    bindEngineer(repoRoot, {
+      engineer_id: engineerId,
+      idempotency_key: 'bind-read-only',
+      provider: 'codex',
+      provider_thread_id: 'thread-read-only',
+      host_id: 'local',
+      engineer_contract_revision: profile.engineer_contract_revision,
+      expected_current_digest: null,
+      expected_binding_generation: 0,
+      expected_binding_id: null,
+      expected_engineer_contract_revision: profile.engineer_contract_revision,
+      now: () => '2026-08-25T00:00:00.000Z',
+      binding_id: () => '11111111-1111-4111-8111-111111111111',
+    });
+    const binding = readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision).binding!;
+    enrollEngineerPrincipal({ repository_id: repoHarnessRepoIdFor(repoRoot), authorization_id: authorizationId, binding, env: process.env });
+    const context = { repoRoot, policy: getMcpPolicy('engineer'), engineerAuthorizationId: authorizationId };
+
+    // No effect exists yet, so a read that prepared the store would leave the
+    // whole provider-thread-effects tree behind.
+    expect(providerThreadEffectState(repoRoot)).toEqual([]);
+    const unknown = await callMcpTool(context, 'engineer_thread_effect_status', { effect_id: `sha256:${'c'.repeat(64)}` });
+    expect(unknown).toMatchObject({
+      isError: true,
+      structuredContent: { error: { code: 'provider_thread_effect_not_found' } },
+    });
+    expect(providerThreadEffectState(repoRoot)).toEqual([]);
+
+    const capability = recordProviderThreadCapability(repoRoot, {
+      host_id: 'local',
+      operations: { send: 'supported', resume: 'unverifiable', observe: 'supported', stop: 'unsupported' },
+      evidence_refs: [{ ref: 'canary', sha256: `sha256:${'a'.repeat(64)}` }],
+      observed_at: '2026-08-25T00:31:00.000Z',
+    });
+    const sent = await callMcpTool(context, 'engineer_message_send', {
+      message_id: '77777777-7777-4777-8777-777777777777',
+      capability_id: 'capability.verification.evals-checks',
+      target_engineer_id: engineerId,
+      scope: 'module',
+      target_binding_id: null,
+      target_binding_generation: null,
+      target_engineer_contract_revision: null,
+      message_type: 'status_update',
+      subject_ref: null,
+      resource_refs: [],
+      body: 'Effect owner for the read-only probe.',
+      created_at: '2026-08-25T00:30:00.000Z',
+    });
+    const effect = prepareProviderThreadEffect({
+      repo_root: repoRoot,
+      engineer_id: engineerId,
+      message_id: (sent.structuredContent as { event: { message_id: string } }).event.message_id,
+      idempotency_key: 'mcp-read-only-probe',
+      operation: 'send',
+      expected_binding_id: binding.binding_id,
+      expected_binding_generation: binding.binding_generation,
+      expected_engineer_contract_revision: binding.engineer_contract_revision,
+      expected_capability_sha256: capability.capability_sha256,
+      created_at: '2026-08-25T00:32:00.000Z',
+    });
+
+    const otherEngineerId = `engineer:${otherCapability}`;
+    const otherProfile = loadEngineerProfile(repoRoot, otherEngineerId);
+    bindEngineer(repoRoot, {
+      engineer_id: otherEngineerId,
+      idempotency_key: 'bind-read-only-other',
+      provider: 'codex',
+      provider_thread_id: 'thread-read-only-other',
+      host_id: 'local',
+      engineer_contract_revision: otherProfile.engineer_contract_revision,
+      expected_current_digest: null,
+      expected_binding_generation: 0,
+      expected_binding_id: null,
+      expected_engineer_contract_revision: otherProfile.engineer_contract_revision,
+      now: () => '2026-08-25T00:33:00.000Z',
+      binding_id: () => '44444444-4444-4444-8444-444444444444',
+    });
+    const otherBinding = readEngineerBindingStatus(repoRoot, otherEngineerId, otherProfile.engineer_contract_revision).binding!;
+    const otherAuthorization = '88888888-8888-4888-8888-888888888888';
+    enrollEngineerPrincipal({ repository_id: repoHarnessRepoIdFor(repoRoot), authorization_id: otherAuthorization, binding: otherBinding, env: process.env });
+
+    const before = providerThreadEffectState(repoRoot);
+    expect(before.length).toBeGreaterThan(0);
+    const foreign = await callMcpTool(
+      { ...context, engineerAuthorizationId: otherAuthorization },
+      'engineer_thread_effect_status',
+      { effect_id: effect.intent.effect_id },
+    );
+    expect(foreign).toMatchObject({
+      isError: true,
+      structuredContent: { error: { code: 'engineer_principal_mismatch' } },
+    });
+    expect(providerThreadEffectState(repoRoot)).toEqual(before);
+  }, 30_000);
 
   test('the scheduling tools carry the ME-1A protocol: principal-scoped offers, required fences, and a stale offer that never mutates Fleet', async () => {
     const { repoRoot, home, repositoryId } = schedulingFixture();

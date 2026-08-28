@@ -5,11 +5,13 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 
 import {
+  CODEX_READ_ONLY_ARGV_TEMPLATE,
   CODEX_READ_ONLY_PROOF_SURFACE,
   buildDelegationAdmissionReceipt,
   buildDelegationEnvelope,
   buildDelegationExecutionPacket,
   canonicalDelegationEnvelopeBytes,
+  canonicalDelegationExecutionPacketBytes,
   validateDelegationEnvelope,
 } from '../../src/core/engineers/delegation';
 import { canonicalMessageDigest } from '../../src/core/messages/mechanics';
@@ -237,6 +239,14 @@ describe('ME-2A read-only admission and conditional ME-3B adapter', () => {
     ]);
     expect(processReceipt.executable_path).toBe(admission.capability.executable_path);
     expect(processReceipt.argv.slice(0, 11)).toEqual(['exec', '--sandbox', 'read-only', '--ephemeral', '--ignore-user-config', '--strict-config', '--json', '--model', admission.profile.model, '-c', `developer_instructions=${JSON.stringify(readLogicalRoleInstructions(root, admission.profile))}`]);
+    // The dispatched argv is the frozen capability-receipt template with its
+    // three placeholders substituted, so admission compares what dispatch runs.
+    const substitutions: Readonly<Record<string, string>> = {
+      '{model}': admission.capability.model,
+      '{developer_instructions_config}': `developer_instructions=${JSON.stringify(readLogicalRoleInstructions(root, admission.profile))}`,
+      '{execution_packet}': canonicalDelegationExecutionPacketBytes(admission.packet),
+    };
+    expect(processReceipt.argv).toEqual(CODEX_READ_ONLY_ARGV_TEMPLATE.map((part) => substitutions[part] ?? part));
     expect(readDelegatedRunEvidenceBlob(root, processReceipt.stdout_ref, processReceipt.stdout_sha256).toString('utf8')).toBe('{"untrusted":true}\n');
   });
 
