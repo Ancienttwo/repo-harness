@@ -125,6 +125,12 @@
 
 - Checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
+- Brand and mascot art source (external reference), all from `Ancienttwo/repo-harness-page@ffe3ff1`:
+  - `src/components/ui/CarrotMark.astro` — pixel-carrot `PX` array, viewBox `0 0 9 12`, `shape-rendering="crispEdges"`.
+  - `src/components/ui/DunkieMark.astro` — Dunkie the donkey, `GRID` + `PAL`/`PAL2` (Codex-blue and Claude-orange saddlebags, `W=#FFFFFF`).
+  - `src/components/ui/HookMark.astro` — Hook the hard-hat crane-hook robot, `GRID` + `PAL`.
+  - `public/favicon.svg` — 16x16 rounded `#14202E` plate carrying the same carrot pixel grid.
+  Ported verbatim into `src/operator-web/marks.tsx` as React inline SVG, and copied to `src/operator-web/favicon.svg`. Brand colours (`#43A047`/`#2E7D33` greens, `#E8742C`/`#F2954A`/`#C2571A` oranges, mascot palettes) stay literal and are exempt from the accent discipline, which governs UI affordances only. All marks are decorative (`aria-hidden`), so no accessible-name or contrast contract is attached to them.
 
 ## Promotion Filter
 

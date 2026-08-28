@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { Icon } from './icons';
+import { CarrotMark, DunkieMark, HookMark } from './marks';
 import {
   DEFAULT_OPERATOR_LOCALE,
   formatRelativeAge,
@@ -240,13 +241,7 @@ function StatusDot({ status }: { readonly status: 'ok' | 'warn' | 'danger' | 'ne
 }
 
 function BrandMark() {
-  return (
-    <span aria-hidden="true" className="brand-mark">
-      <span className="brand-mark__stem" />
-      <span className="brand-mark__leaf brand-mark__leaf--one" />
-      <span className="brand-mark__leaf brand-mark__leaf--two" />
-    </span>
-  );
+  return <CarrotMark height={24} className="brand-mark" />;
 }
 
 function CopyValue({ label, value, t }: { readonly label: string; readonly value: string | null; readonly t: OperatorTranslate }) {
@@ -556,7 +551,12 @@ function Worklist({
                         t={t}
                       />
                     ))}
-                    {group.count === 0 && <p className="worklist-group__empty">{t('worklist.groupEmpty')}</p>}
+                    {group.count === 0 && (
+                      <p className="worklist-group__empty">
+                        {group.id === 'needs_you' && <CarrotMark height={16} />}
+                        {t('worklist.groupEmpty')}
+                      </p>
+                    )}
                   </div>
                 )}
               </section>
@@ -1115,7 +1115,7 @@ function DetailPane({
 function EmptyFleet({ t }: { readonly t: OperatorTranslate }) {
   return (
     <section className="empty-state" aria-labelledby="empty-heading">
-      <span className="empty-state__mark"><Icon name="repo" size={22} /></span>
+      <span className="empty-state__mascot"><DunkieMark height={72} /></span>
       <p className="detail-eyebrow">{t('empty.eyebrow')}</p>
       <h2 id="empty-heading">{t('empty.title')}</h2>
       <p>{t('empty.body')}</p>
@@ -1127,6 +1127,7 @@ function EmptyFleet({ t }: { readonly t: OperatorTranslate }) {
 function LoadingState() {
   return (
     <section className="loading-board" aria-label="Loading Fleet board">
+      <span className="loading-board__mascot"><HookMark height={40} /></span>
       <div className="loading-board__line loading-board__line--wide" />
       <div className="loading-board__rows">{Array.from({ length: 5 }, (_, index) => <span key={index} />)}</div>
     </section>
@@ -1251,6 +1252,10 @@ export function OperatorApp({
         )}
       </div>
       <footer className="operator-footer">
+        <span className="operator-footer__mascots">
+          <DunkieMark height={20} />
+          <HookMark height={20} />
+        </span>
         <span>repo-harness operator</span>
         <span>{t('footer.protocol', { protocol: 2, sequence: snapshot?.sequence ?? '—' })}</span>
         <span className="operator-footer__right">observe-only · one write: task message</span>
