@@ -84,6 +84,7 @@ allowed_paths:
   - .claude/templates/
   - src/
   - tests/
+  - scripts/check-tarball-install-smoke.sh
 ```
 
 ## Evidence Requirements
