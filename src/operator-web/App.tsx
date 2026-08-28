@@ -1,12 +1,17 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { Icon } from './icons';
 import {
+  DEFAULT_OPERATOR_LOCALE,
+  formatRelativeAge,
+  useLocale,
+  type OperatorLocale,
+  type OperatorMessageKey,
+  type OperatorTranslate,
+} from './i18n';
+import {
   allCards,
-  attentionCards,
-  cardsForColumn,
   decodeOperatorFleetSnapshot,
-  formatObservedAt,
   OPERATOR_COLUMNS,
   OPERATOR_PAYLOAD_INVALID_ERROR,
   projectSnapshotViewState,
@@ -14,6 +19,7 @@ import {
   type OperatorApiErrorV1,
   type OperatorFleetCardV1,
   type OperatorFleetColumn,
+  type OperatorFleetRepositoryV1,
   type OperatorFleetSnapshotV1,
   type OperatorSnapshotViewState,
 } from './types';
@@ -25,6 +31,8 @@ export interface OperatorAppProps {
   /** A deterministic initial response; production uses the same-origin API. */
   readonly initialSnapshot?: OperatorFleetSnapshotV1;
   readonly fetchSnapshot?: () => Promise<OperatorFleetSnapshotV1>;
+  /** Tests pin the locale; the browser resolves it from storage or navigator. */
+  readonly initialLocale?: OperatorLocale;
 }
 
 const DEFAULT_API_ERROR: OperatorApiErrorV1 = {
@@ -81,28 +89,131 @@ function snapshotForState(state: OperatorSnapshotViewState): OperatorFleetSnapsh
   return state.snapshot;
 }
 
-function taskKey(card: OperatorFleetCardV1): string {
-  return `${card.repository_id}:${card.task_id}:${card.task_revision}`;
+/**
+ * Selection identity deliberately excludes `task_revision`: a refresh that only
+ * re-writes the task definition must keep the pane open and say so, not drop
+ * the operator's place on the board.
+ */
+export function taskKey(card: OperatorFleetCardV1): string {
+  return `${card.repository_id}:${card.task_id}`;
 }
 
-function displayRepository(card: OperatorFleetCardV1): string {
-  return card.repository_id || 'unknown repository';
+/** The human label is authority; the id prefix is the fallback, never a guess. */
+export function taskDisplayLabel(card: OperatorFleetCardV1): { readonly text: string; readonly isLabel: boolean } {
+  if (card.task_label) return { text: card.task_label, isLabel: true };
+  return { text: card.task_id.slice(0, 12), isLabel: false };
 }
 
-function statusLabel(value: string): string {
-  return value.replaceAll('_', ' ');
+type MergeBlocker = NonNullable<OperatorFleetCardV1['merge_readiness']>['blockers'][number];
+type BlockerOwner = MergeBlocker['attention_owner'];
+
+function cardBlockers(card: OperatorFleetCardV1): readonly MergeBlocker[] {
+  return card.merge_readiness?.blockers ?? [];
 }
 
-function attentionLabel(owner: OperatorFleetCardV1['attention_owner']): string {
-  return owner === 'none' ? 'No attention' : `${owner} attention`;
+export type WorklistCause =
+  | { readonly kind: 'blocker'; readonly blocker: MergeBlocker }
+  | { readonly kind: 'no_progress' }
+  | { readonly kind: 'unread'; readonly count: number };
+
+/**
+ * One row shows one reason. The order is the operator's routing order: a
+ * blocker you own outranks a stalled agent, which outranks a wait on someone
+ * else, which outranks an unread message.
+ */
+export function primaryCause(card: OperatorFleetCardV1): WorklistCause | null {
+  const blockers = cardBlockers(card);
+  const owned = (owner: BlockerOwner) => blockers.find((blocker) => blocker.attention_owner === owner);
+  const userBlocker = owned('user');
+  if (userBlocker) return { kind: 'blocker', blocker: userBlocker };
+  if (card.feedback.no_progress) return { kind: 'no_progress' };
+  const externalBlocker = owned('external');
+  if (externalBlocker) return { kind: 'blocker', blocker: externalBlocker };
+  const agentBlocker = owned('agent');
+  if (agentBlocker) return { kind: 'blocker', blocker: agentBlocker };
+  if (card.inbox.unread_count > 0) return { kind: 'unread', count: card.inbox.unread_count };
+  return null;
+}
+
+export type WorklistGroupId =
+  | 'needs_you'
+  | 'ready_to_merge'
+  | 'unreadable'
+  | 'unclassified'
+  | 'agent_working'
+  | 'external'
+  | 'done';
+
+export const WORKLIST_GROUP_ORDER: readonly WorklistGroupId[] = [
+  'needs_you',
+  'ready_to_merge',
+  'unreadable',
+  'unclassified',
+  'agent_working',
+  'external',
+  'done',
+];
+
+const DEFAULT_COLLAPSED_GROUPS: readonly WorklistGroupId[] = ['agent_working', 'external', 'done'];
+
+/**
+ * Assignment order is not the display order. `unclassified` is claimed before
+ * `external` so a card Fleet could not classify can never land in a group the
+ * board collapses by default.
+ */
+function groupForCard(card: OperatorFleetCardV1): Exclude<WorklistGroupId, 'unreadable'> {
+  if (card.attention_owner === 'user') return 'needs_you';
+  if (card.column === null) return 'unclassified';
+  if (card.column === 'ready_to_merge') return 'ready_to_merge';
+  if (card.attention_owner === 'external') return 'external';
+  if (card.column === 'done') return 'done';
+  return 'agent_working';
+}
+
+function compareCards(left: OperatorFleetCardV1, right: OperatorFleetCardV1): number {
+  if (left.repository_id !== right.repository_id) return left.repository_id < right.repository_id ? -1 : 1;
+  const leftIndex = left.task_index ?? Number.MAX_SAFE_INTEGER;
+  const rightIndex = right.task_index ?? Number.MAX_SAFE_INTEGER;
+  if (leftIndex !== rightIndex) return leftIndex - rightIndex;
+  return left.task_id < right.task_id ? -1 : left.task_id > right.task_id ? 1 : 0;
+}
+
+export interface WorklistGroup {
+  readonly id: WorklistGroupId;
+  readonly cards: readonly OperatorFleetCardV1[];
+  readonly repositories: readonly OperatorFleetRepositoryV1[];
+  readonly count: number;
+}
+
+export function groupWorklist(snapshot: OperatorFleetSnapshotV1): readonly WorklistGroup[] {
+  const buckets = new Map<WorklistGroupId, OperatorFleetCardV1[]>(
+    WORKLIST_GROUP_ORDER.map((id) => [id, []]),
+  );
+  for (const card of allCards(snapshot)) {
+    buckets.get(groupForCard(card))?.push(card);
+  }
+  const unreadable = snapshot.repositories.filter((repository) => repository.status === 'unreadable');
+  return WORKLIST_GROUP_ORDER.map((id) => {
+    const cards = (buckets.get(id) ?? []).slice().sort(compareCards);
+    const repositories = id === 'unreadable' ? unreadable : [];
+    return { id, cards, repositories, count: cards.length + repositories.length };
+  });
+}
+
+function stageKey(column: OperatorFleetColumn | null): OperatorMessageKey {
+  return column === null ? 'stage.unclassified' : (`stage.${column}` as OperatorMessageKey);
+}
+
+function attentionKey(owner: OperatorFleetCardV1['attention_owner']): OperatorMessageKey {
+  return `attention.${owner}` as OperatorMessageKey;
+}
+
+function blockerKey(code: MergeBlocker['code']): OperatorMessageKey {
+  return `blocker.${code}` as OperatorMessageKey;
 }
 
 function attentionTone(owner: OperatorFleetCardV1['attention_owner']): string {
-  return owner === 'user' ? 'tone-carrot' : owner === 'agent' ? 'tone-blue' : owner === 'external' ? 'tone-purple' : 'tone-neutral';
-}
-
-function IconBadge({ children, tone = 'neutral' }: { readonly children: ReactNode; readonly tone?: string }) {
-  return <span className={`operator-badge ${tone}`}>{children}</span>;
+  return owner === 'user' ? 'tone-user' : owner === 'agent' ? 'tone-agent' : owner === 'external' ? 'tone-external' : 'tone-neutral';
 }
 
 export async function copyOperatorIdentifier(
@@ -118,29 +229,8 @@ export async function copyOperatorIdentifier(
   }
 }
 
-function CopyValue({ label, value }: { readonly label: string; readonly value: string | null }) {
-  const [status, setStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
-  useEffect(() => setStatus('idle'), [value]);
-  const rendered = value ?? `No ${label.toLowerCase()} recorded`;
-  return (
-    <div className="copy-value">
-      <code>{rendered}</code>
-      {value && (
-        <button
-          className="copy-value__button"
-          type="button"
-          aria-label={`Copy ${label}`}
-          onClick={() => void copyOperatorIdentifier(value).then((copied) => setStatus(copied ? 'copied' : 'failed'))}
-        >
-          <Icon name="copy" size={14} />
-          <span>{status === 'copied' ? 'Copied' : status === 'failed' ? 'Copy failed' : 'Copy'}</span>
-        </button>
-      )}
-      <span className="copy-value__status" role="status" aria-live="polite">
-        {status === 'copied' ? `${label} copied` : status === 'failed' ? `${label} could not be copied` : ''}
-      </span>
-    </div>
-  );
+function Badge({ children, tone = 'tone-neutral' }: { readonly children: ReactNode; readonly tone?: string }) {
+  return <span className={`operator-badge ${tone}`}>{children}</span>;
 }
 
 function StatusDot({ status }: { readonly status: 'ok' | 'warn' | 'danger' | 'neutral' }) {
@@ -157,286 +247,502 @@ function BrandMark() {
   );
 }
 
-function AppRail({ state, repositoryCount }: { readonly state: OperatorSnapshotViewState; readonly repositoryCount: number }) {
-  const snapshot = snapshotForState(state);
-  const consistency = snapshot?.snapshot_consistency ?? 'degraded';
+function CopyValue({ label, value, t }: { readonly label: string; readonly value: string | null; readonly t: OperatorTranslate }) {
+  const [status, setStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
+  useEffect(() => setStatus('idle'), [value]);
   return (
-    <aside className="operator-rail" aria-label="Operator navigation">
-      <div className="operator-brand">
-        <BrandMark />
-        <span className="operator-brand__name">repo<span>-</span>harness</span>
-      </div>
-      <p className="operator-rail__eyebrow">human control board</p>
-      <nav className="operator-nav" aria-label="Board sections">
-        <a className="operator-nav__link is-active" href="#fleet-board">
-          <Icon name="activity" size={17} />
-          <span>Fleet board</span>
-        </a>
-        <a className="operator-nav__link" href="#attention-inbox">
-          <Icon name="inbox" size={17} />
-          <span>Attention inbox</span>
-        </a>
-        <a className="operator-nav__link" href="#repositories">
-          <Icon name="repo" size={17} />
-          <span>Repositories</span>
-        </a>
-      </nav>
-      <div className="operator-rail__bottom">
-        <div className="operator-rail__status">
-          <StatusDot status={consistency === 'stable' ? 'ok' : consistency === 'degraded' ? 'danger' : 'warn'} />
-          <div>
-            <span className="operator-rail__status-label">observation</span>
-            <strong>{statusLabel(consistency)}</strong>
-          </div>
-        </div>
-        <div className="operator-rail__meta">
-          <span>{repositoryCount} repositories</span>
-          <span>localhost only</span>
-        </div>
-      </div>
-    </aside>
+    <div className="copy-value">
+      <code>{value ?? t('copy.missing', { label })}</code>
+      {value && (
+        <button
+          className="copy-value__button"
+          type="button"
+          aria-label={t('copy.action', { label })}
+          onClick={() => void copyOperatorIdentifier(value).then((copied) => setStatus(copied ? 'copied' : 'failed'))}
+        >
+          <Icon name="copy" size={14} />
+          <span>{status === 'copied' ? t('copy.copied') : status === 'failed' ? t('copy.failed') : t('copy.idle')}</span>
+        </button>
+      )}
+      <span className="copy-value__status" role="status" aria-live="polite">
+        {status === 'copied' ? t('copy.copiedStatus', { label }) : status === 'failed' ? t('copy.failedStatus', { label }) : ''}
+      </span>
+    </div>
   );
 }
 
-function Topbar({
-  state,
+function useNow(intervalMs = 30_000): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(timer);
+  }, [intervalMs]);
+  return now;
+}
+
+function StatusBar({
+  snapshot,
+  stale,
   busy,
+  locale,
+  onLocale,
   onRefresh,
+  t,
 }: {
-  readonly state: OperatorSnapshotViewState;
+  readonly snapshot: OperatorFleetSnapshotV1 | null;
+  readonly stale: boolean;
   readonly busy: boolean;
+  readonly locale: OperatorLocale;
+  readonly onLocale: (locale: OperatorLocale) => void;
   readonly onRefresh: () => void;
+  readonly t: OperatorTranslate;
 }) {
-  const snapshot = snapshotForState(state);
+  const now = useNow();
+  const consistency = snapshot?.snapshot_consistency ?? 'degraded';
+  const unreadable = snapshot?.counts.unreadable ?? 0;
   return (
-    <header className="operator-topbar">
-      <div>
-        <p className="operator-eyebrow">fleet / read-only</p>
-        <h1>Control board</h1>
+    <header className="operator-statusbar">
+      <div className="operator-statusbar__brand">
+        <BrandMark />
+        <span className="operator-statusbar__name">repo<span>-</span>harness</span>
+        <span className="operator-statusbar__subtitle">{t('app.subtitle')}</span>
       </div>
-      <div className="operator-topbar__actions">
-        <span className="operator-topbar__source">
-          <StatusDot status={busy ? 'warn' : snapshot ? 'ok' : 'danger'} />
-          {busy ? 'collecting snapshot' : snapshot ? 'snapshot connected' : 'snapshot unavailable'}
+      <div className="operator-statusbar__facts">
+        <span className={`statusbar-fact statusbar-fact--age${stale ? ' is-stale' : ''}`} data-fact="age">
+          {snapshot ? formatRelativeAge(snapshot.observed_at, now, t) : t('status.observedUnknown')}
+          {stale ? ` · ${t('status.stale')}` : ''}
         </span>
+        <span className="statusbar-fact" data-fact="sequence">
+          {t('status.sequence')} <strong>{snapshot?.sequence ?? '—'}</strong>
+        </span>
+        <span className="statusbar-fact" data-fact="consistency">
+          <StatusDot status={consistency === 'stable' ? 'ok' : consistency === 'degraded' ? 'danger' : 'warn'} />
+          {t('status.consistency')} <strong>{t(`status.consistency.${consistency}` as OperatorMessageKey)}</strong>
+        </span>
+        <span className="statusbar-fact" data-fact="repositories">
+          {t('status.repositories', { count: snapshot?.repositories.length ?? 0 })}
+          {unreadable > 0 ? ` · ${t('status.unreadable', { count: unreadable })}` : ''}
+        </span>
+      </div>
+      <div className="operator-statusbar__actions">
         <button className="operator-button operator-button--secondary" type="button" onClick={onRefresh} disabled={busy}>
-          <Icon name="refresh" size={16} />
-          <span>{busy ? 'Refreshing' : 'Refresh'}</span>
+          <Icon name="refresh" size={15} />
+          <span>{busy ? t('status.refreshing') : t('status.refresh')}</span>
         </button>
+        <div className="locale-switch" role="group" aria-label={t('status.language')}>
+          <button type="button" aria-pressed={locale === 'en'} className={locale === 'en' ? 'is-active' : ''} onClick={() => onLocale('en')}>
+            {t('status.languageEnglish')}
+          </button>
+          <button type="button" aria-pressed={locale === 'zh'} className={locale === 'zh' ? 'is-active' : ''} onClick={() => onLocale('zh')}>
+            {t('status.languageChinese')}
+          </button>
+        </div>
       </div>
     </header>
   );
 }
 
-function SnapshotNotice({ state, onRetry }: { readonly state: OperatorSnapshotViewState; readonly onRetry: () => void }) {
+function SnapshotNotice({
+  state,
+  onRetry,
+  t,
+}: {
+  readonly state: OperatorSnapshotViewState;
+  readonly onRetry: () => void;
+  readonly t: OperatorTranslate;
+}) {
   if (state.kind === 'loading' && state.previous === null) {
     return (
       <div className="operator-notice operator-notice--loading" role="status" aria-live="polite">
         <span className="operator-progress" aria-hidden="true" />
-        <div><strong>Reading Fleet authority</strong><span>Collecting one bounded snapshot from adopted repositories.</span></div>
-      </div>
-    );
-  }
-  if (state.kind === 'fatal') {
-    return (
-      <div className="operator-notice operator-notice--danger" role="alert">
-        <Icon name="alert" size={19} />
-        <div><strong>{state.error.message}</strong><span>{state.error.next_action}</span></div>
-        <button className="operator-button operator-button--primary" type="button" onClick={onRetry}>Retry</button>
+        <div><strong>{t('notice.loadingTitle')}</strong><span>{t('notice.loadingBody')}</span></div>
       </div>
     );
   }
   if (state.kind === 'stale') {
     return (
       <div className="operator-notice operator-notice--danger" role="alert">
-        <Icon name="alert" size={19} />
-        <div><strong>Showing the last successful snapshot</strong><span>{state.error.message}. {state.error.next_action}</span></div>
-        <button className="operator-button operator-button--primary" type="button" onClick={onRetry}>Retry</button>
+        <Icon name="alert" size={18} />
+        <div><strong>{t('notice.staleTitle')}</strong><span>{state.error.message}. {state.error.next_action}</span></div>
+        <button className="operator-button operator-button--secondary" type="button" onClick={onRetry}>{t('notice.retry')}</button>
       </div>
     );
   }
   if (state.kind === 'changed-during-read') {
     return (
       <div className="operator-notice operator-notice--warning" role="status" aria-live="polite">
-        <Icon name="alert" size={19} />
-        <div><strong>Snapshot changed during read</strong><span>Some task facts moved while Fleet authority was observed. Review the source before acting.</span></div>
+        <Icon name="alert" size={18} />
+        <div><strong>{t('notice.changedTitle')}</strong><span>{t('notice.changedBody')}</span></div>
       </div>
     );
   }
   if (state.kind === 'repo-degraded') {
     return (
       <div className="operator-notice operator-notice--warning" role="status" aria-live="polite">
-        <Icon name="alert" size={19} />
-        <div><strong>One or more repositories are degraded</strong><span>Fleet remains readable; the affected repository row carries its typed recovery message.</span></div>
+        <Icon name="alert" size={18} />
+        <div><strong>{t('notice.degradedTitle')}</strong><span>{t('notice.degradedBody')}</span></div>
       </div>
     );
   }
   return null;
 }
 
-function SummaryStrip({ snapshot }: { readonly snapshot: OperatorFleetSnapshotV1 }) {
-  const summary = [
-    { label: 'Available', value: snapshot.counts.available, tone: 'summary-card--carrot' },
-    { label: 'Working', value: snapshot.counts.working, tone: 'summary-card--blue' },
-    { label: 'In review', value: snapshot.counts.in_review, tone: 'summary-card--purple' },
-    { label: 'Ready to merge', value: snapshot.counts.ready_to_merge, tone: 'summary-card--green' },
-    { label: 'Unreadable repos', value: snapshot.counts.unreadable, tone: snapshot.counts.unreadable ? 'summary-card--red' : 'summary-card--neutral' },
-  ] as const;
-  return (
-    <section className="summary-strip" aria-labelledby="summary-heading">
-      <div className="section-heading section-heading--compact">
-        <div><p className="operator-eyebrow">at a glance</p><h2 id="summary-heading">Fleet summary</h2></div>
-        <span className="summary-strip__sequence">seq <strong>{snapshot.sequence}</strong> · {formatObservedAt(snapshot.observed_at)}</span>
-      </div>
-      <div className="summary-grid">
-        {summary.map((item) => (
-          <div className={`summary-card ${item.tone}`} key={item.label}>
-            <span>{item.label}</span><strong>{item.value}</strong>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function AttentionInbox({ snapshot, onSelect }: { readonly snapshot: OperatorFleetSnapshotV1; readonly onSelect: (card: OperatorFleetCardV1) => void }) {
-  const cards = attentionCards(snapshot);
-  return (
-    <section id="attention-inbox" className="attention-section" aria-labelledby="attention-heading">
-      <div className="section-heading">
-        <div><p className="operator-eyebrow">needs a human look</p><h2 id="attention-heading">Attention Inbox</h2></div>
-        <span className="section-heading__count">{cards.length} {cards.length === 1 ? 'item' : 'items'}</span>
-      </div>
-      {cards.length === 0 ? (
-        <div className="empty-inline"><Icon name="check" size={17} /><span>No attention items in this snapshot.</span></div>
-      ) : (
-        <div className="attention-list">
-          {cards.map((card) => (
-            <button className="attention-item" type="button" key={taskKey(card)} onClick={() => onSelect(card)}>
-              <span className={`attention-item__icon ${attentionTone(card.attention_owner)}`}><Icon name="inbox" size={16} /></span>
-              <span className="attention-item__body">
-                <strong>{card.task_id}</strong>
-                <span>{displayRepository(card)} · {attentionLabel(card.attention_owner)}</span>
-              </span>
-              <Icon name="arrow" size={16} />
-            </button>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function TaskCard({ card, onSelect }: { readonly card: OperatorFleetCardV1; readonly onSelect: (card: OperatorFleetCardV1) => void }) {
-  const degraded = card.snapshot_consistency === 'changed_during_read';
-  return (
-    <button className="task-card" type="button" onClick={() => onSelect(card)}>
-      <span className="task-card__topline">
-        <span className="task-card__repository"><Icon name="repo" size={14} />{displayRepository(card)}</span>
-        {card.attention_owner !== 'none' && <StatusDot status={card.attention_owner === 'user' ? 'warn' : 'danger'} />}
+function CauseLine({ card, t }: { readonly card: OperatorFleetCardV1; readonly t: OperatorTranslate }) {
+  const cause = primaryCause(card);
+  if (!cause) {
+    return <span className="worklist-row__cause worklist-row__cause--quiet">{t('row.noCause')}</span>;
+  }
+  if (cause.kind === 'blocker') {
+    return (
+      <span className={`worklist-row__cause ${attentionTone(cause.blocker.attention_owner)}`}>
+        <Icon name="alert" size={13} />
+        <span className="cause-owner">{t(attentionKey(cause.blocker.attention_owner))}</span>
+        <span className="cause-text">{t(blockerKey(cause.blocker.code))}</span>
+        <code className="cause-code">{cause.blocker.code}</code>
       </span>
-      <strong className="task-card__id">{card.task_id}</strong>
-      <span className="task-card__revision">{card.task_revision}</span>
-      <span className="task-card__bottomline">
-        <IconBadge tone={degraded ? 'tone-amber' : card.merge_readiness?.ready ? 'tone-green' : 'tone-neutral'}>
-          {degraded ? 'changed during read' : card.column ? statusLabel(card.column) : 'unclassified'}
-        </IconBadge>
-        {card.feedback.pending_count > 0 && <span className="task-card__signal">{card.feedback.pending_count} feedback</span>}
-        {card.inbox.unread_count > 0 && <span className="task-card__signal">{card.inbox.unread_count} unread</span>}
+    );
+  }
+  if (cause.kind === 'no_progress') {
+    return (
+      <span className="worklist-row__cause tone-agent">
+        <Icon name="flag" size={13} />
+        <span className="cause-text">{t('row.noProgress')}</span>
+      </span>
+    );
+  }
+  return (
+    <span className="worklist-row__cause tone-neutral">
+      <Icon name="inbox" size={13} />
+      <span className="cause-text">{t('row.unread', { count: cause.count })}</span>
+    </span>
+  );
+}
+
+function WorklistRow({
+  card,
+  selected,
+  onSelect,
+  t,
+}: {
+  readonly card: OperatorFleetCardV1;
+  readonly selected: boolean;
+  readonly onSelect: (card: OperatorFleetCardV1) => void;
+  readonly t: OperatorTranslate;
+}) {
+  const label = taskDisplayLabel(card);
+  const changed = card.snapshot_consistency === 'changed_during_read';
+  return (
+    <button
+      className={`worklist-row${selected ? ' is-selected' : ''}`}
+      type="button"
+      aria-current={selected ? 'true' : undefined}
+      onClick={() => onSelect(card)}
+    >
+      <span className="worklist-row__head">
+        <span className={`worklist-row__label${label.isLabel ? '' : ' worklist-row__label--id'}`}>{label.text}</span>
+        {card.attention_owner !== 'none' && (
+          <Badge tone={attentionTone(card.attention_owner)}>{t('attention.owned', { owner: t(attentionKey(card.attention_owner)) })}</Badge>
+        )}
+      </span>
+      <span className="worklist-row__meta">
+        <span className="worklist-row__repository"><Icon name="repo" size={13} />{card.repository_id}</span>
+        <span className="worklist-row__stage">{t(stageKey(card.column))}</span>
+        {changed && <span className="worklist-row__changed">{t('row.changedDuringRead')}</span>}
+      </span>
+      <CauseLine card={card} t={t} />
+      <span className="worklist-row__signals">
+        {card.feedback.pending_count > 0 && <span>{t('row.feedback', { count: card.feedback.pending_count })}</span>}
+        {card.inbox.unread_count > 0 && <span>{t('row.unread', { count: card.inbox.unread_count })}</span>}
       </span>
     </button>
   );
 }
 
-function BoardColumn({
-  column,
-  cards,
-  active,
-  onActivate,
-  onSelect,
-}: {
-  readonly column: { readonly id: OperatorFleetColumn; readonly label: string };
-  readonly cards: readonly OperatorFleetCardV1[];
-  readonly active: boolean;
-  readonly onActivate: () => void;
-  readonly onSelect: (card: OperatorFleetCardV1) => void;
-}) {
+function UnreadableRepositoryRow({ repository, t }: { readonly repository: OperatorFleetRepositoryV1; readonly t: OperatorTranslate }) {
   return (
-    <section className={`board-column ${active ? 'is-active' : ''}`} aria-labelledby={`column-${column.id}`}>
-      <button className="board-column__header" type="button" onClick={onActivate} aria-expanded={active}>
-        <span><span className="board-column__index">{String(OPERATOR_COLUMNS.findIndex((item) => item.id === column.id) + 1).padStart(2, '0')}</span><strong id={`column-${column.id}`}>{column.label}</strong></span>
-        <span className="board-column__count">{cards.length}</span>
-      </button>
-      <div className="board-column__cards">
-        {cards.length === 0 ? (
-          <div className="column-empty"><span>—</span><small>No tasks in this column</small></div>
-        ) : cards.map((card) => <TaskCard key={taskKey(card)} card={card} onSelect={onSelect} />)}
-      </div>
-    </section>
+    <div className="worklist-row worklist-row--repository" role="group" aria-label={repository.repository_id}>
+      <span className="worklist-row__head">
+        <span className="worklist-row__label">{repository.repository_id}</span>
+        <Badge tone="tone-danger">{t('repo.status.unreadable')}</Badge>
+      </span>
+      {repository.error && (
+        <span className="worklist-row__cause tone-danger">
+          <Icon name="alert" size={13} />
+          <span className="cause-text">{repository.error.message}</span>
+          <code className="cause-code">{repository.error.code}</code>
+        </span>
+      )}
+    </div>
   );
 }
 
-function FleetBoard({ snapshot, onSelect }: { readonly snapshot: OperatorFleetSnapshotV1; readonly onSelect: (card: OperatorFleetCardV1) => void }) {
-  const [activeColumn, setActiveColumn] = useState<OperatorFleetColumn>('available');
-  const unclassified = allCards(snapshot).filter((card) => card.column === null);
+function Worklist({
+  snapshot,
+  selectedKey,
+  onSelect,
+  t,
+}: {
+  readonly snapshot: OperatorFleetSnapshotV1;
+  readonly selectedKey: string | null;
+  readonly onSelect: (card: OperatorFleetCardV1) => void;
+  readonly t: OperatorTranslate;
+}) {
+  const groups = useMemo(() => groupWorklist(snapshot), [snapshot]);
+  const [filter, setFilter] = useState<WorklistGroupId | 'all'>('all');
+  const [collapsed, setCollapsed] = useState<readonly WorklistGroupId[]>(DEFAULT_COLLAPSED_GROUPS);
+  const total = groups.reduce((sum, group) => sum + group.count, 0);
+  const visible = groups.filter((group) => filter === 'all' || group.id === filter);
+
+  const toggle = (id: WorklistGroupId) =>
+    setCollapsed((current) => (current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]));
+
   return (
-    <section id="fleet-board" className="board-section" aria-labelledby="board-heading">
-      <div className="section-heading">
-        <div><p className="operator-eyebrow">authoritative order</p><h2 id="board-heading">Fleet board</h2></div>
-        <span className="section-heading__count">5 columns</span>
+    <section className="worklist" id="worklist" aria-labelledby="worklist-heading">
+      <div className="worklist__header">
+        <h2 id="worklist-heading">{t('worklist.title')}</h2>
       </div>
-      <div className="column-switcher" aria-label="Fleet column selector">
-        {OPERATOR_COLUMNS.map((column) => {
-          const count = cardsForColumn(snapshot, column.id).length;
-          return <button key={column.id} type="button" aria-pressed={activeColumn === column.id} className={activeColumn === column.id ? 'is-active' : ''} onClick={() => setActiveColumn(column.id)}>{column.label}<span>{count}</span></button>;
-        })}
+      <div className="worklist__filters" role="group" aria-label={t('worklist.filters')}>
+        <button type="button" aria-pressed={filter === 'all'} className={filter === 'all' ? 'is-active' : ''} onClick={() => setFilter('all')}>
+          {t('worklist.filterAll')}<span>{total}</span>
+        </button>
+        {groups.map((group) => (
+          <button
+            key={group.id}
+            type="button"
+            aria-pressed={filter === group.id}
+            className={filter === group.id ? 'is-active' : ''}
+            onClick={() => {
+              setFilter(group.id);
+              setCollapsed((current) => current.filter((entry) => entry !== group.id));
+            }}
+          >
+            {t(`group.${group.id}` as OperatorMessageKey)}<span>{group.count}</span>
+          </button>
+        ))}
       </div>
-      <div className="board-columns">
-        {OPERATOR_COLUMNS.map((column) => <BoardColumn key={column.id} column={column} cards={cardsForColumn(snapshot, column.id)} active={activeColumn === column.id} onActivate={() => setActiveColumn(column.id)} onSelect={onSelect} />)}
-      </div>
-      {unclassified.length > 0 && (
-        <div className="unclassified-band" role="status">
-          <Icon name="alert" size={16} />
-          <span><strong>{unclassified.length} task{unclassified.length === 1 ? '' : 's'} not classified</strong> · Fleet did not assign a sound column; no client-side classification was applied.</span>
+      {total === 0 ? (
+        <div className="empty-inline"><Icon name="check" size={16} /><span>{t('worklist.empty')}</span></div>
+      ) : (
+        <div className="worklist__groups">
+          {visible.map((group) => {
+            const groupLabel = t(`group.${group.id}` as OperatorMessageKey);
+            const open = !collapsed.includes(group.id);
+            return (
+              <section className={`worklist-group worklist-group--${group.id}`} key={group.id} aria-labelledby={`group-${group.id}`}>
+                <button
+                  className="worklist-group__header"
+                  type="button"
+                  aria-expanded={open}
+                  aria-label={open ? t('worklist.collapse', { group: groupLabel }) : t('worklist.expand', { group: groupLabel })}
+                  onClick={() => toggle(group.id)}
+                >
+                  <Icon name="chevron" size={15} className={open ? 'is-open' : ''} />
+                  <strong id={`group-${group.id}`}>{groupLabel}</strong>
+                  <span className="worklist-group__count">{group.count}</span>
+                </button>
+                {open && (
+                  <div className="worklist-group__rows">
+                    {group.repositories.map((repository) => (
+                      <UnreadableRepositoryRow key={repository.repository_id} repository={repository} t={t} />
+                    ))}
+                    {group.cards.map((card) => (
+                      <WorklistRow
+                        key={taskKey(card)}
+                        card={card}
+                        selected={taskKey(card) === selectedKey}
+                        onSelect={onSelect}
+                        t={t}
+                      />
+                    ))}
+                    {group.count === 0 && <p className="worklist-group__empty">{t('worklist.groupEmpty')}</p>}
+                  </div>
+                )}
+              </section>
+            );
+          })}
         </div>
       )}
     </section>
   );
 }
 
-function RepositoryList({ snapshot }: { readonly snapshot: OperatorFleetSnapshotV1 }) {
+function StageMatrix({ snapshot, t }: { readonly snapshot: OperatorFleetSnapshotV1; readonly t: OperatorTranslate }) {
   return (
-    <section id="repositories" className="repositories-section" aria-labelledby="repositories-heading">
-      <div className="section-heading">
-        <div><p className="operator-eyebrow">source health</p><h2 id="repositories-heading">Repositories</h2></div>
-        <span className="section-heading__count">{snapshot.repositories.length} adopted</span>
-      </div>
-      <div className="repository-list">
-        {snapshot.repositories.map((repository) => {
-          const repoStatus = repository.status === 'unreadable' ? 'danger' : repository.snapshot_consistency === 'stable' ? 'ok' : 'warn';
-          return (
-            <article className={`repository-row repository-row--${repoStatus}`} key={repository.repository_id}>
-              <span className="repository-row__mark"><Icon name="repo" size={17} /></span>
-              <div className="repository-row__main"><strong>{repository.repository_id}</strong><span>{repository.access_mode.replace('_', ' ')} · {repository.cards.length} tasks</span></div>
-              <span className="repository-row__state"><StatusDot status={repoStatus} />{repository.status === 'unreadable' ? 'unreadable' : statusLabel(repository.snapshot_consistency)}</span>
-              {repository.error && <span className="repository-row__error">{repository.error.message}</span>}
-            </article>
-          );
-        })}
-      </div>
+    <div className="stage-matrix__scroll">
+      <table className="stage-matrix">
+        <caption className="detail-eyebrow">{t('detail.matrixTitle')}</caption>
+        <thead>
+          <tr>
+            <th scope="col">{t('detail.matrixRepository')}</th>
+            {OPERATOR_COLUMNS.map((column) => <th scope="col" key={column.id}>{t(stageKey(column.id))}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {snapshot.repositories.map((repository) => (
+            <tr key={repository.repository_id}>
+              <th scope="row">{repository.repository_id}</th>
+              {OPERATOR_COLUMNS.map((column) => (
+                <td key={column.id}>{repository.cards.filter((card) => card.column === column.id).length}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function RepositoryHealth({ snapshot, t }: { readonly snapshot: OperatorFleetSnapshotV1; readonly t: OperatorTranslate }) {
+  return (
+    <div className="repository-list">
+      {snapshot.repositories.map((repository) => {
+        const repoStatus = repository.status === 'unreadable' ? 'danger' : repository.snapshot_consistency === 'stable' ? 'ok' : 'warn';
+        return (
+          <article className={`repository-row repository-row--${repoStatus}`} key={repository.repository_id}>
+            <div className="repository-row__main">
+              <strong>{repository.repository_id}</strong>
+              <span>
+                {t(`repo.accessMode.${repository.access_mode}` as OperatorMessageKey)} · {t('repo.tasks', { count: repository.cards.length })}
+              </span>
+            </div>
+            <span className="repository-row__state">
+              <StatusDot status={repoStatus} />
+              {repository.status === 'unreadable'
+                ? t('repo.status.unreadable')
+                : t(`status.consistency.${repository.snapshot_consistency}` as OperatorMessageKey)}
+            </span>
+            {repository.error && <span className="repository-row__error">{repository.error.message}</span>}
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function TaskCauses({ card, t }: { readonly card: OperatorFleetCardV1; readonly t: OperatorTranslate }) {
+  const blockers = cardBlockers(card);
+  const quiet = blockers.length === 0 && !card.feedback.no_progress && card.inbox.unread_count === 0;
+  return (
+    <section className="detail-block" aria-labelledby="detail-cause-heading">
+      <h3 className="detail-eyebrow" id="detail-cause-heading">{t('detail.cause')}</h3>
+      {quiet && <p className="detail-quiet">{t('detail.causeEmpty')}</p>}
+      {blockers.length > 0 && (
+        <ul className="cause-list">
+          {blockers.map((blocker) => (
+            <li className={`cause-item ${attentionTone(blocker.attention_owner)}`} key={blocker.code}>
+              <span className="cause-text">{t(blockerKey(blocker.code))}</span>
+              <span className="cause-owner">{t('detail.blockerOwner', { owner: t(attentionKey(blocker.attention_owner)) })}</span>
+              <code className="cause-code">{blocker.code}</code>
+            </li>
+          ))}
+        </ul>
+      )}
+      {card.feedback.no_progress && (
+        <div className="detail-callout detail-callout--warning">
+          <Icon name="flag" size={15} />
+          <div>
+            <strong>{t('detail.noProgressTitle')}</strong>
+            <span>{t('detail.noProgressBody')}</span>
+            {card.feedback.repair_actions.length > 0 && (
+              <>
+                <span className="detail-repair-title">{t('detail.repairTitle')}</span>
+                <ul className="repair-list">
+                  {card.feedback.repair_actions.map((action) => (
+                    <li key={action}>
+                      {t(`repair.${action}` as OperatorMessageKey)} <code className="cause-code">{action}</code>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+      {card.inbox.unread_count > 0 && (
+        <div className="detail-callout">
+          <Icon name="inbox" size={15} />
+          <div><strong>{t('row.unread', { count: card.inbox.unread_count })}</strong></div>
+        </div>
+      )}
     </section>
   );
 }
 
-const WIDE_DRAWER_QUERY = '(min-width: 1101px)';
+function TaskDetail({
+  card,
+  revisionChangedFrom,
+  t,
+}: {
+  readonly card: OperatorFleetCardV1;
+  readonly revisionChangedFrom: string | null;
+  readonly t: OperatorTranslate;
+}) {
+  const label = taskDisplayLabel(card);
+  return (
+    <>
+      {revisionChangedFrom && (
+        <div className="detail-callout detail-callout--warning" role="status">
+          <Icon name="alert" size={15} />
+          <div>
+            <strong>{t('detail.revisionChanged')}</strong>
+            <span>{t('detail.revisionChangedBody', { previous: revisionChangedFrom, current: card.task_revision })}</span>
+          </div>
+        </div>
+      )}
+      <div className="detail-chips">
+        <Badge tone={attentionTone(card.attention_owner)}>
+          {card.attention_owner === 'none'
+            ? t('attention.none')
+            : t('attention.owned', { owner: t(attentionKey(card.attention_owner)) })}
+        </Badge>
+        <Badge>{t(stageKey(card.column))}</Badge>
+        <Badge>{card.repository_id}</Badge>
+      </div>
+      <TaskCauses card={card} t={t} />
+      <section className="detail-block" aria-labelledby="detail-identity-heading">
+        <h3 className="detail-eyebrow" id="detail-identity-heading">{t('detail.identity')}</h3>
+        <CopyValue label={t('field.taskId')} value={card.task_id} t={t} />
+        <CopyValue label={t('field.publication')} value={card.publication_id} t={t} />
+        <CopyValue label={t('field.headSha')} value={card.head_sha} t={t} />
+        <dl className="detail-list">
+          <div><dt>{t('field.repository')}</dt><dd>{card.repository_id}</dd></div>
+          <div><dt>{t('field.revision')}</dt><dd className="mono-value">{card.task_revision}</dd></div>
+          <div><dt>{t('field.claim')}</dt><dd className="mono-value">{card.claim_id ?? t('field.notClaimed')}</dd></div>
+          <div><dt>{t('field.generation')}</dt><dd className="mono-value">{card.generation ?? t('field.none')}</dd></div>
+          <div><dt>{t('field.lease')}</dt><dd>{t(`lease.${card.lease_state}` as OperatorMessageKey)}</dd></div>
+          <div>
+            <dt>{t('field.execution')}</dt>
+            <dd>{card.execution_readiness ? t(`execution.${card.execution_readiness}` as OperatorMessageKey) : t('field.notApplicable')}</dd>
+          </div>
+        </dl>
+      </section>
+      <section className="detail-block" aria-labelledby="detail-signals-heading">
+        <h3 className="detail-eyebrow" id="detail-signals-heading">{t('detail.signals')}</h3>
+        <div className="signal-grid">
+          <span><strong>{card.feedback.pending_count}</strong> {t('detail.signalFeedback')}</span>
+          <span><strong>{card.inbox.unread_count}</strong> {t('detail.signalInbox')}</span>
+          <span><strong>{cardBlockers(card).length}</strong> {t('detail.signalBlockers')}</span>
+        </div>
+      </section>
+      {card.snapshot_consistency === 'changed_during_read' && (
+        <div className="detail-callout detail-callout--warning">
+          <Icon name="alert" size={15} />
+          <div><strong>{t('detail.changedDuringRead')}</strong></div>
+        </div>
+      )}
+    </>
+  );
+}
 
-function useWideDrawerLayout(): boolean {
+const WIDE_LAYOUT_QUERY = '(min-width: 901px)';
+
+function useWideLayout(): boolean {
   const [wide, setWide] = useState(() => typeof window !== 'undefined'
     && typeof window.matchMedia === 'function'
-    && window.matchMedia(WIDE_DRAWER_QUERY).matches);
+    && window.matchMedia(WIDE_LAYOUT_QUERY).matches);
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
-    const query = window.matchMedia(WIDE_DRAWER_QUERY);
+    const query = window.matchMedia(WIDE_LAYOUT_QUERY);
     const update = (event: MediaQueryListEvent) => setWide(event.matches);
     setWide(query.matches);
     query.addEventListener('change', update);
@@ -445,7 +751,21 @@ function useWideDrawerLayout(): boolean {
   return wide;
 }
 
-function TaskDrawer({ card, modal, onClose }: { readonly card: OperatorFleetCardV1 | null; readonly modal: boolean; readonly onClose: () => void }) {
+function DetailPane({
+  snapshot,
+  card,
+  revisionChangedFrom,
+  modal,
+  onClose,
+  t,
+}: {
+  readonly snapshot: OperatorFleetSnapshotV1 | null;
+  readonly card: OperatorFleetCardV1 | null;
+  readonly revisionChangedFrom: string | null;
+  readonly modal: boolean;
+  readonly onClose: () => void;
+  readonly t: OperatorTranslate;
+}) {
   const dialogRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
@@ -495,50 +815,61 @@ function TaskDrawer({ card, modal, onClose }: { readonly card: OperatorFleetCard
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardKey, modal]);
 
-  if (!card) return null;
+  if (modal && !card) return null;
+  const label = card ? taskDisplayLabel(card) : null;
   return (
     <>
-      <button className="drawer-scrim" type="button" tabIndex={-1} aria-label="Close task details" onClick={onClose} />
+      {modal && card && (
+        <button className="pane-scrim" type="button" tabIndex={-1} aria-label={t('detail.close')} onClick={onClose} />
+      )}
       <aside
         ref={dialogRef}
-        className="task-drawer"
+        className="detail-pane"
         role={modal ? 'dialog' : 'complementary'}
         aria-modal={modal ? 'true' : undefined}
-        aria-labelledby="task-drawer-title"
+        aria-labelledby="detail-pane-title"
       >
-        <div className="task-drawer__header">
-          <div><p className="operator-eyebrow">task detail</p><h2 id="task-drawer-title">{card.task_id}</h2></div>
-          <button ref={closeButtonRef} className="icon-button" type="button" onClick={onClose} aria-label="Close task details"><Icon name="close" size={19} /></button>
+        <div className="detail-pane__header">
+          <div className="detail-pane__title">
+            <p className="detail-eyebrow">{card ? t('detail.taskDetail') : t('detail.overviewTitle')}</p>
+            <h2 id="detail-pane-title" className={label && !label.isLabel ? 'mono-value' : ''}>
+              {label ? label.text : t('detail.overviewTitle')}
+            </h2>
+            {card && label?.isLabel && <code className="detail-pane__id">{card.task_id.slice(0, 12)}</code>}
+          </div>
+          {card && (
+            <button ref={closeButtonRef} className="icon-button" type="button" onClick={onClose} aria-label={t('detail.close')}>
+              <Icon name="close" size={18} />
+            </button>
+          )}
         </div>
-        <div className="task-drawer__body">
-          <div className="drawer-status"><IconBadge tone={attentionTone(card.attention_owner)}>{attentionLabel(card.attention_owner)}</IconBadge><IconBadge tone="tone-neutral">{card.column ? statusLabel(card.column) : 'unclassified'}</IconBadge></div>
-          <div className="drawer-block"><p className="operator-eyebrow">task identifier</p><CopyValue label="Task identifier" value={card.task_id} /></div>
-          <dl className="detail-list">
-            <div><dt>repository</dt><dd>{displayRepository(card)}</dd></div>
-            <div><dt>revision</dt><dd className="mono-value">{card.task_revision}</dd></div>
-            <div><dt>claim</dt><dd className="mono-value">{card.claim_id ?? 'not claimed'}</dd></div>
-            <div><dt>generation</dt><dd className="mono-value">{card.generation ?? '—'}</dd></div>
-            <div><dt>lease</dt><dd>{statusLabel(card.lease_state)}</dd></div>
-            <div><dt>execution</dt><dd>{card.execution_readiness ? statusLabel(card.execution_readiness) : 'not applicable'}</dd></div>
-          </dl>
-          <div className="drawer-block"><p className="operator-eyebrow">publication</p><CopyValue label="Publication identifier" value={card.publication_id} /><CopyValue label="Head SHA" value={card.head_sha} /></div>
-          <div className="drawer-block"><p className="operator-eyebrow">signals</p><div className="signal-grid"><span><strong>{card.feedback.pending_count}</strong> feedback</span><span><strong>{card.inbox.unread_count}</strong> inbox</span><span><strong>{card.blocker_codes.length}</strong> blockers</span></div></div>
-          {card.blocker_codes.length > 0 && <div className="drawer-callout drawer-callout--warning"><Icon name="alert" size={16} /><span>{card.blocker_codes.join(', ')}</span></div>}
-          {card.snapshot_consistency === 'changed_during_read' && <div className="drawer-callout drawer-callout--warning"><Icon name="alert" size={16} /><span>This task changed while the snapshot was read. Re-observe before acting.</span></div>}
+        <div className="detail-pane__body">
+          {card ? (
+            <TaskDetail card={card} revisionChangedFrom={revisionChangedFrom} t={t} />
+          ) : snapshot ? (
+            <>
+              <p className="detail-quiet">{t('detail.overviewHint')}</p>
+              <StageMatrix snapshot={snapshot} t={t} />
+              <section className="detail-block" aria-labelledby="detail-health-heading">
+                <h3 className="detail-eyebrow" id="detail-health-heading">{t('detail.repositoryHealth')}</h3>
+                <RepositoryHealth snapshot={snapshot} t={t} />
+              </section>
+            </>
+          ) : null}
         </div>
-        <div className="task-drawer__footer"><span>read-only surface</span><span className="mono-value">no mutations</span></div>
+        <div data-slot="composer" />
       </aside>
     </>
   );
 }
 
-function EmptyFleet() {
+function EmptyFleet({ t }: { readonly t: OperatorTranslate }) {
   return (
     <section className="empty-state" aria-labelledby="empty-heading">
-      <span className="empty-state__mark"><Icon name="repo" size={23} /></span>
-      <p className="operator-eyebrow">no adopted repositories</p>
-      <h2 id="empty-heading">The Fleet is quiet.</h2>
-      <p>Adopt a repository, then refresh this local board to observe its authoritative task state.</p>
+      <span className="empty-state__mark"><Icon name="repo" size={22} /></span>
+      <p className="detail-eyebrow">{t('empty.eyebrow')}</p>
+      <h2 id="empty-heading">{t('empty.title')}</h2>
+      <p>{t('empty.body')}</p>
       <code>repo-harness adopt --help</code>
     </section>
   );
@@ -548,21 +879,43 @@ function LoadingState() {
   return (
     <section className="loading-board" aria-label="Loading Fleet board">
       <div className="loading-board__line loading-board__line--wide" />
-      <div className="loading-board__grid">{Array.from({ length: 5 }, (_, index) => <div className="loading-board__column" key={index}><span /><span /><span /></div>)}</div>
+      <div className="loading-board__rows">{Array.from({ length: 5 }, (_, index) => <span key={index} />)}</div>
     </section>
   );
 }
 
-export function OperatorApp({ initialState, initialSnapshot, fetchSnapshot = fetchOperatorSnapshot }: OperatorAppProps) {
+function FatalState({ error, onRetry, t }: { readonly error: OperatorApiErrorV1; readonly onRetry: () => void; readonly t: OperatorTranslate }) {
+  return (
+    <section className="fatal-state" aria-labelledby="fatal-heading">
+      <span className="fatal-state__mark"><Icon name="alert" size={22} /></span>
+      <p className="detail-eyebrow">{t('fatal.eyebrow')}</p>
+      <h2 id="fatal-heading">{t('fatal.title')}</h2>
+      <p>{error.message}</p>
+      <code>{error.next_action}</code>
+      <button className="operator-button operator-button--secondary" type="button" onClick={onRetry}>{t('fatal.retry')}</button>
+    </section>
+  );
+}
+
+interface Selection {
+  readonly key: string;
+  readonly revision: string;
+}
+
+export function OperatorApp({
+  initialState,
+  initialSnapshot,
+  fetchSnapshot = fetchOperatorSnapshot,
+  initialLocale,
+}: OperatorAppProps) {
   const initial = initialState ?? (initialSnapshot ? stateFromSnapshot(initialSnapshot) : { kind: 'loading', previous: null } as const);
   const [state, setState] = useState<OperatorSnapshotViewState>(initial);
-  const [selectedTask, setSelectedTask] = useState<OperatorFleetCardV1 | null>(null);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const wideDrawerLayout = useWideDrawerLayout();
+  const [selection, setSelection] = useState<Selection | null>(null);
+  const { locale, setLocale, t } = useLocale(initialLocale);
+  const wideLayout = useWideLayout();
   const refreshInFlight = useRef(false);
   const snapshot = snapshotForState(state);
   const busy = state.kind === 'loading';
-  const repositoryCount = snapshot?.repositories.length ?? 0;
   const stateKind = state.kind;
 
   const refresh = async () => {
@@ -572,9 +925,9 @@ export function OperatorApp({ initialState, initialSnapshot, fetchSnapshot = fet
     setState({ kind: 'loading', previous });
     try {
       const nextSnapshot = await fetchSnapshot();
-      setSelectedTask((current) => current === null
-        ? null
-        : allCards(nextSnapshot).find((card) => taskKey(card) === taskKey(current)) ?? null);
+      setSelection((current) => (current === null || allCards(nextSnapshot).some((card) => taskKey(card) === current.key))
+        ? current
+        : null);
       setState(stateFromSnapshot(nextSnapshot));
     } catch (error) {
       const apiError = asApiError(error);
@@ -592,48 +945,59 @@ export function OperatorApp({ initialState, initialSnapshot, fetchSnapshot = fet
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const selectedKey = selectedTask ? taskKey(selectedTask) : null;
-  const visibleSelectedTask = selectedKey && snapshot
-    ? allCards(snapshot).find((card) => taskKey(card) === selectedKey) ?? null
+  const selectedCard = selection && snapshot
+    ? allCards(snapshot).find((card) => taskKey(card) === selection.key) ?? null
     : null;
+  const revisionChangedFrom = selectedCard && selection && selectedCard.task_revision !== selection.revision
+    ? selection.revision
+    : null;
+  const selectCard = (card: OperatorFleetCardV1) => setSelection({ key: taskKey(card), revision: card.task_revision });
 
   return (
-    <div className={`operator-app ${mobileMenuOpen ? 'mobile-menu-open' : ''} ${visibleSelectedTask ? 'has-drawer' : ''}`} data-state={stateKind}>
-      <AppRail state={state} repositoryCount={repositoryCount} />
-      <div className="operator-workspace">
-        <Topbar state={state} busy={busy} onRefresh={() => void refresh()} />
-        <button className="mobile-menu-button icon-button" type="button" aria-label="Toggle navigation" aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen((open) => !open)}><Icon name={mobileMenuOpen ? 'close' : 'menu'} size={19} /></button>
+    <div
+      className={`operator-app${selectedCard ? ' has-selection' : ''}`}
+      data-state={stateKind}
+      data-locale={locale}
+      lang={locale === 'zh' ? 'zh' : 'en'}
+    >
+      <StatusBar
+        snapshot={snapshot}
+        stale={stateKind === 'stale'}
+        busy={busy}
+        locale={locale}
+        onLocale={setLocale}
+        onRefresh={() => void refresh()}
+        t={t}
+      />
+      <div className="operator-main">
         <main className="operator-content">
-          <SnapshotNotice state={state} onRetry={() => void refresh()} />
-          {state.kind === 'loading' && state.previous === null ? <LoadingState /> : state.kind === 'fatal' ? <EmptyFatalState error={state.error} onRetry={() => void refresh()} /> : snapshot ? (
-            snapshotViewKind(snapshot) === 'empty' ? <EmptyFleet /> : (
-              <>
-                <SummaryStrip snapshot={snapshot} />
-                <AttentionInbox snapshot={snapshot} onSelect={setSelectedTask} />
-                <FleetBoard snapshot={snapshot} onSelect={setSelectedTask} />
-                <RepositoryList snapshot={snapshot} />
-              </>
-            )
-          ) : null}
+          <SnapshotNotice state={state} onRetry={() => void refresh()} t={t} />
+          {state.kind === 'loading' && state.previous === null ? <LoadingState />
+            : state.kind === 'fatal' ? <FatalState error={state.error} onRetry={() => void refresh()} t={t} />
+              : snapshot ? (
+                snapshotViewKind(snapshot) === 'empty'
+                  ? <EmptyFleet t={t} />
+                  : <Worklist snapshot={snapshot} selectedKey={selection?.key ?? null} onSelect={selectCard} t={t} />
+              ) : null}
         </main>
-        <footer className="operator-footer"><span>repo-harness operator</span><span>protocol 2 · sequence {snapshot?.sequence ?? '—'}</span><span className="operator-footer__right">read-only / localhost</span></footer>
+        {(wideLayout || selectedCard) && state.kind !== 'fatal' && (
+          <DetailPane
+            snapshot={snapshot}
+            card={selectedCard}
+            revisionChangedFrom={revisionChangedFrom}
+            modal={!wideLayout}
+            onClose={() => setSelection(null)}
+            t={t}
+          />
+        )}
       </div>
-      <TaskDrawer card={visibleSelectedTask} modal={!wideDrawerLayout} onClose={() => setSelectedTask(null)} />
+      <footer className="operator-footer">
+        <span>repo-harness operator</span>
+        <span>{t('footer.protocol', { protocol: 2, sequence: snapshot?.sequence ?? '—' })}</span>
+        <span className="operator-footer__right">read-only / localhost</span>
+      </footer>
     </div>
   );
 }
 
-function EmptyFatalState({ error, onRetry }: { readonly error: OperatorApiErrorV1; readonly onRetry: () => void }) {
-  return (
-    <section className="fatal-state" aria-labelledby="fatal-heading">
-      <span className="fatal-state__mark"><Icon name="alert" size={24} /></span>
-      <p className="operator-eyebrow">authority boundary</p>
-      <h2 id="fatal-heading">Fleet snapshot unavailable</h2>
-      <p>{error.message}</p>
-      <code>{error.next_action}</code>
-      <button className="operator-button operator-button--primary" type="button" onClick={onRetry}>Retry observation</button>
-    </section>
-  );
-}
-
-export { fetchOperatorSnapshot };
+export { DEFAULT_OPERATOR_LOCALE, fetchOperatorSnapshot };

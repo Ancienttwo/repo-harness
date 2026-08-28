@@ -22,6 +22,25 @@
   and must not enter the browser bundle. It is typed as `OperatorFleetSnapshotV1['protocol']`,
   so a drift from the core constant is a typecheck failure, not a runtime one.
 
+- WP-B: group assignment order is deliberately not the display order. Display is
+  `needs you -> ready to merge -> unreadable repos -> unclassified -> agent working -> external -> done`,
+  but assignment claims `unclassified` before `external`, so a card Fleet could not classify can never
+  land in a group the board collapses by default. `groupForCard` in `src/operator-web/App.tsx` is the
+  single place that decides this.
+- WP-B: the worklist row reads `merge_readiness.blockers` (per-blocker `code` + `attention_owner`),
+  never the flat `blocker_codes`. The flat list carries no owner, and the owner is what decides whether
+  a row belongs to the human. `blocker_codes` stays in the decoded transport (it is WP-A's contract and
+  still fails closed on an unknown code); the rendered board no longer reads it, including the pane's
+  blocker count, which comes from `merge_readiness.blockers`.
+- WP-B: `feedback.no_progress` is a boolean with no duration anywhere in the contract, so the copy says
+  the task is not progressing and explicitly states the snapshot does not carry how long. `repair_actions`
+  render as sentences, not buttons: this surface has no write path in this work package.
+- WP-B: selection identity is `repository_id:task_id`. The revision at selection time is kept beside it
+  only to detect a definition change, which renders a notice at the top of the pane instead of dropping
+  the operator's place on the board.
+- WP-B: `src/operator-web/i18n.ts` types `zh` as `Record<keyof typeof en, string>`, so a missing
+  translation is a typecheck failure. There is no runtime fallback to English and no partial dictionary.
+
 ## Deviations From Plan Or Spec
 
 - WP-A touched one App.tsx literal (`protocol 1` -> `protocol 2`) even though UI work is WP-B.
@@ -35,6 +54,24 @@
 - `OPERATOR_SERVER_PROTOCOL` (the `/healthz` service surface) stays at 1. It versions the route
   contract, not the fleet payload; the payload's own version is `snapshot.protocol`, which the
   Fleet bump already carries. Bumping both would create a second authority for one fact.
+
+- WP-B: the frozen cause priority names four tiers (user blocker, no progress, external blocker, unread).
+  An agent-owned blocker fits none of them, and a card whose only signal is one would have rendered an
+  empty cause. `primaryCause` inserts agent-owned blockers between external and unread. The pane still
+  lists every blocker regardless of owner.
+- WP-B: `src/operator-web/fixture.ts` gained one card (`fixtureTasks.blocked`, a user-owned
+  `base_moved_since_verification` plus an external `checks_pending`) and set `no_progress` on the
+  repo-console card. Without them the default render reaches no blocker cause at all: every card that
+  carried one sat in a group the board collapses by default, so the cause line would have shipped
+  untested. `counts.in_review` moved 1 -> 2 with the added card.
+- WP-B: the detail pane is resident on wide layouts only. At <= 900px it appears as a modal overlay when
+  a task is selected and is absent otherwise, which is the responsive clause in the frozen decisions;
+  a resident pane under a single-column stack would push the worklist off the first screen.
+- WP-B: `--text-faint` (#74879B) was removed rather than kept unused. It sits at 3.6:1 on the page
+  background, so every remaining text token now clears 4.5:1 by construction instead of by review.
+- WP-B: the brand mark was recolored from carrot to ink. The accent is reserved for human-write
+  affordances and this board has none yet; a decorative accent mark would have spent the signal early.
+  A stylesheet test asserts the accent tokens appear only in the `:root` declaration block.
 
 ## Tradeoffs Considered
 

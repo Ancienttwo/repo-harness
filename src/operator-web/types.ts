@@ -94,21 +94,6 @@ export function projectSnapshotViewState(snapshot: OperatorFleetSnapshotV1): Ope
   return { kind, snapshot } as OperatorSnapshotViewState;
 }
 
-export function cardsForColumn(
-  snapshot: OperatorFleetSnapshotV1,
-  column: OperatorFleetColumn,
-): readonly OperatorFleetCardV1[] {
-  return snapshot.repositories.flatMap((repository) =>
-    repository.cards.filter((card) => card.column === column),
-  );
-}
-
-export function attentionCards(snapshot: OperatorFleetSnapshotV1): readonly OperatorFleetCardV1[] {
-  return snapshot.repositories.flatMap((repository) =>
-    repository.cards.filter((card) => card.attention_owner !== 'none'),
-  );
-}
-
 export function allCards(snapshot: OperatorFleetSnapshotV1): readonly OperatorFleetCardV1[] {
   return snapshot.repositories.flatMap((repository) => repository.cards);
 }
@@ -383,13 +368,4 @@ export function decodeOperatorFleetSnapshot(value: unknown): OperatorFleetSnapsh
     counts: decodedCounts,
     source_snapshot_sha256: sourceSnapshotSha256,
   });
-}
-
-export function formatObservedAt(value: string): string {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(parsed);
 }

@@ -59,6 +59,7 @@ export const fixtureTasks = {
   done: fixtureTask('done', '4a18d6c72f9b350e', 'WP0 sprint row identity derivation', 5),
   console: fixtureTask('console', 'f52c8093a6d71b4e', 'Console adoption planner dry run parity', 1),
   changed: fixtureTask('changed', '81becf4207d3a596', 'WP5 snapshot consistency propagation', 6),
+  blocked: fixtureTask('blocked', '3f9a52c7e08b41d6', 'WP6 base moved during review', 7),
 } as const;
 
 function card(
@@ -126,11 +127,22 @@ const stableRepositories: readonly OperatorFleetRepositoryV1[] = [
       merge_readiness: mergeReadiness('pub-ready', true),
     }),
     card('repo-harness', fixtureTasks.done, 'done'),
+    // A user-owned blocker plus an external one: the worklist row must show the
+    // user-owned cause, and the detail pane must show both.
+    card('repo-harness', fixtureTasks.blocked, 'in_review', {
+      attention_owner: 'user',
+      merge_readiness: mergeReadiness('pub-blocked', false, [
+        { code: 'base_moved_since_verification', attention_owner: 'user' },
+        { code: 'checks_pending', attention_owner: 'external' },
+      ]),
+      blocker_codes: ['base_moved_since_verification', 'checks_pending'],
+    }),
   ]),
   repository('repo-console', [
     card('repo-console', fixtureTasks.console, 'working', {
       task_revision: 'r18',
       attention_owner: 'user',
+      feedback: { pending_count: 2, no_progress: true, repair_actions: ['resume_same_owner', 'explicit_takeover'] },
       inbox: { unread_count: 2, addressed_to_current_claim: true },
     }),
   ], { access_mode: 'read_only' }),
@@ -147,7 +159,7 @@ export const stableSnapshot: OperatorFleetSnapshotV1 = {
   counts: {
     available: 1,
     working: 2,
-    in_review: 1,
+    in_review: 2,
     ready_to_merge: 1,
     done: 1,
     unreadable: 0,

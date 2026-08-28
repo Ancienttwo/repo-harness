@@ -3,19 +3,59 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
 
-import { asApiError, copyOperatorIdentifier, fetchOperatorSnapshot, OperatorApp } from '../../src/operator-web/App';
+import {
+  asApiError,
+  copyOperatorIdentifier,
+  fetchOperatorSnapshot,
+  groupWorklist,
+  OperatorApp,
+  primaryCause,
+  taskDisplayLabel,
+  taskKey,
+} from '../../src/operator-web/App';
 import { degradedSnapshot, fixtureTasks, stableSnapshot } from '../../src/operator-web/fixture';
-import { decodeOperatorFleetSnapshot, projectSnapshotViewState, type OperatorFleetSnapshotV1 } from '../../src/operator-web/types';
+import {
+  localeFromNavigatorLanguage,
+  OPERATOR_LOCALE_STORAGE_KEY,
+  readStoredLocale,
+  relativeAge,
+  resolveInitialLocale,
+  translate,
+  writeStoredLocale,
+} from '../../src/operator-web/i18n';
+import {
+  decodeOperatorFleetSnapshot,
+  projectSnapshotViewState,
+  type OperatorFleetSnapshotV1,
+} from '../../src/operator-web/types';
 
 let root: Root | null = null;
 let window: Window;
 
-function installDom(): void {
+/**
+ * `matchMedia` is stubbed rather than driven by a viewport size so the modal and
+ * the persistent-pane layouts are both asserted deterministically.
+ */
+function installDom(wide = false): void {
   window = new Window({ url: 'http://127.0.0.1:4318/' });
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: (media: string) => ({
+      matches: wide,
+      media,
+      onchange: null,
+      addEventListener() {},
+      removeEventListener() {},
+      addListener() {},
+      removeListener() {},
+      dispatchEvent: () => true,
+    }),
+  });
   Object.assign(globalThis, {
     window,
     document: window.document,
     navigator: window.navigator,
+    localStorage: window.localStorage,
     HTMLElement: window.HTMLElement,
     Element: window.Element,
     Node: window.Node,
@@ -34,6 +74,17 @@ function buttonWithText(text: string): HTMLButtonElement {
   return button as unknown as HTMLButtonElement;
 }
 
+async function mount(node: React.ReactElement): Promise<void> {
+  const container = document.createElement('div');
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () => root?.render(node));
+}
+
+function paneText(): string {
+  return document.querySelector('.detail-pane')?.textContent ?? '';
+}
+
 beforeEach(() => {
   installDom();
 });
@@ -44,21 +95,118 @@ afterEach(async () => {
   window.close();
 });
 
-describe('operator web interactions', () => {
-  test('drawer owns modal focus, traps Tab, closes on Escape, and restores the trigger', async () => {
-    const container = document.createElement('div');
-    document.body.append(container);
-    root = createRoot(container);
-    await act(async () => root?.render(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} />));
+describe('operator web worklist projection', () => {
+  test('assigns groups by who must act and keeps unclassified out of a collapsed group', () => {
+    const groups = groupWorklist(stableSnapshot);
+    const byId = Object.fromEntries(groups.map((group) => [group.id, group.cards.map((card) => card.task_id)]));
 
-    const trigger = buttonWithText(fixtureTasks.review.task_id);
+    expect(groups.map((group) => group.id)).toEqual([
+      'needs_you',
+      'ready_to_merge',
+      'unreadable',
+      'unclassified',
+      'agent_working',
+      'external',
+      'done',
+    ]);
+    expect(byId.needs_you).toEqual([
+      fixtureTasks.console.task_id,
+      fixtureTasks.available.task_id,
+      fixtureTasks.blocked.task_id,
+    ]);
+    expect(byId.ready_to_merge).toEqual([fixtureTasks.ready.task_id]);
+    expect(byId.external).toEqual([fixtureTasks.review.task_id]);
+    expect(byId.agent_working).toEqual([fixtureTasks.working.task_id]);
+    expect(byId.done).toEqual([fixtureTasks.done.task_id]);
+
+    const externalUnclassified = {
+      ...stableSnapshot,
+      repositories: [{
+        ...stableSnapshot.repositories[0],
+        cards: [{ ...stableSnapshot.repositories[0].cards[2], column: null }],
+      }],
+    } as OperatorFleetSnapshotV1;
+    const regrouped = groupWorklist(externalUnclassified);
+    expect(regrouped.find((group) => group.id === 'unclassified')?.count).toBe(1);
+    expect(regrouped.find((group) => group.id === 'external')?.count).toBe(0);
+  });
+
+  test('sorts a group by repository then task index, with unindexed rows last', () => {
+    const [needsYou] = groupWorklist(stableSnapshot);
+    expect(needsYou.cards.map((card) => [card.repository_id, card.task_index])).toEqual([
+      ['repo-console', fixtureTasks.console.task_index],
+      ['repo-harness', fixtureTasks.available.task_index],
+      ['repo-harness', fixtureTasks.blocked.task_index],
+    ]);
+
+    const unindexed = { ...stableSnapshot.repositories[0].cards[0], task_index: null };
+    const sorted = groupWorklist({
+      ...stableSnapshot,
+      repositories: [{ ...stableSnapshot.repositories[0], cards: [unindexed, stableSnapshot.repositories[0].cards[5]] }],
+    } as OperatorFleetSnapshotV1);
+    expect(sorted[0].cards.map((card) => card.task_index)).toEqual([fixtureTasks.blocked.task_index, null]);
+  });
+
+  test('ranks one cause per row: user blocker, then stalled feedback, then external, then unread', () => {
+    const cards = stableSnapshot.repositories[0].cards;
+    const blocked = cards[5];
+    const review = cards[2];
+    const [consoleCard] = stableSnapshot.repositories[1].cards;
+
+    expect(primaryCause(blocked)).toEqual({
+      kind: 'blocker',
+      blocker: { code: 'base_moved_since_verification', attention_owner: 'user' },
+    });
+    expect(primaryCause(consoleCard)).toEqual({ kind: 'no_progress' });
+    expect(primaryCause(review)).toEqual({
+      kind: 'blocker',
+      blocker: { code: 'provider_unavailable', attention_owner: 'external' },
+    });
+    expect(primaryCause(cards[0])).toEqual({ kind: 'unread', count: 1 });
+    expect(primaryCause(cards[4])).toBeNull();
+  });
+
+  test('falls back to a 12 character task id when the sprint row carries no label', () => {
+    const labelled = taskDisplayLabel(stableSnapshot.repositories[0].cards[0]);
+    const unlabelled = taskDisplayLabel({ ...stableSnapshot.repositories[0].cards[0], task_label: null });
+
+    expect(labelled).toEqual({ text: fixtureTasks.available.task_label, isLabel: true });
+    expect(unlabelled).toEqual({ text: fixtureTasks.available.task_id.slice(0, 12), isLabel: false });
+    expect(unlabelled.text.length).toBe(12);
+  });
+
+  test('selection identity ignores the task revision', () => {
+    const card = stableSnapshot.repositories[0].cards[0];
+    expect(taskKey(card)).toBe(`repo-harness:${fixtureTasks.available.task_id}`);
+    expect(taskKey({ ...card, task_revision: 'rev-next' })).toBe(taskKey(card));
+  });
+});
+
+describe('operator web interactions', () => {
+  test('renders the plain-language cause with its raw code and expands a collapsed group on demand', async () => {
+    await mount(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} initialLocale="en" />);
+
+    const worklist = document.querySelector('.worklist')?.textContent ?? '';
+    expect(worklist).toContain('The base branch moved after verification');
+    expect(worklist).toContain('base_moved_since_verification');
+    expect(worklist).toContain('no progress');
+    expect(worklist).not.toContain(fixtureTasks.review.task_label);
+
+    await act(async () => buttonWithText('External').click());
+    expect(document.querySelector('.worklist')?.textContent).toContain(fixtureTasks.review.task_label);
+  });
+
+  test('pane owns modal focus, traps Tab, closes on Escape, and restores the trigger', async () => {
+    await mount(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} initialLocale="en" />);
+
+    const trigger = buttonWithText(fixtureTasks.blocked.task_label);
     trigger.focus();
     await act(async () => trigger.click());
 
     const dialog = document.querySelector('[role="dialog"]');
-    const close = document.querySelector<HTMLButtonElement>('.task-drawer [aria-label="Close task details"]');
+    const close = document.querySelector<HTMLButtonElement>('.detail-pane [aria-label="Close task details"]');
     expect(dialog?.getAttribute('aria-modal')).toBe('true');
-    expect(dialog?.getAttribute('aria-labelledby')).toBe('task-drawer-title');
+    expect(dialog?.getAttribute('aria-labelledby')).toBe('detail-pane-title');
     expect(document.activeElement).toBe(close);
 
     const focusable = Array.from(dialog?.querySelectorAll<HTMLButtonElement>('button:not([disabled])') ?? []);
@@ -74,34 +222,49 @@ describe('operator web interactions', () => {
     expect(document.activeElement).toBe(trigger);
   });
 
-  test('copies full task, publication, and head identifiers and keeps mobile selection on native buttons', async () => {
+  test('detail pane shows every blocker, the no-progress flag, and its repair actions as text', async () => {
+    await mount(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} initialLocale="en" />);
+
+    await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+    const blockedPane = paneText();
+    expect(blockedPane).toContain('The base branch moved after verification');
+    expect(blockedPane).toContain('base_moved_since_verification');
+    expect(blockedPane).toContain('Checks are still running');
+    expect(blockedPane).toContain('checks_pending');
+    expect(blockedPane).toContain('you owns this');
+    expect(blockedPane).toContain('external owns this');
+    expect(document.querySelector('.detail-pane [data-slot="composer"]')?.textContent).toBe('');
+
+    const close = document.querySelector<HTMLButtonElement>('.detail-pane [aria-label="Close task details"]');
+    if (!close) throw new Error('close button not found');
+    await act(async () => close.click());
+    await act(async () => buttonWithText(fixtureTasks.console.task_label).click());
+    const consolePane = paneText();
+    expect(consolePane).toContain('Feedback reports no progress');
+    expect(consolePane).toContain('Resume with the same owner.');
+    expect(consolePane).toContain('Take the task over explicitly.');
+    expect(document.querySelectorAll('.repair-list button').length).toBe(0);
+  });
+
+  test('copies full task, publication, and head identifiers', async () => {
     const copied: string[] = [];
     Object.defineProperty(window.navigator, 'clipboard', {
       configurable: true,
       value: { writeText: async (value: string) => { copied.push(value); } },
     });
-    const container = document.createElement('div');
-    document.body.append(container);
-    root = createRoot(container);
-    await act(async () => root?.render(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} />));
+    await mount(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} initialLocale="en" />);
 
-    await act(async () => buttonWithText(fixtureTasks.review.task_id).click());
+    await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
     const expectedHead = '0123456789abcdef0123456789abcdef01234567';
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(expectedHead);
+    expect(paneText()).toContain(expectedHead);
 
-    for (const label of ['Copy Task identifier', 'Copy Publication identifier', 'Copy Head SHA']) {
+    for (const label of ['Copy task id', 'Copy publication', 'Copy head sha']) {
       const copy = document.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`);
       if (!copy) throw new Error(`copy button not found: ${label}`);
       await act(async () => copy.click());
     }
-    expect(copied).toEqual([fixtureTasks.review.task_id, 'pub-review', expectedHead]);
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Head SHA copied');
-
-    const column = buttonWithText('Ready to merge');
-    expect(column.getAttribute('role')).toBeNull();
-    expect(column.getAttribute('aria-pressed')).toBe('false');
-    await act(async () => column.click());
-    expect(column.getAttribute('aria-pressed')).toBe('true');
+    expect(copied).toEqual([fixtureTasks.blocked.task_id, 'pub-blocked', expectedHead]);
+    expect(paneText()).toContain('head sha copied');
   });
 
   test('clipboard failure is explicit and fail-closed', async () => {
@@ -139,10 +302,13 @@ describe('operator web interactions', () => {
     feedback.pending_count = 'one';
     expect(() => decodeOperatorFleetSnapshot(malformed)).toThrow('Fleet snapshot response is invalid');
 
-    const container = document.createElement('div');
-    document.body.append(container);
-    root = createRoot(container);
-    await act(async () => root?.render(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} fetchSnapshot={async () => decodeOperatorFleetSnapshot(malformed)} />));
+    await mount(
+      <OperatorApp
+        initialState={projectSnapshotViewState(stableSnapshot)}
+        initialLocale="en"
+        fetchSnapshot={async () => decodeOperatorFleetSnapshot(malformed)}
+      />,
+    );
     await act(async () => buttonWithText('Refresh').click());
     await act(async () => {
       await Promise.resolve();
@@ -151,6 +317,7 @@ describe('operator web interactions', () => {
     });
     expect(document.querySelector('[data-state="stale"]')).not.toBeNull();
     expect(document.querySelector('[role="alert"]')?.textContent).toContain('Fleet snapshot response is invalid');
+    expect(document.querySelector('.statusbar-fact--age.is-stale')).not.toBeNull();
   });
 
   test('decodes the sprint task label and index and fails closed on a malformed one', () => {
@@ -229,70 +396,149 @@ describe('operator web interactions', () => {
     }
   });
 
-  test('closes the drawer when refresh removes the selected task or changes its revision', async () => {
+  test('a new task revision keeps the pane open and says so; a removed task closes it', async () => {
     const nextSnapshot = (revision: string | null): OperatorFleetSnapshotV1 => ({
       ...stableSnapshot,
       sequence: stableSnapshot.sequence + 1,
       repositories: stableSnapshot.repositories.map((repository) => ({
         ...repository,
         cards: repository.cards.flatMap((card) => {
-          if (card.task_id !== fixtureTasks.review.task_id) return [card];
+          if (card.task_id !== fixtureTasks.blocked.task_id) return [card];
           if (revision === null) return [];
           return [{ ...card, task_revision: revision }];
         }),
       })),
     });
 
-    for (const revision of [null, 'rev-review-next']) {
-      const container = document.createElement('div');
-      document.body.append(container);
-      root = createRoot(container);
-      await act(async () => root?.render(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} fetchSnapshot={async () => nextSnapshot(revision)} />));
-      await act(async () => buttonWithText(fixtureTasks.review.task_id).click());
-      expect(document.querySelector('[role="dialog"]')).not.toBeNull();
-      await act(async () => buttonWithText('Refresh').click());
-      expect(document.querySelector('[role="dialog"]')).toBeNull();
-      await act(async () => root?.unmount());
-      root = null;
-      container.remove();
-    }
+    await mount(
+      <OperatorApp
+        initialState={projectSnapshotViewState(stableSnapshot)}
+        initialLocale="en"
+        fetchSnapshot={async () => nextSnapshot('rev-blocked-next')}
+      />,
+    );
+    await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+    await act(async () => buttonWithText('Refresh').click());
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(paneText()).toContain('Task definition changed since last snapshot');
+    expect(paneText()).toContain('rev-blocked-next');
+    await act(async () => root?.unmount());
+    root = null;
+
+    await mount(
+      <OperatorApp
+        initialState={projectSnapshotViewState(stableSnapshot)}
+        initialLocale="en"
+        fetchSnapshot={async () => nextSnapshot(null)}
+      />,
+    );
+    await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    await act(async () => buttonWithText('Refresh').click());
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  test('keeps the desktop drawer in a 248px rail plus fluid board plus 360px side column', async () => {
-    const css = await Bun.file('src/operator-web/styles.css').text();
-    expect(css).toContain('@media (min-width: 1101px)');
-    expect(css).toContain('.operator-app.has-drawer { grid-template-columns: 248px minmax(0, 1fr) 360px; }');
-    expect(css).toContain('.operator-app.has-drawer .drawer-scrim { display: none; }');
-    expect(css).toContain('@media (max-width: 1100px)');
+  test('defaults to English, switches to Chinese, and remembers the choice', async () => {
+    await mount(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} />);
+
+    expect(document.querySelector('.operator-app')?.getAttribute('data-locale')).toBe('en');
+    expect(document.body.textContent).toContain('Worklist');
+    expect(document.body.textContent).toContain('Needs you');
+
+    await act(async () => buttonWithText('中').click());
+    const text = document.body.textContent ?? '';
+    expect(document.querySelector('.operator-app')?.getAttribute('data-locale')).toBe('zh');
+    expect(text).toContain('工作队列');
+    expect(text).toContain('需要你');
+    expect(text).toContain('验证之后 base 分支动过');
+    expect(text).not.toContain('Needs you');
+    expect(window.localStorage.getItem(OPERATOR_LOCALE_STORAGE_KEY)).toBe('zh');
+
+    // Identity, provider vocabulary, and the read-only contract are never translated.
+    expect(text).toContain(fixtureTasks.blocked.task_label);
+    expect(text).toContain('base_moved_since_verification');
+    expect(text).toContain('repo-harness');
+    expect(text).toContain('read-only / localhost');
   });
 
-  test('uses a non-modal complementary detail region on wide screens', async () => {
-    Object.defineProperty(window, 'matchMedia', {
-      configurable: true,
-      value: () => ({
-        matches: true,
-        media: '(min-width: 1101px)',
-        onchange: null,
-        addEventListener() {},
-        removeEventListener() {},
-        addListener() {},
-        removeListener() {},
-        dispatchEvent: () => true,
-      }),
-    });
-    const container = document.createElement('div');
-    document.body.append(container);
-    root = createRoot(container);
-    await act(async () => root?.render(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} />));
+  test('locale resolution prefers the stored choice and fails closed to English', () => {
+    expect(localeFromNavigatorLanguage('zh-CN')).toBe('zh');
+    expect(localeFromNavigatorLanguage('ZH')).toBe('zh');
+    expect(localeFromNavigatorLanguage('fr-FR')).toBeNull();
+    expect(localeFromNavigatorLanguage(null)).toBeNull();
+    expect(resolveInitialLocale({ stored: null, language: 'zh-Hant' })).toBe('zh');
+    expect(resolveInitialLocale({ stored: 'en', language: 'zh-CN' })).toBe('en');
+    expect(resolveInitialLocale({ stored: null, language: 'fr-FR' })).toBe('en');
+    expect(resolveInitialLocale({ stored: null, language: null })).toBe('en');
 
-    const trigger = buttonWithText(fixtureTasks.review.task_id);
+    const throwing = {
+      getItem() { throw new Error('blocked'); },
+      setItem() { throw new Error('blocked'); },
+    } as unknown as Storage;
+    expect(readStoredLocale(throwing)).toBeNull();
+    expect(() => writeStoredLocale('zh', throwing)).not.toThrow();
+    expect(readStoredLocale({ getItem: () => 'kl' } as unknown as Storage)).toBeNull();
+  });
+
+  test('reports data age in both locales from observed_at alone', () => {
+    const observed = '2026-08-24T01:10:00.000Z';
+    const base = Date.parse(observed);
+    expect(relativeAge(observed, base + 30_000)).toEqual({ key: 'age.seconds', count: 30 });
+    expect(relativeAge(observed, base + 120_000)).toEqual({ key: 'age.minutes', count: 2 });
+    expect(relativeAge(observed, base + 7_200_000)).toEqual({ key: 'age.hours', count: 2 });
+    expect(relativeAge(observed, base + 172_800_000)).toEqual({ key: 'age.days', count: 2 });
+    expect(relativeAge('not-a-date', base)).toBeNull();
+    expect(translate('en', 'status.observedAgo', { age: '2m' })).toBe('observed 2m ago');
+    expect(translate('zh', 'status.observedAgo', { age: '2 分钟' })).toBe('2 分钟前读到的快照');
+  });
+
+  test('keeps a persistent complementary pane on wide layouts and a fleet overview until a task is picked', async () => {
+    installDom(true);
+    await mount(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} initialLocale="en" />);
+
+    const overview = document.querySelector('[role="complementary"]');
+    expect(overview?.getAttribute('aria-modal')).toBeNull();
+    expect(overview?.getAttribute('aria-labelledby')).toBe('detail-pane-title');
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(paneText()).toContain('Fleet overview');
+    expect(paneText()).toContain('Tasks by repository and stage');
+    expect(paneText()).toContain('Repository health');
+    expect(paneText()).toContain('read only');
+    expect(document.querySelectorAll('.stage-matrix tbody tr').length).toBe(stableSnapshot.repositories.length);
+
+    const trigger = buttonWithText(fixtureTasks.blocked.task_label);
     trigger.focus();
     await act(async () => trigger.click());
-
-    const detail = document.querySelector('[role="complementary"]');
-    expect(detail?.getAttribute('aria-modal')).toBeNull();
-    expect(detail?.getAttribute('aria-labelledby')).toBe('task-drawer-title');
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(document.activeElement).toBe(trigger);
+    expect(paneText()).toContain(fixtureTasks.blocked.task_label);
+    expect(trigger.getAttribute('aria-current')).toBe('true');
+  });
+
+  test('attention carries a text encoding, not only a color', async () => {
+    await mount(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} initialLocale="en" />);
+
+    const row = buttonWithText(fixtureTasks.blocked.task_label);
+    expect(row.textContent).toContain('you attention');
+    expect(row.querySelectorAll('[aria-hidden="true"]:not(svg)').length).toBe(0);
+  });
+
+  test('holds the layout, stale treatment, motion, and type-size contracts in one stylesheet', async () => {
+    const css = await Bun.file('src/operator-web/styles.css').text();
+
+    expect(css).toContain('.operator-main { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr); flex: 1; align-items: start; }');
+    expect(css).toContain('.operator-app[data-state="stale"] .operator-main { filter: saturate(.55); }');
+    expect(css).toContain('@media (max-width: 900px)');
+    expect(css).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(css).not.toContain('@media (max-width: 1100px)');
+
+    const sizes = Array.from(css.matchAll(/font-size:\s*(\d+)px/gu), (match) => Number(match[1]));
+    expect(sizes.length).toBeGreaterThan(0);
+    expect(Math.min(...sizes)).toBeGreaterThanOrEqual(11);
+
+    // The write accent stays reserved; nothing on this read-only board paints with it.
+    const declarations = css.slice(css.indexOf('.operator-app {'));
+    expect(declarations).not.toContain('var(--carrot-500)');
+    expect(declarations).not.toContain('var(--carrot-600)');
   });
 });
