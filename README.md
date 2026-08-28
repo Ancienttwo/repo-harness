@@ -304,16 +304,19 @@ worktree). Full playbook:
 
 ## Local Human Control Board
 
-Run the read-only operator view on the same machine as the adopted repositories:
+Run the observe-only operator view on the same machine as the adopted
+repositories:
 
 ```bash
 repo-harness operator serve
 ```
 
 The command binds to loopback only and prints the local URL. The browser shows
-the canonical Fleet summary, five columns, attention owners, task details, and
-degraded snapshot states. Refresh is explicit; this surface does not acquire
-tasks, mutate workflow state, launch agents, or expose repository paths.
+the canonical Fleet summary, an attention-first worklist, a resident task
+detail pane, and degraded snapshot states. Refresh is explicit; the board
+carries exactly one write action — sending a task-addressed message — and does
+not acquire tasks, mutate workflow state, launch agents, or expose repository
+paths.
 
 ## MCP Connector
 
