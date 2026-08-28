@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-28 12:30
+> **Related Plan**: plans/archive/plan-20260828-1100-me3-acceptance-followup.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260828-1230
+
 # Task Review: me3-acceptance-followup
 
 > **Status**: Accepted
@@ -10,7 +16,7 @@
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: sha256:94cebb1fc1d0c84b73b24696afcf74df90fdb2b8d8ba9d7e9b174741815891b0
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: a7eeb109b80e66af17ca029e74b7ca1ef3878060
+> **Reviewed Target Revision**: 9478b705ad2d70f0b2b2f009f152e9a912af137a
 
 ## Human Review Card
 
@@ -51,11 +57,11 @@
 > **Actor**: not-applicable
 > **Reviewed Subject SHA256**: sha256:94cebb1fc1d0c84b73b24696afcf74df90fdb2b8d8ba9d7e9b174741815891b0
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: a7eeb109b80e66af17ca029e74b7ca1ef3878060
-> **Verification Evidence SHA256**: sha256:7be86ffd523cbfb6decb2b3ea94b18440b070f992d94ebee4f4191d086bdd199
-> **Issued At**: 2026-08-28T03:41:28.657Z
+> **Reviewed Target Revision**: 9478b705ad2d70f0b2b2f009f152e9a912af137a
+> **Verification Evidence SHA256**: sha256:562ece5708f37b86f2f7da31c5e3bddaf81c7ae1c5b2641ab056d3356c362554
+> **Issued At**: 2026-08-28T04:04:38.639Z
 
-- Summary: MCP engineer_thread_effect_status now reads through the pure observation path (no lock, no store mkdir, no current.json repair) with the ownership check before audit; the dispatch argv is derived from CODEX_READ_ONLY_ARGV_TEMPLATE by placeholder substitution, leaving one literal; the todos row-44 revisit trigger names the live engineering-overlay two-pass surface. Six-file focused suite 37 pass / 0 fail plus check:type clean.
+- Summary: MCP engineer_thread_effect_status now reads through the pure observation path (no lock, no store mkdir, no current.json repair) with the ownership check before audit; the dispatch argv is derived from CODEX_READ_ONLY_ARGV_TEMPLATE by placeholder substitution, leaving one literal; the todos row-44 revisit trigger names the live engineering-overlay two-pass surface. Six-file focused suite 37 pass / 0 fail plus check:type clean. Machine-readable subject does not cover the slice because the receipt round ran after merge and push; the review card carries the human-authoritative acceptance evidence.
 - Findings: P3: tests/unit/me2a-me3b-readonly-delegation.test.ts:249 rebuilds the substitution map with the same keys as production, so a placeholder rename of {execution_packet} would leave both sides unsubstituted and still pass; the pre-existing slice(0,11) literal at :239 covers only argv[0..10].; P3: plans/plan-20260828-1100-me3-acceptance-followup.md rollback text names main cbda7ab4 while the actual fork point is 8afee4cf (cbda7ab4 is an ancestor).
 
 ## Behavior Diff Notes

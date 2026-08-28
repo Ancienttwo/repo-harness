@@ -1,6 +1,6 @@
 # Plan: ME3 acceptance follow-up: MCP read-only path and argv single source
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260828-1100
 > **Slug**: me3-acceptance-followup
 > **Planning Source**: repo-harness-plan
