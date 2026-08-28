@@ -6,6 +6,7 @@ import {
   changedDuringReadSnapshot,
   degradedSnapshot,
   emptySnapshot,
+  fixtureTasks,
   stableSnapshot,
 } from '../../src/operator-web/fixture';
 import { projectSnapshotViewState, snapshotViewKind } from '../../src/operator-web/types';
@@ -26,8 +27,8 @@ describe('operator web control board', () => {
     expect(markup).toContain('In review');
     expect(markup).toContain('Ready to merge');
     expect(markup).toContain('Done');
-    expect(markup).toContain('task-available');
-    expect(markup).toContain('protocol 1');
+    expect(markup).toContain(fixtureTasks.available.task_id);
+    expect(markup).toContain('protocol 2');
     expect(markup).toContain('read-only / localhost');
   });
 

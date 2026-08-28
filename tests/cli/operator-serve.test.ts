@@ -83,7 +83,7 @@ describe('operator serve command and HTTP boundary', () => {
       expect(second.status).toBe(200);
       expect(collectCalls).toBe(1);
       const payload = await first.json() as Record<string, unknown>;
-      expect(payload).toMatchObject({ protocol: 1, kind: 'operator_fleet_snapshot', sequence: 1 });
+      expect(payload).toMatchObject({ protocol: 2, kind: 'operator_fleet_snapshot', sequence: 1 });
       expect(JSON.stringify(payload)).not.toContain('repo_root');
 
       const staticResponse = await fetch(`${server.url}/app.js`);

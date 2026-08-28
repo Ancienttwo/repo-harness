@@ -66,6 +66,8 @@ function projectCard(card: FleetBoardCardV1): OperatorFleetCardV1 {
     repository_id: card.repository_id,
     task_id: card.task_id,
     task_revision: card.task_revision,
+    task_label: card.task_label,
+    task_index: card.task_index,
     claim_id: card.claim_id,
     generation: card.generation,
     column: card.column,

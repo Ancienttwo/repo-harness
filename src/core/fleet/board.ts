@@ -5,7 +5,7 @@ import type { MergeReadinessBlockerCode, MergeReadinessV1 } from '../publication
 import type { BoardLeaseState, TaskState } from '../state/types';
 
 /** A fleet projection is its own read model; it never changes BoardColumn. */
-export const FLEET_BOARD_PROTOCOL = 1 as const;
+export const FLEET_BOARD_PROTOCOL = 2 as const;
 export const FLEET_BOARD_KIND = 'fleet_board_snapshot' as const;
 
 export type FleetBoardColumn = 'available' | 'working' | 'in_review' | 'ready_to_merge' | 'done';
@@ -44,6 +44,15 @@ export interface FleetBoardCardV1 {
   readonly repository_id: string;
   readonly task_id: string;
   readonly task_revision: string;
+  /**
+   * The sprint row's own task cell -- the human-readable preimage of
+   * `task_id`, carried verbatim from the same authority that derived the
+   * digest. Null means the card has no canonical row to name, which is a
+   * snapshot fact and never a placeholder for an unread label.
+   */
+  readonly task_label: string | null;
+  /** The sprint row's own index cell, null under the same no-row condition. */
+  readonly task_index: number | null;
   readonly claim_id: string | null;
   readonly generation: number | null;
   /** Null means no five-column classification was sound; it is not counted. */
@@ -95,6 +104,8 @@ export interface FleetBoardSnapshotV1 {
 export interface FleetBoardCardInputV1 {
   readonly task_id: string;
   readonly task_revision: string;
+  readonly task_label: string | null;
+  readonly task_index: number | null;
   readonly task_state: TaskState;
   readonly lease_state: BoardLeaseState;
   readonly claim_id: string | null;
@@ -181,6 +192,8 @@ export function projectFleetBoardCard(repositoryId: string, input: FleetBoardCar
     repository_id: repositoryId,
     task_id: input.task_id,
     task_revision: input.task_revision,
+    task_label: input.task_label,
+    task_index: input.task_index,
     claim_id: input.claim_id,
     generation: input.generation,
     column: classifyFleetBoardColumn(input),

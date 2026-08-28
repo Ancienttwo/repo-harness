@@ -616,7 +616,7 @@ export function OperatorApp({ initialState, initialSnapshot, fetchSnapshot = fet
             )
           ) : null}
         </main>
-        <footer className="operator-footer"><span>repo-harness operator</span><span>protocol 1 · sequence {snapshot?.sequence ?? '—'}</span><span className="operator-footer__right">read-only / localhost</span></footer>
+        <footer className="operator-footer"><span>repo-harness operator</span><span>protocol 2 · sequence {snapshot?.sequence ?? '—'}</span><span className="operator-footer__right">read-only / localhost</span></footer>
       </div>
       <TaskDrawer card={visibleSelectedTask} modal={!wideDrawerLayout} onClose={() => setSelectedTask(null)} />
     </div>

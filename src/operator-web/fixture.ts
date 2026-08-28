@@ -35,25 +35,53 @@ function mergeReadiness(
   };
 }
 
+/**
+ * A fixture task is the real pair the board projects: a 64-hex digest nobody
+ * can read, plus the sprint row cells that name it. Designing the browser
+ * against short synthetic ids is what hid the need for the label.
+ */
+export interface FixtureTask {
+  readonly slug: string;
+  readonly task_id: string;
+  readonly task_label: string;
+  readonly task_index: number;
+}
+
+function fixtureTask(slug: string, seed: string, label: string, index: number): FixtureTask {
+  return { slug, task_id: seed.repeat(4), task_label: label, task_index: index };
+}
+
+export const fixtureTasks = {
+  available: fixtureTask('available', '9c4e17a3b0d582f6', 'WP1 crash-durable closeout transaction', 1),
+  working: fixtureTask('working', '2b71fe0c845d93a7', 'WP2 lease steal fencing token audit', 2),
+  review: fixtureTask('review', 'd0a5c93b16e478f2', 'WP3 publication receipt drift check', 3),
+  ready: fixtureTask('ready', '7e63b2df05a1c894', 'WP4 merge readiness blocker vocabulary', 4),
+  done: fixtureTask('done', '4a18d6c72f9b350e', 'WP0 sprint row identity derivation', 5),
+  console: fixtureTask('console', 'f52c8093a6d71b4e', 'Console adoption planner dry run parity', 1),
+  changed: fixtureTask('changed', '81becf4207d3a596', 'WP5 snapshot consistency propagation', 6),
+} as const;
+
 function card(
   repositoryId: string,
-  taskId: string,
+  task: FixtureTask,
   column: OperatorFleetCardV1['column'],
   overrides: Partial<OperatorFleetCardV1> = {},
 ): OperatorFleetCardV1 {
   return {
     repository_id: repositoryId,
-    task_id: taskId,
-    task_revision: `rev-${taskId}`,
-    claim_id: column === 'available' || column === 'done' ? null : `claim-${taskId}`,
+    task_id: task.task_id,
+    task_revision: `rev-${task.slug}`,
+    task_label: task.task_label,
+    task_index: task.task_index,
+    claim_id: column === 'available' || column === 'done' ? null : `claim-${task.slug}`,
     generation: column === 'available' || column === 'done' ? null : 3,
     column,
     attention_owner: 'none',
     execution_readiness: column === 'available' ? 'execution_ready' : null,
     lease_state: column === 'available' ? 'available' : column === 'done' ? 'released' : 'bound',
-    publication_id: column === 'in_review' || column === 'ready_to_merge' ? `pub-${taskId}` : null,
+    publication_id: column === 'in_review' || column === 'ready_to_merge' ? `pub-${task.slug}` : null,
     head_sha: column === 'in_review' || column === 'ready_to_merge' ? '0123456789abcdef0123456789abcdef01234567' : null,
-    merge_readiness: column === 'ready_to_merge' ? mergeReadiness(`pub-${taskId}`, true) : null,
+    merge_readiness: column === 'ready_to_merge' ? mergeReadiness(`pub-${task.slug}`, true) : null,
     blocker_codes: [],
     feedback: baseFeedback,
     inbox: baseInbox,
@@ -80,27 +108,27 @@ function repository(
 
 const stableRepositories: readonly OperatorFleetRepositoryV1[] = [
   repository('repo-harness', [
-    card('repo-harness', 'task-available', 'available', {
+    card('repo-harness', fixtureTasks.available, 'available', {
       attention_owner: 'user',
       inbox: { unread_count: 1, addressed_to_current_claim: false },
     }),
-    card('repo-harness', 'task-working', 'working', {
+    card('repo-harness', fixtureTasks.working, 'working', {
       attention_owner: 'agent',
       feedback: { pending_count: 1, no_progress: false, repair_actions: ['resume_same_owner'] },
     }),
-    card('repo-harness', 'task-review', 'in_review', {
+    card('repo-harness', fixtureTasks.review, 'in_review', {
       attention_owner: 'external',
-      merge_readiness: mergeReadiness('pub-task-review', false, [{ code: 'provider_unavailable', attention_owner: 'external' }]),
+      merge_readiness: mergeReadiness('pub-review', false, [{ code: 'provider_unavailable', attention_owner: 'external' }]),
       blocker_codes: ['provider_unavailable'],
     }),
-    card('repo-harness', 'task-ready', 'ready_to_merge', {
+    card('repo-harness', fixtureTasks.ready, 'ready_to_merge', {
       attention_owner: 'none',
-      merge_readiness: mergeReadiness('pub-task-ready', true),
+      merge_readiness: mergeReadiness('pub-ready', true),
     }),
-    card('repo-harness', 'task-done', 'done'),
+    card('repo-harness', fixtureTasks.done, 'done'),
   ]),
   repository('repo-console', [
-    card('repo-console', 'task-console', 'working', {
+    card('repo-console', fixtureTasks.console, 'working', {
       task_revision: 'r18',
       attention_owner: 'user',
       inbox: { unread_count: 2, addressed_to_current_claim: true },
@@ -109,7 +137,7 @@ const stableRepositories: readonly OperatorFleetRepositoryV1[] = [
 ];
 
 export const stableSnapshot: OperatorFleetSnapshotV1 = {
-  protocol: 1,
+  protocol: 2,
   kind: 'operator_fleet_snapshot',
   registry_revision: `sha256:${'e'.repeat(64)}`,
   sequence: 18,
@@ -143,8 +171,7 @@ export const changedDuringReadSnapshot: OperatorFleetSnapshotV1 = {
   snapshot_consistency: 'changed_during_read',
   repositories: [
     repository('repo-harness', [
-      card('repo-harness', 'task-changed', null, {
-        task_revision: 'rev-changed',
+      card('repo-harness', fixtureTasks.changed, null, {
         snapshot_consistency: 'changed_during_read',
         attention_owner: 'user',
       }),

@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
 
 import { asApiError, copyOperatorIdentifier, fetchOperatorSnapshot, OperatorApp } from '../../src/operator-web/App';
-import { degradedSnapshot, stableSnapshot } from '../../src/operator-web/fixture';
+import { degradedSnapshot, fixtureTasks, stableSnapshot } from '../../src/operator-web/fixture';
 import { decodeOperatorFleetSnapshot, projectSnapshotViewState, type OperatorFleetSnapshotV1 } from '../../src/operator-web/types';
 
 let root: Root | null = null;
@@ -51,7 +51,7 @@ describe('operator web interactions', () => {
     root = createRoot(container);
     await act(async () => root?.render(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} />));
 
-    const trigger = buttonWithText('task-review');
+    const trigger = buttonWithText(fixtureTasks.review.task_id);
     trigger.focus();
     await act(async () => trigger.click());
 
@@ -85,7 +85,7 @@ describe('operator web interactions', () => {
     root = createRoot(container);
     await act(async () => root?.render(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} />));
 
-    await act(async () => buttonWithText('task-review').click());
+    await act(async () => buttonWithText(fixtureTasks.review.task_id).click());
     const expectedHead = '0123456789abcdef0123456789abcdef01234567';
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain(expectedHead);
 
@@ -94,7 +94,7 @@ describe('operator web interactions', () => {
       if (!copy) throw new Error(`copy button not found: ${label}`);
       await act(async () => copy.click());
     }
-    expect(copied).toEqual(['task-review', 'pub-task-review', expectedHead]);
+    expect(copied).toEqual([fixtureTasks.review.task_id, 'pub-review', expectedHead]);
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Head SHA copied');
 
     const column = buttonWithText('Ready to merge');
@@ -153,6 +153,36 @@ describe('operator web interactions', () => {
     expect(document.querySelector('[role="alert"]')?.textContent).toContain('Fleet snapshot response is invalid');
   });
 
+  test('decodes the sprint task label and index and fails closed on a malformed one', () => {
+    const decoded = decodeOperatorFleetSnapshot(structuredClone(stableSnapshot));
+    expect(decoded.repositories[0]?.cards[2]).toMatchObject({
+      task_id: fixtureTasks.review.task_id,
+      task_label: fixtureTasks.review.task_label,
+      task_index: fixtureTasks.review.task_index,
+    });
+
+    const unlabelled = structuredClone(stableSnapshot) as unknown as Record<string, unknown>;
+    const unlabelledCards = ((unlabelled.repositories as Array<Record<string, unknown>>)[0].cards as Array<Record<string, unknown>>);
+    unlabelledCards[2].task_label = null;
+    unlabelledCards[2].task_index = null;
+    expect(decodeOperatorFleetSnapshot(unlabelled).repositories[0]?.cards[2]).toMatchObject({
+      task_label: null,
+      task_index: null,
+    });
+
+    for (const mutate of [
+      (cards: Array<Record<string, unknown>>) => { cards[2].task_label = ''; },
+      (cards: Array<Record<string, unknown>>) => { cards[2].task_label = 7; },
+      (cards: Array<Record<string, unknown>>) => { delete cards[2].task_label; },
+      (cards: Array<Record<string, unknown>>) => { cards[2].task_index = '3'; },
+      (cards: Array<Record<string, unknown>>) => { cards[2].task_index = 1.5; },
+    ]) {
+      const malformed = structuredClone(stableSnapshot) as unknown as Record<string, unknown>;
+      mutate(((malformed.repositories as Array<Record<string, unknown>>)[0].cards as Array<Record<string, unknown>>));
+      expect(() => decodeOperatorFleetSnapshot(malformed)).toThrow('Fleet snapshot response is invalid');
+    }
+  });
+
   test('reconstructs a closed browser payload and rejects malformed digest and Git OID fields', () => {
     const withExtras = structuredClone(stableSnapshot) as unknown as Record<string, unknown>;
     const repositories = withExtras.repositories as Array<Record<string, unknown>>;
@@ -206,19 +236,19 @@ describe('operator web interactions', () => {
       repositories: stableSnapshot.repositories.map((repository) => ({
         ...repository,
         cards: repository.cards.flatMap((card) => {
-          if (card.task_id !== 'task-review') return [card];
+          if (card.task_id !== fixtureTasks.review.task_id) return [card];
           if (revision === null) return [];
           return [{ ...card, task_revision: revision }];
         }),
       })),
     });
 
-    for (const revision of [null, 'rev-task-review-next']) {
+    for (const revision of [null, 'rev-review-next']) {
       const container = document.createElement('div');
       document.body.append(container);
       root = createRoot(container);
       await act(async () => root?.render(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} fetchSnapshot={async () => nextSnapshot(revision)} />));
-      await act(async () => buttonWithText('task-review').click());
+      await act(async () => buttonWithText(fixtureTasks.review.task_id).click());
       expect(document.querySelector('[role="dialog"]')).not.toBeNull();
       await act(async () => buttonWithText('Refresh').click());
       expect(document.querySelector('[role="dialog"]')).toBeNull();
@@ -255,7 +285,7 @@ describe('operator web interactions', () => {
     root = createRoot(container);
     await act(async () => root?.render(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} />));
 
-    const trigger = buttonWithText('task-review');
+    const trigger = buttonWithText(fixtureTasks.review.task_id);
     trigger.focus();
     await act(async () => trigger.click());
 

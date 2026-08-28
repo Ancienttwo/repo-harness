@@ -25,6 +25,8 @@ function sourceSnapshot(): FleetBoardSnapshotV1 {
           {
             task_id: 'a'.repeat(64),
             task_revision: 'b'.repeat(64),
+            task_label: 'observe one registered repository',
+            task_index: 1,
             task_state: 'pending',
             lease_state: 'available',
             claim_id: null,
@@ -90,6 +92,10 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
     expect(Object.isFrozen(typed.repositories)).toBe(true);
     expect(Object.isFrozen(typed.repositories[0])).toBe(true);
     expect(typed.repositories[0]?.cards[0]?.column).toBe('available');
+    expect(typed.repositories[0]?.cards[0]).toMatchObject({
+      task_label: 'observe one registered repository',
+      task_index: 1,
+    });
     expect(typed.counts.available).toBe(source.counts.available);
   });
 

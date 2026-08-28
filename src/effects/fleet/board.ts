@@ -214,6 +214,8 @@ async function cardInput(
   return Object.freeze({
     task_id: card.task_id,
     task_revision: card.task_revision,
+    task_label: rowTaskLabel(card.task),
+    task_index: rowTaskIndex(card.row_index),
     task_state: card.task_state,
     lease_state: card.lease_state,
     claim_id: card.claim?.claim_id ?? null,
@@ -228,6 +230,19 @@ async function cardInput(
     inbox,
     snapshot_consistency: cardInputConsistency(boardConsistency, inbox.snapshot_consistency),
   });
+}
+
+/**
+ * `projectBoard` flattens a missing canonical row into empty cells, so the
+ * fleet card restores the distinction the board erased: an empty cell is "no
+ * row to name", not a label. Neither value is re-derived from the task digest.
+ */
+function rowTaskLabel(task: string): string | null {
+  return task === '' ? null : task;
+}
+
+function rowTaskIndex(rowIndex: string): number | null {
+  return /^[0-9]+$/u.test(rowIndex) ? Number.parseInt(rowIndex, 10) : null;
 }
 
 function cardInputConsistency(
