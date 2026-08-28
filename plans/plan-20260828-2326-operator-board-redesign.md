@@ -118,8 +118,8 @@ See captured planning output.
 ## Task Breakdown
 
 - [x] WP-A 契約投影:`src/core/fleet/board.ts` 增 `task_label`/`task_index` 進 `FleetBoardCardV1` 與 input,`FLEET_BOARD_PROTOCOL` → 2;`src/effects/fleet/board.ts` 投影 `row.task`/`row.index`;operator types 同步解碼;更新 board 相關測試(commit 276292a6)
-- [ ] WP-B UI 重建:`src/operator-web/` 按凍結決策重寫 App.tsx/styles.css(worklist + pane + 狀態列 + zh/en i18n),渲染 task_label/no_progress/repair_actions/blockers(per-blocker owner + 人話翻譯),修正 attention 語義色與對比度(≥4.5:1 文字、≥3:1 非文字),字級下限 11px;逐條修訂 tests/operator-web/*.test.tsx 的 UX 契約斷言
-- [ ] WP-C 訊息通道:`src/effects/operator/server.ts` 新增 POST endpoint(Origin 必填 + registry 解析 + read_write 閘門 + 8 KiB 鏡像),`sender_kind: 'operator'`;composer UI 按凍結決策;負向測試升級為「恰好一個寫入」不變式
+- [x] WP-B UI 重建:`src/operator-web/` 按凍結決策重寫 App.tsx/styles.css(worklist + pane + 狀態列 + zh/en i18n),渲染 task_label/no_progress/repair_actions/blockers(per-blocker owner + 人話翻譯),修正 attention 語義色與對比度(≥4.5:1 文字、≥3:1 非文字),字級下限 11px;逐條修訂 tests/operator-web/*.test.tsx 的 UX 契約斷言
+- [x] WP-C 訊息通道:`src/effects/operator/server.ts` 新增 POST endpoint(Origin 必填 + registry 解析 + read_write 閘門 + 8 KiB 鏡像),`sender_kind: 'operator'`;composer UI 按凍結決策;負向測試升級為「恰好一個寫入」不變式
 
 ## Oracles
 

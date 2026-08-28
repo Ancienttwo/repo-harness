@@ -73,6 +73,8 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ```yaml
 allowed_paths:
   - docs/spec.md
+  - README.md
+  - docs/design/DESIGN-local-human-control-board-v1.md
   - plans/
   - tasks/todos.md
   - tasks/contracts/20260828-2326-operator-board-redesign.contract.md
