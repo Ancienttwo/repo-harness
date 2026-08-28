@@ -2,6 +2,91 @@
 
 All notable changes to this skill are documented here.
 
+## [0.17.1] - 2026-08-28
+
+### Added
+
+- **Persistent module engineers.** `repo-harness engineer` owns a durable
+  module-engineer control plane: `create`/`enroll`/`bind`/`retire` maintain
+  persistent engineer records and their capability bindings, `offers` and
+  `acquire` hand a bound work envelope to an authenticated engineer principal,
+  and `board`/`status`/`inspect`/`show`/`list` project read-only state. Claims
+  carry an authenticated principal actor, so a claim identifies which engineer
+  holds it rather than only which worktree does. `send`/`receive`/`ack` back a
+  durable task- and claim-scoped engineer inbox whose messages are immutable
+  and supersede on takeover.
+- **Engineering overlay control board and local operator UI.** `repo-harness
+  operator serve` runs a loopback-authenticated human control board over the
+  engineer fleet, backed by a bundled web client built through
+  `build:operator-web`. Request authority is pinned to loopback; the board is a
+  projection surface and never a second mutation authority.
+- **Read-only delegation admission.** `repo-harness delegation` compiles a
+  delegation profile and capability set, admits a delegated run, dispatches it
+  from a frozen argv template, and collects its observations. Admission is
+  fail-closed: a run that cannot be bound to an admitted profile and a
+  writability-checked contract is rejected instead of downgraded.
+- **Verified evidence context.** `repo-harness verified-context` compiles a
+  catalog of verified evidence, binds a decision to it, and persists the
+  resulting receipt. Catalog entries and receipts are validated on write, so a
+  decision cannot cite evidence that was never verified.
+- **Interface change authority.** `repo-harness interface-change` records
+  interface-change proposals against the scheduler projection authority and
+  drives their human transition, with `lookup`/`read` exposing the bound
+  record.
+- **Integration acceptance surface.** `repo-harness integration` reads the
+  acceptance envelope, contract, and matrix and records product acceptance
+  against them.
+- **Engineer MCP profile.** The MCP `engineer` profile exposes
+  `engineer_offers`, `engineer_acquire`, `engineer_status`,
+  `engineer_messages`, `engineer_message_send`, `engineer_message_ack`,
+  `engineer_interface_change_propose`,
+  `engineer_interface_change_transition`, `engineer_thread_effect_capability`,
+  and `engineer_thread_effect_status`. The profile is exclusive: a non-engineer
+  tool called under it returns `TOOL_NOT_AVAILABLE` rather than falling through
+  to the coding profile.
+- **Provider thread effect adapter.** Engineer dispatch resolves provider
+  thread effects through a dedicated adapter, and the thread-effect status read
+  is pure — reading status never mutates thread state.
+- **Official Codex plugin for review on Codex hosts.** Cross-review on a Codex
+  host uses the official Codex plugin and binds the review to an immutable
+  subject.
+- **Incremental sprint verification retry.** `verify-sprint` retries
+  incrementally instead of restarting the whole verification pass.
+
+### Changed
+
+- **ArchContext is pinned to 0.4.7.** Architecture projection acceptance runs
+  against that provider version, and the projection manifest carries explicit
+  provenance for each restamp.
+- **Module engineers are documented as a control plane**, not an execution
+  tier: they schedule, admit, and accept work; they do not hold mutation
+  authority that the contract worktree owns.
+
+### Fixed
+
+- **Engineer CLI errors are layered and typed.** Engineer command failures
+  carry layered error codes, `FleetOffersError` routes through the domain error
+  whitelist, and profile resolution errors stay inside the work-graph domain
+  instead of surfacing as generic runtime faults. Binding comparison is
+  canonical, so an equivalent binding no longer compares unequal.
+- **N-way engineer election proves mutual exclusion.** Concurrent claim
+  election is covered by a test that asserts exactly one winner rather than
+  asserting only that a winner exists.
+- **Header projection into generated helper templates is unconditional.**
+  Generated helpers and acceptance-projection review headers always receive the
+  synced header, so a stale template no longer produces a header that drifts
+  from its source.
+- **Architecture restamp commits are exempt from task sync.** A restamp no
+  longer trips the task-sync gate, and archived acceptance authority survives
+  archival instead of being dropped.
+- **Fixture HOME stays outside the repo under test.** Test fixtures allocate
+  HOME through `mkdtemp` outside the working tree, so a fixture run can no
+  longer write cache state into the repo it is exercising. Install
+  compensation, interactive init, and official Codex plugin fixtures are
+  isolated from each other.
+- **Provider concurrency deadline in fleet tests is stabilized**, removing a
+  timing-dependent failure in the board stability probe.
+
 ## [0.17.0] - 2026-08-23
 
 ### Added
