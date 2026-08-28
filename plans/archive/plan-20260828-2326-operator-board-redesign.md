@@ -1,6 +1,6 @@
 # Plan: Operator board redesign: worklist + detail pane + task message channel
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260828-2326
 > **Slug**: operator-board-redesign
 > **Planning Source**: repo-harness-plan
