@@ -1,6 +1,6 @@
 # Task Contract: operator-board-redesign
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260828-2326-operator-board-redesign.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
