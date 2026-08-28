@@ -562,10 +562,8 @@
       "projectionDigest": "sha256:4efa6fcf47865b251174ac33f217aa1986fad8e2e74c303301e56603752c7152"
     }
   },
-  "receiptDigest": "sha256:3db4da53ad867cda84c2f46d8972563f8fc7defbfdf7c9a0740a02ba81bffef0",
-  "refreshSignalIds": [
-    "sha256:330884176ec14dd34edf948e4f525752c4c2ea7d0adfbfdffa777acd12523ecc"
-  ],
+  "receiptDigest": "sha256:ff92f23bcac26e002f386e9877bc0ea4a13b15932503e975bf5ffbde438266b0",
+  "refreshSignalIds": [],
   "targetCount": 27,
   "fileCount": 27,
   "targets": [
