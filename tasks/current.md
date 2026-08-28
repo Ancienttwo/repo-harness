@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-28T15:01:26+0800 -->
+<!-- updated_at: 2026-08-28T15:21:16+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-28T15:01:26+0800
-> **Source Branch**: codex/me-program-closeout
-> **Source Commit**: eeb3458f
+> **Status**: Active
+> **Updated At**: 2026-08-28T15:21:16+0800
+> **Source Branch**: main
+> **Source Commit**: d81087de
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: ME program ledger closeout
+> **Reason**: manual
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
+- Status: Active
 - Active Plan: (none)
 - Plan Status: (none)
 - Next Task: inspect active worktree marker(s)
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -52,27 +52,14 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=(none), source=(none), file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 14 changed/untracked path(s)
+- Summary: clean
 
 ```
- M docs/researches/20260824-persistent-module-engineer-organization.md
- M plans/prds/20260824-1653-persistent-module-engineer-organization.prd.md
- M tasks/archive/review-20260824-2341-me0a-engineer-profile-binding.md
- M tasks/archive/review-20260825-0316-me0b-engineer-principal-claim-actor.md
- M tasks/archive/review-20260825-2325-me3a-provider-thread-effect.md
- M tasks/archive/review-20260826-0109-me1b-engineering-overlay.md
- M tasks/archive/review-20260826-0246-me4c-integration-product-acceptance.md
- M tasks/archive/review-20260826-0703-me2a-me3b-readonly-delegation.md
- M tasks/archive/review-20260826-1242-me2c-verified-evidence-context.md
- M tasks/archive/review-20260828-0127-me1c-engineer-coordination-messages.md
- M tasks/archive/review-20260828-1306-me4b-interface-change-request.md
- M tasks/workstreams/runtime-harness/engineer-scheduling/me1a-scheduling-schema.md
- M tasks/workstreams/runtime-harness/engineering-overlay/me1b-engineering-overlay.md
- M tasks/workstreams/runtime-harness/interface-change/me4b-interface-change-request.md
+(none)
 ```
 
 ## Source Artifacts
