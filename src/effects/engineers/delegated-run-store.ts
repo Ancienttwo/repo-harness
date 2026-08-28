@@ -862,7 +862,12 @@ export function dispatchDelegatedRun(input: DispatchDelegatedRunInput): Delegate
       dispatch_id: id, intent_sha256: beforeState.intent.intent_sha256, worker_run_ref: null, runtime_principal_id: null, state: 'launch_claimed', failure_class: 'none', observed_capabilities_sha256: beforeState.capability.capability_sha256, protected_before_snapshot_sha256: beforeSnapshot, protected_after_snapshot_sha256: null, process_receipt_sha256: null, observed_at: input.observed_at,
     });
     const developerInstructionsConfig = `developer_instructions=${JSON.stringify(readLogicalRoleInstructions(repoRoot, beforeState.profile))}`;
-    const argv = ['exec', '--sandbox', 'read-only', '--ephemeral', '--ignore-user-config', '--strict-config', '--json', '--model', beforeState.capability.model, '-c', developerInstructionsConfig, canonicalDelegationExecutionPacketBytes(beforeState.packet)];
+    const argvSubstitutions: Readonly<Record<string, string>> = {
+      '{model}': beforeState.capability.model,
+      '{developer_instructions_config}': developerInstructionsConfig,
+      '{execution_packet}': canonicalDelegationExecutionPacketBytes(beforeState.packet),
+    };
+    const argv = CODEX_READ_ONLY_ARGV_TEMPLATE.map((part) => argvSubstitutions[part] ?? part);
     const childEnv = codexChildEnvironment();
     let outcome: ProcessRunResult;
     try {

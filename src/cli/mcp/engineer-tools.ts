@@ -22,9 +22,9 @@ import { readEngineerBindingStatus } from '../../effects/engineers/binding-store
 import { loadEngineerProfile } from '../../effects/engineers/profile-store';
 import {
   ProviderThreadEffectStoreError,
-  listProviderThreadEffects,
+  observeProviderThreadEffectStatus,
+  observeProviderThreadEffects,
   providerThreadCapabilityStatusFor,
-  readProviderThreadEffectStatus,
 } from '../../effects/engineers/provider-thread-effect-store';
 import { resolveEngineerPrincipal, type EngineerPrincipalFences } from '../../effects/engineers/principal';
 import { collectEngineerOffers } from '../../effects/engineers/scheduling';
@@ -494,11 +494,11 @@ export function callEngineerTool(
     if (name === 'engineer_thread_effect_status') {
       const effectId = optionalString(args, 'effect_id');
       if (effectId === undefined) {
-        const result = listProviderThreadEffects(ctx.repoRoot, principal.engineer_id);
+        const result = observeProviderThreadEffects(ctx.repoRoot, principal.engineer_id);
         audit(ctx, name, 'ok', args);
         return textResult(result);
       }
-      const result = readProviderThreadEffectStatus(ctx.repoRoot, effectId);
+      const result = observeProviderThreadEffectStatus(ctx.repoRoot, effectId);
       if (result.intent.engineer_id !== principal.engineer_id) {
         throw new EngineerPrincipalError('engineer_principal_mismatch', 'effect does not belong to authenticated Engineer');
       }

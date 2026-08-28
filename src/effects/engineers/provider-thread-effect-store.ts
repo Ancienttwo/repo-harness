@@ -775,6 +775,27 @@ export function listProviderThreadEffects(
   }).filter((status) => engineerId === undefined || status.intent.engineer_id === engineerId);
 }
 
+/** Pure operator observation of one effect. Unlike the command/status reader
+ * this function never repairs `current.json` or creates store/lock paths. */
+export function observeProviderThreadEffectStatus(
+  repoRoot: string,
+  effectId: string,
+): ProviderThreadEffectStatus {
+  const paths = effectPaths(repoRoot, effectId);
+  const intent = parseIntent(readRaw(paths.intent, 'effect intent'));
+  const observations = readObservationChain(paths, intent);
+  if (observations.length === 0) fail('provider_thread_effect_unreadable', 'effect has no initial observation');
+  const observation = observations[observations.length - 1];
+  const projected = buildProviderThreadEffectCurrent(observation);
+  const currentRaw = readRaw(paths.current, 'effect current');
+  const current = parseCurrent(currentRaw);
+  if (currentRaw !== canonicalProviderThreadEffectCurrentBytes(projected)
+    || current.current_sha256 !== projected.current_sha256) {
+    fail('provider_thread_effect_unreadable', 'effect current projection is stale');
+  }
+  return Object.freeze({ intent, current, observation });
+}
+
 /** Pure operator observation. Unlike the command/status reader this function
  * never repairs `current.json` or creates store/lock paths. */
 export function observeProviderThreadEffects(
@@ -787,19 +808,7 @@ export function observeProviderThreadEffects(
     if (!/^[0-9a-f]{64}$/u.test(name)) {
       fail('provider_thread_effect_unreadable', `invalid effect directory: ${name}`);
     }
-    const paths = effectPaths(repoRoot, `sha256:${name}`);
-    const intent = parseIntent(readRaw(paths.intent, 'effect intent'));
-    const observations = readObservationChain(paths, intent);
-    if (observations.length === 0) fail('provider_thread_effect_unreadable', 'effect has no initial observation');
-    const observation = observations[observations.length - 1];
-    const projected = buildProviderThreadEffectCurrent(observation);
-    const currentRaw = readRaw(paths.current, 'effect current');
-    const current = parseCurrent(currentRaw);
-    if (currentRaw !== canonicalProviderThreadEffectCurrentBytes(projected)
-      || current.current_sha256 !== projected.current_sha256) {
-      fail('provider_thread_effect_unreadable', 'effect current projection is stale');
-    }
-    return Object.freeze({ intent, current, observation });
+    return observeProviderThreadEffectStatus(repoRoot, `sha256:${name}`);
   }).filter((status) => status.intent.engineer_id === engineerId);
   return Object.freeze(statuses);
 }
