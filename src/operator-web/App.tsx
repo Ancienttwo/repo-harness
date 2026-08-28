@@ -384,8 +384,7 @@ function SnapshotNotice({
   return null;
 }
 
-function CauseLine({ card, t }: { readonly card: OperatorFleetCardV1; readonly t: OperatorTranslate }) {
-  const cause = primaryCause(card);
+function CauseLine({ cause, t }: { readonly cause: WorklistCause | null; readonly t: OperatorTranslate }) {
   if (!cause) {
     return <span className="worklist-row__cause worklist-row__cause--quiet">{t('row.noCause')}</span>;
   }
@@ -427,6 +426,7 @@ function WorklistRow({
   readonly t: OperatorTranslate;
 }) {
   const label = taskDisplayLabel(card);
+  const cause = primaryCause(card);
   const changed = card.snapshot_consistency === 'changed_during_read';
   return (
     <button
@@ -446,10 +446,13 @@ function WorklistRow({
         <span className="worklist-row__stage">{t(stageKey(card.column))}</span>
         {changed && <span className="worklist-row__changed">{t('row.changedDuringRead')}</span>}
       </span>
-      <CauseLine card={card} t={t} />
+      <CauseLine cause={cause} t={t} />
       <span className="worklist-row__signals">
         {card.feedback.pending_count > 0 && <span>{t('row.feedback', { count: card.feedback.pending_count })}</span>}
-        {card.inbox.unread_count > 0 && <span>{t('row.unread', { count: card.inbox.unread_count })}</span>}
+        {/* The cause line already states the unread count when unread is the reason this row is here. */}
+        {cause?.kind !== 'unread' && card.inbox.unread_count > 0 && (
+          <span>{t('row.unread', { count: card.inbox.unread_count })}</span>
+        )}
       </span>
     </button>
   );

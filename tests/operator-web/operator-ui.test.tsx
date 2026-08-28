@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { OperatorApp } from '../../src/operator-web/App';
+import { OperatorApp, primaryCause } from '../../src/operator-web/App';
 import {
   changedDuringReadSnapshot,
   degradedSnapshot,
@@ -79,6 +79,18 @@ describe('operator web control board', () => {
     expect(markup).toContain('no progress');
     expect(markup).toContain('1 unread');
     expect(markup).toContain('2 unread');
+  });
+
+  // `available` carries no blocker and no stall, so unread is its primary cause;
+  // the row must not repeat that same count in the trailing signals.
+  test('UX-operator-cause-v1-P2 states an unread primary cause exactly once on the row', () => {
+    const markup = renderStable();
+
+    const availableCard = stableSnapshot.repositories
+      .flatMap((repository) => repository.cards)
+      .find((entry) => entry.task_id === fixtureTasks.available.task_id);
+    expect(primaryCause(availableCard!)?.kind).toBe('unread');
+    expect((markup.match(/1 unread(?!able)/gu) ?? []).length).toBe(1);
   });
 
   test('UX-operator-statusbar-v1-P1 keeps age, sequence, consistency, and repo counts resident', () => {

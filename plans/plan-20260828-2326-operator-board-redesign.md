@@ -112,7 +112,7 @@ See captured planning output.
 - composer 只在 detail pane 底部、默認收合;fence 即確認(claim/generation 併置,changed_during_read/stale/degraded 時禁發);`access_mode: 'read_only'` 為一等閘門;untrusted 語義文案;位元組計數(8 KiB);客戶端 message_id 冪等;delivery 回饋走權威 unread_count 迴路,不持久化本地已送出清單。
 - server:`POST /api/v1/fleet/tasks/{repository_id}/{task_id}/messages`;POST 的 Origin 強制必填(GET 維持現狀);HTTP 層鏡像 body 上限;repository_id 經 registry 解析 + read_write 檢查。
 - footer 契約修訂:`read-only / localhost` → `observe-only · one write: task message`;負向測試升級為「恰好一個寫入」。
-- accent 色紀律:橙只表示人類寫入;attention 語義色修正(user=琥珀、agent=中性藍、external=紫、danger 只留給真錯誤)。
+- accent 色紀律:橙作為 UI affordance 只表示人類寫入,約束對象是 CSS token(`--carrot-*`);brand identity art(marks.tsx 的像素 logo/吉祥物)為例外,其橙色為品牌原色,不承載交互語義。attention 語義色修正(user=琥珀、agent=中性藍、external=紫、danger 只留給真錯誤)。
 - i18n(2026-08-29 用戶追加):中英雙語。單一字典模組 `src/operator-web/i18n.ts`,不引第三方庫;語言切換在常駐狀態列,選擇存 localStorage(讀寫皆 try/catch),初始值跟 `navigator.language`;默認 locale 為 en,測試斷言錨定 en 字串;blocker code 人話翻譯兩語都要並旁附原碼;task_label、repo 名、id/SHA、blocker code 原碼不譯。
 
 ## Task Breakdown
@@ -120,6 +120,7 @@ See captured planning output.
 - [x] WP-A 契約投影:`src/core/fleet/board.ts` 增 `task_label`/`task_index` 進 `FleetBoardCardV1` 與 input,`FLEET_BOARD_PROTOCOL` → 2;`src/effects/fleet/board.ts` 投影 `row.task`/`row.index`;operator types 同步解碼;更新 board 相關測試(commit 276292a6)
 - [x] WP-B UI 重建:`src/operator-web/` 按凍結決策重寫 App.tsx/styles.css(worklist + pane + 狀態列 + zh/en i18n),渲染 task_label/no_progress/repair_actions/blockers(per-blocker owner + 人話翻譯),修正 attention 語義色與對比度(≥4.5:1 文字、≥3:1 非文字),字級下限 11px;逐條修訂 tests/operator-web/*.test.tsx 的 UX 契約斷言
 - [x] WP-C 訊息通道:`src/effects/operator/server.ts` 新增 POST endpoint(Origin 必填 + registry 解析 + read_write 閘門 + 8 KiB 鏡像),`sender_kind: 'operator'`;composer UI 按凍結決策;負向測試升級為「恰好一個寫入」不變式
+- [x] WP-D 品牌採用:canonical 像素蘿蔔 logo + favicon + Dunkie/Hook 吉祥物(來源 Ancienttwo/repo-harness-page@ffe3ff1;commit 4ab78a7e;用戶指令 2026-08-29)
 
 ## Oracles
 

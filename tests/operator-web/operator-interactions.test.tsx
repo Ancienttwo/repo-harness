@@ -549,6 +549,28 @@ describe('operator web interactions', () => {
     expect(carrotSelectors.length).toBeGreaterThan(0);
     for (const selector of carrotSelectors) expect(selector.startsWith('.composer__')).toBe(true);
   });
+
+  /**
+   * The stylesheet guard above only covers rules that go through the carrot
+   * token. Brand orange written as a literal in component source would bypass
+   * it, so the same discipline is enforced against the sources themselves:
+   * `marks.tsx` is brand identity art and may carry the brand orange; any other
+   * component painting with it would be reusing the write accent as decoration.
+   */
+  test('keeps brand orange literals inside the brand art module', async () => {
+    const BRAND_ORANGE = /#(?:E8742C|F2954A|C2571A|C2592C|A44721)\b/giu;
+    const offenders: string[] = [];
+    for await (const relative of new Bun.Glob('*.tsx').scan({ cwd: 'src/operator-web' })) {
+      if (relative === 'marks.tsx') continue;
+      const source = await Bun.file(`src/operator-web/${relative}`).text();
+      const hits = source.match(BRAND_ORANGE);
+      if (hits) offenders.push(`${relative}: ${hits.join(', ')}`);
+    }
+    expect(offenders).toEqual([]);
+
+    // The whitelist is load-bearing only while the brand art actually uses it.
+    expect((await Bun.file('src/operator-web/marks.tsx').text()).match(BRAND_ORANGE)?.length ?? 0).toBeGreaterThan(0);
+  });
 });
 
 describe('operator web task message composer', () => {
