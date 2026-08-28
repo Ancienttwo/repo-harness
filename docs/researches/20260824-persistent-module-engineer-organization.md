@@ -12,6 +12,25 @@
 > **Control-plane Amendment (2026-08-25)**: 用户批准将目标架构从“建设持久 Agent 组织及本地 Worker Host”重构为 “Agent Engineering Control Plane”。ME-0A/0B/1A 保留为已交付控制面；combined ME-3 draft 被 ME-3A Provider Thread Effect Adapter 与 conditional ME-3B Delegated Run Adapter 取代；ME-2C 收窄为 checkpoint evidence projection；ME-4C 脱离 Worker runtime 前置依赖并提前。Runtime Admission Canary 已在 `codex/me1c-engineer-inbox@ef731e6a` 通过，解除了 ME-1C 独立合并边界及 ME-3A 后续设计的 admission blocker；它不批准 ME-3A，也不授权 Provider query loop、history、compaction、model gateway 或 daemon scope。
 > **ME-2C Contract Carrier Closure (2026-08-26)**: semantic constraint authority 冻结在 exact tracked task Contract 内的 strict `Semantic Constraint Catalog` JSON block。`SemanticContractProjectionV1` 只投影 exact commit/blob/bytes/IDs；缺失 catalog、mutable evidence、fork/gap、unreachable subject、subject drift 或 open DecisionRequest 全部 fail closed。WorkerResult prose 永远留在 untrusted projection；assertion/decision store 没有 Task、Lease、Publication 或 Acceptance mutation edge。Architecture Acceptance 为 `changeset.docs-projection-90539fd46a3eccb5` / `event.user-approval-20260826-me2c-architecture`，批准 `entrypoint-changed,relation-changed,verified-flow-proof-changed`，受影响节点仅 `engineer-bindings` 与 `verified-context`；最终 source-only fixed point 不再产生 major delta。
 
+## Program Closeout Status（2026-08-28）
+
+| Slice | Closeout | Product boundary |
+|---|---|---|
+| ME-0A | completed / accepted / published | Engineer Profile 与 Binding authority |
+| ME-0B | completed / accepted / published | authenticated principal 与 ClaimActorReceipt |
+| ME-1A | completed / accepted / published | Work Graph、Offer 与既有 Fleet acquire bridge |
+| ME-1B | completed / accepted / published | read-only Engineering Overlay |
+| ME-1C | completed / accepted / published | persist-first durable coordination messages |
+| ME-2A + conditional ME-3B | completed / accepted / published | admitted read-only delegated run；result 仍是 untrusted evidence |
+| ME-2C | completed / accepted / published | candidate/verifier/decision checkpoint evidence projection |
+| ME-2B | canary completed，runtime not admitted | writable delegation 保持 disabled；Draft writer grant 不进入产品面 |
+| ME-3A | completed / accepted / published | one-action Provider Thread effect 与 lost-ACK reconciliation |
+| ME-4A | completed / accepted / published | bound-task freeze/refusal；不含 takeover |
+| ME-4B | completed / accepted / published | actor-fenced interface-change request；Human 保留 acceptance/integration |
+| ME-4C | completed / accepted / published | integration 与 product acceptance projection |
+
+旧 combined ME-3 Local Worker Host 已 Superseded；ME-0 系列只有 ME-0A 与 ME-0B，ME-0C 不存在。上述 closeout 不新增 daemon、Agent query loop、Provider fallback、writable runtime、writer grant 或第二 Task/Lease/Publication/Acceptance authority。
+
 ## 结论
 
 ### ME-4B Interface Authority Closure（2026-08-26）

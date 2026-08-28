@@ -1,9 +1,9 @@
 # Engineer Scheduling Workstream
 
 > **Capability**: `runtime-harness-engineer-scheduling`
-> **Status**: active
+> **Status**: completed
 > **Source Plan**: `plans/plan-20260825-1149-me1a-engineer-scheduling-schema.md`
-> **Current Slice**: verifying-20260825-me1a-scheduling-schema
+> **Current Slice**: completed-20260828-me1a-scheduling-schema
 
 ## Stable Boundary
 
@@ -20,7 +20,7 @@
 - [x] Repository-key lock, under-lock offer revalidation, and exact ME-0B delegation implemented.
 - [x] Restricted MCP inventory expanded to exact status/offers/acquire tools; local CLI remains read-only for scheduling.
 - [x] ArchContext model, proven acquire flow, generated module, and Human Architecture Acceptance projected.
-- [x] Full repository verification passed; final-subject AcceptanceReceipt remains the closeout boundary.
+- [x] Full repository verification passed; exact-subject AcceptanceReceipt `sha256:c11b32cd8ad65c9ee3e93a059d548f3296f9604e58facb6cd5d5e5b91de3c7f6` against `6879a5229e5c6591b9fb72b22acf362f4b03ed14` and canonical mainline publication close the slice.
 
 ## Deferred Children
 

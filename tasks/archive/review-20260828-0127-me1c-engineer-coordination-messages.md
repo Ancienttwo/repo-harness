@@ -20,13 +20,13 @@
 
 ## Human Review Card
 
-- Verdict: pass pending exact-subject AcceptanceReceipt projection
+- Verdict: pass
 - Change type: code-change
 - Intended files changed: ME-1C protocol/store/CLI/MCP/tests/ArchContext/workflow artifacts only
 - Actual files changed: closed message mechanics; Module message schema and git-common-dir inbox; Engineer CLI/MCP message surfaces; architecture projections and focused tests
 - Commands passed: focused 34-test message/CLI/MCP set; MCP HTTP 15/15; typecheck; architecture/task/workflow/state/init gates; full repository suite 3,087 pass / 2 platform skips / 0 fail
 - Residual risks: recipient inbox scan is linear at 10x; Provider transport lifecycle remains explicitly owned by ME-3A
-- Reviewer action required: freeze the final subject, record the already-authorized acceptance evidence, and reverify before merge
+- Reviewer action required: none
 - Rollback: revert the single ME-1C publication commit; no existing TaskMessage bytes or store migration changed
 
 ## Mode Evidence
@@ -37,7 +37,7 @@
 
 ## Verification Evidence
 
-- Waza `/check` run: equivalent strict repository gate set passed; typed acceptance preparation is next
+- Waza `/check` run: equivalent strict repository gate set and exact-subject external acceptance passed
 - Commands run: contract exit criteria plus `bun test --timeout 60000`
 - Manual checks: reviewed exact-key schemas, resource-root checks, current-principal derivation, Binding rotation, persist-before-transport ordering and absence of Task/Lease mutation
 - Supporting artifacts: `.ai/harness/checks/latest.json`, architecture projection manifest, focused unit/CLI/MCP tests, `docs/researches/20260825-runtime-admission-canary.md`
@@ -90,4 +90,4 @@
 
 ## Summary
 
-- ME-1C is implementation-complete, fully tested and admitted by the Runtime Admission Canary. Acceptance now requires only the frozen-subject receipt workflow and final reverify.
+- ME-1C is accepted, fully tested and admitted by the Runtime Admission Canary.

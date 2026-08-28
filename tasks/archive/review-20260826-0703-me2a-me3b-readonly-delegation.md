@@ -6,7 +6,7 @@
 
 # Task Review: me2a-me3b-readonly-delegation
 
-> **Status**: Review
+> **Status**: Accepted
 > **Plan**: plans/plan-20260826-0257-me2a-me3b-readonly-delegation.md
 > **Contract**: tasks/contracts/20260826-0257-me2a-me3b-readonly-delegation.contract.md
 > **Notes File**: tasks/notes/20260826-0257-me2a-me3b-readonly-delegation.notes.md
@@ -14,19 +14,19 @@
 > **Last Updated**: 2026-08-26 02:58
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:74456cd36c0368911a6f4664c9f876b06e9b56ed45873d582427e952236606e1
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
+> **Reviewed Target Revision**: 5fc220ac1a7651e657f91931cd92914bc31b29a5
 
 ## Human Review Card
 
-- Verdict: pass pending exact-subject AcceptanceReceipt projection
+- Verdict: pass
 - Change type: code-change
 - Intended files changed: ME-2A/conditional ME-3B schemas, read-only effect/store/CLI, focused tests, PRDs, research and ArchContext projections
 - Actual files changed: closed logical Role Profile and capability receipts; immutable admission/intent/launch/observation/result evidence; one-shot Codex read-only action; bounded CLI; delegated-runs capability model and exact inventory tests
 - Commands passed: focused delegation 11/11; architecture inventory 7/7; installed-copy 13/13; system-Python runtime smoke 14/14; typecheck; deploy SQL, architecture, task, strict workflow, project-state and init dry-run gates
 - Residual risks: read-only only; lost ACK after launch remains conservatively `reconciliation_required`; Codex subprocess startup and protected-path hashing are the first 10x pressure points
-- Reviewer action required: freeze the final subject, record the approved Codex semantic disposition, and reverify before merge
+- Reviewer action required: none
 - Rollback: revert the single ME-2A/ME-3B publication; immutable evidence has no authority mutation edge and no daemon remains
 
 ## Mode Evidence
@@ -91,4 +91,4 @@
 
 ## Summary
 
-- ME-2A and conditional ME-3B are implementation-complete and architecture-accepted. The only remaining closeout operation is the frozen-subject receipt workflow and transactional merge.
+- ME-2A and conditional ME-3B are accepted and published as the read-only delegation boundary.

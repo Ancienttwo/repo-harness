@@ -20,13 +20,13 @@
 
 ## Human Review Card
 
-- Verdict: pass pending exact-subject AcceptanceReceipt projection
+- Verdict: pass
 - Change type: code-change
 - Intended files changed: ME-4C closed schemas/effects/CLI/tests, Approved PRD, ArchContext projection and workflow evidence
 - Actual files changed: immutable IntegrationContract/Envelope/Matrix/ProductProjection store; strict current Publication/Git/requirement/Acceptance joins; bounded integration CLI; two-publication, race, symlink and route fixtures; architecture/workstream artifacts
 - Commands passed: focused ME-4C and Publication/Acceptance regressions; typecheck; full repository suite 3112 pass / 2 platform skips / 0 fail; architecture projection validation
 - Residual risks: acceptance revalidates every selected publication and Git fence synchronously; at 10x publication count local Git/filesystem latency fails before schema or authority correctness
-- Reviewer action required: freeze the final subject, project the already-authorized Human acceptance, and run final verification before merge
+- Reviewer action required: none
 - Rollback: revert the single ME-4C publication commit; immutable content-addressed evidence has no mutable pointer and existing Task/Lease/Publication/Acceptance authorities remain unchanged
 
 ## Mode Evidence
@@ -37,7 +37,7 @@
 
 ## Verification Evidence
 
-- Waza `/check` run: equivalent strict repository gate set passed; typed acceptance preparation is next
+- Waza `/check` run: equivalent strict repository gate set passed; exact-subject Human waiver was projected
 - Commands run: focused ME-4C suites, Publication/Acceptance regressions, `bun run check:type`, and `bun test --timeout 60000`
 - Manual checks: reviewed exact-key/canonical validation, existing-commit ancestry, current Lease/Publication joins, AcceptanceReceipt byte revalidation, symlink fail-closed storage, and absence of merge/waiver/authority mutation routes; the frozen `origin/main` subject also carries the already-accepted ME-1B paths, covered by their deterministic oracle and the full green suite
 - Supporting artifacts: `.ai/harness/checks/latest.json`, architecture projection manifest, focused ME-4C tests and full-suite output
@@ -90,4 +90,4 @@
 
 ## Summary
 
-- ME-4C is implementation-complete and fully tested inside the approved control-plane boundary. Acceptance now requires exact-subject receipt projection and canonical publication.
+- ME-4C is accepted and canonically published inside the approved control-plane boundary.

@@ -6,7 +6,7 @@
 
 # Task Review: me1b-engineering-overlay
 
-> **Status**: Review
+> **Status**: Accepted
 > **Plan**: plans/plan-20260825-2339-me1b-engineering-overlay.md
 > **Contract**: tasks/contracts/20260825-2339-me1b-engineering-overlay.contract.md
 > **Notes File**: tasks/notes/20260825-2339-me1b-engineering-overlay.notes.md
@@ -14,19 +14,19 @@
 > **Last Updated**: 2026-08-25 23:39
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:f439c8ee980bdafbf5117e82b019d7e389e0dc1e0c45a95c2fa59bbdf18c9766
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
+> **Reviewed Target Revision**: fee22c4729d6e49d3f67e297842cc2e779d910af
 
 ## Human Review Card
 
-- Verdict: pass pending exact-subject AcceptanceReceipt projection
+- Verdict: pass
 - Change type: code-change
 - Intended files changed: ME-1B schema/projection/CLI/tests, ArchContext projection, PRD and workflow evidence
 - Actual files changed: closed overlay/attention schemas; strict Profile/Binding/Claim/message/Provider projection; `sprint graph` and `engineer board`; focused and inventory fixtures; architecture/workstream artifacts
 - Commands passed: typecheck; focused behavior/CLI gates; architecture inventory gates; full repository suite 3104 pass / 2 platform skips / 0 fail; all root required checks
 - Residual risks: collection is sequential and performs two reads per component; at 10x scale local I/O latency fails before schema correctness
-- Reviewer action required: freeze the final subject, project the already-authorized Human acceptance, and run final verification before merge
+- Reviewer action required: none
 - Rollback: revert the single ME-1B publication commit; the feature is read-only and introduced no mutable authority store
 
 ## Mode Evidence
@@ -37,7 +37,7 @@
 
 ## Verification Evidence
 
-- Waza `/check` run: equivalent strict repository gate set passed; typed acceptance preparation is next
+- Waza `/check` run: equivalent strict repository gate set passed; exact-subject Human waiver was projected
 - Commands run: contract exit criteria, root required checks and `bun test --timeout 60000`
 - Manual checks: reviewed exact-key validation, strict registry authority, component support/consistency joins, owner attribution and absence of mutation/provider routes
 - Supporting artifacts: `.ai/harness/checks/latest.json`, architecture projection manifest, focused ME-1B tests and full-suite log
@@ -90,4 +90,4 @@
 
 ## Summary
 
-- ME-1B is implementation-complete and fully tested inside the approved read-only control-plane boundary. Acceptance now requires only exact-subject receipt projection and canonical publication.
+- ME-1B is accepted and canonically published inside the approved read-only control-plane boundary.

@@ -3,7 +3,7 @@
 > **Status**: Approved
 > **Slug**: `persistent-module-engineer-organization`
 > **Created**: 2026-08-24T16:53:00+0800
-> **Updated**: 2026-08-25T21:03:47+0800
+> **Updated**: 2026-08-28T15:20:00+0800
 > **Human Direction Amendment**: User approved the control-plane reframe, runtime-adapter split and roadmap correction on 2026-08-25
 > **Source Spec**: `docs/spec.md`
 > **Related Research**: `docs/researches/20260824-persistent-module-engineer-organization.md`
@@ -23,7 +23,7 @@
 - **Key risk**: 把 Provider lifecycle、每轮对话或模型路由误做成 repo-harness authority，会把控制平面重新耦合成自建 Agent Runtime；只有可信 principal、Claim actor receipt 和 mutation-time writer grant 才能把权限从提示词变成技术事实。
 - **Unknowns**: ME-0B 已冻结 restricted MCP OAuth authorization carrier；Provider Thread identity 仍不可作为 principal，只保留 nullable observation。
 - **Acceptance scenarios**: 单 active binding、旧 principal 拒绝、Claim actor 可追溯、无第二 Lease、单 writer actor、persist-first message、verified-only next context、Fleet column 不受 runtime state 影响。
-- **Suggested next step**: 继续完成各已批准控制面 slice 的独立 acceptance/merge；ME-2B 只有在 Host 新增 live Parent sandbox replacement 与 effect-time runtime principal/epoch receipt 后才重开。
+- **Suggested next step**: 已批准的控制面 slices 已全部完成 acceptance/merge；ME-2B 仅以 negative feasibility decision 收口，只有 Host 新增 live Parent sandbox replacement 与 effect-time runtime principal/epoch receipt 后才重开 writable delegation。
 
 ## Problem
 

@@ -6,7 +6,7 @@
 
 # Task Review: me3a-provider-thread-effect
 
-> **Status**: Review
+> **Status**: Accepted
 > **Plan**: plans/plan-20260825-2120-me3a-provider-thread-effect.md
 > **Contract**: tasks/contracts/20260825-2120-me3a-provider-thread-effect.contract.md
 > **Notes File**: tasks/notes/20260825-2120-me3a-provider-thread-effect.notes.md
@@ -14,19 +14,19 @@
 > **Last Updated**: 2026-08-25 21:23
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:467b3deb890cdb4f3cc1ab49d4e8b8ece684a1f60f226841d4b7282c8e5f1399
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
+> **Reviewed Target Revision**: b3e42f7f159e80e2819720d0b39beeff495e56df
 
 ## Human Review Card
 
-- Verdict: pass pending exact-subject AcceptanceReceipt projection
+- Verdict: pass
 - Change type: code-change
 - Intended files changed: ME-3A schemas/store/CLI/MCP/tests/ArchContext/workflow artifacts plus ME-1C idempotent delivery observation
 - Actual files changed: closed Provider Thread schemas; git-common-dir journal/current projection; local operator commands; restricted read-only Engineer MCP; architecture capability/flow and exact inventory tests
 - Commands passed: typecheck; focused behavior/CLI/MCP gates; MCP HTTP 15/15; full repository suite 3097 pass / 2 platform skips / 0 fail; architecture sync with dead_letters=0 and blocking=0
 - Residual risks: a crash after `effect_started` persistence but before host receipt can require manual observation; this deliberately sacrifices liveness to preserve zero duplicate Provider turn
-- Reviewer action required: freeze the final subject, project the already-authorized Human acceptance, and run final verification before merge
+- Reviewer action required: none
 - Rollback: revert the single ME-3A publication commit; the new git-common-dir namespace does not rewrite existing Task/Lease/Fleet authorities
 
 ## Mode Evidence
@@ -37,7 +37,7 @@
 
 ## Verification Evidence
 
-- Waza `/check` run: equivalent strict repository gate set passed; typed acceptance preparation is next
+- Waza `/check` run: equivalent strict repository gate set passed; exact-subject Human waiver was projected
 - Commands run: contract exit criteria plus `bun test --timeout 60000`
 - Manual checks: reviewed persist-before-action ordering, pending-at-start revalidation, exact Codex turn correlation, Binding/capability fences, idempotent delivery projection and forbidden runtime surfaces
 - Supporting artifacts: `.ai/harness/checks/latest.json`, architecture projection manifest, ME-3A unit/CLI/MCP tests and Runtime Admission Canary references in the PRD/research
@@ -91,4 +91,4 @@
 
 ## Summary
 
-- ME-3A is implementation-complete and fully tested inside the approved control-plane boundary. Acceptance now requires only exact-subject receipt projection and final publication.
+- ME-3A is accepted and published inside the approved Codex-first control-plane boundary.

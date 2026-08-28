@@ -20,13 +20,13 @@
 
 ## Human Review Card
 
-- Verdict: official Codex plugin found one P1 authority split in the frozen subject; the local correction is implemented and focused verification passes, but the corrected exact-subject Protocol-2 AcceptanceReceipt remains unavailable.
+- Verdict: pass; the official Codex plugin finding was corrected and the corrected exact subject received Human owner-waiver acceptance.
 - Change type: code-change
 - Intended files changed: ME-4B core/store, restricted Engineer MCP and Human CLI adapters, focused tests, architecture projection, PRD/research and workflow evidence.
 - Actual files changed: 42 files relative to current main, 2,807 insertions and 76 deletions before final evidence closeout.
 - Commands passed: focused ME-4B/MCP suite 27/27; typecheck; architecture projection suite 7/7; deploy SQL order; architecture sync; task sync; strict workflow; project-state inspection; init dry-run; CLI help; diff check.
-- Residual risks: Protocol-2 acceptance is not yet issued. The corrected subject still requires the full root replay and a fresh exact-subject freeze before Human owner acceptance.
-- Reviewer action required: after corrected-subject freeze, issue an exact-subject Human owner waiver; the one-semantic-review budget was consumed by the official plugin finding and must not be retried.
+- Residual risks: reverse lookup remains an O(n) deterministic scan and is the first expected 10x pressure point.
+- Reviewer action required: none.
 - Rollback: revert the ME-4B core/store/adapters/tests and capability projection plus the narrow scheduling validator export as one unit.
 
 ## Mode Evidence
@@ -37,7 +37,7 @@
 
 ## Verification Evidence
 
-- Waza `/check` run: equivalent deep review and root checks executed directly; exact-subject verifier remains pending.
+- Waza `/check` run: equivalent deep review, root checks and exact-subject Human owner-waiver acceptance completed.
 - Commands run: original subject checks plus corrected-path `bun run check:type` and 29 focused ME-1A/ME-4B/CLI/MCP tests.
 - Manual checks: exact MCP inventory; Human CLI command inventory; no authorization ID in semantic records; no direct Task/Lease/Publication/Acceptance/architecture-event writer; no message-body transition; no compatibility fallback.
 - Supporting artifacts: post-ME-2B-rebase Architecture Acceptance `changeset.docs-projection-3863b6ccc3229167` / `event.user-approval-20260828-me4b-post-me2b-rebase-architecture`; accepted apply receipt `sha256:73222c9656c628d804998c02937c8f658363f3a859cb05e95e7f3785c5bfd691`. The accepted apply changed only the projection manifest; the ME-4B model digest and semantic boundary are unchanged.
@@ -69,7 +69,7 @@
 ## Residual Risks / Follow-ups
 
 - Reverse lookup is an O(n) deterministic scan. It is correct at the current scale; at 10x request volume it is the first likely pressure point and can later gain a rebuildable index without changing semantic records.
-- Exact-subject Protocol-2 review/waiver and merge are deliberately still gated.
+- Exact-subject Human owner waiver and mainline merge completed.
 - The branch is rebased onto the completed HRD-09 repair at `main@7c8aa24e`; no HRD-09 product or workflow bytes are part of the ME-4B diff.
 
 ## Scorecard
@@ -84,8 +84,7 @@
 ## Failing Items
 
 - Corrected: the official plugin P1 authority split in `interface-change-store.ts`; regression coverage now rejects non-canonical commits and stale referenced-authority bytes.
-- Closeout-only: corrected exact-subject AcceptanceReceipt is unavailable.
-- Verification-only: full strict replay must freeze the corrected subject.
+- Closeout: exact-subject AcceptanceReceipt and mainline merge completed.
 
 ## Retest Steps
 
@@ -94,4 +93,4 @@
 
 ## Summary
 
-- The official semantic review correctly blocked the prior subject. Its P1 and the matching ArchContext selector are corrected; root replay, corrected-subject freeze and Human owner acceptance remain before merge.
+- The official semantic review finding and matching ArchContext selector are corrected; the exact subject is accepted, archived and merged.
