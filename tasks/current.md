@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-28T12:30:40+0800 -->
+<!-- updated_at: 2026-08-28T13:06:21+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-28T12:30:40+0800
-> **Source Branch**: main
-> **Source Commit**: 9478b705
+> **Updated At**: 2026-08-28T13:06:21+0800
+> **Source Branch**: codex/me4b-interface-change
+> **Source Commit**: 6972b3b4
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -56,20 +56,18 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 11 changed/untracked path(s)
+- Summary: 9 changed/untracked path(s)
 
 ```
- M docs/architecture/.projection-manifest.json
- D plans/plan-20260828-1100-me3-acceptance-followup.md
- D tasks/contracts/20260828-1100-me3-acceptance-followup.contract.md
- D tasks/notes/20260828-1100-me3-acceptance-followup.notes.md
- D tasks/reviews/20260828-1100-me3-acceptance-followup.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260828-1100-me3-acceptance-followup.md
-?? tasks/archive/contract-20260828-1230-me3-acceptance-followup.md
-?? tasks/archive/notes-20260828-1230-me3-acceptance-followup.md
-?? tasks/archive/review-20260828-1230-me3-acceptance-followup.md
-?? tasks/archive/todo-20260828-1230-me3-acceptance-followup.md
+ D plans/plan-20260826-1617-me4b-interface-change-request.md
+ D tasks/contracts/20260826-1617-me4b-interface-change-request.contract.md
+ D tasks/notes/20260826-1617-me4b-interface-change-request.notes.md
+ D tasks/reviews/20260826-1617-me4b-interface-change-request.review.md
+?? plans/archive/plan-20260826-1617-me4b-interface-change-request.md
+?? tasks/archive/contract-20260828-1306-me4b-interface-change-request.md
+?? tasks/archive/notes-20260828-1306-me4b-interface-change-request.md
+?? tasks/archive/review-20260828-1306-me4b-interface-change-request.md
+?? tasks/archive/todo-20260828-1306-me4b-interface-change-request.md
 ```
 
 ## Source Artifacts

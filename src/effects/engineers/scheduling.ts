@@ -46,6 +46,12 @@ export interface ProjectedGraphRead {
   readonly graph: ProjectedWorkGraphV1 | null;
 }
 
+export interface TrackedWorkGraphProjectionRead {
+  readonly commit: string;
+  readonly lane: 'unclassified' | 'generic-v1' | 'engineering-v2';
+  readonly graph: ProjectedWorkGraphV1 | null;
+}
+
 export type DependencyAuthorityResolver = (input: {
   readonly dependency: WorkPackageDependencyV1;
   readonly target: ProjectedWorkPackageV1;
@@ -188,11 +194,24 @@ export function readProjectedWorkGraphAt(
   deps: EngineerSchedulingDependencies = dependencies(),
 ): ProjectedGraphRead {
   const targetRef = deps.readCanonicalTargetRef(repo.path);
-  const sprint = deps.readCanonicalSprint(repo.path, { targetRef, sprintPath });
+  return Object.freeze({
+    repo,
+    ...readTrackedWorkGraphProjectionAt(repo.path, repo.id, sprintPath, targetRef, deps),
+  });
+}
+
+export function readTrackedWorkGraphProjectionAt(
+  repoRoot: string,
+  repositoryId: string,
+  sprintPath: string,
+  targetRef: string,
+  deps: EngineerSchedulingDependencies = dependencies(),
+): TrackedWorkGraphProjectionRead {
+  const sprint = deps.readCanonicalSprint(repoRoot, { targetRef, sprintPath });
   if (!sprint.ok) fail('work_graph_unclassified', sprint.error);
   const carrierPath = schedulingCarrierPath(sprintPath);
-  const raw = deps.readFileAtCommit(repo.path, sprint.commit, carrierPath);
-  if (raw === null) return Object.freeze({ repo, commit: sprint.commit, lane: 'unclassified', graph: null });
+  const raw = deps.readFileAtCommit(repoRoot, sprint.commit, carrierPath);
+  if (raw === null) return Object.freeze({ commit: sprint.commit, lane: 'unclassified', graph: null });
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -200,17 +219,17 @@ export function readProjectedWorkGraphAt(
     return fail('work_graph_invalid', `cannot parse canonical work graph ${carrierPath}`, error);
   }
   const graph = validateWorkGraph(parsed);
-  if (graph.repository_id !== repo.id || graph.sprint_path !== sprintPath) {
-    fail('work_graph_invalid', `work graph identity does not match ${repo.id}:${sprintPath}`);
+  if (graph.repository_id !== repositoryId || graph.sprint_path !== sprintPath) {
+    fail('work_graph_invalid', `work graph identity does not match ${repositoryId}:${sprintPath}`);
   }
-  validateReferencedAuthorities(repo.path, sprint.commit, graph, deps.readFileAtCommit);
+  validateReferencedAuthorities(repoRoot, sprint.commit, graph, deps.readFileAtCommit);
   for (const item of graph.work_packages) {
     // A carrier naming a capability the authority cannot resolve is an invalid
     // work graph, not a Profile failure: the Profile domain error would
     // otherwise escape this projection and reach callers as an unclassified
     // failure.
     try {
-      deps.resolveCapability(repo.path, item.primary_capability);
+      deps.resolveCapability(repoRoot, item.primary_capability);
     } catch (error) {
       if (!(error instanceof EngineerProfileBindingError)) throw error;
       fail(
@@ -221,7 +240,7 @@ export function readProjectedWorkGraphAt(
     }
   }
   const canonicalTasks = projectCanonicalTasks({
-    repoIdentity: deps.repoIdentity(repo.path),
+    repoIdentity: deps.repoIdentity(repoRoot),
     sprintPath,
     sprintText: sprint.text,
   }).map((task, index) => Object.freeze({
@@ -232,7 +251,7 @@ export function readProjectedWorkGraphAt(
     row_order: index + 1,
   }));
   const projected = projectWorkGraph(graph, canonicalTasks);
-  return Object.freeze({ repo, commit: sprint.commit, lane: projected.lane, graph: projected });
+  return Object.freeze({ commit: sprint.commit, lane: projected.lane, graph: projected });
 }
 
 function graphUniverse(

@@ -38,6 +38,7 @@ import { buildArchitectureProjectionCommand } from './commands/architecture-proj
 import { buildIntegrationCommand } from './commands/integration';
 import { buildDelegationCommand } from './commands/delegation';
 import { buildVerifiedContextCommand } from './commands/verified-context';
+import { buildInterfaceChangeCommand } from './commands/interface-change';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
 import {
   MIN_BUN_VERSION,
@@ -112,6 +113,7 @@ export const SUBCOMMANDS = [
   'integration',
   'delegation',
   'verified-context',
+  'interface-change',
 ] as const;
 export type Subcommand = (typeof SUBCOMMANDS)[number];
 
@@ -765,6 +767,7 @@ export function buildProgram(): Command {
   program.addCommand(buildIntegrationCommand());
   program.addCommand(buildDelegationCommand());
   program.addCommand(buildVerifiedContextCommand());
+  program.addCommand(buildInterfaceChangeCommand());
   program
     .command('circuit-breaker-record', { hidden: true })
     .description('Internal persistent workflow circuit breaker')

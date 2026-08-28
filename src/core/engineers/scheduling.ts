@@ -283,6 +283,10 @@ function parseWorkPackage(value: unknown, index: number): WorkPackageDefinitionV
   });
 }
 
+export function validateWorkPackageDefinition(value: unknown): WorkPackageDefinitionV1 {
+  return parseWorkPackage(value, 0);
+}
+
 export function schedulingCarrierPath(sprintPath: string): string {
   const safe = safeRepoPath(sprintPath, 'sprint_path', '.sprint.md');
   return `${safe.slice(0, -'.sprint.md'.length)}.work-graph.v1.json`;
@@ -310,8 +314,8 @@ export function validateWorkGraph(value: unknown): WorkGraphV1 {
   });
 }
 
-function workPackageRevision(definition: WorkPackageDefinitionV1): string {
-  return engineerSha256(canonicalEngineerJson(definition));
+export function workPackageRevision(definition: WorkPackageDefinitionV1): string {
+  return engineerSha256(canonicalEngineerJson(validateWorkPackageDefinition(definition)));
 }
 
 export function projectWorkGraph(

@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:a669f43e4e7e08464401db1df0b855175f878896e0de0c10e11db3edd71f8704" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:c6e16d05469157070b0ae216273c72a2748303177474a33f0634e790079f931a" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:a23d2bc659e963369ccb1fb5f291ab496c81295fc401e3755c835d4141301c5d" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:d8910f80e510700d281d9e1e9e900ec07e5dedd7b9b4e66463eb5613683f5557" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
@@ -95,6 +95,14 @@
       {
         "id": "capability.runtime-harness.integration-acceptance",
         "name": "Integration Product Acceptance",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "capability.runtime-harness.interface-change",
+        "name": "Interface Change Requests",
         "type": "Software System",
         "tags": [
           "capability"
@@ -293,6 +301,14 @@
         ]
       },
       {
+        "id": "component.interface-change.primary",
+        "name": "Interface Change Authority Store",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
         "id": "component.mcp-sidecar.primary",
         "name": "MCP Tool Dispatcher",
         "type": "Component",
@@ -453,6 +469,24 @@
         "description": "calls"
       },
       {
+        "id": "relation.interface-change.engineer-bindings",
+        "sourceId": "capability.runtime-harness.interface-change",
+        "destinationId": "capability.runtime-harness.engineer-bindings",
+        "description": "calls"
+      },
+      {
+        "id": "relation.interface-change.engineer-scheduling",
+        "sourceId": "capability.runtime-harness.interface-change",
+        "destinationId": "capability.runtime-harness.engineer-scheduling",
+        "description": "calls"
+      },
+      {
+        "id": "relation.interface-change.primary",
+        "sourceId": "capability.runtime-harness.interface-change",
+        "destinationId": "component.interface-change.primary",
+        "description": "calls"
+      },
+      {
         "id": "relation.mcp-sidecar.engineer-messages",
         "sourceId": "capability.runtime-harness.mcp-sidecar",
         "destinationId": "capability.runtime-harness.engineer-messages",
@@ -468,6 +502,12 @@
         "id": "relation.mcp-sidecar.engineer-scheduling",
         "sourceId": "capability.runtime-harness.mcp-sidecar",
         "destinationId": "capability.runtime-harness.engineer-scheduling",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.interface-change",
+        "sourceId": "capability.runtime-harness.mcp-sidecar",
+        "destinationId": "capability.runtime-harness.interface-change",
         "description": "calls"
       },
       {
@@ -542,6 +582,7 @@
         "capability.runtime-harness.global-runtime-reconciliation",
         "capability.runtime-harness.hook-adapters",
         "capability.runtime-harness.integration-acceptance",
+        "capability.runtime-harness.interface-change",
         "capability.runtime-harness.mcp-sidecar",
         "capability.runtime-harness.provider-thread-effects",
         "capability.runtime-harness.verified-context",
@@ -566,6 +607,7 @@
         "component.hook-adapters.primary",
         "component.inspection-migration.primary",
         "component.integration-acceptance.primary",
+        "component.interface-change.primary",
         "component.mcp-sidecar.primary",
         "component.provider-thread-effects.primary",
         "component.root-router.primary",

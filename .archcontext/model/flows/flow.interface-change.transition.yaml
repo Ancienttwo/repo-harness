@@ -1,0 +1,62 @@
+schemaVersion: archcontext.flow/v1
+id: flow.interface-change.transition
+capabilityId: capability.runtime-harness.interface-change
+name: Fence and persist one interface change transition
+applicability: required
+participants:
+  - id: interface-change
+    nodeId: capability.runtime-harness.interface-change
+  - id: engineer-bindings
+    nodeId: capability.runtime-harness.engineer-bindings
+  - id: engineer-scheduling
+    nodeId: capability.runtime-harness.engineer-scheduling
+  - id: interface-store
+    nodeId: component.interface-change.primary
+steps:
+  - id: validate-actor
+    from: interface-change
+    to: engineer-bindings
+    label: Revalidate the source or target Engineer against the exact current Binding before an Engineer-owned transition
+    evidence:
+      entrypointId: entrypoint.interface-change.binding-fence
+      sourceSymbol: validateEngineerActor
+      sinkId: sink.interface-change.binding
+  - id: persist-transition
+    from: interface-change
+    to: interface-store
+    label: Build immutable event bytes under per-request CAS while keeping Human and Engineer transition sets disjoint
+    evidence:
+      entrypointId: entrypoint.interface-change.event-canonical
+      sourceSymbol: buildInterfaceChangeEvent
+      sinkId: sink.interface-change.event-digest
+outcomes:
+  - id: materialized
+    kind: success
+    label: The target Engineer proves the accepted Work Package exists at one exact Git commit
+    steps:
+      - id: verify-work-graph
+        from: interface-change
+        to: engineer-scheduling
+        label: Read the tracked Sprint and Work Graph through the complete ME-1A authority projection and compare exact Work Package revision and target capability
+        evidence:
+          entrypointId: entrypoint.interface-change.work-graph
+          sourceSymbol: projectedGraphAt
+          sinkId: sink.interface-change.work-graph
+    terminal:
+      participant: interface-change
+      label: Return immutable materialization evidence without changing Sprint, Work Graph, Task or Lease state
+  - id: refused
+    kind: error
+    label: Stale CAS, actor mismatch, invalid transition or inexact materialization fails closed
+    steps:
+      - id: reject-transition
+        from: interface-change
+        to: engineer-bindings
+        label: Preserve existing request and control-plane state without fallback mutation
+        evidence:
+          entrypointId: entrypoint.interface-change.binding-fence
+          sourceSymbol: validateEngineerActor
+          sinkId: sink.interface-change.binding
+    terminal:
+      participant: interface-change
+      label: Return one typed refusal and perform no downstream control-plane mutation

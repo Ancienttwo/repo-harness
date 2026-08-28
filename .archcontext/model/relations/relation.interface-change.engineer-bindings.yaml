@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.interface-change.engineer-bindings
+kind: calls
+source: capability.runtime-harness.interface-change
+target: capability.runtime-harness.engineer-bindings
+intent: Revalidate the exact current Binding for every Engineer-owned transition
