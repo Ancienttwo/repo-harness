@@ -1,6 +1,6 @@
 # Plan: ME-4B Interface Change Request
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260826-1617
 > **Slug**: me4b-interface-change-request
 > **Planning Source**: codex-plan

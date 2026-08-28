@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-28 13:06
+> **Related Plan**: plans/archive/plan-20260826-1617-me4b-interface-change-request.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260828-1306
+
 # Task Review: me4b-interface-change-request
 
-> **Status**: Review
+> **Status**: Accepted
 > **Plan**: plans/plan-20260826-1617-me4b-interface-change-request.md
 > **Contract**: tasks/contracts/20260826-1617-me4b-interface-change-request.contract.md
 > **Notes File**: tasks/notes/20260826-1617-me4b-interface-change-request.notes.md
@@ -8,9 +14,9 @@
 > **Last Updated**: 2026-08-28 01:15
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:e77949c359c47e60f6e27396e5374b5f0b8dd751112df17bdfe520729d443d2f
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
+> **Reviewed Target Revision**: bd084a6fed7f66cb72ac3b146857c6bac81f837f
 
 ## Human Review Card
 
@@ -40,18 +46,18 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
-> **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Disposition**: user_waiver
+> **Reviewer**: User
+> **Source**: user-waiver
+> **Actor**: ancienttwo
+> **Reviewed Subject SHA256**: sha256:e77949c359c47e60f6e27396e5374b5f0b8dd751112df17bdfe520729d443d2f
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: bd084a6fed7f66cb72ac3b146857c6bac81f837f
+> **Verification Evidence SHA256**: sha256:d33609cf60d0dcaae6960d7df65fc467cacf40f77e7aa41a39843315dce1d7fd
+> **Issued At**: 2026-08-28T05:05:53.636Z
 
-- Summary: No exact-subject AcceptanceReceipt has been recorded for the corrected subject.
-- Findings: official Codex plugin reported that local `projectedGraphAt` could accept a non-canonical commit with missing/stale referenced authorities. The correction removes that shadow projection, shares the ME-1A projection, and requires equality with the current canonical-target commit.
+- Summary: Human owner approves ME-4B exact subject sha256:e77949c359c47e60f6e27396e5374b5f0b8dd751112df17bdfe520729d443d2f against target bd084a6fed7f66cb72ac3b146857c6bac81f837f for owner-waiver acceptance, archival, and merge.
+- Findings: none
 
 ## Behavior Diff Notes
 
