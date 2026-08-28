@@ -1,6 +1,6 @@
 # Workstream: ME-4C Integration Product Acceptance
 
-> **Status**: active
+> **Status**: completed
 > **Capability ID**: `runtime-harness-integration-acceptance`
 > **Functional Block**: `src/core/integration/product-acceptance.ts`
 > **Matched Prefix**: `src/core/integration/product-acceptance.ts`
@@ -8,7 +8,7 @@
 > **Architecture Capability**: `integration-acceptance`
 > **Architecture Module**: `docs/architecture/modules/runtime-harness/integration-acceptance.md`
 > **Source Plan**: plans/plan-20260826-0115-me4c-integration-product-acceptance.md
-> **Current Slice**: exact-subject-publication
+> **Current Slice**: completed-20260826-me4c-integration-product-acceptance
 > **Last Handoff**: `.ai/harness/handoff/current.md`
 > **Architecture Request**: Human-approved ME-4C boundary
 

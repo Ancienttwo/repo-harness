@@ -1,6 +1,6 @@
 # Workstream: ME-4A Bound Task Freeze and Handoff
 
-> **Status**: active
+> **Status**: completed
 > **Capability ID**: `runtime-harness-bound-task-freezes`
 > **Functional Block**: `src/core/engineers/task-freeze.ts`
 > **Matched Prefix**: `src/core/engineers/task-freeze.ts`
@@ -8,7 +8,7 @@
 > **Architecture Capability**: `bound-task-freezes`
 > **Architecture Module**: `docs/architecture/modules/runtime-harness/bound-task-freezes.md`
 > **Source Plan**: plans/plan-20260826-1247-me4a-bound-task-freeze-handoff.md
-> **Current Slice**: todo-01
+> **Current Slice**: completed-20260826-me4a-bound-task-freeze-handoff
 > **Last Handoff**: `.ai/harness/handoff/current.md`
 > **Architecture Request**: (none)
 
