@@ -19,6 +19,15 @@ import type {
   OperatorFleetSnapshotV1,
 } from '../core/operator/fleet-snapshot';
 
+/**
+ * The Fleet protocol the browser transport accepts, restated as a literal
+ * because `src/core/fleet/board.ts` owns a Node `createHash` import that must
+ * not enter the browser bundle. `OperatorFleetSnapshotV1['protocol']` is that
+ * module's literal type, so a drift from the core constant fails typecheck
+ * here rather than at runtime.
+ */
+export const OPERATOR_FLEET_PAYLOAD_PROTOCOL: OperatorFleetSnapshotV1['protocol'] = 2;
+
 export interface OperatorApiErrorV1 {
   readonly code: string;
   readonly message: string;
@@ -83,21 +92,6 @@ export function snapshotViewKind(snapshot: OperatorFleetSnapshotV1): Exclude<Ope
 export function projectSnapshotViewState(snapshot: OperatorFleetSnapshotV1): OperatorSnapshotViewState {
   const kind = snapshotViewKind(snapshot);
   return { kind, snapshot } as OperatorSnapshotViewState;
-}
-
-export function cardsForColumn(
-  snapshot: OperatorFleetSnapshotV1,
-  column: OperatorFleetColumn,
-): readonly OperatorFleetCardV1[] {
-  return snapshot.repositories.flatMap((repository) =>
-    repository.cards.filter((card) => card.column === column),
-  );
-}
-
-export function attentionCards(snapshot: OperatorFleetSnapshotV1): readonly OperatorFleetCardV1[] {
-  return snapshot.repositories.flatMap((repository) =>
-    repository.cards.filter((card) => card.attention_owner !== 'none'),
-  );
 }
 
 export function allCards(snapshot: OperatorFleetSnapshotV1): readonly OperatorFleetCardV1[] {
@@ -271,6 +265,8 @@ function decodeCard(value: unknown, repositoryId: string): OperatorFleetCardV1 {
   if (!hasRequiredString(card.repository_id) || card.repository_id !== repositoryId) throw new OperatorPayloadError();
   const taskId = requireString(card.task_id);
   const taskRevision = requireString(card.task_revision);
+  const taskLabel = requireNullableString(card.task_label);
+  const taskIndex = card.task_index === null ? null : requireNonNegativeInteger(card.task_index);
   const claimId = requireNullableString(card.claim_id);
   const generation = card.generation === null ? null : requireNonNegativeInteger(card.generation);
   const column = card.column === null ? null : requireOneOf(card.column, COLUMNS);
@@ -295,6 +291,8 @@ function decodeCard(value: unknown, repositoryId: string): OperatorFleetCardV1 {
     repository_id: repositoryId,
     task_id: taskId,
     task_revision: taskRevision,
+    task_label: taskLabel,
+    task_index: taskIndex,
     claim_id: claimId,
     generation,
     column,
@@ -340,7 +338,9 @@ function decodeRepository(value: unknown): OperatorFleetRepositoryV1 {
 /** Decode the complete browser payload before any component receives it. */
 export function decodeOperatorFleetSnapshot(value: unknown): OperatorFleetSnapshotV1 {
   const snapshot = requireRecord(value);
-  if (snapshot.protocol !== 1 || snapshot.kind !== 'operator_fleet_snapshot') throw new OperatorPayloadError();
+  if (snapshot.protocol !== OPERATOR_FLEET_PAYLOAD_PROTOCOL || snapshot.kind !== 'operator_fleet_snapshot') {
+    throw new OperatorPayloadError();
+  }
   const registryRevision = requireSha256(snapshot.registry_revision);
   const sequence = requirePositiveInteger(snapshot.sequence);
   const observedAt = requireString(snapshot.observed_at);
@@ -358,7 +358,7 @@ export function decodeOperatorFleetSnapshot(value: unknown): OperatorFleetSnapsh
   });
   const repositories = requireArray(snapshot.repositories).map(decodeRepository);
   return Object.freeze({
-    protocol: 1,
+    protocol: OPERATOR_FLEET_PAYLOAD_PROTOCOL,
     kind: 'operator_fleet_snapshot',
     registry_revision: registryRevision,
     sequence,
@@ -368,13 +368,4 @@ export function decodeOperatorFleetSnapshot(value: unknown): OperatorFleetSnapsh
     counts: decodedCounts,
     source_snapshot_sha256: sourceSnapshotSha256,
   });
-}
-
-export function formatObservedAt(value: string): string {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(parsed);
 }

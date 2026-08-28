@@ -12,6 +12,14 @@ import {
   FleetBoardError,
   type FleetBoardCollectorOptions,
 } from '../fleet/board';
+import {
+  OperatorTaskMessageError,
+  sendOperatorTaskMessage,
+  type OperatorTaskMessageErrorCode,
+  type SendOperatorTaskMessageInput,
+  type SendOperatorTaskMessageResult,
+} from '../fleet/task-message-request';
+import { TASK_MESSAGE_BODY_MAX_BYTES } from '../../core/fleet/task-message';
 import type { FleetBoardSnapshotV1 } from '../../core/fleet/board';
 
 export const OPERATOR_SERVER_PROTOCOL = 1 as const;
@@ -23,6 +31,20 @@ export const OPERATOR_DEFAULT_TIMEOUT_MS = 30_000 as const;
 
 const OPERATOR_DIAGNOSTIC_ACTION = 'Run `repo-harness fleet board --json` for diagnostics and retry.';
 const OPERATOR_ASSET_ACTION = 'Build the operator UI with `bun run build:operator-web` and retry.';
+const OPERATOR_REOBSERVE_ACTION = 'Refresh the board to re-observe the task, then retry.';
+
+/**
+ * The transport mirror of the task-message body limit. The protocol constant
+ * stays the authority; the HTTP layer refuses an oversized request before it
+ * spends a task lock proving the same thing.
+ */
+export const OPERATOR_TASK_MESSAGE_BODY_MAX_BYTES = TASK_MESSAGE_BODY_MAX_BYTES;
+/**
+ * JSON escaping expands the body, so the envelope cap is deliberately looser
+ * than the body cap. The decoded `body` field is what the 413 is judged on.
+ */
+const OPERATOR_TASK_MESSAGE_REQUEST_MAX_BYTES = TASK_MESSAGE_BODY_MAX_BYTES * 4;
+const TASK_MESSAGE_ROUTE = /^\/api\/v1\/fleet\/tasks\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/([0-9a-f]{64})\/messages$/u;
 const DEFAULT_STATIC_ROOT = resolve(
   dirname(fileURLToPath(import.meta.url)),
   '../../../dist/operator-ui',
@@ -41,6 +63,9 @@ export interface OperatorServerOptions {
   readonly collect_fleet_board?: (
     options?: FleetBoardCollectorOptions,
   ) => Promise<FleetBoardSnapshotV1>;
+  readonly send_task_message?: (
+    input: SendOperatorTaskMessageInput,
+  ) => SendOperatorTaskMessageResult | Promise<SendOperatorTaskMessageResult>;
 }
 
 export interface OperatorServerHandle {
@@ -173,6 +198,141 @@ function publicFleetError(error: unknown): {
   };
 }
 
+interface PublicTaskMessageFailure {
+  readonly status: number;
+  readonly message: string;
+  readonly next_action: string;
+}
+
+/**
+ * Every failure the write path can surface, restated as a fixed public
+ * sentence. The effect's own message may name a repository root or a sprint
+ * path; the transport keeps the typed code and drops the diagnostic text.
+ */
+const TASK_MESSAGE_FAILURES: Readonly<Record<OperatorTaskMessageErrorCode, PublicTaskMessageFailure>> = Object.freeze({
+  registry_unavailable: {
+    status: 503,
+    message: 'The fleet registry cannot be read.',
+    next_action: OPERATOR_DIAGNOSTIC_ACTION,
+  },
+  repository_not_found: {
+    status: 404,
+    message: 'The repository is not in the fleet registry.',
+    next_action: 'Adopt the repository with `repo-harness adopt`, then refresh the board.',
+  },
+  repository_read_only: {
+    status: 403,
+    message: 'The repository is registered read only.',
+    next_action: 'Re-register the repository with read_write access to send task messages.',
+  },
+  canonical_sprint_unavailable: {
+    status: 503,
+    message: 'The canonical sprint authority cannot be read.',
+    next_action: OPERATOR_DIAGNOSTIC_ACTION,
+  },
+  task_not_found: {
+    status: 404,
+    message: 'The task is not in the canonical sprint.',
+    next_action: OPERATOR_REOBSERVE_ACTION,
+  },
+  task_message_invalid: {
+    status: 400,
+    message: 'The task message is invalid.',
+    next_action: OPERATOR_REOBSERVE_ACTION,
+  },
+  task_message_unreadable: {
+    status: 503,
+    message: 'The task inbox cannot be read.',
+    next_action: OPERATOR_DIAGNOSTIC_ACTION,
+  },
+  message_id_conflict: {
+    status: 409,
+    message: 'A different message already used this message id.',
+    next_action: 'Compose the message again so it gets a new id.',
+  },
+  task_revision_mismatch: {
+    status: 409,
+    message: 'The canonical task definition moved since the snapshot.',
+    next_action: OPERATOR_REOBSERVE_ACTION,
+  },
+  task_unowned: {
+    status: 409,
+    message: 'The task has no owner that can receive this message.',
+    next_action: OPERATOR_REOBSERVE_ACTION,
+  },
+  claim_mismatch: {
+    status: 409,
+    message: 'The task owner changed while the message was being sent.',
+    next_action: OPERATOR_REOBSERVE_ACTION,
+  },
+  recipient_unavailable: {
+    status: 409,
+    message: 'The task has no bound owner session to receive this message.',
+    next_action: OPERATOR_REOBSERVE_ACTION,
+  },
+  task_message_transition_invalid: {
+    status: 409,
+    message: 'The task message delivery state does not allow this write.',
+    next_action: OPERATOR_REOBSERVE_ACTION,
+  },
+});
+
+function publicTaskMessageError(error: unknown): {
+  readonly status: number;
+  readonly body: OperatorErrorResponseV1;
+} {
+  if (error instanceof OperatorTaskMessageError) {
+    const failure = TASK_MESSAGE_FAILURES[error.code];
+    if (failure) {
+      return { status: failure.status, body: errorBody(error.code, failure.message, failure.next_action) };
+    }
+  }
+  return {
+    status: 503,
+    body: errorBody('task_message_unavailable', 'The task message could not be stored.', OPERATOR_DIAGNOSTIC_ACTION),
+  };
+}
+
+export interface OperatorTaskMessageRequestV1 {
+  readonly message_id: string;
+  readonly scope: 'task' | 'claim';
+  readonly body: string;
+}
+
+/** Accept exactly the three transport fields; an unknown key is a rejected request. */
+function decodeTaskMessageRequest(value: unknown): OperatorTaskMessageRequestV1 | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record).sort();
+  if (keys.length !== 3 || keys[0] !== 'body' || keys[1] !== 'message_id' || keys[2] !== 'scope') return null;
+  const { message_id: messageId, scope, body } = record;
+  if (typeof messageId !== 'string' || messageId.length === 0) return null;
+  if (scope !== 'task' && scope !== 'claim') return null;
+  if (typeof body !== 'string') return null;
+  return { message_id: messageId, scope, body };
+}
+
+type RequestBodyRead =
+  | { readonly ok: true; readonly text: string }
+  | { readonly ok: false; readonly reason: 'too_large' | 'invalid' };
+
+async function readBoundedRequestBody(request: IncomingMessage, maxBytes: number): Promise<RequestBodyRead> {
+  const declared = request.headers['content-length'];
+  if (typeof declared !== 'string') return { ok: false, reason: 'invalid' };
+  const length = Number(declared);
+  if (!Number.isSafeInteger(length) || length < 0) return { ok: false, reason: 'invalid' };
+  if (length > maxBytes) return { ok: false, reason: 'too_large' };
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string);
+    size += buffer.byteLength;
+    if (size > maxBytes) return { ok: false, reason: 'too_large' };
+    chunks.push(buffer);
+  }
+  return { ok: true, text: Buffer.concat(chunks).toString('utf-8') };
+}
+
 function contentType(pathname: string): string {
   switch (extname(pathname).toLowerCase()) {
     case '.html': return 'text/html; charset=utf-8';
@@ -245,6 +405,7 @@ export async function startOperatorServer(
   const timeoutMs = assertCollectionOption(options.timeout_ms, 'timeout_ms', 1_000, 30_000);
   const staticRoot = safePathRoot(options.static_root ?? DEFAULT_STATIC_ROOT);
   const collect = options.collect_fleet_board ?? collectFleetBoard;
+  const send = options.send_task_message ?? sendOperatorTaskMessage;
   let inFlight: Promise<OperatorFleetSnapshotV1> | null = null;
 
   const snapshot = (): Promise<OperatorFleetSnapshotV1> => {
@@ -262,6 +423,69 @@ export async function startOperatorServer(
     return pending;
   };
 
+  const handleTaskMessage = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+    repositoryId: string,
+    taskId: string,
+  ): Promise<void> => {
+    const read = await readBoundedRequestBody(request, OPERATOR_TASK_MESSAGE_REQUEST_MAX_BYTES);
+    if (!read.ok) {
+      if (read.reason === 'too_large') {
+        sendJson(response, 413, errorBody(
+          'task_message_body_too_large',
+          `The message body must be at most ${OPERATOR_TASK_MESSAGE_BODY_MAX_BYTES} bytes.`,
+          'Shorten the message, then send it again.',
+        ));
+      } else {
+        sendJson(response, 400, errorBody('invalid_request', 'The request body is invalid.', OPERATOR_REOBSERVE_ACTION));
+      }
+      return;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(read.text);
+    } catch (_error) {
+      sendJson(response, 400, errorBody('invalid_request', 'The request body is not valid JSON.', OPERATOR_REOBSERVE_ACTION));
+      return;
+    }
+    const payload = decodeTaskMessageRequest(parsed);
+    if (payload === null) {
+      sendJson(response, 400, errorBody('invalid_request', 'The request body is invalid.', OPERATOR_REOBSERVE_ACTION));
+      return;
+    }
+    if (Buffer.byteLength(payload.body, 'utf-8') > OPERATOR_TASK_MESSAGE_BODY_MAX_BYTES) {
+      sendJson(response, 413, errorBody(
+        'task_message_body_too_large',
+        `The message body must be at most ${OPERATOR_TASK_MESSAGE_BODY_MAX_BYTES} bytes.`,
+        'Shorten the message, then send it again.',
+      ));
+      return;
+    }
+    try {
+      const result = await send({
+        env: options.env,
+        repository_id: repositoryId,
+        task_id: taskId,
+        message_id: payload.message_id,
+        scope: payload.scope,
+        body: payload.body,
+      });
+      sendJson(response, result.created ? 201 : 200, {
+        ok: true,
+        protocol: OPERATOR_SERVER_PROTOCOL,
+        repository_id: result.repository_id,
+        task_id: result.task_id,
+        message_id: result.message_id,
+        scope: result.scope,
+        created: result.created,
+      });
+    } catch (error) {
+      const failure = publicTaskMessageError(error);
+      sendJson(response, failure.status, failure.body);
+    }
+  };
+
   const handleRequest = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     const method = request.method ?? 'GET';
     const headOnly = method === 'HEAD';
@@ -273,12 +497,23 @@ export async function startOperatorServer(
     }
     const expectedOrigin = `http://${expectedAuthority}`;
     const requestOrigin = request.headers.origin;
-    if (requestOrigin !== undefined && requestOrigin !== expectedOrigin) {
+    if (requestOrigin === undefined) {
+      // A read may come from curl; the one write may not. A browser always
+      // sends Origin on POST, so a missing header is never the board itself.
+      if (method === 'POST') {
+        sendJson(response, 403, errorBody(
+          'origin_required',
+          'The request Origin is required for writes.',
+          'Send the message from the operator board on this loopback origin.',
+        ));
+        return;
+      }
+    } else if (requestOrigin !== expectedOrigin) {
       sendJson(response, 403, errorBody('origin_not_allowed', 'The request Origin is not allowed.'), headOnly);
       return;
     }
-    if (method !== 'GET' && method !== 'HEAD') {
-      sendJson(response, 405, errorBody('method_not_allowed', 'Only GET and HEAD are supported.'), false);
+    if (method !== 'GET' && method !== 'HEAD' && method !== 'POST') {
+      sendJson(response, 405, errorBody('method_not_allowed', 'Only GET, HEAD, and POST are supported.'), false);
       return;
     }
 
@@ -294,6 +529,20 @@ export async function startOperatorServer(
       return;
     }
     const pathname = url.pathname;
+
+    const taskMessageRoute = TASK_MESSAGE_ROUTE.exec(pathname);
+    if (method === 'POST' && taskMessageRoute === null) {
+      sendJson(response, 405, errorBody('method_not_allowed', 'Only the task message route accepts POST.'), false);
+      return;
+    }
+    if (taskMessageRoute !== null) {
+      if (method !== 'POST') {
+        sendJson(response, 405, errorBody('method_not_allowed', 'The task message route accepts POST only.'), false);
+        return;
+      }
+      await handleTaskMessage(request, response, taskMessageRoute[1]!, taskMessageRoute[2]!);
+      return;
+    }
 
     if (pathname === '/healthz') {
       const health: OperatorHealthResponseV1 = {

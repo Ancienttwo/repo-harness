@@ -13,6 +13,8 @@ function card(overrides: Partial<FleetBoardCardInputV1> = {}): FleetBoardCardInp
   return {
     task_id: taskId,
     task_revision: taskRevision,
+    task_label: 'inspect one registered repository',
+    task_index: 1,
     task_state: 'pending',
     lease_state: 'available',
     claim_id: null,
@@ -93,6 +95,45 @@ describe('FleetBoardSnapshotV1 pure projection', () => {
     expect(first.repositories.map((entry) => entry.repository_id)).toEqual(['repo-a', 'repo-z']);
     expect(first.snapshot_sha256).toBe(second.snapshot_sha256);
     expect(first.counts).toEqual({ available: 2, working: 0, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0 });
+  });
+
+  test('carries the sprint row label and index as snapshot facts inside the digest basis', () => {
+    const labelled = snapshot('2026-08-23T00:00:00.000Z', 1);
+    expect(labelled.repositories[0]?.cards[0]).toMatchObject({
+      task_label: 'inspect one registered repository',
+      task_index: 1,
+    });
+
+    const relabelled = projectFleetBoardSnapshot({
+      registry_revision: 'sha256:registry',
+      sequence: 1,
+      observed_at: '2026-08-23T00:00:00.000Z',
+      repositories: [{
+        repository_id: 'repo-a', repo_root: '/fixtures/a', access_mode: 'read_write', status: 'ok',
+        snapshot_consistency: 'stable', cards: [card({ task_label: 'inspect one registered repository (renamed)' })], error: null,
+      }],
+    });
+    const unlabelled = projectFleetBoardSnapshot({
+      registry_revision: 'sha256:registry',
+      sequence: 1,
+      observed_at: '2026-08-23T00:00:00.000Z',
+      repositories: [{
+        repository_id: 'repo-a', repo_root: '/fixtures/a', access_mode: 'read_write', status: 'ok',
+        snapshot_consistency: 'stable', cards: [card({ task_label: null, task_index: null })], error: null,
+      }],
+    });
+    const baseline = projectFleetBoardSnapshot({
+      registry_revision: 'sha256:registry',
+      sequence: 1,
+      observed_at: '2026-08-23T00:00:00.000Z',
+      repositories: [{
+        repository_id: 'repo-a', repo_root: '/fixtures/a', access_mode: 'read_write', status: 'ok',
+        snapshot_consistency: 'stable', cards: [card()], error: null,
+      }],
+    });
+    expect(unlabelled.repositories[0]?.cards[0]).toMatchObject({ task_label: null, task_index: null });
+    expect(relabelled.snapshot_sha256).not.toBe(baseline.snapshot_sha256);
+    expect(unlabelled.snapshot_sha256).not.toBe(baseline.snapshot_sha256);
   });
 
   test('keeps a broken repository as an isolated typed row', () => {

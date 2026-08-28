@@ -55,6 +55,7 @@ function card(index: number): FleetBoardCardInputV1 {
   return {
     task_id: index.toString(16).padStart(64, '0'),
     task_revision: 'b'.repeat(64),
+    task_label: `fixture row ${index}`, task_index: index,
     task_state: 'pending', lease_state: 'available', claim_id: null, generation: null,
     current_publication: null, merge_readiness: null, execution_readiness: 'execution_ready',
     feedback: { pending_count: 0, no_progress: false, repair_actions: [] },
@@ -205,6 +206,13 @@ describe('fleet board collector', () => {
       const result = await collectFleetBoard({ env: { ...process.env, REPO_HARNESS_HOME: home }, timeout_ms: 1_000 });
       expect(result.repositories[0]).toMatchObject({ repository_id: repositoryId, status: 'ok' });
       expect(result.repositories[0]?.cards).toHaveLength(1);
+      // The label is the digest's own preimage: the same sprint row cell the
+      // task id was derived from, not a second description of the work.
+      expect(result.repositories[0]?.cards[0]).toMatchObject({
+        task_label: 'inspect one registered repository',
+        task_index: 1,
+      });
+      expect(result.repositories[0]?.cards[0]?.task_id).toMatch(/^[0-9a-f]{64}$/u);
       expect(readFileSync(join(home, 'registered-repos.json'), 'utf8')).toBe(registryBefore);
       expect(execFileSync('git', ['status', '--porcelain'], { cwd: repoRoot, encoding: 'utf8' })).toBe(statusBefore);
     } finally {

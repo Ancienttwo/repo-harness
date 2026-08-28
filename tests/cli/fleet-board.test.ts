@@ -25,7 +25,7 @@ describe('fleet board CLI transport', () => {
       expect(result.stderr).toBe('');
       const document = JSON.parse(result.stdout) as Record<string, unknown>;
       expect(document).toMatchObject({
-        protocol: 1,
+        protocol: 2,
         kind: 'fleet_board_snapshot',
         sequence: 1,
         repositories: [],

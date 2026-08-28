@@ -5,6 +5,14 @@
 > **Owner**: repo-harness maintainers
 > **Date**: 2026-08-24
 
+> **Superseded in part by v2** (`plans/plan-20260828-2326-operator-board-redesign.md`):
+> the board is no longer read-only. v2 exposes the existing `fleet message` effect
+> as a task-addressed message channel, so the v1 read-only invariant is replaced by
+> an **exactly one write** invariant — observe-only plus that single bounded write.
+> Everything below records the v1 design as confirmed on 2026-08-24 and is left
+> unchanged; read `read-only` and `不存在 mutation controls` below as v1 history,
+> not as the current contract.
+
 ## Purpose & Audience (頁面目的與受眾)
 
 - Page/surface: localhost-only `repo-harness operator serve` read-only Fleet control board.

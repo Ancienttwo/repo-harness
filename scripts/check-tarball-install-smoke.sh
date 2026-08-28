@@ -171,7 +171,8 @@ if (!asset.ok || (await asset.arrayBuffer()).byteLength === 0) fail('operator st
 const snapshot = await fetch(`${baseUrl}/api/v1/fleet/snapshot`);
 if (!snapshot.ok) fail(`operator Fleet API returned ${snapshot.status}`);
 const payload = await snapshot.json();
-if (payload?.protocol !== 1 || payload?.kind !== 'operator_fleet_snapshot' || !Array.isArray(payload?.repositories)
+// payload.protocol tracks FLEET_BOARD_PROTOCOL (src/core/fleet/board.ts), not the /healthz route protocol above.
+if (payload?.protocol !== 2 || payload?.kind !== 'operator_fleet_snapshot' || !Array.isArray(payload?.repositories)
   || typeof payload?.source_snapshot_sha256 !== 'string') {
   fail('operator Fleet API did not return OperatorFleetSnapshotV1');
 }
