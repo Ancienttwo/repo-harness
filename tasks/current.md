@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-28T15:31:17+0800 -->
+<!-- updated_at: 2026-08-29T02:46:24+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Idle
-> **Updated At**: 2026-08-28T15:31:17+0800
+> **Status**: Active
+> **Updated At**: 2026-08-29T02:46:24+0800
 > **Source Branch**: main
-> **Source Commit**: b7f1103b
+> **Source Commit**: 77ad435f
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: manual
@@ -17,10 +17,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Current Focus
 
-- Status: Idle
+- Status: Active
 - Active Plan: (none)
 - Plan Status: (none)
-- Next Task: (none)
+- Next Task: inspect active worktree marker(s)
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,7 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- (none)
+- linked-worktree-447d30e920d3: plans/plan-20260829-0208-verify-contract-fail-closed.md
+- linked-worktree-447d30e920d3: active-worktree owner -> self
 ## Active Sprint
 
 - Sprint: (none)
@@ -55,10 +56,13 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: clean
+- Summary: 4 changed/untracked path(s)
 
 ```
-(none)
+ M docs/architecture/.projection-manifest.json
+ M tasks/current.md
+ M tasks/reviews/20260828-2326-operator-board-redesign.review.md
+?? docs/researches/20260829-operator-board-attention-first-redesign.md
 ```
 
 ## Source Artifacts

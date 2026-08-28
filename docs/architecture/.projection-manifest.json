@@ -5,12 +5,12 @@
   "sourceDigest": "sha256:a23d2bc659e963369ccb1fb5f291ab496c81295fc401e3755c835d4141301c5d",
   "provenance": {
     "schemaVersion": "archcontext.architecture-docs-projection-provenance/v1",
-    "baseHeadSha": "683eafd4fbb7ca80b1d5e4def93e6b4fbca647fe",
-    "worktreeDigest": "sha256:4883d299db4f9bf6bdaee95d37cd19cba14645574f5999ad723dacf79110c2de",
-    "sourceTreeDigest": "sha256:2726a1a1cdbab077f1b93f699eeaa93c86148be8e2689b4cb4a9128ebfc726b0",
+    "baseHeadSha": "77ad435f2a88dd6e5db7ef86afe9b1edb1106ecc",
+    "worktreeDigest": "sha256:f058c6d6bc4ba27ee85cffbbd2bcd4c2f63f2f4c6a5aa3e7bdff27a9f1dff602",
+    "sourceTreeDigest": "sha256:ffc116894775f89223804c1894f6f7b7664b6fb9b7e1f2210202cc10b3ce2a24",
     "modelDigest": "sha256:5c7b6bee15c23e8619de802909877a67b9efa2553f284b377fadfe83caf62bbf",
-    "codeGraphDigest": "sha256:83a161be41b133d9d8ffe21084054b51bc22edb48060fcc76d9267b4f96f4764",
-    "indexedWorktreeDigest": "sha256:e6eb2f8ac3ff2f6c707bfb663b57dcfa78b4394fc3f6e214b0faee27b47198e3",
+    "codeGraphDigest": "sha256:021be1bfa3699a6e0417f363d06d2117621b6de0f4055c39fad5aaa6f85d18a2",
+    "indexedWorktreeDigest": "sha256:30e0e9add9d280353acfc04ff5c6b10c5bd121bf62a0135c97c37dafbcb5ea2e",
     "rendererVersion": "archcontext.docs-renderer/v4",
     "layoutVersion": "archcontext.docs-layout/v1",
     "generatedFrom": {
@@ -19,9 +19,9 @@
       "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
       "codeGraphStatus": "ready"
     },
-    "projectionInputDigest": "sha256:b2ca99a1e7b5ab0f9ea265baeef3cbc5ecc5304d26a47b1643c6cd179319c9d6"
+    "projectionInputDigest": "sha256:a4b02af3c69d0dced3f5f00d92286961972166fca04ce8357e9d28da449e576c"
   },
-  "projectionDigest": "sha256:12608577722f1d8e15d18e8cb8971d78a96e85276c900985e30a40f0db7e6ab2",
+  "projectionDigest": "sha256:8b48caff202b5ab47a18bb4a406bd39a4bd60f3e8b9bdf191d16e857aab379a2",
   "semanticBaseline": {
     "semanticState": {
       "schemaVersion": "archcontext.architecture-semantic-state/v1",
@@ -557,12 +557,12 @@
     },
     "digests": {
       "modelDigest": "sha256:5c7b6bee15c23e8619de802909877a67b9efa2553f284b377fadfe83caf62bbf",
-      "sourceTreeDigest": "sha256:2726a1a1cdbab077f1b93f699eeaa93c86148be8e2689b4cb4a9128ebfc726b0",
+      "sourceTreeDigest": "sha256:ffc116894775f89223804c1894f6f7b7664b6fb9b7e1f2210202cc10b3ce2a24",
       "flowProofDigest": "sha256:857ea8a8c0e9856186266b177c05dac2045220bc808bb17e07b1e3860cef2198",
-      "projectionDigest": "sha256:12608577722f1d8e15d18e8cb8971d78a96e85276c900985e30a40f0db7e6ab2"
+      "projectionDigest": "sha256:8b48caff202b5ab47a18bb4a406bd39a4bd60f3e8b9bdf191d16e857aab379a2"
     }
   },
-  "receiptDigest": "sha256:eebdca34fe51eafa5c17060d541be62f9b882a373033dbd7711ed7ae4c5b8dda",
+  "receiptDigest": "sha256:6aae13b450d7287718a106ea2fe471a309dadf64d5c04c029bbac51ac0221e1b",
   "refreshSignalIds": [],
   "targetCount": 27,
   "fileCount": 27,
@@ -635,9 +635,9 @@
       "sourceDigest": "sha256:4b156de6b1c762fba52333c97bc1928eb8ccdfa64972fe4c9034249d5b66a22c",
       "outputDigest": "sha256:ae0761f94d159619eca95cc0e65038bb547c0d31d085c4f9c4f9095d639f0db1",
       "verifiedAgainst": {
-        "branch": "codex/me3a-provider-thread-effect",
-        "commit": "73aa7d0c291ac5e83bd5ae8205f36b4894d1f0a3",
-        "committedAt": "2026-08-25T23:17:17+08:00"
+        "branch": "main",
+        "commit": "77ad435f2a88dd6e5db7ef86afe9b1edb1106ecc",
+        "committedAt": "2026-08-29T02:40:25+08:00"
       }
     },
     {
@@ -775,9 +775,9 @@
       "sourceDigest": "sha256:183d7a9ef531bb200e573b337911d503eac0d86741a87b02d5d0b60896930782",
       "outputDigest": "sha256:2e93a1f59017a07da7860cf0073e6911d9f75032b5af8be503c56087f394466a",
       "verifiedAgainst": {
-        "branch": "codex/me4b-interface-change",
-        "commit": "e57df6fc25049ae580272da0ed1390c83de6cf78",
-        "committedAt": "2026-08-28T03:14:35+08:00"
+        "branch": "main",
+        "commit": "77ad435f2a88dd6e5db7ef86afe9b1edb1106ecc",
+        "committedAt": "2026-08-29T02:40:25+08:00"
       }
     },
     {
@@ -955,9 +955,9 @@
       "sourceDigest": "sha256:463d4ebee4c32feaf8e98dca3f6862530d876ff145ab4a6c0d1e83b9acd6d4b7",
       "outputDigest": "sha256:966f7438cd7b385cb411a2ef8c2de18c0b1e71eb067941c97375a4b284a873b9",
       "verifiedAgainst": {
-        "branch": "codex/me4b-interface-change",
-        "commit": "c3acba66450edbb177e56275ea0c1863e5c4fbef",
-        "committedAt": "2026-08-28T11:41:27+08:00"
+        "branch": "main",
+        "commit": "77ad435f2a88dd6e5db7ef86afe9b1edb1106ecc",
+        "committedAt": "2026-08-29T02:40:25+08:00"
       }
     },
     {
