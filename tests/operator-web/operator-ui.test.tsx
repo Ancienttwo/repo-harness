@@ -48,7 +48,7 @@ describe('operator web control board', () => {
       'Done',
     )).toBe(true);
     expect(markup).toContain('protocol 2');
-    expect(markup).toContain('read-only / localhost');
+    expect(markup).toContain('observe-only · one write: task message');
   });
 
   test('UX-operator-worklist-v1-P2 leads every row with the human task label, never the digest', () => {
@@ -98,10 +98,11 @@ describe('operator web control board', () => {
     expect(markup).not.toContain('repo_root');
     expect(markup).not.toContain('/Users/');
     expect(markup).not.toContain('/private/');
-    expect(markup).not.toContain('Approve');
-    expect(markup).not.toContain('Merge now');
-    expect(markup).not.toContain('Start agent');
-    expect(markup).toContain('read-only / localhost');
+    for (const affordance of ['Approve', 'Merge now', 'Start agent', 'Acquire', 'Takeover', 'Abandon', 'Reopen']) {
+      expect(markup).not.toContain(affordance);
+    }
+    expect(markup).not.toContain('data-write-action');
+    expect(markup).toContain('observe-only · one write: task message');
   });
 
   test('UX-local-human-control-board-v1-F1 renders a fatal authority failure instead of an empty success board', () => {

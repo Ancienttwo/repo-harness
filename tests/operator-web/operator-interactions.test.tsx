@@ -3,6 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
 
+import { TASK_MESSAGE_BODY_MAX_BYTES } from '../../src/core/fleet/task-message';
 import {
   asApiError,
   copyOperatorIdentifier,
@@ -10,6 +11,7 @@ import {
   groupWorklist,
   OperatorApp,
   primaryCause,
+  TASK_MESSAGE_BODY_LIMIT_BYTES,
   taskDisplayLabel,
   taskKey,
 } from '../../src/operator-web/App';
@@ -233,7 +235,8 @@ describe('operator web interactions', () => {
     expect(blockedPane).toContain('checks_pending');
     expect(blockedPane).toContain('you owns this');
     expect(blockedPane).toContain('external owns this');
-    expect(document.querySelector('.detail-pane [data-slot="composer"]')?.textContent).toBe('');
+    expect(document.querySelector('.detail-pane [data-slot="composer"] .composer__toggle')?.getAttribute('aria-expanded')).toBe('false');
+    expect(document.querySelector('.composer__panel')).toBeNull();
 
     const close = document.querySelector<HTMLButtonElement>('.detail-pane [aria-label="Close task details"]');
     if (!close) throw new Error('close button not found');
@@ -458,7 +461,7 @@ describe('operator web interactions', () => {
     expect(text).toContain(fixtureTasks.blocked.task_label);
     expect(text).toContain('base_moved_since_verification');
     expect(text).toContain('repo-harness');
-    expect(text).toContain('read-only / localhost');
+    expect(text).toContain('observe-only · one write: task message');
   });
 
   test('locale resolution prefers the stored choice and fails closed to English', () => {
@@ -536,9 +539,216 @@ describe('operator web interactions', () => {
     expect(sizes.length).toBeGreaterThan(0);
     expect(Math.min(...sizes)).toBeGreaterThanOrEqual(11);
 
-    // The write accent stays reserved; nothing on this read-only board paints with it.
+    // The write accent marks the one write and nothing else: every rule that
+    // paints with carrot must be a composer rule.
     const declarations = css.slice(css.indexOf('.operator-app {'));
-    expect(declarations).not.toContain('var(--carrot-500)');
-    expect(declarations).not.toContain('var(--carrot-600)');
+    const carrotSelectors = declarations
+      .split('}')
+      .filter((rule) => rule.includes('var(--carrot-'))
+      .map((rule) => rule.slice(0, rule.indexOf('{')).trim());
+    expect(carrotSelectors.length).toBeGreaterThan(0);
+    for (const selector of carrotSelectors) expect(selector.startsWith('.composer__')).toBe(true);
+  });
+});
+
+describe('operator web task message composer', () => {
+  const composerToggle = (): HTMLButtonElement => buttonWithText('Send message to this session');
+  const composerPanel = (): Element | null => document.querySelector('.composer__panel');
+  const sendButton = (): HTMLButtonElement => {
+    const button = document.querySelector('[data-write-action="task-message"]');
+    if (!(button instanceof window.HTMLButtonElement)) throw new Error('send button not found');
+    return button as unknown as HTMLButtonElement;
+  };
+
+  /**
+   * `react-dom` decides at import time whether the host supports the `input`
+   * event, and in this test process there is no DOM yet, so it falls back to
+   * its keyboard-driven change detection. A simulated edit therefore focuses
+   * the field and ends on a key event; the value itself is written through the
+   * prototype setter so React's own value tracker still sees the change.
+   */
+  async function typeMessage(text: string): Promise<void> {
+    const textarea = document.querySelector('#composer-body') as unknown as HTMLTextAreaElement | null;
+    if (textarea === null) throw new Error('composer textarea not found');
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+    await act(async () => {
+      textarea.dispatchEvent(new window.Event('focusin', { bubbles: true }) as unknown as Event);
+      setter?.call(textarea, text);
+      textarea.dispatchEvent(new window.Event('keyup', { bubbles: true }) as unknown as Event);
+    });
+  }
+
+  async function openComposerFor(
+    task: string,
+    snapshot: OperatorFleetSnapshotV1 = stableSnapshot,
+    props: Partial<React.ComponentProps<typeof OperatorApp>> = {},
+  ): Promise<void> {
+    installDom(true);
+    await mount(
+      <OperatorApp initialState={projectSnapshotViewState(snapshot)} initialLocale="en" {...props} />,
+    );
+    await act(async () => buttonWithText(task).click());
+    await act(async () => composerToggle().click());
+  }
+
+  test('UX-operator-task-message-v1-P1 stays collapsed until asked and then states the untrusted contract', async () => {
+    installDom(true);
+    await mount(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} initialLocale="en" />);
+    await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+
+    expect(composerToggle().getAttribute('aria-expanded')).toBe('false');
+    expect(composerPanel()).toBeNull();
+
+    await act(async () => composerToggle().click());
+    const panel = composerPanel();
+    expect(panel).not.toBeNull();
+    expect(panel?.textContent).toContain('untrusted data');
+    expect(panel?.textContent).toContain('may ignore it');
+    expect(panel?.textContent).toContain('0 / 8192 bytes');
+    expect(panel?.textContent).toContain('claim …-blocked · gen 3');
+    expect(panel?.textContent).toContain('writes: task message only · no lease, no merge');
+  });
+
+  test('UX-operator-task-message-v1-P2 derives scope from the observed lease instead of offering a choice', async () => {
+    await openComposerFor(fixtureTasks.blocked.task_label);
+    expect(sendButton().textContent).toBe('Send to owner — claim …-blocked · gen 3');
+    expect(composerPanel()?.textContent).not.toContain('waits for the next claimant');
+
+    await act(async () => root?.unmount());
+    root = null;
+
+    await openComposerFor(fixtureTasks.available.task_label);
+    expect(sendButton().textContent).toBe('Send to the next claimant');
+    expect(composerPanel()?.textContent).toContain('waits for the next claimant');
+    expect(composerPanel()?.textContent).toContain('no current claim');
+  });
+
+  test('UX-operator-task-message-v1-N1 refuses the write on read_only, a torn card, and an unstable board', async () => {
+    await openComposerFor(fixtureTasks.console.task_label);
+    await typeMessage('please resume');
+    expect(sendButton().disabled).toBe(true);
+    expect(composerPanel()?.textContent).toContain('registered read only');
+
+    await act(async () => root?.unmount());
+    root = null;
+
+    // A card that moved under the read, on a board whose own consistency is stable.
+    const tornCard: OperatorFleetSnapshotV1 = {
+      ...stableSnapshot,
+      repositories: stableSnapshot.repositories.map((repository) => ({
+        ...repository,
+        cards: repository.cards.map((card) => (card.task_id === fixtureTasks.blocked.task_id
+          ? { ...card, snapshot_consistency: 'changed_during_read' as const }
+          : card)),
+      })),
+    };
+    await openComposerFor(fixtureTasks.blocked.task_label, tornCard);
+    await typeMessage('please resume');
+    expect(sendButton().disabled).toBe(true);
+    expect(composerPanel()?.textContent).toContain('changed while the snapshot was read');
+
+    await act(async () => root?.unmount());
+    root = null;
+
+    await openComposerFor(fixtureTasks.blocked.task_label, degradedSnapshot);
+    await typeMessage('please resume');
+    expect(sendButton().disabled).toBe(true);
+    expect(composerPanel()?.textContent).toContain('stale or degraded data');
+  });
+
+  test('UX-operator-task-message-v1-N2 counts UTF-8 bytes and blocks an empty or oversized body', async () => {
+    await openComposerFor(fixtureTasks.blocked.task_label);
+    expect(sendButton().disabled).toBe(true);
+    expect(composerPanel()?.textContent).toContain('Write the message before sending it.');
+
+    await typeMessage('检查一下 base');
+    expect(sendButton().disabled).toBe(false);
+    expect(composerPanel()?.textContent).toContain(`${new TextEncoder().encode('检查一下 base').byteLength} / 8192 bytes`);
+
+    await typeMessage('x'.repeat(TASK_MESSAGE_BODY_MAX_BYTES + 1));
+    expect(sendButton().disabled).toBe(true);
+    expect(composerPanel()?.textContent).toContain('over the 8192 byte limit');
+    expect(document.querySelector('.composer__bytes.is-over')).not.toBeNull();
+  });
+
+  test('UX-operator-task-message-v1-P3 sends once, refreshes, and keeps the draft plus the retry id on failure', async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    let refreshes = 0;
+    let failure: unknown = null;
+    installDom(true);
+    await mount(
+      <OperatorApp
+        initialState={projectSnapshotViewState(stableSnapshot)}
+        initialLocale="en"
+        fetchSnapshot={async () => { refreshes += 1; return stableSnapshot; }}
+        sendMessage={async (request) => {
+          sent.push({ ...request });
+          if (failure) throw failure;
+        }}
+      />,
+    );
+    await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+    await act(async () => composerToggle().click());
+
+    failure = { code: 'claim_mismatch', message: 'x', next_action: 'y' };
+    await typeMessage('the base moved, rebase first');
+    await act(async () => sendButton().click());
+    expect(composerPanel()?.textContent).toContain('That session is gone');
+    expect((document.querySelector('#composer-body') as unknown as HTMLTextAreaElement).value)
+      .toBe('the base moved, rebase first');
+    expect(refreshes).toBe(0);
+
+    failure = null;
+    await act(async () => sendButton().click());
+    expect(sent.length).toBe(2);
+    expect(sent[0]!.message_id).toBe(sent[1]!.message_id);
+    expect(sent[1]).toMatchObject({
+      repository_id: 'repo-harness',
+      task_id: fixtureTasks.blocked.task_id,
+      scope: 'claim',
+      body: 'the base moved, rebase first',
+    });
+    expect(String(sent[1]!.message_id)).toMatch(/^[0-9a-f-]{36}$/u);
+    expect(refreshes).toBe(1);
+    expect(composerPanel()?.textContent).toContain('Sent. Waiting for the next snapshot.');
+    expect((document.querySelector('#composer-body') as unknown as HTMLTextAreaElement).value).toBe('');
+
+    // The spent id is never reused, and nothing about the send is persisted.
+    await typeMessage('second message');
+    await act(async () => sendButton().click());
+    expect(sent[2]!.message_id).not.toBe(sent[1]!.message_id);
+    expect(window.localStorage.getItem('repo-harness:operator-sent')).toBeNull();
+  });
+
+  test('UX-operator-task-message-v1-P4 keeps the composer the only write affordance on the board', async () => {
+    await openComposerFor(fixtureTasks.blocked.task_label);
+
+    const writes = document.querySelectorAll('[data-write-action]');
+    expect(writes.length).toBe(1);
+    expect(writes[0]).toBe(sendButton() as unknown as Element);
+    expect(document.querySelector('.worklist [data-write-action]')).toBeNull();
+    expect(document.querySelector('.operator-statusbar [data-write-action]')).toBeNull();
+
+    const text = document.body.textContent ?? '';
+    for (const affordance of ['Approve', 'Merge now', 'Start agent', 'Acquire', 'Takeover', 'Abandon', 'Reopen']) {
+      expect(text).not.toContain(affordance);
+    }
+  });
+
+  test('translates the whole composer and mirrors the protocol body limit', async () => {
+    expect(TASK_MESSAGE_BODY_LIMIT_BYTES).toBe(TASK_MESSAGE_BODY_MAX_BYTES);
+
+    await openComposerFor(fixtureTasks.blocked.task_label);
+    await act(async () => buttonWithText('中').click());
+
+    const panel = composerPanel()?.textContent ?? '';
+    expect(document.querySelector('.composer__toggle')?.textContent).toBe('给这个 session 发消息');
+    expect(panel).toContain('不可信数据');
+    expect(panel).toContain('字节');
+    expect(panel).toContain('先把消息写出来再发');
+    expect(sendButton().textContent).toBe('发给持有者 — claim …-blocked · gen 3');
+    // Identity and the write boundary contract stay untranslated.
+    expect(panel).toContain('claim …-blocked');
+    expect(panel).toContain('writes: task message only · no lease, no merge');
   });
 });

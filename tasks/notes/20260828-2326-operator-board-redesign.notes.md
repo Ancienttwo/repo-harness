@@ -41,6 +41,24 @@
 - WP-B: `src/operator-web/i18n.ts` types `zh` as `Record<keyof typeof en, string>`, so a missing
   translation is a typecheck failure. There is no runtime fallback to English and no partial dictionary.
 
+- WP-C: the browser sends `{ message_id, scope, body }` and nothing else. `task_revision`,
+  `target_claim_id`, and `target_generation` are re-resolved server-side in
+  `src/effects/fleet/task-message-request.ts`, so a fence the browser rendered minutes ago can
+  never become the fence a message is written against. The claim is read twice — once to name
+  the recipient, once inside `sendTaskMessage`'s task lock — so a lease that moves between them
+  fails closed with `claim_mismatch` instead of addressing a session that is gone.
+- WP-C: the HTTP layer keeps only the typed code from a failed write and substitutes a fixed
+  public sentence (`TASK_MESSAGE_FAILURES` in `src/effects/operator/server.ts`). The effect's own
+  message names repository roots and sprint paths, and a snapshot document already refuses to
+  carry those; the write path holds the same line.
+- WP-C: composer scope is derived (`lease_state === 'bound' && claim_id !== null` -> claim, else
+  task), never offered as a control. A scope picker would let the operator address a claim the
+  board can see is not current, which the server would then reject — a choice whose only outcome
+  is a typed error is not a choice.
+- WP-C: the composer keeps no local record of what it sent. The transient "waiting for the next
+  snapshot" line is derived from `snapshot.sequence`, so it disappears the moment authority
+  answers; `inbox.unread_count` is the delivery feedback loop.
+
 ## Deviations From Plan Or Spec
 
 - WP-A touched one App.tsx literal (`protocol 1` -> `protocol 2`) even though UI work is WP-B.
@@ -72,6 +90,24 @@
 - WP-B: the brand mark was recolored from carrot to ink. The accent is reserved for human-write
   affordances and this board has none yet; a decorative accent mark would have spent the signal early.
   A stylesheet test asserts the accent tokens appear only in the `:root` declaration block.
+
+- WP-C: `POST` requires an `Origin` header and `GET` does not. A read may legitimately come from
+  `curl`; a write may not, and a browser always sends `Origin` on `POST`, so a missing header is
+  never the board itself. The Host pinning is unchanged for both.
+- WP-C: the transport caps the raw request at four times the protocol body limit and then judges
+  the 413 on the decoded `body` field. JSON escaping expands the payload, so a single cap would
+  either reject a legal 8 KiB message or accept an illegal one; the envelope cap only bounds how
+  much is read before the authoritative check runs.
+- WP-C: `canonicalTaskContext` in `src/effects/fleet/task-message-request.ts` duplicates the
+  resolution `canonicalInboxContext` performs in `src/cli/commands/fleet.ts`. CLI commands are out
+  of this contract's scope, so extracting the shared helper would have edited a file the contract
+  excludes; the duplicate is deliberate and both call sites resolve the same three authorities in
+  the same order.
+- WP-C: `react-dom` resolves whether the host supports the `input` event at import time, and this
+  test process has no DOM then, so it uses its keyboard-driven change detection. `typeMessage` in
+  `tests/operator-web/operator-interactions.test.tsx` therefore focuses the field and ends on a
+  key event. React's own value tracker still decides whether the value changed, so the assertion
+  is about the component, not about the simulation.
 
 ## Tradeoffs Considered
 

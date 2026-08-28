@@ -237,6 +237,29 @@ code, .mono-value { font-family: var(--font-mono); }
 .signal-grid span { padding: 9px; border-radius: var(--radius-sm); color: var(--text-muted); background: var(--surface-sunken); font-size: 11px; }
 .signal-grid strong { display: block; color: var(--text-strong); font-family: var(--font-display); font-size: 18px; font-weight: 600; }
 
+/* The one write on this board. Carrot appears here and nowhere else. */
+.composer { border-top: 1px solid var(--border-subtle); background: var(--surface-card); }
+.composer__toggle { width: 100%; min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 20px; border: 0; color: var(--text-strong); background: transparent; cursor: pointer; font-family: var(--font-display); font-size: 13px; font-weight: 600; text-align: left; }
+.composer__toggle:hover { background: var(--surface-sunken); }
+.composer__toggle svg { color: var(--text-muted); transition: transform var(--dur-fast) var(--ease-out); }
+.composer__toggle svg.is-open { transform: rotate(180deg); }
+.composer__panel { display: grid; gap: 9px; padding: 4px 20px 18px; }
+.composer__untrusted { color: var(--text-muted); font-size: 12px; }
+.composer__scope-note { padding: 9px 10px; border: 1px solid var(--attention-user-line); border-radius: var(--radius-md); color: var(--attention-user-text); background: var(--attention-user-surface); font-size: 12px; }
+.composer__label { color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.composer__body { min-height: 88px; padding: 9px 10px; border: 1px solid var(--border-default); border-radius: var(--radius-md); color: var(--text-strong); background: var(--surface-page); font-family: inherit; font-size: 13px; line-height: 1.5; resize: vertical; }
+.composer__body:focus-visible { outline: 2px solid var(--carrot-600); outline-offset: 1px; }
+.composer__bytes { color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; text-align: right; }
+.composer__bytes.is-over { color: var(--danger-text); font-weight: 500; }
+.composer__fence { color: var(--text-body); font-family: var(--font-mono); font-size: 11px; }
+.composer__blocked { color: var(--attention-user-text); font-size: 12px; }
+.composer__error { color: var(--danger-text); font-size: 12px; }
+.composer__sent { color: var(--green-600); font-size: 12px; }
+.composer__send { color: var(--text-inverse); background: var(--carrot-600); }
+.composer__send:hover:not(:disabled) { background: var(--carrot-500); }
+.composer__send:disabled { cursor: not-allowed; }
+.composer__boundary { color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; }
+
 .stage-matrix__scroll { overflow-x: auto; }
 .stage-matrix { width: 100%; border-collapse: collapse; font-size: 12px; }
 .stage-matrix caption { padding-bottom: 7px; }

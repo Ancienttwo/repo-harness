@@ -31,6 +31,8 @@ export interface OperatorAppProps {
   /** A deterministic initial response; production uses the same-origin API. */
   readonly initialSnapshot?: OperatorFleetSnapshotV1;
   readonly fetchSnapshot?: () => Promise<OperatorFleetSnapshotV1>;
+  /** The board's one write, injectable so tests never touch a real repository. */
+  readonly sendMessage?: (request: TaskMessageRequestV1) => Promise<void>;
   /** Tests pin the locale; the browser resolves it from storage or navigator. */
   readonly initialLocale?: OperatorLocale;
 }
@@ -734,6 +736,234 @@ function TaskDetail({
   );
 }
 
+/**
+ * The transport limit restated for the browser. `src/core/fleet/task-message.ts`
+ * owns the authority but reaches Node `crypto` and `Buffer`, which must not
+ * enter this bundle, so the drift is caught by a test that imports both.
+ */
+export const TASK_MESSAGE_BODY_LIMIT_BYTES = 8 * 1024;
+
+/** The whole board writes exactly here, and only here. */
+export const OPERATOR_WRITE_BOUNDARY = 'writes: task message only · no lease, no merge';
+
+const TASK_MESSAGE_FAILED_ERROR: OperatorApiErrorV1 = {
+  code: 'task_message_unavailable',
+  message: 'The task message could not be sent',
+  next_action: 'Refresh the board to re-observe the task, then retry.',
+};
+
+const OWNER_GONE_CODES: readonly string[] = ['claim_mismatch', 'recipient_unavailable', 'task_unowned'];
+
+export interface TaskMessageRequestV1 {
+  readonly repository_id: string;
+  readonly task_id: string;
+  readonly message_id: string;
+  readonly scope: 'task' | 'claim';
+  readonly body: string;
+}
+
+export function taskMessageBodyBytes(body: string): number {
+  return new TextEncoder().encode(body).byteLength;
+}
+
+/**
+ * Scope is derived from the observed lease, never offered as a choice: a bound
+ * task is addressed to the claim that holds it, and an unheld task can only be
+ * left for whoever claims it next.
+ */
+export function composerScope(card: OperatorFleetCardV1): 'task' | 'claim' {
+  return card.lease_state === 'bound' && card.claim_id !== null ? 'claim' : 'task';
+}
+
+export type ComposerBlock =
+  | 'read_only'
+  | 'changed_during_read'
+  | 'board_unstable'
+  | 'too_large'
+  | 'empty'
+  | null;
+
+/**
+ * Every reason the one write is refused, in the order the operator should read
+ * them: a permanent repository property first, then a torn observation, then a
+ * board that cannot be trusted, then the message itself.
+ */
+export function composerBlock(input: {
+  readonly access_mode: OperatorFleetRepositoryV1['access_mode'];
+  readonly card_consistency: OperatorFleetCardV1['snapshot_consistency'];
+  readonly board_unstable: boolean;
+  readonly body_bytes: number;
+}): ComposerBlock {
+  if (input.access_mode === 'read_only') return 'read_only';
+  if (input.card_consistency === 'changed_during_read') return 'changed_during_read';
+  if (input.board_unstable) return 'board_unstable';
+  if (input.body_bytes > TASK_MESSAGE_BODY_LIMIT_BYTES) return 'too_large';
+  if (input.body_bytes === 0) return 'empty';
+  return null;
+}
+
+export async function postTaskMessage(request: TaskMessageRequestV1): Promise<void> {
+  const response = await fetch(
+    `/api/v1/fleet/tasks/${encodeURIComponent(request.repository_id)}/${encodeURIComponent(request.task_id)}/messages`,
+    {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message_id: request.message_id, scope: request.scope, body: request.body }),
+    },
+  );
+  if (response.ok) return;
+  let body: unknown = null;
+  try {
+    body = await response.json();
+  } catch {
+    body = null;
+  }
+  throw asApiError(body, TASK_MESSAGE_FAILED_ERROR);
+}
+
+function blockedMessage(block: Exclude<ComposerBlock, null>, t: OperatorTranslate): string {
+  if (block === 'read_only') return t('composer.blockedReadOnly');
+  if (block === 'changed_during_read') return t('composer.blockedChanged');
+  if (block === 'board_unstable') return t('composer.blockedBoard');
+  if (block === 'too_large') return t('composer.blockedTooLarge', { max: TASK_MESSAGE_BODY_LIMIT_BYTES });
+  return t('composer.blockedEmpty');
+}
+
+/**
+ * The board's only write affordance.
+ *
+ * It is collapsed by default, it carries its own fence instead of a separate
+ * confirmation step, and it keeps no local record of what was sent: the
+ * authoritative `inbox.unread_count` on the next snapshot is the delivery
+ * feedback loop.
+ */
+function Composer({
+  card,
+  repository,
+  boardUnstable,
+  sequence,
+  onSent,
+  sendMessage,
+  t,
+}: {
+  readonly card: OperatorFleetCardV1;
+  readonly repository: OperatorFleetRepositoryV1;
+  readonly boardUnstable: boolean;
+  readonly sequence: number;
+  readonly onSent: () => void;
+  readonly sendMessage: (request: TaskMessageRequestV1) => Promise<void>;
+  readonly t: OperatorTranslate;
+}) {
+  const [open, setOpen] = useState(false);
+  const [messageId, setMessageId] = useState<string | null>(null);
+  const [body, setBody] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sentAt, setSentAt] = useState<number | null>(null);
+  const [error, setError] = useState<OperatorApiErrorV1 | null>(null);
+
+  const scope = composerScope(card);
+  const bytes = taskMessageBodyBytes(body);
+  const block = composerBlock({
+    access_mode: repository.access_mode,
+    card_consistency: card.snapshot_consistency,
+    board_unstable: boardUnstable,
+    body_bytes: bytes,
+  });
+  const claimShort = card.claim_id === null ? '' : card.claim_id.slice(-8);
+  const consistency = t(`status.consistency.${card.snapshot_consistency}` as OperatorMessageKey);
+  const sent = sentAt !== null && sentAt === sequence;
+
+  const toggle = () => {
+    if (!open && messageId === null) setMessageId(crypto.randomUUID());
+    setOpen(!open);
+  };
+
+  const submit = async () => {
+    if (block !== null || sending || messageId === null) return;
+    setSending(true);
+    setError(null);
+    try {
+      await sendMessage({
+        repository_id: card.repository_id,
+        task_id: card.task_id,
+        message_id: messageId,
+        scope,
+        body,
+      });
+      // A stored message is a new message: the retry id is spent, the draft is
+      // gone, and the next snapshot owns what the operator sees next.
+      setBody('');
+      setMessageId(crypto.randomUUID());
+      setSentAt(sequence);
+      onSent();
+    } catch (failure) {
+      setError(asApiError(failure, TASK_MESSAGE_FAILED_ERROR));
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <section className={`composer${open ? ' is-open' : ''}`} data-slot="composer" aria-labelledby="composer-heading">
+      <button
+        className="composer__toggle"
+        type="button"
+        aria-expanded={open}
+        aria-controls="composer-panel"
+        onClick={toggle}
+      >
+        <Icon name="chevron" size={15} className={open ? 'is-open' : ''} />
+        <span id="composer-heading">{t('composer.toggle')}</span>
+      </button>
+      {open && (
+        <div className="composer__panel" id="composer-panel">
+          <p className="composer__untrusted">{t('composer.untrusted')}</p>
+          {scope === 'task' && <p className="composer__scope-note">{t('composer.taskScope')}</p>}
+          <label className="composer__label" htmlFor="composer-body">{t('composer.bodyLabel')}</label>
+          <textarea
+            className="composer__body"
+            id="composer-body"
+            rows={4}
+            value={body}
+            placeholder={t('composer.bodyPlaceholder')}
+            onChange={(event) => setBody(event.target.value)}
+          />
+          <p className={`composer__bytes${bytes > TASK_MESSAGE_BODY_LIMIT_BYTES ? ' is-over' : ''}`}>
+            {t('composer.bytes', { used: bytes, max: TASK_MESSAGE_BODY_LIMIT_BYTES })}
+          </p>
+          <p className="composer__fence">
+            {scope === 'claim'
+              ? t('composer.fenceClaim', { claim: claimShort, generation: card.generation ?? '—', consistency })
+              : t('composer.fenceTask', { consistency })}
+          </p>
+          {block !== null && <p className="composer__blocked" role="status">{blockedMessage(block, t)}</p>}
+          {error && (
+            <p className="composer__error" role="alert">
+              {OWNER_GONE_CODES.includes(error.code) ? t('composer.ownerGone') : `${error.message}. ${error.next_action}`}
+            </p>
+          )}
+          {sent && <p className="composer__sent" role="status">{t('composer.sent')}</p>}
+          <button
+            className="operator-button composer__send"
+            type="button"
+            data-write-action="task-message"
+            disabled={block !== null || sending}
+            onClick={() => void submit()}
+          >
+            {sending
+              ? t('composer.sending')
+              : scope === 'claim'
+                ? t('composer.send', { claim: claimShort, generation: card.generation ?? '—' })
+                : t('composer.sendTask')}
+          </button>
+          <p className="composer__boundary">{OPERATOR_WRITE_BOUNDARY}</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
 const WIDE_LAYOUT_QUERY = '(min-width: 901px)';
 
 function useWideLayout(): boolean {
@@ -754,16 +984,24 @@ function useWideLayout(): boolean {
 function DetailPane({
   snapshot,
   card,
+  repository,
   revisionChangedFrom,
+  boardUnstable,
   modal,
   onClose,
+  onSent,
+  sendMessage,
   t,
 }: {
   readonly snapshot: OperatorFleetSnapshotV1 | null;
   readonly card: OperatorFleetCardV1 | null;
+  readonly repository: OperatorFleetRepositoryV1 | null;
   readonly revisionChangedFrom: string | null;
+  readonly boardUnstable: boolean;
   readonly modal: boolean;
   readonly onClose: () => void;
+  readonly onSent: () => void;
+  readonly sendMessage: (request: TaskMessageRequestV1) => Promise<void>;
   readonly t: OperatorTranslate;
 }) {
   const dialogRef = useRef<HTMLElement>(null);
@@ -857,7 +1095,18 @@ function DetailPane({
             </>
           ) : null}
         </div>
-        <div data-slot="composer" />
+        {card && repository && snapshot && (
+          <Composer
+            key={taskKey(card)}
+            card={card}
+            repository={repository}
+            boardUnstable={boardUnstable}
+            sequence={snapshot.sequence}
+            onSent={onSent}
+            sendMessage={sendMessage}
+            t={t}
+          />
+        )}
       </aside>
     </>
   );
@@ -906,6 +1155,7 @@ export function OperatorApp({
   initialState,
   initialSnapshot,
   fetchSnapshot = fetchOperatorSnapshot,
+  sendMessage = postTaskMessage,
   initialLocale,
 }: OperatorAppProps) {
   const initial = initialState ?? (initialSnapshot ? stateFromSnapshot(initialSnapshot) : { kind: 'loading', previous: null } as const);
@@ -951,6 +1201,11 @@ export function OperatorApp({
   const revisionChangedFrom = selectedCard && selection && selectedCard.task_revision !== selection.revision
     ? selection.revision
     : null;
+  const selectedRepository = selectedCard && snapshot
+    ? snapshot.repositories.find((repository) => repository.repository_id === selectedCard.repository_id) ?? null
+    : null;
+  // A board that is stale, torn, or degraded is not a board you may write from.
+  const boardUnstable = stateKind === 'stale' || (snapshot !== null && snapshot.snapshot_consistency !== 'stable');
   const selectCard = (card: OperatorFleetCardV1) => setSelection({ key: taskKey(card), revision: card.task_revision });
 
   return (
@@ -984,9 +1239,13 @@ export function OperatorApp({
           <DetailPane
             snapshot={snapshot}
             card={selectedCard}
+            repository={selectedRepository}
             revisionChangedFrom={revisionChangedFrom}
+            boardUnstable={boardUnstable}
             modal={!wideLayout}
             onClose={() => setSelection(null)}
+            onSent={() => void refresh()}
+            sendMessage={sendMessage}
             t={t}
           />
         )}
@@ -994,7 +1253,7 @@ export function OperatorApp({
       <footer className="operator-footer">
         <span>repo-harness operator</span>
         <span>{t('footer.protocol', { protocol: 2, sequence: snapshot?.sequence ?? '—' })}</span>
-        <span className="operator-footer__right">read-only / localhost</span>
+        <span className="operator-footer__right">observe-only · one write: task message</span>
       </footer>
     </div>
   );

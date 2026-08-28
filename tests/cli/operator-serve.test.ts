@@ -1,13 +1,20 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { projectFleetBoardSnapshot } from '../../src/core/fleet/board';
+import { TASK_MESSAGE_BODY_MAX_BYTES } from '../../src/core/fleet/task-message';
+import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import {
+  OPERATOR_TASK_MESSAGE_BODY_MAX_BYTES,
   startOperatorServer,
   type OperatorServerOptions,
 } from '../../src/effects/operator/server';
+import type {
+  SendOperatorTaskMessageInput,
+  SendOperatorTaskMessageResult,
+} from '../../src/effects/fleet/task-message-request';
 import {
   buildOperatorCommand,
   parseOperatorServeOptions,
@@ -20,6 +27,79 @@ function snapshot() {
     observed_at: '2026-08-24T01:03:00.000Z',
     repositories: [],
   });
+}
+
+const TASK_ID = 'a'.repeat(64);
+const MESSAGE_ID = '123e4567-e89b-42d3-a456-426614174011';
+
+function messagePath(repositoryId: string, taskId = TASK_ID): string {
+  return `/api/v1/fleet/tasks/${repositoryId}/${taskId}/messages`;
+}
+
+interface WriteHarness {
+  readonly server: Awaited<ReturnType<typeof startOperatorServer>>;
+  readonly calls: SendOperatorTaskMessageInput[];
+  readonly staticRoot: string;
+}
+
+async function startWriteServer(
+  send: OperatorServerOptions['send_task_message'],
+  calls: SendOperatorTaskMessageInput[],
+  env?: NodeJS.ProcessEnv,
+): Promise<WriteHarness> {
+  const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-write-'));
+  writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
+  const server = await startOperatorServer({
+    port: 0,
+    static_root: staticRoot,
+    env,
+    collect_fleet_board: async () => snapshot(),
+    send_task_message: send === undefined ? undefined : (input) => {
+      calls.push(input);
+      return send(input);
+    },
+  });
+  return { server, calls, staticRoot };
+}
+
+async function stopWriteServer(harness: WriteHarness): Promise<void> {
+  await harness.server.close();
+  rmSync(harness.staticRoot, { recursive: true, force: true });
+}
+
+function registryHome(entries: readonly { readonly path: string; readonly accessMode: 'read_only' | 'read_write' }[]): {
+  readonly env: NodeJS.ProcessEnv;
+  readonly home: string;
+  readonly ids: readonly string[];
+} {
+  const home = mkdtempSync(join(tmpdir(), 'repo-harness-operator-registry-'));
+  const now = '2026-08-28T00:00:00.000Z';
+  const repos = entries.map((entry) => ({
+    id: repoHarnessRepoIdFor(entry.path),
+    path: entry.path,
+    accessMode: entry.accessMode,
+    source: 'adopt' as const,
+    registeredAt: now,
+    lastSeenAt: now,
+  }));
+  writeFileSync(
+    join(home, 'registered-repos.json'),
+    `${JSON.stringify({ version: 1, authorizationRevision: 1, repos }, null, 2)}\n`,
+  );
+  return { env: { REPO_HARNESS_HOME: home }, home, ids: repos.map((repo) => repo.id) };
+}
+
+function sendResult(overrides: Partial<SendOperatorTaskMessageResult> = {}): SendOperatorTaskMessageResult {
+  return {
+    repository_id: 'repo-write',
+    task_id: TASK_ID,
+    message_id: MESSAGE_ID,
+    scope: 'task',
+    target_claim_id: null,
+    target_generation: null,
+    created: true,
+    ...overrides,
+  };
 }
 
 describe('operator serve command and HTTP boundary', () => {
@@ -161,6 +241,191 @@ describe('operator serve command and HTTP boundary', () => {
     } finally {
       await server.close();
       rmSync(staticRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('UX-operator-task-message-v1-N1 refuses a write without a matching Origin and refuses POST elsewhere', async () => {
+    const calls: SendOperatorTaskMessageInput[] = [];
+    const harness = await startWriteServer(async () => sendResult(), calls);
+    const url = `${harness.server.url}${messagePath('repo-write')}`;
+    const payload = JSON.stringify({ message_id: MESSAGE_ID, scope: 'task', body: 'ping' });
+    try {
+      const missingOrigin = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+      });
+      expect(missingOrigin.status).toBe(403);
+      expect(await missingOrigin.json()).toMatchObject({ error: { code: 'origin_required' } });
+
+      const foreignOrigin = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Origin: 'http://attacker.example' },
+        body: payload,
+      });
+      expect(foreignOrigin.status).toBe(403);
+      expect(await foreignOrigin.json()).toMatchObject({ error: { code: 'origin_not_allowed' } });
+
+      const foreignHost = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Origin: harness.server.url, Host: 'attacker.example' },
+        body: payload,
+      });
+      expect(foreignHost.status).toBe(421);
+
+      const elsewhere = await fetch(`${harness.server.url}/api/v1/fleet/snapshot`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Origin: harness.server.url },
+        body: payload,
+      });
+      expect(elsewhere.status).toBe(405);
+      expect(await elsewhere.json()).toMatchObject({ error: { code: 'method_not_allowed' } });
+
+      const readTheWriteRoute = await fetch(url, { headers: { Origin: harness.server.url } });
+      expect(readTheWriteRoute.status).toBe(405);
+
+      const stillReadable = await fetch(`${harness.server.url}/api/v1/fleet/snapshot`);
+      expect(stillReadable.status).toBe(200);
+      expect(await stillReadable.json()).toMatchObject({ kind: 'operator_fleet_snapshot' });
+
+      expect(calls).toEqual([]);
+    } finally {
+      await stopWriteServer(harness);
+    }
+  });
+
+  test('UX-operator-task-message-v1-N2 mirrors the protocol body limit and rejects malformed requests', async () => {
+    const calls: SendOperatorTaskMessageInput[] = [];
+    const harness = await startWriteServer(async () => sendResult(), calls);
+    const url = `${harness.server.url}${messagePath('repo-write')}`;
+    const headers = { 'Content-Type': 'application/json', Origin: harness.server.url };
+    try {
+      expect(OPERATOR_TASK_MESSAGE_BODY_MAX_BYTES).toBe(TASK_MESSAGE_BODY_MAX_BYTES);
+
+      const oversized = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          message_id: MESSAGE_ID,
+          scope: 'task',
+          body: 'x'.repeat(TASK_MESSAGE_BODY_MAX_BYTES + 1),
+        }),
+      });
+      expect(oversized.status).toBe(413);
+      expect(await oversized.json()).toMatchObject({ error: { code: 'task_message_body_too_large' } });
+
+      const huge = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: 'x'.repeat(TASK_MESSAGE_BODY_MAX_BYTES * 4 + 1),
+      });
+      expect(huge.status).toBe(413);
+
+      for (const body of [
+        'not json',
+        JSON.stringify({ message_id: MESSAGE_ID, scope: 'task' }),
+        JSON.stringify({ message_id: MESSAGE_ID, scope: 'task', body: 'ping', audience: 'owner' }),
+        JSON.stringify({ message_id: MESSAGE_ID, scope: 'orchestrator', body: 'ping' }),
+        JSON.stringify({ message_id: '', scope: 'task', body: 'ping' }),
+        JSON.stringify({ message_id: MESSAGE_ID, scope: 'task', body: 7 }),
+      ]) {
+        const response = await fetch(url, { method: 'POST', headers, body });
+        expect(response.status).toBe(400);
+        expect(await response.json()).toMatchObject({ error: { code: 'invalid_request' } });
+      }
+
+      expect(calls).toEqual([]);
+    } finally {
+      await stopWriteServer(harness);
+    }
+  });
+
+  test('UX-operator-task-message-v1-P1 resolves the repository through the registry and fails closed on read_only', async () => {
+    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-repo-')));
+    const registry = registryHome([{ path: repoRoot, accessMode: 'read_only' }]);
+    const harness = await startWriteServer(undefined, [], registry.env);
+    const headers = { 'Content-Type': 'application/json', Origin: harness.server.url };
+    const payload = JSON.stringify({ message_id: MESSAGE_ID, scope: 'task', body: 'ping' });
+    try {
+      const readOnly = await fetch(`${harness.server.url}${messagePath(registry.ids[0]!)}`, {
+        method: 'POST',
+        headers,
+        body: payload,
+      });
+      expect(readOnly.status).toBe(403);
+      const readOnlyBody = await readOnly.json() as { error: { code: string; message: string; next_action: string } };
+      expect(readOnlyBody.error.code).toBe('repository_read_only');
+      expect(readOnlyBody.error.next_action.length).toBeGreaterThan(0);
+      expect(JSON.stringify(readOnlyBody)).not.toContain(repoRoot);
+
+      const unknown = await fetch(`${harness.server.url}${messagePath('repo_0000000000000000')}`, {
+        method: 'POST',
+        headers,
+        body: payload,
+      });
+      expect(unknown.status).toBe(404);
+      expect(await unknown.json()).toMatchObject({ error: { code: 'repository_not_found' } });
+    } finally {
+      await stopWriteServer(harness);
+      rmSync(repoRoot, { recursive: true, force: true });
+      rmSync(registry.home, { recursive: true, force: true });
+    }
+  });
+
+  test('UX-operator-task-message-v1-P2 hands a valid write to the effect and passes typed failures through', async () => {
+    const calls: SendOperatorTaskMessageInput[] = [];
+    let behavior: 'created' | 'replay' | 'claim_mismatch' = 'created';
+    const { OperatorTaskMessageError } = await import('../../src/effects/fleet/task-message-request');
+    const harness = await startWriteServer(
+      async (input) => {
+        if (behavior === 'claim_mismatch') {
+          throw new OperatorTaskMessageError('claim_mismatch', `task ${input.task_id} owner moved`);
+        }
+        return sendResult({ scope: input.scope, created: behavior === 'created' });
+      },
+      calls,
+    );
+    const url = `${harness.server.url}${messagePath('repo-write')}`;
+    const headers = { 'Content-Type': 'application/json', Origin: harness.server.url };
+    try {
+      const created = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ message_id: MESSAGE_ID, scope: 'claim', body: 'look at the base branch' }),
+      });
+      expect(created.status).toBe(201);
+      expect(await created.json()).toMatchObject({ ok: true, created: true, scope: 'claim', task_id: TASK_ID });
+      expect(calls.length).toBe(1);
+      expect(calls[0]).toMatchObject({
+        repository_id: 'repo-write',
+        task_id: TASK_ID,
+        message_id: MESSAGE_ID,
+        scope: 'claim',
+        body: 'look at the base branch',
+      });
+
+      behavior = 'replay';
+      const replay = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ message_id: MESSAGE_ID, scope: 'claim', body: 'look at the base branch' }),
+      });
+      expect(replay.status).toBe(200);
+      expect(await replay.json()).toMatchObject({ ok: true, created: false });
+
+      behavior = 'claim_mismatch';
+      const conflict = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ message_id: MESSAGE_ID, scope: 'claim', body: 'look at the base branch' }),
+      });
+      expect(conflict.status).toBe(409);
+      const conflictBody = await conflict.json() as { error: { code: string; message: string } };
+      expect(conflictBody.error.code).toBe('claim_mismatch');
+      expect(conflictBody.error.message).toBe('The task owner changed while the message was being sent.');
+      expect(JSON.stringify(conflictBody)).not.toContain('owner moved');
+    } finally {
+      await stopWriteServer(harness);
     }
   });
 
