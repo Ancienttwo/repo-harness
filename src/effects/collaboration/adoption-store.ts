@@ -30,7 +30,7 @@ import {
   type HandoffAdoptionReceiptV1,
 } from '../../core/collaboration/adoption';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
-import { resolveCollaborationActor } from './actor';
+import { resolveCollaborationActor, type CollaborationAuthorizationV1 } from './actor';
 import { assertCollaborationMutationEnabled } from './feature-flag';
 import { listWorkStateHandoffs, readWorkStateHandoff } from './handoff-store';
 import {
@@ -67,7 +67,7 @@ const ADOPTION_CODEC: CollaborationRecordCodec<HandoffAdoptionReceiptV1> = {
 export interface AdoptWorkStateHandoffInput {
   readonly repo_root: string;
   /** The authenticated authorization; the adopter is derived from it, never declared. */
-  readonly authorization_id: string;
+  readonly authorization: CollaborationAuthorizationV1;
   readonly handoff_id: string;
   /** The context packet this adopter received, as its canonical digest. */
   readonly context_packet_sha256: string;
@@ -170,7 +170,7 @@ export function adoptWorkStateHandoff(input: AdoptWorkStateHandoffInput): AdoptW
   const handoffId = validateCollaborationRecordId(input.handoff_id, 'handoff_id');
   const { actor: adopter, repository_id: repositoryId } = resolveCollaborationActor(
     repoRoot,
-    input.authorization_id,
+    input.authorization,
     input.env,
   );
   const paths = adoptionStorePaths(repoRoot);

@@ -7,7 +7,7 @@
 > **Architecture Domain**: `runtime-harness`
 > **Architecture Capability**: `collaboration`
 > **Architecture Module**: `docs/architecture/modules/runtime-harness/collaboration.md`
-> **Source Plan**: plans/plan-20260830-0120-c3-work-state-handoff-adoption.md
+> **Source Plan**: plans/plan-20260830-0509-c4-delegated-worker-contribution-adapter.md
 > **Current Slice**: todo-01
 > **Last Handoff**: `.ai/harness/handoff/current.md`
 > **Architecture Request**: docs/architecture/requests/archive/2026/runtime-harness-collaboration.md
@@ -30,7 +30,7 @@ the freeze record keeps only a pointer.
 - [x] C1: `CoordinationSignalV1` schema, `src/core/collaboration/common.ts`, append-only store; capability node registered, architecture module projected, this ledger moved out of the freeze record, `collaboration.mode` wired to `off`, and the deferred closed inclusion scan landed.
 - [x] C2: signal threads, discovery and hotspot projection -- deterministic thread aggregation on exact opaque keys, the capped integer hotspot function, the closed structural opportunity set, `RelevantSignalV1` retrieval with the 60/40 exploitation/exploration quota, and `CollaborationContextPacketV1` inside the 1,500 estimated-token budget. Pure read model: no store, no cache, no clock, no new protocol. `snapshot_consistency` is reserved on the packet and injected by the future store reader (C6); a pure projection over an already-assembled signal array cannot observe a torn or partial read, so deriving it is deferred with the collector.
 - [x] C3: `WorkStateHandoffV1`, `HandoffExecutionContextV1` and `HandoffAdoptionReceiptV1` with their two append-only stores; adoption is non-exclusive by identity, and the store mechanics all three record families share moved into `record-store.ts` / `actor.ts`.
-- [ ] C4: delegated Worker contribution adapter and the real admission-bridge canary against D6.
+- [x] C4: `CollaborationDelegationAdmissionV1` bridge and the `CollaborationContributionDraftV1` / `CollaborationContributionCommitV1` collector. `max_parallel_readers` is a runtime constraint for the first time: three real parallel readers in separate processes admitted, a fourth real request rejected, terminal readers releasing their seat, and `reconciliation_required` or unreadable readers failing the window closed per D6.
 - [ ] C5: TaskFreeze / explicit takeover succession integration.
 - [ ] C6: collaboration-centric Work Exchange and ContextPacket, with the D3 binding gate.
 - [ ] C7: CLI/MCP and bounded context injection.
@@ -99,6 +99,32 @@ the freeze record keeps only a pointer.
   `tests/unit/collaboration-handoff.test.ts` enforces that lexically over the C3
   surface. The one allowed exception is `claim_id` inside the `bound_task`
   execution-context branch, which references a real Task Claim.
+- C4 extended the admission critical section one step past D5's list, through
+  `prepareDelegatedRun()`. A seat is only observable once an intent exists, so
+  releasing the lock at the admission would let four concurrent requests each see
+  an empty window at a limit of three. Any later row that adds another admission
+  path must keep counting and seat creation in one section. Recorded as a D5
+  addendum in the C0 freeze record.
+- D7's negative proof is now a machine assertion rather than a recorded `rg`:
+  `tests/effects/collaboration-admission-bridge.test.ts` proves
+  `delegated-run-store.ts` still contains none of `delegation_policy`,
+  `allowed_roles` or `max_parallel_readers`, and that the bridge contains the
+  last two. C5-C9 must not move the policy check into the delegation plane.
+- The collaboration stores take a `CollaborationAuthorizationV1` union rather
+  than an authorization id, so a contribution publishes under a
+  `delegated_worker` actor the Host derives from the persisted run. C5-C9 consume
+  that union; adding a third actor kind means adding a branch there and a member
+  to the D4 matrix, not a nullable field.
+- The contribution transaction converges by construction, not by a resume marker:
+  every identity is derived from the run, so re-running the whole collector is
+  the recovery path. A later row that adds a step to it must derive that step's
+  identity the same way, or the convergence proof in
+  `tests/effects/collaboration-contribution-collector.test.ts` stops covering it.
+- C4 declared `relation.collaboration.delegated-runs` and
+  `flow.collaboration.delegated-contribution`. Both AXR7 inventory pins in
+  `tests/architecture-projection-e2e.test.ts` moved with them (relations 39 to
+  40, flows 25 to 26); that suite is not in the acceptance path, so run it
+  explicitly on any row that touches `.archcontext/model/**`.
 - Keep architecture facts in
   `docs/architecture/modules/runtime-harness/collaboration.md`; keep execution
   progress here.

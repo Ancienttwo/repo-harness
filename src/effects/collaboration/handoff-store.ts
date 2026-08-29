@@ -32,7 +32,7 @@ import {
   type WorkStateHandoffV1,
 } from '../../core/collaboration/handoff';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
-import { resolveCollaborationActor } from './actor';
+import { resolveCollaborationActor, type CollaborationAuthorizationV1 } from './actor';
 import { assertCollaborationMutationEnabled } from './feature-flag';
 import {
   COLLABORATION_STORE_RELATIVE_ROOT,
@@ -62,7 +62,7 @@ const HANDOFF_CODEC: CollaborationRecordCodec<WorkStateHandoffV1> = {
 export interface PublishWorkStateHandoffInput {
   readonly repo_root: string;
   /** The authenticated authorization; the actor is derived from it, never declared. */
-  readonly authorization_id: string;
+  readonly authorization: CollaborationAuthorizationV1;
   /** Identity input for the derived handoff id; the same key retried converges. */
   readonly idempotency_key: string;
   readonly thread_key: string;
@@ -128,7 +128,7 @@ export function publishWorkStateHandoff(
     || Buffer.byteLength(input.idempotency_key, 'utf8') > COLLABORATION_IDEMPOTENCY_KEY_MAX_BYTES) {
     collaborationInvalidStore('idempotency_key is invalid');
   }
-  const { actor, repository_id: repositoryId } = resolveCollaborationActor(repoRoot, input.authorization_id, input.env);
+  const { actor, repository_id: repositoryId } = resolveCollaborationActor(repoRoot, input.authorization, input.env);
   const handoffId = deriveWorkStateHandoffId(repositoryId, actor, input.idempotency_key);
   const paths = handoffStorePaths(repoRoot);
 
@@ -169,9 +169,14 @@ export function publishWorkStateHandoff(
   };
 
   ensureCollaborationDirectory(paths.common, paths.shard);
+  // Per handoff, as D9 freezes it. The identity is derived above from the actor
+  // and the idempotency key rather than from the thread, so this is also the
+  // only key that serialises two concurrent publishes of *one* handoff: under a
+  // thread-keyed lock the same identity published under two thread keys would
+  // take two locks and race into a spurious byte conflict.
   return withExclusiveDirectoryLock(
     paths.common,
-    collaborationLockRelativePath('thread', input.thread_key),
+    collaborationLockRelativePath('handoff', handoffId),
     () => {
       const existing = readCollaborationRecord(paths, HANDOFF_CODEC, handoffId, 'handoff_id');
       if (existing) return reconcile(existing);

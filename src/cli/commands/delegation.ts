@@ -125,7 +125,9 @@ function parseDispatch(path: string): DispatchDelegatedRunInput {
 function parseCollect(path: string): CollectDelegatedRunInput {
   const raw = object(repoRelativeJson(path), 'collect input');
   exact(raw, ['dispatch_id', 'untrusted_claims'], 'collect input');
-  return { repo_root: realpathSync(process.cwd()), dispatch_id: raw.dispatch_id as string, untrusted_claims: raw.untrusted_claims as readonly string[] };
+  // No contribution reference on this path: wiring the CLI to the collaboration
+  // plane is C7's row, so today a CLI-collected run has produced none.
+  return { repo_root: realpathSync(process.cwd()), dispatch_id: raw.dispatch_id as string, untrusted_claims: raw.untrusted_claims as readonly string[], contribution_refs: [] };
 }
 
 function parseCapability(path: string): ReadOnlyCapabilityRequest {

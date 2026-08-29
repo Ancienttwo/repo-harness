@@ -55,6 +55,7 @@ import {
   validateDelegationEnvelope,
   validateDelegationExecutionPacket,
   validateLogicalRoleProfile,
+  validateWorkerEvidenceRefs,
   validateWorkerResult,
   validateWorkerRunRef,
   type CodexReadOnlyCapabilityReceiptV1,
@@ -68,6 +69,7 @@ import {
   type DelegationExecutionPacketV1,
   type DelegationRejectionReason,
   type LogicalRoleProfileV1,
+  type WorkerEvidenceRefV1,
   type WorkerResultV1,
   type WorkerRunRefV1,
 } from '../../core/engineers/delegation';
@@ -183,6 +185,22 @@ export interface CollectDelegatedRunInput {
   readonly repo_root: string;
   readonly dispatch_id: string;
   readonly untrusted_claims: readonly string[];
+  /**
+   * Host-derived references the caller wants this run's result to point at, in
+   * addition to the three process-evidence blobs assembled below.
+   *
+   * It is required rather than optional so every call site states whether this
+   * run produced anything beyond its own process evidence. The collaboration
+   * collector passes the contribution commit it just published, which is how
+   * `WorkerResultV1` references that commit without a protocol bump: `ref` is
+   * already a free printable string. Every other caller passes an empty list,
+   * and that is a statement, not a default.
+   *
+   * The direction of the dependency is why this is an input at all. The
+   * collaboration plane reads the delivery plane and never the reverse, so this
+   * module cannot import a collaboration record to derive the reference itself.
+   */
+  readonly contribution_refs: readonly WorkerEvidenceRefV1[];
 }
 
 /** Public capability admission request. Runtime facts are always host-derived. */
@@ -921,8 +939,17 @@ export function collectDelegatedRunResult(input: CollectDelegatedRunInput): Dele
       Object.freeze({ ref: receipt.stdout_ref, sha256: receipt.stdout_sha256 }),
       Object.freeze({ ref: receipt.stderr_ref, sha256: receipt.stderr_sha256 }),
       Object.freeze({ ref: receipt.error_ref, sha256: receipt.error_sha256 }),
+      ...validateWorkerEvidenceRefs(input.contribution_refs, 'contribution_refs', 8),
     ]);
     const result = buildWorkerResult({ delegation_id: joined.envelope.delegation_id, worker_run_id: runRef.worker_run_id, worker_run_ref_sha256: runRef.run_ref_sha256, logical_role: joined.profile.logical_role, runtime_observation_sha256: joined.current.observation_sha256, read_only_sandbox_receipt_sha256: runRef.read_only_sandbox_receipt_sha256, evidence_refs: evidenceRefs, untrusted_claims: input.untrusted_claims });
+    // Exactly one result per run.  Results are content-addressed, so two
+    // different results for one run would land at two paths and both persist;
+    // `status()` would then pick whichever sorted first and a reader would have
+    // no way to tell it had been given a choice.  Collecting the same run twice
+    // with the same inputs is still idempotent -- the digests match and the
+    // create-once write is a no-op.
+    const persisted = status(repoRoot, joined.intent, joined.current).result;
+    if (persisted !== null && persisted.result_sha256 !== result.result_sha256) fail('delegated_run_conflict', 'a different WorkerResult is already persisted for this run');
     persistResult(repoRoot, result);
     return status(repoRoot, joined.intent, joined.current);
   });

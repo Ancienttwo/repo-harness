@@ -25,6 +25,7 @@ import { join, relative } from 'path';
 
 import { CollaborationError } from '../../src/core/collaboration/common';
 import { deriveCoordinationSignalId } from '../../src/core/collaboration/signal';
+import { engineerPrincipalAuthorization } from '../../src/effects/collaboration/actor';
 import { readCollaborationMode } from '../../src/effects/collaboration/feature-flag';
 import {
   COLLABORATION_SIGNALS_RELATIVE_ROOT,
@@ -70,7 +71,7 @@ function publishInput(
 ): PublishCoordinationSignalInput {
   return {
     repo_root: fixtureValue.repoRoot,
-    authorization_id: fixtureValue.actors[0]!.authorization_id,
+    authorization: engineerPrincipalAuthorization(fixtureValue.actors[0]!.authorization_id),
     idempotency_key: 'idem-1',
     thread_key: 'merge-gate-flake',
     reply_to_signal_id: null,
@@ -154,7 +155,7 @@ describe('C1 coordination signal store', () => {
 
     const results = await Promise.all(value.actors.map((actor, index) => publishInDriver(driver, {
       repo_root: value.repoRoot,
-      authorization_id: actor.authorization_id,
+      authorization: engineerPrincipalAuthorization(actor.authorization_id),
       idempotency_key: `concurrent-${index}`,
       // One thread key on purpose: all three contend for the same per-thread lock.
       thread_key: 'shared-thread',
@@ -308,7 +309,7 @@ describe('C1 coordination signal store', () => {
 
     // Another Engineer may reply to or cite this signal, but may not revise it.
     expect(code(() => publishCoordinationSignal(publishInput(value, {
-      authorization_id: value.actors[1]!.authorization_id,
+      authorization: engineerPrincipalAuthorization(value.actors[1]!.authorization_id),
       idempotency_key: 'idem-cross-lineage',
       supersedes_signal_id: original.signal_id,
     })))).toBe('collaboration_invalid');
@@ -481,7 +482,7 @@ describe('C1 coordination signal store', () => {
   test('an unmapped authorization cannot publish', () => {
     const value = fixture();
     expect(code(() => publishCoordinationSignal(publishInput(value, {
-      authorization_id: '55555555-5555-4555-8555-555555555555',
+      authorization: engineerPrincipalAuthorization('55555555-5555-4555-8555-555555555555'),
     })))).toContain('engineer_principal_unmapped');
     expect(listCoordinationSignals(value.repoRoot)).toEqual([]);
   });

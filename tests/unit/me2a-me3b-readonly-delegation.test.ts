@@ -228,6 +228,7 @@ describe('ME-2A read-only admission and conditional ME-3B adapter', () => {
       repo_root: root,
       dispatch_id: prepared.intent.dispatch_id,
       untrusted_claims: ['completed according to worker prose'],
+      contribution_refs: [],
     });
     expect(collected.result).toMatchObject({ logical_role: 'explorer', untrusted_claims: ['completed according to worker prose'] });
     expect(collected.result).not.toHaveProperty('task_id');
@@ -284,7 +285,7 @@ describe('ME-2A read-only admission and conditional ME-3B adapter', () => {
       protected_paths: admission.protectedPaths,
     });
     expect(dispatched.current).toMatchObject({ state: 'failed', failure_class: 'protected_state_changed' });
-    expect(() => collectDelegatedRunResult({ repo_root: root, dispatch_id: prepared.intent.dispatch_id, untrusted_claims: [] })).toThrow('only a completed verified run');
+    expect(() => collectDelegatedRunResult({ repo_root: root, dispatch_id: prepared.intent.dispatch_id, untrusted_claims: [], contribution_refs: [] })).toThrow('only a completed verified run');
   });
 
   test('refuses a tracked Role Profile that changed after admission', () => {

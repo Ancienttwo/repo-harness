@@ -1,6 +1,6 @@
 # C0 — Collaboration / Delivery Two-Plane Authority Freeze
 
-> **Last Updated**: 2026-08-29
+> **Last Updated**: 2026-08-30
 > **Scope**: `capability.runtime-harness.collaboration` boundary against the existing Task / Lease / Publication / Acceptance delivery authorities
 > **Baseline**: `main@a490a5ef76b439228a4b3282934c29ba15090cdf`
 > **Sprint row**: C0 of `plans/sprints/20260828-2321-collaborative-work-exchange-agent-succession.sprint.md`
@@ -154,7 +154,7 @@ Every module the frozen inventory draws a constant from is required to appear in
 this table; `tests/unit/collaboration-authority-baseline.test.ts` asserts that
 membership, so the table cannot silently fall behind the inventory.
 
-One row has moved since this baseline was taken. In C1 commit `06999700`,
+Two rows have moved since this baseline was taken. In C1 commit `06999700`,
 `src/core/engineers/delegation.ts` went from
 `sha256:1ba766c087f40263e017693ea5e5b05994813c62d015db76a55e4ae16d825523` to
 `sha256:06b447ad7477759bcbbaa893fffb011b52c43b1a05c85049383337a0482d1b1d`. The
@@ -166,6 +166,34 @@ same validator instead of a second copy. The wire shape, `DELEGATION_PROTOCOL`,
 `FROZEN_INVENTORY_SHA256` is unaffected and stays
 `sha256:6a49057e17a921e78773f358e31b487c9402c9f828f14480ef705c5ac96fcb64`.
 `tests/unit/me2a-me3b-readonly-delegation.test.ts` is the byte guard.
+
+In C4, `src/effects/engineers/delegated-run-store.ts` went from
+`sha256:33102aaab80af4666c1cb430c963b84476ee240e10de69e6be852c8387a7ee90` to
+`sha256:789eb7aa6f80897fce285c7b0d82fecc941f12fcc618f4b51f9b778a257d75d3`. Two
+changes, both inside `collectDelegatedRunResult()`; the admission path named by
+D7 is untouched, and no wire byte moves.
+
+- `CollectDelegatedRunInput` gains a required `contribution_refs` field, appended
+  to the evidence refs the function already assembles. Child PRD A freezes
+  "`WorkerResultV1` is constructed exactly once and references the commit", and
+  `collaboration-authority-baseline.test.ts` forbids a delivery-plane module from
+  importing the collaboration plane, so the reference cannot be derived here and
+  has to arrive as an input. It is required rather than optional so every call
+  site states whether its run produced one; the CLI collect path passes `[]`
+  because wiring the CLI to the collaboration plane is C7's row.
+  `WorkerResultV1.evidence_refs[].ref` was already a free printable string, so
+  `DELEGATION_PROTOCOL`, `WORKER_RESULT_KIND` and the emitted bytes are unchanged
+  and `FROZEN_INVENTORY_SHA256` is unaffected.
+- The same function now refuses to persist a second result for a run when one
+  with different bytes already exists. Results are content-addressed, so without
+  this two results for one run would land at two paths and `status()` would
+  silently return whichever sorted first. This makes "exactly once" a machine
+  property rather than a convention; collecting the same run twice with the same
+  inputs stays idempotent.
+
+`tests/effects/collaboration-contribution-collector.test.ts` is the guard for
+both, and `tests/unit/me2a-me3b-readonly-delegation.test.ts` still pins the
+unchanged evidence-ref bytes for a run with no contribution.
 
 The digest table is a human baseline. The machine guard is the frozen inventory
 digest in `tests/unit/collaboration-authority-baseline.test.ts`,
@@ -314,6 +342,17 @@ server/Host-side provenance.
 
 ### D5 — Delegation policy bridge design
 
+> **C4 addendum (2026-08-30).** The bridge as shipped keeps this sequence and
+> extends the critical section one step past `admitReadOnlyDelegation()` through
+> `prepareDelegatedRun()`. A seat is only observable once an intent exists, so
+> ending the section at the admission would leave a window in which the seat just
+> granted is invisible, and four concurrent requests at `max_parallel_readers = 3`
+> could each observe an empty window and all four be admitted. Counting a seat
+> and creating it are one critical section. The ordering below is unchanged; the
+> section is longer, not reordered. The nested dispatch lock is a different lock
+> file and the admission lock is always the outer one, so the ordering is total.
+
+
 `CollaborationDelegationAdmissionV1` runs strictly **before**
 `admitReadOnlyDelegation()` and leaves its semantics untouched:
 
@@ -369,6 +408,16 @@ readers at runtime is false. Real runtime rejection is produced by the C4 bridge
 `tests/unit/collaboration-authority-baseline.test.ts` pins this negative proof so
 that C4's bridge cannot be smuggled into the existing admission path.
 
+> **C4 result (2026-08-30).** The bridge shipped in
+> `src/effects/collaboration/admission-bridge.ts`. This negative proof is still
+> true of the file it names — `tests/effects/collaboration-admission-bridge.test.ts`
+> asserts that `delegated-run-store.ts` contains none of `delegation_policy`,
+> `allowed_roles` or `max_parallel_readers`, and that the bridge contains the
+> last two. The repository-level claim is now false in exactly the intended way:
+> three real parallel readers in separate operating-system processes were
+> admitted and a fourth real request was rejected with
+> `max_parallel_readers_exceeded`.
+
 ### D8 — `ArtifactRefV1` reuses the `WorkerResult` evidence-ref shape
 
 `ArtifactRefV1` is the existing `WorkerResultV1.evidence_refs` `{ ref, sha256 }`
@@ -395,6 +444,21 @@ Locking uses the existing `src/effects/locking/exclusive-directory-lock.ts`
 primitive: per-thread for signal append, per-handoff for handoff publish and
 adoption. Canonical JSON, digesting and bounded-UTF-8 checks reuse
 `src/core/messages/mechanics.ts`; no second serializer is written.
+
+**D9 lock ledger.**
+
+| Row | Deviation | Resolution |
+|---|---|---|
+| C3 | Handoff publish took `('thread', thread_key)`, not a per-handoff lock, and a comment in `record-store.ts` claimed that was D9 as frozen | Resolved in C4, not ledgered as a permanent deviation. Handoff publish now takes `('handoff', handoff_id)` and the comment is corrected. The C3-recorded analysis was verified before splitting and holds: nothing needed a signal write and a handoff write to be mutually exclusive, because records publish through a staged write plus `link` so no reader observes a torn one, and handoff publish reads the signal store inside its lock only to prove cited signals resolve — a signal appearing mid-check can only turn a failing check into a passing one, and a persisted signal is immutable so it can never turn a passing check into a failing one. The split also closed a real edge the shared domain left open: handoff identity is keyed on the actor and the idempotency key rather than on the thread, so two publishes of one identity under two thread keys took two locks, raced, and reconciled into a spurious byte conflict. |
+| C4 | Two lock domains exist that D9's prose does not name | Recorded as an extension, not a deviation. `('contribution', worker_run_ref_sha256)` scopes one delegated run's whole contribution transaction, and `('delegation-admission', <claim_id>#<round_index>)` scopes the admission counting window D6 froze. Both are per-subject locks in the same shape D9 fixed; neither changes an existing domain. |
+
+**D9 shard ledger.** C4 adds `contribution-commits/`, which is already on the
+frozen shard list above. It adds no other shard: `CollaborationDelegationAdmissionV1`
+is a returned decision document rather than a persisted record, and the
+contribution draft is not persisted because it is a pure function of the stdout
+blob the `WorkerResultV1` evidence refs already pin — the commit's `draft_sha256`
+is reproducible from that blob, which binds it more tightly than a second copy
+that could drift from its own preimage.
 
 Every store: lstat ancestor walk rejecting symlink and non-directory ancestors;
 canonical JSON; immutable create plus fsync; exact protocol validation; explicit
@@ -494,7 +558,7 @@ timestamps, digest helper) built on `src/core/messages/mechanics.ts`.
 |---|---|
 | Real-task signal noise ratio | C9 measurement |
 | Single-round contribution depth | C4 / C9 observation |
-| Real provider throughput at `max_parallel_readers = 3` | C4 canary |
+| Real provider throughput at `max_parallel_readers = 3` | C9; C4's canary proved the admission limit under real concurrent processes, not provider throughput |
 | Long-run hotspot weight stability | C9 observation |
 | 60/40 exploitation/exploration split | C9 tuning, determinism preserved |
 

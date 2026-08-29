@@ -25,7 +25,7 @@ steps:
     label: Resolve the authenticated principal and fence it against a second read of the principal mapping
     evidence:
       entrypointId: entrypoint.collaboration.actor-derivation
-      sourceSymbol: resolveCollaborationActor
+      sourceSymbol: resolveModuleEngineerActor
       sinkId: sink.collaboration.authenticated-principal
 outcomes:
   - id: published

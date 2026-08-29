@@ -32,7 +32,7 @@ import {
   type CoordinationSignalV1,
 } from '../../core/collaboration/signal';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
-import { resolveCollaborationActor } from './actor';
+import { resolveCollaborationActor, type CollaborationAuthorizationV1 } from './actor';
 import { assertCollaborationMutationEnabled } from './feature-flag';
 import {
   COLLABORATION_STORE_RELATIVE_ROOT,
@@ -70,7 +70,7 @@ const SIGNAL_CODEC: CollaborationRecordCodec<CoordinationSignalV1> = {
 export interface PublishCoordinationSignalInput {
   readonly repo_root: string;
   /** The authenticated authorization; the actor is derived from it, never declared. */
-  readonly authorization_id: string;
+  readonly authorization: CollaborationAuthorizationV1;
   /** Identity input for the derived signal id; the same key retried converges. */
   readonly idempotency_key: string;
   readonly thread_key: string;
@@ -144,7 +144,7 @@ export function publishCoordinationSignal(
     || Buffer.byteLength(input.idempotency_key, 'utf8') > COLLABORATION_IDEMPOTENCY_KEY_MAX_BYTES) {
     collaborationInvalidStore('idempotency_key is invalid');
   }
-  const { actor, repository_id: repositoryId } = resolveCollaborationActor(repoRoot, input.authorization_id, input.env);
+  const { actor, repository_id: repositoryId } = resolveCollaborationActor(repoRoot, input.authorization, input.env);
   const signalId = deriveCoordinationSignalId(repositoryId, actor, input.idempotency_key);
   const paths = signalPaths(repoRoot);
 

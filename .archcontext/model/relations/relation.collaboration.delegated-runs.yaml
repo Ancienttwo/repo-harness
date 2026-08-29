@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.collaboration.delegated-runs
+kind: calls
+source: capability.runtime-harness.collaboration
+target: capability.runtime-harness.delegated-runs
+intent: "Enforce the parent Engineer's delegation policy as a pre-step to the unchanged read-only admission, and turn one run's persisted output into a contribution the delegation plane's own WorkerResult then references"

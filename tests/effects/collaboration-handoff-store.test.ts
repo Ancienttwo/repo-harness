@@ -20,6 +20,7 @@ import { join, relative } from 'path';
 
 import { CollaborationError } from '../../src/core/collaboration/common';
 import { deriveWorkStateHandoffId } from '../../src/core/collaboration/handoff';
+import { engineerPrincipalAuthorization } from '../../src/effects/collaboration/actor';
 import { readCollaborationMode } from '../../src/effects/collaboration/feature-flag';
 import {
   COLLABORATION_HANDOFFS_RELATIVE_ROOT,
@@ -64,7 +65,7 @@ export function publishInput(
 ): PublishWorkStateHandoffInput {
   return {
     repo_root: value.repoRoot,
-    authorization_id: value.actors[0]!.authorization_id,
+    authorization: engineerPrincipalAuthorization(value.actors[0]!.authorization_id),
     idempotency_key: 'handoff-1',
     thread_key: 'merge-gate-flake',
     scope_refs: [{ kind: 'free_topic', value: 'merge gate flake' }],
@@ -210,7 +211,7 @@ describe('C3 work state handoff store', () => {
 
     // Another Engineer may publish their own handoff, but may not revise this one.
     expect(code(() => publishWorkStateHandoff(publishInput(value, {
-      authorization_id: value.actors[1]!.authorization_id,
+      authorization: engineerPrincipalAuthorization(value.actors[1]!.authorization_id),
       idempotency_key: 'handoff-cross-lineage',
       supersedes_handoff_id: original.handoff_id,
     })))).toBe('collaboration_invalid');
@@ -235,7 +236,7 @@ describe('C3 work state handoff store', () => {
 
     const signal = publishCoordinationSignal({
       repo_root: value.repoRoot,
-      authorization_id: value.actors[1]!.authorization_id,
+      authorization: engineerPrincipalAuthorization(value.actors[1]!.authorization_id),
       idempotency_key: 'signal-for-handoff',
       thread_key: 'merge-gate-flake',
       reply_to_signal_id: null,
@@ -375,7 +376,7 @@ describe('C3 work state handoff store', () => {
   test('an unmapped authorization cannot publish a handoff', () => {
     const value = fixture();
     expect(code(() => publishWorkStateHandoff(publishInput(value, {
-      authorization_id: '55555555-5555-4555-8555-555555555555',
+      authorization: engineerPrincipalAuthorization('55555555-5555-4555-8555-555555555555'),
     })))).toContain('engineer_principal_unmapped');
     expect(listWorkStateHandoffs(value.repoRoot)).toEqual([]);
   });

@@ -1,13 +1,13 @@
 # runtime-harness/collaboration 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" sourceDigest="sha256:739122fea1f0c607445382af82c393795ac572f56cf0bc602cb13368ab698fb9" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:d82adcb3e06a634b906626548cf4b5786d8159654b525713e0a1b5ecea898e01" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" sourceDigest="sha256:66ef8662ab04c7acbec0fa16033d108c8f4725c81b72566f79188abc1f1bf52a" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:2dde5d10536a4944a78b23882c75035e5ed3023284a4fbe1eee6c3805d05cef9" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.collaboration`(kind `capability`)
 > **Matched Prefixes**:`src/core/collaboration/**`、`src/effects/collaboration/**`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Publishes append-only coordination signals, work-state handoffs and non-exclusive handoff adoption receipts over one shared create-once store substrate, with Host-derived identity and recorded time, holding zero Task, Lease, Publication or Acceptance authority.
+Publishes append-only coordination signals, work-state handoffs, non-exclusive adoption receipts and delegated-Worker contribution commits over one shared create-once store substrate, and enforces the parent Engineer's delegation policy at admission time as a pre-step to the existing read-only delegation, with Host-derived identity and recorded time and zero Task, Lease, Publication or Acceptance authority.
 
 ## 1. P1:能力架構地圖
 
@@ -16,35 +16,44 @@ Publishes append-only coordination signals, work-state handoffs and non-exclusiv
 ```mermaid
 flowchart LR
   p1_capability_runtime_harness_collaboration_5265febf["Collaboration Substrate"]:::component
+  p1_capability_runtime_harness_delegated_runs_e1654b07["Read-only Delegated Runs"]:::component
   p1_capability_runtime_harness_engineer_bindings_34c00f72["Engineer Bindings"]:::component
   p1_component_collaboration_primary_9383ae07["Append-only Collaboration Record Store"]:::component
+  p1_capability_runtime_harness_collaboration_5265febf -->|"Enforce the parent Engineer's delegation policy as a pre-step to the unchanged read-only admission， and turn one run's persisted output into a contribution the delegation plane's own WorkerResult then references"| p1_capability_runtime_harness_delegated_runs_e1654b07
   p1_capability_runtime_harness_collaboration_5265febf -->|"Derive the publishing actor from the authenticated principal and current Binding instead of accepting a declared identity"| p1_capability_runtime_harness_engineer_bindings_34c00f72
   p1_capability_runtime_harness_collaboration_5265febf -->|"Persist immutable coordination signals under a per-thread lock without writing any delivery store"| p1_component_collaboration_primary_9383ae07
+  p1_capability_runtime_harness_delegated_runs_e1654b07 -->|"Revalidate the exact current parent ClaimActorReceipt， WorkEnvelope and Engineer Binding before delegation admission"| p1_capability_runtime_harness_engineer_bindings_34c00f72
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
   classDef datastore fill:#3f6212,color:#ffffff,stroke:#d9f99d,stroke-width:2px
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:c0a8b4f20d1c90d3c499259dcaee6cc122fb079a8040c7896d98da1d41c8df89`).
-- Semantic nodes: `3`; declared relations: `2`.
+- Proof: `proven` (`sha256:fe482e00d203922226bd5ef26bac24cc27b64a3421cb36d287139895f40de7a6`).
+- Semantic nodes: `4`; declared relations: `4`.
 
 ### 1.2 模組職責表
 
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
 | `entrypoint.collaboration.publish` | `src/effects/collaboration/signal-store.ts#publishCoordinationSignal` | `sink.collaboration.mutation-gate` → `src/effects/collaboration/feature-flag.ts#assertCollaborationMutationEnabled`、`sink.collaboration.signal-schema` → `src/core/collaboration/signal.ts#buildCoordinationSignal` |
-| `entrypoint.collaboration.actor-derivation` | `src/effects/collaboration/actor.ts#resolveCollaborationActor` | `sink.collaboration.authenticated-principal` → `src/effects/engineers/principal.ts#resolveEngineerPrincipal` |
+| `entrypoint.collaboration.actor-derivation` | `src/effects/collaboration/actor.ts#resolveModuleEngineerActor` | `sink.collaboration.authenticated-principal` → `src/effects/engineers/principal.ts#resolveEngineerPrincipal` |
 | `entrypoint.collaboration.read` | `src/effects/collaboration/record-store.ts#readCollaborationRecord` | `sink.collaboration.record-path-guard` → `src/effects/collaboration/record-store.ts#collaborationRecordPath` |
 | `entrypoint.collaboration.durable-publish` | `src/effects/collaboration/record-store.ts#publishCollaborationRecordDurably` | `sink.collaboration.staging-name` → `src/effects/collaboration/record-store.ts#collaborationStagingName` |
 | `entrypoint.collaboration.handoff-publish` | `src/effects/collaboration/handoff-store.ts#publishWorkStateHandoff` | `sink.collaboration.handoff-mutation-gate` → `src/effects/collaboration/feature-flag.ts#assertCollaborationMutationEnabled`、`sink.collaboration.handoff-schema` → `src/core/collaboration/handoff.ts#buildWorkStateHandoff` |
 | `entrypoint.collaboration.handoff-adoption` | `src/effects/collaboration/adoption-store.ts#adoptWorkStateHandoff` | `sink.collaboration.adoption-mutation-gate` → `src/effects/collaboration/feature-flag.ts#assertCollaborationMutationEnabled`、`sink.collaboration.adoption-actor` → `src/effects/collaboration/actor.ts#resolveCollaborationActor` |
 | `entrypoint.collaboration.adoption-identity` | `src/core/collaboration/adoption.ts#handoffAdoptionReceiptId` | `sink.collaboration.adoption-triple` → `src/core/collaboration/adoption.ts#deriveHandoffAdoptionReceiptId` |
+| `entrypoint.collaboration.admission-bridge` | `src/effects/collaboration/admission-bridge.ts#admitCollaborationDelegation` | `sink.collaboration.parent-delegation-policy` → `src/effects/engineers/profile-store.ts#loadEngineerProfile`、`sink.collaboration.tracked-role-profile` → `src/effects/engineers/delegated-run-store.ts#loadLogicalReadOnlyRoleProfile` |
+| `entrypoint.collaboration.admission-window` | `src/effects/collaboration/admission-bridge.ts#admitInsideWindow` | `sink.collaboration.existing-admission` → `src/effects/engineers/delegated-run-store.ts#admitReadOnlyDelegation`、`sink.collaboration.seat-creation` → `src/effects/engineers/delegated-run-store.ts#prepareDelegatedRun` |
+| `entrypoint.collaboration.contribution-collect` | `src/effects/collaboration/contribution-collector.ts#collectCollaborationContribution` | `sink.collaboration.persisted-provider-output` → `src/effects/collaboration/provider-output-adapter.ts#readContributionDraftFromPersistedOutput`、`sink.collaboration.delegated-worker-actor` → `src/effects/collaboration/actor.ts#resolveDelegatedWorkerActor` |
+| `entrypoint.collaboration.contribution-publish` | `src/effects/collaboration/contribution-collector.ts#publishContribution` | `sink.collaboration.contribution-candidate` → `src/effects/collaboration/signal-store.ts#publishCoordinationSignal`、`sink.collaboration.contribution-commit` → `src/core/collaboration/contribution.ts#buildCollaborationContributionCommit`、`sink.collaboration.single-worker-result` → `src/effects/engineers/delegated-run-store.ts#collectDelegatedRunResult` |
+| `entrypoint.collaboration.provider-output` | `src/effects/collaboration/provider-output-adapter.ts#parseContributionDraftFromStdout` | `sink.collaboration.draft-schema` → `src/core/collaboration/contribution.ts#validateCollaborationContributionDraft` |
+| `entrypoint.collaboration.contribution-visibility` | `src/effects/collaboration/contribution-store.ts#listContributedSignalIds` | `sink.collaboration.committed-only` → `src/effects/collaboration/contribution-store.ts#listCollaborationContributionCommits` |
 | `entrypoint.collaboration.shared-mechanics` | `src/core/collaboration/signal.ts#buildCoordinationSignal` | `sink.collaboration.actor-union` → `src/core/collaboration/common.ts#validateCollaborationActorRef` |
 
 ### 1.3 規模信號
 
-- 規模量級:`10–20` 個文件 / `2000–5000` 行
+- 規模量級:`10–20` 個文件 / `5000–10000` 行
 - 匹配前綴:`src/core/collaboration/**`、`src/effects/collaboration/**`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
@@ -52,6 +61,7 @@ flowchart LR
 
 出向關係:
 
+- `calls` → `capability.runtime-harness.delegated-runs` — Enforce the parent Engineer's delegation policy as a pre-step to the unchanged read-only admission, and turn one run's persisted output into a contribution the delegation plane's own WorkerResult then references
 - `calls` → `capability.runtime-harness.engineer-bindings` — Derive the publishing actor from the authenticated principal and current Binding instead of accepting a declared identity
 - `calls` → `component.collaboration.primary` — Persist immutable coordination signals under a per-thread lock without writing any delivery store
 
@@ -61,7 +71,35 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:c0a8b4f20d1c90d3c499259dcaee6cc122fb079a8040c7896d98da1d41c8df89`); selectors `10/10`.
+> **Proof**: `proven` (`sha256:fe482e00d203922226bd5ef26bac24cc27b64a3421cb36d287139895f40de7a6`); selectors `21/21`.
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
+sequenceDiagram
+  autonumber
+  participant p2_collaboration_50c48bca as Collaboration Substrate
+  participant p2_delegated_runs_6de9843b as Read-only Delegated Runs
+  participant p2_engineer_bindings_4e9749d0 as Engineer Bindings
+  participant p2_record_store_d73a3e78 as Append-only Collaboration Record Store
+  p2_collaboration_50c48bca->>p2_engineer_bindings_4e9749d0: Resolve the parent Module Engineer Profile from the parent claim so allowed_roles and max_parallel_readers are the values this admission decides against
+  alt A participant under the limit is admitted through the unchanged read-only admission， and its seat exists before the counting lock is released
+  p2_collaboration_50c48bca->>p2_delegated_runs_6de9843b: Load the tracked read-only Role Profile， because an open logical_role string is not authorization
+  p2_collaboration_50c48bca->>p2_delegated_runs_6de9843b: Forward the caller's admission input verbatim， leaving the existing admission semantics untouched
+  p2_collaboration_50c48bca->>p2_delegated_runs_6de9843b: Create the run intent inside the same critical section that counted for the seat， so the granted seat is never invisible to the next request
+    Note over p2_delegated_runs_6de9843b: Return the admission decision and the seat； the parallel-reader limit is now a runtime constraint rather than a declared value
+  else The run's exact persisted stdout becomes candidate records， one commit， and one WorkerResult that references it
+  p2_collaboration_50c48bca->>p2_delegated_runs_6de9843b: Take the draft only from the stdout blob the Host persisted for that run， never from a caller-supplied payload
+  p2_collaboration_50c48bca->>p2_delegated_runs_6de9843b: Derive the delegated Worker actor from the immutable run reference and admission receipt， ignoring anything the Worker said about itself
+  p2_collaboration_50c48bca->>p2_record_store_d73a3e78: Publish every candidate signal immutably under an identity derived from the run and the entry index， so a retry converges instead of duplicating
+  p2_collaboration_50c48bca->>p2_record_store_d73a3e78: Publish the contribution commit last， as the sole visibility boundary over the candidates already on disk
+  p2_collaboration_50c48bca->>p2_delegated_runs_6de9843b: Construct the one WorkerResult for this run， carrying the commit as an evidence reference and refusing a second result with different bytes
+  p2_collaboration_50c48bca->>p2_record_store_d73a3e78: Expose contributed records to projections only through committed contributions， so an uncommitted candidate is indistinguishable from one never written
+    Note over p2_collaboration_50c48bca: Return the commit and the single WorkerResult； the delivery plane holds the same bytes it held before the contribution
+  else An output that cannot be parsed is a typed rejection， never a synthesised empty contribution
+  p2_collaboration_50c48bca->>p2_record_store_d73a3e78: Validate the entire draft before any visible write， so a malformed later entry publishes none of the earlier ones
+    Note over p2_collaboration_50c48bca: Surface the typed rejection with its adapter version； the ordinary WorkerResult still persists and no candidate， commit or partial signal exists
+  end
+```
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

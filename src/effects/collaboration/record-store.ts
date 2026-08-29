@@ -161,24 +161,25 @@ export function collaborationRecordPath(
 }
 
 /**
- * A lock is named for a (domain, subject) pair, and the domains in use today are
- * not one-per-family: signal publish and handoff publish both take
- * `('thread', thread_key)` and therefore share a lock, while adoption takes
- * `('handoff-adoption', handoff_id)` and contends with neither. That is D9's
- * "per-thread / per-handoff lock" as frozen, not an oversight.
+ * A lock is named for a (domain, subject) pair, one domain per record family, as
+ * D9 freezes them: `('thread', thread_key)` for signal append,
+ * `('handoff', handoff_id)` for handoff publish, `('handoff-adoption',
+ * handoff_id)` for adoption, and `('contribution', worker_run_ref_sha256)` for
+ * one delegated run's whole contribution transaction.
  *
- * The sharing is deliberate but not load-bearing, and the distinction matters if
- * anyone later wants to split it. Nothing needs a signal write and a handoff
- * write to be mutually exclusive: records publish through a staged write plus
- * `link`, so a concurrent write is either fully visible or not visible at all
- * and no reader can observe a torn one. Handoff publish does read the signal
- * store inside this lock, but only to prove cited signals resolve, and a signal
- * appearing mid-check can only turn a failing check into a passing one. Signal
- * idempotency does not depend on it either: identity is keyed on the actor and
- * idempotency key rather than the thread, so two publishes of one identity under
- * different thread keys already take different locks and reconcile through the
- * `EEXIST` branch. Splitting the domains would therefore be a contention change,
- * not a correctness one, and wants a measurement first.
+ * C3 shipped handoff publish on the *signal* domain and a comment here claimed
+ * that was D9 as frozen. It was not; C4 split it and this paragraph is the
+ * correction. The split was safe because the sharing was never load-bearing:
+ * records publish through a staged write plus `link`, so a concurrent write is
+ * either fully visible or not visible at all and no reader observes a torn one,
+ * and handoff publish reads the signal store inside its lock only to prove cited
+ * signals resolve — a signal appearing mid-check can only turn a failing check
+ * into a passing one, and a persisted signal is immutable so it can never turn a
+ * passing check into a failing one. The split also fixed a real edge the shared
+ * domain left open: handoff identity is keyed on the actor and the idempotency
+ * key, not on the thread, so two publishes of *one* identity under two thread
+ * keys took two locks, raced, and reconciled into a spurious byte conflict.
+ * Keying the lock on the identity being written closes that.
  *
  * The separator is an escaped NUL rather than a literal one: a subject key may
  * contain any character a thread key may, and a printable separator would let

@@ -1,0 +1,125 @@
+schemaVersion: archcontext.flow/v1
+id: flow.collaboration.delegated-contribution
+capabilityId: capability.runtime-harness.collaboration
+name: Admit a same-capability read-only participant and make exactly one of its contributions visible
+applicability: required
+participants:
+  - id: collaboration
+    nodeId: capability.runtime-harness.collaboration
+  - id: delegated-runs
+    nodeId: capability.runtime-harness.delegated-runs
+  - id: engineer-bindings
+    nodeId: capability.runtime-harness.engineer-bindings
+  - id: record-store
+    nodeId: component.collaboration.primary
+steps:
+  - id: resolve-delegation-policy
+    from: collaboration
+    to: engineer-bindings
+    label: Resolve the parent Module Engineer Profile from the parent claim so allowed_roles and max_parallel_readers are the values this admission decides against
+    evidence:
+      entrypointId: entrypoint.collaboration.admission-bridge
+      sourceSymbol: admitCollaborationDelegation
+      sinkId: sink.collaboration.parent-delegation-policy
+outcomes:
+  - id: admitted
+    kind: success
+    label: A participant under the limit is admitted through the unchanged read-only admission, and its seat exists before the counting lock is released
+    steps:
+      - id: require-tracked-role
+        from: collaboration
+        to: delegated-runs
+        label: Load the tracked read-only Role Profile, because an open logical_role string is not authorization
+        evidence:
+          entrypointId: entrypoint.collaboration.admission-bridge
+          sourceSymbol: admitCollaborationDelegation
+          sinkId: sink.collaboration.tracked-role-profile
+      - id: forward-to-existing-admission
+        from: collaboration
+        to: delegated-runs
+        label: Forward the caller's admission input verbatim, leaving the existing admission semantics untouched
+        evidence:
+          entrypointId: entrypoint.collaboration.admission-window
+          sourceSymbol: admitInsideWindow
+          sinkId: sink.collaboration.existing-admission
+      - id: create-the-seat
+        from: collaboration
+        to: delegated-runs
+        label: Create the run intent inside the same critical section that counted for the seat, so the granted seat is never invisible to the next request
+        evidence:
+          entrypointId: entrypoint.collaboration.admission-window
+          sourceSymbol: admitInsideWindow
+          sinkId: sink.collaboration.seat-creation
+    terminal:
+      participant: delegated-runs
+      label: Return the admission decision and the seat; the parallel-reader limit is now a runtime constraint rather than a declared value
+  - id: contributed
+    kind: success
+    label: The run's exact persisted stdout becomes candidate records, one commit, and one WorkerResult that references it
+    steps:
+      - id: read-persisted-output
+        from: collaboration
+        to: delegated-runs
+        label: Take the draft only from the stdout blob the Host persisted for that run, never from a caller-supplied payload
+        evidence:
+          entrypointId: entrypoint.collaboration.contribution-collect
+          sourceSymbol: collectCollaborationContribution
+          sinkId: sink.collaboration.persisted-provider-output
+      - id: derive-worker-identity
+        from: collaboration
+        to: delegated-runs
+        label: Derive the delegated Worker actor from the immutable run reference and admission receipt, ignoring anything the Worker said about itself
+        evidence:
+          entrypointId: entrypoint.collaboration.contribution-collect
+          sourceSymbol: collectCollaborationContribution
+          sinkId: sink.collaboration.delegated-worker-actor
+      - id: publish-candidates
+        from: collaboration
+        to: record-store
+        label: Publish every candidate signal immutably under an identity derived from the run and the entry index, so a retry converges instead of duplicating
+        evidence:
+          entrypointId: entrypoint.collaboration.contribution-publish
+          sourceSymbol: publishContribution
+          sinkId: sink.collaboration.contribution-candidate
+      - id: publish-commit
+        from: collaboration
+        to: record-store
+        label: Publish the contribution commit last, as the sole visibility boundary over the candidates already on disk
+        evidence:
+          entrypointId: entrypoint.collaboration.contribution-publish
+          sourceSymbol: publishContribution
+          sinkId: sink.collaboration.contribution-commit
+      - id: single-worker-result
+        from: collaboration
+        to: delegated-runs
+        label: Construct the one WorkerResult for this run, carrying the commit as an evidence reference and refusing a second result with different bytes
+        evidence:
+          entrypointId: entrypoint.collaboration.contribution-publish
+          sourceSymbol: publishContribution
+          sinkId: sink.collaboration.single-worker-result
+      - id: read-committed-only
+        from: collaboration
+        to: record-store
+        label: Expose contributed records to projections only through committed contributions, so an uncommitted candidate is indistinguishable from one never written
+        evidence:
+          entrypointId: entrypoint.collaboration.contribution-visibility
+          sourceSymbol: listContributedSignalIds
+          sinkId: sink.collaboration.committed-only
+    terminal:
+      participant: collaboration
+      label: Return the commit and the single WorkerResult; the delivery plane holds the same bytes it held before the contribution
+  - id: unusable-output
+    kind: error
+    label: An output that cannot be parsed is a typed rejection, never a synthesised empty contribution
+    steps:
+      - id: validate-whole-draft
+        from: collaboration
+        to: record-store
+        label: Validate the entire draft before any visible write, so a malformed later entry publishes none of the earlier ones
+        evidence:
+          entrypointId: entrypoint.collaboration.provider-output
+          sourceSymbol: parseContributionDraftFromStdout
+          sinkId: sink.collaboration.draft-schema
+    terminal:
+      participant: collaboration
+      label: Surface the typed rejection with its adapter version; the ordinary WorkerResult still persists and no candidate, commit or partial signal exists
