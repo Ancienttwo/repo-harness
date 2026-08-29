@@ -449,12 +449,25 @@ function freezeRecordSource(): string {
   return readFileSync(join(REPO_ROOT, FREEZE_RECORD_RELATIVE_PATH), 'utf8');
 }
 
-const PROTOCOL_EXPORT = /^export const [A-Za-z0-9_]*_PROTOCOL\b/mu;
+/**
+ * Every way a module can put a `*_PROTOCOL` name on its public surface. The
+ * declaration form alone left two escape hatches — `const X_PROTOCOL = …;
+ * export { X_PROTOCOL }` and `export { X_PROTOCOL } from './y'` — through which
+ * a protocol owner could skip classification entirely.
+ */
+const PROTOCOL_EXPORT_FORMS: readonly RegExp[] = [
+  /^\s*export\s+(?:declare\s+)?(?:const|let|var|function|class)\s+[A-Za-z0-9_$]*_PROTOCOL\b/mu,
+  /\bexport\s*(?:type\s*)?\{[^}]*_PROTOCOL\b[^}]*\}/u,
+];
+
+function exportsAProtocol(source: string): boolean {
+  return PROTOCOL_EXPORT_FORMS.some((form) => form.test(source));
+}
 
 /**
- * Every `src/core/**` module that declares a `*_PROTOCOL` export, read from the
- * source text rather than from imports so a module nobody imports here still
- * shows up.
+ * Every `src/core/**` module that puts a `*_PROTOCOL` export on its surface,
+ * read from the source text rather than from imports so a module nobody imports
+ * here still shows up.
  */
 function protocolOwningModules(): readonly string[] {
   const root = join(REPO_ROOT, 'src/core');
@@ -465,7 +478,10 @@ function protocolOwningModules(): readonly string[] {
       if (entry.isDirectory()) {
         walk(absolute);
       } else if (entry.isFile() && entry.name.endsWith('.ts')) {
-        if (PROTOCOL_EXPORT.test(readFileSync(absolute, 'utf8'))) {
+        // Broad candidate filter first, then the export-form check, so a file
+        // that merely mentions the token is never classified as an owner.
+        const source = readFileSync(absolute, 'utf8');
+        if (source.includes('_PROTOCOL') && exportsAProtocol(source)) {
           found.push(relative(REPO_ROOT, absolute).replaceAll('\\', '/'));
         }
       }

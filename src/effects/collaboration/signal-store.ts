@@ -17,21 +17,24 @@ import {
   constants,
   existsSync,
   fsyncSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
   readdirSync,
   realpathSync,
+  unlinkSync,
   writeFileSync,
 } from 'fs';
-import { createHash } from 'crypto';
-import { dirname, join, relative, resolve, sep } from 'path';
+import { createHash, randomUUID } from 'crypto';
+import { basename, dirname, join, relative, resolve, sep } from 'path';
 
 import {
   COLLABORATION_IDEMPOTENCY_KEY_MAX_BYTES,
   CollaborationError,
   collaborationActorLineage,
+  validateCollaborationRecordId,
   type CollaborationActorRefV1,
   type CollaborationArtifactRefV1,
   type CollaborationMode,
@@ -55,6 +58,13 @@ export const COLLABORATION_STORE_RELATIVE_ROOT = 'repo-harness/collaboration/v1'
 export const COLLABORATION_SIGNALS_RELATIVE_ROOT = `${COLLABORATION_STORE_RELATIVE_ROOT}/signals`;
 
 const SIGNAL_FILE = /^[0-9a-f]{64}\.json$/u;
+/**
+ * The staging name `publishSignalFileDurably()` links from. A crash between
+ * staging and linking leaves one behind; it is residue of this store's own
+ * publish protocol, so listing skips it instead of declaring the store corrupt.
+ * Anything else in the directory still fails the store closed.
+ */
+const SIGNAL_TEMP_FILE = /^\.[0-9a-f]{64}\.json\.\d+\.[0-9a-f-]{36}\.tmp$/u;
 
 export interface PublishCoordinationSignalInput {
   readonly repo_root: string;
@@ -139,12 +149,22 @@ function assertSafeDirectory(path: string): void {
   if (!stat.isDirectory() || stat.isSymbolicLink()) invalid(`unsafe collaboration directory: ${path}`);
 }
 
-function signalPath(paths: StorePaths, signalId: string): string {
-  return join(paths.signals, `${signalId}.json`);
+/**
+ * Every path into the store is built from a validated record id. The 64-hex
+ * shape is checked *before* the `join()`, so `../escape`, an absolute path or a
+ * separator-bearing id is a typed `collaboration_invalid` and never reaches the
+ * filesystem as a traversal.
+ */
+function signalPath(paths: StorePaths, signalId: string, field = 'signal_id'): string {
+  return join(paths.signals, `${validateCollaborationRecordId(signalId, field)}.json`);
 }
 
-function readPersistedSignal(paths: StorePaths, signalId: string): CoordinationSignalV1 | null {
-  const file = signalPath(paths, signalId);
+function readPersistedSignal(
+  paths: StorePaths,
+  signalId: string,
+  field = 'signal_id',
+): CoordinationSignalV1 | null {
+  const file = signalPath(paths, signalId, field);
   if (!existsSync(file)) return null;
   let raw: string;
   try {
@@ -168,6 +188,9 @@ function readPersistedSignal(paths: StorePaths, signalId: string): CoordinationS
 }
 
 export function readCoordinationSignal(repoRoot: string, signalId: string): CoordinationSignalV1 | null {
+  // Validated before the repo root is even resolved: a malformed id is a caller
+  // error, not a store lookup, and must not cost a filesystem walk.
+  validateCollaborationRecordId(signalId, 'signal_id');
   const paths = storePaths(realpathSync(repoRoot));
   if (!existsSync(paths.signals)) return null;
   assertSafeDirectory(paths.signals);
@@ -188,10 +211,11 @@ export function listCoordinationSignals(repoRoot: string): readonly Coordination
   } catch (error) {
     return unavailable(`signal store is unreadable: ${paths.signals}`, error);
   }
-  const unexpected = entries.filter((entry) => !SIGNAL_FILE.test(entry));
+  const unexpected = entries.filter((entry) => !SIGNAL_FILE.test(entry) && !SIGNAL_TEMP_FILE.test(entry));
   if (unexpected.length > 0) unavailable(`unexpected entries in the signal store: ${unexpected.sort().join(', ')}`);
   return Object.freeze(
     entries
+      .filter((entry) => SIGNAL_FILE.test(entry))
       .sort()
       .map((entry) => readPersistedSignal(paths, entry.slice(0, -'.json'.length))!),
   );
@@ -238,10 +262,51 @@ function assertResolvableSource(
   field: string,
 ): CoordinationSignalV1 | null {
   if (signalId === null) return null;
-  const referenced = readPersistedSignal(paths, signalId);
+  const referenced = readPersistedSignal(paths, validateCollaborationRecordId(signalId, field), field);
   if (!referenced) invalid(`${field} does not exist in this repository: ${signalId}`);
   if (referenced.repository_id !== repositoryId) invalid(`${field} belongs to another repository: ${signalId}`);
   return referenced;
+}
+
+/**
+ * Publish the record so no reader can ever observe a half-written one: the bytes
+ * go into a same-directory temp file, are fsynced, and only then appear under
+ * their final name. `O_CREAT|O_EXCL` on the target itself made the name visible
+ * before the bytes landed, so a crash in between left a zero-length JSON that an
+ * append-only store can never repair.
+ *
+ * `link` rather than `rename` — matching `publishImmutable()` in
+ * `src/effects/publication/feedback-store.ts`, this store's create-once
+ * precedent. A rename would silently overwrite whatever a competing writer had
+ * already published; `link` fails `EEXIST` and preserves first-writer-wins, so
+ * the loser still reconciles to identical bytes or `collaboration_conflict`.
+ */
+function publishSignalFileDurably(directory: string, file: string, bytes: string): void {
+  const temporary = join(directory, `.${basename(file)}.${process.pid}.${randomUUID()}.tmp`);
+  let fd: number | null = null;
+  try {
+    fd = openSync(
+      temporary,
+      constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
+      0o600,
+    );
+    writeFileSync(fd, bytes, 'utf8');
+    fsyncSync(fd);
+  } catch (error) {
+    // Wrapped so the caller's EEXIST branch can only ever mean "the final name
+    // was taken", never "the temp name collided".
+    if (fd !== null) { closeSync(fd); fd = null; }
+    try { unlinkSync(temporary); } catch { /* it may never have been created */ }
+    return unavailable(`cannot stage signal bytes: ${file}`, error);
+  } finally {
+    if (fd !== null) closeSync(fd);
+  }
+  try {
+    linkSync(temporary, file);
+    fsyncDirectory(directory);
+  } finally {
+    try { unlinkSync(temporary); } catch { /* the publish error, if any, wins */ }
+  }
 }
 
 function threadLockRelativePath(threadKey: string): string {
@@ -318,16 +383,10 @@ export function publishCoordinationSignal(
     const bytes = canonicalCoordinationSignalBytes(signal);
     const file = signalPath(paths, signalId);
     try {
-      const fd = openSync(
-        file,
-        constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
-        0o600,
-      );
-      try { writeFileSync(fd, bytes, 'utf8'); fsyncSync(fd); } finally { closeSync(fd); }
-      fsyncDirectory(paths.signals);
+      publishSignalFileDurably(paths.signals, file, bytes);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      // Another writer won the create between the read above and this open.
+      // Another writer won the link between the read above and this publish.
       // Reconcile against its bytes rather than reporting a spurious conflict.
       return reconcile(readPersistedSignal(paths, signalId)!);
     }

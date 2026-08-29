@@ -183,9 +183,12 @@ function code(run: () => unknown): string {
  * A digest over every delivery-plane store under the Git common directory,
  * excluding the collaboration store itself. This is the before/after evidence
  * the Program Verification Matrix asks for on authority preservation.
+ *
+ * `scope` narrows it to one plane subtree (`coordination/v1`, `engineers/v1`)
+ * so a falsifier can name the plane it claims not to have moved.
  */
-function deliveryPlaneDigest(repoRoot: string): string {
-  const root = join(realpathSync(resolveGitCommonDirectory(repoRoot)), 'repo-harness');
+function deliveryPlaneDigest(repoRoot: string, scope = ''): string {
+  const root = join(realpathSync(resolveGitCommonDirectory(repoRoot)), 'repo-harness', scope);
   const hash = createHash('sha256');
   const walk = (directory: string): void => {
     for (const entry of readdirSync(directory, { withFileTypes: true }).sort((left, right) => (left.name < right.name ? -1 : 1))) {
@@ -312,6 +315,71 @@ describe('C1 coordination signal store', () => {
     expect(retry.signal).toEqual(first.signal);
     expect(readFileSync(file, 'utf8')).toBe(bytes);
     expect(statSync(file).mode & 0o777).toBe(0o600);
+  });
+
+  /**
+   * The falsifier for C1's central claim, in one test: republishing the same
+   * identity moves neither the record's own bytes nor either delivery plane. If
+   * the store ever rewrote the file on a retry, or reached into the delivery
+   * plane to record that it had been asked twice, exactly one of these four
+   * digests would move.
+   */
+  test('republishing one identity moves neither the record bytes nor either delivery plane', () => {
+    const value = fixture();
+    const coordinationBefore = deliveryPlaneDigest(value.repoRoot, 'coordination/v1');
+    const engineersBefore = deliveryPlaneDigest(value.repoRoot, 'engineers/v1');
+    // Non-vacuity: the engineers plane really has bytes under it to move.
+    expect(engineersBefore).not.toBe(deliveryPlaneDigest(value.repoRoot, 'no-such-plane/v1'));
+
+    const first = publishCoordinationSignal(publishInput(value, { idempotency_key: 'idem-falsifier' }));
+    expect(first.created).toBe(true);
+    const file = join(
+      realpathSync(resolveGitCommonDirectory(value.repoRoot)),
+      COLLABORATION_SIGNALS_RELATIVE_ROOT,
+      `${first.signal.signal_id}.json`,
+    );
+    const bytes = readFileSync(file, 'utf8');
+
+    const second = publishCoordinationSignal(publishInput(value, { idempotency_key: 'idem-falsifier' }));
+    expect(second.created).toBe(false);
+    expect(second.signal).toEqual(first.signal);
+
+    expect(readFileSync(file, 'utf8')).toBe(bytes);
+    expect(listCoordinationSignals(value.repoRoot)).toHaveLength(1);
+    expect(deliveryPlaneDigest(value.repoRoot, 'coordination/v1')).toBe(coordinationBefore);
+    expect(deliveryPlaneDigest(value.repoRoot, 'engineers/v1')).toBe(engineersBefore);
+  });
+
+  test('a record id that is not 64 hex is refused before any path is built', () => {
+    const value = fixture();
+    const published = publishCoordinationSignal(publishInput(value)).signal;
+    const signalsRoot = join(realpathSync(resolveGitCommonDirectory(value.repoRoot)), COLLABORATION_SIGNALS_RELATIVE_ROOT);
+    writeFileSync(join(value.repoRoot, 'escape.json'), JSON.stringify(published));
+
+    const malformed = [
+      `../../../../${relative('/', join(value.repoRoot, 'escape'))}`,
+      '../escape',
+      `..${'/..'.repeat(8)}/etc/passwd`,
+      join(signalsRoot, `${published.signal_id}.json`),
+      `${published.signal_id}/../${published.signal_id}`,
+      published.signal_id.toUpperCase(),
+      `${published.signal_id} `,
+      'not-hex',
+      '',
+      'a'.repeat(63),
+      'a'.repeat(65),
+    ];
+    for (const signalId of malformed) {
+      expect({ signalId, code: code(() => readCoordinationSignal(value.repoRoot, signalId)) })
+        .toEqual({ signalId, code: 'collaboration_invalid' });
+      expect({ signalId, code: code(() => publishCoordinationSignal(publishInput(value, {
+        idempotency_key: `idem-escape-${malformed.indexOf(signalId)}`,
+        source_signal_ids: [signalId],
+      }))) }).toEqual({ signalId, code: 'collaboration_invalid' });
+    }
+    // Nothing was created by the attempts, and the store still holds one record.
+    expect(listCoordinationSignals(value.repoRoot)).toHaveLength(1);
+    expect(readdirSync(signalsRoot)).toEqual([`${published.signal_id}.json`]);
   });
 
   test('the same identity with a different payload is an explicit conflict', () => {
