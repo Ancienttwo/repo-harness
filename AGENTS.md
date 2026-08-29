@@ -71,34 +71,37 @@ bun src/cli/index.ts init --repo . --dry-run
 <!-- BEGIN ARCHITECTURE CONTRACT -->
 ## Architecture Contract
 
-- Functional block: `src/cli/mcp`
-- Capability ID: `runtime-harness-mcp-sidecar`
-- Matched prefix: `src/cli/mcp`
+- Functional block: `src/core/collaboration`
+- Capability ID: `runtime-harness-collaboration`
+- Matched prefix: `src/core/collaboration`
 - Architecture domain: `runtime-harness`
-- Architecture capability: `mcp-sidecar`
-- Architecture module: `docs/architecture/modules/runtime-harness/mcp-sidecar.md`
-- Last architecture event: 2026-08-27T03:12:23+0800
-- Last changed path: `src/cli/mcp/engineer-tools.ts`
-- Severity: low
-- Change type: source-change
+- Architecture capability: `collaboration`
+- Architecture module: `docs/architecture/modules/runtime-harness/collaboration.md`
+- Last architecture event: 2026-08-29T21:52:21+0800
+- Last changed path: `tasks/workstreams/runtime-harness/collaboration/collaboration-substrate-program.md`
+- Severity: medium
+- Change type: workstream-sync
 - Module responsibility: Keep this block aligned with the local boundary described by surrounding human-owned context.
-- Entrypoints: `src/cli/mcp`
+- Entrypoints: `src/core/collaboration`
 - Allowed dependencies: Follow root `AGENTS.md` / `CLAUDE.md` and this local contract.
 - Forbidden dependencies: Do not cross sibling app/service/package boundaries without an architecture snapshot or explicit plan.
-- Runtime path: `src/cli/mcp`
+- Runtime path: `src/core/collaboration`
 - LSP/tooling profile: `typescript-lsp`
 - Verification: Use root required checks plus local commands recorded in this capability contract.
 - Latest snapshot: `(none yet)`
-- Semantic diagram source: `docs/architecture/modules/runtime-harness/mcp-sidecar.md`
+- Semantic diagram source: `docs/architecture/modules/runtime-harness/collaboration.md`
 - Pending architecture request: `(none)`
 
 ## Active Workstreams
 
-- (none yet)
+- `tasks/workstreams/runtime-harness/collaboration/collaboration-substrate-program.md`
+  - status: active
+  - current_slice: todo-01
+  - source_plan: plans/plan-20260829-2137-c1-coordination-signal-store.md
 
 ## Current Session Projection
 
-- Durable progress lives under `tasks/workstreams/runtime-harness/mcp-sidecar`.
+- Durable progress lives under `tasks/workstreams/runtime-harness/collaboration`.
 - `tasks/current.md` is the tracked derived status snapshot; it is not a live lock or task source.
 - `tasks/todos.md` is the deferred-goal ledger; current execution slices stay in the active plan's `## Task Breakdown`.
 <!-- END ARCHITECTURE CONTRACT -->

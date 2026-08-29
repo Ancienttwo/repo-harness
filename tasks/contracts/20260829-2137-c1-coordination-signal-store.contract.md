@@ -122,8 +122,13 @@ allowed_paths:
   - tests/effects/collaboration-signal-store.test.ts
   - .archcontext/model/nodes/
   - docs/architecture/modules/runtime-harness/collaboration.md
+  - docs/architecture/domains/runtime-harness.md
   - docs/architecture/index.md
   - docs/architecture/requests/
+  # workflow-owned: workstream-sync and context-contract-sync rewrite the
+  # controlled architecture block when a capability workstream is created.
+  - AGENTS.md
+  - CLAUDE.md
   - docs/researches/20260829-c0-collaboration-two-plane-authority-freeze.md
   - .ai/harness/policy.json
 ```

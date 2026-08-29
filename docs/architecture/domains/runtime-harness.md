@@ -30,3 +30,5 @@ instead of becoming separate hook sources of truth.
 - `bash scripts/check-task-workflow.sh --strict`
 
 - `runtime-harness-interface-change` -> `docs/architecture/modules/runtime-harness/interface-change.md`
+
+- `runtime-harness-collaboration` -> `docs/architecture/modules/runtime-harness/collaboration.md`
