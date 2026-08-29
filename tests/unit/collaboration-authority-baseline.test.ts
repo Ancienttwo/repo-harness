@@ -10,89 +10,50 @@
  * protocol versions and wire identities into one canonical digest, and pins the
  * baseline negative proof that today's read-only delegation admission does not
  * consume `delegation_policy`.
+ *
+ * The inventory is not hand-maintained against the source: every module it draws
+ * from is also imported as a namespace, and `C0 authority inventory completeness`
+ * below asserts set equality between what the module exports and what the
+ * inventory declares. Adding a `*_KIND` or `*_PROTOCOL` export to any inventoried
+ * module turns this file red until the inventory is updated.
  */
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'crypto';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-import {
-  ENGINEER_PRINCIPAL_KIND,
-  ENGINEER_PRINCIPAL_MAPPING_KIND,
-  ENGINEER_PRINCIPAL_PROTOCOL,
-  CLAIM_ACTOR_RECEIPT_KIND,
-} from '../../src/core/engineers/principal-claim';
-import {
-  DELEGATION_ADMISSION_RECEIPT_KIND,
-  DELEGATION_ENVELOPE_KIND,
-  DELEGATION_PROTOCOL,
-  DELEGATED_RUN_INTENT_KIND,
-  WORKER_RESULT_KIND,
-  WORKER_RUN_REF_KIND,
-} from '../../src/core/engineers/delegation';
-import {
-  ENGINEER_DELEGATION_ROLES,
-  ENGINEER_PROFILE_PROTOCOL,
-} from '../../src/core/engineers/profile-binding';
-import {
-  ENGINEER_OFFERS_KIND,
-  ENGINEER_OFFER_KIND,
-  ENGINEER_OFFER_PROTOCOL,
-  WORK_GRAPH_KIND,
-  WORK_GRAPH_PROTOCOL,
-} from '../../src/core/engineers/scheduling';
-import { TASK_FREEZE_KIND, TASK_FREEZE_PROTOCOL } from '../../src/core/engineers/task-freeze';
+import * as delegation from '../../src/core/engineers/delegation';
 import {
   MODULE_MESSAGE_BODY_MAX_BYTES,
   MODULE_MESSAGE_CONTEXT_END,
   MODULE_MESSAGE_CONTEXT_START,
   MODULE_MESSAGE_RESOURCE_MAX_COUNT,
 } from '../../src/core/engineers/module-message';
-import { FLEET_BOARD_KIND, FLEET_BOARD_PROTOCOL } from '../../src/core/fleet/board';
+import * as principalClaim from '../../src/core/engineers/principal-claim';
+import * as profileBinding from '../../src/core/engineers/profile-binding';
+import * as scheduling from '../../src/core/engineers/scheduling';
+import * as taskFreeze from '../../src/core/engineers/task-freeze';
+import * as fleetBoard from '../../src/core/fleet/board';
 import {
   TASK_MESSAGE_BODY_MAX_BYTES,
   TASK_MESSAGE_CONTEXT_END,
   TASK_MESSAGE_CONTEXT_START,
 } from '../../src/core/fleet/task-message';
-import {
-  FLEET_OFFERS_KIND,
-  FLEET_OFFERS_PROTOCOL,
-  TASK_OFFER_KIND,
-  TASK_OFFER_PROTOCOL,
-} from '../../src/core/fleet/task-offer';
-import {
-  ACCEPTANCE_MATRIX_KIND,
-  INTEGRATION_CONTRACT_KIND,
-  INTEGRATION_CONTRACT_PROTOCOL,
-  INTEGRATION_ENVELOPE_KIND,
-  PRODUCT_ACCEPTANCE_PROJECTION_KIND,
-} from '../../src/core/integration/product-acceptance';
-import {
-  MERGE_READINESS_KIND,
-  MERGE_READINESS_PROTOCOL,
-} from '../../src/core/publication/merge-readiness';
-import {
-  PUBLICATION_INTEGRATION_OBSERVATION_KIND,
-  PUBLICATION_INTEGRATION_OBSERVATION_PROTOCOL,
-  PUBLICATION_LINEAGE_KIND,
-  PUBLICATION_LINEAGE_PROTOCOL,
-} from '../../src/core/publication/publication-lifecycle';
-import {
-  PUBLICATION_CREATE_INTENT_KIND,
-  PUBLICATION_PREPARE_KIND,
-  PUBLICATION_RECEIPT_KIND,
-  PUBLICATION_RECEIPT_PROTOCOL,
-} from '../../src/core/publication/publication-receipt';
-import {
-  COORDINATION_PROTOCOL,
-  LEASE_OWNER_KIND,
-} from '../../src/core/state/coordination-identity';
+import * as taskOffer from '../../src/core/fleet/task-offer';
+import * as productAcceptance from '../../src/core/integration/product-acceptance';
+import * as mergeReadiness from '../../src/core/publication/merge-readiness';
+import * as publicationLifecycle from '../../src/core/publication/publication-lifecycle';
+import * as publicationReceipt from '../../src/core/publication/publication-receipt';
+import * as coordinationIdentity from '../../src/core/state/coordination-identity';
+import { DELEGATED_RUN_STORE_RELATIVE_ROOT } from '../../src/effects/engineers/delegated-run-store';
 import { INTEGRATION_EVIDENCE_ROOT_RELATIVE_PATH } from '../../src/effects/integration/product-acceptance';
 import { PUBLICATION_RECEIPTS_RELATIVE_PATH } from '../../src/effects/publication/publication-receipt';
 import { COORDINATION_ROOT_RELATIVE_PATH } from '../../src/effects/state/coordination-lease-store';
-import { DELEGATED_RUN_STORE_RELATIVE_ROOT } from '../../src/effects/engineers/delegated-run-store';
 
 const REPO_ROOT = join(import.meta.dir, '..', '..');
+
+const FREEZE_RECORD_RELATIVE_PATH =
+  'docs/researches/20260829-c0-collaboration-two-plane-authority-freeze.md';
 
 interface AuthorityEntry {
   /** Delivery plane this authority belongs to. */
@@ -112,118 +73,215 @@ const AUTHORITY_INVENTORY: readonly AuthorityEntry[] = [
   {
     plane: 'lease',
     authority: 'coordination-lease',
-    protocol: COORDINATION_PROTOCOL,
-    kinds: [LEASE_OWNER_KIND],
+    protocol: coordinationIdentity.COORDINATION_PROTOCOL,
+    kinds: [coordinationIdentity.LEASE_OWNER_KIND],
     storeRoot: COORDINATION_ROOT_RELATIVE_PATH,
   },
   {
     plane: 'task',
     authority: 'engineer-principal-claim',
-    protocol: ENGINEER_PRINCIPAL_PROTOCOL,
-    kinds: [ENGINEER_PRINCIPAL_KIND, ENGINEER_PRINCIPAL_MAPPING_KIND, CLAIM_ACTOR_RECEIPT_KIND],
+    protocol: principalClaim.ENGINEER_PRINCIPAL_PROTOCOL,
+    kinds: [
+      principalClaim.ENGINEER_PRINCIPAL_KIND,
+      principalClaim.ENGINEER_PRINCIPAL_MAPPING_KIND,
+      principalClaim.CLAIM_ACTOR_RECEIPT_KIND,
+    ],
     storeRoot: 'repo-harness/engineers/v1/claim-actors',
   },
   {
     plane: 'task',
     authority: 'engineer-profile-binding',
-    protocol: ENGINEER_PROFILE_PROTOCOL,
-    kinds: [],
+    protocol: profileBinding.ENGINEER_PROFILE_PROTOCOL,
+    kinds: [
+      profileBinding.ENGINEER_PROFILE_KIND,
+      profileBinding.ENGINEER_BINDING_KIND,
+      profileBinding.ENGINEER_BINDING_EVENT_KIND,
+      profileBinding.ENGINEER_BINDING_CURRENT_KIND,
+    ],
     storeRoot: null,
   },
   {
     plane: 'task',
     authority: 'work-graph',
-    protocol: WORK_GRAPH_PROTOCOL,
-    kinds: [WORK_GRAPH_KIND],
+    protocol: scheduling.WORK_GRAPH_PROTOCOL,
+    kinds: [scheduling.WORK_GRAPH_KIND],
     storeRoot: null,
   },
   {
     plane: 'task',
     authority: 'engineer-offer',
-    protocol: ENGINEER_OFFER_PROTOCOL,
-    kinds: [ENGINEER_OFFER_KIND, ENGINEER_OFFERS_KIND],
+    protocol: scheduling.ENGINEER_OFFER_PROTOCOL,
+    kinds: [scheduling.ENGINEER_OFFER_KIND, scheduling.ENGINEER_OFFERS_KIND],
     storeRoot: null,
   },
   {
     plane: 'task',
     authority: 'task-offer',
-    protocol: TASK_OFFER_PROTOCOL,
-    kinds: [TASK_OFFER_KIND],
+    protocol: taskOffer.TASK_OFFER_PROTOCOL,
+    kinds: [taskOffer.TASK_OFFER_KIND],
     storeRoot: null,
   },
   {
     plane: 'task',
     authority: 'fleet-offers',
-    protocol: FLEET_OFFERS_PROTOCOL,
-    kinds: [FLEET_OFFERS_KIND],
+    protocol: taskOffer.FLEET_OFFERS_PROTOCOL,
+    kinds: [taskOffer.FLEET_OFFERS_KIND],
     storeRoot: null,
   },
   {
     plane: 'task',
     authority: 'fleet-board',
-    protocol: FLEET_BOARD_PROTOCOL,
-    kinds: [FLEET_BOARD_KIND],
+    protocol: fleetBoard.FLEET_BOARD_PROTOCOL,
+    kinds: [fleetBoard.FLEET_BOARD_KIND],
     storeRoot: null,
   },
   {
     plane: 'task',
     authority: 'task-freeze-receipt',
-    protocol: TASK_FREEZE_PROTOCOL,
-    kinds: [TASK_FREEZE_KIND],
+    protocol: taskFreeze.TASK_FREEZE_PROTOCOL,
+    kinds: [taskFreeze.TASK_FREEZE_KIND],
     storeRoot: 'repo-harness/engineers/v1/task-freezes',
   },
   {
     plane: 'publication',
     authority: 'publication-receipt',
-    protocol: PUBLICATION_RECEIPT_PROTOCOL,
-    kinds: [PUBLICATION_RECEIPT_KIND, PUBLICATION_CREATE_INTENT_KIND, PUBLICATION_PREPARE_KIND],
+    protocol: publicationReceipt.PUBLICATION_RECEIPT_PROTOCOL,
+    kinds: [
+      publicationReceipt.PUBLICATION_RECEIPT_KIND,
+      publicationReceipt.PUBLICATION_CREATE_INTENT_KIND,
+      publicationReceipt.PUBLICATION_PREPARE_KIND,
+    ],
     storeRoot: PUBLICATION_RECEIPTS_RELATIVE_PATH,
   },
   {
     plane: 'publication',
     authority: 'publication-lineage',
-    protocol: PUBLICATION_LINEAGE_PROTOCOL,
-    kinds: [PUBLICATION_LINEAGE_KIND],
+    protocol: publicationLifecycle.PUBLICATION_LINEAGE_PROTOCOL,
+    kinds: [publicationLifecycle.PUBLICATION_LINEAGE_KIND],
     storeRoot: null,
   },
   {
     plane: 'publication',
     authority: 'publication-integration-observation',
-    protocol: PUBLICATION_INTEGRATION_OBSERVATION_PROTOCOL,
-    kinds: [PUBLICATION_INTEGRATION_OBSERVATION_KIND],
+    protocol: publicationLifecycle.PUBLICATION_INTEGRATION_OBSERVATION_PROTOCOL,
+    kinds: [publicationLifecycle.PUBLICATION_INTEGRATION_OBSERVATION_KIND],
     storeRoot: null,
   },
   {
     plane: 'publication',
     authority: 'merge-readiness',
-    protocol: MERGE_READINESS_PROTOCOL,
-    kinds: [MERGE_READINESS_KIND],
+    protocol: mergeReadiness.MERGE_READINESS_PROTOCOL,
+    kinds: [mergeReadiness.MERGE_READINESS_KIND],
     storeRoot: null,
   },
   {
     plane: 'acceptance',
     authority: 'product-acceptance',
-    protocol: INTEGRATION_CONTRACT_PROTOCOL,
+    protocol: productAcceptance.INTEGRATION_CONTRACT_PROTOCOL,
     kinds: [
-      INTEGRATION_CONTRACT_KIND,
-      INTEGRATION_ENVELOPE_KIND,
-      ACCEPTANCE_MATRIX_KIND,
-      PRODUCT_ACCEPTANCE_PROJECTION_KIND,
+      productAcceptance.INTEGRATION_CONTRACT_KIND,
+      productAcceptance.INTEGRATION_ENVELOPE_KIND,
+      productAcceptance.ACCEPTANCE_MATRIX_KIND,
+      productAcceptance.PRODUCT_ACCEPTANCE_PROJECTION_KIND,
     ],
     storeRoot: INTEGRATION_EVIDENCE_ROOT_RELATIVE_PATH,
   },
   {
     plane: 'delegation',
     authority: 'read-only-delegation',
-    protocol: DELEGATION_PROTOCOL,
+    protocol: delegation.DELEGATION_PROTOCOL,
     kinds: [
-      DELEGATION_ENVELOPE_KIND,
-      DELEGATION_ADMISSION_RECEIPT_KIND,
-      DELEGATED_RUN_INTENT_KIND,
-      WORKER_RUN_REF_KIND,
-      WORKER_RESULT_KIND,
+      delegation.LOGICAL_ROLE_PROFILE_KIND,
+      delegation.CODEX_READ_ONLY_CAPABILITY_KIND,
+      delegation.EXECUTION_PACKET_KIND,
+      delegation.DELEGATION_ENVELOPE_KIND,
+      delegation.DELEGATION_ADMISSION_RECEIPT_KIND,
+      delegation.DELEGATED_RUN_INTENT_KIND,
+      delegation.DELEGATED_RUN_LAUNCH_CLAIM_KIND,
+      delegation.DELEGATED_RUN_OBSERVATION_KIND,
+      delegation.WORKER_RUN_REF_KIND,
+      delegation.WORKER_RESULT_KIND,
+      delegation.CODEX_READ_ONLY_ADAPTER_KIND,
     ],
     storeRoot: DELEGATED_RUN_STORE_RELATIVE_ROOT,
+  },
+];
+
+interface AuthoritySource {
+  /** Repo-relative module path, carried so a set-equality failure names the file. */
+  readonly module: string;
+  /** Namespace import of that module; its exports are read at test time. */
+  readonly exports: Readonly<Record<string, unknown>>;
+  /** Inventory authorities whose wire identity this module owns. */
+  readonly authorities: readonly string[];
+}
+
+/**
+ * Every module `AUTHORITY_INVENTORY` draws a constant from. The completeness
+ * tests below treat each module's exported `*_KIND` / `*_PROTOCOL` surface as the
+ * source of truth and the inventory as the thing that must match it, so a new
+ * wire identity cannot be added to `src/` without failing here first.
+ */
+const AUTHORITY_SOURCE_MODULES: readonly AuthoritySource[] = [
+  {
+    module: 'src/core/state/coordination-identity.ts',
+    exports: coordinationIdentity,
+    authorities: ['coordination-lease'],
+  },
+  {
+    module: 'src/core/engineers/principal-claim.ts',
+    exports: principalClaim,
+    authorities: ['engineer-principal-claim'],
+  },
+  {
+    module: 'src/core/engineers/profile-binding.ts',
+    exports: profileBinding,
+    authorities: ['engineer-profile-binding'],
+  },
+  {
+    module: 'src/core/engineers/scheduling.ts',
+    exports: scheduling,
+    authorities: ['work-graph', 'engineer-offer'],
+  },
+  {
+    module: 'src/core/fleet/task-offer.ts',
+    exports: taskOffer,
+    authorities: ['task-offer', 'fleet-offers'],
+  },
+  {
+    module: 'src/core/fleet/board.ts',
+    exports: fleetBoard,
+    authorities: ['fleet-board'],
+  },
+  {
+    module: 'src/core/engineers/task-freeze.ts',
+    exports: taskFreeze,
+    authorities: ['task-freeze-receipt'],
+  },
+  {
+    module: 'src/core/publication/publication-receipt.ts',
+    exports: publicationReceipt,
+    authorities: ['publication-receipt'],
+  },
+  {
+    module: 'src/core/publication/publication-lifecycle.ts',
+    exports: publicationLifecycle,
+    authorities: ['publication-lineage', 'publication-integration-observation'],
+  },
+  {
+    module: 'src/core/publication/merge-readiness.ts',
+    exports: mergeReadiness,
+    authorities: ['merge-readiness'],
+  },
+  {
+    module: 'src/core/integration/product-acceptance.ts',
+    exports: productAcceptance,
+    authorities: ['product-acceptance'],
+  },
+  {
+    module: 'src/core/engineers/delegation.ts',
+    exports: delegation,
+    authorities: ['read-only-delegation'],
   },
 ];
 
@@ -233,11 +291,96 @@ const AUTHORITY_INVENTORY: readonly AuthorityEntry[] = [
  * silently re-baselined.
  */
 const FROZEN_INVENTORY_SHA256 =
-  'sha256:555dbe25fdefe36d242fc3c96ba5c7326237bd2a5e53dcda44ae8af1e99b9d86';
+  'sha256:1d631cbc52685b2aea44a041e25cef299914287800cbe2221b2c3d3b136cbb7c';
 
 function inventoryDigest(): string {
   return `sha256:${createHash('sha256').update(JSON.stringify(AUTHORITY_INVENTORY), 'utf8').digest('hex')}`;
 }
+
+/** Values of every export whose name ends in `suffix`, in a stable order. */
+function exportedConstantValues(
+  moduleExports: Readonly<Record<string, unknown>>,
+  suffix: string,
+): readonly unknown[] {
+  return sortedValues(
+    Object.entries(moduleExports)
+      .filter(([name]) => name.endsWith(suffix))
+      .map(([, value]) => value),
+  );
+}
+
+function sortedValues(values: readonly unknown[]): readonly unknown[] {
+  return [...values].sort((left, right) => {
+    const a = String(left);
+    const b = String(right);
+    return a < b ? -1 : a > b ? 1 : 0;
+  });
+}
+
+function entriesFor(source: AuthoritySource): readonly AuthorityEntry[] {
+  return AUTHORITY_INVENTORY.filter((entry) => source.authorities.includes(entry.authority));
+}
+
+function freezeRecordSource(): string {
+  return readFileSync(join(REPO_ROOT, FREEZE_RECORD_RELATIVE_PATH), 'utf8');
+}
+
+describe('C0 authority inventory completeness', () => {
+  test('every inventory authority is owned by exactly one source module', () => {
+    const claimed = AUTHORITY_SOURCE_MODULES.flatMap((source) => source.authorities);
+    expect(new Set(claimed).size).toBe(claimed.length);
+    expect([...claimed].sort()).toEqual(
+      AUTHORITY_INVENTORY.map((entry) => entry.authority).sort(),
+    );
+  });
+
+  test('each source module exports exactly the wire kinds its inventory entries declare', () => {
+    for (const source of AUTHORITY_SOURCE_MODULES) {
+      const exported = exportedConstantValues(source.exports, '_KIND');
+      const declared = sortedValues([
+        ...new Set(entriesFor(source).flatMap((entry) => entry.kinds)),
+      ]);
+      expect({ module: source.module, kinds: declared }).toEqual({
+        module: source.module,
+        kinds: exported,
+      });
+    }
+  });
+
+  /**
+   * Protocol constants are compared by value multiset, not by name: the exported
+   * name is not recoverable from the inventory entry. Cardinality still bites —
+   * a new `*_PROTOCOL` export with no matching inventory entry makes the exported
+   * side longer — and the named protocol map below pins each authority's version.
+   */
+  test('each source module exports exactly the protocol versions its inventory entries declare', () => {
+    for (const source of AUTHORITY_SOURCE_MODULES) {
+      const exported = exportedConstantValues(source.exports, '_PROTOCOL');
+      const declared = sortedValues(entriesFor(source).map((entry) => entry.protocol));
+      expect({ module: source.module, protocols: declared }).toEqual({
+        module: source.module,
+        protocols: exported,
+      });
+    }
+  });
+
+  test('the freeze record digests every authority source module', () => {
+    const record = freezeRecordSource();
+    for (const source of AUTHORITY_SOURCE_MODULES) {
+      expect({
+        module: source.module,
+        digested: record.includes(`| \`${source.module}\` | \`sha256:`),
+      }).toEqual({ module: source.module, digested: true });
+    }
+  });
+
+  test('the freeze record cites the current frozen inventory digest', () => {
+    expect({
+      digest: FROZEN_INVENTORY_SHA256,
+      citedByFreezeRecord: freezeRecordSource().includes(FROZEN_INVENTORY_SHA256),
+    }).toEqual({ digest: FROZEN_INVENTORY_SHA256, citedByFreezeRecord: true });
+  });
+});
 
 describe('C0 delivery-plane authority baseline', () => {
   test('enumerates every frozen authority protocol version', () => {
@@ -287,7 +430,7 @@ describe('C0 delivery-plane authority baseline', () => {
 
 describe('C0 frozen delegation invariants', () => {
   test('ENGINEER_DELEGATION_ROLES stays the same five-value closed set', () => {
-    expect([...ENGINEER_DELEGATION_ROLES]).toEqual([
+    expect([...profileBinding.ENGINEER_DELEGATION_ROLES]).toEqual([
       'explorer',
       'root-cause-prover',
       'fast-worker',

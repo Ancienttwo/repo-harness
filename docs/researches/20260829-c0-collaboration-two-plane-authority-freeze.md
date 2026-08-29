@@ -36,9 +36,9 @@ later row inherits a decided boundary instead of negotiating one.
 
 | File | Purpose | Key Exports |
 |------|---------|-------------|
-| `src/core/engineers/delegation.ts` | Read-only delegation protocol records | `DELEGATION_PROTOCOL = 1`, `DELEGATION_ENVELOPE_KIND`, `DELEGATION_ADMISSION_RECEIPT_KIND`, `DELEGATED_RUN_INTENT_KIND`, `WORKER_RUN_REF_KIND`, `WORKER_RESULT_KIND` |
+| `src/core/engineers/delegation.ts` | Read-only delegation protocol records | `DELEGATION_PROTOCOL = 1`, `LOGICAL_ROLE_PROFILE_KIND`, `CODEX_READ_ONLY_CAPABILITY_KIND`, `EXECUTION_PACKET_KIND`, `DELEGATION_ENVELOPE_KIND`, `DELEGATION_ADMISSION_RECEIPT_KIND`, `DELEGATED_RUN_INTENT_KIND`, `DELEGATED_RUN_LAUNCH_CLAIM_KIND`, `DELEGATED_RUN_OBSERVATION_KIND`, `WORKER_RUN_REF_KIND`, `WORKER_RESULT_KIND`, `CODEX_READ_ONLY_ADAPTER_KIND` |
 | `src/effects/engineers/delegated-run-store.ts` | Admission, intent, dispatch, collection | `admitReadOnlyDelegation`, `prepareDelegatedRun`, `collectDelegatedRunResult`, `DELEGATED_RUN_STORE_RELATIVE_ROOT = 'repo-harness/delegated-runs/v1'` |
-| `src/core/engineers/profile-binding.ts` | Engineer profile, binding, `delegation_policy` | `ENGINEER_PROFILE_PROTOCOL = 1`, `ENGINEER_DELEGATION_ROLES` |
+| `src/core/engineers/profile-binding.ts` | Engineer profile, binding, `delegation_policy` | `ENGINEER_PROFILE_PROTOCOL = 1`, `ENGINEER_PROFILE_KIND`, `ENGINEER_BINDING_KIND`, `ENGINEER_BINDING_EVENT_KIND`, `ENGINEER_BINDING_CURRENT_KIND`, `ENGINEER_DELEGATION_ROLES` |
 | `src/core/messages/mechanics.ts` | Shared exact-key, bounded-UTF-8, canonical-bytes and digest mechanics | `assertMessageExactKeys`, `assertMessageBoundedUtf8`, `canonicalMessageBytes`, `canonicalMessageDigest`, `messageSha256` |
 | `src/core/fleet/task-message.ts` / `src/core/engineers/module-message.ts` | Untrusted-injection precedent | `TASK_MESSAGE_CONTEXT_START/END`, `MODULE_MESSAGE_CONTEXT_START/END`, both body limits `8 * 1024`, `MODULE_MESSAGE_RESOURCE_MAX_COUNT = 8` |
 | `src/effects/operator/server.ts` | Operator write surface | POST accepted on the task-message route only (`:534-540`) |
@@ -58,19 +58,32 @@ digests and is owned by the first row that writes a collaboration store (C1).
 | `src/core/engineers/principal-claim.ts` | `sha256:2de353cd5faaa223a044a0cb7a736cd0bbfd5060982830a22fc8c0709d5a2323` |
 | `src/core/engineers/scheduling.ts` | `sha256:85961c14a77f86b3c1bde42ac58ad4b7baf687d1973aa7082a2afdcdea89515a` |
 | `src/core/fleet/task-offer.ts` | `sha256:32b2844835e9750441705a313b556e35851b9bface391b17f8dcd9927333730c` |
+| `src/core/fleet/board.ts` | `sha256:8b1e983c926df4b48985bc966a5e75dee1be9e49156525cb82e948f0a0fb3799` |
 | `src/core/engineers/task-freeze.ts` | `sha256:73e5b1248471d54cc9ecf38f98d1aa4373d8b5b3409c7d7984a664da5c18daa0` |
 | `src/core/publication/publication-receipt.ts` | `sha256:8025a121f27266256910956ac712e10eee233af316fb3fa99ffa8df76c80bc76` |
 | `src/core/publication/publication-lifecycle.ts` | `sha256:a47f4cc1902a08ee1e24e8d2e1d684fc82c5d7b1438f5062f37918cfedb636d5` |
 | `src/core/publication/merge-readiness.ts` | `sha256:7c269ea5ce75138cf74612d49484afd6ce5c0eb862d1d0ad8e7e236db4f91e5c` |
 | `src/core/integration/product-acceptance.ts` | `sha256:a5034e330e8f8b307ccb77a0d26891ea5283de15db25a6f3205b015283a1edca` |
+| `src/core/engineers/profile-binding.ts` | `sha256:02c854aada5d18a2fc52ef922c2cd8ac0a866a815a9cd0026694b37b7e9a0218` |
 | `src/core/engineers/delegation.ts` | `sha256:1ba766c087f40263e017693ea5e5b05994813c62d015db76a55e4ae16d825523` |
 | `src/effects/engineers/delegated-run-store.ts` | `sha256:33102aaab80af4666c1cb430c963b84476ee240e10de69e6be852c8387a7ee90` |
 
+Every module the frozen inventory draws a constant from is required to appear in
+this table; `tests/unit/collaboration-authority-baseline.test.ts` asserts that
+membership, so the table cannot silently fall behind the inventory.
+
 The digest table is a human baseline. The machine guard is the frozen inventory
 digest in `tests/unit/collaboration-authority-baseline.test.ts`,
-`sha256:555dbe25fdefe36d242fc3c96ba5c7326237bd2a5e53dcda44ae8af1e99b9d86`, which
+`sha256:1d631cbc52685b2aea44a041e25cef299914287800cbe2221b2c3d3b136cbb7c`, which
 is computed from the live exported constants rather than from file bytes: it goes
 red on real authority drift and stays green through comment or refactor churn.
+
+The inventory is not maintained by hand against the source. Each inventoried
+module is also imported as a namespace, and the test asserts set equality between
+the module's exported `*_KIND` constants and the kinds the inventory declares for
+that module, plus multiset equality on its exported `*_PROTOCOL` values. Adding a
+new wire identity to any module below turns the test red until the inventory,
+this table and the digest above are all updated together.
 
 ## Architecture Observations
 
@@ -340,12 +353,14 @@ Frozen list of what "zero authority write" means for this program.
 | Plane | Authority | Store root | Collaboration-plane permission |
 |---|---|---|---|
 | Task / Claim | `ClaimActorReceipt`, Engineer principal mapping | `repo-harness/engineers/v1/claim-actors` | read only |
+| Engineer identity | module engineer profile, binding, binding event, current binding | `repo-harness/engineers/v1` | read only |
+| Fleet board | `FleetBoardSnapshot` (protocol 2) | fleet read model | read only, verbatim projection |
 | Lease | coordination lease, four-state machine | `repo-harness/coordination/v1` | read only |
 | Task offers | `TaskOfferV1`, `FleetOffersV1`, `EngineerOfferV1` | fleet/scheduling projections | read only, verbatim projection |
 | Task freeze | `TaskFreezeReceiptV1` | `repo-harness/engineers/v1/task-freezes` | read only; C5 may require one to exist, never writes a successor field |
 | Publication | `PublicationReceiptV1`, lineage, integration observation, merge readiness | `repo-harness/publications/v1` | read only |
 | Acceptance | integration contract, envelope, acceptance matrix, product acceptance projection | `repo-harness/integration/v1` | read only |
-| Delegation | envelope, admission receipt, run intent, worker run ref, worker result | `repo-harness/delegated-runs/v1` | consumed as-is; no protocol bump; bridge is a pre-step only |
+| Delegation | logical role profile, read-only capability, execution packet, envelope, admission receipt, run intent, run launch claim, run observation, worker run ref, worker result, `codex_exec_read_only` adapter | `repo-harness/delegated-runs/v1` | consumed as-is; no protocol bump; bridge is a pre-step only |
 | Operator routes | task-message POST | `src/effects/operator/server.ts:534-540` | the sprint adds no POST route |
 
 ## Technical Debt / Risks
