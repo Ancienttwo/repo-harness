@@ -24,6 +24,7 @@ later row inherits a decided boundary instead of negotiating one.
 | `src/effects/state/coordination-lease-store.ts` | Lease persistence | `COORDINATION_ROOT_RELATIVE_PATH = 'repo-harness/coordination/v1'` |
 | `src/core/engineers/principal-claim.ts` | Engineer principal and Claim actor receipt | `ENGINEER_PRINCIPAL_PROTOCOL = 1`, `ENGINEER_PRINCIPAL_KIND`, `ENGINEER_PRINCIPAL_MAPPING_KIND`, `CLAIM_ACTOR_RECEIPT_KIND` |
 | `src/core/engineers/scheduling.ts` | Work Graph and Engineer offers | `WORK_GRAPH_PROTOCOL = 1`, `ENGINEER_OFFER_PROTOCOL = 1`, `WORK_GRAPH_KIND`, `ENGINEER_OFFER_KIND`, `ENGINEER_OFFERS_KIND` |
+| `src/core/state/project-board.ts` | Canonical board projection: task state, lease state, claim, offered actions; `classifyTaskOffer` reads its cards | `BOARD_PROTOCOL = 1` (no `*_KIND`; the document carries no wire envelope) |
 | `src/core/fleet/task-offer.ts` | Task offers | `TASK_OFFER_PROTOCOL = 1`, `FLEET_OFFERS_PROTOCOL = 1`, `TASK_OFFER_KIND`, `FLEET_OFFERS_KIND` |
 | `src/core/fleet/board.ts` | Fleet board read model | `FLEET_BOARD_PROTOCOL = 2`, `FLEET_BOARD_KIND` |
 | `src/core/engineers/task-freeze.ts` | Exact bound-executor state freeze | `TASK_FREEZE_PROTOCOL = 1`, `TASK_FREEZE_KIND` |
@@ -43,6 +44,79 @@ later row inherits a decided boundary instead of negotiating one.
 | `src/core/fleet/task-message.ts` / `src/core/engineers/module-message.ts` | Untrusted-injection precedent | `TASK_MESSAGE_CONTEXT_START/END`, `MODULE_MESSAGE_CONTEXT_START/END`, both body limits `8 * 1024`, `MODULE_MESSAGE_RESOURCE_MAX_COUNT = 8` |
 | `src/effects/operator/server.ts` | Operator write surface | POST accepted on the task-message route only (`:534-540`) |
 
+### 納入判據與排除清單
+
+The two tables above are not a curated shortlist. At `main@a490a5ef` exactly 23
+modules under `src/core/**` export a `*_PROTOCOL` constant
+(`rg -n '^export const [A-Z0-9_]*_PROTOCOL' src/core`). Thirteen of them are
+inventoried in `tests/unit/collaboration-authority-baseline.test.ts`; the other
+ten are excluded, and each exclusion is adjudicated below against one criterion
+stated once and applied uniformly.
+
+**Inclusion criterion.** A `src/core/**` module enters `AUTHORITY_SOURCE_MODULES`
+if and only if **both** clauses hold.
+
+- **C-1 — plane.** The module owns a wire identity on one of the five planes C0
+  froze: Task/Claim, Lease, Publication, Acceptance, or the reused read-only
+  Delegation plane. Messaging, Verification, Review, Merge, release evidence,
+  provider/host thread effects, and the module-engineering program are other
+  planes; D12 puts Review, Verification and Merge explicitly outside C0–C9.
+- **C-2 — cross-agent authority.** Its bytes decide, for another agent, who owns
+  work or what has been published or accepted on that plane. Concretely: an
+  admission, claim, publication, or acceptance decision reads them; **or** an
+  inventoried authority is derived from them; **or** they are republished
+  verbatim as a machine-readable document on a cross-agent surface (an HTTP
+  route or a `--json` CLI document). Advisory prompt context, attention and
+  priority hints, message payloads that are framed as untrusted data, and
+  records whose only reader is their own writer do not qualify.
+
+A module failing either clause is excluded, and gets one row below naming the
+clause it fails.
+
+**Adjudication of the ten excluded modules.**
+
+| Module | Fails | Evidence |
+|---|---|---|
+| `src/core/engineers/engineering-overlay.ts` | C-1 and C-2 | Module-engineering attention plane; a derived overlay with no store, no reader but `engineer overlay` output, and an attention payload that asserts no ownership |
+| `src/core/engineers/interface-change.ts` | C-1 | Module-engineering interface-change plane; its work-package projection is downstream of `scheduling.ts` and no Work Graph, offer, claim, or lease reads it back |
+| `src/core/engineers/module-message.ts` | C-2 | Message payload framed as untrusted data (`[ModuleInboxUntrustedPeerMessage]`), never instruction or authority; C0 freezes its markers and byte caps as the injection precedent, not its wire identity |
+| `src/core/engineers/provider-thread-effect.ts` | C-1 | Provider/host thread-effect plane; `src/effects/engineers/delegated-run-store.ts` imports nothing from it, so no admission decision reads a provider thread effect |
+| `src/core/engineers/verified-context.ts` | C-1 (D12) | Verification plane — semantic contract projection, step proposal, round receipt, verification assertion, decision request; consumers are its own store and the `verified-context` CLI only |
+| `src/core/fleet/task-message.ts` | C-2 | Same as `module-message.ts`: untrusted peer payload under `[TaskInboxUntrustedPeerMessages]`; the operator POST route names its recipient from `readLease`, not from a message |
+| `src/core/publication/feedback.ts` | C-1 (D12) | Review/repair loop despite the `publication/` directory; `merge-readiness.ts` imports only `publication-receipt`, and no publication or merge decision reads a feedback event — the fleet board consumes it as a display summary |
+| `src/core/release/runtime-evidence.ts` | C-1 (D12) | Release/verification plane; exports no `*_KIND` at all and has one consumer, `src/effects/release/runtime-evidence.ts` |
+| `src/core/review/change-assessment.ts` | C-1 (D12) | Review plane; one consumer, `src/effects/review/change-assessment.ts` |
+| `src/core/state/project-board-slice.ts` | C-2 | Advisory host-context projection: it derives nothing itself (every ownership decision is imported from `project-board.ts`), has no store and no `--json` surface, and its only consumer renders prompt text that "never blocks a spawn, never fails a hook, and never carries a decision" |
+
+**`project-board.ts` vs `fleet/board.ts`.** Both are Task/Lease-plane read
+models, and both are inventoried; the earlier split between them had no stated
+basis and is resolved here by including `src/core/state/project-board.ts`.
+`fleet/board.ts` satisfies C-2 through the republication limb: `FleetBoardCardV1`
+carries `claim_id`, `generation`, `lease_state` and `column` verbatim and is
+served at `/api/v1/fleet/snapshot` and `repo-harness fleet board --json`.
+`project-board.ts` satisfies C-2 through the stronger derivation limb:
+`collectRepoTaskOffers()` (`src/effects/fleet/acquire.ts:200-236`) builds every
+`TaskOfferV1` from its cards, passing `card.task_state`, `card.lease_state`,
+`card.mode`, `board.snapshot_consistency` and `board.canonical_target` into
+`classifyTaskOffer()`, whose `execution_readiness` is what
+`selectExecutionReadyOffer()` filters on before `fleet acquire` claims a row. A
+change to this projection changes which row another agent may claim. Its
+inventory entry carries `kinds: []` — that is a fact, not an omission: the board
+document has no `kind` field, and `BOARD_PROTOCOL` is a field of the composite
+revision preimage rather than a wire envelope.
+
+**Closed scan deferred to C1.** The criterion is enforced today by hand: the
+adjudication above is exhaustive over the 23 modules, and the digest table plus
+the frozen inventory digest make any inventoried module's drift loud. The
+mechanical form — sweep `src/core/**` for `*_PROTOCOL` exports and assert the
+result equals `AUTHORITY_SOURCE_MODULES` union an explicit `DELIBERATELY_EXCLUDED`
+list — is deliberately **not** added in C0. C0 writes no `src/`, so every module
+such a scan could find already exists and has already been adjudicated by hand;
+the assertion would restate today's split and would be calibrated against zero
+new samples. C1 introduces `src/core/collaboration/`, the first module the
+criterion must classify without hindsight, and owns the scan together with the
+exclusion list it calibrates against.
+
 ### Baseline source digests at `main@a490a5ef`
 
 Recorded as the C0 source-byte baseline for the sprint row's 「现有 authority bytes
@@ -57,6 +131,7 @@ digests and is owned by the first row that writes a collaboration store (C1).
 | `src/effects/state/coordination-lease-store.ts` | `sha256:d70aa2913ec30aeb696dfc331b950d3ad11a2328079f888a6e0e895e5eb717d9` |
 | `src/core/engineers/principal-claim.ts` | `sha256:2de353cd5faaa223a044a0cb7a736cd0bbfd5060982830a22fc8c0709d5a2323` |
 | `src/core/engineers/scheduling.ts` | `sha256:85961c14a77f86b3c1bde42ac58ad4b7baf687d1973aa7082a2afdcdea89515a` |
+| `src/core/state/project-board.ts` | `sha256:574ff25a5ceb8c1080b6686a117a33d52826d880a59ac1397454d0545d0b66ff` |
 | `src/core/fleet/task-offer.ts` | `sha256:32b2844835e9750441705a313b556e35851b9bface391b17f8dcd9927333730c` |
 | `src/core/fleet/board.ts` | `sha256:8b1e983c926df4b48985bc966a5e75dee1be9e49156525cb82e948f0a0fb3799` |
 | `src/core/engineers/task-freeze.ts` | `sha256:73e5b1248471d54cc9ecf38f98d1aa4373d8b5b3409c7d7984a664da5c18daa0` |
@@ -74,7 +149,7 @@ membership, so the table cannot silently fall behind the inventory.
 
 The digest table is a human baseline. The machine guard is the frozen inventory
 digest in `tests/unit/collaboration-authority-baseline.test.ts`,
-`sha256:1d631cbc52685b2aea44a041e25cef299914287800cbe2221b2c3d3b136cbb7c`, which
+`sha256:6a49057e17a921e78773f358e31b487c9402c9f828f14480ef705c5ac96fcb64`, which
 is computed from the live exported constants rather than from file bytes: it goes
 red on real authority drift and stays green through comment or refactor churn.
 
@@ -354,6 +429,7 @@ Frozen list of what "zero authority write" means for this program.
 |---|---|---|---|
 | Task / Claim | `ClaimActorReceipt`, Engineer principal mapping | `repo-harness/engineers/v1/claim-actors` | read only |
 | Engineer identity | module engineer profile, binding, binding event, current binding | `repo-harness/engineers/v1` | read only |
+| Task / Lease board | `BoardDocumentV1` (protocol 1) — the projection `classifyTaskOffer` derives `execution_readiness` from | canonical board read model, no store | read only, verbatim projection |
 | Fleet board | `FleetBoardSnapshot` (protocol 2) | fleet read model | read only, verbatim projection |
 | Lease | coordination lease, four-state machine | `repo-harness/coordination/v1` | read only |
 | Task offers | `TaskOfferV1`, `FleetOffersV1`, `EngineerOfferV1` | fleet/scheduling projections | read only, verbatim projection |

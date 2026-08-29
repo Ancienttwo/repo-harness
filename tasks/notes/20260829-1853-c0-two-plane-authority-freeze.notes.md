@@ -62,6 +62,21 @@
 - The sprint's C0 "Expected files" lists `plans/prds/*` and `plans/sprints/*`.
   Those five program files were already produced and are out of scope for this
   row; C0 added only its own work-package plan.
+- The mechanical closed scan over `src/core/**` — sweep every `*_PROTOCOL`
+  export and assert the result equals `AUTHORITY_SOURCE_MODULES` union an
+  explicit `DELIBERATELY_EXCLUDED` list — is deferred to C1 rather than added
+  here. C0 writes no `src/`, so the scan could only find modules that were
+  already adjudicated by hand in the freeze record's 「納入判據與排除清單」; the
+  assertion would restate today's split against zero new samples. C1 introduces
+  `src/core/collaboration/`, the first module the criterion has to classify
+  without hindsight, and owns the scan plus the exclusion list it calibrates
+  against. Applying the criterion honestly during the round-4 review also moved
+  `src/core/state/project-board.ts` from excluded to inventoried: it is not a
+  display-only read model, `collectRepoTaskOffers()`
+  (`src/effects/fleet/acquire.ts:200-236`) derives every `TaskOfferV1` from its
+  cards, so its bytes decide which row `fleet acquire` may claim. That is the
+  thirteenth inventoried module and the reason the frozen inventory digest moved
+  to `sha256:6a49057e17a921e78773f358e31b487c9402c9f828f14480ef705c5ac96fcb64`.
 
 ## Tradeoffs Considered
 

@@ -45,6 +45,7 @@ import * as mergeReadiness from '../../src/core/publication/merge-readiness';
 import * as publicationLifecycle from '../../src/core/publication/publication-lifecycle';
 import * as publicationReceipt from '../../src/core/publication/publication-receipt';
 import * as coordinationIdentity from '../../src/core/state/coordination-identity';
+import * as projectBoard from '../../src/core/state/project-board';
 import { DELEGATED_RUN_STORE_RELATIVE_ROOT } from '../../src/effects/engineers/delegated-run-store';
 import { INTEGRATION_EVIDENCE_ROOT_RELATIVE_PATH } from '../../src/effects/integration/product-acceptance';
 import { PUBLICATION_RECEIPTS_RELATIVE_PATH } from '../../src/effects/publication/publication-receipt';
@@ -112,6 +113,21 @@ const AUTHORITY_INVENTORY: readonly AuthorityEntry[] = [
     authority: 'engineer-offer',
     protocol: scheduling.ENGINEER_OFFER_PROTOCOL,
     kinds: [scheduling.ENGINEER_OFFER_KIND, scheduling.ENGINEER_OFFERS_KIND],
+    storeRoot: null,
+  },
+  {
+    /**
+     * The board document has no `kind` field: `BOARD_PROTOCOL` is a field of the
+     * composite revision preimage, not a wire envelope. It is inventoried
+     * because `collectRepoTaskOffers()`
+     * (`src/effects/fleet/acquire.ts:200-236`) derives every `TaskOfferV1` from
+     * its cards, so a change to this projection changes `execution_readiness`
+     * and therefore which row `fleet acquire` may claim.
+     */
+    plane: 'task',
+    authority: 'project-board',
+    protocol: projectBoard.BOARD_PROTOCOL,
+    kinds: [],
     storeRoot: null,
   },
   {
@@ -220,7 +236,25 @@ interface AuthoritySource {
  * Every module `AUTHORITY_INVENTORY` draws a constant from. The completeness
  * tests below treat each module's exported `*_KIND` / `*_PROTOCOL` surface as the
  * source of truth and the inventory as the thing that must match it, so a new
- * wire identity cannot be added to `src/` without failing here first.
+ * wire identity cannot be added to an inventoried module without failing here
+ * first.
+ *
+ * Membership is not curated by taste. The inclusion criterion and the
+ * clause-by-clause adjudication of every `src/core/**` module that exports a
+ * `*_PROTOCOL` and is *not* listed here are frozen in
+ * `docs/researches/20260829-c0-collaboration-two-plane-authority-freeze.md`,
+ * section 「納入判據與排除清單」. Adding or removing a module here without
+ * moving that section is a silent re-baseline.
+ *
+ * Deliberately deferred to C1: the closed scan — sweeping `src/core/**` for
+ * `*_PROTOCOL` exports and asserting the result equals
+ * `AUTHORITY_SOURCE_MODULES` union an explicit `DELIBERATELY_EXCLUDED` list.
+ * C0 writes no `src/`, so every module such a scan could find already exists and
+ * has already been adjudicated by hand; the assertion would only restate today's
+ * split and would be calibrated against zero new samples. C1 adds
+ * `src/core/collaboration/` — the first module the criterion has to classify
+ * without hindsight — and owns the scan together with the exclusion list it
+ * calibrates against.
  */
 const AUTHORITY_SOURCE_MODULES: readonly AuthoritySource[] = [
   {
@@ -242,6 +276,11 @@ const AUTHORITY_SOURCE_MODULES: readonly AuthoritySource[] = [
     module: 'src/core/engineers/scheduling.ts',
     exports: scheduling,
     authorities: ['work-graph', 'engineer-offer'],
+  },
+  {
+    module: 'src/core/state/project-board.ts',
+    exports: projectBoard,
+    authorities: ['project-board'],
   },
   {
     module: 'src/core/fleet/task-offer.ts',
@@ -291,7 +330,7 @@ const AUTHORITY_SOURCE_MODULES: readonly AuthoritySource[] = [
  * silently re-baselined.
  */
 const FROZEN_INVENTORY_SHA256 =
-  'sha256:1d631cbc52685b2aea44a041e25cef299914287800cbe2221b2c3d3b136cbb7c';
+  'sha256:6a49057e17a921e78773f358e31b487c9402c9f828f14480ef705c5ac96fcb64';
 
 function inventoryDigest(): string {
   return `sha256:${createHash('sha256').update(JSON.stringify(AUTHORITY_INVENTORY), 'utf8').digest('hex')}`;
@@ -392,6 +431,7 @@ describe('C0 delivery-plane authority baseline', () => {
       'engineer-profile-binding': 1,
       'work-graph': 1,
       'engineer-offer': 1,
+      'project-board': 1,
       'task-offer': 1,
       'fleet-offers': 1,
       'fleet-board': 2,
