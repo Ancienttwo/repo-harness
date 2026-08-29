@@ -1,8 +1,8 @@
 # Architecture Queue Card: runtime-harness-collaboration
 
 > **Status**: Resolved
-> **Detected**: 2026-08-29T18:57:20+0800
-> **Updated**: 2026-08-29T18:57:20+0800
+> **Detected**: 2026-08-29T19:13:23+0800
+> **Updated**: 2026-08-29T19:13:23+0800
 > **Severity**: medium
 > **Change Type**: boundary-or-config
 > **File**: `docs/researches/20260829-c0-collaboration-two-plane-authority-freeze.md`
@@ -11,7 +11,7 @@
 > **Matched Prefix**: `src/core/collaboration`
 > **Architecture Domain**: `runtime-harness`
 > **Architecture Capability**: `collaboration`
-> **Architecture Module**: `docs/architecture/modules/runtime-harness/collaboration.md`
+> **Architecture Module**: `docs/architecture/domains/runtime-harness.md`
 > **Workstream Directory**: `tasks/workstreams/runtime-harness/collaboration`
 > **Contract Files**: `none`, `none`
 > **Contract Sync Required**: false
@@ -33,13 +33,13 @@
 
 | Last Event | Severity | Change Type | File | Event Key |
 | --- | --- | --- | --- | --- |
-| 2026-08-29T18:57:20+0800 | medium | boundary-or-config | `docs/researches/20260829-c0-collaboration-two-plane-authority-freeze.md` | `sha256:ace4ae5afab06451bd0cdf2bf0a571bdf9e809299bacb7db912f6321c79b3d2c` |
+| 2026-08-29T19:13:23+0800 | medium | boundary-or-config | `docs/researches/20260829-c0-collaboration-two-plane-authority-freeze.md` | `sha256:7c100f7fb3d4c9682a11d1ea117eeaa5d930c9e26f4543345e706e66d7028b04` |
 
 ## Event Fields
 
 ```json
 {
-  "ts": "2026-08-29T18:57:20+0800",
+  "ts": "2026-08-29T19:13:23+0800",
   "file_path": "docs/researches/20260829-c0-collaboration-two-plane-authority-freeze.md",
   "severity": "medium",
   "functional_block": "src/core/collaboration",
@@ -47,7 +47,7 @@
   "matched_prefix": "src/core/collaboration",
   "architecture_domain": "runtime-harness",
   "architecture_capability": "collaboration",
-  "architecture_module": "docs/architecture/modules/runtime-harness/collaboration.md",
+  "architecture_module": "docs/architecture/domains/runtime-harness.md",
   "workstream_dir": "tasks/workstreams/runtime-harness/collaboration",
   "contract_agents": "",
   "contract_claude": "",
@@ -55,7 +55,7 @@
   "request_file": "docs/architecture/requests/runtime-harness-collaboration.md",
   "spawn_recommended": false,
   "contract_sync_required": false,
-  "event_key": "sha256:ace4ae5afab06451bd0cdf2bf0a571bdf9e809299bacb7db912f6321c79b3d2c"
+  "event_key": "sha256:7c100f7fb3d4c9682a11d1ea117eeaa5d930c9e26f4543345e706e66d7028b04"
 }
 ```
 
@@ -64,7 +64,7 @@
 ```json
 [
   {
-    "ts": "2026-08-29T18:57:20+0800",
+    "ts": "2026-08-29T19:13:23+0800",
     "file_path": "docs/researches/20260829-c0-collaboration-two-plane-authority-freeze.md",
     "severity": "medium",
     "functional_block": "src/core/collaboration",
@@ -72,7 +72,7 @@
     "matched_prefix": "src/core/collaboration",
     "architecture_domain": "runtime-harness",
     "architecture_capability": "collaboration",
-    "architecture_module": "docs/architecture/modules/runtime-harness/collaboration.md",
+    "architecture_module": "docs/architecture/domains/runtime-harness.md",
     "workstream_dir": "tasks/workstreams/runtime-harness/collaboration",
     "contract_agents": "",
     "contract_claude": "",
@@ -80,7 +80,7 @@
     "request_file": "docs/architecture/requests/runtime-harness-collaboration.md",
     "spawn_recommended": false,
     "contract_sync_required": false,
-    "event_key": "sha256:ace4ae5afab06451bd0cdf2bf0a571bdf9e809299bacb7db912f6321c79b3d2c"
+    "event_key": "sha256:7c100f7fb3d4c9682a11d1ea117eeaa5d930c9e26f4543345e706e66d7028b04"
   }
 ]
 ```
@@ -88,10 +88,9 @@
 ## Archive Resolution
 
 - Status: Resolved
-- Archived: 2026-08-29T19:00:11+0800
+- Archived: 2026-08-29T19:13:33+0800
 - Artifacts:
-- `docs/architecture/modules/runtime-harness/collaboration.md`
+- `docs/architecture/domains/runtime-harness.md`
 - `docs/researches/20260829-c0-collaboration-two-plane-authority-freeze.md`
-- `tasks/workstreams/runtime-harness/collaboration/20260829-collaboration.md`
 - `tests/unit/collaboration-authority-baseline.test.ts`
-- Note: C0 accepts the capability.runtime-harness.collaboration boundary as an additive, non-authoritative plane: zero Task/Lease/Publication/Acceptance writes, DELEGATION_PROTOCOL unbumped, collaboration provenance carried by an additive CollaborationRunContextBinding. Frozen decisions D1-D12 live in the research artifact. The ArchContext capability node and its projected module sections land in C1 with the first real src/core/collaboration source files; C0 changes no runtime source.
+- Note: C0 accepts capability.runtime-harness.collaboration as an additive, non-authoritative plane: zero Task/Lease/Publication/Acceptance writes, DELEGATION_PROTOCOL unbumped, collaboration provenance carried by an additive CollaborationRunContextBinding. Frozen decisions D1-D12 and the C0-C9 slice ledger live in the research artifact. Architecture Module points at the runtime-harness domain doc because the capability has no module yet: an archcontext node needs entrypoint path+symbol anchors and capability prefixes that exist, and docs/architecture/modules plus tasks/workstreams reject files that no declared capability owns (scripts/capability-resolver.ts:306,326). C1 registers the node with the first real src/core/collaboration source, at which point ArchContext projects the capability module, the domain listing gains its row, and repo-harness run workstream-sync ensure creates the durable ledger. C0 changes no runtime source.

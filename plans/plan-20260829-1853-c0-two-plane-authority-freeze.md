@@ -273,9 +273,8 @@ Allowed surfaces for this work package:
   `scripts/architecture-event.ts` and resolved through
   `repo-harness run archive-architecture-request`.
 - `docs/researches/*-collaboration-two-plane-authority-freeze.md` — the durable
-  freeze record carrying P1/P2/P3, the decision table and the negative proof.
-- `tasks/workstreams/runtime-harness/collaboration/` — durable capability
-  workstream ledger.
+  freeze record carrying P1/P2/P3, the decision table, the negative proof and the
+  C0–C9 slice ledger.
 - `tests/unit/collaboration-authority-baseline.test.ts` — the baseline contract
   test.
 - `tasks/current.md` via `repo-harness run refresh-current-status --write`.
@@ -283,8 +282,11 @@ Allowed surfaces for this work package:
 Forbidden: any change under `src/`; any edit to the five program plan files
 (`plans/sprints/20260828-2321-*.sprint.md` and the four
 `plans/prds/20260828-2321-*.prd.md`); `.ai/harness/policy.json`;
-`.archcontext/model/nodes/*` (the capability node lands with C1's real source
-files); anything not traceable to the task breakdown below.
+`.archcontext/model/nodes/*`, `docs/architecture/modules/`, and
+`tasks/workstreams/` — the capability node, its projected module and its
+workstream ledger all require a registered capability with existing prefixes and
+entrypoint anchors (`scripts/capability-resolver.ts:285-288,306,326`), so they
+land with C1's real source; anything not traceable to the task breakdown below.
 
 ## Oracles
 
@@ -298,20 +300,22 @@ files); anything not traceable to the task breakdown below.
 
 ## Task Breakdown
 
-- [ ] Record the baseline commit and the authority protocol inventory in the freeze research doc, including the verified `delegation_policy` negative proof.
-- [ ] Create and accept the architecture request for `capability.runtime-harness.collaboration` under `docs/architecture/requests/`, then resolve it with the freeze artifacts.
-- [ ] Write the durable freeze record under `docs/researches/` carrying P1 map, the four P2 traces, and frozen decisions 1-11 including the admission decision table and test vectors.
-- [ ] Ensure the durable capability workstream ledger under `tasks/workstreams/runtime-harness/collaboration/`.
-- [ ] Add `tests/unit/collaboration-authority-baseline.test.ts` asserting the enumerated authority protocol versions and the byte digests of the authority source files, with zero runtime behavior change.
-- [ ] Run every oracle, refresh `tasks/current.md`, and confirm `src/` is untouched.
+- [x] Record the baseline commit and the authority protocol inventory in the freeze research doc, including the verified `delegation_policy` negative proof.
+- [x] Create and accept the architecture request for `capability.runtime-harness.collaboration` under `docs/architecture/requests/`, then resolve it with the freeze artifacts.
+- [x] Write the durable freeze record under `docs/researches/` carrying P1 map, the four P2 traces, and frozen decisions D1-D12 including the admission decision table and test vectors.
+- [x] Carry the durable C0-C9 slice ledger in the freeze record; the `tasks/workstreams/runtime-harness/collaboration/` ledger lands in C1 once the capability is registered.
+- [x] Add `tests/unit/collaboration-authority-baseline.test.ts` asserting the enumerated authority protocol versions, one frozen inventory digest over the live authority constants, and the D7 negative proof, with zero runtime behavior change.
+- [x] Run every oracle, refresh `tasks/current.md`, and confirm `src/` is untouched.
 
 ## Annotations
-<!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
+
+None. All decisions are frozen in
+`docs/researches/20260829-c0-collaboration-two-plane-authority-freeze.md`.
 
 ## Task Breakdown
-- [ ] Record the baseline commit and the authority protocol inventory in the freeze research doc, including the verified `delegation_policy` negative proof.
-- [ ] Create and accept the architecture request for `capability.runtime-harness.collaboration` under `docs/architecture/requests/`, then resolve it with the freeze artifacts.
-- [ ] Write the durable freeze record under `docs/researches/` carrying P1 map, the four P2 traces, and frozen decisions 1-11 including the admission decision table and test vectors.
-- [ ] Ensure the durable capability workstream ledger under `tasks/workstreams/runtime-harness/collaboration/`.
-- [ ] Add `tests/unit/collaboration-authority-baseline.test.ts` asserting the enumerated authority protocol versions and the byte digests of the authority source files, with zero runtime behavior change.
-- [ ] Run every oracle, refresh `tasks/current.md`, and confirm `src/` is untouched.
+- [x] Record the baseline commit and the authority protocol inventory in the freeze research doc, including the verified `delegation_policy` negative proof.
+- [x] Create and accept the architecture request for `capability.runtime-harness.collaboration` under `docs/architecture/requests/`, then resolve it with the freeze artifacts.
+- [x] Write the durable freeze record under `docs/researches/` carrying P1 map, the four P2 traces, and frozen decisions D1-D12 including the admission decision table and test vectors.
+- [x] Carry the durable C0-C9 slice ledger in the freeze record; the `tasks/workstreams/runtime-harness/collaboration/` ledger lands in C1 once the capability is registered.
+- [x] Add `tests/unit/collaboration-authority-baseline.test.ts` asserting the enumerated authority protocol versions, one frozen inventory digest over the live authority constants, and the D7 negative proof, with zero runtime behavior change.
+- [x] Run every oracle, refresh `tasks/current.md`, and confirm `src/` is untouched.

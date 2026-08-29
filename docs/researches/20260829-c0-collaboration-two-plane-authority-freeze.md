@@ -6,6 +6,7 @@
 > **Sprint row**: C0 of `plans/sprints/20260828-2321-collaborative-work-exchange-agent-succession.sprint.md`
 > **Source PRD**: `plans/prds/20260828-2321-collaboration-substrate.prd.md` (Child A)
 > **Architecture request**: `docs/architecture/requests/archive/2026/runtime-harness-collaboration.md` (Resolved)
+> **Durable ledger**: this document, until C1 registers the capability node and `workstream-sync` can own `tasks/workstreams/runtime-harness/collaboration/`
 > **Machine guard**: `tests/unit/collaboration-authority-baseline.test.ts`
 > **Usage**: This is the frozen record C1–C9 read from. Do not re-derive these decisions per row; supersede this document instead of silently editing it.
 
@@ -382,6 +383,29 @@ timestamps, digest helper) built on `src/core/messages/mechanics.ts`.
 | Real provider throughput at `max_parallel_readers = 3` | C4 canary |
 | Long-run hotspot weight stability | C9 observation |
 | 60/40 exploitation/exploration split | C9 tuning, determinism preserved |
+
+## Program Slice Ledger
+
+Durable C0-C9 progress lives here until C1 registers
+`capability.runtime-harness.collaboration` as an archcontext node. The repo's
+capability registry rejects any file under `docs/architecture/modules/` or
+`tasks/workstreams/` that no declared capability owns
+(`scripts/capability-resolver.ts:306,326`), and a node needs entrypoint
+path+symbol anchors plus prefixes that exist (`:285-288`). Neither is available in
+a row that writes no source, so C0 keeps the ledger in the research artifact and
+C1 moves it to `tasks/workstreams/runtime-harness/collaboration/` through
+`repo-harness run workstream-sync ensure`.
+
+- [x] C0: two-plane authority freeze -- architecture request accepted, D1-D12 frozen, baseline authority-enumeration contract test in place, zero `src/` change.
+- [ ] C1: `CoordinationSignalV1` schema, `src/core/collaboration/common.ts`, append-only store; register the archcontext capability node, let ArchContext project the capability module, and move this ledger into the capability workstream.
+- [ ] C2: signal threads, discovery and hotspot projection.
+- [ ] C3: `WorkStateHandoffV1` and adoption receipts.
+- [ ] C4: delegated Worker contribution adapter and the real admission-bridge canary against D6.
+- [ ] C5: TaskFreeze / explicit takeover succession integration.
+- [ ] C6: collaboration-centric Work Exchange and ContextPacket, with the D3 binding gate.
+- [ ] C7: CLI/MCP and bounded context injection.
+- [ ] C8: read-only Operator collaboration surface.
+- [ ] C9: real multi-agent canary and multi-seat decision.
 
 ## Handoff Notes
 
