@@ -1,0 +1,68 @@
+schemaVersion: archcontext.flow/v1
+id: flow.collaboration.publish-signal
+capabilityId: capability.runtime-harness.collaboration
+name: Publish one coordination signal without minting authority
+applicability: required
+participants:
+  - id: collaboration
+    nodeId: capability.runtime-harness.collaboration
+  - id: engineer-bindings
+    nodeId: capability.runtime-harness.engineer-bindings
+  - id: signal-store
+    nodeId: component.collaboration.primary
+steps:
+  - id: gate-mutation
+    from: collaboration
+    to: signal-store
+    label: Refuse every mutation unless collaboration.mode has been promoted past off
+    evidence:
+      entrypointId: entrypoint.collaboration.publish
+      sourceSymbol: publishCoordinationSignal
+      sinkId: sink.collaboration.mutation-gate
+  - id: derive-actor
+    from: collaboration
+    to: engineer-bindings
+    label: Resolve the authenticated principal and fence it against a second read of the principal mapping
+    evidence:
+      entrypointId: entrypoint.collaboration.actor-derivation
+      sourceSymbol: resolveModuleEngineerActor
+      sinkId: sink.collaboration.authenticated-principal
+outcomes:
+  - id: published
+    kind: success
+    label: A new identity samples the recorded time once and lands as one immutable file
+    steps:
+      - id: build-record
+        from: collaboration
+        to: signal-store
+        label: Content-address the signal and write it with an exclusive create plus fsync
+        evidence:
+          entrypointId: entrypoint.collaboration.publish
+          sourceSymbol: publishCoordinationSignal
+          sinkId: sink.collaboration.signal-schema
+    terminal:
+      participant: collaboration
+      label: Return the persisted signal; no Task, Lease, Publication or Acceptance byte moves
+  - id: refused
+    kind: error
+    label: An invalid record, an unresolvable reference or an unreadable shard fails closed
+    steps:
+      - id: reject-record
+        from: collaboration
+        to: signal-store
+        label: Reject an unknown field, an unsupported actor kind or a stale digest before any write
+        evidence:
+          entrypointId: entrypoint.collaboration.shared-mechanics
+          sourceSymbol: validateCoordinationSignal
+          sinkId: sink.collaboration.actor-union
+      - id: reject-store
+        from: collaboration
+        to: signal-store
+        label: Fail loud on an unreadable or non-canonical shard rather than serving a healthy empty store
+        evidence:
+          entrypointId: entrypoint.collaboration.read
+          sourceSymbol: listCoordinationSignals
+          sinkId: sink.collaboration.record-identity
+    terminal:
+      participant: collaboration
+      label: Surface the typed rejection; a republished identity reuses its recorded time instead of re-sampling the clock

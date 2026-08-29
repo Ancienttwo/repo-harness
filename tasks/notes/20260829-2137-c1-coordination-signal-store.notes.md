@@ -73,7 +73,39 @@
 
 ## Open Questions
 
-- None.
+- **The architecture projection for a new capability node needs an acceptance
+  step this repo exposes no lever for.** Registering
+  `capability.runtime-harness.collaboration` is a `node-added` major change, so
+  the projection stops at `human-action-required` /
+  `unresolved-major-change` and the module doc's machine region is never
+  rendered. `ProjectionRequestV1.acceptedChange` is the field that clears it, and
+  `rg -n acceptedChange src/` finds no production caller: only
+  `src/effects/architecture/projection-orchestrator.ts` accepts it as an option,
+  and neither the CLI (`repo-harness architecture-projection`) nor the Stop hook
+  ever sets it. Reproduce with:
+
+  ```text
+  bun src/cli/index.ts architecture-projection check --json
+    -> status "adoption-required"
+  bun src/cli/index.ts architecture-projection adopt --json --adoption-plan-id <id from archctx docs adopt --profile repo-harness/v1>
+    -> status "human-action-required", reasonCode "unresolved-major-change"
+  node_modules/.bin/archctx docs adopt --profile repo-harness/v1 --approved --adoption-plan-id <id> --expected-worktree-digest <digest>
+    -> AC_PRECONDITION_FAILED projection-adoption-fixed-point-unproven
+  ```
+
+  The repo's own history lands this as a separate commit: `d634cab1` added the
+  `interface-change` capability and bumped the same count assertions, and the
+  module doc only appeared later in `60677edc`
+  (`docs(architecture): project ME-4B authority`). C1 leaves
+  `docs/architecture/modules/runtime-harness/collaboration.md` with its human
+  P3/P4 sections plus the `## 1.` / `## 2.` placeholders the adoption range
+  requires, so one projection run fills the machine region in place.
+
+  A drain attempt (`architecture-projection drain`) dead-letters on this and
+  makes `check-architecture-sync` strict fail. That dead letter is ignored
+  runtime cache under `.ai/harness/architecture-projection/`, not a durable
+  finding; it was removed after being recorded here so a later session's gate is
+  not poisoned by a cache entry with no commit explaining it.
 
 ## Evidence Links
 

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.collaboration.engineer-bindings
+kind: calls
+source: capability.runtime-harness.collaboration
+target: capability.runtime-harness.engineer-bindings
+intent: "Derive the publishing actor from the authenticated principal and current Binding instead of accepting a declared identity"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.collaboration.primary
+kind: calls
+source: capability.runtime-harness.collaboration
+target: component.collaboration.primary
+intent: "Persist immutable coordination signals under a per-thread lock without writing any delivery store"

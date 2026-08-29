@@ -1,13 +1,12 @@
 # runtime-harness/collaboration 架構文檔
 
-> **狀態**:`active`
-> **Capability ID**:`capability.runtime-harness.collaboration`(kind `capability`)
-> **Matched Prefixes**:`src/core/collaboration`、`src/effects/collaboration`
-> **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
-> **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成;本能力節點在 C1 註冊,首次投影會在下次 ArchContext 運行時寫入機器區。本文檔不記錄出處;投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
+## 1. P1:能力架構地圖
 
-Publishes append-only coordination signals with Host-derived identity and
-recorded time, holding zero Task, Lease, Publication or Acceptance authority.
+(待 ArchContext 投影)
+
+## 2. P2:端到端數據流
+
+(待 ArchContext 投影)
 
 ## 3. P3:設計決策與不變量
 
