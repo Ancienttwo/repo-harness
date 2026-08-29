@@ -73,6 +73,15 @@ the freeze record keeps only a pointer.
   `src/core/collaboration/thread-projection.ts`: `{thread_key, handoff_id,
   adoption_count}`, injected as a collection that defaults to empty. C3 fills it
   from real handoff and adoption records without changing C2.
+- The `CollaborationHandoffFactV1` seam above is still unfilled after C3, and
+  that is deliberate rather than an omission. C3 delivered the handoff and
+  adoption stores; nothing in `src/` constructs a handoff fact from them, and
+  only the C2 tests supply literals. C3's scope excluded the context-packet
+  builder and every thread/hotspot file, and Child PRD A puts the store reader
+  in C6, so C6 is the row that joins `listWorkStateHandoffs()` and
+  `listHandoffAdoptionReceipts()` onto the projection. Treat the C2 note's
+  "C3 fills it" as the expectation at the time it was written, not as landed
+  state.
 - C3 extracted the durable create-once publish protocol and the server-side
   actor derivation out of `signal-store.ts` into
   `src/effects/collaboration/record-store.ts` and `actor.ts`. C4-C9 add their
