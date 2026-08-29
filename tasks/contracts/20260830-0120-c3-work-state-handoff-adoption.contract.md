@@ -43,7 +43,9 @@ Publication or Acceptance byte moves.
     from `signal-store.ts` with zero behavior change so three stores share one
     copy instead of three
   - `src/effects/collaboration/signal-store.ts` rewired onto those two modules
-  - four collaboration test files for this row
+  - four collaboration test files for this row, plus
+    `tests/helpers/collaboration-store-fixture.ts` and C1's store test rewired
+    onto it, so the three store tests share one disposable-repository fixture
   - the capability workstream ledger and this row's notes
 - Out of scope:
   - `src/core/collaboration/common.ts` and `signal.ts` (C1-frozen; a needed
@@ -130,6 +132,10 @@ allowed_paths:
   - tests/unit/collaboration-adoption.test.ts
   - tests/effects/collaboration-handoff-store.test.ts
   - tests/effects/collaboration-adoption-store.test.ts
+  # the three-actor disposable repository the three store tests share, and C1's
+  # store test rewired onto it so the isolation rules live in one place
+  - tests/helpers/collaboration-store-fixture.ts
+  - tests/effects/collaboration-signal-store.test.ts
 ```
 
 ## Evidence Requirements
