@@ -7,7 +7,7 @@
 > **Architecture Domain**: `runtime-harness`
 > **Architecture Capability**: `collaboration`
 > **Architecture Module**: `docs/architecture/modules/runtime-harness/collaboration.md`
-> **Source Plan**: plans/plan-20260829-2137-c1-coordination-signal-store.md
+> **Source Plan**: plans/plan-20260830-0121-c2-thread-hotspot-projection.md
 > **Current Slice**: todo-01
 > **Last Handoff**: `.ai/harness/handoff/current.md`
 > **Architecture Request**: docs/architecture/requests/archive/2026/runtime-harness-collaboration.md
@@ -28,7 +28,7 @@ the freeze record keeps only a pointer.
 
 - [x] C0: two-plane authority freeze -- architecture request accepted, D1-D12 frozen, baseline authority-enumeration contract test in place, zero `src/` change.
 - [x] C1: `CoordinationSignalV1` schema, `src/core/collaboration/common.ts`, append-only store; capability node registered, architecture module projected, this ledger moved out of the freeze record, `collaboration.mode` wired to `off`, and the deferred closed inclusion scan landed.
-- [ ] C2: signal threads, discovery and hotspot projection.
+- [x] C2: signal threads, discovery and hotspot projection -- deterministic thread aggregation on exact opaque keys, the capped integer hotspot function, the closed structural opportunity set, `RelevantSignalV1` retrieval with the 60/40 exploitation/exploration quota, and `CollaborationContextPacketV1` inside the 1,500 estimated-token budget. Pure read model: no store, no cache, no clock, no new protocol.
 - [ ] C3: `WorkStateHandoffV1` and adoption receipts.
 - [ ] C4: delegated Worker contribution adapter and the real admission-bridge canary against D6.
 - [ ] C5: TaskFreeze / explicit takeover succession integration.
@@ -61,6 +61,19 @@ the freeze record keeps only a pointer.
   `tasks/notes/20260829-2137-c1-coordination-signal-store.notes.md`. C2-C9 add no
   capability, so the next row to need this path is the first one outside this
   program.
+- C2 declared no new archcontext entrypoint. Adding one to
+  `capability.runtime-harness.collaboration.yaml` classifies as
+  `unresolved-major-change` (`entrypoint-changed`, `responsibility-changed`) and
+  would need the same acceptance path C1 recorded as tool debt above. C2 changed
+  only `extensions.verification` and let the source size bucket move
+  (`2-5 files / 1000-2000 lines` -> `5-10 files / 2000-5000 lines`), which the
+  projection applies automatically. Declaring the C2 entrypoints is available as
+  a separate architecture slice whenever that acceptance verb lands.
+- The C3 seam is `CollaborationHandoffFactV1` in
+  `src/core/collaboration/thread-projection.ts`: `{thread_key, handoff_id,
+  adoption_count}`, injected as a collection that defaults to empty. C3 fills it
+  from real handoff and adoption records without changing C2.
+
 - Keep architecture facts in
   `docs/architecture/modules/runtime-harness/collaboration.md`; keep execution
   progress here.
