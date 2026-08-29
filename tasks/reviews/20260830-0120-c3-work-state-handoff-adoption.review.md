@@ -1,16 +1,16 @@
 # Task Review: c3-work-state-handoff-adoption
 
-> **Status**: Pending
+> **Status**: Accepted
 > **Plan**: plans/plan-20260830-0120-c3-work-state-handoff-adoption.md
 > **Contract**: tasks/contracts/20260830-0120-c3-work-state-handoff-adoption.contract.md
 > **Notes File**: tasks/notes/20260830-0120-c3-work-state-handoff-adoption.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-08-30 01:20
-> **Recommendation**: fail
+> **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:3bd2cedb7c7223e2f6f8d54ac6de603acd4309ea87c8440cdf62b305e977afea
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
+> **Reviewed Target Revision**: cd3feff24aaf555e12f4434d4d2358011220807a
 
 ## Human Review Card
 
@@ -71,17 +71,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Codex
+> **Source**: codex-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:3bd2cedb7c7223e2f6f8d54ac6de603acd4309ea87c8440cdf62b305e977afea
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: cd3feff24aaf555e12f4434d4d2358011220807a
+> **Verification Evidence SHA256**: sha256:4f63a2fb706811aa4095ca44e26a114059a3e8c8f4b34a923711821d738fb350
+> **Issued At**: 2026-08-29T20:49:49.198Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: C3 WorkStateHandoffV1 and non-exclusive adoption receipts accepted after two external review rounds. Extracts C1's signal store into a shared record-store.ts/actor.ts substrate for C4-C9, preserving C1's atomicity invariants verbatim: staged write, fsync, link rather than rename so first-writer-wins survives, a single staging-segment list driving both builder and matcher, and 64-hex record-id validation before every join. Adds handoff and adoption stores plus an archcontext model realignment that re-anchors selectors the extraction had deleted. The round-1 P1 is closed: assertReceiptBindsItsHandoff resolves handoff_id and requires the persisted handoff's handoff_sha256 to match, failing closed on both a digest mismatch and a missing handoff across readHandoffAdoptionReceipt, listHandoffAdoptionReceipts and transitively listAdoptersOfWorkStateHandoff, so a forged receipt can no longer be counted as an adopter; the list path resolves the handoff shard once into a Map without weakening the check. Write and read paths keep deliberately distinct typed errors: a conflicting persisted record on adopt is a conflict, corrupt data on read is unavailable. C0's freeze is intact with the authority inventory and digest untouched, no delivery-plane write and no reverse import, and C1's closed protocol scan stays satisfied because handoff.ts and adoption.ts consume COLLABORATION_PROTOCOL without exporting one. Residual accepted as non-blocking: handoff publish locks per-thread where D9 specifies per-handoff, functionally safe but needing either a split or a recorded deviation.
 - Findings: none
 
 ## Behavior Diff Notes
