@@ -48,15 +48,17 @@
 - `repo-harness run architecture-queue record --file` could not seed the request
   either: `classify_change` returns `none unrelated` for `docs/` and `tests/`
   paths and only assigns a capability for `src/` paths, so no card is produced for
-  a row that touches no source. The card was created through the same helper the
-  queue uses internally (`scripts/architecture-event.ts upsert-request`) with an
-  explicitly built event, then resolved through
-  `repo-harness run archive-architecture-request`.
-- `docs/architecture/modules/runtime-harness/collaboration.md` was created because
-  `archive-architecture-request` fails closed when the referenced architecture
-  module is missing. It is explicitly marked human-authored, not an ArchContext
-  projection; C1 registers the node and ArchContext takes over the machine
-  sections.
+  a row that touches no source. The queue's own path is `record-event`, which adds
+  the queue lock, the event JSONL and the request index; this row used the helper's
+  card-only subcommand `scripts/architecture-event.ts upsert-request` with an
+  explicitly built event, then resolved it through
+  `repo-harness run archive-architecture-request`. Card-only is sufficient here
+  because the card was archived immediately and
+  `bun scripts/architecture-event.ts reindex-requests --check` passes.
+- The plan's last Task Breakdown item originally claimed this row refreshes
+  `tasks/current.md`. It does not, deliberately: the finish lifecycle owns that
+  refresh (`archive-workflow.sh:702`), so the row was reworded rather than the
+  refresh performed here.
 - The sprint's C0 "Expected files" lists `plans/prds/*` and `plans/sprints/*`.
   Those five program files were already produced and are out of scope for this
   row; C0 added only its own work-package plan.

@@ -305,7 +305,7 @@ land with C1's real source; anything not traceable to the task breakdown below.
 - [x] Write the durable freeze record under `docs/researches/` carrying P1 map, the four P2 traces, and frozen decisions D1-D12 including the admission decision table and test vectors.
 - [x] Carry the durable C0-C9 slice ledger in the freeze record; the `tasks/workstreams/runtime-harness/collaboration/` ledger lands in C1 once the capability is registered.
 - [x] Add `tests/unit/collaboration-authority-baseline.test.ts` asserting the enumerated authority protocol versions, one frozen inventory digest over the live authority constants, and the D7 negative proof, with zero runtime behavior change.
-- [x] Run every oracle, refresh `tasks/current.md`, and confirm `src/` is untouched.
+- [x] Run every oracle and confirm `src/` is untouched; `tasks/current.md` is refreshed by the finish lifecycle (`archive-workflow.sh`), not by this row.
 
 ## Annotations
 
@@ -318,4 +318,4 @@ None. All decisions are frozen in
 - [x] Write the durable freeze record under `docs/researches/` carrying P1 map, the four P2 traces, and frozen decisions D1-D12 including the admission decision table and test vectors.
 - [x] Carry the durable C0-C9 slice ledger in the freeze record; the `tasks/workstreams/runtime-harness/collaboration/` ledger lands in C1 once the capability is registered.
 - [x] Add `tests/unit/collaboration-authority-baseline.test.ts` asserting the enumerated authority protocol versions, one frozen inventory digest over the live authority constants, and the D7 negative proof, with zero runtime behavior change.
-- [x] Run every oracle, refresh `tasks/current.md`, and confirm `src/` is untouched.
+- [x] Run every oracle and confirm `src/` is untouched; `tasks/current.md` is refreshed by the finish lifecycle (`archive-workflow.sh`), not by this row.

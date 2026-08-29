@@ -44,9 +44,11 @@ later row inherits a decided boundary instead of negotiating one.
 
 ### Baseline source digests at `main@a490a5ef`
 
-Recorded as the byte baseline for the authority-preservation evidence required by
-the sprint's Program Verification Matrix. A digest change on any of these files
-during C1–C9 must be justified in the row that changed it.
+Recorded as the C0 source-byte baseline for the sprint row's 「现有 authority bytes
+不变」 clause. A digest change on any of these files during C1–C9 must be justified
+in the row that changed it. This table does not satisfy the Program Verification
+Matrix's authority-preservation row: that row asks for before/after **store**
+digests and is owned by the first row that writes a collaboration store (C1).
 
 | File | sha256 |
 |---|---|
