@@ -3,7 +3,7 @@
 > **Status**: Approved
 > **Slug**: `collaborative-work-exchange-agent-succession`
 > **Created**: 2026-08-28T23:21:55-07:00
-> **Updated**: 2026-08-29T00:41:20-07:00
+> **Updated**: 2026-08-29 21:13
 > **Source PRD**: `plans/prds/20260828-2321-collaborative-work-exchange-agent-succession.prd.md`
 > **Child PRD A (Active)**: `plans/prds/20260828-2321-collaboration-substrate.prd.md`
 > **Child PRD B (Deferred — Phase 2)**: `plans/prds/20260828-2321-work-exchange-independent-review.prd.md`
@@ -151,7 +151,7 @@ No step skips a state。`independent_review` 与 `guarded_merge` 在本 Sprint �
 
 | # | Status | Task | Mode | Acceptance | Plan |
 |---:|:---:|---|---|---|---|
-| 1 | [ ] | C0 — freeze collaboration/delivery two-plane authority | contract | Architecture request 明确 signals/handoffs/participants 无 Task、Lease、Publication、Acceptance authority；现有 `DelegatedRunIntent.context_packet_sha256` 真实语义冻结；`CollaborationRunContextBindingV1` 决策完成；P0 actor 支持矩阵完成；delegation policy bridge 设计完成；admission 决策表与测试向量冻结（`max_parallel_readers=3`；active readers 0/1/2 放行、3 拒绝；reader 状态陈旧或未知 fail closed）；baseline 负面证明记录在案（当前 `admitReadOnlyDelegation()` 不消费 `delegation_policy`）；ArtifactRef 复用决策完成；现有 authority bytes 不变 | (pending) |
+| 1 | [x] | C0 — freeze collaboration/delivery two-plane authority | contract | Architecture request 明确 signals/handoffs/participants 无 Task、Lease、Publication、Acceptance authority；现有 `DelegatedRunIntent.context_packet_sha256` 真实语义冻结；`CollaborationRunContextBindingV1` 决策完成；P0 actor 支持矩阵完成；delegation policy bridge 设计完成；admission 决策表与测试向量冻结（`max_parallel_readers=3`；active readers 0/1/2 放行、3 拒绝；reader 状态陈旧或未知 fail closed）；baseline 负面证明记录在案（当前 `admitReadOnlyDelegation()` 不消费 `delegation_policy`）；ArtifactRef 复用决策完成；现有 authority bytes 不变 | `plans/archive/plan-20260829-1853-c0-two-plane-authority-freeze.md` |
 | 2 | [ ] | C1 — `CoordinationSignalV1` schema, `common.ts` and append-only store | contract | signal ID 与记录时间由 Host/Server 派生；记录时间对重试稳定：delegated 贡献取该次运行精确的 process receipt / 持久化观测时间，直接发布在第一次 idempotency 事件里冻结时间，重试复用已记录值、绝不重采墙钟；每条 signal 身份级原子写；supersede 仅限同 actor lineage；source refs 必须已存在且同仓库；scope refs 携带 revision；`common.ts` 归 C1 独占；三个 actor 可并发发布；同 id 同 payload 幂等；不同 payload 冲突；Task/Lease bytes 零变化 | (pending) |
 | 3 | [ ] | C2 — signal threads, discovery and hotspot projection | contract | opportunity 只用结构化闭集理由（`open_request` / `unverified_hypothesis` / `stalled_thread` 已移除）；检索理由为闭集代码；利用/探索配额生效；digest 不含墙钟；`recent_activity` 与 hotspot 的新近度相对 source snapshot 里的最新事件计算（确定性 epoch），不读运行时墙钟；同输入 byte-identical；thread 由 opaque key 聚合；top-K context ≤1,500 tokens；无 LLM 状态推断 | (pending) |
 | 4 | [ ] | C3 — `WorkStateHandoffV1` and adoption receipts | contract | handoff 包含 attempted paths、dead ends、findings、next actions；`execution_context` 判别联合；receipt 带 `handoff_sha256`；多对多采用成立且同采用者幂等；协议与文案不使用 claim 词汇；adoption 不创建 Claim | (pending) |
@@ -645,3 +645,4 @@ Keep this section last; `repo-harness run sprint-backlog complete-task` appends 
 
 | When | Task | Plan | Result |
 |---|---|---|---|
+| 2026-08-29 21:13 | C0 — freeze collaboration/delivery two-plane authority | `plans/archive/plan-20260829-1853-c0-two-plane-authority-freeze.md` | done |

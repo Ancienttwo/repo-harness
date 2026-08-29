@@ -1,0 +1,526 @@
+/**
+ * C0 — collaboration / delivery two-plane authority freeze.
+ *
+ * Sprint row C0 of
+ * `plans/sprints/20260828-2321-collaborative-work-exchange-agent-succession.sprint.md`.
+ * Frozen decisions: `docs/researches/20260829-c0-collaboration-two-plane-authority-freeze.md`.
+ *
+ * This file adds no behavior. It enumerates the delivery-plane authorities that
+ * the collaboration substrate (C1-C9) must leave untouched, freezes their
+ * protocol versions and wire identities into one canonical digest, and pins the
+ * baseline negative proof that today's read-only delegation admission does not
+ * consume `delegation_policy`.
+ *
+ * The inventory is not hand-maintained against the source: every module it draws
+ * from is also imported as a namespace, and `C0 authority inventory completeness`
+ * below asserts set equality between what the module exports and what the
+ * inventory declares. Adding a `*_KIND` or `*_PROTOCOL` export to any inventoried
+ * module turns this file red until the inventory is updated.
+ */
+import { describe, expect, test } from 'bun:test';
+import { createHash } from 'crypto';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
+import * as delegation from '../../src/core/engineers/delegation';
+import {
+  MODULE_MESSAGE_BODY_MAX_BYTES,
+  MODULE_MESSAGE_CONTEXT_END,
+  MODULE_MESSAGE_CONTEXT_START,
+  MODULE_MESSAGE_RESOURCE_MAX_COUNT,
+} from '../../src/core/engineers/module-message';
+import * as principalClaim from '../../src/core/engineers/principal-claim';
+import * as profileBinding from '../../src/core/engineers/profile-binding';
+import * as scheduling from '../../src/core/engineers/scheduling';
+import * as taskFreeze from '../../src/core/engineers/task-freeze';
+import * as fleetBoard from '../../src/core/fleet/board';
+import {
+  TASK_MESSAGE_BODY_MAX_BYTES,
+  TASK_MESSAGE_CONTEXT_END,
+  TASK_MESSAGE_CONTEXT_START,
+} from '../../src/core/fleet/task-message';
+import * as taskOffer from '../../src/core/fleet/task-offer';
+import * as productAcceptance from '../../src/core/integration/product-acceptance';
+import * as mergeReadiness from '../../src/core/publication/merge-readiness';
+import * as publicationLifecycle from '../../src/core/publication/publication-lifecycle';
+import * as publicationReceipt from '../../src/core/publication/publication-receipt';
+import * as coordinationIdentity from '../../src/core/state/coordination-identity';
+import * as projectBoard from '../../src/core/state/project-board';
+import { DELEGATED_RUN_STORE_RELATIVE_ROOT } from '../../src/effects/engineers/delegated-run-store';
+import { INTEGRATION_EVIDENCE_ROOT_RELATIVE_PATH } from '../../src/effects/integration/product-acceptance';
+import { PUBLICATION_RECEIPTS_RELATIVE_PATH } from '../../src/effects/publication/publication-receipt';
+import { COORDINATION_ROOT_RELATIVE_PATH } from '../../src/effects/state/coordination-lease-store';
+
+const REPO_ROOT = join(import.meta.dir, '..', '..');
+
+const FREEZE_RECORD_RELATIVE_PATH =
+  'docs/researches/20260829-c0-collaboration-two-plane-authority-freeze.md';
+
+interface AuthorityEntry {
+  /** Delivery plane this authority belongs to. */
+  readonly plane: 'task' | 'lease' | 'publication' | 'acceptance' | 'delegation';
+  readonly authority: string;
+  readonly protocol: number;
+  readonly kinds: readonly string[];
+  readonly storeRoot: string | null;
+}
+
+/**
+ * The frozen inventory. Values are read from the live exported constants, so the
+ * digest below moves only when a real authority identity moves — not when a
+ * comment or an unrelated helper in the same file changes.
+ */
+const AUTHORITY_INVENTORY: readonly AuthorityEntry[] = [
+  {
+    plane: 'lease',
+    authority: 'coordination-lease',
+    protocol: coordinationIdentity.COORDINATION_PROTOCOL,
+    kinds: [coordinationIdentity.LEASE_OWNER_KIND],
+    storeRoot: COORDINATION_ROOT_RELATIVE_PATH,
+  },
+  {
+    plane: 'task',
+    authority: 'engineer-principal-claim',
+    protocol: principalClaim.ENGINEER_PRINCIPAL_PROTOCOL,
+    kinds: [
+      principalClaim.ENGINEER_PRINCIPAL_KIND,
+      principalClaim.ENGINEER_PRINCIPAL_MAPPING_KIND,
+      principalClaim.CLAIM_ACTOR_RECEIPT_KIND,
+    ],
+    storeRoot: 'repo-harness/engineers/v1/claim-actors',
+  },
+  {
+    plane: 'task',
+    authority: 'engineer-profile-binding',
+    protocol: profileBinding.ENGINEER_PROFILE_PROTOCOL,
+    kinds: [
+      profileBinding.ENGINEER_PROFILE_KIND,
+      profileBinding.ENGINEER_BINDING_KIND,
+      profileBinding.ENGINEER_BINDING_EVENT_KIND,
+      profileBinding.ENGINEER_BINDING_CURRENT_KIND,
+    ],
+    storeRoot: null,
+  },
+  {
+    plane: 'task',
+    authority: 'work-graph',
+    protocol: scheduling.WORK_GRAPH_PROTOCOL,
+    kinds: [scheduling.WORK_GRAPH_KIND],
+    storeRoot: null,
+  },
+  {
+    plane: 'task',
+    authority: 'engineer-offer',
+    protocol: scheduling.ENGINEER_OFFER_PROTOCOL,
+    kinds: [scheduling.ENGINEER_OFFER_KIND, scheduling.ENGINEER_OFFERS_KIND],
+    storeRoot: null,
+  },
+  {
+    /**
+     * The board document has no `kind` field: `BOARD_PROTOCOL` is a field of the
+     * composite revision preimage, not a wire envelope. It is inventoried
+     * because `collectRepoTaskOffers()`
+     * (`src/effects/fleet/acquire.ts:200-236`) derives every `TaskOfferV1` from
+     * its cards, so a change to this projection changes `execution_readiness`
+     * and therefore which row `fleet acquire` may claim.
+     */
+    plane: 'task',
+    authority: 'project-board',
+    protocol: projectBoard.BOARD_PROTOCOL,
+    kinds: [],
+    storeRoot: null,
+  },
+  {
+    plane: 'task',
+    authority: 'task-offer',
+    protocol: taskOffer.TASK_OFFER_PROTOCOL,
+    kinds: [taskOffer.TASK_OFFER_KIND],
+    storeRoot: null,
+  },
+  {
+    plane: 'task',
+    authority: 'fleet-offers',
+    protocol: taskOffer.FLEET_OFFERS_PROTOCOL,
+    kinds: [taskOffer.FLEET_OFFERS_KIND],
+    storeRoot: null,
+  },
+  {
+    plane: 'task',
+    authority: 'fleet-board',
+    protocol: fleetBoard.FLEET_BOARD_PROTOCOL,
+    kinds: [fleetBoard.FLEET_BOARD_KIND],
+    storeRoot: null,
+  },
+  {
+    plane: 'task',
+    authority: 'task-freeze-receipt',
+    protocol: taskFreeze.TASK_FREEZE_PROTOCOL,
+    kinds: [taskFreeze.TASK_FREEZE_KIND],
+    storeRoot: 'repo-harness/engineers/v1/task-freezes',
+  },
+  {
+    plane: 'publication',
+    authority: 'publication-receipt',
+    protocol: publicationReceipt.PUBLICATION_RECEIPT_PROTOCOL,
+    kinds: [
+      publicationReceipt.PUBLICATION_RECEIPT_KIND,
+      publicationReceipt.PUBLICATION_CREATE_INTENT_KIND,
+      publicationReceipt.PUBLICATION_PREPARE_KIND,
+    ],
+    storeRoot: PUBLICATION_RECEIPTS_RELATIVE_PATH,
+  },
+  {
+    plane: 'publication',
+    authority: 'publication-lineage',
+    protocol: publicationLifecycle.PUBLICATION_LINEAGE_PROTOCOL,
+    kinds: [publicationLifecycle.PUBLICATION_LINEAGE_KIND],
+    storeRoot: null,
+  },
+  {
+    plane: 'publication',
+    authority: 'publication-integration-observation',
+    protocol: publicationLifecycle.PUBLICATION_INTEGRATION_OBSERVATION_PROTOCOL,
+    kinds: [publicationLifecycle.PUBLICATION_INTEGRATION_OBSERVATION_KIND],
+    storeRoot: null,
+  },
+  {
+    plane: 'publication',
+    authority: 'merge-readiness',
+    protocol: mergeReadiness.MERGE_READINESS_PROTOCOL,
+    kinds: [mergeReadiness.MERGE_READINESS_KIND],
+    storeRoot: null,
+  },
+  {
+    plane: 'acceptance',
+    authority: 'product-acceptance',
+    protocol: productAcceptance.INTEGRATION_CONTRACT_PROTOCOL,
+    kinds: [
+      productAcceptance.INTEGRATION_CONTRACT_KIND,
+      productAcceptance.INTEGRATION_ENVELOPE_KIND,
+      productAcceptance.ACCEPTANCE_MATRIX_KIND,
+      productAcceptance.PRODUCT_ACCEPTANCE_PROJECTION_KIND,
+    ],
+    storeRoot: INTEGRATION_EVIDENCE_ROOT_RELATIVE_PATH,
+  },
+  {
+    plane: 'delegation',
+    authority: 'read-only-delegation',
+    protocol: delegation.DELEGATION_PROTOCOL,
+    kinds: [
+      delegation.LOGICAL_ROLE_PROFILE_KIND,
+      delegation.CODEX_READ_ONLY_CAPABILITY_KIND,
+      delegation.EXECUTION_PACKET_KIND,
+      delegation.DELEGATION_ENVELOPE_KIND,
+      delegation.DELEGATION_ADMISSION_RECEIPT_KIND,
+      delegation.DELEGATED_RUN_INTENT_KIND,
+      delegation.DELEGATED_RUN_LAUNCH_CLAIM_KIND,
+      delegation.DELEGATED_RUN_OBSERVATION_KIND,
+      delegation.WORKER_RUN_REF_KIND,
+      delegation.WORKER_RESULT_KIND,
+      delegation.CODEX_READ_ONLY_ADAPTER_KIND,
+    ],
+    storeRoot: DELEGATED_RUN_STORE_RELATIVE_ROOT,
+  },
+];
+
+interface AuthoritySource {
+  /** Repo-relative module path, carried so a set-equality failure names the file. */
+  readonly module: string;
+  /** Namespace import of that module; its exports are read at test time. */
+  readonly exports: Readonly<Record<string, unknown>>;
+  /** Inventory authorities whose wire identity this module owns. */
+  readonly authorities: readonly string[];
+}
+
+/**
+ * Every module `AUTHORITY_INVENTORY` draws a constant from. The completeness
+ * tests below treat each module's exported `*_KIND` / `*_PROTOCOL` surface as the
+ * source of truth and the inventory as the thing that must match it, so a new
+ * wire identity cannot be added to an inventoried module without failing here
+ * first.
+ *
+ * Membership is not curated by taste. The inclusion criterion and the
+ * clause-by-clause adjudication of every `src/core/**` module that exports a
+ * `*_PROTOCOL` and is *not* listed here are frozen in
+ * `docs/researches/20260829-c0-collaboration-two-plane-authority-freeze.md`,
+ * section 「納入判據與排除清單」. Adding or removing a module here without
+ * moving that section is a silent re-baseline.
+ *
+ * Deliberately deferred to C1: the closed scan — sweeping `src/core/**` for
+ * `*_PROTOCOL` exports and asserting the result equals
+ * `AUTHORITY_SOURCE_MODULES` union an explicit `DELIBERATELY_EXCLUDED` list.
+ * C0 writes no `src/`, so every module such a scan could find already exists and
+ * has already been adjudicated by hand; the assertion would only restate today's
+ * split and would be calibrated against zero new samples. C1 adds
+ * `src/core/collaboration/` — the first module the criterion has to classify
+ * without hindsight — and owns the scan together with the exclusion list it
+ * calibrates against.
+ */
+const AUTHORITY_SOURCE_MODULES: readonly AuthoritySource[] = [
+  {
+    module: 'src/core/state/coordination-identity.ts',
+    exports: coordinationIdentity,
+    authorities: ['coordination-lease'],
+  },
+  {
+    module: 'src/core/engineers/principal-claim.ts',
+    exports: principalClaim,
+    authorities: ['engineer-principal-claim'],
+  },
+  {
+    module: 'src/core/engineers/profile-binding.ts',
+    exports: profileBinding,
+    authorities: ['engineer-profile-binding'],
+  },
+  {
+    module: 'src/core/engineers/scheduling.ts',
+    exports: scheduling,
+    authorities: ['work-graph', 'engineer-offer'],
+  },
+  {
+    module: 'src/core/state/project-board.ts',
+    exports: projectBoard,
+    authorities: ['project-board'],
+  },
+  {
+    module: 'src/core/fleet/task-offer.ts',
+    exports: taskOffer,
+    authorities: ['task-offer', 'fleet-offers'],
+  },
+  {
+    module: 'src/core/fleet/board.ts',
+    exports: fleetBoard,
+    authorities: ['fleet-board'],
+  },
+  {
+    module: 'src/core/engineers/task-freeze.ts',
+    exports: taskFreeze,
+    authorities: ['task-freeze-receipt'],
+  },
+  {
+    module: 'src/core/publication/publication-receipt.ts',
+    exports: publicationReceipt,
+    authorities: ['publication-receipt'],
+  },
+  {
+    module: 'src/core/publication/publication-lifecycle.ts',
+    exports: publicationLifecycle,
+    authorities: ['publication-lineage', 'publication-integration-observation'],
+  },
+  {
+    module: 'src/core/publication/merge-readiness.ts',
+    exports: mergeReadiness,
+    authorities: ['merge-readiness'],
+  },
+  {
+    module: 'src/core/integration/product-acceptance.ts',
+    exports: productAcceptance,
+    authorities: ['product-acceptance'],
+  },
+  {
+    module: 'src/core/engineers/delegation.ts',
+    exports: delegation,
+    authorities: ['read-only-delegation'],
+  },
+];
+
+/**
+ * Frozen at `main@a490a5ef76b439228a4b3282934c29ba15090cdf`. A change here is an
+ * authority change: it must be justified by the sprint row that caused it, not
+ * silently re-baselined.
+ */
+const FROZEN_INVENTORY_SHA256 =
+  'sha256:6a49057e17a921e78773f358e31b487c9402c9f828f14480ef705c5ac96fcb64';
+
+function inventoryDigest(): string {
+  return `sha256:${createHash('sha256').update(JSON.stringify(AUTHORITY_INVENTORY), 'utf8').digest('hex')}`;
+}
+
+/** Values of every export whose name ends in `suffix`, in a stable order. */
+function exportedConstantValues(
+  moduleExports: Readonly<Record<string, unknown>>,
+  suffix: string,
+): readonly unknown[] {
+  return sortedValues(
+    Object.entries(moduleExports)
+      .filter(([name]) => name.endsWith(suffix))
+      .map(([, value]) => value),
+  );
+}
+
+function sortedValues(values: readonly unknown[]): readonly unknown[] {
+  return [...values].sort((left, right) => {
+    const a = String(left);
+    const b = String(right);
+    return a < b ? -1 : a > b ? 1 : 0;
+  });
+}
+
+function entriesFor(source: AuthoritySource): readonly AuthorityEntry[] {
+  return AUTHORITY_INVENTORY.filter((entry) => source.authorities.includes(entry.authority));
+}
+
+function freezeRecordSource(): string {
+  return readFileSync(join(REPO_ROOT, FREEZE_RECORD_RELATIVE_PATH), 'utf8');
+}
+
+describe('C0 authority inventory completeness', () => {
+  test('every inventory authority is owned by exactly one source module', () => {
+    const claimed = AUTHORITY_SOURCE_MODULES.flatMap((source) => source.authorities);
+    expect(new Set(claimed).size).toBe(claimed.length);
+    expect([...claimed].sort()).toEqual(
+      AUTHORITY_INVENTORY.map((entry) => entry.authority).sort(),
+    );
+  });
+
+  test('each source module exports exactly the wire kinds its inventory entries declare', () => {
+    for (const source of AUTHORITY_SOURCE_MODULES) {
+      const exported = exportedConstantValues(source.exports, '_KIND');
+      const declared = sortedValues([
+        ...new Set(entriesFor(source).flatMap((entry) => entry.kinds)),
+      ]);
+      expect({ module: source.module, kinds: declared }).toEqual({
+        module: source.module,
+        kinds: exported,
+      });
+    }
+  });
+
+  /**
+   * Protocol constants are compared by value multiset, not by name: the exported
+   * name is not recoverable from the inventory entry. Cardinality still bites —
+   * a new `*_PROTOCOL` export with no matching inventory entry makes the exported
+   * side longer — and the named protocol map below pins each authority's version.
+   */
+  test('each source module exports exactly the protocol versions its inventory entries declare', () => {
+    for (const source of AUTHORITY_SOURCE_MODULES) {
+      const exported = exportedConstantValues(source.exports, '_PROTOCOL');
+      const declared = sortedValues(entriesFor(source).map((entry) => entry.protocol));
+      expect({ module: source.module, protocols: declared }).toEqual({
+        module: source.module,
+        protocols: exported,
+      });
+    }
+  });
+
+  test('the freeze record digests every authority source module', () => {
+    const record = freezeRecordSource();
+    for (const source of AUTHORITY_SOURCE_MODULES) {
+      expect({
+        module: source.module,
+        digested: record.includes(`| \`${source.module}\` | \`sha256:`),
+      }).toEqual({ module: source.module, digested: true });
+    }
+  });
+
+  test('the freeze record cites the current frozen inventory digest', () => {
+    expect({
+      digest: FROZEN_INVENTORY_SHA256,
+      citedByFreezeRecord: freezeRecordSource().includes(FROZEN_INVENTORY_SHA256),
+    }).toEqual({ digest: FROZEN_INVENTORY_SHA256, citedByFreezeRecord: true });
+  });
+});
+
+describe('C0 delivery-plane authority baseline', () => {
+  test('enumerates every frozen authority protocol version', () => {
+    expect(
+      Object.fromEntries(AUTHORITY_INVENTORY.map((entry) => [entry.authority, entry.protocol])),
+    ).toEqual({
+      'coordination-lease': 1,
+      'engineer-principal-claim': 1,
+      'engineer-profile-binding': 1,
+      'work-graph': 1,
+      'engineer-offer': 1,
+      'project-board': 1,
+      'task-offer': 1,
+      'fleet-offers': 1,
+      'fleet-board': 2,
+      'task-freeze-receipt': 1,
+      'publication-receipt': 1,
+      'publication-lineage': 1,
+      'publication-integration-observation': 1,
+      'merge-readiness': 1,
+      'product-acceptance': 1,
+      'read-only-delegation': 1,
+    });
+  });
+
+  test('covers all four delivery planes plus the reused delegation plane', () => {
+    expect(new Set(AUTHORITY_INVENTORY.map((entry) => entry.plane))).toEqual(
+      new Set(['task', 'lease', 'publication', 'acceptance', 'delegation']),
+    );
+  });
+
+  test('authority store roots stay on the repo-harness/<domain>/v1 convention', () => {
+    for (const entry of AUTHORITY_INVENTORY) {
+      if (entry.storeRoot === null) continue;
+      expect(entry.storeRoot).toMatch(/^repo-harness\/[a-z0-9-]+\/v1(\/[a-z0-9-]+)*$/u);
+    }
+  });
+
+  test('every wire kind is unique across the delivery plane', () => {
+    const kinds = AUTHORITY_INVENTORY.flatMap((entry) => entry.kinds);
+    expect(new Set(kinds).size).toBe(kinds.length);
+  });
+
+  test('the frozen authority inventory digest is unchanged', () => {
+    expect(inventoryDigest()).toBe(FROZEN_INVENTORY_SHA256);
+  });
+});
+
+describe('C0 frozen delegation invariants', () => {
+  test('ENGINEER_DELEGATION_ROLES stays the same five-value closed set', () => {
+    expect([...profileBinding.ENGINEER_DELEGATION_ROLES]).toEqual([
+      'explorer',
+      'root-cause-prover',
+      'fast-worker',
+      'deep-worker',
+      'gatekeeper',
+    ]);
+  });
+
+  /**
+   * The two `context_packet_sha256` binding assertions
+   * (`src/effects/engineers/delegated-run-store.ts:731,791`) are recorded prose in
+   * the freeze record, not asserted here: proving them needs a delegated-run
+   * fixture, which is runtime behavior C0 does not produce. The row that first
+   * exercises the admission path owns that assertion.
+   */
+  test('untrusted injection markers and message limits are unchanged', () => {
+    expect(TASK_MESSAGE_CONTEXT_START).toBe('[TaskInboxUntrustedPeerMessages]');
+    expect(TASK_MESSAGE_CONTEXT_END).toBe('[/TaskInboxUntrustedPeerMessages]');
+    expect(MODULE_MESSAGE_CONTEXT_START).toBe('[ModuleInboxUntrustedPeerMessage]');
+    expect(MODULE_MESSAGE_CONTEXT_END).toBe('[/ModuleInboxUntrustedPeerMessage]');
+    expect(TASK_MESSAGE_BODY_MAX_BYTES).toBe(8 * 1024);
+    expect(MODULE_MESSAGE_BODY_MAX_BYTES).toBe(8 * 1024);
+    expect(MODULE_MESSAGE_RESOURCE_MAX_COUNT).toBe(8);
+  });
+});
+
+describe('C0 baseline negative proof', () => {
+  /**
+   * Freeze decision D7. Today `max_parallel_readers` is a declared profile value
+   * with no admission-time enforcement, and `delegation_policy` is declared and
+   * validated only in the profile schema. C4's admission bridge is a new
+   * pre-step under `src/effects/collaboration/`; it must not be smuggled into the
+   * existing admission path, whose semantics C0 froze as unchanged.
+   */
+  test('the read-only delegation admission path does not consume delegation_policy', () => {
+    const source = readFileSync(
+      join(REPO_ROOT, 'src/effects/engineers/delegated-run-store.ts'),
+      'utf8',
+    );
+    expect(source).not.toContain('delegation_policy');
+    expect(source).not.toContain('max_parallel_readers');
+    expect(source).not.toContain('allowed_roles');
+  });
+
+  test('delegation_policy is declared and validated only in the profile schema', () => {
+    const profileSource = readFileSync(
+      join(REPO_ROOT, 'src/core/engineers/profile-binding.ts'),
+      'utf8',
+    );
+    expect(profileSource).toContain('max_parallel_readers');
+    expect(profileSource).toContain("assertInteger(value.delegation_policy.max_parallel_readers");
+  });
+});
