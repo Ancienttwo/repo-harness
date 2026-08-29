@@ -161,7 +161,25 @@ export function collaborationRecordPath(
 }
 
 /**
- * Each record family locks on its own subject, so two families never contend.
+ * A lock is named for a (domain, subject) pair, and the domains in use today are
+ * not one-per-family: signal publish and handoff publish both take
+ * `('thread', thread_key)` and therefore share a lock, while adoption takes
+ * `('handoff-adoption', handoff_id)` and contends with neither. That is D9's
+ * "per-thread / per-handoff lock" as frozen, not an oversight.
+ *
+ * The sharing is deliberate but not load-bearing, and the distinction matters if
+ * anyone later wants to split it. Nothing needs a signal write and a handoff
+ * write to be mutually exclusive: records publish through a staged write plus
+ * `link`, so a concurrent write is either fully visible or not visible at all
+ * and no reader can observe a torn one. Handoff publish does read the signal
+ * store inside this lock, but only to prove cited signals resolve, and a signal
+ * appearing mid-check can only turn a failing check into a passing one. Signal
+ * idempotency does not depend on it either: identity is keyed on the actor and
+ * idempotency key rather than the thread, so two publishes of one identity under
+ * different thread keys already take different locks and reconcile through the
+ * `EEXIST` branch. Splitting the domains would therefore be a contention change,
+ * not a correctness one, and wants a measurement first.
+ *
  * The separator is an escaped NUL rather than a literal one: a subject key may
  * contain any character a thread key may, and a printable separator would let
  * two different (domain, subject) pairs collapse onto one lock.

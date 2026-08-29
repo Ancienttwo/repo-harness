@@ -307,16 +307,20 @@ describe('C3 handoff adoption store', () => {
 
   /**
    * `handoff_id` is redundant with `handoff_sha256`, which pins the exact bytes
-   * that contain it, and the PRD freezes both onto the record. The reconcile
-   * equality check is that redundancy's drift check: a persisted receipt naming
-   * a different handoff than its digest pins is an explicit conflict, not a
-   * record the store keeps serving.
+   * that contain it, and the PRD freezes both onto the record. The identity
+   * triple does *not* cover `handoff_id`, so this is the one field a receipt
+   * carries that its own filename cannot constrain: a record naming handoff B
+   * while its digest pins handoff A derives the right name, serialises
+   * canonically and validates. Every path must refuse it — the write path as a
+   * conflict, and the read paths on their own, because an append-only store has
+   * no repair path once such a record exists.
    */
-  test('a persisted receipt whose handoff_id disagrees with its digest is an explicit conflict', () => {
+  test('a persisted receipt whose handoff_id disagrees with its digest is refused on every path', () => {
     const value = fixture();
     const handoff = publishHandoff(value).handoff;
     const other = publishHandoff(value, { idempotency_key: 'handoff-2', goal: 'a different goal' }).handoff;
     const honest = adoptWorkStateHandoff(adoptInput(value, handoff.handoff_id));
+    expect(listAdoptersOfWorkStateHandoff(value.repoRoot, other.handoff_id)).toEqual([]);
 
     // Same identity triple, same canonical serialization, wrong subject id.
     const forged = buildHandoffAdoptionReceipt({
@@ -331,8 +335,48 @@ describe('C3 handoff adoption store', () => {
 
     expect(code(() => adoptWorkStateHandoff(adoptInput(value, handoff.handoff_id))))
       .toBe('collaboration_conflict');
+    // The write path alone is not enough: without a read-side cross-check this
+    // record would be served as a real adoption of `other`, inflating the
+    // adopter count of a handoff nobody adopted.
+    expect(code(() => readHandoffAdoptionReceipt(value.repoRoot, honest.receipt_id)))
+      .toBe('collaboration_unavailable');
+    expect(code(() => listHandoffAdoptionReceipts(value.repoRoot))).toBe('collaboration_unavailable');
+    expect(code(() => listAdoptersOfWorkStateHandoff(value.repoRoot, other.handoff_id)))
+      .toBe('collaboration_unavailable');
     // The forged bytes were not repaired or overwritten by the failed adoption.
     expect(readFileSync(file, 'utf8')).toBe(canonicalHandoffAdoptionReceiptBytes(forged));
+  });
+
+  /**
+   * The same hole with the subject removed rather than swapped: a receipt whose
+   * `handoff_id` resolves to nothing at all. Failing closed matters more here
+   * than on the swap, because there is no second record to compare against.
+   */
+  test('a persisted receipt naming a handoff that does not exist fails the store closed', () => {
+    const value = fixture();
+    const handoff = publishHandoff(value).handoff;
+    const honest = adoptWorkStateHandoff(adoptInput(value, handoff.handoff_id));
+    expect(readHandoffAdoptionReceipt(value.repoRoot, honest.receipt_id)).toEqual(honest.receipt);
+
+    // `handoff_id` is outside the identity preimage, so this lands under the
+    // very same filename the honest receipt occupies.
+    const orphaned = buildHandoffAdoptionReceipt({
+      handoff_id: 'f'.repeat(64),
+      handoff_sha256: handoff.handoff_sha256,
+      adopter: honest.receipt.adopter,
+      context_packet_sha256: PACKET_SHA,
+      adopted_at: honest.receipt.adopted_at,
+    });
+    writeFileSync(
+      join(adoptionsRoot(value.repoRoot), `${honest.receipt_id}.json`),
+      canonicalHandoffAdoptionReceiptBytes(orphaned),
+    );
+
+    expect(code(() => readHandoffAdoptionReceipt(value.repoRoot, honest.receipt_id)))
+      .toBe('collaboration_unavailable');
+    expect(code(() => listHandoffAdoptionReceipts(value.repoRoot))).toBe('collaboration_unavailable');
+    expect(code(() => listAdoptersOfWorkStateHandoff(value.repoRoot, handoff.handoff_id)))
+      .toBe('collaboration_unavailable');
   });
 
   test('a receipt filed under a name it does not derive fails the store closed', () => {

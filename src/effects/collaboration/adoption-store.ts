@@ -32,13 +32,14 @@ import {
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import { resolveCollaborationActor } from './actor';
 import { assertCollaborationMutationEnabled } from './feature-flag';
-import { readWorkStateHandoff } from './handoff-store';
+import { listWorkStateHandoffs, readWorkStateHandoff } from './handoff-store';
 import {
   COLLABORATION_STORE_RELATIVE_ROOT,
   collaborationInvalidStore,
   collaborationLockRelativePath,
   collaborationRecordPath,
   collaborationStorePaths,
+  collaborationUnavailable,
   ensureCollaborationDirectory,
   listCollaborationRecords,
   publishCollaborationRecordDurably,
@@ -88,6 +89,34 @@ export function adoptionStorePaths(repoRoot: string): CollaborationStorePaths {
   return collaborationStorePaths(repoRoot, COLLABORATION_ADOPTIONS_SHARD);
 }
 
+/**
+ * The receipt identity covers the handoff *digest*, not the handoff *id*, so
+ * `handoff_id` is the one field a receipt carries that its own name does not
+ * constrain. A record naming handoff B while its digest pins handoff A derives
+ * the right filename, serialises canonically and validates — and every reader
+ * that groups receipts by `handoff_id`, which is the shape C6 consumes, would
+ * then count an adopter against a handoff nobody adopted.
+ *
+ * `adopt()` catches that case as a byte conflict, but only for the one identity
+ * being written. Reads need their own check, because an append-only store has
+ * no repair path: once such a record exists, every later read inherits it.
+ */
+function assertReceiptBindsItsHandoff(
+  receipt: HandoffAdoptionReceiptV1,
+  boundDigest: string | null,
+): void {
+  if (boundDigest === null) {
+    collaborationUnavailable(
+      `adoption receipt references a handoff that does not exist in this repository: ${receipt.handoff_id}`,
+    );
+  }
+  if (boundDigest !== receipt.handoff_sha256) {
+    collaborationUnavailable(
+      `adoption receipt handoff_id and handoff_sha256 disagree: ${receipt.handoff_id}`,
+    );
+  }
+}
+
 export function readHandoffAdoptionReceipt(
   repoRoot: string,
   receiptId: string,
@@ -95,17 +124,33 @@ export function readHandoffAdoptionReceipt(
   // Validated before the repo root is even resolved: a malformed id is a caller
   // error, not a store lookup, and must not cost a filesystem walk.
   validateCollaborationRecordId(receiptId, 'receipt_id');
-  return readCollaborationRecord(adoptionStorePaths(realpathSync(repoRoot)), ADOPTION_CODEC, receiptId, 'receipt_id');
+  const root = realpathSync(repoRoot);
+  const receipt = readCollaborationRecord(adoptionStorePaths(root), ADOPTION_CODEC, receiptId, 'receipt_id');
+  if (receipt) {
+    assertReceiptBindsItsHandoff(receipt, readWorkStateHandoff(root, receipt.handoff_id)?.handoff_sha256 ?? null);
+  }
+  return receipt;
 }
 
 export function listHandoffAdoptionReceipts(repoRoot: string): readonly HandoffAdoptionReceiptV1[] {
-  return listCollaborationRecords(adoptionStorePaths(realpathSync(repoRoot)), ADOPTION_CODEC, 'receipt_id');
+  const root = realpathSync(repoRoot);
+  const receipts = listCollaborationRecords(adoptionStorePaths(root), ADOPTION_CODEC, 'receipt_id');
+  if (receipts.length === 0) return receipts;
+  // One shard scan rather than one file read per receipt: the same cross-check,
+  // without making a list of N receipts cost N handoff reads.
+  const digests = new Map(listWorkStateHandoffs(root).map((handoff) => [handoff.handoff_id, handoff.handoff_sha256]));
+  for (const receipt of receipts) {
+    assertReceiptBindsItsHandoff(receipt, digests.get(receipt.handoff_id) ?? null);
+  }
+  return receipts;
 }
 
 /**
  * Every adopter of one handoff. This is a plain filter over persisted receipts
  * rather than an index: an index would be a second authority that could disagree
- * with the records it summarises.
+ * with the records it summarises. The grouping key is `handoff_id`, which is
+ * exactly why `listHandoffAdoptionReceipts()` proves it against the bound digest
+ * before anything is counted.
  */
 export function listAdoptersOfWorkStateHandoff(
   repoRoot: string,
