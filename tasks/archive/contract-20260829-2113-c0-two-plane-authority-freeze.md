@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-29 21:13
+> **Related Plan**: plans/archive/plan-20260829-1853-c0-two-plane-authority-freeze.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260829-2113
+
 # Task Contract: c0-two-plane-authority-freeze
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260829-1853-c0-two-plane-authority-freeze.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->

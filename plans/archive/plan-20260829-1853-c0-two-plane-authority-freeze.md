@@ -1,6 +1,6 @@
 # Plan: C0 collaboration/delivery two-plane authority freeze
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260829-1853
 > **Slug**: c0-two-plane-authority-freeze
 > **Planning Source**: repo-harness-sprint
