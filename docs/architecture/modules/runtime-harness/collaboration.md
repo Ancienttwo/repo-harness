@@ -1,12 +1,83 @@
 # runtime-harness/collaboration 架構文檔
 
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" sourceDigest="sha256:7ae73b97d16065f3f27319dc9644c95d24bcb860053ac49026f34429d4de901f" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:ed240f46ebf44c545236a6a36a828a4f5140a309ba53bed9044eb988c7e80f4d" -->
+> **狀態**:`active`
+> **Capability ID**:`capability.runtime-harness.collaboration`(kind `capability`)
+> **Matched Prefixes**:`src/core/collaboration/**`、`src/effects/collaboration/**`
+> **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
+> **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
+
+Publishes append-only coordination signals with Host-derived identity and recorded time, holding zero Task, Lease, Publication or Acceptance authority.
+
 ## 1. P1:能力架構地圖
 
-(待 ArchContext 投影)
+### 1.1 架構圖
+
+```mermaid
+flowchart LR
+  p1_capability_runtime_harness_collaboration_5265febf["Collaboration Substrate"]:::component
+  p1_capability_runtime_harness_engineer_bindings_34c00f72["Engineer Bindings"]:::component
+  p1_component_collaboration_primary_9383ae07["Append-only Coordination Signal Store"]:::component
+  p1_capability_runtime_harness_collaboration_5265febf -->|"Derive the publishing actor from the authenticated principal and current Binding instead of accepting a declared identity"| p1_capability_runtime_harness_engineer_bindings_34c00f72
+  p1_capability_runtime_harness_collaboration_5265febf -->|"Persist immutable coordination signals under a per-thread lock without writing any delivery store"| p1_component_collaboration_primary_9383ae07
+  classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
+  classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
+  classDef datastore fill:#3f6212,color:#ffffff,stroke:#d9f99d,stroke-width:2px
+  classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
+```
+
+- Proof: `proven` (`sha256:ba6168c8de638264fdf9780b20b12e20e14e4ac2b5ccb35931439f3ccecfe078`).
+- Semantic nodes: `3`; declared relations: `2`.
+
+### 1.2 模組職責表
+
+| 宣告入口 | 錨點 | 職責 |
+| --- | --- | --- |
+| `entrypoint.collaboration.publish` | `src/effects/collaboration/signal-store.ts#publishCoordinationSignal` | `sink.collaboration.mutation-gate` → `src/effects/collaboration/feature-flag.ts#assertCollaborationMutationEnabled`、`sink.collaboration.signal-schema` → `src/core/collaboration/signal.ts#buildCoordinationSignal` |
+| `entrypoint.collaboration.actor-derivation` | `src/effects/collaboration/signal-store.ts#resolveModuleEngineerActor` | `sink.collaboration.authenticated-principal` → `src/effects/engineers/principal.ts#resolveEngineerPrincipal` |
+| `entrypoint.collaboration.read` | `src/effects/collaboration/signal-store.ts#readPersistedSignal` | `sink.collaboration.record-identity` → `src/core/collaboration/signal.ts#canonicalCoordinationSignalBytes` |
+| `entrypoint.collaboration.shared-mechanics` | `src/core/collaboration/signal.ts#buildCoordinationSignal` | `sink.collaboration.actor-union` → `src/core/collaboration/common.ts#validateCollaborationActorRef` |
+
+### 1.3 規模信號
+
+- 規模量級:`2–5` 個文件 / `500–1000` 行
+- 匹配前綴:`src/core/collaboration/**`、`src/effects/collaboration/**`
+- 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
+
+### 1.4 依賴邊界
+
+出向關係:
+
+- `calls` → `capability.runtime-harness.engineer-bindings` — Derive the publishing actor from the authenticated principal and current Binding instead of accepting a declared identity
+- `calls` → `component.collaboration.primary` — Persist immutable coordination signals under a per-thread lock without writing any delivery store
+
+入向關係:
+
+- 無。
 
 ## 2. P2:端到端數據流
 
-(待 ArchContext 投影)
+> **Proof**: `proven` (`sha256:ba6168c8de638264fdf9780b20b12e20e14e4ac2b5ccb35931439f3ccecfe078`); selectors `5/5`.
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
+sequenceDiagram
+  autonumber
+  participant p2_collaboration_50c48bca as Collaboration Substrate
+  participant p2_engineer_bindings_4e9749d0 as Engineer Bindings
+  participant p2_signal_store_5a76fb32 as Append-only Coordination Signal Store
+  p2_collaboration_50c48bca->>p2_signal_store_5a76fb32: Refuse every mutation unless collaboration.mode has been promoted past off
+  p2_collaboration_50c48bca->>p2_engineer_bindings_4e9749d0: Resolve the authenticated principal and fence it against a second read of the principal mapping
+  alt A new identity samples the recorded time once and lands as one immutable file
+  p2_collaboration_50c48bca->>p2_signal_store_5a76fb32: Content-address the signal and write it with an exclusive create plus fsync
+    Note over p2_collaboration_50c48bca: Return the persisted signal； no Task， Lease， Publication or Acceptance byte moves
+  else An invalid record or an unreadable shard fails closed
+  p2_collaboration_50c48bca->>p2_signal_store_5a76fb32: Reject an unknown field， an unsupported actor kind or a stale digest before any write
+  p2_collaboration_50c48bca->>p2_signal_store_5a76fb32: Fail loud on an unreadable or non-canonical shard rather than serving a healthy empty store
+    Note over p2_collaboration_50c48bca: Surface the typed rejection； a republished identity reuses its recorded time instead of re-sampling the clock
+  end
+```
+<!-- END ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" -->
 
 ## 3. P3:設計決策與不變量
 

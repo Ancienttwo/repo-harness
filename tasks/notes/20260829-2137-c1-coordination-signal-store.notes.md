@@ -73,39 +73,112 @@
 
 ## Open Questions
 
-- **The architecture projection for a new capability node needs an acceptance
-  step this repo exposes no lever for.** Registering
-  `capability.runtime-harness.collaboration` is a `node-added` major change, so
-  the projection stops at `human-action-required` /
-  `unresolved-major-change` and the module doc's machine region is never
-  rendered. `ProjectionRequestV1.acceptedChange` is the field that clears it, and
-  `rg -n acceptedChange src/` finds no production caller: only
-  `src/effects/architecture/projection-orchestrator.ts` accepts it as an option,
-  and neither the CLI (`repo-harness architecture-projection`) nor the Stop hook
-  ever sets it. Reproduce with:
+- **Resolved: the `node-added` acceptance.** Registering
+  `capability.runtime-harness.collaboration` is a major change, and
+  `ProjectionRequestV1.acceptedChange` — the field that accepts it — has no
+  production caller: only
+  `src/effects/architecture/projection-orchestrator.ts:57` takes it as an
+  option, and neither `repo-harness architecture-projection` nor the Stop hook
+  ever sets it. The id convention is documented by precedent in
+  `docs/researches/20260824-persistent-module-engineer-organization.md`
+  (`changeset.docs-projection-<digest16>` / `event.user-approval-<date>-<slug>`,
+  with prior `node-added,relation-changed` acceptances for the delegated-runs
+  and bound-task-freezes capabilities), so the acceptance was executed through
+  the internal API with those shapes. Full evidence below.
 
-  ```text
-  bun src/cli/index.ts architecture-projection check --json
-    -> status "adoption-required"
-  bun src/cli/index.ts architecture-projection adopt --json --adoption-plan-id <id from archctx docs adopt --profile repo-harness/v1>
-    -> status "human-action-required", reasonCode "unresolved-major-change"
-  node_modules/.bin/archctx docs adopt --profile repo-harness/v1 --approved --adoption-plan-id <id> --expected-worktree-digest <digest>
-    -> AC_PRECONDITION_FAILED projection-adoption-fixed-point-unproven
-  ```
+- **Two real preconditions had to be fixed first, and neither was the flag.**
+  1. **Stale CodeGraph index.** `archctx.mjs:7669` refuses an acceptance while
+     any capability's flow proof is `unprovable`, and
+     `scripts/contract-worktree.sh:460` says so outright ("codegraph init
+     failed; architecture projection will report unresolved-major-change for
+     every capability"). The worktree was indexed at creation, before any
+     collaboration source existed. `codegraph index .` (743 files, 15,213
+     nodes) fixed it.
+  2. **Three flow selectors pointed at indirect calls.** The original node
+     anchored `listCoordinationSignals -> canonicalCoordinationSignalBytes` and
+     `validateCoordinationSignal -> validateCollaborationActorRef /
+     validateCollaborationArtifactRefs`, none of which are direct edges.
+     Re-anchored to edges CodeGraph actually records — verified with
+     `codegraph node <symbol>` — so the flow now proves 5/5 selectors:
+     `publishCoordinationSignal -> assertCollaborationMutationEnabled`,
+     `resolveModuleEngineerActor -> resolveEngineerPrincipal`,
+     `publishCoordinationSignal -> buildCoordinationSignal`,
+     `buildCoordinationSignal -> validateCollaborationActorRef`,
+     `readPersistedSignal -> canonicalCoordinationSignalBytes`.
 
-  The repo's own history lands this as a separate commit: `d634cab1` added the
-  `interface-change` capability and bumped the same count assertions, and the
-  module doc only appeared later in `60677edc`
-  (`docs(architecture): project ME-4B authority`). C1 leaves
-  `docs/architecture/modules/runtime-harness/collaboration.md` with its human
-  P3/P4 sections plus the `## 1.` / `## 2.` placeholders the adoption range
-  requires, so one projection run fills the machine region in place.
+- **`apply`, not `adopt`.** A hand-written module doc turns the run into an
+  adoption candidate, and `archctx docs adopt` with an `acceptedChange` throws
+  `architecture-major-change-accepted-reference-without-semantic-delta` because
+  its inner projection already simulates the adopted files. The repo's
+  precedent creates the doc through the projection instead: `60677edc`
+  (`docs(architecture): project ME-4B authority`) added
+  `docs/architecture/modules/runtime-harness/interface-change.md` as a create.
+  So the hand-written doc was removed, `apply` rendered it, and the human
+  sections 3 and 4 were restored into the preserved region afterwards.
 
-  A drain attempt (`architecture-projection drain`) dead-letters on this and
-  makes `check-architecture-sync` strict fail. That dead letter is ignored
-  runtime cache under `.ai/harness/architecture-projection/`, not a durable
-  finding; it was removed after being recorded here so a later session's gate is
-  not poisoned by a cache entry with no commit explaining it.
+### Architecture acceptance evidence
+
+Accepted delta, copied verbatim from the `check --json` refresh signal (not
+invented — `acceptedChangeIssues()` requires sorted, unique, non-empty arrays
+and known reason codes):
+
+```json
+{
+  "changeSetId": "changeset.docs-projection-eb1d7ac0475d1b2b",
+  "eventId": "event.user-approval-20260829-c1-collaboration-architecture",
+  "reasonCodes": ["node-added", "relation-changed"],
+  "affectedNodeIds": [
+    "capability.runtime-harness.collaboration",
+    "capability.runtime-harness.engineer-bindings"
+  ]
+}
+```
+
+`changeSetId` follows archctx's own derivation
+(`changeset.docs-projection-<first 16 hex of the resulting projectionDigest>`,
+`archctx.mjs:35873`); the resulting digest was
+`sha256:eb1d7ac0475d1b2b4c96c3624005fbe6e83a4eee1da6019318fbd7dc7dc92d9b`.
+`eventId` records the orchestrator's explicit approval of this `node-added`
+change and follows the precedent naming in the ME-series research doc.
+
+Invocation. A throwaway script at `/tmp/c1-accept-projection.ts` (scaffolding,
+never committed) replicated `src/cli/commands/architecture-projection.ts`
+`execute()` exactly, adding only `acceptedChange`:
+
+```text
+bun /tmp/c1-accept-projection.ts apply "" changeset.docs-projection-eb1d7ac0475d1b2b
+```
+
+Output:
+
+```json
+{
+  "mode": "apply",
+  "status": "applied-reconcile-required",
+  "files": [
+    "docs/architecture/.projection-manifest.json",
+    "docs/architecture/changelog.md",
+    "docs/architecture/decisions/index.md",
+    "docs/architecture/diagrams/architecture.likec4",
+    "docs/architecture/diagrams/architecture.mmd",
+    "docs/architecture/diagrams/architecture.structurizr.json",
+    "docs/architecture/index.md",
+    "docs/architecture/modules/runtime-harness/collaboration.md",
+    "docs/architecture/modules/runtime-harness/engineer-bindings.md"
+  ],
+  "humanActions": [],
+  "receiptDigest": "sha256:8264905576cc74442e782cc7beb89dcdf6d77533c334c92e1fd675c3a64a6dc1"
+}
+```
+
+`applied-reconcile-required` is the expected post-apply worktree-digest
+divergence, not a refusal: `humanActions` is empty, which is the acceptance
+landing. Human sections were then restored and the ordinary
+`repo-harness architecture-projection apply --json` converged the manifest
+(`status: applied`, one file). Final state: `check --json` returns `noop` with
+no human actions, the manifest carries `targetCount: 28` and 22 capabilities
+all `proven`, and `capability.runtime-harness.collaboration` is in the semantic
+baseline.
 
 ## Evidence Links
 

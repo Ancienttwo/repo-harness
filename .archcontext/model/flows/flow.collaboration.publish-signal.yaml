@@ -45,7 +45,7 @@ outcomes:
       label: Return the persisted signal; no Task, Lease, Publication or Acceptance byte moves
   - id: refused
     kind: error
-    label: An invalid record, an unresolvable reference or an unreadable shard fails closed
+    label: An invalid record or an unreadable shard fails closed
     steps:
       - id: reject-record
         from: collaboration
@@ -53,7 +53,7 @@ outcomes:
         label: Reject an unknown field, an unsupported actor kind or a stale digest before any write
         evidence:
           entrypointId: entrypoint.collaboration.shared-mechanics
-          sourceSymbol: validateCoordinationSignal
+          sourceSymbol: buildCoordinationSignal
           sinkId: sink.collaboration.actor-union
       - id: reject-store
         from: collaboration
@@ -61,7 +61,7 @@ outcomes:
         label: Fail loud on an unreadable or non-canonical shard rather than serving a healthy empty store
         evidence:
           entrypointId: entrypoint.collaboration.read
-          sourceSymbol: listCoordinationSignals
+          sourceSymbol: readPersistedSignal
           sinkId: sink.collaboration.record-identity
     terminal:
       participant: collaboration

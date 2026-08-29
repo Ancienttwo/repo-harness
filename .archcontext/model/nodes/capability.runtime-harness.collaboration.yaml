@@ -22,12 +22,12 @@ source:
       symbols:
         - name: "publishCoordinationSignal"
           sinks:
-            - id: sink.collaboration.signal-schema
-              path: "src/core/collaboration/signal.ts"
-              symbol: "buildCoordinationSignal"
             - id: sink.collaboration.mutation-gate
               path: "src/effects/collaboration/feature-flag.ts"
               symbol: "assertCollaborationMutationEnabled"
+            - id: sink.collaboration.signal-schema
+              path: "src/core/collaboration/signal.ts"
+              symbol: "buildCoordinationSignal"
     - id: entrypoint.collaboration.actor-derivation
       path: "src/effects/collaboration/signal-store.ts"
       symbols:
@@ -39,7 +39,7 @@ source:
     - id: entrypoint.collaboration.read
       path: "src/effects/collaboration/signal-store.ts"
       symbols:
-        - name: "listCoordinationSignals"
+        - name: "readPersistedSignal"
           sinks:
             - id: sink.collaboration.record-identity
               path: "src/core/collaboration/signal.ts"
@@ -47,14 +47,11 @@ source:
     - id: entrypoint.collaboration.shared-mechanics
       path: "src/core/collaboration/signal.ts"
       symbols:
-        - name: "validateCoordinationSignal"
+        - name: "buildCoordinationSignal"
           sinks:
             - id: sink.collaboration.actor-union
               path: "src/core/collaboration/common.ts"
               symbol: "validateCollaborationActorRef"
-            - id: sink.collaboration.artifact-ref-reuse
-              path: "src/core/collaboration/common.ts"
-              symbol: "validateCollaborationArtifactRefs"
 extensions:
   contractFiles:
     agents: "AGENTS.md"
