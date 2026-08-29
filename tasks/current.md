@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-29T11:06:09+0800 -->
+<!-- updated_at: 2026-08-29T15:41:53+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-08-29T11:06:09+0800
-> **Source Branch**: codex/verify-contract-fail-closed
-> **Source Commit**: b94d1db9
+> **Updated At**: 2026-08-29T15:41:53+0800
+> **Source Branch**: main
+> **Source Commit**: b4b0a372
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive-workflow
+> **Reason**: manual
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -47,7 +47,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/runtime-harness/integration-acceptance/me4c-integration-product-acceptance.md`: status=completed, current_slice=completed-20260826-me4c-integration-product-acceptance, source_plan=plans/plan-20260826-0115-me4c-integration-product-acceptance.md
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Implement fail-closed rules A1/A2 in `scripts/verify-contract.sh` with `failure_class="missing_artifact"` parse rejection, mirror to `assets/templates/helpers/verify-contract.sh`.
+- Exact Next Step: (none)
 
 ## Checks
 
@@ -55,19 +55,15 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: 6 changed/untracked path(s)
 
 ```
- D plans/plan-20260829-0208-verify-contract-fail-closed.md
- D tasks/contracts/20260829-0208-verify-contract-fail-closed.contract.md
- D tasks/notes/20260829-0208-verify-contract-fail-closed.notes.md
- D tasks/reviews/20260829-0208-verify-contract-fail-closed.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260829-0208-verify-contract-fail-closed.md
-?? tasks/archive/contract-20260829-1106-verify-contract-fail-closed.md
-?? tasks/archive/notes-20260829-1106-verify-contract-fail-closed.md
-?? tasks/archive/review-20260829-1106-verify-contract-fail-closed.md
-?? tasks/archive/todo-20260829-1106-verify-contract-fail-closed.md
+ M docs/architecture/.projection-manifest.json
+?? plans/prds/20260828-2321-collaboration-substrate.prd.md
+?? plans/prds/20260828-2321-collaborative-work-exchange-agent-succession.prd.md
+?? plans/prds/20260828-2321-guarded-merge-unattended-automation.prd.md
+?? plans/prds/20260828-2321-work-exchange-independent-review.prd.md
+?? plans/sprints/20260828-2321-collaborative-work-exchange-agent-succession.sprint.md
 ```
 
 ## Source Artifacts
