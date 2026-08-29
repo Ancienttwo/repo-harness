@@ -82,6 +82,12 @@
   migration. Deriving the value stays C6's task; the marker's scope is the packet,
   matching the sprint wording — `CollaborationThreadSnapshotV1` has no such field
   in Child PRD A and the thread projection is untouched.
+- **`tasks/lessons.md` was declared in `allowed_paths` after the fact.** The
+  NUL-bytes-defeat-grep lesson came out of this slice's own gate findings, not
+  from the planned surface, so the contract did not list the file and the ship
+  gate's `allowed_paths` preflight rejected the first commit. Declared under the
+  contract's own Scope gate ("update this contract before widening scope") rather
+  than by dropping the lesson.
 - **Sprint row 3 was not marked complete and the sprint file was not touched.** A
   sibling worker is landing C3 in parallel and the sprint backlog is a shared
   file; row completion belongs to the closeout that merges, not to either worker.

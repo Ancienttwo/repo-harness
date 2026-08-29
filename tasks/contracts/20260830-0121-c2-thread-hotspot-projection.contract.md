@@ -109,6 +109,7 @@ allowed_paths:
   - plans/plan-20260830-0121-c2-thread-hotspot-projection.md
   - tasks/current.md
   - tasks/todos.md
+  - tasks/lessons.md
   - tasks/contracts/20260830-0121-c2-thread-hotspot-projection.contract.md
   - tasks/reviews/20260830-0121-c2-thread-hotspot-projection.review.md
   - tasks/notes/20260830-0121-c2-thread-hotspot-projection.notes.md
