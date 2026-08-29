@@ -189,7 +189,7 @@ Transport limits：title ≤256 bytes；body ≤8 KiB；labels ≤12；scope ref
 
 协议只关闭传输边界：actor kind、ref 结构、ID 与 digest 格式、body 体积、label 数量、ref 数量。协议不关闭语义：哪些 label、thread 叫什么、发现分几类、用什么协作策略，全部由 Agent 决定。`HOLD`、`BREAKTHROUGH`、`NEED-REPRO` 这类词可以自发长出来，系统不给它们任何权威。
 
-Append-only：signal 一旦写入不可修改，修订通过 `supersedes_signal_id` 追加新条目。
+Append-only：signal 一旦写入不可修改，修订通过 `supersedes_signal_id` 追加新条目。`created_at` 对重试稳定：delegated 贡献取该次运行精确的 process receipt / 持久化观测时间，直接发布在第一次 idempotency 事件里冻结时间，重试复用已记录值而不重采墙钟。
 ### WorkStateHandoffV1
 ```ts
 interface WorkStateHandoffV1 {
@@ -316,6 +316,8 @@ CollaborationContextPacket → canonical untrusted rendering
 → existing intent.context_packet_sha256 keeps carrying ExecutionPacket SHA
 → new binding records which collaboration packet/rendering was embedded
 ```
+
+这条 binding 是 collaboration-mode delegated run 的必需派发闸门，不是可选审计元数据：派发前校验 binding 存在、与当前 intent 和 execution packet 匹配、引用协作 packet、`rendered_context_sha256` 与组合后的 goal 一致，缺失或陈旧一律 fail closed。
 ### CollaborationDelegationAdmissionV1
 一轮协作在进入既有 `admitReadOnlyDelegation()` 之前必须先过这道桥：
 ```text
@@ -327,6 +329,8 @@ CollaborationContextPacket → canonical untrusted rendering
 → 才调用 admitReadOnlyDelegation()
 ```
 开放的 `logical_role` 字符串本身不是授权。每个角色仍需要 tracked LogicalRoleProfile、role instructions、model、capability receipt、精确准入、当前 parent Claim 与 Binding 全部到位。
+
+准入决策表在 C0 以模型层冻结：`max_parallel_readers=3` 时 active readers 0 / 1 / 2 放行、3 拒绝，reader 状态陈旧或未知一律 fail closed；C0 只留下这张表，以及当前 `admitReadOnlyDelegation()` 不消费 `delegation_policy` 的 baseline 负面证明。真实并行 reader 与真实第四个请求被拒的运行时 canary 由实现这道桥的 C4 独占。
 ### CollaborationContributionDraftV1
 Worker 输出，由 Host collector 解析并持久化。P0 不 bump `DelegationEnvelopeV1`。
 ```ts
@@ -436,6 +440,8 @@ hotspot 由确定性函数从下列输入计算：
 - 低 contributor 覆盖度；
 - unadopted handoff 数量；
 - 跨 thread 引用次数。
+
+新近度（含 `recent_activity`）相对 source snapshot 里的最新事件计算，以它为确定性 epoch，不读运行时墙钟。
 
 hotspot 只影响三件事：Work Exchange 排序、`CollaborationContextPacketV1` 的选择、推荐探索方向。它永远不影响 Work Graph priority、dependency、Task state 与 Lease eligibility，探索配额也保证热度高的 thread 吃不掉全部上下文。
 ## Module Behaviors

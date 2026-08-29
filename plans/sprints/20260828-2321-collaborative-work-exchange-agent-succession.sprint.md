@@ -151,13 +151,13 @@ No step skips a state。`independent_review` 与 `guarded_merge` 在本 Sprint �
 
 | # | Status | Task | Mode | Acceptance | Plan |
 |---:|:---:|---|---|---|---|
-| 1 | [ ] | C0 — freeze collaboration/delivery two-plane authority | contract | Architecture request 明确 signals/handoffs/participants 无 Task、Lease、Publication、Acceptance authority；现有 `DelegatedRunIntent.context_packet_sha256` 真实语义冻结；`CollaborationRunContextBindingV1` 决策完成；P0 actor 支持矩阵完成；delegation policy bridge 设计完成；3 readers + 第 4 个被拒的 model-free canary 通过；ArtifactRef 复用决策完成；现有 authority bytes 不变 | (pending) |
-| 2 | [ ] | C1 — `CoordinationSignalV1` schema, `common.ts` and append-only store | contract | signal ID 与记录时间由 Host/Server 派生；每条 signal 身份级原子写；supersede 仅限同 actor lineage；source refs 必须已存在且同仓库；scope refs 携带 revision；`common.ts` 归 C1 独占；三个 actor 可并发发布；同 id 同 payload 幂等；不同 payload 冲突；Task/Lease bytes 零变化 | (pending) |
-| 3 | [ ] | C2 — signal threads, discovery and hotspot projection | contract | opportunity 只用结构化闭集理由（`open_request` / `unverified_hypothesis` / `stalled_thread` 已移除）；检索理由为闭集代码；利用/探索配额生效；digest 不含墙钟；同输入 byte-identical；thread 由 opaque key 聚合；top-K context ≤1,500 tokens；无 LLM 状态推断 | (pending) |
+| 1 | [ ] | C0 — freeze collaboration/delivery two-plane authority | contract | Architecture request 明确 signals/handoffs/participants 无 Task、Lease、Publication、Acceptance authority；现有 `DelegatedRunIntent.context_packet_sha256` 真实语义冻结；`CollaborationRunContextBindingV1` 决策完成；P0 actor 支持矩阵完成；delegation policy bridge 设计完成；admission 决策表与测试向量冻结（`max_parallel_readers=3`；active readers 0/1/2 放行、3 拒绝；reader 状态陈旧或未知 fail closed）；baseline 负面证明记录在案（当前 `admitReadOnlyDelegation()` 不消费 `delegation_policy`）；ArtifactRef 复用决策完成；现有 authority bytes 不变 | (pending) |
+| 2 | [ ] | C1 — `CoordinationSignalV1` schema, `common.ts` and append-only store | contract | signal ID 与记录时间由 Host/Server 派生；记录时间对重试稳定：delegated 贡献取该次运行精确的 process receipt / 持久化观测时间，直接发布在第一次 idempotency 事件里冻结时间，重试复用已记录值、绝不重采墙钟；每条 signal 身份级原子写；supersede 仅限同 actor lineage；source refs 必须已存在且同仓库；scope refs 携带 revision；`common.ts` 归 C1 独占；三个 actor 可并发发布；同 id 同 payload 幂等；不同 payload 冲突；Task/Lease bytes 零变化 | (pending) |
+| 3 | [ ] | C2 — signal threads, discovery and hotspot projection | contract | opportunity 只用结构化闭集理由（`open_request` / `unverified_hypothesis` / `stalled_thread` 已移除）；检索理由为闭集代码；利用/探索配额生效；digest 不含墙钟；`recent_activity` 与 hotspot 的新近度相对 source snapshot 里的最新事件计算（确定性 epoch），不读运行时墙钟；同输入 byte-identical；thread 由 opaque key 聚合；top-K context ≤1,500 tokens；无 LLM 状态推断 | (pending) |
 | 4 | [ ] | C3 — `WorkStateHandoffV1` and adoption receipts | contract | handoff 包含 attempted paths、dead ends、findings、next actions；`execution_context` 判别联合；receipt 带 `handoff_sha256`；多对多采用成立且同采用者幂等；协议与文案不使用 claim 词汇；adoption 不创建 Claim | (pending) |
-| 5 | [ ] | C4 — delegated Worker contribution adapter | contract | draft 只来自持久化 stdout 的 versioned adapter；`CollaborationContributionCommitV1` 为可见性边界；每个持久化边界的故障注入都收敛；WorkerResult exactly-once；`max_parallel_readers` 在准入期真正生效；每个角色都要 tracked LogicalRoleProfile；至少 3 个同 capability read-only Worker 并行；writer 数仍为 1 | (pending) |
+| 5 | [ ] | C4 — delegated Worker contribution adapter | contract | draft 只来自持久化 stdout 的 versioned adapter；`CollaborationContributionCommitV1` 为可见性边界；每个持久化边界的故障注入都收敛；WorkerResult exactly-once；`max_parallel_readers` 在准入期真正生效；每个角色都要 tracked LogicalRoleProfile；本行独占真实运行时 canary：3 个真实并行 reader 放行、第 4 个真实请求在 `max_parallel_readers=3` 被桥拒绝、完成或失败的 reader 正确释放名额、reconciliation_required 与状态不确定的 reader 按 C0 冻结规则处理；writer 数仍为 1 | (pending) |
 | 6 | [ ] | C5 — TaskFreeze / explicit takeover succession integration | contract | dirty executor 先 freeze；handoff 不转移 Lease；successor 只有经现有 release/takeover/acquire 才可写 | (pending) |
-| 7 | [ ] | C6 — collaboration-centric Work Exchange and ContextPacket | contract | packet 带 `source_snapshot_sha256`、截断证据、`estimator_version` 与 canonical render SHA；`CollaborationRunContextBindingV1` 落地；显示 existing execution offers、participants、threads、signals、handoffs、opportunities；snapshot fail-loud | (pending) |
+| 7 | [ ] | C6 — collaboration-centric Work Exchange and ContextPacket | contract | packet 带 `source_snapshot_sha256`、截断证据、`estimator_version` 与 canonical render SHA；`CollaborationRunContextBindingV1` 落地，且它是 collaboration-mode delegated run 的必需派发闸门：派发前校验 binding 存在、与当前 intent 和 execution packet 匹配、引用协作 packet、render digest 与组合后的 goal 一致，缺失或陈旧一律 fail closed，不是可选审计元数据；显示 existing execution offers、participants、threads、signals、handoffs、opportunities；snapshot fail-loud | (pending) |
 | 8 | [ ] | C7 — CLI/MCP and bounded context injection | contract | authenticated actor 由服务端推导；Engineer 可 post；Worker 由 Host collector post；全部 context 标记 untrusted | (pending) |
 | 9 | [ ] | C8 — read-only Operator collaboration surface | contract | 展示 lanes、discoveries、handoffs、hotspots、contributors；task message 仍是唯一 browser write | (pending) |
 | 10 | [ ] | C9 — real multi-agent canary and multi-seat decision | contract | C9-A 可行性通过；C9-B 重复证据成立；aggregate compute/cost 记录完整；usefulness rubric 开跑前冻结；跨臂污染防护到位；零 authority drift；输出 persistent multi-seat go/no-go | (pending) |
@@ -184,7 +184,8 @@ No step skips a state。`independent_review` 与 `guarded_merge` 在本 Sprint �
 - [ ] 完成 `CollaborationRunContextBindingV1` 决策：协作 provenance 走加法绑定，不 bump Delegation 协议。
 - [ ] 完成 P0 actor 支持矩阵：`module_engineer` / `delegated_worker` Supported，`human_operator` Deferred，`native_subagent` Unsupported。
 - [ ] 完成 delegation policy bridge 设计：`allowed_roles` 与 `max_parallel_readers` 如何在准入期生效。
-- [ ] 跑 model-free canary：同一 parent claim、3 个不同 dispatch_id、3 个并行只读 run、protected state 字节不变、第 4 个并发请求在 `max_parallel_readers=3` 被拒。
+- [ ] 冻结 admission 决策表与测试向量：`max_parallel_readers=3`；active readers 0 / 1 / 2 放行；active readers 3 拒绝；reader 状态陈旧或未知一律 fail closed。
+- [ ] 记录 baseline 负面证明：当前 `admitReadOnlyDelegation()` 不消费 `delegation_policy`，`max_parallel_readers` 今天只是 profile 里的声明值。真实运行时拒绝由 C4 的桥产生，本行不主张。
 - [ ] 完成 ArtifactRef 决策：复用现有 `WorkerResult` `{ ref, sha256 }` 校验器，不引入重复引用类型。
 - [ ] 冻结 store roots、lock 策略与 canonical JSON 机制。
 - [ ] 冻结 feature flag 与降级模式。
@@ -203,7 +204,7 @@ tasks/workstreams/runtime-harness/*
 
 **Acceptance**
 
-架构请求被接受；无运行时源文件变更；契约测试枚举现有权威协议版本；上述六项决策全部有明确结论，C1 之后不留待定项。
+架构请求被接受；无运行时源文件变更；契约测试枚举现有权威协议版本；上述各项决策全部有明确结论，C1 之后不留待定项。admission 侧只做模型层验收：决策表与测试向量冻结、baseline 负面证明在案；本行不主张任何真实运行时拒绝，真实并发 canary 归 C4。
 
 **Rollback**
 
@@ -224,6 +225,7 @@ tasks/workstreams/runtime-harness/*
 - [ ] 实现 `CollaborationActorRefV1` 判别联合（P0 只有 `module_engineer` 与 `delegated_worker`）与带 revision 的 `CollaborationScopeRefV1`。
 - [ ] `ArtifactRefV1` 直接复用现有 `WorkerResult` `{ ref, sha256 }` 校验器。
 - [ ] signal ID 与记录时间由 Host/Server 派生，不接受调用方提供。
+- [ ] 记录时间对重试稳定：delegated 贡献取该次运行精确的 process receipt / 持久化观测时间；直接发布在第一次 idempotency 事件里冻结时间；重试复用已记录的时间，绝不重采墙钟。
 - [ ] 每条 signal 以身份级原子写落盘，不做批量部分可见。
 - [ ] supersede 只允许同 actor lineage 内进行，且目标必须存在。
 - [ ] `source_signal_ids` 引用的 signal 必须已存在且同仓库。
@@ -269,6 +271,7 @@ tasks/workstreams/runtime-harness/*
 - [ ] 实现 `RelevantSignalV1` 的闭集检索理由与 `matched_refs`。
 - [ ] 实现确定性利用/探索配额（默认 60/40，低覆盖 thread 与 unadopted handoff 有固定名额）。
 - [ ] 投影里的任何 digest 都不含墙钟输入。
+- [ ] `recent_activity` 与 hotspot 的新近度相对 source snapshot 里的最新事件计算，以它为确定性 epoch，不读运行时墙钟。
 - [ ] 实现 top-K 选择与 1,500 estimated tokens 预算截断。
 - [ ] 断言 hotspot 不进入 Work Graph priority、dependency、Task state、Lease eligibility。
 - [ ] 采集期变化标记 `changed_during_read`，分片不可读标记 `degraded`。
@@ -335,11 +338,13 @@ handoff 内容完整可校验；同一份 handoff 被多个采用者采用全部
 
 - [ ] 在每个持久化边界注入故障（signal 1 之后、signal N 之后、handoff 之后、commit 之前、commit 之后、WorkerResult 之前、WorkerResult 之后），重试后收敛到一条可见 commit、一个 WorkerResult、零重复 signal；
 - [ ] 不可解析 draft 的 typed rejection 负例；
-- [ ] 第 4 个并发 reader 被 admission bridge 拒绝。
+- [ ] 真实运行时 canary：同一 parent claim 下 3 个真实并行 reader 全部被桥放行，第 4 个真实请求在 `max_parallel_readers=3` 被拒；
+- [ ] 完成与失败的 reader 都正确释放名额，释放后新请求可再次放行；
+- [ ] `reconciliation_required` 与状态不确定的 reader 名额按 C0 冻结的决策表处理（陈旧或未知一律 fail closed）。
 
 **Acceptance**
 
-至少 3 个同 capability read-only Worker 并行且第 4 个被拒；参与者 protected snapshot 前后相等；writer 数仍为 1。
+本行独占真实运行时 admission canary：3 个同 capability read-only Worker 真实并行放行、第 4 个真实请求被桥拒绝、完成或失败的 reader 释放名额、不确定 reader 按 C0 冻结规则 fail closed；参与者 protected snapshot 前后相等；writer 数仍为 1。
 
 **Rollback**
 
@@ -386,6 +391,7 @@ handoff 内容完整可校验；同一份 handoff 被多个采用者采用全部
 - [ ] 实现 `CollaborationContextPacketV1` builder：绑定 `source_snapshot_sha256`、记录 `estimator_version` 与 `budget_estimated_tokens`、确定性截断并写 `truncated` 与 `omitted_signal_count`、输出 canonical `rendered_context_sha256`。
 - [ ] `built_at` 不进内容摘要，投递时间落在 run-context binding 与 adoption receipt 上。
 - [ ] 实现 `CollaborationRunContextBindingV1`：记录 dispatch、intent、execution packet、协作 packet、render、base/composed goal 的摘要。
+- [ ] 把 binding 作为 collaboration-mode delegated run 的必需派发闸门：派发前校验 binding 存在、与当前 intent 和 execution packet 匹配、引用协作 packet、`rendered_context_sha256` 与组合后的 goal 一致；缺失或陈旧一律 fail closed。它不是可选审计元数据。
 - [ ] 对每个可变来源做 double-read。
 - [ ] `snapshot_consistency` 非 `stable` 时 fail loud。
 - [ ] 基准测试 100 Work Packages / 10 Engineers。

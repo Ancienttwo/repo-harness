@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-29T16:56:30+0800 -->
+<!-- updated_at: 2026-08-29T18:46:04+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Idle
-> **Updated At**: 2026-08-29T16:56:30+0800
+> **Status**: Active
+> **Updated At**: 2026-08-29T18:46:04+0800
 > **Source Branch**: main
-> **Source Commit**: 17590cfb
+> **Source Commit**: b007f7c6
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: manual
@@ -17,10 +17,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Current Focus
 
-- Status: Idle
+- Status: Active
 - Active Plan: (none)
 - Plan Status: (none)
-- Next Task: (none)
+- Next Task: inspect active worktree marker(s)
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,7 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- (none)
+- linked-worktree-15c0db14c68b: plans/plan-20260829-1728-oracle-thinking-passthrough.md
+- linked-worktree-15c0db14c68b: active-worktree owner -> self
 ## Active Sprint
 
 - Sprint: (none)
@@ -55,14 +56,11 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 6 changed/untracked path(s)
+- Summary: 3 changed/untracked path(s)
 
 ```
  M docs/architecture/.projection-manifest.json
  M plans/prds/20260828-2321-collaboration-substrate.prd.md
- M plans/prds/20260828-2321-collaborative-work-exchange-agent-succession.prd.md
- M plans/prds/20260828-2321-guarded-merge-unattended-automation.prd.md
- M plans/prds/20260828-2321-work-exchange-independent-review.prd.md
  M plans/sprints/20260828-2321-collaborative-work-exchange-agent-succession.sprint.md
 ```
 
