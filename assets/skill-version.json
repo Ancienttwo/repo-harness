@@ -1,6 +1,6 @@
 {
-  "version": "0.17.1",
-  "templateVersion": "0.17.1",
+  "version": "0.18.0",
+  "templateVersion": "0.18.0",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "compatibility": {
@@ -271,6 +271,10 @@
     {
       "version": "0.17.1",
       "description": "Delivers the persistent module-engineer control plane on the existing early-access line: durable engineer records, bindings and authenticated principal claims, a task/claim-scoped engineer inbox, the loopback operator control board, fail-closed read-only delegation admission, verified evidence context, interface change authority, integration acceptance, and the exclusive engineer MCP profile; pins ArchContext 0.4.7 and isolates fixture HOME outside the repo under test"
+    },
+    {
+      "version": "0.18.0",
+      "description": "Rebuilds the operator control board as an attention-first worklist with a resident detail pane, projecting task_label and task_index through FleetBoardCardV1 at FLEET_BOARD_PROTOCOL 2, and opens the board's single write channel as an authenticated task-message POST with Origin, read_only and 8 KiB gates under sender_kind operator; adds zh/en board i18n and canonical brand marks"
     }
   ],
   "generatedProjectStamp": {
