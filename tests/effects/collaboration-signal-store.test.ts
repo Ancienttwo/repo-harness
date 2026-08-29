@@ -35,6 +35,7 @@ import {
   listCoordinationSignals,
   publishCoordinationSignal,
   readCoordinationSignal,
+  signalStagingName,
   type PublishCoordinationSignalInput,
 } from '../../src/effects/collaboration/signal-store';
 import { bindEngineer, readEngineerBindingStatus } from '../../src/effects/engineers/binding-store';
@@ -509,6 +510,48 @@ describe('C1 coordination signal store', () => {
     rmSync(file);
     writeFileSync(join(signalsRoot, 'notes.txt'), 'stray\n');
     expect(code(() => listCoordinationSignals(value.repoRoot))).toBe('collaboration_unavailable');
+  });
+
+  /**
+   * The staging skip is the one exception to "anything unexpected fails the
+   * store closed", so it has to match the name this store writes and nothing
+   * else. The genuine name comes from `signalStagingName()` itself — the same
+   * producer `publishSignalFileDurably()` uses — so a builder that drifts from
+   * the matcher turns this test red instead of silently widening the skip.
+   */
+  test('only this store\'s own staging name is skipped; lookalikes fail the store closed', () => {
+    const value = fixture();
+    const published = publishCoordinationSignal(publishInput(value)).signal;
+    const signalsRoot = join(realpathSync(resolveGitCommonDirectory(value.repoRoot)), COLLABORATION_SIGNALS_RELATIVE_ROOT);
+    const record = `${published.signal_id}.json`;
+
+    const genuine = signalStagingName(record);
+    writeFileSync(join(signalsRoot, genuine), 'staged bytes');
+    expect(code(() => listCoordinationSignals(value.repoRoot))).toBe('no-error');
+    expect(listCoordinationSignals(value.repoRoot)).toHaveLength(1);
+    rmSync(join(signalsRoot, genuine));
+
+    const uuid = genuine.slice(genuine.lastIndexOf('.', genuine.length - 5) + 1, -'.tmp'.length);
+    const lookalikes = [
+      // 36 hyphens: what `[0-9a-f-]{36}` used to admit in place of a UUID.
+      `.${record}.${process.pid}.${'-'.repeat(36)}.tmp`,
+      // A well-formed UUID of the wrong version — not something `randomUUID()` emits.
+      `.${record}.${process.pid}.${uuid.slice(0, 14)}1${uuid.slice(15)}.tmp`,
+      // A variant nibble outside [89ab], likewise unreachable from `randomUUID()`.
+      `.${record}.${process.pid}.${uuid.slice(0, 19)}c${uuid.slice(20)}.tmp`,
+      // Pid 0 is never a process; `\d+` used to accept it.
+      `.${record}.0.${uuid}.tmp`,
+      `.${record}.007.${uuid}.tmp`,
+    ];
+    for (const lookalike of lookalikes) {
+      writeFileSync(join(signalsRoot, lookalike), 'not staging residue');
+      expect({ lookalike, code: code(() => listCoordinationSignals(value.repoRoot)) })
+        .toEqual({ lookalike, code: 'collaboration_unavailable' });
+      rmSync(join(signalsRoot, lookalike));
+    }
+
+    // Non-vacuity: the record itself is still readable once the residue is gone.
+    expect(listCoordinationSignals(value.repoRoot)).toHaveLength(1);
   });
 
   test('the actor comes from the authenticated principal, never from the caller', () => {

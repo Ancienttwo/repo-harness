@@ -58,13 +58,47 @@ export const COLLABORATION_STORE_RELATIVE_ROOT = 'repo-harness/collaboration/v1'
 export const COLLABORATION_SIGNALS_RELATIVE_ROOT = `${COLLABORATION_STORE_RELATIVE_ROOT}/signals`;
 
 const SIGNAL_FILE = /^[0-9a-f]{64}\.json$/u;
+
+/**
+ * The variable segments of a staging name, in order. `signalStagingName()`
+ * emits them and `SIGNAL_TEMP_FILE` recognises them from this one list, so the
+ * writer of the residue and the reader that tolerates it cannot drift apart.
+ * A matcher looser than the builder is a hole: every file whose name merely
+ * resembles staging residue would be skipped instead of failing the store
+ * closed, which is exactly the guarantee `listCoordinationSignals()` sells.
+ */
+const SIGNAL_STAGING_SEGMENTS: readonly {
+  readonly pattern: string;
+  readonly emit: () => string;
+}[] = [
+  // The staging writer's pid. Real pids start at 1; 0 is never a process.
+  { pattern: '[1-9][0-9]*', emit: () => String(process.pid) },
+  // `randomUUID()` is v4: a literal version nibble and a variant nibble in [89ab].
+  {
+    pattern: '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}',
+    emit: () => randomUUID(),
+  },
+];
+
 /**
  * The staging name `publishSignalFileDurably()` links from. A crash between
  * staging and linking leaves one behind; it is residue of this store's own
  * publish protocol, so listing skips it instead of declaring the store corrupt.
  * Anything else in the directory still fails the store closed.
  */
-const SIGNAL_TEMP_FILE = /^\.[0-9a-f]{64}\.json\.\d+\.[0-9a-f-]{36}\.tmp$/u;
+const SIGNAL_TEMP_FILE = new RegExp(
+  `^\\.[0-9a-f]{64}\\.json${SIGNAL_STAGING_SEGMENTS.map((segment) => `\\.${segment.pattern}`).join('')}\\.tmp$`,
+  'u',
+);
+
+/**
+ * The only producer of a staging name. Exported so the skip rule can be proven
+ * against the name this store actually writes rather than against a copy of its
+ * shape kept somewhere else.
+ */
+export function signalStagingName(finalName: string): string {
+  return `.${finalName}${SIGNAL_STAGING_SEGMENTS.map((segment) => `.${segment.emit()}`).join('')}.tmp`;
+}
 
 export interface PublishCoordinationSignalInput {
   readonly repo_root: string;
@@ -282,7 +316,7 @@ function assertResolvableSource(
  * the loser still reconciles to identical bytes or `collaboration_conflict`.
  */
 function publishSignalFileDurably(directory: string, file: string, bytes: string): void {
-  const temporary = join(directory, `.${basename(file)}.${process.pid}.${randomUUID()}.tmp`);
+  const temporary = join(directory, signalStagingName(basename(file)));
   let fd: number | null = null;
   try {
     fd = openSync(

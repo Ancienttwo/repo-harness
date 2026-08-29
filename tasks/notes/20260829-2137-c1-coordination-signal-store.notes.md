@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260829-2137-c1-coordination-signal-store.md
 > **Contract**: tasks/contracts/20260829-2137-c1-coordination-signal-store.contract.md
 > **Review**: tasks/reviews/20260829-2137-c1-coordination-signal-store.review.md
-> **Last Updated**: 2026-08-29 21:38
+> **Last Updated**: 2026-08-30 00:00
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -41,6 +41,30 @@
   source refs; a reply target is the same invariant (an unresolvable pointer is
   an unverifiable claim), so it gets the same existence and same-repository
   check.
+- **The closed inclusion scan asks the module system, not the source text.**
+  Three review rounds each found one more export form the regex list did not
+  cover — declaration, then `const X_PROTOCOL = …; export { X_PROTOCOL }`, then
+  `export { X } from './y'`, then `export * from '../outside-src-core'`. Each fix
+  closed one form and left the class open, and the star form is not even
+  detectable by a token pre-filter: the re-exporting file need not contain
+  `_PROTOCOL` at all. `protocolOwningModules()` now imports every
+  `src/core/**/*.ts` and reads `Object.keys(namespace)`; the module system
+  already collapses declaration, named re-export, re-export-from, star re-export
+  and aliasing into one answer. Verified safe to import: an AST-shaped scan of
+  all 70 `src/core` modules found no top-level executable statement, and every
+  top-level initializer is a `join()`, a regex, a frozen literal or a pure id
+  builder. A type-only `*_PROTOCOL` is deliberately not an owner — it names no
+  wire version a reader can depend on.
+- **A staging name has one producer and one matcher, built from one list.**
+  `SIGNAL_TEMP_FILE` is the sole exception to "anything unexpected fails the
+  store closed", so a matcher looser than the builder silently converts that
+  guarantee into a skip. The loose form (`\d+` for the pid, `[0-9a-f-]{36}` for
+  the UUID) accepted pid `0` and 36 literal hyphens. Rather than tightening two
+  independent literals, `SIGNAL_STAGING_SEGMENTS` pairs each variable segment's
+  pattern with its emitter, and `signalStagingName()` and `SIGNAL_TEMP_FILE` are
+  both derived from it, so the two ends cannot drift. `signalStagingName()` is
+  exported so the skip rule is proven against the name the store actually
+  writes instead of against a copy of its shape kept in the test.
 - **`collaboration.mode` was wired only into this repo's policy, not into the
   adoption planner defaults.** The freeze record names `.ai/harness/policy.json`
   as the surface; pushing the key into `src/core/adoption/standard-plan.ts` would
@@ -203,9 +227,16 @@ baseline.
 - Checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Closed inclusion scan: `tests/unit/collaboration-authority-baseline.test.ts`,
-  describe block `C1 closed inclusion scan`. Verified to bite by adding a
-  throwaway `src/core/state/scan-probe.ts` exporting a `*_PROTOCOL` and
-  observing the scan go red before removing it.
+  describe block `C1 closed inclusion scan`. Verified to bite against four
+  throwaway probes in `src/core`, each removed after observing the scan go red:
+  `export const X_PROTOCOL`; `const X_PROTOCOL = …; export { X_PROTOCOL }`;
+  `export { X_PROTOCOL } from '../effects/…'`; and `export * from '../effects/…'`
+  star-re-exporting a protocol declared outside `src/core` — the form the
+  previous text-matching scan admitted.
+- Staging-name skip: `tests/effects/collaboration-signal-store.test.ts`, test
+  `only this store's own staging name is skipped`. Non-vacuity checked by
+  temporarily restoring the loose `\d+` / `[0-9a-f-]{36}` patterns and observing
+  the 36-hyphen lookalike turn the test red.
 - Store acceptance: `tests/effects/collaboration-signal-store.test.ts`, including
   the three-actor independent-process publish and the delivery-plane digest
   comparison.

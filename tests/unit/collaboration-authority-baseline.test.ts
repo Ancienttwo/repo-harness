@@ -21,6 +21,7 @@ import { describe, expect, test } from 'bun:test';
 import { createHash } from 'crypto';
 import { readFileSync, readdirSync } from 'fs';
 import { join, relative } from 'path';
+import { pathToFileURL } from 'url';
 
 import * as delegation from '../../src/core/engineers/delegation';
 import {
@@ -450,44 +451,45 @@ function freezeRecordSource(): string {
 }
 
 /**
- * Every way a module can put a `*_PROTOCOL` name on its public surface. The
- * declaration form alone left two escape hatches — `const X_PROTOCOL = …;
- * export { X_PROTOCOL }` and `export { X_PROTOCOL } from './y'` — through which
- * a protocol owner could skip classification entirely.
+ * Every `src/core/**` module that puts a `*_PROTOCOL` name on its export
+ * surface, resolved by importing the module and reading its namespace rather
+ * than by matching export syntax.
+ *
+ * Matching syntax was a losing game: each new form — the declaration, then
+ * `const X_PROTOCOL = …; export { X_PROTOCOL }`, then `export { X } from './y'`,
+ * then `export * from '../elsewhere'` — was another bypass found only after it
+ * existed. The module system already collapses declaration, named re-export,
+ * re-export-from, star re-export and aliasing into a single answer, so asking it
+ * closes the whole class instead of the three forms someone thought of.
+ *
+ * Every module is imported, with no source pre-filter: a star re-export need not
+ * contain the token it re-exports, so any text-level shortcut reopens the hole
+ * this replaces. `src/core` is pure protocol and logic — no module in it runs
+ * anything at import time — so importing all of them costs only the parse.
+ * A `*_PROTOCOL` that is type-only is deliberately not an owner: it names no
+ * wire version a reader could depend on.
  */
-const PROTOCOL_EXPORT_FORMS: readonly RegExp[] = [
-  /^\s*export\s+(?:declare\s+)?(?:const|let|var|function|class)\s+[A-Za-z0-9_$]*_PROTOCOL\b/mu,
-  /\bexport\s*(?:type\s*)?\{[^}]*_PROTOCOL\b[^}]*\}/u,
-];
-
-function exportsAProtocol(source: string): boolean {
-  return PROTOCOL_EXPORT_FORMS.some((form) => form.test(source));
-}
-
-/**
- * Every `src/core/**` module that puts a `*_PROTOCOL` export on its surface,
- * read from the source text rather than from imports so a module nobody imports
- * here still shows up.
- */
-function protocolOwningModules(): readonly string[] {
+async function protocolOwningModules(): Promise<readonly string[]> {
   const root = join(REPO_ROOT, 'src/core');
-  const found: string[] = [];
+  const modules: string[] = [];
   const walk = (directory: string): void => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const absolute = join(directory, entry.name);
       if (entry.isDirectory()) {
         walk(absolute);
       } else if (entry.isFile() && entry.name.endsWith('.ts')) {
-        // Broad candidate filter first, then the export-form check, so a file
-        // that merely mentions the token is never classified as an owner.
-        const source = readFileSync(absolute, 'utf8');
-        if (source.includes('_PROTOCOL') && exportsAProtocol(source)) {
-          found.push(relative(REPO_ROOT, absolute).replaceAll('\\', '/'));
-        }
+        modules.push(absolute);
       }
     }
   };
   walk(root);
+  const found: string[] = [];
+  for (const absolute of modules.sort()) {
+    const namespace = (await import(pathToFileURL(absolute).href)) as Readonly<Record<string, unknown>>;
+    if (Object.keys(namespace).some((name) => name.endsWith('_PROTOCOL'))) {
+      found.push(relative(REPO_ROOT, absolute).replaceAll('\\', '/'));
+    }
+  }
   return found.sort();
 }
 
@@ -554,10 +556,10 @@ describe('C0 authority inventory completeness', () => {
  * classify without hindsight, so the row that adds it also closes the scan.
  */
 describe('C1 closed inclusion scan', () => {
-  test('every src/core module owning a protocol is either an authority source or an adjudicated exclusion', () => {
+  test('every src/core module owning a protocol is either an authority source or an adjudicated exclusion', async () => {
     const inventoried = AUTHORITY_SOURCE_MODULES.map((source) => source.module);
     const excluded = DELIBERATELY_EXCLUDED.map((entry) => entry.module);
-    expect(protocolOwningModules()).toEqual([...inventoried, ...excluded].sort());
+    expect(await protocolOwningModules()).toEqual([...inventoried, ...excluded].sort());
   });
 
   test('the two sides of the scan are disjoint and internally unique', () => {
