@@ -106,6 +106,30 @@ export const COLLABORATION_RETRIEVAL_REASONS = [
 export type CollaborationRetrievalReason = (typeof COLLABORATION_RETRIEVAL_REASONS)[number];
 
 /**
+ * How much of the source set the collector actually managed to read: `stable`
+ * when nothing moved underneath it, `changed_during_read` when the store changed
+ * mid-collection, `degraded` when a shard was unreadable.
+ *
+ * This projection is pure — it sees an array of already-committed signals and
+ * cannot observe whether that array was assembled from a torn read, so it cannot
+ * derive the value. The future store reader (sprint row C6) is the only layer
+ * that can, and it injects the value here, the same seam `handoff_facts` uses.
+ * The field is reserved now rather than added later because packets carry
+ * `packet_sha256` over their own key set: adding a key once C6 persists packets
+ * would invalidate every stored digest, which is a protocol migration.
+ */
+export const COLLABORATION_SNAPSHOT_CONSISTENCY = ['stable', 'changed_during_read', 'degraded'] as const;
+
+export type CollaborationSnapshotConsistency = (typeof COLLABORATION_SNAPSHOT_CONSISTENCY)[number];
+
+function validateSnapshotConsistency(value: unknown): CollaborationSnapshotConsistency {
+  if (!COLLABORATION_SNAPSHOT_CONSISTENCY.includes(value as CollaborationSnapshotConsistency)) {
+    collaborationInvalid('context packet snapshot_consistency is invalid');
+  }
+  return value as CollaborationSnapshotConsistency;
+}
+
+/**
  * Subject kinds the closed reason set can express. `publication` and
  * `free_topic` subjects have no reason code, so they are refused rather than
  * silently dropped: a caller that asked for publication-scoped context and got a
@@ -138,6 +162,7 @@ export interface CollaborationContextPacketV1 {
   readonly kind: typeof COLLABORATION_CONTEXT_PACKET_KIND;
   readonly repository_id: string;
   readonly source_snapshot_sha256: string;
+  readonly snapshot_consistency: CollaborationSnapshotConsistency;
   readonly subject_refs: readonly CollaborationScopeRefV1[];
   readonly selection_policy_version: typeof COLLABORATION_SELECTION_POLICY_VERSION;
   readonly estimator_version: typeof COLLABORATION_ESTIMATOR_VERSION;
@@ -155,6 +180,7 @@ const PACKET_FIELDS = [
   'kind',
   'repository_id',
   'source_snapshot_sha256',
+  'snapshot_consistency',
   'subject_refs',
   'selection_policy_version',
   'estimator_version',
@@ -290,6 +316,8 @@ export interface BuildCollaborationContextPacketInput {
   readonly signals: readonly CoordinationSignalV1[];
   readonly subject_refs: readonly CollaborationScopeRefV1[];
   readonly handoff_facts?: readonly CollaborationHandoffFactV1[];
+  /** Injected by the store reader (C6); defaults to `stable` for a caller-supplied set. */
+  readonly snapshot_consistency?: CollaborationSnapshotConsistency;
   readonly handoff?: CollaborationHandoffRefV1 | null;
   readonly budget_estimated_tokens?: number;
 }
@@ -308,6 +336,7 @@ export function buildCollaborationContextPacket(
   const repositoryId = validateCollaborationRepositoryId(input.repository_id);
   const subjectRefs = validateSubjectRefs(input.subject_refs);
   const handoff = validateHandoffRef(input.handoff ?? null);
+  const snapshotConsistency = validateSnapshotConsistency(input.snapshot_consistency ?? 'stable');
   const budget = input.budget_estimated_tokens ?? COLLABORATION_CONTEXT_BUDGET_ESTIMATED_TOKENS;
   if (!Number.isInteger(budget) || budget <= collaborationContextEnvelopeTokens()) {
     collaborationInvalid('budget_estimated_tokens must leave room for the untrusted wrapper');
@@ -453,6 +482,7 @@ export function buildCollaborationContextPacket(
     kind: COLLABORATION_CONTEXT_PACKET_KIND,
     repository_id: repositoryId,
     source_snapshot_sha256: collaborationSourceSnapshotDigest(signals),
+    snapshot_consistency: snapshotConsistency,
     subject_refs: subjectRefs,
     selection_policy_version: COLLABORATION_SELECTION_POLICY_VERSION,
     estimator_version: COLLABORATION_ESTIMATOR_VERSION,
@@ -518,6 +548,7 @@ export function validateCollaborationContextPacket(value: unknown): Collaboratio
     kind: COLLABORATION_CONTEXT_PACKET_KIND,
     repository_id: validateCollaborationRepositoryId(value.repository_id),
     source_snapshot_sha256: sourceDigest,
+    snapshot_consistency: validateSnapshotConsistency(value.snapshot_consistency),
     subject_refs: validateSubjectRefs(value.subject_refs),
     selection_policy_version: COLLABORATION_SELECTION_POLICY_VERSION,
     estimator_version: COLLABORATION_ESTIMATOR_VERSION,

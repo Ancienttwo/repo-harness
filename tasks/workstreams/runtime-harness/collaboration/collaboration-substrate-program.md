@@ -28,7 +28,7 @@ the freeze record keeps only a pointer.
 
 - [x] C0: two-plane authority freeze -- architecture request accepted, D1-D12 frozen, baseline authority-enumeration contract test in place, zero `src/` change.
 - [x] C1: `CoordinationSignalV1` schema, `src/core/collaboration/common.ts`, append-only store; capability node registered, architecture module projected, this ledger moved out of the freeze record, `collaboration.mode` wired to `off`, and the deferred closed inclusion scan landed.
-- [x] C2: signal threads, discovery and hotspot projection -- deterministic thread aggregation on exact opaque keys, the capped integer hotspot function, the closed structural opportunity set, `RelevantSignalV1` retrieval with the 60/40 exploitation/exploration quota, and `CollaborationContextPacketV1` inside the 1,500 estimated-token budget. Pure read model: no store, no cache, no clock, no new protocol.
+- [x] C2: signal threads, discovery and hotspot projection -- deterministic thread aggregation on exact opaque keys, the capped integer hotspot function, the closed structural opportunity set, `RelevantSignalV1` retrieval with the 60/40 exploitation/exploration quota, and `CollaborationContextPacketV1` inside the 1,500 estimated-token budget. Pure read model: no store, no cache, no clock, no new protocol. `snapshot_consistency` is reserved on the packet and injected by the future store reader (C6); a pure projection over an already-assembled signal array cannot observe a torn or partial read, so deriving it is deferred with the collector.
 - [ ] C3: `WorkStateHandoffV1` and adoption receipts.
 - [ ] C4: delegated Worker contribution adapter and the real admission-bridge canary against D6.
 - [ ] C5: TaskFreeze / explicit takeover succession integration.

@@ -22,6 +22,7 @@ import {
   COLLABORATION_HOTSPOT_SELECTION_TOP_K,
   COLLABORATION_RETRIEVAL_REASONS,
   COLLABORATION_SELECTION_POLICY_VERSION,
+  COLLABORATION_SNAPSHOT_CONSISTENCY,
   buildCollaborationContextPacket,
   canonicalCollaborationContextPacketBytes,
   collaborationContextEnvelopeTokens,
@@ -405,5 +406,41 @@ describe('the packet round-trips and fails closed', () => {
       created_at: '2026-08-30T00:00:01Z',
     });
     expect(() => packetFor([foreign])).toThrow(CollaborationError);
+  });
+});
+
+describe('snapshot_consistency is carried, not derived', () => {
+  test('a caller-supplied source set defaults to stable', () => {
+    const { packet } = packetFor(reasonFixture());
+    expect(packet.snapshot_consistency).toBe('stable');
+    expect(COLLABORATION_SNAPSHOT_CONSISTENCY).toEqual(['stable', 'changed_during_read', 'degraded']);
+  });
+
+  test.each(['changed_during_read', 'degraded'] as const)(
+    'an injected %s reaches the record and the digest',
+    (consistency) => {
+      const stable = packetFor(reasonFixture()).packet;
+      const { packet } = packetFor(reasonFixture(), { snapshot_consistency: consistency });
+      expect(packet.snapshot_consistency).toBe(consistency);
+      // Same signals, same rendered text: only the marker moved, and the digest
+      // has to notice, or a torn read would be indistinguishable from a clean one.
+      expect(packet.rendered_context_sha256).toBe(stable.rendered_context_sha256);
+      expect(packet.packet_sha256).not.toBe(stable.packet_sha256);
+      expect(validateCollaborationContextPacket(JSON.parse(JSON.stringify(packet)))).toEqual(packet);
+    },
+  );
+
+  test('a value outside the closed set is refused at build and at validation', () => {
+    expect(() => packetFor(reasonFixture(), { snapshot_consistency: 'torn' as never }))
+      .toThrow(CollaborationError);
+    const record = JSON.parse(JSON.stringify(packetFor(reasonFixture()).packet)) as Record<string, unknown>;
+    record.snapshot_consistency = 'torn';
+    expect(() => validateCollaborationContextPacket(record)).toThrow(CollaborationError);
+  });
+
+  test('a packet missing the field is refused', () => {
+    const record = JSON.parse(JSON.stringify(packetFor(reasonFixture()).packet)) as Record<string, unknown>;
+    delete record.snapshot_consistency;
+    expect(() => validateCollaborationContextPacket(record)).toThrow(CollaborationError);
   });
 });

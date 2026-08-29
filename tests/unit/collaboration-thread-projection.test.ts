@@ -303,6 +303,18 @@ describe('contribution opportunities use a closed structural set', () => {
     )!.source_refs).toEqual([recordId(3)]);
   });
 
+  test('recent_activity names every signal at the latest instant, in either spelling', () => {
+    // `…:05Z` and `…:05.000Z` are one instant; `latest_signal_at` can only carry
+    // one spelling, so a string compare would drop the other signal's evidence.
+    const signals = [
+      signal({ n: 1, thread: 'same-instant', at: '2026-08-30T00:00:05Z' }),
+      signal({ n: 2, thread: 'same-instant', at: '2026-08-30T00:00:05.000Z', actor: engineer('delivery') }),
+    ];
+    const projection = projectCollaborationThreads({ signals });
+    const recent = projection.opportunities.find((opportunity) => opportunity.reason === 'recent_activity')!;
+    expect([...recent.source_refs].sort()).toEqual([recordId(1), recordId(2)].sort());
+  });
+
   test('source refs stay bounded on a busy lane', () => {
     const signals = Array.from({ length: 20 }, (_unused, index) => signal({
       n: index + 1,

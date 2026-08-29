@@ -67,6 +67,21 @@
   auto-appliable surface: the capability's `extensions.verification` list gains
   the three new test files, and the projection re-render is applied and committed.
   Declaring the C2 entrypoints stays available as a separate architecture slice.
+- **The plan capture dropped sprint row 3's last task, `snapshot_consistency`.**
+  The sprint asks C2 to mark a source set that changed during collection
+  (`changed_during_read`) or whose shard was unreadable (`degraded`); the captured
+  plan carried no task for it and the first implementation shipped without the
+  field. Resolved by injection rather than derivation: `buildCollaborationContextPacket`
+  takes an optional `snapshot_consistency` defaulting to `stable`, validated
+  against the closed three-value set and carried into `PACKET_FIELDS` and the
+  `packet_sha256` preimage. A pure projection over an already-assembled array of
+  committed signals cannot observe how that array was read, so the value comes
+  from the store reader (C6) through the same seam `handoff_facts` uses. The shape
+  is reserved now because the packet digests its own key set: adding the key after
+  C6 persists packets would invalidate every stored digest, which is a protocol
+  migration. Deriving the value stays C6's task; the marker's scope is the packet,
+  matching the sprint wording — `CollaborationThreadSnapshotV1` has no such field
+  in Child PRD A and the thread projection is untouched.
 - **Sprint row 3 was not marked complete and the sprint file was not touched.** A
   sibling worker is landing C3 in parallel and the sprint backlog is a shared
   file; row completion belongs to the closeout that merges, not to either worker.

@@ -250,8 +250,8 @@ export function projectCollaborationThreads(
   const facts = validateHandoffFacts(input.handoff_facts ?? [], new Set(lanes.keys()));
 
   /**
-   * Cross-lane edges. An edge counts once per unordered endpoint pair even when
-   * a signal both replies to and cites the same record, and only when the target
+   * Cross-lane edges. An edge counts once per ordered (source, target) reference
+   * even when a signal both replies to and cites the same record, and only when the target
    * is present in the source set — a reference the snapshot cannot resolve is
    * not evidence of a link between two lanes it can see. Both endpoints count
    * it: being cited from another lane is as much a reason to look as citing one.
@@ -376,7 +376,11 @@ function projectOpportunities(
     add('cross_thread_reference', [...crossingSignalIds].sort(byText));
   }
   if (snapshot.recency_rank === COLLABORATION_RECENCY_RANK_MAX) {
-    add('recent_activity', ordered.filter((signal) => signal.created_at === snapshot.latest_signal_at).map((signal) => signal.signal_id));
+    // Instants, not spellings: `…:05Z` and `…:05.000Z` are the same moment, and
+    // `latest_signal_at` carries only one of them, so a string compare would drop
+    // the other signal from the evidence for a reason it helped earn.
+    const latestMs = parseInstant(snapshot.latest_signal_at);
+    add('recent_activity', ordered.filter((signal) => parseInstant(signal.created_at) === latestMs).map((signal) => signal.signal_id));
   }
   if (snapshot.artifact_ref_count >= COLLABORATION_ARTIFACT_RICH_MIN_REFS) {
     add('artifact_rich_thread', ordered.filter((signal) => signal.artifact_refs.length > 0).map((signal) => signal.signal_id));
