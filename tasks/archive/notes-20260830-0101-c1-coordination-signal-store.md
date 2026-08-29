@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-30 01:01
+> **Related Plan**: plans/archive/plan-20260829-2137-c1-coordination-signal-store.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260830-0101
+
 # Implementation Notes: c1-coordination-signal-store
 
 > **Status**: Active

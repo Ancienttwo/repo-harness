@@ -1,6 +1,6 @@
 # Plan: C1 CoordinationSignalV1 schema, common.ts and append-only store
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260829-2137
 > **Slug**: c1-coordination-signal-store
 > **Planning Source**: repo-harness-sprint
