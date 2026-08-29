@@ -25,6 +25,7 @@ later row inherits a decided boundary instead of negotiating one.
 | `src/core/engineers/principal-claim.ts` | Engineer principal and Claim actor receipt | `ENGINEER_PRINCIPAL_PROTOCOL = 1`, `ENGINEER_PRINCIPAL_KIND`, `ENGINEER_PRINCIPAL_MAPPING_KIND`, `CLAIM_ACTOR_RECEIPT_KIND` |
 | `src/core/engineers/scheduling.ts` | Work Graph and Engineer offers | `WORK_GRAPH_PROTOCOL = 1`, `ENGINEER_OFFER_PROTOCOL = 1`, `WORK_GRAPH_KIND`, `ENGINEER_OFFER_KIND`, `ENGINEER_OFFERS_KIND` |
 | `src/core/fleet/task-offer.ts` | Task offers | `TASK_OFFER_PROTOCOL = 1`, `FLEET_OFFERS_PROTOCOL = 1`, `TASK_OFFER_KIND`, `FLEET_OFFERS_KIND` |
+| `src/core/fleet/board.ts` | Fleet board read model | `FLEET_BOARD_PROTOCOL = 2`, `FLEET_BOARD_KIND` |
 | `src/core/engineers/task-freeze.ts` | Exact bound-executor state freeze | `TASK_FREEZE_PROTOCOL = 1`, `TASK_FREEZE_KIND` |
 | `src/core/publication/publication-receipt.ts` | Publication receipt | `PUBLICATION_RECEIPT_PROTOCOL = 1`, `PUBLICATION_RECEIPT_KIND`, `PUBLICATION_CREATE_INTENT_KIND`, `PUBLICATION_PREPARE_KIND` |
 | `src/core/publication/publication-lifecycle.ts` | Publication lineage and integration observation | `PUBLICATION_LINEAGE_PROTOCOL = 1`, `PUBLICATION_INTEGRATION_OBSERVATION_PROTOCOL = 1` |
@@ -67,7 +68,7 @@ digests and is owned by the first row that writes a collaboration store (C1).
 
 The digest table is a human baseline. The machine guard is the frozen inventory
 digest in `tests/unit/collaboration-authority-baseline.test.ts`,
-`sha256:ebbb3deb8e0cfd3759c71a00cf68b78d8175d3bec336bb4e8b101477ab05daa6`, which
+`sha256:555dbe25fdefe36d242fc3c96ba5c7326237bd2a5e53dcda44ae8af1e99b9d86`, which
 is computed from the live exported constants rather than from file bytes: it goes
 red on real authority drift and stays green through comment or refactor churn.
 
