@@ -1020,9 +1020,9 @@
       "sourceDigest": "sha256:dc2faa5abe1e85c162bcc9a126ee79a0178c75d03c20ff97519b8b463cc2ee44",
       "outputDigest": "sha256:aa5aac73ff819f8ad0c053a57d5b1627faf2fc5bdbc18e8ab4722de0ab085d59",
       "verifiedAgainst": {
-        "branch": "codex/c2-thread-hotspot-projection",
-        "commit": "e53ad65481e1e050ae7c67242807bd701789461f",
-        "committedAt": "2026-08-30T01:40:34+08:00"
+        "branch": "codex/c3-work-state-handoff-adoption",
+        "commit": "eb47b4fe0e88ed15637731124d84395815918a07",
+        "committedAt": "2026-08-30T03:45:08+08:00"
       }
     },
     {
