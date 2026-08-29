@@ -111,6 +111,9 @@ function packetFor(
     subject_refs: subjectRefs,
     handoff_facts: handoffFacts,
     handoff: { handoff_id: recordId(0xa1), handoff_sha256: digest('e') },
+    // Stated explicitly, never defaulted: these fixtures stand in for a reader
+    // that observed a clean collection, which is a claim only a reader can make.
+    snapshot_consistency: 'stable',
     budget_estimated_tokens: 20_000,
     ...overrides,
   });
@@ -410,9 +413,19 @@ describe('the packet round-trips and fails closed', () => {
 });
 
 describe('snapshot_consistency is carried, not derived', () => {
-  test('a caller-supplied source set defaults to stable', () => {
-    const { packet } = packetFor(reasonFixture());
-    expect(packet.snapshot_consistency).toBe('stable');
+  test('a build with no snapshot_consistency fails closed', () => {
+    // `stable` is a positive assertion about a collection the builder never saw,
+    // so there is nothing safe to default to: the caller states it or gets no packet.
+    const { snapshot_consistency: _omitted, ...withoutMarker } = {
+      repository_id: repositoryId,
+      signals: reasonFixture(),
+      subject_refs: subjectRefs,
+      handoff_facts: handoffFacts,
+      handoff: { handoff_id: recordId(0xa1), handoff_sha256: digest('e') },
+      snapshot_consistency: 'stable' as const,
+      budget_estimated_tokens: 20_000,
+    };
+    expect(() => buildCollaborationContextPacket(withoutMarker as never)).toThrow(CollaborationError);
     expect(COLLABORATION_SNAPSHOT_CONSISTENCY).toEqual(['stable', 'changed_during_read', 'degraded']);
   });
 

@@ -112,8 +112,13 @@ export type CollaborationRetrievalReason = (typeof COLLABORATION_RETRIEVAL_REASO
  *
  * This projection is pure — it sees an array of already-committed signals and
  * cannot observe whether that array was assembled from a torn read, so it cannot
- * derive the value. The future store reader (sprint row C6) is the only layer
- * that can, and it injects the value here, the same seam `handoff_facts` uses.
+ * derive the value. The store reader (sprint row C6) is the sole authority for
+ * it and supplies it here, the same seam `handoff_facts` uses; the builder never
+ * synthesizes it. `stable` in particular is a positive assertion — nothing moved
+ * underneath the collector and no shard was unreadable — so defaulting to it
+ * would fabricate an authority the builder does not have and seal that claim
+ * into `packet_sha256`. A caller with nothing to assert has no packet to build.
+ *
  * The field is reserved now rather than added later because packets carry
  * `packet_sha256` over their own key set: adding a key once C6 persists packets
  * would invalidate every stored digest, which is a protocol migration.
@@ -316,8 +321,8 @@ export interface BuildCollaborationContextPacketInput {
   readonly signals: readonly CoordinationSignalV1[];
   readonly subject_refs: readonly CollaborationScopeRefV1[];
   readonly handoff_facts?: readonly CollaborationHandoffFactV1[];
-  /** Injected by the store reader (C6); defaults to `stable` for a caller-supplied set. */
-  readonly snapshot_consistency?: CollaborationSnapshotConsistency;
+  /** Supplied by the store reader (C6), which is the only layer that can observe it. */
+  readonly snapshot_consistency: CollaborationSnapshotConsistency;
   readonly handoff?: CollaborationHandoffRefV1 | null;
   readonly budget_estimated_tokens?: number;
 }
@@ -336,7 +341,7 @@ export function buildCollaborationContextPacket(
   const repositoryId = validateCollaborationRepositoryId(input.repository_id);
   const subjectRefs = validateSubjectRefs(input.subject_refs);
   const handoff = validateHandoffRef(input.handoff ?? null);
-  const snapshotConsistency = validateSnapshotConsistency(input.snapshot_consistency ?? 'stable');
+  const snapshotConsistency = validateSnapshotConsistency(input.snapshot_consistency);
   const budget = input.budget_estimated_tokens ?? COLLABORATION_CONTEXT_BUDGET_ESTIMATED_TOKENS;
   if (!Number.isInteger(budget) || budget <= collaborationContextEnvelopeTokens()) {
     collaborationInvalid('budget_estimated_tokens must leave room for the untrusted wrapper');

@@ -72,9 +72,14 @@
   (`changed_during_read`) or whose shard was unreadable (`degraded`); the captured
   plan carried no task for it and the first implementation shipped without the
   field. Resolved by injection rather than derivation: `buildCollaborationContextPacket`
-  takes an optional `snapshot_consistency` defaulting to `stable`, validated
-  against the closed three-value set and carried into `PACKET_FIELDS` and the
-  `packet_sha256` preimage. A pure projection over an already-assembled array of
+  takes a required `snapshot_consistency`, validated against the closed
+  three-value set and carried into `PACKET_FIELDS` and the `packet_sha256`
+  preimage. It is required rather than defaulted because `stable` is a positive
+  assertion — nothing moved under the collector, no shard was unreadable — that
+  the builder cannot observe; defaulting to it would fabricate an authority and
+  seal the fabricated claim into the digest, and would leave the field with two
+  semantics, since the parse path already fails closed on a missing key. A pure
+  projection over an already-assembled array of
   committed signals cannot observe how that array was read, so the value comes
   from the store reader (C6) through the same seam `handoff_facts` uses. The shape
   is reserved now because the packet digests its own key set: adding the key after
