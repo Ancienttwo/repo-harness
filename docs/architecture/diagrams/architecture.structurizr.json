@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:a23d2bc659e963369ccb1fb5f291ab496c81295fc401e3755c835d4141301c5d" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:d8910f80e510700d281d9e1e9e900ec07e5dedd7b9b4e66463eb5613683f5557" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:d6054457b74a07527ebabcef3a8dc0a7aa770663d1e6fc2f2e7efef8b976e5b5" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:9395941418f873f90c0591262ea5ef436a21d7835ac77f0c9ef2e9750710c2d9" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
@@ -31,6 +31,14 @@
       {
         "id": "capability.runtime-harness.bound-task-freezes",
         "name": "Bound Task Freezes",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "capability.runtime-harness.collaboration",
+        "name": "Collaboration Substrate",
         "type": "Software System",
         "tags": [
           "capability"
@@ -205,6 +213,14 @@
         ]
       },
       {
+        "id": "component.collaboration.primary",
+        "name": "Append-only Coordination Signal Store",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
         "id": "component.contract-assets.primary",
         "name": "Workflow Contract Asset",
         "type": "Component",
@@ -370,6 +386,18 @@
         "id": "relation.codegraph-readiness.primary",
         "sourceId": "capability.verification.codegraph-readiness",
         "destinationId": "component.codegraph-readiness.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.collaboration.engineer-bindings",
+        "sourceId": "capability.runtime-harness.collaboration",
+        "destinationId": "capability.runtime-harness.engineer-bindings",
+        "description": "calls"
+      },
+      {
+        "id": "relation.collaboration.primary",
+        "sourceId": "capability.runtime-harness.collaboration",
+        "destinationId": "component.collaboration.primary",
         "description": "calls"
       },
       {
@@ -574,6 +602,7 @@
         "capability.public-surface.adoption",
         "capability.public-surface.root-router",
         "capability.runtime-harness.bound-task-freezes",
+        "capability.runtime-harness.collaboration",
         "capability.runtime-harness.delegated-runs",
         "capability.runtime-harness.engineer-bindings",
         "capability.runtime-harness.engineer-messages",
@@ -595,6 +624,7 @@
         "component.adoption.primary",
         "component.bound-task-freezes.primary",
         "component.codegraph-readiness.primary",
+        "component.collaboration.primary",
         "component.contract-assets.primary",
         "component.delegated-runs.primary",
         "component.engineer-bindings.primary",

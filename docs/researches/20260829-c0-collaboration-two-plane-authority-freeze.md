@@ -6,7 +6,7 @@
 > **Sprint row**: C0 of `plans/sprints/20260828-2321-collaborative-work-exchange-agent-succession.sprint.md`
 > **Source PRD**: `plans/prds/20260828-2321-collaboration-substrate.prd.md` (Child A)
 > **Architecture request**: `docs/architecture/requests/archive/2026/runtime-harness-collaboration.md` (Resolved)
-> **Durable ledger**: this document, until C1 registers the capability node and `workstream-sync` can own `tasks/workstreams/runtime-harness/collaboration/`
+> **Durable ledger**: `tasks/workstreams/runtime-harness/collaboration/collaboration-substrate-program.md` (moved out of this document by C1)
 > **Machine guard**: `tests/unit/collaboration-authority-baseline.test.ts`
 > **Usage**: This is the frozen record C1–C9 read from. Do not re-derive these decisions per row; supersede this document instead of silently editing it.
 
@@ -105,17 +105,24 @@ inventory entry carries `kinds: []` — that is a fact, not an omission: the boa
 document has no `kind` field, and `BOARD_PROTOCOL` is a field of the composite
 revision preimage rather than a wire envelope.
 
-**Closed scan deferred to C1.** The criterion is enforced today by hand: the
-adjudication above is exhaustive over the 23 modules, and the digest table plus
-the frozen inventory digest make any inventoried module's drift loud. The
-mechanical form — sweep `src/core/**` for `*_PROTOCOL` exports and assert the
-result equals `AUTHORITY_SOURCE_MODULES` union an explicit `DELIBERATELY_EXCLUDED`
-list — is deliberately **not** added in C0. C0 writes no `src/`, so every module
-such a scan could find already exists and has already been adjudicated by hand;
-the assertion would restate today's split and would be calibrated against zero
-new samples. C1 introduces `src/core/collaboration/`, the first module the
-criterion must classify without hindsight, and owns the scan together with the
-exclusion list it calibrates against.
+**Closed scan — deferred by C0, landed in C1.** C0 enforced the criterion by
+hand: the adjudication above is exhaustive over the 23 modules, and the digest
+table plus the frozen inventory digest make any inventoried module's drift loud.
+The mechanical form was deliberately not added in C0, which writes no `src/`, so
+the assertion would have restated the same split against zero new samples.
+
+C1 introduced `src/core/collaboration/` and closed the scan in
+`tests/unit/collaboration-authority-baseline.test.ts` (`C1 closed inclusion
+scan`): it sweeps `src/core/**` for `*_PROTOCOL` exports and asserts the result
+equals `AUTHORITY_SOURCE_MODULES` united with an explicit `DELIBERATELY_EXCLUDED`
+list, each excluded row naming the clause it fails and its evidence. The ten
+rows above are that list's seed; the eleventh is C1's own module, adjudicated
+below. A companion assertion pins D1's direction by proving that no
+delivery-plane module imports the collaboration plane.
+
+| Module | Fails | Evidence |
+|---|---|---|
+| `src/core/collaboration/common.ts` | C-1 and C-2 | Collaboration plane, which D1 fixes as additive and non-authoritative rather than one of the five planes C0 froze; a signal's bytes grant no Claim, move no Lease generation, and reach any reader inside an untrusted wrapper, so no admission, claim, publication or acceptance decision reads them |
 
 ### Baseline source digests at `main@a490a5ef`
 
@@ -146,6 +153,19 @@ digests and is owned by the first row that writes a collaboration store (C1).
 Every module the frozen inventory draws a constant from is required to appear in
 this table; `tests/unit/collaboration-authority-baseline.test.ts` asserts that
 membership, so the table cannot silently fall behind the inventory.
+
+One row has moved since this baseline was taken. In C1 commit `06999700`,
+`src/core/engineers/delegation.ts` went from
+`sha256:1ba766c087f40263e017693ea5e5b05994813c62d015db76a55e4ae16d825523` to
+`sha256:06b447ad7477759bcbbaa893fffb011b52c43b1a05c85049383337a0482d1b1d`. The
+change is an extract-and-export refactor: the evidence-ref validation that was
+inline in `buildWorkerResult()` became the exported
+`validateWorkerEvidenceRefs()`, which D8 requires so `ArtifactRefV1` reuses the
+same validator instead of a second copy. The wire shape, `DELEGATION_PROTOCOL`,
+`WORKER_RESULT_KIND` and every emitted byte are unchanged, so
+`FROZEN_INVENTORY_SHA256` is unaffected and stays
+`sha256:6a49057e17a921e78773f358e31b487c9402c9f828f14480ef705c5ac96fcb64`.
+`tests/unit/me2a-me3b-readonly-delegation.test.ts` is the byte guard.
 
 The digest table is a human baseline. The machine guard is the frozen inventory
 digest in `tests/unit/collaboration-authority-baseline.test.ts`,
@@ -480,26 +500,16 @@ timestamps, digest helper) built on `src/core/messages/mechanics.ts`.
 
 ## Program Slice Ledger
 
-Durable C0-C9 progress lives here until C1 registers
-`capability.runtime-harness.collaboration` as an archcontext node. The repo's
-capability registry rejects any file under `docs/architecture/modules/` or
-`tasks/workstreams/` that no declared capability owns
-(`scripts/capability-resolver.ts:306,326`), and a node needs entrypoint
-path+symbol anchors plus prefixes that exist (`:285-288`). Neither is available in
-a row that writes no source, so C0 keeps the ledger in the research artifact and
-C1 moves it to `tasks/workstreams/runtime-harness/collaboration/` through
-`repo-harness run workstream-sync ensure`.
+Moved. Durable C0-C9 progress lives in
+`tasks/workstreams/runtime-harness/collaboration/collaboration-substrate-program.md`.
 
-- [x] C0: two-plane authority freeze -- architecture request accepted, D1-D12 frozen, baseline authority-enumeration contract test in place, zero `src/` change.
-- [ ] C1: `CoordinationSignalV1` schema, `src/core/collaboration/common.ts`, append-only store; register the archcontext capability node, let ArchContext project the capability module, and move this ledger into the capability workstream.
-- [ ] C2: signal threads, discovery and hotspot projection.
-- [ ] C3: `WorkStateHandoffV1` and adoption receipts.
-- [ ] C4: delegated Worker contribution adapter and the real admission-bridge canary against D6.
-- [ ] C5: TaskFreeze / explicit takeover succession integration.
-- [ ] C6: collaboration-centric Work Exchange and ContextPacket, with the D3 binding gate.
-- [ ] C7: CLI/MCP and bounded context injection.
-- [ ] C8: read-only Operator collaboration surface.
-- [ ] C9: real multi-agent canary and multi-seat decision.
+C0 kept the ledger here because the capability registry rejects a workstream
+directory that no declared capability owns (`scripts/capability-resolver.ts:306,326`)
+and a capability node needs prefixes that exist (`:285-288`) — neither was
+available in a row that writes no source. C1 created `src/core/collaboration/`,
+registered `capability.runtime-harness.collaboration` as an archcontext node with
+its primary component, and moved the ledger through
+`repo-harness run workstream-sync ensure`. Update slice status there, not here.
 
 ## Handoff Notes
 

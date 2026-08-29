@@ -216,6 +216,9 @@
     ],
     "rule": "pre-edit-guard blocks implementation edits (non-workflow paths) unless an active plan is Approved/Executing; prompt-layer plan gates are advisory routing only"
   },
+  "collaboration": {
+    "mode": "off"
+  },
   "delegation": {
     "mode": "explicit",
     "max_agents": 2,

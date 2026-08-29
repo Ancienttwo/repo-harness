@@ -19,8 +19,9 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'crypto';
-import { readFileSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, readdirSync } from 'fs';
+import { join, relative } from 'path';
+import { pathToFileURL } from 'url';
 
 import * as delegation from '../../src/core/engineers/delegation';
 import {
@@ -246,15 +247,10 @@ interface AuthoritySource {
  * section 「納入判據與排除清單」. Adding or removing a module here without
  * moving that section is a silent re-baseline.
  *
- * Deliberately deferred to C1: the closed scan — sweeping `src/core/**` for
- * `*_PROTOCOL` exports and asserting the result equals
- * `AUTHORITY_SOURCE_MODULES` union an explicit `DELIBERATELY_EXCLUDED` list.
- * C0 writes no `src/`, so every module such a scan could find already exists and
- * has already been adjudicated by hand; the assertion would only restate today's
- * split and would be calibrated against zero new samples. C1 adds
- * `src/core/collaboration/` — the first module the criterion has to classify
- * without hindsight — and owns the scan together with the exclusion list it
- * calibrates against.
+ * The closed scan C0 deferred lives below in `C1 closed inclusion scan`: it
+ * sweeps `src/core/**` for `*_PROTOCOL` exports and asserts the result equals
+ * this list united with `DELIBERATELY_EXCLUDED`, so a new protocol-owning module
+ * can no longer appear without being adjudicated.
  */
 const AUTHORITY_SOURCE_MODULES: readonly AuthoritySource[] = [
   {
@@ -324,6 +320,96 @@ const AUTHORITY_SOURCE_MODULES: readonly AuthoritySource[] = [
   },
 ];
 
+interface ExcludedModule {
+  /** Repo-relative module path that exports a `*_PROTOCOL` but owns no inventoried authority. */
+  readonly module: string;
+  /**
+   * The inclusion clause it fails. C-1 is the plane clause: the module owns a
+   * wire identity on one of Task/Claim, Lease, Publication, Acceptance or the
+   * reused read-only Delegation plane. C-2 is the cross-agent-authority clause:
+   * its bytes decide, for another agent, who owns work or what has been
+   * published or accepted on that plane.
+   */
+  readonly fails: readonly ('C-1' | 'C-2')[];
+  readonly evidence: string;
+}
+
+/**
+ * The other side of the closed scan. Every `src/core/**` module that exports a
+ * `*_PROTOCOL` and is not an authority source appears here with the clause it
+ * fails, so "not inventoried" is always an adjudication rather than an omission.
+ *
+ * The first ten rows are the hand adjudication C0 froze in
+ * `docs/researches/20260829-c0-collaboration-two-plane-authority-freeze.md`,
+ * section 「納入判據與排除清單」. Moving a row here without moving that section
+ * is a silent re-baseline.
+ */
+const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
+  {
+    module: 'src/core/engineers/engineering-overlay.ts',
+    fails: ['C-1', 'C-2'],
+    evidence: 'module-engineering attention plane; a derived overlay with no store, no reader but `engineer overlay` output, and an attention payload that asserts no ownership',
+  },
+  {
+    module: 'src/core/engineers/interface-change.ts',
+    fails: ['C-1'],
+    evidence: 'module-engineering interface-change plane; its work-package projection is downstream of scheduling.ts and no Work Graph, offer, claim or lease reads it back',
+  },
+  {
+    module: 'src/core/engineers/module-message.ts',
+    fails: ['C-2'],
+    evidence: 'message payload framed as untrusted data under [ModuleInboxUntrustedPeerMessage]; C0 freezes its markers and byte caps as the injection precedent, not its wire identity',
+  },
+  {
+    module: 'src/core/engineers/provider-thread-effect.ts',
+    fails: ['C-1'],
+    evidence: 'provider/host thread-effect plane; the delegated-run store imports nothing from it, so no admission decision reads a provider thread effect',
+  },
+  {
+    module: 'src/core/engineers/verified-context.ts',
+    fails: ['C-1'],
+    evidence: 'verification plane (D12); consumers are its own store and the verified-context CLI only',
+  },
+  {
+    module: 'src/core/fleet/task-message.ts',
+    fails: ['C-2'],
+    evidence: 'untrusted peer payload under [TaskInboxUntrustedPeerMessages]; the operator POST route names its recipient from readLease, not from a message',
+  },
+  {
+    module: 'src/core/publication/feedback.ts',
+    fails: ['C-1'],
+    evidence: 'review/repair loop despite the publication/ directory (D12); merge-readiness imports only publication-receipt and no publication or merge decision reads a feedback event',
+  },
+  {
+    module: 'src/core/release/runtime-evidence.ts',
+    fails: ['C-1'],
+    evidence: 'release/verification plane (D12); exports no *_KIND at all and has one consumer, src/effects/release/runtime-evidence.ts',
+  },
+  {
+    module: 'src/core/review/change-assessment.ts',
+    fails: ['C-1'],
+    evidence: 'review plane (D12); one consumer, src/effects/review/change-assessment.ts',
+  },
+  {
+    module: 'src/core/state/project-board-slice.ts',
+    fails: ['C-2'],
+    evidence: 'advisory host-context projection: every ownership decision is imported from project-board.ts, it has no store and no --json surface, and its only consumer renders prompt text that carries no decision',
+  },
+  {
+    /**
+     * C1's own module, and the first the criterion classifies without hindsight.
+     * It fails C-1 because the collaboration plane is not one of the five planes
+     * C0 froze — D1 fixes it as an additive, non-authoritative plane that reads
+     * the delivery plane and never writes it. It fails C-2 because a signal's
+     * bytes decide nothing for another agent: they grant no Claim, move no Lease
+     * generation, and are rendered to any reader inside an untrusted wrapper.
+     */
+    module: 'src/core/collaboration/common.ts',
+    fails: ['C-1', 'C-2'],
+    evidence: 'collaboration plane (D1): additive and non-authoritative, writes no delivery store, and its records are advisory context read as untrusted data',
+  },
+];
+
 /**
  * Frozen at `main@a490a5ef76b439228a4b3282934c29ba15090cdf`. A change here is an
  * authority change: it must be justified by the sprint row that caused it, not
@@ -362,6 +448,49 @@ function entriesFor(source: AuthoritySource): readonly AuthorityEntry[] {
 
 function freezeRecordSource(): string {
   return readFileSync(join(REPO_ROOT, FREEZE_RECORD_RELATIVE_PATH), 'utf8');
+}
+
+/**
+ * Every `src/core/**` module that puts a `*_PROTOCOL` name on its export
+ * surface, resolved by importing the module and reading its namespace rather
+ * than by matching export syntax.
+ *
+ * Matching syntax was a losing game: each new form — the declaration, then
+ * `const X_PROTOCOL = …; export { X_PROTOCOL }`, then `export { X } from './y'`,
+ * then `export * from '../elsewhere'` — was another bypass found only after it
+ * existed. The module system already collapses declaration, named re-export,
+ * re-export-from, star re-export and aliasing into a single answer, so asking it
+ * closes the whole class instead of the three forms someone thought of.
+ *
+ * Every module is imported, with no source pre-filter: a star re-export need not
+ * contain the token it re-exports, so any text-level shortcut reopens the hole
+ * this replaces. `src/core` is pure protocol and logic — no module in it runs
+ * anything at import time — so importing all of them costs only the parse.
+ * A `*_PROTOCOL` that is type-only is deliberately not an owner: it names no
+ * wire version a reader could depend on.
+ */
+async function protocolOwningModules(): Promise<readonly string[]> {
+  const root = join(REPO_ROOT, 'src/core');
+  const modules: string[] = [];
+  const walk = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const absolute = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        walk(absolute);
+      } else if (entry.isFile() && entry.name.endsWith('.ts')) {
+        modules.push(absolute);
+      }
+    }
+  };
+  walk(root);
+  const found: string[] = [];
+  for (const absolute of modules.sort()) {
+    const namespace = (await import(pathToFileURL(absolute).href)) as Readonly<Record<string, unknown>>;
+    if (Object.keys(namespace).some((name) => name.endsWith('_PROTOCOL'))) {
+      found.push(relative(REPO_ROOT, absolute).replaceAll('\\', '/'));
+    }
+  }
+  return found.sort();
 }
 
 describe('C0 authority inventory completeness', () => {
@@ -418,6 +547,70 @@ describe('C0 authority inventory completeness', () => {
       digest: FROZEN_INVENTORY_SHA256,
       citedByFreezeRecord: freezeRecordSource().includes(FROZEN_INVENTORY_SHA256),
     }).toEqual({ digest: FROZEN_INVENTORY_SHA256, citedByFreezeRecord: true });
+  });
+});
+
+/**
+ * The scan C0 deferred to C1. C0 adjudicated the split by hand against zero new
+ * samples; `src/core/collaboration/` is the first module the criterion has to
+ * classify without hindsight, so the row that adds it also closes the scan.
+ */
+describe('C1 closed inclusion scan', () => {
+  test('every src/core module owning a protocol is either an authority source or an adjudicated exclusion', async () => {
+    const inventoried = AUTHORITY_SOURCE_MODULES.map((source) => source.module);
+    const excluded = DELIBERATELY_EXCLUDED.map((entry) => entry.module);
+    expect(await protocolOwningModules()).toEqual([...inventoried, ...excluded].sort());
+  });
+
+  test('the two sides of the scan are disjoint and internally unique', () => {
+    const inventoried = AUTHORITY_SOURCE_MODULES.map((source) => source.module);
+    const excluded = DELIBERATELY_EXCLUDED.map((entry) => entry.module);
+    expect(new Set(inventoried).size).toBe(inventoried.length);
+    expect(new Set(excluded).size).toBe(excluded.length);
+    expect(inventoried.filter((module) => excluded.includes(module))).toEqual([]);
+  });
+
+  test('every exclusion names at least one failed clause and its evidence', () => {
+    for (const entry of DELIBERATELY_EXCLUDED) {
+      expect({ module: entry.module, clauses: entry.fails.length > 0, evidence: entry.evidence.length > 0 })
+        .toEqual({ module: entry.module, clauses: true, evidence: true });
+    }
+  });
+
+  /**
+   * C1's classification, stated as an assertion rather than only as prose: the
+   * collaboration plane is additive and non-authoritative, so its protocol owner
+   * is excluded on both clauses.
+   */
+  test('the collaboration plane is excluded on both clauses', () => {
+    expect(DELIBERATELY_EXCLUDED.find((entry) => entry.module === 'src/core/collaboration/common.ts')?.fails)
+      .toEqual(['C-1', 'C-2']);
+    expect(AUTHORITY_INVENTORY.some((entry) => entry.authority.includes('collaboration'))).toBe(false);
+  });
+
+  /**
+   * D1 in one direction only. The collaboration plane may read the delivery
+   * plane; a delivery-plane module importing it would be the second scheduler
+   * Child PRD A names as its key risk.
+   */
+  test('no delivery-plane module imports the collaboration plane', () => {
+    const offenders: string[] = [];
+    for (const directory of [
+      'src/core/state', 'src/core/fleet', 'src/core/publication', 'src/core/integration', 'src/core/engineers',
+      'src/effects/state', 'src/effects/fleet', 'src/effects/publication', 'src/effects/integration', 'src/effects/engineers',
+    ]) {
+      const walk = (current: string): void => {
+        for (const entry of readdirSync(current, { withFileTypes: true })) {
+          const absolute = join(current, entry.name);
+          if (entry.isDirectory()) walk(absolute);
+          else if (entry.isFile() && entry.name.endsWith('.ts') && readFileSync(absolute, 'utf8').includes('collaboration/')) {
+            offenders.push(relative(REPO_ROOT, absolute).replaceAll('\\', '/'));
+          }
+        }
+      };
+      walk(join(REPO_ROOT, directory));
+    }
+    expect(offenders.sort()).toEqual([]);
   });
 });
 

@@ -1,0 +1,62 @@
+schemaVersion: archcontext.node/v2
+id: capability.runtime-harness.collaboration
+kind: capability
+name: Collaboration Substrate
+status: active
+summary: Publishes append-only coordination signals with Host-derived identity and recorded time, holding zero Task, Lease, Publication or Acceptance authority.
+responsibilities:
+  - Own the shared collaboration mechanics frozen for later rows, namely the actor union, revision-bound scope refs, the reused WorkerResult evidence-ref shape, deterministic record identity and the recorded-time source.
+  - Validate CoordinationSignalV1 against an exact key set and content-address it, closing the transport without closing any collaboration vocabulary.
+  - Derive the publishing actor from the authenticated Engineer principal and refuse any caller-declared identity.
+  - Keep recorded time stable across retries by sampling only on the branch that creates a record and rebuilding a republish from the persisted value.
+  - Persist each signal as one immutable content-checked file under a per-thread lock, with an lstat ancestor walk, explicit idempotency conflict and no healthy-empty fallback.
+  - Restrict revision to supersede inside one actor lineage and require every reply, source and supersede reference to already resolve in the same repository.
+  - Gate every mutation on collaboration.mode, which defaults to off, and perform no write to any delivery-plane store.
+source:
+  include:
+    - "src/core/collaboration/**"
+    - "src/effects/collaboration/**"
+  entrypoints:
+    - id: entrypoint.collaboration.publish
+      path: "src/effects/collaboration/signal-store.ts"
+      symbols:
+        - name: "publishCoordinationSignal"
+          sinks:
+            - id: sink.collaboration.mutation-gate
+              path: "src/effects/collaboration/feature-flag.ts"
+              symbol: "assertCollaborationMutationEnabled"
+            - id: sink.collaboration.signal-schema
+              path: "src/core/collaboration/signal.ts"
+              symbol: "buildCoordinationSignal"
+    - id: entrypoint.collaboration.actor-derivation
+      path: "src/effects/collaboration/signal-store.ts"
+      symbols:
+        - name: "resolveModuleEngineerActor"
+          sinks:
+            - id: sink.collaboration.authenticated-principal
+              path: "src/effects/engineers/principal.ts"
+              symbol: "resolveEngineerPrincipal"
+    - id: entrypoint.collaboration.read
+      path: "src/effects/collaboration/signal-store.ts"
+      symbols:
+        - name: "readPersistedSignal"
+          sinks:
+            - id: sink.collaboration.record-identity
+              path: "src/core/collaboration/signal.ts"
+              symbol: "canonicalCoordinationSignalBytes"
+    - id: entrypoint.collaboration.shared-mechanics
+      path: "src/core/collaboration/signal.ts"
+      symbols:
+        - name: "buildCoordinationSignal"
+          sinks:
+            - id: sink.collaboration.actor-union
+              path: "src/core/collaboration/common.ts"
+              symbol: "validateCollaborationActorRef"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun test tests/unit/collaboration-common.test.ts tests/unit/collaboration-signal.test.ts tests/unit/collaboration-authority-baseline.test.ts tests/effects/collaboration-signal-store.test.ts --timeout 60000"
+    - "bun run check:type"
