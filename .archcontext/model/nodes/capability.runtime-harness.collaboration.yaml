@@ -59,4 +59,5 @@ extensions:
   lspProfile: "typescript-lsp"
   verification:
     - "bun test tests/unit/collaboration-common.test.ts tests/unit/collaboration-signal.test.ts tests/unit/collaboration-authority-baseline.test.ts tests/effects/collaboration-signal-store.test.ts --timeout 60000"
+    - "bun test tests/unit/collaboration-hotspot.test.ts tests/unit/collaboration-thread-projection.test.ts tests/unit/collaboration-context-packet.test.ts --timeout 60000"
     - "bun run check:type"
