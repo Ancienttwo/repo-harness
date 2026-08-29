@@ -7,7 +7,7 @@
 > **Architecture Domain**: `runtime-harness`
 > **Architecture Capability**: `collaboration`
 > **Architecture Module**: `docs/architecture/modules/runtime-harness/collaboration.md`
-> **Source Plan**: plans/plan-20260830-0121-c2-thread-hotspot-projection.md
+> **Source Plan**: plans/plan-20260830-0120-c3-work-state-handoff-adoption.md
 > **Current Slice**: todo-01
 > **Last Handoff**: `.ai/harness/handoff/current.md`
 > **Architecture Request**: docs/architecture/requests/archive/2026/runtime-harness-collaboration.md
@@ -29,7 +29,7 @@ the freeze record keeps only a pointer.
 - [x] C0: two-plane authority freeze -- architecture request accepted, D1-D12 frozen, baseline authority-enumeration contract test in place, zero `src/` change.
 - [x] C1: `CoordinationSignalV1` schema, `src/core/collaboration/common.ts`, append-only store; capability node registered, architecture module projected, this ledger moved out of the freeze record, `collaboration.mode` wired to `off`, and the deferred closed inclusion scan landed.
 - [x] C2: signal threads, discovery and hotspot projection -- deterministic thread aggregation on exact opaque keys, the capped integer hotspot function, the closed structural opportunity set, `RelevantSignalV1` retrieval with the 60/40 exploitation/exploration quota, and `CollaborationContextPacketV1` inside the 1,500 estimated-token budget. Pure read model: no store, no cache, no clock, no new protocol. `snapshot_consistency` is reserved on the packet and injected by the future store reader (C6); a pure projection over an already-assembled signal array cannot observe a torn or partial read, so deriving it is deferred with the collector.
-- [ ] C3: `WorkStateHandoffV1` and adoption receipts.
+- [x] C3: `WorkStateHandoffV1`, `HandoffExecutionContextV1` and `HandoffAdoptionReceiptV1` with their two append-only stores; adoption is non-exclusive by identity, and the store mechanics all three record families share moved into `record-store.ts` / `actor.ts`.
 - [ ] C4: delegated Worker contribution adapter and the real admission-bridge canary against D6.
 - [ ] C5: TaskFreeze / explicit takeover succession integration.
 - [ ] C6: collaboration-centric Work Exchange and ContextPacket, with the D3 binding gate.
@@ -73,7 +73,23 @@ the freeze record keeps only a pointer.
   `src/core/collaboration/thread-projection.ts`: `{thread_key, handoff_id,
   adoption_count}`, injected as a collection that defaults to empty. C3 fills it
   from real handoff and adoption records without changing C2.
-
+- C3 extracted the durable create-once publish protocol and the server-side
+  actor derivation out of `signal-store.ts` into
+  `src/effects/collaboration/record-store.ts` and `actor.ts`. C4-C9 add their
+  stores on top of those two modules; a fourth hand-copied publish path is the
+  thing to reject at review. `tests/helpers/collaboration-store-fixture.ts` is
+  the shared three-actor disposable repository for the same reason.
+- Adoption is non-exclusive, and it is non-exclusive *by identity*: the receipt
+  id is `derive(handoff_sha256, adopter_actor_sha256, context_packet_sha256)`, so
+  two adopters differ in one term and neither can exclude the other. C5 wires
+  succession onto `TaskFreezeReceiptV1` and the existing release / takeover /
+  acquire lifecycle; it must not reach for an adoption receipt to decide who may
+  write.
+- Knowledge adoption never uses the delivery plane's ownership vocabulary. The
+  term for a handoff nobody has picked up is `unadopted_handoff`, and
+  `tests/unit/collaboration-handoff.test.ts` enforces that lexically over the C3
+  surface. The one allowed exception is `claim_id` inside the `bound_task`
+  execution-context branch, which references a real Task Claim.
 - Keep architecture facts in
   `docs/architecture/modules/runtime-harness/collaboration.md`; keep execution
   progress here.

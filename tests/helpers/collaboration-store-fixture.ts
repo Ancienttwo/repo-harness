@@ -158,13 +158,15 @@ export function deliveryPlaneDigest(repoRoot: string, scope = ''): string {
       const absolute = join(directory, entry.name);
       const scoped = relative(root, absolute);
       if (scoped === 'collaboration' || scoped.startsWith('collaboration/')) continue;
+      // NUL-separated, matching what C1 hashed: a path may contain a space, and
+      // a printable separator would let two different trees hash the same.
       if (entry.isDirectory()) {
-        hash.update(`d ${scoped} `);
+        hash.update(`d ${scoped}\u0000`);
         walk(absolute);
       } else if (entry.isFile()) {
-        hash.update(`f ${scoped} `);
+        hash.update(`f ${scoped}\u0000`);
         hash.update(readFileSync(absolute));
-        hash.update(' ');
+        hash.update('\u0000');
       }
     }
   };
