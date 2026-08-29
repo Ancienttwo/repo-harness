@@ -67,6 +67,124 @@
   successor's evidence slot, which is worse than an absent entry because the
   successor trusts it.
 
+- **Scope-gate self-amendment for the architecture surface.** The contract's
+  `allowed_paths` carried no architecture entry, so even a resolved projection
+  could not have landed its outputs. `.archcontext/model/`, `docs/architecture/`,
+  `AGENTS.md`, `CLAUDE.md` and `tasks/lessons.md` were added under the Scope gate
+  after the ship gate refused. The two root contract files and everything under
+  `docs/architecture/` are machine output here: `context-contract-sync` rewrites
+  the controlled block and `runArchitectureProjection` renders the rest. Nothing
+  under either path was hand-edited.
+
+- **The capability model was stale, not merely re-rendered.** The node's flow
+  selectors named `resolveModuleEngineerActor` and `readPersistedSignal`, both of
+  which this row's extraction moved out of `signal-store.ts`, and
+  `flow.collaboration.publish-signal.yaml` named the same two symbols in its
+  `derive-actor` and `reject-store` steps. `codegraph node` reports both as "not
+  found in the codebase". So the model described code that no longer exists and
+  had to be corrected; leaving it would have rendered a module doc claiming a
+  proof over dead anchors.
+
+## Architecture acceptance evidence
+
+The extraction plus the two new record families are a major change. The
+orchestrator approved it; it was accepted through the internal-API route C1
+recorded, because `ProjectionRequestV1.acceptedChange` still has no production
+caller.
+
+**Model changes, all forced by reality rather than by the gate.**
+
+| File | Change | Why |
+|---|---|---|
+| `capability.runtime-harness.collaboration.yaml` | `actor-derivation` repointed to `resolveCollaborationActor` in `actor.ts`; `read` repointed to `readCollaborationRecord` in `record-store.ts` with sink `collaborationRecordPath` | both old symbols were deleted by the extraction |
+| same | added `durable-publish`, `handoff-publish`, `handoff-adoption` and `adoption-identity` entrypoints | the capability really does have these surfaces now |
+| same | summary and three responsibilities extended to name the shared substrate and the two record families | the old summary described a signal-only capability |
+| `component.collaboration.primary.yaml` | renamed to *Append-only Collaboration Record Store* | it is no longer signal-specific |
+| `flow.collaboration.publish-signal.yaml` | the two dead selectors repaired | same deletion as above |
+| `flow.collaboration.handoff-adoption.yaml` | new required flow | the capability claimed handoff and adoption responsibilities with zero flow evidence |
+
+The old `read` selector proved `readPersistedSignal -> canonicalCoordinationSignalBytes`.
+That check now runs through the record codec, which is an indirect call and
+therefore unprovable, so it was replaced with
+`readCollaborationRecord -> collaborationRecordPath` — the 64-hex-before-`join()`
+guard, which protects the same property through an edge CodeGraph records.
+Every selector was verified with `codegraph node <symbol>` before being written.
+
+**Two refusals that were diagnosis, not noise.** `classifyArchitectureMajorChange`
+(`archctx.mjs:7669`) ignores a valid `acceptedChange` whenever any capability is
+unprovable, so the first two acceptance attempts returned
+`human-action-required` with the acceptedChange silently discarded. The cause was
+found by reading that function rather than by retrying: the first attempt still
+had the stale flow file, and the second had two adoption selectors anchored
+inside the `withExclusiveDirectoryLock` callback — C1's recorded
+indirect-call trap, re-anchored to top-level direct calls. A third refusal,
+`flow.collaboration.handoff-adoption.outcomes requires success and error`
+(`archctx.mjs:8852`), is a flow-schema rule: every flow needs at least one
+outcome of each kind.
+
+Accepted delta, copied verbatim from `refreshSignals[0]` of the final
+`architecture-projection check --json` refusal. Note that `humanActions[].reasonCode`
+is always the generic `unresolved-major-change`; the real classification is only
+in the refresh signal.
+
+```json
+{
+  "changeSetId": "changeset.docs-projection-b79a903f3bc86f45",
+  "eventId": "event.user-approval-20260830-c3-collaboration-architecture",
+  "reasonCodes": ["node-renamed", "responsibility-changed", "verified-flow-proof-changed"],
+  "affectedNodeIds": ["capability.runtime-harness.collaboration"]
+}
+```
+
+`changeSetId` follows archctx's own derivation, `changeset.docs-projection-<first
+16 hex of the resulting projectionDigest>`; the resulting digest was
+`sha256:b79a903f3bc86f45c47f1e1ce01595679846defc7ef80e4c34007115d7db173b`.
+`eventId` records the orchestrator's explicit approval.
+
+Invocation. A throwaway script at `/tmp/c3-accept-projection.ts` (scaffolding,
+never committed) replicated `src/cli/commands/architecture-projection.ts`
+`execute()` exactly, adding only `acceptedChange`:
+
+```text
+bun .c3-accept-projection.ts apply \
+  changeset.docs-projection-b79a903f3bc86f45 \
+  event.user-approval-20260830-c3-collaboration-architecture \
+  '["node-renamed","responsibility-changed","verified-flow-proof-changed"]'
+```
+
+Output:
+
+```json
+{
+  "status": "applied",
+  "files": [
+    "docs/architecture/.projection-manifest.json",
+    "docs/architecture/changelog.md",
+    "docs/architecture/decisions/index.md",
+    "docs/architecture/diagrams/architecture.likec4",
+    "docs/architecture/diagrams/architecture.mmd",
+    "docs/architecture/diagrams/architecture.structurizr.json",
+    "docs/architecture/index.md",
+    "docs/architecture/modules/runtime-harness/collaboration.md"
+  ],
+  "humanActions": [],
+  "receiptDigest": "sha256:84b9540dbe1fa744f0fc472d18f09d1a30f584e743994c4d0e24812cc7ebf42e"
+}
+```
+
+`humanActions: []` is the acceptance landing. The ordinary
+`repo-harness architecture-projection apply --json` then converged the manifest
+(`status: applied`, one file), and `check --json` now returns `noop` with exit 0
+and zero refresh signals. The rendered module doc reports
+`Proof: proven; selectors 10/10`.
+
+The request card was produced by the sanctioned queue path — `architecture-queue
+record --file` over the seven changed source files — and archived Resolved to
+`docs/architecture/requests/archive/2026/20260830-033653-runtime-harness-collaboration.md`.
+The helper's own collision rule kept C0's card at the unprefixed name intact.
+Severity `low` / change type `source-change` is the classifier's output and was
+not overridden.
+
 ## Tradeoffs Considered
 
 | Option | Decision | Reason |

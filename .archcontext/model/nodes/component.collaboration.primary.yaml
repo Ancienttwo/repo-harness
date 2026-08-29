@@ -1,7 +1,7 @@
 schemaVersion: archcontext.node/v2
 id: component.collaboration.primary
 kind: component
-name: Append-only Coordination Signal Store
+name: Append-only Collaboration Record Store
 status: active
 parent: capability.runtime-harness.collaboration
-summary: Stores immutable content-addressed CoordinationSignalV1 bytes under a per-thread lock, revised only by supersede and never writing a delivery-plane store.
+summary: Stores immutable content-addressed coordination signal, work-state handoff and handoff adoption receipt bytes through one create-once publish protocol under a per-subject lock, revised only by supersede and never writing a delivery-plane store.

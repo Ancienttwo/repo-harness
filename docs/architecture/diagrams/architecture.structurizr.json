@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:6116574ed16a3980395c88a10df2f6f56eb3f8b6d34119de51fc20c4ddc2f7e3" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:9395941418f873f90c0591262ea5ef436a21d7835ac77f0c9ef2e9750710c2d9" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:e65d2970044f442575fb8659f38b8ebee6406f78482a549575f65fafc1f8bbfe" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:12fe3b26e6c92e67f489f7e65d8558ea9399c67d256d457c20f329771650ea65" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
@@ -214,7 +214,7 @@
       },
       {
         "id": "component.collaboration.primary",
-        "name": "Append-only Coordination Signal Store",
+        "name": "Append-only Collaboration Record Store",
         "type": "Component",
         "tags": [
           "component"
