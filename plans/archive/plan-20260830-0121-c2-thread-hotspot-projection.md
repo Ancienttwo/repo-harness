@@ -1,6 +1,6 @@
 # Plan: C2 signal threads, discovery and hotspot projection
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260830-0121
 > **Slug**: c2-thread-hotspot-projection
 > **Planning Source**: repo-harness-sprint

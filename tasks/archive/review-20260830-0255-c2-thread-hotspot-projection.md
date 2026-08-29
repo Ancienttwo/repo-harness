@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-30 02:55
+> **Related Plan**: plans/archive/plan-20260830-0121-c2-thread-hotspot-projection.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260830-0255
+
 # Task Review: c2-thread-hotspot-projection
 
 > **Status**: Accepted

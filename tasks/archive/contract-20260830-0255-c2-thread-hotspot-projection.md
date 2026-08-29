@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-30 02:55
+> **Related Plan**: plans/archive/plan-20260830-0121-c2-thread-hotspot-projection.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260830-0255
+
 # Task Contract: c2-thread-hotspot-projection
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260830-0121-c2-thread-hotspot-projection.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
