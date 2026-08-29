@@ -374,6 +374,11 @@ export function validateCollaborationRecordedTimeSource(value: unknown): Collabo
 export function deriveCollaborationRecordId(domain: string, parts: readonly string[]): string {
   const scope = opaque(domain, 'record id domain', 64);
   if (parts.length === 0) collaborationInvalid('record id preimage is empty');
+  // The separator is NUL, so a part carrying a control character would make the
+  // preimage ambiguous. Parts are held to the same opaque-text rule as the domain.
+  parts.forEach((part, index) => {
+    if (!OPAQUE.test(part)) collaborationInvalid(`record id part ${index} is invalid`);
+  });
   const preimage = [`repo-harness-collaboration/v${COLLABORATION_PROTOCOL}`, scope, ...parts].join(' ');
   return createHash('sha256').update(preimage, 'utf8').digest('hex');
 }

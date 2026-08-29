@@ -121,10 +121,23 @@ allowed_paths:
   - tests/unit/collaboration-authority-baseline.test.ts
   - tests/effects/collaboration-signal-store.test.ts
   - .archcontext/model/nodes/
+  - .archcontext/model/flows/
+  - .archcontext/model/relations/
   - docs/architecture/modules/runtime-harness/collaboration.md
+  - docs/architecture/modules/runtime-harness/engineer-bindings.md
   - docs/architecture/domains/runtime-harness.md
   - docs/architecture/index.md
   - docs/architecture/requests/
+  # projection-owned: `architecture-projection apply` rewrites these when a
+  # capability node is added; they are outputs of the C1 registration, not edits.
+  - docs/architecture/.projection-manifest.json
+  - docs/architecture/changelog.md
+  - docs/architecture/decisions/index.md
+  - docs/architecture/diagrams/architecture.likec4
+  - docs/architecture/diagrams/architecture.mmd
+  - docs/architecture/diagrams/architecture.structurizr.json
+  - tests/architecture-projection-e2e.test.ts
+  - tests/capability-archcontext-export.test.ts
   # workflow-owned: workstream-sync and context-contract-sync rewrite the
   # controlled architecture block when a capability workstream is created.
   - AGENTS.md

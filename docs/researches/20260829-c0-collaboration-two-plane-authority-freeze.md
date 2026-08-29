@@ -154,6 +154,19 @@ Every module the frozen inventory draws a constant from is required to appear in
 this table; `tests/unit/collaboration-authority-baseline.test.ts` asserts that
 membership, so the table cannot silently fall behind the inventory.
 
+One row has moved since this baseline was taken. In C1 commit `06999700`,
+`src/core/engineers/delegation.ts` went from
+`sha256:1ba766c087f40263e017693ea5e5b05994813c62d015db76a55e4ae16d825523` to
+`sha256:06b447ad7477759bcbbaa893fffb011b52c43b1a05c85049383337a0482d1b1d`. The
+change is an extract-and-export refactor: the evidence-ref validation that was
+inline in `buildWorkerResult()` became the exported
+`validateWorkerEvidenceRefs()`, which D8 requires so `ArtifactRefV1` reuses the
+same validator instead of a second copy. The wire shape, `DELEGATION_PROTOCOL`,
+`WORKER_RESULT_KIND` and every emitted byte are unchanged, so
+`FROZEN_INVENTORY_SHA256` is unaffected and stays
+`sha256:6a49057e17a921e78773f358e31b487c9402c9f828f14480ef705c5ac96fcb64`.
+`tests/unit/me2a-me3b-readonly-delegation.test.ts` is the byte guard.
+
 The digest table is a human baseline. The machine guard is the frozen inventory
 digest in `tests/unit/collaboration-authority-baseline.test.ts`,
 `sha256:6a49057e17a921e78773f358e31b487c9402c9f828f14480ef705c5ac96fcb64`, which

@@ -57,6 +57,24 @@
   and add the collaboration row to an adjudication table whose criterion is
   unchanged. No D-decision was reopened; `AUTHORITY_INVENTORY` and
   `FROZEN_INVENTORY_SHA256` are untouched.
+- `allowed_paths` was widened by twelve entries before the acceptance freeze,
+  because the capability registration writes more than the node file the
+  contract originally named. Two are archctx model surfaces the node needs to be
+  reachable: `.archcontext/model/flows/` holds the collaboration publish-signal
+  flow whose selectors prove the node, and `.archcontext/model/relations/` holds
+  the edges that attach it to the existing graph. Seven are outputs of
+  `architecture-projection apply`, which regenerates them from the model rather
+  than accepting hand edits: `docs/architecture/.projection-manifest.json`,
+  `docs/architecture/changelog.md`, `docs/architecture/decisions/index.md`, the
+  three `docs/architecture/diagrams/architecture.{likec4,mmd,structurizr.json}`
+  renderings, and `docs/architecture/modules/runtime-harness/engineer-bindings.md`
+  (the `relation-changed` half of the accepted delta, already named in the
+  acceptance evidence above). The last two,
+  `tests/architecture-projection-e2e.test.ts` and
+  `tests/capability-archcontext-export.test.ts`, hardcode a capability count that
+  a new capability necessarily moves. Every one of them traces to C1's stated
+  goal of registering `capability.runtime-harness.collaboration`; none is a new
+  decision, and no source or protocol surface was widened.
 - The workstream ledger file is named `collaboration-substrate-program.md`
   rather than after this slice, because it carries C0-C9 rather than one row.
   That matches the existing topic-named workstream files.

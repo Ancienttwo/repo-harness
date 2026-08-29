@@ -204,6 +204,14 @@ describe('C1 collaboration record identity', () => {
     expect(deriveCollaborationRecordId('signal', ['a'])).toMatch(/^[0-9a-f]{64}$/u);
     expect(code(() => deriveCollaborationRecordId('signal', []))).toBe('collaboration_invalid');
   });
+
+  test('rejects a part carrying the join separator or any other control character', () => {
+    expect(code(() => deriveCollaborationRecordId('signal', ['a\u0000b']))).toBe('collaboration_invalid');
+    expect(code(() => deriveCollaborationRecordId('signal', ['a', 'b\u0000c']))).toBe('collaboration_invalid');
+    expect(code(() => deriveCollaborationRecordId('signal', ['a\nb']))).toBe('collaboration_invalid');
+    expect(code(() => deriveCollaborationRecordId('signal', ['a\u007fb']))).toBe('collaboration_invalid');
+    expect(code(() => deriveCollaborationRecordId('signal', ['']))).toBe('collaboration_invalid');
+  });
 });
 
 describe('C1 collaboration recorded time', () => {

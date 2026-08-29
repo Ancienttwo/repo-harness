@@ -50,6 +50,17 @@ the freeze record keeps only a pointer.
 - `collaboration.mode` is `off` in `.ai/harness/policy.json`. Promotion is
   `off -> shadow -> active` with no skipped state, and Gate 1 in the sprint says
   what shadow requires.
+- The C1 architecture acceptance is recorded, not implied. `capability.runtime-harness.collaboration`
+  is a `node-added` major change, accepted 2026-08-29 with changeSetId
+  `changeset.docs-projection-eb1d7ac0475d1b2b`, eventId
+  `event.user-approval-20260829-c1-collaboration-architecture` and reason codes
+  `node-added` / `relation-changed`. `repo-harness architecture-projection` has
+  no acceptance verb, so the delta was applied through the internal
+  `runArchitectureProjection` API; that tool debt is in `tasks/todos.md` and the
+  full invocation evidence is in
+  `tasks/notes/20260829-2137-c1-coordination-signal-store.notes.md`. C2-C9 add no
+  capability, so the next row to need this path is the first one outside this
+  program.
 - Keep architecture facts in
   `docs/architecture/modules/runtime-harness/collaboration.md`; keep execution
   progress here.
