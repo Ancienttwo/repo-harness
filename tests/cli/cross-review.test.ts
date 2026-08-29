@@ -239,6 +239,11 @@ function withOfficialPluginFixture(
       installPath: pluginRoot,
     }]),
     CROSS_REVIEW_PLUGIN_PAYLOAD: officialPluginPayload(),
+    // The fixture HOME is the only plugin-data authority here. An explicit
+    // undefined survives discoverOfficialCodexPlugin's `{ ...process.env,
+    // ...opts.env }` merge, so an ambient CLAUDE_PLUGIN_DATA cannot outrank
+    // the HOME-based default and point discovery outside the fixture.
+    CLAUDE_PLUGIN_DATA: undefined,
   };
   try {
     fn({ repo, home, pluginRoot, claudeCommand, runtimeCommand, env });

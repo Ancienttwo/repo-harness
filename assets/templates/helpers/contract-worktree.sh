@@ -135,13 +135,25 @@ finish_attempt_frozen_base=""
 
 emit_finish_attempt() {
   local outcome="$1" frozen_base="${2:-}" publication="${3:-}" publication_field
+  local ended_ms
   [[ -n "$finish_attempt_started_ms" ]] || return 0
+  # A polluted `now_ms` stdout (a bare word instead of a millisecond timestamp)
+  # makes the elapsed arithmetic fail under `set -u`, which a trailing `|| true`
+  # cannot catch. The `merged` emission runs after publication is durable and
+  # after the abort trap is disarmed, so a crash here would orphan the worktree.
+  # Measurement is best effort: drop the record, keep the finish. No fallback
+  # timestamp is synthesized.
+  ended_ms="$(now_ms || true)"
+  if [[ ! "$ended_ms" =~ ^[0-9]+$ || ! "$finish_attempt_started_ms" =~ ^[0-9]+$ ]]; then
+    finish_attempt_started_ms=""
+    return 0
+  fi
   if [[ -n "$publication" ]]; then
     publication_field="\"$(json_escape "$publication")\""
   else
     publication_field="null"
   fi
-  coordination_wait_emit "{\"protocol\":1,\"kind\":\"finish_attempt\",\"at\":\"$(json_escape "$(date '+%Y-%m-%dT%H:%M:%S%z')")\",\"slug\":\"$(json_escape "$finish_attempt_slug")\",\"ms\":$(( $(now_ms) - finish_attempt_started_ms )),\"outcome\":\"$(json_escape "$outcome")\",\"frozen_base\":\"$(json_escape "$frozen_base")\",\"publication\":${publication_field}}" || true
+  coordination_wait_emit "{\"protocol\":1,\"kind\":\"finish_attempt\",\"at\":\"$(json_escape "$(date '+%Y-%m-%dT%H:%M:%S%z')")\",\"slug\":\"$(json_escape "$finish_attempt_slug")\",\"ms\":$((ended_ms - finish_attempt_started_ms)),\"outcome\":\"$(json_escape "$outcome")\",\"frozen_base\":\"$(json_escape "$frozen_base")\",\"publication\":${publication_field}}" || true
   finish_attempt_started_ms=""
   return 0
 }
@@ -1782,7 +1794,11 @@ sprint_lease_reconcile_after_publication() {
 }
 
 finish_worktree() {
-  finish_attempt_started_ms="$(now_ms)"
+  # The opening sample is measurement-only, and a polluted `now_ms` stdout must
+  # not abort the finish. An unusable sample is cleared here so `emit_finish_attempt`
+  # drops the record instead of the finish.
+  finish_attempt_started_ms="$(now_ms || true)"
+  [[ "$finish_attempt_started_ms" =~ ^[0-9]+$ ]] || finish_attempt_started_ms=""
   finish_attempt_slug=""
   finish_attempt_frozen_base=""
   local merge_back=1

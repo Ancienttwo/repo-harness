@@ -1313,7 +1313,7 @@ describe('board projection over real linked worktrees', () => {
 
 describe('helper mirrors', () => {
   test('the helper mirrors stay byte-identical', () => {
-    for (const name of ['sprint-backlog.sh', 'contract-worktree.sh']) {
+    for (const name of ['sprint-backlog.sh', 'contract-worktree.sh', 'verify-contract.sh']) {
       expect(readFileSync(join(ROOT, 'scripts', name), 'utf-8'))
         .toBe(readFileSync(join(HELPER_DIR, name), 'utf-8'));
     }

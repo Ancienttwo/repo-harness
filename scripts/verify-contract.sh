@@ -52,6 +52,44 @@ strip_quotes() {
   printf '%s' "$value"
 }
 
+# YAML allows a trailing ` # comment` on any line, including a mapping key. The
+# exit_criteria matchers below compare key text exactly, so a commented header
+# used to miss every matcher at once: the section dispatch left `$section`
+# pointing at the previous section, the unknown-key and misindented-reuse rules
+# saw no key at all, and reuse-only entries leaked back into the executed set.
+# Normalize each candidate key line once here and feed the normalized form to
+# every matcher. A `#` only opens a comment when it is at line start or
+# preceded by whitespace, and never inside a quoted scalar, so item values that
+# legitimately contain `#` are returned unmangled.
+normalize_yaml_key_line() {
+  local raw="$1"
+  local len=${#raw}
+  local i char quote="" out=""
+  for ((i = 0; i < len; i++)); do
+    char="${raw:i:1}"
+    if [[ -n "$quote" ]]; then
+      out+="$char"
+      [[ "$char" == "$quote" ]] && quote=""
+      continue
+    fi
+    case "$char" in
+      "'"|'"')
+        quote="$char"
+        out+="$char"
+        continue
+        ;;
+      '#')
+        if [[ -z "$out" || "${out: -1}" == " " || "${out: -1}" == $'\t' ]]; then
+          break
+        fi
+        ;;
+    esac
+    out+="$char"
+  done
+  out="${out%"${out##*[![:space:]]}"}"
+  printf '%s' "$out"
+}
+
 json_escape() {
   local value="$1"
   value="${value//\\/\\\\}"
@@ -879,6 +917,20 @@ is_preflight_command() {
   return 1
 }
 
+# A polluted `now_ms` stdout (a bare word instead of a millisecond timestamp)
+# makes the elapsed arithmetic fail under `set -u`, and the EXIT trap masks that
+# status, so the round would exit 0 with a truncated, unparseable report. Report
+# a null duration instead; no fallback timestamp is synthesized.
+report_total_duration_ms() {
+  local ended_ms
+  ended_ms="$(now_ms || true)"
+  if [[ "$ended_ms" =~ ^[0-9]+$ && "${verification_started_ms:-}" =~ ^[0-9]+$ ]]; then
+    printf '%s' "$((ended_ms - verification_started_ms))"
+    return 0
+  fi
+  printf 'null'
+}
+
 write_report() {
   local report_path="$1"
   local idx
@@ -899,7 +951,7 @@ write_report() {
     printf '  "read_only": %s,\n' "$([[ "$read_only" -eq 1 ]] && echo true || echo false)"
     printf '  "executes_contract_commands": %s,\n' "$([[ "$executes_contract_commands" -eq 1 ]] && echo true || echo false)"
     printf '  "budget_ms": %s,\n' "$VERIFICATION_BUDGET_MS"
-    printf '  "total_duration_ms": %s,\n' "$(( $(now_ms) - verification_started_ms ))"
+    printf '  "total_duration_ms": %s,\n' "$(report_total_duration_ms)"
     printf '  "timed_out": %s,\n' "$([[ "$verification_budget_exhausted" -eq 1 ]] && echo true || echo false)"
     printf '  "total": %s,\n' "$total"
     printf '  "failed": %s,\n' "$failed"
@@ -1014,8 +1066,12 @@ cleanup_verify_contract() {
   rm -rf "$tmp_dir"
 }
 trap cleanup_verify_contract EXIT
-verification_started_ms="$(now_ms)"
-verification_deadline_ms="$((verification_started_ms + VERIFICATION_BUDGET_MS))"
+# A polluted `now_ms` stdout aborts a bare `$(( ))` under `set -u` before any
+# report exists, so the opening sample is taken non-fatally and validated. An
+# unenforceable verification budget is a failure, not a degraded mode: the run
+# fails closed below with a report rather than executing criteria without a
+# deadline. No fallback timestamp is synthesized.
+verification_started_ms="$(now_ms || true)"
 verification_budget_exhausted=0
 
 if [[ ! -f "$contract_file" ]]; then
@@ -1025,6 +1081,39 @@ fi
 
 previous_status="$(read_contract_status "$contract_file")"
 previous_status="${previous_status:-Pending}"
+
+if [[ ! "$verification_started_ms" =~ ^[0-9]+$ ]]; then
+  echo "[ContractVerify] now_ms produced a non-numeric start timestamp: '$verification_started_ms'" >&2
+  echo "[ContractVerify] verification budget cannot be enforced; refusing to execute exit criteria" >&2
+  next_status="Pending"
+  if [[ "$read_only" -eq 0 ]]; then
+    update_contract_status "$contract_file" "$next_status"
+  fi
+  total=0
+  failed=0
+  failure_class="verification_budget"
+  RESULT_KINDS=()
+  RESULT_TARGETS=()
+  RESULT_PASSED=()
+  RESULT_MESSAGES=()
+  RESULT_DURATIONS=()
+  RESULT_TIMED_OUT=()
+  RESULT_EXIT_CODES=()
+  RESULT_SIGNALS=()
+  RESULT_EXECUTIONS=()
+  RESULT_COMMANDS=()
+  RESULT_CACHE_KEYS=()
+  RESULT_FORCE_REASONS=()
+  fail "verification_budget" "$contract_file" \
+    "now_ms produced a non-numeric start timestamp: '$verification_started_ms'"
+  write_report "$report_file"
+  if [[ "$strict" -eq 1 ]]; then
+    exit 1
+  fi
+  exit 0
+fi
+
+verification_deadline_ms="$((verification_started_ms + VERIFICATION_BUDGET_MS))"
 
 yaml_block="$(
   awk '
@@ -1096,6 +1185,9 @@ declare -a qa_mins=()
 declare -a manual_checks=()
 declare -a reusable_tests_pass=()
 declare -a reusable_commands_succeed=()
+declare -a parse_errors=()
+
+EXIT_CRITERIA_SECTION_KEYS="files_exist, tests_pass, commands_succeed, artifacts_exist, files_contain, files_not_exist, files_not_contain, qa_scores, manual_checks"
 
 section=""
 in_exit_criteria=0
@@ -1111,10 +1203,22 @@ done < <(contract_allowed_paths "$contract_file")
 while IFS= read -r raw_line; do
   line="$(printf '%s' "$raw_line" | sed -E 's/[[:space:]]+$//')"
   trimmed="$(printf '%s' "$line" | sed -E 's/^[[:space:]]+//')"
+  # Key matching runs on the comment-normalized form; item extraction below
+  # keeps the raw `$trimmed` so quoted `#` inside a command survives.
+  key_line="$(normalize_yaml_key_line "$raw_line")"
+  key_trimmed="$(printf '%s' "$key_line" | sed -E 's/^[[:space:]]+//')"
 
   [[ -z "$trimmed" ]] && continue
   [[ "$trimmed" =~ ^# ]] && continue
-  if [[ "$line" == "exit_criteria:" ]]; then
+  # Rule A2: `criterion_reuse:` is a top-level sibling of `exit_criteria:`, and
+  # the reuse parser below only matches it at column 0. An indented copy used to
+  # leave reuse disabled while its nested sub-headers re-triggered the section
+  # dispatch and leaked reuse-only items into the executed criteria.
+  if [[ "$key_trimmed" == "criterion_reuse:" && "$key_line" != "criterion_reuse:" ]]; then
+    parse_errors+=("criterion_reuse: must start at column 0, found indented: '$line'")
+    continue
+  fi
+  if [[ "$key_line" == "exit_criteria:" ]]; then
     in_exit_criteria=1
     section=""
     continue
@@ -1125,7 +1229,7 @@ while IFS= read -r raw_line; do
   fi
   [[ "$in_exit_criteria" -eq 1 ]] || continue
 
-  case "$trimmed" in
+  case "$key_trimmed" in
     files_exist:)
       section="files_exist"
       pending_path=""
@@ -1173,6 +1277,16 @@ while IFS= read -r raw_line; do
       continue
       ;;
   esac
+
+  # Rule A1: an unrecognized valueless header inside exit_criteria used to be a
+  # silent no-op that left $section pointing at the previous section, so the
+  # items nested under it were appended to the wrong criteria list. Item-level
+  # keys carry a value (`path:`, `pattern:`, `dimension:`, `min:`) and are not
+  # matched here.
+  if [[ "$key_trimmed" =~ ^[A-Za-z_][A-Za-z0-9_]*:$ ]]; then
+    parse_errors+=("unknown exit_criteria section key '${key_trimmed%:}'; accepted keys: $EXIT_CRITERIA_SECTION_KEYS")
+    continue
+  fi
 
   case "$section" in
     files_exist|commands_succeed|files_not_exist|artifacts_exist|manual_checks)
@@ -1231,11 +1345,46 @@ while IFS= read -r raw_line; do
   esac
 done <<< "$yaml_block"
 
+# A malformed exit_criteria block is an unparseable artifact, not a criteria
+# set: reject the whole block before anything executes, and reuse the existing
+# missing_artifact class rather than adding a failure_class value.
+if ((${#parse_errors[@]})); then
+  next_status="Pending"
+  if [[ "$read_only" -eq 0 ]]; then
+    update_contract_status "$contract_file" "$next_status"
+  fi
+  total=0
+  failed=0
+  failure_class="missing_artifact"
+  RESULT_KINDS=()
+  RESULT_TARGETS=()
+  RESULT_PASSED=()
+  RESULT_MESSAGES=()
+  RESULT_DURATIONS=()
+  RESULT_TIMED_OUT=()
+  RESULT_EXIT_CODES=()
+  RESULT_SIGNALS=()
+  RESULT_EXECUTIONS=()
+  RESULT_COMMANDS=()
+  RESULT_CACHE_KEYS=()
+  RESULT_FORCE_REASONS=()
+  for parse_error in "${parse_errors[@]}"; do
+    echo "[ContractVerify] exit_criteria parse error in $contract_file: $parse_error" >&2
+    fail "exit_criteria_parse" "$contract_file" "exit_criteria parse error: $parse_error"
+  done
+  write_report "$report_file"
+  if [[ "$strict" -eq 1 ]]; then
+    exit 1
+  fi
+  exit 0
+fi
+
 reuse_section=""
 in_criterion_reuse=0
 while IFS= read -r raw_line; do
   line="$(printf '%s' "$raw_line" | sed -E 's/[[:space:]]+$//')"
-  if [[ "$line" == "criterion_reuse:" ]]; then
+  key_line="$(normalize_yaml_key_line "$raw_line")"
+  if [[ "$key_line" == "criterion_reuse:" ]]; then
     in_criterion_reuse=1
     reuse_section=""
     continue
@@ -1245,7 +1394,7 @@ while IFS= read -r raw_line; do
     reuse_section=""
   fi
   [[ "$in_criterion_reuse" -eq 1 ]] || continue
-  case "$line" in
+  case "$key_line" in
     "  tests_pass:")
       reuse_section="tests_pass"
       continue

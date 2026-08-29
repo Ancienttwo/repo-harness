@@ -4099,6 +4099,493 @@ describe("Workflow helper scripts", () => {
     }
   }, 30_000);
 
+  test("verify-contract accepts column-0 criterion_reuse and rejects the misindented copy", () => {
+    const cwd = tmpWorkspace("helper-verify-contract-reuse-indent");
+    const countPath = join(cwd, ".ai/harness/expensive-count");
+    try {
+      mkdirSync(join(cwd, "scripts"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+      copyHelpers(cwd);
+      installHooks(cwd);
+
+      writeFileSync(
+        join(cwd, "scripts/expensive-fixture.sh"),
+        "#!/bin/bash\nprintf 'run\\n' >> .ai/harness/expensive-count\n",
+      );
+      chmodSync(join(cwd, "scripts/expensive-fixture.sh"), 0o755);
+
+      const contract = (reuseIndent: string) =>
+        [
+          "# Task Contract: reuse-indent",
+          "",
+          "> **Status**: Active",
+          "> **Task Profile**: code-change",
+          "",
+          "```yaml",
+          "exit_criteria:",
+          "  commands_succeed:",
+          "    - bash scripts/expensive-fixture.sh",
+          `${reuseIndent}criterion_reuse:`,
+          `${reuseIndent}  commands_succeed:`,
+          `${reuseIndent}    - bash scripts/expensive-fixture.sh`,
+          "```",
+          "",
+          "## Evidence Requirements",
+          "",
+          "```yaml",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
+          "```",
+          "",
+        ].join("\n");
+
+      writeFileSync(join(cwd, "task.contract.md"), contract(""));
+      const accepted = run(
+        "bash",
+        ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict", "--read-only"],
+        cwd,
+      );
+      expect(accepted.status, `${accepted.stdout}\n${accepted.stderr}`).toBe(0);
+      expect(readFileSync(countPath, "utf-8").trim().split("\n")).toHaveLength(1);
+
+      // One space of indent used to leak the reuse-only entry into the executed
+      // set (the same command ran twice) while leaving reuse disabled.
+      writeFileSync(join(cwd, "task.contract.md"), contract(" "));
+      const rejected = run(
+        "bash",
+        [
+          "scripts/verify-contract.sh",
+          "--contract",
+          "task.contract.md",
+          "--strict",
+          "--read-only",
+          "--report-file",
+          "rejected.json",
+        ],
+        cwd,
+      );
+      expect(rejected.status).toBe(1);
+      expect(rejected.stderr).toContain("criterion_reuse:");
+      expect(rejected.stderr).toContain("column 0");
+      expect(readFileSync(countPath, "utf-8").trim().split("\n")).toHaveLength(1);
+      const report = JSON.parse(readFileSync(join(cwd, "rejected.json"), "utf-8"));
+      expect(report.failure_class).toBe("missing_artifact");
+      expect(report.next_status).toBe("Pending");
+      expect(report.results.some((entry: any) => entry.kind === "exit_criteria_parse")).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("verify-contract fails closed on an unknown exit_criteria section key", () => {
+    const cwd = tmpWorkspace("helper-verify-contract-unknown-section");
+    try {
+      mkdirSync(join(cwd, "scripts"), { recursive: true });
+      mkdirSync(join(cwd, "src"), { recursive: true });
+      copyHelpers(cwd);
+      installHooks(cwd);
+
+      writeFileSync(join(cwd, "src/index.ts"), "export const value = 1;\n");
+      writeFileSync(
+        join(cwd, "task.contract.md"),
+        [
+          "# Task Contract: unknown-section",
+          "",
+          "> **Status**: Active",
+          "> **Task Profile**: code-change",
+          "",
+          "```yaml",
+          "exit_criteria:",
+          "  files_exist:",
+          "    - src/index.ts",
+          "  comands_succeed:",
+          "    - test -f src/index.ts",
+          "```",
+          "",
+          "## Evidence Requirements",
+          "",
+          "```yaml",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
+          "```",
+          "",
+        ].join("\n"),
+      );
+
+      const res = run(
+        "bash",
+        [
+          "scripts/verify-contract.sh",
+          "--contract",
+          "task.contract.md",
+          "--strict",
+          "--read-only",
+          "--report-file",
+          "report.json",
+        ],
+        cwd,
+      );
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain("comands_succeed");
+      expect(res.stderr).toContain("commands_succeed");
+      const report = JSON.parse(readFileSync(join(cwd, "report.json"), "utf-8"));
+      expect(report.failure_class).toBe("missing_artifact");
+      expect(report.results.some((entry: any) => entry.kind === "exit_criteria_parse")).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("verify-contract reports a null total_duration_ms when now_ms output is polluted", () => {
+    const cwd = tmpWorkspace("helper-verify-contract-polluted-now-ms");
+    try {
+      mkdirSync(join(cwd, "scripts"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+      mkdirSync(join(cwd, "shim"), { recursive: true });
+      copyHelpers(cwd);
+      installHooks(cwd);
+
+      // now_ms prefers `node`. This shim answers normally until the contract's
+      // own criterion drops the marker, so the run's opening timestamp is real
+      // and only the closing one inside write_report is polluted -- the
+      // transient stdout pollution the guard exists for.
+      writeFileSync(
+        join(cwd, "shim/node"),
+        [
+          "#!/bin/bash",
+          `if [[ -f ${JSON.stringify(join(cwd, ".ai/harness/pollute-now"))} ]]; then`,
+          "  printf 'not-a-timestamp'",
+          "  exit 0",
+          "fi",
+          "printf '%s000' \"$(date +%s)\"",
+          "",
+        ].join("\n"),
+      );
+      chmodSync(join(cwd, "shim/node"), 0o755);
+
+      writeFileSync(
+        join(cwd, "task.contract.md"),
+        [
+          "# Task Contract: polluted-now-ms",
+          "",
+          "> **Status**: Active",
+          "> **Task Profile**: code-change",
+          "",
+          "```yaml",
+          "exit_criteria:",
+          "  commands_succeed:",
+          "    - touch .ai/harness/pollute-now",
+          "```",
+          "",
+          "## Evidence Requirements",
+          "",
+          "```yaml",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
+          "```",
+          "",
+        ].join("\n"),
+      );
+
+      const res = run(
+        "bash",
+        [
+          "scripts/verify-contract.sh",
+          "--contract",
+          "task.contract.md",
+          "--strict",
+          "--read-only",
+          "--report-file",
+          "report.json",
+        ],
+        cwd,
+        { PATH: `${join(cwd, "shim")}:${process.env.PATH ?? ""}` },
+      );
+      expect(res.status, `${res.stdout}\n${res.stderr}`).toBe(0);
+      expect(existsSync(join(cwd, ".ai/harness/pollute-now"))).toBe(true);
+      const report = JSON.parse(readFileSync(join(cwd, "report.json"), "utf-8"));
+      expect(report.total_duration_ms).toBeNull();
+      expect(report.failed).toBe(0);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("verify-contract normalizes trailing comments on criterion_reuse headers", () => {
+    const cwd = tmpWorkspace("helper-verify-contract-reuse-comment");
+    const countPath = join(cwd, ".ai/harness/expensive-count");
+    try {
+      mkdirSync(join(cwd, "scripts"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+      copyHelpers(cwd);
+      installHooks(cwd);
+
+      writeFileSync(
+        join(cwd, "scripts/expensive-fixture.sh"),
+        "#!/bin/bash\nprintf 'run\\n' >> .ai/harness/expensive-count\n",
+      );
+      chmodSync(join(cwd, "scripts/expensive-fixture.sh"), 0o755);
+
+      const contract = (reuseIndent: string) =>
+        [
+          "# Task Contract: reuse-comment",
+          "",
+          "> **Status**: Active",
+          "> **Task Profile**: code-change",
+          "",
+          "```yaml",
+          "exit_criteria:",
+          "  commands_succeed:",
+          "    - bash scripts/expensive-fixture.sh",
+          `${reuseIndent}criterion_reuse: # reuse note`,
+          `${reuseIndent}  commands_succeed: # reuse note`,
+          `${reuseIndent}    - bash scripts/expensive-fixture.sh`,
+          "```",
+          "",
+          "## Evidence Requirements",
+          "",
+          "```yaml",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
+          "```",
+          "",
+        ].join("\n");
+
+      // A commented column-0 `criterion_reuse:` still enables reuse: the
+      // command is declared once and runs once.
+      writeFileSync(join(cwd, "task.contract.md"), contract(""));
+      const accepted = run(
+        "bash",
+        ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict", "--read-only"],
+        cwd,
+      );
+      expect(accepted.status, `${accepted.stdout}\n${accepted.stderr}`).toBe(0);
+      expect(readFileSync(countPath, "utf-8").trim().split("\n")).toHaveLength(1);
+
+      // The trailing comment used to hide the indented copy from both the
+      // column-0 rule and the section dispatch, re-leaking the reuse-only entry
+      // into the executed set.
+      writeFileSync(join(cwd, "task.contract.md"), contract(" "));
+      const rejected = run(
+        "bash",
+        [
+          "scripts/verify-contract.sh",
+          "--contract",
+          "task.contract.md",
+          "--strict",
+          "--read-only",
+          "--report-file",
+          "rejected.json",
+        ],
+        cwd,
+      );
+      expect(rejected.status).toBe(1);
+      expect(rejected.stderr).toContain("criterion_reuse:");
+      expect(rejected.stderr).toContain("column 0");
+      expect(readFileSync(countPath, "utf-8").trim().split("\n")).toHaveLength(1);
+      const report = JSON.parse(readFileSync(join(cwd, "rejected.json"), "utf-8"));
+      expect(report.failure_class).toBe("missing_artifact");
+      expect(report.next_status).toBe("Pending");
+      expect(report.results.some((entry: any) => entry.kind === "exit_criteria_parse")).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("verify-contract fails closed on an unknown exit_criteria section key carrying a trailing comment", () => {
+    const cwd = tmpWorkspace("helper-verify-contract-unknown-section-comment");
+    try {
+      mkdirSync(join(cwd, "scripts"), { recursive: true });
+      mkdirSync(join(cwd, "src"), { recursive: true });
+      copyHelpers(cwd);
+      installHooks(cwd);
+
+      writeFileSync(join(cwd, "src/index.ts"), "export const value = 1;\n");
+      writeFileSync(
+        join(cwd, "task.contract.md"),
+        [
+          "# Task Contract: unknown-section-comment",
+          "",
+          "> **Status**: Active",
+          "> **Task Profile**: code-change",
+          "",
+          "```yaml",
+          "exit_criteria:",
+          "  files_exist:",
+          "    - src/index.ts",
+          "  comands_succeed: # typo",
+          "    - test -f src/index.ts",
+          "```",
+          "",
+          "## Evidence Requirements",
+          "",
+          "```yaml",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
+          "```",
+          "",
+        ].join("\n"),
+      );
+
+      const res = run(
+        "bash",
+        [
+          "scripts/verify-contract.sh",
+          "--contract",
+          "task.contract.md",
+          "--strict",
+          "--read-only",
+          "--report-file",
+          "report.json",
+        ],
+        cwd,
+      );
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain("comands_succeed");
+      expect(res.stderr).toContain("commands_succeed");
+      const report = JSON.parse(readFileSync(join(cwd, "report.json"), "utf-8"));
+      expect(report.failure_class).toBe("missing_artifact");
+      expect(report.results.some((entry: any) => entry.kind === "exit_criteria_parse")).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("verify-contract dispatches a commented section header without mangling quoted item text", () => {
+    const cwd = tmpWorkspace("helper-verify-contract-section-comment");
+    const countPath = join(cwd, ".ai/harness/expensive-count");
+    const quotedCommand = `bash -c 'echo "a # b"'`;
+    try {
+      mkdirSync(join(cwd, "scripts"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+      copyHelpers(cwd);
+      installHooks(cwd);
+
+      writeFileSync(
+        join(cwd, "scripts/expensive-fixture.sh"),
+        "#!/bin/bash\nprintf 'run\\n' >> .ai/harness/expensive-count\n",
+      );
+      chmodSync(join(cwd, "scripts/expensive-fixture.sh"), 0o755);
+
+      writeFileSync(
+        join(cwd, "task.contract.md"),
+        [
+          "# Task Contract: section-comment",
+          "",
+          "> **Status**: Active",
+          "> **Task Profile**: code-change",
+          "",
+          "```yaml",
+          "exit_criteria:",
+          "  commands_succeed: # still a real section header",
+          "    - bash scripts/expensive-fixture.sh",
+          `    - ${quotedCommand}`,
+          "```",
+          "",
+          "## Evidence Requirements",
+          "",
+          "```yaml",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
+          "```",
+          "",
+        ].join("\n"),
+      );
+
+      const res = run(
+        "bash",
+        [
+          "scripts/verify-contract.sh",
+          "--contract",
+          "task.contract.md",
+          "--strict",
+          "--read-only",
+          "--report-file",
+          "report.json",
+        ],
+        cwd,
+      );
+      expect(res.status, `${res.stdout}\n${res.stderr}`).toBe(0);
+      expect(readFileSync(countPath, "utf-8").trim().split("\n")).toHaveLength(1);
+      const report = JSON.parse(readFileSync(join(cwd, "report.json"), "utf-8"));
+      expect(report.failed).toBe(0);
+      // A `#` inside a quoted scalar is content, not a comment: a truncated
+      // command would leave an unterminated quote and exit non-zero.
+      const quoted = report.results.find((entry: any) => entry.kind === "commands_succeed" && entry.command === quotedCommand);
+      expect(quoted, JSON.stringify(report.results)).toBeDefined();
+      expect(quoted.passed).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("verify-contract fails closed when the opening now_ms sample is polluted", () => {
+    const cwd = tmpWorkspace("helper-verify-contract-polluted-start-now-ms");
+    try {
+      mkdirSync(join(cwd, "scripts"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+      mkdirSync(join(cwd, "shim"), { recursive: true });
+      copyHelpers(cwd);
+      installHooks(cwd);
+
+      // Pollutes the very first `now_ms` call, so the verification budget
+      // deadline can never be computed.
+      writeFileSync(join(cwd, "shim/node"), ["#!/bin/bash", "printf 'not-a-timestamp'", ""].join("\n"));
+      chmodSync(join(cwd, "shim/node"), 0o755);
+
+      writeFileSync(
+        join(cwd, "task.contract.md"),
+        [
+          "# Task Contract: polluted-start-now-ms",
+          "",
+          "> **Status**: Active",
+          "> **Task Profile**: code-change",
+          "",
+          "```yaml",
+          "exit_criteria:",
+          "  commands_succeed:",
+          "    - touch .ai/harness/should-not-run",
+          "```",
+          "",
+          "## Evidence Requirements",
+          "",
+          "```yaml",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
+          "```",
+          "",
+        ].join("\n"),
+      );
+
+      const res = run(
+        "bash",
+        [
+          "scripts/verify-contract.sh",
+          "--contract",
+          "task.contract.md",
+          "--strict",
+          "--read-only",
+          "--report-file",
+          "report.json",
+        ],
+        cwd,
+        { PATH: `${join(cwd, "shim")}:${process.env.PATH ?? ""}` },
+      );
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain("non-numeric start timestamp");
+      expect(res.stderr).toContain("not-a-timestamp");
+      expect(existsSync(join(cwd, ".ai/harness/should-not-run"))).toBe(false);
+      const report = JSON.parse(readFileSync(join(cwd, "report.json"), "utf-8"));
+      expect(report.failure_class).toBe("verification_budget");
+      expect(report.next_status).toBe("Pending");
+      expect(report.total_duration_ms).toBeNull();
+      expect(report.failed).toBe(1);
+      expect(report.results.some((entry: any) => entry.kind === "verification_budget")).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test("verify-contract should fail unsupported task profile", () => {
     const cwd = tmpWorkspace("helper-verify-contract-profile-invalid");
     try {

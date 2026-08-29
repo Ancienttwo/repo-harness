@@ -222,7 +222,14 @@ release_backlog_lock() {
 
 emit_backlog_lock_wait() {
   local verb="$1" started_ms="$2" attempts="$3" reclaimed_stale="$4" outcome="$5"
-  coordination_wait_emit "{\"protocol\":1,\"kind\":\"backlog_lock_wait\",\"at\":\"$(json_escape "$(date '+%Y-%m-%dT%H:%M:%S%z')")\",\"verb\":\"$(json_escape "$verb")\",\"ms\":$(( $(now_ms) - started_ms )),\"attempts\":${attempts},\"reclaimed_stale\":${reclaimed_stale},\"outcome\":\"$(json_escape "$outcome")\"}" || true
+  local ended_ms
+  # A polluted `now_ms` stdout (a bare word instead of a millisecond timestamp)
+  # makes the elapsed arithmetic fail under `set -u`, which a trailing `|| true`
+  # cannot catch. Measurement is best effort: drop the record rather than the
+  # host command. No fallback timestamp is synthesized.
+  ended_ms="$(now_ms || true)"
+  [[ "$ended_ms" =~ ^[0-9]+$ && "$started_ms" =~ ^[0-9]+$ ]] || return 0
+  coordination_wait_emit "{\"protocol\":1,\"kind\":\"backlog_lock_wait\",\"at\":\"$(json_escape "$(date '+%Y-%m-%dT%H:%M:%S%z')")\",\"verb\":\"$(json_escape "$verb")\",\"ms\":$((ended_ms - started_ms)),\"attempts\":${attempts},\"reclaimed_stale\":${reclaimed_stale},\"outcome\":\"$(json_escape "$outcome")\"}" || true
 }
 
 acquire_backlog_lock() {
@@ -230,7 +237,11 @@ acquire_backlog_lock() {
   local attempts=0
   local reclaimed_stale=false
   local started_ms
-  started_ms="$(now_ms)"
+  # The opening sample is measurement-only, and a polluted `now_ms` stdout must
+  # not abort lock acquisition. An unusable sample is cleared here so the
+  # emit-site numeric guard drops the record instead of the host command.
+  started_ms="$(now_ms || true)"
+  [[ "$started_ms" =~ ^[0-9]+$ ]] || started_ms=""
   local coordination_dir
   local max_attempts="${REPO_HARNESS_BACKLOG_LOCK_ATTEMPTS:-100}"
   local sleep_seconds="${REPO_HARNESS_BACKLOG_LOCK_SLEEP_SECONDS:-0.1}"

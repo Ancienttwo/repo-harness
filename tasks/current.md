@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-29T02:55:06+0800 -->
+<!-- updated_at: 2026-08-29T11:06:09+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-29T02:55:06+0800
-> **Source Branch**: main
-> **Source Commit**: 0ba78fe6
+> **Status**: Idle
+> **Updated At**: 2026-08-29T11:06:09+0800
+> **Source Branch**: codex/verify-contract-fail-closed
+> **Source Commit**: b94d1db9
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -17,11 +17,11 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
+- Status: Idle
 - Active Plan: (none)
 - Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Next Task: (none)
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -31,8 +31,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- linked-worktree-447d30e920d3: plans/plan-20260829-0208-verify-contract-fail-closed.md
-- linked-worktree-447d30e920d3: active-worktree owner -> self
+- (none)
 ## Active Sprint
 
 - Sprint: (none)
@@ -48,7 +47,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/runtime-harness/integration-acceptance/me4c-integration-product-acceptance.md`: status=completed, current_slice=completed-20260826-me4c-integration-product-acceptance, source_plan=plans/plan-20260826-0115-me4c-integration-product-acceptance.md
 ## Handoff
 
-- Exact Next Step: Stage the completed module diff first; then run /check and let canonical workflow gates determine whether review, external acceptance, verification, or worktree finish is next. Command: /check
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Implement fail-closed rules A1/A2 in `scripts/verify-contract.sh` with `failure_class="missing_artifact"` parse rejection, mirror to `assets/templates/helpers/verify-contract.sh`.
 
 ## Checks
 
@@ -59,16 +58,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260828-2326-operator-board-redesign.md
- D tasks/contracts/20260828-2326-operator-board-redesign.contract.md
- D tasks/notes/20260828-2326-operator-board-redesign.notes.md
- D tasks/reviews/20260828-2326-operator-board-redesign.review.md
+ D plans/plan-20260829-0208-verify-contract-fail-closed.md
+ D tasks/contracts/20260829-0208-verify-contract-fail-closed.contract.md
+ D tasks/notes/20260829-0208-verify-contract-fail-closed.notes.md
+ D tasks/reviews/20260829-0208-verify-contract-fail-closed.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260828-2326-operator-board-redesign.md
-?? tasks/archive/contract-20260829-0255-operator-board-redesign.md
-?? tasks/archive/notes-20260829-0255-operator-board-redesign.md
-?? tasks/archive/review-20260829-0255-operator-board-redesign.md
-?? tasks/archive/todo-20260829-0255-operator-board-redesign.md
+?? plans/archive/plan-20260829-0208-verify-contract-fail-closed.md
+?? tasks/archive/contract-20260829-1106-verify-contract-fail-closed.md
+?? tasks/archive/notes-20260829-1106-verify-contract-fail-closed.md
+?? tasks/archive/review-20260829-1106-verify-contract-fail-closed.md
+?? tasks/archive/todo-20260829-1106-verify-contract-fail-closed.md
 ```
 
 ## Source Artifacts
