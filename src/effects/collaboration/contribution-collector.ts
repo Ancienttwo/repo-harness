@@ -70,33 +70,44 @@ import {
 } from '../engineers/delegated-run-store';
 import { delegatedRunAuthorization, resolveDelegatedWorkerActor } from './actor';
 import { assertCollaborationMutationEnabled } from './feature-flag';
-import { publishWorkStateHandoff } from './handoff-store';
+import { COLLABORATION_HANDOFFS_SHARD, HANDOFF_CODEC, publishWorkStateHandoff } from './handoff-store';
 import {
   CollaborationContributionRejection,
   readContributionDraftFromPersistedOutput,
 } from './provider-output-adapter';
 import { CONTRIBUTION_COMMIT_CODEC, contributionStorePaths } from './contribution-store';
 import {
+  collaborationDestinationPaths,
   collaborationInvalidStore,
   collaborationLockRelativePath,
   collaborationRecordPath,
   ensureCollaborationDirectory,
+  listCollaborationRecords,
+  promoteCollaborationCandidate,
   publishCollaborationRecordDurably,
   readCollaborationRecord,
+  type CollaborationPublishDestinationV1,
+  type CollaborationRecordCodec,
 } from './record-store';
-import { publishCoordinationSignal } from './signal-store';
+import { COLLABORATION_SIGNALS_SHARD, SIGNAL_CODEC, publishCoordinationSignal } from './signal-store';
+
+/** Frozen once: the collector promotes into the public shards and nowhere else. */
+const PUBLIC_DESTINATION: CollaborationPublishDestinationV1 = Object.freeze({ kind: 'public' as const });
 
 /**
- * Where a fault may be injected. These are the seven persistence boundaries the
- * row's convergence claim is made about, named here rather than in a test so the
- * claim is stated where the writes are.
+ * Every persistence boundary this transaction crosses, named here rather than in
+ * a test so the convergence and invisibility claims are stated where the writes
+ * are. Each one is a point a Host can die at, and each is covered by
+ * `tests/effects/collaboration-contribution-collector.test.ts`.
  */
 export type ContributionCollectorBoundary =
-  | 'after_first_signal'
-  | 'after_last_signal'
-  | 'after_handoff'
+  | 'after_first_candidate'
+  | 'after_last_candidate'
+  | 'after_handoff_candidate'
   | 'before_commit'
   | 'after_commit'
+  | 'after_first_promotion'
+  | 'after_last_promotion'
   | 'before_worker_result'
   | 'after_worker_result';
 
@@ -219,11 +230,56 @@ interface PublishContributionInput {
 /**
  * The whole write side of the transaction, in one named top-level function.
  *
- * It is not an inline lock callback for the same reason the admission bridge's
- * critical section is not: the edges out of here — to the signal store, the
- * handoff store, the commit publish and the single `WorkerResultV1` — are the
- * transaction, and a call made inside a lock callback is an indirect hop that
- * neither a reader nor the architecture flow proof can follow.
+ * ## Ordering: stage invisibly, commit, then promote
+ *
+ * ```text
+ * 1. stage every candidate under contribution-candidates/<run>/{signals,handoffs}/
+ * 2. publish the CollaborationContributionCommitV1
+ * 3. promote each candidate into signals/ and handoffs/ by link
+ * 4. construct the single WorkerResultV1
+ * ```
+ *
+ * The commit is written *before* promotion, and that ordering is the whole
+ * point. It makes one invariant hold at every instant, including inside every
+ * crash window:
+ *
+ * > **Every publicly readable Worker record is already committed.**
+ *
+ * The earlier shape published candidates straight into the public shards and
+ * relied on readers filtering by commit. That is a reader-side obligation, and a
+ * crash during staging left Worker records permanently readable by
+ * `listCoordinationSignals()` with no commit referencing them and no recall path
+ * in an append-only store. Here invisibility is a property of *where* a candidate
+ * lives, so a reader that forgets a filter cannot leak an uncommitted record.
+ *
+ * ## Crash windows
+ *
+ * | Window | Public state | Residue | Resolution |
+ * |---|---|---|---|
+ * | during staging (1) | nothing | candidates only, which no public reader opens | retry re-stages to identical bytes at identical names; reconciles |
+ * | after staging, before the commit lands (2) | nothing | candidates only | retry publishes the commit and promotes |
+ * | after the commit, mid-promotion (3) | the records promoted so far, all of them committed | none that is both public and uncommitted | retry promotes the rest; `EEXIST` on the ones already promoted |
+ * | after promotion, before the WorkerResult (4) | complete and committed | none | retry reconciles every write and constructs the result |
+ * | after the WorkerResult (5) | complete and committed | none | retry is fully idempotent |
+ *
+ * Every window self-heals on retry, and no window is publicly readable without
+ * its commit. The window this ordering accepts is the mirror image: in (3) a
+ * commit can name a record that is not public yet, so a reader following
+ * `commit.signal_refs` may find one missing. That is transient, it closes on the
+ * next collection of the same run, and it is the honest trade — the alternative
+ * ordering makes uncommitted records publicly visible instead, which is the
+ * failure this row exists to remove.
+ *
+ * Convergence is structural rather than procedural. There is no resume marker
+ * anywhere below, because every identity is derived from the run: signal ids from
+ * `<run_ref>#<index>`, the handoff from `<run_ref>#handoff`, the commit from the
+ * run reference alone, and the recorded time from the process receipt's own
+ * `observed_at`. Re-running the whole transaction *is* the recovery path.
+ *
+ * It is a named top-level function rather than an inline lock callback so the
+ * edges out of it — the two stores, the commit publish, the promotions and the
+ * single `WorkerResultV1` — are direct calls a reader, and the architecture flow
+ * proof, can follow.
  */
 function publishContribution(
   input: PublishContributionInput,
@@ -232,12 +288,19 @@ function publishContribution(
     root, draft, observed_at: observedAt, run_ref_sha256: runRefSha256,
     commit_id: commitId, authorization, paths, mode,
   } = input;
-  let created = false;
+  const destination: CollaborationPublishDestinationV1 = Object.freeze({
+    kind: 'contribution_candidate' as const,
+    worker_run_ref_sha256: runRefSha256,
+  });
+
+  // Step 1. Nothing written here is publicly readable, so the longest phase of
+  // the transaction — one write per drafted entry — cannot leak a record.
   const signalRefs: ContributionSignalRefV1[] = [];
   for (const [index, signalDraft] of draft.signals.entries()) {
     const published = publishCoordinationSignal({
       repo_root: root,
       authorization,
+      destination,
       idempotency_key: contributionSignalIdentityKey(runRefSha256, index),
       thread_key: draft.thread_key,
       reply_to_signal_id: signalDraft.reply_to_signal_id,
@@ -253,13 +316,12 @@ function publishContribution(
       recorded_time: { kind: 'persisted_observation', observed_at: observedAt },
       env: input.env,
     });
-    created = created || published.created;
     signalRefs.push(Object.freeze({
       signal_id: published.signal.signal_id,
       signal_sha256: published.signal.signal_sha256,
     }));
-    if (index === 0) input.crash_hook?.('after_first_signal');
-    if (index === draft.signals.length - 1) input.crash_hook?.('after_last_signal');
+    if (index === 0) input.crash_hook?.('after_first_candidate');
+    if (index === draft.signals.length - 1) input.crash_hook?.('after_last_candidate');
   }
 
   let handoffRef: ContributionHandoffRefV1 | null = null;
@@ -267,6 +329,7 @@ function publishContribution(
     const published = publishWorkStateHandoff({
       repo_root: root,
       authorization,
+      destination,
       idempotency_key: contributionHandoffIdentityKey(runRefSha256),
       thread_key: draft.thread_key,
       scope_refs: draft.signals[0]?.scope_refs ?? [],
@@ -284,13 +347,20 @@ function publishContribution(
       recorded_time: { kind: 'persisted_observation', observed_at: observedAt },
       env: input.env,
     });
-    created = created || published.created;
     handoffRef = Object.freeze({
       handoff_id: published.handoff.handoff_id,
       handoff_sha256: published.handoff.handoff_sha256,
     });
-    input.crash_hook?.('after_handoff');
+    input.crash_hook?.('after_handoff_candidate');
   }
+
+  const signalCandidates = collaborationDestinationPaths(root, COLLABORATION_SIGNALS_SHARD, destination);
+  const handoffCandidates = collaborationDestinationPaths(root, COLLABORATION_HANDOFFS_SHARD, destination);
+  // Nothing outside the draft may ride into a public shard on this transaction.
+  // The candidate area is listed with the same fail-closed rule a public shard
+  // gets, so an entry nobody staged fails the store rather than being promoted.
+  assertCandidateAreaHolds(signalCandidates, SIGNAL_CODEC, 'signal_id', signalRefs.map((ref) => ref.signal_id));
+  assertCandidateAreaHolds(handoffCandidates, HANDOFF_CODEC, 'handoff_id', handoffRef === null ? [] : [handoffRef.handoff_id]);
 
   const commit = buildCollaborationContributionCommit({
     worker_run_ref_sha256: runRefSha256,
@@ -301,7 +371,9 @@ function publishContribution(
   });
   const bytes = canonicalCollaborationContributionCommitBytes(commit);
 
+  // Step 2. The visibility boundary lands before anything it names is public.
   input.crash_hook?.('before_commit');
+  let created = false;
   const existing = readCollaborationRecord(paths, CONTRIBUTION_COMMIT_CODEC, commitId, 'contribution_commit_id');
   if (existing) {
     if (canonicalCollaborationContributionCommitBytes(existing) !== bytes) {
@@ -317,8 +389,8 @@ function publishContribution(
       created = true;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      // Another process won the link. Reconcile against its bytes rather
-      // than reporting a spurious conflict.
+      // Another process won the link. Reconcile against its bytes rather than
+      // reporting a spurious conflict.
       const won = readCollaborationRecord(paths, CONTRIBUTION_COMMIT_CODEC, commitId, 'contribution_commit_id');
       if (!won) collaborationInvalidStore(`contribution commit ${commitId} vanished after publication`);
       if (canonicalCollaborationContributionCommitBytes(won) !== bytes) {
@@ -331,11 +403,31 @@ function publishContribution(
   }
   input.crash_hook?.('after_commit');
 
+  // Step 3. Every record promoted from here is one the commit above already
+  // names, which is what makes "nothing publicly readable is uncommitted" hold
+  // part-way through this loop as well as at the end of it.
+  const publicSignals = collaborationDestinationPaths(root, COLLABORATION_SIGNALS_SHARD, PUBLIC_DESTINATION);
+  const publicHandoffs = collaborationDestinationPaths(root, COLLABORATION_HANDOFFS_SHARD, PUBLIC_DESTINATION);
+  for (const [index, ref] of commit.signal_refs.entries()) {
+    promoteCollaborationCandidate(signalCandidates, publicSignals, SIGNAL_CODEC, ref.signal_id, 'signal_id');
+    if (index === 0) input.crash_hook?.('after_first_promotion');
+  }
+  if (commit.handoff_ref !== null) {
+    promoteCollaborationCandidate(
+      handoffCandidates,
+      publicHandoffs,
+      HANDOFF_CODEC,
+      commit.handoff_ref.handoff_id,
+      'handoff_id',
+    );
+  }
+  input.crash_hook?.('after_last_promotion');
+
+  // Step 4. Exactly one `WorkerResultV1` per run: `collectDelegatedRunResult()`
+  // refuses a second result that differs from the one already persisted, so the
+  // retry either lands the same bytes or fails loudly rather than leaving two
+  // results a reader would have to choose between.
   input.crash_hook?.('before_worker_result');
-  // Exactly one `WorkerResultV1` per run: `collectDelegatedRunResult()`
-  // refuses a second result that differs from the one already persisted, so
-  // the retry either lands the same bytes or fails loudly rather than
-  // leaving two results a reader would have to choose between.
   const collected = collectDelegatedRunResult({
     repo_root: root,
     dispatch_id: input.dispatch_id,
@@ -356,3 +448,31 @@ function publishContribution(
     mode,
   });
 }
+
+/**
+ * Prove a run's candidate area holds exactly the records this transaction
+ * staged, before any of them is promoted.
+ *
+ * `listCollaborationRecords()` already fails the store closed on an entry that
+ * is neither a 64-hex record nor this store's own staging residue, so a foreign
+ * file in the candidate area never reaches the comparison below. What this adds
+ * is the other half: a *well-formed* record nobody staged must not ride into a
+ * public shard on someone else's transaction.
+ */
+function assertCandidateAreaHolds<T>(
+  candidates: ReturnType<typeof collaborationDestinationPaths>,
+  codec: CollaborationRecordCodec<T>,
+  field: string,
+  expected: readonly string[],
+): void {
+  const found = listCollaborationRecords(candidates, codec, field)
+    .map((record) => codec.identityOf(record))
+    .sort();
+  const wanted = [...expected].sort();
+  if (found.length !== wanted.length || found.some((id, index) => id !== wanted[index])) {
+    collaborationInvalidStore(
+      `${codec.label} candidate area does not hold exactly this contribution: expected ${wanted.join(', ') || '(none)'}, found ${found.join(', ') || '(none)'}`,
+    );
+  }
+}
+

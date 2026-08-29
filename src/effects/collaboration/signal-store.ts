@@ -36,6 +36,7 @@ import { resolveCollaborationActor, type CollaborationAuthorizationV1 } from './
 import { assertCollaborationMutationEnabled } from './feature-flag';
 import {
   COLLABORATION_STORE_RELATIVE_ROOT,
+  collaborationDestinationPaths,
   collaborationInvalidStore,
   collaborationLockRelativePath,
   collaborationRecordPath,
@@ -45,6 +46,7 @@ import {
   listCollaborationRecords,
   publishCollaborationRecordDurably,
   readCollaborationRecord,
+  type CollaborationPublishDestinationV1,
   type CollaborationRecordCodec,
   type CollaborationStorePaths,
 } from './record-store';
@@ -60,7 +62,7 @@ export const COLLABORATION_SIGNALS_RELATIVE_ROOT = `${COLLABORATION_STORE_RELATI
  */
 export const signalStagingName = collaborationStagingName;
 
-const SIGNAL_CODEC: CollaborationRecordCodec<CoordinationSignalV1> = {
+export const SIGNAL_CODEC: CollaborationRecordCodec<CoordinationSignalV1> = {
   label: 'signal',
   validate: validateCoordinationSignal,
   identityOf: (signal) => signal.signal_id,
@@ -83,6 +85,12 @@ export interface PublishCoordinationSignalInput {
   readonly source_signal_ids: readonly string[];
   readonly supersedes_signal_id: string | null;
   readonly recorded_time: CollaborationRecordedTimeSource;
+  /**
+   * Public, or staged as one delegated run's candidate. A Module Engineer
+   * publishing directly is immediately visible and passes `public`; a Worker
+   * contribution stages, and becomes visible only when its commit promotes it.
+   */
+  readonly destination: CollaborationPublishDestinationV1;
   readonly now?: () => string;
   readonly env?: NodeJS.ProcessEnv;
 }
@@ -115,18 +123,22 @@ export function listCoordinationSignals(repoRoot: string): readonly Coordination
  * is an unverifiable claim.
  */
 function assertResolvableSource(
-  paths: CollaborationStorePaths,
+  searchPaths: readonly CollaborationStorePaths[],
   repositoryId: string,
   signalId: string | null,
   field: string,
 ): CoordinationSignalV1 | null {
   if (signalId === null) return null;
-  const referenced = readCollaborationRecord(
-    paths,
-    SIGNAL_CODEC,
-    validateCollaborationRecordId(signalId, field),
-    field,
-  );
+  const recordId = validateCollaborationRecordId(signalId, field);
+  // Public records first, then this run's own candidates. A staged contribution
+  // may cite a signal it staged moments earlier in the same transaction: that
+  // record exists and is durable, it is simply not public yet, and refusing it
+  // would make a contribution unable to reference its own output.
+  let referenced: CoordinationSignalV1 | null = null;
+  for (const paths of searchPaths) {
+    referenced = readCollaborationRecord(paths, SIGNAL_CODEC, recordId, field);
+    if (referenced) break;
+  }
   if (!referenced) collaborationInvalidStore(`${field} does not exist in this repository: ${signalId}`);
   if (referenced.repository_id !== repositoryId) {
     collaborationInvalidStore(`${field} belongs to another repository: ${signalId}`);
@@ -146,7 +158,11 @@ export function publishCoordinationSignal(
   }
   const { actor, repository_id: repositoryId } = resolveCollaborationActor(repoRoot, input.authorization, input.env);
   const signalId = deriveCoordinationSignalId(repositoryId, actor, input.idempotency_key);
-  const paths = signalPaths(repoRoot);
+  const publicPaths = signalPaths(repoRoot);
+  const paths = collaborationDestinationPaths(repoRoot, COLLABORATION_SIGNALS_SHARD, input.destination);
+  // Resolution order is fixed here rather than at each call: public store, then
+  // the destination when it is a candidate area.
+  const searchPaths = input.destination.kind === 'public' ? [publicPaths] : [publicPaths, paths];
 
   const build = (createdAt: string): CoordinationSignalV1 => buildCoordinationSignal({
     signal_id: signalId,
@@ -188,11 +204,13 @@ export function publishCoordinationSignal(
       const existing = readCollaborationRecord(paths, SIGNAL_CODEC, signalId, 'signal_id');
       if (existing) return reconcile(existing);
 
-      assertResolvableSource(paths, repositoryId, input.reply_to_signal_id, 'reply_to_signal_id');
+      assertResolvableSource(searchPaths, repositoryId, input.reply_to_signal_id, 'reply_to_signal_id');
       for (const sourceId of input.source_signal_ids) {
-        assertResolvableSource(paths, repositoryId, sourceId, 'source_signal_id');
+        assertResolvableSource(searchPaths, repositoryId, sourceId, 'source_signal_id');
       }
-      const superseded = assertResolvableSource(paths, repositoryId, input.supersedes_signal_id, 'supersedes_signal_id');
+      // A revision supersedes a record that is already public; superseding an
+      // unpromoted candidate would revise something no reader has ever seen.
+      const superseded = assertResolvableSource([publicPaths], repositoryId, input.supersedes_signal_id, 'supersedes_signal_id');
       if (superseded && collaborationActorLineage(superseded.actor) !== collaborationActorLineage(actor)) {
         collaborationInvalidStore('supersedes_signal_id belongs to another actor lineage');
       }

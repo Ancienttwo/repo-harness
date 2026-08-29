@@ -438,6 +438,8 @@ publications, integration, delegated-runs and engineers.
   context-packets/<sha256>.json
   contribution-commits/<sha256>.json
   run-context-bindings/<sha256>.json
+  contribution-candidates/<worker-run-ref>/signals/<signal-id>.json     (C4)
+  contribution-candidates/<worker-run-ref>/handoffs/<handoff-id>.json   (C4)
 ```
 
 Locking uses the existing `src/effects/locking/exclusive-directory-lock.ts`
@@ -452,13 +454,38 @@ adoption. Canonical JSON, digesting and bounded-UTF-8 checks reuse
 | C3 | Handoff publish took `('thread', thread_key)`, not a per-handoff lock, and a comment in `record-store.ts` claimed that was D9 as frozen | Resolved in C4, not ledgered as a permanent deviation. D9 froze a per-handoff lock; C3 deviated in both code and comment; C4 corrected both. Handoff publish now takes `('handoff', handoff_id)`. The C3-recorded safety analysis was re-verified before splitting and holds: nothing needed a signal write and a handoff write to be mutually exclusive, because records publish through a staged write plus `link` so no reader observes a torn one, and handoff publish reads the signal store inside its lock only to prove cited signals resolve — a signal appearing mid-check can only turn a failing check into a passing one, and a persisted signal is immutable so it can never turn a passing check into a failing one. |
 | C4 | Two lock domains exist that D9's prose does not name | Recorded as an extension, not a deviation. `('contribution', worker_run_ref_sha256)` scopes one delegated run's whole contribution transaction, and `('delegation-admission', <claim_id>#<round_index>)` scopes the admission counting window D6 froze. Both are per-subject locks in the same shape D9 fixed; neither changes an existing domain. |
 
-**D9 shard ledger.** C4 adds `contribution-commits/`, which is already on the
-frozen shard list above. It adds no other shard: `CollaborationDelegationAdmissionV1`
-is a returned decision document rather than a persisted record, and the
-contribution draft is not persisted because it is a pure function of the stdout
-blob the `WorkerResultV1` evidence refs already pin — the commit's `draft_sha256`
-is reproducible from that blob, which binds it more tightly than a second copy
-that could drift from its own preimage.
+**D9 shard ledger.**
+
+| Row | Shard | Status |
+|---|---|---|
+| C4 | `contribution-commits/<sha256>.json` | Already on the frozen list above; no change. |
+| C4 | `contribution-candidates/<worker-run-ref>/{signals,handoffs}/<record-id>.json` | **Added to the frozen list.** Declared here rather than introduced silently. |
+| C4 | (none) for `CollaborationDelegationAdmissionV1` | It is a returned decision document, not a persisted record; the durable admission evidence stays the delegation plane's own `DelegationAdmissionReceiptV1`. |
+| C4 | (none) for the contribution draft | It is a pure function of the stdout blob the `WorkerResultV1` evidence refs already pin, so `commit.draft_sha256` is reproducible from persisted bytes. A second copy on disk could drift from its own preimage. |
+
+The candidate area exists because the contribution commit has to be the *sole*
+visibility boundary, and a filter applied by every future reader is not a
+boundary — this program has already had reader-side obligations get missed. A
+delegated Worker's signals and handoff are staged under
+`contribution-candidates/<worker-run-ref>/` and become publicly readable only
+when their commit promotes them by `link` into `signals/` and `handoffs/`.
+`listCoordinationSignals()` and `listWorkStateHandoffs()` never open the
+candidate area, so an uncommitted record is unreachable rather than filtered.
+
+Both levels of the candidate namespace are closed-form — a 64-hex run directory
+and the public shard name beneath it — so the same fail-closed listing rule a
+public shard gets applies here, and a foreign entry fails the store instead of
+being skipped or promoted.
+
+The ordering is stage -> commit -> promote, so the invariant *every publicly
+readable Worker record is already committed* holds inside every crash window.
+The accepted mirror-image window is that a commit can briefly name a record that
+is not public yet; it is transient and closes on the next collection of the same
+run. The full window analysis lives in the `publishContribution()` doc comment.
+
+This shard is written only on the delegated-contribution path. A Module Engineer
+publishing directly passes the `public` destination and keeps immediate
+visibility, unchanged from C1 and C3.
 
 Every store: lstat ancestor walk rejecting symlink and non-directory ancestors;
 canonical JSON; immutable create plus fsync; exact protocol validation; explicit

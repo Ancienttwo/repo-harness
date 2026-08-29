@@ -36,6 +36,7 @@ import { resolveCollaborationActor, type CollaborationAuthorizationV1 } from './
 import { assertCollaborationMutationEnabled } from './feature-flag';
 import {
   COLLABORATION_STORE_RELATIVE_ROOT,
+  collaborationDestinationPaths,
   collaborationInvalidStore,
   collaborationLockRelativePath,
   collaborationRecordPath,
@@ -44,15 +45,16 @@ import {
   listCollaborationRecords,
   publishCollaborationRecordDurably,
   readCollaborationRecord,
+  type CollaborationPublishDestinationV1,
   type CollaborationRecordCodec,
   type CollaborationStorePaths,
 } from './record-store';
-import { readCoordinationSignal } from './signal-store';
+import { COLLABORATION_SIGNALS_SHARD, readCoordinationSignal, SIGNAL_CODEC } from './signal-store';
 
 export const COLLABORATION_HANDOFFS_SHARD = 'handoffs';
 export const COLLABORATION_HANDOFFS_RELATIVE_ROOT = `${COLLABORATION_STORE_RELATIVE_ROOT}/${COLLABORATION_HANDOFFS_SHARD}`;
 
-const HANDOFF_CODEC: CollaborationRecordCodec<WorkStateHandoffV1> = {
+export const HANDOFF_CODEC: CollaborationRecordCodec<WorkStateHandoffV1> = {
   label: 'handoff',
   validate: validateWorkStateHandoff,
   identityOf: (handoff) => handoff.handoff_id,
@@ -79,6 +81,12 @@ export interface PublishWorkStateHandoffInput {
   readonly execution_context: HandoffExecutionContextV1;
   readonly supersedes_handoff_id: string | null;
   readonly recorded_time: CollaborationRecordedTimeSource;
+  /**
+   * Public, or staged as one delegated run's candidate. Same rule as the signal
+   * store: a Module Engineer publishing directly is immediately visible; a Worker
+   * contribution becomes visible only when its commit promotes it.
+   */
+  readonly destination: CollaborationPublishDestinationV1;
   readonly now?: () => string;
   readonly env?: NodeJS.ProcessEnv;
 }
@@ -110,8 +118,25 @@ export function listWorkStateHandoffs(repoRoot: string): readonly WorkStateHando
  * that points at a record nobody can resolve gives the successor a dead
  * reference in the place its evidence should be.
  */
-function assertResolvableSignal(repoRoot: string, repositoryId: string, signalId: string): void {
-  const signal = readCoordinationSignal(repoRoot, validateCollaborationRecordId(signalId, 'source_signal_id'));
+function assertResolvableSignal(
+  repoRoot: string,
+  repositoryId: string,
+  signalId: string,
+  destination: CollaborationPublishDestinationV1,
+): void {
+  const recordId = validateCollaborationRecordId(signalId, 'source_signal_id');
+  // Public first, then this run's own staged signals. A handoff written as part
+  // of a contribution routinely cites the signals that contribution just staged;
+  // they are durable and identified, only not public yet.
+  let signal = readCoordinationSignal(repoRoot, recordId);
+  if (!signal && destination.kind === 'contribution_candidate') {
+    signal = readCollaborationRecord(
+      collaborationDestinationPaths(repoRoot, COLLABORATION_SIGNALS_SHARD, destination),
+      SIGNAL_CODEC,
+      recordId,
+      'source_signal_id',
+    );
+  }
   if (!signal) collaborationInvalidStore(`source_signal_id does not exist in this repository: ${signalId}`);
   if (signal.repository_id !== repositoryId) {
     collaborationInvalidStore(`source_signal_id belongs to another repository: ${signalId}`);
@@ -130,7 +155,8 @@ export function publishWorkStateHandoff(
   }
   const { actor, repository_id: repositoryId } = resolveCollaborationActor(repoRoot, input.authorization, input.env);
   const handoffId = deriveWorkStateHandoffId(repositoryId, actor, input.idempotency_key);
-  const paths = handoffStorePaths(repoRoot);
+  const publicPaths = handoffStorePaths(repoRoot);
+  const paths = collaborationDestinationPaths(repoRoot, COLLABORATION_HANDOFFS_SHARD, input.destination);
 
   const build = (createdAt: string): WorkStateHandoffV1 => buildWorkStateHandoff({
     handoff_id: handoffId,
@@ -179,11 +205,13 @@ export function publishWorkStateHandoff(
       if (existing) return reconcile(existing);
 
       for (const signalId of input.source_signal_ids) {
-        assertResolvableSignal(repoRoot, repositoryId, signalId);
+        assertResolvableSignal(repoRoot, repositoryId, signalId, input.destination);
       }
       if (input.supersedes_handoff_id !== null) {
+        // A revision supersedes a record that is already public; superseding an
+        // unpromoted candidate would revise something no reader has ever seen.
         const superseded = readCollaborationRecord(
-          paths,
+          publicPaths,
           HANDOFF_CODEC,
           validateCollaborationRecordId(input.supersedes_handoff_id, 'supersedes_handoff_id'),
           'supersedes_handoff_id',

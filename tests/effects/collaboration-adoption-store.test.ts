@@ -77,6 +77,7 @@ function handoffInput(
   return {
     repo_root: value.repoRoot,
     authorization: engineerPrincipalAuthorization(value.actors[0]!.authorization_id),
+    destination: { kind: 'public' },
     idempotency_key: 'handoff-1',
     thread_key: 'merge-gate-flake',
     scope_refs: [],
@@ -206,6 +207,7 @@ describe('C3 handoff adoption store', () => {
     const results = await Promise.all(value.actors.map((actor) => adoptInDriver(driver, {
       repo_root: value.repoRoot,
       authorization: engineerPrincipalAuthorization(actor.authorization_id),
+      destination: { kind: 'public' },
       handoff_id: handoff.handoff_id,
       context_packet_sha256: PACKET_SHA,
       recorded_time: { kind: 'persisted_observation', observed_at: '2026-08-30T12:00:00.000Z' },

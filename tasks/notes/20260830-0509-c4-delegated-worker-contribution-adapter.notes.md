@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260830-0509-c4-delegated-worker-contribution-adapter.md
 > **Contract**: tasks/contracts/20260830-0509-c4-delegated-worker-contribution-adapter.contract.md
 > **Review**: tasks/reviews/20260830-0509-c4-delegated-worker-contribution-adapter.review.md
-> **Last Updated**: 2026-08-30 06:20
+> **Last Updated**: 2026-08-30 08:10
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -50,6 +50,61 @@
   `max_turns` change and no new field. The alternative — a new field on
   `WorkerResultV1` — would have bumped `DELEGATION_PROTOCOL`, which the sprint
   forbids.
+
+- **The commit is the sole visibility boundary because of *where* candidates
+  live, not because readers filter.** Codex round 1 rejected the first shape on a
+  real P1: it published candidates straight into `signals/` and `handoffs/` and
+  committed afterwards, so a crash during staging left Worker records permanently
+  readable by `listCoordinationSignals()` with no commit referencing them and no
+  recall path in an append-only store. `listContributedSignalIds()` was a
+  reader-side obligation, and this program has already had those get missed.
+
+  Candidates now stage under `contribution-candidates/<run_ref>/{signals,handoffs}/`,
+  a shard the public readers never open, and the commit promotes them by `link`.
+  A reader that forgets a filter cannot leak an uncommitted record, because there
+  is no filter to forget.
+
+  **Ordering: stage -> commit -> promote.** The commit lands *before* anything it
+  names is public, which makes one invariant hold at every instant including
+  inside every crash window: *every publicly readable Worker record is already
+  committed.* Windows: staging leaves only invisible candidates and self-heals;
+  after-staging-before-commit leaves only invisible candidates and self-heals;
+  mid-promotion leaves records that are public but every one of them committed,
+  and self-heals; after-promotion and after-WorkerResult are complete and
+  idempotent. The accepted mirror-image window is that a commit can briefly name
+  a record not yet public, so a reader following `commit.signal_refs` may find one
+  missing; it is transient, closes on the next collection of the same run, and is
+  the honest trade — the other ordering makes *uncommitted records publicly
+  visible* instead, which is the failure being removed. Full table in the
+  `publishContribution()` doc comment.
+
+- **Promotion is `link`, not a re-write.** The bytes are already fsynced under
+  the candidate name, so promotion adds a name to durable data and there is no
+  window where the public name exists over incomplete bytes. `EEXIST` means
+  already-promoted, which is the ordinary retry outcome; the bytes are compared
+  anyway, so two different records claiming one identity is a conflict rather
+  than something to promote over.
+
+- **Two independent guards on what may be promoted.** The record-store codec
+  refuses any record whose own identity disagrees with the filename it was read
+  from, and `assertCandidateAreaHolds()` refuses to promote when the run's
+  candidate area holds anything other than exactly this contribution. The first
+  catches a copied or renamed record; the second catches a *valid, correctly
+  named* record that no draft staged. Both are tested at the layer they fire at.
+
+- **A staged contribution can cite its own records; a revision cannot.**
+  Reference resolution for `reply_to_signal_id` and `source_signal_ids` searches
+  the public store and then this run's candidate area, so a handoff may cite the
+  signals the same contribution just staged. `supersedes_*` deliberately searches
+  the public store only: superseding an unpromoted candidate would revise
+  something no reader has ever seen.
+
+- **The destination is a required union, scoped to the collector path.** Direct
+  `module_engineer` publications pass `{ kind: 'public' }` and keep the immediate
+  visibility C1 and C3 gave them — asserted by "a direct Module Engineer
+  publication keeps its immediate visibility". Only the collector passes
+  `contribution_candidate`. A nullable flag would have let a call site stay silent
+  about which act it is performing.
 
 - **Convergence is structural, not procedural.** There is no resume marker and
   no "step N completed" state anywhere in the collector, because every identity
@@ -251,6 +306,23 @@ is the second consecutive row to hit it.
 | Keep the C3 thread-domain handoff lock and ledger it as an accepted deviation | Rejected | D9 had already frozen per-handoff, and the re-verified C3 analysis showed the split was safe. A deviation ledger entry would have preserved a comment that claimed compliance it did not have |
 | Simulate the three parallel readers with three in-process calls | Rejected | Three calls in one event loop cannot contend for an on-disk lock. The canary spawns three real processes and asserts three distinct pids and observed seat counts of 0, 1 and 2 |
 | Use the real Codex CLI in the canary | Rejected | The row makes no claim about the model call. Everything it does claim — the lock, the run state machine, the process receipt, the persisted stdout, the seat count — runs for real against a shell shim, which is the boundary ME-2A already drew |
+
+## Round-2 correction (Codex P1)
+
+The first shape satisfied "converges on retry" but not "the commit is the sole
+visibility boundary": the fault tests asserted the end state and never the
+mid-state, which is exactly where the leak lived. The fix is structural, not a
+stronger assertion — the fault suite now asserts, at **all nine** persistence
+boundaries, that `listCoordinationSignals()` and `listWorkStateHandoffs()` hold
+nothing uncommitted, that pre-commit crashes leave both public listings entirely
+empty, that candidate residue is present on disk yet unreachable publicly and is
+reused rather than rebuilt on retry, and that both foreign-entry guards fail the
+store closed without promoting anything.
+
+Boundary set changed from seven to nine: the three staging boundaries were
+renamed to `*_candidate` to say what they now mark, and `after_first_promotion` /
+`after_last_promotion` were added because promotion is the phase where a record
+becomes publicly readable and had no boundary of its own before.
 
 ## Open Questions
 

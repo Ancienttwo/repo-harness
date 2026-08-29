@@ -66,6 +66,7 @@ export function publishInput(
   return {
     repo_root: value.repoRoot,
     authorization: engineerPrincipalAuthorization(value.actors[0]!.authorization_id),
+    destination: { kind: 'public' },
     idempotency_key: 'handoff-1',
     thread_key: 'merge-gate-flake',
     scope_refs: [{ kind: 'free_topic', value: 'merge gate flake' }],
@@ -212,6 +213,7 @@ describe('C3 work state handoff store', () => {
     // Another Engineer may publish their own handoff, but may not revise this one.
     expect(code(() => publishWorkStateHandoff(publishInput(value, {
       authorization: engineerPrincipalAuthorization(value.actors[1]!.authorization_id),
+      destination: { kind: 'public' },
       idempotency_key: 'handoff-cross-lineage',
       supersedes_handoff_id: original.handoff_id,
     })))).toBe('collaboration_invalid');
@@ -237,6 +239,7 @@ describe('C3 work state handoff store', () => {
     const signal = publishCoordinationSignal({
       repo_root: value.repoRoot,
       authorization: engineerPrincipalAuthorization(value.actors[1]!.authorization_id),
+      destination: { kind: 'public' },
       idempotency_key: 'signal-for-handoff',
       thread_key: 'merge-gate-flake',
       reply_to_signal_id: null,
@@ -377,6 +380,7 @@ describe('C3 work state handoff store', () => {
     const value = fixture();
     expect(code(() => publishWorkStateHandoff(publishInput(value, {
       authorization: engineerPrincipalAuthorization('55555555-5555-4555-8555-555555555555'),
+      destination: { kind: 'public' },
     })))).toContain('engineer_principal_unmapped');
     expect(listWorkStateHandoffs(value.repoRoot)).toEqual([]);
   });

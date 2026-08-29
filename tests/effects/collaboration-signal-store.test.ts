@@ -72,6 +72,7 @@ function publishInput(
   return {
     repo_root: fixtureValue.repoRoot,
     authorization: engineerPrincipalAuthorization(fixtureValue.actors[0]!.authorization_id),
+    destination: { kind: 'public' },
     idempotency_key: 'idem-1',
     thread_key: 'merge-gate-flake',
     reply_to_signal_id: null,
@@ -156,6 +157,7 @@ describe('C1 coordination signal store', () => {
     const results = await Promise.all(value.actors.map((actor, index) => publishInDriver(driver, {
       repo_root: value.repoRoot,
       authorization: engineerPrincipalAuthorization(actor.authorization_id),
+      destination: { kind: 'public' },
       idempotency_key: `concurrent-${index}`,
       // One thread key on purpose: all three contend for the same per-thread lock.
       thread_key: 'shared-thread',
@@ -310,6 +312,7 @@ describe('C1 coordination signal store', () => {
     // Another Engineer may reply to or cite this signal, but may not revise it.
     expect(code(() => publishCoordinationSignal(publishInput(value, {
       authorization: engineerPrincipalAuthorization(value.actors[1]!.authorization_id),
+      destination: { kind: 'public' },
       idempotency_key: 'idem-cross-lineage',
       supersedes_signal_id: original.signal_id,
     })))).toBe('collaboration_invalid');
@@ -483,6 +486,7 @@ describe('C1 coordination signal store', () => {
     const value = fixture();
     expect(code(() => publishCoordinationSignal(publishInput(value, {
       authorization: engineerPrincipalAuthorization('55555555-5555-4555-8555-555555555555'),
+      destination: { kind: 'public' },
     })))).toContain('engineer_principal_unmapped');
     expect(listCoordinationSignals(value.repoRoot)).toEqual([]);
   });

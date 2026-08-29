@@ -92,6 +92,51 @@ export interface CollaborationStorePaths {
   readonly shard: string;
 }
 
+/**
+ * The staging area a delegated Worker's records live in until their contribution
+ * commit promotes them.
+ *
+ * Invisibility is a property of *where* a candidate lives, not of a filter every
+ * reader has to remember to apply. `listCoordinationSignals()` and
+ * `listWorkStateHandoffs()` scan `signals/` and `handoffs/`; a candidate is under
+ * `contribution-candidates/<run>/signals/`, which those functions never open. A
+ * future reader that forgets a filter therefore cannot leak an uncommitted
+ * record, because there is no filter to forget.
+ *
+ * The namespace is closed-form at both levels — a 64-hex run directory and the
+ * public shard name beneath it — so `listCollaborationRecords()` applies the same
+ * fail-closed rule here that it applies to a public shard, and a foreign entry
+ * fails the store rather than being skipped.
+ */
+export const COLLABORATION_CANDIDATES_SHARD = 'contribution-candidates';
+
+const RUN_REF_DIGEST = /^sha256:([0-9a-f]{64})$/u;
+
+export function collaborationCandidateShard(workerRunRefSha256: string, publicShard: string): string {
+  const matched = RUN_REF_DIGEST.exec(workerRunRefSha256);
+  if (!matched) collaborationInvalidStore(`worker_run_ref_sha256 is invalid: ${workerRunRefSha256}`);
+  return `${COLLABORATION_CANDIDATES_SHARD}/${matched[1]}/${publicShard}`;
+}
+
+/**
+ * Where one publish lands. A required discriminated union rather than an optional
+ * flag: a direct Module Engineer publication and a staged Worker candidate are
+ * different acts, and every call site says which one it is performing.
+ */
+export type CollaborationPublishDestinationV1 =
+  | { readonly kind: 'public' }
+  | { readonly kind: 'contribution_candidate'; readonly worker_run_ref_sha256: string };
+
+export function collaborationDestinationPaths(
+  repoRoot: string,
+  publicShard: string,
+  destination: CollaborationPublishDestinationV1,
+): CollaborationStorePaths {
+  return destination.kind === 'public'
+    ? collaborationStorePaths(repoRoot, publicShard)
+    : collaborationStorePaths(repoRoot, collaborationCandidateShard(destination.worker_run_ref_sha256, publicShard));
+}
+
 export function collaborationInvalidStore(message: string, cause?: unknown): never {
   throw new CollaborationError('collaboration_invalid', message, cause);
 }
@@ -290,6 +335,59 @@ export function listCollaborationRecords<T>(
  * already published; `link` fails `EEXIST` and preserves first-writer-wins, so
  * the loser still reconciles to identical bytes or `collaboration_conflict`.
  */
+/**
+ * Make one staged candidate publicly readable, by linking the exact inode the
+ * candidate already occupies into the public shard.
+ *
+ * `link` rather than a re-write: the bytes are already fsynced under the
+ * candidate name, so promotion adds a name to data that is durable, and there is
+ * no window in which the public name exists over incomplete bytes. It keeps the
+ * store's create-once, first-writer-wins semantics — `EEXIST` means the record is
+ * already public, which is the ordinary outcome of re-running a transaction, not
+ * a conflict.
+ *
+ * The candidate is deliberately left in place. It is the append-only record of
+ * what this run staged, and a retry reuses it rather than rebuilding it.
+ *
+ * Returns `true` when this call is the one that made the record public.
+ */
+export function promoteCollaborationCandidate<T>(
+  candidate: CollaborationStorePaths,
+  target: CollaborationStorePaths,
+  codec: CollaborationRecordCodec<T>,
+  recordId: string,
+  field: string,
+): boolean {
+  const from = collaborationRecordPath(candidate, recordId, field);
+  const to = collaborationRecordPath(target, recordId, field);
+  ensureCollaborationDirectory(target.common, target.shard);
+  try {
+    linkSync(from, to);
+    fsyncDirectory(target.shard);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+      return collaborationUnavailable(`cannot promote ${codec.label} candidate: ${recordId}`, error);
+    }
+  }
+  // Already public. Prove it is the same record rather than assuming a retry:
+  // identities here are derived from the run, so a byte disagreement would mean
+  // two different records claiming one identity, which is a conflict and not
+  // something to promote over.
+  const staged = readCollaborationRecord(candidate, codec, recordId, field);
+  const published = readCollaborationRecord(target, codec, recordId, field);
+  if (!staged || !published) {
+    collaborationUnavailable(`${codec.label} candidate vanished during promotion: ${recordId}`);
+  }
+  if (codec.canonicalBytes(staged) !== codec.canonicalBytes(published)) {
+    throw new CollaborationError(
+      'collaboration_conflict',
+      `${codec.label} ${recordId} is already public with different bytes`,
+    );
+  }
+  return false;
+}
+
 export function publishCollaborationRecordDurably(directory: string, file: string, bytes: string): void {
   const temporary = join(directory, collaborationStagingName(basename(file)));
   let fd: number | null = null;

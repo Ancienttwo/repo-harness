@@ -115,6 +115,14 @@ the freeze record keeps only a pointer.
   `delegated_worker` actor the Host derives from the persisted run. C5-C9 consume
   that union; adding a third actor kind means adding a branch there and a member
   to the D4 matrix, not a nullable field.
+- Worker-derived signals and handoffs are staged under
+  `contribution-candidates/<run_ref>/` and become publicly readable only when
+  their contribution commit promotes them by `link`. `listCoordinationSignals()`
+  and `listWorkStateHandoffs()` never open that area, so C6-C8 need no
+  commit filter to avoid uncommitted records — and must not add one, because a
+  filter would re-create the reader-side obligation this replaced. Direct
+  Module Engineer publications pass the `public` destination and are visible
+  immediately, unchanged.
 - The contribution transaction converges by construction, not by a resume marker:
   every identity is derived from the run, so re-running the whole collector is
   the recovery path. A later row that adds a step to it must derive that step's

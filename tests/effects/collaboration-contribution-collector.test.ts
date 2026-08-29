@@ -9,7 +9,7 @@
  * `WorkerResultV1`, and no duplicated signal.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
-import { existsSync, readdirSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
 import { COLLABORATION_PROTOCOL } from '../../src/core/collaboration/common';
@@ -39,7 +39,17 @@ import {
   parseContributionDraftFromStdout,
 } from '../../src/effects/collaboration/provider-output-adapter';
 import { listWorkStateHandoffs } from '../../src/effects/collaboration/handoff-store';
-import { listCoordinationSignals } from '../../src/effects/collaboration/signal-store';
+import {
+  SIGNAL_CODEC,
+  listCoordinationSignals,
+  publishCoordinationSignal,
+} from '../../src/effects/collaboration/signal-store';
+import { HANDOFF_CODEC } from '../../src/effects/collaboration/handoff-store';
+import {
+  collaborationDestinationPaths,
+  listCollaborationRecords,
+} from '../../src/effects/collaboration/record-store';
+import { engineerPrincipalAuthorization } from '../../src/effects/collaboration/actor';
 import {
   dispatchDelegatedRun,
   readDelegatedRunStatus,
@@ -153,6 +163,39 @@ function completedRun(stdout: string, mode: string | null = 'shadow'): {
     writeFileSync(join(value.repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ collaboration: { mode: 'off' } }, null, 2)}\n`);
   }
   return { value, dispatchId };
+}
+
+/**
+ * The ids a run has staged, read from the candidate area itself rather than from
+ * any public listing. Used to prove residue is present on disk while being
+ * unreachable through the public readers.
+ */
+function stagedCandidateIds(repoRoot: string, dispatchId: string): {
+  readonly signals: string[];
+  readonly handoffs: string[];
+} {
+  const runRef = readDelegatedRunStatus(repoRoot, dispatchId).current.worker_run_ref!;
+  const destination = { kind: 'contribution_candidate' as const, worker_run_ref_sha256: runRef };
+  const read = <T>(shard: string, codec: typeof SIGNAL_CODEC | typeof HANDOFF_CODEC, field: string): string[] => {
+    const paths = collaborationDestinationPaths(repoRoot, shard, destination);
+    return existsSync(paths.shard)
+      ? listCollaborationRecords(paths, codec as never, field).map((record) => codec.identityOf(record as never))
+      : [];
+  };
+  return {
+    signals: read('signals', SIGNAL_CODEC, 'signal_id'),
+    handoffs: read('handoffs', HANDOFF_CODEC, 'handoff_id'),
+  };
+}
+
+function candidateSignalDir(repoRoot: string, dispatchId: string): string {
+  const runRef = readDelegatedRunStatus(repoRoot, dispatchId).current.worker_run_ref!;
+  return join(
+    resolveGitCommonDirectory(repoRoot),
+    'repo-harness/collaboration/v1/contribution-candidates',
+    runRef.slice('sha256:'.length),
+    'signals',
+  );
 }
 
 function workerResultCount(repoRoot: string): number {
@@ -351,18 +394,56 @@ describe('C4 contribution collector', () => {
 });
 
 describe('C4 contribution collector fault injection', () => {
+  /**
+   * Every persistence boundary the transaction crosses. The old set stopped at
+   * the commit; promotion is now a separate phase and has its own boundaries,
+   * because that is where a record becomes publicly readable.
+   */
   const BOUNDARIES: readonly ContributionCollectorBoundary[] = [
-    'after_first_signal',
-    'after_last_signal',
-    'after_handoff',
+    'after_first_candidate',
+    'after_last_candidate',
+    'after_handoff_candidate',
     'before_commit',
     'after_commit',
+    'after_first_promotion',
+    'after_last_promotion',
     'before_worker_result',
     'after_worker_result',
   ];
 
+  /**
+   * The invariant this row exists to make structural:
+   *
+   * > every publicly readable Worker record is already committed.
+   *
+   * It is asserted against the *public readers themselves* —
+   * `listCoordinationSignals()` and `listWorkStateHandoffs()`, the functions a
+   * projection actually calls — rather than against a filtered view, so a reader
+   * that forgets to filter is exactly what this catches.
+   */
+  function assertNothingUncommittedIsPublic(repoRoot: string): {
+    readonly signals: number;
+    readonly handoffs: number;
+  } {
+    const committedSignals = listContributedSignalIds(repoRoot);
+    const committedHandoffs = listContributedHandoffIds(repoRoot);
+    const publicSignals = listCoordinationSignals(repoRoot);
+    const publicHandoffs = listWorkStateHandoffs(repoRoot);
+    for (const signal of publicSignals) {
+      // Every signal in this fixture is Worker-derived, so any public one must
+      // be committed. A direct Module Engineer signal would legitimately not be.
+      expect(signal.actor.kind).toBe('delegated_worker');
+      expect(committedSignals.has(signal.signal_id)).toBe(true);
+    }
+    for (const handoff of publicHandoffs) {
+      expect(handoff.actor.kind).toBe('delegated_worker');
+      expect(committedHandoffs.has(handoff.handoff_id)).toBe(true);
+    }
+    return { signals: publicSignals.length, handoffs: publicHandoffs.length };
+  }
+
   for (const boundary of BOUNDARIES) {
-    test(`a crash ${boundary.replace(/_/g, ' ')} converges on retry`, () => {
+    test(`a crash ${boundary.replace(/_/g, ' ')} leaves nothing uncommitted public and converges on retry`, () => {
       const { value, dispatchId } = completedRun(framed(draftPayload()));
       const collect = (hook?: (at: ContributionCollectorBoundary) => void) => collectCollaborationContribution({
         repo_root: value.repoRoot,
@@ -376,10 +457,33 @@ describe('C4 contribution collector fault injection', () => {
         if (at === boundary) throw new Error(`injected crash at ${at}`);
       })).toThrow(`injected crash at ${boundary}`);
 
+      // The mid-state, read exactly as a projection would read it.
+      const midState = assertNothingUncommittedIsPublic(value.repoRoot);
+      // Before the commit lands, nothing at all is public: the staging phase is
+      // the long one, and it is where the old shape leaked records permanently.
+      const preCommit = boundary === 'after_first_candidate'
+        || boundary === 'after_last_candidate'
+        || boundary === 'after_handoff_candidate'
+        || boundary === 'before_commit';
+      if (preCommit) {
+        expect(midState).toEqual({ signals: 0, handoffs: 0 });
+        expect(listCollaborationContributionCommits(value.repoRoot)).toHaveLength(0);
+      }
+      // Whatever the mid-state, the candidate residue is invisible to the public
+      // readers while being present on disk for the retry to reuse.
+      const staged = stagedCandidateIds(value.repoRoot, dispatchId);
+      expect(staged.signals.length).toBeGreaterThan(0);
+      for (const id of staged.signals) {
+        if (!listContributedSignalIds(value.repoRoot).has(id)) {
+          expect(listCoordinationSignals(value.repoRoot).some((s) => s.signal_id === id)).toBe(false);
+        }
+      }
+
       // Whatever landed before the crash, the retry is the whole transaction
       // again. There is no resume marker to be wrong about.
       const retried = collect();
 
+      expect(assertNothingUncommittedIsPublic(value.repoRoot)).toEqual({ signals: 2, handoffs: 1 });
       // One visible commit.
       const commits = listCollaborationContributionCommits(value.repoRoot);
       expect(commits).toHaveLength(1);
@@ -388,7 +492,7 @@ describe('C4 contribution collector fault injection', () => {
       expect(workerResultCount(value.repoRoot)).toBe(1);
       expect(readDelegatedRunStatus(value.repoRoot, dispatchId).result!.result_sha256)
         .toBe(retried.result.result_sha256);
-      // Zero duplicate signals: two drafted, two persisted, both committed.
+      // Zero duplicate signals: two drafted, two public, both committed.
       const signals = listCoordinationSignals(value.repoRoot);
       expect(signals).toHaveLength(2);
       expect(new Set(signals.map((signal) => signal.signal_id)).size).toBe(2);
@@ -398,10 +502,11 @@ describe('C4 contribution collector fault injection', () => {
       const handoffs = listWorkStateHandoffs(value.repoRoot);
       expect(handoffs).toHaveLength(1);
       expect(retried.commit.handoff_ref!.handoff_id).toBe(handoffs[0].handoff_id);
-      // A crash after the commit means everything already existed; a retry then
-      // creates nothing. Before the commit, the retry finishes the transaction.
-      expect(retried.created).toBe(boundary === 'before_commit' || boundary === 'after_first_signal'
-        || boundary === 'after_last_signal' || boundary === 'after_handoff');
+      // The candidate area was reused, not rebuilt into a second copy.
+      expect(stagedCandidateIds(value.repoRoot, dispatchId).signals.sort())
+        .toEqual(signals.map((signal) => signal.signal_id).sort());
+      // `created` reports whether this call published the visibility boundary.
+      expect(retried.created).toBe(preCommit);
     }, 120_000);
   }
 
@@ -445,5 +550,163 @@ describe('C4 contribution collector fault injection', () => {
       env: value.env,
     })).toThrow('a different WorkerResult is already persisted for this run');
     expect(workerResultCount(value.repoRoot)).toBe(1);
+  }, 120_000);
+});
+
+describe('C4 candidate area', () => {
+  test('a staged contribution is invisible to the public readers before its commit', () => {
+    const { value, dispatchId } = completedRun(framed(draftPayload()));
+    expect(() => collectCollaborationContribution({
+      repo_root: value.repoRoot,
+      dispatch_id: dispatchId,
+      untrusted_claims: [],
+      crash_hook: (at) => { if (at === 'before_commit') throw new Error('stop'); },
+      env: value.env,
+    })).toThrow('stop');
+
+    // Everything the Worker produced is durable on disk...
+    const staged = stagedCandidateIds(value.repoRoot, dispatchId);
+    expect(staged.signals).toHaveLength(2);
+    expect(staged.handoffs).toHaveLength(1);
+    // ...and none of it is reachable through any public reader.
+    expect(listCoordinationSignals(value.repoRoot)).toHaveLength(0);
+    expect(listWorkStateHandoffs(value.repoRoot)).toHaveLength(0);
+    expect(listCollaborationContributionCommits(value.repoRoot)).toHaveLength(0);
+    expect(listContributedSignalIds(value.repoRoot).size).toBe(0);
+  }, 120_000);
+
+  test('the candidate area is not a public shard: it lives outside signals/ and handoffs/', () => {
+    const { value, dispatchId } = completedRun(framed(draftPayload()));
+    expect(() => collectCollaborationContribution({
+      repo_root: value.repoRoot,
+      dispatch_id: dispatchId,
+      untrusted_claims: [],
+      crash_hook: (at) => { if (at === 'before_commit') throw new Error('stop'); },
+      env: value.env,
+    })).toThrow('stop');
+    const root = join(resolveGitCommonDirectory(value.repoRoot), 'repo-harness/collaboration/v1');
+    expect(existsSync(join(root, 'contribution-candidates'))).toBe(true);
+    // The public shards are absent entirely, which is stronger than being empty:
+    // there is no filter involved, the records are simply not there.
+    expect(existsSync(join(root, 'signals'))).toBe(false);
+    expect(existsSync(join(root, 'handoffs'))).toBe(false);
+  }, 120_000);
+
+  test('a foreign entry in the candidate area fails the store closed instead of being promoted', () => {
+    const { value, dispatchId } = completedRun(framed(draftPayload()));
+    expect(() => collectCollaborationContribution({
+      repo_root: value.repoRoot,
+      dispatch_id: dispatchId,
+      untrusted_claims: [],
+      crash_hook: (at) => { if (at === 'before_commit') throw new Error('stop'); },
+      env: value.env,
+    })).toThrow('stop');
+
+    const candidateSignals = candidateSignalDir(value.repoRoot, dispatchId);
+    // A lookalike: not a record name, not this store's staging residue.
+    writeFileSync(join(candidateSignals, 'lookalike.json'), '{}\n');
+    expect(() => collectCollaborationContribution({
+      repo_root: value.repoRoot,
+      dispatch_id: dispatchId,
+      untrusted_claims: [],
+      env: value.env,
+    })).toThrow('unexpected entries in the signal store');
+    // Nothing was promoted on the way to that refusal.
+    expect(listCoordinationSignals(value.repoRoot)).toHaveLength(0);
+  }, 120_000);
+
+  test('a record filed under a name it does not derive fails the store closed', () => {
+    const { value, dispatchId } = completedRun(framed(draftPayload()));
+    expect(() => collectCollaborationContribution({
+      repo_root: value.repoRoot,
+      dispatch_id: dispatchId,
+      untrusted_claims: [],
+      crash_hook: (at) => { if (at === 'before_commit') throw new Error('stop'); },
+      env: value.env,
+    })).toThrow('stop');
+
+    const candidateSignals = candidateSignalDir(value.repoRoot, dispatchId);
+    // Copy one staged record under a different 64-hex name. It parses and it is
+    // canonical, but its own identity disagrees with the name it is filed under.
+    const [existing] = readdirSync(candidateSignals).filter((entry) => entry.endsWith('.json'));
+    writeFileSync(join(candidateSignals, `${'e'.repeat(64)}.json`), readFileSync(join(candidateSignals, existing), 'utf8'));
+    expect(() => collectCollaborationContribution({
+      repo_root: value.repoRoot,
+      dispatch_id: dispatchId,
+      untrusted_claims: [],
+      env: value.env,
+    })).toThrow('signal path and content identity disagree');
+    expect(listCoordinationSignals(value.repoRoot)).toHaveLength(0);
+  }, 120_000);
+
+  test('a valid record nobody staged for this contribution does not ride into a public shard', () => {
+    const { value, dispatchId } = completedRun(framed(draftPayload()));
+    expect(() => collectCollaborationContribution({
+      repo_root: value.repoRoot,
+      dispatch_id: dispatchId,
+      untrusted_claims: [],
+      crash_hook: (at) => { if (at === 'before_commit') throw new Error('stop'); },
+      env: value.env,
+    })).toThrow('stop');
+
+    // A genuinely valid, self-consistent, correctly named record placed in this
+    // run's candidate area — the case the per-record identity check cannot see,
+    // because nothing about the record itself is wrong. It is simply not part of
+    // the draft this run's persisted stdout pins.
+    const runRef = readDelegatedRunStatus(value.repoRoot, dispatchId).current.worker_run_ref!;
+    publishCoordinationSignal({
+      repo_root: value.repoRoot,
+      authorization: engineerPrincipalAuthorization(value.actors[0]!.authorization_id),
+      destination: { kind: 'contribution_candidate', worker_run_ref_sha256: runRef },
+      idempotency_key: 'not-part-of-this-contribution',
+      thread_key: 'collaboration/intruder',
+      reply_to_signal_id: null,
+      scope_refs: [],
+      labels: [],
+      title: 'staged by nobody',
+      body: 'A valid record that this contribution never drafted.',
+      artifact_refs: [],
+      source_signal_ids: [],
+      supersedes_signal_id: null,
+      recorded_time: { kind: 'first_publication' },
+      now: () => '2026-08-30T00:00:08.000Z',
+      env: value.env,
+    });
+    expect(() => collectCollaborationContribution({
+      repo_root: value.repoRoot,
+      dispatch_id: dispatchId,
+      untrusted_claims: [],
+      env: value.env,
+    })).toThrow('candidate area does not hold exactly this contribution');
+    // It never reached a public shard, and neither did the real candidates.
+    expect(listCoordinationSignals(value.repoRoot)).toHaveLength(0);
+    expect(listCollaborationContributionCommits(value.repoRoot)).toHaveLength(0);
+  }, 120_000);
+
+  test('a direct Module Engineer publication keeps its immediate visibility', () => {
+    const { value } = completedRun(framed(draftPayload()));
+    const published = publishCoordinationSignal({
+      repo_root: value.repoRoot,
+      authorization: engineerPrincipalAuthorization(value.actors[0]!.authorization_id),
+      destination: { kind: 'public' },
+      idempotency_key: 'direct-engineer-signal',
+      thread_key: 'collaboration/direct',
+      reply_to_signal_id: null,
+      scope_refs: [],
+      labels: [],
+      title: 'a Module Engineer speaking directly',
+      body: 'This is not a Worker contribution and needs no commit to be visible.',
+      artifact_refs: [],
+      source_signal_ids: [],
+      supersedes_signal_id: null,
+      recorded_time: { kind: 'first_publication' },
+      now: () => '2026-08-30T00:00:09.000Z',
+      env: value.env,
+    });
+    expect(published.created).toBe(true);
+    // Visible immediately, with no commit anywhere in the repository.
+    expect(listCoordinationSignals(value.repoRoot).map((s) => s.signal_id)).toEqual([published.signal.signal_id]);
+    expect(listCollaborationContributionCommits(value.repoRoot)).toHaveLength(0);
+    expect(listContributedSignalIds(value.repoRoot).size).toBe(0);
   }, 120_000);
 });
