@@ -2,6 +2,59 @@
 
 All notable changes to this skill are documented here.
 
+## [0.18.0] - 2026-08-29
+
+### Added
+
+- **Attention-first operator worklist.** The `operator serve` board replaces the
+  five-column kanban with a single prioritized worklist — needs you, mergeable,
+  unreadable repo, agent in progress, external, done — with the last three
+  groups collapsed by default. The rail anchors and the separate Repositories
+  section are gone.
+- **Resident detail pane.** The board keeps a detail pane open at all times;
+  with nothing selected it shows the repo × stage matrix and repo health. A
+  persistent status bar reports relative data age, `seq`, and consistency,
+  desaturating the surface when the snapshot is stale and marking
+  `changed_during_read` on the status bar and the affected rows without
+  replacing their stage labels.
+- **Human task labels in the board contract.** `FleetBoardCardV1` carries
+  `task_label` and `task_index`, projected from `row.task` and `row.index` as
+  preimages of the same authority. The digest basis changes with them, so
+  `FLEET_BOARD_PROTOCOL` moves from `1` to `2`.
+- **Task message write channel.** `POST
+  /api/v1/fleet/tasks/{repository_id}/{task_id}/messages` exposes the existing
+  `fleet message` effect as the board's one write action, under `sender_kind:
+  'operator'` with a fixed `control-board` sender id. The endpoint requires an
+  `Origin` header, resolves `repository_id` through the registry, enforces
+  `read_write` access, and mirrors the 8 KiB body limit at the HTTP layer. The
+  composer sits collapsed at the foot of the detail pane, treats its fence as
+  the confirmation, refuses to send under `read_only`, `changed_during_read`,
+  `stale`, or `degraded`, and drives delivery feedback from the authoritative
+  `unread_count` rather than a local sent list.
+- **Board internationalization.** A single in-repo dictionary module
+  (`src/operator-web/i18n.ts`) provides zh/en strings with no third-party
+  dependency. The language switch lives in the status bar, persists through
+  `localStorage`, and initializes from `navigator.language` with `en` as the
+  default. Blocker codes are translated in both languages with the raw code
+  shown alongside; task labels, repo names, ids, and SHAs are never translated.
+- **Canonical brand marks.** The board adopts the canonical pixel logo,
+  favicon, and mascots.
+
+### Changed
+
+- **The board's footer contract now reads `observe-only · one write: task
+  message`** instead of `read-only / localhost`, and the negative test is
+  upgraded from "no writes" to an "exactly one write" invariant guarded on both
+  the server and the client.
+- **Accent color discipline.** Carrot accent as a UI affordance means human
+  write and nothing else, a constraint carried by the `--carrot-*` CSS tokens;
+  brand identity art is the documented exception, where orange is a brand color
+  and carries no interaction semantics. Attention semantics are recolored: user
+  amber, agent neutral blue, external purple, and danger reserved for real
+  errors.
+- **Documentation is aligned** with the rebuilt board across the README and the
+  local human control board design note.
+
 ## [0.17.1] - 2026-08-28
 
 ### Added
