@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-30 04:50
+> **Related Plan**: plans/archive/plan-20260830-0120-c3-work-state-handoff-adoption.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260830-0450
+
 # Task Contract: c3-work-state-handoff-adoption
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260830-0120-c3-work-state-handoff-adoption.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->

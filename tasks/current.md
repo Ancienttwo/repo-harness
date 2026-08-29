@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-30T02:55:45+0800 -->
+<!-- updated_at: 2026-08-30T04:50:06+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-30T02:55:45+0800
-> **Source Branch**: codex/c2-thread-hotspot-projection
-> **Source Commit**: 8e71e3f9
+> **Updated At**: 2026-08-30T04:50:06+0800
+> **Source Branch**: codex/c3-work-state-handoff-adoption
+> **Source Commit**: fbaef049
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -31,8 +31,6 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- linked-worktree-1608c4e06d2a: plans/plan-20260830-0120-c3-work-state-handoff-adoption.md
-- linked-worktree-1608c4e06d2a: active-worktree owner -> self
 - linked-worktree-15c0db14c68b: plans/plan-20260829-1728-oracle-thinking-passthrough.md
 - linked-worktree-15c0db14c68b: active-worktree owner -> self
 ## Active Sprint
@@ -41,7 +39,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 ## Workstreams
 
 - `tasks/workstreams/runtime-harness/bound-task-freezes/me4a-bound-task-freeze-handoff.md`: status=completed, current_slice=completed-20260826-me4a-bound-task-freeze-handoff, source_plan=plans/plan-20260826-1247-me4a-bound-task-freeze-handoff.md
-- `tasks/workstreams/runtime-harness/collaboration/collaboration-substrate-program.md`: status=active, current_slice=todo-01, source_plan=plans/plan-20260830-0121-c2-thread-hotspot-projection.md
+- `tasks/workstreams/runtime-harness/collaboration/collaboration-substrate-program.md`: status=active, current_slice=todo-01, source_plan=plans/plan-20260830-0120-c3-work-state-handoff-adoption.md
 - `tasks/workstreams/runtime-harness/engineer-bindings/me0a-profile-binding.md`: status=completed, current_slice=completed-20260824-me0a-profile-binding, source_plan=`plans/plan-20260824-2126-me0a-engineer-profile-binding.md`
 - `tasks/workstreams/runtime-harness/engineer-bindings/me0b-principal-claim-actor.md`: status=completed, current_slice=completed-20260825-me0b-principal-claim-actor, source_plan=`plans/plan-20260825-0029-me0b-engineer-principal-claim-actor.md`
 - `tasks/workstreams/runtime-harness/engineer-messages/me1c-engineer-coordination-messages.md`: status=completed, current_slice=acceptance-and-publication, source_plan=plans/plan-20260825-1443-me1c-engineer-coordination-messages.md
@@ -61,16 +59,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260830-0121-c2-thread-hotspot-projection.md
- D tasks/contracts/20260830-0121-c2-thread-hotspot-projection.contract.md
- D tasks/notes/20260830-0121-c2-thread-hotspot-projection.notes.md
- D tasks/reviews/20260830-0121-c2-thread-hotspot-projection.review.md
+ D plans/plan-20260830-0120-c3-work-state-handoff-adoption.md
+ D tasks/contracts/20260830-0120-c3-work-state-handoff-adoption.contract.md
+ D tasks/notes/20260830-0120-c3-work-state-handoff-adoption.notes.md
+ D tasks/reviews/20260830-0120-c3-work-state-handoff-adoption.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260830-0121-c2-thread-hotspot-projection.md
-?? tasks/archive/contract-20260830-0255-c2-thread-hotspot-projection.md
-?? tasks/archive/notes-20260830-0255-c2-thread-hotspot-projection.md
-?? tasks/archive/review-20260830-0255-c2-thread-hotspot-projection.md
-?? tasks/archive/todo-20260830-0255-c2-thread-hotspot-projection.md
+?? plans/archive/plan-20260830-0120-c3-work-state-handoff-adoption.md
+?? tasks/archive/contract-20260830-0450-c3-work-state-handoff-adoption.md
+?? tasks/archive/notes-20260830-0450-c3-work-state-handoff-adoption.md
+?? tasks/archive/review-20260830-0450-c3-work-state-handoff-adoption.md
+?? tasks/archive/todo-20260830-0450-c3-work-state-handoff-adoption.md
 ```
 
 ## Source Artifacts

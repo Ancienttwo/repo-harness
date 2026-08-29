@@ -1,6 +1,6 @@
 # Plan: C3 WorkStateHandoffV1 and adoption receipts
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260830-0120
 > **Slug**: c3-work-state-handoff-adoption
 > **Planning Source**: repo-harness-sprint
