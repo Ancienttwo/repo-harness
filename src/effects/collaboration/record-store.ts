@@ -168,18 +168,16 @@ export function collaborationRecordPath(
  * one delegated run's whole contribution transaction.
  *
  * C3 shipped handoff publish on the *signal* domain and a comment here claimed
- * that was D9 as frozen. It was not; C4 split it and this paragraph is the
- * correction. The split was safe because the sharing was never load-bearing:
- * records publish through a staged write plus `link`, so a concurrent write is
- * either fully visible or not visible at all and no reader observes a torn one,
- * and handoff publish reads the signal store inside its lock only to prove cited
- * signals resolve — a signal appearing mid-check can only turn a failing check
- * into a passing one, and a persisted signal is immutable so it can never turn a
- * passing check into a failing one. The split also fixed a real edge the shared
- * domain left open: handoff identity is keyed on the actor and the idempotency
- * key, not on the thread, so two publishes of *one* identity under two thread
- * keys took two locks, raced, and reconciled into a spurious byte conflict.
- * Keying the lock on the identity being written closes that.
+ * that was D9 as frozen. It was not; C4 split it to match the frozen decision,
+ * and this paragraph is the correction.
+ *
+ * The split was safe because the sharing was never load-bearing. Records publish
+ * through a staged write plus `link`, so a concurrent write is either fully
+ * visible or not visible at all and no reader observes a torn one. Handoff
+ * publish does read the signal store inside its lock, but only to prove cited
+ * signals resolve: a signal appearing mid-check can only turn a failing check
+ * into a passing one, and a persisted signal is immutable, so it can never turn
+ * a passing check into a failing one.
  *
  * The separator is an escaped NUL rather than a literal one: a subject key may
  * contain any character a thread key may, and a printable separator would let

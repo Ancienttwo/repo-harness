@@ -144,6 +144,9 @@ allowed_paths:
   - tests/effects/collaboration-contribution-collector.test.ts
   - tests/helpers/collaboration-store-fixture.ts
   - tests/helpers/collaboration-delegation-fixture.ts
+  # One real admission request per process: the canary spawns this rather than
+  # making three in-process calls, which cannot contend for an on-disk lock.
+  - tests/helpers/collaboration-admission-runner.ts
   - tests/effects/collaboration-signal-store.test.ts
   - tests/effects/collaboration-handoff-store.test.ts
   - tests/effects/collaboration-adoption-store.test.ts

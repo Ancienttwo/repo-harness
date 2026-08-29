@@ -105,13 +105,21 @@
   and handoff publish reads the signal store inside its lock only to prove cited
   signals resolve — a signal appearing mid-check can only turn a failing check
   into a passing one, and a persisted signal is immutable so it can never turn a
-  passing check into a failing one. Splitting also closed a real edge the shared
-  domain left open: handoff identity is keyed on the actor and the idempotency
-  key rather than on the thread, so two publishes of *one* identity under two
-  thread keys took two locks, raced, and reconciled into a spurious byte
-  conflict. Handoff publish now takes `('handoff', handoff_id)` and the comment
-  is rewritten to say what the code does. Ledgered in the C0 freeze record's new
-  D9 lock table; the C3 row is marked resolved rather than accepted.
+  passing check into a failing one. Handoff publish now takes
+  `('handoff', handoff_id)` and the comment is rewritten to say what the code
+  does. Ledgered in the C0 freeze record's new D9 lock table; the C3 row is
+  marked resolved rather than accepted.
+
+  A third argument was drafted here and is withdrawn as wrong, recorded so it is
+  not re-derived: that the shared domain let two publishes of *one* identity
+  under two `thread_key`s race into a spurious byte conflict. `thread_key` is a
+  field of `WorkStateHandoffV1` and therefore part of its canonical bytes, so two
+  such publishes are two different payloads under one identity, and a conflict is
+  the correct frozen semantics — `tests/effects/collaboration-handoff-store.test.ts`
+  asserts exactly that in "the same identity with a different payload is an
+  explicit conflict". Identical bytes imply an identical `thread_key`, which took
+  the same lock under the old scheme anyway, so there was no race to close. The
+  split stands on the two justifications above.
 
 - **`src/effects/engineers/delegated-run-store.ts` changed, and the digest table
   is updated with the justification C0 requires.** Two changes inside
@@ -240,7 +248,7 @@ is the second consecutive row to hit it.
 | Add a new field to `WorkerResultV1` for the commit | Rejected | Bumps `DELEGATION_PROTOCOL`, which the sprint's global invariants forbid. `evidence_refs[].ref` already accepts these bytes |
 | Make `contribution_refs` optional so existing callers need no change | Rejected | An optional field lets a call site stay silent about whether its run produced a contribution. Required means every site states it, and the CLI's `[]` is a claim about C7's scope rather than a default |
 | Persist the draft as its own shard | Rejected | Not on D9's frozen shard list, and weaker than the digest: the draft is reproducible from the stdout blob the result already pins, and a second copy could drift from its own preimage |
-| Keep the C3 thread-domain handoff lock and ledger it as an accepted deviation | Rejected | The frozen decision was already the better one, the C3 analysis showed the split was safe, and the split closed a real spurious-conflict edge. A deviation ledger entry would have preserved a wrong comment and a worse lock |
+| Keep the C3 thread-domain handoff lock and ledger it as an accepted deviation | Rejected | D9 had already frozen per-handoff, and the re-verified C3 analysis showed the split was safe. A deviation ledger entry would have preserved a comment that claimed compliance it did not have |
 | Simulate the three parallel readers with three in-process calls | Rejected | Three calls in one event loop cannot contend for an on-disk lock. The canary spawns three real processes and asserts three distinct pids and observed seat counts of 0, 1 and 2 |
 | Use the real Codex CLI in the canary | Rejected | The row makes no claim about the model call. Everything it does claim — the lock, the run state machine, the process receipt, the persisted stdout, the seat count — runs for real against a shell shim, which is the boundary ME-2A already drew |
 

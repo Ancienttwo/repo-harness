@@ -169,11 +169,8 @@ export function publishWorkStateHandoff(
   };
 
   ensureCollaborationDirectory(paths.common, paths.shard);
-  // Per handoff, as D9 freezes it. The identity is derived above from the actor
-  // and the idempotency key rather than from the thread, so this is also the
-  // only key that serialises two concurrent publishes of *one* handoff: under a
-  // thread-keyed lock the same identity published under two thread keys would
-  // take two locks and race into a spurious byte conflict.
+  // Per handoff, as D9 freezes it. C3 shipped this on the signal domain; the
+  // reasoning for the split is in `collaborationLockRelativePath()`.
   return withExclusiveDirectoryLock(
     paths.common,
     collaborationLockRelativePath('handoff', handoffId),
