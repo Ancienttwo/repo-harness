@@ -11,8 +11,7 @@
   `FLEET_BOARD_PROTOCOL` from 1 to 2 to carry human task labels, and opens the
   board's single write channel as an authenticated task-message POST. It also
   adds zh/en board internationalization and the canonical brand marks.
-- Publish status: **candidate preparation**. npm publish, tag creation, merge
-  to `main`, and installed-runtime refresh have not occurred.
+- Publish status: **published**. npm repo-harness@0.18.0 (dist-tag latest), tag `v0.18.0` -> `456731f3`, merge PR #221, `check:release-published` OK (2026-08-29).
 
 ## Release Content
 
