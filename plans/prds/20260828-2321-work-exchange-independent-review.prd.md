@@ -15,13 +15,13 @@
 - **Problem**: current execution work is offer-driven, but formal Review/Verification are not claimable Gate Jobs. Cross-review is advisory and current provider feedback arrives after PR activity rather than through an independent repo-harness gate reservation.
 - **Users**: Module Engineer, Independent Reviewer, Independent Verifier, Program Orchestrator, Maintainer.
 - **Platform**: existing Engineer Principal, Work Graph, Publication, review-subject, Acceptance and repair authorities.
-- **P0 surface**: GatePolicyV1, WorkExchangeSnapshotV1, ReviewOfferV1, GateReservationV1, ReviewReceiptV1, VerificationOffer/Receipt, RepairTrigger adapter, GateStatus.
+- **Phase-2 initial surface**: GatePolicyV1, WorkExchangeSnapshotV1, ReviewOfferV1, GateReservationV1, ReviewReceiptV1, VerificationOffer/Receipt, RepairTrigger adapter, GateStatus.
 - **Core metric**: every required publication has a current independent pass or is visibly blocked.
 - **Hard constraint**: no second Lease; no source mutation from reviewer/verifier; no synthetic pass.
 - **Key risk**: reviewer identity accidentally aliases executor because current Module Engineer identity is capability-based.
 - **Unknowns**: same-capability multi-seat reviewers are not supported in v1.
 - **Acceptance scenarios**: exact offer derivation, one reservation winner, executor exclusion, stale receipt invalidation, repair re-entry, conjunctive gates.
-- **Suggested next step**: implement Gate Policy and shadow Work Exchange before any required Review.
+- **Suggested next step**: No implementation until Revisit / Admission Gate passes. Once both pass, implement Gate Policy and shadow Work Exchange before any required Review.
 ## Problem
 ### Existing Reuse Targets
 | Existing component | Use |

@@ -43,8 +43,8 @@ Publication、Acceptance、read-only delegation 与 `TaskFreezeReceiptV1`。缺�
 ### Success Criteria
 
 - 协作写入对 Task/Lease/Publication/Acceptance 的字节影响为 0；
-- 同 capability 至少 3 个并行只读参与者；
-- 至少一次真实 handoff 被后继者采用；
+- 同 capability 至少 3 个并行只读参与者，且第 4 个并发请求在 `max_parallel_readers` 被拒；
+- 至少一次真实 handoff 被后继者采用，且多采用者并存不冲突；
 - 后继者重复已记录 dead end 的次数为 0；
 - context packet ≤1,500 estimated tokens；
 - Work Exchange 相同输入 byte-identical；
@@ -88,26 +88,30 @@ capability 不在本 Sprint 创建。
 ### Dependency Order
 
 ```text
-C0
-├─ C1 → C2
-├─ C3 → C5
-└─ C4
-C1 + C2 + C3 + C4 + C5 → C6 → C7 + C8 → C9
+C0 → C1
+C1 → C2, C1 → C3
+C1 + C3 → C4
+C3 + C4 → C5
+C1 + C2 + C3 + C4 + C5 → C6 → C7 + C8 → C9-A → C9-B / Decision
 ```
+
+C1 独占共享 schema 机制：`src/core/collaboration/common.ts` 里的 actor union、scope refs、
+evidence refs、ID、时间戳与 digest helper 全部由 C1 落地并冻结。C3 与其他行只消费，
+不与 C1 并行改这些结构。
 
 ### Parallelism
 
-Allowed after C0:
+Allowed:
 
-- C1 与 C3 的 schema 层可并行，文件不相交；
-- C4 的 delegation adapter 可与 C1/C3 并行，只要不改 `src/core/engineers/delegation.ts`；
+- C2 与 C3 在 C1 冻结 `common.ts` 之后可并行，文件不相交；
 - C7 与 C8 在 C6 冻结 snapshot 契约后可并行。
 
 Forbidden:
 
 - 两个 writer 同时改 `src/core/collaboration/*`；
+- C3 与 C1 并行改共享 schema；
+- C4 在 C1 与 C3 冻结之前落地 collector 事务；
 - UI 与 server 协议分开落地；
-- C5 与 C3 并行改同一个 handoff schema 文件；
 - 协议文件仍在移动时做 architecture restamp。
 
 ### Global Invariants
@@ -147,16 +151,16 @@ No step skips a state。`independent_review` 与 `guarded_merge` 在本 Sprint �
 
 | # | Status | Task | Mode | Acceptance | Plan |
 |---:|:---:|---|---|---|---|
-| 1 | [ ] | C0 — freeze collaboration/delivery two-plane authority | contract | Architecture request 明确 signals/handoffs/participants 无 Task、Lease、Publication、Acceptance authority；现有 authority bytes 不变 | (pending) |
-| 2 | [ ] | C1 — `CoordinationSignalV1` schema and append-only store | contract | 三个 actor 可并发发布；同 id 同 payload 幂等；不同 payload 冲突；Task/Lease bytes 零变化 | (pending) |
-| 3 | [ ] | C2 — signal threads, discovery and hotspot projection | contract | 同输入 byte-identical；thread 由 opaque key 聚合；top-K context ≤1,500 tokens；无 LLM 状态推断 | (pending) |
-| 4 | [ ] | C3 — `WorkStateHandoffV1` and adoption receipts | contract | handoff 包含 attempted paths、dead ends、findings、next actions；adoption 不创建 Claim | (pending) |
-| 5 | [ ] | C4 — delegated Worker contribution adapter | contract | 至少 3 个同 capability read-only Worker 并行；WorkerResult 可生成 signals/handoff；writer 数仍为 1 | (pending) |
+| 1 | [ ] | C0 — freeze collaboration/delivery two-plane authority | contract | Architecture request 明确 signals/handoffs/participants 无 Task、Lease、Publication、Acceptance authority；现有 `DelegatedRunIntent.context_packet_sha256` 真实语义冻结；`CollaborationRunContextBindingV1` 决策完成；P0 actor 支持矩阵完成；delegation policy bridge 设计完成；3 readers + 第 4 个被拒的 model-free canary 通过；ArtifactRef 复用决策完成；现有 authority bytes 不变 | (pending) |
+| 2 | [ ] | C1 — `CoordinationSignalV1` schema, `common.ts` and append-only store | contract | signal ID 与记录时间由 Host/Server 派生；每条 signal 身份级原子写；supersede 仅限同 actor lineage；source refs 必须已存在且同仓库；scope refs 携带 revision；`common.ts` 归 C1 独占；三个 actor 可并发发布；同 id 同 payload 幂等；不同 payload 冲突；Task/Lease bytes 零变化 | (pending) |
+| 3 | [ ] | C2 — signal threads, discovery and hotspot projection | contract | opportunity 只用结构化闭集理由（`open_request` / `unverified_hypothesis` / `stalled_thread` 已移除）；检索理由为闭集代码；利用/探索配额生效；digest 不含墙钟；同输入 byte-identical；thread 由 opaque key 聚合；top-K context ≤1,500 tokens；无 LLM 状态推断 | (pending) |
+| 4 | [ ] | C3 — `WorkStateHandoffV1` and adoption receipts | contract | handoff 包含 attempted paths、dead ends、findings、next actions；`execution_context` 判别联合；receipt 带 `handoff_sha256`；多对多采用成立且同采用者幂等；协议与文案不使用 claim 词汇；adoption 不创建 Claim | (pending) |
+| 5 | [ ] | C4 — delegated Worker contribution adapter | contract | draft 只来自持久化 stdout 的 versioned adapter；`CollaborationContributionCommitV1` 为可见性边界；每个持久化边界的故障注入都收敛；WorkerResult exactly-once；`max_parallel_readers` 在准入期真正生效；每个角色都要 tracked LogicalRoleProfile；至少 3 个同 capability read-only Worker 并行；writer 数仍为 1 | (pending) |
 | 6 | [ ] | C5 — TaskFreeze / explicit takeover succession integration | contract | dirty executor 先 freeze；handoff 不转移 Lease；successor 只有经现有 release/takeover/acquire 才可写 | (pending) |
-| 7 | [ ] | C6 — collaboration-centric Work Exchange and ContextPacket | contract | 显示 existing execution offers、participants、threads、signals、handoffs、opportunities；snapshot fail-loud | (pending) |
+| 7 | [ ] | C6 — collaboration-centric Work Exchange and ContextPacket | contract | packet 带 `source_snapshot_sha256`、截断证据、`estimator_version` 与 canonical render SHA；`CollaborationRunContextBindingV1` 落地；显示 existing execution offers、participants、threads、signals、handoffs、opportunities；snapshot fail-loud | (pending) |
 | 8 | [ ] | C7 — CLI/MCP and bounded context injection | contract | authenticated actor 由服务端推导；Engineer 可 post；Worker 由 Host collector post；全部 context 标记 untrusted | (pending) |
 | 9 | [ ] | C8 — read-only Operator collaboration surface | contract | 展示 lanes、discoveries、handoffs、hotspots、contributors；task message 仍是唯一 browser write | (pending) |
-| 10 | [ ] | C9 — real multi-agent canary and multi-seat decision | contract | 与 single-agent baseline 比较；至少一次 handoff adoption、一次 signal reuse；零 authority drift；输出 persistent multi-seat go/no-go | (pending) |
+| 10 | [ ] | C9 — real multi-agent canary and multi-seat decision | contract | C9-A 可行性通过；C9-B 重复证据成立；aggregate compute/cost 记录完整；usefulness rubric 开跑前冻结；跨臂污染防护到位；零 authority drift；输出 persistent multi-seat go/no-go | (pending) |
 
 ## Detailed Work Packages
 
@@ -176,6 +180,12 @@ No step skips a state。`independent_review` 与 `guarded_merge` 在本 Sprint �
   - `TaskFreezeReceiptV1` → `sprint release` / `fleet takeover` / `fleet acquire`；
   - Task/Module Message → untrusted 注入渲染。
 - [ ] 冻结非 mutation 断言：Task、Lease、Publication、Acceptance、Operator 路由清单。
+- [ ] 冻结现有 `DelegatedRunIntent.context_packet_sha256` 语义：它承载 ExecutionPacket 摘要，`prepareDelegatedRun()` 与 `intentForDispatch()` 两处断言不变。
+- [ ] 完成 `CollaborationRunContextBindingV1` 决策：协作 provenance 走加法绑定，不 bump Delegation 协议。
+- [ ] 完成 P0 actor 支持矩阵：`module_engineer` / `delegated_worker` Supported，`human_operator` Deferred，`native_subagent` Unsupported。
+- [ ] 完成 delegation policy bridge 设计：`allowed_roles` 与 `max_parallel_readers` 如何在准入期生效。
+- [ ] 跑 model-free canary：同一 parent claim、3 个不同 dispatch_id、3 个并行只读 run、protected state 字节不变、第 4 个并发请求在 `max_parallel_readers=3` 被拒。
+- [ ] 完成 ArtifactRef 决策：复用现有 `WorkerResult` `{ ref, sha256 }` 校验器，不引入重复引用类型。
 - [ ] 冻结 store roots、lock 策略与 canonical JSON 机制。
 - [ ] 冻结 feature flag 与降级模式。
 - [ ] 明确拒绝 P0 内的同 capability 持久多席位。
@@ -193,7 +203,7 @@ tasks/workstreams/runtime-harness/*
 
 **Acceptance**
 
-架构请求被接受；无运行时源文件变更；契约测试枚举现有权威协议版本。
+架构请求被接受；无运行时源文件变更；契约测试枚举现有权威协议版本；上述六项决策全部有明确结论，C1 之后不留待定项。
 
 **Rollback**
 
@@ -209,11 +219,16 @@ tasks/workstreams/runtime-harness/*
 
 **Tasks**
 
+- [ ] 新增 `src/core/collaboration/common.ts`，独占共享 schema 机制：actor union、scope refs、evidence refs、ID、时间戳、digest helper。
 - [ ] 新增 `src/core/collaboration/signal.ts`，实现 exact-key 校验与 canonical digest。
-- [ ] 实现 `CollaborationActorRefV1` 与 `CollaborationScopeRefV1`。
+- [ ] 实现 `CollaborationActorRefV1` 判别联合（P0 只有 `module_engineer` 与 `delegated_worker`）与带 revision 的 `CollaborationScopeRefV1`。
+- [ ] `ArtifactRefV1` 直接复用现有 `WorkerResult` `{ ref, sha256 }` 校验器。
+- [ ] signal ID 与记录时间由 Host/Server 派生，不接受调用方提供。
+- [ ] 每条 signal 以身份级原子写落盘，不做批量部分可见。
+- [ ] supersede 只允许同 actor lineage 内进行，且目标必须存在。
+- [ ] `source_signal_ids` 引用的 signal 必须已存在且同仓库。
 - [ ] 实现传输上限：title ≤256 bytes、body ≤8 KiB、labels ≤12、scope refs ≤8、artifact refs ≤8、source signals ≤16。
 - [ ] 实现 append-only store 与 per-thread lock。
-- [ ] 实现 supersede 语义与目标存在性校验。
 - [ ] actor 一律服务端从 principal 推导，忽略调用方自述。
 - [ ] 加入零 Task/Lease 写入证明。
 
@@ -225,11 +240,12 @@ tasks/workstreams/runtime-harness/*
 - [ ] 各项上限边界；
 - [ ] 同 id 同 payload 幂等 / 不同 payload 冲突；
 - [ ] N-way 独立进程并发 append；
-- [ ] supersede 目标缺失。
+- [ ] supersede 目标缺失或跨 actor lineage；
+- [ ] source ref 不存在或跨仓库。
 
 **Acceptance**
 
-三个 actor 并发发布全部成功；权威 store 字节零变化。
+三个 actor 并发发布全部成功；权威 store 字节零变化；`common.ts` 冻结后其他行只消费不修改。
 
 **Rollback**
 
@@ -247,15 +263,19 @@ tasks/workstreams/runtime-harness/*
 
 - [ ] 实现按 `thread_key` 完全相等的聚合，不做近似合并。
 - [ ] 实现 `CollaborationThreadSnapshotV1`。
-- [ ] 实现确定性 hotspot 函数（独立贡献者数、近期活动、artifact refs、open requests、未认领 handoff、跨 thread 引用）。
-- [ ] 实现 contribution opportunities 的五个 reason 闭集。
+- [ ] 实现确定性 hotspot 函数（独立贡献者数、近期活动、artifact refs、低 contributor 覆盖度、unadopted handoff、跨 thread 引用）。
+- [ ] 实现 `ContributionOpportunityReason` 结构化闭集：`unadopted_handoff` / `low_contributor_coverage` / `cross_thread_reference` / `recent_activity` / `artifact_rich_thread` / `exploration_slot`。
+- [ ] 不实现 `open_request`、`unverified_hypothesis`、`stalled_thread`：薄 signal 协议支撑不了这些语义推断，它们只能作为无系统语义的开放 label 存在。
+- [ ] 实现 `RelevantSignalV1` 的闭集检索理由与 `matched_refs`。
+- [ ] 实现确定性利用/探索配额（默认 60/40，低覆盖 thread 与 unadopted handoff 有固定名额）。
+- [ ] 投影里的任何 digest 都不含墙钟输入。
 - [ ] 实现 top-K 选择与 1,500 estimated tokens 预算截断。
 - [ ] 断言 hotspot 不进入 Work Graph priority、dependency、Task state、Lease eligibility。
 - [ ] 采集期变化标记 `changed_during_read`，分片不可读标记 `degraded`。
 
 **Acceptance**
 
-相同输入 byte-identical；hotspot 变化不改变任何 canonical 权威 digest。
+相同输入 byte-identical；hotspot 变化不改变任何 canonical 权威 digest；最热 thread 吃不掉全部上下文名额。
 
 **Rollback**
 
@@ -272,15 +292,18 @@ tasks/workstreams/runtime-harness/*
 **Tasks**
 
 - [ ] 实现 `WorkStateHandoffV1` schema，强制 `attempted_paths`、`dead_ends`、`key_findings`、`next_actions` 字段存在。
-- [ ] 实现 `execution_state_refs` 与现有 `WorkerResultV1` / `TaskFreezeReceiptV1` / WorkEnvelope / publication 的绑定校验。
-- [ ] 实现 `HandoffAdoptionReceiptV1`。
+- [ ] 实现 `HandoffExecutionContextV1` 判别联合（`delegated_worker` / `bound_task` / `publication` / `none`）与各分支引用的绑定校验。
+- [ ] 实现 `HandoffAdoptionReceiptV1`，字段含 `handoff_sha256`；receipt 身份 = handoff SHA + adopter actor SHA + context packet SHA。
+- [ ] 实现多对多采用：不同采用者各自成功，同采用者相同三元组幂等。
+- [ ] 消费 C1 冻结的 `common.ts`，不在本行修改共享 schema。
+- [ ] 协议、CLI、投影与文案里不使用 claim 词汇描述知识采用。
 - [ ] 实现 supersede 语义。
 - [ ] 断言 adoption 零 Claim 写入、零 Lease generation 变化。
 - [ ] 加入 trigger 闭集：`budget_low` / `context_pressure` / `phase_complete` / `stalled` / `manual`。
 
 **Acceptance**
 
-handoff 内容完整可校验；adoption 不创建 Claim。
+handoff 内容完整可校验；同一份 handoff 被多个采用者采用全部成立；adoption 不创建 Claim。
 
 **Rollback**
 
@@ -296,18 +319,27 @@ handoff 内容完整可校验；adoption 不创建 Claim。
 
 **Tasks**
 
-- [ ] 定义 `CollaborationContributionDraftV1` 与 Host collector。
+- [ ] 定义 `CollaborationContributionDraftV1`、`CollaborationContributionCommitV1` 与 Host collector 事务。
+- [ ] draft 只能来自该次运行精确持久化的 stdout / process receipt，经带版本的 provider-output adapter 解析；拒绝调用方递交的自称 Worker 输出。
+- [ ] 整份 draft 全量校验通过之后才允许任何可见写入。
+- [ ] signal / handoff ID 由 `WorkerRunRef` + 条目下标确定性派生。
+- [ ] 候选条目先落不可变盘，再以 contribution commit 作为唯一可见性边界；投影只读已提交贡献。
+- [ ] `WorkerResultV1` 恰好构造一次并引用该 commit。
+- [ ] 解析失败为显式 typed rejection：正常 WorkerResult 仍持久化，零部分可见 signal，绝不合成空贡献或成功假象。
+- [ ] 实现 `CollaborationDelegationAdmissionV1` 桥：解析 profile/binding/principal、载入 tracked LogicalRoleProfile、在锁内按 parent claim + round_index 统计 active readers、强制 `active_readers < max_parallel_readers`，再进 `admitReadOnlyDelegation()`。
 - [ ] 从 `WorkerRunRefV1` 与 admission receipt 推导 actor，忽略 draft 内的身份声明。
-- [ ] 把最终 signal/handoff digest 写成 `WorkerResultV1.evidence_refs` 条目。
-- [ ] 复用 `DelegatedRunIntentV1.context_packet_sha256` 记录该 run 实际收到的协作上下文。
-- [ ] 不 bump `DelegationEnvelopeV1`。
-- [ ] 并行度上限取 `ModuleEngineerProfileV1.delegation_policy.max_parallel_readers`。
-- [ ] 决定是否需要扩展 `allowed_roles` 闭集；不扩展时以 logical role 表达参与角色。
-- [ ] draft 部分条目非法时整批拒绝。
+- [ ] 不 bump `DelegationEnvelopeV1`，不放宽 `max_turns`；要验证的是单轮贡献是否有用、多轮累积能否补上深度、每轮 packet 是否保持小而聚焦、多轮启动成本是否吃掉收益。
+- [ ] 使用既有 `ENGINEER_DELEGATION_ROLES` 闭集；除非本行的真实 canary 证明需要独立 role instructions，否则不扩枚举。
+
+**Tests**
+
+- [ ] 在每个持久化边界注入故障（signal 1 之后、signal N 之后、handoff 之后、commit 之前、commit 之后、WorkerResult 之前、WorkerResult 之后），重试后收敛到一条可见 commit、一个 WorkerResult、零重复 signal；
+- [ ] 不可解析 draft 的 typed rejection 负例；
+- [ ] 第 4 个并发 reader 被 admission bridge 拒绝。
 
 **Acceptance**
 
-至少 3 个同 capability read-only Worker 并行；参与者 protected snapshot 前后相等；writer 数仍为 1。
+至少 3 个同 capability read-only Worker 并行且第 4 个被拒；参与者 protected snapshot 前后相等；writer 数仍为 1。
 
 **Rollback**
 
@@ -351,7 +383,9 @@ handoff 内容完整可校验；adoption 不创建 Claim。
 - [ ] 实现 `CollaborativeWorkExchangeSnapshotV1`。
 - [ ] `ExistingEngineerOfferProjection` 原样携带 `EngineerOfferV1` 与 `offer_revision`。
 - [ ] 实现 `active_participants` 投影。
-- [ ] 实现 `CollaborationContextPacketV1` builder 与确定性截断。
+- [ ] 实现 `CollaborationContextPacketV1` builder：绑定 `source_snapshot_sha256`、记录 `estimator_version` 与 `budget_estimated_tokens`、确定性截断并写 `truncated` 与 `omitted_signal_count`、输出 canonical `rendered_context_sha256`。
+- [ ] `built_at` 不进内容摘要，投递时间落在 run-context binding 与 adoption receipt 上。
+- [ ] 实现 `CollaborationRunContextBindingV1`：记录 dispatch、intent、execution packet、协作 packet、render、base/composed goal 的摘要。
 - [ ] 对每个可变来源做 double-read。
 - [ ] `snapshot_consistency` 非 `stable` 时 fail loud。
 - [ ] 基准测试 100 Work Packages / 10 Engineers。
@@ -359,7 +393,7 @@ handoff 内容完整可校验；adoption 不创建 Claim。
 
 **Acceptance**
 
-现有 execution offer payload 与 revision 不变；快照确定性通过。
+现有 execution offer payload 与 revision 不变；快照确定性通过；同一 store 重建的 packet 字节同一。
 
 **Rollback**
 
@@ -430,17 +464,24 @@ UI 呈现全部新状态且不在客户端推导语义、不新增 mutation。
 - [ ] 选一个真实但权威安全的任务（复杂 bug hunt、架构影响面调研、性能根因、跨文件协议追踪、大规模测试失败诊断）。
 - [ ] Baseline arm：一个 Agent 独立完成。
 - [ ] Treatment arm：一个 Module Engineer + 三个只读参与者 + signal board + 一次后继者 handoff。
+- [ ] 设置跨臂污染防护：baseline 的发现不得进入 treatment 的 store、context packet 或提示，反向亦然。
+- [ ] 开跑之前冻结 usefulness rubric，跑完不改判定标准。
+
+**Two levels**
+
+- [ ] C9-A 可行性：一个真实任务、三个参与者、至少一次 signal 复用、至少一次 handoff adoption、writer 恒为 1、零 authority drift。
+- [ ] C9-B 决策证据：至少三个匹配的真实任务，或三份冻结 fixture / 重复运行，或同一任务的多次隔离重放。
 
 **Measures**
 
-- [ ] time to first useful finding；
-- [ ] unique useful findings 数量；
-- [ ] 重复调查已记录 dead end 的次数；
+- [ ] aggregate input/output tokens 与 wall-clock；
+- [ ] useful findings per 10k tokens；
+- [ ] time to first useful finding 与 time to first adopted finding；
+- [ ] duplicate dead-end rate；
 - [ ] signal reuse（`source_signal_ids` 引用数）；
-- [ ] handoff adoption 次数；
-- [ ] 后继者到达有效进展的 turns/tokens；
+- [ ] handoff adoption 次数与 handoff restart cost；
+- [ ] never-read signal rate；
 - [ ] 每次注入的 context 体积；
-- [ ] 从未被读取/引用/采用的 signal 占比；
 - [ ] Task/Lease/Publication 字节不变；
 - [ ] 任意时刻 writer 数 ≤1。
 
@@ -460,7 +501,7 @@ UI 呈现全部新状态且不在客户端推导语义、不新增 mutation。
 
 **Acceptance**
 
-至少一次 handoff adoption 与一次 signal reuse；零 authority drift；多席位决策有明确输出。
+C9-A 至少一次 handoff adoption 与一次 signal reuse、零 authority drift；持久 `EngineerSeatV2` 只在 C9-B 的重复案例证明 delegated round 的启动与交接本身是瓶颈时才给 go。
 
 **Rollback**
 
@@ -477,6 +518,8 @@ UI 呈现全部新状态且不在客户端推导语义、不新增 mutation。
 | Succession | freeze receipt + lease generation 变化记录 |
 | Injection trust | 注入渲染快照含不可信包裹与 warning |
 | Actor derivation | draft 自述身份被忽略的负例 |
+| Contribution transaction | 每个持久化边界的故障注入重试收敛证据 |
+| Reader admission | `max_parallel_readers` 超限被拒的负例 |
 | Budget | context packet estimated tokens 采样 |
 | Degradation | store 不可读、采集期变化的 fail-loud 断言 |
 | UI | 路由清单、脱敏、stale/degraded fixtures |
@@ -508,16 +551,17 @@ Requires:
 
 Requires:
 
-- 至少 3 个并行只读参与者稳定运行；
-- collector 拒绝自述身份；
+- 至少 3 个并行只读参与者稳定运行，第 4 个在 admission bridge 被拒；
+- collector 拒绝自述身份，contribution commit 是唯一可见性边界；
 - 一次完整的 handoff → adoption 链路；
-- baseline arm 可复现。
+- usefulness rubric 已冻结、跨臂污染防护就位、baseline arm 可复现。
 
 ### Gate 4 — Canary to Decision
 
 Requires:
 
-- 两臂指标完整；
+- C9-A 与 C9-B 两级证据齐备；
+- 两臂指标完整，含 aggregate compute/cost；
 - 零 authority drift；
 - 噪声比例可接受；
 - multi-seat go/no-go 有明确依据。

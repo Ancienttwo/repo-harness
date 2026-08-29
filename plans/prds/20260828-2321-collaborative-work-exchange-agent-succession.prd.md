@@ -8,7 +8,6 @@
 > **Baseline**: `Ancienttwo/repo-harness@456731f308b7ad54585ac50acbc510350a4c563c`
 > **Tier**: standard
 > **Architecture Risk**: high
-> **Future repo path**: `plans/prds/20260828-2321-collaborative-work-exchange-agent-succession.prd.md`
 > **Child PRD A (Active)**: `plans/prds/20260828-2321-collaboration-substrate.prd.md`
 > **Child PRD B (Deferred — Phase 2)**: `plans/prds/20260828-2321-work-exchange-independent-review.prd.md`
 > **Child PRD C (Deferred — Phase 3)**: `plans/prds/20260828-2321-guarded-merge-unattended-automation.prd.md`
@@ -21,17 +20,17 @@
 ## AI Quick-Read Card
 
 - **Problem**: repo-harness 已有 Task、Lease、WorkEnvelope、PublicationReceipt、AcceptanceReceipt、MergeReadiness、Module Engineer Binding、read-only delegation 和 attention-first Operator Board，但一次 Agent 运行产生的假设、死路和部分证据没有可发布、可发现、可继承的载体。budget 或 context 耗尽时这些知识直接消失。
-- **Users**: Maintainer、Module Engineer、Collaboration Participant（read-only delegated Worker / native subagent / Human）、Successor Engineer、Program Orchestrator。
+- **Users**: Maintainer、Module Engineer、Collaboration Participant（P0 只有 read-only delegated Worker 可发布）、Successor Engineer、Program Orchestrator。
 - **Platform**: repo-backed control plane、git-common-dir collaboration store、CLI/MCP first、localhost Operator Board 只读投影；Provider runtime 继续拥有 Agent turn 与线程生命周期。
-- **P0 surface**: `CoordinationSignalV1`、`WorkStateHandoffV1`、`HandoffAdoptionReceiptV1`、`CollaborationContextPacketV1`、same-capability multi-participant（复用现有 read-only delegation）、collaboration-centric `WorkExchangeSnapshotV1`、read-only Operator collaboration view、real multi-agent canary。
+- **P0 surface**: `CoordinationSignalV1`、`WorkStateHandoffV1`、`HandoffAdoptionReceiptV1`、`CollaborationContextPacketV1`、`CollaborationRunContextBindingV1`、`CollaborationDelegationAdmissionV1`、`CollaborationContributionCommitV1`、same-capability multi-participant（复用现有 read-only delegation）、collaboration-centric `WorkExchangeSnapshotV1`、read-only Operator collaboration view、real multi-agent canary。
 - **Phase 2 surface**: GatePolicy、ReviewOffer、GateReservation、ReviewReceipt、VerificationOffer/Receipt、Gate convergence。
 - **Phase 3 surface**: MergeEligibility、Provider merge capability、Merge Controller、ProgramAuthorization、Budget、Auto Merge。
 - **Core metric**: 协作层写入对 Task/Lease/Publication/Acceptance 的字节影响为 0，同时后继者不重复已记录的 dead end。
 - **Hard constraint**: 协作平面不持有任何交付权威；进入权威流程必须经显式 promotion。
 - **Key risk**: 把协作信号误实现成第二调度器或第二权威，或让 thread 热度变成 Work Graph 优先级。
 - **Unknowns**: 真实多 Agent 协作的信噪比、同 capability 持久多席位是否必要、context packet 在真实任务上的有效体积。
-- **Acceptance scenarios**: 三个只读参与者并发发布 signal 且 writer 仍为 1；handoff 被后继者采用但不产生 Claim；hotspot 只改变发现排序；snapshot 对相同输入 byte-identical。
-- **Suggested next step**: 先冻结两平面权威边界（C0），再实现 signal store 与 handoff（C1/C3），最后用一个真实任务跑 canary（C9）。
+- **Acceptance scenarios**: 三个只读参与者并发发布 signal 且 writer 仍为 1，第四个并发请求在 `max_parallel_readers=3` 被拒；handoff 被多个后继者采用但都不产生 Claim；hotspot 只改变发现排序；snapshot 对相同输入 byte-identical。
+- **Suggested next step**: 先冻结两平面权威边界与现有 `context_packet_sha256` 语义（C0），再实现 signal store 与 handoff（C1/C3），最后用一个真实任务跑 C9-A 可行性 canary 并以 C9-B 的重复证据支撑多席位决策。
 
 ## Problem
 
@@ -134,7 +133,7 @@ off → shadow → active
 ```
 
 - P0 每个 capability 只有一个持久 Module Engineer 与一个 writer。
-- P0 只读参与者通过现有 delegation 产生，数量上限来自 `ModuleEngineerProfileV1.delegation_policy.max_parallel_readers`。
+- P0 只读参与者通过现有 delegation 产生。`ModuleEngineerProfileV1.delegation_policy.max_parallel_readers` 今天只是 profile 里的声明值，`admitReadOnlyDelegation()` 不读它；把它变成运行时约束的是新增的 Collaboration Delegation Admission Bridge。
 - P0 context packet 注入预算沿用仓库现有 session context 门槛 1,500 estimated tokens。
 
 ### Freedoms
@@ -142,13 +141,13 @@ off → shadow → active
 - thread 命名、label 词表、探索策略完全由 Agent 决定。
 - 协作 UI 可以是单页或 secondary route，只要保持 attention-first 语义。
 - context packet 的选择算法可以迭代，只要保持确定性与可追溯。
-- 参与者可以是当前 Engineer Session、delegated read-only WorkerRun、native read-only subagent 或 Human operator。
+- 参与形式可以是当前 Engineer Session、delegated read-only WorkerRun、native read-only subagent 或 Human operator；能写入协作 store 的作者在 P0 只有前两类，后两类是 Operator Board 上的只读展示参与者。
 
 ### Feasibility Boundary
 
 **Confirmed**
 
-- `DelegatedRunIntentV1.context_packet_sha256` 已存在，可直接记录某次 delegated run 实际收到的协作上下文摘要。
+- `DelegatedRunIntentV1.context_packet_sha256` 已存在，但它承载的是 `DelegationExecutionPacketV1.packet_sha256`，不是协作 context packet 的摘要。`prepareDelegatedRun()` 在 `src/effects/engineers/delegated-run-store.ts:731` 用 `envelope.execution_packet_sha256 !== input.context_packet_sha256` 拒绝不匹配的输入，`intentForDispatch()` 在同文件 `:791` 再次断言 `packet.packet_sha256 !== intent.context_packet_sha256` 即 `delegated_run_conflict`。协作上下文的 provenance 需要新增的 `CollaborationRunContextBindingV1` 承载。
 - `WorkerResultV1` 已把 worker prose 归入 `untrusted_claims`，并单列 `evidence_refs`。
 - `DelegationEnvelopeV1.mode` 只允许 `read_only`，`max_depth` 固定为 0，只读参与者无法自己再派生。
 - `TaskFreezeReceiptV1` 已冻结 claim、binding、WorkEnvelope、worktree topology、head/tree/diff、untracked inventory、checks state、unverified hypotheses 与 writer grant。
@@ -175,8 +174,8 @@ off → shadow → active
 
 #### Collaboration Participant
 
-- **Need**: 读到别人已经试过什么、哪条路是死路、哪个假设还没人验证。
-- **Success signal**: 选中一个未被认领的 thread 或 open request，产出别人可引用的 signal。
+- **Need**: 读到别人已经试过什么、哪条路是死路、哪些线程还缺人。
+- **Success signal**: 选中一条 unadopted handoff 或低覆盖 thread，产出别人可引用的 signal。
 
 #### Successor Engineer
 
@@ -199,19 +198,36 @@ off → shadow → active
 
 ### Publish
 
-任何参与者都可以把部分结论写成 `CoordinationSignalV1`：自由文本、opaque thread key、开放 labels、可选 typed scope/artifact refs。append-only，修订只通过 `supersedes_signal_id`。任务失败也可以发布 partial result。
+具备不可变 provenance 的参与者可以把部分结论写成 `CoordinationSignalV1`：自由文本、opaque thread key、开放 labels、可选 typed scope/artifact refs。append-only，修订只通过 `supersedes_signal_id`。任务失败也可以发布 partial result。
+
+P0 作者支持矩阵：
+
+| Actor kind | P0 状态 | 依据 |
+|---|---|---|
+| `module_engineer` | Supported | Binding + Principal + ClaimActorReceipt 已是服务端可验证的身份 |
+| `delegated_worker` | Supported | `WorkerRunRefV1` + `DelegationAdmissionReceiptV1` 提供不可变 run provenance |
+| `human_operator` | Deferred | 需要一个独立的 local-operator principal，当前没有 |
+| `native_subagent` | Unsupported | Host 拿不到不可变 run provenance |
+
+Deferred 与 Unsupported 两类不进入 wire union。它们可以作为只读展示参与者出现在 Operator Board 上，不能成为 signal 或 handoff 的作者。
 
 ### Discover
 
-协作 store 派生 thread 聚合、hotspot 排序与 contribution opportunities，投影进 Work Exchange 与 `CollaborationContextPacketV1`。发现是确定性投影，没有 LLM 状态推断。
+协作 store 派生 thread 聚合、hotspot 排序与 contribution opportunities，投影进 Work Exchange 与 `CollaborationContextPacketV1`。发现是确定性投影，没有 LLM 状态推断。opportunity 与 relevance 只用结构化理由，不做“这条像是 open request”“这个线程停滞了”这类语义推断——薄 signal 协议提供不了这种判断的依据。
 
 ### Succession
 
-`WorkStateHandoffV1` 承载 completed、key findings、attempted paths（含 outcome 与 evidence refs）、dead ends、open hypotheses、next actions 与执行状态引用。`HandoffAdoptionReceiptV1` 只证明“这份上下文交给了谁”。
+`WorkStateHandoffV1` 承载 completed、key findings、attempted paths（含 outcome 与 evidence refs）、dead ends、open hypotheses、next actions 与执行上下文引用。`HandoffAdoptionReceiptV1` 只证明“这份上下文交给了谁”。
 
 冻结的一句话：
 
 > WorkStateHandoff 传递知识；TaskFreeze 传递精确状态；现有 Lease lifecycle 传递执行权。
+
+冻结的第二句：
+
+> Handoff adoption is non-exclusive.
+
+同一份 handoff 可以被多个采用者各自采用，每个都成功；同一采用者重复采用是幂等的。唯一性只存在于 Task Lease writer 一侧，writer 的更替只由现有 release/takeover/acquire 生命周期决定。知识采用一律不使用 claim 词汇。
 
 ### Emergent Lanes
 
@@ -232,6 +248,80 @@ off → shadow → active
 | 其他 | Human decision |
 
 Shared Acceptance 移至 Deferred Phase 2。
+
+## Delegation Reuse Corrections
+
+### Run Context Binding
+
+现有 Delegation 协议保持不变，协作上下文的 provenance 走一个加法绑定：
+
+```ts
+interface CollaborationRunContextBindingV1 {
+  protocol: 1;
+  kind: "repo-harness-collaboration-run-context-binding";
+  dispatch_id: string;
+  delegated_run_intent_sha256: string;
+  execution_packet_sha256: string;
+  collaboration_context_packet_sha256: string;
+  rendered_context_sha256: string;
+  base_goal_sha256: string;
+  composed_goal_sha256: string;
+  binding_sha256: string;
+}
+```
+
+正确的流向：
+
+```text
+CollaborationContextPacket → canonical untrusted rendering
+→ compose into DelegationExecutionPacket.goal
+→ ExecutionPacket gets its own packet_sha256
+→ existing intent.context_packet_sha256 keeps carrying ExecutionPacket SHA
+→ new binding records which collaboration packet/rendering was embedded
+```
+
+`DelegationEnvelopeV1` 与 `DelegatedRunIntentV1` 不 bump，两处既有断言继续成立。
+
+### Participant Admission Bridge
+
+`admitReadOnlyDelegation()` 今天只校验 parent claim、binding、logical role profile、runtime capability 与 execution packet 的一致性，它的输入里根本没有 `ModuleEngineerProfileV1`，因此 `allowed_roles` 与 `max_parallel_readers` 在准入时没有任何运行时效力。一轮协作前需要一个前置桥：
+
+```text
+CollaborationDelegationAdmissionV1
+  从 parent ClaimActorReceipt 解析当前 ModuleEngineerProfile
+  → 读取当前 Binding 与 Principal
+  → 载入 tracked LogicalRoleProfile 并校验其可用于协作
+  → 按 parent claim + round_index 统计 active readers
+  → 在锁内强制 active_readers < max_parallel_readers
+  → 才进入既有 admitReadOnlyDelegation()
+```
+
+开放的 `logical_role` 字符串本身不构成授权。每个角色仍需要 tracked LogicalRoleProfile、role instructions、model、capability receipt、精确准入、当前 parent Claim 与 Binding。P0 使用既有的 tracked 角色 `explorer`、`root-cause-prover`、`fast-worker`、`deep-worker`、`gatekeeper`；协作侧的分工由 goal、thread_key、labels 与 scope refs 表达。除非 C4 的真实 canary 证明 critic / reproducer / summarizer 需要各自独立的 role instructions，否则不扩 `ENGINEER_DELEGATION_ROLES`。
+
+### Contribution Commit
+
+`collectDelegatedRunResult()` 今天的入参只有 `{ repo_root, dispatch_id, untrusted_claims }`，evidence refs 全部由 Host 从持久化的 process receipt（stdout / stderr / error blob）组装，一次调用构造一个不可变 `WorkerResultV1`。协作侧的贡献收集不能把调用方递来的 JSON 当作 Worker 输出，也不能在校验中途留下半可见状态：
+
+- draft 只能来自那次运行精确持久化的 stdout / process receipt，经一个带版本的 provider-output adapter 解析；
+- 整份 draft 先全量校验，之后才允许任何可见写入；
+- signal / handoff 的 ID 由 `WorkerRunRefV1` 加条目下标确定性派生；
+- 候选条目先以不可变形式落盘；
+- 可见性边界是一条 `CollaborationContributionCommitV1`，投影只读已提交的贡献；
+- `WorkerResultV1` 恰好构造一次，并引用那条 contribution commit；
+- 解析失败是显式 typed rejection：正常的 `WorkerResultV1` 仍然持久化，不产生任何部分可见 signal，也绝不合成空贡献或假装成功。
+
+```ts
+interface CollaborationContributionCommitV1 {
+  protocol: 1;
+  kind: "repo-harness-collaboration-contribution-commit";
+  worker_run_ref_sha256: string;
+  draft_sha256: string;
+  signal_refs: readonly { signal_id: string; signal_sha256: string }[];
+  handoff_ref: { handoff_id: string; handoff_sha256: string } | null;
+  committed_at: string;
+  commit_sha256: string;
+}
+```
 
 ## Coordination Signal vs Module Message
 
@@ -258,6 +348,9 @@ Module Message 保持点对点定向通信语义，不改造成全局广播协�
 | Execution right | Lease claim/generation |
 | Executor provenance | ClaimActorReceipt |
 | Delegated run provenance | `DelegationAdmissionReceiptV1` + `DelegatedRunIntentV1` |
+| Delegated run execution packet identity | `DelegationExecutionPacketV1.packet_sha256`（即 `intent.context_packet_sha256` 承载的值） |
+| Collaboration context provenance for a run | `CollaborationRunContextBindingV1`（advisory only） |
+| Collaboration contribution visibility | `CollaborationContributionCommitV1`（advisory only） |
 | Read-only worker output | `WorkerResultV1`（prose 归 `untrusted_claims`） |
 | Exact frozen execution state | `TaskFreezeReceiptV1` |
 | Collaboration observation | `CoordinationSignalV1`（advisory only） |
@@ -305,7 +398,7 @@ Does not own Review authority, Merge authority, or any Lease transition.
 Approved Work Graph → one execution owner
 → spawn/read parallel collaboration participants
 → participants publish signals and partial results
-→ threads / hotspots / open requests emerge
+→ threads / hotspots / unadopted handoffs emerge
 → next participants discover and build on prior signals
 → budget/context pressure creates WorkStateHandoff
 → successor adopts exact context
@@ -360,8 +453,8 @@ P0 只读显示：active lanes；recent discoveries；open handoffs；hotspots�
 | 指标 | 目标 |
 |---|---:|
 | Signal 写入改变 Task/Lease bytes | 0 |
-| 同 capability 并行只读参与者 | 至少 3 |
-| Handoff 被后继者采用 | 至少 1 个真实案例 |
+| 同 capability 并行只读参与者 | 至少 3，且第 4 个并发请求被拒 |
+| Handoff 被后继者采用 | 至少 1 个真实案例，多采用者并存不冲突 |
 | 后继者重复已记录 dead end | 0 次 |
 | Context packet | ≤1,500 estimated tokens |
 | Signal 来源可追溯 | 100% |
@@ -401,10 +494,10 @@ P0 只读显示：active lanes；recent discoveries；open handoffs；hotspots�
 
 ### Scenario 5 — Handoff adoption without acquire
 
-- **Given** 一份 open handoff。
-- **When** 另一个参与者采用它。
-- **Then** 生成 `HandoffAdoptionReceiptV1`，不产生 Claim、不改 Lease generation。
-- **Evidence** claim store 零写入。
+- **Given** 一份 unadopted handoff。
+- **When** 两个不同参与者先后采用它，其中一个重复提交相同采用。
+- **Then** 两条 `HandoffAdoptionReceiptV1` 都成立，重复提交幂等，全程不产生 Claim、不改 Lease generation。
+- **Evidence** claim store 零写入 + 多采用者 receipt 集合。
 
 ### Scenario 6 — Dirty executor succession
 
@@ -466,7 +559,7 @@ Phase 5 — Revisit independent gates
 Phase 6 — Revisit guarded merge
 ```
 
-Phase 4 的判定输入来自 C9 canary。Phase 5 的准入条件写在 Child PRD B 的 Reviewer Supply Admission Gate 与 Revisit Trigger。Phase 6 依赖 Phase 5 已激活。
+Phase 4 的判定输入来自 C9-A 可行性 canary 与 C9-B 的重复运行证据。Phase 5 的准入条件写在 Child PRD B 的 Reviewer Supply Admission Gate 与 Revisit Trigger。Phase 6 依赖 Phase 5 已激活。
 
 ## Multi-Seat Decision Gate
 
@@ -477,12 +570,12 @@ P0 冻结的参与者模型：
   → 一个持久 Module Engineer
   → 一个当前 writer / Lease owner
   → N 个 read-only collaboration participants
-      (explorer / root-cause-prover / deep-reasoner / critic / reproducer / summarizer)
+      (explorer / root-cause-prover / fast-worker / deep-worker / gatekeeper)
 ```
 
-参与者可以是当前 Engineer Session、delegated read-only WorkerRun、native read-only subagent 或 Human operator。只有当前 Lease owner 是 writer。
+参与角色取自 `ENGINEER_DELEGATION_ROLES` 这个既有闭集，协作分工由 goal、thread_key、labels 与 scope refs 表达。只有当前 Lease owner 是 writer。
 
-只有在真实 canary 之后出现下列任一条件，才启动 persistent multi-seat `EngineerSeatV2` PRD：
+`EngineerSeatV2` 的 go/no-go 需要 C9-B 的重复证据支撑，单次 C9-A 可行性 canary 不足以做这个决定。只有反复出现的案例证明 delegated round 的启动与交接本身是瓶颈，并且出现下列任一条件，才启动 persistent multi-seat `EngineerSeatV2` PRD：
 
 - 多个同 capability 的长期 Session 必须独立存活；
 - bounded delegated rounds 的交接延迟成为实测瓶颈；
@@ -521,8 +614,9 @@ Stop promotion if:
 | Item | Impact | Resolution |
 |---|---|---|
 | Signal 信噪比 | context packet 可能被噪声填满 | canary 记录 never-read/cited/adopted 比例 |
-| 同 capability 持久席位 | 可能需要 EngineerSeatV2 | C9 决策门 |
-| native subagent 结构化输出 | contribution draft 可能不稳定 | 先只支持 delegated Worker 与 Human |
+| 同 capability 持久席位 | 可能需要 EngineerSeatV2 | C9-A 可行性 + C9-B 重复证据 |
+| native subagent 结构化输出 | 没有不可变 run provenance | P0 不作为作者，只做只读展示 |
+| local human-operator principal | human_operator 发布被 Deferred | 需要独立 principal 后重新评估 |
 | handoff 粒度 | 太粗无用、太细昂贵 | 真实任务上迭代 |
 | 跨 capability 协作 | 超出 P0 边界 | Interface Change Request 仍是唯一通道 |
 | Reviewer supply | Phase 2 前置条件 | Child PRD B admission gate |
@@ -531,8 +625,8 @@ Stop promotion if:
 ## Developer Handoff
 
 - 先做 Child PRD A，从两平面权威冻结开始。
-- 复用现有 delegation：`mode` 只有 `read_only`，`max_depth` 固定 0，单次 run 的 `max_turns` 在协议里被钉为 1，多轮通过 `round_index` 表达。
-- 复用 `DelegatedRunIntentV1.context_packet_sha256` 记录某次 run 实际收到的协作上下文。
+- 复用现有 delegation：`mode` 只有 `read_only`，`max_depth` 固定 0，单次 run 的 `max_turns` 在协议里被钉为 1，多轮通过 `round_index` 表达。C4 不要试图放宽 `max_turns`；要验证的是单轮能否产出有用贡献、多轮 signal 累积能否补上单轮深度、每轮 context packet 是否保持小而聚焦、多轮启动成本是否吃掉协作收益。预算意义上的接力是许多短 Worker 共享累积状态。
+- `DelegatedRunIntentV1.context_packet_sha256` 承载的是 ExecutionPacket 摘要，协作上下文 provenance 走新增的 `CollaborationRunContextBindingV1`。
 - 复用 Task/Module Message 的 untrusted 包裹模式，不要发明新的 prompt-trust 模型。
 - 不移动现有 scheduling/publication/acceptance 代码，除非两个消费者证明了共享抽象。
 - 每个新 mutation 都是独立 contract/PR 边界。

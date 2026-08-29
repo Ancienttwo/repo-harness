@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-29T15:41:53+0800 -->
+<!-- updated_at: 2026-08-29T16:56:30+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-08-29T15:41:53+0800
+> **Updated At**: 2026-08-29T16:56:30+0800
 > **Source Branch**: main
-> **Source Commit**: b4b0a372
+> **Source Commit**: 17590cfb
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: manual
@@ -59,11 +59,11 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ```
  M docs/architecture/.projection-manifest.json
-?? plans/prds/20260828-2321-collaboration-substrate.prd.md
-?? plans/prds/20260828-2321-collaborative-work-exchange-agent-succession.prd.md
-?? plans/prds/20260828-2321-guarded-merge-unattended-automation.prd.md
-?? plans/prds/20260828-2321-work-exchange-independent-review.prd.md
-?? plans/sprints/20260828-2321-collaborative-work-exchange-agent-succession.sprint.md
+ M plans/prds/20260828-2321-collaboration-substrate.prd.md
+ M plans/prds/20260828-2321-collaborative-work-exchange-agent-succession.prd.md
+ M plans/prds/20260828-2321-guarded-merge-unattended-automation.prd.md
+ M plans/prds/20260828-2321-work-exchange-independent-review.prd.md
+ M plans/sprints/20260828-2321-collaborative-work-exchange-agent-succession.sprint.md
 ```
 
 ## Source Artifacts

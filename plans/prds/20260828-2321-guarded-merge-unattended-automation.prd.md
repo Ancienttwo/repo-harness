@@ -6,9 +6,7 @@
 > **Updated**: 2026-08-29T00:41:20-07:00
 > **Source Spec**: `docs/spec.md`
 > **Source Umbrella PRD**: `plans/prds/20260828-2321-collaborative-work-exchange-agent-succession.prd.md`
-> **Depends On**: real collaboration evidence from `plans/prds/20260828-2321-collaboration-substrate.prd.md`
-> **Depends On**: active independent Review/Verification gates from `plans/prds/20260828-2321-work-exchange-independent-review.prd.md`
-> **Depends On**: provider merge capability canary
+> **Depends On**: real collaboration evidence; active independent gates; provider merge capability canary
 > **Baseline**: `main@456731f308b7ad54585ac50acbc510350a4c563c`
 > **Tier**: standard
 > **Deferral note**: 本 PRD 的设计资产完整保留，实现不在当前 active backlog。`MergeEligibilityV1` 保留为设计，不实现。
@@ -16,14 +14,14 @@
 - **Problem**: current MergeReadiness can prove a publication is locally/provider ready, but no target-base automation policy, Host grant, budget, exact Merge Eligibility or crash-recoverable provider effect exists.
 - **Users**: Maintainer, Runtime Operator, Program Orchestrator, Integration Engineer.
 - **Platform**: current MergeReadiness, AcceptanceReceipt, Integration Acceptance, provider facts and git-common-dir stores.
-- **P0 surface**: MergeEligibilityV1 and ProviderMergeCapabilityV1, read-only.
-- **P1 surface**: AutomationPolicy, ProgramAuthorization, Budget Ledger, Merge Intent/Observation/Receipt, Host Merge Controller, low-risk canary.
+- **Phase-3 initial surface**: MergeEligibilityV1 and ProviderMergeCapabilityV1, read-only.
+- **Phase-3 follow-on surface**: AutomationPolicy, ProgramAuthorization, Budget Ledger, Merge Intent/Observation/Receipt, Host Merge Controller, low-risk canary.
 - **Core metric**: zero unauthorized or duplicate merges.
 - **Hard constraint**: merge is deterministic Host effect; no Engineer/browser mutation; candidate cannot self-authorize.
 - **Key risk**: provider call succeeds but local process times out, causing duplicate retry.
 - **Unknowns**: current repo has auto-merge disabled; merge queue and merge-group capability unknown.
 - **Acceptance scenarios**: all gates current, target policy + local grant, exact head, provider capability, crash recovery, hard budget halt.
-- **Suggested next step**: ship Merge Eligibility and provider capability observation before any merge submission path.
+- **Suggested next step**: No implementation until Revisit / Admission Gate passes. Once Phase 2 is active and the provider merge capability canary lands, ship Merge Eligibility and provider capability observation before any merge submission path.
 ## Problem
 ### Existing Reuse Targets
 | Existing component | Use |

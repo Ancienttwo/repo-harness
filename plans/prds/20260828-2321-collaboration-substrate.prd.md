@@ -6,27 +6,26 @@
 > **Updated**: 2026-08-29T00:41:20-07:00
 > **Source Spec**: `docs/spec.md`
 > **Source Umbrella PRD**: `plans/prds/20260828-2321-collaborative-work-exchange-agent-succession.prd.md`
-> **Future repo path**: `plans/prds/20260828-2321-collaboration-substrate.prd.md`
 > **Baseline**: `main@456731f308b7ad54585ac50acbc510350a4c563c`
 > **Tier**: standard
 ## AI Quick-Read Card
 - **Problem**: 一次 Agent 运行的假设、死路和部分证据只回流给发起它的 Engineer。`WorkerResultV1.untrusted_claims` 没有被其他参与者发现的通道，budget 或 context 耗尽时这些知识直接消失。
-- **Users**: Module Engineer（当前 writer）、Collaboration Participant、Successor Engineer、Maintainer。
+- **Users**: Module Engineer（当前 writer）、Collaboration Participant（P0 作者只有 delegated read-only Worker）、Successor Engineer、Maintainer。
 - **Platform**: 现有 Module Engineer Principal/Binding、read-only delegation、Task/Module Message untrusted 注入、git-common-dir store。
-- **P0 surface**: `CoordinationSignalV1`、`WorkStateHandoffV1`、`HandoffAdoptionReceiptV1`、`CollaborationContextPacketV1`、`CollaborationContributionDraftV1`、thread/hotspot 投影、`CollaborativeWorkExchangeSnapshotV1`、CLI/MCP、Operator 只读视图、real canary。
+- **P0 surface**: `CoordinationSignalV1`、`WorkStateHandoffV1`、`HandoffAdoptionReceiptV1`、`CollaborationContextPacketV1`、`CollaborationRunContextBindingV1`、`CollaborationDelegationAdmissionV1`、`CollaborationContributionDraftV1`、`CollaborationContributionCommitV1`、thread/hotspot 投影、`CollaborativeWorkExchangeSnapshotV1`、CLI/MCP、Operator 只读视图、real canary。
 - **Core metric**: 后继者重复已记录 dead end 的次数为 0，且协作写入对 Task/Lease bytes 影响为 0。
-- **Hard constraint**: 协作平面无交付权威；只有 Lease owner 是 writer；adoption 不产生 Claim。
+- **Hard constraint**: 协作平面无交付权威；只有 Lease owner 是 writer；adoption 不产生 Claim；adoption 非排他。
 - **Key risk**: 协作 store 退化成第二调度器，或 hotspot 热度渗入 canonical priority。
-- **Unknowns**: 真实任务上的 signal 信噪比；native read-only subagent 能否稳定产出结构化 draft。
-- **Acceptance scenarios**: 三个只读参与者并发发布；thread 由 opaque key 自发聚合；handoff 被采用但零 Claim；snapshot byte-identical。
-- **Suggested next step**: 先冻结两平面边界与 store 布局，再实现 signal append-only store。
+- **Unknowns**: 真实任务上的 signal 信噪比；单轮 delegated run 能否产出足够深度的贡献。
+- **Acceptance scenarios**: 三个只读参与者并发发布且第四个被 `max_parallel_readers` 拒；thread 由 opaque key 自发聚合；一份 handoff 被多个采用者采用但零 Claim；snapshot byte-identical。
+- **Suggested next step**: 先冻结两平面边界、现有 `context_packet_sha256` 语义与 store 布局，再实现 signal append-only store。
 ## Problem
 ### Existing Reuse Targets
 | Existing component | Use |
 |---|---|
-| `ModuleEngineerProfileV1.delegation_policy` | `max_parallel_readers` 决定一轮并行只读参与者上限 |
+| `ModuleEngineerProfileV1.delegation_policy` | 声明 `allowed_roles` 与 `max_parallel_readers`；今天没有任何准入期执行力，由本 PRD 的 admission bridge 变成运行时约束 |
 | `DelegationEnvelopeV1` / `DelegationAdmissionReceiptV1` | 只读参与者的准入与 provenance |
-| `DelegatedRunIntentV1.context_packet_sha256` | 记录该次 run 实际收到的协作上下文摘要 |
+| `DelegatedRunIntentV1.context_packet_sha256` | 承载 `DelegationExecutionPacketV1.packet_sha256`；协作上下文 provenance 另走 `CollaborationRunContextBindingV1` |
 | `WorkerRunRefV1` / `WorkerResultV1` | 参与者产出与 `evidence_refs` / `untrusted_claims` |
 | `TaskFreezeReceiptV1` | 脏执行者交接前的精确状态冻结 |
 | `EngineerOfferV1` | Work Exchange 的 execution offer 投影源 |
@@ -48,7 +47,8 @@ signal 不授予任何权力。执行仍走现有 acquire/Lease。交接仍走�
 - 协作写入对 Task、Lease、Publication、Acceptance 的字节影响为 0；
 - 只有当前 Lease owner 修改 worktree、提交、发布；
 - signal 与 handoff append-only，修订只通过 supersede；
-- adoption receipt 不创建 Claim、不改 Lease generation；
+- adoption receipt 不创建 Claim、不改 Lease generation，且采用非排他；
+- 贡献的可见性边界是 contribution commit，未提交的候选对读者不可见；
 - hotspot 只影响发现排序、context 选择与推荐探索方向；
 - 注入内容全部包在不可信标记内；
 - 协作 store 不可读时 fail loud，不回退成健康空集；
@@ -65,7 +65,10 @@ thread_key = 由 Agent 自由创建
 ```
 ### Feasibility Boundary
 **Confirmed**
-- `DelegatedRunIntentV1.context_packet_sha256` 已存在，无需 bump DelegationEnvelope 即可记录协作上下文 provenance；
+- `DelegatedRunIntentV1.context_packet_sha256` 的语义已被两处断言钉死为 ExecutionPacket 摘要：`prepareDelegatedRun()`（`src/effects/engineers/delegated-run-store.ts:731`）拒绝 `envelope.execution_packet_sha256 !== input.context_packet_sha256`，`intentForDispatch()`（同文件 `:791`）拒绝 `packet.packet_sha256 !== intent.context_packet_sha256`；协作 provenance 只能加法承载，不能改写这个字段的含义；
+- `admitReadOnlyDelegation()`（`src/effects/engineers/delegated-run-store.ts:692`）的入参 `AdmitReadOnlyDelegationInput`（同文件 `:149-160`）不含 `ModuleEngineerProfileV1`，准入期不读 `delegation_policy`；`allowed_roles` 与 `max_parallel_readers` 全仓库只在 `src/core/engineers/profile-binding.ts:39-44`、`:254-285` 的 schema 校验里出现；
+- `collectDelegatedRunResult()`（`src/effects/engineers/delegated-run-store.ts:911`）入参只有 `{ repo_root, dispatch_id, untrusted_claims }`（`:182-186`），evidence refs 由 Host 从持久化 process receipt 的 stdout/stderr/error blob 组装（`:920-924`），一次调用构造一个不可变 `WorkerResultV1`（`:925`）；
+- `ENGINEER_DELEGATION_ROLES` 是 `explorer` / `root-cause-prover` / `fast-worker` / `deep-worker` / `gatekeeper` 五值闭集（`src/core/engineers/profile-binding.ts:20-26`）；
 - `DelegationEnvelopeV1.mode` 只有 `read_only`，`max_depth` 固定 0；
 - `DelegationExecutionPacketV1` 与 `DelegationEnvelopeV1` 均把 `max_turns` 钉为 1，多轮通过 `DelegatedRunIntentV1.round_index` 表达；
 - `WorkerResultV1` 已分离 `evidence_refs` 与 `untrusted_claims`；
@@ -75,7 +78,7 @@ thread_key = 由 Agent 自由创建
 
 **[UNVERIFIED]**
 - 真实任务上 signal 的 never-read 比例；
-- native read-only subagent 能否稳定输出可解析的 contribution draft；
+- 单轮（`max_turns=1`）delegated run 能否产出足够深度的贡献，以及多轮 signal 累积能否补上单轮深度；
 - 一轮 `max_parallel_readers` 上限在真实 provider 下的实际吞吐；
 - hotspot 权重在长时间运行后的稳定性。
 ## Goals
@@ -84,8 +87,8 @@ thread_key = 由 Agent 自由创建
 3. 确定性计算 hotspot 与 contribution opportunities。
 4. 定义 `WorkStateHandoffV1` 与 `HandoffAdoptionReceiptV1`。
 5. 定义 `CollaborationContextPacketV1` 与其注入渲染。
-6. 用现有 read-only delegation 承载同 capability 多参与者。
-7. 定义 `CollaborationContributionDraftV1` 与 Host collector。
+6. 用现有 read-only delegation 承载同 capability 多参与者，并以 `CollaborationDelegationAdmissionV1` 把 `allowed_roles` 与 `max_parallel_readers` 变成运行时约束。
+7. 定义 `CollaborationContributionDraftV1`、`CollaborationContributionCommitV1` 与 Host collector 事务。
 8. 把 TaskFreeze 与现有 release/takeover/acquire 接进交接路径。
 9. 输出 collaboration-centric Work Exchange snapshot。
 10. 提供 CLI/MCP 读写面与 Operator 只读视图。
@@ -118,38 +121,49 @@ thread_key = 由 Agent 自由创建
 - 通过既有 Human/operator 通道介入。
 ## Data Model
 ### CollaborationActorRefV1
-参与者身份由服务端从 authenticated principal 推导，调用方不能自述。
+参与者身份由服务端从 authenticated principal 推导，调用方不能自述。P0 支持的作者只有两类，用判别联合表达，每个分支只带自己那条 provenance 链需要的字段：
 ```ts
-type CollaborationActorKind =
-  | "module_engineer"
-  | "delegated_worker"
-  | "native_subagent"
-  | "human_operator";
-interface CollaborationActorRefV1 {
-  kind: CollaborationActorKind;
-  engineer_id: string;
-  binding_id: string | null;
-  binding_generation: number | null;
-  worker_run_ref_sha256: string | null;
-  actor_ref_sha256: string;
-}
+type CollaborationActorRefV1 =
+  | {
+      kind: "module_engineer";
+      engineer_id: string;
+      binding_id: string;
+      binding_generation: number;
+      principal_mapping_sha256: string;
+    }
+  | {
+      kind: "delegated_worker";
+      parent_engineer_id: string;
+      parent_binding_id: string;
+      parent_binding_generation: number;
+      worker_run_ref_sha256: string;
+      admission_receipt_sha256: string;
+    };
 ```
-`delegated_worker` 必须携带 `worker_run_ref_sha256`，回指现有 `WorkerRunRefV1`。
+P0 作者支持矩阵：
+
+| Actor kind | 状态 | 依据 |
+|---|---|---|
+| `module_engineer` | Supported | Binding + Principal 已是服务端可验证身份 |
+| `delegated_worker` | Supported | `WorkerRunRefV1` + `DelegationAdmissionReceiptV1` 提供不可变 run provenance |
+| `human_operator` | Deferred | 缺一个独立的 local-operator principal |
+| `native_subagent` | Unsupported | Host 拿不到不可变 run provenance |
+
+Deferred 与 Unsupported 不进 wire union，也不留“以后再加”的占位分支。它们可以作为只读展示参与者出现在 Operator Board 上。取得各自的不可变 server/Host 侧 provenance 之后再单独评估。
 ### CollaborationScopeRefV1
+scope ref 绑定被引用对象的 revision，避免旧发现被当成当前事实：
 ```ts
-type CollaborationScopeKind =
-  | "capability"
-  | "work_package"
-  | "task"
-  | "path"
-  | "publication"
-  | "free_topic";
-interface CollaborationScopeRefV1 {
-  kind: CollaborationScopeKind;
-  value: string;
-}
+type CollaborationScopeRefV1 =
+  | { kind: "capability"; capability_id: string; capability_revision: string }
+  | { kind: "work_package"; work_package_id: string; work_package_revision: string }
+  | { kind: "task"; task_id: string; task_revision: string }
+  | { kind: "path"; path: string; head_sha: string }
+  | { kind: "publication"; publication_id: string; head_sha: string }
+  | { kind: "free_topic"; value: string };
 ```
-`free_topic` 保证协作不被现有分类学卡死。
+`free_topic` 保证协作不被现有分类学卡死。Discovery 对每条 ref 投影 `current | stale | unknown`，旧 signal 作为历史保留，不被静默当作当前结论。
+### ArtifactRefV1
+`ArtifactRefV1` 直接复用现有 `WorkerResultV1.evidence_refs` 的 `{ ref, sha256 }` 形状与同一个校验器，不引入第二个等价引用类型。这条在 C0 决定，C1 之后不再有待定项。
 ### CoordinationSignalV1
 ```ts
 interface CoordinationSignalV1 {
@@ -164,7 +178,7 @@ interface CoordinationSignalV1 {
   labels: readonly string[];
   title: string;
   body: string;
-  artifact_refs: readonly { locator: string; sha256: string }[];
+  artifact_refs: readonly ArtifactRefV1[];
   source_signal_ids: readonly string[];
   supersedes_signal_id: string | null;
   created_at: string;
@@ -199,47 +213,78 @@ interface WorkStateHandoffV1 {
   open_hypotheses: readonly string[];
   next_actions: readonly string[];
   source_signal_ids: readonly string[];
-  execution_state_refs: {
-    worker_result_sha256: string | null;
-    task_freeze_receipt_sha256: string | null;
-    work_envelope_sha256: string | null;
-    publication_id: string | null;
-  };
+  execution_context: HandoffExecutionContextV1;
   supersedes_handoff_id: string | null;
   created_at: string;
   handoff_sha256: string;
 }
 ```
+执行上下文用判别联合表达，不用一组可空字段，避免“四个都为 null 也合法”这种无意义状态：
+```ts
+type HandoffExecutionContextV1 =
+  | { kind: "delegated_worker"; worker_run_ref_sha256: string; worker_result_sha256: string }
+  | { kind: "bound_task"; task_id: string; task_revision: string; claim_id: string;
+      lease_generation: number; work_envelope_sha256: string;
+      task_freeze_receipt_sha256: string }
+  | { kind: "publication"; publication_id: string; head_sha: string }
+  | { kind: "none" };
+```
 `dead_ends` 与 `attempted_paths` 是这个协议存在的理由。缺了它们，后继者会把前一个人的预算重烧一遍。
-
-`ArtifactRefV1` 与现有 `WorkerResultV1.evidence_refs` 的 `{ ref, sha256 }` 同构，是本 PRD 引入的命名，[UNVERIFIED] 是否直接复用同一个校验器。
 ### HandoffAdoptionReceiptV1
 ```ts
 interface HandoffAdoptionReceiptV1 {
   protocol: 1;
   kind: "repo-harness-handoff-adoption-receipt";
   handoff_id: string;
+  handoff_sha256: string;
   adopter: CollaborationActorRefV1;
   context_packet_sha256: string;
   adopted_at: string;
   receipt_sha256: string;
 }
 ```
-这份 receipt 只证明“这个上下文被交给了谁”。它不授予 Task，不授予 Lease，不改变任何 Claim。
+receipt 身份 = handoff SHA + adopter actor SHA + context packet SHA。多个不同采用者可以各自成功采用同一份 handoff，同一采用者以相同三元组重复提交是幂等的。
+
+冻结的一句话：
+
+> Handoff adoption is non-exclusive.
+
+唯一性只存在于 Task Lease writer 一侧；writer 的更替只由现有 release/takeover/acquire 生命周期决定。这份 receipt 只证明“这个上下文被交给了谁”，不授予 Task，不授予 Lease，不改变任何 Claim。知识采用在协议、CLI、投影与文案里一律不使用 claim 词汇。
 ### CollaborationContextPacketV1
 ```ts
 interface CollaborationContextPacketV1 {
   protocol: 1;
   kind: "repo-harness-collaboration-context-packet";
   repository_id: string;
+  source_snapshot_sha256: string;
   subject_refs: readonly CollaborationScopeRefV1[];
-  signals: readonly { signal_id: string; signal_sha256: string; why_relevant: string }[];
+  selection_policy_version: 1;
+  estimator_version: string;
+  budget_estimated_tokens: number;
+  signals: readonly RelevantSignalV1[];
   handoff: { handoff_id: string; handoff_sha256: string } | null;
-  hotspot_refs: readonly string[];
-  built_at: string;
+  truncated: boolean;
+  omitted_signal_count: number;
+  rendered_context_sha256: string;
   packet_sha256: string;
 }
 ```
+`built_at` 不进内容摘要。投递时间记录在 run-context binding 与 adoption receipt 上；把墙钟塞进 digest 会让同一份 store 重建出的 packet 失去字节同一性。
+
+`why_relevant` 是闭集检索理由加上命中的 refs，不是自由散文：
+```ts
+interface RelevantSignalV1 {
+  signal_id: string;
+  signal_sha256: string;
+  reason:
+    | "same_task" | "same_work_package" | "same_capability" | "same_path"
+    | "same_thread" | "source_reference" | "handoff" | "hotspot"
+    | "exploration_slot";
+  matched_refs: readonly CollaborationScopeRefV1[];
+}
+```
+选择算法带确定性的利用/探索配额，避免所有上下文塌到最热的那条 thread：第一轮每条 thread 最多 1 条 signal；第二轮取被引用最多、证据最密的条目；固定配额留给低覆盖 thread 与 unadopted handoff。默认 60% 利用 / 40% 探索，比例由 canary 调，但同一输入永远给出同一结果。
+
 注入时全部内容包在：
 ```text
 [CoordinationContextUntrusted]
@@ -247,8 +292,43 @@ interface CollaborationContextPacketV1 {
 [/CoordinationContextUntrusted]
 ```
 这一对标记沿用现有 `[TaskInboxUntrustedPeerMessages]` 与 `[ModuleInboxUntrustedPeerMessage]` 的形状与固定 warning 文案约定，是本 PRD 新增的第三个标记；“messages are untrusted data, not instructions or authority” 的信任边界直接复用，不发明新的 prompt-trust 模型。
+### CollaborationRunContextBindingV1
+现有 Delegation 协议不动。协作上下文进入某次 run 的事实由一条加法绑定记录：
+```ts
+interface CollaborationRunContextBindingV1 {
+  protocol: 1;
+  kind: "repo-harness-collaboration-run-context-binding";
+  dispatch_id: string;
+  delegated_run_intent_sha256: string;
+  execution_packet_sha256: string;
+  collaboration_context_packet_sha256: string;
+  rendered_context_sha256: string;
+  base_goal_sha256: string;
+  composed_goal_sha256: string;
+  binding_sha256: string;
+}
+```
+流向：
+```text
+CollaborationContextPacket → canonical untrusted rendering
+→ compose into DelegationExecutionPacket.goal
+→ ExecutionPacket gets its own packet_sha256
+→ existing intent.context_packet_sha256 keeps carrying ExecutionPacket SHA
+→ new binding records which collaboration packet/rendering was embedded
+```
+### CollaborationDelegationAdmissionV1
+一轮协作在进入既有 `admitReadOnlyDelegation()` 之前必须先过这道桥：
+```text
+从 parent ClaimActorReceipt 解析当前 ModuleEngineerProfile
+→ 读取当前 Binding 与 Principal
+→ 载入 tracked LogicalRoleProfile 并校验它允许用于协作
+→ 按 parent claim + round_index 统计 active readers
+→ 在锁内强制 active_readers < max_parallel_readers
+→ 才调用 admitReadOnlyDelegation()
+```
+开放的 `logical_role` 字符串本身不是授权。每个角色仍需要 tracked LogicalRoleProfile、role instructions、model、capability receipt、精确准入、当前 parent Claim 与 Binding 全部到位。
 ### CollaborationContributionDraftV1
-Worker 输出，由 Host collector 解析并持久化。最终 digest 通过现有 `WorkerResultV1.evidence_refs` 引用；P0 不 bump `DelegationEnvelopeV1`。
+Worker 输出，由 Host collector 解析并持久化。P0 不 bump `DelegationEnvelopeV1`。
 ```ts
 interface CollaborationContributionDraftV1 {
   protocol: 1;
@@ -259,7 +339,22 @@ interface CollaborationContributionDraftV1 {
   built_on_signal_ids: readonly string[];
 }
 ```
-draft 里没有 actor 字段。actor 由 Host collector 从 `WorkerRunRefV1` 与 admission receipt 推导，Worker 无法自述身份。
+draft 里没有 actor 字段。actor 由 Host collector 从 `WorkerRunRefV1` 与 admission receipt 推导，Worker 无法自述身份。draft 的来源只能是那次运行精确持久化的 stdout / process receipt，经带版本的 provider-output adapter 解析；调用方递来的、自称来自 Worker 的 JSON 一律不接受。
+### CollaborationContributionCommitV1
+贡献的可见性边界是一条 commit，投影只读已提交的贡献：
+```ts
+interface CollaborationContributionCommitV1 {
+  protocol: 1;
+  kind: "repo-harness-collaboration-contribution-commit";
+  worker_run_ref_sha256: string;
+  draft_sha256: string;
+  signal_refs: readonly { signal_id: string; signal_sha256: string }[];
+  handoff_ref: { handoff_id: string; handoff_sha256: string } | null;
+  committed_at: string;
+  commit_sha256: string;
+}
+```
+signal 与 handoff 的 ID 从 `WorkerRunRefV1` 加条目下标确定性派生，因此同一次运行的重试收敛到同一组 ID。`WorkerResultV1` 恰好构造一次并引用这条 commit。
 ### CollaborationThreadSnapshotV1
 ```ts
 interface CollaborationThreadSnapshotV1 {
@@ -267,13 +362,14 @@ interface CollaborationThreadSnapshotV1 {
   signal_count: number;
   distinct_contributor_count: number;
   latest_signal_at: string;
-  open_request_count: number;
-  unclaimed_handoff_count: number;
+  unadopted_handoff_count: number;
+  adoption_count: number;
+  cross_thread_reference_count: number;
   hotspot_score: number;
   thread_sha256: string;
 }
 ```
-`hotspot_score` 是确定性函数输出，不是排名权威。
+`hotspot_score` 是确定性函数输出，不是排名权威。这里只放可从已提交 signal / handoff / adoption 直接数出来的结构量。
 ### CollaborativeWorkExchangeSnapshotV1
 ```ts
 interface CollaborativeWorkExchangeSnapshotV1 {
@@ -284,14 +380,24 @@ interface CollaborativeWorkExchangeSnapshotV1 {
   open_handoffs: WorkStateHandoffSummaryV1[];
   contribution_opportunities: readonly {
     thread_key: string;
-    reason: "open_request" | "unverified_hypothesis" | "unclaimed_handoff"
-          | "active_hotspot" | "stalled_thread";
+    reason: ContributionOpportunityReason;
     source_refs: readonly string[];
   }[];
   snapshot_consistency: "stable" | "changed_during_read" | "degraded";
   snapshot_sha256: string;
 }
 ```
+opportunity 理由只用薄协议真能支撑的结构事实：
+```ts
+type ContributionOpportunityReason =
+  | "unadopted_handoff"
+  | "low_contributor_coverage"
+  | "cross_thread_reference"
+  | "recent_activity"
+  | "artifact_rich_thread"
+  | "exploration_slot";
+```
+`open_request`、`unverified_hypothesis`、`stalled_thread` 不进 P0 的机器投影——判断某条 signal 是不是提问、假设有没有被验证、线程是不是停滞，需要薄 signal 协议里根本没有的语义信息。Agent 仍可以自由用 `NEED-REPRO`、`HOLD` 这类开放 label 表达同样的意思，系统不赋予它们任何语义或权威。
 `ExistingEngineerOfferProjection` 原样携带现有 `EngineerOfferV1` 与其 `offer_revision`，不重新解释 readiness。`snapshot_consistency` 非 `stable` 时消费者必须 fail loud。
 ## Multi-Participant Model
 P0 冻结的模型：
@@ -300,45 +406,38 @@ P0 冻结的模型：
   → 一个持久 Module Engineer
   → 一个当前 writer / Lease owner
   → N 个 read-only collaboration participants
-      (explorer / root-cause-prover / deep-reasoner / critic / reproducer / summarizer)
+      (explorer / root-cause-prover / fast-worker / deep-worker / gatekeeper)
 ```
-`ModuleEngineerProfileV1.delegation_policy.allowed_roles` 当前只接受 `explorer`、`root-cause-prover`、`fast-worker`、`deep-worker`、`gatekeeper` 五个值；`deep-reasoner`、`critic`、`reproducer`、`summarizer` 不在这个闭集内。`LogicalRoleProfileV1.logical_role` 本身是开放字符串，所以这些参与角色在 P0 以 logical role 表达，是否扩展 `allowed_roles` 闭集留给 C4 决定，本 PRD 不预设。
+P0 直接使用 `ENGINEER_DELEGATION_ROLES` 这个既有五值闭集，协作侧的分工由 goal、thread_key、labels 与 scope refs 表达，不靠新角色名。`LogicalRoleProfileV1.logical_role` 虽是开放字符串，但一个开放字符串换不来授权：每个角色都要有 tracked profile、role instructions、model、capability receipt 与精确准入。只有 C4 的真实 canary 证明 critic / reproducer / summarizer 需要各自独立的 role instructions，才考虑扩这个闭集。
 
-参与者可以是当前 Engineer Session、delegated read-only WorkerRun、native read-only subagent 或 Human operator。只有当前 Lease owner 是 writer。P0 不实现同 capability 的持久 Module Engineer 席位。多席位的启动条件写在 umbrella PRD 的 Multi-Seat Decision Gate，由 C9 canary 判定。
+参与形式可以是当前 Engineer Session、delegated read-only WorkerRun、native read-only subagent 或 Human operator，但 P0 能写入协作 store 的作者只有 `module_engineer` 与 `delegated_worker`。只有当前 Lease owner 是 writer。P0 不实现同 capability 的持久 Module Engineer 席位。多席位的启动条件写在 umbrella PRD 的 Multi-Seat Decision Gate，由 C9-A 可行性与 C9-B 重复证据共同判定。
 ### Writer Rule
-参与者可以：读代码、搜索、跑只读分析、提假设、比较方案、解释失败原因、贡献证据、写 handoff。
-
-参与者不可以：修改 worktree、提交、发布、改 Task state、转移 Lease、宣布验证通过。
+参与者可以读代码、搜索、跑只读分析、提假设、比较方案、解释失败原因、贡献证据、写 handoff；不可以修改 worktree、提交、发布、改 Task state、转移 Lease、宣布验证通过。
 ### Collaboration Round
 ```text
-1. Build CollaborationContextPacket
-2. Launch up to max_parallel_readers delegated runs
-3. Each Worker picks a thread / gap / hypothesis
-4. Worker outputs CollaborationContributionDraft
-5. Host collector persists signals / optional handoff
-6. Recompute threads and hotspots
-7. Next round Workers read the new context
+1. Build CollaborationContextPacket + canonical untrusted rendering
+2. Compose into ExecutionPacket.goal, record CollaborationRunContextBinding
+3. Admission bridge enforces allowed_roles + max_parallel_readers
+4. Launch up to max_parallel_readers delegated runs
+5. Each Worker picks a thread / gap / opportunity
+6. Host collector parses persisted stdout, publishes contribution commit
+7. Recompute threads and hotspots
+8. Next round Workers read the new context
 ```
 这是 round-based publish/discover，不是同步聊天室。一轮内参与者互相看不到实时输出，下一轮才读到彼此的 signal。由于协议把单次 delegated run 的 `max_turns` 钉为 1，"轮"与 `DelegatedRunIntentV1.round_index` 天然对齐。
 ## Emergent Lanes
-没有中央 lane 枚举。Agent 自己创造 `thread_key`、`labels`、`reply_to_signal_id`、`source_signal_ids`。系统只做一件事：把 `thread_key` 完全相同的 signal 聚成一条 lane。
-
-一条 lane 的名字、生命周期、结束条件都由参与者自己约定。系统不判断 lane 是否合理，也不合并近似 key。
+没有中央 lane 枚举。Agent 自己创造 `thread_key`、`labels`、`reply_to_signal_id`、`source_signal_ids`；系统只把 `thread_key` 完全相同的 signal 聚成一条 lane，不判断 lane 是否合理，也不合并近似 key。
 ## Hotspots
 hotspot 由确定性函数从下列输入计算：
 
 - 独立 contributor 数量；
 - 近期活动时间分布；
 - artifact / evidence ref 数量；
-- 未回应的 open request；
-- 未认领的 handoff；
+- 低 contributor 覆盖度；
+- unadopted handoff 数量；
 - 跨 thread 引用次数。
 
-hotspot 只影响三件事：Work Exchange 排序、`CollaborationContextPacketV1` 的选择、推荐探索方向。
-
-hotspot 永远不影响：Work Graph priority、dependency、Task state、Lease eligibility。
-
-这条边界让一个真实突破可以在下一轮自然把多数参与者引过去，同时不让群体热度变成交付权威。
+hotspot 只影响三件事：Work Exchange 排序、`CollaborationContextPacketV1` 的选择、推荐探索方向。它永远不影响 Work Graph priority、dependency、Task state 与 Lease eligibility，探索配额也保证热度高的 thread 吃不掉全部上下文。
 ## Module Behaviors
 ### Signal Store
 - **Purpose**: append-only 持久化协作观察。
@@ -352,23 +451,38 @@ hotspot 永远不影响：Work Graph priority、dependency、Task state、Lease 
 - **No inference**: 不用 LLM 推断状态或情绪。
 ### Handoff Store
 - **Purpose**: 持久化知识交接。
-- **Normal**: 校验 → 绑定 `execution_state_refs` → immutable create。
-- **Failure**: 引用的 `task_freeze_receipt_sha256` 不可解析时拒绝。
+- **Normal**: 校验 → 绑定 `execution_context` 判别分支 → immutable create。
+- **Failure**: `bound_task` 分支引用的 `task_freeze_receipt_sha256` 不可解析时拒绝。
 - **No transfer**: 不触碰 Claim 与 Lease。
 ### Adoption Recorder
 - **Purpose**: 记录上下文交付事实。
-- **Normal**: 校验 handoff 存在 → 绑定 `context_packet_sha256` → 写 receipt。
+- **Normal**: 校验 handoff 存在 → 绑定 `handoff_sha256` 与 `context_packet_sha256` → 写 receipt。
+- **Concurrent**: 多个不同采用者各自成功；同一采用者相同三元组幂等。
 - **Failure**: handoff 已被 supersede 时拒绝。
-- **No claim**: claim store 零写入。
+- **No claim**: claim store 零写入，投影与文案不使用 claim 词汇。
+### Participant Admission Bridge
+- **Purpose**: 让 `allowed_roles` 与 `max_parallel_readers` 在准入期真正生效。
+- **Normal**: 解析 profile/binding/principal → 载入 tracked LogicalRoleProfile → 在锁内按 parent claim + round_index 统计 active readers → 放行进 `admitReadOnlyDelegation()`。
+- **Failure**: 超过 `max_parallel_readers` 或角色不可用时以 typed rejection 拒绝，不进入既有准入。
+- **No bypass**: 既有 `admitReadOnlyDelegation()` 的语义不变，桥只做前置。
 ### Context Packet Builder
 - **Purpose**: 在预算内组装可注入上下文。
-- **Normal**: 由 subject refs + hotspot 排序选 top-K signal → 附最相关 handoff → 计算 digest。
-- **Failure**: 超预算时按确定性顺序截断并记录截断事实。
+- **Normal**: 绑定 `source_snapshot_sha256` → 由 subject refs、闭集检索理由与利用/探索配额选 signal → 附最相关 handoff → 记 `estimator_version` 与 `budget_estimated_tokens` → 计算 render digest 与 packet digest。
+- **Failure**: 超预算时按确定性顺序截断，写 `truncated` 与 `omitted_signal_count`。
 - **Untrusted**: 输出必须由调用方包进不可信标记后再注入。
 ### Contribution Collector
-- **Purpose**: 把 Worker draft 变成持久 signal/handoff。
-- **Normal**: 解析 draft → 从 `WorkerRunRefV1` 推导 actor → 逐条写入 → 把最终 digest 作为 `WorkerResultV1.evidence_refs` 条目。
-- **Failure**: draft 不可解析时整批拒绝，不做部分写入。
+- **Purpose**: 把一次运行的精确输出变成可见的协作贡献。
+- **Normal**:
+  ```text
+  从持久化 stdout / process receipt 取 draft（versioned provider-output adapter）
+  → 全量校验整份 draft
+  → 从 WorkerRunRef + 条目下标派生确定性 ID
+  → 落盘不可变候选条目
+  → 发布 CollaborationContributionCommitV1（可见性边界）
+  → 构造唯一一次 WorkerResult 并引用该 commit
+  ```
+- **Failure**: 解析失败是显式 typed rejection——正常 `WorkerResultV1` 仍然持久化，不留部分可见 signal，绝不合成空贡献或假装成功。
+- **Visibility**: 投影只读已提交的贡献，未提交的候选对任何读者不可见。
 - **No self-identification**: 忽略 draft 中任何身份声明。
 ### Succession Coordinator
 - **Purpose**: 把知识交接与执行权交接分开。
@@ -412,7 +526,7 @@ repo-harness collaboration handoff adopt \
 repo-harness collaboration packet build \
   --scope <kind:value> --format json
 ```
-`--authorization-id` 解析出的 principal 是 actor 的唯一来源。CLI 不接受 `--engineer-id` 之类的自述身份参数。
+`--authorization-id` 解析出的 principal 是 actor 的唯一来源。CLI 不接受 `--engineer-id` 之类的自述身份参数。`collaboration post` 目前只围绕 Engineer `authorization_id` 设计，与 P0 作者支持矩阵一致：`module_engineer` 走 CLI/MCP，`delegated_worker` 走 Host collector，其余两类没有可发布路径。
 ## MCP
 Engineer profile 新增：
 ```text
@@ -442,21 +556,15 @@ Collaboration 工具集不得暴露：任意文件写；generic shell；task acq
 ```text
 <git-common-dir>/repo-harness/collaboration/v1/
   signals/<signal-id>.json
-  threads/<thread-key-digest>/current.json
   handoffs/<handoff-id>.json
   adoptions/<sha256>.json
   context-packets/<sha256>.json
+  contribution-commits/<sha256>.json
+  run-context-bindings/<sha256>.json
 ```
-Every store:
-- 用 lstat 遍历祖先目录；
-- 拒绝 symlink 与非目录祖先；
-- canonical JSON；
-- immutable create + fsync；
-- per-thread / per-handoff lock；
-- exact protocol 校验；
-- idempotency 冲突显式报错；
-- 无路径逃逸；
-- 无 healthy-empty 回退。
+P0 的 thread 投影直接由已提交 signal 计算，不落 `threads/<digest>/current.json`。真的需要缓存时，缓存必须绑定来源集合的 digest，并在 digest 不匹配时重算；缓存永远不能成为权威，读取路径必须能在缓存缺失时给出同样的结果。
+
+Every store：用 lstat 遍历祖先目录并拒绝 symlink 与非目录祖先；canonical JSON；immutable create + fsync；per-thread / per-handoff lock；exact protocol 校验；idempotency 冲突显式报错；无路径逃逸；无 healthy-empty 回退。
 ## Performance Targets
 | Target | Number |
 |---|---:|
@@ -498,10 +606,10 @@ Every store:
 - Given 一份 handoff。
 - When 校验其内容。
 - Then attempted paths、dead ends、key findings、next actions 均非空或显式为空数组，且 schema 强制存在。
-### Scenario 6 — adoption without claim
-- Given 一份 open handoff。
-- When 另一参与者采用。
-- Then 产生 adoption receipt，claim store 零写入。
+### Scenario 6 — non-exclusive adoption
+- Given 一份 unadopted handoff。
+- When 两个不同参与者各自采用，其中一个重复提交相同三元组。
+- Then 两条 adoption receipt 都成立，重复提交幂等，claim store 零写入。
 ### Scenario 7 — dirty succession
 - Given 执行者 worktree 脏且 checks 未验证。
 - When 请求交接。
@@ -515,9 +623,17 @@ Every store:
 - When collector 落盘。
 - Then actor 取自 `WorkerRunRefV1`，声称被忽略。
 ### Scenario 10 — parallel readers, one writer
-- Given 三个只读参与者与一个 Lease owner。
-- When 一轮结束。
-- Then 参与者 protected snapshot 前后相等，writer 数为 1。
+- Given 同一 parent claim 下三个只读参与者与一个 Lease owner，`max_parallel_readers=3`。
+- When 一轮进行中再发起第四个并发请求。
+- Then 前三个正常运行、protected snapshot 前后相等、writer 数为 1，第四个在 admission bridge 被拒。
+### Scenario 13 — contribution transaction convergence
+- Given 在每个持久化边界（signal 1 之后、signal N 之后、handoff 之后、contribution commit 之前、commit 之后、WorkerResult 之前、WorkerResult 之后）注入故障。
+- When 重试收集。
+- Then 每种注入点都收敛到一条可见 contribution commit、一个 WorkerResult、零重复 signal。
+### Scenario 14 — parse failure is typed rejection
+- Given Worker stdout 不可解析为合法 draft。
+- When collector 运行。
+- Then 返回 typed rejection，正常 WorkerResult 仍持久化，零可见 signal，无空贡献被合成。
 ### Scenario 11 — snapshot determinism
 - Given 相同仓库字节与相同协作 store。
 - When 两次采集。
@@ -533,22 +649,25 @@ Every store:
 | labels 超 12 | 拒绝写入 |
 | 同 id 不同 payload | idempotency 冲突 |
 | supersede 目标不存在 | 拒绝写入 |
-| draft 部分条目非法 | 整批拒绝 |
-| handoff 引用不可解析 freeze receipt | 拒绝写入 |
+| draft 部分条目非法 | 整批 typed rejection，零可见写入 |
+| draft 不来自持久化 stdout / process receipt | 拒绝，不接受调用方自述的 Worker 输出 |
+| 并发 reader 超过 `max_parallel_readers` | admission bridge 拒绝，不进入既有准入 |
+| handoff `bound_task` 分支引用不可解析 freeze receipt | 拒绝写入 |
 | 采用已被 supersede 的 handoff | 拒绝 |
+| 同一采用者重复采用同一 handoff | 幂等返回既有 receipt |
 | 协作 store 不可读 | snapshot degraded + fail loud |
 | context packet 超预算 | 确定性截断并记录 |
 | 采集期 store 变化 | `changed_during_read` |
 | 参与者尝试写 worktree | sandbox 拒绝 + `sandbox_violation` |
 | actor 自述身份 | 忽略，取服务端推导值 |
 ## Rollout
-1. 两平面权威冻结与 store 布局。
-2. Signal schema 与 append-only store。
+1. 两平面权威冻结、现有 `context_packet_sha256` 语义冻结与 store 布局。
+2. Signal schema、共享 schema 机制与 append-only store。
 3. Thread 与 hotspot 投影。
-4. Handoff 与 adoption receipt。
-5. Contribution draft 与 Host collector。
+4. Handoff 与非排他 adoption receipt。
+5. Admission bridge、contribution draft/commit 事务与 Host collector。
 6. TaskFreeze / release / takeover 交接接线。
-7. Context packet 与 untrusted 注入。
+7. Context packet、canonical render 与 run-context binding。
 8. Collaborative Work Exchange snapshot。
 9. CLI / MCP。
 10. Operator 只读视图。
@@ -570,29 +689,36 @@ Every store:
 ### Arms
 - **Baseline**: 一个 Agent 独立完成。
 - **Treatment**: 一个 Module Engineer + 三个只读参与者 + signal board + 一次后继者 handoff。
+两臂之间设污染隔离：baseline 的发现不得以任何形式进入 treatment 的 store、context packet 或提示，反向亦然。
+### Two levels
+- **C9-A 可行性**: 一个真实任务、三个参与者、至少一次 signal 复用、至少一次 handoff adoption、writer 恒为 1、零 authority drift。
+- **C9-B 决策证据**: 至少三个匹配的真实任务，或三份冻结 fixture / 重复运行，或同一任务的多次隔离重放，才足以支撑 `EngineerSeatV2` go/no-go。
 ### Measures
+指标口径在开跑之前冻结，跑完不改判定标准。
 | 维度 | 指标 |
 |---|---|
-| 速度 | time to first useful finding |
-| 产出 | unique useful findings 数量 |
-| 浪费 | 重复调查已记录 dead end 的次数 |
+| 速度 | time to first useful finding；time to first adopted finding |
+| 产出 | unique useful findings 数量；useful findings per 10k tokens |
+| 浪费 | duplicate dead-end rate |
 | 复用 | signal reuse（`source_signal_ids` 引用数） |
-| 交接 | handoff adoption 次数 |
-| 重启成本 | 后继者到达有效进展所需 turns/tokens |
-| 预算 | 每次注入的 context 体积 |
-| 噪声 | 从未被读取/引用/采用的 signal 占比 |
+| 交接 | handoff adoption 次数；handoff restart cost |
+| 预算 | aggregate input/output tokens；wall-clock；每次注入的 context 体积 |
+| 噪声 | never-read signal rate |
 | 权威安全 | Task/Lease/Publication 字节不变 |
 | 写入安全 | 任意时刻 writer 数 ≤1 |
 ### Decision output
-C9 结束后回答三个问题：是否需要同 capability 持久席位；是否需要正式 Review marketplace；是否需要无人值守 merge。前者产出 `EngineerSeatV2` go/no-go，后两者分别决定 Child PRD B 与 Child PRD C 的激活时机。
+C9 结束后回答三个问题：是否需要同 capability 持久席位；是否需要正式 Review marketplace；是否需要无人值守 merge。持久 `EngineerSeatV2` 只在 C9-B 的重复案例证明 delegated round 的启动与交接本身是瓶颈时才给 go，单次 C9-A 通过不构成依据。后两个问题分别决定 Child PRD B 与 Child PRD C 的激活时机。
 ## Proposed File Map
 ```text
 src/core/collaboration/
+  common.ts
   signal.ts
   handoff.ts
   adoption.ts
   context-packet.ts
+  run-context-binding.ts
   contribution-draft.ts
+  contribution-commit.ts
   thread-projection.ts
   hotspot.ts
   exchange.ts
@@ -601,6 +727,7 @@ src/effects/collaboration/
   handoff-store.ts
   adoption-store.ts
   context-packet-store.ts
+  delegation-admission-bridge.ts
   contribution-collector.ts
   collect.ts
 src/cli/commands/
@@ -612,6 +739,7 @@ src/core/operator/
 ```
 ## Test Map
 ```text
+tests/unit/collaboration-common.test.ts
 tests/unit/collaboration-signal.test.ts
 tests/unit/collaboration-handoff.test.ts
 tests/unit/collaboration-adoption.test.ts
@@ -621,6 +749,7 @@ tests/unit/collaboration-hotspot.test.ts
 tests/unit/collaboration-exchange.test.ts
 tests/effects/collaboration-signal-store.test.ts
 tests/effects/collaboration-handoff-store.test.ts
+tests/effects/collaboration-admission-bridge.test.ts
 tests/effects/collaboration-contribution-collector.test.ts
 tests/effects/collaboration-succession.test.ts
 tests/effects/collaboration-collector.test.ts
@@ -630,8 +759,8 @@ tests/operator-web/collaboration.test.tsx
 ```
 ## Developer Handoff
 - 先冻结两平面边界，再写任何 store。
-- 复用现有 delegation：`mode` 只有 `read_only`，`max_depth` 固定 0，单 run `max_turns` 被协议钉为 1，多轮走 `round_index`。
-- 复用 `DelegatedRunIntentV1.context_packet_sha256`，P0 不 bump `DelegationEnvelopeV1`。
+- 复用现有 delegation：`mode` 只有 `read_only`，`max_depth` 固定 0，单 run `max_turns` 被协议钉为 1，多轮走 `round_index`。不要试图放宽 `max_turns`；要验证的是单轮贡献是否有用、多轮累积能否补上深度、每轮 packet 是否保持小而聚焦、多轮启动成本是否吃掉收益。
+- `DelegatedRunIntentV1.context_packet_sha256` 保持 ExecutionPacket 语义，协作 provenance 走 `CollaborationRunContextBindingV1`，P0 不 bump `DelegationEnvelopeV1`。
 - actor 一律服务端推导，`WorkerRunRefV1` 是 delegated worker 的唯一身份来源。
 - 注入包裹沿用 Task/Module Message 的既有模式与文案约定。
 - 交接路径必须先过 `TaskFreezeReceiptV1`，执行权仍走 `sprint release` / `fleet acquire` / `fleet takeover`。
@@ -641,9 +770,9 @@ tests/operator-web/collaboration.test.tsx
 | Item | Impact | Resolution |
 |---|---|---|
 | signal 信噪比 | context packet 可能被噪声填满 | canary 记录 never-read 比例 |
-| logical role 闭集 | `deep-reasoner` 等不在 `allowed_roles` | C4 决定是否扩展枚举 |
-| native subagent draft | 输出可能不可解析 | P0 先只支持 delegated Worker 与 Human |
+| 单轮贡献深度 | `max_turns=1` 下贡献可能太浅 | C4/C9 观测多轮累积能否补上 |
+| native subagent / human operator 发布 | 缺不可变 provenance 或独立 principal | 各自具备后单独评估，P0 不进 wire union |
 | handoff 粒度 | 太粗无用、太细昂贵 | 真实任务迭代 |
-| `ArtifactRefV1` 复用 | 可能与既有校验器重复 | 实现时优先复用 `{ ref, sha256 }` 校验路径 |
 | hotspot 长期稳定性 | 排序可能抖动 | canary 观测后再调权重 |
-| 同 capability 持久席位 | 可能需要 EngineerSeatV2 | C9 决策门 |
+| 利用/探索比例 | 60/40 是初始值 | canary 可调，但必须保持确定性 |
+| 同 capability 持久席位 | 可能需要 EngineerSeatV2 | C9-A 可行性 + C9-B 重复证据 |
