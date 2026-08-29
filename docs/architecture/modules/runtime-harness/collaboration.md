@@ -1,13 +1,13 @@
 # runtime-harness/collaboration 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" sourceDigest="sha256:aca9cbdf78a70de223ee7553e3a8af70ee93aff6ba687167783c7760106e7e34" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:aa00512280bfa11b986b612791ec6b74579a692905ae4e8943e6af8de73cfccf" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" sourceDigest="sha256:739122fea1f0c607445382af82c393795ac572f56cf0bc602cb13368ab698fb9" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:d82adcb3e06a634b906626548cf4b5786d8159654b525713e0a1b5ecea898e01" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.collaboration`(kind `capability`)
 > **Matched Prefixes**:`src/core/collaboration/**`、`src/effects/collaboration/**`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Publishes append-only coordination signals with Host-derived identity and recorded time, holding zero Task, Lease, Publication or Acceptance authority.
+Publishes append-only coordination signals, work-state handoffs and non-exclusive handoff adoption receipts over one shared create-once store substrate, with Host-derived identity and recorded time, holding zero Task, Lease, Publication or Acceptance authority.
 
 ## 1. P1:能力架構地圖
 
@@ -17,7 +17,7 @@ Publishes append-only coordination signals with Host-derived identity and record
 flowchart LR
   p1_capability_runtime_harness_collaboration_5265febf["Collaboration Substrate"]:::component
   p1_capability_runtime_harness_engineer_bindings_34c00f72["Engineer Bindings"]:::component
-  p1_component_collaboration_primary_9383ae07["Append-only Coordination Signal Store"]:::component
+  p1_component_collaboration_primary_9383ae07["Append-only Collaboration Record Store"]:::component
   p1_capability_runtime_harness_collaboration_5265febf -->|"Derive the publishing actor from the authenticated principal and current Binding instead of accepting a declared identity"| p1_capability_runtime_harness_engineer_bindings_34c00f72
   p1_capability_runtime_harness_collaboration_5265febf -->|"Persist immutable coordination signals under a per-thread lock without writing any delivery store"| p1_component_collaboration_primary_9383ae07
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
@@ -26,7 +26,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:ba6168c8de638264fdf9780b20b12e20e14e4ac2b5ccb35931439f3ccecfe078`).
+- Proof: `proven` (`sha256:c0a8b4f20d1c90d3c499259dcaee6cc122fb079a8040c7896d98da1d41c8df89`).
 - Semantic nodes: `3`; declared relations: `2`.
 
 ### 1.2 模組職責表
@@ -34,13 +34,17 @@ flowchart LR
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
 | `entrypoint.collaboration.publish` | `src/effects/collaboration/signal-store.ts#publishCoordinationSignal` | `sink.collaboration.mutation-gate` → `src/effects/collaboration/feature-flag.ts#assertCollaborationMutationEnabled`、`sink.collaboration.signal-schema` → `src/core/collaboration/signal.ts#buildCoordinationSignal` |
-| `entrypoint.collaboration.actor-derivation` | `src/effects/collaboration/signal-store.ts#resolveModuleEngineerActor` | `sink.collaboration.authenticated-principal` → `src/effects/engineers/principal.ts#resolveEngineerPrincipal` |
-| `entrypoint.collaboration.read` | `src/effects/collaboration/signal-store.ts#readPersistedSignal` | `sink.collaboration.record-identity` → `src/core/collaboration/signal.ts#canonicalCoordinationSignalBytes` |
+| `entrypoint.collaboration.actor-derivation` | `src/effects/collaboration/actor.ts#resolveCollaborationActor` | `sink.collaboration.authenticated-principal` → `src/effects/engineers/principal.ts#resolveEngineerPrincipal` |
+| `entrypoint.collaboration.read` | `src/effects/collaboration/record-store.ts#readCollaborationRecord` | `sink.collaboration.record-path-guard` → `src/effects/collaboration/record-store.ts#collaborationRecordPath` |
+| `entrypoint.collaboration.durable-publish` | `src/effects/collaboration/record-store.ts#publishCollaborationRecordDurably` | `sink.collaboration.staging-name` → `src/effects/collaboration/record-store.ts#collaborationStagingName` |
+| `entrypoint.collaboration.handoff-publish` | `src/effects/collaboration/handoff-store.ts#publishWorkStateHandoff` | `sink.collaboration.handoff-mutation-gate` → `src/effects/collaboration/feature-flag.ts#assertCollaborationMutationEnabled`、`sink.collaboration.handoff-schema` → `src/core/collaboration/handoff.ts#buildWorkStateHandoff` |
+| `entrypoint.collaboration.handoff-adoption` | `src/effects/collaboration/adoption-store.ts#adoptWorkStateHandoff` | `sink.collaboration.adoption-mutation-gate` → `src/effects/collaboration/feature-flag.ts#assertCollaborationMutationEnabled`、`sink.collaboration.adoption-actor` → `src/effects/collaboration/actor.ts#resolveCollaborationActor` |
+| `entrypoint.collaboration.adoption-identity` | `src/core/collaboration/adoption.ts#handoffAdoptionReceiptId` | `sink.collaboration.adoption-triple` → `src/core/collaboration/adoption.ts#deriveHandoffAdoptionReceiptId` |
 | `entrypoint.collaboration.shared-mechanics` | `src/core/collaboration/signal.ts#buildCoordinationSignal` | `sink.collaboration.actor-union` → `src/core/collaboration/common.ts#validateCollaborationActorRef` |
 
 ### 1.3 規模信號
 
-- 規模量級:`5–10` 個文件 / `2000–5000` 行
+- 規模量級:`10–20` 個文件 / `2000–5000` 行
 - 匹配前綴:`src/core/collaboration/**`、`src/effects/collaboration/**`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
@@ -57,7 +61,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:ba6168c8de638264fdf9780b20b12e20e14e4ac2b5ccb35931439f3ccecfe078`); selectors `5/5`.
+> **Proof**: `proven` (`sha256:c0a8b4f20d1c90d3c499259dcaee6cc122fb079a8040c7896d98da1d41c8df89`); selectors `10/10`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -65,7 +69,28 @@ sequenceDiagram
   autonumber
   participant p2_collaboration_50c48bca as Collaboration Substrate
   participant p2_engineer_bindings_4e9749d0 as Engineer Bindings
-  participant p2_signal_store_5a76fb32 as Append-only Coordination Signal Store
+  participant p2_record_store_d73a3e78 as Append-only Collaboration Record Store
+  p2_collaboration_50c48bca->>p2_record_store_d73a3e78: Refuse every handoff write unless collaboration.mode has been promoted past off
+  alt The attempted paths， dead ends， findings and next actions land as one immutable record
+  p2_collaboration_50c48bca->>p2_record_store_d73a3e78: Require the four knowledge fields and one complete execution-context branch before any write
+    Note over p2_collaboration_50c48bca: Return the persisted handoff； knowledge moved and no Task， Lease or Claim byte did
+  else Any number of distinct adopters take the same handoff， and none of them gains a writer seat
+  p2_collaboration_50c48bca->>p2_engineer_bindings_4e9749d0: Derive the adopter from the authenticated principal and refuse any caller-declared identity
+  p2_collaboration_50c48bca->>p2_record_store_d73a3e78: Key the receipt on the handoff digest， the adopter actor digest and the context packet digest so distinct adopters never collide
+    Note over p2_collaboration_50c48bca: Return the receipt； execution succession still runs only through TaskFreeze plus the existing release， takeover and acquire lifecycle
+  else A disabled collaboration plane refuses knowledge transfer instead of degrading to a silent write
+  p2_collaboration_50c48bca->>p2_record_store_d73a3e78: Refuse the adoption before any record is read or written when collaboration.mode is off
+    Note over p2_collaboration_50c48bca: Surface the typed collaboration_disabled rejection； the adoption shard is never created
+  end
+```
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
+sequenceDiagram
+  autonumber
+  participant p2_collaboration_50c48bca as Collaboration Substrate
+  participant p2_engineer_bindings_4e9749d0 as Engineer Bindings
+  participant p2_signal_store_5a76fb32 as Append-only Collaboration Record Store
   p2_collaboration_50c48bca->>p2_signal_store_5a76fb32: Refuse every mutation unless collaboration.mode has been promoted past off
   p2_collaboration_50c48bca->>p2_engineer_bindings_4e9749d0: Resolve the authenticated principal and fence it against a second read of the principal mapping
   alt A new identity samples the recorded time once and lands as one immutable file
@@ -73,7 +98,7 @@ sequenceDiagram
     Note over p2_collaboration_50c48bca: Return the persisted signal； no Task， Lease， Publication or Acceptance byte moves
   else An invalid record or an unreadable shard fails closed
   p2_collaboration_50c48bca->>p2_signal_store_5a76fb32: Reject an unknown field， an unsupported actor kind or a stale digest before any write
-  p2_collaboration_50c48bca->>p2_signal_store_5a76fb32: Fail loud on an unreadable or non-canonical shard rather than serving a healthy empty store
+  p2_collaboration_50c48bca->>p2_signal_store_5a76fb32: Validate the 64-hex record id before any path join， then fail loud on an unreadable or non-canonical shard rather than serving a healthy empty store
     Note over p2_collaboration_50c48bca: Surface the typed rejection； a republished identity reuses its recorded time instead of re-sampling the clock
   end
 ```

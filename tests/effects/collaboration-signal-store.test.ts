@@ -9,12 +9,9 @@
  */
 import { afterEach, describe, expect, test } from 'bun:test';
 import { spawn } from 'child_process';
-import { createHash } from 'crypto';
 import {
-  cpSync,
   copyFileSync,
   existsSync,
-  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -23,7 +20,6 @@ import {
   statSync,
   writeFileSync,
 } from 'fs';
-import { execFileSync } from 'child_process';
 import { tmpdir } from 'os';
 import { join, relative } from 'path';
 
@@ -38,48 +34,25 @@ import {
   signalStagingName,
   type PublishCoordinationSignalInput,
 } from '../../src/effects/collaboration/signal-store';
-import { bindEngineer, readEngineerBindingStatus } from '../../src/effects/engineers/binding-store';
-import { enrollEngineerPrincipal, readEngineerPrincipalMapping } from '../../src/effects/engineers/principal-store';
+import { readEngineerBindingStatus } from '../../src/effects/engineers/binding-store';
+import { readEngineerPrincipalMapping } from '../../src/effects/engineers/principal-store';
 import { loadEngineerProfile } from '../../src/effects/engineers/profile-store';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
+import {
+  CONTRACT_ENGINEER,
+  createCollaborationFixture,
+  deliveryPlaneDigest,
+  removeFixtureRoots,
+  type CollaborationFixture as Fixture,
+} from '../helpers/collaboration-store-fixture';
 
 const sourceRoot = process.cwd();
 const roots: string[] = [];
 
-const COLLABORATION_ENGINEER = 'engineer:capability.runtime-harness.collaboration';
-const EVALS_ENGINEER = 'engineer:capability.verification.evals-checks';
-const CONTRACT_ENGINEER = 'engineer:capability.workflow-engine.contract-assets';
-
-interface Actor {
-  readonly engineer_id: string;
-  readonly authorization_id: string;
-}
-
-interface Fixture {
-  readonly repoRoot: string;
-  readonly home: string;
-  readonly env: NodeJS.ProcessEnv;
-  readonly actors: readonly Actor[];
-}
-
 afterEach(() => {
-  while (roots.length > 0) rmSync(roots.pop()!, { recursive: true, force: true });
+  removeFixtureRoots(roots);
 });
-
-function git(cwd: string, args: readonly string[]): void {
-  execFileSync('git', [...args], { cwd, stdio: ['ignore', 'ignore', 'pipe'] });
-}
-
-function collaborationProfile(): string {
-  const base = JSON.parse(readFileSync(join(sourceRoot, 'agents/engineers/profiles/verification-evals-checks.json'), 'utf8')) as Record<string, unknown>;
-  return `${JSON.stringify({
-    ...base,
-    engineer_id: COLLABORATION_ENGINEER,
-    capability_id: 'capability.runtime-harness.collaboration',
-    sop_ref: 'agents/engineers/sops/runtime-harness-collaboration.md',
-  }, null, 2)}\n`;
-}
 
 /**
  * A disposable repository carrying the real capability nodes and Engineer
@@ -88,62 +61,7 @@ function collaborationProfile(): string {
  * repo, so the principal store never touches the developer's own state.
  */
 function fixture(mode: string | null = 'shadow'): Fixture {
-  const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-c1-signal-')));
-  const home = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-c1-signal-home-')));
-  roots.push(repoRoot, home);
-  git(repoRoot, ['init', '-q', '-b', 'main']);
-  git(repoRoot, ['config', 'user.email', 'tests@example.invalid']);
-  git(repoRoot, ['config', 'user.name', 'Tests']);
-  mkdirSync(join(repoRoot, '.archcontext/model'), { recursive: true });
-  mkdirSync(join(repoRoot, 'agents'), { recursive: true });
-  mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
-  mkdirSync(join(repoRoot, 'src/core/collaboration'), { recursive: true });
-  mkdirSync(join(repoRoot, 'src/effects/collaboration'), { recursive: true });
-  cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(repoRoot, '.archcontext/model/nodes'), { recursive: true });
-  cpSync(join(sourceRoot, 'agents/engineers'), join(repoRoot, 'agents/engineers'), { recursive: true });
-  writeFileSync(join(repoRoot, 'agents/engineers/profiles/runtime-harness-collaboration.json'), collaborationProfile());
-  writeFileSync(join(repoRoot, 'agents/engineers/sops/runtime-harness-collaboration.md'), '# Collaboration SOP fixture\n');
-  if (mode !== null) {
-    writeFileSync(join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ collaboration: { mode } }, null, 2)}\n`);
-  }
-  writeFileSync(join(repoRoot, 'README.md'), 'fixture\n');
-  writeFileSync(join(repoRoot, 'src/core/collaboration/.keep'), '');
-  writeFileSync(join(repoRoot, 'src/effects/collaboration/.keep'), '');
-  git(repoRoot, ['add', '.']);
-  git(repoRoot, ['commit', '-qm', 'fixture']);
-
-  const env = { ...process.env, REPO_HARNESS_HOME: home };
-  const actors: Actor[] = [
-    { engineer_id: COLLABORATION_ENGINEER, authorization_id: '22222222-2222-4222-8222-222222222222' },
-    { engineer_id: EVALS_ENGINEER, authorization_id: '33333333-3333-4333-8333-333333333333' },
-    { engineer_id: CONTRACT_ENGINEER, authorization_id: '44444444-4444-4444-8444-444444444444' },
-  ];
-  actors.forEach((actor, index) => {
-    const profile = loadEngineerProfile(repoRoot, actor.engineer_id);
-    bindEngineer(repoRoot, {
-      engineer_id: actor.engineer_id,
-      idempotency_key: `bind-${index}`,
-      provider: 'codex',
-      provider_thread_id: `thread-${index}`,
-      host_id: 'local',
-      engineer_contract_revision: profile.engineer_contract_revision,
-      expected_current_digest: null,
-      expected_binding_generation: 0,
-      expected_binding_id: null,
-      expected_engineer_contract_revision: profile.engineer_contract_revision,
-      now: () => '2026-08-29T00:00:00.000Z',
-      binding_id: () => `${index + 1}${`${index + 1}`.repeat(7)}-1111-4111-8111-111111111111`,
-    });
-    const status = readEngineerBindingStatus(repoRoot, actor.engineer_id, profile.engineer_contract_revision);
-    enrollEngineerPrincipal({
-      repository_id: repoHarnessRepoIdFor(repoRoot),
-      authorization_id: actor.authorization_id,
-      binding: status.binding!,
-      created_at: '2026-08-29T00:00:00.000Z',
-      env,
-    });
-  });
-  return { repoRoot, home, env, actors };
+  return createCollaborationFixture(sourceRoot, roots, mode, 'repo-harness-c1-signal');
 }
 
 function publishInput(
@@ -178,36 +96,6 @@ function code(run: () => unknown): string {
     return `other:${(error as { code?: string }).code ?? (error as Error).message}`;
   }
   return 'no-error';
-}
-
-/**
- * A digest over every delivery-plane store under the Git common directory,
- * excluding the collaboration store itself. This is the before/after evidence
- * the Program Verification Matrix asks for on authority preservation.
- *
- * `scope` narrows it to one plane subtree (`coordination/v1`, `engineers/v1`)
- * so a falsifier can name the plane it claims not to have moved.
- */
-function deliveryPlaneDigest(repoRoot: string, scope = ''): string {
-  const root = join(realpathSync(resolveGitCommonDirectory(repoRoot)), 'repo-harness', scope);
-  const hash = createHash('sha256');
-  const walk = (directory: string): void => {
-    for (const entry of readdirSync(directory, { withFileTypes: true }).sort((left, right) => (left.name < right.name ? -1 : 1))) {
-      const absolute = join(directory, entry.name);
-      const scoped = relative(root, absolute);
-      if (scoped === 'collaboration' || scoped.startsWith('collaboration/')) continue;
-      if (entry.isDirectory()) {
-        hash.update(`d ${scoped} `);
-        walk(absolute);
-      } else if (entry.isFile()) {
-        hash.update(`f ${scoped} `);
-        hash.update(readFileSync(absolute));
-        hash.update(' ');
-      }
-    }
-  };
-  if (existsSync(root)) walk(root);
-  return `sha256:${hash.digest('hex')}`;
 }
 
 interface DriverResult {

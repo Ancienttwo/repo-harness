@@ -25,7 +25,7 @@ steps:
     label: Resolve the authenticated principal and fence it against a second read of the principal mapping
     evidence:
       entrypointId: entrypoint.collaboration.actor-derivation
-      sourceSymbol: resolveModuleEngineerActor
+      sourceSymbol: resolveCollaborationActor
       sinkId: sink.collaboration.authenticated-principal
 outcomes:
   - id: published
@@ -58,11 +58,11 @@ outcomes:
       - id: reject-store
         from: collaboration
         to: signal-store
-        label: Fail loud on an unreadable or non-canonical shard rather than serving a healthy empty store
+        label: Validate the 64-hex record id before any path join, then fail loud on an unreadable or non-canonical shard rather than serving a healthy empty store
         evidence:
           entrypointId: entrypoint.collaboration.read
-          sourceSymbol: readPersistedSignal
-          sinkId: sink.collaboration.record-identity
+          sourceSymbol: readCollaborationRecord
+          sinkId: sink.collaboration.record-path-guard
     terminal:
       participant: collaboration
       label: Surface the typed rejection; a republished identity reuses its recorded time instead of re-sampling the clock

@@ -1,0 +1,75 @@
+schemaVersion: archcontext.flow/v1
+id: flow.collaboration.handoff-adoption
+capabilityId: capability.runtime-harness.collaboration
+name: Hand work state to a successor without handing over the right to execute
+applicability: required
+participants:
+  - id: collaboration
+    nodeId: capability.runtime-harness.collaboration
+  - id: engineer-bindings
+    nodeId: capability.runtime-harness.engineer-bindings
+  - id: record-store
+    nodeId: component.collaboration.primary
+steps:
+  - id: gate-handoff-mutation
+    from: collaboration
+    to: record-store
+    label: Refuse every handoff write unless collaboration.mode has been promoted past off
+    evidence:
+      entrypointId: entrypoint.collaboration.handoff-publish
+      sourceSymbol: publishWorkStateHandoff
+      sinkId: sink.collaboration.handoff-mutation-gate
+outcomes:
+  - id: handed-off
+    kind: success
+    label: The attempted paths, dead ends, findings and next actions land as one immutable record
+    steps:
+      - id: build-handoff
+        from: collaboration
+        to: record-store
+        label: Require the four knowledge fields and one complete execution-context branch before any write
+        evidence:
+          entrypointId: entrypoint.collaboration.handoff-publish
+          sourceSymbol: publishWorkStateHandoff
+          sinkId: sink.collaboration.handoff-schema
+    terminal:
+      participant: collaboration
+      label: Return the persisted handoff; knowledge moved and no Task, Lease or Claim byte did
+  - id: adopted
+    kind: success
+    label: Any number of distinct adopters take the same handoff, and none of them gains a writer seat
+    steps:
+      - id: derive-adopter
+        from: collaboration
+        to: engineer-bindings
+        label: Derive the adopter from the authenticated principal and refuse any caller-declared identity
+        evidence:
+          entrypointId: entrypoint.collaboration.handoff-adoption
+          sourceSymbol: adoptWorkStateHandoff
+          sinkId: sink.collaboration.adoption-actor
+      - id: key-receipt
+        from: collaboration
+        to: record-store
+        label: Key the receipt on the handoff digest, the adopter actor digest and the context packet digest so distinct adopters never collide
+        evidence:
+          entrypointId: entrypoint.collaboration.adoption-identity
+          sourceSymbol: handoffAdoptionReceiptId
+          sinkId: sink.collaboration.adoption-triple
+    terminal:
+      participant: collaboration
+      label: Return the receipt; execution succession still runs only through TaskFreeze plus the existing release, takeover and acquire lifecycle
+  - id: refused
+    kind: error
+    label: A disabled collaboration plane refuses knowledge transfer instead of degrading to a silent write
+    steps:
+      - id: gate-adoption-mutation
+        from: collaboration
+        to: record-store
+        label: Refuse the adoption before any record is read or written when collaboration.mode is off
+        evidence:
+          entrypointId: entrypoint.collaboration.handoff-adoption
+          sourceSymbol: adoptWorkStateHandoff
+          sinkId: sink.collaboration.adoption-mutation-gate
+    terminal:
+      participant: collaboration
+      label: Surface the typed collaboration_disabled rejection; the adoption shard is never created

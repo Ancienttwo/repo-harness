@@ -77,10 +77,10 @@ bun src/cli/index.ts init --repo . --dry-run
 - Architecture domain: `runtime-harness`
 - Architecture capability: `collaboration`
 - Architecture module: `docs/architecture/modules/runtime-harness/collaboration.md`
-- Last architecture event: 2026-08-29T21:52:21+0800
-- Last changed path: `tasks/workstreams/runtime-harness/collaboration/collaboration-substrate-program.md`
-- Severity: medium
-- Change type: workstream-sync
+- Last architecture event: 2026-08-30T03:36:30+0800
+- Last changed path: `src/core/collaboration/adoption.ts`
+- Severity: low
+- Change type: source-change
 - Module responsibility: Keep this block aligned with the local boundary described by surrounding human-owned context.
 - Entrypoints: `src/core/collaboration`
 - Allowed dependencies: Follow root `AGENTS.md` / `CLAUDE.md` and this local contract.
@@ -97,7 +97,7 @@ bun src/cli/index.ts init --repo . --dry-run
 - `tasks/workstreams/runtime-harness/collaboration/collaboration-substrate-program.md`
   - status: active
   - current_slice: todo-01
-  - source_plan: plans/plan-20260829-2137-c1-coordination-signal-store.md
+  - source_plan: plans/plan-20260830-0120-c3-work-state-handoff-adoption.md
 
 ## Current Session Projection
 

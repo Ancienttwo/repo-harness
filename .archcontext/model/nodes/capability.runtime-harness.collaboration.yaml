@@ -3,7 +3,7 @@ id: capability.runtime-harness.collaboration
 kind: capability
 name: Collaboration Substrate
 status: active
-summary: Publishes append-only coordination signals with Host-derived identity and recorded time, holding zero Task, Lease, Publication or Acceptance authority.
+summary: Publishes append-only coordination signals, work-state handoffs and non-exclusive handoff adoption receipts over one shared create-once store substrate, with Host-derived identity and recorded time, holding zero Task, Lease, Publication or Acceptance authority.
 responsibilities:
   - Own the shared collaboration mechanics frozen for later rows, namely the actor union, revision-bound scope refs, the reused WorkerResult evidence-ref shape, deterministic record identity and the recorded-time source.
   - Validate CoordinationSignalV1 against an exact key set and content-address it, closing the transport without closing any collaboration vocabulary.
@@ -12,6 +12,9 @@ responsibilities:
   - Persist each signal as one immutable content-checked file under a per-thread lock, with an lstat ancestor walk, explicit idempotency conflict and no healthy-empty fallback.
   - Restrict revision to supersede inside one actor lineage and require every reply, source and supersede reference to already resolve in the same repository.
   - Gate every mutation on collaboration.mode, which defaults to off, and perform no write to any delivery-plane store.
+  - Own one durable create-once publish protocol and one server-side actor derivation as shared substrate, so each record family is a schema plus a shard name rather than a third copy of the crash-safety rules.
+  - Validate WorkStateHandoffV1 with its attempted paths, dead ends, key findings and next actions present, and its execution context complete on exactly one branch of the discriminated union.
+  - Record handoff adoption as non-exclusive by identity, keying each receipt on the handoff digest, the adopter actor digest and the context packet digest, so distinct adopters never exclude one another and grant no Task or Lease.
 source:
   include:
     - "src/core/collaboration/**"
@@ -29,21 +32,59 @@ source:
               path: "src/core/collaboration/signal.ts"
               symbol: "buildCoordinationSignal"
     - id: entrypoint.collaboration.actor-derivation
-      path: "src/effects/collaboration/signal-store.ts"
+      path: "src/effects/collaboration/actor.ts"
       symbols:
-        - name: "resolveModuleEngineerActor"
+        - name: "resolveCollaborationActor"
           sinks:
             - id: sink.collaboration.authenticated-principal
               path: "src/effects/engineers/principal.ts"
               symbol: "resolveEngineerPrincipal"
     - id: entrypoint.collaboration.read
-      path: "src/effects/collaboration/signal-store.ts"
+      path: "src/effects/collaboration/record-store.ts"
       symbols:
-        - name: "readPersistedSignal"
+        - name: "readCollaborationRecord"
           sinks:
-            - id: sink.collaboration.record-identity
-              path: "src/core/collaboration/signal.ts"
-              symbol: "canonicalCoordinationSignalBytes"
+            - id: sink.collaboration.record-path-guard
+              path: "src/effects/collaboration/record-store.ts"
+              symbol: "collaborationRecordPath"
+    - id: entrypoint.collaboration.durable-publish
+      path: "src/effects/collaboration/record-store.ts"
+      symbols:
+        - name: "publishCollaborationRecordDurably"
+          sinks:
+            - id: sink.collaboration.staging-name
+              path: "src/effects/collaboration/record-store.ts"
+              symbol: "collaborationStagingName"
+    - id: entrypoint.collaboration.handoff-publish
+      path: "src/effects/collaboration/handoff-store.ts"
+      symbols:
+        - name: "publishWorkStateHandoff"
+          sinks:
+            - id: sink.collaboration.handoff-mutation-gate
+              path: "src/effects/collaboration/feature-flag.ts"
+              symbol: "assertCollaborationMutationEnabled"
+            - id: sink.collaboration.handoff-schema
+              path: "src/core/collaboration/handoff.ts"
+              symbol: "buildWorkStateHandoff"
+    - id: entrypoint.collaboration.handoff-adoption
+      path: "src/effects/collaboration/adoption-store.ts"
+      symbols:
+        - name: "adoptWorkStateHandoff"
+          sinks:
+            - id: sink.collaboration.adoption-mutation-gate
+              path: "src/effects/collaboration/feature-flag.ts"
+              symbol: "assertCollaborationMutationEnabled"
+            - id: sink.collaboration.adoption-actor
+              path: "src/effects/collaboration/actor.ts"
+              symbol: "resolveCollaborationActor"
+    - id: entrypoint.collaboration.adoption-identity
+      path: "src/core/collaboration/adoption.ts"
+      symbols:
+        - name: "handoffAdoptionReceiptId"
+          sinks:
+            - id: sink.collaboration.adoption-triple
+              path: "src/core/collaboration/adoption.ts"
+              symbol: "deriveHandoffAdoptionReceiptId"
     - id: entrypoint.collaboration.shared-mechanics
       path: "src/core/collaboration/signal.ts"
       symbols:
@@ -60,4 +101,5 @@ extensions:
   verification:
     - "bun test tests/unit/collaboration-common.test.ts tests/unit/collaboration-signal.test.ts tests/unit/collaboration-authority-baseline.test.ts tests/effects/collaboration-signal-store.test.ts --timeout 60000"
     - "bun test tests/unit/collaboration-hotspot.test.ts tests/unit/collaboration-thread-projection.test.ts tests/unit/collaboration-context-packet.test.ts --timeout 60000"
+    - "bun test tests/unit/collaboration-handoff.test.ts tests/unit/collaboration-adoption.test.ts tests/effects/collaboration-handoff-store.test.ts tests/effects/collaboration-adoption-store.test.ts --timeout 60000"
     - "bun run check:type"
