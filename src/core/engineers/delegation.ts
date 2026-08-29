@@ -231,6 +231,16 @@ export interface WorkerRunRefV1 {
   readonly run_ref_sha256: string;
 }
 
+/**
+ * The `{ ref, sha256 }` evidence reference `WorkerResultV1` carries. Named so
+ * that the collaboration plane's `ArtifactRefV1` can alias this exact type and
+ * run this exact validator instead of growing a second equivalent shape.
+ */
+export interface WorkerEvidenceRefV1 {
+  readonly ref: string;
+  readonly sha256: string;
+}
+
 export interface WorkerResultV1 {
   readonly protocol: typeof DELEGATION_PROTOCOL;
   readonly kind: typeof WORKER_RESULT_KIND;
@@ -240,7 +250,7 @@ export interface WorkerResultV1 {
   readonly logical_role: string;
   readonly runtime_observation_sha256: string;
   readonly read_only_sandbox_receipt_sha256: string;
-  readonly evidence_refs: readonly { readonly ref: string; readonly sha256: string }[];
+  readonly evidence_refs: readonly WorkerEvidenceRefV1[];
   /** Worker prose is evidence only; no authority transition consumes it here. */
   readonly untrusted_claims: readonly string[];
   readonly result_sha256: string;
@@ -710,15 +720,29 @@ export function validateWorkerRunRef(value: unknown): WorkerRunRefV1 {
 
 export const canonicalWorkerRunRefBytes = (value: WorkerRunRefV1): string => canonical(value, validateWorkerRunRef);
 
-export function buildWorkerResult(input: Omit<WorkerResultV1, 'protocol' | 'kind' | 'result_sha256'>): WorkerResultV1 {
-  const claims = exactArray(input.untrusted_claims, 'untrusted_claims', (item) => required(item, 'untrusted_claim', 4096), 64);
-  const refs = exactArray(input.evidence_refs, 'evidence_refs', (item) => {
+/**
+ * The single validator for the `WorkerResultV1` evidence-ref shape. Exported so
+ * the collaboration plane reuses it verbatim rather than re-deriving the same
+ * `{ ref, sha256 }` contract; `maximum` lets a caller impose a tighter count
+ * bound without changing the per-entry rules.
+ */
+export function validateWorkerEvidenceRefs(
+  value: unknown,
+  field: string,
+  maximum: number,
+): readonly WorkerEvidenceRefV1[] {
+  return exactArray(value, field, (item) => {
     const entry = record(item, 'evidence_ref');
     assertMessageExactKeys(entry, ['ref', 'sha256'], 'evidence_ref', invalid);
     const ref = required(entry.ref, 'evidence_ref.ref', 2048);
     if (!RESULT_REF.test(ref)) invalid('evidence_ref.ref is invalid');
     return Object.freeze({ ref, sha256: sha(entry.sha256, 'evidence_ref.sha256') });
-  }, 64);
+  }, maximum);
+}
+
+export function buildWorkerResult(input: Omit<WorkerResultV1, 'protocol' | 'kind' | 'result_sha256'>): WorkerResultV1 {
+  const claims = exactArray(input.untrusted_claims, 'untrusted_claims', (item) => required(item, 'untrusted_claim', 4096), 64);
+  const refs = validateWorkerEvidenceRefs(input.evidence_refs, 'evidence_refs', 64);
   const basis = {
     protocol: DELEGATION_PROTOCOL, kind: WORKER_RESULT_KIND, delegation_id: uuid(input.delegation_id, 'delegation_id'), worker_run_id: uuid(input.worker_run_id, 'worker_run_id'), worker_run_ref_sha256: sha(input.worker_run_ref_sha256, 'worker_run_ref_sha256'), logical_role: role(input.logical_role), runtime_observation_sha256: sha(input.runtime_observation_sha256, 'runtime_observation_sha256'), read_only_sandbox_receipt_sha256: sha(input.read_only_sandbox_receipt_sha256, 'read_only_sandbox_receipt_sha256'), evidence_refs: refs, untrusted_claims: claims,
   } as const;
