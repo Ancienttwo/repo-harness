@@ -29,7 +29,7 @@ describe("AXR7 repo-harness architecture consumer", () => {
     expect(capabilities).toHaveLength(22);
     expect(components).toHaveLength(22);
     expect(relations).toHaveLength(39);
-    expect(flows).toHaveLength(24);
+    expect(flows).toHaveLength(25);
     expect(flows.every((flow) => flow.schemaVersion === "archcontext.flow/v1")).toBe(true);
     expect(flows.every((flow) => flow.applicability === "required")).toBe(true);
     expect(new Set(flows.map((flow) => flow.capabilityId))).toEqual(new Set(capabilities.map((node) => node.id)));

@@ -185,6 +185,15 @@ The helper's own collision rule kept C0's card at the unprefixed name intact.
 Severity `low` / change type `source-change` is the classifier's output and was
 not overridden.
 
+**One repo-wide coupling the gate does not cover.** Adding the flow turned
+`tests/architecture-projection-e2e.test.ts` red: AXR7 pins the model inventory
+(`expect(flows).toHaveLength(24)`), so a legitimate new flow is a red test until
+the count moves. The count was bumped to 25; the assertion that every capability
+maps to at least one required flow is unchanged and still passes, and multiple
+flows per capability was already the norm (`mcp-sidecar` has three). Neither the
+contract's exit criteria nor `verify-sprint --prepare-acceptance` runs that file,
+so an archcontext model change needs the architecture suites run explicitly.
+
 ## Tradeoffs Considered
 
 | Option | Decision | Reason |

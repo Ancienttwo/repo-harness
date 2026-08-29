@@ -151,6 +151,9 @@ allowed_paths:
   - AGENTS.md
   - CLAUDE.md
   - tasks/lessons.md
+  # pins the archcontext model inventory; C3 adds one required flow for the
+  # handoff and adoption families, so the flow count moves 24 -> 25.
+  - tests/architecture-projection-e2e.test.ts
 ```
 
 ## Evidence Requirements
