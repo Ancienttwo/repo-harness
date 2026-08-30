@@ -1,6 +1,6 @@
 # Plan: C5 TaskFreeze and explicit takeover succession integration
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260830-0858
 > **Slug**: c5-taskfreeze-succession-integration
 > **Planning Source**: repo-harness-sprint

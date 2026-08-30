@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-30 10:13
+> **Related Plan**: plans/archive/plan-20260830-0858-c5-taskfreeze-succession-integration.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260830-1013
+
 # Task Contract: c5-taskfreeze-succession-integration
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260830-0858-c5-taskfreeze-succession-integration.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
