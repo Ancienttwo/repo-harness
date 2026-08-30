@@ -1070,6 +1070,14 @@ describe('mcp http transport', () => {
         'engineer_thread_effect_status',
         'engineer_interface_change_propose',
         'engineer_interface_change_transition',
+        // C7's collaboration block, served over the same transport and bounded by
+        // the same authenticated principal this session already carries.
+        'collaboration_exchange',
+        'collaboration_threads',
+        'collaboration_packet',
+        'collaboration_signal_post',
+        'collaboration_handoff_publish',
+        'collaboration_handoff_adopt',
       ]);
       const unmapped = await call(firstHeaders, 3, 'tools/call', { name: 'engineer_status', arguments: {} });
       expect(JSON.parse(unmapped.result.content[0].text)).toMatchObject({ error: { code: 'engineer_principal_unmapped' } });
