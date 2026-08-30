@@ -1,6 +1,6 @@
 # Plan: C6 collaboration-centric Work Exchange and Context Packet
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260830-1031
 > **Slug**: c6-collaborative-work-exchange-context-packet
 > **Planning Source**: repo-harness-sprint
