@@ -176,21 +176,21 @@ exit_criteria:
     - repo-harness run check-task-workflow --strict
     - bun scripts/inspect-project-state.ts --repo . --format text
     - bun src/cli/index.ts init --repo . --dry-run
-  criterion_reuse:
-    tests_pass:
-      - tests/unit/c9-real-multi-agent-canary-and-multi-seat-decision.test.ts
-      - tests/effects/collaboration-contribution-collector.test.ts
-    commands_succeed:
-      - bun test tests/unit/c9-real-multi-agent-canary-and-multi-seat-decision.test.ts tests/effects/collaboration-contribution-collector.test.ts --timeout 60000
-      - bun run check:type
-      - bun run build:operator-web
-      - bun test --timeout 60000
-      - bash scripts/check-deploy-sql-order.sh
-      - bash scripts/check-architecture-sync.sh
-      - bash scripts/check-task-sync.sh
-      - repo-harness run check-task-workflow --strict
-      - bun scripts/inspect-project-state.ts --repo . --format text
-      - bun src/cli/index.ts init --repo . --dry-run
+criterion_reuse:
+  tests_pass:
+    - tests/unit/c9-real-multi-agent-canary-and-multi-seat-decision.test.ts
+    - tests/effects/collaboration-contribution-collector.test.ts
+  commands_succeed:
+    - bun test tests/unit/c9-real-multi-agent-canary-and-multi-seat-decision.test.ts tests/effects/collaboration-contribution-collector.test.ts --timeout 60000
+    - bun run check:type
+    - bun run build:operator-web
+    - bun test --timeout 60000
+    - bash scripts/check-deploy-sql-order.sh
+    - bash scripts/check-architecture-sync.sh
+    - bash scripts/check-task-sync.sh
+    - repo-harness run check-task-workflow --strict
+    - bun scripts/inspect-project-state.ts --repo . --format text
+    - bun src/cli/index.ts init --repo . --dry-run
 ```
 
 ## Acceptance Notes (Human Review)
