@@ -84,6 +84,8 @@ import { validateClaimActorReceiptLive } from './claim-actor-store';
 import { type WorkEnvelopeV1 } from '../fleet/acquire';
 
 export const DELEGATED_RUN_STORE_RELATIVE_ROOT = 'repo-harness/delegated-runs/v1';
+/** Codex JSONL includes tool events before the final message and usage receipt. */
+export const CODEX_DELEGATED_RUN_MAX_OUTPUT_BYTES = 1024 * 1024;
 const STORE_COMPONENTS = Object.freeze(['profiles', 'capabilities', 'packets', 'envelopes', 'admissions', 'intents', 'launch-claims', 'observations', 'process-receipts', 'run-refs', 'results', 'current'] as const);
 const SHA = /^sha256:[0-9a-f]{64}$/u;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -892,7 +894,14 @@ export function dispatchDelegatedRun(input: DispatchDelegatedRunInput): Delegate
       current = appendObservation(repoRoot, current, {
         dispatch_id: id, intent_sha256: beforeState.intent.intent_sha256, worker_run_ref: null, runtime_principal_id: null, state: 'running', failure_class: 'none', observed_capabilities_sha256: beforeState.capability.capability_sha256, protected_before_snapshot_sha256: beforeSnapshot, protected_after_snapshot_sha256: null, process_receipt_sha256: null, observed_at: input.observed_at,
       });
-      outcome = runProcess(executable, argv, { cwd: repoRoot, timeoutMs: 120_000, processGroup: true, env: childEnv.env, inheritEnv: false });
+      outcome = runProcess(executable, argv, {
+        cwd: repoRoot,
+        timeoutMs: 120_000,
+        maxOutputBytes: CODEX_DELEGATED_RUN_MAX_OUTPUT_BYTES,
+        processGroup: true,
+        env: childEnv.env,
+        inheritEnv: false,
+      });
       input.crash_hook?.('after_host_action_before_receipt');
     } catch (_error) {
       const unknown = noActionReconciliation(repoRoot, current, input.observed_at);

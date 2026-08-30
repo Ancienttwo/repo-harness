@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:156c45048e5718a90fb51bc32b7094d9f6fbcf5da9f61fd8975a9923c4c201a8" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:f1cb1be59785e9f37cde40f732b8aa9ce5dc36eb04545870c272eba37c5fb623" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:3ad5f00afd07951d2b7f4bc5b3200dcb4497e1eff8ba6d81ef4104a97fafaca9" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:130e1fcd74820dd5d29659c4bb7b72e9f59f66e0ad300ccb1478ac34de28f69c" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
@@ -407,6 +407,12 @@
         "description": "calls"
       },
       {
+        "id": "relation.collaboration.engineer-scheduling",
+        "sourceId": "capability.runtime-harness.collaboration",
+        "destinationId": "capability.runtime-harness.engineer-scheduling",
+        "description": "calls"
+      },
+      {
         "id": "relation.collaboration.primary",
         "sourceId": "capability.runtime-harness.collaboration",
         "destinationId": "component.collaboration.primary",
@@ -416,6 +422,12 @@
         "id": "relation.contract-assets.primary",
         "sourceId": "capability.workflow-engine.contract-assets",
         "destinationId": "component.contract-assets.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.delegated-runs.collaboration",
+        "sourceId": "capability.runtime-harness.delegated-runs",
+        "destinationId": "capability.runtime-harness.collaboration",
         "description": "calls"
       },
       {
@@ -524,6 +536,12 @@
         "id": "relation.interface-change.primary",
         "sourceId": "capability.runtime-harness.interface-change",
         "destinationId": "component.interface-change.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.mcp-sidecar.collaboration",
+        "sourceId": "capability.runtime-harness.mcp-sidecar",
+        "destinationId": "capability.runtime-harness.collaboration",
         "description": "calls"
       },
       {

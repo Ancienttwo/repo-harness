@@ -184,6 +184,20 @@ Harness 是指围绕 Agent 构建的测试、验证与约束基础设施，这�
 
 ## 3. 上下文工程为什么决定稳定性
 
+### repo-harness 的三读者反例
+
+repo-harness C9 把同一个只读协议追踪分别交给单 Agent baseline，以及
+「一个 Module Engineer + 三个并行只读 Worker + signal/handoff」treatment。
+三次隔离配对里，baseline 得到 9 个冻结 rubric 合格 finding；加入真实
+successor run 的 treatment 得到 12 个，却消耗约 3.51 倍 input tokens，且
+四分之三的 Worker signal 没有进入后继者 context。真实 handoff restart
+只在一组三组里超过 baseline first-useful latency，没有形成重复瓶颈证据。
+
+这个结果说明多 Agent 结构本身不构成收益证明。先冻结 usefulness、隔离
+两臂、记录 provider usage 和 authority digest，再决定是否增加持久席位；
+否则只是把并行和交接的成本包装成架构。完整数据见
+`docs/researches/20260830-c9-real-multi-agent-canary.md`。
+
 Transformer 的注意力复杂度是 O(n²)，上下文越长，关键信号越容易被噪声稀释，实践里最常见的失效模式是无关内容一旦占到上下文的大头，Agent 的决策质量就会明显下滑，这类现象通常被叫作 Context Rot，很多看起来像模型能力不足的问题，往往可以追溯到上下文组织不当。
 
 ### 上下文为什么要分层

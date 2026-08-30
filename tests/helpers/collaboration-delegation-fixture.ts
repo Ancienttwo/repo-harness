@@ -92,7 +92,9 @@ if [ "$1" = "sandbox" ]; then
 fi
 if [ "$1" = "exec" ]; then
   if [ -f "$PWD/.fake-exec-fail" ]; then exit 7; fi
-  if [ -f "$PWD/.fake-stdout" ]; then /bin/cat "$PWD/.fake-stdout"; fi
+  if [ -f "$PWD/.fake-stdout" ]; then
+    ${JSON.stringify(process.execPath)} -e 'const fs = require("fs"); const text = fs.readFileSync(process.argv[1], "utf8"); console.log(JSON.stringify({type:"thread.started",thread_id:"00000000-0000-4000-8000-000000000001"})); console.log(JSON.stringify({type:"turn.started"})); console.log(JSON.stringify({type:"item.completed",item:{id:"item_0",type:"agent_message",text}})); console.log(JSON.stringify({type:"turn.completed",usage:{input_tokens:100,cached_input_tokens:10,output_tokens:20}}));' "$PWD/.fake-stdout"
+  fi
   exit 0
 fi
 exit 64
@@ -218,6 +220,7 @@ export function delegationParticipant(
   fixture: DelegationSubject,
   index: number,
   goal?: string,
+  allowedReadPaths: readonly string[] = ['README.md'],
 ): DelegationParticipant {
   const delegationId = `${`${index + 1}`.repeat(8)}-2222-4222-8222-222222222222`;
   const packet = buildDelegationExecutionPacket({
@@ -227,7 +230,7 @@ export function delegationParticipant(
     model: fixture.role_profile.model,
     role_instructions: readLogicalRoleInstructions(fixture.repoRoot, fixture.role_profile),
     goal: goal ?? `Participant ${index} reads and reports.`,
-    allowed_read_paths: ['README.md'],
+    allowed_read_paths: allowedReadPaths,
     max_turns: 1,
     max_depth: 0,
     return_contract: 'WorkerResultV1',

@@ -3,10 +3,17 @@ import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, extname, isAbsolute, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import type { OperatorCollaborationSnapshotV1 } from '../../core/operator/collaboration-snapshot';
 import {
   projectOperatorFleetSnapshot,
   type OperatorFleetSnapshotV1,
 } from '../../core/operator/fleet-snapshot';
+import {
+  OperatorCollaborationError,
+  readOperatorCollaborationSnapshot,
+  type OperatorCollaborationErrorCode,
+  type ReadOperatorCollaborationSnapshotInput,
+} from './collaboration';
 import {
   collectFleetBoard,
   FleetBoardError,
@@ -32,6 +39,8 @@ export const OPERATOR_DEFAULT_TIMEOUT_MS = 30_000 as const;
 const OPERATOR_DIAGNOSTIC_ACTION = 'Run `repo-harness fleet board --json` for diagnostics and retry.';
 const OPERATOR_ASSET_ACTION = 'Build the operator UI with `bun run build:operator-web` and retry.';
 const OPERATOR_REOBSERVE_ACTION = 'Refresh the board to re-observe the task, then retry.';
+const OPERATOR_ADOPT_ACTION = 'Adopt the repository with `repo-harness adopt`, then refresh the board.';
+const OPERATOR_COLLABORATION_ACTION = 'Check the repository collaboration store, then refresh the board.';
 
 /**
  * The transport mirror of the task-message body limit. The protocol constant
@@ -45,10 +54,47 @@ export const OPERATOR_TASK_MESSAGE_BODY_MAX_BYTES = TASK_MESSAGE_BODY_MAX_BYTES;
  */
 const OPERATOR_TASK_MESSAGE_REQUEST_MAX_BYTES = TASK_MESSAGE_BODY_MAX_BYTES * 4;
 const TASK_MESSAGE_ROUTE = /^\/api\/v1\/fleet\/tasks\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/([0-9a-f]{64})\/messages$/u;
+/**
+ * The repository id is matched loosely and resolved strictly, the same split the
+ * task-message route already uses: the registry is the authority on which ids
+ * exist, and duplicating its shape here would be a second opinion about it.
+ */
+const COLLABORATION_SNAPSHOT_ROUTE = /^\/api\/v1\/collaboration\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/snapshot$/u;
 const DEFAULT_STATIC_ROOT = resolve(
   dirname(fileURLToPath(import.meta.url)),
   '../../../dist/operator-ui',
 );
+
+export interface OperatorRouteV1 {
+  readonly id: string;
+  readonly method: 'GET' | 'POST';
+  /** The literal path, or the route regexp's source for a parameterized one. */
+  readonly pattern: string;
+  /** True only for a route that can change repository state. */
+  readonly write: boolean;
+}
+
+/**
+ * The complete route surface, as a value.
+ *
+ * The program's standing boundary is that the operator board has exactly one
+ * browser write and it is the task message. Probing a running server proves that
+ * the routes which exist behave, but it cannot prove which routes exist; this
+ * inventory is what makes the claim structural, so adding a route without
+ * declaring it here is caught by the same test that counts the writes.
+ */
+export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
+  Object.freeze({ id: 'health', method: 'GET', pattern: '/healthz', write: false }),
+  Object.freeze({ id: 'fleet_snapshot', method: 'GET', pattern: '/api/v1/fleet/snapshot', write: false }),
+  Object.freeze({
+    id: 'collaboration_snapshot',
+    method: 'GET',
+    pattern: COLLABORATION_SNAPSHOT_ROUTE.source,
+    write: false,
+  }),
+  Object.freeze({ id: 'static_asset', method: 'GET', pattern: '/*', write: false }),
+  Object.freeze({ id: 'task_message', method: 'POST', pattern: TASK_MESSAGE_ROUTE.source, write: true }),
+] as const);
 
 export type OperatorServerHost = '127.0.0.1' | '::1';
 
@@ -63,6 +109,9 @@ export interface OperatorServerOptions {
   readonly collect_fleet_board?: (
     options?: FleetBoardCollectorOptions,
   ) => Promise<FleetBoardSnapshotV1>;
+  readonly read_collaboration_snapshot?: (
+    input: ReadOperatorCollaborationSnapshotInput,
+  ) => OperatorCollaborationSnapshotV1 | Promise<OperatorCollaborationSnapshotV1>;
   readonly send_task_message?: (
     input: SendOperatorTaskMessageInput,
   ) => SendOperatorTaskMessageResult | Promise<SendOperatorTaskMessageResult>;
@@ -195,6 +244,55 @@ function publicFleetError(error: unknown): {
   return {
     status: 503,
     body: errorBody('fleet_snapshot_unavailable', 'Fleet snapshot is unavailable.'),
+  };
+}
+
+interface PublicFailure {
+  readonly status: number;
+  readonly message: string;
+  readonly next_action: string;
+}
+
+/**
+ * Every collaboration read failure as a fixed public sentence. The effect's own
+ * message names a repository id and its cause carries a store path and a
+ * provider diagnostic; the transport keeps the typed code and drops both.
+ */
+const COLLABORATION_FAILURES: Readonly<Record<OperatorCollaborationErrorCode, PublicFailure>> = Object.freeze({
+  registry_unavailable: {
+    status: 503,
+    message: 'The fleet registry cannot be read.',
+    next_action: OPERATOR_DIAGNOSTIC_ACTION,
+  },
+  repository_not_found: {
+    status: 404,
+    message: 'The repository is not in the fleet registry.',
+    next_action: OPERATOR_ADOPT_ACTION,
+  },
+  collaboration_snapshot_unavailable: {
+    status: 503,
+    message: 'The collaboration store cannot be read.',
+    next_action: OPERATOR_COLLABORATION_ACTION,
+  },
+});
+
+function publicCollaborationError(error: unknown): {
+  readonly status: number;
+  readonly body: OperatorErrorResponseV1;
+} {
+  if (error instanceof OperatorCollaborationError) {
+    const failure = COLLABORATION_FAILURES[error.code];
+    if (failure) {
+      return { status: failure.status, body: errorBody(error.code, failure.message, failure.next_action) };
+    }
+  }
+  return {
+    status: 503,
+    body: errorBody(
+      'collaboration_snapshot_unavailable',
+      'The collaboration store cannot be read.',
+      OPERATOR_COLLABORATION_ACTION,
+    ),
   };
 }
 
@@ -405,6 +503,7 @@ export async function startOperatorServer(
   const timeoutMs = assertCollectionOption(options.timeout_ms, 'timeout_ms', 1_000, 30_000);
   const staticRoot = safePathRoot(options.static_root ?? DEFAULT_STATIC_ROOT);
   const collect = options.collect_fleet_board ?? collectFleetBoard;
+  const readCollaboration = options.read_collaboration_snapshot ?? readOperatorCollaborationSnapshot;
   const send = options.send_task_message ?? sendOperatorTaskMessage;
   let inFlight: Promise<OperatorFleetSnapshotV1> | null = null;
 
@@ -559,6 +658,22 @@ export async function startOperatorServer(
         sendJson(response, 200, await snapshot(), headOnly);
       } catch (error) {
         const failure = publicFleetError(error);
+        sendJson(response, failure.status, failure.body, headOnly);
+      }
+      return;
+    }
+
+    const collaborationRoute = COLLABORATION_SNAPSHOT_ROUTE.exec(pathname);
+    if (collaborationRoute !== null) {
+      // POST reached 405 above; this route reads and nothing else.
+      try {
+        const collaboration = await readCollaboration({
+          env: options.env,
+          repository_id: collaborationRoute[1]!,
+        });
+        sendJson(response, 200, collaboration, headOnly);
+      } catch (error) {
+        const failure = publicCollaborationError(error);
         sendJson(response, failure.status, failure.body, headOnly);
       }
       return;

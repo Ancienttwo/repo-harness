@@ -34,7 +34,7 @@ import {
  * travels on every rejection so a failure can be attributed to a specific
  * reader rather than to "parsing".
  */
-export const PROVIDER_OUTPUT_ADAPTER_VERSION = 'codex-exec-stdout/v1' as const;
+export const PROVIDER_OUTPUT_ADAPTER_VERSION = 'codex-exec-jsonl/v1' as const;
 
 /**
  * The marker pair a Worker wraps its draft in, reusing the convention
@@ -58,6 +58,18 @@ export const CONTRIBUTION_ADAPTER_REJECTION_REASONS = [
 ] as const;
 export type ContributionAdapterRejectionReason =
   (typeof CONTRIBUTION_ADAPTER_REJECTION_REASONS)[number];
+
+export interface CodexExecUsageV1 {
+  readonly input_tokens: number;
+  readonly cached_input_tokens: number;
+  readonly output_tokens: number;
+}
+
+export interface CodexExecStructuredOutputV1 {
+  readonly thread_id: string;
+  readonly final_response: string;
+  readonly usage: CodexExecUsageV1;
+}
 
 /**
  * A parse refusal.
@@ -88,8 +100,65 @@ function reject(
   throw new CollaborationContributionRejection(reason, message, PROVIDER_OUTPUT_ADAPTER_VERSION, cause);
 }
 
+function record(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function nonNegativeInteger(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+/** Decode the one frozen provider wire emitted by `CODEX_READ_ONLY_ARGV_TEMPLATE`. */
+export function parseCodexExecStructuredOutput(stdout: string): CodexExecStructuredOutputV1 {
+  const lines = stdout.split('\n').map((line) => line.trim()).filter(Boolean);
+  if (lines.length === 0) reject('adapter_payload_not_json', 'provider output is not Codex JSONL');
+  const events = lines.map((line, index) => {
+    try {
+      const parsed = record(JSON.parse(line));
+      if (parsed === null || typeof parsed.type !== 'string') {
+        reject('adapter_payload_not_json', 'provider output contains a malformed Codex JSONL event');
+      }
+      return parsed;
+    } catch (error) {
+      if (error instanceof CollaborationContributionRejection) throw error;
+      reject('adapter_payload_not_json', `provider output is not Codex JSONL at line ${index + 1}`, error);
+    }
+  });
+  const starts = events.filter((event) => event.type === 'thread.started');
+  const completions = events.filter((event) => event.type === 'turn.completed');
+  const messages = events.flatMap((event) => {
+    if (event.type !== 'item.completed') return [];
+    const item = record(event.item);
+    return item?.type === 'agent_message' && typeof item.text === 'string' ? [item.text] : [];
+  });
+  if (starts.length !== 1 || completions.length !== 1 || messages.length === 0) {
+    reject('adapter_payload_not_json', 'provider output lacks one complete Codex turn and final agent message');
+  }
+  const threadId = starts[0]!.thread_id;
+  const usage = record(completions[0]!.usage);
+  const inputTokens = nonNegativeInteger(usage?.input_tokens);
+  const cachedInputTokens = nonNegativeInteger(usage?.cached_input_tokens);
+  const outputTokens = nonNegativeInteger(usage?.output_tokens);
+  if (typeof threadId !== 'string' || threadId.length === 0
+    || inputTokens === null || cachedInputTokens === null || outputTokens === null) {
+    reject('adapter_payload_not_json', 'provider output carries malformed Codex identity or usage');
+  }
+  return Object.freeze({
+    thread_id: threadId,
+    final_response: messages[messages.length - 1]!,
+    usage: Object.freeze({
+      input_tokens: inputTokens,
+      cached_input_tokens: cachedInputTokens,
+      output_tokens: outputTokens,
+    }),
+  });
+}
+
 /**
- * Extract and validate a draft from raw provider stdout.
+ * Extract and validate a draft from the final agent message decoded from the
+ * provider stream.
  *
  * Exported separately from the store-reading entrypoint so the framing rules can
  * be proven directly against bytes, without a delegated run having to exist.
@@ -131,7 +200,7 @@ export function parseContributionDraftFromStdout(stdout: string): CollaborationC
       'draft_invalid',
       error instanceof CollaborationError
         ? `contribution draft is invalid: ${error.message}`
-        : 'contribution draft is invalid',
+        : `contribution draft is invalid: ${error instanceof Error ? error.message : String(error)}`,
       error,
     );
   }
@@ -143,6 +212,8 @@ export interface PersistedProviderOutput {
   readonly observed_at: string;
   readonly stdout_sha256: string;
   readonly adapter_version: typeof PROVIDER_OUTPUT_ADAPTER_VERSION;
+  readonly provider_thread_id: string;
+  readonly usage: CodexExecUsageV1;
 }
 
 /**
@@ -159,10 +230,13 @@ export function readContributionDraftFromPersistedOutput(
   const root = realpathSync(repoRoot);
   const receipt = readCodexProcessReceipt(root, processReceiptSha256);
   const stdout = readDelegatedRunEvidenceBlob(root, receipt.stdout_ref, receipt.stdout_sha256);
+  const structured = parseCodexExecStructuredOutput(stdout.toString('utf8'));
   return Object.freeze({
-    draft: parseContributionDraftFromStdout(stdout.toString('utf8')),
+    draft: parseContributionDraftFromStdout(structured.final_response),
     observed_at: receipt.observed_at,
     stdout_sha256: receipt.stdout_sha256,
     adapter_version: PROVIDER_OUTPUT_ADAPTER_VERSION,
+    provider_thread_id: structured.thread_id,
+    usage: structured.usage,
   });
 }

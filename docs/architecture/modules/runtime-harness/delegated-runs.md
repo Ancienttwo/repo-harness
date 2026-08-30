@@ -1,6 +1,6 @@
 # runtime-harness/delegated-runs 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-delegated-runs" sourceDigest="sha256:1352fab7930b16404a1eac2accdea73ebd3dd6524d7945a3f81591fa978b6aa7" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:5b18cf3cdeead54b3a9d3de96c855bb0055d739bf691d98895c55e1ec358f309" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-delegated-runs" sourceDigest="sha256:e0b44b51a2d0ac8a9b11c23297a95300e70b505b7747a50818a8976dc336d002" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:9f93c573b327da6b4e45c16091495fe72d596719ade4e4c6dcdf9112468bc15d" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.delegated-runs`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/delegation.ts`、`src/effects/engineers/delegated-run-store.ts`、`src/cli/commands/delegation.ts`
@@ -33,6 +33,7 @@ flowchart LR
 
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
+| `entrypoint.delegated-runs.dispatch-command` | `src/cli/commands/delegation.ts#dispatchWithCollaborationFence` | `sink.delegated-runs.collaboration-dispatch-fence` → `src/effects/collaboration/context-delivery.ts#fenceCollaborationDispatch`、`sink.delegated-runs.dispatch-host-action` → `src/effects/engineers/delegated-run-store.ts#dispatchDelegatedRun` |
 | `entrypoint.delegated-runs.parent-authority` | `src/effects/engineers/delegated-run-store.ts#validateDelegationParent` | `sink.delegated-runs.parent-authority` → `src/effects/engineers/claim-actor-store.ts#validateClaimActorReceiptLive` |
 | `entrypoint.delegated-runs.intent` | `src/effects/engineers/delegated-run-store.ts#persistIntent` | `sink.delegated-runs.intent-schema` → `src/core/engineers/delegation.ts#canonicalDelegatedRunIntentBytes` |
 | `entrypoint.delegated-runs.observation` | `src/effects/engineers/delegated-run-store.ts#appendObservation` | `sink.delegated-runs.observation` → `src/core/engineers/delegation.ts#buildDelegatedRunObservation` |
@@ -48,6 +49,7 @@ flowchart LR
 
 出向關係:
 
+- `calls` → `capability.runtime-harness.collaboration` — Run the collaboration dispatch fence as a pre-step before the unchanged read-only host action, refusing a run whose injected coordination context no binding accounts for
 - `calls` → `capability.runtime-harness.engineer-bindings` — Revalidate the exact current parent ClaimActorReceipt, WorkEnvelope and Engineer Binding before delegation admission
 - `calls` → `component.delegated-runs.primary` — Persist immutable capability, admission, launch, process and result evidence without creating runtime or task authority
 

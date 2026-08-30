@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.delegated-runs.collaboration
+kind: calls
+source: capability.runtime-harness.delegated-runs
+target: capability.runtime-harness.collaboration
+intent: "Run the collaboration dispatch fence as a pre-step before the unchanged read-only host action, refusing a run whose injected coordination context no binding accounts for"

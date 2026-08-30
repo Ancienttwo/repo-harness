@@ -2,7 +2,9 @@ import { Command } from 'commander';
 import { lstatSync, readFileSync, realpathSync } from 'fs';
 import { isAbsolute, relative, resolve } from 'path';
 
+import { CollaborationError } from '../../core/collaboration/common';
 import { DelegationError, buildDelegationEnvelope, buildDelegationExecutionPacket } from '../../core/engineers/delegation';
+import { fenceCollaborationDispatch } from '../../effects/collaboration/context-delivery';
 import {
   DelegatedRunStoreError,
   admitReadOnlyDelegation,
@@ -34,7 +36,10 @@ function output(value: unknown, format: Format, label: string, digest?: string):
 }
 
 function outputError(error: unknown): void {
-  const code = error instanceof DelegationError || error instanceof DelegatedRunStoreError ? error.code : 'delegation_invalid';
+  const code = error instanceof DelegationError || error instanceof DelegatedRunStoreError
+    || error instanceof CollaborationError
+    ? error.code
+    : 'delegation_invalid';
   const message = error instanceof Error ? error.message : String(error);
   process.stderr.write(`${JSON.stringify({ ok: false, error: code, message })}\n`);
   process.exitCode = 1;
@@ -139,6 +144,29 @@ function parseCapability(path: string): ReadOnlyCapabilityRequest {
   };
 }
 
+/**
+ * The dispatch verb, as a named handler.
+ *
+ * C7 wires C6's fence to its first production call site. It is a pre-step rather
+ * than an edit to `dispatchDelegatedRun()` so the delegation plane keeps one
+ * dispatch semantics, and it is a module-level function rather than an inline
+ * `.action()` closure so both edges — into the collaboration fence and into the
+ * host action — are direct statements a reader and the architecture flow proof
+ * can follow.
+ *
+ * `fenceCollaborationDispatch()` returns null for a run that carries neither a
+ * binding nor an untrusted coordination marker, which is every dispatch this
+ * command served before this row.
+ */
+function dispatchWithCollaborationFence(options: { input: string; format: Format }): void {
+  try {
+    const request = parseDispatch(options.input);
+    fenceCollaborationDispatch({ repo_root: request.repo_root, dispatch_id: request.dispatch_id });
+    const value = dispatchDelegatedRun(request);
+    output(value, options.format, 'DelegatedRunObservationV1', value.current.observation_sha256);
+  } catch (error) { outputError(error); }
+}
+
 export function buildDelegationCommand(): Command {
   const command = new Command('delegation').description('Admit and execute one bounded Codex CLI read-only delegation');
   command.command('profile')
@@ -180,12 +208,7 @@ export function buildDelegationCommand(): Command {
   command.command('dispatch')
     .requiredOption('--input <path>', 'Repository-relative exact dispatch JSON input')
     .option('--format <format>', 'json or text', 'json')
-    .action((options: { input: string; format: Format }) => {
-      try {
-        const value = dispatchDelegatedRun(parseDispatch(options.input));
-        output(value, options.format, 'DelegatedRunObservationV1', value.current.observation_sha256);
-      } catch (error) { outputError(error); }
-    });
+    .action(dispatchWithCollaborationFence);
   command.command('observe')
     .requiredOption('--dispatch-id <digest>', 'Exact persisted dispatch ID')
     .option('--format <format>', 'json or text', 'json')

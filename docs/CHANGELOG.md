@@ -2,6 +2,25 @@
 
 All notable changes to this skill are documented here.
 
+## [Unreleased]
+
+### Added
+
+- **Real multi-agent collaboration canary.** A source-checkout canary runs three
+  isolated baseline/treatment protocol traces with three concurrent read-only
+  Codex Workers plus one real successor run, exact usage metrics, bounded
+  context injection, source-signal reuse, handoff adoption, persisted
+  writer-lineage checks and delivery-authority digests. C9-A and C9-B pass;
+  persistent `EngineerSeatV2`, Phase 5 Review and Phase 6 Merge remain inactive.
+
+### Fixed
+
+- **Delegated Codex output now follows its actual JSONL wire.** Contribution
+  collection decodes one complete `codex exec --json` turn and parses only its
+  final agent message. Test shims emit the same JSONL shape, raw-marker output is
+  rejected, provider usage is retained, and the delegated capture ceiling is 1
+  MiB so tool events cannot erase the terminal message at the old 64 KiB cap.
+
 ## [0.18.0] - 2026-08-29
 
 ### Added
