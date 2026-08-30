@@ -5,8 +5,8 @@
 > **Contract**: tasks/contracts/20260830-1903-r1-provider-neutral-agent-runtime.contract.md
 > **Notes File**: tasks/notes/20260830-1903-r1-provider-neutral-agent-runtime.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-08-30 22:51
-> **Recommendation**: fail
+> **Last Updated**: 2026-08-31 02:45
+> **Recommendation**: pass
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: sha256:7870792d230e8b24abadbd682d1723b5024ca4af517f448bc5889d52f6358e2e
 > **Reviewed Subject Scope**: normalized-final-content
@@ -14,13 +14,13 @@
 
 ## Human Review Card
 
-- Verdict: implementation review clean; acceptance blocked on the real Codex App Thread canary
+- Verdict: implementation review clean; the real Codex App Thread canary passed on 2026-08-31, closing the last acceptance blocker
 - Change type: code-change + bounded terminal migration
 - Intended files changed: Agent Runtime protocol/store/adapters, CLI/MCP/overlay, Fleet/operator DTO, policy, architecture and workflow evidence
 - Actual files changed: 61 tracked-diff paths plus the captured plan/PRD/contract/review/notes artifacts excluded from normalized review subject
 - Commands passed: full `bun test --timeout 60000` (3514 pass, 2 platform skips, 0 fail), focused R1/authority/CLI suite (44 pass), typecheck and all root Required Checks
-- Residual risks: the Codex adapter has exact injected-invoker coverage but no real user-owned App Thread Host invocation
-- Reviewer action required: provide one explicitly authorized real Codex App Thread target, then rerun subject-bound acceptance
+- Residual risks: none open; the Codex adapter has one real local Codex Host invocation (turn accepted and completed on a fresh real thread) plus the injected-invoker fault matrix
+- Reviewer action required: rerun subject-bound acceptance on the rebased head; the canary evidence lives in the implementation notes Deviations section
 - Rollback: set `agent_runtime.mode=off`; preserve immutable V2 journals; revert the unaccepted R1 implementation without reviving V1 runtime readers
 
 ## Mode Evidence
@@ -34,6 +34,7 @@
 - Waza `/check` run: deep scope, on target; one fail-closed policy-shape finding fixed and retested
 - Commands run: `bun test --timeout 60000`; focused five-file R1/authority/CLI suite; `bun run check:type`; all commands under root Required Checks; `repo-harness architecture-projection apply --json`
 - Manual checks: real temporary tmux session received exactly one bounded `repo-harness-inbox:<effect>:<control>` line; session removed after capture; legacy runtime-name scan limited to explicit migration/history
+- Real Codex App Thread canary (2026-08-31): `codex app-server` 0.150.1 stdio JSON-RPC; fresh real thread `01a053dc-033e-7d33-9659-192c096675b2` bound as engineer endpoint; one `turn/start` delivered exactly the bounded control line (accepted, turn completed); repeated start emitted no second Host action; message body absent from action and delivered text; exact module receipt closed the chain at `observed_success`; thread archived and fixture repo removed after capture
 - Supporting artifacts: architecture receipt `sha256:6d1d03493a689cbc3eac9182d182252536b2d4e0f586538e53d28db7ce40590b`; implementation notes
 - Implementation notes reviewed: yes
 - Run snapshot: full suite 3514 pass / 2 platform skips / 0 fail; post-review focused suite 44 pass / 0 fail

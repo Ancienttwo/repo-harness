@@ -30,7 +30,7 @@
 
 ## Open Questions
 
-- Closeout requires one explicitly authorized real Codex App Thread target for the remaining Host-control canary.
+- (none; the real Codex App Thread canary closed the last review blocker on 2026-08-31)
 
 ## Evidence Links
 
