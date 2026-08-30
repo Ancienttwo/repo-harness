@@ -206,10 +206,18 @@ export interface DelegationSubject {
   readonly claim_actor_receipt: ClaimActorReceiptV1;
 }
 
-/** Build one participant's packet and envelope against the subject's parent claim. */
+/**
+ * Build one participant's packet and envelope against the subject's parent claim.
+ *
+ * `goal` is an override rather than a fixed string because C6 dispatches a goal
+ * that was composed from a collaboration context packet, and the fence compares
+ * the binding against the goal the envelope actually carries. A fixture that
+ * could only produce its own goal would make that comparison untestable.
+ */
 export function delegationParticipant(
   fixture: DelegationSubject,
   index: number,
+  goal?: string,
 ): DelegationParticipant {
   const delegationId = `${`${index + 1}`.repeat(8)}-2222-4222-8222-222222222222`;
   const packet = buildDelegationExecutionPacket({
@@ -218,7 +226,7 @@ export function delegationParticipant(
     role_profile_sha256: fixture.role_profile.role_profile_sha256,
     model: fixture.role_profile.model,
     role_instructions: readLogicalRoleInstructions(fixture.repoRoot, fixture.role_profile),
-    goal: `Participant ${index} reads and reports.`,
+    goal: goal ?? `Participant ${index} reads and reports.`,
     allowed_read_paths: ['README.md'],
     max_turns: 1,
     max_depth: 0,
