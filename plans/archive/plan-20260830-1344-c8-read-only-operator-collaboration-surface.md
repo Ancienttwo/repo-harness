@@ -1,6 +1,6 @@
 # Plan: C8 read-only Operator collaboration surface
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260830-1344
 > **Slug**: c8-read-only-operator-collaboration-surface
 > **Planning Source**: repo-harness-sprint

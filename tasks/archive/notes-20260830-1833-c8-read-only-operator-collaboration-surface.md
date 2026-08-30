@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-30 18:33
+> **Related Plan**: plans/archive/plan-20260830-1344-c8-read-only-operator-collaboration-surface.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260830-1833
+
 # Implementation Notes: c8-read-only-operator-collaboration-surface
 
 > **Status**: Active
