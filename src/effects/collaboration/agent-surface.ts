@@ -20,6 +20,18 @@
  *   persisted. A direct publication freezes the clock on its first idempotency
  *   event, which is `first_publication` and nothing a caller chooses.
  *
+ * **Every read routes through the verified projection.** `collect()` is the only
+ * read path: it runs C6's collector, which double-reads each source, applies the
+ * builder's cross-repository check, and runs C5's read-time proof over every
+ * `bound_task` execution context, withholding the ones that do not hold. A raw
+ * store read on this layer would skip all three and hand an agent the unproven
+ * Claim the proof exists to withhold. The rule for a new read here is therefore a
+ * question, not a habit: *what is this data's existing verified projection, and
+ * did I route through it?* Exactly one read is adjudicated as having no such
+ * projection — `collaborationPacketRead()`, argued at its own definition — and no
+ * raw list reader is imported by this module at all, so the unverified path is
+ * unreachable from here rather than merely unused.
+ *
  * **Reads are served with the flag off; mutations are not.** This is C1-C6's
  * existing convention rather than a new decision: each store calls
  * `assertCollaborationMutationEnabled()` for itself, and
@@ -60,6 +72,7 @@ import type {
   WorkStateHandoffTrigger,
   WorkStateHandoffV1,
 } from '../../core/collaboration/handoff';
+import type { WorkStateHandoffSummaryV1 } from '../../core/collaboration/work-exchange';
 import type { CoordinationSignalV1 } from '../../core/collaboration/signal';
 import type {
   CollaborationContributionOpportunityV1,
@@ -70,16 +83,16 @@ import type { EngineerOfferV1 } from '../../core/engineers/scheduling';
 import { collectEngineerOffers } from '../engineers/scheduling';
 import { resolveEngineerPrincipal } from '../engineers/principal';
 import { engineerPrincipalAuthorization } from './actor';
-import { adoptWorkStateHandoff, listHandoffAdoptionReceipts } from './adoption-store';
+import { adoptWorkStateHandoff } from './adoption-store';
 import {
   deliverCollaborationContext,
   readCollaborationContextPacket,
   type CollaborationContextDeliveryV1,
 } from './context-delivery';
 import { assertCollaborationMutationEnabled, readCollaborationMode } from './feature-flag';
-import { listWorkStateHandoffs, publishWorkStateHandoff } from './handoff-store';
+import { publishWorkStateHandoff } from './handoff-store';
 import { collaborationUnavailable } from './record-store';
-import { listCoordinationSignals, publishCoordinationSignal } from './signal-store';
+import { publishCoordinationSignal } from './signal-store';
 import {
   collectCollaborativeWorkExchange,
   type CollaborativeWorkExchangeCollectionV1,
@@ -211,44 +224,57 @@ export interface CollaborationSignalsViewV1 {
   readonly signals: readonly CoordinationSignalV1[];
 }
 
+/**
+ * Signals, taken from the collection rather than from the signal store.
+ *
+ * `collection.signals` is the exact set `buildCollaborativeWorkExchangeSnapshot()`
+ * was built from, so it has already passed that builder's cross-repository check
+ * and carries the collection's own `snapshot_consistency`. A raw
+ * `listCoordinationSignals()` here would be a second read of the same records
+ * that skips both, and it is the read this surface must not have.
+ */
 export function collaborationSignalsView(
   context: CollaborationSurfaceContext,
 ): CollaborationSignalsViewV1 {
   const repoRoot = surfaceRoot(context);
-  resolveEngineerPrincipal({
-    repo_root: repoRoot,
-    authorization_id: context.authorization_id,
-    env: context.env,
-  });
-  return marked(readCollaborationMode(repoRoot), { signals: listCoordinationSignals(repoRoot) });
+  const collection = collect(repoRoot, context);
+  return marked(collection.mode, { signals: collection.signals });
 }
 
 export interface CollaborationHandoffsViewV1 {
   readonly mode: CollaborationMode;
   readonly content_trust: CollaborationContentTrustV1;
-  readonly handoffs: readonly WorkStateHandoffV1[];
-  readonly adoption_counts: readonly { readonly handoff_id: string; readonly adoption_count: number }[];
+  readonly handoffs: readonly WorkStateHandoffSummaryV1[];
+  /** How many `bound_task` contexts the read-time proof withheld from this view. */
+  readonly unverified_execution_context_count: number;
 }
 
+/**
+ * Handoffs, taken from the verified projection.
+ *
+ * `publishWorkStateHandoff()` validates an `execution_context` for shape only, so
+ * a persisted `bound_task` branch can name any Claim, any Lease generation and
+ * any freeze digest — the author supplied all three. `snapshot.open_handoffs` is
+ * the projection that has already run C5's read-time proof through
+ * `proveExecutionContexts()` and withheld every branch that did not hold,
+ * counting the omissions in `unverified_execution_context_count`.
+ *
+ * Reading `listWorkStateHandoffs()` here instead would hand an agent exactly the
+ * unproven Claim the proof exists to withhold, which is the leak C6 removed from
+ * its own collection and which must not reappear on the first agent-facing
+ * surface. The summary is deliberately narrower than the record: it carries the
+ * handoff's knowledge (`goal`, `trigger`, the next-action and open-hypothesis
+ * counts, the adoption count) without re-exporting the unverified branch, and
+ * superseded handoffs are already gone from it because the projection drops them.
+ */
 export function collaborationHandoffsView(
   context: CollaborationSurfaceContext,
 ): CollaborationHandoffsViewV1 {
   const repoRoot = surfaceRoot(context);
-  resolveEngineerPrincipal({
-    repo_root: repoRoot,
-    authorization_id: context.authorization_id,
-    env: context.env,
-  });
-  const handoffs = listWorkStateHandoffs(repoRoot);
-  const receipts = listHandoffAdoptionReceipts(repoRoot);
-  const counts = new Map<string, number>();
-  for (const receipt of receipts) counts.set(receipt.handoff_id, (counts.get(receipt.handoff_id) ?? 0) + 1);
-  return marked(readCollaborationMode(repoRoot), {
-    handoffs,
-    adoption_counts: Object.freeze(handoffs.map((handoff) => Object.freeze({
-      handoff_id: handoff.handoff_id,
-      adoption_count: counts.get(handoff.handoff_id) ?? 0,
-    }))),
+  const collection = collect(repoRoot, context);
+  return marked(collection.mode, {
+    handoffs: collection.snapshot.open_handoffs,
+    unverified_execution_context_count: collection.snapshot.unverified_execution_context_count,
   });
 }
 
@@ -384,6 +410,24 @@ export interface CollaborationPacketReadResultV1 {
   readonly packet: CollaborationContextPacketV1;
 }
 
+/**
+ * The one raw store read on this surface, and why it is safe.
+ *
+ * A `CollaborationContextPacketV1` is a Host record: the Host built it from
+ * already-committed signals, filed it under its own content digest, and
+ * `readCollaborationContextPacket()` re-validates it against that digest before
+ * returning it. It has no author and no `execution_context` — its field set is
+ * `subject_refs`, `signals` (id, digest, retrieval reason, matched refs), a
+ * handoff *reference*, the estimator and truncation evidence, and the two
+ * digests. There is no participant-supplied branch in it for a proof to
+ * withhold, so there is no verified projection it could be routed through: this
+ * read *is* the authority for a packet.
+ *
+ * Every other read on this surface goes through `collect()`, which is the
+ * verified projection. If a future field on the packet ever carried a claim an
+ * author supplied, this adjudication expires and the read must move behind a
+ * proof.
+ */
 export function collaborationPacketRead(
   context: CollaborationSurfaceContext,
   packetSha256: string,
