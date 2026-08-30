@@ -70,9 +70,19 @@
 
 ## Open Questions
 
-- The sprint row names a ≤1,500 estimated-token injection budget. That budget is
-  `COLLABORATION_CONTEXT_BUDGET_ESTIMATED_TOKENS`, already enforced and tested by C2/C6's packet
-  builder; this row adds no new injected-context path, so it was not re-asserted here.
+- None.
+
+## Injection Budget
+
+`collaboration packet build` is the first caller-reachable, budget-overridable injection path in
+the program: before this row every packet was built by a Host step inside an already-gated round,
+and `budget_estimated_tokens` had no caller who could name it. The default remains the frozen
+`COLLABORATION_CONTEXT_BUDGET_ESTIMATED_TOKENS` (1,500), and the upper bound is now enforced in
+the core builder (`src/core/collaboration/context-packet.ts`) rather than at this surface, so every
+current and future caller inherits the cap from one place. Asking for less is a caller's business;
+asking for more is refused with a typed `collaboration_invalid`, covered at the builder
+(`tests/unit/collaboration-context-packet.test.ts`) and through the CLI
+(`tests/cli/collaboration.test.ts`).
 
 ## Evidence Links
 

@@ -15,6 +15,7 @@ import { writeFileSync } from 'fs';
 import { join } from 'path';
 
 import {
+  COLLABORATION_CONTEXT_BUDGET_ESTIMATED_TOKENS,
   COLLABORATION_CONTEXT_END,
   COLLABORATION_CONTEXT_START,
   COLLABORATION_CONTEXT_WARNING,
@@ -372,5 +373,35 @@ describe('C7 bounded collaboration CLI', () => {
     expect(read.status).toBe(0);
     expect((JSON.parse(read.stdout) as { packet: { packet_sha256: string } }).packet.packet_sha256)
       .toBe(result.packet.packet_sha256);
+  });
+
+  test('a packet build asking for more than the frozen injection budget is refused', () => {
+    const value = fixture();
+    publishSignal(value, 'signal-a', 'merge-gate-flake');
+    const authorization = value.actors[0]!.authorization_id;
+    const packetInput = (name: string, budget: number) => writeInput(value, name, {
+      base_goal: BASE_GOAL,
+      subject_refs: [CAPABILITY_REF],
+      handoff: null,
+      budget_estimated_tokens: budget,
+    });
+
+    const refused = cli(value, 'collaboration', 'packet', 'build', '--authorization-id', authorization,
+      '--input', packetInput('.packet-over.json', COLLABORATION_CONTEXT_BUDGET_ESTIMATED_TOKENS + 1));
+
+    expect(refused.status).toBe(1);
+    const error = failure(refused);
+    expect(error.error).toBe('collaboration_invalid');
+    expect(error.message)
+      .toContain(`must not exceed the frozen injection budget of ${COLLABORATION_CONTEXT_BUDGET_ESTIMATED_TOKENS}`);
+
+    // A bound, not a ban: the ceiling itself still builds, and the record carries
+    // the number the builder accepted rather than the one the caller asked for.
+    const atCeiling = cli(value, 'collaboration', 'packet', 'build', '--authorization-id', authorization,
+      '--input', packetInput('.packet-at.json', COLLABORATION_CONTEXT_BUDGET_ESTIMATED_TOKENS));
+    expect(atCeiling.stderr).toBe('');
+    expect(atCeiling.status).toBe(0);
+    expect((JSON.parse(atCeiling.stdout) as { packet: { budget_estimated_tokens: number } })
+      .packet.budget_estimated_tokens).toBe(COLLABORATION_CONTEXT_BUDGET_ESTIMATED_TOKENS);
   });
 });

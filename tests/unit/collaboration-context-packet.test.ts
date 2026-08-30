@@ -114,7 +114,9 @@ function packetFor(
     // Stated explicitly, never defaulted: these fixtures stand in for a reader
     // that observed a clean collection, which is a claim only a reader can make.
     snapshot_consistency: 'stable',
-    budget_estimated_tokens: 20_000,
+    // The frozen ceiling, which is also the largest budget the builder accepts.
+    // These fixtures are about selection, not truncation, and they fit inside it.
+    budget_estimated_tokens: COLLABORATION_CONTEXT_BUDGET_ESTIMATED_TOKENS,
     ...overrides,
   });
 }
@@ -369,6 +371,22 @@ describe('the budget is respected and truncation leaves evidence', () => {
     expect(() => packetFor(reasonFixture(), { budget_estimated_tokens: collaborationContextEnvelopeTokens() }))
       .toThrow(CollaborationError);
   });
+
+  test('a budget above the frozen injection ceiling is refused', () => {
+    // The bound lives in the builder rather than at each surface, so a caller
+    // that can name the budget cannot raise the ceiling by asking. The largest
+    // accepted value is the constant itself.
+    expect(() => packetFor(reasonFixture(), {
+      budget_estimated_tokens: COLLABORATION_CONTEXT_BUDGET_ESTIMATED_TOKENS + 1,
+    })).toThrow(`must not exceed the frozen injection budget of ${COLLABORATION_CONTEXT_BUDGET_ESTIMATED_TOKENS}`);
+    expect(() => packetFor(reasonFixture(), { budget_estimated_tokens: 20_000 })).toThrow(CollaborationError);
+    expect(packetFor(reasonFixture(), {
+      budget_estimated_tokens: COLLABORATION_CONTEXT_BUDGET_ESTIMATED_TOKENS,
+    }).packet.budget_estimated_tokens).toBe(COLLABORATION_CONTEXT_BUDGET_ESTIMATED_TOKENS);
+    // The default is the same number, so an omitted budget cannot exceed it either.
+    expect(packetFor(reasonFixture(), { budget_estimated_tokens: undefined })
+      .packet.budget_estimated_tokens).toBe(COLLABORATION_CONTEXT_BUDGET_ESTIMATED_TOKENS);
+  });
 });
 
 describe('the packet round-trips and fails closed', () => {
@@ -423,7 +441,7 @@ describe('snapshot_consistency is carried, not derived', () => {
       handoff_facts: handoffFacts,
       handoff: { handoff_id: recordId(0xa1), handoff_sha256: digest('e') },
       snapshot_consistency: 'stable' as const,
-      budget_estimated_tokens: 20_000,
+      budget_estimated_tokens: COLLABORATION_CONTEXT_BUDGET_ESTIMATED_TOKENS,
     };
     expect(() => buildCollaborationContextPacket(withoutMarker as never)).toThrow(CollaborationError);
     expect(COLLABORATION_SNAPSHOT_CONSISTENCY).toEqual(['stable', 'changed_during_read', 'degraded']);

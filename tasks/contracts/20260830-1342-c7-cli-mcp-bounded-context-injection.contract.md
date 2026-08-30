@@ -41,6 +41,8 @@ through the CLI, while an ordinary delegated dispatch is unaffected.
     `handoff publish|list|adopt` and `packet build`, registered in `src/cli/index.ts`.
   - `src/cli/mcp/collaboration-tools.ts` and its append to the engineer profile in
     `src/cli/mcp/tools.ts`.
+  - The frozen injection budget's upper bound in `buildCollaborationContextPacket()`, since
+    `collaboration packet build` is the first caller-reachable path that can name the budget.
   - The architecture model entries and projection for the new entrypoints and flow.
 - Out of scope:
   - the Operator read-only surface (C8), `operator-web/`, `src/core/operator/`,
@@ -120,6 +122,11 @@ allowed_paths:
   # The engineer profile's live doctor compares the served tools/list against the
   # inventory it builds, so it has to expect the same composition the server does.
   - src/cli/mcp/setup.ts
+  # The injection budget's upper bound belongs in the builder every caller already
+  # passes through, because `collaboration packet build` is the first surface that
+  # lets a caller name the budget at all.
+  - src/core/collaboration/context-packet.ts
+  - tests/unit/collaboration-context-packet.test.ts
   - src/effects/collaboration/context-delivery.ts
   # One module both adapters call, so the actor derivation, the fixed destination,
   # the mutation gate and the untrusted marking are stated once instead of twice.
@@ -185,6 +192,7 @@ exit_criteria:
     - .ai/harness/checks/latest.json
     - tasks/notes/20260830-1342-c7-cli-mcp-bounded-context-injection.notes.md
   tests_pass:
+    - path: tests/unit/collaboration-context-packet.test.ts
     - path: tests/cli/collaboration.test.ts
     - path: tests/cli/mcp-collaboration-tools.test.ts
     - path: tests/cli/mcp-engineer-tools.test.ts

@@ -72,6 +72,13 @@ export const COLLABORATION_ESTIMATOR_VERSION = 'utf8_bytes_div_4/v1' as const;
  * budget (`SESSION_START_CONTEXT_TOKEN_SLO`) already holds injected context to.
  * Collaboration context competes for the same window, so it inherits the number
  * rather than inventing a second opinion about how much context is affordable.
+ *
+ * It is the default *and* the hard upper bound. `budget_estimated_tokens` stays
+ * caller-supplied because a caller may legitimately want less, but a caller
+ * asking for more is asking to exceed the ceiling this constant exists to hold,
+ * and the builder is the one place every current and future caller passes
+ * through — so the cap lives here rather than at each surface that could forget
+ * it.
  */
 export const COLLABORATION_CONTEXT_BUDGET_ESTIMATED_TOKENS = 1500;
 
@@ -324,6 +331,11 @@ export interface BuildCollaborationContextPacketInput {
   /** Supplied by the store reader (C6), which is the only layer that can observe it. */
   readonly snapshot_consistency: CollaborationSnapshotConsistency;
   readonly handoff?: CollaborationHandoffRefV1 | null;
+  /**
+   * Optional, defaulting to `COLLABORATION_CONTEXT_BUDGET_ESTIMATED_TOKENS` and
+   * bounded above by it. Asking for less is a caller's business; asking for more
+   * is refused.
+   */
   readonly budget_estimated_tokens?: number;
 }
 
@@ -345,6 +357,16 @@ export function buildCollaborationContextPacket(
   const budget = input.budget_estimated_tokens ?? COLLABORATION_CONTEXT_BUDGET_ESTIMATED_TOKENS;
   if (!Number.isInteger(budget) || budget <= collaborationContextEnvelopeTokens()) {
     collaborationInvalid('budget_estimated_tokens must leave room for the untrusted wrapper');
+  }
+  // The ceiling, enforced where every caller already passes. A surface that lets
+  // a caller name the budget — C7's `collaboration packet build` is the first —
+  // would otherwise be able to raise the injection budget past the frozen number
+  // just by asking, and each new surface would have to remember the bound
+  // separately.
+  if (budget > COLLABORATION_CONTEXT_BUDGET_ESTIMATED_TOKENS) {
+    collaborationInvalid(
+      `budget_estimated_tokens must not exceed the frozen injection budget of ${COLLABORATION_CONTEXT_BUDGET_ESTIMATED_TOKENS}`,
+    );
   }
   const signals = input.signals.map((entry) => validateCoordinationSignal(entry));
   for (const signal of signals) {
