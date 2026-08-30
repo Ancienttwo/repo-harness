@@ -1,11 +1,11 @@
 # Sprint: Collaborative Work Exchange and Agent Succession
 
-> **Status**: Approved
+> **Status**: Done
 > **Slug**: `collaborative-work-exchange-agent-succession`
 > **Created**: 2026-08-28T23:21:55-07:00
 > **Updated**: 2026-08-30 22:16
 > **Source PRD**: `plans/prds/20260828-2321-collaborative-work-exchange-agent-succession.prd.md`
-> **Child PRD A (Active)**: `plans/prds/20260828-2321-collaboration-substrate.prd.md`
+> **Child PRD A (Completed)**: `plans/prds/20260828-2321-collaboration-substrate.prd.md`
 > **Child PRD B (Deferred — Phase 2)**: `plans/prds/20260828-2321-work-exchange-independent-review.prd.md`
 > **Child PRD C (Deferred — Phase 3)**: `plans/prds/20260828-2321-guarded-merge-unattended-automation.prd.md`
 > **Source Spec**: `docs/spec.md`
@@ -14,7 +14,7 @@
 > **Program Strategy**: authority freeze → signals/handoffs → discovery → real canary → multi-seat decision
 > **Default Feature State**: all new mutation disabled
 
-Program-level sprint container. Active backlog is C0–C9 and belongs entirely to
+Program-level sprint container. Completed backlog C0–C9 belongs entirely to
 Child PRD A. Each contract row is an independent merge and rollback boundary.
 Do not combine the signal store, the succession path and the Operator view into
 one branch.
@@ -467,43 +467,43 @@ UI 呈现全部新状态且不在客户端推导语义、不新增 mutation。
 
 **Canary setup**
 
-- [ ] 选一个真实但权威安全的任务（复杂 bug hunt、架构影响面调研、性能根因、跨文件协议追踪、大规模测试失败诊断）。
-- [ ] Baseline arm：一个 Agent 独立完成。
-- [ ] Treatment arm：一个 Module Engineer + 三个只读参与者 + signal board + 一次后继者 handoff。
-- [ ] 设置跨臂污染防护：baseline 的发现不得进入 treatment 的 store、context packet 或提示，反向亦然。
-- [ ] 开跑之前冻结 usefulness rubric，跑完不改判定标准。
+- [x] 选一个真实但权威安全的任务（复杂 bug hunt、架构影响面调研、性能根因、跨文件协议追踪、大规模测试失败诊断）。
+- [x] Baseline arm：一个 Agent 独立完成。
+- [x] Treatment arm：一个 Module Engineer + 三个只读参与者 + signal board + 一次后继者 handoff。
+- [x] 设置跨臂污染防护：baseline 的发现不得进入 treatment 的 store、context packet 或提示，反向亦然。
+- [x] 开跑之前冻结 usefulness rubric，跑完不改判定标准。
 
 **Two levels**
 
-- [ ] C9-A 可行性：一个真实任务、三个参与者、至少一次 signal 复用、至少一次 handoff adoption、writer 恒为 1、零 authority drift。
-- [ ] C9-B 决策证据：至少三个匹配的真实任务，或三份冻结 fixture / 重复运行，或同一任务的多次隔离重放。
+- [x] C9-A 可行性：一个真实任务、三个参与者、至少一次 signal 复用、至少一次 handoff adoption、writer 恒为 1、零 authority drift。
+- [x] C9-B 决策证据：至少三个匹配的真实任务，或三份冻结 fixture / 重复运行，或同一任务的多次隔离重放。
 
 **Measures**
 
-- [ ] aggregate input/output tokens 与 wall-clock；
-- [ ] useful findings per 10k tokens；
-- [ ] time to first useful finding 与 time to first adopted finding；
-- [ ] duplicate dead-end rate；
-- [ ] signal reuse（`source_signal_ids` 引用数）；
-- [ ] handoff adoption 次数与 handoff restart cost；
-- [ ] never-read signal rate；
-- [ ] 每次注入的 context 体积；
-- [ ] Task/Lease/Publication 字节不变；
-- [ ] 任意时刻 writer 数 ≤1。
+- [x] aggregate input/output tokens 与 wall-clock；
+- [x] useful findings per 10k tokens；
+- [x] time to first useful finding 与 time to first adopted finding；
+- [x] duplicate dead-end rate；
+- [x] signal reuse（`source_signal_ids` 引用数）；
+- [x] handoff adoption 次数与 handoff restart cost；
+- [x] never-read signal rate；
+- [x] 每次注入的 context 体积；
+- [x] Task/Lease/Publication 字节不变；
+- [x] 任意时刻 writer 数 ≤1。
 
 **Tasks**
 
-- [ ] 运行 baseline 与 treatment 两臂并记录全部指标。
-- [ ] 运行 N-way signal 并发与 handoff 竞争。
-- [ ] 运行全量 unit/effects/CLI/MCP/operator 套件。
-- [ ] 运行 `bun test --timeout 60000`。
-- [ ] 运行 `node node_modules/typescript/bin/tsc --noEmit`。
-- [ ] 运行 `bun run build:operator-web`。
-- [ ] 运行 strict task workflow checks。
-- [ ] 运行 ArchContext P1/P2 与投影验收。
-- [ ] 扫描 `src/`、`tests/`、`scripts/`、模板与打包冒烟中的协议消费者。
-- [ ] 更新 README、changelog、docs、examples 与发布清单。
-- [ ] 输出 persistent multi-seat go/no-go 与 Phase 5/6 的启动建议。
+- [x] 运行 baseline 与 treatment 两臂并记录全部指标。
+- [x] 运行 N-way signal 并发与 handoff 竞争。
+- [x] 运行全量 unit/effects/CLI/MCP/operator 套件。
+- [x] 运行 `bun test --timeout 60000`。
+- [x] 运行 `node node_modules/typescript/bin/tsc --noEmit`。
+- [x] 运行 `bun run build:operator-web`。
+- [x] 运行 strict task workflow checks。
+- [x] 运行 ArchContext P1/P2 与投影验收。
+- [x] 扫描 `src/`、`tests/`、`scripts/`、模板与打包冒烟中的协议消费者。
+- [x] 更新 README、changelog、docs、examples 与发布清单。
+- [x] 输出 persistent multi-seat go/no-go 与 Phase 5/6 的启动建议。
 
 **Acceptance**
 
