@@ -75,7 +75,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ## Change Assessment
 
 ```json
-{"protocol":1,"oracles":[]}
+{"protocol":1,"oracles":[{"id":"c9-deterministic-contract-and-repository-suite","kind":"deterministic_test","paths":["*"]},{"id":"c9-live-provider-and-packaged-runtime-readback","kind":"runtime_readback","paths":["*"]}]}
 ```
 
 ## Acceptance Policy
@@ -176,13 +176,21 @@ exit_criteria:
     - repo-harness run check-task-workflow --strict
     - bun scripts/inspect-project-state.ts --repo . --format text
     - bun src/cli/index.ts init --repo . --dry-run
-# Optional exact-subject reuse is fail-closed and opt-in. List only deterministic
-# criteria whose inputs are fully bound by the frozen subject/toolchain context.
-# criterion_reuse:
-#   tests_pass:
-#     - path/to/deterministic.test.ts
-#   commands_succeed:
-#     - bun test --timeout 60000
+  criterion_reuse:
+    tests_pass:
+      - tests/unit/c9-real-multi-agent-canary-and-multi-seat-decision.test.ts
+      - tests/effects/collaboration-contribution-collector.test.ts
+    commands_succeed:
+      - bun test tests/unit/c9-real-multi-agent-canary-and-multi-seat-decision.test.ts tests/effects/collaboration-contribution-collector.test.ts --timeout 60000
+      - bun run check:type
+      - bun run build:operator-web
+      - bun test --timeout 60000
+      - bash scripts/check-deploy-sql-order.sh
+      - bash scripts/check-architecture-sync.sh
+      - bash scripts/check-task-sync.sh
+      - repo-harness run check-task-workflow --strict
+      - bun scripts/inspect-project-state.ts --repo . --format text
+      - bun src/cli/index.ts init --repo . --dry-run
 ```
 
 ## Acceptance Notes (Human Review)
