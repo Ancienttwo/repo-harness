@@ -1,6 +1,6 @@
 # Plan: Sprint task: C9 — real multi-agent canary and multi-seat decision
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260830-1839
 > **Slug**: c9-real-multi-agent-canary-and-multi-seat-decision
 > **Planning Source**: repo-harness-sprint
