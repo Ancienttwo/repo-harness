@@ -3,13 +3,17 @@
 > **Outcome**: Completed
 > **Lifecycle**: review
 > **Parent Run ID**: run-20260831-0214
+> **Archive Projection V1**: `plans/plan-20260830-2139-architecture-projection-acceptance.md` => `plans/archive/plan-20260830-2139-architecture-projection-acceptance.md`
+> **Archive Projection V1**: `tasks/contracts/20260830-2139-architecture-projection-acceptance.contract.md` => `tasks/archive/contract-20260831-0214-architecture-projection-acceptance.md`
+> **Archive Projection V1**: `tasks/reviews/20260830-2139-architecture-projection-acceptance.review.md` => `tasks/archive/review-20260831-0214-architecture-projection-acceptance.md`
+> **Archive Projection V1**: `tasks/notes/20260830-2139-architecture-projection-acceptance.notes.md` => `tasks/archive/notes-20260831-0214-architecture-projection-acceptance.md`
 
 # Task Review: architecture-projection-acceptance
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260830-2139-architecture-projection-acceptance.md
-> **Contract**: tasks/contracts/20260830-2139-architecture-projection-acceptance.contract.md
-> **Notes File**: tasks/notes/20260830-2139-architecture-projection-acceptance.notes.md
+> **Plan**: plans/archive/plan-20260830-2139-architecture-projection-acceptance.md
+> **Contract**: tasks/archive/contract-20260831-0214-architecture-projection-acceptance.md
+> **Notes File**: tasks/archive/notes-20260831-0214-architecture-projection-acceptance.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-08-31 00:00
 > **Recommendation**: pass
@@ -33,7 +37,7 @@
 
 - Selected route: work-package implementation followed by Deep Waza `/check`
 - P1/P2/P3 evidence: captured in the source plan and verified against the CLI -> candidate store -> provider -> receipt -> strict-gate path
-- Root cause or plan evidence: `plans/plan-20260830-2139-architecture-projection-acceptance.md`
+- Root cause or plan evidence: `plans/archive/plan-20260830-2139-architecture-projection-acceptance.md`
 
 ## Verification Evidence
 

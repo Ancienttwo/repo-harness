@@ -3,13 +3,17 @@
 > **Outcome**: Completed
 > **Lifecycle**: notes
 > **Parent Run ID**: run-20260831-0214
+> **Archive Projection V1**: `plans/plan-20260830-2139-architecture-projection-acceptance.md` => `plans/archive/plan-20260830-2139-architecture-projection-acceptance.md`
+> **Archive Projection V1**: `tasks/contracts/20260830-2139-architecture-projection-acceptance.contract.md` => `tasks/archive/contract-20260831-0214-architecture-projection-acceptance.md`
+> **Archive Projection V1**: `tasks/reviews/20260830-2139-architecture-projection-acceptance.review.md` => `tasks/archive/review-20260831-0214-architecture-projection-acceptance.md`
+> **Archive Projection V1**: `tasks/notes/20260830-2139-architecture-projection-acceptance.notes.md` => `tasks/archive/notes-20260831-0214-architecture-projection-acceptance.md`
 
 # Implementation Notes: architecture-projection-acceptance
 
 > **Status**: Active
-> **Plan**: plans/plan-20260830-2139-architecture-projection-acceptance.md
-> **Contract**: tasks/contracts/20260830-2139-architecture-projection-acceptance.contract.md
-> **Review**: tasks/reviews/20260830-2139-architecture-projection-acceptance.review.md
+> **Plan**: plans/archive/plan-20260830-2139-architecture-projection-acceptance.md
+> **Contract**: tasks/archive/contract-20260831-0214-architecture-projection-acceptance.md
+> **Review**: tasks/archive/review-20260831-0214-architecture-projection-acceptance.md
 > **Last Updated**: 2026-08-31 00:00
 > **Lifecycle**: notes
 
