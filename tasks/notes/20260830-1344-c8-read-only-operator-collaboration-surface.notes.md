@@ -57,6 +57,13 @@
   the board would have to invent, and `idle` is kept distinct from an empty
   snapshot: the first says nothing has been read, the second says the store was
   read and holds nothing.
+- **The HTTP response is pinned as an egress shape.** C7's final review established
+  that safety follows serialized field sets rather than read/write operation names.
+  C8 therefore pins the exact top-level snapshot keys and the exact handoff keys on
+  the real HTTP route, then proves that every value in a structurally valid but
+  unverifiable `bound_task` branch is absent from the serialized response. This
+  keeps the Operator boundary aligned with verify-or-exclude even if a future
+  source record grows new fields.
 
 ## Deviations From Plan Or Spec
 

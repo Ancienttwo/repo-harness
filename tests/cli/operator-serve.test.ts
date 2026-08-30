@@ -197,15 +197,7 @@ function collaborationFixtureRepository(): {
     source_signal_ids: [],
     // A Claim id no freeze receipt can produce. C6 withholds the whole branch on
     // read, so this value must not reach the browser under any framing.
-    execution_context: {
-      kind: 'bound_task',
-      task_id: 'c'.repeat(64),
-      task_revision: 'd'.repeat(64),
-      claim_id: FORGED_CLAIM_ID,
-      lease_generation: 4,
-      work_envelope_sha256: `sha256:${'e'.repeat(64)}`,
-      task_freeze_receipt_sha256: `sha256:${'f'.repeat(64)}`,
-    },
+    execution_context: FORGED_EXECUTION_CONTEXT,
     supersedes_handoff_id: null,
     recorded_time: { kind: 'persisted_observation', observed_at: '2026-08-30T09:10:00.000Z' },
     env: fixture.env,
@@ -214,6 +206,25 @@ function collaborationFixtureRepository(): {
 }
 
 const FORGED_CLAIM_ID = '7c7c7c7c-7c7c-4c7c-8c7c-7c7c7c7c7c7c';
+const FORGED_EXECUTION_CONTEXT = {
+  kind: 'bound_task',
+  task_id: 'c'.repeat(64),
+  task_revision: 'd'.repeat(64),
+  claim_id: FORGED_CLAIM_ID,
+  lease_generation: 4242,
+  work_envelope_sha256: `sha256:${'e'.repeat(64)}`,
+  task_freeze_receipt_sha256: `sha256:${'f'.repeat(64)}`,
+} as const;
+
+function containsPrimitive(value: unknown, target: string | number): boolean {
+  if (value === target) return true;
+  if (Array.isArray(value)) return value.some((entry) => containsPrimitive(entry, target));
+  if (value !== null && typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>)
+      .some((entry) => containsPrimitive(entry, target));
+  }
+  return false;
+}
 
 function sendResult(overrides: Partial<SendOperatorTaskMessageResult> = {}): SendOperatorTaskMessageResult {
   return {
@@ -664,6 +675,16 @@ describe('operator serve command and HTTP boundary', () => {
       const payload = await response.json() as OperatorCollaborationSnapshotV1;
       const serialized = JSON.stringify(payload);
 
+      // The HTTP response is an external egress even though the route is read-only.
+      // Pin both the document and the authority-bearing nested record so a future
+      // spread cannot make a newly-added source field silently browser-visible.
+      expect(Object.keys(payload).sort()).toEqual([
+        'changed_sources', 'degraded_sources', 'handoffs', 'kind', 'mode',
+        'opportunities', 'participants', 'protocol', 'repository_id', 'signals',
+        'snapshot_consistency', 'source_snapshot_sha256', 'threads',
+        'unverified_execution_context_count',
+      ]);
+
       // What the panels need is present.
       expect(payload.repository_id).toBe(repositoryId);
       expect(payload.mode).toBe('shadow');
@@ -672,6 +693,11 @@ describe('operator serve command and HTTP boundary', () => {
       expect(payload.signals.map((signal) => signal.title))
         .toContain('the second read disagreed with the first');
       expect(payload.handoffs).toHaveLength(1);
+      expect(Object.keys(payload.handoffs[0]!).sort()).toEqual([
+        'actor_lineage', 'adoption_count', 'created_at', 'execution_context_kind',
+        'goal', 'handoff_id', 'handoff_sha256', 'next_action_count',
+        'open_hypothesis_count', 'thread_key', 'trigger',
+      ]);
       expect(payload.handoffs[0]!.goal).toBe('carry the torn read forward');
       expect(payload.handoffs[0]!.adoption_count).toBe(0);
       expect(payload.participants.length).toBeGreaterThan(0);
@@ -679,7 +705,9 @@ describe('operator serve command and HTTP boundary', () => {
       // The unproven bound_task context is withheld and counted, not flagged.
       expect(payload.handoffs[0]!.execution_context_kind).toBeNull();
       expect(payload.unverified_execution_context_count).toBe(1);
-      expect(serialized).not.toContain(FORGED_CLAIM_ID);
+      for (const forgedValue of Object.values(FORGED_EXECUTION_CONTEXT)) {
+        expect(containsPrimitive(payload, forgedValue)).toBe(false);
+      }
       expect(serialized).not.toContain('lease_generation');
       expect(serialized).not.toContain('task_freeze_receipt_sha256');
 
