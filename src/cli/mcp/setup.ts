@@ -25,6 +25,7 @@ import {
 import { sensitiveAllowedRootReason } from './policy';
 import { parseMcpProfile } from './policy';
 import { buildCodingToolDefinitions } from './coding-tools';
+import { buildCollaborationToolDefinitions } from './collaboration-tools';
 import { buildEngineerToolDefinitions } from './engineer-tools';
 import { isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
 import { repoHarnessPackageVersion } from './version';
@@ -1336,9 +1337,13 @@ export async function runMcpLiveDoctor(opts: { repo?: string; json?: boolean }):
       const toolsPayload = jsonFromMcpResponse(await toolsResponse.text());
       const tools = (toolsPayload?.result as { tools?: Array<{ name?: string }> } | undefined)?.tools ?? [];
       toolNames = tools.map((tool) => tool.name ?? '').filter(Boolean);
+      // The engineer profile serves its own tools followed by C7's collaboration
+      // block, and `exactInventoryMatches` below compares the served list to this
+      // one byte for byte, so the doctor must expect the same composition the
+      // server builds.
       const expectedSpecialTools = coding
         ? buildCodingToolDefinitions()
-        : engineer ? buildEngineerToolDefinitions() : null;
+        : engineer ? [...buildEngineerToolDefinitions(), ...buildCollaborationToolDefinitions()] : null;
       const required = expectedSpecialTools ? expectedSpecialTools.map((tool) => tool.name) : REQUIRED_CODEX_TOOLS;
       const missing = required.filter((name) => !toolNames.includes(name));
       const specialSchemaMatches = expectedSpecialTools === null || JSON.stringify(tools

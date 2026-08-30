@@ -57,6 +57,10 @@ import {
   type CollaborationHandoffRefV1,
 } from '../../core/collaboration/context-packet';
 import {
+  COLLABORATION_CONTEXT_END,
+  COLLABORATION_CONTEXT_START,
+} from '../../core/collaboration/context-packet';
+import {
   buildCollaborationRunContextBinding,
   canonicalCollaborationRunContextBindingBytes,
   checkCollaborationRunContextBinding,
@@ -368,4 +372,64 @@ export function assertCollaborationDispatchBinding(
   const refusal = checkCollaborationRunContextBinding(binding, fenceSubject(repoRoot, run, binding));
   if (refusal !== null) throw new CollaborationRunContextBindingRefused(refusal, run.intent.dispatch_id);
   return binding!;
+}
+
+/**
+ * Whether one dispatch is a collaboration dispatch, decided from Host-owned state.
+ *
+ * Sprint row C7. The fence above cannot run on every delegated dispatch: a
+ * binding exists only for a run that went through `deliverCollaborationContext()`,
+ * so an ordinary delegated run has none and an unconditional fence would refuse
+ * the delegation CLI's whole existing path. The discriminator is a union of two
+ * facts, and it is a union because either one alone leaves a hole:
+ *
+ * - *A binding record exists for the dispatch.* Necessary — a run that was bound
+ *   must still be the run that was bound when it finally dispatches.
+ * - *The envelope goal carries either untrusted coordination marker.* Also
+ *   necessary, and this is the half that closes the interesting hole: a caller
+ *   who injects the block into a goal and simply never records a binding would,
+ *   under a binding-only test, skip the fence by omitting the very record the
+ *   fence checks.
+ *
+ * `delegation_only` therefore means "no binding and no marker", which is exactly
+ * a run this row makes no claim about. Everything else must produce a binding
+ * that reproduces the goal being dispatched.
+ *
+ * The markers are tested by presence rather than by attempting a split. A goal
+ * carrying a partial or malformed block is a collaboration dispatch whose binding
+ * will not check out, and it must reach the fence to be told so; deciding it away
+ * here with a caught parse error would be the surface forming its own opinion
+ * about a forgery.
+ */
+export type CollaborationDispatchIntentV1 = 'collaboration' | 'delegation_only';
+
+export function collaborationDispatchIntent(
+  repoRoot: string,
+  dispatchId: string,
+): CollaborationDispatchIntentV1 {
+  const root = realpathSync(repoRoot);
+  const run = readLiveRun(root, dispatchId);
+  if (readCollaborationRunContextBinding(root, run.intent.dispatch_id) !== null) return 'collaboration';
+  return run.envelope.goal.includes(COLLABORATION_CONTEXT_START)
+    || run.envelope.goal.includes(COLLABORATION_CONTEXT_END)
+    ? 'collaboration'
+    : 'delegation_only';
+}
+
+/**
+ * The production entry every dispatch surface calls before `dispatchDelegatedRun()`.
+ *
+ * Returns the checked binding for a collaboration dispatch and `null` for a
+ * delegation-only one. It is a distinct function from the assertion above so the
+ * two questions stay separate: `assertCollaborationDispatchBinding()` answers
+ * "does this run's binding hold", which a caller that already knows the run is a
+ * collaboration run should ask directly, and this answers "does this run need one
+ * at all", which is the question a general dispatch path has.
+ */
+export function fenceCollaborationDispatch(
+  input: AssertCollaborationDispatchBindingInput,
+): CollaborationRunContextBindingV1 | null {
+  const repoRoot = realpathSync(input.repo_root);
+  if (collaborationDispatchIntent(repoRoot, input.dispatch_id) === 'delegation_only') return null;
+  return assertCollaborationDispatchBinding({ repo_root: repoRoot, dispatch_id: input.dispatch_id });
 }
