@@ -30,7 +30,7 @@ import {
   type HandoffAdoptionReceiptV1,
 } from '../../core/collaboration/adoption';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
-import { resolveCollaborationActor } from './actor';
+import { resolveCollaborationActor, type CollaborationAuthorizationV1 } from './actor';
 import { assertCollaborationMutationEnabled } from './feature-flag';
 import { listWorkStateHandoffs, readWorkStateHandoff } from './handoff-store';
 import {
@@ -67,7 +67,7 @@ const ADOPTION_CODEC: CollaborationRecordCodec<HandoffAdoptionReceiptV1> = {
 export interface AdoptWorkStateHandoffInput {
   readonly repo_root: string;
   /** The authenticated authorization; the adopter is derived from it, never declared. */
-  readonly authorization_id: string;
+  readonly authorization: CollaborationAuthorizationV1;
   readonly handoff_id: string;
   /** The context packet this adopter received, as its canonical digest. */
   readonly context_packet_sha256: string;
@@ -170,9 +170,26 @@ export function adoptWorkStateHandoff(input: AdoptWorkStateHandoffInput): AdoptW
   const handoffId = validateCollaborationRecordId(input.handoff_id, 'handoff_id');
   const { actor: adopter, repository_id: repositoryId } = resolveCollaborationActor(
     repoRoot,
-    input.authorization_id,
+    input.authorization,
     input.env,
   );
+  // The sibling of the destination guard in `record-store.ts`. This store has no
+  // destination — a receipt always lands in the public `adoptions/` shard — so
+  // the binding it needs is on the actor alone: a `delegated_worker` adoption
+  // would be a publicly readable Worker record that no contribution commit
+  // references, which is the same invariant the candidate area protects, one
+  // record family over.
+  //
+  // Nothing constructs one today: the contribution collector never adopts, and
+  // D4 lists `delegated_worker` as a supported author without any row having
+  // wired adoption for it. Refusing is therefore fail-closed rather than a
+  // removed capability, and the row that needs Worker adoption (C5 succession or
+  // C6 packets) unblocks it by deciding how such a receipt becomes visible.
+  if (adopter.kind !== 'module_engineer') {
+    collaborationInvalidStore(
+      'handoff adoption requires a module_engineer authorization; a delegated_worker has no adoption path yet',
+    );
+  }
   const paths = adoptionStorePaths(repoRoot);
 
   ensureCollaborationDirectory(paths.common, paths.shard);

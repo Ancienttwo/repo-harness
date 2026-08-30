@@ -3,7 +3,7 @@ id: capability.runtime-harness.collaboration
 kind: capability
 name: Collaboration Substrate
 status: active
-summary: Publishes append-only coordination signals, work-state handoffs and non-exclusive handoff adoption receipts over one shared create-once store substrate, with Host-derived identity and recorded time, holding zero Task, Lease, Publication or Acceptance authority.
+summary: Publishes append-only coordination signals, work-state handoffs, non-exclusive adoption receipts and delegated-Worker contribution commits over one shared create-once store substrate, and enforces the parent Engineer's delegation policy at admission time as a pre-step to the existing read-only delegation, with Host-derived identity and recorded time and zero Task, Lease, Publication or Acceptance authority.
 responsibilities:
   - Own the shared collaboration mechanics frozen for later rows, namely the actor union, revision-bound scope refs, the reused WorkerResult evidence-ref shape, deterministic record identity and the recorded-time source.
   - Validate CoordinationSignalV1 against an exact key set and content-address it, closing the transport without closing any collaboration vocabulary.
@@ -15,6 +15,13 @@ responsibilities:
   - Own one durable create-once publish protocol and one server-side actor derivation as shared substrate, so each record family is a schema plus a shard name rather than a third copy of the crash-safety rules.
   - Validate WorkStateHandoffV1 with its attempted paths, dead ends, key findings and next actions present, and its execution context complete on exactly one branch of the discriminated union.
   - Record handoff adoption as non-exclusive by identity, keying each receipt on the handoff digest, the adopter actor digest and the context packet digest, so distinct adopters never exclude one another and grant no Task or Lease.
+  - Turn the parent Module Engineer Profile's allowed_roles and max_parallel_readers into runtime constraints in a pre-step that leaves the existing read-only admission semantics untouched, counting active readers per parent claim and round index and creating the seat inside the same critical section that counted for it.
+  - Fail the admission window closed whenever a reader's state cannot be established, its immutable records do not join, or it is awaiting reconciliation, so a seat is never inferred free.
+  - Derive a delegated Worker's identity from the immutable WorkerRunRef and admission receipt rather than from anything the Worker produced, so a contribution can never name its own author.
+  - Parse one run's contribution draft only from the exact stdout bytes the Host persisted for that run, through a versioned provider-output adapter, and refuse a caller-supplied draft by having no parameter that accepts one.
+  - Derive every contributed signal and handoff identity from the WorkerRunRef and the entry index and every commit identity from the run reference alone, so a retried collection converges instead of appending duplicates.
+  - Publish candidates immutably first and one contribution commit last as the sole visibility boundary, so a projection reads only committed contributions and an interrupted transaction leaves nothing partially visible.
+  - Treat an unusable Worker output as a typed rejection that still persists the ordinary WorkerResult, never as a synthesised empty contribution or an appearance of success.
 source:
   include:
     - "src/core/collaboration/**"
@@ -34,7 +41,7 @@ source:
     - id: entrypoint.collaboration.actor-derivation
       path: "src/effects/collaboration/actor.ts"
       symbols:
-        - name: "resolveCollaborationActor"
+        - name: "resolveModuleEngineerActor"
           sinks:
             - id: sink.collaboration.authenticated-principal
               path: "src/effects/engineers/principal.ts"
@@ -85,6 +92,69 @@ source:
             - id: sink.collaboration.adoption-triple
               path: "src/core/collaboration/adoption.ts"
               symbol: "deriveHandoffAdoptionReceiptId"
+    - id: entrypoint.collaboration.admission-bridge
+      path: "src/effects/collaboration/admission-bridge.ts"
+      symbols:
+        - name: "admitCollaborationDelegation"
+          sinks:
+            - id: sink.collaboration.parent-delegation-policy
+              path: "src/effects/engineers/profile-store.ts"
+              symbol: "loadEngineerProfile"
+            - id: sink.collaboration.tracked-role-profile
+              path: "src/effects/engineers/delegated-run-store.ts"
+              symbol: "loadLogicalReadOnlyRoleProfile"
+    - id: entrypoint.collaboration.admission-window
+      path: "src/effects/collaboration/admission-bridge.ts"
+      symbols:
+        - name: "admitInsideWindow"
+          sinks:
+            - id: sink.collaboration.existing-admission
+              path: "src/effects/engineers/delegated-run-store.ts"
+              symbol: "admitReadOnlyDelegation"
+            - id: sink.collaboration.seat-creation
+              path: "src/effects/engineers/delegated-run-store.ts"
+              symbol: "prepareDelegatedRun"
+    - id: entrypoint.collaboration.contribution-collect
+      path: "src/effects/collaboration/contribution-collector.ts"
+      symbols:
+        - name: "collectCollaborationContribution"
+          sinks:
+            - id: sink.collaboration.persisted-provider-output
+              path: "src/effects/collaboration/provider-output-adapter.ts"
+              symbol: "readContributionDraftFromPersistedOutput"
+            - id: sink.collaboration.delegated-worker-actor
+              path: "src/effects/collaboration/actor.ts"
+              symbol: "resolveDelegatedWorkerActor"
+    - id: entrypoint.collaboration.contribution-publish
+      path: "src/effects/collaboration/contribution-collector.ts"
+      symbols:
+        - name: "publishContribution"
+          sinks:
+            - id: sink.collaboration.contribution-candidate
+              path: "src/effects/collaboration/signal-store.ts"
+              symbol: "publishCoordinationSignal"
+            - id: sink.collaboration.contribution-commit
+              path: "src/core/collaboration/contribution.ts"
+              symbol: "buildCollaborationContributionCommit"
+            - id: sink.collaboration.single-worker-result
+              path: "src/effects/engineers/delegated-run-store.ts"
+              symbol: "collectDelegatedRunResult"
+    - id: entrypoint.collaboration.provider-output
+      path: "src/effects/collaboration/provider-output-adapter.ts"
+      symbols:
+        - name: "parseContributionDraftFromStdout"
+          sinks:
+            - id: sink.collaboration.draft-schema
+              path: "src/core/collaboration/contribution.ts"
+              symbol: "validateCollaborationContributionDraft"
+    - id: entrypoint.collaboration.contribution-visibility
+      path: "src/effects/collaboration/contribution-store.ts"
+      symbols:
+        - name: "listContributedSignalIds"
+          sinks:
+            - id: sink.collaboration.committed-only
+              path: "src/effects/collaboration/contribution-store.ts"
+              symbol: "listCollaborationContributionCommits"
     - id: entrypoint.collaboration.shared-mechanics
       path: "src/core/collaboration/signal.ts"
       symbols:
@@ -102,4 +172,5 @@ extensions:
     - "bun test tests/unit/collaboration-common.test.ts tests/unit/collaboration-signal.test.ts tests/unit/collaboration-authority-baseline.test.ts tests/effects/collaboration-signal-store.test.ts --timeout 60000"
     - "bun test tests/unit/collaboration-hotspot.test.ts tests/unit/collaboration-thread-projection.test.ts tests/unit/collaboration-context-packet.test.ts --timeout 60000"
     - "bun test tests/unit/collaboration-handoff.test.ts tests/unit/collaboration-adoption.test.ts tests/effects/collaboration-handoff-store.test.ts tests/effects/collaboration-adoption-store.test.ts --timeout 60000"
+    - "bun test tests/unit/collaboration-contribution.test.ts tests/unit/collaboration-admission.test.ts tests/effects/collaboration-admission-bridge.test.ts tests/effects/collaboration-contribution-collector.test.ts --timeout 180000"
     - "bun run check:type"

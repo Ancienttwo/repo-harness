@@ -3,7 +3,7 @@
 > **Status**: Approved
 > **Slug**: `collaborative-work-exchange-agent-succession`
 > **Created**: 2026-08-28T23:21:55-07:00
-> **Updated**: 2026-08-30 04:50
+> **Updated**: 2026-08-30 08:35
 > **Source PRD**: `plans/prds/20260828-2321-collaborative-work-exchange-agent-succession.prd.md`
 > **Child PRD A (Active)**: `plans/prds/20260828-2321-collaboration-substrate.prd.md`
 > **Child PRD B (Deferred — Phase 2)**: `plans/prds/20260828-2321-work-exchange-independent-review.prd.md`
@@ -155,7 +155,7 @@ No step skips a state。`independent_review` 与 `guarded_merge` 在本 Sprint �
 | 2 | [x] | C1 — `CoordinationSignalV1` schema, `common.ts` and append-only store | contract | signal ID 与记录时间由 Host/Server 派生；记录时间对重试稳定：delegated 贡献取该次运行精确的 process receipt / 持久化观测时间，直接发布在第一次 idempotency 事件里冻结时间，重试复用已记录值、绝不重采墙钟；每条 signal 身份级原子写；supersede 仅限同 actor lineage；source refs 必须已存在且同仓库；scope refs 携带 revision；`common.ts` 归 C1 独占；三个 actor 可并发发布；同 id 同 payload 幂等；不同 payload 冲突；Task/Lease bytes 零变化 | `plans/archive/plan-20260829-2137-c1-coordination-signal-store.md` |
 | 3 | [x] | C2 — signal threads, discovery and hotspot projection | contract | opportunity 只用结构化闭集理由（`open_request` / `unverified_hypothesis` / `stalled_thread` 已移除）；检索理由为闭集代码；利用/探索配额生效；digest 不含墙钟；`recent_activity` 与 hotspot 的新近度相对 source snapshot 里的最新事件计算（确定性 epoch），不读运行时墙钟；同输入 byte-identical；thread 由 opaque key 聚合；top-K context ≤1,500 tokens；无 LLM 状态推断 | `plans/archive/plan-20260830-0121-c2-thread-hotspot-projection.md` |
 | 4 | [x] | C3 — `WorkStateHandoffV1` and adoption receipts | contract | handoff 包含 attempted paths、dead ends、findings、next actions；`execution_context` 判别联合；receipt 带 `handoff_sha256`；多对多采用成立且同采用者幂等；协议与文案不使用 claim 词汇；adoption 不创建 Claim | `plans/archive/plan-20260830-0120-c3-work-state-handoff-adoption.md` |
-| 5 | [ ] | C4 — delegated Worker contribution adapter | contract | draft 只来自持久化 stdout 的 versioned adapter；`CollaborationContributionCommitV1` 为可见性边界；每个持久化边界的故障注入都收敛；WorkerResult exactly-once；`max_parallel_readers` 在准入期真正生效；每个角色都要 tracked LogicalRoleProfile；本行独占真实运行时 canary：3 个真实并行 reader 放行、第 4 个真实请求在 `max_parallel_readers=3` 被桥拒绝、完成或失败的 reader 正确释放名额、reconciliation_required 与状态不确定的 reader 按 C0 冻结规则处理；writer 数仍为 1 | (pending) |
+| 5 | [x] | C4 — delegated Worker contribution adapter | contract | draft 只来自持久化 stdout 的 versioned adapter；`CollaborationContributionCommitV1` 为可见性边界；每个持久化边界的故障注入都收敛；WorkerResult exactly-once；`max_parallel_readers` 在准入期真正生效；每个角色都要 tracked LogicalRoleProfile；本行独占真实运行时 canary：3 个真实并行 reader 放行、第 4 个真实请求在 `max_parallel_readers=3` 被桥拒绝、完成或失败的 reader 正确释放名额、reconciliation_required 与状态不确定的 reader 按 C0 冻结规则处理；writer 数仍为 1 | `plans/archive/plan-20260830-0509-c4-delegated-worker-contribution-adapter.md` |
 | 6 | [ ] | C5 — TaskFreeze / explicit takeover succession integration | contract | dirty executor 先 freeze；handoff 不转移 Lease；successor 只有经现有 release/takeover/acquire 才可写 | (pending) |
 | 7 | [ ] | C6 — collaboration-centric Work Exchange and ContextPacket | contract | packet 带 `source_snapshot_sha256`、截断证据、`estimator_version` 与 canonical render SHA；`CollaborationRunContextBindingV1` 落地，且它是 collaboration-mode delegated run 的必需派发闸门：派发前校验 binding 存在、与当前 intent 和 execution packet 匹配、引用协作 packet、render digest 与组合后的 goal 一致，缺失或陈旧一律 fail closed，不是可选审计元数据；显示 existing execution offers、participants、threads、signals、handoffs、opportunities；snapshot fail-loud | (pending) |
 | 8 | [ ] | C7 — CLI/MCP and bounded context injection | contract | authenticated actor 由服务端推导；Engineer 可 post；Worker 由 Host collector post；全部 context 标记 untrusted | (pending) |
@@ -322,25 +322,25 @@ handoff 内容完整可校验；同一份 handoff 被多个采用者采用全部
 
 **Tasks**
 
-- [ ] 定义 `CollaborationContributionDraftV1`、`CollaborationContributionCommitV1` 与 Host collector 事务。
-- [ ] draft 只能来自该次运行精确持久化的 stdout / process receipt，经带版本的 provider-output adapter 解析；拒绝调用方递交的自称 Worker 输出。
-- [ ] 整份 draft 全量校验通过之后才允许任何可见写入。
-- [ ] signal / handoff ID 由 `WorkerRunRef` + 条目下标确定性派生。
-- [ ] 候选条目先落不可变盘，再以 contribution commit 作为唯一可见性边界；投影只读已提交贡献。
-- [ ] `WorkerResultV1` 恰好构造一次并引用该 commit。
-- [ ] 解析失败为显式 typed rejection：正常 WorkerResult 仍持久化，零部分可见 signal，绝不合成空贡献或成功假象。
-- [ ] 实现 `CollaborationDelegationAdmissionV1` 桥：解析 profile/binding/principal、载入 tracked LogicalRoleProfile、在锁内按 parent claim + round_index 统计 active readers、强制 `active_readers < max_parallel_readers`，再进 `admitReadOnlyDelegation()`。
-- [ ] 从 `WorkerRunRefV1` 与 admission receipt 推导 actor，忽略 draft 内的身份声明。
-- [ ] 不 bump `DelegationEnvelopeV1`，不放宽 `max_turns`；要验证的是单轮贡献是否有用、多轮累积能否补上深度、每轮 packet 是否保持小而聚焦、多轮启动成本是否吃掉收益。
-- [ ] 使用既有 `ENGINEER_DELEGATION_ROLES` 闭集；除非本行的真实 canary 证明需要独立 role instructions，否则不扩枚举。
+- [x] 定义 `CollaborationContributionDraftV1`、`CollaborationContributionCommitV1` 与 Host collector 事务。
+- [x] draft 只能来自该次运行精确持久化的 stdout / process receipt，经带版本的 provider-output adapter 解析；拒绝调用方递交的自称 Worker 输出。
+- [x] 整份 draft 全量校验通过之后才允许任何可见写入。
+- [x] signal / handoff ID 由 `WorkerRunRef` + 条目下标确定性派生。
+- [x] 候选条目先落不可变盘，再以 contribution commit 作为唯一可见性边界；投影只读已提交贡献。
+- [x] `WorkerResultV1` 恰好构造一次并引用该 commit。
+- [x] 解析失败为显式 typed rejection：正常 WorkerResult 仍持久化，零部分可见 signal，绝不合成空贡献或成功假象。
+- [x] 实现 `CollaborationDelegationAdmissionV1` 桥：解析 profile/binding/principal、载入 tracked LogicalRoleProfile、在锁内按 parent claim + round_index 统计 active readers、强制 `active_readers < max_parallel_readers`，再进 `admitReadOnlyDelegation()`。
+- [x] 从 `WorkerRunRefV1` 与 admission receipt 推导 actor，忽略 draft 内的身份声明。
+- [x] 不 bump `DelegationEnvelopeV1`，不放宽 `max_turns`；要验证的是单轮贡献是否有用、多轮累积能否补上深度、每轮 packet 是否保持小而聚焦、多轮启动成本是否吃掉收益。
+- [x] 使用既有 `ENGINEER_DELEGATION_ROLES` 闭集；除非本行的真实 canary 证明需要独立 role instructions，否则不扩枚举。
 
 **Tests**
 
-- [ ] 在每个持久化边界注入故障（signal 1 之后、signal N 之后、handoff 之后、commit 之前、commit 之后、WorkerResult 之前、WorkerResult 之后），重试后收敛到一条可见 commit、一个 WorkerResult、零重复 signal；
-- [ ] 不可解析 draft 的 typed rejection 负例；
-- [ ] 真实运行时 canary：同一 parent claim 下 3 个真实并行 reader 全部被桥放行，第 4 个真实请求在 `max_parallel_readers=3` 被拒；
-- [ ] 完成与失败的 reader 都正确释放名额，释放后新请求可再次放行；
-- [ ] `reconciliation_required` 与状态不确定的 reader 名额按 C0 冻结的决策表处理（陈旧或未知一律 fail closed）。
+- [x] 在每个持久化边界注入故障（signal 1 之后、signal N 之后、handoff 之后、commit 之前、commit 之后、WorkerResult 之前、WorkerResult 之后），重试后收敛到一条可见 commit、一个 WorkerResult、零重复 signal；
+- [x] 不可解析 draft 的 typed rejection 负例；
+- [x] 真实运行时 canary：同一 parent claim 下 3 个真实并行 reader 全部被桥放行，第 4 个真实请求在 `max_parallel_readers=3` 被拒；
+- [x] 完成与失败的 reader 都正确释放名额，释放后新请求可再次放行；
+- [x] `reconciliation_required` 与状态不确定的 reader 名额按 C0 冻结的决策表处理（陈旧或未知一律 fail closed）。
 
 **Acceptance**
 
@@ -649,3 +649,4 @@ Keep this section last; `repo-harness run sprint-backlog complete-task` appends 
 | 2026-08-30 01:01 | C1 — `CoordinationSignalV1` schema, `common.ts` and append-only store | `plans/archive/plan-20260829-2137-c1-coordination-signal-store.md` | done |
 | 2026-08-30 02:55 | C2 — signal threads, discovery and hotspot projection | `plans/archive/plan-20260830-0121-c2-thread-hotspot-projection.md` | done |
 | 2026-08-30 04:50 | C3 — `WorkStateHandoffV1` and adoption receipts | `plans/archive/plan-20260830-0120-c3-work-state-handoff-adoption.md` | done |
+| 2026-08-30 08:35 | C4 — delegated Worker contribution adapter | `plans/archive/plan-20260830-0509-c4-delegated-worker-contribution-adapter.md` | done |

@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:e65d2970044f442575fb8659f38b8ebee6406f78482a549575f65fafc1f8bbfe" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:12fe3b26e6c92e67f489f7e65d8558ea9399c67d256d457c20f329771650ea65" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:49642e59e99a96a79003974eac75ed50a58bc1e112934723110fbf7db8bacb14" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:9bc87e3757bf802f02e968dd23a12cf32f8780c5b4b4257be44f9c7ac4ab1678" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
@@ -386,6 +386,12 @@
         "id": "relation.codegraph-readiness.primary",
         "sourceId": "capability.verification.codegraph-readiness",
         "destinationId": "component.codegraph-readiness.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.collaboration.delegated-runs",
+        "sourceId": "capability.runtime-harness.collaboration",
+        "destinationId": "capability.runtime-harness.delegated-runs",
         "description": "calls"
       },
       {

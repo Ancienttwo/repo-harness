@@ -32,10 +32,12 @@ import {
   type WorkStateHandoffV1,
 } from '../../core/collaboration/handoff';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
-import { resolveCollaborationActor } from './actor';
+import { resolveCollaborationActor, type CollaborationAuthorizationV1 } from './actor';
 import { assertCollaborationMutationEnabled } from './feature-flag';
 import {
   COLLABORATION_STORE_RELATIVE_ROOT,
+  authorizeCollaborationDestination,
+  collaborationDestinationPaths,
   collaborationInvalidStore,
   collaborationLockRelativePath,
   collaborationRecordPath,
@@ -44,15 +46,17 @@ import {
   listCollaborationRecords,
   publishCollaborationRecordDurably,
   readCollaborationRecord,
+  type AuthorizedCollaborationDestination,
+  type CollaborationPublishDestinationV1,
   type CollaborationRecordCodec,
   type CollaborationStorePaths,
 } from './record-store';
-import { readCoordinationSignal } from './signal-store';
+import { COLLABORATION_SIGNALS_SHARD, readCoordinationSignal, SIGNAL_CODEC } from './signal-store';
 
 export const COLLABORATION_HANDOFFS_SHARD = 'handoffs';
 export const COLLABORATION_HANDOFFS_RELATIVE_ROOT = `${COLLABORATION_STORE_RELATIVE_ROOT}/${COLLABORATION_HANDOFFS_SHARD}`;
 
-const HANDOFF_CODEC: CollaborationRecordCodec<WorkStateHandoffV1> = {
+export const HANDOFF_CODEC: CollaborationRecordCodec<WorkStateHandoffV1> = {
   label: 'handoff',
   validate: validateWorkStateHandoff,
   identityOf: (handoff) => handoff.handoff_id,
@@ -62,7 +66,7 @@ const HANDOFF_CODEC: CollaborationRecordCodec<WorkStateHandoffV1> = {
 export interface PublishWorkStateHandoffInput {
   readonly repo_root: string;
   /** The authenticated authorization; the actor is derived from it, never declared. */
-  readonly authorization_id: string;
+  readonly authorization: CollaborationAuthorizationV1;
   /** Identity input for the derived handoff id; the same key retried converges. */
   readonly idempotency_key: string;
   readonly thread_key: string;
@@ -79,6 +83,12 @@ export interface PublishWorkStateHandoffInput {
   readonly execution_context: HandoffExecutionContextV1;
   readonly supersedes_handoff_id: string | null;
   readonly recorded_time: CollaborationRecordedTimeSource;
+  /**
+   * Public, or staged as one delegated run's candidate. Same rule as the signal
+   * store: a Module Engineer publishing directly is immediately visible; a Worker
+   * contribution becomes visible only when its commit promotes it.
+   */
+  readonly destination: CollaborationPublishDestinationV1;
   readonly now?: () => string;
   readonly env?: NodeJS.ProcessEnv;
 }
@@ -110,8 +120,25 @@ export function listWorkStateHandoffs(repoRoot: string): readonly WorkStateHando
  * that points at a record nobody can resolve gives the successor a dead
  * reference in the place its evidence should be.
  */
-function assertResolvableSignal(repoRoot: string, repositoryId: string, signalId: string): void {
-  const signal = readCoordinationSignal(repoRoot, validateCollaborationRecordId(signalId, 'source_signal_id'));
+function assertResolvableSignal(
+  repoRoot: string,
+  repositoryId: string,
+  signalId: string,
+  authorized: AuthorizedCollaborationDestination,
+): void {
+  const recordId = validateCollaborationRecordId(signalId, 'source_signal_id');
+  // Public first, then this run's own staged signals. A handoff written as part
+  // of a contribution routinely cites the signals that contribution just staged;
+  // they are durable and identified, only not public yet.
+  let signal = readCoordinationSignal(repoRoot, recordId);
+  if (!signal && authorized.destination.kind === 'contribution_candidate') {
+    signal = readCollaborationRecord(
+      collaborationDestinationPaths(repoRoot, COLLABORATION_SIGNALS_SHARD, authorized),
+      SIGNAL_CODEC,
+      recordId,
+      'source_signal_id',
+    );
+  }
   if (!signal) collaborationInvalidStore(`source_signal_id does not exist in this repository: ${signalId}`);
   if (signal.repository_id !== repositoryId) {
     collaborationInvalidStore(`source_signal_id belongs to another repository: ${signalId}`);
@@ -128,9 +155,13 @@ export function publishWorkStateHandoff(
     || Buffer.byteLength(input.idempotency_key, 'utf8') > COLLABORATION_IDEMPOTENCY_KEY_MAX_BYTES) {
     collaborationInvalidStore('idempotency_key is invalid');
   }
-  const { actor, repository_id: repositoryId } = resolveCollaborationActor(repoRoot, input.authorization_id, input.env);
+  const { actor, repository_id: repositoryId } = resolveCollaborationActor(repoRoot, input.authorization, input.env);
   const handoffId = deriveWorkStateHandoffId(repositoryId, actor, input.idempotency_key);
-  const paths = handoffStorePaths(repoRoot);
+  const publicPaths = handoffStorePaths(repoRoot);
+  // Bound to the actor before any path is resolved, exactly as the signal store
+  // does it; the rule lives in one place and both stores read it from there.
+  const authorized = authorizeCollaborationDestination(actor, input.destination);
+  const paths = collaborationDestinationPaths(repoRoot, COLLABORATION_HANDOFFS_SHARD, authorized);
 
   const build = (createdAt: string): WorkStateHandoffV1 => buildWorkStateHandoff({
     handoff_id: handoffId,
@@ -169,19 +200,23 @@ export function publishWorkStateHandoff(
   };
 
   ensureCollaborationDirectory(paths.common, paths.shard);
+  // Per handoff, as D9 freezes it. C3 shipped this on the signal domain; the
+  // reasoning for the split is in `collaborationLockRelativePath()`.
   return withExclusiveDirectoryLock(
     paths.common,
-    collaborationLockRelativePath('thread', input.thread_key),
+    collaborationLockRelativePath('handoff', handoffId),
     () => {
       const existing = readCollaborationRecord(paths, HANDOFF_CODEC, handoffId, 'handoff_id');
       if (existing) return reconcile(existing);
 
       for (const signalId of input.source_signal_ids) {
-        assertResolvableSignal(repoRoot, repositoryId, signalId);
+        assertResolvableSignal(repoRoot, repositoryId, signalId, authorized);
       }
       if (input.supersedes_handoff_id !== null) {
+        // A revision supersedes a record that is already public; superseding an
+        // unpromoted candidate would revise something no reader has ever seen.
         const superseded = readCollaborationRecord(
-          paths,
+          publicPaths,
           HANDOFF_CODEC,
           validateCollaborationRecordId(input.supersedes_handoff_id, 'supersedes_handoff_id'),
           'supersedes_handoff_id',

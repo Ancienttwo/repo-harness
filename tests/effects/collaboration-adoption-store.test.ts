@@ -41,6 +41,7 @@ import {
   type PublishWorkStateHandoffInput,
   type PublishWorkStateHandoffResult,
 } from '../../src/effects/collaboration/handoff-store';
+import { engineerPrincipalAuthorization } from '../../src/effects/collaboration/actor';
 import { collaborationStagingName } from '../../src/effects/collaboration/record-store';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
@@ -75,7 +76,8 @@ function handoffInput(
 ): PublishWorkStateHandoffInput {
   return {
     repo_root: value.repoRoot,
-    authorization_id: value.actors[0]!.authorization_id,
+    authorization: engineerPrincipalAuthorization(value.actors[0]!.authorization_id),
+    destination: { kind: 'public' },
     idempotency_key: 'handoff-1',
     thread_key: 'merge-gate-flake',
     scope_refs: [],
@@ -111,7 +113,7 @@ function adoptInput(
 ): AdoptWorkStateHandoffInput {
   return {
     repo_root: value.repoRoot,
-    authorization_id: value.actors[0]!.authorization_id,
+    authorization: engineerPrincipalAuthorization(value.actors[0]!.authorization_id),
     handoff_id: handoffId,
     context_packet_sha256: PACKET_SHA,
     recorded_time: { kind: 'first_publication' },
@@ -204,7 +206,8 @@ describe('C3 handoff adoption store', () => {
 
     const results = await Promise.all(value.actors.map((actor) => adoptInDriver(driver, {
       repo_root: value.repoRoot,
-      authorization_id: actor.authorization_id,
+      authorization: engineerPrincipalAuthorization(actor.authorization_id),
+      destination: { kind: 'public' },
       handoff_id: handoff.handoff_id,
       context_packet_sha256: PACKET_SHA,
       recorded_time: { kind: 'persisted_observation', observed_at: '2026-08-30T12:00:00.000Z' },
@@ -514,7 +517,7 @@ describe('C3 handoff adoption store', () => {
     const value = fixture();
     const handoff = publishHandoff(value).handoff;
     expect(code(() => adoptWorkStateHandoff(adoptInput(value, handoff.handoff_id, {
-      authorization_id: '55555555-5555-4555-8555-555555555555',
+      authorization: engineerPrincipalAuthorization('55555555-5555-4555-8555-555555555555'),
     })))).toContain('engineer_principal_unmapped');
     expect(listHandoffAdoptionReceipts(value.repoRoot)).toEqual([]);
   });

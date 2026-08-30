@@ -36,7 +36,11 @@ import {
 import { createHash, randomUUID } from 'crypto';
 import { basename, dirname, join, relative, sep } from 'path';
 
-import { CollaborationError, validateCollaborationRecordId } from '../../core/collaboration/common';
+import {
+  CollaborationError,
+  validateCollaborationRecordId,
+  type CollaborationActorRefV1,
+} from '../../core/collaboration/common';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 
 export const COLLABORATION_STORE_RELATIVE_ROOT = 'repo-harness/collaboration/v1';
@@ -90,6 +94,112 @@ export interface CollaborationStorePaths {
   readonly root: string;
   /** The absolute directory of one record family, for example `.../v1/handoffs`. */
   readonly shard: string;
+}
+
+/**
+ * The staging area a delegated Worker's records live in until their contribution
+ * commit promotes them.
+ *
+ * Invisibility is a property of *where* a candidate lives, not of a filter every
+ * reader has to remember to apply. `listCoordinationSignals()` and
+ * `listWorkStateHandoffs()` scan `signals/` and `handoffs/`; a candidate is under
+ * `contribution-candidates/<run>/signals/`, which those functions never open. A
+ * future reader that forgets a filter therefore cannot leak an uncommitted
+ * record, because there is no filter to forget.
+ *
+ * The namespace is closed-form at both levels — a 64-hex run directory and the
+ * public shard name beneath it — so `listCollaborationRecords()` applies the same
+ * fail-closed rule here that it applies to a public shard, and a foreign entry
+ * fails the store rather than being skipped.
+ */
+export const COLLABORATION_CANDIDATES_SHARD = 'contribution-candidates';
+
+const RUN_REF_DIGEST = /^sha256:([0-9a-f]{64})$/u;
+
+export function collaborationCandidateShard(workerRunRefSha256: string, publicShard: string): string {
+  const matched = RUN_REF_DIGEST.exec(workerRunRefSha256);
+  if (!matched) collaborationInvalidStore(`worker_run_ref_sha256 is invalid: ${workerRunRefSha256}`);
+  return `${COLLABORATION_CANDIDATES_SHARD}/${matched[1]}/${publicShard}`;
+}
+
+/**
+ * Where one publish lands. A required discriminated union rather than an optional
+ * flag: a direct Module Engineer publication and a staged Worker candidate are
+ * different acts, and every call site says which one it is performing.
+ */
+export type CollaborationPublishDestinationV1 =
+  | { readonly kind: 'public' }
+  | { readonly kind: 'contribution_candidate'; readonly worker_run_ref_sha256: string };
+
+/** Non-exported, so an authorized destination cannot be forged outside this module. */
+declare const AUTHORIZED: unique symbol;
+
+/**
+ * A destination that has been checked against the actor writing to it.
+ *
+ * `collaborationDestinationPaths()` accepts nothing else, and
+ * `authorizeCollaborationDestination()` is the only function that can produce
+ * one. The illegal combination is therefore not something each store has to
+ * remember to police — it cannot be expressed at this boundary at all, so the
+ * collector path, direct callers, and every future C5-C9 entry point pass
+ * through the same check by construction.
+ */
+export interface AuthorizedCollaborationDestination {
+  readonly [AUTHORIZED]: true;
+  readonly destination: CollaborationPublishDestinationV1;
+}
+
+/**
+ * Bind a write destination to the actor performing the write.
+ *
+ * The invariant this protects is the one the contribution commit exists for:
+ * *every publicly readable Worker record is already committed.* Staging Worker
+ * records in an invisible candidate area only holds if a Worker cannot also
+ * write straight into a public shard, and `authorization` and `destination`
+ * arrive as independent inputs — so a caller holding a `delegated_run`
+ * authorization could otherwise name `{ kind: 'public' }` and bypass the
+ * collector entirely.
+ *
+ * The rules, stated once:
+ *
+ * - `module_engineer` may write only to `public`. Immediate visibility is the
+ *   declared, correct behaviour for a Module Engineer speaking directly, and a
+ *   candidate area belongs to a delegated run the Engineer does not have.
+ * - `delegated_worker` may write only to its **own** run's candidate area. Not
+ *   `public`, which is the bypass; and not another run's candidates, which would
+ *   let one Worker plant records another run's commit would promote.
+ */
+export function authorizeCollaborationDestination(
+  actor: CollaborationActorRefV1,
+  destination: CollaborationPublishDestinationV1,
+): AuthorizedCollaborationDestination {
+  if (actor.kind === 'module_engineer') {
+    if (destination.kind !== 'public') {
+      collaborationInvalidStore(
+        'a module_engineer may only publish to the public store; contribution candidates belong to a delegated run',
+      );
+    }
+  } else if (destination.kind !== 'contribution_candidate') {
+    collaborationInvalidStore(
+      'a delegated_worker may only publish into its own contribution candidate area; a Worker record becomes public only when its contribution commit promotes it',
+    );
+  } else if (destination.worker_run_ref_sha256 !== actor.worker_run_ref_sha256) {
+    collaborationInvalidStore(
+      'a delegated_worker may only publish into its own run\'s contribution candidate area',
+    );
+  }
+  return Object.freeze({ destination }) as AuthorizedCollaborationDestination;
+}
+
+export function collaborationDestinationPaths(
+  repoRoot: string,
+  publicShard: string,
+  authorized: AuthorizedCollaborationDestination,
+): CollaborationStorePaths {
+  const destination = authorized.destination;
+  return destination.kind === 'public'
+    ? collaborationStorePaths(repoRoot, publicShard)
+    : collaborationStorePaths(repoRoot, collaborationCandidateShard(destination.worker_run_ref_sha256, publicShard));
 }
 
 export function collaborationInvalidStore(message: string, cause?: unknown): never {
@@ -161,24 +271,23 @@ export function collaborationRecordPath(
 }
 
 /**
- * A lock is named for a (domain, subject) pair, and the domains in use today are
- * not one-per-family: signal publish and handoff publish both take
- * `('thread', thread_key)` and therefore share a lock, while adoption takes
- * `('handoff-adoption', handoff_id)` and contends with neither. That is D9's
- * "per-thread / per-handoff lock" as frozen, not an oversight.
+ * A lock is named for a (domain, subject) pair, one domain per record family, as
+ * D9 freezes them: `('thread', thread_key)` for signal append,
+ * `('handoff', handoff_id)` for handoff publish, `('handoff-adoption',
+ * handoff_id)` for adoption, and `('contribution', worker_run_ref_sha256)` for
+ * one delegated run's whole contribution transaction.
  *
- * The sharing is deliberate but not load-bearing, and the distinction matters if
- * anyone later wants to split it. Nothing needs a signal write and a handoff
- * write to be mutually exclusive: records publish through a staged write plus
- * `link`, so a concurrent write is either fully visible or not visible at all
- * and no reader can observe a torn one. Handoff publish does read the signal
- * store inside this lock, but only to prove cited signals resolve, and a signal
- * appearing mid-check can only turn a failing check into a passing one. Signal
- * idempotency does not depend on it either: identity is keyed on the actor and
- * idempotency key rather than the thread, so two publishes of one identity under
- * different thread keys already take different locks and reconcile through the
- * `EEXIST` branch. Splitting the domains would therefore be a contention change,
- * not a correctness one, and wants a measurement first.
+ * C3 shipped handoff publish on the *signal* domain and a comment here claimed
+ * that was D9 as frozen. It was not; C4 split it to match the frozen decision,
+ * and this paragraph is the correction.
+ *
+ * The split was safe because the sharing was never load-bearing. Records publish
+ * through a staged write plus `link`, so a concurrent write is either fully
+ * visible or not visible at all and no reader observes a torn one. Handoff
+ * publish does read the signal store inside its lock, but only to prove cited
+ * signals resolve: a signal appearing mid-check can only turn a failing check
+ * into a passing one, and a persisted signal is immutable, so it can never turn
+ * a passing check into a failing one.
  *
  * The separator is an escaped NUL rather than a literal one: a subject key may
  * contain any character a thread key may, and a printable separator would let
@@ -291,6 +400,65 @@ export function listCollaborationRecords<T>(
  * already published; `link` fails `EEXIST` and preserves first-writer-wins, so
  * the loser still reconciles to identical bytes or `collaboration_conflict`.
  */
+/**
+ * Make one staged candidate publicly readable, by linking the exact inode the
+ * candidate already occupies into the public shard.
+ *
+ * `link` rather than a re-write: the bytes are already fsynced under the
+ * candidate name, so promotion adds a name to data that is durable, and there is
+ * no window in which the public name exists over incomplete bytes. It keeps the
+ * store's create-once, first-writer-wins semantics — `EEXIST` means the record is
+ * already public, which is the ordinary outcome of re-running a transaction, not
+ * a conflict.
+ *
+ * The candidate is deliberately left in place. It is the append-only record of
+ * what this run staged, and a retry reuses it rather than rebuilding it.
+ *
+ * Returns `true` when this call is the one that made the record public.
+ */
+export function promoteCollaborationCandidate<T>(
+  repoRoot: string,
+  publicShard: string,
+  candidate: CollaborationStorePaths,
+  codec: CollaborationRecordCodec<T>,
+  recordId: string,
+  field: string,
+): boolean {
+  // The public target is derived here rather than passed in. Promotion is the
+  // Host completing a committed transaction, not an actor publishing, so it
+  // needs no destination -- and giving it one would have reintroduced a public
+  // destination value that a caller could aim somewhere else.
+  const target = collaborationStorePaths(repoRoot, publicShard);
+  const from = collaborationRecordPath(candidate, recordId, field);
+  const to = collaborationRecordPath(target, recordId, field);
+  ensureCollaborationDirectory(target.common, target.shard);
+  try {
+    linkSync(from, to);
+    fsyncDirectory(target.shard);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+      return collaborationUnavailable(`cannot promote ${codec.label} candidate: ${recordId}`, error);
+    }
+  }
+  // Already public. Prove it is the same record rather than assuming a retry:
+  // identities here are derived from the run, so a byte disagreement would mean
+  // two different records claiming one identity, which is a conflict and not
+  // something to promote over.
+  const staged = readCollaborationRecord(candidate, codec, recordId, field);
+  const published = readCollaborationRecord(target, codec, recordId, field);
+  if (!staged || !published) {
+    collaborationUnavailable(`${codec.label} candidate vanished during promotion: ${recordId}`);
+  }
+  if (codec.canonicalBytes(staged) !== codec.canonicalBytes(published)) {
+    throw new CollaborationError(
+      'collaboration_conflict',
+      `${codec.label} ${recordId} is already public with different bytes`,
+    );
+  }
+  return false;
+}
+
 export function publishCollaborationRecordDurably(directory: string, file: string, bytes: string): void {
   const temporary = join(directory, collaborationStagingName(basename(file)));
   let fd: number | null = null;

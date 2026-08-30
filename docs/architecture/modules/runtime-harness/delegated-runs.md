@@ -1,6 +1,6 @@
 # runtime-harness/delegated-runs 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-delegated-runs" sourceDigest="sha256:5b810b0f6ec6cb92d26ddce0e0ef2dfc55a02507e703bd79c69bf442bacb4fc9" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:f221634f8c5ef0d49739deb2fe5e9e88527b531c0c6be803316855b87967656b" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-delegated-runs" sourceDigest="sha256:1352fab7930b16404a1eac2accdea73ebd3dd6524d7945a3f81591fa978b6aa7" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:5b18cf3cdeead54b3a9d3de96c855bb0055d739bf691d98895c55e1ec358f309" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.delegated-runs`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/delegation.ts`、`src/effects/engineers/delegated-run-store.ts`、`src/cli/commands/delegation.ts`
@@ -53,6 +53,7 @@ flowchart LR
 
 入向關係:
 
+- `calls` ← `capability.runtime-harness.collaboration` — Enforce the parent Engineer's delegation policy as a pre-step to the unchanged read-only admission, and turn one run's persisted output into a contribution the delegation plane's own WorkerResult then references
 - `calls` ← `capability.runtime-harness.verified-context` — Revalidate existing immutable WorkerRunRef, process receipt, WorkerResult and evidence blobs as untrusted checkpoint inputs
 
 ## 2. P2:端到端數據流
