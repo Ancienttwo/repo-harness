@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-31 02:14
+> **Related Plan**: plans/archive/plan-20260830-2139-architecture-projection-acceptance.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260831-0214
+
 # Task Contract: architecture-projection-acceptance
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260830-2139-architecture-projection-acceptance.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->

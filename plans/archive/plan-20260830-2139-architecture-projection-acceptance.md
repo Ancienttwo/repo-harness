@@ -1,6 +1,6 @@
 # Plan: Architecture Projection Acceptance Verb
 
-> **Status**: Review
+> **Status**: Archived
 > **Created**: 20260830-2139
 > **Slug**: architecture-projection-acceptance
 > **Planning Source**: user-approved-plan
