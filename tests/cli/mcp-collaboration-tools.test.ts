@@ -108,6 +108,16 @@ function handoffArgs(key: string, threadKey: string): Record<string, unknown> {
   };
 }
 
+const FORGED_EXECUTION_CONTEXT = {
+  kind: 'bound_task',
+  task_id: 'f'.repeat(64),
+  task_revision: 'e'.repeat(64),
+  claim_id: '9b9b9b9b-9b9b-4b9b-8b9b-9b9b9b9b9b9b',
+  lease_generation: 4242,
+  work_envelope_sha256: `sha256:${'1'.repeat(64)}`,
+  task_freeze_receipt_sha256: `sha256:${'2'.repeat(64)}`,
+} as const;
+
 function structured(result: { structuredContent?: unknown }): Record<string, unknown> {
   return result.structuredContent as Record<string, unknown>;
 }
@@ -221,9 +231,12 @@ describe('C7 Engineer MCP collaboration tools', () => {
     const value = fixture();
     const published = await callMcpTool(context(value), 'collaboration_handoff_publish', handoffArgs('handoff-a', 'merge-gate-flake'));
     expect(published.isError).toBeUndefined();
-    const handoff = structured(published).handoff as Record<string, unknown>;
+    const acknowledgement = structured(published);
+    expect(Object.keys(acknowledgement).sort()).toEqual([
+      'content_trust', 'created', 'handoff_id', 'handoff_sha256', 'mode',
+    ]);
 
-    const adopt = { handoff_id: handoff.handoff_id as string, context_packet_sha256: `sha256:${'c'.repeat(64)}` };
+    const adopt = { handoff_id: acknowledgement.handoff_id as string, context_packet_sha256: `sha256:${'c'.repeat(64)}` };
     const firstAdoption = await callMcpTool(context(value, 1), 'collaboration_handoff_adopt', adopt);
     const secondAdoption = await callMcpTool(context(value, 2), 'collaboration_handoff_adopt', adopt);
     expect(firstAdoption.isError).toBeUndefined();
@@ -244,6 +257,23 @@ describe('C7 Engineer MCP collaboration tools', () => {
         warning: COLLABORATION_CONTEXT_WARNING,
       });
     }
+  });
+
+  test('the publish acknowledgement and verified reads contain no forged execution authority', async () => {
+    const value = fixture();
+    const published = await callMcpTool(context(value), 'collaboration_handoff_publish', {
+      ...handoffArgs('forged-handoff', 'merge-gate-flake'),
+      execution_context: FORGED_EXECUTION_CONTEXT,
+    });
+    expect(published.isError).toBeUndefined();
+    const exchange = await callMcpTool(context(value), 'collaboration_exchange', {});
+    const threads = await callMcpTool(context(value), 'collaboration_threads', {});
+    for (const payload of [published, exchange, threads].map((result) => JSON.stringify(structured(result)))) {
+      for (const forgedValue of Object.values(FORGED_EXECUTION_CONTEXT).map(String)) {
+        expect(payload).not.toContain(forgedValue);
+      }
+    }
+    expect((structured(exchange).snapshot as Record<string, unknown>).unverified_execution_context_count).toBe(1);
   });
 
   test('an unauthenticated session cannot reach any collaboration tool', async () => {

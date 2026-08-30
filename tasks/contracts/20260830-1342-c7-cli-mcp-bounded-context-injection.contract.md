@@ -29,7 +29,9 @@ principal, whose mutations fail closed when `collaboration.mode` is off, which e
 file write, generic shell, task acquire/release, publication, acceptance or merge tool, and which
 passes C6's untrusted coordination rendering through unstripped; plus the dispatch fence wired in
 front of `dispatchDelegatedRun()` so a collaboration-mode run without a valid binding is refused
-through the CLI, while an ordinary delegated dispatch is unaffected.
+through the CLI, while an ordinary delegated dispatch is unaffected. A handoff publication returns
+an identity-only acknowledgement: the full record, especially its caller-supplied
+`execution_context`, becomes externally readable only through C6's verified projection.
 
 ## Scope
 

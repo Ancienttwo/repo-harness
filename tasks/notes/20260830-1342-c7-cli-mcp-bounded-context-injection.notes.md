@@ -57,6 +57,12 @@
   `listWorkStateHandoffs()` raw and returned unverified `execution_context`, re-opening on the first
   agent-facing surface the exact leak C6 removed from its own collection. Fixed by routing every
   surface read through `collect()`; see the sweep table above.
+- Codex round-2 found the same P1 at a different egress: `handoff publish` returned the newly
+  persisted `WorkStateHandoffV1` verbatim, so the write acknowledgement exposed a caller-supplied,
+  shape-valid-only `execution_context` in the same record shape as a verified read. Fixed at the
+  shared surface by making publication return an identity-only acknowledgement
+  (`handoff_id`, `handoff_sha256`, `created`, mode and trust marking); both CLI and MCP pin that exact
+  shape, and the forged-context non-containment tests include the publication response itself.
 - One relation the plan did not anticipate was required:
   `relation.collaboration.engineer-scheduling`. The exchange surface asks the scheduling plane for
   the caller's own offers, and without the declared relation that flow step is unprovable.
@@ -90,12 +96,24 @@ through it?*
 | `collaborationHandoffsView` → handoffs | `collect().snapshot.open_handoffs` (was raw `listWorkStateHandoffs()` + `listHandoffAdoptionReceipts()`) | **The P1.** Verified: `proveExecutionContexts()` withholds every unproven `bound_task` branch and counts it in `unverified_execution_context_count`, which the view now returns. Adoption counts come off the summary, so the receipts read is gone too |
 | `readExecutionOffersFor` → offers | `collectEngineerOffers()` | Adjudicated: the scheduling plane is the authority for its own offers; there is no projection above it |
 | `collaborationPacketRead` → one packet | `readCollaborationContextPacket()` | Adjudicated in place: a Host record with no author and no `execution_context`, re-validated against its own content digest. No author-supplied branch exists for a proof to withhold, so this read *is* the authority |
-| mutations (`signalPost`, `handoffPublish`, `handoffAdopt`, `packetBuild`) | the stores' own write paths | Not reads; each store gates itself and derives the actor |
+| `collaborationHandoffPublish` acknowledgement | `publishWorkStateHandoff()` identity only | Persistence proves record identity and bytes, not execution authority. The acknowledgement contains no handoff body or `execution_context`; contents re-enter only through the verified exchange |
+| other mutation acknowledgements (`signalPost`, `handoffAdopt`, `packetBuild`) | the stores' own write paths | Adjudicated by data shape: signals have no execution authority field and remain explicitly untrusted; adoption returns identity only; packets are Host-built and content-digested |
 
 Structurally enforced, not just corrected: after the routing, this module imports **no** raw
 collaboration list or record reader at all, so the unverified path is unreachable from the surface
 layer rather than merely unused. `tests/cli/collaboration.test.ts` asserts that import set, with
 `readCollaborationContextPacket` named as the one adjudicated exception.
+
+## Egress Shape Rule
+
+The verify-or-exclude invariant applies to every serialized egress, not only verbs named `read` or
+`list`. A success acknowledgement may return only fields whose meaning the completed write proved.
+For handoff publication that set is the immutable record identity and byte digest plus idempotency
+status; the write did not prove the caller-supplied `execution_context`, so returning the handoff
+record would overstate what succeeded. CLI and MCP therefore share
+`CollaborationHandoffPublishAcknowledgementV1`, and both transport tests pin its exact five-key
+shape. The forged `bound_task` regression passes each serialized acknowledgement and verified read
+through the same non-containment assertion.
 
 ## Injection Budget
 

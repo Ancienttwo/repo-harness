@@ -340,17 +340,27 @@ export interface CollaborationHandoffPublishInput {
   readonly supersedes_handoff_id: string | null;
 }
 
-export interface CollaborationHandoffPublishResultV1 {
+/**
+ * A write acknowledgement is not a verified read projection.
+ *
+ * `publishWorkStateHandoff()` proves persistence and identity, but a caller-supplied
+ * `execution_context` is only shape-valid at that boundary. Returning the record
+ * here would make the acknowledgement indistinguishable from a handoff that passed
+ * `collectCollaborativeWorkExchange()`'s read-time proof. Keep the acknowledgement
+ * identity-only; consumers that need handoff contents must use a verified read.
+ */
+export interface CollaborationHandoffPublishAcknowledgementV1 {
   readonly mode: CollaborationMode;
   readonly content_trust: CollaborationContentTrustV1;
-  readonly handoff: WorkStateHandoffV1;
+  readonly handoff_id: string;
+  readonly handoff_sha256: string;
   readonly created: boolean;
 }
 
 export function collaborationHandoffPublish(
   context: CollaborationSurfaceContext,
   input: CollaborationHandoffPublishInput,
-): CollaborationHandoffPublishResultV1 {
+): CollaborationHandoffPublishAcknowledgementV1 {
   const repoRoot = surfaceRoot(context);
   const result = publishWorkStateHandoff({
     repo_root: repoRoot,
@@ -373,7 +383,11 @@ export function collaborationHandoffPublish(
     recorded_time: { kind: 'first_publication' },
     env: context.env,
   });
-  return marked(result.mode, { handoff: result.handoff, created: result.created });
+  return marked(result.mode, {
+    handoff_id: result.handoff.handoff_id,
+    handoff_sha256: result.handoff.handoff_sha256,
+    created: result.created,
+  });
 }
 
 export interface CollaborationHandoffAdoptInput {

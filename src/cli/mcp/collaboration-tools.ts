@@ -164,7 +164,7 @@ export function buildCollaborationToolDefinitions(): CollaborationMcpToolDefinit
     },
     {
       name: 'collaboration_handoff_publish',
-      description: 'Publish one work-state handoff carrying knowledge only; it transfers no Task, Claim, Lease or Publication authority.',
+      description: 'Publish one work-state handoff and return an identity-only acknowledgement. Read contents through the verified exchange; publication transfers no Task, Claim, Lease or Publication authority.',
       inputSchema: {
         type: 'object',
         properties: {

@@ -28,7 +28,6 @@ import {
   recordCollaborationRunContextBinding,
   type CollaborationContextDeliveryV1,
 } from '../../src/effects/collaboration/context-delivery';
-import { publishWorkStateHandoff } from '../../src/effects/collaboration/handoff-store';
 import { publishCoordinationSignal } from '../../src/effects/collaboration/signal-store';
 import { collectCollaborativeWorkExchange } from '../../src/effects/collaboration/work-exchange';
 import { readDelegatedRunStatus } from '../../src/effects/engineers/delegated-run-store';
@@ -239,11 +238,8 @@ const FORGED_WORK_ENVELOPE = `sha256:${'1'.repeat(64)}`;
 const FORGED_FREEZE_RECEIPT = `sha256:${'2'.repeat(64)}`;
 const FORGED_LEASE_GENERATION = 4242;
 
-function publishForgedBoundTaskHandoff(value: Fixture, threadKey: string): string {
-  return publishWorkStateHandoff({
-    repo_root: value.repoRoot,
-    authorization: engineerPrincipalAuthorization(value.actors[0]!.authorization_id),
-    destination: { kind: 'public' },
+function forgedBoundTaskHandoffInput(threadKey: string): Record<string, unknown> {
+  return {
     idempotency_key: 'forged-bound-task',
     thread_key: threadKey,
     scope_refs: [CAPABILITY_REF],
@@ -266,17 +262,24 @@ function publishForgedBoundTaskHandoff(value: Fixture, threadKey: string): strin
       task_freeze_receipt_sha256: FORGED_FREEZE_RECEIPT,
     },
     supersedes_handoff_id: null,
-    recorded_time: { kind: 'persisted_observation', observed_at: '2026-08-30T09:30:00.000Z' },
-    env: value.env,
-  }).handoff.handoff_id;
+  };
 }
 
 describe('C7 the surface never re-exports an unproven execution context', () => {
   test('a forged bound_task claim reaches no read surface, while the handoff knowledge still projects', () => {
     const value = fixture();
     publishSignal(value, 'signal-a', 'merge-gate-flake');
-    const handoffId = publishForgedBoundTaskHandoff(value, 'merge-gate-flake');
     const authorization = value.actors[0]!.authorization_id;
+    const input = writeInput(value, '.forged-handoff.json', forgedBoundTaskHandoffInput('merge-gate-flake'));
+    const published = cli(value, 'collaboration', 'handoff', 'publish',
+      '--authorization-id', authorization, '--input', input);
+    expect(published.stderr).toBe('');
+    expect(published.status).toBe(0);
+    const acknowledgement = JSON.parse(published.stdout) as Record<string, unknown>;
+    expect(Object.keys(acknowledgement).sort()).toEqual([
+      'content_trust', 'created', 'handoff_id', 'handoff_sha256', 'mode',
+    ]);
+    const handoffId = acknowledgement.handoff_id as string;
 
     const listed = cli(value, 'collaboration', 'handoff', 'list', '--authorization-id', authorization);
     const exchange = cli(value, 'collaboration', 'exchange', '--authorization-id', authorization);
@@ -289,7 +292,10 @@ describe('C7 the surface never re-exports an unproven execution context', () => 
 
     // Non-containment over the whole payload: no projection, count or nested
     // record may carry the Claim, the Lease generation or the freeze digest.
-    for (const payload of [listed.stdout, exchange.stdout, threads.stdout, signals.stdout]) {
+    // The publication acknowledgement is included deliberately: persistence
+    // proves identity and bytes, not the caller-supplied execution authority.
+    // Its shape must never masquerade as the verified read projection.
+    for (const payload of [published.stdout, listed.stdout, exchange.stdout, threads.stdout, signals.stdout]) {
       for (const forgedValue of [
         FORGED_CLAIM_ID,
         FORGED_WORK_ENVELOPE,

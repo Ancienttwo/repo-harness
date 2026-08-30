@@ -204,7 +204,7 @@ function postAction(options: MutationOptions): void {
 function handoffPublishAction(options: MutationOptions): void {
   try {
     const value = collaborationHandoffPublish(contextOf(options), parseHandoffPublish(options.input));
-    output(value, options.format, 'WorkStateHandoffV1');
+    output(value, options.format, 'CollaborationHandoffPublishAcknowledgementV1');
   } catch (error) { outputError(error); }
 }
 
