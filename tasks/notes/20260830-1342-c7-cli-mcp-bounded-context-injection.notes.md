@@ -9,26 +9,84 @@
 
 ## Design Decisions
 
-- ...
+- **The fence discriminator is a union, not a single test.** `collaborationDispatchIntent()`
+  calls a dispatch a collaboration dispatch when a binding record exists for it *or* when the
+  envelope goal carries either untrusted coordination marker. Binding-exists alone leaves the
+  interesting hole open: a caller who injects the block into a goal and never records a binding
+  would skip the fence by omitting the very record the fence checks. Marker-carries alone fails
+  symmetrically. `delegation_only` therefore means "no binding and no marker", which is exactly
+  the shape every dispatch this command served before this row.
+- **Markers are tested by presence, not by attempting a split.** A goal carrying a partial or
+  malformed block is a collaboration dispatch whose binding will not check out, and it must reach
+  the fence to be told so. Catching a parse failure here would be the surface forming its own
+  opinion about a forgery.
+- **One shared surface module, two thin adapters.** `src/effects/collaboration/agent-surface.ts`
+  is the only place the actor derivation, the fixed `public` destination, the `first_publication`
+  recorded time and the untrusted marking are stated. The CLI and the MCP tool set restate none of
+  them. Two copies of a rule that must agree is how one of them silently falls behind.
+- **No actor, destination or recorded time on the wire, and an unknown key is refused rather than
+  dropped.** The CLI parses mutation payloads with an exact key set and the tools use
+  `additionalProperties: false` plus `rejectUnknown()`. Rejection is strictly stronger than
+  ignoring, and it keeps C1's store enforcement from being the only thing between a caller and a
+  forged author.
+- **Reads answer with the flag off; mutations do not.** This follows C1-C6 rather than deciding
+  anything new: each store gates itself, and `collectCollaborativeWorkExchange()` reads the mode,
+  reports it and returns a snapshot regardless. A read surface that refused when off would make
+  the flag unobservable through the surface an operator would use to observe it. Every payload
+  carries `mode`.
+- **The untrusted marking is a pass-through, not a second producer.**
+  `renderCollaborationContext()` stays the only emitter of `[CoordinationContextUntrusted]`,
+  because `decomposeCollaborationGoal()` depends on exactly one such line existing in a composed
+  goal. `packet build` returns C6's rendering verbatim; every other payload carries
+  `content_trust` with the same frozen warning sentence and no markers.
+- **`packet build` is CLI-only.** The PRD's Engineer tool profile lists packet *read*; composing a
+  packet into a delegated run's goal is a Host act C6 gave the Host, so it is not something a
+  Worker's parent can ask a tool for. The MCP inventory is the PRD's six; the CLI family is the
+  sprint row's list plus `packet read`.
+- **`mcp doctor --live` had to move with the server.** `src/cli/mcp/setup.ts` compares the served
+  `tools/list` byte for byte against the inventory it builds, so leaving it on the engineer-only
+  list would have made the doctor report the profile not ready.
 
 ## Deviations From Plan Or Spec
 
-- None recorded.
+- Allowed Paths were widened mid-slice, through the contract, for
+  `src/effects/collaboration/agent-surface.ts` (the shared surface module) and
+  `src/cli/mcp/setup.ts` (the live doctor inventory). Both are recorded in the contract with the
+  reason.
+- One relation the plan did not anticipate was required:
+  `relation.collaboration.engineer-scheduling`. The exchange surface asks the scheduling plane for
+  the caller's own offers, and without the declared relation that flow step is unprovable.
 
 ## Tradeoffs Considered
 
 | Option | Decision | Reason |
 |--------|----------|--------|
-| ... | ... | ... |
+| Fence every delegated dispatch vs only collaboration ones | Only collaboration ones | A binding exists only for a run that went through `deliverCollaborationContext()`; an unconditional fence would refuse the entire existing delegation CLI path |
+| Binding-exists discriminator vs binding-or-marker | Binding-or-marker | Binding-exists alone lets a forger skip the fence by not recording the record the fence checks |
+| Wrap read payloads in the canonical markers vs a `content_trust` field | `content_trust` | A second emitter of the markers would make `decomposeCollaborationGoal()`'s "exactly one such line" assumption ambiguous |
+| Default `read_execution_offers` to `[]` vs asking the scheduling plane | Ask | The collector requires the caller to supply the plane's own answer precisely so an empty list cannot mean "nobody asked"; a scheduling refusal now fails the read instead of being reported as zero offers |
+| Hoist the offer read out of the collector callback vs a named helper called from it | Named helper | Hoisting would give the double read one cached answer and make the offer source always look stable, defeating the consistency detection it exists for |
+| A separate MCP profile for collaboration vs extending the engineer inventory | Extend | The surface is bounded by exactly the authenticated Engineer principal the profile already carries; a second profile would be a second place the boundary is stated |
 
 ## Open Questions
 
-- None.
+- The sprint row names a ≤1,500 estimated-token injection budget. That budget is
+  `COLLABORATION_CONTEXT_BUDGET_ESTIMATED_TOKENS`, already enforced and tested by C2/C6's packet
+  builder; this row adds no new injected-context path, so it was not re-asserted here.
 
 ## Evidence Links
 
 - Checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
+- Architecture acceptance: `event.orchestrator-approval-20260830-c7-collaboration-architecture`,
+  `changeset.docs-projection-c7-collaboration-surface-b`, reason codes `entrypoint-changed`,
+  `ownership-changed`, `relation-changed`, `responsibility-changed`,
+  `verified-flow-proof-changed`, affected `capability.runtime-harness.collaboration`,
+  `capability.runtime-harness.delegated-runs`, `capability.runtime-harness.mcp-sidecar`. Applied
+  through the same internal-API route C1-C6 recorded as tool debt
+  (`ProjectionRequestV1.acceptedChange` still has no production caller); the ordinary apply then
+  converged the manifest and `check --json` returns `noop` at exit 0. The collaboration module doc
+  reports `Proof: proven`, selectors `48/48`.
 
 ## Promotion Filter
 
@@ -39,3 +97,11 @@ Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset 
 - Promote to `tasks/lessons.md` only after a repeated correction or failure pattern.
 - Promote to `docs/researches/` only when it is durable repo knowledge with evidence.
 - Promote to harness asset files only after verification across more than one task or fixture.
+- Promoted to `tasks/lessons.md`: an archcontext flow step whose evidence edge passes through a
+  closure, and a flow step crossing to a capability with no declared relation, both make the
+  capability's proof `unprovable` and silently consume a major-change acceptance without
+  applying. Same class as C6's self-edge lesson, different two triggers; hard to reverse (a wasted
+  approval event plus a stale durable receipt that short-circuits the retry to `noop`), surprising
+  without local context (the refusal names neither the step nor the missing relation), and the
+  trade-off is real — the callback in question exists so the collector's double read stays a
+  double read.
