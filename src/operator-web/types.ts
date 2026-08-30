@@ -1,5 +1,19 @@
 /** Browser projections import their transport types from the core authority. */
 export type {
+  OperatorCollaborationActorKind,
+  OperatorCollaborationConsistency,
+  OperatorCollaborationExecutionContextKind,
+  OperatorCollaborationHandoffV1,
+  OperatorCollaborationMode,
+  OperatorCollaborationOpportunityReason,
+  OperatorCollaborationOpportunityV1,
+  OperatorCollaborationParticipantV1,
+  OperatorCollaborationSignalV1,
+  OperatorCollaborationSnapshotV1,
+  OperatorCollaborationSource,
+  OperatorCollaborationThreadV1,
+} from '../core/operator/collaboration-snapshot';
+export type {
   OperatorFleetCardV1,
   OperatorFleetColumn,
   OperatorFleetCountsV1,
@@ -11,6 +25,15 @@ export type {
   OperatorFleetSnapshotV1,
 } from '../core/operator/fleet-snapshot';
 
+import type {
+  OperatorCollaborationHandoffV1,
+  OperatorCollaborationOpportunityV1,
+  OperatorCollaborationParticipantV1,
+  OperatorCollaborationSignalV1,
+  OperatorCollaborationSnapshotV1,
+  OperatorCollaborationSource,
+  OperatorCollaborationThreadV1,
+} from '../core/operator/collaboration-snapshot';
 import type {
   OperatorFleetCardV1,
   OperatorFleetColumn,
@@ -27,6 +50,13 @@ import type {
  * here rather than at runtime.
  */
 export const OPERATOR_FLEET_PAYLOAD_PROTOCOL: OperatorFleetSnapshotV1['protocol'] = 3;
+
+/**
+ * The collaboration protocol the browser transport accepts, restated for the
+ * same reason and typed against the core literal, so a bump that forgets the
+ * browser fails typecheck.
+ */
+export const OPERATOR_COLLABORATION_PAYLOAD_PROTOCOL: OperatorCollaborationSnapshotV1['protocol'] = 1;
 
 export interface OperatorApiErrorV1 {
   readonly code: string;
@@ -169,6 +199,24 @@ const MERGE_ATTENTION_OWNERS = ['agent', 'user', 'external'] as const;
 const MERGE_INTEGRATION_MODES = ['unmerged', 'ancestor', 'absorbed', 'unavailable'] as const;
 const SHA256_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 const GIT_OID_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u;
+const COLLABORATION_RECORD_ID_PATTERN = /^[0-9a-f]{64}$/u;
+const COLLABORATION_MODES = ['off', 'shadow', 'active'] as const;
+const COLLABORATION_SOURCES = ['signals', 'handoffs', 'adoptions', 'execution_offers'] as const;
+const COLLABORATION_ACTOR_KINDS = ['module_engineer', 'delegated_worker'] as const;
+const COLLABORATION_EXECUTION_CONTEXT_KINDS = [
+  'delegated_worker',
+  'bound_task',
+  'publication',
+  'none',
+] as const;
+const COLLABORATION_OPPORTUNITY_REASONS = [
+  'unadopted_handoff',
+  'low_contributor_coverage',
+  'cross_thread_reference',
+  'recent_activity',
+  'artifact_rich_thread',
+  'exploration_slot',
+] as const;
 
 function requireRecord(value: unknown): UnknownRecord {
   if (!isRecord(value)) throw new OperatorPayloadError();
@@ -343,6 +391,132 @@ function decodeRepository(value: unknown): OperatorFleetRepositoryV1 {
     snapshot_consistency: snapshotConsistency,
     cards: Object.freeze(cards),
     error,
+  });
+}
+
+function requireCollaborationRecordId(value: unknown): string {
+  const id = requireString(value);
+  if (!COLLABORATION_RECORD_ID_PATTERN.test(id)) throw new OperatorPayloadError();
+  return id;
+}
+
+function requireInstant(value: unknown): string {
+  const instant = requireString(value);
+  if (Number.isNaN(Date.parse(instant))) throw new OperatorPayloadError();
+  return instant;
+}
+
+function decodeCollaborationThread(value: unknown): OperatorCollaborationThreadV1 {
+  const thread = requireRecord(value);
+  return Object.freeze({
+    thread_key: requireString(thread.thread_key),
+    signal_count: requireNonNegativeInteger(thread.signal_count),
+    distinct_contributor_count: requireNonNegativeInteger(thread.distinct_contributor_count),
+    latest_signal_at: requireInstant(thread.latest_signal_at),
+    artifact_ref_count: requireNonNegativeInteger(thread.artifact_ref_count),
+    unadopted_handoff_count: requireNonNegativeInteger(thread.unadopted_handoff_count),
+    adoption_count: requireNonNegativeInteger(thread.adoption_count),
+    cross_thread_reference_count: requireNonNegativeInteger(thread.cross_thread_reference_count),
+    recency_rank: requireNonNegativeInteger(thread.recency_rank),
+    hotspot_score: requireNonNegativeInteger(thread.hotspot_score),
+    thread_sha256: requireSha256(thread.thread_sha256),
+  });
+}
+
+function decodeCollaborationSignal(value: unknown): OperatorCollaborationSignalV1 {
+  const signal = requireRecord(value);
+  return Object.freeze({
+    signal_id: requireCollaborationRecordId(signal.signal_id),
+    signal_sha256: requireSha256(signal.signal_sha256),
+    thread_key: requireString(signal.thread_key),
+    actor_lineage: requireString(signal.actor_lineage),
+    title: requireString(signal.title),
+    labels: Object.freeze(requireArray(signal.labels).map(requireString)),
+    artifact_ref_count: requireNonNegativeInteger(signal.artifact_ref_count),
+    created_at: requireInstant(signal.created_at),
+    superseded: requireBoolean(signal.superseded),
+  });
+}
+
+function decodeCollaborationHandoff(value: unknown): OperatorCollaborationHandoffV1 {
+  const handoff = requireRecord(value);
+  return Object.freeze({
+    handoff_id: requireCollaborationRecordId(handoff.handoff_id),
+    handoff_sha256: requireSha256(handoff.handoff_sha256),
+    thread_key: requireString(handoff.thread_key),
+    actor_lineage: requireString(handoff.actor_lineage),
+    trigger: requireString(handoff.trigger),
+    goal: requireString(handoff.goal),
+    next_action_count: requireNonNegativeInteger(handoff.next_action_count),
+    open_hypothesis_count: requireNonNegativeInteger(handoff.open_hypothesis_count),
+    adoption_count: requireNonNegativeInteger(handoff.adoption_count),
+    created_at: requireInstant(handoff.created_at),
+    // Null is the withheld `bound_task` context, so it is decoded rather than
+    // defaulted: an absent key would silently become the same value as a proof
+    // that did not hold.
+    execution_context_kind: handoff.execution_context_kind === null
+      ? null
+      : requireOneOf(handoff.execution_context_kind, COLLABORATION_EXECUTION_CONTEXT_KINDS),
+  });
+}
+
+function decodeCollaborationParticipant(value: unknown): OperatorCollaborationParticipantV1 {
+  const participant = requireRecord(value);
+  return Object.freeze({
+    actor_lineage: requireString(participant.actor_lineage),
+    actor_kind: requireOneOf(participant.actor_kind, COLLABORATION_ACTOR_KINDS),
+    latest_actor_sha256: requireSha256(participant.latest_actor_sha256),
+    signal_count: requireNonNegativeInteger(participant.signal_count),
+    handoff_count: requireNonNegativeInteger(participant.handoff_count),
+    thread_keys: Object.freeze(requireArray(participant.thread_keys).map(requireString)),
+    latest_activity_at: requireInstant(participant.latest_activity_at),
+  });
+}
+
+function decodeCollaborationOpportunity(value: unknown): OperatorCollaborationOpportunityV1 {
+  const opportunity = requireRecord(value);
+  return Object.freeze({
+    thread_key: requireString(opportunity.thread_key),
+    reason: requireOneOf(opportunity.reason, COLLABORATION_OPPORTUNITY_REASONS),
+    source_refs: Object.freeze(requireArray(opportunity.source_refs).map(requireString)),
+  });
+}
+
+function decodeCollaborationSources(value: unknown): readonly OperatorCollaborationSource[] {
+  return Object.freeze(requireArray(value).map((source) => requireOneOf(source, COLLABORATION_SOURCES)));
+}
+
+/**
+ * Decode the complete collaboration payload before any panel receives it.
+ *
+ * A payload that does not decode raises `OperatorPayloadError` and the panel
+ * shows a stated failure. It never falls back to a partial document: a lane list
+ * that silently dropped the entries it could not read would be the healthy-empty
+ * reading the collaboration program exists to refuse.
+ */
+export function decodeOperatorCollaborationSnapshot(value: unknown): OperatorCollaborationSnapshotV1 {
+  const snapshot = requireRecord(value);
+  if (
+    snapshot.protocol !== OPERATOR_COLLABORATION_PAYLOAD_PROTOCOL
+    || snapshot.kind !== 'operator_collaboration_snapshot'
+  ) {
+    throw new OperatorPayloadError();
+  }
+  return Object.freeze({
+    protocol: OPERATOR_COLLABORATION_PAYLOAD_PROTOCOL,
+    kind: 'operator_collaboration_snapshot',
+    repository_id: requireString(snapshot.repository_id),
+    mode: requireOneOf(snapshot.mode, COLLABORATION_MODES),
+    snapshot_consistency: requireOneOf(snapshot.snapshot_consistency, SNAPSHOT_CONSISTENCIES),
+    degraded_sources: decodeCollaborationSources(snapshot.degraded_sources),
+    changed_sources: decodeCollaborationSources(snapshot.changed_sources),
+    threads: Object.freeze(requireArray(snapshot.threads).map(decodeCollaborationThread)),
+    signals: Object.freeze(requireArray(snapshot.signals).map(decodeCollaborationSignal)),
+    handoffs: Object.freeze(requireArray(snapshot.handoffs).map(decodeCollaborationHandoff)),
+    participants: Object.freeze(requireArray(snapshot.participants).map(decodeCollaborationParticipant)),
+    opportunities: Object.freeze(requireArray(snapshot.opportunities).map(decodeCollaborationOpportunity)),
+    unverified_execution_context_count: requireNonNegativeInteger(snapshot.unverified_execution_context_count),
+    source_snapshot_sha256: requireSha256(snapshot.source_snapshot_sha256),
   });
 }
 
