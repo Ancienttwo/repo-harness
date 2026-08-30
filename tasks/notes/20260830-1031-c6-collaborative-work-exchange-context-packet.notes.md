@@ -48,6 +48,65 @@
   resolution, so the caller supplies a reader and the collector only double-reads
   what it returns.
 
+## Round-2 Corrections And The Sibling-Exit Sweep
+
+Codex round 1 rejected two P1s and one P2, all in
+`src/effects/collaboration/work-exchange.ts`. All three were real.
+
+- **Cross-source stability was overclaimed.** The collector read each source
+  twice back to back, which proves that source stable inside its own window and
+  says nothing about the collection: with per-source windows that never overlap,
+  signals could change after their window closed while handoffs were still being
+  read, and the returned pair — a combination that never coexisted — was marked
+  `stable`, which is an assertion about the whole set. Restructured to two full
+  passes over every source, classified per source afterwards. Source `i` is now
+  observed over `[t_i, t_{N+i}]`, and for any `i < j` the windows overlap on
+  `[t_j, t_{N+i}]`, non-empty because `j < N + i` always holds. That pairwise
+  overlap is the property `stable` now claims. What it does not claim is
+  atomicity: a write landing after a source's final read is still invisible, and
+  no finite number of passes closes that without a cross-store lock. Saying so is
+  the point — the original bug was a stronger claim than the mechanism supported,
+  and replacing it with a slightly weaker overclaim would repeat it.
+- **The raw handoff exit was real and is closed.** The collection returned
+  `handoffs: WorkStateHandoffV1[]` verbatim beside a snapshot that correctly
+  withheld unverified `bound_task` contexts, so the exclusion was decorative for
+  any consumer that reached for the field. Nothing in `src/` or `tests/` consumed
+  it (verified by search before removal), so it is removed rather than replaced:
+  `snapshot.open_handoffs` is the verified-or-null projection and `handoff_facts`
+  is derived from it. A regression test asserts the forged Claim id appears
+  nowhere in the serialized collection and pins the exact key set.
+- **`binding_goal_not_composed` was untested and unreachable honestly.** The
+  composed-goal digest check fires first, so the branch needs a binding whose
+  `composed_goal_sha256` is the digest of an uncomposed goal — a record no
+  producer here writes. Tested against exactly that, driving the pure check
+  directly, with a companion assertion showing the ordering that makes it
+  unreachable. The workstream ledger's "all four refusal modes are tested"
+  sentence was false and now enumerates which codes are honest-path, which is
+  forged-state-only, and which are unreached because the recorder refuses before
+  persisting.
+
+**Sibling-exit sweep.** This was the third occurrence of "guarded main path,
+unguarded sibling exit" in the program (C3 receipt filter key, C4 destination
+sibling API, C6 raw handoffs), so every C6 return surface was enumerated rather
+than only the one reported.
+
+| Surface | Verdict |
+|---|---|
+| `collection.handoffs` | **Fixed** — removed; it re-exported the contexts the snapshot excludes |
+| `collection.signals` | Keep. Signals carry no `execution_context`, so no verify-or-exclude rule applies, and the cross-repository check runs inside `buildCollaborativeWorkExchangeSnapshot()` and throws — a collection that returns has already passed it. Required by the packet build |
+| `collection.handoff_facts` | Keep. Derived from `snapshot.open_handoffs`, so it inherits both guards (superseded excluded, unproven context withheld) and carries no context of its own |
+| adoption receipts | Never exposed; only their per-handoff counts reach the snapshot |
+| `delivery.packet` / `rendered_context` / `composed_goal` | Keep. These are the guarded artifacts themselves; the packet's `handoff` field is an id plus digest, never handoff content |
+| `deliverCollaborationContext` dropping C2's `build.projection` | Keep. Thread counts only, and it is not returned at all |
+| `readCollaborationContextPacket`, `readCollaborationRunContextBinding`, `listCollaborationRunContextBindings` | Keep. Host-written records with no actor content and no execution context |
+| `validateCollaborativeWorkExchangeSnapshot` | **Docstring fixed, behaviour unchanged.** It claimed every nested projection was re-validated "through C1 and C3"; only `execution_offers` actually is. It cannot re-run the proof — that resolves a `TaskFreezeReceiptV1` from an effect and this module is pure. The producer is the only guard point, and the comment now says that instead of implying a check that does not happen. A false claim about verification was the more dangerous half of this one |
+
+The pattern behind all three occurrences: a guard is applied where the value is
+*produced*, and a second accessor hands out the pre-guard value because it was
+convenient at the time. The check that generalises is not "look for raw records"
+but "for each guard, enumerate every path by which a caller can obtain the thing
+the guard protects."
+
 ## Deviations From Plan Or Spec
 
 - None recorded.

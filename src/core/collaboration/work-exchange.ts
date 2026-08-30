@@ -456,11 +456,26 @@ export function buildCollaborativeWorkExchangeSnapshot(
 /**
  * Re-derive the digest from the record's own contents.
  *
- * Every nested projection is re-validated through the validator that owns it —
- * offers through the scheduling authority, signals and handoffs through C1 and
- * C3 — rather than through a local shape check, so a snapshot that round-trips
- * through this function carries records the rest of the repository would also
- * accept.
+ * What this checks and what it does not, stated exactly, because a validator
+ * that is believed to check more than it does is worse than one known to check
+ * less.
+ *
+ * Checked: the key set is exact, the protocol and kind are ours, the array
+ * fields are arrays, the counts are non-negative integers, and every execution
+ * offer goes back through the scheduling authority's own `validateEngineerOffer`
+ * so a projection cannot disagree with the offer it carries. `snapshot_sha256`
+ * is then re-derived over the whole basis, so any byte that moved is caught.
+ *
+ * Not checked: the participant, thread, signal-summary, handoff-summary and
+ * opportunity projections are carried through as given. In particular this
+ * function does **not** re-run the `bound_task` execution-context proof. It
+ * cannot: the proof resolves a `TaskFreezeReceiptV1` from the Task freeze store,
+ * which is an effect, and this module is pure. The proof is enforced at the
+ * producer — `buildCollaborativeWorkExchangeSnapshot()` refuses to build without
+ * a verdict for every `bound_task` handoff — and that producer is the only guard
+ * point. A snapshot assembled by hand rather than collected therefore carries
+ * whatever its author put in it, bound to its digest; this function reports that
+ * the bytes are self-consistent, never that they were proven.
  */
 export function validateCollaborativeWorkExchangeSnapshot(
   value: unknown,

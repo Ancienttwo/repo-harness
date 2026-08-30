@@ -11,10 +11,23 @@
  * **Double read, and what each outcome means.** Every mutable source is read
  * twice and the two reads are compared by canonical bytes:
  *
- * - identical — the source held still for the whole collection;
+ * - identical — the source held still across its window;
  * - different — a writer committed between the reads, so the snapshot describes
  *   a moment that has already passed and is marked `changed_during_read`;
  * - unreadable — the source could not be established at all, marked `degraded`.
+ *
+ * **The window spans the collection, not one source.** Both passes read every
+ * source before either is classified, so source `i` is observed over
+ * `[t_i, t_{N+i}]`. For any two sources `i < j` those windows overlap on
+ * `[t_j, t_{N+i}]`, which is non-empty because `j < N + i` always holds. That
+ * overlap is what makes `stable` an assertion about the *combination*: reading
+ * each source twice back to back instead would give windows that never touch,
+ * and a change to one source after its own window closed would go unreported
+ * while the other source was still being read.
+ *
+ * What no number of passes closes is a write landing after a source's final
+ * read; that is the standing limit of optimistic double-reading without a
+ * cross-store lock, and `stable` claims overlap, not atomicity.
  *
  * The snapshot is built from the second read, never from a merge of the two. A
  * merge would produce a set that no single moment ever contained, and
@@ -99,26 +112,66 @@ type Observation<T> =
   | { readonly outcome: 'stable' | 'changed_during_read'; readonly value: T }
   | { readonly outcome: 'degraded'; readonly cause: unknown };
 
+type PassOutcome<T> =
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly cause: unknown };
+
 /**
- * Read one source twice and classify what happened in between.
+ * One source's read in one pass. A throw is captured rather than propagated so
+ * the remaining sources in the pass are still read: a degraded source is a fact
+ * about that source, and abandoning the pass would turn it into a fact about
+ * every source after it in the order.
+ */
+function readPass<T>(read: () => T): PassOutcome<T> {
+  try {
+    return { ok: true, value: read() };
+  } catch (cause) {
+    return { ok: false, cause };
+  }
+}
+
+/**
+ * Classify one source from its two passes.
  *
  * The comparison is on canonical bytes rather than on record counts: two reads
  * that both return three records but disagree about one of them changed just as
  * much as two reads of different lengths, and a count comparison would call that
  * stable.
  */
-function observe<T>(read: () => T, canonical: (value: T) => string): Observation<T> {
-  let first: T;
-  let second: T;
-  try {
-    first = read();
-    second = read();
-  } catch (cause) {
-    return { outcome: 'degraded', cause };
-  }
+function classifyPasses<T>(
+  first: PassOutcome<T>,
+  second: PassOutcome<T>,
+  canonical: (value: T) => string,
+): Observation<T> {
+  if (!first.ok) return { outcome: 'degraded', cause: first.cause };
+  if (!second.ok) return { outcome: 'degraded', cause: second.cause };
   return {
-    outcome: canonical(first) === canonical(second) ? 'stable' : 'changed_during_read',
-    value: second,
+    outcome: canonical(first.value) === canonical(second.value) ? 'stable' : 'changed_during_read',
+    value: second.value,
+  };
+}
+
+/**
+ * One pass over every source, always in the same order.
+ *
+ * The order is the object literal's source order, which JavaScript evaluates
+ * top to bottom, so the two passes interleave identically and a source's
+ * position is a property of this function rather than of the call site.
+ */
+function readAllSources(
+  repoRoot: string,
+  readExecutionOffers: () => readonly EngineerOfferV1[],
+): {
+  readonly signals: PassOutcome<readonly CoordinationSignalV1[]>;
+  readonly handoffs: PassOutcome<readonly WorkStateHandoffV1[]>;
+  readonly adoptions: PassOutcome<readonly HandoffAdoptionReceiptV1[]>;
+  readonly execution_offers: PassOutcome<readonly EngineerOfferV1[]>;
+} {
+  return {
+    signals: readPass(() => listCoordinationSignals(repoRoot)),
+    handoffs: readPass(() => listWorkStateHandoffs(repoRoot)),
+    adoptions: readPass(() => listHandoffAdoptionReceipts(repoRoot)),
+    execution_offers: readPass(readExecutionOffers),
   };
 }
 
@@ -151,10 +204,26 @@ export interface CollectCollaborativeWorkExchangeInput {
 
 export interface CollaborativeWorkExchangeCollectionV1 {
   readonly snapshot: CollaborativeWorkExchangeSnapshotV1;
-  /** The exact signal set the snapshot was built from, for the context packet. */
+  /**
+   * The exact signal set the snapshot was built from, for the context packet.
+   *
+   * Signals carry no `execution_context`, so no verify-or-exclude rule applies
+   * to them, and the cross-repository check runs inside
+   * `buildCollaborativeWorkExchangeSnapshot()` and throws — a collection that
+   * returns at all has already passed it. Nothing is exposed here that the
+   * snapshot withholds.
+   */
   readonly signals: readonly CoordinationSignalV1[];
-  readonly handoffs: readonly WorkStateHandoffV1[];
-  /** C2's declared seam, now carrying real C3 records. */
+  /**
+   * C2's declared seam, now carrying real C3 records.
+   *
+   * Derived from `snapshot.open_handoffs`, so it inherits the same guards: a
+   * superseded handoff is already gone and an unproven `bound_task` context was
+   * already withheld. The raw `WorkStateHandoffV1[]` this collection used to
+   * return alongside the snapshot is deliberately absent — it re-exported the
+   * unverified execution contexts the snapshot exists to exclude, which is the
+   * whole point of the exclusion.
+   */
   readonly handoff_facts: readonly CollaborationHandoffFactV1[];
   readonly snapshot_consistency: CollaborationSnapshotConsistency;
   readonly degraded_sources: readonly CollaborationExchangeSource[];
@@ -229,7 +298,21 @@ export function collectCollaborativeWorkExchange(
   const repoRoot = realpathSync(input.repo_root);
   const mode = readCollaborationMode(repoRoot);
 
-  const signalObservation = observe(() => listCoordinationSignals(repoRoot), signalSetBytes);
+  // Both passes cover every source before either is classified. Reading one
+  // source twice back to back would prove that source stable inside its own
+  // window while proving nothing about the collection: with per-source windows
+  // that never overlap, signals could change after their window closed and
+  // handoffs be read afterwards, and the pair returned would be a combination
+  // that never coexisted — reported as `stable`, which is an assertion about the
+  // whole set.
+  const firstPass = readAllSources(repoRoot, input.read_execution_offers);
+  const secondPass = readAllSources(repoRoot, input.read_execution_offers);
+
+  const signalObservation = classifyPasses(firstPass.signals, secondPass.signals, signalSetBytes);
+  const handoffObservation = classifyPasses(firstPass.handoffs, secondPass.handoffs, handoffSetBytes);
+  const adoptionObservation = classifyPasses(firstPass.adoptions, secondPass.adoptions, adoptionSetBytes);
+  const offerObservation = classifyPasses(firstPass.execution_offers, secondPass.execution_offers, offerSetBytes);
+
   if (signalObservation.outcome === 'degraded') {
     // The one source whose absence leaves nothing to describe. Every projection
     // below is derived from the signal set, so there is no partial snapshot to
@@ -239,9 +322,6 @@ export function collectCollaborativeWorkExchange(
       signalObservation.cause,
     );
   }
-  const handoffObservation = observe(() => listWorkStateHandoffs(repoRoot), handoffSetBytes);
-  const adoptionObservation = observe(() => listHandoffAdoptionReceipts(repoRoot), adoptionSetBytes);
-  const offerObservation = observe(input.read_execution_offers, offerSetBytes);
 
   const observations: readonly (readonly [CollaborationExchangeSource, Observation<unknown>])[] = [
     ['signals', signalObservation],
@@ -300,7 +380,6 @@ export function collectCollaborativeWorkExchange(
   return Object.freeze({
     snapshot,
     signals,
-    handoffs,
     handoff_facts: Object.freeze(handoffFacts),
     snapshot_consistency: snapshotConsistency,
     degraded_sources: Object.freeze(degradedSources),

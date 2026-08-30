@@ -332,6 +332,33 @@ describe('C6 collaborative work exchange collection', () => {
     expect(collection.snapshot.execution_offers).toHaveLength(1);
   });
 
+  test('a write to one source between the two passes is caught by the other source\'s window', () => {
+    const value = fixture();
+    publishSignal(value, 'signal-a', 'merge-gate-flake');
+
+    // The write lands while the offer source is being read for the first time,
+    // which is after the first pass read signals and before the second pass
+    // reads them again. Reading each source twice back to back would have closed
+    // the signal window long before this point and reported `stable`; the
+    // interleaved passes put the write inside the signal window instead.
+    let reads = 0;
+    const collection = collectCollaborativeWorkExchange({
+      repo_root: value.repoRoot,
+      read_execution_offers: () => {
+        reads += 1;
+        if (reads === 1) publishSignal(value, 'signal-late', 'archctx-drain');
+        return [];
+      },
+    });
+
+    expect(reads).toBe(2);
+    expect(collection.changed_sources).toEqual(['signals']);
+    expect(collection.snapshot_consistency).toBe('changed_during_read');
+    expect(collection.snapshot.snapshot_consistency).toBe('changed_during_read');
+    // The offer source itself never moved, so the mark names the source that did.
+    expect(collection.degraded_sources).toEqual([]);
+  });
+
   test('an unreadable additive shard is reported as degraded', () => {
     const value = fixture();
     publishSignal(value, 'signal-a', 'merge-gate-flake');
@@ -391,6 +418,40 @@ describe('C6 collaborative work exchange collection', () => {
     expect(snapshot.unverified_execution_context_count).toBe(1);
     // Nothing anywhere in the snapshot repeats the forged Claim or generation.
     expect(JSON.stringify(snapshot)).not.toContain('9a9a9a9a-9a9a-4a9a-8a9a-9a9a9a9a9a9a');
+  });
+
+  test('the collection exposes no raw handoff beside the snapshot that withheld one', () => {
+    const value = fixture();
+    publishSignal(value, 'signal-a', 'merge-gate-flake');
+    publishHandoff(value, 'handoff-a', 'merge-gate-flake', {
+      kind: 'bound_task',
+      task_id: 'a'.repeat(64),
+      task_revision: 'b'.repeat(64),
+      claim_id: '9a9a9a9a-9a9a-4a9a-8a9a-9a9a9a9a9a9a',
+      lease_generation: 7,
+      work_envelope_sha256: `sha256:${'8'.repeat(64)}`,
+      task_freeze_receipt_sha256: `sha256:${'9'.repeat(64)}`,
+    });
+
+    const collection = collect(value);
+
+    // The forged Claim must not reach a consumer through any field of the
+    // collection, not merely through the snapshot. A sibling exit carrying the
+    // raw records would make the snapshot's exclusion decorative.
+    expect(JSON.stringify(collection)).not.toContain('9a9a9a9a-9a9a-4a9a-8a9a-9a9a9a9a9a9a');
+    expect(Object.keys(collection).sort()).toEqual([
+      'changed_sources',
+      'degraded_sources',
+      'handoff_facts',
+      'mode',
+      'signals',
+      'snapshot',
+      'snapshot_consistency',
+    ]);
+    // `handoff_facts` is derived from the guarded projection, so it names the
+    // handoff without carrying its execution context.
+    expect(collection.handoff_facts).toHaveLength(1);
+    expect(JSON.stringify(collection.handoff_facts)).not.toContain('bound_task');
   });
 
   test('a non-bound_task execution context needs no proof and passes through', () => {

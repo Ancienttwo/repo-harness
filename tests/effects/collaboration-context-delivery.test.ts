@@ -19,6 +19,8 @@ import {
 } from '../../src/core/collaboration/context-packet';
 import { collaborationSha256 } from '../../src/core/collaboration/common';
 import {
+  buildCollaborationRunContextBinding,
+  checkCollaborationRunContextBinding,
   composeCollaborationGoal,
   decomposeCollaborationGoal,
 } from '../../src/core/collaboration/run-binding';
@@ -294,6 +296,46 @@ describe('C6 collaboration run context binding fence', () => {
       dispatch_id: dispatchId,
       delivery,
     }))).toBe('binding_composed_goal_stale');
+  });
+
+  test('a binding naming an uncomposed goal is refused, reachable only from forged state', () => {
+    // `binding_goal_not_composed` cannot be produced through the honest path:
+    // `deliverCollaborationContext()` always composes, so a binding whose
+    // `composed_goal_sha256` matches an uncomposed goal is a record no producer
+    // in this repository writes. The refusal exists for a hand-written or
+    // corrupted binding, so it is exercised against exactly that — driving the
+    // pure check directly rather than through a store the producer guards.
+    const plainGoal = 'A goal that was never composed with a coordination block.';
+    const renderedDigest = `sha256:${'d'.repeat(64)}`;
+    const binding = buildCollaborationRunContextBinding({
+      dispatch_id: `sha256:${'1'.repeat(64)}`,
+      delegated_run_intent_sha256: `sha256:${'2'.repeat(64)}`,
+      execution_packet_sha256: `sha256:${'3'.repeat(64)}`,
+      collaboration_context_packet_sha256: `sha256:${'4'.repeat(64)}`,
+      rendered_context_sha256: renderedDigest,
+      base_goal_sha256: `sha256:${'5'.repeat(64)}`,
+      composed_goal_sha256: collaborationSha256(plainGoal),
+    });
+
+    // Every earlier check passes, so control actually reaches the decomposition.
+    expect(checkCollaborationRunContextBinding(binding, {
+      dispatch_id: binding.dispatch_id,
+      delegated_run_intent_sha256: binding.delegated_run_intent_sha256,
+      execution_packet_sha256: binding.execution_packet_sha256,
+      composed_goal: plainGoal,
+      context_packet_rendered_context_sha256: renderedDigest,
+    })).toBe('binding_goal_not_composed');
+
+    // And the ordering is what makes it unreachable honestly: give the same
+    // binding a goal it does not digest to, and the composed-goal check fires
+    // first.
+    expect(checkCollaborationRunContextBinding(binding, {
+      dispatch_id: binding.dispatch_id,
+      delegated_run_intent_sha256: binding.delegated_run_intent_sha256,
+      execution_packet_sha256: binding.execution_packet_sha256,
+      composed_goal: `${plainGoal} altered`,
+      context_packet_rendered_context_sha256: renderedDigest,
+    })).toBe('binding_composed_goal_stale');
   });
 
   test('the binding store keeps one record per dispatch', () => {
