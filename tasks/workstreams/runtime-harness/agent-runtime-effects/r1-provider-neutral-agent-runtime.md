@@ -45,4 +45,5 @@ and semantic acceptance closeout.
 - [x] CLI/MCP/Engineering Overlay and Fleet/operator read models migrated to Agent Runtime terminology and protocol 3.
 - [x] Real local tmux canary passed with one bounded control reference and no message body.
 - [x] Architecture projection reached fixed point with zero pending human actions.
-- [ ] Real Codex App Thread Host-control canary and semantic acceptance receipt complete.
+- [x] Real Codex App Thread Host-control canary complete (2026-08-31, rerun after receipt-correlation hardening; thread `01a0544f-3a0a-7352-b3ad-e44dec748eab`).
+- [ ] Semantic acceptance receipt recorded on the final frozen subject.

@@ -17,7 +17,7 @@
 - Verdict: implementation review clean; the real Codex App Thread canary passed on 2026-08-31, closing the last acceptance blocker
 - Change type: code-change + bounded terminal migration
 - Intended files changed: Agent Runtime protocol/store/adapters, CLI/MCP/overlay, Fleet/operator DTO, policy, architecture and workflow evidence
-- Actual files changed: 61 tracked-diff paths plus the captured plan/PRD/contract/review/notes artifacts excluded from normalized review subject
+- Actual files changed: the tracked-diff path count drifts with each fix round (frozen selection packet is the authority); captured plan/PRD/contract/review/notes artifacts stay excluded from the normalized review subject
 - Commands passed: full `bun test --timeout 60000` green at each frozen round (latest run snapshot `run-20260831T042558-70779`; counts drift with the fix rounds, so the snapshot is the count authority), focused R1/task-message/inbox/authority/CLI suites green after the correlation hardening, typecheck and all root Required Checks
 - Residual risks: none open; the Codex adapter has one real local Codex Host invocation (turn accepted and completed on a fresh real thread) plus the injected-invoker fault matrix
 - Reviewer action required: rerun subject-bound acceptance on the rebased head; the canary evidence lives in the implementation notes Deviations section
@@ -38,7 +38,7 @@
 - Real Codex App Thread canary (2026-08-31, rerun after receipt-correlation hardening): `codex app-server` 0.150.1 stdio JSON-RPC; fresh real thread `01a0544f-3a0a-7352-b3ad-e44dec748eab` (supersedes thread `01a053dc-033e-7d33-9659-192c096675b2` from the pre-hardening run); the delivered module observation now carries the exact `control_ref`, closing the chain under the hardened success rule bound as engineer endpoint; one `turn/start` delivered exactly the bounded control line (accepted, turn completed); repeated start emitted no second Host action; message body absent from action and delivered text; exact module receipt closed the chain at `observed_success`; thread archived and fixture repo removed after capture
 - Supporting artifacts: architecture receipt `sha256:6d1d03493a689cbc3eac9182d182252536b2d4e0f586538e53d28db7ce40590b`; implementation notes
 - Implementation notes reviewed: yes
-- Run snapshot: full suite 3514 pass / 2 platform skips / 0 fail; post-review focused suite 44 pass / 0 fail
+- Run snapshot: the latest frozen `verify-sprint` run under `.ai/harness/runs/` is the count authority for each round; post-hardening focused suites are green (R1 suite 18 pass, task/inbox/authority/CLI suites green)
 
 ## Acceptance Receipt Projection
 

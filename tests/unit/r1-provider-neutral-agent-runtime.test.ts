@@ -16,10 +16,14 @@ import {
 import { bindLeaseRecord, buildLeaseOwnerRecord, deriveTaskId, deriveTaskRevision } from '../../src/core/state/coordination-identity';
 import {
   buildAgentRuntimeCapabilityObservation,
+  buildAgentRuntimeEffectCurrent,
   buildAgentRuntimeEffectIntent,
+  buildAgentRuntimeEffectObservation,
   buildAgentRuntimeHostAction,
   canonicalAgentRuntimeCapabilityBytes,
+  canonicalAgentRuntimeEffectCurrentBytes,
   canonicalAgentRuntimeEffectIntentBytes,
+  canonicalAgentRuntimeEffectObservationBytes,
   deriveAgentRuntimeEffectId,
   validateAgentRuntimeCapabilityObservation,
   validateAgentRuntimeEffectIntent,
@@ -203,6 +207,37 @@ describe('R1 provider-neutral Agent Runtime', () => {
     const profile = loadEngineerProfile(repoRoot, engineerId); const binding = readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision).binding!;
     const observed = capability(repoRoot);
     expect(() => prepareAgentRuntimeEffect({ repo_root: repoRoot, message_kind: 'module_message', engineer_id: engineerId, message_id: '99999999-9999-4999-8999-999999999999', idempotency_key: 'module-scope-refusal', expected_binding_id: binding.binding_id, expected_binding_generation: binding.binding_generation, expected_engineer_contract_revision: binding.engineer_contract_revision, expected_capability_sha256: observed.capability_sha256, created_at: '2026-08-30T10:03:30.000Z' })).toThrow('no Binding fence');
+  });
+
+  test('observe before any delivery observation reconciles instead of throwing', () => {
+    const repoRoot = fixture(); const prepared = prepare(repoRoot); startAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, started_at: '2026-08-30T10:04:00.000Z' });
+    const observed = observeAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, adapter: { adapter_kind: 'codex-app-thread', outcome: 'accepted', process_exit_code: null, process_signal: null }, observed_at: '2026-08-30T10:05:00.000Z', receipt_wait_exhausted: true });
+    expect(observed.current.state).toBe('reconciliation_required'); expect(observed.observation.failure_class).toBe('receipt_missing');
+  });
+
+  test('an idempotency replay with a different target fence fails closed', () => {
+    const repoRoot = fixture(); const profile = loadEngineerProfile(repoRoot, engineerId); const binding = readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision).binding!; message(repoRoot); const observed = capability(repoRoot);
+    const base = { repo_root: repoRoot, message_kind: 'module_message' as const, engineer_id: engineerId, message_id: messageOne, idempotency_key: 'replay-identity', expected_capability_sha256: observed.capability_sha256, created_at: '2026-08-30T10:03:00.000Z' };
+    const first = prepareAgentRuntimeEffect({ ...base, expected_binding_id: binding.binding_id, expected_binding_generation: binding.binding_generation, expected_engineer_contract_revision: binding.engineer_contract_revision });
+    expect(first.intent.effect_id).toBe(deriveAgentRuntimeEffectId('replay-identity'));
+    expect(() => prepareAgentRuntimeEffect({ ...base, expected_binding_id: '123e4567-e89b-42d3-a456-426614174000', expected_binding_generation: binding.binding_generation, expected_engineer_contract_revision: binding.engineer_contract_revision })).toThrow('idempotency key names another prepare request');
+  });
+
+  test('start refuses a persisted pre-hardening intent over a module-scope message', () => {
+    const repoRoot = fixture();
+    const sent = sendModuleMessage({ repo_root: repoRoot, event: buildModuleMessageEvent({
+      message_id: '99999999-9999-4999-8999-999999999999', capability_id: capabilityId, target_engineer_id: engineerId, scope: 'module', target_binding_id: null,
+      target_binding_generation: null, target_engineer_contract_revision: null, message_type: 'work_request', subject_ref: null,
+      resource_refs: [], sender: { kind: 'program_orchestrator', principal_ref: 'human:r1', binding_generation: null }, body: 'module scope body', created_at: '2026-08-30T10:01:30.000Z',
+    }) });
+    const profile = loadEngineerProfile(repoRoot, engineerId); const binding = readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision).binding!; const cap = capability(repoRoot);
+    const intent = buildAgentRuntimeEffectIntent({ idempotency_key: 'legacy-module-scope', message_ref: { kind: 'module_message', message_id: '99999999-9999-4999-8999-999999999999', message_event_digest: sent.event.event_digest, engineer_id: engineerId, binding_id: binding.binding_id, binding_generation: binding.binding_generation, engineer_contract_revision: binding.engineer_contract_revision, delivery_attempt: 1 }, endpoint_fence: { engineer_id: engineerId, binding_id: binding.binding_id, binding_generation: binding.binding_generation, engineer_contract_revision: binding.engineer_contract_revision, adapter_kind: 'codex-app-thread', host_id: 'local', endpoint_id: 'endpoint-1111' }, operation: 'notify_inbox', capability_sha256: cap.capability_sha256, created_at: '2026-08-30T10:03:00.000Z' });
+    const effectDir = join(resolveGitCommonDirectory(repoRoot), 'repo-harness/agent-runtime-effects/v2/effects', deriveAgentRuntimeEffectId('legacy-module-scope').slice(7));
+    mkdirSync(effectDir, { recursive: true }); writeFileSync(join(effectDir, 'intent.json'), canonicalAgentRuntimeEffectIntentBytes(intent));
+    const initial = buildAgentRuntimeEffectObservation({ effect_id: intent.effect_id, intent_sha256: intent.intent_sha256, sequence: 0, state: 'intent_persisted', adapter: { adapter_kind: 'codex-app-thread', outcome: 'unknown', process_exit_code: null, process_signal: null }, receipt_kind: null, receipt_sha256: null, failure_class: 'none', observed_at: intent.created_at, previous_observation_sha256: null });
+    mkdirSync(join(effectDir, 'observations'), { recursive: true }); writeFileSync(join(effectDir, 'observations', '00000000.json'), canonicalAgentRuntimeEffectObservationBytes(initial));
+    writeFileSync(join(effectDir, 'current.json'), canonicalAgentRuntimeEffectCurrentBytes(buildAgentRuntimeEffectCurrent(initial)));
+    expect(() => startAgentRuntimeEffect({ repo_root: repoRoot, effect_id: intent.effect_id, started_at: '2026-08-30T10:04:00.000Z' })).toThrow('no Binding fence');
   });
 
   test('shadow records preparation but refuses Host action', () => {
