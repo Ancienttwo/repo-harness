@@ -408,6 +408,19 @@ const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
     fails: ['C-1', 'C-2'],
     evidence: 'collaboration plane (D1): additive and non-authoritative, writes no delivery store, and its records are advisory context read as untrusted data',
   },
+  {
+    /**
+     * C8's browser transport view. It carries `COLLABORATION_PROTOCOL` rather
+     * than minting one, so it fails C-1 for the same reason its source does: the
+     * collaboration plane is not one of the five C0 froze. It fails C-2 more
+     * strongly than its source — every value in it is a copy of a decision the
+     * collaboration read model already made, its only reader is a human browser
+     * on loopback, and no agent reads it at all.
+     */
+    module: 'src/core/operator/collaboration-snapshot.ts',
+    fails: ['C-1', 'C-2'],
+    evidence: 'operator transport view of the collaboration plane (D1): a redacting projection with no store, no agent reader, and no field it decides rather than copies',
+  },
 ];
 
 /**

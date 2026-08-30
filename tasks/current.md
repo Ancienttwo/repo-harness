@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-30T18:09:17+0800 -->
+<!-- updated_at: 2026-08-30T18:34:06+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-30T18:09:17+0800
-> **Source Branch**: codex/c7-cli-mcp-bounded-context-injection
-> **Source Commit**: 3b02ec2c
+> **Updated At**: 2026-08-30T18:34:06+0800
+> **Source Branch**: codex/c8-read-only-operator-collaboration-surface
+> **Source Commit**: 68390c79
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -61,16 +61,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260830-1342-c7-cli-mcp-bounded-context-injection.md
- D tasks/contracts/20260830-1342-c7-cli-mcp-bounded-context-injection.contract.md
- D tasks/notes/20260830-1342-c7-cli-mcp-bounded-context-injection.notes.md
- D tasks/reviews/20260830-1342-c7-cli-mcp-bounded-context-injection.review.md
+ D plans/plan-20260830-1344-c8-read-only-operator-collaboration-surface.md
+ D tasks/contracts/20260830-1344-c8-read-only-operator-collaboration-surface.contract.md
+ D tasks/notes/20260830-1344-c8-read-only-operator-collaboration-surface.notes.md
+ D tasks/reviews/20260830-1344-c8-read-only-operator-collaboration-surface.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260830-1342-c7-cli-mcp-bounded-context-injection.md
-?? tasks/archive/contract-20260830-1809-c7-cli-mcp-bounded-context-injection.md
-?? tasks/archive/notes-20260830-1809-c7-cli-mcp-bounded-context-injection.md
-?? tasks/archive/review-20260830-1809-c7-cli-mcp-bounded-context-injection.md
-?? tasks/archive/todo-20260830-1809-c7-cli-mcp-bounded-context-injection.md
+?? plans/archive/plan-20260830-1344-c8-read-only-operator-collaboration-surface.md
+?? tasks/archive/contract-20260830-1833-c8-read-only-operator-collaboration-surface.md
+ ?? tasks/archive/notes-20260830-1833-c8-read-only-operator-collaboration-surface.md
+ ?? tasks/archive/review-20260830-1833-c8-read-only-operator-collaboration-surface.md
+ ?? tasks/archive/todo-20260830-1833-c8-read-only-operator-collaboration-surface.md
 ```
 
 ## Source Artifacts

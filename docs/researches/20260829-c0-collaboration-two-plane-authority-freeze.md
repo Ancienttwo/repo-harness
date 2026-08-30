@@ -116,13 +116,15 @@ C1 introduced `src/core/collaboration/` and closed the scan in
 scan`): it sweeps `src/core/**` for `*_PROTOCOL` exports and asserts the result
 equals `AUTHORITY_SOURCE_MODULES` united with an explicit `DELIBERATELY_EXCLUDED`
 list, each excluded row naming the clause it fails and its evidence. The ten
-rows above are that list's seed; the eleventh is C1's own module, adjudicated
-below. A companion assertion pins D1's direction by proving that no
-delivery-plane module imports the collaboration plane.
+rows above are that list's seed; the eleventh is C1's own module and the twelfth
+is C8's operator transport view, both adjudicated below. A companion assertion
+pins D1's direction by proving that no delivery-plane module imports the
+collaboration plane.
 
 | Module | Fails | Evidence |
 |---|---|---|
 | `src/core/collaboration/common.ts` | C-1 and C-2 | Collaboration plane, which D1 fixes as additive and non-authoritative rather than one of the five planes C0 froze; a signal's bytes grant no Claim, move no Lease generation, and reach any reader inside an untrusted wrapper, so no admission, claim, publication or acceptance decision reads them |
+| `src/core/operator/collaboration-snapshot.ts` | C-1 and C-2 | Operator transport view of the collaboration plane, added by C8. It carries `COLLABORATION_PROTOCOL` rather than minting one, so it fails C-1 for the same reason its source does; it fails C-2 more strongly, because every value in it is a copy of a decision the collaboration read model already made, it has no store, and its only reader is a human browser on loopback |
 
 ### Baseline source digests at `main@a490a5ef`
 

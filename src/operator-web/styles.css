@@ -235,6 +235,23 @@ code, .mono-value { font-family: var(--font-mono); }
 .signal-grid span { padding: 9px; border-radius: var(--radius-sm); color: var(--text-muted); background: var(--surface-sunken); font-size: 11px; }
 .signal-grid strong { display: block; color: var(--text-strong); font-family: var(--font-display); font-size: 18px; font-weight: 600; }
 
+/* Read-only collaboration. No control lives inside this block. */
+.collab-pane { gap: 14px; padding-top: 14px; border-top: 1px solid var(--border-subtle); }
+.collab-list { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.collab-list > li { display: grid; gap: 5px; padding: 9px 10px; border: 1px solid var(--border-default); border-radius: var(--radius-md); font-size: 12px; }
+.collab-lane__head, .collab-handoff__head, .collab-contributor__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 7px; }
+.collab-lane__key { overflow-wrap: anywhere; color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; }
+.collab-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; color: var(--text-muted); font-size: 11px; }
+.collab-meta .mono-value { overflow-wrap: anywhere; font-size: 11px; }
+.collab-signal__title { color: var(--text-strong); overflow-wrap: anywhere; }
+.collab-signal.is-superseded .collab-signal__title { color: var(--text-muted); text-decoration: line-through; }
+.collab-flag { color: var(--text-muted); font-weight: 600; }
+.collab-labels { display: flex; flex-wrap: wrap; gap: 5px; }
+.collab-handoff strong { overflow-wrap: anywhere; font-size: 12px; }
+.collab-context { color: var(--text-muted); font-size: 11px; }
+.collab-context.is-withheld { color: var(--danger-text); font-weight: 600; }
+.collab-opportunity { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+
 /* The one write on this board. Carrot appears here and nowhere else. */
 .composer { border-top: 1px solid var(--border-subtle); background: var(--surface-card); }
 .composer__toggle { width: 100%; min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 20px; border: 0; color: var(--text-strong); background: transparent; cursor: pointer; font-family: var(--font-display); font-size: 13px; font-weight: 600; text-align: left; }
