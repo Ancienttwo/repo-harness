@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-30 08:35
+> **Related Plan**: plans/archive/plan-20260830-0509-c4-delegated-worker-contribution-adapter.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260830-0835
+
 # Task Contract: c4-delegated-worker-contribution-adapter
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260830-0509-c4-delegated-worker-contribution-adapter.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->

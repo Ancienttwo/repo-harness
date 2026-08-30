@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-30 08:35
+> **Related Plan**: plans/archive/plan-20260830-0509-c4-delegated-worker-contribution-adapter.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260830-0835
+
 # Task Review: c4-delegated-worker-contribution-adapter
 
 > **Status**: Accepted

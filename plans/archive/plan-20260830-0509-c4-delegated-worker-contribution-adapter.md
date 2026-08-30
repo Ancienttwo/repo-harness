@@ -1,6 +1,6 @@
 # Plan: C4 delegated Worker contribution adapter and admission bridge
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260830-0509
 > **Slug**: c4-delegated-worker-contribution-adapter
 > **Planning Source**: repo-harness-sprint
