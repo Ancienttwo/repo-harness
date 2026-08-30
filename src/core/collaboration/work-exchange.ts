@@ -203,6 +203,15 @@ export function projectExistingEngineerOffer(offer: EngineerOfferV1): ExistingEn
   return Object.freeze({ offer: validated, offer_revision: validated.offer_revision });
 }
 
+/** The same cross-repository rule the signal and handoff sets are held to. */
+function projectOfferForRepository(offer: EngineerOfferV1, repositoryId: string): ExistingEngineerOfferProjectionV1 {
+  const projected = projectExistingEngineerOffer(offer);
+  if (projected.offer.repository_id !== repositoryId) {
+    collaborationInvalid(`execution offer belongs to another repository: ${projected.offer.work_package_id}`);
+  }
+  return projected;
+}
+
 function validateOfferProjection(value: unknown): ExistingEngineerOfferProjectionV1 {
   if (!isCollaborationRecord(value)) collaborationInvalid('execution offer projection must be an object');
   assertMessageExactKeys(value, ['offer', 'offer_revision'], 'execution offer projection', collaborationInvalid);
@@ -421,7 +430,7 @@ export function buildCollaborativeWorkExchangeSnapshot(
     repository_id: repositoryId,
     execution_offers: Object.freeze(
       input.execution_offers
-        .map((offer) => projectExistingEngineerOffer(offer))
+        .map((offer) => projectOfferForRepository(offer, repositoryId))
         .sort((left, right) => byText(left.offer.work_package_id, right.offer.work_package_id)
           || byText(left.offer_revision, right.offer_revision)),
     ),
