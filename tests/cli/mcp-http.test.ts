@@ -1070,6 +1070,15 @@ describe('mcp http transport', () => {
         'engineer_runtime_effect_status',
         'engineer_interface_change_propose',
         'engineer_interface_change_transition',
+        // C7's collaboration block. It extends the same closed inventory rather
+        // than opening a second profile, so this list stays the one place the
+        // engineer profile's whole surface is stated.
+        'collaboration_exchange',
+        'collaboration_threads',
+        'collaboration_packet',
+        'collaboration_signal_post',
+        'collaboration_handoff_publish',
+        'collaboration_handoff_adopt',
       ]);
       const unmapped = await call(firstHeaders, 3, 'tools/call', { name: 'engineer_status', arguments: {} });
       expect(JSON.parse(unmapped.result.content[0].text)).toMatchObject({ error: { code: 'engineer_principal_unmapped' } });
