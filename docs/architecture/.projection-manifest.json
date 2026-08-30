@@ -701,8 +701,8 @@
       "outputDigest": "sha256:1a1199f60e33bc6bc3e6f3daaa7c6c63659232b404ce32ecce9b019c3d47f4cd",
       "verifiedAgainst": {
         "branch": "codex/c6-collaborative-work-exchange-context-packet",
-        "commit": "806d73842f9df926a18491d296d4353a320dbcdb",
-        "committedAt": "2026-08-30T11:19:21+08:00"
+        "commit": "e4d79b87b1982e898fdec77f85c7f9a06bb64b2f",
+        "committedAt": "2026-08-30T12:52:26+08:00"
       }
     },
     {
@@ -1001,8 +1001,8 @@
       "outputDigest": "sha256:966f7438cd7b385cb411a2ef8c2de18c0b1e71eb067941c97375a4b284a873b9",
       "verifiedAgainst": {
         "branch": "codex/c6-collaborative-work-exchange-context-packet",
-        "commit": "806d73842f9df926a18491d296d4353a320dbcdb",
-        "committedAt": "2026-08-30T11:19:21+08:00"
+        "commit": "e4d79b87b1982e898fdec77f85c7f9a06bb64b2f",
+        "committedAt": "2026-08-30T12:52:26+08:00"
       }
     },
     {
