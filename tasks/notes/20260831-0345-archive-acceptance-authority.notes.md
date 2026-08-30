@@ -33,6 +33,10 @@
   semantic AcceptanceReceipt, binds the complete shared manifest plus exact
   archive file bytes, makes merge seals cover both authorities, and uses the
   projected live contract path instead of filename inference.
+- The first full-suite run exposed one deterministic conformance-fixture drift:
+  the host closeout call trace did not yet include the two new archive sealing
+  calls. The fixture expectation now covers those calls; no runtime behavior
+  outside the approved archive path changed.
 
 ## Tradeoffs Considered
 

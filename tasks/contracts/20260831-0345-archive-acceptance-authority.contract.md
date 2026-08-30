@@ -113,6 +113,7 @@ allowed_paths:
   - tests/acceptance-receipt.test.ts
   - tests/archive-evidence-gates.test.ts
   - tests/merge-gate.test.ts
+  - tests/continuation-conformance.test.ts
 ```
 
 ## Evidence Requirements
@@ -170,6 +171,7 @@ exit_criteria:
     - path: tests/helper-scripts.test.ts
     - path: tests/archive-evidence-gates.test.ts
     - path: tests/merge-gate.test.ts
+    - path: tests/continuation-conformance.test.ts
   commands_succeed:
     - bun test tests/acceptance-receipt.test.ts tests/helper-scripts.test.ts tests/archive-evidence-gates.test.ts tests/merge-gate.test.ts --timeout 60000
     - bun test --timeout 60000

@@ -1001,8 +1001,8 @@
       "outputDigest": "sha256:966f7438cd7b385cb411a2ef8c2de18c0b1e71eb067941c97375a4b284a873b9",
       "verifiedAgainst": {
         "branch": "codex/archive-acceptance-authority",
-        "commit": "10424425f3e69684f3bfa37408f78b2694f90fef",
-        "committedAt": "2026-08-31T03:59:04+08:00"
+        "commit": "d0a233e7274422b2d5c75fd77d2028c68601b58f",
+        "committedAt": "2026-08-31T04:42:32+08:00"
       }
     },
     {
@@ -1021,8 +1021,8 @@
       "outputDigest": "sha256:aa5aac73ff819f8ad0c053a57d5b1627faf2fc5bdbc18e8ab4722de0ab085d59",
       "verifiedAgainst": {
         "branch": "codex/archive-acceptance-authority",
-        "commit": "10424425f3e69684f3bfa37408f78b2694f90fef",
-        "committedAt": "2026-08-31T03:59:04+08:00"
+        "commit": "d0a233e7274422b2d5c75fd77d2028c68601b58f",
+        "committedAt": "2026-08-31T04:42:32+08:00"
       }
     },
     {
