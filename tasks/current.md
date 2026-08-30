@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-31T04:42:24+0800 -->
+<!-- updated_at: 2026-08-31T06:01:54+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Active
-> **Updated At**: 2026-08-31T04:42:24+0800
+> **Status**: ManualClearedWithActiveWork
+> **Updated At**: 2026-08-31T06:01:54+0800
 > **Source Branch**: codex/archive-acceptance-authority
-> **Source Commit**: 10424425
+> **Source Commit**: be65d430
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive acceptance authority implementation ready for verification
+> **Reason**: archive-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Active
-- Active Plan: plans/plan-20260831-0345-archive-acceptance-authority.md
-- Plan Status: Executing
-- Next Task: Synchronize workflow artifacts, close the deferred Todo, and run all Required Checks plus final review/acceptance.
-- Clear Note: (none)
+- Status: ManualClearedWithActiveWork
+- Active Plan: (none)
+- Plan Status: (none)
+- Next Task: inspect active worktree marker(s)
+- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
 
 ## Mainline Snapshot Reading
 
@@ -31,8 +31,6 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- .: plans/plan-20260831-0345-archive-acceptance-authority.md
-- .: active-worktree owner -> self
 - linked-worktree-2dd4cdc461ad: plans/plan-20260830-1903-r1-provider-neutral-agent-runtime.md
 - linked-worktree-2dd4cdc461ad: active-worktree owner -> self
 - linked-worktree-15c0db14c68b: plans/plan-20260829-1728-oracle-thinking-passthrough.md
@@ -60,20 +58,19 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 11 changed/untracked path(s)
+- Summary: 10 changed/untracked path(s)
 
 ```
- M assets/templates/helpers/acceptance-receipt.ts
- M assets/templates/helpers/archive-workflow.sh
- M assets/templates/helpers/merge-gate.ts
- M docs/architecture/.projection-manifest.json
- M plans/plan-20260831-0345-archive-acceptance-authority.md
- M scripts/acceptance-receipt.ts
- M scripts/archive-workflow.sh
- M scripts/merge-gate.ts
- M tasks/contracts/20260831-0345-archive-acceptance-authority.contract.md
- M tasks/notes/20260831-0345-archive-acceptance-authority.notes.md
- M tests/acceptance-receipt.test.ts
+ D plans/plan-20260831-0345-archive-acceptance-authority.md
+ D tasks/contracts/20260831-0345-archive-acceptance-authority.contract.md
+ D tasks/notes/20260831-0345-archive-acceptance-authority.notes.md
+ D tasks/reviews/20260831-0345-archive-acceptance-authority.review.md
+ M tasks/todos.md
+?? plans/archive/plan-20260831-0345-archive-acceptance-authority.md
+?? tasks/archive/contract-20260831-0601-archive-acceptance-authority.md
+?? tasks/archive/notes-20260831-0601-archive-acceptance-authority.md
+?? tasks/archive/review-20260831-0601-archive-acceptance-authority.md
+?? tasks/archive/todo-20260831-0601-archive-acceptance-authority.md
 ```
 
 ## Source Artifacts

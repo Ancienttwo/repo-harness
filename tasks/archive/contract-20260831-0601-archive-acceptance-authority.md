@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-31 06:01
+> **Related Plan**: plans/archive/plan-20260831-0345-archive-acceptance-authority.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260831-0601
+
 # Task Contract: archive-acceptance-authority
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260831-0345-archive-acceptance-authority.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->

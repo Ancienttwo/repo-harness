@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-31 06:01
+> **Related Plan**: plans/archive/plan-20260831-0345-archive-acceptance-authority.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260831-0601
+
 # Implementation Notes: archive-acceptance-authority
 
 > **Status**: Active

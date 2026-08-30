@@ -1,6 +1,6 @@
 # Plan: Archive Acceptance Authority Canonicalization
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260831-0345
 > **Slug**: archive-acceptance-authority
 > **Planning Source**: codex-plan

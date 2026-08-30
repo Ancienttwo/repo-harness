@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-31 06:01
+> **Related Plan**: plans/archive/plan-20260831-0345-archive-acceptance-authority.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260831-0601
+
 # Task Review: archive-acceptance-authority
 
 > **Status**: Accepted
@@ -48,9 +54,9 @@
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: 1037d92dac5142788d606bf1a3c993f5768ae779
 > **Verification Evidence SHA256**: sha256:bec92f87719a8fd0a0fdcb0f5f2ca3b7a679eabd2d5f4928ae729b82f121a6d6
-> **Issued At**: 2026-08-30T21:41:16.259Z
+> **Issued At**: 2026-08-30T22:01:41.786Z
 
-- Summary: Owner approved the bounded archive acceptance authority fix after the blocking review findings were addressed and all required checks passed.
+- Summary: Owner approved the completed bounded archive acceptance authority work-package after all required checks passed.
 - Findings: none
 
 ## Behavior Diff Notes
