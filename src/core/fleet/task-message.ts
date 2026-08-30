@@ -350,7 +350,7 @@ export function validateTaskMessageDeliveryReceipt(value: unknown): TaskMessageD
   const deliveryRef = record.delivery_ref === null ? null : requiredString(record.delivery_ref, 'delivery_ref');
   if (deliveryRef !== null) assertMessageBoundedUtf8(deliveryRef, 'delivery_ref', 512, invalid);
   if (state === 'pending' && deliveryRef !== null) invalid('pending receipt cannot carry a bounded control reference');
-  if (state !== 'pending' && channel === 'agent_runtime_effect' && deliveryRef === null) invalid('agent_runtime_effect delivery requires its bounded control reference');
+  if (state !== 'pending' && state !== 'superseded' && channel === 'agent_runtime_effect' && deliveryRef === null) invalid('agent_runtime_effect delivery requires its bounded control reference');
   if (channel !== 'agent_runtime_effect' && deliveryRef !== null) invalid('only agent_runtime_effect delivery carries a bounded control reference');
   const deliveredAt = record.delivered_at === null ? null : requiredString(record.delivered_at, 'delivered_at');
   const acknowledgedAt = record.acknowledged_at === null ? null : requiredString(record.acknowledged_at, 'acknowledged_at');

@@ -6,7 +6,13 @@ import { join } from 'path';
 
 import { buildModuleMessageEvent } from '../../src/core/engineers/module-message';
 import { buildClaimActorReceipt, validateEngineerPrincipal } from '../../src/core/engineers/principal-claim';
-import { buildTaskMessageEvent } from '../../src/core/fleet/task-message';
+import {
+  buildTaskMessageDeliveryReceipt,
+  buildTaskMessageEvent,
+  canonicalTaskMessageDeliveryReceiptBytes,
+  transitionTaskMessageDeliveryReceipt,
+  validateTaskMessageDeliveryReceipt,
+} from '../../src/core/fleet/task-message';
 import { bindLeaseRecord, buildLeaseOwnerRecord, deriveTaskId, deriveTaskRevision } from '../../src/core/state/coordination-identity';
 import {
   buildAgentRuntimeCapabilityObservation,
@@ -178,6 +184,25 @@ describe('R1 provider-neutral Agent Runtime', () => {
     const foreignObserved = observeAgentRuntimeEffect({ repo_root: repoRoot, effect_id: foreignPrepared.intent.effect_id, adapter: { adapter_kind: 'codex-app-thread', outcome: 'accepted', process_exit_code: null, process_signal: null }, observed_at: '2026-08-30T11:10:00.000Z', receipt_wait_exhausted: true });
     expect(foreignObserved.current.state).toBe('reconciliation_required');
     expect(foreignStarted.action).not.toBeNull();
+  });
+
+  test('an effect-channel receipt superseded before delivery stays serializable and never proves success', () => {
+    const reserved = buildTaskMessageDeliveryReceipt({ message_id: '88888888-8888-4888-8888-888888888888', recipient: { kind: 'claim', claim_id: '44444444-4444-4444-8444-444444444444', generation: 1 }, task_revision: '0'.repeat(64), delivery_channel: 'agent_runtime_effect' });
+    const superseded = transitionTaskMessageDeliveryReceipt(reserved, { state: 'superseded' });
+    expect(superseded.delivery_state).toBe('superseded'); expect(superseded.delivery_ref).toBeNull();
+    expect(() => validateTaskMessageDeliveryReceipt(JSON.parse(canonicalTaskMessageDeliveryReceiptBytes(superseded)))).not.toThrow();
+  });
+
+  test('prepare refuses module-scope messages that carry no Binding fence', () => {
+    const repoRoot = fixture();
+    sendModuleMessage({ repo_root: repoRoot, event: buildModuleMessageEvent({
+      message_id: '99999999-9999-4999-8999-999999999999', capability_id: capabilityId, target_engineer_id: engineerId, scope: 'module', target_binding_id: null,
+      target_binding_generation: null, target_engineer_contract_revision: null, message_type: 'work_request', subject_ref: null,
+      resource_refs: [], sender: { kind: 'program_orchestrator', principal_ref: 'human:r1', binding_generation: null }, body: 'module scope body', created_at: '2026-08-30T10:01:30.000Z',
+    }) });
+    const profile = loadEngineerProfile(repoRoot, engineerId); const binding = readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision).binding!;
+    const observed = capability(repoRoot);
+    expect(() => prepareAgentRuntimeEffect({ repo_root: repoRoot, message_kind: 'module_message', engineer_id: engineerId, message_id: '99999999-9999-4999-8999-999999999999', idempotency_key: 'module-scope-refusal', expected_binding_id: binding.binding_id, expected_binding_generation: binding.binding_generation, expected_engineer_contract_revision: binding.engineer_contract_revision, expected_capability_sha256: observed.capability_sha256, created_at: '2026-08-30T10:03:30.000Z' })).toThrow('no Binding fence');
   });
 
   test('shadow records preparation but refuses Host action', () => {

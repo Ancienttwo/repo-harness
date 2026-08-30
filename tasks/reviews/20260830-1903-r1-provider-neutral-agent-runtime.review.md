@@ -18,7 +18,7 @@
 - Change type: code-change + bounded terminal migration
 - Intended files changed: Agent Runtime protocol/store/adapters, CLI/MCP/overlay, Fleet/operator DTO, policy, architecture and workflow evidence
 - Actual files changed: 61 tracked-diff paths plus the captured plan/PRD/contract/review/notes artifacts excluded from normalized review subject
-- Commands passed: full `bun test --timeout 60000` (3514 pass, 2 platform skips, 0 fail), focused R1/authority/CLI suite (44 pass), typecheck and all root Required Checks
+- Commands passed: full `bun test --timeout 60000` green at each frozen round (latest run snapshot `run-20260831T042558-70779`; counts drift with the fix rounds, so the snapshot is the count authority), focused R1/task-message/inbox/authority/CLI suites green after the correlation hardening, typecheck and all root Required Checks
 - Residual risks: none open; the Codex adapter has one real local Codex Host invocation (turn accepted and completed on a fresh real thread) plus the injected-invoker fault matrix
 - Reviewer action required: rerun subject-bound acceptance on the rebased head; the canary evidence lives in the implementation notes Deviations section
 - Rollback: set `agent_runtime.mode=off`; preserve immutable V2 journals; revert the unaccepted R1 implementation without reviving V1 runtime readers
@@ -69,7 +69,7 @@
 
 | Dimension | Score | Notes |
 |-----------|-------|-------|
-| Functionality | 9/10 | Protocol/store/tmux path and exact receipts verified; real Codex Host invocation remains. |
+| Functionality | 9/10 | Protocol/store/both adapter paths and exact effect-bound receipts verified, including the real Codex Host invocation. |
 | Product depth | 9/10 | Cross-plane proof, migration and read-model integration are complete within R1 scope. |
 | Design quality | 9/10 | One endpoint authority, closed adapters, no fallback, at-most-once recovery. |
 | Code quality | 9/10 | Full suite and focused fault matrix pass; policy schema is exact-key fail-closed. |
@@ -85,4 +85,4 @@
 
 ## Summary
 
-- No open code finding remains. Recommendation stays `fail` only because the work package's explicit two-adapter real-runtime acceptance boundary is incomplete.
+- No open code finding remains. Both real-runtime adapter canaries (tmux session and Codex App Thread) passed, and the Codex acceptance rounds closed the receipt-correlation findings; recommendation is `pass` pending the final subject-bound re-review of this fix round.
