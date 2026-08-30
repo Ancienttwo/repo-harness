@@ -5,12 +5,12 @@
   "sourceDigest": "sha256:156c45048e5718a90fb51bc32b7094d9f6fbcf5da9f61fd8975a9923c4c201a8",
   "provenance": {
     "schemaVersion": "archcontext.architecture-docs-projection-provenance/v1",
-    "baseHeadSha": "d672e1f20e928107c53f57fe3e621f0613735366",
-    "worktreeDigest": "sha256:b367173bbf849ca913244699b6d34578eca331a0340c005952652eab950a5256",
+    "baseHeadSha": "806d73842f9df926a18491d296d4353a320dbcdb",
+    "worktreeDigest": "sha256:bdbbb7058b9b4c5a69963a274c530b79033eb0f599c6b0876d0c8f9c2330a24e",
     "sourceTreeDigest": "sha256:f04370c769b8ec1ad696ca84cc04bba15d33e9990051e33819975c161a75a46b",
     "modelDigest": "sha256:e2ca3a253f62c437c16437a266c3e78864c3ec0318e329757b05f87dd528d2e1",
-    "codeGraphDigest": "sha256:6583aa688c2083978f2da4ae2390e74cf73f207ec88556eaf039d82a1db645d6",
-    "indexedWorktreeDigest": "sha256:3de73ab18692b2ff5092398539046f77365064640ffe303dc9bb0370a8d1f3cd",
+    "codeGraphDigest": "sha256:ae7442ad14b84aa33d495761da37ea46a4fb8a79de48f0fce9b755a140fd1446",
+    "indexedWorktreeDigest": "sha256:fa96f92389b6fb58993ad7f05d599381eb1497ee948a4918dec65cebecc8648b",
     "rendererVersion": "archcontext.docs-renderer/v4",
     "layoutVersion": "archcontext.docs-layout/v1",
     "generatedFrom": {
@@ -19,9 +19,9 @@
       "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
       "codeGraphStatus": "ready"
     },
-    "projectionInputDigest": "sha256:c35be47519ef9fdfeb57a234b0ea20ad3980d48f161f0042c1953cfccccaece0"
+    "projectionInputDigest": "sha256:937df2ecbacb0068b292a74e1ad9631f02b26a2b56727f7f1bed46c424b0f94f"
   },
-  "projectionDigest": "sha256:a0450291963ba16ca4d8cecc71a284134a45c629cefa69c0c88f36dcfefe5ba0",
+  "projectionDigest": "sha256:be079b09c4c7624aeb6e95f43878c939729d7623b103db13ee61f28b850a18f9",
   "semanticBaseline": {
     "semanticState": {
       "schemaVersion": "archcontext.architecture-semantic-state/v1",
@@ -584,10 +584,10 @@
       "modelDigest": "sha256:e2ca3a253f62c437c16437a266c3e78864c3ec0318e329757b05f87dd528d2e1",
       "sourceTreeDigest": "sha256:f04370c769b8ec1ad696ca84cc04bba15d33e9990051e33819975c161a75a46b",
       "flowProofDigest": "sha256:e8f2c82cc36ff44731dc69ea5bfc457e5462c120fba977d4642449e8968d50f9",
-      "projectionDigest": "sha256:a0450291963ba16ca4d8cecc71a284134a45c629cefa69c0c88f36dcfefe5ba0"
+      "projectionDigest": "sha256:be079b09c4c7624aeb6e95f43878c939729d7623b103db13ee61f28b850a18f9"
     }
   },
-  "receiptDigest": "sha256:af6fd9e7749f01910b7699eaad61fd042914f562fe97cf9636b94720a9f8eb1c",
+  "receiptDigest": "sha256:032806fcb974823151b02eeeab135609b3f9936e80c8c97b0503e24cf0046802",
   "refreshSignalIds": [],
   "targetCount": 28,
   "fileCount": 28,
@@ -701,8 +701,8 @@
       "outputDigest": "sha256:1a1199f60e33bc6bc3e6f3daaa7c6c63659232b404ce32ecce9b019c3d47f4cd",
       "verifiedAgainst": {
         "branch": "codex/c6-collaborative-work-exchange-context-packet",
-        "commit": "d672e1f20e928107c53f57fe3e621f0613735366",
-        "committedAt": "2026-08-30T10:52:50+08:00"
+        "commit": "806d73842f9df926a18491d296d4353a320dbcdb",
+        "committedAt": "2026-08-30T11:19:21+08:00"
       }
     },
     {
@@ -1001,8 +1001,8 @@
       "outputDigest": "sha256:966f7438cd7b385cb411a2ef8c2de18c0b1e71eb067941c97375a4b284a873b9",
       "verifiedAgainst": {
         "branch": "codex/c6-collaborative-work-exchange-context-packet",
-        "commit": "d672e1f20e928107c53f57fe3e621f0613735366",
-        "committedAt": "2026-08-30T10:52:50+08:00"
+        "commit": "806d73842f9df926a18491d296d4353a320dbcdb",
+        "committedAt": "2026-08-30T11:19:21+08:00"
       }
     },
     {
@@ -1020,9 +1020,9 @@
       "sourceDigest": "sha256:dc2faa5abe1e85c162bcc9a126ee79a0178c75d03c20ff97519b8b463cc2ee44",
       "outputDigest": "sha256:aa5aac73ff819f8ad0c053a57d5b1627faf2fc5bdbc18e8ab4722de0ab085d59",
       "verifiedAgainst": {
-        "branch": "codex/c4-delegated-worker-contribution-adapter",
-        "commit": "a0cf9ec51399af7a1dfba7497cf80191f3db2ac9",
-        "committedAt": "2026-08-30T05:54:51+08:00"
+        "branch": "codex/c6-collaborative-work-exchange-context-packet",
+        "commit": "806d73842f9df926a18491d296d4353a320dbcdb",
+        "committedAt": "2026-08-30T11:19:21+08:00"
       }
     },
     {
