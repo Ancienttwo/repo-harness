@@ -32,7 +32,7 @@ the freeze record keeps only a pointer.
 - [x] C3: `WorkStateHandoffV1`, `HandoffExecutionContextV1` and `HandoffAdoptionReceiptV1` with their two append-only stores; adoption is non-exclusive by identity, and the store mechanics all three record families share moved into `record-store.ts` / `actor.ts`.
 - [x] C4: `CollaborationDelegationAdmissionV1` bridge and the `CollaborationContributionDraftV1` / `CollaborationContributionCommitV1` collector. `max_parallel_readers` is a runtime constraint for the first time: three real parallel readers in separate processes admitted, a fourth real request rejected, terminal readers releasing their seat, and `reconciliation_required` or unreadable readers failing the window closed per D6.
 - [x] C5: TaskFreeze / explicit takeover succession integration -- `src/effects/collaboration/succession.ts` joins the two planes: the `bound_task` execution context is derived from the persisted `TaskFreezeReceiptV1` on publish and re-derived and compared on read, a dirty bound executor is refused succession until it freezes, and a successor gets a write path only from a live Claim the existing release / takeover / acquire lifecycle granted. No new protocol, no new store, no successor field, no second destination resolver.
-- [ ] C6: collaboration-centric Work Exchange and ContextPacket, with the D3 binding gate.
+- [x] C6: collaboration-centric Work Exchange and ContextPacket, with the D3 binding gate -- `CollaborativeWorkExchangeSnapshotV1` over the real stores with `snapshot_consistency` derived from a double-read of every mutable source, C2's `CollaborationHandoffFactV1` seam filled from real C3 handoff and adoption records, existing `EngineerOfferV1` records carried through with their `offer_revision` untouched, and `CollaborationRunContextBindingV1` implemented as a fail-closed dispatch fence — `assertCollaborationDispatchBinding()` refuses a missing, dangling, digest-mismatched or unsplittable binding. Refusal coverage, stated exactly: `binding_missing`, `binding_context_packet_unresolvable` and `binding_composed_goal_stale` are reached through the honest path (a run with no binding, a packet deleted after recording, and a run admitted with a different goal); `binding_goal_not_composed` is unreachable that way, because the composed-goal digest check fires first, so it is tested against a hand-built binding driving the pure check directly. The remaining codes (`binding_dispatch_mismatch`, `binding_intent_stale`, `binding_execution_packet_stale`, `binding_rendered_context_stale`, `binding_base_goal_stale`) are unreached by any current test: the binding is keyed by dispatch and built from live records, so the recorder refuses before persisting rather than letting a mismatching binding exist. The fence is not yet wired: it has zero production callers, and the only dispatch path (`dispatchDelegatedRun()`, reached from `src/cli/commands/delegation.ts:185`) never consults it, because the CLI surface is C7's row. **Forward constraint: C7's collaboration dispatch surface MUST call `assertCollaborationDispatchBinding()` before `dispatchDelegatedRun()` — shipping a dispatch path without it recreates the exact failure this row exists to prevent.** Both C4/C5 obligations adjudicated: `execution_context` is verify-or-exclude through `resolveBoundTaskSuccession()`, and the `delegated_worker` adoption refusal stays with the Host as the adopting actor.
 - [ ] C7: CLI/MCP and bounded context injection.
 - [ ] C8: read-only Operator collaboration surface.
 - [ ] C9: real multi-agent canary and multi-seat decision.
@@ -191,6 +191,56 @@ the freeze record keeps only a pointer.
   `entrypoint-changed` plus `relation-changed` and need the same internal-API
   acceptance route C1, C3 and C4 recorded as tool debt; it is available as a
   separate architecture slice, on the same terms C2 deferred its own.
+
+- C6 filled both seams C2 declared. `snapshot_consistency` is derived by the
+  collector because it is the only layer that can observe a torn read: every
+  mutable source is read twice and compared on canonical bytes, and the worst of
+  the four observations wins. The snapshot is built from the second read, never
+  from a merge -- a merged set is one no single moment contained, and
+  `source_snapshot_sha256` would then identify a state that never existed.
+- The split between failing closed and marking degraded is not a preference.
+  Signals are what every projection is derived from, so an unreadable signal
+  shard leaves nothing to describe and the collection throws. Handoffs,
+  adoptions and execution offers are additive: their absence leaves counts at
+  zero, which reads exactly like "there are none", so the snapshot carries
+  `degraded` and every consumer that builds injectable context refuses it. The
+  mark is what stops a partial view being read as a complete one.
+- Obligation 1 (carried from C4/C5) is closed as **verify-or-exclude**. A
+  persisted `bound_task` context is shape-checked only, so the delegated-worker
+  contribution path can write any Claim id, lease generation and freeze digest.
+  Every C6 surface that would expose one runs `resolveBoundTaskSuccession()`
+  first; a branch that does not prove is withheld and counted in
+  `unverified_execution_context_count`. Flagging was rejected: it leaves the
+  unproven value in the read model and makes every downstream reader responsible
+  for remembering to check a boolean, which is the shape the fail-closed rule
+  exists to prevent. The handoff's knowledge still projects, because the
+  knowledge was never the forged part.
+- Obligation 2 is closed as **the refusal stays, with corrected wording**. C6
+  makes the Host the adopting actor: it builds the packet, composes it into the
+  goal and records the binding, so a `module_engineer` adoption on behalf of a
+  worker round is who the context was handed to. A Worker-authored receipt would
+  be a public record with no commit reference -- the inversion of C4's
+  visibility boundary -- and would carry weaker provenance than the binding,
+  which is derived from the persisted intent and envelope rather than from the
+  Worker's own account. Round continuity does not need it.
+- The binding is additive and the Delegation protocol is untouched.
+  `intent.context_packet_sha256` keeps the ExecutionPacket meaning C0's D2 froze,
+  and is cross-checked against the envelope rather than reinterpreted. Goal
+  composition is deliberately reversible: the fence splits the dispatched goal
+  back into base and rendering and compares both, so it checks the block actually
+  embedded rather than a digest of something it never saw. A base goal carrying
+  the untrusted markers is refused rather than escaped, which is what keeps the
+  split total.
+- C6 declared the entrypoints C2 and C5 deferred, in one acceptance event
+  (`event.orchestrator-approval-20260830-c6-collaboration-architecture`). One
+  trap worth keeping: an intra-capability flow step written as
+  `from: collaboration to: collaboration` produces `relation-binding-missing`
+  for every such step, which makes the capability `unprovable`, which makes
+  `classifyArchitectureMajorChange()` discard a valid `acceptedChange` and return
+  `human-action-required` with no diagnostic. The existing flows already route
+  those steps through the `component.collaboration.primary` participant; the fix
+  is to match them. Diagnosis came from instrumenting the compiler in a throwaway
+  `node_modules` patch, reverted and `shasum`-verified against a pre-patch copy.
 
 - Keep architecture facts in
   `docs/architecture/modules/runtime-harness/collaboration.md`; keep execution

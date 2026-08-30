@@ -1,0 +1,149 @@
+schemaVersion: archcontext.flow/v1
+id: flow.collaboration.context-delivery
+capabilityId: capability.runtime-harness.collaboration
+name: Read the collaboration substrate into one snapshot and deliver a bounded context packet into a fenced delegated run
+applicability: required
+participants:
+  - id: collaboration
+    nodeId: capability.runtime-harness.collaboration
+  - id: delegated-runs
+    nodeId: capability.runtime-harness.delegated-runs
+  - id: bound-task-freezes
+    nodeId: capability.runtime-harness.bound-task-freezes
+  - id: collaboration-store
+    nodeId: component.collaboration.primary
+steps:
+  - id: collect-the-exchange
+    from: collaboration
+    to: collaboration-store
+    label: Double-read every mutable source and project one Work Exchange snapshot whose snapshot_consistency reports what the two reads observed
+    evidence:
+      entrypointId: entrypoint.collaboration.work-exchange
+      sourceSymbol: collectCollaborativeWorkExchange
+      sinkId: sink.collaboration.exchange-projection
+outcomes:
+  - id: delivered
+    kind: success
+    label: A stable snapshot becomes a bounded packet, an untrusted rendering composed into the run's goal, and a binding that records exactly what was embedded
+    steps:
+      - id: gate-on-mode
+        from: collaboration
+        to: collaboration-store
+        label: Read collaboration.mode, so a collection reports the mode the round is running under
+        evidence:
+          entrypointId: entrypoint.collaboration.work-exchange
+          sourceSymbol: collectCollaborativeWorkExchange
+          sinkId: sink.collaboration.exchange-mode
+      - id: carry-offers-verbatim
+        from: collaboration
+        to: collaboration-store
+        label: Pass each existing EngineerOfferV1 through the scheduling authority's own validator, so the offer and its revision reach the snapshot unreinterpreted
+        evidence:
+          entrypointId: entrypoint.collaboration.exchange-offer-projection
+          sourceSymbol: projectExistingEngineerOffer
+          sinkId: sink.collaboration.existing-offer-authority
+      - id: build-the-packet
+        from: collaboration
+        to: collaboration-store
+        label: Select within budget from that exact collection, binding the source snapshot, estimator version, truncation evidence and canonical render digest
+        evidence:
+          entrypointId: entrypoint.collaboration.context-delivery
+          sourceSymbol: deliverCollaborationContext
+          sinkId: sink.collaboration.context-packet-build
+      - id: compose-the-goal
+        from: collaboration
+        to: collaboration-store
+        label: Append the rendering inside the untrusted coordination markers, reversibly, so the block embedded in the goal can be split back out and compared
+        evidence:
+          entrypointId: entrypoint.collaboration.context-delivery
+          sourceSymbol: deliverCollaborationContext
+          sinkId: sink.collaboration.untrusted-goal-composition
+      - id: read-the-live-run
+        from: collaboration
+        to: delegated-runs
+        label: Read the run's own intent and envelope, so the binding records what actually happened rather than what the caller believed
+        evidence:
+          entrypointId: entrypoint.collaboration.run-context-read
+          sourceSymbol: readLiveRun
+          sinkId: sink.collaboration.live-run-status
+      - id: join-the-execution-packet
+        from: collaboration
+        to: delegated-runs
+        label: Read the envelope behind the admission, keeping intent.context_packet_sha256 as the ExecutionPacket digest the delegation protocol already froze
+        evidence:
+          entrypointId: entrypoint.collaboration.run-context-read
+          sourceSymbol: readLiveRun
+          sinkId: sink.collaboration.live-run-envelope
+      - id: record-the-binding
+        from: collaboration
+        to: collaboration-store
+        label: Build the additive run-context binding over the dispatch, intent, execution packet, collaboration packet, rendering and both goals, bumping no delegation protocol
+        evidence:
+          entrypointId: entrypoint.collaboration.run-binding-record
+          sourceSymbol: recordCollaborationRunContextBinding
+          sinkId: sink.collaboration.run-binding-build
+    terminal:
+      participant: collaboration
+      label: Return the packet, the rendering and the binding; no Task, Lease, Publication or Acceptance byte moved and no delegation record grew a field
+  - id: proven-succession
+    kind: success
+    label: A handoff's bound_task execution context is shown against the freeze receipt it names, or withheld
+    steps:
+      - id: prove-the-context
+        from: collaboration
+        to: collaboration-store
+        label: Run the read-time proof for every bound_task handoff before any projection can expose one
+        evidence:
+          entrypointId: entrypoint.collaboration.execution-context-proof
+          sourceSymbol: proveExecutionContexts
+          sinkId: sink.collaboration.read-time-succession-proof
+      - id: resolve-the-receipt
+        from: collaboration
+        to: bound-task-freezes
+        label: Resolve the exact TaskFreeze receipt the context names, failing closed when the digest resolves to nothing
+        evidence:
+          entrypointId: entrypoint.collaboration.succession
+          sourceSymbol: resolveBoundTaskSuccession
+          sinkId: sink.collaboration.freeze-receipt-read
+      - id: rederive-and-compare
+        from: collaboration
+        to: collaboration-store
+        label: Re-derive the whole branch from the receipt and compare canonical bytes, so a resolvable receipt describing a different Claim is caught too
+        evidence:
+          entrypointId: entrypoint.collaboration.succession
+          sourceSymbol: resolveBoundTaskSuccession
+          sinkId: sink.collaboration.freeze-derived-context
+      - id: publish-succession-knowledge
+        from: collaboration
+        to: collaboration-store
+        label: Publish the succession handoff through the ordinary handoff store, carrying knowledge and never a Claim or a Lease
+        evidence:
+          entrypointId: entrypoint.collaboration.succession-publish
+          sourceSymbol: publishBoundTaskSuccessionHandoff
+          sinkId: sink.collaboration.succession-handoff-publish
+    terminal:
+      participant: collaboration
+      label: Expose the context only when it proved; otherwise withhold it and count the omission, leaving the handoff's knowledge readable
+  - id: dispatch-refused
+    kind: error
+    label: A collaboration-mode run whose binding is missing, dangling, or describes a different goal is refused before it dispatches
+    steps:
+      - id: read-the-binding
+        from: collaboration
+        to: collaboration-store
+        label: Read the persisted binding for this dispatch, treating its absence as a refusal rather than as permission
+        evidence:
+          entrypointId: entrypoint.collaboration.dispatch-fence
+          sourceSymbol: assertCollaborationDispatchBinding
+          sinkId: sink.collaboration.persisted-binding-read
+      - id: check-the-binding
+        from: collaboration
+        to: collaboration-store
+        label: Run the same pure check the recorder ran, against the live intent, execution packet and the goal actually being dispatched
+        evidence:
+          entrypointId: entrypoint.collaboration.dispatch-fence
+          sourceSymbol: assertCollaborationDispatchBinding
+          sinkId: sink.collaboration.binding-fence-check
+    terminal:
+      participant: collaboration
+      label: Surface the typed refusal naming the one fact that failed; the run does not dispatch and injected context that no record accounts for cannot reach a Worker

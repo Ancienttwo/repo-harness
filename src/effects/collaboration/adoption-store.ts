@@ -180,14 +180,22 @@ export function adoptWorkStateHandoff(input: AdoptWorkStateHandoffInput): AdoptW
   // references, which is the same invariant the candidate area protects, one
   // record family over.
   //
-  // Nothing constructs one today: the contribution collector never adopts, and
-  // D4 lists `delegated_worker` as a supported author without any row having
-  // wired adoption for it. Refusing is therefore fail-closed rather than a
-  // removed capability, and the row that needs Worker adoption (C5 succession or
-  // C6 packets) unblocks it by deciding how such a receipt becomes visible.
+  // C6 was named as the row that would decide this, and it decided the refusal
+  // stays. Its context delivery makes the Host the adopting actor: the Host
+  // builds the packet, composes it into the run's goal and records the run
+  // context binding, so a Module Engineer adopting on behalf of a Worker round
+  // is who the context was actually handed to. A Worker-authored receipt would
+  // add nothing that record does not already carry, with weaker provenance —
+  // the binding is derived from the persisted intent and envelope, while a
+  // receipt would be the Worker's own account of what it received.
+  //
+  // Round continuity does not need one either. A successor Worker reads the
+  // context it is given through its own binding, not through an adoption
+  // receipt it wrote about a previous round.
   if (adopter.kind !== 'module_engineer') {
     collaborationInvalidStore(
-      'handoff adoption requires a module_engineer authorization; a delegated_worker has no adoption path yet',
+      'handoff adoption requires a module_engineer authorization; context delivered to a delegated run is'
+      + ' recorded by its CollaborationRunContextBindingV1, not by a Worker-authored adoption receipt',
     );
   }
   const paths = adoptionStorePaths(repoRoot);

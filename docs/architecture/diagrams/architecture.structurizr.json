@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:49642e59e99a96a79003974eac75ed50a58bc1e112934723110fbf7db8bacb14" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:9bc87e3757bf802f02e968dd23a12cf32f8780c5b4b4257be44f9c7ac4ab1678" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:156c45048e5718a90fb51bc32b7094d9f6fbcf5da9f61fd8975a9923c4c201a8" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:f1cb1be59785e9f37cde40f732b8aa9ce5dc36eb04545870c272eba37c5fb623" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
@@ -386,6 +386,12 @@
         "id": "relation.codegraph-readiness.primary",
         "sourceId": "capability.verification.codegraph-readiness",
         "destinationId": "component.codegraph-readiness.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.collaboration.bound-task-freezes",
+        "sourceId": "capability.runtime-harness.collaboration",
+        "destinationId": "capability.runtime-harness.bound-task-freezes",
         "description": "calls"
       },
       {
