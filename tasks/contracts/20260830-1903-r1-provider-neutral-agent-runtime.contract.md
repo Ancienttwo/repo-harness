@@ -76,6 +76,7 @@ allowed_paths:
   - .archcontext/
   - docs/architecture/
   - docs/spec.md
+  - docs/researches/20260829-c0-collaboration-two-plane-authority-freeze.md
   - plans/
   - tasks/todos.md
   - tasks/current.md
