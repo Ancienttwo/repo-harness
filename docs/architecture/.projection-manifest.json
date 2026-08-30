@@ -660,9 +660,9 @@
       "sourceDigest": "sha256:4b156de6b1c762fba52333c97bc1928eb8ccdfa64972fe4c9034249d5b66a22c",
       "outputDigest": "sha256:ae0761f94d159619eca95cc0e65038bb547c0d31d085c4f9c4f9095d639f0db1",
       "verifiedAgainst": {
-        "branch": "codex/c0-two-plane-authority-freeze",
-        "commit": "5d91e324ee71288889a222a929a10a6b72374def",
-        "committedAt": "2026-08-29T20:27:27+08:00"
+        "branch": "codex/c7-c9-collaboration-integration",
+        "commit": "faa5d8ba2dacd81c76dd60379263e40e634f4242",
+        "committedAt": "2026-08-30T20:05:59+08:00"
       }
     },
     {
@@ -700,9 +700,9 @@
       "sourceDigest": "sha256:a9f113e2b5a0e0c286ddf359b66b2646584b1e1993615ae61a7042c77ab1b371",
       "outputDigest": "sha256:fcce96e601a31bdb7f7524a261a2f3be2ff118ec9444d00f22dddfd0840300f8",
       "verifiedAgainst": {
-        "branch": "codex/c7-cli-mcp-bounded-context-injection",
-        "commit": "c57ee31de3838abcc5ee14e1d17550a5d4fcb16b",
-        "committedAt": "2026-08-30T18:07:08+08:00"
+        "branch": "codex/c7-c9-collaboration-integration",
+        "commit": "faa5d8ba2dacd81c76dd60379263e40e634f4242",
+        "committedAt": "2026-08-30T20:05:59+08:00"
       }
     },
     {
@@ -720,9 +720,9 @@
       "sourceDigest": "sha256:e0b44b51a2d0ac8a9b11c23297a95300e70b505b7747a50818a8976dc336d002",
       "outputDigest": "sha256:9f93c573b327da6b4e45c16091495fe72d596719ade4e4c6dcdf9112468bc15d",
       "verifiedAgainst": {
-        "branch": "codex/c7-cli-mcp-bounded-context-injection",
-        "commit": "ff065ca62460fc91aab79ebd8e8d65b624e51afb",
-        "committedAt": "2026-08-30T14:18:33+08:00"
+        "branch": "codex/c7-c9-collaboration-integration",
+        "commit": "faa5d8ba2dacd81c76dd60379263e40e634f4242",
+        "committedAt": "2026-08-30T20:05:59+08:00"
       }
     },
     {
@@ -740,9 +740,9 @@
       "sourceDigest": "sha256:0f5b9f51e6ae0fffd2e1f5db33e7bd4b0d226f0d1be33b705b6e4fa95fd07d67",
       "outputDigest": "sha256:301def2110a36250bc1f7352cb300aaff774b7456c51cb89404eecccd9294c2e",
       "verifiedAgainst": {
-        "branch": "codex/c4-delegated-worker-contribution-adapter",
-        "commit": "a0cf9ec51399af7a1dfba7497cf80191f3db2ac9",
-        "committedAt": "2026-08-30T05:54:51+08:00"
+        "branch": "codex/c7-c9-collaboration-integration",
+        "commit": "faa5d8ba2dacd81c76dd60379263e40e634f4242",
+        "committedAt": "2026-08-30T20:05:59+08:00"
       }
     },
     {
@@ -1001,8 +1001,8 @@
       "outputDigest": "sha256:966f7438cd7b385cb411a2ef8c2de18c0b1e71eb067941c97375a4b284a873b9",
       "verifiedAgainst": {
         "branch": "codex/c7-c9-collaboration-integration",
-        "commit": "f8c63a7adb9b73a687501a7e36336797305398b1",
-        "committedAt": "2026-08-30T18:39:01+08:00"
+        "commit": "faa5d8ba2dacd81c76dd60379263e40e634f4242",
+        "committedAt": "2026-08-30T20:05:59+08:00"
       }
     },
     {
