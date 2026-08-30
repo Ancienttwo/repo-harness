@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-30T22:18:28+0800 -->
+<!-- updated_at: 2026-08-30T22:16:27+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Active
-> **Updated At**: 2026-08-30T22:18:28+0800
+> **Status**: ManualClearedWithActiveWork
+> **Updated At**: 2026-08-30T22:16:27+0800
 > **Source Branch**: codex/c7-c9-collaboration-integration
-> **Source Commit**: ba7de07e
+> **Source Commit**: d617fefe
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: C0-C9 collaboration sprint completed
+> **Reason**: archive-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Active
+- Status: ManualClearedWithActiveWork
 - Active Plan: (none)
 - Plan Status: (none)
 - Next Task: inspect active worktree marker(s)
-- Clear Note: (none)
+- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
 
 ## Mainline Snapshot Reading
 
@@ -43,7 +43,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 ## Workstreams
 
 - `tasks/workstreams/runtime-harness/bound-task-freezes/me4a-bound-task-freeze-handoff.md`: status=completed, current_slice=completed-20260826-me4a-bound-task-freeze-handoff, source_plan=plans/plan-20260826-1247-me4a-bound-task-freeze-handoff.md
-- `tasks/workstreams/runtime-harness/collaboration/collaboration-substrate-program.md`: status=completed, current_slice=completed-c9-real-multi-agent-canary, source_plan=plans/archive/plan-20260830-1839-c9-real-multi-agent-canary-and-multi-seat-decision.md
+- `tasks/workstreams/runtime-harness/collaboration/collaboration-substrate-program.md`: status=active, current_slice=todo-01, source_plan=plans/plan-20260830-0858-c5-taskfreeze-succession-integration.md
 - `tasks/workstreams/runtime-harness/engineer-bindings/me0a-profile-binding.md`: status=completed, current_slice=completed-20260824-me0a-profile-binding, source_plan=`plans/plan-20260824-2126-me0a-engineer-profile-binding.md`
 - `tasks/workstreams/runtime-harness/engineer-bindings/me0b-principal-claim-actor.md`: status=completed, current_slice=completed-20260825-me0b-principal-claim-actor, source_plan=`plans/plan-20260825-0029-me0b-engineer-principal-claim-actor.md`
 - `tasks/workstreams/runtime-harness/engineer-messages/me1c-engineer-coordination-messages.md`: status=completed, current_slice=acceptance-and-publication, source_plan=plans/plan-20260825-1443-me1c-engineer-coordination-messages.md
@@ -60,10 +60,19 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: clean
+- Summary: 10 changed/untracked path(s)
 
 ```
-(none)
+ D plans/plan-20260830-1839-c9-real-multi-agent-canary-and-multi-seat-decision.md
+ D tasks/contracts/20260830-1839-c9-real-multi-agent-canary-and-multi-seat-decision.contract.md
+ D tasks/notes/20260830-1839-c9-real-multi-agent-canary-and-multi-seat-decision.notes.md
+ D tasks/reviews/20260830-1839-c9-real-multi-agent-canary-and-multi-seat-decision.review.md
+ M tasks/todos.md
+?? plans/archive/plan-20260830-1839-c9-real-multi-agent-canary-and-multi-seat-decision.md
+?? tasks/archive/contract-20260830-2216-c9-real-multi-agent-canary-and-multi-seat-decision.md
+?? tasks/archive/notes-20260830-2216-c9-real-multi-agent-canary-and-multi-seat-decision.md
+?? tasks/archive/review-20260830-2216-c9-real-multi-agent-canary-and-multi-seat-decision.md
+?? tasks/archive/todo-20260830-2216-c9-real-multi-agent-canary-and-multi-seat-decision.md
 ```
 
 ## Source Artifacts
