@@ -54,6 +54,10 @@
 
 - Checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
+- Passing prepared run: `run-20260831T051510-52449-20260831-0345-archive-acceptance-authority.json`
+- Final acceptance: owner `ancienttwo` via typed `user_waiver`; the one
+  external Codex review budget had already produced the two blocking findings
+  recorded above and correctly refused a second semantic review.
 
 ## Promotion Filter
 

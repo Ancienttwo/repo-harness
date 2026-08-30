@@ -132,7 +132,7 @@ The current five-line envelope preserves bytes but leaves pointers dangling. Bli
 - [x] Implement transactional exact path projection and pointer rewriting in source/template archive helpers.
 - [x] Implement fail-closed AcceptanceReceipt reverse normalization in source/template helpers.
 - [x] Add positive identity, dangling-pointer, malformed-map, collision and historical-envelope regression coverage.
-- [ ] Synchronize workflow artifacts, close the deferred Todo, and run all Required Checks plus final review/acceptance.
+- [x] Synchronize workflow artifacts, close the deferred Todo, and run all Required Checks plus final review/acceptance.
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
@@ -142,4 +142,4 @@ The current five-line envelope preserves bytes but leaves pointers dangling. Bli
 - [x] Implement transactional exact path projection and pointer rewriting in source/template archive helpers.
 - [x] Implement fail-closed AcceptanceReceipt reverse normalization in source/template helpers.
 - [x] Add positive identity, dangling-pointer, malformed-map, collision and historical-envelope regression coverage.
-- [ ] Synchronize workflow artifacts, close the deferred Todo, and run all Required Checks plus final review/acceptance.
+- [x] Synchronize workflow artifacts, close the deferred Todo, and run all Required Checks plus final review/acceptance.
