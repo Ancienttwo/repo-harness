@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-31T03:57:52+0800 -->
+<!-- updated_at: 2026-08-31T04:42:24+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-08-31T03:57:52+0800
+> **Updated At**: 2026-08-31T04:42:24+0800
 > **Source Branch**: codex/archive-acceptance-authority
-> **Source Commit**: 1037d92d
+> **Source Commit**: 10424425
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive-acceptance-authority
+> **Reason**: archive acceptance authority implementation ready for verification
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -56,25 +56,24 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 12 changed/untracked path(s)
+- Summary: 11 changed/untracked path(s)
 
 ```
  M assets/templates/helpers/acceptance-receipt.ts
  M assets/templates/helpers/archive-workflow.sh
+ M assets/templates/helpers/merge-gate.ts
  M docs/architecture/.projection-manifest.json
+ M plans/plan-20260831-0345-archive-acceptance-authority.md
  M scripts/acceptance-receipt.ts
  M scripts/archive-workflow.sh
- M tasks/todos.md
+ M scripts/merge-gate.ts
+ M tasks/contracts/20260831-0345-archive-acceptance-authority.contract.md
+ M tasks/notes/20260831-0345-archive-acceptance-authority.notes.md
  M tests/acceptance-receipt.test.ts
- M tests/helper-scripts.test.ts
-?? plans/plan-20260831-0345-archive-acceptance-authority.md
-?? tasks/contracts/20260831-0345-archive-acceptance-authority.contract.md
-?? tasks/notes/20260831-0345-archive-acceptance-authority.notes.md
-?? tasks/reviews/20260831-0345-archive-acceptance-authority.review.md
 ```
 
 ## Source Artifacts

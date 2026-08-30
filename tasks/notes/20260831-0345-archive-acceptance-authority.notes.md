@@ -18,10 +18,21 @@
   including `allowed_paths` and `artifacts_exist`. Historical
   `verify-sprint --contract <archive>` can then consume the archived contract
   normally, without heuristic fallback.
+- Completed archival writes a host-owned `ArchiveProjectionReceipt` only after
+  all repository artifacts have moved successfully. The archive transaction
+  snapshots that host file too, so a sealing failure restores both repository
+  and host authority. Re-accepting an archived subject preserves the canonical
+  live contract/goal identities and atomically rebinds the archive receipt.
 
 ## Deviations From Plan Or Spec
 
-- None recorded.
+- Independent Codex review rejected the first implementation with two P1s:
+  an unbound same-family projection could redirect accepted pointers, and
+  filename-based archived-contract matching broke on `-v2` collisions. The
+  final design adds a host-owned `ArchiveProjectionReceipt` chained to the
+  semantic AcceptanceReceipt, binds the complete shared manifest plus exact
+  archive file bytes, makes merge seals cover both authorities, and uses the
+  projected live contract path instead of filename inference.
 
 ## Tradeoffs Considered
 

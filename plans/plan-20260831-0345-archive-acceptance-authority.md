@@ -104,9 +104,10 @@ Make archived workflow artifacts self-consistent without invalidating a previous
 ## Decisions
 
 - `scripts/archive-workflow.sh` remains the sole archive mutation authority.
-- Every archived plan/contract/review/notes/todo artifact receives one strict versioned archive envelope carrying the exact live-to-archive path projection for the artifact family.
+- Every archived plan/contract/review/notes artifact receives one strict versioned archive envelope carrying the exact live-to-archive path projection for the artifact family; the archived todo body is rewritten from the same in-memory map but is not an authority artifact.
 - The archive transaction rewrites only exact paths from that projection; it does not infer missing artifacts or search by slug.
-- `scripts/acceptance-receipt.ts` validates the projection shape and reverse-normalizes only those exact rewritten paths before hashing. Existing strict envelopes without a projection remain readable as historical protocol-1 archive output.
+- `scripts/acceptance-receipt.ts` validates the projection shape, reverse-normalizes only those exact rewritten paths before hashing, and seals the shared manifest plus exact archived bytes in a host-owned `ArchiveProjectionReceipt` chained to the semantic receipt. Existing strict envelopes without a projection remain readable as historical protocol-1 archive output.
+- `scripts/merge-gate.ts` binds the semantic and archive receipts as one acceptance authority fingerprint.
 - Malformed, duplicate, cross-family, or non-repository projection entries fail closed.
 - No automatic semantic acceptance, provider action, or broad historical content rewrite is introduced.
 

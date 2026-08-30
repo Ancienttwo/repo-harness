@@ -7,12 +7,16 @@ import { createHash } from 'crypto';
 import { buildReviewSubject } from '../src/effects/review/diff-fingerprint';
 import { applyReviewerDisagreement, assessChange, buildReviewSelectionPacket } from '../src/core/review/change-assessment';
 import {
+  acceptanceAuthorityFingerprint,
+  acceptanceReceiptPath,
+  archiveProjectionReceiptPath,
   parseAcceptancePolicy,
   projectAcceptance,
   recordAcceptance,
   recordUserWaiverAcceptance,
   recordUserWaiverGrant,
   revokeUserWaiverGrant,
+  sealArchiveProjection,
   verifyAcceptance,
   verifyUserWaiverGrant,
 } from '../scripts/acceptance-receipt';
@@ -564,6 +568,9 @@ describe('AcceptanceReceipt', () => {
     const { root, home } = makeFixture();
     const livePlanPath = 'plans/plan-demo.md';
     const liveContractPath = 'tasks/contracts/demo.contract.md';
+    const liveReviewPath = 'tasks/reviews/demo.review.md';
+    mkdirSync(join(root, 'tasks', 'reviews'), { recursive: true });
+    writeFileSync(join(root, liveReviewPath), `# Review\n\nPlan: ${livePlanPath}\n`);
     writeFileSync(
       join(root, livePlanPath),
       `${readFileSync(join(root, livePlanPath), 'utf-8')}\nContract: ${liveContractPath}\n`,
@@ -574,12 +581,15 @@ describe('AcceptanceReceipt', () => {
     mkdirSync(join(root, 'tasks', 'archive'), { recursive: true });
 
     const archivePlanPath = 'plans/archive/plan-demo.md';
-    const archiveContractPath = 'tasks/archive/contract-20260721-0815-demo.md';
+    const archiveContractPath = 'tasks/archive/contract-20260721-0815-demo-v2.md';
+    const archiveReviewPath = 'tasks/archive/review-20260721-0815-demo.md';
+    writeFileSync(join(root, 'tasks', 'archive', 'contract-20260721-0815-demo.md'), 'pre-existing collision\n');
     const projection = [
       `> **Archive Projection V1**: \`${livePlanPath}\` => \`${archivePlanPath}\``,
       `> **Archive Projection V1**: \`${liveContractPath}\` => \`${archiveContractPath}\``,
+      `> **Archive Projection V1**: \`${liveReviewPath}\` => \`${archiveReviewPath}\``,
     ];
-    const envelope = (lifecycle: 'plan' | 'contract') => [
+    const envelope = (lifecycle: 'plan' | 'contract' | 'review') => [
       '> **Archived**: 2026-07-21 08:15',
       `> **Related Plan**: ${archivePlanPath}`,
       '> **Outcome**: Completed',
@@ -602,24 +612,51 @@ describe('AcceptanceReceipt', () => {
     const archivedContract = [...envelope('contract'), contractText].join('\n');
     writeFileSync(join(root, archiveContractPath), archivedContract);
     rmSync(join(root, liveContractPath));
+    const reviewText = readFileSync(join(root, liveReviewPath), 'utf-8')
+      .replaceAll(livePlanPath, archivePlanPath)
+      .replaceAll(liveReviewPath, archiveReviewPath);
+    const archivedReview = [...envelope('review'), reviewText].join('\n');
+    writeFileSync(join(root, archiveReviewPath), archivedReview);
+    rmSync(join(root, liveReviewPath));
     commit(root, 'archive workflow with exact path projection');
 
+    sealArchiveProjection({ root, authorityHome: home, contract: archiveContractPath });
     expect((await verifyAcceptance({ root, authorityHome: home })).disposition).toBe('external_pass');
     expect(archivedPlan).toContain(`Contract: ${archiveContractPath}`);
     expect(archivedContract).toContain(`> **Plan**: ${archivePlanPath}`);
 
-    writeFileSync(
-      join(root, archiveContractPath),
-      archivedContract.replace(
-        `\`${liveContractPath}\` => \`${archiveContractPath}\``,
-        `\`${liveContractPath}\` => \`tasks/archive/review-20260721-0815-demo.md\``,
-      ),
+    const firstAuthority = acceptanceAuthorityFingerprint(root, home);
+    const renewed = await recordAcceptance({
+      root,
+      authorityHome: home,
+      contract: archiveContractPath,
+      verification: '.ai/harness/checks/latest.json',
+      disposition: 'external_pass',
+      reviewer: 'Claude',
+      source: 'claude-review',
+      actor: null,
+      summary: 'archived authority accepted again',
+      findings: [],
+      now: () => new Date('2026-07-21T08:30:00.000Z'),
+    });
+    expect((await verifyAcceptance({ root, authorityHome: home })).summary).toBe(renewed.summary);
+    const archiveSeal = JSON.parse(readFileSync(archiveProjectionReceiptPath(root, home), 'utf-8'));
+    expect(archiveSeal.acceptance_receipt_sha256).toBe(
+      `sha256:${createHash('sha256').update(readFileSync(acceptanceReceiptPath(root, home))).digest('hex')}`,
     );
+    expect(acceptanceAuthorityFingerprint(root, home)).not.toBe(firstAuthority);
+
+    const redirectedReviewPath = 'tasks/archive/review-20260721-0815-demo-v2.md';
+    for (const path of [archivePlanPath, archiveContractPath, archiveReviewPath]) {
+      const redirected = readFileSync(join(root, path), 'utf-8').replaceAll(archiveReviewPath, redirectedReviewPath);
+      writeFileSync(join(root, path === archiveReviewPath ? redirectedReviewPath : path), redirected);
+    }
+    rmSync(join(root, archiveReviewPath));
     await expect(verifyAcceptance({
       root,
       authorityHome: home,
       contract: archiveContractPath,
-    })).rejects.toThrow('crosses an unsupported workflow family');
+    })).rejects.toThrow('ArchiveProjectionReceipt is stale');
   }, 30_000);
 
   test('strict archive envelopes preserve the waiver grant and its exact receipt', async () => {

@@ -16,7 +16,9 @@ import { userInfo } from "os";
 import { dirname, isAbsolute, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import {
+  acceptanceAuthorityFingerprint,
   acceptanceReceiptPath,
+  archiveProjectionReceiptPath,
   resolveProtectedGitRuntime,
   verifyAcceptance,
   type AcceptanceReceipt,
@@ -417,7 +419,9 @@ function acceptanceReceiptFingerprint(root: string, authorityHome: string): stri
   const path = acceptanceReceiptPath(root, authorityHome);
   if (!existsSync(path)) fail(`AcceptanceReceipt is missing: ${path}`);
   requireHostOwnedRegular(path, "AcceptanceReceipt");
-  return sha256(readFileSync(path));
+  const archivePath = archiveProjectionReceiptPath(root, authorityHome);
+  if (existsSync(archivePath)) requireHostOwnedRegular(archivePath, "ArchiveProjectionReceipt");
+  return acceptanceAuthorityFingerprint(root, authorityHome);
 }
 
 function readSeal(path: string): Seal {

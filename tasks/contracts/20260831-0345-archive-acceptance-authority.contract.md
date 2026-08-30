@@ -29,6 +29,8 @@ fail closed when malformed.
 
 - In scope:
   - Add a strict archive path-projection envelope owned by `archive-workflow.sh`.
+  - Bind the projection manifest and exact archived artifact bytes in a host-owned
+    ArchiveProjectionReceipt chained to the semantic AcceptanceReceipt.
   - Rewrite exact live workflow paths to their precomputed archive destinations
     in plan, contract, review, notes, and archived todo bodies.
   - Reverse-normalize only a valid declared projection before AcceptanceReceipt
@@ -103,11 +105,14 @@ allowed_paths:
   - tasks/notes/20260831-0345-archive-acceptance-authority.notes.md
   - scripts/archive-workflow.sh
   - scripts/acceptance-receipt.ts
+  - scripts/merge-gate.ts
   - assets/templates/helpers/archive-workflow.sh
   - assets/templates/helpers/acceptance-receipt.ts
+  - assets/templates/helpers/merge-gate.ts
   - tests/helper-scripts.test.ts
   - tests/acceptance-receipt.test.ts
   - tests/archive-evidence-gates.test.ts
+  - tests/merge-gate.test.ts
 ```
 
 ## Evidence Requirements
@@ -164,8 +169,9 @@ exit_criteria:
     - path: tests/acceptance-receipt.test.ts
     - path: tests/helper-scripts.test.ts
     - path: tests/archive-evidence-gates.test.ts
+    - path: tests/merge-gate.test.ts
   commands_succeed:
-    - bun test tests/acceptance-receipt.test.ts tests/helper-scripts.test.ts tests/archive-evidence-gates.test.ts --timeout 60000
+    - bun test tests/acceptance-receipt.test.ts tests/helper-scripts.test.ts tests/archive-evidence-gates.test.ts tests/merge-gate.test.ts --timeout 60000
     - bun test --timeout 60000
     - bash scripts/check-deploy-sql-order.sh
     - bash scripts/check-architecture-sync.sh
