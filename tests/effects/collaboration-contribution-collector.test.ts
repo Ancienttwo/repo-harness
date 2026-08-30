@@ -38,18 +38,26 @@ import {
   CollaborationContributionRejection,
   parseContributionDraftFromStdout,
 } from '../../src/effects/collaboration/provider-output-adapter';
-import { listWorkStateHandoffs } from '../../src/effects/collaboration/handoff-store';
 import {
   SIGNAL_CODEC,
   listCoordinationSignals,
   publishCoordinationSignal,
 } from '../../src/effects/collaboration/signal-store';
-import { HANDOFF_CODEC } from '../../src/effects/collaboration/handoff-store';
 import {
+  HANDOFF_CODEC,
+  listWorkStateHandoffs,
+  publishWorkStateHandoff,
+} from '../../src/effects/collaboration/handoff-store';
+import { adoptWorkStateHandoff } from '../../src/effects/collaboration/adoption-store';
+import {
+  authorizeCollaborationDestination,
   collaborationDestinationPaths,
   listCollaborationRecords,
 } from '../../src/effects/collaboration/record-store';
-import { engineerPrincipalAuthorization } from '../../src/effects/collaboration/actor';
+import {
+  delegatedRunAuthorization,
+  engineerPrincipalAuthorization,
+} from '../../src/effects/collaboration/actor';
 import {
   dispatchDelegatedRun,
   readDelegatedRunStatus,
@@ -175,9 +183,14 @@ function stagedCandidateIds(repoRoot: string, dispatchId: string): {
   readonly handoffs: string[];
 } {
   const runRef = readDelegatedRunStatus(repoRoot, dispatchId).current.worker_run_ref!;
-  const destination = { kind: 'contribution_candidate' as const, worker_run_ref_sha256: runRef };
+  // Authorized with the run's own Host-derived actor, which is the only actor
+  // that may reach this candidate area at all.
+  const authorized = authorizeCollaborationDestination(
+    resolveDelegatedWorkerActor(repoRoot, dispatchId).actor,
+    { kind: 'contribution_candidate', worker_run_ref_sha256: runRef },
+  );
   const read = <T>(shard: string, codec: typeof SIGNAL_CODEC | typeof HANDOFF_CODEC, field: string): string[] => {
-    const paths = collaborationDestinationPaths(repoRoot, shard, destination);
+    const paths = collaborationDestinationPaths(repoRoot, shard, authorized);
     return existsSync(paths.shard)
       ? listCollaborationRecords(paths, codec as never, field).map((record) => codec.identityOf(record as never))
       : [];
@@ -186,6 +199,41 @@ function stagedCandidateIds(repoRoot: string, dispatchId: string): {
     signals: read('signals', SIGNAL_CODEC, 'signal_id'),
     handoffs: read('handoffs', HANDOFF_CODEC, 'handoff_id'),
   };
+}
+
+/**
+ * A second delegated run in an existing fixture, driven to `completed`. Used to
+ * obtain a valid record that belongs to a different contribution.
+ */
+function secondCompletedRun(value: CollaborationDelegationFixture): string {
+  const participant = delegationParticipant(value, 1);
+  const admitted = admitCollaborationDelegation({
+    repo_root: value.repoRoot,
+    round_index: 0,
+    decided_at: '2026-08-30T00:00:02.000Z',
+    idempotency_key: participant.idempotency_key,
+    observed_at: '2026-08-30T00:00:03.000Z',
+    delegation: {
+      repo_root: value.repoRoot,
+      envelope: participant.envelope,
+      role_profile: value.role_profile,
+      capability: value.capability,
+      execution_packet: participant.packet,
+      work_envelope: {} as never,
+      claim_actor_receipt: value.claim_actor_receipt,
+      decided_at: '2026-08-30T00:00:02.000Z',
+      validate_parent: liveParentFor(value),
+    },
+  });
+  const dispatchId = admitted.run!.intent.dispatch_id;
+  const dispatched = dispatchDelegatedRun({
+    repo_root: value.repoRoot,
+    dispatch_id: dispatchId,
+    observed_at: '2026-08-30T00:00:04.000Z',
+    protected_paths: PROTECTED_PATHS,
+  });
+  expect(dispatched.current.state).toBe('completed');
+  return dispatchId;
 }
 
 function candidateSignalDir(repoRoot: string, dispatchId: string): string {
@@ -649,29 +697,25 @@ describe('C4 candidate area', () => {
       env: value.env,
     })).toThrow('stop');
 
-    // A genuinely valid, self-consistent, correctly named record placed in this
-    // run's candidate area — the case the per-record identity check cannot see,
-    // because nothing about the record itself is wrong. It is simply not part of
-    // the draft this run's persisted stdout pins.
-    const runRef = readDelegatedRunStatus(value.repoRoot, dispatchId).current.worker_run_ref!;
-    publishCoordinationSignal({
+    // A second delegated run in the same repository, staged and then abandoned,
+    // gives a genuinely valid record: correctly named, self-consistent, and not
+    // part of the first run's draft. Planting it takes an out-of-band file write
+    // because the destination guard no longer lets any actor publish into
+    // another run's candidate area through the store API.
+    const second = secondCompletedRun(value);
+    expect(() => collectCollaborationContribution({
       repo_root: value.repoRoot,
-      authorization: engineerPrincipalAuthorization(value.actors[0]!.authorization_id),
-      destination: { kind: 'contribution_candidate', worker_run_ref_sha256: runRef },
-      idempotency_key: 'not-part-of-this-contribution',
-      thread_key: 'collaboration/intruder',
-      reply_to_signal_id: null,
-      scope_refs: [],
-      labels: [],
-      title: 'staged by nobody',
-      body: 'A valid record that this contribution never drafted.',
-      artifact_refs: [],
-      source_signal_ids: [],
-      supersedes_signal_id: null,
-      recorded_time: { kind: 'first_publication' },
-      now: () => '2026-08-30T00:00:08.000Z',
+      dispatch_id: second,
+      untrusted_claims: [],
+      crash_hook: (at) => { if (at === 'before_commit') throw new Error('stop'); },
       env: value.env,
-    });
+    })).toThrow('stop');
+
+    const donor = candidateSignalDir(value.repoRoot, second);
+    const target = candidateSignalDir(value.repoRoot, dispatchId);
+    const [foreign] = readdirSync(donor).filter((entry) => entry.endsWith('.json'));
+    writeFileSync(join(target, foreign), readFileSync(join(donor, foreign), 'utf8'));
+
     expect(() => collectCollaborationContribution({
       repo_root: value.repoRoot,
       dispatch_id: dispatchId,
@@ -708,5 +752,129 @@ describe('C4 candidate area', () => {
     expect(listCoordinationSignals(value.repoRoot).map((s) => s.signal_id)).toEqual([published.signal.signal_id]);
     expect(listCollaborationContributionCommits(value.repoRoot)).toHaveLength(0);
     expect(listContributedSignalIds(value.repoRoot).size).toBe(0);
+  }, 120_000);
+});
+
+describe('C4 destination is bound to actor kind', () => {
+  /**
+   * The round-2 P1. `authorization` and `destination` arrive as independent
+   * inputs, so before this guard a caller holding a `delegated_run`
+   * authorization could name `{ kind: 'public' }` and write a Worker record
+   * straight into `signals/`, bypassing the collector and every candidate area.
+   * Same invariant as the staging fix, a different entry point.
+   *
+   * The guard lives in `authorizeCollaborationDestination()`, and
+   * `collaborationDestinationPaths()` accepts nothing else, so the illegal pair
+   * is unreachable rather than policed by each store.
+   */
+  function stagedRun() {
+    const { value, dispatchId } = completedRun(framed(draftPayload()));
+    return { value, dispatchId };
+  }
+
+  const signalInput = (value: CollaborationDelegationFixture, extra: Record<string, unknown>) => ({
+    repo_root: value.repoRoot,
+    idempotency_key: 'bypass-attempt',
+    thread_key: 'collaboration/bypass',
+    reply_to_signal_id: null,
+    scope_refs: [],
+    labels: [],
+    title: 'no commit vouches for me',
+    body: 'An attempt to reach a public shard without a contribution commit.',
+    artifact_refs: [],
+    source_signal_ids: [],
+    supersedes_signal_id: null,
+    recorded_time: { kind: 'first_publication' as const },
+    now: () => '2026-08-30T00:00:09.000Z',
+    env: value.env,
+    ...extra,
+  });
+
+  test('a delegated_worker cannot publish a signal straight into the public shard', () => {
+    const { value, dispatchId } = stagedRun();
+    expect(() => publishCoordinationSignal(signalInput(value, {
+      authorization: delegatedRunAuthorization(dispatchId),
+      destination: { kind: 'public' },
+    }) as never)).toThrow('a delegated_worker may only publish into its own contribution candidate area');
+    expect(listCoordinationSignals(value.repoRoot)).toHaveLength(0);
+  }, 120_000);
+
+  test('a delegated_worker cannot publish a handoff straight into the public shard', () => {
+    const { value, dispatchId } = stagedRun();
+    expect(() => publishWorkStateHandoff({
+      repo_root: value.repoRoot,
+      authorization: delegatedRunAuthorization(dispatchId),
+      destination: { kind: 'public' },
+      idempotency_key: 'bypass-attempt',
+      thread_key: 'collaboration/bypass',
+      scope_refs: [],
+      trigger: 'manual',
+      goal: 'Reach the public handoff shard without a commit.',
+      completed: [],
+      key_findings: [],
+      attempted_paths: [{ description: 'publish directly', outcome: 'refused', evidence_refs: [] }],
+      dead_ends: [],
+      open_hypotheses: [],
+      next_actions: ['stop'],
+      source_signal_ids: [],
+      execution_context: { kind: 'none' },
+      supersedes_handoff_id: null,
+      recorded_time: { kind: 'first_publication' },
+      now: () => '2026-08-30T00:00:09.000Z',
+      env: value.env,
+    })).toThrow('a delegated_worker may only publish into its own contribution candidate area');
+    expect(listWorkStateHandoffs(value.repoRoot)).toHaveLength(0);
+  }, 120_000);
+
+  test('a delegated_worker cannot publish into another run\'s candidate area', () => {
+    const { value, dispatchId } = stagedRun();
+    const other = secondCompletedRun(value);
+    const otherRunRef = readDelegatedRunStatus(value.repoRoot, other).current.worker_run_ref!;
+    expect(() => publishCoordinationSignal(signalInput(value, {
+      authorization: delegatedRunAuthorization(dispatchId),
+      destination: { kind: 'contribution_candidate', worker_run_ref_sha256: otherRunRef },
+    }) as never)).toThrow("may only publish into its own run's contribution candidate area");
+    // Nothing landed in either run's area or in the public shard.
+    expect(stagedCandidateIds(value.repoRoot, other).signals).toHaveLength(0);
+    expect(listCoordinationSignals(value.repoRoot)).toHaveLength(0);
+  }, 120_000);
+
+  test('a module_engineer cannot publish into a candidate area either', () => {
+    const { value, dispatchId } = stagedRun();
+    const runRef = readDelegatedRunStatus(value.repoRoot, dispatchId).current.worker_run_ref!;
+    expect(() => publishCoordinationSignal(signalInput(value, {
+      authorization: engineerPrincipalAuthorization(value.actors[0]!.authorization_id),
+      destination: { kind: 'contribution_candidate', worker_run_ref_sha256: runRef },
+    }) as never)).toThrow('a module_engineer may only publish to the public store');
+  }, 120_000);
+
+  test('a delegated_worker cannot record a handoff adoption', () => {
+    const { value, dispatchId } = stagedRun();
+    // The sibling family: adoption has no destination, so the binding is on the
+    // actor alone. A Worker adoption would be a public Worker record that no
+    // contribution commit references.
+    expect(() => adoptWorkStateHandoff({
+      repo_root: value.repoRoot,
+      authorization: delegatedRunAuthorization(dispatchId),
+      handoff_id: 'a'.repeat(64),
+      context_packet_sha256: `sha256:${'b'.repeat(64)}`,
+      recorded_time: { kind: 'first_publication' },
+      now: () => '2026-08-30T00:00:09.000Z',
+      env: value.env,
+    })).toThrow('handoff adoption requires a module_engineer authorization');
+  }, 120_000);
+
+  test('the collector round-trip still works through the same guard', () => {
+    const { value, dispatchId } = stagedRun();
+    const collected = collectCollaborationContribution({
+      repo_root: value.repoRoot,
+      dispatch_id: dispatchId,
+      untrusted_claims: [],
+      env: value.env,
+    });
+    expect(collected.commit.signal_refs).toHaveLength(2);
+    expect(listCoordinationSignals(value.repoRoot)).toHaveLength(2);
+    expect([...listContributedSignalIds(value.repoRoot)].sort())
+      .toEqual(collected.commit.signal_refs.map((ref) => ref.signal_id).sort());
   }, 120_000);
 });

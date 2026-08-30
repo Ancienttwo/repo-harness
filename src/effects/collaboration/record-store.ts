@@ -36,7 +36,11 @@ import {
 import { createHash, randomUUID } from 'crypto';
 import { basename, dirname, join, relative, sep } from 'path';
 
-import { CollaborationError, validateCollaborationRecordId } from '../../core/collaboration/common';
+import {
+  CollaborationError,
+  validateCollaborationRecordId,
+  type CollaborationActorRefV1,
+} from '../../core/collaboration/common';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 
 export const COLLABORATION_STORE_RELATIVE_ROOT = 'repo-harness/collaboration/v1';
@@ -127,11 +131,72 @@ export type CollaborationPublishDestinationV1 =
   | { readonly kind: 'public' }
   | { readonly kind: 'contribution_candidate'; readonly worker_run_ref_sha256: string };
 
+/** Non-exported, so an authorized destination cannot be forged outside this module. */
+declare const AUTHORIZED: unique symbol;
+
+/**
+ * A destination that has been checked against the actor writing to it.
+ *
+ * `collaborationDestinationPaths()` accepts nothing else, and
+ * `authorizeCollaborationDestination()` is the only function that can produce
+ * one. The illegal combination is therefore not something each store has to
+ * remember to police — it cannot be expressed at this boundary at all, so the
+ * collector path, direct callers, and every future C5-C9 entry point pass
+ * through the same check by construction.
+ */
+export interface AuthorizedCollaborationDestination {
+  readonly [AUTHORIZED]: true;
+  readonly destination: CollaborationPublishDestinationV1;
+}
+
+/**
+ * Bind a write destination to the actor performing the write.
+ *
+ * The invariant this protects is the one the contribution commit exists for:
+ * *every publicly readable Worker record is already committed.* Staging Worker
+ * records in an invisible candidate area only holds if a Worker cannot also
+ * write straight into a public shard, and `authorization` and `destination`
+ * arrive as independent inputs — so a caller holding a `delegated_run`
+ * authorization could otherwise name `{ kind: 'public' }` and bypass the
+ * collector entirely.
+ *
+ * The rules, stated once:
+ *
+ * - `module_engineer` may write only to `public`. Immediate visibility is the
+ *   declared, correct behaviour for a Module Engineer speaking directly, and a
+ *   candidate area belongs to a delegated run the Engineer does not have.
+ * - `delegated_worker` may write only to its **own** run's candidate area. Not
+ *   `public`, which is the bypass; and not another run's candidates, which would
+ *   let one Worker plant records another run's commit would promote.
+ */
+export function authorizeCollaborationDestination(
+  actor: CollaborationActorRefV1,
+  destination: CollaborationPublishDestinationV1,
+): AuthorizedCollaborationDestination {
+  if (actor.kind === 'module_engineer') {
+    if (destination.kind !== 'public') {
+      collaborationInvalidStore(
+        'a module_engineer may only publish to the public store; contribution candidates belong to a delegated run',
+      );
+    }
+  } else if (destination.kind !== 'contribution_candidate') {
+    collaborationInvalidStore(
+      'a delegated_worker may only publish into its own contribution candidate area; a Worker record becomes public only when its contribution commit promotes it',
+    );
+  } else if (destination.worker_run_ref_sha256 !== actor.worker_run_ref_sha256) {
+    collaborationInvalidStore(
+      'a delegated_worker may only publish into its own run\'s contribution candidate area',
+    );
+  }
+  return Object.freeze({ destination }) as AuthorizedCollaborationDestination;
+}
+
 export function collaborationDestinationPaths(
   repoRoot: string,
   publicShard: string,
-  destination: CollaborationPublishDestinationV1,
+  authorized: AuthorizedCollaborationDestination,
 ): CollaborationStorePaths {
+  const destination = authorized.destination;
   return destination.kind === 'public'
     ? collaborationStorePaths(repoRoot, publicShard)
     : collaborationStorePaths(repoRoot, collaborationCandidateShard(destination.worker_run_ref_sha256, publicShard));
@@ -352,12 +417,18 @@ export function listCollaborationRecords<T>(
  * Returns `true` when this call is the one that made the record public.
  */
 export function promoteCollaborationCandidate<T>(
+  repoRoot: string,
+  publicShard: string,
   candidate: CollaborationStorePaths,
-  target: CollaborationStorePaths,
   codec: CollaborationRecordCodec<T>,
   recordId: string,
   field: string,
 ): boolean {
+  // The public target is derived here rather than passed in. Promotion is the
+  // Host completing a committed transaction, not an actor publishing, so it
+  // needs no destination -- and giving it one would have reintroduced a public
+  // destination value that a caller could aim somewhere else.
+  const target = collaborationStorePaths(repoRoot, publicShard);
   const from = collaborationRecordPath(candidate, recordId, field);
   const to = collaborationRecordPath(target, recordId, field);
   ensureCollaborationDirectory(target.common, target.shard);

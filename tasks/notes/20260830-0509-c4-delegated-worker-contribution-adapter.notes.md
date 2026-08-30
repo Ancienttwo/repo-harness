@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260830-0509-c4-delegated-worker-contribution-adapter.md
 > **Contract**: tasks/contracts/20260830-0509-c4-delegated-worker-contribution-adapter.contract.md
 > **Review**: tasks/reviews/20260830-0509-c4-delegated-worker-contribution-adapter.review.md
-> **Last Updated**: 2026-08-30 08:10
+> **Last Updated**: 2026-08-30 09:30
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -323,6 +323,38 @@ Boundary set changed from seven to nine: the three staging boundaries were
 renamed to `*_candidate` to say what they now mark, and `after_first_promotion` /
 `after_last_promotion` were added because promotion is the phase where a record
 becomes publicly readable and had no boundary of its own before.
+
+## Round-3 correction (Codex P1)
+
+Round 2 closed the collector's own leak but left a second entry point to the
+same invariant: `authorization` and `destination` were independent inputs, so a
+caller holding `delegatedRunAuthorization(dispatchId)` could name
+`{ kind: 'public' }` and write a Worker record straight into `signals/`,
+bypassing the collector and the candidate area entirely. Reproduced before
+fixing — a `delegated_worker` signal publicly listed with zero commits.
+
+**Single enforcement point.** `authorizeCollaborationDestination(actor, destination)`
+in `record-store.ts` is the only producer of an `AuthorizedCollaborationDestination`,
+whose brand is a non-exported symbol, and `collaborationDestinationPaths()`
+accepts nothing else. The illegal pair is therefore not policed by each store —
+it cannot be expressed at the boundary, and TypeScript flagged every existing
+caller the moment the signature changed, which is how the sweep was made
+exhaustive rather than remembered. Rules: `module_engineer` -> `public` only;
+`delegated_worker` -> its own run's candidate area only, never `public` and
+never another run's.
+
+`promoteCollaborationCandidate()` now derives its own public target from the
+shard name instead of taking a destination. Promotion is the Host completing a
+committed transaction, not an actor publishing, and keeping a public destination
+value around for it would have left exactly the forgeable value the guard
+removes. `PUBLIC_DESTINATION` is gone from the collector.
+
+**The sibling.** `adoptWorkStateHandoff()` takes the same authorization union but
+no destination, so the binding it needs is on the actor alone: a
+`delegated_worker` adoption would be a publicly readable Worker record no commit
+references — the same invariant, one record family over. Nothing constructs one
+today, so the store now refuses it fail-closed, with the unblock path named for
+whichever row (C5 succession or C6 packets) first needs Worker adoption.
 
 ## Open Questions
 

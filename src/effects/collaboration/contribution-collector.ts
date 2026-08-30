@@ -46,6 +46,7 @@ import { realpathSync } from 'fs';
 
 import {
   CollaborationError,
+  type CollaborationActorRefV1,
   type CollaborationMode,
 } from '../../core/collaboration/common';
 import {
@@ -77,6 +78,7 @@ import {
 } from './provider-output-adapter';
 import { CONTRIBUTION_COMMIT_CODEC, contributionStorePaths } from './contribution-store';
 import {
+  authorizeCollaborationDestination,
   collaborationDestinationPaths,
   collaborationInvalidStore,
   collaborationLockRelativePath,
@@ -88,11 +90,10 @@ import {
   readCollaborationRecord,
   type CollaborationPublishDestinationV1,
   type CollaborationRecordCodec,
+  type CollaborationStorePaths,
 } from './record-store';
 import { COLLABORATION_SIGNALS_SHARD, SIGNAL_CODEC, publishCoordinationSignal } from './signal-store';
 
-/** Frozen once: the collector promotes into the public shards and nowhere else. */
-const PUBLIC_DESTINATION: CollaborationPublishDestinationV1 = Object.freeze({ kind: 'public' as const });
 
 /**
  * Every persistence boundary this transaction crosses, named here rather than in
@@ -182,9 +183,10 @@ export function collectCollaborationContribution(
   const { draft, observed_at: observedAt } = parsed;
   const draftSha256 = collaborationContributionDraftSha256(draft);
   const authorization = delegatedRunAuthorization(input.dispatch_id);
-  // Derived here only to fail early and loudly if the run's provenance does not
-  // join; the stores derive it again for themselves, from the same records.
-  resolveDelegatedWorkerActor(root, input.dispatch_id);
+  // The Host-derived identity for this run. The stores derive it again for
+  // themselves from the same records; the collector needs it here to authorize
+  // the candidate area it is about to stage into and read back.
+  const { actor } = resolveDelegatedWorkerActor(root, input.dispatch_id);
 
   const commitId = deriveCollaborationContributionCommitId(run.runRefSha256);
   const paths = contributionStorePaths(root);
@@ -205,6 +207,7 @@ export function collectCollaborationContribution(
       run_ref_sha256: run.runRefSha256,
       commit_id: commitId,
       authorization,
+      actor,
       paths,
       mode,
     }),
@@ -223,6 +226,7 @@ interface PublishContributionInput {
   readonly run_ref_sha256: string;
   readonly commit_id: string;
   readonly authorization: ReturnType<typeof delegatedRunAuthorization>;
+  readonly actor: CollaborationActorRefV1;
   readonly paths: ReturnType<typeof contributionStorePaths>;
   readonly mode: CollaborationMode;
 }
@@ -286,7 +290,7 @@ function publishContribution(
 ): CollectCollaborationContributionResult {
   const {
     root, draft, observed_at: observedAt, run_ref_sha256: runRefSha256,
-    commit_id: commitId, authorization, paths, mode,
+    commit_id: commitId, authorization, actor, paths, mode,
   } = input;
   const destination: CollaborationPublishDestinationV1 = Object.freeze({
     kind: 'contribution_candidate' as const,
@@ -354,8 +358,11 @@ function publishContribution(
     input.crash_hook?.('after_handoff_candidate');
   }
 
-  const signalCandidates = collaborationDestinationPaths(root, COLLABORATION_SIGNALS_SHARD, destination);
-  const handoffCandidates = collaborationDestinationPaths(root, COLLABORATION_HANDOFFS_SHARD, destination);
+  // The same guard the stores went through, on the same actor: the collector
+  // gets no privileged route into the candidate area.
+  const authorized = authorizeCollaborationDestination(actor, destination);
+  const signalCandidates = collaborationDestinationPaths(root, COLLABORATION_SIGNALS_SHARD, authorized);
+  const handoffCandidates = collaborationDestinationPaths(root, COLLABORATION_HANDOFFS_SHARD, authorized);
   // Nothing outside the draft may ride into a public shard on this transaction.
   // The candidate area is listed with the same fail-closed rule a public shard
   // gets, so an entry nobody staged fails the store rather than being promoted.
@@ -406,16 +413,15 @@ function publishContribution(
   // Step 3. Every record promoted from here is one the commit above already
   // names, which is what makes "nothing publicly readable is uncommitted" hold
   // part-way through this loop as well as at the end of it.
-  const publicSignals = collaborationDestinationPaths(root, COLLABORATION_SIGNALS_SHARD, PUBLIC_DESTINATION);
-  const publicHandoffs = collaborationDestinationPaths(root, COLLABORATION_HANDOFFS_SHARD, PUBLIC_DESTINATION);
   for (const [index, ref] of commit.signal_refs.entries()) {
-    promoteCollaborationCandidate(signalCandidates, publicSignals, SIGNAL_CODEC, ref.signal_id, 'signal_id');
+    promoteCollaborationCandidate(root, COLLABORATION_SIGNALS_SHARD, signalCandidates, SIGNAL_CODEC, ref.signal_id, 'signal_id');
     if (index === 0) input.crash_hook?.('after_first_promotion');
   }
   if (commit.handoff_ref !== null) {
     promoteCollaborationCandidate(
+      root,
+      COLLABORATION_HANDOFFS_SHARD,
       handoffCandidates,
-      publicHandoffs,
       HANDOFF_CODEC,
       commit.handoff_ref.handoff_id,
       'handoff_id',
@@ -460,7 +466,7 @@ function publishContribution(
  * public shard on someone else's transaction.
  */
 function assertCandidateAreaHolds<T>(
-  candidates: ReturnType<typeof collaborationDestinationPaths>,
+  candidates: CollaborationStorePaths,
   codec: CollaborationRecordCodec<T>,
   field: string,
   expected: readonly string[],
@@ -475,4 +481,3 @@ function assertCandidateAreaHolds<T>(
     );
   }
 }
-

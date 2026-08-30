@@ -173,6 +173,23 @@ export function adoptWorkStateHandoff(input: AdoptWorkStateHandoffInput): AdoptW
     input.authorization,
     input.env,
   );
+  // The sibling of the destination guard in `record-store.ts`. This store has no
+  // destination — a receipt always lands in the public `adoptions/` shard — so
+  // the binding it needs is on the actor alone: a `delegated_worker` adoption
+  // would be a publicly readable Worker record that no contribution commit
+  // references, which is the same invariant the candidate area protects, one
+  // record family over.
+  //
+  // Nothing constructs one today: the contribution collector never adopts, and
+  // D4 lists `delegated_worker` as a supported author without any row having
+  // wired adoption for it. Refusing is therefore fail-closed rather than a
+  // removed capability, and the row that needs Worker adoption (C5 succession or
+  // C6 packets) unblocks it by deciding how such a receipt becomes visible.
+  if (adopter.kind !== 'module_engineer') {
+    collaborationInvalidStore(
+      'handoff adoption requires a module_engineer authorization; a delegated_worker has no adoption path yet',
+    );
+  }
   const paths = adoptionStorePaths(repoRoot);
 
   ensureCollaborationDirectory(paths.common, paths.shard);

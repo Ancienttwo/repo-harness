@@ -36,6 +36,7 @@ import { resolveCollaborationActor, type CollaborationAuthorizationV1 } from './
 import { assertCollaborationMutationEnabled } from './feature-flag';
 import {
   COLLABORATION_STORE_RELATIVE_ROOT,
+  authorizeCollaborationDestination,
   collaborationDestinationPaths,
   collaborationInvalidStore,
   collaborationLockRelativePath,
@@ -159,7 +160,10 @@ export function publishCoordinationSignal(
   const { actor, repository_id: repositoryId } = resolveCollaborationActor(repoRoot, input.authorization, input.env);
   const signalId = deriveCoordinationSignalId(repositoryId, actor, input.idempotency_key);
   const publicPaths = signalPaths(repoRoot);
-  const paths = collaborationDestinationPaths(repoRoot, COLLABORATION_SIGNALS_SHARD, input.destination);
+  // Bound to the actor before any path is resolved: a delegated Worker cannot
+  // name the public shard, and a Module Engineer cannot name a candidate area.
+  const authorized = authorizeCollaborationDestination(actor, input.destination);
+  const paths = collaborationDestinationPaths(repoRoot, COLLABORATION_SIGNALS_SHARD, authorized);
   // Resolution order is fixed here rather than at each call: public store, then
   // the destination when it is a candidate area.
   const searchPaths = input.destination.kind === 'public' ? [publicPaths] : [publicPaths, paths];

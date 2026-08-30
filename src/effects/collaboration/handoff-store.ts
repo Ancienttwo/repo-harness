@@ -36,6 +36,7 @@ import { resolveCollaborationActor, type CollaborationAuthorizationV1 } from './
 import { assertCollaborationMutationEnabled } from './feature-flag';
 import {
   COLLABORATION_STORE_RELATIVE_ROOT,
+  authorizeCollaborationDestination,
   collaborationDestinationPaths,
   collaborationInvalidStore,
   collaborationLockRelativePath,
@@ -45,6 +46,7 @@ import {
   listCollaborationRecords,
   publishCollaborationRecordDurably,
   readCollaborationRecord,
+  type AuthorizedCollaborationDestination,
   type CollaborationPublishDestinationV1,
   type CollaborationRecordCodec,
   type CollaborationStorePaths,
@@ -122,16 +124,16 @@ function assertResolvableSignal(
   repoRoot: string,
   repositoryId: string,
   signalId: string,
-  destination: CollaborationPublishDestinationV1,
+  authorized: AuthorizedCollaborationDestination,
 ): void {
   const recordId = validateCollaborationRecordId(signalId, 'source_signal_id');
   // Public first, then this run's own staged signals. A handoff written as part
   // of a contribution routinely cites the signals that contribution just staged;
   // they are durable and identified, only not public yet.
   let signal = readCoordinationSignal(repoRoot, recordId);
-  if (!signal && destination.kind === 'contribution_candidate') {
+  if (!signal && authorized.destination.kind === 'contribution_candidate') {
     signal = readCollaborationRecord(
-      collaborationDestinationPaths(repoRoot, COLLABORATION_SIGNALS_SHARD, destination),
+      collaborationDestinationPaths(repoRoot, COLLABORATION_SIGNALS_SHARD, authorized),
       SIGNAL_CODEC,
       recordId,
       'source_signal_id',
@@ -156,7 +158,10 @@ export function publishWorkStateHandoff(
   const { actor, repository_id: repositoryId } = resolveCollaborationActor(repoRoot, input.authorization, input.env);
   const handoffId = deriveWorkStateHandoffId(repositoryId, actor, input.idempotency_key);
   const publicPaths = handoffStorePaths(repoRoot);
-  const paths = collaborationDestinationPaths(repoRoot, COLLABORATION_HANDOFFS_SHARD, input.destination);
+  // Bound to the actor before any path is resolved, exactly as the signal store
+  // does it; the rule lives in one place and both stores read it from there.
+  const authorized = authorizeCollaborationDestination(actor, input.destination);
+  const paths = collaborationDestinationPaths(repoRoot, COLLABORATION_HANDOFFS_SHARD, authorized);
 
   const build = (createdAt: string): WorkStateHandoffV1 => buildWorkStateHandoff({
     handoff_id: handoffId,
@@ -205,7 +210,7 @@ export function publishWorkStateHandoff(
       if (existing) return reconcile(existing);
 
       for (const signalId of input.source_signal_ids) {
-        assertResolvableSignal(repoRoot, repositoryId, signalId, input.destination);
+        assertResolvableSignal(repoRoot, repositoryId, signalId, authorized);
       }
       if (input.supersedes_handoff_id !== null) {
         // A revision supersedes a record that is already public; superseding an

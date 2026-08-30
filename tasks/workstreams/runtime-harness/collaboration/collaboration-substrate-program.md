@@ -123,6 +123,13 @@ the freeze record keeps only a pointer.
   filter would re-create the reader-side obligation this replaced. Direct
   Module Engineer publications pass the `public` destination and are visible
   immediately, unchanged.
+- Write destination is bound to actor kind at a single enforcement point,
+  `authorizeCollaborationDestination()` in `record-store.ts`; it is the only
+  producer of the branded value `collaborationDestinationPaths()` accepts. C5-C9
+  get the binding for free on any new store, and must not add a second
+  destination resolver that skips it. `module_engineer` writes public only;
+  `delegated_worker` writes only its own run's candidate area. The adoption store
+  has no destination and refuses `delegated_worker` outright until a row wires it.
 - The contribution transaction converges by construction, not by a resume marker:
   every identity is derived from the run, so re-running the whole collector is
   the recovery path. A later row that adds a step to it must derive that step's
