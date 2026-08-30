@@ -1,6 +1,6 @@
 # Architecture Queue Card: runtime-harness-mcp-sidecar
 
-> **Status**: Pending
+> **Status**: Resolved
 > **Detected**: 2026-08-30T20:31:20+0800
 > **Updated**: 2026-08-30T20:31:20+0800
 > **Severity**: low
@@ -84,3 +84,10 @@
   }
 ]
 ```
+
+## Archive Resolution
+
+- Status: Resolved
+- Archived: 2026-08-31T01:49:51+0800
+- Artifacts:
+- `docs/architecture/modules/runtime-harness/mcp-sidecar.md`

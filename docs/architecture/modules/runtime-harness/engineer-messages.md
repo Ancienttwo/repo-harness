@@ -1,13 +1,13 @@
 # runtime-harness/engineer-messages 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-messages" sourceDigest="sha256:b420ed1d26b9c94d2f5741f86135a62b1c1e659dfa6670933b80d754d75b96d2" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:6f94ce2e934f6a2bd5f41bf4947b3525a1b301dc27828dc59d225424db6e4498" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-messages" sourceDigest="sha256:4f24f8a7d8aba2a3b7c222c3032065930c98bf3329ecb25885410df83880d9dc" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:bfa509d1f06a5f75632a5f8de0741ebbf35aedc27cdce6387211ae4f6aac090c" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-messages`(kind `capability`)
 > **Matched Prefixes**:`src/core/messages/mechanics.ts`、`src/core/engineers/module-message.ts`、`src/effects/engineers/module-inbox.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Persists closed Module Engineer messages and binding-fenced delivery state before any optional Provider transport observation.
+Persists closed Module Engineer messages and binding-fenced delivery state before any optional Agent Runtime effect.
 
 ## 1. P1:能力架構地圖
 
@@ -51,7 +51,7 @@ flowchart LR
 
 入向關係:
 
-- `calls` ← `capability.runtime-harness.agent-runtime-effects` — Consume one exact persisted message and project positive delivery only from its authoritative receipt
+- `calls` ← `capability.runtime-harness.agent-runtime-effects` — Consume one exact persisted message and record effect success only from its authoritative receipt
 - `calls` ← `capability.runtime-harness.engineering-overlay` — Observe pending and failed delivery facts from the existing ME-1C event and receipt authority
 - `calls` ← `capability.runtime-harness.mcp-sidecar` — Expose authenticated Engineer message send, list and acknowledgement without granting generic Fleet or Provider authority
 

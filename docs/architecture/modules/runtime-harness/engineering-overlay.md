@@ -1,13 +1,13 @@
 # runtime-harness/engineering-overlay 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineering-overlay" sourceDigest="sha256:06214075572b77e5c063af3d7240be61709bd7b38b1c7305a33d564e41ab3f1e" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:bdcc163dd16594d4d67106cd967bdea87f1b6c6a6bb82fb03d24e7beb1bd14ea" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineering-overlay" sourceDigest="sha256:f9ab4635d72a1716c09c6070af18e58da67bdbb87773350d6986680dfaf7988e" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:9bae1e0d6199be40d080e00c13cb97f3ef8cb4d1068a029af5dc7c58716edd66" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineering-overlay`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/engineering-overlay.ts`、`src/effects/engineers/engineering-overlay.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Projects Profile, Binding, Claim, message and Provider observations into exact read-only Engineer and organization-attention views without changing Fleet lifecycle authority.
+Projects Profile, Binding, Claim, message and Agent Runtime observations into exact read-only Engineer and organization-attention views without changing Fleet lifecycle authority.
 
 ## 1. P1:能力架構地圖
 
@@ -31,7 +31,7 @@ flowchart LR
 
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
-| `entrypoint.engineering-overlay.collect` | `src/effects/engineers/engineering-overlay.ts#collectEngineeringBoard` | `sink.engineering-overlay.binding` → `src/effects/engineers/binding-store.ts#readEngineerBindingStatus`、`sink.engineering-overlay.claim` → `src/effects/engineers/claim-actor-store.ts#listLiveClaimActorReceiptsForEngineer`、`sink.engineering-overlay.messages` → `src/effects/engineers/module-inbox.ts#observeModuleInboxSummary`、`sink.engineering-overlay.provider-effects` → `src/effects/engineers/provider-thread-effect-store.ts#observeProviderThreadEffects`、`sink.engineering-overlay.schema` → `src/core/engineers/engineering-overlay.ts#buildEngineeringOverlaySnapshot` |
+| `entrypoint.engineering-overlay.collect` | `src/effects/engineers/engineering-overlay.ts#collectEngineeringBoard` | `sink.engineering-overlay.binding` → `src/effects/engineers/binding-store.ts#readEngineerBindingStatus`、`sink.engineering-overlay.claim` → `src/effects/engineers/claim-actor-store.ts#listLiveClaimActorReceiptsForEngineer`、`sink.engineering-overlay.messages` → `src/effects/engineers/module-inbox.ts#observeModuleInboxSummary`、`sink.engineering-overlay.runtime-effects` → `src/effects/engineers/agent-runtime-effect-store.ts#observeAgentRuntimeEffects`、`sink.engineering-overlay.schema` → `src/core/engineers/engineering-overlay.ts#buildEngineeringOverlaySnapshot` |
 | `entrypoint.engineering-overlay.attention` | `src/core/engineers/engineering-overlay.ts#projectOrganizationAttention` | `sink.engineering-overlay.attention-schema` → `src/core/engineers/engineering-overlay.ts#validateOrganizationAttentionSnapshot` |
 | `entrypoint.engineering-overlay.overlay-schema` | `src/core/engineers/engineering-overlay.ts#buildEngineeringOverlaySnapshot` | `sink.engineering-overlay.overlay-validation` → `src/core/engineers/engineering-overlay.ts#validateEngineeringOverlaySnapshot` |
 

@@ -296,7 +296,7 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 - Treat user-level `~/.codex/hooks.json` and `~/.claude/settings.json` as host adapters. Keep hook implementation under `.ai/hooks/`, and treat repo-local `.claude/settings.json` / `.codex/hooks.json` hook adapters as retired legacy config.
 - Consider adding `bun scripts/capability-resolver.ts validate --format text` to the strict workflow gate after the architecture registry has been used through one more real slice.
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:1e86455ca74e338a5a15320bcfdf5689f363e0451f0ad5ada9dbe31383682112" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:a99716d5e85fb0494296e037f472ea92cd7589dab28fce6066bf184b01489544" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:b8f07a45683509615148043bd9655a2a478f3802959a534c4f863badd470ba38" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:a99716d5e85fb0494296e037f472ea92cd7589dab28fce6066bf184b01489544" -->
 # Architecture Index
 
 Generated: 1970-01-01T00:00:00.000Z
