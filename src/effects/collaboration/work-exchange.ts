@@ -187,24 +187,27 @@ function proveExecutionContexts(
   repoRoot: string,
   handoffs: readonly WorkStateHandoffV1[],
 ): readonly CollaborationExecutionContextProofV1[] {
-  return handoffs
-    .filter((handoff) => handoff.execution_context.kind === 'bound_task')
-    .map((handoff) => {
-      try {
-        resolveBoundTaskSuccession(repoRoot, handoff);
-        return { handoff_id: handoff.handoff_id, verified: true };
-      } catch (error) {
-        // Only a decided verdict is swallowed. An unresolvable receipt and a
-        // context that disagrees with a resolvable one are both "this branch is
-        // not proven", which is what the caller asked. Anything else — a broken
-        // store, a programming error — is not a verdict and must not be
-        // laundered into one.
-        if (error instanceof CollaborationError || isTaskFreezeVerdict(error)) {
-          return { handoff_id: handoff.handoff_id, verified: false };
-        }
-        throw error;
-      }
-    });
+  const proofs: CollaborationExecutionContextProofV1[] = [];
+  for (const handoff of handoffs) {
+    if (handoff.execution_context.kind !== 'bound_task') continue;
+    let verified = true;
+    try {
+      // A direct statement rather than a call inside a callback, so the edge
+      // into C5's proof is one a reader and the architecture flow proof can both
+      // follow without an intervening closure.
+      resolveBoundTaskSuccession(repoRoot, handoff);
+    } catch (error) {
+      // Only a decided verdict is swallowed. An unresolvable receipt and a
+      // context that disagrees with a resolvable one are both "this branch is
+      // not proven", which is what the caller asked. Anything else — a broken
+      // store, a programming error — is not a verdict and must not be laundered
+      // into one.
+      if (!(error instanceof CollaborationError) && !isTaskFreezeVerdict(error)) throw error;
+      verified = false;
+    }
+    proofs.push({ handoff_id: handoff.handoff_id, verified });
+  }
+  return proofs;
 }
 
 /**

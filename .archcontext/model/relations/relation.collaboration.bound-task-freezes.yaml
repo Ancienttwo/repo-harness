@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.collaboration.bound-task-freezes
+kind: calls
+source: capability.runtime-harness.collaboration
+target: capability.runtime-harness.bound-task-freezes
+intent: "Prove a handoff's bound_task execution context against the persisted TaskFreeze receipt it names, on publish and again on every read, so a caller-supplied Claim and Lease generation is never projected as a fact"

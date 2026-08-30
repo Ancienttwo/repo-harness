@@ -1,13 +1,13 @@
 # runtime-harness/collaboration 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" sourceDigest="sha256:7e49ded50c742ca067ce469065584ee9fec6d86418d5bb4f0061860759e0af7a" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:8a19b41e7429f8879f08eb0c6dfbf0be7f68ccc74b9759cc5f3b9a43df094e80" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" sourceDigest="sha256:72eedefb2f055b55a12d62ca72a1acb5a7448281811d9d291b723fda66555ad2" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:1a1199f60e33bc6bc3e6f3daaa7c6c63659232b404ce32ecce9b019c3d47f4cd" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.collaboration`(kind `capability`)
 > **Matched Prefixes**:`src/core/collaboration/**`、`src/effects/collaboration/**`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Publishes append-only coordination signals, work-state handoffs, non-exclusive adoption receipts and delegated-Worker contribution commits over one shared create-once store substrate, and enforces the parent Engineer's delegation policy at admission time as a pre-step to the existing read-only delegation, with Host-derived identity and recorded time and zero Task, Lease, Publication or Acceptance authority.
+Publishes append-only coordination signals, work-state handoffs, non-exclusive adoption receipts and delegated-Worker contribution commits over one shared create-once store substrate, enforces the parent Engineer's delegation policy at admission time as a pre-step to the existing read-only delegation, and reads that substrate back into one collaborative Work Exchange snapshot and one bounded context packet whose delivery into a delegated run is fenced by a required run-context binding, with Host-derived identity and recorded time and zero Task, Lease, Publication or Acceptance authority.
 
 ## 1. P1:能力架構地圖
 
@@ -15,10 +15,13 @@ Publishes append-only coordination signals, work-state handoffs, non-exclusive a
 
 ```mermaid
 flowchart LR
+  p1_capability_runtime_harness_bound_task_freezes_b47bdee4["Bound Task Freezes"]:::component
   p1_capability_runtime_harness_collaboration_5265febf["Collaboration Substrate"]:::component
   p1_capability_runtime_harness_delegated_runs_e1654b07["Read-only Delegated Runs"]:::component
   p1_capability_runtime_harness_engineer_bindings_34c00f72["Engineer Bindings"]:::component
   p1_component_collaboration_primary_9383ae07["Append-only Collaboration Record Store"]:::component
+  p1_capability_runtime_harness_bound_task_freezes_b47bdee4 -->|"Revalidate the current Binding and exact live ClaimActorReceipt before inspection or rotation refusal"| p1_capability_runtime_harness_engineer_bindings_34c00f72
+  p1_capability_runtime_harness_collaboration_5265febf -->|"Prove a handoff's bound_task execution context against the persisted TaskFreeze receipt it names， on publish and again on every read， so a caller-supplied Claim and Lease generation is never projected as a fact"| p1_capability_runtime_harness_bound_task_freezes_b47bdee4
   p1_capability_runtime_harness_collaboration_5265febf -->|"Enforce the parent Engineer's delegation policy as a pre-step to the unchanged read-only admission， and turn one run's persisted output into a contribution the delegation plane's own WorkerResult then references"| p1_capability_runtime_harness_delegated_runs_e1654b07
   p1_capability_runtime_harness_collaboration_5265febf -->|"Derive the publishing actor from the authenticated principal and current Binding instead of accepting a declared identity"| p1_capability_runtime_harness_engineer_bindings_34c00f72
   p1_capability_runtime_harness_collaboration_5265febf -->|"Persist immutable coordination signals under a per-thread lock without writing any delivery store"| p1_component_collaboration_primary_9383ae07
@@ -29,8 +32,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:fe482e00d203922226bd5ef26bac24cc27b64a3421cb36d287139895f40de7a6`).
-- Semantic nodes: `4`; declared relations: `4`.
+- Proof: `proven` (`sha256:d56bc0d130fd57f1bd3f440c2912ab9dbd3ebf9609b25af059b969169b1f3131`).
+- Semantic nodes: `5`; declared relations: `6`.
 
 ### 1.2 模組職責表
 
@@ -49,6 +52,15 @@ flowchart LR
 | `entrypoint.collaboration.contribution-publish` | `src/effects/collaboration/contribution-collector.ts#publishContribution` | `sink.collaboration.contribution-candidate` → `src/effects/collaboration/signal-store.ts#publishCoordinationSignal`、`sink.collaboration.contribution-commit` → `src/core/collaboration/contribution.ts#buildCollaborationContributionCommit`、`sink.collaboration.single-worker-result` → `src/effects/engineers/delegated-run-store.ts#collectDelegatedRunResult` |
 | `entrypoint.collaboration.provider-output` | `src/effects/collaboration/provider-output-adapter.ts#parseContributionDraftFromStdout` | `sink.collaboration.draft-schema` → `src/core/collaboration/contribution.ts#validateCollaborationContributionDraft` |
 | `entrypoint.collaboration.contribution-visibility` | `src/effects/collaboration/contribution-store.ts#listContributedSignalIds` | `sink.collaboration.committed-only` → `src/effects/collaboration/contribution-store.ts#listCollaborationContributionCommits` |
+| `entrypoint.collaboration.succession` | `src/effects/collaboration/succession.ts#resolveBoundTaskSuccession` | `sink.collaboration.freeze-receipt-read` → `src/effects/engineers/task-freeze-store.ts#readTaskFreezeReceipt`、`sink.collaboration.freeze-derived-context` → `src/effects/collaboration/succession.ts#boundTaskExecutionContext` |
+| `entrypoint.collaboration.succession-publish` | `src/effects/collaboration/succession.ts#publishBoundTaskSuccessionHandoff` | `sink.collaboration.succession-handoff-publish` → `src/effects/collaboration/handoff-store.ts#publishWorkStateHandoff` |
+| `entrypoint.collaboration.work-exchange` | `src/effects/collaboration/work-exchange.ts#collectCollaborativeWorkExchange` | `sink.collaboration.exchange-projection` → `src/core/collaboration/work-exchange.ts#buildCollaborativeWorkExchangeSnapshot`、`sink.collaboration.exchange-mode` → `src/effects/collaboration/feature-flag.ts#readCollaborationMode` |
+| `entrypoint.collaboration.execution-context-proof` | `src/effects/collaboration/work-exchange.ts#proveExecutionContexts` | `sink.collaboration.read-time-succession-proof` → `src/effects/collaboration/succession.ts#resolveBoundTaskSuccession` |
+| `entrypoint.collaboration.exchange-offer-projection` | `src/core/collaboration/work-exchange.ts#projectExistingEngineerOffer` | `sink.collaboration.existing-offer-authority` → `src/core/engineers/scheduling.ts#validateEngineerOffer` |
+| `entrypoint.collaboration.context-delivery` | `src/effects/collaboration/context-delivery.ts#deliverCollaborationContext` | `sink.collaboration.context-packet-build` → `src/core/collaboration/context-packet.ts#buildCollaborationContextPacket`、`sink.collaboration.untrusted-goal-composition` → `src/core/collaboration/run-binding.ts#composeCollaborationGoal` |
+| `entrypoint.collaboration.run-context-read` | `src/effects/collaboration/context-delivery.ts#readLiveRun` | `sink.collaboration.live-run-status` → `src/effects/engineers/delegated-run-store.ts#readDelegatedRunStatus`、`sink.collaboration.live-run-envelope` → `src/effects/engineers/delegated-run-store.ts#readDelegationEnvelope` |
+| `entrypoint.collaboration.run-binding-record` | `src/effects/collaboration/context-delivery.ts#recordCollaborationRunContextBinding` | `sink.collaboration.run-binding-build` → `src/core/collaboration/run-binding.ts#buildCollaborationRunContextBinding` |
+| `entrypoint.collaboration.dispatch-fence` | `src/effects/collaboration/context-delivery.ts#assertCollaborationDispatchBinding` | `sink.collaboration.binding-fence-check` → `src/core/collaboration/run-binding.ts#checkCollaborationRunContextBinding`、`sink.collaboration.persisted-binding-read` → `src/effects/collaboration/context-delivery.ts#readCollaborationRunContextBinding` |
 | `entrypoint.collaboration.shared-mechanics` | `src/core/collaboration/signal.ts#buildCoordinationSignal` | `sink.collaboration.actor-union` → `src/core/collaboration/common.ts#validateCollaborationActorRef` |
 
 ### 1.3 規模信號
@@ -61,6 +73,7 @@ flowchart LR
 
 出向關係:
 
+- `calls` → `capability.runtime-harness.bound-task-freezes` — Prove a handoff's bound_task execution context against the persisted TaskFreeze receipt it names, on publish and again on every read, so a caller-supplied Claim and Lease generation is never projected as a fact
 - `calls` → `capability.runtime-harness.delegated-runs` — Enforce the parent Engineer's delegation policy as a pre-step to the unchanged read-only admission, and turn one run's persisted output into a contribution the delegation plane's own WorkerResult then references
 - `calls` → `capability.runtime-harness.engineer-bindings` — Derive the publishing actor from the authenticated principal and current Binding instead of accepting a declared identity
 - `calls` → `component.collaboration.primary` — Persist immutable coordination signals under a per-thread lock without writing any delivery store
@@ -71,7 +84,38 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:fe482e00d203922226bd5ef26bac24cc27b64a3421cb36d287139895f40de7a6`); selectors `21/21`.
+> **Proof**: `proven` (`sha256:d56bc0d130fd57f1bd3f440c2912ab9dbd3ebf9609b25af059b969169b1f3131`); selectors `35/35`.
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
+sequenceDiagram
+  autonumber
+  participant p2_collaboration_50c48bca as Collaboration Substrate
+  participant p2_delegated_runs_6de9843b as Read-only Delegated Runs
+  participant p2_bound_task_freezes_60610ef7 as Bound Task Freezes
+  participant p2_collaboration_store_5c827af5 as Append-only Collaboration Record Store
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Double-read every mutable source and project one Work Exchange snapshot whose snapshot_consistency reports what the two reads observed
+  alt A stable snapshot becomes a bounded packet， an untrusted rendering composed into the run's goal， and a binding that records exactly what was embedded
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Read collaboration.mode， so a collection reports the mode the round is running under
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Pass each existing EngineerOfferV1 through the scheduling authority's own validator， so the offer and its revision reach the snapshot unreinterpreted
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Select within budget from that exact collection， binding the source snapshot， estimator version， truncation evidence and canonical render digest
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Append the rendering inside the untrusted coordination markers， reversibly， so the block embedded in the goal can be split back out and compared
+  p2_collaboration_50c48bca->>p2_delegated_runs_6de9843b: Read the run's own intent and envelope， so the binding records what actually happened rather than what the caller believed
+  p2_collaboration_50c48bca->>p2_delegated_runs_6de9843b: Read the envelope behind the admission， keeping intent.context_packet_sha256 as the ExecutionPacket digest the delegation protocol already froze
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Build the additive run-context binding over the dispatch， intent， execution packet， collaboration packet， rendering and both goals， bumping no delegation protocol
+    Note over p2_collaboration_50c48bca: Return the packet， the rendering and the binding； no Task， Lease， Publication or Acceptance byte moved and no delegation record grew a field
+  else A handoff's bound_task execution context is shown against the freeze receipt it names， or withheld
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Run the read-time proof for every bound_task handoff before any projection can expose one
+  p2_collaboration_50c48bca->>p2_bound_task_freezes_60610ef7: Resolve the exact TaskFreeze receipt the context names， failing closed when the digest resolves to nothing
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Re-derive the whole branch from the receipt and compare canonical bytes， so a resolvable receipt describing a different Claim is caught too
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Publish the succession handoff through the ordinary handoff store， carrying knowledge and never a Claim or a Lease
+    Note over p2_collaboration_50c48bca: Expose the context only when it proved； otherwise withhold it and count the omission， leaving the handoff's knowledge readable
+  else A collaboration-mode run whose binding is missing， dangling， or describes a different goal is refused before it dispatches
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Read the persisted binding for this dispatch， treating its absence as a refusal rather than as permission
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Run the same pure check the recorder ran， against the live intent， execution packet and the goal actually being dispatched
+    Note over p2_collaboration_50c48bca: Surface the typed refusal naming the one fact that failed； the run does not dispatch and injected context that no record accounts for cannot reach a Worker
+  end
+```
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

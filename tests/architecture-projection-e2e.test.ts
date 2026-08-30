@@ -29,11 +29,13 @@ describe("AXR7 repo-harness architecture consumer", () => {
     expect(capabilities).toHaveLength(22);
     expect(components).toHaveLength(22);
     // C4 declared the collaboration -> delegated-runs relation and the
-    // delegated-contribution flow. Both counts are inventory pins: a legitimate
-    // model addition is a red test until the pin moves with it, which is the
-    // point. Multiple flows per capability was already the norm.
-    expect(relations).toHaveLength(40);
-    expect(flows).toHaveLength(26);
+    // delegated-contribution flow; C6 adds the collaboration -> bound-task-freezes
+    // relation its read-time succession proof crosses, and the context-delivery
+    // flow. Both counts are inventory pins: a legitimate model addition is a red
+    // test until the pin moves with it, which is the point. Multiple flows per
+    // capability was already the norm.
+    expect(relations).toHaveLength(41);
+    expect(flows).toHaveLength(27);
     expect(flows.every((flow) => flow.schemaVersion === "archcontext.flow/v1")).toBe(true);
     expect(flows.every((flow) => flow.applicability === "required")).toBe(true);
     expect(new Set(flows.map((flow) => flow.capabilityId))).toEqual(new Set(capabilities.map((node) => node.id)));

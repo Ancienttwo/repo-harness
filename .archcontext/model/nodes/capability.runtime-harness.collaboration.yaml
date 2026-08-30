@@ -3,7 +3,7 @@ id: capability.runtime-harness.collaboration
 kind: capability
 name: Collaboration Substrate
 status: active
-summary: Publishes append-only coordination signals, work-state handoffs, non-exclusive adoption receipts and delegated-Worker contribution commits over one shared create-once store substrate, and enforces the parent Engineer's delegation policy at admission time as a pre-step to the existing read-only delegation, with Host-derived identity and recorded time and zero Task, Lease, Publication or Acceptance authority.
+summary: Publishes append-only coordination signals, work-state handoffs, non-exclusive adoption receipts and delegated-Worker contribution commits over one shared create-once store substrate, enforces the parent Engineer's delegation policy at admission time as a pre-step to the existing read-only delegation, and reads that substrate back into one collaborative Work Exchange snapshot and one bounded context packet whose delivery into a delegated run is fenced by a required run-context binding, with Host-derived identity and recorded time and zero Task, Lease, Publication or Acceptance authority.
 responsibilities:
   - Own the shared collaboration mechanics frozen for later rows, namely the actor union, revision-bound scope refs, the reused WorkerResult evidence-ref shape, deterministic record identity and the recorded-time source.
   - Validate CoordinationSignalV1 against an exact key set and content-address it, closing the transport without closing any collaboration vocabulary.
@@ -22,6 +22,13 @@ responsibilities:
   - Derive every contributed signal and handoff identity from the WorkerRunRef and the entry index and every commit identity from the run reference alone, so a retried collection converges instead of appending duplicates.
   - Publish candidates immutably first and one contribution commit last as the sole visibility boundary, so a projection reads only committed contributions and an interrupted transaction leaves nothing partially visible.
   - Treat an unusable Worker output as a typed rejection that still persists the ordinary WorkerResult, never as a synthesised empty contribution or an appearance of success.
+  - Separate knowledge succession from execution authority by deriving a bound_task execution context from the persisted TaskFreeze receipt on publish and re-deriving and comparing it on read, and by granting a successor a write path only through the existing release, takeover and acquire lifecycle.
+  - Read every mutable collaboration source twice and derive snapshot_consistency from what the two reads observed, since the store reader is the only layer that can tell a torn read from a still one.
+  - Fail the collection closed when the signal set itself is unreadable, and mark the snapshot degraded when an additive source is, so a partial view is never served as a complete one.
+  - Project existing EngineerOfferV1 records and their offer_revision verbatim into the Work Exchange snapshot, reinterpreting neither readiness nor revision.
+  - Withhold any bound_task execution context whose read-time proof does not hold, and count the omission, rather than publishing an unproven Claim beside a flag.
+  - Build the bounded context packet only from a stable collection, bind its source snapshot, estimator version, truncation evidence and canonical render digest, and compose the rendering into the delegated run's goal inside the untrusted coordination markers.
+  - Record which collaboration packet and rendering entered which run as an additive run-context binding that bumps no delegation protocol, and refuse dispatch when that binding is missing, dangling, or describes a goal other than the one being dispatched.
 source:
   include:
     - "src/core/collaboration/**"
@@ -155,6 +162,93 @@ source:
             - id: sink.collaboration.committed-only
               path: "src/effects/collaboration/contribution-store.ts"
               symbol: "listCollaborationContributionCommits"
+    - id: entrypoint.collaboration.succession
+      path: "src/effects/collaboration/succession.ts"
+      symbols:
+        - name: "resolveBoundTaskSuccession"
+          sinks:
+            - id: sink.collaboration.freeze-receipt-read
+              path: "src/effects/engineers/task-freeze-store.ts"
+              symbol: "readTaskFreezeReceipt"
+            - id: sink.collaboration.freeze-derived-context
+              path: "src/effects/collaboration/succession.ts"
+              symbol: "boundTaskExecutionContext"
+    - id: entrypoint.collaboration.succession-publish
+      path: "src/effects/collaboration/succession.ts"
+      symbols:
+        - name: "publishBoundTaskSuccessionHandoff"
+          sinks:
+            - id: sink.collaboration.succession-handoff-publish
+              path: "src/effects/collaboration/handoff-store.ts"
+              symbol: "publishWorkStateHandoff"
+    - id: entrypoint.collaboration.work-exchange
+      path: "src/effects/collaboration/work-exchange.ts"
+      symbols:
+        - name: "collectCollaborativeWorkExchange"
+          sinks:
+            - id: sink.collaboration.exchange-projection
+              path: "src/core/collaboration/work-exchange.ts"
+              symbol: "buildCollaborativeWorkExchangeSnapshot"
+            - id: sink.collaboration.exchange-mode
+              path: "src/effects/collaboration/feature-flag.ts"
+              symbol: "readCollaborationMode"
+    - id: entrypoint.collaboration.execution-context-proof
+      path: "src/effects/collaboration/work-exchange.ts"
+      symbols:
+        - name: "proveExecutionContexts"
+          sinks:
+            - id: sink.collaboration.read-time-succession-proof
+              path: "src/effects/collaboration/succession.ts"
+              symbol: "resolveBoundTaskSuccession"
+    - id: entrypoint.collaboration.exchange-offer-projection
+      path: "src/core/collaboration/work-exchange.ts"
+      symbols:
+        - name: "projectExistingEngineerOffer"
+          sinks:
+            - id: sink.collaboration.existing-offer-authority
+              path: "src/core/engineers/scheduling.ts"
+              symbol: "validateEngineerOffer"
+    - id: entrypoint.collaboration.context-delivery
+      path: "src/effects/collaboration/context-delivery.ts"
+      symbols:
+        - name: "deliverCollaborationContext"
+          sinks:
+            - id: sink.collaboration.context-packet-build
+              path: "src/core/collaboration/context-packet.ts"
+              symbol: "buildCollaborationContextPacket"
+            - id: sink.collaboration.untrusted-goal-composition
+              path: "src/core/collaboration/run-binding.ts"
+              symbol: "composeCollaborationGoal"
+    - id: entrypoint.collaboration.run-context-read
+      path: "src/effects/collaboration/context-delivery.ts"
+      symbols:
+        - name: "readLiveRun"
+          sinks:
+            - id: sink.collaboration.live-run-status
+              path: "src/effects/engineers/delegated-run-store.ts"
+              symbol: "readDelegatedRunStatus"
+            - id: sink.collaboration.live-run-envelope
+              path: "src/effects/engineers/delegated-run-store.ts"
+              symbol: "readDelegationEnvelope"
+    - id: entrypoint.collaboration.run-binding-record
+      path: "src/effects/collaboration/context-delivery.ts"
+      symbols:
+        - name: "recordCollaborationRunContextBinding"
+          sinks:
+            - id: sink.collaboration.run-binding-build
+              path: "src/core/collaboration/run-binding.ts"
+              symbol: "buildCollaborationRunContextBinding"
+    - id: entrypoint.collaboration.dispatch-fence
+      path: "src/effects/collaboration/context-delivery.ts"
+      symbols:
+        - name: "assertCollaborationDispatchBinding"
+          sinks:
+            - id: sink.collaboration.binding-fence-check
+              path: "src/core/collaboration/run-binding.ts"
+              symbol: "checkCollaborationRunContextBinding"
+            - id: sink.collaboration.persisted-binding-read
+              path: "src/effects/collaboration/context-delivery.ts"
+              symbol: "readCollaborationRunContextBinding"
     - id: entrypoint.collaboration.shared-mechanics
       path: "src/core/collaboration/signal.ts"
       symbols:
@@ -173,4 +267,5 @@ extensions:
     - "bun test tests/unit/collaboration-hotspot.test.ts tests/unit/collaboration-thread-projection.test.ts tests/unit/collaboration-context-packet.test.ts --timeout 60000"
     - "bun test tests/unit/collaboration-handoff.test.ts tests/unit/collaboration-adoption.test.ts tests/effects/collaboration-handoff-store.test.ts tests/effects/collaboration-adoption-store.test.ts --timeout 60000"
     - "bun test tests/unit/collaboration-contribution.test.ts tests/unit/collaboration-admission.test.ts tests/effects/collaboration-admission-bridge.test.ts tests/effects/collaboration-contribution-collector.test.ts --timeout 180000"
+    - "bun test tests/effects/collaboration-succession.test.ts tests/effects/collaboration-work-exchange.test.ts tests/effects/collaboration-context-delivery.test.ts --timeout 180000"
     - "bun run check:type"
