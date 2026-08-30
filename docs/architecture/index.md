@@ -296,7 +296,7 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 - Treat user-level `~/.codex/hooks.json` and `~/.claude/settings.json` as host adapters. Keep hook implementation under `.ai/hooks/`, and treat repo-local `.claude/settings.json` / `.codex/hooks.json` hook adapters as retired legacy config.
 - Consider adding `bun scripts/capability-resolver.ts validate --format text` to the strict workflow gate after the architecture registry has been used through one more real slice.
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:156c45048e5718a90fb51bc32b7094d9f6fbcf5da9f61fd8975a9923c4c201a8" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:7c65edf08eb543b7f754f6b1e643d0a1697bffd6163143e55da77cf6ef9f6263" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:3ad5f00afd07951d2b7f4bc5b3200dcb4497e1eff8ba6d81ef4104a97fafaca9" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:19c7868908c081bc31e2880c835ef39c070a42a012049cee6ca5db6b5314ceba" -->
 # Architecture Index
 
 Generated: 1970-01-01T00:00:00.000Z
@@ -336,8 +336,10 @@ Generated: 1970-01-01T00:00:00.000Z
 - capability.runtime-harness.collaboration -> capability.runtime-harness.bound-task-freezes — calls
 - capability.runtime-harness.collaboration -> capability.runtime-harness.delegated-runs — calls
 - capability.runtime-harness.collaboration -> capability.runtime-harness.engineer-bindings — calls
+- capability.runtime-harness.collaboration -> capability.runtime-harness.engineer-scheduling — calls
 - capability.runtime-harness.collaboration -> component.collaboration.primary — calls
 - capability.workflow-engine.contract-assets -> component.contract-assets.primary — calls
+- capability.runtime-harness.delegated-runs -> capability.runtime-harness.collaboration — calls
 - capability.runtime-harness.delegated-runs -> capability.runtime-harness.engineer-bindings — calls
 - capability.runtime-harness.delegated-runs -> component.delegated-runs.primary — calls
 - capability.runtime-harness.engineer-bindings -> component.engineer-bindings.primary — calls
@@ -356,6 +358,7 @@ Generated: 1970-01-01T00:00:00.000Z
 - capability.runtime-harness.interface-change -> capability.runtime-harness.engineer-bindings — calls
 - capability.runtime-harness.interface-change -> capability.runtime-harness.engineer-scheduling — calls
 - capability.runtime-harness.interface-change -> component.interface-change.primary — calls
+- capability.runtime-harness.mcp-sidecar -> capability.runtime-harness.collaboration — calls
 - capability.runtime-harness.mcp-sidecar -> capability.runtime-harness.engineer-messages — calls
 - capability.runtime-harness.mcp-sidecar -> capability.runtime-harness.engineer-bindings — calls
 - capability.runtime-harness.mcp-sidecar -> capability.runtime-harness.engineer-scheduling — calls

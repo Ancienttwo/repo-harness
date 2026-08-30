@@ -66,6 +66,7 @@ import type {
   CollaborationThreadSnapshotV1,
 } from '../../core/collaboration/thread-projection';
 import type { CollaborativeWorkExchangeSnapshotV1 } from '../../core/collaboration/work-exchange';
+import type { EngineerOfferV1 } from '../../core/engineers/scheduling';
 import { collectEngineerOffers } from '../engineers/scheduling';
 import { resolveEngineerPrincipal } from '../engineers/principal';
 import { engineerPrincipalAuthorization } from './actor';
@@ -130,22 +131,28 @@ function surfaceRoot(context: CollaborationSurfaceContext): string {
  * fails with that refusal rather than reporting zero offers, which would be this
  * surface inventing an answer the scheduling plane declined to give.
  */
-function collect(
+function readExecutionOffersFor(
   repoRoot: string,
   context: CollaborationSurfaceContext,
-): CollaborativeWorkExchangeCollectionV1 {
+): readonly EngineerOfferV1[] {
   const principal = resolveEngineerPrincipal({
     repo_root: repoRoot,
     authorization_id: context.authorization_id,
     env: context.env,
   });
+  return collectEngineerOffers({ repo_root: repoRoot, principal, env: context.env }).offers;
+}
+
+function collect(
+  repoRoot: string,
+  context: CollaborationSurfaceContext,
+): CollaborativeWorkExchangeCollectionV1 {
   return collectCollaborativeWorkExchange({
     repo_root: repoRoot,
-    read_execution_offers: () => collectEngineerOffers({
-      repo_root: repoRoot,
-      principal,
-      env: context.env,
-    }).offers,
+    // Called once per collector pass, on purpose. Hoisting the read out of the
+    // callback would make the offer source look stable to the double read that
+    // exists to notice it moving.
+    read_execution_offers: () => readExecutionOffersFor(repoRoot, context),
   });
 }
 

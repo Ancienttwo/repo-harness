@@ -1,5 +1,5 @@
 # runtime-harness/mcp-sidecar 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:14cc1502f690d5a24e894b28a9f2f8af016e5f0c142c7292a449e8ac76047214" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:65b39e95859520bd9969e9866b114e732fa282773a98a810c9f8a5b563466fb3" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:372dbf785a749b61dd4e9222fce563ede145a31a1eceefeab507185ef7fe6332" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:1bf7ebc5cc2b3260a4f811ff972d4cb18429a5922b6c8d50333f08b3f12d940f" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.mcp-sidecar`(kind `capability`)
 > **Matched Prefixes**:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`、`src/cli/chatgpt-browser/file-policy.ts`、`src/effects/repo-registry.ts`、`docs/repo-harness-chatgpt-mcp-setup.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`docs/researches/20260711-devspace-chatgpt-local-control.md`
@@ -39,6 +39,7 @@ flowchart LR
 | `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#messageSendAsEngineer` | `sink.mcp-sidecar.engineer-messages` → `src/effects/engineers/module-inbox.ts#sendModuleMessage` |
 | `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#acquireAsEngineer` | `sink.mcp-sidecar.engineer-acquire` → `src/effects/engineers/scheduling-acquire.ts#acquireScheduledEngineerTask` |
 | `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#callEngineerTool` | `sink.mcp-sidecar.provider-thread-effect-status` → `src/effects/engineers/provider-thread-effect-store.ts#readProviderThreadEffectStatus`、`sink.mcp-sidecar.interface-change` → `src/effects/engineers/interface-change-store.ts#transitionInterfaceChangeRequest` |
+| `entrypoint.mcp-sidecar.collaboration-tools` | `src/cli/mcp/collaboration-tools.ts#callCollaborationTool` | `sink.mcp-sidecar.collaboration-exchange` → `src/effects/collaboration/agent-surface.ts#collaborationExchangeView`、`sink.mcp-sidecar.collaboration-signal-post` → `src/effects/collaboration/agent-surface.ts#collaborationSignalPost`、`sink.mcp-sidecar.collaboration-handoff-adopt` → `src/effects/collaboration/agent-surface.ts#collaborationHandoffAdopt` |
 
 ### 1.3 規模信號
 
@@ -50,6 +51,7 @@ flowchart LR
 
 出向關係:
 
+- `calls` → `capability.runtime-harness.collaboration` — Serve the bounded Engineer collaboration tool set from the shared agent surface, deriving the author from the authenticated authorization and taking no actor, destination or recorded time from a caller
 - `calls` → `capability.runtime-harness.engineer-messages` — Expose authenticated Engineer message send, list and acknowledgement without granting generic Fleet or Provider authority
 - `calls` → `capability.runtime-harness.engineer-bindings` — Resolve a verified OAuth authorization to the current Engineer Binding before acquiring a Fleet Claim
 - `calls` → `capability.runtime-harness.engineer-scheduling` — Project and acquire exact revision-fenced Engineer offers for a verified OAuth principal

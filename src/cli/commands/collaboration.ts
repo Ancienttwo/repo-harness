@@ -172,6 +172,68 @@ function parsePacketBuild(path: string): CollaborationPacketBuildInput {
   return raw as unknown as CollaborationPacketBuildInput;
 }
 
+/**
+ * One named handler per subcommand.
+ *
+ * They are module-level functions rather than inline `.action()` closures so each
+ * call into `agent-surface.ts` is a direct statement the architecture flow proof
+ * can follow, matching the reason C6 kept its own proof edge out of a callback.
+ */
+function exchangeAction(options: ReadOptions): void {
+  try { output(collaborationExchangeView(contextOf(options)), options.format, 'CollaborativeWorkExchangeSnapshotV1'); }
+  catch (error) { outputError(error); }
+}
+
+function threadsAction(options: ReadOptions): void {
+  try { output(collaborationThreadsView(contextOf(options)), options.format, 'CollaborationThreadProjectionV1'); }
+  catch (error) { outputError(error); }
+}
+
+function signalsAction(options: ReadOptions): void {
+  try { output(collaborationSignalsView(contextOf(options)), options.format, 'CoordinationSignalV1[]'); }
+  catch (error) { outputError(error); }
+}
+
+function postAction(options: MutationOptions): void {
+  try {
+    const value = collaborationSignalPost(contextOf(options), parseSignalPost(options.input));
+    output(value, options.format, 'CoordinationSignalV1');
+  } catch (error) { outputError(error); }
+}
+
+function handoffPublishAction(options: MutationOptions): void {
+  try {
+    const value = collaborationHandoffPublish(contextOf(options), parseHandoffPublish(options.input));
+    output(value, options.format, 'WorkStateHandoffV1');
+  } catch (error) { outputError(error); }
+}
+
+function handoffListAction(options: ReadOptions): void {
+  try { output(collaborationHandoffsView(contextOf(options)), options.format, 'WorkStateHandoffV1[]'); }
+  catch (error) { outputError(error); }
+}
+
+function handoffAdoptAction(options: MutationOptions): void {
+  try {
+    const value = collaborationHandoffAdopt(contextOf(options), parseHandoffAdopt(options.input));
+    output(value, options.format, 'HandoffAdoptionReceiptV1');
+  } catch (error) { outputError(error); }
+}
+
+function packetBuildAction(options: MutationOptions): void {
+  try {
+    const value = collaborationPacketBuild(contextOf(options), parsePacketBuild(options.input));
+    output(value, options.format, 'CollaborationContextPacketV1');
+  } catch (error) { outputError(error); }
+}
+
+function packetReadAction(options: ReadOptions & { readonly packetSha256: string }): void {
+  try {
+    const value = collaborationPacketRead(contextOf(options), options.packetSha256);
+    output(value, options.format, 'CollaborationContextPacketV1');
+  } catch (error) { outputError(error); }
+}
+
 function withAuthorization(command: Command): Command {
   return command
     .requiredOption('--authorization-id <id>', 'Server-minted Engineer OAuth authorization ID')
@@ -188,100 +250,48 @@ export function buildCollaborationCommand(): Command {
 
   withAuthorization(command.command('exchange')
     .description('Read one collaborative Work Exchange snapshot for this authenticated Module Engineer'))
-    .action((options: ReadOptions) => {
-      try { output(collaborationExchangeView(contextOf(options)), options.format, 'CollaborativeWorkExchangeSnapshotV1'); }
-      catch (error) { outputError(error); }
-    });
+    .action(exchangeAction);
 
   withAuthorization(command.command('threads')
     .description('Read lanes, hotspot scores and contribution opportunities from that same snapshot'))
-    .action((options: ReadOptions) => {
-      try { output(collaborationThreadsView(contextOf(options)), options.format, 'CollaborationThreadProjectionV1'); }
-      catch (error) { outputError(error); }
-    });
+    .action(threadsAction);
 
   withAuthorization(command.command('signals')
     .description('List every committed coordination signal in this repository'))
-    .action((options: ReadOptions) => {
-      try { output(collaborationSignalsView(contextOf(options)), options.format, 'CoordinationSignalV1[]'); }
-      catch (error) { outputError(error); }
-    });
+    .action(signalsAction);
 
   withInput(command.command('post')
     .description('Publish one coordination signal; the author is derived from --authorization-id and cannot be declared'),
   'Repository-relative exact coordination signal JSON input')
-    .action((options: MutationOptions) => {
-      try {
-        output(
-          collaborationSignalPost(contextOf(options), parseSignalPost(options.input)),
-          options.format,
-          'CoordinationSignalV1',
-        );
-      } catch (error) { outputError(error); }
-    });
+    .action(postAction);
 
   const handoff = command.command('handoff').description('Publish, list and adopt work-state handoffs');
 
   withInput(handoff.command('publish')
     .description('Publish one work-state handoff; the author is derived from --authorization-id'),
   'Repository-relative exact work-state handoff JSON input')
-    .action((options: MutationOptions) => {
-      try {
-        output(
-          collaborationHandoffPublish(contextOf(options), parseHandoffPublish(options.input)),
-          options.format,
-          'WorkStateHandoffV1',
-        );
-      } catch (error) { outputError(error); }
-    });
+    .action(handoffPublishAction);
 
   withAuthorization(handoff.command('list')
     .description('List published work-state handoffs and how many adopters each has'))
-    .action((options: ReadOptions) => {
-      try { output(collaborationHandoffsView(contextOf(options)), options.format, 'WorkStateHandoffV1[]'); }
-      catch (error) { outputError(error); }
-    });
+    .action(handoffListAction);
 
   withInput(handoff.command('adopt')
     .description('Record a non-exclusive adoption receipt; adoption grants no Task, Claim or Lease'),
   'Repository-relative exact handoff adoption JSON input')
-    .action((options: MutationOptions) => {
-      try {
-        output(
-          collaborationHandoffAdopt(contextOf(options), parseHandoffAdopt(options.input)),
-          options.format,
-          'HandoffAdoptionReceiptV1',
-        );
-      } catch (error) { outputError(error); }
-    });
+    .action(handoffAdoptAction);
 
   const packet = command.command('packet').description('Build and read bounded collaboration context packets');
 
   withInput(packet.command('build')
     .description('Build one bounded context packet and return its untrusted rendering verbatim'),
   'Repository-relative exact context packet JSON input')
-    .action((options: MutationOptions) => {
-      try {
-        output(
-          collaborationPacketBuild(contextOf(options), parsePacketBuild(options.input)),
-          options.format,
-          'CollaborationContextPacketV1',
-        );
-      } catch (error) { outputError(error); }
-    });
+    .action(packetBuildAction);
 
   withAuthorization(packet.command('read')
     .description('Read one persisted context packet by its canonical digest'))
     .requiredOption('--packet-sha256 <digest>', 'Exact persisted packet digest')
-    .action((options: ReadOptions & { packetSha256: string }) => {
-      try {
-        output(
-          collaborationPacketRead(contextOf(options), options.packetSha256),
-          options.format,
-          'CollaborationContextPacketV1',
-        );
-      } catch (error) { outputError(error); }
-    });
+    .action(packetReadAction);
 
   return command;
 }

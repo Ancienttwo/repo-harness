@@ -1,9 +1,9 @@
 # runtime-harness/collaboration 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" sourceDigest="sha256:72eedefb2f055b55a12d62ca72a1acb5a7448281811d9d291b723fda66555ad2" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:1a1199f60e33bc6bc3e6f3daaa7c6c63659232b404ce32ecce9b019c3d47f4cd" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" sourceDigest="sha256:a9f113e2b5a0e0c286ddf359b66b2646584b1e1993615ae61a7042c77ab1b371" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:fcce96e601a31bdb7f7524a261a2f3be2ff118ec9444d00f22dddfd0840300f8" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.collaboration`(kind `capability`)
-> **Matched Prefixes**:`src/core/collaboration/**`、`src/effects/collaboration/**`
+> **Matched Prefixes**:`src/core/collaboration/**`、`src/effects/collaboration/**`、`src/cli/commands/collaboration.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -19,21 +19,31 @@ flowchart LR
   p1_capability_runtime_harness_collaboration_5265febf["Collaboration Substrate"]:::component
   p1_capability_runtime_harness_delegated_runs_e1654b07["Read-only Delegated Runs"]:::component
   p1_capability_runtime_harness_engineer_bindings_34c00f72["Engineer Bindings"]:::component
+  p1_capability_runtime_harness_engineer_scheduling_022bd8e0["Engineer Scheduling"]:::component
+  p1_capability_runtime_harness_mcp_sidecar_4e12aaf3["MCP Sidecar"]:::component
   p1_component_collaboration_primary_9383ae07["Append-only Collaboration Record Store"]:::component
+  p1_component_delegated_runs_primary_0e9104c9["Read-only Delegated Run Journal"]:::component
   p1_capability_runtime_harness_bound_task_freezes_b47bdee4 -->|"Revalidate the current Binding and exact live ClaimActorReceipt before inspection or rotation refusal"| p1_capability_runtime_harness_engineer_bindings_34c00f72
   p1_capability_runtime_harness_collaboration_5265febf -->|"Prove a handoff's bound_task execution context against the persisted TaskFreeze receipt it names， on publish and again on every read， so a caller-supplied Claim and Lease generation is never projected as a fact"| p1_capability_runtime_harness_bound_task_freezes_b47bdee4
   p1_capability_runtime_harness_collaboration_5265febf -->|"Enforce the parent Engineer's delegation policy as a pre-step to the unchanged read-only admission， and turn one run's persisted output into a contribution the delegation plane's own WorkerResult then references"| p1_capability_runtime_harness_delegated_runs_e1654b07
   p1_capability_runtime_harness_collaboration_5265febf -->|"Derive the publishing actor from the authenticated principal and current Binding instead of accepting a declared identity"| p1_capability_runtime_harness_engineer_bindings_34c00f72
+  p1_capability_runtime_harness_collaboration_5265febf -->|"Ask the scheduling plane for this exact authenticated principal's own offers， so a Work Exchange snapshot reports what the plane answered rather than defaulting an empty list"| p1_capability_runtime_harness_engineer_scheduling_022bd8e0
   p1_capability_runtime_harness_collaboration_5265febf -->|"Persist immutable coordination signals under a per-thread lock without writing any delivery store"| p1_component_collaboration_primary_9383ae07
+  p1_capability_runtime_harness_delegated_runs_e1654b07 -->|"Run the collaboration dispatch fence as a pre-step before the unchanged read-only host action， refusing a run whose injected coordination context no binding accounts for"| p1_capability_runtime_harness_collaboration_5265febf
   p1_capability_runtime_harness_delegated_runs_e1654b07 -->|"Revalidate the exact current parent ClaimActorReceipt， WorkEnvelope and Engineer Binding before delegation admission"| p1_capability_runtime_harness_engineer_bindings_34c00f72
+  p1_capability_runtime_harness_delegated_runs_e1654b07 -->|"Persist immutable capability， admission， launch， process and result evidence without creating runtime or task authority"| p1_component_delegated_runs_primary_0e9104c9
+  p1_capability_runtime_harness_engineer_scheduling_022bd8e0 -->|"Revalidate the exact current Engineer contract and delegate the elected offer to the existing Engineer acquire authority"| p1_capability_runtime_harness_engineer_bindings_34c00f72
+  p1_capability_runtime_harness_mcp_sidecar_4e12aaf3 -->|"Serve the bounded Engineer collaboration tool set from the shared agent surface， deriving the author from the authenticated authorization and taking no actor， destination or recorded time from a caller"| p1_capability_runtime_harness_collaboration_5265febf
+  p1_capability_runtime_harness_mcp_sidecar_4e12aaf3 -->|"Resolve a verified OAuth authorization to the current Engineer Binding before acquiring a Fleet Claim"| p1_capability_runtime_harness_engineer_bindings_34c00f72
+  p1_capability_runtime_harness_mcp_sidecar_4e12aaf3 -->|"Project and acquire exact revision-fenced Engineer offers for a verified OAuth principal"| p1_capability_runtime_harness_engineer_scheduling_022bd8e0
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
   classDef datastore fill:#3f6212,color:#ffffff,stroke:#d9f99d,stroke-width:2px
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:d56bc0d130fd57f1bd3f440c2912ab9dbd3ebf9609b25af059b969169b1f3131`).
-- Semantic nodes: `5`; declared relations: `6`.
+- Proof: `proven` (`sha256:b64618cbeef5a3095fb0d278f55730b7d84eb300233da0722dea98c5f0c99290`).
+- Semantic nodes: `8`; declared relations: `13`.
 
 ### 1.2 模組職責表
 
@@ -61,12 +71,22 @@ flowchart LR
 | `entrypoint.collaboration.run-context-read` | `src/effects/collaboration/context-delivery.ts#readLiveRun` | `sink.collaboration.live-run-status` → `src/effects/engineers/delegated-run-store.ts#readDelegatedRunStatus`、`sink.collaboration.live-run-envelope` → `src/effects/engineers/delegated-run-store.ts#readDelegationEnvelope` |
 | `entrypoint.collaboration.run-binding-record` | `src/effects/collaboration/context-delivery.ts#recordCollaborationRunContextBinding` | `sink.collaboration.run-binding-build` → `src/core/collaboration/run-binding.ts#buildCollaborationRunContextBinding` |
 | `entrypoint.collaboration.dispatch-fence` | `src/effects/collaboration/context-delivery.ts#assertCollaborationDispatchBinding` | `sink.collaboration.binding-fence-check` → `src/core/collaboration/run-binding.ts#checkCollaborationRunContextBinding`、`sink.collaboration.persisted-binding-read` → `src/effects/collaboration/context-delivery.ts#readCollaborationRunContextBinding` |
+| `entrypoint.collaboration.dispatch-guard` | `src/effects/collaboration/context-delivery.ts#fenceCollaborationDispatch` | `sink.collaboration.dispatch-intent` → `src/effects/collaboration/context-delivery.ts#collaborationDispatchIntent`、`sink.collaboration.dispatch-binding-assert` → `src/effects/collaboration/context-delivery.ts#assertCollaborationDispatchBinding` |
+| `entrypoint.collaboration.agent-surface-read` | `src/effects/collaboration/agent-surface.ts#collect` | `sink.collaboration.surface-exchange-collect` → `src/effects/collaboration/work-exchange.ts#collectCollaborativeWorkExchange` |
+| `entrypoint.collaboration.agent-surface-offers` | `src/effects/collaboration/agent-surface.ts#readExecutionOffersFor` | `sink.collaboration.surface-offer-authority` → `src/effects/engineers/scheduling.ts#collectEngineerOffers` |
+| `entrypoint.collaboration.agent-surface-publish` | `src/effects/collaboration/agent-surface.ts#collaborationSignalPost` | `sink.collaboration.surface-signal-publish` → `src/effects/collaboration/signal-store.ts#publishCoordinationSignal` |
+| `entrypoint.collaboration.agent-surface-publish` | `src/effects/collaboration/agent-surface.ts#collaborationHandoffPublish` | `sink.collaboration.surface-handoff-publish` → `src/effects/collaboration/handoff-store.ts#publishWorkStateHandoff` |
+| `entrypoint.collaboration.agent-surface-publish` | `src/effects/collaboration/agent-surface.ts#collaborationHandoffAdopt` | `sink.collaboration.surface-handoff-adopt` → `src/effects/collaboration/adoption-store.ts#adoptWorkStateHandoff` |
+| `entrypoint.collaboration.agent-surface-packet` | `src/effects/collaboration/agent-surface.ts#collaborationPacketBuild` | `sink.collaboration.surface-mutation-gate` → `src/effects/collaboration/feature-flag.ts#assertCollaborationMutationEnabled`、`sink.collaboration.surface-context-delivery` → `src/effects/collaboration/context-delivery.ts#deliverCollaborationContext` |
+| `entrypoint.collaboration.command-family` | `src/cli/commands/collaboration.ts#exchangeAction` | `sink.collaboration.command-exchange` → `src/effects/collaboration/agent-surface.ts#collaborationExchangeView` |
+| `entrypoint.collaboration.command-family` | `src/cli/commands/collaboration.ts#postAction` | `sink.collaboration.command-signal-post` → `src/effects/collaboration/agent-surface.ts#collaborationSignalPost` |
+| `entrypoint.collaboration.command-family` | `src/cli/commands/collaboration.ts#packetBuildAction` | `sink.collaboration.command-packet-build` → `src/effects/collaboration/agent-surface.ts#collaborationPacketBuild` |
 | `entrypoint.collaboration.shared-mechanics` | `src/core/collaboration/signal.ts#buildCoordinationSignal` | `sink.collaboration.actor-union` → `src/core/collaboration/common.ts#validateCollaborationActorRef` |
 
 ### 1.3 規模信號
 
 - 規模量級:`20–50` 個文件 / `5000–10000` 行
-- 匹配前綴:`src/core/collaboration/**`、`src/effects/collaboration/**`
+- 匹配前綴:`src/core/collaboration/**`、`src/effects/collaboration/**`、`src/cli/commands/collaboration.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -76,15 +96,49 @@ flowchart LR
 - `calls` → `capability.runtime-harness.bound-task-freezes` — Prove a handoff's bound_task execution context against the persisted TaskFreeze receipt it names, on publish and again on every read, so a caller-supplied Claim and Lease generation is never projected as a fact
 - `calls` → `capability.runtime-harness.delegated-runs` — Enforce the parent Engineer's delegation policy as a pre-step to the unchanged read-only admission, and turn one run's persisted output into a contribution the delegation plane's own WorkerResult then references
 - `calls` → `capability.runtime-harness.engineer-bindings` — Derive the publishing actor from the authenticated principal and current Binding instead of accepting a declared identity
+- `calls` → `capability.runtime-harness.engineer-scheduling` — Ask the scheduling plane for this exact authenticated principal's own offers, so a Work Exchange snapshot reports what the plane answered rather than defaulting an empty list
 - `calls` → `component.collaboration.primary` — Persist immutable coordination signals under a per-thread lock without writing any delivery store
 
 入向關係:
 
-- 無。
+- `calls` ← `capability.runtime-harness.delegated-runs` — Run the collaboration dispatch fence as a pre-step before the unchanged read-only host action, refusing a run whose injected coordination context no binding accounts for
+- `calls` ← `capability.runtime-harness.mcp-sidecar` — Serve the bounded Engineer collaboration tool set from the shared agent surface, deriving the author from the authenticated authorization and taking no actor, destination or recorded time from a caller
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:d56bc0d130fd57f1bd3f440c2912ab9dbd3ebf9609b25af059b969169b1f3131`); selectors `35/35`.
+> **Proof**: `proven` (`sha256:b64618cbeef5a3095fb0d278f55730b7d84eb300233da0722dea98c5f0c99290`); selectors `48/48`.
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
+sequenceDiagram
+  autonumber
+  participant p2_collaboration_50c48bca as Collaboration Substrate
+  participant p2_collaboration_store_5c827af5 as Append-only Collaboration Record Store
+  participant p2_engineer_mcp_97bc42c0 as MCP Sidecar
+  participant p2_delegated_runs_6de9843b as Read-only Delegated Runs
+  participant p2_scheduling_authority_0fce7315 as Engineer Scheduling
+  participant p2_delegated_run_store_75dc2bad as Read-only Delegated Run Journal
+  p2_collaboration_50c48bca->>p2_scheduling_authority_0fce7315: Ask the scheduling plane what this exact authenticated principal could pick up， so an empty offer list means the plane answered rather than that nobody asked
+  alt A Module Engineer reads the exchange and publishes bounded records whose author the Host derived， with every payload marked untrusted
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Collect the same double-read exchange the Host reads， so the surface adds no cache and no second answer that could disagree with snapshot_sha256
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Serve the command family from the shared surface， so the CLI restates none of the actor， destination or marking rules
+  p2_engineer_mcp_97bc42c0->>p2_collaboration_50c48bca: Serve the same surface to the closed Engineer tool inventory， which carries no arbitrary write， generic shell， acquire， publication， acceptance or merge tool
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Publish through the store that derives the author from the authorization， with no parameter anywhere that would accept a caller-declared actor
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Reject an undeclared key on the wire before publishing， so an identity claim is refused with the field named rather than silently dropped
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Record adoption as an identity statement that grants no Task， Claim or Lease， so distinct adopters never exclude one another
+    Note over p2_collaboration_50c48bca: Return the payload with its mode and its untrusted-coordination marking； no Task， Lease， Publication or Acceptance byte moved
+  else A packet build is refused while collaboration.mode is off， and reads keep answering so the flag stays observable
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Apply the mutation gate at the first boundary a caller can trigger a packet write from， since C6 built delivery as a Host step inside an already-gated round
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Return C6's rendering verbatim with its untrusted markers intact， rather than re-emitting them from a second producer
+    Note over p2_collaboration_50c48bca: Surface the typed refusal with the flag's own reason； a repository that has not opted in cannot grow collaboration state through this surface
+  else A dispatch carrying injected coordination context that no binding accounts for is refused before the host action
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Decide from Host-owned state whether this dispatch is a collaboration dispatch， treating a persisted binding and an untrusted marker in the goal as equally sufficient
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Re-run the whole binding check against the live run for a collaboration dispatch， and let a delegation-only run through untouched
+  p2_delegated_runs_6de9843b->>p2_collaboration_50c48bca: Run the fence as a pre-step in the dispatch command， so the delegation plane keeps one dispatch semantics and the requirement lifts out by deleting the pre-step
+  p2_delegated_runs_6de9843b->>p2_delegated_run_store_75dc2bad: Invoke the unchanged read-only host action only after the fence returned， so a refusal leaves the seat exactly as prepareDelegatedRun left it
+    Note over p2_delegated_runs_6de9843b: Surface the typed refusal naming the one fact that failed； injected context that no record accounts for cannot reach a Worker
+  end
+```
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

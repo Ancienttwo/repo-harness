@@ -1,0 +1,145 @@
+schemaVersion: archcontext.flow/v1
+id: flow.collaboration.bounded-agent-surface
+capabilityId: capability.runtime-harness.collaboration
+name: Serve one bounded Module Engineer surface over the collaboration substrate and fence the dispatch that consumes it
+applicability: required
+participants:
+  - id: collaboration
+    nodeId: capability.runtime-harness.collaboration
+  - id: collaboration-store
+    nodeId: component.collaboration.primary
+  - id: engineer-mcp
+    nodeId: capability.runtime-harness.mcp-sidecar
+  - id: delegated-runs
+    nodeId: capability.runtime-harness.delegated-runs
+  - id: scheduling-authority
+    nodeId: capability.runtime-harness.engineer-scheduling
+  - id: delegated-run-store
+    nodeId: component.delegated-runs.primary
+steps:
+  - id: ask-the-scheduling-plane
+    from: collaboration
+    to: scheduling-authority
+    label: Ask the scheduling plane what this exact authenticated principal could pick up, so an empty offer list means the plane answered rather than that nobody asked
+    evidence:
+      entrypointId: entrypoint.collaboration.agent-surface-offers
+      sourceSymbol: readExecutionOffersFor
+      sinkId: sink.collaboration.surface-offer-authority
+outcomes:
+  - id: served
+    kind: success
+    label: A Module Engineer reads the exchange and publishes bounded records whose author the Host derived, with every payload marked untrusted
+    steps:
+      - id: collect-for-the-caller
+        from: collaboration
+        to: collaboration-store
+        label: Collect the same double-read exchange the Host reads, so the surface adds no cache and no second answer that could disagree with snapshot_sha256
+        evidence:
+          entrypointId: entrypoint.collaboration.agent-surface-read
+          sourceSymbol: collect
+          sinkId: sink.collaboration.surface-exchange-collect
+      - id: read-through-the-command
+        from: collaboration
+        to: collaboration-store
+        label: Serve the command family from the shared surface, so the CLI restates none of the actor, destination or marking rules
+        evidence:
+          entrypointId: entrypoint.collaboration.command-family
+          sourceSymbol: exchangeAction
+          sinkId: sink.collaboration.command-exchange
+      - id: read-through-the-tool
+        from: engineer-mcp
+        to: collaboration
+        label: Serve the same surface to the closed Engineer tool inventory, which carries no arbitrary write, generic shell, acquire, publication, acceptance or merge tool
+        evidence:
+          entrypointId: entrypoint.mcp-sidecar.collaboration-tools
+          sourceSymbol: callCollaborationTool
+          sinkId: sink.mcp-sidecar.collaboration-exchange
+      - id: publish-with-a-derived-author
+        from: collaboration
+        to: collaboration-store
+        label: Publish through the store that derives the author from the authorization, with no parameter anywhere that would accept a caller-declared actor
+        evidence:
+          entrypointId: entrypoint.collaboration.agent-surface-publish
+          sourceSymbol: collaborationSignalPost
+          sinkId: sink.collaboration.surface-signal-publish
+      - id: post-through-the-command
+        from: collaboration
+        to: collaboration-store
+        label: Reject an undeclared key on the wire before publishing, so an identity claim is refused with the field named rather than silently dropped
+        evidence:
+          entrypointId: entrypoint.collaboration.command-family
+          sourceSymbol: postAction
+          sinkId: sink.collaboration.command-signal-post
+      - id: adopt-non-exclusively
+        from: collaboration
+        to: collaboration-store
+        label: Record adoption as an identity statement that grants no Task, Claim or Lease, so distinct adopters never exclude one another
+        evidence:
+          entrypointId: entrypoint.collaboration.agent-surface-publish
+          sourceSymbol: collaborationHandoffAdopt
+          sinkId: sink.collaboration.surface-handoff-adopt
+    terminal:
+      participant: collaboration
+      label: Return the payload with its mode and its untrusted-coordination marking; no Task, Lease, Publication or Acceptance byte moved
+  - id: gated
+    kind: error
+    label: A packet build is refused while collaboration.mode is off, and reads keep answering so the flag stays observable
+    steps:
+      - id: gate-the-build
+        from: collaboration
+        to: collaboration-store
+        label: Apply the mutation gate at the first boundary a caller can trigger a packet write from, since C6 built delivery as a Host step inside an already-gated round
+        evidence:
+          entrypointId: entrypoint.collaboration.agent-surface-packet
+          sourceSymbol: collaborationPacketBuild
+          sinkId: sink.collaboration.surface-mutation-gate
+      - id: deliver-the-rendering
+        from: collaboration
+        to: collaboration-store
+        label: Return C6's rendering verbatim with its untrusted markers intact, rather than re-emitting them from a second producer
+        evidence:
+          entrypointId: entrypoint.collaboration.agent-surface-packet
+          sourceSymbol: collaborationPacketBuild
+          sinkId: sink.collaboration.surface-context-delivery
+    terminal:
+      participant: collaboration
+      label: Surface the typed refusal with the flag's own reason; a repository that has not opted in cannot grow collaboration state through this surface
+  - id: fenced
+    kind: error
+    label: A dispatch carrying injected coordination context that no binding accounts for is refused before the host action
+    steps:
+      - id: decide-the-intent
+        from: collaboration
+        to: collaboration-store
+        label: Decide from Host-owned state whether this dispatch is a collaboration dispatch, treating a persisted binding and an untrusted marker in the goal as equally sufficient
+        evidence:
+          entrypointId: entrypoint.collaboration.dispatch-guard
+          sourceSymbol: fenceCollaborationDispatch
+          sinkId: sink.collaboration.dispatch-intent
+      - id: check-the-binding
+        from: collaboration
+        to: collaboration-store
+        label: Re-run the whole binding check against the live run for a collaboration dispatch, and let a delegation-only run through untouched
+        evidence:
+          entrypointId: entrypoint.collaboration.dispatch-guard
+          sourceSymbol: fenceCollaborationDispatch
+          sinkId: sink.collaboration.dispatch-binding-assert
+      - id: fence-before-the-host-action
+        from: delegated-runs
+        to: collaboration
+        label: Run the fence as a pre-step in the dispatch command, so the delegation plane keeps one dispatch semantics and the requirement lifts out by deleting the pre-step
+        evidence:
+          entrypointId: entrypoint.delegated-runs.dispatch-command
+          sourceSymbol: dispatchWithCollaborationFence
+          sinkId: sink.delegated-runs.collaboration-dispatch-fence
+      - id: reach-the-host-action
+        from: delegated-runs
+        to: delegated-run-store
+        label: Invoke the unchanged read-only host action only after the fence returned, so a refusal leaves the seat exactly as prepareDelegatedRun left it
+        evidence:
+          entrypointId: entrypoint.delegated-runs.dispatch-command
+          sourceSymbol: dispatchWithCollaborationFence
+          sinkId: sink.delegated-runs.dispatch-host-action
+    terminal:
+      participant: delegated-runs
+      label: Surface the typed refusal naming the one fact that failed; injected context that no record accounts for cannot reach a Worker

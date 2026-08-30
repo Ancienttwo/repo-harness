@@ -7,6 +7,7 @@ summary: Provides the local MCP sidecar and its repository access policy boundar
 responsibilities:
   - Own MCP lifecycle, workspace registration, access policy, and local browser integration.
   - Bind authorization-scoped MCP sessions to verified OAuth authorization IDs and expose the closed Engineer tool inventory without a coding runtime.
+  - Extend that same closed inventory with the bounded collaboration block rather than opening a second profile, and keep the live doctor's expected inventory built from the same composition the server serves.
 source:
   include:
     - "src/cli/mcp/**"
@@ -54,6 +55,20 @@ source:
             - id: sink.mcp-sidecar.interface-change
               path: "src/effects/engineers/interface-change-store.ts"
               symbol: "transitionInterfaceChangeRequest"
+    - id: entrypoint.mcp-sidecar.collaboration-tools
+      path: "src/cli/mcp/collaboration-tools.ts"
+      symbols:
+        - name: "callCollaborationTool"
+          sinks:
+            - id: sink.mcp-sidecar.collaboration-exchange
+              path: "src/effects/collaboration/agent-surface.ts"
+              symbol: "collaborationExchangeView"
+            - id: sink.mcp-sidecar.collaboration-signal-post
+              path: "src/effects/collaboration/agent-surface.ts"
+              symbol: "collaborationSignalPost"
+            - id: sink.mcp-sidecar.collaboration-handoff-adopt
+              path: "src/effects/collaboration/agent-surface.ts"
+              symbol: "collaborationHandoffAdopt"
 extensions:
   contractFiles:
     agents: "AGENTS.md"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.collaboration
+kind: calls
+source: capability.runtime-harness.mcp-sidecar
+target: capability.runtime-harness.collaboration
+intent: "Serve the bounded Engineer collaboration tool set from the shared agent surface, deriving the author from the authenticated authorization and taking no actor, destination or recorded time from a caller"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.collaboration.engineer-scheduling
+kind: calls
+source: capability.runtime-harness.collaboration
+target: capability.runtime-harness.engineer-scheduling
+intent: "Ask the scheduling plane for this exact authenticated principal's own offers, so a Work Exchange snapshot reports what the plane answered rather than defaulting an empty list"

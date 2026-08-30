@@ -29,10 +29,16 @@ responsibilities:
   - Withhold any bound_task execution context whose read-time proof does not hold, and count the omission, rather than publishing an unproven Claim beside a flag.
   - Build the bounded context packet only from a stable collection, bind its source snapshot, estimator version, truncation evidence and canonical render digest, and compose the rendering into the delegated run's goal inside the untrusted coordination markers.
   - Record which collaboration packet and rendering entered which run as an additive run-context binding that bumps no delegation protocol, and refuse dispatch when that binding is missing, dangling, or describes a goal other than the one being dispatched.
+  - Decide whether one dispatch is a collaboration dispatch from Host-owned state alone, treating a persisted binding or an untrusted coordination marker in the envelope goal as equally sufficient, so a run that carries injected context but never recorded a binding cannot skip the fence by omitting the record the fence checks.
+  - Serve one bounded Module Engineer surface for both the command family and the MCP tool set, exposing no arbitrary file write, generic shell, task acquire or release, publication, acceptance or merge verb.
+  - Accept no actor, publish destination or recorded time from a caller on that surface, refusing an undeclared key at the boundary rather than dropping it, so an identity claim has nowhere to land.
+  - Serve collaboration reads while collaboration.mode is off and report the mode on every payload, while every mutation fails closed, so the flag stays observable through the surface an operator would use to observe it.
+  - Mark every payload that carries agent-authored text as untrusted coordination context, and pass the canonical untrusted rendering through verbatim rather than re-emitting its markers from a second producer.
 source:
   include:
     - "src/core/collaboration/**"
     - "src/effects/collaboration/**"
+    - "src/cli/commands/collaboration.ts"
   entrypoints:
     - id: entrypoint.collaboration.publish
       path: "src/effects/collaboration/signal-store.ts"
@@ -249,6 +255,80 @@ source:
             - id: sink.collaboration.persisted-binding-read
               path: "src/effects/collaboration/context-delivery.ts"
               symbol: "readCollaborationRunContextBinding"
+    - id: entrypoint.collaboration.dispatch-guard
+      path: "src/effects/collaboration/context-delivery.ts"
+      symbols:
+        - name: "fenceCollaborationDispatch"
+          sinks:
+            - id: sink.collaboration.dispatch-intent
+              path: "src/effects/collaboration/context-delivery.ts"
+              symbol: "collaborationDispatchIntent"
+            - id: sink.collaboration.dispatch-binding-assert
+              path: "src/effects/collaboration/context-delivery.ts"
+              symbol: "assertCollaborationDispatchBinding"
+    - id: entrypoint.collaboration.agent-surface-read
+      path: "src/effects/collaboration/agent-surface.ts"
+      symbols:
+        - name: "collect"
+          sinks:
+            - id: sink.collaboration.surface-exchange-collect
+              path: "src/effects/collaboration/work-exchange.ts"
+              symbol: "collectCollaborativeWorkExchange"
+    - id: entrypoint.collaboration.agent-surface-offers
+      path: "src/effects/collaboration/agent-surface.ts"
+      symbols:
+        - name: "readExecutionOffersFor"
+          sinks:
+            - id: sink.collaboration.surface-offer-authority
+              path: "src/effects/engineers/scheduling.ts"
+              symbol: "collectEngineerOffers"
+    - id: entrypoint.collaboration.agent-surface-publish
+      path: "src/effects/collaboration/agent-surface.ts"
+      symbols:
+        - name: "collaborationSignalPost"
+          sinks:
+            - id: sink.collaboration.surface-signal-publish
+              path: "src/effects/collaboration/signal-store.ts"
+              symbol: "publishCoordinationSignal"
+        - name: "collaborationHandoffPublish"
+          sinks:
+            - id: sink.collaboration.surface-handoff-publish
+              path: "src/effects/collaboration/handoff-store.ts"
+              symbol: "publishWorkStateHandoff"
+        - name: "collaborationHandoffAdopt"
+          sinks:
+            - id: sink.collaboration.surface-handoff-adopt
+              path: "src/effects/collaboration/adoption-store.ts"
+              symbol: "adoptWorkStateHandoff"
+    - id: entrypoint.collaboration.agent-surface-packet
+      path: "src/effects/collaboration/agent-surface.ts"
+      symbols:
+        - name: "collaborationPacketBuild"
+          sinks:
+            - id: sink.collaboration.surface-mutation-gate
+              path: "src/effects/collaboration/feature-flag.ts"
+              symbol: "assertCollaborationMutationEnabled"
+            - id: sink.collaboration.surface-context-delivery
+              path: "src/effects/collaboration/context-delivery.ts"
+              symbol: "deliverCollaborationContext"
+    - id: entrypoint.collaboration.command-family
+      path: "src/cli/commands/collaboration.ts"
+      symbols:
+        - name: "exchangeAction"
+          sinks:
+            - id: sink.collaboration.command-exchange
+              path: "src/effects/collaboration/agent-surface.ts"
+              symbol: "collaborationExchangeView"
+        - name: "postAction"
+          sinks:
+            - id: sink.collaboration.command-signal-post
+              path: "src/effects/collaboration/agent-surface.ts"
+              symbol: "collaborationSignalPost"
+        - name: "packetBuildAction"
+          sinks:
+            - id: sink.collaboration.command-packet-build
+              path: "src/effects/collaboration/agent-surface.ts"
+              symbol: "collaborationPacketBuild"
     - id: entrypoint.collaboration.shared-mechanics
       path: "src/core/collaboration/signal.ts"
       symbols:
@@ -268,4 +348,5 @@ extensions:
     - "bun test tests/unit/collaboration-handoff.test.ts tests/unit/collaboration-adoption.test.ts tests/effects/collaboration-handoff-store.test.ts tests/effects/collaboration-adoption-store.test.ts --timeout 60000"
     - "bun test tests/unit/collaboration-contribution.test.ts tests/unit/collaboration-admission.test.ts tests/effects/collaboration-admission-bridge.test.ts tests/effects/collaboration-contribution-collector.test.ts --timeout 180000"
     - "bun test tests/effects/collaboration-succession.test.ts tests/effects/collaboration-work-exchange.test.ts tests/effects/collaboration-context-delivery.test.ts --timeout 180000"
+    - "bun test tests/cli/collaboration.test.ts tests/cli/mcp-collaboration-tools.test.ts tests/cli/mcp-engineer-tools.test.ts --timeout 180000"
     - "bun run check:type"

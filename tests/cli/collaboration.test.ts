@@ -258,7 +258,9 @@ describe('C7 bounded collaboration CLI', () => {
     const posted = cli(value, 'collaboration', 'post', '--authorization-id', authorization, '--input', input);
     expect(posted.stderr).toBe('');
     expect(posted.status).toBe(0);
-    const signal = (JSON.parse(posted.stdout) as { signal: Record<string, unknown> }).signal;
+    const signal = (JSON.parse(posted.stdout) as {
+      signal: { signal_id: string; actor: Record<string, unknown> };
+    }).signal;
     expect(signal.actor).toMatchObject({ kind: 'module_engineer', engineer_id: value.actors[0]!.engineer_id });
 
     const exchange = cli(value, 'collaboration', 'exchange', '--authorization-id', authorization);
