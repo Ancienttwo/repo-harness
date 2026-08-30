@@ -20,6 +20,7 @@ import {
 import type { ArchctxProcessResult, RunArchctxProcess } from '../src/effects/architecture/archctx-provider';
 import { buildManagedHooks } from '../src/cli/installer/managed-entries';
 import { consumeArchitectureRefreshSignals, type RunArchitectureRefreshActions } from '../src/effects/architecture/refresh-consumer';
+import { inspectArchitectureProjectionAcceptanceState } from '../src/effects/architecture/projection-acceptance';
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -623,6 +624,12 @@ describe('durable architecture projection orchestration', () => {
     expect(result.error).toContain('unresolved major change');
     expect(readPendingPostEditEvents(f.repoRoot)).toHaveLength(1);
     expect(existsSync(join(f.repoRoot, '.ai/harness/architecture-refresh/receipts'))).toBe(false);
+    expect(inspectArchitectureProjectionAcceptanceState(f.repoRoot)).toMatchObject({
+      candidates: 1,
+      receipts: 0,
+      unresolvedCandidates: 1,
+      invalidArtifacts: 0,
+    });
   });
 
   test('manual drain leaves the cursor unchanged when the legacy cascade helper fails', () => {

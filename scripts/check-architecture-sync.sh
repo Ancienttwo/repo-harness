@@ -215,6 +215,8 @@ count_json_files() {
 
 projection_state="disabled"
 projection_reason="policy.architecture.projection_provider=disabled"
+projection_acceptance_unresolved=0
+projection_acceptance_invalid=0
 if [[ "$projection_provider" == "archctx" ]]; then
   if [[ -f "$repo/src/cli/index.ts" ]] && command -v bun >/dev/null 2>&1; then
     projection_status_json="$(bun "$repo/src/cli/index.ts" architecture-projection status --json 2>/dev/null || true)"
@@ -232,15 +234,18 @@ if [[ "$projection_provider" == "archctx" ]]; then
     if [[ -n "$projection_status_json" ]] && command -v jq >/dev/null 2>&1; then
       projection_state="$(printf '%s' "$projection_status_json" | jq -r '.projectionProvider.state // "error"' 2>/dev/null || printf 'error')"
       projection_reason="$(printf '%s' "$projection_status_json" | jq -r '.projectionProvider.reason // "readiness status unavailable"' 2>/dev/null || printf 'readiness status unavailable')"
+      projection_acceptance_unresolved="$(printf '%s' "$projection_status_json" | jq -r '.acceptance.unresolvedCandidates // 0' 2>/dev/null || printf '0')"
+      projection_acceptance_invalid="$(printf '%s' "$projection_status_json" | jq -r '.acceptance.invalidArtifacts // 0' 2>/dev/null || printf '0')"
     elif [[ -n "$projection_status_json" ]] && command -v node >/dev/null 2>&1; then
       projection_readback="$(PROJECTION_STATUS_JSON="$projection_status_json" node -e '
 try {
   const value = JSON.parse(process.env.PROJECTION_STATUS_JSON || "{}");
-  process.stdout.write(`${value.projectionProvider?.state || "error"}\t${value.projectionProvider?.reason || "readiness status unavailable"}`);
+  process.stdout.write(`${value.projectionProvider?.state || "error"}\t${value.projectionProvider?.reason || "readiness status unavailable"}\t${value.acceptance?.unresolvedCandidates || 0}\t${value.acceptance?.invalidArtifacts || 0}`);
 } catch { process.stdout.write("error\treadiness status invalid"); }
 ' 2>/dev/null || printf 'error\treadiness status unavailable')"
-      projection_state="${projection_readback%%$'\t'*}"
-      projection_reason="${projection_readback#*$'\t'}"
+      IFS=$'\t' read -r projection_state projection_reason projection_acceptance_unresolved projection_acceptance_invalid <<< "$projection_readback"
+      : "${projection_acceptance_unresolved:=0}"
+      : "${projection_acceptance_invalid:=0}"
     fi
   fi
 fi
@@ -249,7 +254,7 @@ projection_runtime_root=".ai/harness/architecture-projection"
 projection_pending="$(count_json_files "$projection_runtime_root/pending")"
 projection_running="$(count_json_files "$projection_runtime_root/running")"
 projection_dead_letters="$(count_json_files "$projection_runtime_root/dead-letter")"
-projection_human_actions=0
+projection_human_actions="$projection_acceptance_unresolved"
 projection_adoption_required=0
 if [[ -d "$projection_runtime_root/receipts" ]] && command -v jq >/dev/null 2>&1; then
   while IFS= read -r receipt; do
@@ -258,7 +263,7 @@ if [[ -d "$projection_runtime_root/receipts" ]] && command -v jq >/dev/null 2>&1
     [[ "$receipt_status" == "adoption-required" ]] && projection_adoption_required=$((projection_adoption_required + 1))
   done < <(find "$projection_runtime_root/receipts" -maxdepth 1 -type f -name '*.json' | sort)
 fi
-projection_blocking=$((projection_pending + projection_running + projection_dead_letters + projection_human_actions + projection_adoption_required))
+projection_blocking=$((projection_pending + projection_running + projection_dead_letters + projection_human_actions + projection_adoption_required + projection_acceptance_invalid))
 if [[ "$projection_provider" == "archctx" && "$projection_state" != "ready" ]]; then
   projection_blocking=$((projection_blocking + 1))
 fi

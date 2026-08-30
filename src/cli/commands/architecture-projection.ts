@@ -7,6 +7,12 @@ import { drainArchitectureProjectionJobs } from '../../effects/architecture/proj
 import { architectureProjectionQueueState, retryArchitectureProjectionDeadLetter } from '../../effects/architecture/projection-jobs';
 import { publishLatestArchitectureProjectionRestamp } from '../../effects/architecture/restamp-publication';
 import { consumeArchitectureRefreshSignals } from '../../effects/architecture/refresh-consumer';
+import {
+  acceptArchitectureProjectionCandidate,
+  inspectArchitectureProjectionAcceptanceState,
+  reconcileArchitectureProjectionCandidate,
+  recordArchitectureProjectionAcceptanceCandidates,
+} from '../../effects/architecture/projection-acceptance';
 import { processArchitectureCascade, readPendingPostEditEvents } from '../hook/mutation-observed';
 import {
   acknowledgeArchitectureProjectionPublication,
@@ -25,7 +31,10 @@ export interface ProjectionCommandOptions {
 export function buildArchitectureProjectionCommand(): Command {
   const command = new Command('architecture-projection').description('Run the configured deterministic architecture projection provider');
   command.command('status').requiredOption('--json', 'Output readiness JSON').action(() => {
-    try { write(inspectArchitectureProjectionReadiness(repositoryRoot())); }
+    try {
+      const root = repositoryRoot();
+      write({ ...inspectArchitectureProjectionReadiness(root), acceptance: inspectArchitectureProjectionAcceptanceState(root) });
+    }
     catch (error) { fail(error); }
   });
   for (const name of ['check', 'plan', 'apply'] as const) {
@@ -86,6 +95,25 @@ export function buildArchitectureProjectionCommand(): Command {
         write({ schemaVersion: 'repo-harness.architecture-projection-retry/v1', job, queue: architectureProjectionQueueState(root) });
       } catch (error) { fail(error); }
     });
+  command.command('accept')
+    .description('Apply one exact unresolved-major refresh signal after explicit approval')
+    .requiredOption('--json', 'Output architecture acceptance receipt JSON')
+    .requiredOption('--signal-id <sha256>', 'Exact unresolved-major refresh signal id')
+    .requiredOption('--approval-reference <event-id>', 'Exact external human approval event identity')
+    .action((options: { signalId: string; approvalReference: string }) => {
+      try {
+        write(acceptArchitectureProjectionCandidate(repositoryRoot(), options.signalId, options.approvalReference));
+      } catch (error) { fail(error); }
+    });
+  command.command('reconcile')
+    .description('Retire one proof-only candidate after a current deterministic proof check')
+    .requiredOption('--json', 'Output architecture reconciliation receipt JSON')
+    .requiredOption('--signal-id <sha256>', 'Exact verified-flow-proof-changed signal id')
+    .action((options: { signalId: string }) => {
+      try {
+        write(reconcileArchitectureProjectionCandidate(repositoryRoot(), options.signalId));
+      } catch (error) { fail(error); }
+    });
   command.command('adopt')
     .requiredOption('--json', 'Output ProjectionResultV1 JSON')
     .requiredOption('--adoption-plan-id <id>', 'Approved ArchContext adoption plan id')
@@ -110,6 +138,7 @@ function execute(mode: ProjectionMode, options: ProjectionCommandOptions): void 
       ...(mode === 'adopt' ? { adoptionPlanId: options.adoptionPlanId } : {}),
     };
     const result = runArchitectureProjection(request, root);
+    recordArchitectureProjectionAcceptanceCandidates(root, request, result);
     if ((mode === 'apply' || mode === 'adopt') && (result.status === 'applied' || result.status === 'noop')) {
       const unresolved = result.refreshSignals.find((signal) => signal.mode === 'human-action-required');
       if (!unresolved) consumeArchitectureRefreshSignals(root, result.refreshSignals, request.changedPaths);
