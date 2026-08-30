@@ -5,12 +5,12 @@
   "sourceDigest": "sha256:49642e59e99a96a79003974eac75ed50a58bc1e112934723110fbf7db8bacb14",
   "provenance": {
     "schemaVersion": "archcontext.architecture-docs-projection-provenance/v1",
-    "baseHeadSha": "fd7a4a36ed01af83b1620a4b9b1a5c7b8d91f4ab",
-    "worktreeDigest": "sha256:df53573369a35ad5da91507caf93bc9e619d5a711e9ee50bace38850243d6985",
-    "sourceTreeDigest": "sha256:ecd6ac8c740e92c91d324caab4d1a359f9cfdcd5eb2bd4780dd0caeaec6807d5",
+    "baseHeadSha": "8beeeeab5556bcb594bd4dda4f99a3554ea62870",
+    "worktreeDigest": "sha256:a17509544055f6ba9cb55ca3cbcb3e563f488ecc3c9c4b6a555e33358fa998d9",
+    "sourceTreeDigest": "sha256:56c4958cb6dd190b4460a473ac51250ce57a40644595b31bd7a9b6a2adebc927",
     "modelDigest": "sha256:13c904d7263b76428a7bff7d24bdf00cb7ac5cf307156862b6ed38c71e7b48d5",
-    "codeGraphDigest": "sha256:5b2ba90a6d24b8619e6e10d59b153b2bf3f922cb559729ae0133431227c575a8",
-    "indexedWorktreeDigest": "sha256:94e5479587f54e95d445c70a7ad8ac9474caac4159f82eaaf50e40367325ae5f",
+    "codeGraphDigest": "sha256:0f9ae12495ebf8ec5a028629b59c3354f44cb97b890002016ff952216bc0ac83",
+    "indexedWorktreeDigest": "sha256:f36711b5fd646c234c0178ca113505c073d9596c392a26229356cf796d7a5dae",
     "rendererVersion": "archcontext.docs-renderer/v4",
     "layoutVersion": "archcontext.docs-layout/v1",
     "generatedFrom": {
@@ -19,9 +19,9 @@
       "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
       "codeGraphStatus": "ready"
     },
-    "projectionInputDigest": "sha256:e1ff82c18dd081beb03f44e698d237e5ff6fd1141ee836145971fe46fe0c6791"
+    "projectionInputDigest": "sha256:2425b6ee1ab17e900475b69b787a82578c6e18dcbbbfa6f854283fa65290fd4a"
   },
-  "projectionDigest": "sha256:d20ccaf8539199ff1d15facf880122f25a89631384701d46d263e3639b3af76d",
+  "projectionDigest": "sha256:327b219cfa558bffc06cb4398610b14537ba01a7ead21213ca5c2fa4f0d27c85",
   "semanticBaseline": {
     "semanticState": {
       "schemaVersion": "archcontext.architecture-semantic-state/v1",
@@ -582,12 +582,12 @@
     },
     "digests": {
       "modelDigest": "sha256:13c904d7263b76428a7bff7d24bdf00cb7ac5cf307156862b6ed38c71e7b48d5",
-      "sourceTreeDigest": "sha256:ecd6ac8c740e92c91d324caab4d1a359f9cfdcd5eb2bd4780dd0caeaec6807d5",
+      "sourceTreeDigest": "sha256:56c4958cb6dd190b4460a473ac51250ce57a40644595b31bd7a9b6a2adebc927",
       "flowProofDigest": "sha256:32a045378fdd21a7fcb534d3221adbb9ad1b1ad129ed12398e048859acb35c7c",
-      "projectionDigest": "sha256:d20ccaf8539199ff1d15facf880122f25a89631384701d46d263e3639b3af76d"
+      "projectionDigest": "sha256:327b219cfa558bffc06cb4398610b14537ba01a7ead21213ca5c2fa4f0d27c85"
     }
   },
-  "receiptDigest": "sha256:165f47b325788513a880c52a9a635588a50ba1403efc5d525477ce2dfd89ba52",
+  "receiptDigest": "sha256:554948682f75c901ba0df05be622fd22cfdc11e4fce4f717fd8c69794c72507b",
   "refreshSignalIds": [],
   "targetCount": 28,
   "fileCount": 28,
@@ -697,12 +697,12 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v4",
       "format": "markdown",
-      "sourceDigest": "sha256:66ef8662ab04c7acbec0fa16033d108c8f4725c81b72566f79188abc1f1bf52a",
-      "outputDigest": "sha256:2dde5d10536a4944a78b23882c75035e5ed3023284a4fbe1eee6c3805d05cef9",
+      "sourceDigest": "sha256:7e49ded50c742ca067ce469065584ee9fec6d86418d5bb4f0061860759e0af7a",
+      "outputDigest": "sha256:8a19b41e7429f8879f08eb0c6dfbf0be7f68ccc74b9759cc5f3b9a43df094e80",
       "verifiedAgainst": {
-        "branch": "codex/c4-delegated-worker-contribution-adapter",
-        "commit": "fd7a4a36ed01af83b1620a4b9b1a5c7b8d91f4ab",
-        "committedAt": "2026-08-30T08:02:11+08:00"
+        "branch": "codex/c5-taskfreeze-succession-integration",
+        "commit": "8beeeeab5556bcb594bd4dda4f99a3554ea62870",
+        "committedAt": "2026-08-30T09:08:25+08:00"
       }
     },
     {
@@ -1000,9 +1000,9 @@
       "sourceDigest": "sha256:463d4ebee4c32feaf8e98dca3f6862530d876ff145ab4a6c0d1e83b9acd6d4b7",
       "outputDigest": "sha256:966f7438cd7b385cb411a2ef8c2de18c0b1e71eb067941c97375a4b284a873b9",
       "verifiedAgainst": {
-        "branch": "codex/c4-delegated-worker-contribution-adapter",
-        "commit": "fd7a4a36ed01af83b1620a4b9b1a5c7b8d91f4ab",
-        "committedAt": "2026-08-30T08:02:11+08:00"
+        "branch": "codex/c5-taskfreeze-succession-integration",
+        "commit": "8beeeeab5556bcb594bd4dda4f99a3554ea62870",
+        "committedAt": "2026-08-30T09:08:25+08:00"
       }
     },
     {

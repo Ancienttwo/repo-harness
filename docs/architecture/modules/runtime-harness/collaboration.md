@@ -1,6 +1,6 @@
 # runtime-harness/collaboration 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" sourceDigest="sha256:66ef8662ab04c7acbec0fa16033d108c8f4725c81b72566f79188abc1f1bf52a" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:2dde5d10536a4944a78b23882c75035e5ed3023284a4fbe1eee6c3805d05cef9" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" sourceDigest="sha256:7e49ded50c742ca067ce469065584ee9fec6d86418d5bb4f0061860759e0af7a" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:8a19b41e7429f8879f08eb0c6dfbf0be7f68ccc74b9759cc5f3b9a43df094e80" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.collaboration`(kind `capability`)
 > **Matched Prefixes**:`src/core/collaboration/**`、`src/effects/collaboration/**`
@@ -53,7 +53,7 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`10–20` 個文件 / `5000–10000` 行
+- 規模量級:`20–50` 個文件 / `5000–10000` 行
 - 匹配前綴:`src/core/collaboration/**`、`src/effects/collaboration/**`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 

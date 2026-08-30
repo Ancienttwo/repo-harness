@@ -7,7 +7,7 @@
 > **Architecture Domain**: `runtime-harness`
 > **Architecture Capability**: `collaboration`
 > **Architecture Module**: `docs/architecture/modules/runtime-harness/collaboration.md`
-> **Source Plan**: plans/plan-20260830-0509-c4-delegated-worker-contribution-adapter.md
+> **Source Plan**: plans/plan-20260830-0858-c5-taskfreeze-succession-integration.md
 > **Current Slice**: todo-01
 > **Last Handoff**: `.ai/harness/handoff/current.md`
 > **Architecture Request**: docs/architecture/requests/archive/2026/runtime-harness-collaboration.md
@@ -31,7 +31,7 @@ the freeze record keeps only a pointer.
 - [x] C2: signal threads, discovery and hotspot projection -- deterministic thread aggregation on exact opaque keys, the capped integer hotspot function, the closed structural opportunity set, `RelevantSignalV1` retrieval with the 60/40 exploitation/exploration quota, and `CollaborationContextPacketV1` inside the 1,500 estimated-token budget. Pure read model: no store, no cache, no clock, no new protocol. `snapshot_consistency` is reserved on the packet and injected by the future store reader (C6); a pure projection over an already-assembled signal array cannot observe a torn or partial read, so deriving it is deferred with the collector.
 - [x] C3: `WorkStateHandoffV1`, `HandoffExecutionContextV1` and `HandoffAdoptionReceiptV1` with their two append-only stores; adoption is non-exclusive by identity, and the store mechanics all three record families share moved into `record-store.ts` / `actor.ts`.
 - [x] C4: `CollaborationDelegationAdmissionV1` bridge and the `CollaborationContributionDraftV1` / `CollaborationContributionCommitV1` collector. `max_parallel_readers` is a runtime constraint for the first time: three real parallel readers in separate processes admitted, a fourth real request rejected, terminal readers releasing their seat, and `reconciliation_required` or unreadable readers failing the window closed per D6.
-- [ ] C5: TaskFreeze / explicit takeover succession integration.
+- [x] C5: TaskFreeze / explicit takeover succession integration -- `src/effects/collaboration/succession.ts` joins the two planes: the `bound_task` execution context is derived from the persisted `TaskFreezeReceiptV1` on publish and re-derived and compared on read, a dirty bound executor is refused succession until it freezes, and a successor gets a write path only from a live Claim the existing release / takeover / acquire lifecycle granted. No new protocol, no new store, no successor field, no second destination resolver.
 - [ ] C6: collaboration-centric Work Exchange and ContextPacket, with the D3 binding gate.
 - [ ] C7: CLI/MCP and bounded context injection.
 - [ ] C8: read-only Operator collaboration surface.
@@ -140,6 +140,58 @@ the freeze record keeps only a pointer.
   `tests/architecture-projection-e2e.test.ts` moved with them (relations 39 to
   40, flows 25 to 26); that suite is not in the acceptance path, so run it
   explicitly on any row that touches `.archcontext/model/**`.
+- C5 elects nobody, and the code says so structurally rather than in prose.
+  `handoffSuccessionRequirement()` is a total function over
+  `HandoffExecutionContextV1`: the `bound_task` branch needs execution authority
+  and every other branch is `knowledge_only`. Read-only participant succession
+  therefore needs no takeover *by kind*, not by a rule someone could relax, and
+  the bound-executor path needs one for the same reason.
+- The mismatch C5 closes was C3-shaped and could only be closed here. C3
+  validated the `bound_task` branch's shape -- six well-formed references,
+  present together or not at all -- and a valid-looking record could still name a
+  freeze receipt that does not exist or describes different bytes. Closing it in
+  the schema layer would have meant importing the freeze store into
+  `src/core/collaboration/`, inverting the direction D1 froze, so the cross-check
+  lives in `effects` beside `admission-bridge.ts`. C6-C9 read succession through
+  `resolveBoundTaskSuccession()`; a projection that trusts `execution_context`
+  without it is reading unvalidated references.
+- `publishBoundTaskSuccessionHandoff()` takes no `execution_context` parameter.
+  That absence is the guarantee: derive on write so the bad record is
+  unexpressible on the supported path, compare on read so a record from any other
+  route is still refused. Both use one derivation, `boundTaskExecutionContext()`.
+- The `delegated_worker` adoption refusal in `adoption-store.ts` stays closed
+  after C5, and this is a decision rather than an omission. That comment names
+  "C5 succession or C6 packets" as the row that unblocks it; C5 is not that row.
+  Unblocking needs a decision about how a Worker adoption receipt becomes
+  visible -- the adoption store has no destination, so a `delegated_worker`
+  receipt would be publicly readable while no contribution commit references it
+  -- and the receipt identity binds `context_packet_sha256`, which only the C6
+  store reader can produce. C5's read-only succession path meanwhile completes
+  with a `module_engineer` adoption, because the Host is the actor that delivers
+  a packet, so nothing C5 owes is blocked by the refusal. C6 owns it.
+- How succession composes with C4's admission rounds, for the row that wires it:
+  a successor delegated run adopts before its round starts, never during. The
+  order is adopt (collaboration plane, non-exclusive, zero seats) ->
+  `admitCollaborationDelegation()` (counts the seat and creates it in one
+  critical section) -> dispatch. Adoption takes no seat and must not be moved
+  inside the admission critical section, which counts readers per parent claim
+  and round index and would then serialize on an unrelated record. For a *bound*
+  successor the ordering is stricter and one-way: the Claim comes from the
+  delivery-plane lifecycle first, and only then does its round begin --
+  `assertSuccessorExecutionAuthority()` reads the Claim and never the admission,
+  so a round can never be the thing that grants a write path. C6 owns the wiring;
+  C5 owns the ordering constraint.
+- C5 declared no new archcontext entrypoint, and the projection agreed: with the
+  model untouched, `architecture-projection check --json` planned exactly two
+  renderer outputs (`docs/architecture/.projection-manifest.json` and the
+  collaboration module doc) for a source size-bucket move, `10-20` to `20-50`
+  files. No `unresolved-major-change`, no relation to declare, no AXR7 pin to
+  move. Declaring `entrypoint.collaboration.succession` with sinks into
+  `src/effects/engineers/task-freeze-store.ts` would classify as
+  `entrypoint-changed` plus `relation-changed` and need the same internal-API
+  acceptance route C1, C3 and C4 recorded as tool debt; it is available as a
+  separate architecture slice, on the same terms C2 deferred its own.
+
 - Keep architecture facts in
   `docs/architecture/modules/runtime-harness/collaboration.md`; keep execution
   progress here.
