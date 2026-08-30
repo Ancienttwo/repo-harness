@@ -10,10 +10,11 @@
 - [x] usefulness rubric and three matched cases frozen before the accepted run
 - [x] baseline and treatment repositories, Git common dirs and HOMEs isolated
 - [x] three real concurrent read-only Workers per treatment
+- [x] one real successor run reaches a useful contribution per treatment
 - [x] provider-authoritative input/cached/output token counts and wall time
 - [x] at least one source-signal reuse and handoff adoption in every treatment
 - [x] context injections below 1,500 estimated tokens
-- [x] tracked source bytes unchanged and writer count never above one
+- [x] tracked source bytes unchanged and persisted Module Engineer writer lineage count exactly one
 - [x] Task/Lease/Publication/Acceptance digest unchanged in every arm
 - [x] C9-A and C9-B pass
 - [x] persistent `EngineerSeatV2` decision: NO-GO
@@ -22,7 +23,7 @@
 
 ## Release Checks
 
-- [x] `bun test --timeout 60000` (3,549 pass, 2 skip, 0 fail)
+- [x] `bun test --timeout 60000` (3,550 pass, 2 skip, 0 fail)
 - [x] `bun run check:type`
 - [x] `bun run build:operator-web`
 - [x] `bash scripts/check-deploy-sql-order.sh`

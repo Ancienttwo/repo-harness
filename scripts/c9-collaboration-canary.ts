@@ -14,9 +14,15 @@ import {
 } from 'fs';
 import { dirname, join, relative } from 'path';
 
-import { COLLABORATION_PROTOCOL } from '../src/core/collaboration/common';
+import {
+  COLLABORATION_PROTOCOL,
+  collaborationActorLineage,
+} from '../src/core/collaboration/common';
 import type { CoordinationSignalV1 } from '../src/core/collaboration/signal';
-import { adoptWorkStateHandoff } from '../src/effects/collaboration/adoption-store';
+import {
+  adoptWorkStateHandoff,
+  listHandoffAdoptionReceipts,
+} from '../src/effects/collaboration/adoption-store';
 import { engineerPrincipalAuthorization } from '../src/effects/collaboration/actor';
 import { admitCollaborationDelegation } from '../src/effects/collaboration/admission-bridge';
 import {
@@ -30,7 +36,10 @@ import {
   parseCodexExecStructuredOutput,
   type CodexExecUsageV1,
 } from '../src/effects/collaboration/provider-output-adapter';
-import { publishCoordinationSignal } from '../src/effects/collaboration/signal-store';
+import {
+  listCoordinationSignals,
+  publishCoordinationSignal,
+} from '../src/effects/collaboration/signal-store';
 import { collectCollaborativeWorkExchange } from '../src/effects/collaboration/work-exchange';
 import {
   readCodexProcessReceipt,
@@ -77,6 +86,7 @@ export interface C9CanaryCase {
   readonly thread_key: string;
   readonly paths: readonly string[];
   readonly questions: readonly string[];
+  readonly successor_question: string;
 }
 
 export const C9_CASES: readonly C9CanaryCase[] = Object.freeze([
@@ -95,6 +105,7 @@ export const C9_CASES: readonly C9CanaryCase[] = Object.freeze([
       'Trace the persisted stdout through the provider adapter into a contribution commit.',
       'Identify which test boundary proves the real provider wire rather than a shim-only shape.',
     ]),
+    successor_question: 'Continue from the handoff and verify where provider usage reaches the final C9 metric.',
   }),
   Object.freeze({
     id: 'execution-context-egress',
@@ -114,6 +125,7 @@ export const C9_CASES: readonly C9CanaryCase[] = Object.freeze([
       'Trace CLI and MCP handoff reads and identify where unverified execution context is withheld.',
       'Trace the Operator browser projection and identify its exact egress shape.',
     ]),
+    successor_question: 'Continue from the handoff and verify the final Operator egress withholding invariant.',
   }),
   Object.freeze({
     id: 'delivery-authority-boundary',
@@ -131,6 +143,7 @@ export const C9_CASES: readonly C9CanaryCase[] = Object.freeze([
       'Trace handoff adoption and prove it does not acquire a Claim or move a Lease generation.',
       'Trace context delivery and prove the binding gates dispatch without changing Task or Publication bytes.',
     ]),
+    successor_question: 'Continue from the handoff and verify the final authority-digest exclusion boundary.',
   }),
 ]);
 
@@ -426,6 +439,19 @@ function aggregateUsage(runs: readonly RunEvidence[]): CodexExecUsageV1 {
   }), { input_tokens: 0, cached_input_tokens: 0, output_tokens: 0 }));
 }
 
+export function countObservedModuleEngineerWriters(repoRoot: string): number {
+  const actors = [
+    ...listCoordinationSignals(repoRoot).map((signal) => signal.actor),
+    ...listWorkStateHandoffs(repoRoot).map((handoff) => handoff.actor),
+    ...listHandoffAdoptionReceipts(repoRoot).map((receipt) => receipt.adopter),
+  ];
+  return new Set(
+    actors
+      .filter((actor) => actor.kind === 'module_engineer')
+      .map((actor) => collaborationActorLineage(actor)),
+  ).size;
+}
+
 function metric(
   fixture: ArmFixture,
   canaryCase: C9CanaryCase,
@@ -433,7 +459,11 @@ function metric(
   wallMs: number,
   authorityBefore: string,
   deliveries: readonly CollaborationContextDeliveryV1[],
-  adoption: { readonly elapsed: number; readonly count: number } | null,
+  adoption: {
+    readonly elapsed: number;
+    readonly count: number;
+    readonly handoff_restart_ms: number;
+  } | null,
 ): C9ArmMetrics {
   const usage = aggregateUsage(runs);
   const signals = runs.flatMap((run) => run.signals);
@@ -464,13 +494,13 @@ function metric(
     duplicate_dead_end_rate: deadEnds.length === 0 ? 0 : Number((duplicateDeadEnds / deadEnds.length).toFixed(4)),
     signal_reuse_count: signals.reduce((sum, signal) => sum + signal.source_signal_ids.length, 0),
     handoff_adoption_count: adoption?.count ?? 0,
-    handoff_restart_ms: adoption === null ? null : Math.round(adoption.elapsed - Math.max(...runs.map((run) => run.completed_after_ms))),
+    handoff_restart_ms: adoption === null ? null : Math.round(adoption.handoff_restart_ms),
     never_read_signal_rate: signals.length === 0 ? 0 : Number((neverRead / signals.length).toFixed(4)),
     context_injections: Object.freeze(deliveries.map((delivery) => Object.freeze({
       bytes: Buffer.byteLength(delivery.rendered_context, 'utf8'),
       estimated_tokens: Math.ceil(Buffer.byteLength(delivery.rendered_context, 'utf8') / 4),
     }))),
-    writer_max: 1,
+    writer_max: countObservedModuleEngineerWriters(fixture.value.repoRoot),
     authority_before_sha256: authorityBefore,
     authority_after_sha256: authorityAfter,
     authority_unchanged: authorityBefore === authorityAfter,
@@ -535,26 +565,49 @@ async function runTreatment(canaryCase: C9CanaryCase, roots: string[]): Promise<
     repo_root: fixture.value.repoRoot,
     collection: successorCollection,
     subject_refs: [{ kind: 'capability', capability_id: CAPABILITY, capability_revision: CAPABILITY_REVISION }],
-    base_goal: `Adopt and continue ${canaryCase.id}.`,
+    base_goal: contributionGoal(
+      canaryCase,
+      [canaryCase.successor_question],
+      [kickoff.signal_id],
+      false,
+    ),
     handoff: { handoff_id: handoff.handoff_id, handoff_sha256: handoff.handoff_sha256 },
   });
   deliveries.push(successorDelivery);
   adoptWorkStateHandoff({
     repo_root: fixture.value.repoRoot,
-    authorization: engineerPrincipalAuthorization(fixture.value.actors[1]!.authorization_id),
+    authorization: engineerPrincipalAuthorization(fixture.value.actors[0]!.authorization_id),
     handoff_id: handoff.handoff_id,
     context_packet_sha256: successorDelivery.packet.packet_sha256,
     recorded_time: { kind: 'persisted_observation', observed_at: '2026-08-30T10:47:00.000Z' },
     env: fixture.value.env,
   });
+  const adoptionElapsed = performance.now() - started;
+  const predecessorCompletedAt = Math.max(...runs.map((run) => run.completed_after_ms));
+  const successorDispatchId = admit(fixture, canaryCase.questions.length, successorDelivery.composed_goal, canaryCase.paths);
+  recordCollaborationRunContextBinding({
+    repo_root: fixture.value.repoRoot,
+    dispatch_id: successorDispatchId,
+    delivery: successorDelivery,
+  });
+  const successorCompleted = await dispatchMany(fixture.value.repoRoot, [successorDispatchId], started);
+  const successorRun = evidenceForRun(fixture, successorDispatchId, successorCompleted[0]!);
+  if (!successorRun.signals.some((signal) => useful(signal, canaryCase))) {
+    throw new Error(`C9 successor ${canaryCase.id} produced no useful contribution`);
+  }
+  const allRuns = [...runs, successorRun];
   return metric(
     fixture,
     canaryCase,
-    runs,
+    allRuns,
     performance.now() - started,
     authorityBefore,
     deliveries,
-    { elapsed: performance.now() - started, count: 1 },
+    {
+      elapsed: adoptionElapsed,
+      count: 1,
+      handoff_restart_ms: successorRun.completed_after_ms - predecessorCompletedAt,
+    },
   );
 }
 
@@ -563,13 +616,13 @@ export function classifyC9Decision(cases: readonly C9CaseReport[]): C9Decision {
   const c9A = first !== undefined
     && first.signal_reuse_count > 0
     && first.handoff_adoption_count > 0
-    && first.writer_max <= 1
+    && first.writer_max === 1
     && first.authority_unchanged
     && first.worktree_unchanged;
   const c9B = cases.length >= C9_USEFULNESS_RUBRIC.persistent_seat_gate.repeated_case_count
     && cases.every((entry) => entry.treatment.authority_unchanged
       && entry.treatment.worktree_unchanged
-      && entry.treatment.writer_max <= 1
+      && entry.treatment.writer_max === 1
       && entry.treatment.signal_reuse_count > 0
       && entry.treatment.handoff_adoption_count > 0);
   const bottleneck = c9B && cases.every((entry) => entry.treatment.useful_findings > entry.baseline.useful_findings

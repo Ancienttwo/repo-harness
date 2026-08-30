@@ -188,9 +188,10 @@ Harness 是指围绕 Agent 构建的测试、验证与约束基础设施，这�
 
 repo-harness C9 把同一个只读协议追踪分别交给单 Agent baseline，以及
 「一个 Module Engineer + 三个并行只读 Worker + signal/handoff」treatment。
-三次隔离配对里，两臂都得到 9 个冻结 rubric 合格 finding；treatment
-却消耗约 2.58 倍 input tokens，且三分之二的 Worker signal 没有进入后继者
-context。handoff restart 只有约 1.2 秒，不是主要瓶颈。
+三次隔离配对里，baseline 得到 9 个冻结 rubric 合格 finding；加入真实
+successor run 的 treatment 得到 12 个，却消耗约 3.51 倍 input tokens，且
+四分之三的 Worker signal 没有进入后继者 context。真实 handoff restart
+只在一组三组里超过 baseline first-useful latency，没有形成重复瓶颈证据。
 
 这个结果说明多 Agent 结构本身不构成收益证明。先冻结 usefulness、隔离
 两臂、记录 provider usage 和 authority digest，再决定是否增加持久席位；

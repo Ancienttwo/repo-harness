@@ -8,10 +8,10 @@ All notable changes to this skill are documented here.
 
 - **Real multi-agent collaboration canary.** A source-checkout canary runs three
   isolated baseline/treatment protocol traces with three concurrent read-only
-  Codex Workers, exact usage metrics, bounded context injection, source-signal
-  reuse, handoff adoption, writer-singularity checks and delivery-authority
-  digests. C9-A and C9-B pass; persistent `EngineerSeatV2`, Phase 5 Review and
-  Phase 6 Merge remain inactive.
+  Codex Workers plus one real successor run, exact usage metrics, bounded
+  context injection, source-signal reuse, handoff adoption, persisted
+  writer-lineage checks and delivery-authority digests. C9-A and C9-B pass;
+  persistent `EngineerSeatV2`, Phase 5 Review and Phase 6 Merge remain inactive.
 
 ### Fixed
 

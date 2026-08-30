@@ -6,10 +6,17 @@ import {
   C9_USEFULNESS_RUBRIC,
   classifyC9Decision,
   collectConcurrentDispatchCompletionTimes,
+  countObservedModuleEngineerWriters,
   type C9ArmMetrics,
   type C9CaseReport,
 } from '../../scripts/c9-collaboration-canary';
+import { engineerPrincipalAuthorization } from '../../src/effects/collaboration/actor';
+import { publishCoordinationSignal } from '../../src/effects/collaboration/signal-store';
 import { CODEX_DELEGATED_RUN_MAX_OUTPUT_BYTES } from '../../src/effects/engineers/delegated-run-store';
+import {
+  createCollaborationFixture,
+  removeFixtureRoots,
+} from '../helpers/collaboration-store-fixture';
 
 function metrics(overrides: Partial<C9ArmMetrics> = {}): C9ArmMetrics {
   return {
@@ -54,7 +61,9 @@ describe('C9 real multi-agent canary contract', () => {
     expect(C9_USEFULNESS_RUBRIC.rules).toHaveLength(4);
     expect(C9_CASES).toHaveLength(3);
     expect(new Set(C9_CASES.map((entry) => entry.id)).size).toBe(3);
-    expect(C9_CASES.every((entry) => entry.questions.length === 3 && entry.paths.length > 0)).toBe(true);
+    expect(C9_CASES.every((entry) => entry.questions.length === 3
+      && entry.successor_question.length > 0
+      && entry.paths.length > 0)).toBe(true);
     expect(CODEX_DELEGATED_RUN_MAX_OUTPUT_BYTES).toBe(1024 * 1024);
   });
 
@@ -101,5 +110,34 @@ describe('C9 real multi-agent canary contract', () => {
     await Promise.resolve();
     completeFirst({ stdout: '', stderr: '', exit_code: 0 });
     expect(await result).toEqual([20, 10]);
+  });
+
+  test('derives two writers from two persisted Module Engineer lineages', () => {
+    const roots: string[] = [];
+    try {
+      const fixture = createCollaborationFixture(process.cwd(), roots, 'active', 'repo-harness-c9-writers');
+      fixture.actors.slice(0, 2).forEach((actor, index) => {
+        publishCoordinationSignal({
+          repo_root: fixture.repoRoot,
+          authorization: engineerPrincipalAuthorization(actor.authorization_id),
+          destination: { kind: 'public' },
+          idempotency_key: `c9-writer-${index}`,
+          thread_key: 'c9/writer-observation',
+          reply_to_signal_id: null,
+          scope_refs: [{ kind: 'free_topic', value: 'c9/writer-observation' }],
+          labels: ['C9'],
+          title: `writer ${index}`,
+          body: `writer observation ${index}`,
+          artifact_refs: [],
+          source_signal_ids: [],
+          supersedes_signal_id: null,
+          recorded_time: { kind: 'persisted_observation', observed_at: `2026-08-30T10:4${index}:00.000Z` },
+          env: fixture.env,
+        });
+      });
+      expect(countObservedModuleEngineerWriters(fixture.repoRoot)).toBe(2);
+    } finally {
+      removeFixtureRoots(roots);
+    }
   });
 });

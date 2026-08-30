@@ -13,11 +13,12 @@
 - Treat Codex JSONL as the only provider wire; raw markers are rejected rather than kept as a compatibility path.
 - Hash Task/Lease/Publication/Acceptance store roots separately from the delegation evidence store, because a real delegated run must append its own immutable receipts.
 - Gate tracked source bytes separately from gitignored Host evidence written under `.ai/harness/evidence/`.
-- Keep `EngineerSeatV2`, Review marketplace and guarded merge inactive: treatment matched baseline usefulness at 2.58x input tokens, and handoff restart was only about 1.1 seconds.
+- Keep `EngineerSeatV2`, Review marketplace and guarded merge inactive: treatment produced 12 useful findings versus 9 at 3.51x input tokens, and real successor restart exceeded baseline first-useful latency in only one of three cases.
 
 ## Deviations From Plan Or Spec
 
 - The cheapest real-provider probe exposed a pre-existing JSONL/raw-marker mismatch and a 64 KiB terminal-event truncation risk. C9 corrected both before running the frozen three-case matrix; it did not add an alternate wire or provider fallback.
+- External review rejected the first metric implementation because it timed only local adoption and hard-coded the writer count. The accepted canary dispatches a real successor to a useful contribution and derives writer lineages from persisted signals, handoffs and adoption receipts.
 - Two early treatment attempts produced invalid authoritative drafts. The collector rejected them without synthesizing output. The prompt was narrowed to preserve the frozen schema and empty evidence-ref arrays; the accepted matrix is a fresh full run after that pre-run harness correction.
 
 ## Tradeoffs Considered
