@@ -12,6 +12,12 @@
 
 ## Active Lessons
 
+- Date: 2026-08-30
+- Triggered by correction: the first C9 real-provider probe crossed the frozen `codex exec --json` argv and exposed two facts the shim-only C4 tests could not: the contribution adapter searched persisted stdout for raw marker lines even though the provider emits JSONL, and the generic 64 KiB capture ceiling could truncate the JSONL before its final agent message and `turn.completed` usage event. The fake Codex had been emitting the impossible raw shape, so every deterministic collector test passed.
+- Mistake pattern: freezing a producer argv and a consumer parser independently while the test double reproduces the consumer's assumption instead of the producer's actual wire; then sizing evidence capture for prose rather than for the full structured event stream whose terminal receipt is required.
+- Prevention rule: every provider integration test double emits the exact frozen transport envelope, including terminal identity/usage events, and carries a negative test for the retired shape. Capture budgets are sized against the whole structured stream and must preserve its terminal receipt; if the receipt is missing or the stream is truncated, fail closed rather than parsing a partial prefix or synthesizing output.
+- Where to apply next time: Codex/Claude JSONL adapters, process-output evidence stores, provider review runners, delegation collectors, and any test shim standing in for a structured external CLI.
+
 - Date: 2026-08-17
 - Triggered by correction: a `minimal_change` enforce/v2 proposal was drafted on the assumption that advice mode had been observing this repo for two months, but the signal loop had never run once — collection needs both gates (`src/cli/hook/mutation-observed.ts:113`, `policy.mode !== 'off' && policy.post_edit_observer`), this repo's `post_edit_observer` was `false`, `.ai/harness/checks/minimal-change.latest.json` did not exist, and `verdict: 'review'` had occurred zero times.
 - Mistake pattern: inferring that a per-repo observation mechanism is live from one enabling field (`mode: advice`) while its separate power switch stayed off, then reasoning about thresholds and escalation over a dataset that was never collected.

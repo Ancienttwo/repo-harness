@@ -35,6 +35,7 @@ import { resolveDelegatedWorkerActor } from '../../src/effects/collaboration/act
 import {
   CONTRIBUTION_OUTPUT_END,
   CONTRIBUTION_OUTPUT_START,
+  parseCodexExecStructuredOutput,
   CollaborationContributionRejection,
   parseContributionDraftFromStdout,
 } from '../../src/effects/collaboration/provider-output-adapter';
@@ -252,6 +253,24 @@ function workerResultCount(repoRoot: string): number {
 }
 
 describe('C4 provider-output adapter', () => {
+  test('decodes the exact Codex JSONL final message and provider-authoritative usage', () => {
+    const stdout = [
+      JSON.stringify({ type: 'thread.started', thread_id: 'thread-1' }),
+      JSON.stringify({ type: 'item.completed', item: { id: 'warning', type: 'error', message: 'non-final event' } }),
+      JSON.stringify({ type: 'item.completed', item: { id: 'final', type: 'agent_message', text: framed(draftPayload()) } }),
+      JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 220, cached_input_tokens: 40, output_tokens: 50, reasoning_output_tokens: 3 } }),
+    ].join('\n');
+    const parsed = parseCodexExecStructuredOutput(stdout);
+    expect(parsed.thread_id).toBe('thread-1');
+    expect(parsed.final_response).toBe(framed(draftPayload()));
+    expect(parsed.usage).toEqual({ input_tokens: 220, cached_input_tokens: 40, output_tokens: 50 });
+  });
+
+  test('refuses the old raw-marker shape because the delegated argv is JSONL-only', () => {
+    expect(() => parseCodexExecStructuredOutput(framed(draftPayload())))
+      .toThrow('provider output is not Codex JSONL');
+  });
+
   test('extracts a draft from framed stdout and ignores the prose around it', () => {
     const draft = parseContributionDraftFromStdout(framed(draftPayload()));
     expect(draft.thread_key).toBe('collaboration/contribution-collector');
@@ -274,7 +293,7 @@ describe('C4 provider-output adapter', () => {
       try { parseContributionDraftFromStdout(stdout); } catch (error) { caught = error; }
       expect(caught).toBeInstanceOf(CollaborationContributionRejection);
       expect((caught as CollaborationContributionRejection).reason).toBe(reason as never);
-      expect((caught as CollaborationContributionRejection).adapter_version).toBe('codex-exec-stdout/v1');
+      expect((caught as CollaborationContributionRejection).adapter_version).toBe('codex-exec-jsonl/v1');
     }
   });
 

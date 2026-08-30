@@ -318,6 +318,26 @@ carries exactly one write action — sending a task-addressed message — and do
 not acquire tasks, mutate workflow state, launch agents, or expose repository
 paths.
 
+## Collaboration Canary
+
+The collaboration substrate keeps one Module Engineer and one writer while
+bounded read-only Workers exchange untrusted signals and explicit handoffs.
+Run the source-checkout live gate with:
+
+```bash
+bun scripts/c9-collaboration-canary.ts --live
+```
+
+The command creates isolated disposable repositories for three matched
+baseline/treatment traces and records provider-authoritative Codex token usage,
+context size, signal reuse, handoff adoption, writer count, and delivery-plane
+digests. The accepted C9 result is deliberately a negative multi-seat decision:
+the three-reader treatment preserved authority and reused state, but did not
+outproduce the single-reader baseline. Persistent same-capability
+`EngineerSeatV2`, independent Review marketplace, and unattended Merge remain
+inactive. See
+[`20260830-c9-real-multi-agent-canary.md`](docs/researches/20260830-c9-real-multi-agent-canary.md).
+
 ## MCP Connector
 
 As an optional sidecar, `repo-harness mcp` exposes workflow artifacts to MCP

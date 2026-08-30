@@ -95,6 +95,11 @@ repos.
   output override summaries.
 - Delegated work remains parent-owned: explorer and verifier are read-only;
   worker edits are constrained to contract `allowed_paths`.
+- Collaboration remains an untrusted knowledge plane: signals, context packets
+  and handoff adoption cannot acquire a Claim, move a Lease, publish or accept.
+  The C9 live gate keeps one writer, records exact provider JSONL usage, and
+  requires repeated evidence before any persistent same-capability seat can be
+  proposed.
 - A Module Engineer binding is shared git-common-dir authorization state for
   engineer-scoped commands only. It cannot create, transfer, or replace task
   Lease, Publication, Acceptance, or merge authority.
