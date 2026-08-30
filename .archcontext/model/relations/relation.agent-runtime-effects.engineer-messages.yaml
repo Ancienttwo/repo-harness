@@ -3,4 +3,4 @@ id: relation.agent-runtime-effects.engineer-messages
 kind: calls
 source: capability.runtime-harness.agent-runtime-effects
 target: capability.runtime-harness.engineer-messages
-intent: Consume one exact persisted message and project positive delivery only from its authoritative receipt
+intent: Consume one exact persisted message and record effect success only from its authoritative receipt

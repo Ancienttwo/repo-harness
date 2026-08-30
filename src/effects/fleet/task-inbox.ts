@@ -700,6 +700,26 @@ export function listTaskInbox(input: TaskInboxListInput): TaskInboxListResult {
   });
 }
 
+/** Read one exact Task message/recipient receipt pair for runtime correlation.
+ * This adds no delivery transition and preserves Task Inbox as the authority. */
+export function readTaskMessageDelivery(input: {
+  readonly repo_root: string;
+  readonly task_id: string;
+  readonly message_id: string;
+  readonly recipient: TaskMessageRecipient;
+}): TaskInboxEventEntry {
+  const event = readEventAt(taskInboxEventPath(input.repo_root, input.task_id, input.message_id));
+  if (event.task_id !== input.task_id || event.message_id !== input.message_id) {
+    fail('task_message_invalid', 'message does not belong to the requested Task inbox');
+  }
+  const receipt = readOptionalReceipt(input.repo_root, input.task_id, input.message_id, input.recipient);
+  return Object.freeze({
+    event,
+    receipt,
+    globally_satisfied: receipt?.delivery_state === 'acknowledged',
+  });
+}
+
 /**
  * Fence the recipient, supersede stale claim messages, and durably mark
  * eligible events delivered before returning them. Hook delivery is bounded;

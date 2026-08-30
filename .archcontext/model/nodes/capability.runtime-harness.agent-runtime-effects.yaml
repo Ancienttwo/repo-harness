@@ -3,7 +3,7 @@ id: capability.runtime-harness.agent-runtime-effects
 kind: capability
 name: Agent Runtime Effects
 status: active
-summary: Owns the accepted provider-neutral, at-most-once Agent runtime-effect boundary; the current Codex Thread V1 implementation remains the evidence-bearing implementation until R1 replaces it with V2.
+summary: Owns the provider-neutral, at-most-once Agent Runtime Effect V2 boundary for closed Codex App Thread and tmux CLI Agent adapters.
 responsibilities:
   - Validate closed runtime capability, effect intent, Host action, observation and current schemas.
   - Bind every effect to one exact persisted Task or Module message, one current recipient fence and one current Engineer Binding endpoint.
@@ -15,51 +15,58 @@ responsibilities:
   - Exclude automatic endpoint creation, Agent process ownership, transcript semantics, provider/model routing and remote tmux.
 source:
   include:
-    - "src/core/engineers/provider-thread-effect.ts"
-    - "src/effects/engineers/provider-thread-effect-store.ts"
+    - "src/core/engineers/agent-runtime-effect.ts"
+    - "src/effects/engineers/agent-runtime-effect-store.ts"
+    - "src/effects/engineers/agent-runtime-feature.ts"
+    - "src/effects/engineers/agent-runtime-adapters/**"
   entrypoints:
     - id: entrypoint.agent-runtime-effects.prepare
-      path: "src/effects/engineers/provider-thread-effect-store.ts"
+      path: "src/effects/engineers/agent-runtime-effect-store.ts"
       symbols:
-        - name: "assertCurrentBinding"
+        - name: "currentBinding"
           sinks:
             - id: sink.agent-runtime-effects.current-binding
               path: "src/effects/engineers/binding-store.ts"
               symbol: "readEngineerBindingStatus"
-        - name: "assertPendingMessage"
+        - name: "moduleReference"
           sinks:
             - id: sink.agent-runtime-effects.persisted-message
               path: "src/effects/engineers/module-inbox.ts"
               symbol: "readModuleMessageDelivery"
+        - name: "taskEndpointAndReference"
+          sinks:
+            - id: sink.agent-runtime-effects.persisted-task-message
+              path: "src/effects/fleet/task-inbox.ts"
+              symbol: "readTaskMessageDelivery"
     - id: entrypoint.agent-runtime-effects.start
-      path: "src/effects/engineers/provider-thread-effect-store.ts"
+      path: "src/effects/engineers/agent-runtime-effect-store.ts"
       symbols:
-        - name: "startProviderThreadEffect"
+        - name: "startAgentRuntimeEffect"
           sinks:
             - id: sink.agent-runtime-effects.started-observation
-              path: "src/core/engineers/provider-thread-effect.ts"
-              symbol: "buildProviderThreadEffectObservation"
+              path: "src/core/engineers/agent-runtime-effect.ts"
+              symbol: "buildAgentRuntimeEffectObservation"
     - id: entrypoint.agent-runtime-effects.observe
-      path: "src/effects/engineers/provider-thread-effect-store.ts"
+      path: "src/effects/engineers/agent-runtime-effect-store.ts"
       symbols:
-        - name: "observeProviderThreadEffect"
+        - name: "observeAgentRuntimeEffect"
           sinks:
             - id: sink.agent-runtime-effects.reconciliation-observation
-              path: "src/core/engineers/provider-thread-effect.ts"
-              symbol: "buildProviderThreadEffectObservation"
-        - name: "projectSuccessfulDelivery"
+              path: "src/core/engineers/agent-runtime-effect.ts"
+              symbol: "buildAgentRuntimeEffectObservation"
+        - name: "receiptEvidence"
           sinks:
-            - id: sink.agent-runtime-effects.delivery-observation
+            - id: sink.agent-runtime-effects.receipt-evidence
               path: "src/effects/engineers/module-inbox.ts"
-              symbol: "recordModuleMessageDeliveryObservation"
+              symbol: "readModuleMessageDelivery"
 notes:
-  - The accepted capability identity is Agent Runtime Effects; source selectors intentionally remain on the current V1 files until the approved R1 work package performs the one-shot product rename and migration.
-  - Architecture acceptance does not claim that tmux execution or Task Inbox correlation is implemented.
+  - Runtime adapters receive only a bounded inbox-control reference; message content remains in the authoritative Task or Module Inbox.
+  - Provider Thread V1 is available only to the explicit terminal-only migration and has no steady-state reader or command alias.
 extensions:
   contractFiles:
     agents: "AGENTS.md"
     claude: "CLAUDE.md"
   lspProfile: "typescript-lsp"
   verification:
-    - "bun test tests/unit/me3a-provider-thread-effect.test.ts tests/unit/me1c-module-inbox.test.ts tests/cli/engineer.test.ts tests/cli/mcp-engineer-tools.test.ts --timeout 60000"
+    - "bun test tests/unit/r1-provider-neutral-agent-runtime.test.ts tests/unit/r1-agent-runtime-adapters.test.ts tests/cli/engineer.test.ts tests/cli/mcp-engineer-tools.test.ts --timeout 60000"
     - "bun run check:type"

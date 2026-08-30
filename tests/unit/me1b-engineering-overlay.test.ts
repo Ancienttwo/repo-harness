@@ -148,7 +148,7 @@ function deps(root: string, overrides: Partial<EngineeringOverlayDependencies> =
     readBinding: readEngineerBindingStatus,
     listClaims: () => Object.freeze([]),
     readMessages: () => Object.freeze({ pending: 0, delivery_failed: 0, revision: `sha256:${'3'.repeat(64)}` }),
-    listProviderEffects: () => Object.freeze([]),
+    listRuntimeEffects: () => Object.freeze([]),
     ...overrides,
   };
 }

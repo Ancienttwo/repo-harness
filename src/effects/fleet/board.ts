@@ -31,6 +31,7 @@ import {
 import { FeedbackError, projectPendingFeedbackOffer, type PendingFeedbackOffer } from '../publication/feedback';
 import { readFeedbackEvents } from '../publication/feedback-store';
 import { summarizeTaskInboxForFleet, TaskInboxError } from './task-inbox';
+import { observeAgentRuntimeEffects, projectTaskAgentRuntimeState, AgentRuntimeEffectStoreError, type AgentRuntimeEffectStatus } from '../engineers/agent-runtime-effect-store';
 
 export type FleetBoardFatalErrorCode =
   | 'fleet_registry_unavailable'
@@ -150,6 +151,7 @@ function emptyFeedback(): FleetBoardFeedbackSummaryV1 {
 function mapRepositoryError(error: unknown): FleetBoardErrorCode {
   if (error instanceof FleetRepositoryError) return error.code;
   if (error instanceof TaskInboxError) return 'repo_inbox_unreadable';
+  if (error instanceof AgentRuntimeEffectStoreError) return 'repo_inbox_unreadable';
   if (error instanceof FeedbackError) return 'repo_feedback_unreadable';
   if (error instanceof MergeReadinessError) {
     return error.code === 'receipt_unavailable' || error.code === 'publication_claim_mismatch' || error.code === 'publication_pointer_mismatch'
@@ -181,6 +183,7 @@ async function cardInput(
   offers: ReadonlyMap<string, TaskOfferV1>,
   options: FleetRepositoryCollectionOptions,
   boardConsistency: 'stable' | 'changed_during_read',
+  runtimeEffects: readonly AgentRuntimeEffectStatus[],
 ): Promise<FleetBoardCardInputV1> {
   assertCollectionActive(options.signal, options.deadline_exceeded);
   const currentPublication = card.claim?.current_publication ?? null;
@@ -211,6 +214,13 @@ async function cardInput(
     task_revision: card.task_revision,
     current_claim: card.claim === null ? null : { claim_id: card.claim.claim_id, generation: card.claim.generation },
   });
+  const runtime = projectTaskAgentRuntimeState({
+    repo_root: repo.path,
+    task_id: card.task_id,
+    task_revision: card.task_revision,
+    current_claim: card.claim === null ? null : { claim_id: card.claim.claim_id, generation: card.claim.generation },
+    statuses: runtimeEffects,
+  });
   return Object.freeze({
     task_id: card.task_id,
     task_revision: card.task_revision,
@@ -227,7 +237,11 @@ async function cardInput(
     merge_readiness: readiness,
     execution_readiness: offers.get(card.task_id)?.execution_readiness ?? null,
     feedback,
-    inbox,
+    inbox: Object.freeze({
+      unread_count: inbox.unread_count,
+      addressed_to_current_claim: inbox.addressed_to_current_claim,
+      ...runtime,
+    }),
     snapshot_consistency: cardInputConsistency(boardConsistency, inbox.snapshot_consistency),
   });
 }
@@ -287,12 +301,14 @@ async function collectRepository(
     const offered = collectRepoTaskOffers(repo, registry, { now_ms: options.now_ms });
     assertCollectionActive(controller.signal, options.deadline_exceeded);
     const offers = offerIndex(offered?.offers ?? []);
+    const runtimeEffects = observeAgentRuntimeEffects(repo.path);
     const cards = await collectBounded(board.cards, options.max_concurrency, async (card) => cardInput(
       repo,
       card,
       offers,
       { ...options, signal: controller.signal },
       board.snapshot_consistency,
+      runtimeEffects,
     ));
     assertCollectionActive(controller.signal, options.deadline_exceeded);
     return Object.freeze({

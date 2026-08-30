@@ -15,8 +15,8 @@ export type OverlaySupport = 'unsupported' | 'available' | 'unreadable';
 export type OverlayConsistency = 'stable' | 'changed_during_read' | 'degraded';
 export type OverlayBindingState = 'unbound' | 'active' | 'retired' | null;
 export type OverlayProviderObservation = 'unknown' | 'reachable' | 'unreachable';
-export type OverlayComponentName = 'profiles' | 'bindings' | 'claims' | 'messages' | 'provider_effects';
-const COMPONENT_ORDER: readonly OverlayComponentName[] = ['profiles', 'bindings', 'claims', 'messages', 'provider_effects'];
+export type OverlayComponentName = 'profiles' | 'bindings' | 'claims' | 'messages' | 'runtime_effects';
+const COMPONENT_ORDER: readonly OverlayComponentName[] = ['profiles', 'bindings', 'claims', 'messages', 'runtime_effects'];
 
 export interface OverlayBindingValueV1 {
   readonly binding_id: string;
@@ -60,7 +60,7 @@ export interface OverlayMessageProjectionV1 {
   readonly revision: string | null;
 }
 
-export interface OverlayProviderEffectProjectionV1 {
+export interface OverlayRuntimeEffectProjectionV1 {
   readonly support: 'available' | 'unreadable';
   readonly active: number | null;
   readonly reconciliation_required: number | null;
@@ -81,7 +81,7 @@ export interface EngineeringOverlayEngineerV1 {
   readonly active_claim: OverlayActiveClaimProjectionV1;
   readonly delegations: OverlayUnsupportedProjectionV1;
   readonly messages: OverlayMessageProjectionV1;
-  readonly provider_effects: OverlayProviderEffectProjectionV1;
+  readonly runtime_effects: OverlayRuntimeEffectProjectionV1;
   readonly memory: OverlayUnsupportedProjectionV1;
 }
 
@@ -109,7 +109,7 @@ export type OrganizationAttentionReason =
   | 'binding_stale'
   | 'engineer_contract_revision_changed'
   | 'message_delivery_failed'
-  | 'provider_reconciliation_required';
+  | 'runtime_reconciliation_required';
 
 export interface OrganizationAttentionItemV1 {
   readonly engineer_id: string;
@@ -245,15 +245,15 @@ function validateMessages(value: unknown): OverlayMessageProjectionV1 {
   return Object.freeze({ support: 'available', pending: integer(input.pending, 'messages.pending'), delivery_failed: integer(input.delivery_failed, 'messages.delivery_failed'), revision: string(input.revision, 'messages.revision', DIGEST) });
 }
 
-function validateProviderEffects(value: unknown): OverlayProviderEffectProjectionV1 {
-  const input = record(value, 'provider_effects');
-  exact(input, ['support', 'active', 'reconciliation_required', 'failed', 'revision'], 'provider_effects');
+function validateRuntimeEffects(value: unknown): OverlayRuntimeEffectProjectionV1 {
+  const input = record(value, 'runtime_effects');
+  exact(input, ['support', 'active', 'reconciliation_required', 'failed', 'revision'], 'runtime_effects');
   if (input.support === 'unreadable') {
-    if (input.active !== null || input.reconciliation_required !== null || input.failed !== null || input.revision !== null) invalid('unreadable provider_effects must not expose values');
+    if (input.active !== null || input.reconciliation_required !== null || input.failed !== null || input.revision !== null) invalid('unreadable runtime_effects must not expose values');
     return Object.freeze({ support: 'unreadable', active: null, reconciliation_required: null, failed: null, revision: null });
   }
-  if (input.support !== 'available') invalid('provider_effects support is invalid');
-  return Object.freeze({ support: 'available', active: integer(input.active, 'provider_effects.active'), reconciliation_required: integer(input.reconciliation_required, 'provider_effects.reconciliation_required'), failed: integer(input.failed, 'provider_effects.failed'), revision: string(input.revision, 'provider_effects.revision', DIGEST) });
+  if (input.support !== 'available') invalid('runtime_effects support is invalid');
+  return Object.freeze({ support: 'available', active: integer(input.active, 'runtime_effects.active'), reconciliation_required: integer(input.reconciliation_required, 'runtime_effects.reconciliation_required'), failed: integer(input.failed, 'runtime_effects.failed'), revision: string(input.revision, 'runtime_effects.revision', DIGEST) });
 }
 
 function validateUnsupported(value: unknown, field: string): OverlayUnsupportedProjectionV1 {
@@ -265,7 +265,7 @@ function validateUnsupported(value: unknown, field: string): OverlayUnsupportedP
 
 function validateEngineer(value: unknown): EngineeringOverlayEngineerV1 {
   const input = record(value, 'engineer');
-  exact(input, ['engineer_id', 'capability_id', 'engineer_contract_revision', 'binding', 'active_claim', 'delegations', 'messages', 'provider_effects', 'memory'], 'engineer');
+  exact(input, ['engineer_id', 'capability_id', 'engineer_contract_revision', 'binding', 'active_claim', 'delegations', 'messages', 'runtime_effects', 'memory'], 'engineer');
   const engineerId = string(input.engineer_id, 'engineer_id', ENGINEER_ID);
   const capabilityId = string(input.capability_id, 'capability_id', CAPABILITY_ID);
   if (engineerId !== `engineer:${capabilityId}`) invalid('engineer_id does not match capability_id');
@@ -277,7 +277,7 @@ function validateEngineer(value: unknown): EngineeringOverlayEngineerV1 {
     active_claim: validateClaim(input.active_claim),
     delegations: validateUnsupported(input.delegations, 'delegations'),
     messages: validateMessages(input.messages),
-    provider_effects: validateProviderEffects(input.provider_effects),
+    runtime_effects: validateRuntimeEffects(input.runtime_effects),
     memory: validateUnsupported(input.memory, 'memory'),
   });
 }
@@ -288,7 +288,7 @@ function validateComponents(value: unknown): readonly OverlayComponentObservatio
   const components = value.map((candidate, index) => {
     const input = record(candidate, 'component');
     exact(input, ['component', 'support', 'observation_before', 'observation_after'], 'component');
-    if (!['profiles', 'bindings', 'claims', 'messages', 'provider_effects'].includes(String(input.component)) || seen.has(String(input.component))) invalid('component name is invalid or duplicated');
+    if (!['profiles', 'bindings', 'claims', 'messages', 'runtime_effects'].includes(String(input.component)) || seen.has(String(input.component))) invalid('component name is invalid or duplicated');
     if (input.component !== COMPONENT_ORDER[index]) invalid('components are not in canonical order');
     seen.add(String(input.component));
     if (input.support !== 'available' && input.support !== 'unreadable') invalid('component support is invalid');
@@ -326,9 +326,9 @@ export function validateEngineeringOverlaySnapshot(value: unknown): EngineeringO
       bindings: engineers.map((engineer) => engineer.binding.support),
       claims: engineers.map((engineer) => engineer.active_claim.support),
       messages: engineers.map((engineer) => engineer.messages.support),
-      provider_effects: engineers.map((engineer) => engineer.provider_effects.support),
+      runtime_effects: engineers.map((engineer) => engineer.runtime_effects.support),
     };
-    for (const component of ['bindings', 'claims', 'messages', 'provider_effects'] as const) {
+    for (const component of ['bindings', 'claims', 'messages', 'runtime_effects'] as const) {
       const expected = observedSupports[component].some((support) => support === 'unreadable') ? 'unreadable' : 'available';
       if (componentByName.get(component)!.support !== expected) invalid(`${component} component support does not match Engineer observations`);
     }
@@ -370,7 +370,7 @@ export function projectOrganizationAttention(overlayInput: EngineeringOverlaySna
       if (engineer.binding.value && engineer.binding.value.engineer_contract_revision !== engineer.engineer_contract_revision) attention.push({ engineer_id: engineer.engineer_id, reason: 'engineer_contract_revision_changed', owner: 'maintainer', source_revision: engineer.binding.revision! });
     }
     if (engineer.messages.support === 'available' && engineer.messages.delivery_failed !== null && engineer.messages.delivery_failed > 0) attention.push({ engineer_id: engineer.engineer_id, reason: 'message_delivery_failed', owner: 'module_engineer', source_revision: engineer.messages.revision! });
-    if (engineer.provider_effects.support === 'available' && engineer.provider_effects.reconciliation_required !== null && engineer.provider_effects.reconciliation_required > 0) attention.push({ engineer_id: engineer.engineer_id, reason: 'provider_reconciliation_required', owner: 'runtime_operator', source_revision: engineer.provider_effects.revision! });
+    if (engineer.runtime_effects.support === 'available' && engineer.runtime_effects.reconciliation_required !== null && engineer.runtime_effects.reconciliation_required > 0) attention.push({ engineer_id: engineer.engineer_id, reason: 'runtime_reconciliation_required', owner: 'runtime_operator', source_revision: engineer.runtime_effects.revision! });
   }
   attention.sort((left, right) => left.engineer_id.localeCompare(right.engineer_id) || left.reason.localeCompare(right.reason));
   const basis = {
@@ -395,12 +395,12 @@ export function validateOrganizationAttentionSnapshot(value: unknown): Organizat
     binding_stale: 'maintainer',
     engineer_contract_revision_changed: 'maintainer',
     message_delivery_failed: 'module_engineer',
-    provider_reconciliation_required: 'runtime_operator',
+    runtime_reconciliation_required: 'runtime_operator',
   };
   const attention = input.attention.map((candidate) => {
     const item = record(candidate, 'attention item');
     exact(item, ['engineer_id', 'reason', 'owner', 'source_revision'], 'attention item');
-    if (!['binding_missing', 'binding_stale', 'engineer_contract_revision_changed', 'message_delivery_failed', 'provider_reconciliation_required'].includes(String(item.reason))) invalid('attention reason is invalid');
+    if (!['binding_missing', 'binding_stale', 'engineer_contract_revision_changed', 'message_delivery_failed', 'runtime_reconciliation_required'].includes(String(item.reason))) invalid('attention reason is invalid');
     const reason = item.reason as OrganizationAttentionReason;
     if (item.owner !== owners[reason]) invalid('attention owner does not match reason');
     const engineerId = string(item.engineer_id, 'engineer_id', ENGINEER_ID);

@@ -3,10 +3,10 @@ id: capability.runtime-harness.engineering-overlay
 kind: capability
 name: Engineering Overlay
 status: active
-summary: Projects Profile, Binding, Claim, message and Provider observations into exact read-only Engineer and organization-attention views without changing Fleet lifecycle authority.
+summary: Projects Profile, Binding, Claim, message and Agent Runtime observations into exact read-only Engineer and organization-attention views without changing Fleet lifecycle authority.
 responsibilities:
   - Validate closed EngineeringOverlaySnapshotV1 and OrganizationAttentionSnapshotV1 schemas with content-addressed snapshots.
-  - Read tracked Profiles plus independent Binding, ClaimActor, ME-1C inbox and ME-3A effect observations without creating a second authority.
+  - Read tracked Profiles plus independent Binding, ClaimActor, inbox and Agent Runtime effect observations without creating a second authority.
   - Double-read every component revision and expose stable, changed_during_read or degraded explicitly.
   - Keep absent later delegation and memory protocols unsupported rather than translating them into healthy-empty data.
   - Expose CLI/JSON read models only; exclude web UI, mutation routes, cached status and HumanControl composite state.
@@ -30,9 +30,9 @@ source:
             - id: sink.engineering-overlay.messages
               path: "src/effects/engineers/module-inbox.ts"
               symbol: "observeModuleInboxSummary"
-            - id: sink.engineering-overlay.provider-effects
-              path: "src/effects/engineers/provider-thread-effect-store.ts"
-              symbol: "observeProviderThreadEffects"
+            - id: sink.engineering-overlay.runtime-effects
+              path: "src/effects/engineers/agent-runtime-effect-store.ts"
+              symbol: "observeAgentRuntimeEffects"
             - id: sink.engineering-overlay.schema
               path: "src/core/engineers/engineering-overlay.ts"
               symbol: "buildEngineeringOverlaySnapshot"

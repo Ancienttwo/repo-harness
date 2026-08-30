@@ -59,7 +59,7 @@ function card(index: number): FleetBoardCardInputV1 {
     task_state: 'pending', lease_state: 'available', claim_id: null, generation: null,
     current_publication: null, merge_readiness: null, execution_readiness: 'execution_ready',
     feedback: { pending_count: 0, no_progress: false, repair_actions: [] },
-    inbox: { unread_count: 0, addressed_to_current_claim: false }, snapshot_consistency: 'stable',
+    inbox: { unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, failure_class: null }, snapshot_consistency: 'stable',
   };
 }
 

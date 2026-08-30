@@ -4,4 +4,4 @@ kind: component
 name: Agent Runtime Effect Journal
 status: active
 parent: capability.runtime-harness.agent-runtime-effects
-summary: Owns immutable effect intent and observation chains plus deterministic current repair; the current V1 journal remains active until R1 performs the accepted V2 migration.
+summary: Owns immutable V2 effect intent and observation chains plus deterministic current repair and the explicit terminal-only V1 archive receipt.

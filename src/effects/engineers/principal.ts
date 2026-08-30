@@ -13,7 +13,7 @@ import { readEngineerBindingStatus } from './binding-store';
 import { readEngineerPrincipalMapping } from './principal-store';
 import { loadEngineerProfile } from './profile-store';
 
-const PROVIDERS = new Set<EngineerObservedProvider>(['codex', 'claude', 'worker_host', 'unknown']);
+const PROVIDERS = new Set<EngineerObservedProvider>(['codex', 'claude', 'worker_host', 'unknown', 'codex-app-thread', 'tmux-cli-agent']);
 
 export interface EngineerPrincipalFences {
   readonly engineer_id?: string;

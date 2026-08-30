@@ -21,8 +21,12 @@ function fixture(): string {
   execFileSync('git', ['init', '-q'], { cwd: root });
   mkdirSync(join(root, '.archcontext/model'), { recursive: true });
   mkdirSync(join(root, 'agents'), { recursive: true });
+  mkdirSync(join(root, '.ai/harness'), { recursive: true });
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(root, '.archcontext/model/nodes'), { recursive: true });
   cpSync(join(sourceRoot, 'agents/engineers'), join(root, 'agents/engineers'), { recursive: true });
+  writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({
+    agent_runtime: { mode: 'active', adapters: { 'codex-app-thread': { enabled: true }, 'tmux-cli-agent': { enabled: true } } },
+  }));
   execFileSync('git', ['add', '.archcontext', 'agents/engineers'], { cwd: root });
   return root;
 }
@@ -86,7 +90,10 @@ function graphFixture(): string {
   writeFileSync(join(root, 'plans/policies/module.json'), policy);
   writeFileSync(join(root, 'plans/rollback/wp-a.json'), rollback);
   writeFileSync(join(root, 'tasks/current.md'), '# Current\n');
-  writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({ worktree_strategy: { merge_back: { target: 'main' } } }));
+  writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({
+    worktree_strategy: { merge_back: { target: 'main' } },
+    agent_runtime: { mode: 'active', adapters: { 'codex-app-thread': { enabled: true }, 'tmux-cli-agent': { enabled: true } } },
+  }));
   writeFileSync(join(root, '.ai/harness/sprint/active-sprint'), 'plans/sprints/demo.sprint.md\n');
   execFileSync('git', ['add', '.'], { cwd: root });
   execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: root });
@@ -182,7 +189,7 @@ describe('repo-harness engineer CLI', () => {
     const revision = profiles.find((item) => item.engineer_id === engineerId)!.engineer_contract_revision;
     const bindArgs = [
       'engineer', 'binding', 'bind', '--engineer-id', engineerId,
-      '--idempotency-key', 'cli-bind-1', '--provider', 'codex',
+      '--idempotency-key', 'cli-bind-1', '--provider', 'codex-app-thread',
       '--provider-thread-id', 'thread-cli', '--host-id', 'local',
       '--expected-current-digest', 'null', '--expected-binding-generation', '0',
       '--expected-binding-id', 'null', '--expected-engineer-contract-revision', revision,
@@ -232,9 +239,10 @@ describe('repo-harness engineer CLI', () => {
     });
 
     const observedCapability = run(root, [
-      'engineer', 'thread-effect', 'capability',
+      'engineer', 'runtime-effect', 'capability',
+      '--adapter-kind', 'codex-app-thread',
       '--host-id', 'local',
-      '--operations-json', JSON.stringify({ send: 'supported', resume: 'unverifiable', observe: 'supported', stop: 'unsupported' }),
+      '--operations-json', JSON.stringify({ notify_inbox: 'supported' }),
       '--evidence-refs-json', JSON.stringify([{ ref: 'canary', sha256: `sha256:${'a'.repeat(64)}` }]),
       '--observed-at', '2026-08-25T00:31:00.000Z',
       '--json',
@@ -242,11 +250,10 @@ describe('repo-harness engineer CLI', () => {
     expect(observedCapability.exitCode).toBe(0);
     const capability = JSON.parse(observedCapability.stdout) as { capability_sha256: string };
     const preparedEffect = run(root, [
-      'engineer', 'thread-effect', 'prepare',
+      'engineer', 'runtime-effect', 'prepare-module',
       '--engineer-id', engineerId,
       '--message-id', '33333333-3333-4333-8333-333333333333',
       '--idempotency-key', 'cli-effect-1',
-      '--operation', 'send',
       '--expected-binding-id', active.current_binding_id,
       '--expected-binding-generation', String(active.binding_generation),
       '--expected-engineer-contract-revision', revision,
@@ -254,28 +261,28 @@ describe('repo-harness engineer CLI', () => {
       '--created-at', '2026-08-25T00:32:00.000Z',
       '--json',
     ]);
-    expect(preparedEffect.exitCode).toBe(0);
+    expect(preparedEffect.exitCode, preparedEffect.stderr).toBe(0);
     const effect = JSON.parse(preparedEffect.stdout) as { intent: { effect_id: string }; current: { state: string } };
     expect(effect.current.state).toBe('intent_persisted');
     const startedEffect = run(root, [
-      'engineer', 'thread-effect', 'start',
+      'engineer', 'runtime-effect', 'start',
       '--effect-id', effect.intent.effect_id,
       '--started-at', '2026-08-25T00:33:00.000Z',
       '--json',
     ]);
-    expect(JSON.parse(startedEffect.stdout)).toMatchObject({ current: { state: 'effect_started' }, action: { operation: 'send' } });
+    expect(JSON.parse(startedEffect.stdout)).toMatchObject({ current: { state: 'effect_started' }, action: { operation: 'notify_inbox' } });
     const duplicateStart = run(root, [
-      'engineer', 'thread-effect', 'start',
+      'engineer', 'runtime-effect', 'start',
       '--effect-id', effect.intent.effect_id,
       '--started-at', '2026-08-25T00:34:00.000Z',
       '--json',
     ]);
     expect(JSON.parse(duplicateStart.stdout)).toMatchObject({ current: { state: 'reconciliation_required' }, action: null });
     const effectStatus = run(root, [
-      'engineer', 'thread-effect', 'status', '--effect-id', effect.intent.effect_id, '--json',
+      'engineer', 'runtime-effect', 'status', '--effect-id', effect.intent.effect_id, '--json',
     ]);
     expect(JSON.parse(effectStatus.stdout)).toMatchObject({
-      intent: { message_event_digest: sentMessage.event.event_digest },
+      intent: { message_ref: { message_event_digest: sentMessage.event.event_digest } },
       current: { state: 'reconciliation_required' },
     });
 
@@ -313,7 +320,7 @@ describe('repo-harness engineer CLI', () => {
     expect(help.stdout).toContain('principal');
     expect(help.stdout).toContain('offers');
     expect(help.stdout).toContain('message');
-    expect(help.stdout).toContain('thread-effect');
+    expect(help.stdout).toContain('runtime-effect');
     expect(help.stdout).not.toContain('claim');
     expect(help.stdout).not.toContain('acquire');
     const offersHelp = run(root, ['engineer', 'offers', '--help']);

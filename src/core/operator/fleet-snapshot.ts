@@ -86,6 +86,10 @@ function projectCard(card: FleetBoardCardV1): OperatorFleetCardV1 {
     inbox: Object.freeze({
       unread_count: card.inbox.unread_count,
       addressed_to_current_claim: card.inbox.addressed_to_current_claim,
+      delivery_state: card.inbox.delivery_state,
+      runtime_reachability: card.inbox.runtime_reachability,
+      effect_sha256: card.inbox.effect_sha256,
+      failure_class: card.inbox.failure_class,
     }),
     snapshot_consistency: card.snapshot_consistency,
   });
