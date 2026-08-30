@@ -190,10 +190,80 @@ function stableJson(value: unknown): string {
   return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(',')}}`;
 }
 
+type ArchiveProjectionKind = 'plan' | 'contract' | 'review' | 'notes';
+
+type ArchiveProjectionEntry = {
+  source: string;
+  destination: string;
+  kind: ArchiveProjectionKind;
+};
+
+function archiveProjectionKind(path: string, archived: boolean): ArchiveProjectionKind | null {
+  const patterns: Array<[ArchiveProjectionKind, RegExp]> = archived
+    ? [
+        ['plan', /^plans\/archive\/plan-[^`\r\n]+\.md$/],
+        ['contract', /^tasks\/archive\/contract-[^`\r\n]+\.md$/],
+        ['review', /^tasks\/archive\/review-[^`\r\n]+\.md$/],
+        ['notes', /^tasks\/archive\/notes-[^`\r\n]+\.md$/],
+      ]
+    : [
+        ['plan', /^plans\/plan-[^`\r\n]+\.md$/],
+        ['contract', /^tasks\/contracts\/[^`\r\n]+\.contract\.md$/],
+        ['review', /^tasks\/reviews\/[^`\r\n]+\.review\.md$/],
+        ['notes', /^tasks\/notes\/[^`\r\n]+\.notes\.md$/],
+      ];
+  return patterns.find(([, pattern]) => pattern.test(path))?.[0] ?? null;
+}
+
+function normalizeArchiveProjection(content: string): string {
+  const projectionMarker = '> **Archive Projection V1**:';
+  const archiveEnvelope = /^(?<envelope>> \*\*Archived\*\*: \d{4}-\d{2}-\d{2} \d{2}:\d{2}\r?\n> \*\*Related Plan\*\*: (?<relatedPlan>plans\/archive\/[^\r\n]+)\r?\n> \*\*Outcome\*\*: (?:Completed|Abandoned|Superseded)\r?\n> \*\*Lifecycle\*\*: (?<lifecycle>plan|contract|review|notes)\r?\n> \*\*Parent Run ID\*\*: [^\s\r\n]+\r?\n(?<projection>(?:> \*\*Archive Projection V1\*\*: `[^`\r\n]+` => `[^`\r\n]+`\r?\n)*)\r?\n)/;
+  const envelope = archiveEnvelope.exec(content);
+  if (!envelope) {
+    if (content.includes(projectionMarker)) fail('archive projection envelope is malformed');
+    return content;
+  }
+
+  const projectionText = envelope.groups?.projection ?? '';
+  if (projectionText === '') return content.slice(envelope[0].length);
+
+  const entries: ArchiveProjectionEntry[] = [];
+  const linePattern = /^> \*\*Archive Projection V1\*\*: `([^`\r\n]+)` => `([^`\r\n]+)`\r?$/gm;
+  for (const match of projectionText.matchAll(linePattern)) {
+    const source = match[1];
+    const destination = match[2];
+    const sourceKind = archiveProjectionKind(source, false);
+    const destinationKind = archiveProjectionKind(destination, true);
+    if (sourceKind === null || destinationKind === null || sourceKind !== destinationKind) {
+      fail('archive projection entry crosses an unsupported workflow family');
+    }
+    entries.push({ source, destination, kind: sourceKind });
+  }
+  if (entries.length === 0 || entries.length !== projectionText.trimEnd().split(/\r?\n/).length) {
+    fail('archive projection entries are malformed');
+  }
+  if (new Set(entries.map((entry) => entry.source)).size !== entries.length
+    || new Set(entries.map((entry) => entry.destination)).size !== entries.length) {
+    fail('archive projection entries must be one-to-one');
+  }
+  const planEntry = entries.find((entry) => entry.kind === 'plan');
+  if (!planEntry || planEntry.destination !== envelope.groups?.relatedPlan) {
+    fail('archive projection related plan is inconsistent');
+  }
+  const lifecycle = envelope.groups?.lifecycle as ArchiveProjectionKind;
+  if (!entries.some((entry) => entry.kind === lifecycle)) {
+    fail('archive projection does not contain its lifecycle artifact');
+  }
+
+  let normalized = content.slice(envelope[0].length);
+  for (const entry of [...entries].sort((left, right) => right.destination.length - left.destination.length)) {
+    normalized = normalized.replaceAll(entry.destination, entry.source);
+  }
+  return normalized;
+}
+
 function authorityFingerprint(content: string): string {
-  const archiveEnvelope = /^> \*\*Archived\*\*: \d{4}-\d{2}-\d{2} \d{2}:\d{2}\r?\n> \*\*Related Plan\*\*: plans\/archive\/[^\r\n]+\r?\n> \*\*Outcome\*\*: (?:Completed|Abandoned|Superseded)\r?\n> \*\*Lifecycle\*\*: (?:contract|review|notes)\r?\n> \*\*Parent Run ID\*\*: [^\s\r\n]+\r?\n\r?\n/;
-  const normalized = content
-    .replace(archiveEnvelope, '')
+  const normalized = normalizeArchiveProjection(content)
     .replace(/^> \*\*Status\*\*:[ \t]*.+$/m, '> **Status**: <lifecycle>')
     .replace(/^> \*\*Last Updated\*\*:[ \t]*.+$/m, '> **Last Updated**: <lifecycle>');
   return sha256(normalized);

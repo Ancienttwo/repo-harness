@@ -560,6 +560,68 @@ describe('AcceptanceReceipt', () => {
     })).rejects.toThrow('verification evidence contract is stale');
   }, 30_000);
 
+  test('versioned archive path projection rewrites pointers without changing receipt authority', async () => {
+    const { root, home } = makeFixture();
+    const livePlanPath = 'plans/plan-demo.md';
+    const liveContractPath = 'tasks/contracts/demo.contract.md';
+    writeFileSync(
+      join(root, livePlanPath),
+      `${readFileSync(join(root, livePlanPath), 'utf-8')}\nContract: ${liveContractPath}\n`,
+    );
+    commit(root, 'bind workflow pointers');
+    await externalPass(root, home);
+    mkdirSync(join(root, 'plans', 'archive'), { recursive: true });
+    mkdirSync(join(root, 'tasks', 'archive'), { recursive: true });
+
+    const archivePlanPath = 'plans/archive/plan-demo.md';
+    const archiveContractPath = 'tasks/archive/contract-20260721-0815-demo.md';
+    const projection = [
+      `> **Archive Projection V1**: \`${livePlanPath}\` => \`${archivePlanPath}\``,
+      `> **Archive Projection V1**: \`${liveContractPath}\` => \`${archiveContractPath}\``,
+    ];
+    const envelope = (lifecycle: 'plan' | 'contract') => [
+      '> **Archived**: 2026-07-21 08:15',
+      `> **Related Plan**: ${archivePlanPath}`,
+      '> **Outcome**: Completed',
+      `> **Lifecycle**: ${lifecycle}`,
+      '> **Parent Run ID**: projection-test',
+      ...projection,
+      '',
+    ];
+    const plan = readFileSync(join(root, livePlanPath), 'utf-8')
+      .replace('> **Status**: Executing', '> **Status**: Archived')
+      .replaceAll(livePlanPath, archivePlanPath)
+      .replaceAll(liveContractPath, archiveContractPath);
+    const archivedPlan = [...envelope('plan'), plan].join('\n');
+    writeFileSync(join(root, archivePlanPath), archivedPlan);
+    rmSync(join(root, livePlanPath));
+
+    const contractText = readFileSync(join(root, liveContractPath), 'utf-8')
+      .replaceAll(livePlanPath, archivePlanPath)
+      .replaceAll(liveContractPath, archiveContractPath);
+    const archivedContract = [...envelope('contract'), contractText].join('\n');
+    writeFileSync(join(root, archiveContractPath), archivedContract);
+    rmSync(join(root, liveContractPath));
+    commit(root, 'archive workflow with exact path projection');
+
+    expect((await verifyAcceptance({ root, authorityHome: home })).disposition).toBe('external_pass');
+    expect(archivedPlan).toContain(`Contract: ${archiveContractPath}`);
+    expect(archivedContract).toContain(`> **Plan**: ${archivePlanPath}`);
+
+    writeFileSync(
+      join(root, archiveContractPath),
+      archivedContract.replace(
+        `\`${liveContractPath}\` => \`${archiveContractPath}\``,
+        `\`${liveContractPath}\` => \`tasks/archive/review-20260721-0815-demo.md\``,
+      ),
+    );
+    await expect(verifyAcceptance({
+      root,
+      authorityHome: home,
+      contract: archiveContractPath,
+    })).rejects.toThrow('crosses an unsupported workflow family');
+  }, 30_000);
+
   test('strict archive envelopes preserve the waiver grant and its exact receipt', async () => {
     const { root, home } = makeFixture();
     recordUserWaiverGrant({

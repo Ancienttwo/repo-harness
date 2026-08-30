@@ -22,6 +22,8 @@ archive_transaction_dir=""
 archive_transaction_active=0
 archive_transaction_paths=()
 archive_transaction_existed=()
+archive_projection_sources=()
+archive_projection_destinations=()
 
 archive_transaction_snapshot() {
   local path="$1"
@@ -434,6 +436,72 @@ unique_archive_path() {
   printf '%s' "$candidate"
 }
 
+archive_projection_add() {
+  local source_path="$1"
+  local destination_path="$2"
+
+  [[ "$source_path" != *'`'* && "$source_path" != *$'\n'* && "$destination_path" != *'`'* && "$destination_path" != *$'\n'* ]] || {
+    echo "archive-workflow: archive projection path contains an unsupported character" >&2
+    return 1
+  }
+  archive_projection_sources+=("$source_path")
+  archive_projection_destinations+=("$destination_path")
+}
+
+write_archive_projection_lines() {
+  local index
+  for ((index = 0; index < ${#archive_projection_sources[@]}; index++)); do
+    printf '> **Archive Projection V1**: `%s` => `%s`\n' \
+      "${archive_projection_sources[$index]}" \
+      "${archive_projection_destinations[$index]}"
+  done
+}
+
+rewrite_archive_projection_file() {
+  local source_file="$1"
+  local index temporary next
+
+  temporary="$(mktemp)"
+  cp "$source_file" "$temporary"
+  for ((index = 0; index < ${#archive_projection_sources[@]}; index++)); do
+    next="$(mktemp)"
+    awk \
+      -v source_path="${archive_projection_sources[$index]}" \
+      -v destination_path="${archive_projection_destinations[$index]}" '
+      {
+        remaining = $0
+        rendered = ""
+        while ((position = index(remaining, source_path)) > 0) {
+          rendered = rendered substr(remaining, 1, position - 1) destination_path
+          remaining = substr(remaining, position + length(source_path))
+        }
+        print rendered remaining
+      }
+    ' "$temporary" > "$next"
+    mv "$next" "$temporary"
+  done
+  cat "$temporary"
+  rm -f "$temporary"
+}
+
+write_archived_artifact() {
+  local source_file="$1"
+  local destination_file="$2"
+  local lifecycle="$3"
+  local related_plan="$4"
+
+  {
+    echo "> **Archived**: ${timestamp_human}"
+    echo "> **Related Plan**: ${related_plan}"
+    echo "> **Outcome**: ${outcome}"
+    echo "> **Lifecycle**: ${lifecycle}"
+    echo "> **Parent Run ID**: ${parent_run_id}"
+    write_archive_projection_lines
+    echo
+    rewrite_archive_projection_file "$source_file"
+  } > "$destination_file"
+}
+
 normalize_slug() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g'
 }
@@ -609,12 +677,38 @@ apply_archive_workflow() {
   archive_plan_path="plans/archive/${plan_base}"
   archive_plan_path="$(unique_archive_path "$archive_plan_path")"
 
-  if [[ "$plan_file" != "$archive_plan_path" ]]; then
-    mv "$plan_file" "$archive_plan_path"
+  notes_file="tasks/notes/${artifact_stem}.notes.md"
+  if [[ ! -f "$notes_file" && -f "tasks/notes/${slug}.notes.md" ]]; then
+    notes_file="tasks/notes/${slug}.notes.md"
   fi
-
+  archive_todo=""
+  archive_notes=""
+  archive_contract=""
+  archive_review=""
   if [[ -f tasks/todos.md ]] && grep -q '[^[:space:]]' tasks/todos.md; then
     archive_todo="$(unique_archive_path "tasks/archive/todo-${timestamp}-${slug}.md")"
+  fi
+  if [[ -f "$notes_file" ]]; then
+    archive_notes="$(unique_archive_path "tasks/archive/notes-${timestamp}-${slug}.md")"
+  fi
+  if [[ -f "$contract_file" ]]; then
+    archive_contract="$(unique_archive_path "tasks/archive/contract-${timestamp}-${slug}.md")"
+  fi
+  if [[ -f "$review_file" ]]; then
+    archive_review="$(unique_archive_path "tasks/archive/review-${timestamp}-${slug}.md")"
+  fi
+
+  archive_projection_sources=()
+  archive_projection_destinations=()
+  archive_projection_add "$plan_file" "$archive_plan_path"
+  [[ -z "$archive_notes" ]] || archive_projection_add "$notes_file" "$archive_notes"
+  [[ -z "$archive_contract" ]] || archive_projection_add "$contract_file" "$archive_contract"
+  [[ -z "$archive_review" ]] || archive_projection_add "$review_file" "$archive_review"
+
+  write_archived_artifact "$plan_file" "$archive_plan_path" "plan" "$archive_plan_path"
+  rm -f "$plan_file"
+
+  if [[ -n "$archive_todo" ]]; then
     {
       echo "> **Archived**: ${timestamp_human}"
       echo "> **Related Plan**: ${archive_plan_path}"
@@ -622,53 +716,22 @@ apply_archive_workflow() {
       echo "> **Source Plan**: ${todo_source_plan:-"(none)"}"
       echo "> **Parent Run ID**: ${parent_run_id}"
       echo
-      cat tasks/todos.md
+      rewrite_archive_projection_file tasks/todos.md
     } > "$archive_todo"
   fi
 
-  notes_file="tasks/notes/${artifact_stem}.notes.md"
-  if [[ ! -f "$notes_file" && -f "tasks/notes/${slug}.notes.md" ]]; then
-    notes_file="tasks/notes/${slug}.notes.md"
-  fi
-  if [[ -f "$notes_file" ]]; then
-    archive_notes="$(unique_archive_path "tasks/archive/notes-${timestamp}-${slug}.md")"
-    {
-      echo "> **Archived**: ${timestamp_human}"
-      echo "> **Related Plan**: ${archive_plan_path}"
-      echo "> **Outcome**: ${outcome}"
-      echo "> **Lifecycle**: notes"
-      echo "> **Parent Run ID**: ${parent_run_id}"
-      echo
-      cat "$notes_file"
-    } > "$archive_notes"
+  if [[ -n "$archive_notes" ]]; then
+    write_archived_artifact "$notes_file" "$archive_notes" "notes" "$archive_plan_path"
     rm -f "$notes_file"
   fi
 
-  if [[ -f "$contract_file" ]]; then
-    archive_contract="$(unique_archive_path "tasks/archive/contract-${timestamp}-${slug}.md")"
-    {
-      echo "> **Archived**: ${timestamp_human}"
-      echo "> **Related Plan**: ${archive_plan_path}"
-      echo "> **Outcome**: ${outcome}"
-      echo "> **Lifecycle**: contract"
-      echo "> **Parent Run ID**: ${parent_run_id}"
-      echo
-      cat "$contract_file"
-    } > "$archive_contract"
+  if [[ -n "$archive_contract" ]]; then
+    write_archived_artifact "$contract_file" "$archive_contract" "contract" "$archive_plan_path"
     rm -f "$contract_file"
   fi
 
-  if [[ -f "$review_file" ]]; then
-    archive_review="$(unique_archive_path "tasks/archive/review-${timestamp}-${slug}.md")"
-    {
-      echo "> **Archived**: ${timestamp_human}"
-      echo "> **Related Plan**: ${archive_plan_path}"
-      echo "> **Outcome**: ${outcome}"
-      echo "> **Lifecycle**: review"
-      echo "> **Parent Run ID**: ${parent_run_id}"
-      echo
-      cat "$review_file"
-    } > "$archive_review"
+  if [[ -n "$archive_review" ]]; then
+    write_archived_artifact "$review_file" "$archive_review" "review" "$archive_plan_path"
     rm -f "$review_file"
   fi
 

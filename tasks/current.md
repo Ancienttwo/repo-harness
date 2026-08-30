@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-31T01:00:58+0800 -->
+<!-- updated_at: 2026-08-31T03:57:52+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-08-31T01:00:58+0800
-> **Source Branch**: main
-> **Source Commit**: 6f6bd659
+> **Updated At**: 2026-08-31T03:57:52+0800
+> **Source Branch**: codex/archive-acceptance-authority
+> **Source Commit**: 1037d92d
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: manual
+> **Reason**: archive-acceptance-authority
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -18,9 +18,9 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 ## Current Focus
 
 - Status: Active
-- Active Plan: (none)
-- Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
+- Active Plan: plans/plan-20260831-0345-archive-acceptance-authority.md
+- Plan Status: Executing
+- Next Task: Synchronize workflow artifacts, close the deferred Todo, and run all Required Checks plus final review/acceptance.
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,8 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- linked-worktree-d1f2163e22bb: plans/plan-20260830-2139-architecture-projection-acceptance.md
-- linked-worktree-d1f2163e22bb: active-worktree owner -> self
+- .: plans/plan-20260831-0345-archive-acceptance-authority.md
+- .: active-worktree owner -> self
 - linked-worktree-2dd4cdc461ad: plans/plan-20260830-1903-r1-provider-neutral-agent-runtime.md
 - linked-worktree-2dd4cdc461ad: active-worktree owner -> self
 - linked-worktree-15c0db14c68b: plans/plan-20260829-1728-oracle-thinking-passthrough.md
@@ -56,23 +56,25 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
+- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: 12 changed/untracked path(s)
 
 ```
+ M assets/templates/helpers/acceptance-receipt.ts
+ M assets/templates/helpers/archive-workflow.sh
  M docs/architecture/.projection-manifest.json
- M docs/architecture/changelog.md
- M docs/architecture/decisions/index.md
- M docs/architecture/diagrams/architecture.likec4
- M docs/architecture/diagrams/architecture.mmd
- M docs/architecture/diagrams/architecture.structurizr.json
- M docs/architecture/index.md
- M docs/architecture/modules/runtime-harness/mcp-sidecar.md
- D docs/architecture/requests/runtime-harness-collaboration.md
-?? docs/architecture/requests/archive/2026/20260831-005155-runtime-harness-collaboration.md
+ M scripts/acceptance-receipt.ts
+ M scripts/archive-workflow.sh
+ M tasks/todos.md
+ M tests/acceptance-receipt.test.ts
+ M tests/helper-scripts.test.ts
+?? plans/plan-20260831-0345-archive-acceptance-authority.md
+?? tasks/contracts/20260831-0345-archive-acceptance-authority.contract.md
+?? tasks/notes/20260831-0345-archive-acceptance-authority.notes.md
+?? tasks/reviews/20260831-0345-archive-acceptance-authority.review.md
 ```
 
 ## Source Artifacts
