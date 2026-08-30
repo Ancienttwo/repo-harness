@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.agent-runtime-effects.journal
+kind: calls
+source: capability.runtime-harness.agent-runtime-effects
+target: component.agent-runtime-effects.journal
+intent: Persist immutable effect intents and observations before one closed Host action or a reconcile-only state can be returned

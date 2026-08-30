@@ -1,0 +1,62 @@
+schemaVersion: archcontext.flow/v1
+id: flow.agent-runtime-effects.lifecycle
+capabilityId: capability.runtime-harness.agent-runtime-effects
+name: Admit and reconcile one bound Agent runtime effect
+applicability: required
+participants:
+  - id: effect-journal
+    nodeId: capability.runtime-harness.agent-runtime-effects
+  - id: binding-authority
+    nodeId: capability.runtime-harness.engineer-bindings
+  - id: message-authority
+    nodeId: capability.runtime-harness.engineer-messages
+  - id: effect-schema
+    nodeId: component.agent-runtime-effects.journal
+steps:
+  - id: resolve-persisted-input
+    from: effect-journal
+    to: message-authority
+    label: Read the exact persisted message and pending delivery receipt before action admission
+    evidence:
+      entrypointId: entrypoint.agent-runtime-effects.prepare
+      sourceSymbol: assertPendingMessage
+      sinkId: sink.agent-runtime-effects.persisted-message
+  - id: revalidate-binding
+    from: effect-journal
+    to: binding-authority
+    label: Revalidate Binding generation, Host, endpoint and contract revision
+    evidence:
+      entrypointId: entrypoint.agent-runtime-effects.prepare
+      sourceSymbol: assertCurrentBinding
+      sinkId: sink.agent-runtime-effects.current-binding
+outcomes:
+  - id: success
+    kind: success
+    label: One immutable intent admits at most one Host action and exact receipt evidence closes the observation chain
+    steps:
+      - id: project-positive-delivery
+        from: effect-journal
+        to: message-authority
+        label: Idempotently publish one delivered observation only after exact receipt correlation
+        evidence:
+          entrypointId: entrypoint.agent-runtime-effects.observe
+          sourceSymbol: projectSuccessfulDelivery
+          sinkId: sink.agent-runtime-effects.delivery-observation
+    terminal:
+      participant: effect-journal
+      label: Return terminal effect current and no further Host action
+  - id: reconcile
+    kind: error
+    label: Lost acknowledgement or ambiguous Host facts remain reconciliation_required without retry
+    steps:
+      - id: preserve-message
+        from: effect-journal
+        to: effect-schema
+        label: Persist reconciliation_required in the immutable effect chain while leaving the authoritative receipt unchanged
+        evidence:
+          entrypointId: entrypoint.agent-runtime-effects.observe
+          sourceSymbol: observeProviderThreadEffect
+          sinkId: sink.agent-runtime-effects.reconciliation-observation
+    terminal:
+      participant: effect-journal
+      label: Return reconcile-only state and no Host action

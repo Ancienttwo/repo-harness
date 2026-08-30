@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.agent-runtime-effects.engineer-bindings
+kind: calls
+source: capability.runtime-harness.agent-runtime-effects
+target: capability.runtime-harness.engineer-bindings
+intent: Revalidate the exact current Engineer Binding endpoint before preparing or admitting one Host adapter action

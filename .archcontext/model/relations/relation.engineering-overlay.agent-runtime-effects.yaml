@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.engineering-overlay.agent-runtime-effects
+kind: calls
+source: capability.runtime-harness.engineering-overlay
+target: capability.runtime-harness.agent-runtime-effects
+intent: Observe exact current runtime-effect and reconciliation states without executing or repairing an effect

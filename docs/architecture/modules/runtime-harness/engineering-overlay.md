@@ -1,6 +1,6 @@
 # runtime-harness/engineering-overlay 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineering-overlay" sourceDigest="sha256:ace8d61ab1321a73c501fc4422730aa799614e2b1dcb576c5d8ff3b29d889bd3" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:253057a1369c4f2962fb668c3aff17bd1e0d2d6464b71167210ba1ef489853e3" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineering-overlay" sourceDigest="sha256:06214075572b77e5c063af3d7240be61709bd7b38b1c7305a33d564e41ab3f1e" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:bdcc163dd16594d4d67106cd967bdea87f1b6c6a6bb82fb03d24e7beb1bd14ea" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineering-overlay`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/engineering-overlay.ts`、`src/effects/engineers/engineering-overlay.ts`
@@ -45,10 +45,10 @@ flowchart LR
 
 出向關係:
 
+- `calls` → `capability.runtime-harness.agent-runtime-effects` — Observe exact current runtime-effect and reconciliation states without executing or repairing an effect
 - `calls` → `capability.runtime-harness.engineer-bindings` — Observe exact current Profile, Binding and live ClaimActor revisions without mutating their stores
 - `calls` → `capability.runtime-harness.engineer-messages` — Observe pending and failed delivery facts from the existing ME-1C event and receipt authority
 - `calls` → `component.engineering-overlay.primary` — Validate and content-address the read-only Engineer and organization-attention projections
-- `calls` → `capability.runtime-harness.provider-thread-effects` — Observe exact current Provider effect and reconciliation states without executing or repairing an effect
 
 入向關係:
 

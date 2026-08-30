@@ -1,7 +1,0 @@
-schemaVersion: archcontext.node/v2
-id: component.provider-thread-effects.primary
-kind: component
-name: Codex Provider Thread Effect Journal
-status: active
-parent: capability.runtime-harness.provider-thread-effects
-summary: Owns immutable effect intent and observation chains plus deterministic current repair; the host remains the sole Provider action executor.

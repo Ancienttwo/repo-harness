@@ -1,6 +1,0 @@
-schemaVersion: archcontext.relation/v1
-id: relation.provider-thread-effects.engineer-bindings
-kind: calls
-source: capability.runtime-harness.provider-thread-effects
-target: capability.runtime-harness.engineer-bindings
-intent: Revalidate the exact current Codex Engineer Binding before preparing or admitting one host action

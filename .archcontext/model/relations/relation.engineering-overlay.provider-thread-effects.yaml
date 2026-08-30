@@ -1,6 +1,0 @@
-schemaVersion: archcontext.relation/v1
-id: relation.engineering-overlay.provider-thread-effects
-kind: calls
-source: capability.runtime-harness.engineering-overlay
-target: capability.runtime-harness.provider-thread-effects
-intent: Observe exact current Provider effect and reconciliation states without executing or repairing an effect
