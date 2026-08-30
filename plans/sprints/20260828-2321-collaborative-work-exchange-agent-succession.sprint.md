@@ -8,14 +8,16 @@
 > **Child PRD A (Active)**: `plans/prds/20260828-2321-collaboration-substrate.prd.md`
 > **Child PRD B (Deferred — Phase 2)**: `plans/prds/20260828-2321-work-exchange-independent-review.prd.md`
 > **Child PRD C (Deferred — Phase 3)**: `plans/prds/20260828-2321-guarded-merge-unattended-automation.prd.md`
+> **Child PRD D (Approved — Phase 1 Runtime Transport)**: `plans/prds/20260830-1827-provider-neutral-agent-runtime-adapter.prd.md`
 > **Source Spec**: `docs/spec.md`
 > **Baseline**: `main@456731f308b7ad54585ac50acbc510350a4c563c`
 > **Goal Mode**: incremental
-> **Program Strategy**: authority freeze → signals/handoffs → discovery → real canary → multi-seat decision
+> **Program Strategy**: authority freeze → signals/handoffs → discovery → real canary → multi-seat decision；R1 runtime transport 由 Child PRD D 独立加入
 > **Default Feature State**: all new mutation disabled
 
-Program-level sprint container. Active backlog is C0–C9 and belongs entirely to
-Child PRD A. Each contract row is an independent merge and rollback boundary.
+Program-level sprint container. Collaboration backlog C0–C9 belongs to Child
+PRD A; R1 belongs to Child PRD D and joins the program before C8/C9. Each
+contract row is an independent merge and rollback boundary.
 Do not combine the signal store, the succession path and the Operator view into
 one branch.
 
@@ -53,7 +55,8 @@ Publication、Acceptance、read-only delegation 与 `TaskFreezeReceiptV1`。缺�
 
 ### Acceptance Scenarios
 
-见 umbrella PRD scenarios 1–10 与 Child PRD A scenarios 1–12。每一行必须写明
+见 umbrella PRD scenarios 1–10、Child PRD A scenarios 1–12 与 Child PRD D
+scenarios 1–7。每一行必须写明
 它关闭哪些 scenario。
 
 ### Non-goals
@@ -77,6 +80,7 @@ Existing:
 - `capability.runtime-harness.engineer-messages`
 - `capability.runtime-harness.engineering-overlay`
 - delegation / publication / operator-web capabilities
+- `capability.runtime-harness.agent-runtime-effects`（已接受替换原 `provider-thread-effects` identity；当前 node 暂以 V1 source selectors 提供实施前证据，R1 必须一次性完成 product/protocol rename）
 
 New:
 
@@ -93,6 +97,7 @@ C1 → C2, C1 → C3
 C1 + C3 → C4
 C3 + C4 → C5
 C1 + C2 + C3 + C4 + C5 → C6 → C7 + C8 → C9-A → C9-B / Decision
+ME-1C + ME-3A + C6 → R1
 ```
 
 C1 独占共享 schema 机制：`src/core/collaboration/common.ts` 里的 actor union、scope refs、
@@ -104,7 +109,8 @@ evidence refs、ID、时间戳与 digest helper 全部由 C1 落地并冻结。C
 Allowed:
 
 - C2 与 C3 在 C1 冻结 `common.ts` 之后可并行，文件不相交；
-- C7 与 C8 在 C6 冻结 snapshot 契约后可并行。
+- C7 与 C8 在 C6 冻结 snapshot 契约后可并行（已按此收口）；
+- R1 与已完成的 C7/C8/C9 无执行顺序依赖，作为 Child PRD D 的独立合同行推进。
 
 Forbidden:
 
@@ -131,6 +137,7 @@ Forbidden:
 ```jsonc
 {
   "collaboration": { "mode": "off" },
+  "agent_runtime": { "mode": "off", "tmux-cli-agent": "disabled" },
   "independent_review": { "mode": "off" },
   "guarded_merge": { "mode": "disabled" },
   "program_automation": { "mode": "disabled" }
@@ -161,6 +168,7 @@ No step skips a state。`independent_review` 与 `guarded_merge` 在本 Sprint �
 | 8 | [x] | C7 — CLI/MCP and bounded context injection | contract | authenticated actor 由服务端推导；Engineer 可 post；Worker 由 Host collector post；全部 context 标记 untrusted | `plans/archive/plan-20260830-1342-c7-cli-mcp-bounded-context-injection.md` |
 | 9 | [x] | C8 — read-only Operator collaboration surface | contract | 展示 lanes、discoveries、handoffs、hotspots、contributors；task message 仍是唯一 browser write | `plans/archive/plan-20260830-1344-c8-read-only-operator-collaboration-surface.md` |
 | 10 | [x] | C9 — real multi-agent canary and multi-seat decision | contract | C9-A 可行性通过；C9-B 重复证据成立；aggregate compute/cost 记录完整；usefulness rubric 开跑前冻结；跨臂污染防护到位；零 authority drift；输出 persistent multi-seat go/no-go | `plans/archive/plan-20260830-1839-c9-real-multi-agent-canary-and-multi-seat-decision.md` |
+| 11 | [ ] | R1 — provider-neutral runtime effect and optional tmux endpoint adapter | contract | exact Task/Module message refs；existing Binding/Claim fence；tmux only carries bounded control ref；structured ACK；lost-ACK reconciliation；zero fallback；zero authority drift | `plans/plan-20260830-1903-r1-provider-neutral-agent-runtime.md`（Executing） |
 
 ## Detailed Work Packages
 
@@ -433,6 +441,39 @@ handoff 内容完整可校验；同一份 handoff 被多个采用者采用全部
 
 ---
 
+### R1 — Provider-Neutral Runtime Effect and Optional tmux Endpoint Adapter
+
+**Purpose**
+
+让一个已经持久化的 Task/Module message 可以安全地通知不同本地 harness
+Agent，同时保持消息、身份、Task 与 Board 权威不变。
+
+**Tasks**
+
+- [ ] 冻结 provider-neutral runtime-effect protocol 与显式一次性迁移；closed adapter union 只含 `codex-app-thread | tmux-cli-agent`。
+- [ ] 复用 existing `EngineerBindingV1` endpoint tuple，不新增第二 Binding store 或 `tmux_agent` actor。
+- [ ] 引入 exact Task/Module message reference；Task 分支绑定 task revision + Claim generation，Module 分支绑定 Engineer Binding generation。
+- [ ] tmux Host action 只携带 bounded inbox control reference，不携带 message body，不开放 generic shell。
+- [ ] tmux command success 只到 `effect_started`；positive success 必须关联 exact inbox/wrapper receipt。
+- [ ] 保留 ME-3A persist-first、one-action、Binding fence 与 lost-ACK `reconciliation_required`。
+- [ ] capability unavailable/unsupported 时 fail closed；禁止跨 adapter fallback。
+- [ ] adversarial pane output 不产生 acknowledgement、Task state、signal、handoff、Acceptance 或 completion evidence。
+- [ ] 投影 server-owned delivery/runtime state，供 C8 只读消费并脱敏 endpoint 诊断。
+- [ ] 运行一个 already-bound tmux endpoint canary 与一个 Codex App Thread control。
+
+**Acceptance**
+
+duplicate Agent-visible delivery 0；direct tmux message-body delivery 0；unknown
+effect retry 0；stale Claim/Binding Host action 0；runtime-only authority bytes
+零变化；tmux 缺失是 typed unavailable 而不是降级到另一 adapter。
+
+**Rollback**
+
+`agent_runtime.mode=off` 并禁用 `tmux-cli-agent`；existing Codex App Thread
+adapter 与 message stores 保持可读。协议迁移不得依赖运行时 shape guessing。
+
+---
+
 ### C8 — Read-Only Operator Collaboration Surface
 
 **Purpose**
@@ -444,6 +485,7 @@ handoff 内容完整可校验；同一份 handoff 被多个采用者采用全部
 - [ ] 新增 browser-safe collaboration snapshot（GET only）。
 - [ ] 脱敏本地路径与 provider 诊断。
 - [ ] 展示 lanes、recent discoveries、open handoffs、hotspots、contributors、当前 writer。
+- [ ] 展示 server-owned `pending | delivered | acknowledged | failed | reconciliation_required` 与 `reachable | unavailable | unknown`；runtime 状态只影响 attention/diagnostics，不改变 Task column。
 - [ ] 展示 snapshot consistency 与降级原因。
 - [ ] 保持 attention-first 布局与刷新后的选中态。
 - [ ] 扩展 zh/en 词表。
@@ -469,7 +511,7 @@ UI 呈现全部新状态且不在客户端推导语义、不新增 mutation。
 
 - [ ] 选一个真实但权威安全的任务（复杂 bug hunt、架构影响面调研、性能根因、跨文件协议追踪、大规模测试失败诊断）。
 - [ ] Baseline arm：一个 Agent 独立完成。
-- [ ] Treatment arm：一个 Module Engineer + 三个只读参与者 + signal board + 一次后继者 handoff。
+- [ ] Treatment arm：一个 Module Engineer + 三个只读参与者（至少一个 already-bound `tmux-cli-agent` endpoint 与一个 Codex App Thread control）+ signal board + 一次后继者 handoff。
 - [ ] 设置跨臂污染防护：baseline 的发现不得进入 treatment 的 store、context packet 或提示，反向亦然。
 - [ ] 开跑之前冻结 usefulness rubric，跑完不改判定标准。
 
@@ -488,6 +530,7 @@ UI 呈现全部新状态且不在客户端推导语义、不新增 mutation。
 - [ ] handoff adoption 次数与 handoff restart cost；
 - [ ] never-read signal rate；
 - [ ] 每次注入的 context 体积；
+- [ ] runtime delivery latency、acknowledgement latency 与 reconciliation outcome；
 - [ ] Task/Lease/Publication 字节不变；
 - [ ] 任意时刻 writer 数 ≤1。
 
@@ -529,6 +572,7 @@ C9-A 至少一次 handoff adoption 与一次 signal reuse、零 authority drift�
 | Budget | context packet estimated tokens 采样 |
 | Degradation | store 不可读、采集期变化的 fail-loud 断言 |
 | UI | 路由清单、脱敏、stale/degraded fixtures |
+| Runtime delivery | exact message/recipient/effect correlation、lost-ACK one-action proof、no-fallback assertion、adversarial transcript negative proof |
 | Compatibility | feature flag 关闭时的既有仓库 |
 | Packaging | 安装 tarball 冒烟与协议消费者扫描 |
 
@@ -560,6 +604,7 @@ Requires:
 - 至少 3 个并行只读参与者稳定运行，第 4 个在 admission bridge 被拒；
 - collector 拒绝自述身份，contribution commit 是唯一可见性边界；
 - 一次完整的 handoff → adoption 链路；
+- R1 的 tmux endpoint canary 与 Codex App Thread control 均有 exact receipt/effect evidence，lost ACK 不触发第二 action；
 - usefulness rubric 已冻结、跨臂污染防护就位、baseline arm 可复现。
 
 ### Gate 4 — Canary to Decision

@@ -3,15 +3,16 @@
 > **Slug**: `collaboration-substrate`
 > **Activation**: Active — Phase 0–3
 > **Created**: 2026-08-28T23:21:55-07:00
-> **Updated**: 2026-08-29T00:41:20-07:00
+> **Updated**: 2026-08-30T18:27:10+0800
 > **Source Spec**: `docs/spec.md`
 > **Source Umbrella PRD**: `plans/prds/20260828-2321-collaborative-work-exchange-agent-succession.prd.md`
+> **Runtime Transport Sibling**: `plans/prds/20260830-1827-provider-neutral-agent-runtime-adapter.prd.md`
 > **Baseline**: `main@456731f308b7ad54585ac50acbc510350a4c563c`
 > **Tier**: standard
 ## AI Quick-Read Card
 - **Problem**: 一次 Agent 运行的假设、死路和部分证据只回流给发起它的 Engineer。`WorkerResultV1.untrusted_claims` 没有被其他参与者发现的通道，budget 或 context 耗尽时这些知识直接消失。
 - **Users**: Module Engineer（当前 writer）、Collaboration Participant（P0 作者只有 delegated read-only Worker）、Successor Engineer、Maintainer。
-- **Platform**: 现有 Module Engineer Principal/Binding、read-only delegation、Task/Module Message untrusted 注入、git-common-dir store。
+- **Platform**: 现有 Module Engineer Principal/Binding、read-only delegation、Task/Module Message untrusted 注入、git-common-dir store；runtime endpoint transport 由 sibling Child PRD D 提供，本 PRD 只消费其只读投影。
 - **P0 surface**: `CoordinationSignalV1`、`WorkStateHandoffV1`、`HandoffAdoptionReceiptV1`、`CollaborationContextPacketV1`、`CollaborationRunContextBindingV1`、`CollaborationDelegationAdmissionV1`、`CollaborationContributionDraftV1`、`CollaborationContributionCommitV1`、thread/hotspot 投影、`CollaborativeWorkExchangeSnapshotV1`、CLI/MCP、Operator 只读视图、real canary。
 - **Core metric**: 后继者重复已记录 dead end 的次数为 0，且协作写入对 Task/Lease bytes 影响为 0。
 - **Hard constraint**: 协作平面无交付权威；只有 Lease owner 是 writer；adoption 不产生 Claim；adoption 非排他。
@@ -105,6 +106,7 @@ thread_key = 由 Agent 自由创建
 - 浏览器写入；
 - 跨仓库协作；
 - 自动长期记忆。
+- Agent runtime、PTY ownership、tmux command construction 与 endpoint lifecycle；这些由 sibling Child PRD D 独立拥有，本 PRD 只读其 server projection。
 ## Users
 ### Module Engineer / Current Writer
 - 发起协作轮次，构建 context packet。
@@ -555,6 +557,7 @@ Collaboration 工具集不得暴露：任意文件写；generic shell；task acq
 - open handoffs 与是否已被采用；
 - contributors 与其参与形式（Engineer / delegated Worker / Human）；
 - 当前 writer 与其 Lease 状态；
+- 当前消息的 `pending | delivered | acknowledged | failed | reconciliation_required` 与 runtime 的 `reachable | unavailable | unknown`；这些字段只从 Child PRD D 的 server-owned receipt/effect projection 读取；
 - snapshot consistency。
 
 现有 task message composer 仍是唯一 browser write。本 PRD 不新增任何 POST 路由。
@@ -676,8 +679,9 @@ Every store：用 lstat 遍历祖先目录并拒绝 symlink 与非目录祖先�
 7. Context packet、canonical render 与 run-context binding。
 8. Collaborative Work Exchange snapshot。
 9. CLI / MCP。
-10. Operator 只读视图。
-11. Real multi-agent canary 与多席位决策。
+10. Child PRD D 冻结 provider-neutral runtime/delivery projection。
+11. Operator 只读视图消费该投影，不读取 tmux/transcript。
+12. Real multi-agent canary 与多席位决策。
 ## Kill Gates
 - 协作层出现第二个 Task/Lease 权威；
 - signal 或 handoff 无显式 promotion 改变权威状态；
@@ -694,7 +698,7 @@ Every store：用 lstat 遍历祖先目录并拒绝 symlink 与非目录祖先�
 选一个真实但权威安全的任务：复杂 bug hunt、架构影响面调研、性能根因定位、跨文件协议追踪，或大规模测试失败诊断。任务本身不得要求参与者写入。
 ### Arms
 - **Baseline**: 一个 Agent 独立完成。
-- **Treatment**: 一个 Module Engineer + 三个只读参与者 + signal board + 一次后继者 handoff。
+- **Treatment**: 一个 Module Engineer + 三个只读参与者（至少一个已绑定 `tmux-cli-agent` endpoint 与一个 Codex App Thread control）+ signal board + 一次后继者 handoff。
 两臂之间设污染隔离：baseline 的发现不得以任何形式进入 treatment 的 store、context packet 或提示，反向亦然。
 ### Two levels
 - **C9-A 可行性**: 一个真实任务、三个参与者、至少一次 signal 复用、至少一次 handoff adoption、writer 恒为 1、零 authority drift。

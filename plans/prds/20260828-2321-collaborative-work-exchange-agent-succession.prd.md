@@ -3,7 +3,7 @@
 > **Status**: Approved
 > **Slug**: `collaborative-work-exchange-agent-succession`
 > **Created**: 2026-08-28T23:21:55-07:00
-> **Updated**: 2026-08-29T00:41:20-07:00
+> **Updated**: 2026-08-30T18:27:10+0800
 > **Source Spec**: `docs/spec.md`
 > **Baseline**: `Ancienttwo/repo-harness@456731f308b7ad54585ac50acbc510350a4c563c`
 > **Tier**: standard
@@ -11,6 +11,7 @@
 > **Child PRD A (Active)**: `plans/prds/20260828-2321-collaboration-substrate.prd.md`
 > **Child PRD B (Deferred — Phase 2)**: `plans/prds/20260828-2321-work-exchange-independent-review.prd.md`
 > **Child PRD C (Deferred — Phase 3)**: `plans/prds/20260828-2321-guarded-merge-unattended-automation.prd.md`
+> **Child PRD D (Approved — Phase 1 Runtime Transport)**: `plans/prds/20260830-1827-provider-neutral-agent-runtime-adapter.prd.md`
 > **Program Sprint**: `plans/sprints/20260828-2321-collaborative-work-exchange-agent-succession.sprint.md`
 
 ## Delivery Target
@@ -21,7 +22,7 @@
 
 - **Problem**: repo-harness 已有 Task、Lease、WorkEnvelope、PublicationReceipt、AcceptanceReceipt、MergeReadiness、Module Engineer Binding、read-only delegation 和 attention-first Operator Board，但一次 Agent 运行产生的假设、死路和部分证据没有可发布、可发现、可继承的载体。budget 或 context 耗尽时这些知识直接消失。
 - **Users**: Maintainer、Module Engineer、Collaboration Participant（P0 只有 read-only delegated Worker 可发布）、Successor Engineer、Program Orchestrator。
-- **Platform**: repo-backed control plane、git-common-dir collaboration store、CLI/MCP first、localhost Operator Board 只读投影；Provider runtime 继续拥有 Agent turn 与线程生命周期。
+- **Platform**: repo-backed control plane、git-common-dir collaboration store、CLI/MCP first、localhost Operator Board 只读投影；Provider runtime 继续拥有 Agent turn 与线程生命周期，可选 runtime adapter 只负责已绑定 endpoint 的 Host action 与证据回收。
 - **P0 surface**: `CoordinationSignalV1`、`WorkStateHandoffV1`、`HandoffAdoptionReceiptV1`、`CollaborationContextPacketV1`、`CollaborationRunContextBindingV1`、`CollaborationDelegationAdmissionV1`、`CollaborationContributionCommitV1`、same-capability multi-participant（复用现有 read-only delegation）、collaboration-centric `WorkExchangeSnapshotV1`、read-only Operator collaboration view、real multi-agent canary。
 - **Phase 2 surface**: GatePolicy、ReviewOffer、GateReservation、ReviewReceipt、VerificationOffer/Receipt、Gate convergence。
 - **Phase 3 surface**: MergeEligibility、Provider merge capability、Merge Controller、ProgramAuthorization、Budget、Auto Merge。
@@ -30,7 +31,7 @@
 - **Key risk**: 把协作信号误实现成第二调度器或第二权威，或让 thread 热度变成 Work Graph 优先级。
 - **Unknowns**: 真实多 Agent 协作的信噪比、同 capability 持久多席位是否必要、context packet 在真实任务上的有效体积。
 - **Acceptance scenarios**: 三个只读参与者并发发布 signal 且 writer 仍为 1，第四个并发请求在 `max_parallel_readers=3` 被拒；handoff 被多个后继者采用但都不产生 Claim；hotspot 只改变发现排序；snapshot 对相同输入 byte-identical。
-- **Suggested next step**: 先冻结两平面权威边界与现有 `context_packet_sha256` 语义（C0），再实现 signal store 与 handoff（C1/C3），最后用一个真实任务跑 C9-A 可行性 canary 并以 C9-B 的重复证据支撑多席位决策。
+- **Suggested next step**: C0–C6 已冻结协作 substrate；并行推进 C7 provider-neutral CLI/MCP 与 Child PRD D 的 R1 runtime adapter，再由 C8 投影 delivery/runtime 状态，最后运行 C9-A/C9-B。
 
 ## Problem
 
@@ -356,6 +357,9 @@ Module Message 保持点对点定向通信语义，不改造成全局广播协�
 | Collaboration observation | `CoordinationSignalV1`（advisory only） |
 | Knowledge succession | `WorkStateHandoffV1`（advisory only） |
 | Context delivery proof | `HandoffAdoptionReceiptV1`（advisory only） |
+| Runtime endpoint identity | existing `EngineerBindingV1`（provider + endpoint + host + binding generation） |
+| Runtime Host action / observation | provider-neutral runtime-effect journal；tmux command success alone is not delivery proof |
+| Task/Module delivery state | existing message event and delivery receipt authorities |
 | Module candidate | PublicationReceipt |
 | Semantic acceptance | existing AcceptanceReceipt |
 | Live provider readiness | existing MergeReadiness |
@@ -392,12 +396,28 @@ Does not own Review authority, Merge authority, or any Lease transition.
 
 `MergeEligibilityV1` 设计保留但不实现，依赖 Phase 2 的独立 Review/Verification 与 provider merge capability canary。
 
+### Child PRD D — Provider-Neutral Agent Runtime Adapter (Approved — Phase 1)
+
+`plans/prds/20260830-1827-provider-neutral-agent-runtime-adapter.prd.md`
+
+Owns: the provider-neutral runtime-effect/message-reference contract; the
+optional `tmux-cli-agent` Host adapter; exact Binding/Claim fences; structured
+delivery acknowledgement; lost-ACK reconciliation; and the read-only
+delivery/runtime projection consumed by C8.
+
+Does not own message bodies, Task/Lease transitions, Agent identity, session
+creation, transcripts, generic shell or Board columns. Direct `tmux send-keys`
+remains outside the delivery authority; the adapter may emit only a bounded
+control reference after the durable intent exists.
+
 ## End-to-End Lifecycle
 
 ```text
 Approved Work Graph → one execution owner
 → spawn/read parallel collaboration participants
 → participants publish signals and partial results
+→ persisted Task/Module messages optionally wake an already-bound runtime endpoint
+→ the endpoint consumes the durable inbox and records an exact receipt
 → threads / hotspots / unadopted handoffs emerge
 → next participants discover and build on prior signals
 → budget/context pressure creates WorkStateHandoff
@@ -621,10 +641,11 @@ Stop promotion if:
 | 跨 capability 协作 | 超出 P0 边界 | Interface Change Request 仍是唯一通道 |
 | Reviewer supply | Phase 2 前置条件 | Child PRD B admission gate |
 | Provider merge capability | Phase 3 前置条件 | Child PRD C canary |
+| tmux endpoint availability and third-party harness acknowledgement | Determines whether a local terminal Agent is safely addressable | Child PRD D capability probe + real canary; unavailable is a valid result |
 
 ## Developer Handoff
 
-- 先做 Child PRD A，从两平面权威冻结开始。
+- Child PRD A 的 C0–C6 已完成；C7 与 Child PRD D R1 可并行，C8 在两者冻结 server projection 后接入，C9 最后运行。
 - 复用现有 delegation：`mode` 只有 `read_only`，`max_depth` 固定 0，单次 run 的 `max_turns` 在协议里被钉为 1，多轮通过 `round_index` 表达。C4 不要试图放宽 `max_turns`；要验证的是单轮能否产出有用贡献、多轮 signal 累积能否补上单轮深度、每轮 context packet 是否保持小而聚焦、多轮启动成本是否吃掉协作收益。预算意义上的接力是许多短 Worker 共享累积状态。
 - `DelegatedRunIntentV1.context_packet_sha256` 承载的是 ExecutionPacket 摘要，协作上下文 provenance 走新增的 `CollaborationRunContextBindingV1`。
 - 复用 Task/Module Message 的 untrusted 包裹模式，不要发明新的 prompt-trust 模型。
