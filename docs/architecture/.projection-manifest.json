@@ -5,12 +5,12 @@
   "sourceDigest": "sha256:3ad5f00afd07951d2b7f4bc5b3200dcb4497e1eff8ba6d81ef4104a97fafaca9",
   "provenance": {
     "schemaVersion": "archcontext.architecture-docs-projection-provenance/v1",
-    "baseHeadSha": "6a60ef2b1708ff9ef04e82435c3560be073c047a",
-    "worktreeDigest": "sha256:1003bb4470966cf1089af28b65eb3bc2ba8e8c104751d626ddeabb4279b1ac32",
-    "sourceTreeDigest": "sha256:9ed2e02c63a52d6341cd26b98b5acfd702826a8199960fc6171152b5b8846ac3",
+    "baseHeadSha": "ff065ca62460fc91aab79ebd8e8d65b624e51afb",
+    "worktreeDigest": "sha256:f3a68fa9932b8927e023b0f6e18b96823716029947d16e9bd558cc13788a93ae",
+    "sourceTreeDigest": "sha256:17f8b0fbed961aa10bd4092419e14251431bef724761df64a12e619e65c8287b",
     "modelDigest": "sha256:d773a9e859d7888d3b5631d836105b1e2ee9b8c319b52416a2ef8960ef27ce03",
-    "codeGraphDigest": "sha256:1f57ae73998a44de0bd85cd4a9dccd2839ae7c4ec0fa70e8c27ba24e1794da25",
-    "indexedWorktreeDigest": "sha256:f9ca78bd98eb31f65daa09ae8e71b838549f22932e1d26737dcc5e6ec68f7bdf",
+    "codeGraphDigest": "sha256:11bf35c8dc45d96449af77c1535cb8327da29e39dd70fcc595c40ca3f05231c2",
+    "indexedWorktreeDigest": "sha256:d710c5859978bdff379d4e3fc5d5fce91552754da63120fd55b320a14c23e8b6",
     "rendererVersion": "archcontext.docs-renderer/v4",
     "layoutVersion": "archcontext.docs-layout/v1",
     "generatedFrom": {
@@ -19,9 +19,9 @@
       "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
       "codeGraphStatus": "ready"
     },
-    "projectionInputDigest": "sha256:18aa6506fb89fbba31ede6120ae61a394458bac50932ffc32e1a95fee1a73f03"
+    "projectionInputDigest": "sha256:18ecb0dc65b230620fdea383ed36c08cb6d10418793a840f9a20cb47a0680658"
   },
-  "projectionDigest": "sha256:db99fdc8875442d9a32b3f88da3a490893267bc59ee73c92c4a0a3702190ebf1",
+  "projectionDigest": "sha256:c35722fcaf5dd4915993d79e5f7be6cb13f5f94cc03c4ea08799f1d6c0ea144c",
   "semanticBaseline": {
     "semanticState": {
       "schemaVersion": "archcontext.architecture-semantic-state/v1",
@@ -582,12 +582,12 @@
     },
     "digests": {
       "modelDigest": "sha256:d773a9e859d7888d3b5631d836105b1e2ee9b8c319b52416a2ef8960ef27ce03",
-      "sourceTreeDigest": "sha256:9ed2e02c63a52d6341cd26b98b5acfd702826a8199960fc6171152b5b8846ac3",
+      "sourceTreeDigest": "sha256:17f8b0fbed961aa10bd4092419e14251431bef724761df64a12e619e65c8287b",
       "flowProofDigest": "sha256:f0fa8436d262cebd0b710dcd717e392e376cceb5ca3b4359e2389bb63618a194",
-      "projectionDigest": "sha256:db99fdc8875442d9a32b3f88da3a490893267bc59ee73c92c4a0a3702190ebf1"
+      "projectionDigest": "sha256:c35722fcaf5dd4915993d79e5f7be6cb13f5f94cc03c4ea08799f1d6c0ea144c"
     }
   },
-  "receiptDigest": "sha256:d83b51423180f159f24529eaa9d34239a11cbe82d59959b01cc53fc928c3c615",
+  "receiptDigest": "sha256:8d6d6176edfafbdea1c65e6d3b34f8fc0a64c53756cfde44a7c7f0cc6036977d",
   "refreshSignalIds": [],
   "targetCount": 28,
   "fileCount": 28,
@@ -701,8 +701,8 @@
       "outputDigest": "sha256:fcce96e601a31bdb7f7524a261a2f3be2ff118ec9444d00f22dddfd0840300f8",
       "verifiedAgainst": {
         "branch": "codex/c7-cli-mcp-bounded-context-injection",
-        "commit": "6a60ef2b1708ff9ef04e82435c3560be073c047a",
-        "committedAt": "2026-08-30T13:54:44+08:00"
+        "commit": "ff065ca62460fc91aab79ebd8e8d65b624e51afb",
+        "committedAt": "2026-08-30T14:18:33+08:00"
       }
     },
     {
@@ -721,8 +721,8 @@
       "outputDigest": "sha256:9f93c573b327da6b4e45c16091495fe72d596719ade4e4c6dcdf9112468bc15d",
       "verifiedAgainst": {
         "branch": "codex/c7-cli-mcp-bounded-context-injection",
-        "commit": "6a60ef2b1708ff9ef04e82435c3560be073c047a",
-        "committedAt": "2026-08-30T13:54:44+08:00"
+        "commit": "ff065ca62460fc91aab79ebd8e8d65b624e51afb",
+        "committedAt": "2026-08-30T14:18:33+08:00"
       }
     },
     {
@@ -1001,8 +1001,8 @@
       "outputDigest": "sha256:966f7438cd7b385cb411a2ef8c2de18c0b1e71eb067941c97375a4b284a873b9",
       "verifiedAgainst": {
         "branch": "codex/c7-cli-mcp-bounded-context-injection",
-        "commit": "6a60ef2b1708ff9ef04e82435c3560be073c047a",
-        "committedAt": "2026-08-30T13:54:44+08:00"
+        "commit": "ff065ca62460fc91aab79ebd8e8d65b624e51afb",
+        "committedAt": "2026-08-30T14:18:33+08:00"
       }
     },
     {
@@ -1020,9 +1020,9 @@
       "sourceDigest": "sha256:dc2faa5abe1e85c162bcc9a126ee79a0178c75d03c20ff97519b8b463cc2ee44",
       "outputDigest": "sha256:aa5aac73ff819f8ad0c053a57d5b1627faf2fc5bdbc18e8ab4722de0ab085d59",
       "verifiedAgainst": {
-        "branch": "codex/c6-collaborative-work-exchange-context-packet",
-        "commit": "806d73842f9df926a18491d296d4353a320dbcdb",
-        "committedAt": "2026-08-30T11:19:21+08:00"
+        "branch": "codex/c7-cli-mcp-bounded-context-injection",
+        "commit": "ff065ca62460fc91aab79ebd8e8d65b624e51afb",
+        "committedAt": "2026-08-30T14:18:33+08:00"
       }
     },
     {
