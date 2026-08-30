@@ -12,12 +12,15 @@ import {
 } from './i18n';
 import {
   allCards,
+  decodeOperatorCollaborationSnapshot,
   decodeOperatorFleetSnapshot,
   OPERATOR_COLUMNS,
   OPERATOR_PAYLOAD_INVALID_ERROR,
   projectSnapshotViewState,
   snapshotViewKind,
   type OperatorApiErrorV1,
+  type OperatorCollaborationSnapshotV1,
+  type OperatorCollaborationSource,
   type OperatorFleetCardV1,
   type OperatorFleetColumn,
   type OperatorFleetRepositoryV1,
@@ -34,6 +37,10 @@ export interface OperatorAppProps {
   readonly fetchSnapshot?: () => Promise<OperatorFleetSnapshotV1>;
   /** The board's one write, injectable so tests never touch a real repository. */
   readonly sendMessage?: (request: TaskMessageRequestV1) => Promise<void>;
+  /** The read-only collaboration read, injectable on the same terms. */
+  readonly fetchCollaboration?: (repositoryId: string) => Promise<OperatorCollaborationSnapshotV1>;
+  /** A deterministic collaboration state for fixtures and server renders. */
+  readonly initialCollaboration?: CollaborationViewState;
   /** Tests pin the locale; the browser resolves it from storage or navigator. */
   readonly initialLocale?: OperatorLocale;
 }
@@ -740,6 +747,369 @@ function TaskDetail({
 }
 
 /**
+ * The board's collaboration read, as a state machine rather than a nullable
+ * snapshot.
+ *
+ * `idle` and an empty snapshot are different facts and are kept apart on
+ * purpose: the first says nothing has been read for this repository yet, the
+ * second says the store was read and holds nothing. Collapsing them is how a
+ * collaboration store that could not be read starts looking quiet.
+ */
+export type CollaborationViewState =
+  | { readonly kind: 'idle' }
+  | { readonly kind: 'loading'; readonly repository_id: string }
+  | { readonly kind: 'ready'; readonly snapshot: OperatorCollaborationSnapshotV1 }
+  | {
+      readonly kind: 'failed';
+      readonly repository_id: string;
+      readonly error: OperatorApiErrorV1;
+    };
+
+const COLLABORATION_UNAVAILABLE_ERROR: OperatorApiErrorV1 = {
+  code: 'collaboration_snapshot_unavailable',
+  message: 'The collaboration store cannot be read.',
+  next_action: 'Check the repository collaboration store, then refresh the board.',
+};
+
+async function fetchOperatorCollaborationSnapshot(
+  repositoryId: string,
+): Promise<OperatorCollaborationSnapshotV1> {
+  const response = await fetch(`/api/v1/collaboration/${encodeURIComponent(repositoryId)}/snapshot`, {
+    headers: { Accept: 'application/json' },
+    cache: 'no-store',
+  });
+  let body: unknown = null;
+  try {
+    body = await response.json();
+  } catch {
+    body = null;
+  }
+  if (!response.ok) throw asApiError(body, COLLABORATION_UNAVAILABLE_ERROR);
+  try {
+    return decodeOperatorCollaborationSnapshot(body);
+  } catch (error) {
+    if (error instanceof Error && error.name === 'OperatorPayloadError') throw error;
+    throw OPERATOR_PAYLOAD_INVALID_ERROR;
+  }
+}
+
+function sourceList(
+  sources: readonly OperatorCollaborationSource[],
+  t: OperatorTranslate,
+): string {
+  return sources.map((source) => t(`collab.source.${source}` as OperatorMessageKey)).join(', ');
+}
+
+/**
+ * The consistency banner.
+ *
+ * `degraded` and `changed_during_read` are stated with the sources that produced
+ * them, because the collector already knows which ones moved and a banner that
+ * only said "incomplete" would send the reader back to guessing. A quiet panel
+ * is never an acceptable rendering of either.
+ */
+function CollaborationConsistency({
+  snapshot,
+  t,
+}: {
+  readonly snapshot: OperatorCollaborationSnapshotV1;
+  readonly t: OperatorTranslate;
+}) {
+  if (snapshot.snapshot_consistency === 'degraded') {
+    return (
+      <div className="operator-notice operator-notice--danger" role="alert">
+        <Icon name="alert" size={16} />
+        <div>
+          <strong>{t('collab.degradedTitle')}</strong>
+          <span>{t('collab.degradedBody', { sources: sourceList(snapshot.degraded_sources, t) })}</span>
+        </div>
+      </div>
+    );
+  }
+  if (snapshot.snapshot_consistency === 'changed_during_read') {
+    return (
+      <div className="operator-notice operator-notice--warning" role="status" aria-live="polite">
+        <Icon name="alert" size={16} />
+        <div>
+          <strong>{t('collab.changedTitle')}</strong>
+          <span>{t('collab.changedBody', { sources: sourceList(snapshot.changed_sources, t) })}</span>
+        </div>
+      </div>
+    );
+  }
+  return null;
+}
+
+function CollaborationLanes({
+  snapshot,
+  t,
+}: {
+  readonly snapshot: OperatorCollaborationSnapshotV1;
+  readonly t: OperatorTranslate;
+}) {
+  return (
+    <section className="detail-block" aria-labelledby="collab-lanes-heading">
+      <h3 className="detail-eyebrow" id="collab-lanes-heading">{t('collab.lanes')}</h3>
+      {snapshot.threads.length === 0 ? (
+        <p className="detail-quiet">{t('collab.lanesEmpty')}</p>
+      ) : (
+        <ul className="collab-list">
+          {snapshot.threads.map((thread) => (
+            <li className="collab-lane" key={thread.thread_key}>
+              <span className="collab-lane__head">
+                <strong className="collab-lane__key">{thread.thread_key}</strong>
+                <Badge>{t('collab.laneHotspot', { score: thread.hotspot_score })}</Badge>
+              </span>
+              <span className="collab-meta">
+                <span>{t('collab.laneSignals', { count: thread.signal_count })}</span>
+                <span>{t('collab.laneContributors', { count: thread.distinct_contributor_count })}</span>
+                <span>{t('collab.laneArtifacts', { count: thread.artifact_ref_count })}</span>
+                {thread.unadopted_handoff_count > 0 && (
+                  <span>{t('collab.laneUnadopted', { count: thread.unadopted_handoff_count })}</span>
+                )}
+                {thread.adoption_count > 0 && (
+                  <span>{t('collab.laneAdopted', { count: thread.adoption_count })}</span>
+                )}
+                {thread.cross_thread_reference_count > 0 && (
+                  <span>{t('collab.laneCrossRefs', { count: thread.cross_thread_reference_count })}</span>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function CollaborationDiscoveries({
+  snapshot,
+  t,
+}: {
+  readonly snapshot: OperatorCollaborationSnapshotV1;
+  readonly t: OperatorTranslate;
+}) {
+  return (
+    <section className="detail-block" aria-labelledby="collab-signals-heading">
+      <h3 className="detail-eyebrow" id="collab-signals-heading">{t('collab.discoveries')}</h3>
+      {snapshot.signals.length === 0 ? (
+        <p className="detail-quiet">{t('collab.discoveriesEmpty')}</p>
+      ) : (
+        <ul className="collab-list">
+          {snapshot.signals.map((signal) => (
+            <li className={`collab-signal${signal.superseded ? ' is-superseded' : ''}`} key={signal.signal_id}>
+              <span className="collab-signal__title">{signal.title}</span>
+              <span className="collab-meta">
+                <span className="collab-lane__key">{signal.thread_key}</span>
+                <span className="mono-value">{signal.actor_lineage}</span>
+                {signal.artifact_ref_count > 0 && (
+                  <span>{t('collab.signalArtifacts', { count: signal.artifact_ref_count })}</span>
+                )}
+                {signal.superseded && <span className="collab-flag">{t('collab.superseded')}</span>}
+              </span>
+              {signal.labels.length > 0 && (
+                <span className="collab-labels">
+                  {signal.labels.map((label) => <code className="cause-code" key={label}>{label}</code>)}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function CollaborationHandoffs({
+  snapshot,
+  t,
+}: {
+  readonly snapshot: OperatorCollaborationSnapshotV1;
+  readonly t: OperatorTranslate;
+}) {
+  return (
+    <section className="detail-block" aria-labelledby="collab-handoffs-heading">
+      <h3 className="detail-eyebrow" id="collab-handoffs-heading">{t('collab.handoffs')}</h3>
+      {snapshot.handoffs.length === 0 ? (
+        <p className="detail-quiet">{t('collab.handoffsEmpty')}</p>
+      ) : (
+        <ul className="collab-list">
+          {snapshot.handoffs.map((handoff) => (
+            <li className="collab-handoff" key={handoff.handoff_id}>
+              <span className="collab-handoff__head">
+                <strong>{handoff.goal}</strong>
+                <Badge>{t('collab.handoffAdoptions', { count: handoff.adoption_count })}</Badge>
+              </span>
+              <span className="collab-meta">
+                <span className="collab-lane__key">{handoff.thread_key}</span>
+                <span>{t('collab.handoffTrigger', { trigger: handoff.trigger })}</span>
+                <span>{t('collab.handoffNextActions', { count: handoff.next_action_count })}</span>
+                <span>{t('collab.handoffHypotheses', { count: handoff.open_hypothesis_count })}</span>
+              </span>
+              <span className={`collab-context${handoff.execution_context_kind === null ? ' is-withheld' : ''}`}>
+                {handoff.execution_context_kind === null
+                  ? t('collab.contextWithheld')
+                  : t(`collab.context.${handoff.execution_context_kind}` as OperatorMessageKey)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {snapshot.unverified_execution_context_count > 0 && (
+        <div className="detail-callout detail-callout--warning">
+          <Icon name="alert" size={15} />
+          <div>
+            <strong>{t('collab.unverified', { count: snapshot.unverified_execution_context_count })}</strong>
+            <span>{t('collab.unverifiedBody')}</span>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CollaborationContributors({
+  snapshot,
+  t,
+}: {
+  readonly snapshot: OperatorCollaborationSnapshotV1;
+  readonly t: OperatorTranslate;
+}) {
+  return (
+    <section className="detail-block" aria-labelledby="collab-contributors-heading">
+      <h3 className="detail-eyebrow" id="collab-contributors-heading">{t('collab.contributors')}</h3>
+      {snapshot.participants.length === 0 ? (
+        <p className="detail-quiet">{t('collab.contributorsEmpty')}</p>
+      ) : (
+        <ul className="collab-list">
+          {snapshot.participants.map((participant) => (
+            <li className="collab-contributor" key={participant.actor_lineage}>
+              <span className="collab-contributor__head">
+                <span className="mono-value">{participant.actor_lineage}</span>
+                <Badge>{t(`collab.actor.${participant.actor_kind}` as OperatorMessageKey)}</Badge>
+              </span>
+              <span className="collab-meta">
+                {t('collab.contributorCounts', {
+                  signals: participant.signal_count,
+                  handoffs: participant.handoff_count,
+                  lanes: participant.thread_keys.length,
+                })}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function CollaborationOpportunities({
+  snapshot,
+  t,
+}: {
+  readonly snapshot: OperatorCollaborationSnapshotV1;
+  readonly t: OperatorTranslate;
+}) {
+  if (snapshot.opportunities.length === 0) return null;
+  return (
+    <section className="detail-block" aria-labelledby="collab-opportunities-heading">
+      <h3 className="detail-eyebrow" id="collab-opportunities-heading">{t('collab.opportunities')}</h3>
+      <ul className="collab-list">
+        {snapshot.opportunities.map((opportunity) => (
+          <li className="collab-opportunity" key={`${opportunity.thread_key}:${opportunity.reason}`}>
+            <span className="collab-lane__key">{opportunity.thread_key}</span>
+            <span>{t(`collab.reason.${opportunity.reason}` as OperatorMessageKey)}</span>
+            <code className="cause-code">{opportunity.reason}</code>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/**
+ * The whole read-only collaboration surface.
+ *
+ * Every panel below renders a field the server already decided. Nothing here
+ * ranks, joins or infers, and there is no control of any kind: the board's one
+ * write stays the task-message composer.
+ */
+export function CollaborationPane({
+  state,
+  t,
+}: {
+  readonly state: CollaborationViewState;
+  readonly t: OperatorTranslate;
+}) {
+  if (state.kind === 'idle') {
+    return (
+      <section className="detail-block collab-pane" aria-labelledby="collab-heading">
+        <h3 className="detail-eyebrow" id="collab-heading">{t('collab.title')}</h3>
+        <p className="detail-quiet">{t('collab.hint')}</p>
+      </section>
+    );
+  }
+  if (state.kind === 'loading') {
+    return (
+      <section className="detail-block collab-pane" aria-labelledby="collab-heading">
+        <h3 className="detail-eyebrow" id="collab-heading">{t('collab.title')}</h3>
+        <div className="operator-notice operator-notice--loading" role="status" aria-live="polite">
+          <span className="operator-progress" aria-hidden="true" />
+          <div><strong>{t('collab.loading')}</strong><span>{t('collab.scope', { repository: state.repository_id })}</span></div>
+        </div>
+      </section>
+    );
+  }
+  if (state.kind === 'failed') {
+    return (
+      <section className="detail-block collab-pane" aria-labelledby="collab-heading">
+        <h3 className="detail-eyebrow" id="collab-heading">{t('collab.title')}</h3>
+        <div className="operator-notice operator-notice--danger" role="alert">
+          <Icon name="alert" size={16} />
+          <div>
+            <strong>{t('collab.failedTitle')}</strong>
+            <span>{state.error.message} {state.error.next_action}</span>
+          </div>
+        </div>
+      </section>
+    );
+  }
+  const { snapshot } = state;
+  return (
+    <section className="detail-block collab-pane" aria-labelledby="collab-heading" data-collab-mode={snapshot.mode}>
+      <h3 className="detail-eyebrow" id="collab-heading">{t('collab.title')}</h3>
+      <div className="detail-chips">
+        <Badge>{t('collab.scope', { repository: snapshot.repository_id })}</Badge>
+        <Badge>{t('collab.mode')} {t(`collab.mode.${snapshot.mode}` as OperatorMessageKey)}</Badge>
+        <Badge>{t('collab.readOnly')}</Badge>
+      </div>
+      <CollaborationConsistency snapshot={snapshot} t={t} />
+      {snapshot.mode === 'off' && (
+        <div className="detail-callout">
+          <Icon name="flag" size={15} />
+          <div><strong>{t('collab.modeOffTitle')}</strong><span>{t('collab.modeOffBody')}</span></div>
+        </div>
+      )}
+      <CollaborationLanes snapshot={snapshot} t={t} />
+      <CollaborationDiscoveries snapshot={snapshot} t={t} />
+      <CollaborationHandoffs snapshot={snapshot} t={t} />
+      <CollaborationContributors snapshot={snapshot} t={t} />
+      <CollaborationOpportunities snapshot={snapshot} t={t} />
+      <div className="detail-callout">
+        <Icon name="flag" size={15} />
+        <div><strong>{t('collab.offersTitle')}</strong><span>{t('collab.offersBody')}</span></div>
+      </div>
+      <dl className="detail-list">
+        <div>
+          <dt>{t('collab.sourceDigest')}</dt>
+          <dd className="mono-value">{snapshot.source_snapshot_sha256}</dd>
+        </div>
+      </dl>
+    </section>
+  );
+}
+
+/**
  * The transport limit restated for the browser. `src/core/fleet/task-message.ts`
  * owns the authority but reaches Node `crypto` and `Buffer`, which must not
  * enter this bundle, so the drift is caught by a test that imports both.
@@ -988,6 +1358,7 @@ function DetailPane({
   snapshot,
   card,
   repository,
+  collaboration,
   revisionChangedFrom,
   boardUnstable,
   modal,
@@ -999,6 +1370,7 @@ function DetailPane({
   readonly snapshot: OperatorFleetSnapshotV1 | null;
   readonly card: OperatorFleetCardV1 | null;
   readonly repository: OperatorFleetRepositoryV1 | null;
+  readonly collaboration: CollaborationViewState;
   readonly revisionChangedFrom: string | null;
   readonly boardUnstable: boolean;
   readonly modal: boolean;
@@ -1097,6 +1469,9 @@ function DetailPane({
               </section>
             </>
           ) : null}
+          {/* Below the task's own facts, never above them: collaboration is
+              context for a decision the worklist already surfaced. */}
+          <CollaborationPane state={collaboration} t={t} />
         </div>
         {card && repository && snapshot && (
           <Composer
@@ -1160,11 +1535,16 @@ export function OperatorApp({
   initialSnapshot,
   fetchSnapshot = fetchOperatorSnapshot,
   sendMessage = postTaskMessage,
+  fetchCollaboration = fetchOperatorCollaborationSnapshot,
+  initialCollaboration,
   initialLocale,
 }: OperatorAppProps) {
   const initial = initialState ?? (initialSnapshot ? stateFromSnapshot(initialSnapshot) : { kind: 'loading', previous: null } as const);
   const [state, setState] = useState<OperatorSnapshotViewState>(initial);
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [collaboration, setCollaboration] = useState<CollaborationViewState>(
+    initialCollaboration ?? { kind: 'idle' },
+  );
   const { locale, setLocale, t } = useLocale(initialLocale);
   const wideLayout = useWideLayout();
   const refreshInFlight = useRef(false);
@@ -1208,6 +1588,37 @@ export function OperatorApp({
   const selectedRepository = selectedCard && snapshot
     ? snapshot.repositories.find((repository) => repository.repository_id === selectedCard.repository_id) ?? null
     : null;
+  const collaborationRepositoryId = selectedCard?.repository_id ?? null;
+
+  // The collaboration store is per repository, so the read is scoped by the
+  // selected task's repository rather than by a default the board would have to
+  // invent. Deselecting returns to `idle`, which is not the same as an empty
+  // store and does not claim to have read one.
+  useEffect(() => {
+    if (initialCollaboration) return;
+    if (collaborationRepositoryId === null) {
+      setCollaboration({ kind: 'idle' });
+      return;
+    }
+    let current = true;
+    setCollaboration({ kind: 'loading', repository_id: collaborationRepositoryId });
+    void fetchCollaboration(collaborationRepositoryId).then(
+      (next) => { if (current) setCollaboration({ kind: 'ready', snapshot: next }); },
+      (error) => {
+        if (current) {
+          setCollaboration({
+            kind: 'failed',
+            repository_id: collaborationRepositoryId,
+            error: asApiError(error, COLLABORATION_UNAVAILABLE_ERROR),
+          });
+        }
+      },
+    );
+    return () => { current = false; };
+    // The repository is the whole input; refetching on every board refresh would
+    // re-read four stores for a document that did not change identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collaborationRepositoryId]);
   // A board that is stale, torn, or degraded is not a board you may write from.
   const boardUnstable = stateKind === 'stale' || (snapshot !== null && snapshot.snapshot_consistency !== 'stable');
   const selectCard = (card: OperatorFleetCardV1) => setSelection({ key: taskKey(card), revision: card.task_revision });
@@ -1244,6 +1655,7 @@ export function OperatorApp({
             snapshot={snapshot}
             card={selectedCard}
             repository={selectedRepository}
+            collaboration={collaboration}
             revisionChangedFrom={revisionChangedFrom}
             boardUnstable={boardUnstable}
             modal={!wideLayout}
@@ -1267,4 +1679,4 @@ export function OperatorApp({
   );
 }
 
-export { DEFAULT_OPERATOR_LOCALE, fetchOperatorSnapshot };
+export { DEFAULT_OPERATOR_LOCALE, fetchOperatorCollaborationSnapshot, fetchOperatorSnapshot };
