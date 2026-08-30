@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-30 18:09
+> **Related Plan**: plans/archive/plan-20260830-1342-c7-cli-mcp-bounded-context-injection.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260830-1809
+
 # Task Review: c7-cli-mcp-bounded-context-injection
 
 > **Status**: Accepted

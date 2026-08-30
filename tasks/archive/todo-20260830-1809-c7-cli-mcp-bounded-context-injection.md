@@ -1,7 +1,13 @@
+> **Archived**: 2026-08-30 18:09
+> **Related Plan**: plans/archive/plan-20260830-1342-c7-cli-mcp-bounded-context-injection.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260830-1809
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-08-30 13:42
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

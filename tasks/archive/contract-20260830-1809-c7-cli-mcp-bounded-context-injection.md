@@ -1,6 +1,12 @@
+> **Archived**: 2026-08-30 18:09
+> **Related Plan**: plans/archive/plan-20260830-1342-c7-cli-mcp-bounded-context-injection.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260830-1809
+
 # Task Contract: c7-cli-mcp-bounded-context-injection
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260830-1342-c7-cli-mcp-bounded-context-injection.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->

@@ -3,7 +3,7 @@
 > **Status**: Approved
 > **Slug**: `collaborative-work-exchange-agent-succession`
 > **Created**: 2026-08-28T23:21:55-07:00
-> **Updated**: 2026-08-30 13:19
+> **Updated**: 2026-08-30 18:09
 > **Source PRD**: `plans/prds/20260828-2321-collaborative-work-exchange-agent-succession.prd.md`
 > **Child PRD A (Active)**: `plans/prds/20260828-2321-collaboration-substrate.prd.md`
 > **Child PRD B (Deferred — Phase 2)**: `plans/prds/20260828-2321-work-exchange-independent-review.prd.md`
@@ -158,7 +158,7 @@ No step skips a state。`independent_review` 与 `guarded_merge` 在本 Sprint �
 | 5 | [x] | C4 — delegated Worker contribution adapter | contract | draft 只来自持久化 stdout 的 versioned adapter；`CollaborationContributionCommitV1` 为可见性边界；每个持久化边界的故障注入都收敛；WorkerResult exactly-once；`max_parallel_readers` 在准入期真正生效；每个角色都要 tracked LogicalRoleProfile；本行独占真实运行时 canary：3 个真实并行 reader 放行、第 4 个真实请求在 `max_parallel_readers=3` 被桥拒绝、完成或失败的 reader 正确释放名额、reconciliation_required 与状态不确定的 reader 按 C0 冻结规则处理；writer 数仍为 1 | `plans/archive/plan-20260830-0509-c4-delegated-worker-contribution-adapter.md` |
 | 6 | [x] | C5 — TaskFreeze / explicit takeover succession integration | contract | dirty executor 先 freeze；handoff 不转移 Lease；successor 只有经现有 release/takeover/acquire 才可写 | `plans/archive/plan-20260830-0858-c5-taskfreeze-succession-integration.md` |
 | 7 | [x] | C6 — collaboration-centric Work Exchange and ContextPacket | contract | packet 带 `source_snapshot_sha256`、截断证据、`estimator_version` 与 canonical render SHA；`CollaborationRunContextBindingV1` 落地，且它是 collaboration-mode delegated run 的必需派发闸门：派发前校验 binding 存在、与当前 intent 和 execution packet 匹配、引用协作 packet、render digest 与组合后的 goal 一致，缺失或陈旧一律 fail closed，不是可选审计元数据；显示 existing execution offers、participants、threads、signals、handoffs、opportunities；snapshot fail-loud | `plans/archive/plan-20260830-1031-c6-collaborative-work-exchange-context-packet.md` |
-| 8 | [ ] | C7 — CLI/MCP and bounded context injection | contract | authenticated actor 由服务端推导；Engineer 可 post；Worker 由 Host collector post；全部 context 标记 untrusted | (pending) |
+| 8 | [x] | C7 — CLI/MCP and bounded context injection | contract | authenticated actor 由服务端推导；Engineer 可 post；Worker 由 Host collector post；全部 context 标记 untrusted | `plans/archive/plan-20260830-1342-c7-cli-mcp-bounded-context-injection.md` |
 | 9 | [ ] | C8 — read-only Operator collaboration surface | contract | 展示 lanes、discoveries、handoffs、hotspots、contributors；task message 仍是唯一 browser write | (pending) |
 | 10 | [ ] | C9 — real multi-agent canary and multi-seat decision | contract | C9-A 可行性通过；C9-B 重复证据成立；aggregate compute/cost 记录完整；usefulness rubric 开跑前冻结；跨臂污染防护到位；零 authority drift；输出 persistent multi-seat go/no-go | (pending) |
 
@@ -652,3 +652,4 @@ Keep this section last; `repo-harness run sprint-backlog complete-task` appends 
 | 2026-08-30 08:35 | C4 — delegated Worker contribution adapter | `plans/archive/plan-20260830-0509-c4-delegated-worker-contribution-adapter.md` | done |
 | 2026-08-30 10:13 | C5 — TaskFreeze / explicit takeover succession integration | `plans/archive/plan-20260830-0858-c5-taskfreeze-succession-integration.md` | done |
 | 2026-08-30 13:19 | C6 — collaboration-centric Work Exchange and ContextPacket | `plans/archive/plan-20260830-1031-c6-collaborative-work-exchange-context-packet.md` | done |
+| 2026-08-30 18:09 | C7 — CLI/MCP and bounded context injection | `plans/archive/plan-20260830-1342-c7-cli-mcp-bounded-context-injection.md` | done |

@@ -1,6 +1,6 @@
 # Plan: C7 CLI/MCP bounded collaboration surface and context injection
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260830-1342
 > **Slug**: c7-cli-mcp-bounded-context-injection
 > **Planning Source**: repo-harness-sprint
