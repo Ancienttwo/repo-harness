@@ -11,7 +11,7 @@
  */
 import { afterEach, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'child_process';
-import { writeFileSync } from 'fs';
+import { readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
 import {
@@ -28,6 +28,7 @@ import {
   recordCollaborationRunContextBinding,
   type CollaborationContextDeliveryV1,
 } from '../../src/effects/collaboration/context-delivery';
+import { publishWorkStateHandoff } from '../../src/effects/collaboration/handoff-store';
 import { publishCoordinationSignal } from '../../src/effects/collaboration/signal-store';
 import { collectCollaborativeWorkExchange } from '../../src/effects/collaboration/work-exchange';
 import { readDelegatedRunStatus } from '../../src/effects/engineers/delegated-run-store';
@@ -219,6 +220,129 @@ describe('C7 collaboration dispatch fence through the delegation CLI', () => {
     expect(dispatched.stderr).toBe('');
     expect(dispatched.status).toBe(0);
     expect(readDelegatedRunStatus(value.repoRoot, dispatchId).current.state).toBe('completed');
+  });
+});
+
+/**
+ * A structurally valid handoff whose `bound_task` branch names a Claim, a Lease
+ * generation and a freeze receipt that resolve to nothing.
+ *
+ * `publishWorkStateHandoff()` validates that branch for shape only — the author
+ * supplied every value in it — so this is exactly the record C5's read-time proof
+ * exists to withhold, and exactly what a raw store read on the surface would hand
+ * back to an agent.
+ */
+const FORGED_CLAIM_ID = '9b9b9b9b-9b9b-4b9b-8b9b-9b9b9b9b9b9b';
+const FORGED_TASK_ID = 'f'.repeat(64);
+const FORGED_TASK_REVISION = 'e'.repeat(64);
+const FORGED_WORK_ENVELOPE = `sha256:${'1'.repeat(64)}`;
+const FORGED_FREEZE_RECEIPT = `sha256:${'2'.repeat(64)}`;
+const FORGED_LEASE_GENERATION = 4242;
+
+function publishForgedBoundTaskHandoff(value: Fixture, threadKey: string): string {
+  return publishWorkStateHandoff({
+    repo_root: value.repoRoot,
+    authorization: engineerPrincipalAuthorization(value.actors[0]!.authorization_id),
+    destination: { kind: 'public' },
+    idempotency_key: 'forged-bound-task',
+    thread_key: threadKey,
+    scope_refs: [CAPABILITY_REF],
+    trigger: 'context_pressure',
+    goal: 'carry the merge-gate flake investigation forward',
+    completed: ['read the collector'],
+    key_findings: ['the double read is the only consistency authority'],
+    attempted_paths: [{ description: 'single read', outcome: 'cannot see a torn read', evidence_refs: [] }],
+    dead_ends: ['per-source windows'],
+    open_hypotheses: ['the offer reader is the next bottleneck'],
+    next_actions: ['wire the fence'],
+    source_signal_ids: [],
+    execution_context: {
+      kind: 'bound_task',
+      task_id: FORGED_TASK_ID,
+      task_revision: FORGED_TASK_REVISION,
+      claim_id: FORGED_CLAIM_ID,
+      lease_generation: FORGED_LEASE_GENERATION,
+      work_envelope_sha256: FORGED_WORK_ENVELOPE,
+      task_freeze_receipt_sha256: FORGED_FREEZE_RECEIPT,
+    },
+    supersedes_handoff_id: null,
+    recorded_time: { kind: 'persisted_observation', observed_at: '2026-08-30T09:30:00.000Z' },
+    env: value.env,
+  }).handoff.handoff_id;
+}
+
+describe('C7 the surface never re-exports an unproven execution context', () => {
+  test('a forged bound_task claim reaches no read surface, while the handoff knowledge still projects', () => {
+    const value = fixture();
+    publishSignal(value, 'signal-a', 'merge-gate-flake');
+    const handoffId = publishForgedBoundTaskHandoff(value, 'merge-gate-flake');
+    const authorization = value.actors[0]!.authorization_id;
+
+    const listed = cli(value, 'collaboration', 'handoff', 'list', '--authorization-id', authorization);
+    const exchange = cli(value, 'collaboration', 'exchange', '--authorization-id', authorization);
+    const threads = cli(value, 'collaboration', 'threads', '--authorization-id', authorization);
+    const signals = cli(value, 'collaboration', 'signals', '--authorization-id', authorization);
+    for (const result of [listed, exchange, threads, signals]) {
+      expect(result.stderr).toBe('');
+      expect(result.status).toBe(0);
+    }
+
+    // Non-containment over the whole payload: no projection, count or nested
+    // record may carry the Claim, the Lease generation or the freeze digest.
+    for (const payload of [listed.stdout, exchange.stdout, threads.stdout, signals.stdout]) {
+      for (const forgedValue of [
+        FORGED_CLAIM_ID,
+        FORGED_WORK_ENVELOPE,
+        FORGED_FREEZE_RECEIPT,
+        String(FORGED_LEASE_GENERATION),
+        FORGED_TASK_ID,
+        FORGED_TASK_REVISION,
+      ]) {
+        expect(payload).not.toContain(forgedValue);
+      }
+    }
+
+    // The knowledge was never the forged part: the handoff still projects, and
+    // the withholding is counted rather than silent.
+    const view = JSON.parse(listed.stdout) as {
+      handoffs: Array<{ handoff_id: string; goal: string; trigger: string; execution_context: unknown }>;
+      unverified_execution_context_count: number;
+    };
+    const projected = view.handoffs.find((entry) => entry.handoff_id === handoffId);
+    expect(projected).toBeDefined();
+    expect(projected!.goal).toBe('carry the merge-gate flake investigation forward');
+    expect(projected!.trigger).toBe('context_pressure');
+    expect(projected!.execution_context).toBeNull();
+    expect(view.unverified_execution_context_count).toBe(1);
+
+    // The same record over the MCP read surface.
+    const snapshot = JSON.parse(exchange.stdout) as {
+      snapshot: { open_handoffs: Array<{ handoff_id: string; execution_context: unknown }> };
+    };
+    expect(snapshot.snapshot.open_handoffs.find((entry) => entry.handoff_id === handoffId)!.execution_context)
+      .toBeNull();
+  });
+
+  test('the surface layer imports no raw collaboration store list reader', () => {
+    // Structural, not incidental: the unverified path is unreachable from this
+    // module rather than merely unused, so a future read cannot pick it up by
+    // autocomplete. `readCollaborationContextPacket` is the one adjudicated raw
+    // read — a Host record with no author-supplied branch — and is argued in place.
+    const surface = readFileSync(join(sourceRoot, 'src/effects/collaboration/agent-surface.ts'), 'utf8');
+    const imports = surface.slice(0, surface.indexOf('export interface CollaborationContentTrustV1'));
+    for (const rawReader of [
+      'listCoordinationSignals',
+      'listWorkStateHandoffs',
+      'listHandoffAdoptionReceipts',
+      'readWorkStateHandoff',
+      'readCoordinationSignal',
+      'readHandoffAdoptionReceipt',
+      'listCollaborationRecords',
+      'readCollaborationRecord',
+    ]) {
+      expect(imports).not.toContain(rawReader);
+    }
+    expect(imports).toContain('readCollaborationContextPacket');
   });
 });
 

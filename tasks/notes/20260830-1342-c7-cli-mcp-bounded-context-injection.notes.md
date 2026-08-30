@@ -53,6 +53,10 @@
   `src/effects/collaboration/agent-surface.ts` (the shared surface module) and
   `src/cli/mcp/setup.ts` (the live doctor inventory). Both are recorded in the contract with the
   reason.
+- Codex round-1 found a P1 this row introduced: `collaboration handoff list` read
+  `listWorkStateHandoffs()` raw and returned unverified `execution_context`, re-opening on the first
+  agent-facing surface the exact leak C6 removed from its own collection. Fixed by routing every
+  surface read through `collect()`; see the sweep table above.
 - One relation the plan did not anticipate was required:
   `relation.collaboration.engineer-scheduling`. The exchange surface asks the scheduling plane for
   the caller's own offers, and without the declared relation that flow step is unprovable.
@@ -71,6 +75,27 @@
 ## Open Questions
 
 - None.
+
+## Surface Read Sweep
+
+Every read reachable from `src/effects/collaboration/agent-surface.ts`, and what it routes through.
+The fixed question for each: *what is this data's existing verified projection, and did I route
+through it?*
+
+| Surface read | Routed through | Verdict |
+|---|---|---|
+| `collaborationExchangeView` → snapshot | `collect()` → `collectCollaborativeWorkExchange()` | Verified projection: double read, cross-repository check, C5 read-time proof |
+| `collaborationThreadsView` → threads, opportunities | same collection's `snapshot` | Verified; no second derivation, so it cannot disagree with `snapshot_sha256` |
+| `collaborationSignalsView` → signals | `collect().signals` (was raw `listCoordinationSignals()`) | Verified: the exact set the snapshot builder accepted, so it inherits the cross-repository check a raw list skips. Signals carry no `execution_context`, but the raw read was still the wrong authority |
+| `collaborationHandoffsView` → handoffs | `collect().snapshot.open_handoffs` (was raw `listWorkStateHandoffs()` + `listHandoffAdoptionReceipts()`) | **The P1.** Verified: `proveExecutionContexts()` withholds every unproven `bound_task` branch and counts it in `unverified_execution_context_count`, which the view now returns. Adoption counts come off the summary, so the receipts read is gone too |
+| `readExecutionOffersFor` → offers | `collectEngineerOffers()` | Adjudicated: the scheduling plane is the authority for its own offers; there is no projection above it |
+| `collaborationPacketRead` → one packet | `readCollaborationContextPacket()` | Adjudicated in place: a Host record with no author and no `execution_context`, re-validated against its own content digest. No author-supplied branch exists for a proof to withhold, so this read *is* the authority |
+| mutations (`signalPost`, `handoffPublish`, `handoffAdopt`, `packetBuild`) | the stores' own write paths | Not reads; each store gates itself and derives the actor |
+
+Structurally enforced, not just corrected: after the routing, this module imports **no** raw
+collaboration list or record reader at all, so the unverified path is unreachable from the surface
+layer rather than merely unused. `tests/cli/collaboration.test.ts` asserts that import set, with
+`readCollaborationContextPacket` named as the one adjudicated exception.
 
 ## Injection Budget
 
