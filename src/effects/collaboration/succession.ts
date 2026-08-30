@@ -99,12 +99,15 @@ export function handoffSuccessionRequirement(handoff: WorkStateHandoffV1): Hando
 }
 
 /**
- * The one place a `bound_task` execution context is constructed.
+ * The single derivation of a `bound_task` execution context.
  *
- * Every field is read out of the receipt, so the context cannot describe a state
- * other than the one that was frozen. A signature taking these six values
- * separately would be a smaller change and would let a caller express exactly
- * the record this row exists to prevent.
+ * Every field is read out of the receipt, so a context derived here cannot
+ * describe a state other than the one that was frozen. A signature taking these
+ * six values separately would be a smaller change and would let a caller express
+ * exactly the record this row exists to prevent. The branch remains constructible
+ * elsewhere — `publishWorkStateHandoff()` validates a caller-supplied
+ * `execution_context` for shape only — which is why `resolveBoundTaskSuccession()`
+ * re-derives from the receipt and compares canonical bytes at read time.
  */
 export function boundTaskExecutionContext(receipt: TaskFreezeReceiptV1): HandoffExecutionContextV1 {
   return Object.freeze({

@@ -10,7 +10,11 @@
 ## Design Decisions
 
 - **Derive on write, prove on read, one derivation.** `boundTaskExecutionContext()`
-  is the only construction site for the `bound_task` branch.
+  is the single *derivation* of the `bound_task` branch — used by the publish path
+  and again by the read-time comparison. It is not the only place the branch can
+  be constructed: `publishWorkStateHandoff()` still accepts a caller-supplied
+  `execution_context` with shape-only validation, and C5's own negative tests
+  build such records directly. That is exactly why the read-time proof exists.
   `publishBoundTaskSuccessionHandoff()` has no `execution_context` parameter, so
   the mismatched record is unexpressible on the supported path;
   `resolveBoundTaskSuccession()` re-derives from the receipt and compares

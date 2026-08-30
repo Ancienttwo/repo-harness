@@ -218,15 +218,15 @@ records, which is the frozen three-way sentence stated as code.
 
 ## Task Breakdown
 
-- [ ] `src/effects/collaboration/succession.ts`: `handoffSuccessionRequirement()`,
+- [x] `src/effects/collaboration/succession.ts`: `handoffSuccessionRequirement()`,
       `boundTaskExecutionContext()`, `assertBoundTaskFrozenForSuccession()`,
       `publishBoundTaskSuccessionHandoff()`, `resolveBoundTaskSuccession()`,
       `assertSuccessorExecutionAuthority()`.
-- [ ] `tests/helpers/collaboration-succession-fixture.ts`: the three-actor
+- [x] `tests/helpers/collaboration-succession-fixture.ts`: the three-actor
       collaboration repository plus a real bound task — persisted lease, claim
       actor receipt, exact WorkEnvelope, checks evidence — so `inspectBoundTask()`
       and `createTaskFreeze()` run against real Git state.
-- [ ] `tests/effects/collaboration-succession.test.ts`:
+- [x] `tests/effects/collaboration-succession.test.ts`:
       (a) dirty executor refused before freeze, frozen, handoff published with the
       receipt-derived context, zero delivery-plane bytes moved, released, taken
       over through `stealLeaseRecord` at generation + 1, successor authority
@@ -241,13 +241,18 @@ records, which is the frozen three-way sentence stated as code.
       plus: no successor field on `TaskFreezeReceiptV1`, handoff publication does
       not change lease generation, and the `bound_task_active` interaction with
       `assertNoLiveClaimForBindingRotation()`.
-- [ ] `tasks/workstreams/runtime-harness/collaboration/collaboration-substrate-program.md`:
+- [x] `tasks/workstreams/runtime-harness/collaboration/collaboration-substrate-program.md`:
       C5 closed, the delegated-worker adoption decision recorded, and how
       succession composes with C4's admission rounds.
-- [ ] `tasks/lessons.md`: the C4 sprint-backlog hand-edit correction.
-- [ ] Architecture: declare the succession surface on the capability node, accept
-      the change if the projection classifies it major, render, and move the AXR7
-      pins in the same commit.
+- [x] `tasks/lessons.md`: the C4 sprint-backlog hand-edit correction.
+- [ ] DEFERRED — Architecture: declare the succession surface on the capability
+      node, accept the change if the projection classifies it major, render, and
+      move the AXR7 pins in the same commit. The projection classified the change
+      minor with no refresh signal, so nothing was declared; declaring
+      `entrypoint.collaboration.succession` would require the internal-API
+      acceptance route and is deferred to a separate architecture slice. Decision
+      recorded in the "No architecture model change." bullet of
+      `tasks/notes/20260830-0858-c5-taskfreeze-succession-integration.notes.md`.
 
 ## Acceptance
 
@@ -266,9 +271,11 @@ depends on it, `collaboration.mode` is `off`, and no existing path calls into it
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] `src/effects/collaboration/succession.ts`: `handoffSuccessionRequirement()`,
-- [ ] `tests/helpers/collaboration-succession-fixture.ts`: the three-actor
-- [ ] `tests/effects/collaboration-succession.test.ts`:
-- [ ] `tasks/workstreams/runtime-harness/collaboration/collaboration-substrate-program.md`:
-- [ ] `tasks/lessons.md`: the C4 sprint-backlog hand-edit correction.
-- [ ] Architecture: declare the succession surface on the capability node, accept
+- [x] `src/effects/collaboration/succession.ts`: `handoffSuccessionRequirement()`,
+- [x] `tests/helpers/collaboration-succession-fixture.ts`: the three-actor
+- [x] `tests/effects/collaboration-succession.test.ts`:
+- [x] `tasks/workstreams/runtime-harness/collaboration/collaboration-substrate-program.md`:
+- [x] `tasks/lessons.md`: the C4 sprint-backlog hand-edit correction.
+- [ ] DEFERRED — Architecture: declare the succession surface on the capability
+      node; see the "No architecture model change." bullet in
+      `tasks/notes/20260830-0858-c5-taskfreeze-succession-integration.notes.md`.
