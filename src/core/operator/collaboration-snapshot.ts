@@ -41,7 +41,18 @@ import type {
  * digest, none of which a browser has any use for. What a reader needs is what
  * kind of work the knowledge came from, and whether a context was withheld.
  */
-export const OPERATOR_COLLABORATION_PROTOCOL = 1 as const;
+/**
+ * The source plane's protocol, carried rather than minted.
+ *
+ * The Fleet transport view does the same thing for the same reason: this
+ * document is a redaction of a collaboration read model, not a second wire
+ * identity with a version axis of its own, and a reader correlating the two
+ * needs the number to mean the same thing on both sides. It is restated as a
+ * literal because importing the collaboration constant would pull that module's
+ * Node `createHash` dependency into the browser bundle; the annotation is the
+ * source protocol's own type, so a bump that forgets this file fails typecheck.
+ */
+export const OPERATOR_COLLABORATION_PROTOCOL: CollaborativeWorkExchangeSnapshotV1['protocol'] = 1;
 export const OPERATOR_COLLABORATION_SNAPSHOT_KIND = 'operator_collaboration_snapshot' as const;
 
 /**

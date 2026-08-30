@@ -114,6 +114,13 @@ allowed_paths:
   - src/operator-web/
   - tests/cli/operator-serve.test.ts
   - tests/operator-web/
+  # Widened during execution, not before it. The new core module exports a
+  # `*_PROTOCOL`, so C1's closed inclusion scan requires it to be adjudicated as
+  # an authority source or a deliberate exclusion; the scan's own docstring makes
+  # the research section the other half of that record, and moving one without
+  # the other is the silent re-baseline it exists to catch.
+  - tests/unit/collaboration-authority-baseline.test.ts
+  - docs/researches/20260829-c0-collaboration-two-plane-authority-freeze.md
   # Declared up front. src/core/operator/** and src/effects/operator/** belong to no ArchContext
   # capability node today, so no node, relation or flow is expected to move; these paths are held
   # open only so the projection and its pins can move with the code if the check reports otherwise.
