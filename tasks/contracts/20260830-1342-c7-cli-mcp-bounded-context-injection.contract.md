@@ -117,7 +117,13 @@ allowed_paths:
   - src/cli/index.ts
   - src/cli/mcp/collaboration-tools.ts
   - src/cli/mcp/tools.ts
+  # The engineer profile's live doctor compares the served tools/list against the
+  # inventory it builds, so it has to expect the same composition the server does.
+  - src/cli/mcp/setup.ts
   - src/effects/collaboration/context-delivery.ts
+  # One module both adapters call, so the actor derivation, the fixed destination,
+  # the mutation gate and the untrusted marking are stated once instead of twice.
+  - src/effects/collaboration/agent-surface.ts
   - tests/cli/
   # The architecture surface. This row adds CLI and MCP entrypoints and one flow, so
   # the model and its projection move with the code in one acceptance round under
