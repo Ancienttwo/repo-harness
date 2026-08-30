@@ -94,7 +94,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ## Change Assessment
 
 ```json
-{"protocol":1,"oracles":[]}
+{"protocol":1,"oracles":[{"id":"architecture-projection-acceptance-tests","kind":"deterministic_test","paths":["src/effects/architecture/projection-acceptance.ts"]},{"id":"architecture-projection-status-readback","kind":"runtime_readback","paths":["src/effects/architecture/projection-acceptance.ts"]}]}
 ```
 
 ## Acceptance Policy
@@ -182,6 +182,7 @@ exit_criteria:
   commands_succeed:
     - bun test tests/unit/architecture-projection-acceptance.test.ts tests/architecture-projection-provider.test.ts tests/architecture-projection-orchestration.test.ts --timeout 60000
     - bun test --timeout 60000
+    - bun src/cli/index.ts architecture-projection status --json
     - bash scripts/check-deploy-sql-order.sh
     - bash scripts/check-architecture-sync.sh
     - bash scripts/check-task-sync.sh
