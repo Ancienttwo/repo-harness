@@ -199,13 +199,3 @@ governs the gate's necessity.
 - `repo-harness architecture-projection check --json`
 
 ## Annotations
-<!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
-
-## Task Breakdown
-- [ ] Add `CollaborativeWorkExchangeSnapshotV1` protocol in `src/core/collaboration/work-exchange.ts`
-- [ ] Add `CollaborationRunContextBindingV1` protocol in `src/core/collaboration/run-binding.ts`
-- [ ] Implement `src/effects/collaboration/work-exchange.ts`: double-read collection over every
-- [ ] Implement `src/effects/collaboration/context-delivery.ts`: real `handoff_facts` join from the
-- [ ] Route every `execution_context` exposure through `resolveBoundTaskSuccession()` with
-- [ ] Tests: snapshot determinism byte-identical; exact offer revision preservation; fail-loud
-- [ ] Architecture: declare the new entrypoints and flow in `.archcontext/model/`, project into
