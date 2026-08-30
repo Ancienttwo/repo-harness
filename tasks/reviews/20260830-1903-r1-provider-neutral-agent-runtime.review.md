@@ -34,7 +34,8 @@
 - Waza `/check` run: deep scope, on target; one fail-closed policy-shape finding fixed and retested
 - Commands run: `bun test --timeout 60000`; focused five-file R1/authority/CLI suite; `bun run check:type`; all commands under root Required Checks; `repo-harness architecture-projection apply --json`
 - Manual checks: real temporary tmux session received exactly one bounded `repo-harness-inbox:<effect>:<control>` line; session removed after capture; legacy runtime-name scan limited to explicit migration/history
-- Real Codex App Thread canary (2026-08-31): `codex app-server` 0.150.1 stdio JSON-RPC; fresh real thread `01a053dc-033e-7d33-9659-192c096675b2` bound as engineer endpoint; one `turn/start` delivered exactly the bounded control line (accepted, turn completed); repeated start emitted no second Host action; message body absent from action and delivered text; exact module receipt closed the chain at `observed_success`; thread archived and fixture repo removed after capture
+- Receipt-correlation hardening (2026-08-31, Codex acceptance round): success now requires this exact effect's bounded control reference on the delivery evidence — the Module observation chain must carry `provider_delivery_ref === control_ref` at the effect's delivery attempt, and Task delivery settles `delivery_channel: agent_runtime_effect` with the exact `delivery_ref` at delivery time (hook/manual lanes can never prove an effect); negative tests cover null ref, foreign ref, and hook-lane delivery
+- Real Codex App Thread canary (2026-08-31, rerun after receipt-correlation hardening): `codex app-server` 0.150.1 stdio JSON-RPC; fresh real thread `01a0544f-3a0a-7352-b3ad-e44dec748eab` (supersedes thread `01a053dc-033e-7d33-9659-192c096675b2` from the pre-hardening run); the delivered module observation now carries the exact `control_ref`, closing the chain under the hardened success rule bound as engineer endpoint; one `turn/start` delivered exactly the bounded control line (accepted, turn completed); repeated start emitted no second Host action; message body absent from action and delivered text; exact module receipt closed the chain at `observed_success`; thread archived and fixture repo removed after capture
 - Supporting artifacts: architecture receipt `sha256:6d1d03493a689cbc3eac9182d182252536b2d4e0f586538e53d28db7ce40590b`; implementation notes
 - Implementation notes reviewed: yes
 - Run snapshot: full suite 3514 pass / 2 platform skips / 0 fail; post-review focused suite 44 pass / 0 fail
@@ -62,7 +63,7 @@
 
 ## Residual Risks / Follow-ups
 
-- Blocker: no authorized real Codex App Thread target exists for the final Host-control canary. Creating a user-owned task is outside current app authorization.
+- The real Codex App Thread canary blocker is closed (2026-08-31); remaining follow-up is the receipt-correlation hardening review round recorded in Deviations.
 
 ## Scorecard
 
@@ -75,12 +76,11 @@
 
 ## Failing Items
 
-- Real Codex App Thread control canary is not available under current authorization.
-- AcceptanceReceipt is intentionally unavailable until that canary is attached to the frozen subject.
+- (none)
 
 ## Retest Steps
 
-- Re-run: real Codex Host canary against an explicitly named task, then `repo-harness run verify-sprint --prepare-acceptance`.
+- Re-run: `repo-harness run verify-sprint --prepare-acceptance --contract tasks/contracts/20260830-1903-r1-provider-neutral-agent-runtime.contract.md` after each fix round; the frozen subject is rebound to the fixing HEAD.
 - Re-check: normalized review subject, architecture fixed point, contract criteria and AcceptanceReceipt projection.
 
 ## Summary

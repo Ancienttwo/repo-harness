@@ -18,7 +18,7 @@
 
 ## Deviations From Plan Or Spec
 
-- The real tmux canary ran against a temporary already-bound local session and passed. A real Codex App Thread canary remains unavailable because no user-owned target task was explicitly authorized; the adapter is covered by an injected Host invoker test only.
+- The real tmux canary ran against a temporary already-bound local session and passed. The real Codex App Thread canary also ran and passed on 2026-08-31 (see Deviations); the earlier unavailability note is superseded.
 
 ## Tradeoffs Considered
 
@@ -31,6 +31,7 @@
 ## Open Questions
 
 - (none; the real Codex App Thread canary closed the last review blocker on 2026-08-31)
+- Receipt correlation settled at delivery time: a Task receipt reserves `agent_runtime_effect` while pending, and `transitionTaskMessageDeliveryReceipt` settles channel+`delivery_ref` together at delivered — a human-facing lane that delivers a receipt reserved for an effect records its own channel instead of fabricating an effect reference. Module success requires the observation chain to carry the exact control ref at the effect's delivery attempt; plain hook observations (null ref) reconcile instead of succeeding.
 
 ## Evidence Links
 

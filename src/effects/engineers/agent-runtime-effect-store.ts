@@ -7,6 +7,7 @@ import { dirname, join, relative, resolve, sep } from 'path';
 
 import {
   AgentRuntimeEffectError,
+  agentRuntimeControlRef,
   assertAgentRuntimeEffectTransition,
   buildAgentRuntimeCapabilityObservation,
   buildAgentRuntimeEffectCurrent,
@@ -40,7 +41,7 @@ import { readLease } from '../state/coordination-lease-store';
 import { readEngineerBindingStatus } from './binding-store';
 import { readClaimActorReceipt } from './claim-actor-store';
 import { assertAgentRuntimeActionEnabled, assertAgentRuntimePrepareEnabled } from './agent-runtime-feature';
-import { readModuleMessageDelivery } from './module-inbox';
+import { readModuleMessageDelivery, readModuleMessageDeliveryObservations } from './module-inbox';
 import { loadEngineerProfile } from './profile-store';
 import { readTaskMessageDelivery } from '../fleet/task-inbox';
 import type { RuntimeDeliveryState, RuntimeReachability } from '../../core/fleet/board';
@@ -265,15 +266,24 @@ export function startAgentRuntimeEffect(input: { repo_root: string; effect_id: s
 }
 function receiptEvidence(repoRoot: string, intent: AgentRuntimeEffectIntentV2): { kind: 'task_message_delivery_receipt' | 'module_message_delivery_receipt'; sha256: string } | null {
   const ref = intent.message_ref;
+  // A delivered state alone proves only that the inbox saw some delivery.
+  // Success additionally requires this exact effect's bounded control
+  // reference on the delivery evidence; anything else stays unproven and
+  // reconciles instead of succeeding.
+  const controlRef = agentRuntimeControlRef(intent);
   if (ref.kind === 'module_message') {
     const entry = readModuleMessageDelivery({ repo_root: repoRoot, engineer_id: ref.engineer_id, message_id: ref.message_id }); const receipt = entry.receipt;
     if (entry.event.event_digest !== ref.message_event_digest || receipt.message_event_digest !== ref.message_event_digest || receipt.recipient_engineer_id !== ref.engineer_id || receipt.target_binding_generation !== ref.binding_generation || receipt.attempt !== ref.delivery_attempt) fail('agent_runtime_effect_conflict', 'Module receipt mismatches the frozen effect reference');
-    return receipt.delivery_state === 'delivered' || receipt.delivery_state === 'acknowledged' ? { kind: 'module_message_delivery_receipt', sha256: receipt.receipt_digest } : null;
+    if (receipt.delivery_state !== 'delivered' && receipt.delivery_state !== 'acknowledged') return null;
+    const bound = readModuleMessageDeliveryObservations(repoRoot, ref.engineer_id, ref.message_id)
+      .some((observation) => observation.attempt === ref.delivery_attempt && observation.outcome === 'delivered' && observation.provider_delivery_ref === controlRef);
+    return bound ? { kind: 'module_message_delivery_receipt', sha256: receipt.receipt_digest } : null;
   }
   const entry = readTaskMessageDelivery({ repo_root: repoRoot, task_id: ref.task_id, message_id: ref.message_id, recipient: { kind: 'claim', claim_id: ref.claim_id, generation: ref.lease_generation } }); const receipt = entry.receipt;
   if (!receipt) return null;
   if (entry.event.event_digest !== ref.message_event_digest || entry.event.task_revision !== ref.task_revision || receipt.recipient_task_revision !== ref.task_revision || receipt.recipient_claim_id !== ref.claim_id || receipt.recipient_generation !== ref.lease_generation) fail('agent_runtime_effect_conflict', 'Task receipt mismatches the frozen effect reference');
   if (receipt.delivery_state !== 'delivered' && receipt.delivery_state !== 'acknowledged') return null;
+  if (receipt.delivery_channel !== 'agent_runtime_effect' || receipt.delivery_ref !== controlRef) return null;
   return { kind: 'task_message_delivery_receipt', sha256: `sha256:${createHash('sha256').update(canonicalTaskMessageDeliveryReceiptBytes(receipt)).digest('hex')}` };
 }
 export function observeAgentRuntimeEffect(input: { repo_root: string; effect_id: string; adapter: AgentRuntimeAdapterObservationV2; observed_at: string; receipt_wait_exhausted: boolean; crash_hook?: AgentRuntimeEffectCrashHook }): AgentRuntimeEffectStatus {

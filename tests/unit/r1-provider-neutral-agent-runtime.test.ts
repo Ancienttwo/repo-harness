@@ -99,9 +99,24 @@ describe('R1 provider-neutral Agent Runtime', () => {
   test('persists before one Host action and exact Module receipt is the only success evidence', () => {
     const repoRoot = fixture(); const prepared = prepare(repoRoot); const started = startAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, started_at: '2026-08-30T10:04:00.000Z' });
     expect(started.action?.adapter_kind).toBe('codex-app-thread'); expect(readAgentRuntimeEffectStatus(repoRoot, prepared.intent.effect_id).current.state).toBe('effect_started');
-    recordModuleMessageDeliveryObservation({ repo_root: repoRoot, engineer_id: engineerId, message_id: messageOne, expected_message_event_digest: prepared.intent.message_ref.message_event_digest, expected_attempt: 1, result: { outcome: 'delivered', provider_delivery_ref: started.action!.control_sha256, observed_at: '2026-08-30T10:05:00.000Z' } });
+    recordModuleMessageDeliveryObservation({ repo_root: repoRoot, engineer_id: engineerId, message_id: messageOne, expected_message_event_digest: prepared.intent.message_ref.message_event_digest, expected_attempt: 1, result: { outcome: 'delivered', provider_delivery_ref: started.action!.control_ref, observed_at: '2026-08-30T10:05:00.000Z' } });
     const done = observeAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, adapter: { adapter_kind: 'codex-app-thread', outcome: 'accepted', process_exit_code: null, process_signal: null }, observed_at: '2026-08-30T10:06:00.000Z', receipt_wait_exhausted: false });
     expect(done.current.state).toBe('observed_success'); expect(done.observation.receipt_kind).toBe('module_message_delivery_receipt');
+  });
+
+  test('a Module delivery observation without this effect control reference never succeeds', () => {
+    const repoRoot = fixture(); const prepared = prepare(repoRoot); const started = startAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, started_at: '2026-08-30T10:04:00.000Z' });
+    recordModuleMessageDeliveryObservation({ repo_root: repoRoot, engineer_id: engineerId, message_id: messageOne, expected_message_event_digest: prepared.intent.message_ref.message_event_digest, expected_attempt: 1, result: { outcome: 'delivered', provider_delivery_ref: null, observed_at: '2026-08-30T10:05:00.000Z' } });
+    const observed = observeAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, adapter: { adapter_kind: 'codex-app-thread', outcome: 'accepted', process_exit_code: null, process_signal: null }, observed_at: '2026-08-30T10:06:00.000Z', receipt_wait_exhausted: true });
+    expect(observed.current.state).toBe('reconciliation_required'); expect(observed.observation.failure_class).toBe('receipt_missing');
+  });
+
+  test('a foreign control reference on a Module delivery observation never succeeds', () => {
+    const repoRoot = fixture(); const prepared = prepare(repoRoot); startAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, started_at: '2026-08-30T10:04:00.000Z' });
+    const foreign = `repo-harness-inbox:sha256:${'f'.repeat(64)}:sha256:${'e'.repeat(64)}`;
+    recordModuleMessageDeliveryObservation({ repo_root: repoRoot, engineer_id: engineerId, message_id: messageOne, expected_message_event_digest: prepared.intent.message_ref.message_event_digest, expected_attempt: 1, result: { outcome: 'delivered', provider_delivery_ref: foreign, observed_at: '2026-08-30T10:05:00.000Z' } });
+    const observed = observeAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, adapter: { adapter_kind: 'codex-app-thread', outcome: 'accepted', process_exit_code: null, process_signal: null }, observed_at: '2026-08-30T10:06:00.000Z', receipt_wait_exhausted: true });
+    expect(observed.current.state).toBe('reconciliation_required');
   });
 
   test('lost acknowledgement reconciles and a repeated start emits no second action', () => {
@@ -131,8 +146,38 @@ describe('R1 provider-neutral Agent Runtime', () => {
     sendTaskMessage({ repo_root: repoRoot, canonical_source: { targetRef: 'HEAD', sprintPath }, event: buildTaskMessageEvent({ message_id: taskMessageId, task_id: taskId, task_revision: taskRevision, scope: 'claim', target_claim_id: claimId, target_generation: 1, sender_kind: 'operator', sender_id: 'runtime-test', sender_trust: 'local_operator', audience: 'owner', body: 'task body never enters runtime action', created_at: '2026-08-30T11:01:00.000Z', in_reply_to: null }) });
     const observed = capability(repoRoot); const prepared = prepareAgentRuntimeEffect({ repo_root: repoRoot, message_kind: 'task_message', task_id: taskId, message_id: taskMessageId, idempotency_key: 'task-runtime', expected_task_revision: taskRevision, expected_claim_id: claimId, expected_lease_generation: 1, expected_capability_sha256: observed.capability_sha256, created_at: '2026-08-30T11:02:00.000Z' });
     const started = startAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, started_at: '2026-08-30T11:03:00.000Z' }); expect(started.action).not.toBeNull(); expect(JSON.stringify(started.action)).not.toContain('task body');
-    deliverTaskInbox({ repo_root: repoRoot, task_id: taskId, canonical_source: { targetRef: 'HEAD', sprintPath }, recipient: { kind: 'claim', claim_id: claimId, generation: 1 }, execution_worktree: repoRoot, delivery_channel: 'hook_session', delivered_at: '2026-08-30T11:04:00.000Z' });
+    deliverTaskInbox({ repo_root: repoRoot, task_id: taskId, canonical_source: { targetRef: 'HEAD', sprintPath }, recipient: { kind: 'claim', claim_id: claimId, generation: 1 }, execution_worktree: repoRoot, delivery_channel: 'agent_runtime_effect', message_id: taskMessageId, delivery_ref: started.action!.control_ref, delivered_at: '2026-08-30T11:04:00.000Z' });
     const done = observeAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, adapter: { adapter_kind: 'codex-app-thread', outcome: 'accepted', process_exit_code: null, process_signal: null }, observed_at: '2026-08-30T11:05:00.000Z', receipt_wait_exhausted: false }); expect(done.current.state).toBe('observed_success'); expect(done.observation.receipt_kind).toBe('task_message_delivery_receipt');
+  });
+
+  test('a Task hook delivery or a foreign control reference never proves the effect', () => {
+    const repoRoot = fixture();
+    const sprintPath = 'plans/sprints/runtime.sprint.md'; const taskCell = 'wake exact task owner'; mkdirSync(join(repoRoot, 'plans/sprints'), { recursive: true });
+    writeFileSync(join(repoRoot, sprintPath), ['# Sprint: runtime', '', '## Backlog', '', '| # | Status | Task | Mode | Acceptance | Plan |', '|---|---|---|---|---|---|', `| 1 | [ ] | ${taskCell} | contract | exact receipt | (pending) |`, ''].join('\n'));
+    execFileSync('git', ['add', sprintPath], { cwd: repoRoot }); execFileSync('git', ['commit', '-qm', 'task authority'], { cwd: repoRoot });
+    const taskId = deriveTaskId({ repoIdentity: resolveRepoIdentity(repoRoot), sprintPath, taskCell }); const taskRevision = deriveTaskRevision({ taskId, modeCell: 'contract', acceptanceCell: 'exact receipt' }); const claimId = '44444444-4444-4444-8444-444444444444';
+    const claimed = buildLeaseOwnerRecord({ claimId, taskId, taskRevision, sprintPath, targetRef: 'HEAD', generation: 1, sessionId: 'runtime-session', sourceWorktree: repoRoot });
+    const bound = bindLeaseRecord(claimed, { claimId, executionWorktree: repoRoot, branch: 'codex/runtime', unitRef: 'plans/runtime.md' }); if (!bound.ok) throw new Error(bound.error); createLeaseDirectory(repoRoot, taskId); writeLeaseOwnerDurably(repoRoot, taskId, bound.record);
+    const profile = loadEngineerProfile(repoRoot, engineerId); const binding = readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision).binding!;
+    const principal = validateEngineerPrincipal({ protocol: 1, kind: 'repo-harness-engineer-principal', repository_id: repoHarnessRepoIdFor(repoRoot), engineer_id: engineerId, binding_id: binding.binding_id, binding_generation: binding.binding_generation, engineer_contract_revision: binding.engineer_contract_revision, carrier: 'mcp_oauth', auth_subject: '55555555-5555-4555-8555-555555555555', provider: binding.provider, provider_thread_id: binding.provider_thread_id });
+    const envelope = { protocol: 1 as const, kind: 'repo-harness-work-envelope' as const, repo_id: repoHarnessRepoIdFor(repoRoot), task_id: taskId, task_revision: taskRevision, sprint_path: sprintPath, claim_id: claimId, generation: 1, worktree_path: repoRoot, branch: 'codex/runtime', unit_ref: 'plans/runtime.md', authorization_revision: 1 };
+    publishClaimActorReceipt(repoRoot, buildClaimActorReceipt({ envelope, principal, session_id: 'runtime-session', bound_at: '2026-08-30T11:00:00.000Z' }));
+    const hookMessageId = '66666666-6666-4666-8666-666666666666';
+    sendTaskMessage({ repo_root: repoRoot, canonical_source: { targetRef: 'HEAD', sprintPath }, event: buildTaskMessageEvent({ message_id: hookMessageId, task_id: taskId, task_revision: taskRevision, scope: 'claim', target_claim_id: claimId, target_generation: 1, sender_kind: 'operator', sender_id: 'runtime-test', sender_trust: 'local_operator', audience: 'owner', body: 'hook lane body', created_at: '2026-08-30T11:01:00.000Z', in_reply_to: null }) });
+    const observed = capability(repoRoot); const prepared = prepareAgentRuntimeEffect({ repo_root: repoRoot, message_kind: 'task_message', task_id: taskId, message_id: hookMessageId, idempotency_key: 'task-hook-lane', expected_task_revision: taskRevision, expected_claim_id: claimId, expected_lease_generation: 1, expected_capability_sha256: observed.capability_sha256, created_at: '2026-08-30T11:02:00.000Z' });
+    startAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, started_at: '2026-08-30T11:03:00.000Z' });
+    deliverTaskInbox({ repo_root: repoRoot, task_id: taskId, canonical_source: { targetRef: 'HEAD', sprintPath }, recipient: { kind: 'claim', claim_id: claimId, generation: 1 }, execution_worktree: repoRoot, delivery_channel: 'hook_session', delivered_at: '2026-08-30T11:04:00.000Z' });
+    const hookObserved = observeAgentRuntimeEffect({ repo_root: repoRoot, effect_id: prepared.intent.effect_id, adapter: { adapter_kind: 'codex-app-thread', outcome: 'accepted', process_exit_code: null, process_signal: null }, observed_at: '2026-08-30T11:05:00.000Z', receipt_wait_exhausted: true });
+    expect(hookObserved.current.state).toBe('reconciliation_required'); expect(hookObserved.observation.failure_class).toBe('receipt_missing');
+
+    const foreignMessageId = '77777777-7777-4777-8777-777777777777';
+    sendTaskMessage({ repo_root: repoRoot, canonical_source: { targetRef: 'HEAD', sprintPath }, event: buildTaskMessageEvent({ message_id: foreignMessageId, task_id: taskId, task_revision: taskRevision, scope: 'claim', target_claim_id: claimId, target_generation: 1, sender_kind: 'operator', sender_id: 'runtime-test', sender_trust: 'local_operator', audience: 'owner', body: 'foreign ref body', created_at: '2026-08-30T11:06:00.000Z', in_reply_to: null }) });
+    const foreignPrepared = prepareAgentRuntimeEffect({ repo_root: repoRoot, message_kind: 'task_message', task_id: taskId, message_id: foreignMessageId, idempotency_key: 'task-foreign-ref', expected_task_revision: taskRevision, expected_claim_id: claimId, expected_lease_generation: 1, expected_capability_sha256: observed.capability_sha256, created_at: '2026-08-30T11:07:00.000Z' });
+    const foreignStarted = startAgentRuntimeEffect({ repo_root: repoRoot, effect_id: foreignPrepared.intent.effect_id, started_at: '2026-08-30T11:08:00.000Z' });
+    deliverTaskInbox({ repo_root: repoRoot, task_id: taskId, canonical_source: { targetRef: 'HEAD', sprintPath }, recipient: { kind: 'claim', claim_id: claimId, generation: 1 }, execution_worktree: repoRoot, delivery_channel: 'agent_runtime_effect', message_id: foreignMessageId, delivery_ref: `repo-harness-inbox:${prepared.intent.effect_id}:sha256:${'a'.repeat(64)}`, delivered_at: '2026-08-30T11:09:00.000Z' });
+    const foreignObserved = observeAgentRuntimeEffect({ repo_root: repoRoot, effect_id: foreignPrepared.intent.effect_id, adapter: { adapter_kind: 'codex-app-thread', outcome: 'accepted', process_exit_code: null, process_signal: null }, observed_at: '2026-08-30T11:10:00.000Z', receipt_wait_exhausted: true });
+    expect(foreignObserved.current.state).toBe('reconciliation_required');
+    expect(foreignStarted.action).not.toBeNull();
   });
 
   test('shadow records preparation but refuses Host action', () => {

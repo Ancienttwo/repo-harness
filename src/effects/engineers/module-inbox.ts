@@ -574,6 +574,17 @@ export function readModuleMessageDelivery(input: {
   });
 }
 
+/** Read one message's full delivery observation chain. A pure read for
+ * runtime-effect correlation: it returns an empty chain when nothing was
+ * observed and never creates inbox or lock paths. */
+export function readModuleMessageDeliveryObservations(repoRoot: string, engineerId: string, messageId: string): readonly ModuleMessageDeliveryObservationV1[] {
+  const directory = join(pathsFor(repoRoot, engineerId).observations, messageId);
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory).sort()
+    .filter((name) => /^[0-9]{8}\.json$/u.test(name))
+    .map((name) => readObservation(join(directory, name)));
+}
+
 export function recordModuleMessageDeliveryObservation(
   input: RecordModuleMessageDeliveryObservationInput,
 ): ModuleInboxEntry & { readonly observation: ModuleMessageDeliveryObservationV1 } {

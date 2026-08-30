@@ -237,9 +237,16 @@ export function validateAgentRuntimeEffectIntent(value: unknown): AgentRuntimeEf
 export function canonicalAgentRuntimeEffectIntentBytes(value: AgentRuntimeEffectIntentV2): string { return canonicalMessageBytes(validateAgentRuntimeEffectIntent(value) as unknown as Readonly<Record<string, unknown>>); }
 
 function controlSha(intent: AgentRuntimeEffectIntentV2): string { return digest({ domain: 'repo-harness-agent-runtime-control.v2', effect_id: intent.effect_id, intent_sha256: intent.intent_sha256, message_event_digest: intent.message_ref.message_event_digest, delivery_attempt: intent.message_ref.delivery_attempt }); }
+/** The exact bounded inbox-control reference one effect admits. The same
+ * deterministic derivation runs on the observing side, so a delivery receipt
+ * must carry this exact string before it can prove this effect's delivery. */
+export function agentRuntimeControlRef(intentValue: AgentRuntimeEffectIntentV2): string {
+  const intent = validateAgentRuntimeEffectIntent(intentValue);
+  return `repo-harness-inbox:${intent.effect_id}:${controlSha(intent)}`;
+}
 export function buildAgentRuntimeHostAction(intentValue: AgentRuntimeEffectIntentV2): AgentRuntimeHostActionV2 {
   const intent = validateAgentRuntimeEffectIntent(intentValue); const control = controlSha(intent);
-  const basis = Object.freeze({ protocol: AGENT_RUNTIME_EFFECT_PROTOCOL, kind: AGENT_RUNTIME_HOST_ACTION_KIND, effect_id: intent.effect_id, intent_sha256: intent.intent_sha256, adapter_kind: intent.endpoint_fence.adapter_kind, operation: intent.operation, host_id: intent.endpoint_fence.host_id, endpoint_id: intent.endpoint_fence.endpoint_id, message_id: intent.message_ref.message_id, message_event_digest: intent.message_ref.message_event_digest, delivery_attempt: intent.message_ref.delivery_attempt, control_ref: `repo-harness-inbox:${intent.effect_id}:${control}`, control_sha256: control });
+  const basis = Object.freeze({ protocol: AGENT_RUNTIME_EFFECT_PROTOCOL, kind: AGENT_RUNTIME_HOST_ACTION_KIND, effect_id: intent.effect_id, intent_sha256: intent.intent_sha256, adapter_kind: intent.endpoint_fence.adapter_kind, operation: intent.operation, host_id: intent.endpoint_fence.host_id, endpoint_id: intent.endpoint_fence.endpoint_id, message_id: intent.message_ref.message_id, message_event_digest: intent.message_ref.message_event_digest, delivery_attempt: intent.message_ref.delivery_attempt, control_ref: agentRuntimeControlRef(intent), control_sha256: control });
   return Object.freeze({ ...basis, action_sha256: digest(basis) });
 }
 export function validateAgentRuntimeHostAction(value: unknown): AgentRuntimeHostActionV2 {
