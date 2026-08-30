@@ -18,9 +18,9 @@
 > **Last Updated**: 2026-08-31 00:00
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: sha256:db04aec369663e56e5cf5261d349eab2327f7690b6051cd34f0670f9500d5c5c
+> **Reviewed Subject SHA256**: sha256:88d781a62f2e40e887c3933e381879bebaaee812bf8a7debaa0244eb858f9cc0
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: 1037d92dac5142788d606bf1a3c993f5768ae779
+> **Reviewed Target Revision**: 525d2a19c2bba9389f0fdbaf0ef4ebe42acf04de
 
 ## Human Review Card
 
@@ -50,17 +50,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: external_pass
-> **Reviewer**: Codex
-> **Source**: codex-plugin
-> **Actor**: not-applicable
-> **Reviewed Subject SHA256**: sha256:db04aec369663e56e5cf5261d349eab2327f7690b6051cd34f0670f9500d5c5c
+> **Disposition**: user_waiver
+> **Reviewer**: User
+> **Source**: user-waiver
+> **Actor**: ancienttwo
+> **Reviewed Subject SHA256**: sha256:88d781a62f2e40e887c3933e381879bebaaee812bf8a7debaa0244eb858f9cc0
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: 1037d92dac5142788d606bf1a3c993f5768ae779
-> **Verification Evidence SHA256**: sha256:b1c8719c3e709f8c067b8955181b73d911d936f908c52b72807b063255a09848
-> **Issued At**: 2026-08-30T18:12:51.067Z
+> **Reviewed Target Revision**: 525d2a19c2bba9389f0fdbaf0ef4ebe42acf04de
+> **Verification Evidence SHA256**: sha256:f518438f066cf080434060c0c50c12ebd0abe0d36592c1774da3a002bcf6f5e4
+> **Issued At**: 2026-08-30T22:45:38.554Z
 
-- Summary: Final read-only gatekeeper review passed the exact signal identity, freshness, mutual-exclusion, durable-job, crash-recovery, and no-provider-apply boundaries with the repository-required checks green.
+- Summary: Owner approved the rebased final architecture-projection acceptance candidate after the required checks passed.
 - Findings: none
 
 ## Behavior Diff Notes
