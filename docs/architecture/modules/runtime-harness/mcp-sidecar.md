@@ -1,5 +1,5 @@
 # runtime-harness/mcp-sidecar 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:372dbf785a749b61dd4e9222fce563ede145a31a1eceefeab507185ef7fe6332" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:1bf7ebc5cc2b3260a4f811ff972d4cb18429a5922b6c8d50333f08b3f12d940f" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:9f4271efed28fe42f3cf52fb38c4c8a291576e1a59f8e9c474a03430a3a96472" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:f9849e6915ff4bd1d1b1c5954ce1e57db87e7fd3dcedd27ff37cda38e709013e" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.mcp-sidecar`(kind `capability`)
 > **Matched Prefixes**:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`、`src/cli/chatgpt-browser/file-policy.ts`、`src/effects/repo-registry.ts`、`docs/repo-harness-chatgpt-mcp-setup.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`docs/researches/20260711-devspace-chatgpt-local-control.md`
@@ -51,13 +51,13 @@ flowchart LR
 
 出向關係:
 
+- `calls` → `capability.runtime-harness.agent-runtime-effects` — Expose read-only runtime capability and current-effect projections to the authenticated Engineer without Host mutation authority
 - `calls` → `capability.runtime-harness.collaboration` — Serve the bounded Engineer collaboration tool set from the shared agent surface, deriving the author from the authenticated authorization and taking no actor, destination or recorded time from a caller
 - `calls` → `capability.runtime-harness.engineer-messages` — Expose authenticated Engineer message send, list and acknowledgement without granting generic Fleet or Provider authority
 - `calls` → `capability.runtime-harness.engineer-bindings` — Resolve a verified OAuth authorization to the current Engineer Binding before acquiring a Fleet Claim
 - `calls` → `capability.runtime-harness.engineer-scheduling` — Project and acquire exact revision-fenced Engineer offers for a verified OAuth principal
 - `calls` → `capability.runtime-harness.interface-change` — Expose only authenticated Engineer propose, submit, cancel, materialize and implemented mutations through the server-derived OAuth principal
 - `calls` → `component.mcp-sidecar.primary` — Dispatch an MCP tool call
-- `calls` → `capability.runtime-harness.provider-thread-effects` — Expose read-only capability and current effect projections to the authenticated Engineer without Provider mutation authority
 
 入向關係:
 

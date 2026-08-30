@@ -1,6 +1,6 @@
 # Architecture Queue Card: runtime-harness-collaboration
 
-> **Status**: Pending
+> **Status**: Resolved
 > **Detected**: 2026-08-30T05:35:54+0800
 > **Updated**: 2026-08-30T05:35:57+0800
 > **Severity**: low
@@ -284,3 +284,11 @@
   }
 ]
 ```
+
+## Archive Resolution
+
+- Status: Resolved
+- Archived: 2026-08-31T00:51:56+0800
+- Artifacts:
+- `docs/architecture/modules/runtime-harness/collaboration.md`
+- Note: C7-C9 collaboration surfaces merged in PR #229: verified projection egress, read-only operator surface, real multi-agent canary. Final verification 18/18 criteria; typed owner-waiver AcceptanceReceipt recorded. Evidence: docs/researches/20260830-c9-real-multi-agent-canary.md

@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:3ad5f00afd07951d2b7f4bc5b3200dcb4497e1eff8ba6d81ef4104a97fafaca9" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:130e1fcd74820dd5d29659c4bb7b72e9f59f66e0ad300ccb1478ac34de28f69c" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:1e86455ca74e338a5a15320bcfdf5689f363e0451f0ad5ada9dbe31383682112" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:56be646c4cc7bb83393620d85941501eadda272c33d3bc900d93e2695e591d4a" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
@@ -23,6 +23,14 @@
       {
         "id": "capability.public-surface.root-router",
         "name": "Root Router",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "capability.runtime-harness.agent-runtime-effects",
+        "name": "Agent Runtime Effects",
         "type": "Software System",
         "tags": [
           "capability"
@@ -125,14 +133,6 @@
         ]
       },
       {
-        "id": "capability.runtime-harness.provider-thread-effects",
-        "name": "Provider Thread Effects",
-        "type": "Software System",
-        "tags": [
-          "capability"
-        ]
-      },
-      {
         "id": "capability.runtime-harness.verified-context",
         "name": "Verified Evidence Context",
         "type": "Software System",
@@ -191,6 +191,14 @@
       {
         "id": "component.adoption.primary",
         "name": "Adoption Transaction",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.agent-runtime-effects.journal",
+        "name": "Agent Runtime Effect Journal",
         "type": "Component",
         "tags": [
           "component"
@@ -333,14 +341,6 @@
         ]
       },
       {
-        "id": "component.provider-thread-effects.primary",
-        "name": "Codex Provider Thread Effect Journal",
-        "type": "Component",
-        "tags": [
-          "component"
-        ]
-      },
-      {
         "id": "component.root-router.primary",
         "name": "Root Adoption Router",
         "type": "Component",
@@ -368,6 +368,24 @@
         "id": "relation.adoption.primary",
         "sourceId": "capability.public-surface.adoption",
         "destinationId": "component.adoption.primary",
+        "description": "calls"
+      },
+      {
+        "id": "relation.agent-runtime-effects.engineer-bindings",
+        "sourceId": "capability.runtime-harness.agent-runtime-effects",
+        "destinationId": "capability.runtime-harness.engineer-bindings",
+        "description": "calls"
+      },
+      {
+        "id": "relation.agent-runtime-effects.engineer-messages",
+        "sourceId": "capability.runtime-harness.agent-runtime-effects",
+        "destinationId": "capability.runtime-harness.engineer-messages",
+        "description": "calls"
+      },
+      {
+        "id": "relation.agent-runtime-effects.journal",
+        "sourceId": "capability.runtime-harness.agent-runtime-effects",
+        "destinationId": "component.agent-runtime-effects.journal",
         "description": "calls"
       },
       {
@@ -461,6 +479,12 @@
         "description": "calls"
       },
       {
+        "id": "relation.engineering-overlay.agent-runtime-effects",
+        "sourceId": "capability.runtime-harness.engineering-overlay",
+        "destinationId": "capability.runtime-harness.agent-runtime-effects",
+        "description": "calls"
+      },
+      {
         "id": "relation.engineering-overlay.engineer-bindings",
         "sourceId": "capability.runtime-harness.engineering-overlay",
         "destinationId": "capability.runtime-harness.engineer-bindings",
@@ -476,12 +500,6 @@
         "id": "relation.engineering-overlay.primary",
         "sourceId": "capability.runtime-harness.engineering-overlay",
         "destinationId": "component.engineering-overlay.primary",
-        "description": "calls"
-      },
-      {
-        "id": "relation.engineering-overlay.provider-thread-effects",
-        "sourceId": "capability.runtime-harness.engineering-overlay",
-        "destinationId": "capability.runtime-harness.provider-thread-effects",
         "description": "calls"
       },
       {
@@ -539,6 +557,12 @@
         "description": "calls"
       },
       {
+        "id": "relation.mcp-sidecar.agent-runtime-effects",
+        "sourceId": "capability.runtime-harness.mcp-sidecar",
+        "destinationId": "capability.runtime-harness.agent-runtime-effects",
+        "description": "calls"
+      },
+      {
         "id": "relation.mcp-sidecar.collaboration",
         "sourceId": "capability.runtime-harness.mcp-sidecar",
         "destinationId": "capability.runtime-harness.collaboration",
@@ -575,30 +599,6 @@
         "description": "calls"
       },
       {
-        "id": "relation.mcp-sidecar.provider-thread-effects",
-        "sourceId": "capability.runtime-harness.mcp-sidecar",
-        "destinationId": "capability.runtime-harness.provider-thread-effects",
-        "description": "calls"
-      },
-      {
-        "id": "relation.provider-thread-effects.engineer-bindings",
-        "sourceId": "capability.runtime-harness.provider-thread-effects",
-        "destinationId": "capability.runtime-harness.engineer-bindings",
-        "description": "calls"
-      },
-      {
-        "id": "relation.provider-thread-effects.engineer-messages",
-        "sourceId": "capability.runtime-harness.provider-thread-effects",
-        "destinationId": "capability.runtime-harness.engineer-messages",
-        "description": "calls"
-      },
-      {
-        "id": "relation.provider-thread-effects.primary",
-        "sourceId": "capability.runtime-harness.provider-thread-effects",
-        "destinationId": "component.provider-thread-effects.primary",
-        "description": "calls"
-      },
-      {
         "id": "relation.root-router.primary",
         "sourceId": "capability.public-surface.root-router",
         "destinationId": "component.root-router.primary",
@@ -631,6 +631,7 @@
         "capability.public-surface.action-commands",
         "capability.public-surface.adoption",
         "capability.public-surface.root-router",
+        "capability.runtime-harness.agent-runtime-effects",
         "capability.runtime-harness.bound-task-freezes",
         "capability.runtime-harness.collaboration",
         "capability.runtime-harness.delegated-runs",
@@ -643,7 +644,6 @@
         "capability.runtime-harness.integration-acceptance",
         "capability.runtime-harness.interface-change",
         "capability.runtime-harness.mcp-sidecar",
-        "capability.runtime-harness.provider-thread-effects",
         "capability.runtime-harness.verified-context",
         "capability.runtime-mcp.general-repo-access",
         "capability.verification.codegraph-readiness",
@@ -652,6 +652,7 @@
         "capability.workflow-engine.inspection-migration",
         "component.action-commands.primary",
         "component.adoption.primary",
+        "component.agent-runtime-effects.journal",
         "component.bound-task-freezes.primary",
         "component.codegraph-readiness.primary",
         "component.collaboration.primary",
@@ -669,7 +670,6 @@
         "component.integration-acceptance.primary",
         "component.interface-change.primary",
         "component.mcp-sidecar.primary",
-        "component.provider-thread-effects.primary",
         "component.root-router.primary",
         "component.verified-context.primary"
       ]

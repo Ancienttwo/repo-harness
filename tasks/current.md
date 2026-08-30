@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-30T22:16:27+0800 -->
+<!-- updated_at: 2026-08-31T01:00:58+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-30T22:16:27+0800
-> **Source Branch**: codex/c7-c9-collaboration-integration
-> **Source Commit**: d617fefe
+> **Status**: Active
+> **Updated At**: 2026-08-31T01:00:58+0800
+> **Source Branch**: main
+> **Source Commit**: 6f6bd659
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive-workflow
+> **Reason**: manual
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
+- Status: Active
 - Active Plan: (none)
 - Plan Status: (none)
 - Next Task: inspect active worktree marker(s)
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -42,14 +42,14 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Sprint: (none)
 ## Workstreams
 
+- `tasks/workstreams/runtime-harness/agent-runtime-effects/me3a-provider-thread-effect.md`: status=completed, current_slice=completed-20260825-me3a-provider-thread-effect, source_plan=plans/plan-20260825-2120-me3a-provider-thread-effect.md
+- `tasks/workstreams/runtime-harness/agent-runtime-effects/r1-provider-neutral-agent-runtime.md`: status=planned, current_slice=architecture-accepted-awaiting-activation, source_plan=plans/plan-20260830-1903-r1-provider-neutral-agent-runtime.md
 - `tasks/workstreams/runtime-harness/bound-task-freezes/me4a-bound-task-freeze-handoff.md`: status=completed, current_slice=completed-20260826-me4a-bound-task-freeze-handoff, source_plan=plans/plan-20260826-1247-me4a-bound-task-freeze-handoff.md
 - `tasks/workstreams/runtime-harness/collaboration/collaboration-substrate-program.md`: status=active, current_slice=todo-01, source_plan=plans/plan-20260830-0858-c5-taskfreeze-succession-integration.md
 - `tasks/workstreams/runtime-harness/engineer-bindings/me0a-profile-binding.md`: status=completed, current_slice=completed-20260824-me0a-profile-binding, source_plan=`plans/plan-20260824-2126-me0a-engineer-profile-binding.md`
 - `tasks/workstreams/runtime-harness/engineer-bindings/me0b-principal-claim-actor.md`: status=completed, current_slice=completed-20260825-me0b-principal-claim-actor, source_plan=`plans/plan-20260825-0029-me0b-engineer-principal-claim-actor.md`
 - `tasks/workstreams/runtime-harness/engineer-messages/me1c-engineer-coordination-messages.md`: status=completed, current_slice=acceptance-and-publication, source_plan=plans/plan-20260825-1443-me1c-engineer-coordination-messages.md
 - `tasks/workstreams/runtime-harness/engineer-scheduling/me1a-scheduling-schema.md`: status=completed, current_slice=completed-20260828-me1a-scheduling-schema, source_plan=`plans/plan-20260825-1149-me1a-engineer-scheduling-schema.md`
-- `tasks/workstreams/runtime-harness/engineering-overlay/me1b-engineering-overlay.md`: status=completed, current_slice=completed-20260828-exact-subject-publication, source_plan=plans/plan-20260825-2339-me1b-engineering-overlay.md
-- `tasks/workstreams/runtime-harness/hook-adapters/github-issues-158-159.md`: status=completed, current_slice=completed-20260805-contract-scoped-check-repair, source_plan=plans/plan-20260805-0001-github-issues-158-159.md
 ## Handoff
 
 - Exact Next Step: (none)
@@ -63,16 +63,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260830-1839-c9-real-multi-agent-canary-and-multi-seat-decision.md
- D tasks/contracts/20260830-1839-c9-real-multi-agent-canary-and-multi-seat-decision.contract.md
- D tasks/notes/20260830-1839-c9-real-multi-agent-canary-and-multi-seat-decision.notes.md
- D tasks/reviews/20260830-1839-c9-real-multi-agent-canary-and-multi-seat-decision.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260830-1839-c9-real-multi-agent-canary-and-multi-seat-decision.md
-?? tasks/archive/contract-20260830-2216-c9-real-multi-agent-canary-and-multi-seat-decision.md
-?? tasks/archive/notes-20260830-2216-c9-real-multi-agent-canary-and-multi-seat-decision.md
-?? tasks/archive/review-20260830-2216-c9-real-multi-agent-canary-and-multi-seat-decision.md
-?? tasks/archive/todo-20260830-2216-c9-real-multi-agent-canary-and-multi-seat-decision.md
+ M docs/architecture/.projection-manifest.json
+ M docs/architecture/changelog.md
+ M docs/architecture/decisions/index.md
+ M docs/architecture/diagrams/architecture.likec4
+ M docs/architecture/diagrams/architecture.mmd
+ M docs/architecture/diagrams/architecture.structurizr.json
+ M docs/architecture/index.md
+ M docs/architecture/modules/runtime-harness/mcp-sidecar.md
+ D docs/architecture/requests/runtime-harness-collaboration.md
+?? docs/architecture/requests/archive/2026/20260831-005155-runtime-harness-collaboration.md
 ```
 
 ## Source Artifacts

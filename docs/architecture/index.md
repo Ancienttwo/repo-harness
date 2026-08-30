@@ -286,7 +286,7 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 
 
 <!-- BEGIN ARCHITECTURE PENDING REQUESTS -->
-- [ ] 2026-08-30T05:35:57+0800 [low] `src/effects/collaboration/record-store.ts` -> [runtime-harness-collaboration](requests/runtime-harness-collaboration.md)
+- (none)
 <!-- END ARCHITECTURE PENDING REQUESTS -->
 
 
@@ -296,7 +296,7 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 - Treat user-level `~/.codex/hooks.json` and `~/.claude/settings.json` as host adapters. Keep hook implementation under `.ai/hooks/`, and treat repo-local `.claude/settings.json` / `.codex/hooks.json` hook adapters as retired legacy config.
 - Consider adding `bun scripts/capability-resolver.ts validate --format text` to the strict workflow gate after the architecture registry has been used through one more real slice.
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:3ad5f00afd07951d2b7f4bc5b3200dcb4497e1eff8ba6d81ef4104a97fafaca9" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:19c7868908c081bc31e2880c835ef39c070a42a012049cee6ca5db6b5314ceba" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:1e86455ca74e338a5a15320bcfdf5689f363e0451f0ad5ada9dbe31383682112" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:a99716d5e85fb0494296e037f472ea92cd7589dab28fce6066bf184b01489544" -->
 # Architecture Index
 
 Generated: 1970-01-01T00:00:00.000Z
@@ -306,6 +306,7 @@ Generated: 1970-01-01T00:00:00.000Z
 - [Action Commands](modules/public-surface/action-commands.md) — capability / active
 - [Adoption](modules/public-surface/adoption.md) — capability / active
 - [Root Router](modules/public-surface/root-router.md) — capability / active
+- [Agent Runtime Effects](modules/runtime-harness/agent-runtime-effects.md) — capability / active
 - [Bound Task Freezes](modules/runtime-harness/bound-task-freezes.md) — capability / active
 - [Collaboration Substrate](modules/runtime-harness/collaboration.md) — capability / active
 - [Read-only Delegated Runs](modules/runtime-harness/delegated-runs.md) — capability / active
@@ -318,7 +319,6 @@ Generated: 1970-01-01T00:00:00.000Z
 - [Integration Product Acceptance](modules/runtime-harness/integration-acceptance.md) — capability / active
 - [Interface Change Requests](modules/runtime-harness/interface-change.md) — capability / active
 - [MCP Sidecar](modules/runtime-harness/mcp-sidecar.md) — capability / active
-- [Provider Thread Effects](modules/runtime-harness/provider-thread-effects.md) — capability / active
 - [Verified Evidence Context](modules/runtime-harness/verified-context.md) — capability / active
 - [General Repository Access](modules/runtime-mcp/general-repo-access.md) — capability / active
 - [CodeGraph Readiness](modules/verification/codegraph-readiness.md) — capability / active
@@ -330,6 +330,9 @@ Generated: 1970-01-01T00:00:00.000Z
 
 - capability.public-surface.action-commands -> component.action-commands.primary — calls
 - capability.public-surface.adoption -> component.adoption.primary — calls
+- capability.runtime-harness.agent-runtime-effects -> capability.runtime-harness.engineer-bindings — calls
+- capability.runtime-harness.agent-runtime-effects -> capability.runtime-harness.engineer-messages — calls
+- capability.runtime-harness.agent-runtime-effects -> component.agent-runtime-effects.journal — calls
 - capability.runtime-harness.bound-task-freezes -> capability.runtime-harness.engineer-bindings — calls
 - capability.runtime-harness.bound-task-freezes -> component.bound-task-freezes.primary — calls
 - capability.verification.codegraph-readiness -> component.codegraph-readiness.primary — calls
@@ -345,10 +348,10 @@ Generated: 1970-01-01T00:00:00.000Z
 - capability.runtime-harness.engineer-bindings -> component.engineer-bindings.primary — calls
 - capability.runtime-harness.engineer-messages -> capability.runtime-harness.engineer-bindings — calls
 - capability.runtime-harness.engineer-scheduling -> capability.runtime-harness.engineer-bindings — calls
+- capability.runtime-harness.engineering-overlay -> capability.runtime-harness.agent-runtime-effects — calls
 - capability.runtime-harness.engineering-overlay -> capability.runtime-harness.engineer-bindings — calls
 - capability.runtime-harness.engineering-overlay -> capability.runtime-harness.engineer-messages — calls
 - capability.runtime-harness.engineering-overlay -> component.engineering-overlay.primary — calls
-- capability.runtime-harness.engineering-overlay -> capability.runtime-harness.provider-thread-effects — calls
 - capability.verification.evals-checks -> component.evals-checks.primary — calls
 - capability.runtime-mcp.general-repo-access -> component.general-repo-access.primary — calls
 - capability.runtime-harness.global-runtime-reconciliation -> component.global-runtime-reconciliation.primary — calls
@@ -358,16 +361,13 @@ Generated: 1970-01-01T00:00:00.000Z
 - capability.runtime-harness.interface-change -> capability.runtime-harness.engineer-bindings — calls
 - capability.runtime-harness.interface-change -> capability.runtime-harness.engineer-scheduling — calls
 - capability.runtime-harness.interface-change -> component.interface-change.primary — calls
+- capability.runtime-harness.mcp-sidecar -> capability.runtime-harness.agent-runtime-effects — calls
 - capability.runtime-harness.mcp-sidecar -> capability.runtime-harness.collaboration — calls
 - capability.runtime-harness.mcp-sidecar -> capability.runtime-harness.engineer-messages — calls
 - capability.runtime-harness.mcp-sidecar -> capability.runtime-harness.engineer-bindings — calls
 - capability.runtime-harness.mcp-sidecar -> capability.runtime-harness.engineer-scheduling — calls
 - capability.runtime-harness.mcp-sidecar -> capability.runtime-harness.interface-change — calls
 - capability.runtime-harness.mcp-sidecar -> component.mcp-sidecar.primary — calls
-- capability.runtime-harness.mcp-sidecar -> capability.runtime-harness.provider-thread-effects — calls
-- capability.runtime-harness.provider-thread-effects -> capability.runtime-harness.engineer-bindings — calls
-- capability.runtime-harness.provider-thread-effects -> capability.runtime-harness.engineer-messages — calls
-- capability.runtime-harness.provider-thread-effects -> component.provider-thread-effects.primary — calls
 - capability.public-surface.root-router -> component.root-router.primary — calls
 - capability.runtime-harness.verified-context -> capability.runtime-harness.delegated-runs — calls
 - capability.runtime-harness.verified-context -> capability.runtime-harness.engineer-bindings — calls
