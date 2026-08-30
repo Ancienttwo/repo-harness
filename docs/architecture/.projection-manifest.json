@@ -701,8 +701,8 @@
       "outputDigest": "sha256:8a19b41e7429f8879f08eb0c6dfbf0be7f68ccc74b9759cc5f3b9a43df094e80",
       "verifiedAgainst": {
         "branch": "codex/c5-taskfreeze-succession-integration",
-        "commit": "8beeeeab5556bcb594bd4dda4f99a3554ea62870",
-        "committedAt": "2026-08-30T09:08:25+08:00"
+        "commit": "440b90a8d4b9fc05abd92eaa49599de5327b8180",
+        "committedAt": "2026-08-30T10:01:30+08:00"
       }
     },
     {
