@@ -701,8 +701,8 @@
       "outputDigest": "sha256:fcce96e601a31bdb7f7524a261a2f3be2ff118ec9444d00f22dddfd0840300f8",
       "verifiedAgainst": {
         "branch": "codex/c7-cli-mcp-bounded-context-injection",
-        "commit": "1b2ae75b9ce2ae4ab0fb5081877c674eaeea559f",
-        "committedAt": "2026-08-30T16:14:33+08:00"
+        "commit": "c57ee31de3838abcc5ee14e1d17550a5d4fcb16b",
+        "committedAt": "2026-08-30T18:07:08+08:00"
       }
     },
     {
@@ -901,8 +901,8 @@
       "outputDigest": "sha256:1bf7ebc5cc2b3260a4f811ff972d4cb18429a5922b6c8d50333f08b3f12d940f",
       "verifiedAgainst": {
         "branch": "codex/c7-cli-mcp-bounded-context-injection",
-        "commit": "6a60ef2b1708ff9ef04e82435c3560be073c047a",
-        "committedAt": "2026-08-30T13:54:44+08:00"
+        "commit": "c57ee31de3838abcc5ee14e1d17550a5d4fcb16b",
+        "committedAt": "2026-08-30T18:07:08+08:00"
       }
     },
     {
@@ -1001,8 +1001,8 @@
       "outputDigest": "sha256:966f7438cd7b385cb411a2ef8c2de18c0b1e71eb067941c97375a4b284a873b9",
       "verifiedAgainst": {
         "branch": "codex/c7-cli-mcp-bounded-context-injection",
-        "commit": "1b2ae75b9ce2ae4ab0fb5081877c674eaeea559f",
-        "committedAt": "2026-08-30T16:14:33+08:00"
+        "commit": "c57ee31de3838abcc5ee14e1d17550a5d4fcb16b",
+        "committedAt": "2026-08-30T18:07:08+08:00"
       }
     },
     {
