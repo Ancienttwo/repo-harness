@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeAll, afterAll } from "bun:test";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawn, spawnSync } from "child_process";
@@ -101,7 +101,10 @@ describe("workflow-state locking", () => {
     expect(kept[0]).toBe('{"n":2000}');
     expect(kept[kept.length - 1]).toBe('{"n":2499}');
 
-    const archive = readFileSync(join(cwd, ".ai/harness/archive/rotation-test-" + archiveStamp() + ".jsonl"), "utf-8")
+    const archiveDir = join(cwd, ".ai/harness/archive");
+    const archives = readdirSync(archiveDir).filter((name) => /^rotation-test-\d{6}\.jsonl$/u.test(name));
+    expect(archives).toHaveLength(1);
+    const archive = readFileSync(join(archiveDir, archives[0]), "utf-8")
       .trim()
       .split("\n");
     expect(archive.length).toBe(2000);
@@ -116,8 +119,3 @@ describe("workflow-state locking", () => {
     expect(readFileSync(file, "utf-8").trim().split("\n").length).toBe(2);
   }, 30_000);
 });
-
-function archiveStamp(): string {
-  const now = new Date();
-  return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
-}

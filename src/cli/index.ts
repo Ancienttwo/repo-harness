@@ -40,6 +40,7 @@ import { buildDelegationCommand } from './commands/delegation';
 import { buildCollaborationCommand } from './commands/collaboration';
 import { buildVerifiedContextCommand } from './commands/verified-context';
 import { buildInterfaceChangeCommand } from './commands/interface-change';
+import { buildExternalSourceCommand } from './commands/external-source';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
 import {
   MIN_BUN_VERSION,
@@ -115,6 +116,7 @@ export const SUBCOMMANDS = [
   'delegation',
   'verified-context',
   'interface-change',
+  'external-source',
 ] as const;
 export type Subcommand = (typeof SUBCOMMANDS)[number];
 
@@ -770,6 +772,7 @@ export function buildProgram(): Command {
   program.addCommand(buildCollaborationCommand());
   program.addCommand(buildVerifiedContextCommand());
   program.addCommand(buildInterfaceChangeCommand());
+  program.addCommand(buildExternalSourceCommand());
   program
     .command('circuit-breaker-record', { hidden: true })
     .description('Internal persistent workflow circuit breaker')

@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: component.external-source-intake.immutable-evidence
+kind: component
+name: Immutable External Evidence Store
+status: active
+parent: capability.runtime-harness.external-source-intake
+summary: Creates observations and receipts once under the Git common directory and serves only validated immutable reads.
