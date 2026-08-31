@@ -549,6 +549,122 @@ describe('operator collaboration read', () => {
     expect(paneText()).toContain('hotspot 87');
   });
 
+  test('aborts the obsolete collaboration request when selection moves to another repository', async () => {
+    const requests: Array<{
+      readonly repositoryId: string;
+      readonly signal: AbortSignal;
+      readonly resolve: (snapshot: OperatorCollaborationSnapshotV1) => void;
+    }> = [];
+    const fetchCollaboration = (repositoryId: string, signal: AbortSignal): Promise<OperatorCollaborationSnapshotV1> => new Promise((resolve, reject) => {
+      requests.push({ repositoryId, signal, resolve });
+      signal.addEventListener('abort', () => {
+        const error = new Error('superseded');
+        error.name = 'AbortError';
+        reject(error);
+      }, { once: true });
+    });
+
+    await mount(
+      <OperatorApp
+        initialState={projectSnapshotViewState(stableSnapshot)}
+        initialLocale="en"
+        fetchCollaboration={fetchCollaboration}
+      />,
+    );
+    await act(async () => buttonWithText(fixtureTasks.console.task_label).click());
+    await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+
+    expect(requests.map((request) => request.repositoryId)).toEqual(['repo-console', 'repo-harness']);
+    expect(requests[0]!.signal.aborted).toBe(true);
+    expect(requests[1]!.signal.aborted).toBe(false);
+    expect(paneText()).toContain('repository repo-harness');
+    expect(paneText()).not.toContain('The collaboration store cannot be read');
+  });
+
+  test('aborts the active collaboration request when the task is deselected', async () => {
+    const observed: { signal: AbortSignal | null } = { signal: null };
+    await mount(
+      <OperatorApp
+        initialState={projectSnapshotViewState(stableSnapshot)}
+        initialLocale="en"
+        fetchCollaboration={async (_repositoryId, nextSignal) => {
+          observed.signal = nextSignal;
+          return new Promise<OperatorCollaborationSnapshotV1>(() => {});
+        }}
+      />,
+    );
+    await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+    expect(observed.signal?.aborted).toBe(false);
+
+    const close = document.querySelector<HTMLButtonElement>('[aria-label="Close task details"]');
+    if (!close) throw new Error('close button not found');
+    await act(async () => close.click());
+
+    expect(observed.signal?.aborted).toBe(true);
+    expect(paneText()).toContain('Select a task to read its repository collaboration lanes.');
+  });
+
+  test('refresh supersedes a collaboration generation without showing an abort failure', async () => {
+    const signals: AbortSignal[] = [];
+    const fetchCollaboration = async (repositoryId: string, signal: AbortSignal): Promise<OperatorCollaborationSnapshotV1> => {
+      signals.push(signal);
+      return new Promise((resolve, reject) => {
+        signal.addEventListener('abort', () => {
+          const error = new Error('superseded');
+          error.name = 'AbortError';
+          reject(error);
+        }, { once: true });
+        if (signal.aborted) return;
+        // Keep the current generation pending so the assertion exercises its
+        // cancellation rather than completion order.
+        void repositoryId;
+        void resolve;
+      });
+    };
+    await mount(
+      <OperatorApp
+        initialState={projectSnapshotViewState(stableSnapshot)}
+        initialLocale="en"
+        fetchSnapshot={async () => stableSnapshot}
+        fetchCollaboration={fetchCollaboration}
+      />,
+    );
+    await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+    expect(signals).toHaveLength(1);
+
+    await act(async () => buttonWithText('Refresh').click());
+
+    expect(signals).toHaveLength(2);
+    expect(signals[0]!.aborted).toBe(true);
+    expect(signals[1]!.aborted).toBe(false);
+    expect(paneText()).toContain('Reading the collaboration store');
+    expect(paneText()).not.toContain('The collaboration store cannot be read');
+  });
+
+  test('passes the collaboration generation signal to the production fetch transport', async () => {
+    const originalFetch = globalThis.fetch;
+    const observed: { signal: AbortSignal | null } = { signal: null };
+    const controller = new AbortController();
+    const fetchStub = async (
+      _input: Parameters<typeof fetch>[0],
+      init?: Parameters<typeof fetch>[1],
+    ) => {
+      observed.signal = (init as RequestInit).signal as AbortSignal | null;
+      return new Response(JSON.stringify(collaborationSnapshot), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    };
+    globalThis.fetch = fetchStub as unknown as typeof fetch;
+    try {
+      await expect(fetchOperatorCollaborationSnapshot(collaborationSnapshot.repository_id, controller.signal))
+        .resolves.toEqual(collaborationSnapshot);
+      expect(observed.signal).toBe(controller.signal);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test('keeps Fleet validation copy separate from collaboration validation copy', async () => {
     const originalFetch = globalThis.fetch;
     try {

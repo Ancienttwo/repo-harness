@@ -40,7 +40,7 @@ export interface OperatorAppProps {
   /** The board's one write, injectable so tests never touch a real repository. */
   readonly sendMessage?: (request: TaskMessageRequestV1) => Promise<void>;
   /** The read-only collaboration read, injectable on the same terms. */
-  readonly fetchCollaboration?: (repositoryId: string) => Promise<OperatorCollaborationSnapshotV1>;
+  readonly fetchCollaboration?: (repositoryId: string, signal: AbortSignal) => Promise<OperatorCollaborationSnapshotV1>;
   /** A deterministic collaboration state for fixtures and server renders. */
   readonly initialCollaboration?: CollaborationViewState;
   /** Tests pin the locale; the browser resolves it from storage or navigator. */
@@ -859,10 +859,12 @@ function assertCollaborationRepository(
 
 async function fetchOperatorCollaborationSnapshot(
   repositoryId: string,
+  signal?: AbortSignal,
 ): Promise<OperatorCollaborationSnapshotV1> {
   const response = await fetch(`/api/v1/collaboration/${encodeURIComponent(repositoryId)}/snapshot`, {
     headers: { Accept: 'application/json' },
     cache: 'no-store',
+    signal,
   });
   let body: unknown = null;
   try {
@@ -1215,6 +1217,26 @@ const TASK_MESSAGE_FAILED_ERROR: OperatorApiErrorV1 = {
 };
 
 const OWNER_GONE_CODES: readonly string[] = ['claim_mismatch', 'recipient_unavailable', 'task_unowned'];
+const STALE_FENCE_CODES: readonly string[] = [
+  'task_revision_mismatch',
+  'claim_mismatch',
+  'recipient_unavailable',
+  'task_unowned',
+  'task_not_pending',
+];
+
+type ComposerRecovery = 'rebind' | 'new_message_id' | null;
+
+function composerRecovery(error: OperatorApiErrorV1 | null): ComposerRecovery {
+  if (error === null) return null;
+  if (error.code === 'message_id_conflict') return 'new_message_id';
+  if (STALE_FENCE_CODES.includes(error.code)) return 'rebind';
+  return null;
+}
+
+function isAmbiguousMessageFailure(error: OperatorApiErrorV1): boolean {
+  return error.code === TASK_MESSAGE_FAILED_ERROR.code;
+}
 
 export interface TaskMessageFenceV1 {
   /** The task revision the operator saw when the draft was opened. */
@@ -1368,16 +1390,35 @@ function Composer({
   const claimShort = fence.expected_claim_id === null ? '' : fence.expected_claim_id.slice(-8);
   const consistency = t(`status.consistency.${card.snapshot_consistency}` as OperatorMessageKey);
   const sent = sentAt !== null && sentAt === sequence;
+  const recovery = composerRecovery(error);
+  const recoveryEnabled = block === null && !sending;
+
+  const beginDraft = () => ({ message_id: crypto.randomUUID(), fence: observedFence });
 
   const toggle = () => {
     if (!open && draft === null) {
-      setDraft({ message_id: crypto.randomUUID(), fence: observedFence });
+      setDraft(beginDraft());
+      setSentAt(null);
     }
     setOpen(!open);
   };
 
+  const rebind = () => {
+    if (!recoveryEnabled || recovery !== 'rebind') return;
+    setDraft(beginDraft());
+    setError(null);
+    setSentAt(null);
+  };
+
+  const startWithNewMessageId = () => {
+    if (!recoveryEnabled || recovery !== 'new_message_id' || draft === null) return;
+    setDraft({ ...draft, message_id: crypto.randomUUID() });
+    setError(null);
+    setSentAt(null);
+  };
+
   const submit = async () => {
-    if (block !== null || sending || draft === null) return;
+    if (block !== null || sending || draft === null || recovery !== null) return;
     setSending(true);
     setError(null);
     try {
@@ -1392,7 +1433,7 @@ function Composer({
       // A stored message is a new message: the retry id is spent, the draft is
       // gone, and the next snapshot owns what the operator sees next.
       setBody('');
-      setDraft({ message_id: crypto.randomUUID(), fence: observedFence });
+      setDraft(null);
       setSentAt(sequence);
       onSent();
     } catch (failure) {
@@ -1425,7 +1466,13 @@ function Composer({
             rows={4}
             value={body}
             placeholder={t('composer.bodyPlaceholder')}
-            onChange={(event) => setBody(event.target.value)}
+            onChange={(event) => {
+              if (draft === null) {
+                setDraft(beginDraft());
+                setSentAt(null);
+              }
+              setBody(event.target.value);
+            }}
           />
           <p className={`composer__bytes${bytes > TASK_MESSAGE_BODY_LIMIT_BYTES ? ' is-over' : ''}`}>
             {t('composer.bytes', { used: bytes, max: TASK_MESSAGE_BODY_LIMIT_BYTES })}
@@ -1437,16 +1484,43 @@ function Composer({
           </p>
           {block !== null && <p className="composer__blocked" role="status">{blockedMessage(block, t)}</p>}
           {error && (
-            <p className="composer__error" role="alert">
-              {OWNER_GONE_CODES.includes(error.code) ? t('composer.ownerGone') : `${error.message}. ${error.next_action}`}
-            </p>
+            <div className="composer__error" role="alert">
+              <p>{OWNER_GONE_CODES.includes(error.code) ? t('composer.ownerGone') : `${error.message}. ${error.next_action}`}</p>
+              {recovery === 'rebind' && (
+                <>
+                  <p>{t('composer.rebindHint')}</p>
+                  <button
+                    className="operator-button operator-button--secondary"
+                    type="button"
+                    disabled={!recoveryEnabled}
+                    onClick={rebind}
+                  >
+                    {t('composer.rebind')}
+                  </button>
+                </>
+              )}
+              {recovery === 'new_message_id' && (
+                <>
+                  <p>{t('composer.newMessageIdHint')}</p>
+                  <button
+                    className="operator-button operator-button--secondary"
+                    type="button"
+                    disabled={!recoveryEnabled}
+                    onClick={startWithNewMessageId}
+                  >
+                    {t('composer.newMessageId')}
+                  </button>
+                </>
+              )}
+              {recovery === null && isAmbiguousMessageFailure(error) && <p>{t('composer.ambiguousRetry')}</p>}
+            </div>
           )}
           {sent && <p className="composer__sent" role="status">{t('composer.sent')}</p>}
           <button
             className="operator-button composer__send"
             type="button"
             data-write-action="task-message"
-            disabled={block !== null || sending}
+            disabled={block !== null || sending || recovery !== null}
             onClick={() => void submit()}
           >
             {sending
@@ -1605,7 +1679,7 @@ function DetailPane({
               context for a decision the worklist already surfaced. */}
           <CollaborationPane state={collaboration} t={t} />
         </div>
-        {card && repository && snapshot && (
+        {card && card.column !== 'done' && repository && snapshot && (
           <Composer
             key={taskKey(card)}
             card={card}
@@ -1681,28 +1755,45 @@ export function OperatorApp({
   const { locale, setLocale, t } = useLocale(initialLocale);
   const wideLayout = useWideLayout();
   const refreshInFlight = useRef(false);
+  const refreshQueued = useRef(false);
+  const stateRef = useRef<OperatorSnapshotViewState>(initial);
   const snapshot = snapshotForState(state);
   const busy = state.kind === 'loading';
   const stateKind = state.kind;
 
   const refresh = async () => {
-    if (refreshInFlight.current) return;
-    refreshInFlight.current = true;
-    // An explicit board refresh is also the collaboration recovery action. The
-    // selected repository remains the only scope, but its read must be issued
-    // again even when the task selection identity is unchanged.
+    // Every request supersedes the selected repository's collaboration read,
+    // even when its Fleet collection is coalesced behind an active one.
     setCollaborationRefreshGeneration((current) => current + 1);
-    const previous = snapshotForState(state);
-    setState({ kind: 'loading', previous });
+    if (refreshInFlight.current) {
+      refreshQueued.current = true;
+      return;
+    }
+    refreshInFlight.current = true;
     try {
-      const nextSnapshot = await fetchSnapshot();
-      setSelection((current) => (current === null || allCards(nextSnapshot).some((card) => taskKey(card) === current.key))
-        ? current
-        : null);
-      setState(stateFromSnapshot(nextSnapshot));
-    } catch (error) {
-      const apiError = asApiError(error);
-      setState(previous ? { kind: 'stale', snapshot: previous, error: apiError } : { kind: 'fatal', error: apiError });
+      do {
+        refreshQueued.current = false;
+        const previous = snapshotForState(stateRef.current);
+        const loading: OperatorSnapshotViewState = { kind: 'loading', previous };
+        stateRef.current = loading;
+        setState(loading);
+        try {
+          const nextSnapshot = await fetchSnapshot();
+          setSelection((current) => (current === null || allCards(nextSnapshot).some((card) => taskKey(card) === current.key))
+            ? current
+            : null);
+          const nextState = stateFromSnapshot(nextSnapshot);
+          stateRef.current = nextState;
+          setState(nextState);
+        } catch (error) {
+          const apiError = asApiError(error);
+          const nextState: OperatorSnapshotViewState = previous
+            ? { kind: 'stale', snapshot: previous, error: apiError }
+            : { kind: 'fatal', error: apiError };
+          stateRef.current = nextState;
+          setState(nextState);
+        }
+      } while (refreshQueued.current);
     } finally {
       refreshInFlight.current = false;
     }
@@ -1737,11 +1828,11 @@ export function OperatorApp({
       setCollaboration({ kind: 'idle' });
       return;
     }
-    let current = true;
+    const controller = new AbortController();
     setCollaboration({ kind: 'loading', repository_id: collaborationRepositoryId });
-    void fetchCollaboration(collaborationRepositoryId).then(
+    void fetchCollaboration(collaborationRepositoryId, controller.signal).then(
       (next) => {
-        if (current) {
+        if (!controller.signal.aborted) {
           try {
             setCollaboration({
               kind: 'ready',
@@ -1757,7 +1848,7 @@ export function OperatorApp({
         }
       },
       (error) => {
-        if (current) {
+        if (!controller.signal.aborted && !(error instanceof Error && error.name === 'AbortError')) {
           setCollaboration({
             kind: 'failed',
             repository_id: collaborationRepositoryId,
@@ -1766,7 +1857,7 @@ export function OperatorApp({
         }
       },
     );
-    return () => { current = false; };
+    return () => { controller.abort(); };
     // The repository remains the scope; the explicit refresh generation is the
     // only extra trigger, so reads never fan out to other repositories.
     // eslint-disable-next-line react-hooks/exhaustive-deps

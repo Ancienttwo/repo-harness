@@ -195,6 +195,11 @@ const en = {
   'composer.blockedEmpty': 'Write the message before sending it.',
   'composer.blockedTooLarge': 'The message is over the {max} byte limit.',
   'composer.ownerGone': 'That session is gone — refresh and read the row again.',
+  'composer.ambiguousRetry': 'The send outcome is unknown. Retrying keeps the same message id and fence.',
+  'composer.rebindHint': 'This task or owner changed. Rebind only if you intend to address the current snapshot.',
+  'composer.rebind': 'Rebind to current snapshot',
+  'composer.newMessageIdHint': 'This message id belongs to a different message. Start with a new id before retrying.',
+  'composer.newMessageId': 'Start with a new message ID',
 
   'collab.title': 'Collaboration',
   'collab.scope': 'repository {repository}',
@@ -466,6 +471,11 @@ const zh: Readonly<Record<OperatorMessageKey, string>> = {
   'composer.blockedEmpty': '先把消息写出来再发。',
   'composer.blockedTooLarge': '消息超过 {max} 字节上限。',
   'composer.ownerGone': '那个 session 已经不在了 —— 刷新之后重新读这一行。',
+  'composer.ambiguousRetry': '这次发送的结果不明确。重试会保留同一个 message id 和 fence。',
+  'composer.rebindHint': '这个任务或持有者已经变了。只有明确要发给当前快照时，才重新绑定。',
+  'composer.rebind': '重新绑定到当前快照',
+  'composer.newMessageIdHint': '这个 message id 已经属于另一条消息。重试前先换一个 id。',
+  'composer.newMessageId': '用新的 message ID 重新开始',
 
   'collab.title': '协作',
   'collab.scope': '仓库 {repository}',
