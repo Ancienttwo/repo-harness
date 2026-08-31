@@ -185,6 +185,43 @@ describe("architecture sync gate", () => {
     });
   }, 30_000);
 
+  test("strict projection gate reads unresolved acceptance candidates from CLI receipt state", () => {
+    tmpRepo((cwd) => {
+      writeFileSync(
+        join(cwd, ".ai/harness/policy.json"),
+        JSON.stringify({
+          context: { capability_source: "registry" },
+          architecture: {
+            freshness_gate: "strict",
+            gate_min_severity: "medium",
+            projection_provider: "archctx",
+            projection_apply: "automatic",
+          },
+        }, null, 2) + "\n",
+      );
+      mkdirSync(join(cwd, "src/cli"), { recursive: true });
+      const statusFile = join(cwd, ".ai/harness/projection-status.json");
+      const writeStatus = (unresolvedCandidates: number, invalidArtifacts = 0) => writeFileSync(statusFile, JSON.stringify({
+        projectionProvider: { state: "ready", reason: "fixture provider ready" },
+        acceptance: { unresolvedCandidates, invalidArtifacts },
+      }));
+      writeFileSync(join(cwd, "src/cli/index.ts"), `process.stdout.write(await Bun.file(${JSON.stringify(statusFile)}).text());\n`);
+      writeChangedFiles(cwd, ["apps/web/src/routes/account.tsx"]);
+      expect(run("bash", ["scripts/architecture-queue.sh", "reindex"], cwd).status).toBe(0);
+
+      writeStatus(1);
+      const blocked = run("bash", ["scripts/check-architecture-sync.sh", "--changed-files", "changed.txt"], cwd);
+      expect(blocked.status).toBe(1);
+      expect(blocked.stdout).toContain("human_actions=1");
+      expect(blocked.stderr).toContain("strict gate failed");
+
+      writeStatus(0);
+      const resolved = run("bash", ["scripts/check-architecture-sync.sh", "--changed-files", "changed.txt"], cwd);
+      expect(resolved.status).toBe(0);
+      expect(resolved.stdout).toContain("human_actions=0");
+    });
+  }, 30_000);
+
   test("missing resolver is advisory in advisory mode and fail-closed in strict mode", () => {
     tmpRepo((cwd) => {
       writePendingCard(cwd);

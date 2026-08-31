@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-31T08:57:08+0800 -->
+<!-- updated_at: 2026-08-31T10:25:18+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-31T08:57:08+0800
+> **Status**: Active
+> **Updated At**: 2026-08-31T10:25:18+0800
 > **Source Branch**: codex/r1-provider-neutral-agent-runtime
-> **Source Commit**: eb8cfb56
+> **Source Commit**: e26d613b
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive-workflow
+> **Reason**: manual
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
+- Status: Active
 - Active Plan: (none)
 - Plan Status: (none)
 - Next Task: inspect active worktree marker(s)
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -31,6 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
+- linked-worktree-174c70b25a10: plans/plan-20260831-0937-archived-acceptance-cli-finalization.md
+- linked-worktree-174c70b25a10: active-worktree owner -> self
 - linked-worktree-15c0db14c68b: plans/plan-20260829-1728-oracle-thinking-passthrough.md
 - linked-worktree-15c0db14c68b: active-worktree owner -> self
 ## Active Sprint
@@ -56,19 +58,44 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: 35 changed/untracked path(s)
 
 ```
- D plans/plan-20260830-1903-r1-provider-neutral-agent-runtime.md
- D tasks/contracts/20260830-1903-r1-provider-neutral-agent-runtime.contract.md
- D tasks/notes/20260830-1903-r1-provider-neutral-agent-runtime.notes.md
- D tasks/reviews/20260830-1903-r1-provider-neutral-agent-runtime.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260830-1903-r1-provider-neutral-agent-runtime.md
-?? tasks/archive/contract-20260831-0857-r1-provider-neutral-agent-runtime.md
-?? tasks/archive/notes-20260831-0857-r1-provider-neutral-agent-runtime.md
-?? tasks/archive/review-20260831-0857-r1-provider-neutral-agent-runtime.md
-?? tasks/archive/todo-20260831-0857-r1-provider-neutral-agent-runtime.md
+M  assets/reference-configs/external-tooling.md
+M  assets/reference-configs/harness-overview.md
+M  assets/templates/helpers/acceptance-receipt.ts
+M  assets/templates/helpers/archive-workflow.sh
+M  assets/templates/helpers/check-architecture-sync.sh
+M  assets/templates/helpers/merge-gate.ts
+M  docs/architecture/.projection-manifest.json
+M  docs/reference-configs/external-tooling.md
+M  docs/reference-configs/harness-overview.md
+A  plans/archive/plan-20260830-2139-architecture-projection-acceptance.md
+A  plans/archive/plan-20260831-0345-archive-acceptance-authority.md
+M  scripts/acceptance-receipt.ts
+M  scripts/archive-workflow.sh
+M  scripts/check-architecture-sync.sh
+M  scripts/merge-gate.ts
+M  src/cli/commands/architecture-projection.ts
+A  src/effects/architecture/projection-acceptance.ts
+M  src/effects/architecture/projection-jobs.ts
+M  src/effects/architecture/projection-orchestrator.ts
+A  tasks/archive/contract-20260831-0214-architecture-projection-acceptance.md
+A  tasks/archive/contract-20260831-0601-archive-acceptance-authority.md
+A  tasks/archive/notes-20260831-0214-architecture-projection-acceptance.md
+A  tasks/archive/notes-20260831-0601-archive-acceptance-authority.md
+A  tasks/archive/review-20260831-0214-architecture-projection-acceptance.md
+A  tasks/archive/review-20260831-0601-archive-acceptance-authority.md
+A  tasks/archive/todo-20260831-0601-archive-acceptance-authority.md
+M  tasks/current.md
+M  tasks/todos.md
+M  tests/acceptance-receipt.test.ts
+M  tests/architecture-projection-orchestration.test.ts
+M  tests/architecture-projection-provider.test.ts
+M  tests/architecture-sync.test.ts
+M  tests/continuation-conformance.test.ts
+M  tests/helper-scripts.test.ts
+A  tests/unit/architecture-projection-acceptance.test.ts
 ```
 
 ## Source Artifacts

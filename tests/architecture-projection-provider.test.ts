@@ -207,7 +207,7 @@ function runner(calls: Array<{ binary: string; args: readonly string[] }>, docs:
 }
 
 describe('package-local ArchContext projection provider', () => {
-  test('does not expose caller-authored architecture acceptance as CLI authority', () => {
+  test('exposes only signal-bound acceptance and proof-only reconciliation as CLI authorities', () => {
     const command = buildArchitectureProjectionCommand();
     for (const name of ['check', 'plan', 'apply', 'adopt']) {
       const subcommand = command.commands.find((candidate) => candidate.name() === name);
@@ -217,6 +217,19 @@ describe('package-local ArchContext projection provider', () => {
       expect(subcommand!.options.map((option) => option.long)).not.toContain('--accepted-reason');
       expect(subcommand!.options.map((option) => option.long)).not.toContain('--accepted-node-id');
     }
+    const accept = command.commands.find((candidate) => candidate.name() === 'accept');
+    expect(accept).toBeDefined();
+    expect(accept!.options.map((option) => option.long)).toEqual([
+      '--json',
+      '--signal-id',
+      '--approval-reference',
+    ]);
+    const reconcile = command.commands.find((candidate) => candidate.name() === 'reconcile');
+    expect(reconcile).toBeDefined();
+    expect(reconcile!.options.map((option) => option.long)).toEqual([
+      '--json',
+      '--signal-id',
+    ]);
 
     const invalid = request(fixture().repoRoot);
     invalid.acceptedChange = {

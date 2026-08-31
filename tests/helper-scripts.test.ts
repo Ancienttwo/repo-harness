@@ -2552,6 +2552,113 @@ describe("Workflow helper scripts", () => {
     }
   }, 30_000);
 
+  test("archive-workflow rewrites one exact workflow family to collision-safe archive pointers", () => {
+    const cwd = tmpWorkspace("helper-archive-path-projection");
+    try {
+      mkdirSync(join(cwd, "plans/archive"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/archive"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/notes"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
+      copyHelpers(cwd);
+
+      const plan = "plans/plan-20260304-1502-demo.md";
+      const contract = "tasks/contracts/20260304-1502-demo.contract.md";
+      const review = "tasks/reviews/20260304-1502-demo.review.md";
+      const notes = "tasks/notes/20260304-1502-demo.notes.md";
+      writeFileSync(
+        join(cwd, plan),
+        [
+          "# Plan: demo",
+          "",
+          "> **Status**: Executing",
+          `> **Task Contract**: \`${contract}\``,
+          `> **Task Review**: \`${review}\``,
+          `> **Implementation Notes**: \`${notes}\``,
+          "",
+          `Contract pointer: ${contract}`,
+          "",
+        ].join("\n"),
+      );
+      writeFileSync(
+        join(cwd, contract),
+        [
+          "# Task Contract: demo",
+          "",
+          "> **Status**: Active",
+          `> **Plan**: ${plan}`,
+          `> **Review File**: \`${review}\``,
+          `> **Notes File**: \`${notes}\``,
+          "",
+          "## Allowed Paths",
+          "",
+          "```yaml",
+          "allowed_paths:",
+          `  - ${contract}`,
+          `  - ${review}`,
+          `  - ${notes}`,
+          "```",
+          "",
+          "## Exit Criteria (Machine Verifiable)",
+          "",
+          "```yaml",
+          "exit_criteria:",
+          "  artifacts_exist:",
+          `    - ${notes}`,
+          "```",
+          "",
+        ].join("\n"),
+      );
+      writeFileSync(join(cwd, review), `# Task Review: demo\n\n> **Plan**: ${plan}\n> **Contract**: ${contract}\n> **Notes File**: ${notes}\n`);
+      writeFileSync(join(cwd, notes), `# Implementation Notes: demo\n\n> **Plan**: ${plan}\n> **Contract**: ${contract}\n> **Review**: ${review}\n`);
+      writeFileSync(join(cwd, "tasks/todos.md"), `# Deferred Goal Ledger\n\n> **Status**: Backlog\n> **Updated**: now\n\n## Deferred Goals\n\n${plan}\n`);
+
+      const collision = "tasks/archive/review-20990101-0101-demo.md";
+      writeFileSync(join(cwd, collision), "pre-existing review archive\n");
+      const res = run(
+        "bash",
+        [
+          "scripts/archive-workflow.sh",
+          "--plan", plan,
+          "--outcome", "Abandoned",
+          "--timestamp", "20990101-0101",
+        ],
+        cwd,
+      );
+      expect(res.status, res.stderr).toBe(0);
+
+      const destinations = {
+        plan: "plans/archive/plan-20260304-1502-demo.md",
+        contract: "tasks/archive/contract-20990101-0101-demo.md",
+        review: "tasks/archive/review-20990101-0101-demo-v2.md",
+        notes: "tasks/archive/notes-20990101-0101-demo.md",
+      };
+      for (const destination of Object.values(destinations)) {
+        expect(existsSync(join(cwd, destination))).toBe(true);
+      }
+      const expectedPairs = [
+        [plan, destinations.plan],
+        [notes, destinations.notes],
+        [contract, destinations.contract],
+        [review, destinations.review],
+      ];
+      for (const destination of Object.values(destinations)) {
+        const content = readFileSync(join(cwd, destination), "utf-8");
+        for (const [source, archived] of expectedPairs) {
+          expect(content).toContain(`> **Archive Projection V1**: \`${source}\` => \`${archived}\``);
+          expect(content.split("\n\n").slice(1).join("\n\n")).not.toContain(source);
+        }
+      }
+      expect(readFileSync(join(cwd, destinations.plan), "utf-8")).toContain(`> **Task Contract**: \`${destinations.contract}\``);
+      const archivedContract = readFileSync(join(cwd, destinations.contract), "utf-8");
+      expect(archivedContract).toContain(`> **Plan**: ${destinations.plan}`);
+      expect(archivedContract).toContain(`  - ${destinations.review}`);
+      expect(archivedContract).toContain(`    - ${destinations.notes}`);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   // R-E (fix 5): a --timestamp value passed to archive-workflow.sh is used
   // verbatim for every archive-family filename instead of a fresh internal
   // `date` call (the seam contract-worktree.sh finish now relies on so its

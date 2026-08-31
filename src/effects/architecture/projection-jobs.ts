@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
-import type { ProjectionResultV1 } from '../../core/architecture/projection';
+import { sameAcceptedArchitectureChange, type ProjectionResultV1 } from '../../core/architecture/projection';
 import type { AcceptedArchitectureChangeReferenceV1 } from 'archctx-contracts';
 
 export const ARCHITECTURE_PROJECTION_RUNTIME_ROOT = '.ai/harness/architecture-projection';
@@ -331,6 +331,113 @@ export function completeArchitectureProjectionJob(
     };
     atomicJson(pathFor(repoRoot, 'receipts', job.jobId), receipt);
     unlinkSync(runningPath);
+    return receipt;
+  });
+}
+
+export function completeArchitectureProjectionDeadLetterAcceptance(
+  repoRoot: string,
+  jobId: string,
+  expectedChangedPaths: readonly string[],
+  acceptedChange: AcceptedArchitectureChangeReferenceV1,
+  result: ProjectionResultV1,
+  refreshReceiptDigests: readonly string[],
+  now = new Date(),
+): ArchitectureProjectionReceiptV1 {
+  if (!/^job-[a-f0-9]{24}$/.test(jobId)) throw new Error('architecture projection acceptance job id is invalid');
+  return withExclusiveDirectoryLock(repoRoot, LOCK_PATH, () => {
+    const receiptPath = pathFor(repoRoot, 'receipts', jobId);
+    if (existsSync(receiptPath)) {
+      const existing = readJson<ArchitectureProjectionReceiptV1>(receiptPath);
+      if (!existing.acceptedChange || !sameAcceptedArchitectureChange(existing.acceptedChange, acceptedChange)
+        || existing.changedPaths.join('\0') !== expectedChangedPaths.join('\0')
+        || existing.result.receiptDigest !== result.receiptDigest) {
+        throw new Error(`architecture projection acceptance receipt conflicts with completed job: ${jobId}`);
+      }
+      const residualDeadLetterPath = pathFor(repoRoot, 'dead-letter', jobId);
+      if (existsSync(residualDeadLetterPath)) {
+        const residual = readJson<ArchitectureProjectionDeadLetterV1>(residualDeadLetterPath);
+        if (residual.job.jobId !== jobId
+          || residual.job.changedPaths.join('\0') !== expectedChangedPaths.join('\0')) {
+          throw new Error(`architecture projection acceptance residual dead letter identity mismatch: ${jobId}`);
+        }
+        unlinkSync(residualDeadLetterPath);
+      }
+      return existing;
+    }
+    const deadLetterPath = pathFor(repoRoot, 'dead-letter', jobId);
+    if (!existsSync(deadLetterPath)) throw new Error(`architecture projection acceptance dead letter is missing: ${jobId}`);
+    const deadLetter = readJson<ArchitectureProjectionDeadLetterV1>(deadLetterPath);
+    if (deadLetter.job.changedPaths.join('\0') !== expectedChangedPaths.join('\0')) {
+      throw new Error(`architecture projection acceptance dead letter changed paths mismatch: ${jobId}`);
+    }
+    const receipt: ArchitectureProjectionReceiptV1 = {
+      schemaVersion: 'repo-harness.architecture-projection-receipt/v1',
+      jobId,
+      sourceEventIds: deadLetter.job.sourceEventIds,
+      sourceKeys: deadLetter.job.sourceKeys,
+      changedPaths: deadLetter.job.changedPaths,
+      acceptedChange,
+      attempt: deadLetter.job.attempt,
+      completedAt: now.toISOString(),
+      result,
+      refreshReceiptDigests: [...new Set(refreshReceiptDigests)].sort(),
+    };
+    atomicJson(receiptPath, receipt);
+    unlinkSync(deadLetterPath);
+    return receipt;
+  });
+}
+
+export function completeArchitectureProjectionDeadLetterReconciliation(
+  repoRoot: string,
+  jobId: string,
+  expectedChangedPaths: readonly string[],
+  result: ProjectionResultV1,
+  now = new Date(),
+): ArchitectureProjectionReceiptV1 {
+  if (!/^job-[a-f0-9]{24}$/.test(jobId)) throw new Error('architecture projection reconciliation job id is invalid');
+  return withExclusiveDirectoryLock(repoRoot, LOCK_PATH, () => {
+    const receiptPath = pathFor(repoRoot, 'receipts', jobId);
+    if (existsSync(receiptPath)) {
+      const existing = readJson<ArchitectureProjectionReceiptV1>(receiptPath);
+      if (existing.acceptedChange
+        || existing.changedPaths.join('\0') !== expectedChangedPaths.join('\0')
+        || existing.result.receiptDigest !== result.receiptDigest) {
+        throw new Error(`architecture projection reconciliation receipt conflicts with completed job: ${jobId}`);
+      }
+      const residualDeadLetterPath = pathFor(repoRoot, 'dead-letter', jobId);
+      if (existsSync(residualDeadLetterPath)) {
+        const residual = readJson<ArchitectureProjectionDeadLetterV1>(residualDeadLetterPath);
+        if (residual.job.jobId !== jobId
+          || residual.job.acceptedChange
+          || residual.job.changedPaths.join('\0') !== expectedChangedPaths.join('\0')) {
+          throw new Error(`architecture projection reconciliation residual dead letter identity mismatch: ${jobId}`);
+        }
+        unlinkSync(residualDeadLetterPath);
+      }
+      return existing;
+    }
+    const deadLetterPath = pathFor(repoRoot, 'dead-letter', jobId);
+    if (!existsSync(deadLetterPath)) throw new Error(`architecture projection reconciliation dead letter is missing: ${jobId}`);
+    const deadLetter = readJson<ArchitectureProjectionDeadLetterV1>(deadLetterPath);
+    if (deadLetter.job.acceptedChange
+      || deadLetter.job.changedPaths.join('\0') !== expectedChangedPaths.join('\0')) {
+      throw new Error(`architecture projection reconciliation dead letter identity mismatch: ${jobId}`);
+    }
+    const receipt: ArchitectureProjectionReceiptV1 = {
+      schemaVersion: 'repo-harness.architecture-projection-receipt/v1',
+      jobId,
+      sourceEventIds: deadLetter.job.sourceEventIds,
+      sourceKeys: deadLetter.job.sourceKeys,
+      changedPaths: deadLetter.job.changedPaths,
+      attempt: deadLetter.job.attempt,
+      completedAt: now.toISOString(),
+      result,
+      refreshReceiptDigests: [],
+    };
+    atomicJson(receiptPath, receipt);
+    unlinkSync(deadLetterPath);
     return receipt;
   });
 }

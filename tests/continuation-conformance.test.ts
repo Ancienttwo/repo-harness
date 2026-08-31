@@ -921,6 +921,8 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
         'verify-sprint ',
         `acceptance-receipt verify --contract tasks/contracts/${row}.contract.md --verification .ai/harness/checks/latest.json`,
         `acceptance-receipt verify --contract tasks/contracts/${row}.contract.md --verification .ai/harness/checks/latest.json`,
+        'acceptance-receipt archive-projection-path',
+        `acceptance-receipt seal-archive-projection --contract tasks/archive/contract-${row}.md`,
       ];
       expect(gateCalls).toEqual([
         ...closeoutGate('row-one'), // the SIGKILLed closeout

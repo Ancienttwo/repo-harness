@@ -849,6 +849,28 @@ stdout. A typed refresh-required signal runs the canonical architecture,
 context-contract, and capability-context writers even when the legacy queue
 helper creates no drift card. SessionStart and
 `repo-harness architecture-projection drain --json` expose queue state.
+An unresolved-major signal is persisted as an exact acceptance candidate. A
+human approval is applied only through
+`repo-harness architecture-projection accept --signal-id <sha256> --approval-reference <event-id> --json`:
+the command copies reason codes and affected node ids from that signal, keeps
+the supplied approval event identity unchanged, and refuses if repository,
+workspace, HEAD, or worktree digest has moved. A successful accepted apply
+writes a content-bound acceptance receipt, projects an automatic-drain dead
+letter into its terminal job receipt, and is byte-idempotent on the same signal
+and approval reference. `status --json` reports unresolved or invalid
+acceptance evidence, and the strict architecture gate fails closed on either;
+the command never chooses or infers an architecture decision.
+If a candidate's exact reason set is only `verified-flow-proof-changed`, use
+`repo-harness architecture-projection reconcile --signal-id <sha256> --json`
+after refreshing the configured CodeGraph index. Reconciliation runs the same
+provider in check mode without `acceptedChange`, requires CodeGraph-ready
+input/output snapshots and an empty `noop`, and writes a separate content-bound
+receipt. Semantic reasons, unavailable proof, affected nodes, files, human
+actions, refresh signals, and apply receipts all fail closed; human approval is
+never treated as missing proof. Resolution is serialized per acceptance store,
+so acceptance and reconciliation cannot both execute for one candidate. When
+the candidate came from the automatic drain, a successful reconciliation also
+projects the exact dead letter into a terminal job receipt.
 Each successful canonical refresh action is checkpointed by action key before
 the next action runs, so a partial failure resumes without replaying completed
 writers. Missing or stale CLI authority remains a typed refresh failure; it is

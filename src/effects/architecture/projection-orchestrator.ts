@@ -32,6 +32,7 @@ import {
 import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { AcceptedArchitectureChangeReferenceV1 } from 'archctx-contracts';
+import { recordArchitectureProjectionAcceptanceCandidates } from './projection-acceptance';
 
 export interface ArchitectureProjectionSourceEvent {
   readonly source_key: string;
@@ -120,6 +121,7 @@ export function drainArchitectureProjectionJobs(
         options.onDiagnostic?.(diagnostic);
       },
     });
+    recordArchitectureProjectionAcceptanceCandidates(root, request, result, { jobId: job.jobId });
     if (result.status === 'applied-reconcile-required') {
       const diagnostic = diagnostics.find((entry) => entry.code === 'post-apply-reconciliation-required');
       if (!diagnostic) throw new ClassifiedProjectionError('invalid-result', 'archctx returned applied-reconcile-required without provider reconciliation evidence');
