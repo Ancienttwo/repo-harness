@@ -68,7 +68,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ## Change Assessment
 
 ```json
-{"protocol":1,"oracles":[{"id":"external-source-binding-tests","kind":"deterministic_test","description":"Focused protocol/store/effect/CLI tests prove exact binding, N:M edges, drift projection, unsafe-content framing and fail-closed authority checks."},{"id":"external-source-binding-readback","kind":"runtime_readback","description":"CLI JSON readback proves persisted binding receipts project the exact immutable source and canonical task identities without mutating Fleet/Lease/runtime authorities."}]}
+{"protocol":1,"oracles":[{"id":"external-source-binding-tests","kind":"deterministic_test","paths":["*"],"description":"Focused protocol/store/effect/CLI tests prove exact binding, N:M edges, drift projection, unsafe-content framing and fail-closed authority checks."},{"id":"external-source-binding-readback","kind":"runtime_readback","paths":["*"],"description":"CLI JSON readback proves persisted binding receipts project the exact immutable source and canonical task identities without mutating Fleet/Lease/runtime authorities."}]}
 ```
 
 ## Acceptance Policy
