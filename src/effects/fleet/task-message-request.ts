@@ -47,6 +47,12 @@ export interface SendOperatorTaskMessageInput {
   readonly task_id: string;
   readonly message_id: string;
   readonly scope: TaskMessageScope;
+  /** The task revision the operator board observed when it opened the draft. */
+  readonly expected_task_revision: string;
+  /** Null is the explicit task-scoped absence of a claim fence. */
+  readonly expected_claim_id: string | null;
+  /** Null is the explicit task-scoped absence of a generation fence. */
+  readonly expected_generation: number | null;
   readonly body: string;
 }
 
@@ -84,7 +90,11 @@ interface CanonicalTaskContext {
   readonly task_revision: string;
 }
 
-function canonicalTaskContext(repoRoot: string, taskId: string): CanonicalTaskContext {
+function canonicalTaskContext(
+  repoRoot: string,
+  taskId: string,
+  expectedTaskRevision: string,
+): CanonicalTaskContext {
   const sprintPath = readActiveSprintPath(repoRoot);
   if (!sprintPath) {
     throw new OperatorTaskMessageError('canonical_sprint_unavailable', 'the repository has no active canonical sprint');
@@ -105,6 +115,9 @@ function canonicalTaskContext(repoRoot: string, taskId: string): CanonicalTaskCo
     taskId,
   );
   if (!task.ok) throw new OperatorTaskMessageError('task_not_found', task.error);
+  if (task.task.task_revision !== expectedTaskRevision) {
+    throw new OperatorTaskMessageError('task_revision_mismatch', 'the canonical task revision changed since the board snapshot');
+  }
   return { source, task_id: task.task.task_id, task_revision: task.task.task_revision };
 }
 
@@ -126,10 +139,20 @@ function asOperatorTaskMessageError(error: unknown, fallback: OperatorTaskMessag
  */
 export function sendOperatorTaskMessage(input: SendOperatorTaskMessageInput): SendOperatorTaskMessageResult {
   const repoRoot = registeredRepositoryRoot(input);
-  const context = canonicalTaskContext(repoRoot, input.task_id);
+  if (input.scope === 'task' && (input.expected_claim_id !== null || input.expected_generation !== null)) {
+    throw new OperatorTaskMessageError('task_message_invalid', 'task-scoped messages cannot carry a claim fence');
+  }
+  if (input.scope === 'claim' && (input.expected_claim_id === null || input.expected_generation === null)) {
+    throw new OperatorTaskMessageError('task_message_invalid', 'claim-scoped messages require a claim fence');
+  }
+  const context = canonicalTaskContext(repoRoot, input.task_id, input.expected_task_revision);
   const owner = input.scope === 'claim' ? readLease(repoRoot, context.task_id).record : null;
   if (input.scope === 'claim' && owner === null) {
     throw new OperatorTaskMessageError('recipient_unavailable', `task ${context.task_id} has no current owner lease`);
+  }
+  if (input.scope === 'claim'
+    && (owner!.claim_id !== input.expected_claim_id || owner!.generation !== input.expected_generation)) {
+    throw new OperatorTaskMessageError('claim_mismatch', `task ${context.task_id} owner changed since the board snapshot`);
   }
   try {
     const event = buildTaskMessageEvent({

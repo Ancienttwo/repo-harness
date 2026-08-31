@@ -146,6 +146,7 @@ const en = {
   'repo.accessMode.read_only': 'read only',
   'repo.accessMode.read_write': 'read write',
   'repo.status.unreadable': 'unreadable',
+  'repo.error.runtimeEffectUnreadable': 'Agent Runtime effect evidence is unavailable. Reconcile runtime delivery evidence, then refresh.',
   'repo.tasks': '{count} tasks',
 
   'blocker.receipt_unavailable': 'The publication receipt cannot be read',
@@ -416,6 +417,7 @@ const zh: Readonly<Record<OperatorMessageKey, string>> = {
   'repo.accessMode.read_only': '只读',
   'repo.accessMode.read_write': '可读写',
   'repo.status.unreadable': '读不到',
+  'repo.error.runtimeEffectUnreadable': 'Agent Runtime effect 证据不可用。请 reconcile runtime 投递证据后刷新。',
   'repo.tasks': '{count} 个任务',
 
   'blocker.receipt_unavailable': '读不到发布回执',

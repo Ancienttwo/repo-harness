@@ -2,12 +2,14 @@ import { describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawn, spawnSync } from 'node:child_process';
 
 import { projectFleetBoardSnapshot } from '../../src/core/fleet/board';
 import { TASK_MESSAGE_BODY_MAX_BYTES } from '../../src/core/fleet/task-message';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import {
   OPERATOR_TASK_MESSAGE_BODY_MAX_BYTES,
+  OPERATOR_TASK_MESSAGE_REQUEST_MAX_BYTES,
   startOperatorServer,
   type OperatorServerOptions,
 } from '../../src/effects/operator/server';
@@ -20,20 +22,33 @@ import {
   parseOperatorServeOptions,
 } from '../../src/cli/commands/operator';
 
-function snapshot() {
+function snapshot(sequence = 1) {
   return projectFleetBoardSnapshot({
     registry_revision: 'sha256:registry',
-    sequence: 1,
+    sequence,
     observed_at: '2026-08-24T01:03:00.000Z',
     repositories: [],
   });
 }
 
 const TASK_ID = 'a'.repeat(64);
+const TASK_REVISION = 'b'.repeat(64);
+const CLAIM_ID = '123e4567-e89b-42d3-a456-426614174012';
 const MESSAGE_ID = '123e4567-e89b-42d3-a456-426614174011';
 
 function messagePath(repositoryId: string, taskId = TASK_ID): string {
   return `/api/v1/fleet/tasks/${repositoryId}/${taskId}/messages`;
+}
+
+function taskMessagePayload(body = 'ping', scope: 'task' | 'claim' = 'task'): string {
+  return JSON.stringify({
+    message_id: MESSAGE_ID,
+    scope,
+    body,
+    expected_task_revision: TASK_REVISION,
+    expected_claim_id: scope === 'claim' ? CLAIM_ID : null,
+    expected_generation: scope === 'claim' ? 1 : null,
+  });
 }
 
 interface WriteHarness {
@@ -122,10 +137,10 @@ describe('operator serve command and HTTP boundary', () => {
   test('UX-local-human-control-board-v1-P1 serves health, browser-safe Fleet snapshot, and static fallback', async () => {
     const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-ui-'));
     let collectCalls = 0;
-    const collect = async () => {
+    const collect = async (options?: { readonly sequence?: number }) => {
       collectCalls += 1;
       await Bun.sleep(10);
-      return snapshot();
+      return snapshot(options?.sequence ?? 1);
     };
     const options: OperatorServerOptions = {
       port: 0,
@@ -164,7 +179,16 @@ describe('operator serve command and HTTP boundary', () => {
       expect(collectCalls).toBe(1);
       const payload = await first.json() as Record<string, unknown>;
       expect(payload).toMatchObject({ protocol: 3, kind: 'operator_fleet_snapshot', sequence: 1 });
+      expect(await second.json()).toMatchObject({ sequence: 1 });
       expect(JSON.stringify(payload)).not.toContain('repo_root');
+
+      const third = await fetch(`${server.url}/api/v1/fleet/snapshot`);
+      expect(third.status).toBe(200);
+      expect(await third.json()).toMatchObject({ sequence: 2 });
+      const fourth = await fetch(`${server.url}/api/v1/fleet/snapshot`);
+      expect(fourth.status).toBe(200);
+      expect(await fourth.json()).toMatchObject({ sequence: 3 });
+      expect(collectCalls).toBe(3);
 
       const staticResponse = await fetch(`${server.url}/app.js`);
       expect(staticResponse.status).toBe(200);
@@ -248,7 +272,7 @@ describe('operator serve command and HTTP boundary', () => {
     const calls: SendOperatorTaskMessageInput[] = [];
     const harness = await startWriteServer(async () => sendResult(), calls);
     const url = `${harness.server.url}${messagePath('repo-write')}`;
-    const payload = JSON.stringify({ message_id: MESSAGE_ID, scope: 'task', body: 'ping' });
+    const payload = taskMessagePayload();
     try {
       const missingOrigin = await fetch(url, {
         method: 'POST',
@@ -302,14 +326,26 @@ describe('operator serve command and HTTP boundary', () => {
     try {
       expect(OPERATOR_TASK_MESSAGE_BODY_MAX_BYTES).toBe(TASK_MESSAGE_BODY_MAX_BYTES);
 
+      for (const body of [
+        'x'.repeat(TASK_MESSAGE_BODY_MAX_BYTES),
+        `${'界'.repeat(2_730)}xx`,
+        '😀'.repeat(2_048),
+        '"\\'.repeat(4_096),
+        '\0'.repeat(TASK_MESSAGE_BODY_MAX_BYTES),
+      ]) {
+        expect(new TextEncoder().encode(body).byteLength).toBe(TASK_MESSAGE_BODY_MAX_BYTES);
+        const legal = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: taskMessagePayload(body),
+        });
+        expect(legal.status).toBe(201);
+      }
+
       const oversized = await fetch(url, {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          message_id: MESSAGE_ID,
-          scope: 'task',
-          body: 'x'.repeat(TASK_MESSAGE_BODY_MAX_BYTES + 1),
-        }),
+        body: taskMessagePayload('x'.repeat(TASK_MESSAGE_BODY_MAX_BYTES + 1)),
       });
       expect(oversized.status).toBe(413);
       expect(await oversized.json()).toMatchObject({ error: { code: 'task_message_body_too_large' } });
@@ -317,9 +353,10 @@ describe('operator serve command and HTTP boundary', () => {
       const huge = await fetch(url, {
         method: 'POST',
         headers,
-        body: 'x'.repeat(TASK_MESSAGE_BODY_MAX_BYTES * 4 + 1),
+        body: 'x'.repeat(OPERATOR_TASK_MESSAGE_REQUEST_MAX_BYTES + 1),
       });
       expect(huge.status).toBe(413);
+      expect(await huge.json()).toMatchObject({ error: { code: 'task_message_envelope_too_large' } });
 
       for (const body of [
         'not json',
@@ -334,9 +371,99 @@ describe('operator serve command and HTTP boundary', () => {
         expect(await response.json()).toMatchObject({ error: { code: 'invalid_request' } });
       }
 
-      expect(calls).toEqual([]);
+      expect(calls).toHaveLength(5);
     } finally {
       await stopWriteServer(harness);
+    }
+  });
+
+  test('bounds collaboration reads and permits a healthy retry after timeout', async () => {
+    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-collaboration-timeout-'));
+    writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
+    let collaborationCalls = 0;
+    let abortObserved = false;
+    let healthy = false;
+    const server = await startOperatorServer({
+      port: 0,
+      static_root: staticRoot,
+      timeout_ms: 1_000,
+      collect_fleet_board: async (options) => snapshot(options?.sequence ?? 1),
+      read_collaboration_snapshot: async ({ signal }) => {
+        collaborationCalls += 1;
+        if (healthy) return {} as never;
+        signal.addEventListener('abort', () => { abortObserved = true; }, { once: true });
+        return new Promise<never>(() => {});
+      },
+    });
+    try {
+      const startedAt = Date.now();
+      const timedOut = await fetch(`${server.url}/api/v1/collaboration/repo-write/snapshot`);
+      expect(Date.now() - startedAt).toBeLessThan(2_500);
+      expect(timedOut.status).toBe(503);
+      expect(await timedOut.json()).toMatchObject({
+        error: {
+          code: 'collaboration_snapshot_timeout',
+          message: 'The collaboration snapshot timed out.',
+        },
+      });
+      expect(collaborationCalls).toBe(1);
+      expect(abortObserved).toBe(true);
+
+      healthy = true;
+      const retry = await fetch(`${server.url}/api/v1/collaboration/repo-write/snapshot`);
+      expect(retry.status).toBe(200);
+      expect(await retry.json()).toEqual({});
+      expect(collaborationCalls).toBe(2);
+    } finally {
+      await server.close();
+      rmSync(staticRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('isolates the default synchronous collaboration reader so its deadline remains enforceable', async () => {
+    if (process.platform === 'win32') return;
+    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-collaboration-worker-'));
+    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-collaboration-repo-')));
+    expect(spawnSync('git', ['init', '-q', repoRoot]).status).toBe(0);
+    const registry = registryHome([{ path: repoRoot, accessMode: 'read_write' }]);
+    const policyPath = join(repoRoot, '.ai/harness/policy.json');
+    mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
+    writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
+    const fifo = spawnSync('mkfifo', [policyPath], { encoding: 'utf8' });
+    expect(fifo.status).toBe(0);
+    const server = await startOperatorServer({
+      port: 0,
+      static_root: staticRoot,
+      timeout_ms: 1_000,
+      env: registry.env,
+      collect_fleet_board: async (options) => snapshot(options?.sequence ?? 1),
+    });
+    const fifoWriter = spawn('bash', ['-c', 'exec 3>"$1"; sleep 10', 'bash', policyPath], {
+      stdio: 'ignore',
+    });
+    try {
+      const startedAt = Date.now();
+      const url = `${server.url}/api/v1/collaboration/${registry.ids[0]!}/snapshot`;
+      const timedOut = await fetch(url);
+      expect(Date.now() - startedAt).toBeLessThan(2_500);
+      expect(timedOut.status).toBe(503);
+      expect(await timedOut.json()).toMatchObject({ error: { code: 'collaboration_snapshot_timeout' } });
+
+      fifoWriter.kill('SIGTERM');
+      rmSync(policyPath);
+      writeFileSync(policyPath, `${JSON.stringify({ collaboration: { mode: 'off' } })}\n`);
+      const retry = await fetch(url);
+      expect(retry.status).toBe(200);
+      expect(await retry.json()).toMatchObject({
+        kind: 'operator_collaboration_snapshot',
+        repository_id: registry.ids[0],
+      });
+    } finally {
+      fifoWriter.kill('SIGTERM');
+      await server.close();
+      rmSync(staticRoot, { recursive: true, force: true });
+      rmSync(repoRoot, { recursive: true, force: true });
+      rmSync(registry.home, { recursive: true, force: true });
     }
   });
 
@@ -345,7 +472,7 @@ describe('operator serve command and HTTP boundary', () => {
     const registry = registryHome([{ path: repoRoot, accessMode: 'read_only' }]);
     const harness = await startWriteServer(undefined, [], registry.env);
     const headers = { 'Content-Type': 'application/json', Origin: harness.server.url };
-    const payload = JSON.stringify({ message_id: MESSAGE_ID, scope: 'task', body: 'ping' });
+    const payload = taskMessagePayload();
     try {
       const readOnly = await fetch(`${harness.server.url}${messagePath(registry.ids[0]!)}`, {
         method: 'POST',
@@ -391,7 +518,7 @@ describe('operator serve command and HTTP boundary', () => {
       const created = await fetch(url, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ message_id: MESSAGE_ID, scope: 'claim', body: 'look at the base branch' }),
+        body: taskMessagePayload('look at the base branch', 'claim'),
       });
       expect(created.status).toBe(201);
       expect(await created.json()).toMatchObject({ ok: true, created: true, scope: 'claim', task_id: TASK_ID });
@@ -408,7 +535,7 @@ describe('operator serve command and HTTP boundary', () => {
       const replay = await fetch(url, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ message_id: MESSAGE_ID, scope: 'claim', body: 'look at the base branch' }),
+        body: taskMessagePayload('look at the base branch', 'claim'),
       });
       expect(replay.status).toBe(200);
       expect(await replay.json()).toMatchObject({ ok: true, created: false });
@@ -417,7 +544,7 @@ describe('operator serve command and HTTP boundary', () => {
       const conflict = await fetch(url, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ message_id: MESSAGE_ID, scope: 'claim', body: 'look at the base branch' }),
+        body: taskMessagePayload('look at the base branch', 'claim'),
       });
       expect(conflict.status).toBe(409);
       const conflictBody = await conflict.json() as { error: { code: string; message: string } };

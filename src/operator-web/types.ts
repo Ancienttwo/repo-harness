@@ -74,6 +74,14 @@ export const OPERATOR_PAYLOAD_INVALID_ERROR: OperatorApiErrorV1 = Object.freeze(
   next_action: 'Run `repo-harness fleet board --json` for diagnostics, then retry.',
 });
 
+/** Collaboration decoding has its own typed failure so the panel can preserve
+ * the operation that failed without exposing response contents. */
+export const OPERATOR_COLLABORATION_PAYLOAD_INVALID_ERROR: OperatorApiErrorV1 = Object.freeze({
+  code: 'operator_collaboration_payload_invalid',
+  message: 'Collaboration snapshot response is invalid',
+  next_action: 'Check the repository collaboration store, then refresh the board.',
+});
+
 /** Thrown only after the complete browser transport contract fails decoding. */
 export class OperatorPayloadError extends Error {
   readonly code = OPERATOR_PAYLOAD_INVALID_ERROR.code;
@@ -82,6 +90,17 @@ export class OperatorPayloadError extends Error {
   constructor() {
     super(OPERATOR_PAYLOAD_INVALID_ERROR.message);
     this.name = 'OperatorPayloadError';
+  }
+}
+
+/** Thrown only after the complete collaboration transport contract fails. */
+export class OperatorCollaborationPayloadError extends Error {
+  readonly code = OPERATOR_COLLABORATION_PAYLOAD_INVALID_ERROR.code;
+  readonly next_action = OPERATOR_COLLABORATION_PAYLOAD_INVALID_ERROR.next_action;
+
+  constructor() {
+    super(OPERATOR_COLLABORATION_PAYLOAD_INVALID_ERROR.message);
+    this.name = 'OperatorCollaborationPayloadError';
   }
 }
 
@@ -166,6 +185,7 @@ const ERROR_CODES = [
   'repo_readiness_unavailable',
   'repo_feedback_unreadable',
   'repo_inbox_unreadable',
+  'repo_runtime_effect_unreadable',
   'repo_collection_timeout',
 ] as const;
 const EXECUTION_READINESS = ['execution_ready', 'planning_required', 'inline_ready', 'unsupported'] as const;
@@ -199,6 +219,11 @@ const MERGE_ATTENTION_OWNERS = ['agent', 'user', 'external'] as const;
 const MERGE_INTEGRATION_MODES = ['unmerged', 'ancestor', 'absorbed', 'unavailable'] as const;
 const SHA256_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 const GIT_OID_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u;
+// Keep these transport-side checks byte-for-byte aligned with the canonical
+// Task Message route and `task-message.ts`; importing those Node modules would
+// pull `crypto` into the browser bundle.
+const TASK_DIGEST_PATTERN = /^[0-9a-f]{64}$/u;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const COLLABORATION_RECORD_ID_PATTERN = /^[0-9a-f]{64}$/u;
 const COLLABORATION_MODES = ['off', 'shadow', 'active'] as const;
 const COLLABORATION_SOURCES = ['signals', 'handoffs', 'adoptions', 'execution_offers'] as const;
@@ -232,6 +257,18 @@ function requireSha256(value: unknown): string {
   const digest = requireString(value);
   if (!SHA256_PATTERN.test(digest)) throw new OperatorPayloadError();
   return digest;
+}
+
+function requireTaskDigest(value: unknown): string {
+  const digest = requireString(value);
+  if (!TASK_DIGEST_PATTERN.test(digest)) throw new OperatorPayloadError();
+  return digest;
+}
+
+function requireUuid(value: unknown): string {
+  const uuid = requireString(value);
+  if (!UUID_PATTERN.test(uuid)) throw new OperatorPayloadError();
+  return uuid;
 }
 
 function requireGitOid(value: unknown): string {
@@ -311,12 +348,13 @@ function decodeMergeReadiness(value: unknown): OperatorFleetCardV1['merge_readin
 function decodeCard(value: unknown, repositoryId: string): OperatorFleetCardV1 {
   const card = requireRecord(value);
   if (!hasRequiredString(card.repository_id) || card.repository_id !== repositoryId) throw new OperatorPayloadError();
-  const taskId = requireString(card.task_id);
-  const taskRevision = requireString(card.task_revision);
+  const taskId = requireTaskDigest(card.task_id);
+  const taskRevision = requireTaskDigest(card.task_revision);
   const taskLabel = requireNullableString(card.task_label);
   const taskIndex = card.task_index === null ? null : requireNonNegativeInteger(card.task_index);
-  const claimId = requireNullableString(card.claim_id);
-  const generation = card.generation === null ? null : requireNonNegativeInteger(card.generation);
+  const claimId = card.claim_id === null ? null : requireUuid(card.claim_id);
+  const generation = card.generation === null ? null : requirePositiveInteger(card.generation);
+  if ((claimId === null) !== (generation === null)) throw new OperatorPayloadError();
   const column = card.column === null ? null : requireOneOf(card.column, COLUMNS);
   const attentionOwner = requireOneOf(card.attention_owner, ATTENTION_OWNERS);
   const executionReadiness = card.execution_readiness === null
@@ -489,35 +527,40 @@ function decodeCollaborationSources(value: unknown): readonly OperatorCollaborat
 /**
  * Decode the complete collaboration payload before any panel receives it.
  *
- * A payload that does not decode raises `OperatorPayloadError` and the panel
- * shows a stated failure. It never falls back to a partial document: a lane list
+ * A payload that does not decode raises `OperatorCollaborationPayloadError` and
+ * the panel shows a stated failure. It never falls back to a partial document: a lane list
  * that silently dropped the entries it could not read would be the healthy-empty
  * reading the collaboration program exists to refuse.
  */
 export function decodeOperatorCollaborationSnapshot(value: unknown): OperatorCollaborationSnapshotV1 {
-  const snapshot = requireRecord(value);
-  if (
-    snapshot.protocol !== OPERATOR_COLLABORATION_PAYLOAD_PROTOCOL
-    || snapshot.kind !== 'operator_collaboration_snapshot'
-  ) {
-    throw new OperatorPayloadError();
+  try {
+    const snapshot = requireRecord(value);
+    if (
+      snapshot.protocol !== OPERATOR_COLLABORATION_PAYLOAD_PROTOCOL
+      || snapshot.kind !== 'operator_collaboration_snapshot'
+    ) {
+      throw new OperatorPayloadError();
+    }
+    return Object.freeze({
+      protocol: OPERATOR_COLLABORATION_PAYLOAD_PROTOCOL,
+      kind: 'operator_collaboration_snapshot',
+      repository_id: requireString(snapshot.repository_id),
+      mode: requireOneOf(snapshot.mode, COLLABORATION_MODES),
+      snapshot_consistency: requireOneOf(snapshot.snapshot_consistency, SNAPSHOT_CONSISTENCIES),
+      degraded_sources: decodeCollaborationSources(snapshot.degraded_sources),
+      changed_sources: decodeCollaborationSources(snapshot.changed_sources),
+      threads: Object.freeze(requireArray(snapshot.threads).map(decodeCollaborationThread)),
+      signals: Object.freeze(requireArray(snapshot.signals).map(decodeCollaborationSignal)),
+      handoffs: Object.freeze(requireArray(snapshot.handoffs).map(decodeCollaborationHandoff)),
+      participants: Object.freeze(requireArray(snapshot.participants).map(decodeCollaborationParticipant)),
+      opportunities: Object.freeze(requireArray(snapshot.opportunities).map(decodeCollaborationOpportunity)),
+      unverified_execution_context_count: requireNonNegativeInteger(snapshot.unverified_execution_context_count),
+      source_snapshot_sha256: requireSha256(snapshot.source_snapshot_sha256),
+    });
+  } catch (error) {
+    if (error instanceof OperatorPayloadError) throw new OperatorCollaborationPayloadError();
+    throw error;
   }
-  return Object.freeze({
-    protocol: OPERATOR_COLLABORATION_PAYLOAD_PROTOCOL,
-    kind: 'operator_collaboration_snapshot',
-    repository_id: requireString(snapshot.repository_id),
-    mode: requireOneOf(snapshot.mode, COLLABORATION_MODES),
-    snapshot_consistency: requireOneOf(snapshot.snapshot_consistency, SNAPSHOT_CONSISTENCIES),
-    degraded_sources: decodeCollaborationSources(snapshot.degraded_sources),
-    changed_sources: decodeCollaborationSources(snapshot.changed_sources),
-    threads: Object.freeze(requireArray(snapshot.threads).map(decodeCollaborationThread)),
-    signals: Object.freeze(requireArray(snapshot.signals).map(decodeCollaborationSignal)),
-    handoffs: Object.freeze(requireArray(snapshot.handoffs).map(decodeCollaborationHandoff)),
-    participants: Object.freeze(requireArray(snapshot.participants).map(decodeCollaborationParticipant)),
-    opportunities: Object.freeze(requireArray(snapshot.opportunities).map(decodeCollaborationOpportunity)),
-    unverified_execution_context_count: requireNonNegativeInteger(snapshot.unverified_execution_context_count),
-    source_snapshot_sha256: requireSha256(snapshot.source_snapshot_sha256),
-  });
 }
 
 /** Decode the complete browser payload before any component receives it. */

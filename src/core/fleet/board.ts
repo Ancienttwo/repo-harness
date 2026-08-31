@@ -25,6 +25,7 @@ export type FleetBoardErrorCode =
   | 'repo_readiness_unavailable'
   | 'repo_feedback_unreadable'
   | 'repo_inbox_unreadable'
+  | 'repo_runtime_effect_unreadable'
   | 'repo_collection_timeout';
 
 export interface FleetBoardErrorV1 {
@@ -156,6 +157,7 @@ export const FLEET_BOARD_ERROR_MESSAGES: Readonly<Record<FleetBoardErrorCode, st
   repo_readiness_unavailable: 'repository readiness observation is unavailable',
   repo_feedback_unreadable: 'repository feedback observation is unavailable',
   repo_inbox_unreadable: 'repository inbox observation is unavailable',
+  repo_runtime_effect_unreadable: 'repository Agent Runtime effect store is unavailable',
   repo_collection_timeout: 'repository collection exceeded the fleet round deadline',
 });
 

@@ -99,6 +99,30 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
     expect(typed.counts.available).toBe(source.counts.available);
   });
 
+  test('projects the Agent Runtime effect-store error as a safe dedicated DTO value', () => {
+    const source = sourceSnapshot();
+    const withRuntimeError = {
+      ...source,
+      repositories: source.repositories.map((repository, index) => index === 1
+        ? {
+            ...repository,
+            error: {
+              code: 'repo_runtime_effect_unreadable' as const,
+              message: 'runtime store /private/runtime-effects secret=redacted',
+            },
+          }
+        : repository),
+    } as FleetBoardSnapshotV1;
+
+    const projected = projectOperatorFleetSnapshot(withRuntimeError);
+    expect(projected.repositories[1]?.error).toEqual({
+      code: 'repo_runtime_effect_unreadable',
+      message: 'repository Agent Runtime effect store is unavailable',
+    });
+    expect(JSON.stringify(projected)).not.toContain('/private/runtime-effects');
+    expect(JSON.stringify(projected)).not.toContain('secret=redacted');
+  });
+
   test('rejects an unsupported Fleet protocol before crossing the browser boundary', () => {
     const invalid = { ...sourceSnapshot(), protocol: 99 } as unknown as FleetBoardSnapshotV1;
     expect(() => projectOperatorFleetSnapshot(invalid)).toThrow('unsupported Fleet snapshot protocol');

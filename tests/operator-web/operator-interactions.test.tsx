@@ -13,10 +13,11 @@ import {
   OperatorApp,
   primaryCause,
   TASK_MESSAGE_BODY_LIMIT_BYTES,
+  type TaskMessageRequestV1,
   taskDisplayLabel,
   taskKey,
 } from '../../src/operator-web/App';
-import { degradedSnapshot, fixtureTasks, stableSnapshot } from '../../src/operator-web/fixture';
+import { collaborationSnapshot, degradedSnapshot, fixtureTasks, stableSnapshot } from '../../src/operator-web/fixture';
 import {
   localeFromNavigatorLanguage,
   OPERATOR_LOCALE_STORAGE_KEY,
@@ -86,6 +87,21 @@ async function mount(node: React.ReactElement): Promise<void> {
 
 function paneText(): string {
   return document.querySelector('.detail-pane')?.textContent ?? '';
+}
+
+/** The browser decoder follows the write-route identity contract. */
+function decodableSnapshot(snapshot: OperatorFleetSnapshotV1): OperatorFleetSnapshotV1 {
+  return {
+    ...snapshot,
+    repositories: snapshot.repositories.map((repository) => ({
+      ...repository,
+      cards: repository.cards.map((card) => ({
+        ...card,
+        task_revision: card.task_id,
+        claim_id: card.claim_id === null ? null : '123e4567-e89b-42d3-a456-426614174012',
+      })),
+    })),
+  };
 }
 
 beforeEach(() => {
@@ -227,6 +243,35 @@ describe('operator web interactions', () => {
     expect(paneText()).toContain('adapter_unavailable');
   });
 
+  test('keeps Agent Runtime effect-store failures distinct from Task Inbox failures in both locales', async () => {
+    const runtimeEffectFailure: OperatorFleetSnapshotV1 = {
+      ...degradedSnapshot,
+      repositories: degradedSnapshot.repositories.map((repository) => repository.repository_id === 'repo-unreadable'
+        ? {
+          ...repository,
+          error: {
+            code: 'repo_runtime_effect_unreadable',
+            message: 'repository Agent Runtime effect store is unavailable',
+          },
+        }
+        : repository),
+    };
+
+    installDom(true);
+    await mount(<OperatorApp initialState={projectSnapshotViewState(runtimeEffectFailure)} initialLocale="en" />);
+    await act(async () => buttonWithText('Unreadable repos').click());
+    const english = document.querySelector('.worklist')?.textContent ?? '';
+    expect(english).toContain('Agent Runtime effect evidence is unavailable');
+    expect(english).toContain('Reconcile runtime delivery evidence');
+    expect(english).not.toContain('Task Inbox');
+
+    await act(async () => buttonWithText('中').click());
+    const chinese = document.querySelector('.worklist')?.textContent ?? '';
+    expect(chinese).toContain('Agent Runtime effect 证据不可用');
+    expect(chinese).toContain('reconcile runtime 投递证据');
+    expect(chinese).not.toContain('Task Inbox');
+  });
+
   test('pane owns modal focus, traps Tab, closes on Escape, and restores the trigger', async () => {
     await mount(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} initialLocale="en" />);
 
@@ -329,7 +374,7 @@ describe('operator web interactions', () => {
   });
 
   test('rejects malformed nested payloads before they reach React rendering', async () => {
-    const malformed = structuredClone(stableSnapshot) as unknown as Record<string, unknown>;
+    const malformed = structuredClone(decodableSnapshot(stableSnapshot)) as unknown as Record<string, unknown>;
     const repositories = malformed.repositories as Array<Record<string, unknown>>;
     const cards = repositories[0].cards as Array<Record<string, unknown>>;
     const feedback = cards[0].feedback as Record<string, unknown>;
@@ -355,20 +400,20 @@ describe('operator web interactions', () => {
   });
 
   test('rejects protocol 2 rather than applying a browser compatibility path', () => {
-    const stale = structuredClone(stableSnapshot) as unknown as Record<string, unknown>;
+    const stale = structuredClone(decodableSnapshot(stableSnapshot)) as unknown as Record<string, unknown>;
     stale.protocol = 2;
     expect(() => decodeOperatorFleetSnapshot(stale)).toThrow('Fleet snapshot response is invalid');
   });
 
   test('decodes the sprint task label and index and fails closed on a malformed one', () => {
-    const decoded = decodeOperatorFleetSnapshot(structuredClone(stableSnapshot));
+    const decoded = decodeOperatorFleetSnapshot(decodableSnapshot(stableSnapshot));
     expect(decoded.repositories[0]?.cards[2]).toMatchObject({
       task_id: fixtureTasks.review.task_id,
       task_label: fixtureTasks.review.task_label,
       task_index: fixtureTasks.review.task_index,
     });
 
-    const unlabelled = structuredClone(stableSnapshot) as unknown as Record<string, unknown>;
+    const unlabelled = structuredClone(decodableSnapshot(stableSnapshot)) as unknown as Record<string, unknown>;
     const unlabelledCards = ((unlabelled.repositories as Array<Record<string, unknown>>)[0].cards as Array<Record<string, unknown>>);
     unlabelledCards[2].task_label = null;
     unlabelledCards[2].task_index = null;
@@ -391,7 +436,7 @@ describe('operator web interactions', () => {
   });
 
   test('reconstructs a closed browser payload and rejects malformed digest and Git OID fields', () => {
-    const withExtras = structuredClone(stableSnapshot) as unknown as Record<string, unknown>;
+    const withExtras = structuredClone(decodableSnapshot(stableSnapshot)) as unknown as Record<string, unknown>;
     const repositories = withExtras.repositories as Array<Record<string, unknown>>;
     const cards = repositories[0].cards as Array<Record<string, unknown>>;
     const readiness = cards[2].merge_readiness as Record<string, unknown>;
@@ -414,7 +459,7 @@ describe('operator web interactions', () => {
     expect(decoded.repositories[0]).not.toBe(repositories[0]);
     expect(decoded.repositories[0]?.cards[2]).not.toBe(cards[2]);
 
-    const degradedWithExtra = structuredClone(degradedSnapshot) as unknown as Record<string, unknown>;
+    const degradedWithExtra = structuredClone(decodableSnapshot(degradedSnapshot)) as unknown as Record<string, unknown>;
     const degradedRepositories = degradedWithExtra.repositories as Array<Record<string, unknown>>;
     (degradedRepositories.at(-1)?.error as Record<string, unknown>).future_secret = 'error-secret';
     expect(JSON.stringify(decodeOperatorFleetSnapshot(degradedWithExtra))).not.toContain('error-secret');
@@ -476,6 +521,65 @@ describe('operator web interactions', () => {
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
     await act(async () => buttonWithText('Refresh').click());
     expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  test('reveals a newly urgent first group while preserving an explicit collapse', async () => {
+    const working = stableSnapshot.repositories[0]!.cards.find((card) => card.task_id === fixtureTasks.working.task_id)!;
+    const lowerPriority = {
+      ...stableSnapshot,
+      repositories: [{ ...stableSnapshot.repositories[0]!, cards: [working] }],
+      counts: { available: 0, working: 1, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0 },
+    } satisfies OperatorFleetSnapshotV1;
+    const urgent = { ...stableSnapshot, sequence: stableSnapshot.sequence + 1 };
+
+    installDom(true);
+    await mount(
+      <OperatorApp
+        initialState={projectSnapshotViewState(lowerPriority)}
+        initialLocale="en"
+        fetchSnapshot={async () => urgent}
+      />,
+    );
+    expect(document.querySelector('[aria-label="Expand Needs you"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="Collapse Agent working"]')).not.toBeNull();
+
+    await act(async () => buttonWithText('Refresh').click());
+    expect(document.querySelector('[aria-label="Collapse Needs you"]')).not.toBeNull();
+    expect(buttonWithText(fixtureTasks.blocked.task_label)).not.toBeNull();
+
+    // A direct collapse is an operator choice and survives the next snapshot.
+    await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Collapse Needs you"]')?.click());
+    expect(document.querySelector('[aria-label="Expand Needs you"]')).not.toBeNull();
+    await act(async () => buttonWithText('Refresh').click());
+    expect(document.querySelector('[aria-label="Expand Needs you"]')).not.toBeNull();
+    expect(document.querySelector(`button.worklist-row`)).toBeNull();
+  });
+
+  test('keeps an explicitly expanded lower-priority group open when urgent work arrives', async () => {
+    const working = stableSnapshot.repositories[0]!.cards.find((card) => card.task_id === fixtureTasks.working.task_id)!;
+    const lowerPriority = {
+      ...stableSnapshot,
+      repositories: [{ ...stableSnapshot.repositories[0]!, cards: [working] }],
+      counts: { available: 0, working: 1, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0 },
+    } satisfies OperatorFleetSnapshotV1;
+    const urgent = { ...stableSnapshot, sequence: stableSnapshot.sequence + 1 };
+
+    installDom(true);
+    await mount(
+      <OperatorApp
+        initialState={projectSnapshotViewState(lowerPriority)}
+        initialLocale="en"
+        fetchSnapshot={async () => urgent}
+      />,
+    );
+    const agentHeader = document.querySelector<HTMLButtonElement>('[aria-label="Collapse Agent working"]');
+    if (!agentHeader) throw new Error('agent working header not found');
+    await act(async () => agentHeader.click());
+    await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Expand Agent working"]')?.click());
+    await act(async () => buttonWithText('Refresh').click());
+
+    expect(document.querySelector('[aria-label="Collapse Agent working"]')).not.toBeNull();
+    expect(buttonWithText(fixtureTasks.working.task_label)).not.toBeNull();
   });
 
   test('defaults to English, switches to Chinese, and remembers the choice', async () => {
@@ -768,6 +872,9 @@ describe('operator web task message composer', () => {
       task_id: fixtureTasks.blocked.task_id,
       scope: 'claim',
       body: 'the base moved, rebase first',
+      expected_task_revision: stableSnapshot.repositories[0]!.cards[5]!.task_revision,
+      expected_claim_id: stableSnapshot.repositories[0]!.cards[5]!.claim_id,
+      expected_generation: stableSnapshot.repositories[0]!.cards[5]!.generation,
     });
     expect(String(sent[1]!.message_id)).toMatch(/^[0-9a-f-]{36}$/u);
     expect(refreshes).toBe(1);
@@ -779,6 +886,73 @@ describe('operator web task message composer', () => {
     await act(async () => sendButton().click());
     expect(sent[2]!.message_id).not.toBe(sent[1]!.message_id);
     expect(window.localStorage.getItem('repo-harness:operator-sent')).toBeNull();
+  });
+
+  test('keeps the draft fence bound to the rendered card across a refresh', async () => {
+    const blocked = stableSnapshot.repositories[0]!.cards[5]!;
+    const refreshed: OperatorFleetSnapshotV1 = {
+      ...stableSnapshot,
+      sequence: stableSnapshot.sequence + 1,
+      repositories: stableSnapshot.repositories.map((repository) => ({
+        ...repository,
+        cards: repository.cards.map((card) => (card.task_id === blocked.task_id
+          ? {
+            ...card,
+            task_revision: `${blocked.task_revision}-next`,
+            claim_id: 'claim-replaced-by-refresh',
+            generation: (blocked.generation ?? 0) + 1,
+          }
+          : card)),
+      })),
+    };
+    const submitted: TaskMessageRequestV1[] = [];
+    const collaboration = {
+      // The injected reader is only here to keep this test about the task
+      // composer; the repository binding itself is covered by collaboration tests.
+      repository_id: 'repo-harness',
+    };
+
+    installDom(true);
+    await mount(
+      <OperatorApp
+        initialState={projectSnapshotViewState(stableSnapshot)}
+        initialLocale="en"
+        fetchSnapshot={async () => refreshed}
+        fetchCollaboration={async () => ({
+          ...collaborationSnapshot,
+          ...collaboration,
+        })}
+        sendMessage={async (request) => {
+          submitted.push(request);
+          throw {
+            code: 'task_revision_mismatch',
+            message: 'The canonical task definition moved since the snapshot.',
+            next_action: 'Refresh the board to re-observe the task, then retry.',
+          };
+        }}
+      />,
+    );
+    await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+    await act(async () => composerToggle().click());
+    await typeMessage('send only to the observed owner');
+    const originalFence = {
+      expected_task_revision: blocked.task_revision,
+      expected_claim_id: blocked.claim_id,
+      expected_generation: blocked.generation,
+    };
+
+    await act(async () => buttonWithText('Refresh').click());
+    expect(paneText()).toContain(`rev ${originalFence.expected_task_revision}`);
+    expect(paneText()).not.toContain('claim …replaced');
+
+    await act(async () => sendButton().click());
+    expect(submitted).toHaveLength(1);
+    expect(submitted[0]).toMatchObject({
+      scope: 'claim',
+      body: 'send only to the observed owner',
+      ...originalFence,
+    });
+    expect(composerPanel()?.textContent).toContain('The canonical task definition moved since the snapshot.');
   });
 
   test('UX-operator-task-message-v1-P4 keeps the composer the only write affordance on the board', async () => {

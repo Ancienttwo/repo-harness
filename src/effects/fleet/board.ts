@@ -151,7 +151,7 @@ function emptyFeedback(): FleetBoardFeedbackSummaryV1 {
 function mapRepositoryError(error: unknown): FleetBoardErrorCode {
   if (error instanceof FleetRepositoryError) return error.code;
   if (error instanceof TaskInboxError) return 'repo_inbox_unreadable';
-  if (error instanceof AgentRuntimeEffectStoreError) return 'repo_inbox_unreadable';
+  if (error instanceof AgentRuntimeEffectStoreError) return 'repo_runtime_effect_unreadable';
   if (error instanceof FeedbackError) return 'repo_feedback_unreadable';
   if (error instanceof MergeReadinessError) {
     return error.code === 'receipt_unavailable' || error.code === 'publication_claim_mismatch' || error.code === 'publication_pointer_mismatch'

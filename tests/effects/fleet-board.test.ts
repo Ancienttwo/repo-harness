@@ -10,6 +10,8 @@ import {
   watchFleetBoard,
   type FleetBoardDependencies,
 } from '../../src/effects/fleet/board';
+import { AgentRuntimeEffectStoreError } from '../../src/effects/engineers/agent-runtime-effect-store';
+import { TaskInboxError } from '../../src/effects/fleet/task-inbox';
 import type { FleetBoardCardInputV1 } from '../../src/core/fleet/board';
 import {
   buildPublicationReceipt,
@@ -367,6 +369,35 @@ describe('fleet board collector', () => {
     expect(rendered).not.toContain('/private/provider-root');
     expect(rendered).not.toContain('super-secret');
     expect(rendered).not.toContain('gh stderr');
+  });
+
+  test('keeps Agent Runtime effect-store failures distinct from Task Inbox failures', async () => {
+    const collectWith = async (error: Error) => collectFleetBoard({ timeout_ms: 1_000 }, {
+      read_registry: () => registry([repo(0)]),
+      collect_repository: async () => { throw error; },
+    });
+    const runtime = await collectWith(new AgentRuntimeEffectStoreError(
+      'agent_runtime_effect_unreadable',
+      'runtime store /private/runtime-effects secret=redacted',
+    ));
+    const inbox = await collectWith(new TaskInboxError(
+      'task_message_unreadable',
+      'task inbox /private/task-inbox secret=redacted',
+    ));
+
+    expect(runtime.repositories[0]?.error).toEqual({
+      code: 'repo_runtime_effect_unreadable',
+      message: 'repository Agent Runtime effect store is unavailable',
+    });
+    expect(inbox.repositories[0]?.error).toEqual({
+      code: 'repo_inbox_unreadable',
+      message: 'repository inbox observation is unavailable',
+    });
+    expect(runtime.repositories[0]?.error?.code).not.toBe(inbox.repositories[0]?.error?.code);
+    expect(JSON.stringify(runtime)).not.toContain('/private/runtime-effects');
+    expect(JSON.stringify(runtime)).not.toContain('secret=redacted');
+    expect(JSON.stringify(inbox)).not.toContain('/private/task-inbox');
+    expect(JSON.stringify(inbox)).not.toContain('secret=redacted');
   });
 
   test('watch emits immediate sequential snapshots with monotonic sequence and no overlap', async () => {

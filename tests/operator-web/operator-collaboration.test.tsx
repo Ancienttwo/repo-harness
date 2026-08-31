@@ -6,7 +6,12 @@ import { Window } from 'happy-dom';
 
 import { projectOperatorCollaborationSnapshot } from '../../src/core/operator/collaboration-snapshot';
 import type { CollaborativeWorkExchangeSnapshotV1 } from '../../src/core/collaboration/work-exchange';
-import { CollaborationPane, OperatorApp } from '../../src/operator-web/App';
+import {
+  CollaborationPane,
+  fetchOperatorCollaborationSnapshot,
+  fetchOperatorSnapshot,
+  OperatorApp,
+} from '../../src/operator-web/App';
 import {
   changedCollaborationSnapshot,
   collaborationSnapshot,
@@ -252,7 +257,7 @@ describe('operator collaboration projection', () => {
       },
       { ...collaborationSnapshot, unverified_execution_context_count: -1 },
     ]) {
-      expect(() => decodeOperatorCollaborationSnapshot(broken)).toThrow('Fleet snapshot response is invalid');
+      expect(() => decodeOperatorCollaborationSnapshot(broken)).toThrow('Collaboration snapshot response is invalid');
     }
   });
 });
@@ -439,15 +444,15 @@ describe('operator collaboration read', () => {
     expect(paneText()).toContain('repository repo-console');
     expect(paneText()).toContain('hotspot 87');
 
-    // A refresh keeps the selection, so it must not re-read a store whose
-    // identity did not change.
+    // An explicit board refresh also re-reads the selected repository, while
+    // keeping the selection and avoiding reads for every other repository.
     await act(async () => buttonWithText('Refresh').click());
-    expect(asked).toEqual(['repo-console']);
+    expect(asked).toEqual(['repo-console', 'repo-console']);
     expect(paneText()).toContain('repository repo-console');
 
     // Selecting a task in another repository moves the scope.
     await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
-    expect(asked).toEqual(['repo-console', 'repo-harness']);
+    expect(asked).toEqual(['repo-console', 'repo-console', 'repo-harness']);
     expect(paneText()).toContain('repository repo-harness');
   });
 
@@ -473,5 +478,136 @@ describe('operator collaboration read', () => {
     expect(document.querySelector('.detail-pane')?.textContent)
       .toContain('The base branch moved after verification');
     expect(document.querySelector('.detail-pane [data-slot="composer"]')).not.toBeNull();
+  });
+
+  test('explicit board refresh retries a failed collaboration read without changing selection', async () => {
+    const asked: string[] = [];
+    let attempts = 0;
+    await mount(
+      <OperatorApp
+        initialState={projectSnapshotViewState(stableSnapshot)}
+        initialLocale="en"
+        fetchSnapshot={async () => stableSnapshot}
+        fetchCollaboration={async (repositoryId) => {
+          asked.push(repositoryId);
+          attempts += 1;
+          if (attempts === 1) {
+            throw {
+              code: 'collaboration_snapshot_unavailable',
+              message: 'The collaboration store cannot be read.',
+              next_action: 'Check the repository collaboration store, then refresh the board.',
+            };
+          }
+          return {
+            ...collaborationSnapshot,
+            repository_id: repositoryId,
+            source_snapshot_sha256: `sha256:${'f'.repeat(64)}`,
+          };
+        }}
+      />,
+    );
+
+    await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+    expect(asked).toEqual(['repo-harness']);
+    expect(paneText()).toContain('The collaboration store cannot be read');
+
+    await act(async () => buttonWithText('Refresh').click());
+    expect(asked).toEqual(['repo-harness', 'repo-harness']);
+    expect(paneText()).toContain(`sha256:${'f'.repeat(64)}`);
+    expect(document.querySelector('.detail-pane')?.textContent).toContain(fixtureTasks.blocked.task_label);
+  });
+
+  test('late collaboration responses cannot replace the repository selected later', async () => {
+    const pending = new Map<string, Array<(snapshot: OperatorCollaborationSnapshotV1) => void>>();
+    const fetchCollaboration = (repositoryId: string): Promise<OperatorCollaborationSnapshotV1> => new Promise((resolve) => {
+      const requests = pending.get(repositoryId) ?? [];
+      requests.push(resolve);
+      pending.set(repositoryId, requests);
+    });
+
+    await mount(
+      <OperatorApp
+        initialState={projectSnapshotViewState(stableSnapshot)}
+        initialLocale="en"
+        fetchCollaboration={fetchCollaboration}
+      />,
+    );
+    await act(async () => buttonWithText(fixtureTasks.console.task_label).click());
+    await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+    expect(paneText()).toContain('repository repo-harness');
+
+    await act(async () => {
+      pending.get('repo-console')?.[0]?.({ ...collaborationSnapshot, repository_id: 'repo-console' });
+    });
+    expect(paneText()).toContain('repository repo-harness');
+    expect(paneText()).not.toContain('hotspot 87');
+
+    await act(async () => {
+      pending.get('repo-harness')?.[0]?.({ ...collaborationSnapshot, repository_id: 'repo-harness' });
+    });
+    expect(paneText()).toContain('repository repo-harness');
+    expect(paneText()).toContain('hotspot 87');
+  });
+
+  test('keeps Fleet validation copy separate from collaboration validation copy', async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = (async () => new Response(JSON.stringify({ protocol: 2 }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as typeof fetch;
+      await expect(fetchOperatorSnapshot()).rejects.toMatchObject({
+        code: 'operator_payload_invalid',
+        message: 'Fleet snapshot response is invalid',
+      });
+
+      globalThis.fetch = (async () => new Response(JSON.stringify({
+        ...collaborationSnapshot,
+        protocol: 2,
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as typeof fetch;
+      await expect(fetchOperatorCollaborationSnapshot(collaborationSnapshot.repository_id)).rejects.toMatchObject({
+        code: 'operator_collaboration_payload_invalid',
+        message: 'Collaboration snapshot response is invalid',
+        next_action: 'Check the repository collaboration store, then refresh the board.',
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('rejects a structurally valid collaboration response for another repository', async () => {
+    const requestedRepository = 'repo-harness';
+    const otherRepository = 'repo-other';
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(JSON.stringify({
+      ...collaborationSnapshot,
+      repository_id: otherRepository,
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })) as unknown as typeof fetch;
+    try {
+      await expect(fetchOperatorCollaborationSnapshot(requestedRepository)).rejects.toMatchObject({
+        code: 'collaboration_repository_mismatch',
+        message: 'The collaboration response does not match the requested repository.',
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    await mount(
+      <OperatorApp
+        initialState={projectSnapshotViewState(stableSnapshot)}
+        initialLocale="en"
+        fetchCollaboration={async () => ({ ...collaborationSnapshot, repository_id: otherRepository })}
+      />,
+    );
+    await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
+    expect(paneText()).toContain('does not match the requested repository');
+    expect(paneText()).not.toContain('hotspot 87');
+    expect(paneText()).not.toContain('Double-read windows must overlap');
   });
 });

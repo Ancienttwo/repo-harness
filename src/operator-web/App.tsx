@@ -15,6 +15,7 @@ import {
   decodeOperatorCollaborationSnapshot,
   decodeOperatorFleetSnapshot,
   OPERATOR_COLUMNS,
+  OPERATOR_COLLABORATION_PAYLOAD_INVALID_ERROR,
   OPERATOR_FLEET_PAYLOAD_PROTOCOL,
   OPERATOR_PAYLOAD_INVALID_ERROR,
   projectSnapshotViewState,
@@ -484,7 +485,23 @@ function WorklistRow({
   );
 }
 
-function UnreadableRepositoryRow({ repository, t }: { readonly repository: OperatorFleetRepositoryV1; readonly t: OperatorTranslate }) {
+const RUNTIME_EFFECT_ERROR_CODE = 'repo_runtime_effect_unreadable';
+
+function repositoryErrorMessage(
+  error: NonNullable<OperatorFleetRepositoryV1['error']>,
+  t: OperatorTranslate,
+): string {
+  if (error.code !== RUNTIME_EFFECT_ERROR_CODE) return error.message;
+  return t('repo.error.runtimeEffectUnreadable');
+}
+
+function UnreadableRepositoryRow({
+  repository,
+  t,
+}: {
+  readonly repository: OperatorFleetRepositoryV1;
+  readonly t: OperatorTranslate;
+}) {
   return (
     <div className="worklist-row worklist-row--repository" role="group" aria-label={repository.repository_id}>
       <span className="worklist-row__head">
@@ -494,7 +511,7 @@ function UnreadableRepositoryRow({ repository, t }: { readonly repository: Opera
       {repository.error && (
         <span className="worklist-row__cause tone-danger">
           <Icon name="alert" size={13} />
-          <span className="cause-text">{repository.error.message}</span>
+          <span className="cause-text">{repositoryErrorMessage(repository.error, t)}</span>
           <code className="cause-code">{repository.error.code}</code>
         </span>
       )}
@@ -515,12 +532,22 @@ function Worklist({
 }) {
   const groups = useMemo(() => groupWorklist(snapshot), [snapshot]);
   const [filter, setFilter] = useState<WorklistGroupId | 'all'>('all');
-  const [collapsed, setCollapsed] = useState<readonly WorklistGroupId[]>(() => defaultCollapsedGroups(groups));
+  /**
+   * `undefined` means the group still follows the attention-first default for
+   * the current snapshot. Once an operator toggles a group, its explicit
+   * choice survives later snapshots while all other groups may be reconciled
+   * against the new first non-empty group.
+   */
+  const [groupOverrides, setGroupOverrides] = useState<Partial<Record<WorklistGroupId, boolean>>>({});
+  const automaticCollapsed = useMemo(() => new Set(defaultCollapsedGroups(groups)), [groups]);
   const total = groups.reduce((sum, group) => sum + group.count, 0);
   const visible = groups.filter((group) => filter === 'all' || group.id === filter);
 
-  const toggle = (id: WorklistGroupId) =>
-    setCollapsed((current) => (current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]));
+  const isCollapsed = (id: WorklistGroupId): boolean => groupOverrides[id] ?? automaticCollapsed.has(id);
+  const toggle = (id: WorklistGroupId) => {
+    const nextCollapsed = !isCollapsed(id);
+    setGroupOverrides((current) => ({ ...current, [id]: nextCollapsed }));
+  };
 
   return (
     <section className="worklist" id="worklist" aria-labelledby="worklist-heading">
@@ -539,7 +566,9 @@ function Worklist({
             className={filter === group.id ? 'is-active' : ''}
             onClick={() => {
               setFilter(group.id);
-              setCollapsed((current) => current.filter((entry) => entry !== group.id));
+              // Choosing a group filter is also an explicit request to see
+              // that group's rows; keep it open when a later snapshot arrives.
+              setGroupOverrides((current) => ({ ...current, [group.id]: false }));
             }}
           >
             {t(`group.${group.id}` as OperatorMessageKey)}<span>{group.count}</span>
@@ -552,7 +581,7 @@ function Worklist({
         <div className="worklist__groups">
           {visible.map((group) => {
             const groupLabel = t(`group.${group.id}` as OperatorMessageKey);
-            const open = !collapsed.includes(group.id);
+            const open = !isCollapsed(group.id);
             return (
               <section className={`worklist-group worklist-group--${group.id}`} key={group.id} aria-labelledby={`group-${group.id}`}>
                 <button
@@ -623,7 +652,13 @@ function StageMatrix({ snapshot, t }: { readonly snapshot: OperatorFleetSnapshot
   );
 }
 
-function RepositoryHealth({ snapshot, t }: { readonly snapshot: OperatorFleetSnapshotV1; readonly t: OperatorTranslate }) {
+function RepositoryHealth({
+  snapshot,
+  t,
+}: {
+  readonly snapshot: OperatorFleetSnapshotV1;
+  readonly t: OperatorTranslate;
+}) {
   return (
     <div className="repository-list">
       {snapshot.repositories.map((repository) => {
@@ -642,7 +677,7 @@ function RepositoryHealth({ snapshot, t }: { readonly snapshot: OperatorFleetSna
                 ? t('repo.status.unreadable')
                 : t(`status.consistency.${repository.snapshot_consistency}` as OperatorMessageKey)}
             </span>
-            {repository.error && <span className="repository-row__error">{repository.error.message}</span>}
+            {repository.error && <span className="repository-row__error">{repositoryErrorMessage(repository.error, t)}</span>}
           </article>
         );
       })}
@@ -808,6 +843,20 @@ const COLLABORATION_UNAVAILABLE_ERROR: OperatorApiErrorV1 = {
   next_action: 'Check the repository collaboration store, then refresh the board.',
 };
 
+const COLLABORATION_REPOSITORY_MISMATCH_ERROR: OperatorApiErrorV1 = {
+  code: 'collaboration_repository_mismatch',
+  message: 'The collaboration response does not match the requested repository.',
+  next_action: COLLABORATION_UNAVAILABLE_ERROR.next_action,
+};
+
+function assertCollaborationRepository(
+  snapshot: OperatorCollaborationSnapshotV1,
+  repositoryId: string,
+): OperatorCollaborationSnapshotV1 {
+  if (snapshot.repository_id !== repositoryId) throw COLLABORATION_REPOSITORY_MISMATCH_ERROR;
+  return snapshot;
+}
+
 async function fetchOperatorCollaborationSnapshot(
   repositoryId: string,
 ): Promise<OperatorCollaborationSnapshotV1> {
@@ -822,12 +871,15 @@ async function fetchOperatorCollaborationSnapshot(
     body = null;
   }
   if (!response.ok) throw asApiError(body, COLLABORATION_UNAVAILABLE_ERROR);
+  let snapshot: OperatorCollaborationSnapshotV1;
   try {
-    return decodeOperatorCollaborationSnapshot(body);
-  } catch (error) {
-    if (error instanceof Error && error.name === 'OperatorPayloadError') throw error;
-    throw OPERATOR_PAYLOAD_INVALID_ERROR;
+    snapshot = decodeOperatorCollaborationSnapshot(body);
+  } catch {
+    // Fleet and collaboration payloads are separate authorities. Keep a
+    // malformed collaboration response from borrowing Fleet diagnostics.
+    throw OPERATOR_COLLABORATION_PAYLOAD_INVALID_ERROR;
   }
+  return assertCollaborationRepository(snapshot, repositoryId);
 }
 
 function sourceList(
@@ -1164,12 +1216,24 @@ const TASK_MESSAGE_FAILED_ERROR: OperatorApiErrorV1 = {
 
 const OWNER_GONE_CODES: readonly string[] = ['claim_mismatch', 'recipient_unavailable', 'task_unowned'];
 
+export interface TaskMessageFenceV1 {
+  /** The task revision the operator saw when the draft was opened. */
+  readonly expected_task_revision: string;
+  /** Claim identity is null for task-scoped delivery. */
+  readonly expected_claim_id: string | null;
+  /** Claim generation is null for task-scoped delivery. */
+  readonly expected_generation: number | null;
+}
+
 export interface TaskMessageRequestV1 {
   readonly repository_id: string;
   readonly task_id: string;
   readonly message_id: string;
   readonly scope: 'task' | 'claim';
   readonly body: string;
+  readonly expected_task_revision: string;
+  readonly expected_claim_id: string | null;
+  readonly expected_generation: number | null;
 }
 
 export function taskMessageBodyBytes(body: string): number {
@@ -1183,6 +1247,15 @@ export function taskMessageBodyBytes(body: string): number {
  */
 export function composerScope(card: OperatorFleetCardV1): 'task' | 'claim' {
   return card.lease_state === 'bound' && card.claim_id !== null ? 'claim' : 'task';
+}
+
+function composerFence(card: OperatorFleetCardV1): TaskMessageFenceV1 {
+  const scope = composerScope(card);
+  return Object.freeze({
+    expected_task_revision: card.task_revision,
+    expected_claim_id: scope === 'claim' ? card.claim_id : null,
+    expected_generation: scope === 'claim' ? card.generation : null,
+  });
 }
 
 export type ComposerBlock =
@@ -1219,7 +1292,14 @@ export async function postTaskMessage(request: TaskMessageRequestV1): Promise<vo
       method: 'POST',
       cache: 'no-store',
       headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message_id: request.message_id, scope: request.scope, body: request.body }),
+      body: JSON.stringify({
+        message_id: request.message_id,
+        scope: request.scope,
+        body: request.body,
+        expected_task_revision: request.expected_task_revision,
+        expected_claim_id: request.expected_claim_id,
+        expected_generation: request.expected_generation,
+      }),
     },
   );
   if (response.ok) return;
@@ -1266,13 +1346,18 @@ function Composer({
   readonly t: OperatorTranslate;
 }) {
   const [open, setOpen] = useState(false);
-  const [messageId, setMessageId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<{ readonly message_id: string; readonly fence: TaskMessageFenceV1 } | null>(null);
   const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
   const [sentAt, setSentAt] = useState<number | null>(null);
   const [error, setError] = useState<OperatorApiErrorV1 | null>(null);
 
-  const scope = composerScope(card);
+  const observedFence = composerFence(card);
+  // A draft owns its original fence. If the card refreshes while the composer
+  // is open, the POST still carries the old revision/claim/generation and the
+  // server can reject it atomically instead of silently retargeting the text.
+  const fence = draft?.fence ?? observedFence;
+  const scope = fence.expected_claim_id === null ? 'task' : 'claim';
   const bytes = taskMessageBodyBytes(body);
   const block = composerBlock({
     access_mode: repository.access_mode,
@@ -1280,31 +1365,34 @@ function Composer({
     board_unstable: boardUnstable,
     body_bytes: bytes,
   });
-  const claimShort = card.claim_id === null ? '' : card.claim_id.slice(-8);
+  const claimShort = fence.expected_claim_id === null ? '' : fence.expected_claim_id.slice(-8);
   const consistency = t(`status.consistency.${card.snapshot_consistency}` as OperatorMessageKey);
   const sent = sentAt !== null && sentAt === sequence;
 
   const toggle = () => {
-    if (!open && messageId === null) setMessageId(crypto.randomUUID());
+    if (!open && draft === null) {
+      setDraft({ message_id: crypto.randomUUID(), fence: observedFence });
+    }
     setOpen(!open);
   };
 
   const submit = async () => {
-    if (block !== null || sending || messageId === null) return;
+    if (block !== null || sending || draft === null) return;
     setSending(true);
     setError(null);
     try {
       await sendMessage({
         repository_id: card.repository_id,
         task_id: card.task_id,
-        message_id: messageId,
+        message_id: draft.message_id,
         scope,
         body,
+        ...draft.fence,
       });
       // A stored message is a new message: the retry id is spent, the draft is
       // gone, and the next snapshot owns what the operator sees next.
       setBody('');
-      setMessageId(crypto.randomUUID());
+      setDraft({ message_id: crypto.randomUUID(), fence: observedFence });
       setSentAt(sequence);
       onSent();
     } catch (failure) {
@@ -1344,8 +1432,8 @@ function Composer({
           </p>
           <p className="composer__fence">
             {scope === 'claim'
-              ? t('composer.fenceClaim', { claim: claimShort, generation: card.generation ?? '—', consistency })
-              : t('composer.fenceTask', { consistency })}
+              ? `${t('composer.fenceClaim', { claim: claimShort, generation: fence.expected_generation ?? '—', consistency })} · rev ${fence.expected_task_revision}`
+              : `${t('composer.fenceTask', { consistency })} · rev ${fence.expected_task_revision}`}
           </p>
           {block !== null && <p className="composer__blocked" role="status">{blockedMessage(block, t)}</p>}
           {error && (
@@ -1364,7 +1452,7 @@ function Composer({
             {sending
               ? t('composer.sending')
               : scope === 'claim'
-                ? t('composer.send', { claim: claimShort, generation: card.generation ?? '—' })
+                ? t('composer.send', { claim: claimShort, generation: fence.expected_generation ?? '—' })
                 : t('composer.sendTask')}
           </button>
           <p className="composer__boundary">{OPERATOR_WRITE_BOUNDARY}</p>
@@ -1589,6 +1677,7 @@ export function OperatorApp({
   const [collaboration, setCollaboration] = useState<CollaborationViewState>(
     initialCollaboration ?? { kind: 'idle' },
   );
+  const [collaborationRefreshGeneration, setCollaborationRefreshGeneration] = useState(0);
   const { locale, setLocale, t } = useLocale(initialLocale);
   const wideLayout = useWideLayout();
   const refreshInFlight = useRef(false);
@@ -1599,6 +1688,10 @@ export function OperatorApp({
   const refresh = async () => {
     if (refreshInFlight.current) return;
     refreshInFlight.current = true;
+    // An explicit board refresh is also the collaboration recovery action. The
+    // selected repository remains the only scope, but its read must be issued
+    // again even when the task selection identity is unchanged.
+    setCollaborationRefreshGeneration((current) => current + 1);
     const previous = snapshotForState(state);
     setState({ kind: 'loading', previous });
     try {
@@ -1647,7 +1740,22 @@ export function OperatorApp({
     let current = true;
     setCollaboration({ kind: 'loading', repository_id: collaborationRepositoryId });
     void fetchCollaboration(collaborationRepositoryId).then(
-      (next) => { if (current) setCollaboration({ kind: 'ready', snapshot: next }); },
+      (next) => {
+        if (current) {
+          try {
+            setCollaboration({
+              kind: 'ready',
+              snapshot: assertCollaborationRepository(next, collaborationRepositoryId),
+            });
+          } catch (error) {
+            setCollaboration({
+              kind: 'failed',
+              repository_id: collaborationRepositoryId,
+              error: asApiError(error, COLLABORATION_UNAVAILABLE_ERROR),
+            });
+          }
+        }
+      },
       (error) => {
         if (current) {
           setCollaboration({
@@ -1659,10 +1767,10 @@ export function OperatorApp({
       },
     );
     return () => { current = false; };
-    // The repository is the whole input; refetching on every board refresh would
-    // re-read four stores for a document that did not change identity.
+    // The repository remains the scope; the explicit refresh generation is the
+    // only extra trigger, so reads never fan out to other repositories.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [collaborationRepositoryId]);
+  }, [collaborationRepositoryId, collaborationRefreshGeneration]);
   // A board that is stale, torn, or degraded is not a board you may write from.
   const boardUnstable = stateKind === 'stale' || (snapshot !== null && snapshot.snapshot_consistency !== 'stable');
   const selectCard = (card: OperatorFleetCardV1) => setSelection({ key: taskKey(card), revision: card.task_revision });
@@ -1691,7 +1799,12 @@ export function OperatorApp({
               : snapshot ? (
                 snapshotViewKind(snapshot) === 'empty'
                   ? <EmptyFleet t={t} />
-                  : <Worklist snapshot={snapshot} selectedKey={selection?.key ?? null} onSelect={selectCard} t={t} />
+                  : <Worklist
+                    snapshot={snapshot}
+                    selectedKey={selection?.key ?? null}
+                    onSelect={selectCard}
+                    t={t}
+                  />
               ) : null}
         </main>
         {(wideLayout || selectedCard) && state.kind !== 'fatal' && (
