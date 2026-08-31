@@ -1,6 +1,6 @@
 # Task Review: r1-provider-neutral-agent-runtime
 
-> **Status**: Review
+> **Status**: Accepted
 > **Plan**: plans/plan-20260830-1903-r1-provider-neutral-agent-runtime.md
 > **Contract**: tasks/contracts/20260830-1903-r1-provider-neutral-agent-runtime.contract.md
 > **Notes File**: tasks/notes/20260830-1903-r1-provider-neutral-agent-runtime.notes.md
@@ -8,9 +8,9 @@
 > **Last Updated**: 2026-08-31 02:45
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: sha256:7870792d230e8b24abadbd682d1723b5024ca4af517f448bc5889d52f6358e2e
+> **Reviewed Subject SHA256**: sha256:966c490cf1b5f80d82a023d6b4644720bf82dd82b87f3079c8e9d28383d2f21e
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: 24e6055476d30b1873bc4fff5c31ec4555fb6913
+> **Reviewed Target Revision**: aef4edff1fd21ca97643e0d13cf5fd29ba746d69
 
 ## Human Review Card
 
@@ -42,17 +42,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Codex
+> **Source**: codex-plugin
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:966c490cf1b5f80d82a023d6b4644720bf82dd82b87f3079c8e9d28383d2f21e
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: aef4edff1fd21ca97643e0d13cf5fd29ba746d69
+> **Verification Evidence SHA256**: sha256:71afc045781ec3f70733a11d4ef7cc340df2b22f53386c959068b5f1b714cd3f
+> **Issued At**: 2026-08-31T00:57:00.440Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: Round-4 Codex xhigh review on subject 966c490c (diff HEAD 809895d8 + plan source-ref row-index fix ea6a978b): VERDICT PASS; all three round-3 findings closed (attempt-direction observe, replay identity, module-scope fence); final sweep found no bypass path to observed_success without the exact control reference; Codex Host canary thread 01a0544f recorded in review card.
 - Findings: none
 
 ## Behavior Diff Notes

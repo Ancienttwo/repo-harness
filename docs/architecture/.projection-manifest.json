@@ -5,12 +5,12 @@
   "sourceDigest": "sha256:b8f07a45683509615148043bd9655a2a478f3802959a534c4f863badd470ba38",
   "provenance": {
     "schemaVersion": "archcontext.architecture-docs-projection-provenance/v1",
-    "baseHeadSha": "61ad51a814bd3bb8c5bd5a49465c466d9525c583",
-    "worktreeDigest": "sha256:3adefe36525f7713bbb809baab6e1c8514740f681f667eb3d31b00573c2f8b32",
-    "sourceTreeDigest": "sha256:004b52d7d1a6f7d6fa97e0343c6f7676a69283d832e1300a47a4508fd3b47dc5",
+    "baseHeadSha": "809895d882835f4612576e0dc962629deb38e107",
+    "worktreeDigest": "sha256:d694ed9e1a93b0f4779e5818717105c6c9bb91e4d01fd5c17dd1891e2cf7ca3f",
+    "sourceTreeDigest": "sha256:75e52f43f1e1b4be34a4d42bf6753aeb7dda033be78505307834d8351cf8f4ff",
     "modelDigest": "sha256:77b095dbb70f0db219fd3c0f23d00244ed9b593301926a0bfbee08baf9754f3b",
-    "codeGraphDigest": "sha256:ca228b75ce10e472aecff8571137422444f3d9a15d23a08e5214c2440f81b10b",
-    "indexedWorktreeDigest": "sha256:1897e1002f7ae9746f54fe6fb814b0e4ec9850407e1f31a885f17b5445baeb0c",
+    "codeGraphDigest": "sha256:1ca958431646dff535d6cd7d68d0ef486e0ddf5ed1f36956dbe62ff7a52c2bd3",
+    "indexedWorktreeDigest": "sha256:54c38db4826306c1a4d0ce67cd1f9b255e7f8d2d9465d1a957e019f36232c704",
     "rendererVersion": "archcontext.docs-renderer/v4",
     "layoutVersion": "archcontext.docs-layout/v1",
     "generatedFrom": {
@@ -19,9 +19,9 @@
       "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
       "codeGraphStatus": "ready"
     },
-    "projectionInputDigest": "sha256:6743cce709b88d85be3faad6e96831cf18b3699b5f23cee483f2c372f6e141cb"
+    "projectionInputDigest": "sha256:4ba69fc39bcfd6280925475bcfc467872683e5b8f3eb2515364effeb06c4ba07"
   },
-  "projectionDigest": "sha256:f351ca9926f4a5a0b1bc19d9551291c4090766355ef423ae0dfb21b83b629d56",
+  "projectionDigest": "sha256:2d426cdc5845e48b5083f168a256a4bad7d32c23d359608c6bb6c6cb7fb5403b",
   "semanticBaseline": {
     "semanticState": {
       "schemaVersion": "archcontext.architecture-semantic-state/v1",
@@ -582,12 +582,12 @@
     },
     "digests": {
       "modelDigest": "sha256:77b095dbb70f0db219fd3c0f23d00244ed9b593301926a0bfbee08baf9754f3b",
-      "sourceTreeDigest": "sha256:004b52d7d1a6f7d6fa97e0343c6f7676a69283d832e1300a47a4508fd3b47dc5",
+      "sourceTreeDigest": "sha256:75e52f43f1e1b4be34a4d42bf6753aeb7dda033be78505307834d8351cf8f4ff",
       "flowProofDigest": "sha256:bdad48e7304e2c750f67a6552cb4a3f9686265ee4c60116fba9b26e4a0f2d22f",
-      "projectionDigest": "sha256:f351ca9926f4a5a0b1bc19d9551291c4090766355ef423ae0dfb21b83b629d56"
+      "projectionDigest": "sha256:2d426cdc5845e48b5083f168a256a4bad7d32c23d359608c6bb6c6cb7fb5403b"
     }
   },
-  "receiptDigest": "sha256:c6fb6aad9e1369639d988d61222b812c78bb2b8a9ee6e06a96242ed0440a3825",
+  "receiptDigest": "sha256:a221ac252a5e1a5656d03d8549a3461ddb885706de62573991d3655a2ec410b3",
   "refreshSignalIds": [],
   "targetCount": 28,
   "fileCount": 28,
@@ -681,8 +681,8 @@
       "outputDigest": "sha256:89dfc817809be4f206c133ec77607395fe409ede91dfb53dda90a2579e0f75c9",
       "verifiedAgainst": {
         "branch": "codex/r1-provider-neutral-agent-runtime",
-        "commit": "4b8fe4fc552593b20add2ad871b7ca2f0c269e91",
-        "committedAt": "2026-08-31T05:18:54+08:00"
+        "commit": "809895d882835f4612576e0dc962629deb38e107",
+        "committedAt": "2026-08-31T06:47:02+08:00"
       }
     },
     {
@@ -761,8 +761,8 @@
       "outputDigest": "sha256:0d1a18d1a26ccaf526e9b486826f5bb7f0698c0c05849cb191f4a7f387831b98",
       "verifiedAgainst": {
         "branch": "codex/r1-provider-neutral-agent-runtime",
-        "commit": "4b8fe4fc552593b20add2ad871b7ca2f0c269e91",
-        "committedAt": "2026-08-31T05:18:54+08:00"
+        "commit": "809895d882835f4612576e0dc962629deb38e107",
+        "committedAt": "2026-08-31T06:47:02+08:00"
       }
     },
     {
@@ -1001,8 +1001,8 @@
       "outputDigest": "sha256:966f7438cd7b385cb411a2ef8c2de18c0b1e71eb067941c97375a4b284a873b9",
       "verifiedAgainst": {
         "branch": "codex/r1-provider-neutral-agent-runtime",
-        "commit": "61ad51a814bd3bb8c5bd5a49465c466d9525c583",
-        "committedAt": "2026-08-31T06:01:46+08:00"
+        "commit": "809895d882835f4612576e0dc962629deb38e107",
+        "committedAt": "2026-08-31T06:47:02+08:00"
       }
     },
     {
