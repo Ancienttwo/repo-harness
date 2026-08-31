@@ -1,13 +1,13 @@
 # runtime-harness/external-source-intake 架构文档
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-external-source-intake" sourceDigest="sha256:7fd7a0d0194204c27368385e385810ad330c29a05786a3ac0175b0f87b3a09bc" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:8df450e0f33604dad8c4a3f5abf8022f22c82a5f60798af4ccce024d8c4a4674" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-external-source-intake" sourceDigest="sha256:6541799cf66876186ca1f02ea41703c215d77d82a66ecd2fc3c9bc896632465c" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:25015e028af8f33a6d9a4fca5b87625fb450534fc264bc282a94cb7085ed1eb1" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.external-source-intake`(kind `capability`)
 > **Matched Prefixes**:`src/core/external-sources/**`、`src/effects/external-sources/**`、`src/cli/commands/external-source.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Owns provider-neutral immutable external Issue observations, refresh receipts, and read-only projections without scheduler authority.
+Owns immutable external Issue evidence and authorization-fenced provenance bindings to exact canonical tasks without scheduler authority.
 
 ## 1. P1:能力架構地圖
 
@@ -33,6 +33,8 @@ flowchart LR
 | --- | --- | --- |
 | `entrypoint.external-source-intake.refresh` | `src/effects/external-sources/refresh.ts#refreshExternalSource` | `sink.external-source-intake.immutable-observation-store` → `src/effects/external-sources/store.ts#writeProviderIssueObservation`、`sink.external-source-intake.immutable-attempt-receipt` → `src/effects/external-sources/store.ts#writeExternalSourceRefreshReceipt` |
 | `entrypoint.external-source-intake.list` | `src/effects/external-sources/refresh.ts#listExternalSourceProjection` | `sink.external-source-intake.read-only-projection` → `src/core/external-sources/projection.ts#buildExternalSourceProjection` |
+| `entrypoint.external-source-intake.bind` | `src/effects/external-sources/binding.ts#bindExternalSource` | `sink.external-source-intake.binding-receipt` → `src/effects/external-sources/store.ts#writeExternalSourceBindingReceipt` |
+| `entrypoint.external-source-intake.bind` | `src/effects/external-sources/binding.ts#listExternalSourceBindings` | `sink.external-source-intake.binding-projection` → `src/core/external-sources/binding.ts#ExternalSourceBindingProjectionV1` |
 
 ### 1.3 規模信號
 
@@ -78,6 +80,10 @@ sequenceDiagram
 3. 每次刷新写一个不可变 receipt；complete-empty、incomplete 和 unavailable 绝不折叠为同一个投影状态。
 4. 标题、正文、labels 与 assignees 是未信任 JSON。P0 只通过 JSON read model 暴露它们，不进入 prompt、合同或执行上下文。
 5. append-only 扫描成本是已知 P0 权衡；在实测前不引入 mutable cache 或 adoption state。
+6. WP2 的 binding 是 provenance edge，不是 scheduler edge：只有 canonical sprint row 与已批准 plan/contract 能进入现有 TaskOffer；receipt 本身不能创建工作。
+7. 一个 receipt 只绑定一个 source revision 与一个 task revision；多条 receipt 自然表达 one-to-many / many-to-one，不做 semantic duplicate 推断。
+8. source、canonical task/plan 或 registry authorization 漂移只产生显式 attention，不自动 rebind、取消、重开或改变 Lease。
+9. provider 内容只允许由 `renderExternalSourceUntrustedContext` 输出，且 JSON 数据必须位于明确的 `[ExternalSourceUntrusted]` 边界内。
 
 ## 4. 历史决策记录（append-only）
 
@@ -86,3 +92,9 @@ sequenceDiagram
 - P1：`src/core/external-sources/` 定义 provider-neutral protocol，`src/effects/external-sources/` 负责 strict policy、`gh` 一次性读取与 Git common-dir store，`src/cli/commands/external-source.ts` 仅注册 refresh/list read surface。
 - P2：`external-source refresh --repo <id>` 先读取 registry 与 strict policy，再解析 immutable GitHub identity、分页 Issue JSON、过滤 PR、写 observation 和 attempt receipt，最后从持久记录投影；provider 失败写 typed unavailable/incomplete receipt 并非零退出。
 - P3：禁止接入 Fleet 或 collaboration，避免外部 provider 绕过已批准的 sprint/plan/contract/lease 链。10x 时先碰到 provider 页数/字节/截止边界，而非 Lease 并发；超限 fail-closed 且无健康 empty fallback。
+
+### WP2 authenticated canonical binding（2026-09-01）
+
+- P1：`src/core/external-sources/binding.ts` 定义 closed receipt/projection 与唯一 untrusted renderer；`src/effects/external-sources/binding.ts` 负责 registry、observation、canonical task 与 plan/contract 的 exact revalidation；store 只追加 immutable edge。
+- P2：`external-source bind` 读取两次 strict registry/source/canonical authority，持久化 exact edge；`bindings` 重读 live authorities并投影 source/canonical/authorization drift；canonical task 随后由既有 Fleet collector 产生 TaskOffer。
+- P3：人类 acceptance 留在 PR merge。binding、dispatch、execution、repair 不增加 per-unit waiver/review gate；缺 credential/authorization/provider capability/required host dependency 才属于 installation blocker。

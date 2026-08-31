@@ -57,9 +57,15 @@ For an explicitly reviewed one-shot batch, select exact Issue numbers instead of
 }
 ```
 
-Exact-batch refresh resolves only those Issue endpoints and fails the whole attempt if any selected Issue is missing, malformed, a pull request, or exceeds a limit. GitHub assignees, labels, and open/closed state are evidence only: they do not prove whether local work has already been dispatched. Dispatch deduplication belongs to a later authenticated binding against canonical repo-harness task identity.
+Exact-batch refresh resolves only those Issue endpoints and fails the whole attempt if any selected Issue is missing, malformed, a pull request, or exceeds a limit. GitHub assignees, labels, and open/closed state are evidence only: they do not prove whether local work has already been dispatched. Dispatch deduplication belongs to an authenticated binding against canonical repo-harness task identity.
 
 `repo-harness external-source refresh --repo <registered-repo-id>` invokes the locally authenticated `gh` client once and records immutable observations plus an attempt receipt under the repository Git common directory. `list` performs no provider call. These records are inert evidence: they do not create or change TaskOffer, priority, Claim, Lease, WorkEnvelope, collaboration, or Agent Runtime state.
+
+## External Source Binding WP2
+
+After planning has produced a canonical pending sprint row and its exact Approved work-package plan/contract, run `repo-harness external-source bind --repo <id> --source-revision <digest> --sprint <path> --task-id <id> --target-ref <ref>`. The command requires a strict `read_write` registry grant and persists one immutable provenance edge with exact observation, authorization, canonical task, and plan/contract revisions.
+
+`external-source bindings` reports source/canonical/authorization drift without mutating work. `external-source context` is the sole provider-content renderer and wraps canonical JSON in `[ExternalSourceUntrusted]`. The unchanged execution path remains canonical row + Approved plan/contract → TaskOffer → acquire → Claim/Lease → WorkEnvelope. Human acceptance stays at PR merge; only a true `installation_blocker` may pause earlier.
 
 Generated repos route external tooling by host/runtime shape. Task-level
 skill routing lives in `docs/reference-configs/agentic-development-flow.md`.

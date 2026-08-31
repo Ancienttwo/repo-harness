@@ -32,7 +32,7 @@ function fixture(): { readonly root: string; readonly home: string; readonly bin
 describe('external-source CLI', () => {
   test('registers exact refresh/list commands', () => {
     const command = buildExternalSourceCommand();
-    expect(command.commands.map((child) => child.name())).toEqual(['refresh', 'list']);
+    expect(command.commands.map((child) => child.name())).toEqual(['refresh', 'list', 'bind', 'bindings', 'context']);
   });
 
   test('refreshes then lists an inert JSON projection through a read-only registry grant', () => {
