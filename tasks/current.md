@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-31T01:00:58+0800 -->
+<!-- updated_at: 2026-08-31T08:57:08+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Active
-> **Updated At**: 2026-08-31T01:00:58+0800
-> **Source Branch**: main
-> **Source Commit**: 6f6bd659
+> **Status**: ManualClearedWithActiveWork
+> **Updated At**: 2026-08-31T08:57:08+0800
+> **Source Branch**: codex/r1-provider-neutral-agent-runtime
+> **Source Commit**: eb8cfb56
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: manual
+> **Reason**: archive-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Active
+- Status: ManualClearedWithActiveWork
 - Active Plan: (none)
 - Plan Status: (none)
 - Next Task: inspect active worktree marker(s)
-- Clear Note: (none)
+- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
 
 ## Mainline Snapshot Reading
 
@@ -31,10 +31,6 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- linked-worktree-d1f2163e22bb: plans/plan-20260830-2139-architecture-projection-acceptance.md
-- linked-worktree-d1f2163e22bb: active-worktree owner -> self
-- linked-worktree-2dd4cdc461ad: plans/plan-20260830-1903-r1-provider-neutral-agent-runtime.md
-- linked-worktree-2dd4cdc461ad: active-worktree owner -> self
 - linked-worktree-15c0db14c68b: plans/plan-20260829-1728-oracle-thinking-passthrough.md
 - linked-worktree-15c0db14c68b: active-worktree owner -> self
 ## Active Sprint
@@ -43,7 +39,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 ## Workstreams
 
 - `tasks/workstreams/runtime-harness/agent-runtime-effects/me3a-provider-thread-effect.md`: status=completed, current_slice=completed-20260825-me3a-provider-thread-effect, source_plan=plans/plan-20260825-2120-me3a-provider-thread-effect.md
-- `tasks/workstreams/runtime-harness/agent-runtime-effects/r1-provider-neutral-agent-runtime.md`: status=planned, current_slice=architecture-accepted-awaiting-activation, source_plan=plans/plan-20260830-1903-r1-provider-neutral-agent-runtime.md
+- `tasks/workstreams/runtime-harness/agent-runtime-effects/r1-provider-neutral-agent-runtime.md`: status=active, current_slice=codex-app-thread-canary-and-acceptance, source_plan=plans/plan-20260830-1903-r1-provider-neutral-agent-runtime.md
 - `tasks/workstreams/runtime-harness/bound-task-freezes/me4a-bound-task-freeze-handoff.md`: status=completed, current_slice=completed-20260826-me4a-bound-task-freeze-handoff, source_plan=plans/plan-20260826-1247-me4a-bound-task-freeze-handoff.md
 - `tasks/workstreams/runtime-harness/collaboration/collaboration-substrate-program.md`: status=active, current_slice=todo-01, source_plan=plans/plan-20260830-0858-c5-taskfreeze-succession-integration.md
 - `tasks/workstreams/runtime-harness/engineer-bindings/me0a-profile-binding.md`: status=completed, current_slice=completed-20260824-me0a-profile-binding, source_plan=`plans/plan-20260824-2126-me0a-engineer-profile-binding.md`
@@ -63,16 +59,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- M docs/architecture/.projection-manifest.json
- M docs/architecture/changelog.md
- M docs/architecture/decisions/index.md
- M docs/architecture/diagrams/architecture.likec4
- M docs/architecture/diagrams/architecture.mmd
- M docs/architecture/diagrams/architecture.structurizr.json
- M docs/architecture/index.md
- M docs/architecture/modules/runtime-harness/mcp-sidecar.md
- D docs/architecture/requests/runtime-harness-collaboration.md
-?? docs/architecture/requests/archive/2026/20260831-005155-runtime-harness-collaboration.md
+ D plans/plan-20260830-1903-r1-provider-neutral-agent-runtime.md
+ D tasks/contracts/20260830-1903-r1-provider-neutral-agent-runtime.contract.md
+ D tasks/notes/20260830-1903-r1-provider-neutral-agent-runtime.notes.md
+ D tasks/reviews/20260830-1903-r1-provider-neutral-agent-runtime.review.md
+ M tasks/todos.md
+?? plans/archive/plan-20260830-1903-r1-provider-neutral-agent-runtime.md
+?? tasks/archive/contract-20260831-0857-r1-provider-neutral-agent-runtime.md
+?? tasks/archive/notes-20260831-0857-r1-provider-neutral-agent-runtime.md
+?? tasks/archive/review-20260831-0857-r1-provider-neutral-agent-runtime.md
+?? tasks/archive/todo-20260831-0857-r1-provider-neutral-agent-runtime.md
 ```
 
 ## Source Artifacts

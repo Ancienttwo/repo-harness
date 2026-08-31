@@ -1,3 +1,9 @@
+> **Archived**: 2026-08-31 08:57
+> **Related Plan**: plans/archive/plan-20260830-1903-r1-provider-neutral-agent-runtime.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260831-0857
+
 # Implementation Notes: r1-provider-neutral-agent-runtime
 
 > **Status**: Active

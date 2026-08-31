@@ -1,6 +1,6 @@
 # Plan: R1 Provider-Neutral Agent Runtime
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260830-1903
 > **Slug**: r1-provider-neutral-agent-runtime
 > **Planning Source**: repo-harness-plan

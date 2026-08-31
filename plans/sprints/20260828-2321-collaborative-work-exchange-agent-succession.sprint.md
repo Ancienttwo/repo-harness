@@ -3,7 +3,7 @@
 > **Status**: Approved
 > **Slug**: `collaborative-work-exchange-agent-succession`
 > **Created**: 2026-08-28T23:21:55-07:00
-> **Updated**: 2026-08-30 22:16
+> **Updated**: 2026-08-31 08:57
 > **Source PRD**: `plans/prds/20260828-2321-collaborative-work-exchange-agent-succession.prd.md`
 > **Child PRD A (Active)**: `plans/prds/20260828-2321-collaboration-substrate.prd.md`
 > **Child PRD B (Deferred — Phase 2)**: `plans/prds/20260828-2321-work-exchange-independent-review.prd.md`
@@ -168,7 +168,7 @@ No step skips a state。`independent_review` 与 `guarded_merge` 在本 Sprint �
 | 8 | [x] | C7 — CLI/MCP and bounded context injection | contract | authenticated actor 由服务端推导；Engineer 可 post；Worker 由 Host collector post；全部 context 标记 untrusted | `plans/archive/plan-20260830-1342-c7-cli-mcp-bounded-context-injection.md` |
 | 9 | [x] | C8 — read-only Operator collaboration surface | contract | 展示 lanes、discoveries、handoffs、hotspots、contributors；task message 仍是唯一 browser write | `plans/archive/plan-20260830-1344-c8-read-only-operator-collaboration-surface.md` |
 | 10 | [x] | C9 — real multi-agent canary and multi-seat decision | contract | C9-A 可行性通过；C9-B 重复证据成立；aggregate compute/cost 记录完整；usefulness rubric 开跑前冻结；跨臂污染防护到位；零 authority drift；输出 persistent multi-seat go/no-go | `plans/archive/plan-20260830-1839-c9-real-multi-agent-canary-and-multi-seat-decision.md` |
-| 11 | [ ] | R1 — provider-neutral runtime effect and optional tmux endpoint adapter | contract | exact Task/Module message refs；existing Binding/Claim fence；tmux only carries bounded control ref；structured ACK；lost-ACK reconciliation；zero fallback；zero authority drift | `plans/plan-20260830-1903-r1-provider-neutral-agent-runtime.md`（Executing） |
+| 11 | [x] | R1 — provider-neutral runtime effect and optional tmux endpoint adapter | contract | exact Task/Module message refs；existing Binding/Claim fence；tmux only carries bounded control ref；structured ACK；lost-ACK reconciliation；zero fallback；zero authority drift | `plans/archive/plan-20260830-1903-r1-provider-neutral-agent-runtime.md` |
 
 ## Detailed Work Packages
 
@@ -700,3 +700,4 @@ Keep this section last; `repo-harness run sprint-backlog complete-task` appends 
 | 2026-08-30 18:09 | C7 — CLI/MCP and bounded context injection | `plans/archive/plan-20260830-1342-c7-cli-mcp-bounded-context-injection.md` | done |
 | 2026-08-30 18:34 | C8 — read-only Operator collaboration surface | `plans/archive/plan-20260830-1344-c8-read-only-operator-collaboration-surface.md` | done |
 | 2026-08-30 22:16 | C9 — real multi-agent canary and multi-seat decision | `plans/archive/plan-20260830-1839-c9-real-multi-agent-canary-and-multi-seat-decision.md` | done |
+| 2026-08-31 08:57 | R1 — provider-neutral runtime effect and optional tmux endpoint adapter | `plans/archive/plan-20260830-1903-r1-provider-neutral-agent-runtime.md` | done |

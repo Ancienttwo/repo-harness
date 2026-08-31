@@ -1,7 +1,13 @@
+> **Archived**: 2026-08-31 08:57
+> **Related Plan**: plans/archive/plan-20260830-1903-r1-provider-neutral-agent-runtime.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260831-0857
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-08-30T18:27:10+0800 — Fleet Board delivery-state goal promoted into approved Child PRD D
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.
