@@ -3,13 +3,15 @@ id: capability.runtime-harness.external-source-intake
 kind: capability
 name: External Source Intake
 status: active
-summary: Owns provider-neutral immutable external Issue observations, refresh receipts, and read-only projections without scheduler authority.
+summary: Owns immutable external Issue evidence and authorization-fenced provenance bindings to exact canonical tasks without scheduler authority.
 responsibilities:
   - Validate immutable provider Issue observations and refresh receipts as canonical JSON evidence.
   - Read only explicitly enabled, bounded manual GitHub policy and persist provider observations under the Git common directory.
-  - Derive a read-only projection from immutable records; never create Task, priority, Claim, Lease, WorkEnvelope, collaboration, or Agent Runtime facts.
+  - Bind one exact eligible observation revision to one exact pending canonical task and approved plan/contract proof through an append-only authorization-fenced receipt.
+  - Derive read-only evidence and binding projections; never create Task, priority, Claim, Lease, WorkEnvelope, collaboration, or Agent Runtime facts.
   - Fail closed on unavailable or incomplete provider reads and persist the typed attempt receipt when storage is available.
-  - Exclude provider writeback, task adoption/binding, prompt rendering, comments, polling, UI, MCP, and non-GitHub adapters.
+  - Render provider content only through the explicit untrusted-source context boundary.
+  - Exclude provider writeback, task generation, comments, polling, UI, MCP, and non-GitHub adapters.
 source:
   include:
     - "src/core/external-sources/**"
@@ -35,11 +37,24 @@ source:
             - id: sink.external-source-intake.read-only-projection
               path: "src/core/external-sources/projection.ts"
               symbol: "buildExternalSourceProjection"
+    - id: entrypoint.external-source-intake.bind
+      path: "src/effects/external-sources/binding.ts"
+      symbols:
+        - name: "bindExternalSource"
+          sinks:
+            - id: sink.external-source-intake.binding-receipt
+              path: "src/effects/external-sources/store.ts"
+              symbol: "writeExternalSourceBindingReceipt"
+        - name: "listExternalSourceBindings"
+          sinks:
+            - id: sink.external-source-intake.binding-projection
+              path: "src/core/external-sources/binding.ts"
+              symbol: "ExternalSourceBindingProjectionV1"
 extensions:
   contractFiles:
     agents: "AGENTS.md"
     claude: "CLAUDE.md"
   lspProfile: "typescript-lsp"
   verification:
-    - "bun test tests/unit/external-source-intake-p0.test.ts tests/unit/external-source-policy.test.ts tests/effects/external-source-store.test.ts tests/effects/external-source-github.test.ts tests/cli/external-source-intake.test.ts tests/unit/external-source-authority.test.ts --timeout 60000"
+    - "bun test tests/unit/external-source-intake-p0.test.ts tests/unit/external-source-binding-wp2.test.ts tests/unit/external-source-policy.test.ts tests/effects/external-source-store.test.ts tests/effects/external-source-binding-store.test.ts tests/effects/external-source-binding.test.ts tests/effects/external-source-github.test.ts tests/cli/external-source-intake.test.ts tests/cli/external-source-binding.test.ts tests/unit/external-source-authority.test.ts --timeout 60000"
     - "bun run check:type"

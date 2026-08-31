@@ -9,6 +9,11 @@ import {
   type ExternalSourceRefreshReceiptV1,
   type ProviderIssueObservationV1,
 } from '../../core/external-sources/issue-observation';
+import {
+  canonicalExternalSourceBindingReceiptBytes,
+  validateExternalSourceBindingReceipt,
+  type ExternalSourceBindingReceiptV1,
+} from '../../core/external-sources/binding';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 
@@ -32,6 +37,7 @@ interface StorePaths {
   readonly root: string;
   readonly observations: string;
   readonly receipts: string;
+  readonly bindings: string;
   readonly locks: string;
 }
 
@@ -42,7 +48,7 @@ function fail(code: ExternalSourceStoreErrorCode, message: string, cause?: unkno
 function pathsFor(repoRoot: string): StorePaths {
   const common = resolve(resolveGitCommonDirectory(repoRoot));
   const root = join(common, EXTERNAL_SOURCE_STORE_RELATIVE_ROOT);
-  return Object.freeze({ common, root, observations: join(root, 'observations'), receipts: join(root, 'receipts'), locks: join(root, 'locks') });
+  return Object.freeze({ common, root, observations: join(root, 'observations'), receipts: join(root, 'receipts'), bindings: join(root, 'bindings'), locks: join(root, 'locks') });
 }
 
 function pathSegments(root: string, target: string): string[] {
@@ -80,7 +86,7 @@ function ensureDirectory(common: string, target: string, create: boolean): boole
 }
 
 function ensureStore(paths: StorePaths): void {
-  for (const path of [paths.root, paths.observations, paths.receipts, paths.locks]) ensureDirectory(paths.common, path, true);
+  for (const path of [paths.root, paths.observations, paths.receipts, paths.bindings, paths.locks]) ensureDirectory(paths.common, path, true);
 }
 
 function regularFile(path: string, label: string): void {
@@ -140,6 +146,10 @@ function receiptPath(paths: StorePaths, receipt: ExternalSourceRefreshReceiptV1)
   return join(paths.receipts, `${digestHex(receipt.receipt_sha256, 'receipt')}.json`);
 }
 
+function bindingPath(paths: StorePaths, receipt: ExternalSourceBindingReceiptV1): string {
+  return join(paths.bindings, `${digestHex(receipt.binding_id, 'binding id')}.json`);
+}
+
 function lock<T>(paths: StorePaths, action: () => T): T {
   ensureStore(paths);
   return withExclusiveDirectoryLock(paths.common, `${EXTERNAL_SOURCE_STORE_RELATIVE_ROOT}/locks/store`, action, { reclaimStaleEmptyDirectory: true });
@@ -179,6 +189,20 @@ export function writeExternalSourceRefreshReceipt(repoRoot: string, receipt: Ext
     if (writeExclusive(target, bytes, 'external source refresh receipt')) return receipt;
     if (readRaw(target, 'external source refresh receipt') !== bytes) fail('external_source_store_conflict', 'external source refresh receipt conflicts with immutable existing bytes');
     return receipt;
+  });
+}
+
+/** Persist one immutable source-revision-to-task-revision edge. */
+export function writeExternalSourceBindingReceipt(repoRoot: string, receipt: ExternalSourceBindingReceiptV1): ExternalSourceBindingReceiptV1 {
+  validateExternalSourceBindingReceipt(receipt);
+  const paths = pathsFor(repoRoot);
+  const bytes = canonicalExternalSourceBindingReceiptBytes(receipt);
+  return lock(paths, () => {
+    const target = bindingPath(paths, receipt);
+    if (writeExclusive(target, bytes, 'external source binding receipt')) return receipt;
+    const existing = readRaw(target, 'external source binding receipt');
+    if (existing === bytes) return receipt;
+    fail('external_source_store_conflict', 'external source binding receipt conflicts with immutable existing bytes');
   });
 }
 
@@ -243,6 +267,24 @@ export function listExternalSourceRefreshReceipts(repoRoot: string): readonly Ex
     }
   }
   return Object.freeze(records.sort((left, right) => left.completed_at.localeCompare(right.completed_at) || left.receipt_sha256.localeCompare(right.receipt_sha256)));
+}
+
+export function listExternalSourceBindingReceipts(repoRoot: string): readonly ExternalSourceBindingReceiptV1[] {
+  const paths = pathsFor(repoRoot);
+  if (!ensureDirectory(paths.common, paths.bindings, false)) return Object.freeze([]);
+  const records: ExternalSourceBindingReceiptV1[] = [];
+  for (const name of jsonFiles(paths.bindings)) {
+    const raw = readRaw(join(paths.bindings, name), 'external source binding receipt');
+    try {
+      const value = validateExternalSourceBindingReceipt(JSON.parse(raw));
+      if (canonicalExternalSourceBindingReceiptBytes(value) !== raw) fail('external_source_store_invalid', 'external source binding receipt is non-canonical');
+      records.push(value);
+    } catch (error) {
+      if (error instanceof ExternalSourceStoreError) throw error;
+      fail('external_source_store_invalid', 'external source binding receipt is malformed', error);
+    }
+  }
+  return Object.freeze(records.sort((left, right) => left.bound_at.localeCompare(right.bound_at) || left.binding_id.localeCompare(right.binding_id)));
 }
 
 export function externalSourceStoreRoot(repoRoot: string): string {

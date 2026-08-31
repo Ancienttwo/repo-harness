@@ -346,6 +346,11 @@ interface ExcludedModule {
  */
 const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
   {
+    module: 'src/core/external-sources/binding.ts',
+    fails: ['C-1', 'C-2'],
+    evidence: 'external-source provenance plane; receipts bind inert provider evidence to an already-canonical task revision and no TaskOffer, Claim, Lease, Publication or Acceptance authority reads them',
+  },
+  {
     module: 'src/core/engineers/engineering-overlay.ts',
     fails: ['C-1', 'C-2'],
     evidence: 'module-engineering attention plane; a derived overlay with no store, no reader but `engineer overlay` output, and an attention payload that asserts no ownership',

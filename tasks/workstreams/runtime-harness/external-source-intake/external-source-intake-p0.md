@@ -7,8 +7,8 @@
 > **Architecture Domain**: `runtime-harness`
 > **Architecture Capability**: `external-source-intake`
 > **Architecture Module**: `docs/architecture/modules/runtime-harness/external-source-intake.md`
-> **Source Plan**: `plans/plan-20260831-1512-external-source-intake-p0.md`
-> **Current Slice**: external-source-intake-p0
+> **Source Plan**: `plans/plan-20260901-0205-external-source-binding-wp2.md`
+> **Current Slice**: external-source-binding-wp2
 
 ## Purpose
 
@@ -24,4 +24,6 @@ Keep the P0 external evidence plane auditable and isolated from canonical planni
 
 - [x] Architecture capability and immutable evidence component registered.
 - [x] Protocol, strict policy, Git common-dir store, bounded GitHub adapter, projection and CLI implemented.
-- [ ] Focused and repository acceptance evidence complete.
+- [x] Focused and repository acceptance evidence complete for P0.
+- [x] WP2 append-only source-to-canonical-task binding, drift projection, untrusted context, and CLI bridge implemented.
+- [ ] WP2 acceptance and PR merge complete.
