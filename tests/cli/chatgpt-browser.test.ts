@@ -1067,7 +1067,7 @@ describe('chatgpt browser command', () => {
           '--prompt',
           'Review this.',
           '--thinking',
-          'heavy',
+          'pro',
           '--model',
           'gpt-5.5-pro',
           '--oracle-bin',
@@ -1078,9 +1078,51 @@ describe('chatgpt browser command', () => {
         expect(payload.status).toBe('completed');
         const output = readFileSync(payload.paths.output, 'utf-8');
         expect(output).toContain('--model gpt-5.5-pro --browser-model-strategy select');
-        expect(output).toContain('--browser-thinking-time heavy');
+        expect(output).toContain('--browser-thinking-time pro');
         const meta = JSON.parse(readFileSync(join(repoRoot, '.ai/harness/chatgpt/sessions', payload.sessionId, 'meta.json'), 'utf-8'));
-        expect(meta.model.thinking).toBe('heavy');
+        expect(meta.model.thinking).toBe('pro');
+      } finally {
+        rmSync(binDir, { recursive: true, force: true });
+      }
+    });
+  }, 30_000);
+
+  test('oracle rejection of a thinking value fails closed without a local fallback', () => {
+    withRepo((repoRoot) => {
+      const binDir = mkdtempSync(join(tmpdir(), 'repo-harness-fake-oracle-bad-thinking-'));
+      try {
+        const oraclePath = join(binDir, 'oracle');
+        writeFileSync(
+          oraclePath,
+          [
+            '#!/bin/sh',
+            'PREV=""',
+            'for a in "$@"; do',
+            '  if [ "$PREV" = "--browser-thinking-time" ] && [ "$a" = "bogus" ]; then',
+            '    printf "%s\\n" "error: option \'--browser-thinking-time <level>\' argument \'bogus\' is invalid" >&2',
+            '    exit 1',
+            '  fi',
+            '  PREV="$a"',
+            'done',
+          ].join('\n'),
+        );
+        chmodSync(oraclePath, 0o755);
+        const result = runChatgpt([
+          'browser-consult',
+          '--repo',
+          repoRoot,
+          '--prompt',
+          'Review this.',
+          '--thinking',
+          'bogus',
+          '--oracle-bin',
+          oraclePath,
+        ]);
+        const payload = JSON.parse(result.stdout);
+        expect(payload.status).toBe('failed');
+        expect(payload.error.code).toBe('ORACLE_EXIT_NONZERO');
+        const meta = JSON.parse(readFileSync(join(repoRoot, '.ai/harness/chatgpt/sessions', payload.sessionId, 'meta.json'), 'utf-8'));
+        expect(meta.status).toBe('failed');
       } finally {
         rmSync(binDir, { recursive: true, force: true });
       }

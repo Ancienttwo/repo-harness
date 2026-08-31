@@ -4,7 +4,8 @@ export type BrowserProviderName = 'oracle' | 'native';
 
 export type NativeBrowserChannel = 'chrome' | 'chrome-beta' | 'chrome-dev' | 'chrome-canary';
 
-export type ThinkingLevel = 'light' | 'standard' | 'extended' | 'heavy';
+// Oracle validates the thinking value fail-closed at run time; the wrapper does not re-derive the accepted set.
+export type ThinkingLevel = string;
 
 export type BrowserWriteOutputPolicy = 'cli' | 'mcp';
 

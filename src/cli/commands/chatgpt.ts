@@ -10,7 +10,7 @@ import {
   runBrowserFollowup,
   runBrowserSetup,
 } from '../chatgpt-browser/engine';
-import type { BrowserProviderName, BrowserSessionStatus, NativeBrowserChannel, ThinkingLevel } from '../chatgpt-browser/types';
+import type { BrowserProviderName, BrowserSessionStatus, NativeBrowserChannel } from '../chatgpt-browser/types';
 import { runChatgptSkillProjection } from '../chatgpt-skill/installer';
 import type { ChatgptSkillTarget } from '../chatgpt-skill/installer';
 
@@ -107,12 +107,6 @@ function parseSkillTarget(value?: string): ChatgptSkillTarget {
   if (value === undefined || value === 'both') return 'both';
   if (value === 'codex' || value === 'claude') return value;
   throw new Error(`invalid --target "${value}" (expected: codex, claude, both)`);
-}
-
-function parseThinking(value?: string): ThinkingLevel | undefined {
-  if (value === undefined) return undefined;
-  if (value === 'light' || value === 'standard' || value === 'extended' || value === 'heavy') return value;
-  throw new Error(`invalid --thinking "${value}" (expected: light, standard, extended, heavy)`);
 }
 
 function parseBrowserChannel(value?: string): NativeBrowserChannel | undefined {
@@ -246,7 +240,7 @@ export function buildChatgptCommand(): Command {
     .option('--file <path>', 'Repo-relative workflow file to include inline', (value, previous: string[] = []) => [...previous, value], [])
     .option('--follow-up <text>', 'Follow-up prompt for the same conversation', (value, previous: string[] = []) => [...previous, value], [])
     .option('--model <label>', 'Requested ChatGPT model label')
-    .option('--thinking <level>', 'Thinking level: light|standard|extended|heavy')
+    .option('--thinking <level>', 'Thinking level passed to Oracle (validated by Oracle; e.g. light|standard|extended|extra-high|pro|heavy or UI alias instant|medium|high|xhigh)')
     .option('--chatgpt-app <name>', 'Select a ChatGPT app/connector by name before submitting the prompt')
     .option('--provider <provider>', 'Browser provider: oracle|native', 'oracle')
     .option('--chatgpt-url <url>', 'ChatGPT URL to open')
@@ -276,7 +270,7 @@ export function buildChatgptCommand(): Command {
           files: (rawOpts.file ?? []).map((path) => ({ path })),
           followups: rawOpts.followUp,
           model: rawOpts.model,
-          thinking: parseThinking(rawOpts.thinking),
+          thinking: rawOpts.thinking,
           chatgptApp: rawOpts.chatgptApp,
           provider: parseProvider(rawOpts.provider),
           chatgptUrl: rawOpts.chatgptUrl,
@@ -329,7 +323,7 @@ export function buildChatgptCommand(): Command {
     .requiredOption('--prompt <text>', 'Follow-up prompt to send to ChatGPT Web')
     .option('--follow-up <text>', 'Additional follow-up prompt', (value, previous: string[] = []) => [...previous, value], [])
     .option('--model <label>', 'Override requested ChatGPT model label')
-    .option('--thinking <level>', 'Thinking level: light|standard|extended|heavy')
+    .option('--thinking <level>', 'Thinking level passed to Oracle (validated by Oracle; e.g. light|standard|extended|extra-high|pro|heavy or UI alias instant|medium|high|xhigh)')
     .option('--chatgpt-app <name>', 'Select a ChatGPT app/connector by name before submitting the follow-up')
     .option('--provider <provider>', 'Browser provider: oracle|native')
     .option('--timeout-ms <ms>', 'Assistant timeout in milliseconds')
@@ -356,7 +350,7 @@ export function buildChatgptCommand(): Command {
           prompt: rawOpts.prompt,
           followups: rawOpts.followUp,
           model: rawOpts.model,
-          thinking: parseThinking(rawOpts.thinking),
+          thinking: rawOpts.thinking,
           chatgptApp: rawOpts.chatgptApp,
           provider: rawOpts.provider ? parseProvider(rawOpts.provider) : undefined,
           timeoutMs: parsePositiveInteger('timeout-ms', rawOpts.timeoutMs),

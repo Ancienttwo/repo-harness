@@ -6,7 +6,7 @@ import { isRegisteredRepoHarnessRoot, readRegisteredRepoHarnessRepos } from '../
 import { runProcess } from '../../effects/process-runner';
 import { runHelper } from '../runtime/helper-runner';
 import { listSessions, openSession, readSession, runBrowserConsult, runBrowserFollowup } from '../chatgpt-browser/engine';
-import type { BrowserProviderName, NativeBrowserChannel, ThinkingLevel } from '../chatgpt-browser/types';
+import type { BrowserProviderName, NativeBrowserChannel } from '../chatgpt-browser/types';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { loadMcpLocalConfig } from './auth';
 import { guardedWriteFile } from './guarded-write';
@@ -887,12 +887,6 @@ function renderCodexGoalFromSprint(args: Record<string, unknown>): { body: strin
   return { body, prompt };
 }
 
-function parseThinking(value: unknown): ThinkingLevel | undefined {
-  if (value === undefined || value === null || value === '') return undefined;
-  if (value === 'light' || value === 'standard' || value === 'extended' || value === 'heavy') return value;
-  throw new Error(`invalid thinking level: ${String(value)}`);
-}
-
 function parseBrowserProvider(value: unknown): BrowserProviderName | undefined {
   if (value === undefined || value === null || value === '') return undefined;
   if (value === 'oracle' || value === 'native') return value;
@@ -1016,7 +1010,10 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
       title: { type: 'string' },
       files: { type: 'array', items: { type: 'string' } },
       model: { type: 'string' },
-      thinking: { type: 'string', enum: ['light', 'standard', 'extended', 'heavy'] },
+      thinking: {
+        type: 'string',
+        description: 'Thinking level passed to Oracle (validated by Oracle; e.g. light|standard|extended|extra-high|pro|heavy or UI alias instant|medium|high|xhigh)',
+      },
       provider: { type: 'string', enum: ['oracle', 'native'] },
       browserChannel: { type: 'string', enum: ['chrome', 'chrome-beta', 'chrome-dev', 'chrome-canary'] },
       followups: { type: 'array', items: { type: 'string' } },
@@ -1440,7 +1437,7 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
           files: stringList(args.files).map((path) => ({ path })),
           followups: stringList(args.followups),
           model: typeof args.model === 'string' ? args.model : undefined,
-          thinking: parseThinking(args.thinking),
+          thinking: typeof args.thinking === 'string' ? args.thinking : undefined,
           provider: parseBrowserProvider(args.provider),
           browserChannel: parseNativeBrowserChannel(args.browserChannel),
           writeOutput: typeof args.writeOutput === 'string' ? args.writeOutput : undefined,

@@ -59,6 +59,12 @@ describe('mcp tools', () => {
       expect(buildMcpToolDefinitions(ctx.policy, { enableChatgptBrowser: true }).some((tool) => tool.name === 'open_chatgpt_browser_session')).toBe(true);
       const disabled = await jsonTool(ctx, 'run_chatgpt_browser_consult', { prompt: 'Say OK', dryRun: true });
       expect(disabled.error.code).toBe('TOOL_DISABLED');
+
+      const consultTool = buildMcpToolDefinitions(ctx.policy, { enableChatgptBrowser: true }).find((tool) => tool.name === 'run_chatgpt_browser_consult');
+      const thinkingSchema = (consultTool?.inputSchema as { properties: Record<string, Record<string, unknown>> }).properties.thinking;
+      expect(thinkingSchema.type).toBe('string');
+      expect(thinkingSchema.enum).toBeUndefined();
+      expect(String(thinkingSchema.description)).toContain('validated by Oracle');
     });
   });
 
@@ -69,7 +75,7 @@ describe('mcp tools', () => {
         prompt: 'Review this sprint.',
         files: ['plans/sprints/example.sprint.md'],
         model: 'GPT-5.5 Pro',
-        thinking: 'heavy',
+        thinking: 'pro',
         dryRun: true,
       });
       expect(created.status).toBe('dry_run');
@@ -77,6 +83,7 @@ describe('mcp tools', () => {
 
       const read = await jsonTool(browserCtx, 'read_chatgpt_browser_session', { sessionId: created.sessionId });
       expect(read.meta.engine).toBe('chatgpt-browser');
+      expect(read.meta.model.thinking).toBe('pro');
       expect(read.output).toContain('Dry run only');
 
       const listed = await jsonTool(browserCtx, 'list_chatgpt_browser_sessions', { limit: 1 });
