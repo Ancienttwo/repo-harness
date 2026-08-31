@@ -2,6 +2,7 @@
 
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'fs';
 import { isAbsolute, join, relative, resolve } from 'path';
+import { acceptancePolicySource, parseAcceptancePolicy } from './acceptance-receipt.ts';
 
 export type HistoricalPlanDecision = 'AUTO' | 'HOLD' | 'EXCLUDE';
 
@@ -52,9 +53,15 @@ function markdownSection(text: string, title: string): string | null {
   return lines.slice(start + 1, end).join('\n');
 }
 
-export function hasRecordedAcceptanceReceipt(reviewText: string): boolean {
+export function hasRecordedAcceptanceReceipt(contractText: string, reviewText: string): boolean {
   const receipt = markdownSection(reviewText, 'Acceptance Receipt Projection');
   if (!receipt) return false;
+  let policy;
+  try {
+    policy = parseAcceptancePolicy(contractText);
+  } catch {
+    return false;
+  }
   const disposition = header(receipt, 'Disposition');
   const reviewer = header(receipt, 'Reviewer');
   const source = header(receipt, 'Source');
@@ -67,8 +74,14 @@ export function hasRecordedAcceptanceReceipt(reviewText: string): boolean {
   const findings = receipt.match(/^- Findings:\s*(.+?)\s*$/mi)?.[1]?.trim() ?? '';
   const identityValid = (
     disposition === 'external_pass'
-    && ((reviewer === 'Claude' && source === 'claude-review') || (reviewer === 'Codex' && source === 'codex-review'))
-  ) || (disposition === 'user_waiver' && reviewer === 'User' && source === 'user-waiver');
+    && reviewer === policy.reviewer
+    && source === acceptancePolicySource(policy)
+  ) || (
+    disposition === 'user_waiver'
+    && policy.user_waiver === 'allowed'
+    && reviewer === 'User'
+    && source === 'user-waiver'
+  );
   return identityValid
     && /^sha256:[0-9a-f]{64}$/.test(subject ?? '')
     && scope === 'normalized-final-content'
@@ -86,7 +99,7 @@ export function hasRecordedAcceptanceReceipt(reviewText: string): boolean {
 export function evaluateSealedTerminalEvidence(contractText: string, reviewText: string): SealedTerminalEvidenceResult {
   const contractStatus = header(contractText, 'Status');
   const recommendation = header(reviewText, 'Recommendation');
-  const receiptRecorded = hasRecordedAcceptanceReceipt(reviewText);
+  const receiptRecorded = hasRecordedAcceptanceReceipt(contractText, reviewText);
   if (contractStatus !== 'Fulfilled') {
     return { ok: false, reason: `contract status is ${contractStatus ?? 'missing'}, not Fulfilled`, contract_status: contractStatus, review_recommendation: recommendation, receipt_recorded: receiptRecorded };
   }
@@ -157,7 +170,7 @@ export function classifyHistoricalPlans(repoRoot: string): HistoricalPlanReport 
     const reviewText = review ? readFileSync(join(root, review), 'utf8') : '';
     const contractStatus = contract ? header(contractText, 'Status') : null;
     const recommendation = review ? header(reviewText, 'Recommendation') : null;
-    const receiptRecorded = review ? hasRecordedAcceptanceReceipt(reviewText) : false;
+    const receiptRecorded = contract && review ? hasRecordedAcceptanceReceipt(contractText, reviewText) : false;
     if (plan === activePlan) {
       return { plan, plan_status: planStatus, contract, contract_status: contractStatus, review, review_recommendation: recommendation, receipt_recorded: receiptRecorded, decision: 'EXCLUDE', reason: 'current active plan' };
     }

@@ -1,0 +1,13 @@
+bun test v1.4.0 (34cbb9a40)
+
+tests/historical-plan-classifier.test.ts:
+error: expected sealed-terminal AUTO count 1, received 0
+error: expected hasRecordedAcceptanceReceipt(receiptReview()) to be true, received false
+
+0 pass
+2 fail
+4 expect() calls
+Ran 2 tests across 1 file.
+
+REGRESSION_GUARD=tests/historical-plan-classifier.test.ts
+PRE_FIX_EXIT=1
