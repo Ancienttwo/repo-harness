@@ -7,6 +7,7 @@ import { TASK_MESSAGE_BODY_MAX_BYTES } from '../../src/core/fleet/task-message';
 import {
   asApiError,
   copyOperatorIdentifier,
+  defaultCollapsedGroups,
   fetchOperatorSnapshot,
   groupWorklist,
   OperatorApp,
@@ -133,6 +134,18 @@ describe('operator web worklist projection', () => {
     expect(regrouped.find((group) => group.id === 'external')?.count).toBe(0);
   });
 
+  test('collapses every group except the first non-empty group', () => {
+    const groups = groupWorklist(stableSnapshot);
+    expect(defaultCollapsedGroups(groups)).toEqual([
+      'ready_to_merge', 'unreadable', 'unclassified', 'agent_working', 'external', 'done',
+    ]);
+    const withoutNeedsYou = groups.map((group) => group.id === 'needs_you'
+      ? { ...group, cards: [], count: 0 }
+      : group);
+    expect(defaultCollapsedGroups(withoutNeedsYou)).not.toContain('ready_to_merge');
+    expect(defaultCollapsedGroups(withoutNeedsYou)).toContain('needs_you');
+  });
+
   test('sorts a group by repository then task index, with unindexed rows last', () => {
     const [needsYou] = groupWorklist(stableSnapshot);
     expect(needsYou.cards.map((card) => [card.repository_id, card.task_index])).toEqual([
@@ -198,6 +211,22 @@ describe('operator web interactions', () => {
     expect(document.querySelector('.worklist')?.textContent).toContain(fixtureTasks.review.task_label);
   });
 
+  test('projects R1 runtime evidence without changing authoritative worklist grouping', async () => {
+    const working = stableSnapshot.repositories[0].cards.find((card) => card.task_id === fixtureTasks.working.task_id)!;
+    expect(groupWorklist(stableSnapshot).find((group) => group.id === 'agent_working')?.cards).toContain(working);
+
+    await mount(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} initialLocale="en" />);
+    await act(async () => buttonWithText('Agent working').click());
+    const row = buttonWithText(fixtureTasks.working.task_label);
+    expect(row.textContent).toContain('runtime unavailable');
+    expect(row.textContent).toContain('reconciliation required');
+
+    await act(async () => row.click());
+    expect(paneText()).toContain('Delivery and runtime evidence');
+    expect(paneText()).toContain(`sha256:${'9'.repeat(64)}`);
+    expect(paneText()).toContain('adapter_unavailable');
+  });
+
   test('pane owns modal focus, traps Tab, closes on Escape, and restores the trigger', async () => {
     await mount(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} initialLocale="en" />);
 
@@ -210,6 +239,7 @@ describe('operator web interactions', () => {
     expect(dialog?.getAttribute('aria-modal')).toBe('true');
     expect(dialog?.getAttribute('aria-labelledby')).toBe('detail-pane-title');
     expect(document.activeElement).toBe(close);
+    expect(document.body.style.overflow).toBe('hidden');
 
     const focusable = Array.from(dialog?.querySelectorAll<HTMLButtonElement>('button:not([disabled])') ?? []);
     const last = focusable.at(-1);
@@ -222,6 +252,7 @@ describe('operator web interactions', () => {
     });
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(document.activeElement).toBe(trigger);
+    expect(document.body.style.overflow).toBe('');
   });
 
   test('detail pane shows every blocker, the no-progress flag, and its repair actions as text', async () => {
@@ -321,6 +352,12 @@ describe('operator web interactions', () => {
     expect(document.querySelector('[data-state="stale"]')).not.toBeNull();
     expect(document.querySelector('[role="alert"]')?.textContent).toContain('Fleet snapshot response is invalid');
     expect(document.querySelector('.statusbar-fact--age.is-stale')).not.toBeNull();
+  });
+
+  test('rejects protocol 2 rather than applying a browser compatibility path', () => {
+    const stale = structuredClone(stableSnapshot) as unknown as Record<string, unknown>;
+    stale.protocol = 2;
+    expect(() => decodeOperatorFleetSnapshot(stale)).toThrow('Fleet snapshot response is invalid');
   });
 
   test('decodes the sprint task label and index and fails closed on a malformed one', () => {
@@ -574,7 +611,7 @@ describe('operator web interactions', () => {
 });
 
 describe('operator web task message composer', () => {
-  const composerToggle = (): HTMLButtonElement => buttonWithText('Send message to this session');
+  const composerToggle = (): HTMLButtonElement => document.querySelector<HTMLButtonElement>('.composer__toggle')!;
   const composerPanel = (): Element | null => document.querySelector('.composer__panel');
   const sendButton = (): HTMLButtonElement => {
     const button = document.querySelector('[data-write-action="task-message"]');
@@ -619,6 +656,7 @@ describe('operator web task message composer', () => {
     await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
 
     expect(composerToggle().getAttribute('aria-expanded')).toBe('false');
+    expect(composerToggle().textContent).toContain('Message current owner');
     expect(composerPanel()).toBeNull();
 
     await act(async () => composerToggle().click());
@@ -640,6 +678,7 @@ describe('operator web task message composer', () => {
     root = null;
 
     await openComposerFor(fixtureTasks.available.task_label);
+    expect(composerToggle().textContent).toContain('Queue message for next claimant');
     expect(sendButton().textContent).toBe('Send to the next claimant');
     expect(composerPanel()?.textContent).toContain('waits for the next claimant');
     expect(composerPanel()?.textContent).toContain('no current claim');
@@ -764,7 +803,7 @@ describe('operator web task message composer', () => {
     await act(async () => buttonWithText('中').click());
 
     const panel = composerPanel()?.textContent ?? '';
-    expect(document.querySelector('.composer__toggle')?.textContent).toBe('给这个 session 发消息');
+    expect(document.querySelector('.composer__toggle')?.textContent).toBe('给当前持有者发消息');
     expect(panel).toContain('不可信数据');
     expect(panel).toContain('字节');
     expect(panel).toContain('先把消息写出来再发');

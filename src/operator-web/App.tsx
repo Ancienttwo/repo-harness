@@ -15,6 +15,7 @@ import {
   decodeOperatorCollaborationSnapshot,
   decodeOperatorFleetSnapshot,
   OPERATOR_COLUMNS,
+  OPERATOR_FLEET_PAYLOAD_PROTOCOL,
   OPERATOR_PAYLOAD_INVALID_ERROR,
   projectSnapshotViewState,
   snapshotViewKind,
@@ -164,8 +165,6 @@ export const WORKLIST_GROUP_ORDER: readonly WorklistGroupId[] = [
   'done',
 ];
 
-const DEFAULT_COLLAPSED_GROUPS: readonly WorklistGroupId[] = ['agent_working', 'external', 'done'];
-
 /**
  * Assignment order is not the display order. `unclassified` is claimed before
  * `external` so a card Fleet could not classify can never land in a group the
@@ -208,6 +207,25 @@ export function groupWorklist(snapshot: OperatorFleetSnapshotV1): readonly Workl
     const repositories = id === 'unreadable' ? unreadable : [];
     return { id, cards, repositories, count: cards.length + repositories.length };
   });
+}
+
+/** Start with one useful group open; zero-count and lower-priority groups stay out of the first viewport. */
+export function defaultCollapsedGroups(groups: readonly WorklistGroup[]): readonly WorklistGroupId[] {
+  const firstNonEmpty = groups.find((group) => group.count > 0)?.id ?? null;
+  return groups.filter((group) => group.id !== firstNonEmpty).map((group) => group.id);
+}
+
+function RuntimeExceptionBadges({ card, t }: { readonly card: OperatorFleetCardV1; readonly t: OperatorTranslate }) {
+  return (
+    <>
+      {card.inbox.runtime_reachability === 'unavailable' && (
+        <Badge tone="tone-danger">{t('runtime.unavailable')}</Badge>
+      )}
+      {(card.inbox.delivery_state === 'failed' || card.inbox.delivery_state === 'reconciliation_required') && (
+        <Badge tone="tone-danger">{t(`delivery.${card.inbox.delivery_state}` as OperatorMessageKey)}</Badge>
+      )}
+    </>
+  );
 }
 
 function stageKey(column: OperatorFleetColumn | null): OperatorMessageKey {
@@ -447,6 +465,7 @@ function WorklistRow({
         {card.attention_owner !== 'none' && (
           <Badge tone={attentionTone(card.attention_owner)}>{t('attention.owned', { owner: t(attentionKey(card.attention_owner)) })}</Badge>
         )}
+        <RuntimeExceptionBadges card={card} t={t} />
       </span>
       <span className="worklist-row__meta">
         <span className="worklist-row__repository"><Icon name="repo" size={13} />{card.repository_id}</span>
@@ -496,7 +515,7 @@ function Worklist({
 }) {
   const groups = useMemo(() => groupWorklist(snapshot), [snapshot]);
   const [filter, setFilter] = useState<WorklistGroupId | 'all'>('all');
-  const [collapsed, setCollapsed] = useState<readonly WorklistGroupId[]>(DEFAULT_COLLAPSED_GROUPS);
+  const [collapsed, setCollapsed] = useState<readonly WorklistGroupId[]>(() => defaultCollapsedGroups(groups));
   const total = groups.reduce((sum, group) => sum + group.count, 0);
   const visible = groups.filter((group) => filter === 'all' || group.id === filter);
 
@@ -725,6 +744,24 @@ function TaskDetail({
           <div>
             <dt>{t('field.execution')}</dt>
             <dd>{card.execution_readiness ? t(`execution.${card.execution_readiness}` as OperatorMessageKey) : t('field.notApplicable')}</dd>
+          </div>
+        </dl>
+      </section>
+      <section className="detail-block" aria-labelledby="detail-delivery-heading">
+        <h3 className="detail-eyebrow" id="detail-delivery-heading">{t('detail.deliveryRuntime')}</h3>
+        <CopyValue label={t('field.effectSha')} value={card.inbox.effect_sha256} t={t} />
+        <dl className="detail-list">
+          <div>
+            <dt>{t('field.deliveryState')}</dt>
+            <dd>{t(`delivery.${card.inbox.delivery_state}` as OperatorMessageKey)}</dd>
+          </div>
+          <div>
+            <dt>{t('field.runtimeReachability')}</dt>
+            <dd>{t(`runtime.${card.inbox.runtime_reachability}` as OperatorMessageKey)}</dd>
+          </div>
+          <div>
+            <dt>{t('field.failureClass')}</dt>
+            <dd className="mono-value">{card.inbox.failure_class ?? t('field.none')}</dd>
           </div>
         </dl>
       </section>
@@ -1287,7 +1324,7 @@ function Composer({
         onClick={toggle}
       >
         <Icon name="chevron" size={15} className={open ? 'is-open' : ''} />
-        <span id="composer-heading">{t('composer.toggle')}</span>
+        <span id="composer-heading">{scope === 'claim' ? t('composer.toggleClaim') : t('composer.toggleTask')}</span>
       </button>
       {open && (
         <div className="composer__panel" id="composer-panel">
@@ -1426,6 +1463,13 @@ function DetailPane({
     // Task identity and responsive modality own the focus lifecycle; incidental
     // card replacement does not restart it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardKey, modal]);
+
+  useEffect(() => {
+    if (!modal || !cardKey || typeof document === 'undefined') return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previousOverflow; };
   }, [cardKey, modal]);
 
   if (modal && !card) return null;
@@ -1672,7 +1716,7 @@ export function OperatorApp({
           <HookMark height={20} />
         </span>
         <span>repo-harness operator</span>
-        <span>{t('footer.protocol', { protocol: 2, sequence: snapshot?.sequence ?? '—' })}</span>
+        <span>{t('footer.protocol', { protocol: snapshot?.protocol ?? OPERATOR_FLEET_PAYLOAD_PROTOCOL, sequence: snapshot?.sequence ?? '—' })}</span>
         <span className="operator-footer__right">observe-only · one write: task message</span>
       </footer>
     </div>

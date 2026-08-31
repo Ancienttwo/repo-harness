@@ -47,7 +47,7 @@ describe('operator web control board', () => {
       'External',
       'Done',
     )).toBe(true);
-    expect(markup).toContain('protocol 2');
+    expect(markup).toContain('protocol 3');
     expect(markup).toContain('observe-only · one write: task message');
   });
 
@@ -61,7 +61,7 @@ describe('operator web control board', () => {
     expect(markup).not.toContain(fixtureTasks.blocked.task_id);
   });
 
-  test('UX-operator-worklist-v1-P3 collapses the three low-attention groups by default', () => {
+  test('UX-operator-worklist-v1-P3 expands only the first non-empty group by default', () => {
     const markup = renderStable();
 
     expect(markup).not.toContain(fixtureTasks.working.task_label);
@@ -69,6 +69,7 @@ describe('operator web control board', () => {
     expect(markup).not.toContain(fixtureTasks.done.task_label);
     expect(markup).toContain('aria-label="Expand Agent working"');
     expect(markup).toContain('aria-label="Collapse Needs you"');
+    expect(markup).toContain('aria-label="Expand Unreadable repos"');
   });
 
   test('UX-operator-cause-v1-P1 states the cause in plain words and keeps the raw blocker code', () => {
@@ -158,7 +159,12 @@ describe('operator web control board', () => {
   });
 
   test('keeps unreadable repositories visible with their typed recovery message', () => {
-    const markup = renderStable(degradedSnapshot);
+    const unreadableOnly = {
+      ...degradedSnapshot,
+      repositories: degradedSnapshot.repositories.filter((repository) => repository.status === 'unreadable'),
+      counts: { available: 0, working: 0, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 1 },
+    } as const;
+    const markup = renderStable(unreadableOnly);
 
     expect(markup).toContain('repo-unreadable');
     expect(markup).toContain('repository authority cannot be read');

@@ -317,7 +317,8 @@ code, .mono-value { font-family: var(--font-mono); }
   .operator-statusbar { gap: 10px 14px; }
   .operator-statusbar__actions { width: 100%; margin-left: 0; }
   .pane-scrim { position: fixed; z-index: 35; inset: 0; display: block; border: 0; background: rgba(20, 32, 46, .32); cursor: pointer; }
-  .detail-pane { position: fixed; z-index: 40; top: 0; right: 0; bottom: 0; left: 0; max-height: none; border-left: 0; animation: sheet-in var(--dur-base) var(--ease-out); }
+  .detail-pane { position: fixed; z-index: 40; top: 0; right: 0; bottom: 0; left: 0; max-height: none; border-left: 0; background: var(--paper-0); animation: sheet-in var(--dur-base) var(--ease-out); }
+  .operator-button, .icon-button, .locale-switch button, .worklist__filters button, .copy-value__button { min-width: 44px; min-height: 44px; }
   @keyframes sheet-in { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
   .signal-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

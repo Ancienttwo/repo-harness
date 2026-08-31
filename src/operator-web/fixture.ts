@@ -121,6 +121,13 @@ const stableRepositories: readonly OperatorFleetRepositoryV1[] = [
     card('repo-harness', fixtureTasks.working, 'working', {
       attention_owner: 'agent',
       feedback: { pending_count: 1, no_progress: false, repair_actions: ['resume_same_owner'] },
+      inbox: {
+        ...baseInbox,
+        delivery_state: 'reconciliation_required',
+        runtime_reachability: 'unavailable',
+        effect_sha256: `sha256:${'9'.repeat(64)}`,
+        failure_class: 'adapter_unavailable',
+      },
     }),
     card('repo-harness', fixtureTasks.review, 'in_review', {
       attention_owner: 'external',

@@ -13,6 +13,16 @@
 > unchanged; read `read-only` and `不存在 mutation controls` below as v1 history,
 > not as the current contract.
 
+> **Current presentation amendment (2026-08-31)**: the browser consumes only
+> protocol 3. The worklist opens the first non-empty group and collapses all
+> others by default. R1 `delivery_state`, `runtime_reachability`, `effect_sha256`,
+> and `failure_class` are secondary task evidence: exceptional delivery/runtime
+> states may add a compact badge, but never move a task between Fleet columns.
+> The composer names its actual target (current owner or next claimant). At
+> `<=900px` the task drawer is an opaque modal, locks background scrolling, and
+> exposes 44px minimum interactive targets. Protocol 2 remains rejected rather
+> than translated.
+
 ## Purpose & Audience (頁面目的與受眾)
 
 - Page/surface: localhost-only `repo-harness operator serve` read-only Fleet control board.
