@@ -4,6 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
 import { defaultPolicy } from "../src/core/adoption/standard-plan";
+import { parseExternalSourcesPolicy } from "../src/effects/external-sources/policy";
 
 const ROOT = join(import.meta.dir, "..");
 const REFERENCE_STUB_MARKER = "<!-- repo-harness: reference-config-stub v1 -->";
@@ -466,6 +467,13 @@ describe("create-project-dirs runtime smoke", () => {
       for (const seeded of [policy, tsDefaultPolicy, fallbackSeedPolicy]) {
         expect(seeded.context.capability_source).toBe("registry");
       }
+      // External source intake is disabled by absence in every initializer
+      // surface. A generated repository must never infer provider access from
+      // a URL, CLI installation, or registry grant.
+      for (const seeded of [policy, tsDefaultPolicy, fallbackSeedPolicy]) {
+        expect(parseExternalSourcesPolicy(seeded.external_sources).mode).toBe("off");
+      }
+      expect(parseExternalSourcesPolicy(repoPolicy.external_sources).mode).toBe("off");
       // This repo cut its own authority over to archcontext nodes (Stage 2); the
       // seeded default above is what a newly generated repo gets, not what this repo
       // runs on. Both shapes share the one selector and the one rule string.

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.external-source-intake.immutable-evidence
+kind: calls
+source: capability.runtime-harness.external-source-intake
+target: component.external-source-intake.immutable-evidence
+intent: Persist provider-neutral immutable observations and typed refresh receipts before deriving a read-only projection

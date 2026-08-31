@@ -1,0 +1,45 @@
+schemaVersion: archcontext.node/v2
+id: capability.runtime-harness.external-source-intake
+kind: capability
+name: External Source Intake
+status: active
+summary: Owns provider-neutral immutable external Issue observations, refresh receipts, and read-only projections without scheduler authority.
+responsibilities:
+  - Validate immutable provider Issue observations and refresh receipts as canonical JSON evidence.
+  - Read only explicitly enabled, bounded manual GitHub policy and persist provider observations under the Git common directory.
+  - Derive a read-only projection from immutable records; never create Task, priority, Claim, Lease, WorkEnvelope, collaboration, or Agent Runtime facts.
+  - Fail closed on unavailable or incomplete provider reads and persist the typed attempt receipt when storage is available.
+  - Exclude provider writeback, task adoption/binding, prompt rendering, comments, polling, UI, MCP, and non-GitHub adapters.
+source:
+  include:
+    - "src/core/external-sources/**"
+    - "src/effects/external-sources/**"
+    - "src/cli/commands/external-source.ts"
+  entrypoints:
+    - id: entrypoint.external-source-intake.refresh
+      path: "src/effects/external-sources/refresh.ts"
+      symbols:
+        - name: "refreshExternalSource"
+          sinks:
+            - id: sink.external-source-intake.immutable-observation-store
+              path: "src/effects/external-sources/store.ts"
+              symbol: "writeProviderIssueObservation"
+            - id: sink.external-source-intake.immutable-attempt-receipt
+              path: "src/effects/external-sources/store.ts"
+              symbol: "writeExternalSourceRefreshReceipt"
+    - id: entrypoint.external-source-intake.list
+      path: "src/effects/external-sources/refresh.ts"
+      symbols:
+        - name: "listExternalSourceProjection"
+          sinks:
+            - id: sink.external-source-intake.read-only-projection
+              path: "src/core/external-sources/projection.ts"
+              symbol: "buildExternalSourceProjection"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun test tests/unit/external-source-intake-p0.test.ts tests/unit/external-source-policy.test.ts tests/effects/external-source-store.test.ts tests/effects/external-source-github.test.ts tests/cli/external-source-intake.test.ts tests/unit/external-source-authority.test.ts --timeout 60000"
+    - "bun run check:type"

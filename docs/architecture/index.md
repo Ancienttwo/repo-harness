@@ -296,7 +296,7 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 - Treat user-level `~/.codex/hooks.json` and `~/.claude/settings.json` as host adapters. Keep hook implementation under `.ai/hooks/`, and treat repo-local `.claude/settings.json` / `.codex/hooks.json` hook adapters as retired legacy config.
 - Consider adding `bun scripts/capability-resolver.ts validate --format text` to the strict workflow gate after the architecture registry has been used through one more real slice.
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:b8f07a45683509615148043bd9655a2a478f3802959a534c4f863badd470ba38" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:a99716d5e85fb0494296e037f472ea92cd7589dab28fce6066bf184b01489544" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.architecture.index" sourceDigest="sha256:e6875c58b94ebce07542d38177f71d3621ffbf483400a170847d821cdb1426da" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:f502e512b3331101b5b7a8c2d51676642f13c1b53de5b006b2dd48de2dd8c628" -->
 # Architecture Index
 
 Generated: 1970-01-01T00:00:00.000Z
@@ -314,6 +314,7 @@ Generated: 1970-01-01T00:00:00.000Z
 - [Engineer Messages](modules/runtime-harness/engineer-messages.md) — capability / active
 - [Engineer Scheduling](modules/runtime-harness/engineer-scheduling.md) — capability / active
 - [Engineering Overlay](modules/runtime-harness/engineering-overlay.md) — capability / active
+- [External Source Intake](modules/runtime-harness/external-source-intake.md) — capability / active
 - [Global Runtime Reconciliation](modules/runtime-harness/global-runtime-reconciliation.md) — capability / active
 - [Hook Adapters](modules/runtime-harness/hook-adapters.md) — capability / active
 - [Integration Product Acceptance](modules/runtime-harness/integration-acceptance.md) — capability / active
@@ -353,6 +354,7 @@ Generated: 1970-01-01T00:00:00.000Z
 - capability.runtime-harness.engineering-overlay -> capability.runtime-harness.engineer-messages — calls
 - capability.runtime-harness.engineering-overlay -> component.engineering-overlay.primary — calls
 - capability.verification.evals-checks -> component.evals-checks.primary — calls
+- capability.runtime-harness.external-source-intake -> component.external-source-intake.immutable-evidence — calls
 - capability.runtime-mcp.general-repo-access -> component.general-repo-access.primary — calls
 - capability.runtime-harness.global-runtime-reconciliation -> component.global-runtime-reconciliation.primary — calls
 - capability.runtime-harness.hook-adapters -> component.hook-adapters.primary — calls

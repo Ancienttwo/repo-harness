@@ -1,5 +1,66 @@
 # External Tooling
 
+## External Source Intake P0
+
+`.ai/harness/policy.json#external_sources` is absent by default and is equivalent to the only default, `{ "version": 1, "mode": "off" }`. Refresh never auto-enables from a repository URL, installed `gh`, labels, or registry access mode.
+
+To enable one manual GitHub evidence refresh, use one exact closed selection shape. Every limit is positive. A label scan requires sorted non-empty `labels_all` and accepts a sorted optional `assignees_any` restriction. Unknown fields and provider values fail closed.
+
+```json
+{
+  "external_sources": {
+    "version": 1,
+    "mode": "manual",
+    "github": {
+      "enabled": true,
+      "repository": "owner/repository",
+      "selection": {
+        "kind": "labels",
+        "labels_all": ["ready"],
+        "assignees_any": []
+      },
+      "limits": {
+        "max_pages": 5,
+        "max_issues": 500,
+        "max_body_bytes": 65536,
+        "max_total_bytes": 1048576,
+        "deadline_ms": 30000
+      }
+    }
+  }
+}
+```
+
+For an explicitly reviewed one-shot batch, select exact Issue numbers instead of requiring provider labels or scanning the whole repository:
+
+```json
+{
+  "external_sources": {
+    "version": 1,
+    "mode": "manual",
+    "github": {
+      "enabled": true,
+      "repository": "Ancienttwo/byok-sdk",
+      "selection": {
+        "kind": "issue_numbers",
+        "issue_numbers": [102, 103, 104, 105, 106, 107, 108, 109, 110, 111]
+      },
+      "limits": {
+        "max_pages": 1,
+        "max_issues": 10,
+        "max_body_bytes": 65536,
+        "max_total_bytes": 1048576,
+        "deadline_ms": 30000
+      }
+    }
+  }
+}
+```
+
+Exact-batch refresh resolves only those Issue endpoints and fails the whole attempt if any selected Issue is missing, malformed, a pull request, or exceeds a limit. GitHub assignees, labels, and open/closed state are evidence only: they do not prove whether local work has already been dispatched. Dispatch deduplication belongs to a later authenticated binding against canonical repo-harness task identity.
+
+`repo-harness external-source refresh --repo <registered-repo-id>` invokes the locally authenticated `gh` client once and records immutable observations plus an attempt receipt under the repository Git common directory. `list` performs no provider call. These records are inert evidence: they do not create or change TaskOffer, priority, Claim, Lease, WorkEnvelope, collaboration, or Agent Runtime state.
+
 Generated repos route external tooling by host/runtime shape. Task-level
 skill routing lives in `docs/reference-configs/agentic-development-flow.md`.
 

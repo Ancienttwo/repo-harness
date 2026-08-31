@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.external-source-intake.refresh
+capabilityId: capability.runtime-harness.external-source-intake
+name: Persist one bounded external evidence refresh without execution authority
+applicability: required
+participants:
+  - id: intake
+    nodeId: capability.runtime-harness.external-source-intake
+  - id: immutable-evidence
+    nodeId: component.external-source-intake.immutable-evidence
+steps:
+  - id: persist-observations
+    from: intake
+    to: immutable-evidence
+    label: Normalize bounded provider Issue JSON into immutable observation records
+    evidence:
+      entrypointId: entrypoint.external-source-intake.refresh
+      sourceSymbol: refreshExternalSource
+      sinkId: sink.external-source-intake.immutable-observation-store
+outcomes:
+  - id: complete
+    kind: success
+    label: Complete provider evidence remains a read-only projection
+    steps:
+      - id: persist-complete-receipt
+        from: intake
+        to: immutable-evidence
+        label: Persist the immutable complete attempt receipt before projection
+        evidence:
+          entrypointId: entrypoint.external-source-intake.refresh
+          sourceSymbol: refreshExternalSource
+          sinkId: sink.external-source-intake.immutable-attempt-receipt
+    terminal:
+      participant: intake
+      label: Return a provider-neutral projection with no Task, Claim, Lease, or runtime mutation
+  - id: unavailable-or-incomplete
+    kind: error
+    label: Provider failures and bounds never become a healthy empty refresh
+    steps:
+      - id: persist-failed-receipt
+        from: intake
+        to: immutable-evidence
+        label: Persist the typed unavailable or incomplete attempt receipt
+        evidence:
+          entrypointId: entrypoint.external-source-intake.refresh
+          sourceSymbol: refreshExternalSource
+          sinkId: sink.external-source-intake.immutable-attempt-receipt
+    terminal:
+      participant: intake
+      label: Return a non-zero typed refresh failure without fallback
