@@ -28,8 +28,7 @@ import {
   MergeReadinessError,
   type AbortablePublicationReadinessInput,
 } from '../publication/merge-readiness';
-import { FeedbackError, projectPendingFeedbackOffer, type PendingFeedbackOffer } from '../publication/feedback';
-import { readFeedbackEvents } from '../publication/feedback-store';
+import { FeedbackError, projectFleetFeedback } from '../publication/feedback';
 import { summarizeTaskInboxForFleet, TaskInboxError } from './task-inbox';
 import { observeAgentRuntimeEffects, projectTaskAgentRuntimeState, AgentRuntimeEffectStoreError, type AgentRuntimeEffectStatus } from '../engineers/agent-runtime-effect-store';
 
@@ -128,19 +127,18 @@ function assertRepositoryAuthority(repo: RepoHarnessRegisteredRepo): void {
   }
 }
 
-function feedbackSummary(repoRoot: string, publicationId: string): FleetBoardFeedbackSummaryV1 {
-  const projection: PendingFeedbackOffer = projectPendingFeedbackOffer({ repo_root: repoRoot, publication_id: publicationId });
-  const pendingCount = readFeedbackEvents(repoRoot, publicationId).length;
-  if (projection.state === 'none') {
-    return Object.freeze({ pending_count: pendingCount, no_progress: false, repair_actions: Object.freeze([]) });
-  }
-  if (projection.state === 'no_progress') {
-    return Object.freeze({ pending_count: pendingCount, no_progress: true, repair_actions: Object.freeze([]) });
-  }
+function feedbackSummary(repoRoot: string, publicationId: string): {
+  readonly summary: FleetBoardFeedbackSummaryV1;
+  readonly snapshot_consistency: 'stable' | 'changed_during_read';
+} {
+  const projection = projectFleetFeedback({ repo_root: repoRoot, publication_id: publicationId });
   return Object.freeze({
-    pending_count: pendingCount,
-    no_progress: false,
-    repair_actions: Object.freeze([...projection.offer.allowed_actions]),
+    summary: Object.freeze({
+      pending_count: projection.pending_count,
+      no_progress: projection.no_progress,
+      repair_actions: projection.repair_actions,
+    }),
+    snapshot_consistency: projection.snapshot_consistency,
   });
 }
 
@@ -189,6 +187,7 @@ async function cardInput(
   const currentPublication = card.claim?.current_publication ?? null;
   let readiness = null;
   let feedback = emptyFeedback();
+  let feedbackConsistency: 'stable' | 'changed_during_read' = 'stable';
   if (card.lease_state === 'reviewing' && currentPublication !== null) {
     const input: AbortablePublicationReadinessInput = {
       repo_root: repo.path,
@@ -205,7 +204,9 @@ async function cardInput(
       return resolvePublicationReadinessAbortable(input);
     });
     assertCollectionActive(options.signal, options.deadline_exceeded);
-    feedback = feedbackSummary(repo.path, currentPublication.publication_id);
+    const feedbackProjection = feedbackSummary(repo.path, currentPublication.publication_id);
+    feedback = feedbackProjection.summary;
+    feedbackConsistency = feedbackProjection.snapshot_consistency;
   }
   assertCollectionActive(options.signal, options.deadline_exceeded);
   const inbox = summarizeTaskInboxForFleet({
@@ -242,7 +243,7 @@ async function cardInput(
       addressed_to_current_claim: inbox.addressed_to_current_claim,
       ...runtime,
     }),
-    snapshot_consistency: cardInputConsistency(boardConsistency, inbox.snapshot_consistency),
+    snapshot_consistency: cardInputConsistency(boardConsistency, inbox.snapshot_consistency, feedbackConsistency),
   });
 }
 
@@ -262,8 +263,9 @@ function rowTaskIndex(rowIndex: string): number | null {
 function cardInputConsistency(
   board: 'stable' | 'changed_during_read',
   inbox: 'stable' | 'changed_during_read',
+  feedback: 'stable' | 'changed_during_read',
 ): 'stable' | 'changed_during_read' {
-  return board === 'stable' && inbox === 'stable' ? 'stable' : 'changed_during_read';
+  return board === 'stable' && inbox === 'stable' && feedback === 'stable' ? 'stable' : 'changed_during_read';
 }
 
 async function collectRepository(

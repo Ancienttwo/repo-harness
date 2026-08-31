@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 
 import { projectFleetBoardSnapshot } from '../../src/core/fleet/board';
 import { TASK_MESSAGE_BODY_MAX_BYTES } from '../../src/core/fleet/task-message';
+import type { OperatorCollaborationSnapshotV1 } from '../../src/core/operator/collaboration-snapshot';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import {
   OPERATOR_TASK_MESSAGE_BODY_MAX_BYTES,
@@ -61,6 +62,7 @@ async function startWriteServer(
   send: OperatorServerOptions['send_task_message'],
   calls: SendOperatorTaskMessageInput[],
   env?: NodeJS.ProcessEnv,
+  timeoutMs?: number,
 ): Promise<WriteHarness> {
   const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-write-'));
   writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
@@ -68,6 +70,7 @@ async function startWriteServer(
     port: 0,
     static_root: staticRoot,
     env,
+    timeout_ms: timeoutMs,
     collect_fleet_board: async () => snapshot(),
     send_task_message: send === undefined ? undefined : (input) => {
       calls.push(input);
@@ -115,6 +118,14 @@ function sendResult(overrides: Partial<SendOperatorTaskMessageResult> = {}): Sen
     created: true,
     ...overrides,
   };
+}
+
+async function waitFor(condition: () => boolean, message: string): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (condition()) return;
+    await Bun.sleep(10);
+  }
+  throw new Error(message);
 }
 
 describe('operator serve command and HTTP boundary', () => {
@@ -377,6 +388,110 @@ describe('operator serve command and HTTP boundary', () => {
     }
   });
 
+  test('bounds ambiguous task-message writes and recovers through the same message identity', async () => {
+    const calls: SendOperatorTaskMessageInput[] = [];
+    let abortObserved = false;
+    let committed = false;
+    const harness = await startWriteServer(
+      async ({ signal }) => {
+        if (committed) return sendResult({ created: false });
+        committed = true;
+        signal.addEventListener('abort', () => { abortObserved = true; }, { once: true });
+        return new Promise<never>(() => {});
+      },
+      calls,
+      undefined,
+      1_000,
+    );
+    const url = `${harness.server.url}${messagePath('repo-write')}`;
+    const headers = { 'Content-Type': 'application/json', Origin: harness.server.url };
+    try {
+      const timedOut = await fetch(url, { method: 'POST', headers, body: taskMessagePayload() });
+      expect(timedOut.status).toBe(503);
+      expect(await timedOut.json()).toMatchObject({
+        error: {
+          code: 'task_message_timeout',
+          next_action: expect.stringContaining('same message_id'),
+        },
+      });
+      expect(abortObserved).toBe(true);
+      expect((await fetch(`${harness.server.url}/healthz`)).status).toBe(200);
+
+      const retry = await fetch(url, { method: 'POST', headers, body: taskMessagePayload() });
+      expect(retry.status).toBe(200);
+      expect(await retry.json()).toMatchObject({ ok: true, created: false, message_id: MESSAGE_ID });
+      expect(calls).toHaveLength(2);
+    } finally {
+      await stopWriteServer(harness);
+    }
+  });
+
+  test('server shutdown aborts an active task-message sender', async () => {
+    const calls: SendOperatorTaskMessageInput[] = [];
+    let started = false;
+    let abortObserved = false;
+    const harness = await startWriteServer(async ({ signal }) => {
+      started = true;
+      signal.addEventListener('abort', () => { abortObserved = true; }, { once: true });
+      return new Promise<never>(() => {});
+    }, calls);
+    const request = fetch(`${harness.server.url}${messagePath('repo-write')}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: harness.server.url },
+      body: taskMessagePayload(),
+    }).catch(() => null);
+    try {
+      await waitFor(() => started, 'task-message sender did not start');
+      const startedAt = Date.now();
+      await harness.server.close();
+      expect(Date.now() - startedAt).toBeLessThan(2_500);
+      expect(abortObserved).toBe(true);
+      await request;
+    } finally {
+      rmSync(harness.staticRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('isolates the default task-message sender before a blocked canonical read can freeze the server', async () => {
+    if (process.platform === 'win32') return;
+    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-task-message-worker-'));
+    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-task-message-repo-')));
+    expect(spawnSync('git', ['init', '-q', repoRoot]).status).toBe(0);
+    const registry = registryHome([{ path: repoRoot, accessMode: 'read_write' }]);
+    const markerPath = join(repoRoot, '.ai/harness/sprint/active-sprint');
+    mkdirSync(join(repoRoot, '.ai/harness/sprint'), { recursive: true });
+    writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
+    expect(spawnSync('mkfifo', [markerPath]).status).toBe(0);
+    const server = await startOperatorServer({
+      port: 0,
+      static_root: staticRoot,
+      timeout_ms: 1_000,
+      env: registry.env,
+      collect_fleet_board: async () => snapshot(),
+    });
+    const writer = spawn('bash', ['-c', 'exec 3>"$1"; sleep 10', 'bash', markerPath], { stdio: 'ignore' });
+    try {
+      const startedAt = Date.now();
+      const timedOut = await fetch(`${server.url}${messagePath(registry.ids[0]!)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Origin: server.url },
+        body: taskMessagePayload(),
+      });
+      expect(Date.now() - startedAt).toBeLessThan(2_500);
+      expect(timedOut.status).toBe(503);
+      expect(await timedOut.json()).toMatchObject({ error: { code: 'task_message_timeout' } });
+      expect((await fetch(`${server.url}/healthz`)).status).toBe(200);
+      expect(existsSync(join(repoRoot, '.git/repo-harness/coordination/v1/locks/tasks', `${TASK_ID}.lock`))).toBe(false);
+      expect(existsSync(join(repoRoot, '.git/repo-harness/task-inbox/v1', TASK_ID, 'events'))).toBe(false);
+    } finally {
+      writer.kill('SIGTERM');
+      await server.close();
+      rmSync(staticRoot, { recursive: true, force: true });
+      rmSync(repoRoot, { recursive: true, force: true });
+      rmSync(registry.home, { recursive: true, force: true });
+    }
+  });
+
   test('bounds collaboration reads and permits a healthy retry after timeout', async () => {
     const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-collaboration-timeout-'));
     writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
@@ -414,6 +529,91 @@ describe('operator serve command and HTTP boundary', () => {
       expect(retry.status).toBe(200);
       expect(await retry.json()).toEqual({});
       expect(collaborationCalls).toBe(2);
+    } finally {
+      await server.close();
+      rmSync(staticRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('coalesces same-repository collaboration reads and retains work for a remaining subscriber', async () => {
+    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-collaboration-coalesce-'));
+    writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
+    let calls = 0;
+    let aborts = 0;
+    let healthy = false;
+    let resolveFirst!: (snapshot: OperatorCollaborationSnapshotV1) => void;
+    const server = await startOperatorServer({
+      port: 0,
+      static_root: staticRoot,
+      max_concurrency: 1,
+      collect_fleet_board: async () => snapshot(),
+      read_collaboration_snapshot: ({ signal }) => {
+        calls += 1;
+        if (healthy) return Promise.resolve({} as never);
+        signal.addEventListener('abort', () => { aborts += 1; }, { once: true });
+        return new Promise((resolve) => { resolveFirst = resolve as (snapshot: OperatorCollaborationSnapshotV1) => void; });
+      },
+    });
+    const firstController = new AbortController();
+    const url = `${server.url}/api/v1/collaboration/repo-write/snapshot`;
+    const first = fetch(url, { signal: firstController.signal }).catch(() => null);
+    try {
+      await waitFor(() => calls === 1, 'first collaboration reader did not start');
+      const second = fetch(url);
+      await Bun.sleep(30);
+      expect(calls).toBe(1);
+
+      firstController.abort();
+      await first;
+      await Bun.sleep(30);
+      expect(aborts).toBe(0);
+
+      resolveFirst({} as never);
+      expect((await second).status).toBe(200);
+      healthy = true;
+      expect((await fetch(url)).status).toBe(200);
+      expect(calls).toBe(2);
+    } finally {
+      await server.close();
+      rmSync(staticRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('bounds cross-repository collaboration workers and rejects queue overflow', async () => {
+    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-collaboration-queue-'));
+    writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
+    const started: string[] = [];
+    const resolvers = new Map<string, (snapshot: OperatorCollaborationSnapshotV1) => void>();
+    const server = await startOperatorServer({
+      port: 0,
+      static_root: staticRoot,
+      max_concurrency: 1,
+      collect_fleet_board: async () => snapshot(),
+      read_collaboration_snapshot: ({ repository_id }) => new Promise((resolve) => {
+        started.push(repository_id);
+        resolvers.set(repository_id, resolve as (snapshot: OperatorCollaborationSnapshotV1) => void);
+      }),
+    });
+    const url = (repositoryId: string) => `${server.url}/api/v1/collaboration/${repositoryId}/snapshot`;
+    try {
+      const first = fetch(url('repo-a'));
+      await waitFor(() => started.length === 1, 'first collaboration reader did not start');
+      const second = fetch(url('repo-b'));
+      const third = fetch(url('repo-c'));
+      const overloaded = await fetch(url('repo-d'));
+      expect(overloaded.status).toBe(503);
+      expect(await overloaded.json()).toMatchObject({ error: { code: 'collaboration_snapshot_busy' } });
+      expect(started).toEqual(['repo-a']);
+
+      resolvers.get('repo-a')!({} as never);
+      expect((await first).status).toBe(200);
+      await waitFor(() => started.length === 2, 'queued collaboration reader did not start');
+      expect(started).toEqual(['repo-a', 'repo-b']);
+      resolvers.get('repo-b')!({} as never);
+      expect((await second).status).toBe(200);
+      await waitFor(() => started.length === 3, 'second queued collaboration reader did not start');
+      resolvers.get('repo-c')!({} as never);
+      expect((await third).status).toBe(200);
     } finally {
       await server.close();
       rmSync(staticRoot, { recursive: true, force: true });
@@ -467,6 +667,60 @@ describe('operator serve command and HTTP boundary', () => {
     }
   });
 
+  test('isolates default Fleet collection and clears a blocked Worker for retry and shutdown', async () => {
+    if (process.platform === 'win32') return;
+    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-fleet-worker-'));
+    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-fleet-repo-')));
+    expect(spawnSync('git', ['init', '-q', repoRoot]).status).toBe(0);
+    const registry = registryHome([{ path: repoRoot, accessMode: 'read_write' }]);
+    const markerPath = join(repoRoot, '.ai/harness/sprint/active-sprint');
+    mkdirSync(join(repoRoot, '.ai/harness/sprint'), { recursive: true });
+    writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
+    expect(spawnSync('mkfifo', [markerPath]).status).toBe(0);
+    const server = await startOperatorServer({
+      port: 0,
+      static_root: staticRoot,
+      timeout_ms: 1_000,
+      env: registry.env,
+    });
+    let writer = spawn('bash', ['-c', 'exec 3>"$1"; sleep 10', 'bash', markerPath], { stdio: 'ignore' });
+    let closed = false;
+    try {
+      const startedAt = Date.now();
+      const blocked = fetch(`${server.url}/api/v1/fleet/snapshot`);
+      await Bun.sleep(30);
+      expect((await fetch(`${server.url}/healthz`)).status).toBe(200);
+      const timedOut = await blocked;
+      expect(Date.now() - startedAt).toBeLessThan(2_500);
+      expect(timedOut.status).toBe(503);
+      expect(await timedOut.json()).toMatchObject({ error: { code: 'fleet_snapshot_timeout' } });
+
+      writer.kill('SIGTERM');
+      rmSync(markerPath);
+      writeFileSync(markerPath, '\n');
+      const retry = await fetch(`${server.url}/api/v1/fleet/snapshot`);
+      expect(retry.status).toBe(200);
+      expect(JSON.stringify(await retry.json())).not.toContain(registry.home);
+
+      rmSync(markerPath);
+      expect(spawnSync('mkfifo', [markerPath]).status).toBe(0);
+      writer = spawn('bash', ['-c', 'exec 3>"$1"; sleep 10', 'bash', markerPath], { stdio: 'ignore' });
+      const active = fetch(`${server.url}/api/v1/fleet/snapshot`).catch(() => null);
+      await Bun.sleep(30);
+      const closeStartedAt = Date.now();
+      await server.close();
+      closed = true;
+      expect(Date.now() - closeStartedAt).toBeLessThan(2_500);
+      await active;
+    } finally {
+      writer.kill('SIGTERM');
+      if (!closed) await server.close();
+      rmSync(staticRoot, { recursive: true, force: true });
+      rmSync(repoRoot, { recursive: true, force: true });
+      rmSync(registry.home, { recursive: true, force: true });
+    }
+  });
+
   test('UX-operator-task-message-v1-P1 resolves the repository through the registry and fails closed on read_only', async () => {
     const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-repo-')));
     const registry = registryHome([{ path: repoRoot, accessMode: 'read_only' }]);
@@ -501,12 +755,18 @@ describe('operator serve command and HTTP boundary', () => {
 
   test('UX-operator-task-message-v1-P2 hands a valid write to the effect and passes typed failures through', async () => {
     const calls: SendOperatorTaskMessageInput[] = [];
-    let behavior: 'created' | 'replay' | 'claim_mismatch' = 'created';
+    let behavior: 'created' | 'replay' | 'claim_mismatch' | 'canonical_source_stale' | 'task_not_pending' = 'created';
     const { OperatorTaskMessageError } = await import('../../src/effects/fleet/task-message-request');
     const harness = await startWriteServer(
       async (input) => {
         if (behavior === 'claim_mismatch') {
           throw new OperatorTaskMessageError('claim_mismatch', `task ${input.task_id} owner moved`);
+        }
+        if (behavior === 'canonical_source_stale') {
+          throw new OperatorTaskMessageError('canonical_source_stale', `task ${input.task_id} source moved`);
+        }
+        if (behavior === 'task_not_pending') {
+          throw new OperatorTaskMessageError('task_not_pending', `task ${input.task_id} is done`);
         }
         return sendResult({ scope: input.scope, created: behavior === 'created' });
       },
@@ -551,6 +811,28 @@ describe('operator serve command and HTTP boundary', () => {
       expect(conflictBody.error.code).toBe('claim_mismatch');
       expect(conflictBody.error.message).toBe('The task owner changed while the message was being sent.');
       expect(JSON.stringify(conflictBody)).not.toContain('owner moved');
+
+      behavior = 'canonical_source_stale';
+      const staleSource = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: taskMessagePayload('look at the base branch', 'claim'),
+      });
+      expect(staleSource.status).toBe(409);
+      expect(await staleSource.json()).toMatchObject({
+        error: { code: 'canonical_source_stale', message: 'The active task board authority changed since the snapshot.' },
+      });
+
+      behavior = 'task_not_pending';
+      const completed = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: taskMessagePayload('look at the base branch', 'claim'),
+      });
+      expect(completed.status).toBe(409);
+      expect(await completed.json()).toMatchObject({
+        error: { code: 'task_not_pending', message: 'This task no longer accepts messages.' },
+      });
     } finally {
       await stopWriteServer(harness);
     }

@@ -754,6 +754,92 @@ describe('operator web task message composer', () => {
     await act(async () => composerToggle().click());
   }
 
+  test('coalesces a post-send refresh behind an in-flight Fleet snapshot without overlap', async () => {
+    const pending: Array<{
+      readonly resolve: (snapshot: OperatorFleetSnapshotV1) => void;
+      readonly reject: (error: unknown) => void;
+    }> = [];
+    let calls = 0;
+    let active = 0;
+    let maxActive = 0;
+    const fetchSnapshot = (): Promise<OperatorFleetSnapshotV1> => new Promise((resolve, reject) => {
+      calls += 1;
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      pending.push({
+        resolve: (snapshot) => {
+          active -= 1;
+          resolve(snapshot);
+        },
+        reject: (error) => {
+          active -= 1;
+          reject(error);
+        },
+      });
+    });
+    const postMessageSnapshot: OperatorFleetSnapshotV1 = {
+      ...stableSnapshot,
+      sequence: stableSnapshot.sequence + 2,
+      repositories: stableSnapshot.repositories.map((repository) => ({
+        ...repository,
+        cards: repository.cards.map((card) => card.task_id === fixtureTasks.blocked.task_id
+          ? { ...card, inbox: { ...card.inbox, unread_count: card.inbox.unread_count + 1 } }
+          : card),
+      })),
+    };
+
+    await openComposerFor(fixtureTasks.blocked.task_label, stableSnapshot, {
+      fetchSnapshot,
+      initialCollaboration: { kind: 'idle' },
+      sendMessage: async () => {},
+    });
+    await typeMessage('send while the board is refreshing');
+    await act(async () => buttonWithText('Refresh').click());
+    expect(calls).toBe(1);
+
+    await act(async () => sendButton().click());
+    expect(calls).toBe(1);
+    expect(maxActive).toBe(1);
+
+    await act(async () => pending[0]!.resolve(stableSnapshot));
+    expect(calls).toBe(2);
+    expect(maxActive).toBe(1);
+
+    await act(async () => pending[1]!.resolve(postMessageSnapshot));
+    expect(calls).toBe(2);
+    expect(maxActive).toBe(1);
+    expect(document.querySelector('[data-fact="sequence"]')?.textContent).toContain(String(postMessageSnapshot.sequence));
+    expect(paneText()).toContain('1 unread');
+  });
+
+  test('runs the one queued recovery read after the in-flight Fleet request fails', async () => {
+    const pending: Array<{
+      readonly resolve: (snapshot: OperatorFleetSnapshotV1) => void;
+      readonly reject: (error: unknown) => void;
+    }> = [];
+    let calls = 0;
+    const fetchSnapshot = (): Promise<OperatorFleetSnapshotV1> => new Promise((resolve, reject) => {
+      calls += 1;
+      pending.push({ resolve, reject });
+    });
+
+    await openComposerFor(fixtureTasks.blocked.task_label, stableSnapshot, {
+      fetchSnapshot,
+      initialCollaboration: { kind: 'idle' },
+      sendMessage: async () => {},
+    });
+    await typeMessage('send through a failed observation');
+    await act(async () => buttonWithText('Refresh').click());
+    await act(async () => sendButton().click());
+    expect(calls).toBe(1);
+
+    await act(async () => pending[0]!.reject(new Error('Fleet provider is offline')));
+    expect(calls).toBe(2);
+    await act(async () => pending[1]!.resolve(stableSnapshot));
+    expect(calls).toBe(2);
+    expect(document.querySelector('[data-state="stable"]')).not.toBeNull();
+  });
+
   test('UX-operator-task-message-v1-P1 stays collapsed until asked and then states the untrusted contract', async () => {
     installDom(true);
     await mount(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} initialLocale="en" />);
@@ -821,6 +907,17 @@ describe('operator web task message composer', () => {
     expect(composerPanel()?.textContent).toContain('stale or degraded data');
   });
 
+  test('does not render the task-message composer for a completed task', async () => {
+    installDom(true);
+    await mount(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} initialLocale="en" />);
+
+    await act(async () => buttonWithText('Done').click());
+    await act(async () => buttonWithText(fixtureTasks.done.task_label).click());
+
+    expect(document.querySelector('.detail-pane [data-slot="composer"]')).toBeNull();
+    expect(document.querySelector('[data-write-action="task-message"]')).toBeNull();
+  });
+
   test('UX-operator-task-message-v1-N2 counts UTF-8 bytes and blocks an empty or oversized body', async () => {
     await openComposerFor(fixtureTasks.blocked.task_label);
     expect(sendButton().disabled).toBe(true);
@@ -836,7 +933,7 @@ describe('operator web task message composer', () => {
     expect(document.querySelector('.composer__bytes.is-over')).not.toBeNull();
   });
 
-  test('UX-operator-task-message-v1-P3 sends once, refreshes, and keeps the draft plus the retry id on failure', async () => {
+  test('UX-operator-task-message-v1-P3 retries an ambiguous send with its exact draft identity', async () => {
     const sent: Array<Record<string, unknown>> = [];
     let refreshes = 0;
     let failure: unknown = null;
@@ -855,10 +952,10 @@ describe('operator web task message composer', () => {
     await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
     await act(async () => composerToggle().click());
 
-    failure = { code: 'claim_mismatch', message: 'x', next_action: 'y' };
+    failure = new Error('the connection closed before the result arrived');
     await typeMessage('the base moved, rebase first');
     await act(async () => sendButton().click());
-    expect(composerPanel()?.textContent).toContain('That session is gone');
+    expect(composerPanel()?.textContent).toContain('The send outcome is unknown');
     expect((document.querySelector('#composer-body') as unknown as HTMLTextAreaElement).value)
       .toBe('the base moved, rebase first');
     expect(refreshes).toBe(0);
@@ -886,6 +983,156 @@ describe('operator web task message composer', () => {
     await act(async () => sendButton().click());
     expect(sent[2]!.message_id).not.toBe(sent[1]!.message_id);
     expect(window.localStorage.getItem('repo-harness:operator-sent')).toBeNull();
+  });
+
+  test('rotates a conflicting message id only after the operator explicitly asks', async () => {
+    const submitted: TaskMessageRequestV1[] = [];
+    let conflict = true;
+    await openComposerFor(fixtureTasks.blocked.task_label, stableSnapshot, {
+      sendMessage: async (request) => {
+        submitted.push(request);
+        if (conflict) {
+          throw {
+            code: 'message_id_conflict',
+            message: 'A different message already used this message id.',
+            next_action: 'Compose the message again so it gets a new id.',
+          };
+        }
+      },
+    });
+    await typeMessage('use the next available message id');
+    await act(async () => sendButton().click());
+
+    expect(sendButton().disabled).toBe(true);
+    expect(composerPanel()?.textContent).toContain('Start with a new message ID');
+    const conflictingId = submitted[0]!.message_id;
+
+    conflict = false;
+    await act(async () => buttonWithText('Start with a new message ID').click());
+    expect(sendButton().disabled).toBe(false);
+    expect((document.querySelector('#composer-body') as unknown as HTMLTextAreaElement).value)
+      .toBe('use the next available message id');
+
+    await act(async () => sendButton().click());
+    expect(submitted).toHaveLength(2);
+    expect(submitted[1]!.message_id).not.toBe(conflictingId);
+    expect(submitted[1]).toMatchObject({
+      body: 'use the next available message id',
+      expected_task_revision: submitted[0]!.expected_task_revision,
+      expected_claim_id: submitted[0]!.expected_claim_id,
+      expected_generation: submitted[0]!.expected_generation,
+    });
+  });
+
+  test('rebinds a stale draft only through an explicit current-snapshot action', async () => {
+    const initialCard = stableSnapshot.repositories[0]!.cards.find((card) => card.task_id === fixtureTasks.blocked.task_id)!;
+    const reboundSnapshot: OperatorFleetSnapshotV1 = {
+      ...stableSnapshot,
+      sequence: stableSnapshot.sequence + 1,
+      repositories: stableSnapshot.repositories.map((repository) => ({
+        ...repository,
+        cards: repository.cards.map((card) => card.task_id === initialCard.task_id
+          ? {
+            ...card,
+            task_revision: `${initialCard.task_revision}-next`,
+            claim_id: 'claim-current-owner',
+            generation: (initialCard.generation ?? 0) + 1,
+          }
+          : card),
+      })),
+    };
+    const submitted: TaskMessageRequestV1[] = [];
+    await openComposerFor(fixtureTasks.blocked.task_label, stableSnapshot, {
+      fetchSnapshot: async () => reboundSnapshot,
+      sendMessage: async (request) => {
+        submitted.push(request);
+        if (submitted.length === 1) {
+          throw {
+            code: 'claim_mismatch',
+            message: 'The task owner changed while the message was being sent.',
+            next_action: 'Refresh the board to re-observe the task, then retry.',
+          };
+        }
+      },
+    });
+    await typeMessage('send only if the current owner still needs this');
+    await act(async () => sendButton().click());
+
+    expect(sendButton().disabled).toBe(true);
+    expect(composerPanel()?.textContent).toContain('Rebind to current snapshot');
+    const originalId = submitted[0]!.message_id;
+
+    await act(async () => buttonWithText('Refresh').click());
+    expect(paneText()).toContain(`rev ${initialCard.task_revision}`);
+    await act(async () => buttonWithText('Rebind to current snapshot').click());
+
+    expect(sendButton().disabled).toBe(false);
+    expect((document.querySelector('#composer-body') as unknown as HTMLTextAreaElement).value)
+      .toBe('send only if the current owner still needs this');
+    await act(async () => sendButton().click());
+    expect(submitted).toHaveLength(2);
+    expect(submitted[1]).toMatchObject({
+      expected_task_revision: `${initialCard.task_revision}-next`,
+      expected_claim_id: 'claim-current-owner',
+      expected_generation: (initialCard.generation ?? 0) + 1,
+    });
+    expect(submitted[1]!.message_id).not.toBe(originalId);
+  });
+
+  test('disables stale-draft rebind when the refreshed board is degraded', async () => {
+    await openComposerFor(fixtureTasks.blocked.task_label, stableSnapshot, {
+      fetchSnapshot: async () => degradedSnapshot,
+      sendMessage: async () => {
+        throw {
+          code: 'task_revision_mismatch',
+          message: 'The canonical task definition moved since the snapshot.',
+          next_action: 'Refresh the board to re-observe the task, then retry.',
+        };
+      },
+    });
+    await typeMessage('wait for a stable board');
+    await act(async () => sendButton().click());
+    await act(async () => buttonWithText('Refresh').click());
+
+    const rebind = buttonWithText('Rebind to current snapshot');
+    expect(rebind.disabled).toBe(true);
+    expect(sendButton().disabled).toBe(true);
+  });
+
+  test('clears a successful draft and freezes the next message against the latest card', async () => {
+    const initialCard = stableSnapshot.repositories[0]!.cards.find((card) => card.task_id === fixtureTasks.blocked.task_id)!;
+    const refreshedSnapshot: OperatorFleetSnapshotV1 = {
+      ...stableSnapshot,
+      sequence: stableSnapshot.sequence + 1,
+      repositories: stableSnapshot.repositories.map((repository) => ({
+        ...repository,
+        cards: repository.cards.map((card) => card.task_id === initialCard.task_id
+          ? { ...card, task_revision: `${initialCard.task_revision}-after-send` }
+          : card),
+      })),
+    };
+    const submitted: TaskMessageRequestV1[] = [];
+    await openComposerFor(fixtureTasks.blocked.task_label, stableSnapshot, {
+      fetchSnapshot: async () => refreshedSnapshot,
+      sendMessage: async (request) => { submitted.push(request); },
+    });
+    await typeMessage('first message');
+    await act(async () => sendButton().click());
+    expect((document.querySelector('#composer-body') as unknown as HTMLTextAreaElement).value).toBe('');
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await typeMessage('second message');
+    await act(async () => sendButton().click());
+
+    expect(submitted).toHaveLength(2);
+    expect(submitted[1]!.message_id).not.toBe(submitted[0]!.message_id);
+    expect(submitted[1]).toMatchObject({
+      body: 'second message',
+      expected_task_revision: `${initialCard.task_revision}-after-send`,
+    });
   });
 
   test('keeps the draft fence bound to the rendered card across a refresh', async () => {
