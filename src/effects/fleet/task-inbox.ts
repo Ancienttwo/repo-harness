@@ -21,8 +21,9 @@ import {
   type TaskMessageEventV1,
   type TaskMessageRecipient,
 } from '../../core/fleet/task-message';
-import { lookupCanonicalTask, type CanonicalTask } from '../../core/state/coordination-identity';
+import { lookupCanonicalTask, PENDING_ROW_STATUS, type CanonicalTask } from '../../core/state/coordination-identity';
 import { resolveGitCommonDirectory } from '../git/common-directory';
+import { readActiveSprintPath, readCanonicalTargetRef } from '../state/collect-board-inputs';
 import { readCanonicalSprint, resolveRepoIdentity, type CanonicalSprintSource } from '../state/coordination-canonical-source';
 import { readLease, withTaskLock, type LeaseRead } from '../state/coordination-lease-store';
 
@@ -33,6 +34,8 @@ export type TaskInboxErrorCode =
   | 'task_message_unreadable'
   | 'message_id_conflict'
   | 'task_revision_mismatch'
+  | 'canonical_source_stale'
+  | 'task_not_pending'
   | 'task_unowned'
   | 'claim_mismatch'
   | 'recipient_unavailable'
@@ -374,6 +377,26 @@ function canonicalTask(
   return task.task;
 }
 
+/**
+ * The request's source is intentionally captured before the task lock so the
+ * operator can receive a typed stale-snapshot response. The active marker and
+ * policy target are re-read here, under that lock, to make this comparison the
+ * source-authority linearization point for publication.
+ */
+function assertCanonicalSourceIsActive(repoRoot: string, source: TaskInboxCanonicalSource): void {
+  let sprintPath: string | null;
+  let targetRef: string;
+  try {
+    sprintPath = readActiveSprintPath(repoRoot);
+    targetRef = readCanonicalTargetRef(repoRoot);
+  } catch (error) {
+    throw asInboxError(error, 'task_message_unreadable', 'cannot re-read active task board authority');
+  }
+  if (sprintPath !== source.sprintPath || targetRef !== source.targetRef) {
+    fail('canonical_source_stale', 'the active task board authority changed since the message was opened');
+  }
+}
+
 function assertLeaseCanonicalSource(lease: LeaseRead, source: TaskInboxCanonicalSource, taskId: string, expectedRevision: string): NonNullable<LeaseRead['record']> {
   if (lease.record === null) fail('task_unowned', `task ${taskId} has no owner`);
   if (lease.record.task_revision !== expectedRevision) fail('task_revision_mismatch', `lease revision does not match task inbox event for ${taskId}`);
@@ -659,11 +682,10 @@ export function summarizeTaskInboxForFleet(input: TaskInboxFleetSummaryInput): T
   });
 }
 
-/**
- * Persist an immutable event after canonical task resolution. Claim-scoped
- * sends additionally freeze the current bound claim/generation under lock.
- */
-export function sendTaskMessage(input: SendTaskMessageInput): TaskInboxSendResult {
+function sendTaskMessageWithAuthority(
+  input: SendTaskMessageInput,
+  requireActiveTaskBoardAuthority: boolean,
+): TaskInboxSendResult {
   let event: TaskMessageEventV1;
   try {
     event = validateTaskMessageEvent(input.event);
@@ -671,7 +693,13 @@ export function sendTaskMessage(input: SendTaskMessageInput): TaskInboxSendResul
     throw asInboxError(error, 'task_message_invalid', 'task message event is invalid');
   }
   return withInboxTaskLock(input.repo_root, event.task_id, () => {
-    canonicalTask(input.repo_root, input.canonical_source, event.task_id, event.task_revision);
+    if (requireActiveTaskBoardAuthority) {
+      assertCanonicalSourceIsActive(input.repo_root, input.canonical_source);
+    }
+    const task = canonicalTask(input.repo_root, input.canonical_source, event.task_id, event.task_revision);
+    if (requireActiveTaskBoardAuthority && task.row.status !== PENDING_ROW_STATUS) {
+      fail('task_not_pending', `task ${event.task_id} no longer accepts messages because its status is ${task.row.status}`);
+    }
     if (event.scope === 'claim') {
       const record = assertLeaseCanonicalSource(readLease(input.repo_root, event.task_id), input.canonical_source, event.task_id, event.task_revision);
       if (record.state !== 'bound') fail('recipient_unavailable', `task ${event.task_id} owner is ${record.state}, not bound`);
@@ -681,6 +709,23 @@ export function sendTaskMessage(input: SendTaskMessageInput): TaskInboxSendResul
     }
     return writeImmutableEvent(input.repo_root, event);
   });
+}
+
+/**
+ * Persist a producer-authorized immutable event after canonical task
+ * resolution. Claim-scoped sends additionally freeze the current bound
+ * claim/generation under lock.
+ */
+export function sendTaskMessage(input: SendTaskMessageInput): TaskInboxSendResult {
+  return sendTaskMessageWithAuthority(input, false);
+}
+
+/**
+ * Task Board's only write. Its captured source and pending-row authority are
+ * both revalidated under the task lock immediately before publication.
+ */
+export function sendTaskBoardMessage(input: SendTaskMessageInput): TaskInboxSendResult {
+  return sendTaskMessageWithAuthority(input, true);
 }
 
 /** Read-only projection for a canonical recipient. It never marks delivery. */

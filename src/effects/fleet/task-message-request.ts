@@ -4,11 +4,14 @@ import {
   type TaskMessageScope,
 } from '../../core/fleet/task-message';
 import { lookupCanonicalTask } from '../../core/state/coordination-identity';
-import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
+import {
+  withRepoHarnessRegistryAuthorizationLock,
+  type RepoHarnessRegistryStrictSnapshot,
+} from '../repo-registry';
 import { readActiveSprintPath, readCanonicalTargetRef } from '../state/collect-board-inputs';
 import { readCanonicalSprint, resolveRepoIdentity } from '../state/coordination-canonical-source';
 import { readLease } from '../state/coordination-lease-store';
-import { sendTaskMessage, TaskInboxError, type TaskInboxErrorCode } from './task-inbox';
+import { sendTaskBoardMessage, TaskInboxError, type TaskInboxErrorCode } from './task-inbox';
 
 /**
  * The single write the operator board is allowed to perform.
@@ -67,14 +70,11 @@ export interface SendOperatorTaskMessageResult {
   readonly created: boolean;
 }
 
-function registeredRepositoryRoot(input: SendOperatorTaskMessageInput): string {
-  let repos: ReturnType<typeof readRepoHarnessRegistryStrictSnapshot>['repos'];
-  try {
-    repos = readRepoHarnessRegistryStrictSnapshot({ env: input.env, adoptedOnly: false }).repos;
-  } catch (error) {
-    throw new OperatorTaskMessageError('registry_unavailable', 'cannot read the fleet registry authority', error);
-  }
-  const repository = repos.find((candidate) => candidate.id === input.repository_id);
+function registeredRepositoryRoot(
+  input: SendOperatorTaskMessageInput,
+  snapshot: RepoHarnessRegistryStrictSnapshot,
+): string {
+  const repository = snapshot.repos.find((candidate) => candidate.id === input.repository_id);
   if (repository === undefined) {
     throw new OperatorTaskMessageError('repository_not_found', `repository ${input.repository_id} is not registered`);
   }
@@ -138,49 +138,60 @@ function asOperatorTaskMessageError(error: unknown, fallback: OperatorTaskMessag
  * `claim_mismatch` instead of addressing a session that no longer exists.
  */
 export function sendOperatorTaskMessage(input: SendOperatorTaskMessageInput): SendOperatorTaskMessageResult {
-  const repoRoot = registeredRepositoryRoot(input);
-  if (input.scope === 'task' && (input.expected_claim_id !== null || input.expected_generation !== null)) {
-    throw new OperatorTaskMessageError('task_message_invalid', 'task-scoped messages cannot carry a claim fence');
-  }
-  if (input.scope === 'claim' && (input.expected_claim_id === null || input.expected_generation === null)) {
-    throw new OperatorTaskMessageError('task_message_invalid', 'claim-scoped messages require a claim fence');
-  }
-  const context = canonicalTaskContext(repoRoot, input.task_id, input.expected_task_revision);
-  const owner = input.scope === 'claim' ? readLease(repoRoot, context.task_id).record : null;
-  if (input.scope === 'claim' && owner === null) {
-    throw new OperatorTaskMessageError('recipient_unavailable', `task ${context.task_id} has no current owner lease`);
-  }
-  if (input.scope === 'claim'
-    && (owner!.claim_id !== input.expected_claim_id || owner!.generation !== input.expected_generation)) {
-    throw new OperatorTaskMessageError('claim_mismatch', `task ${context.task_id} owner changed since the board snapshot`);
-  }
   try {
-    const event = buildTaskMessageEvent({
-      message_id: input.message_id,
-      task_id: context.task_id,
-      task_revision: context.task_revision,
-      scope: input.scope,
-      target_claim_id: owner === null ? null : owner.claim_id,
-      target_generation: owner === null ? null : owner.generation,
-      sender_kind: OPERATOR_TASK_MESSAGE_SENDER_KIND,
-      sender_id: OPERATOR_TASK_MESSAGE_SENDER_ID,
-      sender_trust: 'local_operator',
-      audience: 'owner',
-      body: input.body,
-      created_at: new Date().toISOString(),
-      in_reply_to: null,
-    });
-    const result = sendTaskMessage({ repo_root: repoRoot, canonical_source: context.source, event });
-    return Object.freeze({
-      repository_id: input.repository_id,
-      task_id: event.task_id,
-      message_id: event.message_id,
-      scope: event.scope,
-      target_claim_id: event.target_claim_id,
-      target_generation: event.target_generation,
-      created: result.created,
+    return withRepoHarnessRegistryAuthorizationLock({ env: input.env }, (snapshot) => {
+      const repoRoot = registeredRepositoryRoot(input, snapshot);
+      if (input.scope === 'task' && (input.expected_claim_id !== null || input.expected_generation !== null)) {
+        throw new OperatorTaskMessageError('task_message_invalid', 'task-scoped messages cannot carry a claim fence');
+      }
+      if (input.scope === 'claim' && (input.expected_claim_id === null || input.expected_generation === null)) {
+        throw new OperatorTaskMessageError('task_message_invalid', 'claim-scoped messages require a claim fence');
+      }
+      const context = canonicalTaskContext(repoRoot, input.task_id, input.expected_task_revision);
+      const owner = input.scope === 'claim' ? readLease(repoRoot, context.task_id).record : null;
+      if (input.scope === 'claim' && owner === null) {
+        throw new OperatorTaskMessageError('recipient_unavailable', `task ${context.task_id} has no current owner lease`);
+      }
+      if (input.scope === 'claim'
+        && (owner!.claim_id !== input.expected_claim_id || owner!.generation !== input.expected_generation)) {
+        throw new OperatorTaskMessageError('claim_mismatch', `task ${context.task_id} owner changed since the board snapshot`);
+      }
+      try {
+        const event = buildTaskMessageEvent({
+          message_id: input.message_id,
+          task_id: context.task_id,
+          task_revision: context.task_revision,
+          scope: input.scope,
+          target_claim_id: owner === null ? null : owner.claim_id,
+          target_generation: owner === null ? null : owner.generation,
+          sender_kind: OPERATOR_TASK_MESSAGE_SENDER_KIND,
+          sender_id: OPERATOR_TASK_MESSAGE_SENDER_ID,
+          sender_trust: 'local_operator',
+          audience: 'owner',
+          body: input.body,
+          created_at: new Date().toISOString(),
+          in_reply_to: null,
+        });
+        const result = sendTaskBoardMessage({
+          repo_root: repoRoot,
+          canonical_source: context.source,
+          event,
+        });
+        return Object.freeze({
+          repository_id: input.repository_id,
+          task_id: event.task_id,
+          message_id: event.message_id,
+          scope: event.scope,
+          target_claim_id: event.target_claim_id,
+          target_generation: event.target_generation,
+          created: result.created,
+        });
+      } catch (error) {
+        throw asOperatorTaskMessageError(error, 'task_message_invalid');
+      }
     });
   } catch (error) {
-    throw asOperatorTaskMessageError(error, 'task_message_invalid');
+    if (error instanceof OperatorTaskMessageError) throw error;
+    throw asOperatorTaskMessageError(error, 'registry_unavailable');
   }
 }

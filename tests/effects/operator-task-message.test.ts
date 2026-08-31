@@ -1,14 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { deriveTaskId, deriveTaskRevision, buildLeaseOwnerRecord, bindLeaseRecord } from '../../src/core/state/coordination-identity';
-import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
+import { repoHarnessRegisteredReposPath, repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { sendOperatorTaskMessage, OperatorTaskMessageError } from '../../src/effects/fleet/task-message-request';
 import { createLeaseDirectory, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
-import { taskInboxEventPath } from '../../src/effects/fleet/task-inbox';
+import { taskInboxEventPath, taskInboxTaskDirectory } from '../../src/effects/fleet/task-inbox';
 import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
 
 const SPRINT_PATH = 'plans/sprints/operator-message.sprint.md';
@@ -17,6 +17,10 @@ const CLAIM_ONE = '123e4567-e89b-42d3-a456-426614174001';
 const CLAIM_TWO = '123e4567-e89b-42d3-a456-426614174002';
 const MESSAGE_ONE = '123e4567-e89b-42d3-a456-426614174010';
 const MESSAGE_TWO = '123e4567-e89b-42d3-a456-426614174011';
+const PROJECT_ROOT = resolve(import.meta.dir, '../..');
+const TASK_MESSAGE_REQUEST_MODULE = resolve(import.meta.dir, '../../src/effects/fleet/task-message-request.ts');
+const REGISTRY_MODULE = resolve(import.meta.dir, '../../src/effects/repo-registry.ts');
+const LEASE_STORE_MODULE = resolve(import.meta.dir, '../../src/effects/state/coordination-lease-store.ts');
 
 interface Fixture {
   readonly root: string;
@@ -130,17 +134,156 @@ function withFixture(run: (value: Fixture) => void): void {
   }
 }
 
+async function withFixtureAsync(run: (value: Fixture) => Promise<void>): Promise<void> {
+  const value = fixture();
+  try {
+    await run(value);
+  } finally {
+    rmSync(value.root, { recursive: true, force: true });
+    rmSync(value.home, { recursive: true, force: true });
+  }
+}
+
+async function waitFor(condition: () => boolean, description: string): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (!condition()) {
+    if (Date.now() >= deadline) throw new Error(`timed out waiting for ${description}`);
+    await Bun.sleep(10);
+  }
+}
+
+function spawnWorker(script: string, env: Record<string, string>): ReturnType<typeof Bun.spawn> {
+  return Bun.spawn([process.execPath, '-e', script], {
+    cwd: PROJECT_ROOT,
+    env: { ...process.env, ...env },
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+}
+
+async function workerResult(worker: ReturnType<typeof Bun.spawn>): Promise<{ readonly status: number; readonly stdout: string; readonly stderr: string }> {
+  if (!(worker.stdout instanceof ReadableStream) || !(worker.stderr instanceof ReadableStream)) {
+    throw new Error('worker must expose stdout and stderr pipes');
+  }
+  const [status, stdout, stderr] = await Promise.all([
+    worker.exited,
+    new Response(worker.stdout).text(),
+    new Response(worker.stderr).text(),
+  ]);
+  return { status, stdout, stderr };
+}
+
+function operatorMessageWorker(value: Fixture, messageId: string, env: Record<string, string> = {}): ReturnType<typeof Bun.spawn> {
+  const script = `
+    const { sendOperatorTaskMessage, OperatorTaskMessageError } = await import(process.env.TASK_MESSAGE_REQUEST_MODULE);
+    try {
+      const result = sendOperatorTaskMessage(JSON.parse(process.env.TASK_INPUT));
+      process.stdout.write(JSON.stringify({ ok: true, result }));
+    } catch (error) {
+      process.stdout.write(JSON.stringify({
+        ok: false,
+        code: error instanceof OperatorTaskMessageError ? error.code : null,
+        message: error instanceof Error ? error.message : String(error),
+      }));
+    }
+  `;
+  return spawnWorker(script, {
+    TASK_MESSAGE_REQUEST_MODULE,
+    TASK_INPUT: JSON.stringify(input(value, messageId, 'task')),
+    ...env,
+  });
+}
+
+function taskLockHolder(value: Fixture, readyPath: string, releasePath: string): ReturnType<typeof Bun.spawn> {
+  const script = `
+    import { existsSync, writeFileSync } from 'node:fs';
+    const { withTaskLock } = await import(process.env.LEASE_STORE_MODULE);
+    withTaskLock(process.env.REPO_ROOT, process.env.TASK_ID, () => {
+      writeFileSync(process.env.READY_PATH, 'ready\\n');
+      const wait = new Int32Array(new SharedArrayBuffer(4));
+      while (!existsSync(process.env.RELEASE_PATH)) Atomics.wait(wait, 0, 0, 5);
+    });
+  `;
+  return spawnWorker(script, {
+    LEASE_STORE_MODULE,
+    REPO_ROOT: value.root,
+    TASK_ID: value.taskId,
+    READY_PATH: readyPath,
+    RELEASE_PATH: releasePath,
+  });
+}
+
+function readWorkerPayload(result: { readonly status: number; readonly stdout: string; readonly stderr: string }): Record<string, unknown> {
+  expect(result.status, result.stderr).toBe(0);
+  return JSON.parse(result.stdout) as Record<string, unknown>;
+}
+
+function registryRevoker(
+  value: Fixture,
+  opts: { readonly readyPath?: string; readonly releasePath?: string } = {},
+): ReturnType<typeof Bun.spawn> {
+  const script = `
+    import { existsSync, writeFileSync } from 'node:fs';
+    const { applyRepoHarnessRegistryBatch } = await import(process.env.REGISTRY_MODULE);
+    const wait = new Int32Array(new SharedArrayBuffer(4));
+    applyRepoHarnessRegistryBatch([
+      { repoRoot: process.env.REPO_ROOT, source: 'adopt', accessMode: 'read_only' },
+    ], {
+      env: { REPO_HARNESS_HOME: process.env.REGISTRY_HOME },
+      requireAdopted: false,
+      beforeCommit: () => {
+        if (!process.env.READY_PATH) return;
+        writeFileSync(process.env.READY_PATH, 'ready\\n');
+        while (!existsSync(process.env.RELEASE_PATH)) Atomics.wait(wait, 0, 0, 5);
+      },
+    });
+  `;
+  return spawnWorker(script, {
+    REGISTRY_MODULE,
+    REGISTRY_HOME: value.home,
+    REPO_ROOT: value.root,
+    READY_PATH: opts.readyPath ?? '',
+    RELEASE_PATH: opts.releasePath ?? '',
+  });
+}
+
+function pausedGitBin(value: Fixture, readyPath: string, releasePath: string): string {
+  const bin = join(value.root, 'test-bin');
+  mkdirSync(bin, { recursive: true });
+  const gitPath = join(bin, 'git');
+  const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+  writeFileSync(gitPath, `#!/bin/sh
+"${realGit}" "$@"
+status=$?
+if [ "$1" = "show" ] && [ "$status" -eq 0 ]; then
+  : > "${readyPath}"
+  while [ ! -f "${releasePath}" ]; do sleep 0.01; done
+fi
+exit "$status"
+`);
+  chmodSync(gitPath, 0o700);
+  return bin;
+}
+
+function expectNoInboxArtifacts(value: Fixture, messageId: string): void {
+  expect(existsSync(taskInboxEventPath(value.root, value.taskId, messageId))).toBe(false);
+}
+
+function expectOperatorError(run: () => void, code: OperatorTaskMessageError['code']): void {
+  expect(run).toThrow(OperatorTaskMessageError);
+  try {
+    run();
+  } catch (error) {
+    expect((error as OperatorTaskMessageError).code).toBe(code);
+  }
+}
+
 describe('operator task-message effect fence', () => {
   test('rejects a stale task revision before creating an event', () => withFixture((value) => {
-    expect(() => sendOperatorTaskMessage(input(value, MESSAGE_ONE, 'task', {
+    expectOperatorError(() => sendOperatorTaskMessage(input(value, MESSAGE_ONE, 'task', {
       expected_task_revision: '0'.repeat(64),
-    }))).toThrow(OperatorTaskMessageError);
-    try {
-      sendOperatorTaskMessage(input(value, MESSAGE_ONE, 'task', { expected_task_revision: '0'.repeat(64) }));
-    } catch (error) {
-      expect((error as OperatorTaskMessageError).code).toBe('task_revision_mismatch');
-    }
-    expect(() => readFileSync(taskInboxEventPath(value.root, value.taskId, MESSAGE_ONE))).toThrow();
+    })), 'task_revision_mismatch');
+    expectNoInboxArtifacts(value, MESSAGE_ONE);
   }));
 
   test('keeps a claim message bound to the observed claim and rejects takeover', () => withFixture((value) => {
@@ -156,12 +299,130 @@ describe('operator task-message effect fence', () => {
     expect(stored).toMatchObject({ target_claim_id: CLAIM_ONE, target_generation: 1 });
 
     lease(value, CLAIM_TWO, 2);
-    expect(() => sendOperatorTaskMessage(input(value, MESSAGE_TWO, 'claim'))).toThrow(OperatorTaskMessageError);
-    try {
-      sendOperatorTaskMessage(input(value, MESSAGE_TWO, 'claim'));
-    } catch (error) {
-      expect((error as OperatorTaskMessageError).code).toBe('claim_mismatch');
-    }
-    expect(() => readFileSync(taskInboxEventPath(value.root, value.taskId, MESSAGE_TWO))).toThrow();
+    expectOperatorError(() => sendOperatorTaskMessage(input(value, MESSAGE_TWO, 'claim')), 'claim_mismatch');
+    expectNoInboxArtifacts(value, MESSAGE_TWO);
   }));
+
+  test('keeps an identical retry idempotent while task authority remains pending', () => withFixture((value) => {
+    expect(sendOperatorTaskMessage(input(value, MESSAGE_ONE, 'task')).created).toBe(true);
+    expect(sendOperatorTaskMessage(input(value, MESSAGE_ONE, 'task')).created).toBe(false);
+  }));
+
+  test('rejects a completed canonical row even when its task revision is unchanged', () => withFixture((value) => {
+    writeFileSync(join(value.root, SPRINT_PATH), [
+      '# Sprint: operator message', '', '## Backlog', '',
+      '| # | Status | Task | Mode | Acceptance | Plan |',
+      '|---|--------|------|------|------------|------|',
+      `| 1 | [x] | ${TASK_CELL} | contract | proves the fence | (pending) |`, '',
+    ].join('\n'));
+    git(value.root, 'add', SPRINT_PATH);
+    git(value.root, 'commit', '-m', 'complete fixture task');
+
+    expectOperatorError(() => sendOperatorTaskMessage(input(value, MESSAGE_ONE, 'task')), 'task_not_pending');
+    expectNoInboxArtifacts(value, MESSAGE_ONE);
+    expect(existsSync(taskInboxTaskDirectory(value.root, value.taskId))).toBe(false);
+  }));
+
+  test('linearizes registry revocation before a waiting task-message publication', async () => withFixtureAsync(async (value) => {
+    const readyPath = join(value.home, 'revocation-ready');
+    const releasePath = join(value.home, 'release-revocation');
+    const revoker = registryRevoker(value, { readyPath, releasePath });
+    await waitFor(() => existsSync(readyPath), 'registry revocation prepare barrier');
+
+    const sender = operatorMessageWorker(value, MESSAGE_ONE);
+    writeFileSync(releasePath, 'release\n');
+
+    const [revokerResult, senderResult] = await Promise.all([workerResult(revoker), workerResult(sender)]);
+    expect(revokerResult.status, revokerResult.stderr).toBe(0);
+    expect(readWorkerPayload(senderResult)).toMatchObject({ ok: false, code: 'repository_read_only' });
+    expectNoInboxArtifacts(value, MESSAGE_ONE);
+  }), 30_000);
+
+  test('lets a sender that holds registry authorization publish before a waiting revocation', async () => withFixtureAsync(async (value) => {
+    const lockReadyPath = join(value.home, 'task-lock-ready');
+    const lockReleasePath = join(value.home, 'task-lock-release');
+    const lockHolder = taskLockHolder(value, lockReadyPath, lockReleasePath);
+    await waitFor(() => existsSync(lockReadyPath), 'task lock holder');
+
+    const sender = operatorMessageWorker(value, MESSAGE_ONE);
+    const registryLockPath = `${repoHarnessRegisteredReposPath({ REPO_HARNESS_HOME: value.home })}.lock`;
+    await waitFor(() => {
+      if (!existsSync(registryLockPath)) return false;
+      try {
+        return JSON.parse(readFileSync(registryLockPath, 'utf8')).pid === sender.pid;
+      } catch {
+        return false;
+      }
+    }, 'sender registry authorization lock');
+
+    const revoker = registryRevoker(value);
+    writeFileSync(lockReleasePath, 'release\n');
+
+    const [lockResult, senderResult, revokerResult] = await Promise.all([
+      workerResult(lockHolder),
+      workerResult(sender),
+      workerResult(revoker),
+    ]);
+    expect(lockResult.status, lockResult.stderr).toBe(0);
+    expect(readWorkerPayload(senderResult)).toMatchObject({ ok: true, result: { created: true } });
+    expect(revokerResult.status, revokerResult.stderr).toBe(0);
+    expect(JSON.parse(readFileSync(join(value.home, 'registered-repos.json'), 'utf8'))).toMatchObject({
+      repos: [{ accessMode: 'read_only' }],
+    });
+    expect(existsSync(taskInboxEventPath(value.root, value.taskId, MESSAGE_ONE))).toBe(true);
+  }), 30_000);
+
+  if (process.platform !== 'win32') {
+    test('rejects an active-sprint change captured between source resolution and the task lock', async () => withFixtureAsync(async (value) => {
+      const gitReadyPath = join(value.home, 'initial-sprint-read');
+      const gitReleasePath = join(value.home, 'release-initial-sprint-read');
+      const bin = pausedGitBin(value, gitReadyPath, gitReleasePath);
+      const sender = operatorMessageWorker(value, MESSAGE_ONE, { PATH: `${bin}:${process.env.PATH ?? ''}` });
+      await waitFor(() => existsSync(gitReadyPath), 'initial canonical sprint read');
+      writeFileSync(join(value.root, '.ai/harness/sprint/active-sprint'), 'plans/sprints/replacement.sprint.md\n');
+      writeFileSync(gitReleasePath, 'release\n');
+
+      const senderResult = await workerResult(sender);
+      expect(readWorkerPayload(senderResult)).toMatchObject({ ok: false, code: 'canonical_source_stale' });
+      expectNoInboxArtifacts(value, MESSAGE_ONE);
+    }), 30_000);
+
+    test('rejects a canonical target-ref change captured between source resolution and the task lock', async () => withFixtureAsync(async (value) => {
+      const gitReadyPath = join(value.home, 'initial-sprint-read');
+      const gitReleasePath = join(value.home, 'release-initial-sprint-read');
+      const bin = pausedGitBin(value, gitReadyPath, gitReleasePath);
+      const sender = operatorMessageWorker(value, MESSAGE_ONE, { PATH: `${bin}:${process.env.PATH ?? ''}` });
+      await waitFor(() => existsSync(gitReadyPath), 'initial canonical sprint read');
+      writeFileSync(join(value.root, '.ai/harness/policy.json'), JSON.stringify({
+        worktree_strategy: { merge_back: { target: 'alternate' } },
+      }));
+      writeFileSync(gitReleasePath, 'release\n');
+
+      const senderResult = await workerResult(sender);
+      expect(readWorkerPayload(senderResult)).toMatchObject({ ok: false, code: 'canonical_source_stale' });
+      expectNoInboxArtifacts(value, MESSAGE_ONE);
+    }), 30_000);
+
+    test('rejects a status change that lands after draft resolution and before locked publication', async () => withFixtureAsync(async (value) => {
+      const gitReadyPath = join(value.home, 'initial-sprint-read');
+      const gitReleasePath = join(value.home, 'release-initial-sprint-read');
+      const bin = pausedGitBin(value, gitReadyPath, gitReleasePath);
+      const sender = operatorMessageWorker(value, MESSAGE_ONE, { PATH: `${bin}:${process.env.PATH ?? ''}` });
+      await waitFor(() => existsSync(gitReadyPath), 'initial canonical sprint read');
+
+      writeFileSync(join(value.root, SPRINT_PATH), [
+        '# Sprint: operator message', '', '## Backlog', '',
+        '| # | Status | Task | Mode | Acceptance | Plan |',
+        '|---|--------|------|------|------------|------|',
+        `| 1 | [x] | ${TASK_CELL} | contract | proves the fence | (pending) |`, '',
+      ].join('\n'));
+      git(value.root, 'add', SPRINT_PATH);
+      git(value.root, 'commit', '-m', 'complete fixture task after draft');
+      writeFileSync(gitReleasePath, 'release\n');
+
+      const senderResult = await workerResult(sender);
+      expect(readWorkerPayload(senderResult)).toMatchObject({ ok: false, code: 'task_not_pending' });
+      expectNoInboxArtifacts(value, MESSAGE_ONE);
+    }), 30_000);
+  }
 });

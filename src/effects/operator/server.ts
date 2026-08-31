@@ -490,6 +490,16 @@ const TASK_MESSAGE_FAILURES: Readonly<Record<OperatorTaskMessageErrorCode, Publi
     message: 'The canonical task definition moved since the snapshot.',
     next_action: OPERATOR_REOBSERVE_ACTION,
   },
+  canonical_source_stale: {
+    status: 409,
+    message: 'The active task board authority changed since the snapshot.',
+    next_action: OPERATOR_REOBSERVE_ACTION,
+  },
+  task_not_pending: {
+    status: 409,
+    message: 'This task no longer accepts messages.',
+    next_action: OPERATOR_REOBSERVE_ACTION,
+  },
   task_unowned: {
     status: 409,
     message: 'The task has no owner that can receive this message.',

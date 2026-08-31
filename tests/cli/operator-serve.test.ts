@@ -501,12 +501,18 @@ describe('operator serve command and HTTP boundary', () => {
 
   test('UX-operator-task-message-v1-P2 hands a valid write to the effect and passes typed failures through', async () => {
     const calls: SendOperatorTaskMessageInput[] = [];
-    let behavior: 'created' | 'replay' | 'claim_mismatch' = 'created';
+    let behavior: 'created' | 'replay' | 'claim_mismatch' | 'canonical_source_stale' | 'task_not_pending' = 'created';
     const { OperatorTaskMessageError } = await import('../../src/effects/fleet/task-message-request');
     const harness = await startWriteServer(
       async (input) => {
         if (behavior === 'claim_mismatch') {
           throw new OperatorTaskMessageError('claim_mismatch', `task ${input.task_id} owner moved`);
+        }
+        if (behavior === 'canonical_source_stale') {
+          throw new OperatorTaskMessageError('canonical_source_stale', `task ${input.task_id} source moved`);
+        }
+        if (behavior === 'task_not_pending') {
+          throw new OperatorTaskMessageError('task_not_pending', `task ${input.task_id} is done`);
         }
         return sendResult({ scope: input.scope, created: behavior === 'created' });
       },
@@ -551,6 +557,28 @@ describe('operator serve command and HTTP boundary', () => {
       expect(conflictBody.error.code).toBe('claim_mismatch');
       expect(conflictBody.error.message).toBe('The task owner changed while the message was being sent.');
       expect(JSON.stringify(conflictBody)).not.toContain('owner moved');
+
+      behavior = 'canonical_source_stale';
+      const staleSource = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: taskMessagePayload('look at the base branch', 'claim'),
+      });
+      expect(staleSource.status).toBe(409);
+      expect(await staleSource.json()).toMatchObject({
+        error: { code: 'canonical_source_stale', message: 'The active task board authority changed since the snapshot.' },
+      });
+
+      behavior = 'task_not_pending';
+      const completed = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: taskMessagePayload('look at the base branch', 'claim'),
+      });
+      expect(completed.status).toBe(409);
+      expect(await completed.json()).toMatchObject({
+        error: { code: 'task_not_pending', message: 'This task no longer accepts messages.' },
+      });
     } finally {
       await stopWriteServer(harness);
     }
