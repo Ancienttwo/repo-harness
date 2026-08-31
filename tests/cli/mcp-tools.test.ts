@@ -38,6 +38,44 @@ async function jsonTool(ctx: McpToolContext, name: string, args: Record<string, 
   return JSON.parse(result.content[0].text);
 }
 
+async function runGuardedWriteRace(
+  repoRoot: string,
+  relativePath: string,
+  expectedSha256: string | undefined,
+): Promise<Array<Record<string, unknown>>> {
+  const barrierRoot = join(repoRoot, `.guarded-write-barrier-${Date.now()}`);
+  mkdirSync(barrierRoot);
+  const releasePath = join(barrierRoot, 'release');
+  const workerPath = join(import.meta.dir, '../fixtures/mcp-guarded-write-worker.ts');
+  const absolutePath = join(repoRoot, relativePath);
+  const workers = ['writer-a\n', 'writer-b\n'].map((content, index) => Bun.spawn({
+    cmd: [
+      process.execPath,
+      workerPath,
+      absolutePath,
+      relativePath,
+      Buffer.from(content).toString('base64'),
+      expectedSha256 ?? '-',
+      join(barrierRoot, `ready-${index}`),
+      releasePath,
+    ],
+    stdout: 'pipe',
+    stderr: 'pipe',
+  }));
+
+  const deadline = Date.now() + 5_000;
+  while ((!existsSync(join(barrierRoot, 'ready-0')) || !existsSync(join(barrierRoot, 'ready-1'))) && Date.now() < deadline) {
+    await Bun.sleep(5);
+  }
+  expect(existsSync(join(barrierRoot, 'ready-0'))).toBe(true);
+  expect(existsSync(join(barrierRoot, 'ready-1'))).toBe(true);
+  writeFileSync(releasePath, 'go\n', { flag: 'wx' });
+
+  const exits = await Promise.all(workers.map((worker) => worker.exited));
+  expect(exits).toEqual([0, 0]);
+  return Promise.all(workers.map(async (worker) => JSON.parse(await new Response(worker.stdout).text())));
+}
+
 async function withRegistryHome<T>(fn: (home: string) => Promise<T>): Promise<T> {
   const home = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-registry-'));
   const previous = process.env.REPO_HARNESS_HOME;
@@ -428,6 +466,28 @@ describe('mcp tools', () => {
 
       const content = readFileSync(join(repoRoot, created.path), 'utf-8');
       expect(content.includes('Writer A.') !== content.includes('Writer B.')).toBe(true);
+    });
+  });
+
+  test('cross-process guarded writes serialize revision checks and create-only claims', async () => {
+    await withRepo(async (repoRoot, ctx) => {
+      const created = await jsonTool(ctx, 'write_plan', {
+        title: 'Process Race',
+        slug: 'process-race',
+        body: '# Process Race\n\nBase revision.',
+      });
+      const replacements = await runGuardedWriteRace(repoRoot, created.path, created.sha256);
+      expect(replacements.filter((entry) => entry.ok === true)).toHaveLength(1);
+      expect(replacements.filter((entry) => entry.code === 'REVISION_CONFLICT')).toHaveLength(1);
+      expect(['writer-a\n', 'writer-b\n']).toContain(readFileSync(join(repoRoot, created.path), 'utf-8'));
+      expect(existsSync(join(repoRoot, 'plans', '.plan-process-race.md.repo-harness.lock'))).toBe(false);
+
+      const createPath = 'plans/plan-process-create.md';
+      const creates = await runGuardedWriteRace(repoRoot, createPath, undefined);
+      expect(creates.filter((entry) => entry.ok === true)).toHaveLength(1);
+      expect(creates.filter((entry) => entry.code === 'WOULD_OVERWRITE')).toHaveLength(1);
+      expect(['writer-a\n', 'writer-b\n']).toContain(readFileSync(join(repoRoot, createPath), 'utf-8'));
+      expect(existsSync(join(repoRoot, 'plans', '.plan-process-create.md.repo-harness.lock'))).toBe(false);
     });
   });
 

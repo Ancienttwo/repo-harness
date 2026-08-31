@@ -10,7 +10,7 @@ import {
 } from './binding';
 import { resolveBrowserOutputPath } from './file-policy';
 import { checkNativeChatgptSession, nativeDebuggingBlockedByDefaultProfile, nativeProviderAvailable, runNativeProvider } from './native-provider';
-import { buildOracleCommand, probeOracle, resolveOracleBin, runOracleProvider, supportsBrowserAppPreselect } from './oracle-provider';
+import { buildOracleCommand, probeOracle, REQUIRED_ORACLE_VERSION, resolveOracleBin, runOracleProvider, supportsBrowserAppPreselect, validateOracleVersion } from './oracle-provider';
 import { assemblePromptBundle } from './prompt-assembler';
 import { scanPromptBundle } from './secret-scan';
 import {
@@ -49,8 +49,8 @@ export interface BrowserDoctorAgentAction {
   automatic: false;
 }
 
-const PINNED_ORACLE_INSTALL = 'bun add -g @steipete/oracle@0.14.1';
-const PINNED_ORACLE_REPO_LOCAL_INSTALL = 'bun add -D @steipete/oracle@0.14.1';
+const PINNED_ORACLE_INSTALL = `bun add -g @steipete/oracle@${REQUIRED_ORACLE_VERSION}`;
+const PINNED_ORACLE_REPO_LOCAL_INSTALL = `bun add -D @steipete/oracle@${REQUIRED_ORACLE_VERSION}`;
 
 const EMPTY_ORACLE_CAPABILITIES = {
   browserEngine: false,
@@ -98,6 +98,7 @@ function buildOracleAgentActions(input: {
   provider: BrowserProviderName;
   oraclePresent: boolean;
   oracleCapabilitiesReady: boolean;
+  oracleVersionCompatible: boolean;
   missingOracleCapabilities: string[];
   oracleSource?: string;
 }): BrowserDoctorAgentAction[] {
@@ -146,9 +147,12 @@ function buildOracleAgentActions(input: {
     }];
   }
   if (!input.oracleCapabilitiesReady) {
+    const missingRequirements = input.oracleVersionCompatible
+      ? input.missingOracleCapabilities.join(', ') || 'nodeCompatible'
+      : `exact version ${REQUIRED_ORACLE_VERSION}`;
     if (input.oracleSource === '--oracle-bin' || input.oracleSource === 'REPO_HARNESS_ORACLE_BIN') {
       return [configuredSourceAction(
-        `Configured Oracle source ${input.oracleSource} resolved but is missing required browser-mode capabilities: ${input.missingOracleCapabilities.join(', ') || 'nodeCompatible'}.`,
+        `Configured Oracle source ${input.oracleSource} resolved but does not satisfy Oracle compatibility requirements: ${missingRequirements}.`,
       )];
     }
     const repoLocal = input.oracleSource === 'node_modules/.bin';
@@ -156,7 +160,7 @@ function buildOracleAgentActions(input: {
       id: 'chatgpt-oracle-upgrade-pinned',
       status: 'needs_agent',
       requires_agent: true,
-      reason: `Resolved Oracle is missing required browser-mode capabilities: ${input.missingOracleCapabilities.join(', ') || 'nodeCompatible'}.`,
+      reason: `Resolved Oracle does not satisfy compatibility requirements: ${missingRequirements}.`,
       risk: repoLocal
         ? 'Upgrades an optional repo-local external CLI dev dependency; verify the pinned binary before running any real GPT Pro consult.'
         : 'Upgrades an optional external CLI; verify the pinned binary before running any real GPT Pro consult.',
@@ -259,7 +263,9 @@ export async function browserDoctor(
   const missingOracleCapabilities = Object.entries(oracleCapabilities)
     .filter(([, supported]) => supported !== true)
     .map(([capability]) => capability);
-  const oracleCapabilitiesReady = Boolean(oracleProbe?.nodeCompatible && missingOracleCapabilities.length === 0);
+  const oracleVersionCompatible = oracleProbe?.versionCompatible === true;
+  const oracleVersionError = oracleProbe ? validateOracleVersion(oracleProbe.version).error : undefined;
+  const oracleCapabilitiesReady = Boolean(oracleProbe?.nodeCompatible && oracleVersionCompatible && missingOracleCapabilities.length === 0);
   const nativePresent = await nativeProviderAvailable();
   const bindingResult = readBrowserBinding(repoRoot);
   const binding = bindingResult.binding;
@@ -301,6 +307,8 @@ export async function browserDoctor(
   if (provider === 'oracle') {
     if (!oraclePresent) {
       next.push('Install oracle (pin the version) or pass --oracle-bin / set REPO_HARNESS_ORACLE_BIN before non-dry-run execution.');
+    } else if (!oracleVersionCompatible) {
+      next.push(oracleVersionError?.message ?? `Resolved oracle must report exactly version ${REQUIRED_ORACLE_VERSION}.`);
     } else if (!oracleCapabilitiesReady) {
       next.push('Resolved oracle binary did not report the required browser-mode flags; upgrade oracle or check `oracle --help`.');
     } else {
@@ -323,10 +331,10 @@ export async function browserDoctor(
     }
   }
   const oracleCode = provider === 'oracle'
-    ? (!oraclePresent ? 'ORACLE_NOT_INSTALLED' : oracleCapabilitiesReady ? undefined : 'ORACLE_INCOMPATIBLE')
+    ? (!oraclePresent ? 'ORACLE_NOT_INSTALLED' : oracleCapabilitiesReady ? undefined : !oracleVersionCompatible ? 'ORACLE_VERSION_UNSUPPORTED' : 'ORACLE_INCOMPATIBLE')
     : 'NATIVE_PROVIDER_DEPRECATED';
   const oracleError = provider === 'oracle'
-    ? oracleResolution.error ?? (!oracleCapabilitiesReady && oraclePresent ? {
+    ? oracleResolution.error ?? (!oracleCapabilitiesReady && oraclePresent ? oracleVersionError ?? {
       code: 'ORACLE_INCOMPATIBLE',
       message: `oracle binary did not report required browser-mode capabilities: ${missingOracleCapabilities.join(', ')}`,
       recovery: 'Upgrade oracle or check `oracle --help`; repo-harness requires every flag it may send at runtime.',
@@ -336,6 +344,7 @@ export async function browserDoctor(
     provider,
     oraclePresent,
     oracleCapabilitiesReady,
+    oracleVersionCompatible,
     missingOracleCapabilities,
     oracleSource: oracleResolution.source,
   });
@@ -351,6 +360,8 @@ export async function browserDoctor(
       binary: oracleResolution.binary,
       resolvedFrom: oracleResolution.source,
       version: oracleProbe?.version,
+      requiredVersion: REQUIRED_ORACLE_VERSION,
+      versionCompatible: oracleVersionCompatible,
       nodeCompatible: oracleProbe?.nodeCompatible ?? false,
       capabilities: oracleCapabilities,
       optionalCapabilities: oracleOptionalCapabilities,

@@ -49,11 +49,21 @@ export interface OracleCapabilities {
 export interface OracleProbe {
   binary: string;
   version?: string;
+  /** True only when the binary reports the one Oracle release this transport supports. */
+  versionCompatible: boolean;
   /** True when the binary responded to a `--help`/`--version` probe at all. */
   nodeCompatible: boolean;
   capabilities: OracleCapabilities;
   helpText: string;
 }
+
+/**
+ * Oracle's browser command/output contract is release-specific. Keep this as the
+ * single version authority for both consultation and browser-doctor diagnostics.
+ */
+export const REQUIRED_ORACLE_VERSION = '0.14.1';
+
+const ORACLE_TERM_GRACE_MS = 5_000;
 
 export function supportsBrowserAppPreselect(helpText: string): boolean {
   return helpText.includes('--browser-app');
@@ -135,6 +145,27 @@ function detectVersion(text: string): string | undefined {
   return text.match(/\b\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?\b/)?.[0];
 }
 
+export function validateOracleVersion(version: string | undefined): {
+  compatible: boolean;
+  error?: { code: 'ORACLE_VERSION_UNSUPPORTED'; message: string; recovery: string };
+} {
+  if (version === REQUIRED_ORACLE_VERSION) return { compatible: true };
+  const detected = version ? `detected ${version}` : 'could not detect a version';
+  return {
+    compatible: false,
+    error: {
+      code: 'ORACLE_VERSION_UNSUPPORTED',
+      message: `oracle ${detected}; repo-harness requires exactly ${REQUIRED_ORACLE_VERSION}`,
+      recovery: `Install or select @steipete/oracle@${REQUIRED_ORACLE_VERSION}, then rerun browser-doctor before a real consult.`,
+    },
+  };
+}
+
+function probeOracleVersion(binary: string): string | undefined {
+  const versionRun = spawnSync(binary, ['--version'], { encoding: 'utf-8', timeout: 30_000, maxBuffer: 1024 * 1024 });
+  return detectVersion(`${versionRun.stdout ?? ''}\n${versionRun.stderr ?? ''}`);
+}
+
 /**
  * Probe an oracle binary's help/version output to confirm it actually accepts
  * the flags we send. The probe is the readiness gate — version comparison alone
@@ -144,13 +175,15 @@ export function probeOracle(binary: string): OracleProbe {
   const help = spawnSync(binary, ['--help'], { encoding: 'utf-8', timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
   const debugHelp = spawnSync(binary, ['--debug-help'], { encoding: 'utf-8', timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
   const helpText = `${help.stdout ?? ''}\n${help.stderr ?? ''}\n${debugHelp.stdout ?? ''}\n${debugHelp.stderr ?? ''}`;
-  const versionRun = spawnSync(binary, ['--version'], { encoding: 'utf-8', timeout: 30_000, maxBuffer: 1024 * 1024 });
-  const versionText = `${versionRun.stdout ?? ''}\n${versionRun.stderr ?? ''}`;
+  // `--version` is the compatibility authority. A help banner is not a valid
+  // substitute: it can omit or embed unrelated version-like strings.
+  const version = probeOracleVersion(binary);
   const ranOk = !help.error && (help.status === 0 || helpText.trim().length > 0);
   const browserThinkingTime = probeBrowserThinkingTime(binary);
   return {
     binary,
-    version: detectVersion(versionText) ?? detectVersion(helpText),
+    version,
+    versionCompatible: validateOracleVersion(version).compatible,
     nodeCompatible: ranOk,
     capabilities: detectCapabilities(helpText, browserThinkingTime),
     helpText,
@@ -294,6 +327,26 @@ interface OracleProcessResult {
   error?: Error;
 }
 
+function oracleProcessTreeSupportError(): { code: 'ORACLE_PROCESS_TREE_UNSUPPORTED'; message: string; recovery: string } | undefined {
+  if (process.platform !== 'win32') return undefined;
+  return {
+    code: 'ORACLE_PROCESS_TREE_UNSUPPORTED',
+    message: 'Oracle browser consults are unsupported on win32 because repo-harness cannot guarantee bounded process-tree termination.',
+    recovery: 'Run the Oracle consult from a POSIX host where repo-harness can supervise the dedicated Oracle process group.',
+  };
+}
+
+function signalOracleProcessGroup(pid: number | undefined, signal: NodeJS.Signals): Error | undefined {
+  if (!pid) return new Error('oracle process did not report a PID for process-group supervision');
+  try {
+    process.kill(-pid, signal);
+    return undefined;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ESRCH') return undefined;
+    return error instanceof Error ? error : new Error(String(error));
+  }
+}
+
 function runOracleProcess(
   binary: string,
   args: string[],
@@ -305,40 +358,81 @@ function runOracleProcess(
     let spawnError: Error | undefined;
     let timedOut = false;
     let killTimer: NodeJS.Timeout | undefined;
+    let settled = false;
     const child = spawn(binary, args, {
       cwd: opts.cwd,
       env: opts.env,
       stdio: ['ignore', 'pipe', 'pipe'],
+      // A fresh POSIX process group lets a timeout terminate Oracle wrappers and
+      // their descendants together instead of leaving inherited pipes open.
+      detached: true,
     });
-    const timeout = setTimeout(() => {
-      timedOut = true;
-      child.kill('SIGTERM');
-      killTimer = setTimeout(() => child.kill('SIGKILL'), 5_000);
-    }, opts.timeoutMs);
     const collect = (chunk: Buffer | string, stream: 'stdout' | 'stderr') => {
       const text = typeof chunk === 'string' ? chunk : chunk.toString('utf-8');
       if (stream === 'stdout') stdout += text;
       else stderr += text;
       process.stderr.write(text);
     };
-    child.stdout?.setEncoding('utf-8');
-    child.stderr?.setEncoding('utf-8');
-    child.stdout?.on('data', (chunk) => collect(chunk, 'stdout'));
-    child.stderr?.on('data', (chunk) => collect(chunk, 'stderr'));
-    child.on('error', (error) => {
-      spawnError = error;
-    });
-    child.on('close', (status, signal) => {
+    const stopCollecting = () => {
+      child.stdout?.removeListener('data', onStdout);
+      child.stderr?.removeListener('data', onStderr);
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+    };
+    const settle = (result: OracleProcessResult, destroyPipes = false) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timeout);
       if (killTimer) clearTimeout(killTimer);
-      resolveResult({
+      child.removeListener('error', onError);
+      child.removeListener('close', onClose);
+      if (destroyPipes) stopCollecting();
+      resolveResult(result);
+    };
+    const onStdout = (chunk: Buffer | string) => collect(chunk, 'stdout');
+    const onStderr = (chunk: Buffer | string) => collect(chunk, 'stderr');
+    const onError = (error: Error) => {
+      spawnError = error;
+      settle({ stdout, stderr, status: null, signal: null, error }, true);
+    };
+    const onClose = (status: number | null, signal: NodeJS.Signals | null) => {
+      // A wrapper can exit from TERM before a SIGTERM-resistant descendant. Keep
+      // the group watchdog alive until the bounded SIGKILL pass has completed.
+      if (timedOut) return;
+      settle({
         stdout,
         stderr,
         status,
         signal,
         error: spawnError ?? (timedOut ? new Error(`oracle timed out after ${opts.timeoutMs}ms`) : undefined),
       });
-    });
+    };
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      timedOut = true;
+      const termError = signalOracleProcessGroup(child.pid, 'SIGTERM');
+      killTimer = setTimeout(() => {
+        if (settled) return;
+        const killError = signalOracleProcessGroup(child.pid, 'SIGKILL');
+        settle({
+          stdout,
+          stderr,
+          status: null,
+          signal: 'SIGKILL',
+          error: killError
+            ? new Error(`oracle process-group forced termination failed: ${killError.message}`)
+            : termError
+              ? new Error(`oracle process-group termination failed: ${termError.message}`)
+              : new Error(`oracle timed out after ${opts.timeoutMs}ms`),
+        }, true);
+      }, ORACLE_TERM_GRACE_MS);
+    }, opts.timeoutMs);
+    child.stdout?.setEncoding('utf-8');
+    child.stderr?.setEncoding('utf-8');
+    child.stdout?.on('data', onStdout);
+    child.stderr?.on('data', onStderr);
+    child.on('error', onError);
+    child.on('close', onClose);
   });
 }
 
@@ -369,6 +463,29 @@ export async function runOracleProvider(input: BrowserConsultInput, bundle: Prom
       },
     };
   }
+  const resolvedOracleVersion = probeOracleVersion(resolution.binary);
+  const versionValidation = validateOracleVersion(resolvedOracleVersion);
+  if (!versionValidation.compatible) {
+    return {
+      status: 'failed',
+      output: versionValidation.error!.message,
+      command: [resolution.binary, ...buildOracleCommand(input)],
+      oracleBinary: resolution.binary,
+      oracleVersion: resolvedOracleVersion,
+      error: versionValidation.error,
+    };
+  }
+  const processTreeSupportError = oracleProcessTreeSupportError();
+  if (processTreeSupportError) {
+    return {
+      status: 'failed',
+      output: processTreeSupportError.message,
+      command: [resolution.binary, ...buildOracleCommand(input)],
+      oracleBinary: resolution.binary,
+      oracleVersion: resolvedOracleVersion,
+      error: processTreeSupportError,
+    };
+  }
   if (input.chatgptApp) {
     const probe = probeOracle(resolution.binary);
     if (!supportsBrowserAppPreselect(probe.helpText)) {
@@ -377,7 +494,7 @@ export async function runOracleProvider(input: BrowserConsultInput, bundle: Prom
         output: `Oracle binary does not support ChatGPT app preselection for "${input.chatgptApp}".`,
         command: [resolution.binary, ...buildOracleCommand(input)],
         oracleBinary: resolution.binary,
-        oracleVersion: probe.version,
+        oracleVersion: resolvedOracleVersion,
         error: {
           code: 'ORACLE_APP_PRESELECT_UNSUPPORTED',
           message: 'oracle binary did not report --browser-app support',
@@ -429,7 +546,7 @@ export async function runOracleProvider(input: BrowserConsultInput, bundle: Prom
     const stdout = result.stdout?.trimEnd() ?? '';
     const stderr = result.stderr?.trimEnd() ?? '';
     const log = [stdout, stderr ? `\n[stderr]\n${stderr}` : ''].filter(Boolean).join('\n').trimEnd();
-    const oracleVersion = detectVersion(`${stdout}\n${stderr}`);
+    const oracleVersion = resolvedOracleVersion;
     const conversationUrl = extractConversationUrl(log);
     const providerSessionId = extractProviderSessionId(log);
 
