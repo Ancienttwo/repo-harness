@@ -1,23 +1,23 @@
 # Workstream: R1 Provider-Neutral Agent Runtime
 
-> **Status**: planned
+> **Status**: active
 > **Capability ID**: `runtime-harness-agent-runtime-effects`
-> **Functional Block**: `src/core/engineers/provider-thread-effect.ts` (transitional V1 selector)
-> **Matched Prefix**: `src/core/engineers/provider-thread-effect.ts`
+> **Functional Block**: `src/core/engineers/agent-runtime-effect.ts`
+> **Matched Prefix**: `src/core/engineers/agent-runtime-effect.ts`
 > **Architecture Domain**: `runtime-harness`
 > **Architecture Capability**: `agent-runtime-effects`
 > **Architecture Module**: `docs/architecture/modules/runtime-harness/agent-runtime-effects.md`
 > **Source Plan**: plans/plan-20260830-1903-r1-provider-neutral-agent-runtime.md
-> **Current Slice**: architecture-accepted-awaiting-activation
+> **Current Slice**: codex-app-thread-canary-and-acceptance
 > **Last Handoff**: `.ai/harness/handoff/current.md`
 > **Architecture Request**: `docs/architecture/requests/archive/2026/runtime-harness-provider-thread-effects.md`
 
 ## Purpose
 
-Track R1 under the accepted Agent Runtime Effects boundary. The architecture
-node continues to select the current V1 source files until the approved work
-package performs the one-shot product/protocol rename; that transition is
-explicit and must not become an alias or dual authority.
+Track R1 under the accepted Agent Runtime Effects boundary. The product/protocol
+rename and terminal-only V1 retirement are implemented without an alias or dual
+runtime authority; the remaining slice is the authorized real Codex Host canary
+and semantic acceptance closeout.
 
 ## Frozen Boundary
 
@@ -40,6 +40,10 @@ explicit and must not become an alias or dual authority.
 - [x] Decision-complete work-package plan captured as Approved but not activated.
 - [x] Agent Runtime capability/component identity and dependency direction accepted.
 - [x] Durable P1/P2/P3 snapshot records the transition and non-implementation boundary.
-- [ ] Plan activated through an explicit later `plan-to-todo` invocation.
-- [ ] V2 implementation, canary and architecture fixed-point closeout complete.
-
+- [x] Plan activated through `plan-to-todo` in an isolated contract worktree.
+- [x] V2 protocol/store, closed adapters, feature policy and V1 retirement implemented.
+- [x] CLI/MCP/Engineering Overlay and Fleet/operator read models migrated to Agent Runtime terminology and protocol 3.
+- [x] Real local tmux canary passed with one bounded control reference and no message body.
+- [x] Architecture projection reached fixed point with zero pending human actions.
+- [x] Real Codex App Thread Host-control canary complete (2026-08-31, rerun after receipt-correlation hardening; thread `01a0544f-3a0a-7352-b3ad-e44dec748eab`).
+- [ ] Semantic acceptance receipt recorded on the final frozen subject.

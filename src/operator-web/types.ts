@@ -49,7 +49,7 @@ import type {
  * module's literal type, so a drift from the core constant fails typecheck
  * here rather than at runtime.
  */
-export const OPERATOR_FLEET_PAYLOAD_PROTOCOL: OperatorFleetSnapshotV1['protocol'] = 2;
+export const OPERATOR_FLEET_PAYLOAD_PROTOCOL: OperatorFleetSnapshotV1['protocol'] = 3;
 
 /**
  * The collaboration protocol the browser transport accepts, restated for the
@@ -334,6 +334,13 @@ function decodeCard(value: unknown, repositoryId: string): OperatorFleetCardV1 {
   const inbox = requireRecord(card.inbox);
   const unreadCount = requireNonNegativeInteger(inbox.unread_count);
   const addressedToCurrentClaim = requireBoolean(inbox.addressed_to_current_claim);
+  const deliveryState = requireOneOf(inbox.delivery_state, ['pending', 'delivered', 'acknowledged', 'failed', 'reconciliation_required'] as const);
+  const runtimeReachability = requireOneOf(inbox.runtime_reachability, ['reachable', 'unavailable', 'unknown'] as const);
+  const effectSha256 = requireNullableString(inbox.effect_sha256);
+  const failureClass = inbox.failure_class === null ? null : requireOneOf(inbox.failure_class, [
+    'none', 'binding_stale', 'claim_stale', 'capability_unsupported', 'adapter_unavailable',
+    'receipt_missing', 'receipt_mismatch', 'unknown',
+  ] as const);
   const snapshotConsistency = requireOneOf(card.snapshot_consistency, ['stable', 'changed_during_read'] as const);
   return Object.freeze({
     repository_id: repositoryId,
@@ -359,6 +366,10 @@ function decodeCard(value: unknown, repositoryId: string): OperatorFleetCardV1 {
     inbox: Object.freeze({
       unread_count: unreadCount,
       addressed_to_current_claim: addressedToCurrentClaim,
+      delivery_state: deliveryState,
+      runtime_reachability: runtimeReachability,
+      effect_sha256: effectSha256,
+      failure_class: failureClass,
     }),
     snapshot_consistency: snapshotConsistency,
   });

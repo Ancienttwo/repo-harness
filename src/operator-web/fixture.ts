@@ -16,6 +16,10 @@ const baseFeedback = {
 const baseInbox = {
   unread_count: 0,
   addressed_to_current_claim: false,
+  delivery_state: 'pending',
+  runtime_reachability: 'unknown',
+  effect_sha256: null,
+  failure_class: null,
 } as const;
 
 function mergeReadiness(
@@ -112,7 +116,7 @@ const stableRepositories: readonly OperatorFleetRepositoryV1[] = [
   repository('repo-harness', [
     card('repo-harness', fixtureTasks.available, 'available', {
       attention_owner: 'user',
-      inbox: { unread_count: 1, addressed_to_current_claim: false },
+      inbox: { ...baseInbox, unread_count: 1, addressed_to_current_claim: false },
     }),
     card('repo-harness', fixtureTasks.working, 'working', {
       attention_owner: 'agent',
@@ -144,13 +148,13 @@ const stableRepositories: readonly OperatorFleetRepositoryV1[] = [
       task_revision: 'r18',
       attention_owner: 'user',
       feedback: { pending_count: 2, no_progress: true, repair_actions: ['resume_same_owner', 'explicit_takeover'] },
-      inbox: { unread_count: 2, addressed_to_current_claim: true },
+      inbox: { ...baseInbox, unread_count: 2, addressed_to_current_claim: true },
     }),
   ], { access_mode: 'read_only' }),
 ];
 
 export const stableSnapshot: OperatorFleetSnapshotV1 = {
-  protocol: 2,
+  protocol: 3,
   kind: 'operator_fleet_snapshot',
   registry_revision: `sha256:${'e'.repeat(64)}`,
   sequence: 18,

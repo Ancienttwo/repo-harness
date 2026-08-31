@@ -1,11 +1,11 @@
 # Plan: R1 Provider-Neutral Agent Runtime
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260830-1903
 > **Slug**: r1-provider-neutral-agent-runtime
 > **Planning Source**: repo-harness-plan
 > **Orchestration Kind**: host-plan
-> **Source Ref**: sprint:plans/sprints/20260828-2321-collaborative-work-exchange-agent-succession.sprint.md#R1
+> **Source Ref**: sprint:plans/sprints/20260828-2321-collaborative-work-exchange-agent-succession.sprint.md#11
 > **Artifact Level**: work-package
 > **Promotion Reason**: risk_boundary
 > **Verification Boundary**: Protocol and V1 retirement fault matrix, exact receipt correlation, tmux/Codex canary, Fleet projection, full required checks, and fixed-point architecture acceptance.
@@ -19,7 +19,7 @@
 ## Agentic Routing
 - Selected route: planning
 - Routing reason: Captured from repo-harness-plan planning output.
-- Source ref: sprint:plans/sprints/20260828-2321-collaborative-work-exchange-agent-succession.sprint.md#R1
+- Source ref: sprint:plans/sprints/20260828-2321-collaborative-work-exchange-agent-succession.sprint.md#11
 - Due diligence:
   - P1 map: See captured planning output below.
   - P2 trace: See captured planning output below.

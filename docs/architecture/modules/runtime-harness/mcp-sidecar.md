@@ -1,5 +1,5 @@
 # runtime-harness/mcp-sidecar 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:9f4271efed28fe42f3cf52fb38c4c8a291576e1a59f8e9c474a03430a3a96472" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:f9849e6915ff4bd1d1b1c5954ce1e57db87e7fd3dcedd27ff37cda38e709013e" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" sourceDigest="sha256:98aca01f5972a801ccbed7b23063276724226233393bfd9d69dda2743eb9a26f" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:f77e33f1153051b1b06a584faf6bd25a8581694d6b6148650dc66c9160b0cf2c" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.mcp-sidecar`(kind `capability`)
 > **Matched Prefixes**:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`、`src/cli/chatgpt-browser/file-policy.ts`、`src/effects/repo-registry.ts`、`docs/repo-harness-chatgpt-mcp-setup.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`docs/researches/20260711-devspace-chatgpt-local-control.md`
@@ -38,7 +38,7 @@ flowchart LR
 | `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#callEngineerTool` | `sink.mcp-sidecar.engineer-principal` → `src/effects/engineers/principal.ts#resolveEngineerPrincipal`、`sink.mcp-sidecar.engineer-offers` → `src/effects/engineers/scheduling.ts#collectEngineerOffers` |
 | `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#messageSendAsEngineer` | `sink.mcp-sidecar.engineer-messages` → `src/effects/engineers/module-inbox.ts#sendModuleMessage` |
 | `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#acquireAsEngineer` | `sink.mcp-sidecar.engineer-acquire` → `src/effects/engineers/scheduling-acquire.ts#acquireScheduledEngineerTask` |
-| `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#callEngineerTool` | `sink.mcp-sidecar.provider-thread-effect-status` → `src/effects/engineers/provider-thread-effect-store.ts#readProviderThreadEffectStatus`、`sink.mcp-sidecar.interface-change` → `src/effects/engineers/interface-change-store.ts#transitionInterfaceChangeRequest` |
+| `entrypoint.mcp-sidecar.engineer-tools` | `src/cli/mcp/engineer-tools.ts#callEngineerTool` | `sink.mcp-sidecar.agent-runtime-effect-status` → `src/effects/engineers/agent-runtime-effect-store.ts#observeAgentRuntimeEffectStatus`、`sink.mcp-sidecar.interface-change` → `src/effects/engineers/interface-change-store.ts#transitionInterfaceChangeRequest` |
 | `entrypoint.mcp-sidecar.collaboration-tools` | `src/cli/mcp/collaboration-tools.ts#callCollaborationTool` | `sink.mcp-sidecar.collaboration-exchange` → `src/effects/collaboration/agent-surface.ts#collaborationExchangeView`、`sink.mcp-sidecar.collaboration-signal-post` → `src/effects/collaboration/agent-surface.ts#collaborationSignalPost`、`sink.mcp-sidecar.collaboration-handoff-adopt` → `src/effects/collaboration/agent-surface.ts#collaborationHandoffAdopt` |
 
 ### 1.3 規模信號

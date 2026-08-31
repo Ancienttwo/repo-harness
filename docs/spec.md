@@ -14,8 +14,8 @@ trace, review, and handoff.
 
 The same authority model may support persistent logical Module Engineers. The
 engineer is a repo-defined role with a reviewed SOP and repo-grounded knowledge;
-a Codex or Claude Session is only its replaceable runtime binding, while native
-Subagents remain bounded workers under one canonical task claim.
+a Codex App Thread or tmux CLI Agent is only its replaceable runtime binding,
+while native Subagents remain bounded workers under one canonical task claim.
 
 ## Primary Users
 
@@ -71,6 +71,11 @@ repos.
   journal records operation progress for explicit recovery only (never workflow
   state, never read by state resolution), and attempt receipts are liveness
   evidence that never enter effective state or `progress_token`.
+- Agent Runtime effects are provider-neutral, at-most-once control-plane effects.
+  An adapter receives only a bounded inbox-control reference after intent and
+  `effect_started` are durable; only the exact persisted Task or Module Inbox
+  receipt proves delivery, and every ambiguous outcome requires reconciliation
+  without an automatic retry.
 
 ## Workflow Surfaces
 
@@ -122,6 +127,10 @@ repos.
   Durable module knowledge remains in architecture, research, lessons,
   workstreams, and task-local notes, with any engineer memory kept as a
   rebuildable index.
+- Agent Runtime adapters are a closed set (`codex-app-thread`,
+  `tmux-cli-agent`). They cannot create endpoints, carry message bodies, execute
+  generic tmux commands, infer receipt state, or change Task, Lease,
+  Collaboration, Publication, Acceptance, or Fleet column authority.
 
 ## Human Review Expectations
 
@@ -185,10 +194,14 @@ AcceptanceReceipt field.
   canonical capability and a reviewed SOP. It is not a Session, task owner,
   Lease, or acceptance identity.
 - **Engineer binding**: The current shared, generation-fenced association between
-  a Module Engineer and one Provider Session. Its contract revision covers the
-  canonical Profile bytes, SOP bytes, and capability revision. It authorizes
+  a Module Engineer and one Agent runtime endpoint. Its contract revision covers
+  the canonical Profile bytes, SOP bytes, and capability revision. It authorizes
   only explicitly engineer-scoped runtime commands issued through a trusted
   principal boundary.
+- **Agent Runtime effect**: An immutable V2 intent and observation chain that
+  fences one persisted inbox message to one current endpoint and admits at most
+  one closed `notify_inbox` Host action. Reachability and delivery are read-model
+  facts, never scheduling or acceptance authority.
 - **Delegated worker grant**: A non-transferable child mutation permit under one
   current task claim and one exclusive worktree writer slot. It is not a second
   task Lease and cannot authorize publication or acceptance.

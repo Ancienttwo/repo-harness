@@ -23,7 +23,7 @@ function card(overrides: Partial<FleetBoardCardInputV1> = {}): FleetBoardCardInp
     merge_readiness: null,
     execution_readiness: 'execution_ready',
     feedback: { pending_count: 0, no_progress: false, repair_actions: [] },
-    inbox: { unread_count: 0, addressed_to_current_claim: false },
+    inbox: { unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, failure_class: null },
     snapshot_consistency: 'stable',
     ...overrides,
   };
@@ -55,6 +55,26 @@ describe('FleetBoardSnapshotV1 pure projection', () => {
     expect(classifyFleetBoardColumn(card({ task_state: 'done', lease_state: 'reviewing' }))).toBe('done');
   });
 
+  test('keeps runtime delivery facts out of Fleet column and execution readiness authority', () => {
+    const baseline = card();
+    const reconciled = card({
+      inbox: {
+        ...baseline.inbox,
+        delivery_state: 'reconciliation_required',
+        runtime_reachability: 'unavailable',
+        effect_sha256: `sha256:${'f'.repeat(64)}`,
+        failure_class: 'receipt_missing',
+      },
+    });
+    const projected = projectFleetBoardSnapshot({
+      registry_revision: 'sha256:registry', sequence: 1, observed_at: '2026-08-30T00:00:00.000Z',
+      repositories: [{ repository_id: 'repo-a', repo_root: '/fixtures/a', access_mode: 'read_write', status: 'ok', snapshot_consistency: 'stable', cards: [reconciled], error: null }],
+    }).repositories[0]!.cards[0]!;
+    expect(projected.column).toBe(classifyFleetBoardColumn(baseline));
+    expect(projected.execution_readiness).toBe(baseline.execution_readiness);
+    expect(projected.inbox.delivery_state).toBe('reconciliation_required');
+  });
+
   test('uses review readiness only with the lease pointer and preserves attention precedence', () => {
     const reviewing = card({
       lease_state: 'reviewing',
@@ -73,7 +93,7 @@ describe('FleetBoardSnapshotV1 pure projection', () => {
         blockers: [{ code: 'checks_pending', attention_owner: 'external' }],
       },
       feedback: { pending_count: 2, no_progress: true, repair_actions: [] },
-      inbox: { unread_count: 1, addressed_to_current_claim: true },
+      inbox: { unread_count: 1, addressed_to_current_claim: true, delivery_state: 'delivered', runtime_reachability: 'reachable', effect_sha256: `sha256:${'f'.repeat(64)}`, failure_class: null },
     });
     const result = projectFleetBoardSnapshot({
       registry_revision: 'sha256:registry', sequence: 1, observed_at: '2026-08-23T00:00:00.000Z',

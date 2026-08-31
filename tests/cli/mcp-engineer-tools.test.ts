@@ -12,9 +12,9 @@ import { bindEngineer, readEngineerBindingStatus, retireEngineer } from '../../s
 import { enrollEngineerPrincipal, revokeEngineerPrincipal } from '../../src/effects/engineers/principal-store';
 import { loadEngineerProfile } from '../../src/effects/engineers/profile-store';
 import {
-  prepareProviderThreadEffect,
-  recordProviderThreadCapability,
-} from '../../src/effects/engineers/provider-thread-effect-store';
+  prepareAgentRuntimeEffect,
+  recordAgentRuntimeCapability,
+} from '../../src/effects/engineers/agent-runtime-effect-store';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 
 const roots: string[] = [];
@@ -31,8 +31,10 @@ function fixture(): { repoRoot: string; home: string } {
   execFileSync('git', ['config', 'user.name', 'Tests'], { cwd: repoRoot });
   mkdirSync(join(repoRoot, '.archcontext/model'), { recursive: true });
   mkdirSync(join(repoRoot, 'agents'), { recursive: true });
+  mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(repoRoot, '.archcontext/model/nodes'), { recursive: true });
   cpSync(join(sourceRoot, 'agents/engineers'), join(repoRoot, 'agents/engineers'), { recursive: true });
+  writeFileSync(join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ agent_runtime: { mode: 'active', adapters: { 'codex-app-thread': { enabled: true }, 'tmux-cli-agent': { enabled: true } } } })}\n`);
   writeFileSync(join(repoRoot, 'README.md'), 'fixture\n');
   execFileSync('git', ['add', '.'], { cwd: repoRoot });
   execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: repoRoot });
@@ -125,10 +127,10 @@ function coordinationState(repoRoot: string): string[] {
   return readdirSync(root, { recursive: true }).map((entry) => String(entry)).sort();
 }
 
-/** Every byte the Provider Thread Effect store owns, so a read path that
+/** Every byte the Agent Runtime Effect store owns, so a read path that
  * creates store or lock directories, or repairs `current.json`, is visible. */
-function providerThreadEffectState(repoRoot: string): string[] {
-  const root = join(resolveGitCommonDirectory(repoRoot), 'repo-harness', 'provider-thread-effects');
+function agentRuntimeEffectState(repoRoot: string): string[] {
+  const root = join(resolveGitCommonDirectory(repoRoot), 'repo-harness', 'agent-runtime-effects');
   if (!existsSync(root)) return [];
   return readdirSync(root, { recursive: true }).map((entry) => {
     const relative = String(entry);
@@ -153,8 +155,8 @@ describe('restricted Engineer MCP tools', () => {
       'engineer_messages',
       'engineer_message_send',
       'engineer_message_ack',
-      'engineer_thread_effect_capability',
-      'engineer_thread_effect_status',
+      'engineer_runtime_effect_capability',
+      'engineer_runtime_effect_status',
       'engineer_interface_change_propose',
       'engineer_interface_change_transition',
       // C7's collaboration block. It extends the same closed inventory rather
@@ -178,7 +180,7 @@ describe('restricted Engineer MCP tools', () => {
     const current = bindEngineer(repoRoot, {
       engineer_id: engineerId,
       idempotency_key: 'bind-1',
-      provider: 'codex',
+      provider: 'codex-app-thread',
       provider_thread_id: 'thread-1',
       host_id: 'local',
       engineer_contract_revision: profile.engineer_contract_revision,
@@ -206,10 +208,10 @@ describe('restricted Engineer MCP tools', () => {
       message_id: '55555555-5555-4555-8555-555555555555',
       capability_id: 'capability.verification.evals-checks',
       target_engineer_id: engineerId,
-      scope: 'module',
-      target_binding_id: null,
-      target_binding_generation: null,
-      target_engineer_contract_revision: null,
+      scope: 'assignment',
+      target_binding_id: binding.binding_id,
+      target_binding_generation: binding.binding_generation,
+      target_engineer_contract_revision: binding.engineer_contract_revision,
       message_type: 'status_update',
       subject_ref: null,
       resource_refs: [],
@@ -222,30 +224,31 @@ describe('restricted Engineer MCP tools', () => {
         receipt: { delivery_state: 'pending' },
       },
     });
-    const capability = recordProviderThreadCapability(repoRoot, {
+    const capability = recordAgentRuntimeCapability(repoRoot, {
+      adapter_kind: 'codex-app-thread',
       host_id: 'local',
-      operations: { send: 'supported', resume: 'unverifiable', observe: 'supported', stop: 'unsupported' },
+      operations: { notify_inbox: 'supported' },
       evidence_refs: [{ ref: 'canary', sha256: `sha256:${'a'.repeat(64)}` }],
       observed_at: '2026-08-25T00:31:00.000Z',
     });
     const sentEvent = (sent.structuredContent as { event: { message_id: string } }).event;
-    const effect = prepareProviderThreadEffect({
+    const effect = prepareAgentRuntimeEffect({
       repo_root: repoRoot,
+      message_kind: 'module_message',
       engineer_id: engineerId,
       message_id: sentEvent.message_id,
       idempotency_key: 'mcp-read-only-effect',
-      operation: 'send',
       expected_binding_id: binding.binding_id,
       expected_binding_generation: binding.binding_generation,
       expected_engineer_contract_revision: binding.engineer_contract_revision,
       expected_capability_sha256: capability.capability_sha256,
       created_at: '2026-08-25T00:32:00.000Z',
     });
-    const capabilityView = await callMcpTool(context, 'engineer_thread_effect_capability', { operation: 'send' });
+    const capabilityView = await callMcpTool(context, 'engineer_runtime_effect_capability', {});
     expect(capabilityView).toMatchObject({
       structuredContent: { status: 'supported', capability: { capability_sha256: capability.capability_sha256 } },
     });
-    const effectView = await callMcpTool(context, 'engineer_thread_effect_status', { effect_id: effect.intent.effect_id });
+    const effectView = await callMcpTool(context, 'engineer_runtime_effect_status', { effect_id: effect.intent.effect_id });
     expect(effectView).toMatchObject({
       structuredContent: { intent: { effect_id: effect.intent.effect_id }, current: { state: 'intent_persisted' } },
     });
@@ -274,10 +277,10 @@ describe('restricted Engineer MCP tools', () => {
       message_id: '66666666-6666-4666-8666-666666666666',
       capability_id: 'capability.verification.evals-checks',
       target_engineer_id: engineerId,
-      scope: 'module',
-      target_binding_id: null,
-      target_binding_generation: null,
-      target_engineer_contract_revision: null,
+      scope: 'assignment',
+      target_binding_id: binding.binding_id,
+      target_binding_generation: binding.binding_generation,
+      target_engineer_contract_revision: binding.engineer_contract_revision,
       message_type: 'not_a_module_message_type',
       subject_ref: null,
       resource_refs: [],
@@ -317,14 +320,14 @@ describe('restricted Engineer MCP tools', () => {
     expect(stale).toMatchObject({ isError: true, structuredContent: { error: { code: 'engineer_principal_stale' } } });
   });
 
-  test('thread effect status is a pure read: an unknown or foreign effect_id creates no store or lock path and repairs no current.json', async () => {
+  test('runtime effect status is a pure read: an unknown or foreign effect_id creates no store or lock path and repairs no current.json', async () => {
     const { repoRoot, home } = fixture();
     process.env.REPO_HARNESS_HOME = home;
     const profile = loadEngineerProfile(repoRoot, engineerId);
     bindEngineer(repoRoot, {
       engineer_id: engineerId,
       idempotency_key: 'bind-read-only',
-      provider: 'codex',
+      provider: 'codex-app-thread',
       provider_thread_id: 'thread-read-only',
       host_id: 'local',
       engineer_contract_revision: profile.engineer_contract_revision,
@@ -340,18 +343,19 @@ describe('restricted Engineer MCP tools', () => {
     const context = { repoRoot, policy: getMcpPolicy('engineer'), engineerAuthorizationId: authorizationId };
 
     // No effect exists yet, so a read that prepared the store would leave the
-    // whole provider-thread-effects tree behind.
-    expect(providerThreadEffectState(repoRoot)).toEqual([]);
-    const unknown = await callMcpTool(context, 'engineer_thread_effect_status', { effect_id: `sha256:${'c'.repeat(64)}` });
+    // whole agent-runtime-effects tree behind.
+    expect(agentRuntimeEffectState(repoRoot)).toEqual([]);
+    const unknown = await callMcpTool(context, 'engineer_runtime_effect_status', { effect_id: `sha256:${'c'.repeat(64)}` });
     expect(unknown).toMatchObject({
       isError: true,
-      structuredContent: { error: { code: 'provider_thread_effect_not_found' } },
+      structuredContent: { error: { code: 'agent_runtime_effect_not_found' } },
     });
-    expect(providerThreadEffectState(repoRoot)).toEqual([]);
+    expect(agentRuntimeEffectState(repoRoot)).toEqual([]);
 
-    const capability = recordProviderThreadCapability(repoRoot, {
+    const capability = recordAgentRuntimeCapability(repoRoot, {
+      adapter_kind: 'codex-app-thread',
       host_id: 'local',
-      operations: { send: 'supported', resume: 'unverifiable', observe: 'supported', stop: 'unsupported' },
+      operations: { notify_inbox: 'supported' },
       evidence_refs: [{ ref: 'canary', sha256: `sha256:${'a'.repeat(64)}` }],
       observed_at: '2026-08-25T00:31:00.000Z',
     });
@@ -359,22 +363,22 @@ describe('restricted Engineer MCP tools', () => {
       message_id: '77777777-7777-4777-8777-777777777777',
       capability_id: 'capability.verification.evals-checks',
       target_engineer_id: engineerId,
-      scope: 'module',
-      target_binding_id: null,
-      target_binding_generation: null,
-      target_engineer_contract_revision: null,
+      scope: 'assignment',
+      target_binding_id: binding.binding_id,
+      target_binding_generation: binding.binding_generation,
+      target_engineer_contract_revision: binding.engineer_contract_revision,
       message_type: 'status_update',
       subject_ref: null,
       resource_refs: [],
       body: 'Effect owner for the read-only probe.',
       created_at: '2026-08-25T00:30:00.000Z',
     });
-    const effect = prepareProviderThreadEffect({
+    const effect = prepareAgentRuntimeEffect({
       repo_root: repoRoot,
+      message_kind: 'module_message',
       engineer_id: engineerId,
       message_id: (sent.structuredContent as { event: { message_id: string } }).event.message_id,
       idempotency_key: 'mcp-read-only-probe',
-      operation: 'send',
       expected_binding_id: binding.binding_id,
       expected_binding_generation: binding.binding_generation,
       expected_engineer_contract_revision: binding.engineer_contract_revision,
@@ -387,7 +391,7 @@ describe('restricted Engineer MCP tools', () => {
     bindEngineer(repoRoot, {
       engineer_id: otherEngineerId,
       idempotency_key: 'bind-read-only-other',
-      provider: 'codex',
+      provider: 'codex-app-thread',
       provider_thread_id: 'thread-read-only-other',
       host_id: 'local',
       engineer_contract_revision: otherProfile.engineer_contract_revision,
@@ -402,18 +406,18 @@ describe('restricted Engineer MCP tools', () => {
     const otherAuthorization = '88888888-8888-4888-8888-888888888888';
     enrollEngineerPrincipal({ repository_id: repoHarnessRepoIdFor(repoRoot), authorization_id: otherAuthorization, binding: otherBinding, env: process.env });
 
-    const before = providerThreadEffectState(repoRoot);
+    const before = agentRuntimeEffectState(repoRoot);
     expect(before.length).toBeGreaterThan(0);
     const foreign = await callMcpTool(
       { ...context, engineerAuthorizationId: otherAuthorization },
-      'engineer_thread_effect_status',
+      'engineer_runtime_effect_status',
       { effect_id: effect.intent.effect_id },
     );
     expect(foreign).toMatchObject({
       isError: true,
       structuredContent: { error: { code: 'engineer_principal_mismatch' } },
     });
-    expect(providerThreadEffectState(repoRoot)).toEqual(before);
+    expect(agentRuntimeEffectState(repoRoot)).toEqual(before);
   }, 30_000);
 
   test('the scheduling tools carry the ME-1A protocol: principal-scoped offers, required fences, and a stale offer that never mutates Fleet', async () => {
@@ -423,7 +427,7 @@ describe('restricted Engineer MCP tools', () => {
     bindEngineer(repoRoot, {
       engineer_id: engineerId,
       idempotency_key: 'bind-scheduling',
-      provider: 'codex',
+      provider: 'codex-app-thread',
       provider_thread_id: 'thread-scheduling',
       host_id: 'local',
       engineer_contract_revision: profile.engineer_contract_revision,

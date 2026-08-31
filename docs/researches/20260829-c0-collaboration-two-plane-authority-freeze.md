@@ -26,7 +26,7 @@ later row inherits a decided boundary instead of negotiating one.
 | `src/core/engineers/scheduling.ts` | Work Graph and Engineer offers | `WORK_GRAPH_PROTOCOL = 1`, `ENGINEER_OFFER_PROTOCOL = 1`, `WORK_GRAPH_KIND`, `ENGINEER_OFFER_KIND`, `ENGINEER_OFFERS_KIND` |
 | `src/core/state/project-board.ts` | Canonical board projection: task state, lease state, claim, offered actions; `classifyTaskOffer` reads its cards | `BOARD_PROTOCOL = 1` (no `*_KIND`; the document carries no wire envelope) |
 | `src/core/fleet/task-offer.ts` | Task offers | `TASK_OFFER_PROTOCOL = 1`, `FLEET_OFFERS_PROTOCOL = 1`, `TASK_OFFER_KIND`, `FLEET_OFFERS_KIND` |
-| `src/core/fleet/board.ts` | Fleet board read model | `FLEET_BOARD_PROTOCOL = 2`, `FLEET_BOARD_KIND` |
+| `src/core/fleet/board.ts` | Fleet board read model | `FLEET_BOARD_PROTOCOL = 3`, `FLEET_BOARD_KIND` |
 | `src/core/engineers/task-freeze.ts` | Exact bound-executor state freeze | `TASK_FREEZE_PROTOCOL = 1`, `TASK_FREEZE_KIND` |
 | `src/core/publication/publication-receipt.ts` | Publication receipt | `PUBLICATION_RECEIPT_PROTOCOL = 1`, `PUBLICATION_RECEIPT_KIND`, `PUBLICATION_CREATE_INTENT_KIND`, `PUBLICATION_PREPARE_KIND` |
 | `src/core/publication/publication-lifecycle.ts` | Publication lineage and integration observation | `PUBLICATION_LINEAGE_PROTOCOL = 1`, `PUBLICATION_INTEGRATION_OBSERVATION_PROTOCOL = 1` |
@@ -142,7 +142,7 @@ digests and is owned by the first row that writes a collaboration store (C1).
 | `src/core/engineers/scheduling.ts` | `sha256:85961c14a77f86b3c1bde42ac58ad4b7baf687d1973aa7082a2afdcdea89515a` |
 | `src/core/state/project-board.ts` | `sha256:574ff25a5ceb8c1080b6686a117a33d52826d880a59ac1397454d0545d0b66ff` |
 | `src/core/fleet/task-offer.ts` | `sha256:32b2844835e9750441705a313b556e35851b9bface391b17f8dcd9927333730c` |
-| `src/core/fleet/board.ts` | `sha256:8b1e983c926df4b48985bc966a5e75dee1be9e49156525cb82e948f0a0fb3799` |
+| `src/core/fleet/board.ts` | `sha256:a3ce75ff29d45e9e787ead76ca70f0a7a05b40ac822be7256e33b0c227a03076` |
 | `src/core/engineers/task-freeze.ts` | `sha256:73e5b1248471d54cc9ecf38f98d1aa4373d8b5b3409c7d7984a664da5c18daa0` |
 | `src/core/publication/publication-receipt.ts` | `sha256:8025a121f27266256910956ac712e10eee233af316fb3fa99ffa8df76c80bc76` |
 | `src/core/publication/publication-lifecycle.ts` | `sha256:a47f4cc1902a08ee1e24e8d2e1d684fc82c5d7b1438f5062f37918cfedb636d5` |
@@ -156,7 +156,8 @@ Every module the frozen inventory draws a constant from is required to appear in
 this table; `tests/unit/collaboration-authority-baseline.test.ts` asserts that
 membership, so the table cannot silently fall behind the inventory.
 
-Two rows have moved since this baseline was taken. In C1 commit `06999700`,
+Two earlier rows moved without changing wire authority after this baseline was
+taken. In C1 commit `06999700`,
 `src/core/engineers/delegation.ts` went from
 `sha256:1ba766c087f40263e017693ea5e5b05994813c62d015db76a55e4ae16d825523` to
 `sha256:06b447ad7477759bcbbaa893fffb011b52c43b1a05c85049383337a0482d1b1d`. The
@@ -168,6 +169,12 @@ same validator instead of a second copy. The wire shape, `DELEGATION_PROTOCOL`,
 `FROZEN_INVENTORY_SHA256` is unaffected and stays
 `sha256:6a49057e17a921e78773f358e31b487c9402c9f828f14480ef705c5ac96fcb64`.
 `tests/unit/me2a-me3b-readonly-delegation.test.ts` is the byte guard.
+
+R1 later moved a third row deliberately: `src/core/fleet/board.ts` advanced from
+protocol 2 to protocol 3 to add server-derived delivery state and runtime
+reachability. That is a real read-model authority change, so the inventory
+digest and file digest above were advanced together under the approved R1 work
+package.
 
 In C4, `src/effects/engineers/delegated-run-store.ts` went from
 `sha256:33102aaab80af4666c1cb430c963b84476ee240e10de69e6be852c8387a7ee90` to
@@ -199,9 +206,12 @@ unchanged evidence-ref bytes for a run with no contribution.
 
 The digest table is a human baseline. The machine guard is the frozen inventory
 digest in `tests/unit/collaboration-authority-baseline.test.ts`,
-`sha256:6a49057e17a921e78773f358e31b487c9402c9f828f14480ef705c5ac96fcb64`, which
-is computed from the live exported constants rather than from file bytes: it goes
-red on real authority drift and stays green through comment or refactor churn.
+`sha256:4e6d4f3388da0a21fd06895725f2540926944a38fbeaa68e02dde9c78a96f0c3`, which
+is computed from the live exported constants rather than from file bytes. The
+approved R1 provider-neutral Agent Runtime work package deliberately advanced
+the Fleet board protocol from 2 to 3 to carry delivery state and runtime
+reachability as read-only facts. The digest goes red on real authority drift and
+stays green through comment or refactor churn.
 
 The inventory is not maintained by hand against the source. Each inventoried
 module is also imported as a namespace, and the test asserts set equality between
@@ -543,7 +553,7 @@ Frozen list of what "zero authority write" means for this program.
 | Task / Claim | `ClaimActorReceipt`, Engineer principal mapping | `repo-harness/engineers/v1/claim-actors` | read only |
 | Engineer identity | module engineer profile, binding, binding event, current binding | `repo-harness/engineers/v1` | read only |
 | Task / Lease board | `BoardDocumentV1` (protocol 1) — the projection `classifyTaskOffer` derives `execution_readiness` from | canonical board read model, no store | read only, verbatim projection |
-| Fleet board | `FleetBoardSnapshot` (protocol 2) | fleet read model | read only, verbatim projection |
+| Fleet board | `FleetBoardSnapshot` (protocol 3) | fleet read model | read only, verbatim projection |
 | Lease | coordination lease, four-state machine | `repo-harness/coordination/v1` | read only |
 | Task offers | `TaskOfferV1`, `FleetOffersV1`, `EngineerOfferV1` | fleet/scheduling projections | read only, verbatim projection |
 | Task freeze | `TaskFreezeReceiptV1` | `repo-harness/engineers/v1/task-freezes` | read only; C5 may require one to exist, never writes a successor field |

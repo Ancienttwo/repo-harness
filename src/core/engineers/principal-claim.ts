@@ -16,7 +16,7 @@ const REPOSITORY_ID = /^repo_[0-9a-f]{16}$/;
 const ENGINEER_ID = /^engineer:capability\.[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*$/;
 const OPAQUE = /^[^\u0000-\u001f\u007f]{1,512}$/;
 
-export type EngineerObservedProvider = 'codex' | 'claude' | 'worker_host' | 'unknown';
+export type EngineerObservedProvider = 'codex' | 'claude' | 'worker_host' | 'unknown' | 'codex-app-thread' | 'tmux-cli-agent';
 export type EngineerPrincipalMappingState = 'active' | 'revoked';
 
 export interface EngineerPrincipalMappingV1 {
@@ -198,7 +198,7 @@ export function validateEngineerPrincipal(value: unknown): EngineerPrincipalV1 {
   const input = record(value, 'engineer principal', code);
   exact(input, ['protocol', 'kind', 'repository_id', 'engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision', 'carrier', 'auth_subject', 'provider', 'provider_thread_id'], 'engineer principal', code);
   if (input.protocol !== 1 || input.kind !== ENGINEER_PRINCIPAL_KIND || input.carrier !== 'mcp_oauth') throw new EngineerPrincipalError(code, 'engineer principal protocol, kind, or carrier is invalid');
-  if (!['codex', 'claude', 'worker_host', 'unknown'].includes(String(input.provider))) throw new EngineerPrincipalError(code, 'provider is invalid');
+  if (!['codex', 'claude', 'worker_host', 'unknown', 'codex-app-thread', 'tmux-cli-agent'].includes(String(input.provider))) throw new EngineerPrincipalError(code, 'provider is invalid');
   return Object.freeze({
     protocol: 1,
     kind: ENGINEER_PRINCIPAL_KIND,

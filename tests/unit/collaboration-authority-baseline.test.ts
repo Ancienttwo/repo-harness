@@ -361,9 +361,9 @@ const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
     evidence: 'message payload framed as untrusted data under [ModuleInboxUntrustedPeerMessage]; C0 freezes its markers and byte caps as the injection precedent, not its wire identity',
   },
   {
-    module: 'src/core/engineers/provider-thread-effect.ts',
+    module: 'src/core/engineers/agent-runtime-effect.ts',
     fails: ['C-1'],
-    evidence: 'provider/host thread-effect plane; the delegated-run store imports nothing from it, so no admission decision reads a provider thread effect',
+    evidence: 'provider/host runtime-effect plane; the delegated-run store imports nothing from it, so no admission decision reads a agent runtime effect',
   },
   {
     module: 'src/core/engineers/verified-context.ts',
@@ -409,14 +409,6 @@ const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
     evidence: 'collaboration plane (D1): additive and non-authoritative, writes no delivery store, and its records are advisory context read as untrusted data',
   },
   {
-    /**
-     * C8's browser transport view. It carries `COLLABORATION_PROTOCOL` rather
-     * than minting one, so it fails C-1 for the same reason its source does: the
-     * collaboration plane is not one of the five C0 froze. It fails C-2 more
-     * strongly than its source — every value in it is a copy of a decision the
-     * collaboration read model already made, its only reader is a human browser
-     * on loopback, and no agent reads it at all.
-     */
     module: 'src/core/operator/collaboration-snapshot.ts',
     fails: ['C-1', 'C-2'],
     evidence: 'operator transport view of the collaboration plane (D1): a redacting projection with no store, no agent reader, and no field it decides rather than copies',
@@ -424,12 +416,14 @@ const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
 ];
 
 /**
- * Frozen at `main@a490a5ef76b439228a4b3282934c29ba15090cdf`. A change here is an
- * authority change: it must be justified by the sprint row that caused it, not
- * silently re-baselined.
+ * Frozen at `main@a490a5ef76b439228a4b3282934c29ba15090cdf`, then deliberately
+ * advanced by the approved R1 provider-neutral Agent Runtime work package when
+ * FleetBoardSnapshot moved to protocol 3. A change here is an authority change:
+ * it must be justified by the work package that caused it, not silently
+ * re-baselined.
  */
 const FROZEN_INVENTORY_SHA256 =
-  'sha256:6a49057e17a921e78773f358e31b487c9402c9f828f14480ef705c5ac96fcb64';
+  'sha256:4e6d4f3388da0a21fd06895725f2540926944a38fbeaa68e02dde9c78a96f0c3';
 
 function inventoryDigest(): string {
   return `sha256:${createHash('sha256').update(JSON.stringify(AUTHORITY_INVENTORY), 'utf8').digest('hex')}`;
@@ -640,7 +634,7 @@ describe('C0 delivery-plane authority baseline', () => {
       'project-board': 1,
       'task-offer': 1,
       'fleet-offers': 1,
-      'fleet-board': 2,
+      'fleet-board': 3,
       'task-freeze-receipt': 1,
       'publication-receipt': 1,
       'publication-lineage': 1,

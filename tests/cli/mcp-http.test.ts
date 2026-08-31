@@ -1066,12 +1066,13 @@ describe('mcp http transport', () => {
         'engineer_messages',
         'engineer_message_send',
         'engineer_message_ack',
-        'engineer_thread_effect_capability',
-        'engineer_thread_effect_status',
+        'engineer_runtime_effect_capability',
+        'engineer_runtime_effect_status',
         'engineer_interface_change_propose',
         'engineer_interface_change_transition',
-        // C7's collaboration block, served over the same transport and bounded by
-        // the same authenticated principal this session already carries.
+        // C7's collaboration block. It extends the same closed inventory rather
+        // than opening a second profile, so this list stays the one place the
+        // engineer profile's whole surface is stated.
         'collaboration_exchange',
         'collaboration_threads',
         'collaboration_packet',

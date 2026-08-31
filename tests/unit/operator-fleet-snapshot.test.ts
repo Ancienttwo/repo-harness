@@ -35,7 +35,7 @@ function sourceSnapshot(): FleetBoardSnapshotV1 {
             merge_readiness: null,
             execution_readiness: 'execution_ready',
             feedback: { pending_count: 1, no_progress: false, repair_actions: [] },
-            inbox: { unread_count: 2, addressed_to_current_claim: false },
+            inbox: { unread_count: 2, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, failure_class: null },
             snapshot_consistency: 'changed_during_read',
           },
         ],

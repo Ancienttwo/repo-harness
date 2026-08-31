@@ -331,6 +331,13 @@ export function defaultPolicy(documentationProfile: string): JsonObject {
       helper_runtime_dir: "package:assets/templates/helpers",
       helper_source: "package",
     },
+    agent_runtime: {
+      mode: "off",
+      adapters: {
+        "codex-app-thread": { enabled: false },
+        "tmux-cli-agent": { enabled: false },
+      },
+    },
     operations: {
       dir: "deploy",
       private_dir: "_ops",

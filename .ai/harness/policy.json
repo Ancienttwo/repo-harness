@@ -219,6 +219,17 @@
   "collaboration": {
     "mode": "off"
   },
+  "agent_runtime": {
+    "mode": "off",
+    "adapters": {
+      "codex-app-thread": {
+        "enabled": false
+      },
+      "tmux-cli-agent": {
+        "enabled": false
+      }
+    }
+  },
   "delegation": {
     "mode": "explicit",
     "max_agents": 2,

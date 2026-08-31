@@ -49,9 +49,9 @@ source:
               symbol: "acquireScheduledEngineerTask"
         - name: "callEngineerTool"
           sinks:
-            - id: sink.mcp-sidecar.provider-thread-effect-status
-              path: "src/effects/engineers/provider-thread-effect-store.ts"
-              symbol: "readProviderThreadEffectStatus"
+            - id: sink.mcp-sidecar.agent-runtime-effect-status
+              path: "src/effects/engineers/agent-runtime-effect-store.ts"
+              symbol: "observeAgentRuntimeEffectStatus"
             - id: sink.mcp-sidecar.interface-change
               path: "src/effects/engineers/interface-change-store.ts"
               symbol: "transitionInterfaceChangeRequest"

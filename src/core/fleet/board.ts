@@ -3,15 +3,18 @@ import { createHash } from 'crypto';
 import type { TaskOfferExecutionReadiness } from './task-offer';
 import type { MergeReadinessBlockerCode, MergeReadinessV1 } from '../publication/merge-readiness';
 import type { BoardLeaseState, TaskState } from '../state/types';
+import type { AgentRuntimeFailureClass } from '../engineers/agent-runtime-effect';
 
 /** A fleet projection is its own read model; it never changes BoardColumn. */
-export const FLEET_BOARD_PROTOCOL = 2 as const;
+export const FLEET_BOARD_PROTOCOL = 3 as const;
 export const FLEET_BOARD_KIND = 'fleet_board_snapshot' as const;
 
 export type FleetBoardColumn = 'available' | 'working' | 'in_review' | 'ready_to_merge' | 'done';
 export type FleetBoardAttentionOwner = 'user' | 'agent' | 'external' | 'none';
 export type FleetBoardSnapshotConsistency = 'stable' | 'changed_during_read' | 'degraded';
 export type FleetRepositoryStatus = 'ok' | 'unreadable';
+export type RuntimeDeliveryState = 'pending' | 'delivered' | 'acknowledged' | 'failed' | 'reconciliation_required';
+export type RuntimeReachability = 'reachable' | 'unavailable' | 'unknown';
 
 export type FleetBoardErrorCode =
   | 'repo_unreadable'
@@ -32,6 +35,10 @@ export interface FleetBoardErrorV1 {
 export interface FleetBoardInboxSummaryV1 {
   readonly unread_count: number;
   readonly addressed_to_current_claim: boolean;
+  readonly delivery_state: RuntimeDeliveryState;
+  readonly runtime_reachability: RuntimeReachability;
+  readonly effect_sha256: string | null;
+  readonly failure_class: AgentRuntimeFailureClass | null;
 }
 
 export interface FleetBoardFeedbackSummaryV1 {
@@ -216,6 +223,10 @@ export function projectFleetBoardCard(repositoryId: string, input: FleetBoardCar
     inbox: Object.freeze({
       unread_count: input.inbox.unread_count,
       addressed_to_current_claim: input.inbox.addressed_to_current_claim,
+      delivery_state: input.inbox.delivery_state,
+      runtime_reachability: input.inbox.runtime_reachability,
+      effect_sha256: input.inbox.effect_sha256,
+      failure_class: input.inbox.failure_class,
     }),
     snapshot_consistency: input.snapshot_consistency,
   });

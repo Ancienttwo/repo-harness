@@ -15,12 +15,12 @@ import {
   type ModuleMessageType,
 } from '../../core/engineers/module-message';
 import {
-  ProviderThreadEffectError,
-  type ProviderThreadCapabilityStatus,
-  type ProviderThreadFailureClass,
-  type ProviderThreadOperation,
-  type ProviderThreadUsageV1,
-} from '../../core/engineers/provider-thread-effect';
+  AgentRuntimeEffectError,
+  type AgentRuntimeAdapterKind,
+  type AgentRuntimeAdapterObservationV2,
+  type AgentRuntimeCapabilityStatus,
+  type AgentRuntimeOperation,
+} from '../../core/engineers/agent-runtime-effect';
 import {
   bindEngineer,
   readEngineerBindingStatus,
@@ -52,14 +52,15 @@ import {
   sendModuleMessage,
 } from '../../effects/engineers/module-inbox';
 import {
-  ProviderThreadEffectStoreError,
-  listProviderThreadEffects,
-  observeProviderThreadEffect,
-  prepareProviderThreadEffect,
-  readProviderThreadEffectStatus,
-  recordProviderThreadCapability,
-  startProviderThreadEffect,
-} from '../../effects/engineers/provider-thread-effect-store';
+  AgentRuntimeEffectStoreError,
+  listAgentRuntimeEffects,
+  migrateProviderThreadEffectsV1,
+  observeAgentRuntimeEffect,
+  prepareAgentRuntimeEffect,
+  readAgentRuntimeEffectStatus,
+  recordAgentRuntimeCapability,
+  startAgentRuntimeEffect,
+} from '../../effects/engineers/agent-runtime-effect-store';
 import {
   createTaskFreeze,
   inspectBoundTask,
@@ -78,7 +79,7 @@ function emitError(error: unknown): void {
   const code = error instanceof EngineerProfileBindingError || error instanceof EngineerPrincipalError
     || error instanceof EngineerSchedulingError || error instanceof FleetOffersError
     || error instanceof ModuleMessageError || error instanceof ModuleInboxError
-    || error instanceof ProviderThreadEffectError || error instanceof ProviderThreadEffectStoreError
+    || error instanceof AgentRuntimeEffectError || error instanceof AgentRuntimeEffectStoreError
     || error instanceof TaskFreezeError
     || error instanceof EngineeringOverlayError || error instanceof EngineeringOverlayProjectionError
     ? error.code
@@ -157,7 +158,7 @@ export function buildEngineerCommand(): Command {
           `binding=${item.binding.support === 'available' ? item.binding.state : 'unreadable'}`,
           `claim=${item.active_claim.support === 'available' && item.active_claim.value ? item.active_claim.value.claim_id : item.active_claim.support === 'available' ? 'none' : 'unreadable'}`,
           `pending=${item.messages.support === 'available' ? item.messages.pending : 'unreadable'}`,
-          `reconcile=${item.provider_effects.support === 'available' ? item.provider_effects.reconciliation_required : 'unreadable'}`,
+          `reconcile=${item.runtime_effects.support === 'available' ? item.runtime_effects.reconciliation_required : 'unreadable'}`,
         ].join(' ')),
         ...board.organization_attention.attention.map((item) => `attention ${item.engineer_id} ${item.reason} owner=${item.owner}`),
       ];
@@ -218,7 +219,7 @@ export function buildEngineerCommand(): Command {
     .requiredOption('--engineer-id <id>', 'Exact engineer_id')
     .requiredOption('--idempotency-key <key>', 'Stable retry key')
     .requiredOption('--provider <provider>', 'Provider name')
-    .requiredOption('--provider-thread-id <id>', 'Opaque Provider Thread ID')
+    .requiredOption('--provider-thread-id <id>', 'Opaque runtime endpoint ID carried by the historical Binding field')
     .requiredOption('--host-id <id>', 'Host ID')
     .requiredOption('--expected-current-digest <digest>', 'Expected current digest or literal null')
     .requiredOption('--expected-binding-generation <n>', 'Expected binding generation')
@@ -396,25 +397,28 @@ export function buildEngineerCommand(): Command {
     }));
   engineer.addCommand(message);
 
-  const threadEffect = new Command('thread-effect')
-    .description('Journal host-owned Provider Thread effects without executing a Provider runtime');
-  threadEffect
+  const runtimeEffect = new Command('runtime-effect')
+    .description('Journal provider-neutral Agent Runtime effects; Host actions remain closed and receipt-proven');
+  runtimeEffect
     .command('capability')
+    .requiredOption('--adapter-kind <kind>', 'codex-app-thread or tmux-cli-agent')
     .requiredOption('--host-id <id>', 'Exact host ID')
-    .requiredOption('--operations-json <json>', 'Closed send/resume/observe/stop capability statuses')
+    .requiredOption('--operations-json <json>', 'Exact notify_inbox capability status')
     .requiredOption('--evidence-refs-json <json>', 'Bounded capability evidence references')
     .requiredOption('--observed-at <timestamp>', 'Stable RFC3339 observation time')
     .option('--json', 'Output JSON')
     .action((options: {
+      adapterKind: AgentRuntimeAdapterKind;
       hostId: string;
       operationsJson: string;
       evidenceRefsJson: string;
       observedAt: string;
       json?: boolean;
     }) => run(() => {
-      const observation = recordProviderThreadCapability(realpathSync(process.cwd()), {
+      const observation = recordAgentRuntimeCapability(realpathSync(process.cwd()), {
+        adapter_kind: options.adapterKind,
         host_id: options.hostId,
-        operations: jsonOption<Readonly<Record<ProviderThreadOperation, ProviderThreadCapabilityStatus>>>(
+        operations: jsonOption<Readonly<Record<AgentRuntimeOperation, AgentRuntimeCapabilityStatus>>>(
           options.operationsJson,
           'operations-json',
         ),
@@ -426,12 +430,11 @@ export function buildEngineerCommand(): Command {
       });
       emit(observation, options.json, `${observation.host_id} ${observation.capability_sha256}`);
     }));
-  threadEffect
-    .command('prepare')
+  runtimeEffect
+    .command('prepare-module')
     .requiredOption('--engineer-id <id>', 'Exact engineer_id')
     .requiredOption('--message-id <id>', 'Exact persisted ME-1C message UUID')
     .requiredOption('--idempotency-key <key>', 'Stable effect retry key')
-    .requiredOption('--operation <operation>', 'send, resume, observe, or stop')
     .requiredOption('--expected-binding-id <id>', 'Exact current Binding UUID')
     .requiredOption('--expected-binding-generation <n>', 'Exact current Binding generation')
     .requiredOption('--expected-engineer-contract-revision <digest>', 'Exact Engineer contract revision')
@@ -442,7 +445,6 @@ export function buildEngineerCommand(): Command {
       engineerId: string;
       messageId: string;
       idempotencyKey: string;
-      operation: string;
       expectedBindingId: string;
       expectedBindingGeneration: string;
       expectedEngineerContractRevision: string;
@@ -450,12 +452,12 @@ export function buildEngineerCommand(): Command {
       createdAt: string;
       json?: boolean;
     }) => run(() => {
-      const status = prepareProviderThreadEffect({
+      const status = prepareAgentRuntimeEffect({
         repo_root: realpathSync(process.cwd()),
+        message_kind: 'module_message',
         engineer_id: options.engineerId,
         message_id: options.messageId,
         idempotency_key: options.idempotencyKey,
-        operation: options.operation as ProviderThreadOperation,
         expected_binding_id: options.expectedBindingId,
         expected_binding_generation: integerOption(options.expectedBindingGeneration, 'expected-binding-generation'),
         expected_engineer_contract_revision: options.expectedEngineerContractRevision,
@@ -464,13 +466,38 @@ export function buildEngineerCommand(): Command {
       });
       emit(status, options.json, `${status.current.state} ${status.intent.effect_id}`);
     }));
-  threadEffect
+  runtimeEffect
+    .command('prepare-task')
+    .requiredOption('--task-id <digest>', 'Exact Task ID')
+    .requiredOption('--message-id <id>', 'Exact persisted Task message UUID')
+    .requiredOption('--idempotency-key <key>', 'Stable effect retry key')
+    .requiredOption('--expected-task-revision <digest>', 'Exact Task revision')
+    .requiredOption('--expected-claim-id <id>', 'Exact bound Claim UUID')
+    .requiredOption('--expected-lease-generation <n>', 'Exact bound Lease generation')
+    .requiredOption('--expected-capability-sha256 <digest>', 'Exact capability observation digest')
+    .requiredOption('--created-at <timestamp>', 'Stable RFC3339 intent creation time')
+    .option('--json', 'Output JSON')
+    .action((options: {
+      taskId: string; messageId: string; idempotencyKey: string; expectedTaskRevision: string;
+      expectedClaimId: string; expectedLeaseGeneration: string; expectedCapabilitySha256: string;
+      createdAt: string; json?: boolean;
+    }) => run(() => {
+      const status = prepareAgentRuntimeEffect({
+        repo_root: realpathSync(process.cwd()), message_kind: 'task_message', task_id: options.taskId,
+        message_id: options.messageId, idempotency_key: options.idempotencyKey,
+        expected_task_revision: options.expectedTaskRevision, expected_claim_id: options.expectedClaimId,
+        expected_lease_generation: integerOption(options.expectedLeaseGeneration, 'expected-lease-generation'),
+        expected_capability_sha256: options.expectedCapabilitySha256, created_at: options.createdAt,
+      });
+      emit(status, options.json, `${status.current.state} ${status.intent.effect_id}`);
+    }));
+  runtimeEffect
     .command('start')
     .requiredOption('--effect-id <digest>', 'Exact prepared effect ID')
     .requiredOption('--started-at <timestamp>', 'Stable RFC3339 admission time')
     .option('--json', 'Output JSON')
     .action((options: { effectId: string; startedAt: string; json?: boolean }) => run(() => {
-      const result = startProviderThreadEffect({
+      const result = startAgentRuntimeEffect({
         repo_root: realpathSync(process.cwd()),
         effect_id: options.effectId,
         started_at: options.startedAt,
@@ -479,54 +506,38 @@ export function buildEngineerCommand(): Command {
         ? `host-action ${result.action.action_sha256}`
         : `${result.current.state} no-action`);
     }));
-  threadEffect
+  runtimeEffect
     .command('observe')
     .requiredOption('--effect-id <digest>', 'Exact started effect ID')
-    .requiredOption('--state <state>', 'observed_success, observed_failure, reconciliation_required, or stopped')
-    .requiredOption('--message-event-digest <digest>', 'Exact persisted ME-1C event digest')
-    .requiredOption('--host-id <id>', 'Exact host ID')
-    .requiredOption('--provider-thread-id <id>', 'Exact Provider Thread ID')
-    .requiredOption('--provider-turn-id <id>', 'Exact Provider turn ID or null')
-    .requiredOption('--provider-user-message-id <id>', 'Exact Provider user message ID or null')
-    .requiredOption('--provider-assistant-message-id <id>', 'Exact Provider assistant message ID or null')
-    .requiredOption('--provider-effect-ref <ref>', 'Provider effect reference or null')
-    .requiredOption('--failure-class <class>', 'Closed failure class')
-    .requiredOption('--usage-json <json>', 'Provider usage object; unavailable values stay null')
+    .requiredOption('--adapter-observation-json <json>', 'Closed adapter observation; never Provider prose or pane output')
+    .option('--receipt-wait-exhausted', 'The bounded receipt observation window ended')
     .requiredOption('--observed-at <timestamp>', 'Stable RFC3339 observation time')
     .option('--json', 'Output JSON')
     .action((options: {
       effectId: string;
-      state: 'observed_success' | 'observed_failure' | 'reconciliation_required' | 'stopped';
-      messageEventDigest: string;
-      hostId: string;
-      providerThreadId: string;
-      providerTurnId: string;
-      providerUserMessageId: string;
-      providerAssistantMessageId: string;
-      providerEffectRef: string;
-      failureClass: ProviderThreadFailureClass;
-      usageJson: string;
+      adapterObservationJson: string;
+      receiptWaitExhausted?: boolean;
       observedAt: string;
       json?: boolean;
     }) => run(() => {
-      const status = observeProviderThreadEffect({
+      const status = observeAgentRuntimeEffect({
         repo_root: realpathSync(process.cwd()),
         effect_id: options.effectId,
-        state: options.state,
-        message_event_digest: options.messageEventDigest,
-        host_id: options.hostId,
-        provider_thread_id: options.providerThreadId,
-        provider_turn_id: nullableOption(options.providerTurnId, 'provider-turn-id'),
-        provider_user_message_id: nullableOption(options.providerUserMessageId, 'provider-user-message-id'),
-        provider_assistant_message_id: nullableOption(options.providerAssistantMessageId, 'provider-assistant-message-id'),
-        provider_effect_ref: nullableOption(options.providerEffectRef, 'provider-effect-ref'),
-        failure_class: options.failureClass,
-        usage: jsonOption<ProviderThreadUsageV1>(options.usageJson, 'usage-json'),
+        adapter: jsonOption<AgentRuntimeAdapterObservationV2>(options.adapterObservationJson, 'adapter-observation-json'),
+        receipt_wait_exhausted: options.receiptWaitExhausted === true,
         observed_at: options.observedAt,
       });
       emit(status, options.json, `${status.current.state} ${status.intent.effect_id}`);
     }));
-  threadEffect
+  runtimeEffect
+    .command('migrate-v1')
+    .requiredOption('--migrated-at <timestamp>', 'Stable RFC3339 migration time')
+    .option('--json', 'Output JSON')
+    .action((options: { migratedAt: string; json?: boolean }) => run(() => {
+      const result = migrateProviderThreadEffectsV1(realpathSync(process.cwd()), options.migratedAt);
+      emit(result, options.json, result ? `${result.source_tree_sha256} ${result.archive_relative_path}` : 'no-v1-store');
+    }));
+  runtimeEffect
     .command('status')
     .option('--effect-id <digest>', 'Exact effect ID')
     .option('--engineer-id <id>', 'Filter effects by exact Engineer ID')
@@ -534,15 +545,15 @@ export function buildEngineerCommand(): Command {
     .action((options: { effectId?: string; engineerId?: string; json?: boolean }) => run(() => {
       const repoRoot = realpathSync(process.cwd());
       if (options.effectId) {
-        const result = readProviderThreadEffectStatus(repoRoot, options.effectId);
+        const result = readAgentRuntimeEffectStatus(repoRoot, options.effectId);
         emit(result, options.json, `${result.current.state} ${result.intent.effect_id}`);
         return;
       }
-      const result = listProviderThreadEffects(repoRoot, options.engineerId);
+      const result = listAgentRuntimeEffects(repoRoot, options.engineerId);
       emit(result, options.json, result.map((item) =>
         `${item.current.state} ${item.intent.effect_id}`).join('\n'));
     }));
-  engineer.addCommand(threadEffect);
+  engineer.addCommand(runtimeEffect);
 
   const principal = new Command('principal').description('Manage OAuth authorization mappings to current Module Engineer Bindings');
   principal

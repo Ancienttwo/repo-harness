@@ -64,6 +64,12 @@ export interface TaskInboxListInput {
 
 export interface DeliverTaskInboxInput extends TaskInboxListInput {
   readonly delivery_channel: TaskMessageDeliveryChannel;
+  /** Required exactly when the delivery channel is one Agent Runtime effect's
+   * Host action; it is the bounded control reference that later proves this
+   * effect's delivery. Forbidden for human-facing channels. An effect
+   * delivery marks exactly its own message and never the whole hook lane. */
+  readonly delivery_ref?: string;
+  readonly message_id?: string;
   readonly delivered_at: string;
 }
 
@@ -700,6 +706,26 @@ export function listTaskInbox(input: TaskInboxListInput): TaskInboxListResult {
   });
 }
 
+/** Read one exact Task message/recipient receipt pair for runtime correlation.
+ * This adds no delivery transition and preserves Task Inbox as the authority. */
+export function readTaskMessageDelivery(input: {
+  readonly repo_root: string;
+  readonly task_id: string;
+  readonly message_id: string;
+  readonly recipient: TaskMessageRecipient;
+}): TaskInboxEventEntry {
+  const event = readEventAt(taskInboxEventPath(input.repo_root, input.task_id, input.message_id));
+  if (event.task_id !== input.task_id || event.message_id !== input.message_id) {
+    fail('task_message_invalid', 'message does not belong to the requested Task inbox');
+  }
+  const receipt = readOptionalReceipt(input.repo_root, input.task_id, input.message_id, input.recipient);
+  return Object.freeze({
+    event,
+    receipt,
+    globally_satisfied: receipt?.delivery_state === 'acknowledged',
+  });
+}
+
 /**
  * Fence the recipient, supersede stale claim messages, and durably mark
  * eligible events delivered before returning them. Hook delivery is bounded;
@@ -708,6 +734,19 @@ export function listTaskInbox(input: TaskInboxListInput): TaskInboxListResult {
 export function deliverTaskInbox(input: DeliverTaskInboxInput): TaskInboxDeliveryResult {
   const recipient = input.recipient;
   assertTaskId(input.task_id);
+  if (input.delivery_channel === 'agent_runtime_effect') {
+    if (input.delivery_ref === undefined || input.delivery_ref.length === 0) {
+      fail('task_message_invalid', 'agent_runtime_effect delivery requires its bounded control reference');
+    }
+    if (input.message_id === undefined) {
+      fail('task_message_invalid', 'agent_runtime_effect delivery requires its exact message_id');
+    }
+  } else if (input.delivery_ref !== undefined || input.message_id !== undefined) {
+    fail('task_message_invalid', 'only agent_runtime_effect delivery carries a bounded control reference');
+  }
+  if (input.delivery_channel !== 'agent_runtime_effect' && input.delivery_ref !== undefined) {
+    fail('task_message_invalid', 'only agent_runtime_effect delivery carries a bounded control reference');
+  }
   return withInboxTaskLock(input.repo_root, input.task_id, () => {
     const expectedRevision = recipientTaskRevision(input);
     const deliveries: TaskInboxDelivery[] = [];
@@ -732,6 +771,7 @@ export function deliverTaskInbox(input: DeliverTaskInboxInput): TaskInboxDeliver
         continue;
       }
       if (isGloballySatisfied(input.repo_root, input.task_id, event)) continue;
+      if (input.delivery_channel === 'agent_runtime_effect' && event.message_id !== input.message_id) continue;
       const prior = receiptFor(input.repo_root, input.task_id, event, recipient, input.delivery_channel);
       if (prior.delivery_state === 'acknowledged' || prior.delivery_state === 'superseded' || prior.delivery_state === 'delivered') continue;
       const bodyBytes = Buffer.byteLength(event.body, 'utf-8');
@@ -742,7 +782,9 @@ export function deliverTaskInbox(input: DeliverTaskInboxInput): TaskInboxDeliver
         pendingCount += 1;
         continue;
       }
-      const delivered = transitionTaskMessageDeliveryReceipt(prior, { state: 'delivered', at: input.delivered_at });
+      const delivered = transitionTaskMessageDeliveryReceipt(prior, input.delivery_channel === 'agent_runtime_effect'
+        ? { state: 'delivered', at: input.delivered_at, delivery_ref: input.delivery_ref }
+        : { state: 'delivered', at: input.delivered_at, delivery_channel: input.delivery_channel });
       writeReceipt(input.repo_root, input.task_id, delivered);
       deliveries.push({ event, receipt: delivered });
       renderedBodyBytes += bodyBytes;
