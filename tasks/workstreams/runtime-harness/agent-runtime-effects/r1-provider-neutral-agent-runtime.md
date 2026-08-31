@@ -1,6 +1,6 @@
 # Workstream: R1 Provider-Neutral Agent Runtime
 
-> **Status**: active
+> **Status**: completed
 > **Capability ID**: `runtime-harness-agent-runtime-effects`
 > **Functional Block**: `src/core/engineers/agent-runtime-effect.ts`
 > **Matched Prefix**: `src/core/engineers/agent-runtime-effect.ts`
@@ -8,7 +8,7 @@
 > **Architecture Capability**: `agent-runtime-effects`
 > **Architecture Module**: `docs/architecture/modules/runtime-harness/agent-runtime-effects.md`
 > **Source Plan**: plans/plan-20260830-1903-r1-provider-neutral-agent-runtime.md
-> **Current Slice**: codex-app-thread-canary-and-acceptance
+> **Current Slice**: completed-20260831-r1 (PR #230, squash 4f7cb37e)
 > **Last Handoff**: `.ai/harness/handoff/current.md`
 > **Architecture Request**: `docs/architecture/requests/archive/2026/runtime-harness-provider-thread-effects.md`
 
