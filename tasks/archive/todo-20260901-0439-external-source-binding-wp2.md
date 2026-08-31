@@ -1,7 +1,13 @@
+> **Archived**: 2026-09-01 04:39
+> **Related Plan**: plans/archive/plan-20260901-0205-external-source-binding-wp2.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260901-0439
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-09-01 04:35
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

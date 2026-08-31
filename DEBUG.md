@@ -65,3 +65,78 @@ ArchContext's daemon-level generic ChangeSet precondition includes the live `.ai
 - Operational recovery: replace the stale daemon with the exact package-local 0.4.5 runtime, wait for the abandoned provider lease, retry the exact dead-letter after runtime activity quiesces, and preserve fail-closed pre-write behavior. The job completed as `applied`, created receipt `sha256:c298bfb4809eb4aae1c305cbef8c08ee447ab8df0e03e892182e0f7dc809ad12`, and left pending/running/dead-letter all at zero.
 - Verification: the official 0.4.5 daemon was restarted after removing diagnostic instrumentation; package binary SHA-256 is `acf0f2d901d5b830ebb5246411e99d281813f896c8903dc3885a69c50839acc4`; strict architecture sync passes.
 - Required upstream correction: projection apply must bind its ChangeSet precondition to the projection-specific worktree digest (or otherwise exclude `.ai/harness` symmetrically) and the package-local readiness handshake must reject a daemon whose product version differs from the exact client package version. This belongs in ArchContext; repo-harness must not add a semantic fallback around an authority-owned digest.
+
+---
+
+# Debug: sealed terminal rejects Codex plugin acceptance
+
+## Observations
+
+- Reproduction: `bun scripts/classify-historical-plans.ts --verify-sealed-contract tasks/contracts/20260901-0205-external-source-binding-wp2.contract.md --verify-sealed-review tasks/reviews/20260901-0205-external-source-binding-wp2.review.md` exits 1.
+- Exact result: `contract status is Active, not Fulfilled`, with `review_recommendation=pass` and `receipt_recorded=false`.
+- The accepted review records `Disposition=external_pass`, `Reviewer=Codex`, and `Source=codex-plugin`.
+- The contract acceptance policy also names `Reviewer=Codex` and `Source=codex-plugin`.
+- `hasRecordedAcceptanceReceipt` accepts Codex only when the source is `codex-review`.
+- Environment: macOS, Bun 1.4.0, repo-harness 0.18.0, commit `e2c04899`.
+- Working boundary: recommendation parsing succeeds; the failure is confined to sealed terminal evidence classification and the still-active contract lifecycle status.
+
+## Hypotheses
+
+### H1: `hasRecordedAcceptanceReceipt` hard-codes a host-specific source instead of consulting policy (ROOT HYPOTHESIS)
+
+- Supports: the review and contract use the current Codex-host `codex-plugin` source, while the classifier hard-codes the Claude-host `codex-review` source.
+- Conflicts: contract status is independently Active, so the end-to-end command cannot isolate this limb by itself.
+- Test: evaluate `hasRecordedAcceptanceReceipt` once with current review bytes and once with only `codex-plugin` replaced by `codex-review`; false then true confirms the identity predicate mismatch.
+
+### H2: Markdown section or header parsing fails on the projected review shape
+
+- Supports: `receipt_recorded=false` can result from any missing projection field.
+- Conflicts: the projection visibly contains every required field and valid hashes/timestamp.
+- Test: evaluate the function with the source unchanged but independently inspect parsed headers through the existing tests.
+
+### H3: Active contract status forces `receipt_recorded=false`
+
+- Supports: the top-level result reports the contract lifecycle failure first.
+- Conflicts: `evaluateSealedTerminalEvidence` computes `receiptRecorded` before testing contract status, and returns that independent value.
+- Test: call `hasRecordedAcceptanceReceipt` directly without the contract.
+
+### H4: Acceptance projection and policy legitimately require different source vocabularies
+
+- Supports: historical Claude and Codex review runners used different source names.
+- Conflicts: projection and policy must use the same source for a given contract; the failure is between host routes, not between those two authorities.
+- Test: compare the classifier predicate with `parseAcceptancePolicy` and AcceptanceReceipt validation constants.
+
+## Experiments
+
+### E1: One-variable in-memory source substitution
+
+- Change: no repository files; replace only the review projection source string in memory.
+- Confirms H1 if current bytes return false and substituted bytes return true.
+- Rejects H1 if both results are equal.
+- Result: `{"current":false,"substituted":true}`.
+- Conclusion: H1 confirmed. H2 and H3 do not explain the direct function result; H4 conflicts with the canonical protocol-2 policy documented in `docs/reference-configs/sprint-contracts.md`.
+
+### E2: External review falsifies a global literal replacement
+
+- Change under review: replace `codex-review` with `codex-plugin` in the identity predicate.
+- Result: the official Codex plugin review identified that protocol 2 intentionally uses `codex-review` on Claude hosts and `codex-plugin` on Codex hosts.
+- Confirmation: `scripts/plan-to-todo.sh` emits both policies according to host, `parseAcceptancePolicy` accepts both, and `acceptancePolicySource` returns the contract-frozen source.
+- Conclusion: the original root-cause boundary was correct but the first fix was too narrow. The missing invariant is exact receipt-to-policy binding, not global retirement of `codex-review`.
+
+## Root Cause
+
+`scripts/classify-historical-plans.ts:hasRecordedAcceptanceReceipt` hard-coded the Claude-host `codex-review` source without reading the contract's frozen acceptance policy. Codex-host contracts therefore rejected valid `codex-plugin` receipts; globally replacing the literal would produce the symmetric failure for Claude-host contracts.
+
+## Fix
+
+- Reuse the authoritative acceptance-policy parser and require external reviewer/source identity to match that exact policy.
+- Permit a user-waiver projection only when the same policy explicitly allows waiver.
+- Add regression coverage for both protocol-2 host sources, cross-policy mismatches, invalid policy, and forbidden waiver.
+- Promote the already accepted WP2 contract lifecycle to `Fulfilled`, rerun sealed-terminal classification, and archive the workflow after the classifier fix lands.
+
+## Verification
+
+- The regression guard failed on the unfixed classifier with `PRE_FIX_EXIT=1` and is preserved at `tasks/notes/20260901-0432-archive-codex-plugin-source.pre-fix.log`.
+- After policy binding in runtime and template helpers, both focused classifier and archive evidence suites passed: 14 tests, 177 expectations.
+- The exact WP2 sealed-terminal command returned `ok=true`, `contract_status=Fulfilled`, `review_recommendation=pass`, and `receipt_recorded=true`.
+- The working-tree archive helper moved the WP2 plan, contract, review, notes, and todo projection into their canonical archive surfaces.

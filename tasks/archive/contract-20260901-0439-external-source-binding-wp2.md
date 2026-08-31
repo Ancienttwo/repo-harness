@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-01 04:39
+> **Related Plan**: plans/archive/plan-20260901-0205-external-source-binding-wp2.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260901-0439
+> **Archive Projection V1**: `plans/plan-20260901-0205-external-source-binding-wp2.md` => `plans/archive/plan-20260901-0205-external-source-binding-wp2.md`
+> **Archive Projection V1**: `tasks/notes/20260901-0205-external-source-binding-wp2.notes.md` => `tasks/archive/notes-20260901-0439-external-source-binding-wp2.md`
+> **Archive Projection V1**: `tasks/contracts/20260901-0205-external-source-binding-wp2.contract.md` => `tasks/archive/contract-20260901-0439-external-source-binding-wp2.md`
+> **Archive Projection V1**: `tasks/reviews/20260901-0205-external-source-binding-wp2.review.md` => `tasks/archive/review-20260901-0439-external-source-binding-wp2.md`
+
 # Task Contract: external-source-binding-wp2
 
-> **Status**: Active
-> **Plan**: plans/plan-20260901-0205-external-source-binding-wp2.md
+> **Status**: Fulfilled
+> **Plan**: plans/archive/plan-20260901-0205-external-source-binding-wp2.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
-> **Last Updated**: 2026-09-01 02:05
-> **Review File**: `tasks/reviews/20260901-0205-external-source-binding-wp2.review.md`
-> **Notes File**: `tasks/notes/20260901-0205-external-source-binding-wp2.notes.md`
+> **Last Updated**: 2026-09-01 04:43
+> **Review File**: `tasks/archive/review-20260901-0439-external-source-binding-wp2.md`
+> **Notes File**: `tasks/archive/notes-20260901-0439-external-source-binding-wp2.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -56,10 +66,10 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260901-0205-external-source-binding-wp2.md`
+- Source plan: `plans/archive/plan-20260901-0205-external-source-binding-wp2.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260901-0205-external-source-binding-wp2.review.md`
-- Notes file: `tasks/notes/20260901-0205-external-source-binding-wp2.notes.md`
+- Review file: `tasks/archive/review-20260901-0439-external-source-binding-wp2.md`
+- Notes file: `tasks/archive/notes-20260901-0439-external-source-binding-wp2.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -84,9 +94,9 @@ allowed_paths:
   - docs/spec.md
   - plans/
   - tasks/todos.md
-  - tasks/contracts/20260901-0205-external-source-binding-wp2.contract.md
-  - tasks/reviews/20260901-0205-external-source-binding-wp2.review.md
-  - tasks/notes/20260901-0205-external-source-binding-wp2.notes.md
+  - tasks/archive/contract-20260901-0439-external-source-binding-wp2.md
+  - tasks/archive/review-20260901-0439-external-source-binding-wp2.md
+  - tasks/archive/notes-20260901-0439-external-source-binding-wp2.md
   - tasks/workstreams/runtime-harness/external-source-intake/external-source-intake-p0.md
   - .ai/context/capabilities.json
   - .archcontext/
@@ -146,7 +156,7 @@ exit_criteria:
     - docs/spec.md
   artifacts_exist:
     - .ai/harness/checks/latest.json
-    - tasks/notes/20260901-0205-external-source-binding-wp2.notes.md
+    - tasks/archive/notes-20260901-0439-external-source-binding-wp2.md
   tests_pass:
     - path: tests/unit/external-source-binding-wp2.test.ts
     - path: tests/effects/external-source-binding-store.test.ts

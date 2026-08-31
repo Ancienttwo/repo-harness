@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-01 04:39
+> **Related Plan**: plans/archive/plan-20260901-0205-external-source-binding-wp2.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260901-0439
+> **Archive Projection V1**: `plans/plan-20260901-0205-external-source-binding-wp2.md` => `plans/archive/plan-20260901-0205-external-source-binding-wp2.md`
+> **Archive Projection V1**: `tasks/notes/20260901-0205-external-source-binding-wp2.notes.md` => `tasks/archive/notes-20260901-0439-external-source-binding-wp2.md`
+> **Archive Projection V1**: `tasks/contracts/20260901-0205-external-source-binding-wp2.contract.md` => `tasks/archive/contract-20260901-0439-external-source-binding-wp2.md`
+> **Archive Projection V1**: `tasks/reviews/20260901-0205-external-source-binding-wp2.review.md` => `tasks/archive/review-20260901-0439-external-source-binding-wp2.md`
+
 # Implementation Notes: external-source-binding-wp2
 
 > **Status**: Active
-> **Plan**: plans/plan-20260901-0205-external-source-binding-wp2.md
-> **Contract**: tasks/contracts/20260901-0205-external-source-binding-wp2.contract.md
-> **Review**: tasks/reviews/20260901-0205-external-source-binding-wp2.review.md
+> **Plan**: plans/archive/plan-20260901-0205-external-source-binding-wp2.md
+> **Contract**: tasks/archive/contract-20260901-0439-external-source-binding-wp2.md
+> **Review**: tasks/archive/review-20260901-0439-external-source-binding-wp2.md
 > **Last Updated**: 2026-09-01 02:05
 > **Lifecycle**: notes
 

@@ -10,7 +10,22 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-function receiptReview(recommendation = 'pass'): string {
+function acceptanceContract(source: 'codex-review' | 'codex-plugin' = 'codex-plugin', waiver: 'allowed' | 'forbidden' = 'allowed'): string {
+  return [
+    '# Contract',
+    '',
+    '> **Status**: Fulfilled',
+    '',
+    '## Acceptance Policy',
+    '',
+    '```json',
+    JSON.stringify({ protocol: 2, reviewer: 'Codex', source, user_waiver: waiver }),
+    '```',
+    '',
+  ].join('\n');
+}
+
+function receiptReview(recommendation = 'pass', source = 'codex-plugin', reviewer = 'Codex', disposition = 'external_pass'): string {
   return [
     '# Review',
     '',
@@ -18,9 +33,9 @@ function receiptReview(recommendation = 'pass'): string {
     '',
     '## Acceptance Receipt Projection',
     '',
-    '> **Disposition**: external_pass',
-    '> **Reviewer**: Codex',
-    '> **Source**: codex-review',
+    `> **Disposition**: ${disposition}`,
+    `> **Reviewer**: ${reviewer}`,
+    `> **Source**: ${source}`,
     '> **Actor**: not-applicable',
     `> **Reviewed Subject SHA256**: sha256:${'a'.repeat(64)}`,
     '> **Reviewed Subject Scope**: normalized-final-content',
@@ -34,7 +49,7 @@ function receiptReview(recommendation = 'pass'): string {
   ].join('\n');
 }
 
-function writeFamily(root: string, stem: string, contractStatus: string, reviewText: string): void {
+function writeFamily(root: string, stem: string, contractStatus: string, reviewText: string, source: 'codex-review' | 'codex-plugin' = 'codex-plugin'): void {
   const plan = `plans/plan-${stem}.md`;
   const contract = `tasks/contracts/${stem}.contract.md`;
   const review = `tasks/reviews/${stem}.review.md`;
@@ -45,13 +60,10 @@ function writeFamily(root: string, stem: string, contractStatus: string, reviewT
     `> **Task Contract**: \`${contract}\``,
     '',
   ].join('\n'));
-  writeFileSync(join(root, contract), [
-    `# Contract: ${stem}`,
-    '',
+  writeFileSync(join(root, contract), acceptanceContract(source).replace('> **Status**: Fulfilled', [
     `> **Status**: ${contractStatus}`,
     `> **Review File**: \`${review}\``,
-    '',
-  ].join('\n'));
+  ].join('\n')));
   writeFileSync(join(root, review), reviewText);
 }
 
@@ -83,11 +95,21 @@ describe('historical plan sealed-terminal classifier', () => {
     ]);
   });
 
-  test('rejects placeholder, mismatched, and legacy receipt prose', () => {
-    expect(hasRecordedAcceptanceReceipt(receiptReview())).toBe(true);
-    expect(hasRecordedAcceptanceReceipt(receiptReview().replace('codex-review', 'claude-review'))).toBe(false);
-    expect(hasRecordedAcceptanceReceipt(receiptReview().replace(/sha256:[a-f0-9]{64}/, 'pending'))).toBe(false);
-    expect(hasRecordedAcceptanceReceipt(receiptReview().replace('- Summary: accepted', '- Summary: pending'))).toBe(false);
-    expect(hasRecordedAcceptanceReceipt('# Review\n\n> **Recommendation**: pass\n\n## External Acceptance Advice\n\n> **External Acceptance**: pass\n')).toBe(false);
+  test('binds external receipt identity to the frozen host policy', () => {
+    expect(hasRecordedAcceptanceReceipt(acceptanceContract('codex-plugin'), receiptReview())).toBe(true);
+    expect(hasRecordedAcceptanceReceipt(acceptanceContract('codex-review'), receiptReview('pass', 'codex-review'))).toBe(true);
+    expect(hasRecordedAcceptanceReceipt(acceptanceContract('codex-plugin'), receiptReview('pass', 'codex-review'))).toBe(false);
+    expect(hasRecordedAcceptanceReceipt(acceptanceContract('codex-review'), receiptReview())).toBe(false);
+    expect(hasRecordedAcceptanceReceipt(acceptanceContract('codex-plugin'), receiptReview('pass', 'claude-review'))).toBe(false);
+  });
+
+  test('rejects placeholder, forbidden waiver, invalid policy, and legacy receipt prose', () => {
+    const contract = acceptanceContract();
+    expect(hasRecordedAcceptanceReceipt(contract, receiptReview().replace(/sha256:[a-f0-9]{64}/, 'pending'))).toBe(false);
+    expect(hasRecordedAcceptanceReceipt(contract, receiptReview().replace('- Summary: accepted', '- Summary: pending'))).toBe(false);
+    expect(hasRecordedAcceptanceReceipt(acceptanceContract('codex-plugin', 'allowed'), receiptReview('pass', 'user-waiver', 'User', 'user_waiver'))).toBe(true);
+    expect(hasRecordedAcceptanceReceipt(acceptanceContract('codex-plugin', 'forbidden'), receiptReview('pass', 'user-waiver', 'User', 'user_waiver'))).toBe(false);
+    expect(hasRecordedAcceptanceReceipt('# Contract\n', receiptReview())).toBe(false);
+    expect(hasRecordedAcceptanceReceipt(contract, '# Review\n\n> **Recommendation**: pass\n\n## External Acceptance Advice\n\n> **External Acceptance**: pass\n')).toBe(false);
   });
 });

@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-01 04:39
+> **Related Plan**: plans/archive/plan-20260901-0205-external-source-binding-wp2.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260901-0439
+> **Archive Projection V1**: `plans/plan-20260901-0205-external-source-binding-wp2.md` => `plans/archive/plan-20260901-0205-external-source-binding-wp2.md`
+> **Archive Projection V1**: `tasks/notes/20260901-0205-external-source-binding-wp2.notes.md` => `tasks/archive/notes-20260901-0439-external-source-binding-wp2.md`
+> **Archive Projection V1**: `tasks/contracts/20260901-0205-external-source-binding-wp2.contract.md` => `tasks/archive/contract-20260901-0439-external-source-binding-wp2.md`
+> **Archive Projection V1**: `tasks/reviews/20260901-0205-external-source-binding-wp2.review.md` => `tasks/archive/review-20260901-0439-external-source-binding-wp2.md`
+
 # Task Review: external-source-binding-wp2
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260901-0205-external-source-binding-wp2.md
-> **Contract**: tasks/contracts/20260901-0205-external-source-binding-wp2.contract.md
-> **Notes File**: tasks/notes/20260901-0205-external-source-binding-wp2.notes.md
+> **Plan**: plans/archive/plan-20260901-0205-external-source-binding-wp2.md
+> **Contract**: tasks/archive/contract-20260901-0439-external-source-binding-wp2.md
+> **Notes File**: tasks/archive/notes-20260901-0439-external-source-binding-wp2.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-01 02:05
 > **Recommendation**: pass
@@ -26,7 +36,7 @@
 ## Mode Evidence
 
 - Selected route: parent-agent planning with `agent-harness-construction` schema-first contract design.
-- P1/P2/P3 evidence: plan `plans/plan-20260901-0205-external-source-binding-wp2.md`, architecture module `docs/architecture/modules/runtime-harness/external-source-intake.md`, and CLI E2E `tests/cli/external-source-binding.test.ts`.
+- P1/P2/P3 evidence: plan `plans/archive/plan-20260901-0205-external-source-binding-wp2.md`, architecture module `docs/architecture/modules/runtime-harness/external-source-intake.md`, and CLI E2E `tests/cli/external-source-binding.test.ts`.
 - Root cause or plan evidence: approved work-package plan and contract; this is not a bugfix.
 
 ## Verification Evidence
@@ -35,7 +45,7 @@
 - Commands run: `bun test --timeout 60000`; `bun run check:type`; `bash scripts/check-deploy-sql-order.sh`; `bash scripts/check-architecture-sync.sh`; `bash scripts/check-task-sync.sh`; `repo-harness run check-task-workflow --strict`; `bun scripts/inspect-project-state.ts --repo . --format text`; `bun src/cli/index.ts init --repo . --dry-run`.
 - Manual checks: diff inspected for strict create-once conflict behavior, deterministic retry bytes, provider-content framing, and absence of TaskOffer/Claim/Lease/WorkEnvelope writes.
 - Supporting artifacts: focused protocol/store/effect/CLI tests and ArchContext fixed-point projection.
-- Implementation notes reviewed: `tasks/notes/20260901-0205-external-source-binding-wp2.notes.md`.
+- Implementation notes reviewed: `tasks/archive/notes-20260901-0439-external-source-binding-wp2.md`.
 - Run snapshot: `.ai/harness/runs/` and `.ai/harness/checks/latest.json` after acceptance preparation.
 
 ## Acceptance Receipt Projection
