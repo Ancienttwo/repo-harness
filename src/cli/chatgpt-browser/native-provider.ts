@@ -1,6 +1,5 @@
 import { spawnSync } from 'child_process';
-import { existsSync } from 'fs';
-import { createServer } from 'net';
+import { existsSync, readFileSync } from 'fs';
 import { homedir } from 'os';
 import { join, resolve } from 'path';
 import { pathToFileURL } from 'url';
@@ -44,7 +43,11 @@ const SEND_BUTTON_SELECTORS = [
 ];
 
 const ASSISTANT_SELECTOR = '[data-message-author-role="assistant"]';
-const STABLE_CAPTURE_MS = 5000;
+const STOP_GENERATING_SELECTORS = [
+  '[data-testid="stop-button"]',
+  'button[aria-label*="Stop generating"]',
+];
+const DEVTOOLS_ACTIVE_PORT_FILE = 'DevToolsActivePort';
 
 const CHANNEL_APPS: Record<NativeBrowserChannel, { appName: string; executable: string }> = {
   chrome: {
@@ -65,7 +68,7 @@ const CHANNEL_APPS: Record<NativeBrowserChannel, { appName: string; executable: 
   },
 };
 
-interface CdpConnection {
+export interface CdpConnection {
   send(method: string, params?: Record<string, unknown>, sessionId?: string): Promise<any>;
   close(): void;
 }
@@ -149,25 +152,28 @@ function normalizeAssistantText(raw: string | null | undefined): string {
   return text;
 }
 
-async function getFreePort(): Promise<number> {
-  return await new Promise((resolvePort, reject) => {
-    const server = createServer();
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      server.close(() => {
-        if (typeof address === 'object' && address) resolvePort(address.port);
-        else reject(new Error('failed to allocate local CDP port'));
-      });
-    });
-    server.on('error', reject);
-  });
+function readDevToolsActivePort(profileDir: string): { port: number; contents: string } | null {
+  try {
+    const contents = readFileSync(join(profileDir, DEVTOOLS_ACTIVE_PORT_FILE), 'utf-8');
+    const [portLine] = contents.split(/\r?\n/u);
+    const port = Number(portLine);
+    if (!Number.isInteger(port) || port < 1 || port > 65_535) return null;
+    return { port, contents };
+  } catch (_error) {
+    return null;
+  }
 }
 
-async function waitForCdp(port: number, timeoutMs: number): Promise<{ webSocketDebuggerUrl: string; Browser?: string }> {
+async function waitForCdp(profileDir: string, activePortBeforeLaunch: string | undefined, timeoutMs: number): Promise<{ webSocketDebuggerUrl: string; Browser?: string }> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    const activePort = readDevToolsActivePort(profileDir);
+    if (!activePort || activePort.contents === activePortBeforeLaunch) {
+      await Bun.sleep(250);
+      continue;
+    }
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/json/version`);
+      const response = await fetch(`http://127.0.0.1:${activePort.port}/json/version`);
       if (response.ok) {
         const body = await response.json() as { webSocketDebuggerUrl?: string; Browser?: string };
         if (body.webSocketDebuggerUrl) return { webSocketDebuggerUrl: body.webSocketDebuggerUrl, Browser: body.Browser };
@@ -177,35 +183,68 @@ async function waitForCdp(port: number, timeoutMs: number): Promise<{ webSocketD
     }
     await Bun.sleep(250);
   }
-  throw new Error(`Chrome CDP endpoint did not become ready on port ${port}`);
+  throw new Error(`Chrome CDP endpoint did not become ready for profile ${profileDir}`);
 }
 
-function connectCdp(webSocketUrl: string): Promise<CdpConnection> {
+export function createCdpClient(webSocketUrl: string): Promise<CdpConnection> {
   return new Promise((resolveConnection, reject) => {
     const ws = new WebSocket(webSocketUrl);
     let nextId = 1;
     const pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void; timer: Timer }>();
+    let opened = false;
+    let closed = false;
+    const closedError = new Error('Chrome CDP websocket closed');
+
+    const teardown = () => {
+      if (closed) return;
+      closed = true;
+      for (const waiting of pending.values()) {
+        clearTimeout(waiting.timer);
+        waiting.reject(closedError);
+      }
+      pending.clear();
+    };
 
     ws.onopen = () => {
+      opened = true;
       resolveConnection({
         send(method: string, params: Record<string, unknown> = {}, sessionId?: string): Promise<any> {
+          if (closed) return Promise.reject(closedError);
           const id = nextId++;
           const payload = { id, method, params, ...(sessionId ? { sessionId } : {}) };
-          ws.send(JSON.stringify(payload));
           return new Promise((resolve, rejectSend) => {
             const timer = setTimeout(() => {
               pending.delete(id);
               rejectSend(new Error(`${method} timed out`));
             }, 30_000);
             pending.set(id, { resolve, reject: rejectSend, timer });
+            try {
+              ws.send(JSON.stringify(payload));
+            } catch (_error) {
+              teardown();
+            }
           });
         },
         close(): void {
+          teardown();
           ws.close();
         },
       });
     };
-    ws.onerror = () => reject(new Error(`failed to connect to Chrome CDP websocket: ${webSocketUrl}`));
+    ws.onerror = () => {
+      if (!opened) {
+        reject(new Error(`failed to connect to Chrome CDP websocket: ${webSocketUrl}`));
+        return;
+      }
+      teardown();
+    };
+    ws.onclose = () => {
+      if (!opened) {
+        reject(new Error(`failed to connect to Chrome CDP websocket: ${webSocketUrl}`));
+        return;
+      }
+      teardown();
+    };
     ws.onmessage = (event) => {
       const message = JSON.parse(String(event.data)) as { id?: number; result?: unknown; error?: { message?: string } };
       if (!message.id || !pending.has(message.id)) return;
@@ -237,14 +276,14 @@ export function openNativeBrowserPage(channel: NativeBrowserChannel, profileDir:
   }
 }
 
-async function launchChrome(channel: NativeBrowserChannel, profileDir: string, port: number, headless: boolean, url = 'about:blank', profileDirectory?: string): Promise<void> {
+async function launchChrome(channel: NativeBrowserChannel, profileDir: string, headless: boolean, url = 'about:blank', profileDirectory?: string): Promise<void> {
   const app = CHANNEL_APPS[channel];
   if (!existsSync(app.executable)) throw new Error(`${app.appName} is not installed at ${app.executable}`);
   const args = [
     '-na',
     app.appName,
     '--args',
-    `--remote-debugging-port=${port}`,
+    '--remote-debugging-port=0',
     '--remote-allow-origins=*',
     ...chromeProfileArgs(profileDir, profileDirectory),
     '--no-first-run',
@@ -320,10 +359,10 @@ export async function checkNativeChatgptSession(input: {
     };
   }
   try {
-    const port = await getFreePort();
-    await launchChrome(channel, profileDir, port, input.headless === true, 'about:blank', profileDirectory);
-    const version = await waitForCdp(port, Math.min(timeoutMs, 30_000));
-    connection = await connectCdp(version.webSocketDebuggerUrl);
+    const activePortBeforeLaunch = readDevToolsActivePort(profileDir)?.contents;
+    await launchChrome(channel, profileDir, input.headless === true, 'about:blank', profileDirectory);
+    const version = await waitForCdp(profileDir, activePortBeforeLaunch, Math.min(timeoutMs, 30_000));
+    connection = await createCdpClient(version.webSocketDebuggerUrl);
     const target = await connection.send('Target.createTarget', { url: 'about:blank' });
     const attached = await connection.send('Target.attachToTarget', { targetId: target.targetId, flatten: true });
     sessionId = attached.sessionId;
@@ -398,28 +437,43 @@ async function submitPrompt(connection: CdpConnection, sessionId: string, render
   await connection.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }, sessionId);
 }
 
-async function waitForStableAssistantText(connection: CdpConnection, sessionId: string, timeoutMs: number): Promise<{ text: string; stable: boolean }> {
+async function assistantMessageCount(connection: CdpConnection, sessionId: string): Promise<number> {
+  const result = await evaluate(connection, sessionId, `
+    return document.querySelectorAll(${JSON.stringify(ASSISTANT_SELECTOR)}).length;
+  `);
+  return typeof result === 'number' && Number.isInteger(result) && result >= 0 ? result : 0;
+}
+
+/**
+ * ChatGPT's visible stop-generation control is the completion authority.  Text
+ * alone is deliberately insufficient: a temporarily paused stream can resume.
+ */
+export async function waitForVerifiedAssistantText(
+  connection: CdpConnection,
+  sessionId: string,
+  assistantIndex: number,
+  timeoutMs: number,
+): Promise<{ text: string; completed: boolean }> {
   const deadline = Date.now() + timeoutMs;
   let latest = '';
-  let stableSince = 0;
+  const stopSelectors = JSON.stringify(STOP_GENERATING_SELECTORS);
   while (Date.now() < deadline) {
     const result = await evaluate(connection, sessionId, `
-    const nodes = [...document.querySelectorAll(${JSON.stringify(ASSISTANT_SELECTOR)})];
-    const raw = nodes.at(-1)?.innerText || '';
-    return { text: raw, url: location.href };
+    const node = [...document.querySelectorAll(${JSON.stringify(ASSISTANT_SELECTOR)})][${assistantIndex}];
+    const streaming = ${stopSelectors}.some((selector) => {
+      const element = document.querySelector(selector);
+      return element && element.getClientRects().length > 0;
+    });
+    return { text: node?.innerText || '', streaming };
   `);
     const text = normalizeAssistantText(result?.text);
-    if (text) {
-      if (text !== latest) {
-        latest = text;
-        stableSince = Date.now();
-      } else if (Date.now() - stableSince >= STABLE_CAPTURE_MS) {
-        return { text, stable: true };
-      }
+    if (text) latest = text;
+    if (text && result?.streaming === false) {
+      return { text, completed: true };
     }
     await Bun.sleep(500);
   }
-  return { text: latest, stable: false };
+  return { text: latest, completed: false };
 }
 
 export async function runNativeProvider(input: BrowserConsultInput, bundle: PromptBundle): Promise<NativeProviderResult> {
@@ -460,10 +514,10 @@ export async function runNativeProvider(input: BrowserConsultInput, bundle: Prom
     };
   }
   try {
-    const port = await getFreePort();
-    await launchChrome(channel, profileDir, port, input.headless === true, 'about:blank', profileDirectory);
-    const version = await waitForCdp(port, Math.min(timeoutMs, 30_000));
-    connection = await connectCdp(version.webSocketDebuggerUrl);
+    const activePortBeforeLaunch = readDevToolsActivePort(profileDir)?.contents;
+    await launchChrome(channel, profileDir, input.headless === true, 'about:blank', profileDirectory);
+    const version = await waitForCdp(profileDir, activePortBeforeLaunch, Math.min(timeoutMs, 30_000));
+    connection = await createCdpClient(version.webSocketDebuggerUrl);
     const target = await connection.send('Target.createTarget', { url: 'about:blank' });
     const attached = await connection.send('Target.attachToTarget', { targetId: target.targetId, flatten: true });
     sessionId = attached.sessionId;
@@ -492,8 +546,9 @@ export async function runNativeProvider(input: BrowserConsultInput, bundle: Prom
       };
     }
 
+    const existingAssistantMessages = await assistantMessageCount(connection, sessionId!);
     await submitPrompt(connection, sessionId!, bundle.rendered);
-    const capture = await waitForStableAssistantText(connection, sessionId!, timeoutMs);
+    const capture = await waitForVerifiedAssistantText(connection, sessionId!, existingAssistantMessages, timeoutMs);
     const url = await currentUrl(connection, sessionId!);
     if (!capture.text) {
       return {
@@ -511,18 +566,18 @@ export async function runNativeProvider(input: BrowserConsultInput, bundle: Prom
         },
       };
     }
-    if (!capture.stable) {
+    if (!capture.completed) {
       return {
         status: 'incomplete_capture',
         output: [
           capture.text,
           '',
-          '[repo-harness native provider warning: assistant text was captured but did not remain stable before timeout.]',
+          '[repo-harness native provider warning: assistant text was captured but ChatGPT completion could not be verified before timeout.]',
         ].join('\n'),
         conversationUrl: conversationUrl(url),
         error: {
           code: 'ASSISTANT_CAPTURE_INCOMPLETE',
-          message: 'assistant text did not stabilize before timeout',
+          message: 'assistant completion could not be verified before timeout',
           recovery: 'Inspect the kept browser session or rerun with a longer --timeout-ms.',
         },
       };

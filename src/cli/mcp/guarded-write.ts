@@ -5,14 +5,16 @@
  * resolved `absolutePath` and never re-derives a policy decision. It owns only
  * the commit contract:
  *
- *   1. lstat guards  - any symlink at the target is refused (an in-repo symlink
+ *   1. cross-process exclusion - one target-scoped directory lock covers the
+ *      authoritative read, revision comparison, and final rename.
+ *   2. lstat guards  - any symlink at the target is refused (an in-repo symlink
  *      passes `resolveMcpPath` but would clobber the link target); anything that
  *      is not a regular file is refused.
- *   2. revision precondition - absent `expectedSha256` means create-only; a
+ *   3. revision precondition - absent `expectedSha256` means create-only; a
  *      supplied hash must match the current bytes. Conflict outcomes never echo
  *      the current hash, because echoing it turns a conflict into a blind
  *      write -> lift-hash -> rewrite loop that clobbers unread content.
- *   3. durable commit - temp file in the target directory, fsync, rename,
+ *   4. durable commit - temp file in the target directory, fsync, rename,
  *      parent-directory fsync (house idiom from
  *      `src/effects/evidence/atomic-append.ts` and
  *      `general-repo-access.ts#atomicWriteFile`).
@@ -31,12 +33,14 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
   writeSync,
 } from 'fs';
 import { basename, dirname, resolve } from 'path';
+import { withExclusiveDirectoryLock } from '../../effects/locking/exclusive-directory-lock';
 
 export type GuardedWriteErrorCode =
   | 'WOULD_OVERWRITE'
@@ -80,7 +84,7 @@ function fsyncDirectoryBestEffort(path: string): void {
   }
 }
 
-export function guardedWriteFile(
+function guardedWriteFileUnderLock(
   absolutePath: string,
   relativePath: string,
   content: string,
@@ -189,4 +193,31 @@ export function guardedWriteFile(
   }
 
   return { ok: true, sha256: hashContent(content), previousSha256 };
+}
+
+export function guardedWriteFile(
+  absolutePath: string,
+  relativePath: string,
+  content: string,
+  expectedSha256: string | undefined,
+): GuardedWriteOutcome {
+  const directory = dirname(absolutePath);
+  const lockPath = `.${basename(absolutePath)}.repo-harness.lock`;
+
+  try {
+    mkdirSync(directory, { recursive: true });
+    return withExclusiveDirectoryLock(
+      realpathSync(directory),
+      lockPath,
+      () => guardedWriteFileUnderLock(absolutePath, relativePath, content, expectedSha256),
+      { reclaimStaleEmptyDirectory: true },
+    );
+  } catch (error) {
+    return {
+      ok: false,
+      code: 'WRITE_FAILED',
+      message: `could not acquire the write exclusion boundary for ${relativePath}: ${error instanceof Error ? error.message : String(error)}`,
+      details: { path: relativePath },
+    };
+  }
 }

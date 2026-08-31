@@ -12,6 +12,12 @@
 
 ## Active Lessons
 
+- Date: 2026-08-31
+- Triggered by correction: implementation of public Issues #231-#240 against their declared baseline `5da1963` found that #236's native relay/JSON-envelope symbols and #235's `operations.ts` patch path did not exist at that commit; title/body uniqueness and issue completeness had been verified, but the cited executable authority had not.
+- Mistake pattern: treating a well-structured issue body plus a matching commit label as sufficient evidence that its paths, symbols, and runtime boundary exist, then dispatching implementation before reopening those authorities at the exact baseline.
+- Prevention rule: before publishing or dispatching a code issue, resolve every cited path and symbol at the declared commit and trace one caller-to-side-effect route. If the authority moved, bind the issue to the active owner explicitly; if the runtime path never existed, reject the issue as evidence-invalid instead of inventing the missing subsystem. Count/title/state checks validate issue hygiene, not technical truth.
+- Where to apply next time: GitHub Connector audits, generated issue batches, security/concurrency findings, and any handoff whose acceptance criteria depend on named internal symbols.
+
 - Date: 2026-08-30
 - Triggered by correction: the first C9 real-provider probe crossed the frozen `codex exec --json` argv and exposed two facts the shim-only C4 tests could not: the contribution adapter searched persisted stdout for raw marker lines even though the provider emits JSONL, and the generic 64 KiB capture ceiling could truncate the JSONL before its final agent message and `turn.completed` usage event. The fake Codex had been emitting the impossible raw shape, so every deterministic collector test passed.
 - Mistake pattern: freezing a producer argv and a consumer parser independently while the test double reproduces the consumer's assumption instead of the producer's actual wire; then sizing evidence capture for prose rather than for the full structured event stream whose terminal receipt is required.
