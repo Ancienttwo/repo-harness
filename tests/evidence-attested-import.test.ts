@@ -10,7 +10,14 @@ import { importAttestedEvidence, type AttestedReceiptInput } from "../src/effect
 import { readAcceptedEvents, readGenesisRecord } from "../src/effects/evidence/event-log";
 import { buildReviewSubject } from "../src/effects/review/diff-fingerprint";
 import { prepareChangeAssessment } from "../src/effects/review/change-assessment";
-import { runAcceptanceReceiptCli } from "../scripts/acceptance-receipt";
+import {
+  acceptanceReceiptPath,
+  archiveProjectionReceiptPath,
+  recordAcceptance,
+  recordUserWaiverGrant,
+  runAcceptanceReceiptCli,
+  sealArchiveProjection,
+} from "../scripts/acceptance-receipt";
 
 function git(repoRoot: string, args: readonly string[]): string {
   return execFileSync("git", ["-C", repoRoot, ...args], { encoding: "utf-8" });
@@ -90,7 +97,7 @@ describe("importAttestedEvidence: trust mapping", () => {
   test("external_pass maps to external_attested", () => {
     withTempRepo("attested-import-external-pass", (repoRoot) => {
       const { contractRelative } = setupFixtureRepo(repoRoot);
-      const result = importAttestedEvidence({ repoRoot, receipt: baseReceipt(contractRelative) });
+      const result = importAttestedEvidence({ repoRoot, authorityContractFile: contractRelative, receipt: baseReceipt(contractRelative) });
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.event.trust_class).toBe("external_attested");
@@ -108,6 +115,7 @@ describe("importAttestedEvidence: trust mapping", () => {
       const { contractRelative } = setupFixtureRepo(repoRoot);
       const result = importAttestedEvidence({
         repoRoot,
+        authorityContractFile: contractRelative,
         receipt: baseReceipt(contractRelative, {
           disposition: "user_waiver",
           reviewer: "User",
@@ -125,7 +133,7 @@ describe("importAttestedEvidence: trust mapping", () => {
     withTempRepo("attested-import-d3-fields", (repoRoot) => {
       const { contractRelative } = setupFixtureRepo(repoRoot, { allowedPaths: ["src/a.ts", "src/b.ts"] });
       const receipt = baseReceipt(contractRelative);
-      const result = importAttestedEvidence({ repoRoot, receipt });
+      const result = importAttestedEvidence({ repoRoot, authorityContractFile: contractRelative, receipt });
       expect(result.ok).toBe(true);
       if (!result.ok) return;
 
@@ -162,6 +170,7 @@ describe("importAttestedEvidence: fail-closed paths", () => {
       const { contractRelative } = setupFixtureRepo(repoRoot);
       const result = importAttestedEvidence({
         repoRoot,
+        authorityContractFile: contractRelative,
         receipt: baseReceipt(contractRelative, { disposition: "reject" }),
       });
       expect(result.ok).toBe(false);
@@ -177,6 +186,7 @@ describe("importAttestedEvidence: fail-closed paths", () => {
       const { contractRelative } = setupFixtureRepo(repoRoot);
       const result = importAttestedEvidence({
         repoRoot,
+        authorityContractFile: contractRelative,
         receipt: baseReceipt(contractRelative, { disposition: "totally-invented" }),
       });
       expect(result.ok).toBe(false);
@@ -191,6 +201,7 @@ describe("importAttestedEvidence: fail-closed paths", () => {
       const { contractRelative } = setupFixtureRepo(repoRoot);
       const result = importAttestedEvidence({
         repoRoot,
+        authorityContractFile: contractRelative,
         receipt: baseReceipt(contractRelative, { reviewer: "" }),
       });
       expect(result.ok).toBe(false);
@@ -206,6 +217,7 @@ describe("importAttestedEvidence: fail-closed paths", () => {
       const { contractRelative } = setupFixtureRepo(repoRoot);
       const result = importAttestedEvidence({
         repoRoot,
+        authorityContractFile: contractRelative,
         receipt: baseReceipt(contractRelative, { summary: "   " }),
       });
       expect(result.ok).toBe(false);
@@ -220,6 +232,7 @@ describe("importAttestedEvidence: fail-closed paths", () => {
       const { contractRelative } = setupFixtureRepo(repoRoot);
       const result = importAttestedEvidence({
         repoRoot,
+        authorityContractFile: contractRelative,
         receipt: baseReceipt(contractRelative, { subject_sha256: "" }),
       });
       expect(result.ok).toBe(false);
@@ -234,6 +247,7 @@ describe("importAttestedEvidence: fail-closed paths", () => {
       const { contractRelative } = setupFixtureRepo(repoRoot);
       const result = importAttestedEvidence({
         repoRoot,
+        authorityContractFile: contractRelative,
         receipt: baseReceipt(contractRelative, { target_revision: "" }),
       });
       expect(result.ok).toBe(false);
@@ -246,7 +260,7 @@ describe("importAttestedEvidence: fail-closed paths", () => {
   test("an uncommitted contract file fails closed (no authority commit) and appends nothing", () => {
     withTempRepo("attested-import-uncommitted-contract", (repoRoot) => {
       const { contractRelative } = setupFixtureRepo(repoRoot, { commitContract: false });
-      const result = importAttestedEvidence({ repoRoot, receipt: baseReceipt(contractRelative) });
+      const result = importAttestedEvidence({ repoRoot, authorityContractFile: contractRelative, receipt: baseReceipt(contractRelative) });
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.reason).toBe("missing_subject");
       const { accepted } = readAcceptedEvents(repoRoot);
@@ -259,9 +273,10 @@ describe("importAttestedEvidence: default-deny at trust level", () => {
   test("an attested-only ledger leaves the authoritative filter empty", () => {
     withTempRepo("attested-import-default-deny", (repoRoot) => {
       const { contractRelative } = setupFixtureRepo(repoRoot);
-      const first = importAttestedEvidence({ repoRoot, receipt: baseReceipt(contractRelative) });
+      const first = importAttestedEvidence({ repoRoot, authorityContractFile: contractRelative, receipt: baseReceipt(contractRelative) });
       const second = importAttestedEvidence({
         repoRoot,
+        authorityContractFile: contractRelative,
         receipt: baseReceipt(contractRelative, {
           disposition: "user_waiver",
           reviewer: "User",
@@ -293,8 +308,8 @@ describe("importAttestedEvidence: idempotency and genesis", () => {
       const { contractRelative } = setupFixtureRepo(repoRoot);
       const receipt = baseReceipt(contractRelative);
 
-      const first = importAttestedEvidence({ repoRoot, receipt, correlationRunId: "run-a" });
-      const second = importAttestedEvidence({ repoRoot, receipt, correlationRunId: "run-b" });
+      const first = importAttestedEvidence({ repoRoot, authorityContractFile: contractRelative, receipt, correlationRunId: "run-a" });
+      const second = importAttestedEvidence({ repoRoot, authorityContractFile: contractRelative, receipt, correlationRunId: "run-b" });
       expect(first.ok).toBe(true);
       expect(second.ok).toBe(true);
       if (!first.ok || !second.ok) return;
@@ -317,9 +332,10 @@ describe("importAttestedEvidence: idempotency and genesis", () => {
   test("re-importing a receipt with a different subject is not deduped", () => {
     withTempRepo("attested-import-distinct-subject", (repoRoot) => {
       const { contractRelative } = setupFixtureRepo(repoRoot);
-      const first = importAttestedEvidence({ repoRoot, receipt: baseReceipt(contractRelative) });
+      const first = importAttestedEvidence({ repoRoot, authorityContractFile: contractRelative, receipt: baseReceipt(contractRelative) });
       const second = importAttestedEvidence({
         repoRoot,
+        authorityContractFile: contractRelative,
         receipt: baseReceipt(contractRelative, { subject_sha256: `sha256:${"c".repeat(64)}` }),
       });
       expect(first.ok).toBe(true);
@@ -338,13 +354,14 @@ describe("importAttestedEvidence: idempotency and genesis", () => {
       expect(readGenesisRecord(repoRoot)).toBeNull();
 
       const receipt = baseReceipt(contractRelative);
-      const first = importAttestedEvidence({ repoRoot, receipt });
+      const first = importAttestedEvidence({ repoRoot, authorityContractFile: contractRelative, receipt });
       expect(first.ok).toBe(true);
       if (!first.ok) return;
       expect(first.genesis.ledger_epoch_start_sha).toBe(LEDGER_EPOCH_START_SHA);
 
       const second = importAttestedEvidence({
         repoRoot,
+        authorityContractFile: contractRelative,
         receipt: baseReceipt(contractRelative, { subject_sha256: `sha256:${"d".repeat(64)}` }),
       });
       expect(second.ok).toBe(true);
@@ -474,6 +491,81 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
     return { root, home };
   }
 
+  async function archiveCliFixture(root: string, home: string): Promise<{
+    archivedContract: string;
+    archivedReview: string;
+    liveContract: string;
+  }> {
+    const livePlan = "plans/plan-fixture.md";
+    const liveContract = "tasks/contracts/fixture-cli.contract.md";
+    const liveReview = "tasks/reviews/fixture-cli.review.md";
+    await recordAcceptance({
+      root,
+      authorityHome: home,
+      contract: liveContract,
+      verification: ".ai/harness/checks/latest.json",
+      disposition: "external_pass",
+      reviewer: "Claude",
+      source: "claude-review",
+      actor: null,
+      summary: "initial live acceptance",
+      findings: [],
+    });
+    recordUserWaiverGrant({
+      root,
+      authorityHome: home,
+      contract: liveContract,
+      actor: "fixture-owner",
+      summary: "approve archived acceptance",
+    });
+
+    const archivedPlan = "plans/archive/plan-fixture.md";
+    const archivedContract = "tasks/archive/contract-20260831-archived-cli.md";
+    const archivedReview = "tasks/archive/review-20260831-archived-cli.md";
+    mkdirSync(join(root, "plans", "archive"), { recursive: true });
+    mkdirSync(join(root, "tasks", "archive"), { recursive: true });
+    const projection = [
+      `> **Archive Projection V1**: \`${livePlan}\` => \`${archivedPlan}\``,
+      `> **Archive Projection V1**: \`${liveContract}\` => \`${archivedContract}\``,
+      `> **Archive Projection V1**: \`${liveReview}\` => \`${archivedReview}\``,
+    ];
+    const envelope = (lifecycle: "plan" | "contract" | "review") => [
+      "> **Archived**: 2026-08-31 09:45",
+      `> **Related Plan**: ${archivedPlan}`,
+      "> **Outcome**: Completed",
+      `> **Lifecycle**: ${lifecycle}`,
+      "> **Parent Run ID**: archived-cli-test",
+      ...projection,
+      "",
+    ];
+    writeFileSync(
+      join(root, archivedPlan),
+      [...envelope("plan"), readFileSync(join(root, livePlan), "utf-8")
+        .replace("> **Status**: Executing", "> **Status**: Archived")
+        .replaceAll(livePlan, archivedPlan)
+        .replaceAll(liveContract, archivedContract)].join("\n"),
+    );
+    writeFileSync(
+      join(root, archivedContract),
+      [...envelope("contract"), readFileSync(join(root, liveContract), "utf-8")
+        .replaceAll(livePlan, archivedPlan)
+        .replaceAll(liveContract, archivedContract)].join("\n"),
+    );
+    writeFileSync(
+      join(root, archivedReview),
+      [...envelope("review"), readFileSync(join(root, liveReview), "utf-8")
+        .replaceAll(livePlan, archivedPlan)
+        .replaceAll(liveReview, archivedReview)].join("\n"),
+    );
+    rmSync(join(root, livePlan));
+    rmSync(join(root, liveContract));
+    rmSync(join(root, liveReview));
+    git(root, ["add", "-A"]);
+    git(root, ["commit", "-q", "-m", "archive accepted workflow"]);
+    sealArchiveProjection({ root, authorityHome: home, contract: archivedContract });
+    return { archivedContract, archivedReview, liveContract };
+  }
+
   test("real record --disposition external_pass appends one accepted external_attested event", async () => {
     const { root, home } = setupCliFixture();
     cwdStack.push(process.cwd());
@@ -520,5 +612,41 @@ describe("scripts/acceptance-receipt.ts record: attested-import wiring", () => {
     // Existing, pre-EPC-04 behavior: reject still exits 1 (unaffected by this package's wiring).
     expect(exitCode).toBe(1);
     expect(readGenesisRecord(root)).toBeNull();
+  }, 30_000);
+
+  test("archived user waiver imports selected contract and leaves projection sealed", async () => {
+    const { root, home } = setupCliFixture();
+    const { archivedContract, archivedReview, liveContract } = await archiveCliFixture(root, home);
+    cwdStack.push(process.cwd());
+    process.chdir(root);
+
+    const exitCode = await runAcceptanceReceiptCli(
+      [
+        "record",
+        "--contract", archivedContract,
+        "--verification", ".ai/harness/checks/latest.json",
+        "--disposition", "user_waiver",
+        "--review", archivedReview,
+      ],
+      { authorityHome: home, now: () => new Date("2026-08-31T01:50:00.000Z") },
+    );
+    expect(exitCode).toBe(0);
+
+    const receipt = JSON.parse(readFileSync(acceptanceReceiptPath(root, home), "utf-8"));
+    expect(receipt.contract_file).toBe(liveContract);
+    const { accepted } = readAcceptedEvents(root);
+    expect(accepted.length).toBe(1);
+    expect(accepted[0]!.trust_class).toBe("human_acceptance");
+    expect(accepted[0]!.subject_identity.contract_hash).toBe(
+      `sha256:${createHash("sha256").update(readFileSync(join(root, archivedContract))).digest("hex")}`,
+    );
+    expect(readFileSync(join(root, archivedReview), "utf-8")).toContain("## Acceptance Receipt Projection");
+    expect(readFileSync(archiveProjectionReceiptPath(root, home), "utf-8")).toContain(
+      '"kind": "repo-harness-archive-projection-receipt"',
+    );
+    expect(await runAcceptanceReceiptCli(
+      ["verify", "--contract", archivedContract, "--verification", ".ai/harness/checks/latest.json"],
+      { authorityHome: home },
+    )).toBe(0);
   }, 30_000);
 });

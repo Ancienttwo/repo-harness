@@ -1,0 +1,16 @@
+COMMAND=bun test tests/evidence-attested-import.test.ts -t "archived user waiver imports selected contract and leaves projection sealed"
+bun test v1.4.0 (34cbb9a40)
+
+tests/evidence-attested-import.test.ts:
+error: AcceptanceReceipt recorded but ledger import failed closed: receipt contract_file is missing or unreadable: tasks/contracts/fixture-cli.contract.md
+ exitCode: 1,
+
+      at fail (scripts/acceptance-receipt.ts:177:21)
+      at importAttestedReceiptIfApplicable (scripts/acceptance-receipt.ts:1266:5)
+      at async runAcceptanceReceiptCli (scripts/acceptance-receipt.ts:1342:13)
+      at async <anonymous> (tests/evidence-attested-import.test.ts:613:28)
+(fail) scripts/acceptance-receipt.ts record: attested-import wiring > archived user waiver imports selected contract and leaves projection sealed
+
+0 pass
+1 fail
+PRE_FIX_EXIT=1

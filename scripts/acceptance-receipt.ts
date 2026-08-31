@@ -1215,13 +1215,18 @@ export function projectAcceptance(reviewPath: string, receipt: AcceptanceReceipt
  * real fail-closed reason) still fails the record command: an acceptance
  * that cannot enter the evidence authority must not report success.
  */
-async function importAttestedReceiptIfApplicable(root: string, receipt: AcceptanceReceipt): Promise<void> {
+async function importAttestedReceiptIfApplicable(
+  root: string,
+  receipt: AcceptanceReceipt,
+  authorityContractFile: string,
+): Promise<void> {
   if (receipt.disposition !== 'external_pass' && receipt.disposition !== 'user_waiver') return;
 
   const modulePath = join(PACKAGE_ROOT, 'src', 'effects', 'evidence', 'attested-import.ts');
   type AttestedImportModule = {
     importAttestedEvidence: (input: {
       repoRoot: string;
+      authorityContractFile: string;
       receipt: {
         disposition: string;
         reviewer: string;
@@ -1249,6 +1254,7 @@ async function importAttestedReceiptIfApplicable(root: string, receipt: Acceptan
 
   const result = attestedImport.importAttestedEvidence({
     repoRoot: root,
+    authorityContractFile,
     receipt: {
       disposition: receipt.disposition,
       reviewer: receipt.reviewer,
@@ -1264,6 +1270,25 @@ async function importAttestedReceiptIfApplicable(root: string, receipt: Acceptan
   });
   if (!result.ok) {
     fail(`AcceptanceReceipt recorded but ledger import failed closed: ${result.message ?? result.reason}`);
+  }
+}
+
+function projectRecordedAcceptance(args: {
+  root: string;
+  authorityHome: string;
+  contract: string;
+  review: string | undefined;
+  receipt: AcceptanceReceipt;
+}): void {
+  if (!args.review) return;
+  projectAcceptance(resolve(args.root, args.review), args.receipt);
+  const contract = readRegular(args.root, args.contract, 'contract');
+  if (parseArchiveProjection(contract.content)) {
+    sealArchiveProjection({
+      root: args.root,
+      authorityHome: args.authorityHome,
+      contract: contract.path,
+    });
   }
 }
 
@@ -1331,17 +1356,18 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
   if (command === 'record') {
     const disposition = option(argv, '--disposition') as AcceptanceDisposition;
     if (!['external_pass', 'user_waiver', 'reject'].includes(disposition)) fail('--disposition is invalid', 2);
+    const contract = option(argv, '--contract')!;
+    const review = option(argv, '--review', false);
     if (disposition === 'user_waiver') {
       const receipt = await recordUserWaiverAcceptance({
         root,
         authorityHome,
-        contract: option(argv, '--contract')!,
+        contract,
         verification: option(argv, '--verification')!,
         now: opts.now,
       });
-      await importAttestedReceiptIfApplicable(root, receipt);
-      const review = option(argv, '--review', false);
-      if (review) projectAcceptance(resolve(root, review), receipt);
+      projectRecordedAcceptance({ root, authorityHome, contract, review, receipt });
+      await importAttestedReceiptIfApplicable(root, receipt, contract);
       console.log(JSON.stringify(receipt));
       return 0;
     }
@@ -1349,7 +1375,7 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
     const receipt = await recordAcceptance({
       root,
       authorityHome,
-      contract: option(argv, '--contract')!,
+      contract,
       verification: option(argv, '--verification')!,
       disposition,
       reviewer: option(argv, '--reviewer')!,
@@ -1359,9 +1385,8 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
       findings: validateFindings(JSON.parse(findingsRaw)),
       now: opts.now,
     });
-    await importAttestedReceiptIfApplicable(root, receipt);
-    const review = option(argv, '--review', false);
-    if (review) projectAcceptance(resolve(root, review), receipt);
+    projectRecordedAcceptance({ root, authorityHome, contract, review, receipt });
+    await importAttestedReceiptIfApplicable(root, receipt, contract);
     console.log(JSON.stringify(receipt));
     return disposition === 'reject' ? 1 : 0;
   }

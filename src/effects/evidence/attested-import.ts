@@ -102,6 +102,8 @@ export interface AttestedImportInput {
   /** Repo root the receipt was recorded against. */
   readonly repoRoot: string;
   readonly receipt: AttestedReceiptInput;
+  /** Exact contract artifact selected and validated by the recording command. */
+  readonly authorityContractFile: string;
   readonly correlationRunId?: string;
 }
 
@@ -244,12 +246,12 @@ export function importAttestedEvidence(input: AttestedImportInput): AttestedImpo
     };
   }
 
-  const contractRelative = receipt.contract_file?.trim();
+  const contractRelative = input.authorityContractFile.trim();
   if (!contractRelative || !existsSync(join(repoRoot, contractRelative))) {
     return {
       ok: false,
       reason: "missing_subject",
-      message: `receipt contract_file is missing or unreadable: ${receipt.contract_file}`,
+      message: `selected authority contract is missing or unreadable: ${input.authorityContractFile}`,
     };
   }
 
