@@ -1,6 +1,6 @@
 # Task Review: external-source-binding-wp2
 
-> **Status**: Passed
+> **Status**: Accepted
 > **Plan**: plans/plan-20260901-0205-external-source-binding-wp2.md
 > **Contract**: tasks/contracts/20260901-0205-external-source-binding-wp2.contract.md
 > **Notes File**: tasks/notes/20260901-0205-external-source-binding-wp2.notes.md
@@ -8,9 +8,9 @@
 > **Last Updated**: 2026-09-01 02:05
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:0604885698e08f128f3249bc66c965dfb19ff1eaf8b6d5202fbaac10b7a11e38
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
+> **Reviewed Target Revision**: bb9a497eeb7e9060ed67bc2bb194b89ac8445219
 
 ## Human Review Card
 
@@ -40,17 +40,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Codex
+> **Source**: codex-plugin
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:0604885698e08f128f3249bc66c965dfb19ff1eaf8b6d5202fbaac10b7a11e38
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: bb9a497eeb7e9060ed67bc2bb194b89ac8445219
+> **Verification Evidence SHA256**: sha256:af07e91a44cbb8decac280da867f9b77b05dc17c21e530dd64e2371ea3ec2992
+> **Issued At**: 2026-08-31T20:03:49.148Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: Exact external-source binding preserves canonical Fleet authority; deterministic protocol, store, drift, untrusted-context, and CLI bridge evidence passed.
 - Findings: none
 
 ## Behavior Diff Notes
