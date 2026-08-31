@@ -45,6 +45,7 @@
 - Focused verification: `bun test tests/unit/external-source-policy.test.ts tests/effects/external-source-github.test.ts tests/effects/external-source-store.test.ts tests/unit/external-source-intake-p0.test.ts tests/cli/external-source-intake.test.ts tests/unit/external-source-authority.test.ts --timeout 60000` and `bun run check:type`.
 - Architecture verification: `bash scripts/check-architecture-sync.sh` reports zero blocking candidates and `bun test ./tests/architecture-projection-e2e.test.ts --timeout 60000` passes after advancing the exact projection target-count pin from 28 to 29.
 - Month-boundary regression: `bun test ./tests/workflow-state-lock.test.ts --timeout 60000` verifies rotation against the actual unique archive file, independent of Bun/shell timezone disagreement.
+- Change Assessment: `external-source-intake-tests` covers the selected new abstraction with deterministic focused/full tests; `github-exact-batch-live-readback` covers the same selected surface with the successful `Ancienttwo/repo-harness#231-#240` refresh.
 
 ## Promotion Filter
 
