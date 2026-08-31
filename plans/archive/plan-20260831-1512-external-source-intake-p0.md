@@ -1,6 +1,6 @@
 # Plan: External Source Intake P0
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260831-1512
 > **Slug**: external-source-intake-p0
 > **Planning Source**: user-approved-plan

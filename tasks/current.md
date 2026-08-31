@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-08-31T11:34:49+0800 -->
+<!-- updated_at: 2026-09-01T01:34:45+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-08-31T11:34:49+0800
-> **Source Branch**: codex/archived-acceptance-cli-finalization
-> **Source Commit**: f0dffc66
+> **Status**: Idle
+> **Updated At**: 2026-09-01T01:34:45+0800
+> **Source Branch**: codex/external-source-intake-p0
+> **Source Commit**: e54a7286
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -17,11 +17,11 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
+- Status: Idle
 - Active Plan: (none)
 - Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Next Task: (none)
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -31,8 +31,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- linked-worktree-15c0db14c68b: plans/plan-20260829-1728-oracle-thinking-passthrough.md
-- linked-worktree-15c0db14c68b: active-worktree owner -> self
+- (none)
 ## Active Sprint
 
 - Sprint: (none)
@@ -59,16 +58,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260831-0937-archived-acceptance-cli-finalization.md
- D tasks/contracts/20260831-0937-archived-acceptance-cli-finalization.contract.md
- D tasks/notes/20260831-0937-archived-acceptance-cli-finalization.notes.md
- D tasks/reviews/20260831-0937-archived-acceptance-cli-finalization.review.md
+ D plans/plan-20260831-1512-external-source-intake-p0.md
+ D tasks/contracts/20260831-1512-external-source-intake-p0.contract.md
+ D tasks/notes/20260831-1512-external-source-intake-p0.notes.md
+ D tasks/reviews/20260831-1512-external-source-intake-p0.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260831-0937-archived-acceptance-cli-finalization.md
-?? tasks/archive/contract-20260831-1134-archived-acceptance-cli-finalization.md
-?? tasks/archive/notes-20260831-1134-archived-acceptance-cli-finalization.md
-?? tasks/archive/review-20260831-1134-archived-acceptance-cli-finalization.md
-?? tasks/archive/todo-20260831-1134-archived-acceptance-cli-finalization.md
+?? plans/archive/plan-20260831-1512-external-source-intake-p0.md
+?? tasks/archive/contract-20260901-0134-external-source-intake-p0.md
+?? tasks/archive/notes-20260901-0134-external-source-intake-p0.md
+?? tasks/archive/review-20260901-0134-external-source-intake-p0.md
+?? tasks/archive/todo-20260901-0134-external-source-intake-p0.md
 ```
 
 ## Source Artifacts

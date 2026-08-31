@@ -1,3 +1,9 @@
+> **Archived**: 2026-09-01 01:34
+> **Related Plan**: plans/archive/plan-20260831-1512-external-source-intake-p0.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260901-0134
+
 # Implementation Notes: external-source-intake-p0
 
 > **Status**: Active
