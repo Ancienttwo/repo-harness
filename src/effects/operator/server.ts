@@ -14,13 +14,12 @@ import {
   type ReadOperatorCollaborationSnapshotInput,
 } from './collaboration';
 import {
-  collectFleetBoard,
   FleetBoardError,
+  type FleetBoardFatalErrorCode,
   type FleetBoardCollectorOptions,
 } from '../fleet/board';
 import {
   OperatorTaskMessageError,
-  sendOperatorTaskMessage,
   type OperatorTaskMessageErrorCode,
   type SendOperatorTaskMessageInput,
   type SendOperatorTaskMessageResult,
@@ -130,7 +129,7 @@ export interface OperatorServerOptions {
     input: OperatorCollaborationSnapshotReaderInput,
   ) => Promise<OperatorCollaborationSnapshotV1>;
   readonly send_task_message?: (
-    input: SendOperatorTaskMessageInput,
+    input: SendOperatorTaskMessageInput & { readonly signal: AbortSignal },
   ) => SendOperatorTaskMessageResult | Promise<SendOperatorTaskMessageResult>;
 }
 
@@ -246,6 +245,16 @@ function publicFleetError(error: unknown): {
   readonly status: number;
   readonly body: OperatorErrorResponseV1;
 } {
+  if (error instanceof OperatorFleetTimeoutError) {
+    return {
+      status: 503,
+      body: errorBody(
+        'fleet_snapshot_timeout',
+        'The Fleet snapshot timed out.',
+        'Refresh the board and retry.',
+      ),
+    };
+  }
   if (error instanceof FleetBoardError) {
     const messageByCode: Readonly<Record<FleetBoardError['code'], string>> = {
       fleet_registry_unavailable: 'Fleet registry cannot be read.',
@@ -262,6 +271,15 @@ function publicFleetError(error: unknown): {
     status: 503,
     body: errorBody('fleet_snapshot_unavailable', 'Fleet snapshot is unavailable.'),
   };
+}
+
+class OperatorFleetTimeoutError extends Error {
+  readonly code = 'fleet_snapshot_timeout' as const;
+
+  constructor() {
+    super('fleet snapshot deadline exceeded');
+    this.name = 'OperatorFleetTimeoutError';
+  }
 }
 
 interface PublicFailure {
@@ -297,6 +315,16 @@ function publicCollaborationError(error: unknown): {
   readonly status: number;
   readonly body: OperatorErrorResponseV1;
 } {
+  if (error instanceof OperatorCollaborationBusyError) {
+    return {
+      status: 503,
+      body: errorBody(
+        'collaboration_snapshot_busy',
+        'The collaboration snapshot service is busy.',
+        'Wait for the current collaboration refresh to finish, then retry.',
+      ),
+    };
+  }
   if (error instanceof OperatorCollaborationTimeoutError) {
     return {
       status: 503,
@@ -332,7 +360,17 @@ class OperatorCollaborationTimeoutError extends Error {
   }
 }
 
+class OperatorCollaborationBusyError extends Error {
+  readonly code = 'collaboration_snapshot_busy' as const;
+
+  constructor() {
+    super('collaboration snapshot queue is full');
+    this.name = 'OperatorCollaborationBusyError';
+  }
+}
+
 const OPERATOR_COLLABORATION_REQUEST_ABORTED = Symbol('operator-collaboration-request-aborted');
+const OPERATOR_TASK_MESSAGE_REQUEST_ABORTED = Symbol('operator-task-message-request-aborted');
 
 type OperatorCollaborationWorkerResponse =
   | {
@@ -433,6 +471,167 @@ function readDefaultCollaborationSnapshot(
   });
 }
 
+type OperatorFleetWorkerResponse =
+  | {
+      readonly ok: true;
+      readonly snapshot: FleetBoardSnapshotV1;
+    }
+  | {
+      readonly ok: false;
+      readonly code: FleetBoardFatalErrorCode;
+    };
+
+function fleetWorkerResponse(value: unknown): OperatorFleetWorkerResponse | null {
+  if (typeof value !== 'object' || value === null || !('ok' in value)) return null;
+  if (value.ok === true && 'snapshot' in value && typeof value.snapshot === 'object' && value.snapshot !== null) {
+    return { ok: true, snapshot: value.snapshot as FleetBoardSnapshotV1 };
+  }
+  if (
+    value.ok === false
+    && 'code' in value
+    && (value.code === 'fleet_registry_unavailable'
+      || value.code === 'fleet_registry_invalid'
+      || value.code === 'fleet_board_argument_invalid'
+      || value.code === 'fleet_watch_aborted_before_first_snapshot')
+  ) {
+    return { ok: false, code: value.code };
+  }
+  return null;
+}
+
+/** The parent owns request lifetime; the Worker owns only the blocking collection. */
+function readDefaultFleetSnapshot(
+  input: Required<Pick<FleetBoardCollectorOptions, 'sequence' | 'max_concurrency' | 'timeout_ms'>> & {
+    readonly env?: NodeJS.ProcessEnv;
+    readonly signal: AbortSignal;
+  },
+): Promise<FleetBoardSnapshotV1> {
+  return new Promise((resolveRead, rejectRead) => {
+    const worker = new Worker(new URL('./fleet-worker.ts', import.meta.url));
+    let settled = false;
+    const finish = (
+      outcome:
+        | { readonly ok: true; readonly snapshot: FleetBoardSnapshotV1 }
+        | { readonly ok: false; readonly error: unknown },
+    ): void => {
+      if (settled) return;
+      settled = true;
+      input.signal.removeEventListener('abort', onAbort);
+      worker.terminate();
+      if (outcome.ok) resolveRead(outcome.snapshot);
+      else rejectRead(outcome.error);
+    };
+    const onAbort = (): void => finish({ ok: false, error: new OperatorFleetTimeoutError() });
+    input.signal.addEventListener('abort', onAbort, { once: true });
+    worker.onmessage = (event: MessageEvent<unknown>) => {
+      const response = fleetWorkerResponse(event.data);
+      if (response === null) {
+        finish({ ok: false, error: new FleetBoardError('fleet_registry_unavailable', 'fleet worker returned an invalid response') });
+      } else if (response.ok) {
+        finish({ ok: true, snapshot: response.snapshot });
+      } else {
+        finish({ ok: false, error: new FleetBoardError(response.code, `fleet worker failed with ${response.code}`) });
+      }
+    };
+    worker.onerror = (error) => {
+      finish({ ok: false, error: new FleetBoardError('fleet_registry_unavailable', 'fleet worker failed', error) });
+    };
+    if (input.signal.aborted) {
+      onAbort();
+      return;
+    }
+    worker.postMessage({
+      env: collaborationWorkerEnvironment(input.env),
+      sequence: input.sequence,
+      max_concurrency: input.max_concurrency,
+      timeout_ms: input.timeout_ms,
+    });
+  });
+}
+
+type WorkerTaskMessageErrorCode = OperatorTaskMessageErrorCode;
+
+type OperatorTaskMessageWorkerResponse =
+  | {
+      readonly ok: true;
+      readonly result: SendOperatorTaskMessageResult;
+    }
+  | {
+      readonly ok: false;
+      readonly code: WorkerTaskMessageErrorCode;
+    };
+
+function taskMessageWorkerResponse(value: unknown): OperatorTaskMessageWorkerResponse | null {
+  if (typeof value !== 'object' || value === null || !('ok' in value)) return null;
+  if (value.ok === true && 'result' in value && typeof value.result === 'object' && value.result !== null) {
+    return { ok: true, result: value.result as SendOperatorTaskMessageResult };
+  }
+  if (
+    value.ok === false
+    && 'code' in value
+    && (value.code === 'registry_unavailable'
+      || value.code === 'repository_not_found'
+      || value.code === 'repository_read_only'
+      || value.code === 'canonical_sprint_unavailable'
+      || value.code === 'canonical_source_stale'
+      || value.code === 'task_not_found'
+      || value.code === 'task_message_invalid'
+      || value.code === 'task_message_unreadable'
+      || value.code === 'message_id_conflict'
+      || value.code === 'task_revision_mismatch'
+      || value.code === 'task_not_pending'
+      || value.code === 'task_unowned'
+      || value.code === 'claim_mismatch'
+      || value.code === 'recipient_unavailable'
+      || value.code === 'task_message_transition_invalid')
+  ) {
+    return { ok: false, code: value.code };
+  }
+  return null;
+}
+
+function sendDefaultTaskMessage(
+  input: SendOperatorTaskMessageInput,
+  signal: AbortSignal,
+): Promise<SendOperatorTaskMessageResult> {
+  return new Promise((resolveWrite, rejectWrite) => {
+    const worker = new Worker(new URL('./task-message-worker.ts', import.meta.url));
+    let settled = false;
+    const finish = (
+      outcome:
+        | { readonly ok: true; readonly result: SendOperatorTaskMessageResult }
+        | { readonly ok: false; readonly error: unknown },
+    ): void => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', onAbort);
+      worker.terminate();
+      if (outcome.ok) resolveWrite(outcome.result);
+      else rejectWrite(outcome.error);
+    };
+    const onAbort = (): void => finish({ ok: false, error: OPERATOR_TASK_MESSAGE_REQUEST_ABORTED });
+    signal.addEventListener('abort', onAbort, { once: true });
+    worker.onmessage = (event: MessageEvent<unknown>) => {
+      const response = taskMessageWorkerResponse(event.data);
+      if (response === null) {
+        finish({ ok: false, error: new OperatorTaskMessageError('task_message_unreadable', 'task-message worker returned an invalid response') });
+      } else if (response.ok) {
+        finish({ ok: true, result: response.result });
+      } else {
+        finish({ ok: false, error: new OperatorTaskMessageError(response.code as OperatorTaskMessageErrorCode, `task-message worker failed with ${response.code}`) });
+      }
+    };
+    worker.onerror = (error) => {
+      finish({ ok: false, error: new OperatorTaskMessageError('task_message_unreadable', 'task-message worker failed', error) });
+    };
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    worker.postMessage({ input });
+  });
+}
+
 interface PublicTaskMessageFailure {
   readonly status: number;
   readonly message: string;
@@ -522,12 +721,31 @@ const TASK_MESSAGE_FAILURES: Readonly<Record<OperatorTaskMessageErrorCode, Publi
   },
 });
 
+class OperatorTaskMessageTimeoutError extends Error {
+  readonly code = 'task_message_timeout' as const;
+
+  constructor() {
+    super('task-message deadline exceeded');
+    this.name = 'OperatorTaskMessageTimeoutError';
+  }
+}
+
 function publicTaskMessageError(error: unknown): {
   readonly status: number;
   readonly body: OperatorErrorResponseV1;
 } {
+  if (error instanceof OperatorTaskMessageTimeoutError) {
+    return {
+      status: 503,
+      body: errorBody(
+        'task_message_timeout',
+        'The task message outcome is unknown because the request timed out.',
+        'Retry the exact same message_id, body, and fence. If it committed, the existing message will be returned without a duplicate.',
+      ),
+    };
+  }
   if (error instanceof OperatorTaskMessageError) {
-    const failure = TASK_MESSAGE_FAILURES[error.code];
+    const failure = TASK_MESSAGE_FAILURES[error.code as WorkerTaskMessageErrorCode];
     if (failure) {
       return { status: failure.status, body: errorBody(error.code, failure.message, failure.next_action) };
     }
@@ -682,27 +900,158 @@ export async function startOperatorServer(
   const maxConcurrency = assertCollectionOption(options.max_concurrency, 'max_concurrency', 1, 16);
   const timeoutMs = assertCollectionOption(options.timeout_ms, 'timeout_ms', 1_000, 30_000);
   const staticRoot = safePathRoot(options.static_root ?? DEFAULT_STATIC_ROOT);
-  const collect = options.collect_fleet_board ?? collectFleetBoard;
+  const collect = options.collect_fleet_board;
   const readCollaboration = options.read_collaboration_snapshot ?? readDefaultCollaborationSnapshot;
-  const send = options.send_task_message ?? sendOperatorTaskMessage;
+  const send = options.send_task_message;
   let inFlight: Promise<OperatorFleetSnapshotV1> | null = null;
   let nextSnapshotSequence = 1;
-  const activeCollaborationCancellers = new Set<() => void>();
+  let activeFleetCanceller: (() => void) | null = null;
+  const activeTaskMessageCancellers = new Set<() => void>();
+  const activeCollaborationRequestCancellers = new Set<() => void>();
+  const collaborationObservations = new Map<string, CollaborationObservation>();
+  const collaborationQueue: CollaborationObservation[] = [];
+  const collaborationQueueCapacity = maxConcurrency * 2;
+  let activeCollaborationWorkers = 0;
+
+  interface CollaborationObservation {
+    readonly repositoryId: string;
+    readonly controller: AbortController;
+    readonly promise: Promise<OperatorCollaborationSnapshotV1>;
+    readonly resolve: (snapshot: OperatorCollaborationSnapshotV1) => void;
+    readonly reject: (error: unknown) => void;
+    timer: ReturnType<typeof setTimeout> | null;
+    subscribers: number;
+    started: boolean;
+    settled: boolean;
+  }
+
+  const drainCollaborationQueue = (): void => {
+    while (activeCollaborationWorkers < maxConcurrency && collaborationQueue.length > 0) {
+      const next = collaborationQueue.shift()!;
+      if (next.settled || next.subscribers === 0) continue;
+      startCollaborationObservation(next);
+    }
+  };
+
+  const settleCollaborationObservation = (
+    observation: CollaborationObservation,
+    outcome:
+      | { readonly ok: true; readonly snapshot: OperatorCollaborationSnapshotV1 }
+      | { readonly ok: false; readonly error: unknown },
+  ): void => {
+    if (observation.settled) return;
+    observation.settled = true;
+    if (observation.timer !== null) clearTimeout(observation.timer);
+    if (observation.started) activeCollaborationWorkers -= 1;
+    else {
+      const queuedAt = collaborationQueue.indexOf(observation);
+      if (queuedAt >= 0) collaborationQueue.splice(queuedAt, 1);
+    }
+    if (collaborationObservations.get(observation.repositoryId) === observation) {
+      collaborationObservations.delete(observation.repositoryId);
+    }
+    if (outcome.ok) observation.resolve(outcome.snapshot);
+    else observation.reject(outcome.error);
+    drainCollaborationQueue();
+  };
+
+  const cancelCollaborationObservation = (observation: CollaborationObservation, error: unknown): void => {
+    if (observation.settled) return;
+    observation.controller.abort();
+    settleCollaborationObservation(observation, { ok: false, error });
+  };
+
+  const startCollaborationObservation = (observation: CollaborationObservation): void => {
+    if (observation.settled || observation.subscribers === 0) return;
+    observation.started = true;
+    activeCollaborationWorkers += 1;
+    Promise.resolve().then(() => readCollaboration({
+      env: options.env,
+      repository_id: observation.repositoryId,
+      signal: observation.controller.signal,
+    })).then(
+      (snapshot) => settleCollaborationObservation(observation, { ok: true, snapshot }),
+      (error) => settleCollaborationObservation(observation, { ok: false, error }),
+    );
+  };
+
+  const acquireCollaborationObservation = (repositoryId: string): CollaborationObservation => {
+    const existing = collaborationObservations.get(repositoryId);
+    if (existing !== undefined) {
+      existing.subscribers += 1;
+      return existing;
+    }
+    if (activeCollaborationWorkers >= maxConcurrency && collaborationQueue.length >= collaborationQueueCapacity) {
+      throw new OperatorCollaborationBusyError();
+    }
+    let resolveObservation!: (snapshot: OperatorCollaborationSnapshotV1) => void;
+    let rejectObservation!: (error: unknown) => void;
+    const observation: CollaborationObservation = {
+      repositoryId,
+      controller: new AbortController(),
+      promise: new Promise<OperatorCollaborationSnapshotV1>((resolveObservationPromise, rejectObservationPromise) => {
+        resolveObservation = resolveObservationPromise;
+        rejectObservation = rejectObservationPromise;
+      }),
+      resolve: (snapshot) => resolveObservation(snapshot),
+      reject: (error) => rejectObservation(error),
+      timer: null,
+      subscribers: 1,
+      started: false,
+      settled: false,
+    };
+    observation.timer = setTimeout(() => {
+      cancelCollaborationObservation(observation, new OperatorCollaborationTimeoutError());
+    }, timeoutMs);
+    collaborationObservations.set(repositoryId, observation);
+    if (activeCollaborationWorkers < maxConcurrency) startCollaborationObservation(observation);
+    else collaborationQueue.push(observation);
+    return observation;
+  };
+
+  const releaseCollaborationObservation = (observation: CollaborationObservation): void => {
+    if (observation.subscribers === 0) return;
+    observation.subscribers -= 1;
+    if (observation.subscribers === 0 && !observation.settled) {
+      cancelCollaborationObservation(observation, OPERATOR_COLLABORATION_REQUEST_ABORTED);
+    }
+  };
 
   const snapshot = (): Promise<OperatorFleetSnapshotV1> => {
     if (inFlight !== null) return inFlight;
     const sequence = nextSnapshotSequence;
     nextSnapshotSequence += 1;
-    const pending = collect({
-      env: options.env,
-      sequence,
-      max_concurrency: maxConcurrency,
-      timeout_ms: timeoutMs,
-    }).then(projectOperatorFleetSnapshot);
+    const controller = new AbortController();
+    const deadline = setTimeout(() => controller.abort(), timeoutMs);
+    const pending = (collect === undefined
+      ? readDefaultFleetSnapshot({
+        env: options.env,
+        sequence,
+        max_concurrency: maxConcurrency,
+        timeout_ms: timeoutMs,
+        signal: controller.signal,
+      })
+      : Promise.resolve().then(() => collect({
+        env: options.env,
+        sequence,
+        max_concurrency: maxConcurrency,
+        timeout_ms: timeoutMs,
+        signal: controller.signal,
+      }))).then(projectOperatorFleetSnapshot);
     inFlight = pending;
+    const cancelFleet = () => controller.abort();
+    activeFleetCanceller = cancelFleet;
     pending.then(
-      () => { if (inFlight === pending) inFlight = null; },
-      () => { if (inFlight === pending) inFlight = null; },
+      () => {
+        clearTimeout(deadline);
+        if (inFlight === pending) inFlight = null;
+        if (activeFleetCanceller === cancelFleet) activeFleetCanceller = null;
+      },
+      () => {
+        clearTimeout(deadline);
+        if (inFlight === pending) inFlight = null;
+        if (activeFleetCanceller === cancelFleet) activeFleetCanceller = null;
+      },
     );
     return pending;
   };
@@ -746,39 +1095,6 @@ export async function startOperatorServer(
       ));
       return;
     }
-    try {
-      const result = await send({
-        env: options.env,
-        repository_id: repositoryId,
-        task_id: taskId,
-        message_id: payload.message_id,
-        scope: payload.scope,
-        expected_task_revision: payload.expected_task_revision,
-        expected_claim_id: payload.expected_claim_id,
-        expected_generation: payload.expected_generation,
-        body: payload.body,
-      });
-      sendJson(response, result.created ? 201 : 200, {
-        ok: true,
-        protocol: OPERATOR_SERVER_PROTOCOL,
-        repository_id: result.repository_id,
-        task_id: result.task_id,
-        message_id: result.message_id,
-        scope: result.scope,
-        created: result.created,
-      });
-    } catch (error) {
-      const failure = publicTaskMessageError(error);
-      sendJson(response, failure.status, failure.body);
-    }
-  };
-
-  const handleCollaborationSnapshot = async (
-    request: IncomingMessage,
-    response: ServerResponse,
-    repositoryId: string,
-    headOnly = false,
-  ): Promise<void> => {
     const controller = new AbortController();
     let finished = false;
     let clientDisconnected = false;
@@ -794,38 +1110,119 @@ export async function startOperatorServer(
       else serverClosing = true;
       controller.abort();
       if (reason === 'server_shutdown' && !response.destroyed) response.destroy();
+      rejectCancellation?.(OPERATOR_TASK_MESSAGE_REQUEST_ABORTED);
+    };
+    const onClientDisconnect = () => cancel('client_disconnect');
+    const cancelForServerClose = () => cancel('server_shutdown');
+    request.once('aborted', onClientDisconnect);
+    response.once('close', onClientDisconnect);
+    activeTaskMessageCancellers.add(cancelForServerClose);
+    const timer = setTimeout(() => {
+      if (finished) return;
+      timeoutExpired = true;
+      controller.abort();
+      rejectCancellation?.(new OperatorTaskMessageTimeoutError());
+    }, timeoutMs);
+    const input: SendOperatorTaskMessageInput = {
+      env: options.env,
+      repository_id: repositoryId,
+      task_id: taskId,
+      message_id: payload.message_id,
+      scope: payload.scope,
+      expected_task_revision: payload.expected_task_revision,
+      expected_claim_id: payload.expected_claim_id,
+      expected_generation: payload.expected_generation,
+      body: payload.body,
+    };
+    try {
+      const result = await Promise.race([
+        send === undefined
+          ? sendDefaultTaskMessage({ ...input, env: collaborationWorkerEnvironment(input.env) }, controller.signal)
+          : Promise.resolve().then(() => send({ ...input, signal: controller.signal })),
+        cancellation,
+      ]);
+      if (clientDisconnected || serverClosing || response.destroyed) return;
+      finished = true;
+      sendJson(response, result.created ? 201 : 200, {
+        ok: true,
+        protocol: OPERATOR_SERVER_PROTOCOL,
+        repository_id: result.repository_id,
+        task_id: result.task_id,
+        message_id: result.message_id,
+        scope: result.scope,
+        created: result.created,
+      });
+    } catch (error) {
+      if (clientDisconnected || serverClosing || response.destroyed) return;
+      finished = true;
+      const failure = publicTaskMessageError(timeoutExpired ? new OperatorTaskMessageTimeoutError() : error);
+      sendJson(response, failure.status, failure.body);
+    } finally {
+      finished = true;
+      clearTimeout(timer);
+      activeTaskMessageCancellers.delete(cancelForServerClose);
+      request.removeListener('aborted', onClientDisconnect);
+      response.removeListener('close', onClientDisconnect);
+    }
+  };
+
+  const handleCollaborationSnapshot = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+    repositoryId: string,
+    headOnly = false,
+  ): Promise<void> => {
+    let observation: CollaborationObservation;
+    try {
+      observation = acquireCollaborationObservation(repositoryId);
+    } catch (error) {
+      const failure = publicCollaborationError(error);
+      sendJson(response, failure.status, failure.body, headOnly);
+      return;
+    }
+    let finished = false;
+    let clientDisconnected = false;
+    let serverClosing = false;
+    let released = false;
+    let rejectCancellation: ((reason: unknown) => void) | null = null;
+    const cancellation = new Promise<never>((_resolve, reject) => {
+      rejectCancellation = reject;
+    });
+    const release = (): void => {
+      if (released) return;
+      released = true;
+      releaseCollaborationObservation(observation);
+    };
+    const cancel = (reason: 'client_disconnect' | 'server_shutdown'): void => {
+      if (finished) return;
+      if (reason === 'client_disconnect') clientDisconnected = true;
+      else serverClosing = true;
+      release();
+      if (reason === 'server_shutdown' && !response.destroyed) response.destroy();
       rejectCancellation?.(OPERATOR_COLLABORATION_REQUEST_ABORTED);
     };
     const onClientDisconnect = () => cancel('client_disconnect');
     const cancelForServerClose = () => cancel('server_shutdown');
     request.once('aborted', onClientDisconnect);
     response.once('close', onClientDisconnect);
-    activeCollaborationCancellers.add(cancelForServerClose);
-    const timer = setTimeout(() => {
-      if (finished) return;
-      timeoutExpired = true;
-      controller.abort();
-      rejectCancellation?.(new OperatorCollaborationTimeoutError());
-    }, timeoutMs);
+    activeCollaborationRequestCancellers.add(cancelForServerClose);
     try {
       const collaboration = await Promise.race([
-        Promise.resolve().then(() => readCollaboration({
-          env: options.env,
-          repository_id: repositoryId,
-          signal: controller.signal,
-        })),
+        observation.promise,
         cancellation,
       ]);
       if (clientDisconnected || serverClosing || response.destroyed) return;
+      finished = true;
       sendJson(response, 200, collaboration, headOnly);
     } catch (error) {
       if (clientDisconnected || serverClosing || response.destroyed) return;
-      const failure = publicCollaborationError(timeoutExpired ? new OperatorCollaborationTimeoutError() : error);
+      finished = true;
+      const failure = publicCollaborationError(error);
       sendJson(response, failure.status, failure.body, headOnly);
     } finally {
       finished = true;
-      clearTimeout(timer);
-      activeCollaborationCancellers.delete(cancelForServerClose);
+      release();
+      activeCollaborationRequestCancellers.delete(cancelForServerClose);
       request.removeListener('aborted', onClientDisconnect);
       response.removeListener('close', onClientDisconnect);
     }
@@ -983,7 +1380,9 @@ export async function startOperatorServer(
   const close = async (): Promise<void> => {
     if (closed) return;
     closed = true;
-    for (const cancel of activeCollaborationCancellers) cancel();
+    activeFleetCanceller?.();
+    for (const cancel of activeTaskMessageCancellers) cancel();
+    for (const cancel of activeCollaborationRequestCancellers) cancel();
     if (!server.listening) return;
     await new Promise<void>((resolveClose, rejectClose) => {
       server.close((error?: Error) => {
