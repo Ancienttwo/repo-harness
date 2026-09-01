@@ -15,10 +15,13 @@ const ROOT = join(import.meta.dir, "..");
 const HELPER = join(ROOT, "assets", "templates", "helpers", "check-task-sync.sh");
 
 function run(cwd: string, args: string[], env?: Record<string, string>) {
+  const processEnv = { ...process.env };
+  delete processEnv.REPO_HARNESS_DIFF_BASE;
+  delete processEnv.REPO_HARNESS_DIFF_MODE;
   return spawnSync(args[0], args.slice(1), {
     cwd,
     encoding: "utf-8",
-    env: env === undefined ? process.env : { ...process.env, ...env },
+    env: { ...processEnv, ...env },
   });
 }
 
@@ -370,6 +373,32 @@ describe("check-task-sync helper", () => {
       const modified = run(cwd, ["bash", "scripts/check-task-sync.sh"], env);
       expect(modified.status).toBe(1);
       expect(reportedDigest(modified.stdout)).not.toBe(reportedDigest(deleted.stdout));
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("keeps a committed deletion in a base-range virtual-tree identity", () => {
+    const cwd = setupRepo();
+    try {
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      const base = run(cwd, ["git", "rev-parse", "HEAD"]).stdout.trim();
+      rmSync(join(cwd, "src", "app.ts"));
+      expect(run(cwd, ["git", "add", "src/app.ts"]).status).toBe(0);
+      expect(run(cwd, ["git", "commit", "-m", "delete-source"]).status).toBe(0);
+
+      const unbound = run(cwd, ["bash", "scripts/check-task-sync.sh"], { REPO_HARNESS_DIFF_BASE: base });
+      expect(unbound.status).toBe(1);
+      expect(unbound.stderr).toBe("");
+      const digest = reportedDigest(unbound.stdout);
+      writeFileSync(
+        join(cwd, "plans", "plan-delete.md"),
+        `# Plan: delete\n\n> **Substantive Change SHA256**: \`${digest}\`\n`,
+      );
+
+      const bound = run(cwd, ["bash", "scripts/check-task-sync.sh"], { REPO_HARNESS_DIFF_BASE: base });
+      expect(bound.status).toBe(0);
+      expect(bound.stdout).toContain("Bound canonical workflow evidence");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

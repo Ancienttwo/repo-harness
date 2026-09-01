@@ -248,12 +248,13 @@ if (overlap.length > 0) {
   exit 1
 fi
 
-# Project only substantive paths into a temporary index seeded from HEAD. The
-# resulting tree is independent of where the same final content happened to
-# live (dirty worktree, index, or committed HEAD).
+# Project the complete worktree into a temporary index seeded from HEAD, then
+# restrict the canonical raw diff to substantive paths. Updating the whole
+# temporary index avoids passing a base-only deleted path to git add while the
+# path filter below keeps workflow artifacts out of the identity.
 identity_index="$identity_dir/index"
 GIT_INDEX_FILE="$identity_index" git read-tree HEAD
-GIT_INDEX_FILE="$identity_index" git add -A -- "${substantive_files[@]}"
+GIT_INDEX_FILE="$identity_index" git add -A -- .
 virtual_tree="$(GIT_INDEX_FILE="$identity_index" git write-tree)"
 git diff --raw --no-abbrev --no-renames -z "$effective_base" "$virtual_tree" -- "${substantive_files[@]}" > "$identity_dir/base-virtual.raw"
 

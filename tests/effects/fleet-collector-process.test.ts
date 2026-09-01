@@ -120,7 +120,7 @@ describe('Fleet collector supervision protocol', () => {
   });
 
   test('Windows server delegates collector creation to the Job owner and gates start on its assignment proof', () => {
-    const server = readFileSync(join(ROOT, 'src/effects/operator/server.ts'), 'utf-8');
+    const server = readFileSync(join(ROOT, 'src/effects/operator/server.ts'), 'utf-8').replaceAll('\r\n', '\n');
     expect(server).toContain("const collector = process.platform === 'win32'\n      ? null");
     expect(server).toContain("? spawn('powershell.exe'");
     expect(server).toContain("type: 'launch'");

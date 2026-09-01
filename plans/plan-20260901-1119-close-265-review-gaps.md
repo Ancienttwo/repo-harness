@@ -15,7 +15,7 @@
 > **Task Contract**: `tasks/contracts/20260901-1119-close-265-review-gaps.contract.md`
 > **Task Review**: `tasks/reviews/20260901-1119-close-265-review-gaps.review.md`
 > **Implementation Notes**: `tasks/notes/20260901-1119-close-265-review-gaps.notes.md`
-> **Substantive Change SHA256**: `sha256:f6d732499b2a5252cbe25423f3ae587488ed669ead5f65f73cd5a5b7e61dc2e9`
+> **Substantive Change SHA256**: `sha256:7e2596f8704cc69e402f2ae79e6c8c28a7e63717433cfc64efd4f77a2d1febaf`
 
 ## Agentic Routing
 - Selected route: planning
