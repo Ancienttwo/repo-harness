@@ -1,6 +1,16 @@
+> **Archived**: 2026-09-01 09:19
+> **Related Plan**: plans/archive/plan-20260901-0432-archive-codex-plugin-source.md
+> **Outcome**: Completed
+> **Lifecycle**: plan
+> **Parent Run ID**: run-20260901-0919
+> **Archive Projection V1**: `plans/plan-20260901-0432-archive-codex-plugin-source.md` => `plans/archive/plan-20260901-0432-archive-codex-plugin-source.md`
+> **Archive Projection V1**: `tasks/notes/20260901-0432-archive-codex-plugin-source.notes.md` => `tasks/archive/notes-20260901-0919-archive-codex-plugin-source.md`
+> **Archive Projection V1**: `tasks/contracts/20260901-0432-archive-codex-plugin-source.contract.md` => `tasks/archive/contract-20260901-0919-archive-codex-plugin-source.md`
+> **Archive Projection V1**: `tasks/reviews/20260901-0432-archive-codex-plugin-source.review.md` => `tasks/archive/review-20260901-0919-archive-codex-plugin-source.md`
+
 # Plan: Archive Codex Plugin Acceptance Source
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260901-0432
 > **Slug**: archive-codex-plugin-source
 > **Artifact Level**: work-package
@@ -9,9 +19,9 @@
 > **Rollback Surface**: Revert the classifier/template/test changes and restore the WP2 lifecycle/archive artifacts in one commit.
 > **Spec**: `docs/spec.md`
 > **Research**: See `docs/researches/`
-> **Task Contract**: `tasks/contracts/20260901-0432-archive-codex-plugin-source.contract.md`
-> **Task Review**: `tasks/reviews/20260901-0432-archive-codex-plugin-source.review.md`
-> **Implementation Notes**: `tasks/notes/20260901-0432-archive-codex-plugin-source.notes.md`
+> **Task Contract**: `tasks/archive/contract-20260901-0919-archive-codex-plugin-source.md`
+> **Task Review**: `tasks/archive/review-20260901-0919-archive-codex-plugin-source.md`
+> **Implementation Notes**: `tasks/archive/notes-20260901-0919-archive-codex-plugin-source.md`
 
 ## Agentic Routing
 - Selected route: parent agent bugfix workflow
@@ -24,16 +34,16 @@
 ## Workflow Inventory
 Complete this inventory before implementation. If any line is unknown, keep the plan in Draft and fill it before projection.
 
-- Active plan: `plans/plan-20260901-0432-archive-codex-plugin-source.md`
-- Sprint contract: `tasks/contracts/20260901-0432-archive-codex-plugin-source.contract.md`
-- Sprint review: `tasks/reviews/20260901-0432-archive-codex-plugin-source.review.md`
-- Implementation notes: `tasks/notes/20260901-0432-archive-codex-plugin-source.notes.md`
+- Active plan: `plans/archive/plan-20260901-0432-archive-codex-plugin-source.md`
+- Sprint contract: `tasks/archive/contract-20260901-0919-archive-codex-plugin-source.md`
+- Sprint review: `tasks/archive/review-20260901-0919-archive-codex-plugin-source.md`
+- Implementation notes: `tasks/archive/notes-20260901-0919-archive-codex-plugin-source.md`
 - Deferred-goal ledger: `tasks/todos.md`
 - Current checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
-- Scope authority: `tasks/contracts/20260901-0432-archive-codex-plugin-source.contract.md` `allowed_paths`
+- Scope authority: `tasks/archive/contract-20260901-0919-archive-codex-plugin-source.md` `allowed_paths`
 - Concurrency rule: `.ai/harness/active-plan` selects the active plan for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; `.claude/.active-plan` is a legacy fallback during transition. If another worktree already owns active work, open or switch to the matching worktree instead of serializing unrelated plans.
-- Execution isolation: approved contract-level work projects through `repo-harness run plan-to-todo --plan plans/plan-20260901-0432-archive-codex-plugin-source.md` and may start `repo-harness run contract-worktree start --plan plans/plan-20260901-0432-archive-codex-plugin-source.md`.
+- Execution isolation: approved contract-level work projects through `repo-harness run plan-to-todo --plan plans/archive/plan-20260901-0432-archive-codex-plugin-source.md` and may start `repo-harness run contract-worktree start --plan plans/archive/plan-20260901-0432-archive-codex-plugin-source.md`.
 
 ## Approach
 ### Strategy
@@ -74,11 +84,11 @@ The external identity predicate becomes `reviewer === policy.reviewer && source 
 | Workflow archive changes architecture proof digests | Medium | Medium | Reconcile the exact proof-only signal against a current ready CodeGraph index and commit only provider-owned projection outputs. |
 
 ## Task Contracts
-- Contract file: `tasks/contracts/20260901-0432-archive-codex-plugin-source.contract.md`
-- Review file: `tasks/reviews/20260901-0432-archive-codex-plugin-source.review.md`
-- Implementation notes file: `tasks/notes/20260901-0432-archive-codex-plugin-source.notes.md`
+- Contract file: `tasks/archive/contract-20260901-0919-archive-codex-plugin-source.md`
+- Review file: `tasks/archive/review-20260901-0919-archive-codex-plugin-source.md`
+- Implementation notes file: `tasks/archive/notes-20260901-0919-archive-codex-plugin-source.md`
 - Template: `.claude/templates/contract.template.md`
-- Verification command: `repo-harness run verify-contract --contract tasks/contracts/20260901-0432-archive-codex-plugin-source.contract.md --strict`
+- Verification command: `repo-harness run verify-contract --contract tasks/archive/contract-20260901-0919-archive-codex-plugin-source.md --strict`
 - Active plan rule: `.ai/harness/active-plan` is authoritative for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; `.claude/.active-plan` is a legacy fallback during transition. Do not infer active execution from the latest non-archived plan.
 
 ## Handoff

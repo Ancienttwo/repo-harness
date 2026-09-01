@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-01 09:19
+> **Related Plan**: plans/archive/plan-20260901-0432-archive-codex-plugin-source.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260901-0919
+> **Archive Projection V1**: `plans/plan-20260901-0432-archive-codex-plugin-source.md` => `plans/archive/plan-20260901-0432-archive-codex-plugin-source.md`
+> **Archive Projection V1**: `tasks/notes/20260901-0432-archive-codex-plugin-source.notes.md` => `tasks/archive/notes-20260901-0919-archive-codex-plugin-source.md`
+> **Archive Projection V1**: `tasks/contracts/20260901-0432-archive-codex-plugin-source.contract.md` => `tasks/archive/contract-20260901-0919-archive-codex-plugin-source.md`
+> **Archive Projection V1**: `tasks/reviews/20260901-0432-archive-codex-plugin-source.review.md` => `tasks/archive/review-20260901-0919-archive-codex-plugin-source.md`
+
 # Task Contract: archive-codex-plugin-source
 
 > **Status**: Fulfilled
-> **Plan**: plans/plan-20260901-0432-archive-codex-plugin-source.md
+> **Plan**: plans/archive/plan-20260901-0432-archive-codex-plugin-source.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-01 04:35
-> **Review File**: `tasks/reviews/20260901-0432-archive-codex-plugin-source.review.md`
-> **Notes File**: `tasks/notes/20260901-0432-archive-codex-plugin-source.notes.md`
+> **Review File**: `tasks/archive/review-20260901-0919-archive-codex-plugin-source.md`
+> **Notes File**: `tasks/archive/notes-20260901-0919-archive-codex-plugin-source.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -46,10 +56,10 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260901-0432-archive-codex-plugin-source.md`
+- Source plan: `plans/archive/plan-20260901-0432-archive-codex-plugin-source.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260901-0432-archive-codex-plugin-source.review.md`
-- Notes file: `tasks/notes/20260901-0432-archive-codex-plugin-source.notes.md`
+- Review file: `tasks/archive/review-20260901-0919-archive-codex-plugin-source.md`
+- Notes file: `tasks/archive/notes-20260901-0919-archive-codex-plugin-source.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -80,9 +90,9 @@ allowed_paths:
   - tasks/contracts/20260901-0205-external-source-binding-wp2.contract.md
   - tasks/reviews/20260901-0205-external-source-binding-wp2.review.md
   - tasks/notes/20260901-0205-external-source-binding-wp2.notes.md
-  - tasks/contracts/20260901-0432-archive-codex-plugin-source.contract.md
-  - tasks/reviews/20260901-0432-archive-codex-plugin-source.review.md
-  - tasks/notes/20260901-0432-archive-codex-plugin-source.notes.md
+  - tasks/archive/contract-20260901-0919-archive-codex-plugin-source.md
+  - tasks/archive/review-20260901-0919-archive-codex-plugin-source.md
+  - tasks/archive/notes-20260901-0919-archive-codex-plugin-source.md
   - tasks/notes/20260901-0432-archive-codex-plugin-source.pre-fix.log
   - tasks/archive/
   - plans/archive/
@@ -139,7 +149,7 @@ exit_criteria:
     - DEBUG.md
   artifacts_exist:
     - .ai/harness/checks/latest.json
-    - tasks/notes/20260901-0432-archive-codex-plugin-source.notes.md
+    - tasks/archive/notes-20260901-0919-archive-codex-plugin-source.md
   tests_pass:
     - path: tests/historical-plan-classifier.test.ts
     - path: tests/archive-evidence-gates.test.ts
