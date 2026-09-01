@@ -127,6 +127,7 @@ describe('Fleet collector supervision protocol', () => {
     );
     expect(assignmentFailure.indexOf('Stop-ExactCollector')).toBeGreaterThan(-1);
     expect(controller).toContain('TerminateJobObject');
+    expect(controller.indexOf('TotalPageFaultCount')).toBeLessThan(controller.indexOf('ActiveProcesses'));
     expect(controller).toContain('ActiveProcesses');
     expect(controller.indexOf('ActiveProcesses')).toBeLessThan(controller.indexOf("Write-Response 'cleanup_ack'"));
     expect(controller).not.toContain('taskkill');

@@ -46,6 +46,7 @@ public static class RepoHarnessFleetJob {
     public long TotalKernelTime;
     public long ThisPeriodTotalUserTime;
     public long ThisPeriodTotalKernelTime;
+    public UInt32 TotalPageFaultCount;
     public UInt32 TotalProcesses;
     public UInt32 ActiveProcesses;
     public UInt32 TotalTerminatedProcesses;
