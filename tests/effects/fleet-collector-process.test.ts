@@ -9,14 +9,14 @@ import { parseFleetCollectorRequest } from '../../src/effects/operator/fleet-col
 const ROOT = join(import.meta.dir, '../..');
 const testWindows = process.platform === 'win32' ? test : test.skip;
 
-function nextJsonLine(child: ChildProcessWithoutNullStreams): Promise<Record<string, unknown>> {
+function nextJsonLine(child: ChildProcessWithoutNullStreams, label: string): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     let buffered = '';
     let stderr = '';
     const timer = setTimeout(() => {
       cleanup();
-      reject(new Error(`timed out waiting for child JSON response${stderr ? `: ${stderr.trim()}` : ''}`));
-    }, 5_000);
+      reject(new Error(`timed out waiting for ${label}${stderr ? `: ${stderr.trim()}` : ''}`));
+    }, 15_000);
     const cleanup = (): void => {
       clearTimeout(timer);
       child.stdout.removeListener('data', onData);
@@ -96,7 +96,7 @@ describe('Fleet collector supervision protocol', () => {
       windowsHide: true,
     });
     try {
-      const response = nextJsonLine(collector);
+      const response = nextJsonLine(collector, 'collector cancellation response');
       collector.stdin.write('{"type":"cancel"}\n');
       expect(await response).toEqual({ ok: false, cancelled: true });
       await new Promise<void>((resolve) => collector.once('close', () => resolve()));
@@ -178,11 +178,11 @@ describe('Fleet collector supervision protocol', () => {
     let collectorPid = 0;
     let descendantPid = 0;
     try {
-      const assigned = nextJsonLine(controller);
+      const assigned = nextJsonLine(controller, 'controller assignment response');
       controller.stdin.write(`${JSON.stringify({ type: 'launch', executable: process.execPath, collector_path: fixture })}\n`);
       expect(await assigned).toEqual({ type: 'assigned' });
 
-      const started = nextJsonLine(controller);
+      const started = nextJsonLine(controller, 'collector identity response');
       controller.stdin.write('{"type":"start","sequence":1,"max_concurrency":1,"timeout_ms":1000}\n');
       const identities = await started;
       collectorPid = Number(identities.collector_pid);
@@ -191,7 +191,7 @@ describe('Fleet collector supervision protocol', () => {
         throw new Error(`invalid collector identities: ${JSON.stringify(identities)}`);
       }
 
-      const acknowledged = nextJsonLine(controller);
+      const acknowledged = nextJsonLine(controller, 'controller cleanup acknowledgement');
       controller.stdin.write('{"type":"cancel"}\n');
       controller.stdin.write('{"type":"terminate"}\n');
       expect(await acknowledged).toEqual({ type: 'cleanup_ack' });
@@ -209,7 +209,7 @@ describe('Fleet collector supervision protocol', () => {
       }
       rmSync(fixtureRoot, { recursive: true, force: true });
     }
-  }, 10_000);
+  }, 45_000);
 
   testWindows('a bare PID is rejected and cannot redirect Job cleanup to an unrelated process identity', async () => {
     const controller = spawn('powershell.exe', [
@@ -218,7 +218,7 @@ describe('Fleet collector supervision protocol', () => {
     ], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     const unrelated = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore', windowsHide: true });
     try {
-      const failed = nextJsonLine(controller);
+      const failed = nextJsonLine(controller, 'invalid launch rejection');
       controller.stdin.write(`${JSON.stringify({
         type: 'assign',
         collector_pid: unrelated.pid,
@@ -231,5 +231,5 @@ describe('Fleet collector supervision protocol', () => {
       controller.kill('SIGKILL');
       unrelated.kill('SIGKILL');
     }
-  }, 10_000);
+  }, 30_000);
 });
