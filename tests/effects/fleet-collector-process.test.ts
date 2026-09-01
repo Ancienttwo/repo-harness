@@ -12,18 +12,28 @@ const testWindows = process.platform === 'win32' ? test : test.skip;
 function nextJsonLine(child: ChildProcessWithoutNullStreams): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     let buffered = '';
+    let stderr = '';
     const timer = setTimeout(() => {
       cleanup();
-      reject(new Error('timed out waiting for child JSON response'));
+      reject(new Error(`timed out waiting for child JSON response${stderr ? `: ${stderr.trim()}` : ''}`));
     }, 5_000);
     const cleanup = (): void => {
       clearTimeout(timer);
       child.stdout.removeListener('data', onData);
+      child.stderr.removeListener('data', onStderr);
       child.removeListener('error', onError);
+      child.removeListener('close', onClose);
     };
     const onError = (error: Error): void => {
       cleanup();
       reject(error);
+    };
+    const onClose = (code: number | null): void => {
+      cleanup();
+      reject(new Error(`child closed before JSON response (code=${String(code)})${stderr ? `: ${stderr.trim()}` : ''}`));
+    };
+    const onStderr = (chunk: Buffer | string): void => {
+      stderr += String(chunk);
     };
     const onData = (chunk: Buffer | string): void => {
       buffered += String(chunk);
@@ -34,7 +44,9 @@ function nextJsonLine(child: ChildProcessWithoutNullStreams): Promise<Record<str
       catch (error) { reject(error); }
     };
     child.stdout.on('data', onData);
+    child.stderr.on('data', onStderr);
     child.once('error', onError);
+    child.once('close', onClose);
   });
 }
 
@@ -101,6 +113,7 @@ describe('Fleet collector supervision protocol', () => {
     expect(controller).toContain('AssignProcessToJobObject');
     expect(controller).toContain('$collector.Handle');
     expect(controller).toContain('$collector.HasExited');
+    expect(controller).toContain('[RepoHarnessFleetJob]::BeginForwarding($collector)');
     expect(controller).toContain('function Stop-ExactCollector');
     expect(controller).toContain('$process.WaitForExit(10)');
     expect(controller).toContain("$request.type -ne 'launch'");

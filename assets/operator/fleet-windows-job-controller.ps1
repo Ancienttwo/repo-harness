@@ -126,6 +126,13 @@ public static class RepoHarnessFleetJob {
   }
 
   public static void DiscardCollectorError(object sender, DataReceivedEventArgs args) { }
+
+  public static void BeginForwarding(Process process) {
+    process.OutputDataReceived += ForwardCollectorOutput;
+    process.ErrorDataReceived += DiscardCollectorError;
+    process.BeginOutputReadLine();
+    process.BeginErrorReadLine();
+  }
 }
 '@
 
@@ -187,8 +194,6 @@ function Stop-ExactCollector([System.Diagnostics.Process]$process) {
 $assigned = $false
 $closed = $false
 $collector = $null
-$stdoutHandler = [System.Diagnostics.DataReceivedEventHandler][RepoHarnessFleetJob]::ForwardCollectorOutput
-$stderrHandler = [System.Diagnostics.DataReceivedEventHandler][RepoHarnessFleetJob]::DiscardCollectorError
 try {
   while ($null -ne ($line = [Console]::In.ReadLine())) {
     $request = $null
@@ -227,10 +232,7 @@ try {
         Write-Response 'cleanup_failed'
         break
       }
-      $collector.add_OutputDataReceived($stdoutHandler)
-      $collector.add_ErrorDataReceived($stderrHandler)
-      $collector.BeginOutputReadLine()
-      $collector.BeginErrorReadLine()
+      [RepoHarnessFleetJob]::BeginForwarding($collector)
       $assigned = $true
       Write-Response 'assigned'
       continue
