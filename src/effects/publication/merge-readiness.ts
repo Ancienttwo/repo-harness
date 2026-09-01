@@ -80,6 +80,38 @@ export interface ProviderIdentity {
   readonly mergeable: 'MERGEABLE' | 'CONFLICTING';
 }
 
+const PROVIDER_TERMINATION_GRACE_MS = 500;
+const PROVIDER_SYNCHRONOUS_TIMEOUT_MS = 30_000;
+
+/**
+ * Fleet owns process-tree termination at the collector boundary. This helper
+ * therefore addresses only its direct provider child; on Windows the parent
+ * Job controller is the sole tree owner, so no PID-based tree fallback exists.
+ */
+function waitForProviderChildExit(child: ReturnType<typeof spawn>, timeoutMs: number): Promise<boolean> {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      child.removeListener('close', onClose);
+      resolve(false);
+    }, timeoutMs);
+    const onClose = (): void => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    child.once('close', onClose);
+  });
+}
+
+async function terminateProviderChild(child: ReturnType<typeof spawn>): Promise<void> {
+  try { child.kill('SIGTERM'); } catch { /* the direct provider child already exited */ }
+  if (await waitForProviderChildExit(child, PROVIDER_TERMINATION_GRACE_MS)) return;
+  try { child.kill('SIGKILL'); } catch { /* the direct provider child already exited */ }
+  if (!await waitForProviderChildExit(child, PROVIDER_SYNCHRONOUS_TIMEOUT_MS)) {
+    throw new Error('provider child did not exit after forced termination');
+  }
+}
+
 interface LocalReadinessSnapshot {
   readonly token: string;
   readonly lease: LeaseOwnerRecord | null;
@@ -130,6 +162,8 @@ function gh(input: PublicationReadinessInput, args: readonly string[], accepted 
   const result = injected ?? spawnSync(input.gh_bin ?? process.env.REPO_HARNESS_GH_BIN ?? 'gh', [...args], {
     cwd: input.repo_root,
     encoding: 'utf-8',
+    timeout: PROVIDER_SYNCHRONOUS_TIMEOUT_MS,
+    killSignal: 'SIGKILL',
   });
   if (('error' in result && result.error) || result.status === null || !accepted.includes(result.status)) {
     const cause = 'error' in result ? result.error : undefined;
@@ -164,22 +198,52 @@ async function ghAbortable(
       let stdout = '';
       let stderr = '';
       let settled = false;
+      let abortRequested = false;
+      let completion: { status: number | null; stdout: string; stderr: string; error?: Error } | null = null;
       const finish = (result: { status: number | null; stdout: string; stderr: string; error?: Error }) => {
         if (settled) return;
         settled = true;
         input.signal?.removeEventListener('abort', abort);
         resolve(result);
       };
+      const maybeFinish = () => {
+        if (completion !== null && !abortRequested) finish(completion);
+      };
       const abort = () => {
-        try { child.kill('SIGTERM'); } catch { /* child may have already exited */ }
+        if (abortRequested || settled) return;
+        abortRequested = true;
+        void terminateProviderChild(child)
+          .then(() => {
+            finish(completion ?? {
+              status: null,
+              stdout,
+              stderr,
+              error: new Error('provider process did not exit after process-tree termination'),
+            });
+          })
+          .catch((error) => {
+            finish({
+              status: null,
+              stdout,
+              stderr,
+              error: error instanceof Error ? error : new Error(String(error)),
+            });
+          });
       };
       input.signal?.addEventListener('abort', abort, { once: true });
       child.stdout.setEncoding('utf-8');
       child.stderr.setEncoding('utf-8');
       child.stdout.on('data', (chunk: string) => { stdout += chunk; });
       child.stderr.on('data', (chunk: string) => { stderr += chunk; });
-      child.once('error', (error) => finish({ status: null, stdout, stderr, error }));
-      child.once('close', (status) => finish({ status, stdout, stderr }));
+      child.once('error', (error) => {
+        completion = { status: null, stdout, stderr, error };
+        maybeFinish();
+      });
+      child.once('close', (status) => {
+        completion = { status, stdout, stderr };
+        maybeFinish();
+      });
+      if (input.signal?.aborted) abort();
     });
   if (input.signal?.aborted || result.error || result.status === null || !accepted.includes(result.status)) {
     const detail = input.signal?.aborted ? 'aborted' : (result.stderr || result.error?.message || `exit ${result.status}`).trim();

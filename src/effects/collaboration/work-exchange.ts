@@ -33,11 +33,13 @@
  * merge would produce a set that no single moment ever contained, and
  * `source_snapshot_sha256` would then identify a state that never existed.
  *
- * **Why the primary source throws and the rest degrade.** Signals are what every
- * projection here is derived from. Without them there is no source set, no
- * thread order and no honest `source_snapshot_sha256` — a snapshot built over an
- * unreadable signal shard would be a digest of nothing, so the collection fails
- * closed instead. Handoffs, adoptions and execution offers are additive: their
+ * **Why authority sources throw and additive stores degrade.** Mode is the
+ * authority for whether the collaboration surface is enabled, and signals are
+ * what every projection here is derived from. Without either there is no honest
+ * snapshot: an unreadable mode cannot be replaced with a permission default,
+ * and an unreadable signal shard would make `source_snapshot_sha256` a digest of
+ * nothing. The collection therefore fails closed on either. Handoffs, adoptions
+ * and execution offers are additive: their
  * absence leaves counts at zero, which reads exactly like "there are none". That
  * is a fabrication unless it is marked, and `degraded` is the mark. Every
  * consumer that builds injectable context refuses a non-`stable` snapshot, so a
@@ -93,6 +95,7 @@ import { resolveBoundTaskSuccession } from './succession';
 
 /** The sources a collection reads, named so a refusal can point at one. */
 export const COLLABORATION_EXCHANGE_SOURCES = [
+  'mode',
   'signals',
   'handoffs',
   'adoptions',
@@ -152,7 +155,7 @@ function classifyPasses<T>(
 }
 
 /**
- * One pass over every source, always in the same order.
+ * One pass over mode and every record source, always in the same order.
  *
  * The order is the object literal's source order, which JavaScript evaluates
  * top to bottom, so the two passes interleave identically and a source's
@@ -162,12 +165,14 @@ function readAllSources(
   repoRoot: string,
   readExecutionOffers: () => readonly EngineerOfferV1[],
 ): {
+  readonly mode: PassOutcome<CollaborationMode>;
   readonly signals: PassOutcome<readonly CoordinationSignalV1[]>;
   readonly handoffs: PassOutcome<readonly WorkStateHandoffV1[]>;
   readonly adoptions: PassOutcome<readonly HandoffAdoptionReceiptV1[]>;
   readonly execution_offers: PassOutcome<readonly EngineerOfferV1[]>;
 } {
   return {
+    mode: readPass(() => readCollaborationMode(repoRoot)),
     signals: readPass(() => listCoordinationSignals(repoRoot)),
     handoffs: readPass(() => listWorkStateHandoffs(repoRoot)),
     adoptions: readPass(() => listHandoffAdoptionReceipts(repoRoot)),
@@ -296,7 +301,6 @@ export function collectCollaborativeWorkExchange(
   input: CollectCollaborativeWorkExchangeInput,
 ): CollaborativeWorkExchangeCollectionV1 {
   const repoRoot = realpathSync(input.repo_root);
-  const mode = readCollaborationMode(repoRoot);
 
   // Both passes cover every source before either is classified. Reading one
   // source twice back to back would prove that source stable inside its own
@@ -308,10 +312,18 @@ export function collectCollaborativeWorkExchange(
   const firstPass = readAllSources(repoRoot, input.read_execution_offers);
   const secondPass = readAllSources(repoRoot, input.read_execution_offers);
 
+  const modeObservation = classifyPasses(firstPass.mode, secondPass.mode, (mode) => mode);
   const signalObservation = classifyPasses(firstPass.signals, secondPass.signals, signalSetBytes);
   const handoffObservation = classifyPasses(firstPass.handoffs, secondPass.handoffs, handoffSetBytes);
   const adoptionObservation = classifyPasses(firstPass.adoptions, secondPass.adoptions, adoptionSetBytes);
   const offerObservation = classifyPasses(firstPass.execution_offers, secondPass.execution_offers, offerSetBytes);
+
+  if (modeObservation.outcome === 'degraded') {
+    return collaborationUnavailable(
+      'collaboration mode is unreadable; no snapshot can be derived',
+      modeObservation.cause,
+    );
+  }
 
   if (signalObservation.outcome === 'degraded') {
     // The one source whose absence leaves nothing to describe. Every projection
@@ -324,6 +336,7 @@ export function collectCollaborativeWorkExchange(
   }
 
   const observations: readonly (readonly [CollaborationExchangeSource, Observation<unknown>])[] = [
+    ['mode', modeObservation],
     ['signals', signalObservation],
     ['handoffs', handoffObservation],
     ['adoptions', adoptionObservation],
@@ -343,6 +356,7 @@ export function collectCollaborativeWorkExchange(
     );
 
   const signals = signalObservation.value;
+  const mode = modeObservation.value;
   const handoffs = handoffObservation.outcome === 'degraded' ? [] : handoffObservation.value;
   const adoptions = adoptionObservation.outcome === 'degraded' ? [] : adoptionObservation.value;
   const offers = offerObservation.outcome === 'degraded' ? [] : offerObservation.value;

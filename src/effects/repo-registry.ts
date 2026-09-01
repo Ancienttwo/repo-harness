@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "crypto";
-import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "fs";
+import { closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { dirname, isAbsolute, join, resolve } from "path";
 
@@ -224,6 +224,40 @@ function describeRegistryLock(path: string): string {
   }
 }
 
+function reclaimDeadRegistryMutationLock(lockPath: string): boolean {
+  let descriptor: number | null = null;
+  try {
+    const published = lstatSync(lockPath);
+    if (!published.isFile()) return false;
+    descriptor = openSync(lockPath, 'r');
+    const opened = fstatSync(descriptor);
+    if (opened.dev !== published.dev || opened.ino !== published.ino) return false;
+    const owner = JSON.parse(readFileSync(descriptor, 'utf-8')) as Partial<RegistryLockOwner>;
+    if (!Number.isSafeInteger(owner.pid)
+      || (owner.pid ?? 0) < 1
+      || typeof owner.token !== 'string'
+      || typeof owner.acquiredAt !== 'string') return false;
+    try {
+      process.kill(owner.pid!, 0);
+      return false;
+    } catch (error) {
+      if (!isNodeError(error) || error.code !== 'ESRCH') return false;
+    }
+    const current = lstatSync(lockPath);
+    if (!current.isFile() || current.dev !== published.dev || current.ino !== published.ino) return false;
+    const currentOwner = JSON.parse(readFileSync(lockPath, 'utf-8')) as Partial<RegistryLockOwner>;
+    if (currentOwner.pid !== owner.pid || currentOwner.token !== owner.token) return false;
+    unlinkSync(lockPath);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    if (descriptor !== null) {
+      try { closeSync(descriptor); } catch { /* descriptor may already be closed */ }
+    }
+  }
+}
+
 function acquireRegistryMutationLock(registryPath: string): () => void {
   mkdirSync(dirname(registryPath), { recursive: true, mode: 0o700 });
   const lockPath = `${registryPath}.lock`;
@@ -262,6 +296,7 @@ function acquireRegistryMutationLock(registryPath: string): () => void {
       };
     } catch (error) {
       if (!isNodeError(error) || error.code !== 'EEXIST') throw error;
+      if (reclaimDeadRegistryMutationLock(lockPath)) continue;
       if (Date.now() >= deadline) {
         throw new Error(`timed out waiting for registry mutation lock ${lockPath}: ${describeRegistryLock(lockPath)}`);
       }

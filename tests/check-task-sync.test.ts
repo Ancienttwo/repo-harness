@@ -14,8 +14,18 @@ import { spawnSync } from "child_process";
 const ROOT = join(import.meta.dir, "..");
 const HELPER = join(ROOT, "assets", "templates", "helpers", "check-task-sync.sh");
 
-function run(cwd: string, args: string[]) {
-  return spawnSync(args[0], args.slice(1), { cwd, encoding: "utf-8" });
+function run(cwd: string, args: string[], env?: Record<string, string>) {
+  return spawnSync(args[0], args.slice(1), {
+    cwd,
+    encoding: "utf-8",
+    env: env === undefined ? process.env : { ...process.env, ...env },
+  });
+}
+
+function reportedDigest(output: string): string {
+  const match = output.match(/sha256:[0-9a-f]{64}/u);
+  expect(match).not.toBeNull();
+  return match![0];
 }
 
 function setupRepo(): string {
@@ -53,7 +63,7 @@ describe("check-task-sync helper", () => {
       writeFileSync(join(cwd, "src", "app.ts"), "export const value = 2;\n");
       const res = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
       expect(res.status).toBe(1);
-      expect(res.stdout).toContain("without tasks/ synchronization");
+      expect(res.stdout).toContain("Substantive diff lacks canonical workflow evidence");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -65,70 +75,140 @@ describe("check-task-sync helper", () => {
       writeFileSync(join(cwd, "src", "new-file.ts"), "export const created = true;\n");
       const res = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
       expect(res.status).toBe(1);
-      expect(res.stdout).toContain("without tasks/ synchronization");
+      expect(res.stdout).toContain("Substantive diff lacks canonical workflow evidence");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
 
-  test("passes when code changes include tasks/todos.md updates", () => {
+  test("does not treat tasks/todos.md as diff-bound evidence", () => {
     const cwd = setupRepo();
     try {
       writeFileSync(join(cwd, "src", "app.ts"), "export const value = 2;\n");
       writeFileSync(join(cwd, "tasks", "todos.md"), "# Task Execution Checklist (Primary)\n- [x] updated\n");
       const res = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
-      expect(res.status).toBe(0);
+      expect(res.status).toBe(1);
+      expect(res.stdout).toContain("Substantive diff lacks canonical workflow evidence");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
 
-  test("passes when untracked repo changes include an untracked tasks file", () => {
+  test("passes only when a canonical artifact binds the exact substantive digest", () => {
     const cwd = setupRepo();
     try {
       mkdirSync(join(cwd, "tasks", "contracts"), { recursive: true });
       writeFileSync(join(cwd, "src", "new-file.ts"), "export const created = true;\n");
       writeFileSync(join(cwd, "tasks", "contracts", "new-file.contract.md"), "# Task Contract\n");
+      const unbound = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
+      expect(unbound.status).toBe(1);
+      const digest = reportedDigest(unbound.stdout);
+      writeFileSync(
+        join(cwd, "tasks", "contracts", "new-file.contract.md"),
+        `# Task Contract\n\n> **Substantive Change SHA256**: \`${digest}\`\n`,
+      );
       const res = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
       expect(res.status).toBe(0);
-      expect(res.stdout).toContain("synchronized tasks/ updates");
+      expect(res.stdout).toContain("Bound canonical workflow evidence");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
 
-  test("passes when code changes include tasks/lessons.md updates", () => {
+  test("binds multiple untracked substantive files as separate NUL-delimited records", () => {
+    const cwd = setupRepo();
+    try {
+      mkdirSync(join(cwd, "tasks", "contracts"), { recursive: true });
+      writeFileSync(join(cwd, "src", "new-a.ts"), "export const a = true;\n");
+      writeFileSync(join(cwd, "src", "new-b.ts"), "export const b = true;\n");
+      const contract = join(cwd, "tasks", "contracts", "multiple-untracked.contract.md");
+      writeFileSync(contract, "# Task Contract\n");
+
+      const unbound = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
+      expect(unbound.status).toBe(1);
+      expect(unbound.stderr).toBe("");
+      const digest = reportedDigest(unbound.stdout);
+      writeFileSync(contract, `# Task Contract\n\n> **Substantive Change SHA256**: \`${digest}\`\n`);
+
+      const bound = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
+      expect(bound.status).toBe(0);
+      expect(bound.stdout).toContain("Bound canonical workflow evidence");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("binds a newline-tab-backslash path without accepting a split pseudo-path", () => {
+    const cwd = setupRepo();
+    try {
+      writeFileSync(join(cwd, "src", "real"), "export const sentinel = true;\n");
+      expect(run(cwd, ["git", "add", "src/real"]).status).toBe(0);
+      expect(run(cwd, ["git", "commit", "-m", "pseudo-path-sentinel"]).status).toBe(0);
+      const base = run(cwd, ["git", "rev-parse", "HEAD"]).stdout.trim();
+      const baseEnv = { REPO_HARNESS_DIFF_BASE: base };
+      const weirdPath = join("src", "real\npath\t\\tail.ts");
+      const weirdFile = join(cwd, weirdPath);
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      const evidence = join(cwd, "plans", "plan-weird-path.md");
+      writeFileSync(weirdFile, "export const value = 1;\n");
+      writeFileSync(evidence, "# Plan: weird path\n");
+
+      const dirtyDefault = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
+      const dirtyBase = run(cwd, ["bash", "scripts/check-task-sync.sh"], baseEnv);
+      expect(dirtyDefault.status).toBe(1);
+      expect(dirtyBase.status).toBe(1);
+      const digest = reportedDigest(dirtyDefault.stdout);
+      expect(reportedDigest(dirtyBase.stdout)).toBe(digest);
+
+      writeFileSync(evidence, `# Plan: weird path\n\n> **Substantive Change SHA256**: \`${digest}\`\n`);
+      expect(run(cwd, ["bash", "scripts/check-task-sync.sh"]).status).toBe(0);
+      expect(run(cwd, ["bash", "scripts/check-task-sync.sh"], baseEnv).status).toBe(0);
+
+      writeFileSync(weirdFile, "export const value = 2;\n");
+      const staleDefault = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
+      const staleBase = run(cwd, ["bash", "scripts/check-task-sync.sh"], baseEnv);
+      expect(staleDefault.status).toBe(1);
+      expect(staleBase.status).toBe(1);
+      expect(reportedDigest(staleDefault.stdout)).not.toBe(digest);
+      expect(reportedDigest(staleBase.stdout)).toBe(reportedDigest(staleDefault.stdout));
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("does not treat tasks/lessons.md as diff-bound evidence", () => {
     const cwd = setupRepo();
     try {
       writeFileSync(join(cwd, "src", "app.ts"), "export const value = 2;\n");
       writeFileSync(join(cwd, "tasks", "lessons.md"), "# Lessons Learned (Self-Improvement Loop)\n- rule\n");
       const res = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
-      expect(res.status).toBe(0);
+      expect(res.status).toBe(1);
+      expect(res.stdout).toContain("Substantive diff lacks canonical workflow evidence");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
 
-  test("passes when only tasks files changed", () => {
+  test("passes when only research documentation changed", () => {
     const cwd = setupRepo();
     try {
       writeFileSync(join(cwd, "docs", "researches", "20260612-finding.md"), "# Finding\n");
       const res = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
       expect(res.status).toBe(0);
-      expect(res.stdout).toContain("Only task/research sync files changed");
+      expect(res.stdout).toContain("No substantive repo changes detected");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
 
-  test("passes when code changes include docs/researches updates", () => {
+  test("does not treat research documentation as diff-bound evidence", () => {
     const cwd = setupRepo();
     try {
       writeFileSync(join(cwd, "src", "app.ts"), "export const value = 2;\n");
       writeFileSync(join(cwd, "docs", "researches", "20260612-finding.md"), "# Finding\n");
       const res = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
-      expect(res.status).toBe(0);
-      expect(res.stdout).toContain("synchronized tasks/ updates");
+      expect(res.status).toBe(1);
+      expect(res.stdout).toContain("Substantive diff lacks canonical workflow evidence");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -165,7 +245,7 @@ describe("check-task-sync helper", () => {
       writeFileSync(join(cwd, "docs", "architecture", "index.md"), "# Changed architecture\n");
       const res = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
       expect(res.status).toBe(1);
-      expect(res.stdout).toContain("without tasks/ synchronization");
+      expect(res.stdout).toContain("Substantive diff lacks canonical workflow evidence");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -178,7 +258,7 @@ describe("check-task-sync helper", () => {
       writeFileSync(join(cwd, "evals", "harness", "reports", "profile-comparison.json"), '{"authoritative":true}\n');
       const res = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
       expect(res.status).toBe(1);
-      expect(res.stdout).toContain("without tasks/ synchronization");
+      expect(res.stdout).toContain("Substantive diff lacks canonical workflow evidence");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -190,7 +270,7 @@ describe("check-task-sync helper", () => {
       writeFileSync(join(cwd, "evals", "harness", "reports", "other.json"), "{}\n");
       const res = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
       expect(res.status).toBe(1);
-      expect(res.stdout).toContain("without tasks/ synchronization");
+      expect(res.stdout).toContain("Substantive diff lacks canonical workflow evidence");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -203,6 +283,7 @@ describe("check-task-sync helper", () => {
       writeFileSync(join(cwd, "docs", "PROGRESS.md"), "# Project Milestones\n- [x] milestone\n");
       const res = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
       expect(res.status).toBe(1);
+      expect(res.stdout).toContain("docs/PROGRESS.md");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -216,12 +297,13 @@ describe("check-task-sync helper", () => {
       writeFileSync(join(cwd, "docs", "PROGRESS.md"), "# Project Milestones\n- [x] milestone\n");
       const res = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
       expect(res.status).toBe(1);
+      expect(res.stdout).toContain("docs/PROGRESS.md");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
 
-  test("prefers staged changes over working tree changes", () => {
+  test("unions staged and working-tree changes", () => {
     const cwd = setupRepo();
     try {
       writeFileSync(join(cwd, "src", "app.ts"), "export const value = 2;\n");
@@ -229,8 +311,98 @@ describe("check-task-sync helper", () => {
       expect(run(cwd, ["git", "add", "tasks/todos.md"]).status).toBe(0);
 
       const res = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
-      expect(res.status).toBe(0);
-      expect(res.stdout).toContain("Only task/research sync files changed.");
+      expect(res.status).toBe(1);
+      expect(res.stdout).toContain("src/app.ts");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("fails closed when one substantive path has staged and working-tree divergence", () => {
+    const cwd = setupRepo();
+    try {
+      const base = run(cwd, ["git", "rev-parse", "HEAD"]).stdout.trim();
+      const env = { REPO_HARNESS_DIFF_BASE: base };
+
+      writeFileSync(join(cwd, "src", "app.ts"), "export const value = 2;\n");
+      expect(run(cwd, ["git", "add", "src/app.ts"]).status).toBe(0);
+      writeFileSync(join(cwd, "src", "app.ts"), "export const value = 1;\n");
+      const first = run(cwd, ["bash", "scripts/check-task-sync.sh"], env);
+      expect(first.status).toBe(1);
+      expect(first.stderr).toContain("Cannot form stable diff identity");
+      expect(first.stderr).toContain("src/app.ts");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("base mode changes identity when the resolved base changes despite identical final contents", () => {
+    const cwd = setupRepo();
+    try {
+      const firstBase = run(cwd, ["git", "rev-parse", "HEAD"]).stdout.trim();
+      writeFileSync(join(cwd, "src", "app.ts"), "export const value = 2;\n");
+      expect(run(cwd, ["git", "add", "src/app.ts"]).status).toBe(0);
+      expect(run(cwd, ["git", "commit", "-m", "second-base"]).status).toBe(0);
+      const secondBase = run(cwd, ["git", "rev-parse", "HEAD"]).stdout.trim();
+      writeFileSync(join(cwd, "src", "app.ts"), "export const value = 3;\n");
+
+      const fromFirstBase = run(cwd, ["bash", "scripts/check-task-sync.sh"], { REPO_HARNESS_DIFF_BASE: firstBase });
+      const fromSecondBase = run(cwd, ["bash", "scripts/check-task-sync.sh"], { REPO_HARNESS_DIFF_BASE: secondBase });
+      expect(fromFirstBase.status).toBe(1);
+      expect(fromSecondBase.status).toBe(1);
+      expect(reportedDigest(fromFirstBase.stdout)).not.toBe(reportedDigest(fromSecondBase.stdout));
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("virtual-tree identity distinguishes deletion from a modified final file", () => {
+    const cwd = setupRepo();
+    try {
+      const base = run(cwd, ["git", "rev-parse", "HEAD"]).stdout.trim();
+      const env = { REPO_HARNESS_DIFF_BASE: base };
+
+      rmSync(join(cwd, "src", "app.ts"));
+      const deleted = run(cwd, ["bash", "scripts/check-task-sync.sh"], env);
+      expect(deleted.status).toBe(1);
+
+      writeFileSync(join(cwd, "src", "app.ts"), "export const value = 2;\n");
+      const modified = run(cwd, ["bash", "scripts/check-task-sync.sh"], env);
+      expect(modified.status).toBe(1);
+      expect(reportedDigest(modified.stdout)).not.toBe(reportedDigest(deleted.stdout));
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("keeps the same identity from a dirty prepared state through a committed base range", () => {
+    const cwd = setupRepo();
+    try {
+      const base = run(cwd, ["git", "rev-parse", "HEAD"]).stdout.trim();
+      const direct = { REPO_HARNESS_DIFF_BASE: base };
+      const mergeBase = { REPO_HARNESS_DIFF_BASE: base, REPO_HARNESS_DIFF_MODE: "merge-base" };
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      const evidence = join(cwd, "plans", "plan-change.md");
+      writeFileSync(join(cwd, "src", "app.ts"), "export const value = 2;\n");
+      writeFileSync(evidence, "# Plan: change\n");
+
+      const dirtyDefault = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
+      const dirtyDirect = run(cwd, ["bash", "scripts/check-task-sync.sh"], direct);
+      const dirtyMergeBase = run(cwd, ["bash", "scripts/check-task-sync.sh"], mergeBase);
+      expect(dirtyDefault.status).toBe(1);
+      expect(dirtyDirect.status).toBe(1);
+      expect(dirtyMergeBase.status).toBe(1);
+      const digest = reportedDigest(dirtyDefault.stdout);
+      expect(reportedDigest(dirtyDirect.stdout)).toBe(digest);
+      expect(reportedDigest(dirtyMergeBase.stdout)).toBe(digest);
+
+      writeFileSync(evidence, `# Plan: change\n\n> **Substantive Change SHA256**: \`${digest}\`\n`);
+      expect(run(cwd, ["bash", "scripts/check-task-sync.sh"]).status).toBe(0);
+
+      expect(run(cwd, ["git", "add", "src/app.ts", "plans/plan-change.md"]).status).toBe(0);
+      expect(run(cwd, ["git", "commit", "-m", "prepared-change"]).status).toBe(0);
+      expect(run(cwd, ["bash", "scripts/check-task-sync.sh"], direct).status).toBe(0);
+      expect(run(cwd, ["bash", "scripts/check-task-sync.sh"], mergeBase).status).toBe(0);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

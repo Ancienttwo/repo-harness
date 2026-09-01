@@ -68,6 +68,37 @@ export interface OperatorApiErrorEnvelopeV1 {
   readonly error: OperatorApiErrorV1;
 }
 
+export const OPERATOR_TASK_MESSAGE_RESPONSE_PROTOCOL = 1 as const;
+
+export interface OperatorTaskMessageRequestIdentityV1 {
+  readonly repository_id: string;
+  readonly task_id: string;
+  readonly message_id: string;
+  readonly scope: 'task' | 'claim';
+}
+
+export interface OperatorTaskMessageResponseV1 extends OperatorTaskMessageRequestIdentityV1 {
+  readonly ok: true;
+  readonly protocol: typeof OPERATOR_TASK_MESSAGE_RESPONSE_PROTOCOL;
+  readonly created: boolean;
+}
+
+export const OPERATOR_TASK_MESSAGE_RESPONSE_INVALID_ERROR: OperatorApiErrorV1 = Object.freeze({
+  code: 'task_message_response_invalid',
+  message: 'The task message acknowledgment is invalid',
+  next_action: 'Retry with the same message ID so the server can return the incumbent event.',
+});
+
+export class OperatorTaskMessageResponseError extends Error {
+  readonly code = OPERATOR_TASK_MESSAGE_RESPONSE_INVALID_ERROR.code;
+  readonly next_action = OPERATOR_TASK_MESSAGE_RESPONSE_INVALID_ERROR.next_action;
+
+  constructor() {
+    super(OPERATOR_TASK_MESSAGE_RESPONSE_INVALID_ERROR.message);
+    this.name = 'OperatorTaskMessageResponseError';
+  }
+}
+
 export const OPERATOR_PAYLOAD_INVALID_ERROR: OperatorApiErrorV1 = Object.freeze({
   code: 'operator_payload_invalid',
   message: 'Fleet snapshot response is invalid',
@@ -226,7 +257,7 @@ const TASK_DIGEST_PATTERN = /^[0-9a-f]{64}$/u;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const COLLABORATION_RECORD_ID_PATTERN = /^[0-9a-f]{64}$/u;
 const COLLABORATION_MODES = ['off', 'shadow', 'active'] as const;
-const COLLABORATION_SOURCES = ['signals', 'handoffs', 'adoptions', 'execution_offers'] as const;
+const COLLABORATION_SOURCES = ['mode', 'signals', 'handoffs', 'adoptions', 'execution_offers'] as const;
 const COLLABORATION_ACTOR_KINDS = ['module_engineer', 'delegated_worker'] as const;
 const COLLABORATION_EXECUTION_CONTEXT_KINDS = [
   'delegated_worker',
@@ -305,6 +336,14 @@ function requireBoolean(value: unknown): boolean {
 function requireArray(value: unknown): readonly unknown[] {
   if (!Array.isArray(value)) throw new OperatorPayloadError();
   return value;
+}
+
+function requireExactKeys(value: UnknownRecord, expected: readonly string[]): void {
+  const actual = Object.keys(value).sort();
+  const canonical = [...expected].sort();
+  if (actual.length !== canonical.length || actual.some((key, index) => key !== canonical[index])) {
+    throw new OperatorPayloadError();
+  }
 }
 
 function decodeError(value: unknown): OperatorFleetRepositoryV1['error'] {
@@ -421,7 +460,11 @@ function decodeRepository(value: unknown): OperatorFleetRepositoryV1 {
   const snapshotConsistency = requireOneOf(repository.snapshot_consistency, SNAPSHOT_CONSISTENCIES);
   const error = decodeError(repository.error);
   const cards = requireArray(repository.cards).map((card) => decodeCard(card, repositoryId));
-  if (repository.status === 'unreadable' && repository.error === null) throw new OperatorPayloadError();
+  if (status === 'unreadable' && (error === null || cards.length !== 0 || snapshotConsistency !== 'degraded')) {
+    throw new OperatorPayloadError();
+  }
+  const cardChanged = cards.some((card) => card.snapshot_consistency === 'changed_during_read');
+  if (cardChanged && snapshotConsistency === 'stable') throw new OperatorPayloadError();
   return Object.freeze({
     repository_id: repositoryId,
     access_mode: accessMode,
@@ -585,6 +628,17 @@ export function decodeOperatorFleetSnapshot(value: unknown): OperatorFleetSnapsh
     unreadable: requireNonNegativeInteger(counts.unreadable),
   });
   const repositories = requireArray(snapshot.repositories).map(decodeRepository);
+  const leastHealthyRepository = repositories.some((repository) => repository.snapshot_consistency === 'degraded')
+    ? 'degraded'
+    : repositories.some((repository) => repository.snapshot_consistency === 'changed_during_read')
+      ? 'changed_during_read'
+      : 'stable';
+  if (
+    (snapshotConsistency === 'stable' && leastHealthyRepository !== 'stable')
+    || (snapshotConsistency === 'changed_during_read' && leastHealthyRepository === 'degraded')
+  ) {
+    throw new OperatorPayloadError();
+  }
   return Object.freeze({
     protocol: OPERATOR_FLEET_PAYLOAD_PROTOCOL,
     kind: 'operator_fleet_snapshot',
@@ -596,4 +650,47 @@ export function decodeOperatorFleetSnapshot(value: unknown): OperatorFleetSnapsh
     counts: decodedCounts,
     source_snapshot_sha256: sourceSnapshotSha256,
   });
+}
+
+/** Decode and bind a 2xx Task Message acknowledgment to its exact request. */
+export function decodeOperatorTaskMessageResponse(
+  value: unknown,
+  expected: OperatorTaskMessageRequestIdentityV1,
+  status: number,
+): OperatorTaskMessageResponseV1 {
+  try {
+    const response = requireRecord(value);
+    requireExactKeys(response, [
+      'ok', 'protocol', 'repository_id', 'task_id', 'message_id', 'scope', 'created',
+    ]);
+    if (response.ok !== true || response.protocol !== OPERATOR_TASK_MESSAGE_RESPONSE_PROTOCOL) {
+      throw new OperatorPayloadError();
+    }
+    const repositoryId = requireString(response.repository_id);
+    const taskId = requireTaskDigest(response.task_id);
+    const messageId = requireUuid(response.message_id);
+    const scope = requireOneOf(response.scope, ['task', 'claim'] as const);
+    const created = requireBoolean(response.created);
+    if (
+      repositoryId !== expected.repository_id
+      || taskId !== expected.task_id
+      || messageId !== expected.message_id
+      || scope !== expected.scope
+      || (created ? status !== 201 : status !== 200)
+    ) {
+      throw new OperatorPayloadError();
+    }
+    return Object.freeze({
+      ok: true,
+      protocol: OPERATOR_TASK_MESSAGE_RESPONSE_PROTOCOL,
+      repository_id: repositoryId,
+      task_id: taskId,
+      message_id: messageId,
+      scope,
+      created,
+    });
+  } catch (error) {
+    if (error instanceof OperatorPayloadError) throw new OperatorTaskMessageResponseError();
+    throw error;
+  }
 }

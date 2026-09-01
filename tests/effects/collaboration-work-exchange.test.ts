@@ -217,6 +217,13 @@ function collect(value: Fixture, offers: readonly EngineerOfferV1[] = []) {
   });
 }
 
+function writeMode(value: Fixture, mode: 'off' | 'shadow' | 'active'): void {
+  writeFileSync(
+    join(value.repoRoot, '.ai/harness/policy.json'),
+    `${JSON.stringify({ collaboration: { mode } }, null, 2)}\n`,
+  );
+}
+
 describe('C6 collaborative work exchange collection', () => {
   test('the same stores rebuild a byte-identical snapshot', () => {
     const value = fixture();
@@ -330,6 +337,51 @@ describe('C6 collaborative work exchange collection', () => {
     expect(collection.snapshot.snapshot_consistency).toBe('changed_during_read');
     // Built from the second read, never from a merge of the two.
     expect(collection.snapshot.execution_offers).toHaveLength(1);
+  });
+
+  for (const [before, after] of [
+    ['active', 'off'],
+    ['off', 'active'],
+    ['shadow', 'active'],
+  ] as const) {
+    test(`mode ${before} -> ${after} is fenced by the same double-read window`, () => {
+      const value = fixture('shadow');
+      publishSignal(value, 'signal-a', 'merge-gate-flake');
+      writeMode(value, before);
+      let offerReads = 0;
+
+      const collection = collectCollaborativeWorkExchange({
+        repo_root: value.repoRoot,
+        read_execution_offers: () => {
+          offerReads += 1;
+          if (offerReads === 1) writeMode(value, after);
+          return [];
+        },
+      });
+
+      expect(collection.mode).toBe(after);
+      expect(collection.snapshot_consistency).toBe('changed_during_read');
+      expect(collection.changed_sources).toEqual(['mode']);
+      expect(collection.degraded_sources).toEqual([]);
+      expect(collection.snapshot.snapshot_consistency).toBe('changed_during_read');
+    });
+  }
+
+  test('an unreadable mode fails closed instead of becoming a default', () => {
+    const value = fixture('active');
+    publishSignal(value, 'signal-a', 'merge-gate-flake');
+    let offerReads = 0;
+
+    expect(() => collectCollaborativeWorkExchange({
+      repo_root: value.repoRoot,
+      read_execution_offers: () => {
+        offerReads += 1;
+        if (offerReads === 1) {
+          writeFileSync(join(value.repoRoot, '.ai/harness/policy.json'), '{not-json\n');
+        }
+        return [];
+      },
+    })).toThrow('collaboration mode is unreadable');
   });
 
   test('a write to one source between the two passes is caught by the other source\'s window', () => {

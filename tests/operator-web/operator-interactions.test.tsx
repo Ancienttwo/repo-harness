@@ -985,6 +985,30 @@ describe('operator web task message composer', () => {
     expect(window.localStorage.getItem('repo-harness:operator-sent')).toBeNull();
   });
 
+  test('keeps the exact draft when a 2xx response has no bound acknowledgment', async () => {
+    const originalFetch = globalThis.fetch;
+    let refreshes = 0;
+    globalThis.fetch = (async () => new Response('{}', {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })) as unknown as typeof fetch;
+    try {
+      await openComposerFor(fixtureTasks.blocked.task_label, stableSnapshot, {
+        fetchSnapshot: async () => { refreshes += 1; return stableSnapshot; },
+      });
+      await typeMessage('retain until the exact acknowledgment arrives');
+      await act(async () => sendButton().click());
+
+      expect((document.querySelector('#composer-body') as unknown as HTMLTextAreaElement).value)
+        .toBe('retain until the exact acknowledgment arrives');
+      expect(composerPanel()?.textContent).toContain('acknowledgment is invalid');
+      expect(refreshes).toBe(0);
+      expect(sendButton().disabled).toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test('rotates a conflicting message id only after the operator explicitly asks', async () => {
     const submitted: TaskMessageRequestV1[] = [];
     let conflict = true;
@@ -1061,6 +1085,7 @@ describe('operator web task message composer', () => {
     expect(sendButton().disabled).toBe(true);
     expect(composerPanel()?.textContent).toContain('Rebind to current snapshot');
     const originalId = submitted[0]!.message_id;
+    expect(buttonWithText('Rebind to current snapshot').disabled).toBe(true);
 
     await act(async () => buttonWithText('Refresh').click());
     expect(paneText()).toContain(`rev ${initialCard.task_revision}`);
@@ -1077,6 +1102,31 @@ describe('operator web task message composer', () => {
       expected_generation: (initialCard.generation ?? 0) + 1,
     });
     expect(submitted[1]!.message_id).not.toBe(originalId);
+  });
+
+  test('treats canonical source staleness as requiring a newer stable snapshot', async () => {
+    const refreshed = { ...stableSnapshot, sequence: stableSnapshot.sequence + 1 };
+    let attempts = 0;
+    await openComposerFor(fixtureTasks.blocked.task_label, stableSnapshot, {
+      fetchSnapshot: async () => refreshed,
+      sendMessage: async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          throw {
+            code: 'canonical_source_stale',
+            message: 'The canonical source changed while the message was being sent.',
+            next_action: 'Refresh the board to re-observe the task, then retry.',
+          };
+        }
+      },
+    });
+    await typeMessage('bind only after canonical source refresh');
+    await act(async () => sendButton().click());
+
+    const rebind = buttonWithText('Rebind to current snapshot');
+    expect(rebind.disabled).toBe(true);
+    await act(async () => buttonWithText('Refresh').click());
+    expect(buttonWithText('Rebind to current snapshot').disabled).toBe(false);
   });
 
   test('disables stale-draft rebind when the refreshed board is degraded', async () => {
@@ -1097,6 +1147,25 @@ describe('operator web task message composer', () => {
     const rebind = buttonWithText('Rebind to current snapshot');
     expect(rebind.disabled).toBe(true);
     expect(sendButton().disabled).toBe(true);
+  });
+
+  test('blocks writes from an impossible injected unreadable repository payload', async () => {
+    const repository = stableSnapshot.repositories[0]!;
+    const impossible: OperatorFleetSnapshotV1 = {
+      ...stableSnapshot,
+      snapshot_consistency: 'stable',
+      repositories: [{
+        ...repository,
+        status: 'unreadable',
+        snapshot_consistency: 'stable',
+        error: { code: 'repo_unreadable', message: 'repository authority cannot be read' },
+      }],
+    };
+
+    await openComposerFor(fixtureTasks.blocked.task_label, impossible);
+    await typeMessage('must never reach the write boundary');
+    expect(sendButton().disabled).toBe(true);
+    expect(composerPanel()?.textContent).toContain('stale or degraded data');
   });
 
   test('clears a successful draft and freezes the next message against the latest card', async () => {

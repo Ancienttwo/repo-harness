@@ -7366,6 +7366,113 @@ describe("Workflow helper scripts", () => {
   }, 30_000);
 });
 
+describe("diff-bound task synchronization", () => {
+  function taskSyncFixture(prefix: string): { cwd: string; base: string } {
+    const cwd = tmpWorkspace(prefix);
+    mkdirSync(join(cwd, "scripts"), { recursive: true });
+    mkdirSync(join(cwd, "src"), { recursive: true });
+    mkdirSync(join(cwd, "tasks"), { recursive: true });
+    copyFileSync(join(ROOT, "scripts/check-task-sync.sh"), join(cwd, "scripts/check-task-sync.sh"));
+    chmodSync(join(cwd, "scripts/check-task-sync.sh"), 0o755);
+    writeFileSync(join(cwd, "src/app.ts"), "export const value = 1;\n");
+    writeFileSync(join(cwd, "tasks/current.md"), "# Current Status Snapshot\n\nUnrelated existing state.\n");
+    initGitRepo(cwd);
+    commitAll(cwd, "seed");
+    return { cwd, base: run("git", ["rev-parse", "HEAD"], cwd).stdout.trim() };
+  }
+
+  function taskSync(cwd: string, base: string, mode = "direct") {
+    return run("bash", ["scripts/check-task-sync.sh"], cwd, {
+      REPO_HARNESS_DIFF_BASE: base,
+      REPO_HARNESS_DIFF_MODE: mode,
+    });
+  }
+
+  function reportedDigest(output: string): string {
+    const match = output.match(/sha256:[0-9a-f]{64}/);
+    expect(match).not.toBeNull();
+    return match![0]!;
+  }
+
+  test("a substantive push-parent diff requires an exact identity-bound canonical artifact", () => {
+    const { cwd, base } = taskSyncFixture("helper-task-sync-bound-artifact");
+    try {
+      writeFileSync(join(cwd, "src/app.ts"), "export const value = 2;\n");
+      // Touching the unrelated read model is deliberately insufficient.
+      writeFileSync(join(cwd, "tasks/current.md"), "# Current Status Snapshot\n\nStill unrelated.\n");
+
+      const missing = taskSync(cwd, base);
+      expect(missing.status).toBe(1);
+      expect(missing.stdout, missing.stderr).toContain("Substantive diff lacks canonical workflow evidence");
+      expect(missing.stdout).toContain("src/app.ts");
+      const digest = reportedDigest(missing.stdout);
+
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      writeFileSync(
+        join(cwd, "plans/plan-change.md"),
+        `# Plan: change\n\n> **Substantive Change SHA256**: \`${digest}\`\n`,
+      );
+      const admitted = taskSync(cwd, base);
+      expect(admitted.status, `${admitted.stdout}\n${admitted.stderr}`).toBe(0);
+      expect(admitted.stdout).toContain("Bound canonical workflow evidence: plans/plan-change.md");
+      const pullRequest = taskSync(cwd, "main", "merge-base");
+      expect(pullRequest.status, `${pullRequest.stdout}\n${pullRequest.stderr}`).toBe(0);
+
+      writeFileSync(
+        join(cwd, "plans/plan-change.md"),
+        `# Plan: change\n\n> **Substantive Change SHA256**: \`sha256:${"0".repeat(64)}\`\n`,
+      );
+      expect(taskSync(cwd, base).status).toBe(1);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("a machine-readable waiver must bind the digest and cover every substantive path", () => {
+    const { cwd, base } = taskSyncFixture("helper-task-sync-waiver");
+    try {
+      writeFileSync(join(cwd, "src/app.ts"), "export const value = 3;\n");
+      const digest = reportedDigest(taskSync(cwd, base).stdout);
+      mkdirSync(join(cwd, "tasks/waivers"), { recursive: true });
+      const waiverPath = join(cwd, "tasks/waivers/hotfix.json");
+      const waiver = {
+        protocol: 1,
+        kind: "repo-harness-substantive-change-waiver",
+        substantive_change_sha256: digest,
+        reason: "Production recovery cannot wait for the normal review artifact.",
+        owner: "release-engineer",
+        scope: ["tests/**"],
+        expires_at: "2999-01-01T00:00:00.000Z",
+      };
+      writeFileSync(waiverPath, `${JSON.stringify(waiver, null, 2)}\n`);
+      const uncovered = taskSync(cwd, base);
+      expect(uncovered.status).toBe(1);
+      expect(uncovered.stderr).toContain("does not cover: src/app.ts");
+
+      waiver.scope = ["src/**"];
+      writeFileSync(waiverPath, `${JSON.stringify(waiver, null, 2)}\n`);
+      const admitted = taskSync(cwd, base);
+      expect(admitted.status, `${admitted.stdout}\n${admitted.stderr}`).toBe(0);
+      expect(admitted.stdout).toContain("Bound machine-readable waiver admitted");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("docs-only changes remain an explicit non-substantive exception", () => {
+    const { cwd, base } = taskSyncFixture("helper-task-sync-docs-only");
+    try {
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      writeFileSync(join(cwd, "docs/guide.md"), "# Guide\n");
+      const result = taskSync(cwd, base);
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+      expect(result.stdout).toContain("No substantive repo changes detected");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
 // The batch entrypoint added to worktree-merge-lib.sh so a non-bash caller
 // (the SessionStart cleanable-worktree notice) can consume the single merge
 // authority instead of re-deriving `git merge-tree --write-tree`. Sourcing the

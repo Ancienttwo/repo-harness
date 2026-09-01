@@ -160,6 +160,11 @@ function taskInboxRoot(repoRoot: string): string {
   return join(resolveGitCommonDirectory(repoRoot), TASK_INBOX_RELATIVE_PATH);
 }
 
+/** Crash residue is not a canonical record and must never enter strict scans. */
+function taskInboxStagingDirectory(repoRoot: string, taskId: string, kind: 'events' | 'delivery'): string {
+  return join(taskInboxTaskDirectory(repoRoot, taskId), 'staging', kind);
+}
+
 export function taskInboxTaskDirectory(repoRoot: string, taskId: string): string {
   assertTaskId(taskId);
   return join(taskInboxRoot(repoRoot), taskId);
@@ -480,9 +485,11 @@ function ensureInboxDirectories(repoRoot: string, taskId: string, messageId?: st
   const taskDirectory = taskInboxTaskDirectory(repoRoot, taskId);
   inspectSafeDirectoryChain(commonDirectory, taskDirectory, true, 'task inbox task directory');
   inspectSafeDirectoryChain(commonDirectory, join(taskDirectory, 'events'), true, 'task inbox event directory');
+  inspectSafeDirectoryChain(commonDirectory, taskInboxStagingDirectory(repoRoot, taskId, 'events'), true, 'task inbox event staging directory');
   if (messageId) {
     inspectSafeDirectoryChain(commonDirectory, join(taskDirectory, 'delivery'), true, 'task inbox delivery root');
     inspectSafeDirectoryChain(commonDirectory, join(taskDirectory, 'delivery', messageId), true, 'task inbox delivery directory');
+    inspectSafeDirectoryChain(commonDirectory, taskInboxStagingDirectory(repoRoot, taskId, 'delivery'), true, 'task inbox delivery staging directory');
   }
 }
 
@@ -498,7 +505,10 @@ function writeImmutableEvent(repoRoot: string, event: TaskMessageEventV1): TaskI
     return { event: existing, event_path: target, created: false };
   }
   const directory = dirname(target);
-  const temporary = join(directory, `.${event.message_id}.${process.pid}.${randomUUID()}.tmp`);
+  const temporary = join(
+    taskInboxStagingDirectory(repoRoot, event.task_id, 'events'),
+    `.${event.message_id}.${process.pid}.${randomUUID()}.tmp`,
+  );
   const bytes = Buffer.from(`${canonical}\n`, 'utf-8');
   let fd: number | null = null;
   try {
@@ -563,7 +573,10 @@ function writeReceipt(repoRoot: string, taskId: string, receipt: TaskMessageDeli
   if (existsSync(target)) readReceiptAt(target);
   const canonical = canonicalTaskMessageDeliveryReceiptBytes(receipt);
   const directory = dirname(target);
-  const temporary = join(directory, `.${deriveTaskMessageRecipientKey(recipient)}.${process.pid}.${randomUUID()}.tmp`);
+  const temporary = join(
+    taskInboxStagingDirectory(repoRoot, taskId, 'delivery'),
+    `.${receipt.message_id}.${deriveTaskMessageRecipientKey(recipient)}.${process.pid}.${randomUUID()}.tmp`,
+  );
   const bytes = Buffer.from(`${canonical}\n`, 'utf-8');
   let fd: number | null = null;
   try {

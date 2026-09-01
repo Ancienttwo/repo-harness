@@ -63,6 +63,7 @@ export const OPERATOR_COLLABORATION_SNAPSHOT_KIND = 'operator_collaboration_snap
  * this projection's input, so a renamed or added source fails typecheck there.
  */
 export const OPERATOR_COLLABORATION_SOURCES = [
+  'mode',
   'signals',
   'handoffs',
   'adoptions',

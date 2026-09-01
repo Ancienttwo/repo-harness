@@ -43,6 +43,24 @@ jobs:
         with:
           bun-version: 1.4.0
 
+      - name: Resolve workflow evidence diff
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_PARENT_SHA: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            echo "REPO_HARNESS_DIFF_BASE=$PR_BASE_SHA" >> "$GITHUB_ENV"
+            echo "REPO_HARNESS_DIFF_MODE=merge-base" >> "$GITHUB_ENV"
+          elif [ "$EVENT_NAME" = "push" ]; then
+            echo "REPO_HARNESS_DIFF_BASE=$PUSH_PARENT_SHA" >> "$GITHUB_ENV"
+            echo "REPO_HARNESS_DIFF_MODE=direct" >> "$GITHUB_ENV"
+          else
+            echo "REPO_HARNESS_DIFF_BASE=$(git rev-parse HEAD^)" >> "$GITHUB_ENV"
+            echo "REPO_HARNESS_DIFF_MODE=direct" >> "$GITHUB_ENV"
+          fi
+
       - name: CI gate
         run: bun run check:ci
 
@@ -87,6 +105,7 @@ jobs:
           tests/cli/mcp-http.test.ts
           tests/cli/mcp-oauth.test.ts
           tests/cli/mcp-stdio.test.ts
+          tests/effects/fleet-collector-process.test.ts
           tests/cli/windows-protected-helper-runtime-smoke.test.ts
 
   # Stable aggregate context for branch protection. Binding protection to the

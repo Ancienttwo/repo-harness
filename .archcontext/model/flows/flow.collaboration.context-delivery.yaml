@@ -29,10 +29,10 @@ outcomes:
       - id: gate-on-mode
         from: collaboration
         to: collaboration-store
-        label: Read collaboration.mode, so a collection reports the mode the round is running under
+        label: Read collaboration.mode in each full-source pass, so the collection detects a mode change inside the same overlapping consistency window
         evidence:
-          entrypointId: entrypoint.collaboration.work-exchange
-          sourceSymbol: collectCollaborativeWorkExchange
+          entrypointId: entrypoint.collaboration.exchange-source-read
+          sourceSymbol: readAllSources
           sinkId: sink.collaboration.exchange-mode
       - id: carry-offers-verbatim
         from: collaboration

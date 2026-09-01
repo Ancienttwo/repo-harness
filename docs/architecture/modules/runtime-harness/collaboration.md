@@ -1,6 +1,6 @@
 # runtime-harness/collaboration 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" sourceDigest="sha256:a9f113e2b5a0e0c286ddf359b66b2646584b1e1993615ae61a7042c77ab1b371" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:fcce96e601a31bdb7f7524a261a2f3be2ff118ec9444d00f22dddfd0840300f8" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" sourceDigest="sha256:d5669b836478bff88642e5e7d2fb59329c30e96eb633c3e44b3b962e1c1ce4e4" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:c6dc6b205faae37089e73be81aed991abab962d57bf3ce287db4b9cc05f5d336" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.collaboration`(kind `capability`)
 > **Matched Prefixes**:`src/core/collaboration/**`、`src/effects/collaboration/**`、`src/cli/commands/collaboration.ts`
@@ -42,7 +42,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:b64618cbeef5a3095fb0d278f55730b7d84eb300233da0722dea98c5f0c99290`).
+- Proof: `proven` (`sha256:cf0d7f5242bcbdccf9fdb65f22751f6a0d736495a517e705ba6d43fada241237`).
 - Semantic nodes: `8`; declared relations: `13`.
 
 ### 1.2 模組職責表
@@ -64,7 +64,8 @@ flowchart LR
 | `entrypoint.collaboration.contribution-visibility` | `src/effects/collaboration/contribution-store.ts#listContributedSignalIds` | `sink.collaboration.committed-only` → `src/effects/collaboration/contribution-store.ts#listCollaborationContributionCommits` |
 | `entrypoint.collaboration.succession` | `src/effects/collaboration/succession.ts#resolveBoundTaskSuccession` | `sink.collaboration.freeze-receipt-read` → `src/effects/engineers/task-freeze-store.ts#readTaskFreezeReceipt`、`sink.collaboration.freeze-derived-context` → `src/effects/collaboration/succession.ts#boundTaskExecutionContext` |
 | `entrypoint.collaboration.succession-publish` | `src/effects/collaboration/succession.ts#publishBoundTaskSuccessionHandoff` | `sink.collaboration.succession-handoff-publish` → `src/effects/collaboration/handoff-store.ts#publishWorkStateHandoff` |
-| `entrypoint.collaboration.work-exchange` | `src/effects/collaboration/work-exchange.ts#collectCollaborativeWorkExchange` | `sink.collaboration.exchange-projection` → `src/core/collaboration/work-exchange.ts#buildCollaborativeWorkExchangeSnapshot`、`sink.collaboration.exchange-mode` → `src/effects/collaboration/feature-flag.ts#readCollaborationMode` |
+| `entrypoint.collaboration.work-exchange` | `src/effects/collaboration/work-exchange.ts#collectCollaborativeWorkExchange` | `sink.collaboration.exchange-projection` → `src/core/collaboration/work-exchange.ts#buildCollaborativeWorkExchangeSnapshot` |
+| `entrypoint.collaboration.exchange-source-read` | `src/effects/collaboration/work-exchange.ts#readAllSources` | `sink.collaboration.exchange-mode` → `src/effects/collaboration/feature-flag.ts#readCollaborationMode` |
 | `entrypoint.collaboration.execution-context-proof` | `src/effects/collaboration/work-exchange.ts#proveExecutionContexts` | `sink.collaboration.read-time-succession-proof` → `src/effects/collaboration/succession.ts#resolveBoundTaskSuccession` |
 | `entrypoint.collaboration.exchange-offer-projection` | `src/core/collaboration/work-exchange.ts#projectExistingEngineerOffer` | `sink.collaboration.existing-offer-authority` → `src/core/engineers/scheduling.ts#validateEngineerOffer` |
 | `entrypoint.collaboration.context-delivery` | `src/effects/collaboration/context-delivery.ts#deliverCollaborationContext` | `sink.collaboration.context-packet-build` → `src/core/collaboration/context-packet.ts#buildCollaborationContextPacket`、`sink.collaboration.untrusted-goal-composition` → `src/core/collaboration/run-binding.ts#composeCollaborationGoal` |
@@ -106,7 +107,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:b64618cbeef5a3095fb0d278f55730b7d84eb300233da0722dea98c5f0c99290`); selectors `48/48`.
+> **Proof**: `proven` (`sha256:cf0d7f5242bcbdccf9fdb65f22751f6a0d736495a517e705ba6d43fada241237`); selectors `48/48`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -150,7 +151,7 @@ sequenceDiagram
   participant p2_collaboration_store_5c827af5 as Append-only Collaboration Record Store
   p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Double-read every mutable source and project one Work Exchange snapshot whose snapshot_consistency reports what the two reads observed
   alt A stable snapshot becomes a bounded packet， an untrusted rendering composed into the run's goal， and a binding that records exactly what was embedded
-  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Read collaboration.mode， so a collection reports the mode the round is running under
+  p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Read collaboration.mode in each full-source pass， so the collection detects a mode change inside the same overlapping consistency window
   p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Pass each existing EngineerOfferV1 through the scheduling authority's own validator， so the offer and its revision reach the snapshot unreinterpreted
   p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Select within budget from that exact collection， binding the source snapshot， estimator version， truncation evidence and canonical render digest
   p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Append the rendering inside the untrusted coordination markers， reversibly， so the block embedded in the goal can be split back out and compared

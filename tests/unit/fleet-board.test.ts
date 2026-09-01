@@ -117,6 +117,42 @@ describe('FleetBoardSnapshotV1 pure projection', () => {
     expect(first.counts).toEqual({ available: 2, working: 0, in_review: 0, ready_to_merge: 0, done: 0, unreadable: 0 });
   });
 
+  test('rolls a changed card up through its repository and the Fleet snapshot', () => {
+    const stable = projectFleetBoardSnapshot({
+      registry_revision: 'sha256:registry', sequence: 1, observed_at: '2026-08-23T00:00:00.000Z',
+      repositories: [{
+        repository_id: 'repo-a', repo_root: '/fixtures/a', access_mode: 'read_write', status: 'ok',
+        snapshot_consistency: 'stable', cards: [card()], error: null,
+      }],
+    });
+    const changed = projectFleetBoardSnapshot({
+      registry_revision: 'sha256:registry', sequence: 1, observed_at: '2026-08-23T00:00:00.000Z',
+      repositories: [{
+        repository_id: 'repo-a', repo_root: '/fixtures/a', access_mode: 'read_write', status: 'ok',
+        snapshot_consistency: 'stable', cards: [card({ snapshot_consistency: 'changed_during_read' })], error: null,
+      }],
+    });
+
+    expect(changed.repositories[0]).toMatchObject({ snapshot_consistency: 'changed_during_read' });
+    expect(changed.snapshot_consistency).toBe('changed_during_read');
+    expect(changed.snapshot_sha256).not.toBe(stable.snapshot_sha256);
+  });
+
+  test('keeps degraded classification above changed child consistency', () => {
+    const result = projectFleetBoardSnapshot({
+      registry_revision: 'sha256:registry', sequence: 1, observed_at: '2026-08-23T00:00:00.000Z',
+      repositories: [{
+        repository_id: 'repo-a', repo_root: '/fixtures/a', access_mode: 'read_write', status: 'ok',
+        snapshot_consistency: 'stable',
+        cards: [card({ execution_readiness: 'planning_required', snapshot_consistency: 'changed_during_read' })],
+        error: null,
+      }],
+    });
+
+    expect(result.repositories[0]?.snapshot_consistency).toBe('degraded');
+    expect(result.snapshot_consistency).toBe('degraded');
+  });
+
   test('carries the sprint row label and index as snapshot facts inside the digest basis', () => {
     const labelled = snapshot('2026-08-23T00:00:00.000Z', 1);
     expect(labelled.repositories[0]?.cards[0]).toMatchObject({

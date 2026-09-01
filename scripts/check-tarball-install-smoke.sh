@@ -60,6 +60,8 @@ const required = [
   "assets/templates/helpers/runtime-evidence-receipt.ts",
   "interfaces/effective-state-v1.ts",
   "interfaces/types.ts",
+  "src/effects/operator/fleet-collector-process.ts",
+  "assets/operator/fleet-windows-job-controller.ps1",
   "dist/operator-ui/index.html",
 ];
 const retired = [
