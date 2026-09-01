@@ -1,26 +1,26 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-09-01T05:04:34+0800 -->
+<!-- updated_at: 2026-09-01T09:21:08+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Active
-> **Updated At**: 2026-09-01T05:04:34+0800
-> **Source Branch**: codex/archive-codex-plugin-source
-> **Source Commit**: e2c04899
+> **Status**: Idle
+> **Updated At**: 2026-09-01T09:21:08+0800
+> **Source Branch**: codex/archive-codex-plugin-source-closeout
+> **Source Commit**: 1ead6cea
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: manual
+> **Reason**: workflow-closeout
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Active
-- Active Plan: plans/plan-20260901-0432-archive-codex-plugin-source.md
-- Plan Status: Executing
-- Next Task: Run required repository checks and prepare protocol-2 acceptance evidence.
+- Status: Idle
+- Active Plan: (none)
+- Plan Status: (none)
+- Next Task: (none)
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,8 +31,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- .: plans/plan-20260901-0432-archive-codex-plugin-source.md
-- .: active-worktree owner -> self
+- (none)
 ## Active Sprint
 
 - Sprint: (none)
@@ -52,33 +51,23 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
+- status=(none), source=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 20 changed/untracked path(s)
+- Summary: 10 changed/untracked path(s)
 
 ```
- M DEBUG.md
- M assets/templates/helpers/classify-historical-plans.ts
- D plans/plan-20260901-0205-external-source-binding-wp2.md
- M scripts/classify-historical-plans.ts
- D tasks/contracts/20260901-0205-external-source-binding-wp2.contract.md
+ D plans/plan-20260901-0432-archive-codex-plugin-source.md
+ D tasks/contracts/20260901-0432-archive-codex-plugin-source.contract.md
  M tasks/current.md
- D tasks/notes/20260901-0205-external-source-binding-wp2.notes.md
- D tasks/reviews/20260901-0205-external-source-binding-wp2.review.md
- M tasks/todos.md
- M tests/archive-evidence-gates.test.ts
- M tests/historical-plan-classifier.test.ts
-?? plans/archive/plan-20260901-0205-external-source-binding-wp2.md
-?? plans/plan-20260901-0432-archive-codex-plugin-source.md
-?? tasks/archive/contract-20260901-0439-external-source-binding-wp2.md
-?? tasks/archive/notes-20260901-0439-external-source-binding-wp2.md
-?? tasks/archive/review-20260901-0439-external-source-binding-wp2.md
-?? tasks/archive/todo-20260901-0439-external-source-binding-wp2.md
-?? tasks/contracts/20260901-0432-archive-codex-plugin-source.contract.md
-?? tasks/notes/20260901-0432-archive-codex-plugin-source.notes.md
-?? tasks/reviews/20260901-0432-archive-codex-plugin-source.review.md
+ D tasks/notes/20260901-0432-archive-codex-plugin-source.notes.md
+ D tasks/reviews/20260901-0432-archive-codex-plugin-source.review.md
+?? plans/archive/plan-20260901-0432-archive-codex-plugin-source.md
+?? tasks/archive/contract-20260901-0919-archive-codex-plugin-source.md
+?? tasks/archive/notes-20260901-0919-archive-codex-plugin-source.md
+?? tasks/archive/review-20260901-0919-archive-codex-plugin-source.md
+?? tasks/archive/todo-20260901-0919-archive-codex-plugin-source.md
 ```
 
 ## Source Artifacts

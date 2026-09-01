@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-01 09:19
+> **Related Plan**: plans/archive/plan-20260901-0432-archive-codex-plugin-source.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260901-0919
+> **Archive Projection V1**: `plans/plan-20260901-0432-archive-codex-plugin-source.md` => `plans/archive/plan-20260901-0432-archive-codex-plugin-source.md`
+> **Archive Projection V1**: `tasks/notes/20260901-0432-archive-codex-plugin-source.notes.md` => `tasks/archive/notes-20260901-0919-archive-codex-plugin-source.md`
+> **Archive Projection V1**: `tasks/contracts/20260901-0432-archive-codex-plugin-source.contract.md` => `tasks/archive/contract-20260901-0919-archive-codex-plugin-source.md`
+> **Archive Projection V1**: `tasks/reviews/20260901-0432-archive-codex-plugin-source.review.md` => `tasks/archive/review-20260901-0919-archive-codex-plugin-source.md`
+
 # Task Review: archive-codex-plugin-source
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260901-0432-archive-codex-plugin-source.md
-> **Contract**: tasks/contracts/20260901-0432-archive-codex-plugin-source.contract.md
-> **Notes File**: tasks/notes/20260901-0432-archive-codex-plugin-source.notes.md
+> **Plan**: plans/archive/plan-20260901-0432-archive-codex-plugin-source.md
+> **Contract**: tasks/archive/contract-20260901-0919-archive-codex-plugin-source.md
+> **Notes File**: tasks/archive/notes-20260901-0919-archive-codex-plugin-source.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-01 04:35
 > **Recommendation**: pass
