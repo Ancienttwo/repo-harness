@@ -398,6 +398,48 @@ describe('per-task lock', () => {
     expect(existsSync(lockPath)).toBe(false);
   });
 
+  test('immediately reclaims a task lock whose independent owner process was terminated', async () => {
+    if (process.platform === 'win32') return;
+    const repo = createRepo();
+    const taskId = taskIdFor('terminated lock owner');
+    const lockPath = join(resolveGitCommonDirectory(repo), taskLockRelativePath(taskId));
+    const readyPath = join(repo, '.task-lock-owner-ready');
+    const leaseStoreModule = new URL('../src/effects/state/coordination-lease-store.ts', import.meta.url).href;
+    const child = Bun.spawn([
+      process.execPath,
+      '-e',
+      [
+        "const { writeFileSync } = await import('node:fs');",
+        'const { withTaskLock } = await import(process.env.LEASE_STORE_MODULE);',
+        'withTaskLock(process.env.REPO_ROOT, process.env.TASK_ID, () => {',
+        "  writeFileSync(process.env.READY_PATH, 'ready\\n');",
+        '  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);',
+        '});',
+      ].join('\n'),
+    ], {
+      cwd: repo,
+      env: {
+        ...process.env,
+        LEASE_STORE_MODULE: leaseStoreModule,
+        REPO_ROOT: repo,
+        TASK_ID: taskId,
+        READY_PATH: readyPath,
+      },
+      stdout: 'ignore',
+      stderr: 'pipe',
+    });
+    for (let attempt = 0; attempt < 500 && !existsSync(readyPath); attempt += 1) await Bun.sleep(10);
+    expect(existsSync(readyPath)).toBe(true);
+    expect(existsSync(lockPath)).toBe(true);
+    child.kill('SIGKILL');
+    await child.exited;
+
+    const startedAt = Date.now();
+    expect(withTaskLock(repo, taskId, () => 'recovered')).toBe('recovered');
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+    expect(existsSync(lockPath)).toBe(false);
+  }, 10_000);
+
   test('two tasks do not contend, and a linked worktree shares one lock', () => {
     const repo = createRepo();
     const linked = realpathSync(

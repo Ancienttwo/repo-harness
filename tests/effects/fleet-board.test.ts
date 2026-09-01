@@ -251,6 +251,25 @@ describe('fleet board collector', () => {
     expect(result.counts.unreadable).toBe(1);
   });
 
+  test('publishes a changed Fleet verdict when a collector returns a torn card under a stable repository read', async () => {
+    const dependencies: FleetBoardDependencies = {
+      read_registry: () => registry([repo(0)]),
+      collect_repository: async (entry) => ({
+        repository_id: entry.id,
+        repo_root: entry.path,
+        access_mode: entry.accessMode,
+        status: 'ok',
+        snapshot_consistency: 'stable',
+        cards: [{ ...card(0), snapshot_consistency: 'changed_during_read' }],
+        error: null,
+      }),
+    };
+
+    const result = await collectFleetBoard({ timeout_ms: 1_000 }, dependencies);
+    expect(result.repositories[0]?.snapshot_consistency).toBe('changed_during_read');
+    expect(result.snapshot_consistency).toBe('changed_during_read');
+  });
+
   test('uses one fleet round deadline, drains abort cleanup, and marks every unfinished repository as timed out', async () => {
     const repos = Array.from({ length: 10 }, (_, index) => repo(index));
     let starts = 0;

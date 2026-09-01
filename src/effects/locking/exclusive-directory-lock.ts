@@ -295,11 +295,9 @@ function reclaimStaleLockDirectory(
     const raw = readFileSync(observedOwnerPath, 'utf-8');
     const lock = JSON.parse(raw) as { pid?: unknown; created_at?: unknown; token?: unknown };
     const pid = typeof lock.pid === 'number' ? lock.pid : null;
-    const createdAt = typeof lock.created_at === 'number' ? lock.created_at : 0;
     const token = typeof lock.token === 'string' ? lock.token : null;
     reclaim = token === observedToken.token
       && pid === observedToken.pid
-      && Date.now() - createdAt > LOCK_STALE_MS
       && !ownerIsAlive(observedToken.pid);
   } catch {
     reclaim = Date.now() - observedOwnerMtimeMs > LOCK_STALE_MS

@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { dirname, extname, isAbsolute, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -33,6 +34,8 @@ export const OPERATOR_DEFAULT_HOST = '127.0.0.1' as const;
 export const OPERATOR_DEFAULT_PORT = 4318 as const;
 export const OPERATOR_DEFAULT_MAX_CONCURRENCY = 4 as const;
 export const OPERATOR_DEFAULT_TIMEOUT_MS = 30_000 as const;
+const OPERATOR_WORKER_CLEANUP_GRACE_MS = 500;
+const OPERATOR_FLEET_CONTROLLER_ACK_TIMEOUT_MS = 5_000;
 
 const OPERATOR_DIAGNOSTIC_ACTION = 'Run `repo-harness fleet board --json` for diagnostics and retry.';
 const OPERATOR_ASSET_ACTION = 'Build the operator UI with `bun run build:operator-web` and retry.';
@@ -471,7 +474,7 @@ function readDefaultCollaborationSnapshot(
   });
 }
 
-type OperatorFleetWorkerResponse =
+type OperatorFleetCollectorResponse =
   | {
       readonly ok: true;
       readonly snapshot: FleetBoardSnapshotV1;
@@ -479,9 +482,13 @@ type OperatorFleetWorkerResponse =
   | {
       readonly ok: false;
       readonly code: FleetBoardFatalErrorCode;
+    }
+  | {
+      readonly ok: false;
+      readonly cancelled: true;
     };
 
-function fleetWorkerResponse(value: unknown): OperatorFleetWorkerResponse | null {
+function fleetCollectorResponse(value: unknown): OperatorFleetCollectorResponse | null {
   if (typeof value !== 'object' || value === null || !('ok' in value)) return null;
   if (value.ok === true && 'snapshot' in value && typeof value.snapshot === 'object' && value.snapshot !== null) {
     return { ok: true, snapshot: value.snapshot as FleetBoardSnapshotV1 };
@@ -496,19 +503,129 @@ function fleetWorkerResponse(value: unknown): OperatorFleetWorkerResponse | null
   ) {
     return { ok: false, code: value.code };
   }
+  if (value.ok === false && 'cancelled' in value && value.cancelled === true) {
+    return { ok: false, cancelled: true };
+  }
   return null;
 }
 
-/** The parent owns request lifetime; the Worker owns only the blocking collection. */
+type WindowsFleetControllerResponse =
+  | { readonly type: 'assigned' }
+  | { readonly type: 'cleanup_ack' }
+  | { readonly type: 'cleanup_failed' };
+
+function windowsFleetControllerResponse(value: unknown): WindowsFleetControllerResponse | null {
+  if (typeof value !== 'object' || value === null || !('type' in value)) return null;
+  const record = value as Record<string, unknown>;
+  if (record.type === 'cleanup_ack' || record.type === 'cleanup_failed') return { type: record.type };
+  if (record.type === 'assigned') return { type: 'assigned' };
+  return null;
+}
+
+function writeChildJsonLine(child: ChildProcessWithoutNullStreams, value: unknown): boolean {
+  if (child.stdin.destroyed || !child.stdin.writable) return false;
+  try {
+    child.stdin.write(`${JSON.stringify(value)}\n`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function childJsonLines(stream: NodeJS.ReadableStream, onValue: (value: unknown) => void): void {
+  let buffered = '';
+  stream.setEncoding('utf-8');
+  stream.on('data', (chunk: string) => {
+    buffered += chunk;
+    let newline = buffered.indexOf('\n');
+    while (newline >= 0) {
+      const line = buffered.slice(0, newline);
+      buffered = buffered.slice(newline + 1);
+      try { onValue(JSON.parse(line)); } catch { onValue(null); }
+      newline = buffered.indexOf('\n');
+    }
+  });
+}
+
+function posixProcessGroupAbsent(pid: number | undefined): boolean {
+  if (pid === undefined) return false;
+  try {
+    process.kill(-pid, 0);
+    return false;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ESRCH';
+  }
+}
+
+async function waitForPosixProcessGroupAbsence(pid: number | undefined): Promise<boolean> {
+  const deadline = Date.now() + OPERATOR_FLEET_CONTROLLER_ACK_TIMEOUT_MS;
+  while (!posixProcessGroupAbsent(pid) && Date.now() < deadline) await Bun.sleep(10);
+  return posixProcessGroupAbsent(pid);
+}
+
+function signalPosixProcessGroup(pid: number | undefined, signal: NodeJS.Signals): boolean {
+  if (pid === undefined) return false;
+  try {
+    process.kill(-pid, signal);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ESRCH';
+  }
+}
+
+function fleetCollectorProcessPath(): string {
+  return fileURLToPath(new URL('./fleet-collector-process.ts', import.meta.url));
+}
+
+function windowsFleetControllerPath(): string {
+  return fileURLToPath(new URL('../../../assets/operator/fleet-windows-job-controller.ps1', import.meta.url));
+}
+
+/**
+ * POSIX collection runs in a server-owned detached process group. Windows
+ * collection is different: the server owns only the controller child, while
+ * that Job owner creates the inert collector and assigns its exact handle
+ * before forwarding the start payload. Provider descendants then inherit the
+ * Job automatically.
+ */
 function readDefaultFleetSnapshot(
   input: Required<Pick<FleetBoardCollectorOptions, 'sequence' | 'max_concurrency' | 'timeout_ms'>> & {
     readonly env?: NodeJS.ProcessEnv;
     readonly signal: AbortSignal;
   },
 ): Promise<FleetBoardSnapshotV1> {
+  if (input.signal.aborted) return Promise.reject(new OperatorFleetTimeoutError());
   return new Promise((resolveRead, rejectRead) => {
-    const worker = new Worker(new URL('./fleet-worker.ts', import.meta.url));
+    const workerEnvironment = { ...process.env, ...collaborationWorkerEnvironment(input.env) };
+    const collector = process.platform === 'win32'
+      ? null
+      : spawn(process.execPath, [fleetCollectorProcessPath()], {
+        env: workerEnvironment,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        detached: true,
+        windowsHide: true,
+      });
+    const controller = process.platform === 'win32'
+      ? spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', windowsFleetControllerPath()], {
+        env: workerEnvironment,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+      })
+      : null;
     let settled = false;
+    let cancellationRequested = false;
+    let collectorClosed = false;
+    let controllerAssigned = controller === null;
+    let controllerClosed = controller === null;
+    let controllerFailed = false;
+    let controllerCleanupAcknowledged = controller === null;
+    let controllerCleanupRequested = false;
+    let collectorResponse: OperatorFleetCollectorResponse | null = null;
+    let intended: { readonly ok: true; readonly snapshot: FleetBoardSnapshotV1 } | { readonly ok: false; readonly error: unknown } | null = null;
+    let cleanupTimer: ReturnType<typeof setTimeout> | null = null;
+    let acknowledgementTimer: ReturnType<typeof setTimeout> | null = null;
+    let controllerCloseTimer: ReturnType<typeof setTimeout> | null = null;
+    let posixFinalizing = false;
     const finish = (
       outcome:
         | { readonly ok: true; readonly snapshot: FleetBoardSnapshotV1 }
@@ -517,35 +634,218 @@ function readDefaultFleetSnapshot(
       if (settled) return;
       settled = true;
       input.signal.removeEventListener('abort', onAbort);
-      worker.terminate();
+      if (cleanupTimer !== null) clearTimeout(cleanupTimer);
+      if (acknowledgementTimer !== null) clearTimeout(acknowledgementTimer);
+      if (controllerCloseTimer !== null) clearTimeout(controllerCloseTimer);
+      collector?.stdin.end();
+      controller?.stdin.end();
       if (outcome.ok) resolveRead(outcome.snapshot);
       else rejectRead(outcome.error);
     };
-    const onAbort = (): void => finish({ ok: false, error: new OperatorFleetTimeoutError() });
-    input.signal.addEventListener('abort', onAbort, { once: true });
-    worker.onmessage = (event: MessageEvent<unknown>) => {
-      const response = fleetWorkerResponse(event.data);
-      if (response === null) {
-        finish({ ok: false, error: new FleetBoardError('fleet_registry_unavailable', 'fleet worker returned an invalid response') });
-      } else if (response.ok) {
-        finish({ ok: true, snapshot: response.snapshot });
-      } else {
-        finish({ ok: false, error: new FleetBoardError(response.code, `fleet worker failed with ${response.code}`) });
+    const unavailable = (message: string) => new FleetBoardError('fleet_registry_unavailable', message);
+    const failWindowsController = (message: string): void => {
+      if (settled || controller === null || controllerFailed) return;
+      controllerFailed = true;
+      intended = { ok: false, error: unavailable(message) };
+      cancellationRequested = true;
+      if (acknowledgementTimer !== null) {
+        clearTimeout(acknowledgementTimer);
+        acknowledgementTimer = null;
       }
+      if (cleanupTimer !== null) {
+        clearTimeout(cleanupTimer);
+        cleanupTimer = null;
+      }
+      try { controller.kill('SIGKILL'); } catch { /* controller close remains the cleanup fence */ }
     };
-    worker.onerror = (error) => {
-      finish({ ok: false, error: new FleetBoardError('fleet_registry_unavailable', 'fleet worker failed', error) });
+    const requestWindowsCleanup = (terminate: boolean): void => {
+      if (controller === null || controllerCleanupRequested || settled) return;
+      controllerCleanupRequested = true;
+      if (cleanupTimer !== null) {
+        clearTimeout(cleanupTimer);
+        cleanupTimer = null;
+      }
+      if (!writeChildJsonLine(controller, { type: terminate ? 'terminate' : 'cleanup' })) {
+        failWindowsController('Fleet Windows Job controller is unavailable');
+        return;
+      }
+      acknowledgementTimer = setTimeout(() => {
+        failWindowsController('Fleet Windows Job controller did not acknowledge cleanup');
+      }, OPERATOR_FLEET_CONTROLLER_ACK_TIMEOUT_MS);
     };
-    if (input.signal.aborted) {
-      onAbort();
-      return;
+    const finalizePosix = (): void => {
+      if (settled || collector === null || !collectorClosed || intended === null || posixFinalizing) return;
+      posixFinalizing = true;
+      void (async () => {
+        if (!posixProcessGroupAbsent(collector.pid)) {
+          signalPosixProcessGroup(collector.pid, 'SIGTERM');
+          await Bun.sleep(OPERATOR_WORKER_CLEANUP_GRACE_MS);
+          signalPosixProcessGroup(collector.pid, 'SIGKILL');
+        }
+        if (!await waitForPosixProcessGroupAbsence(collector.pid)) {
+          finish({ ok: false, error: unavailable('Fleet collector process group did not exit') });
+          return;
+        }
+        finish(intended);
+      })();
+    };
+    const finalize = (): void => {
+      if (controller !== null) {
+        if (controllerFailed) {
+          if (controllerClosed && intended !== null) finish(intended);
+          return;
+        }
+        if (intended === null) return;
+        if (!controllerAssigned) {
+          failWindowsController('Fleet Windows Job controller returned a collector response before assignment');
+          return;
+        }
+        if (!controllerCleanupRequested) requestWindowsCleanup(cancellationRequested);
+        if (controllerCleanupAcknowledged && controllerClosed) finish(intended);
+        return;
+      }
+      if (collector === null || !collectorClosed) return;
+      if (intended === null) intended = { ok: false, error: unavailable('Fleet collector exited without a response') };
+      if (cancellationRequested && cleanupTimer !== null) return;
+      finalizePosix();
+    };
+    const recordCollectorResponse = (value: unknown): void => {
+      const response = fleetCollectorResponse(value);
+      if (response === null) {
+        intended = { ok: false, error: unavailable('Fleet collector returned an invalid response') };
+      } else if (response.ok) {
+        collectorResponse = response;
+        intended = cancellationRequested
+          ? { ok: false, error: new OperatorFleetTimeoutError() }
+          : { ok: true, snapshot: response.snapshot };
+      } else if ('cancelled' in response) {
+        collectorResponse = response;
+        intended = { ok: false, error: new OperatorFleetTimeoutError() };
+      } else {
+        collectorResponse = response;
+        intended = { ok: false, error: new FleetBoardError(response.code, `Fleet collector failed with ${response.code}`) };
+      }
+      finalize();
+    };
+    const onAbort = (): void => {
+      if (settled || cancellationRequested) return;
+      cancellationRequested = true;
+      if (controller !== null) {
+        if (!writeChildJsonLine(controller, { type: 'cancel' })) {
+          failWindowsController('Fleet Windows Job controller cannot accept cooperative cancellation');
+          return;
+        }
+      } else {
+        if (collector === null || !writeChildJsonLine(collector, { type: 'cancel' })) {
+          intended = { ok: false, error: unavailable('Fleet collector cannot accept cooperative cancellation') };
+        }
+        if (collector !== null) signalPosixProcessGroup(collector.pid, 'SIGTERM');
+      }
+      cleanupTimer = setTimeout(() => {
+        cleanupTimer = null;
+        intended = { ok: false, error: new OperatorFleetTimeoutError() };
+        if (controller !== null) {
+          requestWindowsCleanup(true);
+        } else {
+          if (collector === null) return;
+          signalPosixProcessGroup(collector.pid, 'SIGKILL');
+          void waitForPosixProcessGroupAbsence(collector.pid).then((absent) => {
+            if (!absent) finish({ ok: false, error: unavailable('Fleet collector process group did not exit') });
+            else finalize();
+          });
+        }
+      }, OPERATOR_WORKER_CLEANUP_GRACE_MS);
+    };
+    input.signal.addEventListener('abort', onAbort, { once: true });
+    if (collector !== null) {
+      childJsonLines(collector.stdout, recordCollectorResponse);
+      collector.stderr.resume();
+      collector.once('error', (error) => {
+        intended = { ok: false, error: unavailable(`Fleet collector failed: ${error.message}`) };
+      });
+      collector.once('close', () => {
+        collectorClosed = true;
+        if (cleanupTimer !== null) {
+          clearTimeout(cleanupTimer);
+          cleanupTimer = null;
+        }
+        if (collectorResponse === null && intended === null) intended = { ok: false, error: unavailable('Fleet collector exited without a response') };
+        finalize();
+      });
     }
-    worker.postMessage({
+    if (controller !== null) {
+      childJsonLines(controller.stdout, (value) => {
+        const response = windowsFleetControllerResponse(value);
+        if (response === null) {
+          recordCollectorResponse(value);
+          return;
+        }
+        if (response.type === 'assigned') {
+          if (controllerAssigned) {
+            failWindowsController('Fleet Windows Job controller assigned more than one collector');
+            return;
+          }
+          controllerAssigned = true;
+          if (cancellationRequested) return;
+          if (!writeChildJsonLine(controller, {
+            type: 'start',
+            sequence: input.sequence,
+            max_concurrency: input.max_concurrency,
+            timeout_ms: input.timeout_ms,
+          })) {
+            intended = { ok: false, error: unavailable('Fleet Windows Job controller cannot forward the assigned start payload') };
+            requestWindowsCleanup(true);
+          }
+          return;
+        }
+        if (response.type === 'cleanup_ack') {
+          controllerCleanupAcknowledged = true;
+          if (acknowledgementTimer !== null) {
+            clearTimeout(acknowledgementTimer);
+            acknowledgementTimer = null;
+          }
+          controllerCloseTimer = setTimeout(() => {
+            failWindowsController('Fleet Windows Job controller did not exit after cleanup acknowledgement');
+          }, OPERATOR_FLEET_CONTROLLER_ACK_TIMEOUT_MS);
+          finalize();
+          return;
+        }
+        failWindowsController('Fleet Windows Job controller could not prove cleanup');
+      });
+      controller.stderr.resume();
+      controller.once('error', (error) => {
+        failWindowsController(`Fleet Windows Job controller failed: ${error.message}`);
+      });
+      controller.once('close', () => {
+        controllerClosed = true;
+        if (controllerCloseTimer !== null) {
+          clearTimeout(controllerCloseTimer);
+          controllerCloseTimer = null;
+        }
+        if (!controllerCleanupAcknowledged && !settled) {
+          failWindowsController('Fleet Windows Job controller exited without cleanup acknowledgement');
+        }
+        finalize();
+      });
+      if (!writeChildJsonLine(controller, {
+        type: 'launch',
+        executable: process.execPath,
+        collector_path: fleetCollectorProcessPath(),
+      })) {
+        failWindowsController('Fleet Windows Job controller cannot accept collector launch');
+      }
+    } else if (collector !== null && !writeChildJsonLine(collector, {
+      type: 'start',
       env: collaborationWorkerEnvironment(input.env),
       sequence: input.sequence,
       max_concurrency: input.max_concurrency,
       timeout_ms: input.timeout_ms,
-    });
+    })) {
+      finish({ ok: false, error: unavailable('Fleet collector cannot accept start payload') });
+    }
+    if (input.signal.aborted) {
+      onAbort();
+    }
   });
 }
 
@@ -594,9 +894,22 @@ function sendDefaultTaskMessage(
   input: SendOperatorTaskMessageInput,
   signal: AbortSignal,
 ): Promise<SendOperatorTaskMessageResult> {
+  if (signal.aborted) return Promise.reject(OPERATOR_TASK_MESSAGE_REQUEST_ABORTED);
   return new Promise((resolveWrite, rejectWrite) => {
-    const worker = new Worker(new URL('./task-message-worker.ts', import.meta.url));
+    const child = spawn(
+      process.execPath,
+      [fileURLToPath(new URL('./task-message-process.ts', import.meta.url))],
+      {
+        env: { ...process.env, ...collaborationWorkerEnvironment(input.env) },
+        stdio: ['pipe', 'pipe', 'pipe'],
+      },
+    );
     let settled = false;
+    let aborting = false;
+    let invalidOutput = false;
+    let spawnError: Error | null = null;
+    let stdout = '';
+    let killTimer: ReturnType<typeof setTimeout> | null = null;
     const finish = (
       outcome:
         | { readonly ok: true; readonly result: SendOperatorTaskMessageResult }
@@ -605,30 +918,70 @@ function sendDefaultTaskMessage(
       if (settled) return;
       settled = true;
       signal.removeEventListener('abort', onAbort);
-      worker.terminate();
+      if (killTimer !== null) clearTimeout(killTimer);
       if (outcome.ok) resolveWrite(outcome.result);
       else rejectWrite(outcome.error);
     };
-    const onAbort = (): void => finish({ ok: false, error: OPERATOR_TASK_MESSAGE_REQUEST_ABORTED });
+    const onAbort = (): void => {
+      if (settled || aborting) return;
+      aborting = true;
+      try { child.kill('SIGTERM'); } catch { /* the process may already have exited */ }
+      killTimer = setTimeout(() => {
+        try { child.kill('SIGKILL'); } catch { /* the process may already have exited */ }
+      }, OPERATOR_WORKER_CLEANUP_GRACE_MS);
+    };
     signal.addEventListener('abort', onAbort, { once: true });
-    worker.onmessage = (event: MessageEvent<unknown>) => {
-      const response = taskMessageWorkerResponse(event.data);
+    child.stdout.setEncoding('utf-8');
+    child.stdout.on('data', (chunk: string) => {
+      stdout += chunk;
+      if (stdout.length > 65_536 && !invalidOutput) {
+        invalidOutput = true;
+        try { child.kill('SIGKILL'); } catch { /* the process may already have exited */ }
+      }
+    });
+    child.stderr.resume();
+    child.once('error', (error) => {
+      spawnError = error;
+    });
+    child.once('close', (status) => {
+      if (aborting || signal.aborted) {
+        finish({ ok: false, error: OPERATOR_TASK_MESSAGE_REQUEST_ABORTED });
+        return;
+      }
+      if (invalidOutput || spawnError !== null || status !== 0) {
+        finish({
+          ok: false,
+          error: new OperatorTaskMessageError('task_message_unreadable', 'task-message process failed', spawnError),
+        });
+        return;
+      }
+      let decoded: unknown;
+      try {
+        decoded = JSON.parse(stdout);
+      } catch (error) {
+        finish({
+          ok: false,
+          error: new OperatorTaskMessageError('task_message_unreadable', 'task-message process returned invalid JSON', error),
+        });
+        return;
+      }
+      const response = taskMessageWorkerResponse(decoded);
       if (response === null) {
-        finish({ ok: false, error: new OperatorTaskMessageError('task_message_unreadable', 'task-message worker returned an invalid response') });
+        finish({ ok: false, error: new OperatorTaskMessageError('task_message_unreadable', 'task-message process returned an invalid response') });
       } else if (response.ok) {
         finish({ ok: true, result: response.result });
       } else {
-        finish({ ok: false, error: new OperatorTaskMessageError(response.code as OperatorTaskMessageErrorCode, `task-message worker failed with ${response.code}`) });
+        finish({ ok: false, error: new OperatorTaskMessageError(response.code as OperatorTaskMessageErrorCode, `task-message process failed with ${response.code}`) });
       }
-    };
-    worker.onerror = (error) => {
-      finish({ ok: false, error: new OperatorTaskMessageError('task_message_unreadable', 'task-message worker failed', error) });
-    };
+    });
+    child.stdin.on('error', () => {
+      // A cancellation may close stdin before the request bytes are flushed.
+    });
+    child.stdin.end(JSON.stringify({ input: { ...input, env: undefined } }));
     if (signal.aborted) {
       onAbort();
       return;
     }
-    worker.postMessage({ input });
   });
 }
 
@@ -810,23 +1163,59 @@ function decodeTaskMessageRequest(value: unknown): OperatorTaskMessageRequestV1 
 
 type RequestBodyRead =
   | { readonly ok: true; readonly text: string }
-  | { readonly ok: false; readonly reason: 'envelope_too_large' | 'invalid' };
+  | { readonly ok: false; readonly reason: 'envelope_too_large' | 'invalid' | 'aborted' };
 
-async function readBoundedRequestBody(request: IncomingMessage, maxBytes: number): Promise<RequestBodyRead> {
+function readBoundedRequestBody(
+  request: IncomingMessage,
+  maxBytes: number,
+  signal: AbortSignal,
+): Promise<RequestBodyRead> {
   const declared = request.headers['content-length'];
-  if (typeof declared !== 'string') return { ok: false, reason: 'invalid' };
+  if (typeof declared !== 'string') return Promise.resolve({ ok: false, reason: 'invalid' });
   const length = Number(declared);
-  if (!Number.isSafeInteger(length) || length < 0) return { ok: false, reason: 'invalid' };
-  if (length > maxBytes) return { ok: false, reason: 'envelope_too_large' };
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const chunk of request) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string);
-    size += buffer.byteLength;
-    if (size > maxBytes) return { ok: false, reason: 'envelope_too_large' };
-    chunks.push(buffer);
-  }
-  return { ok: true, text: Buffer.concat(chunks).toString('utf-8') };
+  if (!Number.isSafeInteger(length) || length < 0) return Promise.resolve({ ok: false, reason: 'invalid' });
+  if (length > maxBytes) return Promise.resolve({ ok: false, reason: 'envelope_too_large' });
+  return new Promise((resolveRead) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let settled = false;
+    const cleanup = (): void => {
+      signal.removeEventListener('abort', onAbort);
+      request.removeListener('data', onData);
+      request.removeListener('end', onEnd);
+      request.removeListener('error', onError);
+    };
+    const finish = (result: RequestBodyRead): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolveRead(result);
+    };
+    const onAbort = (): void => {
+      request.pause();
+      finish({ ok: false, reason: 'aborted' });
+    };
+    const onData = (chunk: Buffer | string): void => {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buffer.byteLength;
+      if (size > maxBytes || size > length) {
+        request.pause();
+        finish({ ok: false, reason: 'envelope_too_large' });
+        return;
+      }
+      chunks.push(buffer);
+    };
+    const onEnd = (): void => {
+      if (size !== length) finish({ ok: false, reason: 'invalid' });
+      else finish({ ok: true, text: Buffer.concat(chunks).toString('utf-8') });
+    };
+    const onError = (): void => finish({ ok: false, reason: signal.aborted ? 'aborted' : 'invalid' });
+    signal.addEventListener('abort', onAbort, { once: true });
+    request.on('data', onData);
+    request.once('end', onEnd);
+    request.once('error', onError);
+    if (signal.aborted) onAbort();
+  });
 }
 
 function contentType(pathname: string): string {
@@ -906,7 +1295,9 @@ export async function startOperatorServer(
   let inFlight: Promise<OperatorFleetSnapshotV1> | null = null;
   let nextSnapshotSequence = 1;
   let activeFleetCanceller: (() => void) | null = null;
+  let activeFleetSubscribers = 0;
   const activeTaskMessageCancellers = new Set<() => void>();
+  const activeTaskMessageCompletions = new Set<Promise<void>>();
   const activeCollaborationRequestCancellers = new Set<() => void>();
   const collaborationObservations = new Map<string, CollaborationObservation>();
   const collaborationQueue: CollaborationObservation[] = [];
@@ -1056,45 +1447,55 @@ export async function startOperatorServer(
     return pending;
   };
 
+  const handleFleetSnapshot = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+    headOnly: boolean,
+  ): Promise<void> => {
+    activeFleetSubscribers += 1;
+    let finished = false;
+    let released = false;
+    let clientDisconnected = false;
+    const release = (): void => {
+      if (released) return;
+      released = true;
+      activeFleetSubscribers -= 1;
+      if (!finished && activeFleetSubscribers === 0) activeFleetCanceller?.();
+    };
+    const onClientDisconnect = (): void => {
+      if (finished) return;
+      clientDisconnected = true;
+      release();
+    };
+    request.once('aborted', onClientDisconnect);
+    response.once('close', onClientDisconnect);
+    try {
+      const current = await snapshot();
+      if (clientDisconnected || response.destroyed) return;
+      finished = true;
+      sendJson(response, 200, current, headOnly);
+    } catch (error) {
+      if (clientDisconnected || response.destroyed) return;
+      finished = true;
+      const failure = publicFleetError(error);
+      sendJson(response, failure.status, failure.body, headOnly);
+    } finally {
+      finished = true;
+      release();
+      request.removeListener('aborted', onClientDisconnect);
+      response.removeListener('close', onClientDisconnect);
+    }
+  };
+
   const handleTaskMessage = async (
     request: IncomingMessage,
     response: ServerResponse,
     repositoryId: string,
     taskId: string,
   ): Promise<void> => {
-    const read = await readBoundedRequestBody(request, OPERATOR_TASK_MESSAGE_REQUEST_MAX_BYTES);
-    if (!read.ok) {
-      if (read.reason === 'envelope_too_large') {
-        sendJson(response, 413, errorBody(
-          'task_message_envelope_too_large',
-          'The task message request envelope is too large.',
-          'Shorten the request, then send it again.',
-        ));
-      } else {
-        sendJson(response, 400, errorBody('invalid_request', 'The request body is invalid.', OPERATOR_REOBSERVE_ACTION));
-      }
-      return;
-    }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(read.text);
-    } catch (_error) {
-      sendJson(response, 400, errorBody('invalid_request', 'The request body is not valid JSON.', OPERATOR_REOBSERVE_ACTION));
-      return;
-    }
-    const payload = decodeTaskMessageRequest(parsed);
-    if (payload === null) {
-      sendJson(response, 400, errorBody('invalid_request', 'The request body is invalid.', OPERATOR_REOBSERVE_ACTION));
-      return;
-    }
-    if (Buffer.byteLength(payload.body, 'utf-8') > OPERATOR_TASK_MESSAGE_BODY_MAX_BYTES) {
-      sendJson(response, 413, errorBody(
-        'task_message_body_too_large',
-        `The message body must be at most ${OPERATOR_TASK_MESSAGE_BODY_MAX_BYTES} bytes.`,
-        'Shorten the message, then send it again.',
-      ));
-      return;
-    }
+    let resolveCompletion!: () => void;
+    const completion = new Promise<void>((resolvePending) => { resolveCompletion = resolvePending; });
+    activeTaskMessageCompletions.add(completion);
     const controller = new AbortController();
     let finished = false;
     let clientDisconnected = false;
@@ -1123,24 +1524,67 @@ export async function startOperatorServer(
       controller.abort();
       rejectCancellation?.(new OperatorTaskMessageTimeoutError());
     }, timeoutMs);
-    const input: SendOperatorTaskMessageInput = {
-      env: options.env,
-      repository_id: repositoryId,
-      task_id: taskId,
-      message_id: payload.message_id,
-      scope: payload.scope,
-      expected_task_revision: payload.expected_task_revision,
-      expected_claim_id: payload.expected_claim_id,
-      expected_generation: payload.expected_generation,
-      body: payload.body,
-    };
     try {
-      const result = await Promise.race([
-        send === undefined
-          ? sendDefaultTaskMessage({ ...input, env: collaborationWorkerEnvironment(input.env) }, controller.signal)
-          : Promise.resolve().then(() => send({ ...input, signal: controller.signal })),
+      const read = await Promise.race([
+        readBoundedRequestBody(request, OPERATOR_TASK_MESSAGE_REQUEST_MAX_BYTES, controller.signal),
         cancellation,
       ]);
+      if (!read.ok) {
+        if (read.reason === 'aborted') {
+          throw timeoutExpired ? new OperatorTaskMessageTimeoutError() : OPERATOR_TASK_MESSAGE_REQUEST_ABORTED;
+        }
+        finished = true;
+        if (read.reason === 'envelope_too_large') {
+          sendJson(response, 413, errorBody(
+            'task_message_envelope_too_large',
+            'The task message request envelope is too large.',
+            'Shorten the request, then send it again.',
+          ));
+        } else {
+          sendJson(response, 400, errorBody('invalid_request', 'The request body is invalid.', OPERATOR_REOBSERVE_ACTION));
+        }
+        return;
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(read.text);
+      } catch (_error) {
+        finished = true;
+        sendJson(response, 400, errorBody('invalid_request', 'The request body is not valid JSON.', OPERATOR_REOBSERVE_ACTION));
+        return;
+      }
+      const payload = decodeTaskMessageRequest(parsed);
+      if (payload === null) {
+        finished = true;
+        sendJson(response, 400, errorBody('invalid_request', 'The request body is invalid.', OPERATOR_REOBSERVE_ACTION));
+        return;
+      }
+      if (Buffer.byteLength(payload.body, 'utf-8') > OPERATOR_TASK_MESSAGE_BODY_MAX_BYTES) {
+        finished = true;
+        sendJson(response, 413, errorBody(
+          'task_message_body_too_large',
+          `The message body must be at most ${OPERATOR_TASK_MESSAGE_BODY_MAX_BYTES} bytes.`,
+          'Shorten the message, then send it again.',
+        ));
+        return;
+      }
+      const input: SendOperatorTaskMessageInput = {
+        env: options.env,
+        repository_id: repositoryId,
+        task_id: taskId,
+        message_id: payload.message_id,
+        scope: payload.scope,
+        expected_task_revision: payload.expected_task_revision,
+        expected_claim_id: payload.expected_claim_id,
+        expected_generation: payload.expected_generation,
+        body: payload.body,
+      };
+      const result = send === undefined
+        ? await sendDefaultTaskMessage({ ...input, env: collaborationWorkerEnvironment(input.env) }, controller.signal)
+        : await Promise.race([
+            Promise.resolve().then(() => send({ ...input, signal: controller.signal })),
+            cancellation,
+          ]);
       if (clientDisconnected || serverClosing || response.destroyed) return;
       finished = true;
       sendJson(response, result.created ? 201 : 200, {
@@ -1155,12 +1599,15 @@ export async function startOperatorServer(
     } catch (error) {
       if (clientDisconnected || serverClosing || response.destroyed) return;
       finished = true;
+      if (timeoutExpired) response.shouldKeepAlive = false;
       const failure = publicTaskMessageError(timeoutExpired ? new OperatorTaskMessageTimeoutError() : error);
       sendJson(response, failure.status, failure.body);
     } finally {
       finished = true;
       clearTimeout(timer);
       activeTaskMessageCancellers.delete(cancelForServerClose);
+      activeTaskMessageCompletions.delete(completion);
+      resolveCompletion();
       request.removeListener('aborted', onClientDisconnect);
       response.removeListener('close', onClientDisconnect);
     }
@@ -1297,12 +1744,7 @@ export async function startOperatorServer(
     }
 
     if (pathname === '/api/v1/fleet/snapshot') {
-      try {
-        sendJson(response, 200, await snapshot(), headOnly);
-      } catch (error) {
-        const failure = publicFleetError(error);
-        sendJson(response, failure.status, failure.body, headOnly);
-      }
+      await handleFleetSnapshot(request, response, headOnly);
       return;
     }
 
@@ -1383,6 +1825,7 @@ export async function startOperatorServer(
     activeFleetCanceller?.();
     for (const cancel of activeTaskMessageCancellers) cancel();
     for (const cancel of activeCollaborationRequestCancellers) cancel();
+    await Promise.allSettled([...activeTaskMessageCompletions]);
     if (!server.listening) return;
     await new Promise<void>((resolveClose, rejectClose) => {
       server.close((error?: Error) => {

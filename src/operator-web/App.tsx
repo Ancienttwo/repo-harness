@@ -14,6 +14,7 @@ import {
   allCards,
   decodeOperatorCollaborationSnapshot,
   decodeOperatorFleetSnapshot,
+  decodeOperatorTaskMessageResponse,
   OPERATOR_COLUMNS,
   OPERATOR_COLLABORATION_PAYLOAD_INVALID_ERROR,
   OPERATOR_FLEET_PAYLOAD_PROTOCOL,
@@ -1218,6 +1219,7 @@ const TASK_MESSAGE_FAILED_ERROR: OperatorApiErrorV1 = {
 
 const OWNER_GONE_CODES: readonly string[] = ['claim_mismatch', 'recipient_unavailable', 'task_unowned'];
 const STALE_FENCE_CODES: readonly string[] = [
+  'canonical_source_stale',
   'task_revision_mismatch',
   'claim_mismatch',
   'recipient_unavailable',
@@ -1324,12 +1326,15 @@ export async function postTaskMessage(request: TaskMessageRequestV1): Promise<vo
       }),
     },
   );
-  if (response.ok) return;
   let body: unknown = null;
   try {
     body = await response.json();
   } catch {
     body = null;
+  }
+  if (response.ok) {
+    decodeOperatorTaskMessageResponse(body, request, response.status);
+    return;
   }
   throw asApiError(body, TASK_MESSAGE_FAILED_ERROR);
 }
@@ -1373,6 +1378,12 @@ function Composer({
   const [sending, setSending] = useState(false);
   const [sentAt, setSentAt] = useState<number | null>(null);
   const [error, setError] = useState<OperatorApiErrorV1 | null>(null);
+  const [staleFailure, setStaleFailure] = useState<{
+    readonly failed_sequence: number;
+    readonly task_key: string;
+    readonly failed_fence: TaskMessageFenceV1;
+    readonly error_code: string;
+  } | null>(null);
 
   const observedFence = composerFence(card);
   // A draft owns its original fence. If the card refreshes while the composer
@@ -1391,7 +1402,14 @@ function Composer({
   const consistency = t(`status.consistency.${card.snapshot_consistency}` as OperatorMessageKey);
   const sent = sentAt !== null && sentAt === sequence;
   const recovery = composerRecovery(error);
-  const recoveryEnabled = block === null && !sending;
+  const recoveryEnabled = block === null && !sending && (recovery !== 'rebind' || (
+    staleFailure !== null
+    && staleFailure.task_key === taskKey(card)
+    && sequence > staleFailure.failed_sequence
+    && repository.status === 'ok'
+    && repository.snapshot_consistency === 'stable'
+    && card.snapshot_consistency === 'stable'
+  ));
 
   const beginDraft = () => ({ message_id: crypto.randomUUID(), fence: observedFence });
 
@@ -1407,6 +1425,7 @@ function Composer({
     if (!recoveryEnabled || recovery !== 'rebind') return;
     setDraft(beginDraft());
     setError(null);
+    setStaleFailure(null);
     setSentAt(null);
   };
 
@@ -1434,10 +1453,20 @@ function Composer({
       // gone, and the next snapshot owns what the operator sees next.
       setBody('');
       setDraft(null);
+      setStaleFailure(null);
       setSentAt(sequence);
       onSent();
     } catch (failure) {
-      setError(asApiError(failure, TASK_MESSAGE_FAILED_ERROR));
+      const apiError = asApiError(failure, TASK_MESSAGE_FAILED_ERROR);
+      setError(apiError);
+      setStaleFailure(composerRecovery(apiError) === 'rebind'
+        ? {
+            failed_sequence: sequence,
+            task_key: taskKey(card),
+            failed_fence: draft.fence,
+            error_code: apiError.code,
+          }
+        : null);
     } finally {
       setSending(false);
     }
@@ -1863,7 +1892,13 @@ export function OperatorApp({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collaborationRepositoryId, collaborationRefreshGeneration]);
   // A board that is stale, torn, or degraded is not a board you may write from.
-  const boardUnstable = stateKind === 'stale' || (snapshot !== null && snapshot.snapshot_consistency !== 'stable');
+  const boardUnstable = stateKind === 'stale'
+    || stateKind === 'repo-degraded'
+    || stateKind === 'changed-during-read'
+    || (snapshot !== null && snapshot.snapshot_consistency !== 'stable')
+    || (selectedRepository !== null && (
+      selectedRepository.status !== 'ok' || selectedRepository.snapshot_consistency !== 'stable'
+    ));
   const selectCard = (card: OperatorFleetCardV1) => setSelection({ key: taskKey(card), revision: card.task_revision });
 
   return (

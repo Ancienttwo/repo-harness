@@ -70,6 +70,19 @@ sequenceDiagram
 <!-- END ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" -->
 ## 3. P3：设计决策与不变量
 
+### Diff-bound workflow evidence
+
+`scripts/check-task-sync.sh` owns the change-identity boundary for workflow
+evidence. It classifies the final staged and working-tree diff, hashes only the
+substantive path contents, and accepts execution evidence only when a changed
+canonical plan, contract, review, notes, or workstream artifact contains that
+exact digest. `scripts/check-task-workflow.sh` and CI consume this result; they
+do not infer freshness from the mere presence or recency of a task artifact.
+Exact generated status projections and general documentation remain outside the
+substantive set, while architecture truth and workflow-helper changes remain
+inside it. A waiver is a separate typed, digest-bound, scoped, expiring
+authority; missing or malformed evidence fails closed.
+
 ### 权威 skill eval 证据边界
 
 - 当 release/readiness 断言依赖 skill effectiveness 时，必须执行 non-dry-run `bun run benchmark:skills --eval <slug>`，并保留 `full_test_count` 与 `effectiveness_authority` 的结构化证据。

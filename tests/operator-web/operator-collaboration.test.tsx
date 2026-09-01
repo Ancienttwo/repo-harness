@@ -338,6 +338,17 @@ describe('operator collaboration surface', () => {
     expect(markup).toContain('Re-observe before acting on them.');
   });
 
+  test('renders collaboration mode as a closed consistency source in both locales', () => {
+    const modeChanged: OperatorCollaborationSnapshotV1 = {
+      ...collaborationSnapshot,
+      snapshot_consistency: 'changed_during_read',
+      changed_sources: ['mode'],
+    };
+
+    expect(render(modeChanged, 'en')).toContain('collaboration mode');
+    expect(render(modeChanged, 'zh')).toContain('协作模式');
+  });
+
   test('UX-operator-collaboration-v1-F3 states an unreadable store instead of an empty one', () => {
     const markup = renderToStaticMarkup(
       <OperatorApp

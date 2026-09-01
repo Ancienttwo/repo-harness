@@ -251,9 +251,12 @@ function projectRepository(input: FleetRepositoryBoardInputV1): FleetRepositoryB
     .map((card) => projectFleetBoardCard(input.repository_id, card))
     .sort((left, right) => compare(left.task_id, right.task_id) || compare(left.task_revision, right.task_revision));
   const unclassified = cards.some((card) => card.column === null);
-  const consistency = input.snapshot_consistency === 'stable' && !unclassified
-    ? 'stable'
-    : input.snapshot_consistency === 'changed_during_read' ? 'changed_during_read' : 'degraded';
+  const changedCard = cards.some((card) => card.snapshot_consistency === 'changed_during_read');
+  const consistency = input.snapshot_consistency === 'degraded' || unclassified
+    ? 'degraded'
+    : input.snapshot_consistency === 'changed_during_read' || changedCard
+      ? 'changed_during_read'
+      : 'stable';
   const error = input.error ?? (unclassified
     ? { code: 'repo_board_unavailable' as const, message: 'one or more cards have no sound fleet column classification' }
     : null);

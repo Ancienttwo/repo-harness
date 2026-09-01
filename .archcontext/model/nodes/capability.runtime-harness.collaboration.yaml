@@ -23,7 +23,7 @@ responsibilities:
   - Publish candidates immutably first and one contribution commit last as the sole visibility boundary, so a projection reads only committed contributions and an interrupted transaction leaves nothing partially visible.
   - Treat an unusable Worker output as a typed rejection that still persists the ordinary WorkerResult, never as a synthesised empty contribution or an appearance of success.
   - Separate knowledge succession from execution authority by deriving a bound_task execution context from the persisted TaskFreeze receipt on publish and re-deriving and comparing it on read, and by granting a successor a write path only through the existing release, takeover and acquire lifecycle.
-  - Read every mutable collaboration source twice and derive snapshot_consistency from what the two reads observed, since the store reader is the only layer that can tell a torn read from a still one.
+  - Read collaboration.mode and every mutable collaboration record source twice inside one overlapping collection window, fail closed when mode is unreadable, and derive snapshot_consistency from what the two reads observed, since the store reader is the only layer that can tell a torn read from a still one.
   - Fail the collection closed when the signal set itself is unreadable, and mark the snapshot degraded when an additive source is, so a partial view is never served as a complete one.
   - Project existing EngineerOfferV1 records and their offer_revision verbatim into the Work Exchange snapshot, reinterpreting neither readiness nor revision.
   - Withhold any bound_task execution context whose read-time proof does not hold, and count the omission, rather than publishing an unproven Claim beside a flag.
@@ -195,6 +195,11 @@ source:
             - id: sink.collaboration.exchange-projection
               path: "src/core/collaboration/work-exchange.ts"
               symbol: "buildCollaborativeWorkExchangeSnapshot"
+    - id: entrypoint.collaboration.exchange-source-read
+      path: "src/effects/collaboration/work-exchange.ts"
+      symbols:
+        - name: "readAllSources"
+          sinks:
             - id: sink.collaboration.exchange-mode
               path: "src/effects/collaboration/feature-flag.ts"
               symbol: "readCollaborationMode"

@@ -1256,6 +1256,12 @@ fi
 check_handoff_resume_pair "$handoff_file" "$resume_file"
 check_current_resume_freshness "$current_status_file" "$resume_file"
 
+if [[ -f scripts/check-task-sync.sh ]]; then
+  if ! waiver_error="$(bash scripts/check-task-sync.sh --validate-waivers-only 2>&1)"; then
+    report_issue "Substantive-change waiver validation failed: ${waiver_error//$'\n'/; }"
+  fi
+fi
+
 active_plan="$(get_active_plan || true)"
 if [[ -z "$active_plan" ]]; then
   if [[ -f "$ACTIVE_WORKTREE_MARKER" ]]; then

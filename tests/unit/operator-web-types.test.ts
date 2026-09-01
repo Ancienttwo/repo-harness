@@ -3,9 +3,11 @@ import { describe, expect, test } from 'bun:test';
 import {
   decodeOperatorCollaborationSnapshot,
   decodeOperatorFleetSnapshot,
+  decodeOperatorTaskMessageResponse,
   OPERATOR_COLLABORATION_PAYLOAD_INVALID_ERROR,
   OperatorCollaborationPayloadError,
   OperatorPayloadError,
+  OperatorTaskMessageResponseError,
 } from '../../src/operator-web/types';
 import { translate } from '../../src/operator-web/i18n';
 
@@ -111,6 +113,81 @@ describe('operator browser payload contracts', () => {
     ['generation without claim', { claim_id: null }],
   ])('rejects %s before rendering a write affordance', (_name, changes) => {
     expect(() => decodeOperatorFleetSnapshot(fleetPayloadWithCard(changes))).toThrow(OperatorPayloadError);
+  });
+
+  test.each([
+    ['unreadable repository with a card', { status: 'unreadable', snapshot_consistency: 'degraded', error: { code: 'repo_unreadable', message: 'unreadable' } }],
+    ['unreadable repository with stable consistency', { status: 'unreadable', snapshot_consistency: 'stable', cards: [], error: { code: 'repo_unreadable', message: 'unreadable' } }],
+    ['unreadable repository without an error', { status: 'unreadable', snapshot_consistency: 'degraded', cards: [], error: null }],
+  ])('rejects an impossible %s payload', (_name, changes) => {
+    const payload = validFleetPayload();
+    const repositories = payload.repositories as Array<Record<string, unknown>>;
+    repositories[0] = { ...repositories[0], ...changes };
+    expect(() => decodeOperatorFleetSnapshot(payload)).toThrow(OperatorPayloadError);
+  });
+
+  test('rejects repository and Fleet consistency that is healthier than a child', () => {
+    const changedCard = fleetPayloadWithCard({ snapshot_consistency: 'changed_during_read' });
+    expect(() => decodeOperatorFleetSnapshot(changedCard)).toThrow(OperatorPayloadError);
+
+    const degradedRepository = validFleetPayload();
+    const repositories = degradedRepository.repositories as Array<Record<string, unknown>>;
+    repositories[0] = { ...repositories[0], snapshot_consistency: 'degraded' };
+    expect(() => decodeOperatorFleetSnapshot(degradedRepository)).toThrow(OperatorPayloadError);
+
+    degradedRepository.snapshot_consistency = 'degraded';
+    expect(decodeOperatorFleetSnapshot(degradedRepository).snapshot_consistency).toBe('degraded');
+  });
+
+  test('accepts mode as a closed collaboration consistency source', () => {
+    expect(decodeOperatorCollaborationSnapshot({
+      ...validCollaborationPayload(),
+      snapshot_consistency: 'changed_during_read',
+      changed_sources: ['mode'],
+    }).changed_sources).toEqual(['mode']);
+  });
+
+  test('strictly decodes and binds Task Message success acknowledgments', () => {
+    const expected = {
+      repository_id: 'repo-1',
+      task_id: taskId,
+      message_id: '00000000-0000-4000-8000-000000000002',
+      scope: 'claim' as const,
+    };
+    const created = {
+      ok: true,
+      protocol: 1,
+      ...expected,
+      created: true,
+    } as const;
+    expect(decodeOperatorTaskMessageResponse(created, expected, 201)).toEqual(created);
+    expect(decodeOperatorTaskMessageResponse({ ...created, created: false }, expected, 200).created).toBe(false);
+  });
+
+  test.each([
+    ['empty body', {}, 200],
+    ['wrong protocol', { protocol: 2 }, 201],
+    ['wrong repository', { repository_id: 'repo-2' }, 201],
+    ['wrong task', { task_id: 'f'.repeat(64) }, 201],
+    ['wrong message', { message_id: '00000000-0000-4000-8000-000000000003' }, 201],
+    ['wrong scope', { scope: 'task' }, 201],
+    ['extra field', { future: true }, 201],
+    ['status disagrees with created', {}, 200],
+  ])('rejects Task Message success with %s', (_name, changes, status) => {
+    const expected = {
+      repository_id: 'repo-1',
+      task_id: taskId,
+      message_id: '00000000-0000-4000-8000-000000000002',
+      scope: 'claim' as const,
+    };
+    const response = _name === 'empty body' ? {} : {
+      ok: true,
+      protocol: 1,
+      ...expected,
+      created: true,
+      ...changes,
+    };
+    expect(() => decodeOperatorTaskMessageResponse(response, expected, status)).toThrow(OperatorTaskMessageResponseError);
   });
 
   test('uses a collaboration-specific validation contract while Fleet keeps its own contract', () => {

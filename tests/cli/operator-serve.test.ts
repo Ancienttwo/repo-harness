@@ -3,11 +3,12 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
+import { createConnection } from 'node:net';
 
 import { projectFleetBoardSnapshot } from '../../src/core/fleet/board';
 import { TASK_MESSAGE_BODY_MAX_BYTES } from '../../src/core/fleet/task-message';
 import type { OperatorCollaborationSnapshotV1 } from '../../src/core/operator/collaboration-snapshot';
-import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
+import { repoHarnessRegisteredReposPath, repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import {
   OPERATOR_TASK_MESSAGE_BODY_MAX_BYTES,
   OPERATOR_TASK_MESSAGE_REQUEST_MAX_BYTES,
@@ -388,6 +389,93 @@ describe('operator serve command and HTTP boundary', () => {
     }
   });
 
+  test('starts the task-message deadline before a slow body and cancels body reads on disconnect or shutdown', async () => {
+    const calls: SendOperatorTaskMessageInput[] = [];
+    const harness = await startWriteServer(async () => sendResult(), calls, undefined, 1_000);
+    const payload = taskMessagePayload();
+    const requestHead = [
+      `POST ${messagePath('repo-write')} HTTP/1.1`,
+      `Host: ${harness.server.host}:${harness.server.port}`,
+      `Origin: ${harness.server.url}`,
+      'Content-Type: application/json',
+      `Content-Length: ${Buffer.byteLength(payload)}`,
+      'Connection: keep-alive',
+      '',
+      '',
+    ].join('\r\n');
+    try {
+      const timeoutResponse = await new Promise<string>((resolveResponse, rejectResponse) => {
+        const socket = createConnection({ host: harness.server.host, port: harness.server.port });
+        let responseText = '';
+        let nextByte = 0;
+        let drip: ReturnType<typeof setInterval> | null = null;
+        let settled = false;
+        const finish = (error?: Error): void => {
+          if (settled) return;
+          settled = true;
+          if (drip !== null) clearInterval(drip);
+          socket.destroy();
+          if (error !== undefined && responseText.length === 0) rejectResponse(error);
+          else resolveResponse(responseText);
+        };
+        socket.setEncoding('utf-8');
+        socket.on('data', (chunk) => { responseText += chunk; });
+        socket.once('error', (error) => finish(error));
+        socket.once('close', () => finish());
+        socket.once('connect', () => {
+          socket.write(requestHead);
+          drip = setInterval(() => {
+            if (nextByte < payload.length) socket.write(payload[nextByte++]!);
+          }, 200);
+        });
+      });
+      expect(timeoutResponse).toContain('HTTP/1.1 503');
+      expect(timeoutResponse).toContain('task_message_timeout');
+      expect(calls).toHaveLength(0);
+
+      const disconnected = createConnection({ host: harness.server.host, port: harness.server.port });
+      await new Promise<void>((resolveConnected, rejectConnected) => {
+        disconnected.once('connect', resolveConnected);
+        disconnected.once('error', rejectConnected);
+      });
+      disconnected.write(requestHead);
+      disconnected.write(payload.slice(0, 5));
+      disconnected.destroy();
+      await Bun.sleep(50);
+      expect((await fetch(`${harness.server.url}/healthz`)).status).toBe(200);
+      expect(calls).toHaveLength(0);
+    } finally {
+      await stopWriteServer(harness);
+    }
+
+    const shutdownCalls: SendOperatorTaskMessageInput[] = [];
+    const shutdownHarness = await startWriteServer(async () => sendResult(), shutdownCalls);
+    const shutdownSocket = createConnection({ host: shutdownHarness.server.host, port: shutdownHarness.server.port });
+    try {
+      await new Promise<void>((resolveConnected, rejectConnected) => {
+        shutdownSocket.once('connect', resolveConnected);
+        shutdownSocket.once('error', rejectConnected);
+      });
+      shutdownSocket.write([
+        `POST ${messagePath('repo-write')} HTTP/1.1`,
+        `Host: ${shutdownHarness.server.host}:${shutdownHarness.server.port}`,
+        `Origin: ${shutdownHarness.server.url}`,
+        'Content-Type: application/json',
+        `Content-Length: ${Buffer.byteLength(payload)}`,
+        '',
+        payload.slice(0, 5),
+      ].join('\r\n'));
+      await Bun.sleep(30);
+      const startedAt = Date.now();
+      await shutdownHarness.server.close();
+      expect(Date.now() - startedAt).toBeLessThan(2_500);
+      expect(shutdownCalls).toHaveLength(0);
+    } finally {
+      shutdownSocket.destroy();
+      rmSync(shutdownHarness.staticRoot, { recursive: true, force: true });
+    }
+  });
+
   test('bounds ambiguous task-message writes and recovers through the same message identity', async () => {
     const calls: SendOperatorTaskMessageInput[] = [];
     let abortObserved = false;
@@ -481,8 +569,24 @@ describe('operator serve command and HTTP boundary', () => {
       expect(timedOut.status).toBe(503);
       expect(await timedOut.json()).toMatchObject({ error: { code: 'task_message_timeout' } });
       expect((await fetch(`${server.url}/healthz`)).status).toBe(200);
+      const registryLockPath = `${repoHarnessRegisteredReposPath(registry.env)}.lock`;
+      expect(existsSync(registryLockPath)).toBe(true);
       expect(existsSync(join(repoRoot, '.git/repo-harness/coordination/v1/locks/tasks', `${TASK_ID}.lock`))).toBe(false);
       expect(existsSync(join(repoRoot, '.git/repo-harness/task-inbox/v1', TASK_ID, 'events'))).toBe(false);
+
+      writer.kill('SIGTERM');
+      rmSync(markerPath);
+      writeFileSync(markerPath, '\n');
+      const retryStartedAt = Date.now();
+      const retry = await fetch(`${server.url}${messagePath(registry.ids[0]!)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Origin: server.url },
+        body: taskMessagePayload(),
+      });
+      expect(Date.now() - retryStartedAt).toBeLessThan(2_500);
+      expect(retry.status).toBe(503);
+      expect(await retry.json()).toMatchObject({ error: { code: 'canonical_sprint_unavailable' } });
+      expect(existsSync(registryLockPath)).toBe(false);
     } finally {
       writer.kill('SIGTERM');
       await server.close();
@@ -718,6 +822,52 @@ describe('operator serve command and HTTP boundary', () => {
       rmSync(staticRoot, { recursive: true, force: true });
       rmSync(repoRoot, { recursive: true, force: true });
       rmSync(registry.home, { recursive: true, force: true });
+    }
+  });
+
+  test('cancels a sole Fleet observation when its client disconnects and permits a clean retry', async () => {
+    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-fleet-disconnect-'));
+    writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
+    let started = false;
+    let abortObserved = false;
+    let healthy = false;
+    const server = await startOperatorServer({
+      port: 0,
+      static_root: staticRoot,
+      collect_fleet_board: async (options) => {
+        if (healthy) return snapshot(options?.sequence ?? 1);
+        started = true;
+        return new Promise<never>((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () => {
+            abortObserved = true;
+            reject(new Error('cancelled Fleet fixture'));
+          }, { once: true });
+        });
+      },
+    });
+    const socket = createConnection({ host: server.host, port: server.port });
+    try {
+      await new Promise<void>((resolveConnected, rejectConnected) => {
+        socket.once('connect', resolveConnected);
+        socket.once('error', rejectConnected);
+      });
+      socket.write([
+        'GET /api/v1/fleet/snapshot HTTP/1.1',
+        `Host: ${server.host}:${server.port}`,
+        'Connection: keep-alive',
+        '',
+        '',
+      ].join('\r\n'));
+      await waitFor(() => started, 'Fleet observation did not start');
+      socket.destroy();
+      await waitFor(() => abortObserved, 'Fleet client disconnect did not abort collection');
+      healthy = true;
+      const retry = await fetch(`${server.url}/api/v1/fleet/snapshot`);
+      expect(retry.status).toBe(200);
+    } finally {
+      socket.destroy();
+      await server.close();
+      rmSync(staticRoot, { recursive: true, force: true });
     }
   });
 

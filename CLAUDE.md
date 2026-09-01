@@ -71,41 +71,37 @@ bun src/cli/index.ts init --repo . --dry-run
 <!-- BEGIN ARCHITECTURE CONTRACT -->
 ## Architecture Contract
 
-- Functional block: `src/core/engineers/provider-thread-effect.ts`
-- Capability ID: `runtime-harness-agent-runtime-effects`
-- Matched prefix: `src/core/engineers/provider-thread-effect.ts`
+- Functional block: `src/effects/collaboration`
+- Capability ID: `runtime-harness-collaboration`
+- Matched prefix: `src/effects/collaboration`
 - Architecture domain: `runtime-harness`
-- Architecture capability: `agent-runtime-effects`
-- Architecture module: `docs/architecture/modules/runtime-harness/agent-runtime-effects.md`
-- Last architecture event: 2026-08-30T19:18:36+0800
-- Last changed path: `.archcontext/model/nodes/capability.runtime-harness.agent-runtime-effects.yaml`
-- Severity: medium
-- Change type: boundary-accepted
+- Architecture capability: `collaboration`
+- Architecture module: `docs/architecture/modules/runtime-harness/collaboration.md`
+- Last architecture event: 2026-09-01T12:44:55+0800
+- Last changed path: `src/effects/collaboration/work-exchange.ts`
+- Severity: low
+- Change type: source-change
 - Module responsibility: Keep this block aligned with the local boundary described by surrounding human-owned context.
-- Entrypoints: `src/core/engineers/provider-thread-effect.ts`
+- Entrypoints: `src/effects/collaboration`
 - Allowed dependencies: Follow root `AGENTS.md` / `CLAUDE.md` and this local contract.
 - Forbidden dependencies: Do not cross sibling app/service/package boundaries without an architecture snapshot or explicit plan.
-- Runtime path: `src/core/engineers/provider-thread-effect.ts`
+- Runtime path: `src/effects/collaboration`
 - LSP/tooling profile: `typescript-lsp`
 - Verification: Use root required checks plus local commands recorded in this capability contract.
 - Latest snapshot: `(none yet)`
-- Semantic diagram source: `docs/architecture/modules/runtime-harness/agent-runtime-effects.md`
+- Semantic diagram source: `docs/architecture/modules/runtime-harness/collaboration.md`
 - Pending architecture request: `(none)`
 
 ## Active Workstreams
 
-- `tasks/workstreams/runtime-harness/agent-runtime-effects/me3a-provider-thread-effect.md`
-  - status: completed
-  - current_slice: completed-20260825-me3a-provider-thread-effect
-  - source_plan: plans/plan-20260825-2120-me3a-provider-thread-effect.md
-- `tasks/workstreams/runtime-harness/agent-runtime-effects/r1-provider-neutral-agent-runtime.md`
-  - status: planned
-  - current_slice: architecture-accepted-awaiting-activation
-  - source_plan: plans/plan-20260830-1903-r1-provider-neutral-agent-runtime.md
+- `tasks/workstreams/runtime-harness/collaboration/collaboration-substrate-program.md`
+  - status: active
+  - current_slice: todo-01
+  - source_plan: plans/plan-20260830-0858-c5-taskfreeze-succession-integration.md
 
 ## Current Session Projection
 
-- Durable progress lives under `tasks/workstreams/runtime-harness/agent-runtime-effects`.
+- Durable progress lives under `tasks/workstreams/runtime-harness/collaboration`.
 - `tasks/current.md` is the tracked derived status snapshot; it is not a live lock or task source.
 - `tasks/todos.md` is the deferred-goal ledger; current execution slices stay in the active plan's `## Task Breakdown`.
 <!-- END ARCHITECTURE CONTRACT -->

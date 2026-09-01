@@ -20,7 +20,7 @@ function sourceSnapshot(): FleetBoardSnapshotV1 {
         repo_root: '/private/workspaces/repo-a',
         access_mode: 'read_write',
         status: 'ok',
-        snapshot_consistency: 'changed_during_read',
+        snapshot_consistency: 'stable',
         cards: [
           {
             task_id: 'a'.repeat(64),
@@ -81,6 +81,8 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
       code: 'repo_unreadable',
       message: 'repository authority cannot be read',
     });
+    expect(source.repositories[0]?.snapshot_consistency).toBe('changed_during_read');
+    expect(projected.snapshot_consistency).toBe('degraded');
   });
 
   test('returns an immutable transport view without reclassifying cards or counts', () => {
