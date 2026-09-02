@@ -11,6 +11,7 @@
 > **Verification Boundary**: Commands named in the captured planning output plus `repo-harness run verify-contract --contract tasks/contracts/20260903-0438-brc4b-oracle-version-pin-gate-findings.contract.md --strict`.
 > **Rollback Surface**: Before execution remove `plans/plan-20260903-0438-brc4b-oracle-version-pin-gate-findings.md`; after execution revert branch `codex/brc4b-oracle-version-pin-gate-findings` or the explicitly reviewed diff.
 > **Spec**: `docs/spec.md`
+> **Substantive Change SHA256**: `sha256:eb05ea4402cc21eb0ab8c35c4022239c10f45ce63fe6c6de29252521959d2823`
 > **Research**: See `docs/researches/`
 > **Task Contract**: `tasks/contracts/20260903-0438-brc4b-oracle-version-pin-gate-findings.contract.md`
 > **Task Review**: `tasks/reviews/20260903-0438-brc4b-oracle-version-pin-gate-findings.review.md`
@@ -147,12 +148,12 @@ PR #290（main@9e922e47）把有 profile 綁定時的 oracle 傳輸換成 `--cop
 
 ## Task Breakdown
 
-- [ ] 擷取 pre-fix artifact：先寫 regression guard，在未修代碼上跑並存 `.ai/harness/evidence/brc4b-pre-fix.txt`（含 `PRE_FIX_EXIT=非零`）
-- [ ] 抬 pin 到 `0.18.0`，doctor 本機回 ready
-- [ ] 移除 `browserCookiePath` 能力與 readiness 依賴，更新測試與 doctor JSON 斷言
-- [ ] stale-session 比對收進非零 exit 分支，補「exit 0 且 log 含該句仍以 answer file 為準」的測試
-- [ ] transport 推導加 provider，補 native 測試
-- [ ] 文檔與 assets 字面串同步，`bun test tests/readme-dx.test.ts` 綠
+- [x] 擷取 pre-fix artifact：先寫 regression guard，在未修代碼上跑並存 `.ai/harness/evidence/brc4b-pre-fix.txt`（含 `PRE_FIX_EXIT=非零`）
+- [x] 抬 pin 到 `0.18.0`，doctor 本機回 ready
+- [x] 移除 `browserCookiePath` 能力與 readiness 依賴，更新測試與 doctor JSON 斷言
+- [x] stale-session 比對收進非零 exit 分支，補「exit 0 且 log 含該句仍以 answer file 為準」的測試
+- [x] transport 推導加 provider，補 native 測試
+- [x] 文檔與 assets 字面串同步，`bun test tests/readme-dx.test.ts` 綠
 - [ ] contract 填 Root Cause Evidence 四欄、Change Assessment oracles（物件陣列）、Exit Criteria；`verify-contract --strict`、`check-task-workflow --strict`、merge-base `check-task-sync`、`check-architecture-sync` 全綠
 - [ ] Codex read-only review → AcceptanceReceipt → `verify-sprint`；PR 直接 `gh pr create`，不跑 finish
 
@@ -177,11 +178,11 @@ Revert branch `codex/brc4b-oracle-version-pin-gate-findings`；沒有資料或�
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] 擷取 pre-fix artifact：先寫 regression guard，在未修代碼上跑並存 `.ai/harness/evidence/brc4b-pre-fix.txt`（含 `PRE_FIX_EXIT=非零`）
-- [ ] 抬 pin 到 `0.18.0`，doctor 本機回 ready
-- [ ] 移除 `browserCookiePath` 能力與 readiness 依賴，更新測試與 doctor JSON 斷言
-- [ ] stale-session 比對收進非零 exit 分支，補「exit 0 且 log 含該句仍以 answer file 為準」的測試
-- [ ] transport 推導加 provider，補 native 測試
-- [ ] 文檔與 assets 字面串同步，`bun test tests/readme-dx.test.ts` 綠
+- [x] 擷取 pre-fix artifact：先寫 regression guard，在未修代碼上跑並存 `.ai/harness/evidence/brc4b-pre-fix.txt`（含 `PRE_FIX_EXIT=非零`）
+- [x] 抬 pin 到 `0.18.0`，doctor 本機回 ready
+- [x] 移除 `browserCookiePath` 能力與 readiness 依賴，更新測試與 doctor JSON 斷言
+- [x] stale-session 比對收進非零 exit 分支，補「exit 0 且 log 含該句仍以 answer file 為準」的測試
+- [x] transport 推導加 provider，補 native 測試
+- [x] 文檔與 assets 字面串同步，`bun test tests/readme-dx.test.ts` 綠
 - [ ] contract 填 Root Cause Evidence 四欄、Change Assessment oracles（物件陣列）、Exit Criteria；`verify-contract --strict`、`check-task-workflow --strict`、merge-base `check-task-sync`、`check-architecture-sync` 全綠
 - [ ] Codex read-only review → AcceptanceReceipt → `verify-sprint`；PR 直接 `gh pr create`，不跑 finish

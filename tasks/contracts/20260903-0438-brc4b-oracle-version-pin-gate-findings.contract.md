@@ -1,6 +1,6 @@
 # Task Contract: brc4b-oracle-version-pin-gate-findings
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260903-0438-brc4b-oracle-version-pin-gate-findings.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
@@ -71,7 +71,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 - root_cause: `src/cli/chatgpt-browser/oracle-provider.ts:66` pinned `REQUIRED_ORACLE_VERSION = '0.14.1'`, so `validateOracleVersion` rejected the installed Oracle `0.18.0` with `ORACLE_VERSION_UNSUPPORTED` and every doctor run and real consult failed closed on version alone.
 - repro: `bun src/cli/index.ts chatgpt browser-doctor --provider oracle --json` returned `"status": "action_required"` with `"code": "ORACLE_VERSION_UNSUPPORTED"` and `"version": "0.18.0", "requiredVersion": "0.14.1"`.
-- regression_guard: tests/cli/chatgpt-browser.test.ts (`oracle doctor reports ready on the pinned 0.18.0 surface without a cookie-path flag`)
+- regression_guard: tests/cli/chatgpt-browser.test.ts
 - pre_fix_failure_artifact: .ai/harness/evidence/brc4b-pre-fix.txt
 
 ## Workflow Inventory
@@ -184,7 +184,9 @@ exit_criteria:
 
 ## Acceptance Notes (Human Review)
 
-- Functional behavior: doctor reports `ready` against the installed Oracle `0.18.0`; a bound
+- Functional behavior: the regression guard is the `oracle doctor reports ready on the pinned
+  0.18.0 surface without a cookie-path flag` case in `tests/cli/chatgpt-browser.test.ts`; doctor
+  reports `ready` against the installed Oracle `0.18.0`; a bound
   dry run still renders exactly `--copy-profile` plus `--browser-chrome-profile` and no
   `--browser-cookie-path`.
 - Edge cases: a clean Oracle exit whose log happens to contain the stale-session sentence is
