@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260902-2101-issue-284-dependency-authority.review.md
 > **Last Updated**: 2026-09-02 21:01
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:5b9f2e4f0017b23a1c2b84fcea35aec35735be53640aba61c93727df51890fab`
+> **Substantive Change SHA256**: `sha256:1a9593603666c97be51bc8efb69c1996e0cb4d5ceedb341064670c5583d49708`
 
 ## Design Decisions
 
