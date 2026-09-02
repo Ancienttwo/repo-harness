@@ -15,7 +15,7 @@
 > **Task Contract**: `tasks/contracts/20260902-2101-issue-284-dependency-authority.contract.md`
 > **Task Review**: `tasks/reviews/20260902-2101-issue-284-dependency-authority.review.md`
 > **Implementation Notes**: `tasks/notes/20260902-2101-issue-284-dependency-authority.notes.md`
-> **Substantive Change SHA256**: `sha256:03c181a824c2866f1706cdca5dc5263654a0f47f290ce2669690777f01ce1c3c`
+> **Substantive Change SHA256**: `sha256:420d68a3bce959ae22bdca6f7757eb3b57c70a2faadbbf0b065d2eea6ab82526`
 
 ## Agentic Routing
 - Selected route: planning
