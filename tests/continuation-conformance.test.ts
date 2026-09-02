@@ -878,8 +878,8 @@ describe('host Goal conformance: the full tick over a disposable repository', ()
       // Both rows landed on main through their own closeout, and the sprint
       // authority -- not the driver's memory -- records that.
       const sprint = readFileSync(join(primary, SPRINT), 'utf-8');
-      expect(sprint).toMatch(/\| 1 \| \[x\] \| row-one \|/);
-      expect(sprint).toMatch(/\| 2 \| \[x\] \| row-two \|/);
+      expect(sprint).toMatch(/\| 1 \| [0-9a-f]{64} \| \[x\] \| row-one \|/);
+      expect(sprint).toMatch(/\| 2 \| [0-9a-f]{64} \| \[x\] \| row-two \|/);
       expect(existsSync(join(primary, 'src/row-one.ts'))).toBe(true);
       expect(existsSync(join(primary, 'src/row-two.ts'))).toBe(true);
 

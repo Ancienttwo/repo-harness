@@ -13,6 +13,7 @@ when present.
 1. Route `plan` (default when no sprint is active):
    - Discuss the product direction with the user from two named perspectives before writing anything: product (problem, users, success criteria, acceptance scenarios, non-goals) and architecture (capabilities touched, dependency order, risks, slice granularity).
    - Run `repo-harness run sprint-backlog init --slug <slug> --title <title>`, then fill `## PRD`, `## Architecture Notes`, and the ordered `## Backlog` table from the upper-layer PRD or source spec; every row needs a concrete machine-checkable acceptance line and a mode (`contract` or `inline`).
+   - The backlog is schema 2 (`> **Backlog Schema**: 2`): the row shape is `| # | ID | Status | Task | Mode | Acceptance | Plan |` and the `ID` cell is the persisted immutable task identity. `sprint-backlog init` mints the first row's id; mint each additional row's id with `od -An -tx1 -N32 /dev/urandom | tr -d ' \n'`. Never edit, copy, or regenerate an existing `ID` — editing the Task text is a rename that keeps identity, which is the whole point of the column.
    - Present the draft sprint to the user. Only after explicit approval set `> **Status**: Approved`; `check-task-workflow.sh --strict` rejects placeholder PRDs, placeholder acceptance lines, and duplicate backlog rows.
 2. Route `from-prd` when the user gives `plans/prds/*.prd.md`:
    - Read the PRD `Problem`, `Users`, `Success Criteria`, `Acceptance Scenarios`, and `Non-goals`; summarize them into the Sprint `## PRD` section and set `> **Source PRD**:` to the PRD path.

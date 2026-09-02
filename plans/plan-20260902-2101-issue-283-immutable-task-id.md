@@ -140,9 +140,9 @@ the `ID` column to the repo's real six-cell backlog grammar rather than dropping
 the `#` index and `Plan` cells, which `scripts/sprint-backlog.sh` owns.
 
 ## Task Breakdown
-- [ ] #1 Add failing property tests for identity/revision semantics (rename keeps id + changes revision; reorder keeps both; Mode/Acceptance change revision; Status-only keeps revision; duplicate/missing/malformed ID fail closed).
-- [ ] #2 Implement Sprint schema v2 parsing/validation and the v2 identity/revision derivation in `coordination-identity.ts` without changing `COORDINATION_PROTOCOL`.
-- [ ] #3 Move Work Graph carrier and all consumers (CLI, Fleet, Engineer scheduling, messages, external-source bindings, board projections) to join by persisted `task_id`; add continuity fixtures for messages and external-source references and a stale-offer/lease-after-title-edit test.
-- [ ] #4 Implement the one-shot migration command with live-lease refusal, deterministic Sprint + Work Graph rewrite, re-read proof, and byte-bound migration receipt; add golden tests.
-- [ ] #5 Migrate repo-local sprint files that live code paths consume; record v1 parser owner and removal trigger in `tasks/todos.md`; update `docs/spec.md`, sprint-contract reference docs, and architecture module docs.
-- [ ] #6 Run focused tests, `bun run check:type`, `repo-harness run check-state-boundaries`, root required checks, and record acceptance evidence.
+- [x] #1 Add failing property tests for identity/revision semantics (rename keeps id + changes revision; reorder keeps both; Mode/Acceptance change revision; Status-only keeps revision; duplicate/missing/malformed ID fail closed).
+- [x] #2 Implement Sprint schema v2 parsing/validation and the v2 identity/revision derivation in `coordination-identity.ts` without changing `COORDINATION_PROTOCOL`.
+- [x] #3 Move Work Graph carrier and all consumers (CLI, Fleet, Engineer scheduling, messages, external-source bindings, board projections) to join by persisted `task_id`; add continuity fixtures for messages and external-source references and a stale-offer/lease-after-title-edit test.
+- [x] #4 Implement the one-shot migration command with live-lease refusal, deterministic Sprint + Work Graph rewrite, re-read proof, and byte-bound migration receipt; add golden tests.
+- [x] #5 Migrate repo-local sprint files that live code paths consume; record v1 parser owner and removal trigger in `tasks/todos.md`; update `docs/spec.md`, sprint-contract reference docs, and architecture module docs.
+- [x] #6 Run focused tests, `bun run check:type`, `repo-harness run check-state-boundaries`, root required checks, and record acceptance evidence.
