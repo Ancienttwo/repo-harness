@@ -118,7 +118,7 @@ function dependency(state: WorkPackageDependencyState, repositoryId = REPO_ID): 
   };
 }
 
-function workGraphJson(state: WorkPackageDependencyState = 'canonical_done'): unknown {
+function workGraphJson(state: WorkPackageDependencyState = 'canonical_done', repositoryId = REPO_ID): unknown {
   const definition = (id: string, taskRef: string, dependsOn: unknown[]) => ({
     work_package_id: id,
     task_ref: taskRef,
@@ -136,7 +136,7 @@ function workGraphJson(state: WorkPackageDependencyState = 'canonical_done'): un
     }],
     rollback_boundary: {
       kind: 'work_package',
-      boundary_id: `${REPO_ID}:${id}`,
+      boundary_id: `${repositoryId}:${id}`,
       boundary_ref: `plans/rollback/${id}.json`,
       boundary_revision: engineerSha256(id === 'wp-a' ? ROLLBACK_A : ROLLBACK_B),
     },
@@ -144,12 +144,12 @@ function workGraphJson(state: WorkPackageDependencyState = 'canonical_done'): un
   return {
     protocol: 1,
     kind: 'repo-harness-work-graph',
-    repository_id: REPO_ID,
+    repository_id: repositoryId,
     sprint_path: SPRINT,
     lane: 'engineering-v2',
     work_packages: [
       definition('wp-a', 'task A', []),
-      definition('wp-b', 'task B', [dependency(state)]),
+      definition('wp-b', 'task B', [dependency(state, repositoryId)]),
     ],
   };
 }
@@ -176,7 +176,7 @@ function repository(id: string, path: string, accessMode: RepoHarnessRegisteredR
   };
 }
 
-function projectFixtureGraph(root: string, sprintText = SPRINT_TEXT): ProjectedWorkGraphV1 {
+function projectFixtureGraph(root: string, sprintText = SPRINT_TEXT, repositoryId = REPO_ID): ProjectedWorkGraphV1 {
   const tasks = projectCanonicalTasks({
     repoIdentity: realpathSync(resolveGitCommonDirectory(root)),
     sprintPath: SPRINT,
@@ -188,7 +188,7 @@ function projectFixtureGraph(root: string, sprintText = SPRINT_TEXT): ProjectedW
     status: task.row.status,
     row_order: index + 1,
   }));
-  return projectWorkGraph(validateWorkGraph(workGraphJson()), tasks);
+  return projectWorkGraph(validateWorkGraph(workGraphJson('canonical_done', repositoryId)), tasks);
 }
 
 function fixture(): Fixture {
@@ -225,6 +225,26 @@ function fixture(): Fixture {
     reads: [{ repo, commit, graph }],
     identity: publicationSha256(realpathSync(resolveGitCommonDirectory(root))),
   };
+}
+
+/**
+ * Moves the target and the projected graph member together. The resolver
+ * requires the target to be the exact graph member its edge names, so a test
+ * that moves only one of the two would be exercising the pairing guard rather
+ * than the state it means to exercise.
+ */
+function retargeted(
+  subject: Fixture,
+  patch: Partial<ProjectedWorkPackageV1>,
+): Pick<DependencyAuthorityInput, 'target' | 'reads'> {
+  const target = Object.freeze({ ...subject.target, ...patch }) as ProjectedWorkPackageV1;
+  const graph: ProjectedWorkGraphV1 = Object.freeze({
+    ...subject.graph,
+    work_packages: Object.freeze(subject.graph.work_packages.map((item) => (
+      item.work_package_id === target.work_package_id ? target : item
+    ))),
+  });
+  return { target, reads: [{ repo: subject.repo, commit: subject.commit, graph }] };
 }
 
 function gitShow(root: string, commit: string, path: string): string | null {
@@ -478,7 +498,7 @@ describe('issue #284 closed dependency authority', () => {
       .toEqual([`canonical-task:${REPO_ID}:${subject.target.task_id}`]);
 
     const open = resolveDependencyAuthority(input(subject, 'canonical_done', {
-      target: { ...subject.target, task_status: '[ ]' },
+      ...retargeted(subject, { task_status: '[ ]' }),
     }));
     expect(open.status).toBe('unsatisfied');
     expect(open.authority_revision).not.toBe(ready.authority_revision);
@@ -490,7 +510,7 @@ describe('issue #284 closed dependency authority', () => {
     expect(revoked.authority_revision).toBeNull();
 
     const moved = resolveDependencyAuthority(input(subject, 'canonical_done', {
-      target: { ...subject.target, task_revision: 'f'.repeat(64) },
+      ...retargeted(subject, { task_revision: 'f'.repeat(64) }),
     }));
     expect(moved.status).toBe('satisfied');
     expect(moved.authority_revision).not.toBe(ready.authority_revision);
@@ -575,7 +595,7 @@ describe('issue #284 closed dependency authority', () => {
 
     // The same observation no longer answers a moved task revision.
     const moved = resolveDependencyAuthority(input(subject, 'publication_integrated', {
-      target: { ...subject.target, task_revision: 'a'.repeat(64) },
+      ...retargeted(subject, { task_revision: 'a'.repeat(64) }),
     }));
     expect(moved.status).toBe('unsatisfied');
 
@@ -664,7 +684,7 @@ describe('issue #284 closed dependency authority', () => {
     expect(accepted.authority_revision).not.toBe(withoutProduct.authority_revision);
 
     const movedTarget = resolveDependencyAuthority(input(subject, 'product_accepted', {
-      target: { ...subject.target, task_revision: 'b'.repeat(64) },
+      ...retargeted(subject, { task_revision: 'b'.repeat(64) }),
     }));
     expect(movedTarget.status).toBe('unsatisfied');
 
@@ -701,6 +721,10 @@ describe('issue #284 closed dependency authority', () => {
 
     const localRepo = repository(REPO_ID, local.root);
     const remoteRepo = repository(OTHER_REPO_ID, remote.root);
+    // The remote repository owns its own Work Graph identity; the resolver
+    // requires the target to be that graph's exact member.
+    const remoteGraph = projectFixtureGraph(remote.root, SPRINT_TEXT, OTHER_REPO_ID);
+    const remoteTarget = remoteGraph.work_packages.find((item) => item.work_package_id === 'wp-a')!;
     const registry: RepoHarnessRegistrySnapshot = {
       registryPath: join(local.root, 'registry.json'),
       authorizationRevision: 3,
@@ -708,11 +732,11 @@ describe('issue #284 closed dependency authority', () => {
     };
     const reads: readonly DependencyAuthorityRepositoryRead[] = [
       { repo: localRepo, commit: localCommit, graph: local.graph },
-      { repo: remoteRepo, commit: remote.commit, graph: remote.graph },
+      { repo: remoteRepo, commit: remote.commit, graph: remoteGraph },
     ];
     const crossInput: DependencyAuthorityInput = {
       dependency: dependency('module_accepted', OTHER_REPO_ID),
-      target: remote.target,
+      target: remoteTarget,
       reads,
       registry,
       env: { HOME: remote.root },
@@ -821,6 +845,63 @@ describe('issue #284 closed dependency authority', () => {
     expect(stale.ok).toBe(false);
     if (stale.ok) throw new Error('expected a stale offer');
     expect(stale.error).toBe('engineer_offer_stale');
+  });
+
+  test('the resolver refuses a target that is not the exact Work Package its edge names', () => {
+    const subject = fixture();
+    writeAcceptanceReceipt(subject, acceptanceReceipt(subject));
+    const otherWorkPackage = subject.graph.work_packages.find((item) => item.work_package_id === 'wp-b')!;
+    const mismatches: readonly { readonly label: string; readonly patch: Partial<DependencyAuthorityInput> }[] = [
+      { label: 'mismatched work_package_id', patch: { target: otherWorkPackage } },
+      {
+        label: 'cross-repository target',
+        patch: { target: { ...subject.target, repository_id: OTHER_REPO_ID } as ProjectedWorkPackageV1 },
+      },
+      {
+        label: 'stale work_package_revision',
+        patch: { target: { ...subject.target, work_package_revision: `sha256:${'9'.repeat(64)}` } as ProjectedWorkPackageV1 },
+      },
+    ];
+    for (const state of WORK_PACKAGE_DEPENDENCY_STATES) {
+      const paired = resolveDependencyAuthority(input(subject, state));
+      expect(paired.evidence_refs.some((entry) => entry.ref.startsWith('dependency-target-mismatch:'))).toBe(false);
+      for (const mismatch of mismatches) {
+        const resolved = resolveDependencyAuthority(input(subject, state, mismatch.patch));
+        expect([state, mismatch.label, resolved.status]).toEqual([state, mismatch.label, 'authority_unavailable']);
+        expect(resolved.authority_revision).toBeNull();
+        expect(resolved.evidence_refs.map((entry) => entry.ref))
+          .toEqual([`dependency-target-mismatch:${REPO_ID}:wp-a`]);
+      }
+    }
+    // Positive control: the exact pair still reaches the real adapters.
+    expect(resolveDependencyAuthority(input(subject, 'canonical_done')).status).toBe('satisfied');
+    expect(resolveDependencyAuthority(input(subject, 'module_accepted')).status).toBe('satisfied');
+  });
+
+  test('a completed unrelated target cannot satisfy another edge', () => {
+    const subject = fixture();
+    const openWorkPackage = subject.graph.work_packages.find((item) => item.work_package_id === 'wp-b')!;
+    const edgeToOpen: WorkPackageDependencyV1 = {
+      repository_id: REPO_ID,
+      work_package_id: 'wp-b',
+      required_state: 'canonical_done',
+      acceptance_authority: null,
+    };
+    expect(subject.target.task_status).toBe('[x]');
+    expect(openWorkPackage.task_status).toBe('[ ]');
+    expect(resolveDependencyAuthority(input(subject, 'canonical_done', {
+      dependency: edgeToOpen,
+      target: openWorkPackage,
+    })).status).toBe('unsatisfied');
+
+    const smuggled = resolveDependencyAuthority(input(subject, 'canonical_done', {
+      dependency: edgeToOpen,
+      target: subject.target,
+    }));
+    expect(smuggled.status).toBe('authority_unavailable');
+    expect(smuggled.authority_revision).toBeNull();
+    expect(smuggled.evidence_refs.map((entry) => entry.ref))
+      .toEqual([`dependency-target-mismatch:${REPO_ID}:wp-b`]);
   });
 
   test('the evidence projection is the only input to authority_revision', () => {

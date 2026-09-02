@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260902-2101-issue-284-dependency-authority.review.md
 > **Last Updated**: 2026-09-02 21:01
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:1a9593603666c97be51bc8efb69c1996e0cb4d5ceedb341064670c5583d49708`
+> **Substantive Change SHA256**: `sha256:d6cc51a2e9b15d3118feea6d2570531103043bee7f1ac7c5f8d9ea8515da03d6`
 
 ## Design Decisions
 
@@ -52,6 +52,19 @@
   next to the code that persists those content-addressed stores, so the store layout stays owned by one module. `authorityFingerprint` and
   `readAcceptanceReceiptFile` were exported from `scripts/acceptance-receipt.ts` (mirrored to `assets/templates/helpers/`) so the resolver reuses
   the single receipt validator and the single contract-normalization rule instead of re-deriving either.
+- **The edge/target pairing is proven at the resolver boundary, not only in the caller.** `resolveDependencyAuthority` receives the declared
+  edge and the observed target as two separate inputs, and every adapter reads the target: `canonicalDone` decides purely from
+  `target.task_status`. Before the guard, a caller that passed edge A with an unrelated completed target B — including a cross-repository B —
+  got `satisfied`, because `authorizedRead` only resolves `dependency.repository_id` and never compared the two. The only pairing check lived in
+  `src/effects/engineers/scheduling.ts#dependencyObservations`, which finds the target by the edge's identity. Leaving it there was rejected:
+  the contract declares this module the closed authority for the verdict, the module is exported, injectable and unit-tested directly, and a
+  second caller (an MCP tool, an operator projection, a future scheduler) would silently inherit the hole. `targetPairingRefusal` now runs after
+  authorization and before any adapter and requires `target.repository_id === dependency.repository_id`,
+  `target.work_package_id === dependency.work_package_id`, and exact canonical equality with the projected member of `read.graph.work_packages`
+  at the canonical commit, which covers `work_package_revision`, `task_id`, `task_revision` and the row status rather than the id alone. A
+  mismatch is `authority_unavailable` with `authority_revision: null` and one `dependency-target-mismatch:<repo>:<wp>` evidence ref carrying the
+  digest of `{reason, declared, observed}` — the module's existing `VerifiedEvidenceRefV1` shape, no new error taxonomy. The caller-side lookup
+  stays as it is: it is how the correct pair is produced, and the boundary check is what makes the pair a proven precondition of the verdict.
 - **The task join site is isolated.** The publication and product adapters join to the target by `target.task_id` / `target.task_revision`
   inside `publicationIntegrated` and `productAccepted` only; issue #283 can swap the join without touching the status semantics.
 

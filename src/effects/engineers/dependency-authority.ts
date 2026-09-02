@@ -454,6 +454,58 @@ function productAccepted(
   ]);
 }
 
+type DependencyTargetMismatch = 'repository_mismatch' | 'work_package_mismatch' | 'not_a_graph_member';
+
+function pairingRefusal(input: DependencyAuthorityInput, reason: DependencyTargetMismatch): AdapterVerdict {
+  return Object.freeze({
+    status: 'authority_unavailable',
+    evidence_refs: Object.freeze([evidence(
+      `dependency-target-mismatch:${input.dependency.repository_id}:${input.dependency.work_package_id}`,
+      engineerSha256(canonicalEngineerJson({
+        reason,
+        declared: {
+          repository_id: input.dependency.repository_id,
+          work_package_id: input.dependency.work_package_id,
+          required_state: input.dependency.required_state,
+        },
+        observed: {
+          repository_id: input.target.repository_id,
+          work_package_id: input.target.work_package_id,
+          work_package_revision: input.target.work_package_revision,
+          task_id: input.target.task_id,
+          task_revision: input.target.task_revision,
+        },
+      })),
+    )]),
+  });
+}
+
+/**
+ * The declared edge and the observed target arrive as two separate inputs, and
+ * every adapter reads the target rather than the edge: `canonicalDone` decides
+ * from `target.task_status` alone. This module is the closed authority for the
+ * verdict and is injectable, so the pairing is proven here instead of being
+ * trusted from the caller. An unpaired or stale target is
+ * `authority_unavailable`, never a verdict about some other Work Package.
+ */
+function targetPairingRefusal(
+  input: DependencyAuthorityInput,
+  read: DependencyAuthorityRepositoryRead,
+): AdapterVerdict | null {
+  if (input.target.repository_id !== input.dependency.repository_id) return pairingRefusal(input, 'repository_mismatch');
+  if (input.target.work_package_id !== input.dependency.work_package_id) return pairingRefusal(input, 'work_package_mismatch');
+  const member = (read.graph?.work_packages ?? []).find((candidate) => (
+    candidate.repository_id === input.dependency.repository_id
+    && candidate.work_package_id === input.dependency.work_package_id
+  )) ?? null;
+  // Exact membership at the canonical commit: identity, Work Package revision,
+  // canonical task identity and row status must all be the projected member's.
+  if (member === null || canonicalEngineerJson(member) !== canonicalEngineerJson(input.target)) {
+    return pairingRefusal(input, 'not_a_graph_member');
+  }
+  return null;
+}
+
 function unreachableDependencyState(state: never): never {
   throw new Error(`unsupported dependency state has no authority adapter: ${String(state)}`);
 }
@@ -463,6 +515,8 @@ export function resolveDependencyAuthority(input: DependencyAuthorityInput): Dep
   const read = authorizedRead(input);
   const repo = read?.repo ?? null;
   if (read === null) return resolution(input, repo, UNAVAILABLE);
+  const unpaired = targetPairingRefusal(input, read);
+  if (unpaired !== null) return resolution(input, repo, unpaired);
   const state: WorkPackageDependencyState = input.dependency.required_state;
   switch (state) {
     case 'canonical_done':
