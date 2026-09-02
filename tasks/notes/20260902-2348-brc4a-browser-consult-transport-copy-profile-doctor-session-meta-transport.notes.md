@@ -25,20 +25,30 @@
   back to the `Local State` `last_used` profile, which depends on whatever the user last
   opened in Chrome. That is exactly the class of silent, unattributable session the transport
   change is meant to remove, so `validateOracleProfileBinding` rejects it.
-- **`browserCookiePath` stays in the doctor capability map.** The acceptance line adds two
-  capabilities and does not retire one. Removing it would also loosen the doctor readiness
-  bar in the same change that tightens it, so it is left alone; the wrapper simply never
-  sends the flag any more.
+- **`browserCookiePath` stays in the doctor capability map and in the readiness set.** The
+  acceptance line adds two capabilities and retires none. The Codex review argued that
+  readiness should no longer depend on a flag the wrapper never sends; that is a real
+  observation, but dropping a capability from the readiness set loosens the gate in the same
+  change that tightens it, and no acceptance clause asks for it. Left as is and reported as
+  a follow-up candidate.
 - **Oracle's `--copy-profile` mutual exclusions need no defensive code.** Oracle rejects
   `--copy-profile` together with `--browser-manual-login`, `--browser-keep-browser`,
   `--remote-chrome`, and `--remote-host`. `buildOracleCommand` emits none of those four on
   any path, so there is nothing to guard; the constraint is documented in
   `docs/repo-harness-chatgpt-browser-engine.md` instead.
-- **Dry run renders the command it would run, including a malformed binding.** A binding
-  without `profileDirectory` still renders a lone `--copy-profile` in
-  `dryRun.command`, because that argv is what the run would attempt; the run itself is
-  stopped earlier by `ORACLE_PROFILE_NOT_FOUND`. Making the dry run diverge from the real
-  argv would make the preview useless as evidence.
+- **The dry run fails closed on an unusable binding instead of previewing half a
+  transport.** First pass let `--dry-run` render a lone `--copy-profile` when the binding
+  named no profile directory, on the theory that the preview should mirror the argv. The
+  Codex acceptance review rejected that: the previewed command is evidence, and a command
+  the real run refuses is not a useful preview. `runBrowserConsult` now runs
+  `validateOracleProfileBinding` on the oracle dry-run path too and returns the same
+  `ORACLE_PROFILE_NOT_FOUND`, so there is one rule for both paths.
+- **`browser.transport` is derived from the profile binding only, per the dispatched
+  design.** A native-provider session with a binding therefore records `copy_profile` even
+  though the deprecated native path drives the user's own Chrome over CDP rather than
+  copying it. The Codex review flagged this; changing it means either a third transport
+  value or a provider-dependent rule, both of which change the type this task was handed.
+  Left as dispatched and reported upward instead.
 
 ## Deviations From Plan Or Spec
 
@@ -61,6 +71,15 @@
 | Detect the running-session refusal by exit code | Rejected | Oracle exits 1 for many reasons; the verbatim message is the only specific signal |
 | Auto-append `--force` on `ORACLE_SESSION_ALREADY_RUNNING` | Rejected | It would abandon a live detached worker and its browser; reattach or cleanup is the user's call |
 | Bump `REQUIRED_ORACLE_VERSION` to 0.18.0 so the local doctor turns green | Deferred | Version pinning is its own compatibility surface and is not in this acceptance line |
+
+## Review Rounds
+
+- Round 1 (`codex exec -s read-only`, branch diff against `main@d8d62dea`): `REJECT`, six
+  findings. Fixed in place: the dry-run half transport, single-missing-flag coverage for
+  `ORACLE_COPY_PROFILE_UNSUPPORTED`, and a fixture-level assertion that the refused
+  same-prompt run is invoked exactly once and never with `--force`. Kept with rationale: the
+  `browserCookiePath` readiness entry and the binding-derived `transport` value. The sprint
+  row 4 checkbox commit is a coordinator-requested conflict-avoidance commit, kept separate.
 
 ## Open Questions
 

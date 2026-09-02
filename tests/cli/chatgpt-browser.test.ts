@@ -1316,38 +1316,63 @@ describe('chatgpt browser command', () => {
     });
   }, 30_000);
 
-  test('oracle provider fails closed when the resolved binary cannot copy a Chrome profile', () => {
-    withRepo((repoRoot) => {
-      bindChromeProfile(repoRoot);
+  // Each transport flag is independently required: a binary that reports one but
+  // not the other must still fail, and the error must name only what is missing.
+  const missingTransportFlagCases = [
+    {
+      label: 'neither transport flag',
+      help: 'Usage: oracle --engine browser --browser-archive never --write-output <p> --browser-cookie-path <path> --heartbeat <seconds>',
+      named: ['--copy-profile', '--browser-chrome-profile'],
+      absent: [] as string[],
+    },
+    {
+      label: 'only --copy-profile',
+      help: 'Usage: oracle --engine browser --browser-archive never --write-output <p> --copy-profile <dir> --heartbeat <seconds>',
+      named: ['--browser-chrome-profile'],
+      absent: ['--copy-profile'],
+    },
+    {
+      label: 'only --browser-chrome-profile',
+      help: 'Usage: oracle --engine browser --browser-archive never --write-output <p> --browser-chrome-profile <name> --heartbeat <seconds>',
+      named: ['--copy-profile'],
+      absent: ['--browser-chrome-profile'],
+    },
+  ];
 
-      const binDir = mkdtempSync(join(tmpdir(), 'repo-harness-fake-oracle-no-copy-profile-'));
-      try {
-        const oraclePath = writeFakeOracle(join(binDir, 'oracle'), {
-          help: 'Usage: oracle --engine browser --browser-archive never --write-output <p> --browser-cookie-path <path> --heartbeat <seconds>',
-          body: ['printf "%s\\n" "unexpected oracle execution" >&2', 'exit 99'],
-        });
-        const result = runChatgpt([
-          'browser-consult',
-          '--repo',
-          repoRoot,
-          '--prompt',
-          'Review this.',
-          '--oracle-bin',
-          oraclePath,
-        ]);
-        expect(result.status).toBe(0);
-        const payload = JSON.parse(result.stdout);
-        expect(payload.status).toBe('failed');
-        expect(payload.error.code).toBe('ORACLE_COPY_PROFILE_UNSUPPORTED');
-        const output = readFileSync(payload.paths.output, 'utf-8');
-        expect(output).toContain('--copy-profile');
-        expect(output).toContain('--browser-chrome-profile');
-        expect(output).not.toContain('unexpected oracle execution');
-      } finally {
-        rmSync(binDir, { recursive: true, force: true });
-      }
-    });
-  }, 30_000);
+  for (const transportCase of missingTransportFlagCases) {
+    test(`oracle provider fails closed when the resolved binary reports ${transportCase.label}`, () => {
+      withRepo((repoRoot) => {
+        bindChromeProfile(repoRoot);
+
+        const binDir = mkdtempSync(join(tmpdir(), 'repo-harness-fake-oracle-no-copy-profile-'));
+        try {
+          const oraclePath = writeFakeOracle(join(binDir, 'oracle'), {
+            help: transportCase.help,
+            body: ['printf "%s\\n" "unexpected oracle execution" >&2', 'exit 99'],
+          });
+          const result = runChatgpt([
+            'browser-consult',
+            '--repo',
+            repoRoot,
+            '--prompt',
+            'Review this.',
+            '--oracle-bin',
+            oraclePath,
+          ]);
+          expect(result.status).toBe(0);
+          const payload = JSON.parse(result.stdout);
+          expect(payload.status).toBe('failed');
+          expect(payload.error.code).toBe('ORACLE_COPY_PROFILE_UNSUPPORTED');
+          const output = readFileSync(payload.paths.output, 'utf-8');
+          for (const flag of transportCase.named) expect(output).toContain(flag);
+          for (const reported of transportCase.absent) expect(output).not.toContain(reported);
+          expect(output).not.toContain('unexpected oracle execution');
+        } finally {
+          rmSync(binDir, { recursive: true, force: true });
+        }
+      });
+    }, 30_000);
+  }
 
   test('oracle provider fails closed when the bound Chrome user data directory has no Local State', () => {
     withRepo((repoRoot) => {
@@ -1425,6 +1450,21 @@ describe('chatgpt browser command', () => {
         const output = readFileSync(payload.paths.output, 'utf-8');
         expect(output).toContain('names no Chrome profile directory');
         expect(output).not.toContain('unexpected oracle execution');
+
+        // A dry run must not preview a half transport either.
+        const dryRun = runChatgpt([
+          'browser-consult',
+          '--repo',
+          repoRoot,
+          '--prompt',
+          'Review this.',
+          '--dry-run',
+        ]);
+        expect(dryRun.status).toBe(0);
+        const dryRunPayload = JSON.parse(dryRun.stdout);
+        expect(dryRunPayload.status).toBe('failed');
+        expect(dryRunPayload.error.code).toBe('ORACLE_PROFILE_NOT_FOUND');
+        expect(dryRunPayload.dryRun.command).toBeUndefined();
       } finally {
         rmSync(binDir, { recursive: true, force: true });
       }
@@ -1436,12 +1476,14 @@ describe('chatgpt browser command', () => {
       bindChromeProfile(repoRoot);
 
       const binDir = mkdtempSync(join(tmpdir(), 'repo-harness-fake-oracle-session-running-'));
+      const argvLog = join(binDir, 'argv.txt');
       try {
         const oraclePath = writeFakeOracle(join(binDir, 'oracle'), {
           body: [
             'for a in "$@"; do',
             '  if [ "$a" = "--dry-run" ]; then exit 0; fi',
             'done',
+            `printf "%s\\n" "$*" >> "${argvLog}"`,
             'printf "%s\\n" "A session with the same prompt is already running" >&2',
             'exit 1',
           ],
@@ -1462,6 +1504,12 @@ describe('chatgpt browser command', () => {
         expect(payload.error.recovery).toContain('oracle session <id>');
         expect(payload.error.recovery).toContain('ORACLE_HOME_DIR');
         expect(payload.error.recovery).toContain('--force');
+        // The refusal must not be retried with --force behind the user's back:
+        // exactly one invocation, and it never carried the flag.
+        const invocations = readFileSync(argvLog, 'utf-8').trimEnd().split('\n');
+        expect(invocations).toHaveLength(1);
+        expect(invocations[0]).not.toContain('--force');
+        expect(invocations[0]).toContain('--copy-profile');
       } finally {
         rmSync(binDir, { recursive: true, force: true });
       }
