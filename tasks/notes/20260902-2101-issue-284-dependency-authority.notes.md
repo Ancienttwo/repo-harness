@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260902-2101-issue-284-dependency-authority.review.md
 > **Last Updated**: 2026-09-02 21:01
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:420d68a3bce959ae22bdca6f7757eb3b57c70a2faadbbf0b065d2eea6ab82526`
+> **Substantive Change SHA256**: `sha256:5b9f2e4f0017b23a1c2b84fcea35aec35735be53640aba61c93727df51890fab`
 
 ## Design Decisions
 
@@ -66,6 +66,19 @@
   `verify-sprint` change-assessment evidence chain. This follows the existing ME-4C test precedent
   (`tests/unit/me4c-integration-product-acceptance.test.ts`). Publication receipts, leases, integration observations, integration
   contracts/envelopes/matrices and the product acceptance projection are all built with their real production builders and writers.
+
+- **The ArchContext major architecture change was accepted through the explicit approval route, not auto-applied.** Adding
+  `src/effects/engineers/dependency-authority.ts` to `capability.runtime-harness.engineer-scheduling` changed the node's entrypoints,
+  ownership and responsibilities, so archctx classified the projection `human-action-required` with `reasonCode: unresolved-major-change`
+  (`reasonCodes: entrypoint-changed, ownership-changed, responsibility-changed`) and `verify-sprint --prepare-acceptance` refused to freeze
+  acceptance. The change was approved by the orchestrator against the direction fixed in issue #284 and accepted with
+  `architecture-projection accept --signal-id sha256:d8238fa3813289bf542ca90da0a0d840b452a3a41de6791fd6e19e681a82bb12
+  --approval-reference event.orchestrator-approval-20260903-issue-284-dependency-authority`. As in the sibling #278 run, `accept` exited
+  non-zero with `applied-reconcile-required` (post-apply worktree digest diverged from the accepted snapshot) after writing every projection
+  file; the ordinary `architecture-projection apply` then converged and `architecture-projection check` reports `noop` with no human actions
+  and no refresh signals. The pre-apply acceptance candidate left in the ignored store
+  (`.ai/harness/architecture-projection/acceptance-candidates/`) was stale against the post-apply worktree digest and was removed after `check`
+  confirmed its change was already applied. All `docs/architecture/**` content in this branch is generated output, never hand-edited.
 
 ## Tradeoffs Considered
 
