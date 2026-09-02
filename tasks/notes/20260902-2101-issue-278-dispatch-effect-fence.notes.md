@@ -34,16 +34,22 @@
   about 250 lines and puts collaboration semantics inside the delegation plane
   to buy an acyclic graph. A comment at the import states the constraint the
   cycle depends on.
-- `tests/unit/collaboration-authority-baseline.test.ts`'s C1 closed inclusion
-  scan asserted that no delivery-plane module mentions `collaboration/` at all,
-  which is the C6 pre-step decision stated as a test. Issue #278 overturns that
-  decision, and no honest implementation of "the dispatch effect enforces the
-  fence" can avoid the edge: the check reads collaboration records, so the
-  delegation store must reference the collaboration plane whatever the file
-  layout. The scan is amended to admit exactly one file, one imported symbol and
-  one mention, so a second delivery-plane collaboration dependency — the risk
-  Child PRD A drew the rule against — still fails it. This is an architecture
-  boundary change and needs the same approval as the projection candidate below.
+- The C1 closed inclusion scan in
+  `tests/unit/collaboration-authority-baseline.test.ts` stated the C6 pre-step
+  decision as a test: no delivery-plane module may mention `collaboration/` at
+  all. Issue #278 replaces that decision, so the scan's absolute form is
+  replaced with its bounded form rather than worked around. The check reads
+  collaboration records, so the delegation store must reference the
+  collaboration plane whatever the file layout; there is no implementation of
+  "the dispatch effect enforces the fence" that leaves the old assertion true.
+  The amended scan admits exactly one file, one imported symbol and one mention,
+  and still fails on any second delivery-plane collaboration dependency — the
+  risk Child PRD A drew the rule against. This is an accepted architecture
+  design change, decided against the published issue #278 spec and the
+  deferred-goal row it fulfils, and it is recorded in the same round as the
+  architecture acceptance below. It is not a test relaxation to make a build
+  pass: the narrowed rule is the new invariant, and widening the exception fails
+  the same test.
 
 - Fence executions are counted with `mock.module()` inside a spawned `bun`
   worker, following `tests/cli/registry.test.ts`. The real fence is captured
@@ -82,20 +88,16 @@
 | Fence after the launch-claim/state short-circuits | Rejected | Would change the CLI's existing refusal behaviour for an already-claimed collaboration run |
 | Leave the C1 scan intact and keep the fence a pre-step | Rejected | Contradicts the change issue #278 asks for; the gap it names stays open |
 | Bounded one-file, one-symbol exception in the C1 scan | Chosen | The only shape that admits the ordered edge while still failing on any other delivery-plane collaboration dependency |
+| `event.user-approval-*` for the architecture acceptance | Rejected | An orchestrator decided it; the ledger already records one round that attributed an agent decision to a user approval id |
 
 ## Open Questions
 
-- Is the bounded D1 exception the accepted resolution of the conflict between
-  issue #278 and the C1 closed inclusion scan, or should the fence stay a
-  pre-step? The alternatives are: keep the scan and reject #278's requirement
-  that the raw effect be unreachable; move `dispatchDelegatedRun()` out of
-  `src/effects/engineers/` into a plane that may depend on both; or accept the
-  one-edge exception as recorded here.
-- Which approval event identity should
-  `architecture-projection accept --approval-reference` carry for this change,
-  and does it need a `docs/architecture/snapshots/` record like the
-  2026-08-30 acceptance? The candidate is bound to the exact HEAD and worktree
-  digest, so it must be accepted from the final committed state of this branch.
+- None. The two boundary questions this slice raised are decided: the bounded D1
+  exception is the accepted resolution, and the architecture projection was
+  accepted under
+  `event.orchestrator-approval-20260902-issue-278-dispatch-effect-fence`, an
+  orchestrator identity rather than the `event.user-approval-*` shape the
+  deferred-goal ledger records as a past mis-attribution.
 
 ## Evidence Links
 
