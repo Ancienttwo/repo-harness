@@ -40,7 +40,6 @@ export interface OracleCapabilities {
   sessionFollowup: boolean;
   browserArchive: boolean;
   browserModelStrategy: boolean;
-  browserCookiePath: boolean;
   copyProfile: boolean;
   browserChromeProfile: boolean;
   browserThinkingTime: boolean;
@@ -63,7 +62,7 @@ export interface OracleProbe {
  * Oracle's browser command/output contract is release-specific. Keep this as the
  * single version authority for both consultation and browser-doctor diagnostics.
  */
-export const REQUIRED_ORACLE_VERSION = '0.14.1';
+export const REQUIRED_ORACLE_VERSION = '0.18.0';
 
 const ORACLE_TERM_GRACE_MS = 5_000;
 
@@ -139,7 +138,6 @@ function detectCapabilities(helpText: string, browserThinkingTime: boolean): Ora
     sessionFollowup: has('--followup'),
     browserArchive: has('--browser-archive'),
     browserModelStrategy: has('--browser-model-strategy'),
-    browserCookiePath: has('--browser-cookie-path'),
     // Oracle hides --browser-chrome-profile from `--help`; probeOracle folds
     // `--debug-help` into the same text so both transport flags are visible.
     copyProfile: has('--copy-profile'),
@@ -616,26 +614,6 @@ export async function runOracleProvider(input: BrowserConsultInput, bundle: Prom
     const conversationUrl = extractConversationUrl(log);
     const providerSessionId = extractProviderSessionId(log);
 
-    // A detached Oracle worker from an earlier run of the same prompt blocks the
-    // new run. Reattaching or cleaning up is the user's call; repo-harness never
-    // adds `--force` on its own because that would abandon a live session.
-    if (log.includes(ORACLE_SESSION_ALREADY_RUNNING_MARKER)) {
-      return {
-        status: 'failed',
-        output: log,
-        command,
-        oracleBinary: resolution.binary,
-        oracleVersion,
-        conversationUrl,
-        providerSessionId,
-        error: {
-          code: 'ORACLE_SESSION_ALREADY_RUNNING',
-          message: 'oracle refused the prompt because a session with the same prompt is already running',
-          recovery: `Reattach to the running session with \`oracle session <id>\` under the repo-harness-controlled ORACLE_HOME_DIR (${oracleHomeDir}), or terminate the detached Oracle worker and its throwaway Chrome before retrying. repo-harness never adds \`--force\` on your behalf.`,
-        },
-      };
-    }
-
     // Pre/at-start failures are safe to surface as failed; the prompt never landed.
     if (result.error) {
       return {
@@ -648,6 +626,27 @@ export async function runOracleProvider(input: BrowserConsultInput, bundle: Prom
       };
     }
     if (result.status !== 0) {
+      // A detached Oracle worker from an earlier run of the same prompt blocks the
+      // new run. Reattaching or cleaning up is the user's call; repo-harness never
+      // adds `--force` on its own because that would abandon a live session. Only a
+      // refusal exit classifies here: on a clean exit the answer file stays the
+      // authority even when the log happens to carry this sentence.
+      if (log.includes(ORACLE_SESSION_ALREADY_RUNNING_MARKER)) {
+        return {
+          status: 'failed',
+          output: log,
+          command,
+          oracleBinary: resolution.binary,
+          oracleVersion,
+          conversationUrl,
+          providerSessionId,
+          error: {
+            code: 'ORACLE_SESSION_ALREADY_RUNNING',
+            message: 'oracle refused the prompt because a session with the same prompt is already running',
+            recovery: `Reattach to the running session with \`oracle session <id>\` under the repo-harness-controlled ORACLE_HOME_DIR (${oracleHomeDir}), or terminate the detached Oracle worker and its throwaway Chrome before retrying. repo-harness never adds \`--force\` on your behalf.`,
+          },
+        };
+      }
       return {
         status: 'failed',
         output: log || `oracle exited with status ${result.status ?? result.signal ?? 'unknown'}`,

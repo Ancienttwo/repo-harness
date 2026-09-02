@@ -9,7 +9,7 @@ export type ThinkingLevel = string;
 
 export type BrowserWriteOutputPolicy = 'cli' | 'mcp';
 
-export type BrowserSessionTransport = 'copy_profile' | 'oracle_session';
+export type BrowserSessionTransport = 'copy_profile' | 'oracle_session' | 'native_profile';
 
 export interface BrowserFileInput {
   path: string;
@@ -112,9 +112,11 @@ export interface BrowserSessionMeta {
   browser: {
     mode: 'manual-login';
     /**
-     * How the run reaches a signed-in ChatGPT session. A repo-local Chrome
-     * profile binding is transported by copying that profile (`copy_profile`);
-     * without a binding the provider uses its own browser session.
+     * How the run reaches a signed-in ChatGPT session. Oracle transports a
+     * repo-local Chrome profile binding by copying that profile
+     * (`copy_profile`); without a binding it uses its own browser session
+     * (`oracle_session`). The deprecated native provider drives the bound
+     * profile directly (`native_profile`).
      */
     transport: BrowserSessionTransport;
     chatgptUrl: string;
