@@ -59,7 +59,6 @@ const EMPTY_ORACLE_CAPABILITIES = {
   sessionFollowup: false,
   browserArchive: false,
   browserModelStrategy: false,
-  browserCookiePath: false,
   copyProfile: false,
   browserChromeProfile: false,
   browserThinkingTime: false,

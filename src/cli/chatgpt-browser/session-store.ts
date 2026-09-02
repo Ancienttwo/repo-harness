@@ -9,6 +9,7 @@ import type {
   BrowserSessionMeta,
   BrowserSessionPaths,
   BrowserSessionStatus,
+  BrowserSessionTransport,
   PromptBundle,
   PromptSecretScanReceipt,
   StoredBrowserSession,
@@ -115,6 +116,15 @@ function validateArtifactNames(artifacts?: BrowserImportedArtifact[]): void {
   }
 }
 
+/**
+ * Transport is provider-specific: only Oracle copies a bound profile into its
+ * own throwaway browser, so the native provider never reports `copy_profile`.
+ */
+function resolveSessionTransport(provider: BrowserProviderName, profileDir?: string): BrowserSessionTransport {
+  if (provider === 'native') return 'native_profile';
+  return profileDir ? 'copy_profile' : 'oracle_session';
+}
+
 function allocateBrowserSessionPaths(input: BrowserConsultInput): { sessionId: string; paths: BrowserSessionPaths } {
   const baseSessionId = createBrowserSessionId(input);
   const root = sessionRoot(input.repoRoot, input.sessionRoot);
@@ -178,7 +188,7 @@ export function writeBrowserSession(opts: {
     },
     browser: {
       mode: 'manual-login',
-      transport: opts.input.profileDir ? 'copy_profile' : 'oracle_session',
+      transport: resolveSessionTransport(opts.provider, opts.input.profileDir),
       chatgptUrl: opts.input.chatgptUrl ?? 'https://chatgpt.com/',
       chatgptApp: opts.input.chatgptApp,
       channel: opts.input.browserChannel,
