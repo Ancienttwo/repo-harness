@@ -1,6 +1,6 @@
 # Task Contract: issue-278-dispatch-effect-fence
 
-> **Status**: Active
+> **Status**: Partial
 > **Plan**: plans/plan-20260902-2101-issue-278-dispatch-effect-fence.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
