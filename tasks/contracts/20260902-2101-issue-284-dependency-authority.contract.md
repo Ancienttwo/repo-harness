@@ -1,6 +1,6 @@
 # Task Contract: issue-284-dependency-authority
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260902-2101-issue-284-dependency-authority.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
@@ -164,7 +164,7 @@ exit_criteria:
   commands_succeed:
     - bun run check:type
     - bun test --timeout 60000
-    - repo-harness run check-state-boundaries
+    - bun run check:state-boundaries
     - bash scripts/check-deploy-sql-order.sh
     - bash scripts/check-architecture-sync.sh
     - bash scripts/check-task-sync.sh

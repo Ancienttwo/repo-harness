@@ -128,10 +128,10 @@ The four states already exist; the gap is adapters that read the existing single
 - [x] #2 Implement `src/effects/engineers/dependency-authority.ts` with the `canonical_done` and `module_accepted` adapters reading the canonical Sprint and exact-subject AcceptanceReceipt authority.
 - [x] #3 Implement `publication_integrated` and `product_accepted` adapters over the existing Publication and ME-4C product-acceptance authorities; decide and implement the closed policy reference on the dependency edge only if `required_acceptance` cannot select one authority.
 - [x] #4 Wire the resolver as the default in `scheduling.ts`; add cross-repository tests proving registry-snapshot isolation, exact repository identity, target movement and authorization revocation staling the offer; add offer/acquire revalidation tests and board `dependency_not_ready` vs `dependency_authority_unavailable` tests.
-- [ ] #5 Update spec/architecture docs and ArchContext selectors; run focused tests, `bun run check:type`, `repo-harness run check-state-boundaries`, root required checks, and record acceptance evidence.
+- [x] #5 Update spec/architecture docs and ArchContext selectors; run focused tests, `bun run check:type`, `bun run check:state-boundaries`, root required checks, and record acceptance evidence.
 
 ## Verification
-bun test --timeout 60000; bun run check:type; repo-harness run check-state-boundaries; bash scripts/check-deploy-sql-order.sh; bash scripts/check-architecture-sync.sh; bash scripts/check-task-sync.sh; repo-harness run check-task-workflow --strict; bun scripts/inspect-project-state.ts --repo . --format text; bun src/cli/index.ts init --repo . --dry-run.
+bun test --timeout 60000; bun run check:type; bun run check:state-boundaries; bash scripts/check-deploy-sql-order.sh; bash scripts/check-architecture-sync.sh; bash scripts/check-task-sync.sh; repo-harness run check-task-workflow --strict; bun scripts/inspect-project-state.ts --repo . --format text; bun src/cli/index.ts init --repo . --dry-run.
 
 ## Annotations
 
@@ -142,4 +142,4 @@ bun test --timeout 60000; bun run check:type; repo-harness run check-state-bound
 - [x] #2 Implement `src/effects/engineers/dependency-authority.ts` with the `canonical_done` and `module_accepted` adapters reading the canonical Sprint and exact-subject AcceptanceReceipt authority.
 - [x] #3 Implement `publication_integrated` and `product_accepted` adapters over the existing Publication and ME-4C product-acceptance authorities; decide and implement the closed policy reference on the dependency edge only if `required_acceptance` cannot select one authority.
 - [x] #4 Wire the resolver as the default in `scheduling.ts`; add cross-repository tests proving registry-snapshot isolation, exact repository identity, target movement and authorization revocation staling the offer; add offer/acquire revalidation tests and board `dependency_not_ready` vs `dependency_authority_unavailable` tests.
-- [ ] #5 Update spec/architecture docs and ArchContext selectors; run focused tests, `bun run check:type`, `repo-harness run check-state-boundaries`, root required checks, and record acceptance evidence.
+- [x] #5 Update spec/architecture docs and ArchContext selectors; run focused tests, `bun run check:type`, `bun run check:state-boundaries`, root required checks, and record acceptance evidence.
