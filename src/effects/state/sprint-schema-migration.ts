@@ -14,7 +14,7 @@
  * the bytes that landed.
  */
 import { createHash } from 'crypto';
-import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { mkdirSync } from 'fs';
 import type { CommandOutcome } from '../../core/state/command-outcome';
@@ -162,85 +162,108 @@ export function migrateSprintSchemaCommand(
   writeFileSync(worktreeSprint, afterBytes, 'utf-8');
   if (carrierAfter !== null) writeFileSync(worktreeCarrier, carrierAfter, 'utf-8');
 
+  const receiptPath = options.receipt ?? defaultMigrationReceiptPath(sprintPath);
+  const receiptAbsolute = join(repoRoot, receiptPath);
+
   /**
-   * Undo the write, then refuse. Every gate below runs *after* the files
-   * changed, so without this a refusal would leave a half-migrated tree that
-   * reads as authoritative: the sprint would declare schema 2 while the proof
-   * that its ids are the pre-migration ids had just failed. A refusal must
-   * always mean "the files are exactly as they were".
-   *
-   * The receipt is written only past the last gate, so there is never a
-   * receipt to remove here.
+   * Put the files back exactly as they were, and drop any receipt this call
+   * created. Every gate past this point runs *after* the files changed, so a
+   * failure that left them written would leave a half-migrated tree that reads
+   * as authoritative: the sprint would declare schema 2 while the proof that
+   * its ids are the pre-migration ids had just failed, or while no receipt
+   * exists to bind the bytes.
    */
-  const restoreAndRefuse = (message: string): CommandOutcome => {
+  const restoreWrittenFiles = (): void => {
     writeFileSync(worktreeSprint, beforeBytes, 'utf-8');
     if (carrierBefore !== null) writeFileSync(worktreeCarrier, carrierBefore, 'utf-8');
+    rmSync(receiptAbsolute, { force: true });
+  };
+
+  /** A refusal must always mean "the files are exactly as they were". */
+  const restoreAndRefuse = (message: string): CommandOutcome => {
+    restoreWrittenFiles();
     return refuse(message);
   };
 
-  // Re-read proof over the bytes that actually landed.
-  const reread = readFileSync(worktreeSprint, 'utf-8');
-  if (reread !== afterBytes) {
-    return restoreAndRefuse(`migrated ${sprintPath} does not match the bytes just written`);
-  }
-  if (sprintBacklogSchema(reread) !== 2) {
-    return restoreAndRefuse(`migrated ${sprintPath} does not declare backlog schema 2`);
-  }
-  let migrated;
   try {
-    migrated = projectCanonicalTasks({
-      repoIdentity: deps.repoIdentity(repoRoot),
-      sprintPath,
-      sprintText: reread,
-    });
+    // Re-read proof over the bytes that actually landed.
+    const reread = readFileSync(worktreeSprint, 'utf-8');
+    if (reread !== afterBytes) {
+      return restoreAndRefuse(`migrated ${sprintPath} does not match the bytes just written`);
+    }
+    if (sprintBacklogSchema(reread) !== 2) {
+      return restoreAndRefuse(`migrated ${sprintPath} does not declare backlog schema 2`);
+    }
+    let migrated;
+    try {
+      migrated = projectCanonicalTasks({
+        repoIdentity: deps.repoIdentity(repoRoot),
+        sprintPath,
+        sprintText: reread,
+      });
+    } catch (error) {
+      if (error instanceof SprintSchemaError) {
+        return restoreAndRefuse(`migrated ${sprintPath} fails schema 2 validation: ${error.message}`);
+      }
+      throw error;
+    }
+    if (migrated.length !== legacy.rows.length) {
+      return restoreAndRefuse(`migrated ${sprintPath} has ${migrated.length} rows but schema 1 had ${legacy.rows.length}`);
+    }
+    const tasks: MigratedRowV1[] = [];
+    for (let index = 0; index < migrated.length; index += 1) {
+      const before = legacy.rows[index];
+      const after = migrated[index];
+      if (after.task_id !== before.legacy_task_id) {
+        return restoreAndRefuse(
+          `migrated row ${after.row.index} has task id ${after.task_id} but its schema 1 identity was ${before.legacy_task_id}`,
+        );
+      }
+      if (after.row.task !== before.row.task) {
+        return restoreAndRefuse(`migrated row ${after.row.index} Task cell changed during the rewrite`);
+      }
+      tasks.push({ row_index: after.row.index, task_id: after.task_id, task_cell: after.row.task });
+    }
+
+    const receipt: SprintSchemaMigrationReceiptV1 = {
+      protocol: SPRINT_SCHEMA_MIGRATION_PROTOCOL,
+      kind: SPRINT_SCHEMA_MIGRATION_KIND,
+      from_schema: 1,
+      to_schema: 2,
+      sprint_path: sprintPath,
+      target_ref: options.targetRef,
+      target_commit: canonical.commit,
+      sprint_sha256_before: sha256(beforeBytes),
+      sprint_sha256_after: sha256(afterBytes),
+      work_graph_path: carrierExists ? carrierPath : null,
+      work_graph_sha256_before: carrierBefore === null ? null : sha256(carrierBefore),
+      work_graph_sha256_after: carrierAfter === null ? null : sha256(carrierAfter),
+      tasks: Object.freeze(tasks),
+    };
+
+    mkdirSync(dirname(receiptAbsolute), { recursive: true });
+    writeFileSync(receiptAbsolute, `${JSON.stringify(receipt, null, 2)}\n`, 'utf-8');
+
+    return {
+      exitCode: 0,
+      stdout: `${JSON.stringify({ ok: true, receipt_path: receiptPath, receipt })}\n`,
+      stderr: '',
+    };
   } catch (error) {
-    if (error instanceof SprintSchemaError) {
-      return restoreAndRefuse(`migrated ${sprintPath} fails schema 2 validation: ${error.message}`);
+    // An unexpected throw is not a licence to leave the tree half migrated.
+    // The restore runs in its own try so that a restore failure surfaces
+    // instead of being swallowed, and so that it names the original cause
+    // rather than replacing it silently.
+    try {
+      restoreWrittenFiles();
+    } catch (restoreError) {
+      throw new Error(
+        `sprint migrate-schema failed and could not restore ${sprintPath}: `
+        + `${restoreError instanceof Error ? restoreError.message : String(restoreError)} `
+        + `(original failure: ${error instanceof Error ? error.message : String(error)})`,
+        { cause: error },
+      );
     }
     throw error;
   }
-  if (migrated.length !== legacy.rows.length) {
-    return restoreAndRefuse(`migrated ${sprintPath} has ${migrated.length} rows but schema 1 had ${legacy.rows.length}`);
-  }
-  const tasks: MigratedRowV1[] = [];
-  for (let index = 0; index < migrated.length; index += 1) {
-    const before = legacy.rows[index];
-    const after = migrated[index];
-    if (after.task_id !== before.legacy_task_id) {
-      return restoreAndRefuse(
-        `migrated row ${after.row.index} has task id ${after.task_id} but its schema 1 identity was ${before.legacy_task_id}`,
-      );
-    }
-    if (after.row.task !== before.row.task) {
-      return restoreAndRefuse(`migrated row ${after.row.index} Task cell changed during the rewrite`);
-    }
-    tasks.push({ row_index: after.row.index, task_id: after.task_id, task_cell: after.row.task });
-  }
-
-  const receipt: SprintSchemaMigrationReceiptV1 = {
-    protocol: SPRINT_SCHEMA_MIGRATION_PROTOCOL,
-    kind: SPRINT_SCHEMA_MIGRATION_KIND,
-    from_schema: 1,
-    to_schema: 2,
-    sprint_path: sprintPath,
-    target_ref: options.targetRef,
-    target_commit: canonical.commit,
-    sprint_sha256_before: sha256(beforeBytes),
-    sprint_sha256_after: sha256(afterBytes),
-    work_graph_path: carrierExists ? carrierPath : null,
-    work_graph_sha256_before: carrierBefore === null ? null : sha256(carrierBefore),
-    work_graph_sha256_after: carrierAfter === null ? null : sha256(carrierAfter),
-    tasks: Object.freeze(tasks),
-  };
-
-  const receiptPath = options.receipt ?? defaultMigrationReceiptPath(sprintPath);
-  const receiptAbsolute = join(repoRoot, receiptPath);
-  mkdirSync(dirname(receiptAbsolute), { recursive: true });
-  writeFileSync(receiptAbsolute, `${JSON.stringify(receipt, null, 2)}\n`, 'utf-8');
-
-  return {
-    exitCode: 0,
-    stdout: `${JSON.stringify({ ok: true, receipt_path: receiptPath, receipt })}\n`,
-    stderr: '',
-  };
 }

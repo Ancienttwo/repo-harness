@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260902-2101-issue-283-immutable-task-id.review.md
 > **Last Updated**: 2026-09-02 21:01
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:8b830fe7abfe78ccb81827d1a5c23d0bf370c2671e9d85e5f42099d1c3025f9b`
+> **Substantive Change SHA256**: `sha256:707fdad892653ba6e426f6d2034308135a2fe946f055283ad2f54c90a0988135`
 
 ## Design Decisions
 
@@ -51,6 +51,14 @@
   (`sprint-backlog.sh`, `check-task-workflow.sh`, `refresh-current-status.sh`,
   `heartbeat-triage.sh`) became schema-aware, and `session-context.ts` stopped
   re-implementing the row grammar and now reads `backlogRows`.
+- **A migration failure always means "files untouched".** Every gate past the
+  write goes through `restoreAndRefuse()`, and the whole post-write section is
+  wrapped so an *unexpected* throw restores `beforeBytes`/`carrierBefore` and
+  drops any receipt before rethrowing. The restore runs in its own `try`: a
+  restore failure surfaces and names the original cause through `{ cause }`
+  rather than silently replacing it. The pure rewrite is injected through
+  `MigrateSprintSchemaDependencies.rewriteSprint` because that is the only seam
+  able to produce bytes that pass the rewrite and then fail the re-read proof.
 - **Migration receipt path**: `<sprint stem>.schema-migration.v1.json` next to
   the sprint, overridable with `--receipt`. It is a durable commit surface, not
   runtime evidence, because it is the only proof binding old/new sprint bytes,

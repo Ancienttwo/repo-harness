@@ -357,6 +357,44 @@ describe('migrate-schema command', () => {
     expect(existsSync(join(root, defaultMigrationReceiptPath(SPRINT_PATH)))).toBe(false);
   });
 
+  test('an unexpected post-write throw restores both files, writes no receipt, and propagates', () => {
+    const carrierPath = SPRINT_PATH.replace('.sprint.md', '.work-graph.v1.json');
+    const carrier = `${JSON.stringify({
+      protocol: 1,
+      kind: 'repo-harness-work-graph',
+      repository_id: 'repo_0123456789abcdef',
+      sprint_path: SPRINT_PATH,
+      lane: 'engineering-v2',
+      work_packages: [{ work_package_id: 'wp-a', task_ref: 'second work package' }],
+    }, null, 2)}\n`;
+    const root = repoFixture(V1_SPRINT, carrier);
+    const sprintBefore = readFileSync(join(root, SPRINT_PATH), 'utf-8');
+    const carrierBefore = readFileSync(join(root, carrierPath), 'utf-8');
+
+    // `repoIdentity` is read once before the write (to derive the schema 1 ids)
+    // and once after it (to re-project the migrated sprint). Throwing on the
+    // second call is a plain Error inside the post-write window: no typed
+    // refusal, no gate -- exactly the case that used to rethrow past the
+    // restore and leave the tree half migrated.
+    let calls = 0;
+    const deps = processMigrationDependencies(root);
+    const failing = {
+      ...deps,
+      repoIdentity: (cwd: string) => {
+        calls += 1;
+        if (calls > 1) throw new Error('repo identity is unavailable');
+        return deps.repoIdentity(cwd);
+      },
+    };
+
+    expect(() => migrateSprintSchemaCommand({ sprint: SPRINT_PATH, targetRef: 'main' }, failing))
+      .toThrow('repo identity is unavailable');
+    expect(calls).toBe(2);
+    expect(readFileSync(join(root, SPRINT_PATH), 'utf-8')).toBe(sprintBefore);
+    expect(readFileSync(join(root, carrierPath), 'utf-8')).toBe(carrierBefore);
+    expect(existsSync(join(root, defaultMigrationReceiptPath(SPRINT_PATH)))).toBe(false);
+  });
+
   test('duplicate Task cells refuse the migration before any write', () => {
     const root = repoFixture(V1_SPRINT.replace('second work package', 'first work package'));
     const before = readFileSync(join(root, SPRINT_PATH), 'utf-8');
