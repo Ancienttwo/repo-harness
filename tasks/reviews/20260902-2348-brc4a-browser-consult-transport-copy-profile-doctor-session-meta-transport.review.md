@@ -8,9 +8,9 @@
 > **Last Updated**: 2026-09-02 23:48
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: sha256:2882ceb46f5b59bf86e05d89e490de62257c20b320d23e831970856d4b12b162
+> **Reviewed Subject SHA256**: sha256:49e8a8952541ea3241c8400e840a95a7877691c600a3a2091c673db9585006bf
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: d8d62dea20c47d4f58638fbd4cfc93126f358144
+> **Reviewed Target Revision**: b62e6a07dc23b773a643ed454797b475176f084f
 
 ## Human Review Card
 
@@ -21,7 +21,7 @@
 - Commands passed: `bun test tests/cli/chatgpt-browser.test.ts --timeout 60000` (46 pass), `bun run check:type`, `repo-harness run verify-contract --strict` (8/8), `repo-harness run check-task-workflow --strict`, `REPO_HARNESS_DIFF_BASE=origin/main REPO_HARNESS_DIFF_MODE=merge-base bash scripts/check-task-sync.sh`, `bash scripts/check-architecture-sync.sh`, `repo-harness run verify-sprint --prepare-acceptance`
 - Residual risks: `browser-doctor` still requires the unsent `browserCookiePath` capability for `ready`; `browser.transport` is derived from the profile binding, so a deprecated native session with a binding records `copy_profile`; `REQUIRED_ORACLE_VERSION` stays pinned at 0.14.1, so this host's doctor remains `action_required` against Oracle 0.18.0
 - Reviewer action required: inspect diff and card
-- Rollback: revert the branch commits; the change is confined to `src/cli/chatgpt-browser` plus its tests and docs
+- Rollback: revert the branch commits on top of `main@b62e6a07`; the change is confined to `src/cli/chatgpt-browser` plus its tests and docs
 
 ## Mode Evidence
 
@@ -31,7 +31,7 @@
 
 ## Verification Evidence
 
-- Waza `/check` run: replaced by two `codex exec -s read-only` semantic review rounds (round 1 REJECT with six findings, round 2 PASS with none)
+- Waza `/check` run: replaced by three `codex exec -s read-only` semantic review rounds (round 1 REJECT with six findings, round 2 PASS with none, round 3 PASS with none on the rebased base `main@b62e6a07`)
 - Commands run: see the Human Review Card `Commands passed` line
 - Manual checks: `oracle --help | grep -c copy-profile` = 1 and `oracle --debug-help | grep -c browser-chrome-profile` = 1 on the host 0.18.0 binary; `browser-doctor --provider oracle --json` reports both new capabilities true with `missingCapabilities: []`; `browser-consult --dry-run` against the real profile binding renders `--copy-profile <user-data-dir> --browser-chrome-profile "Profile 11"` with no `--browser-cookie-path` and session meta `transport: copy_profile`
 - Supporting artifacts: `.ai/harness/checks/latest.json`
@@ -44,13 +44,13 @@
 > **Reviewer**: Codex
 > **Source**: codex-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: sha256:2882ceb46f5b59bf86e05d89e490de62257c20b320d23e831970856d4b12b162
+> **Reviewed Subject SHA256**: sha256:49e8a8952541ea3241c8400e840a95a7877691c600a3a2091c673db9585006bf
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: d8d62dea20c47d4f58638fbd4cfc93126f358144
-> **Verification Evidence SHA256**: sha256:2ff7fa44ef55a356185ec1ec5136a4cb0e27ca40fb40f13f44d519e47a9d9dca
-> **Issued At**: 2026-09-02T17:51:55.207Z
+> **Reviewed Target Revision**: b62e6a07dc23b773a643ed454797b475176f084f
+> **Verification Evidence SHA256**: sha256:889034af76e3d3889e38bb9769b6c22c184713cc6ee0a956a0e50296a0663150
+> **Issued At**: 2026-09-02T18:43:56.045Z
 
-- Summary: Round 2 codex exec read-only review of the full branch diff against main@d8d62dea: VERDICT PASS, no findings. The bound-profile oracle transport is --copy-profile plus --browser-chrome-profile only, with no cookie-path fallback; doctor capabilities, session meta transport, the same-prompt refusal mapping and the docs are in sync. Round 1 rejected with six findings; three were fixed (dry-run half transport, single-missing-flag coverage, no automatic --force) and three were kept as documented residual risk (browserCookiePath readiness entry, binding-derived transport for the deprecated native provider, the coordinator-requested sprint row 4 commit).
+- Summary: Round 3 codex exec read-only review of the full branch diff against the rebased base main@b62e6a07: VERDICT PASS, no findings. A range-diff and per-file comparison confirmed the rebase changed no source, test, docs or skill-asset content relative to the round 2 PASS; only the regenerated projection manifest, the rebound plan digest, the contract base SHA and the main version of tasks/todos.md moved. PR 289's content is untouched by this branch. The bound-profile oracle transport remains --copy-profile plus --browser-chrome-profile only, with no cookie-path fallback, and the three known items stay documented residual risk.
 - Findings: none
 
 ## Behavior Diff Notes

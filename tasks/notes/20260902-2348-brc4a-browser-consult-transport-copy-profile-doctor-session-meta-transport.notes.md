@@ -80,6 +80,15 @@
   same-prompt run is invoked exactly once and never with `--force`. Kept with rationale: the
   `browserCookiePath` readiness entry and the binding-derived `transport` value. The sprint
   row 4 checkbox commit is a coordinator-requested conflict-avoidance commit, kept separate.
+- Round 2 (same subject, round 1 fixes applied): `PASS`, no findings.
+- Round 3 (after rebasing onto `main@b62e6a07`, which landed PR #289): `PASS`, no findings.
+  The rebase conflicted only on `docs/architecture/.projection-manifest.json` and
+  `tasks/todos.md`; both took the main version, the manifest was then regenerated with
+  `repo-harness architecture-projection drain` rather than hand-edited, and the commit that
+  had only refreshed the manifest became empty and was skipped. `.ai/harness/worktrees/<slug>.json`
+  still recorded the pre-rebase `base_commit`, which fails the gate with
+  `stale_base_commit`; refreshing that ignored runtime file to the new fork point is the
+  documented remedy.
 
 ## Open Questions
 
