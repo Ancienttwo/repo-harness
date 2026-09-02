@@ -37,6 +37,7 @@
   `publication-integration-observation:`, `publication-receipt:`, `product-acceptance-projection:`, `integration-envelope:`,
   `integration-contract:`, `product-requirement:`). They are folded into `authority_revision`; `WorkPackageDependencyObservationV1` itself was
   left unchanged so the offer schema and `dependency_revision` keep their current shape.
+- **`receipt.target_revision` is deliberately shape-checked, not anchored.** The exact anchor is `receipt.target_ref === deps.readCanonicalTargetRef(targetRepo)`; the revision itself is only required to be a git OID and is then bound into the evidence projection as `acceptance-target:<target_ref>` with `engineerSha256(target_revision)`. Binding it to `read.commit` would revoke acceptance on every unrelated commit, and proving ancestry would put Git topology into the acceptance verdict. See the Tradeoffs table.
 - **Field mismatches are `unsatisfied`, IO/authorization failures are `authority_unavailable`.** A receipt that is readable but bound to another
   contract subject, another repository root, another target ref, or a `reject` disposition is a readable negative. A missing receipt file, an
   unreadable store, an unregistered or non-`read_write` dependency repository, an unprovable declared subject, or a lease read that throws is
@@ -75,6 +76,9 @@
 | Infer publication integration from merge commits or branch ancestry | Rejected | Explicitly forbidden by the issue; the immutable integration observation is the only integration proof |
 | Include the canonical Sprint commit in `authority_revision` | Rejected | Every unrelated commit would stale every offer; `task_revision` already tracks the owning row |
 | Re-run `verifyAcceptance` inside the resolver | Rejected | It is async and rebuilds the full review subject; offer collection is synchronous and must stay linear in authority reads |
+| Bind `receipt.target_revision` to the target repository's canonical commit (`read.commit`) | Rejected | `read.commit` is the current tip of the canonical target ref, so equality would revoke a valid acceptance on the first unrelated commit to that repository. Acceptance is recorded against the review base, not against whatever the tip later becomes |
+| Prove `receipt.target_revision` is an ancestor of `read.commit` with `git merge-base --is-ancestor` | Rejected | It adds a git process per dependency edge to offer collection and makes acceptance a function of Git topology, which the issue forbids for the publication adapter and which would be inconsistent here |
+| Shape-check `receipt.target_revision` and carry staleness through evidence | **Chosen** | The resolver checks `receipt.target_ref` against the target repository's canonical target ref exactly, checks `target_revision` for git-OID shape, and folds `acceptance-target:<target_ref>` + `engineerSha256(target_revision)` into the evidence projection. A moved review base therefore changes `authority_revision` and stales the Engineer offer, forcing `acquireScheduledEngineerTask` to revalidate, without the resolver inventing a second staleness rule. Full reviewed-path overlap staleness stays owned by `verifyAcceptance` (`scripts/acceptance-receipt.ts`), the acceptance authority itself |
 
 ## Open Questions
 
