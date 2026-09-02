@@ -6,6 +6,7 @@
 > **Review**: tasks/reviews/20260902-2101-issue-278-dispatch-effect-fence.review.md
 > **Last Updated**: 2026-09-02 21:01
 > **Lifecycle**: notes
+> **Substantive Change SHA256**: `sha256:4c68625c861a36d2e8e1d27cfebd18a43ab6bf9380294c05f8e9db3ec77f3c11`
 
 ## Design Decisions
 
