@@ -101,7 +101,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ## Change Assessment
 
 ```json
-{"protocol":1,"oracles":[{"id":"issue-283-task-identity","kind":"deterministic_test","paths":["*"]}]}
+{"protocol":1,"oracles":[{"id":"issue-283-task-identity","kind":"deterministic_test","paths":["*"]},{"id":"issue-283-migrate-schema-live-lease-readback","kind":"runtime_readback","paths":["*"]}]}
 ```
 
 ## Acceptance Policy
