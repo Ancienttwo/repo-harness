@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260902-2101-issue-284-dependency-authority.review.md
 > **Last Updated**: 2026-09-02 21:01
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:d6cc51a2e9b15d3118feea6d2570531103043bee7f1ac7c5f8d9ea8515da03d6`
+> **Substantive Change SHA256**: `sha256:800569ef4ad47927d1df6dec717e381b69110087a4a1c2204694f237b2e18223`
 
 ## Design Decisions
 
@@ -52,6 +52,32 @@
   next to the code that persists those content-addressed stores, so the store layout stays owned by one module. `authorityFingerprint` and
   `readAcceptanceReceiptFile` were exported from `scripts/acceptance-receipt.ts` (mirrored to `assets/templates/helpers/`) so the resolver reuses
   the single receipt validator and the single contract-normalization rule instead of re-deriving either.
+- **The acceptance verdict is extracted, not duplicated.** The first implementation of `moduleAccepted` re-derived its own `bound` expression
+  from seven receipt fields and ignored `expected_reviewer`, `reviewer`, `source`, `waiver_grant_sha256`, `goal_file`, `goal_sha256` and
+  `verification_evidence_sha256`. That made it a second, weaker acceptance authority: a `reviewer: Claude / source: claude-review` receipt
+  satisfied a contract whose Acceptance Policy is `{reviewer: Codex, source: codex-review}`, a `user_waiver` passed against a contract that
+  forbids waivers or with a grant whose fingerprint had moved, and the goal binding was never checked at all. Duplicating the rule set was
+  rejected outright — the issue forbids a second acceptance authority and the contract Scope promised to reuse the single validator, and a
+  duplicate silently drifts every time the acceptance plane changes. The synchronous rule set is now
+  `scripts/acceptance-receipt.ts#validateAcceptanceReceiptAgainstPolicy`, composed from the existing `parseAcceptancePolicy`,
+  `validateDisposition`, `waiverGrantFingerprint` and `markdownHeader`, and `verifyAcceptance` calls exactly that function for its synchronous
+  part. There is one implementation and two callers.
+- **What `verifyAcceptance` still checks beyond the shared function, and how the resolver covers it.** Three things stay in `verifyAcceptance`
+  because they are asynchronous or need the live working tree: (1) `resolveArchived` path resolution for a contract or goal that has since been
+  archived; (2) `currentSubject(root, target_ref)` — the live normalized review subject compared with `receipt.subject_sha256`, plus the
+  reviewed-path overlap count against the moved target revision; (3) `normalizedVerificationEvidence(...)` recomputed and compared with
+  `receipt.verification_evidence_sha256`. The resolver covers each without weakening: it does not resolve archived paths at all — the declared
+  `subject_ref` and `receipt.goal_file` must both be readable at the target repository's canonical commit or the result is
+  `authority_unavailable`; and it does not re-derive the live subject or evidence, it binds the receipt's own frozen
+  `subject_sha256`/`verification_evidence_sha256`/`target_revision` plus the whole receipt's byte digest into the evidence projection, so any
+  movement changes `authority_revision` and stales the offer instead of producing a pass on stale evidence. The resolver additionally requires
+  `receipt.target_ref` to equal the target repository's canonical target ref, which `verifyAcceptance` does not need because it anchors the
+  subject on the receipt's own ref. `verifyArchiveProjectionAuthority` also stays in `verifyAcceptance`: it is an authority-home-scoped seal
+  check, and the resolver treats an unreadable gate store as `authority_unavailable`.
+- **`CONSUMED_RECEIPT_KEYS` is the structural guard.** It sits next to the validator and lists every `AcceptanceReceipt` key the shared function
+  consumes. `tests/unit/issue-284-dependency-authority.test.ts` asserts it equals the keys of a canonical receipt fixture and then runs a
+  deliberate-break probe: for each declared key it mutates exactly that field on an otherwise valid receipt and requires a refusal. A key added
+  to the receipt type without a rule, or a rule silently dropped, fails that test rather than quietly widening what counts as accepted.
 - **The edge/target pairing is proven at the resolver boundary, not only in the caller.** `resolveDependencyAuthority` receives the declared
   edge and the observed target as two separate inputs, and every adapter reads the target: `canonicalDone` decides purely from
   `target.task_status`. Before the guard, a caller that passed edge A with an unrelated completed target B — including a cross-repository B —

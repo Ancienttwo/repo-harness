@@ -59,9 +59,13 @@ import { acquireScheduledEngineerTask } from '../../src/effects/engineers/schedu
 import type { EngineerPrincipalV1 } from '../../src/core/engineers/principal-claim';
 import type { RepoHarnessRegisteredRepo, RepoHarnessRegistrySnapshot } from '../../src/effects/repo-registry';
 import {
+  CONSUMED_RECEIPT_KEYS,
   acceptanceReceiptPath,
   authorityFingerprint,
+  userWaiverGrantPath,
+  validateAcceptanceReceiptAgainstPolicy,
   type AcceptanceReceipt,
+  type UserWaiverGrant,
 } from '../../scripts/acceptance-receipt';
 
 const REPO_ID = 'repo_0123456789abcdef';
@@ -70,7 +74,30 @@ const CAPABILITY = 'capability.workflow-engine.contract-assets';
 const SPRINT = 'plans/sprints/demo.sprint.md';
 const CONTRACT_REF = 'tasks/contracts/wp-a.contract.md';
 const PRD_REF = 'plans/prds/product.md';
-const CONTRACT_TEXT = '# Task Contract: wp-a\n\n> **Status**: Active\n\n## Goal\n\nDeliver wp-a.\n';
+const GOAL_REF = 'plans/plan-wp-a.md';
+const CONTRACT_NO_WAIVER_REF = 'tasks/contracts/wp-a-sealed.contract.md';
+const OWNER = 'ancienttwo';
+const CONTRACT_TEXT = [
+  '# Task Contract: wp-a',
+  '',
+  '> **Status**: Active',
+  `> **Owner**: ${OWNER}`,
+  '',
+  '## Goal',
+  '',
+  'Deliver wp-a.',
+  '',
+  '## Acceptance Policy',
+  '',
+  '```json',
+  '{"protocol":2,"reviewer":"Codex","source":"codex-review","user_waiver":"allowed"}',
+  '```',
+  '',
+].join('\n');
+const CONTRACT_NO_WAIVER_TEXT = CONTRACT_TEXT
+  .replace('# Task Contract: wp-a', '# Task Contract: wp-a (sealed)')
+  .replace('"user_waiver":"allowed"', '"user_waiver":"forbidden"');
+const GOAL_TEXT = '# Plan: wp-a\n\n> **Status**: Approved\n\n## Approach\n\nDeliver wp-a.\n';
 const PRD_TEXT = '# Product\n\n> **Status**: Approved\n';
 const POLICY_BYTES = '{"policy":1}\n';
 const ROLLBACK_A = '{"rollback":"a"}\n';
@@ -101,6 +128,10 @@ function writeRepoFile(root: string, relative: string, content: string): void {
 
 function moduleAuthority(revision = engineerSha256(CONTRACT_TEXT)): WorkPackageDependencyV1['acceptance_authority'] {
   return { authority_kind: 'module_acceptance', subject_ref: CONTRACT_REF, subject_revision: revision };
+}
+
+function moduleAuthorityFor(ref: string, text: string): WorkPackageDependencyV1['acceptance_authority'] {
+  return { authority_kind: 'module_acceptance', subject_ref: ref, subject_revision: engineerSha256(text) };
 }
 
 function productAuthority(revision = engineerSha256(PRD_TEXT)): WorkPackageDependencyV1['acceptance_authority'] {
@@ -203,6 +234,8 @@ function fixture(): Fixture {
   writeRepoFile(root, 'plans/rollback/wp-a.json', ROLLBACK_A);
   writeRepoFile(root, 'plans/rollback/wp-b.json', ROLLBACK_B);
   writeRepoFile(root, CONTRACT_REF, CONTRACT_TEXT);
+  writeRepoFile(root, CONTRACT_NO_WAIVER_REF, CONTRACT_NO_WAIVER_TEXT);
+  writeRepoFile(root, GOAL_REF, GOAL_TEXT);
   writeRepoFile(root, PRD_REF, PRD_TEXT);
   writeRepoFile(root, 'docs/spec.md', '# Source spec\n');
   git(root, 'add', '.');
@@ -279,8 +312,8 @@ function acceptanceReceipt(subject: Fixture, overrides: Partial<AcceptanceReceip
     repository_root: subject.root,
     contract_file: CONTRACT_REF,
     contract_sha256: authorityFingerprint(CONTRACT_TEXT),
-    goal_file: 'plans/plan-wp-a.md',
-    goal_sha256: `sha256:${'b'.repeat(64)}`,
+    goal_file: GOAL_REF,
+    goal_sha256: authorityFingerprint(GOAL_TEXT),
     verification_file: '.ai/harness/checks/latest.json',
     verification_evidence_sha256: `sha256:${'c'.repeat(64)}`,
     benchmark_evidence_sha256: 'not-applicable',
@@ -306,6 +339,47 @@ function acceptanceReceipt(subject: Fixture, overrides: Partial<AcceptanceReceip
 function writeAcceptanceReceipt(subject: Fixture, receipt: AcceptanceReceipt, authorityHome = subject.root): void {
   const path = acceptanceReceiptPath(subject.root, authorityHome, true);
   writeFileSync(path, `${JSON.stringify(receipt, null, 2)}\n`);
+}
+
+function waiverGrant(subject: Fixture, overrides: Partial<UserWaiverGrant> = {}): UserWaiverGrant {
+  return {
+    protocol: 1,
+    kind: 'repo-harness-user-waiver-grant',
+    repository_root: subject.root,
+    contract_file: CONTRACT_REF,
+    contract_sha256: authorityFingerprint(CONTRACT_TEXT),
+    goal_file: GOAL_REF,
+    goal_sha256: authorityFingerprint(GOAL_TEXT),
+    actor: OWNER,
+    scope: 'contract-authority',
+    summary: 'owner waived wp-a',
+    issued_at: '2026-09-02T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function writeWaiverGrant(subject: Fixture, grant: UserWaiverGrant): void {
+  writeFileSync(userWaiverGrantPath(subject.root, subject.root, true), `${JSON.stringify(grant, null, 2)}\n`);
+}
+
+function waivedReceipt(subject: Fixture, grant: UserWaiverGrant, overrides: Partial<AcceptanceReceipt> = {}): AcceptanceReceipt {
+  return acceptanceReceipt(subject, {
+    disposition: 'user_waiver',
+    reviewer: 'User',
+    source: 'user-waiver',
+    actor: OWNER,
+    summary: grant.summary,
+    waiver_grant_sha256: engineerSha256(stableJson(grant)),
+    ...overrides,
+  });
+}
+
+/** Mirrors scripts/acceptance-receipt.ts#stableJson so the fingerprint matches. */
+function stableJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(',')}}`;
 }
 
 function reviewingPublication(subject: Fixture, head: string, base: string, number: number): ReturnType<typeof buildPublicationReceipt> {
@@ -902,6 +976,123 @@ describe('issue #284 closed dependency authority', () => {
     expect(smuggled.authority_revision).toBeNull();
     expect(smuggled.evidence_refs.map((entry) => entry.ref))
       .toEqual([`dependency-target-mismatch:${REPO_ID}:wp-b`]);
+  });
+
+  test('the shared acceptance validator consumes every AcceptanceReceipt key', () => {
+    const subject = fixture();
+    const valid = acceptanceReceipt(subject);
+    const base = {
+      receipt: valid,
+      repositoryRoot: subject.root,
+      expectedContractFile: CONTRACT_REF,
+      contractContent: CONTRACT_TEXT,
+      goalContent: GOAL_TEXT,
+      waiverGrant: null,
+    };
+    expect(validateAcceptanceReceiptAgainstPolicy(base)).toEqual({ ok: true });
+    expect([...Object.keys(valid)].sort()).toEqual([...CONSUMED_RECEIPT_KEYS].sort());
+
+    // Deliberate-break probe: every declared key must be able to refuse.
+    const breaks: Record<keyof AcceptanceReceipt, unknown> = {
+      protocol: 1,
+      kind: 'repo-harness-other-receipt',
+      repository_root: join(subject.root, 'elsewhere'),
+      contract_file: 'tasks/contracts/other.contract.md',
+      contract_sha256: authorityFingerprint('# other\n'),
+      goal_file: '../escape.md',
+      goal_sha256: authorityFingerprint('# other goal\n'),
+      verification_file: '/etc/passwd',
+      verification_evidence_sha256: 'not-a-digest',
+      benchmark_evidence_sha256: '',
+      subject_sha256: 'not-a-digest',
+      subject_scope: 'raw-diff',
+      target_ref: '',
+      target_revision: 'zzzz',
+      reviewed_paths: ['../escape.ts'],
+      disposition: 'reject',
+      expected_reviewer: 'Claude',
+      reviewer: 'Claude',
+      source: 'claude-review',
+      actor: 'someone-else',
+      summary: '   ',
+      findings: [{ severity: 'P0', message: 'blocked' }],
+      waiver_grant_sha256: `sha256:${'e'.repeat(64)}`,
+      issued_at: 'not-a-timestamp',
+    };
+    for (const key of CONSUMED_RECEIPT_KEYS) {
+      const broken = { ...valid, [key]: breaks[key] } as AcceptanceReceipt;
+      const verdict = validateAcceptanceReceiptAgainstPolicy({ ...base, receipt: broken });
+      expect([key, verdict.ok]).toEqual([key, false]);
+    }
+  });
+
+  test('module_accepted refuses a receipt the acceptance policy itself would refuse', () => {
+    const subject = fixture();
+    const exact = input(subject, 'module_accepted');
+
+    writeAcceptanceReceipt(subject, acceptanceReceipt(subject));
+    expect(resolveDependencyAuthority(exact).status).toBe('satisfied');
+
+    // Policy is {reviewer: Codex, source: codex-review}; a Claude external_pass
+    // is structurally valid and must still fail the contract's own policy.
+    writeAcceptanceReceipt(subject, acceptanceReceipt(subject, {
+      expected_reviewer: 'Claude',
+      reviewer: 'Claude',
+      source: 'claude-review',
+    }));
+    expect(resolveDependencyAuthority(exact).status).toBe('unsatisfied');
+
+    writeAcceptanceReceipt(subject, acceptanceReceipt(subject, {
+      reviewer: 'Claude',
+      source: 'claude-review',
+    }));
+    expect(resolveDependencyAuthority(exact).status).toBe('unsatisfied');
+
+    writeAcceptanceReceipt(subject, acceptanceReceipt(subject, {
+      goal_sha256: authorityFingerprint('# Plan: wp-a\n\n> **Status**: Approved\n\n## Approach\n\nSomething else.\n'),
+    }));
+    expect(resolveDependencyAuthority(exact).status).toBe('unsatisfied');
+  });
+
+  test('module_accepted enforces the waiver policy and the exact grant fingerprint', () => {
+    const subject = fixture();
+    const grant = waiverGrant(subject);
+    writeWaiverGrant(subject, grant);
+    writeAcceptanceReceipt(subject, waivedReceipt(subject, grant));
+    const exact = input(subject, 'module_accepted');
+    expect(resolveDependencyAuthority(exact).status).toBe('satisfied');
+
+    // A grant whose bytes moved no longer matches the receipt fingerprint.
+    writeWaiverGrant(subject, waiverGrant(subject, { summary: 'owner waived wp-a again' }));
+    expect(resolveDependencyAuthority(exact).status).toBe('unsatisfied');
+
+    // The sealed contract forbids user waiver; the same receipt shape must fail.
+    writeWaiverGrant(subject, waiverGrant(subject, {
+      contract_file: CONTRACT_NO_WAIVER_REF,
+      contract_sha256: authorityFingerprint(CONTRACT_NO_WAIVER_TEXT),
+    }));
+    const sealedGrant = waiverGrant(subject, {
+      contract_file: CONTRACT_NO_WAIVER_REF,
+      contract_sha256: authorityFingerprint(CONTRACT_NO_WAIVER_TEXT),
+    });
+    writeAcceptanceReceipt(subject, waivedReceipt(subject, sealedGrant, {
+      contract_file: CONTRACT_NO_WAIVER_REF,
+      contract_sha256: authorityFingerprint(CONTRACT_NO_WAIVER_TEXT),
+    }));
+    const sealed = input(subject, 'module_accepted', {
+      dependency: {
+        ...dependency('module_accepted'),
+        acceptance_authority: moduleAuthorityFor(CONTRACT_NO_WAIVER_REF, CONTRACT_NO_WAIVER_TEXT),
+      },
+    });
+    expect(resolveDependencyAuthority(sealed).status).toBe('unsatisfied');
+
+    // A missing grant for a user_waiver receipt is an unreadable authority.
+    rmSync(userWaiverGrantPath(subject.root, subject.root), { force: true });
+    writeAcceptanceReceipt(subject, waivedReceipt(subject, grant));
+    const missing = resolveDependencyAuthority(exact);
+    expect(missing.status).toBe('authority_unavailable');
+    expect(missing.authority_revision).toBeNull();
   });
 
   test('the evidence projection is the only input to authority_revision', () => {

@@ -58,9 +58,12 @@ import { COMPLETED_ROW_STATUS_PATTERN } from '../../core/state/coordination-iden
 import type { RepoHarnessRegisteredRepo, RepoHarnessRegistrySnapshot } from '../repo-registry';
 import {
   acceptanceReceiptPath,
-  authorityFingerprint,
   readAcceptanceReceiptFile,
+  readUserWaiverGrantFile,
+  userWaiverGrantPath,
+  validateAcceptanceReceiptAgainstPolicy,
   type AcceptanceReceipt,
+  type UserWaiverGrant,
 } from '../../../scripts/acceptance-receipt';
 
 export const DEPENDENCY_AUTHORITY_PROTOCOL = 1 as const;
@@ -94,6 +97,7 @@ export interface AcceptanceAuthorityRead {
 export interface DependencyAuthorityReaders {
   readonly readCanonicalTargetRef: (repoRoot: string) => string;
   readonly readAcceptanceReceipt: (repoRoot: string, authorityHome: string) => AcceptanceAuthorityRead;
+  readonly readUserWaiverGrant: (repoRoot: string, authorityHome: string) => UserWaiverGrant;
   readonly readLease: (repoRoot: string, taskId: string) => LeaseRead;
   readonly readIntegrationObservations: (
     repoRoot: string,
@@ -136,6 +140,7 @@ export function defaultDependencyAuthorityReaders(): DependencyAuthorityReaders 
       const receipt = readAcceptanceReceiptFile(path);
       return Object.freeze({ receipt, bytes_sha256: engineerSha256(readFileSync(path)) });
     },
+    readUserWaiverGrant: (repoRoot, authorityHome) => readUserWaiverGrantFile(userWaiverGrantPath(repoRoot, authorityHome)),
     readLease,
     readIntegrationObservations: readPublicationIntegrationObservations,
     readPublicationReceipt: (repoRoot, publicationId) => readPublicationReceiptCache(repoRoot, publicationId),
@@ -272,8 +277,6 @@ function canonicalDone(input: DependencyAuthorityInput): AdapterVerdict {
   ]);
 }
 
-const PASSING_ACCEPTANCE_DISPOSITIONS: readonly AcceptanceReceipt['disposition'][] = Object.freeze(['external_pass', 'user_waiver']);
-
 function moduleAccepted(
   input: DependencyAuthorityInput,
   read: DependencyAuthorityRepositoryRead,
@@ -303,15 +306,25 @@ function moduleAccepted(
   }
   const receipt = acceptance.receipt;
 
-  const refs = [
-    evidence(`acceptance-receipt:${repositoryIdentity}`, acceptance.bytes_sha256),
-    evidence(`acceptance-subject:${reference.subject_ref}`, reference.subject_revision),
-    evidence(`acceptance-target:${receipt.target_ref}`, engineerSha256(receipt.target_revision)),
-    evidence(
-      `acceptance-reviewed-paths:${reference.subject_ref}`,
-      engineerSha256(canonicalEngineerJson([...receipt.reviewed_paths].sort())),
-    ),
-  ];
+  // The receipt's own goal binding is proven at the same canonical commit as
+  // the declared contract subject. An unreadable goal or waiver grant is an
+  // unreadable authority, never a weaker pass.
+  let goal: string | null;
+  try {
+    goal = read.commit === null ? null : input.readFileAtCommit(read.repo.path, read.commit, receipt.goal_file);
+  } catch {
+    return UNAVAILABLE;
+  }
+  if (goal === null) return UNAVAILABLE;
+
+  let waiverGrant: UserWaiverGrant | null = null;
+  if (receipt.disposition === 'user_waiver') {
+    try {
+      waiverGrant = reader.readUserWaiverGrant(read.repo.path, authorityHome);
+    } catch {
+      return UNAVAILABLE;
+    }
+  }
 
   let repositoryRoot: string;
   try {
@@ -320,18 +333,35 @@ function moduleAccepted(
     return UNAVAILABLE;
   }
 
-  // Every field below is a readable negative when it fails: the authority
-  // answered, and it is not an acceptance of this exact subject.
-  const bound = receipt.repository_root === repositoryRoot
-    && receipt.contract_file === reference.subject_ref
-    && receipt.contract_sha256 === authorityFingerprint(subject)
-    && receipt.subject_scope === 'normalized-final-content'
-    && receipt.target_ref === targetRef
-    && /^[0-9a-f]{40,64}$/u.test(receipt.target_revision)
-    && receipt.reviewed_paths.length > 0
-    && receipt.reviewed_paths.every((path) => path.length > 0 && !path.startsWith('/')
-      && !path.split('/').some((part) => part === '' || part === '.' || part === '..'))
-    && PASSING_ACCEPTANCE_DISPOSITIONS.includes(receipt.disposition);
+  const refs = [
+    evidence(`acceptance-receipt:${repositoryIdentity}`, acceptance.bytes_sha256),
+    evidence(`acceptance-subject:${reference.subject_ref}`, reference.subject_revision),
+    evidence(`acceptance-goal:${receipt.goal_file}`, engineerSha256(goal)),
+    evidence(`acceptance-target:${receipt.target_ref}`, engineerSha256(receipt.target_revision)),
+    evidence(
+      `acceptance-reviewed-paths:${reference.subject_ref}`,
+      engineerSha256(canonicalEngineerJson([...receipt.reviewed_paths].sort())),
+    ),
+  ];
+  if (waiverGrant !== null) {
+    refs.push(evidence(
+      `acceptance-waiver-grant:${reference.subject_ref}`,
+      engineerSha256(canonicalEngineerJson(waiverGrant)),
+    ));
+  }
+
+  // The acceptance verdict is the acceptance authority's own synchronous rule
+  // set, not a second one re-derived here. The only additional binding is the
+  // edge's declared subject and this repository's canonical target ref.
+  const policy = validateAcceptanceReceiptAgainstPolicy({
+    receipt,
+    repositoryRoot,
+    expectedContractFile: reference.subject_ref,
+    contractContent: subject,
+    goalContent: goal,
+    waiverGrant,
+  });
+  const bound = policy.ok && receipt.target_ref === targetRef;
   return verdict(bound ? 'satisfied' : 'unsatisfied', refs);
 }
 

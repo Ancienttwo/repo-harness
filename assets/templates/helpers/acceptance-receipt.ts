@@ -665,6 +665,102 @@ function validateDisposition(
   if (findings.length === 0) fail('reject requires at least one finding');
 }
 
+export type AcceptanceReceiptPolicyVerdict = { ok: true } | { ok: false; reason: string };
+
+export type AcceptanceReceiptPolicyInput = {
+  receipt: AcceptanceReceipt;
+  repositoryRoot: string;
+  expectedContractFile: string;
+  contractContent: string;
+  goalContent: string;
+  waiverGrant: UserWaiverGrant | null;
+};
+
+/**
+ * Every AcceptanceReceipt key the shared synchronous validator below consumes.
+ * A second reader asserts against this list so no caller can accept a receipt
+ * on a narrower rule set than the acceptance gate itself applies.
+ */
+export const CONSUMED_RECEIPT_KEYS: readonly (keyof AcceptanceReceipt)[] = [
+  'protocol', 'kind', 'repository_root', 'contract_file', 'contract_sha256',
+  'goal_file', 'goal_sha256', 'verification_file', 'verification_evidence_sha256',
+  'benchmark_evidence_sha256', 'subject_sha256', 'subject_scope', 'target_ref',
+  'target_revision', 'reviewed_paths', 'disposition', 'expected_reviewer',
+  'reviewer', 'source', 'actor', 'summary', 'findings', 'waiver_grant_sha256',
+  'issued_at',
+];
+
+const SHA256_FIELD = /^sha256:[0-9a-f]{64}$/;
+const GIT_OID_FIELD = /^[0-9a-f]{40,64}$/;
+
+function unsafeRepoRelativePath(value: string): boolean {
+  return value.length === 0
+    || isAbsolute(value)
+    || value.startsWith('-')
+    || value.includes('\\')
+    || value.split('/').some((part) => part.length === 0 || part === '.' || part === '..');
+}
+
+/**
+ * The single synchronous acceptance rule set. `verifyAcceptance` composes it
+ * with the live subject and verification-evidence reads; any other reader that
+ * needs an acceptance verdict calls exactly this function rather than
+ * re-deriving a weaker one.
+ */
+export function validateAcceptanceReceiptAgainstPolicy(
+  input: AcceptanceReceiptPolicyInput,
+): AcceptanceReceiptPolicyVerdict {
+  const no = (reason: string): AcceptanceReceiptPolicyVerdict => ({ ok: false, reason });
+  const receipt = input.receipt;
+  try {
+    if (receipt.protocol !== 2 || receipt.kind !== 'repo-harness-acceptance-receipt') {
+      return no('AcceptanceReceipt kind/protocol is invalid');
+    }
+    if (receipt.repository_root !== input.repositoryRoot) return no('AcceptanceReceipt repository root is stale');
+    if (receipt.contract_file !== input.expectedContractFile) return no('AcceptanceReceipt contract file is stale');
+    if (authorityFingerprint(input.contractContent) !== receipt.contract_sha256) return no('AcceptanceReceipt contract is stale');
+    const policy = parseAcceptancePolicy(input.contractContent);
+    if (policy.reviewer !== receipt.expected_reviewer) return no('AcceptanceReceipt reviewer policy is stale');
+    if (unsafeRepoRelativePath(receipt.goal_file)) return no('AcceptanceReceipt goal_file is unsafe');
+    if (authorityFingerprint(input.goalContent) !== receipt.goal_sha256) return no('AcceptanceReceipt goal is stale');
+    if (unsafeRepoRelativePath(receipt.verification_file)) return no('AcceptanceReceipt verification_file is unsafe');
+    if (!SHA256_FIELD.test(receipt.verification_evidence_sha256)) return no('AcceptanceReceipt verification_evidence_sha256 is invalid');
+    if (receipt.benchmark_evidence_sha256.trim() === '') return no('AcceptanceReceipt benchmark_evidence_sha256 is required');
+    if (!SHA256_FIELD.test(receipt.subject_sha256)) return no('AcceptanceReceipt subject_sha256 is invalid');
+    if (receipt.subject_scope !== 'normalized-final-content') return no('AcceptanceReceipt subject scope is invalid');
+    if (receipt.target_ref.trim() === '') return no('AcceptanceReceipt target_ref is required');
+    if (!GIT_OID_FIELD.test(receipt.target_revision)) return no('AcceptanceReceipt target_revision is invalid');
+    // Emptiness is legal: a subject can review zero paths. Shape is not.
+    if (receipt.reviewed_paths.some(unsafeRepoRelativePath)) return no('AcceptanceReceipt reviewed_paths are invalid');
+    if (receipt.summary.trim() === '') return no('AcceptanceReceipt summary is required');
+    if (receipt.issued_at.trim() === '' || Number.isNaN(Date.parse(receipt.issued_at))) {
+      return no('AcceptanceReceipt issued_at is invalid');
+    }
+    if (receipt.disposition === 'reject') return no('AcceptanceReceipt disposition is reject');
+    const owner = markdownHeader(input.contractContent, 'Owner');
+    if (receipt.disposition === 'user_waiver') {
+      const grant = input.waiverGrant;
+      if (grant === null) return no('AcceptanceReceipt user_waiver requires a UserWaiverGrant');
+      if (policy.user_waiver !== 'allowed') return no('contract forbids user waiver');
+      if (grant.repository_root !== input.repositoryRoot) return no('UserWaiverGrant repository root is stale');
+      if (grant.contract_file !== receipt.contract_file || grant.contract_sha256 !== receipt.contract_sha256) {
+        return no('UserWaiverGrant contract authority is stale');
+      }
+      if (grant.goal_file !== receipt.goal_file || grant.goal_sha256 !== receipt.goal_sha256) {
+        return no('UserWaiverGrant goal authority is stale');
+      }
+      if (grant.actor !== owner) return no('UserWaiverGrant owner is stale');
+      if (waiverGrantFingerprint(grant) !== receipt.waiver_grant_sha256) return no('AcceptanceReceipt waiver grant is stale');
+    } else if (receipt.waiver_grant_sha256 !== null || input.waiverGrant !== null) {
+      return no('AcceptanceReceipt waiver grant binding does not match disposition');
+    }
+    validateDisposition(policy, owner, receipt.disposition, receipt.reviewer, receipt.source, receipt.actor, receipt.findings);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, reason: (error as Error).message };
+  }
+}
+
 function readReceipt(path: string): AcceptanceReceipt {
   if (!existsSync(path)) fail(`AcceptanceReceipt is missing: ${path}`);
   let value: unknown;
@@ -719,6 +815,10 @@ function writeReceipt(path: string, receipt: AcceptanceReceipt): void {
   writeFileSync(temporary, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });
   chmodSync(temporary, 0o600);
   renameSync(temporary, path);
+}
+
+export function readUserWaiverGrantFile(path: string): UserWaiverGrant {
+  return readUserWaiverGrant(path);
 }
 
 function readUserWaiverGrant(path: string): UserWaiverGrant {
@@ -1122,11 +1222,8 @@ export async function verifyAcceptance(args: {
   const contractPath = args.contract ?? resolveArchived(root, receipt.contract_file, 'tasks', receipt.contract_sha256);
   const contract = readRegular(root, contractPath, 'contract');
   if (authorityFingerprint(contract.content) !== receipt.contract_sha256) fail('AcceptanceReceipt contract is stale');
-  const policy = parseAcceptancePolicy(contract.content);
-  if (policy.reviewer !== receipt.expected_reviewer) fail('AcceptanceReceipt reviewer policy is stale');
   const goalPath = resolveArchived(root, receipt.goal_file, 'plans', receipt.goal_sha256);
   const goal = readRegular(root, goalPath, 'goal');
-  if (authorityFingerprint(goal.content) !== receipt.goal_sha256) fail('AcceptanceReceipt goal is stale');
   verifyArchiveProjectionAuthority({ root, authorityHome: args.authorityHome, acceptance: receipt, contract });
   const verificationPath = args.verification ?? receipt.verification_file;
   const verification = readRegular(root, verificationPath, 'verification evidence');
@@ -1137,12 +1234,19 @@ export async function verifyAcceptance(args: {
   }
   const evidence = await normalizedVerificationEvidence(verification.content, subject, root, contract.path, contract.content);
   if (evidence.fingerprint !== receipt.verification_evidence_sha256) fail('AcceptanceReceipt verification evidence is stale');
-  if (receipt.disposition === 'reject') fail('AcceptanceReceipt disposition is reject');
-  if (receipt.disposition === 'user_waiver') {
-    const grant = verifyUserWaiverGrant({ root, authorityHome: args.authorityHome, contract: contract.path });
-    if (waiverGrantFingerprint(grant) !== receipt.waiver_grant_sha256) fail('AcceptanceReceipt waiver grant is stale');
-  }
-  validateDisposition(policy, markdownHeader(contract.content, 'Owner'), receipt.disposition, receipt.reviewer, receipt.source, receipt.actor, receipt.findings);
+  // One synchronous rule set: the same function every other acceptance reader
+  // calls, so no caller can pass a receipt this gate would refuse.
+  const policyVerdict = validateAcceptanceReceiptAgainstPolicy({
+    receipt,
+    repositoryRoot: root,
+    expectedContractFile: receipt.contract_file,
+    contractContent: contract.content,
+    goalContent: goal.content,
+    waiverGrant: receipt.disposition === 'user_waiver'
+      ? verifyUserWaiverGrant({ root, authorityHome: args.authorityHome, contract: contract.path })
+      : null,
+  });
+  if (!policyVerdict.ok) fail(policyVerdict.reason);
   return receipt;
 }
 
