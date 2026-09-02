@@ -1,0 +1,60 @@
+schemaVersion: archcontext.node/v2
+id: capability.runtime-harness.automation-budget
+kind: capability
+name: Automation Budget
+status: active
+summary: Enforces one machine-checked per-goal automation budget by reserving before every claim, dispatch, retry, or provider invocation and publishing an immutable stop receipt on exhaustion.
+responsibilities:
+  - Project one exact host-owned ProgramAuthorization grant onto one automation run without minting a second authorization or budget schema.
+  - Compose the grant's limits with the task contract's own runner budget by strictest value per metric and bind the derivation into the budget digest.
+  - Reject a configured hard token or cost limit at preflight unless the provider capability revision attests attributable usage.
+  - Grant or refuse each reservation under the run's exclusive lock against the frozen deadline and the folded append-only ledger.
+  - Charge one idempotency key once and hold an interrupted reservation in a typed reconciliation state that only exact evidence can resolve.
+  - Publish an immutable AutomationStopReceipt on exhaustion and project a read-only operator slice of budget, consumption, and stop receipt.
+  - Never create, rewrite, release, or steal Task, Lease, Work Graph, claim, or contract authority, and never raise or renew a budget.
+source:
+  include:
+    - "src/core/automation/**"
+    - "src/effects/automation/**"
+    - "src/cli/commands/automation.ts"
+  entrypoints:
+    - id: entrypoint.automation-budget.reserve
+      path: "src/effects/automation/budget-store.ts"
+      symbols:
+        - name: "reserveAutomationBudget"
+          sinks:
+            - id: sink.automation-budget.reservation-decision
+              path: "src/core/automation/budget.ts"
+              symbol: "evaluateAutomationReservation"
+            - id: sink.automation-budget.stop-receipt
+              path: "src/core/automation/budget.ts"
+              symbol: "sealAutomationStopReceipt"
+    - id: entrypoint.automation-budget.append
+      path: "src/effects/automation/budget-store.ts"
+      symbols:
+        - name: "appendAutomationUsage"
+          sinks:
+            - id: sink.automation-budget.usage-event
+              path: "src/core/automation/budget.ts"
+              symbol: "sealAutomationUsageEvent"
+        - name: "reconcileAutomationReservation"
+          sinks:
+            - id: sink.automation-budget.ledger-chain
+              path: "src/core/automation/budget.ts"
+              symbol: "chainAutomationLedgerDigest"
+    - id: entrypoint.automation-budget.project
+      path: "src/effects/automation/budget-store.ts"
+      symbols:
+        - name: "readAutomationBudgetBoardSlice"
+          sinks:
+            - id: sink.automation-budget.operator-slice
+              path: "src/core/automation/projection.ts"
+              symbol: "projectAutomationBudgetSlice"
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun test tests/unit/issue-282-automation-budget-core.test.ts tests/unit/issue-282-automation-budget-store.test.ts tests/unit/issue-282-automation-budget-contention.test.ts tests/unit/issue-282-automation-budget-e2e.test.ts --timeout 60000"
+    - "bun run check:type"

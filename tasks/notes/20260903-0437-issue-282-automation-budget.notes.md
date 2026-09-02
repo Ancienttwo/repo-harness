@@ -4,26 +4,150 @@
 > **Plan**: plans/plan-20260903-0437-issue-282-automation-budget.md
 > **Contract**: tasks/contracts/20260903-0437-issue-282-automation-budget.contract.md
 > **Review**: tasks/reviews/20260903-0437-issue-282-automation-budget.review.md
-> **Last Updated**: 2026-09-03 04:37
+> **Last Updated**: 2026-09-03 05:20
 > **Lifecycle**: notes
 
 ## Design Decisions
 
-- ...
+### PRD schema mapping
+
+The plan's hard constraint is that the budget schema is the guarded-merge PRD's
+`ProgramAuthorizationV1` / `ProgramBudgetLimitV1`, not a new shape.
+`src/core/automation/budget.ts` implements both verbatim and makes
+`AutomationBudgetV1` a thin projection that *embeds* one exact grant rather than
+restating it: the grant stays the single authorization authority, and the budget
+adds only the run-scoped bindings the grant does not carry — `automation_run_id`,
+`goal_id` / `goal_revision`, `contract_sha256` plus the composed
+`contract_limits`, `metric_support` (the provider capability revision),
+`effective_limits` with `limit_derivations`, the frozen `deadline_at`,
+`created_by` / `created_at`, and `revision` / `supersedes_sha256`.
+
+Three fields were added to `ProgramBudgetLimitV1` and the PRD block was updated
+to match (`plans/prds/20260828-2321-guarded-merge-unattended-automation.prd.md`):
+`max_successful_acquisitions`, `max_runner_invocations`,
+`max_consecutive_no_progress_steps`. Issue #282's five v1 metrics do not fit the
+merge program's turn / failure / cycle triple, and the alternative — a second
+budget type beside the PRD's — is exactly the duplicated authority the plan
+forbids. Extending the shared type keeps one host-owned limit schema for both
+the repair campaign and the controller.
+
+The usage event keeps the PRD wire kind `repo-harness-program-budget-event`.
+`AutomationUsageEventV1` is `ProgramBudgetEventV1` plus the ledger bindings the
+merge program has no use for (`automation_run_id`, `budget_sha256`,
+`reservation_sha256`, `idempotency_key`, `step_index`, the additive `consumed`
+vector, `usage_attribution`, `resolution`, `evidence_refs`). One consumption
+event on the wire, not two.
+
+`engineer_id` and `claim_id` are typed nullable slots. Task identity (#283),
+lease liveness (#286), and attempt receipts (#287) are landing in parallel
+worktrees; binding them here would have minted a fourth opinion about identities
+this slice does not own.
+
+### Store layout
+
+`<git-common-dir>/repo-harness/automation-budget/v1/`:
+
+```
+budgets/<budget_sha256>.json                     immutable, create-once
+runs/<automation_run_id>/current.json            mutable, rewritten under the run lock
+runs/<automation_run_id>/reservations/<sha256(idempotency_key)>.json
+runs/<automation_run_id>/events/<reservation_sha256>.json
+runs/<automation_run_id>/reconciliations/<reservation_sha256>.json
+runs/<automation_run_id>/stop-receipt.json       immutable, create-once
+locks/<automation_run_id>.lock
+```
+
+The Git common directory is the point: every linked worktree of one clone shares
+one budget, which is the scope a per-worktree file would lack. `automation_run_id`
+is a bare 64-hex digest so it is a safe single path component. Reservations are
+keyed by the digest of the idempotency key and usage events by the reservation
+digest, so create-once `O_EXCL` writes are what make replay idempotent — there
+is no read-then-decide window in the charging path.
+
+`current.json` is the only mutable record, is rewritten only inside the run's
+`withExclusiveDirectoryLock`, and chains through `previous_current_sha256`. The
+ledger digest chains as `sha256(previous + newline + event_sha256)`, so an event
+can be appended but no earlier one can be edited out.
+
+Only one reservation may be open per run. That is a deliberate v1 invariant, not
+an oversight: it is what makes "a crash between reservation and usage append
+blocks further spending" a single-condition check rather than a per-reservation
+expiry sweep, and a controller is a sequential stepper by construction.
+
+### Reconciliation rules
+
+An interrupted reservation is resolved only from exact evidence, never from an
+assumption. Every resolution requires at least one `evidence_ref`; a
+reconciliation with none fails with
+`automation_budget_reconciliation_evidence_missing`.
+
+- `reconciled_observed` — the real usage is recoverable. Token and cost figures
+  still need `usage_attribution` bound to the exact capability revision the
+  budget was minted against.
+- `reconciled_reserved` — the real usage is not recoverable, so the full
+  reserved upper bound is charged. Losing an observation costs the worst case,
+  never nothing.
+- `reconciled_not_started` — evidence proves the operation never began; the
+  charge must be exactly zero on every reserved metric, and any other vector is
+  rejected.
+
+There is no `charge_zero` path that a caller can reach by omitting evidence.
+
+### Composition with contract runner budgets
+
+`composeAutomationLimits` takes the strictest applicable value per metric and
+records the derivation for every enforced metric, so the derivation is inside
+`budget_sha256` rather than a comment. The task contract's
+`delegation.budget.runner_invocations` bounds `max_runner_invocations` and
+`wall_time_minutes` bounds `max_wall_clock_seconds`. A contract that declares
+`delegation.budget.tokens` is rejected: `scripts/contract-run.ts` already refuses
+a non-null token budget as unenforceable, so accepting one here would invent a
+second meaning for a field the runner treats as invalid.
+
+The grant's `expires_at` clamps the frozen deadline; when it does, the
+`wall_clock_seconds` derivation records `authorization_expiry` as its source.
+
+### Operator projection
+
+`projectAutomationBudgetSlice` is the read model: per-metric limit / consumed /
+reserved / remaining, the state, the frozen deadline, and the stop receipt's own
+facts. It carries no provider identity, no usage attribution and no evidence
+refs. The surface is `repo-harness automation budget show --run <id>`; the
+end-to-end test asserts the CLI and the direct read produce the same
+`slice_sha256`.
+
+The operator HTTP server was deliberately not extended. Its read routes are
+worker-backed, cancellable, fleet-wide observations keyed by `repository_id`,
+and an automation run has no registry identity yet — that binds through the
+Engineer identity slot left open for #283. Adding a fourth route with that
+machinery for a synchronous local-store read would be compensation for a shape
+this slice does not have.
 
 ## Deviations From Plan Or Spec
 
-- None recorded.
+- The plan's task-breakdown order was TDD per module rather than one global
+  red phase: the core module and its tests landed together, then the store,
+  then contention, then the end-to-end fixture. Each module's tests were run
+  and failing behaviour corrected before the next module started (two real
+  defects were caught this way: a self-referential `event_id` digest, and a
+  replay path that let an exhausted run re-grant a stored reservation).
 
 ## Tradeoffs Considered
 
 | Option | Decision | Reason |
 |--------|----------|--------|
-| ... | ... | ... |
+| A second `ControllerAuthorization` / budget type beside the PRD's | Rejected | Two authorization shapes for one host-owned grant is duplicated authority; extending `ProgramBudgetLimitV1` keeps one schema for the campaign and the controller |
+| Post-hoc accounting (sum the ledger after each provider call) | Rejected | Cannot stop the next claim or dispatch; only reserve-before-act can |
+| Many concurrent open reservations per run with per-reservation expiry | Rejected for v1 | Adds a sweep and an expiry policy to buy parallelism a sequential controller does not use; one open reservation makes the crash rule a single condition |
+| Treat a contract `delegation.budget.tokens` as an automation token limit | Rejected | The contract runner rejects that field as unenforceable; reusing it would be a second meaning for the same datum |
+| Add an operator HTTP route for the budget slice | Deferred | Needs a repository-scoped run identity that binds through #283; the CLI projection is the same read model and the same digest |
 
 ## Open Questions
 
-- None.
+- The architecture projection for the new `capability.runtime-harness.automation-budget`
+  node returns `human-action-required` (`unresolved-major-change`, reason
+  `node-added`). Approval is the orchestrator's call; see the report for the
+  exact `architecture-projection accept` invocation and signal id.
 
 ## Evidence Links
 

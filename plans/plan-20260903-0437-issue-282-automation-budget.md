@@ -123,11 +123,11 @@ Controller step → `reserveAutomationBudget({kind: acquisition|dispatch|retry|i
 Reserve-before-act is the only shape that prevents the next spend; post-hoc totals cannot. Reusing the PRD schema keeps one host-owned authorization authority for both the campaign and the controller. At 10x the first pressure is per-step lock contention on the budget file; keep reservations small and the ledger append-only.
 
 ## Task Breakdown
-- [ ] #1 Failing tests: schema validation (no null/unlimited for unattended), strictest-composition, reservation arithmetic, frozen deadline, token preflight rejection, replay single charge, stop receipt digest.
-- [ ] #2 Core types aligned to `ProgramAuthorizationV1`/`ProgramBudgetLimitV1` + pure functions.
-- [ ] #3 Effects: ledger store, per-budget lock/CAS reservation, usage append, reconciliation; cross-process contention and crash fixtures.
-- [ ] #4 Stop receipt publication + board/Operator projection; end-to-end stop-before-next-claim fixture.
-- [ ] #5 Docs/spec/ArchContext, todos ledger closure, focused tests + root required checks, evidence.
+- [x] #1 Failing tests: schema validation (no null/unlimited for unattended), strictest-composition, reservation arithmetic, frozen deadline, token preflight rejection, replay single charge, stop receipt digest.
+- [x] #2 Core types aligned to `ProgramAuthorizationV1`/`ProgramBudgetLimitV1` + pure functions.
+- [x] #3 Effects: ledger store, per-budget lock/CAS reservation, usage append, reconciliation; cross-process contention and crash fixtures.
+- [x] #4 Stop receipt publication + board/Operator projection; end-to-end stop-before-next-claim fixture.
+- [x] #5 Docs/spec/ArchContext, todos ledger closure, focused tests + root required checks, evidence.
 
 ## Verification
 bun test --timeout 60000; bun run check:type; bun run check:state-boundaries; bash scripts/check-deploy-sql-order.sh; bash scripts/check-architecture-sync.sh; bash scripts/check-task-sync.sh; repo-harness run check-task-workflow --strict; bun scripts/inspect-project-state.ts --repo . --format text; bun src/cli/index.ts init --repo . --dry-run.

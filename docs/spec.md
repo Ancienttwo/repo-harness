@@ -76,6 +76,21 @@ repos.
   `effect_started` are durable; only the exact persisted Task or Module Inbox
   receipt proves delivery, and every ambiguous outcome requires reconciliation
   without an automatic retry.
+- An unattended automation run is bounded by one machine-enforced budget, never
+  by prompt text. Every claim, dispatch, retry, and provider invocation first
+  takes a reservation under the run's exclusive lock, and a reservation that
+  would pass any hard limit is refused before the operation happens. The limits
+  are the host-owned `ProgramAuthorizationV1` / `ProgramBudgetLimitV1` grant
+  composed with the task contract's own runner budget, strictest value per
+  metric, with the derivation bound into the budget digest. Wall clock is a
+  frozen absolute deadline. A token or cost limit exists only where the provider
+  capability attests attributable usage; otherwise the budget is rejected at
+  preflight instead of becoming advisory. Replaying an idempotency key charges
+  once, an interrupted reservation blocks further spending until it is
+  reconciled from exact evidence rather than assumed free, and exhaustion
+  publishes an immutable `AutomationStopReceiptV1`. A budget never raises or
+  renews itself, never rewrites Task, Lease, Work Graph, or contract authority,
+  and never releases or steals a claim.
 
 ## Workflow Surfaces
 
@@ -90,6 +105,7 @@ repos.
 | `.ai/harness/checks/latest.json` | Verifier | Current structured gate result |
 | `.ai/harness/runs/*.json` | Verifier | Immutable run/trace snapshots |
 | `.ai/harness/handoff/` | Session owner | Resume packets and exact next step |
+| `repo-harness automation budget show --run <id>` | Package runtime | Read-only operator projection of one automation run's budget, consumption, and stop receipt |
 | `docs/reference-configs/ux-feature-guard.md`, `docs/reference-configs/design-options.md`, `.claude/templates/design-brief.template.md` | Conventions | Frontend behavior discipline: freeze rules and non-goals before implementation, product boundary before imagegen variants, taste-class refinement ceiling, role-aware visible-concept declaration; `frontend` task_profile contracts must cite a design brief, and the runtime `[UXFeatureGuard]` advisory fires only on frontend-scoped feature intent |
 
 ## Safety Boundaries

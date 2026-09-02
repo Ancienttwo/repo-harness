@@ -270,7 +270,10 @@ Grant properties:
 ```ts
 interface ProgramBudgetLimitV1 {
   max_agent_turns: number;
+  max_successful_acquisitions: number;
+  max_runner_invocations: number;
   max_provider_failures: number;
+  max_consecutive_no_progress_steps: number;
   max_repair_cycles: number;
   max_wall_clock_seconds: number;
   max_input_tokens: number | null;
@@ -278,6 +281,15 @@ interface ProgramBudgetLimitV1 {
   max_cost_micros: number | null;
 }
 ```
+Acquisitions, runner invocations, and the consecutive no-progress streak are
+the three v1 metrics a controller step needs and the merge program's turn /
+failure / cycle triple does not express. They are part of this type rather than
+a second budget shape: one host-owned limit schema serves both the repair
+campaign and the automation controller. A `null` in the trailing trio means the
+metric is not limited, never that it is unlimited by default -- the seven
+non-nullable limits are mandatory for any unattended run.
+
+Implemented by `src/core/automation/budget.ts`.
 ### ProgramBudgetEventV1
 ```ts
 interface ProgramBudgetEventV1 {
@@ -304,6 +316,16 @@ interface ProgramBudgetEventV1 {
 }
 ```
 Null usage stays null. Turns, failures, repair cycles and wall-clock remain enforceable.
+
+The automation ledger appends this same event kind with the run-scoped bindings
+the merge program does not carry: `automation_run_id`, `budget_sha256`,
+`reservation_sha256`, `idempotency_key`, `step_index`, the additive `consumed`
+metric vector, the `usage_attribution` that makes a token or cost number
+provider-authoritative, the `resolution` that distinguishes an observed append
+from a reconciled one, and `evidence_refs`. See `AutomationUsageEventV1` in
+`src/core/automation/budget.ts`; the wire `kind` stays
+`repo-harness-program-budget-event` so there is one consumption event on the
+wire, not two.
 ### ProviderMergeCapabilityV1
 ```ts
 interface ProviderMergeCapabilityV1 {
