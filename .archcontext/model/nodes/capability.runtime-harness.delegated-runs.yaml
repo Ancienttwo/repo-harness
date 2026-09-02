@@ -12,7 +12,7 @@ responsibilities:
   - Reconcile any lost acknowledgement or pre-observation crash without retry, resume, Provider substitution or inferred success.
   - Collect only receipt-bound WorkerResult evidence while leaving Task, Lease, Publication and Acceptance authorities unchanged.
   - Exclude writable delegation, scheduler, daemon, model/tool loop, history, compaction, Provider fallback and generic Worker Host behavior.
-  - Run the collaboration plane's dispatch fence as a pre-step in front of the unchanged host action, so a run carrying injected coordination context that no binding accounts for never reaches the Codex CLI, and a run carrying neither a binding nor a marker dispatches exactly as before.
+  - Run the collaboration plane's dispatch fence inside the one exported dispatch, under the dispatch lock and before any host action, so no caller can reach the Codex CLI with injected coordination context that no binding accounts for, and a run carrying neither a binding nor a marker dispatches exactly as before.
 source:
   include:
     - "src/core/engineers/delegation.ts"
@@ -22,14 +22,19 @@ source:
     - id: entrypoint.delegated-runs.dispatch-command
       path: "src/cli/commands/delegation.ts"
       symbols:
-        - name: "dispatchWithCollaborationFence"
+        - name: "dispatchDelegatedRunCommand"
+          sinks:
+            - id: sink.delegated-runs.dispatch-host-action
+              path: "src/effects/engineers/delegated-run-store.ts"
+              symbol: "dispatchDelegatedRun"
+    - id: entrypoint.delegated-runs.dispatch-effect
+      path: "src/effects/engineers/delegated-run-store.ts"
+      symbols:
+        - name: "dispatchDelegatedRun"
           sinks:
             - id: sink.delegated-runs.collaboration-dispatch-fence
               path: "src/effects/collaboration/context-delivery.ts"
               symbol: "fenceCollaborationDispatch"
-            - id: sink.delegated-runs.dispatch-host-action
-              path: "src/effects/engineers/delegated-run-store.ts"
-              symbol: "dispatchDelegatedRun"
     - id: entrypoint.delegated-runs.parent-authority
       path: "src/effects/engineers/delegated-run-store.ts"
       symbols:

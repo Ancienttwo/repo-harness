@@ -124,22 +124,22 @@ outcomes:
           entrypointId: entrypoint.collaboration.dispatch-guard
           sourceSymbol: fenceCollaborationDispatch
           sinkId: sink.collaboration.dispatch-binding-assert
-      - id: fence-before-the-host-action
-        from: delegated-runs
-        to: collaboration
-        label: Run the fence as a pre-step in the dispatch command, so the delegation plane keeps one dispatch semantics and the requirement lifts out by deleting the pre-step
-        evidence:
-          entrypointId: entrypoint.delegated-runs.dispatch-command
-          sourceSymbol: dispatchWithCollaborationFence
-          sinkId: sink.delegated-runs.collaboration-dispatch-fence
       - id: reach-the-host-action
         from: delegated-runs
         to: delegated-run-store
-        label: Invoke the unchanged read-only host action only after the fence returned, so a refusal leaves the seat exactly as prepareDelegatedRun left it
+        label: Call the one exported dispatch from the command adapter, which carries no collaboration pre-step of its own and no second opinion about which runs need a binding
         evidence:
           entrypointId: entrypoint.delegated-runs.dispatch-command
-          sourceSymbol: dispatchWithCollaborationFence
+          sourceSymbol: dispatchDelegatedRunCommand
           sinkId: sink.delegated-runs.dispatch-host-action
+      - id: fence-before-the-host-action
+        from: delegated-runs
+        to: collaboration
+        label: Run the fence as the first statement under the dispatch lock, so no caller reaches the host action by forgetting a pre-step and the fence decides on the same locked view the host action is taken from
+        evidence:
+          entrypointId: entrypoint.delegated-runs.dispatch-effect
+          sourceSymbol: dispatchDelegatedRun
+          sinkId: sink.delegated-runs.collaboration-dispatch-fence
     terminal:
       participant: delegated-runs
       label: Surface the typed refusal naming the one fact that failed; injected context that no record accounts for cannot reach a Worker

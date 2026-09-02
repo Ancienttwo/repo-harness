@@ -601,12 +601,29 @@ describe('C1 closed inclusion scan', () => {
   });
 
   /**
-   * D1 in one direction only. The collaboration plane may read the delivery
-   * plane; a delivery-plane module importing it would be the second scheduler
-   * Child PRD A names as its key risk.
+   * D1 in one direction, with one exact exception.
+   *
+   * The collaboration plane may read the delivery plane; a delivery-plane
+   * module importing it would be the second scheduler Child PRD A names as its
+   * key risk. Issue #278 opened exactly one edge the other way: the read-only
+   * dispatch effect enforces the collaboration fence itself, because a fence
+   * that is a pre-step at each call site is bypassed by forgetting it, and a
+   * caller that reaches `dispatchDelegatedRun()` directly is exactly the
+   * non-CLI controller C9's canary anticipated.
+   *
+   * The exception is stated as an exact pair — one file, one imported symbol,
+   * one mention — rather than as a directory allowance, so the risk this scan
+   * was drawn against still fails it: a delivery-plane module that grows any
+   * other collaboration dependency, or this one that grows a second, is an
+   * offender.
    */
-  test('no delivery-plane module imports the collaboration plane', () => {
+  const DISPATCH_FENCE_EDGE = 'src/effects/engineers/delegated-run-store.ts';
+  const DISPATCH_FENCE_IMPORT =
+    "import { fenceCollaborationDispatch } from '../collaboration/context-delivery';";
+
+  test('no delivery-plane module imports the collaboration plane beyond the dispatch fence', () => {
     const offenders: string[] = [];
+    const fenceEdges: string[] = [];
     for (const directory of [
       'src/core/state', 'src/core/fleet', 'src/core/publication', 'src/core/integration', 'src/core/engineers',
       'src/effects/state', 'src/effects/fleet', 'src/effects/publication', 'src/effects/integration', 'src/effects/engineers',
@@ -614,15 +631,23 @@ describe('C1 closed inclusion scan', () => {
       const walk = (current: string): void => {
         for (const entry of readdirSync(current, { withFileTypes: true })) {
           const absolute = join(current, entry.name);
-          if (entry.isDirectory()) walk(absolute);
-          else if (entry.isFile() && entry.name.endsWith('.ts') && readFileSync(absolute, 'utf8').includes('collaboration/')) {
-            offenders.push(relative(REPO_ROOT, absolute).replaceAll('\\', '/'));
+          if (entry.isDirectory()) { walk(absolute); continue; }
+          if (!entry.isFile() || !entry.name.endsWith('.ts')) continue;
+          const source = readFileSync(absolute, 'utf8');
+          if (!source.includes('collaboration/')) continue;
+          const module = relative(REPO_ROOT, absolute).replaceAll('\\', '/');
+          if (module === DISPATCH_FENCE_EDGE
+            && source.split('collaboration/').length - 1 === 1
+            && source.includes(DISPATCH_FENCE_IMPORT)) {
+            fenceEdges.push(module);
+            continue;
           }
+          offenders.push(module);
         }
       };
       walk(join(REPO_ROOT, directory));
     }
-    expect(offenders.sort()).toEqual([]);
+    expect({ offenders: offenders.sort(), fenceEdges }).toEqual({ offenders: [], fenceEdges: [DISPATCH_FENCE_EDGE] });
   });
 });
 

@@ -15,6 +15,7 @@
 > **Task Contract**: `tasks/contracts/20260902-2101-issue-278-dispatch-effect-fence.contract.md`
 > **Task Review**: `tasks/reviews/20260902-2101-issue-278-dispatch-effect-fence.review.md`
 > **Implementation Notes**: `tasks/notes/20260902-2101-issue-278-dispatch-effect-fence.notes.md`
+> **Substantive Change SHA256**: `sha256:b10aaaa66e6d66ec01d3248f0db1762f7f8c2168c1b2666628cfde8cbda01305`
 
 ## Agentic Routing
 - Selected route: planning
@@ -120,11 +121,11 @@ CLI `delegation dispatch` → `dispatchWithCollaborationFence` → `fenceCollabo
 The fence is a property of the dispatch operation, not of one call site; C6 built it as a pre-step to keep one dispatch semantics, and moving the fence inside the effect keeps that single semantics while making the guarantee loud rather than silent. Smallest coherent change: fence inside the effect boundary, delete the pre-steps, update the declared ArchContext edge. At 10x callers the first failure is a forgotten pre-step; effect-owned fencing removes that class.
 
 ## Task Breakdown
-- [ ] #1 Add failing tests: direct non-CLI collaboration dispatch without binding fails before host action; same call with exact live binding succeeds; delegation_only dispatches without binding; stale/replaced binding fails closed in CLI and direct-effect fixtures.
-- [ ] #2 Compose the fence into the single production dispatch effect and make the raw unfenced path non-public.
-- [ ] #3 Remove redundant pre-step fencing from the CLI adapter and the C9 runner; add composed-path tests asserting exactly one fence invocation and zero provider calls on refusal.
-- [ ] #4 Update ArchContext flow/capability selectors and module docs to the effect-owned edge; run architecture projection; remove the fulfilled `tasks/todos.md` ledger row.
-- [ ] #5 Run focused tests, `bun run check:type`, root required checks, and record acceptance evidence.
+- [x] #1 Add failing tests: direct non-CLI collaboration dispatch without binding fails before host action; same call with exact live binding succeeds; delegation_only dispatches without binding; stale/replaced binding fails closed in CLI and direct-effect fixtures.
+- [x] #2 Compose the fence into the single production dispatch effect and make the raw unfenced path non-public.
+- [x] #3 Remove redundant pre-step fencing from the CLI adapter and the C9 runner; add composed-path tests asserting exactly one fence invocation and zero provider calls on refusal.
+- [ ] #4 Update ArchContext flow/capability selectors and module docs to the effect-owned edge; run architecture projection; remove the fulfilled `tasks/todos.md` ledger row. (Model selectors, flow and relation updated; ledger row removed. The projection returns `human-action-required` for the entrypoint/relation/responsibility change and needs `architecture-projection accept --signal-id <id> --approval-reference <event-id>`, which this contract does not own; module docs are projection outputs of that accepted apply.)
+- [x] #5 Run focused tests, `bun run check:type`, root required checks, and record acceptance evidence.
 
 ## Verification
 bun test --timeout 60000; bun run check:type; bash scripts/check-deploy-sql-order.sh; bash scripts/check-architecture-sync.sh; bash scripts/check-task-sync.sh; repo-harness run check-task-workflow --strict; bun scripts/inspect-project-state.ts --repo . --format text; bun src/cli/index.ts init --repo . --dry-run.
@@ -134,8 +135,8 @@ bun test --timeout 60000; bun run check:type; bash scripts/check-deploy-sql-orde
 - None.
 
 ## Task Breakdown
-- [ ] #1 Add failing tests: direct non-CLI collaboration dispatch without binding fails before host action; same call with exact live binding succeeds; delegation_only dispatches without binding; stale/replaced binding fails closed in CLI and direct-effect fixtures.
-- [ ] #2 Compose the fence into the single production dispatch effect and make the raw unfenced path non-public.
-- [ ] #3 Remove redundant pre-step fencing from the CLI adapter and the C9 runner; add composed-path tests asserting exactly one fence invocation and zero provider calls on refusal.
-- [ ] #4 Update ArchContext flow/capability selectors and module docs to the effect-owned edge; run architecture projection; remove the fulfilled `tasks/todos.md` ledger row.
-- [ ] #5 Run focused tests, `bun run check:type`, root required checks, and record acceptance evidence.
+- [x] #1 Add failing tests: direct non-CLI collaboration dispatch without binding fails before host action; same call with exact live binding succeeds; delegation_only dispatches without binding; stale/replaced binding fails closed in CLI and direct-effect fixtures.
+- [x] #2 Compose the fence into the single production dispatch effect and make the raw unfenced path non-public.
+- [x] #3 Remove redundant pre-step fencing from the CLI adapter and the C9 runner; add composed-path tests asserting exactly one fence invocation and zero provider calls on refusal.
+- [ ] #4 Update ArchContext flow/capability selectors and module docs to the effect-owned edge; run architecture projection; remove the fulfilled `tasks/todos.md` ledger row. (Model selectors, flow and relation updated; ledger row removed. The projection returns `human-action-required` for the entrypoint/relation/responsibility change and needs `architecture-projection accept --signal-id <id> --approval-reference <event-id>`, which this contract does not own; module docs are projection outputs of that accepted apply.)
+- [x] #5 Run focused tests, `bun run check:type`, root required checks, and record acceptance evidence.
