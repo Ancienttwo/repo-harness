@@ -20,6 +20,7 @@ import {
   type ScheduledEngineerAcquireAssertionV1,
   type ScheduledEngineerAcquireResult,
 } from '../../src/effects/engineers/scheduling-acquire';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const REPO = 'repo_0123456789abcdef';
 const CAPABILITY = 'capability.workflow-engine.contract-assets';
@@ -52,7 +53,7 @@ function offer(): EngineerOfferV1 {
     lane: 'engineering-v2',
     work_packages: [{
       work_package_id: 'wp-a',
-      task_ref: 'task A',
+      task_id: fixtureTaskId('task A'),
       primary_capability: CAPABILITY,
       depends_on: [],
       priority: 50,
@@ -62,7 +63,7 @@ function offer(): EngineerOfferV1 {
       required_acceptance: [{ gate: 'module', policy_id: 'module', policy_ref: 'plans/policy.json', policy_revision: DIGEST }],
       rollback_boundary: { kind: 'work_package', boundary_id: 'wp-a', boundary_ref: 'plans/rollback.json', boundary_revision: DIGEST },
     }],
-  }), [{ task_id: '1'.repeat(64), task_revision: '2'.repeat(64), task_ref: 'task A', status: '[ ]', row_order: 1 }]);
+  }), [{ task_id: fixtureTaskId('task A'), task_revision: '2'.repeat(64), task_ref: 'task A', status: '[ ]', row_order: 1 }]);
   const candidate = buildEngineerOfferCandidate({
     graph,
     work_package: graph.work_packages[0],

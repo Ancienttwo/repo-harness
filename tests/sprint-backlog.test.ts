@@ -21,6 +21,7 @@ import { join } from "path";
 import { spawnSync } from "child_process";
 import { sessionStartMainContent } from "../src/cli/hook/session-context";
 import { createStateInputCollector } from "../src/effects/loop/state-input-collector";
+import { fixtureTaskId } from './helpers/sprint-fixture';
 
 const ROOT = join(import.meta.dir, "..");
 const HELPER_DIR = join(ROOT, "assets/templates/helpers");
@@ -111,6 +112,7 @@ function writeActiveSprintFixture(cwd: string, sprintRelPath: string) {
       "> **Updated**: 2026-06-10 00:00",
       "> **Source Spec**: `docs/spec.md`",
       "> **Goal Mode**: incremental",
+      "> **Backlog Schema**: 2",
       "",
       "## PRD",
       "",
@@ -118,10 +120,10 @@ function writeActiveSprintFixture(cwd: string, sprintRelPath: string) {
       "",
       "## Backlog",
       "",
-      "| # | Status | Task | Mode | Acceptance | Plan |",
-      "|---|--------|------|------|------------|------|",
-      "| 1 | [ ] | task-a | contract | unit tests pass | (pending) |",
-      "| 2 | [ ] | task-b | inline | doc section updated | (pending) |",
+      "| # | ID | Status | Task | Mode | Acceptance | Plan |",
+      "|---|----|--------|------|------|------------|------|",
+      `| 1 | ${fixtureTaskId('task-a')} | [ ] | task-a | contract | unit tests pass | (pending) |`,
+      `| 2 | ${fixtureTaskId('task-b')} | [ ] | task-b | inline | doc section updated | (pending) |`,
       "",
       "## Execution Log",
       "",
@@ -194,7 +196,7 @@ describe("sprint-backlog helper", () => {
       const sprint = readFileSync(join(cwd, marker), "utf-8");
       expect(sprint).toContain("# Sprint: Auth Overhaul");
       expect(sprint).toContain("> **Status**: Draft");
-      expect(sprint).toContain("| # | Status | Task | Mode | Acceptance | Plan |");
+      expect(sprint).toContain("| # | ID | Status | Task | Mode | Acceptance | Plan |");
 
       const again = run("bash", ["scripts/sprint-backlog.sh", "init", "--slug", "another"], cwd);
       expect(again.status).toBe(1);
@@ -236,7 +238,7 @@ describe("sprint-backlog helper", () => {
       expect(completeBySlug.stdout).toContain("Backlog progress: 1/2");
 
       const afterFirst = readFileSync(join(cwd, sprintPath), "utf-8");
-      expect(afterFirst).toContain("| 1 | [x] | task-a | contract | unit tests pass | `plans/plan-20260610-0001-task-a.md` |");
+      expect(afterFirst).toContain(`| 1 | ${fixtureTaskId('task-a')} | [x] | task-a | contract | unit tests pass | \`plans/plan-20260610-0001-task-a.md\` |`);
       expect(afterFirst).toContain("| task-a | `plans/plan-20260610-0001-task-a.md` | done |");
 
       const nextAfterFirst = run("bash", ["scripts/sprint-backlog.sh", "next"], cwd);
@@ -296,8 +298,8 @@ describe("sprint-backlog helper", () => {
       writeFileSync(
         join(cwd, sprintPath),
         original.replace(
-          "| 2 | [ ] | task-b | inline | doc section updated | (pending) |",
-          "| 1 | [ ] | task-dup | inline | duplicate index row | (pending) |\n| 2 | [ ] | task-b | inline | doc section updated | (pending) |"
+          `| 2 | ${fixtureTaskId('task-b')} | [ ] | task-b | inline | doc section updated | (pending) |`,
+          `| 1 | ${fixtureTaskId('task-dup')} | [ ] | task-dup | inline | duplicate index row | (pending) |\n| 2 | [ ] | task-b | inline | doc section updated | (pending) |`
         )
       );
 
@@ -313,8 +315,8 @@ describe("sprint-backlog helper", () => {
       expect(complete.status).toBe(0);
 
       const after = readFileSync(join(cwd, sprintPath), "utf-8");
-      expect(after).toContain("| 1 | [x] | task-a | contract | unit tests pass | `plans\\windows\\plan-a.md` |");
-      expect(after).toContain("| 1 | [ ] | task-dup | inline | duplicate index row | (pending) |");
+      expect(after).toContain(`| 1 | ${fixtureTaskId('task-a')} | [x] | task-a | contract | unit tests pass | \`plans\\windows\\plan-a.md\` |`);
+      expect(after).toContain(`| 1 | ${fixtureTaskId('task-dup')} | [ ] | task-dup | inline | duplicate index row | (pending) |`);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -388,7 +390,7 @@ describe("sprint-backlog helper", () => {
       expect(plan).toContain("Verify acceptance: unit tests pass");
 
       const sprintAfterContract = readFileSync(join(cwd, sprintPath), "utf-8");
-      expect(sprintAfterContract).toContain("| 1 | [ ] | task-a | contract | unit tests pass | (pending) |");
+      expect(sprintAfterContract).toContain(`| 1 | ${fixtureTaskId('task-a')} | [ ] | task-a | contract | unit tests pass | (pending) |`);
 
       // Row 2 (task-b) is inline mode: it appends checklist rows to the active
       // plan and does not create a new top-level plan or task artifacts.
@@ -398,7 +400,7 @@ describe("sprint-backlog helper", () => {
       expect(inline.stdout).toContain("is inline; appended checklist row(s) to the active plan");
       expect(inline.stdout).not.toContain("Captured plan:");
       const sprintAfterInline = readFileSync(join(cwd, sprintPath), "utf-8");
-      expect(sprintAfterInline).toContain("| 2 | [ ] | task-b | inline | doc section updated | (pending) |");
+      expect(sprintAfterInline).toContain(`| 2 | ${fixtureTaskId('task-b')} | [ ] | task-b | inline | doc section updated | (pending) |`);
       expect(readdirSync(join(cwd, "plans")).filter((name) => name.includes("task-b")).length).toBe(0);
       const activePlan = readFileSync(join(cwd, ".ai/harness/active-plan"), "utf-8").trim();
       const activePlanBody = readFileSync(join(cwd, activePlan), "utf-8");
@@ -515,7 +517,7 @@ describe("sprint-backlog helper", () => {
       expect(foreign.status).toBe(1);
       expect(foreign.stderr).toContain(`is claimed by ${claimId}`);
       expect(foreign.stderr).toContain("holds no claim token");
-      expect(readFileSync(join(cwd, sprintPath), "utf-8")).toContain("| 2 | [ ] | task-b |");
+      expect(readFileSync(join(cwd, sprintPath), "utf-8")).toContain(`| 2 | ${fixtureTaskId('task-b')} | [ ] | task-b |`);
 
       // A stolen-from tree keeps its old token; the comparison is against the
       // owner record, so the stale token is refused too.
@@ -523,13 +525,13 @@ describe("sprint-backlog helper", () => {
       const stale = run("bash", ["scripts/sprint-backlog.sh", "complete-task", "--task", "task-b"], cwd);
       expect(stale.status).toBe(1);
       expect(stale.stderr).toContain("the claim moved");
-      expect(readFileSync(join(cwd, sprintPath), "utf-8")).toContain("| 2 | [ ] | task-b |");
+      expect(readFileSync(join(cwd, sprintPath), "utf-8")).toContain(`| 2 | ${fixtureTaskId('task-b')} | [ ] | task-b |`);
 
       // A row with no lease of its own completes unchanged, even though the
       // lease store is live for a sibling row.
       const unclaimed = run("bash", ["scripts/sprint-backlog.sh", "complete-task", "--task", "task-a"], cwd);
       expect(unclaimed.status, `${unclaimed.stdout}\n${unclaimed.stderr}`).toBe(0);
-      expect(readFileSync(join(cwd, sprintPath), "utf-8")).toMatch(/\|\s*1\s*\|\s*\[x\]\s*\|\s*task-a/);
+      expect(readFileSync(join(cwd, sprintPath), "utf-8")).toMatch(/\|\s*1\s*\|\s*[0-9a-f]{64}\s*\|\s*\[x\]\s*\|\s*task-a/);
 
       // And the owning token still completes its own row and releases it.
       writeFileSync(token, ownerToken);
@@ -556,7 +558,7 @@ describe("sprint-backlog helper", () => {
       const complete = run("bash", ["scripts/sprint-backlog.sh", "complete-task", "--task", "task-a"], cwd, LOCK_TEST_ENV);
       expect(complete.status).toBe(1);
       expect(complete.stderr).toContain("timed out acquiring backlog lock");
-      expect(readFileSync(join(cwd, sprintPath), "utf-8")).toContain("| 1 | [ ] | task-a |");
+      expect(readFileSync(join(cwd, sprintPath), "utf-8")).toContain(`| 1 | ${fixtureTaskId('task-a')} | [ ] | task-a |`);
 
       const timedOut = readJsonl(join(cwd, WAITS_LEDGER_RELATIVE))
         .filter((record) => record.kind === "backlog_lock_wait");
@@ -623,7 +625,7 @@ describe("sprint-backlog helper", () => {
       );
       expect(complete.status).toBe(0);
       expect(readFileSync(join(cwd, sprintPath), "utf-8")).toContain(
-        "| 1 | [x] | task-a | contract | unit tests pass | `plans/archive/plan-x.md` |"
+        `| 1 | ${fixtureTaskId('task-a')} | [x] | task-a | contract | unit tests pass | \`plans/archive/plan-x.md\` |`
       );
 
       const outside = run(
@@ -682,6 +684,7 @@ describe("check-task-workflow sprint validation", () => {
           "# Sprint: Bad",
           "",
           "> **Status**: Approved",
+          "> **Backlog Schema**: 2",
           "",
           "## PRD",
           "",
@@ -689,10 +692,10 @@ describe("check-task-workflow sprint validation", () => {
           "",
           "## Backlog",
           "",
-          "| # | Status | Task | Mode | Acceptance | Plan |",
-          "|---|--------|------|------|------------|------|",
-          "| 1 | [ ] | task-a | warp | tbd | (pending) |",
-          "| 1 | [ ] | task-a | inline | Replace with a machine-checkable acceptance line | (pending) |",
+          "| # | ID | Status | Task | Mode | Acceptance | Plan |",
+          "|---|----|--------|------|------|------------|------|",
+          `| 1 | ${fixtureTaskId('task-a')} | [ ] | task-a | warp | tbd | (pending) |`,
+          `| 1 | ${fixtureTaskId('task-a')} | [ ] | task-a | inline | Replace with a machine-checkable acceptance line | (pending) |`,
           "",
         ].join("\n")
       );

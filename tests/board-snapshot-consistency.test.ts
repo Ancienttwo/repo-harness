@@ -23,11 +23,11 @@ import {
 } from '../src/core/state/project-board';
 import { resolveBoardFromCollector, type BoardCollector } from '../src/effects/state/resolve-board';
 import {
-  deriveTaskId,
   deriveTaskRevision,
   type LeaseOwnerRecordV1,
 } from '../src/core/state/coordination-identity';
 import type { AttemptLedgerRead } from '../src/core/state/attempt-ledger';
+import { fixtureTaskId } from './helpers/sprint-fixture';
 
 const REPO_IDENTITY = '/tmp/board-consistency-fixture/.git';
 const SPRINT_PATH = 'plans/sprints/consistency.sprint.md';
@@ -38,12 +38,8 @@ const WORKTREE_A = '/tmp/board-consistency-fixture-wt-a';
 const UNIT_REF = 'plans/plan-consistency.md';
 const TOKEN = 'sha256:progress-token-a';
 
-const TASK_ID = deriveTaskId({
-  repoIdentity: REPO_IDENTITY,
-  sprintPath: SPRINT_PATH,
-  taskCell: TASK_CELL,
-});
-const TASK_REVISION = deriveTaskRevision({
+const TASK_ID = fixtureTaskId(TASK_CELL);
+const TASK_REVISION = deriveTaskRevision({ taskCell: TASK_CELL,
   taskId: TASK_ID,
   modeCell: 'contract',
   acceptanceCell: 'consistency tests pass',
@@ -51,8 +47,8 @@ const TASK_REVISION = deriveTaskRevision({
 
 /** The single sprint text every scenario keeps constant, on purpose. */
 const SPRINT_TEXT = [
-  '| # | Status | Task | Mode | Acceptance | Plan |',
-  `| 1 | [ ] | ${TASK_CELL} | contract | consistency tests pass | (pending) |`,
+  '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+  `| 1 | ${fixtureTaskId(`${TASK_CELL}`)} | [ ] | ${TASK_CELL} | contract | consistency tests pass | (pending) |`,
 ].join('\n');
 
 function ownerRecord(claimId: string, generation: number): LeaseOwnerRecordV1 {
@@ -111,6 +107,7 @@ function taskOf(observation: Observation): BoardTaskInput {
     task_revision: TASK_REVISION,
     row: {
       index: '1',
+      id: TASK_ID,
       status: '[ ]',
       task: TASK_CELL,
       mode: 'contract',

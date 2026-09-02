@@ -29,7 +29,6 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
-  deriveTaskId,
   deriveTaskRevision,
   serializeLeaseOwnerRecord,
   type LeaseOwnerRecordV1,
@@ -55,6 +54,7 @@ import {
 import { resolveRepoIdentity } from '../src/effects/state/coordination-canonical-source';
 import * as sliceInputs from '../src/effects/state/collect-slice-inputs';
 import type { EffectiveState } from '../src/core/state/types';
+import { fixtureTaskId } from './helpers/sprint-fixture';
 
 // ---------------------------------------------------------------------------
 // Collector spy: the assertable form of "the unarmed path collects nothing"
@@ -103,13 +103,14 @@ const PEER_BRANCH = 'codex/wp3-peer';
 /** `backlogRows()` only scans between `## Backlog` and the next `## ` heading. */
 const SPRINT_TEXT = [
   '# WP3 fixture sprint',
+  '> **Backlog Schema**: 2',
   '',
   '## Backlog',
   '',
-  '| # | Status | Task | Mode | Acceptance | Plan |',
-  '| --- | --- | --- | --- | --- | --- |',
-  `| 1 | [ ] | ${OWN_TASK_CELL} | contract | slice tests pass | (pending) |`,
-  `| 2 | [ ] | ${PEER_TASK_CELL} | contract | metadata tests pass | (pending) |`,
+  '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+  '| --- |----| --- | --- | --- | --- | --- |',
+  `| 1 | ${fixtureTaskId(`${OWN_TASK_CELL}`)} | [ ] | ${OWN_TASK_CELL} | contract | slice tests pass | (pending) |`,
+  `| 2 | ${fixtureTaskId(`${PEER_TASK_CELL}`)} | [ ] | ${PEER_TASK_CELL} | contract | metadata tests pass | (pending) |`,
   '',
 ].join('\n');
 
@@ -163,17 +164,17 @@ function buildFixture(): Fixture {
   git(primary, ['worktree', 'add', '-b', BRANCH, worktree]);
 
   const repoIdentity = resolveRepoIdentity(primary);
-  const ownTaskId = deriveTaskId({ repoIdentity, sprintPath: SPRINT_PATH, taskCell: OWN_TASK_CELL });
-  const peerTaskId = deriveTaskId({ repoIdentity, sprintPath: SPRINT_PATH, taskCell: PEER_TASK_CELL });
+  const ownTaskId = fixtureTaskId(OWN_TASK_CELL);
+  const peerTaskId = fixtureTaskId(PEER_TASK_CELL);
 
   return {
     primary,
     worktree: realpathSync(worktree),
     repoIdentity,
     ownTaskId,
-    ownTaskRevision: deriveTaskRevision({ taskId: ownTaskId, modeCell: 'contract', acceptanceCell: 'slice tests pass' }),
+    ownTaskRevision: deriveTaskRevision({ taskCell: OWN_TASK_CELL, taskId: ownTaskId, modeCell: 'contract', acceptanceCell: 'slice tests pass' }),
     peerTaskId,
-    peerTaskRevision: deriveTaskRevision({ taskId: peerTaskId, modeCell: 'contract', acceptanceCell: 'metadata tests pass' }),
+    peerTaskRevision: deriveTaskRevision({ taskCell: PEER_TASK_CELL, taskId: peerTaskId, modeCell: 'contract', acceptanceCell: 'metadata tests pass' }),
     cleanup: () => rmSync(base, { recursive: true, force: true }),
   };
 }
@@ -317,6 +318,7 @@ function pureTask(overrides: Partial<BoardOwnershipInput> = {}): BoardOwnershipI
     task_revision: 'rev-own',
     row: {
       index: '1',
+      id: PURE_TASK_ID,
       status: '[ ]',
       task: 'wire the hook slice',
       mode: 'contract',
@@ -400,7 +402,7 @@ describe('renderBoardSlice is deterministic and bounded', () => {
         pureTask(),
         ...Array.from({ length: count }, (_unused, index) => pureTask({
           task_id: `${String(index).padStart(2, '0')}${'0'.repeat(62)}`,
-          row: { index: String(index + 2), status: '[ ]', task: `peer row ${index}`, mode: 'contract', acceptance: 'x', plan: '(pending)' },
+          row: { index: String(index + 2), id: `${String(index).padStart(2, '0')}${'0'.repeat(62)}`, status: '[ ]', task: `peer row ${index}`, mode: 'contract', acceptance: 'x', plan: '(pending)' },
         })),
       ],
     });
@@ -431,7 +433,7 @@ describe('renderBoardSlice is deterministic and bounded', () => {
       sprint_path: SPRINT_PATH,
       self_task_id: PURE_TASK_ID,
       tasks: [pureTask({
-        row: { index: '1', status: '[ ]', task: long, mode: 'contract', acceptance: 'x', plan: '(pending)' },
+        row: { index: '1', id: PURE_TASK_ID, status: '[ ]', task: long, mode: 'contract', acceptance: 'x', plan: '(pending)' },
       })],
     });
     const rendered = renderBoardSlice(slice);
@@ -752,6 +754,7 @@ describe('once armed, every step fails closed with its own reason token', () => 
     writeLease(fixture, ownerRecord(fixture, {
       task_revision: deriveTaskRevision({
         taskId: fixture.ownTaskId,
+        taskCell: OWN_TASK_CELL,
         modeCell: 'contract',
         acceptanceCell: 'the acceptance line this row used to carry',
       }),

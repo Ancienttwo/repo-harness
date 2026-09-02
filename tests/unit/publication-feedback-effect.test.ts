@@ -15,7 +15,6 @@ import {
   beginLeaseCompletionRecord,
   bindLeaseRecord,
   buildLeaseOwnerRecord,
-  deriveTaskId,
   deriveTaskRevision,
   enterReviewingLeaseRecord,
 } from '../../src/core/state/coordination-identity';
@@ -49,6 +48,7 @@ import {
   writeLeaseOwnerDurably,
 } from '../../src/effects/state/coordination-lease-store';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const HEAD = 'a'.repeat(40);
 const BASE = 'b'.repeat(40);
@@ -248,20 +248,20 @@ function installRepairFixture(): RepairFixture {
   git(root, 'config', 'user.email', 'feedback-repair@test.invalid');
   mkdirSync(join(root, 'plans', 'sprints'), { recursive: true });
   writeFileSync(join(root, REPAIR_SPRINT), [
-    '# Sprint: feedback repair', '', '## Backlog', '',
-    '| # | Status | Task | Mode | Acceptance | Plan |',
-    '|---|--------|------|------|------------|------|',
-    `| 1 | [ ] | ${REPAIR_TASK} | contract | feedback repair tests | (pending) |`,
-    `| 2 | [ ] | ${FOREIGN_REPAIR_TASK} | contract | foreign repair sentinel tests | (pending) |`, '',
+    '# Sprint: feedback repair', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+    '|---|----|--------|------|------|------------|------|',
+    `| 1 | ${fixtureTaskId(`${REPAIR_TASK}`)} | [ ] | ${REPAIR_TASK} | contract | feedback repair tests | (pending) |`,
+    `| 2 | ${fixtureTaskId(`${FOREIGN_REPAIR_TASK}`)} | [ ] | ${FOREIGN_REPAIR_TASK} | contract | foreign repair sentinel tests | (pending) |`, '',
   ].join('\n'));
   writeFileSync(join(root, 'README.md'), 'base\n');
   git(root, 'add', '.');
   git(root, 'commit', '-m', 'base');
   const base = git(root, 'rev-parse', 'HEAD');
-  const taskId = deriveTaskId({ repoIdentity: resolveRepoIdentity(root), sprintPath: REPAIR_SPRINT, taskCell: REPAIR_TASK });
-  const revision = deriveTaskRevision({ taskId, modeCell: 'contract', acceptanceCell: 'feedback repair tests' });
-  const foreignTaskId = deriveTaskId({ repoIdentity: resolveRepoIdentity(root), sprintPath: REPAIR_SPRINT, taskCell: FOREIGN_REPAIR_TASK });
-  const foreignTaskRevision = deriveTaskRevision({ taskId: foreignTaskId, modeCell: 'contract', acceptanceCell: 'foreign repair sentinel tests' });
+  const taskId = fixtureTaskId(REPAIR_TASK);
+  const revision = deriveTaskRevision({ taskCell: REPAIR_TASK, taskId, modeCell: 'contract', acceptanceCell: 'feedback repair tests' });
+  const foreignTaskId = fixtureTaskId(FOREIGN_REPAIR_TASK);
+  const foreignTaskRevision = deriveTaskRevision({ taskCell: FOREIGN_REPAIR_TASK, taskId: foreignTaskId, modeCell: 'contract', acceptanceCell: 'foreign repair sentinel tests' });
   git(root, 'switch', '-c', 'codex/feedback-repair');
   writeFileSync(join(root, 'repair.txt'), 'candidate\n');
   git(root, 'add', 'repair.txt');

@@ -21,7 +21,6 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import {
   buildLeaseOwnerRecord,
-  deriveTaskId,
   deriveTaskRevision,
   type LeaseOwnerRecord,
 } from '../src/core/state/coordination-identity';
@@ -35,6 +34,7 @@ import type { RepoHarnessRegisteredRepo, RepoHarnessRegistrySnapshot } from '../
 import { resolveRepoIdentity } from '../src/effects/state/coordination-canonical-source';
 import { readLease, type LeaseRead } from '../src/effects/state/coordination-lease-store';
 import type { SprintCommandDependencies } from '../src/effects/state/coordination-sprint';
+import { fixtureTaskId } from './helpers/sprint-fixture';
 
 const ROOT = join(import.meta.dir, '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -172,12 +172,13 @@ function createFleetRaceFixture(): FleetRaceFixture {
   writeFileSync(join(repo, '.ai/harness/sprint/active-sprint'), `${sprintPath}\n`);
   writeFileSync(join(repo, sprintPath), [
     '# Fleet process race sprint',
+    '> **Backlog Schema**: 2',
     '',
     '## Backlog',
     '',
-    '| # | Status | Task | Mode | Acceptance | Plan |',
-    '| --- | --- | --- | --- | --- | --- |',
-    `| 1 | [ ] | ${task} | contract | returns one bound envelope | (pending) |`,
+    '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+    '| --- |----| --- | --- | --- | --- | --- |',
+    `| 1 | ${fixtureTaskId(`${task}`)} | [ ] | ${task} | contract | returns one bound envelope | (pending) |`,
     '',
   ].join('\n'));
   writeFileSync(join(repo, planPath), racePlan(sprintPath, task, planPath, contractPath));
@@ -243,12 +244,13 @@ function createFixture(): Fixture {
   mkdirSync(join(primary, 'plans/sprints'), { recursive: true });
   writeFileSync(join(primary, SPRINT_PATH), [
     '# Acquire fixture',
+    '> **Backlog Schema**: 2',
     '',
     '## Backlog',
     '',
-    '| # | Status | Task | Mode | Acceptance | Plan |',
-    '| --- | --- | --- | --- | --- | --- |',
-    `| 1 | [ ] | ${TASK} | contract | exact token provenance | (pending) |`,
+    '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+    '| --- |----| --- | --- | --- | --- | --- |',
+    `| 1 | ${fixtureTaskId(`${TASK}`)} | [ ] | ${TASK} | contract | exact token provenance | (pending) |`,
     '',
   ].join('\n'));
   writeFileSync(join(primary, PLAN), '# Acquire fixture\n');
@@ -256,16 +258,12 @@ function createFixture(): Fixture {
   git(primary, ['commit', '-m', 'seed']);
   git(primary, ['worktree', 'add', '-b', 'codex/acquire-fixture', worktree]);
 
-  const taskId = deriveTaskId({
-    repoIdentity: resolveRepoIdentity(primary),
-    sprintPath: SPRINT_PATH,
-    taskCell: TASK,
-  });
+  const taskId = fixtureTaskId(TASK);
   return {
     primary,
     worktree: realpathSync(worktree),
     taskId,
-    taskRevision: deriveTaskRevision({
+    taskRevision: deriveTaskRevision({ taskCell: TASK,
       taskId,
       modeCell: 'contract',
       acceptanceCell: 'exact token provenance',
@@ -447,23 +445,20 @@ const EFFECT_START: ContractWorktreeStartV1 = {
 function effectSprintText(): string {
   return [
     '# Effect fixture',
+    '> **Backlog Schema**: 2',
     '',
     '## Backlog',
     '',
-    '| # | Status | Task | Mode | Acceptance | Plan |',
-    '| --- | --- | --- | --- | --- | --- |',
-    `| 1 | [ ] | ${EFFECT_TASK} | contract | all stages converge | (pending) |`,
+    '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+    '| --- |----| --- | --- | --- | --- | --- |',
+    `| 1 | ${fixtureTaskId(`${EFFECT_TASK}`)} | [ ] | ${EFFECT_TASK} | contract | all stages converge | (pending) |`,
     '',
   ].join('\n');
 }
 
 function effectFixture() {
-  const taskId = deriveTaskId({
-    repoIdentity: EFFECT_REPO.path,
-    sprintPath: EFFECT_SPRINT,
-    taskCell: EFFECT_TASK,
-  });
-  const taskRevision = deriveTaskRevision({
+  const taskId = fixtureTaskId(EFFECT_TASK);
+  const taskRevision = deriveTaskRevision({ taskCell: TASK,
     taskId,
     modeCell: 'contract',
     acceptanceCell: 'all stages converge',

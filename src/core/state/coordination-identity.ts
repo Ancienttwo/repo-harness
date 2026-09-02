@@ -4,21 +4,28 @@
  * input reaches this layer; `src/effects/state/coordination-lease-store.ts`
  * owns every side effect and `src/cli/commands/sprint.ts` owns process I/O.
  *
- * Two derivations, and the reason each excludes what it excludes:
+ * Identity is read, not derived:
  *
- * - `task_id = digest(protocol + repo identity + canonical sprint path + exact
- *   Task cell text)`. The row index is excluded on purpose: including it means
- *   deleting or reordering row 1 rewrites the identity of every row below it,
- *   orphaning live leases into unreachable directories while the same tasks
- *   become freshly claimable under new ids. The sprint path gives cross-sprint
- *   isolation, and the exact Task cell text -- never `normalize_slug()`, which
- *   collapses "Fix auth bug" and "Fix auth-bug" into one key -- gives
- *   within-sprint separation.
- * - `task_revision = digest(task_id + Mode cell + Acceptance cell)`. The Status
- *   cell is excluded on purpose: a sibling row completing rewrites the sprint
- *   file, and a revision that moved with it would invalidate every other live
- *   claim, making parallel execution impossible. Only this row's own semantic
- *   fields may mark a claim drifted.
+ * - `task_id` is the backlog row's persisted `ID` cell, verbatim, validated
+ *   against `TASK_DIGEST_PATTERN`. It was previously a digest of the exact Task
+ *   cell text, which made a title clarification indistinguishable from deleting
+ *   one task and creating another: live leases were orphaned, claim-scoped
+ *   messages lost their subject, and the renamed row became freshly claimable.
+ *   Display text and identity are two data and no longer share one field. The
+ *   row index is still not identity -- reordering must not rewrite anything --
+ *   and neither is a slug, which collapses "Fix auth bug" and "Fix auth-bug".
+ * - `task_revision = digest(task_id + Task cell + Mode cell + Acceptance cell)`.
+ *   The Task cell is now part of the preimage directly, so a title edit still
+ *   drifts every offer and claim taken before it even though identity survives.
+ *   The Status cell is excluded on purpose: a sibling row completing rewrites
+ *   the sprint file, and a revision that moved with it would invalidate every
+ *   other live claim, making parallel execution impossible.
+ *
+ * The revision preimage carries `SPRINT_IDENTITY_PROTOCOL_V2`, not
+ * `COORDINATION_PROTOCOL`. The latter versions the lease owner record and its
+ * on-disk plane; bumping it to version an identity derivation would silently
+ * reject every persisted record written by an older build. The two version
+ * domains are deliberately separate.
  *
  * The digest is `sha256` hex with no `sha256:` prefix, unlike the house
  * `progress_token`/`state_revision` shape. `task_id` is used verbatim as a
@@ -26,12 +33,33 @@
  * hex string is a safe path component on every filesystem this repo targets.
  * `TASK_DIGEST_PATTERN` is the validator the effects layer applies before any
  * derived value reaches `join()`.
+ *
+ * Schema 1 sprints carry no `ID` cell and therefore cannot mint identity here
+ * at all. `src/core/state/sprint-schema-v1.ts` owns the one remaining v1
+ * derivation and exists only to feed the migration command.
  */
 import { createHash } from 'crypto';
-import { backlogRows, type BacklogRow } from './sprint-backlog-rows';
+import {
+  SPRINT_BACKLOG_SCHEMA_V2,
+  SprintSchemaError,
+  backlogRows,
+  sprintBacklogSchema,
+  type BacklogRow,
+} from './sprint-backlog-rows';
 
-/** Coordination protocol version; part of every digest preimage. */
+/**
+ * Lease-plane protocol version. Part of every lease owner record and of the
+ * legacy v1 identity preimage; deliberately NOT part of the schema-2 revision
+ * preimage, which versions itself through `SPRINT_IDENTITY_PROTOCOL_V2`.
+ */
 export const COORDINATION_PROTOCOL = 1;
+
+/**
+ * Domain token distinguishing schema-2 revision digests from every v1 digest.
+ * A literal, not a number derived from `COORDINATION_PROTOCOL`, so the two
+ * version axes can never be accidentally coupled again.
+ */
+export const SPRINT_IDENTITY_PROTOCOL_V2 = 'protocol-v2';
 
 export const LEASE_OWNER_KIND = 'repo-harness-lease-owner';
 
@@ -48,7 +76,6 @@ export const COMPLETED_ROW_STATUS_PATTERN = /^\[[xX]\]$/;
 /** Shape every `task_id` and `task_revision` must have before it is trusted. */
 export const TASK_DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 
-const TASK_ID_DOMAIN = 'repo-harness-task-id';
 const TASK_REVISION_DOMAIN = 'repo-harness-task-revision';
 
 /**
@@ -56,43 +83,39 @@ const TASK_REVISION_DOMAIN = 'repo-harness-task-revision';
  * string array is the canonical encoding: every field is quoted and escaped,
  * so no field value can forge a separator into another field's position.
  */
-function digest(fields: readonly string[]): string {
+export function identityDigest(fields: readonly string[]): string {
   return createHash('sha256').update(JSON.stringify(fields), 'utf-8').digest('hex');
 }
 
-export interface TaskIdInput {
-  /** Stable identity of the clone that owns the coordination plane. */
-  readonly repoIdentity: string;
-  /** Canonical repo-relative sprint path, as it exists on the target ref. */
-  readonly sprintPath: string;
+export interface TaskRevisionInput {
+  /** The row's persisted `ID` cell. */
+  readonly taskId: string;
   /** The row's Task cell, verbatim and untransformed. */
   readonly taskCell: string;
-}
-
-export function deriveTaskId(input: TaskIdInput): string {
-  return digest([
-    TASK_ID_DOMAIN,
-    String(COORDINATION_PROTOCOL),
-    input.repoIdentity,
-    input.sprintPath,
-    input.taskCell,
-  ]);
-}
-
-export interface TaskRevisionInput {
-  readonly taskId: string;
   readonly modeCell: string;
   readonly acceptanceCell: string;
 }
 
 export function deriveTaskRevision(input: TaskRevisionInput): string {
-  return digest([
+  return identityDigest([
     TASK_REVISION_DOMAIN,
-    String(COORDINATION_PROTOCOL),
+    SPRINT_IDENTITY_PROTOCOL_V2,
     input.taskId,
+    input.taskCell,
     input.modeCell,
     input.acceptanceCell,
   ]);
+}
+
+/**
+ * The refusal every identity-minting path returns for a schema 1 sprint. There
+ * is no dual-read: a sprint that has not been migrated cannot mint identity,
+ * because the only id it could produce is the derived-from-title id this
+ * contract removed.
+ */
+export function unmigratedSprintRefusal(sprintPath: string): string {
+  return `canonical sprint ${sprintPath} is still backlog schema 1 and cannot mint task identity; `
+    + `run 'repo-harness sprint migrate-schema --sprint ${sprintPath} --target-ref <ref>' first`;
 }
 
 /** One backlog row resolved to its coordination identity. */
@@ -109,18 +132,40 @@ export interface CanonicalSprintInput {
   readonly sprintText: string;
 }
 
-/** Every backlog row of one canonical sprint, in file order. */
+/**
+ * Every backlog row of one canonical sprint, in file order.
+ *
+ * Fails closed on a schema 1 sprint, on an `ID` cell that is not a bare
+ * 64-character lowercase hex string, and on a duplicate id. A duplicate is the
+ * copy-paste failure the contract names explicitly: two rows claiming one
+ * identity would share a lease directory, so the whole projection is refused
+ * rather than one of the two rows being picked.
+ */
 export function projectCanonicalTasks(input: CanonicalSprintInput): CanonicalTask[] {
-  return backlogRows(input.sprintText).map((row) => {
-    const taskId = deriveTaskId({
-      repoIdentity: input.repoIdentity,
-      sprintPath: input.sprintPath,
-      taskCell: row.task,
-    });
+  if (sprintBacklogSchema(input.sprintText) !== SPRINT_BACKLOG_SCHEMA_V2) {
+    throw new SprintSchemaError(unmigratedSprintRefusal(input.sprintPath));
+  }
+  const rows = backlogRows(input.sprintText);
+  const seen = new Set<string>();
+  return rows.map((row) => {
+    if (!TASK_DIGEST_PATTERN.test(row.id)) {
+      throw new SprintSchemaError(
+        row.id.length === 0
+          ? `backlog row ${row.index} in ${input.sprintPath} has no persisted task id`
+          : `backlog row ${row.index} in ${input.sprintPath} has a malformed task id: ${row.id}`,
+      );
+    }
+    if (seen.has(row.id)) {
+      throw new SprintSchemaError(
+        `backlog row ${row.index} in ${input.sprintPath} repeats task id ${row.id}; ids must be unique within a sprint`,
+      );
+    }
+    seen.add(row.id);
     return {
-      task_id: taskId,
+      task_id: row.id,
       task_revision: deriveTaskRevision({
-        taskId,
+        taskId: row.id,
+        taskCell: row.task,
         modeCell: row.mode,
         acceptanceCell: row.acceptance,
       }),
@@ -147,7 +192,14 @@ export function lookupCanonicalTask(
   if (!TASK_DIGEST_PATTERN.test(taskId)) {
     return { ok: false, error: `malformed task id: ${taskId}` };
   }
-  const matches = projectCanonicalTasks(input).filter((task) => task.task_id === taskId);
+  let projected: CanonicalTask[];
+  try {
+    projected = projectCanonicalTasks(input);
+  } catch (error) {
+    if (error instanceof SprintSchemaError) return { ok: false, error: error.message };
+    throw error;
+  }
+  const matches = projected.filter((task) => task.task_id === taskId);
   if (matches.length === 0) {
     return { ok: false, error: `no backlog row in ${input.sprintPath} has task id ${taskId}` };
   }
@@ -174,7 +226,14 @@ export function resolveCanonicalTaskRef(
   taskRef: string,
 ): CanonicalTaskLookup {
   if (taskRef.length === 0) return { ok: false, error: 'empty task reference' };
-  const matches = projectCanonicalTasks(input).filter(
+  let projected: CanonicalTask[];
+  try {
+    projected = projectCanonicalTasks(input);
+  } catch (error) {
+    if (error instanceof SprintSchemaError) return { ok: false, error: error.message };
+    throw error;
+  }
+  const matches = projected.filter(
     (task) => task.row.index === taskRef || task.row.task === taskRef,
   );
   if (matches.length === 0) {

@@ -24,7 +24,6 @@ import { join } from 'path';
 import { randomUUID } from 'crypto';
 import {
   buildLeaseOwnerRecord,
-  deriveTaskId,
   deriveTaskRevision,
   parseLeaseOwnerRecord,
   projectCanonicalTasks,
@@ -61,6 +60,7 @@ import {
   writeLeaseOwnerDurably,
 } from '../src/effects/state/coordination-lease-store';
 import { resolveGitCommonDirectory } from '../src/effects/git/common-directory';
+import { fixtureTaskId } from './helpers/sprint-fixture';
 
 const FIXTURES = new Set<string>();
 
@@ -87,7 +87,7 @@ const REPO_IDENTITY = '/tmp/lease-store-fixture/.git';
 const SPRINT_PATH = 'plans/sprints/lease-store.sprint.md';
 
 function taskIdFor(taskCell: string): string {
-  return deriveTaskId({ repoIdentity: REPO_IDENTITY, sprintPath: SPRINT_PATH, taskCell });
+  return fixtureTaskId(taskCell);
 }
 
 function recordFor(taskCell: string, claimId: string): LeaseOwnerRecordV1 {
@@ -95,7 +95,7 @@ function recordFor(taskCell: string, claimId: string): LeaseOwnerRecordV1 {
   return buildLeaseOwnerRecord({
     claimId,
     taskId,
-    taskRevision: deriveTaskRevision({ taskId, modeCell: 'contract', acceptanceCell: 'green' }),
+    taskRevision: deriveTaskRevision({ taskId, taskCell, modeCell: 'contract', acceptanceCell: 'green' }),
     sprintPath: SPRINT_PATH,
     targetRef: 'main',
     generation: 1,
@@ -505,19 +505,20 @@ describe('per-task lock', () => {
  */
 describe('claim verbs', () => {
   const SPRINT = 'plans/sprints/verbs.sprint.md';
-  const ROW_A = '| 1 | [ ] | build the lease store | contract | store tests pass | (pending) |';
-  const ROW_B = '| 2 | [ ] | wire the claim verbs | contract | claim tests pass | (pending) |';
+  const ROW_A = `| 1 | ${fixtureTaskId('build the lease store')} | [ ] | build the lease store | contract | store tests pass | (pending) |`;
+  const ROW_B = `| 2 | ${fixtureTaskId('wire the claim verbs')} | [ ] | wire the claim verbs | contract | claim tests pass | (pending) |`;
 
   function sprintText(rows: readonly string[]): string {
     return [
       '# Sprint: Verb Fixture',
       '',
       '> **Status**: Executing',
+      '> **Backlog Schema**: 2',
       '',
       '## Backlog',
       '',
-      '| # | Status | Task | Mode | Acceptance | Plan |',
-      '|---|--------|------|------|------------|------|',
+      '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+      '|---|----|--------|------|------|------------|------|',
       ...rows,
       '',
       '## Execution Log',
@@ -605,7 +606,7 @@ describe('claim verbs', () => {
     const repo = repoWithSprint();
     const options = claimOptions(repo, 'wire the claim verbs');
     commitSprint(repo, [
-      '| 1 | [x] | build the lease store | contract | store tests pass | `plans/archive/a.md` |',
+      `| 1 | ${fixtureTaskId('build the lease store')} | [x] | build the lease store | contract | store tests pass | \`plans/archive/a.md\` |`,
       ROW_B,
     ]);
     const outcome = claimSprintCommand(options, deps(repo));
@@ -622,7 +623,7 @@ describe('claim verbs', () => {
     expect(drifted.stderr).toContain('drifted');
 
     const options = claimOptions(repo, 'wire the claim verbs');
-    commitSprint(repo, [ROW_A, '| 2 | [x] | wire the claim verbs | contract | claim tests pass | (pending) |']);
+    commitSprint(repo, [ROW_A, `| 2 | ${fixtureTaskId('wire the claim verbs')} | [x] | wire the claim verbs | contract | claim tests pass | (pending) |`]);
     const done = claimSprintCommand(options, deps(repo));
     expect(done.exitCode).toBe(1);
     expect(done.stderr).toContain('is not pending');
@@ -634,7 +635,7 @@ describe('claim verbs', () => {
     const options = claimOptions(repo, 'wire the claim verbs');
     // A stale local copy that still shows the row pending must not rescue a
     // claim whose canonical row has already been completed.
-    commitSprint(repo, [ROW_A, '| 2 | [x] | wire the claim verbs | contract | claim tests pass | (pending) |']);
+    commitSprint(repo, [ROW_A, `| 2 | ${fixtureTaskId('wire the claim verbs')} | [x] | wire the claim verbs | contract | claim tests pass | (pending) |`]);
     writeFileSync(join(repo, SPRINT), sprintText([ROW_A, ROW_B]));
     expect(claimSprintCommand(options, deps(repo)).exitCode).toBe(1);
   });
@@ -656,7 +657,7 @@ describe('claim verbs', () => {
           if (reads === 2) {
             commitSprint(repo, [
               ROW_A,
-              '| 2 | [x] | wire the claim verbs | contract | claim tests pass | (pending) |',
+              `| 2 | ${fixtureTaskId('wire the claim verbs')} | [x] | wire the claim verbs | contract | claim tests pass | (pending) |`,
             ]);
           }
           return live.coordination.readCanonicalSprint(source);
@@ -959,7 +960,7 @@ describe('claim verbs', () => {
     // so the next owner can inspect that drift explicitly.
     commitSprint(repo, [
       ROW_A,
-      '| 2 | [ ] | wire the claim verbs | contract | updated acceptance | (pending) |',
+      `| 2 | ${fixtureTaskId('wire the claim verbs')} | [ ] | wire the claim verbs | contract | updated acceptance | (pending) |`,
     ]);
     const restored = abortCompletionSprintCommand(
       { claimId: 'claim-1', worktree: '/tmp/wt', targetRef: 'main' },
@@ -986,7 +987,7 @@ describe('claim verbs', () => {
     ).exitCode).toBe(0);
     commitSprint(repo, [
       ROW_A,
-      '| 2 | [x] | wire the claim verbs | contract | claim tests pass | `plans/archive/plan-x.md` |',
+      `| 2 | ${fixtureTaskId('wire the claim verbs')} | [x] | wire the claim verbs | contract | claim tests pass | \`plans/archive/plan-x.md\` |`,
     ]);
     const completed = abortCompletionSprintCommand(
       { claimId: 'claim-1', worktree: '/tmp/wt', targetRef: 'main' },
@@ -1013,7 +1014,7 @@ describe('claim verbs', () => {
     // what `task_revision` exists to catch.
     commitSprint(repo, [
       ROW_A,
-      '| 2 | [ ] | wire the claim verbs | contract | claim tests pass AND cover steal | (pending) |',
+      `| 2 | ${fixtureTaskId('wire the claim verbs')} | [ ] | wire the claim verbs | contract | claim tests pass AND cover steal | (pending) |`,
     ]);
 
     const drifted = beginCompletionSprintCommand(

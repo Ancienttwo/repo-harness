@@ -6,6 +6,7 @@
 > **Updated**: {{TIMESTAMP}}
 > **Source PRD**: (optional) `plans/prds/<prd>.prd.md`
 > **Source Spec**: `docs/spec.md`
+> **Backlog Schema**: 2
 > **Goal Mode**: incremental
 
 Program-level sprint container. The Source PRD summary and ordered backlog
@@ -58,9 +59,14 @@ Ordered execution queue; keep rows in dependency order. Mode `contract` runs
 the full plan -> contract -> worktree flow; `inline` allows primary-tree
 execution for small tasks. Every row needs a concrete acceptance line.
 
-| # | Status | Task | Mode | Acceptance | Plan |
-|---|--------|------|------|------------|------|
-| 1 | [ ] | {{SPRINT_SLUG}}-task-1 | contract | Replace with a machine-checkable acceptance line | (pending) |
+The `ID` cell is the persisted, immutable task identity (64 lowercase hex
+characters). It is minted once when the row is created and must never be edited,
+copied between rows, or regenerated: editing the Task text is a rename, not a new
+task.
+
+| # | ID | Status | Task | Mode | Acceptance | Plan |
+|---|----|--------|------|------|------------|------|
+| 1 | {{TASK_ID_1}} | [ ] | {{SPRINT_SLUG}}-task-1 | contract | Replace with a machine-checkable acceptance line | (pending) |
 
 ## Execution Log
 

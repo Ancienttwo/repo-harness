@@ -1,14 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 
 import { buildProviderIssueObservation } from '../../src/core/external-sources/issue-observation';
-import { deriveTaskId, deriveTaskRevision } from '../../src/core/state/coordination-identity';
+import { deriveTaskRevision } from '../../src/core/state/coordination-identity';
 import { bindExternalSource, listExternalSourceBindings, type ExternalSourceBindingDependencies } from '../../src/effects/external-sources/binding';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const REPO_ID = 'repo_0123456789abcdef';
 const SPRINT = 'plans/sprints/intake.sprint.md';
 const TASK = 'implement intake';
-const TASK_ID = deriveTaskId({ repoIdentity: '/git/common', sprintPath: SPRINT, taskCell: TASK });
-const TASK_REVISION = deriveTaskRevision({ taskId: TASK_ID, modeCell: 'contract', acceptanceCell: 'tests pass' });
+const TASK_ID = fixtureTaskId(TASK);
+const TASK_REVISION = deriveTaskRevision({ taskCell: TASK, taskId: TASK_ID, modeCell: 'contract', acceptanceCell: 'tests pass' });
 const PLAN = { plan_path: 'plans/plan-intake.md', contract_path: 'tasks/contracts/intake.contract.md', source_ref: `sprint:${SPRINT}#${TASK}`, plan_sha256: `sha256:${'a'.repeat(64)}`, contract_sha256: `sha256:${'b'.repeat(64)}`, projectable: true as const };
 
 function observation(body = 'request') {
@@ -27,7 +28,7 @@ function harness(observations = [observation()]): { deps: ExternalSourceBindingD
     registry: () => ({ registryPath: '/registry', registryRevision: `sha256:${'d'.repeat(64)}`, authorizationRevision: 4, repos: [repo] }),
     observations: () => observations,
     receipts: () => written,
-    canonical: () => ({ ok: true, commit: 'e'.repeat(40), text: `# Sprint\n\n## Backlog\n\n| # | Status | Task | Mode | Acceptance | Plan |\n|---|---|---|---|---|---|\n| 1 | [ ] | ${TASK} | contract | tests pass | plan |\n` }),
+    canonical: () => ({ ok: true, commit: 'e'.repeat(40), text: `# Sprint\n\n## Backlog\n\n| # | ID | Status | Task | Mode | Acceptance | Plan |\n|---|---|---|---|---|---|\n| 1 | [ ] | ${TASK} | contract | tests pass | plan |\n` }),
     plan: () => ({ ok: true, proof: PLAN }),
     repoIdentity: () => '/git/common',
     write: (_root, receipt) => { const existing = written.find((entry) => entry.binding_id === receipt.binding_id); if (existing) return existing; written.push(receipt); return receipt; },

@@ -31,6 +31,11 @@ import {
   type StealCommandOptions,
   type WriteClaimTokenCommandOptions,
 } from '../../effects/state/coordination-sprint';
+import {
+  migrateSprintSchemaCommand,
+  processMigrationDependencies,
+  type MigrateSprintSchemaOptions,
+} from '../../effects/state/sprint-schema-migration';
 
 class CliArgumentError extends Error {}
 
@@ -81,6 +86,21 @@ export function buildSprintCommand(): Command {
       } catch (error) {
         emitError(error);
       }
+    });
+
+  sprint
+    .command('migrate-schema')
+    .description('One-shot migration of one canonical sprint backlog from schema 1 to schema 2 (persisted task ID column)')
+    .requiredOption('--sprint <path>', 'Repo-relative canonical sprint path')
+    .requiredOption('--target-ref <ref>', 'Canonical ref the schema 1 identities are derived from')
+    .option('--receipt <path>', 'Repo-relative migration receipt path')
+    .action((opts: { sprint: string; targetRef: string; receipt?: string }) => {
+      const options: MigrateSprintSchemaOptions = {
+        sprint: opts.sprint,
+        targetRef: opts.targetRef,
+        ...(opts.receipt === undefined ? {} : { receipt: opts.receipt }),
+      };
+      writeOutcome(migrateSprintSchemaCommand(options, processMigrationDependencies(process.cwd())));
     });
 
   sprint

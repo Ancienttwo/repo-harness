@@ -12,6 +12,7 @@ import {
   type SchedulingCanonicalTask,
   type WorkGraphV1,
 } from '../../src/core/engineers/scheduling';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const REPO = 'repo_0123456789abcdef';
 const OTHER_REPO = 'repo_fedcba9876543210';
@@ -21,7 +22,7 @@ const CAPABILITY = 'capability.workflow-engine.contract-assets';
 function workPackage(id = 'wp-a', taskRef = 'task A', dependsOn: unknown[] = []) {
   return {
     work_package_id: id,
-    task_ref: taskRef,
+    task_id: fixtureTaskId(taskRef),
     primary_capability: CAPABILITY,
     depends_on: dependsOn,
     priority: 50,
@@ -56,7 +57,7 @@ function graph(workPackages: unknown[], lane: 'generic-v1' | 'engineering-v2' = 
 
 function task(ref = 'task A', id = '1', revision = '2', rowOrder = 1): SchedulingCanonicalTask {
   return {
-    task_id: id.length === 64 ? id : id.repeat(64),
+    task_id: fixtureTaskId(ref),
     task_revision: revision.length === 64 ? revision : revision.repeat(64),
     task_ref: ref,
     status: '[ ]',
@@ -101,7 +102,7 @@ describe('ME-1A closed scheduling schema', () => {
     expect(() => projectWorkGraph(graph([workPackage()]), [task(), task('task B', '3', '4', 2)]))
       .toThrow('cover every canonical Sprint row');
     expect(() => projectWorkGraph(graph([workPackage('wp-a', 'missing')]), [task()]))
-      .toThrow('task_ref is absent');
+      .toThrow('task_id is absent');
   });
 
   test('rejects missing dependency targets and cycles across repository-qualified identities', () => {

@@ -40,6 +40,7 @@ import { spawnSync } from 'child_process';
 import { buildReviewSubject } from '../src/effects/review/diff-fingerprint';
 import { readLease } from '../src/effects/state/coordination-lease-store';
 import type { ContinuationEnvelopeV1 } from '../src/core/state/types';
+import { fixtureTaskId } from './helpers/sprint-fixture';
 
 const ROOT = join(import.meta.dir, '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -205,6 +206,7 @@ const SPRINT_TEXT = [
   '> **Updated**: 2026-08-03 00:00',
   '> **Source Spec**: `docs/spec.md`',
   '> **Goal Mode**: incremental',
+  '> **Backlog Schema**: 2',
   '',
   '## PRD',
   '',
@@ -212,10 +214,10 @@ const SPRINT_TEXT = [
   '',
   '## Backlog',
   '',
-  '| # | Status | Task | Mode | Acceptance | Plan |',
-  '|---|--------|------|------|------------|------|',
-  '| 1 | [ ] | row-one | contract | first slice lands | (pending) |',
-  '| 2 | [ ] | row-two | contract | second slice lands | (pending) |',
+  '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+  '|---|----|--------|------|------|------------|------|',
+  `| 1 | ${fixtureTaskId('row-one')} | [ ] | row-one | contract | first slice lands | (pending) |`,
+  `| 2 | ${fixtureTaskId('row-two')} | [ ] | row-two | contract | second slice lands | (pending) |`,
   '',
   '## Execution Log',
   '',

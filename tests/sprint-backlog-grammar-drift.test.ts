@@ -3,13 +3,17 @@
  * `scripts/sprint-backlog.sh`'s `backlog_rows` grammar, so the repo rule
  * requires a check binding it to that authority.
  *
- * All six cells are compared, not just the status column. Every column is now
- * identity-bearing: `task_id` hashes the Task cell verbatim and `task_revision`
- * hashes Mode and Acceptance, so a cell-extraction disagreement no longer
- * shifts a checkbox, it mints a different lease key or falsely marks a live
- * claim drifted. `sprint-backlog-rows.ts` claims its split reproduces the awk
- * field split exactly, including on escaped pipes; this is what holds it to
- * that claim.
+ * All cells are compared, not just the status column, and both backlog schemas
+ * are in the corpus. Every column is identity-bearing: the schema 2 `ID` cell is
+ * `task_id` itself and `task_revision` hashes the Task, Mode, and Acceptance
+ * cells, so a cell-extraction disagreement no longer shifts a checkbox, it
+ * points a lease at the wrong key or falsely marks a live claim drifted.
+ * `sprint-backlog-rows.ts` claims its split reproduces the awk field split
+ * exactly, including on escaped pipes; this is what holds it to that claim.
+ *
+ * The awk emits one fixed field order for both schemas --
+ * `index status task mode acceptance plan id`, with an empty id on schema 1 --
+ * so every existing `$n` reference in the script keeps its position.
  *
  * Own file rather than an append to `continuation-envelope.test.ts`: that suite
  * is an end-to-end CLI/envelope test over a temp repo, while this one is a
@@ -52,10 +56,10 @@ function bashRows(definition: string, fixturePath: string): string[] {
   return result.stdout.split('\n').filter((line) => line.length > 0);
 }
 
-/** The projection in the same six-column, tab-separated shape the awk prints. */
+/** The projection in the same seven-column, tab-separated shape the awk prints. */
 function projectedRows(sprintText: string): string[] {
   return backlogRows(sprintText).map((row: BacklogRow) =>
-    [row.index, row.status, row.task, row.mode, row.acceptance, row.plan].join('\t'));
+    [row.index, row.status, row.task, row.mode, row.acceptance, row.plan, row.id].join('\t'));
 }
 
 const fixtures = readdirSync(FIXTURE_DIR)
@@ -72,7 +76,7 @@ describe('sprint backlog row grammar: bash authority vs TS projection', () => {
   });
 
   for (const name of fixtures) {
-    test(`${name}: identical rows across all six columns`, () => {
+    test(`${name}: identical rows across all seven columns`, () => {
       const path = join(FIXTURE_DIR, name);
       const text = readFileSync(path, 'utf-8');
       const bash = bashRows(definition, path);
@@ -103,7 +107,7 @@ describe('sprint backlog row grammar: bash authority vs TS projection', () => {
     // Trimming one cell differently is invisible to a status-only diff and
     // silently changes task_id: the same row would hash to two lease keys.
     const untrimmed = definition.replace(
-      'for (i = 2; i <= 7; i++) {',
+      'for (i = 2; i <= last; i++) {',
       'for (i = 2; i <= 3; i++) {',
     );
     expect(untrimmed).not.toBe(definition);

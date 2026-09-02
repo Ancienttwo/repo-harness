@@ -18,7 +18,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { AttemptLedgerRead } from '../src/core/state/attempt-ledger';
 import {
-  deriveTaskId,
   deriveTaskRevision,
   type LeaseOwnerRecordV2,
   type LeaseOwnerRecordV1,
@@ -41,6 +40,7 @@ import type {
   BoardProgressState,
   TaskState,
 } from '../src/core/state/types';
+import { fixtureTaskId } from './helpers/sprint-fixture';
 
 const REPO_IDENTITY = '/tmp/board-projection-fixture/.git';
 const SPRINT_PATH = 'plans/sprints/board.sprint.md';
@@ -51,18 +51,14 @@ const WORKTREE = '/tmp/board-projection-fixture-wt-a';
 const UNIT_REF = 'plans/plan-board.md';
 const TOKEN = 'sha256:progress-token-a';
 
-const TASK_ID = deriveTaskId({
-  repoIdentity: REPO_IDENTITY,
-  sprintPath: SPRINT_PATH,
-  taskCell: TASK_CELL,
-});
-const TASK_REVISION = deriveTaskRevision({
+const TASK_ID = fixtureTaskId(TASK_CELL);
+const TASK_REVISION = deriveTaskRevision({ taskCell: TASK_CELL,
   taskId: TASK_ID,
   modeCell: 'contract',
   acceptanceCell: 'board tests pass',
 });
 /** What the row's definition drifted TO; the lease still holds the old one. */
-const DRIFTED_REVISION = deriveTaskRevision({
+const DRIFTED_REVISION = deriveTaskRevision({ taskCell: TASK_CELL,
   taskId: TASK_ID,
   modeCell: 'inline',
   acceptanceCell: 'something else entirely',
@@ -99,6 +95,7 @@ const UNKNOWN_REASONS = [
 function backlogRow(status: string): BacklogRow {
   return {
     index: '1',
+    id: TASK_ID,
     status,
     task: TASK_CELL,
     mode: 'contract',

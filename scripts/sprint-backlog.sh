@@ -280,21 +280,69 @@ acquire_backlog_lock() {
   emit_backlog_lock_wait "$verb" "$started_ms" "$attempts" "$reclaimed_stale" acquired
 }
 
-# Backlog rows live between '## Backlog' and the next '## ' heading:
-# | 1 | [ ] | task-slug | contract | acceptance | plan |
-# Output: index<TAB>status<TAB>task<TAB>mode<TAB>acceptance<TAB>plan
+# Backlog rows live between '## Backlog' and the next '## ' heading. The row
+# shape depends on the schema declared in the sprint header:
+#
+#   schema 1 (no '> **Backlog Schema**:' marker):
+#     | 1 | [ ] | task-slug | contract | acceptance | plan |
+#   schema 2 ('> **Backlog Schema**: 2'):
+#     | 1 | <64-hex id> | [ ] | task-slug | contract | acceptance | plan |
+#
+# Output is one fixed shape for both, so every existing field reference keeps
+# its position and the persisted id is appended last:
+#   index<TAB>status<TAB>task<TAB>mode<TAB>acceptance<TAB>plan<TAB>id
+# The id field is empty on schema 1, where the column does not exist. The marker
+# is only honoured before '## Backlog'; src/core/state/sprint-backlog-rows.ts
+# reads it the same way and tests/sprint-backlog-grammar-drift.test.ts binds the
+# two together.
 backlog_rows() {
   local file="$1"
   awk -F '|' '
+    !in_section && /^>[[:space:]]*\*\*Backlog Schema\*\*:/ {
+      declared = $0
+      sub(/^>[[:space:]]*\*\*Backlog Schema\*\*:[[:space:]]*/, "", declared)
+      gsub(/[[:space:]]+$/, "", declared)
+      if (declared == "2") {
+        schema = 2
+      } else {
+        printf "sprint-backlog: unsupported backlog schema: %s\n", declared > "/dev/stderr"
+        exit 1
+      }
+      next
+    }
     /^## Backlog[[:space:]]*$/ { in_section = 1; next }
     in_section && /^## / { exit }
     !in_section { next }
     /^\|[[:space:]]*[0-9]+[[:space:]]*\|/ {
-      for (i = 2; i <= 7; i++) {
+      last = (schema == 2) ? 8 : 7
+      for (i = 2; i <= last; i++) {
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", $i)
       }
-      printf "%s\t%s\t%s\t%s\t%s\t%s\n", $2, $3, $4, $5, $6, $7
+      if (schema == 2) {
+        printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", $2, $4, $5, $6, $7, $8, $3
+      } else {
+        printf "%s\t%s\t%s\t%s\t%s\t%s\t\n", $2, $3, $4, $5, $6, $7
+      }
     }
+  ' "$file"
+}
+
+# The declared backlog schema of one sprint file: 1 or 2. Fails closed on any
+# other declared value, matching sprintBacklogSchema() in TypeScript.
+backlog_schema() {
+  local file="$1"
+  awk '
+    /^## Backlog[[:space:]]*$/ { exit }
+    /^>[[:space:]]*\*\*Backlog Schema\*\*:/ {
+      declared = $0
+      sub(/^>[[:space:]]*\*\*Backlog Schema\*\*:[[:space:]]*/, "", declared)
+      gsub(/[[:space:]]+$/, "", declared)
+      if (declared == "2") { found = 2; exit }
+      printf "sprint-backlog: unsupported backlog schema: %s\n", declared > "/dev/stderr"
+      bad = 1
+      exit 1
+    }
+    END { if (!bad) print (found == 2) ? 2 : 1 }
   ' "$file"
 }
 
@@ -310,6 +358,21 @@ backlog_counts() {
 next_pending_row() {
   local file="$1"
   backlog_rows "$file" | awk -F '\t' '$2 == "[ ]" { print; exit }'
+}
+
+# Mint one persisted task id: 32 random bytes rendered as lowercase hex. A task
+# id is never derived from the Task text, the slug, or the row index -- deriving
+# it from any of those is exactly the identity coupling schema 2 removes. Random
+# also keeps ids unique across sprints, which matters because the coordination
+# lease directory is keyed by task id alone.
+mint_task_id() {
+  local id
+  id="$(od -An -tx1 -N32 /dev/urandom | tr -d ' \n')"
+  if [[ ! "$id" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "sprint-backlog: could not mint a task id from /dev/urandom" >&2
+    exit 1
+  fi
+  printf '%s' "$id"
 }
 
 render_sprint_file() {
@@ -329,6 +392,7 @@ render_sprint_file() {
 > **Updated**: {{TIMESTAMP}}
 > **Source PRD**: (optional) `plans/prds/<prd>.prd.md`
 > **Source Spec**: `docs/spec.md`
+> **Backlog Schema**: 2
 > **Goal Mode**: incremental
 
 Program-level sprint container. The Source PRD summary and ordered backlog
@@ -381,9 +445,14 @@ Ordered execution queue; keep rows in dependency order. Mode `contract` runs
 the full plan -> contract -> worktree flow; `inline` allows primary-tree
 execution for small tasks. Every row needs a concrete acceptance line.
 
-| # | Status | Task | Mode | Acceptance | Plan |
-|---|--------|------|------|------------|------|
-| 1 | [ ] | {{SPRINT_SLUG}}-task-1 | contract | Replace with a machine-checkable acceptance line | (pending) |
+The `ID` cell is the persisted, immutable task identity (64 lowercase hex
+characters). It is minted once when the row is created and must never be edited,
+copied between rows, or regenerated: editing the Task text is a rename, not a new
+task.
+
+| # | ID | Status | Task | Mode | Acceptance | Plan |
+|---|----|--------|------|------|------------|------|
+| 1 | {{TASK_ID_1}} | [ ] | {{SPRINT_SLUG}}-task-1 | contract | Replace with a machine-checkable acceptance line | (pending) |
 
 ## Execution Log
 
@@ -398,9 +467,10 @@ SPRINT_TEMPLATE_EOF
   # strings treat |, &, \ and newlines as metacharacters, so free-text titles
   # must never reach them. Render to a temp file so a failure cannot leave a
   # half-written sprint file behind.
-  local tmp_file
+  local tmp_file task_id_1
   tmp_file="$(mktemp)"
-  if ! SPRINT_SLUG="$slug" SPRINT_TITLE="$title" SPRINT_TS="$timestamp" awk '
+  task_id_1="$(mint_task_id)"
+  if ! SPRINT_SLUG="$slug" SPRINT_TITLE="$title" SPRINT_TS="$timestamp" TASK_ID_1="$task_id_1" awk '
     function replace_all(line, ph, val,    out, i) {
       out = ""
       while ((i = index(line, ph)) > 0) {
@@ -414,6 +484,7 @@ SPRINT_TEMPLATE_EOF
       line = replace_all(line, "{{SPRINT_SLUG}}", ENVIRON["SPRINT_SLUG"])
       line = replace_all(line, "{{SPRINT_TITLE}}", ENVIRON["SPRINT_TITLE"])
       line = replace_all(line, "{{TIMESTAMP}}", ENVIRON["SPRINT_TS"])
+      line = replace_all(line, "{{TASK_ID_1}}", ENVIRON["TASK_ID_1"])
       print line
     }
   ' "$template_file" > "$tmp_file"; then
@@ -601,8 +672,10 @@ cmd_complete_task() {
   # escapes, so a backslash in either would split or mismatch the table row.
   # The rewrite matches index AND task so a duplicate index can never flip a
   # different row than the one resolved above.
-  if ! PLAN_CELL="$plan_cell" TARGET_TASK="$target_task" awk -F '|' -v target="$target_index" -v ts="$timestamp" '
-    BEGIN { in_section = 0; rewritten = 0 }
+  local schema
+  schema="$(backlog_schema "$sprint_file")"
+  if ! PLAN_CELL="$plan_cell" TARGET_TASK="$target_task" awk -F '|' -v target="$target_index" -v ts="$timestamp" -v schema="$schema" '
+    BEGIN { in_section = 0; rewritten = 0; off = (schema == 2) ? 1 : 0 }
     /^> \*\*Updated\*\*:/ {
       print "> **Updated**: " ts
       next
@@ -611,13 +684,19 @@ cmd_complete_task() {
     in_section && /^## / { in_section = 0 }
     {
       if (in_section && !rewritten && $0 ~ /^\|[[:space:]]*[0-9]+[[:space:]]*\|/) {
-        idx = $2; task = $4; mode = $5; acceptance = $6
+        idx = $2; id = (schema == 2) ? $3 : ""
+        task = $(4 + off); mode = $(5 + off); acceptance = $(6 + off)
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", idx)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", id)
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", task)
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", mode)
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", acceptance)
         if (idx == target && task == ENVIRON["TARGET_TASK"]) {
-          printf "| %s | [x] | %s | %s | %s | %s |\n", idx, task, mode, acceptance, ENVIRON["PLAN_CELL"]
+          if (schema == 2) {
+            printf "| %s | %s | [x] | %s | %s | %s | %s |\n", idx, id, task, mode, acceptance, ENVIRON["PLAN_CELL"]
+          } else {
+            printf "| %s | [x] | %s | %s | %s | %s |\n", idx, task, mode, acceptance, ENVIRON["PLAN_CELL"]
+          }
           rewritten = 1
           next
         }
@@ -923,8 +1002,10 @@ set_row_plan_cell() {
   local timestamp tmp_file
   timestamp="$(date '+%Y-%m-%d %H:%M')"
   tmp_file="$(mktemp)"
-  if ! PLAN_CELL="$plan_cell" TARGET_TASK="$target_task" awk -F '|' -v target="$target_index" -v ts="$timestamp" '
-    BEGIN { in_section = 0; rewritten = 0 }
+  local schema
+  schema="$(backlog_schema "$sprint_file")"
+  if ! PLAN_CELL="$plan_cell" TARGET_TASK="$target_task" awk -F '|' -v target="$target_index" -v ts="$timestamp" -v schema="$schema" '
+    BEGIN { in_section = 0; rewritten = 0; off = (schema == 2) ? 1 : 0 }
     /^> \*\*Updated\*\*:/ {
       print "> **Updated**: " ts
       next
@@ -933,14 +1014,20 @@ set_row_plan_cell() {
     in_section && /^## / { in_section = 0 }
     {
       if (in_section && !rewritten && $0 ~ /^\|[[:space:]]*[0-9]+[[:space:]]*\|/) {
-        idx = $2; status = $3; task = $4; mode = $5; acceptance = $6
+        idx = $2; id = (schema == 2) ? $3 : ""
+        status = $(3 + off); task = $(4 + off); mode = $(5 + off); acceptance = $(6 + off)
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", idx)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", id)
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", status)
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", task)
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", mode)
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", acceptance)
         if (idx == target && task == ENVIRON["TARGET_TASK"]) {
-          printf "| %s | %s | %s | %s | %s | %s |\n", idx, status, task, mode, acceptance, ENVIRON["PLAN_CELL"]
+          if (schema == 2) {
+            printf "| %s | %s | %s | %s | %s | %s | %s |\n", idx, id, status, task, mode, acceptance, ENVIRON["PLAN_CELL"]
+          } else {
+            printf "| %s | %s | %s | %s | %s | %s |\n", idx, status, task, mode, acceptance, ENVIRON["PLAN_CELL"]
+          }
           rewritten = 1
           next
         }
