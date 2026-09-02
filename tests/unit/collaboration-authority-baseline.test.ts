@@ -418,6 +418,20 @@ const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
     fails: ['C-1', 'C-2'],
     evidence: 'operator transport view of the collaboration plane (D1): a redacting projection with no store, no agent reader, and no field it decides rather than copies',
   },
+  {
+    /**
+     * The schema 1 -> 2 backlog migration receipt. It fails C-1 because a
+     * migration receipt is not a wire identity on Task/Claim, Lease,
+     * Publication, Acceptance or Delegation -- it is an audit record of one
+     * file rewrite. It fails C-2 because nothing reads it back: no offer,
+     * claim, lease, publication or acceptance path imports it, and the
+     * migration itself proves its result by re-reading the canonical sprint,
+     * never by trusting the receipt.
+     */
+    module: 'src/core/state/sprint-schema-migration.ts',
+    fails: ['C-1', 'C-2'],
+    evidence: 'one-shot backlog schema migration plane: a write-only audit receipt with a single consumer, src/effects/state/sprint-schema-migration.ts, and no reader on any delivery plane',
+  },
 ];
 
 /**

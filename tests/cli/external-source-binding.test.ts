@@ -52,7 +52,7 @@ describe('external-source binding CLI contract', () => {
       mkdirSync(home, { recursive: true });
       writeFileSync(join(repo, '.ai/harness/policy.json'), '{}\n');
       writeFileSync(join(repo, '.ai/harness/sprint/active-sprint'), `${sprint}\n`);
-      writeFileSync(join(repo, sprint), `# Sprint\n\n## Backlog\n\n| # | ID | Status | Task | Mode | Acceptance | Plan |\n|---|---|---|---|---|---|\n| 1 | [ ] | ${task} | contract | tests pass | (pending) |\n`);
+      writeFileSync(join(repo, sprint), `# Sprint\n\n> **Backlog Schema**: 2\n\n## Backlog\n\n| # | ID | Status | Task | Mode | Acceptance | Plan |\n|---|----|---|---|---|---|---|\n| 1 | ${fixtureTaskId(task)} | [ ] | ${task} | contract | tests pass | (pending) |\n`);
       writeFileSync(join(repo, planPath), plan(sprint, task, planPath, contractPath));
       writeFileSync(join(repo, contractPath), `# Contract\n\n> **Plan**: ${planPath}\n\n## Allowed Paths\n\n\`\`\`yaml\nallowed_paths:\n  - src/\n\`\`\`\n`);
       execFileSync('git', ['init', '-b', 'main'], { cwd: repo });
