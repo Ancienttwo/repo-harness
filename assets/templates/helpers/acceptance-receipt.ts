@@ -774,6 +774,10 @@ export function readAcceptanceVerificationObservation(
   if (record.contract_file !== contractFile || record.contract_sha256 !== contractSha256) {
     fail('AcceptanceVerificationObservation subject is stale');
   }
+  if (unsafeRepoRelativePath(record.goal_file)) fail('AcceptanceVerificationObservation goal_file is unsafe');
+  if (!['external_pass', 'user_waiver', 'reject'].includes(String(record.disposition))) {
+    fail('AcceptanceVerificationObservation disposition is invalid');
+  }
   const rebuilt = buildAcceptanceVerificationObservation({
     repository_root: record.repository_root,
     acceptance_receipt_sha256: record.acceptance_receipt_sha256,
@@ -844,7 +848,54 @@ function validateDisposition(
   if (findings.length === 0) fail('reject requires at least one finding');
 }
 
-export type AcceptanceReceiptPolicyVerdict = { ok: true } | { ok: false; reason: string };
+/**
+ * Stable identifiers for every rule the shared synchronous validator applies.
+ * They exist so a second reader can enumerate the rule set and declare, per
+ * rule, how it is covered on its own path.
+ */
+export type AcceptanceValidatorRuleId =
+  | 'receipt_protocol_kind'
+  | 'repository_root'
+  | 'contract_file'
+  | 'contract_fingerprint'
+  | 'reviewer_policy'
+  | 'goal_file_shape'
+  | 'goal_fingerprint'
+  | 'verification_file_shape'
+  | 'verification_evidence_shape'
+  | 'benchmark_evidence_present'
+  | 'subject_sha256_shape'
+  | 'subject_scope'
+  | 'target_ref_present'
+  | 'target_revision_shape'
+  | 'reviewed_paths_shape'
+  | 'summary_present'
+  | 'issued_at_shape'
+  | 'disposition_not_reject'
+  | 'waiver_grant_present'
+  | 'waiver_policy_allowed'
+  | 'waiver_grant_repository'
+  | 'waiver_grant_contract'
+  | 'waiver_grant_goal'
+  | 'waiver_grant_owner'
+  | 'waiver_grant_fingerprint'
+  | 'waiver_binding_symmetry'
+  | 'disposition_policy';
+
+export const ACCEPTANCE_VALIDATOR_RULE_IDS: readonly AcceptanceValidatorRuleId[] = [
+  'receipt_protocol_kind', 'repository_root', 'contract_file', 'contract_fingerprint',
+  'reviewer_policy', 'goal_file_shape', 'goal_fingerprint', 'verification_file_shape',
+  'verification_evidence_shape', 'benchmark_evidence_present', 'subject_sha256_shape',
+  'subject_scope', 'target_ref_present', 'target_revision_shape', 'reviewed_paths_shape',
+  'summary_present', 'issued_at_shape', 'disposition_not_reject', 'waiver_grant_present',
+  'waiver_policy_allowed', 'waiver_grant_repository', 'waiver_grant_contract',
+  'waiver_grant_goal', 'waiver_grant_owner', 'waiver_grant_fingerprint',
+  'waiver_binding_symmetry', 'disposition_policy',
+];
+
+export type AcceptanceReceiptPolicyVerdict =
+  | { ok: true }
+  | { ok: false; rule: AcceptanceValidatorRuleId; reason: string };
 
 export type AcceptanceReceiptPolicyInput = {
   receipt: AcceptanceReceipt;
@@ -891,54 +942,58 @@ function unsafeRepoRelativePath(value: string): boolean {
 export function validateAcceptanceReceiptAgainstPolicy(
   input: AcceptanceReceiptPolicyInput,
 ): AcceptanceReceiptPolicyVerdict {
-  const no = (reason: string): AcceptanceReceiptPolicyVerdict => ({ ok: false, reason });
+  const no = (rule: AcceptanceValidatorRuleId, reason: string): AcceptanceReceiptPolicyVerdict => ({ ok: false, rule, reason });
   const receipt = input.receipt;
   try {
     if (receipt.protocol !== 2 || receipt.kind !== 'repo-harness-acceptance-receipt') {
-      return no('AcceptanceReceipt kind/protocol is invalid');
+      return no('receipt_protocol_kind', 'AcceptanceReceipt kind/protocol is invalid');
     }
-    if (receipt.repository_root !== input.repositoryRoot) return no('AcceptanceReceipt repository root is stale');
-    if (receipt.contract_file !== input.expectedContractFile) return no('AcceptanceReceipt contract file is stale');
-    if (authorityFingerprint(input.contractContent) !== receipt.contract_sha256) return no('AcceptanceReceipt contract is stale');
+    if (receipt.repository_root !== input.repositoryRoot) return no('repository_root', 'AcceptanceReceipt repository root is stale');
+    if (receipt.contract_file !== input.expectedContractFile) return no('contract_file', 'AcceptanceReceipt contract file is stale');
+    if (authorityFingerprint(input.contractContent) !== receipt.contract_sha256) return no('contract_fingerprint', 'AcceptanceReceipt contract is stale');
     const policy = parseAcceptancePolicy(input.contractContent);
-    if (policy.reviewer !== receipt.expected_reviewer) return no('AcceptanceReceipt reviewer policy is stale');
-    if (unsafeRepoRelativePath(receipt.goal_file)) return no('AcceptanceReceipt goal_file is unsafe');
-    if (authorityFingerprint(input.goalContent) !== receipt.goal_sha256) return no('AcceptanceReceipt goal is stale');
-    if (unsafeRepoRelativePath(receipt.verification_file)) return no('AcceptanceReceipt verification_file is unsafe');
-    if (!SHA256_FIELD.test(receipt.verification_evidence_sha256)) return no('AcceptanceReceipt verification_evidence_sha256 is invalid');
-    if (receipt.benchmark_evidence_sha256.trim() === '') return no('AcceptanceReceipt benchmark_evidence_sha256 is required');
-    if (!SHA256_FIELD.test(receipt.subject_sha256)) return no('AcceptanceReceipt subject_sha256 is invalid');
-    if (receipt.subject_scope !== 'normalized-final-content') return no('AcceptanceReceipt subject scope is invalid');
-    if (receipt.target_ref.trim() === '') return no('AcceptanceReceipt target_ref is required');
-    if (!GIT_OID_FIELD.test(receipt.target_revision)) return no('AcceptanceReceipt target_revision is invalid');
+    if (policy.reviewer !== receipt.expected_reviewer) return no('reviewer_policy', 'AcceptanceReceipt reviewer policy is stale');
+    if (unsafeRepoRelativePath(receipt.goal_file)) return no('goal_file_shape', 'AcceptanceReceipt goal_file is unsafe');
+    if (authorityFingerprint(input.goalContent) !== receipt.goal_sha256) return no('goal_fingerprint', 'AcceptanceReceipt goal is stale');
+    if (unsafeRepoRelativePath(receipt.verification_file)) return no('verification_file_shape', 'AcceptanceReceipt verification_file is unsafe');
+    if (!SHA256_FIELD.test(receipt.verification_evidence_sha256)) return no('verification_evidence_shape', 'AcceptanceReceipt verification_evidence_sha256 is invalid');
+    if (receipt.benchmark_evidence_sha256.trim() === '') return no('benchmark_evidence_present', 'AcceptanceReceipt benchmark_evidence_sha256 is required');
+    if (!SHA256_FIELD.test(receipt.subject_sha256)) return no('subject_sha256_shape', 'AcceptanceReceipt subject_sha256 is invalid');
+    if (receipt.subject_scope !== 'normalized-final-content') return no('subject_scope', 'AcceptanceReceipt subject scope is invalid');
+    if (receipt.target_ref.trim() === '') return no('target_ref_present', 'AcceptanceReceipt target_ref is required');
+    if (!GIT_OID_FIELD.test(receipt.target_revision)) return no('target_revision_shape', 'AcceptanceReceipt target_revision is invalid');
     // Emptiness is legal: a subject can review zero paths. Shape is not.
-    if (receipt.reviewed_paths.some(unsafeRepoRelativePath)) return no('AcceptanceReceipt reviewed_paths are invalid');
-    if (receipt.summary.trim() === '') return no('AcceptanceReceipt summary is required');
+    if (receipt.reviewed_paths.some(unsafeRepoRelativePath)) return no('reviewed_paths_shape', 'AcceptanceReceipt reviewed_paths are invalid');
+    if (receipt.summary.trim() === '') return no('summary_present', 'AcceptanceReceipt summary is required');
     if (receipt.issued_at.trim() === '' || Number.isNaN(Date.parse(receipt.issued_at))) {
-      return no('AcceptanceReceipt issued_at is invalid');
+      return no('issued_at_shape', 'AcceptanceReceipt issued_at is invalid');
     }
-    if (receipt.disposition === 'reject') return no('AcceptanceReceipt disposition is reject');
+    if (receipt.disposition === 'reject') return no('disposition_not_reject', 'AcceptanceReceipt disposition is reject');
     const owner = markdownHeader(input.contractContent, 'Owner');
     if (receipt.disposition === 'user_waiver') {
       const grant = input.waiverGrant;
-      if (grant === null) return no('AcceptanceReceipt user_waiver requires a UserWaiverGrant');
-      if (policy.user_waiver !== 'allowed') return no('contract forbids user waiver');
-      if (grant.repository_root !== input.repositoryRoot) return no('UserWaiverGrant repository root is stale');
+      if (grant === null) return no('waiver_grant_present', 'AcceptanceReceipt user_waiver requires a UserWaiverGrant');
+      if (policy.user_waiver !== 'allowed') return no('waiver_policy_allowed', 'contract forbids user waiver');
+      if (grant.repository_root !== input.repositoryRoot) return no('waiver_grant_repository', 'UserWaiverGrant repository root is stale');
       if (grant.contract_file !== receipt.contract_file || grant.contract_sha256 !== receipt.contract_sha256) {
-        return no('UserWaiverGrant contract authority is stale');
+        return no('waiver_grant_contract', 'UserWaiverGrant contract authority is stale');
       }
       if (grant.goal_file !== receipt.goal_file || grant.goal_sha256 !== receipt.goal_sha256) {
-        return no('UserWaiverGrant goal authority is stale');
+        return no('waiver_grant_goal', 'UserWaiverGrant goal authority is stale');
       }
-      if (grant.actor !== owner) return no('UserWaiverGrant owner is stale');
-      if (waiverGrantFingerprint(grant) !== receipt.waiver_grant_sha256) return no('AcceptanceReceipt waiver grant is stale');
+      if (grant.actor !== owner) return no('waiver_grant_owner', 'UserWaiverGrant owner is stale');
+      if (waiverGrantFingerprint(grant) !== receipt.waiver_grant_sha256) return no('waiver_grant_fingerprint', 'AcceptanceReceipt waiver grant is stale');
     } else if (receipt.waiver_grant_sha256 !== null || input.waiverGrant !== null) {
-      return no('AcceptanceReceipt waiver grant binding does not match disposition');
+      return no('waiver_binding_symmetry', 'AcceptanceReceipt waiver grant binding does not match disposition');
     }
-    validateDisposition(policy, owner, receipt.disposition, receipt.reviewer, receipt.source, receipt.actor, receipt.findings);
+    try {
+      validateDisposition(policy, owner, receipt.disposition, receipt.reviewer, receipt.source, receipt.actor, receipt.findings);
+    } catch (error) {
+      return no('disposition_policy', (error as Error).message);
+    }
     return { ok: true };
   } catch (error) {
-    return { ok: false, reason: (error as Error).message };
+    return { ok: false, rule: 'contract_fingerprint', reason: (error as Error).message };
   }
 }
 
@@ -1453,8 +1508,8 @@ export async function verifyAcceptance(args: {
   }
   const evidence = await normalizedVerificationEvidence(verification.content, subject, root, contract.path, contract.content);
   if (evidence.fingerprint !== receipt.verification_evidence_sha256) fail('AcceptanceReceipt verification evidence is stale');
-  // One synchronous rule set: the same function every other acceptance reader
-  // calls, so no caller can pass a receipt this gate would refuse.
+  // The gate's one synchronous rule set. Readers outside this module do not
+  // run it: they read the AcceptanceVerificationObservationV1 written below.
   const policyVerdict = validateAcceptanceReceiptAgainstPolicy({
     receipt,
     repositoryRoot: root,

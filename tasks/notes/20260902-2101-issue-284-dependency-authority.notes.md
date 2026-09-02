@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260902-2101-issue-284-dependency-authority.review.md
 > **Last Updated**: 2026-09-02 21:01
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:15457ecee29e743715191559b33ae158c12a99eb317c222c1d6e2f487c5b742e`
+> **Substantive Change SHA256**: `sha256:b3e4e5f3255257fb064f1b6e74afff90c261b1aa580a89352d73123873ed586c`
 
 ## Design Decisions
 
@@ -39,10 +39,13 @@
   `integration-contract:`, `product-requirement:`). They are folded into `authority_revision`; `WorkPackageDependencyObservationV1` itself was
   left unchanged so the offer schema and `dependency_revision` keep their current shape.
 - **`receipt.target_revision` is deliberately shape-checked, not anchored.** The exact anchor is `receipt.target_ref === deps.readCanonicalTargetRef(targetRepo)`; the revision itself is only required to be a git OID and is then bound into the evidence projection as `acceptance-target:<target_ref>` with `engineerSha256(target_revision)`. Binding it to `read.commit` would revoke acceptance on every unrelated commit, and proving ancestry would put Git topology into the acceptance verdict. See the Tradeoffs table.
-- **Field mismatches are `unsatisfied`, IO/authorization failures are `authority_unavailable`.** A receipt that is readable but bound to another
-  contract subject, another repository root, another target ref, or a `reject` disposition is a readable negative. A missing receipt file, an
-  unreadable store, an unregistered or non-`read_write` dependency repository, an unprovable declared subject, or a lease read that throws is
-  `authority_unavailable` with `authority_revision: null`.
+- **Readable negatives are `unsatisfied`; unreadable or absent authorities are `authority_unavailable`.** On the observation path a readable
+  negative is a verdict the authority published that does not authorize this edge: a `reject` disposition, any disposition outside the
+  `external_pass`/`user_waiver` whitelist, a verdict recorded against a different canonical target ref, or a goal whose bytes at the canonical
+  commit no longer fingerprint to the observed `goal_sha256`. `authority_unavailable` covers the cases where no verdict for this exact subject
+  can be read at all: no observation under the subject key (including a contract subject that moved, since the key moves with it), an
+  observation whose bytes, id, subject or filename do not validate, an observation bound to another repository root, an archive-projected
+  contract subject, an unregistered or non-`read_write` dependency repository, and an unreadable goal or gate store.
 - **Exhaustiveness is enforced twice.** `resolveDependencyAuthority` dispatches through a `switch` whose `default` calls
   `unreachableDependencyState(state: never)`, and `WORK_PACKAGE_DEPENDENCY_STATES` is derived from
   `Record<WorkPackageDependencyState, WorkPackageDependencyAuthorityKind | null>` keys. Adding a state without an adapter fails typecheck at the
@@ -52,6 +55,13 @@
   next to the code that persists those content-addressed stores, so the store layout stays owned by one module. `authorityFingerprint` and
   `readAcceptanceReceiptFile` were exported from `scripts/acceptance-receipt.ts` (mirrored to `assets/templates/helpers/`) so the resolver reuses
   the single receipt validator and the single contract-normalization rule instead of re-deriving either.
+- **The observation's disposition is gated by a whitelist, not by a `reject` test.** Moving to record-time observations dropped the
+  `PASSING_ACCEPTANCE_DISPOSITIONS` whitelist that round 1 had, and `reject` is a first-class persisted disposition: `validateDisposition`'s
+  third branch accepts it with a matching reviewer and at least one finding, so `recordAcceptance` writes a reject receipt *and* now its
+  observation. The observation therefore exists for a rejection, and existence alone made `module_accepted` satisfied. The resolver now checks
+  `observation.disposition` against `['external_pass', 'user_waiver']` and emits `acceptance-disposition:<value>` as evidence. A whitelist
+  rather than `!== 'reject'` so a disposition added later is a readable negative until someone decides what it means for scheduling; the
+  observation reader independently rejects a value outside the receipt's own disposition enum.
 - **`module_accepted` reads a record-time observation; it no longer re-derives acceptance at all.** Two rounds of review kept finding the same
   class of defect because the resolver was still an acceptance evaluator: round 2 shipped the shared synchronous validator, and round 3 found
   that the synchronous rule set cannot prove `subject_sha256` or `verification_evidence_sha256` (those need the live working tree and the
@@ -128,6 +138,46 @@
   runtime refresh. Until then `module_accepted` is fail-closed `authority_unavailable` in real repositories — correct behaviour, but it must be
   reported rather than discovered: an operator who declares a `module_accepted` edge before that refresh will see the Engineer offer excluded
   with `dependency_authority_unavailable` and no observation on disk.
+
+## Acceptance Rule Coverage On The Observation Path
+
+Every rule in `scripts/acceptance-receipt.ts#validateAcceptanceReceiptAgainstPolicy` carries a stable id
+(`ACCEPTANCE_VALIDATOR_RULE_IDS`). `src/effects/engineers/dependency-authority.ts#OBSERVATION_PATH_RULE_COVERAGE` declares, per rule, which of
+three mechanisms covers it on the observation path, and a test asserts the two key sets are equal — so a rule added to the validator without a
+coverage decision fails typecheck (the map is an exhaustive `Record`) and fails the test.
+
+`record_time` is claimed only where `recordAcceptance` / `recordUserWaiverAcceptance` actually run the rule **before**
+`writeAcceptanceWithArchiveProjection`; that ordering was checked rule by rule against those two functions.
+
+| Rule | Mechanism | Why |
+|------|-----------|-----|
+| `receipt_protocol_kind` | record_time | `buildReceipt` hardcodes protocol 2 and the receipt kind |
+| `repository_root` | resolver | `readAcceptanceVerificationObservation` requires `repository_root === realpathSync(repoPath)`; this is what defeats cross-repository replay |
+| `contract_file` | subject_key | the subject key is `sha256({contract_file, contract_sha256})` and the reader compares both fields to the requested pair |
+| `contract_fingerprint` | subject_key | the resolver derives the key from `authorityFingerprint(subject bytes at the canonical commit)` |
+| `reviewer_policy` | record_time | `buildReceipt` sets `expected_reviewer` from the parsed contract policy, so they cannot disagree |
+| `goal_file_shape` | resolver | the observation reader rejects an unsafe `goal_file` before the resolver opens it |
+| `goal_fingerprint` | resolver | the resolver re-fingerprints the goal at the target repository's canonical commit against `observation.goal_sha256` |
+| `verification_file_shape` | record_time | `readRegular` refuses a path that escapes the repository |
+| `verification_evidence_shape` | record_time | set from `normalizedVerificationEvidence(...)`, which is a `sha256(...)` |
+| `benchmark_evidence_present` | record_time | set from the same evidence pass, never empty |
+| `subject_sha256_shape` | record_time | `currentSubject` fails unless the digest matches `^sha256:[0-9a-f]{64}$` |
+| `subject_scope` | record_time | `buildReceipt` hardcodes `normalized-final-content` |
+| `target_ref_present` | resolver | additionally compared with the target repository's canonical target ref, which is the readable-negative case |
+| `target_revision_shape` | record_time | set from the review base the policy resolved |
+| `reviewed_paths_shape` | record_time | set from the subject's repository-relative diff paths |
+| `summary_present` | record_time | `recordAcceptance` refuses an empty summary; the waiver path takes the grant's non-empty summary |
+| `issued_at_shape` | record_time | `now().toISOString()` |
+| `disposition_not_reject` | **resolver** | `validateDisposition` has a third branch that *accepts* `reject` with a matching reviewer and at least one finding, so `recordAcceptance` writes both a reject receipt and its observation. Only the resolver's passing-disposition whitelist keeps a recorded rejection out of scheduling |
+| `waiver_grant_present` | record_time | `recordAcceptance` refuses `user_waiver` outright; the waiver path materializes from a verified grant |
+| `waiver_policy_allowed` | record_time | `verifyUserWaiverGrant` fails when the contract forbids waivers |
+| `waiver_grant_repository` | record_time | `verifyUserWaiverGrant` checks the grant's repository root |
+| `waiver_grant_contract` | record_time | `verifyUserWaiverGrant` checks the grant's contract file and fingerprint |
+| `waiver_grant_goal` | record_time | `verifyUserWaiverGrant` checks the grant's goal fingerprint |
+| `waiver_grant_owner` | record_time | `verifyUserWaiverGrant` compares the grant actor with the contract Owner header |
+| `waiver_grant_fingerprint` | record_time | `buildReceipt` sets `waiver_grant_sha256` from the verified grant |
+| `waiver_binding_symmetry` | record_time | the two record paths are the only writers and each sets the pair consistently |
+| `disposition_policy` | record_time | `validateDisposition` runs before `buildReceipt` in both record paths — note this proves the disposition is *policy-consistent*, not that it is *passing*, which is why `disposition_not_reject` needs its own mechanism |
 
 ## Deviations From Plan Or Spec
 

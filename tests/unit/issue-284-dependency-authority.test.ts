@@ -32,6 +32,7 @@ import {
   projectCanonicalTasks,
 } from '../../src/core/state/coordination-identity';
 import {
+  OBSERVATION_PATH_RULE_COVERAGE,
   resolveDependencyAuthority,
   type DependencyAuthorityInput,
   type DependencyAuthorityReaders,
@@ -59,6 +60,7 @@ import { acquireScheduledEngineerTask } from '../../src/effects/engineers/schedu
 import type { EngineerPrincipalV1 } from '../../src/core/engineers/principal-claim';
 import type { RepoHarnessRegisteredRepo, RepoHarnessRegistrySnapshot } from '../../src/effects/repo-registry';
 import {
+  ACCEPTANCE_VALIDATOR_RULE_IDS,
   CONSUMED_RECEIPT_KEYS,
   acceptanceReceiptPath,
   acceptanceVerificationObservationPath,
@@ -621,6 +623,17 @@ describe('issue #284 closed dependency authority', () => {
     expect(moved.authority_revision).not.toBe(ready.authority_revision);
   });
 
+  test('every acceptance validator rule has a declared observation-path mechanism', () => {
+    expect([...Object.keys(OBSERVATION_PATH_RULE_COVERAGE)].sort())
+      .toEqual([...ACCEPTANCE_VALIDATOR_RULE_IDS].sort());
+    for (const [rule, mechanism] of Object.entries(OBSERVATION_PATH_RULE_COVERAGE)) {
+      expect([rule, ['record_time', 'subject_key', 'resolver'].includes(mechanism)]).toEqual([rule, true]);
+    }
+    // The one rule the authority does not enforce before writing must be the
+    // resolver's own, or a recorded rejection reaches scheduling.
+    expect(OBSERVATION_PATH_RULE_COVERAGE.disposition_not_reject).toBe('resolver');
+  });
+
   test('module_accepted reads the acceptance authority\'s verified observation', () => {
     const subject = fixture();
     // The gate store has no observations directory at all.
@@ -651,6 +664,40 @@ describe('issue #284 closed dependency authority', () => {
     const after = resolveDependencyAuthority(input(subject, 'module_accepted'));
     expect(after.status).toBe('satisfied');
     expect(after.authority_revision).not.toBe(accepted.authority_revision);
+  });
+
+  test('module_accepted gates on the observed disposition', () => {
+    const subject = fixture();
+
+    // A recorded rejection is a readable negative, never an acceptance.
+    recordAcceptanceObservation(subject, acceptanceReceipt(subject, {
+      disposition: 'reject',
+      findings: [{ severity: 'P0', message: 'blocked' }],
+    }));
+    const rejected = resolveDependencyAuthority(input(subject, 'module_accepted'));
+    expect(rejected.status).toBe('unsatisfied');
+    expect(rejected.evidence_refs.map((entry) => entry.ref)).toContain('acceptance-disposition:reject');
+
+    const grant = waiverGrant(subject);
+    recordAcceptanceObservation(subject, waivedReceipt(subject, grant));
+    const waived = resolveDependencyAuthority(input(subject, 'module_accepted'));
+    expect(waived.status).toBe('satisfied');
+    expect(waived.evidence_refs.map((entry) => entry.ref)).toContain('acceptance-disposition:user_waiver');
+
+    recordAcceptanceObservation(subject);
+    expect(resolveDependencyAuthority(input(subject, 'module_accepted')).status).toBe('satisfied');
+
+    // A disposition outside the passing whitelist fails closed even when the
+    // observation is otherwise validly signed by the authority's own writer.
+    const forged = writeAcceptanceVerificationObservation({
+      root: subject.root,
+      authorityHome: subject.root,
+      receipt: { ...acceptanceReceipt(subject), disposition: 'conditional_pass' as AcceptanceReceipt['disposition'] },
+      archiveProjectionSha256: null,
+    });
+    expect(forged.disposition).toBe('conditional_pass' as AcceptanceReceipt['disposition']);
+    const unknown = resolveDependencyAuthority(input(subject, 'module_accepted'));
+    expect(unknown.status).not.toBe('satisfied');
   });
 
   test('a moved contract semantic line changes the subject key and is unavailable, not accepted', () => {
@@ -696,7 +743,7 @@ describe('issue #284 closed dependency authority', () => {
     expect(resolveDependencyAuthority(exact).status).toBe('authority_unavailable');
   });
 
-  test('the acceptance policy rules the authority applies are the ones this branch reuses', () => {
+  test('verifyAcceptance keeps the acceptance policy rule set this branch extracted', () => {
     const subject = fixture();
     const valid = acceptanceReceipt(subject);
     const base = {

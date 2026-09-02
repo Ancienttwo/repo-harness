@@ -60,6 +60,8 @@ import {
   authorityFingerprint,
   contractCarriesArchiveProjection,
   readAcceptanceVerificationObservation,
+  type AcceptanceDisposition,
+  type AcceptanceValidatorRuleId,
   type AcceptanceVerificationObservationV1,
 } from '../../../scripts/acceptance-receipt';
 
@@ -269,6 +271,62 @@ function canonicalDone(input: DependencyAuthorityInput): AdapterVerdict {
 }
 
 /**
+ * How each rule of the acceptance authority's synchronous validator is covered
+ * on the observation path this module reads.
+ *
+ * - `record_time`: the authority enforces the rule before it writes, so an
+ *   observation existing at all implies the rule held. Only claimed for rules
+ *   `recordAcceptance` / `recordUserWaiverAcceptance` actually run before
+ *   `writeAcceptanceWithArchiveProjection`.
+ * - `subject_key`: bound by the observation's subject key, which this module
+ *   derives from the edge's declared contract bytes at the canonical commit.
+ * - `resolver`: this module checks the observation field itself.
+ *
+ * A rule with no mechanism is a bug, not a gap: `disposition_not_reject` is
+ * `resolver` precisely because `recordAcceptance` will happily record — and
+ * therefore observe — a `reject`.
+ */
+export const OBSERVATION_PATH_RULE_COVERAGE: Readonly<Record<AcceptanceValidatorRuleId, 'record_time' | 'subject_key' | 'resolver'>> = Object.freeze({
+  // buildReceipt hardcodes protocol/kind; the observation reader re-derives its own.
+  receipt_protocol_kind: 'record_time',
+  // The observation reader requires repository_root === realpath(repo path).
+  repository_root: 'resolver',
+  contract_file: 'subject_key',
+  contract_fingerprint: 'subject_key',
+  // buildReceipt sets expected_reviewer from the parsed contract policy.
+  reviewer_policy: 'record_time',
+  // The observation reader rejects an unsafe goal_file.
+  goal_file_shape: 'resolver',
+  // The resolver re-fingerprints the goal at the target's canonical commit.
+  goal_fingerprint: 'resolver',
+  verification_file_shape: 'record_time',
+  verification_evidence_shape: 'record_time',
+  benchmark_evidence_present: 'record_time',
+  subject_sha256_shape: 'record_time',
+  subject_scope: 'record_time',
+  // Also compared against the target repository's canonical target ref.
+  target_ref_present: 'resolver',
+  target_revision_shape: 'record_time',
+  reviewed_paths_shape: 'record_time',
+  summary_present: 'record_time',
+  issued_at_shape: 'record_time',
+  // recordAcceptance writes a reject receipt and its observation, so only the
+  // passing-disposition whitelist below keeps a rejection out of scheduling.
+  disposition_not_reject: 'resolver',
+  waiver_grant_present: 'record_time',
+  waiver_policy_allowed: 'record_time',
+  waiver_grant_repository: 'record_time',
+  waiver_grant_contract: 'record_time',
+  waiver_grant_goal: 'record_time',
+  waiver_grant_owner: 'record_time',
+  waiver_grant_fingerprint: 'record_time',
+  waiver_binding_symmetry: 'record_time',
+  disposition_policy: 'record_time',
+});
+
+const PASSING_ACCEPTANCE_DISPOSITIONS: readonly AcceptanceDisposition[] = Object.freeze(['external_pass', 'user_waiver']);
+
+/**
  * The module acceptance verdict is the acceptance authority's own record-time
  * observation, read the same way `publicationIntegrated` reads the publication
  * authority's integration observation and `productAccepted` reads the ME-4C
@@ -328,8 +386,13 @@ function moduleAccepted(
   const refs = [
     evidence(`acceptance-observation:${observation.observation_id}`, observation.observation_id),
     evidence(`acceptance-subject:${reference.subject_ref}`, reference.subject_revision),
+    evidence(`acceptance-disposition:${observation.disposition}`, engineerSha256(observation.disposition)),
     evidence(`acceptance-target:${observation.target_ref}`, engineerSha256(observation.target_revision)),
   ];
+  // A whitelist, not a `reject` test: a disposition this resolver does not
+  // know is a readable negative, so a future disposition fails closed until
+  // someone decides what it means for scheduling.
+  if (!PASSING_ACCEPTANCE_DISPOSITIONS.includes(observation.disposition)) return verdict('unsatisfied', refs);
   if (observation.target_ref !== targetRef) return verdict('unsatisfied', refs);
 
   let goal: string | null;
