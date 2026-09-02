@@ -11,7 +11,7 @@
 > **Verification Boundary**: Commands named in the captured planning output plus `repo-harness run verify-contract --contract tasks/contracts/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.contract.md --strict`.
 > **Rollback Surface**: Before execution remove `plans/plan-20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.md`; after execution revert branch `codex/brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport` or the explicitly reviewed diff.
 > **Spec**: `docs/spec.md`
-> **Substantive Change SHA256**: `sha256:d796e77a14340ca81d056544aff441a9dd5c6c305442a15940a3a296e8d1056e`
+> **Substantive Change SHA256**: `sha256:117898eb6fb02ff73456beb39c3d3b2df1258def8aaa75d5151109e652c7dd3f`
 > **Research**: See `docs/researches/`
 > **Task Contract**: `tasks/contracts/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.contract.md`
 > **Task Review**: `tasks/reviews/20260902-2348-brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport.review.md`

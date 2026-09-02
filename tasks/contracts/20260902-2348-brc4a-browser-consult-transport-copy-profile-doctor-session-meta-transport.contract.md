@@ -197,7 +197,7 @@ exit_criteria:
 
 ## Rollback Point
 
-- Commit / checkpoint: `main@d8d62dea20c47d4f58638fbd4cfc93126f358144` (branch base)
+- Commit / checkpoint: `main@b62e6a07dc23b773a643ed454797b475176f084f` (branch base after rebase)
 - Revert strategy: revert the branch commits on
   `codex/brc4a-browser-consult-transport-copy-profile-doctor-session-meta-transport`; the
   change is confined to the `src/cli/chatgpt-browser` package plus its tests and docs.
