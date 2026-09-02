@@ -79,6 +79,12 @@ allowed_paths:
   - tests/unit/issue-282-automation-budget-store.test.ts
   - tests/unit/issue-282-automation-budget-contention.test.ts
   - tests/unit/issue-282-automation-budget-e2e.test.ts
+  # Widened during execution: adding capability.runtime-harness.automation-budget
+  # changes the self-host node count and adds one protocol-owning core module, so
+  # three existing closed-scan assertions have to be re-baselined with it.
+  - tests/capability-archcontext-export.test.ts
+  - tests/architecture-projection-e2e.test.ts
+  - tests/unit/collaboration-authority-baseline.test.ts
   - plans/plan-20260903-0437-issue-282-automation-budget.md
   - plans/prds/20260828-2321-guarded-merge-unattended-automation.prd.md
   - docs/spec.md
