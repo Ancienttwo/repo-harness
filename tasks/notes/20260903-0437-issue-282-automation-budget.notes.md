@@ -6,6 +6,7 @@
 > **Review**: tasks/reviews/20260903-0437-issue-282-automation-budget.review.md
 > **Last Updated**: 2026-09-03 05:20
 > **Lifecycle**: notes
+> **Substantive Change SHA256**: `sha256:7ae738ef08fd7ac5d144ead33c22c0a33f09c49484c1c22c9307f3112685704f`
 
 ## Design Decisions
 
