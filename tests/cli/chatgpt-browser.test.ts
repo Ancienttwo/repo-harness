@@ -107,6 +107,55 @@ function writeFakeGitleaks(dir: string, version = '8.30.0'): string {
   return path;
 }
 
+// Oracle browser transport fixtures. The bound-profile path probes the resolved
+// binary for --copy-profile/--browser-chrome-profile before it runs, so any fake
+// oracle used with a profile binding must answer --help/--debug-help.
+const FAKE_ORACLE_HELP = 'Usage: oracle --engine browser --browser-archive never --write-output <p> --browser-follow-up <t> --followup <id> --browser-model-strategy current --browser-cookie-path <path> --copy-profile <dir> --browser-chrome-profile <name> --chatgpt-url <url> --heartbeat <seconds>';
+
+function writeFakeOracle(path: string, opts: { help?: string; sessionLine?: string; body?: string[] } = {}): string {
+  writeFileSync(path, [
+    '#!/bin/sh',
+    'case "$1" in',
+    '  --version) printf "%s\\n" "0.14.1"; exit 0;;',
+    `  --help|--debug-help) printf "%s\\n" "${opts.help ?? FAKE_ORACLE_HELP}"; exit 0;;`,
+    'esac',
+    ...(opts.body ?? [
+      'ARGS="$*"',
+      'OUT=""',
+      'PREV=""',
+      'for a in "$@"; do',
+      '  if [ "$PREV" = "--write-output" ]; then OUT="$a"; fi',
+      '  PREV="$a"',
+      'done',
+      ...(opts.sessionLine ? [`printf "%s\\n" "${opts.sessionLine}"`] : []),
+      'if [ -n "$OUT" ]; then printf "%s\\n" "Oracle saw: $ARGS" > "$OUT"; fi',
+    ]),
+  ].join('\n'));
+  chmodSync(path, 0o755);
+  return path;
+}
+
+function bindChromeProfile(repoRoot: string, opts: { profileDirectory?: string } = {}): { userDataDir: string; profileDir: string } {
+  const userDataDir = join(repoRoot, 'Chrome/User Data');
+  const profileDir = join(userDataDir, opts.profileDirectory ?? 'Profile 1');
+  mkdirSync(profileDir, { recursive: true });
+  writeFileSync(join(userDataDir, 'Local State'), '{}\n');
+  writeFileSync(join(profileDir, 'Preferences'), '{}\n');
+  const setup = runChatgpt([
+    'browser-setup',
+    '--repo',
+    repoRoot,
+    '--profile-dir',
+    profileDir,
+    '--browser-channel',
+    'chrome',
+    '--chatgpt-url',
+    'https://chatgpt.com/',
+  ]);
+  expect(setup.status).toBe(0);
+  return { userDataDir, profileDir };
+}
+
 describe('chatgpt browser command', () => {
   test('prints help for browser command group', () => {
     const root = runChatgpt(['--help']);
@@ -1003,7 +1052,7 @@ describe('chatgpt browser command', () => {
           '#!/bin/sh',
           'case "$1" in',
           `  --version) printf "%s\\n" "${version}"; exit 0;;`,
-          '  --help|--debug-help) printf "%s\\n" "Usage: oracle --engine browser --browser-archive never --write-output <p> --browser-follow-up <t> --followup <id> --browser-model-strategy current --browser-cookie-path <path> --chatgpt-url <url> --heartbeat <seconds>"; exit 0;;',
+          '  --help|--debug-help) printf "%s\\n" "Usage: oracle --engine browser --browser-archive never --write-output <p> --browser-follow-up <t> --followup <id> --browser-model-strategy current --browser-cookie-path <path> --copy-profile <dir> --browser-chrome-profile <name> --chatgpt-url <url> --heartbeat <seconds>"; exit 0;;',
           'esac',
           'if [ -n "$FAKE_ORACLE_EXECUTED" ]; then printf "%s\\n" "ran" > "$FAKE_ORACLE_EXECUTED"; fi',
         ].join('\n'));
@@ -1231,49 +1280,13 @@ describe('chatgpt browser command', () => {
     });
   }, 30_000);
 
-  test('oracle provider uses the bound ChatGPT profile cookie database', () => {
+  test('oracle provider copies the bound Chrome profile as the only transport', () => {
     withRepo((repoRoot) => {
-      const userDataDir = join(repoRoot, 'Chrome/User Data');
-      const profileDir = join(userDataDir, 'Profile 1');
-      mkdirSync(profileDir, { recursive: true });
-      writeFileSync(join(userDataDir, 'Local State'), '{}\n');
-      writeFileSync(join(profileDir, 'Preferences'), '{}\n');
-      writeFileSync(join(profileDir, 'Cookies'), 'fake cookie db\n');
-      const setup = runChatgpt([
-        'browser-setup',
-        '--repo',
-        repoRoot,
-        '--profile-dir',
-        profileDir,
-        '--browser-channel',
-        'chrome',
-        '--chatgpt-url',
-        'https://chatgpt.com/',
-      ]);
-      expect(setup.status).toBe(0);
+      const { userDataDir } = bindChromeProfile(repoRoot);
 
       const binDir = mkdtempSync(join(tmpdir(), 'repo-harness-fake-oracle-profile-'));
       try {
-        const oraclePath = join(binDir, 'oracle');
-        writeFileSync(
-          oraclePath,
-          [
-            '#!/bin/sh',
-            'case "$1" in',
-            '  --version) printf "%s\\n" "0.14.1"; exit 0;;',
-            'esac',
-            'ARGS="$*"',
-            'OUT=""',
-            'PREV=""',
-            'for a in "$@"; do',
-            '  if [ "$PREV" = "--write-output" ]; then OUT="$a"; fi',
-            '  PREV="$a"',
-            'done',
-            'printf "%s\\n" "Session ID: oracle_profile_123"',
-            'if [ -n "$OUT" ]; then printf "%s\\n" "Oracle saw: $ARGS" > "$OUT"; fi',
-          ].join('\n'),
-        );
-        chmodSync(oraclePath, 0o755);
+        const oraclePath = writeFakeOracle(join(binDir, 'oracle'), { sessionLine: 'Session ID: oracle_profile_123' });
         const result = runChatgpt([
           'browser-consult',
           '--repo',
@@ -1288,115 +1301,89 @@ describe('chatgpt browser command', () => {
         expect(payload.status).toBe('completed');
         const output = readFileSync(payload.paths.output, 'utf-8');
         expect(output).toContain('--browser-model-strategy current');
-        expect(output).toContain(`--browser-cookie-path ${join(profileDir, 'Cookies')}`);
+        expect(output).toContain(`--copy-profile ${userDataDir}`);
+        expect(output).toContain('--browser-chrome-profile Profile 1');
+        expect(output).not.toContain('--browser-cookie-path');
         expect(output).toContain('--chatgpt-url https://chatgpt.com/');
         const meta = JSON.parse(readFileSync(join(repoRoot, '.ai/harness/chatgpt/sessions', payload.sessionId, 'meta.json'), 'utf-8'));
         expect(meta.browser.profileDir).toBe(userDataDir);
         expect(meta.browser.profileDirectory).toBe('Profile 1');
-        expect(meta.browser.selectedProfilePath).toBe(profileDir);
+        expect(meta.browser.selectedProfilePath).toBe(join(userDataDir, 'Profile 1'));
+        expect(meta.browser.transport).toBe('copy_profile');
       } finally {
         rmSync(binDir, { recursive: true, force: true });
       }
     });
   }, 30_000);
 
-  test('oracle provider prefers modern Network/Cookies over legacy Cookies', () => {
+  // Each transport flag is independently required: a binary that reports one but
+  // not the other must still fail, and the error must name only what is missing.
+  const missingTransportFlagCases = [
+    {
+      label: 'neither transport flag',
+      help: 'Usage: oracle --engine browser --browser-archive never --write-output <p> --browser-cookie-path <path> --heartbeat <seconds>',
+      named: ['--copy-profile', '--browser-chrome-profile'],
+      absent: [] as string[],
+    },
+    {
+      label: 'only --copy-profile',
+      help: 'Usage: oracle --engine browser --browser-archive never --write-output <p> --copy-profile <dir> --heartbeat <seconds>',
+      named: ['--browser-chrome-profile'],
+      absent: ['--copy-profile'],
+    },
+    {
+      label: 'only --browser-chrome-profile',
+      help: 'Usage: oracle --engine browser --browser-archive never --write-output <p> --browser-chrome-profile <name> --heartbeat <seconds>',
+      named: ['--copy-profile'],
+      absent: ['--browser-chrome-profile'],
+    },
+  ];
+
+  for (const transportCase of missingTransportFlagCases) {
+    test(`oracle provider fails closed when the resolved binary reports ${transportCase.label}`, () => {
+      withRepo((repoRoot) => {
+        bindChromeProfile(repoRoot);
+
+        const binDir = mkdtempSync(join(tmpdir(), 'repo-harness-fake-oracle-no-copy-profile-'));
+        try {
+          const oraclePath = writeFakeOracle(join(binDir, 'oracle'), {
+            help: transportCase.help,
+            body: ['printf "%s\\n" "unexpected oracle execution" >&2', 'exit 99'],
+          });
+          const result = runChatgpt([
+            'browser-consult',
+            '--repo',
+            repoRoot,
+            '--prompt',
+            'Review this.',
+            '--oracle-bin',
+            oraclePath,
+          ]);
+          expect(result.status).toBe(0);
+          const payload = JSON.parse(result.stdout);
+          expect(payload.status).toBe('failed');
+          expect(payload.error.code).toBe('ORACLE_COPY_PROFILE_UNSUPPORTED');
+          const output = readFileSync(payload.paths.output, 'utf-8');
+          for (const flag of transportCase.named) expect(output).toContain(flag);
+          for (const reported of transportCase.absent) expect(output).not.toContain(reported);
+          expect(output).not.toContain('unexpected oracle execution');
+        } finally {
+          rmSync(binDir, { recursive: true, force: true });
+        }
+      });
+    }, 30_000);
+  }
+
+  test('oracle provider fails closed when the bound Chrome user data directory has no Local State', () => {
     withRepo((repoRoot) => {
-      const userDataDir = join(repoRoot, 'Chrome/User Data');
-      const profileDir = join(userDataDir, 'Profile 1');
-      const networkDir = join(profileDir, 'Network');
-      mkdirSync(networkDir, { recursive: true });
-      writeFileSync(join(userDataDir, 'Local State'), '{}\n');
-      writeFileSync(join(profileDir, 'Preferences'), '{}\n');
-      writeFileSync(join(profileDir, 'Cookies'), 'legacy cookie db\n');
-      writeFileSync(join(networkDir, 'Cookies'), 'modern cookie db\n');
-      const setup = runChatgpt([
-        'browser-setup',
-        '--repo',
-        repoRoot,
-        '--profile-dir',
-        profileDir,
-        '--browser-channel',
-        'chrome',
-      ]);
-      expect(setup.status).toBe(0);
+      const { userDataDir } = bindChromeProfile(repoRoot);
+      rmSync(join(userDataDir, 'Local State'));
 
-      const binDir = mkdtempSync(join(tmpdir(), 'repo-harness-fake-oracle-network-cookie-'));
+      const binDir = mkdtempSync(join(tmpdir(), 'repo-harness-fake-oracle-no-local-state-'));
       try {
-        const oraclePath = join(binDir, 'oracle');
-        writeFileSync(
-          oraclePath,
-          [
-            '#!/bin/sh',
-            'case "$1" in',
-            '  --version) printf "%s\\n" "0.14.1"; exit 0;;',
-            'esac',
-            'ARGS="$*"',
-            'OUT=""',
-            'PREV=""',
-            'for a in "$@"; do',
-            '  if [ "$PREV" = "--write-output" ]; then OUT="$a"; fi',
-            '  PREV="$a"',
-            'done',
-            'if [ -n "$OUT" ]; then printf "%s\n" "Oracle saw: $ARGS" > "$OUT"; fi',
-          ].join('\n'),
-        );
-        chmodSync(oraclePath, 0o755);
-        const result = runChatgpt([
-          'browser-consult',
-          '--repo',
-          repoRoot,
-          '--prompt',
-          'Review this.',
-          '--oracle-bin',
-          oraclePath,
-        ]);
-        expect(result.status).toBe(0);
-        const payload = JSON.parse(result.stdout);
-        expect(payload.status).toBe('completed');
-        const output = readFileSync(payload.paths.output, 'utf-8');
-        expect(output).toContain(`--browser-cookie-path ${join(networkDir, 'Cookies')}`);
-        expect(output).not.toContain(`--browser-cookie-path ${join(profileDir, 'Cookies')}`);
-      } finally {
-        rmSync(binDir, { recursive: true, force: true });
-      }
-    });
-  }, 30_000);
-
-  test('oracle provider fails closed when the bound profile has no regular cookie database', () => {
-    withRepo((repoRoot) => {
-      const userDataDir = join(repoRoot, 'Chrome/User Data');
-      const profileDir = join(userDataDir, 'Profile 1');
-      mkdirSync(profileDir, { recursive: true });
-      writeFileSync(join(userDataDir, 'Local State'), '{}\n');
-      writeFileSync(join(profileDir, 'Preferences'), '{}\n');
-      mkdirSync(join(profileDir, 'Cookies'));
-      const setup = runChatgpt([
-        'browser-setup',
-        '--repo',
-        repoRoot,
-        '--profile-dir',
-        profileDir,
-        '--browser-channel',
-        'chrome',
-      ]);
-      expect(setup.status).toBe(0);
-
-      const binDir = mkdtempSync(join(tmpdir(), 'repo-harness-fake-oracle-no-cookie-'));
-      try {
-        const oraclePath = join(binDir, 'oracle');
-        writeFileSync(
-          oraclePath,
-          [
-            '#!/bin/sh',
-            'case "$1" in',
-            '  --version) printf "%s\\n" "0.14.1"; exit 0;;',
-            'esac',
-            'printf "%s\\n" "unexpected oracle execution" >&2',
-            'exit 99',
-          ].join('\n'),
-        );
-        chmodSync(oraclePath, 0o755);
+        const oraclePath = writeFakeOracle(join(binDir, 'oracle'), {
+          body: ['printf "%s\\n" "unexpected oracle execution" >&2', 'exit 99'],
+        });
         const result = runChatgpt([
           'browser-consult',
           '--repo',
@@ -1409,13 +1396,166 @@ describe('chatgpt browser command', () => {
         expect(result.status).toBe(0);
         const payload = JSON.parse(result.stdout);
         expect(payload.status).toBe('failed');
-        expect(payload.error.code).toBe('ORACLE_PROFILE_COOKIE_NOT_FOUND');
+        expect(payload.error.code).toBe('ORACLE_PROFILE_NOT_FOUND');
+        expect(payload.error.recovery).toContain('browser-setup');
         const output = readFileSync(payload.paths.output, 'utf-8');
-        expect(output).toContain('could not find a Chrome cookie database');
+        expect(output).toContain('Local State');
         expect(output).not.toContain('unexpected oracle execution');
       } finally {
         rmSync(binDir, { recursive: true, force: true });
       }
+    });
+  }, 30_000);
+
+  test('oracle provider fails closed when the binding names no Chrome profile directory', () => {
+    withRepo((repoRoot) => {
+      // A user data directory bound without a profile subdirectory would leave
+      // profile selection to Oracle's Local State last_used, which is not
+      // deterministic; repo-harness refuses instead of guessing.
+      const userDataDir = join(repoRoot, 'Chrome/User Data');
+      mkdirSync(userDataDir, { recursive: true });
+      writeFileSync(join(userDataDir, 'Local State'), '{}\n');
+      const setup = runChatgpt([
+        'browser-setup',
+        '--repo',
+        repoRoot,
+        '--profile-dir',
+        userDataDir,
+        '--browser-channel',
+        'chrome',
+      ]);
+      expect(setup.status).toBe(0);
+      const binding = JSON.parse(readFileSync(join(repoRoot, '.repo-harness/chatgpt-browser.local.json'), 'utf-8'));
+      expect(binding.profileDirectory).toBeUndefined();
+
+      const binDir = mkdtempSync(join(tmpdir(), 'repo-harness-fake-oracle-no-profile-directory-'));
+      try {
+        const oraclePath = writeFakeOracle(join(binDir, 'oracle'), {
+          body: ['printf "%s\\n" "unexpected oracle execution" >&2', 'exit 99'],
+        });
+        const result = runChatgpt([
+          'browser-consult',
+          '--repo',
+          repoRoot,
+          '--prompt',
+          'Review this.',
+          '--oracle-bin',
+          oraclePath,
+        ]);
+        expect(result.status).toBe(0);
+        const payload = JSON.parse(result.stdout);
+        expect(payload.status).toBe('failed');
+        expect(payload.error.code).toBe('ORACLE_PROFILE_NOT_FOUND');
+        expect(payload.error.recovery).toContain('--profile-directory');
+        const output = readFileSync(payload.paths.output, 'utf-8');
+        expect(output).toContain('names no Chrome profile directory');
+        expect(output).not.toContain('unexpected oracle execution');
+
+        // A dry run must not preview a half transport either.
+        const dryRun = runChatgpt([
+          'browser-consult',
+          '--repo',
+          repoRoot,
+          '--prompt',
+          'Review this.',
+          '--dry-run',
+        ]);
+        expect(dryRun.status).toBe(0);
+        const dryRunPayload = JSON.parse(dryRun.stdout);
+        expect(dryRunPayload.status).toBe('failed');
+        expect(dryRunPayload.error.code).toBe('ORACLE_PROFILE_NOT_FOUND');
+        expect(dryRunPayload.dryRun.command).toBeUndefined();
+      } finally {
+        rmSync(binDir, { recursive: true, force: true });
+      }
+    });
+  }, 30_000);
+
+  test('oracle provider maps a running same-prompt session to a reattach failure', () => {
+    withRepo((repoRoot) => {
+      bindChromeProfile(repoRoot);
+
+      const binDir = mkdtempSync(join(tmpdir(), 'repo-harness-fake-oracle-session-running-'));
+      const argvLog = join(binDir, 'argv.txt');
+      try {
+        const oraclePath = writeFakeOracle(join(binDir, 'oracle'), {
+          body: [
+            'for a in "$@"; do',
+            '  if [ "$a" = "--dry-run" ]; then exit 0; fi',
+            'done',
+            `printf "%s\\n" "$*" >> "${argvLog}"`,
+            'printf "%s\\n" "A session with the same prompt is already running" >&2',
+            'exit 1',
+          ],
+        });
+        const result = runChatgpt([
+          'browser-consult',
+          '--repo',
+          repoRoot,
+          '--prompt',
+          'Review this.',
+          '--oracle-bin',
+          oraclePath,
+        ]);
+        expect(result.status).toBe(0);
+        const payload = JSON.parse(result.stdout);
+        expect(payload.status).toBe('failed');
+        expect(payload.error.code).toBe('ORACLE_SESSION_ALREADY_RUNNING');
+        expect(payload.error.recovery).toContain('oracle session <id>');
+        expect(payload.error.recovery).toContain('ORACLE_HOME_DIR');
+        expect(payload.error.recovery).toContain('--force');
+        // The refusal must not be retried with --force behind the user's back:
+        // exactly one invocation, and it never carried the flag.
+        const invocations = readFileSync(argvLog, 'utf-8').trimEnd().split('\n');
+        expect(invocations).toHaveLength(1);
+        expect(invocations[0]).not.toContain('--force');
+        expect(invocations[0]).toContain('--copy-profile');
+      } finally {
+        rmSync(binDir, { recursive: true, force: true });
+      }
+    });
+  }, 30_000);
+
+  test('oracle dry run renders the copy-profile transport and records it in session meta', () => {
+    withRepo((repoRoot) => {
+      const { userDataDir } = bindChromeProfile(repoRoot);
+      const dryRun = runChatgpt([
+        'browser-consult',
+        '--repo',
+        repoRoot,
+        '--prompt',
+        'Reply exactly OK',
+        '--dry-run',
+      ]);
+      expect(dryRun.status).toBe(0);
+      const payload = JSON.parse(dryRun.stdout);
+      expect(payload.status).toBe('dry_run');
+      const command = (payload.dryRun.command as string[]).join(' ');
+      expect(command).toContain(`--copy-profile ${userDataDir}`);
+      expect(command).toContain('--browser-chrome-profile Profile 1');
+      expect(command).not.toContain('--browser-cookie-path');
+      const meta = JSON.parse(readFileSync(join(repoRoot, '.ai/harness/chatgpt/sessions', payload.sessionId, 'meta.json'), 'utf-8'));
+      expect(meta.browser.transport).toBe('copy_profile');
+    });
+  }, 30_000);
+
+  test('oracle dry run without a profile binding records the oracle session transport', () => {
+    withRepo((repoRoot) => {
+      const dryRun = runChatgpt([
+        'browser-consult',
+        '--repo',
+        repoRoot,
+        '--prompt',
+        'Reply exactly OK',
+        '--dry-run',
+      ]);
+      expect(dryRun.status).toBe(0);
+      const payload = JSON.parse(dryRun.stdout);
+      const command = (payload.dryRun.command as string[]).join(' ');
+      expect(command).not.toContain('--copy-profile');
+      expect(command).not.toContain('--browser-chrome-profile');
+      const meta = JSON.parse(readFileSync(join(repoRoot, '.ai/harness/chatgpt/sessions', payload.sessionId, 'meta.json'), 'utf-8'));
+      expect(meta.browser.transport).toBe('oracle_session');
     });
   }, 30_000);
 
@@ -1658,7 +1798,7 @@ describe('chatgpt browser command', () => {
             '#!/bin/sh',
             'case "$1" in',
             '  --version) printf "%s\\n" "0.14.1";;',
-            '  *) printf "%s\\n" "Usage: oracle --engine browser --browser-archive never --write-output <p> --browser-follow-up <t> --followup <id> --browser-model-strategy current --browser-cookie-path <path> --chatgpt-url <url> --heartbeat <seconds>";;',
+            '  *) printf "%s\\n" "Usage: oracle --engine browser --browser-archive never --write-output <p> --browser-follow-up <t> --followup <id> --browser-model-strategy current --browser-cookie-path <path> --copy-profile <dir> --browser-chrome-profile <name> --chatgpt-url <url> --heartbeat <seconds>";;',
             'esac',
           ].join('\n'),
         );
@@ -1679,6 +1819,8 @@ describe('chatgpt browser command', () => {
           browserArchive: true,
           browserModelStrategy: true,
           browserCookiePath: true,
+          copyProfile: true,
+          browserChromeProfile: true,
           browserThinkingTime: true,
           chatgptUrl: true,
           heartbeat: true,
@@ -1748,11 +1890,13 @@ describe('chatgpt browser command', () => {
           browserArchive: false,
           browserModelStrategy: false,
           browserCookiePath: false,
+          copyProfile: false,
+          browserChromeProfile: false,
           browserThinkingTime: false,
           chatgptUrl: false,
           heartbeat: false,
         });
-        expect(readiness.oracle.missingCapabilities).toEqual(['browserFollowup', 'sessionFollowup', 'browserArchive', 'browserModelStrategy', 'browserCookiePath', 'browserThinkingTime', 'chatgptUrl', 'heartbeat']);
+        expect(readiness.oracle.missingCapabilities).toEqual(['browserFollowup', 'sessionFollowup', 'browserArchive', 'browserModelStrategy', 'browserCookiePath', 'copyProfile', 'browserChromeProfile', 'browserThinkingTime', 'chatgptUrl', 'heartbeat']);
         expect(readiness.oracle.error.message).toContain('browserFollowup');
         expect(readiness.agent_actions).toHaveLength(1);
         expect(readiness.agent_actions[0]).toMatchObject({
@@ -1763,6 +1907,38 @@ describe('chatgpt browser command', () => {
           automatic: false,
         });
         expect(readiness.agent_actions[0].reason).toContain('browserFollowup');
+      } finally {
+        rmSync(binDir, { recursive: true, force: true });
+      }
+    });
+  }, 30_000);
+
+  test('oracle doctor is not ready without the copy-profile transport flags', () => {
+    withRepo((repoRoot) => {
+      const binDir = mkdtempSync(join(tmpdir(), 'repo-harness-fake-oracle-no-transport-'));
+      try {
+        const oraclePath = join(binDir, 'oracle');
+        writeFileSync(
+          oraclePath,
+          [
+            '#!/bin/sh',
+            'case "$1" in',
+            '  --version) printf "%s\\n" "0.14.1";;',
+            '  *) printf "%s\\n" "Usage: oracle --engine browser --browser-archive never --write-output <p> --browser-follow-up <t> --followup <id> --browser-model-strategy current --browser-cookie-path <path> --chatgpt-url <url> --heartbeat <seconds>";;',
+            'esac',
+          ].join('\n'),
+        );
+        chmodSync(oraclePath, 0o755);
+        const doctor = runChatgpt(['browser-doctor', '--repo', repoRoot, '--provider', 'oracle', '--oracle-bin', oraclePath, '--json']);
+        expect(doctor.status).toBe(0);
+        const readiness = JSON.parse(doctor.stdout);
+        expect(readiness.status).toBe('action_required');
+        expect(readiness.code).toBe('ORACLE_INCOMPATIBLE');
+        expect(readiness.oracle.capabilities.copyProfile).toBe(false);
+        expect(readiness.oracle.capabilities.browserChromeProfile).toBe(false);
+        expect(readiness.oracle.missingCapabilities).toEqual(['copyProfile', 'browserChromeProfile']);
+        expect(readiness.oracle.error.message).toContain('copyProfile');
+        expect(readiness.oracle.error.message).toContain('browserChromeProfile');
       } finally {
         rmSync(binDir, { recursive: true, force: true });
       }

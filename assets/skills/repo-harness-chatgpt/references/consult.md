@@ -42,9 +42,9 @@ implementation:
    alive; wait for a final answer or a concrete browser/login/capture/tool-call
    failure. Keep the Oracle heartbeat (59s) enabled; heartbeat diagnostics like
    "no thinking status detected yet" are progress signals, not blockers.
-9. If a repo-local ChatGPT profile binding exists, the real consult must use
-   that bound profile's cookie database and must not silently fall back to the
-   default Chrome/Oracle profile.
+9. If a repo-local ChatGPT profile binding exists, the real consult must copy
+   that bound Chrome profile (`--copy-profile` plus `--browser-chrome-profile`)
+   and must not silently fall back to the default Chrome/Oracle profile.
 10. For MCP usage from this session, the server must already be running with
     `repo-harness mcp serve --repo . --enable-chatgpt-browser`.
 
@@ -63,8 +63,15 @@ implementation:
 
 - `ORACLE_NOT_INSTALLED` / `ORACLE_INCOMPATIBLE`: see `setup.md`; do not
   silently retry on native.
-- `ORACLE_PROFILE_COOKIE_NOT_FOUND`: fix the selected Chrome profile binding
-  before retrying; do not proceed against the default profile.
+- `ORACLE_PROFILE_NOT_FOUND`: fix the selected Chrome profile binding before
+  retrying; do not proceed against the default profile.
+- `ORACLE_COPY_PROFILE_UNSUPPORTED`: the resolved Oracle binary cannot copy a
+  Chrome profile; run `browser-doctor --provider oracle --json` and repair the
+  binary instead of dropping the profile binding.
+- `ORACLE_SESSION_ALREADY_RUNNING`: a detached Oracle worker still holds the
+  same prompt. Reattach with `oracle session <id>` under the repo-harness
+  `ORACLE_HOME_DIR`, or clean up that worker and its throwaway Chrome; never
+  add `--force` on the user's behalf.
 - `ORACLE_CAPTURE_INCOMPLETE`: do not auto-retry on native; the prompt may
   already be submitted. Reattach through the saved provider session instead
   (see `continue.md`).

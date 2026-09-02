@@ -10,7 +10,7 @@ import {
 } from './binding';
 import { resolveBrowserOutputPath } from './file-policy';
 import { checkNativeChatgptSession, nativeDebuggingBlockedByDefaultProfile, nativeProviderAvailable, runNativeProvider } from './native-provider';
-import { buildOracleCommand, probeOracle, REQUIRED_ORACLE_VERSION, resolveOracleBin, runOracleProvider, supportsBrowserAppPreselect, validateOracleVersion } from './oracle-provider';
+import { buildOracleCommand, probeOracle, REQUIRED_ORACLE_VERSION, resolveOracleBin, runOracleProvider, supportsBrowserAppPreselect, validateOracleProfileBinding, validateOracleVersion } from './oracle-provider';
 import { assemblePromptBundle } from './prompt-assembler';
 import { scanPromptBundle } from './secret-scan';
 import {
@@ -60,6 +60,8 @@ const EMPTY_ORACLE_CAPABILITIES = {
   browserArchive: false,
   browserModelStrategy: false,
   browserCookiePath: false,
+  copyProfile: false,
+  browserChromeProfile: false,
   browserThinkingTime: false,
   chatgptUrl: false,
   heartbeat: false,
@@ -470,6 +472,28 @@ export async function runBrowserConsult(input: BrowserConsultInput): Promise<Bro
       error: native.error,
       secretScan,
     });
+  }
+  // A dry run must preview a command the real run would actually execute. An
+  // unusable profile binding cannot produce the `--copy-profile` /
+  // `--browser-chrome-profile` pair, so it fails here for the same reason and
+  // with the same code as the real run instead of rendering a half transport.
+  if (provider === 'oracle') {
+    const bindingError = validateOracleProfileBinding(effectiveInput);
+    if (bindingError) {
+      return writeBrowserSession({
+        input: effectiveInput,
+        provider,
+        status: 'failed',
+        bundle,
+        output: bindingError.message,
+        error: {
+          code: 'ORACLE_PROFILE_NOT_FOUND',
+          message: bindingError.message,
+          recovery: bindingError.recovery,
+        },
+        secretScan,
+      });
+    }
   }
   const command = provider === 'oracle' ? ['oracle', ...buildOracleCommand(effectiveInput)] : undefined;
   return writeBrowserSession({
