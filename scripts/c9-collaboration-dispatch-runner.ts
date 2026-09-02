@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
 
-import { fenceCollaborationDispatch } from '../src/effects/collaboration/context-delivery';
 import { dispatchDelegatedRun } from '../src/effects/engineers/delegated-run-store';
 
 const PROTECTED_PATHS = Object.freeze([
@@ -14,7 +13,6 @@ if (process.argv.length !== 5) {
 }
 
 const [, , repoRoot, dispatchId, observedAt] = process.argv;
-fenceCollaborationDispatch({ repo_root: repoRoot!, dispatch_id: dispatchId! });
 const status = dispatchDelegatedRun({
   repo_root: repoRoot!,
   dispatch_id: dispatchId!,

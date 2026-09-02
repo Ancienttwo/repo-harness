@@ -10,7 +10,7 @@
  *   -> render the canonical [CoordinationContextUntrusted] block
  *   -> compose it into the delegated run's goal
  *   -> record CollaborationRunContextBindingV1
- *   -> before dispatch, verify the binding against the live run
+ *   -> inside dispatch, verify the binding against the live run
  * ```
  *
  * **Fail loud on a non-stable snapshot.** A packet's `source_snapshot_sha256`
@@ -351,17 +351,18 @@ export interface AssertCollaborationDispatchBindingInput {
 /**
  * The dispatch fence.
  *
- * A collaboration-mode delegated run passes through this before
+ * A collaboration-mode delegated run passes through this inside
  * `dispatchDelegatedRun()`. It re-reads the run and the binding from their
  * stores and re-runs the whole check — nothing is carried over from the
  * recording call, because the interval between recording and dispatching is
  * exactly where the state this fence exists to catch would have moved.
  *
- * It is a pre-step in the collaboration plane rather than an edit to
- * `dispatchDelegatedRun()`, matching how C4's admission bridge sits in front of
- * `admitReadOnlyDelegation()`: the delegation plane keeps one dispatch semantics,
- * and the collaboration requirement can be removed by deleting this module
- * instead of by unpicking an existing function.
+ * The check lives here and the call site lives in the dispatch effect. C6 made
+ * it a pre-step in this plane, matching how C4's admission bridge sits in front
+ * of `admitReadOnlyDelegation()`, and issue #278 moved the call because a
+ * pre-step is only as good as the callers who remember it while the check
+ * itself is a property of dispatching. Removing the collaboration requirement
+ * is still one deletion, now of one call rather than of every call site.
  */
 export function assertCollaborationDispatchBinding(
   input: AssertCollaborationDispatchBindingInput,
@@ -417,11 +418,17 @@ export function collaborationDispatchIntent(
 }
 
 /**
- * The production entry every dispatch surface calls before `dispatchDelegatedRun()`.
+ * The entry `dispatchDelegatedRun()` runs on every delegated dispatch.
  *
- * Returns the checked binding for a collaboration dispatch and `null` for a
- * delegation-only one. It is a distinct function from the assertion above so the
- * two questions stay separate: `assertCollaborationDispatchBinding()` answers
+ * It has exactly one production call site — the dispatch effect itself — so a
+ * dispatch surface neither may nor need call it: the CLI, the C9 canary runner
+ * and any future non-CLI controller are fenced by dispatching, not by
+ * remembering. Returns the checked binding for a collaboration dispatch and
+ * `null` for a delegation-only one, which is why an ordinary delegated run is
+ * unaffected by being routed through it.
+ *
+ * It is a distinct function from the assertion above so the two questions stay
+ * separate: `assertCollaborationDispatchBinding()` answers
  * "does this run's binding hold", which a caller that already knows the run is a
  * collaboration run should ask directly, and this answers "does this run need one
  * at all", which is the question a general dispatch path has.

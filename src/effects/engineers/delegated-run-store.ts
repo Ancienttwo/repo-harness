@@ -75,6 +75,12 @@ import {
 } from '../../core/engineers/delegation';
 import { canonicalMessageBytes, canonicalMessageDigest, messageSha256 } from '../../core/messages/mechanics';
 import { type ClaimActorReceiptV1 } from '../../core/engineers/principal-claim';
+// The dispatch effect owns the collaboration fence, so this module imports the
+// collaboration plane that already imports this one's readers. The cycle is
+// resolvable because every edge in both directions is a function declaration
+// called at run time; neither module reads the other at evaluation time, and
+// nothing here may start doing so.
+import { fenceCollaborationDispatch } from '../collaboration/context-delivery';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import { runProcess, type ProcessRunResult } from '../process-runner';
@@ -856,11 +862,29 @@ function noActionReconciliation(repoRoot: string, current: DelegatedRunObservati
   });
 }
 
-/** One persisted launch claim permits one and only one subprocess action. */
+/**
+ * One persisted launch claim permits one and only one subprocess action.
+ *
+ * The collaboration fence runs here rather than in front of here. C6/C7 made it
+ * a pre-step at the delegation CLI, which held only as long as every caller
+ * remembered it: a controller that acquires work and dispatches it — agent task
+ * automation, an MCP surface, a scheduler — reaches this function directly, and
+ * a forgotten pre-step is not a refusal but a silent bypass. Enforcing it inside
+ * the only exported dispatch means there is no unfenced entry to forget.
+ *
+ * It is the first statement under the dispatch lock, which is where the
+ * pre-step could not be. The pre-step read the run and its binding outside the
+ * lock and then re-read them here, so a binding could be replaced between the
+ * two reads; the fence now decides on the same locked view the host action is
+ * taken from. Everything below is unchanged: `fenceCollaborationDispatch()`
+ * returns null for a run carrying neither a binding nor an untrusted marker,
+ * which is every delegation-only run.
+ */
 export function dispatchDelegatedRun(input: DispatchDelegatedRunInput): DelegatedRunStatus {
   const repoRoot = resolve(input.repo_root);
   const id = dispatchId(input.dispatch_id);
   return withDispatchLock(repoRoot, id, () => {
+    fenceCollaborationDispatch({ repo_root: repoRoot, dispatch_id: id });
     const beforeState = intentForDispatch(repoRoot, id);
     if (launchClaimFor(repoRoot, id, beforeState.intent.intent_sha256) !== null) {
       const current = noActionReconciliation(repoRoot, beforeState.current, input.observed_at);
