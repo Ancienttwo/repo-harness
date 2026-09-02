@@ -202,6 +202,24 @@ AcceptanceReceipt field.
   fences one persisted inbox message to one current endpoint and admits at most
   one closed `notify_inbox` Host action. Reachability and delivery are read-model
   facts, never scheduling or acceptance authority.
+- **Dependency authority**: The single read-only resolver that answers one
+  declared Work Graph dependency state from the one authority that already owns
+  that verdict: the canonical Sprint row for `canonical_done`, the exact-subject
+  AcceptanceReceipt for `module_accepted`, the Lease publication pointer plus the
+  immutable PublicationReceipt and integration observation for
+  `publication_integrated`, and the ME-4C product acceptance projection for
+  `product_accepted`. A readable negative is `unsatisfied`; a missing,
+  unreadable, unauthorized or unsupported authority is `authority_unavailable`;
+  an unknown authority is never ready. Each observation carries an
+  `authority_revision` digest of its canonical validated evidence projection, so
+  receipt, target-revision or registry-authorization movement stales the
+  Engineer offer that asserted it.
+- **Dependency acceptance authority reference**: The closed, revision-bound
+  `acceptance_authority` field on a Work Graph dependency edge that names the
+  exact acceptance subject for `module_accepted` and `product_accepted`. It is
+  validated against the same canonical commit as the target Work Graph;
+  `required_acceptance` policy documents cannot select a receipt subject and are
+  never used as a substitute.
 - **Delegated worker grant**: A non-transferable child mutation permit under one
   current task claim and one exclusive worktree writer slot. It is not a second
   task Lease and cannot authorize publication or acceptance.
