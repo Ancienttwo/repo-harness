@@ -1,6 +1,6 @@
 # runtime-harness/collaboration 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" sourceDigest="sha256:d5669b836478bff88642e5e7d2fb59329c30e96eb633c3e44b3b962e1c1ce4e4" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:c6dc6b205faae37089e73be81aed991abab962d57bf3ce287db4b9cc05f5d336" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-collaboration" sourceDigest="sha256:bd4593da4dd2b54e885bb9c388e046e46ca7bec68d38e7936776460ee3a4df98" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:ee4f975d65d198d6854b681cf9a31f3b14fd496d207ab55aed69c8ed00af02c9" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.collaboration`(kind `capability`)
 > **Matched Prefixes**:`src/core/collaboration/**`、`src/effects/collaboration/**`、`src/cli/commands/collaboration.ts`
@@ -29,7 +29,7 @@ flowchart LR
   p1_capability_runtime_harness_collaboration_5265febf -->|"Derive the publishing actor from the authenticated principal and current Binding instead of accepting a declared identity"| p1_capability_runtime_harness_engineer_bindings_34c00f72
   p1_capability_runtime_harness_collaboration_5265febf -->|"Ask the scheduling plane for this exact authenticated principal's own offers， so a Work Exchange snapshot reports what the plane answered rather than defaulting an empty list"| p1_capability_runtime_harness_engineer_scheduling_022bd8e0
   p1_capability_runtime_harness_collaboration_5265febf -->|"Persist immutable coordination signals under a per-thread lock without writing any delivery store"| p1_component_collaboration_primary_9383ae07
-  p1_capability_runtime_harness_delegated_runs_e1654b07 -->|"Run the collaboration dispatch fence as a pre-step before the unchanged read-only host action， refusing a run whose injected coordination context no binding accounts for"| p1_capability_runtime_harness_collaboration_5265febf
+  p1_capability_runtime_harness_delegated_runs_e1654b07 -->|"Run the collaboration dispatch fence inside the read-only dispatch effect itself， before any host action， refusing a run whose injected coordination context no binding accounts for"| p1_capability_runtime_harness_collaboration_5265febf
   p1_capability_runtime_harness_delegated_runs_e1654b07 -->|"Revalidate the exact current parent ClaimActorReceipt， WorkEnvelope and Engineer Binding before delegation admission"| p1_capability_runtime_harness_engineer_bindings_34c00f72
   p1_capability_runtime_harness_delegated_runs_e1654b07 -->|"Persist immutable capability， admission， launch， process and result evidence without creating runtime or task authority"| p1_component_delegated_runs_primary_0e9104c9
   p1_capability_runtime_harness_engineer_scheduling_022bd8e0 -->|"Revalidate the exact current Engineer contract and delegate the elected offer to the existing Engineer acquire authority"| p1_capability_runtime_harness_engineer_bindings_34c00f72
@@ -42,7 +42,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:cf0d7f5242bcbdccf9fdb65f22751f6a0d736495a517e705ba6d43fada241237`).
+- Proof: `proven` (`sha256:f1ceb5d4280caa61ca532e0e31dbe615c64cc2d17cfb4fb5290795070901f982`).
 - Semantic nodes: `8`; declared relations: `13`.
 
 ### 1.2 模組職責表
@@ -102,12 +102,12 @@ flowchart LR
 
 入向關係:
 
-- `calls` ← `capability.runtime-harness.delegated-runs` — Run the collaboration dispatch fence as a pre-step before the unchanged read-only host action, refusing a run whose injected coordination context no binding accounts for
+- `calls` ← `capability.runtime-harness.delegated-runs` — Run the collaboration dispatch fence inside the read-only dispatch effect itself, before any host action, refusing a run whose injected coordination context no binding accounts for
 - `calls` ← `capability.runtime-harness.mcp-sidecar` — Serve the bounded Engineer collaboration tool set from the shared agent surface, deriving the author from the authenticated authorization and taking no actor, destination or recorded time from a caller
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:cf0d7f5242bcbdccf9fdb65f22751f6a0d736495a517e705ba6d43fada241237`); selectors `48/48`.
+> **Proof**: `proven` (`sha256:f1ceb5d4280caa61ca532e0e31dbe615c64cc2d17cfb4fb5290795070901f982`); selectors `48/48`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -135,8 +135,8 @@ sequenceDiagram
   else A dispatch carrying injected coordination context that no binding accounts for is refused before the host action
   p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Decide from Host-owned state whether this dispatch is a collaboration dispatch， treating a persisted binding and an untrusted marker in the goal as equally sufficient
   p2_collaboration_50c48bca->>p2_collaboration_store_5c827af5: Re-run the whole binding check against the live run for a collaboration dispatch， and let a delegation-only run through untouched
-  p2_delegated_runs_6de9843b->>p2_collaboration_50c48bca: Run the fence as a pre-step in the dispatch command， so the delegation plane keeps one dispatch semantics and the requirement lifts out by deleting the pre-step
-  p2_delegated_runs_6de9843b->>p2_delegated_run_store_75dc2bad: Invoke the unchanged read-only host action only after the fence returned， so a refusal leaves the seat exactly as prepareDelegatedRun left it
+  p2_delegated_runs_6de9843b->>p2_delegated_run_store_75dc2bad: Call the one exported dispatch from the command adapter， which carries no collaboration pre-step of its own and no second opinion about which runs need a binding
+  p2_delegated_runs_6de9843b->>p2_collaboration_50c48bca: Run the fence as the first statement under the dispatch lock， so no caller reaches the host action by forgetting a pre-step and the fence decides on the same locked view the host action is taken from
     Note over p2_delegated_runs_6de9843b: Surface the typed refusal naming the one fact that failed； injected context that no record accounts for cannot reach a Worker
   end
 ```

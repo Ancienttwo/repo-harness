@@ -4,7 +4,6 @@ import { isAbsolute, relative, resolve } from 'path';
 
 import { CollaborationError } from '../../core/collaboration/common';
 import { DelegationError, buildDelegationEnvelope, buildDelegationExecutionPacket } from '../../core/engineers/delegation';
-import { fenceCollaborationDispatch } from '../../effects/collaboration/context-delivery';
 import {
   DelegatedRunStoreError,
   admitReadOnlyDelegation,
@@ -147,22 +146,16 @@ function parseCapability(path: string): ReadOnlyCapabilityRequest {
 /**
  * The dispatch verb, as a named handler.
  *
- * C7 wires C6's fence to its first production call site. It is a pre-step rather
- * than an edit to `dispatchDelegatedRun()` so the delegation plane keeps one
- * dispatch semantics, and it is a module-level function rather than an inline
- * `.action()` closure so both edges — into the collaboration fence and into the
- * host action — are direct statements a reader and the architecture flow proof
- * can follow.
- *
- * `fenceCollaborationDispatch()` returns null for a run that carries neither a
- * binding nor an untrusted coordination marker, which is every dispatch this
- * command served before this row.
+ * It carries no collaboration pre-step. `dispatchDelegatedRun()` runs the fence
+ * itself, so a refusal reaches this command as the same typed
+ * `CollaborationRunContextBindingRefused` it always did, and this adapter has no
+ * second opinion about which runs need one. It stays a module-level function
+ * rather than an inline `.action()` closure so the edge into the host action is
+ * a direct statement a reader and the architecture flow proof can follow.
  */
-function dispatchWithCollaborationFence(options: { input: string; format: Format }): void {
+function dispatchDelegatedRunCommand(options: { input: string; format: Format }): void {
   try {
-    const request = parseDispatch(options.input);
-    fenceCollaborationDispatch({ repo_root: request.repo_root, dispatch_id: request.dispatch_id });
-    const value = dispatchDelegatedRun(request);
+    const value = dispatchDelegatedRun(parseDispatch(options.input));
     output(value, options.format, 'DelegatedRunObservationV1', value.current.observation_sha256);
   } catch (error) { outputError(error); }
 }
@@ -208,7 +201,7 @@ export function buildDelegationCommand(): Command {
   command.command('dispatch')
     .requiredOption('--input <path>', 'Repository-relative exact dispatch JSON input')
     .option('--format <format>', 'json or text', 'json')
-    .action(dispatchWithCollaborationFence);
+    .action(dispatchDelegatedRunCommand);
   command.command('observe')
     .requiredOption('--dispatch-id <digest>', 'Exact persisted dispatch ID')
     .option('--format <format>', 'json or text', 'json')
