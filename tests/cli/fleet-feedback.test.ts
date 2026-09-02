@@ -272,7 +272,7 @@ function addAmbiguousReviewingPublication(subject: Fixture): void {
   ].join('\n'));
   const repoIdentity = resolveRepoIdentity(subject.root);
   const taskId = fixtureTaskId(taskCell);
-  const taskRevision = deriveTaskRevision({ taskCell: TASK,
+  const taskRevision = deriveTaskRevision({ taskCell,
     taskId,
     modeCell: 'contract',
     acceptanceCell: 'provider feedback passes',

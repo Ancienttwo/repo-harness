@@ -237,11 +237,15 @@ export function writeClaimTokenForBoundLease(cwd: string, input: ClaimTokenWrite
     if (task.task.row.status !== PENDING_ROW_STATUS) {
       throw new Error(`cannot write claim token for ${input.task_id}: canonical row is not pending`);
     }
-    if (task.task.row.task !== input.task) {
-      throw new Error(`cannot write claim token for ${input.task_id}: task cell mismatch`);
-    }
+    // Revision first: under backlog schema 2 the Task cell is part of the
+    // revision preimage, so a title edit since the lease was taken is revision
+    // drift and must be reported as that. The Task cell comparison below is a
+    // caller-consistency check against `--task`, not an identity check.
     if (task.task.task_revision !== lease.record.task_revision) {
       throw new Error(`cannot write claim token for ${input.task_id}: task revision mismatch`);
+    }
+    if (task.task.row.task !== input.task) {
+      throw new Error(`cannot write claim token for ${input.task_id}: task cell mismatch`);
     }
     return writeTokenAtomically(worktree, { ...input, worktree });
   });

@@ -126,7 +126,7 @@ describe('ME-1A closed scheduling schema', () => {
     expect(() => projectWorkGraph(graph([
       workPackage('wp-a', 'task A'),
       workPackage('wp-b', 'task B'),
-    ]), [task(), task('task B', '1', '3', 2)])).toThrow('duplicate task_id');
+    ]), [task(), { ...task('task B', '1', '3', 2), task_id: fixtureTaskId('task A') }])).toThrow('duplicate task_id');
   });
 
   test('builds a revision-fenced offer only when every closed input is ready', () => {
@@ -143,7 +143,7 @@ describe('ME-1A closed scheduling schema', () => {
       binding: { state: 'active', binding_id: '11111111-1111-4111-8111-111111111111', binding_generation: 1 },
       fleet_offer: {
         execution_readiness: 'execution_ready', snapshot_consistency: 'stable',
-        task_id: '1'.repeat(64), task_revision: '2'.repeat(64),
+        task_id: fixtureTaskId('task A'), task_revision: '2'.repeat(64),
         offer_revision: DIGEST, authorization_revision: 7,
       },
       dependencies: [],
@@ -211,7 +211,7 @@ describe('ME-1A closed scheduling schema', () => {
       binding: { state: 'active' as const, binding_id: '11111111-1111-4111-8111-111111111111', binding_generation: 1 },
       fleet_offer: {
         execution_readiness: 'execution_ready', snapshot_consistency: 'stable',
-        task_id: '1'.repeat(64), task_revision: '2'.repeat(64),
+        task_id: fixtureTaskId('task A'), task_revision: '2'.repeat(64),
         offer_revision: DIGEST, authorization_revision: 7,
       },
       dependencies: [],

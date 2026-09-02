@@ -458,7 +458,7 @@ function effectSprintText(): string {
 
 function effectFixture() {
   const taskId = fixtureTaskId(EFFECT_TASK);
-  const taskRevision = deriveTaskRevision({ taskCell: TASK,
+  const taskRevision = deriveTaskRevision({ taskCell: EFFECT_TASK,
     taskId,
     modeCell: 'contract',
     acceptanceCell: 'all stages converge',

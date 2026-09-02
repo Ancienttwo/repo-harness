@@ -71,7 +71,7 @@ function offer(): EngineerOfferV1 {
     binding: { state: 'active', binding_id: BINDING, binding_generation: 2 },
     fleet_offer: {
       execution_readiness: 'execution_ready', snapshot_consistency: 'stable',
-      task_id: '1'.repeat(64), task_revision: '2'.repeat(64), offer_revision: `sha256:${'b'.repeat(64)}`, authorization_revision: 4,
+      task_id: fixtureTaskId('task A'), task_revision: '2'.repeat(64), offer_revision: `sha256:${'b'.repeat(64)}`, authorization_revision: 4,
     },
     dependencies: [],
     concurrency_available: true,
