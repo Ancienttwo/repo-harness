@@ -63,20 +63,28 @@
 
 ## Deviations From Plan Or Spec
 
-- `docs/architecture/modules/runtime-harness/{collaboration,delegated-runs}.md`
-  were not hand-edited. They are outputs of the architecture projection, which
-  lists them in its own file set, so the model files are the only authored
-  surface and the docs follow from an accepted apply.
-- Task breakdown row #4 is closed for the model and the ledger, and open for the
-  projection: the entrypoint, relation and responsibility edits make the
-  projection return `human-action-required` with reason codes
-  `entrypoint-changed`, `relation-changed`, `responsibility-changed` and
-  `verified-flow-proof-changed`. Resolving that needs
-  `architecture-projection accept --signal-id <id> --approval-reference <event-id>`,
-  and the approval identity is a human/orchestrator decision this contract does
-  not own. `tasks/todos.md` already records that a previous round mis-attributed
-  an agent decision to a user approval id; minting another one here would repeat
-  that.
+- `docs/architecture/**` was never hand-edited. Those files are projection
+  outputs, so the model files are the only authored surface and the docs come
+  from the accepted apply.
+- The architecture acceptance needed two commands rather than one. The accepted
+  apply (`architecture-projection accept --signal-id
+  sha256:258b86d3173c936db109a97e7c9813f96684de2f19454d3f935dd3ceeaede37a
+  --approval-reference
+  event.orchestrator-approval-20260902-issue-278-dispatch-effect-fence`) wrote
+  all nine projection files, and then returned `applied-reconcile-required`:
+  writing them changed the worktree digest the accepted snapshot named, so the
+  provider deferred refresh delivery and no acceptance receipt was persisted.
+  The semantic delta itself was resolved by that apply — the next
+  `architecture-projection check` returned no `refreshSignals` and no
+  `humanActions` — so the regenerated docs were committed and an ordinary
+  `apply` restamped `.projection-manifest.json`, after which `check` is `noop`.
+  The candidate left behind is bound to the pre-apply head, so it can be neither
+  accepted (`refresh signal is stale`) nor reconciled (reconciliation admits an
+  exact `verified-flow-proof-changed` reason set only); it was removed from the
+  ignored acceptance store once `check` proved the change it described was
+  already applied. A copy is at `/tmp/278-stale-candidate.json` for the review
+  round. The durable record of the approval identity is this note plus the
+  committed projection output, not a receipt.
 
 ## Tradeoffs Considered
 
