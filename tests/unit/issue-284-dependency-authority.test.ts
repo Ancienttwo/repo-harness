@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 
@@ -61,10 +61,14 @@ import type { RepoHarnessRegisteredRepo, RepoHarnessRegistrySnapshot } from '../
 import {
   CONSUMED_RECEIPT_KEYS,
   acceptanceReceiptPath,
+  acceptanceVerificationObservationPath,
+  acceptanceVerificationObservationSubjectKey,
   authorityFingerprint,
   userWaiverGrantPath,
   validateAcceptanceReceiptAgainstPolicy,
+  writeAcceptanceVerificationObservation,
   type AcceptanceReceipt,
+  type AcceptanceVerificationObservationV1,
   type UserWaiverGrant,
 } from '../../scripts/acceptance-receipt';
 
@@ -382,6 +386,33 @@ function stableJson(value: unknown): string {
   return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(',')}}`;
 }
 
+/**
+ * Records one acceptance the way the authority does: the receipt file plus the
+ * authority's own verified observation, written by the production writer.
+ */
+function recordAcceptanceObservation(
+  subject: Fixture,
+  receipt: AcceptanceReceipt = acceptanceReceipt(subject),
+  archiveProjectionSha256: string | null = null,
+): AcceptanceVerificationObservationV1 {
+  writeAcceptanceReceipt(subject, receipt);
+  return writeAcceptanceVerificationObservation({
+    root: subject.root,
+    authorityHome: subject.root,
+    receipt,
+    archiveProjectionSha256,
+  });
+}
+
+function observationPathFor(subject: Fixture, receipt: AcceptanceReceipt = acceptanceReceipt(subject)): string {
+  return acceptanceVerificationObservationPath(
+    subject.root,
+    subject.root,
+    receipt.contract_file,
+    receipt.contract_sha256,
+  );
+}
+
 function reviewingPublication(subject: Fixture, head: string, base: string, number: number): ReturnType<typeof buildPublicationReceipt> {
   const receipt = buildPublicationReceipt({
     repo_id: subject.identity,
@@ -590,58 +621,131 @@ describe('issue #284 closed dependency authority', () => {
     expect(moved.authority_revision).not.toBe(ready.authority_revision);
   });
 
-  test('module_accepted binds one exact AcceptanceReceipt subject', () => {
+  test('module_accepted reads the acceptance authority\'s verified observation', () => {
     const subject = fixture();
-    expect(resolveDependencyAuthority(input(subject, 'module_accepted')).status).toBe('authority_unavailable');
+    // The gate store has no observations directory at all.
+    expect(existsSync(observationPathFor(subject))).toBe(false);
+    const absent = resolveDependencyAuthority(input(subject, 'module_accepted'));
+    expect(absent.status).toBe('authority_unavailable');
+    expect(absent.authority_revision).toBeNull();
 
-    writeAcceptanceReceipt(subject, acceptanceReceipt(subject));
+    const observation = recordAcceptanceObservation(subject);
     const accepted = resolveDependencyAuthority(input(subject, 'module_accepted'));
     expect(accepted.status).toBe('satisfied');
-    expect(accepted.evidence_refs.map((entry) => entry.ref)).toContain(`acceptance-receipt:${subject.identity}`);
-    expect(accepted.evidence_refs.map((entry) => entry.ref)).toContain(`acceptance-subject:${CONTRACT_REF}`);
+    expect(accepted.evidence_refs.map((entry) => entry.ref))
+      .toContain(`acceptance-observation:${observation.observation_id}`);
+    expect(accepted.evidence_refs.map((entry) => entry.ref)).toContain(`acceptance-goal:${GOAL_REF}`);
 
-    writeAcceptanceReceipt(subject, acceptanceReceipt(subject, {
-      contract_file: 'tasks/contracts/other.contract.md',
-    }));
-    const otherSubject = resolveDependencyAuthority(input(subject, 'module_accepted'));
-    expect(otherSubject.status).toBe('unsatisfied');
-    expect(otherSubject.authority_revision).not.toBe(accepted.authority_revision);
+    // Re-recording the same subject overwrites one file rather than growing a bag.
+    const rerecorded = recordAcceptanceObservation(subject);
+    expect(rerecorded.observation_id).toBe(observation.observation_id);
+    expect(readdirSync(dirname(observationPathFor(subject)))).toEqual([
+      `${acceptanceVerificationObservationSubjectKey(CONTRACT_REF, authorityFingerprint(CONTRACT_TEXT)).slice('sha256:'.length)}.json`,
+    ]);
+    expect(resolveDependencyAuthority(input(subject, 'module_accepted')).status).toBe('satisfied');
 
-    writeAcceptanceReceipt(subject, acceptanceReceipt(subject, {
-      disposition: 'reject',
-      findings: [{ severity: 'P0', message: 'blocked' }],
-    }));
-    expect(resolveDependencyAuthority(input(subject, 'module_accepted')).status).toBe('unsatisfied');
-
-    writeAcceptanceReceipt(subject, acceptanceReceipt(subject, { repository_root: join(subject.root, 'elsewhere') }));
-    expect(resolveDependencyAuthority(input(subject, 'module_accepted')).status).toBe('unsatisfied');
-  });
-
-  test('module_accepted rejects a receipt bound to superseded contract bytes', () => {
-    const subject = fixture();
-    writeAcceptanceReceipt(subject, acceptanceReceipt(subject, {
-      contract_sha256: authorityFingerprint('# Task Contract: wp-a\n\n> **Status**: Active\n\n## Goal\n\nSomething else.\n'),
-    }));
-    expect(resolveDependencyAuthority(input(subject, 'module_accepted')).status).toBe('unsatisfied');
-
-    // A declared subject revision that no longer matches the committed bytes is
-    // an unreadable authority, never a passing acceptance.
-    writeAcceptanceReceipt(subject, acceptanceReceipt(subject));
-    const staleDeclaration = resolveDependencyAuthority(input(subject, 'module_accepted', {
-      dependency: { ...dependency('module_accepted'), acceptance_authority: moduleAuthority(`sha256:${'e'.repeat(64)}`) },
-    }));
-    expect(staleDeclaration.status).toBe('authority_unavailable');
-    expect(staleDeclaration.authority_revision).toBeNull();
-  });
-
-  test('module_accepted authority_revision moves when the receipt bytes move', () => {
-    const subject = fixture();
-    writeAcceptanceReceipt(subject, acceptanceReceipt(subject));
-    const before = resolveDependencyAuthority(input(subject, 'module_accepted'));
-    writeAcceptanceReceipt(subject, acceptanceReceipt(subject, { summary: 'accepted wp-a again' }));
+    // A different acceptance for the same subject moves the observation id and
+    // therefore the dependency revision.
+    const moved = recordAcceptanceObservation(subject, acceptanceReceipt(subject, { summary: 'accepted wp-a again' }));
+    expect(moved.observation_id).not.toBe(observation.observation_id);
     const after = resolveDependencyAuthority(input(subject, 'module_accepted'));
     expect(after.status).toBe('satisfied');
-    expect(after.authority_revision).not.toBe(before.authority_revision);
+    expect(after.authority_revision).not.toBe(accepted.authority_revision);
+  });
+
+  test('a moved contract semantic line changes the subject key and is unavailable, not accepted', () => {
+    const subject = fixture();
+    recordAcceptanceObservation(subject);
+    const accepted = resolveDependencyAuthority(input(subject, 'module_accepted'));
+    expect(accepted.status).toBe('satisfied');
+
+    const changed = CONTRACT_TEXT.replace('Deliver wp-a.', 'Deliver something else.');
+    const stale = resolveDependencyAuthority(input(subject, 'module_accepted', {
+      dependency: {
+        ...dependency('module_accepted'),
+        acceptance_authority: moduleAuthorityFor(CONTRACT_REF, changed),
+      },
+      readFileAtCommit: (repoRoot, commit, path) => (path === CONTRACT_REF ? changed : gitShow(repoRoot, commit, path)),
+    }));
+    expect(stale.status).toBe('authority_unavailable');
+    expect(stale.authority_revision).toBeNull();
+    expect(stale.authority_revision).not.toBe(accepted.authority_revision);
+  });
+
+  test('a forged or misfiled observation is unavailable, never accepted', () => {
+    const subject = fixture();
+    const observation = recordAcceptanceObservation(subject);
+    const path = observationPathFor(subject);
+    const exact = input(subject, 'module_accepted');
+    expect(resolveDependencyAuthority(exact).status).toBe('satisfied');
+
+    const forgedId = { ...observation, observation_id: `sha256:${'1'.repeat(64)}` };
+    writeFileSync(path, `${JSON.stringify(forgedId)}\n`);
+    expect(resolveDependencyAuthority(exact).status).toBe('authority_unavailable');
+
+    // Semantically identical but not the authority's canonical byte order.
+    writeFileSync(path, `${JSON.stringify(observation, null, 2)}\n`);
+    expect(resolveDependencyAuthority(exact).status).toBe('authority_unavailable');
+
+    // Correct bytes under the wrong subject key are never reachable and never
+    // resolve when the reader is pointed at that key.
+    recordAcceptanceObservation(subject);
+    const misfiled = join(dirname(path), `${'0'.repeat(64)}.json`);
+    copyFileSync(path, misfiled);
+    rmSync(path, { force: true });
+    expect(resolveDependencyAuthority(exact).status).toBe('authority_unavailable');
+  });
+
+  test('the acceptance policy rules the authority applies are the ones this branch reuses', () => {
+    const subject = fixture();
+    const valid = acceptanceReceipt(subject);
+    const base = {
+      receipt: valid,
+      repositoryRoot: subject.root,
+      expectedContractFile: CONTRACT_REF,
+      contractContent: CONTRACT_TEXT,
+      goalContent: GOAL_TEXT,
+      waiverGrant: null,
+    };
+    expect(validateAcceptanceReceiptAgainstPolicy(base)).toEqual({ ok: true });
+
+    // Policy is {reviewer: Codex, source: codex-review}.
+    expect(validateAcceptanceReceiptAgainstPolicy({
+      ...base,
+      receipt: { ...valid, expected_reviewer: 'Claude', reviewer: 'Claude', source: 'claude-review' },
+    }).ok).toBe(false);
+    expect(validateAcceptanceReceiptAgainstPolicy({
+      ...base,
+      receipt: { ...valid, reviewer: 'Claude', source: 'claude-review' },
+    }).ok).toBe(false);
+    expect(validateAcceptanceReceiptAgainstPolicy({
+      ...base,
+      goalContent: '# Plan: wp-a\n\n> **Status**: Approved\n\n## Approach\n\nSomething else.\n',
+    }).ok).toBe(false);
+
+    const grant = waiverGrant(subject);
+    const waived = waivedReceipt(subject, grant);
+    expect(validateAcceptanceReceiptAgainstPolicy({ ...base, receipt: waived, waiverGrant: grant }).ok).toBe(true);
+    expect(validateAcceptanceReceiptAgainstPolicy({
+      ...base,
+      receipt: waived,
+      waiverGrant: waiverGrant(subject, { summary: 'owner waived wp-a again' }),
+    }).ok).toBe(false);
+    expect(validateAcceptanceReceiptAgainstPolicy({ ...base, receipt: waived, waiverGrant: null }).ok).toBe(false);
+    const sealedGrant = waiverGrant(subject, {
+      contract_file: CONTRACT_NO_WAIVER_REF,
+      contract_sha256: authorityFingerprint(CONTRACT_NO_WAIVER_TEXT),
+    });
+    expect(validateAcceptanceReceiptAgainstPolicy({
+      ...base,
+      expectedContractFile: CONTRACT_NO_WAIVER_REF,
+      contractContent: CONTRACT_NO_WAIVER_TEXT,
+      receipt: waivedReceipt(subject, sealedGrant, {
+        contract_file: CONTRACT_NO_WAIVER_REF,
+        contract_sha256: authorityFingerprint(CONTRACT_NO_WAIVER_TEXT),
+      }),
+      waiverGrant: sealedGrant,
+    }).ok).toBe(false);
   });
 
   test('publication_integrated needs the immutable observation, not a merged-looking Git state', () => {
@@ -712,7 +816,7 @@ describe('issue #284 closed dependency authority', () => {
     const head = git(subject.root, 'rev-parse', 'HEAD');
     reviewingPublication(subject, head, base, 1);
 
-    writeAcceptanceReceipt(subject, acceptanceReceipt(subject));
+    recordAcceptanceObservation(subject);
     expect(resolveDependencyAuthority(input(subject, 'module_accepted')).status).toBe('satisfied');
     const withoutProduct = resolveDependencyAuthority(input(subject, 'product_accepted'));
     expect(withoutProduct.status).toBe('unsatisfied');
@@ -788,10 +892,10 @@ describe('issue #284 closed dependency authority', () => {
     git(local.root, 'add', CONTRACT_REF);
     git(local.root, 'commit', '-m', 'local decoy');
     const localCommit = git(local.root, 'rev-parse', 'HEAD');
-    writeAcceptanceReceipt(local, acceptanceReceipt(local, {
+    recordAcceptanceObservation(local, acceptanceReceipt(local, {
       contract_sha256: authorityFingerprint('# Task Contract: wp-a\n\n> **Status**: Active\n\n## Goal\n\nLocal decoy.\n'),
     }));
-    writeAcceptanceReceipt(remote, acceptanceReceipt(remote));
+    recordAcceptanceObservation(remote);
 
     const localRepo = repository(REPO_ID, local.root);
     const remoteRepo = repository(OTHER_REPO_ID, remote.root);
@@ -819,15 +923,28 @@ describe('issue #284 closed dependency authority', () => {
     };
     const resolved = resolveDependencyAuthority(crossInput);
     expect(resolved.status).toBe('satisfied');
-    expect(resolved.evidence_refs.map((entry) => entry.ref)).toContain(`acceptance-receipt:${remote.identity}`);
-    expect(resolved.evidence_refs.map((entry) => entry.ref)).not.toContain(`acceptance-receipt:${local.identity}`);
+    // The remote repository's own observation answered; the same-named local
+    // contract path was never opened.
+    const remoteObservation = readFileSync(observationPathFor(remote), 'utf-8');
+    expect(resolved.evidence_refs.map((entry) => entry.ref))
+      .toContain(`acceptance-observation:${(JSON.parse(remoteObservation) as AcceptanceVerificationObservationV1).observation_id}`);
+    expect(remoteObservation).not.toEqual(readFileSync(observationPathFor(local, acceptanceReceipt(local, {
+      contract_sha256: authorityFingerprint('# Task Contract: wp-a\n\n> **Status**: Active\n\n## Goal\n\nLocal decoy.\n'),
+    })), 'utf-8'));
 
-    // A receipt claiming another repository root is not this repository's acceptance.
-    writeAcceptanceReceipt(remote, acceptanceReceipt(remote, { repository_root: local.root }));
-    expect(resolveDependencyAuthority(crossInput).status).toBe('unsatisfied');
+    // Cross-repository replay: repo A's observation bytes copied verbatim into
+    // repo B's gate store bind repo A's root and can never answer for repo B.
+    const replayed = observationPathFor(remote);
+    rmSync(replayed, { force: true });
+    recordAcceptanceObservation(local);
+    copyFileSync(observationPathFor(local), replayed);
+    const replay = resolveDependencyAuthority(crossInput);
+    expect(replay.status).toBe('authority_unavailable');
+    expect(replay.authority_revision).toBeNull();
 
     // Authorization revocation is unavailable, never satisfied.
-    writeAcceptanceReceipt(remote, acceptanceReceipt(remote));
+    rmSync(replayed, { force: true });
+    recordAcceptanceObservation(remote);
     const revoked = resolveDependencyAuthority({
       ...crossInput,
       registry: { ...registry, repos: [localRepo, repository(OTHER_REPO_ID, remote.root, 'read_only')] },
@@ -843,7 +960,7 @@ describe('issue #284 closed dependency authority', () => {
 
   test('an unregistered dependency repository never resolves through the local worktree', () => {
     const subject = fixture();
-    writeAcceptanceReceipt(subject, acceptanceReceipt(subject));
+    recordAcceptanceObservation(subject);
     const resolved = resolveDependencyAuthority(input(subject, 'module_accepted', {
       dependency: dependency('module_accepted', OTHER_REPO_ID),
     }));
@@ -859,13 +976,15 @@ describe('issue #284 closed dependency authority', () => {
     expect(unavailable.exclusions.find((item) => item.work_package_id === 'wp-b')?.blockers)
       .toEqual(['dependency_authority_unavailable']);
 
-    writeAcceptanceReceipt(subject, acceptanceReceipt(subject, { contract_file: 'tasks/contracts/other.contract.md' }));
+    // A verdict recorded against another canonical target ref is a readable
+    // negative, not an unreadable authority.
+    recordAcceptanceObservation(subject, acceptanceReceipt(subject, { target_ref: 'release' }));
     const notReady = offers(subject, 'module_accepted');
     expect(notReady.offers).toEqual([]);
     expect(notReady.exclusions.find((item) => item.work_package_id === 'wp-b')?.blockers)
       .toEqual(['dependency_not_ready']);
 
-    writeAcceptanceReceipt(subject, acceptanceReceipt(subject));
+    recordAcceptanceObservation(subject);
     const ready = offers(subject, 'module_accepted');
     expect(ready.offers.map((offer) => offer.work_package_id)).toEqual(['wp-b']);
     expect(ready.offers[0]!.dependency_revision).toMatch(/^sha256:[0-9a-f]{64}$/u);
@@ -873,7 +992,7 @@ describe('issue #284 closed dependency authority', () => {
 
   test('acquire revalidates the asserted offer after the dependency authority moves', () => {
     const subject = fixture();
-    writeAcceptanceReceipt(subject, acceptanceReceipt(subject));
+    recordAcceptanceObservation(subject);
     const deps = schedulingDependencies(subject, 'module_accepted');
     const document = offers(subject, 'module_accepted');
     const offer = document.offers[0]!;
@@ -909,7 +1028,7 @@ describe('issue #284 closed dependency authority', () => {
     });
     expect(acquired.ok).toBe(true);
 
-    writeAcceptanceReceipt(subject, acceptanceReceipt(subject, { summary: 'accepted wp-a again' }));
+    recordAcceptanceObservation(subject, acceptanceReceipt(subject, { summary: 'accepted wp-a again' }));
     const stale = acquireScheduledEngineerTask({
       repo_root: subject.root,
       principal: principal(),
@@ -923,7 +1042,7 @@ describe('issue #284 closed dependency authority', () => {
 
   test('the resolver refuses a target that is not the exact Work Package its edge names', () => {
     const subject = fixture();
-    writeAcceptanceReceipt(subject, acceptanceReceipt(subject));
+    recordAcceptanceObservation(subject);
     const otherWorkPackage = subject.graph.work_packages.find((item) => item.work_package_id === 'wp-b')!;
     const mismatches: readonly { readonly label: string; readonly patch: Partial<DependencyAuthorityInput> }[] = [
       { label: 'mismatched work_package_id', patch: { target: otherWorkPackage } },
@@ -1026,78 +1145,41 @@ describe('issue #284 closed dependency authority', () => {
     }
   });
 
-  test('module_accepted refuses a receipt the acceptance policy itself would refuse', () => {
+  test('an archive-projected contract subject cannot borrow the accepted contract fingerprint', () => {
     const subject = fixture();
-    const exact = input(subject, 'module_accepted');
+    recordAcceptanceObservation(subject);
+    // authorityFingerprint() normalizes the archive envelope away, so these
+    // bytes hash to the accepted contract's digest while never having been
+    // sealed as an archive projection.
+    const forged = [
+      '> **Archived**: 2026-09-02 21:01',
+      '> **Related Plan**: plans/archive/plan-wp-a.md',
+      '> **Outcome**: Completed',
+      '> **Lifecycle**: contract',
+      '> **Parent Run ID**: run-issue-284',
+      '> **Archive Projection V1**: `tasks/contracts/wp-a.contract.md` => `tasks/archive/contract-20260902-2101-wp-a.md`',
+      '> **Archive Projection V1**: `plans/plan-wp-a.md` => `plans/archive/plan-wp-a.md`',
+      '',
+      CONTRACT_TEXT,
+    ].join('\n');
+    expect(authorityFingerprint(forged)).toBe(authorityFingerprint(CONTRACT_TEXT));
 
-    writeAcceptanceReceipt(subject, acceptanceReceipt(subject));
-    expect(resolveDependencyAuthority(exact).status).toBe('satisfied');
-
-    // Policy is {reviewer: Codex, source: codex-review}; a Claude external_pass
-    // is structurally valid and must still fail the contract's own policy.
-    writeAcceptanceReceipt(subject, acceptanceReceipt(subject, {
-      expected_reviewer: 'Claude',
-      reviewer: 'Claude',
-      source: 'claude-review',
-    }));
-    expect(resolveDependencyAuthority(exact).status).toBe('unsatisfied');
-
-    writeAcceptanceReceipt(subject, acceptanceReceipt(subject, {
-      reviewer: 'Claude',
-      source: 'claude-review',
-    }));
-    expect(resolveDependencyAuthority(exact).status).toBe('unsatisfied');
-
-    writeAcceptanceReceipt(subject, acceptanceReceipt(subject, {
-      goal_sha256: authorityFingerprint('# Plan: wp-a\n\n> **Status**: Approved\n\n## Approach\n\nSomething else.\n'),
-    }));
-    expect(resolveDependencyAuthority(exact).status).toBe('unsatisfied');
-  });
-
-  test('module_accepted enforces the waiver policy and the exact grant fingerprint', () => {
-    const subject = fixture();
-    const grant = waiverGrant(subject);
-    writeWaiverGrant(subject, grant);
-    writeAcceptanceReceipt(subject, waivedReceipt(subject, grant));
-    const exact = input(subject, 'module_accepted');
-    expect(resolveDependencyAuthority(exact).status).toBe('satisfied');
-
-    // A grant whose bytes moved no longer matches the receipt fingerprint.
-    writeWaiverGrant(subject, waiverGrant(subject, { summary: 'owner waived wp-a again' }));
-    expect(resolveDependencyAuthority(exact).status).toBe('unsatisfied');
-
-    // The sealed contract forbids user waiver; the same receipt shape must fail.
-    writeWaiverGrant(subject, waiverGrant(subject, {
-      contract_file: CONTRACT_NO_WAIVER_REF,
-      contract_sha256: authorityFingerprint(CONTRACT_NO_WAIVER_TEXT),
-    }));
-    const sealedGrant = waiverGrant(subject, {
-      contract_file: CONTRACT_NO_WAIVER_REF,
-      contract_sha256: authorityFingerprint(CONTRACT_NO_WAIVER_TEXT),
-    });
-    writeAcceptanceReceipt(subject, waivedReceipt(subject, sealedGrant, {
-      contract_file: CONTRACT_NO_WAIVER_REF,
-      contract_sha256: authorityFingerprint(CONTRACT_NO_WAIVER_TEXT),
-    }));
-    const sealed = input(subject, 'module_accepted', {
+    const resolved = resolveDependencyAuthority(input(subject, 'module_accepted', {
       dependency: {
         ...dependency('module_accepted'),
-        acceptance_authority: moduleAuthorityFor(CONTRACT_NO_WAIVER_REF, CONTRACT_NO_WAIVER_TEXT),
+        acceptance_authority: moduleAuthorityFor(CONTRACT_REF, forged),
       },
-    });
-    expect(resolveDependencyAuthority(sealed).status).toBe('unsatisfied');
-
-    // A missing grant for a user_waiver receipt is an unreadable authority.
-    rmSync(userWaiverGrantPath(subject.root, subject.root), { force: true });
-    writeAcceptanceReceipt(subject, waivedReceipt(subject, grant));
-    const missing = resolveDependencyAuthority(exact);
-    expect(missing.status).toBe('authority_unavailable');
-    expect(missing.authority_revision).toBeNull();
+      readFileAtCommit: (repoRoot, commit, path) => (
+        path === CONTRACT_REF ? forged : gitShow(repoRoot, commit, path)
+      ),
+    }));
+    expect(resolved.status).toBe('authority_unavailable');
+    expect(resolved.authority_revision).toBeNull();
   });
 
   test('the evidence projection is the only input to authority_revision', () => {
     const subject = fixture();
-    writeAcceptanceReceipt(subject, acceptanceReceipt(subject));
+    recordAcceptanceObservation(subject);
     const first = resolveDependencyAuthority(input(subject, 'module_accepted'));
     const second = resolveDependencyAuthority(input(subject, 'module_accepted'));
     expect(second.authority_revision).toBe(first.authority_revision);

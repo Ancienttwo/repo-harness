@@ -204,11 +204,12 @@ AcceptanceReceipt field.
   facts, never scheduling or acceptance authority.
 - **Dependency authority**: The single read-only resolver that answers one
   declared Work Graph dependency state from the one authority that already owns
-  that verdict: the canonical Sprint row for `canonical_done`, the exact-subject
-  AcceptanceReceipt for `module_accepted`, the Lease publication pointer plus the
-  immutable PublicationReceipt and integration observation for
-  `publication_integrated`, and the ME-4C product acceptance projection for
-  `product_accepted`. A readable negative is `unsatisfied`; a missing,
+  that verdict: the canonical Sprint row for `canonical_done`, the acceptance
+  authority's own verification observation for `module_accepted`, the Lease
+  publication pointer plus the immutable PublicationReceipt and integration
+  observation for `publication_integrated`, and the ME-4C product acceptance
+  projection for `product_accepted`. Every branch reads a record-time artifact
+  the owning authority published; none of them re-derives a verdict. A readable negative is `unsatisfied`; a missing,
   unreadable, unauthorized or unsupported authority is `authority_unavailable`;
   an unknown authority is never ready. Each observation carries an
   `authority_revision` digest of its canonical validated evidence projection, so
@@ -220,6 +221,21 @@ AcceptanceReceipt field.
   validated against the same canonical commit as the target Work Graph;
   `required_acceptance` policy documents cannot select a receipt subject and are
   never used as a substitute.
+- **Acceptance verification observation**: The immutable record the acceptance
+  authority writes for itself inside the same transaction that records an
+  AcceptanceReceipt. It freezes what only that authority can prove — the live
+  normalized review subject digest, the verification-evidence fingerprint, the
+  contract and goal bindings, the target ref and revision, the disposition, and
+  the archive-projection seal digest when one applies. It is keyed by subject
+  (`sha256` of the contract file plus its acceptance fingerprint) rather than
+  content-addressed, so one contract subject has exactly one current
+  observation and re-recording the same subject overwrites it while a changed
+  contract lands under a different key. Readers verify identity, canonical
+  bytes and the derived observation id; they never recompute the acceptance
+  verdict. A dependency edge naming an archive-projected contract is
+  fail-closed `authority_unavailable`, because the acceptance fingerprint
+  normalizes the archive envelope away and only the authority's own seal can
+  distinguish a projected contract from its source.
 - **Delegated worker grant**: A non-transferable child mutation permit under one
   current task claim and one exclusive worktree writer slot. It is not a second
   task Lease and cannot authorize publication or acceptance.

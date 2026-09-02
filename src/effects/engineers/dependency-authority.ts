@@ -17,7 +17,7 @@
  *
  * There is deliberately no "unknown means ready" path.
  */
-import { readFileSync, realpathSync } from 'fs';
+import { realpathSync } from 'fs';
 import { userInfo } from 'os';
 
 import {
@@ -57,13 +57,10 @@ import { readLease, type LeaseRead } from '../state/coordination-lease-store';
 import { COMPLETED_ROW_STATUS_PATTERN } from '../../core/state/coordination-identity';
 import type { RepoHarnessRegisteredRepo, RepoHarnessRegistrySnapshot } from '../repo-registry';
 import {
-  acceptanceReceiptPath,
-  readAcceptanceReceiptFile,
-  readUserWaiverGrantFile,
-  userWaiverGrantPath,
-  validateAcceptanceReceiptAgainstPolicy,
-  type AcceptanceReceipt,
-  type UserWaiverGrant,
+  authorityFingerprint,
+  contractCarriesArchiveProjection,
+  readAcceptanceVerificationObservation,
+  type AcceptanceVerificationObservationV1,
 } from '../../../scripts/acceptance-receipt';
 
 export const DEPENDENCY_AUTHORITY_PROTOCOL = 1 as const;
@@ -89,15 +86,14 @@ export interface DependencyAuthorityRepositoryRead {
   readonly graph: ProjectedWorkGraphV1 | null;
 }
 
-export interface AcceptanceAuthorityRead {
-  readonly receipt: AcceptanceReceipt;
-  readonly bytes_sha256: string;
-}
-
 export interface DependencyAuthorityReaders {
   readonly readCanonicalTargetRef: (repoRoot: string) => string;
-  readonly readAcceptanceReceipt: (repoRoot: string, authorityHome: string) => AcceptanceAuthorityRead;
-  readonly readUserWaiverGrant: (repoRoot: string, authorityHome: string) => UserWaiverGrant;
+  readonly readAcceptanceObservation: (
+    repoRoot: string,
+    authorityHome: string,
+    contractFile: string,
+    contractSha256: string,
+  ) => AcceptanceVerificationObservationV1 | null;
   readonly readLease: (repoRoot: string, taskId: string) => LeaseRead;
   readonly readIntegrationObservations: (
     repoRoot: string,
@@ -135,12 +131,7 @@ function defaultAuthorityHome(env: NodeJS.ProcessEnv | undefined): string {
 export function defaultDependencyAuthorityReaders(): DependencyAuthorityReaders {
   const value: DependencyAuthorityReaders = {
     readCanonicalTargetRef,
-    readAcceptanceReceipt: (repoRoot, authorityHome) => {
-      const path = acceptanceReceiptPath(repoRoot, authorityHome);
-      const receipt = readAcceptanceReceiptFile(path);
-      return Object.freeze({ receipt, bytes_sha256: engineerSha256(readFileSync(path)) });
-    },
-    readUserWaiverGrant: (repoRoot, authorityHome) => readUserWaiverGrantFile(userWaiverGrantPath(repoRoot, authorityHome)),
+    readAcceptanceObservation: readAcceptanceVerificationObservation,
     readLease,
     readIntegrationObservations: readPublicationIntegrationObservations,
     readPublicationReceipt: (repoRoot, publicationId) => readPublicationReceiptCache(repoRoot, publicationId),
@@ -277,6 +268,15 @@ function canonicalDone(input: DependencyAuthorityInput): AdapterVerdict {
   ]);
 }
 
+/**
+ * The module acceptance verdict is the acceptance authority's own record-time
+ * observation, read the same way `publicationIntegrated` reads the publication
+ * authority's integration observation and `productAccepted` reads the ME-4C
+ * projection. Nothing about acceptance is re-derived here: the live review
+ * subject, the verification evidence fingerprint and the archive-projection
+ * seal were all proven by `verifyAcceptance` at record time and frozen into the
+ * observation by the authority that proved them.
+ */
 function moduleAccepted(
   input: DependencyAuthorityInput,
   read: DependencyAuthorityRepositoryRead,
@@ -287,82 +287,67 @@ function moduleAccepted(
   const subject = subjectBytesAtCommit(input, read, reference);
   if (subject === null) return UNAVAILABLE;
 
+  // An archive envelope normalizes away inside the acceptance fingerprint, so
+  // archive-projected subject bytes could otherwise borrow an accepted
+  // contract's digest. A dependency edge cannot name an archived contract.
+  let archived: boolean;
+  let subjectFingerprint: string;
+  try {
+    archived = contractCarriesArchiveProjection(subject);
+    subjectFingerprint = authorityFingerprint(subject);
+  } catch {
+    return UNAVAILABLE;
+  }
+  if (archived) return UNAVAILABLE;
+
   let authorityHome: string;
-  let repositoryIdentity: string;
   let targetRef: string;
   try {
     authorityHome = reader.resolveAuthorityHome(input.env);
-    repositoryIdentity = reader.repositoryIdentity(read.repo.path);
     targetRef = reader.readCanonicalTargetRef(read.repo.path);
   } catch {
     return UNAVAILABLE;
   }
 
-  let acceptance: AcceptanceAuthorityRead;
+  let observation: AcceptanceVerificationObservationV1 | null;
   try {
-    acceptance = reader.readAcceptanceReceipt(read.repo.path, authorityHome);
+    observation = reader.readAcceptanceObservation(
+      read.repo.path,
+      authorityHome,
+      reference.subject_ref,
+      subjectFingerprint,
+    );
   } catch {
     return UNAVAILABLE;
   }
-  const receipt = acceptance.receipt;
+  // Absent is not negative: the authority has published no verdict for this
+  // exact subject, which is an unavailable authority, never "not accepted".
+  if (observation === null) return UNAVAILABLE;
+  if (observation.archive_projection_sha256 !== null) return UNAVAILABLE;
 
-  // The receipt's own goal binding is proven at the same canonical commit as
-  // the declared contract subject. An unreadable goal or waiver grant is an
-  // unreadable authority, never a weaker pass.
+  const refs = [
+    evidence(`acceptance-observation:${observation.observation_id}`, observation.observation_id),
+    evidence(`acceptance-subject:${reference.subject_ref}`, reference.subject_revision),
+    evidence(`acceptance-target:${observation.target_ref}`, engineerSha256(observation.target_revision)),
+  ];
+  if (observation.target_ref !== targetRef) return verdict('unsatisfied', refs);
+
   let goal: string | null;
   try {
-    goal = read.commit === null ? null : input.readFileAtCommit(read.repo.path, read.commit, receipt.goal_file);
+    goal = read.commit === null ? null : input.readFileAtCommit(read.repo.path, read.commit, observation.goal_file);
   } catch {
     return UNAVAILABLE;
   }
   if (goal === null) return UNAVAILABLE;
+  refs.push(evidence(`acceptance-goal:${observation.goal_file}`, engineerSha256(goal)));
 
-  let waiverGrant: UserWaiverGrant | null = null;
-  if (receipt.disposition === 'user_waiver') {
-    try {
-      waiverGrant = reader.readUserWaiverGrant(read.repo.path, authorityHome);
-    } catch {
-      return UNAVAILABLE;
-    }
-  }
-
-  let repositoryRoot: string;
+  let goalFingerprint: string;
   try {
-    repositoryRoot = realpathSync(read.repo.path);
+    goalFingerprint = authorityFingerprint(goal);
   } catch {
     return UNAVAILABLE;
   }
-
-  const refs = [
-    evidence(`acceptance-receipt:${repositoryIdentity}`, acceptance.bytes_sha256),
-    evidence(`acceptance-subject:${reference.subject_ref}`, reference.subject_revision),
-    evidence(`acceptance-goal:${receipt.goal_file}`, engineerSha256(goal)),
-    evidence(`acceptance-target:${receipt.target_ref}`, engineerSha256(receipt.target_revision)),
-    evidence(
-      `acceptance-reviewed-paths:${reference.subject_ref}`,
-      engineerSha256(canonicalEngineerJson([...receipt.reviewed_paths].sort())),
-    ),
-  ];
-  if (waiverGrant !== null) {
-    refs.push(evidence(
-      `acceptance-waiver-grant:${reference.subject_ref}`,
-      engineerSha256(canonicalEngineerJson(waiverGrant)),
-    ));
-  }
-
-  // The acceptance verdict is the acceptance authority's own synchronous rule
-  // set, not a second one re-derived here. The only additional binding is the
-  // edge's declared subject and this repository's canonical target ref.
-  const policy = validateAcceptanceReceiptAgainstPolicy({
-    receipt,
-    repositoryRoot,
-    expectedContractFile: reference.subject_ref,
-    contractContent: subject,
-    goalContent: goal,
-    waiverGrant,
-  });
-  const bound = policy.ok && receipt.target_ref === targetRef;
-  return verdict(bound ? 'satisfied' : 'unsatisfied', refs);
+  return verdict(goalFingerprint === observation.goal_sha256 ? 'satisfied' : 'unsatisfied', refs);
 }
 
 function publicationIntegrated(

@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260902-2101-issue-284-dependency-authority.review.md
 > **Last Updated**: 2026-09-02 21:01
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:800569ef4ad47927d1df6dec717e381b69110087a4a1c2204694f237b2e18223`
+> **Substantive Change SHA256**: `sha256:15457ecee29e743715191559b33ae158c12a99eb317c222c1d6e2f487c5b742e`
 
 ## Design Decisions
 
@@ -52,6 +52,33 @@
   next to the code that persists those content-addressed stores, so the store layout stays owned by one module. `authorityFingerprint` and
   `readAcceptanceReceiptFile` were exported from `scripts/acceptance-receipt.ts` (mirrored to `assets/templates/helpers/`) so the resolver reuses
   the single receipt validator and the single contract-normalization rule instead of re-deriving either.
+- **`module_accepted` reads a record-time observation; it no longer re-derives acceptance at all.** Two rounds of review kept finding the same
+  class of defect because the resolver was still an acceptance evaluator: round 2 shipped the shared synchronous validator, and round 3 found
+  that the synchronous rule set cannot prove `subject_sha256` or `verification_evidence_sha256` (those need the live working tree and the
+  verify-sprint evidence chain, both only available at record time), and that `authorityFingerprint` normalizes an archive envelope away, so
+  archive-projected contract bytes hash to the accepted contract's digest and passed `contract_sha256` without any seal check. The fix is
+  structural, not another check: the acceptance authority now writes
+  `AcceptanceVerificationObservationV1` inside the same transaction that records the receipt, freezing everything only it can prove, and the
+  resolver reads that observation. This is exactly the shape the other two adapters already had — `publicationIntegrated` reads
+  `reconcilePublication`'s integration observation and `productAccepted` reads `createProductAcceptanceProjection`'s projection — so all four
+  states now share one rule: the owning authority publishes its verdict at record time and the resolver only proves identity and bytes.
+- **Record-time anchor, not verify-time.** Anchoring at verification time was rejected: `verifyAcceptance` is asynchronous, rebuilds the live
+  review subject and recomputes the verification-evidence fingerprint, and `collectEngineerOffers` is synchronous and runs per dependency edge
+  per offer. Anchoring at record time also keeps `verifyAcceptance` a pure read with no side effects, which the merge gate depends on.
+- **Subject-keyed, not content-addressed.** The observation lives at
+  `<authorityHome>/gates/<sha256(realpath(root))>/acceptance-observations/<sha256({contract_file, contract_sha256})>.json`. A content-addressed
+  bag would accumulate every historical acceptance and force the reader to search, which is how a "pick the best matching receipt" heuristic
+  gets born. Subject keying gives exactly one current observation per contract subject: re-recording overwrites that one file, and a changed
+  contract semantic line changes the key so the old verdict becomes unreachable rather than stale-but-readable.
+- **The singleton receipt was the real defect, and this fixes it.** `acceptanceReceiptPath` is a per-repository singleton
+  (`gates/<repo>/acceptance.latest.json`), so the round-1 and round-2 designs made `module_accepted` flip to `unsatisfied` the moment any other
+  contract in that repository was accepted. Dependency edges are long-lived, so that state was unusable as built. Subject-keyed observations
+  remove the singleton constraint entirely: two Work Packages in one repository can both hold a satisfied `module_accepted` edge.
+- **Deliberate deviation from the issue's literal wording, orchestrator-approved.** Issue #284 says `module_accepted` should "read the exact
+  current AcceptanceReceipt from its owning authority". The resolver now reads the authority's verification observation instead. The observation
+  is written by that same authority, in the same transaction, and binds the receipt's own digest, so no second acceptance authority exists — and
+  this is the only shape that satisfies the issue's stronger invariant ("no second acceptance authority", "no weaker re-derivation") given that
+  the receipt alone cannot be re-verified synchronously. The deviation was reviewed and approved by the orchestrator before implementation.
 - **The acceptance verdict is extracted, not duplicated.** The first implementation of `moduleAccepted` re-derived its own `bound` expression
   from seven receipt fields and ignored `expected_reviewer`, `reviewer`, `source`, `waiver_grant_sha256`, `goal_file`, `goal_sha256` and
   `verification_evidence_sha256`. That made it a second, weaker acceptance authority: a `reviewer: Claude / source: claude-review` receipt
@@ -93,6 +120,14 @@
   stays as it is: it is how the correct pair is produced, and the boundary check is what makes the pair a proven precondition of the verdict.
 - **The task join site is isolated.** The publication and product adapters join to the target by `target.task_id` / `target.task_revision`
   inside `publicationIntegrated` and `productAccepted` only; issue #283 can swap the join without touching the status semantics.
+
+## Deployment
+
+- `acceptance-receipt` is a PROTECTED helper: `repo-harness run acceptance-receipt` resolves it from the installed global runtime, not from this
+  checkout. Production repositories therefore start writing `AcceptanceVerificationObservationV1` only after the next release plus a global
+  runtime refresh. Until then `module_accepted` is fail-closed `authority_unavailable` in real repositories — correct behaviour, but it must be
+  reported rather than discovered: an operator who declares a `module_accepted` edge before that refresh will see the Engineer offer excluded
+  with `dependency_authority_unavailable` and no observation on disk.
 
 ## Deviations From Plan Or Spec
 
