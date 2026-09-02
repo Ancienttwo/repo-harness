@@ -178,6 +178,7 @@ export function writeBrowserSession(opts: {
     },
     browser: {
       mode: 'manual-login',
+      transport: opts.input.profileDir ? 'copy_profile' : 'oracle_session',
       chatgptUrl: opts.input.chatgptUrl ?? 'https://chatgpt.com/',
       chatgptApp: opts.input.chatgptApp,
       channel: opts.input.browserChannel,

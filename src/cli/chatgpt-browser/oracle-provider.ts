@@ -41,6 +41,8 @@ export interface OracleCapabilities {
   browserArchive: boolean;
   browserModelStrategy: boolean;
   browserCookiePath: boolean;
+  copyProfile: boolean;
+  browserChromeProfile: boolean;
   browserThinkingTime: boolean;
   chatgptUrl: boolean;
   heartbeat: boolean;
@@ -64,6 +66,9 @@ export interface OracleProbe {
 export const REQUIRED_ORACLE_VERSION = '0.14.1';
 
 const ORACLE_TERM_GRACE_MS = 5_000;
+
+/** Verbatim Oracle refusal when a detached worker still holds the same prompt. */
+const ORACLE_SESSION_ALREADY_RUNNING_MARKER = 'A session with the same prompt is already running';
 
 export function supportsBrowserAppPreselect(helpText: string): boolean {
   return helpText.includes('--browser-app');
@@ -135,6 +140,10 @@ function detectCapabilities(helpText: string, browserThinkingTime: boolean): Ora
     browserArchive: has('--browser-archive'),
     browserModelStrategy: has('--browser-model-strategy'),
     browserCookiePath: has('--browser-cookie-path'),
+    // Oracle hides --browser-chrome-profile from `--help`; probeOracle folds
+    // `--debug-help` into the same text so both transport flags are visible.
+    copyProfile: has('--copy-profile'),
+    browserChromeProfile: has('--browser-chrome-profile'),
     browserThinkingTime,
     chatgptUrl: has('--chatgpt-url'),
     heartbeat: has('--heartbeat'),
@@ -234,8 +243,10 @@ export function buildOracleCommand(input: BrowserConsultInput, answerPath?: stri
   if (input.chatgptApp) args.push('--browser-app', input.chatgptApp);
   if (input.chatgptUrl) args.push('--chatgpt-url', input.chatgptUrl);
   args.push('--heartbeat', String(input.heartbeatSeconds ?? 59));
-  const cookiePath = resolveOracleCookiePath(input);
-  if (cookiePath) args.push('--browser-cookie-path', cookiePath);
+  if (input.profileDir) {
+    args.push('--copy-profile', input.profileDir);
+    if (input.profileDirectory) args.push('--browser-chrome-profile', input.profileDirectory);
+  }
   for (const file of input.files ?? []) args.push('--file', resolveOracleFilePath(input, file.path));
   for (const followup of input.followups ?? []) args.push('--browser-follow-up', followup);
   return args;
@@ -274,16 +285,45 @@ function stageScanBoundOracleFiles(input: BrowserConsultInput, bundle: PromptBun
   }
 }
 
-export function resolveOracleCookiePath(input: Pick<BrowserConsultInput, 'profileDir' | 'profileDirectory'>): string | undefined {
+/**
+ * Validate the bound Chrome profile against what `--copy-profile` needs: a real
+ * Chrome user data directory, its `Local State`, and an explicitly named profile
+ * subdirectory. Without the explicit name Oracle would fall back to `Local
+ * State`'s `last_used` profile, which is not deterministic, so this fails closed
+ * instead of guessing.
+ */
+export function validateOracleProfileBinding(
+  input: Pick<BrowserConsultInput, 'profileDir' | 'profileDirectory'>,
+): { message: string; recovery: string } | undefined {
   if (!input.profileDir) return undefined;
-  const selectedProfilePath = input.profileDirectory
-    ? join(input.profileDir, input.profileDirectory)
-    : input.profileDir;
-  const candidates = [
-    join(selectedProfilePath, 'Network', 'Cookies'),
-    join(selectedProfilePath, 'Cookies'),
-  ];
-  return candidates.find((candidate) => regularFileExists(candidate));
+  const recovery = 'Re-run browser-setup against the signed-in Chrome user data directory with an explicit --profile-directory, or omit the profile binding only if you intentionally want Oracle to use its own browser session.';
+  if (!directoryExists(input.profileDir)) {
+    return { message: `Chrome user data directory for the selected ChatGPT profile is not a directory: ${input.profileDir}`, recovery };
+  }
+  const localState = join(input.profileDir, 'Local State');
+  if (!regularFileExists(localState)) {
+    return { message: `Chrome user data directory has no readable Local State file: ${localState}`, recovery };
+  }
+  if (!input.profileDirectory) {
+    return {
+      message: `ChatGPT profile binding for ${input.profileDir} names no Chrome profile directory; Oracle would pick the Local State last_used profile instead`,
+      recovery,
+    };
+  }
+  const selectedProfilePath = join(input.profileDir, input.profileDirectory);
+  if (!directoryExists(selectedProfilePath)) {
+    return { message: `Selected Chrome profile directory does not exist: ${selectedProfilePath}`, recovery };
+  }
+  return undefined;
+}
+
+function directoryExists(path: string): boolean {
+  try {
+    if (lstatSync(path).isSymbolicLink()) return false;
+    return statSync(path).isDirectory();
+  } catch (_error) {
+    return false;
+  }
 }
 
 function regularFileExists(path: string): boolean {
@@ -486,14 +526,16 @@ export async function runOracleProvider(input: BrowserConsultInput, bundle: Prom
       error: processTreeSupportError,
     };
   }
+  const oracleBinary = resolution.binary;
+  let cachedProbe: OracleProbe | undefined;
+  const probeResolvedOracle = (): OracleProbe => (cachedProbe ??= probeOracle(oracleBinary));
   if (input.chatgptApp) {
-    const probe = probeOracle(resolution.binary);
-    if (!supportsBrowserAppPreselect(probe.helpText)) {
+    if (!supportsBrowserAppPreselect(probeResolvedOracle().helpText)) {
       return {
         status: 'failed',
         output: `Oracle binary does not support ChatGPT app preselection for "${input.chatgptApp}".`,
-        command: [resolution.binary, ...buildOracleCommand(input)],
-        oracleBinary: resolution.binary,
+        command: [oracleBinary, ...buildOracleCommand(input)],
+        oracleBinary,
         oracleVersion: resolvedOracleVersion,
         error: {
           code: 'ORACLE_APP_PRESELECT_UNSUPPORTED',
@@ -503,21 +545,45 @@ export async function runOracleProvider(input: BrowserConsultInput, bundle: Prom
       };
     }
   }
-  if (input.profileDir && !resolveOracleCookiePath(input)) {
-    const selectedProfilePath = input.profileDirectory
-      ? join(input.profileDir, input.profileDirectory)
-      : input.profileDir;
-    return {
-      status: 'failed',
-      output: `Oracle could not find a Chrome cookie database for the selected ChatGPT profile: ${selectedProfilePath}`,
-      command: [resolution.binary, ...buildOracleCommand(input)],
-      oracleBinary: resolution.binary,
-      error: {
-        code: 'ORACLE_PROFILE_COOKIE_NOT_FOUND',
-        message: 'Oracle could not find a Chrome cookie database for the selected ChatGPT profile',
-        recovery: 'Re-run browser-setup with the correct Chrome profile directory, or omit the profile binding only if you intentionally want Oracle to use its own browser session.',
-      },
-    };
+  if (input.profileDir) {
+    // The bound-profile transport is `--copy-profile` plus an explicit
+    // `--browser-chrome-profile`. There is no second transport to fall back to,
+    // so a binary without both flags fails before the prompt is submitted.
+    const capabilities = probeResolvedOracle().capabilities;
+    const missingTransportFlags = [
+      ...(capabilities.copyProfile ? [] : ['--copy-profile']),
+      ...(capabilities.browserChromeProfile ? [] : ['--browser-chrome-profile']),
+    ];
+    if (missingTransportFlags.length > 0) {
+      const message = `oracle binary did not report ${missingTransportFlags.join(' and ')} support, which the bound ChatGPT profile transport requires`;
+      return {
+        status: 'failed',
+        output: message,
+        command: [oracleBinary, ...buildOracleCommand(input)],
+        oracleBinary,
+        oracleVersion: resolvedOracleVersion,
+        error: {
+          code: 'ORACLE_COPY_PROFILE_UNSUPPORTED',
+          message,
+          recovery: 'Upgrade or point repo-harness at an Oracle binary that supports --copy-profile and --browser-chrome-profile, then rerun browser-doctor --provider oracle --json.',
+        },
+      };
+    }
+    const bindingError = validateOracleProfileBinding(input);
+    if (bindingError) {
+      return {
+        status: 'failed',
+        output: bindingError.message,
+        command: [oracleBinary, ...buildOracleCommand(input)],
+        oracleBinary,
+        oracleVersion: resolvedOracleVersion,
+        error: {
+          code: 'ORACLE_PROFILE_NOT_FOUND',
+          message: bindingError.message,
+          recovery: bindingError.recovery,
+        },
+      };
+    }
   }
   const answerDir = mkdtempSync(join(tmpdir(), 'repo-harness-oracle-answer-'));
   const runCwd = mkdtempSync(join(tmpdir(), 'repo-harness-oracle-cwd-'));
@@ -549,6 +615,26 @@ export async function runOracleProvider(input: BrowserConsultInput, bundle: Prom
     const oracleVersion = resolvedOracleVersion;
     const conversationUrl = extractConversationUrl(log);
     const providerSessionId = extractProviderSessionId(log);
+
+    // A detached Oracle worker from an earlier run of the same prompt blocks the
+    // new run. Reattaching or cleaning up is the user's call; repo-harness never
+    // adds `--force` on its own because that would abandon a live session.
+    if (log.includes(ORACLE_SESSION_ALREADY_RUNNING_MARKER)) {
+      return {
+        status: 'failed',
+        output: log,
+        command,
+        oracleBinary: resolution.binary,
+        oracleVersion,
+        conversationUrl,
+        providerSessionId,
+        error: {
+          code: 'ORACLE_SESSION_ALREADY_RUNNING',
+          message: 'oracle refused the prompt because a session with the same prompt is already running',
+          recovery: `Reattach to the running session with \`oracle session <id>\` under the repo-harness-controlled ORACLE_HOME_DIR (${oracleHomeDir}), or terminate the detached Oracle worker and its throwaway Chrome before retrying. repo-harness never adds \`--force\` on your behalf.`,
+        },
+      };
+    }
 
     // Pre/at-start failures are safe to surface as failed; the prompt never landed.
     if (result.error) {

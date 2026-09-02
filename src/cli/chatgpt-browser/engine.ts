@@ -60,6 +60,8 @@ const EMPTY_ORACLE_CAPABILITIES = {
   browserArchive: false,
   browserModelStrategy: false,
   browserCookiePath: false,
+  copyProfile: false,
+  browserChromeProfile: false,
   browserThinkingTime: false,
   chatgptUrl: false,
   heartbeat: false,
