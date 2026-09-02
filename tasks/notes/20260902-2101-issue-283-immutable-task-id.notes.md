@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260902-2101-issue-283-immutable-task-id.review.md
 > **Last Updated**: 2026-09-02 21:01
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:ae14396cabb2a923a841b12d3944ea4f0e270892b5ed1778e7877f089fab7d1b`
+> **Substantive Change SHA256**: `sha256:8b830fe7abfe78ccb81827d1a5c23d0bf370c2671e9d85e5f42099d1c3025f9b`
 
 ## Design Decisions
 
@@ -99,7 +99,8 @@
   plan proof therefore mismatches until the plan's `Source Ref` header is
   updated, even though `task_id` survived. That is a plan-binding authority, not
   task identity, and migrating it would rewrite the header of every existing
-  plan, so it stayed out of scope. Worth a follow-up decision.
+  plan, so it stayed out of scope. Tracked as the
+  `plan-source-ref-task-cell-coupling` row in `tasks/todos.md`.
 - The migrated ids are the schema 1 derived values, whose preimage includes the
   git common-directory path of the clone that runs the migration. That is exactly
   what the issue asks for (preserve the known identity rather than invent an

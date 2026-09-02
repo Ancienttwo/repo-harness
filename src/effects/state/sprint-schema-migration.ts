@@ -48,6 +48,14 @@ export interface MigrateSprintSchemaDependencies {
   readonly repoIdentity: (cwd: string) => string;
   readonly readCanonicalSprint: typeof readCanonicalSprint;
   readonly readLease: typeof readLease;
+  /**
+   * The pure rewrite, injected like every other collaborator. It is the only
+   * seam a test can use to force a *post-write* validation failure, which is
+   * the one path where "refuse" has to also mean "undo"; nothing else in the
+   * command can produce bytes that pass the rewrite and then fail the re-read
+   * proof.
+   */
+  readonly rewriteSprint: typeof rewriteSprintToSchemaV2;
 }
 
 export function processMigrationDependencies(repoRoot: string): MigrateSprintSchemaDependencies {
@@ -56,6 +64,7 @@ export function processMigrationDependencies(repoRoot: string): MigrateSprintSch
     repoIdentity: resolveRepoIdentity,
     readCanonicalSprint,
     readLease,
+    rewriteSprint: rewriteSprintToSchemaV2,
   };
 }
 
@@ -125,7 +134,7 @@ export function migrateSprintSchemaCommand(
 
   let afterBytes: string;
   try {
-    afterBytes = rewriteSprintToSchemaV2({ sprintText: canonical.text, idsByRowIndex });
+    afterBytes = deps.rewriteSprint({ sprintText: canonical.text, idsByRowIndex });
   } catch (error) {
     if (error instanceof SprintSchemaMigrationError) return refuse(error.message);
     throw error;
@@ -153,13 +162,29 @@ export function migrateSprintSchemaCommand(
   writeFileSync(worktreeSprint, afterBytes, 'utf-8');
   if (carrierAfter !== null) writeFileSync(worktreeCarrier, carrierAfter, 'utf-8');
 
+  /**
+   * Undo the write, then refuse. Every gate below runs *after* the files
+   * changed, so without this a refusal would leave a half-migrated tree that
+   * reads as authoritative: the sprint would declare schema 2 while the proof
+   * that its ids are the pre-migration ids had just failed. A refusal must
+   * always mean "the files are exactly as they were".
+   *
+   * The receipt is written only past the last gate, so there is never a
+   * receipt to remove here.
+   */
+  const restoreAndRefuse = (message: string): CommandOutcome => {
+    writeFileSync(worktreeSprint, beforeBytes, 'utf-8');
+    if (carrierBefore !== null) writeFileSync(worktreeCarrier, carrierBefore, 'utf-8');
+    return refuse(message);
+  };
+
   // Re-read proof over the bytes that actually landed.
   const reread = readFileSync(worktreeSprint, 'utf-8');
   if (reread !== afterBytes) {
-    return refuse(`migrated ${sprintPath} does not match the bytes just written`);
+    return restoreAndRefuse(`migrated ${sprintPath} does not match the bytes just written`);
   }
   if (sprintBacklogSchema(reread) !== 2) {
-    return refuse(`migrated ${sprintPath} does not declare backlog schema 2`);
+    return restoreAndRefuse(`migrated ${sprintPath} does not declare backlog schema 2`);
   }
   let migrated;
   try {
@@ -169,23 +194,25 @@ export function migrateSprintSchemaCommand(
       sprintText: reread,
     });
   } catch (error) {
-    if (error instanceof SprintSchemaError) return refuse(`migrated ${sprintPath} fails schema 2 validation: ${error.message}`);
+    if (error instanceof SprintSchemaError) {
+      return restoreAndRefuse(`migrated ${sprintPath} fails schema 2 validation: ${error.message}`);
+    }
     throw error;
   }
   if (migrated.length !== legacy.rows.length) {
-    return refuse(`migrated ${sprintPath} has ${migrated.length} rows but schema 1 had ${legacy.rows.length}`);
+    return restoreAndRefuse(`migrated ${sprintPath} has ${migrated.length} rows but schema 1 had ${legacy.rows.length}`);
   }
   const tasks: MigratedRowV1[] = [];
   for (let index = 0; index < migrated.length; index += 1) {
     const before = legacy.rows[index];
     const after = migrated[index];
     if (after.task_id !== before.legacy_task_id) {
-      return refuse(
+      return restoreAndRefuse(
         `migrated row ${after.row.index} has task id ${after.task_id} but its schema 1 identity was ${before.legacy_task_id}`,
       );
     }
     if (after.row.task !== before.row.task) {
-      return refuse(`migrated row ${after.row.index} Task cell changed during the rewrite`);
+      return restoreAndRefuse(`migrated row ${after.row.index} Task cell changed during the rewrite`);
     }
     tasks.push({ row_index: after.row.index, task_id: after.task_id, task_cell: after.row.task });
   }

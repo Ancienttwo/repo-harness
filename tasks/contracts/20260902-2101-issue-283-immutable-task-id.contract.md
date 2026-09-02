@@ -118,6 +118,8 @@ allowed_paths:
   - tests/
   - scripts/
   - assets/templates/
+  - assets/reference-configs/
+  - assets/skills/repo-harness-product/references/
   - .claude/templates/
   - plans/
   - docs/

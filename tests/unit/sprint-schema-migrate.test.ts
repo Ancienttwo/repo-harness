@@ -9,7 +9,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { projectCanonicalTasks } from '../../src/core/state/coordination-identity';
@@ -320,6 +320,41 @@ describe('migrate-schema command', () => {
     const again = migrateSprintSchemaCommand({ sprint: SPRINT_PATH, targetRef: 'main' }, processMigrationDependencies(root));
     expect(again.exitCode).toBe(1);
     expect(again.stderr).toContain('not backlog schema 1');
+  });
+
+  test('a post-write validation failure restores both files and writes no receipt', () => {
+    const carrierPath = SPRINT_PATH.replace('.sprint.md', '.work-graph.v1.json');
+    const carrier = `${JSON.stringify({
+      protocol: 1,
+      kind: 'repo-harness-work-graph',
+      repository_id: 'repo_0123456789abcdef',
+      sprint_path: SPRINT_PATH,
+      lane: 'engineering-v2',
+      work_packages: [{ work_package_id: 'wp-a', task_ref: 'second work package' }],
+    }, null, 2)}\n`;
+    const root = repoFixture(V1_SPRINT, carrier);
+    const sprintBefore = readFileSync(join(root, SPRINT_PATH), 'utf-8');
+    const carrierBefore = readFileSync(join(root, carrierPath), 'utf-8');
+
+    // A rewrite that silently drops the last backlog row: the bytes are valid
+    // schema 2 and survive the re-read, so the only gate that catches it is the
+    // row-count proof -- which runs after both files are already on disk.
+    const outcome = migrateSprintSchemaCommand(
+      { sprint: SPRINT_PATH, targetRef: 'main' },
+      {
+        ...processMigrationDependencies(root),
+        rewriteSprint: (input) => rewriteSprintToSchemaV2(input)
+          .split('\n')
+          .filter((line) => !line.includes('second work package'))
+          .join('\n'),
+      },
+    );
+
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.stderr).toContain('has 1 rows but schema 1 had 2');
+    expect(readFileSync(join(root, SPRINT_PATH), 'utf-8')).toBe(sprintBefore);
+    expect(readFileSync(join(root, carrierPath), 'utf-8')).toBe(carrierBefore);
+    expect(existsSync(join(root, defaultMigrationReceiptPath(SPRINT_PATH)))).toBe(false);
   });
 
   test('duplicate Task cells refuse the migration before any write', () => {

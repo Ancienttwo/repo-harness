@@ -13,8 +13,8 @@
  * during which a live sprint can mint identity from its Task text.
  *
  * - Compatibility owner: the repo-harness coordination-identity maintainer,
- *   tracked as a deferred-goal row in `tasks/todos.md`
- *   (`sprint-schema-v1-parser-removal`).
+ *   tracked as the `sprint-schema-v1-parser-removal` deferred-goal row in
+ *   `tasks/todos.md`.
  * - Removal trigger: once every tracked sprint under `plans/sprints/` reports
  *   `Backlog Schema: 2` and no archived sprint needs re-activation, delete this
  *   module together with `sprint migrate-schema` and the schema 1 branches in
