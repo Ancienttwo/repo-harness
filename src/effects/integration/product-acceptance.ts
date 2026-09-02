@@ -9,6 +9,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   unlinkSync,
   writeSync,
@@ -334,6 +335,29 @@ export function readAcceptanceMatrix(repoRoot: string, digest: string, gitBin = 
 
 export function readProductAcceptanceProjection(repoRoot: string, digest: string, gitBin = 'git'): ProductAcceptanceProjectionV1 {
   return readStored(repoRoot, gitBin, 'products', digest, validateProductAcceptanceProjection, canonicalProductAcceptanceProjectionBytes);
+}
+
+/**
+ * Read-only projection of the immutable product acceptance store. The store is
+ * content-addressed by projection digest, so a reader that must answer "is this
+ * work package product-accepted" reads the projections this module persisted
+ * rather than reconstructing a second product verdict.
+ */
+export function listProductAcceptanceProjections(repoRoot: string, gitBin = 'git'): readonly ProductAcceptanceProjectionV1[] {
+  let directory: string;
+  try {
+    directory = integrationEvidenceDirectory(repoRoot, gitBin, 'products', false);
+  } catch (error) {
+    if (error instanceof IntegrationAcceptanceError && (error.cause as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') {
+      return Object.freeze([]);
+    }
+    throw error;
+  }
+  const digests = readdirSync(directory, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && /^[0-9a-f]{64}\.json$/.test(entry.name))
+    .map((entry) => `sha256:${entry.name.slice(0, -'.json'.length)}`)
+    .sort();
+  return Object.freeze(digests.map((digest) => readProductAcceptanceProjection(repoRoot, digest, gitBin)));
 }
 
 function assertApprovedRequirement(repoRoot: string, contract: IntegrationContractV1): void {

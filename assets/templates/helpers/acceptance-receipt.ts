@@ -300,7 +300,7 @@ function normalizeArchiveProjection(content: string): string {
   return content.replace(legacyEnvelope, '');
 }
 
-function authorityFingerprint(content: string): string {
+export function authorityFingerprint(content: string): string {
   const normalized = normalizeArchiveProjection(content)
     .replace(/^> \*\*Status\*\*:[ \t]*.+$/m, '> **Status**: <lifecycle>')
     .replace(/^> \*\*Last Updated\*\*:[ \t]*.+$/m, '> **Last Updated**: <lifecycle>');
@@ -703,6 +703,15 @@ function readReceipt(path: string): AcceptanceReceipt {
     fail('AcceptanceReceipt waiver grant binding does not match disposition');
   }
   return { ...value, findings: validateFindings(value.findings) } as AcceptanceReceipt;
+}
+
+/**
+ * Read-only accessor for the single AcceptanceReceipt authority file. It
+ * exists so other authorities revalidate the same bytes through the same
+ * validator instead of re-deriving a second receipt parser.
+ */
+export function readAcceptanceReceiptFile(path: string): AcceptanceReceipt {
+  return readReceipt(path);
 }
 
 function writeReceipt(path: string, receipt: AcceptanceReceipt): void {

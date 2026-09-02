@@ -23,10 +23,26 @@ export type WorkPackageDependencyState =
   | 'publication_integrated'
   | 'product_accepted';
 
+export type WorkPackageDependencyAuthorityKind = 'module_acceptance' | 'product_acceptance';
+
+/**
+ * A dependency edge that requires an acceptance verdict must name the exact
+ * authority subject. `required_acceptance` carries policy documents, not
+ * receipt subjects, so it cannot select one AcceptanceReceipt or one ME-4C
+ * product projection. This closed reference is validated against the same
+ * canonical commit as the target Work Graph before any authority is read.
+ */
+export interface WorkPackageDependencyAuthorityRefV1 {
+  readonly authority_kind: WorkPackageDependencyAuthorityKind;
+  readonly subject_ref: string;
+  readonly subject_revision: string;
+}
+
 export interface WorkPackageDependencyV1 {
   readonly repository_id: string;
   readonly work_package_id: string;
   readonly required_state: WorkPackageDependencyState;
+  readonly acceptance_authority: WorkPackageDependencyAuthorityRefV1 | null;
 }
 
 export interface WorkPackageAcceptancePolicyV1 {
@@ -209,16 +225,57 @@ function safeRepoPath(value: unknown, field: string, suffix?: string): string {
   return path;
 }
 
+const DEPENDENCY_AUTHORITY_KIND_BY_STATE: Readonly<Record<WorkPackageDependencyState, WorkPackageDependencyAuthorityKind | null>> = Object.freeze({
+  canonical_done: null,
+  module_accepted: 'module_acceptance',
+  publication_integrated: null,
+  product_accepted: 'product_acceptance',
+});
+
+export const WORK_PACKAGE_DEPENDENCY_STATES: readonly WorkPackageDependencyState[] = Object.freeze(
+  Object.keys(DEPENDENCY_AUTHORITY_KIND_BY_STATE).sort() as WorkPackageDependencyState[],
+);
+
+export function dependencyAuthorityKindForState(state: WorkPackageDependencyState): WorkPackageDependencyAuthorityKind | null {
+  return DEPENDENCY_AUTHORITY_KIND_BY_STATE[state];
+}
+
+function parseDependencyAuthority(
+  value: unknown,
+  required: WorkPackageDependencyAuthorityKind | null,
+  label: string,
+): WorkPackageDependencyAuthorityRefV1 | null {
+  if (value === null) {
+    if (required !== null) invalid(`${label} requires an ${required} authority reference`);
+    return null;
+  }
+  if (required === null) invalid(`${label} must be null for this required_state`);
+  const input = record(value, label);
+  exact(input, ['authority_kind', 'subject_ref', 'subject_revision'], label);
+  if (input.authority_kind !== required) invalid(`${label}.authority_kind must be ${required}`);
+  return Object.freeze({
+    authority_kind: required,
+    subject_ref: safeRepoPath(input.subject_ref, `${label}.subject_ref`),
+    subject_revision: string(input.subject_revision, `${label}.subject_revision`, DIGEST),
+  });
+}
+
 function parseDependency(value: unknown, index: number): WorkPackageDependencyV1 {
   const input = record(value, `depends_on[${index}]`);
-  exact(input, ['repository_id', 'work_package_id', 'required_state'], `depends_on[${index}]`);
-  if (!['canonical_done', 'module_accepted', 'publication_integrated', 'product_accepted'].includes(String(input.required_state))) {
+  exact(input, ['repository_id', 'work_package_id', 'required_state', 'acceptance_authority'], `depends_on[${index}]`);
+  if (!WORK_PACKAGE_DEPENDENCY_STATES.includes(String(input.required_state) as WorkPackageDependencyState)) {
     invalid(`depends_on[${index}].required_state is invalid`);
   }
+  const requiredState = input.required_state as WorkPackageDependencyState;
   return Object.freeze({
     repository_id: string(input.repository_id, `depends_on[${index}].repository_id`, REPOSITORY_ID),
     work_package_id: string(input.work_package_id, `depends_on[${index}].work_package_id`, WORK_PACKAGE_ID),
-    required_state: input.required_state as WorkPackageDependencyState,
+    required_state: requiredState,
+    acceptance_authority: parseDependencyAuthority(
+      input.acceptance_authority,
+      DEPENDENCY_AUTHORITY_KIND_BY_STATE[requiredState],
+      `depends_on[${index}].acceptance_authority`,
+    ),
   });
 }
 
@@ -473,7 +530,8 @@ export function buildEngineerOfferCandidate(input: EngineerOfferCandidateInput):
   if (input.dependencies.length !== item.depends_on.length || input.dependencies.some((entry, index) => {
     const expected = item.depends_on[index];
     if (!expected || entry.repository_id !== expected.repository_id
-      || entry.work_package_id !== expected.work_package_id || entry.required_state !== expected.required_state) return true;
+      || entry.work_package_id !== expected.work_package_id || entry.required_state !== expected.required_state
+      || canonicalEngineerJson(entry.acceptance_authority ?? null) !== canonicalEngineerJson(expected.acceptance_authority ?? null)) return true;
     if (!['satisfied', 'unsatisfied', 'authority_unavailable'].includes(entry.status)) return true;
     return entry.status === 'authority_unavailable'
       ? entry.authority_revision !== null
