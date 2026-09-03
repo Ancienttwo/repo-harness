@@ -331,6 +331,32 @@ export function buildWorkDemandEvent(input: BuildWorkDemandEventInput): WorkDema
   return Object.freeze({ ...basis, event_sha256: canonicalMessageDigest(basis) });
 }
 
+export function validateWorkDemandEvent(value: unknown): WorkDemandEventV1 {
+  const input = record(value, 'WorkDemand event');
+  exact(input, ['protocol', 'kind', 'transition_id', 'idempotency_key', 'operation_fingerprint', 'demand_id', 'demand_sha256', 'revision', 'transition', 'expected_current_digest', 'actor', 'next_state', 'accepted_projection', 'materialization_receipt', 'event_sha256'], 'WorkDemand event');
+  if (input.protocol !== WORK_DEMAND_PROTOCOL || input.kind !== WORK_DEMAND_EVENT_KIND) invalid('WorkDemand event protocol or kind is invalid');
+  assertMessageInteger(input.revision, 'revision', 1, invalid);
+  const transition = required(input.transition, 'transition') as WorkDemandTransition;
+  if (!['propose', 'submit', 'accept', 'reject', 'cancel', 'begin_materialization', 'materialize', 'integrate'].includes(transition)) invalid('WorkDemand transition is invalid');
+  const nextState = required(input.next_state, 'next_state') as WorkDemandState;
+  if (!['proposed', 'under_review', 'accepted', 'rejected', 'cancelled', 'materializing', 'materialized', 'integrated'].includes(nextState)) invalid('WorkDemand next state is invalid');
+  const basis = Object.freeze({
+    protocol: WORK_DEMAND_PROTOCOL, kind: WORK_DEMAND_EVENT_KIND,
+    transition_id: sha(input.transition_id, 'transition_id'), idempotency_key: bounded(input.idempotency_key, 'idempotency_key', 512),
+    operation_fingerprint: sha(input.operation_fingerprint, 'operation_fingerprint'), demand_id: uuid(input.demand_id, 'demand_id'),
+    demand_sha256: sha(input.demand_sha256, 'demand_sha256'), revision: input.revision, transition,
+    expected_current_digest: input.expected_current_digest === null ? null : sha(input.expected_current_digest, 'expected_current_digest'),
+    actor: validateActor(input.actor), next_state: nextState,
+    accepted_projection: input.accepted_projection === null ? null : validateAcceptedWorkDemandProjection(input.accepted_projection),
+    materialization_receipt: input.materialization_receipt === null ? null : validateMaterializedWorkDemandReceipt(input.materialization_receipt),
+  });
+  const built = Object.freeze({ ...basis, event_sha256: canonicalMessageDigest(basis) });
+  if (input.transition_id !== deriveWorkDemandTransitionId(built.demand_id, built.idempotency_key)
+    || input.event_sha256 !== built.event_sha256
+    || canonicalMessageBytes(input) !== canonicalMessageBytes(built as unknown as RecordValue)) invalid('WorkDemand event digest is stale');
+  return built;
+}
+
 export function foldWorkDemandCurrent(previous: WorkDemandCurrentV1 | null, eventValue: WorkDemandEventV1): WorkDemandCurrentV1 {
   const event = eventValue;
   if ((previous?.current_digest ?? null) !== event.expected_current_digest || event.revision !== (previous?.revision ?? 0) + 1) invalid('WorkDemand event chain is discontinuous');
@@ -359,3 +385,9 @@ export function validateWorkDemandCurrent(value: unknown): WorkDemandCurrentV1 {
   if (input.current_digest !== built.current_digest || canonicalMessageBytes(input) !== canonicalMessageBytes(built as unknown as RecordValue)) invalid('WorkDemand current digest is stale');
   return built;
 }
+
+export const canonicalWorkDemandBytes = (value: WorkDemandV1): string => canonicalMessageBytes(value as unknown as RecordValue);
+export const canonicalWorkDemandProjectionBytes = (value: AcceptedWorkDemandProjectionV1): string => canonicalMessageBytes(value as unknown as RecordValue);
+export const canonicalWorkDemandEventBytes = (value: WorkDemandEventV1): string => canonicalMessageBytes(value as unknown as RecordValue);
+export const canonicalWorkDemandCurrentBytes = (value: WorkDemandCurrentV1): string => canonicalMessageBytes(value as unknown as RecordValue);
+export const canonicalWorkDemandReceiptBytes = (value: MaterializedWorkDemandReceiptV1): string => canonicalMessageBytes(value as unknown as RecordValue);
