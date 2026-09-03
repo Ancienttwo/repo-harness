@@ -133,4 +133,3 @@ Reserve-before-act is the only shape that prevents the next spend; post-hoc tota
 bun test --timeout 60000; bun run check:type; bun run check:state-boundaries; bash scripts/check-deploy-sql-order.sh; bash scripts/check-architecture-sync.sh; bash scripts/check-task-sync.sh; repo-harness run check-task-workflow --strict; bun scripts/inspect-project-state.ts --repo . --format text; bun src/cli/index.ts init --repo . --dry-run.
 
 ## Annotations
-
