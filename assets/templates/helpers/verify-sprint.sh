@@ -913,7 +913,7 @@ fi
 
 finalize_prepared_acceptance() {
   local acceptance_row acceptance_exit acceptance_status acceptance_reviewer acceptance_source acceptance_disposition acceptance_message
-  local finalized_checks change_assessment_file=".ai/harness/checks/change-assessment.latest.json"
+  local finalized_checks prepared_run_file change_assessment_file=".ai/harness/checks/change-assessment.latest.json"
 
   [[ -n "$BUN_BIN" && -x "$BUN_BIN" ]] || { echo "verify-sprint: trusted Bun runtime is unavailable" >&2; return 1; }
   [[ -f "$helper_dir/acceptance-receipt.ts" ]] || { echo "verify-sprint: AcceptanceReceipt helper is missing: $helper_dir/acceptance-receipt.ts" >&2; return 1; }
@@ -942,6 +942,51 @@ finalize_prepared_acceptance() {
     external_pass|user_waiver) ;;
     *) echo "verify-sprint: AcceptanceReceipt disposition is not a closeout state: $acceptance_disposition" >&2; return 1 ;;
   esac
+
+  if jq -e \
+    --arg reviewer "$acceptance_reviewer" \
+    --arg source "$acceptance_source" \
+    --arg disposition "$acceptance_disposition" \
+    '
+      .acceptance_receipt.status == "pass"
+      and .acceptance_receipt.disposition == $disposition
+      and .acceptance_receipt.reviewer == $reviewer
+      and .acceptance_receipt.source == $source
+      and ([.guards[] | select(.name == "acceptance_receipt" and .status == "pass")] | length == 1)
+    ' "$checks_file" >/dev/null 2>&1; then
+    echo "Sprint acceptance already finalized for the receipt-bound evidence"
+    echo "Prepared evidence: $checks_file"
+    return 0
+  fi
+
+  prepared_run_file="$(jq -r '.run_file // empty' "$checks_file")"
+  case "$prepared_run_file" in
+    .ai/harness/runs/*.json) ;;
+    *) echo "verify-sprint: prepared run snapshot path is missing or unsafe" >&2; return 1 ;;
+  esac
+  [[ "$prepared_run_file" != *"/../"* && "$prepared_run_file" != ../* && "$prepared_run_file" != */.. ]] || {
+    echo "verify-sprint: prepared run snapshot path contains traversal" >&2
+    return 1
+  }
+  [[ -f "$prepared_run_file" && ! -L "$prepared_run_file" ]] || {
+    echo "verify-sprint: prepared run snapshot is missing or is a symlink: $prepared_run_file" >&2
+    return 1
+  }
+  jq -e --arg snapshot "$prepared_run_file" --slurpfile prepared "$checks_file" '
+    .source == "verify-sprint"
+    and .status == "pass"
+    and .exit_code == 0
+    and .run_file == $snapshot
+    and .lifecycle.snapshot == $snapshot
+    and .review_subject_sha256 == $prepared[0].review_subject_sha256
+    and .contract.file == $prepared[0].contract.file
+    and .change_assessment == $prepared[0].change_assessment
+    and (.commands | type == "array")
+    and ([.commands[] | select(.status != "pass" or .exit_code != 0)] | length == 0)
+  ' "$prepared_run_file" >/dev/null 2>&1 || {
+    echo "verify-sprint: immutable prepared run snapshot does not match the receipt-bound evidence" >&2
+    return 1
+  }
 
   REPO_HARNESS_TARGET_REPO_ROOT="$(pwd -P)" "$BUN_BIN" "$helper_dir/acceptance-receipt.ts" project \
     --contract "$contract_file" --verification "$checks_file" --review "$review_file" >/dev/null
@@ -974,7 +1019,7 @@ finalize_prepared_acceptance() {
       }
       | .guards = [.guards[] | if .name == "acceptance_receipt" then .status = "pass" else . end]
       | .next_step = "finish contract worktree or archive completed task"
-    ' "$checks_file" > "$finalized_checks"
+    ' "$prepared_run_file" > "$finalized_checks"
   echo "Sprint acceptance finalized without rerunning verification"
   echo "Prepared evidence: $checks_file"
   set +e
@@ -983,7 +1028,13 @@ finalize_prepared_acceptance() {
   set -e
   rm -f "$finalized_checks"
   case "$emit_exit" in
-    0) : ;;
+    0)
+      REPO_HARNESS_TARGET_REPO_ROOT="$(pwd -P)" "$BUN_BIN" "$helper_dir/acceptance-receipt.ts" verify \
+        --contract "$contract_file" --verification "$checks_file" --format row >/dev/null || {
+        echo "verify-sprint: finalized evidence no longer matches the AcceptanceReceipt" >&2
+        return 1
+      }
+      ;;
     3) : ;;
     *) echo "verify-sprint: evidence emission failed" >&2; return 1 ;;
   esac
