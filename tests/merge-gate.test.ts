@@ -6,7 +6,7 @@ import { spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { buildReviewSubject } from '../src/effects/review/diff-fingerprint';
 import { prepareChangeAssessment } from '../src/effects/review/change-assessment';
-import { acceptanceReceiptPath, recordAcceptance } from '../scripts/acceptance-receipt';
+import { acceptanceAuthorityFingerprint, acceptanceReceiptPath, recordAcceptance, sealArchiveProjection } from '../scripts/acceptance-receipt';
 
 const ROOT = join(import.meta.dir, '..');
 const SCRIPT = join(ROOT, 'scripts', 'merge-gate.ts');
@@ -139,6 +139,67 @@ async function makeFixture(seedCandidate?: (cwd: string) => void) {
   return { cwd, home, harness, providerCalls };
 }
 
+function archiveAcceptedFixture(cwd: string, home: string, apply = true): Record<string, string> {
+  const livePlan = 'plans/plan-demo.md';
+  const liveContract = 'tasks/contracts/demo.contract.md';
+  const liveReview = 'tasks/reviews/demo.review.md';
+  const archivedPlan = 'plans/archive/plan-demo.md';
+  const archivedContract = 'tasks/archive/contract-20260904-demo.md';
+  const archivedReview = 'tasks/archive/review-20260904-demo.md';
+  const projection = [
+    `> **Archive Projection V1**: \`${livePlan}\` => \`${archivedPlan}\``,
+    `> **Archive Projection V1**: \`${liveContract}\` => \`${archivedContract}\``,
+    `> **Archive Projection V1**: \`${liveReview}\` => \`${archivedReview}\``,
+  ];
+  const envelope = (lifecycle: 'plan' | 'contract' | 'review') => [
+    '> **Archived**: 2026-09-04 09:45',
+    `> **Related Plan**: ${archivedPlan}`,
+    '> **Outcome**: Completed',
+    `> **Lifecycle**: ${lifecycle}`,
+    '> **Parent Run ID**: merge-gate-archive-fixture',
+    ...projection,
+    '',
+  ];
+
+  const archivedPlanContent = [
+    ...envelope('plan'),
+    readFileSync(join(cwd, livePlan), 'utf-8')
+      .replace('> **Status**: Executing', '> **Status**: Archived')
+      .replaceAll(livePlan, archivedPlan)
+      .replaceAll(liveContract, archivedContract),
+  ].join('\n');
+  const archivedContractContent = [
+    ...envelope('contract'),
+    readFileSync(join(cwd, liveContract), 'utf-8')
+      .replaceAll(livePlan, archivedPlan)
+      .replaceAll(liveContract, archivedContract),
+  ].join('\n');
+  const archivedReviewContent = [
+    ...envelope('review'),
+    readFileSync(join(cwd, liveReview), 'utf-8')
+      .replaceAll(livePlan, archivedPlan)
+      .replaceAll(liveReview, archivedReview),
+  ].join('\n');
+  const destinations = {
+    [archivedPlan]: `sha256:${createHash('sha256').update(archivedPlanContent).digest('hex')}`,
+    [archivedContract]: `sha256:${createHash('sha256').update(archivedContractContent).digest('hex')}`,
+    [archivedReview]: `sha256:${createHash('sha256').update(archivedReviewContent).digest('hex')}`,
+  };
+  if (!apply) return destinations;
+
+  mkdirSync(join(cwd, 'plans', 'archive'), { recursive: true });
+  mkdirSync(join(cwd, 'tasks', 'archive'), { recursive: true });
+  writeFileSync(join(cwd, archivedPlan), archivedPlanContent);
+  writeFileSync(join(cwd, archivedContract), archivedContractContent);
+  writeFileSync(join(cwd, archivedReview), archivedReviewContent);
+  rmSync(join(cwd, livePlan));
+  rmSync(join(cwd, liveContract));
+  rmSync(join(cwd, liveReview));
+  commit(cwd, 'archive accepted workflow');
+  sealArchiveProjection({ root: cwd, authorityHome: home, contract: archivedContract });
+  return destinations;
+}
+
 describe('provider-free merge seal', () => {
   test('consumes the one AcceptanceReceipt and binds exact base/head/full diff locally', async () => {
     const fixture = await makeFixture();
@@ -209,6 +270,41 @@ describe('provider-free merge seal', () => {
     mkdirSync(join(fixture.cwd, 'tasks'), { recursive: true });
     writeFileSync(join(fixture.cwd, 'tasks', 'current.md'), '# Current\n\nlifecycle projection\n');
     commit(fixture.cwd, 'archive lifecycle projection');
+
+    const verified = run('bun', [fixture.harness, 'verify', '--base', 'main', '--format', 'sha'], fixture.cwd);
+    expect(verified.status, verified.stderr).toBe(0);
+    expect(verified.stdout.trim()).toBe(git(fixture.cwd, 'rev-parse', 'HEAD'));
+    expect(readFileSync(fixture.providerCalls, 'utf-8').trim()).toBe('1');
+  }, 30_000);
+
+  test('post-freeze archive projection preserves the already sealed acceptance authority', async () => {
+    const fixture = await makeFixture();
+    const beforeArchive = acceptanceAuthorityFingerprint(fixture.cwd, fixture.home);
+    const destinations = archiveAcceptedFixture(fixture.cwd, fixture.home, false);
+    const sealed = run('bun', [
+      fixture.harness,
+      'run',
+      '--base', 'main',
+      '--allow-post-freeze', 'plans/plan-demo.md',
+      '--allow-post-freeze', 'plans/archive/plan-demo.md',
+      '--allow-post-freeze', 'tasks/contracts/demo.contract.md',
+      '--allow-post-freeze', 'tasks/archive/contract-20260904-demo.md',
+      '--allow-post-freeze', 'tasks/reviews/demo.review.md',
+      '--allow-post-freeze', 'tasks/archive/review-20260904-demo.md',
+      '--expect-post-freeze-destination', `plans/archive/plan-demo.md=${destinations['plans/archive/plan-demo.md']}`,
+      '--expect-post-freeze-destination', `tasks/archive/contract-20260904-demo.md=${destinations['tasks/archive/contract-20260904-demo.md']}`,
+      '--expect-post-freeze-destination', `tasks/archive/review-20260904-demo.md=${destinations['tasks/archive/review-20260904-demo.md']}`,
+      '--format', 'sha',
+    ], fixture.cwd);
+    expect(sealed.status, sealed.stderr).toBe(0);
+    const sealPath = join(dirname(acceptanceReceiptPath(fixture.cwd, fixture.home)), 'merge-seal.latest.json');
+    const frozenSeal = JSON.parse(readFileSync(sealPath, 'utf-8')) as { acceptance_receipt_sha256: string };
+    expect(frozenSeal.acceptance_receipt_sha256).toBe(beforeArchive);
+
+    archiveAcceptedFixture(fixture.cwd, fixture.home);
+    const afterArchive = acceptanceAuthorityFingerprint(fixture.cwd, fixture.home);
+    expect(afterArchive).not.toBe(beforeArchive);
+    expect(frozenSeal.acceptance_receipt_sha256).not.toBe(afterArchive);
 
     const verified = run('bun', [fixture.harness, 'verify', '--base', 'main', '--format', 'sha'], fixture.cwd);
     expect(verified.status, verified.stderr).toBe(0);
