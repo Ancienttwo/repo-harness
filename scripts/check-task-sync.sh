@@ -108,7 +108,7 @@ for (const file of waivers) {
 }
 if (invalid) process.exit(2);
 if (!schemaOnly && !admitted) process.exit(1);
-' "$expected_digest" "$schema_only" "${substantive[@]}" --waivers "${waivers[@]}"
+' "$expected_digest" "$schema_only" ${substantive[@]+"${substantive[@]}"} --waivers "${waivers[@]}"
 }
 
 if [[ "$validate_waivers_only" -eq 1 ]]; then
