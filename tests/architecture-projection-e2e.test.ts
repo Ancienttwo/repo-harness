@@ -46,7 +46,7 @@ describe("AXR7 repo-harness architecture consumer", () => {
     const moduleDocs = filesUnder(join(architectureRoot, "modules")).filter((path) => path.endsWith(".md"));
     const html = filesUnder(architectureRoot).filter((path) => path.endsWith(".html"));
 
-    expect(moduleDocs).toHaveLength(24);
+    expect(moduleDocs).toHaveLength(25);
     expect(html.map((path) => relative(ROOT, path))).toEqual([]);
     for (const path of moduleDocs) {
       const body = readFileSync(path, "utf8");
