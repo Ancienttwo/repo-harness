@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-04 04:16
+> **Related Plan**: plans/archive/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260904-0416
+> **Archive Projection V1**: `plans/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md` => `plans/archive/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md`
+> **Archive Projection V1**: `tasks/notes/20260903-0954-brc0-authority-freeze-baseline-characterization.notes.md` => `tasks/archive/notes-20260904-0416-brc0-authority-freeze-baseline-characterization.md`
+> **Archive Projection V1**: `tasks/contracts/20260903-0954-brc0-authority-freeze-baseline-characterization.contract.md` => `tasks/archive/contract-20260904-0416-brc0-authority-freeze-baseline-characterization.md`
+> **Archive Projection V1**: `tasks/reviews/20260903-0954-brc0-authority-freeze-baseline-characterization.review.md` => `tasks/archive/review-20260904-0416-brc0-authority-freeze-baseline-characterization.md`
+
 # Task Contract: brc0-authority-freeze-baseline-characterization
 
 > **Status**: Fulfilled
-> **Plan**: plans/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md
+> **Plan**: plans/archive/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-03 09:54
-> **Review File**: `tasks/reviews/20260903-0954-brc0-authority-freeze-baseline-characterization.review.md`
-> **Notes File**: `tasks/notes/20260903-0954-brc0-authority-freeze-baseline-characterization.notes.md`
+> **Review File**: `tasks/archive/review-20260904-0416-brc0-authority-freeze-baseline-characterization.md`
+> **Notes File**: `tasks/archive/notes-20260904-0416-brc0-authority-freeze-baseline-characterization.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -84,10 +94,10 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md`
+- Source plan: `plans/archive/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260903-0954-brc0-authority-freeze-baseline-characterization.review.md`
-- Notes file: `tasks/notes/20260903-0954-brc0-authority-freeze-baseline-characterization.notes.md`
+- Review file: `tasks/archive/review-20260904-0416-brc0-authority-freeze-baseline-characterization.md`
+- Notes file: `tasks/archive/notes-20260904-0416-brc0-authority-freeze-baseline-characterization.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -111,9 +121,9 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 allowed_paths:
   - plans/
   - tasks/todos.md
-  - tasks/contracts/20260903-0954-brc0-authority-freeze-baseline-characterization.contract.md
-  - tasks/reviews/20260903-0954-brc0-authority-freeze-baseline-characterization.review.md
-  - tasks/notes/20260903-0954-brc0-authority-freeze-baseline-characterization.notes.md
+  - tasks/archive/contract-20260904-0416-brc0-authority-freeze-baseline-characterization.md
+  - tasks/archive/review-20260904-0416-brc0-authority-freeze-baseline-characterization.md
+  - tasks/archive/notes-20260904-0416-brc0-authority-freeze-baseline-characterization.md
   - tests/characterization/
   - tests/fixtures/repair-campaign/
   - docs/researches/
@@ -176,7 +186,7 @@ exit_criteria:
     - docs/architecture/snapshots/2026-09-03-development-campaign-boundary-declaration.md
   artifacts_exist:
     - .ai/harness/checks/latest.json
-    - tasks/notes/20260903-0954-brc0-authority-freeze-baseline-characterization.notes.md
+    - tasks/archive/notes-20260904-0416-brc0-authority-freeze-baseline-characterization.md
   tests_pass:
     - path: tests/characterization/repair-campaign-authority-freeze.test.ts
   commands_succeed:
