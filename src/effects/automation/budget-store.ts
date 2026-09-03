@@ -34,6 +34,7 @@ import {
   chainAutomationLedgerDigest,
   emptyAutomationMetricVector,
   evaluateAutomationReservation,
+  foldAutomationLedger,
   requireUnattendedAutomationBudget,
   sealAutomationBudgetCurrent,
   sealAutomationReservation,
@@ -335,6 +336,101 @@ export function readAutomationBudgetStatus(repoRoot: string, runId: string): Aut
 }
 
 /**
+ * The one recovery for a durable record `current.json` does not agree with.
+ *
+ * Every record except `current.json` is create-once and fsynced before the
+ * projection is renamed, so a crash can only ever leave the projection behind
+ * the durable records -- never ahead of them. That makes `current.json` a
+ * derived projection of `reservations/` and `events/`, and the repair is a
+ * re-derivation rather than a guess: a reservation with no event is the
+ * interrupted operation, an event the projection has not folded in is a charge
+ * that already happened. Nothing is ever silently re-minted, and no metric is
+ * ever assumed to be zero.
+ *
+ * Drift is detected by counting directory entries, which costs two `readdir`
+ * calls on the healthy path; the full re-derivation only runs after a crash.
+ */
+export type AutomationCurrentDrift = 'none' | 'unlisted_reservation' | 'unfolded_event';
+
+function jsonEntries(directory: string): readonly string[] {
+  if (!existsSync(directory)) return Object.freeze([]);
+  try {
+    return Object.freeze(readdirSync(directory).filter((entry) => entry.endsWith('.json')).sort());
+  } catch (error) {
+    return fail('automation_budget_store_unavailable', `cannot list ${directory}`, error);
+  }
+}
+
+export function detectAutomationCurrentDrift(
+  paths: RunPaths,
+  current: AutomationBudgetCurrentV1,
+): AutomationCurrentDrift {
+  const events = jsonEntries(paths.events).length;
+  if (events !== current.event_count) return 'unfolded_event';
+  if (jsonEntries(paths.reservations).length !== events + current.open_reservation_sha256s.length) {
+    return 'unlisted_reservation';
+  }
+  return 'none';
+}
+
+function repairCurrentFromDurableRecords(
+  repoRoot: string,
+  paths: RunPaths,
+  status: AutomationBudgetStatusV1,
+  repairedAt: string,
+): AutomationBudgetStatusV1 {
+  const events = jsonEntries(paths.events)
+    .map((entry) => parse(readRaw(join(paths.events, entry), 'automation usage event'), validateAutomationUsageEvent, 'automation usage event'))
+    .sort((left, right) => left.step_index - right.step_index);
+  const reservations = jsonEntries(paths.reservations)
+    .map((entry) => parse(readRaw(join(paths.reservations, entry), 'automation reservation'), validateAutomationReservation, 'automation reservation'));
+  const closed = new Set(events.map((event) => event.reservation_sha256));
+  const open = reservations.filter((reservation) => !closed.has(reservation.reservation_sha256));
+  if (open.length > 1) {
+    fail('automation_budget_store_conflict', 'more than one automation reservation is unresolved; this run cannot be reconciled automatically');
+  }
+  const folded = foldAutomationLedger(events);
+  let ledger = AUTOMATION_LEDGER_GENESIS;
+  for (const event of events) ledger = chainAutomationLedgerDigest(ledger, event.event_sha256);
+  const nextStepIndex = folded.last_completed_step_index + 1;
+  const held = open[0] ?? null;
+  if (held !== null && held.step_index !== nextStepIndex) {
+    fail('automation_budget_store_conflict', 'the unresolved automation reservation does not occupy the next controller step');
+  }
+  const current = sealAutomationBudgetCurrent({
+    automation_run_id: status.current.automation_run_id,
+    budget_sha256: status.current.budget_sha256,
+    // A repaired run is one that was interrupted: the refusal it produces is
+    // the same one an open reservation produces, so the next operation is
+    // blocked until the interrupted one is appended or reconciled.
+    state: status.stop_receipt !== null ? 'budget_exhausted' : held === null ? 'active' : 'reconciliation_required',
+    consumed: folded.consumed,
+    open_reserved: held === null ? emptyAutomationMetricVector() : held.reserved,
+    consecutive_no_progress_steps: folded.consecutive_no_progress_steps,
+    last_completed_step_index: folded.last_completed_step_index,
+    next_step_index: nextStepIndex,
+    open_reservation_sha256s: held === null ? [] : [held.reservation_sha256],
+    event_count: folded.event_count,
+    ledger_sha256: ledger,
+    stop_receipt_sha256: status.stop_receipt === null ? null : status.stop_receipt.stop_receipt_sha256,
+    previous_current_sha256: status.current.current_sha256,
+    updated_at: repairedAt,
+  });
+  writeAtomic(paths.current, bytes(current), 'automation budget current');
+  return Object.freeze({ budget: status.budget, current, stop_receipt: status.stop_receipt });
+}
+
+/**
+ * Every mutating verb enters through here, inside the run lock, so no decision
+ * is ever taken against a projection the durable records contradict.
+ */
+function lockedStatus(repoRoot: string, paths: RunPaths, runId: string, now: string): AutomationBudgetStatusV1 {
+  const status = readAutomationBudgetStatus(repoRoot, runId);
+  if (detectAutomationCurrentDrift(paths, status.current) === 'none') return status;
+  return repairCurrentFromDurableRecords(repoRoot, paths, status, now);
+}
+
+/**
  * An unattended run may not start without a concrete enforceable budget. There
  * is no unlimited default and no advisory mode.
  */
@@ -395,7 +491,15 @@ export function publishAutomationBudget(input: PublishAutomationBudgetInput): Au
     if (!writeExclusive(budgetPath, encoded, 'automation budget') && readRaw(budgetPath, 'automation budget') !== encoded) {
       fail('automation_budget_store_conflict', 'an automation budget with this digest already exists with different bytes');
     }
-    const existing = readCurrentOptional(paths);
+    const preexisting = readCurrentOptional(paths);
+    const existing = preexisting === null || detectAutomationCurrentDrift(paths, preexisting) === 'none'
+      ? preexisting
+      : repairCurrentFromDurableRecords(
+        repoRoot,
+        paths,
+        readAutomationBudgetStatus(repoRoot, budget.automation_run_id),
+        input.published_at,
+      ).current;
     if (existing === null) {
       if (budget.revision !== 1) fail('automation_budget_store_conflict', 'the first budget for a run must be revision 1');
       const current = sealAutomationBudgetCurrent({
@@ -431,14 +535,21 @@ export function publishAutomationBudget(input: PublishAutomationBudgetInput): Au
       fail('automation_budget_store_conflict', 'a budget revision must increment the revision counter by one');
     }
     // A new revision invalidates every controller decision taken under the old
-    // one: an open reservation from the superseded digest can no longer be
-    // appended, so the run drops into reconciliation rather than silently
-    // spending against limits it was not granted under.
-    const stale = existing.open_reservation_sha256s.length > 0;
+    // one, and a reservation carries the exact revision that authorized it. A
+    // revision published over an in-flight operation would therefore strand a
+    // charge that can never land, so the publication waits for the run to be
+    // quiescent instead. The ledger itself is revision-independent: consumption
+    // already recorded stays recorded across the revision.
+    if (existing.open_reservation_sha256s.length > 0) {
+      fail(
+        'automation_budget_store_conflict',
+        'a budget revision cannot be published while an in-flight operation holds a reservation; append or reconcile it first',
+      );
+    }
     const current = sealAutomationBudgetCurrent({
       automation_run_id: existing.automation_run_id,
       budget_sha256: budget.budget_sha256,
-      state: stale ? 'reconciliation_required' : 'active',
+      state: 'active',
       consumed: existing.consumed,
       open_reserved: existing.open_reserved,
       consecutive_no_progress_steps: existing.consecutive_no_progress_steps,
@@ -600,8 +711,12 @@ export function reserveAutomationBudget(input: ReserveAutomationBudgetInput): Au
   const paths = runPaths(repoRoot, input.automation_run_id);
   const reserved = validateAutomationMetricVector(input.reserved, 'reserved');
   return withExclusiveDirectoryLock(paths.common, paths.lockRelative, () => {
-    const status = readAutomationBudgetStatus(repoRoot, input.automation_run_id);
+    const status = lockedStatus(repoRoot, paths, input.automation_run_id, input.reserved_at);
     const reservationPath = join(paths.reservations, `${keyDigest(input.idempotency_key)}.json`);
+    // A stored reservation is closed, open, or nothing this store may act on.
+    // The third case cannot survive `lockedStatus`, so reaching it means the
+    // durable records and the projection still disagree: fail closed rather
+    // than re-mint a reservation whose headroom is unaccounted for.
     const replay = (): AutomationBudgetReservationV1 | null => {
       if (!existsSync(reservationPath)) return null;
       const stored = parse(readRaw(reservationPath, 'automation reservation'), validateAutomationReservation, 'automation reservation');
@@ -611,7 +726,12 @@ export function reserveAutomationBudget(input: ReserveAutomationBudgetInput): Au
       if (stored.budget_sha256 !== status.current.budget_sha256) {
         fail('automation_budget_store_conflict', 'automation reservation was granted under a superseded budget revision');
       }
-      return stored;
+      if (existsSync(join(paths.events, `${stored.reservation_sha256}.json`))) return stored;
+      if (status.current.open_reservation_sha256s.includes(stored.reservation_sha256)) return stored;
+      return fail(
+        'automation_budget_store_conflict',
+        'stored automation reservation is neither open nor charged after reconciliation; refusing to re-mint it',
+      );
     };
     const decision = evaluateAutomationReservation({
       budget: status.budget,
@@ -722,7 +842,7 @@ function commitUsage(
   resolution: AutomationUsageEventV1['resolution'],
   inFlight: readonly AutomationInFlightAuthorityV1[],
 ): AutomationUsageCommitV1 {
-  const status = readAutomationBudgetStatus(repoRoot, reservation.automation_run_id);
+  const status = lockedStatus(repoRoot, paths, reservation.automation_run_id, result.observed_at);
   const eventPath = join(paths.events, `${reservation.reservation_sha256}.json`);
   if (existsSync(eventPath)) {
     // Replaying the same key charges once. A replay that claims a different

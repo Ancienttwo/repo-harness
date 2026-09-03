@@ -8,7 +8,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'child_process';
 import { createHash } from 'crypto';
-import { existsSync, mkdtempSync, readdirSync, realpathSync, rmSync } from 'fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -31,6 +31,7 @@ import {
   reconcileAutomationReservation,
   requireUnattendedAutomationRunBudget,
   reserveAutomationBudget,
+  AUTOMATION_BUDGET_STORE_RELATIVE_ROOT,
 } from '../../src/effects/automation/budget-store';
 
 const hex = (seed: string): string => createHash('sha256').update(seed, 'utf8').digest('hex');
@@ -118,6 +119,10 @@ function makeBudget(options: BudgetOptions): AutomationBudgetV1 {
     supersedes_sha256: options.supersedes ?? null,
     revision: options.revision ?? 1,
   });
+}
+
+function currentPath(repo: string, runId: string): string {
+  return join(repo, '.git', AUTOMATION_BUDGET_STORE_RELATIVE_ROOT, 'runs', runId, 'current.json');
 }
 
 const NO_TOKENS = { input_tokens: null, output_tokens: null, cost_micros: null } as const;
@@ -445,6 +450,167 @@ describe('issue #282 — crash between reservation and usage append', () => {
   });
 });
 
+describe('issue #282 — a durable reservation the current projection does not list', () => {
+  /**
+   * The crash window this closes: the reservation record is fsynced at
+   * `writeExclusive`, and `current.json` is renamed after it. A process that
+   * dies between the two leaves a durable reservation that the projection does
+   * not list. Nothing may treat that as free headroom, and the interrupted
+   * operation must still be chargeable exactly once.
+   */
+  test('an unlisted reservation blocks a different key and stays chargeable exactly once', () => {
+    const repo = repoFixture();
+    const budget = makeBudget({ run: 'orphan', limits: { ...BASE_LIMITS, max_successful_acquisitions: 1 } });
+    publishAutomationBudget({ repo_root: repo, budget, published_at: '2026-09-03T00:00:01.000Z' });
+
+    const path = currentPath(repo, budget.automation_run_id);
+    const beforeReserve = readFileSync(path, 'utf8');
+    const reserved = automationOperationReservation('acquisition', NO_TOKENS);
+    const orphan = reserveAutomationBudget({
+      repo_root: repo,
+      automation_run_id: budget.automation_run_id,
+      expected_budget_sha256: budget.budget_sha256,
+      idempotency_key: 'op-crashed',
+      operation: 'acquisition',
+      unit_kind: 'execute',
+      unit_id: 'wp-1',
+      attempt: 1,
+      provider: null,
+      reserved,
+      reserved_at: '2026-09-03T00:00:10.000Z',
+    });
+    // The process dies here: the reservation is durable, the projection is not.
+    writeFileSync(path, beforeReserve);
+    expect(readAutomationBudgetStatus(repo, budget.automation_run_id).current.open_reservation_sha256s).toEqual([]);
+
+    let blocked: AutomationBudgetStoreError | null = null;
+    try {
+      acquire(repo, 'orphan', budget, 'op-different', '2026-09-03T00:00:20.000Z');
+    } catch (error) {
+      blocked = error as AutomationBudgetStoreError;
+    }
+    expect(blocked?.refusal?.refusal_code).toBe('reconciliation_required');
+    expect(readAutomationBudgetStatus(repo, budget.automation_run_id).current.consumed.successful_acquisitions).toBe(0);
+
+    const replayed = reserveAutomationBudget({
+      repo_root: repo,
+      automation_run_id: budget.automation_run_id,
+      expected_budget_sha256: budget.budget_sha256,
+      idempotency_key: 'op-crashed',
+      operation: 'acquisition',
+      unit_kind: 'execute',
+      unit_id: 'wp-1',
+      attempt: 1,
+      provider: null,
+      reserved,
+      reserved_at: '2026-09-03T00:00:30.000Z',
+    });
+    expect(replayed.reservation_sha256).toBe(orphan.reservation_sha256);
+
+    const commit = appendAutomationUsage({
+      repo_root: repo,
+      reservation: replayed,
+      usage: { input_tokens: null, output_tokens: null, cost_micros: null },
+      usage_attribution: null,
+      consumed: chargeFor(reserved, true),
+      outcome: 'progress',
+      evidence_refs: [{ ref: 'repo:evidence/recovered', sha256: hex('recovered') }],
+      observed_at: '2026-09-03T00:00:40.000Z',
+    });
+    expect(commit.current.consumed.successful_acquisitions).toBe(1);
+    expect(commit.current.event_count).toBe(1);
+    expect(commit.current.open_reservation_sha256s).toEqual([]);
+    // The single authorized acquisition is now spent, so the run is exhausted.
+    expect(commit.stop_receipt?.triggering_metric).toBe('successful_acquisitions');
+  });
+
+  /**
+   * The mirror window: the usage event is fsynced before `current.json` is
+   * renamed. A crash between them leaves a charge on disk that the projection
+   * has not folded in; replaying the append must land that charge rather than
+   * return the stored event against a stale projection.
+   */
+  test('a durable usage event the current projection has not folded in is still charged once', () => {
+    const repo = repoFixture();
+    const budget = makeBudget({ run: 'unfolded' });
+    publishAutomationBudget({ repo_root: repo, budget, published_at: '2026-09-03T00:00:01.000Z' });
+    const reserved = automationOperationReservation('acquisition', NO_TOKENS);
+    const reservation = reserveAutomationBudget({
+      repo_root: repo,
+      automation_run_id: budget.automation_run_id,
+      expected_budget_sha256: budget.budget_sha256,
+      idempotency_key: 'op-1',
+      operation: 'acquisition',
+      unit_kind: 'execute',
+      unit_id: 'wp-1',
+      attempt: 1,
+      provider: null,
+      reserved,
+      reserved_at: '2026-09-03T00:00:10.000Z',
+    });
+    const path = currentPath(repo, budget.automation_run_id);
+    const beforeAppend = readFileSync(path, 'utf8');
+    appendAutomationUsage({
+      repo_root: repo,
+      reservation,
+      usage: { input_tokens: null, output_tokens: null, cost_micros: null },
+      usage_attribution: null,
+      consumed: chargeFor(reserved, true),
+      outcome: 'progress',
+      evidence_refs: [],
+      observed_at: '2026-09-03T00:00:20.000Z',
+    });
+    // The process dies after the event is durable but before the projection lands.
+    writeFileSync(path, beforeAppend);
+    expect(readAutomationBudgetStatus(repo, budget.automation_run_id).current.consumed.successful_acquisitions).toBe(0);
+
+    const replayed = appendAutomationUsage({
+      repo_root: repo,
+      reservation,
+      usage: { input_tokens: null, output_tokens: null, cost_micros: null },
+      usage_attribution: null,
+      consumed: chargeFor(reserved, true),
+      outcome: 'progress',
+      evidence_refs: [],
+      observed_at: '2026-09-03T00:00:30.000Z',
+    });
+    expect(replayed.current.consumed.successful_acquisitions).toBe(1);
+    expect(replayed.current.event_count).toBe(1);
+    expect(replayed.current.open_reservation_sha256s).toEqual([]);
+  });
+
+  test('an already-used key cannot reopen an exhausted run', () => {
+    const repo = repoFixture();
+    const budget = makeBudget({ run: 'exhausted-replay', limits: { ...BASE_LIMITS, max_successful_acquisitions: 1 } });
+    publishAutomationBudget({ repo_root: repo, budget, published_at: '2026-09-03T00:00:01.000Z' });
+    acquire(repo, 'exhausted-replay', budget, 'op-1', '2026-09-03T00:00:10.000Z');
+    expect(readAutomationBudgetStatus(repo, budget.automation_run_id).current.state).toBe('budget_exhausted');
+
+    // The replay branch is only reachable with a key that already has a stored
+    // reservation; an exhausted run must refuse it too.
+    let refusal: AutomationBudgetStoreError | null = null;
+    try {
+      reserveAutomationBudget({
+        repo_root: repo,
+        automation_run_id: budget.automation_run_id,
+        expected_budget_sha256: budget.budget_sha256,
+        idempotency_key: 'op-1',
+        operation: 'acquisition',
+        unit_kind: 'execute',
+        unit_id: 'wp-1',
+        attempt: 1,
+        provider: null,
+        reserved: automationOperationReservation('acquisition', NO_TOKENS),
+        reserved_at: '2026-09-03T00:00:20.000Z',
+      });
+    } catch (error) {
+      refusal = error as AutomationBudgetStoreError;
+    }
+    expect(refusal?.code).toBe('automation_budget_refused');
+    expect(refusal?.refusal?.refusal_code).toBe('budget_exhausted');
+  });
+});
+
 describe('issue #282 — a limit increase needs a new authorized revision', () => {
   test('a revision must supersede the exact current digest and invalidates stale decisions', () => {
     const repo = repoFixture();
@@ -480,5 +646,54 @@ describe('issue #282 — a limit increase needs a new authorized revision', () =
 
     const resumed = acquire(repo, 'revision', second, 'op-2', '2026-09-03T00:00:40.000Z');
     expect(resumed.commit.current.consumed.successful_acquisitions).toBe(2);
+  });
+
+  /**
+   * A revision must not be able to strand an in-flight operation. The ledger is
+   * revision-independent, but a reservation carries the exact revision that
+   * authorized it, so the publication waits for the run to be quiescent instead
+   * of leaving a charge that can never land.
+   */
+  test('a revision is refused while an operation is still in flight', () => {
+    const repo = repoFixture();
+    const first = makeBudget({ run: 'revision-inflight' });
+    publishAutomationBudget({ repo_root: repo, budget: first, published_at: '2026-09-03T00:00:01.000Z' });
+    const reserved = automationOperationReservation('acquisition', NO_TOKENS);
+    const reservation = reserveAutomationBudget({
+      repo_root: repo,
+      automation_run_id: first.automation_run_id,
+      expected_budget_sha256: first.budget_sha256,
+      idempotency_key: 'op-inflight',
+      operation: 'acquisition',
+      unit_kind: 'execute',
+      unit_id: 'wp-1',
+      attempt: 1,
+      provider: null,
+      reserved,
+      reserved_at: '2026-09-03T00:00:10.000Z',
+    });
+
+    const wider: ProgramBudgetLimitV1 = { ...BASE_LIMITS, max_successful_acquisitions: 5 };
+    expect(() => publishAutomationBudget({
+      repo_root: repo,
+      budget: makeBudget({ run: 'revision-inflight', limits: wider, revision: 2, supersedes: first.budget_sha256 }),
+      published_at: '2026-09-03T00:00:20.000Z',
+    })).toThrow(/in-flight operation/u);
+
+    // Resolving the in-flight operation unblocks the revision.
+    appendAutomationUsage({
+      repo_root: repo,
+      reservation,
+      usage: { input_tokens: null, output_tokens: null, cost_micros: null },
+      usage_attribution: null,
+      consumed: chargeFor(reserved, true),
+      outcome: 'progress',
+      evidence_refs: [],
+      observed_at: '2026-09-03T00:00:30.000Z',
+    });
+    const second = makeBudget({ run: 'revision-inflight', limits: wider, revision: 2, supersedes: first.budget_sha256 });
+    const published = publishAutomationBudget({ repo_root: repo, budget: second, published_at: '2026-09-03T00:00:40.000Z' });
+    expect(published.current.state).toBe('active');
+    expect(published.current.consumed.successful_acquisitions).toBe(1);
   });
 });

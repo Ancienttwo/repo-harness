@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260903-0437-issue-282-automation-budget.review.md
 > **Last Updated**: 2026-09-03 05:20
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:990307a50c36f7b2265cd7a7e06089dd3ce5ad9ff2ca3456f002bd7c2cb9d3b8`
+> **Substantive Change SHA256**: `sha256:26f22c29e5a484224899b669db51b76137cca8b8f2dab7a925627a55e41ea565`
 
 ## Design Decisions
 
@@ -74,6 +74,50 @@ Only one reservation may be open per run. That is a deliberate v1 invariant, not
 an oversight: it is what makes "a crash between reservation and usage append
 blocks further spending" a single-condition check rather than a per-reservation
 expiry sweep, and a controller is a sequential stepper by construction.
+
+### One recovery for a record `current.json` does not list
+
+Post-merge review found two faces of one structural gap. Every record except
+`current.json` is create-once and fsynced *before* the projection is renamed, so
+a crash can leave the projection behind the durable records but never ahead of
+them:
+
+- crash between the reservation write and the `current.json` rename leaves a
+  durable reservation the projection does not list. The old code let a
+  *different* key reserve the same headroom, and then rejected the orphan's
+  usage forever -- one authorized provider call permanently unbilled;
+- crash between the usage-event write and the same rename leaves a charge the
+  projection has not folded in. Replaying the append returned the stored event
+  against a stale projection, losing the charge and leaving the reservation open
+  forever.
+
+The chosen recovery is one rule, not two guards: **`current.json` is a derived
+projection of `reservations/` and `events/`, and every mutating verb re-derives
+it under the run lock before deciding.** `detectAutomationCurrentDrift` compares
+directory entry counts (two `readdir` calls on the healthy path);
+`repairCurrentFromDurableRecords` runs only after a crash and rebuilds consumed,
+the no-progress streak, the ledger chain, the step index and the open
+reservation from the immutable records themselves. Nothing is re-minted and no
+metric is assumed to be zero.
+
+The alternative -- re-registering the orphan ad hoc inside `replay()` -- was
+rejected because it repairs one field on one code path and leaves the mirror
+case (`unfolded_event`) unhandled. Re-derivation states the invariant once and
+covers both. `replay()` now classifies a stored reservation as closed (an event
+exists), open (the repaired projection lists it), or neither -- and the third
+case fails closed instead of re-minting.
+
+A repaired run whose reservation is still open is marked
+`reconciliation_required`, which is exactly the refusal an open reservation
+already produces, so the next operation is blocked until the interrupted one is
+appended or reconciled.
+
+For the same reason, **a budget revision is refused while a reservation is
+open**. A reservation carries the exact revision that authorized it, so
+publishing over an in-flight operation would strand a charge that can never
+land. Requiring the run to be quiescent avoids inventing cross-revision charging
+semantics; the ledger itself stays revision-independent, so consumption already
+recorded survives the revision.
 
 ### Reconciliation rules
 

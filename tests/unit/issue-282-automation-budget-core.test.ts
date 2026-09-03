@@ -29,6 +29,7 @@ import {
   sealAutomationUsageEvent,
   sealProgramAuthorization,
   validateAutomationBudget,
+  validateAutomationUsageEvent,
   validateProgramAuthorization,
   type AutomationBudgetStateV1,
   type AutomationBudgetV1,
@@ -335,6 +336,42 @@ describe('issue #282 — token and cost limits need provider-verified usage', ()
       evidence_refs: [],
       observed_at: '2026-09-03T00:00:20.000Z',
     })).toThrow(/exceeds the reserved upper bound/u);
+  });
+
+  test('a usage event read back with a mutated event_id is rejected', () => {
+    const value = budget();
+    const reserved = automationOperationReservation('acquisition', NO_TOKENS);
+    const reservation = sealAutomationReservation({
+      automation_run_id: value.automation_run_id,
+      budget_sha256: value.budget_sha256,
+      idempotency_key: 'op-1',
+      operation: 'acquisition',
+      unit_kind: 'execute',
+      unit_id: 'wp-1',
+      attempt: 1,
+      provider: null,
+      step_index: 1,
+      reserved,
+      reserved_at: '2026-09-03T00:00:10.000Z',
+      deadline_at: value.deadline_at,
+      previous_ledger_sha256: AUTOMATION_LEDGER_GENESIS,
+    });
+    const event = sealAutomationUsageEvent({
+      budget: value,
+      reservation,
+      usage: { input_tokens: null, output_tokens: null, cost_micros: null },
+      usage_attribution: null,
+      consumed: reserved,
+      outcome: 'progress',
+      resolution: 'observed',
+      evidence_refs: [],
+      observed_at: '2026-09-03T00:00:20.000Z',
+    });
+    expect(validateAutomationUsageEvent(event)).toEqual(event);
+    // The disk-read path is the one that matters: event_id must bind the event
+    // content, not merely be a well-formed digest.
+    expect(() => validateAutomationUsageEvent({ ...event, event_id: hex('a-different-event') }))
+      .toThrow(/does not bind the event content/u);
   });
 });
 

@@ -916,10 +916,10 @@ export function validateAutomationUsageEvent(value: AutomationUsageEventV1): Aut
     observed_at: assertTimestamp(value.observed_at, 'usage observed_at'),
     event_sha256: assertDigest(value.event_sha256, 'usage event_sha256'),
   });
-  if (digestWithout(event, 'event_sha256') !== event.event_sha256) invalid('automation usage event digest does not bind its own content');
   if (digestWithout(event, 'event_id', 'event_sha256') !== event.event_id) {
     invalid('automation usage event_id does not bind the event content');
   }
+  if (digestWithout(event, 'event_sha256') !== event.event_sha256) invalid('automation usage event digest does not bind its own content');
   return event;
 }
 
@@ -1280,12 +1280,28 @@ export interface AutomationStopReceiptV1 {
   readonly stop_receipt_sha256: string;
 }
 
+const REFUSAL_CODES: readonly AutomationRefusalCode[] = Object.freeze([
+  'budget_revision_stale',
+  'budget_exhausted',
+  'reconciliation_required',
+  'budget_expired',
+  'budget_limit_exceeded',
+]);
+
+const IN_FLIGHT_AUTHORITY_KINDS: readonly AutomationInFlightAuthorityKind[] = Object.freeze([
+  'reservation',
+  'claim',
+  'lease',
+  'delegated_run',
+]);
+
 export function validateAutomationStopReceipt(value: AutomationStopReceiptV1): AutomationStopReceiptV1 {
   if (value === null || typeof value !== 'object') invalid('automation stop receipt must be an object');
   if (value.protocol !== AUTOMATION_BUDGET_PROTOCOL) invalid('automation stop receipt protocol is unsupported');
   if (value.kind !== AUTOMATION_STOP_RECEIPT_KIND) invalid('automation stop receipt kind is unsupported');
   if (!Array.isArray(value.in_flight_authority)) invalid('in_flight_authority must be an array');
   if (!(value.triggering_metric in AUTOMATION_METRIC_LIMIT_FIELDS)) invalid('stop receipt triggering_metric is unsupported');
+  if (!REFUSAL_CODES.includes(value.refusal_code)) invalid('stop receipt refusal_code is unsupported');
   const receipt: AutomationStopReceiptV1 = Object.freeze({
     protocol: AUTOMATION_BUDGET_PROTOCOL,
     kind: AUTOMATION_STOP_RECEIPT_KIND,
@@ -1298,11 +1314,19 @@ export function validateAutomationStopReceipt(value: AutomationStopReceiptV1): A
     consumed: assertNullableCount(value.consumed, 'stop receipt consumed', 0),
     reserved: assertNullableCount(value.reserved, 'stop receipt reserved', 0),
     last_completed_step_index: assertCount(value.last_completed_step_index, 'stop receipt last_completed_step_index', 0),
-    in_flight_authority: Object.freeze(value.in_flight_authority.map((entry, index) => Object.freeze({
-      authority_kind: entry.authority_kind,
-      authority_id: assertIdentifier(entry.authority_id, `in_flight_authority[${index}].authority_id`),
-      recovery: 'normal_recovery_required' as const,
-    }))),
+    in_flight_authority: Object.freeze(value.in_flight_authority.map((entry, index) => {
+      if (!IN_FLIGHT_AUTHORITY_KINDS.includes(entry.authority_kind)) {
+        invalid(`in_flight_authority[${index}].authority_kind is unsupported`);
+      }
+      if (entry.recovery !== 'normal_recovery_required') {
+        invalid(`in_flight_authority[${index}].recovery is unsupported`);
+      }
+      return Object.freeze({
+        authority_kind: entry.authority_kind,
+        authority_id: assertIdentifier(entry.authority_id, `in_flight_authority[${index}].authority_id`),
+        recovery: 'normal_recovery_required' as const,
+      });
+    })),
     ledger_sha256: assertDigest(value.ledger_sha256, 'stop receipt ledger_sha256'),
     issued_at: assertTimestamp(value.issued_at, 'stop receipt issued_at'),
     stop_receipt_sha256: assertDigest(value.stop_receipt_sha256, 'stop receipt stop_receipt_sha256'),
