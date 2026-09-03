@@ -23,10 +23,26 @@ export type WorkPackageDependencyState =
   | 'publication_integrated'
   | 'product_accepted';
 
+export type WorkPackageDependencyAuthorityKind = 'module_acceptance' | 'product_acceptance';
+
+/**
+ * A dependency edge that requires an acceptance verdict must name the exact
+ * authority subject. `required_acceptance` carries policy documents, not
+ * receipt subjects, so it cannot select one AcceptanceReceipt or one ME-4C
+ * product projection. This closed reference is validated against the same
+ * canonical commit as the target Work Graph before any authority is read.
+ */
+export interface WorkPackageDependencyAuthorityRefV1 {
+  readonly authority_kind: WorkPackageDependencyAuthorityKind;
+  readonly subject_ref: string;
+  readonly subject_revision: string;
+}
+
 export interface WorkPackageDependencyV1 {
   readonly repository_id: string;
   readonly work_package_id: string;
   readonly required_state: WorkPackageDependencyState;
+  readonly acceptance_authority: WorkPackageDependencyAuthorityRefV1 | null;
 }
 
 export interface WorkPackageAcceptancePolicyV1 {
@@ -45,7 +61,12 @@ export interface WorkPackageRollbackBoundaryV1 {
 
 export interface WorkPackageDefinitionV1 {
   readonly work_package_id: string;
-  readonly task_ref: string;
+  /**
+   * The canonical Sprint row's persisted `ID` cell. This is the join key, and
+   * it is deliberately not the Task cell text: a title clarification used to
+   * make the carrier stop mapping its own Work Package.
+   */
+  readonly task_id: string;
   readonly primary_capability: string;
   readonly depends_on: readonly WorkPackageDependencyV1[];
   readonly priority: number;
@@ -68,6 +89,7 @@ export interface WorkGraphV1 {
 export interface SchedulingCanonicalTask {
   readonly task_id: string;
   readonly task_revision: string;
+  /** Display projection of the Task cell; never a join key. */
   readonly task_ref: string;
   readonly status: string;
   readonly row_order: number;
@@ -77,7 +99,8 @@ export interface ProjectedWorkPackageV1 extends WorkPackageDefinitionV1 {
   readonly repository_id: string;
   readonly sprint_path: string;
   readonly work_package_revision: string;
-  readonly task_id: string;
+  /** Derived display text read out of the joined canonical row. */
+  readonly task_ref: string;
   readonly task_revision: string;
   readonly task_status: string;
   readonly row_order: number;
@@ -209,16 +232,57 @@ function safeRepoPath(value: unknown, field: string, suffix?: string): string {
   return path;
 }
 
+const DEPENDENCY_AUTHORITY_KIND_BY_STATE: Readonly<Record<WorkPackageDependencyState, WorkPackageDependencyAuthorityKind | null>> = Object.freeze({
+  canonical_done: null,
+  module_accepted: 'module_acceptance',
+  publication_integrated: null,
+  product_accepted: 'product_acceptance',
+});
+
+export const WORK_PACKAGE_DEPENDENCY_STATES: readonly WorkPackageDependencyState[] = Object.freeze(
+  Object.keys(DEPENDENCY_AUTHORITY_KIND_BY_STATE).sort() as WorkPackageDependencyState[],
+);
+
+export function dependencyAuthorityKindForState(state: WorkPackageDependencyState): WorkPackageDependencyAuthorityKind | null {
+  return DEPENDENCY_AUTHORITY_KIND_BY_STATE[state];
+}
+
+function parseDependencyAuthority(
+  value: unknown,
+  required: WorkPackageDependencyAuthorityKind | null,
+  label: string,
+): WorkPackageDependencyAuthorityRefV1 | null {
+  if (value === null) {
+    if (required !== null) invalid(`${label} requires an ${required} authority reference`);
+    return null;
+  }
+  if (required === null) invalid(`${label} must be null for this required_state`);
+  const input = record(value, label);
+  exact(input, ['authority_kind', 'subject_ref', 'subject_revision'], label);
+  if (input.authority_kind !== required) invalid(`${label}.authority_kind must be ${required}`);
+  return Object.freeze({
+    authority_kind: required,
+    subject_ref: safeRepoPath(input.subject_ref, `${label}.subject_ref`),
+    subject_revision: string(input.subject_revision, `${label}.subject_revision`, DIGEST),
+  });
+}
+
 function parseDependency(value: unknown, index: number): WorkPackageDependencyV1 {
   const input = record(value, `depends_on[${index}]`);
-  exact(input, ['repository_id', 'work_package_id', 'required_state'], `depends_on[${index}]`);
-  if (!['canonical_done', 'module_accepted', 'publication_integrated', 'product_accepted'].includes(String(input.required_state))) {
+  exact(input, ['repository_id', 'work_package_id', 'required_state', 'acceptance_authority'], `depends_on[${index}]`);
+  if (!WORK_PACKAGE_DEPENDENCY_STATES.includes(String(input.required_state) as WorkPackageDependencyState)) {
     invalid(`depends_on[${index}].required_state is invalid`);
   }
+  const requiredState = input.required_state as WorkPackageDependencyState;
   return Object.freeze({
     repository_id: string(input.repository_id, `depends_on[${index}].repository_id`, REPOSITORY_ID),
     work_package_id: string(input.work_package_id, `depends_on[${index}].work_package_id`, WORK_PACKAGE_ID),
-    required_state: input.required_state as WorkPackageDependencyState,
+    required_state: requiredState,
+    acceptance_authority: parseDependencyAuthority(
+      input.acceptance_authority,
+      DEPENDENCY_AUTHORITY_KIND_BY_STATE[requiredState],
+      `depends_on[${index}].acceptance_authority`,
+    ),
   });
 }
 
@@ -249,7 +313,7 @@ function parseRollback(value: unknown): WorkPackageRollbackBoundaryV1 {
 function parseWorkPackage(value: unknown, index: number): WorkPackageDefinitionV1 {
   const input = record(value, `work_packages[${index}]`);
   exact(input, [
-    'work_package_id', 'task_ref', 'primary_capability', 'depends_on', 'priority',
+    'work_package_id', 'task_id', 'primary_capability', 'depends_on', 'priority',
     'concurrency', 'execution_surface', 'integration_group', 'required_acceptance',
     'rollback_boundary',
   ], `work_packages[${index}]`);
@@ -269,7 +333,7 @@ function parseWorkPackage(value: unknown, index: number): WorkPackageDefinitionV
   if (new Set(policyKeys).size !== policyKeys.length) invalid(`work_packages[${index}].required_acceptance contains duplicates`);
   return Object.freeze({
     work_package_id: string(input.work_package_id, `work_packages[${index}].work_package_id`, WORK_PACKAGE_ID),
-    task_ref: string(input.task_ref, `work_packages[${index}].task_ref`, OPAQUE),
+    task_id: string(input.task_id, `work_packages[${index}].task_id`, TASK_ID),
     primary_capability: string(input.primary_capability, `work_packages[${index}].primary_capability`, CAPABILITY_ID),
     depends_on: Object.freeze(dependencies),
     priority: integer(input.priority, `work_packages[${index}].priority`, 0, 100),
@@ -301,7 +365,7 @@ export function validateWorkGraph(value: unknown): WorkGraphV1 {
   const sprintPath = safeRepoPath(input.sprint_path, 'sprint_path', '.sprint.md');
   const workPackages = input.work_packages.map(parseWorkPackage);
   if (new Set(workPackages.map((entry) => entry.work_package_id)).size !== workPackages.length) invalid('work graph contains duplicate work_package_id');
-  if (new Set(workPackages.map((entry) => entry.task_ref)).size !== workPackages.length) invalid('work graph contains duplicate task_ref');
+  if (new Set(workPackages.map((entry) => entry.task_id)).size !== workPackages.length) invalid('work graph contains duplicate task_id');
   if (input.lane === 'generic-v1' && workPackages.length !== 0) invalid('generic-v1 work graph must contain zero work packages');
   if (input.lane === 'engineering-v2' && workPackages.length === 0) invalid('engineering-v2 work graph must contain work packages');
   return Object.freeze({
@@ -328,7 +392,6 @@ export function projectWorkGraph(
     if (!TASK_ID.test(task.task_id) || !TASK_ID.test(task.task_revision) || !OPAQUE.test(task.task_ref)
       || !Number.isSafeInteger(task.row_order) || task.row_order < 1) invalid('canonical task projection is invalid');
   }
-  if (new Set(tasks.map((task) => task.task_ref)).size !== tasks.length) invalid('canonical Sprint contains duplicate Task cells');
   if (new Set(tasks.map((task) => task.task_id)).size !== tasks.length) invalid('canonical Sprint contains duplicate task_id');
   if (new Set(tasks.map((task) => task.row_order)).size !== tasks.length) invalid('canonical Sprint contains duplicate row_order');
   if (graph.lane === 'generic-v1') {
@@ -343,16 +406,16 @@ export function projectWorkGraph(
     });
   }
   if (graph.work_packages.length !== tasks.length) invalid('engineering-v2 work graph must cover every canonical Sprint row');
-  const byRef = new Map(tasks.map((task) => [task.task_ref, task]));
+  const byId = new Map(tasks.map((task) => [task.task_id, task]));
   const projected = graph.work_packages.map((definition) => {
-    const task = byRef.get(definition.task_ref);
-    if (!task) invalid(`work package ${definition.work_package_id} task_ref is absent from canonical Sprint`);
+    const task = byId.get(definition.task_id);
+    if (!task) invalid(`work package ${definition.work_package_id} task_id is absent from canonical Sprint`);
     return Object.freeze({
       ...definition,
       repository_id: graph.repository_id,
       sprint_path: graph.sprint_path,
       work_package_revision: workPackageRevision(definition),
-      task_id: task.task_id,
+      task_ref: task.task_ref,
       task_revision: task.task_revision,
       task_status: task.status,
       row_order: task.row_order,
@@ -473,7 +536,8 @@ export function buildEngineerOfferCandidate(input: EngineerOfferCandidateInput):
   if (input.dependencies.length !== item.depends_on.length || input.dependencies.some((entry, index) => {
     const expected = item.depends_on[index];
     if (!expected || entry.repository_id !== expected.repository_id
-      || entry.work_package_id !== expected.work_package_id || entry.required_state !== expected.required_state) return true;
+      || entry.work_package_id !== expected.work_package_id || entry.required_state !== expected.required_state
+      || canonicalEngineerJson(entry.acceptance_authority ?? null) !== canonicalEngineerJson(expected.acceptance_authority ?? null)) return true;
     if (!['satisfied', 'unsatisfied', 'authority_unavailable'].includes(entry.status)) return true;
     return entry.status === 'authority_unavailable'
       ? entry.authority_revision !== null
@@ -582,6 +646,77 @@ export function validateEngineerOffer(value: unknown): EngineerOfferV1 {
   const revision = string(input.offer_revision, 'offer_revision', DIGEST);
   if (revision !== engineerSha256(canonicalEngineerJson(basis))) invalid('Engineer offer revision is invalid');
   return Object.freeze({ ...basis, offer_revision: revision });
+}
+
+/** The whole-document authority check. `validateEngineerOffer` proves one
+ * offer; this proves the document a consumer was handed is the exact document
+ * the offer authority produced: closed key set, every offer and exclusion
+ * valid and owned by this document, and a `snapshot_revision` that recomputes
+ * over the given arrays. Order is covered because the digest is taken over the
+ * arrays as given, so a reordered or edited document fails here rather than
+ * being trusted downstream. */
+export function validateEngineerOffersDocument(value: unknown): EngineerOffersV1 {
+  const input = record(value, 'Engineer offers document');
+  exact(input, [
+    'protocol', 'kind', 'repository_id', 'engineer_id', 'lane',
+    'work_graph_revision', 'snapshot_revision', 'offers', 'exclusions',
+  ], 'Engineer offers document');
+  if (input.protocol !== ENGINEER_OFFER_PROTOCOL || input.kind !== ENGINEER_OFFERS_KIND) {
+    invalid('Engineer offers document protocol or kind is invalid');
+  }
+  if (input.lane !== 'generic-v1' && input.lane !== 'engineering-v2' && input.lane !== 'unclassified') {
+    invalid('Engineer offers document lane is invalid');
+  }
+  if (input.work_graph_revision !== null) string(input.work_graph_revision, 'work_graph_revision', DIGEST);
+  if (!Array.isArray(input.offers) || !Array.isArray(input.exclusions)) invalid('Engineer offers document collections are invalid');
+  const repositoryId = string(input.repository_id, 'repository_id', REPOSITORY_ID);
+  const engineerId = string(input.engineer_id, 'engineer_id', ENGINEER_ID);
+  const offers = (input.offers as readonly unknown[]).map((entry) => {
+    const offer = validateEngineerOffer(entry);
+    if (offer.repository_id !== repositoryId || offer.engineer_id !== engineerId) {
+      invalid('Engineer offer does not belong to this offers document');
+    }
+    if (input.work_graph_revision !== null && offer.work_graph_revision !== input.work_graph_revision) {
+      invalid('Engineer offer names another work graph revision');
+    }
+    return offer;
+  });
+  const exclusions = (input.exclusions as readonly unknown[]).map((entry) => {
+    const item = record(entry, 'exclusion');
+    exact(item, ['repository_id', 'work_package_id', 'engineer_id', 'blockers'], 'exclusion');
+    if (!Array.isArray(item.blockers)) invalid('exclusion.blockers is invalid');
+    const blockers = (item.blockers as readonly unknown[]).map((code) => {
+      if (!['profile_capability_mismatch', 'binding_inactive', 'fleet_offer_unavailable', 'dependency_not_ready',
+        'dependency_authority_unavailable', 'concurrency_unavailable', 'active_claim_limit'].includes(String(code))) {
+        invalid('exclusion.blockers contains an invalid code');
+      }
+      return code as EngineerOfferBlockerCode;
+    });
+    if (new Set(blockers).size !== blockers.length) invalid('exclusion.blockers repeats a code');
+    if (string(item.repository_id, 'exclusion.repository_id', REPOSITORY_ID) !== repositoryId
+      || string(item.engineer_id, 'exclusion.engineer_id', ENGINEER_ID) !== engineerId) {
+      invalid('exclusion does not belong to this offers document');
+    }
+    return Object.freeze({
+      repository_id: repositoryId,
+      work_package_id: string(item.work_package_id, 'exclusion.work_package_id', WORK_PACKAGE_ID),
+      engineer_id: engineerId,
+      blockers: Object.freeze(blockers),
+    });
+  });
+  const basis = {
+    protocol: ENGINEER_OFFER_PROTOCOL,
+    kind: ENGINEER_OFFERS_KIND,
+    repository_id: repositoryId,
+    engineer_id: engineerId,
+    lane: input.lane as WorkGraphLane | 'unclassified',
+    work_graph_revision: input.work_graph_revision as string | null,
+    offers,
+    exclusions,
+  };
+  const revision = string(input.snapshot_revision, 'snapshot_revision', DIGEST);
+  if (revision !== engineerSha256(canonicalEngineerJson(basis))) invalid('Engineer offers snapshot revision is invalid');
+  return Object.freeze({ ...basis, offers: Object.freeze(offers), exclusions: Object.freeze(exclusions), snapshot_revision: revision });
 }
 
 export function buildEngineerOffersDocument(input: {

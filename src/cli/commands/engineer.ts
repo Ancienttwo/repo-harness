@@ -4,7 +4,7 @@ import { realpathSync } from 'fs';
 import { EngineerProfileBindingError } from '../../core/engineers/profile-binding';
 import { EngineeringOverlayError } from '../../core/engineers/engineering-overlay';
 import { EngineerPrincipalError } from '../../core/engineers/principal-claim';
-import { EngineerSchedulingError } from '../../core/engineers/scheduling';
+import { EngineerSchedulingError, type EngineerOffersV1 } from '../../core/engineers/scheduling';
 import { TaskFreezeError } from '../../core/engineers/task-freeze';
 import {
   ModuleMessageError,
@@ -54,11 +54,15 @@ import {
 import {
   AgentRuntimeEffectStoreError,
   listAgentRuntimeEffects,
+  listDueOfferWakes,
   migrateProviderThreadEffectsV1,
   observeAgentRuntimeEffect,
   prepareAgentRuntimeEffect,
   readAgentRuntimeEffectStatus,
+  readOfferWakeLedger,
   recordAgentRuntimeCapability,
+  recordAgentRuntimeControllerStep,
+  recordEngineerOfferSnapshot,
   startAgentRuntimeEffect,
 } from '../../effects/engineers/agent-runtime-effect-store';
 import {
@@ -403,7 +407,7 @@ export function buildEngineerCommand(): Command {
     .command('capability')
     .requiredOption('--adapter-kind <kind>', 'codex-app-thread or tmux-cli-agent')
     .requiredOption('--host-id <id>', 'Exact host ID')
-    .requiredOption('--operations-json <json>', 'Exact notify_inbox capability status')
+    .requiredOption('--operations-json <json>', 'Exact capability status per runtime operation')
     .requiredOption('--evidence-refs-json <json>', 'Bounded capability evidence references')
     .requiredOption('--observed-at <timestamp>', 'Stable RFC3339 observation time')
     .option('--json', 'Output JSON')
@@ -528,6 +532,81 @@ export function buildEngineerCommand(): Command {
         observed_at: options.observedAt,
       });
       emit(status, options.json, `${status.current.state} ${status.intent.effect_id}`);
+    }));
+  runtimeEffect
+    .command('wake-record-offers')
+    .description('Record one Engineer offer snapshot and arm at most one durable task-offer wake')
+    .requiredOption('--offers-json <json>', 'Exact EngineerOffersV1 document from the offer authority')
+    .requiredOption('--observed-at <timestamp>', 'Stable RFC3339 observation time')
+    .requiredOption('--expected-capability-sha256 <digest>', 'Exact capability observation digest')
+    .requiredOption('--expected-binding-id <id>', 'Exact Binding UUID the snapshot was collected under')
+    .requiredOption('--expected-binding-generation <n>', 'Exact Binding generation the snapshot was collected under')
+    .requiredOption('--expected-engineer-contract-revision <digest>', 'Exact Engineer contract revision the snapshot was collected under')
+    .requiredOption('--debounce-ms <n>', 'Bounded wake coalescing window in milliseconds')
+    .option('--polling-fallback', 'Permit scheduled polling when the adapter cannot wake')
+    .option('--json', 'Output JSON')
+    .action((options: {
+      offersJson: string; observedAt: string; expectedCapabilitySha256: string; expectedBindingId: string;
+      expectedBindingGeneration: string; expectedEngineerContractRevision: string; debounceMs: string;
+      pollingFallback?: boolean; json?: boolean;
+    }) => run(() => {
+      const result = recordEngineerOfferSnapshot({
+        repo_root: realpathSync(process.cwd()),
+        offers: jsonOption<EngineerOffersV1>(options.offersJson, 'offers-json'),
+        observed_at: options.observedAt,
+        expected_capability_sha256: options.expectedCapabilitySha256,
+        expected_binding_id: options.expectedBindingId,
+        expected_binding_generation: integerOption(options.expectedBindingGeneration, 'expected-binding-generation'),
+        expected_engineer_contract_revision: options.expectedEngineerContractRevision,
+        wake_policy: {
+          debounce_ms: integerOption(options.debounceMs, 'debounce-ms'),
+          polling_fallback_enabled: options.pollingFallback === true,
+        },
+      });
+      emit(result, options.json, `${result.outcome} ${result.cause} ${result.status?.intent.effect_id ?? 'no-effect'}`);
+    }));
+  runtimeEffect
+    .command('wake-status')
+    .description('Read due task-offer wakes and one Binding wake ledger without host authority')
+    .requiredOption('--now <timestamp>', 'Stable RFC3339 evaluation time')
+    .option('--engineer-id <id>', 'Filter wakes by exact Engineer ID')
+    .option('--binding-id <id>', 'Read the exact Binding wake ledger')
+    .option('--binding-generation <n>', 'Exact Binding generation of the ledger to read')
+    .option('--json', 'Output JSON')
+    .action((options: { now: string; engineerId?: string; bindingId?: string; bindingGeneration?: string; json?: boolean }) => run(() => {
+      const repoRoot = realpathSync(process.cwd());
+      if (options.bindingId !== undefined || options.bindingGeneration !== undefined) {
+        if (options.engineerId === undefined || options.bindingId === undefined || options.bindingGeneration === undefined) {
+          throw new CliArgumentError('--engineer-id, --binding-id and --binding-generation must be given together');
+        }
+        const ledger = readOfferWakeLedger(repoRoot, {
+          engineer_id: options.engineerId,
+          binding_id: options.bindingId,
+          binding_generation: integerOption(options.bindingGeneration, 'binding-generation'),
+        });
+        emit(ledger, options.json, ledger ? `${ledger.observed.snapshot_revision} ${ledger.pending?.effect_id ?? 'no-pending-wake'}` : 'no-ledger');
+        return;
+      }
+      const due = listDueOfferWakes(repoRoot, { now: options.now, engineer_id: options.engineerId });
+      emit(due, options.json, due.length === 0 ? 'no-due-wake' : due.map((item) => `${item.state} ${item.wake_reason} ${item.effect_id}`).join('\n'));
+    }));
+  runtimeEffect
+    .command('wake-receipt')
+    .description('Record the controller-step receipt that proves one bounded step ran for this wake')
+    .requiredOption('--effect-id <digest>', 'Exact started wake effect ID')
+    .requiredOption('--control-ref <ref>', 'Exact bounded wake control reference from the Host action')
+    .requiredOption('--observed-snapshot-revision <digest>', 'Offer snapshot revision the controller re-read')
+    .requiredOption('--observed-at <timestamp>', 'Stable RFC3339 observation time')
+    .option('--json', 'Output JSON')
+    .action((options: { effectId: string; controlRef: string; observedSnapshotRevision: string; observedAt: string; json?: boolean }) => run(() => {
+      const receipt = recordAgentRuntimeControllerStep({
+        repo_root: realpathSync(process.cwd()),
+        effect_id: options.effectId,
+        control_ref: options.controlRef,
+        observed_snapshot_revision: options.observedSnapshotRevision,
+        observed_at: options.observedAt,
+      });
+      emit(receipt, options.json, `${receipt.effect_id} ${receipt.receipt_sha256}`);
     }));
   runtimeEffect
     .command('migrate-v1')

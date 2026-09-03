@@ -8,33 +8,56 @@ import { dirname, join, relative, resolve, sep } from 'path';
 import {
   AgentRuntimeEffectError,
   agentRuntimeControlRef,
+  agentRuntimeControlSha256,
   assertAgentRuntimeEffectTransition,
+  assertAgentRuntimeReceiptKindForOperation,
   buildAgentRuntimeCapabilityObservation,
+  buildAgentRuntimeControllerStepReceipt,
   buildAgentRuntimeEffectCurrent,
   buildAgentRuntimeEffectIntent,
   buildAgentRuntimeEffectObservation,
   buildAgentRuntimeHostAction,
+  buildAgentRuntimeOfferWakeLedger,
+  buildAgentRuntimeOfferWakeSnapshot,
   canonicalAgentRuntimeCapabilityBytes,
+  canonicalAgentRuntimeControllerStepReceiptBytes,
   canonicalAgentRuntimeEffectCurrentBytes,
   canonicalAgentRuntimeEffectIntentBytes,
   canonicalAgentRuntimeEffectObservationBytes,
+  canonicalAgentRuntimeOfferWakeLedgerBytes,
+  decideAgentRuntimeOfferWake,
   deriveAgentRuntimeEffectId,
+  deriveAgentRuntimeOfferWakeIdempotencyKey,
   validateAgentRuntimeCapabilityObservation,
+  validateAgentRuntimeControllerStepReceipt,
   validateAgentRuntimeEffectCurrent,
   validateAgentRuntimeEffectIntent,
   validateAgentRuntimeEffectObservation,
+  validateAgentRuntimeOfferWakeLedger,
   type AgentRuntimeAdapterKind,
   type AgentRuntimeAdapterObservationV2,
   type AgentRuntimeCapabilityObservationV2,
+  type AgentRuntimeControllerStepReceiptV2,
   type AgentRuntimeEffectCurrentV2,
   type AgentRuntimeEffectIntentV2,
   type AgentRuntimeEffectObservationV2,
+  type AgentRuntimeEffectState,
+  type AgentRuntimeFailureClass,
   type AgentRuntimeHostActionV2,
+  type AgentRuntimeNotifyInboxIntentV2,
+  type AgentRuntimeOfferWakeIntentV2,
+  type AgentRuntimeOfferWakeLedgerV2,
+  type AgentRuntimeOfferWakePendingV2,
+  type AgentRuntimeOfferWakeReason,
+  type AgentRuntimeOperation,
+  type AgentRuntimeReceiptKind,
   type RuntimeEndpointFenceV2,
   type RuntimeMessageRefV2,
 } from '../../core/engineers/agent-runtime-effect';
+import { validateEngineerOffersDocument, type EngineerOffersV1 } from '../../core/engineers/scheduling';
 import { canonicalModuleMessageDeliveryReceiptBytes } from '../../core/engineers/module-message';
 import { canonicalTaskMessageDeliveryReceiptBytes } from '../../core/fleet/task-message';
+import { readRepoHarnessRegistryStrictSnapshot, repoHarnessAuthorizationRevision } from '../repo-registry';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import { readLease } from '../state/coordination-lease-store';
@@ -43,6 +66,7 @@ import { readClaimActorReceipt } from './claim-actor-store';
 import { assertAgentRuntimeActionEnabled, assertAgentRuntimePrepareEnabled } from './agent-runtime-feature';
 import { readModuleMessageDelivery, readModuleMessageDeliveryObservations } from './module-inbox';
 import { loadEngineerProfile } from './profile-store';
+import { resolveRegisteredRepoForWorktree } from './scheduling';
 import { readTaskMessageDelivery } from '../fleet/task-inbox';
 import type { RuntimeDeliveryState, RuntimeReachability } from '../../core/fleet/board';
 
@@ -55,7 +79,8 @@ export type AgentRuntimeEffectStoreErrorCode =
   | 'agent_runtime_effect_not_found' | 'agent_runtime_effect_conflict' | 'agent_runtime_effect_binding_stale'
   | 'agent_runtime_effect_claim_stale' | 'agent_runtime_effect_capability_unsupported'
   | 'agent_runtime_effect_transition_invalid' | 'agent_runtime_effect_migration_required'
-  | 'agent_runtime_effect_migration_blocked';
+  | 'agent_runtime_effect_migration_blocked' | 'agent_runtime_effect_authorization_stale'
+  | 'agent_runtime_effect_wake_superseded' | 'agent_runtime_effect_wake_coalescing';
 
 export class AgentRuntimeEffectStoreError extends Error {
   constructor(readonly code: AgentRuntimeEffectStoreErrorCode, message: string, readonly cause?: unknown) {
@@ -92,8 +117,8 @@ export interface AgentRuntimeV1MigrationReceiptV1 {
 }
 export type AgentRuntimeV1MigrationCrashHook = (boundary: 'after_archive_rename') => void;
 
-interface StorePaths { common: string; root: string; capabilities: string; effects: string; locks: string; migrations: string }
-interface EffectPaths { store: StorePaths; effect: string; intent: string; observations: string; current: string; lock_relative: string }
+interface StorePaths { common: string; root: string; capabilities: string; effects: string; locks: string; migrations: string; wakes: string }
+interface EffectPaths { store: StorePaths; effect: string; intent: string; observations: string; current: string; controller_step: string; lock_relative: string }
 
 function fail(code: AgentRuntimeEffectStoreErrorCode, message: string, cause?: unknown): never { throw new AgentRuntimeEffectStoreError(code, message, cause); }
 function mapped(error: unknown, code: AgentRuntimeEffectStoreErrorCode, message: string): AgentRuntimeEffectStoreError {
@@ -103,12 +128,12 @@ function mapped(error: unknown, code: AgentRuntimeEffectStoreErrorCode, message:
 }
 function pathsFor(repoRoot: string): StorePaths {
   const common = resolve(resolveGitCommonDirectory(repoRoot)); const root = join(common, AGENT_RUNTIME_EFFECT_RELATIVE_ROOT);
-  return { common, root, capabilities: join(root, 'capabilities'), effects: join(root, 'effects'), locks: join(root, 'locks'), migrations: join(root, 'migrations') };
+  return { common, root, capabilities: join(root, 'capabilities'), effects: join(root, 'effects'), locks: join(root, 'locks'), migrations: join(root, 'migrations'), wakes: join(root, 'wakes') };
 }
 function effectHex(effectId: string): string { const match = /^sha256:([0-9a-f]{64})$/u.exec(effectId); return match ? match[1] : fail('agent_runtime_effect_invalid', 'effect_id is invalid'); }
 function effectPaths(repoRoot: string, effectId: string): EffectPaths {
   const store = pathsFor(repoRoot); const hex = effectHex(effectId); const effect = join(store.effects, hex);
-  return { store, effect, intent: join(effect, 'intent.json'), observations: join(effect, 'observations'), current: join(effect, 'current.json'), lock_relative: `${AGENT_RUNTIME_EFFECT_RELATIVE_ROOT}/locks/${hex}.lock` };
+  return { store, effect, intent: join(effect, 'intent.json'), observations: join(effect, 'observations'), current: join(effect, 'current.json'), controller_step: join(effect, 'controller-step.json'), lock_relative: `${AGENT_RUNTIME_EFFECT_RELATIVE_ROOT}/locks/${hex}.lock` };
 }
 function syncDirectory(path: string): void { const fd = openSync(path, constants.O_RDONLY); try { fsyncSync(fd); } finally { closeSync(fd); } }
 function segments(root: string, target: string): string[] {
@@ -128,7 +153,7 @@ function ensureDirectory(root: string, target: string, create: boolean): boolean
   }
   return true;
 }
-function prepareStore(paths: StorePaths): void { ensureDirectory(paths.common, paths.root, true); for (const path of [paths.capabilities, paths.effects, paths.locks, paths.migrations]) ensureDirectory(paths.common, path, true); }
+function prepareStore(paths: StorePaths): void { ensureDirectory(paths.common, paths.root, true); for (const path of [paths.capabilities, paths.effects, paths.locks, paths.migrations, paths.wakes]) ensureDirectory(paths.common, path, true); }
 function prepareEffect(paths: EffectPaths): void { prepareStore(paths.store); ensureDirectory(paths.store.common, paths.effect, true); ensureDirectory(paths.store.common, paths.observations, true); }
 function regular(path: string, label: string): void {
   try { const stat = lstatSync(path); if (!stat.isFile() || stat.isSymbolicLink()) fail('agent_runtime_effect_unreadable', `${label} is unsafe`); }
@@ -208,10 +233,16 @@ export function recordAgentRuntimeCapability(repoRoot: string, input: Omit<Agent
   return withExclusiveDirectoryLock(paths.common, lockPath, () => { const target = capabilityPath(paths, observation.host_id, observation.adapter_kind); const bytes = canonicalAgentRuntimeCapabilityBytes(observation); if (existsSync(target) && readRaw(target, 'capability observation') === bytes) return observation; replace(target, bytes, 'capability observation'); return observation; }, { reclaimStaleEmptyDirectory: true });
 }
 export function readAgentRuntimeCapability(repoRoot: string, hostId: string, adapter: AgentRuntimeAdapterKind): AgentRuntimeCapabilityObservationV2 {
-  const raw = readRaw(capabilityPath(pathsFor(repoRoot), hostId, adapter), 'capability observation'); try { const value = validateAgentRuntimeCapabilityObservation(JSON.parse(raw)); if (canonicalAgentRuntimeCapabilityBytes(value) !== raw) fail('agent_runtime_effect_unreadable', 'capability observation is non-canonical'); return value; } catch (error) { throw mapped(error, 'agent_runtime_effect_unreadable', 'capability observation is malformed'); }
+  const raw = readRaw(capabilityPath(pathsFor(repoRoot), hostId, adapter), 'capability observation'); try { const value = validateAgentRuntimeCapabilityObservation(JSON.parse(raw)); if (canonicalAgentRuntimeCapabilityBytes(value) !== raw) fail('agent_runtime_effect_unreadable', 'capability observation is non-canonical'); return value; } catch (error) { throw new AgentRuntimeEffectStoreError('agent_runtime_effect_unreadable', 'capability observation is malformed', error); }
 }
-function assertCapability(repoRoot: string, endpoint: RuntimeEndpointFenceV2, expected: string): void {
-  const capability = readAgentRuntimeCapability(repoRoot, endpoint.host_id, endpoint.adapter_kind); if (capability.capability_sha256 !== expected) fail('agent_runtime_effect_conflict', 'capability digest changed'); if (capability.operations.notify_inbox !== 'supported') fail('agent_runtime_effect_capability_unsupported', `notify_inbox capability is ${capability.operations.notify_inbox}`);
+function assertCapability(repoRoot: string, endpoint: RuntimeEndpointFenceV2, expected: string, operation: AgentRuntimeOperation): void {
+  const capability = readAgentRuntimeCapability(repoRoot, endpoint.host_id, endpoint.adapter_kind); if (capability.capability_sha256 !== expected) fail('agent_runtime_effect_conflict', 'capability digest changed'); if (capability.operations[operation] !== 'supported') fail('agent_runtime_effect_capability_unsupported', `${operation} capability is ${capability.operations[operation]}`);
+}
+function notifyIntent(intent: AgentRuntimeEffectIntentV2): AgentRuntimeNotifyInboxIntentV2 {
+  if (intent.operation !== 'notify_inbox') fail('agent_runtime_effect_invalid', 'effect does not notify a message inbox'); return intent;
+}
+function wakeIntent(intent: AgentRuntimeEffectIntentV2): AgentRuntimeOfferWakeIntentV2 {
+  if (intent.operation !== 'wake_for_offer') fail('agent_runtime_effect_invalid', 'effect is not a task-offer wake'); return intent;
 }
 function moduleReference(input: Extract<PrepareAgentRuntimeEffectInput, { message_kind: 'module_message' }>, endpoint: RuntimeEndpointFenceV2): RuntimeMessageRefV2 {
   if (endpoint.engineer_id !== input.engineer_id || endpoint.binding_id !== input.expected_binding_id || endpoint.binding_generation !== input.expected_binding_generation || endpoint.engineer_contract_revision !== input.expected_engineer_contract_revision) fail('agent_runtime_effect_binding_stale', 'prepare fences do not match current Binding');
@@ -229,7 +260,7 @@ function taskEndpointAndReference(input: Extract<PrepareAgentRuntimeEffectInput,
   if ((entry.receipt !== null && entry.receipt.delivery_state !== 'pending') || entry.event.task_revision !== input.expected_task_revision || entry.event.target_claim_id !== input.expected_claim_id || entry.event.target_generation !== input.expected_lease_generation) fail('agent_runtime_effect_transition_invalid', 'Task message does not match the exact pending Claim delivery');
   return { endpoint, message: Object.freeze({ kind: 'task_message', message_id: entry.event.message_id, message_event_digest: entry.event.event_digest, task_id: entry.event.task_id, task_revision: entry.event.task_revision, claim_id: input.expected_claim_id, lease_generation: input.expected_lease_generation, delivery_attempt: 1 }) };
 }
-function assertLiveMessage(repoRoot: string, intent: AgentRuntimeEffectIntentV2): void {
+function assertLiveMessage(repoRoot: string, intent: AgentRuntimeNotifyInboxIntentV2): void {
   assertBinding(repoRoot, intent.endpoint_fence); const ref = intent.message_ref;
   if (ref.kind === 'module_message') {
     const entry = readModuleMessageDelivery({ repo_root: repoRoot, engineer_id: ref.engineer_id, message_id: ref.message_id }); if (entry.event.scope !== 'assignment') fail('agent_runtime_effect_binding_stale', 'module-scope messages carry no Binding fence for a runtime effect'); if (entry.event.event_digest !== ref.message_event_digest || entry.receipt.delivery_state !== 'pending' || entry.receipt.attempt + 1 !== ref.delivery_attempt) fail('agent_runtime_effect_transition_invalid', 'Module message fence is stale'); return;
@@ -244,6 +275,7 @@ function assertLiveMessage(repoRoot: string, intent: AgentRuntimeEffectIntentV2)
  * alone do not identify a request: the full Engineer/Binding or Task/Claim
  * fence is compared against the persisted intent before a replay is served. */
 function replayRequestIdentityMatches(input: PrepareAgentRuntimeEffectInput, existing: AgentRuntimeEffectIntentV2): boolean {
+  if (existing.operation !== 'notify_inbox') return false;
   const ref = existing.message_ref;
   if (input.message_kind === 'module_message') {
     return ref.kind === 'module_message' && ref.engineer_id === input.engineer_id && ref.binding_id === input.expected_binding_id && ref.binding_generation === input.expected_binding_generation && ref.engineer_contract_revision === input.expected_engineer_contract_revision;
@@ -254,30 +286,67 @@ function replayRequestIdentityMatches(input: PrepareAgentRuntimeEffectInput, exi
 export function prepareAgentRuntimeEffect(input: PrepareAgentRuntimeEffectInput): AgentRuntimeEffectStatus {
   assertAgentRuntimePrepareEnabled(input.repo_root); assertMigrationReady(input.repo_root); const paths = effectPaths(input.repo_root, deriveAgentRuntimeEffectId(input.idempotency_key));
   return lock(paths, () => {
-    prepareEffect(paths); if (existsSync(paths.intent)) { const existing = parseIntent(readRaw(paths.intent, 'effect intent')); if (existing.idempotency_key !== input.idempotency_key || existing.capability_sha256 !== input.expected_capability_sha256 || existing.created_at !== input.created_at || existing.message_ref.kind !== input.message_kind || existing.message_ref.message_id !== input.message_id || !replayRequestIdentityMatches(input, existing)) fail('agent_runtime_effect_conflict', 'idempotency key names another prepare request'); return chain(paths, existing).length ? readLocked(paths, true) : initialize(paths, existing); }
+    prepareEffect(paths); if (existsSync(paths.intent)) { const existing = parseIntent(readRaw(paths.intent, 'effect intent')); if (existing.idempotency_key !== input.idempotency_key || existing.capability_sha256 !== input.expected_capability_sha256 || existing.created_at !== input.created_at || !replayRequestIdentityMatches(input, existing) || notifyIntent(existing).message_ref.kind !== input.message_kind || notifyIntent(existing).message_ref.message_id !== input.message_id) fail('agent_runtime_effect_conflict', 'idempotency key names another prepare request'); return chain(paths, existing).length ? readLocked(paths, true) : initialize(paths, existing); }
     let endpoint: RuntimeEndpointFenceV2; let message: RuntimeMessageRefV2;
     if (input.message_kind === 'module_message') { endpoint = currentBinding(input.repo_root, input.engineer_id); message = moduleReference(input, endpoint); }
     else ({ endpoint, message } = taskEndpointAndReference(input));
-    assertCapability(input.repo_root, endpoint, input.expected_capability_sha256);
+    assertCapability(input.repo_root, endpoint, input.expected_capability_sha256, 'notify_inbox');
     const intent = buildAgentRuntimeEffectIntent({ idempotency_key: input.idempotency_key, message_ref: message, endpoint_fence: endpoint, operation: 'notify_inbox', capability_sha256: input.expected_capability_sha256, created_at: input.created_at });
-    const bytes = canonicalAgentRuntimeEffectIntentBytes(intent); if (!writeExclusive(paths.intent, bytes, 'effect intent') && readRaw(paths.intent, 'effect intent') !== bytes) fail('agent_runtime_effect_conflict', 'idempotency key names different intent bytes'); assertLiveMessage(input.repo_root, intent); return initialize(paths, intent);
+    const bytes = canonicalAgentRuntimeEffectIntentBytes(intent); if (!writeExclusive(paths.intent, bytes, 'effect intent') && readRaw(paths.intent, 'effect intent') !== bytes) fail('agent_runtime_effect_conflict', 'idempotency key names different intent bytes'); assertLiveMessage(input.repo_root, notifyIntent(intent)); return initialize(paths, intent);
   });
 }
 export function readAgentRuntimeEffectStatus(repoRoot: string, effectId: string): AgentRuntimeEffectStatus { const paths = effectPaths(repoRoot, effectId); return lock(paths, () => readLocked(paths, true)); }
 export function observeAgentRuntimeEffectStatus(repoRoot: string, effectId: string): AgentRuntimeEffectStatus { return readLocked(effectPaths(repoRoot, effectId), false); }
 
-export function startAgentRuntimeEffect(input: { repo_root: string; effect_id: string; started_at: string; crash_hook?: AgentRuntimeEffectCrashHook }): StartAgentRuntimeEffectResult {
-  const paths = effectPaths(input.repo_root, input.effect_id); return lock(paths, () => {
+/** Fences that live in another authority -- the Binding, the capability
+ * observation and the authorization revision -- can commit between the check
+ * and the durable `effect_started`. Re-reading them after the append and
+ * refusing to hand out the action closes that window without reaching across
+ * authorities for a lock: the action is admitted only if every fence held both
+ * immediately before and immediately after the start became durable. */
+function assertStartFences(input: { repo_root: string; env?: NodeJS.ProcessEnv }, intent: AgentRuntimeEffectIntentV2, startedAt: string): void {
+  assertCapability(input.repo_root, intent.endpoint_fence, intent.capability_sha256, intent.operation);
+  if (intent.operation === 'notify_inbox') assertLiveMessage(input.repo_root, intent);
+  else { assertBinding(input.repo_root, intent.endpoint_fence); assertAuthorizationCurrent(intent.wake_ref.authorization_revision, input.env); void startedAt; }
+}
+function startFenceFailureClass(error: unknown): AgentRuntimeFailureClass | null {
+  if (!(error instanceof AgentRuntimeEffectStoreError)) return null;
+  switch (error.code) {
+    case 'agent_runtime_effect_capability_unsupported': return 'capability_unsupported';
+    // A digest that moved under the start is a conflict with another writer,
+    // not a Host that stopped supporting the operation. Labelling it
+    // `capability_unsupported` would send an operator to the wrong authority.
+    case 'agent_runtime_effect_conflict': return 'fence_conflict';
+    case 'agent_runtime_effect_authorization_stale': return 'authorization_stale';
+    case 'agent_runtime_effect_binding_stale': return 'binding_stale';
+    case 'agent_runtime_effect_claim_stale': return 'claim_stale';
+    default: return null;
+  }
+}
+export function startAgentRuntimeEffect(input: { repo_root: string; effect_id: string; started_at: string; env?: NodeJS.ProcessEnv; crash_hook?: AgentRuntimeEffectCrashHook }): StartAgentRuntimeEffectResult {
+  const paths = effectPaths(input.repo_root, input.effect_id); return withWakeEffectLock(paths, () => lock(paths, () => {
     let status = readLocked(paths, true); if (status.current.state !== 'intent_persisted') {
+      // A superseded wake is terminal and unstartable. Failing loudly keeps it
+      // distinguishable from a wake that simply has no action left to hand out.
+      if (status.current.state === 'superseded') fail('agent_runtime_effect_wake_superseded', 'a newer offer snapshot superseded this wake before any Host action');
       if (status.current.state === 'effect_started') status = append(paths, status, buildAgentRuntimeEffectObservation({ effect_id: status.intent.effect_id, intent_sha256: status.intent.intent_sha256, sequence: status.observation.sequence + 1, state: 'reconciliation_required', adapter: initialAdapter(status.intent.endpoint_fence.adapter_kind), receipt_kind: null, receipt_sha256: null, failure_class: 'unknown', observed_at: input.started_at, previous_observation_sha256: status.observation.observation_sha256 }), input.crash_hook); return Object.freeze({ ...status, action: null });
     }
-    assertAgentRuntimeActionEnabled(input.repo_root, status.intent.endpoint_fence.adapter_kind); assertCapability(input.repo_root, status.intent.endpoint_fence, status.intent.capability_sha256); assertLiveMessage(input.repo_root, status.intent);
+    assertAgentRuntimeActionEnabled(input.repo_root, status.intent.endpoint_fence.adapter_kind);
+    assertStartFences(input, status.intent, input.started_at);
+    if (status.intent.operation === 'wake_for_offer') assertWakeStartable(input.repo_root, status.intent, input.started_at);
     status = append(paths, status, buildAgentRuntimeEffectObservation({ effect_id: status.intent.effect_id, intent_sha256: status.intent.intent_sha256, sequence: status.observation.sequence + 1, state: 'effect_started', adapter: initialAdapter(status.intent.endpoint_fence.adapter_kind), receipt_kind: null, receipt_sha256: null, failure_class: 'none', observed_at: input.started_at, previous_observation_sha256: status.observation.observation_sha256 }), input.crash_hook);
+    try { assertStartFences(input, status.intent, input.started_at); }
+    catch (error) {
+      const failure = startFenceFailureClass(error); if (failure === null) throw error;
+      status = append(paths, status, buildAgentRuntimeEffectObservation({ effect_id: status.intent.effect_id, intent_sha256: status.intent.intent_sha256, sequence: status.observation.sequence + 1, state: 'observed_failure', adapter: initialAdapter(status.intent.endpoint_fence.adapter_kind), receipt_kind: null, receipt_sha256: null, failure_class: failure, observed_at: input.started_at, previous_observation_sha256: status.observation.observation_sha256 }));
+      return Object.freeze({ ...status, action: null });
+    }
     return Object.freeze({ ...status, action: buildAgentRuntimeHostAction(status.intent) });
-  });
+  }));
 }
-function receiptEvidence(repoRoot: string, intent: AgentRuntimeEffectIntentV2): { kind: 'task_message_delivery_receipt' | 'module_message_delivery_receipt'; sha256: string } | null {
-  const ref = intent.message_ref;
+function receiptEvidence(repoRoot: string, intentValue: AgentRuntimeEffectIntentV2): { kind: AgentRuntimeReceiptKind; sha256: string } | null {
+  if (intentValue.operation === 'wake_for_offer') return controllerStepEvidence(repoRoot, intentValue);
+  const intent = intentValue; const ref = intent.message_ref;
   // A delivered state alone proves only that the inbox saw some delivery.
   // Success additionally requires this exact effect's bounded control
   // reference on the delivery evidence; anything else stays unproven and
@@ -302,22 +371,25 @@ function receiptEvidence(repoRoot: string, intent: AgentRuntimeEffectIntentV2): 
   return { kind: 'task_message_delivery_receipt', sha256: `sha256:${createHash('sha256').update(canonicalTaskMessageDeliveryReceiptBytes(receipt)).digest('hex')}` };
 }
 export function observeAgentRuntimeEffect(input: { repo_root: string; effect_id: string; adapter: AgentRuntimeAdapterObservationV2; observed_at: string; receipt_wait_exhausted: boolean; crash_hook?: AgentRuntimeEffectCrashHook }): AgentRuntimeEffectStatus {
-  const paths = effectPaths(input.repo_root, input.effect_id); return lock(paths, () => {
+  const paths = effectPaths(input.repo_root, input.effect_id); return withWakeEffectLock(paths, () => lock(paths, () => {
     let status = readLocked(paths, true); if (status.current.state === 'observed_success' || status.current.state === 'observed_failure' || status.current.state === 'stopped') return status;
     if (status.current.state !== 'effect_started' && status.current.state !== 'reconciliation_required') fail('agent_runtime_effect_transition_invalid', `cannot observe from ${status.current.state}`);
     if (input.adapter.adapter_kind !== status.intent.endpoint_fence.adapter_kind) fail('agent_runtime_effect_conflict', 'adapter observation mismatches effect adapter');
-    const receipt = receiptEvidence(input.repo_root, status.intent); let state: 'observed_success' | 'observed_failure' | 'reconciliation_required'; let failure: 'none' | 'adapter_unavailable' | 'unknown' | 'receipt_missing';
+    const receipt = receiptEvidence(input.repo_root, status.intent); if (receipt) assertAgentRuntimeReceiptKindForOperation(status.intent.operation, receipt.kind); let state: 'observed_success' | 'observed_failure' | 'reconciliation_required'; let failure: 'none' | 'adapter_unavailable' | 'unknown' | 'receipt_missing';
     if (receipt) { state = 'observed_success'; failure = 'none'; }
     else if (input.adapter.outcome === 'unavailable' || input.adapter.outcome === 'unsupported' || input.adapter.outcome === 'failed') { state = 'observed_failure'; failure = 'adapter_unavailable'; }
     else { state = 'reconciliation_required'; failure = input.receipt_wait_exhausted ? 'receipt_missing' : 'unknown'; }
     const observation = buildAgentRuntimeEffectObservation({ effect_id: status.intent.effect_id, intent_sha256: status.intent.intent_sha256, sequence: status.observation.sequence + 1, state, adapter: input.adapter, receipt_kind: receipt?.kind ?? null, receipt_sha256: receipt?.sha256 ?? null, failure_class: failure, observed_at: input.observed_at, previous_observation_sha256: status.observation.observation_sha256 }); status = append(paths, status, observation, input.crash_hook); return status;
-  });
+  }));
 }
 export function listAgentRuntimeEffects(repoRoot: string, engineerId?: string): readonly AgentRuntimeEffectStatus[] {
   const store = pathsFor(repoRoot); if (!ensureDirectory(store.common, store.effects, false)) return Object.freeze([]); const result = readdirSync(store.effects).sort().map((name) => { if (!/^[0-9a-f]{64}$/u.test(name)) fail('agent_runtime_effect_unreadable', `invalid effect directory: ${name}`); return observeAgentRuntimeEffectStatus(repoRoot, `sha256:${name}`); }).filter((status) => !engineerId || status.intent.endpoint_fence.engineer_id === engineerId); return Object.freeze(result);
 }
 export const observeAgentRuntimeEffects = listAgentRuntimeEffects;
-export function agentRuntimeCapabilityStatusFor(repoRoot: string, hostId: string, adapter: AgentRuntimeAdapterKind) { const capability = readAgentRuntimeCapability(repoRoot, hostId, adapter); return Object.freeze({ capability, status: capability.operations.notify_inbox }); }
+/** The capability observation already carries one status per operation; a
+ * separate top-level status would be a second authority for the same datum
+ * once the protocol admits more than one operation. */
+export function agentRuntimeCapabilityStatusFor(repoRoot: string, hostId: string, adapter: AgentRuntimeAdapterKind) { return Object.freeze({ capability: readAgentRuntimeCapability(repoRoot, hostId, adapter) }); }
 
 export interface TaskAgentRuntimeProjectionV1 {
   readonly delivery_state: RuntimeDeliveryState;
@@ -335,6 +407,7 @@ export function projectTaskAgentRuntimeState(input: {
 }): TaskAgentRuntimeProjectionV1 {
   if (input.current_claim === null) return Object.freeze({ delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, failure_class: null });
   const candidates = (input.statuses ?? listAgentRuntimeEffects(input.repo_root)).filter(({ intent }) => {
+    if (intent.operation !== 'notify_inbox') return false;
     const ref = intent.message_ref;
     return ref.kind === 'task_message' && ref.task_id === input.task_id && ref.task_revision === input.task_revision
       && ref.claim_id === input.current_claim!.claim_id && ref.lease_generation === input.current_claim!.generation;
@@ -353,12 +426,381 @@ export function projectTaskAgentRuntimeState(input: {
   let delivery: RuntimeDeliveryState = status.current.state === 'observed_failure' ? 'failed'
     : status.current.state === 'reconciliation_required' ? 'reconciliation_required' : 'pending';
   if (status.current.state === 'observed_success') {
-    const ref = status.intent.message_ref;
+    const ref = notifyIntent(status.intent).message_ref;
     if (ref.kind !== 'task_message') fail('agent_runtime_effect_unreadable', 'Task projection selected a non-Task effect');
     const entry = readTaskMessageDelivery({ repo_root: input.repo_root, task_id: ref.task_id, message_id: ref.message_id, recipient: { kind: 'claim', claim_id: ref.claim_id, generation: ref.lease_generation } });
     delivery = entry.receipt?.delivery_state === 'acknowledged' ? 'acknowledged' : entry.receipt?.delivery_state === 'delivered' ? 'delivered' : 'reconciliation_required';
   }
   return Object.freeze({ delivery_state: delivery, runtime_reachability: reachability, effect_sha256: status.current.current_sha256, failure_class: status.observation.failure_class === 'none' ? null : status.observation.failure_class });
+}
+
+export const AGENT_RUNTIME_OFFER_WAKE_MAX_DEBOUNCE_MS = 3_600_000;
+
+export interface AgentRuntimeWakePolicyV1 {
+  /** Bounded coalescing window. Repeated offer changes inside one window
+   * replace the pending wake instead of opening another; the window never
+   * slides, so a flapping repository still wakes once per window. */
+  readonly debounce_ms: number;
+  /** Scheduled polling is a controller decision, never a runtime default. */
+  readonly polling_fallback_enabled: boolean;
+}
+export type AgentRuntimeOfferWakeCrashBoundary = 'after_intent_persisted' | 'after_superseded' | 'after_ledger_published';
+export type AgentRuntimeOfferWakeCrashHook = (boundary: AgentRuntimeOfferWakeCrashBoundary) => void;
+export interface RecordEngineerOfferSnapshotInput {
+  readonly repo_root: string;
+  readonly offers: EngineerOffersV1;
+  readonly observed_at: string;
+  readonly expected_capability_sha256: string;
+  /** The exact Binding the snapshot was collected under. An offers document
+   * carries no Binding fields of its own and an empty one carries no offers to
+   * fence, so the collector must state the Binding or a stale generation could
+   * update the current ledger's observed snapshot. */
+  readonly expected_binding_id: string;
+  readonly expected_binding_generation: number;
+  readonly expected_engineer_contract_revision: string;
+  readonly wake_policy: AgentRuntimeWakePolicyV1;
+  readonly env?: NodeJS.ProcessEnv;
+  readonly crash_hook?: AgentRuntimeOfferWakeCrashHook;
+}
+export type RecordEngineerOfferSnapshotOutcome = 'wake_prepared' | 'wake_coalesced' | 'unchanged' | 'no_wake' | 'polling_fallback';
+export type RecordEngineerOfferSnapshotCause = 'due' | 'unchanged_snapshot' | 'no_eligible_offers' | 'wake_in_flight' | 'wake_unsupported';
+export interface RecordEngineerOfferSnapshotResult {
+  readonly outcome: RecordEngineerOfferSnapshotOutcome;
+  readonly cause: RecordEngineerOfferSnapshotCause;
+  readonly ledger: AgentRuntimeOfferWakeLedgerV2;
+  readonly status: AgentRuntimeEffectStatus | null;
+}
+export interface AgentRuntimeOfferWakeEventV1 {
+  readonly engineer_id: string;
+  readonly binding_id: string;
+  readonly binding_generation: number;
+  readonly effect_id: string;
+  readonly snapshot_revision: string;
+  readonly wake_reason: AgentRuntimeOfferWakeReason;
+  readonly state: AgentRuntimeEffectState;
+  readonly requested_at: string;
+  readonly coalesce_until: string;
+  readonly control_ref: string;
+}
+export interface AgentRuntimeOfferWakeBindingRef {
+  readonly engineer_id: string;
+  readonly binding_id: string;
+  readonly binding_generation: number;
+}
+
+const TERMINAL_STATES: readonly AgentRuntimeEffectState[] = Object.freeze(['observed_success', 'observed_failure', 'stopped', 'superseded']);
+
+function wakeKey(binding: AgentRuntimeOfferWakeBindingRef): string {
+  return createHash('sha256').update(`${binding.engineer_id}\0${binding.binding_id}\0${String(binding.binding_generation)}`).digest('hex');
+}
+function wakeLedgerPath(store: StorePaths, binding: AgentRuntimeOfferWakeBindingRef): string { return join(store.wakes, `${wakeKey(binding)}.json`); }
+function withWakeLock<T>(store: StorePaths, binding: AgentRuntimeOfferWakeBindingRef, run: () => T): T {
+  prepareStore(store);
+  return withExclusiveDirectoryLock(store.common, `${AGENT_RUNTIME_EFFECT_RELATIVE_ROOT}/locks/wake-${wakeKey(binding)}.lock`, run, { reclaimStaleEmptyDirectory: true });
+}
+function parseWakeLedger(raw: string): AgentRuntimeOfferWakeLedgerV2 {
+  try {
+    const value = validateAgentRuntimeOfferWakeLedger(JSON.parse(raw));
+    if (canonicalAgentRuntimeOfferWakeLedgerBytes(value) !== raw) fail('agent_runtime_effect_unreadable', 'offer wake ledger is non-canonical');
+    return value;
+  } catch (error) { throw mapped(error, 'agent_runtime_effect_unreadable', 'offer wake ledger is malformed'); }
+}
+/** The ledger is published by atomic replace, so a reader never needs the wake
+ * lock. Keeping this read lock-free also keeps the lock order one-way: the
+ * wake lock may take an effect lock, never the reverse. */
+export function readOfferWakeLedger(repoRoot: string, binding: AgentRuntimeOfferWakeBindingRef): AgentRuntimeOfferWakeLedgerV2 | null {
+  const store = pathsFor(repoRoot); const path = wakeLedgerPath(store, binding);
+  if (!existsSync(path)) return null;
+  return parseWakeLedger(readRaw(path, 'offer wake ledger'));
+}
+function publishWakeLedger(store: StorePaths, endpoint: RuntimeEndpointFenceV2, ledger: AgentRuntimeOfferWakeLedgerV2): AgentRuntimeOfferWakeLedgerV2 {
+  ensureDirectory(store.common, store.wakes, true);
+  replace(wakeLedgerPath(store, endpoint), canonicalAgentRuntimeOfferWakeLedgerBytes(ledger), 'offer wake ledger');
+  return ledger;
+}
+function wakeStatusOrNull(repoRoot: string, effectId: string): AgentRuntimeEffectStatus | null {
+  try { return readAgentRuntimeEffectStatus(repoRoot, effectId); }
+  catch (error) {
+    if (error instanceof AgentRuntimeEffectStoreError && error.code === 'agent_runtime_effect_not_found') return null;
+    throw error;
+  }
+}
+function peekWakeEndpoint(paths: EffectPaths): RuntimeEndpointFenceV2 | null {
+  if (!existsSync(paths.intent)) return null;
+  const intent = parseIntent(readRaw(paths.intent, 'effect intent'));
+  return intent.operation === 'wake_for_offer' ? intent.endpoint_fence : null;
+}
+/** Every wake mutation linearizes on the per-Binding wake lock, taken before
+ * the per-effect lock everywhere, so supersession and start share one order
+ * and can never interleave. The intent is written once with O_EXCL and fsynced
+ * before any observation exists, so this unlocked peek cannot read a torn or
+ * mutable value -- it only decides which lock to take. */
+function withWakeEffectLock<T>(paths: EffectPaths, run: () => T): T {
+  const endpoint = peekWakeEndpoint(paths);
+  return endpoint === null ? run() : withWakeLock(paths.store, endpoint, run);
+}
+/** The offers document is another authority's product. Before anything is
+ * derived from it, it is re-proved whole and then fenced to this repository and
+ * the exact current Binding, so a snapshot collected under a previous Binding
+ * generation or contract revision is refused rather than re-bound to the
+ * current one. */
+function assertOffersBindCurrentEndpoint(input: {
+  repo_root: string; offers: EngineerOffersV1; endpoint: RuntimeEndpointFenceV2; env: NodeJS.ProcessEnv | undefined;
+  expected_binding_id: string; expected_binding_generation: number; expected_engineer_contract_revision: string;
+}): void {
+  const { offers, endpoint } = input;
+  let repository;
+  try { repository = resolveRegisteredRepoForWorktree(input.repo_root, readRepoHarnessRegistryStrictSnapshot({ env: input.env ?? process.env })); }
+  catch (error) { throw mapped(error, 'agent_runtime_effect_invalid', 'current worktree is not an exact registered repository'); }
+  if (offers.repository_id !== repository.id) fail('agent_runtime_effect_invalid', 'offers document describes another repository');
+  if (offers.engineer_id !== endpoint.engineer_id) fail('agent_runtime_effect_binding_stale', 'offers document describes another Engineer');
+  // Fence the collection itself before the document, so an empty snapshot from
+  // a previous Binding generation is refused rather than accepted as current.
+  if (input.expected_binding_id !== endpoint.binding_id || input.expected_binding_generation !== endpoint.binding_generation
+    || input.expected_engineer_contract_revision !== endpoint.engineer_contract_revision) {
+    fail('agent_runtime_effect_binding_stale', 'offers snapshot was collected under another Binding generation or Engineer contract revision');
+  }
+  for (const offer of offers.offers) {
+    if (offer.binding_id !== endpoint.binding_id || offer.binding_generation !== endpoint.binding_generation
+      || offer.engineer_contract_revision !== endpoint.engineer_contract_revision) {
+      fail('agent_runtime_effect_binding_stale', 'offers document was collected under another Binding generation or Engineer contract revision');
+    }
+  }
+}
+/** A superseded intent is closed in its own chain rather than left dangling at
+ * `intent_persisted`, so exactly one non-terminal wake exists per Binding and
+ * every reader -- including the Board projection -- agrees with the ledger
+ * pointer without consulting it. */
+function markWakeSuperseded(repoRoot: string, effectId: string, supersededAt: string): void {
+  const paths = effectPaths(repoRoot, effectId);
+  lock(paths, () => {
+    const status = readLocked(paths, true);
+    if (status.current.state !== 'intent_persisted') return status;
+    return append(paths, status, buildAgentRuntimeEffectObservation({
+      effect_id: status.intent.effect_id, intent_sha256: status.intent.intent_sha256, sequence: status.observation.sequence + 1,
+      state: 'superseded', adapter: initialAdapter(status.intent.endpoint_fence.adapter_kind), receipt_kind: null, receipt_sha256: null,
+      failure_class: 'none', observed_at: supersededAt, previous_observation_sha256: status.observation.observation_sha256,
+    }));
+  });
+}
+function offsetTimestamp(from: string, milliseconds: number): string { return new Date(Date.parse(from) + milliseconds).toISOString(); }
+function wakePolicy(value: AgentRuntimeWakePolicyV1): AgentRuntimeWakePolicyV1 {
+  if (!Number.isInteger(value.debounce_ms) || value.debounce_ms < 0 || value.debounce_ms > AGENT_RUNTIME_OFFER_WAKE_MAX_DEBOUNCE_MS) {
+    fail('agent_runtime_effect_invalid', `wake_policy.debounce_ms must be an integer within 0..${AGENT_RUNTIME_OFFER_WAKE_MAX_DEBOUNCE_MS}`);
+  }
+  if (typeof value.polling_fallback_enabled !== 'boolean') fail('agent_runtime_effect_invalid', 'wake_policy.polling_fallback_enabled must be an exact boolean');
+  return value;
+}
+function assertAuthorizationCurrent(expected: number, env: NodeJS.ProcessEnv | undefined): void {
+  const current = repoHarnessAuthorizationRevision(env ?? process.env);
+  if (current !== expected) fail('agent_runtime_effect_authorization_stale', `authorization revision is ${current}, not the ${expected} this wake froze`);
+}
+/** Called with the per-Binding wake lock already held, so the ledger read is
+ * the linearization point rather than a hint. */
+function assertWakeStartable(repoRoot: string, intent: AgentRuntimeOfferWakeIntentV2, startedAt: string): void {
+  const ledger = readOfferWakeLedger(repoRoot, intent.endpoint_fence);
+  if (!ledger || ledger.pending === null || ledger.pending.effect_id !== intent.effect_id) {
+    fail('agent_runtime_effect_wake_superseded', 'a newer offer snapshot superseded this wake before any Host action');
+  }
+  if (Date.parse(startedAt) < Date.parse(ledger.pending.coalesce_until)) {
+    fail('agent_runtime_effect_wake_coalescing', 'the bounded wake coalescing window has not closed');
+  }
+}
+function prepareOfferWakeEffect(input: {
+  repo_root: string; endpoint: RuntimeEndpointFenceV2; repository_id: string; authorization_revision: number;
+  snapshot_revision: string; wake_reason: AgentRuntimeOfferWakeReason; capability_sha256: string; created_at: string;
+}): AgentRuntimeEffectStatus {
+  const key = deriveAgentRuntimeOfferWakeIdempotencyKey({
+    engineer_id: input.endpoint.engineer_id, binding_id: input.endpoint.binding_id, binding_generation: input.endpoint.binding_generation,
+    snapshot_revision: input.snapshot_revision, wake_reason: input.wake_reason,
+  });
+  const paths = effectPaths(input.repo_root, deriveAgentRuntimeEffectId(key));
+  return lock(paths, () => {
+    prepareEffect(paths);
+    const intent = buildAgentRuntimeEffectIntent({
+      idempotency_key: key, operation: 'wake_for_offer', endpoint_fence: input.endpoint, capability_sha256: input.capability_sha256,
+      created_at: input.created_at,
+      wake_ref: { repository_id: input.repository_id, authorization_revision: input.authorization_revision, snapshot_revision: input.snapshot_revision, wake_reason: input.wake_reason },
+    });
+    const bytes = canonicalAgentRuntimeEffectIntentBytes(intent);
+    // `created_at` is this store's own clock, so a crash between the intent
+    // write and the ledger publish would make a byte comparison reject the
+    // replay of the very same snapshot forever. Identity is what must match:
+    // same key, same fence, same wake subject. Anything else is a real
+    // conflict and still fails closed.
+    if (existsSync(paths.intent)) {
+      const existing = wakeIntent(parseIntent(readRaw(paths.intent, 'effect intent')));
+      if (existing.idempotency_key !== key || existing.capability_sha256 !== input.capability_sha256
+        || JSON.stringify(existing.endpoint_fence) !== JSON.stringify(input.endpoint)
+        || existing.wake_ref.repository_id !== input.repository_id
+        || existing.wake_ref.authorization_revision !== input.authorization_revision
+        || existing.wake_ref.snapshot_revision !== input.snapshot_revision
+        || existing.wake_ref.wake_reason !== input.wake_reason) {
+        fail('agent_runtime_effect_conflict', 'wake idempotency key names another wake request');
+      }
+      return chain(paths, existing).length ? readLocked(paths, true) : initialize(paths, existing);
+    }
+    if (!writeExclusive(paths.intent, bytes, 'effect intent') && readRaw(paths.intent, 'effect intent') !== bytes) fail('agent_runtime_effect_conflict', 'wake idempotency key names different intent bytes');
+    return initialize(paths, intent);
+  });
+}
+
+/** The only creator of wake intents. Selection stays with the offer authority
+ * and acquisition stays with the scheduling seam: this records one observed
+ * snapshot per Binding and, on the exact empty-to-eligible transition, arms one
+ * durable hint. */
+export function recordEngineerOfferSnapshot(input: RecordEngineerOfferSnapshotInput): RecordEngineerOfferSnapshotResult {
+  assertAgentRuntimePrepareEnabled(input.repo_root); assertMigrationReady(input.repo_root);
+  const policy = wakePolicy(input.wake_policy);
+  let document: EngineerOffersV1; let observed;
+  try { document = validateEngineerOffersDocument(input.offers); observed = buildAgentRuntimeOfferWakeSnapshot(document); }
+  catch (error) { throw mapped(error, 'agent_runtime_effect_invalid', 'Engineer offers document is invalid'); }
+  const endpoint = currentBinding(input.repo_root, observed.engineer_id);
+  assertOffersBindCurrentEndpoint({
+    repo_root: input.repo_root, offers: document, endpoint, env: input.env,
+    expected_binding_id: input.expected_binding_id, expected_binding_generation: input.expected_binding_generation,
+    expected_engineer_contract_revision: input.expected_engineer_contract_revision,
+  });
+  const store = pathsFor(input.repo_root);
+  return withWakeLock(store, endpoint, () => {
+    const existing = readOfferWakeLedger(input.repo_root, endpoint);
+    const pendingStatus = existing?.pending ? wakeStatusOrNull(input.repo_root, existing.pending.effect_id) : null;
+    const publish = (pending: AgentRuntimeOfferWakePendingV2 | null): AgentRuntimeOfferWakeLedgerV2 => {
+      const ledger = publishWakeLedger(store, endpoint, buildAgentRuntimeOfferWakeLedger({
+        endpoint_fence: endpoint, observed, observed_at: input.observed_at, pending,
+      }));
+      input.crash_hook?.('after_ledger_published');
+      return ledger;
+    };
+    if (existing && existing.observed.snapshot_revision === observed.snapshot_revision) {
+      return Object.freeze({ outcome: 'unchanged' as const, cause: 'unchanged_snapshot' as const, ledger: existing, status: pendingStatus });
+    }
+    const decision = decideAgentRuntimeOfferWake(existing?.observed ?? null, observed);
+    if (!decision.due) {
+      return Object.freeze({ outcome: 'no_wake' as const, cause: decision.cause, ledger: publish(existing?.pending ?? null), status: pendingStatus });
+    }
+    const superseded = existing?.pending && pendingStatus?.current.state === 'intent_persisted' ? existing.pending : null;
+    if (existing?.pending && !superseded && pendingStatus && !TERMINAL_STATES.includes(pendingStatus.current.state)) {
+      return Object.freeze({ outcome: 'no_wake' as const, cause: 'wake_in_flight' as const, ledger: publish(existing.pending), status: pendingStatus });
+    }
+    const capability = readAgentRuntimeCapability(input.repo_root, endpoint.host_id, endpoint.adapter_kind);
+    if (capability.capability_sha256 !== input.expected_capability_sha256) fail('agent_runtime_effect_conflict', 'capability digest changed');
+    if (capability.operations.wake_for_offer !== 'supported') {
+      if (!policy.polling_fallback_enabled) fail('agent_runtime_effect_capability_unsupported', `wake_for_offer capability is ${capability.operations.wake_for_offer}`);
+      return Object.freeze({ outcome: 'polling_fallback' as const, cause: 'wake_unsupported' as const, ledger: publish(existing?.pending ?? null), status: null });
+    }
+    assertAuthorizationCurrent(decision.authorization_revision, input.env);
+    const status = prepareOfferWakeEffect({
+      repo_root: input.repo_root, endpoint, repository_id: decision.repository_id, authorization_revision: decision.authorization_revision,
+      snapshot_revision: decision.snapshot_revision, wake_reason: decision.wake_reason, capability_sha256: input.expected_capability_sha256,
+      created_at: input.observed_at,
+    });
+    input.crash_hook?.('after_intent_persisted');
+    if (superseded && superseded.effect_id !== status.intent.effect_id) {
+      markWakeSuperseded(input.repo_root, superseded.effect_id, input.observed_at);
+      input.crash_hook?.('after_superseded');
+    }
+    const requestedAt = superseded ? superseded.requested_at : input.observed_at;
+    const ledger = publish({
+      effect_id: status.intent.effect_id, snapshot_revision: decision.snapshot_revision, wake_reason: decision.wake_reason,
+      requested_at: requestedAt, coalesce_until: superseded ? superseded.coalesce_until : offsetTimestamp(requestedAt, policy.debounce_ms),
+    });
+    return Object.freeze({ outcome: superseded ? 'wake_coalesced' as const : 'wake_prepared' as const, cause: 'due' as const, ledger, status });
+  });
+}
+
+function controllerStepEvidence(repoRoot: string, intent: AgentRuntimeOfferWakeIntentV2): { kind: AgentRuntimeReceiptKind; sha256: string } | null {
+  const paths = effectPaths(repoRoot, intent.effect_id);
+  if (!existsSync(paths.controller_step)) return null;
+  const raw = readRaw(paths.controller_step, 'controller step receipt');
+  let receipt: AgentRuntimeControllerStepReceiptV2;
+  try {
+    receipt = validateAgentRuntimeControllerStepReceipt(JSON.parse(raw));
+    if (canonicalAgentRuntimeControllerStepReceiptBytes(receipt) !== raw) fail('agent_runtime_effect_unreadable', 'controller step receipt is non-canonical');
+  } catch (error) { throw mapped(error, 'agent_runtime_effect_unreadable', 'controller step receipt is malformed'); }
+  const fence = intent.endpoint_fence;
+  if (receipt.effect_id !== intent.effect_id || receipt.intent_sha256 !== intent.intent_sha256 || receipt.control_ref !== agentRuntimeControlRef(intent)
+    || receipt.engineer_id !== fence.engineer_id || receipt.binding_id !== fence.binding_id || receipt.binding_generation !== fence.binding_generation) {
+    fail('agent_runtime_effect_conflict', 'controller step receipt mismatches the frozen effect reference');
+  }
+  return { kind: 'controller_step_receipt', sha256: receipt.receipt_sha256 };
+}
+
+/** The awakened controller writes this after running one bounded step. The
+ * observed snapshot may already be stale -- a stale wake is still a delivered
+ * wake -- but it can never authorize acquisition. */
+export function recordAgentRuntimeControllerStep(input: {
+  repo_root: string; effect_id: string; control_ref: string; observed_snapshot_revision: string; observed_at: string;
+  crash_hook?: (boundary: 'after_receipt_fsync') => void;
+}): AgentRuntimeControllerStepReceiptV2 {
+  const paths = effectPaths(input.repo_root, input.effect_id);
+  return withWakeEffectLock(paths, () => lock(paths, () => {
+    const status = readLocked(paths, true);
+    const intent = wakeIntent(status.intent);
+    if (status.current.state === 'intent_persisted') fail('agent_runtime_effect_transition_invalid', 'no Host action has run for this wake');
+    if (input.control_ref !== agentRuntimeControlRef(intent)) fail('agent_runtime_effect_conflict', 'controller step receipt names another control reference');
+    const receipt = buildAgentRuntimeControllerStepReceipt({
+      effect_id: intent.effect_id, intent_sha256: intent.intent_sha256, control_ref: input.control_ref,
+      control_sha256: agentRuntimeControlSha256(intent), engineer_id: intent.endpoint_fence.engineer_id,
+      binding_id: intent.endpoint_fence.binding_id, binding_generation: intent.endpoint_fence.binding_generation,
+      observed_snapshot_revision: input.observed_snapshot_revision, observed_at: input.observed_at,
+    });
+    const bytes = canonicalAgentRuntimeControllerStepReceiptBytes(receipt);
+    if (!writeExclusive(paths.controller_step, bytes, 'controller step receipt') && readRaw(paths.controller_step, 'controller step receipt') !== bytes) {
+      fail('agent_runtime_effect_conflict', 'a different controller step receipt already closed this wake');
+    }
+    input.crash_hook?.('after_receipt_fsync');
+    return receipt;
+  }));
+}
+
+function wakeEvent(repoRoot: string, ledger: AgentRuntimeOfferWakeLedgerV2): AgentRuntimeOfferWakeEventV1 | null {
+  if (ledger.pending === null) return null;
+  const status = wakeStatusOrNull(repoRoot, ledger.pending.effect_id);
+  if (!status || TERMINAL_STATES.includes(status.current.state)) return null;
+  return Object.freeze({
+    engineer_id: ledger.endpoint_fence.engineer_id, binding_id: ledger.endpoint_fence.binding_id,
+    binding_generation: ledger.endpoint_fence.binding_generation, effect_id: ledger.pending.effect_id,
+    snapshot_revision: ledger.pending.snapshot_revision, wake_reason: ledger.pending.wake_reason,
+    state: status.current.state, requested_at: ledger.pending.requested_at, coalesce_until: ledger.pending.coalesce_until,
+    control_ref: agentRuntimeControlRef(wakeIntent(status.intent)),
+  });
+}
+/** The effect-level seam a non-interactive controller consumes: durable state
+ * in, bounded wake events out, no CLI and no host coupling. */
+export function listDueOfferWakes(repoRoot: string, input: { now: string; engineer_id?: string }): readonly AgentRuntimeOfferWakeEventV1[] {
+  const store = pathsFor(repoRoot);
+  if (!ensureDirectory(store.common, store.wakes, false)) return Object.freeze([]);
+  const now = Date.parse(input.now);
+  if (Number.isNaN(now)) fail('agent_runtime_effect_invalid', 'now is not a parsable timestamp');
+  const events = readdirSync(store.wakes).sort().flatMap((name) => {
+    if (!/^[0-9a-f]{64}\.json$/u.test(name)) fail('agent_runtime_effect_unreadable', `invalid wake ledger entry: ${name}`);
+    const ledger = parseWakeLedger(readRaw(join(store.wakes, name), 'offer wake ledger'));
+    if (input.engineer_id && ledger.endpoint_fence.engineer_id !== input.engineer_id) return [];
+    const event = wakeEvent(repoRoot, ledger);
+    return event && now >= Date.parse(event.coalesce_until) ? [event] : [];
+  });
+  return Object.freeze(events);
+}
+export interface AgentRuntimeOfferWakeSubscription {
+  /** Deliver every due wake state this handle has not delivered yet and return
+   * how many were delivered. The controller owns the clock, so the seam stays
+   * deterministic and needs no timer. */
+  poll(now: string): number;
+}
+export function subscribeToOfferWakes(repoRoot: string, input: { engineer_id?: string; on_wake: (event: AgentRuntimeOfferWakeEventV1) => void }): AgentRuntimeOfferWakeSubscription {
+  const delivered = new Set<string>();
+  return Object.freeze({
+    poll(now: string): number {
+      let count = 0;
+      for (const event of listDueOfferWakes(repoRoot, { now, engineer_id: input.engineer_id })) {
+        const token = `${event.effect_id}:${event.state}`;
+        if (delivered.has(token)) continue;
+        delivered.add(token); input.on_wake(event); count += 1;
+      }
+      return count;
+    },
+  });
 }
 
 function treeDigest(root: string): string {

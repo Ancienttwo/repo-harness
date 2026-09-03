@@ -127,14 +127,39 @@ export function withTaskLock<T>(cwd: string, taskId: string, run: () => T): T {
   return withExclusiveDirectoryLock(commonDir, taskLockRelativePath(taskId), run);
 }
 
+/** How a reclaimed backlog lock is reported; overridable for tests. */
+export type BacklogLockReclaimReporter = (lockPath: string) => void;
+
+const defaultBacklogLockReclaimReporter: BacklogLockReclaimReporter = (lockPath) => {
+  process.stderr.write(`sprint-backlog: reclaiming stale backlog lock: ${lockPath}\n`);
+};
+
 /**
  * The backlog-wide lock, relocated from `sprint-backlog.sh`'s per-worktree
  * `.backlog-lock` onto the shared plane so back-fill serializes across
- * worktrees. Wiring the shell caller to it is the start-task integration.
+ * worktrees.
+ *
+ * `sprint-backlog.sh`'s `acquire_backlog_lock` still takes this same directory
+ * for `start-task`, and it reclaims a stale *empty* one -- an mtime older than
+ * the threshold plus a successful `rmdir`. This side must reclaim the same
+ * shape, or the two callers of one directory disagree about whether a dead
+ * holder's lock is recoverable: a crash under the shell would strand every
+ * later TypeScript caller, and the reverse. `reclaimStaleOwner` (a dead-PID
+ * owner file, which is the shape *this* primitive leaves behind) is already on
+ * by default; `reclaimStaleEmptyDirectory` is what brings the shell's shape
+ * with it. The report reuses the shell's exact wording so an operator reading
+ * either path's stderr sees one message.
  */
-export function withBacklogLock<T>(cwd: string, run: () => T): T {
+export function withBacklogLock<T>(
+  cwd: string,
+  run: () => T,
+  reportReclaim: BacklogLockReclaimReporter = defaultBacklogLockReclaimReporter,
+): T {
   const commonDir = resolveGitCommonDirectory(cwd);
-  return withExclusiveDirectoryLock(commonDir, COORDINATION_BACKLOG_LOCK_RELATIVE_PATH, run);
+  return withExclusiveDirectoryLock(commonDir, COORDINATION_BACKLOG_LOCK_RELATIVE_PATH, run, {
+    reclaimStaleEmptyDirectory: true,
+    onStaleReclaim: reportReclaim,
+  });
 }
 
 function fsyncDirectory(path: string): void {

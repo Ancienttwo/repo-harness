@@ -328,16 +328,17 @@ cat > "$TARGET_REPO/plans/sprints/20991231-2359-tarball-root.sprint.md" <<'SPRIN
 # Sprint: Tarball Root
 
 > **Status**: Approved
+> **Backlog Schema**: 2
 
 ## Backlog
 
-| # | Status | Task | Mode | Acceptance | Plan |
-|---|--------|------|------|------------|------|
-| 1 | [ ] | task-a | inline | packaged helper reads target repo | (pending) |
-| 2 | [ ] | task-b | inline | packaged helper reads target repo | (pending) |
-| 3 | [ ] | task-c | inline | packaged helper reads target repo | (pending) |
-| 4 | [ ] | task-d | inline | packaged helper reads target repo | (pending) |
-| 5 | [ ] | task-e | inline | packaged helper reads target repo | (pending) |
+| # | ID | Status | Task | Mode | Acceptance | Plan |
+|---|----|--------|------|------|------------|------|
+| 1 | 1111111111111111111111111111111111111111111111111111111111111111 | [ ] | task-a | inline | packaged helper reads target repo | (pending) |
+| 2 | 2222222222222222222222222222222222222222222222222222222222222222 | [ ] | task-b | inline | packaged helper reads target repo | (pending) |
+| 3 | 3333333333333333333333333333333333333333333333333333333333333333 | [ ] | task-c | inline | packaged helper reads target repo | (pending) |
+| 4 | 4444444444444444444444444444444444444444444444444444444444444444 | [ ] | task-d | inline | packaged helper reads target repo | (pending) |
+| 5 | 5555555555555555555555555555555555555555555555555555555555555555 | [ ] | task-e | inline | packaged helper reads target repo | (pending) |
 SPRINT_EOF
 printf '%s' 'plans/sprints/20991231-2359-tarball-root.sprint.md' > "$TARGET_REPO/.ai/harness/sprint/active-sprint"
 

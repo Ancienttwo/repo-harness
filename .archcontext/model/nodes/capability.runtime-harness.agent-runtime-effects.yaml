@@ -3,13 +3,16 @@ id: capability.runtime-harness.agent-runtime-effects
 kind: capability
 name: Agent Runtime Effects
 status: active
-summary: Owns the provider-neutral, at-most-once Agent Runtime Effect V2 boundary for closed Codex App Thread and tmux CLI Agent adapters.
+summary: Owns the provider-neutral, at-most-once Agent Runtime Effect V2 boundary for closed Codex App Thread and tmux CLI Agent adapters, covering inbox notification and durable task-offer wake.
 responsibilities:
   - Validate closed runtime capability, effect intent, Host action, observation and current schemas.
-  - Bind every effect to one exact persisted Task or Module message, one current recipient fence and one current Engineer Binding endpoint.
+  - Bind every effect to one exact subject -- a persisted Task or Module message, or one EngineerOffersV1 snapshot revision -- plus one current recipient fence and one current Engineer Binding endpoint.
+  - Arm at most one durable wake per Engineer Binding on the exact empty-to-eligible offer transition, superseding an unstarted wake inside a bounded coalescing window and never opening a second concurrent wake.
+  - Refuse a wake Host action before it runs when the Binding, capability observation or authorization revision moved, and never place Work Package selection, claim authority or a claim token in a wake.
   - Persist intent and effect_started before admitting at most one closed Host adapter action.
   - Admit only codex-app-thread and tmux-cli-agent adapters; tmux receives a bounded inbox-control reference and never a message body or generic command.
-  - Treat only an exact persisted inbox receipt as positive delivery evidence; ambiguous Host outcomes become reconciliation_required without retry or fallback.
+  - Treat only an exact persisted inbox receipt as positive delivery evidence for notification and only an exact controller-step receipt bound to the effect control reference for a wake; a process exit code alone is never proof and ambiguous Host outcomes become reconciliation_required without retry or fallback.
+  - Expose due wakes through an effect-level subscription seam a non-interactive controller consumes without the CLI, and permit scheduled polling only under an explicit controller policy flag.
   - Project delivery and reachability as read-model facts while leaving Task, Lease, Collaboration, Publication and Acceptance authorities unchanged.
   - Retire the Provider Thread V1 runtime through the R1 terminal-only one-shot migration, with no steady-state alias or dual reader.
   - Exclude automatic endpoint creation, Agent process ownership, transcript semantics, provider/model routing and remote tmux.
@@ -38,6 +41,19 @@ source:
             - id: sink.agent-runtime-effects.persisted-task-message
               path: "src/effects/fleet/task-inbox.ts"
               symbol: "readTaskMessageDelivery"
+    - id: entrypoint.agent-runtime-effects.wake
+      path: "src/effects/engineers/agent-runtime-effect-store.ts"
+      symbols:
+        - name: "recordEngineerOfferSnapshot"
+          sinks:
+            - id: sink.agent-runtime-effects.offer-wake-decision
+              path: "src/core/engineers/agent-runtime-effect.ts"
+              symbol: "decideAgentRuntimeOfferWake"
+        - name: "recordAgentRuntimeControllerStep"
+          sinks:
+            - id: sink.agent-runtime-effects.controller-step-receipt
+              path: "src/core/engineers/agent-runtime-effect.ts"
+              symbol: "buildAgentRuntimeControllerStepReceipt"
     - id: entrypoint.agent-runtime-effects.start
       path: "src/effects/engineers/agent-runtime-effect-store.ts"
       symbols:
@@ -60,7 +76,8 @@ source:
               path: "src/effects/engineers/module-inbox.ts"
               symbol: "readModuleMessageDelivery"
 notes:
-  - Runtime adapters receive only a bounded inbox-control reference; message content remains in the authoritative Task or Module Inbox.
+  - Runtime adapters receive only a bounded control reference; message content remains in the authoritative Task or Module Inbox and offer content remains in the authoritative offers document.
+  - A wake is a hint, never a TaskOffer, Lease or WorkEnvelope; the awakened controller re-reads current offers and acquires only through the ordinary scheduling seam.
   - Provider Thread V1 is available only to the explicit terminal-only migration and has no steady-state reader or command alias.
 extensions:
   contractFiles:
@@ -68,5 +85,5 @@ extensions:
     claude: "CLAUDE.md"
   lspProfile: "typescript-lsp"
   verification:
-    - "bun test tests/unit/r1-provider-neutral-agent-runtime.test.ts tests/unit/r1-agent-runtime-adapters.test.ts tests/cli/engineer.test.ts tests/cli/mcp-engineer-tools.test.ts --timeout 60000"
+    - "bun test tests/unit/r1-provider-neutral-agent-runtime.test.ts tests/unit/r1-agent-runtime-adapters.test.ts tests/unit/issue-281-task-offer-wake.test.ts tests/cli/engineer.test.ts tests/cli/mcp-engineer-tools.test.ts --timeout 60000"
     - "bun run check:type"

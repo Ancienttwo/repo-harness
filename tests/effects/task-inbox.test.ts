@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { buildTaskMessageEvent } from '../../src/core/fleet/task-message';
-import { deriveTaskId, deriveTaskRevision } from '../../src/core/state/coordination-identity';
+import { deriveTaskRevision } from '../../src/core/state/coordination-identity';
 import {
   TaskInboxError,
   deliverTaskInbox,
@@ -27,6 +27,7 @@ import {
 import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
 import { taskLockRelativePath } from '../../src/effects/state/coordination-lease-store';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const PROJECT_ROOT = resolve(import.meta.dir, '../..');
 const TASK_INBOX_MODULE = resolve(import.meta.dir, '../../src/effects/fleet/task-inbox.ts');
@@ -54,20 +55,16 @@ function fixture(): Fixture {
   git(root, 'config', 'user.email', 'task-inbox-staging@test.invalid');
   mkdirSync(join(root, 'plans/sprints'), { recursive: true });
   writeFileSync(join(root, SPRINT_PATH), [
-    '# Sprint: task inbox staging', '', '## Backlog', '',
-    '| # | Status | Task | Mode | Acceptance | Plan |',
-    '|---|--------|------|------|------------|------|',
-    `| 1 | [ ] | ${TASK_CELL} | contract | proves staging isolation | (pending) |`, '',
+    '# Sprint: task inbox staging', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+    '|---|----|--------|------|------|------------|------|',
+    `| 1 | ${fixtureTaskId(`${TASK_CELL}`)} | [ ] | ${TASK_CELL} | contract | proves staging isolation | (pending) |`, '',
   ].join('\n'));
   writeFileSync(join(root, 'README.md'), 'fixture\n');
   git(root, 'add', '.');
   git(root, 'commit', '-m', 'fixture');
-  const taskId = deriveTaskId({
-    repoIdentity: resolveRepoIdentity(root),
-    sprintPath: SPRINT_PATH,
-    taskCell: TASK_CELL,
-  });
-  const taskRevision = deriveTaskRevision({
+  const taskId = fixtureTaskId(TASK_CELL);
+  const taskRevision = deriveTaskRevision({ taskCell: TASK_CELL,
     taskId,
     modeCell: 'contract',
     acceptanceCell: 'proves staging isolation',

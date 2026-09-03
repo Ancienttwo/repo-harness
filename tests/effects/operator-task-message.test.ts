@@ -4,12 +4,13 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { deriveTaskId, deriveTaskRevision, buildLeaseOwnerRecord, bindLeaseRecord } from '../../src/core/state/coordination-identity';
+import { deriveTaskRevision, buildLeaseOwnerRecord, bindLeaseRecord } from '../../src/core/state/coordination-identity';
 import { repoHarnessRegisteredReposPath, repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { sendOperatorTaskMessage, OperatorTaskMessageError } from '../../src/effects/fleet/task-message-request';
 import { createLeaseDirectory, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
 import { taskInboxEventPath, taskInboxTaskDirectory } from '../../src/effects/fleet/task-inbox';
 import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const SPRINT_PATH = 'plans/sprints/operator-message.sprint.md';
 const TASK_CELL = 'send a fenced operator message';
@@ -45,10 +46,10 @@ function fixture(): Fixture {
   mkdirSync(join(root, '.ai/harness/sprint'), { recursive: true });
   writeFileSync(join(root, '.ai/harness/sprint/active-sprint'), `${SPRINT_PATH}\n`);
   writeFileSync(join(root, SPRINT_PATH), [
-    '# Sprint: operator message', '', '## Backlog', '',
-    '| # | Status | Task | Mode | Acceptance | Plan |',
-    '|---|--------|------|------|------------|------|',
-    `| 1 | [ ] | ${TASK_CELL} | contract | proves the fence | (pending) |`, '',
+    '# Sprint: operator message', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+    '|---|----|--------|------|------|------------|------|',
+    `| 1 | ${fixtureTaskId(`${TASK_CELL}`)} | [ ] | ${TASK_CELL} | contract | proves the fence | (pending) |`, '',
   ].join('\n'));
   writeFileSync(join(root, 'README.md'), 'fixture\n');
   git(root, 'add', '.');
@@ -70,12 +71,8 @@ function fixture(): Fixture {
     }],
   })}\n`);
 
-  const taskId = deriveTaskId({
-    repoIdentity: resolveRepoIdentity(root),
-    sprintPath: SPRINT_PATH,
-    taskCell: TASK_CELL,
-  });
-  const taskRevision = deriveTaskRevision({
+  const taskId = fixtureTaskId(TASK_CELL);
+  const taskRevision = deriveTaskRevision({ taskCell: TASK_CELL,
     taskId,
     modeCell: 'contract',
     acceptanceCell: 'proves the fence',
@@ -310,10 +307,10 @@ describe('operator task-message effect fence', () => {
 
   test('rejects a completed canonical row even when its task revision is unchanged', () => withFixture((value) => {
     writeFileSync(join(value.root, SPRINT_PATH), [
-      '# Sprint: operator message', '', '## Backlog', '',
-      '| # | Status | Task | Mode | Acceptance | Plan |',
-      '|---|--------|------|------|------------|------|',
-      `| 1 | [x] | ${TASK_CELL} | contract | proves the fence | (pending) |`, '',
+      '# Sprint: operator message', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+      '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+      '|---|----|--------|------|------|------------|------|',
+      `| 1 | ${fixtureTaskId(`${TASK_CELL}`)} | [x] | ${TASK_CELL} | contract | proves the fence | (pending) |`, '',
     ].join('\n'));
     git(value.root, 'add', SPRINT_PATH);
     git(value.root, 'commit', '-m', 'complete fixture task');
@@ -411,10 +408,10 @@ describe('operator task-message effect fence', () => {
       await waitFor(() => existsSync(gitReadyPath), 'initial canonical sprint read');
 
       writeFileSync(join(value.root, SPRINT_PATH), [
-        '# Sprint: operator message', '', '## Backlog', '',
-        '| # | Status | Task | Mode | Acceptance | Plan |',
-        '|---|--------|------|------|------------|------|',
-        `| 1 | [x] | ${TASK_CELL} | contract | proves the fence | (pending) |`, '',
+        '# Sprint: operator message', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+        '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+        '|---|----|--------|------|------|------------|------|',
+        `| 1 | ${fixtureTaskId(`${TASK_CELL}`)} | [x] | ${TASK_CELL} | contract | proves the fence | (pending) |`, '',
       ].join('\n'));
       git(value.root, 'add', SPRINT_PATH);
       git(value.root, 'commit', '-m', 'complete fixture task after draft');

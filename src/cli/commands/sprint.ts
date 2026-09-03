@@ -15,6 +15,7 @@ import {
   beginCompletionSprintCommand,
   bindSprintCommand,
   claimSprintCommand,
+  completeRowSprintCommand,
   identifySprintCommand,
   processSprintDependencies,
   reconcileSprintCommand,
@@ -25,12 +26,18 @@ import {
   type BeginCompletionCommandOptions,
   type BindCommandOptions,
   type ClaimCommandOptions,
+  type CompleteRowCommandOptions,
   type IdentifyCommandOptions,
   type ReconcileCommandOptions,
   type ReleaseCommandOptions,
   type StealCommandOptions,
   type WriteClaimTokenCommandOptions,
 } from '../../effects/state/coordination-sprint';
+import {
+  migrateSprintSchemaCommand,
+  processMigrationDependencies,
+  type MigrateSprintSchemaOptions,
+} from '../../effects/state/sprint-schema-migration';
 
 class CliArgumentError extends Error {}
 
@@ -84,6 +91,21 @@ export function buildSprintCommand(): Command {
     });
 
   sprint
+    .command('migrate-schema')
+    .description('One-shot migration of one canonical sprint backlog from schema 1 to schema 2 (persisted task ID column)')
+    .requiredOption('--sprint <path>', 'Repo-relative canonical sprint path')
+    .requiredOption('--target-ref <ref>', 'Canonical ref the schema 1 identities are derived from')
+    .option('--receipt <path>', 'Repo-relative migration receipt path')
+    .action((opts: { sprint: string; targetRef: string; receipt?: string }) => {
+      const options: MigrateSprintSchemaOptions = {
+        sprint: opts.sprint,
+        targetRef: opts.targetRef,
+        ...(opts.receipt === undefined ? {} : { receipt: opts.receipt }),
+      };
+      writeOutcome(migrateSprintSchemaCommand(options, processMigrationDependencies(process.cwd())));
+    });
+
+  sprint
     .command('identify')
     .description('Derive one backlog row\'s task id and task revision from the canonical ref')
     .requiredOption('--task <ref>', 'Backlog index or exact Task cell')
@@ -91,6 +113,31 @@ export function buildSprintCommand(): Command {
     .requiredOption('--sprint-path <path>', 'Repo-relative sprint path on that ref')
     .action((opts: IdentifyCommandOptions) => {
       writeOutcome(identifySprintCommand(opts, processSprintDependencies(process.cwd())));
+    });
+
+  sprint
+    .command('complete-row')
+    .description('Complete one backlog row and release its lease inside one locked transaction')
+    .requiredOption('--sprint <path>', 'Repo-relative sprint path whose row is completed')
+    .requiredOption('--task <ref>', 'Backlog index or exact Task cell')
+    .requiredOption('--target-ref <ref>', 'Canonical ref the lease was claimed against')
+    .option('--plan-cell <cell>', 'Replacement Plan cell for the completed row')
+    .option('--defer-lease-release', 'Leave the lease held; the caller owns its release')
+    .action((opts: {
+      sprint: string;
+      task: string;
+      targetRef: string;
+      planCell?: string;
+      deferLeaseRelease?: boolean;
+    }) => {
+      const options: CompleteRowCommandOptions = {
+        sprint: opts.sprint,
+        task: opts.task,
+        targetRef: opts.targetRef,
+        ...(opts.planCell === undefined ? {} : { planCell: opts.planCell }),
+        ...(opts.deferLeaseRelease === true ? { deferLeaseRelease: true } : {}),
+      };
+      writeOutcome(completeRowSprintCommand(options, processSprintDependencies(process.cwd())));
     });
 
   sprint

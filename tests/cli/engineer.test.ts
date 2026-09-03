@@ -8,6 +8,7 @@ import { McpOAuthTokenStore } from '../../src/cli/mcp/oauth';
 import { engineerSha256 } from '../../src/core/engineers/profile-binding';
 import { registerRepoHarnessRepo, repoHarnessRepoIdFor, setRepoHarnessAccessMode } from '../../src/effects/repo-registry';
 import { coordinationRoot } from '../../src/effects/state/coordination-lease-store';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const cli = resolve(process.cwd(), 'src/cli/index.ts');
 const sourceRoot = process.cwd();
@@ -53,12 +54,13 @@ function graphFixture(): string {
   const rollback = '{"rollback":"wp-a"}\n';
   const repositoryId = repoHarnessRepoIdFor(root);
   writeFileSync(join(root, 'plans/sprints/demo.sprint.md'), `# Sprint: demo
+> **Backlog Schema**: 2
 
 ## Backlog
 
-| # | Status | Task | Mode | Acceptance | Plan |
-|---|---|---|---|---|---|
-| 1 | [ ] | task A | contract | accepted A | (pending) |
+| # | ID | Status | Task | Mode | Acceptance | Plan |
+|---|----|---|---|---|---|---|
+| 1 | ${fixtureTaskId('task A')} | [ ] | task A | contract | accepted A | (pending) |
 
 ## Execution Log
 `);
@@ -70,7 +72,7 @@ function graphFixture(): string {
     lane: 'engineering-v2',
     work_packages: [{
       work_package_id: 'wp-a',
-      task_ref: 'task A',
+      task_id: fixtureTaskId('task A'),
       primary_capability: 'capability.verification.evals-checks',
       depends_on: [],
       priority: 50,
@@ -242,7 +244,7 @@ describe('repo-harness engineer CLI', () => {
       'engineer', 'runtime-effect', 'capability',
       '--adapter-kind', 'codex-app-thread',
       '--host-id', 'local',
-      '--operations-json', JSON.stringify({ notify_inbox: 'supported' }),
+      '--operations-json', JSON.stringify({ notify_inbox: 'supported', wake_for_offer: 'supported' }),
       '--evidence-refs-json', JSON.stringify([{ ref: 'canary', sha256: `sha256:${'a'.repeat(64)}` }]),
       '--observed-at', '2026-08-25T00:31:00.000Z',
       '--json',

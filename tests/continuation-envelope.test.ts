@@ -20,6 +20,7 @@ import {
   withRepo,
   writeFixture as write,
 } from './state/effective-state-fixture';
+import { fixtureTaskId } from './helpers/sprint-fixture';
 
 const SPRINT = 'plans/sprints/20260803-fixture.sprint.md';
 const SPRINT_MARKER = '.ai/harness/sprint/active-sprint';
@@ -30,11 +31,12 @@ function sprintFile(status: string, rows: readonly string[]): string {
     '',
     `> **Status**: ${status}`,
     '> **Slug**: continuation-fixture',
+    '> **Backlog Schema**: 2',
     '',
     '## Backlog',
     '',
-    '| # | Status | Task | Mode | Acceptance | Plan |',
-    '|---|--------|------|------|------------|------|',
+    '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+    '|---|----|--------|------|------|------------|------|',
     ...rows,
     '',
     '## Execution Log',
@@ -43,12 +45,12 @@ function sprintFile(status: string, rows: readonly string[]): string {
 }
 
 const PENDING_SPRINT = sprintFile('Approved', [
-  '| 1 | [x] | first work package | contract | done | `plans/archive/plan-first.md` |',
-  '| 2 | [ ] | second work package | contract | pending | (pending) |',
+  `| 1 | ${fixtureTaskId('first work package')} | [x] | first work package | contract | done | \`plans/archive/plan-first.md\` |`,
+  `| 2 | ${fixtureTaskId('second work package')} | [ ] | second work package | contract | pending | (pending) |`,
 ]);
 const FINISHED_SPRINT = sprintFile('Approved', [
-  '| 1 | [x] | first work package | contract | done | `plans/archive/plan-first.md` |',
-  '| 2 | [x] | second work package | contract | done | `plans/archive/plan-second.md` |',
+  `| 1 | ${fixtureTaskId('first work package')} | [x] | first work package | contract | done | \`plans/archive/plan-first.md\` |`,
+  `| 2 | ${fixtureTaskId('second work package')} | [x] | second work package | contract | done | \`plans/archive/plan-second.md\` |`,
 ]);
 
 function dropActivePlan(cwd: string): void {
@@ -239,7 +241,7 @@ describe('continuation envelope halts on unusable sprint authority', () => {
     {
       name: 'sprint that is not approved for execution',
       setup: (cwd: string) => useSprint(cwd, sprintFile('Draft', [
-        '| 1 | [ ] | first work package | contract | pending | (pending) |',
+        `| 1 | ${fixtureTaskId('first work package')} | [ ] | first work package | contract | pending | (pending) |`,
       ])),
       reason: 'sprint_status:Draft',
       unit_ref: SPRINT,
@@ -342,7 +344,7 @@ describe('advance_sprint command survives an adversarial Task cell through real 
         dropActivePlan(cwd);
         for (const task of CORPUS) {
           useSprint(cwd, sprintFile('Approved', [
-            `| 1 | [ ] | ${task} | contract | pending | (pending) |`,
+            `| 1 | ${fixtureTaskId(`${task}`)} | [ ] | ${task} | contract | pending | (pending) |`,
           ]));
           commitFixture(cwd, 'adversarial backlog row');
           const envelope = envelopeFrom(cwd);

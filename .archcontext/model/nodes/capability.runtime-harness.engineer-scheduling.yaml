@@ -7,12 +7,14 @@ summary: Projects explicit same-commit Work Package graphs into revision-fenced 
 responsibilities:
   - Validate closed generic-v1 and engineering-v2 Work Package graph carriers without changing canonical Sprint task identity.
   - Join same-commit graph data to exact Engineer Profile, current Binding, Fleet offer, dependency, Claim, and concurrency observations.
+  - Resolve every declared Work Package dependency state from its one existing receipt authority, read-only and revision-bound.
   - Emit deterministic EngineerOfferV1 projections or typed fail-closed exclusions.
   - Elect one repository concurrency-key winner and revalidate every scheduling fence before mutation.
   - Delegate the current offer to the existing Engineer Binding and Fleet acquire path without creating a second Claim, Lease, or assignment authority.
 source:
   include:
     - "src/core/engineers/scheduling.ts"
+    - "src/effects/engineers/dependency-authority.ts"
     - "src/effects/engineers/scheduling.ts"
     - "src/effects/engineers/scheduling-acquire.ts"
   entrypoints:
@@ -24,6 +26,9 @@ source:
             - id: sink.engineer-scheduling.current-binding
               path: "src/effects/engineers/binding-store.ts"
               symbol: "readEngineerBindingStatus"
+            - id: sink.engineer-scheduling.dependency-authority
+              path: "src/effects/engineers/dependency-authority.ts"
+              symbol: "resolveDependencyObservation"
     - id: entrypoint.engineer-scheduling.acquire
       path: "src/effects/engineers/scheduling-acquire.ts"
       symbols:
@@ -38,5 +43,5 @@ extensions:
     claude: "CLAUDE.md"
   lspProfile: "typescript-lsp"
   verification:
-    - "bun test tests/unit/me1a-engineer-scheduling-schema.test.ts tests/unit/me1a-engineer-scheduling.test.ts tests/unit/me1a-engineer-scheduling-acquire.test.ts tests/cli/engineer.test.ts tests/cli/mcp-engineer-tools.test.ts tests/cli/mcp-http.test.ts --timeout 60000"
+    - "bun test tests/unit/issue-284-dependency-authority.test.ts tests/unit/me1a-engineer-scheduling-schema.test.ts tests/unit/me1a-engineer-scheduling.test.ts tests/unit/me1a-engineer-scheduling-acquire.test.ts tests/cli/engineer.test.ts tests/cli/mcp-engineer-tools.test.ts tests/cli/mcp-http.test.ts --timeout 60000"
     - "bun run check:type"

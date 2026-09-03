@@ -1,0 +1,91 @@
+{
+  "protocol": 1,
+  "kind": "repo-harness-sprint-schema-migration",
+  "from_schema": 1,
+  "to_schema": 2,
+  "sprint_path": "plans/sprints/20260902-2238-gpt-pro-seeded-repair-campaign.sprint.md",
+  "target_ref": "HEAD",
+  "target_commit": "a8c19149f346bd618b6bbdeca55bd8771fce1bc4",
+  "sprint_sha256_before": "sha256:87b3341e52d793551cfdb901ab31e8295452fe093da08225bf7a575eda1267d4",
+  "sprint_sha256_after": "sha256:a15de15024d9385404f8381648601bc1d2a0d7a9410e7eaacac03892c1e28e09",
+  "work_graph_path": null,
+  "work_graph_sha256_before": null,
+  "work_graph_sha256_after": null,
+  "tasks": [
+    {
+      "row_index": "1",
+      "task_id": "23d385b0f0410137fe33517b757689d02fb1741cb495e9a7b6c4262930a81907",
+      "task_cell": "BRC0 — Authority freeze 与 baseline characterization"
+    },
+    {
+      "row_index": "2",
+      "task_id": "bdb16bde88d7b8d131a6304f119d6c863d413eaac5e653b9428e497b85505ab7",
+      "task_cell": "BRC1 — Dispatch fence 进 effect boundary（消费 #278）"
+    },
+    {
+      "row_index": "3",
+      "task_id": "ebc379bc400fac66ae579d6d7c7670936dfec322c290a5fab77f8c706c0f42af",
+      "task_cell": "BRC3 — Campaign protocol、policy key、ProgramAuthorization 复用、append-only journal、cross-process lock"
+    },
+    {
+      "row_index": "4",
+      "task_id": "a8f00b0c394642116eb229d5ee4be562286a547de61b7c231b1505c8eab97278",
+      "task_cell": "Inline spike — oracle_browser Connector 读回能力探针"
+    },
+    {
+      "row_index": "5",
+      "task_id": "9e7090269d9d457155983885ef1cfea64fc606bfcbfd01d81d3d6a971e18aa29",
+      "task_cell": "BRC4a — browser-consult transport：`--copy-profile` 透传、doctor 能力探测、session meta transport"
+    },
+    {
+      "row_index": "6",
+      "task_id": "bb7d61be6326a0b5bb524fe43b812e639c8ac308adcdf4aae11e9f36cba06a50",
+      "task_cell": "BRC4 — GPT Pro Issue batch authoring lane"
+    },
+    {
+      "row_index": "7",
+      "task_id": "ec198badc2dff156f1b523631a82658b961121bc1c304deef1ad1acaf978d08a",
+      "task_cell": "BRC5 — Heartbeat observation 与 slot reconciliation"
+    },
+    {
+      "row_index": "8",
+      "task_id": "71b4f6f92ed60f8f281ec4f3235b305490b05a67f6a1bb7f6e204c857214d27f",
+      "task_cell": "BRC6 — Adoption 与原子 Sprint/WorkGraph materialization"
+    },
+    {
+      "row_index": "9",
+      "task_id": "9a548acaccc8b388b6166e69e9e2aef6656669613e54a7d0d1615207e9b10cdc",
+      "task_cell": "BRC7 — Local auto-plan 交接与 feature-promotion guard"
+    },
+    {
+      "row_index": "10",
+      "task_id": "3722412b92ea2240c60bbca9f09ae2e04e2a30974d2978bc63778f00cfc9ac46",
+      "task_cell": "BRC8 — Acquire-next 与有界并行 worker 控制（消费 #280）"
+    },
+    {
+      "row_index": "11",
+      "task_id": "691bf0c1961cd506c2a3f63b031581d21445eb4f2f243356ade6cdb04e1aa812",
+      "task_cell": "BRC9 — Campaign budget 与 attempt receipts（消费 #282/#287 子集）"
+    },
+    {
+      "row_index": "12",
+      "task_id": "fb27ce861a78e077dc9b72f64a607e51e8baaefbbec28bd99af92362b5d997c4",
+      "task_cell": "BRC10 — Lease liveness 与 controller recovery（消费 #286）"
+    },
+    {
+      "row_index": "13",
+      "task_id": "e71d90886c21eff5e34cd9e8046c270c9f1972669faeb31b0db49d7cc344e806",
+      "task_cell": "BRC13 — Issue closure 与 exact branch/worktree cleanup（人工 merge 之后）"
+    },
+    {
+      "row_index": "14",
+      "task_id": "4c28bc09a21de8d6047778b797cca0e07f4fb92604ae8f1bf09f15bb0afcf3a4",
+      "task_cell": "BRC14 — Fresh GPT Pro main audit 与 1/2/3 group sequencing"
+    },
+    {
+      "row_index": "15",
+      "task_id": "b45c1b05078577dad30e0c57d8b48f075e969f9cfb9c44368b67c4c112fcec92",
+      "task_cell": "BRC15 — Canary 1–3 与 activation ladder"
+    }
+  ]
+}

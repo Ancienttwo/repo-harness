@@ -6,6 +6,7 @@ import { join, resolve } from 'path';
 
 import { engineerSha256 } from '../../src/core/engineers/profile-binding';
 import { registerRepoHarnessRepo, repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const cli = resolve(process.cwd(), 'src/cli/index.ts');
 const sourceRoot = process.cwd();
@@ -28,12 +29,13 @@ function fixture(): { readonly root: string; readonly home: string } {
   mkdirSync(join(root, 'tasks'), { recursive: true });
   cpSync(join(sourceRoot, '.archcontext/model/nodes'), join(root, '.archcontext/model/nodes'), { recursive: true });
   const sprint = `# Sprint: demo
+> **Backlog Schema**: 2
 
 ## Backlog
 
-| # | Status | Task | Mode | Acceptance | Plan |
-|---|---|---|---|---|---|
-| 1 | [ ] | task A | contract | accepted A | (pending) |
+| # | ID | Status | Task | Mode | Acceptance | Plan |
+|---|----|---|---|---|---|---|
+| 1 | ${fixtureTaskId('task A')} | [ ] | task A | contract | accepted A | (pending) |
 
 ## Execution Log
 `;
@@ -48,7 +50,7 @@ function fixture(): { readonly root: string; readonly home: string } {
     lane: 'engineering-v2',
     work_packages: [{
       work_package_id: 'wp-a',
-      task_ref: 'task A',
+      task_id: fixtureTaskId('task A'),
       primary_capability: 'capability.verification.evals-checks',
       depends_on: [],
       priority: 50,
