@@ -286,7 +286,7 @@ contract-assets 前缀，漂移由 `bun run sync:helpers` 的 `--check` 模式�
 
 
 <!-- BEGIN ARCHITECTURE PENDING REQUESTS -->
-- (none)
+- [ ] 2026-09-03T10:06:13+0800 [medium] `src/core/automation/development-campaign.ts` -> [runtime-harness-development-campaign](requests/runtime-harness-development-campaign.md)
 <!-- END ARCHITECTURE PENDING REQUESTS -->
 
 

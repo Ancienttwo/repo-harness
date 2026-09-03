@@ -1,0 +1,75 @@
+{
+  "protocol": 1,
+  "kind": "repo-harness-repair-campaign-protected-capabilities",
+  "source": "plans/prds/20260902-2238-gpt-pro-seeded-repair-campaign.prd.md#module-1--campaign-授权与-policy",
+  "rule": "A repair campaign may open an Issue and author a Plan against a protected surface, but it must never route that surface into automated planning, acquisition, execution, publication or closure. Protection is checked before dispatch, and a hit is a hard stop, never a warning.",
+  "capabilities": [
+    {
+      "capability_id": "capability.runtime-harness.integration-acceptance",
+      "surface": "acceptance authority",
+      "reason": "Owns AcceptanceMatrixV1 and the product-acceptance projection that binds the existing AcceptanceReceipt. A campaign that could edit its own verdict authority could accept itself."
+    },
+    {
+      "capability_id": "capability.workflow-engine.contract-assets",
+      "surface": "campaign policy, merge gate and worktree helpers",
+      "reason": "Owns .ai/harness/policy.json (where development_campaign.mode will live), scripts/merge-gate.ts, scripts/contract-worktree.sh and scripts/ship-worktrees.sh. A campaign that could relax its own policy ladder or the merge gate would defeat the activation ladder from inside a candidate branch."
+    },
+    {
+      "capability_id": "capability.runtime-harness.external-source-intake",
+      "surface": "Issue observation intake",
+      "reason": "Owns the untrusted-external-content boundary the campaign reads through. A campaign that could rewrite intake could launder its own Issue bodies into trusted facts."
+    },
+    {
+      "capability_id": "capability.runtime-harness.collaboration",
+      "surface": "dispatch fence",
+      "reason": "Owns the delegation admission fence that keeps an injected coordination context from reaching a worker. The campaign consumes this fence; it must not be able to move it."
+    },
+    {
+      "capability_id": "capability.runtime-harness.engineer-scheduling",
+      "surface": "Work Graph and offer projection",
+      "reason": "Owns EngineerOffer projection and the acquire revalidation the campaign's bounded parallelism depends on. A second scoring authority inside the campaign is exactly the drift this list forbids."
+    },
+    {
+      "capability_id": "capability.runtime-harness.engineer-bindings",
+      "surface": "principal, credential and ClaimActor provenance",
+      "reason": "Owns the authenticated Engineer principal mapping and immutable ClaimActor receipts. This is the repository's security and credential surface; automated repair here is never in scope."
+    },
+    {
+      "capability_id": "capability.runtime-harness.hook-adapters",
+      "surface": "host hook admission",
+      "reason": "Owns the typed hook runtime that every host event passes through. A campaign-authored change here would change the enforcement path that is supposed to bound the campaign."
+    }
+  ],
+  "unmapped_surfaces": [
+    {
+      "surface": "Task and Lease coordination authority",
+      "paths": [
+        "src/core/state/coordination-identity.ts",
+        "src/core/state/sprint-backlog-rows.ts",
+        "src/effects/state/coordination-lease-store.ts"
+      ],
+      "reason": "Task identity derivation, the canonical backlog row grammar and the lease owner store are protected, but no archcontext capability include glob currently owns them; capability.runtime-harness.integration-acceptance only references coordination-lease-store.ts as a sink. Recorded here so protection does not depend on a capability node that does not exist."
+    },
+    {
+      "surface": "Publication authority",
+      "paths": [
+        "src/core/publication/publication-receipt.ts",
+        "src/core/publication/merge-readiness.ts",
+        "src/core/publication/publication-lifecycle.ts"
+      ],
+      "reason": "PublicationReceiptV1 and MergeReadinessV1 are protected. The sprint architecture notes name capability.runtime-harness.publication, which does not exist as a node; these paths are reachable only as integration-acceptance sinks."
+    },
+    {
+      "surface": "Acceptance receipt helper",
+      "paths": [
+        "scripts/acceptance-receipt.ts"
+      ],
+      "reason": "The protected helper that mints AcceptanceReceipt bytes. src/cli/runtime/helper-runner.ts already lists it in PROTECTED_HELPERS, but no capability include glob owns the file."
+    }
+  ],
+  "pending_capability": {
+    "capability_id": "capability.runtime-harness.development-campaign",
+    "node_file": "capability.runtime-harness.development-campaign.yaml",
+    "reason": "The campaign is protected against itself. Its node is created by sprint row 3 (BRC3); at BRC0 it must not exist, which is what the accompanying test asserts."
+  }
+}
