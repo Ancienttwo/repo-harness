@@ -1,6 +1,6 @@
 # Plan: Module 1: Cutover Closure Gate and policy.refactor reader skeleton
 
-> **Status**: Draft
+> **Status**: Approved
 > **Created**: 20260903-1713
 > **Slug**: refactor-cutover-closure-gate
 > **Planning Source**: waza-think
@@ -26,7 +26,7 @@
   - P3 decision rationale: See captured planning output below.
 
 ## Workflow Inventory
-Complete this inventory before implementation. If any line is unknown, keep the plan in Draft and fill it before projection.
+Inventory resolved on 2026-09-04 before projection. The contract owns the exact writable path set; the review owns acceptance evidence; the notes file records only non-obvious deviations and trade-offs.
 
 - Active plan: `plans/plan-20260903-1713-refactor-cutover-closure-gate.md`
 - Sprint contract: `tasks/contracts/20260903-1713-refactor-cutover-closure-gate.contract.md`
