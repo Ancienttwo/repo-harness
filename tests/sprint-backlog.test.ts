@@ -1163,6 +1163,43 @@ describe("check-task-workflow sprint validation", () => {
     }
   }, 30_000);
 
+  test("the schema gate refuses a header that appears only outside the Backlog section", () => {
+    const cwd = tmpWorkspace("sprint-check-spoofed-header");
+    try {
+      copySprintHelpers(cwd, ["check-task-workflow.sh"]);
+      mkdirSync(join(cwd, "plans/sprints"), { recursive: true });
+      writeFileSync(
+        join(cwd, "plans/sprints/20260610-0000-spoofed-header.sprint.md"),
+        [
+          "# Sprint: Spoofed header",
+          "",
+          "> **Status**: Approved",
+          "> **Backlog Schema**: 2",
+          "",
+          "## PRD",
+          "",
+          "Real problem statement with concrete user outcomes.",
+          "",
+          "## Backlog",
+          "",
+          "| # | Status | Task | Mode | Acceptance | Plan |",
+          "|---|--------|------|------|------------|------|",
+          "",
+          "## Notes",
+          "",
+          "| # | ID | Status | Task | Mode | Acceptance | Plan |",
+          "",
+        ].join("\n")
+      );
+
+      const res = run("bash", ["scripts/check-task-workflow.sh", "--strict"], cwd);
+      expect(res.status).toBe(1);
+      expect(res.stdout).toContain("backlog table header does not match the declared backlog schema");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test("the schema gate counts declarations in the preamble only, like both parsers", () => {
     const cwd = tmpWorkspace("sprint-check-prose-marker");
     try {

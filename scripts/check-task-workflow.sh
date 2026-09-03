@@ -546,11 +546,23 @@ sprint_ready_error() {
     missing=1
   fi
 
-  local schema_header
-  schema_header='^\|[[:space:]]*#[[:space:]]*\|[[:space:]]*ID[[:space:]]*\|[[:space:]]*Status[[:space:]]*\|[[:space:]]*Task[[:space:]]*\|[[:space:]]*Mode[[:space:]]*\|[[:space:]]*Acceptance[[:space:]]*\|[[:space:]]*Plan[[:space:]]*\|'
   if [[ "$schema_ready" -ne 1 ]]; then
     :
-  elif ! grep -Eq "$schema_header" "$file"; then
+  elif ! LC_ALL=C awk -F '|' '
+    /^## Backlog[[:space:]]*$/ { in_section = 1; next }
+    in_section && /^## / { exit }
+    in_section && /^\|/ {
+      for (i = 2; i <= 8; i++) {
+        cell[i] = $i
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", cell[i])
+      }
+      if (cell[2] == "#" && cell[3] == "ID" && cell[4] == "Status" && cell[5] == "Task" && cell[6] == "Mode" && cell[7] == "Acceptance" && cell[8] == "Plan") {
+        found = 1
+        exit
+      }
+    }
+    END { exit found ? 0 : 1 }
+  ' "$file"; then
     echo "backlog table header does not match the declared backlog schema"
     missing=1
   else
