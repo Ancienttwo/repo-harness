@@ -188,7 +188,7 @@ function candidate(fx: Fixture, options: OfferOptions = {}): EngineerOfferCandid
     lane: 'engineering-v2',
     work_packages: [{
       work_package_id: workPackageId,
-      task_ref: 'task A',
+      task_id: taskId,
       primary_capability: capabilityId,
       depends_on: dependencies.map((entry) => ({
         repository_id: entry.repository_id, work_package_id: entry.work_package_id, required_state: entry.required_state,
