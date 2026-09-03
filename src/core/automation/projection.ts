@@ -14,6 +14,7 @@ import {
   type AutomationBudgetCurrentV1,
   type AutomationBudgetState,
   type AutomationBudgetV1,
+  type AutomationCurrentDrift,
   type AutomationCountedMetric,
   type AutomationMetricName,
   type AutomationRefusalCode,
@@ -65,6 +66,12 @@ export interface AutomationBudgetBoardSliceV1 {
   readonly event_count: number;
   readonly ledger_sha256: string;
   readonly stop_receipt: AutomationStopReceiptSliceV1 | null;
+  /**
+   * True when the stored projection has not adopted a durable record yet. The
+   * slice still renders the durable truth; the flag says the counters below it
+   * are the last ones the projection managed to write.
+   */
+  readonly projection_stale: boolean;
   readonly attention_owner: AutomationBudgetAttentionOwner;
   readonly slice_sha256: string;
 }
@@ -73,6 +80,7 @@ export interface ProjectAutomationBudgetSliceInput {
   readonly budget: AutomationBudgetV1;
   readonly current: AutomationBudgetCurrentV1;
   readonly stop_receipt: AutomationStopReceiptV1 | null;
+  readonly drift: AutomationCurrentDrift;
   readonly observed_at: string;
 }
 
@@ -126,6 +134,18 @@ function attentionOwner(state: AutomationBudgetState): AutomationBudgetAttention
   return 'agent';
 }
 
+/**
+ * A read-only projection may not repair anything, so it reports the durable
+ * records rather than the stored counters when the two disagree: a stop receipt
+ * on disk means the run is stopped whatever the projection still says, and any
+ * other unadopted record means the run needs explicit reconciliation.
+ */
+function durableState(input: ProjectAutomationBudgetSliceInput): AutomationBudgetState {
+  if (input.stop_receipt !== null) return 'budget_exhausted';
+  if (input.drift !== 'none') return 'reconciliation_required';
+  return input.current.state;
+}
+
 export function projectAutomationBudgetSlice(
   input: ProjectAutomationBudgetSliceInput,
 ): AutomationBudgetBoardSliceV1 {
@@ -135,7 +155,9 @@ export function projectAutomationBudgetSlice(
   if (input.current.budget_sha256 !== input.budget.budget_sha256) {
     throw new Error('automation budget current belongs to a different budget revision');
   }
-  if (input.stop_receipt !== null && input.stop_receipt.stop_receipt_sha256 !== input.current.stop_receipt_sha256) {
+  if (input.stop_receipt !== null
+    && input.current.stop_receipt_sha256 !== null
+    && input.stop_receipt.stop_receipt_sha256 !== input.current.stop_receipt_sha256) {
     throw new Error('automation stop receipt does not match the current projection');
   }
   const draft = {
@@ -149,7 +171,7 @@ export function projectAutomationBudgetSlice(
     budget_sha256: input.budget.budget_sha256,
     budget_revision: input.budget.revision,
     unattended: input.budget.unattended,
-    state: input.current.state,
+    state: durableState(input),
     deadline_at: input.budget.deadline_at,
     metrics: AUTOMATION_ENFORCEMENT_ORDER.map((metric) => metricSlice(metric, input)),
     consecutive_no_progress_steps: input.current.consecutive_no_progress_steps,
@@ -168,7 +190,8 @@ export function projectAutomationBudgetSlice(
       in_flight_authority_count: input.stop_receipt.in_flight_authority.length,
       issued_at: input.stop_receipt.issued_at,
     }),
-    attention_owner: attentionOwner(input.current.state),
+    projection_stale: input.drift !== 'none',
+    attention_owner: attentionOwner(durableState(input)),
   };
   return Object.freeze({ ...draft, slice_sha256: automationDigest(draft) });
 }

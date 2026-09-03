@@ -52,6 +52,7 @@ import {
   type AutomationBudgetStateV1,
   type AutomationBudgetV1,
   type AutomationCountedMetric,
+  type AutomationCurrentDrift,
   type AutomationEvidenceRefV1,
   type AutomationInFlightAuthorityV1,
   type AutomationMetricName,
@@ -317,8 +318,17 @@ export interface AutomationBudgetStatusV1 {
   readonly budget: AutomationBudgetV1;
   readonly current: AutomationBudgetCurrentV1;
   readonly stop_receipt: AutomationStopReceiptV1 | null;
+  /** Which durable record, if any, the stored projection has not adopted yet. */
+  readonly drift: AutomationCurrentDrift;
 }
 
+/**
+ * The public read. It reports drift instead of repairing it -- a read-only
+ * surface must never write -- and it never throws on a crash window: a
+ * projection that lags a durable record is an expected recoverable state, not a
+ * corrupt store. Only a projection that claims a record the disk does not have,
+ * which no write ordering can produce, stays fail-closed.
+ */
 export function readAutomationBudgetStatus(repoRoot: string, runId: string): AutomationBudgetStatusV1 {
   const paths = runPaths(repoRoot, runId);
   const current = readCurrentOptional(paths);
@@ -329,10 +339,17 @@ export function readAutomationBudgetStatus(repoRoot: string, runId: string): Aut
   if (current.stop_receipt_sha256 !== null && receipt === null) {
     fail('automation_budget_store_invalid', 'automation budget current names a stop receipt that is missing');
   }
-  if (receipt !== null && current.stop_receipt_sha256 !== receipt.stop_receipt_sha256) {
+  if (receipt !== null
+    && current.stop_receipt_sha256 !== null
+    && current.stop_receipt_sha256 !== receipt.stop_receipt_sha256) {
     fail('automation_budget_store_invalid', 'automation stop receipt does not match the current projection');
   }
-  return Object.freeze({ budget, current, stop_receipt: receipt });
+  return Object.freeze({
+    budget,
+    current,
+    stop_receipt: receipt,
+    drift: detectAutomationCurrentDrift(paths, current),
+  });
 }
 
 /**
@@ -341,17 +358,17 @@ export function readAutomationBudgetStatus(repoRoot: string, runId: string): Aut
  * Every record except `current.json` is create-once and fsynced before the
  * projection is renamed, so a crash can only ever leave the projection behind
  * the durable records -- never ahead of them. That makes `current.json` a
- * derived projection of `reservations/` and `events/`, and the repair is a
- * re-derivation rather than a guess: a reservation with no event is the
- * interrupted operation, an event the projection has not folded in is a charge
- * that already happened. Nothing is ever silently re-minted, and no metric is
- * ever assumed to be zero.
+ * derived projection of all three durable record kinds -- `reservations/`,
+ * `events/`, and `stop-receipt.json` -- and the repair is a re-derivation
+ * rather than a guess: a reservation with no event is the interrupted
+ * operation, an event the projection has not folded in is a charge that already
+ * happened, and a stop receipt the projection has not adopted means the run is
+ * already stopped. Nothing is ever silently re-minted, and no metric is ever
+ * assumed to be zero.
  *
  * Drift is detected by counting directory entries, which costs two `readdir`
  * calls on the healthy path; the full re-derivation only runs after a crash.
  */
-export type AutomationCurrentDrift = 'none' | 'unlisted_reservation' | 'unfolded_event';
-
 function jsonEntries(directory: string): readonly string[] {
   if (!existsSync(directory)) return Object.freeze([]);
   try {
@@ -365,6 +382,10 @@ export function detectAutomationCurrentDrift(
   paths: RunPaths,
   current: AutomationBudgetCurrentV1,
 ): AutomationCurrentDrift {
+  // The stop receipt leaves the entry counts of the other two directories
+  // untouched, so it has to be probed on its own or the crash window between
+  // writing it and renaming the projection is invisible here.
+  if (current.stop_receipt_sha256 === null && existsSync(paths.stopReceipt)) return 'unadopted_stop_receipt';
   const events = jsonEntries(paths.events).length;
   if (events !== current.event_count) return 'unfolded_event';
   if (jsonEntries(paths.reservations).length !== events + current.open_reservation_sha256s.length) {
@@ -417,7 +438,7 @@ function repairCurrentFromDurableRecords(
     updated_at: repairedAt,
   });
   writeAtomic(paths.current, bytes(current), 'automation budget current');
-  return Object.freeze({ budget: status.budget, current, stop_receipt: status.stop_receipt });
+  return Object.freeze({ budget: status.budget, current, stop_receipt: status.stop_receipt, drift: 'none' as const });
 }
 
 /**
@@ -426,7 +447,7 @@ function repairCurrentFromDurableRecords(
  */
 function lockedStatus(repoRoot: string, paths: RunPaths, runId: string, now: string): AutomationBudgetStatusV1 {
   const status = readAutomationBudgetStatus(repoRoot, runId);
-  if (detectAutomationCurrentDrift(paths, status.current) === 'none') return status;
+  if (status.drift === 'none') return status;
   return repairCurrentFromDurableRecords(repoRoot, paths, status, now);
 }
 
@@ -451,6 +472,7 @@ export function readAutomationBudgetBoardSlice(
     budget: status.budget,
     current: status.current,
     stop_receipt: status.stop_receipt,
+    drift: status.drift,
     observed_at: observedAt,
   });
 }
@@ -492,14 +514,9 @@ export function publishAutomationBudget(input: PublishAutomationBudgetInput): Au
       fail('automation_budget_store_conflict', 'an automation budget with this digest already exists with different bytes');
     }
     const preexisting = readCurrentOptional(paths);
-    const existing = preexisting === null || detectAutomationCurrentDrift(paths, preexisting) === 'none'
-      ? preexisting
-      : repairCurrentFromDurableRecords(
-        repoRoot,
-        paths,
-        readAutomationBudgetStatus(repoRoot, budget.automation_run_id),
-        input.published_at,
-      ).current;
+    const existing = preexisting === null
+      ? null
+      : lockedStatus(repoRoot, paths, budget.automation_run_id, input.published_at).current;
     if (existing === null) {
       if (budget.revision !== 1) fail('automation_budget_store_conflict', 'the first budget for a run must be revision 1');
       const current = sealAutomationBudgetCurrent({
@@ -519,10 +536,10 @@ export function publishAutomationBudget(input: PublishAutomationBudgetInput): Au
         updated_at: input.published_at,
       });
       writeAtomic(paths.current, bytes(current), 'automation budget current');
-      return Object.freeze({ budget, current, stop_receipt: null });
+      return Object.freeze({ budget, current, stop_receipt: null, drift: 'none' as const });
     }
     if (existing.budget_sha256 === budget.budget_sha256) {
-      return Object.freeze({ budget, current: existing, stop_receipt: readStopReceiptOptional(paths) });
+      return Object.freeze({ budget, current: existing, stop_receipt: readStopReceiptOptional(paths), drift: 'none' as const });
     }
     if (existing.stop_receipt_sha256 !== null) {
       fail('automation_budget_store_conflict', 'an exhausted automation run cannot be revised; mint a new run');
@@ -563,7 +580,7 @@ export function publishAutomationBudget(input: PublishAutomationBudgetInput): Au
       updated_at: input.published_at,
     });
     writeAtomic(paths.current, bytes(current), 'automation budget current');
-    return Object.freeze({ budget, current, stop_receipt: null });
+    return Object.freeze({ budget, current, stop_receipt: null, drift: 'none' as const });
   }, { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true });
 }
 

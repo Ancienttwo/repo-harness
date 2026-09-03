@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260903-0437-issue-282-automation-budget.review.md
 > **Last Updated**: 2026-09-03 05:20
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:26f22c29e5a484224899b669db51b76137cca8b8f2dab7a925627a55e41ea565`
+> **Substantive Change SHA256**: `sha256:3c048c5ebf9c1f27e93297a310142ba45a02d6581192f07915016e04477d54dc`
 
 ## Design Decisions
 
@@ -91,10 +91,19 @@ them:
   against a stale projection, losing the charge and leaving the reservation open
   forever.
 
+- crash between the stop-receipt write and the same rename leaves a receipt on
+  disk with `current.stop_receipt_sha256 === null`. This one is invisible to the
+  entry counts of `events/` and `reservations/`, so it has to be probed on its
+  own; before the fix `readAutomationBudgetStatus` hard-failed on the mismatch
+  and every verb plus the read-only operator slice threw
+  `automation_budget_store_invalid` forever.
+
 The chosen recovery is one rule, not two guards: **`current.json` is a derived
-projection of `reservations/` and `events/`, and every mutating verb re-derives
-it under the run lock before deciding.** `detectAutomationCurrentDrift` compares
-directory entry counts (two `readdir` calls on the healthy path);
+projection of all three durable record kinds -- `reservations/`, `events/` and
+`stop-receipt.json` -- and every mutating verb re-derives it under the run lock
+before deciding.** `detectAutomationCurrentDrift` probes the receipt and
+compares directory entry counts (one `existsSync` plus two `readdir` calls on
+the healthy path);
 `repairCurrentFromDurableRecords` runs only after a crash and rebuilds consumed,
 the no-progress streak, the ledger chain, the step index and the open
 reservation from the immutable records themselves. Nothing is re-minted and no
@@ -110,7 +119,18 @@ case fails closed instead of re-minting.
 A repaired run whose reservation is still open is marked
 `reconciliation_required`, which is exactly the refusal an open reservation
 already produces, so the next operation is blocked until the interrupted one is
-appended or reconciled.
+appended or reconciled. A repaired run whose receipt was unadopted becomes
+`budget_exhausted`, so the next verb refuses instead of re-opening a stopped
+run.
+
+The read path is deliberately asymmetric: `readAutomationBudgetStatus`, the CLI
+`automation budget show` and the board slice **report** drift and never repair
+it, because a read-only surface must not write. They also never throw on a
+crash window -- `AutomationBudgetBoardSliceV1.projection_stale` says the
+counters are the last ones the projection managed to write, and the rendered
+state is the durable truth (a receipt on disk means `budget_exhausted` whatever
+the projection still says). Only a projection claiming a record the disk does
+not have -- which no write ordering can produce -- stays fail-closed.
 
 For the same reason, **a budget revision is refused while a reservation is
 open**. A reservation carries the exact revision that authorized it, so

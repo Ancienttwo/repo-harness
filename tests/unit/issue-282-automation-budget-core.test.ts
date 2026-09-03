@@ -648,6 +648,7 @@ describe('issue #282 — operator projection', () => {
       budget: value,
       current: record,
       stop_receipt: null,
+      drift: 'none',
       observed_at: '2026-09-03T00:05:00.000Z',
     });
     expect(slice.metrics.map((entry) => entry.metric)).toEqual([...AUTOMATION_ENFORCEMENT_ORDER]);
@@ -663,6 +664,7 @@ describe('issue #282 — operator projection', () => {
     const wall = slice.metrics.find((entry) => entry.metric === 'wall_clock_seconds');
     expect(wall?.consumed).toBe(300);
     expect(slice.attention_owner).toBe('agent');
+    expect(slice.projection_stale).toBe(false);
     expect(JSON.stringify(slice)).not.toContain('codex');
     expect(JSON.stringify(slice)).not.toContain('evidence');
     expect(slice.slice_sha256).toMatch(/^[0-9a-f]{64}$/u);

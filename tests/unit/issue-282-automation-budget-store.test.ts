@@ -12,12 +12,15 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSyn
 import { tmpdir } from 'os';
 import { join } from 'path';
 
+import { spawnSync as spawnCli } from 'child_process';
 import {
   automationOperationReservation,
   buildAutomationBudget,
   emptyAutomationMetricVector,
+  sealAutomationBudgetCurrent,
   sealAutomationMetricSupport,
   sealProgramAuthorization,
+  validateAutomationBudgetCurrent,
   type AutomationBudgetV1,
   type AutomationMetricVectorV1,
   type ProgramBudgetLimitV1,
@@ -124,6 +127,9 @@ function makeBudget(options: BudgetOptions): AutomationBudgetV1 {
 function currentPath(repo: string, runId: string): string {
   return join(repo, '.git', AUTOMATION_BUDGET_STORE_RELATIVE_ROOT, 'runs', runId, 'current.json');
 }
+
+const CLI_ROOT = join(import.meta.dir, '..', '..');
+const CLI_ENTRY = join(CLI_ROOT, 'src/cli/index.ts');
 
 const NO_TOKENS = { input_tokens: null, output_tokens: null, cost_micros: null } as const;
 
@@ -608,6 +614,76 @@ describe('issue #282 — a durable reservation the current projection does not l
     }
     expect(refusal?.code).toBe('automation_budget_refused');
     expect(refusal?.refusal?.refusal_code).toBe('budget_exhausted');
+  });
+});
+
+describe('issue #282 — a durable stop receipt the projection missed', () => {
+  /**
+   * The third durable record kind. `persistStopReceipt` writes
+   * `stop-receipt.json` create-once and fsynced, then renames `current.json`. A
+   * crash in that window leaves the receipt durable while the projection still
+   * says the run is active, and the entry counts of `events/` and
+   * `reservations/` are unchanged, so nothing in those two directories can
+   * reveal it.
+   */
+  test('a receipt the projection has not adopted is adopted, not thrown on', () => {
+    const repo = repoFixture();
+    const budget = makeBudget({ run: 'stop-orphan', limits: { ...BASE_LIMITS, max_successful_acquisitions: 1 } });
+    publishAutomationBudget({ repo_root: repo, budget, published_at: '2026-09-03T00:00:01.000Z' });
+    const stopped = acquire(repo, 'stop-orphan', budget, 'op-1', '2026-09-03T00:00:10.000Z');
+    expect(stopped.commit.stop_receipt).not.toBeNull();
+
+    // Roll the projection back to the bytes `commitUsage` wrote just before the
+    // receipt was adopted: same ledger, same counts, no receipt.
+    const path = currentPath(repo, budget.automation_run_id);
+    const adopted = validateAutomationBudgetCurrent(JSON.parse(readFileSync(path, 'utf8')));
+    const preReceipt = sealAutomationBudgetCurrent({
+      automation_run_id: adopted.automation_run_id,
+      budget_sha256: adopted.budget_sha256,
+      state: 'active',
+      consumed: adopted.consumed,
+      open_reserved: adopted.open_reserved,
+      consecutive_no_progress_steps: adopted.consecutive_no_progress_steps,
+      last_completed_step_index: adopted.last_completed_step_index,
+      next_step_index: adopted.next_step_index,
+      open_reservation_sha256s: adopted.open_reservation_sha256s,
+      event_count: adopted.event_count,
+      ledger_sha256: adopted.ledger_sha256,
+      stop_receipt_sha256: null,
+      previous_current_sha256: adopted.previous_current_sha256,
+      updated_at: adopted.updated_at,
+    });
+    writeFileSync(path, `${JSON.stringify(preReceipt)}\n`);
+
+    // The read-only surfaces must render durable truth rather than throw.
+    const slice = readAutomationBudgetBoardSlice(repo, budget.automation_run_id, '2026-09-03T00:00:20.000Z');
+    expect(slice.state).toBe('budget_exhausted');
+    expect(slice.projection_stale).toBe(true);
+    expect(slice.stop_receipt?.triggering_metric).toBe('successful_acquisitions');
+    expect(slice.attention_owner).toBe('user');
+    const shown = spawnCli(
+      process.execPath,
+      [CLI_ENTRY, 'automation', 'budget', 'show', '--repo', repo, '--run', budget.automation_run_id, '--observed-at', '2026-09-03T00:00:20.000Z'],
+      { cwd: CLI_ROOT, encoding: 'utf-8' },
+    );
+    expect(shown.status).toBe(0);
+    expect(JSON.parse(shown.stdout).state).toBe('budget_exhausted');
+
+    // The next verb adopts the receipt and refuses; it never re-opens the run.
+    let refusal: AutomationBudgetStoreError | null = null;
+    try {
+      acquire(repo, 'stop-orphan', budget, 'op-2', '2026-09-03T00:00:30.000Z');
+    } catch (error) {
+      refusal = error as AutomationBudgetStoreError;
+    }
+    expect(refusal?.refusal?.refusal_code).toBe('budget_exhausted');
+
+    const status = readAutomationBudgetStatus(repo, budget.automation_run_id);
+    expect(status.current.state).toBe('budget_exhausted');
+    expect(status.current.stop_receipt_sha256).toBe(stopped.commit.stop_receipt!.stop_receipt_sha256);
+    expect(status.current.consumed.successful_acquisitions).toBe(1);
+    expect(status.drift).toBe('none');
+    expect(readAutomationBudgetBoardSlice(repo, budget.automation_run_id, '2026-09-03T00:00:40.000Z').projection_stale).toBe(false);
   });
 });
 

@@ -95,6 +95,22 @@ export type AutomationOutcome = 'progress' | 'no_progress' | 'provider_failure' 
 
 export type AutomationBudgetState = 'active' | 'reconciliation_required' | 'budget_exhausted';
 
+/**
+ * The ways a stored `current.json` projection can lag the durable records it is
+ * derived from. Every durable record -- a reservation, a usage event, a stop
+ * receipt -- is create-once and fsynced before the projection is renamed, so
+ * the projection can only ever be behind, never ahead. Each face names the
+ * record kind whose durable truth the projection has not adopted yet.
+ */
+export const AUTOMATION_CURRENT_DRIFTS = [
+  'none',
+  'unlisted_reservation',
+  'unfolded_event',
+  'unadopted_stop_receipt',
+] as const;
+
+export type AutomationCurrentDrift = typeof AUTOMATION_CURRENT_DRIFTS[number];
+
 export type AutomationUsageResolution = 'observed' | 'reconciled_observed' | 'reconciled_reserved' | 'reconciled_not_started';
 
 export type AutomationBudgetErrorCode =
