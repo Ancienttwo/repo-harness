@@ -6,9 +6,35 @@
 > **Review**: tasks/reviews/20260903-0437-issue-282-automation-budget.review.md
 > **Last Updated**: 2026-09-03 05:20
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:d3307ed316b21379ffec751b3947b6f9fbcf223a4ba71a0b60531b50b8694c71`
+> **Substantive Change SHA256**: `sha256:f024bac826e81299981a82667fdf3457db19f6ec7fd1d1ee937601d1f549e21a`
 
 ## Design Decisions
+
+### Rule: every derived structure declares its write order
+
+Any new derived structure in this store -- an index, a cache, a mirror name --
+must document, at its definition, **its write order relative to the source
+record** and **which existing drift face covers a crash between them**. If that
+cannot be written down, the structure does not get added.
+
+This rule exists because the by-digest reservation index broke it once. It was
+first published after the counted record, so a crash between the two links left
+a counted record with no index; the next verb folded that record into
+`open_reservation_sha256s`, and from then on the digest resolver found no index
+entry and every verb and read surface reported
+`automation_budget_store_invalid` -- a legitimate reservation permanently
+misclassified as corruption. The fix was ordering, not repair: `writeExclusive`
+links the index **first** and the counted name **second**, inside one temp-file
+critical section, so the invariant is *a counted record exists implies its index
+exists*. The surviving prefix of an interrupted write is now an index entry that
+`jsonEntries` does not count and `current.json` does not reference, which the
+store already handles as a record that was never written.
+
+The general shape: order the derived name before the name that makes the record
+count, so every crash prefix leaves either nothing observable or a harmless
+orphan -- never a counted record missing the structure something else will
+demand.
+
 
 ### PRD schema mapping
 

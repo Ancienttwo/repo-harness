@@ -8,7 +8,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'child_process';
 import { createHash } from 'crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 
@@ -1330,6 +1330,131 @@ describe('issue #282 — grants need a repository to be keyed by', () => {
     expect(existsSync(join(outside, '.git'))).toBe(false);
   });
 });
+
+
+describe('issue #282 — the reservation index is published before the counted record', () => {
+  /**
+   * The by-digest index is a derived name, so its write order is part of its
+   * correctness. `writeExclusive` links the index first and the counted name
+   * second, inside one temp-file critical section, which gives the invariant
+   * "a counted record exists => its index exists". The other prefix -- index
+   * linked, counted name not yet -- leaves an entry nothing counts, folds or
+   * references, which the store already handles as a record that was never
+   * written. The reverse order would leave a counted record with no index,
+   * which the digest resolver would call corruption forever.
+   */
+  function runDir(repo: string, runId: string): string {
+    return join(repo, '.git', AUTOMATION_BUDGET_STORE_RELATIVE_ROOT, 'runs', runId);
+  }
+
+  function assertCountedImpliesIndexed(repo: string, runId: string): number {
+    const reservations = join(runDir(repo, runId), 'reservations');
+    const byDigest = join(reservations, 'by-digest');
+    let counted = 0;
+    for (const entry of readdirSync(reservations)) {
+      if (!entry.endsWith('.json')) continue;
+      counted += 1;
+      const record = JSON.parse(readFileSync(join(reservations, entry), 'utf8')) as { reservation_sha256: string };
+      expect(
+        existsSync(join(byDigest, `${record.reservation_sha256}.json`)),
+        `counted reservation ${entry} must have an index entry`,
+      ).toBe(true);
+    }
+    return counted;
+  }
+
+  test('every counted record the writer produces has its index, at every step of a run', () => {
+    const repo = repoFixture();
+    const budget = makeBudget({ run: 'index-order', limits: { ...BASE_LIMITS, max_successful_acquisitions: 4, max_agent_turns: 12 } });
+    publishBudget(repo, budget);
+    for (const step of [1, 2, 3]) {
+      // Checked after the reservation and again after the charge, so the
+      // invariant is asserted at both durable boundaries of every step.
+      const reservation = reserveAutomationBudget({
+        repo_root: repo,
+        automation_run_id: budget.automation_run_id,
+        expected_budget_sha256: budget.budget_sha256,
+        idempotency_key: `op-${step}`,
+        operation: 'acquisition',
+        unit_kind: 'execute',
+        unit_id: 'wp-1',
+        attempt: 1,
+        provider: null,
+      });
+      expect(assertCountedImpliesIndexed(repo, budget.automation_run_id)).toBe(step);
+      appendAutomationUsage({ repo_root: repo, reservation, outcome: 'progress', evidence_refs: [] });
+      expect(assertCountedImpliesIndexed(repo, budget.automation_run_id)).toBe(step);
+    }
+  });
+
+  test('a failure at the index link never leaves a counted record behind', () => {
+    const repo = repoFixture();
+    const budget = makeBudget({ run: 'index-link-fails' });
+    publishBudget(repo, budget);
+    const byDigest = join(runDir(repo, budget.automation_run_id), 'reservations', 'by-digest');
+    // Injected failure at the first link: the index cannot be created.
+    chmodSync(byDigest, 0o500);
+    try {
+      expect(() => reserveAutomationBudget({
+        repo_root: repo,
+        automation_run_id: budget.automation_run_id,
+        expected_budget_sha256: budget.budget_sha256,
+        idempotency_key: 'op-blocked',
+        operation: 'acquisition',
+        unit_kind: 'execute',
+        unit_id: 'wp-1',
+        attempt: 1,
+        provider: null,
+      })).toThrow(/cannot persist automation reservation/u);
+    } finally {
+      chmodSync(byDigest, 0o700);
+    }
+    // The counted name is what the ledger counts, and it was never created.
+    expect(assertCountedImpliesIndexed(repo, budget.automation_run_id)).toBe(0);
+    expect(readAutomationBudgetStatus(repo, budget.automation_run_id).drift).toBe('none');
+  });
+
+  test('an index entry with no counted record reads as a reservation that never happened', () => {
+    const repo = repoFixture();
+    const budget = makeBudget({ run: 'index-only' });
+    publishBudget(repo, budget);
+    const reservations = join(runDir(repo, budget.automation_run_id), 'reservations');
+    const byDigest = join(reservations, 'by-digest');
+
+    // The surviving prefix of an interrupted write: index linked, counted name
+    // never linked, `current.json` still exactly as it was before the reserve.
+    const currentPath = join(runDir(repo, budget.automation_run_id), 'current.json');
+    const currentBefore = readFileSync(currentPath, 'utf8');
+    const observed = reserveAutomationBudget({
+      repo_root: repo,
+      automation_run_id: budget.automation_run_id,
+      expected_budget_sha256: budget.budget_sha256,
+      idempotency_key: 'op-interrupted',
+      operation: 'acquisition',
+      unit_kind: 'execute',
+      unit_id: 'wp-1',
+      attempt: 1,
+      provider: null,
+    });
+    for (const entry of readdirSync(reservations)) {
+      if (entry.endsWith('.json')) rmSync(join(reservations, entry));
+    }
+    writeFileSync(currentPath, currentBefore);
+    expect(existsSync(join(byDigest, `${observed.reservation_sha256}.json`))).toBe(true);
+
+    // Nothing counts or references it, so it is not corruption and not drift.
+    const status = readAutomationBudgetStatus(repo, budget.automation_run_id);
+    expect(status.drift).toBe('none');
+    expect(status.current.consumed.agent_turns).toBe(0);
+    expect(status.current.open_reservation_sha256s).toEqual([]);
+
+    // The same key mints again and is charged exactly once.
+    const retried = acquire(repo, 'index-only', budget, 'op-interrupted', '2026-09-03T00:00:20.000Z');
+    expect(retried.commit.current.consumed.successful_acquisitions).toBe(1);
+    expect(retried.commit.current.event_count).toBe(1);
+  });
+});
+
 
 describe('issue #282 — a limit increase needs a new authorized revision', () => {
   test('a revision must supersede the exact current digest and invalidates stale decisions', () => {

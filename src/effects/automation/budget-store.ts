@@ -204,6 +204,12 @@ function runPaths(repoRoot: string, runId: string): RunPaths {
     // under their reservation digest, so resolving one listed open reservation
     // is a single stat and parse instead of a scan of every record. It holds no
     // bytes of its own: it is a second name for one file, not a second copy.
+    //
+    // Write order (see `writeExclusive`): index first, counted record second,
+    // `current.json` last. Invariant: a counted record exists => its index
+    // exists. A crash before the counted link leaves an index entry that
+    // `jsonEntries` does not count and `current.json` does not reference, which
+    // the store already handles as "the record was never written".
     reservationsByDigest: join(run, 'reservations', 'by-digest'),
     events: join(run, 'events'),
     reconciliations: join(run, 'reconciliations'),
@@ -282,7 +288,7 @@ function writeAll(descriptor: number, bytes: Buffer): void {
  * "the file exists" means "its content is complete"; a leftover temporary file
  * is garbage that no scan counts and the next attempt replaces.
  */
-function writeExclusive(path: string, bytes: string, label: string): boolean {
+function writeExclusive(path: string, bytes: string, label: string, indexPath?: string): boolean {
   const temp = join(dirname(path), `.${basename(path)}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   let descriptor: number | null = null;
   try {
@@ -291,6 +297,23 @@ function writeExclusive(path: string, bytes: string, label: string): boolean {
     fsyncSync(descriptor);
     closeSync(descriptor);
     descriptor = null;
+    if (indexPath !== undefined) {
+      // Order is the whole guarantee: the index is linked BEFORE the counted
+      // name, so "the counted record exists" implies "its index exists". The
+      // reverse prefix -- index linked, counted name not yet -- leaves an entry
+      // nothing counts, folds, or resolves, which is indistinguishable from the
+      // record never having been written. Linking the counted name first would
+      // instead produce a counted record with no index, which the digest
+      // resolver reports as corruption forever.
+      try {
+        linkSync(temp, indexPath);
+      } catch (error) {
+        // The same record digest always carries the same bytes, so an index
+        // entry left by an interrupted attempt is already the right one.
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      }
+      syncDirectory(dirname(indexPath));
+    }
     try {
       linkSync(temp, path);
     } catch (error) {
@@ -309,21 +332,6 @@ function writeExclusive(path: string, bytes: string, label: string): boolean {
       // The temporary file may never have been created, or may already be gone.
     }
   }
-}
-
-/**
- * Publish a second name for an already-published record. `link` is atomic and
- * fails `EEXIST`, so the index is create-once like the record it points at, and
- * because both names share one inode the index can never disagree with it.
- */
-function linkExclusive(source: string, target: string, label: string): void {
-  try {
-    linkSync(source, target);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return;
-    fail('automation_budget_store_unavailable', `cannot index ${label}`, error);
-  }
-  syncDirectory(dirname(target));
 }
 
 function writeAtomic(path: string, bytes: string, label: string): void {
@@ -1152,14 +1160,14 @@ export function reserveAutomationBudget(input: ReserveAutomationBudgetInput): Au
       deadline_at: status.budget.deadline_at,
       previous_ledger_sha256: status.current.ledger_sha256,
     });
-    if (!writeExclusive(reservationPath, bytes(reservation), 'automation reservation')) {
+    if (!writeExclusive(
+      reservationPath,
+      bytes(reservation),
+      'automation reservation',
+      join(paths.reservationsByDigest, `${reservation.reservation_sha256}.json`),
+    )) {
       fail('automation_budget_store_conflict', 'automation reservation was created concurrently');
     }
-    linkExclusive(
-      reservationPath,
-      join(paths.reservationsByDigest, `${reservation.reservation_sha256}.json`),
-      'automation reservation',
-    );
     const next = sealAutomationBudgetCurrent({
       automation_run_id: status.current.automation_run_id,
       budget_sha256: status.current.budget_sha256,
