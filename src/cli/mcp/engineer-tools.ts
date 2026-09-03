@@ -5,6 +5,7 @@ import {
   buildInterfaceChangeRequest,
   type InterfaceChangeTransition,
 } from '../../core/engineers/interface-change';
+import { WorkDemandError, buildWorkDemand, type WorkDemandTransition } from '../../core/engineers/work-demand';
 import {
   ModuleMessageError,
   buildModuleMessageEvent,
@@ -39,6 +40,7 @@ import {
   readInterfaceChangeStatus,
   transitionInterfaceChangeRequest,
 } from '../../effects/engineers/interface-change-store';
+import { WorkDemandStoreError, readWorkDemandStatus, transitionWorkDemand } from '../../effects/engineers/work-demand-store';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { redactMcpText } from './redaction';
 
@@ -53,6 +55,8 @@ export const ENGINEER_MCP_TOOL_NAMES = [
   'engineer_runtime_effect_status',
   'engineer_interface_change_propose',
   'engineer_interface_change_transition',
+  'engineer_work_demand_propose',
+  'engineer_work_demand_transition',
 ] as const;
 export type EngineerMcpToolName = typeof ENGINEER_MCP_TOOL_NAMES[number];
 
@@ -121,6 +125,8 @@ const PARAMETER_NAMES: Readonly<Record<EngineerMcpToolName, readonly string[]>> 
     'request_id', 'transition', 'idempotency_key', 'expected_current_digest',
     'materialization_commit', 'evidence_sha256',
   ],
+  engineer_work_demand_propose: ['repo_id','engineer_id','binding_id','binding_generation','engineer_contract_revision','demand_id','idempotency_key','source_capability_id','target_capability_id','target_engineer_id','problem','desired_outcome','contract_escape_reason','resource_refs','requested_urgency','dependency_hints','created_at'],
+  engineer_work_demand_transition: ['repo_id','engineer_id','binding_id','binding_generation','engineer_contract_revision','demand_id','transition','idempotency_key','expected_current_digest'],
 });
 
 export interface EngineerMcpToolContext {
@@ -322,6 +328,16 @@ export function buildEngineerToolDefinitions(): EngineerMcpToolDefinition[] {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    {
+      name: 'engineer_work_demand_propose', description: 'Persist one exact Binding-fenced Agent WorkDemand; it creates no Task, Claim, Lease or offer.',
+      inputSchema: { type:'object', properties:{...principalFenceProperties,demand_id:{type:'string',format:'uuid'},idempotency_key:{type:'string',maxLength:512},source_capability_id:{type:'string'},target_capability_id:{type:'string'},target_engineer_id:{type:['string','null']},problem:{type:'string',maxLength:16384},desired_outcome:{type:'string',maxLength:16384},contract_escape_reason:{type:'string',maxLength:16384},resource_refs:{type:'array'},requested_urgency:{type:'string',enum:['low','normal','high','urgent']},dependency_hints:{type:'array',items:{type:'string'}},created_at:{type:'string'}},required:['demand_id','idempotency_key','source_capability_id','target_capability_id','target_engineer_id','problem','desired_outcome','contract_escape_reason','resource_refs','requested_urgency','dependency_hints','created_at'],additionalProperties:false},
+      annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:true,openWorldHint:false},
+    },
+    {
+      name:'engineer_work_demand_transition',description:'Submit or cancel an existing WorkDemand as its exact current requester Engineer.',
+      inputSchema:{type:'object',properties:{...principalFenceProperties,demand_id:{type:'string',format:'uuid'},transition:{type:'string',enum:['submit','cancel']},idempotency_key:{type:'string',maxLength:512},expected_current_digest:{type:'string',pattern:'^sha256:[0-9a-f]{64}$'}},required:['demand_id','transition','idempotency_key','expected_current_digest'],additionalProperties:false},
+      annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:true,openWorldHint:false},
     },
   ];
 }
@@ -561,6 +577,14 @@ function transitionInterfaceChangeAsEngineer(
   return textResult(result);
 }
 
+function demandActor(principal:ReturnType<typeof resolvePrincipal>){return {kind:'engineer' as const,principal:{engineer_id:principal.engineer_id,binding_id:principal.binding_id,binding_generation:principal.binding_generation,engineer_contract_revision:principal.engineer_contract_revision}};}
+function proposeWorkDemandAsEngineer(ctx:EngineerMcpToolContext,args:Record<string,unknown>,principal:ReturnType<typeof resolvePrincipal>):EngineerMcpToolResult{
+  if(!Array.isArray(args.resource_refs)||!Array.isArray(args.dependency_hints))throw new EngineerMcpError('INVALID_ARGUMENT','resource_refs and dependency_hints must be arrays');
+  const demand=buildWorkDemand({repository_id:principal.repository_id,demand_id:requiredString(args,'demand_id'),idempotency_key:requiredString(args,'idempotency_key'),source_engineer:demandActor(principal).principal,source_capability_id:requiredString(args,'source_capability_id'),target_capability_id:requiredString(args,'target_capability_id'),target_engineer_id:requiredNullableString(args,'target_engineer_id'),problem:requiredString(args,'problem'),desired_outcome:requiredString(args,'desired_outcome'),contract_escape_reason:requiredString(args,'contract_escape_reason'),resource_refs:args.resource_refs as never,requested_urgency:requiredString(args,'requested_urgency') as never,dependency_hints:args.dependency_hints as string[],created_at:requiredString(args,'created_at')});
+  const result=transitionWorkDemand({repo_root:ctx.repoRoot,demand,idempotency_key:requiredString(args,'idempotency_key'),transition:'propose',expected_current_digest:null,actor:demandActor(principal),acceptance:null,materialization_receipt:null});audit(ctx,'engineer_work_demand_propose','ok',args);return textResult(result);
+}
+function transitionWorkDemandAsEngineer(ctx:EngineerMcpToolContext,args:Record<string,unknown>,principal:ReturnType<typeof resolvePrincipal>):EngineerMcpToolResult{const transition=requiredString(args,'transition') as WorkDemandTransition;if(transition!=='submit'&&transition!=='cancel')throw new EngineerMcpError('INVALID_ARGUMENT','Engineer WorkDemand transition must be submit or cancel');const status=readWorkDemandStatus(ctx.repoRoot,requiredString(args,'demand_id'));const result=transitionWorkDemand({repo_root:ctx.repoRoot,demand:status.demand,idempotency_key:requiredString(args,'idempotency_key'),transition,expected_current_digest:requiredString(args,'expected_current_digest'),actor:demandActor(principal),acceptance:null,materialization_receipt:null});audit(ctx,'engineer_work_demand_transition','ok',args);return textResult(result);}
+
 function currentBindingForPrincipal(
   ctx: EngineerMcpToolContext,
   principal: ReturnType<typeof resolvePrincipal>,
@@ -635,6 +659,8 @@ export function callEngineerTool(
     }
     if (name === 'engineer_interface_change_propose') return proposeInterfaceChangeAsEngineer(ctx, args, principal);
     if (name === 'engineer_interface_change_transition') return transitionInterfaceChangeAsEngineer(ctx, args, principal);
+    if (name === 'engineer_work_demand_propose') return proposeWorkDemandAsEngineer(ctx,args,principal);
+    if (name === 'engineer_work_demand_transition') return transitionWorkDemandAsEngineer(ctx,args,principal);
     return messageSendAsEngineer(ctx, args, principal);
   } catch (error) {
     const code = error instanceof EngineerPrincipalError || error instanceof EngineerMcpError
@@ -642,6 +668,7 @@ export function callEngineerTool(
       || error instanceof ModuleInboxError
       || error instanceof AgentRuntimeEffectError || error instanceof AgentRuntimeEffectStoreError
       || error instanceof InterfaceChangeError || error instanceof InterfaceChangeStoreError
+      || error instanceof WorkDemandError || error instanceof WorkDemandStoreError
       ? error.code
       : 'ENGINEER_TOOL_FAILED';
     const message = error instanceof Error ? error.message : String(error);

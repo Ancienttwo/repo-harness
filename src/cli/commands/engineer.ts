@@ -1,11 +1,12 @@
 import { Command } from 'commander';
-import { realpathSync } from 'fs';
+import { readFileSync, realpathSync } from 'fs';
 
 import { EngineerProfileBindingError } from '../../core/engineers/profile-binding';
 import { EngineeringOverlayError } from '../../core/engineers/engineering-overlay';
 import { EngineerPrincipalError } from '../../core/engineers/principal-claim';
 import { EngineerSchedulingError, type EngineerOffersV1 } from '../../core/engineers/scheduling';
 import { TaskFreezeError } from '../../core/engineers/task-freeze';
+import { WorkDemandError, validateAcceptedWorkDemandProjection, validateWorkDemand, validateMaterializedWorkDemandReceipt, type WorkDemandActorV1, type WorkDemandTransition } from '../../core/engineers/work-demand';
 import {
   ModuleMessageError,
   buildModuleMessageEvent,
@@ -71,6 +72,8 @@ import {
   verifyTaskFreeze,
 } from '../../effects/engineers/task-freeze-store';
 import { mcpOAuthTokenStorePath } from '../mcp/auth';
+import { WorkDemandStoreError, listWorkDemandStatuses, readWorkDemandStatus, transitionWorkDemand } from '../../effects/engineers/work-demand-store';
+import { WorkDemandMaterializationError, materializeWorkDemand } from '../../effects/engineers/work-demand-materialization';
 import { McpOAuthTokenStore } from '../mcp/oauth';
 
 function emit(value: unknown, json: boolean | undefined, human: string): void {
@@ -85,6 +88,7 @@ function emitError(error: unknown): void {
     || error instanceof ModuleMessageError || error instanceof ModuleInboxError
     || error instanceof AgentRuntimeEffectError || error instanceof AgentRuntimeEffectStoreError
     || error instanceof TaskFreezeError
+    || error instanceof WorkDemandError || error instanceof WorkDemandStoreError || error instanceof WorkDemandMaterializationError
     || error instanceof EngineeringOverlayError || error instanceof EngineeringOverlayProjectionError
     ? error.code
     : error instanceof CliArgumentError
@@ -718,6 +722,19 @@ export function buildEngineerCommand(): Command {
       emit(mapping, options.json, `${mapping.state} ${mapping.engineer_id} generation=${mapping.binding_generation}`);
     }));
   engineer.addCommand(principal);
+
+  const workDemand = new Command('work-demand').description('Manage durable Agent WorkDemand review and task materialization');
+  workDemand.command('propose').requiredOption('--demand-json <path>').requiredOption('--idempotency-key <key>').option('--json').action((options:{demandJson:string;idempotencyKey:string;json?:boolean})=>run(()=>{
+    const repoRoot=realpathSync(process.cwd());const demand=validateWorkDemand(JSON.parse(readFileSync(options.demandJson,'utf8')));const actor:WorkDemandActorV1={kind:'engineer',principal:demand.source_engineer};const result=transitionWorkDemand({repo_root:repoRoot,demand,idempotency_key:options.idempotencyKey,transition:'propose',expected_current_digest:null,actor,acceptance:null,materialization_receipt:null});emit(result,options.json,`${result.current.state} ${demand.demand_id}`);
+  }));
+  workDemand.command('transition').requiredOption('--demand-id <id>').requiredOption('--transition <name>').requiredOption('--idempotency-key <key>').requiredOption('--expected-current-digest <digest>').option('--human-ref <ref>').option('--acceptance-json <path>').option('--receipt-json <path>').option('--json').action((options:{demandId:string;transition:string;idempotencyKey:string;expectedCurrentDigest:string;humanRef?:string;acceptanceJson?:string;receiptJson?:string;json?:boolean})=>run(()=>{
+    const repoRoot=realpathSync(process.cwd());const status=readWorkDemandStatus(repoRoot,options.demandId);const actor:WorkDemandActorV1=options.humanRef?{kind:'human',principal_ref:options.humanRef}:{kind:'engineer',principal:status.demand.source_engineer};const acceptance=options.acceptanceJson?JSON.parse(readFileSync(options.acceptanceJson,'utf8')):null;const receipt=options.receiptJson?validateMaterializedWorkDemandReceipt(JSON.parse(readFileSync(options.receiptJson,'utf8'))):null;const result=transitionWorkDemand({repo_root:repoRoot,demand:status.demand,idempotency_key:options.idempotencyKey,transition:options.transition as WorkDemandTransition,expected_current_digest:options.expectedCurrentDigest,actor,acceptance,materialization_receipt:receipt});emit(result,options.json,`${result.current.state} ${status.demand.demand_id}`);
+  }));
+  workDemand.command('materialize').requiredOption('--demand-id <id>').option('--now <timestamp>').option('--json').action((options:{demandId:string;now?:string;json?:boolean})=>run(()=>{
+    const repoRoot=realpathSync(process.cwd());const status=readWorkDemandStatus(repoRoot,options.demandId);if(!status.current.accepted_projection)throw new CliArgumentError('WorkDemand has no accepted projection');const receipt=materializeWorkDemand({repo_root:repoRoot,demand:status.demand,projection:validateAcceptedWorkDemandProjection(status.current.accepted_projection),now:options.now?()=>options.now!:undefined});emit(receipt,options.json,`${receipt.materialized_commit} ${receipt.task_id}`);
+  }));
+  workDemand.command('status').option('--demand-id <id>').option('--json').action((options:{demandId?:string;json?:boolean})=>run(()=>{const repoRoot=realpathSync(process.cwd());if(options.demandId){const value=readWorkDemandStatus(repoRoot,options.demandId);emit(value,options.json,`${value.current.state} ${value.demand.demand_id}`);return;}const values=listWorkDemandStatuses(repoRoot);emit(values,options.json,values.map(item=>`${item.current.state} ${item.demand.demand_id}`).join('\n'));}));
+  engineer.addCommand(workDemand);
 
   engineer
     .command('bootstrap-prompt')
