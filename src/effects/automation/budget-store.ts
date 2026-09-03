@@ -1266,7 +1266,6 @@ export interface ReserveAutomationBudgetInput {
 export function reserveAutomationBudget(input: ReserveAutomationBudgetInput): AutomationBudgetReservationV1 {
   const repoRoot = resolve(input.repo_root);
   const paths = runPaths(repoRoot, input.automation_run_id);
-  const reservedAt = automationStoreNow();
   // The counting components come from the operation kind, never from the
   // caller: an acquisition that reserves zero acquisitions is not a smaller
   // request, it is an unmetered one. Token and cost components stay null while
@@ -1277,6 +1276,11 @@ export function reserveAutomationBudget(input: ReserveAutomationBudgetInput): Au
     cost_micros: null,
   });
   return withExclusiveDirectoryLock(paths.common, paths.lockRelative, () => {
+    // The deadline decision belongs to the serialized state transition. A
+    // caller may wait behind another process long enough to cross the run's
+    // deadline, so a timestamp sampled before lock acquisition is stale by
+    // construction.
+    const reservedAt = automationStoreNow();
     const status = lockedStatus(repoRoot, paths, input.automation_run_id, reservedAt);
     const reservationPath = join(paths.reservations, `${keyDigest(input.idempotency_key)}.json`);
     // A stored reservation is closed, open, or nothing this store may act on.

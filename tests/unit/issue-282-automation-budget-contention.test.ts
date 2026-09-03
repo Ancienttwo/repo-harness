@@ -22,8 +22,11 @@ import {
   type ProgramBudgetLimitV1,
 } from '../../src/core/automation/budget';
 import {
+  AUTOMATION_BUDGET_STORE_RELATIVE_ROOT,
+  AutomationBudgetStoreError,
   publishAutomationBudget,
   readAutomationBudgetStatus,
+  reserveAutomationBudget,
 } from '../../src/effects/automation/budget-store';
 import type { AutomationBudgetStatusV1 } from '../../src/effects/automation/budget-store';
 import { mintProgramAuthorization } from '../../src/effects/automation/grant-store';
@@ -40,11 +43,12 @@ process.env.REPO_HARNESS_TEST_CLOCK_SEAM = '1';
  */
 let fixtureClockMs = Date.parse('2026-09-03T00:00:01.000Z');
 let fixtureAutoAdvance = true;
-__setAutomationClockForTests(() => {
+const fixtureClock = (): Date => {
   const value = new Date(fixtureClockMs);
   if (fixtureAutoAdvance) fixtureClockMs += 1_000;
   return value;
-});
+};
+__setAutomationClockForTests(fixtureClock);
 const at = (iso: string): void => { fixtureClockMs = Date.parse(iso); fixtureAutoAdvance = false; };
 const resumeAutoClock = (): void => { fixtureAutoAdvance = true; };
 
@@ -238,6 +242,57 @@ async function race(repo: string, budget: AutomationBudgetV1, keys: readonly str
 }
 
 describe('issue #282 — concurrent controllers cannot reserve past one limit', () => {
+  test('a reservation that waits across the wall-clock deadline is refused', async () => {
+    const repo = repoFixture();
+    const budget = makeBudget('race-deadline', { ...LIMITS, max_wall_clock_seconds: 2 });
+    publishBudget(repo, budget);
+
+    const holderSource = `
+      import { acquireExclusiveDirectoryLock } from '${join(ROOT, 'src/effects/locking/exclusive-directory-lock')}';
+      const [root, relative] = process.argv.slice(2);
+      const handle = acquireExclusiveDirectoryLock(root, relative);
+      process.stdout.write('ready\\n');
+      setTimeout(() => { handle.release(); process.exit(0); }, 1500);
+    `;
+    const holderDir = realpathSync(mkdtempSync(join(tmpdir(), 'automation-budget-lock-holder-')));
+    FIXTURES.add(holderDir);
+    const holderFile = join(holderDir, 'holder.ts');
+    writeFileSync(holderFile, holderSource);
+    const common = realpathSync(join(repo, '.git'));
+    const lockRelative = `${AUTOMATION_BUDGET_STORE_RELATIVE_ROOT}/locks/${budget.automation_run_id}.lock`;
+    const holder = spawn(process.execPath, [holderFile, common, lockRelative], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    await new Promise<void>((resolveReady, rejectReady) => {
+      holder.once('error', rejectReady);
+      holder.stdout?.once('data', (chunk) => {
+        if (String(chunk).includes('ready')) resolveReady();
+        else rejectReady(new Error(`lock holder did not become ready: ${String(chunk)}`));
+      });
+    });
+
+    const startedAt = Date.now();
+    __setAutomationClockForTests(() => new Date(Date.parse('2026-09-03T00:00:01.000Z') + (Date.now() - startedAt)));
+    try {
+      expect(() => reserveAutomationBudget({
+        repo_root: repo,
+        automation_run_id: budget.automation_run_id,
+        expected_budget_sha256: budget.budget_sha256,
+        idempotency_key: 'deadline-crossing-reservation',
+        operation: 'acquisition',
+        unit_kind: 'execute',
+        unit_id: 'wp-1',
+        attempt: 1,
+        provider: null,
+      })).toThrow(AutomationBudgetStoreError);
+      const status = readAutomationBudgetStatus(repo, budget.automation_run_id);
+      expect(status.current.open_reservation_sha256s).toEqual([]);
+      expect(status.current.event_count).toBe(0);
+    } finally {
+      __setAutomationClockForTests(fixtureClock);
+    }
+  }, 10_000);
+
   test('four processes racing one remaining acquisition charge exactly one', async () => {
     const repo = repoFixture();
     const budget = makeBudget('race-one', LIMITS);
