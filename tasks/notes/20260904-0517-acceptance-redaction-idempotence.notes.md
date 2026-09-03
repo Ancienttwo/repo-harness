@@ -18,8 +18,8 @@
 ## Deviations From Plan Or Spec
 
 - The initial candidate fix normalized redaction markers inside AcceptanceReceipt canonicalization. Root-cause proof falsified that direction because it would hide a real command-identity change; scope moved to the finalization producer.
-- The acceptance preflight refreshed the repository-owned architecture projection manifest after the linked worktree's CodeGraph index became ready. The contract therefore includes that deterministic generated projection in the frozen subject.
-- While publishing, `origin/main` advanced across the reviewed `helper-scripts` and architecture surfaces. The branch was rebased, and the user's task-wide approval was bound as `user.approval-20260904-full-task` to the exact ArchContext signal `sha256:bd58dfc27fa5218745540127764ddf5ef9a77aadfbef538c36b92ce5ae0171d6`; its deterministic architecture-doc projection is included in the refreshed subject.
+- The first acceptance preflight needed a worktree-local CodeGraph index before ArchContext could prove the current flow graph.
+- While publishing, `origin/main` advanced across the reviewed `helper-scripts` and architecture surfaces. The branch was rebased, and the user's task-wide approval was bound as `user.approval-20260904-full-task` to the exact ArchContext signal `sha256:bd58dfc27fa5218745540127764ddf5ef9a77aadfbef538c36b92ce5ae0171d6`. A later upstream merge supplied a newer canonical projection, so every generated architecture-doc delta was dropped from this branch rather than carrying a second authority.
 - After that rebase, the globally installed `repo-harness` predated `origin/main`'s new workflow schema and falsely reported the new `cutover-closure.ts` helper and schema-v2 sprint tables as missing. Exact-subject verification now invokes the branch-local CLI (`bun src/cli/index.ts run check-task-workflow --strict`), which is the source-bound authority under review.
 
 ## Tradeoffs Considered
@@ -40,7 +40,7 @@
 - Run snapshots: `.ai/harness/runs/`
 - Pre-fix failure: `.ai/harness/runs/pre-fix-acceptance-redaction-idempotence.log`
 - Focused verification: `bun test tests/evidence-projection-drift.test.ts`; affected finalizer fixture in `tests/helper-scripts.test.ts`.
-- Full repository verification: `bun test --timeout 60000` passed 3,736 tests with 4 platform-specific skips and 0 failures on the implementation worktree.
+- Full repository verification: `bun test --timeout 60000` passed with only platform-specific skips and 0 failures on the implementation worktree.
 - Required checks passed: deploy SQL order, architecture sync, task sync, strict workflow, project-state inspection, init dry-run, helper-source mirror sync, and `git diff --check`.
 
 ## Promotion Filter

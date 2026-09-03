@@ -86,14 +86,6 @@ allowed_paths:
   - assets/templates/helpers/verify-sprint.sh
   - tests/evidence-projection-drift.test.ts
   - tests/helper-scripts.test.ts
-  - docs/architecture/.projection-manifest.json
-  - docs/architecture/changelog.md
-  - docs/architecture/decisions/index.md
-  - docs/architecture/diagrams/architecture.likec4
-  - docs/architecture/diagrams/architecture.mmd
-  - docs/architecture/diagrams/architecture.structurizr.json
-  - docs/architecture/index.md
-  - docs/architecture/modules/public-surface/root-router.md
 ```
 
 ## Evidence Requirements
