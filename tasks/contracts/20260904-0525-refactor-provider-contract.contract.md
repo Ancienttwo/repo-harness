@@ -81,6 +81,8 @@ allowed_paths:
   - docs/researches/20260902-restructure.md
   - docs/verification/axr5-archctx-clean-room-readback.json
   - docs/architecture/
+  - AGENTS.md
+  - CLAUDE.md
   - plans/prds/20260903-0435-archctx-backed-refactor-mode.prd.md
   - package.json
   - bun.lock

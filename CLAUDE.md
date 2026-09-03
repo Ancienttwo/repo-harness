@@ -71,37 +71,34 @@ bun src/cli/index.ts init --repo . --dry-run
 <!-- BEGIN ARCHITECTURE CONTRACT -->
 ## Architecture Contract
 
-- Functional block: `src/effects/collaboration`
-- Capability ID: `runtime-harness-collaboration`
-- Matched prefix: `src/effects/collaboration`
+- Functional block: `src/effects/architecture`
+- Capability ID: `runtime-harness-global-runtime-reconciliation`
+- Matched prefix: `src/effects/architecture`
 - Architecture domain: `runtime-harness`
-- Architecture capability: `collaboration`
-- Architecture module: `docs/architecture/modules/runtime-harness/collaboration.md`
-- Last architecture event: 2026-09-01T12:44:55+0800
-- Last changed path: `src/effects/collaboration/work-exchange.ts`
+- Architecture capability: `global-runtime-reconciliation`
+- Architecture module: `docs/architecture/modules/runtime-harness/global-runtime-reconciliation.md`
+- Last architecture event: 2026-09-04T07:42:27+0800
+- Last changed path: `src/effects/architecture/archctx-provider.ts`
 - Severity: low
 - Change type: source-change
 - Module responsibility: Keep this block aligned with the local boundary described by surrounding human-owned context.
-- Entrypoints: `src/effects/collaboration`
+- Entrypoints: `src/effects/architecture`
 - Allowed dependencies: Follow root `AGENTS.md` / `CLAUDE.md` and this local contract.
 - Forbidden dependencies: Do not cross sibling app/service/package boundaries without an architecture snapshot or explicit plan.
-- Runtime path: `src/effects/collaboration`
+- Runtime path: `src/effects/architecture`
 - LSP/tooling profile: `typescript-lsp`
 - Verification: Use root required checks plus local commands recorded in this capability contract.
 - Latest snapshot: `(none yet)`
-- Semantic diagram source: `docs/architecture/modules/runtime-harness/collaboration.md`
+- Semantic diagram source: `docs/architecture/modules/runtime-harness/global-runtime-reconciliation.md`
 - Pending architecture request: `(none)`
 
 ## Active Workstreams
 
-- `tasks/workstreams/runtime-harness/collaboration/collaboration-substrate-program.md`
-  - status: active
-  - current_slice: todo-01
-  - source_plan: plans/plan-20260830-0858-c5-taskfreeze-succession-integration.md
+- (none yet)
 
 ## Current Session Projection
 
-- Durable progress lives under `tasks/workstreams/runtime-harness/collaboration`.
+- Durable progress lives under `tasks/workstreams/runtime-harness/global-runtime-reconciliation`.
 - `tasks/current.md` is the tracked derived status snapshot; it is not a live lock or task source.
 - `tasks/todos.md` is the deferred-goal ledger; current execution slices stay in the active plan's `## Task Breakdown`.
 <!-- END ARCHITECTURE CONTRACT -->
