@@ -1,7 +1,7 @@
 {
   "protocol": 1,
   "kind": "repo-harness-substantive-change-waiver",
-  "substantive_change_sha256": "sha256:e8bd9366460e458cc0bb5116f2bdef97a788bac0bc3a9f03ab37de3461cc88db",
+  "substantive_change_sha256": "sha256:675405465feb271dee7325fef9014dd3c59df69e0e09f7387e528e7a36e3ce0c",
   "reason": "The completed Module 1 work package carries a verified external_pass AcceptanceReceipt, and contract-worktree finish archived its canonical plan, contract, review, and notes before the PR diff was evaluated. This waiver binds only the already-reviewed substantive paths so task-sync can validate the closed workflow without restoring a second active evidence authority.",
   "owner": "ancienttwo",
   "scope": [
