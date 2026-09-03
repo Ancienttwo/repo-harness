@@ -880,7 +880,8 @@ export type AcceptanceValidatorRuleId =
   | 'waiver_grant_owner'
   | 'waiver_grant_fingerprint'
   | 'waiver_binding_symmetry'
-  | 'disposition_policy';
+  | 'disposition_policy'
+  | 'validator_threw';
 
 export const ACCEPTANCE_VALIDATOR_RULE_IDS: readonly AcceptanceValidatorRuleId[] = [
   'receipt_protocol_kind', 'repository_root', 'contract_file', 'contract_fingerprint',
@@ -890,7 +891,7 @@ export const ACCEPTANCE_VALIDATOR_RULE_IDS: readonly AcceptanceValidatorRuleId[]
   'summary_present', 'issued_at_shape', 'disposition_not_reject', 'waiver_grant_present',
   'waiver_policy_allowed', 'waiver_grant_repository', 'waiver_grant_contract',
   'waiver_grant_goal', 'waiver_grant_owner', 'waiver_grant_fingerprint',
-  'waiver_binding_symmetry', 'disposition_policy',
+  'waiver_binding_symmetry', 'disposition_policy', 'validator_threw',
 ];
 
 export type AcceptanceReceiptPolicyVerdict =
@@ -993,7 +994,9 @@ export function validateAcceptanceReceiptAgainstPolicy(
     }
     return { ok: true };
   } catch (error) {
-    return { ok: false, rule: 'contract_fingerprint', reason: (error as Error).message };
+    // A rule that threw rather than returned: the contract policy block is
+    // unparseable, or an input the caller supplied is malformed.
+    return { ok: false, rule: 'validator_threw', reason: (error as Error).message };
   }
 }
 

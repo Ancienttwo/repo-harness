@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260902-2101-issue-284-dependency-authority.review.md
 > **Last Updated**: 2026-09-02 21:01
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:b3e4e5f3255257fb064f1b6e74afff90c261b1aa580a89352d73123873ed586c`
+> **Substantive Change SHA256**: `sha256:09fbf46fb11894713b4b50586887176e246b506fb41ecf97ad116215dfc37a5f`
 
 ## Design Decisions
 
@@ -162,7 +162,7 @@ coverage decision fails typecheck (the map is an exhaustive `Record`) and fails 
 | `verification_evidence_shape` | record_time | set from `normalizedVerificationEvidence(...)`, which is a `sha256(...)` |
 | `benchmark_evidence_present` | record_time | set from the same evidence pass, never empty |
 | `subject_sha256_shape` | record_time | `currentSubject` fails unless the digest matches `^sha256:[0-9a-f]{64}$` |
-| `subject_scope` | record_time | `buildReceipt` hardcodes `normalized-final-content` |
+| `subject_scope` | record_time | `buildReceipt` sets it from `context.subject.scope`, which the review subject builder pins to `src/effects/review/diff-fingerprint.ts#REVIEW_SUBJECT_SCOPE` |
 | `target_ref_present` | resolver | additionally compared with the target repository's canonical target ref, which is the readable-negative case |
 | `target_revision_shape` | record_time | set from the review base the policy resolved |
 | `reviewed_paths_shape` | record_time | set from the subject's repository-relative diff paths |
@@ -178,6 +178,7 @@ coverage decision fails typecheck (the map is an exhaustive `Record`) and fails 
 | `waiver_grant_fingerprint` | record_time | `buildReceipt` sets `waiver_grant_sha256` from the verified grant |
 | `waiver_binding_symmetry` | record_time | the two record paths are the only writers and each sets the pair consistently |
 | `disposition_policy` | record_time | `validateDisposition` runs before `buildReceipt` in both record paths — note this proves the disposition is *policy-consistent*, not that it is *passing*, which is why `disposition_not_reject` needs its own mechanism |
+| `validator_threw` | record_time | a rule that throws instead of returning (an unparseable Acceptance Policy block, a malformed input) aborts `recordAcceptance` / `recordUserWaiverAcceptance` before `writeAcceptanceWithArchiveProjection`, so no receipt and no observation are written |
 
 ## Deviations From Plan Or Spec
 

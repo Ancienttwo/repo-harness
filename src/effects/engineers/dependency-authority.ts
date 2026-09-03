@@ -322,6 +322,9 @@ export const OBSERVATION_PATH_RULE_COVERAGE: Readonly<Record<AcceptanceValidator
   waiver_grant_fingerprint: 'record_time',
   waiver_binding_symmetry: 'record_time',
   disposition_policy: 'record_time',
+  // A rule that throws at record time aborts the record path before any
+  // receipt or observation is written, so an observation cannot exist for one.
+  validator_threw: 'record_time',
 });
 
 const PASSING_ACCEPTANCE_DISPOSITIONS: readonly AcceptanceDisposition[] = Object.freeze(['external_pass', 'user_waiver']);
