@@ -284,6 +284,13 @@
   runtime evidence, because it is the only proof binding old/new sprint bytes,
   old/new Work Graph bytes, and the target commit.
 
+- **The completion journal covers the sprint bytes only.** The lease plane (owner
+  record, claim token) is not journalled. A throw after `removeLease` and before
+  `removeClaimToken` leaves the lease released with the token present; the row
+  still reads pending and `sprint reconcile` resolves the residue. Accepted
+  deliberately: the lease plane owns its own recovery, and this residue is
+  strictly weaker than the published-`[x]` defect the journal exists to prevent.
+
 ## Deviations From Plan Or Spec
 
 - **Row shape.** The issue *recommends* `| ID | Task | Mode | Acceptance | Status |`.
