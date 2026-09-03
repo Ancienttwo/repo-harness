@@ -1,6 +1,6 @@
 # Task Contract: issue-282-automation-budget
 
-> **Status**: Partial
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260903-0437-issue-282-automation-budget.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
