@@ -1,0 +1,58 @@
+schemaVersion: archcontext.flow/v1
+id: flow.automation-controller.acquire-dispatch
+capabilityId: capability.runtime-harness.automation-budget
+name: Acquire and dispatch one Work Package under exact budget and authority fences
+applicability: required
+participants:
+  - id: controller
+    nodeId: capability.runtime-harness.automation-budget
+  - id: journal
+    nodeId: component.automation-controller.journal
+steps:
+  - id: persist-boundary
+    from: controller
+    to: journal
+    label: Persist the exact current state and budget reservation before acquisition or dispatch
+    evidence:
+      entrypointId: entrypoint.automation-controller.step
+      sourceSymbol: stepAutomationController
+      sinkId: sink.automation-controller.journal
+outcomes:
+  - id: acquired-and-dispatched
+    kind: success
+    label: The canonical acquire-next seam returns a WorkEnvelope and the fenced delegated-run effect reports completion
+    steps:
+      - id: acquire-next
+        from: controller
+        to: journal
+        label: Consume the first canonical Engineer offer and record its exact WorkEnvelope identity
+        evidence:
+          entrypointId: entrypoint.automation-controller.step
+          sourceSymbol: stepAutomationController
+          sinkId: sink.automation-controller.acquire
+      - id: dispatch-existing-effect
+        from: controller
+        to: journal
+        label: Dispatch the already-admitted run through the single fenced effect and persist its observation
+        evidence:
+          entrypointId: entrypoint.automation-controller.step
+          sourceSymbol: stepAutomationController
+          sinkId: sink.automation-controller.dispatch
+    terminal:
+      participant: controller
+      label: Return to observing only after durable outcome evidence and one budget charge
+  - id: ambiguous
+    kind: error
+    label: A crash or stale authority makes the side effect ambiguous
+    steps:
+      - id: require-reconciliation
+        from: controller
+        to: journal
+        label: Persist reconciliation_required and prevent another acquisition or dispatch
+        evidence:
+          entrypointId: entrypoint.automation-controller.step
+          sourceSymbol: stepAutomationController
+          sinkId: sink.automation-controller.journal
+    terminal:
+      participant: controller
+      label: Stop with operator attention while Task and Lease authority remain unchanged

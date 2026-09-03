@@ -1,0 +1,7 @@
+schemaVersion: archcontext.node/v2
+id: component.automation-controller.journal
+kind: component
+name: Automation Controller Journal
+status: active
+parent: capability.runtime-harness.automation-budget
+summary: Serializes one bounded controller per Engineer and persists an append-only, crash-recoverable state and receipt chain under the Git common directory.
