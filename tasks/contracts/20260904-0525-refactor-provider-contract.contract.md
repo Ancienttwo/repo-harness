@@ -80,7 +80,7 @@ allowed_paths:
   - docs/spec.md
   - docs/researches/20260902-restructure.md
   - docs/verification/axr5-archctx-clean-room-readback.json
-  - docs/architecture/.projection-manifest.json
+  - docs/architecture/
   - plans/prds/20260903-0435-archctx-backed-refactor-mode.prd.md
   - package.json
   - bun.lock

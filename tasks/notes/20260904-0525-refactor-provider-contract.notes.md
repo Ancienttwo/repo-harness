@@ -36,6 +36,7 @@
 - Packaged readback: `docs/verification/axr5-archctx-clean-room-readback.json`
 
 > **Substantive Change SHA256**: `sha256:4beb947927ece5163f6f8202c38958c20af83150c7e749a98320304c359faec6`
+> **Substantive Change SHA256**: `sha256:0a1b37f4580148e634d2d76d85630bf6373273622adb890cba15cf49d2d37c57`
 
 ## Promotion Filter
 
