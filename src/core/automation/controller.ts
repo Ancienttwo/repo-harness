@@ -61,6 +61,7 @@ export interface AutomationControllerRunV1 {
   readonly principal: AutomationControllerPrincipalV1;
   readonly budget_sha256: string;
   readonly policy: AutomationControllerPolicyV1;
+  readonly protected_paths: readonly string[];
   readonly created_at: string;
   readonly run_sha256: string;
 }
@@ -149,12 +150,14 @@ function policy(value: unknown): AutomationControllerPolicyV1 {
 }
 
 export function buildAutomationControllerRun(input: Omit<AutomationControllerRunV1, 'protocol' | 'kind' | 'run_sha256'>): AutomationControllerRunV1 {
-  const basis = Object.freeze({ protocol: AUTOMATION_CONTROLLER_PROTOCOL, kind: AUTOMATION_CONTROLLER_RUN_KIND, run_id: string(input.run_id, 'run_id', RUN_ID), repository_id: string(input.repository_id, 'repository_id', REPOSITORY_ID), principal: principal(input.principal), budget_sha256: sha(input.budget_sha256, 'budget_sha256'), policy: policy(input.policy), created_at: timestamp(input.created_at, 'created_at') });
+  if (!Array.isArray(input.protected_paths) || input.protected_paths.length === 0 || input.protected_paths.length > 128) invalid('protected_paths must be a non-empty bounded array');
+  const protectedPaths = Object.freeze(input.protected_paths.map((value, index) => { const path = string(value, `protected_paths[${index}]`, undefined, 2048); if (path.startsWith('/') || path.startsWith('-') || path.includes('\\') || path.split('/').some((part) => part === '' || part === '.' || part === '..')) invalid(`protected_paths[${index}] is unsafe`); return path; }));
+  const basis = Object.freeze({ protocol: AUTOMATION_CONTROLLER_PROTOCOL, kind: AUTOMATION_CONTROLLER_RUN_KIND, run_id: string(input.run_id, 'run_id', RUN_ID), repository_id: string(input.repository_id, 'repository_id', REPOSITORY_ID), principal: principal(input.principal), budget_sha256: sha(input.budget_sha256, 'budget_sha256'), policy: policy(input.policy), protected_paths: protectedPaths, created_at: timestamp(input.created_at, 'created_at') });
   return Object.freeze({ ...basis, run_sha256: canonicalMessageDigest(basis) });
 }
 
 export function validateAutomationControllerRun(value: unknown): AutomationControllerRunV1 {
-  const row = object(value, 'controller run'); exact(row, ['protocol', 'kind', 'run_id', 'repository_id', 'principal', 'budget_sha256', 'policy', 'created_at', 'run_sha256'], 'controller run');
+  const row = object(value, 'controller run'); exact(row, ['protocol', 'kind', 'run_id', 'repository_id', 'principal', 'budget_sha256', 'policy', 'protected_paths', 'created_at', 'run_sha256'], 'controller run');
   if (row.protocol !== AUTOMATION_CONTROLLER_PROTOCOL || row.kind !== AUTOMATION_CONTROLLER_RUN_KIND) invalid('controller run protocol or kind is invalid');
   const built = buildAutomationControllerRun(row as unknown as Omit<AutomationControllerRunV1, 'protocol' | 'kind' | 'run_sha256'>);
   if (row.run_sha256 !== built.run_sha256 || canonicalMessageBytes(row) !== canonicalMessageBytes(built as unknown as Record<string, unknown>)) invalid('controller run digest is stale'); return built;
@@ -165,7 +168,7 @@ const TRANSITIONS: Readonly<Record<AutomationControllerState | 'absent', Readonl
   created: Object.freeze({ observe: 'observing', request_stop: 'stopping', require_reconciliation: 'reconciliation_required' }),
   observing: Object.freeze({ begin_acquire: 'acquiring', no_offer: 'completed', block: 'blocked', exhaust_budget: 'budget_exhausted', request_stop: 'stopping', require_reconciliation: 'reconciliation_required' }),
   acquiring: Object.freeze({ acquired: 'executing', retry_wait: 'observing', block: 'blocked', exhaust_budget: 'budget_exhausted', request_stop: 'stopping', require_reconciliation: 'reconciliation_required' }),
-  executing: Object.freeze({ begin_dispatch: 'executing', dispatch_started: 'waiting_for_evidence', request_stop: 'stopping', require_reconciliation: 'reconciliation_required' }),
+  executing: Object.freeze({ begin_dispatch: 'executing', dispatch_started: 'waiting_for_evidence', exhaust_budget: 'budget_exhausted', request_stop: 'stopping', require_reconciliation: 'reconciliation_required' }),
   waiting_for_evidence: Object.freeze({ outcome_observed: 'observing', retry_wait: 'observing', complete: 'completed', block: 'blocked', exhaust_budget: 'budget_exhausted', request_stop: 'stopping', require_reconciliation: 'reconciliation_required' }),
   stopping: Object.freeze({ stop: 'stopped', require_reconciliation: 'reconciliation_required' }),
   blocked: Object.freeze({}), budget_exhausted: Object.freeze({}), completed: Object.freeze({}), stopped: Object.freeze({}), reconciliation_required: Object.freeze({}),

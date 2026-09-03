@@ -30,6 +30,7 @@ function run() {
       initial_backoff_ms: 500,
       maximum_backoff_ms: 8_000,
     },
+    protected_paths: ['plans', 'tasks'],
     created_at: '2026-09-04T00:00:00.000Z',
   });
 }

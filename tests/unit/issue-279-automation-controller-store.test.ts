@@ -20,6 +20,7 @@ function definition(runId = `sha256:${'b'.repeat(64)}`) {
     principal: { authorization_id: 'authorization-1', engineer_id: 'engineer:capability.runtime-harness.automation', binding_id: '11111111-1111-4111-8111-111111111111', binding_generation: 1, engineer_contract_revision: SHA, authorization_revision: 1 },
     budget_sha256: SHA,
     policy: { maximum_steps_per_invocation: 4, maximum_duration_ms: 10_000, maximum_transient_retries: 2, initial_backoff_ms: 100, maximum_backoff_ms: 1_000 },
+    protected_paths: ['plans', 'tasks'],
     created_at: '2026-09-04T00:00:00.000Z',
   });
 }

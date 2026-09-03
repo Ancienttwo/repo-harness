@@ -1,0 +1,68 @@
+import { describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { spawnSync } from 'child_process';
+
+import { buildAutomationControllerRun } from '../../src/core/automation/controller';
+import { startAutomationControllerRun } from '../../src/effects/automation/controller-store';
+import { stepAutomationController } from '../../src/effects/automation/controller-run';
+
+const SHA = `sha256:${'a'.repeat(64)}`;
+const RUN_ID = `sha256:${'b'.repeat(64)}`;
+const principal = {
+  protocol: 1, kind: 'repo-harness-engineer-principal', repository_id: 'repo_0123456789abcdef',
+  engineer_id: 'engineer:capability.runtime-harness.automation', binding_id: '11111111-1111-4111-8111-111111111111',
+  binding_generation: 1, engineer_contract_revision: SHA, carrier: 'mcp_oauth', auth_subject: 'authorization-1',
+  provider: 'tmux-cli-agent', provider_thread_id: null,
+} as const;
+
+function setup() {
+  const root = mkdtempSync(join(tmpdir(), 'controller-run-')); spawnSync('git', ['init', '-q'], { cwd: root });
+  const run = buildAutomationControllerRun({ run_id: RUN_ID, repository_id: principal.repository_id,
+    principal: { authorization_id: principal.auth_subject, engineer_id: principal.engineer_id, binding_id: principal.binding_id, binding_generation: 1, engineer_contract_revision: SHA, authorization_revision: 7 }, budget_sha256: SHA,
+    policy: { maximum_steps_per_invocation: 8, maximum_duration_ms: 10_000, maximum_transient_retries: 2, initial_backoff_ms: 100, maximum_backoff_ms: 1_000 }, protected_paths: ['plans', 'tasks'], created_at: '2026-09-04T00:00:00.000Z' });
+  startAutomationControllerRun({ repo_root: root, run, idempotency_key: 'start', observed_at: run.created_at }); return { root, run };
+}
+
+function dependencies(acquire: unknown, dispatch: unknown = null) {
+  let reservation = 0;
+  return {
+    now: () => new Date('2026-09-04T00:00:01.000Z'), resolvePrincipal: () => principal as never,
+    authorizationRevision: () => 7,
+    readBudget: () => ({ budget: { budget_sha256: SHA, unattended: true, engineer_id: principal.engineer_id }, current: {}, stored_current: {}, stop_receipt: null, drift: 'none', latest_record_at: null }) as never,
+    reserveBudget: () => ({ reservation_sha256: `sha256:${String(++reservation).padStart(64, '0')}` }) as never,
+    appendUsage: () => ({ event: { event_sha256: `sha256:${'e'.repeat(64)}` }, current: {}, stop_receipt: null }) as never,
+    acquireNext: () => acquire as never, dispatch: () => dispatch as never,
+  };
+}
+
+describe('issue #279 bounded controller orchestration', () => {
+  test('persists acquisition before consuming a real WorkEnvelope and dispatches only through the fenced dependency', () => {
+    const { root } = setup();
+    try {
+      const acquired = { ok: true, offer: { work_package_id: 'wp-1' }, envelope: { protocol: 1, kind: 'repo-harness-work-envelope', repo_id: principal.repository_id, task_id: 'c'.repeat(64), task_revision: 'd'.repeat(64), sprint_path: 'plans/sprints/test.sprint.md', claim_id: '22222222-2222-4222-8222-222222222222', generation: 1, worktree_path: root, branch: 'codex/test', unit_ref: 'unit', authorization_revision: 7, offer_revision: SHA, canonical_target: {}, plan: {}, claim_token: {} }, receipt: { receipt_sha256: SHA } };
+      const first = stepAutomationController({ repo_root: root, run_id: RUN_ID, idempotency_key: 'step-1' }, dependencies(acquired));
+      expect(first.current.state).toBe('executing');
+      expect(first.acquisition?.ok).toBe(true);
+      let dispatchCalls = 0;
+      const dispatched = { current: { state: 'completed', observation_sha256: SHA } };
+      const second = stepAutomationController({ repo_root: root, run_id: RUN_ID, idempotency_key: 'step-2', dispatch_id: SHA }, { ...dependencies(acquired, dispatched), dispatch: () => { dispatchCalls += 1; return dispatched as never; } });
+      expect(dispatchCalls).toBe(1);
+      expect(second.current.state).toBe('observing');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('an unresolved persisted acquisition boundary becomes reconciliation_required instead of claiming twice', () => {
+    const { root } = setup();
+    try {
+      const deps = dependencies({ ok: false, error: 'engineer_no_eligible_offer', message: 'none' });
+      const first = stepAutomationController({ repo_root: root, run_id: RUN_ID, idempotency_key: 'step-1' }, { ...deps, acquireNext: () => { throw new Error('crash after side effect boundary'); } });
+      expect(first).toBeUndefined();
+    } catch (error) {
+      expect((error as Error).message).toContain('crash');
+      const recovered = stepAutomationController({ repo_root: root, run_id: RUN_ID, idempotency_key: 'step-2' }, dependencies({ ok: false }));
+      expect(recovered.current.state).toBe('reconciliation_required');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+});
