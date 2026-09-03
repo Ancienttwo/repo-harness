@@ -1,5 +1,7 @@
 # Implementation Notes: issue-281-task-offer-wake
 
+> **Substantive Change SHA256**: `sha256:b2c1a5719c0030e40d6c261b37617cd6e8fa5ff8168894c63291428cfbc27a12`
+
 > **Substantive Change SHA256**: `sha256:a82b0fab8f64172b34b96a0bf75697bf6411a16a74aee7920db3ff7c6899787b`
 
 > **Status**: Active
