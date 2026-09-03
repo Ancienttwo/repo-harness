@@ -191,16 +191,17 @@ extract_next_pending_from_sprint() {
       gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
       return s
     }
+    !in_section && /^>[[:space:]]*\*\*Backlog Schema\*\*:[[:space:]]*2[[:space:]]*$/ { off = 1; next }
     /^## Backlog[[:space:]]*$/ { in_section = 1; next }
     in_section && /^## / { exit }
     !in_section { next }
     /^\|[[:space:]]*[0-9]+[[:space:]]*\|/ {
       idx = trim($2)
-      status = trim($3)
-      task = trim($4)
-      mode = trim($5)
-      acceptance = trim($6)
-      plan = trim($7)
+      status = trim($(3 + off))
+      task = trim($(4 + off))
+      mode = trim($(5 + off))
+      acceptance = trim($(6 + off))
+      plan = trim($(7 + off))
       if (status == "[ ]") {
         printf "index: %s\ntask: %s\nmode: %s\nacceptance: %s\nplan: %s\n", idx, task, mode, acceptance, plan
         exit

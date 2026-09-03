@@ -270,6 +270,33 @@ function git(cwd: string, args: readonly string[]): string {
 }
 
 /**
+ * Read one repo-relative file at one already-resolved commit, or `null` when
+ * the commit does not carry it.
+ *
+ * `readCanonicalSprint` resolves the ref and returns the sprint; a caller that
+ * must also compare a *sibling* of that sprint -- the Work Graph carrier -- has
+ * to read it at the same commit, not from the working tree, or it would bind a
+ * receipt to bytes the commit never had.
+ */
+export function readCanonicalFileAtCommit(
+  cwd: string,
+  commit: string,
+  repoRelativePath: string,
+): string | null {
+  if (unsafeSprintPath(repoRelativePath)) {
+    throw new Error(`unsafe canonical path: ${JSON.stringify(repoRelativePath)}`);
+  }
+  if (!/^[0-9a-f]{40,64}$/.test(commit)) {
+    throw new Error(`unsafe canonical commit: ${JSON.stringify(commit)}`);
+  }
+  try {
+    return git(cwd, ['show', `${commit}:${repoRelativePath}`]);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Read one sprint file at one commit. The ref is resolved to a commit first,
  * so the returned bytes and the returned SHA are the same observation and a
  * caller re-reading after its write can tell a moved ref from a moved file.

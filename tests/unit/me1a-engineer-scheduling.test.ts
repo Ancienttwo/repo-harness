@@ -10,6 +10,7 @@ import {
   collectEngineerOffers,
   type EngineerSchedulingDependencies,
 } from '../../src/effects/engineers/scheduling';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const REPO = 'repo_0123456789abcdef';
 const CAPABILITY = 'capability.workflow-engine.contract-assets';
@@ -21,13 +22,14 @@ const POLICY_BYTES = '{"policy":1}\n';
 const ROLLBACK_A = '{"rollback":"a"}\n';
 const ROLLBACK_B = '{"rollback":"b"}\n';
 const SPRINT_TEXT = `# Sprint: demo
+> **Backlog Schema**: 2
 
 ## Backlog
 
-| # | Status | Task | Mode | Acceptance | Plan |
-|---|---|---|---|---|---|
-| 1 | [x] | task A | contract | accepted A | (pending) |
-| 2 | [ ] | task B | contract | accepted B | (pending) |
+| # | ID | Status | Task | Mode | Acceptance | Plan |
+|---|----|---|---|---|---|---|
+| 1 | ${fixtureTaskId('task A')} | [x] | task A | contract | accepted A | (pending) |
+| 2 | ${fixtureTaskId('task B')} | [ ] | task B | contract | accepted B | (pending) |
 
 ## Execution Log
 `;
@@ -35,7 +37,7 @@ const SPRINT_TEXT = `# Sprint: demo
 function definition(id: string, taskRef: string, dependencies: unknown[] = []) {
   return {
     work_package_id: id,
-    task_ref: taskRef,
+    task_id: fixtureTaskId(taskRef),
     primary_capability: CAPABILITY,
     depends_on: dependencies,
     priority: id === 'wp-b' ? 90 : 10,

@@ -232,6 +232,117 @@ emit_backlog_lock_wait() {
   coordination_wait_emit "{\"protocol\":1,\"kind\":\"backlog_lock_wait\",\"at\":\"$(json_escape "$(date '+%Y-%m-%dT%H:%M:%S%z')")\",\"verb\":\"$(json_escape "$verb")\",\"ms\":$((ended_ms - started_ms)),\"attempts\":${attempts},\"reclaimed_stale\":${reclaimed_stale},\"outcome\":\"$(json_escape "$outcome")\"}" || true
 }
 
+# kill(pid, 0) with the TS ESRCH discrimination: exit 0 is alive, and the
+# "No such process" error is the one failure that proves death. Any other
+# failure (EPERM from a privileged or foreign owner, a probe that could not
+# run) counts as alive so the lock is never stolen from a holder that may
+# still exist. LC_ALL=C pins the strerror text against localized environments.
+backlog_owner_dead() {
+  local pid="$1" probe
+  if kill -0 "$pid" 2>/dev/null; then
+    return 1
+  fi
+  probe="$(LC_ALL=C kill -0 "$pid" 2>&1 || true)"
+  case "$probe" in
+    *"No such process"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Mirror of the single-owner path in reclaimStaleLockDirectory
+# (src/effects/locking/exclusive-directory-lock.ts): a TypeScript holder takes
+# this same lock by creating `<pid>-<created_ms>-<uuid>.json` inside the lock
+# directory, so a holder that crashes after publication leaves a non-empty
+# directory the plain empty-dir reclaim below can never remove. Every
+# ambiguous input fails closed: only an exactly identified dead owner is
+# reclaimed, and this never hot-loops because a failed verdict falls through
+# to the ordinary attempts counter.
+try_reclaim_dead_owner_backlog_lock() {
+  local lock_dir="$1"
+  local entry_path entry_name entry_pid="" entry_token=""
+  local owner_pid="" owner_token="" owner_mtime=""
+
+  # Exactly one entry, like the TS readdirSync().length === 1 gate.
+  [[ "$(find "$lock_dir" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' ')" == "1" ]] || return 1
+  entry_path="$(find "$lock_dir" -mindepth 1 -maxdepth 1 2>/dev/null | head -n 1)"
+  entry_name="${entry_path##*/}"
+  # Filename shape is the TS ownerTokenFromFileName regex; the hex class is
+  # widened for its case-insensitive flag, and the dot is written `[.]`
+  # because bash 3.2 `[[ =~ ]]` does not reliably preserve an unquoted `\.`.
+  if [[ "$entry_name" =~ ^([1-9][0-9]*)-[0-9]+-[0-9a-fA-F-]{36}[.]json$ ]]; then
+    entry_pid="${BASH_REMATCH[1]}"
+    entry_token="${entry_name%.json}"
+  fi
+  [[ -n "$entry_token" ]] || return 1
+  [[ ! -L "$entry_path" && -f "$entry_path" ]] || return 1
+
+  # Owner content is exactly what the TS holder writes:
+  # JSON.stringify({ pid, created_at, token }) + '\n' — one content line of
+  # `{"pid":N,"created_at":N,"token":"..."}` with no spaces, fixed key order,
+  # and only trailing blank lines after it. The whole line must match that
+  # serialization shape before its fields are trusted; anything else (leading
+  # or trailing garbage, extra non-blank lines, missing or reshaped fields)
+  # mirrors the TS JSON.parse catch path and falls into the age gate below
+  # instead of the immediate dead-owner reclaim.
+  local owner_line="" scan_line="" owner_shape_ok=false
+  # JSON whitespace minus the newline that `read` already strips: JSON.parse
+  # skips only [ \t\n\r], so a trailing `\f`/`\v`-only line is malformed
+  # content that must fall into the age-gated fallback, not the main path.
+  local json_ws=$' \t\r'
+  if [[ -r "$entry_path" ]] && exec 3< "$entry_path"; then
+    # A final line without its newline still carries content (read reports
+    # EOF but fills the variable), and JSON.parse would accept it.
+    if IFS= read -r owner_line <&3 || [[ -n "$owner_line" ]]; then
+      if [[ -n "$owner_line" ]]; then
+        owner_shape_ok=true
+        # Trailing blank lines carry only the JSON whitespace that JSON.parse
+        # skips (read already stripped the newline); a `\f`/`\v`-only line,
+        # like any second non-blank line, is malformed content and rejects
+        # the main path into the fallback.
+        while IFS= read -r scan_line <&3 || [[ -n "$scan_line" ]]; do
+          if [[ -n "${scan_line//[$json_ws]/}" ]]; then
+            owner_shape_ok=false
+            break
+          fi
+        done
+      fi
+    fi
+    exec 3<&-
+  fi
+  if $owner_shape_ok; then
+    # The pattern lives in a variable: that is the bash 3.2-safe `[[ =~ ]]`
+    # form for a fixed ERE with braces.
+    local owner_re='^\{"pid":([1-9][0-9]*),"created_at":[0-9]+,"token":"([0-9A-Za-z-]+)"\}$'
+    if [[ "$owner_line" =~ $owner_re ]]; then
+      owner_pid="${BASH_REMATCH[1]}"
+      owner_token="${BASH_REMATCH[2]}"
+    else
+      owner_shape_ok=false
+    fi
+  fi
+  if $owner_shape_ok; then
+    [[ "$owner_pid" == "$entry_pid" && "$owner_token" == "$entry_token" ]] || return 1
+  else
+    # Unparseable owner JSON mirrors the TS catch path: the file must be older
+    # than the TS LOCK_STALE_MS (30s) and the filename pid dead.
+    owner_mtime="$(stat -f %m "$entry_path" 2>/dev/null || true)"
+    if [[ ! "$owner_mtime" =~ ^[0-9]+$ ]]; then
+      owner_mtime="$(stat -c %Y "$entry_path" 2>/dev/null || true)"
+    fi
+    [[ "$owner_mtime" =~ ^[0-9]+$ ]] || return 1
+    [[ $(( $(date +%s) - owner_mtime )) -gt 30 ]] || return 1
+  fi
+
+  backlog_owner_dead "$entry_pid" || return 1
+
+  # unlink then rmdir, both or nothing: rmdir is the publication fence, so a
+  # creator racing in after the unlink makes rmdir fail and the verdict stays
+  # "not reclaimed" instead of stealing a freshly published lock.
+  rm -f "$entry_path" 2>/dev/null || return 1
+  rmdir "$lock_dir" 2>/dev/null || return 1
+  return 0
+}
+
 acquire_backlog_lock() {
   local verb="${1:-unknown}"
   local attempts=0
@@ -264,6 +375,13 @@ acquire_backlog_lock() {
       reclaimed_stale=true
       continue
     fi
+    # No directory-age gate on the owner path: an owner-verified dead holder is
+    # reclaimable the moment it died, exactly like the TS mirror.
+    if try_reclaim_dead_owner_backlog_lock "$BACKLOG_LOCK_DIR"; then
+      echo "sprint-backlog: reclaiming stale backlog lock: $BACKLOG_LOCK_DIR" >&2
+      reclaimed_stale=true
+      continue
+    fi
     attempts=$((attempts + 1))
     if [[ "$attempts" -ge "$max_attempts" ]]; then
       echo "sprint-backlog: timed out acquiring backlog lock: $BACKLOG_LOCK_DIR" >&2
@@ -280,21 +398,80 @@ acquire_backlog_lock() {
   emit_backlog_lock_wait "$verb" "$started_ms" "$attempts" "$reclaimed_stale" acquired
 }
 
-# Backlog rows live between '## Backlog' and the next '## ' heading:
-# | 1 | [ ] | task-slug | contract | acceptance | plan |
-# Output: index<TAB>status<TAB>task<TAB>mode<TAB>acceptance<TAB>plan
+# Backlog rows live between '## Backlog' and the next '## ' heading. The row
+# shape depends on the schema declared in the sprint header:
+#
+#   schema 1 (no '> **Backlog Schema**:' marker):
+#     | 1 | [ ] | task-slug | contract | acceptance | plan |
+#   schema 2 ('> **Backlog Schema**: 2'):
+#     | 1 | <64-hex id> | [ ] | task-slug | contract | acceptance | plan |
+#
+# Output is one fixed shape for both, so every existing field reference keeps
+# its position and the persisted id is appended last:
+#   index<TAB>status<TAB>task<TAB>mode<TAB>acceptance<TAB>plan<TAB>id
+# The id field is empty on schema 1, where the column does not exist. The marker
+# is only honoured before '## Backlog'; src/core/state/sprint-backlog-rows.ts
+# reads it the same way and tests/sprint-backlog-grammar-drift.test.ts binds the
+# two together.
 backlog_rows() {
   local file="$1"
   awk -F '|' '
+    !in_section && /^>[[:space:]]*\*\*Backlog Schema\*\*:/ {
+      declared = $0
+      sub(/^>[[:space:]]*\*\*Backlog Schema\*\*:[[:space:]]*/, "", declared)
+      gsub(/[[:space:]]+$/, "", declared)
+      declarations++
+      if (declarations > 1) {
+        printf "sprint-backlog: backlog schema is declared %d times; exactly one declaration is allowed\n", declarations > "/dev/stderr"
+        exit 1
+      }
+      if (declared == "2") {
+        schema = 2
+      } else {
+        printf "sprint-backlog: unsupported backlog schema: %s\n", declared > "/dev/stderr"
+        exit 1
+      }
+      next
+    }
     /^## Backlog[[:space:]]*$/ { in_section = 1; next }
     in_section && /^## / { exit }
     !in_section { next }
     /^\|[[:space:]]*[0-9]+[[:space:]]*\|/ {
-      for (i = 2; i <= 7; i++) {
+      last = (schema == 2) ? 8 : 7
+      for (i = 2; i <= last; i++) {
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", $i)
       }
-      printf "%s\t%s\t%s\t%s\t%s\t%s\n", $2, $3, $4, $5, $6, $7
+      if (schema == 2) {
+        printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", $2, $4, $5, $6, $7, $8, $3
+      } else {
+        printf "%s\t%s\t%s\t%s\t%s\t%s\t\n", $2, $3, $4, $5, $6, $7
+      }
     }
+  ' "$file"
+}
+
+# The declared backlog schema of one sprint file: 1 or 2. Fails closed on any
+# other declared value, matching sprintBacklogSchema() in TypeScript.
+backlog_schema() {
+  local file="$1"
+  awk '
+    /^## Backlog[[:space:]]*$/ { exit }
+    /^>[[:space:]]*\*\*Backlog Schema\*\*:/ {
+      declared = $0
+      sub(/^>[[:space:]]*\*\*Backlog Schema\*\*:[[:space:]]*/, "", declared)
+      gsub(/[[:space:]]+$/, "", declared)
+      declarations++
+      if (declarations > 1) {
+        printf "sprint-backlog: backlog schema is declared %d times; exactly one declaration is allowed\n", declarations > "/dev/stderr"
+        bad = 1
+        exit 1
+      }
+      if (declared == "2") { found = 2; next }
+      printf "sprint-backlog: unsupported backlog schema: %s\n", declared > "/dev/stderr"
+      bad = 1
+      exit 1
+    }
+    END { if (!bad) print (found == 2) ? 2 : 1 }
   ' "$file"
 }
 
@@ -310,6 +487,21 @@ backlog_counts() {
 next_pending_row() {
   local file="$1"
   backlog_rows "$file" | awk -F '\t' '$2 == "[ ]" { print; exit }'
+}
+
+# Mint one persisted task id: 32 random bytes rendered as lowercase hex. A task
+# id is never derived from the Task text, the slug, or the row index -- deriving
+# it from any of those is exactly the identity coupling schema 2 removes. Random
+# also keeps ids unique across sprints, which matters because the coordination
+# lease directory is keyed by task id alone.
+mint_task_id() {
+  local id
+  id="$(od -An -tx1 -N32 /dev/urandom | tr -d ' \n')"
+  if [[ ! "$id" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "sprint-backlog: could not mint a task id from /dev/urandom" >&2
+    exit 1
+  fi
+  printf '%s' "$id"
 }
 
 render_sprint_file() {
@@ -329,6 +521,7 @@ render_sprint_file() {
 > **Updated**: {{TIMESTAMP}}
 > **Source PRD**: (optional) `plans/prds/<prd>.prd.md`
 > **Source Spec**: `docs/spec.md`
+> **Backlog Schema**: 2
 > **Goal Mode**: incremental
 
 Program-level sprint container. The Source PRD summary and ordered backlog
@@ -381,9 +574,14 @@ Ordered execution queue; keep rows in dependency order. Mode `contract` runs
 the full plan -> contract -> worktree flow; `inline` allows primary-tree
 execution for small tasks. Every row needs a concrete acceptance line.
 
-| # | Status | Task | Mode | Acceptance | Plan |
-|---|--------|------|------|------------|------|
-| 1 | [ ] | {{SPRINT_SLUG}}-task-1 | contract | Replace with a machine-checkable acceptance line | (pending) |
+The `ID` cell is the persisted, immutable task identity (64 lowercase hex
+characters). It is minted once when the row is created and must never be edited,
+copied between rows, or regenerated: editing the Task text is a rename, not a new
+task.
+
+| # | ID | Status | Task | Mode | Acceptance | Plan |
+|---|----|--------|------|------|------------|------|
+| 1 | {{TASK_ID_1}} | [ ] | {{SPRINT_SLUG}}-task-1 | contract | Replace with a machine-checkable acceptance line | (pending) |
 
 ## Execution Log
 
@@ -398,9 +596,10 @@ SPRINT_TEMPLATE_EOF
   # strings treat |, &, \ and newlines as metacharacters, so free-text titles
   # must never reach them. Render to a temp file so a failure cannot leave a
   # half-written sprint file behind.
-  local tmp_file
+  local tmp_file task_id_1
   tmp_file="$(mktemp)"
-  if ! SPRINT_SLUG="$slug" SPRINT_TITLE="$title" SPRINT_TS="$timestamp" awk '
+  task_id_1="$(mint_task_id)"
+  if ! SPRINT_SLUG="$slug" SPRINT_TITLE="$title" SPRINT_TS="$timestamp" TASK_ID_1="$task_id_1" awk '
     function replace_all(line, ph, val,    out, i) {
       out = ""
       while ((i = index(line, ph)) > 0) {
@@ -414,6 +613,7 @@ SPRINT_TEMPLATE_EOF
       line = replace_all(line, "{{SPRINT_SLUG}}", ENVIRON["SPRINT_SLUG"])
       line = replace_all(line, "{{SPRINT_TITLE}}", ENVIRON["SPRINT_TITLE"])
       line = replace_all(line, "{{TIMESTAMP}}", ENVIRON["SPRINT_TS"])
+      line = replace_all(line, "{{TASK_ID_1}}", ENVIRON["TASK_ID_1"])
       print line
     }
   ' "$template_file" > "$tmp_file"; then
@@ -557,103 +757,50 @@ cmd_complete_task() {
 
   [[ -n "$task_ref" ]] || { echo "sprint-backlog: complete-task requires --task" >&2; usage >&2; exit 2; }
 
-  local sprint_file target_row target_index target_status target_task target_plan plan_cell match_count
+  local sprint_file plan_cell output
   sprint_file="$(require_active_sprint)"
-  acquire_backlog_lock complete-task
 
-  # task_ref travels via ENVIRON (awk -v reprocesses backslash escapes).
-  match_count="$(backlog_rows "$sprint_file" | TASK_REF="$task_ref" awk -F '\t' '$1 == ENVIRON["TASK_REF"] || $3 == ENVIRON["TASK_REF"] { count++ } END { print count + 0 }')"
-  if [[ "$match_count" -eq 0 ]]; then
-    echo "sprint-backlog: no backlog row matches task '$task_ref' in $sprint_file" >&2
-    exit 1
-  fi
-  if [[ "$match_count" -gt 1 ]]; then
-    echo "sprint-backlog: task reference '$task_ref' is ambiguous (${match_count} backlog rows match); fix duplicate indices or task names first" >&2
-    exit 1
-  fi
-
-  target_row="$(backlog_rows "$sprint_file" | TASK_REF="$task_ref" awk -F '\t' '$1 == ENVIRON["TASK_REF"] || $3 == ENVIRON["TASK_REF"] { print; exit }')"
-
-  target_index="$(printf '%s' "$target_row" | cut -f1)"
-  target_status="$(printf '%s' "$target_row" | cut -f2)"
-  target_task="$(printf '%s' "$target_row" | cut -f3)"
-  target_plan="$(printf '%s' "$target_row" | cut -f6)"
-
-  if [[ "$target_status" != "[ ]" ]]; then
-    echo "sprint-backlog: backlog task '$target_task' (row $target_index) is already complete" >&2
-    exit 1
-  fi
-
-  # Before the rewrite, never after: flipping the row to [x] is the step that
-  # publishes "this task is done", so it is the step the shared lease has to
-  # gate. Inside the backlog lock the caller already holds.
-  assert_completion_lease_gate "$sprint_file" "$target_task"
-
-  plan_cell="$target_plan"
+  plan_cell=""
   if [[ -n "$plan_file" ]]; then
     plan_cell="\`${plan_file}\`"
   fi
 
-  local timestamp tmp_file
-  timestamp="$(date '+%Y-%m-%d %H:%M')"
-  tmp_file="$(mktemp)"
-  # plan_cell and target_task travel via ENVIRON: awk -v reprocesses C
-  # escapes, so a backslash in either would split or mismatch the table row.
-  # The rewrite matches index AND task so a duplicate index can never flip a
-  # different row than the one resolved above.
-  if ! PLAN_CELL="$plan_cell" TARGET_TASK="$target_task" awk -F '|' -v target="$target_index" -v ts="$timestamp" '
-    BEGIN { in_section = 0; rewritten = 0 }
-    /^> \*\*Updated\*\*:/ {
-      print "> **Updated**: " ts
-      next
-    }
-    /^## Backlog[[:space:]]*$/ { in_section = 1; print; next }
-    in_section && /^## / { in_section = 0 }
-    {
-      if (in_section && !rewritten && $0 ~ /^\|[[:space:]]*[0-9]+[[:space:]]*\|/) {
-        idx = $2; task = $4; mode = $5; acceptance = $6
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", idx)
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", task)
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", mode)
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", acceptance)
-        if (idx == target && task == ENVIRON["TARGET_TASK"]) {
-          printf "| %s | [x] | %s | %s | %s | %s |\n", idx, task, mode, acceptance, ENVIRON["PLAN_CELL"]
-          rewritten = 1
-          next
-        }
-      }
-      print
-    }
-    END { exit rewritten ? 0 : 1 }
-  ' "$sprint_file" > "$tmp_file"; then
-    rm -f "$tmp_file"
-    echo "sprint-backlog: failed to rewrite backlog row (row not rewritten; check the table for malformed cells)" >&2
+  # One call, one transaction. The verb takes the backlog lock itself, so this
+  # helper must not hold it: the lock is a directory mutex, not a reentrant one.
+  local -a complete_args
+  complete_args=(complete-row
+    --sprint "$sprint_file"
+    --task "$task_ref"
+    --target-ref "$(coordination_target_ref)")
+  [[ -z "$plan_cell" ]] || complete_args+=(--plan-cell "$plan_cell")
+  [[ "$defer_lease_release" -eq 0 ]] || complete_args+=(--defer-lease-release)
+
+  # stdout carries the verb's JSON, stderr its diagnostics -- a stale-lock
+  # reclamation among them. Merging the two with `2>&1` would both corrupt the
+  # JSON and swallow the diagnostic on success, so they are kept apart and the
+  # verb's stderr is forwarded either way.
+  local verb_stderr
+  verb_stderr="$(mktemp)"
+  if ! output="$(sprint_lease "${complete_args[@]}" 2>"$verb_stderr")"; then
+    cat "$verb_stderr" >&2
+    rm -f "$verb_stderr"
     exit 1
   fi
-  mv "$tmp_file" "$sprint_file"
+  cat "$verb_stderr" >&2
+  rm -f "$verb_stderr"
 
-  if ! grep -Eq '^## Execution Log[[:space:]]*$' "$sprint_file"; then
-    {
-      echo
-      echo "## Execution Log"
-      echo
-      echo "| When | Task | Plan | Result |"
-      echo "|------|------|------|--------|"
-    } >> "$sprint_file"
+  # Rendering only: every value below was produced by the verb inside its locks.
+  local completed_task completed_row released_claim done total
+  completed_task="$(json_string_field "$output" task)"
+  completed_row="$(json_string_field "$output" row_index)"
+  released_claim="$(json_string_field "$output" released_claim_id)"
+  done="$(json_number_field "$output" done)"
+  total="$(json_number_field "$output" total)"
+
+  if [[ -n "$released_claim" ]]; then
+    echo "Released lease for '$completed_task' (claim $released_claim)"
   fi
-  printf '| %s | %s | %s | done |\n' "$timestamp" "$target_task" "${plan_cell:-(none)}" >> "$sprint_file"
-
-  # Same critical section as the row rewrite: the backlog lock is still held
-  # (released by the EXIT trap), so completion and release are one transaction
-  # for an inline task. Contract finish passes --defer-lease-release because its
-  # transaction boundary is the publication commit, not this rewrite.
-  if [[ "$defer_lease_release" -eq 0 ]]; then
-    release_task_lease "$sprint_file" "$target_task"
-  fi
-
-  local done total
-  read -r done total <<<"$(backlog_counts "$sprint_file")"
-  echo "Completed backlog task '$target_task' (row $target_index) in $sprint_file"
+  echo "Completed backlog task '$completed_task' (row $completed_row) in $sprint_file"
   echo "Backlog progress: ${done}/${total}"
   if [[ "$done" -eq "$total" ]]; then
     echo "All backlog tasks complete. Set the sprint Status to Done after review."
@@ -705,6 +852,13 @@ json_string_field() {
   printf '%s\n' "$1" | sed -nE "s/^[[:space:]]*\"$2\": \"([^\"]*)\",?[[:space:]]*\$/\1/p" | head -1
 }
 
+# The numeric twin, for the counts `complete-row` reports back. Both readers see
+# only CLI stdout the verb just produced; no shell reader touches an authority
+# record on disk any more.
+json_number_field() {
+  printf '%s\n' "$1" | sed -nE "s/^[[:space:]]*\"$2\": ([0-9]+),?[[:space:]]*\$/\1/p" | head -1
+}
+
 coordination_target_ref() {
   policy_get '.worktree_strategy.merge_back.target' 'main'
 }
@@ -718,10 +872,6 @@ coordination_session_id() {
 # was stolen from, may still act on it.
 claim_token_dir() {
   printf '%s/claims' "$(dirname "$marker_file")"
-}
-
-claim_token_field() {
-  sed -n "s/^$2=//p" "$1" | head -1
 }
 
 write_claim_token() {
@@ -743,151 +893,18 @@ write_claim_token() {
   fi
 }
 
-# 0 with the token path on stdout, 1 when this tree holds none, 2 when more
-# than one matches -- ambiguity fails closed instead of picking a token.
-find_claim_token() {
-  local sprint_path="$1" task_cell="$2" dir token match=""
-  dir="$(claim_token_dir)"
-  [[ -d "$dir" ]] || return 1
-  for token in "$dir"/*.claim; do
-    [[ -f "$token" ]] || continue
-    [[ "$(claim_token_field "$token" sprint)" == "$sprint_path" ]] || continue
-    [[ "$(claim_token_field "$token" task)" == "$task_cell" ]] || continue
-    if [[ -n "$match" ]]; then
-      echo "sprint-backlog: more than one claim token matches '$task_cell' in $sprint_path" >&2
-      return 2
-    fi
-    match="$token"
-  done
-  [[ -n "$match" ]] || return 1
-  printf '%s' "$match"
-}
-
-# Read one field of a common-dir owner record. The record is written by the
-# CLI as two-space-indented JSON with one field per line, which is the same
-# shape `closeout_journal_field` reads in contract-worktree.sh. The CLI stays
-# the only authority on the record; this reports which claim owns it so a
-# refusal can name it.
-lease_owner_field() {
-  local file="$1" name="$2"
-  [[ -f "$file" && ! -L "$file" ]] || return 1
-  sed -n "s/^  \"${name}\": \"\(.*\)\",\{0,1\}\$/\1/p" "$file" | head -1
-}
-
-# The inline completion gate.
+# The inline completion transaction lives in TypeScript.
 #
-# Execution ownership lives in the shared lease, so a tree without the owning
-# fencing token may not flip a claimed row to [x] -- the exact false-completion
-# this protocol exists to close. Three shapes, and the reason each is what it is:
-#
-# - no lease store on this clone: its absence is the authority for "nothing
-#   owns anything here", so the zero-coordination single-agent flow completes
-#   exactly as before, without deriving an identity or reading a canonical ref;
-# - a lease store with no lease for this row: nothing owns the row, proceed;
-# - a lease for this row: this tree must hold a claim token carrying the same
-#   claim id the owner record does. A stolen-from tree keeps its old token and
-#   therefore fails the comparison, which is the point.
-#
-# Anything the CLI would classify `unknown` -- a symlinked lease, a missing or
-# unreadable owner record -- refuses and names `sprint reconcile`, because an
-# unclassifiable lease cannot prove the row is unowned.
-assert_completion_lease_gate() {
-  local sprint_path="$1" task_cell="$2"
-  local coordination_dir leases_root entry identity task_id lease_dir owner_file
-  local owner_claim token token_claim found status
-
-  if ! coordination_dir="$(coordination_root)"; then
-    echo "sprint-backlog: not inside a git repository; the shared lease cannot be read" >&2
-    exit 1
-  fi
-  leases_root="$coordination_dir/leases"
-  [[ -d "$leases_root" ]] || return 0
-  found=0
-  for entry in "$leases_root"/*; do
-    if [[ -e "$entry" || -L "$entry" ]]; then
-      found=1
-      break
-    fi
-  done
-  [[ "$found" -eq 1 ]] || return 0
-
-  # The CLI owns every digest: re-deriving task_id here would be a second
-  # implementation of the identity contract.
-  if ! identity="$(sprint_lease identify --task "$task_cell" --target-ref "$(coordination_target_ref)" --sprint-path "$sprint_path" 2>&1)"; then
-    printf '%s\n' "$identity" >&2
-    echo "sprint-backlog: cannot derive the coordination identity of '$task_cell'; leases are live on this clone, so the row cannot be completed unverified" >&2
-    exit 1
-  fi
-  task_id="$(json_string_field "$identity" task_id)"
-  if [[ -z "$task_id" ]]; then
-    echo "sprint-backlog: sprint identify returned no task id for '$task_cell'" >&2
-    exit 1
-  fi
-
-  lease_dir="$leases_root/$task_id"
-  [[ -e "$lease_dir" || -L "$lease_dir" ]] || return 0
-  if [[ ! -d "$lease_dir" || -L "$lease_dir" ]]; then
-    echo "sprint-backlog: the lease for '$task_cell' is not a lease directory ($lease_dir); run 'repo-harness sprint reconcile --task-id $task_id --target-ref <branch>' before completing it" >&2
-    exit 1
-  fi
-
-  owner_file="$lease_dir/owner.json"
-  owner_claim="$(lease_owner_field "$owner_file" claim_id || true)"
-  if [[ -z "$owner_claim" ]]; then
-    echo "sprint-backlog: the lease for '$task_cell' has no readable owner record ($lease_dir); run 'repo-harness sprint reconcile --task-id $task_id --target-ref <branch>' before completing it" >&2
-    exit 1
-  fi
-
-  set +e
-  token="$(find_claim_token "$sprint_path" "$task_cell")"
-  status=$?
-  set -e
-  case "$status" in
-    0) ;;
-    1)
-      echo "sprint-backlog: backlog task '$task_cell' is claimed by ${owner_claim} and this worktree holds no claim token for it; complete it from the owning worktree, or take the claim over with 'repo-harness sprint steal --expected-claim-id ${owner_claim} --reason <reason> --session-id <id>'" >&2
-      exit 1
-      ;;
-    *) exit 1 ;;
-  esac
-
-  token_claim="$(claim_token_field "$token" claim_id)"
-  if [[ "$token_claim" != "$owner_claim" ]]; then
-    echo "sprint-backlog: backlog task '$task_cell' is claimed by ${owner_claim}, but this worktree holds claim ${token_claim:-(none)}; the claim moved, so this tree may not complete the row" >&2
-    exit 1
-  fi
-}
-
-# Inline completion releases inside the caller's backlog-lock critical section.
-# A row completed without a token in this tree releases nothing: either it was
-# never claimed, or the claim was stolen and the new owner's lease is not this
-# caller's to delete.
-release_task_lease() {
-  local sprint_path="$1" task_cell="$2"
-  local token status claim_id output
-  set +e
-  token="$(find_claim_token "$sprint_path" "$task_cell")"
-  status=$?
-  set -e
-  case "$status" in
-    0) ;;
-    1) return 0 ;;
-    *) exit 1 ;;
-  esac
-
-  claim_id="$(claim_token_field "$token" claim_id)"
-  if [[ -z "$claim_id" ]]; then
-    echo "sprint-backlog: claim token carries no claim id: $token" >&2
-    exit 1
-  fi
-  if ! output="$(sprint_lease release --claim-id "$claim_id" 2>&1)"; then
-    printf '%s\n' "$output" >&2
-    echo "sprint-backlog: could not release the lease for '$task_cell' (claim $claim_id)" >&2
-    exit 1
-  fi
-  rm -f "$token"
-  echo "Released lease for '$task_cell' (claim $claim_id)"
-}
+# `sprint complete-row` takes the shared backlog lock, then the row's task
+# lock, and inside that one boundary it resolves the row, reads the owner
+# record and the claim token through their single parsers, compares claim id
+# and task revision, rewrites the row, and releases the lease. The shell used
+# to do those steps itself across two processes -- resolve, gate, rewrite,
+# then ask the CLI to release -- which left windows a concurrent steal or
+# release could land in, and read the owner record with a second parser that
+# disagreed with `JSON.parse` about a duplicated key. Both are gone with the
+# shell-side gate: this helper now only resolves arguments and renders the
+# verb's answer.
 
 # `reserving -> bound`. The path is resolved with `pwd -P` on both sides of the
 # protocol -- here and in contract-worktree finish -- so the binding comparison
@@ -923,8 +940,10 @@ set_row_plan_cell() {
   local timestamp tmp_file
   timestamp="$(date '+%Y-%m-%d %H:%M')"
   tmp_file="$(mktemp)"
-  if ! PLAN_CELL="$plan_cell" TARGET_TASK="$target_task" awk -F '|' -v target="$target_index" -v ts="$timestamp" '
-    BEGIN { in_section = 0; rewritten = 0 }
+  local schema
+  schema="$(backlog_schema "$sprint_file")"
+  if ! PLAN_CELL="$plan_cell" TARGET_TASK="$target_task" awk -F '|' -v target="$target_index" -v ts="$timestamp" -v schema="$schema" '
+    BEGIN { in_section = 0; rewritten = 0; off = (schema == 2) ? 1 : 0 }
     /^> \*\*Updated\*\*:/ {
       print "> **Updated**: " ts
       next
@@ -933,14 +952,20 @@ set_row_plan_cell() {
     in_section && /^## / { in_section = 0 }
     {
       if (in_section && !rewritten && $0 ~ /^\|[[:space:]]*[0-9]+[[:space:]]*\|/) {
-        idx = $2; status = $3; task = $4; mode = $5; acceptance = $6
+        idx = $2; id = (schema == 2) ? $3 : ""
+        status = $(3 + off); task = $(4 + off); mode = $(5 + off); acceptance = $(6 + off)
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", idx)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", id)
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", status)
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", task)
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", mode)
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", acceptance)
         if (idx == target && task == ENVIRON["TARGET_TASK"]) {
-          printf "| %s | %s | %s | %s | %s | %s |\n", idx, status, task, mode, acceptance, ENVIRON["PLAN_CELL"]
+          if (schema == 2) {
+            printf "| %s | %s | %s | %s | %s | %s | %s |\n", idx, id, status, task, mode, acceptance, ENVIRON["PLAN_CELL"]
+          } else {
+            printf "| %s | %s | %s | %s | %s | %s |\n", idx, status, task, mode, acceptance, ENVIRON["PLAN_CELL"]
+          }
           rewritten = 1
           next
         }

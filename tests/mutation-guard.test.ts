@@ -13,13 +13,13 @@ import {
   beginLeaseCompletionRecord,
   bindLeaseRecord,
   buildLeaseOwnerRecord,
-  deriveTaskId,
   deriveTaskRevision,
   enterReviewingLeaseRecord,
   type LeaseOwnerRecord,
 } from '../src/core/state/coordination-identity';
 import { resolveRepoIdentity } from '../src/effects/state/coordination-canonical-source';
 import { createLeaseDirectory, writeLeaseOwnerDurably } from '../src/effects/state/coordination-lease-store';
+import { fixtureTaskId } from './helpers/sprint-fixture';
 
 // HRD-03 falsifier proof + guard-by-guard parity fixtures for the in-process
 // mutation-guard handler that replaces worktree-guard.sh + pre-edit-guard.sh.
@@ -103,10 +103,10 @@ function installPublicationGuardFixture(state: 'completing' | 'reviewing'): Publ
   mkdirSync(join(primary, 'plans/sprints'), { recursive: true });
   mkdirSync(join(primary, 'docs'), { recursive: true });
   writeFileSync(join(primary, PUBLICATION_GUARD_SPRINT), [
-    '# Publication guard sprint', '', '## Backlog', '',
-    '| # | Status | Task | Mode | Acceptance | Plan |',
-    '| --- | --- | --- | --- | --- | --- |',
-    `| 1 | [ ] | ${PUBLICATION_GUARD_TASK} | contract | remediation tests pass | (pending) |`, '',
+    '# Publication guard sprint', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+    '| --- |----| --- | --- | --- | --- | --- |',
+    `| 1 | ${fixtureTaskId(`${PUBLICATION_GUARD_TASK}`)} | [ ] | ${PUBLICATION_GUARD_TASK} | contract | remediation tests pass | (pending) |`, '',
   ].join('\n'));
   writeFileSync(join(primary, 'docs/spec.md'), '# spec\n');
   mkdirSync(join(primary, '.ai/harness/sprint'), { recursive: true });
@@ -117,8 +117,8 @@ function installPublicationGuardFixture(state: 'completing' | 'reviewing'): Publ
 
   const activePlan = writeActivePlan(worktree, 'Executing');
   const repoIdentity = resolveRepoIdentity(worktree);
-  const taskId = deriveTaskId({ repoIdentity, sprintPath: PUBLICATION_GUARD_SPRINT, taskCell: PUBLICATION_GUARD_TASK });
-  const taskRevision = deriveTaskRevision({ taskId, modeCell: 'contract', acceptanceCell: 'remediation tests pass' });
+  const taskId = fixtureTaskId(PUBLICATION_GUARD_TASK);
+  const taskRevision = deriveTaskRevision({ taskCell: PUBLICATION_GUARD_TASK, taskId, modeCell: 'contract', acceptanceCell: 'remediation tests pass' });
   const claimed = buildLeaseOwnerRecord({
     claimId: PUBLICATION_GUARD_CLAIM,
     taskId,

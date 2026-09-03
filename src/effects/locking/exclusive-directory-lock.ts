@@ -85,6 +85,14 @@ export interface ExclusiveDirectoryLockOptions {
   readonly reclaimStaleEmptyDirectory?: boolean;
   readonly reclaimStaleOwner?: boolean;
   readonly waitTimeoutMs?: number;
+  /**
+   * Called once for each stale lock this acquisition reclaimed.
+   *
+   * A reclamation is an operator-visible event: it means a previous holder died
+   * without releasing, and the caller that inherited the lock is the only place
+   * that knows how to say so in that protocol's own words.
+   */
+  readonly onStaleReclaim?: (lockPath: string) => void;
 }
 
 function resolveWaitTimeoutMs(value: number | undefined): number {
@@ -413,8 +421,9 @@ export function acquireExclusiveDirectoryLock(
         if ((pathError as NodeJS.ErrnoException).code === 'ENOENT') continue;
         throw pathError;
       }
-      if (options.reclaimStaleOwner !== false) {
-        reclaimStaleLockDirectory(location, options.reclaimStaleEmptyDirectory === true);
+      if (options.reclaimStaleOwner !== false
+        && reclaimStaleLockDirectory(location, options.reclaimStaleEmptyDirectory === true)) {
+        options.onStaleReclaim?.(location.lockPath);
       }
       if (Date.now() >= deadline) {
         throw new ExclusiveLockContentionError(

@@ -38,6 +38,7 @@ import { loadMinimalChangePolicy } from './minimal-change-policy';
 import { renderMinimalChangeSessionContext } from './minimal-change-context';
 import { runSecurityScan, type SecurityScanReport } from '../commands/security';
 import { fileExists, readText } from '../../effects/state/collect-state-inputs';
+import { backlogRows, type BacklogRow } from '../../core/state/sprint-backlog-rows';
 import type { WorktreeOwnership } from '../../effects/loop/state-input-collector';
 import { resolveRecoveryEvidence } from '../../effects/evidence/recovery-materializer';
 import { parseHookInput } from './hook-input';
@@ -952,29 +953,27 @@ function activeSprintMarkerPath(repoRoot: string): string {
   return '.ai/harness/sprint/active-sprint';
 }
 
-/** `-F '|'` table-row scan for the `## Backlog` section: `cols[2]` is the Status checkbox cell, `cols[3]` the Task cell (awk's 1-indexed $3/$4 over the same split). Both the done/total tally and the first unchecked task are collected in one pass (two independent awk scripts in bash, merged here since neither observes the other's state). */
+/**
+ * Read-only backlog tally for the panel: done/total plus the first unchecked
+ * Task cell. Rows come from `backlogRows`, the one owner of the backlog grammar,
+ * so the panel cannot disagree with the awk authority about which cell is the
+ * Status column once a sprint carries the schema 2 `ID` column. This is a
+ * display surface and mints no identity, so it reads both schemas.
+ */
 function sprintBacklogProgress(text: string): { progress: string; nextTask: string } {
-  let inSection = false;
-  let done = 0;
-  let total = 0;
-  let nextTask: string | null = null;
-  const rowPattern = /^\|\s*\d+\s*\|/;
-  for (const rawLine of text.split('\n')) {
-    const line = rawLine.replace(/\r$/, '');
-    if (/^## Backlog[ \t]*$/.test(line)) {
-      inSection = true;
-      continue;
-    }
-    if (inSection && /^## /.test(line)) break;
-    if (!inSection || !rowPattern.test(line)) continue;
-    const cols = line.split('|');
-    const statusCell = (cols[2] ?? '').trim();
-    const taskCell = (cols[3] ?? '').trim();
-    total += 1;
-    if (/^\[[xX]\]$/.test(statusCell)) done += 1;
-    if (nextTask === null && statusCell === '[ ]') nextTask = taskCell;
+  let rows: readonly BacklogRow[];
+  try {
+    rows = backlogRows(text);
+  } catch {
+    return { progress: '0/0', nextTask: '(none)' };
   }
-  return { progress: `${done}/${total}`, nextTask: nextTask ?? '(none)' };
+  let done = 0;
+  let nextTask: string | null = null;
+  for (const row of rows) {
+    if (/^\[[xX]\]$/.test(row.status)) done += 1;
+    if (nextTask === null && row.status === '[ ]') nextTask = row.task;
+  }
+  return { progress: `${done}/${rows.length}`, nextTask: nextTask ?? '(none)' };
 }
 
 /** 6. `active_sprint_context`. */

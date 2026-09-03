@@ -34,6 +34,7 @@ import { createStateInputCollector } from "../src/effects/loop/state-input-colle
 import { appendEvidenceEvent, appendGenesisRecord } from "../src/effects/evidence/event-log";
 import { LEDGER_EPOCH_START_SHA } from "../src/effects/evidence/epoch";
 import { publishCheckpointFromLedger } from "../src/effects/evidence/checkpoint-store";
+import { fixtureTaskId } from './helpers/sprint-fixture';
 
 // EPC-08: resume availability is now resolved from the canonical
 // checkpoint-backed evidence reader (`resolveRecoveryEvidence`, consumed
@@ -343,7 +344,7 @@ describe("sessionStartMainContent (session-start-context.sh port) — empty/gati
       mkdirSync(join(repoRoot, ".ai/harness/sprint"), { recursive: true });
       writeFileSync(
         join(repoRoot, "plans/sprints/fixture.sprint.md"),
-        "# Sprint: Fixture\n\n> **Status**: Approved\n\n## Backlog\n\n| # | Status | Task |\n|---|--------|------|\n| 1 | [ ] | task-a |\n",
+        `# Sprint: Fixture\n\n> **Status**: Approved\n> **Backlog Schema**: 2\n\n## Backlog\n\n| # | ID | Status | Task |\n|---|----|--------|------|\n| 1 | ${fixtureTaskId('task-a')} | [ ] | task-a |\n`,
       );
       writeFileSync(join(repoRoot, ".ai/harness/sprint/active-sprint"), "plans/sprints/fixture.sprint.md\n");
 
@@ -459,13 +460,14 @@ describe("sessionStartMainContent — pending plan capture, current status, acti
           "# Sprint: Fixture",
           "",
           "> **Status**: Approved",
+          "> **Backlog Schema**: 2",
           "",
           "## Backlog",
           "",
           "| # | Status | Task |",
           "|---|--------|------|",
-          "| 1 | [x] | task-a |",
-          "| 2 | [ ] | task-b |",
+          `| 1 | ${fixtureTaskId('task-a')} | [x] | task-a |`,
+          `| 2 | ${fixtureTaskId('task-b')} | [ ] | task-b |`,
         ].join("\n"),
       );
       writeFileSync(join(repoRoot, ".ai/harness/sprint/active-sprint"), "plans/sprints/fixture.sprint.md\n");
@@ -499,7 +501,7 @@ describe("sessionStartMainSection — actionable header detection", () => {
       mkdirSync(join(repoRoot, ".ai/harness/sprint"), { recursive: true });
       writeFileSync(
         join(repoRoot, "plans/sprints/fixture.sprint.md"),
-        "# Sprint: Fixture\n\n> **Status**: Approved\n\n## Backlog\n\n| # | Status | Task |\n|---|--------|------|\n| 1 | [ ] | task-a |\n",
+        `# Sprint: Fixture\n\n> **Status**: Approved\n> **Backlog Schema**: 2\n\n## Backlog\n\n| # | ID | Status | Task |\n|---|----|--------|------|\n| 1 | ${fixtureTaskId('task-a')} | [ ] | task-a |\n`,
       );
       writeFileSync(join(repoRoot, ".ai/harness/sprint/active-sprint"), "plans/sprints/fixture.sprint.md\n");
 
@@ -548,7 +550,7 @@ describe("buildSessionStartSections — composition order and shape", () => {
         mkdirSync(join(repoRoot, ".ai/harness/sprint"), { recursive: true });
         writeFileSync(
           join(repoRoot, "plans/sprints/fixture.sprint.md"),
-          "# Sprint: Fixture\n\n> **Status**: Approved\n\n## Backlog\n\n| # | Status | Task |\n|---|--------|------|\n| 1 | [ ] | task-a |\n",
+          `# Sprint: Fixture\n\n> **Status**: Approved\n> **Backlog Schema**: 2\n\n## Backlog\n\n| # | ID | Status | Task |\n|---|----|--------|------|\n| 1 | ${fixtureTaskId('task-a')} | [ ] | task-a |\n`,
         );
         writeFileSync(join(repoRoot, ".ai/harness/sprint/active-sprint"), "plans/sprints/fixture.sprint.md\n");
         writeFileSync(
@@ -586,7 +588,7 @@ describe("sessionStartMainContent — provider diagnostics", () => {
       mkdirSync(join(repoRoot, ".ai/harness/sprint"), { recursive: true });
       writeFileSync(
         join(repoRoot, "plans/sprints/fixture.sprint.md"),
-        "# Sprint: Fixture\n\n> **Status**: Approved\n\n## Backlog\n\n| # | Status | Task |\n|---|--------|------|\n| 1 | [ ] | surviving sibling |\n",
+        `# Sprint: Fixture\n\n> **Status**: Approved\n> **Backlog Schema**: 2\n\n## Backlog\n\n| # | ID | Status | Task |\n|---|----|--------|------|\n| 1 | ${fixtureTaskId('surviving sibling')} | [ ] | surviving sibling |\n`,
       );
       writeFileSync(join(repoRoot, ".ai/harness/sprint/active-sprint"), "plans/sprints/fixture.sprint.md\n");
       const diagnostics: Array<Record<string, unknown>> = [];
@@ -624,7 +626,7 @@ describe("budgetSessionContext integration — dedupe and mandatory-overflow fai
       mkdirSync(join(repoRoot, ".ai/harness/sprint"), { recursive: true });
       writeFileSync(
         join(repoRoot, "plans/sprints/fixture.sprint.md"),
-        "# Sprint: Fixture\n\n> **Status**: Approved\n\n## Backlog\n\n| # | Status | Task |\n|---|--------|------|\n| 1 | [ ] | task-a |\n",
+        `# Sprint: Fixture\n\n> **Status**: Approved\n> **Backlog Schema**: 2\n\n## Backlog\n\n| # | ID | Status | Task |\n|---|----|--------|------|\n| 1 | ${fixtureTaskId('task-a')} | [ ] | task-a |\n`,
       );
       writeFileSync(join(repoRoot, ".ai/harness/sprint/active-sprint"), "plans/sprints/fixture.sprint.md\n");
 

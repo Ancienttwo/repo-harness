@@ -45,7 +45,12 @@ export interface WorkPackageRollbackBoundaryV1 {
 
 export interface WorkPackageDefinitionV1 {
   readonly work_package_id: string;
-  readonly task_ref: string;
+  /**
+   * The canonical Sprint row's persisted `ID` cell. This is the join key, and
+   * it is deliberately not the Task cell text: a title clarification used to
+   * make the carrier stop mapping its own Work Package.
+   */
+  readonly task_id: string;
   readonly primary_capability: string;
   readonly depends_on: readonly WorkPackageDependencyV1[];
   readonly priority: number;
@@ -68,6 +73,7 @@ export interface WorkGraphV1 {
 export interface SchedulingCanonicalTask {
   readonly task_id: string;
   readonly task_revision: string;
+  /** Display projection of the Task cell; never a join key. */
   readonly task_ref: string;
   readonly status: string;
   readonly row_order: number;
@@ -77,7 +83,8 @@ export interface ProjectedWorkPackageV1 extends WorkPackageDefinitionV1 {
   readonly repository_id: string;
   readonly sprint_path: string;
   readonly work_package_revision: string;
-  readonly task_id: string;
+  /** Derived display text read out of the joined canonical row. */
+  readonly task_ref: string;
   readonly task_revision: string;
   readonly task_status: string;
   readonly row_order: number;
@@ -249,7 +256,7 @@ function parseRollback(value: unknown): WorkPackageRollbackBoundaryV1 {
 function parseWorkPackage(value: unknown, index: number): WorkPackageDefinitionV1 {
   const input = record(value, `work_packages[${index}]`);
   exact(input, [
-    'work_package_id', 'task_ref', 'primary_capability', 'depends_on', 'priority',
+    'work_package_id', 'task_id', 'primary_capability', 'depends_on', 'priority',
     'concurrency', 'execution_surface', 'integration_group', 'required_acceptance',
     'rollback_boundary',
   ], `work_packages[${index}]`);
@@ -269,7 +276,7 @@ function parseWorkPackage(value: unknown, index: number): WorkPackageDefinitionV
   if (new Set(policyKeys).size !== policyKeys.length) invalid(`work_packages[${index}].required_acceptance contains duplicates`);
   return Object.freeze({
     work_package_id: string(input.work_package_id, `work_packages[${index}].work_package_id`, WORK_PACKAGE_ID),
-    task_ref: string(input.task_ref, `work_packages[${index}].task_ref`, OPAQUE),
+    task_id: string(input.task_id, `work_packages[${index}].task_id`, TASK_ID),
     primary_capability: string(input.primary_capability, `work_packages[${index}].primary_capability`, CAPABILITY_ID),
     depends_on: Object.freeze(dependencies),
     priority: integer(input.priority, `work_packages[${index}].priority`, 0, 100),
@@ -301,7 +308,7 @@ export function validateWorkGraph(value: unknown): WorkGraphV1 {
   const sprintPath = safeRepoPath(input.sprint_path, 'sprint_path', '.sprint.md');
   const workPackages = input.work_packages.map(parseWorkPackage);
   if (new Set(workPackages.map((entry) => entry.work_package_id)).size !== workPackages.length) invalid('work graph contains duplicate work_package_id');
-  if (new Set(workPackages.map((entry) => entry.task_ref)).size !== workPackages.length) invalid('work graph contains duplicate task_ref');
+  if (new Set(workPackages.map((entry) => entry.task_id)).size !== workPackages.length) invalid('work graph contains duplicate task_id');
   if (input.lane === 'generic-v1' && workPackages.length !== 0) invalid('generic-v1 work graph must contain zero work packages');
   if (input.lane === 'engineering-v2' && workPackages.length === 0) invalid('engineering-v2 work graph must contain work packages');
   return Object.freeze({
@@ -328,7 +335,6 @@ export function projectWorkGraph(
     if (!TASK_ID.test(task.task_id) || !TASK_ID.test(task.task_revision) || !OPAQUE.test(task.task_ref)
       || !Number.isSafeInteger(task.row_order) || task.row_order < 1) invalid('canonical task projection is invalid');
   }
-  if (new Set(tasks.map((task) => task.task_ref)).size !== tasks.length) invalid('canonical Sprint contains duplicate Task cells');
   if (new Set(tasks.map((task) => task.task_id)).size !== tasks.length) invalid('canonical Sprint contains duplicate task_id');
   if (new Set(tasks.map((task) => task.row_order)).size !== tasks.length) invalid('canonical Sprint contains duplicate row_order');
   if (graph.lane === 'generic-v1') {
@@ -343,16 +349,16 @@ export function projectWorkGraph(
     });
   }
   if (graph.work_packages.length !== tasks.length) invalid('engineering-v2 work graph must cover every canonical Sprint row');
-  const byRef = new Map(tasks.map((task) => [task.task_ref, task]));
+  const byId = new Map(tasks.map((task) => [task.task_id, task]));
   const projected = graph.work_packages.map((definition) => {
-    const task = byRef.get(definition.task_ref);
-    if (!task) invalid(`work package ${definition.work_package_id} task_ref is absent from canonical Sprint`);
+    const task = byId.get(definition.task_id);
+    if (!task) invalid(`work package ${definition.work_package_id} task_id is absent from canonical Sprint`);
     return Object.freeze({
       ...definition,
       repository_id: graph.repository_id,
       sprint_path: graph.sprint_path,
       work_package_revision: workPackageRevision(definition),
-      task_id: task.task_id,
+      task_ref: task.task_ref,
       task_revision: task.task_revision,
       task_status: task.status,
       row_order: task.row_order,

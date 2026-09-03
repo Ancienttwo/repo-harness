@@ -11,6 +11,7 @@ import {
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 import { spawnSync } from "child_process";
+import { fixtureTaskId } from './helpers/sprint-fixture';
 
 const ROOT = join(import.meta.dir, "..");
 
@@ -46,13 +47,14 @@ function writeSprint(repo: string) {
       "# Sprint: Demo",
       "",
       "> **Status**: Executing",
+      "> **Backlog Schema**: 2",
       "",
       "## Backlog",
       "",
-      "| # | Status | Task | Mode | Acceptance | Plan |",
-      "|---|--------|------|------|------------|------|",
-      "| 1 | [x] | done-task | contract | done | `plans/archive/done.md` |",
-      "| 2 | [ ] | next-heartbeat-task | contract | next acceptance | (pending) |",
+      "| # | ID | Status | Task | Mode | Acceptance | Plan |",
+      "|---|----|--------|------|------|------------|------|",
+      `| 1 | ${fixtureTaskId('done-task')} | [x] | done-task | contract | done | \`plans/archive/done.md\` |`,
+      `| 2 | ${fixtureTaskId('next-heartbeat-task')} | [ ] | next-heartbeat-task | contract | next acceptance | (pending) |`,
       "",
     ].join("\n"),
   );
