@@ -9,7 +9,6 @@ import {
 export interface AutomationBudgetRawOptions {
   readonly repo?: string;
   readonly run?: string;
-  readonly observedAt?: string;
 }
 
 export class AutomationArgumentError extends Error {
@@ -42,8 +41,7 @@ export function runAutomationBudgetShow(raw: AutomationBudgetRawOptions): void {
   const repo = raw.repo?.trim() || process.cwd();
   const run = raw.run?.trim();
   if (!run) throw new AutomationArgumentError('--run is required');
-  const observedAt = raw.observedAt?.trim() || new Date().toISOString().replace(/\.\d{3}Z$/u, '.000Z');
-  const slice = readAutomationBudgetBoardSlice(repo, run, observedAt);
+  const slice = readAutomationBudgetBoardSlice(repo, run);
   process.stdout.write(`${JSON.stringify(slice, null, 2)}\n`);
 }
 
@@ -60,7 +58,6 @@ export function buildAutomationCommand(): Command {
     .description('Print the read-only budget projection for one automation run')
     .option('--repo <path>', 'Repository root', '.')
     .requiredOption('--run <automationRunId>', 'Automation run id (64-character hex digest)')
-    .option('--observed-at <timestamp>', 'ISO-8601 UTC observation time for the wall-clock projection')
     .action((raw: AutomationBudgetRawOptions) => {
       try {
         runAutomationBudgetShow(raw);

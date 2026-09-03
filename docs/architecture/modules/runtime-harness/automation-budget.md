@@ -77,6 +77,11 @@ sequenceDiagram
 
 ## 3. P3:設計決策與不變量
 
+1. 調用方(controller、CLI、campaign)對所有決策輸入都是不可信的;可信來源只有 host 進程:它的時鐘、它的檔案系統、倉庫裡的 canonical authorities。調用方只說要做什麼、發生了什麼,不說那值多少、發生在何時。
+2. 綁定的 task contract 的位元組在**每一次讀取**時重新驗證:store 依 `contract_path` 讀出 contract、比對 `contract_sha256`、自行解析 `delegation.budget`。因此 run 進行中編輯該 contract 會讓每個 verb 一致地 fail closed(`automation_budget_store_invalid`);恢復方式是還原位元組或另開一個 run,設計上沒有 re-bind 路徑——contract 是 budget 綁定的授權,不是可以中途換掉的參數。
+3. `current.json` 是三種 durable record 的投影,不是第二個權威;每個 mutating verb 進 lock 後先重新推導它,read-only 面只回報 drift 不修復。
+4. token / cost 硬上限在本 slice 一律 fail closed:沒有 provider-attested usage 權威可讀之前,自證的用量數字比沒有上限更糟。
+
 ## 4. 歷史決策記錄(append-only)
 
 ## Optimization Backlog

@@ -252,16 +252,23 @@ describe('issue #282 — end-to-end stop before the next claim', () => {
     publishAutomationBudget({ repo_root: repo, budget });
     driveController(repo, budget, 10);
 
-    const observedAt = '2026-09-03T00:30:00.000Z';
     const result = spawnSync(
       process.execPath,
-      [CLI, 'automation', 'budget', 'show', '--repo', repo, '--run', budget.automation_run_id, '--observed-at', observedAt],
+      [CLI, 'automation', 'budget', 'show', '--repo', repo, '--run', budget.automation_run_id],
       { cwd: ROOT, encoding: 'utf-8' },
     );
     expect(result.status).toBe(0);
     const projected = JSON.parse(result.stdout) as AutomationBudgetBoardSliceV1;
-    const direct = readAutomationBudgetBoardSlice(repo, budget.automation_run_id, observedAt);
-    expect(projected.slice_sha256).toBe(direct.slice_sha256);
+    const direct = readAutomationBudgetBoardSlice(repo, budget.automation_run_id);
+    // The CLI takes no observation time, so its slice is read on the child
+    // process's own store clock. Everything the ledger decides is identical;
+    // only the wall-clock row, which is a function of when it was read, is not.
+    for (const field of ['automation_run_id', 'budget_sha256', 'state', 'ledger_sha256', 'attention_owner', 'projection_stale'] as const) {
+      expect(projected[field]).toEqual(direct[field]);
+    }
+    expect(projected.stop_receipt).toEqual(direct.stop_receipt);
+    expect(projected.metrics.filter((entry) => entry.metric !== 'wall_clock_seconds'))
+      .toEqual(direct.metrics.filter((entry) => entry.metric !== 'wall_clock_seconds'));
     expect(projected.state).toBe('budget_exhausted');
     expect(projected.stop_receipt?.triggering_metric).toBe('successful_acquisitions');
     expect(projected.attention_owner).toBe('user');

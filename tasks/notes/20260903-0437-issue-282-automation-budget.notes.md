@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260903-0437-issue-282-automation-budget.review.md
 > **Last Updated**: 2026-09-03 05:20
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:fcb49dc560aac7f09826877c9220fbc57719f5a0b28c79f2cb1bce23eed9cc2f`
+> **Substantive Change SHA256**: `sha256:7ee084e0f68fabe6532673016ce95cd1ee28c06382db265815715a0714f05023`
 
 ## Design Decisions
 
@@ -148,6 +148,12 @@ parses `delegation.budget` itself. A run with no task contract is not the
 default; it is a grant the human issuer had to make. A caller that summarises a
 contract as looser than it is gets refused by re-reading the contract, which is
 the only check a self-consistent digest cannot pass.
+
+The bytes are re-verified on **every** read, not just at publish, so editing the
+bound task contract while a run is in flight fails every verb closed with
+`automation_budget_store_invalid`; recovery is reverting the bytes or minting a
+new run, and there is deliberately no re-bind path -- the contract is an
+authority the budget is bound to, not a parameter that can be swapped mid-run.
 
 ### Token and cost limits are fail-closed
 

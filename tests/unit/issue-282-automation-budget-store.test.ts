@@ -328,7 +328,7 @@ describe('issue #282 — refusing before the limit and publishing the stop recei
     expect(status.current.consumed.successful_acquisitions).toBe(2);
     expect(status.stop_receipt).not.toBeNull();
     expect(status.stop_receipt?.limit).toBe(2);
-    const slice = readAutomationBudgetBoardSlice(repo, budget.automation_run_id, '2026-09-03T00:00:40.000Z');
+    const slice = readAutomationBudgetBoardSlice(repo, budget.automation_run_id);
     expect(slice.state).toBe('budget_exhausted');
     expect(slice.attention_owner).toBe('user');
     expect(slice.stop_receipt?.stop_receipt_sha256).toBe(status.stop_receipt!.stop_receipt_sha256);
@@ -623,14 +623,14 @@ describe('issue #282 — a durable stop receipt the projection missed', () => {
     writeFileSync(path, `${JSON.stringify(preReceipt)}\n`);
 
     // The read-only surfaces must render durable truth rather than throw.
-    const slice = readAutomationBudgetBoardSlice(repo, budget.automation_run_id, '2026-09-03T00:00:20.000Z');
+    const slice = readAutomationBudgetBoardSlice(repo, budget.automation_run_id);
     expect(slice.state).toBe('budget_exhausted');
     expect(slice.projection_stale).toBe(true);
     expect(slice.stop_receipt?.triggering_metric).toBe('successful_acquisitions');
     expect(slice.attention_owner).toBe('user');
     const shown = spawnCli(
       process.execPath,
-      [CLI_ENTRY, 'automation', 'budget', 'show', '--repo', repo, '--run', budget.automation_run_id, '--observed-at', '2026-09-03T00:00:20.000Z'],
+      [CLI_ENTRY, 'automation', 'budget', 'show', '--repo', repo, '--run', budget.automation_run_id],
       { cwd: CLI_ROOT, encoding: 'utf-8' },
     );
     expect(shown.status).toBe(0);
@@ -650,7 +650,7 @@ describe('issue #282 — a durable stop receipt the projection missed', () => {
     expect(status.current.stop_receipt_sha256).toBe(stopped.commit.stop_receipt!.stop_receipt_sha256);
     expect(status.current.consumed.successful_acquisitions).toBe(1);
     expect(status.drift).toBe('none');
-    expect(readAutomationBudgetBoardSlice(repo, budget.automation_run_id, '2026-09-03T00:00:40.000Z').projection_stale).toBe(false);
+    expect(readAutomationBudgetBoardSlice(repo, budget.automation_run_id).projection_stale).toBe(false);
   });
 });
 
@@ -777,7 +777,7 @@ describe('issue #282 — exhaustion is sealed deterministically', () => {
 
     const clock = at('2026-09-03T00:11:00.000Z');
     expect(readAutomationBudgetStatus(repo, budget.automation_run_id).drift).toBe('unsealed_exhaustion');
-    const slice = readAutomationBudgetBoardSlice(repo, budget.automation_run_id, '2026-09-03T00:11:00.000Z');
+    const slice = readAutomationBudgetBoardSlice(repo, budget.automation_run_id);
     expect(slice.state).toBe('budget_exhausted');
     expect(slice.projection_stale).toBe(true);
     expect(slice.attention_owner).toBe('user');

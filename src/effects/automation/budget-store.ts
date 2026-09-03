@@ -632,21 +632,23 @@ export function requireUnattendedAutomationRunBudget(repoRoot: string, runId: st
   return readAutomationBudgetStatus(repoRoot, runId);
 }
 
+/**
+ * The read-only operator projection. It takes no time either: the wall-clock
+ * row and the drift that decides the rendered state are both measured on the
+ * store clock, so asking about the past cannot make an exhausted run look
+ * running.
+ */
 export function readAutomationBudgetBoardSlice(
   repoRoot: string,
   runId: string,
-  observedAt: string,
 ): AutomationBudgetBoardSliceV1 {
-  // `observedAt` is the view time for the wall-clock row only. Drift, which
-  // decides what state the slice renders, is measured on the store clock so a
-  // caller cannot hide an exhausted run by asking about the past.
   const status = readAutomationBudgetStatus(repoRoot, runId);
   return projectAutomationBudgetSlice({
     budget: status.budget,
     current: status.current,
     stop_receipt: status.stop_receipt,
     drift: status.drift,
-    observed_at: observedAt,
+    observed_at: automationStoreNow(),
   });
 }
 
