@@ -35,6 +35,7 @@ import { buildStateCommand } from './commands/state';
 import { buildSprintCommand } from './commands/sprint';
 import { buildPublicationCommand } from './commands/publication';
 import { buildFleetCommand } from './commands/fleet';
+import { buildAutomationCommand } from './commands/automation';
 import { buildOperatorCommand } from './commands/operator';
 import { buildEngineerCommand } from './commands/engineer';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
@@ -898,6 +899,7 @@ export function buildProgram(): Command {
   program.addCommand(buildPublicationCommand());
   program.addCommand(buildFleetCommand());
   program.addCommand(buildOperatorCommand());
+  program.addCommand(buildAutomationCommand());
   program.addCommand(buildEngineerCommand());
   program.addCommand(buildArchitectureProjectionCommand());
   program.addCommand(buildIntegrationCommand());

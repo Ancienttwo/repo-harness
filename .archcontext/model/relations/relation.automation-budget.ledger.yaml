@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.automation-budget.ledger
+kind: calls
+source: capability.runtime-harness.automation-budget
+target: component.automation-budget.ledger
+intent: Reserve, charge, and stop one automation run against a create-once ledger held under the Git common directory

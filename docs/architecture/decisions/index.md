@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.decision.index" sourceDigest="sha256:f7ce9343a23815a1520ddd8484599df40fba18f42624da5c6ede3889d411938b" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:34055a2aa0fbe868ce5dea7df5354de5da63830e5972ff683d9647f97374ec26" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.decision.index" sourceDigest="sha256:52f9a97edea7dd8b4752a71dcb115c004f8ffd442884f7f9f8f801eb333a9801" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:34055a2aa0fbe868ce5dea7df5354de5da63830e5972ff683d9647f97374ec26" -->
 # Architecture Decision Index
 
 - No ADRs selected for this projection.

@@ -346,6 +346,20 @@ interface ExcludedModule {
  */
 const DELIBERATELY_EXCLUDED: readonly ExcludedModule[] = [
   {
+    /**
+     * The automation cost plane (issue #282). It fails C-1 because a budget is
+     * none of the five planes C0 froze: it owns spend, not Task/Claim, Lease,
+     * Publication, Acceptance, or Delegation identity. It fails C-2 because its
+     * bytes decide only whether the next operation may be paid for -- they
+     * grant no claim, move no lease generation, and publish or accept nothing,
+     * and exhaustion explicitly leaves every in-flight authority to its own
+     * owner's normal recovery.
+     */
+    module: 'src/core/automation/budget.ts',
+    fails: ['C-1', 'C-2'],
+    evidence: 'automation cost plane (issue #282): reserves and charges spend against one host-owned ProgramAuthorization grant, writes only its own ledger under the Git common directory, and never creates, releases, or steals a Task, Claim, Lease, Publication, or Acceptance fact',
+  },
+  {
     module: 'src/core/external-sources/binding.ts',
     fails: ['C-1', 'C-2'],
     evidence: 'external-source provenance plane; receipts bind inert provider evidence to an already-canonical task revision and no TaskOffer, Claim, Lease, Publication or Acceptance authority reads them',

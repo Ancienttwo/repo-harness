@@ -1,4 +1,4 @@
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:f7ce9343a23815a1520ddd8484599df40fba18f42624da5c6ede3889d411938b" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:3a9254f712ba70054743fa219cfad25c1c84646f7fa453d47fc3e0c98499b6bd" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.diagram.structurizr" sourceDigest="sha256:52f9a97edea7dd8b4752a71dcb115c004f8ffd442884f7f9f8f801eb333a9801" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:beffdb16a20f9be3014dfc9a73c4302e8478b35907a3e31a438f20a08d641603" -->
 {
   "schemaVersion": "archcontext.structurizr-export/v1",
   "name": "ArchContext Architecture",
@@ -31,6 +31,14 @@
       {
         "id": "capability.runtime-harness.agent-runtime-effects",
         "name": "Agent Runtime Effects",
+        "type": "Software System",
+        "tags": [
+          "capability"
+        ]
+      },
+      {
+        "id": "capability.runtime-harness.automation-budget",
+        "name": "Automation Budget",
         "type": "Software System",
         "tags": [
           "capability"
@@ -207,6 +215,14 @@
       {
         "id": "component.agent-runtime-effects.journal",
         "name": "Agent Runtime Effect Journal",
+        "type": "Component",
+        "tags": [
+          "component"
+        ]
+      },
+      {
+        "id": "component.automation-budget.ledger",
+        "name": "Automation Budget Ledger",
         "type": "Component",
         "tags": [
           "component"
@@ -402,6 +418,12 @@
         "id": "relation.agent-runtime-effects.journal",
         "sourceId": "capability.runtime-harness.agent-runtime-effects",
         "destinationId": "component.agent-runtime-effects.journal",
+        "description": "calls"
+      },
+      {
+        "id": "relation.automation-budget.ledger",
+        "sourceId": "capability.runtime-harness.automation-budget",
+        "destinationId": "component.automation-budget.ledger",
         "description": "calls"
       },
       {
@@ -654,6 +676,7 @@
         "capability.public-surface.adoption",
         "capability.public-surface.root-router",
         "capability.runtime-harness.agent-runtime-effects",
+        "capability.runtime-harness.automation-budget",
         "capability.runtime-harness.bound-task-freezes",
         "capability.runtime-harness.collaboration",
         "capability.runtime-harness.delegated-runs",
@@ -676,6 +699,7 @@
         "component.action-commands.primary",
         "component.adoption.primary",
         "component.agent-runtime-effects.journal",
+        "component.automation-budget.ledger",
         "component.bound-task-freezes.primary",
         "component.codegraph-readiness.primary",
         "component.collaboration.primary",

@@ -93,7 +93,8 @@ export interface RepoHarnessRegistryStrictSnapshot extends RepoHarnessRegistrySn
   readonly registryRevision: string;
 }
 
-function repoHarnessHome(env: NodeJS.ProcessEnv = process.env): string {
+/** The single account-level harness home; every host-owned authority store roots here. */
+export function repoHarnessHome(env: NodeJS.ProcessEnv = process.env): string {
   return resolve(env.REPO_HARNESS_HOME ?? join(env.HOME ?? env.USERPROFILE ?? homedir(), ".repo-harness"));
 }
 
