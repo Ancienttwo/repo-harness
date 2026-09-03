@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260902-2101-issue-283-immutable-task-id.review.md
 > **Last Updated**: 2026-09-02 21:01
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:8452ee59f33c5504a2c801e924c6e90c40e366b388f8f51761b5969ac55ec01e`
+> **Substantive Change SHA256**: `sha256:ec0673a55c518e52ad26250b226f613f1c3aacc5f31e89f1af21b95fa8b87936`
 
 ## Design Decisions
 
