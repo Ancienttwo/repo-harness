@@ -20,6 +20,60 @@ The word "sprint" historically named a single execution slice in this harness. T
 - Legacy filenames: `verify-sprint.sh` and `new-sprint.sh` predate the program layer and are kept for downstream compatibility. Read them as task-contract verification helpers. New generated artifact headings and plan metadata should use **Task Contract** and **Task Review**.
 - Sprint lifecycle: `Draft -> Approved -> Executing -> Done -> Archived`, tracked in the sprint file's `> **Status**:` line. Use `repo-harness run sprint-backlog` for sprint operations; `.ai/harness/sprint/active-sprint` (runtime state, not committed) marks the single active sprint. Harness installs predating the sprint layer must upgrade the global/package runtime before invoking it. `repo-harness run check-task-workflow --strict` rejects Approved/Executing sprints whose PRD/source section is placeholder-only or whose backlog rows lack a concrete acceptance line.
 
+## Sprint Backlog Schema
+
+The `## Backlog` table has two schema versions, declared once in the sprint
+header as `> **Backlog Schema**: 2`. An absent marker means schema 1; any other
+declared value fails closed.
+
+| Schema | Row shape | Task identity |
+|---|---|---|
+| 1 (retired) | `\| # \| Status \| Task \| Mode \| Acceptance \| Plan \|` | derived: `digest(protocol + repo identity + sprint path + exact Task cell)` |
+| 2 | `\| # \| ID \| Status \| Task \| Mode \| Acceptance \| Plan \|` | read: the persisted `ID` cell, 64 lowercase hex characters |
+
+Schema 2 exists because display text and identity are two data. Under schema 1 a
+harmless title clarification produced a different `task_id`, which orphaned live
+Leases and claim-scoped messages, broke the Work Graph carrier's mapping, and
+made the renamed row freshly claimable. Under schema 2:
+
+- `task_id` is the `ID` cell verbatim, minted once when the row is created and
+  never edited, copied between rows, or regenerated;
+- `task_revision = digest(protocol-v2 + task_id + exact Task cell + Mode cell + Acceptance cell)`,
+  so a title, Mode, or Acceptance edit still drifts every offer and claim taken
+  before it while identity survives;
+- the Status and Plan cells stay out of both derivations, so a sibling row
+  completing cannot invalidate a live claim;
+- the row `#` index is not identity, so reordering rows changes nothing;
+- `WorkPackageDefinitionV1.task_id` is the Work Graph join key. `task_ref`
+  survives only as a derived display projection on the *projected* work package
+  and must never be joined on.
+
+A missing, malformed (not 64 lowercase hex), or duplicated `ID` cell fails
+closed in `projectCanonicalTasks`, in every claim/offer/board path built on it,
+and in `repo-harness run check-task-workflow --strict`.
+
+### Migrating a schema 1 sprint
+
+```bash
+repo-harness sprint migrate-schema --sprint <repo-relative sprint> --target-ref <ref>
+```
+
+The migration is one-shot and fail-closed. It reads the sprint at one canonical
+ref, derives each row's existing schema 1 identity, and refuses when: the
+working tree copy differs from that ref, two rows share a Task cell (their
+schema 1 identity is the same value, so no mapping preserves both), a row has an
+empty Task cell or a duplicate index, any affected row still holds a
+non-released Lease, or the same-commit Work Graph carrier names a `task_ref`
+that is not exactly one canonical row. On success it writes the `ID` column and
+the carrier's `task_id` join keys, re-reads the result, proves every persisted id
+equals its pre-migration derived id, and writes
+`<sprint stem>.schema-migration.v1.json` binding the old/new sprint bytes, the
+old/new Work Graph bytes, and the target commit.
+
+`src/core/state/sprint-schema-v1.ts` is the only surviving schema 1 identity
+derivation and is reachable exclusively from this command. Its compatibility
+owner and removal trigger are recorded in `tasks/todos.md`.
+
 ## Inventory First
 
 - Every execution-ready `plans/plan-*.md` should name the active plan, owning worktree, expected contract, review, notes file, deferred-goal ledger, `.ai/harness/checks/latest.json`, `.ai/harness/runs/`, scope authority, plan switching rule, and worktree isolation path. Checks latest files are runtime evidence pointers/cache, not commit surface.

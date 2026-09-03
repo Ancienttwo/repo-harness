@@ -13,7 +13,7 @@ import {
   transitionTaskMessageDeliveryReceipt,
   validateTaskMessageDeliveryReceipt,
 } from '../../src/core/fleet/task-message';
-import { bindLeaseRecord, buildLeaseOwnerRecord, deriveTaskId, deriveTaskRevision } from '../../src/core/state/coordination-identity';
+import { bindLeaseRecord, buildLeaseOwnerRecord, deriveTaskRevision } from '../../src/core/state/coordination-identity';
 import {
   buildAgentRuntimeCapabilityObservation,
   buildAgentRuntimeEffectCurrent,
@@ -47,6 +47,7 @@ import {
   recordAgentRuntimeCapability,
   startAgentRuntimeEffect,
 } from '../../src/effects/engineers/agent-runtime-effect-store';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const sourceRoot = process.cwd();
 const roots: string[] = [];
@@ -86,19 +87,21 @@ function message(repoRoot: string, body = 'secret-message-body') {
 }
 
 function capability(repoRoot: string, adapter: 'codex-app-thread' | 'tmux-cli-agent' = 'codex-app-thread') {
-  return recordAgentRuntimeCapability(repoRoot, { adapter_kind: adapter, host_id: 'local', operations: { notify_inbox: 'supported' }, evidence_refs: [{ ref: 'canary', sha256: digest }], observed_at: '2026-08-30T10:02:00.000Z' });
+  return recordAgentRuntimeCapability(repoRoot, { adapter_kind: adapter, host_id: 'local', operations: { notify_inbox: 'supported', wake_for_offer: 'supported' }, evidence_refs: [{ ref: 'canary', sha256: digest }], observed_at: '2026-08-30T10:02:00.000Z' });
 }
 
 function prepare(repoRoot: string, adapter: 'codex-app-thread' | 'tmux-cli-agent' = 'codex-app-thread') {
   message(repoRoot); const profile = loadEngineerProfile(repoRoot, engineerId); const binding = readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision).binding!; const observed = capability(repoRoot, adapter);
-  return prepareAgentRuntimeEffect({ repo_root: repoRoot, message_kind: 'module_message', engineer_id: engineerId, message_id: messageOne, idempotency_key: 'runtime-one', expected_binding_id: binding.binding_id, expected_binding_generation: binding.binding_generation, expected_engineer_contract_revision: binding.engineer_contract_revision, expected_capability_sha256: observed.capability_sha256, created_at: '2026-08-30T10:03:00.000Z' });
+  const status = prepareAgentRuntimeEffect({ repo_root: repoRoot, message_kind: 'module_message', engineer_id: engineerId, message_id: messageOne, idempotency_key: 'runtime-one', expected_binding_id: binding.binding_id, expected_binding_generation: binding.binding_generation, expected_engineer_contract_revision: binding.engineer_contract_revision, expected_capability_sha256: observed.capability_sha256, created_at: '2026-08-30T10:03:00.000Z' });
+  if (status.intent.operation !== 'notify_inbox') throw new Error('prepared effect is not a message notification');
+  return { ...status, intent: status.intent };
 }
 
 afterEach(() => { while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true }); });
 
 describe('R1 provider-neutral Agent Runtime', () => {
   test('V2 schemas are closed and host action contains control identity, never message content', () => {
-    const observed = buildAgentRuntimeCapabilityObservation({ adapter_kind: 'tmux-cli-agent', host_id: 'local', operations: { notify_inbox: 'supported' }, evidence_refs: [{ ref: 'canary', sha256: digest }], observed_at: '2026-08-30T10:00:00.000Z' });
+    const observed = buildAgentRuntimeCapabilityObservation({ adapter_kind: 'tmux-cli-agent', host_id: 'local', operations: { notify_inbox: 'supported', wake_for_offer: 'supported' }, evidence_refs: [{ ref: 'canary', sha256: digest }], observed_at: '2026-08-30T10:00:00.000Z' });
     expect(validateAgentRuntimeCapabilityObservation(JSON.parse(canonicalAgentRuntimeCapabilityBytes(observed)))).toEqual(observed);
     expect(() => validateAgentRuntimeCapabilityObservation({ ...observed, send: 'supported' })).toThrow();
     const intent = buildAgentRuntimeEffectIntent({ idempotency_key: 'schema', message_ref: { kind: 'module_message', message_id: messageOne, message_event_digest: digest, engineer_id: engineerId, binding_id: bindingOne, binding_generation: 1, engineer_contract_revision: digest, delivery_attempt: 1 }, endpoint_fence: { engineer_id: engineerId, binding_id: bindingOne, binding_generation: 1, engineer_contract_revision: digest, adapter_kind: 'tmux-cli-agent', host_id: 'local', endpoint_id: 'opaque-endpoint' }, operation: 'notify_inbox', capability_sha256: digest, created_at: '2026-08-30T10:00:00.000Z' });
@@ -143,9 +146,9 @@ describe('R1 provider-neutral Agent Runtime', () => {
   test('Task delivery derives its endpoint from ClaimActorReceipt and preserves the exact Lease fence', () => {
     const repoRoot = fixture();
     const sprintPath = 'plans/sprints/runtime.sprint.md'; const taskCell = 'wake exact task owner'; mkdirSync(join(repoRoot, 'plans/sprints'), { recursive: true });
-    writeFileSync(join(repoRoot, sprintPath), ['# Sprint: runtime', '', '## Backlog', '', '| # | Status | Task | Mode | Acceptance | Plan |', '|---|---|---|---|---|---|', `| 1 | [ ] | ${taskCell} | contract | exact receipt | (pending) |`, ''].join('\n'));
+    writeFileSync(join(repoRoot, sprintPath), ['# Sprint: runtime', '', '> **Backlog Schema**: 2', '', '## Backlog', '', '| # | ID | Status | Task | Mode | Acceptance | Plan |', '|---|---|---|---|---|---|---|', `| 1 | ${fixtureTaskId(taskCell)} | [ ] | ${taskCell} | contract | exact receipt | (pending) |`, ''].join('\n'));
     execFileSync('git', ['add', sprintPath], { cwd: repoRoot }); execFileSync('git', ['commit', '-qm', 'task authority'], { cwd: repoRoot });
-    const taskId = deriveTaskId({ repoIdentity: resolveRepoIdentity(repoRoot), sprintPath, taskCell }); const taskRevision = deriveTaskRevision({ taskId, modeCell: 'contract', acceptanceCell: 'exact receipt' }); const claimId = '44444444-4444-4444-8444-444444444444';
+    const taskId = fixtureTaskId(taskCell); const taskRevision = deriveTaskRevision({ taskCell: taskCell, taskId, modeCell: 'contract', acceptanceCell: 'exact receipt' }); const claimId = '44444444-4444-4444-8444-444444444444';
     const claimed = buildLeaseOwnerRecord({ claimId, taskId, taskRevision, sprintPath, targetRef: 'HEAD', generation: 1, sessionId: 'runtime-session', sourceWorktree: repoRoot });
     const bound = bindLeaseRecord(claimed, { claimId, executionWorktree: repoRoot, branch: 'codex/runtime', unitRef: 'plans/runtime.md' }); if (!bound.ok) throw new Error(bound.error); createLeaseDirectory(repoRoot, taskId); writeLeaseOwnerDurably(repoRoot, taskId, bound.record);
     const profile = loadEngineerProfile(repoRoot, engineerId); const binding = readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision).binding!;
@@ -163,9 +166,9 @@ describe('R1 provider-neutral Agent Runtime', () => {
   test('a Task hook delivery or a foreign control reference never proves the effect', () => {
     const repoRoot = fixture();
     const sprintPath = 'plans/sprints/runtime.sprint.md'; const taskCell = 'wake exact task owner'; mkdirSync(join(repoRoot, 'plans/sprints'), { recursive: true });
-    writeFileSync(join(repoRoot, sprintPath), ['# Sprint: runtime', '', '## Backlog', '', '| # | Status | Task | Mode | Acceptance | Plan |', '|---|---|---|---|---|---|', `| 1 | [ ] | ${taskCell} | contract | exact receipt | (pending) |`, ''].join('\n'));
+    writeFileSync(join(repoRoot, sprintPath), ['# Sprint: runtime', '', '> **Backlog Schema**: 2', '', '## Backlog', '', '| # | ID | Status | Task | Mode | Acceptance | Plan |', '|---|---|---|---|---|---|---|', `| 1 | ${fixtureTaskId(taskCell)} | [ ] | ${taskCell} | contract | exact receipt | (pending) |`, ''].join('\n'));
     execFileSync('git', ['add', sprintPath], { cwd: repoRoot }); execFileSync('git', ['commit', '-qm', 'task authority'], { cwd: repoRoot });
-    const taskId = deriveTaskId({ repoIdentity: resolveRepoIdentity(repoRoot), sprintPath, taskCell }); const taskRevision = deriveTaskRevision({ taskId, modeCell: 'contract', acceptanceCell: 'exact receipt' }); const claimId = '44444444-4444-4444-8444-444444444444';
+    const taskId = fixtureTaskId(taskCell); const taskRevision = deriveTaskRevision({ taskCell: taskCell, taskId, modeCell: 'contract', acceptanceCell: 'exact receipt' }); const claimId = '44444444-4444-4444-8444-444444444444';
     const claimed = buildLeaseOwnerRecord({ claimId, taskId, taskRevision, sprintPath, targetRef: 'HEAD', generation: 1, sessionId: 'runtime-session', sourceWorktree: repoRoot });
     const bound = bindLeaseRecord(claimed, { claimId, executionWorktree: repoRoot, branch: 'codex/runtime', unitRef: 'plans/runtime.md' }); if (!bound.ok) throw new Error(bound.error); createLeaseDirectory(repoRoot, taskId); writeLeaseOwnerDurably(repoRoot, taskId, bound.record);
     const profile = loadEngineerProfile(repoRoot, engineerId); const binding = readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision).binding!;

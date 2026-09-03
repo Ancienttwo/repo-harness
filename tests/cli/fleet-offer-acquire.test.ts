@@ -14,6 +14,7 @@ import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import { spawnSync } from 'child_process';
 import { readLease } from '../../src/effects/state/coordination-lease-store';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const CLI = resolve(import.meta.dir, '../../src/cli/index.ts');
 const CWD = resolve(import.meta.dir, '../..');
@@ -140,12 +141,13 @@ function acquireFixture(): AcquireFixture {
   writeFileSync(join(repo, '.ai/harness/sprint/active-sprint'), `${sprintPath}\n`);
   writeFileSync(join(repo, sprintPath), [
     '# CLI acquire sprint',
+    '> **Backlog Schema**: 2',
     '',
     '## Backlog',
     '',
-    '| # | Status | Task | Mode | Acceptance | Plan |',
-    '| --- | --- | --- | --- | --- | --- |',
-    `| 1 | [ ] | ${task} | contract | returns one bound envelope | (pending) |`,
+    '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+    '| --- |----| --- | --- | --- | --- | --- |',
+    `| 1 | ${fixtureTaskId(`${task}`)} | [ ] | ${task} | contract | returns one bound envelope | (pending) |`,
     '',
   ].join('\n'));
   writeFileSync(join(repo, planPath), projectablePlan(sprintPath, task, planPath, contractPath));

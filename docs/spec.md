@@ -199,9 +199,27 @@ AcceptanceReceipt field.
   only explicitly engineer-scoped runtime commands issued through a trusted
   principal boundary.
 - **Agent Runtime effect**: An immutable V2 intent and observation chain that
-  fences one persisted inbox message to one current endpoint and admits at most
-  one closed `notify_inbox` Host action. Reachability and delivery are read-model
-  facts, never scheduling or acceptance authority.
+  fences one subject to one current endpoint and admits at most one closed Host
+  action per intent. `notify_inbox` fences one persisted inbox message;
+  `wake_for_offer` fences one `EngineerOffersV1` snapshot revision. Reachability
+  and delivery are read-model facts, never scheduling or acceptance authority.
+- **Task-offer wake**: A durable `wake_for_offer` effect armed from an offer
+  snapshot that has been re-proved against the offer authority's own
+  whole-document validator and fenced to this repository and the exact current
+  Binding, bound to the Engineer Binding generation, repository ID,
+  authorization revision, offer snapshot revision and a closed reason. Exactly
+  one wake is current per Binding: every wake mutation linearizes on the
+  per-Binding wake lock taken before the per-effect lock, a newer snapshot
+  supersedes an unstarted one into the terminal `superseded` state inside a
+  bounded coalescing window that it inherits rather than extends, and a started
+  one is never superseded. The Host action carries no claim token and no
+  writable authority, and success requires a controller-step receipt bound to
+  the effect control reference — never a message-delivery receipt and never a
+  process exit code. Binding, capability and authorization fences are re-read
+  after the start becomes durable, so a fence that commits during the start
+  yields a recorded failure instead of a stale Host action. A wake is a hint
+  that work may exist; the awakened controller re-reads current offers and
+  authorization, and a stale or empty snapshot is a no-op, not a claim.
 - **Dependency authority**: The single read-only resolver that answers one
   declared Work Graph dependency state from the one authority that already owns
   that verdict: the canonical Sprint row for `canonical_done`, the acceptance

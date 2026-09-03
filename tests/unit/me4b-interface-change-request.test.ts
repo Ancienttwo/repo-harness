@@ -22,6 +22,7 @@ import {
 } from '../../src/effects/engineers/interface-change-store';
 import { loadEngineerProfile } from '../../src/effects/engineers/profile-store';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const sourceRoot = process.cwd();
 const roots: string[] = [];
@@ -40,12 +41,13 @@ const digest = (bytes: string) => `sha256:${createHash('sha256').update(bytes, '
 const SPRINT_TEXT = `# Sprint: interface
 
 > **Status**: Approved
+> **Backlog Schema**: 2
 
 ## Backlog
 
-| # | Status | Task | Mode | Acceptance | Plan |
-|---|---|---|---|---|---|
-| 1 | [ ] | change target interface | contract | exact interface evidence | (pending) |
+| # | ID | Status | Task | Mode | Acceptance | Plan |
+|---|----|---|---|---|---|---|
+| 1 | ${fixtureTaskId('change target interface')} | [ ] | change target interface | contract | exact interface evidence | (pending) |
 
 ## Execution Log
 `;
@@ -119,7 +121,7 @@ function request(root: string) {
 function definition() {
   return {
     work_package_id: 'interface-contract-v2',
-    task_ref: 'change target interface',
+    task_id: fixtureTaskId('change target interface'),
     primary_capability: TARGET_CAPABILITY,
     depends_on: [],
     priority: 80,

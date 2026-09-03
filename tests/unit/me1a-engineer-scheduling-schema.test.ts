@@ -12,6 +12,7 @@ import {
   type SchedulingCanonicalTask,
   type WorkGraphV1,
 } from '../../src/core/engineers/scheduling';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const REPO = 'repo_0123456789abcdef';
 const OTHER_REPO = 'repo_fedcba9876543210';
@@ -31,7 +32,7 @@ const PRODUCT_AUTHORITY = {
 function workPackage(id = 'wp-a', taskRef = 'task A', dependsOn: unknown[] = []) {
   return {
     work_package_id: id,
-    task_ref: taskRef,
+    task_id: fixtureTaskId(taskRef),
     primary_capability: CAPABILITY,
     depends_on: dependsOn,
     priority: 50,
@@ -66,7 +67,7 @@ function graph(workPackages: unknown[], lane: 'generic-v1' | 'engineering-v2' = 
 
 function task(ref = 'task A', id = '1', revision = '2', rowOrder = 1): SchedulingCanonicalTask {
   return {
-    task_id: id.length === 64 ? id : id.repeat(64),
+    task_id: fixtureTaskId(ref),
     task_revision: revision.length === 64 ? revision : revision.repeat(64),
     task_ref: ref,
     status: '[ ]',
@@ -111,7 +112,7 @@ describe('ME-1A closed scheduling schema', () => {
     expect(() => projectWorkGraph(graph([workPackage()]), [task(), task('task B', '3', '4', 2)]))
       .toThrow('cover every canonical Sprint row');
     expect(() => projectWorkGraph(graph([workPackage('wp-a', 'missing')]), [task()]))
-      .toThrow('task_ref is absent');
+      .toThrow('task_id is absent');
   });
 
   test('rejects missing dependency targets and cycles across repository-qualified identities', () => {
@@ -135,7 +136,7 @@ describe('ME-1A closed scheduling schema', () => {
     expect(() => projectWorkGraph(graph([
       workPackage('wp-a', 'task A'),
       workPackage('wp-b', 'task B'),
-    ]), [task(), task('task B', '1', '3', 2)])).toThrow('duplicate task_id');
+    ]), [task(), { ...task('task B', '1', '3', 2), task_id: fixtureTaskId('task A') }])).toThrow('duplicate task_id');
   });
 
   test('builds a revision-fenced offer only when every closed input is ready', () => {
@@ -152,7 +153,7 @@ describe('ME-1A closed scheduling schema', () => {
       binding: { state: 'active', binding_id: '11111111-1111-4111-8111-111111111111', binding_generation: 1 },
       fleet_offer: {
         execution_readiness: 'execution_ready', snapshot_consistency: 'stable',
-        task_id: '1'.repeat(64), task_revision: '2'.repeat(64),
+        task_id: fixtureTaskId('task A'), task_revision: '2'.repeat(64),
         offer_revision: DIGEST, authorization_revision: 7,
       },
       dependencies: [],
@@ -220,7 +221,7 @@ describe('ME-1A closed scheduling schema', () => {
       binding: { state: 'active' as const, binding_id: '11111111-1111-4111-8111-111111111111', binding_generation: 1 },
       fleet_offer: {
         execution_readiness: 'execution_ready', snapshot_consistency: 'stable',
-        task_id: '1'.repeat(64), task_revision: '2'.repeat(64),
+        task_id: fixtureTaskId('task A'), task_revision: '2'.repeat(64),
         offer_revision: DIGEST, authorization_revision: 7,
       },
       dependencies: [],

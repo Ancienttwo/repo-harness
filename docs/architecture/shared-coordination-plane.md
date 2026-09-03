@@ -37,22 +37,36 @@ board 只读上述五者,不读 worktree metadata,不取 task lock。
 
 ## 2. 身份公式
 
-两条推导都在 `src/core/state/coordination-identity.ts`,digest 为 `sha256` hex,
-preimage 是 `JSON.stringify(<string[]>)` —— 数组的 JSON 编码即 domain separation,
-每个字段都被引号包裹并转义,任何字段值都无法把分隔符伪造进另一个字段位置。
+身份是读出来的,不是推导出来的。backlog schema 2 的行携带一个持久化 `ID` 单元格,
+`task_id` 就是这个单元格的原文,经 `TASK_DIGEST_PATTERN` 校验(64 位小写 hex)。
+只有 revision 还是推导,实现在 `src/core/state/coordination-identity.ts`,digest 为
+`sha256` hex,preimage 是 `JSON.stringify(<string[]>)` —— 数组的 JSON 编码即 domain
+separation,每个字段都被引号包裹并转义,任何字段值都无法把分隔符伪造进另一个字段位置。
 
 ```text
-task_id       = sha256(["repo-harness-task-id", protocol, repo_identity, sprint_path, task_cell])
-task_revision = sha256(["repo-harness-task-revision", protocol, task_id, mode_cell, acceptance_cell])
+task_id       = <backlog 行的 ID 单元格原文>
+task_revision = sha256(["repo-harness-task-revision", "protocol-v2", task_id, task_cell, mode_cell, acceptance_cell])
 ```
 
-`task_id` 排除行号:删除或重排第 1 行会改写它下面每一行的身份,把在用 lease
-孤儿化成不可达目录,同时让同一批任务以新 id 重新可领。
-`task_revision` 排除 Status 单元格:兄弟行完成会重写 sprint 文件,若 revision
-随之移动,每一个并发 claim 都会被判定漂移,并行执行就不可能了。
+schema 1 曾用 `sha256(["repo-harness-task-id", protocol, repo_identity, sprint_path, task_cell])`
+推导身份,于是改一次标题就等于删掉一个任务再建一个:在用 lease 被孤儿化、
+claim 作用域的消息失去 subject、Work Graph 载体映射不到自己的 Work Package、
+重命名后的行重新可领。展示文本与身份是两份数据,不再共用一个字段。
 
-`repo_identity` 是解析后的 git common directory —— 一个 clone 的所有 linked
-worktree 共享它,这正是协调面的作用域;跨 clone / 跨机器协调在 v1 之外。
+`task_revision` 的 preimage 现在直接包含 Task 单元格,所以标题编辑仍然让改动前
+拿到的 offer 与 claim 漂移——身份保住,陈旧性照样暴露。它排除 Status 单元格:
+兄弟行完成会重写 sprint 文件,若 revision 随之移动,每一个并发 claim 都会被判定
+漂移,并行执行就不可能了。行号同样不是身份,重排不改变任何东西。
+
+revision preimage 里的版本域是字面量 `protocol-v2`(`SPRINT_IDENTITY_PROTOCOL_V2`),
+不是 `COORDINATION_PROTOCOL`。后者版本化的是 lease owner record 及其落盘平面,
+`parseLeaseOwnerRecord` 对任何其他值 fail closed;拿它去版本化身份推导会让盘上
+每一条既有记录变成不可读。两个版本轴是分开的常量。
+
+schema 1 sprint 无法在任何路径上产生身份。`projectCanonicalTasks` 直接 fail
+closed 并指向 `repo-harness sprint migrate-schema`;唯一残留的 v1 推导在
+`src/core/state/sprint-schema-v1.ts`,只服务于那条一次性迁移命令,移除触发条件
+记在 `tasks/todos.md`。
 
 ## 3. 四态机与 fencing
 

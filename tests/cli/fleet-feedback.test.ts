@@ -27,7 +27,6 @@ import {
   beginLeaseCompletionRecord,
   bindLeaseRecord,
   buildLeaseOwnerRecord,
-  deriveTaskId,
   deriveTaskRevision,
   enterReviewingLeaseRecord,
 } from '../../src/core/state/coordination-identity';
@@ -52,6 +51,7 @@ import {
   readLease,
   writeLeaseOwnerDurably,
 } from '../../src/effects/state/coordination-lease-store';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const CLI = resolve(import.meta.dir, '../../src/cli/index.ts');
 const CLAIM = 'claim-feedback-cli';
@@ -150,18 +150,18 @@ function fixture(): Fixture {
   git(root, 'config', 'user.email', 'fleet-feedback-cli@test.invalid');
   mkdirSync(join(root, 'plans/sprints'), { recursive: true });
   writeFileSync(join(root, SPRINT), [
-    '# Sprint: feedback CLI', '', '## Backlog', '',
-    '| # | Status | Task | Mode | Acceptance | Plan |',
-    '|---|--------|------|------|------------|------|',
-    `| 1 | [ ] | ${TASK} | contract | provider feedback passes | (pending) |`, '',
+    '# Sprint: feedback CLI', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+    '|---|----|--------|------|------|------------|------|',
+    `| 1 | ${fixtureTaskId(`${TASK}`)} | [ ] | ${TASK} | contract | provider feedback passes | (pending) |`, '',
   ].join('\n'));
   writeFileSync(join(root, 'README.md'), 'feedback cli fixture\n');
   git(root, 'add', '.');
   git(root, 'commit', '-m', 'seed feedback CLI fixture');
 
   const repoIdentity = resolveRepoIdentity(root);
-  const taskId = deriveTaskId({ repoIdentity, sprintPath: SPRINT, taskCell: TASK });
-  const taskRevision = deriveTaskRevision({ taskId, modeCell: 'contract', acceptanceCell: 'provider feedback passes' });
+  const taskId = fixtureTaskId(TASK);
+  const taskRevision = deriveTaskRevision({ taskCell: TASK, taskId, modeCell: 'contract', acceptanceCell: 'provider feedback passes' });
   git(root, 'switch', '-c', 'codex/feedback-cli');
   writeFileSync(join(root, 'feature.txt'), 'feedback\n');
   mkdirSync(join(root, '.ai/harness/checks'), { recursive: true });
@@ -265,14 +265,14 @@ function addAmbiguousReviewingPublication(subject: Fixture): void {
   const taskCell = 'second current reviewing publication';
   const task = 'second current reviewing publication';
   writeFileSync(join(subject.root, sprintPath), [
-    '# Sprint: feedback CLI ambiguity', '', '## Backlog', '',
-    '| # | Status | Task | Mode | Acceptance | Plan |',
-    '|---|--------|------|------|------------|------|',
-    `| 1 | [ ] | ${task} | contract | provider feedback passes | (pending) |`, '',
+    '# Sprint: feedback CLI ambiguity', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+    '|---|----|--------|------|------|------------|------|',
+    `| 1 | ${fixtureTaskId(`${task}`)} | [ ] | ${task} | contract | provider feedback passes | (pending) |`, '',
   ].join('\n'));
   const repoIdentity = resolveRepoIdentity(subject.root);
-  const taskId = deriveTaskId({ repoIdentity, sprintPath, taskCell });
-  const taskRevision = deriveTaskRevision({
+  const taskId = fixtureTaskId(taskCell);
+  const taskRevision = deriveTaskRevision({ taskCell,
     taskId,
     modeCell: 'contract',
     acceptanceCell: 'provider feedback passes',

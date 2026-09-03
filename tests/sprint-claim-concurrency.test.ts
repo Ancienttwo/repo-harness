@@ -68,6 +68,7 @@ import {
   inspectCutoverQuiescence,
   recordCutoverInstalled,
 } from '../src/effects/state/coordination-cutover';
+import { fixtureTaskId } from './helpers/sprint-fixture';
 
 const ROOT = join(import.meta.dir, '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -222,6 +223,7 @@ function sprintFile(rows: readonly string[]): string {
     '> **Slug**: race',
     '> **Created**: 2026-08-18 00:00',
     '> **Updated**: 2026-08-18 00:00',
+    '> **Backlog Schema**: 2',
     '',
     '## PRD',
     '',
@@ -229,8 +231,8 @@ function sprintFile(rows: readonly string[]): string {
     '',
     '## Backlog',
     '',
-    '| # | Status | Task | Mode | Acceptance | Plan |',
-    '|---|--------|------|------|------------|------|',
+    '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+    '|---|----|--------|------|------|------------|------|',
     ...rows,
     '',
     '## Execution Log',
@@ -242,8 +244,8 @@ function sprintFile(rows: readonly string[]): string {
 }
 
 const PENDING_ROWS = [
-  `| 1 | [ ] | ${ROW_ONE} | contract | tests pass | (pending) |`,
-  `| 2 | [ ] | ${ROW_TWO} | inline | doc updated | (pending) |`,
+  `| 1 | ${fixtureTaskId(`${ROW_ONE}`)} | [ ] | ${ROW_ONE} | contract | tests pass | (pending) |`,
+  `| 2 | ${fixtureTaskId(`${ROW_TWO}`)} | [ ] | ${ROW_TWO} | inline | doc updated | (pending) |`,
 ];
 
 interface Fixture {
@@ -555,7 +557,7 @@ describe('a stolen-from agent cannot act on the new owner"s lease', () => {
     writeFileSync(
       join(fixture.primary, SPRINT_PATH),
       sprintFile([
-        `| 1 | [x] | ${ROW_ONE} | contract | tests pass | \`plans/archive/plan-row-one.md\` |`,
+        `| 1 | ${fixtureTaskId(`${ROW_ONE}`)} | [x] | ${ROW_ONE} | contract | tests pass | \`plans/archive/plan-row-one.md\` |`,
         PENDING_ROWS[1],
       ]),
     );
@@ -764,7 +766,7 @@ describe('reservations, crash windows, and reconcile', () => {
     writeFileSync(
       join(fixture.primary, SPRINT_PATH),
       sprintFile([
-        `| 1 | [x] | ${ROW_ONE} | contract | tests pass | \`plans/archive/plan-row-one.md\` |`,
+        `| 1 | ${fixtureTaskId(`${ROW_ONE}`)} | [x] | ${ROW_ONE} | contract | tests pass | \`plans/archive/plan-row-one.md\` |`,
         PENDING_ROWS[1],
       ]),
     );
@@ -869,7 +871,7 @@ describe('completion transaction boundaries', () => {
     expect(complete.status, `${complete.stdout}\n${complete.stderr}`).toBe(0);
     expect(complete.stdout).toContain(`Released lease for '${ROW_TWO}'`);
     expect(readFileSync(join(fixture.primary, SPRINT_PATH), 'utf-8'))
-      .toMatch(new RegExp(`\\|\\s*2\\s*\\|\\s*\\[x\\]\\s*\\|\\s*${ROW_TWO}`));
+      .toMatch(new RegExp(`\\|\\s*2\\s*\\|\\s*[0-9a-f]{64}\\s*\\|\\s*\\[x\\]\\s*\\|\\s*${ROW_TWO}`));
 
     // Publish the sibling's completion, so canonical `main` -- the ref every
     // verb validates against -- now carries a rewritten sprint file.
@@ -1207,8 +1209,8 @@ describe('board projection over real linked worktrees', () => {
     // The publication back-fills the canonical row; the lease outlives it when
     // the finish crashes between the two.
     writeFileSync(join(fixture.primary, SPRINT_PATH), sprintFile([
-      `| 1 | [x] | ${ROW_ONE} | contract | tests pass | (done) |`,
-      `| 2 | [ ] | ${ROW_TWO} | inline | doc updated | (pending) |`,
+      `| 1 | ${fixtureTaskId(`${ROW_ONE}`)} | [x] | ${ROW_ONE} | contract | tests pass | (done) |`,
+      `| 2 | ${fixtureTaskId(`${ROW_TWO}`)} | [ ] | ${ROW_TWO} | inline | doc updated | (pending) |`,
     ]));
     git(fixture.primary, ['commit', '--quiet', '-am', 'complete row one']);
 

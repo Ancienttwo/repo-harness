@@ -5,7 +5,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 
 import { TASK_MESSAGE_HOOK_MAX_BYTES, buildTaskMessageEvent, renderTaskMessageUntrustedContext } from '../../src/core/fleet/task-message';
-import { bindLeaseRecord, buildLeaseOwnerRecord, deriveTaskId, deriveTaskRevision } from '../../src/core/state/coordination-identity';
+import { bindLeaseRecord, buildLeaseOwnerRecord, deriveTaskRevision } from '../../src/core/state/coordination-identity';
 import {
   TaskInboxError,
   acknowledgeTaskInbox,
@@ -16,6 +16,7 @@ import {
 } from '../../src/effects/fleet/task-inbox';
 import { readLease, createLeaseDirectory, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
 import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const SPRINT_PATH = 'plans/sprints/inbox.sprint.md';
 const TASK_CELL = 'deliver peer messages safely';
@@ -41,15 +42,15 @@ function fixture(): Fixture {
   writeFileSync(join(root, 'README.md'), 'fixture\n');
   mkdirSync(join(root, 'plans/sprints'), { recursive: true });
   writeFileSync(join(root, SPRINT_PATH), [
-    '# Sprint: inbox', '', '## Backlog', '',
-    '| # | Status | Task | Mode | Acceptance | Plan |',
-    '|---|--------|------|------|------------|------|',
-    `| 1 | [ ] | ${TASK_CELL} | contract | proves delivery | (pending) |`, '',
+    '# Sprint: inbox', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+    '|---|----|--------|------|------|------------|------|',
+    `| 1 | ${fixtureTaskId(`${TASK_CELL}`)} | [ ] | ${TASK_CELL} | contract | proves delivery | (pending) |`, '',
   ].join('\n'));
   git(root, 'add', '.');
   git(root, 'commit', '-m', 'fixture');
-  const task_id = deriveTaskId({ repoIdentity: resolveRepoIdentity(root), sprintPath: SPRINT_PATH, taskCell: TASK_CELL });
-  const task_revision = deriveTaskRevision({ taskId: task_id, modeCell: 'contract', acceptanceCell: 'proves delivery' });
+  const task_id = fixtureTaskId(TASK_CELL);
+  const task_revision = deriveTaskRevision({ taskCell: TASK_CELL, taskId: task_id, modeCell: 'contract', acceptanceCell: 'proves delivery' });
   return { root, task_id, task_revision, source: { targetRef: 'main', sprintPath: SPRINT_PATH } };
 }
 

@@ -1,0 +1,71 @@
+{
+  "protocol": 1,
+  "kind": "repo-harness-sprint-schema-migration",
+  "from_schema": 1,
+  "to_schema": 2,
+  "sprint_path": "plans/sprints/20260828-2321-collaborative-work-exchange-agent-succession.sprint.md",
+  "target_ref": "HEAD",
+  "target_commit": "e7301e151a60e9e945a67957c83dc952a5d74f5d",
+  "sprint_sha256_before": "sha256:e974a8798fba94244d3126ce743c2075200a1ea923d64dceb2a48d9b72ce97e7",
+  "sprint_sha256_after": "sha256:8da6d4748794b3855a386227c6b6a7843bce793fdbbffb386b3724451a19e0f8",
+  "work_graph_path": null,
+  "work_graph_sha256_before": null,
+  "work_graph_sha256_after": null,
+  "tasks": [
+    {
+      "row_index": "1",
+      "task_id": "309d876dd19f864bd3c0a38d2061f553879155b7f8dc47a5cf42521bb84b4312",
+      "task_cell": "C0 — freeze collaboration/delivery two-plane authority"
+    },
+    {
+      "row_index": "2",
+      "task_id": "de6acec87732c3098082a6fa4d13e79d5503d449cf50211d243b55e46a79161e",
+      "task_cell": "C1 — `CoordinationSignalV1` schema, `common.ts` and append-only store"
+    },
+    {
+      "row_index": "3",
+      "task_id": "82103e3da659fb101defa8ce5c836fc4bdd554b67d7e00d3f7ec07d22a4ce716",
+      "task_cell": "C2 — signal threads, discovery and hotspot projection"
+    },
+    {
+      "row_index": "4",
+      "task_id": "e27fd4548c0391e4ac921e726938a5338a6c0c6eabec992b79696c405bce2c9b",
+      "task_cell": "C3 — `WorkStateHandoffV1` and adoption receipts"
+    },
+    {
+      "row_index": "5",
+      "task_id": "1f44ba45de1df0adf4cccd20e65d64cf971b005f1ab3cf0363a3173a326bff3a",
+      "task_cell": "C4 — delegated Worker contribution adapter"
+    },
+    {
+      "row_index": "6",
+      "task_id": "76ba87d2a64a18f17e4917d870ac335e4138a3587dd770a949769af3624edeed",
+      "task_cell": "C5 — TaskFreeze / explicit takeover succession integration"
+    },
+    {
+      "row_index": "7",
+      "task_id": "8879e88ac06237eaf71d9fe13e5dcb070dceac9bf1713a58ebf7c05f3e165ba1",
+      "task_cell": "C6 — collaboration-centric Work Exchange and ContextPacket"
+    },
+    {
+      "row_index": "8",
+      "task_id": "935f48c4523b248073e20e315883a75216cd2d857a1214e9ec2ba74b5c5066ff",
+      "task_cell": "C7 — CLI/MCP and bounded context injection"
+    },
+    {
+      "row_index": "9",
+      "task_id": "64d764b6f0ff0d9450efa5a46328554e799b19d67e9853d4cbffb90132b0e5d2",
+      "task_cell": "C8 — read-only Operator collaboration surface"
+    },
+    {
+      "row_index": "10",
+      "task_id": "713faba2363d48603cfbb0b81eca578c239e18fd1474dcf22a8c175fa0232349",
+      "task_cell": "C9 — real multi-agent canary and multi-seat decision"
+    },
+    {
+      "row_index": "11",
+      "task_id": "938bc73de481a09e96d1d5e2346423d79de16f5b66e20259badb8b1767399e90",
+      "task_cell": "R1 — provider-neutral runtime effect and optional tmux endpoint adapter"
+    }
+  ]
+}
