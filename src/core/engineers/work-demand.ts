@@ -225,6 +225,16 @@ export function buildAcceptedWorkDemandProjection(input: Omit<AcceptedWorkDemand
   return Object.freeze({ ...basis, projection_sha256: canonicalMessageDigest(basis) });
 }
 
+export function validateAcceptedWorkDemandProjection(value: unknown): AcceptedWorkDemandProjectionV1 {
+  const input = record(value, 'accepted WorkDemand projection');
+  exact(input, ['protocol', 'kind', 'demand_id', 'demand_sha256', 'accepted_from_current_digest', 'sprint_path', 'expected_sprint_commit', 'expected_work_graph_revision', 'task_id', 'task_text', 'task_mode', 'acceptance_text', 'work_package', 'work_package_revision', 'planning_required', 'projection_sha256'], 'accepted WorkDemand projection');
+  if (input.protocol !== WORK_DEMAND_PROTOCOL || input.kind !== WORK_DEMAND_PROJECTION_KIND) invalid('accepted projection protocol or kind is invalid');
+  const built = buildAcceptedWorkDemandProjection(input as unknown as Omit<AcceptedWorkDemandProjectionV1, 'protocol' | 'kind' | 'work_package_revision' | 'projection_sha256'>);
+  if (input.work_package_revision !== built.work_package_revision || input.projection_sha256 !== built.projection_sha256
+    || canonicalMessageBytes(input) !== canonicalMessageBytes(built as unknown as RecordValue)) invalid('accepted projection digest is stale');
+  return built;
+}
+
 function sameFence(left: WorkDemandEngineerFenceV1, right: WorkDemandEngineerFenceV1): boolean { return canonicalMessageBytes(left as unknown as RecordValue) === canonicalMessageBytes(right as unknown as RecordValue); }
 
 export function assertWorkDemandActor(demand: WorkDemandV1, transition: WorkDemandTransition, actor: WorkDemandActorV1): void {
@@ -253,4 +263,99 @@ export function buildMaterializedWorkDemandReceipt(input: Omit<MaterializedWorkD
     task_id: required(input.task_id, 'task_id', TASK_ID), work_package_id: required(input.work_package_id, 'work_package_id', /^[a-z0-9][a-z0-9-]{0,127}$/u),
     work_package_revision: sha(input.work_package_revision, 'work_package_revision'), materialized_commit: required(input.materialized_commit, 'materialized_commit', /^[0-9a-f]{40,64}$/u) });
   return Object.freeze({ ...basis, receipt_sha256: canonicalMessageDigest(basis) });
+}
+
+export function validateMaterializedWorkDemandReceipt(value: unknown): MaterializedWorkDemandReceiptV1 {
+  const input = record(value, 'materialized WorkDemand receipt');
+  exact(input, ['protocol', 'kind', 'demand_id', 'demand_sha256', 'projection_sha256', 'repository_id', 'sprint_path', 'task_id', 'work_package_id', 'work_package_revision', 'materialized_commit', 'receipt_sha256'], 'materialized WorkDemand receipt');
+  if (input.protocol !== WORK_DEMAND_PROTOCOL || input.kind !== 'repo-harness-materialized-work-demand-receipt') invalid('materialization receipt protocol or kind is invalid');
+  const built = buildMaterializedWorkDemandReceipt(input as unknown as Omit<MaterializedWorkDemandReceiptV1, 'protocol' | 'kind' | 'receipt_sha256'>);
+  if (input.receipt_sha256 !== built.receipt_sha256 || canonicalMessageBytes(input) !== canonicalMessageBytes(built as unknown as RecordValue)) invalid('materialization receipt digest is stale');
+  return built;
+}
+
+function validateActor(value: unknown): WorkDemandActorV1 {
+  const input = record(value, 'WorkDemand actor');
+  if (input.kind === 'engineer') {
+    exact(input, ['kind', 'principal'], 'WorkDemand actor');
+    return Object.freeze({ kind: 'engineer', principal: engineerFence(input.principal) });
+  }
+  if (input.kind === 'human') {
+    exact(input, ['kind', 'principal_ref'], 'WorkDemand actor');
+    return Object.freeze({ kind: 'human', principal_ref: bounded(input.principal_ref, 'principal_ref', 512) });
+  }
+  return invalid('WorkDemand actor kind is invalid');
+}
+
+export interface BuildWorkDemandEventInput {
+  readonly demand: WorkDemandV1;
+  readonly previous: WorkDemandCurrentV1 | null;
+  readonly idempotency_key: string;
+  readonly transition: WorkDemandTransition;
+  readonly expected_current_digest: string | null;
+  readonly actor: WorkDemandActorV1;
+  readonly accepted_projection: AcceptedWorkDemandProjectionV1 | null;
+  readonly materialization_receipt: MaterializedWorkDemandReceiptV1 | null;
+}
+
+export function deriveWorkDemandTransitionId(demandId: string, idempotencyKey: string): string {
+  return canonicalMessageDigest({ domain: 'repo-harness-work-demand-transition.v1', demand_id: uuid(demandId, 'demand_id'), idempotency_key: bounded(idempotencyKey, 'idempotency_key', 512) });
+}
+
+export function buildWorkDemandEvent(input: BuildWorkDemandEventInput): WorkDemandEventV1 {
+  const demand = validateWorkDemand(input.demand);
+  const previous = input.previous === null ? null : validateWorkDemandCurrent(input.previous);
+  if ((previous?.current_digest ?? null) !== input.expected_current_digest) throw new WorkDemandError('work_demand_stale', 'expected WorkDemand current digest is stale');
+  const actor = validateActor(input.actor); assertWorkDemandActor(demand, input.transition, actor);
+  const next = nextWorkDemandState(previous, input.transition);
+  const projection = input.accepted_projection === null ? null : validateAcceptedWorkDemandProjection(input.accepted_projection);
+  const receipt = input.materialization_receipt === null ? null : validateMaterializedWorkDemandReceipt(input.materialization_receipt);
+  if (input.transition === 'accept') {
+    if (!projection || previous === null || projection.demand_id !== demand.demand_id || projection.demand_sha256 !== demand.demand_sha256 || projection.accepted_from_current_digest !== previous.current_digest) invalid('accept requires the exact immutable projection');
+  } else if (projection !== null) invalid('only accept may carry an accepted projection');
+  if (input.transition === 'materialize') {
+    const accepted = previous?.accepted_projection;
+    if (!receipt || !accepted || receipt.demand_id !== demand.demand_id || receipt.demand_sha256 !== demand.demand_sha256
+      || receipt.projection_sha256 !== accepted.projection_sha256 || receipt.task_id !== accepted.task_id
+      || receipt.work_package_id !== accepted.work_package.work_package_id || receipt.work_package_revision !== accepted.work_package_revision) invalid('materialize requires a receipt for the exact accepted projection');
+  } else if (receipt !== null) invalid('only materialize may carry a materialization receipt');
+  const idempotencyKey = bounded(input.idempotency_key, 'idempotency_key', 512);
+  const operation = { demand_id: demand.demand_id, demand_sha256: demand.demand_sha256, transition: input.transition,
+    expected_current_digest: input.expected_current_digest, actor, accepted_projection_sha256: projection?.projection_sha256 ?? null,
+    materialization_receipt_sha256: receipt?.receipt_sha256 ?? null };
+  const basis = Object.freeze({ protocol: WORK_DEMAND_PROTOCOL, kind: WORK_DEMAND_EVENT_KIND,
+    transition_id: deriveWorkDemandTransitionId(demand.demand_id, idempotencyKey), idempotency_key: idempotencyKey,
+    operation_fingerprint: canonicalMessageDigest(operation), demand_id: demand.demand_id, demand_sha256: demand.demand_sha256,
+    revision: (previous?.revision ?? 0) + 1, transition: input.transition, expected_current_digest: input.expected_current_digest,
+    actor, next_state: next, accepted_projection: projection, materialization_receipt: receipt });
+  return Object.freeze({ ...basis, event_sha256: canonicalMessageDigest(basis) });
+}
+
+export function foldWorkDemandCurrent(previous: WorkDemandCurrentV1 | null, eventValue: WorkDemandEventV1): WorkDemandCurrentV1 {
+  const event = eventValue;
+  if ((previous?.current_digest ?? null) !== event.expected_current_digest || event.revision !== (previous?.revision ?? 0) + 1) invalid('WorkDemand event chain is discontinuous');
+  const basis = Object.freeze({ protocol: WORK_DEMAND_PROTOCOL, kind: WORK_DEMAND_CURRENT_KIND, demand_id: event.demand_id,
+    demand_sha256: event.demand_sha256, revision: event.revision, state: event.next_state, current_event_sha256: event.event_sha256,
+    accepted_projection: event.accepted_projection ?? previous?.accepted_projection ?? null,
+    materialization_receipt: event.materialization_receipt ?? previous?.materialization_receipt ?? null,
+    previous_current_digest: previous?.current_digest ?? null });
+  return Object.freeze({ ...basis, current_digest: canonicalMessageDigest(basis) });
+}
+
+export function validateWorkDemandCurrent(value: unknown): WorkDemandCurrentV1 {
+  const input = record(value, 'WorkDemand current');
+  exact(input, ['protocol', 'kind', 'demand_id', 'demand_sha256', 'revision', 'state', 'current_event_sha256', 'accepted_projection', 'materialization_receipt', 'previous_current_digest', 'current_digest'], 'WorkDemand current');
+  if (input.protocol !== WORK_DEMAND_PROTOCOL || input.kind !== WORK_DEMAND_CURRENT_KIND) invalid('WorkDemand current protocol or kind is invalid');
+  assertMessageInteger(input.revision, 'revision', 1, invalid);
+  const state = required(input.state, 'state') as WorkDemandState;
+  if (!['proposed', 'under_review', 'accepted', 'rejected', 'cancelled', 'materializing', 'materialized', 'integrated'].includes(state)) invalid('WorkDemand current state is invalid');
+  const basis = Object.freeze({ protocol: WORK_DEMAND_PROTOCOL, kind: WORK_DEMAND_CURRENT_KIND, demand_id: uuid(input.demand_id, 'demand_id'),
+    demand_sha256: sha(input.demand_sha256, 'demand_sha256'), revision: input.revision, state,
+    current_event_sha256: sha(input.current_event_sha256, 'current_event_sha256'),
+    accepted_projection: input.accepted_projection === null ? null : validateAcceptedWorkDemandProjection(input.accepted_projection),
+    materialization_receipt: input.materialization_receipt === null ? null : validateMaterializedWorkDemandReceipt(input.materialization_receipt),
+    previous_current_digest: input.previous_current_digest === null ? null : sha(input.previous_current_digest, 'previous_current_digest') });
+  const built = Object.freeze({ ...basis, current_digest: canonicalMessageDigest(basis) });
+  if (input.current_digest !== built.current_digest || canonicalMessageBytes(input) !== canonicalMessageBytes(built as unknown as RecordValue)) invalid('WorkDemand current digest is stale');
+  return built;
 }
