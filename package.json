@@ -87,8 +87,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "archctx": "0.4.7",
-    "archctx-contracts": "0.4.7",
+    "archctx": "0.5.2",
+    "archctx-contracts": "0.5.2",
     "commander": "^15.0.0",
     "express": "^5.2.1"
   }

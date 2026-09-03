@@ -170,17 +170,17 @@ function setupManagedRuntimeReadback(home: string, fakeBin: string, harnessVersi
   writeFileSync(join(harness, 'package.json'), JSON.stringify({
     name: 'repo-harness',
     version: harnessVersion,
-    dependencies: { archctx: '0.4.7', 'archctx-contracts': '0.4.7' },
+    dependencies: { archctx: '0.5.2', 'archctx-contracts': '0.5.2' },
   }));
   writeFileSync(join(archctx, 'package.json'), JSON.stringify({
     name: 'archctx',
-    version: '0.4.7',
+    version: '0.5.2',
     engines: { node: '>=22.22 <26' },
     bin: { archctx: './bin/archctx.mjs' },
     dependencies: { '@colbymchenry/codegraph': '1.5.0' },
   }));
   writeExecutable(join(archctx, 'bin', 'archctx.mjs'), '#!/usr/bin/env node\n');
-  writeFileSync(join(globalModules, 'archctx-contracts', 'package.json'), JSON.stringify({ name: 'archctx-contracts', version: '0.4.7' }));
+  writeFileSync(join(globalModules, 'archctx-contracts', 'package.json'), JSON.stringify({ name: 'archctx-contracts', version: '0.5.2' }));
   writeFileSync(join(globalModules, '@colbymchenry', 'codegraph', 'package.json'), JSON.stringify({ name: '@colbymchenry/codegraph', version: '1.5.0' }));
   const systemNode = spawnSync('node', ['-p', 'process.execPath'], { encoding: 'utf-8' }).stdout.trim();
   writeExecutable(join(fakeBin, 'node'), [
@@ -188,7 +188,7 @@ function setupManagedRuntimeReadback(home: string, fakeBin: string, harnessVersi
     'if [[ "${1:-}" == "--version" ]]; then echo v24.11.0; exit 0; fi',
     `if [[ "\${1:-}" == *"/archctx/bin/archctx.mjs" ]]; then printf '%s\\n' '${JSON.stringify({
       schemaVersion: 'archcontext.capabilities/v1',
-      package: { name: 'archctx', version: '0.4.7' },
+      package: { name: 'archctx', version: '0.5.2' },
       protocols: {
         projectionRequest: 'archcontext.projection-request/v1',
         projectionResult: 'archcontext.projection-result/v2',

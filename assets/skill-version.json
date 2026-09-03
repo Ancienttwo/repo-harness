@@ -270,7 +270,7 @@
     },
     {
       "version": "0.17.1",
-      "description": "Delivers the persistent module-engineer control plane on the existing early-access line: durable engineer records, bindings and authenticated principal claims, a task/claim-scoped engineer inbox, the loopback operator control board, fail-closed read-only delegation admission, verified evidence context, interface change authority, integration acceptance, and the exclusive engineer MCP profile; pins ArchContext 0.4.7 and isolates fixture HOME outside the repo under test"
+      "description": "Delivers the persistent module-engineer control plane on the existing early-access line: durable engineer records, bindings and authenticated principal claims, a task/claim-scoped engineer inbox, the loopback operator control board, fail-closed read-only delegation admission, verified evidence context, interface change authority, integration acceptance, and the exclusive engineer MCP profile; pins ArchContext 0.5.2 and isolates fixture HOME outside the repo under test"
     },
     {
       "version": "0.18.0",

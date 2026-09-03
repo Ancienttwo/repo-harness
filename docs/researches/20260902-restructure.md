@@ -2,6 +2,8 @@
 
 > contract 字段对照的权威是 arch-context 主干的 `docs/researches/20260902-restructure.md` §0 修订记录；本文 §二十二 是下游对齐记录，只指回它、不独立演化。
 
+> **下游发布读回（2026-09-04）**：上游全部 refactor surface 已随 `archctx@0.5.2` / `archctx-contracts@0.5.2` 发布。公开的 0.5.1 manifest 漏掉 `koffi`，只能视为历史坏包，不得安装。下游 scan 与 verify 继续使用分阶段 feature gate，但两个 stage 都精确绑定 0.5.2；`docs/verification/axr5-archctx-clean-room-readback.json` 是本仓的 packaged readback 证据。正文中的 0.5.0/0.5.1 顺序保留为历史设计记录，不再是执行 pin。
+
 ## 最终决策
 
 应采用一条非常清晰的分界：
@@ -979,7 +981,7 @@ root execute
     "provider": "archctx",
     "stages": {
       "scan": {
-        "provider_version": "0.5.0",
+        "provider_version": "0.5.2",
         "required_features": [
           "module-statistics-v1",
           "refactor-assessment-v1",
@@ -987,7 +989,7 @@ root execute
         ]
       },
       "verify": {
-        "provider_version": "0.5.1",
+        "provider_version": "0.5.2",
         "required_features": [
           "refactor-resolution-v1"
         ]
@@ -1494,9 +1496,11 @@ src/core/refactor/refactor-score.ts
 
 ---
 
-# 十七、版本与发布顺序
+# 十七、版本与发布顺序（历史设计记录）
 
-repo-harness 当前 provider contract 仍固定要求 `archctx@0.4.7` 以及现有 projection feature 集合（`src/core/architecture/projection.ts:12-18`：`architecture-docs-renderer-v2`、`architecture-refresh-signal-v1`、`projection-apply-receipt-v1`、`projection-protocol-v2`）。这条仍然成立，但要补两个事实：
+> 本节记录 2026-09-03 的两段发布计划。实际发布收口为 `archctx@0.5.2` / `archctx-contracts@0.5.2`：0.5.1 因 manifest 缺少 `koffi` 不可消费；scan/record 与 verify 保留独立 feature gate，但两个 stage 的 exact runtime pin 都是 0.5.2。当前权威见文首读回说明及 `docs/verification/axr5-archctx-clean-room-readback.json`。
+
+当时 repo-harness provider contract 固定要求 `archctx@0.4.7` 以及既有 projection feature 集合。以下内容描述当时的发布前基线：
 
 * npm 上 `archctx` 的 `latest` 已经是 `0.4.8`（发布于 2026-09-02T08:32Z），repo-harness 的 pin 落后一个 patch；
 * rf1a 冻结的 refactor contracts（2026-09-03 04:00 +0800 合入 arch-context main）**尚未进入任何已发布的 npm 包**。`ARCHCTX_FEATURES`（`packages/contracts/src/projection.ts:58-64`）目前仍不含任何 refactor feature。
