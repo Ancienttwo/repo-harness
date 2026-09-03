@@ -114,6 +114,9 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ```yaml
 allowed_paths:
+  # Covers the reconcile surface this contract also touches:
+  # src/effects/state/coordination-sprint.ts (the bounded pre-migration
+  # recovery window) and src/cli/commands/sprint.ts (its adapter).
   - src/
   - tests/
   - scripts/

@@ -60,6 +60,7 @@ import {
   writeLeaseOwnerDurably,
 } from '../src/effects/state/coordination-lease-store';
 import { resolveGitCommonDirectory } from '../src/effects/git/common-directory';
+import { deriveLegacyTaskId } from '../src/core/state/sprint-schema-v1';
 import { fixtureTaskId } from './helpers/sprint-fixture';
 
 const FIXTURES = new Set<string>();
@@ -1109,5 +1110,133 @@ describe('claim verbs', () => {
     const traversal = claimSprintCommand({ ...base, sprintPath: '../escape.md' }, deps(repo));
     expect(traversal.exitCode).toBe(1);
     expect(traversal.stderr).toContain('unsafe canonical sprint path');
+  });
+});
+
+/**
+ * The pre-migration recovery window.
+ *
+ * `sprint migrate-schema` refuses while any row holds a non-released lease, and
+ * schema 2 identity is fail-closed on a schema 1 sprint. Without a bounded
+ * exception those two rules deadlock: a lease minted before the migration can
+ * never be reconciled, so the sprint can never be migrated. `reconcile` is the
+ * one verb that must work *before* migration, so it -- and only it -- may prove
+ * completion through the schema 1 compatibility reader.
+ *
+ * The exception is deliberately narrow: `completing` only, exact legacy-id
+ * equality, and a completed status cell. A live `bound` lease still belongs to
+ * its owner.
+ */
+describe('reconcile on a schema 1 sprint: the pre-migration recovery window', () => {
+  const LEGACY_SPRINT = 'plans/sprints/legacy-residue.sprint.md';
+  const LEGACY_TASK = 'close the C9 canary';
+  const SIBLING_TASK = 'keep a second row pending';
+
+  function legacySprintText(status: string): string {
+    return [
+      '# Sprint: Legacy Residue',
+      '',
+      '> **Status**: Approved',
+      '',
+      '## Backlog',
+      '',
+      '| # | Status | Task | Mode | Acceptance | Plan |',
+      '|---|--------|------|------|------------|------|',
+      `| 1 | ${status} | ${LEGACY_TASK} | contract | canary evidence recorded | (pending) |`,
+      `| 2 | [ ] | ${SIBLING_TASK} | inline | still pending | (pending) |`,
+      '',
+    ].join('\n');
+  }
+
+  function legacyRepo(status: string): { readonly repo: string; readonly taskId: string } {
+    const repo = createRepo();
+    mkdirSync(join(repo, 'plans/sprints'), { recursive: true });
+    writeFileSync(join(repo, LEGACY_SPRINT), legacySprintText(status));
+    run(repo, ['add', LEGACY_SPRINT]);
+    run(repo, ['commit', '--quiet', '-m', 'legacy sprint']);
+    return {
+      repo,
+      taskId: deriveLegacyTaskId({
+        repoIdentity: resolveGitCommonDirectory(repo),
+        sprintPath: LEGACY_SPRINT,
+        taskCell: LEGACY_TASK,
+      }),
+    };
+  }
+
+  /** Publish a residue lease in one state, the way a crashed closeout leaves it. */
+  function strandLease(repo: string, taskId: string, state: 'completing' | 'bound'): void {
+    const base = buildLeaseOwnerRecord({
+      claimId: 'claim-legacy-residue',
+      taskId,
+      taskRevision: 'c'.repeat(64),
+      sprintPath: LEGACY_SPRINT,
+      targetRef: 'main',
+      generation: 1,
+      sessionId: 'legacy-session',
+      sourceWorktree: repo,
+    });
+    createLeaseDirectory(repo, taskId);
+    writeLeaseOwnerDurably(repo, taskId, {
+      ...base,
+      state,
+      execution_worktree: repo,
+      branch: 'codex/legacy-residue',
+      unit_ref: 'plans/archive/plan-legacy.md',
+      finish_transaction_key: state === 'completing' ? 'finish/legacy-residue' : null,
+    });
+  }
+
+  function reconcile(repo: string, taskId: string) {
+    const outcome = reconcileSprintCommand(
+      { taskId, targetRef: 'main' },
+      processSprintDependencies(repo),
+    );
+    expect(outcome.exitCode).toBe(0);
+    return JSON.parse(outcome.stdout) as {
+      classification: string;
+      canonical_status: string | null;
+      canonical_error: string | null;
+      action: string;
+    };
+  }
+
+  test('a completing residue over a completed row is cleared', () => {
+    const { repo, taskId } = legacyRepo('[x]');
+    strandLease(repo, taskId, 'completing');
+    const result = reconcile(repo, taskId);
+    expect(result.canonical_error).toBeNull();
+    expect(result.canonical_status).toBe('[x]');
+    expect(result.action).toBe('cleared_completed_lease');
+    expect(readLease(repo, taskId).classification).toBe('available');
+  });
+
+  test('a completing residue over a pending row is not cleared', () => {
+    const { repo, taskId } = legacyRepo('[ ]');
+    strandLease(repo, taskId, 'completing');
+    const result = reconcile(repo, taskId);
+    expect(result.canonical_status).toBe('[ ]');
+    expect(result.action).toBe('none');
+    expect(readLease(repo, taskId).classification).toBe('completing');
+  });
+
+  test('a lease whose task id is not any row\'s legacy identity is not cleared', () => {
+    const { repo } = legacyRepo('[x]');
+    const foreignTaskId = 'd'.repeat(64);
+    strandLease(repo, foreignTaskId, 'completing');
+    const result = reconcile(repo, foreignTaskId);
+    expect(result.canonical_status).toBeNull();
+    expect(result.canonical_error).toContain('no backlog row');
+    expect(result.action).toBe('none');
+    expect(readLease(repo, foreignTaskId).classification).toBe('completing');
+  });
+
+  test('a bound lease is never cleared through the compatibility path', () => {
+    const { repo, taskId } = legacyRepo('[x]');
+    strandLease(repo, taskId, 'bound');
+    const result = reconcile(repo, taskId);
+    expect(result.action).toBe('none');
+    expect(result.canonical_error).toContain('bound');
+    expect(readLease(repo, taskId).classification).toBe('bound');
   });
 });

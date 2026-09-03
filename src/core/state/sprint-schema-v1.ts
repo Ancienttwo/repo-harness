@@ -12,6 +12,14 @@
  * schema 1 sprint fails closed everywhere else; there is no dual-read window
  * during which a live sprint can mint identity from its Task text.
  *
+ * Exactly one runtime verb may read it: `sprint reconcile`, through
+ * `lookupLegacyTaskForReconcile()`. Reconcile is the recovery verb that has to
+ * work *before* the migration, and without it the two rules deadlock -- the
+ * migration refuses a non-released lease, while a lease minted under schema 1
+ * can never be proved finished once identity is schema-2-only. That exception
+ * is bounded to a `completing` residue over a completed row and dies with the
+ * same `sprint-schema-v1-parser-removal` trigger as the rest of this module.
+ *
  * - Compatibility owner: the repo-harness coordination-identity maintainer,
  *   tracked as the `sprint-schema-v1-parser-removal` deferred-goal row in
  *   `tasks/todos.md`.
@@ -157,4 +165,42 @@ export function readLegacySprint(input: LegacySprintInput): LegacySprintRead {
     });
   }
   return { ok: true, rows: Object.freeze(out) };
+}
+
+export type LegacyReconcileLookup =
+  | { readonly ok: true; readonly row: BacklogRow }
+  | { readonly ok: false; readonly error: string };
+
+export interface LegacyReconcileInput extends LegacySprintInput {
+  /** The `task_id` the residue lease was minted with. */
+  readonly taskId: string;
+}
+
+/**
+ * Resolve one lease's `task_id` back to its schema 1 backlog row.
+ *
+ * COMPATIBILITY SURFACE -- `sprint reconcile` only. The row is found by
+ * deriving every row's schema 1 identity and requiring exact equality with the
+ * lease's own `task_id`: the caller never supplies a Task cell, so a renamed or
+ * unrelated row cannot be matched into a lease it does not own. A sprint whose
+ * rows fail the strict schema 1 shape check is refused here too, so the
+ * recovery window cannot be widened by a malformed file.
+ */
+export function lookupLegacyTaskForReconcile(input: LegacyReconcileInput): LegacyReconcileLookup {
+  const legacy = readLegacySprint(input);
+  if (!legacy.ok) return { ok: false, error: legacy.error };
+  const matches = legacy.rows.filter((entry) => entry.legacy_task_id === input.taskId);
+  if (matches.length === 0) {
+    return {
+      ok: false,
+      error: `no backlog row in ${input.sprintPath} has schema 1 task id ${input.taskId}`,
+    };
+  }
+  if (matches.length > 1) {
+    return {
+      ok: false,
+      error: `ambiguous schema 1 task id ${input.taskId} (${matches.length} backlog rows match) in ${input.sprintPath}`,
+    };
+  }
+  return { ok: true, row: matches[0].row };
 }

@@ -171,13 +171,24 @@
   `canonical_error: "... is still backlog schema 1 ..."`, `action: "none"`, and
   mutated nothing. This is a migration-ordering trap for every downstream repo,
   not just this one: any lease minted before the migration becomes
-  unreconcilable after it. The bounded fix is to let `reconcile` -- and only
-  `reconcile`, the one recovery verb that must work *before* migration -- prove
-  completion for a schema 1 sprint through the existing
-  `src/core/state/sprint-schema-v1.ts` compatibility surface, under the same
-  `sprint-schema-v1-parser-removal` removal trigger. It is not implemented here:
-  it changes the reconcile authority and belongs to a reviewed decision, not to
-  this contract's scope.
+  unreconcilable after it -- so the trap is general, not local to this repo, and
+  it needs exactly one verb opened rather than a general dual-read.
+  **Decision (authorised): implemented.** `sprint reconcile` -- and only
+  `sprint reconcile` -- may prove completion for a schema 1 sprint, through
+  `lookupLegacyTaskForReconcile()` in the existing
+  `src/core/state/sprint-schema-v1.ts` compatibility surface. Why that verb and
+  no other: every other identity consumer runs *after* a sprint is live, so
+  failing closed costs nothing and protects everything; reconcile is the only
+  one that must run *before* the migration, and refusing it is what closes the
+  loop. The exception is bounded three ways -- the lease must be a `completing`
+  residue (a `reserving` or `bound` lease is live work that still belongs to its
+  owner), the row's derived schema 1 id must equal the lease's own `task_id`
+  (the caller never supplies a Task cell, so no renamed or unrelated row can be
+  matched into a lease it does not own), and the row's status cell must be
+  completed. It dies with the same `sprint-schema-v1-parser-removal` trigger,
+  which now names this consumer in the `tasks/todos.md` row. Guarded by four
+  cases in `tests/coordination-lease-store.test.ts`; pre-fix red at
+  `/tmp/283-prefix-reconcile.log` (`PRE_FIX_EXIT=1`, all four).
 - **The repo's own sprint stays schema 1.**
   `plans/sprints/20260828-2321-collaborative-work-exchange-agent-succession.sprint.md`
   could not be migrated: row 10 still holds a stranded non-released lease in

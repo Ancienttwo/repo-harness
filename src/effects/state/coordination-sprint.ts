@@ -44,6 +44,13 @@ import {
   type CanonicalSprintSource,
 } from './coordination-canonical-source';
 import { appendAttemptReceipt } from './attempt-ledger-store';
+import {
+  SPRINT_BACKLOG_SCHEMA_V1,
+  SprintSchemaError,
+  sprintBacklogSchema,
+  type SprintBacklogSchema,
+} from '../../core/state/sprint-backlog-rows';
+import { lookupLegacyTaskForReconcile } from '../../core/state/sprint-schema-v1';
 import { legacyCutoverRefusal } from './coordination-cutover';
 import {
   writeClaimTokenForBoundLease,
@@ -766,21 +773,53 @@ export function reconcileSprintCommand(
           if (!canonical.ok) {
             canonicalError = canonical.error;
           } else {
-            const lookup = lookupCanonicalTask(
-              {
-                repoIdentity: deps.repoIdentity,
-                sprintPath: read.record.sprint_path,
-                sprintText: canonical.text,
-              },
-              taskId,
-            );
-            if (!lookup.ok) {
-              canonicalError = lookup.error;
-            } else {
-              canonicalStatus = lookup.task.row.status;
-              if (COMPLETED_ROW_STATUS_PATTERN.test(canonicalStatus)) {
-                deps.coordination.removeLease(taskId, read.record.claim_id);
-                action = 'cleared_completed_lease';
+            const source = {
+              repoIdentity: deps.repoIdentity,
+              sprintPath: read.record.sprint_path,
+              sprintText: canonical.text,
+            };
+            let schema: SprintBacklogSchema | null = null;
+            try {
+              schema = sprintBacklogSchema(canonical.text);
+            } catch (error) {
+              canonicalError = error instanceof SprintSchemaError ? error.message : String(error);
+            }
+
+            if (schema === SPRINT_BACKLOG_SCHEMA_V1) {
+              // The pre-migration recovery window, and the only runtime read of
+              // the schema 1 identity derivation. `migrate-schema` refuses a
+              // non-released lease and schema 2 identity is fail-closed on a
+              // schema 1 sprint, so without this a lease minted before the
+              // migration could never be proved finished and the sprint could
+              // never be migrated. It is bounded to a `completing` residue: a
+              // `reserving` or `bound` lease is live work that still belongs to
+              // its owner, who releases it through the normal verbs.
+              if (read.record.state !== 'completing') {
+                canonicalError = `cannot reconcile a ${read.record.state} lease for task ${taskId} on the schema 1 sprint `
+                  + `${read.record.sprint_path}: only a completing residue is recoverable before migration, and this lease `
+                  + `still belongs to ${read.record.execution_worktree ?? read.record.claimed_by.source_worktree}`;
+              } else {
+                const legacy = lookupLegacyTaskForReconcile({ ...source, taskId });
+                if (!legacy.ok) {
+                  canonicalError = legacy.error;
+                } else {
+                  canonicalStatus = legacy.row.status;
+                  if (COMPLETED_ROW_STATUS_PATTERN.test(canonicalStatus)) {
+                    deps.coordination.removeLease(taskId, read.record.claim_id);
+                    action = 'cleared_completed_lease';
+                  }
+                }
+              }
+            } else if (schema !== null) {
+              const lookup = lookupCanonicalTask(source, taskId);
+              if (!lookup.ok) {
+                canonicalError = lookup.error;
+              } else {
+                canonicalStatus = lookup.task.row.status;
+                if (COMPLETED_ROW_STATUS_PATTERN.test(canonicalStatus)) {
+                  deps.coordination.removeLease(taskId, read.record.claim_id);
+                  action = 'cleared_completed_lease';
+                }
               }
             }
           }
