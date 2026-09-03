@@ -831,9 +831,9 @@ describe('BRC0 negative freeze: retired and absent surfaces', () => {
     const nodes = readdirSync(join(REPO_ROOT, '.archcontext/model/nodes'));
     expect(nodes.filter((entry) => entry.includes('development-campaign'))).toEqual([]);
 
+    // The two directory-level rows (src/core/automation, src/effects/automation) were
+    // removed because automation/ became a shared namespace with the #282 budget ledger.
     for (const path of [
-      'src/core/automation',
-      'src/effects/automation',
       'src/cli/commands/campaign.ts',
       'src/core/automation/development-campaign.ts',
     ]) {

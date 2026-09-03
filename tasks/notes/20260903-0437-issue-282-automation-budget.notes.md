@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260903-0437-issue-282-automation-budget.review.md
 > **Last Updated**: 2026-09-03 05:20
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:c13760e05cb73d5a3cafaf9e0998e71c75119cc4234672ff08723ecf29a4aafe`
+> **Substantive Change SHA256**: `sha256:4cc37c7711b989a17b0a961b496c62c791a6e82ea17bac7fae72ccd061b4cf0f`
 
 ## Design Decisions
 
@@ -204,6 +204,15 @@ this slice does not have.
   and `appendAutomationUsage -> sealAutomationUsageEvent`, both of which are indirect (through
   `persistStopReceipt` and `commitUsage`). The node and flow now name the function that actually
   makes each call, which is also the more honest description of the code.
+- BRC0 campaign negative freeze narrowed with the campaign owner's approval:
+  `tests/characterization/repair-campaign-authority-freeze.test.ts` asserted that four
+  paths do not exist yet, two of which are directory-level (`src/core/automation`,
+  `src/effects/automation`) and collide with this branch's budget module. Only those two
+  rows were deleted; `src/cli/commands/campaign.ts`, `src/core/automation/development-campaign.ts`,
+  the policy `development_campaign` key and the `.archcontext` development-campaign node
+  negatives are untouched, so the campaign capability is still frozen at file level.
+  `automation/` is now a shared namespace, which is what the directory assertions could no
+  longer express.
 - The plan's task-breakdown order was TDD per module rather than one global
   red phase: the core module and its tests landed together, then the store,
   then contention, then the end-to-end fixture. Each module's tests were run

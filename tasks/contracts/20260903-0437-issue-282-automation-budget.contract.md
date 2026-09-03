@@ -85,6 +85,8 @@ allowed_paths:
   - tests/capability-archcontext-export.test.ts
   - tests/architecture-projection-e2e.test.ts
   - tests/unit/collaboration-authority-baseline.test.ts
+  # owner-approved BRC0 freeze narrowing for the shared automation namespace
+  - tests/characterization/repair-campaign-authority-freeze.test.ts
   - plans/plan-20260903-0437-issue-282-automation-budget.md
   - plans/prds/20260828-2321-guarded-merge-unattended-automation.prd.md
   - docs/spec.md
