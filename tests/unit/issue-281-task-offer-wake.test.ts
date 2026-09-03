@@ -888,8 +888,12 @@ describe('issue #281 wake mutations linearize on the per-Binding wake lock', () 
       const startable = wakes.filter((status) => status.current.state === 'intent_persisted');
       const live = wakes.filter((status) => status.current.state === 'intent_persisted' || status.current.state === 'effect_started');
       const ledger = readOfferWakeLedger(fx.repoRoot, { engineer_id: engineerId, binding_id: fx.bindingId, binding_generation: fx.bindingGeneration })!;
-      const detail = `round=${round} observer=${observerOut.trim()} starter=${starterOut.trim()} states=${wakes.map((status) => status.current.state).join(',')}`;
-      expect(`${detail} startable=${startable.length}`).toBe(`${detail} startable=${startable.length <= 1 ? startable.length : 'many'}`);
+      // Both processes must have done real work: a worker that died early
+      // would satisfy the invariant for the wrong reason.
+      expect(observerOut.trim()).toMatch(/^OBSERVER:(wake_coalesced|no_wake)$/u);
+      expect(starterOut.trim()).toMatch(/^(STARTER:(action|no-action)|ERROR:agent_runtime_effect_wake_superseded)$/u);
+      // Whoever wins, the Binding is left with exactly one non-terminal wake
+      // and the ledger points at it: never two startable wakes.
       expect(startable.length).toBeLessThanOrEqual(1);
       expect(live).toHaveLength(1);
       expect(ledger.pending!.effect_id).toBe(live[0]!.intent.effect_id);
