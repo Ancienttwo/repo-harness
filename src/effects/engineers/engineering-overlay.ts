@@ -158,13 +158,20 @@ function messageProjection(summary: ModuleInboxObservationSummary): OverlayMessa
 }
 
 function runtimeEffectProjection(statuses: readonly AgentRuntimeEffectStatus[]): OverlayRuntimeEffectProjectionV1 {
-  const current = statuses.map((status) => ({ effect_id: status.intent.effect_id, current_sha256: status.current.current_sha256, state: status.current.state }))
+  const current = statuses.map((status) => ({ effect_id: status.intent.effect_id, current_sha256: status.current.current_sha256, operation: status.intent.operation, state: status.current.state }))
     .sort((left, right) => left.effect_id.localeCompare(right.effect_id));
+  const wakes = current.filter((item) => item.operation === 'wake_for_offer');
   return Object.freeze({
     support: 'available',
     active: current.filter((item) => item.state === 'intent_persisted' || item.state === 'effect_started').length,
     reconciliation_required: current.filter((item) => item.state === 'reconciliation_required').length,
     failed: current.filter((item) => item.state === 'observed_failure').length,
+    wake: Object.freeze({
+      pending: wakes.filter((item) => item.state === 'intent_persisted' || item.state === 'effect_started').length,
+      delivered: wakes.filter((item) => item.state === 'observed_success').length,
+      failed: wakes.filter((item) => item.state === 'observed_failure').length,
+      reconciliation_required: wakes.filter((item) => item.state === 'reconciliation_required').length,
+    }),
     revision: digest(current),
   });
 }
@@ -228,7 +235,7 @@ function engineerProjection(read: EngineerRead): EngineeringOverlayEngineerV1 {
     active_claim: projectionOrUnreadable(read.claim, Object.freeze({ support: 'unreadable', value: null, revision: null })),
     delegations: Object.freeze({ support: 'unsupported', value: null }),
     messages: projectionOrUnreadable(read.messages, Object.freeze({ support: 'unreadable', pending: null, delivery_failed: null, revision: null })),
-    runtime_effects: projectionOrUnreadable(read.runtime_effects, Object.freeze({ support: 'unreadable', active: null, reconciliation_required: null, failed: null, revision: null })),
+    runtime_effects: projectionOrUnreadable(read.runtime_effects, Object.freeze({ support: 'unreadable', active: null, reconciliation_required: null, failed: null, wake: null, revision: null })),
     memory: Object.freeze({ support: 'unsupported', value: null }),
   });
 }

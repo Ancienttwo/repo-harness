@@ -244,7 +244,7 @@ describe('repo-harness engineer CLI', () => {
       'engineer', 'runtime-effect', 'capability',
       '--adapter-kind', 'codex-app-thread',
       '--host-id', 'local',
-      '--operations-json', JSON.stringify({ notify_inbox: 'supported' }),
+      '--operations-json', JSON.stringify({ notify_inbox: 'supported', wake_for_offer: 'supported' }),
       '--evidence-refs-json', JSON.stringify([{ ref: 'canary', sha256: `sha256:${'a'.repeat(64)}` }]),
       '--observed-at', '2026-08-25T00:31:00.000Z',
       '--json',

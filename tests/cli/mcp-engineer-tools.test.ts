@@ -228,7 +228,7 @@ describe('restricted Engineer MCP tools', () => {
     const capability = recordAgentRuntimeCapability(repoRoot, {
       adapter_kind: 'codex-app-thread',
       host_id: 'local',
-      operations: { notify_inbox: 'supported' },
+      operations: { notify_inbox: 'supported', wake_for_offer: 'supported' },
       evidence_refs: [{ ref: 'canary', sha256: `sha256:${'a'.repeat(64)}` }],
       observed_at: '2026-08-25T00:31:00.000Z',
     });
@@ -247,7 +247,7 @@ describe('restricted Engineer MCP tools', () => {
     });
     const capabilityView = await callMcpTool(context, 'engineer_runtime_effect_capability', {});
     expect(capabilityView).toMatchObject({
-      structuredContent: { status: 'supported', capability: { capability_sha256: capability.capability_sha256 } },
+      structuredContent: { capability: { capability_sha256: capability.capability_sha256, operations: { notify_inbox: 'supported', wake_for_offer: 'supported' } } },
     });
     const effectView = await callMcpTool(context, 'engineer_runtime_effect_status', { effect_id: effect.intent.effect_id });
     expect(effectView).toMatchObject({
@@ -356,7 +356,7 @@ describe('restricted Engineer MCP tools', () => {
     const capability = recordAgentRuntimeCapability(repoRoot, {
       adapter_kind: 'codex-app-thread',
       host_id: 'local',
-      operations: { notify_inbox: 'supported' },
+      operations: { notify_inbox: 'supported', wake_for_offer: 'supported' },
       evidence_refs: [{ ref: 'canary', sha256: `sha256:${'a'.repeat(64)}` }],
       observed_at: '2026-08-25T00:31:00.000Z',
     });
