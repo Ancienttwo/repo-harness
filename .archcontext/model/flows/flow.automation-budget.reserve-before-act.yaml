@@ -28,11 +28,19 @@ outcomes:
         label: Append the authoritative usage event for the exact reservation
         evidence:
           entrypointId: entrypoint.automation-budget.append
-          sourceSymbol: appendAutomationUsage
+          sourceSymbol: commitUsage
           sinkId: sink.automation-budget.usage-event
+      - id: chain-ledger
+        from: budget
+        to: ledger
+        label: Chain the append-only ledger digest so no earlier event can be edited out
+        evidence:
+          entrypointId: entrypoint.automation-budget.append
+          sourceSymbol: commitUsage
+          sinkId: sink.automation-budget.ledger-chain
     terminal:
       participant: budget
-      label: Return the reservation and the updated projection without touching Task, Lease, Work Graph, or contract authority
+      label: Return the reservation and the updated projection without touching Task， Lease， Work Graph， or contract authority
   - id: exhausted
     kind: error
     label: A hard limit stops the run before the operation happens
@@ -43,8 +51,16 @@ outcomes:
         label: Publish the immutable stop receipt naming the triggering metric and the in-flight authority
         evidence:
           entrypointId: entrypoint.automation-budget.reserve
-          sourceSymbol: reserveAutomationBudget
+          sourceSymbol: persistStopReceipt
           sinkId: sink.automation-budget.stop-receipt
+      - id: project-stopped-state
+        from: budget
+        to: ledger
+        label: Project the stopped budget for the operator without provider-sensitive data
+        evidence:
+          entrypointId: entrypoint.automation-budget.project
+          sourceSymbol: readAutomationBudgetBoardSlice
+          sinkId: sink.automation-budget.operator-slice
     terminal:
       participant: budget
       label: Refuse with a typed refusal and leave every in-flight authority to its own owner's normal recovery

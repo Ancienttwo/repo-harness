@@ -26,19 +26,19 @@ source:
             - id: sink.automation-budget.reservation-decision
               path: "src/core/automation/budget.ts"
               symbol: "evaluateAutomationReservation"
+        - name: "persistStopReceipt"
+          sinks:
             - id: sink.automation-budget.stop-receipt
               path: "src/core/automation/budget.ts"
               symbol: "sealAutomationStopReceipt"
     - id: entrypoint.automation-budget.append
       path: "src/effects/automation/budget-store.ts"
       symbols:
-        - name: "appendAutomationUsage"
+        - name: "commitUsage"
           sinks:
             - id: sink.automation-budget.usage-event
               path: "src/core/automation/budget.ts"
               symbol: "sealAutomationUsageEvent"
-        - name: "reconcileAutomationReservation"
-          sinks:
             - id: sink.automation-budget.ledger-chain
               path: "src/core/automation/budget.ts"
               symbol: "chainAutomationLedgerDigest"

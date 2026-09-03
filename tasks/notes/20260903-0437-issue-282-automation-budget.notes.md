@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260903-0437-issue-282-automation-budget.review.md
 > **Last Updated**: 2026-09-03 05:20
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:4536d738c74930155d84a7df980578f66d781ab77732feea5d5bbe647d59d927`
+> **Substantive Change SHA256**: `sha256:990307a50c36f7b2265cd7a7e06089dd3ce5ad9ff2ca3456f002bd7c2cb9d3b8`
 
 ## Design Decisions
 
@@ -126,6 +126,20 @@ this slice does not have.
 
 ## Deviations From Plan Or Spec
 
+- Architecture acceptance: the new capability node `capability.runtime-harness.automation-budget`
+  is an `unresolved-major-change` (`node-added`). The orchestrator approved it as
+  `event.orchestrator-approval-20260903-issue-282-automation-budget`; the accepted signal was
+  `sha256:756564a6671d47dc3d834b6f32e1c4ac6aeb0cfbf9ac3ae253006698bc906f31`.
+  `architecture-projection accept` exited 1 with `applied-reconcile-required` after writing all
+  eight projection files (post-apply `worktreeDigest` diverges from the accepted snapshot because
+  the write itself changes the tree), the ordinary `apply` then converged to `applied`, and
+  `check` is `noop` with no human actions or refresh signals. Same shape as #278/#284.
+- The first flow proof was unprovable and blocked the approval regardless of the approval itself:
+  archctx proves a P2 step only from a *direct* call edge between the declared source symbol and
+  the sink symbol. The original node declared `reserveAutomationBudget -> sealAutomationStopReceipt`
+  and `appendAutomationUsage -> sealAutomationUsageEvent`, both of which are indirect (through
+  `persistStopReceipt` and `commitUsage`). The node and flow now name the function that actually
+  makes each call, which is also the more honest description of the code.
 - The plan's task-breakdown order was TDD per module rather than one global
   red phase: the core module and its tests landed together, then the store,
   then contention, then the end-to-end fixture. Each module's tests were run
