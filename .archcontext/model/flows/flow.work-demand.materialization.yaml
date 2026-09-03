@@ -1,0 +1,62 @@
+schemaVersion: archcontext.flow/v1
+id: flow.work-demand.materialization
+capabilityId: capability.runtime-harness.work-demand
+name: Review and atomically materialize one WorkDemand
+applicability: required
+participants:
+  - id: work-demand
+    nodeId: capability.runtime-harness.work-demand
+  - id: engineer-bindings
+    nodeId: capability.runtime-harness.engineer-bindings
+  - id: engineer-scheduling
+    nodeId: capability.runtime-harness.engineer-scheduling
+  - id: demand-store
+    nodeId: component.work-demand.primary
+steps:
+  - id: validate-requester
+    from: work-demand
+    to: engineer-bindings
+    label: Revalidate the exact requester Binding before Agent-owned transitions
+    evidence:
+      entrypointId: entrypoint.work-demand.binding
+      sourceSymbol: validateEngineer
+      sinkId: sink.work-demand.binding
+  - id: persist-lifecycle
+    from: work-demand
+    to: demand-store
+    label: Persist the exact request, event and Human-accepted projection under per-demand CAS
+    evidence:
+      entrypointId: entrypoint.work-demand.event
+      sourceSymbol: buildWorkDemandEvent
+      sinkId: sink.work-demand.digest
+outcomes:
+  - id: materialized
+    kind: success
+    label: The accepted task becomes canonical in one Git commit
+    steps:
+      - id: publish-tree
+        from: work-demand
+        to: engineer-scheduling
+        label: Validate both new authorities, write one Git tree and update the canonical ref by compare-and-swap
+        evidence:
+          entrypointId: entrypoint.work-demand.materialize
+          sourceSymbol: materializeWorkDemand
+          sinkId: sink.work-demand.graph
+    terminal:
+      participant: work-demand
+      label: Return a materialization receipt that creates no Claim or Lease
+  - id: refused
+    kind: error
+    label: Actor, digest or canonical revision mismatch fails closed
+    steps:
+      - id: preserve-authority
+        from: work-demand
+        to: demand-store
+        label: Leave the current demand, Sprint and Work Graph authorities unchanged
+        evidence:
+          entrypointId: entrypoint.work-demand.event
+          sourceSymbol: buildWorkDemandEvent
+          sinkId: sink.work-demand.digest
+    terminal:
+      participant: work-demand
+      label: Return one typed refusal without fallback materialization

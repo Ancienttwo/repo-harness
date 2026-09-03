@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.work-demand.primary
+kind: calls
+source: capability.runtime-harness.work-demand
+target: component.work-demand.primary
+intent: Persist immutable lifecycle evidence and one recoverable current projection
