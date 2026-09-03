@@ -10,6 +10,8 @@
 
 > **Substantive Change SHA256**: `sha256:60bb7e23a89e6d786006ff37cd33cab5e9da79793be089d20649ffcba273f49c`
 
+> **Substantive Change SHA256**: `sha256:9d7eab520a47d69ed568984767171c21248f51f38f78e5b37bf18d2ab6ca7607`
+
 > **Status**: Active
 > **Plan**: plans/plan-20260903-0437-issue-282-automation-budget.md
 > **Contract**: tasks/contracts/20260903-0437-issue-282-automation-budget.contract.md
