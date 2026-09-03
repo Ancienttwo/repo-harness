@@ -18,7 +18,7 @@
  * operational failure or a fail-closed refusal, 0 is a completed verb.
  */
 import { randomUUID } from 'crypto';
-import { existsSync, realpathSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, rmdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { buildAttemptReceipt } from '../../core/state/attempt-ledger';
 import type { CommandOutcome } from '../../core/state/command-outcome';
@@ -26,6 +26,7 @@ import {
   COMPLETED_ROW_STATUS_PATTERN,
   FIRST_LEASE_GENERATION,
   PENDING_ROW_STATUS,
+  RELEASABLE_LEASE_STATES,
   TASK_DIGEST_PATTERN,
   abortLeaseCompletionRecord,
   beginLeaseCompletionRecord,
@@ -37,6 +38,7 @@ import {
   stealLeaseRecord,
   type CanonicalTask,
   type LeaseOwnerRecord,
+  type LeaseTransition,
 } from '../../core/state/coordination-identity';
 import {
   readCanonicalSprint,
@@ -53,6 +55,7 @@ import {
 } from '../../core/state/sprint-backlog-rows';
 import { lookupLegacyTaskForReconcile } from '../../core/state/sprint-schema-v1';
 import { legacyCutoverRefusal } from './coordination-cutover';
+import { createWriteJournal, type JournalFileSystem } from './write-journal';
 import {
   readClaimTokenForTask,
   removeClaimTokenForTask,
@@ -98,7 +101,10 @@ export interface CoordinationPort {
   readonly removeClaimToken: (taskId: string) => void;
   /** The working-tree sprint file the completion rewrites. */
   readonly readSprintFile: (repoRelativePath: string) => string | null;
-  readonly writeSprintFile: (repoRelativePath: string, text: string) => void;
+  /** The absolute path the journal records, resolved through the repo guard. */
+  readonly sprintFilePath: (repoRelativePath: string) => string;
+  /** The journal's filesystem, so a completion rolls back like a migration. */
+  readonly journalFs: JournalFileSystem;
   readonly now: () => Date;
   readonly readLease: (taskId: string) => LeaseRead;
   readonly createLeaseDirectory: (taskId: string) => boolean;
@@ -735,22 +741,54 @@ export function completeRowSprintCommand(
           if (error instanceof SprintRowCompletionError) return refuse(`sprint-backlog: ${error.message}`);
           throw error;
         }
-        deps.coordination.writeSprintFile(sprintPath, completion.sprintText);
-
-        // Release inside the same critical section as the flip: an inline
-        // completion's transaction ends here. Contract finish defers it because
-        // its transaction ends at the publication commit instead.
-        let released: string | null = null;
-        if (gate !== null && options.deferLeaseRelease !== true) {
+        // Every refusable step happens before the first write. The release
+        // transition is pure, so computing it here turns "the lease cannot be
+        // released" from a post-publication surprise into a refusal that leaves
+        // the row pending.
+        const releasing = gate !== null && options.deferLeaseRelease !== true;
+        let transition: LeaseTransition | null = null;
+        if (releasing) {
           const current = deps.coordination.readLease(taskId).record;
-          if (current !== null) {
-            const transition = releaseLeaseRecord(current, gate.claim_id);
-            if (!transition.ok) return refuse(transition.error);
-            deps.coordination.writeLeaseOwner(taskId, transition.record);
-            deps.coordination.removeLease(taskId, gate.claim_id);
+          if (current === null) {
+            return refuse(`the lease for '${lockedRow.task}' disappeared before it could be released`);
           }
-          deps.coordination.removeClaimToken(taskId);
-          released = gate.claim_id;
+          if (current.claim_id !== gate!.claim_id) {
+            return refuse(
+              `backlog task '${lockedRow.task}' is claimed by ${current.claim_id}, but this completion gated on `
+              + `${gate!.claim_id}; the claim moved, so this tree may not complete the row`,
+            );
+          }
+          const computed = releaseLeaseRecord(current, gate!.claim_id);
+          if (!computed.ok) return refuse(computed.error);
+          transition = computed;
+        }
+
+        // Past this point the transaction commits: sprint bytes, then the lease
+        // plane, then the token. Anything that still throws restores the sprint
+        // through the same journal the migration uses, so a failure never leaves
+        // a row published `[x]` on its own.
+        const journal = createWriteJournal(deps.coordination.journalFs);
+        let released: string | null = null;
+        try {
+          journal.writeTracked(deps.coordination.sprintFilePath(sprintPath), completion.sprintText);
+          if (transition !== null) {
+            deps.coordination.writeLeaseOwner(taskId, transition.record);
+            deps.coordination.removeLease(taskId, gate!.claim_id);
+            deps.coordination.removeClaimToken(taskId);
+            released = gate!.claim_id;
+          }
+        } catch (error) {
+          try {
+            journal.restore();
+          } catch (restoreError) {
+            throw new Error(
+              `sprint complete-row failed and could not restore ${sprintPath}: `
+              + `${restoreError instanceof Error ? restoreError.message : String(restoreError)} `
+              + `(original failure: ${error instanceof Error ? error.message : String(error)})`,
+              { cause: error },
+            );
+          }
+          throw error;
         }
 
         return ok({
@@ -800,6 +838,22 @@ function completionLeaseGate(
     );
   }
   const record = lease.record;
+
+  // A lease this completion could not release afterwards must not pass the
+  // gate. Without this the row was flipped to `[x]` first and `releaseLeaseRecord`
+  // refused second, publishing "done" while the lease and token stayed live --
+  // the exact half-applied state the transaction exists to prevent. The list is
+  // the release path's own, imported rather than repeated, so the gate cannot
+  // drift from what release will actually accept.
+  if (!RELEASABLE_LEASE_STATES.includes(record.state)) {
+    const recovery = record.state === 'reviewing'
+      ? `its publication is under review; finish or abandon it through the publication recovery verbs before completing the row`
+      : `run 'repo-harness sprint reconcile --task-id ${input.taskId} --target-ref ${input.targetRef}' to clear it first`;
+    return refuse(
+      `backlog task '${input.taskCell}' holds a lease in state ${record.state}, which cannot be released by a `
+      + `completion (only ${RELEASABLE_LEASE_STATES.join(' or ')} can); ${recovery}`,
+    );
+  }
 
   const token = deps.coordination.readClaimToken(input.taskId);
   if (token.outcome === 'ambiguous') {
@@ -1107,8 +1161,21 @@ export function processSprintDependencies(cwd: string): SprintCommandDependencie
       readClaimToken: (taskId) => readClaimTokenForTask(cwd, taskId),
       removeClaimToken: (taskId) => removeClaimTokenForTask(cwd, taskId),
       readSprintFile: (relativePath) => readText(cwd, relativePath),
-      writeSprintFile: (relativePath, text) => {
-        writeFileSync(repoPath(cwd, relativePath), text, 'utf-8');
+      sprintFilePath: (relativePath) => repoPath(cwd, relativePath),
+      journalFs: {
+        exists: (path) => existsSync(path),
+        readText: (path) => readFileSync(path, 'utf-8'),
+        writeText: (path, text) => { writeFileSync(path, text, 'utf-8'); },
+        makeDirectory: (path) => { mkdirSync(path, { recursive: true }); },
+        removeFile: (path) => { rmSync(path, { force: true }); },
+        removeDirectoryIfEmpty: (path) => {
+          try {
+            rmdirSync(path);
+          } catch (error) {
+            const code = (error as NodeJS.ErrnoException).code;
+            if (code !== 'ENOTEMPTY' && code !== 'ENOENT' && code !== 'EEXIST') throw error;
+          }
+        },
       },
       now: () => new Date(),
       readLease: (taskId) => readLease(cwd, taskId),

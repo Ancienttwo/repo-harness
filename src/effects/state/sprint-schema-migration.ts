@@ -41,6 +41,7 @@ import {
   resolveRepoIdentity,
 } from './coordination-canonical-source';
 import { repoPath } from './collect-state-inputs';
+import { createWriteJournal } from './write-journal';
 import { readLease, withBacklogLock, withTaskLock } from './coordination-lease-store';
 
 export interface MigrateSprintSchemaOptions {
@@ -332,68 +333,14 @@ export function migrateSprintSchemaCommand(
       }
     }
 
-    /**
-     * Everything this run touches, in the order it touched it.
-     *
-     * A file entry records the bytes it had first; `null` means the file did not
-     * exist, so the rollback removes it instead of inventing content. A
-     * directory entry records a directory this run created, so a rolled-back
-     * migration does not leave the empty receipt directory behind as its only
-     * trace. The receipt is only ever journalled when this run created it, so a
-     * rollback can never delete a competitor's file.
-     */
-    type JournalEntry =
-      | { readonly kind: 'file'; readonly path: string; readonly before: string | null }
-      | { readonly kind: 'directory'; readonly path: string };
-    const touched: JournalEntry[] = [];
+    // The shared journal: record what each path held before writing it, and on
+    // failure replay it in reverse. `sprint complete-row` uses the same helper
+    // for the same reason, so there is one definition of "a refusal means the
+    // bytes did not move".
+    const journal = createWriteJournal(deps.fs);
+    const { writeTracked, makeDirectoryTracked } = journal;
+    const restoreWrittenFiles = journal.restore;
 
-    const writeTracked = (absolutePath: string, text: string): void => {
-      touched.push({
-        kind: 'file',
-        path: absolutePath,
-        before: deps.fs.exists(absolutePath) ? deps.fs.readText(absolutePath) : null,
-      });
-      deps.fs.writeText(absolutePath, text);
-    };
-
-    /**
-     * `makeDirectory` is recursive, so it can create several levels at once. Each
-     * missing ancestor is journalled from the outermost inwards, and the rollback
-     * replays in reverse, so the deepest is removed first and each `rmdir` sees an
-     * already-empty directory.
-     */
-    const makeDirectoryTracked = (absolutePath: string): void => {
-      const missing: string[] = [];
-      for (let current = absolutePath; !deps.fs.exists(current); current = dirname(current)) {
-        missing.unshift(current);
-        if (dirname(current) === current) break;
-      }
-      for (const path of missing) touched.push({ kind: 'directory', path });
-      deps.fs.makeDirectory(absolutePath);
-    };
-
-    /**
-     * Every entry is attempted, and only then is a failure raised. Stopping at
-     * the first unrestorable file would leave the *others* migrated: the case
-     * that motivates this -- a carrier whose write failed because the path is
-     * unwritable -- is exactly the case where the sprint next to it can and must
-     * still be put back.
-     */
-    const restoreWrittenFiles = (): void => {
-      const failures: string[] = [];
-      for (const entry of [...touched].reverse()) {
-        try {
-          if (entry.kind === 'directory') deps.fs.removeDirectoryIfEmpty(entry.path);
-          else if (entry.before === null) deps.fs.removeFile(entry.path);
-          else deps.fs.writeText(entry.path, entry.before);
-        } catch (error) {
-          failures.push(`${entry.path}: ${error instanceof Error ? error.message : String(error)}`);
-        }
-      }
-      if (failures.length > 0) {
-        throw new Error(`could not restore ${failures.length} path(s): ${failures.join('; ')}`);
-      }
-    };
     /** A refusal must always mean "the files are exactly as they were". */
     const restoreAndRefuse = (message: string): CommandOutcome => {
       restoreWrittenFiles();
@@ -482,7 +429,7 @@ export function migrateSprintSchemaCommand(
         }
         throw error;
       }
-      touched.push({ kind: 'file', path: receiptAbsolute, before: null });
+      journal.recordCreatedFile(receiptAbsolute);
 
       return {
         exitCode: 0,

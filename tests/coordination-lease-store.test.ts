@@ -1468,6 +1468,79 @@ describe('complete-row is one locked transaction', () => {
     expect(existsSync(join(repo, CLAIM_TOKEN_DIR, `${RACE_ID}.claim`))).toBe(false);
   }, 60_000);
 
+test('a lease this completion could not release is refused before any write', () => {
+    // The half-applied state this ordering exists to prevent: the gate passed
+    // on ownership alone, the row was flipped to `[x]`, and only then did
+    // `releaseLeaseRecord` refuse -- publishing "done" while the lease and the
+    // token stayed live. `reviewing` is the normal contract-flow state and
+    // `completing` is the residue a crashed closeout leaves, so both are
+    // reachable here, not hypothetical.
+    for (const state of ['reviewing', 'completing'] as const) {
+      const repo = raceRepo();
+      claimRow(repo, 'claim-original');
+      const ownerPath = leaseOwnerPath(repo, RACE_ID);
+      const bound = JSON.parse(readFileSync(ownerPath, 'utf-8')) as Record<string, unknown>;
+      const stuck = state === 'reviewing'
+        ? {
+          ...bound,
+          record_schema: 2,
+          state,
+          finish_transaction_key: null,
+          current_publication: {
+            publication_id: `sha256:${'c'.repeat(64)}`,
+            receipt_sha256: `sha256:${'a'.repeat(64)}`,
+            head_sha: 'b'.repeat(40),
+            ship_transaction_key: 'ship/race',
+          },
+        }
+        : { ...bound, state, finish_transaction_key: 'finish/race' };
+      writeFileSync(ownerPath, `${JSON.stringify(stuck, null, 2)}\n`);
+      expect(readLease(repo, RACE_ID).record?.state).toBe(state);
+
+      const sprintBefore = readFileSync(join(repo, RACE_SPRINT), 'utf-8');
+      const outcome = completeRowSprintCommand(
+        { sprint: RACE_SPRINT, task: RACE_TASK, targetRef: 'main' },
+        processSprintDependencies(repo),
+      );
+
+      expect(outcome.exitCode).toBe(1);
+      expect(outcome.stderr).toContain(`holds a lease in state ${state}`);
+      expect(outcome.stderr).toContain(state === 'reviewing' ? 'publication recovery' : 'sprint reconcile');
+      // Nothing moved: the row is still pending, the lease and token still stand.
+      expect(readFileSync(join(repo, RACE_SPRINT), 'utf-8')).toBe(sprintBefore);
+      expect(readLease(repo, RACE_ID).record?.state).toBe(state);
+      expect(existsSync(join(repo, CLAIM_TOKEN_DIR, `${RACE_ID}.claim`))).toBe(true);
+    }
+  }, 60_000);
+
+  test('a throw after the row is written restores the sprint bytes', () => {
+    const repo = raceRepo();
+    claimRow(repo, 'claim-original');
+    const sprintBefore = readFileSync(join(repo, RACE_SPRINT), 'utf-8');
+    const real = processSprintDependencies(repo);
+
+    // The lease write is the first step past the row rewrite; failing it is the
+    // window where the row would otherwise stay published on its own.
+    // The verb turns an unexpected throw into a typed operational failure
+    // rather than letting it reach the CLI, so the assertion is on the outcome.
+    const outcome = completeRowSprintCommand(
+      { sprint: RACE_SPRINT, task: RACE_TASK, targetRef: 'main' },
+      {
+        ...real,
+        coordination: {
+          ...real.coordination,
+          writeLeaseOwner: () => { throw new Error('injected lease write failure'); },
+        },
+      },
+    );
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.stderr).toContain('injected lease write failure');
+
+    expect(readFileSync(join(repo, RACE_SPRINT), 'utf-8')).toBe(sprintBefore);
+    expect(readLease(repo, RACE_ID).record?.claim_id).toBe('claim-original');
+    expect(existsSync(join(repo, CLAIM_TOKEN_DIR, `${RACE_ID}.claim`))).toBe(true);
+  }, 60_000);
+
   test('bytes that two readers would read differently are refused, not interpreted', () => {
     // `JSON.parse` keeps the last value for a duplicated key; a line reader
     // keeps the first. Either answer is somebody's authority, so neither is.

@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260902-2101-issue-283-immutable-task-id.review.md
 > **Last Updated**: 2026-09-02 21:01
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:d9164fb17c9e0333eba9389c54a15d213496a0010bbf3a1ba426cf81d7fa6e60`
+> **Substantive Change SHA256**: `sha256:74d7cdc049465ac9f98d9fb4f7dac86b9b4783098c250f7b815d596bc2dcaa3f`
 
 ## Design Decisions
 
@@ -193,6 +193,24 @@
   through this path at all, because resolution runs through
   `resolveCanonicalTaskRef` -- which is the same fail-closed rule every other
   identity consumer already applied.
+- **For a completion too, a refusal means the bytes did not move.** Sinking the
+  transaction into TypeScript was necessary but not sufficient: the gate checked
+  ownership and revision and never `record.state`, so a `reviewing` lease (the
+  normal contract-flow state) or a `completing` residue passed it, the row was
+  flipped to `[x]`, and only then did `releaseLeaseRecord` refuse -- because
+  only `reserving` and `bound` can be given up. The row was published, the lease
+  and token stayed live, and nothing rolled back. Three changes close it, and
+  the order is the point: the gate now refuses any state outside
+  `RELEASABLE_LEASE_STATES` -- imported from the release path rather than
+  repeated, so the two cannot drift -- naming the state and the recovery
+  (`sprint reconcile` for a `completing` residue, publication recovery for
+  `reviewing`); the release transition is computed *before* the sprint is
+  touched, turning "this lease cannot be released" from a post-publication
+  surprise into a refusal that leaves the row pending; and the sprint write goes
+  through `createWriteJournal()` in `src/effects/state/write-journal.ts`, so a
+  throw in the lease write, the lease removal or the token removal restores the
+  row. That journal is the migration's, extracted rather than reimplemented --
+  both transactions now encode the same invariant in the same place.
 - **Bytes two readers would read differently are refused.** `JSON.parse` keeps
   the last value for a duplicated key; a line-oriented reader keeps the first.
   While the shell had its own owner-record reader that difference was reachable:

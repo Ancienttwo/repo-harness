@@ -747,10 +747,6 @@ claim_token_dir() {
   printf '%s/claims' "$(dirname "$marker_file")"
 }
 
-claim_token_field() {
-  sed -n "s/^$2=//p" "$1" | head -1
-}
-
 write_claim_token() {
   local tree="$1" task_id="$2" claim_id="$3" sprint_path="$4" task_cell="$5" unit_ref="$6" output
   # Token bytes are a worktree-local capability, but their publication must

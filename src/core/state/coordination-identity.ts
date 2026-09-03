@@ -791,7 +791,7 @@ export function abortLeaseCompletionRecord(
 }
 
 /** The only states a lease may be given up from (spec 8.3). */
-const RELEASABLE_LEASE_STATES: readonly PersistedLeaseState[] = ['reserving', 'bound'];
+export const RELEASABLE_LEASE_STATES: readonly PersistedLeaseState[] = ['reserving', 'bound'];
 
 /**
  * `-> released`. The record is written before the lease directory is removed,
