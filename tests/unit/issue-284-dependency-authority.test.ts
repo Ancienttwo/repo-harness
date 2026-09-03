@@ -59,6 +59,8 @@ import {
 import { acquireScheduledEngineerTask } from '../../src/effects/engineers/scheduling-acquire';
 import type { EngineerPrincipalV1 } from '../../src/core/engineers/principal-claim';
 import type { RepoHarnessRegisteredRepo, RepoHarnessRegistrySnapshot } from '../../src/effects/repo-registry';
+import { assessChange, buildReviewSelectionPacket } from '../../src/core/review/change-assessment';
+import { buildReviewSubject } from '../../src/effects/review/diff-fingerprint';
 import {
   ACCEPTANCE_VALIDATOR_RULE_IDS,
   CONSUMED_RECEIPT_KEYS,
@@ -66,6 +68,9 @@ import {
   acceptanceVerificationObservationPath,
   acceptanceVerificationObservationSubjectKey,
   authorityFingerprint,
+  recordAcceptance,
+  recordUserWaiverAcceptance,
+  recordUserWaiverGrant,
   userWaiverGrantPath,
   validateAcceptanceReceiptAgainstPolicy,
   writeAcceptanceVerificationObservation,
@@ -575,6 +580,190 @@ function offers(subject: Fixture, state: WorkPackageDependencyState) {
   });
 }
 
+const RECORD_CONTRACT_REF = 'tasks/contracts/demo.contract.md';
+const RECORD_GOAL_REF = 'plans/plan-demo.md';
+const RECORD_REPO_ID = 'repo_abcdef0123456789';
+
+interface RecordFixture {
+  readonly root: string;
+  readonly home: string;
+  readonly commit: string;
+}
+
+function recordContractText(): string {
+  return [
+    '# Task Contract: demo',
+    '',
+    '> **Status**: Active',
+    `> **Plan**: ${RECORD_GOAL_REF}`,
+    '> **Owner**: kito',
+    '',
+    '## Acceptance Policy',
+    '',
+    '```json',
+    '{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}',
+    '```',
+    '',
+    '## Change Assessment',
+    '',
+    '```json',
+    '{"protocol":1,"oracles":[]}',
+    '```',
+    '',
+  ].join('\n');
+}
+
+function recordChecks(root: string): void {
+  const reviewSubject = buildReviewSubject(root, { targetRef: 'main' });
+  if (reviewSubject.status !== 'ok') throw new Error('record fixture subject must be ok');
+  const assessment = assessChange({
+    subject: reviewSubject,
+    workflowProfile: 'lite',
+    strictCategories: [],
+    patternNoveltyPaths: [],
+    declaredOracles: [],
+  });
+  if (assessment.status !== 'ready') throw new Error('record fixture assessment must be ready');
+  const selection_packet = buildReviewSelectionPacket(assessment);
+  const basis = { schema: 'repo-harness-change-assessment-evidence.v1', status: 'pass', assessment, selection_packet };
+  const checks = {
+    schema: 'repo-harness-run-trace.v1',
+    source: 'verify-sprint',
+    status: 'pass',
+    exit_code: 0,
+    active_plan: RECORD_GOAL_REF,
+    review_subject_sha256: reviewSubject.review_subject_sha256,
+    benchmark_evidence: { status: 'not_applicable', report_sha256: 'not-applicable' },
+    commands: [{ name: 'verify-sprint', status: 'pass', exit_code: 0 }],
+    guards: [
+      { name: 'contract', status: 'pass' },
+      { name: 'review', status: 'pass' },
+      { name: 'allowed_paths', status: 'pass' },
+      { name: 'change_assessment', status: 'pass' },
+    ],
+    contract: { file: RECORD_CONTRACT_REF },
+    review: { file: 'tasks/reviews/demo.review.md' },
+    change_assessment: { ...basis, sha256_placeholder: undefined },
+  };
+  checks.change_assessment = { ...basis, evidence_sha256: engineerSha256(stableJson(basis)) } as never;
+  writeRepoFile(root, '.ai/harness/checks/latest.json', `${JSON.stringify(checks, null, 2)}\n`);
+}
+
+/** A minimal repository the real acceptance record path can run against. */
+function recordFixture(options: { readonly extraCandidateFile?: string } = {}): RecordFixture {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'issue-284-record-')));
+  const home = realpathSync(mkdtempSync(join(tmpdir(), 'issue-284-home-')));
+  roots.push(root, home);
+  git(root, 'init', '-b', 'main');
+  git(root, 'config', 'user.name', 'Issue 284');
+  git(root, 'config', 'user.email', 'issue284@test.invalid');
+  writeRepoFile(root, '.gitignore', '.ai/harness/checks/\n-checks.json\n');
+  writeRepoFile(root, '.ai/harness/policy.json', `${JSON.stringify({
+    worktree_strategy: { review_base: 'main' },
+    merge_gate: { enabled: true, rule: 'fixture' },
+  }, null, 2)}\n`);
+  writeRepoFile(root, 'base.txt', 'base\n');
+  git(root, 'add', '-A');
+  git(root, 'commit', '-m', 'base');
+  git(root, 'checkout', '-b', 'codex/demo');
+  writeRepoFile(root, 'feature.txt', 'candidate\n');
+  if (options.extraCandidateFile !== undefined) writeRepoFile(root, options.extraCandidateFile, 'candidate\n');
+  writeRepoFile(root, RECORD_GOAL_REF, '# Plan: demo\n\n> **Status**: Executing\n');
+  writeRepoFile(root, RECORD_CONTRACT_REF, recordContractText());
+  writeRepoFile(root, 'tasks/reviews/demo.review.md', '# Review\n\n> **Recommendation**: pass\n');
+  git(root, 'add', '-A');
+  git(root, 'commit', '-m', 'candidate');
+  recordChecks(root);
+  return { root, home, commit: git(root, 'rev-parse', 'HEAD') };
+}
+
+function recordExternalPass(
+  fixtureValue: RecordFixture,
+  overrides: { readonly verification?: string } = {},
+): ReturnType<typeof recordAcceptance> {
+  return recordAcceptance({
+    root: fixtureValue.root,
+    authorityHome: fixtureValue.home,
+    contract: RECORD_CONTRACT_REF,
+    verification: overrides.verification ?? '.ai/harness/checks/latest.json',
+    disposition: 'external_pass',
+    reviewer: 'Claude',
+    source: 'claude-review',
+    actor: null,
+    summary: 'candidate accepted',
+    findings: [],
+  });
+}
+
+function recordObservationPath(fixtureValue: RecordFixture): string {
+  return acceptanceVerificationObservationPath(
+    fixtureValue.root,
+    fixtureValue.home,
+    RECORD_CONTRACT_REF,
+    authorityFingerprint(recordContractText()),
+  );
+}
+
+/** Points the resolver at the record fixture repository and its committed contract. */
+function recordResolverInput(fixtureValue: RecordFixture): DependencyAuthorityInput {
+  const contractBytes = gitShow(fixtureValue.root, fixtureValue.commit, RECORD_CONTRACT_REF)!;
+  const definition = {
+    work_package_id: 'wp-demo',
+    task_ref: 'task demo',
+    primary_capability: CAPABILITY,
+    depends_on: [],
+    priority: 10,
+    concurrency: { scope: 'repo', key: 'wp-demo' },
+    execution_surface: 'contract',
+    integration_group: null,
+    required_acceptance: [{
+      gate: 'module',
+      policy_id: 'module-default',
+      policy_ref: 'plans/policies/module.json',
+      policy_revision: engineerSha256(POLICY_BYTES),
+    }],
+    rollback_boundary: {
+      kind: 'work_package',
+      boundary_id: `${RECORD_REPO_ID}:wp-demo`,
+      boundary_ref: 'plans/rollback/wp-demo.json',
+      boundary_revision: engineerSha256(ROLLBACK_A),
+    },
+  };
+  const graph = projectWorkGraph(validateWorkGraph({
+    protocol: 1,
+    kind: 'repo-harness-work-graph',
+    repository_id: RECORD_REPO_ID,
+    sprint_path: SPRINT,
+    lane: 'engineering-v2',
+    work_packages: [definition],
+  }), [{
+    task_id: '7'.repeat(64),
+    task_revision: '8'.repeat(64),
+    task_ref: 'task demo',
+    status: '[x]',
+    row_order: 1,
+  }]);
+  const repo = repository(RECORD_REPO_ID, fixtureValue.root);
+  return {
+    dependency: {
+      repository_id: RECORD_REPO_ID,
+      work_package_id: 'wp-demo',
+      required_state: 'module_accepted',
+      acceptance_authority: {
+        authority_kind: 'module_acceptance',
+        subject_ref: RECORD_CONTRACT_REF,
+        subject_revision: engineerSha256(contractBytes),
+      },
+    },
+    target: graph.work_packages[0]!,
+    reads: [{ repo, commit: fixtureValue.commit, graph }],
+    registry: { registryPath: join(fixtureValue.root, 'registry.json'), authorizationRevision: 3, repos: [repo] },
+    env: { HOME: fixtureValue.home },
+    readFileAtCommit: (repoRoot, commit, path) => gitShow(repoRoot, commit, path),
+    readers: { readCanonicalTargetRef: () => 'main', resolveAuthorityHome: () => fixtureValue.home },
+  };
+}
+
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
@@ -621,6 +810,55 @@ describe('issue #284 closed dependency authority', () => {
     }));
     expect(moved.status).toBe('satisfied');
     expect(moved.authority_revision).not.toBe(ready.authority_revision);
+  });
+
+  test('the real record paths refuse a receipt the shared validator would refuse', async () => {
+    // A verification file the record path accepts (it only rejects paths that
+    // escape the repository) but the shared validator refuses.
+    const dashVerification = recordFixture();
+    writeFileSync(join(dashVerification.root, '-checks.json'), readFileSync(join(dashVerification.root, '.ai/harness/checks/latest.json')));
+    await expect(recordExternalPass(dashVerification, { verification: '-checks.json' }))
+      .rejects.toThrow('AcceptanceReceipt verification_file is unsafe');
+    expect(existsSync(acceptanceReceiptPath(dashVerification.root, dashVerification.home))).toBe(false);
+    expect(existsSync(recordObservationPath(dashVerification))).toBe(false);
+
+    // A reviewed path the diff genuinely produces and the validator refuses.
+    const dashReviewed = recordFixture({ extraCandidateFile: '-feature.ts' });
+    await expect(recordExternalPass(dashReviewed))
+      .rejects.toThrow('AcceptanceReceipt reviewed_paths are invalid');
+    expect(existsSync(acceptanceReceiptPath(dashReviewed.root, dashReviewed.home))).toBe(false);
+    expect(existsSync(recordObservationPath(dashReviewed))).toBe(false);
+
+    // The waiver record path runs the same rule set.
+    const waived = recordFixture();
+    recordUserWaiverGrant({
+      root: waived.root,
+      authorityHome: waived.home,
+      contract: RECORD_CONTRACT_REF,
+      actor: 'kito',
+      summary: 'owner waived the candidate',
+    });
+    writeFileSync(join(waived.root, '-checks.json'), readFileSync(join(waived.root, '.ai/harness/checks/latest.json')));
+    await expect(recordUserWaiverAcceptance({
+      root: waived.root,
+      authorityHome: waived.home,
+      contract: RECORD_CONTRACT_REF,
+      verification: '-checks.json',
+    })).rejects.toThrow('AcceptanceReceipt verification_file is unsafe');
+    expect(existsSync(acceptanceReceiptPath(waived.root, waived.home))).toBe(false);
+    expect(existsSync(recordObservationPath(waived))).toBe(false);
+  });
+
+  test('an observation written by the real record path is accepted by the resolver', async () => {
+    const record = recordFixture();
+    const receipt = await recordExternalPass(record);
+    expect(receipt.disposition).toBe('external_pass');
+    expect(existsSync(recordObservationPath(record))).toBe(true);
+
+    const resolved = resolveDependencyAuthority(recordResolverInput(record));
+    expect(resolved.status).toBe('satisfied');
+    expect(resolved.evidence_refs.map((entry) => entry.ref)).toContain('acceptance-disposition:external_pass');
+    expect(resolved.evidence_refs.some((entry) => entry.ref.startsWith('acceptance-observation:sha256:'))).toBe(true);
   });
 
   test('every acceptance validator rule has a declared observation-path mechanism', () => {

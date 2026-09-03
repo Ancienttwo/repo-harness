@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260902-2101-issue-284-dependency-authority.review.md
 > **Last Updated**: 2026-09-02 21:01
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:512cd4946e4ea910257a09e4f96f4c7da7a3f43d0bf69aa7e27868080aa8df01`
+> **Substantive Change SHA256**: `sha256:341bde9e026ca8684cd0f90b1e5fed6cefa5b880a87bd4066d5555ca8dde41d8`
 
 ## Design Decisions
 
@@ -55,6 +55,13 @@
   next to the code that persists those content-addressed stores, so the store layout stays owned by one module. `authorityFingerprint` and
   `readAcceptanceReceiptFile` were exported from `scripts/acceptance-receipt.ts` (mirrored to `assets/templates/helpers/`) so the resolver reuses
   the single receipt validator and the single contract-normalization rule instead of re-deriving either.
+- **Both record paths run the shared validator, so `record_time` is a real mechanism rather than an argument from construction.** The coverage
+  table's first revision reasoned that each `record_time` rule "cannot be violated because of how `buildReceipt` builds the field". That held for
+  most rows and failed for two: `validateAcceptanceReceiptAgainstPolicy` had exactly one caller, `verifyAcceptance`, so the record path only
+  applied `readRegular`/`repoRelative` (which reject repository-escaping paths) and never `unsafeRepoRelativePath` (which additionally rejects
+  `-`-prefixed, absolute, backslash and `.`/`..`-segment paths). A `-checks.json` verification file or a `-feature.ts` reviewed path therefore
+  produced a receipt, an observation, and a `satisfied` dependency. `assertRecordedReceiptPolicy` now runs the full rule set in both record paths
+  before the write, skipping only `disposition_not_reject` because recording a rejection is legitimate and that rule is the resolver's by design.
 - **The observation's disposition is gated by a whitelist, not by a `reject` test.** Moving to record-time observations dropped the
   `PASSING_ACCEPTANCE_DISPOSITIONS` whitelist that round 1 had, and `reject` is a first-class persisted disposition: `validateDisposition`'s
   third branch accepts it with a matching reviewer and at least one finding, so `recordAcceptance` writes a reject receipt *and* now its
@@ -146,39 +153,45 @@ Every rule in `scripts/acceptance-receipt.ts#validateAcceptanceReceiptAgainstPol
 three mechanisms covers it on the observation path, and a test asserts the two key sets are equal — so a rule added to the validator without a
 coverage decision fails typecheck (the map is an exhaustive `Record`) and fails the test.
 
-`record_time` is claimed only where `recordAcceptance` / `recordUserWaiverAcceptance` actually run the rule **before**
-`writeAcceptanceWithArchiveProjection`; that ordering was checked rule by rule against those two functions.
+`record_time` means the rule is enforced before the observation exists. It is not an argument from construction: both `recordAcceptance` and
+`recordUserWaiverAcceptance` call `assertRecordedReceiptPolicy`, which runs the whole shared rule set against the built receipt and `fail()`s
+before `writeAcceptanceWithArchiveProjection`. An earlier revision of this table claimed `record_time` from incidental construction
+(`readRegular` rejects escaping paths, `buildReceipt` sets this field from a validated source) and that was wrong for two rows:
+`verification_file_shape` and `reviewed_paths_shape`. `readRegular`/`repoRelative` only reject repository-escaping paths, while the validator
+additionally rejects `-`-prefixed, absolute, backslash and `.`/`..`-segment paths — so a `-checks.json` verification file or a `-feature.ts`
+reviewed path was recorded, observed, and accepted by the resolver. Calling the shared validator on both record paths is what makes every
+`record_time` row below literally true.
 
 | Rule | Mechanism | Why |
 |------|-----------|-----|
-| `receipt_protocol_kind` | record_time | `buildReceipt` hardcodes protocol 2 and the receipt kind |
+| `receipt_protocol_kind` | record_time | `assertRecordedReceiptPolicy` |
 | `repository_root` | resolver | `readAcceptanceVerificationObservation` requires `repository_root === realpathSync(repoPath)`; this is what defeats cross-repository replay |
 | `contract_file` | subject_key | the subject key is `sha256({contract_file, contract_sha256})` and the reader compares both fields to the requested pair |
 | `contract_fingerprint` | subject_key | the resolver derives the key from `authorityFingerprint(subject bytes at the canonical commit)` |
-| `reviewer_policy` | record_time | `buildReceipt` sets `expected_reviewer` from the parsed contract policy, so they cannot disagree |
+| `reviewer_policy` | record_time | `assertRecordedReceiptPolicy` |
 | `goal_file_shape` | resolver | the observation reader rejects an unsafe `goal_file` before the resolver opens it |
 | `goal_fingerprint` | resolver | the resolver re-fingerprints the goal at the target repository's canonical commit against `observation.goal_sha256` |
-| `verification_file_shape` | record_time | `readRegular` refuses a path that escapes the repository |
-| `verification_evidence_shape` | record_time | set from `normalizedVerificationEvidence(...)`, which is a `sha256(...)` |
-| `benchmark_evidence_present` | record_time | set from the same evidence pass, never empty |
-| `subject_sha256_shape` | record_time | `currentSubject` fails unless the digest matches `^sha256:[0-9a-f]{64}$` |
-| `subject_scope` | record_time | `buildReceipt` sets it from `context.subject.scope`, which the review subject builder pins to `src/effects/review/diff-fingerprint.ts#REVIEW_SUBJECT_SCOPE` |
+| `verification_file_shape` | record_time | `assertRecordedReceiptPolicy` — `readRegular`/`repoRelative` alone only reject repository-escaping paths, so this rule is the only thing that rejects a `-`-prefixed or backslash verification file |
+| `verification_evidence_shape` | record_time | `assertRecordedReceiptPolicy` |
+| `benchmark_evidence_present` | record_time | `assertRecordedReceiptPolicy` |
+| `subject_sha256_shape` | record_time | `assertRecordedReceiptPolicy` |
+| `subject_scope` | record_time | `assertRecordedReceiptPolicy`; the value itself comes from `context.subject.scope`, which the review subject builder pins to `src/effects/review/diff-fingerprint.ts#REVIEW_SUBJECT_SCOPE` |
 | `target_ref_present` | resolver | additionally compared with the target repository's canonical target ref, which is the readable-negative case |
-| `target_revision_shape` | record_time | set from the review base the policy resolved |
-| `reviewed_paths_shape` | record_time | set from the subject's repository-relative diff paths |
-| `summary_present` | record_time | `recordAcceptance` refuses an empty summary; the waiver path takes the grant's non-empty summary |
-| `issued_at_shape` | record_time | `now().toISOString()` |
-| `disposition_not_reject` | **resolver** | `validateDisposition` has a third branch that *accepts* `reject` with a matching reviewer and at least one finding, so `recordAcceptance` writes both a reject receipt and its observation. Only the resolver's passing-disposition whitelist keeps a recorded rejection out of scheduling |
-| `waiver_grant_present` | record_time | `recordAcceptance` refuses `user_waiver` outright; the waiver path materializes from a verified grant |
-| `waiver_policy_allowed` | record_time | `verifyUserWaiverGrant` fails when the contract forbids waivers |
-| `waiver_grant_repository` | record_time | `verifyUserWaiverGrant` checks the grant's repository root |
-| `waiver_grant_contract` | record_time | `verifyUserWaiverGrant` checks the grant's contract file and fingerprint |
-| `waiver_grant_goal` | record_time | `verifyUserWaiverGrant` checks the grant's goal fingerprint |
-| `waiver_grant_owner` | record_time | `verifyUserWaiverGrant` compares the grant actor with the contract Owner header |
-| `waiver_grant_fingerprint` | record_time | `buildReceipt` sets `waiver_grant_sha256` from the verified grant |
-| `waiver_binding_symmetry` | record_time | the two record paths are the only writers and each sets the pair consistently |
-| `disposition_policy` | record_time | `validateDisposition` runs before `buildReceipt` in both record paths — note this proves the disposition is *policy-consistent*, not that it is *passing*, which is why `disposition_not_reject` needs its own mechanism |
-| `validator_threw` | record_time | a rule that throws instead of returning (an unparseable Acceptance Policy block, a malformed input) aborts `recordAcceptance` / `recordUserWaiverAcceptance` before `writeAcceptanceWithArchiveProjection`, so no receipt and no observation are written |
+| `target_revision_shape` | record_time | `assertRecordedReceiptPolicy` |
+| `reviewed_paths_shape` | record_time | `assertRecordedReceiptPolicy` — the diff can genuinely produce a `-`-prefixed path, and nothing else on the record path rejects one |
+| `summary_present` | record_time | `assertRecordedReceiptPolicy` |
+| `issued_at_shape` | record_time | `assertRecordedReceiptPolicy` |
+| `disposition_not_reject` | **resolver** | the one rule `assertRecordedReceiptPolicy` deliberately skips, because recording a rejection is legitimate. `validateDisposition` has a third branch that *accepts* `reject` with a matching reviewer and at least one finding, so `recordAcceptance` writes both a reject receipt and its observation. Only the resolver's passing-disposition whitelist keeps a recorded rejection out of scheduling |
+| `waiver_grant_present` | record_time | `assertRecordedReceiptPolicy`; `recordAcceptance` also refuses `user_waiver` outright |
+| `waiver_policy_allowed` | record_time | `assertRecordedReceiptPolicy` |
+| `waiver_grant_repository` | record_time | `assertRecordedReceiptPolicy` |
+| `waiver_grant_contract` | record_time | `assertRecordedReceiptPolicy` |
+| `waiver_grant_goal` | record_time | `assertRecordedReceiptPolicy` |
+| `waiver_grant_owner` | record_time | `assertRecordedReceiptPolicy` |
+| `waiver_grant_fingerprint` | record_time | `assertRecordedReceiptPolicy` |
+| `waiver_binding_symmetry` | record_time | `assertRecordedReceiptPolicy` |
+| `disposition_policy` | record_time | `assertRecordedReceiptPolicy`; note this proves the disposition is *policy-consistent*, not *passing*, which is why `disposition_not_reject` needs its own mechanism |
+| `validator_threw` | record_time | `assertRecordedReceiptPolicy` propagates a thrown rule as a `fail()`, so no receipt and no observation are written |
 
 ## Deviations From Plan Or Spec
 

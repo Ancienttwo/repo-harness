@@ -274,10 +274,9 @@ function canonicalDone(input: DependencyAuthorityInput): AdapterVerdict {
  * How each rule of the acceptance authority's synchronous validator is covered
  * on the observation path this module reads.
  *
- * - `record_time`: the authority enforces the rule before it writes, so an
- *   observation existing at all implies the rule held. Only claimed for rules
- *   `recordAcceptance` / `recordUserWaiverAcceptance` actually run before
- *   `writeAcceptanceWithArchiveProjection`.
+ * - `record_time`: both record paths call the shared validator through
+ *   `assertRecordedReceiptPolicy` before `writeAcceptanceWithArchiveProjection`,
+ *   so an observation existing at all implies the rule held.
  * - `subject_key`: bound by the observation's subject key, which this module
  *   derives from the edge's declared contract bytes at the canonical commit.
  * - `resolver`: this module checks the observation field itself.
@@ -287,18 +286,18 @@ function canonicalDone(input: DependencyAuthorityInput): AdapterVerdict {
  * therefore observe — a `reject`.
  */
 export const OBSERVATION_PATH_RULE_COVERAGE: Readonly<Record<AcceptanceValidatorRuleId, 'record_time' | 'subject_key' | 'resolver'>> = Object.freeze({
-  // buildReceipt hardcodes protocol/kind; the observation reader re-derives its own.
   receipt_protocol_kind: 'record_time',
   // The observation reader requires repository_root === realpath(repo path).
   repository_root: 'resolver',
   contract_file: 'subject_key',
   contract_fingerprint: 'subject_key',
-  // buildReceipt sets expected_reviewer from the parsed contract policy.
   reviewer_policy: 'record_time',
   // The observation reader rejects an unsafe goal_file.
   goal_file_shape: 'resolver',
   // The resolver re-fingerprints the goal at the target's canonical commit.
   goal_fingerprint: 'resolver',
+  // The record path's own readRegular only rejects escaping paths; this rule
+  // is what rejects a `-`-prefixed or backslash verification file.
   verification_file_shape: 'record_time',
   verification_evidence_shape: 'record_time',
   benchmark_evidence_present: 'record_time',
@@ -307,11 +306,13 @@ export const OBSERVATION_PATH_RULE_COVERAGE: Readonly<Record<AcceptanceValidator
   // Also compared against the target repository's canonical target ref.
   target_ref_present: 'resolver',
   target_revision_shape: 'record_time',
+  // The diff can genuinely produce a `-`-prefixed path.
   reviewed_paths_shape: 'record_time',
   summary_present: 'record_time',
   issued_at_shape: 'record_time',
-  // recordAcceptance writes a reject receipt and its observation, so only the
-  // passing-disposition whitelist below keeps a rejection out of scheduling.
+  // The one rule assertRecordedReceiptPolicy skips: recording a rejection is
+  // legitimate, so only the passing-disposition whitelist below keeps a
+  // recorded rejection out of scheduling.
   disposition_not_reject: 'resolver',
   waiver_grant_present: 'record_time',
   waiver_policy_allowed: 'record_time',
@@ -322,8 +323,8 @@ export const OBSERVATION_PATH_RULE_COVERAGE: Readonly<Record<AcceptanceValidator
   waiver_grant_fingerprint: 'record_time',
   waiver_binding_symmetry: 'record_time',
   disposition_policy: 'record_time',
-  // A rule that throws at record time aborts the record path before any
-  // receipt or observation is written, so an observation cannot exist for one.
+  // A thrown rule propagates as a fail() from assertRecordedReceiptPolicy, so
+  // no receipt and no observation are written.
   validator_threw: 'record_time',
 });
 

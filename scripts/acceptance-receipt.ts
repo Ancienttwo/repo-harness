@@ -1423,6 +1423,32 @@ function writeAcceptanceWithArchiveProjection(
   }
 }
 
+/**
+ * Both record paths run the gate's full synchronous rule set before the
+ * receipt — and therefore the verification observation — is written, so every
+ * `record_time` coverage claim on the observation path is literally true.
+ *
+ * `disposition_not_reject` is the one rule deliberately skipped here: a
+ * rejection is a legitimate thing to record. It stays a reader-side rule, and
+ * every shape rule above it still runs for a rejection.
+ */
+function assertRecordedReceiptPolicy(
+  context: Awaited<ReturnType<typeof acceptanceContext>>,
+  receipt: AcceptanceReceipt,
+  waiverGrant: UserWaiverGrant | null,
+): void {
+  const verdict = validateAcceptanceReceiptAgainstPolicy({
+    receipt,
+    repositoryRoot: context.root,
+    expectedContractFile: receipt.contract_file,
+    contractContent: context.contract.content,
+    goalContent: context.goal.content,
+    waiverGrant,
+  });
+  if (verdict.ok || verdict.rule === 'disposition_not_reject') return;
+  fail(`${verdict.reason} (${verdict.rule})`);
+}
+
 export async function recordAcceptance(args: {
   root: string;
   authorityHome: string;
@@ -1453,6 +1479,7 @@ export async function recordAcceptance(args: {
     null,
     args.now ?? (() => new Date()),
   );
+  assertRecordedReceiptPolicy(context, receipt, null);
   writeAcceptanceWithArchiveProjection(context.root, args.authorityHome, context.contract, receipt);
   return receipt;
 }
@@ -1483,6 +1510,7 @@ export async function recordUserWaiverAcceptance(args: {
     waiverGrantFingerprint(grant),
     args.now ?? (() => new Date()),
   );
+  assertRecordedReceiptPolicy(context, receipt, grant);
   writeAcceptanceWithArchiveProjection(context.root, args.authorityHome, context.contract, receipt);
   return receipt;
 }
