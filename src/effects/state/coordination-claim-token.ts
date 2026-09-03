@@ -272,17 +272,6 @@ export function writeClaimTokenForBoundLease(cwd: string, input: ClaimTokenWrite
 }
 
 /**
- * Every token this tree holds for `unitRef`, resolved through the same
- * repository containment `readText` enforces on every other state source. The
- * directory listing is sorted so an ambiguous result names its matches in a
- * stable order.
- *
- * Throws only on a genuine IO failure the caller must decide about (a
- * permission error, an unreadable directory entry); a missing claims
- * directory is `none`, because a repository that never ran `start-task` is
- * not a failure.
- */
-/**
  * The token this tree holds for one task id, addressed by identity.
  *
  * The file *is* `<task_id>.claim`, so this is one read rather than a scan, and
@@ -312,6 +301,17 @@ export function removeClaimTokenForTask(cwd: string, taskId: string): void {
   }
 }
 
+/**
+ * Every token this tree holds for `unitRef`, resolved through the same
+ * repository containment `readText` enforces on every other state source. The
+ * directory listing is sorted so an ambiguous result names its matches in a
+ * stable order.
+ *
+ * Throws only on a genuine IO failure the caller must decide about (a
+ * permission error, an unreadable directory entry); a missing claims
+ * directory is `none`, because a repository that never ran `start-task` is
+ * not a failure.
+ */
 export function findClaimTokenByUnitRef(cwd: string, unitRef: string): ClaimTokenRead {
   if (!unitRef) return { outcome: 'none' };
   let entries: readonly string[];
