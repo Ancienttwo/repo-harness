@@ -1,6 +1,7 @@
 # Plan: Sprint task: BRC0 — Authority freeze 与 baseline characterization
 
 > **Status**: Executing
+> **Substantive Change SHA256**: `sha256:7d26d4bcabaeae65146d64eb62b7b5a5d5e4d8ce8b1a0e14abb2d472fc784da8`
 > **Created**: 20260903-0954
 > **Slug**: brc0-authority-freeze-baseline-characterization
 > **Planning Source**: repo-harness-sprint
