@@ -313,7 +313,7 @@ describe('repo-harness engineer CLI', () => {
     expect(JSON.parse(retired.stdout).state).toBe('retired');
   });
 
-  test('exposes operator principal mapping but no CLI Engineer acquire route', () => {
+  test('exposes operator principal mapping and the bounded acquire-next route', () => {
     const root = fixture();
     const help = run(root, ['engineer', '--help']);
     expect(help.exitCode).toBe(0);
@@ -324,7 +324,7 @@ describe('repo-harness engineer CLI', () => {
     expect(help.stdout).toContain('message');
     expect(help.stdout).toContain('runtime-effect');
     expect(help.stdout).not.toContain('claim');
-    expect(help.stdout).not.toContain('acquire');
+    expect(help.stdout).toContain('acquire-next');
     const offersHelp = run(root, ['engineer', 'offers', '--help']);
     expect(offersHelp.exitCode).toBe(0);
     expect(offersHelp.stdout).toContain('--authorization-id');

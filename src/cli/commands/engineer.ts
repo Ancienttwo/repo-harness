@@ -40,6 +40,7 @@ import {
 import { repoHarnessRepoIdFor } from '../../effects/repo-registry';
 import { resolveEngineerPrincipal } from '../../effects/engineers/principal';
 import { collectEngineerOffers } from '../../effects/engineers/scheduling';
+import { acquireNextScheduledEngineerTask } from '../../effects/engineers/scheduling-acquire-next';
 import { FleetOffersError } from '../../effects/fleet/acquire';
 import {
   EngineeringOverlayProjectionError,
@@ -319,6 +320,41 @@ export function buildEngineerCommand(): Command {
       emit(offers, options.json, offers.offers.length === 0
         ? `${offers.lane}: no eligible Work Packages`
         : offers.offers.map((offer) => `${offer.work_package_id} ${offer.offer_revision}`).join('\n'));
+    }));
+
+  engineer
+    .command('acquire-next')
+    .description('Select and acquire the first canonical current Engineer offer')
+    .requiredOption('--authorization-id <id>', 'Server-minted Engineer OAuth authorization ID')
+    .requiredOption('--idempotency-key <key>', 'Stable transport retry key')
+    .option('--capability-id <id>', 'Require one exact capability ID')
+    .option('--minimum-priority <n>', 'Require this minimum canonical priority')
+    .option('--max-selection-attempts <n>', 'Bounded stale-selection attempts', '3')
+    .option('--json', 'Output JSON')
+    .action((options: {
+      authorizationId: string;
+      idempotencyKey: string;
+      capabilityId?: string;
+      minimumPriority?: string;
+      maxSelectionAttempts: string;
+      json?: boolean;
+    }) => run(() => {
+      const repoRoot = realpathSync(process.cwd());
+      const principal = resolveEngineerPrincipal({ repo_root: repoRoot, authorization_id: options.authorizationId });
+      const result = acquireNextScheduledEngineerTask({
+        repo_root: repoRoot,
+        principal,
+        idempotency_key: options.idempotencyKey,
+        filters: {
+          ...(options.capabilityId === undefined ? {} : { capability_id: options.capabilityId }),
+          ...(options.minimumPriority === undefined ? {} : { minimum_priority: integerOption(options.minimumPriority, 'minimum-priority') }),
+        },
+        max_selection_attempts: integerOption(options.maxSelectionAttempts, 'max-selection-attempts'),
+      });
+      emit(result, options.json, result.ok
+        ? `acquired ${result.offer.work_package_id} ${result.envelope.claim_id}`
+        : `${result.error}: ${result.message}`);
+      if (!result.ok && result.error !== 'engineer_no_eligible_offer') process.exitCode = 1;
     }));
 
   const message = new Command('message').description('Persist and consume closed Module Engineer coordination messages');

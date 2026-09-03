@@ -153,6 +153,7 @@ describe('restricted Engineer MCP tools', () => {
       'engineer_status',
       'engineer_offers',
       'engineer_acquire',
+      'engineer_acquire_next',
       'engineer_messages',
       'engineer_message_send',
       'engineer_message_ack',
@@ -500,11 +501,25 @@ describe('restricted Engineer MCP tools', () => {
     });
 
     const before = coordinationState(repoRoot);
+    const noNextOffer = await callMcpTool(context, 'engineer_acquire_next', {
+      ...fences,
+      idempotency_key: 'no-next-offer',
+      capability_id: 'capability.workflow-engine.contract-assets',
+      minimum_priority: 100,
+      max_selection_attempts: 2,
+    });
+    expect(noNextOffer).toMatchObject({
+      isError: true,
+      structuredContent: { error: { code: 'engineer_no_eligible_offer' } },
+    });
+    expect(coordinationState(repoRoot).filter((path) => path.endsWith('.json'))).toEqual(before.filter((path) => path.endsWith('.json')));
+
+    const beforeStale = coordinationState(repoRoot);
     const staleOffer = await callMcpTool(context, 'engineer_acquire', acquireArgs);
     expect(staleOffer).toMatchObject({
       isError: true,
       structuredContent: { error: { code: 'engineer_offer_stale' } },
     });
-    expect(coordinationState(repoRoot)).toEqual(before);
+    expect(coordinationState(repoRoot)).toEqual(beforeStale);
   }, 30_000);
 });
