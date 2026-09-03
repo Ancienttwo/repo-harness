@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260903-0437-issue-282-automation-budget.review.md
 > **Last Updated**: 2026-09-03 05:20
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:43154414510a48a60d60fd2fb43afb8451e1bd2b6687c882d8802f150661a951`
+> **Substantive Change SHA256**: `sha256:d3307ed316b21379ffec751b3947b6f9fbcf223a4ba71a0b60531b50b8694c71`
 
 ## Design Decisions
 
@@ -260,9 +260,12 @@ retry could replace. A leftover temporary file is garbage that no scan counts.
 The chosen recovery is one rule, not two guards: **`current.json` is a derived
 projection of all three durable record kinds -- `reservations/`, `events/` and
 `stop-receipt.json` -- and every mutating verb re-derives it under the run lock
-before deciding.** `detectAutomationCurrentDrift` probes the receipt and
-compares directory entry counts (one `existsSync` plus two `readdir` calls on
-the healthy path);
+before deciding.** `detectAutomationCurrentDrift` compares directory entry
+counts by direction, probes the stop receipt, and resolves each open
+reservation the projection lists through a by-digest hard-link index. The
+healthy path is two `readdir` calls and one `existsSync`, plus one `stat` and
+one parse while an operation is in flight -- at most one reservation is ever
+open, and the index means resolving it never scans the record directory.
 `repairCurrentFromDurableRecords` runs only after a crash and rebuilds consumed,
 the no-progress streak, the ledger chain, the step index and the open
 reservation from the immutable records themselves. Nothing is re-minted and no

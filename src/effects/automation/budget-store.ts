@@ -164,6 +164,7 @@ interface RunPaths extends StorePaths {
   readonly run: string;
   readonly current: string;
   readonly reservations: string;
+  readonly reservationsByDigest: string;
   readonly events: string;
   readonly reconciliations: string;
   readonly stopReceipt: string;
@@ -198,6 +199,12 @@ function runPaths(repoRoot: string, runId: string): RunPaths {
     run,
     current: join(run, 'current.json'),
     reservations: join(run, 'reservations'),
+    // Reservations are stored under their idempotency-key digest, which is what
+    // a replay looks up. `by-digest` is a hard-link index of the same inodes
+    // under their reservation digest, so resolving one listed open reservation
+    // is a single stat and parse instead of a scan of every record. It holds no
+    // bytes of its own: it is a second name for one file, not a second copy.
+    reservationsByDigest: join(run, 'reservations', 'by-digest'),
     events: join(run, 'events'),
     reconciliations: join(run, 'reconciliations'),
     stopReceipt: join(run, 'stop-receipt.json'),
@@ -254,7 +261,7 @@ function ensureDirectory(common: string, target: string): void {
 }
 
 function prepareRun(paths: RunPaths): void {
-  for (const target of [paths.root, paths.budgets, paths.runs, paths.locks, paths.run, paths.reservations, paths.events, paths.reconciliations]) {
+  for (const target of [paths.root, paths.budgets, paths.runs, paths.locks, paths.run, paths.reservations, paths.reservationsByDigest, paths.events, paths.reconciliations]) {
     ensureDirectory(paths.common, target);
   }
 }
@@ -302,6 +309,21 @@ function writeExclusive(path: string, bytes: string, label: string): boolean {
       // The temporary file may never have been created, or may already be gone.
     }
   }
+}
+
+/**
+ * Publish a second name for an already-published record. `link` is atomic and
+ * fails `EEXIST`, so the index is create-once like the record it points at, and
+ * because both names share one inode the index can never disagree with it.
+ */
+function linkExclusive(source: string, target: string, label: string): void {
+  try {
+    linkSync(source, target);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return;
+    fail('automation_budget_store_unavailable', `cannot index ${label}`, error);
+  }
+  syncDirectory(dirname(target));
 }
 
 function writeAtomic(path: string, bytes: string, label: string): void {
@@ -549,8 +571,11 @@ function readAutomationBudgetStatusAt(repoRoot: string, runId: string, now: stri
  * already stopped. Nothing is ever silently re-minted, and no metric is ever
  * assumed to be zero.
  *
- * Drift is detected by counting directory entries, which costs two `readdir`
- * calls on the healthy path; the full re-derivation only runs after a crash.
+ * Drift is detected by counting directory entries and resolving each listed
+ * open reservation through the by-digest index. The healthy path is two
+ * `readdir` calls plus, while an operation is in flight, one `stat` and one
+ * parse for the single open reservation -- never a scan of every record. The
+ * full re-derivation only runs after a crash.
  */
 function jsonEntries(directory: string): readonly string[] {
   if (!existsSync(directory)) return Object.freeze([]);
@@ -581,6 +606,8 @@ export function detectAutomationCurrentDrift(
   current: AutomationBudgetCurrentV1,
   now: string,
 ): AutomationCurrentDrift {
+  // The healthy path is exactly two directory listings plus one stat and parse
+  // per open reservation, of which there is at most one.
   const events = jsonEntries(paths.events).length;
   const reservations = jsonEntries(paths.reservations).length;
   if (events < current.event_count) {
@@ -600,16 +627,18 @@ export function detectAutomationCurrentDrift(
       `automation ledger is missing reservations: ${events} usage events are on disk but only ${reservations} reservations are`,
     );
   }
-  if (listedOpen > 0) {
-    // Counts alone cannot see an open reservation whose own file went missing
-    // while an unrelated one appeared, so the listed digests are resolved.
-    const stored = new Set(jsonEntries(paths.reservations).map(
-      (entry) => parse(readRaw(join(paths.reservations, entry), 'automation reservation'), validateAutomationReservation, 'automation reservation').reservation_sha256,
-    ));
-    for (const digest of current.open_reservation_sha256s) {
-      if (!stored.has(digest)) {
-        fail('automation_budget_store_invalid', `automation ledger is missing the open reservation ${digest} the projection lists`);
-      }
+  // Counts alone cannot see an open reservation whose own file went missing
+  // while an unrelated one appeared, so each listed digest is resolved against
+  // the by-digest index: one stat and one parse for the single open
+  // reservation, never a scan of every record.
+  for (const digest of current.open_reservation_sha256s) {
+    const indexed = join(paths.reservationsByDigest, `${digest}.json`);
+    if (!existsSync(indexed)) {
+      fail('automation_budget_store_invalid', `automation ledger is missing the open reservation ${digest} the projection lists`);
+    }
+    const stored = parse(readRaw(indexed, 'automation reservation'), validateAutomationReservation, 'automation reservation');
+    if (stored.reservation_sha256 !== digest) {
+      fail('automation_budget_store_invalid', `automation reservation index entry ${digest} holds a different reservation`);
     }
   }
   // The stop receipt leaves the entry counts of the other two directories
@@ -1126,6 +1155,11 @@ export function reserveAutomationBudget(input: ReserveAutomationBudgetInput): Au
     if (!writeExclusive(reservationPath, bytes(reservation), 'automation reservation')) {
       fail('automation_budget_store_conflict', 'automation reservation was created concurrently');
     }
+    linkExclusive(
+      reservationPath,
+      join(paths.reservationsByDigest, `${reservation.reservation_sha256}.json`),
+      'automation reservation',
+    );
     const next = sealAutomationBudgetCurrent({
       automation_run_id: status.current.automation_run_id,
       budget_sha256: status.current.budget_sha256,

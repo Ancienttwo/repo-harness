@@ -1259,8 +1259,10 @@ describe('issue #282 — a projection claiming records the disk lacks is corrupt
     acquire(repo, 'lost-reservation', budget, 'op-1', '2026-09-03T00:00:10.000Z');
     const before = readFileSync(paths(repo, budget.automation_run_id, 'current.json'), 'utf8');
 
+    // Both names of the record go, including the by-digest index: a hard link
+    // that survives means the record is not actually lost.
     const reservations = join(repo, '.git', AUTOMATION_BUDGET_STORE_RELATIVE_ROOT, 'runs', budget.automation_run_id, 'reservations');
-    for (const entry of readdirSync(reservations)) rmSync(join(reservations, entry));
+    for (const entry of readdirSync(reservations)) rmSync(join(reservations, entry), { recursive: true, force: true });
     refusesEverywhere(repo, budget, before);
   });
 
@@ -1281,7 +1283,7 @@ describe('issue #282 — a projection claiming records the disk lacks is corrupt
     });
     const before = readFileSync(paths(repo, budget.automation_run_id, 'current.json'), 'utf8');
     const reservations = join(repo, '.git', AUTOMATION_BUDGET_STORE_RELATIVE_ROOT, 'runs', budget.automation_run_id, 'reservations');
-    for (const entry of readdirSync(reservations)) rmSync(join(reservations, entry));
+    for (const entry of readdirSync(reservations)) rmSync(join(reservations, entry), { recursive: true, force: true });
     refusesEverywhere(repo, budget, before);
   });
 });
