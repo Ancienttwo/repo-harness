@@ -1,21 +1,73 @@
 {
   "protocol": 1,
   "kind": "repo-harness-repair-campaign-authority-freeze-baseline",
-  "baseline": "main@1022e100",
+  "baseline": "main@b35fd0a7",
+  "rebaselined_from": "1022e100",
+  "rebaselined_at": "2026-09-03T00:00:00Z",
+  "reason": "#283 persisted task IDs (schema 2); campaign owner accepted",
+  "rebaselined": {
+    "note": "Every moved digest below carries a task_revision, whose preimage gained the exact Task cell and the protocol-v2 domain under backlog schema 2. task_id itself was preserved: the freeze fixture now persists the same ids its rows derived under schema 1, which is what `sprint migrate-schema` writes for a real sprint. task.offer_revision, task.offer_classification_matrix, acceptance.*, publication.publication_id and external_source.* are therefore unchanged, which is the proof that the re-baseline is bounded to task revision semantics and did not touch another authority.",
+    "previous": {
+      "task.canonical_projection": "sha256:f45ebbcd68ab31ad54399fd50d35da2e506797af4529c35f7159ecf97d70785e",
+      "lease.reserving_record": "sha256:34b71461dd9306b2d70c73167e64c87bd4c4093bab19c20da7da83c533f77f52",
+      "lease.bound_record": "sha256:c64a4f8b560786a6edc9c2d2f8d98b848e8ae7e0631d760171c67d33c9fdbe19",
+      "publication.receipt_bytes": "sha256:6d84b05cf447c48420e71a45783b006c4627cc9b51db1f221be5dc25bb4147da",
+      "publication.marker": "sha256:fe27345124b83b295f8d4ba2a82d2ee3f25ff39418e453d2d39c0335facff5f9"
+    }
+  },
   "rule": "Each digest is sha256 over bytes produced by the production function named in `source`. Where an authority owns its own canonical serializer the digest is taken over that output directly; where a production function returns an object rather than bytes, `source` names both the subject producer and the repository canonical serializer used to render it. The subject is the literal value built in tests/characterization/repair-campaign-authority-freeze.test.ts. A moved digest means an authority changed; re-deriving the value to make the test pass is never the correct repair.",
   "frozen": {
-    "task.canonical_projection": { "sha256": "sha256:f45ebbcd68ab31ad54399fd50d35da2e506797af4529c35f7159ecf97d70785e", "source": "subject: src/core/state/coordination-identity.ts#projectCanonicalTasks; bytes: src/core/fleet/board.ts#canonicalJson" },
-    "task.offer_revision": { "sha256": "sha256:e33972b19e6c1bc0ab597dddfd6b68bd9b04e3c2f655dd57d03ff2e020b992db", "source": "src/core/fleet/task-offer.ts#taskOfferRevision" },
-    "task.offer_classification_matrix": { "sha256": "sha256:f7c898a771b46476769ac386e122c8b80cb83e639a58dd785c96c5919b64fe79", "source": "subject: src/core/fleet/task-offer.ts#classifyTaskOffer over all 5376 closed inputs; bytes: src/core/fleet/board.ts#canonicalJson" },
-    "lease.reserving_record": { "sha256": "sha256:34b71461dd9306b2d70c73167e64c87bd4c4093bab19c20da7da83c533f77f52", "source": "src/core/state/coordination-identity.ts#buildLeaseOwnerRecord + serializeLeaseOwnerRecord" },
-    "lease.bound_record": { "sha256": "sha256:c64a4f8b560786a6edc9c2d2f8d98b848e8ae7e0631d760171c67d33c9fdbe19", "source": "src/core/state/coordination-identity.ts#bindLeaseRecord + serializeLeaseOwnerRecord" },
-    "acceptance.matrix_bytes": { "sha256": "sha256:c94966029a07d13acf8767e77e3ba43fdbcb17f4b55a975a8dc497e692c08cda", "source": "src/core/integration/product-acceptance.ts#canonicalAcceptanceMatrixBytes" },
-    "acceptance.matrix_sha256": { "sha256": "sha256:a953d8a3ab80eda492768591a6e48793552dc591b795a345a1a86ff77018b240", "source": "src/core/integration/product-acceptance.ts#buildAcceptanceMatrix" },
-    "acceptance.receipt_projection": { "sha256": "sha256:b621d50582c9612a4bb3067bc066953f99b7788e9ced2faec58f4cb63f7c35b6", "source": "scripts/acceptance-receipt.ts#renderAcceptanceProjection" },
-    "publication.receipt_bytes": { "sha256": "sha256:6d84b05cf447c48420e71a45783b006c4627cc9b51db1f221be5dc25bb4147da", "source": "src/core/publication/publication-receipt.ts#canonicalPublicationReceiptBytes" },
-    "publication.publication_id": { "sha256": "sha256:5e640ae858147453ced36fb79f58f4af472d517542c48eea182eafe70ce48d6d", "source": "src/core/publication/publication-receipt.ts#derivePublicationId" },
-    "publication.marker": { "sha256": "sha256:fe27345124b83b295f8d4ba2a82d2ee3f25ff39418e453d2d39c0335facff5f9", "source": "src/core/publication/publication-receipt.ts#encodePublicationMarker" },
-    "external_source.observation_bytes": { "sha256": "sha256:608023e75a64fafc55b7cc58194a47369e5bbeca74adf2f3c4843e3740f5ae67", "source": "src/core/external-sources/issue-observation.ts#canonicalProviderIssueObservationBytes" },
-    "external_source.observation_sha256": { "sha256": "sha256:28c3b467feffa3ca04ff88fd4c11784a5d5767d43585590d5d25391b6f551702", "source": "src/core/external-sources/issue-observation.ts#buildProviderIssueObservation" }
+    "task.canonical_projection": {
+      "sha256": "sha256:4778e3b559513352cf7d681966c5a97a1ed790bb8ebf61afe09626995fde8498",
+      "source": "subject: src/core/state/coordination-identity.ts#projectCanonicalTasks; bytes: src/core/fleet/board.ts#canonicalJson"
+    },
+    "task.offer_revision": {
+      "sha256": "sha256:e33972b19e6c1bc0ab597dddfd6b68bd9b04e3c2f655dd57d03ff2e020b992db",
+      "source": "src/core/fleet/task-offer.ts#taskOfferRevision"
+    },
+    "task.offer_classification_matrix": {
+      "sha256": "sha256:f7c898a771b46476769ac386e122c8b80cb83e639a58dd785c96c5919b64fe79",
+      "source": "subject: src/core/fleet/task-offer.ts#classifyTaskOffer over all 5376 closed inputs; bytes: src/core/fleet/board.ts#canonicalJson"
+    },
+    "lease.reserving_record": {
+      "sha256": "sha256:5cc81d06903ebe202d2515da8294f8787e40fcab4ebaf24f816d4de81f182d84",
+      "source": "src/core/state/coordination-identity.ts#buildLeaseOwnerRecord + serializeLeaseOwnerRecord"
+    },
+    "lease.bound_record": {
+      "sha256": "sha256:12cc81d5fbfbce1cab59b2b2bf16a9b622bc9b8bfb49621a217099681713f8cc",
+      "source": "src/core/state/coordination-identity.ts#bindLeaseRecord + serializeLeaseOwnerRecord"
+    },
+    "acceptance.matrix_bytes": {
+      "sha256": "sha256:c94966029a07d13acf8767e77e3ba43fdbcb17f4b55a975a8dc497e692c08cda",
+      "source": "src/core/integration/product-acceptance.ts#canonicalAcceptanceMatrixBytes"
+    },
+    "acceptance.matrix_sha256": {
+      "sha256": "sha256:a953d8a3ab80eda492768591a6e48793552dc591b795a345a1a86ff77018b240",
+      "source": "src/core/integration/product-acceptance.ts#buildAcceptanceMatrix"
+    },
+    "acceptance.receipt_projection": {
+      "sha256": "sha256:b621d50582c9612a4bb3067bc066953f99b7788e9ced2faec58f4cb63f7c35b6",
+      "source": "scripts/acceptance-receipt.ts#renderAcceptanceProjection"
+    },
+    "publication.receipt_bytes": {
+      "sha256": "sha256:7f256afbf173091c5abc41c0cd6bcbb55f1c8e1ac7368285c7f18d1ea280eb9e",
+      "source": "src/core/publication/publication-receipt.ts#canonicalPublicationReceiptBytes"
+    },
+    "publication.publication_id": {
+      "sha256": "sha256:5e640ae858147453ced36fb79f58f4af472d517542c48eea182eafe70ce48d6d",
+      "source": "src/core/publication/publication-receipt.ts#derivePublicationId"
+    },
+    "publication.marker": {
+      "sha256": "sha256:1609ec00f2351c76bc0ffbb09b0b964a450c35018be306cfc3862325c069ca2e",
+      "source": "src/core/publication/publication-receipt.ts#encodePublicationMarker"
+    },
+    "external_source.observation_bytes": {
+      "sha256": "sha256:608023e75a64fafc55b7cc58194a47369e5bbeca74adf2f3c4843e3740f5ae67",
+      "source": "src/core/external-sources/issue-observation.ts#canonicalProviderIssueObservationBytes"
+    },
+    "external_source.observation_sha256": {
+      "sha256": "sha256:28c3b467feffa3ca04ff88fd4c11784a5d5767d43585590d5d25391b6f551702",
+      "source": "src/core/external-sources/issue-observation.ts#buildProviderIssueObservation"
+    }
   }
 }

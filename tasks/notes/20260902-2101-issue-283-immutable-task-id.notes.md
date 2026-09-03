@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260902-2101-issue-283-immutable-task-id.review.md
 > **Last Updated**: 2026-09-02 21:01
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:e50cf60ed040a0730e18b81d4d8ac6e23f6309ca580e06e17376a810cc62f68c`
+> **Substantive Change SHA256**: `sha256:968a2b4300e5f25e351442822a2e78e894cda639e85ee3dcae4d309047d7778e`
 
 ## Design Decisions
 
@@ -116,6 +116,34 @@
     and `backlog_schema` in `sprint-backlog.sh` apply the same rule, and
     `tests/sprint-backlog-grammar-drift.test.ts` pins the two together on
     duplicated, contradictory, unsupported and empty declarations.
+- **BRC0 authority freeze re-baselined, with the campaign owner's acceptance.**
+  PR #292 landed `tests/characterization/repair-campaign-authority-freeze.test.ts`
+  while this branch was in flight; it froze v1 identity derivation and could not
+  load here. Both sprints are now schema 2 (the campaign sprint migrated in this
+  branch after its owner released every lease -- all fifteen rows classified
+  `available`/`none` before the migration ran), and the freeze was re-baselined
+  under four owner conditions: change only the identity/revision assertions,
+  record the provenance in the baseline JSON, prove the migration preserved the
+  campaign sprint's real ids, and document it in the research file.
+  Five digests moved, not the two the conditions anticipated:
+  `task.canonical_projection`, both lease records, `publication.receipt_bytes`
+  and `publication.marker`. Every one of them carries a `task_revision`, whose
+  preimage gained the exact Task cell and the `protocol-v2` domain. `task_id`
+  itself was deliberately preserved -- the freeze fixture now persists the same
+  ids its rows derived under schema 1, which is exactly what
+  `sprint migrate-schema` writes for a real sprint -- so `task.offer_revision`,
+  the 5376-input classification matrix, every acceptance digest,
+  `publication.publication_id` and the external-source digests are unchanged.
+  That set of *unmoved* digests is the evidence the re-baseline is bounded to
+  task revision semantics and touched no other authority; the previous values of
+  all five are recorded under `rebaselined.previous` in the baseline JSON so the
+  owner can audit the delta rather than take it on trust. The negative proofs
+  (Issue is not a Task, prompt is not a Claim, heartbeat read-only, autoplan
+  retired, capability absent, `unmapped_surfaces`) are unchanged; the only edit
+  inside them is that an invented identity is now fabricated by a test-local
+  `inventedTaskId()` helper, because schema 2 removes the product function that
+  turned text into an identity. That helper is labelled in the file as something
+  no `src/` code may do.
 - **A live sprint may not be schema 1.** `sprint_ready_error()` is only asked
   about Approved/Executing sprints, and it now requires exactly one schema-2
   declaration there, naming `sprint migrate-schema` when it is missing. Schema 1

@@ -279,3 +279,24 @@ exercised here.
   `src/cli/commands/campaign.ts`.
 - `external_sources.mode` is `"off"`, which is the hard precondition PRD Module 2
   requires the campaign to check before any Issue observation is legal.
+
+## 2026-09-03 re-baseline: #283
+
+Five frozen digests moved — `task.canonical_projection`, both lease records,
+`publication.receipt_bytes` and `publication.marker` — because #283 replaced the
+derived `task_id` with a persisted `ID` column and gave `task_revision` a new
+preimage (the exact Task cell plus a `protocol-v2` domain); the freeze fixture
+now persists the same ids its rows derived under schema 1, so `task_id` itself is
+unchanged and `task.offer_revision`, the classification matrix, the acceptance
+digests, `publication.publication_id` and the external-source digests all stayed
+put, which is the proof that only task revision semantics moved. This is
+intentional and is the point of the change rather than drift in an authority:
+identity now survives a Task title edit, so a rename no longer orphans a Lease,
+a claim-scoped message, a Work Graph mapping or an external-source binding, and
+every negative proof in the freeze — an Issue is not a Task, a prompt is not a
+Claim, `heartbeat-triage` stays read-only, `repo-harness-autoplan` stays retired,
+the campaign capability stays absent — is unchanged byte for byte. The campaign
+owner accepted this re-baseline under four conditions, recorded in
+`tasks/notes/20260902-2101-issue-283-immutable-task-id.notes.md`, and the
+migration receipt binding the campaign sprint's old and new bytes is
+`plans/sprints/20260902-2238-gpt-pro-seeded-repair-campaign.schema-migration.v1.json`.

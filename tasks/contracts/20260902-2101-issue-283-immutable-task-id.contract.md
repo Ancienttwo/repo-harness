@@ -126,6 +126,12 @@ allowed_paths:
   - .claude/templates/
   - plans/
   - docs/
+  # Owner-approved re-baseline of the BRC0 authority freeze (PR #292): #283
+  # changed task identity semantics, so the freeze's task_revision-bearing
+  # digests had to move. The campaign owner accepted; see the notes.
+  - tests/characterization/repair-campaign-authority-freeze.test.ts
+  - tests/fixtures/repair-campaign/
+  - docs/researches/20260903-repair-campaign-authority-freeze.md
   - .archcontext/model/
   - AGENTS.md
   - CLAUDE.md
