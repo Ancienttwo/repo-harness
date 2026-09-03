@@ -1,7 +1,13 @@
+> **Archived**: 2026-09-04 03:35
+> **Related Plan**: plans/archive/plan-20260903-1713-refactor-cutover-closure-gate.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260904-0335
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-09-04 01:19
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

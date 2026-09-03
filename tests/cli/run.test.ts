@@ -276,6 +276,7 @@ describe("run command", () => {
       /check-task-workflow\s+Check workflow contract and policy compliance for the current repo/,
     );
     expect(res.stdout).toContain("Planning & execution:");
+    expect(res.stdout.match(/cutover-closure/g)).toHaveLength(1);
     expect(res.stdout).toContain("Verification & maintenance:");
   }, 30_000);
 

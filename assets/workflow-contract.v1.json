@@ -81,6 +81,16 @@
       "stubMarker": "<!-- repo-harness: reference-config-stub v1 -->"
     }
   },
+  "cutoverClosure": {
+    "protocol": 1,
+    "categories": ["old_implementation", "callers", "fallback", "tests", "docs_and_projections", "compatibility_expiry"],
+    "dispositions": ["removed", "migrated", "retained_with_reason", "not_applicable"],
+    "selectorKinds": ["path", "relation", "symbol"],
+    "errorCodes": ["refactor_closure_residue", "refactor_closure_incomplete", "refactor_closure_missing"],
+    "authority": "scripts/cutover-closure.ts",
+    "projection": "assets/templates/helpers/cutover-closure.ts",
+    "evidenceKind": "cutover_closure"
+  },
   "helpers": {
     "runtimeDirectory": "package:assets/templates/helpers",
     "scripts": [
@@ -90,6 +100,7 @@
       "capture-plan.sh",
       "plan-to-todo.sh",
       "contract-run.ts",
+      "cutover-closure.ts",
       "contract-worktree.sh",
       "acceptance-receipt.ts",
       "change-assessment.ts",
@@ -147,6 +158,7 @@
       "capture-plan": "Capture a finished planning note as a plan artifact or checklist rows",
       "plan-to-todo": "Activate an approved plan and start its contract worktree when enabled",
       "contract-run": "Preflight, dry-run, or run a task contract's delegated worker and verifier",
+      "cutover-closure": "Verify explicit refactor cutover closure against an exact Git candidate head",
       "contract-worktree": "Start, finish, clean up, or report status of a contract execution worktree",
       "acceptance-receipt": "Record, project, or verify the single structured semantic acceptance authority",
       "change-assessment": "Prepare or validate deterministic final-subject review selection evidence",
