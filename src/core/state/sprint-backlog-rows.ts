@@ -71,22 +71,34 @@ const BACKLOG_HEADING = /^## Backlog[ \t]*$/;
  * could be. Any other declared value fails closed rather than degrading to 1,
  * because a forward version this build cannot parse must not be read as the
  * oldest one it can.
+ *
+ * The whole preamble is scanned, not just up to the first marker. Returning on
+ * the first declaration would let a second, contradictory one sit unread: this
+ * side would project identity from a file the awk authority refuses, or the
+ * reverse, which is exactly the drift the two parsers are bound against. Two
+ * declarations are a malformed header, not a precedence question.
  */
 export function sprintBacklogSchema(sprintText: string): SprintBacklogSchema {
+  const declarations: string[] = [];
   for (const line of sprintText.split(/\r?\n/)) {
     if (BACKLOG_HEADING.test(line)) break;
     const match = SCHEMA_MARKER.exec(line);
-    if (!match) continue;
-    const declared = match[1];
-    if (declared === String(SPRINT_BACKLOG_SCHEMA_V2)) return SPRINT_BACKLOG_SCHEMA_V2;
-    if (declared === String(SPRINT_BACKLOG_SCHEMA_V1)) {
-      throw new SprintSchemaError(
-        'sprint declares "Backlog Schema: 1"; schema 1 is the absent-marker default and must not be declared',
-      );
-    }
-    throw new SprintSchemaError(`sprint declares an unsupported backlog schema: ${declared || '(empty)'}`);
+    if (match) declarations.push(match[1]);
   }
-  return SPRINT_BACKLOG_SCHEMA_V1;
+  if (declarations.length === 0) return SPRINT_BACKLOG_SCHEMA_V1;
+  if (declarations.length > 1) {
+    throw new SprintSchemaError(
+      `sprint declares the backlog schema ${declarations.length} times (${declarations.map((value) => value || '(empty)').join(', ')}); exactly one declaration is allowed`,
+    );
+  }
+  const declared = declarations[0];
+  if (declared === String(SPRINT_BACKLOG_SCHEMA_V2)) return SPRINT_BACKLOG_SCHEMA_V2;
+  if (declared === String(SPRINT_BACKLOG_SCHEMA_V1)) {
+    throw new SprintSchemaError(
+      'sprint declares "Backlog Schema: 1"; schema 1 is the absent-marker default and must not be declared',
+    );
+  }
+  throw new SprintSchemaError(`sprint declares an unsupported backlog schema: ${declared || '(empty)'}`);
 }
 
 /**
@@ -105,15 +117,15 @@ export interface BacklogRow {
 }
 
 /**
- * Rows between `## Backlog` and the next `## ` heading whose first cell is a
- * bare integer index.
+ * The raw backlog row lines, verbatim and in file order, 1:1 with `backlogRows`.
  *
- * - schema 1: `| <index> | <status> | <task> | <mode> | <acceptance> | <plan> |`
- * - schema 2: `| <index> | <id> | <status> | <task> | <mode> | <acceptance> | <plan> |`
+ * Cell extraction trims and drops whatever the row does not have, so a
+ * truncated row is invisible in `BacklogRow`. Validators that must reject a
+ * malformed row -- the schema 1 migration reader in particular -- need the
+ * original line to count its columns.
  */
-export function backlogRows(sprintText: string): BacklogRow[] {
-  const schema = sprintBacklogSchema(sprintText);
-  const rows: BacklogRow[] = [];
+export function backlogRowLines(sprintText: string): string[] {
+  const lines: string[] = [];
   let inSection = false;
   for (const line of sprintText.split(/\r?\n/)) {
     if (BACKLOG_HEADING.test(line)) {
@@ -123,6 +135,22 @@ export function backlogRows(sprintText: string): BacklogRow[] {
     if (!inSection) continue;
     if (/^## /.test(line)) break;
     if (!/^\|[ \t]*[0-9]+[ \t]*\|/.test(line)) continue;
+    lines.push(line);
+  }
+  return lines;
+}
+
+/**
+ * Rows between `## Backlog` and the next `## ` heading whose first cell is a
+ * bare integer index.
+ *
+ * - schema 1: `| <index> | <status> | <task> | <mode> | <acceptance> | <plan> |`
+ * - schema 2: `| <index> | <id> | <status> | <task> | <mode> | <acceptance> | <plan> |`
+ */
+export function backlogRows(sprintText: string): BacklogRow[] {
+  const schema = sprintBacklogSchema(sprintText);
+  const rows: BacklogRow[] = [];
+  for (const line of backlogRowLines(sprintText)) {
     const cells = line.split('|');
     const cell = (position: number): string => (cells[position] ?? '').trim();
     rows.push(schema === SPRINT_BACKLOG_SCHEMA_V2

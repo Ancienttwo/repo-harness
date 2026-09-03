@@ -87,6 +87,13 @@ describe('schema detection', () => {
     expect(() => sprintBacklogSchema(sprint([ROW_A], '> **Backlog Schema**:'))).toThrow(SprintSchemaError);
   });
 
+  test('a repeated declaration is refused rather than resolved by precedence', () => {
+    const twice = sprint([ROW_A], '> **Backlog Schema**: 2\n> **Backlog Schema**: 2');
+    expect(() => sprintBacklogSchema(twice)).toThrow(/declares the backlog schema 2 times/);
+    const contradictory = sprint([ROW_A], '> **Backlog Schema**: 2\n> **Backlog Schema**: 3');
+    expect(() => sprintBacklogSchema(contradictory)).toThrow(/declares the backlog schema 2 times/);
+  });
+
   test('a marker after the backlog heading is not honoured by either parser', () => {
     const text = [
       '# Sprint: late marker', '', '## Backlog', '',

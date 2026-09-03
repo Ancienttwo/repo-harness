@@ -143,49 +143,107 @@ export interface RewriteWorkGraphInput {
   /** Exact Task cell -> persisted id. */
   readonly idsByTaskCell: ReadonlyMap<string, string>;
   readonly workGraphPath: string;
+  /** The sprint being migrated; the carrier must name exactly this one. */
+  readonly sprintPath: string;
+}
+
+/** Top-level keys a schema 1 Work Graph carrier must have, exactly. */
+const LEGACY_GRAPH_KEYS = [
+  'protocol', 'kind', 'repository_id', 'sprint_path', 'lane', 'work_packages',
+] as const;
+
+/**
+ * Keys a schema 1 Work Package must have, exactly: the `WorkPackageDefinitionV1`
+ * field set with `task_ref` in place of `task_id`. Checking the whole shape
+ * rather than just the join key is the point -- a carrier that survives the
+ * migration only to be refused at runtime by `validateWorkGraph` is a migration
+ * that produced garbage, and the failure would surface far from its cause.
+ */
+const LEGACY_WORK_PACKAGE_KEYS = [
+  'work_package_id', 'task_ref', 'primary_capability', 'depends_on', 'priority',
+  'concurrency', 'execution_surface', 'integration_group', 'required_acceptance',
+  'rollback_boundary',
+] as const;
+
+const LEGACY_GRAPH_PROTOCOL = 1;
+const LEGACY_GRAPH_KIND = 'repo-harness-work-graph';
+const LEGACY_LANES = ['generic-v1', 'engineering-v2'] as const;
+
+function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  return JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort());
+}
+
+function plainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
  * Replace every Work Package's `task_ref` join key with the persisted
- * `task_id`. Refuses a carrier whose `task_ref` does not name exactly one
- * canonical row: an ambiguous or absent mapping is the failure the migration
- * contract requires it to stop on, not something to guess through.
+ * `task_id`.
+ *
+ * The carrier is validated strictly first: exact top-level and per-package key
+ * sets, the Work Graph protocol and kind, the sprint path it claims, its lane's
+ * own emptiness rule, and unique `work_package_id`/`task_ref`. Then every
+ * `task_ref` must name exactly one canonical row, and the ids that come back
+ * must themselves be unique -- an ambiguous or absent mapping is the failure the
+ * migration contract requires it to stop on, not something to guess through.
  */
 export function rewriteWorkGraphToTaskId(input: RewriteWorkGraphInput): string {
+  const refuse = (message: string): never => {
+    throw new SprintSchemaMigrationError(`work graph ${input.workGraphPath} ${message}`);
+  };
+
   let parsed: unknown;
   try {
     parsed = JSON.parse(input.workGraphText);
   } catch {
-    throw new SprintSchemaMigrationError(`work graph ${input.workGraphPath} is not valid JSON`);
+    return refuse('is not valid JSON');
   }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new SprintSchemaMigrationError(`work graph ${input.workGraphPath} is not a JSON object`);
+  if (!plainObject(parsed)) return refuse('is not a JSON object');
+  const graph = parsed;
+  if (!exactKeys(graph, LEGACY_GRAPH_KEYS)) {
+    return refuse(`keys are invalid; expected exactly ${LEGACY_GRAPH_KEYS.join(', ')}`);
   }
-  const graph = parsed as Record<string, unknown>;
+  if (graph.protocol !== LEGACY_GRAPH_PROTOCOL) return refuse(`declares protocol ${String(graph.protocol)}, not ${LEGACY_GRAPH_PROTOCOL}`);
+  if (graph.kind !== LEGACY_GRAPH_KIND) return refuse(`declares kind ${String(graph.kind)}, not ${LEGACY_GRAPH_KIND}`);
+  if (graph.sprint_path !== input.sprintPath) {
+    return refuse(`names sprint_path ${String(graph.sprint_path)}, not the sprint being migrated (${input.sprintPath})`);
+  }
+  if (typeof graph.lane !== 'string' || !LEGACY_LANES.includes(graph.lane as typeof LEGACY_LANES[number])) {
+    return refuse(`declares an unsupported lane: ${String(graph.lane)}`);
+  }
   const packages = graph.work_packages;
-  if (!Array.isArray(packages)) {
-    throw new SprintSchemaMigrationError(`work graph ${input.workGraphPath} has no work_packages array`);
-  }
+  if (!Array.isArray(packages)) return refuse('work_packages is not an array');
+  if (graph.lane === 'generic-v1' && packages.length !== 0) return refuse('is generic-v1 but carries work packages');
+  if (graph.lane === 'engineering-v2' && packages.length === 0) return refuse('is engineering-v2 but carries no work packages');
+
+  const seenPackageId = new Set<string>();
+  const seenTaskRef = new Set<string>();
+  const seenTaskId = new Set<string>();
   const migrated = packages.map((entry, position) => {
-    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
-      throw new SprintSchemaMigrationError(`work graph ${input.workGraphPath} work_packages[${position}] is not an object`);
+    const at = `work_packages[${position}]`;
+    if (!plainObject(entry)) return refuse(`${at} is not an object`);
+    if ('task_id' in entry) return refuse(`${at} already carries task_id`);
+    if (!exactKeys(entry, LEGACY_WORK_PACKAGE_KEYS)) {
+      return refuse(`${at} keys are invalid; expected exactly ${LEGACY_WORK_PACKAGE_KEYS.join(', ')}`);
     }
-    const item = entry as Record<string, unknown>;
-    if ('task_id' in item) {
-      throw new SprintSchemaMigrationError(`work graph ${input.workGraphPath} work_packages[${position}] already carries task_id`);
-    }
-    const ref = item.task_ref;
-    if (typeof ref !== 'string') {
-      throw new SprintSchemaMigrationError(`work graph ${input.workGraphPath} work_packages[${position}].task_ref is not a string`);
-    }
+    const packageId = entry.work_package_id;
+    if (typeof packageId !== 'string' || packageId.length === 0) return refuse(`${at}.work_package_id is not a non-empty string`);
+    if (seenPackageId.has(packageId)) return refuse(`repeats work_package_id ${packageId}`);
+    seenPackageId.add(packageId);
+
+    const ref = entry.task_ref;
+    if (typeof ref !== 'string' || ref.length === 0) return refuse(`${at}.task_ref is not a non-empty string`);
+    if (seenTaskRef.has(ref)) return refuse(`repeats task_ref '${ref}'`);
+    seenTaskRef.add(ref);
+
     const id = input.idsByTaskCell.get(ref);
-    if (id === undefined) {
-      throw new SprintSchemaMigrationError(
-        `work graph ${input.workGraphPath} work_packages[${position}].task_ref '${ref}' does not name a canonical Sprint row`,
-      );
-    }
-    const { task_ref: _dropped, ...rest } = item;
-    return { work_package_id: rest.work_package_id, task_id: id, ...rest };
+    if (id === undefined) return refuse(`${at}.task_ref '${ref}' does not name a canonical Sprint row`);
+    if (seenTaskId.has(id)) return refuse(`maps two work packages onto task id ${id}`);
+    seenTaskId.add(id);
+
+    const { task_ref: _dropped, ...rest } = entry;
+    return { work_package_id: packageId, task_id: id, ...rest };
   });
   return `${JSON.stringify({ ...graph, work_packages: migrated }, null, 2)}\n`;
 }

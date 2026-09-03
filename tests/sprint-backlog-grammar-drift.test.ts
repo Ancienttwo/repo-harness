@@ -24,7 +24,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'child_process';
-import { readFileSync, readdirSync } from 'fs';
+import { readFileSync, readdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { backlogRowStatuses } from '../src/core/state/project-continuation-envelope';
 import { backlogRows, type BacklogRow } from '../src/core/state/sprint-backlog-rows';
@@ -90,6 +90,38 @@ describe('sprint backlog row grammar: bash authority vs TS projection', () => {
       expect(backlogRowStatuses(text)).toEqual(bash.map((row) => row.split('\t')[1] ?? ''));
     }, 30_000);
   }
+
+  test('both sides refuse a duplicated or unsupported schema declaration', () => {
+    // The schema marker is the one header field that changes how every row is
+    // read, so the two parsers have to agree about a malformed declaration as
+    // strictly as they agree about a well-formed one. A TypeScript side that
+    // took the first marker while awk failed on the second would project
+    // identity out of a file the shell refuses to touch.
+    const table = [
+      '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+      '|---|----|--------|------|------|------------|------|',
+      `| 1 | ${'a'.repeat(64)} | [ ] | only row | contract | pending | (pending) |`,
+    ];
+    const cases: readonly { readonly name: string; readonly header: readonly string[] }[] = [
+      { name: 'declared twice', header: ['> **Backlog Schema**: 2', '> **Backlog Schema**: 2'] },
+      { name: 'declared twice with different values', header: ['> **Backlog Schema**: 2', '> **Backlog Schema**: 3'] },
+      { name: 'unsupported version', header: ['> **Backlog Schema**: 3'] },
+      { name: 'empty value', header: ['> **Backlog Schema**:'] },
+    ];
+
+    for (const testCase of cases) {
+      const text = ['# Sprint: marker cases', '', '> **Status**: Executing', ...testCase.header, '', '## Backlog', '', ...table, ''].join('\n');
+      const path = join(FIXTURE_DIR, `.drift-${testCase.name.replace(/\s+/g, '-')}.md`);
+      writeFileSync(path, text);
+      try {
+        expect(() => backlogRows(text)).toThrow();
+        const bash = spawnSync('bash', ['-c', `${definition}\nbacklog_rows "$1"`, 'drift-check', path], { encoding: 'utf-8' });
+        expect(bash.status, `${testCase.name}: bash accepted what TypeScript refused`).not.toBe(0);
+      } finally {
+        rmSync(path, { force: true });
+      }
+    }
+  }, 30_000);
 
   test('the check has teeth: a one-sided grammar widening is caught', () => {
     // Scratch copy only -- the real script is never modified. Admitting dotted

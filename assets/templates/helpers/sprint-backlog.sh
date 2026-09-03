@@ -302,6 +302,11 @@ backlog_rows() {
       declared = $0
       sub(/^>[[:space:]]*\*\*Backlog Schema\*\*:[[:space:]]*/, "", declared)
       gsub(/[[:space:]]+$/, "", declared)
+      declarations++
+      if (declarations > 1) {
+        printf "sprint-backlog: backlog schema is declared %d times; exactly one declaration is allowed\n", declarations > "/dev/stderr"
+        exit 1
+      }
       if (declared == "2") {
         schema = 2
       } else {
@@ -337,7 +342,13 @@ backlog_schema() {
       declared = $0
       sub(/^>[[:space:]]*\*\*Backlog Schema\*\*:[[:space:]]*/, "", declared)
       gsub(/[[:space:]]+$/, "", declared)
-      if (declared == "2") { found = 2; exit }
+      declarations++
+      if (declarations > 1) {
+        printf "sprint-backlog: backlog schema is declared %d times; exactly one declaration is allowed\n", declarations > "/dev/stderr"
+        bad = 1
+        exit 1
+      }
+      if (declared == "2") { found = 2; next }
       printf "sprint-backlog: unsupported backlog schema: %s\n", declared > "/dev/stderr"
       bad = 1
       exit 1

@@ -9,7 +9,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { projectCanonicalTasks } from '../../src/core/state/coordination-identity';
@@ -28,6 +28,7 @@ import {
   defaultMigrationReceiptPath,
   migrateSprintSchemaCommand,
   processMigrationDependencies,
+  type MigrationFileSystem,
 } from '../../src/effects/state/sprint-schema-migration';
 import { leaseOwnerPath } from '../../src/effects/state/coordination-lease-store';
 import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
@@ -58,6 +59,60 @@ const V1_SPRINT = [
   '|------|------|------|--------|',
   '',
 ].join('\n');
+
+const CARRIER_PATH = SPRINT_PATH.replace('.sprint.md', '.work-graph.v1.json');
+const CARRIER_DIGEST = `sha256:${'a'.repeat(64)}`;
+
+/** One schema 1 Work Package in the exact shape the strict validator requires. */
+function legacyWorkPackage(id: string, taskRef: string): Record<string, unknown> {
+  return {
+    work_package_id: id,
+    task_ref: taskRef,
+    primary_capability: 'capability.runtime-harness.collaboration',
+    depends_on: [],
+    priority: 50,
+    concurrency: { scope: 'repo', key: id },
+    execution_surface: 'contract',
+    integration_group: null,
+    required_acceptance: [{
+      gate: 'module', policy_id: 'module-gate',
+      policy_ref: 'docs/spec.md', policy_revision: CARRIER_DIGEST,
+    }],
+    rollback_boundary: {
+      kind: 'work_package', boundary_id: id,
+      boundary_ref: 'plans/rollback.json', boundary_revision: CARRIER_DIGEST,
+    },
+  };
+}
+
+/**
+ * A carrier covering both backlog rows. `projectWorkGraph` requires an
+ * engineering-v2 graph to cover every canonical Sprint row, so a one-package
+ * carrier would be refused for a reason unrelated to whatever a test is
+ * actually exercising.
+ */
+function legacyCarrier(overrides: Record<string, unknown> = {}): string {
+  return `${JSON.stringify({
+    protocol: 1,
+    kind: 'repo-harness-work-graph',
+    repository_id: 'repo_0123456789abcdef',
+    sprint_path: SPRINT_PATH,
+    lane: 'engineering-v2',
+    work_packages: [
+      legacyWorkPackage('wp-a', 'first work package'),
+      legacyWorkPackage('wp-b', 'second work package'),
+    ],
+    ...overrides,
+  }, null, 2)}\n`;
+}
+
+/** The ids the migration will persist for the fixture's two rows. */
+function fixtureIdsByTaskCell(): Map<string, string> {
+  return new Map([
+    ['first work package', 'a'.repeat(64)],
+    ['second work package', 'b'.repeat(64)],
+  ]);
+}
 
 function sha256(text: string): string {
   return `sha256:${createHash('sha256').update(text, 'utf-8').digest('hex')}`;
@@ -126,42 +181,74 @@ describe('pure sprint rewrite', () => {
 });
 
 describe('pure work graph rewrite', () => {
-  const carrier = `${JSON.stringify({
-    protocol: 1,
-    kind: 'repo-harness-work-graph',
-    repository_id: 'repo_0123456789abcdef',
-    sprint_path: SPRINT_PATH,
-    lane: 'engineering-v2',
-    work_packages: [{ work_package_id: 'wp-a', task_ref: 'second work package', priority: 50 }],
-  }, null, 2)}\n`;
+  const rewrite = (workGraphText: string, ids = fixtureIdsByTaskCell()) => rewriteWorkGraphToTaskId({
+    workGraphText,
+    idsByTaskCell: ids,
+    workGraphPath: CARRIER_PATH,
+    sprintPath: SPRINT_PATH,
+  });
 
   test('the join key becomes task_id and task_ref is dropped', () => {
-    const migrated = rewriteWorkGraphToTaskId({
-      workGraphText: carrier,
-      idsByTaskCell: new Map([['second work package', 'b'.repeat(64)]]),
-      workGraphPath: 'plans/sprints/x.work-graph.v1.json',
-    });
-    const parsed = JSON.parse(migrated);
-    expect(parsed.work_packages[0].task_id).toBe('b'.repeat(64));
-    expect('task_ref' in parsed.work_packages[0]).toBe(false);
+    const parsed = JSON.parse(rewrite(legacyCarrier()));
+    expect(parsed.work_packages.map((entry: { task_id: string }) => entry.task_id))
+      .toEqual(['a'.repeat(64), 'b'.repeat(64)]);
+    expect(parsed.work_packages.every((entry: object) => !('task_ref' in entry))).toBe(true);
     expect(parsed.protocol).toBe(1);
+    expect(parsed.sprint_path).toBe(SPRINT_PATH);
   });
 
   test('a task_ref that names no canonical row is refused', () => {
-    expect(() => rewriteWorkGraphToTaskId({
-      workGraphText: carrier,
-      idsByTaskCell: new Map([['first work package', 'a'.repeat(64)]]),
-      workGraphPath: 'plans/sprints/x.work-graph.v1.json',
-    })).toThrow(/does not name a canonical Sprint row/);
+    expect(() => rewrite(legacyCarrier(), new Map([['first work package', 'a'.repeat(64)]])))
+      .toThrow(/does not name a canonical Sprint row/);
   });
 
   test('a carrier that already carries task_id is refused', () => {
-    const already = carrier.replace('"task_ref"', '"task_id"');
-    expect(() => rewriteWorkGraphToTaskId({
-      workGraphText: already,
-      idsByTaskCell: new Map([['second work package', 'b'.repeat(64)]]),
-      workGraphPath: 'plans/sprints/x.work-graph.v1.json',
-    })).toThrow(/already carries task_id/);
+    expect(() => rewrite(legacyCarrier().replace('"task_ref"', '"task_id"')))
+      .toThrow(/already carries task_id|keys are invalid/);
+  });
+
+  test('the wrong protocol, kind or sprint_path is refused', () => {
+    expect(() => rewrite(legacyCarrier({ protocol: 2 }))).toThrow(/declares protocol 2/);
+    expect(() => rewrite(legacyCarrier({ kind: 'repo-harness-other' }))).toThrow(/declares kind/);
+    expect(() => rewrite(legacyCarrier({ sprint_path: 'plans/sprints/other.sprint.md' })))
+      .toThrow(/not the sprint being migrated/);
+  });
+
+  test('unknown or missing top-level keys are refused', () => {
+    expect(() => rewrite(legacyCarrier({ extra: true }))).toThrow(/keys are invalid/);
+    const missing = JSON.parse(legacyCarrier());
+    delete missing.repository_id;
+    expect(() => rewrite(`${JSON.stringify(missing, null, 2)}\n`)).toThrow(/keys are invalid/);
+  });
+
+  test('an unsupported lane and a lane/package-count mismatch are refused', () => {
+    expect(() => rewrite(legacyCarrier({ lane: 'fleet-v3' }))).toThrow(/unsupported lane/);
+    expect(() => rewrite(legacyCarrier({ lane: 'generic-v1' }))).toThrow(/generic-v1 but carries work packages/);
+    expect(() => rewrite(legacyCarrier({ lane: 'engineering-v2', work_packages: [] })))
+      .toThrow(/engineering-v2 but carries no work packages/);
+  });
+
+  test('a work package missing a required field is refused', () => {
+    const short = JSON.parse(legacyCarrier());
+    delete short.work_packages[0].rollback_boundary;
+    expect(() => rewrite(`${JSON.stringify(short, null, 2)}\n`)).toThrow(/work_packages\[0\] keys are invalid/);
+  });
+
+  test('duplicate work_package_id or task_ref is refused', () => {
+    expect(() => rewrite(legacyCarrier({
+      work_packages: [legacyWorkPackage('wp-a', 'first work package'), legacyWorkPackage('wp-a', 'second work package')],
+    }))).toThrow(/repeats work_package_id wp-a/);
+    expect(() => rewrite(legacyCarrier({
+      work_packages: [legacyWorkPackage('wp-a', 'first work package'), legacyWorkPackage('wp-b', 'first work package')],
+    }))).toThrow(/repeats task_ref/);
+  });
+
+  test('two task refs collapsing onto one id are refused', () => {
+    const collapsing = new Map([
+      ['first work package', 'a'.repeat(64)],
+      ['second work package', 'a'.repeat(64)],
+    ]);
+    expect(() => rewrite(legacyCarrier(), collapsing)).toThrow(/maps two work packages onto task id/);
   });
 });
 
@@ -188,6 +275,54 @@ describe('legacy sprint reader', () => {
   });
 });
 
+describe('legacy sprint row shape', () => {
+  const read = (sprintText: string) => readLegacySprint({
+    repoIdentity: '/tmp/clone/.git', sprintPath: SPRINT_PATH, sprintText,
+  });
+
+  test('a truncated row is refused before any id is derived', () => {
+    const truncated = V1_SPRINT.replace(
+      '| 2 | [ ] | second work package | inline | docs land | (pending) |',
+      '| 2 | [ ] | second work package | inline |',
+    );
+    const result = read(truncated);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/has \d+ cells, not the 6/);
+  });
+
+  test('a row with an extra cell is refused', () => {
+    const wide = V1_SPRINT.replace(
+      '| 2 | [ ] | second work package | inline | docs land | (pending) |',
+      '| 2 | [ ] | second work package | inline | docs land | (pending) | extra |',
+    );
+    const result = read(wide);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/has 7 cells, not the 6/);
+  });
+
+  test('an empty Mode or Acceptance cell is refused', () => {
+    for (const [cell, replacement] of [
+      ['mode', '| 2 | [ ] | second work package |  | docs land | (pending) |'],
+      ['acceptance', '| 2 | [ ] | second work package | inline |  | (pending) |'],
+    ] as const) {
+      const result = read(V1_SPRINT.replace('| 2 | [ ] | second work package | inline | docs land | (pending) |', replacement));
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toContain(`empty ${cell} cell`);
+    }
+  });
+
+  test('an invalid status cell is refused', () => {
+    const result = read(V1_SPRINT.replace('| 2 | [ ] |', '| 2 | [~] |'));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain('invalid status cell');
+  });
+
+  test('an empty Plan cell is allowed: it is not identity-bearing', () => {
+    const result = read(V1_SPRINT.replace('| docs land | (pending) |', '| docs land |  |'));
+    expect(result.ok).toBe(true);
+  });
+});
+
 const roots: string[] = [];
 afterEach(() => {
   while (roots.length > 0) rmSync(roots.pop()!, { recursive: true, force: true });
@@ -207,7 +342,10 @@ function repoFixture(sprintText = V1_SPRINT, carrier?: string): string {
   git('config', 'user.name', 'Migration Fixture');
   git('add', '-A');
   git('commit', '-m', 'fixture');
-  return root;
+  // The command resolves paths through `repoPath`, which canonicalises; on
+  // macOS `/var/...` becomes `/private/var/...`, so a test comparing absolute
+  // paths has to start from the canonical root too.
+  return realpathSync(root);
 }
 
 describe('migrate-schema command', () => {
@@ -246,15 +384,8 @@ describe('migrate-schema command', () => {
   });
 
   test('the same-commit Work Graph carrier is rewritten and byte-bound in the receipt', () => {
-    const carrierPath = SPRINT_PATH.replace('.sprint.md', '.work-graph.v1.json');
-    const carrier = `${JSON.stringify({
-      protocol: 1,
-      kind: 'repo-harness-work-graph',
-      repository_id: 'repo_0123456789abcdef',
-      sprint_path: SPRINT_PATH,
-      lane: 'engineering-v2',
-      work_packages: [{ work_package_id: 'wp-a', task_ref: 'second work package' }],
-    }, null, 2)}\n`;
+    const carrierPath = CARRIER_PATH;
+    const carrier = legacyCarrier();
     const root = repoFixture(V1_SPRINT, carrier);
     const outcome = migrateSprintSchemaCommand(
       { sprint: SPRINT_PATH, targetRef: 'main' },
@@ -265,9 +396,10 @@ describe('migrate-schema command', () => {
     const after = readFileSync(join(root, carrierPath), 'utf-8');
     const parsed = JSON.parse(after);
     const repoIdentity = resolveRepoIdentity(root);
-    expect(parsed.work_packages[0].task_id).toBe(deriveLegacyTaskId({
-      repoIdentity, sprintPath: SPRINT_PATH, taskCell: 'second work package',
-    }));
+    expect(parsed.work_packages.map((entry: { task_id: string }) => entry.task_id)).toEqual([
+      deriveLegacyTaskId({ repoIdentity, sprintPath: SPRINT_PATH, taskCell: 'first work package' }),
+      deriveLegacyTaskId({ repoIdentity, sprintPath: SPRINT_PATH, taskCell: 'second work package' }),
+    ]);
     const receipt = JSON.parse(readFileSync(join(root, defaultMigrationReceiptPath(SPRINT_PATH)), 'utf-8'));
     expect(receipt.work_graph_path).toBe(carrierPath);
     expect(receipt.work_graph_sha256_before).toBe(sha256(carrier));
@@ -317,24 +449,25 @@ describe('migrate-schema command', () => {
     expect(migrateSprintSchemaCommand({ sprint: SPRINT_PATH, targetRef: 'main' }, processMigrationDependencies(root)).exitCode).toBe(0);
     execFileSync('git', ['add', '-A'], { cwd: root, encoding: 'utf8' });
     execFileSync('git', ['commit', '-m', 'migrated'], { cwd: root, encoding: 'utf8' });
-    const again = migrateSprintSchemaCommand({ sprint: SPRINT_PATH, targetRef: 'main' }, processMigrationDependencies(root));
+    // A fresh receipt target, so the refusal comes from the schema gate rather
+    // than from the receipt this migration already wrote.
+    const again = migrateSprintSchemaCommand(
+      { sprint: SPRINT_PATH, targetRef: 'main', receipt: 'plans/sprints/second-attempt.schema-migration.v1.json' },
+      processMigrationDependencies(root),
+    );
     expect(again.exitCode).toBe(1);
     expect(again.stderr).toContain('not backlog schema 1');
+    const repeated = migrateSprintSchemaCommand({ sprint: SPRINT_PATH, targetRef: 'main' }, processMigrationDependencies(root));
+    expect(repeated.exitCode).toBe(1);
+    expect(repeated.stderr).toContain('already exists');
   });
 
-  test('a post-write validation failure restores both files and writes no receipt', () => {
-    const carrierPath = SPRINT_PATH.replace('.sprint.md', '.work-graph.v1.json');
-    const carrier = `${JSON.stringify({
-      protocol: 1,
-      kind: 'repo-harness-work-graph',
-      repository_id: 'repo_0123456789abcdef',
-      sprint_path: SPRINT_PATH,
-      lane: 'engineering-v2',
-      work_packages: [{ work_package_id: 'wp-a', task_ref: 'second work package' }],
-    }, null, 2)}\n`;
-    const root = repoFixture(V1_SPRINT, carrier);
+  test('a post-write validation failure restores the sprint and writes no receipt', () => {
+    // No carrier here on purpose: the strict pre-write Work Graph gate would
+    // catch a dropped row before the write, and this test is about the gate
+    // that runs *after* it.
+    const root = repoFixture(V1_SPRINT);
     const sprintBefore = readFileSync(join(root, SPRINT_PATH), 'utf-8');
-    const carrierBefore = readFileSync(join(root, carrierPath), 'utf-8');
 
     // A rewrite that silently drops the last backlog row: the bytes are valid
     // schema 2 and survive the re-read, so the only gate that catches it is the
@@ -353,20 +486,12 @@ describe('migrate-schema command', () => {
     expect(outcome.exitCode).toBe(1);
     expect(outcome.stderr).toContain('has 1 rows but schema 1 had 2');
     expect(readFileSync(join(root, SPRINT_PATH), 'utf-8')).toBe(sprintBefore);
-    expect(readFileSync(join(root, carrierPath), 'utf-8')).toBe(carrierBefore);
     expect(existsSync(join(root, defaultMigrationReceiptPath(SPRINT_PATH)))).toBe(false);
   });
 
   test('an unexpected post-write throw restores both files, writes no receipt, and propagates', () => {
-    const carrierPath = SPRINT_PATH.replace('.sprint.md', '.work-graph.v1.json');
-    const carrier = `${JSON.stringify({
-      protocol: 1,
-      kind: 'repo-harness-work-graph',
-      repository_id: 'repo_0123456789abcdef',
-      sprint_path: SPRINT_PATH,
-      lane: 'engineering-v2',
-      work_packages: [{ work_package_id: 'wp-a', task_ref: 'second work package' }],
-    }, null, 2)}\n`;
+    const carrierPath = CARRIER_PATH;
+    const carrier = legacyCarrier();
     const root = repoFixture(V1_SPRINT, carrier);
     const sprintBefore = readFileSync(join(root, SPRINT_PATH), 'utf-8');
     const carrierBefore = readFileSync(join(root, carrierPath), 'utf-8');
@@ -391,8 +516,77 @@ describe('migrate-schema command', () => {
       .toThrow('repo identity is unavailable');
     expect(calls).toBe(2);
     expect(readFileSync(join(root, SPRINT_PATH), 'utf-8')).toBe(sprintBefore);
-    expect(readFileSync(join(root, carrierPath), 'utf-8')).toBe(carrierBefore);
     expect(existsSync(join(root, defaultMigrationReceiptPath(SPRINT_PATH)))).toBe(false);
+  });
+
+  test('a carrier that differs from the canonical commit is refused', () => {
+    const root = repoFixture(V1_SPRINT, legacyCarrier());
+    const before = readFileSync(join(root, CARRIER_PATH), 'utf-8');
+    writeFileSync(join(root, CARRIER_PATH), before.replace('"priority": 50', '"priority": 51'));
+    const outcome = migrateSprintSchemaCommand(
+      { sprint: SPRINT_PATH, targetRef: 'main' },
+      processMigrationDependencies(root),
+    );
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.stderr).toContain('differs from main');
+    expect(readFileSync(join(root, SPRINT_PATH), 'utf-8')).toBe(V1_SPRINT);
+  });
+
+  test('a carrier present only in the working tree is refused', () => {
+    const root = repoFixture(V1_SPRINT);
+    writeFileSync(join(root, CARRIER_PATH), legacyCarrier());
+    const outcome = migrateSprintSchemaCommand(
+      { sprint: SPRINT_PATH, targetRef: 'main' },
+      processMigrationDependencies(root),
+    );
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.stderr).toContain('exists in the working tree but not at main');
+  });
+
+  test('a carrier present only at the canonical commit is refused', () => {
+    const root = repoFixture(V1_SPRINT, legacyCarrier());
+    rmSync(join(root, CARRIER_PATH));
+    const outcome = migrateSprintSchemaCommand(
+      { sprint: SPRINT_PATH, targetRef: 'main' },
+      processMigrationDependencies(root),
+    );
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.stderr).toContain('but not in the working tree');
+  });
+
+  test('a receipt path that escapes the repository is refused', () => {
+    const root = repoFixture(V1_SPRINT);
+    for (const receipt of ['../escape.json', '/tmp/escape.json']) {
+      const outcome = migrateSprintSchemaCommand(
+        { sprint: SPRINT_PATH, targetRef: 'main', receipt },
+        processMigrationDependencies(root),
+      );
+      expect(outcome.exitCode).toBe(1);
+      expect(outcome.stderr).toContain('not a safe repo-relative path');
+      expect(readFileSync(join(root, SPRINT_PATH), 'utf-8')).toBe(V1_SPRINT);
+    }
+  });
+
+  test('an existing receipt target is never overwritten and never deleted', () => {
+    const root = repoFixture(V1_SPRINT);
+    const receipt = 'plans/sprints/occupied.json';
+    writeFileSync(join(root, receipt), 'somebody else owns this\n');
+    const outcome = migrateSprintSchemaCommand(
+      { sprint: SPRINT_PATH, targetRef: 'main', receipt },
+      processMigrationDependencies(root),
+    );
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.stderr).toContain('already exists');
+    expect(readFileSync(join(root, receipt), 'utf-8')).toBe('somebody else owns this\n');
+    expect(readFileSync(join(root, SPRINT_PATH), 'utf-8')).toBe(V1_SPRINT);
+  });
+
+  test('the receipt digests are taken from the bytes on disk', () => {
+    const root = repoFixture(V1_SPRINT, legacyCarrier());
+    expect(migrateSprintSchemaCommand({ sprint: SPRINT_PATH, targetRef: 'main' }, processMigrationDependencies(root)).exitCode).toBe(0);
+    const receipt = JSON.parse(readFileSync(join(root, defaultMigrationReceiptPath(SPRINT_PATH)), 'utf-8'));
+    expect(receipt.sprint_sha256_after).toBe(sha256(readFileSync(join(root, SPRINT_PATH), 'utf-8')));
+    expect(receipt.work_graph_sha256_after).toBe(sha256(readFileSync(join(root, CARRIER_PATH), 'utf-8')));
   });
 
   test('duplicate Task cells refuse the migration before any write', () => {
@@ -405,5 +599,117 @@ describe('migrate-schema command', () => {
     expect(outcome.exitCode).toBe(1);
     expect(outcome.stderr).toContain('repeat the Task cell');
     expect(readFileSync(join(root, SPRINT_PATH), 'utf-8')).toBe(before);
+  });
+});
+
+/**
+ * The atomicity invariant as one test face rather than per-branch patches.
+ *
+ * The migration's contract is a single sentence -- "a failure means the bytes
+ * did not move" -- so it is verified by failing every filesystem step in turn
+ * and asserting the same three facts each time: sprint bytes unchanged, carrier
+ * bytes unchanged, no receipt. A per-branch review can miss a new write added
+ * outside the rollback boundary; this matrix cannot, because a new step that is
+ * not rolled back shows up as a new red row.
+ */
+describe('migrate-schema atomicity matrix: every filesystem step fails in turn', () => {
+  interface Injection {
+    readonly name: string;
+    /** Wrap the real filesystem so exactly one step throws. */
+    readonly wrap: (real: MigrationFileSystem, paths: { sprint: string; carrier: string; receipt: string }) => MigrationFileSystem;
+  }
+
+  const failingWrite = (target: string) => (real: MigrationFileSystem): MigrationFileSystem => ({
+    ...real,
+    writeText: (path, text) => {
+      if (path === target) throw new Error(`injected write failure: ${path}`);
+      real.writeText(path, text);
+    },
+  });
+
+  const injections: readonly Injection[] = [
+    {
+      name: 'the sprint write fails',
+      wrap: (real, paths) => failingWrite(paths.sprint)(real),
+    },
+    {
+      name: 'the carrier write fails after the sprint was already written',
+      wrap: (real, paths) => failingWrite(paths.carrier)(real),
+    },
+    {
+      // The sprint is read once before the write (to compare against the
+      // canonical bytes) and once after it (the re-read proof). Failing the
+      // second read is a fault inside the post-write window.
+      name: 'the post-write re-read fails',
+      wrap: (real, paths) => {
+        let reads = 0;
+        return {
+          ...real,
+          readText: (path) => {
+            if (path === paths.sprint) {
+              reads += 1;
+              if (reads > 1) throw new Error('injected re-read failure');
+            }
+            return real.readText(path);
+          },
+        };
+      },
+    },
+    {
+      name: 'the receipt write fails',
+      wrap: (real, paths) => failingWrite(paths.receipt)(real),
+    },
+    {
+      name: 'the receipt directory cannot be created',
+      wrap: (real) => ({
+        ...real,
+        makeDirectory: () => { throw new Error('injected mkdir failure'); },
+      }),
+    },
+  ];
+
+  for (const injection of injections) {
+    test(`${injection.name}: sprint, carrier and receipt are exactly as before`, () => {
+      const root = repoFixture(V1_SPRINT, legacyCarrier());
+      const sprintAbsolute = join(root, SPRINT_PATH);
+      const carrierAbsolute = join(root, CARRIER_PATH);
+      const receiptAbsolute = join(root, defaultMigrationReceiptPath(SPRINT_PATH));
+      const sprintBefore = readFileSync(sprintAbsolute, 'utf-8');
+      const carrierBefore = readFileSync(carrierAbsolute, 'utf-8');
+
+      const real = processMigrationDependencies(root);
+      const deps = {
+        ...real,
+        fs: injection.wrap(real.fs, {
+          sprint: sprintAbsolute,
+          carrier: carrierAbsolute,
+          receipt: receiptAbsolute,
+        }),
+      };
+
+      // Either a typed refusal or a propagated throw is acceptable; leaving the
+      // tree half migrated is not.
+      try {
+        const outcome = migrateSprintSchemaCommand({ sprint: SPRINT_PATH, targetRef: 'main' }, deps);
+        expect(outcome.exitCode).not.toBe(0);
+      } catch (error) {
+        expect(error).toBeInstanceOf(Error);
+      }
+
+      expect(readFileSync(sprintAbsolute, 'utf-8')).toBe(sprintBefore);
+      expect(readFileSync(carrierAbsolute, 'utf-8')).toBe(carrierBefore);
+      expect(existsSync(receiptAbsolute)).toBe(false);
+    });
+  }
+
+  test('the same fixture migrates cleanly when nothing is injected', () => {
+    const root = repoFixture(V1_SPRINT, legacyCarrier());
+    const outcome = migrateSprintSchemaCommand(
+      { sprint: SPRINT_PATH, targetRef: 'main' },
+      processMigrationDependencies(root),
+    );
+    expect(outcome.stderr).toBe('');
+    expect(outcome.exitCode).toBe(0);
+    expect(existsSync(join(root, defaultMigrationReceiptPath(SPRINT_PATH)))).toBe(true);
   });
 });

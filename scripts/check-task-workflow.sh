@@ -512,13 +512,32 @@ sprint_ready_error() {
     missing=1
   fi
 
-  local schema_header
-  if grep -Eq '^>[[:space:]]*\*\*Backlog Schema\*\*:[[:space:]]*2[[:space:]]*$' "$file"; then
-    schema_header='^\|[[:space:]]*#[[:space:]]*\|[[:space:]]*ID[[:space:]]*\|[[:space:]]*Status[[:space:]]*\|[[:space:]]*Task[[:space:]]*\|[[:space:]]*Mode[[:space:]]*\|[[:space:]]*Acceptance[[:space:]]*\|[[:space:]]*Plan[[:space:]]*\|'
-  else
-    schema_header='^\|[[:space:]]*#[[:space:]]*\|[[:space:]]*Status[[:space:]]*\|[[:space:]]*Task[[:space:]]*\|[[:space:]]*Mode[[:space:]]*\|[[:space:]]*Acceptance[[:space:]]*\|[[:space:]]*Plan[[:space:]]*\|'
+  # Execution readiness is only ever asked of an Approved or Executing sprint,
+  # and such a sprint must carry persisted task ids: schema 1 derives identity
+  # from the Task cell, so activating one means every title edit silently
+  # deletes a task and creates another. Schema 1 stays readable for archived
+  # sprints and for the migration input, never for live execution.
+  local schema_declarations schema_ready
+  schema_declarations="$(grep -Ec '^>[[:space:]]*\*\*Backlog Schema\*\*:' "$file" || true)"
+  schema_ready=0
+  if [[ "$schema_declarations" -eq 1 ]] \
+    && grep -Eq '^>[[:space:]]*\*\*Backlog Schema\*\*:[[:space:]]*2[[:space:]]*$' "$file"; then
+    schema_ready=1
   fi
-  if ! grep -Eq "$schema_header" "$file"; then
+  if [[ "$schema_ready" -ne 1 ]]; then
+    if [[ "$schema_declarations" -gt 1 ]]; then
+      echo "backlog schema is declared ${schema_declarations} times; exactly one '> **Backlog Schema**: 2' line is allowed"
+    else
+      echo "backlog is not schema 2 and carries no persisted task ids; run 'repo-harness sprint migrate-schema --sprint ${file} --target-ref <ref>' before approving or executing it"
+    fi
+    missing=1
+  fi
+
+  local schema_header
+  schema_header='^\|[[:space:]]*#[[:space:]]*\|[[:space:]]*ID[[:space:]]*\|[[:space:]]*Status[[:space:]]*\|[[:space:]]*Task[[:space:]]*\|[[:space:]]*Mode[[:space:]]*\|[[:space:]]*Acceptance[[:space:]]*\|[[:space:]]*Plan[[:space:]]*\|'
+  if [[ "$schema_ready" -ne 1 ]]; then
+    :
+  elif ! grep -Eq "$schema_header" "$file"; then
     echo "backlog table header does not match the declared backlog schema"
     missing=1
   else

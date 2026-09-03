@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260902-2101-issue-283-immutable-task-id.review.md
 > **Last Updated**: 2026-09-02 21:01
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:44989d6efe69b69f126d14b5eb6f2155c9c1960f467c2f453f436a5bf885491a`
+> **Substantive Change SHA256**: `sha256:8452ee59f33c5504a2c801e924c6e90c40e366b388f8f51761b5969ac55ec01e`
 
 ## Design Decisions
 
@@ -51,6 +51,65 @@
   (`sprint-backlog.sh`, `check-task-workflow.sh`, `refresh-current-status.sh`,
   `heartbeat-triage.sh`) became schema-aware, and `session-context.ts` stopped
   re-implementing the row grammar and now reads `backlogRows`.
+- **Atomicity as implemented: one rollback boundary, one journal, one test face.**
+  Every filesystem touch goes through `MigrateSprintSchemaDependencies.fs`, and
+  every write goes through `writeTracked()`, which records the file's prior
+  bytes (or `null` when it did not exist) before writing. All three writes --
+  sprint, Work Graph carrier, receipt -- live inside one `try`; `restore()`
+  replays that journal in reverse, removing what did not exist and rewriting
+  what did. It attempts *every* entry and only then raises, because the case
+  that motivates it (a carrier whose write failed on an unwritable path) is
+  exactly the case where the sprint beside it can and must still be put back.
+  The guard is not per-branch review but
+  `tests/unit/sprint-schema-migrate.test.ts`'s injected-fault matrix: each
+  filesystem step is failed in turn and each case asserts the same three facts
+  (sprint bytes, carrier bytes, no receipt). A future write added outside the
+  boundary shows up as a new red row instead of passing review. The pre-fix
+  evidence that the matrix bites is `/tmp/283-prefix-atomicity.log`
+  (`PRE_FIX_EXIT=1`, "the carrier write fails after the sprint was already
+  written").
+- **Strict validation, and why each one is a refusal rather than a repair.**
+  - Schema 1 rows are checked for the exact six-cell shape on the *raw* line
+    (`backlogRowLines()`), plus non-empty Status/Task/Mode/Acceptance and a
+    well-formed status cell, before a single id is derived. Cell extraction
+    substitutes the empty string for a column a row does not have, so a
+    truncated row otherwise reads as a row with empty cells and still gets a
+    persisted identity derived from whatever text landed in the Task position.
+    The Plan cell stays optional: it is not identity-bearing.
+  - The legacy Work Graph carrier is validated as a whole -- exact top-level and
+    per-package key sets, protocol, kind, the sprint path it claims, its lane's
+    emptiness rule, unique `work_package_id`/`task_ref`, and a 1:1 task_ref ->
+    task_id mapping. Then the *migrated* carrier is run through
+    `validateWorkGraph()` and `projectWorkGraph()` against the migrated sprint
+    before it reaches the disk. Migrating a carrier that the runtime later
+    refuses is a migration that produced garbage, and the failure would surface
+    far from its cause.
+  - The carrier is read at the canonical commit through
+    `readCanonicalFileAtCommit()` and the working tree must match it byte for
+    byte, in both presence and content -- the same rule the sprint already
+    obeyed. A dirty, deleted, or stale carrier would otherwise land in a receipt
+    that claims to bind that commit's bytes.
+  - Every `*_sha256_after` digest is taken from the bytes re-read off disk, not
+    from the in-memory rewrite. A receipt that hashed the intention rather than
+    the result proves nothing about the file it names.
+  - The `--receipt` target is resolved through `repoPath()` (the same
+    containment check every other state write uses) and refused when it already
+    exists. That gate runs before any write, which is what lets the rollback
+    delete a receipt unconditionally: it can only ever be one this run created.
+  - The backlog schema marker is read by scanning the whole preamble and
+    requiring exactly one declaration with the value `2`. Returning on the first
+    marker let a second, contradictory one sit unread, so this side could
+    project identity from a file the awk authority refuses. Both `backlog_rows`
+    and `backlog_schema` in `sprint-backlog.sh` apply the same rule, and
+    `tests/sprint-backlog-grammar-drift.test.ts` pins the two together on
+    duplicated, contradictory, unsupported and empty declarations.
+- **A live sprint may not be schema 1.** `sprint_ready_error()` is only asked
+  about Approved/Executing sprints, and it now requires exactly one schema-2
+  declaration there, naming `sprint migrate-schema` when it is missing. Schema 1
+  stays readable for archived sprints and for the migration input, never for
+  live execution: activating a sprint without persisted ids means every title
+  edit silently deletes a task and creates another, which is the defect this
+  whole contract exists to remove.
 - **A migration failure always means "files untouched".** Every gate past the
   write goes through `restoreAndRefuse()`, and the whole post-write section is
   wrapped so an *unexpected* throw restores `beforeBytes`/`carrierBefore` and
@@ -79,6 +138,19 @@
   plan and dispatch name it; the runtime only exposes
   `bun run check:state-boundaries` (`scripts/check-state-boundaries.ts`). The
   contract records the working invocation.
+- **Both tracked sprints stay schema 1, and `scripts/check-task-workflow.sh
+  --strict` is red because of it.** Enforcing "Approved/Executing must be
+  schema 2" is correct and was the reviewed requirement, but it lands while two
+  sprints under `plans/sprints/` are mid-flight and cannot be migrated:
+  `20260828-2321-collaborative-work-exchange-agent-succession.sprint.md` row 10
+  holds a stranded `completing` lease, and
+  `20260902-2238-gpt-pro-seeded-repair-campaign.sprint.md` row 1 holds a live
+  `bound` lease belonging to another worktree. Refusing a live lease is a
+  contract requirement the migration must not bypass, and releasing or stealing
+  one is out of scope here, so each sprint must be migrated by whoever owns its
+  lease. Note that `repo-harness run check-task-workflow --strict` still reports
+  OK because the installed global runtime carries an older copy of the helper;
+  the repo-local script is the honest signal.
 - **The repo's own sprint stays schema 1.**
   `plans/sprints/20260828-2321-collaborative-work-exchange-agent-succession.sprint.md`
   could not be migrated: row 10 still holds a stranded non-released lease in

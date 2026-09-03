@@ -717,6 +717,81 @@ describe("check-task-workflow sprint validation", () => {
     }
   }, 30_000);
 
+  test("an Approved schema 1 sprint is not execution-ready and names the migration command", () => {
+    const cwd = tmpWorkspace("sprint-check-schema1");
+    try {
+      copySprintHelpers(cwd, ["check-task-workflow.sh"]);
+      mkdirSync(join(cwd, "plans/sprints"), { recursive: true });
+      const rows = [
+        "## PRD",
+        "",
+        "Real problem statement with concrete user outcomes.",
+        "",
+        "## Backlog",
+        "",
+        "| # | Status | Task | Mode | Acceptance | Plan |",
+        "|---|--------|------|------|------------|------|",
+        "| 1 | [ ] | task-a | contract | unit tests pass | (pending) |",
+        "",
+      ];
+      const sprintPath = "plans/sprints/20260610-0000-legacy.sprint.md";
+      writeFileSync(
+        join(cwd, sprintPath),
+        ["# Sprint: Legacy", "", "> **Status**: Approved", "", ...rows].join("\n")
+      );
+
+      const res = run("bash", ["scripts/check-task-workflow.sh", "--strict"], cwd);
+      expect(res.status).toBe(1);
+      expect(res.stdout).toContain("backlog is not schema 2 and carries no persisted task ids");
+      expect(res.stdout).toContain(`sprint migrate-schema --sprint ${sprintPath}`);
+
+      // The same sprint, archived, is read-only history and is not gated.
+      writeFileSync(
+        join(cwd, sprintPath),
+        ["# Sprint: Legacy", "", "> **Status**: Archived", "", ...rows].join("\n")
+      );
+      const archived = run("bash", ["scripts/check-task-workflow.sh", "--strict"], cwd);
+      expect(archived.stdout).not.toContain("backlog is not schema 2");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("a duplicated backlog schema declaration is refused", () => {
+    const cwd = tmpWorkspace("sprint-check-dup-schema");
+    try {
+      copySprintHelpers(cwd, ["check-task-workflow.sh"]);
+      mkdirSync(join(cwd, "plans/sprints"), { recursive: true });
+      writeFileSync(
+        join(cwd, "plans/sprints/20260610-0000-dup.sprint.md"),
+        [
+          "# Sprint: Dup",
+          "",
+          "> **Status**: Approved",
+          "> **Backlog Schema**: 2",
+          "> **Backlog Schema**: 2",
+          "",
+          "## PRD",
+          "",
+          "Real problem statement with concrete user outcomes.",
+          "",
+          "## Backlog",
+          "",
+          "| # | ID | Status | Task | Mode | Acceptance | Plan |",
+          "|---|----|--------|------|------|------------|------|",
+          `| 1 | ${fixtureTaskId("task-a")} | [ ] | task-a | contract | unit tests pass | (pending) |`,
+          "",
+        ].join("\n")
+      );
+
+      const res = run("bash", ["scripts/check-task-workflow.sh", "--strict"], cwd);
+      expect(res.status).toBe(1);
+      expect(res.stdout).toContain("backlog schema is declared 2 times");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test("reports unknown status instead of crashing on quotes in sprint status", () => {
     const cwd = tmpWorkspace("sprint-check-quote");
     try {

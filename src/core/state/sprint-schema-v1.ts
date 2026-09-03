@@ -26,6 +26,7 @@ import {
 } from './coordination-identity';
 import {
   SPRINT_BACKLOG_SCHEMA_V1,
+  backlogRowLines,
   backlogRows,
   sprintBacklogSchema,
   type BacklogRow,
@@ -74,29 +75,67 @@ export interface LegacySprintInput {
 }
 
 /**
+ * A schema 1 row is `| # | Status | Task | Mode | Acceptance | Plan |`, so
+ * splitting the line on `|` yields eight fields: the empty string before the
+ * leading pipe, six cells, and the empty string after the trailing pipe.
+ *
+ * The count is checked on the raw line rather than on `BacklogRow`, because
+ * cell extraction silently substitutes the empty string for a column the row
+ * does not have: a truncated row reads as a row with empty cells and would
+ * still derive an id.
+ */
+const SCHEMA_V1_LINE_FIELDS = 8;
+
+/** The cells a schema 1 row must fill before it can be given an identity. */
+const REQUIRED_CELLS = ['status', 'task', 'mode', 'acceptance'] as const;
+
+const STATUS_CELL = /^\[[ xX]\]$/;
+
+function rowShapeError(line: string, row: BacklogRow, sprintPath: string): string | null {
+  const fields = line.split('|').length;
+  if (fields !== SCHEMA_V1_LINE_FIELDS) {
+    return `backlog row ${row.index} in ${sprintPath} has ${fields - 2} cells, not the 6 a schema 1 row must have`;
+  }
+  for (const cell of REQUIRED_CELLS) {
+    if (row[cell].length === 0) {
+      return `backlog row ${row.index} in ${sprintPath} has an empty ${cell} cell`;
+    }
+  }
+  if (!STATUS_CELL.test(row.status)) {
+    return `backlog row ${row.index} in ${sprintPath} has an invalid status cell: ${row.status}`;
+  }
+  return null;
+}
+
+/**
  * Every schema 1 row of one sprint with the identity it already has.
  *
- * Refuses a sprint that is not schema 1 (nothing to migrate), a row whose Task
- * cell is empty (no identity preimage), and duplicate Task cells. Duplicates
- * are the ambiguity the migration contract names: two rows sharing one Task
- * cell already share one derived id, so there is no mapping that preserves both
- * and the migration must not pick one.
+ * Refuses a sprint that is not schema 1 (nothing to migrate), any row that is
+ * not the exact schema 1 shape, and duplicate Task cells. The shape check runs
+ * before a single id is derived: a truncated row would otherwise be migrated
+ * into a persisted identity derived from whatever text happened to land in the
+ * Task position. Duplicates are the ambiguity the migration contract names: two
+ * rows sharing one Task cell already share one derived id, so there is no
+ * mapping that preserves both and the migration must not pick one.
  */
 export function readLegacySprint(input: LegacySprintInput): LegacySprintRead {
   if (sprintBacklogSchema(input.sprintText) !== SPRINT_BACKLOG_SCHEMA_V1) {
     return { ok: false, error: `canonical sprint ${input.sprintPath} is not backlog schema 1` };
   }
   const rows = backlogRows(input.sprintText);
+  const lines = backlogRowLines(input.sprintText);
   if (rows.length === 0) {
     return { ok: false, error: `canonical sprint ${input.sprintPath} has no backlog rows to migrate` };
+  }
+  if (rows.length !== lines.length) {
+    return { ok: false, error: `canonical sprint ${input.sprintPath} backlog rows do not project 1:1 onto their source lines` };
   }
   const seenTask = new Set<string>();
   const seenIndex = new Set<string>();
   const out: LegacyCanonicalRow[] = [];
-  for (const row of rows) {
-    if (row.task.length === 0) {
-      return { ok: false, error: `backlog row ${row.index} in ${input.sprintPath} has an empty Task cell` };
-    }
+  for (const [position, row] of rows.entries()) {
+    const shape = rowShapeError(lines[position], row, input.sprintPath);
+    if (shape !== null) return { ok: false, error: shape };
     if (seenTask.has(row.task)) {
       return {
         ok: false,
