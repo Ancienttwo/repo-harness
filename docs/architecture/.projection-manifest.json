@@ -5,12 +5,12 @@
   "sourceDigest": "sha256:3c056bba364cc1652c2a55470677d813948674c1c34c35b7adba45e6cb62bba1",
   "provenance": {
     "schemaVersion": "archcontext.architecture-docs-projection-provenance/v1",
-    "baseHeadSha": "d73914fd42197fe0a931cc5c158d498aa0a94b3d",
-    "worktreeDigest": "sha256:66c0b9155499728e539986c333c58f760ac30209d92c1a60a24265ccf35f37bc",
-    "sourceTreeDigest": "sha256:bd3619b6be2de4ec68cd22225ea2bf6eb8791a5f2d675e64d0376f4b6943e80e",
+    "baseHeadSha": "1bb421d5ea6e711bb7349852f6f7df647006d48c",
+    "worktreeDigest": "sha256:0db933bfe1280e7af0840981029b2947214f917b6e319f0541afa0b7c39466e2",
+    "sourceTreeDigest": "sha256:b16150708e1c9c9f9dd8802caf735f240574f11dcfbc5fd5d9c1135dc8d26ffa",
     "modelDigest": "sha256:34bfb6d94e4e8b79925d18d20e3162a2bfcf26a1584f281821f3b9bf8b127592",
-    "codeGraphDigest": "sha256:94f795b1c4fb1be7f5bd310930675b68d89841032f20cf239c2b762ce4123485",
-    "indexedWorktreeDigest": "sha256:cb1e63b493deeeb8baf751277e7cd3c2fea60c01b17233b2d31c7d403196fd28",
+    "codeGraphDigest": "sha256:3914fce45e3a457a4ff590fcf98f7bb92eb19b96624ab34f092d5c4155b13ddf",
+    "indexedWorktreeDigest": "sha256:0613e8ebe4c5a4981aaa65c9a7e2ddb439f71522095c2296a0469d46fcbd42c9",
     "rendererVersion": "archcontext.docs-renderer/v4",
     "layoutVersion": "archcontext.docs-layout/v1",
     "generatedFrom": {
@@ -19,9 +19,9 @@
       "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
       "codeGraphStatus": "ready"
     },
-    "projectionInputDigest": "sha256:9efcc58995240bfd1a6a040a866cf48a15616673dced98a579971f3d015cac0f"
+    "projectionInputDigest": "sha256:8accbda24ac5bf1705ec657bad94629dbc476bcaff24c8522ff41ec71e691f5f"
   },
-  "projectionDigest": "sha256:9216df1ceb5e3c729a46a45d22fc4f59a9d80352eb602631a09d4a1ca3b70915",
+  "projectionDigest": "sha256:3654166e0c221824a1cdae5560f7cb45c67b494290d473f68c4c770feb4600ca",
   "semanticBaseline": {
     "semanticState": {
       "schemaVersion": "archcontext.architecture-semantic-state/v1",
@@ -607,12 +607,12 @@
     },
     "digests": {
       "modelDigest": "sha256:34bfb6d94e4e8b79925d18d20e3162a2bfcf26a1584f281821f3b9bf8b127592",
-      "sourceTreeDigest": "sha256:bd3619b6be2de4ec68cd22225ea2bf6eb8791a5f2d675e64d0376f4b6943e80e",
+      "sourceTreeDigest": "sha256:b16150708e1c9c9f9dd8802caf735f240574f11dcfbc5fd5d9c1135dc8d26ffa",
       "flowProofDigest": "sha256:fc29e9478d2d600b4445218665d8738aaf35de2005fabf0d0a24b7383fb71ede",
-      "projectionDigest": "sha256:9216df1ceb5e3c729a46a45d22fc4f59a9d80352eb602631a09d4a1ca3b70915"
+      "projectionDigest": "sha256:3654166e0c221824a1cdae5560f7cb45c67b494290d473f68c4c770feb4600ca"
     }
   },
-  "receiptDigest": "sha256:5b5a54a3847818beeb717379dc37b0fd3ca2bd7ab0b1be6d777edde636ca8c63",
+  "receiptDigest": "sha256:6118539242a74b6bceb0c7d2e5f529c5b67af0ef784eda8e4dbae5295a2ef993",
   "refreshSignalIds": [],
   "targetCount": 29,
   "fileCount": 29,
@@ -1045,9 +1045,9 @@
       "sourceDigest": "sha256:463d4ebee4c32feaf8e98dca3f6862530d876ff145ab4a6c0d1e83b9acd6d4b7",
       "outputDigest": "sha256:966f7438cd7b385cb411a2ef8c2de18c0b1e71eb067941c97375a4b284a873b9",
       "verifiedAgainst": {
-        "branch": "codex/candidate-bound-global-runtime-reconciliation",
-        "commit": "8aee832df364374523e3290cea773eb7832a91ac",
-        "committedAt": "2026-09-04T03:45:28+08:00"
+        "branch": "codex/refactor-cutover-closure-gate",
+        "commit": "1bb421d5ea6e711bb7349852f6f7df647006d48c",
+        "committedAt": "2026-09-04T03:56:12+08:00"
       }
     },
     {
@@ -1065,9 +1065,9 @@
       "sourceDigest": "sha256:dc2faa5abe1e85c162bcc9a126ee79a0178c75d03c20ff97519b8b463cc2ee44",
       "outputDigest": "sha256:aa5aac73ff819f8ad0c053a57d5b1627faf2fc5bdbc18e8ab4722de0ab085d59",
       "verifiedAgainst": {
-        "branch": "codex/candidate-bound-global-runtime-reconciliation",
-        "commit": "d73914fd42197fe0a931cc5c158d498aa0a94b3d",
-        "committedAt": "2026-09-04T01:16:41+08:00"
+        "branch": "codex/refactor-cutover-closure-gate",
+        "commit": "1bb421d5ea6e711bb7349852f6f7df647006d48c",
+        "committedAt": "2026-09-04T03:56:12+08:00"
       }
     },
     {
