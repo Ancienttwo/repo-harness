@@ -1,5 +1,7 @@
 # Implementation Notes: issue-284-dependency-authority
 
+> **Substantive Change SHA256**: `sha256:635854ebf5c584dac2944c8180b1caed52045f42b80a5220af8390f9d2af071f`
+
 > **Status**: Active
 > **Plan**: plans/plan-20260902-2101-issue-284-dependency-authority.md
 > **Contract**: tasks/contracts/20260902-2101-issue-284-dependency-authority.contract.md
