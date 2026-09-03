@@ -10,7 +10,7 @@ import { spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { dirname, join } from 'path';
+import { basename, dirname, join } from 'path';
 
 import { spawnSync as spawnCli } from 'child_process';
 import {
@@ -41,6 +41,7 @@ import {
   AUTOMATION_BUDGET_STORE_RELATIVE_ROOT,
   AUTOMATION_RECORD_KINDS,
   AUTOMATION_RUN_DIRECTORY_ENTRIES,
+  AUTOMATION_TRANSIENT_ENTRY_PATTERN,
   type AppendAutomationUsageInput,
   type PublishAutomationBudgetInput,
   type ReconcileAutomationReservationInput,
@@ -1494,10 +1495,46 @@ describe('issue #282 — every durable record kind is enumerated and read', () =
     acquire(repo, 'record-kinds', budget, 'op-final', '2026-09-03T00:00:40.000Z');
 
     const runDirectory = join(repo, '.git', AUTOMATION_BUDGET_STORE_RELATIVE_ROOT, 'runs', budget.automation_run_id);
-    expect(readdirSync(runDirectory).sort()).toEqual([...AUTOMATION_RUN_DIRECTORY_ENTRIES]);
+    const entries = readdirSync(runDirectory);
+    // Persistent entries must be exactly the enumeration. Temp files are
+    // dot-prefixed and transient, so they are asserted by shape instead: a
+    // machine that once crashed mid-write must not fail this test.
+    expect(entries.filter((entry) => !entry.startsWith('.')).sort()).toEqual([...AUTOMATION_RUN_DIRECTORY_ENTRIES]);
+    for (const entry of entries.filter((entry) => entry.startsWith('.'))) {
+      expect(entry, `${entry} must be a transient temp file`).toMatch(AUTOMATION_TRANSIENT_ENTRY_PATTERN);
+    }
     // The index is a nested entry of the reservations directory.
     expect(readdirSync(join(runDirectory, 'reservations')).some((entry) => entry === 'by-digest')).toBe(true);
     expect(existsSync(join(runDirectory, 'stop-receipt.json'))).toBe(true);
+  });
+
+  test('a temp file a crash left behind changes nothing', () => {
+    const repo = repoFixture();
+    const budget = makeBudget({ run: 'orphan-temp' });
+    publishBudget(repo, budget);
+    acquire(repo, 'orphan-temp', budget, 'op-1', '2026-09-03T00:00:10.000Z');
+    const runDirectory = join(repo, '.git', AUTOMATION_BUDGET_STORE_RELATIVE_ROOT, 'runs', budget.automation_run_id);
+    const before = readAutomationBudgetStatus(repo, budget.automation_run_id);
+
+    // Exactly what an interrupted critical section leaves: dot-prefixed,
+    // non-`.json`, in the run directory and beside the records it was becoming.
+    for (const orphan of [
+      join(runDirectory, '.current.tmp-4242-1788000000000-abc123'),
+      join(runDirectory, 'reservations', '.deadbeef.json.tmp-4242-1788000000000-def456'),
+      join(runDirectory, 'events', '.cafe.json.tmp-4242-1788000000000-0a1b2c'),
+    ]) {
+      writeFileSync(orphan, '{"partial"');
+      expect(basename(orphan)).toMatch(AUTOMATION_TRANSIENT_ENTRY_PATTERN);
+    }
+
+    const after = readAutomationBudgetStatus(repo, budget.automation_run_id);
+    expect(after.drift).toBe('none');
+    expect(after.drift).toBe(before.drift);
+    expect(after.current.event_count).toBe(before.current.event_count);
+    expect(after.current.consumed).toEqual(before.current.consumed);
+    // And the run still spends normally.
+    const next = acquire(repo, 'orphan-temp', budget, 'op-2', '2026-09-03T00:00:20.000Z');
+    expect(next.commit.current.consumed.successful_acquisitions).toBe(2);
   });
 
   test('every enumerated kind has a drift face or is explicitly derived', () => {
@@ -1511,7 +1548,7 @@ describe('issue #282 — every durable record kind is enumerated and read', () =
       }
       // No face is only allowed for something the projection does not count.
       expect(kind.counted, `${kind.id} has no drift face so it must not be counted`).toBe(false);
-      expect(['derived', 'projection', 'durable']).toContain(kind.role);
+      expect(['derived', 'projection', 'durable', 'transient']).toContain(kind.role);
     }
     // Every counted kind is covered by at least one face.
     for (const kind of AUTOMATION_RECORD_KINDS.filter((entry) => entry.counted)) {

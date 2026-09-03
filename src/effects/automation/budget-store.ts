@@ -137,7 +137,15 @@ import {
  * `tests/unit/issue-282-automation-budget-store.test.ts` fails if the run
  * directory ever holds something this list does not name.
  */
-export type AutomationRecordRole = 'durable' | 'derived' | 'projection';
+export type AutomationRecordRole = 'durable' | 'derived' | 'projection' | 'transient';
+
+/**
+ * A temporary file left by a crash inside a write's critical section. Every
+ * publication writes under a dot-prefixed, non-`.json` name and then links or
+ * renames it, so a leftover is inert by construction: nothing counts it, folds
+ * it, or resolves through it.
+ */
+export const AUTOMATION_TRANSIENT_ENTRY_PATTERN = /^\.[^/]+\.tmp-\d+-\d+-[0-9a-z]*$/u;
 
 export interface AutomationRecordKindV1 {
   readonly id: string;
@@ -217,12 +225,26 @@ export const AUTOMATION_RECORD_KINDS: readonly AutomationRecordKindV1[] = Object
     drift_faces: Object.freeze([]),
     counted: false,
   }),
+  Object.freeze({
+    id: 'temp',
+    relative_path: '.<name>.tmp-<pid>-<ms>-<rand>',
+    scope: 'run' as const,
+    role: 'transient' as const,
+    write_order: 'created and then linked or renamed away inside one critical section, and unlinked in its finally; a crash can leave one behind',
+    drift_faces: Object.freeze([]),
+    counted: false,
+  }),
 ] as const);
 
-/** The run-directory entries the enumeration accounts for. */
+/**
+ * The persistent run-directory entries the enumeration accounts for. Transient
+ * temp files are excluded: they are dot-prefixed, may or may not exist, and a
+ * leftover one is inert -- `AUTOMATION_TRANSIENT_ENTRY_PATTERN` is what
+ * recognises them.
+ */
 export const AUTOMATION_RUN_DIRECTORY_ENTRIES: readonly string[] = Object.freeze(
   AUTOMATION_RECORD_KINDS
-    .filter((kind) => kind.scope === 'run' && !kind.relative_path.includes('/'))
+    .filter((kind) => kind.scope === 'run' && kind.role !== 'transient' && !kind.relative_path.includes('/'))
     .map((kind) => kind.relative_path)
     .sort(),
 );
@@ -711,12 +733,14 @@ function readAutomationBudgetStatusAt(repoRoot: string, runId: string, now: stri
  * receipt the projection has not adopted means the run is already stopped.
  * Nothing is ever silently re-minted, and no metric is ever assumed to be zero.
  *
- * Drift is detected by counting directory entries, resolving every usage event
- * to its own reservation through the by-digest index, and resolving each listed
- * open reservation the same way. The healthy path is three `readdir` calls, one
- * `existsSync`, and one `stat` per event, plus one `stat` and one parse for the
- * single open reservation while an operation is in flight -- never a scan of
- * every record's contents. The full re-derivation only runs after a crash.
+ * Drift is detected by counting directory entries and then resolving each
+ * record through the by-digest index, never by re-listing `reservations/` per
+ * record. The healthy path is exactly: three `readdir` calls (events,
+ * reservations, reconciliations), one `existsSync` for the stop receipt, one
+ * `existsSync` per usage event, two `existsSync` per reconciliation, and -- only
+ * while an operation is in flight -- one `existsSync` plus one parse for the
+ * single open reservation. No record's contents are read except that one. The
+ * full re-derivation, which does parse every record, only runs after a crash.
  */
 function jsonEntries(directory: string): readonly string[] {
   if (!existsSync(directory)) return Object.freeze([]);
@@ -771,8 +795,9 @@ export function detectAutomationCurrentDrift(
   // Totals alone are forgeable by coincidence: an orphan reservation from one
   // crash can make up the count of a reservation genuinely lost from under a
   // charged event. Every event names its reservation in its own file name, so
-  // each one is resolved through the by-digest index -- O(events) stats, no
-  // parsing -- and a charge whose reservation is gone is corruption.
+  // each one is resolved through the by-digest index -- one `existsSync` per
+  // event against a known path, never a re-listing of `reservations/` -- and a
+  // charge whose reservation is gone is corruption.
   for (const entry of jsonEntries(paths.events)) {
     const digest = entry.replace(/\.json$/u, '');
     if (!existsSync(join(paths.reservationsByDigest, `${digest}.json`))) {

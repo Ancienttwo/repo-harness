@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260903-0437-issue-282-automation-budget.review.md
 > **Last Updated**: 2026-09-03 05:20
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:dde1709abdc7d13893596d9fa1fc2c20aad582f92c3dc4745c1d3d2ecb674542`
+> **Substantive Change SHA256**: `sha256:b2b90bf022728d028a87313409c1a20f1677a39cdcd3f740a6c7d7051a7b93c6`
 
 ## Design Decisions
 
@@ -292,18 +292,25 @@ counted), `reservations/by-digest/` (derived index, not counted),
 `reservations/` (`unlisted_reservation`), `events/` (`unfolded_event`),
 `reconciliations/` (`unconsumed_reconciliation`), `stop-receipt.json`
 (`unadopted_stop_receipt`, `unsealed_exhaustion`), and `current.json` itself
-(the projection). A meta-test asserts the run directory holds exactly those
-entries and that every counted kind has a face, because a record kind nothing
-reads is a record kind nothing can recover -- `reconciliations/` was written for
-two rounds before anything folded it.
+(the projection), plus one `transient` row for the dot-prefixed temp files a
+write's critical section creates and links or renames away. A meta-test asserts
+the run directory's persistent entries are exactly that enumeration, and that
+every dot-prefixed entry matches the transient pattern -- a machine that once
+crashed mid-write must not fail the test, and a leftover temp file is inert by
+construction because nothing counts, folds, or resolves through a non-`.json`
+dot-prefixed name. Every counted kind must carry a drift face, because a record
+kind nothing reads is a record kind nothing can recover -- `reconciliations/`
+was written for two rounds before anything folded it.
 
 `detectAutomationCurrentDrift` compares directory entry counts by direction,
 probes the stop receipt, resolves **every usage event to its own reservation**
 through the by-digest index (totals alone are forgeable by coincidence: an
 orphan reservation from one crash can make up the count of a reservation lost
 from under a charged event), and resolves each open reservation the projection
-lists the same way. The healthy path is three `readdir` calls, one `existsSync`,
-one `stat` per event, plus one `stat` and
+lists the same way, always against a known index path rather than by
+re-listing `reservations/` per record. The healthy path is exactly three
+`readdir` calls, one `existsSync` for the stop receipt, one per usage event, two
+per reconciliation, and -- only while an operation is in flight -- one plus
 one parse while an operation is in flight -- at most one reservation is ever
 open, and the index means resolving it never scans the record directory.
 `repairCurrentFromDurableRecords` runs only after a crash and rebuilds consumed,
