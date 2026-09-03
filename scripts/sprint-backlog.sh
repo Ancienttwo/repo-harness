@@ -325,7 +325,10 @@ try_reclaim_dead_owner_backlog_lock() {
   else
     # Unparseable owner JSON mirrors the TS catch path: the file must be older
     # than the TS LOCK_STALE_MS (30s) and the filename pid dead.
-    owner_mtime="$(stat -f %m "$entry_path" 2>/dev/null || stat -c %Y "$entry_path" 2>/dev/null || true)"
+    owner_mtime="$(stat -f %m "$entry_path" 2>/dev/null || true)"
+    if [[ ! "$owner_mtime" =~ ^[0-9]+$ ]]; then
+      owner_mtime="$(stat -c %Y "$entry_path" 2>/dev/null || true)"
+    fi
     [[ "$owner_mtime" =~ ^[0-9]+$ ]] || return 1
     [[ $(( $(date +%s) - owner_mtime )) -gt 30 ]] || return 1
   fi
