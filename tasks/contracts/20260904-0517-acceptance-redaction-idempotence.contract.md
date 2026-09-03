@@ -86,6 +86,7 @@ allowed_paths:
   - assets/templates/helpers/verify-sprint.sh
   - tests/evidence-projection-drift.test.ts
   - tests/helper-scripts.test.ts
+  - docs/architecture/.projection-manifest.json
 ```
 
 ## Evidence Requirements

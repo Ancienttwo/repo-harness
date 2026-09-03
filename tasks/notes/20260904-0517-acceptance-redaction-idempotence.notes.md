@@ -18,6 +18,7 @@
 ## Deviations From Plan Or Spec
 
 - The initial candidate fix normalized redaction markers inside AcceptanceReceipt canonicalization. Root-cause proof falsified that direction because it would hide a real command-identity change; scope moved to the finalization producer.
+- The acceptance preflight refreshed the repository-owned architecture projection manifest after the linked worktree's CodeGraph index became ready. The contract therefore includes that deterministic generated projection in the frozen subject.
 
 ## Tradeoffs Considered
 
