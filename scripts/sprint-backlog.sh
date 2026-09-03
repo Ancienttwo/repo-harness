@@ -276,13 +276,45 @@ try_reclaim_dead_owner_backlog_lock() {
   [[ -n "$entry_token" ]] || return 1
   [[ ! -L "$entry_path" && -f "$entry_path" ]] || return 1
 
-  # Owner content is one line of `{"pid":N,"created_at":N,"token":"..."}`;
-  # sed pulls the two fields the TS reclaim compares, and a quoted number or
-  # missing field fails the pull exactly where JSON.parse falls into the TS
-  # catch path.
-  owner_pid="$(sed -n -E 's/^.*"pid"[[:space:]]*:[[:space:]]*([1-9][0-9]*).*$/\1/p' "$entry_path" 2>/dev/null | head -n 1)"
-  owner_token="$(sed -n -E 's/^.*"token"[[:space:]]*:[[:space:]]*"([0-9A-Za-z-]+)".*$/\1/p' "$entry_path" 2>/dev/null | head -n 1)"
-  if [[ -n "$owner_pid" && -n "$owner_token" ]]; then
+  # Owner content is exactly what the TS holder writes:
+  # JSON.stringify({ pid, created_at, token }) + '\n' — one content line of
+  # `{"pid":N,"created_at":N,"token":"..."}` with no spaces, fixed key order,
+  # and only trailing blank lines after it. The whole line must match that
+  # serialization shape before its fields are trusted; anything else (leading
+  # or trailing garbage, extra non-blank lines, missing or reshaped fields)
+  # mirrors the TS JSON.parse catch path and falls into the age gate below
+  # instead of the immediate dead-owner reclaim.
+  local owner_line="" scan_line="" owner_shape_ok=false
+  if [[ -r "$entry_path" ]] && exec 3< "$entry_path"; then
+    # A final line without its newline still carries content (read reports
+    # EOF but fills the variable), and JSON.parse would accept it.
+    if IFS= read -r owner_line <&3 || [[ -n "$owner_line" ]]; then
+      if [[ -n "$owner_line" ]]; then
+        owner_shape_ok=true
+        # Trailing blank lines are the whitespace JSON.parse skips; a second
+        # non-blank line is malformed content and rejects the main path.
+        while IFS= read -r scan_line <&3 || [[ -n "$scan_line" ]]; do
+          if [[ -n "${scan_line//[[:space:]]/}" ]]; then
+            owner_shape_ok=false
+            break
+          fi
+        done
+      fi
+    fi
+    exec 3<&-
+  fi
+  if $owner_shape_ok; then
+    # The pattern lives in a variable: that is the bash 3.2-safe `[[ =~ ]]`
+    # form for a fixed ERE with braces.
+    local owner_re='^\{"pid":([1-9][0-9]*),"created_at":[0-9]+,"token":"([0-9A-Za-z-]+)"\}$'
+    if [[ "$owner_line" =~ $owner_re ]]; then
+      owner_pid="${BASH_REMATCH[1]}"
+      owner_token="${BASH_REMATCH[2]}"
+    else
+      owner_shape_ok=false
+    fi
+  fi
+  if $owner_shape_ok; then
     [[ "$owner_pid" == "$entry_pid" && "$owner_token" == "$entry_token" ]] || return 1
   else
     # Unparseable owner JSON mirrors the TS catch path: the file must be older

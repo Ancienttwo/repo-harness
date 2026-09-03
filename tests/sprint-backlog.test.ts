@@ -911,6 +911,92 @@ describe("sprint-backlog helper", () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
+
+  test("malformed owner content escapes the immediate reclaim and only the stale-age fallback removes it", () => {
+    const cwd = tmpWorkspace("sprint-backlog-owner-malformed-shape");
+    try {
+      copySprintHelpers(cwd, ["sprint-backlog.sh", "capture-plan.sh"]);
+      const sprintPath = "plans/sprints/20260610-0000-fixture-sprint.sprint.md";
+      writeActiveSprintFixture(cwd, sprintPath);
+      const lockDir = join(cwd, BACKLOG_LOCK_RELATIVE);
+      mkdirSync(lockDir, { recursive: true });
+      const pid = deadPidFixture();
+      const token = `${pid}-${OWNER_CREATED_MS}-${OWNER_UUID}`;
+      const ownerPath = join(lockDir, `${token}.json`);
+      // TS writes JSON.stringify(...) + "\n" as one exact line; trailing
+      // garbage makes JSON.parse throw even though the pid/token substrings
+      // stay extractable, so the immediate dead-owner reclaim must refuse it.
+      const malformed = `${JSON.stringify({ pid, created_at: OWNER_CREATED_MS, token })}TRAILING\n`;
+      writeFileSync(ownerPath, malformed);
+
+      const keepEnv = {
+        REPO_HARNESS_BACKLOG_LOCK_ATTEMPTS: "2",
+        REPO_HARNESS_BACKLOG_LOCK_SLEEP_SECONDS: "0.05",
+      };
+      const fresh = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a"], cwd, keepEnv);
+      expect(fresh.status, `${fresh.stdout}\n${fresh.stderr}`).toBe(1);
+      expect(fresh.stderr).toContain("timed out acquiring backlog lock");
+      expect(fresh.stderr).not.toContain("reclaiming stale backlog lock");
+      expect(existsSync(ownerPath)).toBe(true);
+
+      // Leading garbage is the same JSON.parse failure through the substring
+      // extraction hole; it must not resurrect the main path either.
+      writeFileSync(ownerPath, `LEADING${malformed}`);
+      const leading = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a"], cwd, keepEnv);
+      expect(leading.status, `${leading.stdout}\n${leading.stderr}`).toBe(1);
+      expect(leading.stderr).not.toContain("reclaiming stale backlog lock");
+      expect(existsSync(ownerPath)).toBe(true);
+
+      // The TS catch path stays reachable: once the owner file is older than
+      // LOCK_STALE_MS the age-gated fallback reclaims the dead holder.
+      writeFileSync(ownerPath, malformed);
+      expect(run("bash", ["-lc", `touch -t 202001010000 '${ownerPath}'`], cwd).status).toBe(0);
+      const reclaimed = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a"], cwd, LOCK_TEST_ENV);
+      expect(reclaimed.status, `${reclaimed.stdout}\n${reclaimed.stderr}`).toBe(0);
+      expect(reclaimed.stderr).toContain("reclaiming stale backlog lock");
+      expect(existsSync(lockDir)).toBe(false);
+      const records = readJsonl(join(cwd, WAITS_LEDGER_RELATIVE))
+        .filter((record) => record.kind === "backlog_lock_wait");
+      expect(records.some((record) => record.reclaimed_stale === true && record.outcome === "acquired")).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("a second non-blank owner line is malformed and only the stale-age fallback removes it", () => {
+    const cwd = tmpWorkspace("sprint-backlog-owner-second-line");
+    try {
+      copySprintHelpers(cwd, ["sprint-backlog.sh", "capture-plan.sh"]);
+      const sprintPath = "plans/sprints/20260610-0000-fixture-sprint.sprint.md";
+      writeActiveSprintFixture(cwd, sprintPath);
+      const lockDir = join(cwd, BACKLOG_LOCK_RELATIVE);
+      mkdirSync(lockDir, { recursive: true });
+      const token = writeTsOwnerFile(lockDir, deadPidFixture());
+      const ownerPath = join(lockDir, `${token}.json`);
+      // A valid content line plus one trailing non-blank line fails JSON.parse
+      // on the TS side; blank lines would be tolerated, this one is not blank.
+      writeFileSync(ownerPath, `${readFileSync(ownerPath, "utf-8")}not json\n`);
+
+      const keepEnv = {
+        REPO_HARNESS_BACKLOG_LOCK_ATTEMPTS: "2",
+        REPO_HARNESS_BACKLOG_LOCK_SLEEP_SECONDS: "0.05",
+      };
+      const fresh = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a"], cwd, keepEnv);
+      expect(fresh.status, `${fresh.stdout}\n${fresh.stderr}`).toBe(1);
+      expect(fresh.stderr).toContain("timed out acquiring backlog lock");
+      expect(fresh.stderr).not.toContain("reclaiming stale backlog lock");
+      expect(existsSync(ownerPath)).toBe(true);
+
+      expect(run("bash", ["-lc", `touch -t 202001010000 '${ownerPath}'`], cwd).status).toBe(0);
+      const reclaimed = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a"], cwd, LOCK_TEST_ENV);
+      expect(reclaimed.status, `${reclaimed.stdout}\n${reclaimed.stderr}`).toBe(0);
+      expect(reclaimed.stderr).toContain("reclaiming stale backlog lock");
+      expect(existsSync(lockDir)).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
 });
 
 describe("check-task-workflow sprint validation", () => {
