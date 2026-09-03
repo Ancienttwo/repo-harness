@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260902-2101-issue-283-immutable-task-id.review.md
 > **Last Updated**: 2026-09-02 21:01
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:74d7cdc049465ac9f98d9fb4f7dac86b9b4783098c250f7b815d596bc2dcaa3f`
+> **Substantive Change SHA256**: `sha256:1942f66210be2c3ea692baa788d6ebaeff57f454fa33b881d3715a7a75802198`
 
 ## Design Decisions
 
@@ -193,6 +193,33 @@
   through this path at all, because resolution runs through
   `resolveCanonicalTaskRef` -- which is the same fail-closed rule every other
   identity consumer already applied.
+- **Two regressions from sinking the transaction, and what they taught.**
+  Moving completion into TypeScript moved two behaviours with it that the shell
+  had owned, and the full suite caught both.
+  First, `sprint-backlog.sh`'s `acquire_backlog_lock` reclaims a stale *empty*
+  lock directory and says so; `withBacklogLock()` took the same directory with
+  no options, so `reclaimStaleEmptyDirectory` was off and a dead holder's lock
+  wedged every later completion. Two callers of one directory cannot hold two
+  different rules about when a dead holder is recoverable, so the TypeScript
+  lock now reclaims both shapes -- the shell's stale empty directory and the
+  dead-PID owner file this primitive itself leaves behind -- and reports it in
+  the shell's exact words through an `onStaleReclaim` hook. The shell also had
+  to stop swallowing it: `complete-task` captured the verb with `2>&1`, which
+  both merged diagnostics into the JSON and hid them on success, so stdout and
+  stderr are now kept apart and the verb's stderr is forwarded either way.
+  Second, and more instructive: the releasable-state gate refused `completing`
+  unconditionally, but the contract closeout calls this verb with
+  `--defer-lease-release` while its own lease sits in exactly that state, put
+  there by `begin-completion`. `backfill_sprint_backlog` failed, the finish
+  transaction aborted, and its closeout journal came out `aborted` instead of
+  resumable `in_progress`. The gate was asking the wrong question: what a
+  completion may accept depends on what it will *do* with the lease. Releasing,
+  the states are the release path's own; deferring, `completing` is not residue
+  but the caller's own window. `reviewing` and `released` are refused either
+  way. Worth recording that the first suspect -- cross-talk between the shared
+  `write-journal.ts` and the closeout transaction journal -- was wrong; a probe
+  reproducing the refusal in isolation found the real cause, and the two
+  journals remain separate mechanisms that never touch.
 - **For a completion too, a refusal means the bytes did not move.** Sinking the
   transaction into TypeScript was necessary but not sufficient: the gate checked
   ownership and revision and never `record.state`, so a `reviewing` lease (the

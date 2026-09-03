@@ -657,10 +657,19 @@ cmd_complete_task() {
   [[ -z "$plan_cell" ]] || complete_args+=(--plan-cell "$plan_cell")
   [[ "$defer_lease_release" -eq 0 ]] || complete_args+=(--defer-lease-release)
 
-  if ! output="$(sprint_lease "${complete_args[@]}" 2>&1)"; then
-    printf '%s\n' "$output" >&2
+  # stdout carries the verb's JSON, stderr its diagnostics -- a stale-lock
+  # reclamation among them. Merging the two with `2>&1` would both corrupt the
+  # JSON and swallow the diagnostic on success, so they are kept apart and the
+  # verb's stderr is forwarded either way.
+  local verb_stderr
+  verb_stderr="$(mktemp)"
+  if ! output="$(sprint_lease "${complete_args[@]}" 2>"$verb_stderr")"; then
+    cat "$verb_stderr" >&2
+    rm -f "$verb_stderr"
     exit 1
   fi
+  cat "$verb_stderr" >&2
+  rm -f "$verb_stderr"
 
   # Rendering only: every value below was produced by the verb inside its locks.
   local completed_task completed_row released_claim done total

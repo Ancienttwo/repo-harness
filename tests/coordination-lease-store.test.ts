@@ -495,6 +495,57 @@ describe('per-task lock', () => {
     expect(inner).toBe('ExclusiveLockContentionError');
   }, 60_000);
 
+test('the backlog lock reclaims a dead owner and reports it in the shell\'s words', () => {
+    // `sprint-backlog.sh` and this primitive now take the same directory, so
+    // they must agree about when a dead holder's lock is recoverable. The shell
+    // reclaims a stale *empty* directory; this primitive leaves an owner file
+    // behind, so it must also reclaim a dead-PID owner -- otherwise a crash
+    // under one caller strands every later call through the other.
+    const repo = createRepo();
+    const lockPath = join(resolveGitCommonDirectory(repo), COORDINATION_BACKLOG_LOCK_RELATIVE_PATH);
+    mkdirSync(lockPath, { recursive: true });
+
+    // A PID that cannot be alive: the owner file names it, so the reclaim is a
+    // decision about a named dead process rather than about elapsed time.
+    const deadPid = 2 ** 22 - 1;
+    const token = `${deadPid}-${Date.now()}-11111111-1111-4111-8111-111111111111`;
+    writeFileSync(
+      join(lockPath, `${token}.json`),
+      `${JSON.stringify({ pid: deadPid, created_at: Date.now(), token })}\n`,
+    );
+
+    const reclaimed: string[] = [];
+    expect(withBacklogLock(repo, () => 'acquired', (path) => reclaimed.push(path))).toBe('acquired');
+    expect(reclaimed).toEqual([lockPath]);
+    expect(existsSync(lockPath)).toBe(false);
+  }, 60_000);
+
+  test('the backlog lock reclaims a stale empty directory, like the shell does', () => {
+    const repo = createRepo();
+    const lockPath = join(resolveGitCommonDirectory(repo), COORDINATION_BACKLOG_LOCK_RELATIVE_PATH);
+    mkdirSync(lockPath, { recursive: true });
+    spawnSync('bash', ['-c', `touch -t 202001010000 '${lockPath}'`], { encoding: 'utf-8' });
+
+    const reclaimed: string[] = [];
+    expect(withBacklogLock(repo, () => 'acquired', (path) => reclaimed.push(path))).toBe('acquired');
+    expect(reclaimed).toEqual([lockPath]);
+    expect(existsSync(lockPath)).toBe(false);
+  }, 60_000);
+
+  test('a live owner is never reclaimed', () => {
+    const repo = createRepo();
+    const lockPath = join(resolveGitCommonDirectory(repo), COORDINATION_BACKLOG_LOCK_RELATIVE_PATH);
+    mkdirSync(lockPath, { recursive: true });
+    const token = `${process.pid}-${Date.now()}-22222222-2222-4222-8222-222222222222`;
+    writeFileSync(
+      join(lockPath, `${token}.json`),
+      `${JSON.stringify({ pid: process.pid, created_at: Date.now(), token })}\n`,
+    );
+    expect(() => withBacklogLock(repo, () => 'never', () => { throw new Error('must not reclaim'); }))
+      .toThrow(/timed out waiting/);
+    expect(existsSync(lockPath)).toBe(true);
+  }, 60_000);
+
   test('the backlog lock is one shared lock for the whole clone', () => {
     const repo = createRepo();
     const lockPath = join(resolveGitCommonDirectory(repo), COORDINATION_BACKLOG_LOCK_RELATIVE_PATH);
@@ -1511,6 +1562,50 @@ test('a lease this completion could not release is refused before any write', ()
       expect(readLease(repo, RACE_ID).record?.state).toBe(state);
       expect(existsSync(join(repo, CLAIM_TOKEN_DIR, `${RACE_ID}.claim`))).toBe(true);
     }
+  }, 60_000);
+
+  test('a deferred release accepts the completing window the closeout holds', () => {
+    // The contract closeout calls this verb with --defer-lease-release while its
+    // own lease sits in `completing`, the state `begin-completion` put it in.
+    // Refusing that state unconditionally aborted the whole finish transaction
+    // and left its journal `aborted` instead of resumable, so what the gate
+    // accepts depends on whether this completion will release the lease at all.
+    const repo = raceRepo();
+    claimRow(repo, 'claim-original');
+    const ownerPath = leaseOwnerPath(repo, RACE_ID);
+    const bound = JSON.parse(readFileSync(ownerPath, 'utf-8')) as Record<string, unknown>;
+    writeFileSync(ownerPath, `${JSON.stringify({ ...bound, state: 'completing', finish_transaction_key: 'finish/race' }, null, 2)}\n`);
+    expect(readLease(repo, RACE_ID).record?.state).toBe('completing');
+
+    const deferred = completeRowSprintCommand(
+      { sprint: RACE_SPRINT, task: RACE_TASK, targetRef: 'main', deferLeaseRelease: true },
+      processSprintDependencies(repo),
+    );
+    expect(deferred.stderr).toBe('');
+    expect(deferred.exitCode).toBe(0);
+    // The row landed and the lease is untouched: its release belongs to the
+    // closeout's own transaction, which ends at the publication commit.
+    expect(readFileSync(join(repo, RACE_SPRINT), 'utf-8')).toContain(`| 1 | ${RACE_ID} | [x] |`);
+    expect(readLease(repo, RACE_ID).record?.state).toBe('completing');
+    expect(existsSync(join(repo, CLAIM_TOKEN_DIR, `${RACE_ID}.claim`))).toBe(true);
+  }, 60_000);
+
+  test('a releasing completion still refuses the same completing lease', () => {
+    // The same state, the other intent: an inline completion would have to
+    // release it, and `completing` cannot be released.
+    const repo = raceRepo();
+    claimRow(repo, 'claim-original');
+    const ownerPath = leaseOwnerPath(repo, RACE_ID);
+    const bound = JSON.parse(readFileSync(ownerPath, 'utf-8')) as Record<string, unknown>;
+    writeFileSync(ownerPath, `${JSON.stringify({ ...bound, state: 'completing', finish_transaction_key: 'finish/race' }, null, 2)}\n`);
+
+    const inline = completeRowSprintCommand(
+      { sprint: RACE_SPRINT, task: RACE_TASK, targetRef: 'main' },
+      processSprintDependencies(repo),
+    );
+    expect(inline.exitCode).toBe(1);
+    expect(inline.stderr).toContain('holds a lease in state completing');
+    expect(readFileSync(join(repo, RACE_SPRINT), 'utf-8')).toContain(`| 1 | ${RACE_ID} | [ ] |`);
   }, 60_000);
 
   test('a throw after the row is written restores the sprint bytes', () => {

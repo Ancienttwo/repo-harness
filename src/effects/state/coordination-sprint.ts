@@ -39,6 +39,7 @@ import {
   type CanonicalTask,
   type LeaseOwnerRecord,
   type LeaseTransition,
+  type PersistedLeaseState,
 } from '../../core/state/coordination-identity';
 import {
   readCanonicalSprint,
@@ -723,6 +724,7 @@ export function completeRowSprintCommand(
           targetRef,
           taskId,
           taskCell: lockedRow.task,
+          willRelease: options.deferLeaseRelease !== true,
         });
         if (isOutcome(gate)) return gate;
 
@@ -823,6 +825,8 @@ function completionLeaseGate(
     readonly targetRef: string;
     readonly taskId: string;
     readonly taskCell: string;
+    /** True when this completion will release the lease itself. */
+    readonly willRelease: boolean;
   },
 ): LeaseOwnerRecord | null | CommandOutcome {
   // No lease plane at all: its absence is the authority for "nothing owns
@@ -839,19 +843,30 @@ function completionLeaseGate(
   }
   const record = lease.record;
 
-  // A lease this completion could not release afterwards must not pass the
-  // gate. Without this the row was flipped to `[x]` first and `releaseLeaseRecord`
+  // A lease this completion could not hand back must not pass the gate.
+  // Without this the row was flipped to `[x]` first and `releaseLeaseRecord`
   // refused second, publishing "done" while the lease and token stayed live --
-  // the exact half-applied state the transaction exists to prevent. The list is
-  // the release path's own, imported rather than repeated, so the gate cannot
-  // drift from what release will actually accept.
-  if (!RELEASABLE_LEASE_STATES.includes(record.state)) {
+  // the exact half-applied state the transaction exists to prevent.
+  //
+  // What counts as acceptable depends on what this completion will actually do
+  // with the lease. When it releases, the states are the release path's own,
+  // imported rather than repeated so the gate cannot drift from what release
+  // will accept. When the caller defers the release -- contract finish, whose
+  // transaction ends at the publication commit -- `completing` is not a residue
+  // to refuse but the exact window the closeout holds while it back-fills this
+  // row, so it is accepted too. `reviewing` and `released` are refused either
+  // way: the first belongs to publication recovery, the second to reconcile.
+  const acceptableStates: readonly PersistedLeaseState[] = input.willRelease
+    ? RELEASABLE_LEASE_STATES
+    : [...RELEASABLE_LEASE_STATES, 'completing'];
+  if (!acceptableStates.includes(record.state)) {
     const recovery = record.state === 'reviewing'
       ? `its publication is under review; finish or abandon it through the publication recovery verbs before completing the row`
       : `run 'repo-harness sprint reconcile --task-id ${input.taskId} --target-ref ${input.targetRef}' to clear it first`;
+    const verb = input.willRelease ? 'released by a completion' : 'completed against';
     return refuse(
-      `backlog task '${input.taskCell}' holds a lease in state ${record.state}, which cannot be released by a `
-      + `completion (only ${RELEASABLE_LEASE_STATES.join(' or ')} can); ${recovery}`,
+      `backlog task '${input.taskCell}' holds a lease in state ${record.state}, which cannot be `
+      + `${verb} (only ${acceptableStates.join(' or ')} can); ${recovery}`,
     );
   }
 
