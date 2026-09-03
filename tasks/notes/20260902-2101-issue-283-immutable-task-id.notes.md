@@ -139,18 +139,45 @@
   `bun run check:state-boundaries` (`scripts/check-state-boundaries.ts`). The
   contract records the working invocation.
 - **Both tracked sprints stay schema 1, and `scripts/check-task-workflow.sh
-  --strict` is red because of it.** Enforcing "Approved/Executing must be
-  schema 2" is correct and was the reviewed requirement, but it lands while two
-  sprints under `plans/sprints/` are mid-flight and cannot be migrated:
-  `20260828-2321-collaborative-work-exchange-agent-succession.sprint.md` row 10
-  holds a stranded `completing` lease, and
-  `20260902-2238-gpt-pro-seeded-repair-campaign.sprint.md` row 1 holds a live
-  `bound` lease belonging to another worktree. Refusing a live lease is a
-  contract requirement the migration must not bypass, and releasing or stealing
-  one is out of scope here, so each sprint must be migrated by whoever owns its
-  lease. Note that `repo-harness run check-task-workflow --strict` still reports
-  OK because the installed global runtime carries an older copy of the helper;
-  the repo-local script is the honest signal.
+  --strict` is red because of it — by design, migrated in sequence.** Enforcing
+  "Approved/Executing must be schema 2" is correct and was the reviewed
+  requirement; it lands while two sprints under `plans/sprints/` are mid-flight
+  and cannot be migrated in this pass. Refusing a live lease is a contract
+  requirement the migration must not bypass, and releasing or stealing one is
+  out of scope, so each sprint is migrated by whoever owns its lease:
+  - `20260828-2321-collaborative-work-exchange-agent-succession.sprint.md`
+    (row 10, `completing`) — attempted here under explicit operator
+    authorisation and **blocked**; see the reconcile deadlock below.
+  - `20260902-2238-gpt-pro-seeded-repair-campaign.sprint.md` (row 1, `bound`,
+    owned by another session) — deliberately untouched. It is migrated in this
+    branch after that session's PR merges and its lease is released; the
+    orchestrator orders the rebase and the migration then.
+- **Judge the gate by the repo-local script, not the installed runtime.**
+  `repo-harness run check-task-workflow --strict` reports OK while
+  `bash scripts/check-task-workflow.sh --strict` reports the two sprints above.
+  That is the known runtime-resolution skew: `repo-harness run` dispatches to
+  the installed global helper, which still carries the pre-change copy. The
+  repo-local script is the honest signal for this contract, and the divergence
+  disappears once the change ships and the global runtime is updated.
+- **A schema 1 lease cannot be reconciled once identity is schema-2-only.**
+  Found while executing the authorised step 1 recovery. The two verbs deadlock:
+  `sprint migrate-schema` refuses while any row holds a non-released lease, and
+  `sprint reconcile` can only clear a non-`released` lease by proving the
+  canonical row is completed -- a proof that runs through
+  `lookupCanonicalTask()`, which now fails closed on a schema 1 sprint. Row 10
+  really is `[x]` at `main`, so the proof exists in the bytes and is simply
+  unreachable through the schema-2-only path. Reconcile therefore returned
+  `classification: "completing"`, `canonical_status: null`,
+  `canonical_error: "... is still backlog schema 1 ..."`, `action: "none"`, and
+  mutated nothing. This is a migration-ordering trap for every downstream repo,
+  not just this one: any lease minted before the migration becomes
+  unreconcilable after it. The bounded fix is to let `reconcile` -- and only
+  `reconcile`, the one recovery verb that must work *before* migration -- prove
+  completion for a schema 1 sprint through the existing
+  `src/core/state/sprint-schema-v1.ts` compatibility surface, under the same
+  `sprint-schema-v1-parser-removal` removal trigger. It is not implemented here:
+  it changes the reconcile authority and belongs to a reviewed decision, not to
+  this contract's scope.
 - **The repo's own sprint stays schema 1.**
   `plans/sprints/20260828-2321-collaborative-work-exchange-agent-succession.sprint.md`
   could not be migrated: row 10 still holds a stranded non-released lease in
