@@ -16,10 +16,11 @@ import {
 } from '../../src/effects/publication/publication-lifecycle';
 import { PublicationLifecycleError } from '../../src/core/publication/publication-lifecycle';
 import { preparePublicationReceipt, ensurePublicationReceipt } from '../../src/effects/publication/publication-receipt';
-import { beginLeaseCompletionRecord, bindLeaseRecord, buildLeaseOwnerRecord, deriveTaskId, deriveTaskRevision } from '../../src/core/state/coordination-identity';
+import { beginLeaseCompletionRecord, bindLeaseRecord, buildLeaseOwnerRecord, deriveTaskRevision } from '../../src/core/state/coordination-identity';
 import { createLeaseDirectory, readLease, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
 import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const CLAIM = 'claim-lifecycle';
 const SUBJECT = `sha256:${'3'.repeat(64)}`;
@@ -67,16 +68,16 @@ function installFixture(): Fixture {
   git(root, 'config', 'user.email', 'lifecycle@test.invalid');
   mkdirSync(join(root, 'plans/sprints'), { recursive: true });
   writeFileSync(join(root, SPRINT_PATH), [
-    '# Sprint: lifecycle', '', '## Backlog', '',
-    '| # | Status | Task | Mode | Acceptance | Plan |',
-    '|---|--------|------|------|------------|------|',
-    `| 1 | [ ] | ${TASK_CELL} | contract | lifecycle tests | (pending) |`, '',
+    '# Sprint: lifecycle', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+    '|---|----|--------|------|------|------------|------|',
+    `| 1 | ${fixtureTaskId(`${TASK_CELL}`)} | [ ] | ${TASK_CELL} | contract | lifecycle tests | (pending) |`, '',
   ].join('\n'));
   writeFileSync(join(root, 'README.md'), 'base\n');
   git(root, 'add', '.'); git(root, 'commit', '-m', 'base');
   const repoIdentity = resolveRepoIdentity(root);
-  const taskId = deriveTaskId({ repoIdentity, sprintPath: SPRINT_PATH, taskCell: TASK_CELL });
-  const revision = deriveTaskRevision({ taskId, modeCell: 'contract', acceptanceCell: 'lifecycle tests' });
+  const taskId = fixtureTaskId(TASK_CELL);
+  const revision = deriveTaskRevision({ taskCell: TASK_CELL, taskId, modeCell: 'contract', acceptanceCell: 'lifecycle tests' });
   git(root, 'switch', '-c', 'codex/lifecycle');
   writeFileSync(join(root, 'feature.txt'), 'lifecycle\n');
   mkdirSync(join(root, '.ai/harness/checks'), { recursive: true });

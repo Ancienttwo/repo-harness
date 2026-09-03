@@ -13,7 +13,7 @@ import {
   transitionTaskMessageDeliveryReceipt,
   validateTaskMessageDeliveryReceipt,
 } from '../../src/core/fleet/task-message';
-import { bindLeaseRecord, buildLeaseOwnerRecord, deriveTaskId, deriveTaskRevision } from '../../src/core/state/coordination-identity';
+import { bindLeaseRecord, buildLeaseOwnerRecord, deriveTaskRevision } from '../../src/core/state/coordination-identity';
 import {
   buildAgentRuntimeCapabilityObservation,
   buildAgentRuntimeEffectCurrent,
@@ -47,6 +47,7 @@ import {
   recordAgentRuntimeCapability,
   startAgentRuntimeEffect,
 } from '../../src/effects/engineers/agent-runtime-effect-store';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const sourceRoot = process.cwd();
 const roots: string[] = [];
@@ -145,9 +146,9 @@ describe('R1 provider-neutral Agent Runtime', () => {
   test('Task delivery derives its endpoint from ClaimActorReceipt and preserves the exact Lease fence', () => {
     const repoRoot = fixture();
     const sprintPath = 'plans/sprints/runtime.sprint.md'; const taskCell = 'wake exact task owner'; mkdirSync(join(repoRoot, 'plans/sprints'), { recursive: true });
-    writeFileSync(join(repoRoot, sprintPath), ['# Sprint: runtime', '', '## Backlog', '', '| # | Status | Task | Mode | Acceptance | Plan |', '|---|---|---|---|---|---|', `| 1 | [ ] | ${taskCell} | contract | exact receipt | (pending) |`, ''].join('\n'));
+    writeFileSync(join(repoRoot, sprintPath), ['# Sprint: runtime', '', '> **Backlog Schema**: 2', '', '## Backlog', '', '| # | ID | Status | Task | Mode | Acceptance | Plan |', '|---|---|---|---|---|---|---|', `| 1 | ${fixtureTaskId(taskCell)} | [ ] | ${taskCell} | contract | exact receipt | (pending) |`, ''].join('\n'));
     execFileSync('git', ['add', sprintPath], { cwd: repoRoot }); execFileSync('git', ['commit', '-qm', 'task authority'], { cwd: repoRoot });
-    const taskId = deriveTaskId({ repoIdentity: resolveRepoIdentity(repoRoot), sprintPath, taskCell }); const taskRevision = deriveTaskRevision({ taskId, modeCell: 'contract', acceptanceCell: 'exact receipt' }); const claimId = '44444444-4444-4444-8444-444444444444';
+    const taskId = fixtureTaskId(taskCell); const taskRevision = deriveTaskRevision({ taskCell: taskCell, taskId, modeCell: 'contract', acceptanceCell: 'exact receipt' }); const claimId = '44444444-4444-4444-8444-444444444444';
     const claimed = buildLeaseOwnerRecord({ claimId, taskId, taskRevision, sprintPath, targetRef: 'HEAD', generation: 1, sessionId: 'runtime-session', sourceWorktree: repoRoot });
     const bound = bindLeaseRecord(claimed, { claimId, executionWorktree: repoRoot, branch: 'codex/runtime', unitRef: 'plans/runtime.md' }); if (!bound.ok) throw new Error(bound.error); createLeaseDirectory(repoRoot, taskId); writeLeaseOwnerDurably(repoRoot, taskId, bound.record);
     const profile = loadEngineerProfile(repoRoot, engineerId); const binding = readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision).binding!;
@@ -165,9 +166,9 @@ describe('R1 provider-neutral Agent Runtime', () => {
   test('a Task hook delivery or a foreign control reference never proves the effect', () => {
     const repoRoot = fixture();
     const sprintPath = 'plans/sprints/runtime.sprint.md'; const taskCell = 'wake exact task owner'; mkdirSync(join(repoRoot, 'plans/sprints'), { recursive: true });
-    writeFileSync(join(repoRoot, sprintPath), ['# Sprint: runtime', '', '## Backlog', '', '| # | Status | Task | Mode | Acceptance | Plan |', '|---|---|---|---|---|---|', `| 1 | [ ] | ${taskCell} | contract | exact receipt | (pending) |`, ''].join('\n'));
+    writeFileSync(join(repoRoot, sprintPath), ['# Sprint: runtime', '', '> **Backlog Schema**: 2', '', '## Backlog', '', '| # | ID | Status | Task | Mode | Acceptance | Plan |', '|---|---|---|---|---|---|---|', `| 1 | ${fixtureTaskId(taskCell)} | [ ] | ${taskCell} | contract | exact receipt | (pending) |`, ''].join('\n'));
     execFileSync('git', ['add', sprintPath], { cwd: repoRoot }); execFileSync('git', ['commit', '-qm', 'task authority'], { cwd: repoRoot });
-    const taskId = deriveTaskId({ repoIdentity: resolveRepoIdentity(repoRoot), sprintPath, taskCell }); const taskRevision = deriveTaskRevision({ taskId, modeCell: 'contract', acceptanceCell: 'exact receipt' }); const claimId = '44444444-4444-4444-8444-444444444444';
+    const taskId = fixtureTaskId(taskCell); const taskRevision = deriveTaskRevision({ taskCell: taskCell, taskId, modeCell: 'contract', acceptanceCell: 'exact receipt' }); const claimId = '44444444-4444-4444-8444-444444444444';
     const claimed = buildLeaseOwnerRecord({ claimId, taskId, taskRevision, sprintPath, targetRef: 'HEAD', generation: 1, sessionId: 'runtime-session', sourceWorktree: repoRoot });
     const bound = bindLeaseRecord(claimed, { claimId, executionWorktree: repoRoot, branch: 'codex/runtime', unitRef: 'plans/runtime.md' }); if (!bound.ok) throw new Error(bound.error); createLeaseDirectory(repoRoot, taskId); writeLeaseOwnerDurably(repoRoot, taskId, bound.record);
     const profile = loadEngineerProfile(repoRoot, engineerId); const binding = readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision).binding!;

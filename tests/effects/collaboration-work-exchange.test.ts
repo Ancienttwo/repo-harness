@@ -88,7 +88,7 @@ function offer(repositoryId: string, workPackageId: string, taskSeed: string): E
       lane: 'engineering-v2',
       work_packages: [{
         work_package_id: workPackageId,
-        task_ref: `task ${workPackageId}`,
+        task_id: taskSeed.repeat(64),
         primary_capability: CAPABILITY,
         depends_on: [],
         priority: 50,

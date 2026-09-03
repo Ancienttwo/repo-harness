@@ -27,6 +27,7 @@ import {
   withRepo,
   writeFixture as write,
 } from './state/effective-state-fixture';
+import { fixtureTaskId } from './helpers/sprint-fixture';
 
 const LEDGER = '.ai/harness/runs/continuation/attempts.jsonl';
 const SPRINT = 'plans/sprints/20260803-attempt-fixture.sprint.md';
@@ -104,12 +105,13 @@ function finishedSprint(cwd: string): void {
     '',
     '> **Status**: Approved',
     '> **Slug**: attempt-fixture',
+    '> **Backlog Schema**: 2',
     '',
     '## Backlog',
     '',
-    '| # | Status | Task | Mode | Acceptance | Plan |',
-    '|---|--------|------|------|------------|------|',
-    '| 1 | [x] | only work package | contract | done | `plans/archive/plan-first.md` |',
+    '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+    '|---|----|--------|------|------|------------|------|',
+    `| 1 | ${fixtureTaskId('only work package')} | [x] | only work package | contract | done | \`plans/archive/plan-first.md\` |`,
     '',
     '## Execution Log',
     '',

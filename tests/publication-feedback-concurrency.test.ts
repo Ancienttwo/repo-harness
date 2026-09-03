@@ -19,7 +19,6 @@ import {
   beginLeaseCompletionRecord,
   bindLeaseRecord,
   buildLeaseOwnerRecord,
-  deriveTaskId,
   deriveTaskRevision,
   enterReviewingLeaseRecord,
 } from '../src/core/state/coordination-identity';
@@ -43,6 +42,7 @@ import { writePublicationReceiptCache } from '../src/effects/publication/publica
 import { resolveRepoIdentity } from '../src/effects/state/coordination-canonical-source';
 import { createLeaseDirectory, leaseOwnerPath, writeLeaseOwnerDurably } from '../src/effects/state/coordination-lease-store';
 import { resolveGitCommonDirectory } from '../src/effects/git/common-directory';
+import { fixtureTaskId } from './helpers/sprint-fixture';
 
 const roots: string[] = [];
 const CLAIM = 'claim-feedback-concurrency';
@@ -74,16 +74,16 @@ function fixture(): Fixture {
   git(root, 'config', 'user.email', 'feedback@test.invalid');
   mkdirSync(join(root, 'plans', 'sprints'), { recursive: true });
   writeFileSync(join(root, SPRINT), [
-    '# Sprint: feedback', '', '## Backlog', '',
-    '| # | Status | Task | Mode | Acceptance | Plan |',
-    '|---|--------|------|------|------------|------|',
-    `| 1 | [ ] | ${TASK} | contract | provider feedback passes | (pending) |`, '',
+    '# Sprint: feedback', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+    '|---|----|--------|------|------|------------|------|',
+    `| 1 | ${fixtureTaskId(`${TASK}`)} | [ ] | ${TASK} | contract | provider feedback passes | (pending) |`, '',
   ].join('\n'));
   writeFileSync(join(root, 'README.md'), 'base\n');
   git(root, 'add', '.'); git(root, 'commit', '-m', 'base');
   const repoId = resolveRepoIdentity(root);
-  const taskId = deriveTaskId({ repoIdentity: repoId, sprintPath: SPRINT, taskCell: TASK });
-  const taskRevision = deriveTaskRevision({ taskId, modeCell: 'contract', acceptanceCell: 'provider feedback passes' });
+  const taskId = fixtureTaskId(TASK);
+  const taskRevision = deriveTaskRevision({ taskCell: TASK, taskId, modeCell: 'contract', acceptanceCell: 'provider feedback passes' });
   git(root, 'switch', '-c', 'codex/feedback');
   writeFileSync(join(root, 'feature.txt'), 'feedback\n');
   git(root, 'add', '.'); git(root, 'commit', '-m', 'feature');

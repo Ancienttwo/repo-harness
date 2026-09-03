@@ -19,6 +19,7 @@ import { join } from "path";
 import { spawn, spawnSync } from "child_process";
 import { ROOT_CAUSE_FIXTURE_CASES } from "./fixtures/root-cause/expected-results";
 import { defaultPolicy } from "../src/core/adoption/standard-plan";
+import { fixtureTaskId } from './helpers/sprint-fixture';
 
 const ROOT = join(import.meta.dir, "..");
 const HELPER_DIR = join(ROOT, "assets/templates/helpers");
@@ -6064,12 +6065,13 @@ describe("Workflow helper scripts", () => {
           "# Sprint: Alpha",
           "",
           "> **Status**: Executing",
+          "> **Backlog Schema**: 2",
           "",
           "## Backlog",
           "",
-          "| # | Status | Task | Mode | Acceptance | Plan |",
-          "|---:|:---:|---|---|---|---|",
-          "| 1 | [ ] | Alpha handoff | contract | handoff includes active artifacts | `plans/plan-20260327-2200-alpha.md` |",
+          "| # | ID | Status | Task | Mode | Acceptance | Plan |",
+          "|---:|----|:---:|---|---|---|---|",
+          `| 1 | ${fixtureTaskId('Alpha handoff')} | [ ] | Alpha handoff | contract | handoff includes active artifacts | \`plans/plan-20260327-2200-alpha.md\` |`,
           "",
         ].join("\n")
       );

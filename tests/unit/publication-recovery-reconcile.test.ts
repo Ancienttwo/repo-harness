@@ -19,7 +19,6 @@ import {
   beginLeaseCompletionRecord,
   bindLeaseRecord,
   buildLeaseOwnerRecord,
-  deriveTaskId,
   deriveTaskRevision,
   enterReviewingLeaseRecord,
 } from '../../src/core/state/coordination-identity';
@@ -29,6 +28,7 @@ import { resolveRepoIdentity } from '../../src/effects/state/coordination-canoni
 import { createLeaseDirectory, leaseOwnerPath, readLease, writeLeaseOwnerDurably } from '../../src/effects/state/coordination-lease-store';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { publicationPointerFromReceipt } from '../../src/core/publication/publication-lifecycle';
+import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const SPRINT_PATH = 'plans/sprints/reconcile.sprint.md';
 const TASK = 'reconcile publication';
@@ -54,10 +54,10 @@ interface Fixture {
 function writeSprint(root: string, status: '[ ]' | '[x]'): void {
   mkdirSync(join(root, 'plans/sprints'), { recursive: true });
   writeFileSync(join(root, SPRINT_PATH), [
-    '# Sprint: reconcile', '', '## Backlog', '',
-    '| # | Status | Task | Mode | Acceptance | Plan |',
-    '|---|--------|------|------|------------|------|',
-    `| 1 | ${status} | ${TASK} | contract | reconcile tests | (pending) |`, '',
+    '# Sprint: reconcile', '', '> **Backlog Schema**: 2', '', '## Backlog', '',
+    '| # | ID | Status | Task | Mode | Acceptance | Plan |',
+    '|---|----|--------|------|------|------------|------|',
+    `| 1 | ${fixtureTaskId(`${TASK}`)} | ${status} | ${TASK} | contract | reconcile tests | (pending) |`, '',
   ].join('\n'));
 }
 
@@ -85,8 +85,8 @@ function installFixture(options: FixtureOptions = {}): Fixture {
   git(root, 'push', 'origin', 'main');
 
   const repoIdentity = resolveRepoIdentity(root);
-  const taskId = deriveTaskId({ repoIdentity, sprintPath: SPRINT_PATH, taskCell: TASK });
-  const revision = deriveTaskRevision({ taskId, modeCell: 'contract', acceptanceCell: 'reconcile tests' });
+  const taskId = fixtureTaskId(TASK);
+  const revision = deriveTaskRevision({ taskCell: TASK, taskId, modeCell: 'contract', acceptanceCell: 'reconcile tests' });
   git(root, 'switch', '-c', 'codex/reconcile');
   writeFileSync(join(root, 'feature.txt'), 'published\n');
   git(root, 'add', 'feature.txt'); git(root, 'commit', '-m', 'feature');

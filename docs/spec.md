@@ -179,6 +179,12 @@ AcceptanceReceipt field.
   promoted to work-package level because it needs its own merge, rollback, or
   verification boundary, rather than staying a checklist row in a sprint
   backlog or active plan.
+- **Sprint task identity**: The `ID` cell of a backlog schema 2 row. It is a
+  persisted 64-hex value read verbatim as `task_id`, never derived from the Task
+  cell text, a slug, or the row index, so editing a Task title is a rename that
+  keeps every Lease, claim-scoped message, Work Graph mapping, and
+  external-source binding attached. `task_revision` still hashes the Task, Mode,
+  and Acceptance cells, so the same edit drifts stale offers and claims.
 - **Task contract**: The authoritative delegation brief in
   `tasks/contracts/*.contract.md` that fixes allowed paths, exit criteria, and
   scope for one execution slice; an implementer works from the contract, not
