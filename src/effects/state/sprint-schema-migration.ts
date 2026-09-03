@@ -41,7 +41,7 @@ import {
   resolveRepoIdentity,
 } from './coordination-canonical-source';
 import { repoPath } from './collect-state-inputs';
-import { readLease } from './coordination-lease-store';
+import { readLease, withBacklogLock, withTaskLock } from './coordination-lease-store';
 
 export interface MigrateSprintSchemaOptions {
   /** Repo-relative canonical sprint path. */
@@ -67,6 +67,13 @@ export interface MigrationFileSystem {
   readonly removeFile: (absolutePath: string) => void;
   /** Remove a directory only when it is empty; a no-op otherwise. */
   readonly removeDirectoryIfEmpty: (absolutePath: string) => void;
+  /**
+   * Create a file only if it does not exist, in one syscall (`O_CREAT|O_EXCL`).
+   * Throws `EEXIST` when it already does. A check-then-write pair cannot make
+   * "never overwrite somebody else's receipt" true: two migrations can both
+   * observe the absence and then both write.
+   */
+  readonly createExclusive: (absolutePath: string, text: string) => void;
 }
 
 export const nodeMigrationFileSystem: MigrationFileSystem = Object.freeze({
@@ -75,6 +82,9 @@ export const nodeMigrationFileSystem: MigrationFileSystem = Object.freeze({
   writeText: (absolutePath: string, text: string) => { writeFileSync(absolutePath, text, 'utf-8'); },
   makeDirectory: (absolutePath: string) => { mkdirSync(absolutePath, { recursive: true }); },
   removeFile: (absolutePath: string) => { rmSync(absolutePath, { force: true }); },
+  createExclusive: (absolutePath: string, text: string) => {
+    writeFileSync(absolutePath, text, { encoding: 'utf-8', flag: 'wx' });
+  },
   removeDirectoryIfEmpty: (absolutePath: string) => {
     // `rmdir` fails on a non-empty directory, which is exactly the guard
     // wanted: a rollback must never take a directory somebody else filled.
@@ -96,6 +106,14 @@ export interface MigrateSprintSchemaDependencies {
   readonly readFileAtCommit: typeof readCanonicalFileAtCommit;
   readonly readLease: typeof readLease;
   /**
+   * The shared backlog lock and the per-task locks, injected so the migration
+   * proves its preconditions and writes inside one coordination boundary. They
+   * are the same locks `sprint-backlog.sh` and every ownership verb take, so a
+   * concurrent `complete-task` cannot land between the proof and the write.
+   */
+  readonly withBacklogLock: typeof withBacklogLock;
+  readonly withTaskLock: typeof withTaskLock;
+  /**
    * The pure rewrite, injected like every other collaborator. It is the only
    * seam a test can use to force a *post-write* validation failure, which is
    * the one path where "refuse" has to also mean "undo"; nothing else in the
@@ -113,6 +131,8 @@ export function processMigrationDependencies(repoRoot: string): MigrateSprintSch
     readCanonicalSprint,
     readFileAtCommit: readCanonicalFileAtCommit,
     readLease,
+    withBacklogLock,
+    withTaskLock,
     rewriteSprint: rewriteSprintToSchemaV2,
     rewriteWorkGraph: rewriteWorkGraphToTaskId,
     fs: nodeMigrationFileSystem,
@@ -135,6 +155,28 @@ export function defaultMigrationReceiptPath(sprintPath: string): string {
   return `${sprintPath.slice(0, -'.sprint.md'.length)}.schema-migration.v1.json`;
 }
 
+/**
+ * Take the shared backlog lock and every affected row's task lock, in stable
+ * `task_id` order, then run `body`.
+ *
+ * The order matters: a fixed sort is what stops two migrations (or a migration
+ * and an ownership verb) from deadlocking by taking the same two locks in
+ * opposite orders. The backlog lock is the one `sprint-backlog.sh` takes for
+ * `complete-task`, so holding it is what makes "prove, then write" a single
+ * boundary rather than two observations with a window between them.
+ */
+function withMigrationLocks<T>(
+  deps: MigrateSprintSchemaDependencies,
+  taskIds: readonly string[],
+  body: () => T,
+): T {
+  const ordered = [...new Set(taskIds)].sort();
+  const next = (index: number): T => (index >= ordered.length
+    ? body()
+    : deps.withTaskLock(deps.repoRoot, ordered[index]!, () => next(index + 1)));
+  return deps.withBacklogLock(deps.repoRoot, () => next(0));
+}
+
 export function migrateSprintSchemaCommand(
   options: MigrateSprintSchemaOptions,
   deps: MigrateSprintSchemaDependencies,
@@ -142,284 +184,327 @@ export function migrateSprintSchemaCommand(
   const { repoRoot } = deps;
   const sprintPath = options.sprint;
 
-  const canonical = deps.readCanonicalSprint(repoRoot, {
-    targetRef: options.targetRef,
-    sprintPath,
-  });
-  if (!canonical.ok) return refuse(canonical.error);
-
-  // The receipt target is resolved and refused *before* anything is written, so
-  // the rollback below never has to decide whether a pre-existing file was its
-  // own. `repoPath` is the same containment check every other state write uses.
+  // The receipt target is resolved before anything else so a malformed path
+  // fails without touching the coordination plane. `repoPath` is the same
+  // containment check every other state write uses.
   const receiptPath = options.receipt ?? defaultMigrationReceiptPath(sprintPath);
   let receiptAbsolute: string;
   try {
     receiptAbsolute = repoPath(repoRoot, receiptPath);
-  } catch (error) {
+  } catch {
     return refuse(`migration receipt path is not a safe repo-relative path: ${receiptPath}`);
-  }
-  if (deps.fs.exists(receiptAbsolute)) {
-    return refuse(`migration receipt ${receiptPath} already exists; this migration is one-shot and will not overwrite it`);
   }
 
   const worktreeSprint = join(repoRoot, sprintPath);
+  const carrierPath = schedulingCarrierPath(sprintPath);
+  const worktreeCarrier = join(repoRoot, carrierPath);
+
+  // An unlocked first read, used only to learn *which* task locks to take. It
+  // proves nothing: everything below is re-read and re-proved inside the locks,
+  // and a row set that moved in between is refused rather than migrated.
   if (!deps.fs.exists(worktreeSprint)) {
     return refuse(`canonical sprint ${sprintPath} is absent from the working tree`);
   }
-  const beforeBytes = deps.fs.readText(worktreeSprint);
-  // The ids are derived from the canonical bytes but written into the working
-  // tree file. If those differ, the migration would persist identities that do
-  // not belong to the text it is editing.
-  if (beforeBytes !== canonical.text) {
-    return refuse(
-      `working tree ${sprintPath} differs from ${options.targetRef} (${canonical.commit}); commit or reset it before migrating`,
-    );
-  }
-
-  const legacy = readLegacySprint({
+  const survey = readLegacySprint({
     repoIdentity: deps.repoIdentity(repoRoot),
     sprintPath,
-    sprintText: canonical.text,
+    sprintText: deps.fs.readText(worktreeSprint),
   });
-  if (!legacy.ok) return refuse(legacy.error);
+  if (!survey.ok) return refuse(survey.error);
+  const surveyedIds = survey.rows.map((entry) => entry.legacy_task_id);
 
-  const held = legacy.rows
-    .map((entry) => ({ entry, lease: deps.readLease(repoRoot, entry.legacy_task_id) }))
-    .filter(({ lease }) => lease.classification !== 'available'
-      && !(lease.record !== null && lease.record.state === 'released'));
-  if (held.length > 0) {
-    return refuse([
-      `${held.length} backlog row(s) still hold a non-released lease; release or reconcile them before migrating:`,
-      ...held.map(({ entry, lease }) => `  row ${entry.row.index} task_id=${entry.legacy_task_id} lease=${lease.classification}`),
-    ].join('\n'));
-  }
+  return withMigrationLocks(deps, surveyedIds, () => {
+    const canonical = deps.readCanonicalSprint(repoRoot, {
+      targetRef: options.targetRef,
+      sprintPath,
+    });
+    if (!canonical.ok) return refuse(canonical.error);
 
-  const idsByRowIndex = new Map(legacy.rows.map((entry) => [entry.row.index, entry.legacy_task_id]));
-  const idsByTaskCell = new Map(legacy.rows.map((entry) => [entry.row.task, entry.legacy_task_id]));
+    if (deps.fs.exists(receiptAbsolute)) {
+      return refuse(`migration receipt ${receiptPath} already exists; this migration is one-shot and will not overwrite it`);
+    }
 
-  let afterBytes: string;
-  try {
-    afterBytes = deps.rewriteSprint({ sprintText: canonical.text, idsByRowIndex });
-  } catch (error) {
-    if (error instanceof SprintSchemaMigrationError) return refuse(error.message);
-    throw error;
-  }
-
-  // The carrier is a sibling of the sprint on the same commit, so it is read
-  // there and the working tree must match it exactly -- the same rule the
-  // sprint itself obeys. A dirty, deleted, or stale carrier would otherwise be
-  // migrated into a receipt that claims to bind this commit's bytes.
-  const carrierPath = schedulingCarrierPath(sprintPath);
-  const worktreeCarrier = join(repoRoot, carrierPath);
-  const committedCarrier = deps.readFileAtCommit(repoRoot, canonical.commit, carrierPath);
-  const carrierInWorktree = deps.fs.exists(worktreeCarrier);
-  if (committedCarrier === null && carrierInWorktree) {
-    return refuse(`work graph ${carrierPath} exists in the working tree but not at ${options.targetRef} (${canonical.commit})`);
-  }
-  if (committedCarrier !== null && !carrierInWorktree) {
-    return refuse(`work graph ${carrierPath} exists at ${options.targetRef} (${canonical.commit}) but not in the working tree`);
-  }
-  let carrierBefore: string | null = null;
-  let carrierAfter: string | null = null;
-  if (committedCarrier !== null) {
-    carrierBefore = deps.fs.readText(worktreeCarrier);
-    if (carrierBefore !== committedCarrier) {
+    if (!deps.fs.exists(worktreeSprint)) {
+      return refuse(`canonical sprint ${sprintPath} is absent from the working tree`);
+    }
+    const beforeBytes = deps.fs.readText(worktreeSprint);
+    // The ids are derived from the canonical bytes but written into the working
+    // tree file. If those differ, the migration would persist identities that do
+    // not belong to the text it is editing.
+    if (beforeBytes !== canonical.text) {
       return refuse(
-        `working tree ${carrierPath} differs from ${options.targetRef} (${canonical.commit}); commit or reset it before migrating`,
+        `working tree ${sprintPath} differs from ${options.targetRef} (${canonical.commit}); commit or reset it before migrating`,
       );
     }
+
+    const legacy = readLegacySprint({
+      repoIdentity: deps.repoIdentity(repoRoot),
+      sprintPath,
+      sprintText: canonical.text,
+    });
+    if (!legacy.ok) return refuse(legacy.error);
+
+    // The locks held cover exactly the rows surveyed before taking them. A row
+    // set that changed in between is a concurrent edit this call cannot fence,
+    // so it refuses instead of migrating rows it does not hold a lock for.
+    const lockedIds = legacy.rows.map((entry) => entry.legacy_task_id);
+    if (JSON.stringify([...lockedIds].sort()) !== JSON.stringify([...surveyedIds].sort())) {
+      return refuse(
+        `canonical sprint ${sprintPath} changed while the migration was taking its locks; re-run it`,
+      );
+    }
+
+    const held = legacy.rows
+      .map((entry) => ({ entry, lease: deps.readLease(repoRoot, entry.legacy_task_id) }))
+      .filter(({ lease }) => lease.classification !== 'available'
+        && !(lease.record !== null && lease.record.state === 'released'));
+    if (held.length > 0) {
+      return refuse([
+        `${held.length} backlog row(s) still hold a non-released lease; release or reconcile them before migrating:`,
+        ...held.map(({ entry, lease }) => `  row ${entry.row.index} task_id=${entry.legacy_task_id} lease=${lease.classification}`),
+      ].join('\n'));
+    }
+
+    const idsByRowIndex = new Map(legacy.rows.map((entry) => [entry.row.index, entry.legacy_task_id]));
+    const idsByTaskCell = new Map(legacy.rows.map((entry) => [entry.row.task, entry.legacy_task_id]));
+
+    let afterBytes: string;
     try {
-      carrierAfter = deps.rewriteWorkGraph({
-        workGraphText: carrierBefore,
-        idsByTaskCell,
-        workGraphPath: carrierPath,
-        sprintPath,
-      });
+      afterBytes = deps.rewriteSprint({ sprintText: canonical.text, idsByRowIndex });
     } catch (error) {
       if (error instanceof SprintSchemaMigrationError) return refuse(error.message);
       throw error;
     }
-    // Prove the migrated carrier is a Work Graph the runtime accepts, and that
-    // it still joins onto the migrated sprint, before it reaches the disk. A
-    // carrier that only fails later would fail far from its cause.
-    try {
-      const graph = validateWorkGraph(JSON.parse(carrierAfter));
-      projectWorkGraph(graph, projectCanonicalTasks({
-        repoIdentity: deps.repoIdentity(repoRoot),
-        sprintPath,
-        sprintText: afterBytes,
-      }).map((task, index) => ({
-        task_id: task.task_id,
-        task_revision: task.task_revision,
-        task_ref: task.row.task,
-        status: task.row.status,
-        row_order: index + 1,
-      })));
-    } catch (error) {
-      if (error instanceof EngineerSchedulingError || error instanceof SprintSchemaError) {
-        return refuse(`migrated work graph ${carrierPath} is not a valid Work Graph for ${sprintPath}: ${error.message}`);
-      }
-      throw error;
-    }
-  }
 
-  /**
-   * Everything this run touches, in the order it touched it.
-   *
-   * A file entry records the bytes it had first; `null` means the file did not
-   * exist, so the rollback removes it instead of inventing content -- which is
-   * also why the receipt target is refused above when it already exists:
-   * rollback then never deletes somebody else's file. A directory entry records
-   * a directory this run created, so a rolled-back migration does not leave the
-   * empty receipt directory behind as its only trace.
-   */
-  type JournalEntry =
-    | { readonly kind: 'file'; readonly path: string; readonly before: string | null }
-    | { readonly kind: 'directory'; readonly path: string };
-  const touched: JournalEntry[] = [];
-
-  const writeTracked = (absolutePath: string, text: string): void => {
-    touched.push({
-      kind: 'file',
-      path: absolutePath,
-      before: deps.fs.exists(absolutePath) ? deps.fs.readText(absolutePath) : null,
-    });
-    deps.fs.writeText(absolutePath, text);
-  };
-
-  /**
-   * `makeDirectory` is recursive, so it can create several levels at once. Each
-   * missing ancestor is journalled from the outermost inwards, and the rollback
-   * replays in reverse, so the deepest is removed first and each `rmdir` sees an
-   * already-empty directory.
-   */
-  const makeDirectoryTracked = (absolutePath: string): void => {
-    const missing: string[] = [];
-    for (let current = absolutePath; !deps.fs.exists(current); current = dirname(current)) {
-      missing.unshift(current);
-      if (dirname(current) === current) break;
+    // The carrier is a sibling of the sprint on the same commit, so it is read
+    // there and the working tree must match it exactly -- the same rule the
+    // sprint itself obeys. A dirty, deleted, or stale carrier would otherwise be
+    // migrated into a receipt that claims to bind this commit's bytes.
+    const committedCarrier = deps.readFileAtCommit(repoRoot, canonical.commit, carrierPath);
+    const carrierInWorktree = deps.fs.exists(worktreeCarrier);
+    if (committedCarrier === null && carrierInWorktree) {
+      return refuse(`work graph ${carrierPath} exists in the working tree but not at ${options.targetRef} (${canonical.commit})`);
     }
-    for (const path of missing) touched.push({ kind: 'directory', path });
-    deps.fs.makeDirectory(absolutePath);
-  };
-
-  /**
-   * Every entry is attempted, and only then is a failure raised. Stopping at
-   * the first unrestorable file would leave the *others* migrated: the case
-   * that motivates this -- a carrier whose write failed because the path is
-   * unwritable -- is exactly the case where the sprint next to it can and must
-   * still be put back.
-   */
-  const restoreWrittenFiles = (): void => {
-    const failures: string[] = [];
-    for (const entry of [...touched].reverse()) {
-      try {
-        if (entry.kind === 'directory') deps.fs.removeDirectoryIfEmpty(entry.path);
-        else if (entry.before === null) deps.fs.removeFile(entry.path);
-        else deps.fs.writeText(entry.path, entry.before);
-      } catch (error) {
-        failures.push(`${entry.path}: ${error instanceof Error ? error.message : String(error)}`);
-      }
+    if (committedCarrier !== null && !carrierInWorktree) {
+      return refuse(`work graph ${carrierPath} exists at ${options.targetRef} (${canonical.commit}) but not in the working tree`);
     }
-    if (failures.length > 0) {
-      throw new Error(`could not restore ${failures.length} path(s): ${failures.join('; ')}`);
-    }
-  };
-  /** A refusal must always mean "the files are exactly as they were". */
-  const restoreAndRefuse = (message: string): CommandOutcome => {
-    restoreWrittenFiles();
-    return refuse(message);
-  };
-
-  try {
-    writeTracked(worktreeSprint, afterBytes);
-    if (carrierAfter !== null) writeTracked(worktreeCarrier, carrierAfter);
-
-    // Re-read proof over the bytes that actually landed.
-    const reread = deps.fs.readText(worktreeSprint);
-    if (reread !== afterBytes) {
-      return restoreAndRefuse(`migrated ${sprintPath} does not match the bytes just written`);
-    }
-    if (sprintBacklogSchema(reread) !== 2) {
-      return restoreAndRefuse(`migrated ${sprintPath} does not declare backlog schema 2`);
-    }
-    const rereadCarrier = carrierAfter === null ? null : deps.fs.readText(worktreeCarrier);
-    if (rereadCarrier !== carrierAfter) {
-      return restoreAndRefuse(`migrated work graph ${carrierPath} does not match the bytes just written`);
-    }
-    let migrated;
-    try {
-      migrated = projectCanonicalTasks({
-        repoIdentity: deps.repoIdentity(repoRoot),
-        sprintPath,
-        sprintText: reread,
-      });
-    } catch (error) {
-      if (error instanceof SprintSchemaError) {
-        return restoreAndRefuse(`migrated ${sprintPath} fails schema 2 validation: ${error.message}`);
-      }
-      throw error;
-    }
-    if (migrated.length !== legacy.rows.length) {
-      return restoreAndRefuse(`migrated ${sprintPath} has ${migrated.length} rows but schema 1 had ${legacy.rows.length}`);
-    }
-    const tasks: MigratedRowV1[] = [];
-    for (let index = 0; index < migrated.length; index += 1) {
-      const before = legacy.rows[index];
-      const after = migrated[index];
-      if (after.task_id !== before.legacy_task_id) {
-        return restoreAndRefuse(
-          `migrated row ${after.row.index} has task id ${after.task_id} but its schema 1 identity was ${before.legacy_task_id}`,
+    let carrierBefore: string | null = null;
+    let carrierAfter: string | null = null;
+    if (committedCarrier !== null) {
+      carrierBefore = deps.fs.readText(worktreeCarrier);
+      if (carrierBefore !== committedCarrier) {
+        return refuse(
+          `working tree ${carrierPath} differs from ${options.targetRef} (${canonical.commit}); commit or reset it before migrating`,
         );
       }
-      if (after.row.task !== before.row.task) {
-        return restoreAndRefuse(`migrated row ${after.row.index} Task cell changed during the rewrite`);
+      try {
+        carrierAfter = deps.rewriteWorkGraph({
+          workGraphText: carrierBefore,
+          idsByTaskCell,
+          workGraphPath: carrierPath,
+          sprintPath,
+        });
+      } catch (error) {
+        if (error instanceof SprintSchemaMigrationError) return refuse(error.message);
+        throw error;
       }
-      tasks.push({ row_index: after.row.index, task_id: after.task_id, task_cell: after.row.task });
+      // Prove the migrated carrier is a Work Graph the runtime accepts, and that
+      // it still joins onto the migrated sprint, before it reaches the disk. A
+      // carrier that only fails later would fail far from its cause.
+      try {
+        const graph = validateWorkGraph(JSON.parse(carrierAfter));
+        projectWorkGraph(graph, projectCanonicalTasks({
+          repoIdentity: deps.repoIdentity(repoRoot),
+          sprintPath,
+          sprintText: afterBytes,
+        }).map((task, index) => ({
+          task_id: task.task_id,
+          task_revision: task.task_revision,
+          task_ref: task.row.task,
+          status: task.row.status,
+          row_order: index + 1,
+        })));
+      } catch (error) {
+        if (error instanceof EngineerSchedulingError || error instanceof SprintSchemaError) {
+          return refuse(`migrated work graph ${carrierPath} is not a valid Work Graph for ${sprintPath}: ${error.message}`);
+        }
+        throw error;
+      }
     }
 
-    // Every "after" digest is taken from the bytes just re-read off disk, not
-    // from the in-memory rewrite: a receipt that hashed the intention rather
-    // than the result would prove nothing about the file it names.
-    const receipt: SprintSchemaMigrationReceiptV1 = {
-      protocol: SPRINT_SCHEMA_MIGRATION_PROTOCOL,
-      kind: SPRINT_SCHEMA_MIGRATION_KIND,
-      from_schema: 1,
-      to_schema: 2,
-      sprint_path: sprintPath,
-      target_ref: options.targetRef,
-      target_commit: canonical.commit,
-      sprint_sha256_before: sha256(beforeBytes),
-      sprint_sha256_after: sha256(reread),
-      work_graph_path: carrierBefore === null ? null : carrierPath,
-      work_graph_sha256_before: carrierBefore === null ? null : sha256(carrierBefore),
-      work_graph_sha256_after: rereadCarrier === null ? null : sha256(rereadCarrier),
-      tasks: Object.freeze(tasks),
+    /**
+     * Everything this run touches, in the order it touched it.
+     *
+     * A file entry records the bytes it had first; `null` means the file did not
+     * exist, so the rollback removes it instead of inventing content. A
+     * directory entry records a directory this run created, so a rolled-back
+     * migration does not leave the empty receipt directory behind as its only
+     * trace. The receipt is only ever journalled when this run created it, so a
+     * rollback can never delete a competitor's file.
+     */
+    type JournalEntry =
+      | { readonly kind: 'file'; readonly path: string; readonly before: string | null }
+      | { readonly kind: 'directory'; readonly path: string };
+    const touched: JournalEntry[] = [];
+
+    const writeTracked = (absolutePath: string, text: string): void => {
+      touched.push({
+        kind: 'file',
+        path: absolutePath,
+        before: deps.fs.exists(absolutePath) ? deps.fs.readText(absolutePath) : null,
+      });
+      deps.fs.writeText(absolutePath, text);
     };
 
-    makeDirectoryTracked(dirname(receiptAbsolute));
-    writeTracked(receiptAbsolute, `${JSON.stringify(receipt, null, 2)}\n`);
-
-    return {
-      exitCode: 0,
-      stdout: `${JSON.stringify({ ok: true, receipt_path: receiptPath, receipt })}\n`,
-      stderr: '',
+    /**
+     * `makeDirectory` is recursive, so it can create several levels at once. Each
+     * missing ancestor is journalled from the outermost inwards, and the rollback
+     * replays in reverse, so the deepest is removed first and each `rmdir` sees an
+     * already-empty directory.
+     */
+    const makeDirectoryTracked = (absolutePath: string): void => {
+      const missing: string[] = [];
+      for (let current = absolutePath; !deps.fs.exists(current); current = dirname(current)) {
+        missing.unshift(current);
+        if (dirname(current) === current) break;
+      }
+      for (const path of missing) touched.push({ kind: 'directory', path });
+      deps.fs.makeDirectory(absolutePath);
     };
-  } catch (error) {
-    // An unexpected throw is not a licence to leave the tree half migrated.
-    // The restore runs in its own try so that a restore failure surfaces
-    // instead of being swallowed, and so that it names the original cause
-    // rather than replacing it silently.
-    try {
+
+    /**
+     * Every entry is attempted, and only then is a failure raised. Stopping at
+     * the first unrestorable file would leave the *others* migrated: the case
+     * that motivates this -- a carrier whose write failed because the path is
+     * unwritable -- is exactly the case where the sprint next to it can and must
+     * still be put back.
+     */
+    const restoreWrittenFiles = (): void => {
+      const failures: string[] = [];
+      for (const entry of [...touched].reverse()) {
+        try {
+          if (entry.kind === 'directory') deps.fs.removeDirectoryIfEmpty(entry.path);
+          else if (entry.before === null) deps.fs.removeFile(entry.path);
+          else deps.fs.writeText(entry.path, entry.before);
+        } catch (error) {
+          failures.push(`${entry.path}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      if (failures.length > 0) {
+        throw new Error(`could not restore ${failures.length} path(s): ${failures.join('; ')}`);
+      }
+    };
+    /** A refusal must always mean "the files are exactly as they were". */
+    const restoreAndRefuse = (message: string): CommandOutcome => {
       restoreWrittenFiles();
-    } catch (restoreError) {
-      throw new Error(
-        `sprint migrate-schema failed and could not restore ${sprintPath}: `
-        + `${restoreError instanceof Error ? restoreError.message : String(restoreError)} `
-        + `(original failure: ${error instanceof Error ? error.message : String(error)})`,
-        { cause: error },
-      );
+      return refuse(message);
+    };
+
+    try {
+      writeTracked(worktreeSprint, afterBytes);
+      if (carrierAfter !== null) writeTracked(worktreeCarrier, carrierAfter);
+
+      // Re-read proof over the bytes that actually landed.
+      const reread = deps.fs.readText(worktreeSprint);
+      if (reread !== afterBytes) {
+        return restoreAndRefuse(`migrated ${sprintPath} does not match the bytes just written`);
+      }
+      if (sprintBacklogSchema(reread) !== 2) {
+        return restoreAndRefuse(`migrated ${sprintPath} does not declare backlog schema 2`);
+      }
+      const rereadCarrier = carrierAfter === null ? null : deps.fs.readText(worktreeCarrier);
+      if (rereadCarrier !== carrierAfter) {
+        return restoreAndRefuse(`migrated work graph ${carrierPath} does not match the bytes just written`);
+      }
+      let migrated;
+      try {
+        migrated = projectCanonicalTasks({
+          repoIdentity: deps.repoIdentity(repoRoot),
+          sprintPath,
+          sprintText: reread,
+        });
+      } catch (error) {
+        if (error instanceof SprintSchemaError) {
+          return restoreAndRefuse(`migrated ${sprintPath} fails schema 2 validation: ${error.message}`);
+        }
+        throw error;
+      }
+      if (migrated.length !== legacy.rows.length) {
+        return restoreAndRefuse(`migrated ${sprintPath} has ${migrated.length} rows but schema 1 had ${legacy.rows.length}`);
+      }
+      const tasks: MigratedRowV1[] = [];
+      for (let index = 0; index < migrated.length; index += 1) {
+        const before = legacy.rows[index]!;
+        const after = migrated[index]!;
+        if (after.task_id !== before.legacy_task_id) {
+          return restoreAndRefuse(
+            `migrated row ${after.row.index} has task id ${after.task_id} but its schema 1 identity was ${before.legacy_task_id}`,
+          );
+        }
+        if (after.row.task !== before.row.task) {
+          return restoreAndRefuse(`migrated row ${after.row.index} Task cell changed during the rewrite`);
+        }
+        tasks.push({ row_index: after.row.index, task_id: after.task_id, task_cell: after.row.task });
+      }
+
+      // Every "after" digest is taken from the bytes just re-read off disk, not
+      // from the in-memory rewrite: a receipt that hashed the intention rather
+      // than the result would prove nothing about the file it names.
+      const receipt: SprintSchemaMigrationReceiptV1 = {
+        protocol: SPRINT_SCHEMA_MIGRATION_PROTOCOL,
+        kind: SPRINT_SCHEMA_MIGRATION_KIND,
+        from_schema: 1,
+        to_schema: 2,
+        sprint_path: sprintPath,
+        target_ref: options.targetRef,
+        target_commit: canonical.commit,
+        sprint_sha256_before: sha256(beforeBytes),
+        sprint_sha256_after: sha256(reread),
+        work_graph_path: carrierBefore === null ? null : carrierPath,
+        work_graph_sha256_before: carrierBefore === null ? null : sha256(carrierBefore),
+        work_graph_sha256_after: rereadCarrier === null ? null : sha256(rereadCarrier),
+        tasks: Object.freeze(tasks),
+      };
+
+      makeDirectoryTracked(dirname(receiptAbsolute));
+      // `O_CREAT|O_EXCL`, not check-then-write: two migrations racing for the
+      // same receipt path both observe its absence, and only the syscall can
+      // decide which one created it. The loser rolls its own writes back and
+      // never touches the winner's file, which is why the receipt is journalled
+      // only after the exclusive create returned.
+      try {
+        deps.fs.createExclusive(receiptAbsolute, `${JSON.stringify(receipt, null, 2)}\n`);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+          return restoreAndRefuse(
+            `migration receipt ${receiptPath} was created by another run while this one was writing; this migration is one-shot and will not overwrite it`,
+          );
+        }
+        throw error;
+      }
+      touched.push({ kind: 'file', path: receiptAbsolute, before: null });
+
+      return {
+        exitCode: 0,
+        stdout: `${JSON.stringify({ ok: true, receipt_path: receiptPath, receipt })}\n`,
+        stderr: '',
+      };
+    } catch (error) {
+      // An unexpected throw is not a licence to leave the tree half migrated.
+      // The restore runs in its own try so that a restore failure surfaces
+      // instead of being swallowed, and so that it names the original cause
+      // rather than replacing it silently.
+      try {
+        restoreWrittenFiles();
+      } catch (restoreError) {
+        throw new Error(
+          `sprint migrate-schema failed and could not restore ${sprintPath}: `
+          + `${restoreError instanceof Error ? restoreError.message : String(restoreError)} `
+          + `(original failure: ${error instanceof Error ? error.message : String(error)})`,
+          { cause: error },
+        );
+      }
+      throw error;
     }
-    throw error;
-  }
+  });
 }

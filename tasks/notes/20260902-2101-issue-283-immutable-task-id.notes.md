@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260902-2101-issue-283-immutable-task-id.review.md
 > **Last Updated**: 2026-09-02 21:01
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:b23299024bd8ac70afff7365e800e3a643c15a6b16870008401ef7e9a8e23b59`
+> **Substantive Change SHA256**: `sha256:7e3a7ab3b47dfd5aba6206d94ff081af56cf0cd8b96de8b496fad15665ca6a93`
 
 ## Design Decisions
 
@@ -144,6 +144,38 @@
   `inventedTaskId()` helper, because schema 2 removes the product function that
   turned text into an identity. That helper is labelled in the file as something
   no `src/` code may do.
+- **Claim tokens are located by identity, not by Task text.** The token file is
+  `<task_id>.claim` and carries its own `task_id`, but `find_claim_token()` in
+  `sprint-backlog.sh` scanned every token and matched the `sprint` and `task`
+  fields against the Task cell. A renamed row therefore reported "this tree
+  holds no claim token": the completion gate refused a row the tree really
+  owned, and the release that follows completion silently released nothing --
+  the exact identity-from-display-text defect this contract removes, still alive
+  in the shell after the TypeScript side moved. It now opens
+  `${task_id}.claim` directly and verifies the token carries the identity its
+  filename claims. `release_task_lease()` reuses the id the completion gate
+  already resolved, and short-circuits when this tree holds no token at all so
+  the zero-coordination flow still never reaches the CLI. The two other `.claim`
+  scanners (`contract-worktree.sh`, `ship-worktrees.sh`) were already
+  identity-based -- they take the single token in the worktree and read
+  `task_id` out of it -- so the sweep changed nothing there.
+- **Precondition proof and write are one coordination boundary.** The migration
+  used to prove the live-lease, sprint-bytes and carrier-bytes preconditions
+  outside any lock, so a `complete-task` holding the shared backlog lock could
+  flip a row to `[x]` between the proof and the write and have it overwritten.
+  It now surveys the row set unlocked (only to learn *which* task locks to
+  take), then takes the shared backlog lock plus every affected row's task lock
+  in sorted `task_id` order and re-proves everything inside: canonical read,
+  receipt absence, sprint bytes, the row set itself, lease state, and both
+  carrier byte comparisons. A row set that moved while the locks were being
+  taken is refused rather than migrated, because the locks held would not cover
+  the new rows. The sort is what stops two callers deadlocking by pairing the
+  same locks in opposite orders.
+- **The receipt is created with `O_CREAT|O_EXCL`.** "Check then write" cannot
+  make "never overwrite somebody else's receipt" true: two migrations both
+  observe the absence and both write. The create is now one syscall, the receipt
+  is journalled only after it returns, and an `EEXIST` rolls this run's own
+  writes back and leaves the winner's bytes untouched.
 - **A live sprint may not be schema 1.** `sprint_ready_error()` is only asked
   about Approved/Executing sprints, and it now requires exactly one schema-2
   declaration there, naming `sprint migrate-schema` when it is missing. Schema 1
@@ -230,15 +262,21 @@
   which now names this consumer in the `tasks/todos.md` row. Guarded by four
   cases in `tests/coordination-lease-store.test.ts`; pre-fix red at
   `/tmp/283-prefix-reconcile.log` (`PRE_FIX_EXIT=1`, all four).
-- **The repo's own sprint stays schema 1.**
+- **Both tracked sprints are schema 2 now; the succession sprint took a
+  recovery step to get there.** The first migration attempt on
   `plans/sprints/20260828-2321-collaborative-work-exchange-agent-succession.sprint.md`
-  could not be migrated: row 10 still holds a stranded non-released lease in
-  state `completing`, and refusing a live lease is a contract requirement the
-  migration must not bypass (releasing or stealing it is explicitly forbidden).
-  The refusal is real evidence that the gate works on live state. The sprint is
-  complete (all rows `[x]`), no active-sprint marker points at it, and no
-  identity-minting path reads it, so it stays schema 1 read-only. The blocker and
-  the v1-parser removal trigger are recorded in `tasks/todos.md`.
+  refused, because row 10 still held a stranded non-released lease in state
+  `completing` and refusing a live lease is a contract requirement the migration
+  must not bypass. That refusal was real evidence the gate works on live state.
+  Under explicit operator authorisation the lease was then cleared through
+  `sprint reconcile` -- which proved row 10 was `[x]` at `main` through the
+  bounded schema 1 recovery window described above, released it, and mutated
+  nothing else -- and the sprint was migrated in `772cc059`. The campaign sprint
+  `plans/sprints/20260902-2238-gpt-pro-seeded-repair-campaign.sprint.md`
+  followed in `ed1a01de` once its owner released every lease (all fifteen rows
+  classified `available`/`none` before the migration ran). The v1-parser removal
+  trigger stays recorded in `tasks/todos.md`; what it now waits on is archived
+  sprints and downstream repos, not these two.
 
 - **The workflow gate criterion runs the checkout's script, not the installed
   runtime.** The contract, `CLAUDE.md`, and `AGENTS.md` previously named

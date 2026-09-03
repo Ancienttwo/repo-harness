@@ -7,7 +7,7 @@
  * bindings in the receipt are all the real ones.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
 import { createHash } from 'crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -31,9 +31,10 @@ import {
   processMigrationDependencies,
   type MigrationFileSystem,
 } from '../../src/effects/state/sprint-schema-migration';
-import { leaseOwnerPath } from '../../src/effects/state/coordination-lease-store';
+import { leaseOwnerPath, withBacklogLock } from '../../src/effects/state/coordination-lease-store';
 import { resolveRepoIdentity } from '../../src/effects/state/coordination-canonical-source';
 
+const REPO_ROOT = join(import.meta.dir, '..', '..');
 const SPRINT_PATH = 'plans/sprints/20260902-2101-migration.sprint.md';
 
 const V1_SPRINT = [
@@ -458,9 +459,12 @@ describe('migrate-schema command', () => {
     );
     expect(again.exitCode).toBe(1);
     expect(again.stderr).toContain('not backlog schema 1');
+    // A second run without --receipt refuses on the schema gate, which runs
+    // before the receipt is even considered; the receipt-exists refusal has its
+    // own test above.
     const repeated = migrateSprintSchemaCommand({ sprint: SPRINT_PATH, targetRef: 'main' }, processMigrationDependencies(root));
     expect(repeated.exitCode).toBe(1);
-    expect(repeated.stderr).toContain('already exists');
+    expect(repeated.stderr).toContain('not backlog schema 1');
   });
 
   test('a post-write validation failure restores the sprint and writes no receipt', () => {
@@ -626,6 +630,12 @@ describe('migrate-schema atomicity matrix: every filesystem step fails in turn',
       if (path === target) throw new Error(`injected write failure: ${path}`);
       real.writeText(path, text);
     },
+    // The receipt lands through `createExclusive`, so a write injection has to
+    // cover both doors or the row would pass without firing.
+    createExclusive: (path, text) => {
+      if (path === target) throw new Error(`injected write failure: ${path}`);
+      real.createExclusive(path, text);
+    },
   });
 
   /**
@@ -737,6 +747,10 @@ describe('migrate-schema atomicity matrix: every filesystem step fails in turn',
           if (path === receiptAbsolute) throw new Error('injected receipt write failure');
           real.fs.writeText(path, text);
         },
+        createExclusive: (path: string, text: string) => {
+          if (path === receiptAbsolute) throw new Error('injected receipt write failure');
+          real.fs.createExclusive(path, text);
+        },
       },
     };
     expect(() => migrateSprintSchemaCommand({ sprint: SPRINT_PATH, targetRef: 'main', receipt }, deps))
@@ -759,5 +773,182 @@ describe('migrate-schema atomicity matrix: every filesystem step fails in turn',
     expect(outcome.stderr).toBe('');
     expect(outcome.exitCode).toBe(0);
     expect(existsSync(join(root, defaultMigrationReceiptPath(SPRINT_PATH)))).toBe(true);
+  });
+});
+
+/**
+ * The migration's preconditions and its write must be one coordination
+ * boundary.
+ *
+ * Proving a live lease, the sprint bytes and the carrier bytes outside a lock
+ * and then writing is two observations with a window between them: a
+ * `complete-task` holding the shared backlog lock can flip a row to `[x]` in
+ * that window, and the migration overwrites it with the state it read before.
+ */
+describe('migrate-schema is serialized against concurrent backlog writers', () => {
+  /**
+   * The migration runs in a second *process* so the exclusion under test is the
+   * real filesystem lock rather than an in-process mock. The test process plays
+   * `complete-task`: it holds the shared backlog lock, lets the child start and
+   * block on it, edits the row, and only then releases. The child must re-prove
+   * its preconditions after it finally gets the lock.
+   */
+  function migrationChildSource(root: string, signals: string): string {
+    return [
+      `import { writeFileSync } from 'fs';`,
+      `import { migrateSprintSchemaCommand, processMigrationDependencies } from '${join(REPO_ROOT, 'src/effects/state/sprint-schema-migration')}';`,
+      `writeFileSync(${JSON.stringify(join(signals, 'started'))}, 'go');`,
+      `const outcome = migrateSprintSchemaCommand(`,
+      `  { sprint: ${JSON.stringify(SPRINT_PATH)}, targetRef: 'main' },`,
+      `  processMigrationDependencies(${JSON.stringify(root)}),`,
+      `);`,
+      `writeFileSync(${JSON.stringify(join(signals, 'outcome.json'))}, JSON.stringify(outcome));`,
+    ].join('\n');
+  }
+
+  function waitForFile(path: string, label: string): void {
+    const deadline = Date.now() + 30_000;
+    while (!existsSync(path)) {
+      if (Date.now() > deadline) throw new Error(`timed out waiting for ${label}`);
+      Bun.sleepSync(10);
+    }
+  }
+
+  test('a complete-task holding the backlog lock is not overwritten: the migration refuses', () => {
+    const root = repoFixture(V1_SPRINT);
+    const signals = join(root, '.signals');
+    mkdirSync(signals, { recursive: true });
+    const childPath = join(root, 'migration-child.ts');
+    writeFileSync(childPath, migrationChildSource(root, signals));
+    const sprintAbsolute = join(root, SPRINT_PATH);
+
+    const child = spawn('bun', [childPath], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+    try {
+      // The backlog lock is the same one `sprint-backlog.sh complete-task`
+      // takes, so holding it here is holding it against the real verb.
+      withBacklogLock(root, () => {
+        waitForFile(join(signals, 'started'), 'the migration child to start');
+        // Give the child time to reach the lock and block on it.
+        Bun.sleepSync(300);
+        const before = readFileSync(sprintAbsolute, 'utf-8');
+        const after = before.replace('| 2 | [ ] | second work package', '| 2 | [x] | second work package');
+        expect(after).not.toBe(before);
+        writeFileSync(sprintAbsolute, after);
+      });
+
+      waitForFile(join(signals, 'outcome.json'), 'the migration child to finish');
+      const outcome = JSON.parse(readFileSync(join(signals, 'outcome.json'), 'utf-8')) as {
+        exitCode: number;
+        stderr: string;
+      };
+
+      // Exactly one won. The writer's edit survived, the migration refused
+      // because it re-read the bytes under the lock, and there is no torn
+      // half-migrated state and no receipt.
+      expect(outcome.exitCode).toBe(1);
+      expect(outcome.stderr).toContain('differs from main');
+      const finalBytes = readFileSync(sprintAbsolute, 'utf-8');
+      expect(finalBytes).toContain('| 2 | [x] | second work package');
+      expect(finalBytes).not.toContain('Backlog Schema');
+      expect(existsSync(join(root, defaultMigrationReceiptPath(SPRINT_PATH)))).toBe(false);
+    } finally {
+      child.kill();
+    }
+  }, 60_000);
+
+  test('the lease proof, the re-read and the write all happen inside the locks', () => {
+    // The invariant the two-process test cannot see from outside: every
+    // precondition this command trusts is re-proved while the backlog lock and
+    // the affected rows' task locks are held, so nothing it read can have moved
+    // before it wrote.
+    const root = repoFixture(V1_SPRINT);
+    const events: string[] = [];
+    const real = processMigrationDependencies(root);
+    const sprintAbsolute = join(root, SPRINT_PATH);
+
+    const outcome = migrateSprintSchemaCommand(
+      { sprint: SPRINT_PATH, targetRef: 'main' },
+      {
+        ...real,
+        withBacklogLock: (cwd, run) => {
+          events.push('backlog:enter');
+          try {
+            return real.withBacklogLock(cwd, run);
+          } finally {
+            events.push('backlog:exit');
+          }
+        },
+        withTaskLock: (cwd, taskId, run) => {
+          events.push(`task:enter:${taskId}`);
+          try {
+            return real.withTaskLock(cwd, taskId, run);
+          } finally {
+            events.push(`task:exit:${taskId}`);
+          }
+        },
+        readLease: (cwd, taskId) => {
+          events.push(`lease:${taskId}`);
+          return real.readLease(cwd, taskId);
+        },
+        fs: {
+          ...real.fs,
+          writeText: (path, text) => {
+            if (path === sprintAbsolute) events.push('write:sprint');
+            real.fs.writeText(path, text);
+          },
+        },
+      },
+    );
+    expect(outcome.stderr).toBe('');
+    expect(outcome.exitCode).toBe(0);
+
+    const backlogEnter = events.indexOf('backlog:enter');
+    const backlogExit = events.indexOf('backlog:exit');
+    const inside = (event: string) => {
+      const at = events.indexOf(event);
+      expect(at, `${event} is not inside the backlog lock`).toBeGreaterThan(backlogEnter);
+      expect(at).toBeLessThan(backlogExit);
+    };
+    inside('write:sprint');
+    for (const entry of events.filter((event) => event.startsWith('lease:'))) inside(entry);
+
+    // Every affected row's task lock is held, and they are taken in a stable
+    // sorted order so two callers cannot deadlock by pairing them differently.
+    const taskEnters = events.filter((event) => event.startsWith('task:enter:'))
+      .map((event) => event.slice('task:enter:'.length));
+    expect(taskEnters.length).toBe(2);
+    expect(taskEnters).toEqual([...taskEnters].sort());
+    for (const taskId of taskEnters) inside(`task:enter:${taskId}`);
+    for (const taskId of taskEnters) inside(`lease:${taskId}`);
+  }, 60_000);
+
+  test('two migrations racing for one receipt: the loser rolls back and leaves the winner alone', () => {
+    const root = repoFixture(V1_SPRINT);
+    const real = processMigrationDependencies(root);
+    const receiptAbsolute = join(root, defaultMigrationReceiptPath(SPRINT_PATH));
+    const sprintBefore = readFileSync(join(root, SPRINT_PATH), 'utf-8');
+
+    // The competitor lands its receipt in the window between this run's
+    // `exists` check and its own create, which is exactly what a check-then-
+    // write cannot survive.
+    const outcome = migrateSprintSchemaCommand(
+      { sprint: SPRINT_PATH, targetRef: 'main' },
+      {
+        ...real,
+        fs: {
+          ...real.fs,
+          createExclusive: (path, text) => {
+            if (path === receiptAbsolute) real.fs.writeText(path, 'a competitor got here first\n');
+            real.fs.createExclusive(path, text);
+          },
+        },
+      },
+    );
+
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.stderr).toContain('created by another run');
+    // The competitor's bytes are untouched, and this run's writes are undone.
+    expect(readFileSync(receiptAbsolute, 'utf-8')).toBe('a competitor got here first\n');
+    expect(readFileSync(join(root, SPRINT_PATH), 'utf-8')).toBe(sprintBefore);
   });
 });

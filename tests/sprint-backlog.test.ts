@@ -544,6 +544,59 @@ describe("sprint-backlog helper", () => {
     }
   }, 60_000);
 
+  test("a title edit does not orphan the lease: the claim token is found by task id", () => {
+    // The defect #283 exists to remove, in the shell layer. The claim token is
+    // named `<task_id>.claim` and carries its own `task_id`, so locating it by
+    // the Task cell text meant a renamed row reported "this tree holds no
+    // token": the gate refused a row the tree really owned, and the release
+    // that follows completion silently did nothing.
+    const cwd = tmpWorkspace("sprint-backlog-rename-token");
+    try {
+      copySprintHelpers(cwd, ["sprint-backlog.sh", "capture-plan.sh"]);
+      const sprintPath = "plans/sprints/20260610-0000-fixture-sprint.sprint.md";
+      writeActiveSprintFixture(cwd, sprintPath);
+
+      // The contract row first, released again: it is what mints the active
+      // plan marker the inline checklist capture needs.
+      const contract = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a"], cwd);
+      expect(contract.status, `${contract.stdout}\n${contract.stderr}`).toBe(0);
+      const contractClaimId = contract.stdout.match(/as claim ([^\s]+)/)?.[1] ?? "";
+      expect(run(CLI_WRAPPER, ["sprint", "release", "--claim-id", contractClaimId], cwd).status).toBe(0);
+
+      const start = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-b"], cwd);
+      expect(start.status, `${start.stdout}\n${start.stderr}`).toBe(0);
+      const claimsDir = join(cwd, ".ai/harness/sprint/claims");
+      const tokenName = readdirSync(claimsDir).filter((name) => name.endsWith(".claim"))[0]!;
+      // The token is addressed by identity, not by title.
+      expect(tokenName).toBe(`${fixtureTaskId("task-b")}.claim`);
+      const leaseDir = join(cwd, ".git/repo-harness/coordination/v1/leases", fixtureTaskId("task-b"));
+      expect(existsSync(leaseDir)).toBe(true);
+
+      // Rename the row: the persisted ID cell is untouched, only the Task text
+      // moves. Identity survives, so the tree still owns the row.
+      const before = readFileSync(join(cwd, sprintPath), "utf-8");
+      const renamed = before.replace(
+        `| ${fixtureTaskId("task-b")} | [ ] | task-b |`,
+        `| ${fixtureTaskId("task-b")} | [ ] | task-b (clarified) |`,
+      );
+      expect(renamed).not.toBe(before);
+      writeFileSync(join(cwd, sprintPath), renamed);
+      run("git", ["add", "-A"], cwd);
+      run("git", ["commit", "-q", "-m", "rename the row"], cwd);
+
+      const complete = run("bash", ["scripts/sprint-backlog.sh", "complete-task", "--task", "task-b (clarified)"], cwd);
+      expect(complete.status, `${complete.stdout}\n${complete.stderr}`).toBe(0);
+      expect(complete.stdout).toContain("Released lease for 'task-b (clarified)'");
+      // The lease really is gone, and so is the token.
+      expect(existsSync(leaseDir)).toBe(false);
+      expect(readdirSync(claimsDir)).toHaveLength(0);
+      expect(readFileSync(join(cwd, sprintPath), "utf-8"))
+        .toContain(`| 2 | ${fixtureTaskId("task-b")} | [x] | task-b (clarified) |`);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 60_000);
+
   test("a non-empty stale lock times out instead of hot-looping", () => {
     const cwd = tmpWorkspace("sprint-backlog-lock-timeout");
     try {

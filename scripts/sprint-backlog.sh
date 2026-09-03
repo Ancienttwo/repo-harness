@@ -833,24 +833,54 @@ write_claim_token() {
   fi
 }
 
-# 0 with the token path on stdout, 1 when this tree holds none, 2 when more
-# than one matches -- ambiguity fails closed instead of picking a token.
+# 0 with the token path on stdout, 1 when this tree holds none, 2 when the
+# token on disk does not carry the identity its own filename claims.
+#
+# The lookup is by identity, not by display text: the CLI names the token file
+# `<task_id>.claim` and writes `task_id` inside it, so one `[[ -f ]]` answers
+# the question exactly. It used to scan every token and match the `sprint` and
+# `task` fields against the Task cell, which meant a renamed row reported "this
+# tree holds no token" -- the tree that really owned the row was refused, and
+# the release that follows completion silently released nothing. That is the
+# identity-from-display-text defect this contract removes, and it was still
+# alive here after the TypeScript side moved.
 find_claim_token() {
-  local sprint_path="$1" task_cell="$2" dir token match=""
+  local task_id="$1" dir token
+  if [[ ! "$task_id" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "sprint-backlog: refusing to resolve a claim token for a malformed task id: $task_id" >&2
+    return 2
+  fi
   dir="$(claim_token_dir)"
   [[ -d "$dir" ]] || return 1
-  for token in "$dir"/*.claim; do
-    [[ -f "$token" ]] || continue
-    [[ "$(claim_token_field "$token" sprint)" == "$sprint_path" ]] || continue
-    [[ "$(claim_token_field "$token" task)" == "$task_cell" ]] || continue
-    if [[ -n "$match" ]]; then
-      echo "sprint-backlog: more than one claim token matches '$task_cell' in $sprint_path" >&2
-      return 2
-    fi
-    match="$token"
-  done
-  [[ -n "$match" ]] || return 1
-  printf '%s' "$match"
+  token="$dir/$task_id.claim"
+  [[ -f "$token" && ! -L "$token" ]] || return 1
+  if [[ "$(claim_token_field "$token" task_id)" != "$task_id" ]]; then
+    echo "sprint-backlog: claim token $token does not carry task id $task_id" >&2
+    return 2
+  fi
+  printf '%s' "$token"
+}
+
+# The identity the completion gate resolved for the row being completed, so the
+# release that follows does not read canonical a second time. Empty when the
+# gate returned before resolving one (no lease store, or no lease for the row).
+COMPLETION_TASK_ID=""
+
+# Resolve one backlog row's persisted task id through the CLI, which owns every
+# identity read. Prints the id on stdout.
+resolve_row_task_id() {
+  local sprint_path="$1" task_cell="$2" identity task_id
+  if ! identity="$(sprint_lease identify --task "$task_cell" --target-ref "$(coordination_target_ref)" --sprint-path "$sprint_path" 2>&1)"; then
+    printf '%s\n' "$identity" >&2
+    echo "sprint-backlog: cannot resolve the coordination identity of '$task_cell'" >&2
+    return 1
+  fi
+  task_id="$(json_string_field "$identity" task_id)"
+  if [[ -z "$task_id" ]]; then
+    echo "sprint-backlog: sprint identify returned no task id for '$task_cell'" >&2
+    return 1
+  fi
+  printf '%s' "$task_id"
 }
 
 # Read one field of a common-dir owner record. The record is written by the
@@ -913,6 +943,7 @@ assert_completion_lease_gate() {
     echo "sprint-backlog: sprint identify returned no task id for '$task_cell'" >&2
     exit 1
   fi
+  COMPLETION_TASK_ID="$task_id"
 
   lease_dir="$leases_root/$task_id"
   [[ -e "$lease_dir" || -L "$lease_dir" ]] || return 0
@@ -929,7 +960,7 @@ assert_completion_lease_gate() {
   fi
 
   set +e
-  token="$(find_claim_token "$sprint_path" "$task_cell")"
+  token="$(find_claim_token "$task_id")"
   status=$?
   set -e
   case "$status" in
@@ -954,9 +985,29 @@ assert_completion_lease_gate() {
 # caller's to delete.
 release_task_lease() {
   local sprint_path="$1" task_cell="$2"
-  local token status claim_id output
+  local token status claim_id output task_id entry held=0
+  local dir
+  dir="$(claim_token_dir)"
+  [[ -d "$dir" ]] || return 0
+  for entry in "$dir"/*.claim; do
+    if [[ -f "$entry" ]]; then
+      held=1
+      break
+    fi
+  done
+  # No token in this tree at all: nothing to release, and no reason to reach
+  # the CLI for an identity the zero-coordination flow never needs.
+  [[ "$held" -eq 1 ]] || return 0
+
+  task_id="$COMPLETION_TASK_ID"
+  if [[ -z "$task_id" ]]; then
+    if ! task_id="$(resolve_row_task_id "$sprint_path" "$task_cell")"; then
+      exit 1
+    fi
+  fi
+
   set +e
-  token="$(find_claim_token "$sprint_path" "$task_cell")"
+  token="$(find_claim_token "$task_id")"
   status=$?
   set -e
   case "$status" in
