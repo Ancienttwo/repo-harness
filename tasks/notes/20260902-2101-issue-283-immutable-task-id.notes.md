@@ -1,5 +1,7 @@
 # Implementation Notes: issue-283-immutable-task-id
 
+> **Substantive Change SHA256**: `sha256:52b7b28904beb8a7ccf762fb2717dd1cb2f07d7e4b6fc8234eac3fce3a0f3292`
+
 > **Status**: Active
 > **Plan**: plans/plan-20260902-2101-issue-283-immutable-task-id.md
 > **Contract**: tasks/contracts/20260902-2101-issue-283-immutable-task-id.contract.md
