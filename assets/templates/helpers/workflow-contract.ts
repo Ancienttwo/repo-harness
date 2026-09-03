@@ -62,6 +62,16 @@ export type WorkflowContract = {
       stubMarker: string;
     };
   };
+  cutoverClosure?: {
+    protocol: 1;
+    categories: string[];
+    dispositions: string[];
+    selectorKinds: string[];
+    errorCodes: string[];
+    authority: string;
+    projection: string;
+    evidenceKind: string;
+  };
   helpers: {
     runtimeDirectory: string;
     runtimeSource: string;
@@ -191,6 +201,22 @@ function validateWorkflowContract(value: unknown, contractPath: string): Workflo
   requireString(contract.version, "version", contractPath);
   requireString(contract.contractId, "contractId", contractPath);
   requireRecord(contract.compatibility, "compatibility", contractPath);
+
+  if (contract.cutoverClosure !== undefined) {
+    const cutover = requireRecord(contract.cutoverClosure, "cutoverClosure", contractPath);
+    if (cutover.protocol !== 1) throw new Error(`invalid workflow contract at ${contractPath}: cutoverClosure.protocol must be 1`);
+    const closedArrays: Array<[string, string[]]> = [
+    ["categories", ["old_implementation", "callers", "fallback", "tests", "docs_and_projections", "compatibility_expiry"]],
+    ["dispositions", ["removed", "migrated", "retained_with_reason", "not_applicable"]],
+    ["selectorKinds", ["path", "relation", "symbol"]],
+    ["errorCodes", ["refactor_closure_residue", "refactor_closure_incomplete", "refactor_closure_missing"]],
+  ];
+    for (const [field, expected] of closedArrays) {
+      const actual = requireStringArray(cutover[field], `cutoverClosure.${field}`, contractPath);
+      if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(`invalid workflow contract at ${contractPath}: cutoverClosure.${field} does not match protocol 1`);
+    }
+    if (requireString(cutover.authority, "cutoverClosure.authority", contractPath) !== "scripts/cutover-closure.ts" || requireString(cutover.projection, "cutoverClosure.projection", contractPath) !== "assets/templates/helpers/cutover-closure.ts" || requireString(cutover.evidenceKind, "cutoverClosure.evidenceKind", contractPath) !== "cutover_closure") throw new Error(`invalid workflow contract at ${contractPath}: cutoverClosure authority or evidence binding drifted`);
+  }
 
   const helpers = requireRecord(contract.helpers, "helpers", contractPath);
   const helperScripts = requireStringArray(helpers.scripts, "helpers.scripts", contractPath);

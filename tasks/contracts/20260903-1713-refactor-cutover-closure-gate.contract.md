@@ -3,11 +3,13 @@
 > **Status**: Active
 > **Plan**: plans/plan-20260903-1713-refactor-cutover-closure-gate.md
 > **Task Profile**: code-change
+> <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
-> **Last Updated**: 2026-09-04 00:00
+> **Last Updated**: 2026-09-04 01:19
 > **Review File**: `tasks/reviews/20260903-1713-refactor-cutover-closure-gate.review.md`
 > **Notes File**: `tasks/notes/20260903-1713-refactor-cutover-closure-gate.notes.md`
+> **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
 
@@ -19,7 +21,7 @@ Deliver the PRD Module 1 Cutover Closure evaluator, its manifest/helper projecti
 
 ## Scope
 
-- In scope: the 13 product/test files enumerated in the source plan, the three workflow artifacts, and the source plan status/task projection.
+- In scope: the 13 product/test files enumerated in the source plan and the workflow artifacts projected by this contract.
 - Out of scope: workflow activation, Task Profile changes, provider/ArchContext integration, state machine/program/board/MCP work, compatibility parsing, fallbacks, caches, migrations, and architecture projection changes.
 - Taste constraints: exactly six closure categories, `path|relation|symbol` selectors, three public error codes, exact Git-object reads, canonical bare SHA-256, and no legacy vocabulary.
 
@@ -32,7 +34,16 @@ Deliver the PRD Module 1 Cutover Closure evaluator, its manifest/helper projecti
 
 ## Falsifier
 
-Replay the handwritten closure inventory against PR #230 head `4f7cb37e0edf74a8d0b334a8a24370ac48807f86`. If exact fixed-string relation evidence cannot classify it, leave policy off/false and return the PRD to design.
+Replay the handwritten closure inventory against PR #230 head `4f7cb37e0edf74a8d0b334a8a24370ac48807f86`. A selector's declared category and disposition apply to its repository-wide exact match set: the old implementation paths and caller symbol must be absent, while `ProviderThreadEffectIntentV1` is explicitly classified under migrated docs because the candidate tree retains it only in the authoritative historical PRD. If that explicit inventory still cannot classify the head, leave policy off/false and return the PRD to design.
+
+## Root Cause Evidence
+
+Required when Task Profile is `bugfix`; leave as-is otherwise.
+
+- root_cause: one sentence naming file:line/condition (testable, not "a state issue").
+- repro: the command or UI path that reproduces the symptom.
+- regression_guard: path to a test that fails on the unfixed code and passes after the fix (must also appear under exit_criteria.tests_pass).
+- pre_fix_failure_artifact: path to a captured run of regression_guard on the UNFIXED code. Capture with `bun test <regression_guard> > <artifact> 2>&1; echo "PRE_FIX_EXIT=$?" >> <artifact>` (no pipes — pipes swallow the exit status). The gate requires a non-zero `PRE_FIX_EXIT=` line plus the regression_guard path string in the artifact (see the Root Cause Evidence Gate section in docs/reference-configs/sprint-contracts.md).
 
 ## Workflow Inventory
 
@@ -43,7 +54,7 @@ Replay the handwritten closure inventory against PR #230 head `4f7cb37e0edf74a8d
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
-- Completion gate: verify the exact subject, record review evidence, and keep activation out of this slice.
+- Completion gate: run `verify-sprint --prepare-acceptance`, record one typed AcceptanceReceipt under the frozen policy below, then run `verify-sprint`; review Markdown is projection only.
 
 ## Change Assessment
 
@@ -63,6 +74,7 @@ Replay the handwritten closure inventory against PR #230 head `4f7cb37e0edf74a8d
 allowed_paths:
   - plans/plan-20260903-1713-refactor-cutover-closure-gate.md
   - tasks/current.md
+  - tasks/todos.md
   - tasks/contracts/20260903-1713-refactor-cutover-closure-gate.contract.md
   - tasks/reviews/20260903-1713-refactor-cutover-closure-gate.review.md
   - tasks/notes/20260903-1713-refactor-cutover-closure-gate.notes.md
@@ -85,6 +97,7 @@ allowed_paths:
 
 ```yaml
 evidence_requirements:
+  # Set benchmark to required when this contract consumes the harness profile benchmark matrix.
   benchmark: not_applicable
 ```
 
@@ -149,6 +162,13 @@ exit_criteria:
     - repo-harness run check-task-workflow --strict
     - bun scripts/inspect-project-state.ts --repo . --format text
     - bun src/cli/index.ts init --repo . --dry-run
+# Optional exact-subject reuse is fail-closed and opt-in. List only deterministic
+# criteria whose inputs are fully bound by the frozen subject/toolchain context.
+# criterion_reuse:
+#   tests_pass:
+#     - path/to/deterministic.test.ts
+#   commands_succeed:
+#     - bun test --timeout 60000
 ```
 
 ## Acceptance Notes (Human Review)
@@ -159,5 +179,5 @@ exit_criteria:
 
 ## Rollback Point
 
-- Commit / checkpoint: main@ffddb51e
+- Commit / checkpoint: main@d73914fd
 - Revert strategy: revert the work-package commit; no persisted data or external state is introduced.

@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { listHelperIds, listHelpers, runHelper } from '../runtime/helper-runner';
 
 export const RUN_HELP_MAX_HELPERS = 60;
-export const RUN_HELP_MAX_LINES = 80;
+export const RUN_HELP_MAX_LINES = 81;
 
 export const RUN_HELP_GROUPS = [
   {
@@ -14,6 +14,7 @@ export const RUN_HELP_GROUPS = [
       'capture-plan',
       'plan-to-todo',
       'contract-run',
+      'cutover-closure',
       'contract-worktree',
       'sprint-backlog',
       'switch-plan',

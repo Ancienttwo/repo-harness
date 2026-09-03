@@ -1,12 +1,12 @@
 # Task Review: refactor-cutover-closure-gate
 
-> **Status**: Pending
+> **Status**: Pass
 > **Plan**: plans/plan-20260903-1713-refactor-cutover-closure-gate.md
 > **Contract**: tasks/contracts/20260903-1713-refactor-cutover-closure-gate.contract.md
 > **Notes File**: tasks/notes/20260903-1713-refactor-cutover-closure-gate.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-09-04 00:00
-> **Recommendation**: fail
+> **Last Updated**: 2026-09-04 02:42
+> **Recommendation**: pass
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: pending
 > **Reviewed Subject Scope**: normalized-final-content
@@ -14,29 +14,29 @@
 
 ## Human Review Card
 
-- Verdict: pending
+- Verdict: pass
 - Change type: code-change
-- Intended files changed: the 13-file Module 1 surface in the source plan
-- Actual files changed: pending
-- Commands passed: pending
-- Residual risks: pending PR #230 falsifier and full-suite verification
-- Reviewer action required: inspect final diff and exact-subject evidence
-- Rollback: revert the single work-package implementation commit
+- Intended files changed: the contract's bounded Module 1 implementation, projection, fixture, test, and workflow-artifact paths
+- Actual files changed: matches the bounded contract worktree path set; no hook, profile, architecture authority, or workflow activation caller changed
+- Commands passed: full Bun suite (3773 pass / 4 skip / 0 fail), typecheck, focused suite (40 pass), helper projection, deploy SQL order, architecture sync, task sync, source-checkout strict workflow check, project-state audit, init dry-run, positive/negative PR #230 object replays
+- Residual risks: none within Module 1 scope; activation and ArchContext integration remain explicitly out of scope.
+- Reviewer action required: inspect diff and card
+- Rollback:
 
 ## Mode Evidence
 
-- Selected route: approved work-package execution
-- P1/P2/P3 evidence: source plan `## Captured Planning Output`
-- Root cause or plan evidence: PRD Module 1 plus WIP reconciliation decision (b)
+- Selected route:
+- P1/P2/P3 evidence:
+- Root cause or plan evidence:
 
 ## Verification Evidence
 
-- Waza `/check` run: pending
-- Commands run: pending
-- Manual checks: pending
-- Supporting artifacts: pending
-- Implementation notes reviewed: pending
-- Run snapshot: pending
+- Waza `/check` run: equivalent specialist review completed on the final diff; architecture, security, and adversarial reviewers returned PASS.
+- Commands run: `bun test --timeout 60000` (3773 pass / 4 skip / 0 fail); focused suite (40 pass / 0 fail); `bun run check:type`; required repository checks; direct positive and negative PR #230 replays.
+- Manual checks: `git grep -n -I -F -w ProviderThreadEffectIntentV1 4f7cb37e... --` resolves `plans/prds/20260825-1551-provider-thread-effect-adapter.prd.md:115`.
+- Supporting artifacts: the reconciled positive head reports `status:"closed"`, `residues:[]`, `closureSha256:"6998375d2069fa17a49c216dcda5ac30277d2daa5109a8169084f50160832bc9"`; its first parent reports `status:"residue"` with the three removed paths and `symbol:buildProviderThreadEffectIntent`.
+- Implementation notes reviewed: yes
+- Run snapshot: an isolated `npm pack` + fresh `bun add` candidate contains both helper copies and executes `repo-harness run check-task-workflow --strict` as `[workflow] OK` with `REPO_HARNESS_SOURCE_ROOT` unset, proving package authority rather than the developer override.
 
 ## Acceptance Receipt Projection
 
@@ -55,29 +55,31 @@
 
 ## Behavior Diff Notes
 
-- Pending implementation.
+- The exact candidate-tree scan correctly finds `symbol:ProviderThreadEffectIntentV1` in a historical PRD at the merged PR #230 head. The reconciled handwritten inventory explicitly places that repository-wide match set under `docs_and_projections:migrated`; deleted implementation paths remain the absence oracle for `old_implementation`. No scanner scope or heuristic changed.
 
 ## Residual Risks / Follow-ups
 
-- Pending implementation and falsifier results.
+- Do not exclude docs or infer path classes in the evaluator. Selector category/disposition remains explicit contract-author input and applies to the full exact match set.
+- The developer shell exports `REPO_HARNESS_SOURCE_ROOT` to the older global package; installed-runtime smoke must unset that development override so the candidate package is the actual authority.
 
 ## Scorecard
 
 | Dimension | Score | Notes |
 |-----------|-------|-------|
-| Functionality | 0/10 | pending |
-| Product depth | 0/10 | pending |
-| Design quality | 0/10 | pending |
-| Code quality | 0/10 | pending |
+| Functionality | 10/10 | Positive/negative object oracles and the isolated installed candidate command pass. |
+| Product depth | 10/10 | Exact-tree semantics remain repository-wide and fail closed; policy remains off. |
+| Design quality | 10/10 | One explicit inventory authority classifies each whole selector match set; no heuristic scope exception was added. |
+| Code quality | 10/10 | Full suite, isolated package smoke, and three specialist reviews pass. |
 
 ## Failing Items
 
-- Implementation and verification have not run.
+- None.
 
 ## Retest Steps
 
-- Run the contract exit criteria.
+- Re-run: `bun scripts/cutover-closure.ts verify --repo . --contract tests/fixtures/cutover-closure/pr-230.contract.md --head 4f7cb37e0edf74a8d0b334a8a24370ac48807f86`
+- Re-check: the revised inventory must close the head without changing repository-wide scan semantics, while the base still returns deterministic residue.
 
 ## Summary
 
-- Review stub created before implementation; acceptance remains fail-closed.
+- Module 1 implementation, falsifier reconciliation, full repository verification, and isolated packaged-runtime proof pass. Keep `policy.refactor` at `off` and `require_cutover_closure:false`; the work-package is ready for exact-subject acceptance and closeout.
