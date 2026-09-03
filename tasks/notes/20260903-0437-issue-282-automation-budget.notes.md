@@ -1,5 +1,7 @@
 # Implementation Notes: issue-282-automation-budget
 
+> **Substantive Change SHA256**: `sha256:60bb7e23a89e6d786006ff37cd33cab5e9da79793be089d20649ffcba273f49c`
+
 > **Status**: Active
 > **Plan**: plans/plan-20260903-0437-issue-282-automation-budget.md
 > **Contract**: tasks/contracts/20260903-0437-issue-282-automation-budget.contract.md
