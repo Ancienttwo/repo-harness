@@ -1,6 +1,6 @@
 # runtime-harness/automation-budget 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-automation-budget" sourceDigest="sha256:4b1f6010c6b30e8f69517c86f60ef3d1e68d51c09eaef8d52d091a8058288441" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:52776e0dd73844f60e7dd8f04eddf54d15c49d6964f83fa9eb808cea5880e67e" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-automation-budget" sourceDigest="sha256:ef80f6b703842a6c19e68bdf67a289c4b6e9edb98a98bcf9182c8fe7c6c4bd06" rendererVersion="archcontext.docs-renderer/v4" outputDigest="sha256:242db864138c0ef4e61a296690722497d0eadb675199351b6d3a11239e139387" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.automation-budget`(kind `capability`)
 > **Matched Prefixes**:`src/core/automation/**`、`src/effects/automation/**`、`src/cli/commands/automation.ts`
@@ -38,7 +38,7 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`2–5` 個文件 / `2000–5000` 行
+- 規模量級:`5–10` 個文件 / `2000–5000` 行
 - 匹配前綴:`src/core/automation/**`、`src/effects/automation/**`、`src/cli/commands/automation.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 

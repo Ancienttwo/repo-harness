@@ -5,12 +5,12 @@
   "sourceDigest": "sha256:52f9a97edea7dd8b4752a71dcb115c004f8ffd442884f7f9f8f801eb333a9801",
   "provenance": {
     "schemaVersion": "archcontext.architecture-docs-projection-provenance/v1",
-    "baseHeadSha": "3e8e79cb2d693a56a49f8d69ffbbca60370cda89",
-    "worktreeDigest": "sha256:cf97d68c499e993e067dffdb3a6567ddf32ac1dca9ef4172de9ac63c4e8103ad",
-    "sourceTreeDigest": "sha256:a38b282668e04bbd44fd34140789bb59b3f4bddf520be5ea501b0793a5e0fbd3",
+    "baseHeadSha": "559c0c6afd00ebca4743f3ef514c27b8b95691e0",
+    "worktreeDigest": "sha256:fed63ba8c2ad7b636f4d6c6585856c6faa704dcef5bd583881cbfa6917848b7d",
+    "sourceTreeDigest": "sha256:68b192089ef0933f7bd86378f54c00eed1073ef2a750a5f57425536a544e469b",
     "modelDigest": "sha256:eb9837780bab79e42b4760879b719174632da5ed7e3fc64d941e481c16972c23",
-    "codeGraphDigest": "sha256:5931498498ff247684effb59f016815e101c6b9e5eaf1c66010fdf04dea6173f",
-    "indexedWorktreeDigest": "sha256:676153c4d9b51e62d47c636089c25f6684ed90705a8a27b5af8f852a7e6bcaed",
+    "codeGraphDigest": "sha256:02bd65fdd7beb08de5dbe7e1273546521791e4d7f1a6ff7c0e06a2a0fddd8899",
+    "indexedWorktreeDigest": "sha256:9771138e4031113370b31f85a45a1be8a65a4d16526b0700d00de2b3a0e152d9",
     "rendererVersion": "archcontext.docs-renderer/v4",
     "layoutVersion": "archcontext.docs-layout/v1",
     "generatedFrom": {
@@ -19,9 +19,9 @@
       "codeGraphBinaryDigest": "sha256:e4be48573fdf16196ca0d2867be2790aa161534e9973dcb89bc70465100ea537",
       "codeGraphStatus": "ready"
     },
-    "projectionInputDigest": "sha256:a1639a66382cd07e2d01b40b7b4e3ab935686611686720012dd61dfc5d046972"
+    "projectionInputDigest": "sha256:61fe07bc18db99657cc714bfb082ec16c2d8ef6384db95bdf49b8530c0b2aef4"
   },
-  "projectionDigest": "sha256:a1acaee50b3f89c6e8330fa8a715a9ae5061f01380cdb3ad6750563c78453d82",
+  "projectionDigest": "sha256:88d8bf435e0b1a2c2252b3ebd68b7f0c45072881bd6cf9248ef6808f8e034947",
   "semanticBaseline": {
     "semanticState": {
       "schemaVersion": "archcontext.architecture-semantic-state/v1",
@@ -632,12 +632,12 @@
     },
     "digests": {
       "modelDigest": "sha256:eb9837780bab79e42b4760879b719174632da5ed7e3fc64d941e481c16972c23",
-      "sourceTreeDigest": "sha256:a38b282668e04bbd44fd34140789bb59b3f4bddf520be5ea501b0793a5e0fbd3",
+      "sourceTreeDigest": "sha256:68b192089ef0933f7bd86378f54c00eed1073ef2a750a5f57425536a544e469b",
       "flowProofDigest": "sha256:aab5c6b25e28aeb3cee41c05ab5914adc4ba25b48aa01c40cdebbc8c936e1769",
-      "projectionDigest": "sha256:a1acaee50b3f89c6e8330fa8a715a9ae5061f01380cdb3ad6750563c78453d82"
+      "projectionDigest": "sha256:88d8bf435e0b1a2c2252b3ebd68b7f0c45072881bd6cf9248ef6808f8e034947"
     }
   },
-  "receiptDigest": "sha256:6e6220e0be6189c22346380f8da08152597f24ae6a2ad9ffd57e0d982b49f240",
+  "receiptDigest": "sha256:719ac4dc93cb6b4da955ffb26f2528fae31937a8e767df0c1914e1b5613ceba2",
   "refreshSignalIds": [],
   "targetCount": 30,
   "fileCount": 30,
@@ -711,8 +711,8 @@
       "outputDigest": "sha256:ae0761f94d159619eca95cc0e65038bb547c0d31d085c4f9c4f9095d639f0db1",
       "verifiedAgainst": {
         "branch": "codex/issue-282-automation-budget",
-        "commit": "560a1789b851d75561f459f7401dad34311b8755",
-        "committedAt": "2026-09-03T12:50:40+08:00"
+        "commit": "559c0c6afd00ebca4743f3ef514c27b8b95691e0",
+        "committedAt": "2026-09-03T15:25:40+08:00"
       }
     },
     {
@@ -747,12 +747,12 @@
       "ownership": "mixed",
       "rendererVersion": "archcontext.docs-renderer/v4",
       "format": "markdown",
-      "sourceDigest": "sha256:4b1f6010c6b30e8f69517c86f60ef3d1e68d51c09eaef8d52d091a8058288441",
-      "outputDigest": "sha256:52776e0dd73844f60e7dd8f04eddf54d15c49d6964f83fa9eb808cea5880e67e",
+      "sourceDigest": "sha256:ef80f6b703842a6c19e68bdf67a289c4b6e9edb98a98bcf9182c8fe7c6c4bd06",
+      "outputDigest": "sha256:242db864138c0ef4e61a296690722497d0eadb675199351b6d3a11239e139387",
       "verifiedAgainst": {
         "branch": "codex/issue-282-automation-budget",
-        "commit": "3e8e79cb2d693a56a49f8d69ffbbca60370cda89",
-        "committedAt": "2026-09-03T14:05:01+08:00"
+        "commit": "559c0c6afd00ebca4743f3ef514c27b8b95691e0",
+        "committedAt": "2026-09-03T15:25:40+08:00"
       }
     },
     {
@@ -1091,8 +1091,8 @@
       "outputDigest": "sha256:966f7438cd7b385cb411a2ef8c2de18c0b1e71eb067941c97375a4b284a873b9",
       "verifiedAgainst": {
         "branch": "codex/issue-282-automation-budget",
-        "commit": "3e8e79cb2d693a56a49f8d69ffbbca60370cda89",
-        "committedAt": "2026-09-03T14:05:01+08:00"
+        "commit": "559c0c6afd00ebca4743f3ef514c27b8b95691e0",
+        "committedAt": "2026-09-03T15:25:40+08:00"
       }
     },
     {
