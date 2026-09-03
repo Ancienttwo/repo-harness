@@ -60,11 +60,21 @@ export interface OverlayMessageProjectionV1 {
   readonly revision: string | null;
 }
 
+/** Observational wake counts. The Agent Runtime effect journal stays the
+ * authority; the board only shows how many wakes are pending, delivered,
+ * failed or awaiting reconciliation. */
+export interface OverlayOfferWakeProjectionV1 {
+  readonly pending: number;
+  readonly delivered: number;
+  readonly failed: number;
+  readonly reconciliation_required: number;
+}
 export interface OverlayRuntimeEffectProjectionV1 {
   readonly support: 'available' | 'unreadable';
   readonly active: number | null;
   readonly reconciliation_required: number | null;
   readonly failed: number | null;
+  readonly wake: OverlayOfferWakeProjectionV1 | null;
   readonly revision: string | null;
 }
 
@@ -247,13 +257,15 @@ function validateMessages(value: unknown): OverlayMessageProjectionV1 {
 
 function validateRuntimeEffects(value: unknown): OverlayRuntimeEffectProjectionV1 {
   const input = record(value, 'runtime_effects');
-  exact(input, ['support', 'active', 'reconciliation_required', 'failed', 'revision'], 'runtime_effects');
+  exact(input, ['support', 'active', 'reconciliation_required', 'failed', 'wake', 'revision'], 'runtime_effects');
   if (input.support === 'unreadable') {
-    if (input.active !== null || input.reconciliation_required !== null || input.failed !== null || input.revision !== null) invalid('unreadable runtime_effects must not expose values');
-    return Object.freeze({ support: 'unreadable', active: null, reconciliation_required: null, failed: null, revision: null });
+    if (input.active !== null || input.reconciliation_required !== null || input.failed !== null || input.wake !== null || input.revision !== null) invalid('unreadable runtime_effects must not expose values');
+    return Object.freeze({ support: 'unreadable', active: null, reconciliation_required: null, failed: null, wake: null, revision: null });
   }
   if (input.support !== 'available') invalid('runtime_effects support is invalid');
-  return Object.freeze({ support: 'available', active: integer(input.active, 'runtime_effects.active'), reconciliation_required: integer(input.reconciliation_required, 'runtime_effects.reconciliation_required'), failed: integer(input.failed, 'runtime_effects.failed'), revision: string(input.revision, 'runtime_effects.revision', DIGEST) });
+  const wake = record(input.wake, 'runtime_effects.wake');
+  exact(wake, ['pending', 'delivered', 'failed', 'reconciliation_required'], 'runtime_effects.wake');
+  return Object.freeze({ support: 'available', active: integer(input.active, 'runtime_effects.active'), reconciliation_required: integer(input.reconciliation_required, 'runtime_effects.reconciliation_required'), failed: integer(input.failed, 'runtime_effects.failed'), wake: Object.freeze({ pending: integer(wake.pending, 'runtime_effects.wake.pending'), delivered: integer(wake.delivered, 'runtime_effects.wake.delivered'), failed: integer(wake.failed, 'runtime_effects.wake.failed'), reconciliation_required: integer(wake.reconciliation_required, 'runtime_effects.wake.reconciliation_required') }), revision: string(input.revision, 'runtime_effects.revision', DIGEST) });
 }
 
 function validateUnsupported(value: unknown, field: string): OverlayUnsupportedProjectionV1 {

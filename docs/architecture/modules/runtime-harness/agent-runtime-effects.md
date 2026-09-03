@@ -88,6 +88,42 @@ sequenceDiagram
 
 ## 3. P3:設計決策與不變量
 
+### 3.1 兩個 operation 共用一條 effect 鏈(#281)
+
+`AgentRuntimeOperation` 從 `notify_inbox` 擴成 `notify_inbox | wake_for_offer`,
+走的是同一條 intent → effect_started → observation → current 鏈,而不是另起一套 daemon。
+intent 依 operation 分岔 subject:`notify_inbox` 帶 `message_ref`,`wake_for_offer` 帶
+`wake_ref`(repository_id、authorization_revision、snapshot_revision、closed reason)。
+Engineer、Binding ID、generation、contract revision 只由 `endpoint_fence` 綁一次,
+wake_ref 不重複承載,避免同一個事實在一份 intent 裡有兩個權威。protocol 仍是 2:
+既有 `notify_inbox` intent 的 canonical bytes 一個 byte 都沒動。
+
+### 3.2 wake 是提示,不是授權
+
+wake host action 只帶 `repo-harness-wake:` 前綴的 bounded control reference、
+repository_id、snapshot_revision 與 reason,不含 claim token、Lease、Task 或 offer body。
+成功只認 `ControllerStepReceiptV2`——綁定該 effect 的 control reference、
+Engineer/Binding fence 與控制器實際重讀到的 snapshot revision;
+message delivery receipt 與 process exit code 都不能結案(`assertAgentRuntimeReceiptKindForOperation`
+兩個方向都封閉)。醒來的控制器重讀當前 offers 與 authorization,
+snapshot 已過期或空掉就是 no-op,仍算一次已送達的 wake。
+
+### 3.3 每個 Binding 一個 wake 指針
+
+`wakes/<sha256(engineer\0binding\0generation)>.json` 是該 Binding 的耐久 ledger:
+上一次消費的 offer 投影 + 唯一的 pending wake 指針 + coalescing 窗口。
+只有 empty→eligible 這個確切轉換會 arm wake;同一個 snapshot 重複觀測不寫盤;
+更新的 snapshot 只在舊 wake 尚未 start 時取代它(繼承原本的 `requested_at`/`coalesce_until`,
+所以窗口有界、不會被連續變更推著走);已 start 的 wake 不被取代,也不會開第二個並行 wake。
+被取代的 intent 靠 ledger fence 永遠 start 不了,因此沒有無限重試面:
+一次 wake 失敗後,除非 offers 再次從空轉為可用,不會自動重來(retry 屬於 attempt receipt 的權威)。
+
+### 3.4 訂閱面在 effect 層
+
+`listDueOfferWakes` / `subscribeToOfferWakes` 讀 ledger 與 effect current,
+由呼叫方提供時鐘、回傳 bounded 事件,非互動控制器不經 CLI 即可消費。
+ledger 用 atomic replace 發布,讀取不取鎖,因此鎖序永遠是 wake lock → effect lock 單向。
+
 ## 4. 歷史決策記錄(append-only)
 
 ## Optimization Backlog

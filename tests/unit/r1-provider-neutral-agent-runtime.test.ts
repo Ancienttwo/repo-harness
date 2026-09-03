@@ -86,19 +86,21 @@ function message(repoRoot: string, body = 'secret-message-body') {
 }
 
 function capability(repoRoot: string, adapter: 'codex-app-thread' | 'tmux-cli-agent' = 'codex-app-thread') {
-  return recordAgentRuntimeCapability(repoRoot, { adapter_kind: adapter, host_id: 'local', operations: { notify_inbox: 'supported' }, evidence_refs: [{ ref: 'canary', sha256: digest }], observed_at: '2026-08-30T10:02:00.000Z' });
+  return recordAgentRuntimeCapability(repoRoot, { adapter_kind: adapter, host_id: 'local', operations: { notify_inbox: 'supported', wake_for_offer: 'supported' }, evidence_refs: [{ ref: 'canary', sha256: digest }], observed_at: '2026-08-30T10:02:00.000Z' });
 }
 
 function prepare(repoRoot: string, adapter: 'codex-app-thread' | 'tmux-cli-agent' = 'codex-app-thread') {
   message(repoRoot); const profile = loadEngineerProfile(repoRoot, engineerId); const binding = readEngineerBindingStatus(repoRoot, engineerId, profile.engineer_contract_revision).binding!; const observed = capability(repoRoot, adapter);
-  return prepareAgentRuntimeEffect({ repo_root: repoRoot, message_kind: 'module_message', engineer_id: engineerId, message_id: messageOne, idempotency_key: 'runtime-one', expected_binding_id: binding.binding_id, expected_binding_generation: binding.binding_generation, expected_engineer_contract_revision: binding.engineer_contract_revision, expected_capability_sha256: observed.capability_sha256, created_at: '2026-08-30T10:03:00.000Z' });
+  const status = prepareAgentRuntimeEffect({ repo_root: repoRoot, message_kind: 'module_message', engineer_id: engineerId, message_id: messageOne, idempotency_key: 'runtime-one', expected_binding_id: binding.binding_id, expected_binding_generation: binding.binding_generation, expected_engineer_contract_revision: binding.engineer_contract_revision, expected_capability_sha256: observed.capability_sha256, created_at: '2026-08-30T10:03:00.000Z' });
+  if (status.intent.operation !== 'notify_inbox') throw new Error('prepared effect is not a message notification');
+  return { ...status, intent: status.intent };
 }
 
 afterEach(() => { while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true }); });
 
 describe('R1 provider-neutral Agent Runtime', () => {
   test('V2 schemas are closed and host action contains control identity, never message content', () => {
-    const observed = buildAgentRuntimeCapabilityObservation({ adapter_kind: 'tmux-cli-agent', host_id: 'local', operations: { notify_inbox: 'supported' }, evidence_refs: [{ ref: 'canary', sha256: digest }], observed_at: '2026-08-30T10:00:00.000Z' });
+    const observed = buildAgentRuntimeCapabilityObservation({ adapter_kind: 'tmux-cli-agent', host_id: 'local', operations: { notify_inbox: 'supported', wake_for_offer: 'supported' }, evidence_refs: [{ ref: 'canary', sha256: digest }], observed_at: '2026-08-30T10:00:00.000Z' });
     expect(validateAgentRuntimeCapabilityObservation(JSON.parse(canonicalAgentRuntimeCapabilityBytes(observed)))).toEqual(observed);
     expect(() => validateAgentRuntimeCapabilityObservation({ ...observed, send: 'supported' })).toThrow();
     const intent = buildAgentRuntimeEffectIntent({ idempotency_key: 'schema', message_ref: { kind: 'module_message', message_id: messageOne, message_event_digest: digest, engineer_id: engineerId, binding_id: bindingOne, binding_generation: 1, engineer_contract_revision: digest, delivery_attempt: 1 }, endpoint_fence: { engineer_id: engineerId, binding_id: bindingOne, binding_generation: 1, engineer_contract_revision: digest, adapter_kind: 'tmux-cli-agent', host_id: 'local', endpoint_id: 'opaque-endpoint' }, operation: 'notify_inbox', capability_sha256: digest, created_at: '2026-08-30T10:00:00.000Z' });

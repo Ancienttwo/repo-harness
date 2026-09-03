@@ -199,9 +199,21 @@ AcceptanceReceipt field.
   only explicitly engineer-scoped runtime commands issued through a trusted
   principal boundary.
 - **Agent Runtime effect**: An immutable V2 intent and observation chain that
-  fences one persisted inbox message to one current endpoint and admits at most
-  one closed `notify_inbox` Host action. Reachability and delivery are read-model
-  facts, never scheduling or acceptance authority.
+  fences one subject to one current endpoint and admits at most one closed Host
+  action per intent. `notify_inbox` fences one persisted inbox message;
+  `wake_for_offer` fences one `EngineerOffersV1` snapshot revision. Reachability
+  and delivery are read-model facts, never scheduling or acceptance authority.
+- **Task-offer wake**: A durable `wake_for_offer` effect armed only on the exact
+  transition from no eligible offers to one or more, bound to the Engineer
+  Binding generation, repository ID, authorization revision, offer snapshot
+  revision and a closed reason. At most one wake is current per Binding: a newer
+  snapshot supersedes an unstarted one inside a bounded coalescing window, and a
+  started one is never superseded. The Host action carries no claim token and no
+  writable authority, and success requires a controller-step receipt bound to the
+  effect control reference — never a message-delivery receipt and never a process
+  exit code. A wake is a hint that work may exist; the awakened controller
+  re-reads current offers and authorization, and a stale or empty snapshot is a
+  no-op, not a claim.
 - **Delegated worker grant**: A non-transferable child mutation permit under one
   current task claim and one exclusive worktree writer slot. It is not a second
   task Lease and cannot authorize publication or acceptance.
