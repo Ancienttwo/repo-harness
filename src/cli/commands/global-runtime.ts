@@ -26,6 +26,20 @@ import {
   resolveProtectedHelperPlatform,
   writeWindowsProtectedHelperContract,
 } from "../runtime/protected-helper-platform";
+import {
+  CANDIDATE_RECONCILIATION_PROTOCOL,
+  candidatePackageIdentity,
+  encodeCandidateRequest,
+  parseCandidateReceipt,
+  type CandidateReconciliationRequest,
+} from '../runtime/candidate-reconciliation';
+
+export interface CandidateHandoffContext {
+  /** Created by the parent transaction; never accepted from the public CLI. */
+  readonly transactionId: string;
+  readonly transactionBackupRoot: string;
+  readonly parentToken: string;
+}
 
 export interface GlobalRuntimeOptions {
   sourceRoot?: string;
@@ -43,6 +57,8 @@ export interface GlobalRuntimeOptions {
   brainRoot?: string;
   profile?: InstallProfile;
   updateMode?: boolean;
+  /** Internal-only capability proving that the caller owns the outer transaction. */
+  candidateHandoff?: CandidateHandoffContext;
 }
 
 export interface GlobalRuntimeStep {
@@ -645,6 +661,106 @@ function installHostAdapters(target: InstallTargetSpec, profile: InstallProfile,
     status: installed.exitCode === 0 ? "ok" : "failed",
     detail: installed.lines.join("; "),
   };
+}
+
+function reconcileWithInstalledCandidate(
+  opts: GlobalRuntimeOptions,
+  cwd: string,
+  bunExecutable: string,
+  env: NodeJS.ProcessEnv,
+  target: InstallTargetSpec,
+  profile: InstallProfile,
+): GlobalRuntimeStep {
+  const handoff = opts.candidateHandoff;
+  if (!handoff) {
+    return {
+      step: 'reconcile installed candidate runtime',
+      status: 'failed',
+      detail: 'candidate reconciliation requires an active parent runtime transaction',
+    };
+  }
+  const candidateRoot = bunGlobalPackageRoot(env);
+  if (candidateRoot === null) {
+    return { step: 'reconcile installed candidate runtime', status: 'failed', detail: 'unable to resolve candidate package root' };
+  }
+  let candidate;
+  try {
+    candidate = candidatePackageIdentity(candidateRoot);
+  } catch (error) {
+    return {
+      step: 'reconcile installed candidate runtime',
+      status: 'failed',
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  }
+  const candidateEntrypoint = join(candidate.root, 'src', 'cli', 'index.ts');
+  if (!existsSync(candidateEntrypoint)) {
+    return {
+      step: 'reconcile installed candidate runtime',
+      status: 'failed',
+      detail: `candidate entrypoint is missing: ${candidateEntrypoint}`,
+    };
+  }
+  const request: CandidateReconciliationRequest = {
+    protocol: CANDIDATE_RECONCILIATION_PROTOCOL,
+    transaction_id: handoff.transactionId,
+    transaction_backup_root: handoff.transactionBackupRoot,
+    parent_token: handoff.parentToken,
+    candidate,
+    cwd,
+    target,
+    profile,
+    sync_skill: opts.syncSkill !== false,
+    host_adapters: opts.hostAdapters !== false,
+    external_skills: opts.externalSkills === true,
+    reverse_skill: opts.reverseSkill === true,
+    obsidian_skills: opts.obsidianSkills === true,
+    codegraph: opts.codegraph ?? true,
+    brain_root: opts.brainRoot,
+  };
+  const child = runProcess(
+    bunExecutable,
+    [candidateEntrypoint, '__reconcile-installed-runtime', '--request', encodeCandidateRequest(request)],
+    cwd,
+    {
+      ...env,
+      REPO_HARNESS_RUNTIME_RECONCILIATION_PARENT: '1',
+      REPO_HARNESS_RUNTIME_RECONCILIATION_TOKEN: handoff.parentToken,
+    },
+  );
+  if (child.status === 'failed') return withStepName(child, 'reconcile installed candidate runtime', `candidate=${candidate.version}`);
+  try {
+    const receipt = parseCandidateReceipt(child.stdout ?? '');
+    if (
+      receipt.transaction_id !== handoff.transactionId
+      || receipt.candidate_package_root !== candidate.root
+      || receipt.candidate_version !== candidate.version
+      || receipt.candidate_package_digest !== candidate.package_digest
+      || receipt.selected_target !== target
+    ) {
+      throw new Error('candidate receipt binding mismatch');
+    }
+    const completeRequired = request.sync_skill && request.host_adapters;
+    if (completeRequired && receipt.reconciliation_scope !== 'complete') {
+      throw new Error('candidate receipt is partial while full reconciliation was requested');
+    }
+    if (completeRequired && receipt.ownership_manifest_digest === null) {
+      throw new Error('candidate receipt omitted the ownership ledger digest');
+    }
+    return {
+      step: 'reconcile installed candidate runtime',
+      status: 'ok',
+      detail: `candidate=${receipt.candidate_version}; scope=${receipt.reconciliation_scope}; receipt=${receipt.route_registry_digest}`,
+    };
+  } catch (error) {
+    return {
+      step: 'reconcile installed candidate runtime',
+      status: 'failed',
+      detail: error instanceof Error ? error.message : String(error),
+      stdout: child.stdout,
+      stderr: child.stderr,
+    };
+  }
 }
 
 function installAgentFleet(sourceRoot: string, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
@@ -1296,6 +1412,14 @@ export function runGlobalRuntimeSetup(
     steps.push({ step: "install repo-harness CLI", status: "skipped", detail: "disabled" });
     if (updateMode && opts.installSpec) steps.push(reconcileManagedRuntime(cwd, bunExecutable, env, opts.installSpec));
     if (updateMode && steps.some((step) => step.status === "failed")) return finalizeRuntimeResult(steps);
+  }
+
+  // The updater that installed the package has already loaded predecessor
+  // modules. Once dependency readback succeeds, only the candidate's absolute
+  // entrypoint may write managed runtime surfaces.
+  if (updateMode && opts.installCli !== false && opts.installSpec && opts.candidateHandoff) {
+    steps.push(reconcileWithInstalledCandidate(opts, cwd, bunExecutable, env, target, profile));
+    return finalizeRuntimeResult(steps);
   }
 
   if (opts.syncSkill !== false) steps.push(syncRuntimeSkill(sourceRoot, profile, env));

@@ -27,6 +27,7 @@ const UPDATE_CHECK_ENV = 'REPO_HARNESS_CHECK_UPDATES';
 const LATEST_VERSION_ENV = 'REPO_HARNESS_LATEST_VERSION';
 
 export type CheckStatus = 'ok' | 'warn' | 'fail' | 'na';
+export type DoctorTarget = 'codex' | 'claude' | 'both';
 
 export interface DoctorCheckResult {
   id: string;
@@ -196,7 +197,7 @@ export function readLatestPackageVersion(env?: NodeJS.ProcessEnv): { version?: s
   }
 }
 
-function checkCliUpdate(): DoctorCheckResult {
+function checkCliUpdate(target: DoctorTarget): DoctorCheckResult {
   const id = 'cli-update';
   const describe = 'repo-harness latest version advisory';
   if (process.env[UPDATE_CHECK_ENV] !== '1') {
@@ -222,7 +223,7 @@ function checkCliUpdate(): DoctorCheckResult {
       id,
       describe,
       status: 'warn',
-      detail: `current=${CLI_VERSION}; latest=${latest.version}; agent_action=bun add -g ${PACKAGE_NAME}@latest && repo-harness init`,
+      detail: `current=${CLI_VERSION}; latest=${latest.version}; agent_action=repo-harness update --target ${target}`,
     };
   }
   return { id, describe, status: 'ok', detail: `current=${CLI_VERSION}; latest=${latest.version}` };
@@ -481,14 +482,14 @@ function checkTypedHookRoutes(cwd: string): DoctorCheckResult {
   };
 }
 
-export function runDoctor(cwd: string = process.cwd()): DoctorReport {
+export function runDoctor(cwd: string = process.cwd(), target: DoctorTarget = 'both'): DoctorReport {
   const checks: DoctorCheckResult[] = [];
   const codegraphProbe = probeCodegraph(cwd);
   const securityReport = runSecurityScan({ cwd });
   checks.push(checkPath());
   checks.push(checkVersion());
   checks.push(checkCodexCliVersion());
-  checks.push(checkCliUpdate());
+  checks.push(checkCliUpdate(target));
   for (const target of ALL_TARGETS) {
     if (target.supportsLocation('global')) {
       checks.push(checkTargetInstall(target));

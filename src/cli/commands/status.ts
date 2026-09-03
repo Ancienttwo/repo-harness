@@ -2,8 +2,8 @@
  * `repo-harness status` — read-only summary of CLI install state + route coverage.
  *
  * Reports per-host install detection (target.detect), managed-entry count vs
- * expected, route registry summary, and current repo opt-in marker presence.
- * No mutations.
+ * expected, exact managed projection drift, route registry summary, and
+ * current repo opt-in marker presence. No mutations.
  */
 
 import * as fs from 'fs';
@@ -14,9 +14,12 @@ import { ALL_TARGETS } from '../installer/targets/registry';
 import { ROUTES, routesForHost } from '../hook/route-registry';
 import {
   buildManagedHooks,
+  compareManagedHookProjection,
   isManagedEntry,
   type HookHost,
   type HooksByEvent,
+  type ManagedHookProjectionMismatch,
+  type ManagedHookProjectionReport,
 } from '../installer/managed-entries';
 import { readJsonOrEmpty } from '../installer/shared';
 import type { Location } from '../installer/types';
@@ -56,6 +59,8 @@ export interface StatusReport {
     configPath?: string;
     managedEntryCount: number;
     expectedEntryCount: number;
+    /** Exact comparison of the repo-harness-owned projection, when inspected. */
+    projection?: ManagedHookProjectionReport;
   }>;
   repo: {
     inGitRepo: boolean;
@@ -115,6 +120,53 @@ function expectedManagedEntryCount(
     .reduce((count, entries) => count + entries.length, 0);
 }
 
+function expectedManagedProfile(
+  installedProfile: StatusReport['installedProfile'],
+): InstallProfile {
+  return installedProfile.recorded === true ? installedProfile.profile : 'full';
+}
+
+function inspectManagedProjection(
+  filePath: string | undefined,
+  host: HookHost,
+  profile: InstallProfile,
+): ManagedHookProjectionReport {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return compareManagedHookProjection({}, host, profile);
+  }
+  try {
+    const data = readJsonOrEmpty<{ hooks?: unknown }>(filePath);
+    return compareManagedHookProjection(data.hooks ?? {}, host, profile);
+  } catch {
+    // Keep malformed host config fail-closed: an empty managed projection is
+    // reported as drift, while the existing target diagnostics retain the
+    // config path for repair.
+    return compareManagedHookProjection({}, host, profile);
+  }
+}
+
+function formatProjectionValue(value: unknown): string {
+  if (value === undefined) return '(missing)';
+  if (typeof value === 'string') {
+    return value.length > 160 ? `${value.slice(0, 157)}...` : value;
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+export function formatManagedHookProjectionMismatch(
+  mismatch: ManagedHookProjectionMismatch,
+): string {
+  const route = mismatch.routeId ? `${mismatch.event}.${mismatch.routeId}` : mismatch.event;
+  if (mismatch.kind === 'missing') return `${route} missing`;
+  if (mismatch.kind === 'duplicate') return `${route} duplicate`;
+  if (mismatch.kind === 'unexpected') return `${route} unexpected`;
+  return `${route} ${mismatch.field} expected=${formatProjectionValue(mismatch.expected)} actual=${formatProjectionValue(mismatch.actual)}`;
+}
+
 function readInstalledProfileForStatus(): StatusReport['installedProfile'] {
   const statePath = installProfileStatePath();
   try {
@@ -155,6 +207,11 @@ export function runStatus(cwd: string = process.cwd()): StatusReport {
     const expectedEntryCount = expectedManagedEntryCount(target.id, installedProfile);
     const det = target.detect('global');
     const managedEntryCount = det.configPath ? countManagedEntries(det.configPath) : 0;
+    const projection = inspectManagedProjection(
+      det.configPath,
+      target.id,
+      expectedManagedProfile(installedProfile),
+    );
     targets.push({
       id: target.id,
       displayName: target.displayName,
@@ -164,6 +221,7 @@ export function runStatus(cwd: string = process.cwd()): StatusReport {
       configPath: det.configPath,
       managedEntryCount,
       expectedEntryCount,
+      projection,
     });
   }
 
@@ -208,6 +266,9 @@ export function formatStatus(report: StatusReport, asJson = false): string {
     if (!t.installed) status = 'host not detected';
     else if (!t.alreadyConfigured) status = 'host present, repo-harness not installed';
     else status = `${t.managedEntryCount}/${t.expectedEntryCount} managed entries`;
+    if (t.alreadyConfigured && t.projection?.status === 'drift' && t.projection.mismatches.length > 0) {
+      status += `; projection drift: ${t.projection.mismatches.map(formatManagedHookProjectionMismatch).join('; ')}`;
+    }
     lines.push(`  ${t.id} (${t.location}): ${status}`);
     if (t.configPath) lines.push(`    ${t.configPath}`);
   }

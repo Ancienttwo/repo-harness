@@ -63,8 +63,22 @@ interface LockHandle {
 
 export interface ExclusiveDirectoryLockHandle {
   readonly lockPath: string;
+  /** Opaque nonce published by this handle while it owns the lock. */
+  readonly ownerToken: string;
+  readonly ownerPid: number;
   assertOwned(): void;
   release(): void;
+}
+
+/**
+ * A read-only observation of the single owner currently published by an
+ * exclusive directory lock. Callers must still validate that the owner is
+ * alive and that the token is bound to their own protocol.
+ */
+export interface ExclusiveDirectoryLockOwner {
+  readonly lockPath: string;
+  readonly pid: number;
+  readonly token: string;
 }
 
 export interface ExclusiveDirectoryLockOptions {
@@ -231,6 +245,51 @@ function ownsExclusiveToken(
   } catch {
     return false;
   }
+}
+
+export function readExclusiveDirectoryLockOwner(
+  canonicalRoot: string,
+  relativeLockPath: string,
+): ExclusiveDirectoryLockOwner | null {
+  const location = prepareLockLocation(canonicalRoot, relativeLockPath);
+  assertLockAncestors(location);
+  let directoryIdentity: FileIdentity;
+  try {
+    const directory = lstatSync(location.lockPath);
+    if (!directory.isDirectory()) {
+      throw new Error(`unsafe lock path is not a real directory: ${location.lockPath}`);
+    }
+    directoryIdentity = fileIdentity(directory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+  const entries = readdirSync(location.lockPath);
+  if (entries.length !== 1) return null;
+  const entry = entries[0]!;
+  const owner = ownerTokenFromFileName(entry);
+  if (owner === null) return null;
+  const ownerPath = join(location.lockPath, entry);
+  const observedOwner = lstatSync(ownerPath);
+  if (!observedOwner.isFile()) return null;
+  const ownerIdentity = fileIdentity(observedOwner);
+  let parsed: { pid?: unknown; token?: unknown };
+  try {
+    parsed = JSON.parse(readFileSync(ownerPath, 'utf-8')) as { pid?: unknown; token?: unknown };
+  } catch {
+    return null;
+  }
+  if (parsed.pid !== owner.pid || parsed.token !== owner.token) return null;
+  assertLockAncestors(location);
+  const currentDirectory = lstatSync(location.lockPath);
+  const currentOwner = lstatSync(ownerPath);
+  if (!currentDirectory.isDirectory()
+    || !sameFileIdentity(fileIdentity(currentDirectory), directoryIdentity)
+    || !currentOwner.isFile()
+    || !sameFileIdentity(fileIdentity(currentOwner), ownerIdentity)
+    || readdirSync(location.lockPath).length !== 1
+    || readdirSync(location.lockPath)[0] !== entry) return null;
+  return { lockPath: location.lockPath, pid: owner.pid, token: owner.token };
 }
 
 function reclaimStaleLockDirectory(
@@ -423,6 +482,8 @@ export function acquireExclusiveDirectoryLock(
   let released = false;
   return {
     lockPath: location.lockPath,
+    ownerToken: handle.ownerName.slice(0, -'.json'.length),
+    ownerPid: process.pid,
     assertOwned() {
       assertLockAncestors(location);
       if (!ownsExclusiveToken(

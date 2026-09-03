@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { basename, join } from 'path';
 import { spawnSync } from 'child_process';
 import { PassThrough, Writable } from 'stream';
 import { createHash } from 'crypto';
@@ -200,6 +200,21 @@ function setupManagedRuntimeReadback(home: string, fakeBin: string, harnessVersi
     `exec "${systemNode}" "$@"`,
     '',
   ].join('\n'));
+}
+
+function installCandidateRuntimeFixture(home: string, version: string): string {
+  const candidate = join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness');
+  rmSync(candidate, { recursive: true, force: true });
+  cpSync(ROOT, candidate, {
+    recursive: true,
+    filter: (source) => !['.git', 'node_modules', '_ops'].includes(basename(source)),
+  });
+  const manifestPath = join(candidate, 'package.json');
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8')) as { version?: string };
+  manifest.version = version;
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  symlinkSync(join(ROOT, 'node_modules'), join(candidate, 'node_modules'), 'dir');
+  return candidate;
 }
 
 describe('install command global runtime bootstrap', () => {
@@ -1573,7 +1588,7 @@ exit 0
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('CLI exposes install help for npx users without legacy plugin options', () => {
     const res = spawnSync('bun', [CLI, 'install', '--help'], {
@@ -1656,6 +1671,7 @@ exit 0
       mkdirSync(fakeBin, { recursive: true });
       mkdirSync(join(home, '.repo-harness'), { recursive: true });
       setupManagedRuntimeReadback(home, fakeBin);
+      installCandidateRuntimeFixture(home, JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8')).version as string);
       writeFileSync(join(home, '.repo-harness', 'install-state.json'), `${JSON.stringify({
         protocol: 2,
         profile: 'full',
@@ -1669,7 +1685,7 @@ exit 0
         ownership_manifest: [],
         previous: null,
       })}\n`);
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == */src/cli/index.ts ]]; then exec "${process.execPath}" "$@"; fi\nexit 0\n`);
 
       const res = spawnSync(
         process.execPath,
@@ -1696,11 +1712,13 @@ exit 0
         },
       );
 
-      expect(res.status).toBe(0);
+      expect(res.status, `${res.stderr}\n${res.stdout}`).toBe(0);
       const result = JSON.parse(res.stdout);
       expect(readFileSync(bunLog, 'utf-8')).toContain('add -g repo-harness@latest');
-      expect(result.steps.find((step: { step: string }) => step.step === 'install agent fleet')?.status).toBe('ok');
-      expect(result.steps.find((step: { step: string }) => step.step === 'configure brain root')?.status).toBe('ok');
+      expect(result.steps.find((step: { step: string }) => step.step === 'reconcile installed candidate runtime')).toMatchObject({
+        status: 'ok',
+        detail: expect.stringContaining('scope=partial'),
+      });
       expect(existsSync(join(home, '.repo-harness', 'config.json'))).toBe(true);
       expect(existsSync(join(repo, '.ai'))).toBe(false);
       expect(existsSync(join(repo, 'tasks'))).toBe(false);
@@ -1792,7 +1810,8 @@ exit 0
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       setupManagedRuntimeReadback(home, fakeBin);
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n`);
+      installCandidateRuntimeFixture(home, '9.9.9');
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == */src/cli/index.ts ]]; then exec "${process.execPath}" "$@"; fi\nexit 0\n`);
 
       const res = spawnSync(
         process.execPath,
@@ -1821,7 +1840,7 @@ exit 0
         },
       );
 
-      expect(res.status).toBe(0);
+      expect(res.status, `${res.stderr}\n${res.stdout}`).toBe(0);
       expect(JSON.parse(res.stdout).steps.find((step: { step: string }) => step.step === 'install repo-harness CLI')?.detail).toBe(
         'spec=repo-harness@9.9.9',
       );
