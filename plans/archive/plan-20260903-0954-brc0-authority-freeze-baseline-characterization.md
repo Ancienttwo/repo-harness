@@ -1,6 +1,16 @@
+> **Archived**: 2026-09-04 04:16
+> **Related Plan**: plans/archive/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md
+> **Outcome**: Completed
+> **Lifecycle**: plan
+> **Parent Run ID**: run-20260904-0416
+> **Archive Projection V1**: `plans/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md` => `plans/archive/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md`
+> **Archive Projection V1**: `tasks/notes/20260903-0954-brc0-authority-freeze-baseline-characterization.notes.md` => `tasks/archive/notes-20260904-0416-brc0-authority-freeze-baseline-characterization.md`
+> **Archive Projection V1**: `tasks/contracts/20260903-0954-brc0-authority-freeze-baseline-characterization.contract.md` => `tasks/archive/contract-20260904-0416-brc0-authority-freeze-baseline-characterization.md`
+> **Archive Projection V1**: `tasks/reviews/20260903-0954-brc0-authority-freeze-baseline-characterization.review.md` => `tasks/archive/review-20260904-0416-brc0-authority-freeze-baseline-characterization.md`
+
 # Plan: Sprint task: BRC0 — Authority freeze 与 baseline characterization
 
-> **Status**: Executing
+> **Status**: Archived
 > **Substantive Change SHA256**: `sha256:767a1126d6efb4685044d960fea7c0914deb5e7fd6d80095510cc209abc7fa2b`
 > **Created**: 20260903-0954
 > **Slug**: brc0-authority-freeze-baseline-characterization
@@ -9,13 +19,13 @@
 > **Source Ref**: sprint:plans/sprints/20260902-2238-gpt-pro-seeded-repair-campaign.sprint.md#BRC0 — Authority freeze 与 baseline characterization
 > **Artifact Level**: work-package
 > **Promotion Reason**: worktree_boundary
-> **Verification Boundary**: Commands named in the captured planning output plus `repo-harness run verify-contract --contract tasks/contracts/20260903-0954-brc0-authority-freeze-baseline-characterization.contract.md --strict`.
-> **Rollback Surface**: Before execution remove `plans/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md`; after execution revert branch `codex/brc0-authority-freeze-baseline-characterization` or the explicitly reviewed diff.
+> **Verification Boundary**: Commands named in the captured planning output plus `repo-harness run verify-contract --contract tasks/archive/contract-20260904-0416-brc0-authority-freeze-baseline-characterization.md --strict`.
+> **Rollback Surface**: Before execution remove `plans/archive/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md`; after execution revert branch `codex/brc0-authority-freeze-baseline-characterization` or the explicitly reviewed diff.
 > **Spec**: `docs/spec.md`
 > **Research**: See `docs/researches/`
-> **Task Contract**: `tasks/contracts/20260903-0954-brc0-authority-freeze-baseline-characterization.contract.md`
-> **Task Review**: `tasks/reviews/20260903-0954-brc0-authority-freeze-baseline-characterization.review.md`
-> **Implementation Notes**: `tasks/notes/20260903-0954-brc0-authority-freeze-baseline-characterization.notes.md`
+> **Task Contract**: `tasks/archive/contract-20260904-0416-brc0-authority-freeze-baseline-characterization.md`
+> **Task Review**: `tasks/archive/review-20260904-0416-brc0-authority-freeze-baseline-characterization.md`
+> **Implementation Notes**: `tasks/archive/notes-20260904-0416-brc0-authority-freeze-baseline-characterization.md`
 
 ## Agentic Routing
 - Selected route: planning
@@ -29,16 +39,16 @@
 ## Workflow Inventory
 Complete this inventory before implementation. If any line is unknown, keep the plan in Draft and fill it before projection.
 
-- Active plan: `plans/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md`
-- Sprint contract: `tasks/contracts/20260903-0954-brc0-authority-freeze-baseline-characterization.contract.md`
-- Sprint review: `tasks/reviews/20260903-0954-brc0-authority-freeze-baseline-characterization.review.md`
-- Implementation notes: `tasks/notes/20260903-0954-brc0-authority-freeze-baseline-characterization.notes.md`
+- Active plan: `plans/archive/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md`
+- Sprint contract: `tasks/archive/contract-20260904-0416-brc0-authority-freeze-baseline-characterization.md`
+- Sprint review: `tasks/archive/review-20260904-0416-brc0-authority-freeze-baseline-characterization.md`
+- Implementation notes: `tasks/archive/notes-20260904-0416-brc0-authority-freeze-baseline-characterization.md`
 - Deferred-goal ledger: `tasks/todos.md`
 - Current checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
-- Scope authority: `tasks/contracts/20260903-0954-brc0-authority-freeze-baseline-characterization.contract.md` `allowed_paths`
+- Scope authority: `tasks/archive/contract-20260904-0416-brc0-authority-freeze-baseline-characterization.md` `allowed_paths`
 - Concurrency rule: `.ai/harness/active-plan` selects the active plan for this worktree when present; `.ai/harness/active-worktree` records the owning worktree. If another worktree already owns active work, open or switch to the matching worktree instead of serializing unrelated plans.
-- Execution isolation: approved contract-level work projects through `repo-harness run plan-to-todo --plan plans/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md` and may start `repo-harness run contract-worktree start --plan plans/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md`.
+- Execution isolation: approved contract-level work projects through `repo-harness run plan-to-todo --plan plans/archive/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md` and may start `repo-harness run contract-worktree start --plan plans/archive/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md`.
 
 ## Approach
 ### Strategy
@@ -84,11 +94,11 @@ See the P2 trace above and the expanded diagram in
 | The pending architecture request blocks a strict gate | Low | Medium | Severity `medium` on a capability that is not in the changed set; `check-architecture-sync.sh` reports `blocking=0` |
 
 ## Task Contracts
-- Contract file: `tasks/contracts/20260903-0954-brc0-authority-freeze-baseline-characterization.contract.md`
-- Review file: `tasks/reviews/20260903-0954-brc0-authority-freeze-baseline-characterization.review.md`
-- Implementation notes file: `tasks/notes/20260903-0954-brc0-authority-freeze-baseline-characterization.notes.md`
+- Contract file: `tasks/archive/contract-20260904-0416-brc0-authority-freeze-baseline-characterization.md`
+- Review file: `tasks/archive/review-20260904-0416-brc0-authority-freeze-baseline-characterization.md`
+- Implementation notes file: `tasks/archive/notes-20260904-0416-brc0-authority-freeze-baseline-characterization.md`
 - Template: `.claude/templates/contract.template.md`
-- Verification command: `repo-harness run verify-contract --contract tasks/contracts/20260903-0954-brc0-authority-freeze-baseline-characterization.contract.md --strict`
+- Verification command: `repo-harness run verify-contract --contract tasks/archive/contract-20260904-0416-brc0-authority-freeze-baseline-characterization.md --strict`
 - Active plan rule: this captured plan is written to `.ai/harness/active-plan` and the owning worktree is written to `.ai/harness/active-worktree` unless --no-active is used. Do not infer active execution from the latest non-archived plan.
 
 ## Handoff
@@ -98,20 +108,20 @@ See the P2 trace above and the expanded diagram in
 
 ## Promotion Gate
 
-- **Merge/PR unit**: Captured plan `plans/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md` is the proposed mergeable execution unit; revise before execute if this is only a checklist step.
-- **Rollback surface**: Before execution remove `plans/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md`; after execution revert branch `codex/brc0-authority-freeze-baseline-characterization` or the explicitly reviewed diff.
-- **Verification boundary**: Commands named in the captured planning output plus `repo-harness run verify-contract --contract tasks/contracts/20260903-0954-brc0-authority-freeze-baseline-characterization.contract.md --strict`.
-- **Review/acceptance boundary**: `tasks/reviews/20260903-0954-brc0-authority-freeze-baseline-characterization.review.md` must record pass against the captured acceptance criteria.
+- **Merge/PR unit**: Captured plan `plans/archive/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md` is the proposed mergeable execution unit; revise before execute if this is only a checklist step.
+- **Rollback surface**: Before execution remove `plans/archive/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md`; after execution revert branch `codex/brc0-authority-freeze-baseline-characterization` or the explicitly reviewed diff.
+- **Verification boundary**: Commands named in the captured planning output plus `repo-harness run verify-contract --contract tasks/archive/contract-20260904-0416-brc0-authority-freeze-baseline-characterization.md --strict`.
+- **Review/acceptance boundary**: `tasks/archive/review-20260904-0416-brc0-authority-freeze-baseline-characterization.md` must record pass against the captured acceptance criteria.
 - **High-risk surface**: Risks named in captured planning output; keep the plan Draft if risk ownership is not concrete.
 - **Why not checklist row**: worktree_boundary
 
 ## Evidence Contract
 
-- **State/progress path**: `plans/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md` task breakdown, `tasks/todos.md` deferred-goal ledger, `tasks/contracts/20260903-0954-brc0-authority-freeze-baseline-characterization.contract.md`, `tasks/reviews/20260903-0954-brc0-authority-freeze-baseline-characterization.review.md`, and `tasks/notes/20260903-0954-brc0-authority-freeze-baseline-characterization.notes.md`
+- **State/progress path**: `plans/archive/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md` task breakdown, `tasks/todos.md` deferred-goal ledger, `tasks/archive/contract-20260904-0416-brc0-authority-freeze-baseline-characterization.md`, `tasks/archive/review-20260904-0416-brc0-authority-freeze-baseline-characterization.md`, and `tasks/archive/notes-20260904-0416-brc0-authority-freeze-baseline-characterization.md`
 - **Verification evidence**: `.ai/harness/checks/latest.json`, `.ai/harness/runs/`, and the commands named in the captured planning output
-- **Evaluator rubric**: `tasks/reviews/20260903-0954-brc0-authority-freeze-baseline-characterization.review.md` must record a passing Waza /check style recommendation
+- **Evaluator rubric**: `tasks/archive/review-20260904-0416-brc0-authority-freeze-baseline-characterization.md` must record a passing Waza /check style recommendation
 - **Stop condition**: all task breakdown items are complete, sprint verification passes, and the review recommends pass
-- **Rollback surface**: Before execution remove `plans/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md`; after execution revert branch `codex/brc0-authority-freeze-baseline-characterization` or the explicitly reviewed diff.
+- **Rollback surface**: Before execution remove `plans/archive/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md`; after execution revert branch `codex/brc0-authority-freeze-baseline-characterization` or the explicitly reviewed diff.
 
 ## Captured Planning Output
 
@@ -169,7 +179,7 @@ single strongest falsifier for "an Issue is not a Task" and it is asserted in bo
 ### P3 decision rationale
 
 Two decisions were forced during the pass and both are recorded in
-`tasks/notes/20260903-0954-brc0-authority-freeze-baseline-characterization.notes.md`:
+`tasks/archive/notes-20260904-0416-brc0-authority-freeze-baseline-characterization.md`:
 
 1. Three protected surfaces (Task/Lease coordination, publication, the acceptance receipt helper)
    are owned by **no** archcontext capability include glob. The sprint's Architecture Notes name
