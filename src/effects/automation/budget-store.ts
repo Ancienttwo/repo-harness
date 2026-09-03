@@ -126,6 +126,107 @@ import {
   newestModifiedMs,
 } from './clock';
 
+/**
+ * Every kind of thing this store puts on disk, with the order it is written in
+ * and the drift face that covers a crash immediately after it.
+ *
+ * This exists because a record kind nothing reads is a record kind nothing can
+ * recover: `reconciliations/` was written for two rounds before anything folded
+ * it, so a crash between the decision and its charge silently lost the
+ * decision. Adding a kind means adding a row here, and the meta-test in
+ * `tests/unit/issue-282-automation-budget-store.test.ts` fails if the run
+ * directory ever holds something this list does not name.
+ */
+export type AutomationRecordRole = 'durable' | 'derived' | 'projection';
+
+export interface AutomationRecordKindV1 {
+  readonly id: string;
+  /** Path relative to the run directory, or to the store root for `store` scope. */
+  readonly relative_path: string;
+  readonly scope: 'run' | 'store';
+  readonly role: AutomationRecordRole;
+  /** Where this sits in the publication order of one operation. */
+  readonly write_order: string;
+  /** Faces that cover a crash immediately after this record lands. */
+  readonly drift_faces: readonly AutomationCurrentDrift[];
+  /** True when `detectAutomationCurrentDrift` counts it against the projection. */
+  readonly counted: boolean;
+}
+
+export const AUTOMATION_RECORD_KINDS: readonly AutomationRecordKindV1[] = Object.freeze([
+  Object.freeze({
+    id: 'budget',
+    relative_path: 'budgets',
+    scope: 'store' as const,
+    role: 'durable' as const,
+    write_order: 'published first, under the run lock and after drift detection, before any run record cites it',
+    drift_faces: Object.freeze([]),
+    counted: false,
+  }),
+  Object.freeze({
+    id: 'reservation-index',
+    relative_path: 'reservations/by-digest',
+    scope: 'run' as const,
+    role: 'derived' as const,
+    write_order: 'linked before the counted reservation, inside one temp-file critical section',
+    drift_faces: Object.freeze([]),
+    counted: false,
+  }),
+  Object.freeze({
+    id: 'reservation',
+    relative_path: 'reservations',
+    scope: 'run' as const,
+    role: 'durable' as const,
+    write_order: 'linked after its index and before current.json',
+    drift_faces: Object.freeze(['unlisted_reservation'] as const),
+    counted: true,
+  }),
+  Object.freeze({
+    id: 'usage-event',
+    relative_path: 'events',
+    scope: 'run' as const,
+    role: 'durable' as const,
+    write_order: 'published after any reconciliation decision and before current.json',
+    drift_faces: Object.freeze(['unfolded_event'] as const),
+    counted: true,
+  }),
+  Object.freeze({
+    id: 'reconciliation',
+    relative_path: 'reconciliations',
+    scope: 'run' as const,
+    role: 'durable' as const,
+    write_order: 'published after drift detection and before the usage event it decides',
+    drift_faces: Object.freeze(['unconsumed_reconciliation'] as const),
+    counted: true,
+  }),
+  Object.freeze({
+    id: 'stop-receipt',
+    relative_path: 'stop-receipt.json',
+    scope: 'run' as const,
+    role: 'durable' as const,
+    write_order: 'published after the charge that exhausted the budget and before current.json',
+    drift_faces: Object.freeze(['unadopted_stop_receipt', 'unsealed_exhaustion'] as const),
+    counted: false,
+  }),
+  Object.freeze({
+    id: 'current-projection',
+    relative_path: 'current.json',
+    scope: 'run' as const,
+    role: 'projection' as const,
+    write_order: 'renamed last, after every durable record of the operation',
+    drift_faces: Object.freeze([]),
+    counted: false,
+  }),
+] as const);
+
+/** The run-directory entries the enumeration accounts for. */
+export const AUTOMATION_RUN_DIRECTORY_ENTRIES: readonly string[] = Object.freeze(
+  AUTOMATION_RECORD_KINDS
+    .filter((kind) => kind.scope === 'run' && !kind.relative_path.includes('/'))
+    .map((kind) => kind.relative_path)
+    .sort(),
+);
+
 export type AutomationBudgetStoreErrorCode =
   | 'automation_budget_clock_regression'
   | 'automation_budget_store_unavailable'
@@ -498,6 +599,37 @@ function readCurrentOptional(paths: RunPaths): AutomationBudgetCurrentV1 | null 
   return parse(readRaw(paths.current, 'automation budget current'), validateAutomationBudgetCurrent, 'automation budget current');
 }
 
+export interface AutomationReconciliationRecordV1 {
+  readonly reservation_sha256: string;
+  readonly resolution: AutomationUsageEventV1['resolution'];
+  readonly reason: string;
+}
+
+/**
+ * The reconciliation decision for one reservation, if an operator recorded one.
+ * It is a decision, not a charge: the usage event is still what spends. Reading
+ * it back is what stops a plain append from overwriting a recorded resolution
+ * with a cheaper one after a crash.
+ */
+function readReconciliationOptional(paths: RunPaths, reservationSha256: string): AutomationReconciliationRecordV1 | null {
+  const path = join(paths.reconciliations, `${reservationSha256}.json`);
+  if (!existsSync(path)) return null;
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(readRaw(path, 'automation reconciliation')) as Record<string, unknown>;
+  } catch (error) {
+    return fail('automation_budget_store_invalid', 'automation reconciliation is not valid JSON', error);
+  }
+  if (parsed.reservation_sha256 !== reservationSha256 || typeof parsed.resolution !== 'string' || typeof parsed.reason !== 'string') {
+    fail('automation_budget_store_invalid', `automation reconciliation ${reservationSha256} is malformed`);
+  }
+  return Object.freeze({
+    reservation_sha256: reservationSha256,
+    resolution: parsed.resolution as AutomationUsageEventV1['resolution'],
+    reason: parsed.reason,
+  });
+}
+
 function readStopReceiptOptional(paths: RunPaths): AutomationStopReceiptV1 | null {
   if (!existsSync(paths.stopReceipt)) return null;
   return parse(readRaw(paths.stopReceipt, 'automation stop receipt'), validateAutomationStopReceipt, 'automation stop receipt');
@@ -571,19 +703,20 @@ function readAutomationBudgetStatusAt(repoRoot: string, runId: string, now: stri
  * Every record except `current.json` is create-once and fsynced before the
  * projection is renamed, so a crash can only ever leave the projection behind
  * the durable records -- never ahead of them. That makes `current.json` a
- * derived projection of all three durable record kinds -- `reservations/`,
- * `events/`, and `stop-receipt.json` -- and the repair is a re-derivation
- * rather than a guess: a reservation with no event is the interrupted
- * operation, an event the projection has not folded in is a charge that already
- * happened, and a stop receipt the projection has not adopted means the run is
- * already stopped. Nothing is ever silently re-minted, and no metric is ever
- * assumed to be zero.
+ * derived projection of every durable record kind -- see
+ * `AUTOMATION_RECORD_KINDS` -- and the repair is a re-derivation rather than a
+ * guess: a reservation with no event is the interrupted operation, an event the
+ * projection has not folded in is a charge that already happened, a
+ * reconciliation with no event is a decision waiting on its charge, and a stop
+ * receipt the projection has not adopted means the run is already stopped.
+ * Nothing is ever silently re-minted, and no metric is ever assumed to be zero.
  *
- * Drift is detected by counting directory entries and resolving each listed
- * open reservation through the by-digest index. The healthy path is two
- * `readdir` calls plus, while an operation is in flight, one `stat` and one
- * parse for the single open reservation -- never a scan of every record. The
- * full re-derivation only runs after a crash.
+ * Drift is detected by counting directory entries, resolving every usage event
+ * to its own reservation through the by-digest index, and resolving each listed
+ * open reservation the same way. The healthy path is three `readdir` calls, one
+ * `existsSync`, and one `stat` per event, plus one `stat` and one parse for the
+ * single open reservation while an operation is in flight -- never a scan of
+ * every record's contents. The full re-derivation only runs after a crash.
  */
 function jsonEntries(directory: string): readonly string[] {
   if (!existsSync(directory)) return Object.freeze([]);
@@ -635,6 +768,17 @@ export function detectAutomationCurrentDrift(
       `automation ledger is missing reservations: ${events} usage events are on disk but only ${reservations} reservations are`,
     );
   }
+  // Totals alone are forgeable by coincidence: an orphan reservation from one
+  // crash can make up the count of a reservation genuinely lost from under a
+  // charged event. Every event names its reservation in its own file name, so
+  // each one is resolved through the by-digest index -- O(events) stats, no
+  // parsing -- and a charge whose reservation is gone is corruption.
+  for (const entry of jsonEntries(paths.events)) {
+    const digest = entry.replace(/\.json$/u, '');
+    if (!existsSync(join(paths.reservationsByDigest, `${digest}.json`))) {
+      fail('automation_budget_store_invalid', `automation ledger is missing the reservation ${digest} that a usage event charges`);
+    }
+  }
   // Counts alone cannot see an open reservation whose own file went missing
   // while an unrelated one appeared, so each listed digest is resolved against
   // the by-digest index: one stat and one parse for the single open
@@ -655,6 +799,17 @@ export function detectAutomationCurrentDrift(
   if (current.stop_receipt_sha256 === null && existsSync(paths.stopReceipt)) return 'unadopted_stop_receipt';
   if (events > current.event_count) return 'unfolded_event';
   if (reservations > events + listedOpen) return 'unlisted_reservation';
+  // A reconciliation decision with no charge behind it is the crash window
+  // between recording the decision and committing the usage event. The
+  // reservation stays open and the run stays in reconciliation until the event
+  // lands under that exact recorded resolution.
+  for (const entry of jsonEntries(paths.reconciliations)) {
+    const digest = entry.replace(/\.json$/u, '');
+    if (!existsSync(join(paths.reservationsByDigest, `${digest}.json`))) {
+      fail('automation_budget_store_invalid', `automation ledger is missing the reservation ${digest} that a reconciliation decides`);
+    }
+    if (!existsSync(join(paths.events, `${digest}.json`))) return 'unconsumed_reconciliation';
+  }
   // The last face has no record of its own. `commitUsage` writes the charge and
   // then seals the receipt, so a crash between the two leaves counts that agree
   // with each other and a run that is over but says it is active. Recomputing
@@ -686,6 +841,12 @@ function deriveCurrentFromDurableRecords(
     .map((entry) => parse(readRaw(join(paths.reservations, entry), 'automation reservation'), validateAutomationReservation, 'automation reservation'));
   const closed = new Set(events.map((event) => event.reservation_sha256));
   const open = reservations.filter((reservation) => !closed.has(reservation.reservation_sha256));
+  // A reconciliation with no event is a decision that has not been charged yet.
+  // It does not add consumption -- the event is what spends -- but it does mean
+  // the run is waiting on an explicit resolution rather than merely idle.
+  const undecided = jsonEntries(paths.reconciliations)
+    .map((entry) => entry.replace(/\.json$/u, ''))
+    .filter((digest) => !closed.has(digest));
   if (open.length > 1) {
     fail('automation_budget_store_conflict', 'more than one automation reservation is unresolved; this run cannot be reconciled automatically');
   }
@@ -703,7 +864,9 @@ function deriveCurrentFromDurableRecords(
     // A repaired run is one that was interrupted: the refusal it produces is
     // the same one an open reservation produces, so the next operation is
     // blocked until the interrupted one is appended or reconciled.
-    state: stopReceipt !== null ? 'budget_exhausted' : held === null ? 'active' : 'reconciliation_required',
+    state: stopReceipt !== null
+      ? 'budget_exhausted'
+      : held === null && undecided.length === 0 ? 'active' : 'reconciliation_required',
     consumed: folded.consumed,
     open_reserved: held === null ? emptyAutomationMetricVector() : held.reserved,
     consecutive_no_progress_steps: folded.consecutive_no_progress_steps,
@@ -859,15 +1022,18 @@ export function publishAutomationBudget(input: PublishAutomationBudgetInput): Au
   const paths = runPaths(repoRoot, budget.automation_run_id);
   prepareRun(paths);
   return withExclusiveDirectoryLock(paths.common, paths.lockRelative, () => {
+    // Drift is detected before anything is written, so a corrupt run refuses
+    // without this call leaving a budget record behind. "No write on
+    // corruption" has to hold for the first write too.
+    const preexisting = readCurrentOptional(paths);
+    const existing = preexisting === null
+      ? null
+      : lockedStatus(repoRoot, paths, budget.automation_run_id, publishedAt).current;
     const budgetPath = join(paths.budgets, `${budget.budget_sha256}.json`);
     const encoded = bytes(budget);
     if (!writeExclusive(budgetPath, encoded, 'automation budget') && readRaw(budgetPath, 'automation budget') !== encoded) {
       fail('automation_budget_store_conflict', 'an automation budget with this digest already exists with different bytes');
     }
-    const preexisting = readCurrentOptional(paths);
-    const existing = preexisting === null
-      ? null
-      : lockedStatus(repoRoot, paths, budget.automation_run_id, publishedAt).current;
     if (existing === null) {
       if (budget.revision !== 1) fail('automation_budget_store_conflict', 'the first budget for a run must be revision 1');
       const current = sealAutomationBudgetCurrent({
@@ -1247,6 +1413,17 @@ function commitUsage(
   inFlight: readonly AutomationInFlightAuthorityV1[],
 ): AutomationUsageCommitV1 {
   const status = lockedStatus(repoRoot, paths, reservation.automation_run_id, observedAt);
+  // A recorded reconciliation is the decision for this reservation, and it was
+  // made durable before any event could be. A later plain append would
+  // otherwise charge the caller's cheaper outcome over an operator's recorded
+  // one, which is exactly what a crash between the two writes used to allow.
+  const decided = readReconciliationOptional(paths, reservation.reservation_sha256);
+  if (decided !== null && decided.resolution !== resolution) {
+    fail(
+      'automation_budget_store_conflict',
+      `automation reservation ${reservation.reservation_sha256} was reconciled as ${decided.resolution}; it cannot be charged as ${resolution}`,
+    );
+  }
   const eventPath = join(paths.events, `${reservation.reservation_sha256}.json`);
   if (existsSync(eventPath)) {
     // Replaying the same key charges once. A replay that claims a different
@@ -1377,6 +1554,9 @@ export function reconcileAutomationReservation(
   }
   const reconciledAt = automationStoreNow();
   return withExclusiveDirectoryLock(paths.common, paths.lockRelative, () => {
+    // Same rule: the run is classified before its reconciliation record lands,
+    // so a corrupt run refuses without gaining a fourth durable record.
+    lockedStatus(repoRoot, paths, reservation.automation_run_id, reconciledAt);
     const evidence = {
       protocol: 1,
       kind: 'repo-harness-automation-reconciliation',

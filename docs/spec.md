@@ -107,7 +107,11 @@ repos.
   convenience rather than a permission boundary, because a same-process caller
   is already trusted at the process level. Replaying an idempotency key charges
   once, an interrupted reservation blocks further spending until it is
-  reconciled from exact evidence rather than assumed free, and exhaustion
+  reconciled from exact evidence rather than assumed free -- and once a
+  reconciliation decision is recorded, only that decision may charge the
+  reservation. A projection that counts durable records the disk does not have
+  is corruption, not a crash window: every verb and every read surface fails
+  closed without writing anything. Exhaustion
   publishes an immutable `AutomationStopReceiptV1`. A budget never raises or
   renews itself, never rewrites Task, Lease, Work Graph, or contract authority,
   and never releases or steals a claim.

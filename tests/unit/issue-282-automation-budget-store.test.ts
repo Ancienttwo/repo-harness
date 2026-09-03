@@ -24,6 +24,7 @@ import {
   validateAutomationBudgetCurrent,
   type AutomationBudgetV1,
   parseContractDelegationBudget,
+  AUTOMATION_CURRENT_DRIFTS,
   type AutomationContractLimitsV1,
   type AutomationMetricVectorV1,
   type ProgramBudgetLimitV1,
@@ -38,6 +39,8 @@ import {
   requireUnattendedAutomationRunBudget,
   reserveAutomationBudget,
   AUTOMATION_BUDGET_STORE_RELATIVE_ROOT,
+  AUTOMATION_RECORD_KINDS,
+  AUTOMATION_RUN_DIRECTORY_ENTRIES,
   type AppendAutomationUsageInput,
   type PublishAutomationBudgetInput,
   type ReconcileAutomationReservationInput,
@@ -1452,6 +1455,246 @@ describe('issue #282 — the reservation index is published before the counted r
     const retried = acquire(repo, 'index-only', budget, 'op-interrupted', '2026-09-03T00:00:20.000Z');
     expect(retried.commit.current.consumed.successful_acquisitions).toBe(1);
     expect(retried.commit.current.event_count).toBe(1);
+  });
+});
+
+
+
+describe('issue #282 — every durable record kind is enumerated and read', () => {
+  /**
+   * A record kind nothing reads is a record kind nothing can recover.
+   * `reconciliations/` was written for two rounds before anything folded it,
+   * so this meta-test pins the enumeration to what the store actually creates.
+   */
+  test('the run directory holds exactly the enumerated entries', () => {
+    const repo = repoFixture();
+    const budget = makeBudget({ run: 'record-kinds', limits: { ...BASE_LIMITS, max_successful_acquisitions: 1 } });
+    publishBudget(repo, budget);
+    // Drive a run through every durable record kind: reservation, index,
+    // event, reconciliation and stop receipt.
+    const reservation = reserveAutomationBudget({
+      repo_root: repo,
+      automation_run_id: budget.automation_run_id,
+      expected_budget_sha256: budget.budget_sha256,
+      idempotency_key: 'op-reconciled',
+      operation: 'provider_invocation',
+      unit_kind: 'execute',
+      unit_id: 'wp-1',
+      attempt: 1,
+      provider: 'codex',
+    });
+    reconcileAutomationReservation({
+      repo_root: repo,
+      reservation,
+      resolution: 'reconciled_reserved',
+      outcome: 'no_progress',
+      reason: 'the controller died mid-call',
+      evidence_refs: [{ ref: 'provider-run:codex/interrupted', sha256: hex('interrupted') }],
+    });
+    acquire(repo, 'record-kinds', budget, 'op-final', '2026-09-03T00:00:40.000Z');
+
+    const runDirectory = join(repo, '.git', AUTOMATION_BUDGET_STORE_RELATIVE_ROOT, 'runs', budget.automation_run_id);
+    expect(readdirSync(runDirectory).sort()).toEqual([...AUTOMATION_RUN_DIRECTORY_ENTRIES]);
+    // The index is a nested entry of the reservations directory.
+    expect(readdirSync(join(runDirectory, 'reservations')).some((entry) => entry === 'by-digest')).toBe(true);
+    expect(existsSync(join(runDirectory, 'stop-receipt.json'))).toBe(true);
+  });
+
+  test('every enumerated kind has a drift face or is explicitly derived', () => {
+    expect(AUTOMATION_RECORD_KINDS.length).toBeGreaterThan(0);
+    for (const kind of AUTOMATION_RECORD_KINDS) {
+      expect(kind.write_order.trim().length, `${kind.id} must state its write order`).toBeGreaterThan(0);
+      if (kind.drift_faces.length > 0) {
+        expect(kind.role, `${kind.id} carries drift faces so it must be durable`).toBe('durable');
+        for (const face of kind.drift_faces) expect([...AUTOMATION_CURRENT_DRIFTS]).toContain(face);
+        continue;
+      }
+      // No face is only allowed for something the projection does not count.
+      expect(kind.counted, `${kind.id} has no drift face so it must not be counted`).toBe(false);
+      expect(['derived', 'projection', 'durable']).toContain(kind.role);
+    }
+    // Every counted kind is covered by at least one face.
+    for (const kind of AUTOMATION_RECORD_KINDS.filter((entry) => entry.counted)) {
+      expect(kind.drift_faces.length, `${kind.id} is counted so it needs a face`).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('issue #282 — a recorded reconciliation cannot be charged as something cheaper', () => {
+  /**
+   * The reconciliation record is durable before the usage event it decides. A
+   * crash between them used to leave the decision on disk with no charge, and
+   * a later plain append wrote the caller's own cheaper outcome instead.
+   */
+  test('an unconsumed reconciliation is drift, and only its own resolution may charge it', () => {
+    const repo = repoFixture();
+    const budget = makeBudget({ run: 'unconsumed-reconciliation' });
+    publishBudget(repo, budget);
+    const reservation = reserveAutomationBudget({
+      repo_root: repo,
+      automation_run_id: budget.automation_run_id,
+      expected_budget_sha256: budget.budget_sha256,
+      idempotency_key: 'op-interrupted',
+      operation: 'provider_invocation',
+      unit_kind: 'execute',
+      unit_id: 'wp-1',
+      attempt: 1,
+      provider: 'codex',
+    });
+    reconcileAutomationReservation({
+      repo_root: repo,
+      reservation,
+      resolution: 'reconciled_reserved',
+      outcome: 'no_progress',
+      reason: 'the controller died after the provider call started',
+      evidence_refs: [{ ref: 'provider-run:codex/exit', sha256: hex('exit') }],
+    });
+
+    // The crash prefix: the decision is durable, its charge is not.
+    const runDirectory = join(repo, '.git', AUTOMATION_BUDGET_STORE_RELATIVE_ROOT, 'runs', budget.automation_run_id);
+    const eventPath = join(runDirectory, 'events', `${reservation.reservation_sha256}.json`);
+    const chargedCurrent = readFileSync(join(runDirectory, 'current.json'), 'utf8');
+    rmSync(eventPath);
+    // Roll the projection back to before the charge landed.
+    const beforeCharge = validateAutomationBudgetCurrent(JSON.parse(chargedCurrent));
+    writeFileSync(join(runDirectory, 'current.json'), `${JSON.stringify(sealAutomationBudgetCurrent({
+      automation_run_id: beforeCharge.automation_run_id,
+      budget_sha256: beforeCharge.budget_sha256,
+      state: 'active',
+      consumed: emptyAutomationMetricVector(),
+      open_reserved: reservation.reserved,
+      consecutive_no_progress_steps: 0,
+      last_completed_step_index: 0,
+      next_step_index: 1,
+      open_reservation_sha256s: [reservation.reservation_sha256],
+      event_count: 0,
+      ledger_sha256: '0'.repeat(64),
+      stop_receipt_sha256: null,
+      previous_current_sha256: null,
+      updated_at: beforeCharge.updated_at,
+    }))}\n`);
+
+    const status = readAutomationBudgetStatus(repo, budget.automation_run_id);
+    expect(status.drift).toBe('unconsumed_reconciliation');
+    expect(status.current.state).toBe('reconciliation_required');
+
+    // A plain append would charge the caller's own outcome over the recorded
+    // decision; it is refused.
+    expect(() => appendAutomationUsage({
+      repo_root: repo,
+      reservation,
+      outcome: 'progress',
+      evidence_refs: [],
+    })).toThrow(/was reconciled as reconciled_reserved/u);
+
+    // Replaying the recorded resolution completes it, charging the worst case.
+    const resolved = reconcileAutomationReservation({
+      repo_root: repo,
+      reservation,
+      resolution: 'reconciled_reserved',
+      outcome: 'no_progress',
+      reason: 'the controller died after the provider call started',
+      evidence_refs: [{ ref: 'provider-run:codex/exit', sha256: hex('exit') }],
+    });
+    expect(resolved.event.resolution).toBe('reconciled_reserved');
+    expect(resolved.current.consumed.runner_invocations).toBe(1);
+    expect(readAutomationBudgetStatus(repo, budget.automation_run_id).drift).toBe('none');
+  });
+});
+
+describe('issue #282 — an orphan reservation cannot mask a lost one', () => {
+  /**
+   * Totals are forgeable by coincidence. R1 is reserved and charged; R2 is
+   * reserved and its projection write is lost; then R1's own names go. The
+   * counts balance and the old detector said `none`, so a same-key retry of R1
+   * would charge twice. Every event now resolves its own reservation.
+   */
+  test('a charged event whose reservation is gone is corruption even when totals balance', () => {
+    const repo = repoFixture();
+    const budget = makeBudget({ run: 'masked-loss', limits: { ...BASE_LIMITS, max_successful_acquisitions: 4, max_agent_turns: 12 } });
+    publishBudget(repo, budget);
+    const runDirectory = join(repo, '.git', AUTOMATION_BUDGET_STORE_RELATIVE_ROOT, 'runs', budget.automation_run_id);
+
+    const first = acquire(repo, 'masked-loss', budget, 'op-1', '2026-09-03T00:00:10.000Z');
+    const afterFirst = readFileSync(join(runDirectory, 'current.json'), 'utf8');
+    // R2 is reserved and the projection write is lost.
+    reserveAutomationBudget({
+      repo_root: repo,
+      automation_run_id: budget.automation_run_id,
+      expected_budget_sha256: budget.budget_sha256,
+      idempotency_key: 'op-2',
+      operation: 'acquisition',
+      unit_kind: 'execute',
+      unit_id: 'wp-1',
+      attempt: 1,
+      provider: null,
+    });
+    writeFileSync(join(runDirectory, 'current.json'), afterFirst);
+
+    // R1's own names are then lost, leaving one reservation and one event.
+    const reservations = join(runDirectory, 'reservations');
+    const byDigest = join(reservations, 'by-digest');
+    const firstDigest = first.reservation.reservation_sha256;
+    rmSync(join(byDigest, `${firstDigest}.json`));
+    for (const entry of readdirSync(reservations)) {
+      if (!entry.endsWith('.json')) continue;
+      const record = JSON.parse(readFileSync(join(reservations, entry), 'utf8')) as { reservation_sha256: string };
+      if (record.reservation_sha256 === firstDigest) rmSync(join(reservations, entry));
+    }
+
+    let thrown: unknown = null;
+    try {
+      readAutomationBudgetStatus(repo, budget.automation_run_id);
+    } catch (error) {
+      thrown = error;
+    }
+    expect((thrown as AutomationBudgetStoreError).code).toBe('automation_budget_store_invalid');
+    expect((thrown as Error).message).toMatch(/that a usage event charges/u);
+  });
+});
+
+describe('issue #282 — corruption is refused before anything is written', () => {
+  test('publish and reconcile leave no durable record when the run is corrupt', () => {
+    const repo = repoFixture();
+    const budget = makeBudget({ run: 'no-write-on-corruption' });
+    publishBudget(repo, budget);
+    const runDirectory = join(repo, '.git', AUTOMATION_BUDGET_STORE_RELATIVE_ROOT, 'runs', budget.automation_run_id);
+    const reservation = reserveAutomationBudget({
+      repo_root: repo,
+      automation_run_id: budget.automation_run_id,
+      expected_budget_sha256: budget.budget_sha256,
+      idempotency_key: 'op-1',
+      operation: 'provider_invocation',
+      unit_kind: 'execute',
+      unit_id: 'wp-1',
+      attempt: 1,
+      provider: 'codex',
+    });
+    appendAutomationUsage({ repo_root: repo, reservation, outcome: 'progress', evidence_refs: [] });
+
+    // Corrupt the run: the projection now counts an event the disk lacks.
+    const events = join(runDirectory, 'events');
+    for (const entry of readdirSync(events)) rmSync(join(events, entry));
+
+    const budgetsBefore = readdirSync(join(repo, '.git', AUTOMATION_BUDGET_STORE_RELATIVE_ROOT, 'budgets')).sort();
+    const reconciliationsBefore = readdirSync(join(runDirectory, 'reconciliations')).sort();
+
+    const revision = makeBudget({ run: 'no-write-on-corruption', limits: { ...BASE_LIMITS, max_agent_turns: 30 }, revision: 2, supersedes: budget.budget_sha256 });
+    mintFor(repo, revision);
+    expect(() => publishAutomationBudget({ repo_root: repo, budget: revision }))
+      .toThrow(/automation ledger is missing/u);
+    expect(() => reconcileAutomationReservation({
+      repo_root: repo,
+      reservation,
+      resolution: 'reconciled_reserved',
+      outcome: 'no_progress',
+      reason: 'attempted during corruption',
+      evidence_refs: [{ ref: 'provider-run:codex/x', sha256: hex('x') }],
+    })).toThrow(/automation ledger is missing/u);
+
+    // Neither verb left a record behind.
+    expect(readdirSync(join(repo, '.git', AUTOMATION_BUDGET_STORE_RELATIVE_ROOT, 'budgets')).sort()).toEqual(budgetsBefore);
+    expect(readdirSync(join(runDirectory, 'reconciliations')).sort()).toEqual(reconciliationsBefore);
   });
 });
 

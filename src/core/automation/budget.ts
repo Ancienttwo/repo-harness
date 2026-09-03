@@ -107,13 +107,15 @@ export type AutomationBudgetState = 'active' | 'reconciliation_required' | 'budg
  * record kind whose durable truth the projection has not adopted yet;
  * `unsealed_exhaustion` is the one face with no record of its own -- the
  * consumption already on disk has reached a hard limit that no stop receipt
- * seals yet.
+ * seals yet. Every other durable record kind has exactly one face here; see
+ * `AUTOMATION_RECORD_KINDS` for the enumeration and each kind's write order.
  */
 export const AUTOMATION_CURRENT_DRIFTS = [
   'none',
   'unlisted_reservation',
   'unfolded_event',
   'unadopted_stop_receipt',
+  'unconsumed_reconciliation',
   'unsealed_exhaustion',
 ] as const;
 

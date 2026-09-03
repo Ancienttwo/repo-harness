@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260903-0437-issue-282-automation-budget.review.md
 > **Last Updated**: 2026-09-03 05:20
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:f024bac826e81299981a82667fdf3457db19f6ec7fd1d1ee937601d1f549e21a`
+> **Substantive Change SHA256**: `sha256:dde1709abdc7d13893596d9fa1fc2c20aad582f92c3dc4745c1d3d2ecb674542`
 
 ## Design Decisions
 
@@ -284,12 +284,26 @@ crash could leave an empty `.json` that no repair could parse and no same-key
 retry could replace. A leftover temporary file is garbage that no scan counts.
 
 The chosen recovery is one rule, not two guards: **`current.json` is a derived
-projection of all three durable record kinds -- `reservations/`, `events/` and
-`stop-receipt.json` -- and every mutating verb re-derives it under the run lock
-before deciding.** `detectAutomationCurrentDrift` compares directory entry
-counts by direction, probes the stop receipt, and resolves each open
-reservation the projection lists through a by-digest hard-link index. The
-healthy path is two `readdir` calls and one `existsSync`, plus one `stat` and
+projection of every durable record kind, and every mutating verb re-derives it
+under the run lock before deciding.** The kinds are enumerated in code as
+`AUTOMATION_RECORD_KINDS`, each row carrying its write order and the drift face
+that covers a crash immediately after it: `budgets/` (store-scoped, not
+counted), `reservations/by-digest/` (derived index, not counted),
+`reservations/` (`unlisted_reservation`), `events/` (`unfolded_event`),
+`reconciliations/` (`unconsumed_reconciliation`), `stop-receipt.json`
+(`unadopted_stop_receipt`, `unsealed_exhaustion`), and `current.json` itself
+(the projection). A meta-test asserts the run directory holds exactly those
+entries and that every counted kind has a face, because a record kind nothing
+reads is a record kind nothing can recover -- `reconciliations/` was written for
+two rounds before anything folded it.
+
+`detectAutomationCurrentDrift` compares directory entry counts by direction,
+probes the stop receipt, resolves **every usage event to its own reservation**
+through the by-digest index (totals alone are forgeable by coincidence: an
+orphan reservation from one crash can make up the count of a reservation lost
+from under a charged event), and resolves each open reservation the projection
+lists the same way. The healthy path is three `readdir` calls, one `existsSync`,
+one `stat` per event, plus one `stat` and
 one parse while an operation is in flight -- at most one reservation is ever
 open, and the index means resolving it never scans the record directory.
 `repairCurrentFromDurableRecords` runs only after a crash and rebuilds consumed,
@@ -305,8 +319,8 @@ exists), open (the repaired projection lists it), or neither -- and the third
 case fails closed instead of re-minting.
 
 A repaired run whose reservation is still open is marked
-`reconciliation_required`, which is exactly the refusal an open reservation
-already produces, so the next operation is blocked until the interrupted one is
+`reconciliation_required`, which is exactly the refusal an open reservation or
+an unconsumed reconciliation decision already produces, so the next operation is blocked until the interrupted one is
 appended or reconciled. A repaired run whose receipt was unadopted becomes
 `budget_exhausted`, so the next verb refuses instead of re-opening a stopped
 run.
@@ -321,7 +335,11 @@ write ordering. It means a record was lost, truncated, or deleted from outside,
 and re-folding it would rebuild a smaller ledger and silently forgive spend that
 really happened. That direction is typed `automation_budget_store_invalid`
 corruption: every verb and every read surface fails closed, nothing is folded,
-and nothing is written.
+and nothing is written. That last clause is enforced by ordering, not by
+intention: `publishAutomationBudget` and `reconcileAutomationReservation` both
+classify the run under the run lock *before* they publish their own durable
+record, so a corrupt run refuses without gaining a budget record or a
+reconciliation record on the way out.
 
 Within the repairable direction the read path is deliberately asymmetric:
 `readAutomationBudgetStatus`, the CLI `automation budget show` and the board
@@ -346,6 +364,12 @@ An interrupted reservation is resolved only from exact evidence, never from an
 assumption. Every resolution requires at least one `evidence_ref`; a
 reconciliation with none fails with
 `automation_budget_reconciliation_evidence_missing`.
+
+The reconciliation record is durable *before* the usage event it decides, and
+`commitUsage` reads it back: once a resolution is recorded, only that resolution
+may charge the reservation. A plain `appendAutomationUsage` after a crash used
+to overwrite an operator's recorded decision with the caller's own cheaper
+outcome; it is now `automation_budget_store_conflict`.
 
 - `reconciled_observed` — the real usage is recoverable. Token and cost figures
   still need `usage_attribution` bound to the exact capability revision the
