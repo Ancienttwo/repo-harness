@@ -260,6 +260,13 @@ AcceptanceReceipt field.
   yields a recorded failure instead of a stale Host action. A wake is a hint
   that work may exist; the awakened controller re-reads current offers and
   authorization, and a stale or empty snapshot is a no-op, not a claim.
+- **Engineer acquire-next**: An idempotent effects operation that reads the
+  current `EngineerOffersV1`, selects the first offer in its authoritative
+  order under closed filters, constructs the full revision assertion, and
+  delegates to the existing scheduled acquire path. Stale selections and lost
+  elections may be re-read only within a caller-supplied bound. A persisted
+  pending receipt after an uncertain side-effect boundary fails closed as
+  reconciliation-required.
 - **Dependency authority**: The single read-only resolver that answers one
   declared Work Graph dependency state from the one authority that already owns
   that verdict: the canonical Sprint row for `canonical_done`, the acceptance

@@ -1,6 +1,6 @@
 # Workstream: Collaboration substrate program (C0-C9)
 
-> **Status**: active
+> **Status**: completed
 > **Capability ID**: `runtime-harness-collaboration`
 > **Functional Block**: `src/core/collaboration`
 > **Matched Prefix**: `src/core/collaboration`
@@ -8,7 +8,7 @@
 > **Architecture Capability**: `collaboration`
 > **Architecture Module**: `docs/architecture/modules/runtime-harness/collaboration.md`
 > **Source Plan**: plans/plan-20260830-0858-c5-taskfreeze-succession-integration.md
-> **Current Slice**: todo-01
+> **Current Slice**: completed-20260831-r1-provider-neutral-agent-runtime
 > **Last Handoff**: `.ai/harness/handoff/current.md`
 > **Architecture Request**: docs/architecture/requests/archive/2026/runtime-harness-collaboration.md
 
@@ -39,7 +39,7 @@ the freeze record keeps only a pointer.
 - [x] C7: CLI/MCP and bounded context injection -- one shared authenticated Engineer surface backs the CLI and the exact MCP inventory; actor, destination and recorded time remain Host-derived, every mutation is mode-gated, collaboration dispatch reaches C6's binding fence immediately before the sole production `dispatchDelegatedRun()` call, and context injection preserves the canonical untrusted markers under the frozen 1,500-token cap. Every handoff read enters through the verified Work Exchange projection, while publication returns an identity-only acknowledgement so a caller-supplied `execution_context` cannot masquerade as proven on any serialized egress. CLI and MCP pin that acknowledgement's exact shape and the forged-context regression covers publication plus every read surface.
 - [x] C8: read-only Operator collaboration surface -- `OperatorCollaborationSnapshotV1` in `src/core/operator/collaboration-snapshot.ts` as the sibling of the existing Fleet transport view, one new GET route at `/api/v1/collaboration/{repository_id}/snapshot`, and lanes, discoveries, handoffs with adoption counts, hotspots and contributors rendered under the existing attention-first detail pane. Three things the projection removes and why: `execution_offers`, because offer eligibility needs an `EngineerPrincipalV1` the board does not have and C6 requires a reader precisely so an empty list cannot be mistaken for "nothing to pick up"; `snapshot_sha256`, because it is the digest of a document containing that unasked-for list, with `source_snapshot_sha256` carried instead; and every `execution_context` branch below its discriminant, because a proven `bound_task` still names a Claim id and freeze digest a browser has no use for, while `null` and `'none'` stay distinct facts in both the payload and the copy. The write boundary is now structural: `OPERATOR_ROUTES` declares the whole surface with one `write: true` entry, and the test asserts the inventory as well as the live 405. Redaction is proven at the HTTP boundary against a real collaboration store whose repository root is an absolute temp path and whose handoff carries a forged Claim. **The sprint row's "当前 writer" is deliberately not in this panel: the collaboration snapshot has no writer concept, the delivery-plane writer is the Lease owner the worklist already shows, and deriving one here would be the client-side semantic inference the row forbids.** No architecture acceptance event: `check --json` planned only the manifest restamp with `affectedNodeIds: []`.
 - [x] C9: real multi-agent canary and multi-seat decision -- a live-provider three-case matrix with the usefulness rubric frozen before the accepted run, three real concurrent read-only workers per treatment, one real successor dispatch per treatment, and per-arm isolation of repositories, Git common dirs and HOMEs. Zero Task/Lease/Publication/Acceptance digest drift in every arm; writer lineage exactly one; context injections under the 1,500-token cap. Decision: persistent `EngineerSeatV2` NO-GO (treatment 12 useful findings vs baseline 9 at 3.51x input tokens; real successor restart exceeded baseline first-useful latency in only one of three cases). Evidence: `docs/researches/20260830-c9-real-multi-agent-canary.md`, gate `deploy/release-checklists/260830-collaboration-canary-decision.md`.
-- [ ] R1 (owned by Child PRD D / accepted agent-runtime-effects boundary): provider-neutral runtime effect plus optional already-bound tmux endpoint adapter; active work package is `plans/plan-20260830-1903-r1-provider-neutral-agent-runtime.md`, and the resolved boundary evidence is `docs/architecture/snapshots/2026-08-30-agent-runtime-effects-boundary-acceptance.md`; no direct message-body injection, no fallback and no authority mutation.
+- [x] R1 (owned by Child PRD D / accepted agent-runtime-effects boundary): provider-neutral runtime effect plus optional already-bound tmux endpoint adapter landed on `main` in PR #230 (`4f7cb37e`); the resolved boundary evidence is `docs/architecture/snapshots/2026-08-30-agent-runtime-effects-boundary-acceptance.md`; no direct message-body injection, no fallback and no authority mutation.
 
 ## Notes
 

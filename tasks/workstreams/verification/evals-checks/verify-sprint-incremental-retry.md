@@ -1,6 +1,6 @@
 # Workstream: Verify-sprint incremental retry
 
-> **Status**: active
+> **Status**: completed
 > **Capability ID**: `verification-evals-checks`
 > **Functional Block**: `scripts/verify-sprint.sh`
 > **Matched Prefix**: `scripts/verify-sprint.sh`
@@ -8,7 +8,7 @@
 > **Architecture Capability**: `evals-checks`
 > **Architecture Module**: `docs/architecture/modules/verification/evals-checks.md`
 > **Source Plan**: plans/plan-20260824-2214-verify-sprint-incremental-retry.md
-> **Current Slice**: verify-exact-subject-retry
+> **Current Slice**: completed-20260825-verify-exact-subject-retry
 > **Last Handoff**: `.ai/harness/handoff/current.md`
 > **Architecture Request**: (none)
 
