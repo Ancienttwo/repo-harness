@@ -18,13 +18,29 @@
     "10"
   ],
   "fixture_id": "batch-partial-7-of-10",
-  "expected_outcome": "incomplete",
-  "expected_missing_slots": [
-    "08",
-    "09",
-    "10"
+  "purpose": "Authoring stopped after seven slots. Follow-up must name only the three slots that are missing and never re-request all ten.",
+  "expected_slot_states": {
+    "01": "complete",
+    "02": "complete",
+    "03": "complete",
+    "04": "complete",
+    "05": "complete",
+    "06": "complete",
+    "07": "complete",
+    "08": "missing",
+    "09": "missing",
+    "10": "missing"
+  },
+  "expected_marked_issue_ids": [
+    "901",
+    "902",
+    "903",
+    "904",
+    "905",
+    "906",
+    "907"
   ],
-  "purpose": "Authoring stopped after seven slots. Follow-up must name only the three missing slots and never re-request all ten.",
+  "expected_unmarked_issue_ids": [],
   "observations": [
     {
       "protocol": 1,

@@ -18,11 +18,26 @@
     "10"
   ],
   "fixture_id": "batch-duplicate-slot",
-  "expected_outcome": "issue_batch_ambiguous",
-  "expected_ambiguous_slots": [
-    "03"
-  ],
   "purpose": "Two issues claim slot 03. Reconciliation must fail closed and must never auto-close the one that looks weaker.",
+  "expected_slot_states": {
+    "01": "complete",
+    "02": "complete",
+    "03": "issue_batch_ambiguous",
+    "04": "missing",
+    "05": "missing",
+    "06": "missing",
+    "07": "missing",
+    "08": "missing",
+    "09": "missing",
+    "10": "missing"
+  },
+  "expected_marked_issue_ids": [
+    "901",
+    "902",
+    "903",
+    "953"
+  ],
+  "expected_unmarked_issue_ids": [],
   "observations": [
     {
       "protocol": 1,

@@ -18,7 +18,26 @@
     "10"
   ],
   "fixture_id": "batch-missing-marker",
-  "purpose": "The title carries the display convention but the body has no marker. The title is not slot authority, so this issue resolves to no slot at all.",
+  "purpose": "Issue 905 carries the display title convention but no body marker. The title is not slot authority, so the issue attaches to no slot and every slot from 03 on stays missing.",
+  "expected_unmarked_issue_ids": [
+    "905"
+  ],
+  "expected_slot_states": {
+    "01": "complete",
+    "02": "complete",
+    "03": "missing",
+    "04": "missing",
+    "05": "missing",
+    "06": "missing",
+    "07": "missing",
+    "08": "missing",
+    "09": "missing",
+    "10": "missing"
+  },
+  "expected_marked_issue_ids": [
+    "901",
+    "902"
+  ],
   "observations": [
     {
       "protocol": 1,
@@ -95,10 +114,5 @@
       "source_revision": "sha256:cf9adc3252390e1562d8e7bd25a467a15dcec270801f4373644fcaf6d17f01b4",
       "observation_sha256": "sha256:b600eb6f5512d340d407ea7e7be62fd0276ccc8953d0f1235eb659d1e9a2bd59"
     }
-  ],
-  "expected_marker_present": false,
-  "expected_unmarked_issue_ids": [
-    "905"
-  ],
-  "outcome_vocabulary_note": "PRD Module 4 assigns no closed outcome code to a body that carries no campaign marker at all: slot_invalid covers a marker whose metadata is malformed, and issue_slot_unexpected covers a marker naming an undeclared slot. Naming this case is BRC5's decision, so this fixture freezes the input and the observable fact (no marker in the body) without inventing a verdict."
+  ]
 }

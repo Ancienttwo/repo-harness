@@ -15,8 +15,13 @@ Declare a new capability `capability.runtime-harness.development-campaign` that
 owns the bounded conversion of externally authored GitHub Issues into local
 repair work, and owns nothing else. The node itself is created by sprint row 3
 (BRC3); at this row the boundary is declared, frozen and queued, and the
-capability deliberately does not exist. `development_campaign.mode` defaults to
-`off`, so the capability is absent by default even after it lands.
+capability node deliberately does not exist yet.
+
+Architecture existence and runtime activation are separate. Once BRC3 lands the
+node, the capability exists as an architecture boundary, while
+`development_campaign.mode` still defaults to `off` and disables every campaign
+mutation at runtime. Landing the node grants no activation; the ladder
+`off -> shadow -> active/manual` remains the only way to reach one.
 
 ## Boundary
 

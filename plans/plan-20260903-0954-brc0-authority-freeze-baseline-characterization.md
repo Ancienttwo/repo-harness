@@ -1,7 +1,7 @@
 # Plan: Sprint task: BRC0 — Authority freeze 与 baseline characterization
 
 > **Status**: Executing
-> **Substantive Change SHA256**: `sha256:a0b47fea67740a6ee567e3dfb179ee7bece3195860a64990c4ffe6a8c78e865a`
+> **Substantive Change SHA256**: `sha256:767a1126d6efb4685044d960fea7c0914deb5e7fd6d80095510cc209abc7fa2b`
 > **Created**: 20260903-0954
 > **Slug**: brc0-authority-freeze-baseline-characterization
 > **Planning Source**: repo-harness-sprint
@@ -214,9 +214,11 @@ Two decisions were forced during the pass and both are recorded in
       well-formed digest derived from an Issue title.
 - [x] Negative fixture: a dispatch prompt reaches no coordination input -- `classifyTaskOffer` with
       extra prompt fields is identical, `parseLeaseOwnerRecord` rejects a prompt-derived `task_id`
-      and any extra field, and the real `acquireFleetTask` entrypoint with every side-effecting
-      dependency replaced by a throwing spy returns `offer_stale` for a prompt-derived assertion and
-      `no_eligible_task` without one, reaching no spy.
+      and any extra field, and the real `acquireFleetTask` entrypoint -- given one writable repository
+      and one production-classified execution-ready offer, with every side-effecting dependency
+      replaced by a throwing spy -- reaches the `claim` spy on the canonical control run but returns
+      `offer_stale` with no spy reached for both a prompt-derived `task_id` and a prompt-declared
+      `repo_id`.
 - [x] Prove `heartbeat-triage` is still discovery-only: source-text audit for mutation, provider and
       dispatch verbs, plus a real run in a temporary repository asserting the write set is exactly
       `.ai/harness/triage/inbox.md` and one run snapshot, a clean `git status`, and an empty lease

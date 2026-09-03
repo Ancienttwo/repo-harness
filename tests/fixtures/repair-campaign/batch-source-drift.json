@@ -18,11 +18,26 @@
     "10"
   ],
   "fixture_id": "batch-source-drift",
-  "expected_outcome": "issue_source_drift",
   "expected_drift_issue_ids": [
     "906"
   ],
   "purpose": "The same issue was observed twice with different bodies. buildExternalSourceProjection already reports source_drift for this shape; adoption must refuse to bind the stale observation.",
+  "expected_slot_states": {
+    "01": "missing",
+    "02": "missing",
+    "03": "missing",
+    "04": "missing",
+    "05": "missing",
+    "06": "issue_source_drift",
+    "07": "missing",
+    "08": "missing",
+    "09": "missing",
+    "10": "missing"
+  },
+  "expected_marked_issue_ids": [
+    "906"
+  ],
+  "expected_unmarked_issue_ids": [],
   "observations": [
     {
       "protocol": 1,

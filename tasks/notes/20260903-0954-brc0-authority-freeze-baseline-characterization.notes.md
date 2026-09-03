@@ -171,3 +171,37 @@ plus two new findings. All four were repaired.
    doc's flow diagram now say so.
 
 The matrix count in the round-1 section above was also corrected from 2688 to 5376.
+
+## Codex review round 3: REJECT, and the five repairs
+
+Round 3 confirmed every round-2 repair as structural and raised five new findings, all valid.
+
+1. **The projection manifest and the verification evidence lagged the final commit.** Both were
+   generated before the round-2 fix commit, so the declared artifact and the recorded evidence
+   described an older subject. Closed by regenerating the projection and re-running
+   `verify-sprint --prepare-acceptance` after the last content commit, and by committing the
+   manifest so the tree and its provenance agree. A manifest-only commit does not retrigger the
+   projection -- `sourceTreeDigest` is unchanged by it -- so this converges rather than chasing HEAD.
+
+2. **`incomplete` was a batch-level outcome the PRD never defines.** PRD Module 4 assigns states per
+   slot (`complete`, `missing`, `issue_batch_ambiguous`, `slot_invalid`, `issue_slot_unexpected`,
+   `issue_source_drift`, `unfilled`); `incomplete` appears only in the sprint row. Worse, the test
+   carried a hand-written allowlist, so it authorized its own fixtures. Both are gone: every fixture
+   now carries `expected_slot_states`, one PRD term per declared slot, and the test reads the PRD
+   file and asserts each state appears there verbatim. Falsified by hand: setting a slot to
+   `incomplete` fails.
+
+3. **Marker presence was a floor, not a freeze.** `seen >= 20` meant several markers could be deleted
+   and the suite would stay green. Each fixture now declares `expected_marked_issue_ids` and
+   `expected_unmarked_issue_ids`, and the test asserts both sets exactly. Falsified by hand: deleting
+   a marker and regenerating the observation digests fails.
+
+4. **The research doc and the plan still described the round-1 prompt test.** They claimed the
+   no-assertion path returns `no_eligible_task` with no spy reached. The current control run reaches
+   the `claim` spy on purpose -- that is what proves the negatives are not vacuous. Both documents now
+   state the actual design.
+
+5. **The boundary snapshot conflated architecture existence with activation.** It read as if the
+   capability stays absent after BRC3 lands the node. Corrected: the node's existence is an
+   architecture fact, `development_campaign.mode = off` is the runtime fact, and landing the node
+   grants no activation.

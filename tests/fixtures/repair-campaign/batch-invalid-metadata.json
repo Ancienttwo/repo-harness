@@ -18,11 +18,26 @@
     "10"
   ],
   "fixture_id": "batch-invalid-metadata",
-  "expected_outcome": "slot_invalid",
-  "expected_invalid_issue_ids": [
+  "purpose": "Issue 904 carries a marker whose group is non-numeric and whose slot is unpadded, so its three marker fields resolve to no declared slot. One targeted edit repair is allowed; failure degrades that slot to unfilled.",
+  "expected_slot_states": {
+    "01": "complete",
+    "02": "complete",
+    "03": "complete",
+    "04": "slot_invalid",
+    "05": "missing",
+    "06": "missing",
+    "07": "missing",
+    "08": "missing",
+    "09": "missing",
+    "10": "missing"
+  },
+  "expected_marked_issue_ids": [
+    "901",
+    "902",
+    "903",
     "904"
   ],
-  "purpose": "Marker is present but its group is non-numeric and its slot is unpadded, so the three marker fields do not resolve to a declared slot. One targeted edit repair is allowed; failure degrades the slot to unfilled.",
+  "expected_unmarked_issue_ids": [],
   "observations": [
     {
       "protocol": 1,

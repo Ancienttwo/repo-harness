@@ -18,8 +18,32 @@
     "10"
   ],
   "fixture_id": "batch-complete-10",
-  "expected_outcome": "complete",
-  "purpose": "Every declared slot carries exactly one well-formed marker; the reconciliation authority (sprint row 7) must classify this batch complete.",
+  "purpose": "Every declared slot carries exactly one well-formed marker; the reconciliation authority (sprint row 7) must resolve every slot to complete.",
+  "expected_slot_states": {
+    "01": "complete",
+    "02": "complete",
+    "03": "complete",
+    "04": "complete",
+    "05": "complete",
+    "06": "complete",
+    "07": "complete",
+    "08": "complete",
+    "09": "complete",
+    "10": "complete"
+  },
+  "expected_marked_issue_ids": [
+    "901",
+    "902",
+    "903",
+    "904",
+    "905",
+    "906",
+    "907",
+    "908",
+    "909",
+    "910"
+  ],
+  "expected_unmarked_issue_ids": [],
   "observations": [
     {
       "protocol": 1,

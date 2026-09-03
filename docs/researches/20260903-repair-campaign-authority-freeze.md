@@ -168,12 +168,16 @@ Two negative facts hold this table up, and both are asserted in the freeze test:
 - An Issue observation carries no Task field on any code path, and an identity
   derived from one resolves to no canonical backlog row.
 - A dispatch prompt reaches no coordination input. `ClassifyTaskOfferInput` has
-  no prompt channel, `parseLeaseOwnerRecord` rejects both a prompt-derived
-  `task_id` and any extra field, and the real `acquireFleetTask` entrypoint —
-  driven with every side-effecting dependency replaced by a throwing spy — fails
-  closed at the selection boundary with `offer_stale` when a prompt-derived task
-  identity is asserted, and `no_eligible_task` when it is not. No spy is ever
-  reached, so no claim, worktree, lease binding or claim token is created.
+  no prompt channel, and `parseLeaseOwnerRecord` rejects both a prompt-derived
+  `task_id` and any extra field. The decisive test drives the real
+  `acquireFleetTask` against a registry holding one writable repository and one
+  genuinely execution-ready `TaskOfferV1`, with every side-effecting dependency
+  replaced by a throwing spy. A control run with no assertion travels the whole
+  canonical path — selection, authorization, revalidation — and **does** reach
+  the `claim` spy, which is what makes the negatives meaningful. A
+  prompt-derived `task_id` and a prompt-declared `repo_id` both return
+  `offer_stale` at the selection boundary with no spy reached, so no claim,
+  worktree, lease binding or claim token is created.
 
 ## Protected capabilities
 
@@ -208,16 +212,24 @@ batches. Every observation in every batch is a real `ProviderIssueObservationV1`
 with a correctly derived `source_revision` and `observation_sha256`, so the
 fixtures pass `validateProviderIssueObservation` unchanged.
 
+Each batch carries `expected_slot_states`, one PRD term per declared slot,
+instead of a batch-level verdict. The test reads the allowed vocabulary out of
+the PRD file itself and asserts each state appears there verbatim, so this row
+cannot authorize a term the PRD does not define and cannot leak one into BRC5.
+`expected_marked_issue_ids` and `expected_unmarked_issue_ids` freeze marker
+presence exactly, so deleting a marker fails even when the observation digests
+are regenerated.
+
 | Fixture | Purpose |
 |---|---|
 | `authority-freeze-baseline.json` | The thirteen frozen digests and the production function that produced each one |
 | `protected-capabilities.json` | The protected list, the unmapped surfaces, and the still-absent campaign capability |
-| `batch-complete-10.json` | Ten unique valid slots; the `complete` path |
-| `batch-partial-7-of-10.json` | Slots 01–07 present, 08/09/10 missing; follow-up must name only the three |
-| `batch-duplicate-slot.json` | Two issues on slot 03; must fail closed as `issue_batch_ambiguous` and never auto-close one |
-| `batch-invalid-metadata.json` | Marker present but `group=one` and `slot=4`; one targeted edit repair, then `unfilled` |
-| `batch-missing-marker.json` | Title prefix present, body marker absent; proves the title is not slot authority. It states no `expected_outcome`: PRD Module 4 names no closed code for a body with no marker at all, and inventing one would hand BRC5 an unauthorized verdict |
-| `batch-source-drift.json` | Same issue observed twice with different bodies; `buildExternalSourceProjection` already reports `source_drift` |
+| `batch-complete-10.json` | Ten unique valid slots; every slot resolves `complete` |
+| `batch-partial-7-of-10.json` | Slots 01–07 `complete`, 08/09/10 `missing`; follow-up must name only the three |
+| `batch-duplicate-slot.json` | Two issues on slot 03; that slot is `issue_batch_ambiguous` and must never auto-close one of the pair |
+| `batch-invalid-metadata.json` | Marker present but `group=one` and `slot=4`; slot 04 is `slot_invalid`, allowing one targeted edit repair before degrading to `unfilled` |
+| `batch-missing-marker.json` | Title prefix present, body marker absent; the issue attaches to no slot, so slots 03–10 stay `missing`. This proves the title is not slot authority |
+| `batch-source-drift.json` | Same issue observed twice with different bodies; slot 06 is `issue_source_drift` and `buildExternalSourceProjection` already reports it |
 
 The marker format is exactly the three PRD fields and carries no hash:
 

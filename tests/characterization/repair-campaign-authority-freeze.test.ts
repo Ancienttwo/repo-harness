@@ -74,6 +74,12 @@ import { listHelperIds } from '../../src/cli/runtime/helper-runner';
 const REPO_ROOT = join(import.meta.dir, '../..');
 const FIXTURES = join(REPO_ROOT, 'tests/fixtures/repair-campaign');
 
+/** The PRD is the vocabulary authority; the fixtures may not exceed it. */
+const PRD_TEXT = readFileSync(
+  join(REPO_ROOT, 'plans/prds/20260902-2238-gpt-pro-seeded-repair-campaign.prd.md'),
+  'utf-8',
+);
+
 const BASELINE = JSON.parse(readFileSync(join(FIXTURES, 'authority-freeze-baseline.json'), 'utf-8')) as {
   readonly frozen: Record<string, { readonly sha256: string; readonly source: string }>;
 };
@@ -360,21 +366,21 @@ describe('BRC0 negative freeze: an Issue is not a Task', () => {
       const document = JSON.parse(readFileSync(join(FIXTURES, name), 'utf-8')) as {
         readonly kind: string;
         readonly declared_slots: readonly string[];
-        readonly expected_outcome?: string;
+        readonly expected_slot_states: Readonly<Record<string, string>>;
         readonly observations: readonly unknown[];
       };
       expect(document.kind).toBe('repo-harness-repair-campaign-provider-batch-fixture');
       expect(document.declared_slots).toHaveLength(10);
       expect(document.observations.length).toBeGreaterThan(0);
-      // Where a fixture states an outcome it must be a term the PRD already
-      // defines; this row invents no vocabulary for BRC5 to inherit.
-      if (typeof document.expected_outcome === 'string') {
-        expect([
-          'complete', 'incomplete', 'issue_batch_ambiguous', 'slot_invalid',
-          'issue_slot_unexpected', 'issue_source_drift',
-          'issue_provider_unavailable', 'issue_provider_snapshot_incomplete',
-        ]).toContain(document.expected_outcome);
+
+      // Every declared slot has a state, and every state is a term the PRD
+      // itself writes. The vocabulary is read out of the PRD rather than
+      // restated here, so this row cannot authorize its own fixtures.
+      expect(Object.keys(document.expected_slot_states).sort()).toEqual([...document.declared_slots].sort());
+      for (const state of new Set(Object.values(document.expected_slot_states))) {
+        expect(PRD_TEXT).toContain(`\`${state}\``);
       }
+
       for (const raw of document.observations) {
         const parsed = validateProviderIssueObservation(raw);
         expect(parsed.provider).toBe('github');
@@ -500,16 +506,13 @@ describe('BRC0 negative freeze: an Issue is not a Task', () => {
 
   test('the slot marker is the only slot authority; the title prefix is not', () => {
     const marked = JSON.parse(readFileSync(join(FIXTURES, 'batch-missing-marker.json'), 'utf-8')) as {
-      readonly expected_marker_present: boolean;
       readonly expected_unmarked_issue_ids: readonly string[];
-      readonly outcome_vocabulary_note: string;
+      readonly expected_slot_states: Readonly<Record<string, string>>;
       readonly observations: readonly unknown[];
     };
-    // PRD Module 4 names no outcome for a body with no marker at all, so this
-    // fixture must not carry an invented one.
-    expect(marked.expected_marker_present).toBe(false);
-    expect('expected_outcome' in marked).toBe(false);
-    expect(marked.outcome_vocabulary_note.length).toBeGreaterThan(0);
+    // The unmarked issue attaches to no slot, so every slot it might have
+    // filled stays `missing`.
+    expect(marked.expected_slot_states['03']).toBe('missing');
     const unmarked = marked.observations
       .map(validateProviderIssueObservation)
       .filter((entry) => !entry.body.includes('<!-- repo-harness-campaign:v1'));
@@ -521,15 +524,25 @@ describe('BRC0 negative freeze: an Issue is not a Task', () => {
 
   test('the campaign marker carries exactly the three PRD fields and no digest', () => {
     const MARKER = /<!-- repo-harness-campaign:v1\n([\s\S]*?)\n-->/u;
-    let seen = 0;
     for (const name of readdirSync(FIXTURES).filter((entry) => entry.startsWith('batch-'))) {
       const document = JSON.parse(readFileSync(join(FIXTURES, name), 'utf-8')) as {
+        readonly expected_marked_issue_ids: readonly string[];
+        readonly expected_unmarked_issue_ids: readonly string[];
         readonly observations: readonly unknown[];
       };
-      for (const observation of document.observations.map(validateProviderIssueObservation)) {
-        const match = MARKER.exec(observation.body);
-        if (match === null) continue;
-        seen += 1;
+      const observations = document.observations.map(validateProviderIssueObservation);
+
+      // Marker presence is frozen exactly, not as a floor: deleting a marker
+      // from any fixture that declares one fails here.
+      const withMarker = observations.filter((entry) => MARKER.test(entry.body));
+      const withoutMarker = observations.filter((entry) => !MARKER.test(entry.body));
+      expect([...new Set(withMarker.map((entry) => entry.provider_issue_id))].sort())
+        .toEqual([...document.expected_marked_issue_ids].sort());
+      expect([...new Set(withoutMarker.map((entry) => entry.provider_issue_id))].sort())
+        .toEqual([...document.expected_unmarked_issue_ids].sort());
+
+      for (const observation of withMarker) {
+        const match = MARKER.exec(observation.body)!;
         const lines = match[1]!.split('\n');
         const keys = lines.map((line) => line.split('=')[0]);
         // Exactly three fields, in the PRD's order, and nothing else.
@@ -544,7 +557,6 @@ describe('BRC0 negative freeze: an Issue is not a Task', () => {
         }
       }
     }
-    expect(seen).toBeGreaterThanOrEqual(20);
   });
 
   test('the same issue observed twice with a different body is source drift', () => {
