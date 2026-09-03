@@ -31,7 +31,7 @@ import {
   type BoardLeaseInput,
   type BoardTaskInput,
 } from '../src/core/state/project-board';
-import type { BacklogRow } from '../src/core/state/sprint-backlog-rows';
+import type { CanonicalTaskRow } from '../src/core/state/coordination-identity';
 import type {
   AttemptReceiptV1,
   BoardCardV1,
@@ -92,10 +92,9 @@ const UNKNOWN_REASONS = [
   'owner_record_unreadable',
 ] as const;
 
-function backlogRow(status: string): BacklogRow {
+function backlogRow(status: string): CanonicalTaskRow {
   return {
     index: '1',
-    id: TASK_ID,
     status,
     task: TASK_CELL,
     mode: 'contract',

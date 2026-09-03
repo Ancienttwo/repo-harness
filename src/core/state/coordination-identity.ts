@@ -119,11 +119,23 @@ export function unmigratedSprintRefusal(sprintPath: string): string {
 }
 
 /** One backlog row resolved to its coordination identity. */
+/**
+ * The backlog row as a canonical task carries it: every cell except `id`.
+ *
+ * `id` is deliberately absent. It is the persisted identity, and the projection
+ * already carries it once as `task_id`; embedding it again would put the same
+ * datum in two places, so a reader could compare them, disagree, and have no
+ * authority to resolve it. Dropping it also keeps the projected row shape
+ * identical to schema 1's, which is what lets a byte-freeze over this
+ * projection move for exactly one reason -- the revision -- rather than two.
+ */
+export type CanonicalTaskRow = Omit<BacklogRow, 'id'>;
+
 export interface CanonicalTask {
   readonly task_id: string;
   readonly task_revision: string;
   readonly sprint_path: string;
-  readonly row: BacklogRow;
+  readonly row: CanonicalTaskRow;
 }
 
 export interface CanonicalSprintInput {
@@ -161,16 +173,19 @@ export function projectCanonicalTasks(input: CanonicalSprintInput): CanonicalTas
       );
     }
     seen.add(row.id);
+    // The rest spread drops `id` and preserves the remaining key order, so the
+    // projected row is byte-identical in shape to the schema 1 row it replaced.
+    const { id: persistedId, ...displayRow } = row;
     return {
-      task_id: row.id,
+      task_id: persistedId,
       task_revision: deriveTaskRevision({
-        taskId: row.id,
+        taskId: persistedId,
         taskCell: row.task,
         modeCell: row.mode,
         acceptanceCell: row.acceptance,
       }),
       sprint_path: input.sprintPath,
-      row,
+      row: displayRow,
     };
   });
 }

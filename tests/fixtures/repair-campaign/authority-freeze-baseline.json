@@ -6,7 +6,7 @@
   "rebaselined_at": "2026-09-03T00:00:00Z",
   "reason": "#283 persisted task IDs (schema 2); campaign owner accepted",
   "rebaselined": {
-    "note": "Every moved digest below carries a task_revision, whose preimage gained the exact Task cell and the protocol-v2 domain under backlog schema 2. task_id itself was preserved: the freeze fixture now persists the same ids its rows derived under schema 1, which is what `sprint migrate-schema` writes for a real sprint. task.offer_revision, task.offer_classification_matrix, acceptance.*, publication.publication_id and external_source.* are therefore unchanged, which is the proof that the re-baseline is bounded to task revision semantics and did not touch another authority.",
+    "note": "Every moved digest below carries a task_revision, whose preimage gained the exact Task cell and the protocol-v2 domain under backlog schema 2. That is the single cause: task_id itself was preserved (the freeze fixture persists the same ids its rows derived under schema 1, which is what `sprint migrate-schema` writes for a real sprint), and `projectCanonicalTasks` carries the persisted id exactly once as `task_id` rather than embedding it a second time inside the projected row, so the projected row shape is identical to schema 1's. task.offer_revision, task.offer_classification_matrix, acceptance.*, publication.publication_id and external_source.* are therefore unchanged, which is the proof that the re-baseline is bounded to task revision semantics and did not touch another authority.",
     "previous": {
       "task.canonical_projection": "sha256:f45ebbcd68ab31ad54399fd50d35da2e506797af4529c35f7159ecf97d70785e",
       "lease.reserving_record": "sha256:34b71461dd9306b2d70c73167e64c87bd4c4093bab19c20da7da83c533f77f52",
@@ -18,7 +18,7 @@
   "rule": "Each digest is sha256 over bytes produced by the production function named in `source`. Where an authority owns its own canonical serializer the digest is taken over that output directly; where a production function returns an object rather than bytes, `source` names both the subject producer and the repository canonical serializer used to render it. The subject is the literal value built in tests/characterization/repair-campaign-authority-freeze.test.ts. A moved digest means an authority changed; re-deriving the value to make the test pass is never the correct repair.",
   "frozen": {
     "task.canonical_projection": {
-      "sha256": "sha256:4778e3b559513352cf7d681966c5a97a1ed790bb8ebf61afe09626995fde8498",
+      "sha256": "sha256:862deb7585620d5d019623130c375905cede72d4a454e1dd817a7ec31531384c",
       "source": "subject: src/core/state/coordination-identity.ts#projectCanonicalTasks; bytes: src/core/fleet/board.ts#canonicalJson"
     },
     "task.offer_revision": {

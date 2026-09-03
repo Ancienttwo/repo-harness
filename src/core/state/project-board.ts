@@ -49,7 +49,7 @@ import {
   PENDING_ROW_STATUS,
   type LeaseOwnerRecord,
 } from './coordination-identity';
-import type { BacklogRow } from './sprint-backlog-rows';
+import type { CanonicalTaskRow } from './coordination-identity';
 import type {
   BoardActionsV1,
   BoardCanonicalTargetV1,
@@ -141,7 +141,7 @@ export interface BoardTaskInput {
    * projection is what keeps `missing` from becoming an unreachable state that
    * silently changes meaning the first time a caller does enumerate leases.
    */
-  readonly row: BacklogRow | null;
+  readonly row: CanonicalTaskRow | null;
   readonly lease: BoardLeaseInput;
   readonly evidence: BoardEvidenceInput | null;
 }
@@ -168,7 +168,7 @@ export interface BoardInputsV1 {
 export interface BoardOwnershipInput {
   readonly task_id: string;
   readonly task_revision: string;
-  readonly row: BacklogRow | null;
+  readonly row: CanonicalTaskRow | null;
   readonly lease: BoardLeaseInput;
   readonly worktree_present: boolean | null;
 }

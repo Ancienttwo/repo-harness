@@ -544,13 +544,15 @@ describe("sprint-backlog helper", () => {
     }
   }, 60_000);
 
-  test("a title edit does not orphan the lease: the claim token is found by task id", () => {
-    // The defect #283 exists to remove, in the shell layer. The claim token is
-    // named `<task_id>.claim` and carries its own `task_id`, so locating it by
-    // the Task cell text meant a renamed row reported "this tree holds no
-    // token": the gate refused a row the tree really owned, and the release
-    // that follows completion silently did nothing.
-    const cwd = tmpWorkspace("sprint-backlog-rename-token");
+  test("a title edit keeps identity and stales the lease: completion fails on task revision", () => {
+    // The two halves of the contract, in one flow. Identity survives a rename,
+    // so the claim token is still found -- it is named `<task_id>.claim`, not
+    // by the Task cell. But the revision moved, so the lease this tree holds
+    // was taken against a definition that no longer exists, and completing on
+    // it would publish "done" for work nobody agreed to. The contract path
+    // already fences this in `sprint begin-completion`; the inline path did
+    // not, and silently completed and released instead.
+    const cwd = tmpWorkspace("sprint-backlog-rename-revision");
     try {
       copySprintHelpers(cwd, ["sprint-backlog.sh", "capture-plan.sh"]);
       const sprintPath = "plans/sprints/20260610-0000-fixture-sprint.sprint.md";
@@ -565,33 +567,52 @@ describe("sprint-backlog helper", () => {
 
       const start = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-b"], cwd);
       expect(start.status, `${start.stdout}\n${start.stderr}`).toBe(0);
+      const staleClaimId = start.stdout.match(/as claim ([^\s]+)/)?.[1] ?? "";
+      expect(staleClaimId).toMatch(/^[0-9a-f-]{36}$/);
       const claimsDir = join(cwd, ".ai/harness/sprint/claims");
-      const tokenName = readdirSync(claimsDir).filter((name) => name.endsWith(".claim"))[0]!;
+      const taskId = fixtureTaskId("task-b");
       // The token is addressed by identity, not by title.
-      expect(tokenName).toBe(`${fixtureTaskId("task-b")}.claim`);
-      const leaseDir = join(cwd, ".git/repo-harness/coordination/v1/leases", fixtureTaskId("task-b"));
+      expect(readdirSync(claimsDir).filter((name) => name.endsWith(".claim"))).toEqual([`${taskId}.claim`]);
+      const leaseDir = join(cwd, ".git/repo-harness/coordination/v1/leases", taskId);
       expect(existsSync(leaseDir)).toBe(true);
 
       // Rename the row: the persisted ID cell is untouched, only the Task text
-      // moves. Identity survives, so the tree still owns the row.
+      // moves, so identity survives and the revision drifts.
       const before = readFileSync(join(cwd, sprintPath), "utf-8");
       const renamed = before.replace(
-        `| ${fixtureTaskId("task-b")} | [ ] | task-b |`,
-        `| ${fixtureTaskId("task-b")} | [ ] | task-b (clarified) |`,
+        `| ${taskId} | [ ] | task-b |`,
+        `| ${taskId} | [ ] | task-b (clarified) |`,
       );
       expect(renamed).not.toBe(before);
       writeFileSync(join(cwd, sprintPath), renamed);
       run("git", ["add", "-A"], cwd);
       run("git", ["commit", "-q", "-m", "rename the row"], cwd);
 
+      // The token is found -- identity held -- and the revision fence refuses.
+      const stale = run("bash", ["scripts/sprint-backlog.sh", "complete-task", "--task", "task-b (clarified)"], cwd);
+      expect(stale.status).toBe(1);
+      expect(stale.stderr).not.toContain("holds no claim token");
+      expect(stale.stderr).toContain("drifted since it was claimed");
+      expect(stale.stderr).toContain("repo-harness sprint release --claim-id");
+      // Nothing moved: the row is still pending and the lease still stands.
+      expect(readFileSync(join(cwd, sprintPath), "utf-8"))
+        .toContain(`| 2 | ${taskId} | [ ] | task-b (clarified) |`);
+      expect(existsSync(leaseDir)).toBe(true);
+      expect(readdirSync(claimsDir).filter((name) => name.endsWith(".claim"))).toEqual([`${taskId}.claim`]);
+
+      // The named recovery: release the stale claim, re-claim at the current
+      // revision, and the same row completes.
+      expect(run(CLI_WRAPPER, ["sprint", "release", "--claim-id", staleClaimId], cwd).status).toBe(0);
+      const reclaim = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-b (clarified)"], cwd);
+      expect(reclaim.status, `${reclaim.stdout}\n${reclaim.stderr}`).toBe(0);
+
       const complete = run("bash", ["scripts/sprint-backlog.sh", "complete-task", "--task", "task-b (clarified)"], cwd);
       expect(complete.status, `${complete.stdout}\n${complete.stderr}`).toBe(0);
       expect(complete.stdout).toContain("Released lease for 'task-b (clarified)'");
-      // The lease really is gone, and so is the token.
       expect(existsSync(leaseDir)).toBe(false);
-      expect(readdirSync(claimsDir)).toHaveLength(0);
+      expect(readdirSync(claimsDir).filter((name) => name.endsWith(".claim"))).toHaveLength(0);
       expect(readFileSync(join(cwd, sprintPath), "utf-8"))
-        .toContain(`| 2 | ${fixtureTaskId("task-b")} | [x] | task-b (clarified) |`);
+        .toContain(`| 2 | ${taskId} | [x] | task-b (clarified) |`);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

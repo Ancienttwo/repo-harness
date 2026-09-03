@@ -318,7 +318,6 @@ function pureTask(overrides: Partial<BoardOwnershipInput> = {}): BoardOwnershipI
     task_revision: 'rev-own',
     row: {
       index: '1',
-      id: PURE_TASK_ID,
       status: '[ ]',
       task: 'wire the hook slice',
       mode: 'contract',
@@ -402,7 +401,7 @@ describe('renderBoardSlice is deterministic and bounded', () => {
         pureTask(),
         ...Array.from({ length: count }, (_unused, index) => pureTask({
           task_id: `${String(index).padStart(2, '0')}${'0'.repeat(62)}`,
-          row: { index: String(index + 2), id: `${String(index).padStart(2, '0')}${'0'.repeat(62)}`, status: '[ ]', task: `peer row ${index}`, mode: 'contract', acceptance: 'x', plan: '(pending)' },
+          row: { index: String(index + 2), status: '[ ]', task: `peer row ${index}`, mode: 'contract', acceptance: 'x', plan: '(pending)' },
         })),
       ],
     });
@@ -433,7 +432,7 @@ describe('renderBoardSlice is deterministic and bounded', () => {
       sprint_path: SPRINT_PATH,
       self_task_id: PURE_TASK_ID,
       tasks: [pureTask({
-        row: { index: '1', id: PURE_TASK_ID, status: '[ ]', task: long, mode: 'contract', acceptance: 'x', plan: '(pending)' },
+        row: { index: '1', status: '[ ]', task: long, mode: 'contract', acceptance: 'x', plan: '(pending)' },
       })],
     });
     const rendered = renderBoardSlice(slice);

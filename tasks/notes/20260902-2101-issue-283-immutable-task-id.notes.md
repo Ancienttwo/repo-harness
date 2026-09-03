@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260902-2101-issue-283-immutable-task-id.review.md
 > **Last Updated**: 2026-09-02 21:01
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:7e3a7ab3b47dfd5aba6206d94ff081af56cf0cd8b96de8b496fad15665ca6a93`
+> **Substantive Change SHA256**: `sha256:e20691b9d1d9a80110672e895be163803cc2c128ad32ec4066824ac85a18b7ee`
 
 ## Design Decisions
 
@@ -159,6 +159,32 @@
   scanners (`contract-worktree.sh`, `ship-worktrees.sh`) were already
   identity-based -- they take the single token in the worktree and read
   `task_id` out of it -- so the sweep changed nothing there.
+- **Inline completion is fenced on task revision, not only on ownership.**
+  Locating the claim token by identity fixed half the rename story and exposed
+  the other half: the token was found, the claim ids matched, and
+  `complete-task` happily completed and released a lease taken against a
+  definition that no longer existed. Identity surviving a rename is the point;
+  the *definition* not surviving it is what `task_revision` is for. The gate now
+  compares the canonical revision `sprint identify` returns against the one the
+  owner record carries, and refuses with both values plus the named recovery
+  (release and re-claim, or an explicit steal). It re-derives neither value --
+  both come from the CLI, which owns every digest -- and it reaches the same
+  conclusion the contract path already reached inside the per-task lock in
+  `sprint begin-completion` ("drifted since it was claimed"). Sweep: the two
+  other finish/steal surfaces delegate to that same CLI gate
+  (`contract-worktree.sh` through `begin-completion`, `ship-worktrees.sh`
+  through the publication CLI, which re-reads the owner record), so the inline
+  path was the only one missing it.
+- **The canonical projection carries the persisted id exactly once.**
+  `projectCanonicalTasks()` embedded the whole backlog row next to `task_id`,
+  and under schema 2 that row carries `id` -- the same datum in two places, with
+  no authority to resolve a disagreement between them. The projected row is now
+  `CanonicalTaskRow` (`Omit<BacklogRow, 'id'>`), produced by a rest spread that
+  preserves the remaining key order, so the projected shape is identical to
+  schema 1's. That also made the BRC0 freeze honest: `task.canonical_projection`
+  had been moving for two reasons, and now moves only through `task_revision`,
+  which is what the baseline's `rebaselined.note` claims. `BoardTaskInput` and
+  `BoardOwnershipInput` follow the same shape; no consumer read `row.id`.
 - **Precondition proof and write are one coordination boundary.** The migration
   used to prove the live-lease, sprint-bytes and carrier-bytes preconditions
   outside any lock, so a `complete-task` holding the shared backlog lock could

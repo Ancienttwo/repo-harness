@@ -107,7 +107,6 @@ function taskOf(observation: Observation): BoardTaskInput {
     task_revision: TASK_REVISION,
     row: {
       index: '1',
-      id: TASK_ID,
       status: '[ ]',
       task: TASK_CELL,
       mode: 'contract',

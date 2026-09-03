@@ -65,7 +65,7 @@
 
 ## Residual Risks / Follow-ups
 
-- `plans/sprints/20260828-2321-collaborative-work-exchange-agent-succession.sprint.md` remains schema 1 read-only; the blocker (a stranded `completing` lease on row 10) and the v1-parser removal trigger are recorded in `tasks/todos.md`.
+- Both tracked sprints are backlog schema 2: the succession sprint migrated in `772cc059` after its stranded `completing` lease on row 10 was cleared through the bounded `sprint reconcile` recovery window, and the repair campaign sprint in `ed1a01de` once its owner released every lease. The v1-parser removal trigger stays recorded in `tasks/todos.md`, now waiting on archived sprints and downstream repos rather than on these two.
 - `proveCanonicalTaskPlan()` still binds plans to rows through `sprint:<path>#<Task cell>`, so a rename still fails that proof with `plan_source_mismatch`; that is a separate authority and is tracked as the `plan-source-ref-task-cell-coupling` row in `tasks/todos.md`.
 - Migrated ids carry the schema 1 preimage, which includes the migrating clone's git common-directory path. Migrate once and commit the result.
 

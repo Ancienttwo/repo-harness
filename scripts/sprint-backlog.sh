@@ -915,6 +915,7 @@ assert_completion_lease_gate() {
   local sprint_path="$1" task_cell="$2"
   local coordination_dir leases_root entry identity task_id lease_dir owner_file
   local owner_claim token token_claim found status
+  local canonical_revision owner_revision
 
   if ! coordination_dir="$(coordination_root)"; then
     echo "sprint-backlog: not inside a git repository; the shared lease cannot be read" >&2
@@ -975,6 +976,29 @@ assert_completion_lease_gate() {
   token_claim="$(claim_token_field "$token" claim_id)"
   if [[ "$token_claim" != "$owner_claim" ]]; then
     echo "sprint-backlog: backlog task '$task_cell' is claimed by ${owner_claim}, but this worktree holds claim ${token_claim:-(none)}; the claim moved, so this tree may not complete the row" >&2
+    exit 1
+  fi
+
+  # The revision fence, and why ownership alone is not enough.
+  #
+  # Identity survives a Task title edit -- that is the point of the persisted ID
+  # column, and it is why the token above was still found. What does not survive
+  # is the *definition*: `task_revision` hashes the Task, Mode and Acceptance
+  # cells, so a lease taken before the edit was taken against a row that no
+  # longer exists. Completing on it would publish "done" for work nobody agreed
+  # to. The contract path already refuses this inside the per-task lock in
+  # `sprint begin-completion` ("drifted since it was claimed"); the inline path
+  # reaches the same conclusion from the two values the CLI already produced --
+  # `sprint identify` reads the canonical revision, and the owner record carries
+  # the one the claim observed -- rather than re-deriving either of them here.
+  canonical_revision="$(json_string_field "$identity" task_revision)"
+  owner_revision="$(lease_owner_field "$owner_file" task_revision || true)"
+  if [[ -z "$canonical_revision" || -z "$owner_revision" ]]; then
+    echo "sprint-backlog: cannot compare the task revision of '$task_cell' (canonical=${canonical_revision:-(none)}, lease=${owner_revision:-(none)}); run 'repo-harness sprint reconcile --task-id $task_id --target-ref <branch>' before completing it" >&2
+    exit 1
+  fi
+  if [[ "$canonical_revision" != "$owner_revision" ]]; then
+    echo "sprint-backlog: backlog task '$task_cell' drifted since it was claimed: canonical revision is ${canonical_revision}, the claim observed ${owner_revision}; release the stale claim with 'repo-harness sprint release --claim-id ${owner_claim}' and re-claim the row at the current revision, or take it over explicitly with 'repo-harness sprint steal --expected-claim-id ${owner_claim} --reason <reason> --session-id <id>'" >&2
     exit 1
   fi
 }
