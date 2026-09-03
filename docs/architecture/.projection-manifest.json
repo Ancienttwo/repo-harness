@@ -885,9 +885,9 @@
       "sourceDigest": "sha256:183d7a9ef531bb200e573b337911d503eac0d86741a87b02d5d0b60896930782",
       "outputDigest": "sha256:2e93a1f59017a07da7860cf0073e6911d9f75032b5af8be503c56087f394466a",
       "verifiedAgainst": {
-        "branch": "codex/external-source-binding-wp2",
-        "commit": "f51a2282e22f32d605fae93139553c8aeadd55be",
-        "committedAt": "2026-09-01T03:17:19+08:00"
+        "branch": "codex/candidate-bound-global-runtime-reconciliation",
+        "commit": "8aee832df364374523e3290cea773eb7832a91ac",
+        "committedAt": "2026-09-04T03:45:28+08:00"
       }
     },
     {
@@ -905,9 +905,9 @@
       "sourceDigest": "sha256:c5528c7ff9467b71364ce083ab4d0bbaff0729765c1e1f8b511ae54319a88e94",
       "outputDigest": "sha256:235db05ad6aca5f3bd47ce84257904865e2b41f0b69c00c2f50989b6e7e61313",
       "verifiedAgainst": {
-        "branch": "codex/me3a-provider-thread-effect",
-        "commit": "73aa7d0c291ac5e83bd5ae8205f36b4894d1f0a3",
-        "committedAt": "2026-08-25T23:17:17+08:00"
+        "branch": "codex/candidate-bound-global-runtime-reconciliation",
+        "commit": "8aee832df364374523e3290cea773eb7832a91ac",
+        "committedAt": "2026-09-04T03:45:28+08:00"
       }
     },
     {
@@ -1046,8 +1046,8 @@
       "outputDigest": "sha256:966f7438cd7b385cb411a2ef8c2de18c0b1e71eb067941c97375a4b284a873b9",
       "verifiedAgainst": {
         "branch": "codex/candidate-bound-global-runtime-reconciliation",
-        "commit": "d73914fd42197fe0a931cc5c158d498aa0a94b3d",
-        "committedAt": "2026-09-04T01:16:41+08:00"
+        "commit": "8aee832df364374523e3290cea773eb7832a91ac",
+        "committedAt": "2026-09-04T03:45:28+08:00"
       }
     },
     {
