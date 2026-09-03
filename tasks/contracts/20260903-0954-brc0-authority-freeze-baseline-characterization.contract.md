@@ -1,6 +1,6 @@
 # Task Contract: brc0-authority-freeze-baseline-characterization
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
