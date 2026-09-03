@@ -103,12 +103,25 @@ is consumed unchanged.
 
 `buildExternalSourceBindingReceipt` (`src/core/external-sources/binding.ts:118`)
 takes `task_id`, `task_revision`, `sprint_path`, `plan_path` and `contract_path`
-as **required inputs** and validates `task_id` against
-`/^[0-9a-f]{64}$/`. The binding therefore consumes a Task that already exists
-under canonical authority; it has no branch on which it could mint one. A
-campaign that wanted an Issue number to become a Task identity would have to
-change this file. The freeze test asserts both directions: binding with the real
-canonical `task_id` succeeds, and binding with `issue-<number>` throws.
+as **required inputs**. It has no branch on which it could mint a Task: every
+identity field is supplied by the caller. But it is a schema boundary, not the
+identity authority — it validates `task_id` against `/^[0-9a-f]{64}$/` and
+nothing more, so any well-formed digest passes it, including one a campaign
+derived from an Issue number.
+
+The authority that rejects an invented identity is
+`lookupCanonicalTask` (`src/core/state/coordination-identity.ts:143`), which
+resolves a `task_id` only against rows the canonical sprint actually contains,
+and `revalidateOffer` in `src/effects/fleet/acquire.ts`, which re-reads canonical
+before any claim. The freeze test asserts all three facts: binding with the real
+canonical `task_id` succeeds, binding with `issue-<number>` throws on shape, and
+a well-formed digest derived from an Issue title resolves to no backlog row while
+every real canonical task id does.
+
+Naming this precisely matters for the campaign design. "The binding cannot mint a
+Task" is true but weak; the enforceable statement is "an identity that no
+canonical backlog row produced resolves to nothing, at lookup and again at
+acquisition."
 
 ## P3: Why the boundary is where it is
 
@@ -148,10 +161,16 @@ listed as allowed is forbidden; absent capability is not permission.
 | Human Campaign Owner | Authorize the campaign; execute every merge in Phase A; grant waivers | — |
 
 Two negative facts hold this table up, and both are asserted in the freeze test:
-an Issue observation carries no Task field on any code path, and a dispatch
-prompt reaches no coordination input — `ClassifyTaskOfferInput` has no prompt
-channel, and `parseLeaseOwnerRecord` rejects both a prompt-derived `task_id` and
-any extra field.
+
+- An Issue observation carries no Task field on any code path, and an identity
+  derived from one resolves to no canonical backlog row.
+- A dispatch prompt reaches no coordination input. `ClassifyTaskOfferInput` has
+  no prompt channel, `parseLeaseOwnerRecord` rejects both a prompt-derived
+  `task_id` and any extra field, and the real `acquireFleetTask` entrypoint —
+  driven with every side-effecting dependency replaced by a throwing spy — fails
+  closed at the selection boundary with `offer_stale` when a prompt-derived task
+  identity is asserted, and `no_eligible_task` when it is not. No spy is ever
+  reached, so no claim, worktree, lease binding or claim token is created.
 
 ## Protected capabilities
 
@@ -194,7 +213,7 @@ fixtures pass `validateProviderIssueObservation` unchanged.
 | `batch-partial-7-of-10.json` | Slots 01–07 present, 08/09/10 missing; follow-up must name only the three |
 | `batch-duplicate-slot.json` | Two issues on slot 03; must fail closed as `issue_batch_ambiguous` and never auto-close one |
 | `batch-invalid-metadata.json` | Marker present but `group=one` and `slot=4`; one targeted edit repair, then `unfilled` |
-| `batch-missing-marker.json` | Title prefix present, body marker absent; proves the title is not slot authority |
+| `batch-missing-marker.json` | Title prefix present, body marker absent; proves the title is not slot authority. It states no `expected_outcome`: PRD Module 4 names no closed code for a body with no marker at all, and inventing one would hand BRC5 an unauthorized verdict |
 | `batch-source-drift.json` | Same issue observed twice with different bodies; `buildExternalSourceProjection` already reports `source_drift` |
 
 The marker format is exactly the three PRD fields and carries no hash:
@@ -216,10 +235,14 @@ exercised here.
 - `heartbeat-triage` is discovery-only. `scripts/heartbeat-triage.sh` runs three
   read probes (`check-task-workflow.sh --strict`, `sprint-backlog.sh next`,
   a pending-request scan) and writes exactly `.ai/harness/triage/inbox.md` plus
-  one run snapshot under `.ai/harness/runs/`. The freeze test runs it against a
-  temporary repository and asserts that write set, plus a clean `git status` and
-  an empty lease inventory. The source text contains no git mutation, no `gh`
-  call, no lease or claim verb and no spawn.
+  one run snapshot under `.ai/harness/runs/`. The freeze test runs the helper
+  **in place**, from the repository's own `scripts/`, against a temporary
+  repository, so the sibling probes it shells out to are the real ones and any
+  transitive write lands inside the observed fixture. The test asserts the write
+  set, that the workflow probe reported `fail` rather than the missing-helper
+  `warning` (proving it actually executed), a clean `git status` and an empty
+  lease inventory. The source text contains no git mutation, no `gh` call, no
+  lease or claim verb and no spawn.
 - `repo-harness-autoplan` is retired with no successor
   (`assets/skill-commands/manifest.json` `retiredPackages`, `replacement: null`).
   No helper id, no `RUN_HELP_GROUPS` entry and no `scripts/autoplan.*` exists.

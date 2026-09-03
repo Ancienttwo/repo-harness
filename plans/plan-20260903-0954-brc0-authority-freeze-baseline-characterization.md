@@ -1,7 +1,7 @@
 # Plan: Sprint task: BRC0 — Authority freeze 与 baseline characterization
 
 > **Status**: Executing
-> **Substantive Change SHA256**: `sha256:7d26d4bcabaeae65146d64eb62b7b5a5d5e4d8ce8b1a0e14abb2d472fc784da8`
+> **Substantive Change SHA256**: `sha256:096cec1473a069904624b368da8e1232c50071398bf0f8c7a6f32d4fed9ecf82`
 > **Created**: 20260903-0954
 > **Slug**: brc0-authority-freeze-baseline-characterization
 > **Planning Source**: repo-harness-sprint
@@ -67,6 +67,7 @@ assertion either pins exact production bytes or pins an absence the campaign des
 | `docs/architecture/requests/runtime-harness-development-campaign.md` | Add (generated) | `planned-boundary-change` drift request for the new capability |
 | `docs/architecture/snapshots/2026-09-03-development-campaign-boundary-declaration.md` | Add | Authored boundary declaration: entrypoints, consumed capabilities, dependency direction |
 | `docs/architecture/index.md` | Modify (generated) | Pending-request index entry |
+| `docs/architecture/.projection-manifest.json` | Modify (generated) | Provenance refreshed by the automatic archctx projection that `verify-sprint --prepare-acceptance` runs |
 | `src/**` | None | This row changes zero source behavior |
 
 ### Data Flow
@@ -189,8 +190,9 @@ Two decisions were forced during the pass and both are recorded in
       `deriveTaskId`/`deriveTaskRevision` agreement, and `taskOfferRevision`, in
       `tests/characterization/repair-campaign-authority-freeze.test.ts`.
 - [x] Freeze the whole closed `classifyTaskOffer` input matrix (access mode x row status x seven
-      lease states x three modes x two consistencies x plan present/absent x eight plan failures)
-      as one digest.
+      lease states x three modes x two consistencies x plan present/absent x eight plan failures x
+      `canonical_available` true/false = 5376 inputs) as one digest over the repository canonical
+      serializer, so no branch of the classifier can change without moving it.
 - [x] Freeze Lease authority bytes for `reserving` and `bound`, and assert
       `parseLeaseOwnerRecord(serializeLeaseOwnerRecord(record))` round-trips.
 - [x] Freeze Acceptance authority bytes: `canonicalAcceptanceMatrixBytes` plus `matrix_sha256`, and
@@ -207,10 +209,14 @@ Two decisions were forced during the pass and both are recorded in
       reconciliation logic is implemented here.
 - [x] Negative fixture: a full ten-slot batch projects to zero Task, zero sprint row and zero lease;
       `buildExternalSourceBindingReceipt` succeeds with the canonical `task_id` and throws with
-      `issue-<number>`.
+      `issue-<number>`; and, because the binding is a schema boundary rather than the identity
+      authority, `lookupCanonicalTask` resolves every real canonical task id and rejects a
+      well-formed digest derived from an Issue title.
 - [x] Negative fixture: a dispatch prompt reaches no coordination input -- `classifyTaskOffer` with
-      extra prompt fields is identical, and `parseLeaseOwnerRecord` rejects a prompt-derived
-      `task_id` and any extra field.
+      extra prompt fields is identical, `parseLeaseOwnerRecord` rejects a prompt-derived `task_id`
+      and any extra field, and the real `acquireFleetTask` entrypoint with every side-effecting
+      dependency replaced by a throwing spy returns `offer_stale` for a prompt-derived assertion and
+      `no_eligible_task` without one, reaching no spy.
 - [x] Prove `heartbeat-triage` is still discovery-only: source-text audit for mutation, provider and
       dispatch verbs, plus a real run in a temporary repository asserting the write set is exactly
       `.ai/harness/triage/inbox.md` and one run snapshot, a clean `git status`, and an empty lease

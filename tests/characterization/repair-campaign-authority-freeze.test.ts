@@ -19,7 +19,7 @@
 import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join, relative } from 'path';
 
@@ -28,6 +28,7 @@ import {
   buildLeaseOwnerRecord,
   deriveTaskId,
   deriveTaskRevision,
+  lookupCanonicalTask,
   parseLeaseOwnerRecord,
   projectCanonicalTasks,
   serializeLeaseOwnerRecord,
@@ -38,6 +39,9 @@ import {
   taskOfferRevision,
   type ClassifyTaskOfferInput,
 } from '../../src/core/fleet/task-offer';
+import { canonicalJson } from '../../src/core/fleet/board';
+import { acquireFleetTask, type FleetAcquireDependencies } from '../../src/effects/fleet/acquire';
+import type { RepoHarnessRegistrySnapshot } from '../../src/effects/repo-registry';
 import {
   buildAcceptanceMatrix,
   canonicalAcceptanceMatrixBytes,
@@ -69,6 +73,16 @@ const BASELINE = JSON.parse(readFileSync(join(FIXTURES, 'authority-freeze-baseli
 
 function digest(value: string): string {
   return `sha256:${createHash('sha256').update(value, 'utf-8').digest('hex')}`;
+}
+
+/**
+ * `projectCanonicalTasks` and `classifyTaskOffer` return objects, not bytes.
+ * Their byte contract is the repository's own canonical serializer in
+ * `src/core/fleet/board.ts`; using it here keeps the digest a property of
+ * production code rather than of this file's `JSON.stringify` call order.
+ */
+function canonicalDigest(value: unknown): string {
+  return digest(canonicalJson(value));
 }
 
 function frozen(id: string): string {
@@ -230,16 +244,18 @@ const OFFER_MATRIX: readonly ClassifyTaskOfferInput[] = (() => {
           for (const consistency of ['stable', 'changed_during_read'] as const) {
             for (const hasPlan of [true, false]) {
               for (const planFailure of planFailures) {
-                inputs.push({
-                  repo_access_mode: accessMode,
-                  row_status: rowStatus,
-                  mode,
-                  lease_state: leaseState,
-                  snapshot_consistency: consistency,
-                  plan: hasPlan ? plan : null,
-                  plan_failure: planFailure,
-                  canonical_available: true,
-                });
+                for (const canonicalAvailable of [true, false]) {
+                  inputs.push({
+                    repo_access_mode: accessMode,
+                    row_status: rowStatus,
+                    mode,
+                    lease_state: leaseState,
+                    snapshot_consistency: consistency,
+                    plan: hasPlan ? plan : null,
+                    plan_failure: planFailure,
+                    canonical_available: canonicalAvailable,
+                  });
+                }
               }
             }
           }
@@ -277,7 +293,7 @@ function listFiles(root: string): string[] {
 
 describe('BRC0 authority freeze: canonical bytes', () => {
   test('Task authority bytes are unchanged', () => {
-    expect(digest(JSON.stringify(CANONICAL_TASKS))).toBe(frozen('task.canonical_projection'));
+    expect(canonicalDigest(CANONICAL_TASKS)).toBe(frozen('task.canonical_projection'));
     expect(CANONICAL_TASKS[0]!.task_id).toBe(deriveTaskId({
       repoIdentity: REPO_IDENTITY,
       sprintPath: SPRINT_PATH,
@@ -294,7 +310,11 @@ describe('BRC0 authority freeze: canonical bytes', () => {
 
   test('TaskOffer classification is unchanged across the whole closed input matrix', () => {
     const results = OFFER_MATRIX.map((input) => classifyTaskOffer(input));
-    expect(digest(JSON.stringify(results))).toBe(frozen('task.offer_classification_matrix'));
+    // Both `canonical_available` values are in the matrix, so the dedicated
+    // `canonical_unavailable` branch cannot change without moving the digest.
+    expect(OFFER_MATRIX).toHaveLength(5376);
+    expect(OFFER_MATRIX.some((input) => input.canonical_available === false)).toBe(true);
+    expect(canonicalDigest(results)).toBe(frozen('task.offer_classification_matrix'));
   });
 
   test('Lease authority bytes are unchanged for reserving and bound', () => {
@@ -333,11 +353,21 @@ describe('BRC0 negative freeze: an Issue is not a Task', () => {
       const document = JSON.parse(readFileSync(join(FIXTURES, name), 'utf-8')) as {
         readonly kind: string;
         readonly declared_slots: readonly string[];
+        readonly expected_outcome?: string;
         readonly observations: readonly unknown[];
       };
       expect(document.kind).toBe('repo-harness-repair-campaign-provider-batch-fixture');
       expect(document.declared_slots).toHaveLength(10);
       expect(document.observations.length).toBeGreaterThan(0);
+      // Where a fixture states an outcome it must be a term the PRD already
+      // defines; this row invents no vocabulary for BRC5 to inherit.
+      if (typeof document.expected_outcome === 'string') {
+        expect([
+          'complete', 'incomplete', 'issue_batch_ambiguous', 'slot_invalid',
+          'issue_slot_unexpected', 'issue_source_drift',
+          'issue_provider_unavailable', 'issue_provider_snapshot_incomplete',
+        ]).toContain(document.expected_outcome);
+      }
       for (const raw of document.observations) {
         const parsed = validateProviderIssueObservation(raw);
         expect(parsed.provider).toBe('github');
@@ -404,8 +434,7 @@ describe('BRC0 negative freeze: an Issue is not a Task', () => {
       bound_at: '2026-09-03T02:10:00.000Z',
     });
     // The receipt only *references* the canonical Task; it is an input, never
-    // an output.  Binding with a Task identity the campaign invented from the
-    // Issue number fails closed.
+    // an output.
     expect(receipt.task_id).toBe(CANONICAL_TASKS[0]!.task_id);
     expect(() => buildExternalSourceBindingReceipt({
       registered_repository_id: REPO_IDENTITY,
@@ -429,11 +458,51 @@ describe('BRC0 negative freeze: an Issue is not a Task', () => {
     })).toThrow();
   });
 
+  test('canonical lookup, not the binding schema, is what rejects an invented Task identity', () => {
+    const observation = validateProviderIssueObservation(batch.observations[0]) as ProviderIssueObservationV1;
+    const canonicalSprint = {
+      repoIdentity: REPO_IDENTITY,
+      sprintPath: SPRINT_PATH,
+      sprintText: SPRINT_TEXT,
+    };
+
+    // `binding.ts` validates shape only, so a well-formed digest that no
+    // backlog row produced still passes its schema. That is exactly why the
+    // binding is not the authority: the canonical sprint is.
+    const inventedFromIssue = deriveTaskId({
+      repoIdentity: REPO_IDENTITY,
+      sprintPath: SPRINT_PATH,
+      taskCell: `Issue #${observation.provider_issue_id}: ${observation.title}`,
+    });
+    expect(inventedFromIssue).toMatch(/^[0-9a-f]{64}$/);
+
+    const lookup = lookupCanonicalTask(canonicalSprint, inventedFromIssue);
+    expect(lookup.ok).toBe(false);
+    expect(lookup.ok === false && lookup.error).toContain('no backlog row');
+
+    // A digest that is merely well formed is rejected the same way.
+    const wellFormedButUnknown = lookupCanonicalTask(canonicalSprint, 'a'.repeat(64));
+    expect(wellFormedButUnknown.ok).toBe(false);
+
+    // Every canonical task id does resolve, so the failure above is the
+    // lookup working, not the fixture being empty.
+    for (const task of CANONICAL_TASKS) {
+      expect(lookupCanonicalTask(canonicalSprint, task.task_id).ok).toBe(true);
+    }
+  });
+
   test('the slot marker is the only slot authority; the title prefix is not', () => {
     const marked = JSON.parse(readFileSync(join(FIXTURES, 'batch-missing-marker.json'), 'utf-8')) as {
+      readonly expected_marker_present: boolean;
       readonly expected_unmarked_issue_ids: readonly string[];
+      readonly outcome_vocabulary_note: string;
       readonly observations: readonly unknown[];
     };
+    // PRD Module 4 names no outcome for a body with no marker at all, so this
+    // fixture must not carry an invented one.
+    expect(marked.expected_marker_present).toBe(false);
+    expect('expected_outcome' in marked).toBe(false);
+    expect(marked.outcome_vocabulary_note.length).toBeGreaterThan(0);
     const unmarked = marked.observations
       .map(validateProviderIssueObservation)
       .filter((entry) => !entry.body.includes('<!-- repo-harness-campaign:v1'));
@@ -485,11 +554,65 @@ describe('BRC0 negative freeze: a prompt is not a Claim', () => {
     expect(parseLeaseOwnerRecord(JSON.stringify(extraField))).toBeNull();
   });
 
-  test('receiving a dispatch prompt creates no lease on disk', () => {
+  test('the real acquisition entrypoint refuses a prompt-derived assertion and takes no claim', () => {
     const repo = fixtureRepo('brc0-prompt-not-claim-');
     const before = listFiles(repo);
-    // The prompt is inert data: nothing in the coordination plane observes it.
-    expect(PROMPT.length).toBeGreaterThan(0);
+
+    const emptyRegistry: RepoHarnessRegistrySnapshot = Object.freeze({
+      registryPath: join(repo, 'registry.json'),
+      authorizationRevision: 1,
+      repos: Object.freeze([]),
+    });
+
+    // Every side-effecting dependency is a spy. `collectFleetOffers` and the
+    // selection rule stay the real production code.
+    const calls: string[] = [];
+    const spy = (name: string) => (...args: unknown[]): never => {
+      calls.push(name);
+      void args;
+      throw new Error(`${name} must not run for a prompt-derived assertion`);
+    };
+    const dependencies: Partial<FleetAcquireDependencies> = {
+      readRegistry: () => emptyRegistry,
+      claim: spy('claim') as unknown as FleetAcquireDependencies['claim'],
+      bind: spy('bind') as unknown as FleetAcquireDependencies['bind'],
+      release: spy('release') as unknown as FleetAcquireDependencies['release'],
+      start: spy('start') as unknown as FleetAcquireDependencies['start'],
+      writeToken: spy('writeToken') as unknown as FleetAcquireDependencies['writeToken'],
+      project: spy('project') as unknown as FleetAcquireDependencies['project'],
+    };
+
+    // The prompt's only reachable channel into acquisition is the optimistic
+    // assertion, so that is where it is fed in.
+    const result = acquireFleetTask({
+      registry_snapshot: emptyRegistry,
+      dependencies,
+      session_id: 'brc0-prompt-not-claim',
+      assertion: {
+        repo_id: 'Worker A',
+        task_id: deriveTaskId({
+          repoIdentity: REPO_IDENTITY,
+          sprintPath: SPRINT_PATH,
+          taskCell: PROMPT,
+        }),
+      },
+    });
+
+    // The asserted task matches no offer, so acquisition fails closed at the
+    // selection boundary, before any dependency with a side effect runs.
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.error).toBe('offer_stale');
+
+    // Dropping the prompt entirely reaches the same place by the other branch.
+    const withoutAssertion = acquireFleetTask({
+      registry_snapshot: emptyRegistry,
+      dependencies,
+      session_id: 'brc0-prompt-not-claim-2',
+    });
+    expect(withoutAssertion.ok).toBe(false);
+    expect(withoutAssertion.ok === false && withoutAssertion.error).toBe('no_eligible_task');
+
+    expect(calls).toEqual([]);
     expect(listFiles(repo)).toEqual(before);
     expect(listLeaseReads(repo)).toHaveLength(0);
     expect(existsSync(join(repo, '.git/repo-harness/coordination'))).toBe(false);
@@ -512,15 +635,16 @@ describe('BRC0 negative freeze: heartbeat-triage stays discovery-only', () => {
 
   test('a real run writes exactly the inbox and its run snapshot', () => {
     const repo = fixtureRepo('brc0-heartbeat-');
-    mkdirSync(join(repo, 'scripts'), { recursive: true });
-    const helper = join(repo, 'scripts/heartbeat-triage.sh');
-    copyFileSync(join(REPO_ROOT, 'scripts/heartbeat-triage.sh'), helper);
+    // Run the helper in place, from the repository's own `scripts/`, so the
+    // sibling probes it shells out to (`check-task-workflow.sh --strict` and
+    // `sprint-backlog.sh next`) are the real ones and their transitive writes,
+    // if any, land inside the observed fixture repository.
+    const helper = join(REPO_ROOT, 'scripts/heartbeat-triage.sh');
     const before = new Set(listFiles(repo));
 
     const stdout = execFileSync('bash', [helper, 'run', '--repo', repo, '--run-id', 'brc0-freeze', '--source', 'manual', '--json'], {
       cwd: repo,
       encoding: 'utf-8',
-      env: { ...process.env, REPO_HARNESS_HELPER_SOURCE_PATH: helper },
     });
 
     const created = listFiles(repo).filter((path) => !before.has(path));
@@ -531,10 +655,14 @@ describe('BRC0 negative freeze: heartbeat-triage stays discovery-only', () => {
 
     const snapshot = JSON.parse(stdout) as {
       readonly kind: string;
-      readonly entries: readonly { readonly kind: string }[];
+      readonly entries: readonly { readonly kind: string; readonly status: string }[];
     };
     expect(snapshot.kind).toBe('repo-harness-heartbeat-triage');
     expect(snapshot.entries.map((entry) => entry.kind).sort()).toEqual(['drift-requests', 'sprint-next', 'workflow-check']);
+    // `fail`, not `warning`: the real sibling helper was found and executed, so
+    // the write-set assertion above covers the transitive path too.
+    const workflowCheck = snapshot.entries.find((entry) => entry.kind === 'workflow-check');
+    expect(workflowCheck?.status).toBe('fail');
 
     // No branch, no commit, no lease: the run leaves git untouched.
     expect(execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: repo, encoding: 'utf-8' }).trim()).toBe('');

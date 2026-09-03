@@ -37,7 +37,9 @@ boundary. Source behavior changes by zero lines.
   - `tests/characterization/repair-campaign-authority-freeze.test.ts`
   - `tests/fixtures/repair-campaign/` (frozen baseline, protected capabilities, six provider batches)
   - `docs/researches/20260903-repair-campaign-authority-freeze.md`
-  - `docs/architecture/requests/runtime-harness-development-campaign.md` (queue-generated) and
+  - `docs/architecture/requests/runtime-harness-development-campaign.md` (queue-generated),
+    `docs/architecture/index.md` and `docs/architecture/.projection-manifest.json` (both regenerated
+    by the queue and the automatic archctx projection), and
     `docs/architecture/snapshots/2026-09-03-development-campaign-boundary-declaration.md`
   - this plan, contract, review and notes
 - Out of scope:
@@ -118,6 +120,7 @@ allowed_paths:
   - docs/architecture/requests/
   - docs/architecture/snapshots/
   - docs/architecture/index.md
+  - docs/architecture/.projection-manifest.json
 ```
 
 ## Evidence Requirements

@@ -69,9 +69,12 @@ capabilities and the dependency direction went to
   collapse to one value, so adding a blocker code, reordering a branch or changing an attention owner
   all fail loudly without 2688 assertions in review.
 - **`heartbeat-triage` is proved twice.** A source-text audit (no `git commit`, no `gh`, no lease,
-  claim, acquire or spawn verb) plus a real run in a temporary repository whose `scripts/` holds only
-  the copied helper, so the sibling-helper probes take their deterministic missing-helper branch and
-  the observed write set is exactly the inbox plus one run snapshot.
+  claim, acquire or spawn verb) plus a real run of the helper in place, from the repository's own
+  `scripts/`, against a temporary repository. Running it in place is deliberate: the sibling probes
+  it shells out to are then the real `check-task-workflow.sh --strict` and `sprint-backlog.sh next`,
+  so their transitive writes land inside the observed fixture and are covered by the same write-set
+  assertion. The test also asserts the workflow probe reported `fail` rather than the missing-helper
+  `warning`, which is how it proves the transitive path actually ran.
 - **`rg` output in this repository is rewritten by the `rtk` hook.** Searching for `autoplan` returned
   matches rendered as `repo-harness-n`. Confirmation of retirement was done with plain `grep`. Any
   agent auditing literal strings here should use `grep` rather than trust the filtered output.
@@ -83,3 +86,50 @@ capabilities and the dependency direction went to
 - The `unfilled` / `slot_invalid` / `issue_batch_ambiguous` vocabularies exist only in the PRD and in
   the fixtures' `expected_outcome` fields. BRC5 owns turning them into a closed type; nothing in this
   row constrains where that type lives.
+
+## Codex review round 1: REJECT, and the four structural repairs
+
+The first external review returned `VERDICT: REJECT` with four P1 findings and three P2 findings.
+All seven were valid. Nothing was waived; each was repaired at the level the finding named.
+
+1. **Mislabeled byte provenance.** The Task projection and the offer matrix were digested with the
+   test's own `JSON.stringify`, while the baseline claimed the production function as the serializer.
+   `projectCanonicalTasks` and `classifyTaskOffer` return objects and own no byte contract. Both
+   digests now go through `canonicalJson` (`src/core/fleet/board.ts:279`), the repository's canonical
+   serializer, and the baseline's `source` field names the subject producer and the byte function
+   separately. The two digests were re-derived because the byte function changed, not because a test
+   was failing.
+
+2. **The binding negative test proved shape, not authority.** `binding.ts` validates `task_id`
+   against `/^[0-9a-f]{64}$/` and nothing else, so any well-formed digest passes it. The original
+   claim -- that minting a Task from an Issue would require changing `binding.ts` -- was wrong. The
+   real authority is `lookupCanonicalTask`, which resolves only against rows the canonical sprint
+   contains. A new test derives a well-formed digest from an Issue title, shows it resolves to no
+   backlog row, and shows every real canonical task id does resolve. The research doc's pressure-point
+   section was rewritten to state the enforceable claim instead of the weak one.
+
+3. **The prompt test was vacuous.** It asserted that a string was non-empty and then observed an
+   untouched repository. It now drives the real `acquireFleetTask` with an empty registry snapshot
+   and every side-effecting dependency (`claim`, `bind`, `release`, `start`, `writeToken`, `project`)
+   replaced by a spy that throws if reached. `collectFleetOffers` and the selection rule stay real.
+   The prompt enters through `assertion`, which is its only reachable channel; the result is
+   `offer_stale` with the assertion and `no_eligible_task` without it, and no spy is ever called.
+
+4. **The heartbeat test bypassed the transitive path.** Copying the helper into a scripts directory
+   with no siblings forced the missing-helper branch, so the real `check-task-workflow.sh --strict`
+   never ran. See the entry above for the repair.
+
+5. **The matrix was not actually closed.** `canonical_available` was pinned to `true`, leaving the
+   `canonical_unavailable` branch (`src/core/fleet/task-offer.ts:192`) outside the freeze. Both values
+   are now in the matrix: 2688 inputs became 5376, and the test asserts that count.
+
+6. **`.projection-manifest.json` was outside Allowed Paths.** The automatic archctx projection that
+   `verify-sprint --prepare-acceptance` runs rewrites it. It is now declared in both the contract's
+   `allowed_paths` and the plan's file-changes table rather than arriving as undeclared drift.
+
+7. **`slot_unresolved` was an invented outcome code.** PRD Module 4 names `slot_invalid` for
+   malformed metadata and `issue_slot_unexpected` for an undeclared slot, but nothing for a body with
+   no marker at all. `batch-missing-marker.json` now states no `expected_outcome`; it records
+   `expected_marker_present: false` plus a note that naming this case belongs to BRC5. The
+   every-fixture test additionally asserts that any `expected_outcome` present in any fixture is a
+   term the PRD already defines, so this row cannot leak vocabulary into later rows.
