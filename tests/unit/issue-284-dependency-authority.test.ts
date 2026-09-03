@@ -1462,12 +1462,17 @@ describe('issue #284 closed dependency authority', () => {
     expect(resolved.authority_revision).toBeNull();
   });
 
-  test('the evidence projection is the only input to authority_revision', () => {
+  test('the authority revision binds the canonical target commit', () => {
     const subject = fixture();
     recordAcceptanceObservation(subject);
     const first = resolveDependencyAuthority(input(subject, 'module_accepted'));
     const second = resolveDependencyAuthority(input(subject, 'module_accepted'));
     expect(second.authority_revision).toBe(first.authority_revision);
+    const moved = resolveDependencyAuthority(input(subject, 'module_accepted', {
+      reads: subject.reads.map((read) => ({ ...read, commit: 'f'.repeat(40) })),
+      readFileAtCommit: (repoRoot, _commit, path) => gitShow(repoRoot, subject.commit, path),
+    }));
+    expect(moved.authority_revision).not.toBe(first.authority_revision);
     expect(first.authority_revision).toBe(engineerSha256(canonicalEngineerJson(JSON.parse(canonicalEngineerJson({
       protocol: 1,
       kind: 'repo-harness-dependency-authority-observation',
@@ -1478,6 +1483,7 @@ describe('issue #284 closed dependency authority', () => {
         acceptance_authority: moduleAuthority(),
       },
       registry: { authorization_revision: 3, access_mode: 'read_write', registered: true },
+      canonical_commit: subject.commit,
       target: {
         repository_id: subject.target.repository_id,
         sprint_path: subject.target.sprint_path,

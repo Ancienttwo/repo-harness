@@ -179,6 +179,7 @@ function verdict(status: 'satisfied' | 'unsatisfied', refs: readonly VerifiedEvi
 function authorityRevision(
   input: DependencyAuthorityInput,
   repo: RepoHarnessRegisteredRepo | null,
+  commit: string | null,
   result: AdapterVerdict,
 ): string {
   return engineerSha256(canonicalEngineerJson({
@@ -195,6 +196,7 @@ function authorityRevision(
       access_mode: repo === null ? null : repo.accessMode,
       registered: repo !== null,
     },
+    canonical_commit: commit,
     target: {
       repository_id: input.target.repository_id,
       sprint_path: input.target.sprint_path,
@@ -216,7 +218,9 @@ function resolution(
 ): DependencyAuthorityResolutionV1 {
   return Object.freeze({
     status: result.status,
-    authority_revision: result.status === 'authority_unavailable' ? null : authorityRevision(input, repo, result),
+    authority_revision: result.status === 'authority_unavailable'
+      ? null
+      : authorityRevision(input, repo, input.reads.find((entry) => entry.repo.id === input.dependency.repository_id)?.commit ?? null, result),
     evidence_refs: result.evidence_refs,
   });
 }
