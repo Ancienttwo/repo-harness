@@ -285,16 +285,22 @@ try_reclaim_dead_owner_backlog_lock() {
   # mirrors the TS JSON.parse catch path and falls into the age gate below
   # instead of the immediate dead-owner reclaim.
   local owner_line="" scan_line="" owner_shape_ok=false
+  # JSON whitespace minus the newline that `read` already strips: JSON.parse
+  # skips only [ \t\n\r], so a trailing `\f`/`\v`-only line is malformed
+  # content that must fall into the age-gated fallback, not the main path.
+  local json_ws=$' \t\r'
   if [[ -r "$entry_path" ]] && exec 3< "$entry_path"; then
     # A final line without its newline still carries content (read reports
     # EOF but fills the variable), and JSON.parse would accept it.
     if IFS= read -r owner_line <&3 || [[ -n "$owner_line" ]]; then
       if [[ -n "$owner_line" ]]; then
         owner_shape_ok=true
-        # Trailing blank lines are the whitespace JSON.parse skips; a second
-        # non-blank line is malformed content and rejects the main path.
+        # Trailing blank lines carry only the JSON whitespace that JSON.parse
+        # skips (read already stripped the newline); a `\f`/`\v`-only line,
+        # like any second non-blank line, is malformed content and rejects
+        # the main path into the fallback.
         while IFS= read -r scan_line <&3 || [[ -n "$scan_line" ]]; do
-          if [[ -n "${scan_line//[[:space:]]/}" ]]; then
+          if [[ -n "${scan_line//[$json_ws]/}" ]]; then
             owner_shape_ok=false
             break
           fi

@@ -997,6 +997,49 @@ describe("sprint-backlog helper", () => {
     }
   }, 30_000);
 
+  test("trailing form-feed and vertical-tab lines are not JSON whitespace and only the stale-age fallback removes them", () => {
+    const cwd = tmpWorkspace("sprint-backlog-owner-json-whitespace");
+    try {
+      copySprintHelpers(cwd, ["sprint-backlog.sh", "capture-plan.sh"]);
+      const sprintPath = "plans/sprints/20260610-0000-fixture-sprint.sprint.md";
+      writeActiveSprintFixture(cwd, sprintPath);
+      const lockDir = join(cwd, BACKLOG_LOCK_RELATIVE);
+      const pid = deadPidFixture();
+      const token = `${pid}-${OWNER_CREATED_MS}-${OWNER_UUID}`;
+      const ownerPath = join(lockDir, `${token}.json`);
+      // JSON.parse skips only [ \t\n\r], so a trailing `\f`/`\v`-only line
+      // makes it throw even though every remaining character is POSIX space;
+      // the immediate dead-owner reclaim must refuse the file and leave it for
+      // the age-gated fallback.
+      const controlVariants: Array<{ control: string; task: string }> = [
+        { control: "\f", task: "task-a" },
+        { control: "\v", task: "task-b" },
+      ];
+      const keepEnv = {
+        REPO_HARNESS_BACKLOG_LOCK_ATTEMPTS: "2",
+        REPO_HARNESS_BACKLOG_LOCK_SLEEP_SECONDS: "0.05",
+      };
+      for (const { control, task } of controlVariants) {
+        mkdirSync(lockDir, { recursive: true });
+        writeFileSync(ownerPath, `${JSON.stringify({ pid, created_at: OWNER_CREATED_MS, token })}\n${control}\n`);
+
+        const fresh = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", task], cwd, keepEnv);
+        expect(fresh.status, `${fresh.stdout}\n${fresh.stderr}`).toBe(1);
+        expect(fresh.stderr).toContain("timed out acquiring backlog lock");
+        expect(fresh.stderr).not.toContain("reclaiming stale backlog lock");
+        expect(existsSync(ownerPath)).toBe(true);
+
+        expect(run("bash", ["-lc", `touch -t 202001010000 '${ownerPath}'`], cwd).status).toBe(0);
+        const reclaimed = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", task], cwd, LOCK_TEST_ENV);
+        expect(reclaimed.status, `${reclaimed.stdout}\n${reclaimed.stderr}`).toBe(0);
+        expect(reclaimed.stderr).toContain("reclaiming stale backlog lock");
+        expect(existsSync(lockDir)).toBe(false);
+      }
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
 });
 
 describe("check-task-workflow sprint validation", () => {
