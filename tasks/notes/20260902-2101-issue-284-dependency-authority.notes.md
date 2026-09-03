@@ -1,5 +1,7 @@
 # Implementation Notes: issue-284-dependency-authority
 
+> **Substantive Change SHA256**: `sha256:0ba6d2285d8a577a79a7d8bd10cf8f0b7e78d75a3a78becd875c5f3b80cd5ade`
+
 > **Substantive Change SHA256**: `sha256:635854ebf5c584dac2944c8180b1caed52045f42b80a5220af8390f9d2af071f`
 
 > **Status**: Active
