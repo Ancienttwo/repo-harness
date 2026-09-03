@@ -232,6 +232,76 @@ emit_backlog_lock_wait() {
   coordination_wait_emit "{\"protocol\":1,\"kind\":\"backlog_lock_wait\",\"at\":\"$(json_escape "$(date '+%Y-%m-%dT%H:%M:%S%z')")\",\"verb\":\"$(json_escape "$verb")\",\"ms\":$((ended_ms - started_ms)),\"attempts\":${attempts},\"reclaimed_stale\":${reclaimed_stale},\"outcome\":\"$(json_escape "$outcome")\"}" || true
 }
 
+# kill(pid, 0) with the TS ESRCH discrimination: exit 0 is alive, and the
+# "No such process" error is the one failure that proves death. Any other
+# failure (EPERM from a privileged or foreign owner, a probe that could not
+# run) counts as alive so the lock is never stolen from a holder that may
+# still exist. LC_ALL=C pins the strerror text against localized environments.
+backlog_owner_dead() {
+  local pid="$1" probe
+  if kill -0 "$pid" 2>/dev/null; then
+    return 1
+  fi
+  probe="$(LC_ALL=C kill -0 "$pid" 2>&1 || true)"
+  case "$probe" in
+    *"No such process"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Mirror of the single-owner path in reclaimStaleLockDirectory
+# (src/effects/locking/exclusive-directory-lock.ts): a TypeScript holder takes
+# this same lock by creating `<pid>-<created_ms>-<uuid>.json` inside the lock
+# directory, so a holder that crashes after publication leaves a non-empty
+# directory the plain empty-dir reclaim below can never remove. Every
+# ambiguous input fails closed: only an exactly identified dead owner is
+# reclaimed, and this never hot-loops because a failed verdict falls through
+# to the ordinary attempts counter.
+try_reclaim_dead_owner_backlog_lock() {
+  local lock_dir="$1"
+  local entry_path entry_name entry_pid="" entry_token=""
+  local owner_pid="" owner_token="" owner_mtime=""
+
+  # Exactly one entry, like the TS readdirSync().length === 1 gate.
+  [[ "$(find "$lock_dir" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' ')" == "1" ]] || return 1
+  entry_path="$(find "$lock_dir" -mindepth 1 -maxdepth 1 2>/dev/null | head -n 1)"
+  entry_name="${entry_path##*/}"
+  # Filename shape is the TS ownerTokenFromFileName regex; the hex class is
+  # widened for its case-insensitive flag, and the dot is written `[.]`
+  # because bash 3.2 `[[ =~ ]]` does not reliably preserve an unquoted `\.`.
+  if [[ "$entry_name" =~ ^([1-9][0-9]*)-[0-9]+-[0-9a-fA-F-]{36}[.]json$ ]]; then
+    entry_pid="${BASH_REMATCH[1]}"
+    entry_token="${entry_name%.json}"
+  fi
+  [[ -n "$entry_token" ]] || return 1
+  [[ ! -L "$entry_path" && -f "$entry_path" ]] || return 1
+
+  # Owner content is one line of `{"pid":N,"created_at":N,"token":"..."}`;
+  # sed pulls the two fields the TS reclaim compares, and a quoted number or
+  # missing field fails the pull exactly where JSON.parse falls into the TS
+  # catch path.
+  owner_pid="$(sed -n -E 's/^.*"pid"[[:space:]]*:[[:space:]]*([1-9][0-9]*).*$/\1/p' "$entry_path" 2>/dev/null | head -n 1)"
+  owner_token="$(sed -n -E 's/^.*"token"[[:space:]]*:[[:space:]]*"([0-9A-Za-z-]+)".*$/\1/p' "$entry_path" 2>/dev/null | head -n 1)"
+  if [[ -n "$owner_pid" && -n "$owner_token" ]]; then
+    [[ "$owner_pid" == "$entry_pid" && "$owner_token" == "$entry_token" ]] || return 1
+  else
+    # Unparseable owner JSON mirrors the TS catch path: the file must be older
+    # than the TS LOCK_STALE_MS (30s) and the filename pid dead.
+    owner_mtime="$(stat -f %m "$entry_path" 2>/dev/null || stat -c %Y "$entry_path" 2>/dev/null || true)"
+    [[ "$owner_mtime" =~ ^[0-9]+$ ]] || return 1
+    [[ $(( $(date +%s) - owner_mtime )) -gt 30 ]] || return 1
+  fi
+
+  backlog_owner_dead "$entry_pid" || return 1
+
+  # unlink then rmdir, both or nothing: rmdir is the publication fence, so a
+  # creator racing in after the unlink makes rmdir fail and the verdict stays
+  # "not reclaimed" instead of stealing a freshly published lock.
+  rm -f "$entry_path" 2>/dev/null || return 1
+  rmdir "$lock_dir" 2>/dev/null || return 1
+  return 0
+}
+
 acquire_backlog_lock() {
   local verb="${1:-unknown}"
   local attempts=0
@@ -260,6 +330,13 @@ acquire_backlog_lock() {
     # must fall through to the timeout instead of hot-looping.
     if [[ -n "$(find "$BACKLOG_LOCK_DIR" -maxdepth 0 -mmin +1 2>/dev/null)" ]] \
       && rmdir "$BACKLOG_LOCK_DIR" 2>/dev/null; then
+      echo "sprint-backlog: reclaiming stale backlog lock: $BACKLOG_LOCK_DIR" >&2
+      reclaimed_stale=true
+      continue
+    fi
+    # No directory-age gate on the owner path: an owner-verified dead holder is
+    # reclaimable the moment it died, exactly like the TS mirror.
+    if try_reclaim_dead_owner_backlog_lock "$BACKLOG_LOCK_DIR"; then
       echo "sprint-backlog: reclaiming stale backlog lock: $BACKLOG_LOCK_DIR" >&2
       reclaimed_stale=true
       continue

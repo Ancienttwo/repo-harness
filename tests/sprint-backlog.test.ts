@@ -18,7 +18,7 @@ import {
 } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { spawnSync } from "child_process";
+import { spawn, spawnSync } from "child_process";
 import { sessionStartMainContent } from "../src/cli/hook/session-context";
 import { createStateInputCollector } from "../src/effects/loop/state-input-collector";
 import { fixtureTaskId } from './helpers/sprint-fixture';
@@ -744,6 +744,169 @@ describe("sprint-backlog helper", () => {
       expect(start.status, `${start.stdout}\n${start.stderr}`).toBe(0);
       expect(start.stderr).toContain("reclaiming stale backlog lock");
       expect(existsSync(lockDir)).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  // The shell verb must mirror the TypeScript reclaim semantics in
+  // src/effects/locking/exclusive-directory-lock.ts, whose withBacklogLock
+  // holders crash after publication and leave `<pid>-<created_ms>-<uuid>.json`
+  // behind: without the owner check below, every shell verb on the clone would
+  // time out forever on a lock whose holder no longer exists.
+  const OWNER_CREATED_MS = 1725000000000;
+  const OWNER_UUID = "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0";
+
+  function writeTsOwnerFile(lockDir: string, pid: number): string {
+    const token = `${pid}-${OWNER_CREATED_MS}-${OWNER_UUID}`;
+    writeFileSync(
+      join(lockDir, `${token}.json`),
+      `${JSON.stringify({ pid, created_at: OWNER_CREATED_MS, token })}\n`,
+    );
+    return token;
+  }
+
+  /** A real pid that is really gone; the ESRCH check pins the fixture itself. */
+  function deadPidFixture(): number {
+    const holder = spawnSync("bash", ["-c", 'printf "%s\\n" "$$"; exec sleep 0'], { encoding: "utf-8" });
+    const pid = Number.parseInt(holder.stdout.trim(), 10);
+    expect(Number.isInteger(pid) && pid > 0).toBe(true);
+    let dead = false;
+    try {
+      process.kill(pid, 0);
+    } catch {
+      dead = true;
+    }
+    expect(dead, `fixture pid ${pid} was expected to be gone`).toBe(true);
+    return pid;
+  }
+
+  test("start-task reclaims a lock left by a dead TypeScript holder", () => {
+    const cwd = tmpWorkspace("sprint-backlog-dead-ts-holder");
+    try {
+      copySprintHelpers(cwd, ["sprint-backlog.sh", "capture-plan.sh"]);
+      const sprintPath = "plans/sprints/20260610-0000-fixture-sprint.sprint.md";
+      writeActiveSprintFixture(cwd, sprintPath);
+      const lockDir = join(cwd, BACKLOG_LOCK_RELATIVE);
+      mkdirSync(lockDir, { recursive: true });
+      writeTsOwnerFile(lockDir, deadPidFixture());
+
+      const start = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a"], cwd, LOCK_TEST_ENV);
+      expect(start.status, `${start.stdout}\n${start.stderr}`).toBe(0);
+      expect(start.stderr).toContain("reclaiming stale backlog lock");
+      // The acquisition rebuilt the lock through mkdir and the verb's exit
+      // released it again, so nothing is left on the coordination plane.
+      expect(existsSync(lockDir)).toBe(false);
+
+      const records = readJsonl(join(cwd, WAITS_LEDGER_RELATIVE))
+        .filter((record) => record.kind === "backlog_lock_wait");
+      expect(records).toHaveLength(1);
+      expect(records[0].outcome).toBe("acquired");
+      expect(records[0].reclaimed_stale).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("a live TypeScript holder keeps its lock and the shell times out without touching it", () => {
+    const cwd = tmpWorkspace("sprint-backlog-live-ts-holder");
+    const holder = spawn("sleep", ["300"], { stdio: "ignore" });
+    try {
+      copySprintHelpers(cwd, ["sprint-backlog.sh", "capture-plan.sh"]);
+      const sprintPath = "plans/sprints/20260610-0000-fixture-sprint.sprint.md";
+      writeActiveSprintFixture(cwd, sprintPath);
+      expect(typeof holder.pid).toBe("number");
+      const lockDir = join(cwd, BACKLOG_LOCK_RELATIVE);
+      mkdirSync(lockDir, { recursive: true });
+      const token = writeTsOwnerFile(lockDir, holder.pid as number);
+
+      const start = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a"], cwd, {
+        REPO_HARNESS_BACKLOG_LOCK_ATTEMPTS: "2",
+        REPO_HARNESS_BACKLOG_LOCK_SLEEP_SECONDS: "0.05",
+      });
+      expect(start.status).toBe(1);
+      expect(start.stderr).toContain("timed out acquiring backlog lock");
+      expect(start.stderr).not.toContain("reclaiming stale backlog lock");
+      // The live owner's directory and owner file are untouched, and the sprint
+      // row stayed pending.
+      expect(existsSync(lockDir)).toBe(true);
+      expect(existsSync(join(lockDir, `${token}.json`))).toBe(true);
+      expect(readFileSync(join(cwd, sprintPath), "utf-8"))
+        .toContain(`| 1 | ${fixtureTaskId('task-a')} | [ ] | task-a |`);
+    } finally {
+      holder.kill();
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("a second lock entry blocks the owner-path reclaim of a dead holder", () => {
+    const cwd = tmpWorkspace("sprint-backlog-owner-two-entries");
+    try {
+      copySprintHelpers(cwd, ["sprint-backlog.sh", "capture-plan.sh"]);
+      const sprintPath = "plans/sprints/20260610-0000-fixture-sprint.sprint.md";
+      writeActiveSprintFixture(cwd, sprintPath);
+      const lockDir = join(cwd, BACKLOG_LOCK_RELATIVE);
+      mkdirSync(lockDir, { recursive: true });
+      const token = writeTsOwnerFile(lockDir, deadPidFixture());
+      writeFileSync(join(lockDir, "stray"), "not mine");
+
+      const start = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a"], cwd, LOCK_TEST_ENV);
+      expect(start.status).toBe(1);
+      expect(start.stderr).toContain("timed out acquiring backlog lock");
+      expect(start.stderr).not.toContain("reclaiming stale backlog lock");
+      expect(existsSync(join(lockDir, `${token}.json`))).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("an owner filename that does not match the TS token shape is never reclaimed", () => {
+    const cwd = tmpWorkspace("sprint-backlog-owner-bad-shape");
+    try {
+      copySprintHelpers(cwd, ["sprint-backlog.sh", "capture-plan.sh"]);
+      const sprintPath = "plans/sprints/20260610-0000-fixture-sprint.sprint.md";
+      writeActiveSprintFixture(cwd, sprintPath);
+      const lockDir = join(cwd, BACKLOG_LOCK_RELATIVE);
+      mkdirSync(lockDir, { recursive: true });
+      // Valid-looking owner content with a dead pid, but the filename does not
+      // carry the `<pid>-<created_ms>-<uuid>.json` shape, so the filename gate
+      // alone must block the reclaim.
+      writeFileSync(
+        join(lockDir, "holder.json"),
+        `${JSON.stringify({ pid: deadPidFixture(), created_at: OWNER_CREATED_MS, token: "holder" })}\n`,
+      );
+
+      const start = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a"], cwd, LOCK_TEST_ENV);
+      expect(start.status).toBe(1);
+      expect(start.stderr).toContain("timed out acquiring backlog lock");
+      expect(start.stderr).not.toContain("reclaiming stale backlog lock");
+      expect(existsSync(join(lockDir, "holder.json"))).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("an owner record whose token does not match its filename is never reclaimed", () => {
+    const cwd = tmpWorkspace("sprint-backlog-owner-token-mismatch");
+    try {
+      copySprintHelpers(cwd, ["sprint-backlog.sh", "capture-plan.sh"]);
+      const sprintPath = "plans/sprints/20260610-0000-fixture-sprint.sprint.md";
+      writeActiveSprintFixture(cwd, sprintPath);
+      const lockDir = join(cwd, BACKLOG_LOCK_RELATIVE);
+      mkdirSync(lockDir, { recursive: true });
+      const pid = deadPidFixture();
+      const fileNameToken = `${pid}-${OWNER_CREATED_MS}-${OWNER_UUID}`;
+      const otherToken = `${pid}-${OWNER_CREATED_MS + 1}-${OWNER_UUID}`;
+      writeFileSync(
+        join(lockDir, `${fileNameToken}.json`),
+        `${JSON.stringify({ pid, created_at: OWNER_CREATED_MS, token: otherToken })}\n`,
+      );
+
+      const start = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-a"], cwd, LOCK_TEST_ENV);
+      expect(start.status).toBe(1);
+      expect(start.stderr).toContain("timed out acquiring backlog lock");
+      expect(start.stderr).not.toContain("reclaiming stale backlog lock");
+      expect(existsSync(join(lockDir, `${fileNameToken}.json`))).toBe(true);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
