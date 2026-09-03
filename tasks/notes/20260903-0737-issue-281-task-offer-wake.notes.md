@@ -79,6 +79,11 @@
 
 ## Evidence Links
 
+- Architecture acceptance: the `agent-runtime-effects` capability projection reported
+  `unresolved-major-change` (`entrypoint-changed`, `responsibility-changed`) for signal
+  `sha256:25f8bf36a73e5ac619269e473ad798cb1fff1bc24f3439b1abbe6bab42cb54e4`. Accepted under approval
+  reference `event.orchestrator-approval-20260903-issue-281-task-offer-wake`; the regenerated
+  `docs/architecture/` projection is committed with that acceptance.
 - Checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Deterministic oracle `issue-281-wake-deterministic`:
