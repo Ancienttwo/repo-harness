@@ -240,6 +240,25 @@
   identity-minting path reads it, so it stays schema 1 read-only. The blocker and
   the v1-parser removal trigger are recorded in `tasks/todos.md`.
 
+- **The workflow gate criterion runs the checkout's script, not the installed
+  runtime.** The contract, `CLAUDE.md`, and `AGENTS.md` previously named
+  `repo-harness run check-task-workflow --strict`. That form resolves the helper
+  from the *installed* package, and this work-package is what introduces the
+  schema-2-aware helper: the released 0.18.0 copy has no `Backlog Schema`
+  handling at all, so once both repo sprints migrated it reported them as
+  `missing backlog table header '| # | Status | Task | Mode | Acceptance | Plan |'`
+  while the checkout's own script reported `[workflow] OK`. The criterion cannot
+  be rescued with `REPO_HARNESS_SOURCE_ROOT`: `scrubHarnessEnv()` in
+  `scripts/run-bounded-verifier-command.ts` strips every `REPO_HARNESS_*`
+  variable before spawning a verification command, deliberately, so that
+  harness-internal wiring can never make a criterion pass. All three surfaces
+  are therefore aligned to CI's exact form,
+  `bash scripts/check-task-workflow.sh --strict` (`scripts/check-ci.sh`), which
+  is the repo's real gate and the authority for a repo whose sprints are already
+  schema 2. Operator consequence: until a release ships this helper, a global
+  `repo-harness` older than it will report a false "not execution-ready" on any
+  repo whose sprints have been migrated.
+
 ## Tradeoffs Considered
 
 | Option | Decision | Reason |
