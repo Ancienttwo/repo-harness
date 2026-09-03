@@ -89,6 +89,10 @@ export const AUTOMATION_ENFORCEMENT_ORDER: readonly AutomationMetricName[] = Obj
 
 export type ProgramUnitKind = 'execute' | 'review' | 'verify' | 'integrate' | 'merge';
 
+export const AUTOMATION_CONTRACT_SCOPES = ['task_contract', 'contract_less'] as const;
+
+export type AutomationContractScope = typeof AUTOMATION_CONTRACT_SCOPES[number];
+
 export type AutomationOperationKind = 'acquisition' | 'dispatch' | 'retry' | 'provider_invocation';
 
 export type AutomationOutcome = 'progress' | 'no_progress' | 'provider_failure' | 'completed';
@@ -194,6 +198,16 @@ function assertIdentifier(value: unknown, label: string): string {
   return value;
 }
 
+const REPO_RELATIVE_PATH = /^(?!\/)(?!.*\/\.\.?(?:\/|$))[A-Za-z0-9._][A-Za-z0-9._\/-]{0,511}$/u;
+
+/** A contract path is read from the repository, so it may not escape it. */
+export function assertRepoRelativePath(value: unknown, label: string): string {
+  if (typeof value !== 'string' || !REPO_RELATIVE_PATH.test(value) || value.includes('\\')) {
+    invalid(`${label} must be a repository-relative path`);
+  }
+  return value as string;
+}
+
 function assertNullableIdentifier(value: unknown, label: string): string | null {
   if (value === null) return null;
   return assertIdentifier(value, label);
@@ -266,6 +280,14 @@ export interface ProgramAuthorizationV1 {
   readonly allowed_merge_method: 'squash' | 'merge' | 'rebase';
   readonly max_repair_cycles: number;
   readonly budget: ProgramBudgetLimitV1;
+  /**
+   * Whether this grant authorizes a run bound to a task contract or an
+   * explicitly contract-less one. A run with no contract is not the default; it
+   * is a decision the grant's human issuer has to make.
+   */
+  readonly contract_scope: AutomationContractScope;
+  /** Repo-relative task contract path; required by `task_contract`, forbidden otherwise. */
+  readonly contract_path: string | null;
   readonly issued_by: string;
   readonly issued_at: string;
   readonly expires_at: string;
@@ -284,6 +306,13 @@ export function validateProgramAuthorization(value: ProgramAuthorizationV1): Pro
   }
   if (!Array.isArray(value.allowed_risk_tiers) || value.allowed_risk_tiers.length !== 1 || value.allowed_risk_tiers[0] !== 'low') {
     invalid('program authorization allowed_risk_tiers must be exactly ["low"]');
+  }
+  if (!AUTOMATION_CONTRACT_SCOPES.includes(value.contract_scope)) invalid('program authorization contract_scope is unsupported');
+  if (value.contract_scope === 'task_contract' && typeof value.contract_path !== 'string') {
+    invalid('program authorization contract_path is required when contract_scope is task_contract');
+  }
+  if (value.contract_scope === 'contract_less' && value.contract_path !== null) {
+    invalid('program authorization contract_path must be null when contract_scope is contract_less');
   }
   if (!Array.isArray(value.allowed_work_package_ids)) invalid('program authorization allowed_work_package_ids must be an array');
   const work = value.allowed_work_package_ids.map((entry, index) => assertIdentifier(entry, `allowed_work_package_ids[${index}]`));
@@ -307,6 +336,8 @@ export function validateProgramAuthorization(value: ProgramAuthorizationV1): Pro
     allowed_merge_method: value.allowed_merge_method,
     max_repair_cycles: assertCount(value.max_repair_cycles, 'max_repair_cycles', 1),
     budget: validateProgramBudgetLimit(value.budget),
+    contract_scope: value.contract_scope,
+    contract_path: value.contract_path === null ? null : assertRepoRelativePath(value.contract_path, 'contract_path'),
     issued_by: assertIdentifier(value.issued_by, 'issued_by'),
     issued_at: issuedAt,
     expires_at: expiresAt,
@@ -405,6 +436,56 @@ export interface AutomationContractLimitsV1 {
   readonly tokens: number | null;
   readonly runner_invocations: number | null;
   readonly wall_time_minutes: number | null;
+}
+
+/**
+ * The task contract's `delegation.budget` block, parsed from the contract's own
+ * bytes.
+ *
+ * The store reads and digests the contract itself rather than accepting a
+ * caller's summary of it, so this parser is the projection step, not the
+ * authority. It deliberately mirrors the reader in `scripts/contract-run.ts`;
+ * the two are separate today because that reader lives inside a CLI script with
+ * no importable surface, and `tasks/todos.md` carries the unification.
+ */
+export function parseContractDelegationBudget(
+  contractText: string,
+  contractPath: string,
+): AutomationContractLimitsV1 {
+  const block = fencedYamlBlock(contractText, 'delegation');
+  if (block === null) {
+    invalid(`task contract ${contractPath} has no delegation YAML block`);
+  }
+  if (/^\s*tool_calls\s*:/mu.test(block)) {
+    invalid(`task contract ${contractPath} uses the retired delegation budget field tool_calls`);
+  }
+  return Object.freeze({
+    contract_path: contractPath,
+    tokens: nullableNumberField(block, 'tokens', contractPath),
+    runner_invocations: nullableNumberField(block, 'runner_invocations', contractPath),
+    wall_time_minutes: nullableNumberField(block, 'wall_time_minutes', contractPath),
+  });
+}
+
+function fencedYamlBlock(markdown: string, key: string): string | null {
+  const fences = markdown.match(/```yaml\n[\s\S]*?```/gu) ?? [];
+  for (const fence of fences) {
+    const body = fence.replace(/^```yaml\n/u, '').replace(/```$/u, '');
+    if (new RegExp(`^${key}\\s*:`, 'mu').test(body)) return body;
+  }
+  return null;
+}
+
+function nullableNumberField(block: string, field: string, contractPath: string): number | null {
+  const match = block.match(new RegExp(`^\\s*${field}\\s*:\\s*(\\S+)\\s*$`, 'mu'));
+  if (!match) invalid(`task contract ${contractPath} delegation budget is missing ${field}`);
+  const raw = match![1]!;
+  if (raw === 'null' || raw === '~') return null;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    invalid(`task contract ${contractPath} delegation budget ${field} must be null or a positive number`);
+  }
+  return parsed;
 }
 
 export type AutomationLimitSource = 'authorization' | 'task_contract' | 'authorization_expiry';
@@ -818,6 +899,30 @@ export function automationOperationReservation(
     default:
       return invalid(`unsupported automation operation kind: ${String(operation)}`);
   }
+}
+
+/**
+ * What an operation actually cost, derived from the reservation it ran under
+ * and the outcome the host observed. The caller declares the outcome, not the
+ * arithmetic: a controller cannot under-report a successful acquisition or
+ * over-report a failure into someone else's headroom.
+ */
+export function deriveAutomationConsumption(
+  operation: AutomationOperationKind,
+  outcome: AutomationOutcome,
+  reserved: AutomationMetricVectorV1,
+): AutomationMetricVectorV1 {
+  const progressed = outcome === 'progress' || outcome === 'completed';
+  return Object.freeze({
+    agent_turns: reserved.agent_turns,
+    successful_acquisitions: operation === 'acquisition' && progressed ? reserved.successful_acquisitions : 0,
+    runner_invocations: reserved.runner_invocations,
+    provider_failures: outcome === 'provider_failure' ? reserved.provider_failures : 0,
+    repair_cycles: reserved.repair_cycles,
+    input_tokens: reserved.input_tokens === null ? null : 0,
+    output_tokens: reserved.output_tokens === null ? null : 0,
+    cost_micros: reserved.cost_micros === null ? null : 0,
+  });
 }
 
 export interface AutomationBudgetReservationV1 {

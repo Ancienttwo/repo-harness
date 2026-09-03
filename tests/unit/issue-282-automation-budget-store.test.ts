@@ -8,7 +8,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'child_process';
 import { createHash } from 'crypto';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -23,6 +23,8 @@ import {
   sealProgramAuthorization,
   validateAutomationBudgetCurrent,
   type AutomationBudgetV1,
+  parseContractDelegationBudget,
+  type AutomationContractLimitsV1,
   type AutomationMetricVectorV1,
   type ProgramBudgetLimitV1,
 } from '../../src/core/automation/budget';
@@ -36,11 +38,32 @@ import {
   requireUnattendedAutomationRunBudget,
   reserveAutomationBudget,
   AUTOMATION_BUDGET_STORE_RELATIVE_ROOT,
+  type AppendAutomationUsageInput,
+  type PublishAutomationBudgetInput,
+  type ReconcileAutomationReservationInput,
+  type ReserveAutomationBudgetInput,
   readAutomationBudget,
 } from '../../src/effects/automation/budget-store';
+import { __setAutomationClockForTests } from '../../src/effects/automation/budget-store.internal';
 
-const at = (iso: string) => () => new Date(iso);
 const hex = (seed: string): string => createHash('sha256').update(seed, 'utf8').digest('hex');
+process.env.REPO_HARNESS_TEST_CLOCK_SEAM = '1';
+/**
+ * The store owns the clock, so a fixture cannot pass a time in beside an
+ * operation; it installs one through the closed test seam instead. The default
+ * clock advances a second per read, which is all the ordering these fixtures
+ * need, and `at()` pins it for the few assertions about a specific instant.
+ */
+let fixtureClockMs = Date.parse('2026-09-03T00:00:01.000Z');
+let fixtureAutoAdvance = true;
+__setAutomationClockForTests(() => {
+  const value = new Date(fixtureClockMs);
+  if (fixtureAutoAdvance) fixtureClockMs += 1_000;
+  return value;
+});
+const at = (iso: string): void => { fixtureClockMs = Date.parse(iso); fixtureAutoAdvance = false; };
+const resumeAutoClock = (): void => { fixtureAutoAdvance = true; };
+
 const FIXTURES = new Set<string>();
 
 afterAll(() => {
@@ -84,6 +107,7 @@ const SUPPORT_TOKENS = sealAutomationMetricSupport({
 
 interface BudgetOptions {
   readonly run: string;
+  readonly contract?: { readonly path: string; readonly sha256: string; readonly limits: AutomationContractLimitsV1 };
   readonly limits?: ProgramBudgetLimitV1;
   readonly revision?: number;
   readonly supersedes?: string | null;
@@ -112,12 +136,14 @@ function makeBudget(options: BudgetOptions): AutomationBudgetV1 {
       allowed_merge_method: 'squash',
       max_repair_cycles: limits.max_repair_cycles,
       budget: limits,
+      contract_scope: options.contract === undefined ? 'contract_less' : 'task_contract',
+      contract_path: options.contract?.path ?? null,
       issued_by: 'ancienttwo',
       issued_at: '2026-09-03T00:00:00.000Z',
       expires_at: '2026-09-04T00:00:00.000Z',
     }),
-    contract_sha256: null,
-    contract_limits: null,
+    contract_sha256: options.contract?.sha256 ?? null,
+    contract_limits: options.contract?.limits ?? null,
     metric_support: options.tokens === true ? SUPPORT_TOKENS : SUPPORT_NONE,
     unattended: true,
     created_by: 'ancienttwo',
@@ -153,18 +179,12 @@ function acquire(repo: string, run: string, budget: AutomationBudgetV1, key: str
     unit_id: 'wp-1',
     attempt: 1,
     provider: null,
-    reserved,
-    clock: at(when),
   });
   const commit = appendAutomationUsage({
     repo_root: repo,
     reservation,
-    usage: { input_tokens: null, output_tokens: null, cost_micros: null },
-    usage_attribution: null,
-    consumed: chargeFor(reserved, true),
     outcome: 'progress',
     evidence_refs: [{ ref: `repo:acquisition/${key}`, sha256: hex(key) }],
-    clock: at(when),
   });
   return { reservation, commit };
 }
@@ -179,7 +199,7 @@ describe('issue #282 — publication and the store boundary', () => {
   test('publication seeds an active ledger under the Git common directory', () => {
     const repo = repoFixture();
     const budget = makeBudget({ run: 'publish' });
-    const status = publishAutomationBudget({ repo_root: repo, budget, clock: at('2026-09-03T00:00:01.000Z') });
+    const status = publishAutomationBudget({ repo_root: repo, budget });
     expect(status.current.state).toBe('active');
     expect(status.current.event_count).toBe(0);
     expect(status.current.next_step_index).toBe(1);
@@ -192,8 +212,8 @@ describe('issue #282 — publication and the store boundary', () => {
   test('republishing the same revision is idempotent', () => {
     const repo = repoFixture();
     const budget = makeBudget({ run: 'republish' });
-    const first = publishAutomationBudget({ repo_root: repo, budget, clock: at('2026-09-03T00:00:01.000Z') });
-    const second = publishAutomationBudget({ repo_root: repo, budget, clock: at('2026-09-03T00:00:02.000Z') });
+    const first = publishAutomationBudget({ repo_root: repo, budget });
+    const second = publishAutomationBudget({ repo_root: repo, budget });
     expect(second.current.current_sha256).toBe(first.current.current_sha256);
   });
 });
@@ -202,7 +222,7 @@ describe('issue #282 — reserve, append, and single charging', () => {
   test('a reservation is charged once no matter how often the key is replayed', () => {
     const repo = repoFixture();
     const budget = makeBudget({ run: 'replay' });
-    publishAutomationBudget({ repo_root: repo, budget, clock: at('2026-09-03T00:00:01.000Z') });
+    publishAutomationBudget({ repo_root: repo, budget });
     const reserved = automationOperationReservation('acquisition', NO_TOKENS);
     const first = reserveAutomationBudget({
       repo_root: repo,
@@ -214,8 +234,6 @@ describe('issue #282 — reserve, append, and single charging', () => {
       unit_id: 'wp-1',
       attempt: 1,
       provider: null,
-      reserved,
-      clock: at('2026-09-03T00:00:10.000Z'),
     });
     const replayed = reserveAutomationBudget({
       repo_root: repo,
@@ -227,8 +245,6 @@ describe('issue #282 — reserve, append, and single charging', () => {
       unit_id: 'wp-1',
       attempt: 1,
       provider: null,
-      reserved,
-      clock: at('2026-09-03T00:00:11.000Z'),
     });
     expect(replayed.reservation_sha256).toBe(first.reservation_sha256);
     expect(replayed.step_index).toBe(1);
@@ -237,22 +253,14 @@ describe('issue #282 — reserve, append, and single charging', () => {
     const commit = appendAutomationUsage({
       repo_root: repo,
       reservation: first,
-      usage: { input_tokens: null, output_tokens: null, cost_micros: null },
-      usage_attribution: null,
-      consumed: charge,
       outcome: 'progress',
       evidence_refs: [],
-      clock: at('2026-09-03T00:00:20.000Z'),
     });
     const replayedCommit = appendAutomationUsage({
       repo_root: repo,
       reservation: first,
-      usage: { input_tokens: null, output_tokens: null, cost_micros: null },
-      usage_attribution: null,
-      consumed: charge,
       outcome: 'progress',
       evidence_refs: [],
-      clock: at('2026-09-03T00:00:30.000Z'),
     });
     expect(replayedCommit.event.event_sha256).toBe(commit.event.event_sha256);
     const status = readAutomationBudgetStatus(repo, budget.automation_run_id);
@@ -262,72 +270,36 @@ describe('issue #282 — reserve, append, and single charging', () => {
     expect(status.current.ledger_sha256).not.toBe('0'.repeat(64));
   });
 
-  test('a replay that claims a different charge is a conflict, not a second event', () => {
+  test('a replay that reports a different outcome is a conflict, not a second event', () => {
     const repo = repoFixture();
     const budget = makeBudget({ run: 'conflict' });
-    publishAutomationBudget({ repo_root: repo, budget, clock: at('2026-09-03T00:00:01.000Z') });
+    publishAutomationBudget({ repo_root: repo, budget });
     const { reservation } = acquire(repo, 'conflict', budget, 'op-1', '2026-09-03T00:00:10.000Z');
+    // The charge is derived, so the only thing a replay can contradict is the
+    // outcome the host observed -- and that still cannot be rewritten.
     expect(() => appendAutomationUsage({
       repo_root: repo,
       reservation,
-      usage: { input_tokens: null, output_tokens: null, cost_micros: null },
-      usage_attribution: null,
-      consumed: { ...emptyAutomationMetricVector(), agent_turns: 1, successful_acquisitions: 0 },
-      outcome: 'progress',
+      outcome: 'no_progress',
       evidence_refs: [],
-      clock: at('2026-09-03T00:00:40.000Z'),
     })).toThrow(/already exists with a different charge/u);
   });
 
-  test('a token charge without provider attribution is refused at append', () => {
+  test('a hard token limit is refused at publish while no provider usage authority is wired', () => {
     const repo = repoFixture();
     const budget = makeBudget({
       run: 'tokens',
       tokens: true,
       limits: { ...BASE_LIMITS, max_input_tokens: 1_000 },
     });
-    publishAutomationBudget({ repo_root: repo, budget, clock: at('2026-09-03T00:00:01.000Z') });
-    const reserved = automationOperationReservation('provider_invocation', { input_tokens: 500, output_tokens: null, cost_micros: null });
-    const reservation = reserveAutomationBudget({
-      repo_root: repo,
-      automation_run_id: budget.automation_run_id,
-      expected_budget_sha256: budget.budget_sha256,
-      idempotency_key: 'op-tokens',
-      operation: 'provider_invocation',
-      unit_kind: 'execute',
-      unit_id: 'wp-1',
-      attempt: 1,
-      provider: 'codex',
-      reserved,
-      clock: at('2026-09-03T00:00:10.000Z'),
-    });
-    expect(() => appendAutomationUsage({
-      repo_root: repo,
-      reservation,
-      usage: { input_tokens: 400, output_tokens: null, cost_micros: null },
-      usage_attribution: null,
-      consumed: { ...reserved, input_tokens: 400, provider_failures: 0 },
-      outcome: 'progress',
-      evidence_refs: [],
-      clock: at('2026-09-03T00:00:20.000Z'),
-    })).toThrow(/requires provider-authoritative attribution/u);
+    expect(() => publishAutomationBudget({ repo_root: repo, budget }))
+      .toThrow(/is not enforceable/u);
 
-    const commit = appendAutomationUsage({
-      repo_root: repo,
-      reservation,
-      usage: { input_tokens: 400, output_tokens: null, cost_micros: null },
-      usage_attribution: {
-        provider: 'codex',
-        capability_sha256: SUPPORT_TOKENS.capability_sha256,
-        evidence_ref: 'evidence-blob:usage',
-        evidence_sha256: hex('usage-bytes'),
-      },
-      consumed: { ...reserved, input_tokens: 400, provider_failures: 0 },
-      outcome: 'progress',
-      evidence_refs: [{ ref: 'evidence-blob:usage', sha256: hex('usage-bytes') }],
-      clock: at('2026-09-03T00:00:20.000Z'),
-    });
-    expect(commit.current.consumed.input_tokens).toBe(400);
+    // Claiming provider-verified metrics without a provider authority behind
+    // them is refused for the same reason.
+    const claimed = makeBudget({ run: 'tokens-claimed', tokens: true });
+    expect(() => publishAutomationBudget({ repo_root: repo, budget: claimed }))
+      .toThrow(/reads no provider usage authority/u);
   });
 });
 
@@ -335,7 +307,7 @@ describe('issue #282 — refusing before the limit and publishing the stop recei
   test('the acquisition after the limit is refused and the run is stopped', () => {
     const repo = repoFixture();
     const budget = makeBudget({ run: 'stop' });
-    publishAutomationBudget({ repo_root: repo, budget, clock: at('2026-09-03T00:00:01.000Z') });
+    publishAutomationBudget({ repo_root: repo, budget });
     acquire(repo, 'stop', budget, 'op-1', '2026-09-03T00:00:10.000Z');
     const second = acquire(repo, 'stop', budget, 'op-2', '2026-09-03T00:00:20.000Z');
     // The limit is reached by the second acquisition, so the receipt is published
@@ -365,8 +337,9 @@ describe('issue #282 — refusing before the limit and publishing the stop recei
   test('the frozen deadline stops the run even when no counted metric is near its limit', () => {
     const repo = repoFixture();
     const budget = makeBudget({ run: 'deadline', limits: { ...BASE_LIMITS, max_wall_clock_seconds: 60 } });
-    publishAutomationBudget({ repo_root: repo, budget, clock: at('2026-09-03T00:00:01.000Z') });
+    publishAutomationBudget({ repo_root: repo, budget });
     expect(budget.deadline_at).toBe('2026-09-03T00:01:00.000Z');
+    at('2026-09-03T00:02:00.000Z');
     let refusal: AutomationBudgetStoreError | null = null;
     try {
       acquire(repo, 'deadline', budget, 'op-late', '2026-09-03T00:02:00.000Z');
@@ -385,7 +358,7 @@ describe('issue #282 — crash between reservation and usage append', () => {
   test('an unresolved reservation blocks the next operation and is never assumed to be free', () => {
     const repo = repoFixture();
     const budget = makeBudget({ run: 'crash' });
-    publishAutomationBudget({ repo_root: repo, budget, clock: at('2026-09-03T00:00:01.000Z') });
+    publishAutomationBudget({ repo_root: repo, budget });
     const reserved = automationOperationReservation('provider_invocation', NO_TOKENS);
     const reservation = reserveAutomationBudget({
       repo_root: repo,
@@ -397,8 +370,6 @@ describe('issue #282 — crash between reservation and usage append', () => {
       unit_id: 'wp-1',
       attempt: 1,
       provider: 'codex',
-      reserved,
-      clock: at('2026-09-03T00:00:10.000Z'),
     });
     // The process dies here: the reservation is durable, the usage never lands.
     expect(readAutomationBudgetStatus(repo, budget.automation_run_id).current.open_reservation_sha256s)
@@ -416,39 +387,18 @@ describe('issue #282 — crash between reservation and usage append', () => {
       repo_root: repo,
       reservation,
       resolution: 'reconciled_reserved',
+      outcome: 'no_progress',
       reason: 'controller crashed after the provider call started',
-      usage: { input_tokens: null, output_tokens: null, cost_micros: null },
-      usage_attribution: null,
-      consumed: reserved,
-      outcome: 'no_progress',
       evidence_refs: [],
-      clock: at('2026-09-03T00:00:30.000Z'),
     })).toThrow(/requires exact evidence/u);
-
-    expect(() => reconcileAutomationReservation({
-      repo_root: repo,
-      reservation,
-      resolution: 'reconciled_not_started',
-      reason: 'guessing the provider never ran',
-      usage: { input_tokens: null, output_tokens: null, cost_micros: null },
-      usage_attribution: null,
-      consumed: reserved,
-      outcome: 'no_progress',
-      evidence_refs: [{ ref: 'repo:evidence/none', sha256: hex('none') }],
-      clock: at('2026-09-03T00:00:30.000Z'),
-    })).toThrow(/must charge nothing/u);
 
     const resolved = reconcileAutomationReservation({
       repo_root: repo,
       reservation,
       resolution: 'reconciled_reserved',
-      reason: 'controller crashed after the provider call started',
-      usage: { input_tokens: null, output_tokens: null, cost_micros: null },
-      usage_attribution: null,
-      consumed: reserved,
       outcome: 'no_progress',
+      reason: 'controller crashed after the provider call started',
       evidence_refs: [{ ref: 'repo:evidence/process-exit', sha256: hex('process-exit') }],
-      clock: at('2026-09-03T00:00:30.000Z'),
     });
     expect(resolved.event.resolution).toBe('reconciled_reserved');
     expect(resolved.current.consumed.runner_invocations).toBe(1);
@@ -458,6 +408,38 @@ describe('issue #282 — crash between reservation and usage append', () => {
     // Spending resumes only once the interrupted reservation is resolved.
     const next = acquire(repo, 'crash', budget, 'op-after', '2026-09-03T00:00:40.000Z');
     expect(next.commit.current.consumed.successful_acquisitions).toBe(1);
+  });
+
+  test('the reconciliation charge is derived from the resolution, never declared', () => {
+    const repo = repoFixture();
+    const budget = makeBudget({ run: 'reconcile-charge' });
+    publishAutomationBudget({ repo_root: repo, budget });
+    const reservation = reserveAutomationBudget({
+      repo_root: repo,
+      automation_run_id: budget.automation_run_id,
+      expected_budget_sha256: budget.budget_sha256,
+      idempotency_key: 'op-never-started',
+      operation: 'provider_invocation',
+      unit_kind: 'execute',
+      unit_id: 'wp-1',
+      attempt: 1,
+      provider: 'codex',
+    });
+    const resolved = reconcileAutomationReservation({
+      repo_root: repo,
+      reservation,
+      resolution: 'reconciled_not_started',
+      outcome: 'no_progress',
+      reason: 'the provider process never launched',
+      evidence_refs: [{ ref: 'repo:evidence/launch-failure', sha256: hex('launch-failure') }],
+    });
+    // Proven not to have started, so it costs nothing -- and the caller had no
+    // way to say otherwise.
+    expect(resolved.event.consumed.agent_turns).toBe(0);
+    expect(resolved.event.consumed.runner_invocations).toBe(0);
+    expect(resolved.event.consumed.provider_failures).toBe(0);
+    expect(resolved.current.consumed.runner_invocations).toBe(0);
+    expect(resolved.current.open_reservation_sha256s).toEqual([]);
   });
 });
 
@@ -472,7 +454,7 @@ describe('issue #282 — a durable reservation the current projection does not l
   test('an unlisted reservation blocks a different key and stays chargeable exactly once', () => {
     const repo = repoFixture();
     const budget = makeBudget({ run: 'orphan', limits: { ...BASE_LIMITS, max_successful_acquisitions: 1 } });
-    publishAutomationBudget({ repo_root: repo, budget, clock: at('2026-09-03T00:00:01.000Z') });
+    publishAutomationBudget({ repo_root: repo, budget });
 
     const path = currentPath(repo, budget.automation_run_id);
     const beforeReserve = readFileSync(path, 'utf8');
@@ -487,8 +469,6 @@ describe('issue #282 — a durable reservation the current projection does not l
       unit_id: 'wp-1',
       attempt: 1,
       provider: null,
-      reserved,
-      clock: at('2026-09-03T00:00:10.000Z'),
     });
     // The process dies here: the reservation is durable, the projection is not.
     writeFileSync(path, beforeReserve);
@@ -513,20 +493,14 @@ describe('issue #282 — a durable reservation the current projection does not l
       unit_id: 'wp-1',
       attempt: 1,
       provider: null,
-      reserved,
-      clock: at('2026-09-03T00:00:30.000Z'),
     });
     expect(replayed.reservation_sha256).toBe(orphan.reservation_sha256);
 
     const commit = appendAutomationUsage({
       repo_root: repo,
       reservation: replayed,
-      usage: { input_tokens: null, output_tokens: null, cost_micros: null },
-      usage_attribution: null,
-      consumed: chargeFor(reserved, true),
       outcome: 'progress',
       evidence_refs: [{ ref: 'repo:evidence/recovered', sha256: hex('recovered') }],
-      clock: at('2026-09-03T00:00:40.000Z'),
     });
     expect(commit.current.consumed.successful_acquisitions).toBe(1);
     expect(commit.current.event_count).toBe(1);
@@ -544,7 +518,7 @@ describe('issue #282 — a durable reservation the current projection does not l
   test('a durable usage event the current projection has not folded in is still charged once', () => {
     const repo = repoFixture();
     const budget = makeBudget({ run: 'unfolded' });
-    publishAutomationBudget({ repo_root: repo, budget, clock: at('2026-09-03T00:00:01.000Z') });
+    publishAutomationBudget({ repo_root: repo, budget });
     const reserved = automationOperationReservation('acquisition', NO_TOKENS);
     const reservation = reserveAutomationBudget({
       repo_root: repo,
@@ -556,20 +530,14 @@ describe('issue #282 — a durable reservation the current projection does not l
       unit_id: 'wp-1',
       attempt: 1,
       provider: null,
-      reserved,
-      clock: at('2026-09-03T00:00:10.000Z'),
     });
     const path = currentPath(repo, budget.automation_run_id);
     const beforeAppend = readFileSync(path, 'utf8');
     appendAutomationUsage({
       repo_root: repo,
       reservation,
-      usage: { input_tokens: null, output_tokens: null, cost_micros: null },
-      usage_attribution: null,
-      consumed: chargeFor(reserved, true),
       outcome: 'progress',
       evidence_refs: [],
-      clock: at('2026-09-03T00:00:20.000Z'),
     });
     // The process dies after the event is durable but before the projection lands.
     writeFileSync(path, beforeAppend);
@@ -578,12 +546,8 @@ describe('issue #282 — a durable reservation the current projection does not l
     const replayed = appendAutomationUsage({
       repo_root: repo,
       reservation,
-      usage: { input_tokens: null, output_tokens: null, cost_micros: null },
-      usage_attribution: null,
-      consumed: chargeFor(reserved, true),
       outcome: 'progress',
       evidence_refs: [],
-      clock: at('2026-09-03T00:00:30.000Z'),
     });
     expect(replayed.current.consumed.successful_acquisitions).toBe(1);
     expect(replayed.current.event_count).toBe(1);
@@ -593,7 +557,7 @@ describe('issue #282 — a durable reservation the current projection does not l
   test('an already-used key cannot reopen an exhausted run', () => {
     const repo = repoFixture();
     const budget = makeBudget({ run: 'exhausted-replay', limits: { ...BASE_LIMITS, max_successful_acquisitions: 1 } });
-    publishAutomationBudget({ repo_root: repo, budget, clock: at('2026-09-03T00:00:01.000Z') });
+    publishAutomationBudget({ repo_root: repo, budget });
     acquire(repo, 'exhausted-replay', budget, 'op-1', '2026-09-03T00:00:10.000Z');
     expect(readAutomationBudgetStatus(repo, budget.automation_run_id).current.state).toBe('budget_exhausted');
 
@@ -611,8 +575,6 @@ describe('issue #282 — a durable reservation the current projection does not l
         unit_id: 'wp-1',
         attempt: 1,
         provider: null,
-        reserved: automationOperationReservation('acquisition', NO_TOKENS),
-        clock: at('2026-09-03T00:00:20.000Z'),
       });
     } catch (error) {
       refusal = error as AutomationBudgetStoreError;
@@ -634,7 +596,7 @@ describe('issue #282 — a durable stop receipt the projection missed', () => {
   test('a receipt the projection has not adopted is adopted, not thrown on', () => {
     const repo = repoFixture();
     const budget = makeBudget({ run: 'stop-orphan', limits: { ...BASE_LIMITS, max_successful_acquisitions: 1 } });
-    publishAutomationBudget({ repo_root: repo, budget, clock: at('2026-09-03T00:00:01.000Z') });
+    publishAutomationBudget({ repo_root: repo, budget });
     const stopped = acquire(repo, 'stop-orphan', budget, 'op-1', '2026-09-03T00:00:10.000Z');
     expect(stopped.commit.stop_receipt).not.toBeNull();
 
@@ -702,7 +664,7 @@ describe('issue #282 — the store owns the clock', () => {
   test('a backdated caller timestamp cannot buy a reservation past the frozen deadline', () => {
     const repo = repoFixture();
     const budget = makeBudget({ run: 'clock', limits: { ...BASE_LIMITS, max_wall_clock_seconds: 60 } });
-    publishAutomationBudget({ repo_root: repo, budget, clock: at('2026-09-03T00:00:01.000Z') });
+    publishAutomationBudget({ repo_root: repo, budget });
     expect(budget.deadline_at).toBe('2026-09-03T00:01:00.000Z');
 
     let refusal: AutomationBudgetStoreError | null = null;
@@ -717,9 +679,7 @@ describe('issue #282 — the store owns the clock', () => {
         unit_id: 'wp-1',
         attempt: 1,
         provider: null,
-        reserved: automationOperationReservation('acquisition', NO_TOKENS),
         // The store clock is well past the deadline; the caller claims otherwise.
-        clock: at('2026-09-03T00:30:00.000Z'),
         reserved_at: '2026-09-03T00:00:10.000Z',
       } as Parameters<typeof reserveAutomationBudget>[0]);
     } catch (error) {
@@ -733,9 +693,11 @@ describe('issue #282 — the store owns the clock', () => {
   test('a clock that runs backwards over a durable record is refused', () => {
     const repo = repoFixture();
     const budget = makeBudget({ run: 'clock-regression' });
-    publishAutomationBudget({ repo_root: repo, budget, clock: at('2026-09-03T00:00:01.000Z') });
+    publishAutomationBudget({ repo_root: repo, budget });
+    at('2026-09-03T00:10:00.000Z');
     acquire(repo, 'clock-regression', budget, 'op-1', '2026-09-03T00:10:00.000Z');
 
+    at('2026-09-03T00:05:00.000Z');
     let refusal: AutomationBudgetStoreError | null = null;
     try {
       acquire(repo, 'clock-regression', budget, 'op-2', '2026-09-03T00:05:00.000Z');
@@ -757,14 +719,14 @@ describe('issue #282 — immutable records publish atomically', () => {
   test('a leftover temporary artifact is garbage that blocks nothing', () => {
     const repo = repoFixture();
     const budget = makeBudget({ run: 'atomic' });
-    publishAutomationBudget({ repo_root: repo, budget, clock: at('2026-09-03T00:00:01.000Z') });
+    publishAutomationBudget({ repo_root: repo, budget });
     const runRoot = join(repo, '.git', AUTOMATION_BUDGET_STORE_RELATIVE_ROOT, 'runs', budget.automation_run_id);
     writeFileSync(join(runRoot, 'reservations', '.abc.json.tmp-1-2-3'), '{"trunc');
     writeFileSync(join(runRoot, 'events', '.def.json.tmp-4-5-6'), '');
 
     const first = acquire(repo, 'atomic', budget, 'op-1', '2026-09-03T00:10:00.000Z');
     expect(first.commit.current.consumed.successful_acquisitions).toBe(1);
-    const status = readAutomationBudgetStatus(repo, budget.automation_run_id, { clock: at('2026-09-03T00:11:00.000Z') });
+    const status = readAutomationBudgetStatus(repo, budget.automation_run_id);
     expect(status.drift).toBe('none');
 
     for (const directory of ['reservations', 'events'] as const) {
@@ -787,7 +749,7 @@ describe('issue #282 — exhaustion is sealed deterministically', () => {
   test('consumption that reached a hard limit without a receipt is sealed on the next read', () => {
     const repo = repoFixture();
     const budget = makeBudget({ run: 'unsealed', limits: { ...BASE_LIMITS, max_successful_acquisitions: 1 } });
-    publishAutomationBudget({ repo_root: repo, budget, clock: at('2026-09-03T00:00:01.000Z') });
+    publishAutomationBudget({ repo_root: repo, budget });
     const stopped = acquire(repo, 'unsealed', budget, 'op-1', '2026-09-03T00:10:00.000Z');
     expect(stopped.commit.stop_receipt).not.toBeNull();
 
@@ -814,8 +776,8 @@ describe('issue #282 — exhaustion is sealed deterministically', () => {
     rmSync(join(repo, '.git', AUTOMATION_BUDGET_STORE_RELATIVE_ROOT, 'runs', budget.automation_run_id, 'stop-receipt.json'));
 
     const clock = at('2026-09-03T00:11:00.000Z');
-    expect(readAutomationBudgetStatus(repo, budget.automation_run_id, { clock }).drift).toBe('unsealed_exhaustion');
-    const slice = readAutomationBudgetBoardSlice(repo, budget.automation_run_id, '2026-09-03T00:11:00.000Z', { clock });
+    expect(readAutomationBudgetStatus(repo, budget.automation_run_id).drift).toBe('unsealed_exhaustion');
+    const slice = readAutomationBudgetBoardSlice(repo, budget.automation_run_id, '2026-09-03T00:11:00.000Z');
     expect(slice.state).toBe('budget_exhausted');
     expect(slice.projection_stale).toBe(true);
     expect(slice.attention_owner).toBe('user');
@@ -827,7 +789,7 @@ describe('issue #282 — exhaustion is sealed deterministically', () => {
       refusal = error as AutomationBudgetStoreError;
     }
     expect(refusal?.refusal?.refusal_code).toBe('budget_exhausted');
-    const sealed = readAutomationBudgetStatus(repo, budget.automation_run_id, { clock });
+    const sealed = readAutomationBudgetStatus(repo, budget.automation_run_id);
     expect(sealed.drift).toBe('none');
     expect(sealed.current.state).toBe('budget_exhausted');
     expect(sealed.stop_receipt?.triggering_metric).toBe('successful_acquisitions');
@@ -852,11 +814,11 @@ describe('issue #282 — effective limits are re-derived, not trusted', () => {
     // The forgery is internally perfect: its digest binds its own bytes.
     expect(forged.budget_sha256).not.toBe(honest.budget_sha256);
 
-    expect(() => publishAutomationBudget({ repo_root: repo, budget: forged, clock: at('2026-09-03T00:00:01.000Z') }))
+    expect(() => publishAutomationBudget({ repo_root: repo, budget: forged }))
       .toThrow(/is not the strictest value its authorities allow/u);
 
     // And it cannot be smuggled in by writing it straight into the store either.
-    publishAutomationBudget({ repo_root: repo, budget: honest, clock: at('2026-09-03T00:00:01.000Z') });
+    publishAutomationBudget({ repo_root: repo, budget: honest });
     writeFileSync(
       join(repo, '.git', AUTOMATION_BUDGET_STORE_RELATIVE_ROOT, 'budgets', `${forged.budget_sha256}.json`),
       `${JSON.stringify(forged)}\n`,
@@ -866,28 +828,155 @@ describe('issue #282 — effective limits are re-derived, not trusted', () => {
   });
 });
 
+describe('issue #282 — the caller supplies no decision input', () => {
+  /**
+   * Structural proof. Time, the reserved vector and the charge are all
+   * decisions, so none of them has a key on any public input: the compile-time
+   * checks below fail the build if one is ever reintroduced.
+   */
+  type ForbiddenDecisionKey = 'clock' | 'now' | 'reserved_at' | 'observed_at' | 'published_at' | 'reconciled_at';
+  type HasNo<T, K extends string> = Extract<keyof T, K> extends never ? true : false;
+
+  const reserveHasNoTime: HasNo<ReserveAutomationBudgetInput, ForbiddenDecisionKey | 'reserved'> = true;
+  const appendHasNoTime: HasNo<AppendAutomationUsageInput, ForbiddenDecisionKey | 'consumed' | 'usage' | 'usage_attribution'> = true;
+  const reconcileHasNoTime: HasNo<ReconcileAutomationReservationInput, ForbiddenDecisionKey | 'consumed' | 'usage' | 'usage_attribution'> = true;
+  const publishHasNoTime: HasNo<PublishAutomationBudgetInput, ForbiddenDecisionKey> = true;
+
+  test('no public verb input carries a time, a reserved vector or a charge', () => {
+    expect([reserveHasNoTime, appendHasNoTime, reconcileHasNoTime, publishHasNoTime]).toEqual([true, true, true, true]);
+  });
+
+  test('a caller that passes a decision input anyway cannot change the decision', () => {
+    const repo = repoFixture();
+    const budget = makeBudget({ run: 'ignored-inputs', limits: { ...BASE_LIMITS, max_successful_acquisitions: 1 } });
+    publishAutomationBudget({ repo_root: repo, budget });
+    const smuggled = {
+      repo_root: repo,
+      automation_run_id: budget.automation_run_id,
+      expected_budget_sha256: budget.budget_sha256,
+      idempotency_key: 'op-smuggled',
+      operation: 'acquisition' as const,
+      unit_kind: 'execute' as const,
+      unit_id: 'wp-1',
+      attempt: 1,
+      provider: null,
+      // None of these are part of the contract; the store must ignore them.
+      reserved: { ...emptyAutomationMetricVector(), agent_turns: 0, successful_acquisitions: 0 },
+      clock: () => new Date('2020-01-01T00:00:00.000Z'),
+      reserved_at: '2020-01-01T00:00:00.000Z',
+    };
+    for (const key of ['reserved', 'clock', 'reserved_at']) {
+      expect(Object.keys(smuggled)).toContain(key);
+    }
+    const reservation = reserveAutomationBudget(smuggled as unknown as ReserveAutomationBudgetInput);
+    // An acquisition costs one acquisition and one step, whatever was passed.
+    expect(reservation.reserved.successful_acquisitions).toBe(1);
+    expect(reservation.reserved.agent_turns).toBe(1);
+    expect(Date.parse(reservation.reserved_at)).toBeGreaterThan(Date.parse('2026-09-03T00:00:00.000Z'));
+
+    const commit = appendAutomationUsage({
+      repo_root: repo,
+      reservation,
+      outcome: 'progress',
+      evidence_refs: [],
+    });
+    expect(commit.current.consumed.successful_acquisitions).toBe(1);
+    // One acquisition was authorized, so the run is now exhausted.
+    expect(commit.current.state).toBe('budget_exhausted');
+  });
+});
+
+describe('issue #282 — the task contract is read, not summarised', () => {
+  const CONTRACT_PATH = 'tasks/contracts/fixture.contract.md';
+  const CONTRACT_BODY = [
+    '# Task Contract: fixture',
+    '',
+    '## Delegation Contract',
+    '',
+    '```yaml',
+    'delegation:',
+    '  budget:',
+    '    tokens: null',
+    '    runner_invocations: 2',
+    '    wall_time_minutes: null',
+    '```',
+    '',
+  ].join('\n');
+
+  function withContract(repo: string): { readonly path: string; readonly sha256: string; readonly limits: AutomationContractLimitsV1 } {
+    mkdirSync(join(repo, 'tasks', 'contracts'), { recursive: true });
+    writeFileSync(join(repo, CONTRACT_PATH), CONTRACT_BODY);
+    return {
+      path: CONTRACT_PATH,
+      sha256: createHash('sha256').update(CONTRACT_BODY, 'utf8').digest('hex'),
+      limits: parseContractDelegationBudget(CONTRACT_BODY, CONTRACT_PATH),
+    };
+  }
+
+  test('a budget bound to a real contract composes from the contract bytes', () => {
+    const repo = repoFixture();
+    const contract = withContract(repo);
+    const budget = makeBudget({ run: 'contract-bound', contract });
+    expect(budget.effective_limits.max_runner_invocations).toBe(2);
+    const published = publishAutomationBudget({ repo_root: repo, budget });
+    expect(published.budget.contract_sha256).toBe(contract.sha256);
+  });
+
+  test('a grant that names a contract the repository does not have is refused', () => {
+    const repo = repoFixture();
+    const contract = withContract(repo);
+    const budget = makeBudget({ run: 'contract-missing', contract });
+    rmSync(join(repo, CONTRACT_PATH));
+    expect(() => publishAutomationBudget({ repo_root: repo, budget })).toThrow(/is missing/u);
+  });
+
+  test('a summary that claims looser limits than the contract is refused', () => {
+    const repo = repoFixture();
+    const contract = withContract(repo);
+    const forged = makeBudget({
+      run: 'contract-forged',
+      contract: { ...contract, limits: { ...contract.limits, runner_invocations: 40 } },
+    });
+    // The forgery is self-consistent and its digest binds it; only re-reading
+    // the contract's own bytes catches it.
+    expect(forged.effective_limits.max_runner_invocations).toBe(8);
+    expect(() => publishAutomationBudget({ repo_root: repo, budget: forged }))
+      .toThrow(/do not match the delegation budget/u);
+  });
+
+  test('a contract-less run must be granted explicitly', () => {
+    const repo = repoFixture();
+    const contract = withContract(repo);
+    const budget = makeBudget({ run: 'contract-less-forged', contract });
+    const grantless = {
+      ...budget,
+      authorization: { ...budget.authorization, contract_scope: 'contract_less' as const, contract_path: null },
+    };
+    expect(() => publishAutomationBudget({ repo_root: repo, budget: grantless }))
+      .toThrow(/digest does not bind|contract-less grant cannot carry/u);
+  });
+});
+
 describe('issue #282 — a limit increase needs a new authorized revision', () => {
   test('a revision must supersede the exact current digest and invalidates stale decisions', () => {
     const repo = repoFixture();
     const first = makeBudget({ run: 'revision' });
-    publishAutomationBudget({ repo_root: repo, budget: first, clock: at('2026-09-03T00:00:01.000Z') });
+    publishAutomationBudget({ repo_root: repo, budget: first });
     acquire(repo, 'revision', first, 'op-1', '2026-09-03T00:00:10.000Z');
 
     const wider: ProgramBudgetLimitV1 = { ...BASE_LIMITS, max_successful_acquisitions: 5 };
     expect(() => publishAutomationBudget({
       repo_root: repo,
       budget: makeBudget({ run: 'revision', limits: wider, revision: 2, supersedes: hex('not-the-current-digest') }),
-      clock: at('2026-09-03T00:00:20.000Z'),
     })).toThrow(/must supersede the exact current revision/u);
 
     expect(() => publishAutomationBudget({
       repo_root: repo,
       budget: makeBudget({ run: 'revision', limits: wider, revision: 3, supersedes: first.budget_sha256 }),
-      clock: at('2026-09-03T00:00:20.000Z'),
     })).toThrow(/increment the revision counter by one/u);
 
     const second = makeBudget({ run: 'revision', limits: wider, revision: 2, supersedes: first.budget_sha256 });
-    const published = publishAutomationBudget({ repo_root: repo, budget: second, clock: at('2026-09-03T00:00:20.000Z') });
+    const published = publishAutomationBudget({ repo_root: repo, budget: second });
     expect(published.current.budget_sha256).toBe(second.budget_sha256);
     expect(published.current.consumed.successful_acquisitions).toBe(1);
 
@@ -912,7 +1001,7 @@ describe('issue #282 — a limit increase needs a new authorized revision', () =
   test('a revision is refused while an operation is still in flight', () => {
     const repo = repoFixture();
     const first = makeBudget({ run: 'revision-inflight' });
-    publishAutomationBudget({ repo_root: repo, budget: first, clock: at('2026-09-03T00:00:01.000Z') });
+    publishAutomationBudget({ repo_root: repo, budget: first });
     const reserved = automationOperationReservation('acquisition', NO_TOKENS);
     const reservation = reserveAutomationBudget({
       repo_root: repo,
@@ -924,30 +1013,23 @@ describe('issue #282 — a limit increase needs a new authorized revision', () =
       unit_id: 'wp-1',
       attempt: 1,
       provider: null,
-      reserved,
-      clock: at('2026-09-03T00:00:10.000Z'),
     });
 
     const wider: ProgramBudgetLimitV1 = { ...BASE_LIMITS, max_successful_acquisitions: 5 };
     expect(() => publishAutomationBudget({
       repo_root: repo,
       budget: makeBudget({ run: 'revision-inflight', limits: wider, revision: 2, supersedes: first.budget_sha256 }),
-      clock: at('2026-09-03T00:00:20.000Z'),
     })).toThrow(/in-flight operation/u);
 
     // Resolving the in-flight operation unblocks the revision.
     appendAutomationUsage({
       repo_root: repo,
       reservation,
-      usage: { input_tokens: null, output_tokens: null, cost_micros: null },
-      usage_attribution: null,
-      consumed: chargeFor(reserved, true),
       outcome: 'progress',
       evidence_refs: [],
-      clock: at('2026-09-03T00:00:30.000Z'),
     });
     const second = makeBudget({ run: 'revision-inflight', limits: wider, revision: 2, supersedes: first.budget_sha256 });
-    const published = publishAutomationBudget({ repo_root: repo, budget: second, clock: at('2026-09-03T00:00:40.000Z') });
+    const published = publishAutomationBudget({ repo_root: repo, budget: second });
     expect(published.current.state).toBe('active');
     expect(published.current.consumed.successful_acquisitions).toBe(1);
   });

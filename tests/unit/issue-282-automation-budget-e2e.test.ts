@@ -32,11 +32,28 @@ import {
   readAutomationBudgetStatus,
   reserveAutomationBudget,
 } from '../../src/effects/automation/budget-store';
+import { __setAutomationClockForTests } from '../../src/effects/automation/budget-store.internal';
 
 const ROOT = join(import.meta.dir, '..', '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
-const at = (iso: string) => () => new Date(iso);
 const hex = (seed: string): string => createHash('sha256').update(seed, 'utf8').digest('hex');
+process.env.REPO_HARNESS_TEST_CLOCK_SEAM = '1';
+/**
+ * The store owns the clock, so a fixture cannot pass a time in beside an
+ * operation; it installs one through the closed test seam instead. The default
+ * clock advances a second per read, which is all the ordering these fixtures
+ * need, and `at()` pins it for the few assertions about a specific instant.
+ */
+let fixtureClockMs = Date.parse('2026-09-03T00:00:01.000Z');
+let fixtureAutoAdvance = true;
+__setAutomationClockForTests(() => {
+  const value = new Date(fixtureClockMs);
+  if (fixtureAutoAdvance) fixtureClockMs += 1_000;
+  return value;
+});
+const at = (iso: string): void => { fixtureClockMs = Date.parse(iso); fixtureAutoAdvance = false; };
+const resumeAutoClock = (): void => { fixtureAutoAdvance = true; };
+
 const FIXTURES = new Set<string>();
 
 afterAll(() => {
@@ -105,6 +122,8 @@ function makeBudget(run: string): AutomationBudgetV1 {
       allowed_merge_method: 'squash',
       max_repair_cycles: LIMITS.max_repair_cycles,
       budget: LIMITS,
+      contract_scope: 'contract_less',
+      contract_path: null,
       issued_by: 'ancienttwo',
       issued_at: '2026-09-03T00:00:00.000Z',
       expires_at: '2026-09-04T00:00:00.000Z',
@@ -158,8 +177,6 @@ function driveController(repo: string, budget: AutomationBudgetV1, rounds: numbe
           unit_id: 'wp-1',
           attempt: 1,
           provider: operation === 'dispatch' ? 'codex' : null,
-          reserved,
-          clock: at(when),
         });
       } catch (error) {
         if (!(error instanceof AutomationBudgetStoreError) || error.refusal === null) throw error;
@@ -176,12 +193,8 @@ function driveController(repo: string, budget: AutomationBudgetV1, rounds: numbe
       appendAutomationUsage({
         repo_root: repo,
         reservation,
-        usage: { input_tokens: null, output_tokens: null, cost_micros: null },
-        usage_attribution: null,
-        consumed: { ...reserved, provider_failures: 0 },
         outcome: 'progress',
         evidence_refs: [{ ref: `repo:step/${key}`, sha256: hex(key) }],
-        clock: at(when),
       });
     }
   }
@@ -204,7 +217,7 @@ describe('issue #282 — end-to-end stop before the next claim', () => {
     const before = foreignAuthorityDigest(repo);
 
     const budget = makeBudget('e2e');
-    publishAutomationBudget({ repo_root: repo, budget, clock: at('2026-09-03T00:00:01.000Z') });
+    publishAutomationBudget({ repo_root: repo, budget });
 
     const trace = driveController(repo, budget, 10);
     expect(trace.claims).toHaveLength(3);
@@ -236,7 +249,7 @@ describe('issue #282 — end-to-end stop before the next claim', () => {
   test('the operator CLI projects the same stop receipt the board reads', () => {
     const repo = repoFixture();
     const budget = makeBudget('e2e-cli');
-    publishAutomationBudget({ repo_root: repo, budget, clock: at('2026-09-03T00:00:01.000Z') });
+    publishAutomationBudget({ repo_root: repo, budget });
     driveController(repo, budget, 10);
 
     const observedAt = '2026-09-03T00:30:00.000Z';

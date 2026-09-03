@@ -25,10 +25,27 @@ import {
   publishAutomationBudget,
   readAutomationBudgetStatus,
 } from '../../src/effects/automation/budget-store';
+import { __setAutomationClockForTests } from '../../src/effects/automation/budget-store.internal';
 
 const ROOT = join(import.meta.dir, '..', '..');
-const at = (iso: string) => () => new Date(iso);
 const hex = (seed: string): string => createHash('sha256').update(seed, 'utf8').digest('hex');
+process.env.REPO_HARNESS_TEST_CLOCK_SEAM = '1';
+/**
+ * The store owns the clock, so a fixture cannot pass a time in beside an
+ * operation; it installs one through the closed test seam instead. The default
+ * clock advances a second per read, which is all the ordering these fixtures
+ * need, and `at()` pins it for the few assertions about a specific instant.
+ */
+let fixtureClockMs = Date.parse('2026-09-03T00:00:01.000Z');
+let fixtureAutoAdvance = true;
+__setAutomationClockForTests(() => {
+  const value = new Date(fixtureClockMs);
+  if (fixtureAutoAdvance) fixtureClockMs += 1_000;
+  return value;
+});
+const at = (iso: string): void => { fixtureClockMs = Date.parse(iso); fixtureAutoAdvance = false; };
+const resumeAutoClock = (): void => { fixtureAutoAdvance = true; };
+
 const FIXTURES = new Set<string>();
 
 afterAll(() => {
@@ -76,6 +93,8 @@ function makeBudget(run: string, limits: ProgramBudgetLimitV1): AutomationBudget
       allowed_merge_method: 'squash',
       max_repair_cycles: limits.max_repair_cycles,
       budget: limits,
+      contract_scope: 'contract_less',
+      contract_path: null,
       issued_by: 'ancienttwo',
       issued_at: '2026-09-03T00:00:00.000Z',
       expires_at: '2026-09-04T00:00:00.000Z',
@@ -103,18 +122,21 @@ function makeBudget(run: string, limits: ProgramBudgetLimitV1): AutomationBudget
  * verbatim.
  */
 const WORKER_SOURCE = `
-import { automationOperationReservation } from '${join(ROOT, 'src/core/automation/budget')}';
+process.env.REPO_HARNESS_TEST_CLOCK_SEAM = '1';
 import {
   AutomationBudgetStoreError,
   appendAutomationUsage,
   reserveAutomationBudget,
 } from '${join(ROOT, 'src/effects/automation/budget-store')}';
+import { __setAutomationClockForTests } from '${join(ROOT, 'src/effects/automation/budget-store.internal')}';
+
+// One fixed instant for every worker. The store owns the clock, so each worker
+// installs the same one through the closed seam: racing processes have no
+// ordering, and the store refuses a clock that runs backwards over its records.
+__setAutomationClockForTests(() => new Date('2026-09-03T00:10:00.000Z'));
 
 const [repo, runId, budgetSha, key, startAt] = process.argv.slice(2);
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-const reserved = automationOperationReservation('acquisition', { input_tokens: null, output_tokens: null, cost_micros: null });
-// One fixed instant for every worker: the store refuses a clock that runs
-// backwards over its own records, and racing processes have no ordering.
 
 function report(value) {
   process.stdout.write(JSON.stringify(value) + '\\n');
@@ -136,18 +158,12 @@ for (let attempt = 0; attempt < 400; attempt += 1) {
       unit_id: 'wp-1',
       attempt: 1,
       provider: null,
-      reserved,
-      clock: () => new Date('2026-09-03T00:10:00.000Z'),
     });
     appendAutomationUsage({
       repo_root: repo,
       reservation,
-      usage: { input_tokens: null, output_tokens: null, cost_micros: null },
-      usage_attribution: null,
-      consumed: reserved,
       outcome: 'progress',
       evidence_refs: [],
-      clock: () => new Date('2026-09-03T00:10:00.000Z'),
     });
     report({ outcome: 'granted', key, step_index: reservation.step_index });
   } catch (error) {
@@ -209,7 +225,8 @@ describe('issue #282 — concurrent controllers cannot reserve past one limit', 
   test('four processes racing one remaining acquisition charge exactly one', async () => {
     const repo = repoFixture();
     const budget = makeBudget('race-one', LIMITS);
-    publishAutomationBudget({ repo_root: repo, budget, clock: at('2026-09-03T00:00:01.000Z') });
+    publishAutomationBudget({ repo_root: repo, budget });
+    at('2026-09-03T00:10:00.000Z');
 
     const reports = await race(repo, budget, ['op-a', 'op-b', 'op-c', 'op-d']);
     const granted = reports.filter((entry) => entry.outcome === 'granted');
@@ -230,7 +247,8 @@ describe('issue #282 — concurrent controllers cannot reserve past one limit', 
   test('concurrent reservations inside the limit never lose an append or reuse a step index', async () => {
     const repo = repoFixture();
     const budget = makeBudget('race-many', { ...LIMITS, max_successful_acquisitions: 4, max_agent_turns: 8 });
-    publishAutomationBudget({ repo_root: repo, budget, clock: at('2026-09-03T00:00:01.000Z') });
+    publishAutomationBudget({ repo_root: repo, budget });
+    at('2026-09-03T00:10:00.000Z');
 
     const reports = await race(repo, budget, ['op-1', 'op-2', 'op-3', 'op-4']);
     expect(reports.filter((entry) => entry.outcome === 'granted')).toHaveLength(4);

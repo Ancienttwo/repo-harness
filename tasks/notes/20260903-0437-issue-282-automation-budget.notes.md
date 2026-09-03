@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260903-0437-issue-282-automation-budget.review.md
 > **Last Updated**: 2026-09-03 05:20
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:300e158d27db6e38ad339eda83b0b90b36c5f8a610fe016e40d261b1ec217b55`
+> **Substantive Change SHA256**: `sha256:3de8849f13086ee2647227636ccebdb2fc7f3562d6e32cf22f7a03e7150b674c`
 
 ## Design Decisions
 
@@ -75,6 +75,30 @@ an oversight: it is what makes "a crash between reservation and usage append
 blocks further spending" a single-condition check rather than a per-reservation
 expiry sweep, and a controller is a sequential stepper by construction.
 
+### The trust boundary
+
+The budget store's caller -- any controller, the CLI, a campaign -- is
+**untrusted for every decision input**. The host process is the only trusted
+source: its clock, its filesystem, and the repository's canonical authorities.
+A caller names what it wants to do and reports what happened; it never states
+what that costs or when it happened.
+
+Concretely, these are derived by the store and have no key on any public input:
+
+| Decision | Derived from |
+|----------|--------------|
+| now | the host clock (`src/effects/automation/clock.ts`), never a parameter |
+| the reserved vector | `automationOperationReservation(operation, …)` |
+| the charge | the reservation plus the outcome the host observed |
+| token/cost usage | nothing -- refused at preflight until a provider authority is wired |
+| the task contract's limits | the contract's own bytes, read and digested from the repository |
+| effective limits, derivations, deadline | recomputed from the grant and the contract on every read |
+
+The compile-time checks in `tests/unit/issue-282-automation-budget-store.test.ts`
+fail the build if any of those keys is ever reintroduced to a public input, and
+the end-to-end controller fixture drives the store through the public inputs
+only, so it is itself the proof that a controller cannot influence a decision.
+
 ### The store owns the clock
 
 The frozen deadline is only worth what the time source behind it is worth. A
@@ -99,6 +123,41 @@ source, which the contention fixture makes explicit.
 wall-clock row, but drift -- which decides the state the slice renders -- is
 measured on the store clock, so asking about the past cannot hide an exhausted
 run.
+
+The test seam is deliberately not an input. `__setAutomationClockForTests` lives
+in `clock.ts`, is re-exported only through `budget-store.internal.ts` (which
+nothing on the public surface re-exports), and refuses to install anything
+unless the process opted in with `REPO_HARNESS_TEST_CLOCK_SEAM=1`. The repo had
+no prior seam convention -- existing modules take a `now?: () => Date` option,
+which is exactly the shape this finding rejected -- so this is the first one.
+
+A second guard bounds a clock that is merely slow rather than malicious: the
+filesystem is host-trusted, so the newest inode timestamp among the run's
+durable records is a floor the store clock may not sit below. It is skipped
+while a test clock is installed, because a fake clock and real inode timestamps
+are two different clocks; the comparison itself is a pure function
+(`clockIsBelowFilesystemFloor`) so it stays testable.
+
+### The task contract is read, never summarised
+
+`contract_limits` is no longer an input. `ProgramAuthorizationV1` carries a
+closed `contract_scope` (`task_contract` | `contract_less`) with a
+`contract_path` that the pairing rule requires or forbids, and the store reads
+those bytes from the repository, digests them against `contract_sha256`, and
+parses `delegation.budget` itself. A run with no task contract is not the
+default; it is a grant the human issuer had to make. A caller that summarises a
+contract as looser than it is gets refused by re-reading the contract, which is
+the only check a self-consistent digest cannot pass.
+
+### Token and cost limits are fail-closed
+
+Enforcing them needs two authorities the store does not have in this slice:
+metric support read from the provider capability store by revision, and a
+charge that references a provider-attested usage record the store re-reads. A
+caller-asserted token number is a self-asserted limit, which is worse than no
+limit, so `assertTokenLimitsUnenforceable` refuses a configured hard token or
+cost limit -- and a `metric_support` that claims verified metrics -- at
+publish and at read. `tasks/todos.md` carries the enabling trigger.
 
 ### Effective limits are re-derived, never trusted
 

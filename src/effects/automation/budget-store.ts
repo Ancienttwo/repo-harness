@@ -30,6 +30,10 @@ import {
   AUTOMATION_ENFORCEMENT_ORDER,
   AUTOMATION_LEDGER_GENESIS,
   AUTOMATION_METRIC_LIMIT_FIELDS,
+  AUTOMATION_VERIFIED_USAGE_METRICS,
+  automationOperationReservation,
+  deriveAutomationConsumption,
+  parseContractDelegationBudget,
   addAutomationMetricVectors,
   canonicalAutomationJson,
   chainAutomationLedgerDigest,
@@ -75,32 +79,6 @@ import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock'
 export const AUTOMATION_BUDGET_STORE_RELATIVE_ROOT = 'repo-harness/automation-budget/v1';
 
 /**
- * The store owns the clock.
- *
- * A caller-supplied timestamp is a claim, not a fact: a controller that
- * backdates it past a frozen deadline would still be granted a reservation, so
- * no decision here reads one. Every mutating verb stamps its records from this
- * clock, and tests inject a deterministic one rather than passing a time in
- * beside the operation.
- */
-export type AutomationClock = () => Date;
-
-const HOST_CLOCK: AutomationClock = () => new Date();
-
-export interface AutomationClockOption {
-  /** Injection seam for deterministic tests; the host clock is the default. */
-  readonly clock?: AutomationClock;
-}
-
-function storeNow(clock: AutomationClock | undefined): string {
-  const value = (clock ?? HOST_CLOCK)();
-  if (!(value instanceof Date) || Number.isNaN(value.getTime())) {
-    fail('automation_budget_store_unavailable', 'the automation budget clock returned an invalid time');
-  }
-  return value.toISOString();
-}
-
-/**
  * Time may not run backwards over a run's own durable records. A regression
  * means the host clock is not the authority it claims to be, so the run stops
  * for explicit reconciliation instead of spending against a deadline it can no
@@ -136,6 +114,13 @@ function assertClockNotRegressed(
 }
 
 const RUN_ID = /^[0-9a-f]{64}$/u;
+
+import {
+  automationClockIsInjected,
+  automationStoreNow,
+  clockIsBelowFilesystemFloor,
+  newestModifiedMs,
+} from './clock';
 
 export type AutomationBudgetStoreErrorCode =
   | 'automation_budget_clock_regression'
@@ -379,11 +364,78 @@ function keyDigest(value: string): string {
 // Reads
 // ---------------------------------------------------------------------------
 
+/**
+ * The trust boundary.
+ *
+ * A budget object is only self-consistent; these checks make it *derived*. The
+ * task contract is read from the repository and digested here, so a caller
+ * cannot hand the store a summary of a contract that says something the
+ * contract does not, and a run with no contract has to be granted one
+ * explicitly rather than getting one by omission.
+ */
+function assertBudgetAuthorities(repoRoot: string, budget: AutomationBudgetV1): void {
+  const grant = budget.authorization;
+  if (grant.contract_scope === 'contract_less') {
+    if (budget.contract_sha256 !== null || budget.contract_limits !== null) {
+      fail('automation_budget_store_invalid', 'a contract-less grant cannot carry task-contract limits');
+    }
+    return;
+  }
+  const contractRelative = grant.contract_path;
+  if (contractRelative === null) fail('automation_budget_store_invalid', 'a task-contract grant must name its contract path');
+  const absolute = resolve(repoRoot, contractRelative);
+  if (relative(resolve(repoRoot), absolute).startsWith('..')) {
+    fail('automation_budget_store_unsafe', `task contract path escapes the repository: ${contractRelative}`);
+  }
+  const text = readRaw(absolute, `task contract ${contractRelative}`);
+  const digest = createHash('sha256').update(text, 'utf8').digest('hex');
+  if (budget.contract_sha256 !== digest) {
+    fail('automation_budget_store_invalid', `automation budget contract_sha256 does not match the bytes of ${contractRelative}`);
+  }
+  let parsed;
+  try {
+    parsed = parseContractDelegationBudget(text, contractRelative);
+  } catch (error) {
+    return fail('automation_budget_store_invalid', `task contract ${contractRelative} delegation budget is unreadable: ${(error as Error).message}`, error);
+  }
+  if (canonicalAutomationJson(budget.contract_limits) !== canonicalAutomationJson(parsed)) {
+    fail('automation_budget_store_invalid', `automation budget contract_limits do not match the delegation budget in ${contractRelative}`);
+  }
+}
+
+/**
+ * Token and cost limits are fail-closed in this slice.
+ *
+ * Enforcing them needs two things the store does not have yet: provider metric
+ * support read from the provider capability authority by revision, and consumed
+ * usage that references a provider-attested usage record the store re-reads. A
+ * self-asserted number is worse than no limit, so a configured one is refused
+ * at preflight instead. See `tasks/todos.md` for the enabling trigger.
+ */
+function assertTokenLimitsUnenforceable(budget: AutomationBudgetV1): void {
+  for (const metric of AUTOMATION_VERIFIED_USAGE_METRICS) {
+    if (budget.effective_limits[AUTOMATION_METRIC_LIMIT_FIELDS[metric]] !== null) {
+      fail(
+        'automation_budget_store_invalid',
+        `a hard ${metric} limit is not enforceable: the store has no provider-attested usage authority wired, so the limit is refused rather than treated as advisory`,
+      );
+    }
+  }
+  if (budget.metric_support.verified_metrics.length > 0) {
+    fail(
+      'automation_budget_store_invalid',
+      'metric support claims verified provider usage, but the store reads no provider usage authority; declare no verified metrics',
+    );
+  }
+}
+
 export function readAutomationBudget(repoRoot: string, budgetSha256: string): AutomationBudgetV1 {
   const paths = storePaths(repoRoot);
   if (!/^[0-9a-f]{64}$/u.test(budgetSha256)) fail('automation_budget_store_unsafe', 'unsafe automation budget digest');
   const budget = parse(readRaw(join(paths.budgets, `${budgetSha256}.json`), 'automation budget'), validateAutomationBudget, 'automation budget');
   if (budget.budget_sha256 !== budgetSha256) fail('automation_budget_store_invalid', 'automation budget digest does not match its path');
+  assertTokenLimitsUnenforceable(budget);
+  assertBudgetAuthorities(repoRoot, budget);
   return budget;
 }
 
@@ -412,11 +464,7 @@ export interface AutomationBudgetStatusV1 {
  * corrupt store. Only a projection that claims a record the disk does not have,
  * which no write ordering can produce, stays fail-closed.
  */
-export function readAutomationBudgetStatus(
-  repoRoot: string,
-  runId: string,
-  options: AutomationClockOption = {},
-): AutomationBudgetStatusV1 {
+export function readAutomationBudgetStatus(repoRoot: string, runId: string): AutomationBudgetStatusV1 {
   const paths = runPaths(repoRoot, runId);
   const current = readCurrentOptional(paths);
   if (current === null) fail('automation_budget_store_not_found', `automation run ${runId} has no budget`);
@@ -435,7 +483,7 @@ export function readAutomationBudgetStatus(
     budget,
     current,
     stop_receipt: receipt,
-    drift: detectAutomationCurrentDrift(paths, budget, current, storeNow(options.clock)),
+    drift: detectAutomationCurrentDrift(paths, budget, current, automationStoreNow()),
   });
 }
 
@@ -556,8 +604,19 @@ function repairCurrentFromDurableRecords(
  * is ever taken against a projection the durable records contradict.
  */
 function lockedStatus(repoRoot: string, paths: RunPaths, runId: string, now: string): AutomationBudgetStatusV1 {
-  const status = readAutomationBudgetStatus(repoRoot, runId, { clock: () => new Date(now) });
+  const status = readAutomationBudgetStatus(repoRoot, runId);
   assertClockNotRegressed(status.current.automation_run_id, status.current.budget_sha256, now, status.current.updated_at, 'dispatch');
+  // The filesystem is host-trusted, so an inode timestamp is a lower bound on
+  // real time that a frozen host clock cannot sit below. An installed test
+  // clock replaces the host's notion of now wholesale, so the two would be
+  // different clocks and the floor is not applied then.
+  if (!automationClockIsInjected()
+    && clockIsBelowFilesystemFloor(now, newestModifiedMs([paths.current, paths.events, paths.reservations, paths.stopReceipt]))) {
+    throw new AutomationBudgetStoreError(
+      'automation_budget_clock_regression',
+      `automation budget clock ${now} precedes the filesystem floor of this run's durable records`,
+    );
+  }
   if (status.drift === 'none') return status;
   return repairCurrentFromDurableRecords(repoRoot, paths, status, now);
 }
@@ -577,12 +636,11 @@ export function readAutomationBudgetBoardSlice(
   repoRoot: string,
   runId: string,
   observedAt: string,
-  options: AutomationClockOption = {},
 ): AutomationBudgetBoardSliceV1 {
   // `observedAt` is the view time for the wall-clock row only. Drift, which
   // decides what state the slice renders, is measured on the store clock so a
   // caller cannot hide an exhausted run by asking about the past.
-  const status = readAutomationBudgetStatus(repoRoot, runId, options);
+  const status = readAutomationBudgetStatus(repoRoot, runId);
   return projectAutomationBudgetSlice({
     budget: status.budget,
     current: status.current,
@@ -606,7 +664,7 @@ function ledgerState(current: AutomationBudgetCurrentV1): AutomationBudgetStateV
 // Publication
 // ---------------------------------------------------------------------------
 
-export interface PublishAutomationBudgetInput extends AutomationClockOption {
+export interface PublishAutomationBudgetInput {
   readonly repo_root: string;
   readonly budget: AutomationBudgetV1;
 }
@@ -618,7 +676,9 @@ export interface PublishAutomationBudgetInput extends AutomationClockOption {
  */
 export function publishAutomationBudget(input: PublishAutomationBudgetInput): AutomationBudgetStatusV1 {
   const budget = validateAutomationBudget(input.budget);
-  const publishedAt = storeNow(input.clock);
+  const publishedAt = automationStoreNow();
+  assertTokenLimitsUnenforceable(budget);
+  assertBudgetAuthorities(resolve(input.repo_root), budget);
   if (Date.parse(budget.created_at) > Date.parse(publishedAt)) {
     fail('automation_budget_store_invalid', 'an automation budget cannot be created in the future of the store clock');
   }
@@ -820,7 +880,7 @@ function exhaustionRefusal(
 // Reserve
 // ---------------------------------------------------------------------------
 
-export interface ReserveAutomationBudgetInput extends AutomationClockOption {
+export interface ReserveAutomationBudgetInput {
   readonly repo_root: string;
   readonly automation_run_id: string;
   readonly expected_budget_sha256: string;
@@ -830,7 +890,6 @@ export interface ReserveAutomationBudgetInput extends AutomationClockOption {
   readonly unit_id: string;
   readonly attempt: number;
   readonly provider: string | null;
-  readonly reserved: AutomationMetricVectorV1;
   readonly in_flight_authority?: readonly AutomationInFlightAuthorityV1[];
 }
 
@@ -843,8 +902,16 @@ export interface ReserveAutomationBudgetInput extends AutomationClockOption {
 export function reserveAutomationBudget(input: ReserveAutomationBudgetInput): AutomationBudgetReservationV1 {
   const repoRoot = resolve(input.repo_root);
   const paths = runPaths(repoRoot, input.automation_run_id);
-  const reservedAt = storeNow(input.clock);
-  const reserved = validateAutomationMetricVector(input.reserved, 'reserved');
+  const reservedAt = automationStoreNow();
+  // The counting components come from the operation kind, never from the
+  // caller: an acquisition that reserves zero acquisitions is not a smaller
+  // request, it is an unmetered one. Token and cost components stay null while
+  // no provider-attested usage authority is wired.
+  const reserved = automationOperationReservation(input.operation, {
+    input_tokens: null,
+    output_tokens: null,
+    cost_micros: null,
+  });
   return withExclusiveDirectoryLock(paths.common, paths.lockRelative, () => {
     const status = lockedStatus(repoRoot, paths, input.automation_run_id, reservedAt);
     const reservationPath = join(paths.reservations, `${keyDigest(input.idempotency_key)}.json`);
@@ -949,14 +1016,12 @@ export function reserveAutomationBudget(input: ReserveAutomationBudgetInput): Au
 // ---------------------------------------------------------------------------
 
 export interface AutomationUsageResultV1 {
-  readonly usage: AutomationUsageEventV1['usage'];
-  readonly usage_attribution: AutomationUsageAttributionV1 | null;
-  readonly consumed: AutomationMetricVectorV1;
+  /** What the host observed. The arithmetic is derived from it, not declared. */
   readonly outcome: AutomationOutcome;
   readonly evidence_refs: readonly AutomationEvidenceRefV1[];
 }
 
-export interface AppendAutomationUsageInput extends AutomationUsageResultV1, AutomationClockOption {
+export interface AppendAutomationUsageInput extends AutomationUsageResultV1 {
   readonly repo_root: string;
   readonly reservation: AutomationBudgetReservationV1;
   readonly in_flight_authority?: readonly AutomationInFlightAuthorityV1[];
@@ -966,6 +1031,32 @@ export interface AutomationUsageCommitV1 {
   readonly event: AutomationUsageEventV1;
   readonly current: AutomationBudgetCurrentV1;
   readonly stop_receipt: AutomationStopReceiptV1 | null;
+}
+
+/**
+ * The charge for one resolved operation. A reconciliation that cannot recover
+ * the real usage pays the reserved worst case; one that proves the operation
+ * never began pays nothing; everything else is derived from the outcome.
+ */
+function consumedFor(
+  reservation: AutomationBudgetReservationV1,
+  outcome: AutomationOutcome,
+  resolution: AutomationUsageEventV1['resolution'],
+): AutomationMetricVectorV1 {
+  if (resolution === 'reconciled_reserved') return reservation.reserved;
+  if (resolution === 'reconciled_not_started') {
+    return validateAutomationMetricVector({
+      agent_turns: 0,
+      successful_acquisitions: 0,
+      runner_invocations: 0,
+      provider_failures: 0,
+      repair_cycles: 0,
+      input_tokens: reservation.reserved.input_tokens === null ? null : 0,
+      output_tokens: reservation.reserved.output_tokens === null ? null : 0,
+      cost_micros: reservation.reserved.cost_micros === null ? null : 0,
+    }, 'consumed');
+  }
+  return deriveAutomationConsumption(reservation.operation, outcome, reservation.reserved);
 }
 
 function commitUsage(
@@ -983,8 +1074,7 @@ function commitUsage(
     // Replaying the same key charges once. A replay that claims a different
     // charge is a conflict, not a second event.
     const stored = parse(readRaw(eventPath, 'automation usage event'), validateAutomationUsageEvent, 'automation usage event');
-    if (canonicalAutomationJson(stored.consumed) !== canonicalAutomationJson(validateAutomationMetricVector(result.consumed, 'consumed'))
-      || canonicalAutomationJson(stored.usage) !== canonicalAutomationJson(result.usage)) {
+    if (canonicalAutomationJson(stored.consumed) !== canonicalAutomationJson(consumedFor(reservation, result.outcome, resolution))) {
       fail('automation_budget_store_conflict', 'a usage event for this reservation already exists with a different charge');
     }
     return Object.freeze({ event: stored, current: status.current, stop_receipt: status.stop_receipt });
@@ -998,9 +1088,9 @@ function commitUsage(
   const event = sealAutomationUsageEvent({
     budget: status.budget,
     reservation,
-    usage: result.usage,
-    usage_attribution: result.usage_attribution,
-    consumed: result.consumed,
+    usage: { input_tokens: null, output_tokens: null, cost_micros: null },
+    usage_attribution: null,
+    consumed: consumedFor(reservation, result.outcome, resolution),
     outcome: result.outcome,
     resolution,
     evidence_refs: result.evidence_refs,
@@ -1042,7 +1132,7 @@ export function appendAutomationUsage(input: AppendAutomationUsageInput): Automa
   const repoRoot = resolve(input.repo_root);
   const reservation = validateAutomationReservation(input.reservation);
   const paths = runPaths(repoRoot, reservation.automation_run_id);
-  const observedAt = storeNow(input.clock);
+  const observedAt = automationStoreNow();
   return withExclusiveDirectoryLock(paths.common, paths.lockRelative, () => commitUsage(
     repoRoot,
     paths,
@@ -1059,7 +1149,7 @@ export type AutomationReconciliationResolution =
   | 'reconciled_reserved'
   | 'reconciled_not_started';
 
-export interface ReconcileAutomationReservationInput extends AutomationUsageResultV1, AutomationClockOption {
+export interface ReconcileAutomationReservationInput extends AutomationUsageResultV1 {
   readonly repo_root: string;
   readonly reservation: AutomationBudgetReservationV1;
   readonly resolution: AutomationReconciliationResolution;
@@ -1091,27 +1181,9 @@ export function reconcileAutomationReservation(
   if (typeof input.reason !== 'string' || input.reason.trim().length === 0) {
     fail('automation_budget_store_invalid', 'a reconciliation must record why the reservation was interrupted');
   }
-  const consumed = validateAutomationMetricVector(input.consumed, 'consumed');
-  if (input.resolution === 'reconciled_reserved'
-    && canonicalAutomationJson(consumed) !== canonicalAutomationJson(reservation.reserved)) {
-    fail('automation_budget_store_invalid', 'a reserved-worst-case reconciliation must charge the full reserved vector');
-  }
-  if (input.resolution === 'reconciled_not_started') {
-    const zeroed = validateAutomationMetricVector({
-      agent_turns: 0,
-      successful_acquisitions: 0,
-      runner_invocations: 0,
-      provider_failures: 0,
-      repair_cycles: 0,
-      input_tokens: reservation.reserved.input_tokens === null ? null : 0,
-      output_tokens: reservation.reserved.output_tokens === null ? null : 0,
-      cost_micros: reservation.reserved.cost_micros === null ? null : 0,
-    }, 'consumed');
-    if (canonicalAutomationJson(consumed) !== canonicalAutomationJson(zeroed)) {
-      fail('automation_budget_store_invalid', 'a not-started reconciliation must charge nothing and must be proven by evidence');
-    }
-  }
-  const reconciledAt = storeNow(input.clock);
+  // The charge is derived from the resolution, so the caller chooses which
+  // recovery it can prove, never what it costs.
+  const reconciledAt = automationStoreNow();
   return withExclusiveDirectoryLock(paths.common, paths.lockRelative, () => {
     const evidence = {
       protocol: 1,

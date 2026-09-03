@@ -66,6 +66,8 @@ function authorization(limits: ProgramBudgetLimitV1 = LIMITS, expiresAt = '2026-
     allowed_merge_method: 'squash',
     max_repair_cycles: limits.max_repair_cycles,
     budget: limits,
+    contract_scope: 'contract_less',
+    contract_path: null,
     issued_by: 'ancienttwo',
     issued_at: '2026-09-03T00:00:00.000Z',
     expires_at: expiresAt,

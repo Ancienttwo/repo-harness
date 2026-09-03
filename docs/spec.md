@@ -79,13 +79,21 @@ repos.
 - An unattended automation run is bounded by one machine-enforced budget, never
   by prompt text. Every claim, dispatch, retry, and provider invocation first
   takes a reservation under the run's exclusive lock, and a reservation that
-  would pass any hard limit is refused before the operation happens. The limits
-  are the host-owned `ProgramAuthorizationV1` / `ProgramBudgetLimitV1` grant
-  composed with the task contract's own runner budget, strictest value per
-  metric, with the derivation bound into the budget digest. Wall clock is a
-  frozen absolute deadline. A token or cost limit exists only where the provider
-  capability attests attributable usage; otherwise the budget is rejected at
-  preflight instead of becoming advisory. Replaying an idempotency key charges
+  would pass any hard limit is refused before the operation happens.
+- The budget store's caller is untrusted for every decision input; the host
+  process is the only trusted source. The store reads its own clock, derives the
+  reserved vector from the operation kind, derives the charge from the outcome
+  the host observed, and reads and digests the task contract from the repository
+  itself. A caller names what it wants to do and what happened; it never states
+  what that costs or when it happened. The limits are the host-owned
+  `ProgramAuthorizationV1` / `ProgramBudgetLimitV1` grant composed with the task
+  contract's own runner budget, strictest value per metric, recomputed from both
+  authorities on every read rather than trusted from the record. A run with no
+  task contract requires an explicit `contract_less` grant. Wall clock is a
+  frozen absolute deadline measured on the store clock, which may not run
+  backwards over the run's own durable records. A token or cost limit is
+  refused at preflight until provider-attested usage is wired, because a
+  self-asserted usage number is worse than no limit. Replaying an idempotency key charges
   once, an interrupted reservation blocks further spending until it is
   reconciled from exact evidence rather than assumed free, and exhaustion
   publishes an immutable `AutomationStopReceiptV1`. A budget never raises or
