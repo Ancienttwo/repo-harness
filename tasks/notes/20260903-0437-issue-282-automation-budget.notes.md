@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260903-0437-issue-282-automation-budget.review.md
 > **Last Updated**: 2026-09-03 05:20
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:301733d024b3dd293733d95302b9699398d04d81687aafd382c9ebf0ae2f5bcf`
+> **Substantive Change SHA256**: `sha256:b5a918229d5e6236e14aff4968cdf1fa0a4d98b59fca44ca7e9e3e04db7851db`
 
 ## Design Decisions
 
@@ -279,13 +279,15 @@ appended or reconciled. A repaired run whose receipt was unadopted becomes
 run.
 
 The read path is deliberately asymmetric: `readAutomationBudgetStatus`, the CLI
-`automation budget show` and the board slice **report** drift and never repair
-it, because a read-only surface must not write. They also never throw on a
-crash window -- `AutomationBudgetBoardSliceV1.projection_stale` says the
-counters are the last ones the projection managed to write, and the rendered
-state is the durable truth (a receipt on disk means `budget_exhausted` whatever
-the projection still says). Only a projection claiming a record the disk does
-not have -- which no write ordering can produce -- stays fail-closed.
+`automation budget show` and the board slice **never repair** -- a read-only surface must not write -- but they do not report
+stale numbers either: when the stored projection lags a durable record, the
+store re-folds those records read-only and every read surface returns that
+folded truth. `AutomationBudgetStatusV1` carries both, `current` (durable
+truth) and `stored_current` (the bytes on disk, which the projection chain
+links to), and `AutomationBudgetBoardSliceV1.projection_stale` says the
+persisted projection is behind, not that the rendered counters are. They also
+never throw on a crash window; only a projection claiming a record the disk does
+not have, which no write ordering can produce, stays fail-closed.
 
 For the same reason, **a budget revision is refused while a reservation is
 open**. A reservation carries the exact revision that authorized it, so

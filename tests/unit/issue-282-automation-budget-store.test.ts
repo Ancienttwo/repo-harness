@@ -10,7 +10,7 @@ import { spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { dirname, join } from 'path';
 
 import { spawnSync as spawnCli } from 'child_process';
 import {
@@ -47,6 +47,7 @@ import {
 import type { AutomationBudgetStatusV1 } from '../../src/effects/automation/budget-store';
 import {
   AutomationGrantStoreError,
+  automationGrantRepoKey,
   listStoredProgramAuthorizations,
   mintProgramAuthorization,
 } from '../../src/effects/automation/grant-store';
@@ -493,7 +494,13 @@ describe('issue #282 — a durable reservation the current projection does not l
     });
     // The process dies here: the reservation is durable, the projection is not.
     writeFileSync(path, beforeReserve);
-    expect(readAutomationBudgetStatus(repo, budget.automation_run_id).current.open_reservation_sha256s).toEqual([]);
+    const crashed = readAutomationBudgetStatus(repo, budget.automation_run_id);
+    // The public read reports the durable truth, not the bytes the crash left:
+    // the reservation is listed, `stored_current` still shows the stale record,
+    // and `drift` names which record the projection has not adopted.
+    expect(crashed.current.open_reservation_sha256s).toEqual([orphan.reservation_sha256]);
+    expect(crashed.stored_current.open_reservation_sha256s).toEqual([]);
+    expect(crashed.drift).toBe('unlisted_reservation');
 
     let blocked: AutomationBudgetStoreError | null = null;
     try {
@@ -562,7 +569,13 @@ describe('issue #282 — a durable reservation the current projection does not l
     });
     // The process dies after the event is durable but before the projection lands.
     writeFileSync(path, beforeAppend);
-    expect(readAutomationBudgetStatus(repo, budget.automation_run_id).current.consumed.successful_acquisitions).toBe(0);
+    const crashed = readAutomationBudgetStatus(repo, budget.automation_run_id);
+    // The charge already happened, so the public read reports it; only the
+    // stored projection is behind.
+    expect(crashed.current.consumed.successful_acquisitions).toBe(1);
+    expect(crashed.current.event_count).toBe(1);
+    expect(crashed.stored_current.consumed.successful_acquisitions).toBe(0);
+    expect(crashed.drift).toBe('unfolded_event');
 
     const replayed = appendAutomationUsage({
       repo_root: repo,
@@ -1053,6 +1066,130 @@ describe('issue #282 — contract containment resolves real paths', () => {
     mintFor(repo, budget);
     expect(() => publishAutomationBudget({ repo_root: repo, budget }))
       .toThrow(/escapes the repository/u);
+  });
+});
+
+describe('issue #282 — every read path re-anchors the grant', () => {
+  /**
+   * Anchoring only at publish would let a revoked grant keep spending for the
+   * whole life of a run: nothing publishes again. Every reader resolves the
+   * embedded grant against the harness home, so a revoked or edited grant stops
+   * the run at the next verb.
+   */
+  function readPaths(repo: string, budget: AutomationBudgetV1): readonly (readonly [string, () => unknown])[] {
+    return [
+      ['readAutomationBudget', () => readAutomationBudget(repo, budget.budget_sha256)],
+      ['readAutomationBudgetStatus', () => readAutomationBudgetStatus(repo, budget.automation_run_id)],
+      ['readAutomationBudgetBoardSlice', () => readAutomationBudgetBoardSlice(repo, budget.automation_run_id)],
+      ['requireUnattendedAutomationRunBudget', () => requireUnattendedAutomationRunBudget(repo, budget.automation_run_id)],
+      ['reserveAutomationBudget', () => reserveAutomationBudget({
+        repo_root: repo,
+        automation_run_id: budget.automation_run_id,
+        expected_budget_sha256: budget.budget_sha256,
+        idempotency_key: 'op-after-revoke',
+        operation: 'acquisition',
+        unit_kind: 'execute',
+        unit_id: 'wp-1',
+        attempt: 1,
+        provider: null,
+      })],
+    ];
+  }
+
+  test('a revoked grant stops every read and execution path', () => {
+    const repo = repoFixture();
+    const budget = makeBudget({ run: 'revoked-grant' });
+    const grantPath = mintProgramAuthorization({ repo_root: repo, authorization: budget.authorization });
+    publishAutomationBudget({ repo_root: repo, budget });
+    for (const [, read] of readPaths(repo, budget)) expect(read).not.toThrow();
+
+    rmSync(grantPath);
+    for (const [name, read] of readPaths(repo, budget)) {
+      let thrown: unknown = null;
+      try {
+        read();
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown, `${name} must refuse a revoked grant`).not.toBeNull();
+      expect((thrown as AutomationGrantStoreError).code).toBe('automation_grant_not_found');
+    }
+    // Nothing was spent while the grant was gone.
+    mintProgramAuthorization({ repo_root: repo, authorization: budget.authorization });
+    expect(readAutomationBudgetStatus(repo, budget.automation_run_id).current.consumed.agent_turns).toBe(0);
+  });
+
+  test('an altered stored grant stops every read and execution path', () => {
+    const repo = repoFixture();
+    const budget = makeBudget({ run: 'altered-grant' });
+    const grantPath = mintProgramAuthorization({ repo_root: repo, authorization: budget.authorization });
+    publishAutomationBudget({ repo_root: repo, budget });
+
+    const stored = JSON.parse(readFileSync(grantPath, 'utf8')) as typeof budget.authorization;
+    writeFileSync(grantPath, `${JSON.stringify({ ...stored, issued_by: 'someone-else' })}\n`);
+    for (const [name, read] of readPaths(repo, budget)) {
+      let thrown: unknown = null;
+      try {
+        read();
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown, `${name} must refuse an altered grant`).not.toBeNull();
+      expect((thrown as AutomationGrantStoreError).code).toBe('automation_grant_invalid');
+    }
+  });
+
+  test('a budget whose repository identity disagrees with its grant is refused', () => {
+    const repo = repoFixture();
+    const budget = makeBudget({ run: 'identity-mismatch' });
+    mintFor(repo, budget);
+    const { budget_sha256: _digest, ...body } = budget;
+    const mismatched = { ...body, repository_id: 'some-other-repository' };
+    const forged = { ...mismatched, budget_sha256: automationDigest(mismatched) } as AutomationBudgetV1;
+    expect(() => publishAutomationBudget({ repo_root: repo, budget: forged }))
+      .toThrow(/repository_id does not match the grant/u);
+  });
+});
+
+describe('issue #282 — the grant gate keys by the clone, not the checkout', () => {
+  /**
+   * The ledger lives under the Git common directory, which every linked
+   * worktree of one clone shares. A grant keyed by the working-tree path would
+   * be invisible from a worktree that reads the same ledger, so the gate keys
+   * by the same identity.
+   */
+  test('a grant minted in the primary checkout is found from a linked worktree', () => {
+    const repo = repoFixture();
+    // A commit is needed before `git worktree add` has anything to branch from.
+    writeFileSync(join(repo, 'README.md'), 'automation budget worktree fixture\n');
+    for (const args of [
+      ['-C', repo, 'add', 'README.md'],
+      ['-C', repo, '-c', 'user.email=fixture@example.com', '-c', 'user.name=fixture', 'commit', '-q', '-m', 'fixture'],
+    ]) {
+      const result = spawnSync('git', args, { encoding: 'utf-8' });
+      if (result.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${result.stderr}`);
+    }
+    const linked = join(realpathSync(mkdtempSync(join(tmpdir(), 'automation-budget-linked-'))), 'wt');
+    FIXTURES.add(dirname(linked));
+    const added = spawnSync('git', ['-C', repo, 'worktree', 'add', '-q', linked, '-b', 'linked-fixture'], { encoding: 'utf-8' });
+    if (added.status !== 0) throw new Error(`git worktree add failed: ${added.stderr}`);
+
+    expect(automationGrantRepoKey(linked)).toBe(automationGrantRepoKey(repo));
+
+    const first = makeBudget({ run: 'linked-worktree' });
+    mintProgramAuthorization({ repo_root: repo, authorization: first.authorization });
+    publishAutomationBudget({ repo_root: repo, budget: first });
+    acquire(repo, 'linked-worktree', first, 'op-1', '2026-09-03T00:00:10.000Z');
+
+    // The revision is published from the linked worktree, which must resolve the
+    // same grant store and the same ledger.
+    const wider: ProgramBudgetLimitV1 = { ...BASE_LIMITS, max_successful_acquisitions: 5 };
+    const second = makeBudget({ run: 'linked-worktree', limits: wider, revision: 2, supersedes: first.budget_sha256 });
+    mintProgramAuthorization({ repo_root: linked, authorization: second.authorization });
+    const published = publishAutomationBudget({ repo_root: linked, budget: second });
+    expect(published.current.budget_sha256).toBe(second.budget_sha256);
+    expect(published.current.consumed.successful_acquisitions).toBe(1);
+    expect(readAutomationBudgetStatus(repo, first.automation_run_id).current.budget_sha256).toBe(second.budget_sha256);
   });
 });
 

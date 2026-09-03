@@ -379,6 +379,13 @@ function keyDigest(value: string): string {
  */
 function assertBudgetAuthorities(repoRoot: string, budget: AutomationBudgetV1): void {
   const grant = budget.authorization;
+  if (budget.repository_id !== grant.repository_id) {
+    fail('automation_budget_store_invalid', 'automation budget repository_id does not match the grant it cites');
+  }
+  // Re-anchored on every read, not only at publish: a grant an operator revoked
+  // or edited must stop the run at the next verb rather than at the next
+  // publication, which may never come.
+  assertProgramAuthorizationAnchored(repoRoot, grant);
   if (grant.contract_scope === 'contract_less') {
     if (budget.contract_sha256 !== null || budget.contract_limits !== null) {
       fail('automation_budget_store_invalid', 'a contract-less grant cannot carry task-contract limits');
@@ -468,18 +475,28 @@ function readStopReceiptOptional(paths: RunPaths): AutomationStopReceiptV1 | nul
 
 export interface AutomationBudgetStatusV1 {
   readonly budget: AutomationBudgetV1;
+  /**
+   * Durable truth: the stored projection when it agrees with the records, and a
+   * read-only re-fold of those records when it does not. Every caller reads
+   * this, so no surface reports counts a crash left behind.
+   */
   readonly current: AutomationBudgetCurrentV1;
+  /** Exactly the bytes on disk, so the projection chain links to a real record. */
+  readonly stored_current: AutomationBudgetCurrentV1;
   readonly stop_receipt: AutomationStopReceiptV1 | null;
   /** Which durable record, if any, the stored projection has not adopted yet. */
   readonly drift: AutomationCurrentDrift;
+  /** Newest timestamp among the run's durable records, when they were re-folded. */
+  readonly latest_record_at: string | null;
 }
 
 /**
- * The public read. It reports drift instead of repairing it -- a read-only
- * surface must never write -- and it never throws on a crash window: a
- * projection that lags a durable record is an expected recoverable state, not a
- * corrupt store. Only a projection that claims a record the disk does not have,
- * which no write ordering can produce, stays fail-closed.
+ * The public read. It never writes and it never throws on a crash window, but
+ * it does not report stale counts either: when the stored projection lags a
+ * durable record, the records are re-folded read-only and `current` is that
+ * folded truth, with `drift` saying the stored projection has not caught up.
+ * Only a projection that claims a record the disk does not have, which no write
+ * ordering can produce, stays fail-closed.
  */
 export function readAutomationBudgetStatus(repoRoot: string, runId: string): AutomationBudgetStatusV1 {
   const paths = runPaths(repoRoot, runId);
@@ -496,11 +513,16 @@ export function readAutomationBudgetStatus(repoRoot: string, runId: string): Aut
     && current.stop_receipt_sha256 !== receipt.stop_receipt_sha256) {
     fail('automation_budget_store_invalid', 'automation stop receipt does not match the current projection');
   }
+  const now = automationStoreNow();
+  const drift = detectAutomationCurrentDrift(paths, budget, current, now);
+  const derived = drift === 'none' ? null : deriveCurrentFromDurableRecords(paths, current, receipt, now);
   return Object.freeze({
     budget,
-    current,
+    current: derived === null ? current : derived.current,
+    stored_current: current,
     stop_receipt: receipt,
-    drift: detectAutomationCurrentDrift(paths, budget, current, automationStoreNow()),
+    drift,
+    latest_record_at: derived === null ? null : derived.latest_record_at,
   });
 }
 
@@ -563,7 +585,8 @@ export function detectAutomationCurrentDrift(
  */
 function deriveCurrentFromDurableRecords(
   paths: RunPaths,
-  status: AutomationBudgetStatusV1,
+  storedCurrent: AutomationBudgetCurrentV1,
+  stopReceipt: AutomationStopReceiptV1 | null,
   derivedAt: string,
 ): { readonly current: AutomationBudgetCurrentV1; readonly latest_record_at: string | null } {
   const events = jsonEntries(paths.events)
@@ -585,12 +608,12 @@ function deriveCurrentFromDurableRecords(
     fail('automation_budget_store_conflict', 'the unresolved automation reservation does not occupy the next controller step');
   }
   const current = sealAutomationBudgetCurrent({
-    automation_run_id: status.current.automation_run_id,
-    budget_sha256: status.current.budget_sha256,
+    automation_run_id: storedCurrent.automation_run_id,
+    budget_sha256: storedCurrent.budget_sha256,
     // A repaired run is one that was interrupted: the refusal it produces is
     // the same one an open reservation produces, so the next operation is
     // blocked until the interrupted one is appended or reconciled.
-    state: status.stop_receipt !== null ? 'budget_exhausted' : held === null ? 'active' : 'reconciliation_required',
+    state: stopReceipt !== null ? 'budget_exhausted' : held === null ? 'active' : 'reconciliation_required',
     consumed: folded.consumed,
     open_reserved: held === null ? emptyAutomationMetricVector() : held.reserved,
     consecutive_no_progress_steps: folded.consecutive_no_progress_steps,
@@ -599,8 +622,8 @@ function deriveCurrentFromDurableRecords(
     open_reservation_sha256s: held === null ? [] : [held.reservation_sha256],
     event_count: folded.event_count,
     ledger_sha256: ledger,
-    stop_receipt_sha256: status.stop_receipt === null ? null : status.stop_receipt.stop_receipt_sha256,
-    previous_current_sha256: status.current.current_sha256,
+    stop_receipt_sha256: stopReceipt === null ? null : stopReceipt.stop_receipt_sha256,
+    previous_current_sha256: storedCurrent.current_sha256,
     updated_at: derivedAt,
   });
   const latest = [
@@ -616,10 +639,10 @@ function repairCurrentFromDurableRecords(
   status: AutomationBudgetStatusV1,
   repairedAt: string,
 ): AutomationBudgetStatusV1 {
-  const derived = deriveCurrentFromDurableRecords(paths, status, repairedAt);
+  const derived = deriveCurrentFromDurableRecords(paths, status.stored_current, status.stop_receipt, repairedAt);
   const current = derived.current;
   if (derived.latest_record_at !== null) {
-    assertClockNotRegressed(status.current.automation_run_id, status.current.budget_sha256, repairedAt, derived.latest_record_at, 'dispatch');
+    assertClockNotRegressed(status.stored_current.automation_run_id, status.stored_current.budget_sha256, repairedAt, derived.latest_record_at, 'dispatch');
   }
   writeAtomic(paths.current, bytes(current), 'automation budget current');
   // A repair that folds in the last charge may itself reach a hard limit, so the
@@ -627,9 +650,23 @@ function repairCurrentFromDurableRecords(
   const refusal = status.stop_receipt === null ? exhaustionRefusal(status.budget, current, repairedAt) : null;
   if (refusal !== null) {
     const stopped = persistStopReceipt(paths, status.budget, current, refusal, [], repairedAt);
-    return Object.freeze({ budget: status.budget, current: stopped.current, stop_receipt: stopped.receipt, drift: 'none' as const });
+    return Object.freeze({
+      budget: status.budget,
+      current: stopped.current,
+      stored_current: stopped.current,
+      stop_receipt: stopped.receipt,
+      drift: 'none' as const,
+      latest_record_at: derived.latest_record_at,
+    });
   }
-  return Object.freeze({ budget: status.budget, current, stop_receipt: status.stop_receipt, drift: 'none' as const });
+  return Object.freeze({
+    budget: status.budget,
+    current,
+    stored_current: current,
+    stop_receipt: status.stop_receipt,
+    drift: 'none' as const,
+    latest_record_at: derived.latest_record_at,
+  });
 }
 
 /**
@@ -638,7 +675,7 @@ function repairCurrentFromDurableRecords(
  */
 function lockedStatus(repoRoot: string, paths: RunPaths, runId: string, now: string): AutomationBudgetStatusV1 {
   const status = readAutomationBudgetStatus(repoRoot, runId);
-  assertClockNotRegressed(status.current.automation_run_id, status.current.budget_sha256, now, status.current.updated_at, 'dispatch');
+  assertClockNotRegressed(status.stored_current.automation_run_id, status.stored_current.budget_sha256, now, status.stored_current.updated_at, 'dispatch');
   // The filesystem is host-trusted, so an inode timestamp is a lower bound on
   // real time that a frozen host clock cannot sit below. An installed test
   // clock replaces the host's notion of now wholesale, so the two would be
@@ -676,20 +713,16 @@ export function readAutomationBudgetBoardSlice(
   runId: string,
 ): AutomationBudgetBoardSliceV1 {
   const status = readAutomationBudgetStatus(repoRoot, runId);
-  const observedAt = automationStoreNow();
-  // A stale projection would under-report what the run has already spent. The
-  // durable records are re-folded here for rendering only -- nothing is
-  // written, so a read never repairs -- and `projection_stale` still says the
-  // stored projection has not caught up.
-  const current = status.drift === 'none'
-    ? status.current
-    : deriveCurrentFromDurableRecords(runPaths(repoRoot, runId), status, observedAt).current;
+  // `status.current` is already the durable truth: the public read folds the
+  // records when the stored projection lags, so the slice never renders counts
+  // a crash left behind. `projection_stale` still says the stored projection
+  // has not caught up.
   return projectAutomationBudgetSlice({
     budget: status.budget,
-    current,
+    current: status.current,
     stop_receipt: status.stop_receipt,
     drift: status.drift,
-    observed_at: observedAt,
+    observed_at: automationStoreNow(),
   });
 }
 
@@ -760,10 +793,10 @@ export function publishAutomationBudget(input: PublishAutomationBudgetInput): Au
         updated_at: publishedAt,
       });
       writeAtomic(paths.current, bytes(current), 'automation budget current');
-      return Object.freeze({ budget, current, stop_receipt: null, drift: 'none' as const });
+      return Object.freeze({ budget, current, stored_current: current, stop_receipt: null, drift: 'none' as const, latest_record_at: null });
     }
     if (existing.budget_sha256 === budget.budget_sha256) {
-      return Object.freeze({ budget, current: existing, stop_receipt: readStopReceiptOptional(paths), drift: 'none' as const });
+      return Object.freeze({ budget, current: existing, stored_current: existing, stop_receipt: readStopReceiptOptional(paths), drift: 'none' as const, latest_record_at: null });
     }
     if (existing.stop_receipt_sha256 !== null) {
       fail('automation_budget_store_conflict', 'an exhausted automation run cannot be revised; mint a new run');
@@ -804,7 +837,7 @@ export function publishAutomationBudget(input: PublishAutomationBudgetInput): Au
       updated_at: publishedAt,
     });
     writeAtomic(paths.current, bytes(current), 'automation budget current');
-    return Object.freeze({ budget, current, stop_receipt: null, drift: 'none' as const });
+    return Object.freeze({ budget, current, stored_current: current, stop_receipt: null, drift: 'none' as const, latest_record_at: null });
   }, { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true });
 }
 

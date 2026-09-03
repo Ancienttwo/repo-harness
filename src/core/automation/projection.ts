@@ -67,9 +67,10 @@ export interface AutomationBudgetBoardSliceV1 {
   readonly ledger_sha256: string;
   readonly stop_receipt: AutomationStopReceiptSliceV1 | null;
   /**
-   * True when the stored projection has not adopted a durable record yet. The
-   * slice still renders the durable truth; the flag says the counters below it
-   * are the last ones the projection managed to write.
+   * True when the stored `current.json` has not adopted a durable record yet.
+   * The counters in this slice are the durable truth either way -- the store
+   * re-folds the records read-only before projecting -- so the flag reports
+   * that the persisted projection is behind, not that these numbers are.
    */
   readonly projection_stale: boolean;
   readonly attention_owner: AutomationBudgetAttentionOwner;

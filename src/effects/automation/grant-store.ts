@@ -17,6 +17,7 @@ import {
   validateProgramAuthorization,
   type ProgramAuthorizationV1,
 } from '../../core/automation/budget';
+import { resolveGitCommonDirectory } from '../git/common-directory';
 import { repoHarnessHome, repoHarnessRepoIdFor } from '../repo-registry';
 
 export type AutomationGrantStoreErrorCode =
@@ -37,16 +38,30 @@ function fail(code: AutomationGrantStoreErrorCode, message: string, cause?: unkn
   throw new AutomationGrantStoreError(code, message, cause);
 }
 
-/** The repository key is derived from the real path, so a symlinked checkout resolves to one key. */
+/**
+ * The gate keys by the same identity the ledger does: the Git common directory.
+ *
+ * A grant authorizes work on a clone, not on one checkout of it. Keying by the
+ * working-tree path would hide a minted grant from every linked worktree of the
+ * same clone, while the budget ledger those worktrees share lives under the
+ * common directory -- two different identities for one authority. The real path
+ * is used so a symlinked checkout resolves to the same key.
+ */
 export function automationGrantRepoKey(repoRoot: string): string {
-  const absolute = resolve(repoRoot);
-  let canonical = absolute;
+  let identity: string;
   try {
-    canonical = realpathSync(absolute);
+    identity = resolveGitCommonDirectory(resolve(repoRoot));
   } catch {
-    // A repository that is not there yet keys by its literal path.
+    // A path that is not a repository yet keys by itself; nothing is stored
+    // under it until it is one.
+    identity = resolve(repoRoot);
   }
-  return repoHarnessRepoIdFor(canonical);
+  try {
+    identity = realpathSync(identity);
+  } catch {
+    // The common directory may not exist yet; its literal path still keys.
+  }
+  return repoHarnessRepoIdFor(identity);
 }
 
 export function automationGrantStoreDirectory(repoRoot: string, env: NodeJS.ProcessEnv = process.env): string {
