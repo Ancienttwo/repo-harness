@@ -81,6 +81,16 @@
 
 - Checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
+- Deterministic oracle `issue-281-wake-deterministic`:
+  `bun test tests/unit/issue-281-task-offer-wake.test.ts tests/unit/r1-provider-neutral-agent-runtime.test.ts tests/unit/r1-agent-runtime-adapters.test.ts tests/cli/engineer.test.ts tests/cli/mcp-engineer-tools.test.ts --timeout 60000`
+- Runtime readback oracle `issue-281-wake-runtime-readback`: drive the new CLI surface against a
+  disposable fixture repository and private registry home --
+  `engineer runtime-effect capability` -> `wake-record-offers` (blocked snapshot, then eligible) ->
+  `wake-status --now ... --json` -> `start` -> `wake-receipt` -> `observe` -> `wake-status`.
+  The readback proves the wake Host action key set carries no message, Task or Claim field
+  (`action_keys=action_sha256,adapter_kind,control_ref,control_sha256,effect_id,endpoint_id,host_id,intent_sha256,kind,operation,protocol,repository_id,snapshot_revision,wake_reason`),
+  that the control reference is `repo-harness-wake:<effect_id>:<control_sha256>`, and that the effect
+  reaches `observed_success` only with `receipt_kind=controller_step_receipt`.
 
 ## Promotion Filter
 
