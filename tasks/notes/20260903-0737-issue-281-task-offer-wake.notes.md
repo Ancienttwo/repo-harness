@@ -6,6 +6,7 @@
 > **Review**: tasks/reviews/20260903-0737-issue-281-task-offer-wake.review.md
 > **Last Updated**: 2026-09-03 07:37
 > **Lifecycle**: notes
+> **Substantive Change SHA256**: `sha256:34a95b2e8275a788bfce6bcaf70bf237a60e042f7a48d9cf83a542aac62afb62`
 
 ## Design Decisions
 
