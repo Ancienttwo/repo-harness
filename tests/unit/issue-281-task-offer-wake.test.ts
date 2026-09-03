@@ -178,7 +178,7 @@ function candidate(fx: Fixture, options: OfferOptions = {}): EngineerOfferCandid
   const revision = options.taskRevision ?? taskRevision;
   const blocked = options.eligible === false;
   const dependencies: readonly WorkPackageDependencyObservationV1[] = blocked && options.blocker === 'dependency'
-    ? [{ repository_id: fx.repositoryId, work_package_id: 'wp-upstream', required_state: 'canonical_done', status: 'unsatisfied', authority_revision: digest }]
+    ? [{ repository_id: fx.repositoryId, work_package_id: 'wp-upstream', required_state: 'canonical_done', acceptance_authority: null, status: 'unsatisfied', authority_revision: digest }]
     : [];
   const graph = projectWorkGraph(validateWorkGraph({
     protocol: 1,
@@ -191,7 +191,10 @@ function candidate(fx: Fixture, options: OfferOptions = {}): EngineerOfferCandid
       task_id: taskId,
       primary_capability: capabilityId,
       depends_on: dependencies.map((entry) => ({
-        repository_id: entry.repository_id, work_package_id: entry.work_package_id, required_state: entry.required_state,
+        repository_id: entry.repository_id,
+        work_package_id: entry.work_package_id,
+        required_state: entry.required_state,
+        acceptance_authority: entry.acceptance_authority,
       })),
       priority: 50,
       concurrency: { scope: 'repo', key: 'release' },

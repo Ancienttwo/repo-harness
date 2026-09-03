@@ -60,6 +60,7 @@ import { acquireScheduledEngineerTask } from '../../src/effects/engineers/schedu
 import type { EngineerPrincipalV1 } from '../../src/core/engineers/principal-claim';
 import type { RepoHarnessRegisteredRepo, RepoHarnessRegistrySnapshot } from '../../src/effects/repo-registry';
 import { assessChange, buildReviewSelectionPacket } from '../../src/core/review/change-assessment';
+import { FIXTURE_SCHEMA_HEADER, fixtureBacklogTable, fixtureTaskId } from '../helpers/sprint-fixture';
 import { buildReviewSubject } from '../../src/effects/review/diff-fingerprint';
 import {
   ACCEPTANCE_VALIDATOR_RULE_IDS,
@@ -115,12 +116,14 @@ const ROLLBACK_A = '{"rollback":"a"}\n';
 const ROLLBACK_B = '{"rollback":"b"}\n';
 const SPRINT_TEXT = `# Sprint: demo
 
+${FIXTURE_SCHEMA_HEADER}
+
 ## Backlog
 
-| # | Status | Task | Mode | Acceptance | Plan |
-|---|---|---|---|---|---|
-| 1 | [x] | task A | contract | accepted A | (pending) |
-| 2 | [ ] | task B | contract | accepted B | (pending) |
+${fixtureBacklogTable([
+  { index: 1, status: '[x]', task: 'task A', acceptance: 'accepted A' },
+  { index: 2, task: 'task B', acceptance: 'accepted B' },
+]).join('\n')}
 
 ## Execution Log
 `;
@@ -163,7 +166,7 @@ function dependency(state: WorkPackageDependencyState, repositoryId = REPO_ID): 
 function workGraphJson(state: WorkPackageDependencyState = 'canonical_done', repositoryId = REPO_ID): unknown {
   const definition = (id: string, taskRef: string, dependsOn: unknown[]) => ({
     work_package_id: id,
-    task_ref: taskRef,
+    task_id: fixtureTaskId(taskRef),
     primary_capability: CAPABILITY,
     depends_on: dependsOn,
     priority: id === 'wp-b' ? 90 : 10,
@@ -709,7 +712,7 @@ function recordResolverInput(fixtureValue: RecordFixture): DependencyAuthorityIn
   const contractBytes = gitShow(fixtureValue.root, fixtureValue.commit, RECORD_CONTRACT_REF)!;
   const definition = {
     work_package_id: 'wp-demo',
-    task_ref: 'task demo',
+    task_id: '7'.repeat(64),
     primary_capability: CAPABILITY,
     depends_on: [],
     priority: 10,
