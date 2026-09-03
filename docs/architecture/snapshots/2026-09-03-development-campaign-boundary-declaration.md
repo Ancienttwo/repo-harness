@@ -49,9 +49,15 @@ Explicitly out of the boundary:
 
 `development-campaign` depends on the four consumed capabilities. No consumed
 capability may depend on `development-campaign`, and none of them gains a new
-export for the campaign's benefit. The campaign reaches Task, Lease and
-Publication authority only through the existing acquire chain in
-`src/effects/fleet/acquire.ts`; it introduces no root lifecycle command.
+export for the campaign's benefit.
+
+The campaign reaches Task and Lease authority only through the existing acquire
+chain in `src/effects/fleet/acquire.ts`. Publication is a separate downstream
+path it does not enter at all: a PR is created by `scripts/ship-worktrees.sh`
+calling the publication CLI on the bound worktree, after the Worker's own
+closeout. The campaign observes the result through `MergeReadinessV1`; it never
+creates or mutates a `PublicationReceiptV1`. It introduces no root lifecycle
+command.
 
 ## Why a new capability rather than an extension
 

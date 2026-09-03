@@ -36,8 +36,15 @@ import {
 } from '../../src/core/state/coordination-identity';
 import {
   classifyTaskOffer,
+  freezeTaskOffer,
   taskOfferRevision,
+  FLEET_OFFERS_KIND,
+  FLEET_OFFERS_PROTOCOL,
+  TASK_OFFER_KIND,
+  TASK_OFFER_PROTOCOL,
   type ClassifyTaskOfferInput,
+  type FleetOffersV1,
+  type TaskOfferV1,
 } from '../../src/core/fleet/task-offer';
 import { canonicalJson } from '../../src/core/fleet/board';
 import { acquireFleetTask, type FleetAcquireDependencies } from '../../src/effects/fleet/acquire';
@@ -512,6 +519,34 @@ describe('BRC0 negative freeze: an Issue is not a Task', () => {
     for (const entry of unmarked) expect(entry.title).toContain('[rh-campaign:');
   });
 
+  test('the campaign marker carries exactly the three PRD fields and no digest', () => {
+    const MARKER = /<!-- repo-harness-campaign:v1\n([\s\S]*?)\n-->/u;
+    let seen = 0;
+    for (const name of readdirSync(FIXTURES).filter((entry) => entry.startsWith('batch-'))) {
+      const document = JSON.parse(readFileSync(join(FIXTURES, name), 'utf-8')) as {
+        readonly observations: readonly unknown[];
+      };
+      for (const observation of document.observations.map(validateProviderIssueObservation)) {
+        const match = MARKER.exec(observation.body);
+        if (match === null) continue;
+        seen += 1;
+        const lines = match[1]!.split('\n');
+        const keys = lines.map((line) => line.split('=')[0]);
+        // Exactly three fields, in the PRD's order, and nothing else.
+        expect(keys).toEqual(['campaign_id', 'group', 'slot']);
+        for (const line of lines) {
+          expect(line).toMatch(/^[a-z_]+=[^=]*$/u);
+          const value = line.slice(line.indexOf('=') + 1);
+          // No digest may appear in the marker: the model must never be asked
+          // to copy a 40- or 64-character hash (PRD Module 3).
+          expect(value).not.toMatch(/^sha256:/u);
+          expect(value).not.toMatch(/[0-9a-f]{40,}/u);
+        }
+      }
+    }
+    expect(seen).toBeGreaterThanOrEqual(20);
+  });
+
   test('the same issue observed twice with a different body is source drift', () => {
     const document = JSON.parse(readFileSync(join(FIXTURES, 'batch-source-drift.json'), 'utf-8')) as {
       readonly registered_repository_id: string;
@@ -554,42 +589,108 @@ describe('BRC0 negative freeze: a prompt is not a Claim', () => {
     expect(parseLeaseOwnerRecord(JSON.stringify(extraField))).toBeNull();
   });
 
-  test('the real acquisition entrypoint refuses a prompt-derived assertion and takes no claim', () => {
+  test('a prompt cannot select an execution-ready offer that the canonical path can', () => {
     const repo = fixtureRepo('brc0-prompt-not-claim-');
     const before = listFiles(repo);
 
-    const emptyRegistry: RepoHarnessRegistrySnapshot = Object.freeze({
+    const REPO_ID = 'repo_1111111111111111';
+    const AUTHORIZATION_REVISION = 7;
+
+    const registry: RepoHarnessRegistrySnapshot = Object.freeze({
       registryPath: join(repo, 'registry.json'),
-      authorizationRevision: 1,
-      repos: Object.freeze([]),
+      authorizationRevision: AUTHORIZATION_REVISION,
+      repos: Object.freeze([Object.freeze({
+        id: REPO_ID,
+        path: repo,
+        accessMode: 'read_write' as const,
+        source: 'manual' as const,
+        registeredAt: '2026-09-03T00:00:00.000Z',
+        lastSeenAt: '2026-09-03T00:00:00.000Z',
+      })]),
     });
 
-    // Every side-effecting dependency is a spy. `collectFleetOffers` and the
-    // selection rule stay the real production code.
+    // A genuinely execution-ready offer, classified by the production
+    // classifier and revisioned by the production digest. Without this the
+    // negatives below would pass merely because the world is empty.
+    const planProof = {
+      plan_path: 'plans/plan-frozen.md',
+      contract_path: 'tasks/contracts/frozen.contract.md',
+      source_ref: 'sprint:frozen#1',
+      plan_sha256: `sha256:${'1'.repeat(64)}`,
+      contract_sha256: `sha256:${'2'.repeat(64)}`,
+    };
+    const classification = classifyTaskOffer({
+      repo_access_mode: 'read_write',
+      row_status: '[ ]',
+      mode: 'contract',
+      lease_state: 'available',
+      snapshot_consistency: 'stable',
+      plan: planProof,
+      canonical_available: true,
+    });
+    expect(classification.execution_readiness).toBe('execution_ready');
+
+    const offer: TaskOfferV1 = freezeTaskOffer({
+      protocol: TASK_OFFER_PROTOCOL,
+      kind: TASK_OFFER_KIND,
+      repo_id: REPO_ID,
+      task_id: CANONICAL_TASKS[0]!.task_id,
+      task_revision: CANONICAL_TASKS[0]!.task_revision,
+      sprint_path: SPRINT_PATH,
+      row_order: 0,
+      execution_readiness: classification.execution_readiness,
+      snapshot_consistency: 'stable',
+      blockers: classification.blockers,
+      offer_revision: taskOfferRevision([REPO_ID, CANONICAL_TASKS[0]!.task_id, CANONICAL_TASKS[0]!.task_revision, 0]),
+      authorization_revision: AUTHORIZATION_REVISION,
+      canonical_target: { ref: 'refs/heads/main', oid: 'b'.repeat(40) },
+      plan: planProof,
+    });
+    const document: FleetOffersV1 = Object.freeze({
+      protocol: FLEET_OFFERS_PROTOCOL,
+      kind: FLEET_OFFERS_KIND,
+      authorization_revision: AUTHORIZATION_REVISION,
+      snapshot_consistency: 'stable',
+      offer_revision: taskOfferRevision([REPO_ID, offer.offer_revision]),
+      offers: Object.freeze([offer]),
+    });
+
     const calls: string[] = [];
     const spy = (name: string) => (...args: unknown[]): never => {
       calls.push(name);
       void args;
-      throw new Error(`${name} must not run for a prompt-derived assertion`);
+      throw new Error(`__spy__${name}`);
     };
-    const dependencies: Partial<FleetAcquireDependencies> = {
-      readRegistry: () => emptyRegistry,
+    const dependencies = (): Partial<FleetAcquireDependencies> => ({
+      readRegistry: () => registry,
+      collectOffers: () => document,
+      sprintDependencies: (() => ({})) as unknown as FleetAcquireDependencies['sprintDependencies'],
       claim: spy('claim') as unknown as FleetAcquireDependencies['claim'],
       bind: spy('bind') as unknown as FleetAcquireDependencies['bind'],
       release: spy('release') as unknown as FleetAcquireDependencies['release'],
       start: spy('start') as unknown as FleetAcquireDependencies['start'],
       writeToken: spy('writeToken') as unknown as FleetAcquireDependencies['writeToken'],
       project: spy('project') as unknown as FleetAcquireDependencies['project'],
-    };
+    });
 
-    // The prompt's only reachable channel into acquisition is the optimistic
-    // assertion, so that is where it is fed in.
-    const result = acquireFleetTask({
-      registry_snapshot: emptyRegistry,
-      dependencies,
-      session_id: 'brc0-prompt-not-claim',
+    // Control: the canonical path does reach the first ownership mutation.
+    // This is what makes the two negatives below meaningful.
+    calls.length = 0;
+    expect(() => acquireFleetTask({
+      registry_snapshot: registry,
+      dependencies: dependencies(),
+      session_id: 'brc0-control',
+    })).toThrow('__spy__claim');
+    expect(calls).toEqual(['claim']);
+
+    // Negative 1: the prompt names a task by its own words. The derived
+    // identity matches no offer, so selection fails closed.
+    calls.length = 0;
+    const promptTask = acquireFleetTask({
+      registry_snapshot: registry,
+      dependencies: dependencies(),
+      session_id: 'brc0-prompt-task',
       assertion: {
-        repo_id: 'Worker A',
         task_id: deriveTaskId({
           repoIdentity: REPO_IDENTITY,
           sprintPath: SPRINT_PATH,
@@ -597,22 +698,23 @@ describe('BRC0 negative freeze: a prompt is not a Claim', () => {
         }),
       },
     });
-
-    // The asserted task matches no offer, so acquisition fails closed at the
-    // selection boundary, before any dependency with a side effect runs.
-    expect(result.ok).toBe(false);
-    expect(result.ok === false && result.error).toBe('offer_stale');
-
-    // Dropping the prompt entirely reaches the same place by the other branch.
-    const withoutAssertion = acquireFleetTask({
-      registry_snapshot: emptyRegistry,
-      dependencies,
-      session_id: 'brc0-prompt-not-claim-2',
-    });
-    expect(withoutAssertion.ok).toBe(false);
-    expect(withoutAssertion.ok === false && withoutAssertion.error).toBe('no_eligible_task');
-
+    expect(promptTask.ok).toBe(false);
+    expect(promptTask.ok === false && promptTask.error).toBe('offer_stale');
     expect(calls).toEqual([]);
+
+    // Negative 2: the prompt names an owner. Even with the real task id, an
+    // ownership claim the registry does not back selects nothing.
+    calls.length = 0;
+    const promptOwner = acquireFleetTask({
+      registry_snapshot: registry,
+      dependencies: dependencies(),
+      session_id: 'brc0-prompt-owner',
+      assertion: { repo_id: 'Worker A', task_id: offer.task_id },
+    });
+    expect(promptOwner.ok).toBe(false);
+    expect(promptOwner.ok === false && promptOwner.error).toBe('offer_stale');
+    expect(calls).toEqual([]);
+
     expect(listFiles(repo)).toEqual(before);
     expect(listLeaseReads(repo)).toHaveLength(0);
     expect(existsSync(join(repo, '.git/repo-harness/coordination'))).toBe(false);
@@ -631,6 +733,21 @@ describe('BRC0 negative freeze: heartbeat-triage stays discovery-only', () => {
     ]) {
       expect(SOURCE).not.toContain(forbidden);
     }
+  });
+
+  test('the sprint probe resolves its repository from the helper location, not from --repo', () => {
+    // Characterization of a real containment gap, frozen so it cannot change
+    // silently: when `.ai/harness/sprint/active-sprint` exists, heartbeat
+    // shells out to `sprint-backlog.sh next`, and that helper derives its own
+    // repository root from `BASH_SOURCE` unless REPO_HARNESS_TARGET_REPO_ROOT
+    // is set. heartbeat-triage sets neither, so that branch reads the helper's
+    // repository rather than the one named by `--repo`.
+    const helper = readFileSync(join(REPO_ROOT, 'scripts/sprint-backlog.sh'), 'utf-8');
+    expect(helper).toContain('SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"');
+    expect(helper).toContain('elif REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)"');
+    expect(SOURCE).not.toContain('REPO_HARNESS_TARGET_REPO_ROOT');
+    // The probe is still read-only: heartbeat only ever calls the `next` verb.
+    expect(SOURCE).toContain('"$sprint_helper" next');
   });
 
   test('a real run writes exactly the inbox and its run snapshot', () => {
@@ -659,10 +776,17 @@ describe('BRC0 negative freeze: heartbeat-triage stays discovery-only', () => {
     };
     expect(snapshot.kind).toBe('repo-harness-heartbeat-triage');
     expect(snapshot.entries.map((entry) => entry.kind).sort()).toEqual(['drift-requests', 'sprint-next', 'workflow-check']);
-    // `fail`, not `warning`: the real sibling helper was found and executed, so
-    // the write-set assertion above covers the transitive path too.
+    // `fail`, not `warning`: the real `check-task-workflow.sh --strict` sibling
+    // was found and executed against the fixture, so the write-set assertion
+    // above covers that transitive path too.
     const workflowCheck = snapshot.entries.find((entry) => entry.kind === 'workflow-check');
     expect(workflowCheck?.status).toBe('fail');
+
+    // The sprint probe takes the local awk fallback because the fixture has no
+    // `.ai/harness/sprint/active-sprint` marker. That branch is fixture-scoped.
+    const sprintNext = snapshot.entries.find((entry) => entry.kind === 'sprint-next');
+    expect(sprintNext?.status).toBe('info');
+    expect(existsSync(join(repo, '.ai/harness/sprint/active-sprint'))).toBe(false);
 
     // No branch, no commit, no lease: the run leaves git untouched.
     expect(execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: repo, encoding: 'utf-8' }).trim()).toBe('');

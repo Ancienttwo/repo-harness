@@ -82,8 +82,11 @@ Fresh worktree + ClaimToken                   scripts/contract-worktree.sh,
 WorkEnvelopeV1                                src/effects/fleet/acquire.ts
   │  the only artifact a Worker may treat as task ownership
   ▼
-PublicationReceiptV1 / PR                     src/core/publication/publication-receipt.ts,
-  │                                           src/effects/publication/publication-receipt.ts
+PublicationReceiptV1 / PR                     created by scripts/ship-worktrees.sh
+  │                                           through the publication CLI over
+  │                                           src/core/publication/publication-receipt.ts and
+  │                                           src/effects/publication/publication-receipt.ts;
+  │                                           this is a separate path from the acquire chain
   ▼
 MergeReadinessV1                              src/core/publication/merge-readiness.ts
   ▼
@@ -239,10 +242,22 @@ exercised here.
   **in place**, from the repository's own `scripts/`, against a temporary
   repository, so the sibling probes it shells out to are the real ones and any
   transitive write lands inside the observed fixture. The test asserts the write
-  set, that the workflow probe reported `fail` rather than the missing-helper
-  `warning` (proving it actually executed), a clean `git status` and an empty
-  lease inventory. The source text contains no git mutation, no `gh` call, no
-  lease or claim verb and no spawn.
+  set, that the `check-task-workflow.sh --strict` probe reported `fail` rather
+  than the missing-helper `warning` (proving it actually executed inside the
+  fixture), a clean `git status` and an empty lease inventory. The source text
+  contains no git mutation, no `gh` call, no lease or claim verb and no spawn.
+
+  One containment gap is frozen rather than claimed away: the sprint probe is
+  only reached when `.ai/harness/sprint/active-sprint` exists, and
+  `scripts/sprint-backlog.sh` derives its own repository root from
+  `BASH_SOURCE` unless `REPO_HARNESS_TARGET_REPO_ROOT` is set.
+  `heartbeat-triage` sets neither, so on that branch the probe reads the
+  helper's repository rather than the one named by `--repo`. The probe is
+  read-only (`sprint-backlog.sh next`), so this is a scoping defect and not a
+  write leak, but it means "every transitive write lands inside `--repo`" is
+  true only for the workflow probe. The freeze test asserts both the resolution
+  rule and the absence of a target-root override, so this cannot change
+  silently. Owning it belongs to the heartbeat capability, not to this row.
 - `repo-harness-autoplan` is retired with no successor
   (`assets/skill-commands/manifest.json` `retiredPackages`, `replacement: null`).
   No helper id, no `RUN_HELP_GROUPS` entry and no `scripts/autoplan.*` exists.

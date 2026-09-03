@@ -65,9 +65,9 @@ capabilities and the dependency direction went to
 - **Digests, not stored blobs.** The freeze is thirteen sha256 values over what the production
   serializer emits for a literal subject. Storing the serialized bytes instead would put thirteen
   blobs into every review and would make "just regenerate it" the path of least resistance.
-- **The whole `classifyTaskOffer` matrix is one digest.** 2 x 2 x 7 x 3 x 2 x 2 x 8 = 2688 inputs
+- **The whole `classifyTaskOffer` matrix is one digest.** 2 x 2 x 7 x 3 x 2 x 2 x 8 x 2 = 5376 inputs
   collapse to one value, so adding a blocker code, reordering a branch or changing an attention owner
-  all fail loudly without 2688 assertions in review.
+  all fail loudly without 5376 assertions in review.
 - **`heartbeat-triage` is proved twice.** A source-text audit (no `git commit`, no `gh`, no lease,
   claim, acquire or spawn verb) plus a real run of the helper in place, from the repository's own
   `scripts/`, against a temporary repository. Running it in place is deliberate: the sibling probes
@@ -133,3 +133,41 @@ All seven were valid. Nothing was waived; each was repaired at the level the fin
    `expected_marker_present: false` plus a note that naming this case belongs to BRC5. The
    every-fixture test additionally asserts that any `expected_outcome` present in any fixture is a
    term the PRD already defines, so this row cannot leak vocabulary into later rows.
+
+## Codex review round 2: REJECT, and the four repairs
+
+Round 2 accepted five of the seven round-1 repairs as structural and rejected two as incomplete,
+plus two new findings. All four were repaired.
+
+1. **The prompt test was still decided by an empty world.** With `repos: []` the offer document was
+   necessarily empty, so the throwing spies were unreachable for a reason that had nothing to do with
+   the prompt. The test now injects a registry with one writable repository and a real
+   execution-ready `TaskOfferV1` built through the production `classifyTaskOffer`, `taskOfferRevision`
+   and `freezeTaskOffer`. A control case with no assertion runs the real selection and revalidation
+   and *does* reach the `claim` spy, which is what makes the two negatives meaningful: a
+   prompt-derived `task_id` and a prompt-declared `repo_id` both return `offer_stale` with no spy
+   reached, while the canonical path reaches the first ownership mutation.
+
+2. **The heartbeat sprint probe was never exercised, and forcing it would have leaked.** The fixture
+   has no `.ai/harness/sprint/active-sprint`, so only `check-task-workflow.sh --strict` ran
+   transitively. Adding the marker would not have fixed the claim: `scripts/sprint-backlog.sh:20`
+   resolves its repository root from `BASH_SOURCE` unless `REPO_HARNESS_TARGET_REPO_ROOT` is set, and
+   `heartbeat-triage` sets neither, so that branch reads the helper's own repository rather than
+   `--repo`. Rather than paper over it, the gap is now frozen: a test asserts the helper's resolution
+   rule, asserts `heartbeat-triage` sets no target-root override, and asserts the probe is read-only
+   (`next`). The research doc's containment claim was narrowed to the workflow probe. Owning the fix
+   belongs to the heartbeat capability.
+
+3. **The three-field marker was documented but not executable-frozen.** The observation validator
+   treats `body` as an opaque string, so a fourth `base_sha` field with regenerated digests would have
+   passed every assertion. A new test parses the marker out of every fixture body, asserts the key
+   list is exactly `[campaign_id, group, slot]`, and asserts no value looks like a digest. Falsified
+   by hand: adding `base_sha=<40 hex>` and rebuilding the observation makes it fail.
+
+4. **The boundary declaration misrouted Publication.** It claimed the campaign reaches Task, Lease and
+   Publication "only through" `acquireFleetTask`. Publication is created by
+   `scripts/ship-worktrees.sh` through the publication CLI, on a separate downstream path the campaign
+   does not enter; it observes the result through `MergeReadinessV1`. The snapshot and the research
+   doc's flow diagram now say so.
+
+The matrix count in the round-1 section above was also corrected from 2688 to 5376.
