@@ -35,7 +35,7 @@ export const AGENT_RUNTIME_OPERATIONS: readonly AgentRuntimeOperation[] = Object
 export type AgentRuntimeOfferWakeReason = 'new_eligible_offer' | 'dependency_unblocked' | 'concurrency_released' | 'retry_due';
 export type AgentRuntimeCapabilityStatus = 'supported' | 'unsupported' | 'unavailable' | 'unverifiable';
 export type AgentRuntimeEffectState = 'intent_persisted' | 'effect_started' | 'observed_success' | 'observed_failure' | 'reconciliation_required' | 'stopped' | 'superseded';
-export type AgentRuntimeFailureClass = 'none' | 'binding_stale' | 'claim_stale' | 'capability_unsupported' | 'adapter_unavailable' | 'authorization_stale' | 'receipt_missing' | 'receipt_mismatch' | 'unknown';
+export type AgentRuntimeFailureClass = 'none' | 'binding_stale' | 'claim_stale' | 'capability_unsupported' | 'adapter_unavailable' | 'authorization_stale' | 'fence_conflict' | 'receipt_missing' | 'receipt_mismatch' | 'unknown';
 export type AgentRuntimeReceiptKind = 'task_message_delivery_receipt' | 'module_message_delivery_receipt' | 'controller_step_receipt';
 export type AgentRuntimeAdapterOutcome = 'accepted' | 'unavailable' | 'unsupported' | 'failed' | 'unknown';
 
@@ -252,7 +252,7 @@ function effectState(value: unknown): AgentRuntimeEffectState {
   if (!allowed.includes(value)) invalid('state is invalid'); return value as AgentRuntimeEffectState;
 }
 function failureClass(value: unknown): AgentRuntimeFailureClass {
-  const allowed: readonly unknown[] = ['none', 'binding_stale', 'claim_stale', 'capability_unsupported', 'adapter_unavailable', 'authorization_stale', 'receipt_missing', 'receipt_mismatch', 'unknown'];
+  const allowed: readonly unknown[] = ['none', 'binding_stale', 'claim_stale', 'capability_unsupported', 'adapter_unavailable', 'authorization_stale', 'fence_conflict', 'receipt_missing', 'receipt_mismatch', 'unknown'];
   if (!allowed.includes(value)) invalid('failure_class is invalid'); return value as AgentRuntimeFailureClass;
 }
 function adapterOutcome(value: unknown): AgentRuntimeAdapterOutcome {

@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260903-0737-issue-281-task-offer-wake.review.md
 > **Last Updated**: 2026-09-03 07:37
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:29a2b391dccecd918d6f64aceea9ed1f0ede2230bce6eef6ed785c3220678d3b`
+> **Substantive Change SHA256**: `sha256:fbed964e0040f5b0c03a9dc9866556fa6b793568e67fc41c4dacd2c9fb41447d`
 
 ## Design Decisions
 
@@ -40,9 +40,34 @@
 - Cross-authority fences (round 1): the Binding, capability observation and authorization revision live
   outside these locks and can commit between the check and the durable `effect_started`. Rather than
   reach across authorities for a lock, the start re-reads the same fences after the append and, when one
-  moved, records `observed_failure` (`binding_stale` / `capability_unsupported` / new
+  moved, records `observed_failure` (`binding_stale` / `capability_unsupported` / `fence_conflict` / new
   `authorization_stale`) and returns `action: null`. The Host action is admitted only if every fence held
   both immediately before and immediately after the start became durable.
+- The post-durable re-check is deliberately NOT wake-only: `assertStartFences` runs the same second read
+  for `notify_inbox` starts, so a Binding that rotates during a message start also records
+  `binding_stale` and returns no action, and a message fence that moves (a delivery state or attempt that
+  advanced under the start, which surfaces as `agent_runtime_effect_transition_invalid`) is re-thrown
+  rather than mislabelled, leaving the effect at `effect_started` so the next start reconciles it to
+  `reconciliation_required`. This widening is intentional fail-closed convergence of both operations on
+  one start contract, not a #281-local rule: the same check-then-commit window existed on the message
+  path before this work and simply had no second read. Nothing that previously succeeded now fails --
+  only starts whose fence genuinely moved mid-start change outcome, and they change from "stale Host
+  action handed out" to "recorded failure, no action".
+- Failure labels are truthful (round 1 gate residual): `startFenceFailureClass` no longer folds
+  `agent_runtime_effect_conflict` into `capability_unsupported`. A capability digest that moved under the
+  start is a conflict with another writer, not a Host that stopped supporting the operation, so it gets
+  its own `fence_conflict` class; sending an operator to the Host instead of to the competing writer was
+  the concrete harm.
+- Empty documents are fenced too (round 1 gate residual): an offers document carries no Binding fields,
+  and an empty one carries no offers to fence, so `assertOffersBindCurrentEndpoint` iterating `offers`
+  alone let an empty snapshot collected under a previous generation update the current ledger's
+  `observed`. `recordEngineerOfferSnapshot` now requires the collector to state
+  `expected_binding_id` / `expected_binding_generation` / `expected_engineer_contract_revision` -- the
+  same shape `PrepareAgentRuntimeEffectInput` already uses -- and checks them against the current Binding
+  before any ledger write, with the per-offer check kept as the second proof that the document agrees
+  with what the collector asserted. Extending `EngineerOffersV1` with a document-level Binding fence was
+  rejected: it would change the offers protocol digest basis and belongs to the scheduling authority, not
+  to this consumer.
 - Coalescing: the durable per-Binding ledger keeps one pending wake pointer plus a window
   (`requested_at`, `coalesce_until`). A due decision while the pending wake is still `intent_persisted`
   replaces the pointer and inherits the original window, so a flapping repository cannot slide the
@@ -60,6 +85,12 @@
   set changes still supersedes the pending wake and the newest revision is never lost. The reason is read
   from the previous blockers of the highest-priority newly eligible Work Package, falling back to the
   highest-priority eligible one.
+- Reading of the issue's "exactly one durable wake intent on the empty-to-eligible transition": the
+  uniqueness that is enforced is one wake per (Binding, snapshot) -- the idempotency key is derived from
+  Binding, snapshot revision and reason, so a given snapshot arms at most one intent and repeats are
+  idempotent -- while any eligible snapshot change is due and supersedes the unstarted wake into
+  `superseded`. The alternative reading (only a literal empty-to-eligible edge may arm a wake) was
+  rejected because it drops the newest revision on an A→B change, which the same acceptance list forbids.
 - Crash replay (round 1): `created_at` for a wake intent is this store's own clock, so a crash between the
   intent write and the ledger publish would make a byte comparison reject the replay of the same snapshot
   forever. The replay path now reconciles on identity -- same idempotency key, endpoint fence and wake

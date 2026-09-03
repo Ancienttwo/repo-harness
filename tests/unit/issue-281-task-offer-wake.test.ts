@@ -244,12 +244,20 @@ function emptyOffers(fx: Fixture): EngineerOffersV1 {
   });
 }
 
-function record(fx: Fixture, document: EngineerOffersV1, observedAt: string, policy?: { debounce_ms?: number; polling_fallback_enabled?: boolean }) {
+function record(
+  fx: Fixture,
+  document: EngineerOffersV1,
+  observedAt: string,
+  policy?: { debounce_ms?: number; polling_fallback_enabled?: boolean; collected_under?: { binding_id: string; binding_generation: number; engineer_contract_revision: string } },
+) {
   return recordEngineerOfferSnapshot({
     repo_root: fx.repoRoot,
     offers: document,
     observed_at: observedAt,
     expected_capability_sha256: fx.capabilitySha256,
+    expected_binding_id: policy?.collected_under?.binding_id ?? fx.bindingId,
+    expected_binding_generation: policy?.collected_under?.binding_generation ?? fx.bindingGeneration,
+    expected_engineer_contract_revision: policy?.collected_under?.engineer_contract_revision ?? fx.engineerContractRevision,
     wake_policy: {
       debounce_ms: policy?.debounce_ms ?? 0,
       polling_fallback_enabled: policy?.polling_fallback_enabled ?? false,
@@ -829,6 +837,28 @@ describe('issue #281 the offers document is proved before anything is derived fr
     expect(listAgentRuntimeEffects(fx.repoRoot, engineerId)).toHaveLength(0);
   });
 
+  test('an empty snapshot collected under a previous Binding never updates the current ledger', () => {
+    const fx = fixture();
+    record(fx, emptyOffers(fx), '2026-09-03T10:03:00.000Z');
+    const staleGeneration = fx.bindingGeneration;
+    bind(fx.repoRoot, 'codex-app-thread', bindingTwo);
+    const rotated = { ...fx, bindingId: bindingTwo, bindingGeneration: staleGeneration + 1 } as Fixture;
+
+    let failure: unknown;
+    try {
+      record(rotated, emptyOffers(rotated), '2026-09-03T10:04:00.000Z', {
+        collected_under: { binding_id: fx.bindingId, binding_generation: staleGeneration, engineer_contract_revision: fx.engineerContractRevision },
+      });
+    } catch (error) { failure = error; }
+    expect(failure).toBeInstanceOf(AgentRuntimeEffectStoreError);
+    expect((failure as AgentRuntimeEffectStoreError).code).toBe('agent_runtime_effect_binding_stale');
+    expect(readOfferWakeLedger(fx.repoRoot, { engineer_id: engineerId, binding_id: bindingTwo, binding_generation: rotated.bindingGeneration })).toBeNull();
+
+    const accepted = record(rotated, emptyOffers(rotated), '2026-09-03T10:05:00.000Z');
+    expect(accepted.cause).toBe('no_eligible_offers');
+    expect(accepted.ledger.endpoint_fence.binding_generation).toBe(rotated.bindingGeneration);
+  });
+
   test('a document produced by the offer authority passes its own whole-document validator', () => {
     const fx = fixture();
     expect(validateEngineerOffersDocument(offers(fx))).toEqual(offers(fx));
@@ -869,6 +899,9 @@ describe('issue #281 wake mutations linearize on the per-Binding wake lock', () 
         const result = recordEngineerOfferSnapshot({
           repo_root: repoRoot, offers: JSON.parse(offersJson), observed_at: '2026-09-03T10:05:00.000Z',
           expected_capability_sha256: ${JSON.stringify(fx.capabilitySha256)},
+          expected_binding_id: ${JSON.stringify(fx.bindingId)},
+          expected_binding_generation: ${fx.bindingGeneration},
+          expected_engineer_contract_revision: ${JSON.stringify(fx.engineerContractRevision)},
           wake_policy: { debounce_ms: 0, polling_fallback_enabled: false }, env,
         });
         process.stdout.write('OBSERVER:' + result.outcome + '\\n');
@@ -908,7 +941,9 @@ describe('issue #281 crash boundaries replay without stranding a wake', () => {
     const document = offers(fx);
     expect(() => recordEngineerOfferSnapshot({
       repo_root: fx.repoRoot, offers: document, observed_at: '2026-09-03T10:04:00.000Z',
-      expected_capability_sha256: fx.capabilitySha256, wake_policy: { debounce_ms: 0, polling_fallback_enabled: false },
+      expected_capability_sha256: fx.capabilitySha256, expected_binding_id: fx.bindingId,
+      expected_binding_generation: fx.bindingGeneration, expected_engineer_contract_revision: fx.engineerContractRevision,
+      wake_policy: { debounce_ms: 0, polling_fallback_enabled: false },
       env: fx.env, crash_hook: (boundary) => { if (boundary === 'after_intent_persisted') throw new Error('crash'); },
     })).toThrow('crash');
     const ledgerAfterCrash = readOfferWakeLedger(fx.repoRoot, { engineer_id: engineerId, binding_id: fx.bindingId, binding_generation: fx.bindingGeneration })!;
@@ -926,7 +961,9 @@ describe('issue #281 crash boundaries replay without stranding a wake', () => {
     const document = offers(fx);
     expect(() => recordEngineerOfferSnapshot({
       repo_root: fx.repoRoot, offers: document, observed_at: '2026-09-03T10:04:00.000Z',
-      expected_capability_sha256: fx.capabilitySha256, wake_policy: { debounce_ms: 0, polling_fallback_enabled: false },
+      expected_capability_sha256: fx.capabilitySha256, expected_binding_id: fx.bindingId,
+      expected_binding_generation: fx.bindingGeneration, expected_engineer_contract_revision: fx.engineerContractRevision,
+      wake_policy: { debounce_ms: 0, polling_fallback_enabled: false },
       env: fx.env, crash_hook: (boundary) => { if (boundary === 'after_ledger_published') throw new Error('crash'); },
     })).toThrow('crash');
     const replay = record(fx, document, '2026-09-03T10:04:30.000Z');
@@ -982,6 +1019,30 @@ describe('issue #281 fences that commit after the check still refuse the Host ac
     expect(started.action).toBeNull();
     expect(started.current.state).toBe('observed_failure');
     expect(started.observation.failure_class).toBe('authorization_stale');
+  });
+
+  test('a capability observation replaced during the start is labelled a conflict, not unsupported', () => {
+    const fx = fixture();
+    record(fx, emptyOffers(fx), '2026-09-03T10:03:00.000Z');
+    const wake = record(fx, offers(fx), '2026-09-03T10:04:00.000Z');
+    let armed = false;
+    const started = startAgentRuntimeEffect({
+      repo_root: fx.repoRoot, effect_id: wake.status!.intent.effect_id, started_at: '2026-09-03T10:04:10.000Z', env: fx.env,
+      crash_hook: (boundary) => {
+        if (boundary !== 'after_current_fsync' || armed) return;
+        armed = true;
+        // Still fully supported, but a different observation: a conflict with
+        // another writer, never a Host that dropped the operation.
+        recordAgentRuntimeCapability(fx.repoRoot, {
+          adapter_kind: 'codex-app-thread', host_id: 'local',
+          operations: { notify_inbox: 'supported', wake_for_offer: 'supported' },
+          evidence_refs: [{ ref: 'second-canary', sha256: digest }], observed_at: '2026-09-03T10:04:11.000Z',
+        });
+      },
+    });
+    expect(started.action).toBeNull();
+    expect(started.current.state).toBe('observed_failure');
+    expect(started.observation.failure_class).toBe('fence_conflict');
   });
 
   test('a Binding rotation committed between the check and the durable start yields no action', () => {

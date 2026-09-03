@@ -539,11 +539,15 @@ export function buildEngineerCommand(): Command {
     .requiredOption('--offers-json <json>', 'Exact EngineerOffersV1 document from the offer authority')
     .requiredOption('--observed-at <timestamp>', 'Stable RFC3339 observation time')
     .requiredOption('--expected-capability-sha256 <digest>', 'Exact capability observation digest')
+    .requiredOption('--expected-binding-id <id>', 'Exact Binding UUID the snapshot was collected under')
+    .requiredOption('--expected-binding-generation <n>', 'Exact Binding generation the snapshot was collected under')
+    .requiredOption('--expected-engineer-contract-revision <digest>', 'Exact Engineer contract revision the snapshot was collected under')
     .requiredOption('--debounce-ms <n>', 'Bounded wake coalescing window in milliseconds')
     .option('--polling-fallback', 'Permit scheduled polling when the adapter cannot wake')
     .option('--json', 'Output JSON')
     .action((options: {
-      offersJson: string; observedAt: string; expectedCapabilitySha256: string; debounceMs: string;
+      offersJson: string; observedAt: string; expectedCapabilitySha256: string; expectedBindingId: string;
+      expectedBindingGeneration: string; expectedEngineerContractRevision: string; debounceMs: string;
       pollingFallback?: boolean; json?: boolean;
     }) => run(() => {
       const result = recordEngineerOfferSnapshot({
@@ -551,6 +555,9 @@ export function buildEngineerCommand(): Command {
         offers: jsonOption<EngineerOffersV1>(options.offersJson, 'offers-json'),
         observed_at: options.observedAt,
         expected_capability_sha256: options.expectedCapabilitySha256,
+        expected_binding_id: options.expectedBindingId,
+        expected_binding_generation: integerOption(options.expectedBindingGeneration, 'expected-binding-generation'),
+        expected_engineer_contract_revision: options.expectedEngineerContractRevision,
         wake_policy: {
           debounce_ms: integerOption(options.debounceMs, 'debounce-ms'),
           polling_fallback_enabled: options.pollingFallback === true,

@@ -312,7 +312,11 @@ function assertStartFences(input: { repo_root: string; env?: NodeJS.ProcessEnv }
 function startFenceFailureClass(error: unknown): AgentRuntimeFailureClass | null {
   if (!(error instanceof AgentRuntimeEffectStoreError)) return null;
   switch (error.code) {
-    case 'agent_runtime_effect_capability_unsupported': case 'agent_runtime_effect_conflict': return 'capability_unsupported';
+    case 'agent_runtime_effect_capability_unsupported': return 'capability_unsupported';
+    // A digest that moved under the start is a conflict with another writer,
+    // not a Host that stopped supporting the operation. Labelling it
+    // `capability_unsupported` would send an operator to the wrong authority.
+    case 'agent_runtime_effect_conflict': return 'fence_conflict';
     case 'agent_runtime_effect_authorization_stale': return 'authorization_stale';
     case 'agent_runtime_effect_binding_stale': return 'binding_stale';
     case 'agent_runtime_effect_claim_stale': return 'claim_stale';
@@ -447,6 +451,13 @@ export interface RecordEngineerOfferSnapshotInput {
   readonly offers: EngineerOffersV1;
   readonly observed_at: string;
   readonly expected_capability_sha256: string;
+  /** The exact Binding the snapshot was collected under. An offers document
+   * carries no Binding fields of its own and an empty one carries no offers to
+   * fence, so the collector must state the Binding or a stale generation could
+   * update the current ledger's observed snapshot. */
+  readonly expected_binding_id: string;
+  readonly expected_binding_generation: number;
+  readonly expected_engineer_contract_revision: string;
   readonly wake_policy: AgentRuntimeWakePolicyV1;
   readonly env?: NodeJS.ProcessEnv;
   readonly crash_hook?: AgentRuntimeOfferWakeCrashHook;
@@ -533,12 +544,22 @@ function withWakeEffectLock<T>(paths: EffectPaths, run: () => T): T {
  * the exact current Binding, so a snapshot collected under a previous Binding
  * generation or contract revision is refused rather than re-bound to the
  * current one. */
-function assertOffersBindCurrentEndpoint(repoRoot: string, offers: EngineerOffersV1, endpoint: RuntimeEndpointFenceV2, env: NodeJS.ProcessEnv | undefined): void {
+function assertOffersBindCurrentEndpoint(input: {
+  repo_root: string; offers: EngineerOffersV1; endpoint: RuntimeEndpointFenceV2; env: NodeJS.ProcessEnv | undefined;
+  expected_binding_id: string; expected_binding_generation: number; expected_engineer_contract_revision: string;
+}): void {
+  const { offers, endpoint } = input;
   let repository;
-  try { repository = resolveRegisteredRepoForWorktree(repoRoot, readRepoHarnessRegistryStrictSnapshot({ env: env ?? process.env })); }
+  try { repository = resolveRegisteredRepoForWorktree(input.repo_root, readRepoHarnessRegistryStrictSnapshot({ env: input.env ?? process.env })); }
   catch (error) { throw mapped(error, 'agent_runtime_effect_invalid', 'current worktree is not an exact registered repository'); }
   if (offers.repository_id !== repository.id) fail('agent_runtime_effect_invalid', 'offers document describes another repository');
   if (offers.engineer_id !== endpoint.engineer_id) fail('agent_runtime_effect_binding_stale', 'offers document describes another Engineer');
+  // Fence the collection itself before the document, so an empty snapshot from
+  // a previous Binding generation is refused rather than accepted as current.
+  if (input.expected_binding_id !== endpoint.binding_id || input.expected_binding_generation !== endpoint.binding_generation
+    || input.expected_engineer_contract_revision !== endpoint.engineer_contract_revision) {
+    fail('agent_runtime_effect_binding_stale', 'offers snapshot was collected under another Binding generation or Engineer contract revision');
+  }
   for (const offer of offers.offers) {
     if (offer.binding_id !== endpoint.binding_id || offer.binding_generation !== endpoint.binding_generation
       || offer.engineer_contract_revision !== endpoint.engineer_contract_revision) {
@@ -635,7 +656,11 @@ export function recordEngineerOfferSnapshot(input: RecordEngineerOfferSnapshotIn
   try { document = validateEngineerOffersDocument(input.offers); observed = buildAgentRuntimeOfferWakeSnapshot(document); }
   catch (error) { throw mapped(error, 'agent_runtime_effect_invalid', 'Engineer offers document is invalid'); }
   const endpoint = currentBinding(input.repo_root, observed.engineer_id);
-  assertOffersBindCurrentEndpoint(input.repo_root, document, endpoint, input.env);
+  assertOffersBindCurrentEndpoint({
+    repo_root: input.repo_root, offers: document, endpoint, env: input.env,
+    expected_binding_id: input.expected_binding_id, expected_binding_generation: input.expected_binding_generation,
+    expected_engineer_contract_revision: input.expected_engineer_contract_revision,
+  });
   const store = pathsFor(input.repo_root);
   return withWakeLock(store, endpoint, () => {
     const existing = readOfferWakeLedger(input.repo_root, endpoint);
