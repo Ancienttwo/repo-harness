@@ -1,9 +1,19 @@
+> **Archived**: 2026-09-04 03:35
+> **Related Plan**: plans/archive/plan-20260903-1713-refactor-cutover-closure-gate.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260904-0335
+> **Archive Projection V1**: `plans/plan-20260903-1713-refactor-cutover-closure-gate.md` => `plans/archive/plan-20260903-1713-refactor-cutover-closure-gate.md`
+> **Archive Projection V1**: `tasks/notes/20260903-1713-refactor-cutover-closure-gate.notes.md` => `tasks/archive/notes-20260904-0335-refactor-cutover-closure-gate.md`
+> **Archive Projection V1**: `tasks/contracts/20260903-1713-refactor-cutover-closure-gate.contract.md` => `tasks/archive/contract-20260904-0335-refactor-cutover-closure-gate.md`
+> **Archive Projection V1**: `tasks/reviews/20260903-1713-refactor-cutover-closure-gate.review.md` => `tasks/archive/review-20260904-0335-refactor-cutover-closure-gate.md`
+
 # Task Review: refactor-cutover-closure-gate
 
 > **Status**: Accepted
-> **Plan**: plans/plan-20260903-1713-refactor-cutover-closure-gate.md
-> **Contract**: tasks/contracts/20260903-1713-refactor-cutover-closure-gate.contract.md
-> **Notes File**: tasks/notes/20260903-1713-refactor-cutover-closure-gate.notes.md
+> **Plan**: plans/archive/plan-20260903-1713-refactor-cutover-closure-gate.md
+> **Contract**: tasks/archive/contract-20260904-0335-refactor-cutover-closure-gate.md
+> **Notes File**: tasks/archive/notes-20260904-0335-refactor-cutover-closure-gate.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-09-04 02:42
 > **Recommendation**: pass

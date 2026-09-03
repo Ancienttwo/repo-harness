@@ -1,14 +1,24 @@
+> **Archived**: 2026-09-04 03:35
+> **Related Plan**: plans/archive/plan-20260903-1713-refactor-cutover-closure-gate.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260904-0335
+> **Archive Projection V1**: `plans/plan-20260903-1713-refactor-cutover-closure-gate.md` => `plans/archive/plan-20260903-1713-refactor-cutover-closure-gate.md`
+> **Archive Projection V1**: `tasks/notes/20260903-1713-refactor-cutover-closure-gate.notes.md` => `tasks/archive/notes-20260904-0335-refactor-cutover-closure-gate.md`
+> **Archive Projection V1**: `tasks/contracts/20260903-1713-refactor-cutover-closure-gate.contract.md` => `tasks/archive/contract-20260904-0335-refactor-cutover-closure-gate.md`
+> **Archive Projection V1**: `tasks/reviews/20260903-1713-refactor-cutover-closure-gate.review.md` => `tasks/archive/review-20260904-0335-refactor-cutover-closure-gate.md`
+
 # Task Contract: refactor-cutover-closure-gate
 
-> **Status**: Active
-> **Plan**: plans/plan-20260903-1713-refactor-cutover-closure-gate.md
+> **Status**: Fulfilled
+> **Plan**: plans/archive/plan-20260903-1713-refactor-cutover-closure-gate.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: ancienttwo
 > **Capability ID**: root
 > **Last Updated**: 2026-09-04 01:19
-> **Review File**: `tasks/reviews/20260903-1713-refactor-cutover-closure-gate.review.md`
-> **Notes File**: `tasks/notes/20260903-1713-refactor-cutover-closure-gate.notes.md`
+> **Review File**: `tasks/archive/review-20260904-0335-refactor-cutover-closure-gate.md`
+> **Notes File**: `tasks/archive/notes-20260904-0335-refactor-cutover-closure-gate.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
@@ -47,10 +57,10 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260903-1713-refactor-cutover-closure-gate.md`
+- Source plan: `plans/archive/plan-20260903-1713-refactor-cutover-closure-gate.md`
 - Deferred-goal ledger: `tasks/todos.md`
-- Review file: `tasks/reviews/20260903-1713-refactor-cutover-closure-gate.review.md`
-- Notes file: `tasks/notes/20260903-1713-refactor-cutover-closure-gate.notes.md`
+- Review file: `tasks/archive/review-20260904-0335-refactor-cutover-closure-gate.md`
+- Notes file: `tasks/archive/notes-20260904-0335-refactor-cutover-closure-gate.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -72,12 +82,12 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ```yaml
 allowed_paths:
-  - plans/plan-20260903-1713-refactor-cutover-closure-gate.md
+  - plans/archive/plan-20260903-1713-refactor-cutover-closure-gate.md
   - tasks/current.md
   - tasks/todos.md
-  - tasks/contracts/20260903-1713-refactor-cutover-closure-gate.contract.md
-  - tasks/reviews/20260903-1713-refactor-cutover-closure-gate.review.md
-  - tasks/notes/20260903-1713-refactor-cutover-closure-gate.notes.md
+  - tasks/archive/contract-20260904-0335-refactor-cutover-closure-gate.md
+  - tasks/archive/review-20260904-0335-refactor-cutover-closure-gate.md
+  - tasks/archive/notes-20260904-0335-refactor-cutover-closure-gate.md
   - tests/unit/cutover-closure-gate.test.ts
   - tests/fixtures/cutover-closure/pr-230.contract.md
   - tests/unit/refactor-policy.test.ts
@@ -144,7 +154,7 @@ exit_criteria:
     - tests/fixtures/cutover-closure/pr-230.contract.md
   artifacts_exist:
     - .ai/harness/checks/latest.json
-    - tasks/notes/20260903-1713-refactor-cutover-closure-gate.notes.md
+    - tasks/archive/notes-20260904-0335-refactor-cutover-closure-gate.md
   tests_pass:
     - path: tests/unit/cutover-closure-gate.test.ts
     - path: tests/unit/refactor-policy.test.ts
