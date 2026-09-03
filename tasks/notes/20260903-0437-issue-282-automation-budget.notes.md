@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260903-0437-issue-282-automation-budget.review.md
 > **Last Updated**: 2026-09-03 05:20
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:4cc37c7711b989a17b0a961b496c62c791a6e82ea17bac7fae72ccd061b4cf0f`
+> **Substantive Change SHA256**: `sha256:300e158d27db6e38ad339eda83b0b90b36c5f8a610fe016e40d261b1ec217b55`
 
 ## Design Decisions
 
@@ -75,6 +75,43 @@ an oversight: it is what makes "a crash between reservation and usage append
 blocks further spending" a single-condition check rather than a per-reservation
 expiry sweep, and a controller is a sequential stepper by construction.
 
+### The store owns the clock
+
+The frozen deadline is only worth what the time source behind it is worth. A
+caller-supplied `reserved_at` / `observed_at` was being used as the decision
+time, so a controller could backdate a call past the deadline and still be
+granted a reservation. The mutating verbs therefore take **no timestamp at
+all**: `AutomationClock` (`() => Date`) is a store dependency defaulting to the
+host clock, tests inject a deterministic one, and every record is stamped from
+it. A caller-supplied time is a claim, not a fact, so there is nowhere to put
+one.
+
+On top of that the store refuses a clock that runs backwards over its own
+durable records: `assertClockNotRegressed` compares store now against
+`current.updated_at` on the fast path, and against the newest `reserved_at` /
+`observed_at` among the records during a repair. A regression is a typed
+`automation_budget_clock_regression` carrying refusal code `clock_regression`;
+it never seals a stop receipt, because a clock fault is not exhaustion. The
+consequence is deliberate: concurrent controllers must share one monotonic time
+source, which the contention fixture makes explicit.
+
+`readAutomationBudgetBoardSlice` still takes an `observedAt` view time for the
+wall-clock row, but drift -- which decides the state the slice renders -- is
+measured on the store clock, so asking about the past cannot hide an exhausted
+run.
+
+### Effective limits are re-derived, never trusted
+
+`deriveAutomationLimits` is the single derivation of every enforced number from
+the two authorities that may set one, and both `buildAutomationBudget` and
+`validateAutomationBudget` call it. The digest only proves an object is
+self-consistent; a forged budget that raises `max_runner_invocations` and
+recomputes its own digest used to publish and then be enforced. The validator
+now recomputes `effective_limits`, `limit_derivations` and `deadline_at` from
+`authorization.budget` plus `contract_limits` and compares them field by field,
+so the derivation recorded in the digest is a verifiable derivation rather than
+a decoration.
+
 ### One recovery for a record `current.json` does not list
 
 Post-merge review found two faces of one structural gap. Every record except
@@ -91,12 +128,25 @@ them:
   against a stale projection, losing the charge and leaving the reservation open
   forever.
 
+- consumption that exactly reaches a hard limit is charged before the receipt is
+  sealed, so a crash between them leaves counts that agree with each other, no
+  receipt, and a run that is over but says it is active. This is the one face
+  with no record of its own: `unsealed_exhaustion` is detected by recomputing
+  `exhaustionRefusal` from the counts, and the repair seals the receipt.
 - crash between the stop-receipt write and the same rename leaves a receipt on
   disk with `current.stop_receipt_sha256 === null`. This one is invisible to the
   entry counts of `events/` and `reservations/`, so it has to be probed on its
   own; before the fix `readAutomationBudgetStatus` hard-failed on the mismatch
   and every verb plus the read-only operator slice threw
   `automation_budget_store_invalid` forever.
+
+Immutable records are also published atomically: each is written and fsynced
+under a temporary name that no scan reads, then linked onto its final path.
+`link` is atomic and fails `EEXIST` exactly like `O_EXCL`, so create-once still
+holds while "the file exists" now means "its content is complete". Creating the
+final path directly made a record visible before its bytes were durable, so a
+crash could leave an empty `.json` that no repair could parse and no same-key
+retry could replace. A leftover temporary file is garbage that no scan counts.
 
 The chosen recovery is one rule, not two guards: **`current.json` is a derived
 projection of all three durable record kinds -- `reservations/`, `events/` and

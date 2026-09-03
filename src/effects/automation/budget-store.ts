@@ -18,12 +18,13 @@ import {
   openSync,
   readFileSync,
   readdirSync,
+  linkSync,
   renameSync,
   unlinkSync,
   writeSync,
 } from 'fs';
 import { createHash } from 'crypto';
-import { dirname, join, relative, resolve, sep } from 'path';
+import { basename, dirname, join, relative, resolve, sep } from 'path';
 
 import {
   AUTOMATION_ENFORCEMENT_ORDER,
@@ -73,9 +74,71 @@ import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock'
 
 export const AUTOMATION_BUDGET_STORE_RELATIVE_ROOT = 'repo-harness/automation-budget/v1';
 
+/**
+ * The store owns the clock.
+ *
+ * A caller-supplied timestamp is a claim, not a fact: a controller that
+ * backdates it past a frozen deadline would still be granted a reservation, so
+ * no decision here reads one. Every mutating verb stamps its records from this
+ * clock, and tests inject a deterministic one rather than passing a time in
+ * beside the operation.
+ */
+export type AutomationClock = () => Date;
+
+const HOST_CLOCK: AutomationClock = () => new Date();
+
+export interface AutomationClockOption {
+  /** Injection seam for deterministic tests; the host clock is the default. */
+  readonly clock?: AutomationClock;
+}
+
+function storeNow(clock: AutomationClock | undefined): string {
+  const value = (clock ?? HOST_CLOCK)();
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) {
+    fail('automation_budget_store_unavailable', 'the automation budget clock returned an invalid time');
+  }
+  return value.toISOString();
+}
+
+/**
+ * Time may not run backwards over a run's own durable records. A regression
+ * means the host clock is not the authority it claims to be, so the run stops
+ * for explicit reconciliation instead of spending against a deadline it can no
+ * longer measure.
+ */
+function assertClockNotRegressed(
+  runId: string,
+  budgetSha256: string,
+  now: string,
+  latestObserved: string,
+  operation: AutomationOperationKind,
+): void {
+  if (Date.parse(now) >= Date.parse(latestObserved)) return;
+  throw new AutomationBudgetStoreError(
+    'automation_budget_clock_regression',
+    `automation budget clock regressed: store time ${now} precedes the durable record time ${latestObserved}`,
+    Object.freeze({
+      protocol: 1 as const,
+      kind: 'repo-harness-automation-budget-refusal' as const,
+      automation_run_id: runId,
+      budget_sha256: budgetSha256,
+      refusal_code: 'clock_regression' as const,
+      operation,
+      idempotency_key: 'clock-regression',
+      metric: null,
+      limit: null,
+      consumed: null,
+      reserved: null,
+      would_consume: null,
+      refused_at: now,
+    }),
+  );
+}
+
 const RUN_ID = /^[0-9a-f]{64}$/u;
 
 export type AutomationBudgetStoreErrorCode =
+  | 'automation_budget_clock_regression'
   | 'automation_budget_store_unavailable'
   | 'automation_budget_store_unsafe'
   | 'automation_budget_store_invalid'
@@ -212,24 +275,44 @@ function writeAll(descriptor: number, bytes: Buffer): void {
   while (offset < bytes.length) offset += writeSync(descriptor, bytes, offset, bytes.length - offset);
 }
 
-/** Create-once persistence: an immutable record is written or it already exists. */
+/**
+ * Create-once persistence with complete content.
+ *
+ * The record is written and fsynced under a temporary name that no reader
+ * scans, then published with `link`, which is atomic and fails `EEXIST` exactly
+ * like `O_EXCL`. Creating the final path directly would make the file visible
+ * before its bytes were durable, so a crash could leave an empty or truncated
+ * record that nothing can parse and that no same-key retry can replace. Here
+ * "the file exists" means "its content is complete"; a leftover temporary file
+ * is garbage that no scan counts and the next attempt replaces.
+ */
 function writeExclusive(path: string, bytes: string, label: string): boolean {
+  const temp = join(dirname(path), `.${basename(path)}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   let descriptor: number | null = null;
   try {
-    descriptor = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+    descriptor = openSync(temp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
     writeAll(descriptor, Buffer.from(bytes, 'utf8'));
     fsyncSync(descriptor);
     closeSync(descriptor);
     descriptor = null;
+    try {
+      linkSync(temp, path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
+      throw error;
+    }
     syncDirectory(dirname(path));
     return true;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
-    fail('automation_budget_store_unavailable', `cannot persist ${label}`, error);
+    return fail('automation_budget_store_unavailable', `cannot persist ${label}`, error);
   } finally {
     if (descriptor !== null) closeSync(descriptor);
+    try {
+      unlinkSync(temp);
+    } catch {
+      // The temporary file may never have been created, or may already be gone.
+    }
   }
-  return fail('automation_budget_store_unavailable', `cannot persist ${label}`);
 }
 
 function writeAtomic(path: string, bytes: string, label: string): void {
@@ -329,7 +412,11 @@ export interface AutomationBudgetStatusV1 {
  * corrupt store. Only a projection that claims a record the disk does not have,
  * which no write ordering can produce, stays fail-closed.
  */
-export function readAutomationBudgetStatus(repoRoot: string, runId: string): AutomationBudgetStatusV1 {
+export function readAutomationBudgetStatus(
+  repoRoot: string,
+  runId: string,
+  options: AutomationClockOption = {},
+): AutomationBudgetStatusV1 {
   const paths = runPaths(repoRoot, runId);
   const current = readCurrentOptional(paths);
   if (current === null) fail('automation_budget_store_not_found', `automation run ${runId} has no budget`);
@@ -348,7 +435,7 @@ export function readAutomationBudgetStatus(repoRoot: string, runId: string): Aut
     budget,
     current,
     stop_receipt: receipt,
-    drift: detectAutomationCurrentDrift(paths, current),
+    drift: detectAutomationCurrentDrift(paths, budget, current, storeNow(options.clock)),
   });
 }
 
@@ -380,7 +467,9 @@ function jsonEntries(directory: string): readonly string[] {
 
 export function detectAutomationCurrentDrift(
   paths: RunPaths,
+  budget: AutomationBudgetV1,
   current: AutomationBudgetCurrentV1,
+  now: string,
 ): AutomationCurrentDrift {
   // The stop receipt leaves the entry counts of the other two directories
   // untouched, so it has to be probed on its own or the crash window between
@@ -390,6 +479,13 @@ export function detectAutomationCurrentDrift(
   if (events !== current.event_count) return 'unfolded_event';
   if (jsonEntries(paths.reservations).length !== events + current.open_reservation_sha256s.length) {
     return 'unlisted_reservation';
+  }
+  // The last face has no record of its own. `commitUsage` writes the charge and
+  // then seals the receipt, so a crash between the two leaves counts that agree
+  // with each other and a run that is over but says it is active. Recomputing
+  // the refusal from the counts is the only thing that can see it.
+  if (current.stop_receipt_sha256 === null && exhaustionRefusal(budget, current, now) !== null) {
+    return 'unsealed_exhaustion';
   }
   return 'none';
 }
@@ -437,7 +533,21 @@ function repairCurrentFromDurableRecords(
     previous_current_sha256: status.current.current_sha256,
     updated_at: repairedAt,
   });
+  const latest = [
+    ...events.map((event) => event.observed_at),
+    ...reservations.map((reservation) => reservation.reserved_at),
+  ].sort().pop();
+  if (latest !== undefined) {
+    assertClockNotRegressed(status.current.automation_run_id, status.current.budget_sha256, repairedAt, latest, 'dispatch');
+  }
   writeAtomic(paths.current, bytes(current), 'automation budget current');
+  // A repair that folds in the last charge may itself reach a hard limit, so the
+  // receipt is sealed here rather than left for whichever verb notices next.
+  const refusal = status.stop_receipt === null ? exhaustionRefusal(status.budget, current, repairedAt) : null;
+  if (refusal !== null) {
+    const stopped = persistStopReceipt(paths, status.budget, current, refusal, [], repairedAt);
+    return Object.freeze({ budget: status.budget, current: stopped.current, stop_receipt: stopped.receipt, drift: 'none' as const });
+  }
   return Object.freeze({ budget: status.budget, current, stop_receipt: status.stop_receipt, drift: 'none' as const });
 }
 
@@ -446,7 +556,8 @@ function repairCurrentFromDurableRecords(
  * is ever taken against a projection the durable records contradict.
  */
 function lockedStatus(repoRoot: string, paths: RunPaths, runId: string, now: string): AutomationBudgetStatusV1 {
-  const status = readAutomationBudgetStatus(repoRoot, runId);
+  const status = readAutomationBudgetStatus(repoRoot, runId, { clock: () => new Date(now) });
+  assertClockNotRegressed(status.current.automation_run_id, status.current.budget_sha256, now, status.current.updated_at, 'dispatch');
   if (status.drift === 'none') return status;
   return repairCurrentFromDurableRecords(repoRoot, paths, status, now);
 }
@@ -466,8 +577,12 @@ export function readAutomationBudgetBoardSlice(
   repoRoot: string,
   runId: string,
   observedAt: string,
+  options: AutomationClockOption = {},
 ): AutomationBudgetBoardSliceV1 {
-  const status = readAutomationBudgetStatus(repoRoot, runId);
+  // `observedAt` is the view time for the wall-clock row only. Drift, which
+  // decides what state the slice renders, is measured on the store clock so a
+  // caller cannot hide an exhausted run by asking about the past.
+  const status = readAutomationBudgetStatus(repoRoot, runId, options);
   return projectAutomationBudgetSlice({
     budget: status.budget,
     current: status.current,
@@ -491,10 +606,9 @@ function ledgerState(current: AutomationBudgetCurrentV1): AutomationBudgetStateV
 // Publication
 // ---------------------------------------------------------------------------
 
-export interface PublishAutomationBudgetInput {
+export interface PublishAutomationBudgetInput extends AutomationClockOption {
   readonly repo_root: string;
   readonly budget: AutomationBudgetV1;
-  readonly published_at: string;
 }
 
 /**
@@ -504,6 +618,10 @@ export interface PublishAutomationBudgetInput {
  */
 export function publishAutomationBudget(input: PublishAutomationBudgetInput): AutomationBudgetStatusV1 {
   const budget = validateAutomationBudget(input.budget);
+  const publishedAt = storeNow(input.clock);
+  if (Date.parse(budget.created_at) > Date.parse(publishedAt)) {
+    fail('automation_budget_store_invalid', 'an automation budget cannot be created in the future of the store clock');
+  }
   const repoRoot = resolve(input.repo_root);
   const paths = runPaths(repoRoot, budget.automation_run_id);
   prepareRun(paths);
@@ -516,7 +634,7 @@ export function publishAutomationBudget(input: PublishAutomationBudgetInput): Au
     const preexisting = readCurrentOptional(paths);
     const existing = preexisting === null
       ? null
-      : lockedStatus(repoRoot, paths, budget.automation_run_id, input.published_at).current;
+      : lockedStatus(repoRoot, paths, budget.automation_run_id, publishedAt).current;
     if (existing === null) {
       if (budget.revision !== 1) fail('automation_budget_store_conflict', 'the first budget for a run must be revision 1');
       const current = sealAutomationBudgetCurrent({
@@ -533,7 +651,7 @@ export function publishAutomationBudget(input: PublishAutomationBudgetInput): Au
         ledger_sha256: AUTOMATION_LEDGER_GENESIS,
         stop_receipt_sha256: null,
         previous_current_sha256: null,
-        updated_at: input.published_at,
+        updated_at: publishedAt,
       });
       writeAtomic(paths.current, bytes(current), 'automation budget current');
       return Object.freeze({ budget, current, stop_receipt: null, drift: 'none' as const });
@@ -577,7 +695,7 @@ export function publishAutomationBudget(input: PublishAutomationBudgetInput): Au
       ledger_sha256: existing.ledger_sha256,
       stop_receipt_sha256: null,
       previous_current_sha256: existing.current_sha256,
-      updated_at: input.published_at,
+      updated_at: publishedAt,
     });
     writeAtomic(paths.current, bytes(current), 'automation budget current');
     return Object.freeze({ budget, current, stop_receipt: null, drift: 'none' as const });
@@ -702,7 +820,7 @@ function exhaustionRefusal(
 // Reserve
 // ---------------------------------------------------------------------------
 
-export interface ReserveAutomationBudgetInput {
+export interface ReserveAutomationBudgetInput extends AutomationClockOption {
   readonly repo_root: string;
   readonly automation_run_id: string;
   readonly expected_budget_sha256: string;
@@ -713,7 +831,6 @@ export interface ReserveAutomationBudgetInput {
   readonly attempt: number;
   readonly provider: string | null;
   readonly reserved: AutomationMetricVectorV1;
-  readonly reserved_at: string;
   readonly in_flight_authority?: readonly AutomationInFlightAuthorityV1[];
 }
 
@@ -726,9 +843,10 @@ export interface ReserveAutomationBudgetInput {
 export function reserveAutomationBudget(input: ReserveAutomationBudgetInput): AutomationBudgetReservationV1 {
   const repoRoot = resolve(input.repo_root);
   const paths = runPaths(repoRoot, input.automation_run_id);
+  const reservedAt = storeNow(input.clock);
   const reserved = validateAutomationMetricVector(input.reserved, 'reserved');
   return withExclusiveDirectoryLock(paths.common, paths.lockRelative, () => {
-    const status = lockedStatus(repoRoot, paths, input.automation_run_id, input.reserved_at);
+    const status = lockedStatus(repoRoot, paths, input.automation_run_id, reservedAt);
     const reservationPath = join(paths.reservations, `${keyDigest(input.idempotency_key)}.json`);
     // A stored reservation is closed, open, or nothing this store may act on.
     // The third case cannot survive `lockedStatus`, so reaching it means the
@@ -757,7 +875,7 @@ export function reserveAutomationBudget(input: ReserveAutomationBudgetInput): Au
       operation: input.operation,
       idempotency_key: input.idempotency_key,
       reserved,
-      now: input.reserved_at,
+      now: reservedAt,
     });
     if (decision.decision === 'refused') {
       const code = decision.refusal.refusal_code;
@@ -776,7 +894,7 @@ export function reserveAutomationBudget(input: ReserveAutomationBudgetInput): Au
           status.current,
           decision.refusal,
           input.in_flight_authority ?? [],
-          input.reserved_at,
+          reservedAt,
         );
       }
       throw new AutomationBudgetStoreError(
@@ -798,7 +916,7 @@ export function reserveAutomationBudget(input: ReserveAutomationBudgetInput): Au
       provider: input.provider,
       step_index: status.current.next_step_index,
       reserved,
-      reserved_at: input.reserved_at,
+      reserved_at: reservedAt,
       deadline_at: status.budget.deadline_at,
       previous_ledger_sha256: status.current.ledger_sha256,
     });
@@ -819,7 +937,7 @@ export function reserveAutomationBudget(input: ReserveAutomationBudgetInput): Au
       ledger_sha256: status.current.ledger_sha256,
       stop_receipt_sha256: null,
       previous_current_sha256: status.current.current_sha256,
-      updated_at: input.reserved_at,
+      updated_at: reservedAt,
     });
     writeAtomic(paths.current, bytes(next), 'automation budget current');
     return reservation;
@@ -836,10 +954,9 @@ export interface AutomationUsageResultV1 {
   readonly consumed: AutomationMetricVectorV1;
   readonly outcome: AutomationOutcome;
   readonly evidence_refs: readonly AutomationEvidenceRefV1[];
-  readonly observed_at: string;
 }
 
-export interface AppendAutomationUsageInput extends AutomationUsageResultV1 {
+export interface AppendAutomationUsageInput extends AutomationUsageResultV1, AutomationClockOption {
   readonly repo_root: string;
   readonly reservation: AutomationBudgetReservationV1;
   readonly in_flight_authority?: readonly AutomationInFlightAuthorityV1[];
@@ -856,10 +973,11 @@ function commitUsage(
   paths: RunPaths,
   reservation: AutomationBudgetReservationV1,
   result: AutomationUsageResultV1,
+  observedAt: string,
   resolution: AutomationUsageEventV1['resolution'],
   inFlight: readonly AutomationInFlightAuthorityV1[],
 ): AutomationUsageCommitV1 {
-  const status = lockedStatus(repoRoot, paths, reservation.automation_run_id, result.observed_at);
+  const status = lockedStatus(repoRoot, paths, reservation.automation_run_id, observedAt);
   const eventPath = join(paths.events, `${reservation.reservation_sha256}.json`);
   if (existsSync(eventPath)) {
     // Replaying the same key charges once. A replay that claims a different
@@ -886,7 +1004,7 @@ function commitUsage(
     outcome: result.outcome,
     resolution,
     evidence_refs: result.evidence_refs,
-    observed_at: result.observed_at,
+    observed_at: observedAt,
   });
   if (!writeExclusive(eventPath, bytes(event), 'automation usage event')) {
     fail('automation_budget_store_conflict', 'automation usage event was created concurrently');
@@ -909,14 +1027,14 @@ function commitUsage(
     ledger_sha256: chainAutomationLedgerDigest(status.current.ledger_sha256, event.event_sha256),
     stop_receipt_sha256: null,
     previous_current_sha256: status.current.current_sha256,
-    updated_at: result.observed_at,
+    updated_at: observedAt,
   });
   writeAtomic(paths.current, bytes(next), 'automation budget current');
-  const refusal = exhaustionRefusal(status.budget, next, result.observed_at);
+  const refusal = exhaustionRefusal(status.budget, next, observedAt);
   if (refusal === null) {
     return Object.freeze({ event, current: next, stop_receipt: null });
   }
-  const stopped = persistStopReceipt(paths, status.budget, next, refusal, inFlight, result.observed_at);
+  const stopped = persistStopReceipt(paths, status.budget, next, refusal, inFlight, observedAt);
   return Object.freeze({ event, current: stopped.current, stop_receipt: stopped.receipt });
 }
 
@@ -924,11 +1042,13 @@ export function appendAutomationUsage(input: AppendAutomationUsageInput): Automa
   const repoRoot = resolve(input.repo_root);
   const reservation = validateAutomationReservation(input.reservation);
   const paths = runPaths(repoRoot, reservation.automation_run_id);
+  const observedAt = storeNow(input.clock);
   return withExclusiveDirectoryLock(paths.common, paths.lockRelative, () => commitUsage(
     repoRoot,
     paths,
     reservation,
     input,
+    observedAt,
     'observed',
     input.in_flight_authority ?? [],
   ), { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true });
@@ -939,7 +1059,7 @@ export type AutomationReconciliationResolution =
   | 'reconciled_reserved'
   | 'reconciled_not_started';
 
-export interface ReconcileAutomationReservationInput extends AutomationUsageResultV1 {
+export interface ReconcileAutomationReservationInput extends AutomationUsageResultV1, AutomationClockOption {
   readonly repo_root: string;
   readonly reservation: AutomationBudgetReservationV1;
   readonly resolution: AutomationReconciliationResolution;
@@ -991,8 +1111,9 @@ export function reconcileAutomationReservation(
       fail('automation_budget_store_invalid', 'a not-started reconciliation must charge nothing and must be proven by evidence');
     }
   }
+  const reconciledAt = storeNow(input.clock);
   return withExclusiveDirectoryLock(paths.common, paths.lockRelative, () => {
-    const record = {
+    const evidence = {
       protocol: 1,
       kind: 'repo-harness-automation-reconciliation',
       automation_run_id: reservation.automation_run_id,
@@ -1000,14 +1121,19 @@ export function reconcileAutomationReservation(
       resolution: input.resolution,
       reason: input.reason,
       evidence_refs: [...input.evidence_refs],
-      reconciled_at: input.observed_at,
     };
     const recordPath = join(paths.reconciliations, `${reservation.reservation_sha256}.json`);
-    const encoded = bytes(record);
-    if (!writeExclusive(recordPath, encoded, 'automation reconciliation') && readRaw(recordPath, 'automation reconciliation') !== encoded) {
-      fail('automation_budget_store_conflict', 'this reservation was already reconciled with different evidence');
+    if (!writeExclusive(recordPath, bytes({ ...evidence, reconciled_at: reconciledAt }), 'automation reconciliation')) {
+      // A replay lands at a different store time, so the evidence is compared
+      // rather than the bytes: the same reservation may only be reconciled with
+      // the same resolution, reason and evidence.
+      const stored = JSON.parse(readRaw(recordPath, 'automation reconciliation')) as Record<string, unknown>;
+      delete stored.reconciled_at;
+      if (canonicalAutomationJson(stored) !== canonicalAutomationJson(evidence)) {
+        fail('automation_budget_store_conflict', 'this reservation was already reconciled with different evidence');
+      }
     }
-    return commitUsage(repoRoot, paths, reservation, input, input.resolution, input.in_flight_authority ?? []);
+    return commitUsage(repoRoot, paths, reservation, input, reconciledAt, input.resolution, input.in_flight_authority ?? []);
   }, { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true });
 }
 

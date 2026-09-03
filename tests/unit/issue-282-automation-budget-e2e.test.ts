@@ -35,6 +35,7 @@ import {
 
 const ROOT = join(import.meta.dir, '..', '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
+const at = (iso: string) => () => new Date(iso);
 const hex = (seed: string): string => createHash('sha256').update(seed, 'utf8').digest('hex');
 const FIXTURES = new Set<string>();
 
@@ -137,13 +138,13 @@ interface ControllerTrace {
  * The controller shape: every side effect is preceded by a reservation, and a
  * typed refusal ends the run instead of being retried or downgraded.
  */
-function driveController(repo: string, budget: AutomationBudgetV1, rounds: number): ControllerTrace {
+function driveController(repo: string, budget: AutomationBudgetV1, rounds: number, startRound = 1): ControllerTrace {
   const claims: string[] = [];
   const dispatches: string[] = [];
-  for (let round = 1; round <= rounds; round += 1) {
+  for (let round = startRound; round < startRound + rounds; round += 1) {
     for (const operation of ['acquisition', 'dispatch'] as const) {
       const key = `${operation}-${round}`;
-      const at = `2026-09-03T00:${String(round).padStart(2, '0')}:0${operation === 'acquisition' ? 0 : 5}.000Z`;
+      const when = `2026-09-03T00:${String(round).padStart(2, '0')}:0${operation === 'acquisition' ? 0 : 5}.000Z`;
       const reserved = automationOperationReservation(operation, NO_TOKENS);
       let reservation;
       try {
@@ -158,7 +159,7 @@ function driveController(repo: string, budget: AutomationBudgetV1, rounds: numbe
           attempt: 1,
           provider: operation === 'dispatch' ? 'codex' : null,
           reserved,
-          reserved_at: at,
+          clock: at(when),
         });
       } catch (error) {
         if (!(error instanceof AutomationBudgetStoreError) || error.refusal === null) throw error;
@@ -180,7 +181,7 @@ function driveController(repo: string, budget: AutomationBudgetV1, rounds: numbe
         consumed: { ...reserved, provider_failures: 0 },
         outcome: 'progress',
         evidence_refs: [{ ref: `repo:step/${key}`, sha256: hex(key) }],
-        observed_at: at,
+        clock: at(when),
       });
     }
   }
@@ -203,7 +204,7 @@ describe('issue #282 — end-to-end stop before the next claim', () => {
     const before = foreignAuthorityDigest(repo);
 
     const budget = makeBudget('e2e');
-    publishAutomationBudget({ repo_root: repo, budget, published_at: '2026-09-03T00:00:01.000Z' });
+    publishAutomationBudget({ repo_root: repo, budget, clock: at('2026-09-03T00:00:01.000Z') });
 
     const trace = driveController(repo, budget, 10);
     expect(trace.claims).toHaveLength(3);
@@ -217,8 +218,10 @@ describe('issue #282 — end-to-end stop before the next claim', () => {
     expect(status.stop_receipt?.limit).toBe(3);
     expect(status.stop_receipt?.consumed).toBe(3);
 
-    // A second controller starting fresh is refused before its first claim.
-    const after = driveController(repo, budget, 1);
+    // A second controller starting fresh is refused before its first claim. It
+    // starts later on the wall clock: the store refuses a clock that runs
+    // backwards over its own records, so a fresh run cannot rewind time.
+    const after = driveController(repo, budget, 1, 20);
     expect(after.claims).toHaveLength(0);
     expect(after.stopped_before).toBe('acquisition');
     expect(after.stopped_because).toBe('budget_exhausted');
@@ -233,7 +236,7 @@ describe('issue #282 — end-to-end stop before the next claim', () => {
   test('the operator CLI projects the same stop receipt the board reads', () => {
     const repo = repoFixture();
     const budget = makeBudget('e2e-cli');
-    publishAutomationBudget({ repo_root: repo, budget, published_at: '2026-09-03T00:00:01.000Z' });
+    publishAutomationBudget({ repo_root: repo, budget, clock: at('2026-09-03T00:00:01.000Z') });
     driveController(repo, budget, 10);
 
     const observedAt = '2026-09-03T00:30:00.000Z';

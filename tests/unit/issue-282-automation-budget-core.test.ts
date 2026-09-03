@@ -134,7 +134,7 @@ describe('issue #282 — schema and digest binding', () => {
     expect(() => validateAutomationBudget({
       ...value,
       effective_limits: { ...value.effective_limits, max_successful_acquisitions: 99 },
-    })).toThrow(/digest does not bind/u);
+    })).toThrow(/is not the strictest value its authorities allow/u);
   });
 
   test('the same inputs always seal to the same budget digest', () => {

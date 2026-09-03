@@ -27,6 +27,7 @@ import {
 } from '../../src/effects/automation/budget-store';
 
 const ROOT = join(import.meta.dir, '..', '..');
+const at = (iso: string) => () => new Date(iso);
 const hex = (seed: string): string => createHash('sha256').update(seed, 'utf8').digest('hex');
 const FIXTURES = new Set<string>();
 
@@ -112,6 +113,8 @@ import {
 const [repo, runId, budgetSha, key, startAt] = process.argv.slice(2);
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 const reserved = automationOperationReservation('acquisition', { input_tokens: null, output_tokens: null, cost_micros: null });
+// One fixed instant for every worker: the store refuses a clock that runs
+// backwards over its own records, and racing processes have no ordering.
 
 function report(value) {
   process.stdout.write(JSON.stringify(value) + '\\n');
@@ -134,7 +137,7 @@ for (let attempt = 0; attempt < 400; attempt += 1) {
       attempt: 1,
       provider: null,
       reserved,
-      reserved_at: '2026-09-03T00:10:00.000Z',
+      clock: () => new Date('2026-09-03T00:10:00.000Z'),
     });
     appendAutomationUsage({
       repo_root: repo,
@@ -144,7 +147,7 @@ for (let attempt = 0; attempt < 400; attempt += 1) {
       consumed: reserved,
       outcome: 'progress',
       evidence_refs: [],
-      observed_at: '2026-09-03T00:10:01.000Z',
+      clock: () => new Date('2026-09-03T00:10:00.000Z'),
     });
     report({ outcome: 'granted', key, step_index: reservation.step_index });
   } catch (error) {
@@ -206,7 +209,7 @@ describe('issue #282 — concurrent controllers cannot reserve past one limit', 
   test('four processes racing one remaining acquisition charge exactly one', async () => {
     const repo = repoFixture();
     const budget = makeBudget('race-one', LIMITS);
-    publishAutomationBudget({ repo_root: repo, budget, published_at: '2026-09-03T00:00:01.000Z' });
+    publishAutomationBudget({ repo_root: repo, budget, clock: at('2026-09-03T00:00:01.000Z') });
 
     const reports = await race(repo, budget, ['op-a', 'op-b', 'op-c', 'op-d']);
     const granted = reports.filter((entry) => entry.outcome === 'granted');
@@ -227,7 +230,7 @@ describe('issue #282 — concurrent controllers cannot reserve past one limit', 
   test('concurrent reservations inside the limit never lose an append or reuse a step index', async () => {
     const repo = repoFixture();
     const budget = makeBudget('race-many', { ...LIMITS, max_successful_acquisitions: 4, max_agent_turns: 8 });
-    publishAutomationBudget({ repo_root: repo, budget, published_at: '2026-09-03T00:00:01.000Z' });
+    publishAutomationBudget({ repo_root: repo, budget, clock: at('2026-09-03T00:00:01.000Z') });
 
     const reports = await race(repo, budget, ['op-1', 'op-2', 'op-3', 'op-4']);
     expect(reports.filter((entry) => entry.outcome === 'granted')).toHaveLength(4);

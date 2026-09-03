@@ -100,13 +100,17 @@ export type AutomationBudgetState = 'active' | 'reconciliation_required' | 'budg
  * derived from. Every durable record -- a reservation, a usage event, a stop
  * receipt -- is create-once and fsynced before the projection is renamed, so
  * the projection can only ever be behind, never ahead. Each face names the
- * record kind whose durable truth the projection has not adopted yet.
+ * record kind whose durable truth the projection has not adopted yet;
+ * `unsealed_exhaustion` is the one face with no record of its own -- the
+ * consumption already on disk has reached a hard limit that no stop receipt
+ * seals yet.
  */
 export const AUTOMATION_CURRENT_DRIFTS = [
   'none',
   'unlisted_reservation',
   'unfolded_event',
   'unadopted_stop_receipt',
+  'unsealed_exhaustion',
 ] as const;
 
 export type AutomationCurrentDrift = typeof AUTOMATION_CURRENT_DRIFTS[number];
@@ -555,17 +559,33 @@ function isoAfter(from: string, seconds: number): string {
   return new Date(Date.parse(from) + (seconds * 1000)).toISOString().replace(/\.\d{3}Z$/u, '.000Z');
 }
 
-export function buildAutomationBudget(input: BuildAutomationBudgetInput): AutomationBudgetV1 {
-  const authorization = validateProgramAuthorization(input.authorization);
-  const support = validateAutomationMetricSupport(input.metric_support);
-  const createdAt = assertTimestamp(input.created_at, 'created_at');
-  const composition = composeAutomationLimits(authorization.budget, input.contract_limits);
-  assertMetricsEnforceable(composition.limits, support);
+export interface AutomationLimitDerivationResultV1 {
+  readonly limits: ProgramBudgetLimitV1;
+  readonly derivations: readonly AutomationLimitDerivationV1[];
+  readonly deadline_at: string;
+}
+
+/**
+ * The single derivation of every enforced number from the two authorities that
+ * may set one: the grant and the task contract. Both the builder and the
+ * validator call it, so a published budget's `effective_limits`,
+ * `limit_derivations` and `deadline_at` are recomputed rather than trusted --
+ * a self-consistent object with a raised limit is refused instead of enforced.
+ */
+export function deriveAutomationLimits(
+  authorization: ProgramAuthorizationV1,
+  contractLimits: AutomationContractLimitsV1 | null,
+  metricSupport: AutomationMetricSupportV1,
+  createdAt: string,
+): AutomationLimitDerivationResultV1 {
+  const composition = composeAutomationLimits(authorization.budget, contractLimits);
+  assertMetricsEnforceable(composition.limits, metricSupport);
   if (Date.parse(authorization.expires_at) <= Date.parse(createdAt)) {
     invalid('automation budget cannot be created after its authorization expires');
   }
   const wallDeadline = isoAfter(createdAt, composition.limits.max_wall_clock_seconds);
   const clampedByGrant = Date.parse(authorization.expires_at) < Date.parse(wallDeadline);
+  const grantSeconds = Math.max(1, Math.floor((Date.parse(authorization.expires_at) - Date.parse(createdAt)) / 1000));
   const deadlineAt = clampedByGrant
     ? new Date(Date.parse(authorization.expires_at)).toISOString().replace(/\.\d{3}Z$/u, '.000Z')
     : wallDeadline;
@@ -574,16 +594,24 @@ export function buildAutomationBudget(input: BuildAutomationBudgetInput): Automa
       ? Object.freeze({
         ...entry,
         selected_source: 'authorization_expiry' as const,
-        selected_value: Math.max(1, Math.floor((Date.parse(authorization.expires_at) - Date.parse(createdAt)) / 1000)),
+        selected_value: grantSeconds,
       })
       : entry
   ));
   const limits = clampedByGrant
-    ? Object.freeze({
-      ...composition.limits,
-      max_wall_clock_seconds: Math.max(1, Math.floor((Date.parse(authorization.expires_at) - Date.parse(createdAt)) / 1000)),
-    })
+    ? Object.freeze({ ...composition.limits, max_wall_clock_seconds: grantSeconds })
     : composition.limits;
+  return Object.freeze({ limits, derivations: Object.freeze(derivations), deadline_at: deadlineAt });
+}
+
+export function buildAutomationBudget(input: BuildAutomationBudgetInput): AutomationBudgetV1 {
+  const authorization = validateProgramAuthorization(input.authorization);
+  const support = validateAutomationMetricSupport(input.metric_support);
+  const createdAt = assertTimestamp(input.created_at, 'created_at');
+  const derived = deriveAutomationLimits(authorization, input.contract_limits ?? null, support, createdAt);
+  const deadlineAt = derived.deadline_at;
+  const derivations = derived.derivations;
+  const limits = derived.limits;
   const draft = {
     protocol: AUTOMATION_BUDGET_PROTOCOL,
     kind: AUTOMATION_BUDGET_KIND,
@@ -625,6 +653,26 @@ export function validateAutomationBudget(value: AutomationBudgetV1): AutomationB
   assertMetricsEnforceable(limits, support);
   if (!Array.isArray(value.limit_derivations) || value.limit_derivations.length !== AUTOMATION_ENFORCEMENT_ORDER.length) {
     invalid('automation budget must record one limit derivation per enforced metric');
+  }
+  // Every enforced number is re-derived from the grant and the task contract.
+  // The digest only proves the object is self-consistent; this proves the
+  // object is what those two authorities actually allow.
+  const derived = deriveAutomationLimits(
+    authorization,
+    value.contract_limits === null || value.contract_limits === undefined ? null : value.contract_limits,
+    support,
+    assertTimestamp(value.created_at, 'created_at'),
+  );
+  for (const field of Object.keys(derived.limits) as readonly (keyof ProgramBudgetLimitV1)[]) {
+    if (limits[field] !== derived.limits[field]) {
+      invalid(`automation budget effective_limits.${field} is not the strictest value its authorities allow`);
+    }
+  }
+  if (canonicalAutomationJson(value.limit_derivations) !== canonicalAutomationJson(derived.derivations)) {
+    invalid('automation budget limit_derivations do not match the derivation its authorities produce');
+  }
+  if (value.deadline_at !== derived.deadline_at) {
+    invalid('automation budget deadline_at is not the frozen deadline its authorities produce');
   }
   const budget: AutomationBudgetV1 = Object.freeze({
     protocol: AUTOMATION_BUDGET_PROTOCOL,
@@ -1061,7 +1109,9 @@ export type AutomationRefusalCode =
   | 'budget_exhausted'
   | 'reconciliation_required'
   | 'budget_expired'
-  | 'budget_limit_exceeded';
+  | 'budget_limit_exceeded'
+  /** The store clock moved backwards past a durable record; never emitted by the pure evaluator. */
+  | 'clock_regression';
 
 export interface AutomationBudgetRefusalV1 {
   readonly protocol: typeof AUTOMATION_BUDGET_PROTOCOL;
@@ -1302,6 +1352,7 @@ const REFUSAL_CODES: readonly AutomationRefusalCode[] = Object.freeze([
   'reconciliation_required',
   'budget_expired',
   'budget_limit_exceeded',
+  'clock_regression',
 ]);
 
 const IN_FLIGHT_AUTHORITY_KINDS: readonly AutomationInFlightAuthorityKind[] = Object.freeze([

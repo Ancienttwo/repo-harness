@@ -142,6 +142,9 @@ function attentionOwner(state: AutomationBudgetState): AutomationBudgetAttention
  */
 function durableState(input: ProjectAutomationBudgetSliceInput): AutomationBudgetState {
   if (input.stop_receipt !== null) return 'budget_exhausted';
+  // Consumption on disk has already reached a hard limit; the receipt that
+  // seals it is the only thing missing, so the run is stopped either way.
+  if (input.drift === 'unsealed_exhaustion') return 'budget_exhausted';
   if (input.drift !== 'none') return 'reconciliation_required';
   return input.current.state;
 }
