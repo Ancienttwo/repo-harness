@@ -110,21 +110,57 @@ message delivery receipt 與 process exit code 都不能結案(`assertAgentRunti
 兩個方向都封閉)。醒來的控制器重讀當前 offers 與 authorization,
 snapshot 已過期或空掉就是 no-op,仍算一次已送達的 wake。
 
-### 3.3 每個 Binding 一個 wake 指針
+### 3.3 offers 文檔是外部權威的產物,先證明再取用
+
+`recordEngineerOfferSnapshot` 收到的 `EngineerOffersV1` 是 scheduling 權威的產物,
+不是可信輸入。進 ledger 之前先過 `validateEngineerOffersDocument`(scheduling core 唯一的
+整份文檔校驗器,與 `validateEngineerOffer` 並列):封閉鍵集、每個 offer 與 exclusion 都合法且屬於本文檔、
+`snapshot_revision` 用相同 basis 重算。摘要蓋在陣列本身,所以改欄位、換順序、偽造 revision 都在這裡失敗。
+通過之後再打兩道 fence:文檔的 `repository_id` 必須等於本 worktree 解析出的註冊倉庫,
+每個 offer 的 `binding_id`/`binding_generation`/`engineer_contract_revision` 必須等於**當前** Binding——
+舊 Binding 世代收集的 snapshot 只會被拒絕,永遠不會被重新綁到當前 Binding 上。
+
+### 3.4 每個 Binding 一個 wake 指針
 
 `wakes/<sha256(engineer\0binding\0generation)>.json` 是該 Binding 的耐久 ledger:
 上一次消費的 offer 投影 + 唯一的 pending wake 指針 + coalescing 窗口。
 只有 empty→eligible 這個確切轉換會 arm wake;同一個 snapshot 重複觀測不寫盤;
-更新的 snapshot 只在舊 wake 尚未 start 時取代它(繼承原本的 `requested_at`/`coalesce_until`,
-所以窗口有界、不會被連續變更推著走);已 start 的 wake 不被取代,也不會開第二個並行 wake。
-被取代的 intent 靠 ledger fence 永遠 start 不了,因此沒有無限重試面:
-一次 wake 失敗後,除非 offers 再次從空轉為可用,不會自動重來(retry 屬於 attempt receipt 的權威)。
+任何換到另一個仍有 eligible work 的 snapshot 都算 due——包括 A→B 這種本來就 eligible 的變化——
+所以最新 revision 不會丟;更新的 snapshot 只在舊 wake 尚未 start 時取代它
+(繼承原本的 `requested_at`/`coalesce_until`,所以窗口有界、不會被連續變更推著走);
+已 start 的 wake 不被取代,也不會開第二個並行 wake。
+被取代的 intent 會在自己的鏈上寫入終態 `superseded`(只能從 `intent_persisted` 到達),
+不是留在 `intent_persisted` 讓 ledger 指針去解釋——因此每個 Binding 任何時刻只有一個非終態 wake,
+Board projection 不必讀 ledger 就與指針一致,重啟一個 superseded wake 是明確報錯而不是靜默無動作。
+沒有無限重試面:同一個 snapshot 的 idempotency key 固定,失敗後除非 offers 再次變化不會自動重來
+(retry 屬於 attempt receipt 的權威)。
 
-### 3.4 訂閱面在 effect 層
+### 3.5 wake 的線性化點只有一個
+
+wake ledger lock 與 per-effect lock 之前各自為政,supersession 與 start 之間有 TOCTOU:
+observer 讀完舊 effect 後放鎖,starter 可以在新 ledger 發佈前啟動舊 wake。
+現在**所有** wake 變更——arm/supersede、start、observe、controller-step receipt——
+都先取 per-Binding wake lock 再取 effect lock,鎖序全域單向 wake → effect;
+`assertWakeStartable` 在該鎖內讀 ledger,所以那次讀就是線性化點而不是提示。
+`startAgentRuntimeEffect` 靠無鎖 peek intent(write-once + fsync,不可變)決定要不要取 wake lock。
+
+跨權威的 fence(Binding、capability observation、authorization revision)不歸這把鎖管,
+它們可能在檢查通過之後、`effect_started` 落盤之前提交。所以 start 在 append 之後**再讀一次**同樣的 fence:
+不成立就寫 `observed_failure`(`binding_stale` / `capability_unsupported` / `authorization_stale`)並回傳 `action: null`。
+host action 只在 fence 於「落盤前」與「落盤後」都成立時才交出去。
+
+### 3.6 崩潰重放不會卡死一個 wake
+
+intent 先寫、ledger 後發佈,兩者之間崩潰時 `created_at` 用的是本 store 的時鐘,
+逐位元組比對會讓同一個 snapshot 的重放永久 conflict。重放比對的是**身分**而非位元組:
+同一把 idempotency key、同一個 endpoint fence、同一個 wake subject 即視為同一個 intent 並接續;
+其餘仍然 fail closed。
+
+### 3.7 訂閱面在 effect 層
 
 `listDueOfferWakes` / `subscribeToOfferWakes` 讀 ledger 與 effect current,
 由呼叫方提供時鐘、回傳 bounded 事件,非互動控制器不經 CLI 即可消費。
-ledger 用 atomic replace 發布,讀取不取鎖,因此鎖序永遠是 wake lock → effect lock 單向。
+ledger 用 atomic replace 發布,讀取不取鎖,因此不會反向持有 effect lock 去要 wake lock。
 
 ## 4. 歷史決策記錄(append-only)
 

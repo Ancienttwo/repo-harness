@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { createHash } from 'crypto';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { join, resolve } from 'path';
 
 import {
   agentRuntimeControlRef,
@@ -26,6 +27,7 @@ import {
   buildEngineerOfferCandidate,
   buildEngineerOffersDocument,
   projectWorkGraph,
+  validateEngineerOffersDocument,
   validateWorkGraph,
   type EngineerOfferCandidateResult,
   type EngineerOffersV1,
@@ -40,6 +42,7 @@ import { loadEngineerProfile } from '../../src/effects/engineers/profile-store';
 import { acquireScheduledEngineerTask } from '../../src/effects/engineers/scheduling-acquire';
 import {
   AgentRuntimeEffectStoreError,
+  listAgentRuntimeEffects,
   listDueOfferWakes,
   observeAgentRuntimeEffect,
   readAgentRuntimeEffectStatus,
@@ -54,6 +57,8 @@ import {
   bumpRepoHarnessAuthorizationRevision,
   repoHarnessRepoIdFor,
 } from '../../src/effects/repo-registry';
+import { canonicalAgentRuntimeCapabilityBytes } from '../../src/core/engineers/agent-runtime-effect';
+import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 
 const sourceRoot = process.cwd();
 const disposable: string[] = [];
@@ -71,6 +76,7 @@ interface Fixture {
   readonly repositoryId: string;
   readonly bindingId: string;
   readonly bindingGeneration: number;
+  readonly engineerContractRevision: string;
   readonly capabilitySha256: string;
 }
 
@@ -154,6 +160,7 @@ function fixture(
     repositoryId,
     bindingId: binding.binding_id,
     bindingGeneration: binding.binding_generation,
+    engineerContractRevision: binding.engineer_contract_revision,
     capabilitySha256: observed.capability_sha256,
   });
 }
@@ -197,7 +204,7 @@ function candidate(fx: Fixture, options: OfferOptions = {}): EngineerOfferCandid
   return buildEngineerOfferCandidate({
     graph,
     work_package: graph.work_packages[0]!,
-    engineer: { engineer_id: engineerId, capability_id: capabilityId, engineer_contract_revision: digest, max_active_claims: 1 },
+    engineer: { engineer_id: engineerId, capability_id: capabilityId, engineer_contract_revision: fx.engineerContractRevision, max_active_claims: 1 },
     binding: { state: 'active', binding_id: fx.bindingId, binding_generation: fx.bindingGeneration },
     fleet_offer: {
       execution_readiness: 'execution_ready',
@@ -368,7 +375,7 @@ describe('issue #281 durable task-offer wake protocol', () => {
 });
 
 describe('issue #281 pure offer-transition observer', () => {
-  const fx = () => ({ repositoryId: 'repo_0123456789abcdef', bindingId: bindingOne, bindingGeneration: 1 } as unknown as Fixture);
+  const fx = () => ({ repositoryId: 'repo_0123456789abcdef', bindingId: bindingOne, bindingGeneration: 1, engineerContractRevision: digest } as unknown as Fixture);
 
   test('an empty to eligible transition is due with new_eligible_offer', () => {
     const base = fx();
@@ -396,14 +403,34 @@ describe('issue #281 pure offer-transition observer', () => {
     expect(decision).toMatchObject({ due: true, wake_reason: 'concurrency_released' });
   });
 
-  test('the same snapshot, an already eligible Engineer and an empty snapshot are never due', () => {
+  test('the same snapshot and an empty snapshot are never due', () => {
     const base = fx();
     const eligible = buildAgentRuntimeOfferWakeSnapshot(offers(base));
     expect(decideAgentRuntimeOfferWake(eligible, eligible)).toMatchObject({ due: false, cause: 'unchanged_snapshot' });
-    const newer = buildAgentRuntimeOfferWakeSnapshot(offers(base, { taskRevision: '3'.repeat(64) }));
-    expect(decideAgentRuntimeOfferWake(eligible, newer)).toMatchObject({ due: false, cause: 'already_eligible' });
     expect(decideAgentRuntimeOfferWake(eligible, buildAgentRuntimeOfferWakeSnapshot(emptyOffers(base))))
       .toMatchObject({ due: false, cause: 'no_eligible_offers' });
+  });
+
+  test('an eligible snapshot moving to another eligible snapshot is due and never loses the newest revision', () => {
+    const base = fx();
+    const a = buildAgentRuntimeOfferWakeSnapshot(offers(base));
+    const b = buildAgentRuntimeOfferWakeSnapshot(offers(base, { taskRevision: '3'.repeat(64) }));
+    expect(decideAgentRuntimeOfferWake(a, b)).toMatchObject({ due: true, snapshot_revision: b.snapshot_revision });
+  });
+
+  test('a Work Package that becomes eligible beside an already eligible one names its own release cause', () => {
+    const base = fx();
+    const previous = buildAgentRuntimeOfferWakeSnapshot(buildEngineerOffersDocument({
+      repository_id: base.repositoryId, engineer_id: engineerId, lane: 'engineering-v2',
+      work_graph_revision: null,
+      candidates: [candidate(base, { workPackageId: 'wp-a' }), candidate(base, { workPackageId: 'wp-b', eligible: false, blocker: 'dependency' })],
+    }));
+    const current = buildAgentRuntimeOfferWakeSnapshot(buildEngineerOffersDocument({
+      repository_id: base.repositoryId, engineer_id: engineerId, lane: 'engineering-v2',
+      work_graph_revision: null,
+      candidates: [candidate(base, { workPackageId: 'wp-a' }), candidate(base, { workPackageId: 'wp-b' })],
+    }));
+    expect(decideAgentRuntimeOfferWake(previous, current)).toMatchObject({ due: true, wake_reason: 'dependency_unblocked' });
   });
 
   test('a snapshot for another Engineer or repository is refused instead of diffed', () => {
@@ -450,7 +477,7 @@ describe('issue #281 durable wake store', () => {
     expect(second.ledger.pending!.snapshot_revision).toBe(newer.snapshot_revision);
     expect(() => startAgentRuntimeEffect({ repo_root: fx.repoRoot, effect_id: first.status!.intent.effect_id, started_at: '2026-09-03T10:06:00.000Z', env: fx.env }))
       .toThrow(AgentRuntimeEffectStoreError);
-    expect(readAgentRuntimeEffectStatus(fx.repoRoot, first.status!.intent.effect_id).current.state).toBe('intent_persisted');
+    expect(readAgentRuntimeEffectStatus(fx.repoRoot, first.status!.intent.effect_id).current.state).toBe('superseded');
     expect(startAgentRuntimeEffect({ repo_root: fx.repoRoot, effect_id: second.status!.intent.effect_id, started_at: '2026-09-03T10:06:00.000Z', env: fx.env }).action)
       .not.toBeNull();
   });
@@ -769,5 +796,240 @@ describe('issue #281 wake state is observational in the Engineering board', () =
     });
     const delivered = collectEngineeringBoard({ repo_root: fx.repoRoot, env: fx.env });
     expect(delivered.overlay.engineers[0]!.runtime_effects.wake).toEqual({ pending: 0, delivered: 1, failed: 0, reconciliation_required: 0 });
+  });
+});
+
+describe('issue #281 the offers document is proved before anything is derived from it', () => {
+  test('a forged snapshot revision or an edited offer is refused', () => {
+    const fx = fixture();
+    const document = offers(fx);
+    expect(() => record(fx, { ...document, snapshot_revision: `sha256:${'9'.repeat(64)}` }, '2026-09-03T10:04:00.000Z'))
+      .toThrow(AgentRuntimeEffectStoreError);
+    expect(() => record(fx, { ...document, offers: [{ ...document.offers[0]!, priority: 99 }] }, '2026-09-03T10:04:00.000Z'))
+      .toThrow(AgentRuntimeEffectStoreError);
+    expect(() => record(fx, { ...document, exclusions: [{ repository_id: fx.repositoryId, work_package_id: 'wp-z', engineer_id: engineerId, blockers: ['binding_inactive'] }] }, '2026-09-03T10:04:00.000Z'))
+      .toThrow(AgentRuntimeEffectStoreError);
+  });
+
+  test('a self-consistent snapshot for another repository never arms a wake', () => {
+    const fx = fixture();
+    const foreign = { ...fx, repositoryId: 'repo_fedcba9876543210' } as Fixture;
+    expect(() => record(fx, offers(foreign), '2026-09-03T10:04:00.000Z')).toThrow(AgentRuntimeEffectStoreError);
+  });
+
+  test('a snapshot collected under a previous Binding is never re-bound to the current one', () => {
+    const fx = fixture();
+    record(fx, emptyOffers(fx), '2026-09-03T10:03:00.000Z');
+    const collected = offers(fx);
+    bind(fx.repoRoot, 'codex-app-thread', bindingTwo);
+    let failure: unknown;
+    try { record(fx, collected, '2026-09-03T10:04:00.000Z'); } catch (error) { failure = error; }
+    expect(failure).toBeInstanceOf(AgentRuntimeEffectStoreError);
+    expect((failure as AgentRuntimeEffectStoreError).code).toBe('agent_runtime_effect_binding_stale');
+    expect(listAgentRuntimeEffects(fx.repoRoot, engineerId)).toHaveLength(0);
+  });
+
+  test('a document produced by the offer authority passes its own whole-document validator', () => {
+    const fx = fixture();
+    expect(validateEngineerOffersDocument(offers(fx))).toEqual(offers(fx));
+    expect(validateEngineerOffersDocument(emptyOffers(fx))).toEqual(emptyOffers(fx));
+  });
+});
+
+describe('issue #281 wake mutations linearize on the per-Binding wake lock', () => {
+  function armed(fx: Fixture) {
+    record(fx, emptyOffers(fx), '2026-09-03T10:03:00.000Z');
+    return record(fx, offers(fx), '2026-09-03T10:04:00.000Z');
+  }
+
+  test('a superseding observer and an old-wake starter never leave two startable wakes', async () => {
+    for (let round = 0; round < 3; round += 1) {
+      const fx = fixture();
+      const wake = armed(fx);
+      const oldEffectId = wake.status!.intent.effect_id;
+      const newer = offers(fx, { taskRevision: `${round + 3}`.repeat(64) });
+      const barrier = join(fx.repoRoot, `barrier-${round}`);
+      const storePath = resolve(sourceRoot, 'src/effects/engineers/agent-runtime-effect-store.ts');
+
+      const worker = (body: string) => {
+        const file = join(fx.repoRoot, `worker-${round}-${body.length}.ts`);
+        writeFileSync(file, `
+          import { existsSync } from 'fs';
+          import { recordEngineerOfferSnapshot, startAgentRuntimeEffect } from ${JSON.stringify(storePath)};
+          const [repoRoot, home, barrier, effectId, offersJson] = process.argv.slice(2);
+          const env = { ...process.env, REPO_HARNESS_HOME: home };
+          const deadline = Date.now() + 20000;
+          while (!existsSync(barrier) && Date.now() < deadline) { /* spin to the shared start line */ }
+          try { ${body} } catch (error) { process.stdout.write('ERROR:' + (error && (error as { code?: string }).code) + '\\n'); process.exit(0); }
+        `);
+        return Bun.spawn(['bun', file, fx.repoRoot, fx.env.REPO_HARNESS_HOME!, barrier, oldEffectId, JSON.stringify(newer)], { stdout: 'pipe', stderr: 'pipe' });
+      };
+
+      const observer = worker(`
+        const result = recordEngineerOfferSnapshot({
+          repo_root: repoRoot, offers: JSON.parse(offersJson), observed_at: '2026-09-03T10:05:00.000Z',
+          expected_capability_sha256: ${JSON.stringify(fx.capabilitySha256)},
+          wake_policy: { debounce_ms: 0, polling_fallback_enabled: false }, env,
+        });
+        process.stdout.write('OBSERVER:' + result.outcome + '\\n');
+      `);
+      const starter = worker(`
+        const result = startAgentRuntimeEffect({ repo_root: repoRoot, effect_id: effectId, started_at: '2026-09-03T10:05:00.000Z', env });
+        process.stdout.write('STARTER:' + (result.action === null ? 'no-action' : 'action') + '\\n');
+      `);
+      writeFileSync(barrier, '');
+      const [observerOut, starterOut] = await Promise.all([
+        new Response(observer.stdout).text(),
+        new Response(starter.stdout).text(),
+      ]);
+      await Promise.all([observer.exited, starter.exited]);
+
+      const wakes = listAgentRuntimeEffects(fx.repoRoot, engineerId).filter((status) => status.intent.operation === 'wake_for_offer');
+      const startable = wakes.filter((status) => status.current.state === 'intent_persisted');
+      const live = wakes.filter((status) => status.current.state === 'intent_persisted' || status.current.state === 'effect_started');
+      const ledger = readOfferWakeLedger(fx.repoRoot, { engineer_id: engineerId, binding_id: fx.bindingId, binding_generation: fx.bindingGeneration })!;
+      const detail = `round=${round} observer=${observerOut.trim()} starter=${starterOut.trim()} states=${wakes.map((status) => status.current.state).join(',')}`;
+      expect(`${detail} startable=${startable.length}`).toBe(`${detail} startable=${startable.length <= 1 ? startable.length : 'many'}`);
+      expect(startable.length).toBeLessThanOrEqual(1);
+      expect(live).toHaveLength(1);
+      expect(ledger.pending!.effect_id).toBe(live[0]!.intent.effect_id);
+    }
+  }, 120_000);
+});
+
+describe('issue #281 crash boundaries replay without stranding a wake', () => {
+  test('a crash between the intent write and the ledger publish replays the same snapshot', () => {
+    const fx = fixture();
+    record(fx, emptyOffers(fx), '2026-09-03T10:03:00.000Z');
+    const document = offers(fx);
+    expect(() => recordEngineerOfferSnapshot({
+      repo_root: fx.repoRoot, offers: document, observed_at: '2026-09-03T10:04:00.000Z',
+      expected_capability_sha256: fx.capabilitySha256, wake_policy: { debounce_ms: 0, polling_fallback_enabled: false },
+      env: fx.env, crash_hook: (boundary) => { if (boundary === 'after_intent_persisted') throw new Error('crash'); },
+    })).toThrow('crash');
+    const ledgerAfterCrash = readOfferWakeLedger(fx.repoRoot, { engineer_id: engineerId, binding_id: fx.bindingId, binding_generation: fx.bindingGeneration })!;
+    expect(ledgerAfterCrash.pending).toBeNull();
+
+    const replay = record(fx, document, '2026-09-03T10:04:30.000Z');
+    expect(replay.outcome).toBe('wake_prepared');
+    expect(replay.ledger.pending!.effect_id).toBe(replay.status!.intent.effect_id);
+    expect(record(fx, document, '2026-09-03T10:05:00.000Z').outcome).toBe('unchanged');
+  });
+
+  test('a crash after the ledger publish leaves the snapshot idempotent', () => {
+    const fx = fixture();
+    record(fx, emptyOffers(fx), '2026-09-03T10:03:00.000Z');
+    const document = offers(fx);
+    expect(() => recordEngineerOfferSnapshot({
+      repo_root: fx.repoRoot, offers: document, observed_at: '2026-09-03T10:04:00.000Z',
+      expected_capability_sha256: fx.capabilitySha256, wake_policy: { debounce_ms: 0, polling_fallback_enabled: false },
+      env: fx.env, crash_hook: (boundary) => { if (boundary === 'after_ledger_published') throw new Error('crash'); },
+    })).toThrow('crash');
+    const replay = record(fx, document, '2026-09-03T10:04:30.000Z');
+    expect(replay.outcome).toBe('unchanged');
+    expect(replay.status!.current.state).toBe('intent_persisted');
+  });
+
+  test('a crash while the start observation lands repairs to one started wake and no second action', () => {
+    const fx = fixture();
+    record(fx, emptyOffers(fx), '2026-09-03T10:03:00.000Z');
+    const wake = record(fx, offers(fx), '2026-09-03T10:04:00.000Z');
+    expect(() => startAgentRuntimeEffect({
+      repo_root: fx.repoRoot, effect_id: wake.status!.intent.effect_id, started_at: '2026-09-03T10:04:10.000Z', env: fx.env,
+      crash_hook: (boundary) => { if (boundary === 'after_observation_fsync') throw new Error('crash'); },
+    })).toThrow('crash');
+    expect(readAgentRuntimeEffectStatus(fx.repoRoot, wake.status!.intent.effect_id).current.state).toBe('effect_started');
+    const repeated = startAgentRuntimeEffect({ repo_root: fx.repoRoot, effect_id: wake.status!.intent.effect_id, started_at: '2026-09-03T10:04:20.000Z', env: fx.env });
+    expect(repeated.action).toBeNull();
+    expect(repeated.current.state).toBe('reconciliation_required');
+  });
+
+  test('a crash after the controller-step receipt is written replays idempotently', () => {
+    const fx = fixture();
+    record(fx, emptyOffers(fx), '2026-09-03T10:03:00.000Z');
+    const wake = record(fx, offers(fx), '2026-09-03T10:04:00.000Z');
+    const start = startAgentRuntimeEffect({ repo_root: fx.repoRoot, effect_id: wake.status!.intent.effect_id, started_at: '2026-09-03T10:04:10.000Z', env: fx.env });
+    const receiptInput = {
+      repo_root: fx.repoRoot, effect_id: wake.status!.intent.effect_id, control_ref: start.action!.control_ref,
+      observed_snapshot_revision: wake.ledger.observed.snapshot_revision, observed_at: '2026-09-03T10:05:00.000Z',
+    };
+    expect(() => recordAgentRuntimeControllerStep({ ...receiptInput, crash_hook: () => { throw new Error('crash'); } })).toThrow('crash');
+    expect(recordAgentRuntimeControllerStep(receiptInput).effect_id).toBe(wake.status!.intent.effect_id);
+    expect(observeAgentRuntimeEffect({
+      repo_root: fx.repoRoot, effect_id: wake.status!.intent.effect_id,
+      adapter: { adapter_kind: 'codex-app-thread', outcome: 'accepted', process_exit_code: null, process_signal: null },
+      observed_at: '2026-09-03T10:06:00.000Z', receipt_wait_exhausted: false,
+    }).current.state).toBe('observed_success');
+  });
+});
+
+describe('issue #281 fences that commit after the check still refuse the Host action', () => {
+  test('an authorization change committed between the check and the durable start yields no action', () => {
+    const fx = fixture();
+    record(fx, emptyOffers(fx), '2026-09-03T10:03:00.000Z');
+    const wake = record(fx, offers(fx), '2026-09-03T10:04:00.000Z');
+    let armed = false;
+    const started = startAgentRuntimeEffect({
+      repo_root: fx.repoRoot, effect_id: wake.status!.intent.effect_id, started_at: '2026-09-03T10:04:10.000Z', env: fx.env,
+      crash_hook: (boundary) => {
+        if (boundary === 'after_current_fsync' && !armed) { armed = true; bumpRepoHarnessAuthorizationRevision(fx.env); }
+      },
+    });
+    expect(started.action).toBeNull();
+    expect(started.current.state).toBe('observed_failure');
+    expect(started.observation.failure_class).toBe('authorization_stale');
+  });
+
+  test('a Binding rotation committed between the check and the durable start yields no action', () => {
+    const fx = fixture();
+    record(fx, emptyOffers(fx), '2026-09-03T10:03:00.000Z');
+    const wake = record(fx, offers(fx), '2026-09-03T10:04:00.000Z');
+    let armed = false;
+    const started = startAgentRuntimeEffect({
+      repo_root: fx.repoRoot, effect_id: wake.status!.intent.effect_id, started_at: '2026-09-03T10:04:10.000Z', env: fx.env,
+      crash_hook: (boundary) => {
+        if (boundary === 'after_current_fsync' && !armed) { armed = true; bind(fx.repoRoot, 'codex-app-thread', bindingTwo); }
+      },
+    });
+    expect(started.action).toBeNull();
+    expect(started.observation.failure_class).toBe('binding_stale');
+  });
+});
+
+describe('issue #281 pre-upgrade capability observations fail closed as unreadable', () => {
+  test('a capability file without wake_for_offer reads as agent_runtime_effect_unreadable', () => {
+    const fx = fixture();
+    const legacy = {
+      protocol: 2, kind: 'repo-harness-agent-runtime-capability-observation', adapter_kind: 'codex-app-thread',
+      host_id: 'local', operations: { notify_inbox: 'supported' }, evidence_refs: [],
+      observed_at: '2026-09-03T10:02:00.000Z', capability_sha256: `sha256:${'7'.repeat(64)}`,
+    };
+    const key = createHash('sha256').update(`codex-app-thread\0local`).digest('hex');
+    const target = join(resolveGitCommonDirectory(fx.repoRoot), 'repo-harness/agent-runtime-effects/v2/capabilities', `${key}.json`);
+    writeFileSync(target, JSON.stringify(legacy));
+    let failure: unknown;
+    try { record(fx, offers(fx), '2026-09-03T10:04:00.000Z'); } catch (error) { failure = error; }
+    expect(failure).toBeInstanceOf(AgentRuntimeEffectStoreError);
+    expect((failure as AgentRuntimeEffectStoreError).code).toBe('agent_runtime_effect_unreadable');
+  });
+
+  test('a re-recorded capability observation carries both operations and is canonical', () => {
+    const fx = fixture();
+    const observed = capability(fx.repoRoot, 'codex-app-thread');
+    expect(observed.operations).toEqual({ notify_inbox: 'supported', wake_for_offer: 'supported' });
+    expect(canonicalAgentRuntimeCapabilityBytes(observed)).toContain('wake_for_offer');
+  });
+});
+
+describe('issue #281 the Board never counts a superseded wake as pending', () => {
+  test('supersession leaves exactly one pending wake in the overlay projection', () => {
+    const fx = fixture();
+    record(fx, emptyOffers(fx), '2026-09-03T10:03:00.000Z');
+    const first = record(fx, offers(fx), '2026-09-03T10:04:00.000Z');
+    const second = record(fx, offers(fx, { taskRevision: '3'.repeat(64) }), '2026-09-03T10:05:00.000Z');
+    expect(second.outcome).toBe('wake_coalesced');
+    expect(readAgentRuntimeEffectStatus(fx.repoRoot, first.status!.intent.effect_id).current.state).toBe('superseded');
+    const board = collectEngineeringBoard({ repo_root: fx.repoRoot, env: fx.env });
+    expect(board.overlay.engineers[0]!.runtime_effects.wake).toEqual({ pending: 1, delivered: 0, failed: 0, reconciliation_required: 0 });
   });
 });

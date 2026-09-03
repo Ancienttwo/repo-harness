@@ -584,6 +584,77 @@ export function validateEngineerOffer(value: unknown): EngineerOfferV1 {
   return Object.freeze({ ...basis, offer_revision: revision });
 }
 
+/** The whole-document authority check. `validateEngineerOffer` proves one
+ * offer; this proves the document a consumer was handed is the exact document
+ * the offer authority produced: closed key set, every offer and exclusion
+ * valid and owned by this document, and a `snapshot_revision` that recomputes
+ * over the given arrays. Order is covered because the digest is taken over the
+ * arrays as given, so a reordered or edited document fails here rather than
+ * being trusted downstream. */
+export function validateEngineerOffersDocument(value: unknown): EngineerOffersV1 {
+  const input = record(value, 'Engineer offers document');
+  exact(input, [
+    'protocol', 'kind', 'repository_id', 'engineer_id', 'lane',
+    'work_graph_revision', 'snapshot_revision', 'offers', 'exclusions',
+  ], 'Engineer offers document');
+  if (input.protocol !== ENGINEER_OFFER_PROTOCOL || input.kind !== ENGINEER_OFFERS_KIND) {
+    invalid('Engineer offers document protocol or kind is invalid');
+  }
+  if (input.lane !== 'generic-v1' && input.lane !== 'engineering-v2' && input.lane !== 'unclassified') {
+    invalid('Engineer offers document lane is invalid');
+  }
+  if (input.work_graph_revision !== null) string(input.work_graph_revision, 'work_graph_revision', DIGEST);
+  if (!Array.isArray(input.offers) || !Array.isArray(input.exclusions)) invalid('Engineer offers document collections are invalid');
+  const repositoryId = string(input.repository_id, 'repository_id', REPOSITORY_ID);
+  const engineerId = string(input.engineer_id, 'engineer_id', ENGINEER_ID);
+  const offers = (input.offers as readonly unknown[]).map((entry) => {
+    const offer = validateEngineerOffer(entry);
+    if (offer.repository_id !== repositoryId || offer.engineer_id !== engineerId) {
+      invalid('Engineer offer does not belong to this offers document');
+    }
+    if (input.work_graph_revision !== null && offer.work_graph_revision !== input.work_graph_revision) {
+      invalid('Engineer offer names another work graph revision');
+    }
+    return offer;
+  });
+  const exclusions = (input.exclusions as readonly unknown[]).map((entry) => {
+    const item = record(entry, 'exclusion');
+    exact(item, ['repository_id', 'work_package_id', 'engineer_id', 'blockers'], 'exclusion');
+    if (!Array.isArray(item.blockers)) invalid('exclusion.blockers is invalid');
+    const blockers = (item.blockers as readonly unknown[]).map((code) => {
+      if (!['profile_capability_mismatch', 'binding_inactive', 'fleet_offer_unavailable', 'dependency_not_ready',
+        'dependency_authority_unavailable', 'concurrency_unavailable', 'active_claim_limit'].includes(String(code))) {
+        invalid('exclusion.blockers contains an invalid code');
+      }
+      return code as EngineerOfferBlockerCode;
+    });
+    if (new Set(blockers).size !== blockers.length) invalid('exclusion.blockers repeats a code');
+    if (string(item.repository_id, 'exclusion.repository_id', REPOSITORY_ID) !== repositoryId
+      || string(item.engineer_id, 'exclusion.engineer_id', ENGINEER_ID) !== engineerId) {
+      invalid('exclusion does not belong to this offers document');
+    }
+    return Object.freeze({
+      repository_id: repositoryId,
+      work_package_id: string(item.work_package_id, 'exclusion.work_package_id', WORK_PACKAGE_ID),
+      engineer_id: engineerId,
+      blockers: Object.freeze(blockers),
+    });
+  });
+  const basis = {
+    protocol: ENGINEER_OFFER_PROTOCOL,
+    kind: ENGINEER_OFFERS_KIND,
+    repository_id: repositoryId,
+    engineer_id: engineerId,
+    lane: input.lane as WorkGraphLane | 'unclassified',
+    work_graph_revision: input.work_graph_revision as string | null,
+    offers,
+    exclusions,
+  };
+  const revision = string(input.snapshot_revision, 'snapshot_revision', DIGEST);
+  if (revision !== engineerSha256(canonicalEngineerJson(basis))) invalid('Engineer offers snapshot revision is invalid');
+  return Object.freeze({ ...basis, offers: Object.freeze(offers), exclusions: Object.freeze(exclusions), snapshot_revision: revision });
+}
+
 export function buildEngineerOffersDocument(input: {
   readonly repository_id: string;
   readonly engineer_id: string;

@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260903-0737-issue-281-task-offer-wake.review.md
 > **Last Updated**: 2026-09-03 07:37
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:37e902b052ee580af405acb585158816567c288895f6e92f512519d0541c795c`
+> **Substantive Change SHA256**: `sha256:63a63b42f28a769c02462e98cf87918c4038818d6c1d817e949c28c2f17464fc`
 
 ## Design Decisions
 
@@ -23,16 +23,47 @@
   by `recordAgentRuntimeControllerStep`. `assertAgentRuntimeReceiptKindForOperation` closes the pairing
   in both directions. `observed_snapshot_revision` records what the woken controller actually re-read,
   which may legitimately differ from the wake's frozen snapshot.
+- Offer-snapshot authority (round 1): the incoming `EngineerOffersV1` is another authority's product and
+  is now re-proved before anything is derived from it. `validateEngineerOffersDocument` lives in the
+  scheduling core beside `validateEngineerOffer` as the single whole-document authority: closed key set,
+  every offer and exclusion valid and owned by the document, and `snapshot_revision` recomputed over the
+  arrays as given (so an edit, a reorder or a forged revision fails there). The store then fences the
+  document to the registered repository for this worktree and to the exact current Binding, so a snapshot
+  collected under a previous Binding generation or contract revision is refused rather than re-bound.
+- Linearization (round 1): the wake ledger lock and the per-effect lock had no common order, so a
+  superseding observer and an old-wake starter could interleave. Every wake mutation -- arm/supersede,
+  start, observe, controller-step receipt -- now takes the per-Binding wake lock before the per-effect
+  lock, making the lock order one-way everywhere. `startAgentRuntimeEffect` decides which lock to take
+  from an unlocked peek at the intent, which is safe because the intent is written once with O_EXCL and
+  fsynced before any observation exists. `assertWakeStartable` reads the ledger inside that lock, so the
+  read is the linearization point rather than a hint.
+- Cross-authority fences (round 1): the Binding, capability observation and authorization revision live
+  outside these locks and can commit between the check and the durable `effect_started`. Rather than
+  reach across authorities for a lock, the start re-reads the same fences after the append and, when one
+  moved, records `observed_failure` (`binding_stale` / `capability_unsupported` / new
+  `authorization_stale`) and returns `action: null`. The Host action is admitted only if every fence held
+  both immediately before and immediately after the start became durable.
 - Coalescing: the durable per-Binding ledger keeps one pending wake pointer plus a window
   (`requested_at`, `coalesce_until`). A due decision while the pending wake is still `intent_persisted`
   replaces the pointer and inherits the original window, so a flapping repository cannot slide the
   window forward; a started wake yields `no_wake`/`wake_in_flight` instead of a second concurrent wake.
   A non-due observation updates only `observed` and never drops the pointer, which is why an
   empty snapshot between two eligible ones still coalesces instead of restarting the window.
-- Supersession has no `stopped` transition: `intent_persisted -> stopped` is not in the shared
-  transition table and adding it would change the message state machine too. The ledger fence in
-  `assertWakeStartable` makes a superseded intent permanently unstartable, which is the fail-closed
-  outcome without touching the shared table.
+- Supersession is terminal (round 1): a superseded intent now moves to a new terminal `superseded` state,
+  reachable only from `intent_persisted`. Leaving it at `intent_persisted` made the Board count two
+  pending wakes for one Binding and forced every reader to consult the ledger to know an intent was dead.
+  `superseded` is a wake-only outcome in practice, carries no receipt or failure evidence, and starting
+  such an effect fails loudly with `agent_runtime_effect_wake_superseded` instead of silently returning
+  no action. The ledger pointer fence is kept as the second guard.
+- A→B transitions (round 1): `decideAgentRuntimeOfferWake` no longer returns `already_eligible`. Any move
+  to a different snapshot that still has eligible work is due, so an already-eligible Engineer whose offer
+  set changes still supersedes the pending wake and the newest revision is never lost. The reason is read
+  from the previous blockers of the highest-priority newly eligible Work Package, falling back to the
+  highest-priority eligible one.
+- Crash replay (round 1): `created_at` for a wake intent is this store's own clock, so a crash between the
+  intent write and the ledger publish would make a byte comparison reject the replay of the same snapshot
+  forever. The replay path now reconciles on identity -- same idempotency key, endpoint fence and wake
+  subject -- and still fails closed on anything else.
 - Subscription seam: `listDueOfferWakes` plus `subscribeToOfferWakes` (caller-driven `poll(now)`,
   in-memory per-handle dedupe on `effect_id:state`). No timers, no CLI, deterministic under test.
   The ledger is published by atomic replace so reads take no lock, which keeps the lock order
@@ -56,9 +87,13 @@
   field silently meant `notify_inbox`, a second authority for a datum the returned capability
   observation already carries per operation. The MCP `engineer_runtime_effect_capability` payload now
   exposes the full matrix instead.
-- Recorded capability observations from before this change fail closed on read: the operations map is a
-  closed exact-key set and its digest is part of `capability_sha256`. Re-record capability with both
-  operations; this is runtime evidence under the Git common directory, not durable history.
+- Recorded capability observations from before this change fail closed on read as
+  `agent_runtime_effect_unreadable`: the operations map is a closed exact-key set and its digest is part
+  of `capability_sha256`. The store read previously leaked the core protocol code
+  (`agent_runtime_effect_invalid`) through `mapped`; a file that exists on disk but no longer parses under
+  the current contract is a store read failure, so that read now reports `unreadable` and a test asserts
+  it from a real pre-upgrade file. Re-record capability with both operations; this is runtime evidence
+  under the Git common directory, not durable history.
 
 ## Tradeoffs Considered
 
@@ -76,6 +111,10 @@
 - An unstarted wake whose snapshot went empty stays pending and startable. That is deliberate — the
   awakened controller re-reads offers and no-ops — but it means the board can show a pending wake for
   work that has already gone away until the next eligible transition supersedes it.
+- Now that an A→B eligible transition is due, a repository whose offer set keeps changing while the
+  Engineer is already awake arms a new wake per changed snapshot once the previous one is terminal. The
+  coalescing window bounds how fast a wake becomes startable, not how many snapshots arm one; if that
+  proves noisy in the controller (#279), the window should move from the pending record to the ledger.
 
 ## Evidence Links
 

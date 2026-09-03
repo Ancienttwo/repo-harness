@@ -10,7 +10,7 @@ import {
   messageNullableString,
   messageRequiredString,
 } from '../messages/mechanics';
-import type { EngineerOfferBlockerCode, EngineerOffersV1 } from './scheduling';
+import { validateEngineerOffersDocument, type EngineerOfferBlockerCode, type EngineerOffersV1 } from './scheduling';
 
 export const AGENT_RUNTIME_EFFECT_PROTOCOL = 2 as const;
 export const AGENT_RUNTIME_CAPABILITY_KIND = 'repo-harness-agent-runtime-capability-observation' as const;
@@ -34,8 +34,8 @@ export const AGENT_RUNTIME_OPERATIONS: readonly AgentRuntimeOperation[] = Object
  * owner extends the closed enum instead of opening the reason field. */
 export type AgentRuntimeOfferWakeReason = 'new_eligible_offer' | 'dependency_unblocked' | 'concurrency_released' | 'retry_due';
 export type AgentRuntimeCapabilityStatus = 'supported' | 'unsupported' | 'unavailable' | 'unverifiable';
-export type AgentRuntimeEffectState = 'intent_persisted' | 'effect_started' | 'observed_success' | 'observed_failure' | 'reconciliation_required' | 'stopped';
-export type AgentRuntimeFailureClass = 'none' | 'binding_stale' | 'claim_stale' | 'capability_unsupported' | 'adapter_unavailable' | 'receipt_missing' | 'receipt_mismatch' | 'unknown';
+export type AgentRuntimeEffectState = 'intent_persisted' | 'effect_started' | 'observed_success' | 'observed_failure' | 'reconciliation_required' | 'stopped' | 'superseded';
+export type AgentRuntimeFailureClass = 'none' | 'binding_stale' | 'claim_stale' | 'capability_unsupported' | 'adapter_unavailable' | 'authorization_stale' | 'receipt_missing' | 'receipt_mismatch' | 'unknown';
 export type AgentRuntimeReceiptKind = 'task_message_delivery_receipt' | 'module_message_delivery_receipt' | 'controller_step_receipt';
 export type AgentRuntimeAdapterOutcome = 'accepted' | 'unavailable' | 'unsupported' | 'failed' | 'unknown';
 
@@ -218,7 +218,7 @@ export type AgentRuntimeOfferWakeDecisionV2 =
     snapshot_revision: string;
     authorization_revision: number;
   }>
-  | Readonly<{ due: false; cause: 'no_eligible_offers' | 'unchanged_snapshot' | 'already_eligible' }>;
+  | Readonly<{ due: false; cause: 'no_eligible_offers' | 'unchanged_snapshot' }>;
 
 export type AgentRuntimeEffectErrorCode = 'agent_runtime_effect_invalid' | 'agent_runtime_effect_transition_invalid';
 export class AgentRuntimeEffectError extends Error {
@@ -248,10 +248,11 @@ function capabilityStatus(value: unknown): AgentRuntimeCapabilityStatus {
   if (value !== 'supported' && value !== 'unsupported' && value !== 'unavailable' && value !== 'unverifiable') invalid('capability status is invalid'); return value;
 }
 function effectState(value: unknown): AgentRuntimeEffectState {
-  if (value !== 'intent_persisted' && value !== 'effect_started' && value !== 'observed_success' && value !== 'observed_failure' && value !== 'reconciliation_required' && value !== 'stopped') invalid('state is invalid'); return value;
+  const allowed: readonly unknown[] = ['intent_persisted', 'effect_started', 'observed_success', 'observed_failure', 'reconciliation_required', 'stopped', 'superseded'];
+  if (!allowed.includes(value)) invalid('state is invalid'); return value as AgentRuntimeEffectState;
 }
 function failureClass(value: unknown): AgentRuntimeFailureClass {
-  const allowed: readonly unknown[] = ['none', 'binding_stale', 'claim_stale', 'capability_unsupported', 'adapter_unavailable', 'receipt_missing', 'receipt_mismatch', 'unknown'];
+  const allowed: readonly unknown[] = ['none', 'binding_stale', 'claim_stale', 'capability_unsupported', 'adapter_unavailable', 'authorization_stale', 'receipt_missing', 'receipt_mismatch', 'unknown'];
   if (!allowed.includes(value)) invalid('failure_class is invalid'); return value as AgentRuntimeFailureClass;
 }
 function adapterOutcome(value: unknown): AgentRuntimeAdapterOutcome {
@@ -400,7 +401,7 @@ export function buildAgentRuntimeEffectObservation(input: Omit<AgentRuntimeEffec
   if (state === 'observed_success' && (receiptKind === null || failure !== 'none')) invalid('observed_success requires one exact receipt and no failure');
   if (state === 'observed_failure' && failure === 'none') invalid('observed_failure requires failure_class');
   if (state === 'reconciliation_required' && failure !== 'unknown' && failure !== 'receipt_missing') invalid('reconciliation_required requires unknown or receipt_missing');
-  if ((state === 'intent_persisted' || state === 'effect_started') && (receiptKind !== null || failure !== 'none')) invalid(`${state} cannot claim receipt or failure evidence`);
+  if ((state === 'intent_persisted' || state === 'effect_started' || state === 'superseded') && (receiptKind !== null || failure !== 'none')) invalid(`${state} cannot claim receipt or failure evidence`);
   const effectId = sha(input.effect_id, 'effect_id'); const intentSha = sha(input.intent_sha256, 'intent_sha256'); const sequence = integer(input.sequence, 'sequence', 0); assertMessageTimestamp(input.observed_at, 'observed_at', invalid);
   const previous = input.previous_observation_sha256 === null ? null : sha(input.previous_observation_sha256, 'previous_observation_sha256'); if ((sequence === 0) !== (previous === null)) invalid('observation predecessor does not match sequence');
   const basis = Object.freeze({ protocol: AGENT_RUNTIME_EFFECT_PROTOCOL, kind: AGENT_RUNTIME_EFFECT_OBSERVATION_KIND, effect_id: effectId, intent_sha256: intentSha, sequence, state, adapter, receipt_kind: receiptKind, receipt_sha256: receiptSha, failure_class: failure, observed_at: input.observed_at, previous_observation_sha256: previous });
@@ -414,7 +415,11 @@ export function validateAgentRuntimeEffectObservation(value: unknown): AgentRunt
 }
 export function canonicalAgentRuntimeEffectObservationBytes(value: AgentRuntimeEffectObservationV2): string { return canonicalMessageBytes(validateAgentRuntimeEffectObservation(value) as unknown as Readonly<Record<string, unknown>>); }
 
-const LEGAL_NEXT: Readonly<Record<AgentRuntimeEffectState, readonly AgentRuntimeEffectState[]>> = Object.freeze({ intent_persisted: ['effect_started'], effect_started: ['observed_success', 'observed_failure', 'reconciliation_required', 'stopped'], reconciliation_required: ['observed_success', 'observed_failure', 'stopped'], observed_success: [], observed_failure: [], stopped: [] });
+/** `superseded` is terminal and reachable only from `intent_persisted`: a wake
+ * that a newer offer snapshot replaced before any Host action ran. It closes
+ * the effect so no reader has to consult the ledger to know the intent is
+ * dead, and it is never reachable once an action has been admitted. */
+const LEGAL_NEXT: Readonly<Record<AgentRuntimeEffectState, readonly AgentRuntimeEffectState[]>> = Object.freeze({ intent_persisted: ['effect_started', 'superseded'], effect_started: ['observed_success', 'observed_failure', 'reconciliation_required', 'stopped'], reconciliation_required: ['observed_success', 'observed_failure', 'stopped'], observed_success: [], observed_failure: [], stopped: [], superseded: [] });
 export function assertAgentRuntimeEffectTransition(previous: AgentRuntimeEffectObservationV2, next: AgentRuntimeEffectObservationV2): void {
   const before = validateAgentRuntimeEffectObservation(previous); const after = validateAgentRuntimeEffectObservation(next);
   if (after.effect_id !== before.effect_id || after.intent_sha256 !== before.intent_sha256 || after.adapter.adapter_kind !== before.adapter.adapter_kind || after.sequence !== before.sequence + 1 || after.previous_observation_sha256 !== before.observation_sha256 || !LEGAL_NEXT[before.state].includes(after.state)) transitionInvalid(`illegal Agent Runtime effect transition: ${before.state} -> ${after.state}`);
@@ -471,17 +476,18 @@ export function canonicalAgentRuntimeControllerStepReceiptBytes(value: AgentRunt
   return canonicalMessageBytes(validateAgentRuntimeControllerStepReceipt(value) as unknown as Readonly<Record<string, unknown>>);
 }
 
-export function buildAgentRuntimeOfferWakeSnapshot(offers: EngineerOffersV1): AgentRuntimeOfferWakeSnapshotV2 {
-  const repository = repositoryId(offers.repository_id, 'offers.repository_id'); const engineerName = engineer(offers.engineer_id, 'offers.engineer_id');
-  const snapshotRevision = sha(offers.snapshot_revision, 'offers.snapshot_revision');
-  if (!Array.isArray(offers.offers) || !Array.isArray(offers.exclusions)) invalid('offers document is invalid');
+/** Every wake decision starts here, and this is the only door: the document is
+ * re-proved against the scheduling authority's own whole-document validator
+ * before a single field is read, so a forged, edited, reordered or foreign
+ * snapshot can never reach the ledger. */
+export function buildAgentRuntimeOfferWakeSnapshot(offersValue: EngineerOffersV1): AgentRuntimeOfferWakeSnapshotV2 {
+  const offers = validateEngineerOffersDocument(offersValue);
   const revisions = new Set(offers.offers.map((offer) => offer.authorization_revision));
   if (revisions.size > 1) invalid('offers document mixes authorization revisions');
-  for (const offer of offers.offers) {
-    if (offer.repository_id !== repository || offer.engineer_id !== engineerName) invalid('offer does not belong to this offers document');
-  }
   return Object.freeze({
-    repository_id: repository, engineer_id: engineerName, snapshot_revision: snapshotRevision,
+    repository_id: repositoryId(offers.repository_id, 'offers.repository_id'),
+    engineer_id: engineer(offers.engineer_id, 'offers.engineer_id'),
+    snapshot_revision: sha(offers.snapshot_revision, 'offers.snapshot_revision'),
     authorization_revision: offers.offers.length === 0 ? null : integer(offers.offers[0]!.authorization_revision, 'offers.authorization_revision', 0),
     eligible_work_package_ids: Object.freeze(offers.offers.map((offer) => workPackageId(offer.work_package_id, 'offer.work_package_id'))),
     blocked: Object.freeze(offers.exclusions.map((exclusion) => Object.freeze({
@@ -508,11 +514,14 @@ export function validateAgentRuntimeOfferWakeSnapshot(value: unknown): AgentRunt
   });
 }
 
-/** The wake reason is read from the previous blockers of the highest-priority
- * newly eligible Work Package. Dependency is inspected before concurrency
- * because a dependency release is the upstream cause when both cleared in the
- * same pass; the order is fixed so the same pair of snapshots always yields
- * the same reason. */
+/** Any move to a different snapshot that still has eligible work is due, so an
+ * already-eligible Engineer whose offer set changes still supersedes the
+ * pending wake and the newest revision is never lost. The reason is read from
+ * the previous blockers of the highest-priority Work Package that is newly
+ * eligible, falling back to the highest-priority eligible one. Dependency is
+ * inspected before concurrency because a dependency release is the upstream
+ * cause when both cleared in the same pass; the order is fixed so the same
+ * pair of snapshots always yields the same reason. */
 export function decideAgentRuntimeOfferWake(previous: AgentRuntimeOfferWakeSnapshotV2 | null, currentValue: AgentRuntimeOfferWakeSnapshotV2): AgentRuntimeOfferWakeDecisionV2 {
   const current = validateAgentRuntimeOfferWakeSnapshot(currentValue);
   const before = previous === null ? null : validateAgentRuntimeOfferWakeSnapshot(previous);
@@ -521,8 +530,8 @@ export function decideAgentRuntimeOfferWake(previous: AgentRuntimeOfferWakeSnaps
   }
   if (current.eligible_work_package_ids.length === 0) return Object.freeze({ due: false, cause: 'no_eligible_offers' });
   if (before && before.snapshot_revision === current.snapshot_revision) return Object.freeze({ due: false, cause: 'unchanged_snapshot' });
-  if (before && before.eligible_work_package_ids.length > 0) return Object.freeze({ due: false, cause: 'already_eligible' });
-  const lead = current.eligible_work_package_ids[0]!;
+  const newlyEligible = current.eligible_work_package_ids.filter((id) => !(before?.eligible_work_package_ids ?? []).includes(id));
+  const lead = newlyEligible[0] ?? current.eligible_work_package_ids[0]!;
   const priorBlockers = before?.blocked.find((entry) => entry.work_package_id === lead)?.blockers ?? [];
   const reason: AgentRuntimeOfferWakeReason = priorBlockers.includes('dependency_not_ready') || priorBlockers.includes('dependency_authority_unavailable')
     ? 'dependency_unblocked'
