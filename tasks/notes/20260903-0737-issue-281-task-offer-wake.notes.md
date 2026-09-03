@@ -1,5 +1,7 @@
 # Implementation Notes: issue-281-task-offer-wake
 
+> **Substantive Change SHA256**: `sha256:a82b0fab8f64172b34b96a0bf75697bf6411a16a74aee7920db3ff7c6899787b`
+
 > **Status**: Active
 > **Plan**: plans/plan-20260903-0737-issue-281-task-offer-wake.md
 > **Contract**: tasks/contracts/20260903-0737-issue-281-task-offer-wake.contract.md
