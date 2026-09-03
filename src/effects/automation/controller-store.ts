@@ -95,7 +95,14 @@ export function startAutomationControllerRun(input: { readonly repo_root: string
   return withExclusiveDirectoryLock(value.common, `${ROOT}/locks/engineers/${fileKey(run.principal.engineer_id)}.lock`, () => withExclusiveDirectoryLock(value.common, value.lock, () => {
     prepare(value); const bytes = Buffer.from(`${canonicalAutomationControllerRunBytes(run)}\n`, 'utf8'); immutable(value.definition, bytes);
     const pointer = join(value.root, 'engineers', `${fileKey(run.principal.engineer_id)}.json`);
-    if (existsSync(pointer)) { const active = regular(pointer).toString('utf8').trim(); if (active !== run.run_id) fail('automation_controller_conflict', `Engineer already has controller run ${active}`); } else atomic(pointer, Buffer.from(`${run.run_id}\n`, 'utf8'));
+    if (existsSync(pointer)) {
+      const active = regular(pointer).toString('utf8').trim();
+      if (active !== run.run_id) {
+        const prior = readAutomationControllerStatus(repoRoot, active);
+        if (!['blocked', 'budget_exhausted', 'completed', 'stopped', 'reconciliation_required'].includes(prior.current.state)) fail('automation_controller_conflict', `Engineer already has controller run ${active}`);
+        atomic(pointer, Buffer.from(`${run.run_id}\n`, 'utf8'));
+      }
+    } else atomic(pointer, Buffer.from(`${run.run_id}\n`, 'utf8'));
     const result = appendLocked(value, run, { repo_root: repoRoot, run_id: run.run_id, expected_current_sha256: null, idempotency_key: input.idempotency_key, operation: 'start', attention_owner: 'none', blocker: null, retry_at: null, receipt: { operation: 'start', outcome: 'created', work_package_id: null, task_id: null, claim_id: null, lease_generation: null, work_envelope_sha256: null, dispatch_id: null, runtime_effect_id: null, evidence_refs: [] }, observed_at: input.observed_at, crash_hook: input.crash_hook });
     return Object.freeze({ run, ...result });
   }, { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true }), { reclaimStaleEmptyDirectory: true, reclaimStaleOwner: true });

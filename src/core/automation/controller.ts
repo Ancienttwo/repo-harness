@@ -107,6 +107,7 @@ export interface AutomationControllerCurrentV1 {
   readonly attention_owner: AutomationControllerAttentionOwner;
   readonly blocker: string | null;
   readonly retry_at: string | null;
+  readonly consecutive_transient_failures: number;
   readonly current_event_sha256: string;
   readonly previous_current_sha256: string | null;
   readonly current_sha256: string;
@@ -167,7 +168,7 @@ const TRANSITIONS: Readonly<Record<AutomationControllerState | 'absent', Readonl
   absent: Object.freeze({ start: 'created' }),
   created: Object.freeze({ observe: 'observing', request_stop: 'stopping', require_reconciliation: 'reconciliation_required' }),
   observing: Object.freeze({ begin_acquire: 'acquiring', no_offer: 'completed', block: 'blocked', exhaust_budget: 'budget_exhausted', request_stop: 'stopping', require_reconciliation: 'reconciliation_required' }),
-  acquiring: Object.freeze({ acquired: 'executing', retry_wait: 'observing', block: 'blocked', exhaust_budget: 'budget_exhausted', request_stop: 'stopping', require_reconciliation: 'reconciliation_required' }),
+  acquiring: Object.freeze({ acquired: 'executing', retry_wait: 'observing', block: 'blocked', exhaust_budget: 'budget_exhausted', require_reconciliation: 'reconciliation_required' }),
   executing: Object.freeze({ begin_dispatch: 'executing', dispatch_started: 'waiting_for_evidence', exhaust_budget: 'budget_exhausted', request_stop: 'stopping', require_reconciliation: 'reconciliation_required' }),
   waiting_for_evidence: Object.freeze({ outcome_observed: 'observing', retry_wait: 'observing', complete: 'completed', block: 'blocked', exhaust_budget: 'budget_exhausted', request_stop: 'stopping', require_reconciliation: 'reconciliation_required' }),
   stopping: Object.freeze({ stop: 'stopped', require_reconciliation: 'reconciliation_required' }),
@@ -209,15 +210,15 @@ export function validateAutomationControllerEvent(value: unknown): AutomationCon
 
 export function foldAutomationControllerCurrent(run: AutomationControllerRunV1, previous: AutomationControllerCurrentV1 | null, event: AutomationControllerEventV1): AutomationControllerCurrentV1 {
   if (event.run_id !== run.run_id || event.revision !== (previous?.revision ?? 0) + 1 || event.previous_state !== (previous?.state ?? null) || event.previous_event_sha256 !== (previous?.current_event_sha256 ?? null)) transitionInvalid('event does not extend exact controller current');
-  const basis = Object.freeze({ protocol: AUTOMATION_CONTROLLER_PROTOCOL, kind: AUTOMATION_CONTROLLER_CURRENT_KIND, run_id: run.run_id, run_sha256: run.run_sha256, revision: event.revision, state: event.next_state, attention_owner: event.attention_owner, blocker: event.blocker, retry_at: event.retry_at, current_event_sha256: event.event_sha256, previous_current_sha256: previous?.current_sha256 ?? null });
+  const basis = Object.freeze({ protocol: AUTOMATION_CONTROLLER_PROTOCOL, kind: AUTOMATION_CONTROLLER_CURRENT_KIND, run_id: run.run_id, run_sha256: run.run_sha256, revision: event.revision, state: event.next_state, attention_owner: event.attention_owner, blocker: event.blocker, retry_at: event.retry_at, consecutive_transient_failures: event.operation === 'retry_wait' ? (previous?.consecutive_transient_failures ?? 0) + 1 : event.operation === 'observe' || event.operation === 'begin_acquire' || event.operation === 'begin_dispatch' ? (previous?.consecutive_transient_failures ?? 0) : 0, current_event_sha256: event.event_sha256, previous_current_sha256: previous?.current_sha256 ?? null });
   return Object.freeze({ ...basis, current_sha256: canonicalMessageDigest(basis) });
 }
 
 export function validateAutomationControllerCurrent(value: unknown): AutomationControllerCurrentV1 {
   const row = object(value, 'controller current');
-  exact(row, ['protocol', 'kind', 'run_id', 'run_sha256', 'revision', 'state', 'attention_owner', 'blocker', 'retry_at', 'current_event_sha256', 'previous_current_sha256', 'current_sha256'], 'controller current');
+  exact(row, ['protocol', 'kind', 'run_id', 'run_sha256', 'revision', 'state', 'attention_owner', 'blocker', 'retry_at', 'consecutive_transient_failures', 'current_event_sha256', 'previous_current_sha256', 'current_sha256'], 'controller current');
   if (row.protocol !== AUTOMATION_CONTROLLER_PROTOCOL || row.kind !== AUTOMATION_CONTROLLER_CURRENT_KIND || !STATES.includes(row.state as AutomationControllerState) || !ATTENTION_OWNERS.includes(row.attention_owner as AutomationControllerAttentionOwner)) invalid('controller current protocol, kind or enum is invalid');
-  const basis = { protocol: AUTOMATION_CONTROLLER_PROTOCOL, kind: AUTOMATION_CONTROLLER_CURRENT_KIND, run_id: string(row.run_id, 'run_id', RUN_ID), run_sha256: sha(row.run_sha256, 'run_sha256'), revision: integer(row.revision, 'revision', 1, Number.MAX_SAFE_INTEGER), state: row.state as AutomationControllerState, attention_owner: row.attention_owner as AutomationControllerAttentionOwner, blocker: row.blocker === null ? null : string(row.blocker, 'blocker', undefined, 4096), retry_at: row.retry_at === null ? null : timestamp(row.retry_at, 'retry_at'), current_event_sha256: sha(row.current_event_sha256, 'current_event_sha256'), previous_current_sha256: row.previous_current_sha256 === null ? null : sha(row.previous_current_sha256, 'previous_current_sha256') };
+  const basis = { protocol: AUTOMATION_CONTROLLER_PROTOCOL, kind: AUTOMATION_CONTROLLER_CURRENT_KIND, run_id: string(row.run_id, 'run_id', RUN_ID), run_sha256: sha(row.run_sha256, 'run_sha256'), revision: integer(row.revision, 'revision', 1, Number.MAX_SAFE_INTEGER), state: row.state as AutomationControllerState, attention_owner: row.attention_owner as AutomationControllerAttentionOwner, blocker: row.blocker === null ? null : string(row.blocker, 'blocker', undefined, 4096), retry_at: row.retry_at === null ? null : timestamp(row.retry_at, 'retry_at'), consecutive_transient_failures: integer(row.consecutive_transient_failures, 'consecutive_transient_failures', 0, Number.MAX_SAFE_INTEGER), current_event_sha256: sha(row.current_event_sha256, 'current_event_sha256'), previous_current_sha256: row.previous_current_sha256 === null ? null : sha(row.previous_current_sha256, 'previous_current_sha256') };
   const built = Object.freeze({ ...basis, current_sha256: canonicalMessageDigest(basis) });
   if (row.current_sha256 !== built.current_sha256 || canonicalMessageBytes(row) !== canonicalMessageBytes(built as unknown as Record<string, unknown>)) invalid('controller current digest is stale');
   return built;

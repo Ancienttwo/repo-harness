@@ -1,4 +1,5 @@
 import { canonicalMessageDigest } from '../../core/messages/mechanics';
+import { buildAutomationControllerRun, type AutomationControllerPolicyV1 } from '../../core/automation/controller';
 import { workEnvelopeSha256, type EngineerPrincipalV1 } from '../../core/engineers/principal-claim';
 import type { AutomationControllerCurrentV1, AutomationControllerOperation, AutomationControllerStepReceiptV1 } from '../../core/automation/controller';
 import {
@@ -10,6 +11,7 @@ import {
 import {
   appendAutomationControllerEvent,
   readAutomationControllerStatus,
+  startAutomationControllerRun,
 } from './controller-store';
 import { resolveEngineerPrincipal } from '../engineers/principal';
 import { acquireNextScheduledEngineerTask, type AcquireNextScheduledEngineerTaskResult } from '../engineers/scheduling-acquire-next';
@@ -43,6 +45,15 @@ export interface AutomationControllerRunDependencies {
   readonly appendUsage: typeof appendAutomationUsage;
 }
 
+export interface StartBoundedAutomationControllerInput {
+  readonly repo_root: string;
+  readonly automation_run_id: string;
+  readonly authorization_id: string;
+  readonly idempotency_key: string;
+  readonly policy: AutomationControllerPolicyV1;
+  readonly protected_paths: readonly string[];
+}
+
 const defaultDependencies: AutomationControllerRunDependencies = {
   now: () => new Date(),
   resolvePrincipal: resolveEngineerPrincipal,
@@ -54,13 +65,41 @@ const defaultDependencies: AutomationControllerRunDependencies = {
   appendUsage: appendAutomationUsage,
 };
 
-function exactPrincipal(expected: ReturnType<typeof readAutomationControllerStatus>['run']['principal'], observed: EngineerPrincipalV1, authorizationRevision: number): void {
-  if (observed.repository_id === '' || observed.engineer_id !== expected.engineer_id
+function exactPrincipal(repositoryId: string, expected: ReturnType<typeof readAutomationControllerStatus>['run']['principal'], observed: EngineerPrincipalV1, authorizationRevision: number): void {
+  if (observed.repository_id !== repositoryId || observed.engineer_id !== expected.engineer_id
     || observed.binding_id !== expected.binding_id || observed.binding_generation !== expected.binding_generation
     || observed.engineer_contract_revision !== expected.engineer_contract_revision
     || observed.auth_subject !== expected.authorization_id || authorizationRevision !== expected.authorization_revision) {
     throw new Error('controller principal, Binding or authorization revision is stale');
   }
+}
+
+export function startBoundedAutomationController(input: StartBoundedAutomationControllerInput, overrides: Partial<AutomationControllerRunDependencies> = {}) {
+  const deps = { ...defaultDependencies, ...overrides };
+  const principal = deps.resolvePrincipal({ repo_root: input.repo_root, authorization_id: input.authorization_id });
+  const authorizationRevision = deps.authorizationRevision();
+  const budget = deps.readBudget(input.repo_root, input.automation_run_id).budget;
+  if (!budget.unattended || budget.automation_run_id !== input.automation_run_id || budget.repository_id !== principal.repository_id || budget.engineer_id !== principal.engineer_id) throw new Error('automation budget does not authorize this exact unattended Engineer controller');
+  const observedAt = deps.now().toISOString();
+  const run = buildAutomationControllerRun({ run_id: input.automation_run_id, repository_id: principal.repository_id, principal: { authorization_id: input.authorization_id, engineer_id: principal.engineer_id, binding_id: principal.binding_id, binding_generation: principal.binding_generation, engineer_contract_revision: principal.engineer_contract_revision, authorization_revision: authorizationRevision }, budget_sha256: budget.budget_sha256, policy: input.policy, protected_paths: input.protected_paths, created_at: observedAt });
+  return startAutomationControllerRun({ repo_root: input.repo_root, run, idempotency_key: input.idempotency_key, observed_at: observedAt });
+}
+
+export function stopAutomationController(repoRoot: string, runId: string, idempotencyKey: string, overrides: Partial<AutomationControllerRunDependencies> = {}) {
+  const deps = { ...defaultDependencies, ...overrides }; const status = readAutomationControllerStatus(repoRoot, runId); let current = status.current;
+  if (['blocked', 'budget_exhausted', 'completed', 'stopped', 'reconciliation_required'].includes(current.state)) return status;
+  const observedAt = deps.now().toISOString();
+  if (current.state !== 'stopping') current = append(repoRoot, runId, current, `${idempotencyKey}:request`, 'request_stop', observedAt, receipt('request_stop', 'requested'));
+  current = append(repoRoot, runId, current, `${idempotencyKey}:stopped`, 'stop', observedAt, receipt('stop', 'stopped'));
+  return Object.freeze({ run: status.run, current });
+}
+
+export function reconcileAutomationController(repoRoot: string, runId: string, idempotencyKey: string, evidenceRefs: readonly string[], overrides: Partial<AutomationControllerRunDependencies> = {}) {
+  const deps = { ...defaultDependencies, ...overrides }; const status = readAutomationControllerStatus(repoRoot, runId); const current = status.current;
+  if (current.state !== 'acquiring' && current.state !== 'waiting_for_evidence' && current.state !== 'executing') return status;
+  if (evidenceRefs.length === 0) throw new Error('controller reconciliation requires exact evidence');
+  const next = append(repoRoot, runId, current, `${idempotencyKey}:reconcile`, 'require_reconciliation', deps.now().toISOString(), receipt('require_reconciliation', 'evidence_requires_operator', { evidence_refs: evidenceRefs }), 'operator', 'controller_reconciliation_required');
+  return Object.freeze({ run: status.run, current: next });
 }
 
 function evidence(runId: string, sha256: string) { return Object.freeze([{ ref: `controller-run:${runId}`, sha256 }]); }
@@ -78,17 +117,24 @@ function budgetRefusal(repoRoot: string, runId: string, current: AutomationContr
   return append(repoRoot, runId, current, `${key}:budget-refusal`, operation, observedAt, receipt(operation, error.code, { evidence_refs: [`automation-budget:${error.code}`] }), exhausted ? 'user' : 'operator', error.refusal?.refusal_code ?? error.code);
 }
 
+function transientAcquisition(result: AcquireNextScheduledEngineerTaskResult): boolean {
+  return !result.ok && (result.error === 'engineer_offer_stale' || result.error === 'engineer_concurrency_unavailable'
+    || (result.error === 'fleet_acquire_failed' && result.fleet?.ok === false && result.fleet.error === 'fleet_acquire_failed'
+      && result.fleet.fleet?.ok === false && (result.fleet.fleet.error === 'offer_stale' || result.fleet.fleet.error === 'claim_failed')));
+}
+
 export function stepAutomationController(input: StepAutomationControllerInput, overrides: Partial<AutomationControllerRunDependencies> = {}): AutomationControllerStepResult {
   const deps = { ...defaultDependencies, ...overrides }; const status = readAutomationControllerStatus(input.repo_root, input.run_id); const run = status.run;
   const startedAt = deps.now().getTime(); let current = status.current; let steps = 0; let acquisition: AcquireNextScheduledEngineerTaskResult | null = null; let dispatched: DelegatedRunStatus | null = null;
   const observedPrincipal = deps.resolvePrincipal({ repo_root: input.repo_root, authorization_id: run.principal.authorization_id });
-  exactPrincipal(run.principal, observedPrincipal, deps.authorizationRevision());
+  exactPrincipal(run.repository_id, run.principal, observedPrincipal, deps.authorizationRevision());
   const budget = deps.readBudget(input.repo_root, run.run_id);
   if (budget.budget.budget_sha256 !== run.budget_sha256 || !budget.budget.unattended || budget.budget.engineer_id !== run.principal.engineer_id) throw new Error('controller budget does not authorize this exact unattended Engineer run');
   const room = () => steps < run.policy.maximum_steps_per_invocation && deps.now().getTime() - startedAt < run.policy.maximum_duration_ms;
   const at = () => deps.now().toISOString();
 
   if (current.state === 'created' && room()) { current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:observe`, 'observe', at(), receipt('observe', 'ready')); steps += 1; }
+  if (current.state === 'observing' && current.retry_at !== null && Date.parse(current.retry_at) > deps.now().getTime()) return Object.freeze({ run_id: run.run_id, current, acquisition, dispatch: dispatched, steps_executed: steps });
   if (current.state === 'acquiring' || current.state === 'waiting_for_evidence') {
     current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:uncertain`, 'require_reconciliation', at(), receipt('require_reconciliation', 'unresolved_side_effect'), 'operator', 'controller_reconciliation_required'); steps += 1;
     return Object.freeze({ run_id: run.run_id, current, acquisition, dispatch: dispatched, steps_executed: steps });
@@ -106,7 +152,15 @@ export function stepAutomationController(input: StepAutomationControllerInput, o
       const envelopeSha = workEnvelopeSha256(acquisition.envelope);
       current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:acquired`, 'acquired', at(), receipt('acquired', 'acquired', { work_package_id: acquisition.offer.work_package_id, task_id: acquisition.envelope.task_id, claim_id: acquisition.envelope.claim_id, lease_generation: acquisition.envelope.generation, work_envelope_sha256: envelopeSha, evidence_refs: [acquisition.receipt.receipt_sha256, usage.event.event_sha256] })); steps += 1;
     } else if (acquisition.error === 'engineer_no_eligible_offer') {
-      current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:no-offer`, 'retry_wait', at(), receipt('retry_wait', 'no_eligible_offer', { evidence_refs: [usage.event.event_sha256] }), 'none', null, new Date(deps.now().getTime() + run.policy.initial_backoff_ms).toISOString()); steps += 1;
+      current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:no-offer`, 'no_offer', at(), receipt('no_offer', 'no_eligible_offer', { evidence_refs: [usage.event.event_sha256] })); steps += 1;
+    } else if (transientAcquisition(acquisition)) {
+      const nextAttempt = current.consecutive_transient_failures + 1;
+      if (nextAttempt > run.policy.maximum_transient_retries) current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:retry-exhausted`, 'block', at(), receipt('block', 'transient_retry_exhausted', { evidence_refs: [usage.event.event_sha256] }), 'operator', 'transient_retry_exhausted');
+      else {
+        const delay = Math.min(run.policy.maximum_backoff_ms, run.policy.initial_backoff_ms * (2 ** (nextAttempt - 1)));
+        current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:retry-${nextAttempt}`, 'retry_wait', at(), receipt('retry_wait', acquisition.error, { evidence_refs: [usage.event.event_sha256] }), 'none', null, new Date(deps.now().getTime() + delay).toISOString());
+      }
+      steps += 1;
     } else {
       current = append(input.repo_root, run.run_id, current, `${input.idempotency_key}:acquire-failed`, 'require_reconciliation', at(), receipt('require_reconciliation', acquisition.error, { evidence_refs: [usage.event.event_sha256] }), 'operator', acquisition.error); steps += 1;
     }

@@ -6,7 +6,7 @@ import { spawnSync } from 'child_process';
 
 import { buildAutomationControllerRun } from '../../src/core/automation/controller';
 import { startAutomationControllerRun } from '../../src/effects/automation/controller-store';
-import { stepAutomationController } from '../../src/effects/automation/controller-run';
+import { stepAutomationController, stopAutomationController } from '../../src/effects/automation/controller-run';
 
 const SHA = `sha256:${'a'.repeat(64)}`;
 const RUN_ID = `sha256:${'b'.repeat(64)}`;
@@ -63,6 +63,34 @@ describe('issue #279 bounded controller orchestration', () => {
       expect((error as Error).message).toContain('crash');
       const recovered = stepAutomationController({ repo_root: root, run_id: RUN_ID, idempotency_key: 'step-2' }, dependencies({ ok: false }));
       expect(recovered.current.state).toBe('reconciliation_required');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('transient acquisition failures persist deterministic bounded backoff and then stop', () => {
+    const { root } = setup(); let now = 1_000; let calls = 0; let reservation = 0;
+    const deps = {
+      ...dependencies({ ok: false }), now: () => new Date(Date.parse('2026-09-04T00:00:00.000Z') + now),
+      acquireNext: () => { calls += 1; return { ok: false, error: 'engineer_concurrency_unavailable', message: 'busy' } as never; },
+      reserveBudget: () => ({ reservation_sha256: `sha256:${String(++reservation).padStart(64, '0')}` }) as never,
+    };
+    try {
+      const first = stepAutomationController({ repo_root: root, run_id: RUN_ID, idempotency_key: 'retry-1' }, deps);
+      expect(first.current.state).toBe('observing'); expect(first.current.consecutive_transient_failures).toBe(1); expect(calls).toBe(1);
+      stepAutomationController({ repo_root: root, run_id: RUN_ID, idempotency_key: 'too-early' }, deps); expect(calls).toBe(1);
+      now += 100;
+      const second = stepAutomationController({ repo_root: root, run_id: RUN_ID, idempotency_key: 'retry-2' }, deps); expect(second.current.consecutive_transient_failures).toBe(2);
+      now += 200;
+      const third = stepAutomationController({ repo_root: root, run_id: RUN_ID, idempotency_key: 'retry-3' }, deps); expect(third.current.state).toBe('blocked'); expect(third.current.blocker).toBe('transient_retry_exhausted');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('explicit stop prevents later acquisition without releasing work authority', () => {
+    const { root } = setup(); let calls = 0;
+    try {
+      const stopped = stopAutomationController(root, RUN_ID, 'stop-1', { now: () => new Date('2026-09-04T00:00:02.000Z') });
+      expect(stopped.current.state).toBe('stopped');
+      const result = stepAutomationController({ repo_root: root, run_id: RUN_ID, idempotency_key: 'after-stop' }, { ...dependencies({ ok: false }), acquireNext: () => { calls += 1; return { ok: false } as never; } });
+      expect(result.current.state).toBe('stopped'); expect(calls).toBe(0);
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 });
