@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260902-2101-issue-283-immutable-task-id.review.md
 > **Last Updated**: 2026-09-02 21:01
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:1942f66210be2c3ea692baa788d6ebaeff57f454fa33b881d3715a7a75802198`
+> **Substantive Change SHA256**: `sha256:0cacb4b9bbadd864c815d9d31d1a698462fe71e5cf10b3afee164b8eaaea9cca`
 
 ## Design Decisions
 
@@ -445,6 +445,13 @@
   alias), and the persisted value becomes the authority everywhere afterwards,
   but it does mean a sprint migrated on two different clones would land two
   different id sets. Migrate once, commit the result.
+- `tests/helpers/sprint-fixture.ts` embeds a raw NUL byte inside a template
+  literal as its digest field separator, so git classifies that TS source as
+  binary (no text diff, grep-invisible). The separator choice is right;
+  rewriting it as the `\u0000` escape keeps the same runtime string and
+  restores text diffability. Left out of this slice because it changes test
+  helper bytes after the verification freeze; fold it into the next
+  test-hygiene pass.
 
 ## Evidence Links
 
