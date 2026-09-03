@@ -77,10 +77,11 @@ sequenceDiagram
 
 ## 3. P3:設計決策與不變量
 
-1. 調用方(controller、CLI、campaign)對所有決策輸入都是不可信的;可信來源只有 host 進程:它的時鐘、它的檔案系統、倉庫裡的 canonical authorities。調用方只說要做什麼、發生了什麼,不說那值多少、發生在何時。
+1. 調用方(controller、CLI、campaign)對所有決策輸入都是不可信的;可信來源只有 host 進程:它的時鐘、它的檔案系統、倉庫裡的 canonical authorities。調用方只說要做什麼、發生了什麼,不說那值多少、發生在何時。每次讀取取一次 store 時鐘並把同一個瞬間用到該次讀取的所有時間欄位,不會同一份投影跨越 deadline。
 2. 綁定的 task contract 的位元組在**每一次讀取**時重新驗證:store 依 `contract_path` 讀出 contract、比對 `contract_sha256`、自行解析 `delegation.budget`。因此 run 進行中編輯該 contract 會讓每個 verb 一致地 fail closed(`automation_budget_store_invalid`);恢復方式是還原位元組或另開一個 run,設計上沒有 re-bind 路徑——contract 是 budget 綁定的授權,不是可以中途換掉的參數。
-3. `current.json` 是三種 durable record 的投影,不是第二個權威;每個 mutating verb 進 lock 後先重新推導它,read-only 面只回報 drift 不修復。
+3. `current.json` 是三種 durable record 的投影,不是第二個權威。drift 是有方向的:durable 多於投影是既有的崩潰窗口,可重新折疊;投影多於 durable(event/reservation 缺檔、投影列出的 open reservation 沒有對應檔案)任何寫入順序都造不出來,一律 typed `automation_budget_store_invalid` fail closed,不折疊也不寫入。可修復方向上,mutating verb 進 lock 後重新推導並落盤,read-only 面重新折疊只用於渲染、絕不寫入,`projection_stale` 說的是持久投影落後,不是渲染出來的數字落後。
 4. token / cost 硬上限在本 slice 一律 fail closed:沒有 provider-attested usage 權威可讀之前,自證的用量數字比沒有上限更糟。
+5. `ProgramAuthorizationV1` 由 operator 鑄進 harness home 的 gate store,key 取自 Git common directory,所以同一個 clone 的每個 linked worktree 解析到同一份 grant;目標不是 Git 倉庫時直接 typed 拒絕,不會落到之後 `git init` 就作廢的路徑 key。每個讀取面都會重新錨定 grant,撤銷或改動後下一個 verb 就停。
 
 ## 4. 歷史決策記錄(append-only)
 

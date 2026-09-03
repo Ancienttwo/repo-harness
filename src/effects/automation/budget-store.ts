@@ -491,14 +491,24 @@ export interface AutomationBudgetStatusV1 {
 }
 
 /**
- * The public read. It never writes and it never throws on a crash window, but
- * it does not report stale counts either: when the stored projection lags a
- * durable record, the records are re-folded read-only and `current` is that
- * folded truth, with `drift` saying the stored projection has not caught up.
- * Only a projection that claims a record the disk does not have, which no write
- * ordering can produce, stays fail-closed.
+ * The public read. It never writes, and it never throws on the repairable
+ * direction of drift -- a projection that lags a durable record is an expected
+ * crash window -- but it does not report stale counts either: those records are
+ * re-folded read-only and `current` is that folded truth, with `drift` saying
+ * the stored projection has not caught up. The opposite direction, a projection
+ * counting records the disk does not have, is corruption and throws.
  */
 export function readAutomationBudgetStatus(repoRoot: string, runId: string): AutomationBudgetStatusV1 {
+  return readAutomationBudgetStatusAt(repoRoot, runId, automationStoreNow());
+}
+
+/**
+ * The same read against one exact instant. `now` is internal: it comes from the
+ * store clock at the top of a read, never from a caller, and exists so a single
+ * read renders every time-dependent field from one instant instead of sampling
+ * the clock twice and reporting two different moments as one state.
+ */
+function readAutomationBudgetStatusAt(repoRoot: string, runId: string, now: string): AutomationBudgetStatusV1 {
   const paths = runPaths(repoRoot, runId);
   const current = readCurrentOptional(paths);
   if (current === null) fail('automation_budget_store_not_found', `automation run ${runId} has no budget`);
@@ -513,7 +523,6 @@ export function readAutomationBudgetStatus(repoRoot: string, runId: string): Aut
     && current.stop_receipt_sha256 !== receipt.stop_receipt_sha256) {
     fail('automation_budget_store_invalid', 'automation stop receipt does not match the current projection');
   }
-  const now = automationStoreNow();
   const drift = detectAutomationCurrentDrift(paths, budget, current, now);
   const derived = drift === 'none' ? null : deriveCurrentFromDurableRecords(paths, current, receipt, now);
   return Object.freeze({
@@ -552,21 +561,63 @@ function jsonEntries(directory: string): readonly string[] {
   }
 }
 
+/**
+ * Which durable record the stored projection has not adopted -- and, crucially,
+ * in which direction the two disagree.
+ *
+ * The write ordering only ever leaves the projection *behind* the records: each
+ * record is fsynced and published before `current.json` is renamed. So "more
+ * records than the projection counts" is the expected crash window and is
+ * repairable by re-folding. The opposite direction -- the projection counting
+ * records the disk does not have -- cannot be produced by any write ordering.
+ * It means a record was lost, truncated away, or deleted from outside, and
+ * re-folding it would rebuild a smaller ledger and silently forgive real spend.
+ * That direction is corruption and stays fail-closed on every verb and every
+ * read surface; nothing is folded and nothing is written.
+ */
 export function detectAutomationCurrentDrift(
   paths: RunPaths,
   budget: AutomationBudgetV1,
   current: AutomationBudgetCurrentV1,
   now: string,
 ): AutomationCurrentDrift {
+  const events = jsonEntries(paths.events).length;
+  const reservations = jsonEntries(paths.reservations).length;
+  if (events < current.event_count) {
+    fail(
+      'automation_budget_store_invalid',
+      `automation ledger is missing usage events: the projection counts ${current.event_count} but ${events} are on disk`,
+    );
+  }
+  const listedOpen = current.open_reservation_sha256s.length;
+  // Every usage event was written against a reservation, so there can never be
+  // fewer reservation files than events. The projection's own open list is not
+  // added here: in the unfolded-event window the same reservation is still
+  // listed open while its event already exists, which is one file, not two.
+  if (reservations < events) {
+    fail(
+      'automation_budget_store_invalid',
+      `automation ledger is missing reservations: ${events} usage events are on disk but only ${reservations} reservations are`,
+    );
+  }
+  if (listedOpen > 0) {
+    // Counts alone cannot see an open reservation whose own file went missing
+    // while an unrelated one appeared, so the listed digests are resolved.
+    const stored = new Set(jsonEntries(paths.reservations).map(
+      (entry) => parse(readRaw(join(paths.reservations, entry), 'automation reservation'), validateAutomationReservation, 'automation reservation').reservation_sha256,
+    ));
+    for (const digest of current.open_reservation_sha256s) {
+      if (!stored.has(digest)) {
+        fail('automation_budget_store_invalid', `automation ledger is missing the open reservation ${digest} the projection lists`);
+      }
+    }
+  }
   // The stop receipt leaves the entry counts of the other two directories
   // untouched, so it has to be probed on its own or the crash window between
   // writing it and renaming the projection is invisible here.
   if (current.stop_receipt_sha256 === null && existsSync(paths.stopReceipt)) return 'unadopted_stop_receipt';
-  const events = jsonEntries(paths.events).length;
-  if (events !== current.event_count) return 'unfolded_event';
-  if (jsonEntries(paths.reservations).length !== events + current.open_reservation_sha256s.length) {
-    return 'unlisted_reservation';
-  }
+  if (events > current.event_count) return 'unfolded_event';
+  if (reservations > events + listedOpen) return 'unlisted_reservation';
   // The last face has no record of its own. `commitUsage` writes the charge and
   // then seals the receipt, so a crash between the two leaves counts that agree
   // with each other and a run that is over but says it is active. Recomputing
@@ -581,7 +632,9 @@ export function detectAutomationCurrentDrift(
  * Re-derive the projection from the durable records. This does not write, so
  * the read-only surfaces can render durable counts instead of the stale ones
  * the projection still holds, and the mutating verbs reuse the same derivation
- * before persisting it.
+ * before persisting it. It only ever runs on the repairable direction of drift:
+ * `detectAutomationCurrentDrift` has already refused the case where records are
+ * missing, so this can never rebuild a smaller ledger than the one on disk.
  */
 function deriveCurrentFromDurableRecords(
   paths: RunPaths,
@@ -674,7 +727,7 @@ function repairCurrentFromDurableRecords(
  * is ever taken against a projection the durable records contradict.
  */
 function lockedStatus(repoRoot: string, paths: RunPaths, runId: string, now: string): AutomationBudgetStatusV1 {
-  const status = readAutomationBudgetStatus(repoRoot, runId);
+  const status = readAutomationBudgetStatusAt(repoRoot, runId, now);
   assertClockNotRegressed(status.stored_current.automation_run_id, status.stored_current.budget_sha256, now, status.stored_current.updated_at, 'dispatch');
   // The filesystem is host-trusted, so an inode timestamp is a lower bound on
   // real time that a frozen host clock cannot sit below. An installed test
@@ -712,17 +765,21 @@ export function readAutomationBudgetBoardSlice(
   repoRoot: string,
   runId: string,
 ): AutomationBudgetBoardSliceV1 {
-  const status = readAutomationBudgetStatus(repoRoot, runId);
-  // `status.current` is already the durable truth: the public read folds the
-  // records when the stored projection lags, so the slice never renders counts
-  // a crash left behind. `projection_stale` still says the stored projection
-  // has not caught up.
+  // One instant for the whole slice. Sampling the clock again for the
+  // wall-clock row could straddle the deadline and render a run that the drift
+  // check just called exhausted as active with time left, or the reverse.
+  const observedAt = automationStoreNow();
+  // `status.current` is already the durable truth: the read folds the records
+  // when the stored projection lags, so the slice never renders counts a crash
+  // left behind. `projection_stale` still says the stored projection has not
+  // caught up.
+  const status = readAutomationBudgetStatusAt(repoRoot, runId, observedAt);
   return projectAutomationBudgetSlice({
     budget: status.budget,
     current: status.current,
     stop_receipt: status.stop_receipt,
     drift: status.drift,
-    observed_at: automationStoreNow(),
+    observed_at: observedAt,
   });
 }
 

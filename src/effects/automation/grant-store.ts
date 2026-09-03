@@ -21,6 +21,7 @@ import { resolveGitCommonDirectory } from '../git/common-directory';
 import { repoHarnessHome, repoHarnessRepoIdFor } from '../repo-registry';
 
 export type AutomationGrantStoreErrorCode =
+  | 'automation_grant_not_a_repository'
   | 'automation_grant_unavailable'
   | 'automation_grant_unsafe'
   | 'automation_grant_invalid'
@@ -51,15 +52,22 @@ export function automationGrantRepoKey(repoRoot: string): string {
   let identity: string;
   try {
     identity = resolveGitCommonDirectory(resolve(repoRoot));
-  } catch {
-    // A path that is not a repository yet keys by itself; nothing is stored
-    // under it until it is one.
-    identity = resolve(repoRoot);
+  } catch (error) {
+    // There is no path key to fall back to. A grant filed under a plain
+    // directory path would be abandoned the moment that directory became a
+    // repository, because the key would change and the stored grant would stop
+    // resolving -- an authority that silently disappears is worse than none.
+    return fail(
+      'automation_grant_not_a_repository',
+      `automation grants are keyed by the Git common directory, and ${resolve(repoRoot)} is not inside a Git repository`,
+      error,
+    );
   }
   try {
     identity = realpathSync(identity);
   } catch {
-    // The common directory may not exist yet; its literal path still keys.
+    // The common directory resolved, so its literal path is a valid key even if
+    // it cannot be canonicalised on this filesystem.
   }
   return repoHarnessRepoIdFor(identity);
 }

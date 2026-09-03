@@ -1193,6 +1193,142 @@ describe('issue #282 — the grant gate keys by the clone, not the checkout', ()
   });
 });
 
+describe('issue #282 — a projection claiming records the disk lacks is corruption', () => {
+  /**
+   * Drift has a direction. The write ordering only ever leaves the projection
+   * behind the records, so "more records than counted" is the crash window and
+   * folds. The opposite -- the projection counting records that are gone --
+   * cannot be produced by any write ordering, and folding it would rebuild a
+   * smaller ledger and forgive spend that really happened.
+   */
+  function paths(repo: string, runId: string, leaf: string): string {
+    return join(repo, '.git', AUTOMATION_BUDGET_STORE_RELATIVE_ROOT, 'runs', runId, leaf);
+  }
+
+  function everySurface(repo: string, budget: AutomationBudgetV1): readonly (readonly [string, () => unknown])[] {
+    return [
+      ['readAutomationBudgetStatus', () => readAutomationBudgetStatus(repo, budget.automation_run_id)],
+      ['readAutomationBudgetBoardSlice', () => readAutomationBudgetBoardSlice(repo, budget.automation_run_id)],
+      ['requireUnattendedAutomationRunBudget', () => requireUnattendedAutomationRunBudget(repo, budget.automation_run_id)],
+      ['reserveAutomationBudget', () => reserveAutomationBudget({
+        repo_root: repo,
+        automation_run_id: budget.automation_run_id,
+        expected_budget_sha256: budget.budget_sha256,
+        idempotency_key: 'op-after-loss',
+        operation: 'acquisition',
+        unit_kind: 'execute',
+        unit_id: 'wp-1',
+        attempt: 1,
+        provider: null,
+      })],
+    ];
+  }
+
+  function refusesEverywhere(repo: string, budget: AutomationBudgetV1, currentBefore: string): void {
+    for (const [name, surface] of everySurface(repo, budget)) {
+      let thrown: unknown = null;
+      try {
+        surface();
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown, `${name} must fail closed on a missing durable record`).not.toBeNull();
+      expect((thrown as AutomationBudgetStoreError).code).toBe('automation_budget_store_invalid');
+      expect((thrown as Error).message).toMatch(/is missing/u);
+    }
+    // Nothing was folded, nothing was written: the projection is untouched.
+    expect(readFileSync(paths(repo, budget.automation_run_id, 'current.json'), 'utf8')).toBe(currentBefore);
+  }
+
+  test('a deleted usage event fails every verb and read surface closed', () => {
+    const repo = repoFixture();
+    const budget = makeBudget({ run: 'lost-event' });
+    publishBudget(repo, budget);
+    acquire(repo, 'lost-event', budget, 'op-1', '2026-09-03T00:00:10.000Z');
+    const before = readFileSync(paths(repo, budget.automation_run_id, 'current.json'), 'utf8');
+
+    const events = join(repo, '.git', AUTOMATION_BUDGET_STORE_RELATIVE_ROOT, 'runs', budget.automation_run_id, 'events');
+    for (const entry of readdirSync(events)) rmSync(join(events, entry));
+    refusesEverywhere(repo, budget, before);
+  });
+
+  test('a deleted reservation fails every verb and read surface closed', () => {
+    const repo = repoFixture();
+    const budget = makeBudget({ run: 'lost-reservation' });
+    publishBudget(repo, budget);
+    acquire(repo, 'lost-reservation', budget, 'op-1', '2026-09-03T00:00:10.000Z');
+    const before = readFileSync(paths(repo, budget.automation_run_id, 'current.json'), 'utf8');
+
+    const reservations = join(repo, '.git', AUTOMATION_BUDGET_STORE_RELATIVE_ROOT, 'runs', budget.automation_run_id, 'reservations');
+    for (const entry of readdirSync(reservations)) rmSync(join(reservations, entry));
+    refusesEverywhere(repo, budget, before);
+  });
+
+  test('an open reservation the projection lists but the disk lacks fails closed', () => {
+    const repo = repoFixture();
+    const budget = makeBudget({ run: 'lost-open-reservation' });
+    publishBudget(repo, budget);
+    reserveAutomationBudget({
+      repo_root: repo,
+      automation_run_id: budget.automation_run_id,
+      expected_budget_sha256: budget.budget_sha256,
+      idempotency_key: 'op-open',
+      operation: 'acquisition',
+      unit_kind: 'execute',
+      unit_id: 'wp-1',
+      attempt: 1,
+      provider: null,
+    });
+    const before = readFileSync(paths(repo, budget.automation_run_id, 'current.json'), 'utf8');
+    const reservations = join(repo, '.git', AUTOMATION_BUDGET_STORE_RELATIVE_ROOT, 'runs', budget.automation_run_id, 'reservations');
+    for (const entry of readdirSync(reservations)) rmSync(join(reservations, entry));
+    refusesEverywhere(repo, budget, before);
+  });
+});
+
+describe('issue #282 — one read renders one instant', () => {
+  /**
+   * The slice used to sample the clock twice: once for the drift decision and
+   * once for the wall-clock row. A deadline crossing between the two reads
+   * would render a run the drift check had just called exhausted as active with
+   * time still on the clock.
+   */
+  test('the drift decision and the wall-clock row come from the same instant', () => {
+    const repo = repoFixture();
+    const budget = makeBudget({ run: 'one-instant', limits: { ...BASE_LIMITS, max_wall_clock_seconds: 60 } });
+    publishBudget(repo, budget);
+    expect(budget.deadline_at).toBe('2026-09-03T00:01:00.000Z');
+
+    // Every clock read after this point returns a different, advancing instant,
+    // so a slice that sampled twice would straddle the deadline.
+    at('2026-09-03T00:00:59.000Z');
+    resumeAutoClock();
+    const slice = readAutomationBudgetBoardSlice(repo, budget.automation_run_id);
+    const wall = slice.metrics.find((entry) => entry.metric === 'wall_clock_seconds');
+    // Exhausted and out of wall clock, or active with wall clock left -- never
+    // one of each, which is what two instants produced.
+    const exhausted = slice.state === 'budget_exhausted';
+    expect(exhausted).toBe(wall!.remaining === 0);
+  });
+});
+
+describe('issue #282 — grants need a repository to be keyed by', () => {
+  test('minting outside a Git repository is refused, not filed under a path key', () => {
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), 'automation-budget-nonrepo-')));
+    FIXTURES.add(outside);
+    const budget = makeBudget({ run: 'non-repository' });
+    let thrown: unknown = null;
+    try {
+      mintProgramAuthorization({ repo_root: outside, authorization: budget.authorization });
+    } catch (error) {
+      thrown = error;
+    }
+    expect((thrown as AutomationGrantStoreError).code).toBe('automation_grant_not_a_repository');
+    // A grant filed under a plain path key would be abandoned by `git init`.
+    expect(existsSync(join(outside, '.git'))).toBe(false);
+  });
+});
+
 describe('issue #282 — a limit increase needs a new authorized revision', () => {
   test('a revision must supersede the exact current digest and invalidates stale decisions', () => {
     const repo = repoFixture();

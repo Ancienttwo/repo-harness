@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260903-0437-issue-282-automation-budget.review.md
 > **Last Updated**: 2026-09-03 05:20
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:b5a918229d5e6236e14aff4968cdf1fa0a4d98b59fca44ca7e9e3e04db7851db`
+> **Substantive Change SHA256**: `sha256:43154414510a48a60d60fd2fb43afb8451e1bd2b6687c882d8802f150661a951`
 
 ## Design Decisions
 
@@ -127,6 +127,9 @@ revisit trigger in `tasks/todos.md`:
 What is *not* a non-goal, and was fixed here: a grant is only an authority if an
 operator minted it outside the repository. `ProgramAuthorizationV1` grants live
 in the account-level harness home (`<home>/gates/<repoKey>/program-authorizations/<sha256>.json`,
+where `repoKey` is derived from the Git common directory so every linked worktree
+of one clone resolves the same grant, and minting outside a repository is a typed
+refusal rather than a path key a later `git init` would abandon;
 0o700/0o600, create-once, canonical bytes, published by `link`), are written by
 `repo-harness automation grant mint`, and `publishAutomationBudget` refuses any
 budget whose embedded grant does not resolve to byte-identical stored bytes --
@@ -154,10 +157,11 @@ it never seals a stop receipt, because a clock fault is not exhaustion. The
 consequence is deliberate: concurrent controllers must share one monotonic time
 source, which the contention fixture makes explicit.
 
-`readAutomationBudgetBoardSlice` still takes an `observedAt` view time for the
-wall-clock row, but drift -- which decides the state the slice renders -- is
-measured on the store clock, so asking about the past cannot hide an exhausted
-run.
+`readAutomationBudgetBoardSlice(repoRoot, runId)` takes no time at all. It reads
+the store clock exactly once and passes that one instant to both the status read
+(which decides drift) and the wall-clock row, so a caller cannot ask about the
+past and one slice can never straddle the deadline -- reporting a run as active
+with time left that the same slice's drift check just called exhausted.
 
 The test seam is deliberately not an input. `__setAutomationClockForTests` lives
 in `clock.ts`, is re-exported only through `budget-store.internal.ts` (which
@@ -278,16 +282,27 @@ appended or reconciled. A repaired run whose receipt was unadopted becomes
 `budget_exhausted`, so the next verb refuses instead of re-opening a stopped
 run.
 
-The read path is deliberately asymmetric: `readAutomationBudgetStatus`, the CLI
-`automation budget show` and the board slice **never repair** -- a read-only surface must not write -- but they do not report
-stale numbers either: when the stored projection lags a durable record, the
-store re-folds those records read-only and every read surface returns that
-folded truth. `AutomationBudgetStatusV1` carries both, `current` (durable
-truth) and `stored_current` (the bytes on disk, which the projection chain
-links to), and `AutomationBudgetBoardSliceV1.projection_stale` says the
-persisted projection is behind, not that the rendered counters are. They also
-never throw on a crash window; only a projection claiming a record the disk does
-not have, which no write ordering can produce, stays fail-closed.
+**Drift has a direction, and only one direction is repairable.** The write
+ordering publishes every durable record before `current.json` is renamed, so the
+projection can only ever lag the records. "More records than the projection
+counts" is therefore the expected crash window and folds. The opposite --
+`events < event_count`, fewer reservation files than usage events, or an open
+reservation the projection lists whose file is gone -- cannot be produced by any
+write ordering. It means a record was lost, truncated, or deleted from outside,
+and re-folding it would rebuild a smaller ledger and silently forgive spend that
+really happened. That direction is typed `automation_budget_store_invalid`
+corruption: every verb and every read surface fails closed, nothing is folded,
+and nothing is written.
+
+Within the repairable direction the read path is deliberately asymmetric:
+`readAutomationBudgetStatus`, the CLI `automation budget show` and the board
+slice **never repair** -- a read-only surface must not write -- but they do not
+report stale numbers either. When the stored projection lags, the store re-folds
+those records read-only and every read surface returns that folded truth.
+`AutomationBudgetStatusV1` carries both `current` (durable truth) and
+`stored_current` (the bytes on disk, which the projection chain links to), and
+`AutomationBudgetBoardSliceV1.projection_stale` says the persisted projection is
+behind, not that the rendered counters are.
 
 For the same reason, **a budget revision is refused while a reservation is
 open**. A reservation carries the exact revision that authorized it, so
