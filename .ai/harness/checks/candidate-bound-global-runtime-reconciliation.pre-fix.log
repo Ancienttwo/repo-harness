@@ -1,0 +1,15 @@
+bun test v1.4.0 (34cbb9a40)
+
+tests/unit/candidate-bound-global-runtime-reconciliation.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module '../../src/cli/runtime/candidate-reconciliation' from '/Users/ancienttwo/Projects/repo-harness-wt-candidate-bound-global-runtime-reconciliation/tests/unit/candidate-bound-global-runtime-reconciliation.test.ts'
+-------------------------------
+
+
+ 0 pass
+ 1 fail
+ 1 error
+Ran 1 test across 1 file. [9.00ms]
+PRE_FIX_EXIT=1

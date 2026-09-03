@@ -222,6 +222,42 @@ describe('init-hook command', () => {
     });
   });
 
+  test('turns same-count exact projection drift into an install action', () => {
+    withTempHome((home, repo) => {
+      mkdirSync(join(home, '.codex'), { recursive: true });
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+
+      const report = runInitHook({
+        cwd: repo,
+        target: 'codex',
+        env: { ...process.env, HOME: home },
+        statusReport: baseStatusReport({
+          projection: {
+            status: 'drift',
+            expectedEntryCount: 12,
+            managedEntryCount: 12,
+            mismatches: [{
+              kind: 'field-mismatch',
+              event: 'Stop',
+              routeId: 'default',
+              field: 'timeout',
+              expected: 150,
+              actual: 30,
+            }],
+          },
+        }),
+        doctorReport: baseDoctorReport(),
+        toolingReport: baseToolingReport(),
+      });
+
+      const adapter = report.checks.find((entry) => entry.id === 'status.adapter.codex');
+      const action = report.agent_actions.find((entry) => entry.id === 'adapter.codex.install');
+      expect(adapter?.status).toBe('needs_agent');
+      expect(adapter?.detail).toContain('Stop.default timeout expected=150 actual=30');
+      expect(action?.command).toBe('repo-harness install --target codex --location global');
+    });
+  });
+
   test('invalid installed profile state requires migration even when adapter count is complete', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
@@ -301,14 +337,14 @@ describe('init-hook command', () => {
             id: 'cli-update',
             describe: 'repo-harness latest version advisory',
             status: 'warn',
-            detail: 'current=0.4.2; latest=99.0.0; agent_action=bun add -g repo-harness@latest && repo-harness init',
+            detail: 'current=0.4.2; latest=99.0.0; agent_action=repo-harness update --target codex',
           },
         ]),
         toolingReport: baseToolingReport(),
       });
 
       const action = report.agent_actions.find((entry) => entry.id === 'cli.update');
-      expect(action?.command).toBe('bun add -g repo-harness@latest && repo-harness init');
+      expect(action?.command).toBe('repo-harness update --target codex');
       expect(action?.verification).toBe('repo-harness setup check --target codex --check-updates --json');
     });
   });

@@ -15,7 +15,12 @@ import {
 import { homedir } from 'os';
 import { delimiter, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { buildManagedHooks, isManagedEntry, type HookHost, type HooksByEvent } from './managed-entries';
+import {
+  canonicalManagedHookProjection,
+  compareManagedHookProjection,
+  type HookHost,
+  type HooksByEvent,
+} from './managed-entries';
 import {
   mutationPathSkillNames as catalogMutationPathSkillNames,
   requiredExplicitExternalDependencyInstallGroups,
@@ -167,22 +172,14 @@ const LEGACY_PROFILE_COMPONENTS: Readonly<Record<LegacyInstallProfile, readonly 
 });
 const OWNER_MARKER = '.repo-harness-owner.json';
 const MANAGED_HOOK_MARKER = 'repo-harness-managed-hook-v1';
-const MANAGED_HOOK_PREFIX = `: ${MANAGED_HOOK_MARKER}; `;
 const CODEGRAPH_CONFIG_MARKER = 'codegraph-config-projection';
 
 function managedAdapterHash(path: string): string | null {
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf-8')) as {
-      hooks?: Record<string, Array<{ matcher?: unknown; hooks?: Array<{ type?: unknown; command?: unknown; timeout?: unknown }> }>>;
+      hooks?: unknown;
     };
-    const projection: Record<string, unknown[]> = {};
-    for (const [event, entries] of Object.entries(parsed.hooks ?? {}).sort(([left], [right]) => left.localeCompare(right))) {
-      const managed = (entries ?? []).filter((entry) => (
-        Array.isArray(entry?.hooks)
-        && entry.hooks.some((hook) => typeof hook?.command === 'string' && hook.command.startsWith(MANAGED_HOOK_PREFIX))
-      ));
-      if (managed.length > 0) projection[event] = managed;
-    }
+    const projection = canonicalManagedHookProjection(parsed.hooks);
     if (Object.keys(projection).length === 0) return null;
     return `sha256:${createHash('sha256').update(JSON.stringify(projection)).digest('hex')}`;
   } catch {
@@ -248,14 +245,12 @@ function removeCodegraphProjection(path: string): void {
 function adapterHasRequiredProjection(path: string, host: HookHost, profile: InstallProfile): boolean {
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf-8')) as { hooks?: HooksByEvent };
-    const actual = parsed.hooks ?? {};
-    const expected = buildManagedHooks(host, profile);
-    return Object.entries(expected).every(([event, entries]) => {
-      const managedActual = (actual[event] ?? []).filter(isManagedEntry);
-      return entries.every((entry) => managedActual.some((candidate) => (
-        JSON.stringify(candidate) === JSON.stringify(entry)
-      )));
-    });
+    const projection = compareManagedHookProjection(parsed.hooks ?? {}, host, profile);
+    // A profile transition may probe the previous profile's still-present
+    // managed routes before the target installer rewrites the adapter. Extra
+    // routes are therefore tolerated by this component-presence probe, but
+    // any required route field drift, duplicate, or missing route is not.
+    return projection.mismatches.every((mismatch) => mismatch.kind === 'unexpected');
   } catch {
     return false;
   }
