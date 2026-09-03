@@ -154,7 +154,7 @@ exit_criteria:
     - bash scripts/check-deploy-sql-order.sh
     - bash scripts/check-architecture-sync.sh
     - bash scripts/check-task-sync.sh
-    - repo-harness run check-task-workflow --strict
+    - bun src/cli/index.ts run check-task-workflow --strict
     - bun scripts/inspect-project-state.ts --repo . --format text
     - bun src/cli/index.ts init --repo . --dry-run
 # Optional exact-subject reuse is fail-closed and opt-in. List only deterministic

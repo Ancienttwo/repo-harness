@@ -20,6 +20,7 @@
 - The initial candidate fix normalized redaction markers inside AcceptanceReceipt canonicalization. Root-cause proof falsified that direction because it would hide a real command-identity change; scope moved to the finalization producer.
 - The acceptance preflight refreshed the repository-owned architecture projection manifest after the linked worktree's CodeGraph index became ready. The contract therefore includes that deterministic generated projection in the frozen subject.
 - While publishing, `origin/main` advanced across the reviewed `helper-scripts` and architecture surfaces. The branch was rebased, and the user's task-wide approval was bound as `user.approval-20260904-full-task` to the exact ArchContext signal `sha256:bd58dfc27fa5218745540127764ddf5ef9a77aadfbef538c36b92ce5ae0171d6`; its deterministic architecture-doc projection is included in the refreshed subject.
+- After that rebase, the globally installed `repo-harness` predated `origin/main`'s new workflow schema and falsely reported the new `cutover-closure.ts` helper and schema-v2 sprint tables as missing. Exact-subject verification now invokes the branch-local CLI (`bun src/cli/index.ts run check-task-workflow --strict`), which is the source-bound authority under review.
 
 ## Tradeoffs Considered
 
