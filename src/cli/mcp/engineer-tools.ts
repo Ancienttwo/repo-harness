@@ -34,6 +34,7 @@ import {
 import { resolveEngineerPrincipal, type EngineerPrincipalFences } from '../../effects/engineers/principal';
 import { collectEngineerOffers } from '../../effects/engineers/scheduling';
 import { acquireScheduledEngineerTask } from '../../effects/engineers/scheduling-acquire';
+import { acquireNextScheduledEngineerTask } from '../../effects/engineers/scheduling-acquire-next';
 import {
   InterfaceChangeStoreError,
   readInterfaceChangeStatus,
@@ -46,6 +47,7 @@ export const ENGINEER_MCP_TOOL_NAMES = [
   'engineer_status',
   'engineer_offers',
   'engineer_acquire',
+  'engineer_acquire_next',
   'engineer_messages',
   'engineer_message_send',
   'engineer_message_ack',
@@ -76,6 +78,10 @@ const PARAMETER_NAMES: Readonly<Record<EngineerMcpToolName, readonly string[]>> 
     'fleet_offer_revision',
     'authorization_revision',
     'max_attempts',
+  ],
+  engineer_acquire_next: [
+    'repo_id', 'engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision',
+    'idempotency_key', 'capability_id', 'minimum_priority', 'max_selection_attempts',
   ],
   engineer_messages: ['repo_id', 'engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision'],
   engineer_message_send: [
@@ -206,6 +212,23 @@ export function buildEngineerToolDefinitions(): EngineerMcpToolDefinition[] {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    },
+    {
+      name: 'engineer_acquire_next',
+      description: 'Select the first canonical current Engineer offer and acquire it with a stable retry key.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ...principalFenceProperties,
+          idempotency_key: { type: 'string', minLength: 1, maxLength: 512 },
+          capability_id: { type: 'string', pattern: '^capability\\.[a-z0-9][a-z0-9.-]*$' },
+          minimum_priority: { type: 'number', minimum: 0, maximum: 100 },
+          max_selection_attempts: { type: 'number', minimum: 1, maximum: 16 },
+        },
+        required: ['repo_id', 'engineer_id', 'binding_id', 'binding_generation', 'engineer_contract_revision', 'idempotency_key'],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },
     {
       name: 'engineer_messages',
@@ -493,6 +516,25 @@ function acquireAsEngineer(
   return result.ok ? textResult(result) : errorResult(result.error, result.message);
 }
 
+function acquireNextAsEngineer(
+  ctx: EngineerMcpToolContext,
+  args: Record<string, unknown>,
+  principal: ReturnType<typeof resolvePrincipal>,
+): EngineerMcpToolResult {
+  const result = acquireNextScheduledEngineerTask({
+    repo_root: ctx.repoRoot,
+    principal,
+    idempotency_key: requiredString(args, 'idempotency_key'),
+    filters: {
+      capability_id: optionalString(args, 'capability_id'),
+      minimum_priority: optionalInteger(args, 'minimum_priority', 0),
+    },
+    max_selection_attempts: optionalInteger(args, 'max_selection_attempts', 1),
+  });
+  audit(ctx, 'engineer_acquire_next', result.ok ? 'ok' : 'failed', args, result.ok ? undefined : result.message);
+  return result.ok ? textResult(result) : errorResult(result.error, result.message);
+}
+
 function interfaceActor(principal: ReturnType<typeof resolvePrincipal>) {
   return Object.freeze({
     kind: 'engineer' as const,
@@ -596,6 +638,7 @@ export function callEngineerTool(
       return textResult(result);
     }
     if (name === 'engineer_acquire') return acquireAsEngineer(ctx, args, principal);
+    if (name === 'engineer_acquire_next') return acquireNextAsEngineer(ctx, args, principal);
     if (name === 'engineer_messages') {
       const result = receiveModuleInbox({ repo_root: ctx.repoRoot, principal });
       audit(ctx, name, 'ok', args);

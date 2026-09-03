@@ -1063,6 +1063,7 @@ describe('mcp http transport', () => {
         'engineer_status',
         'engineer_offers',
         'engineer_acquire',
+        'engineer_acquire_next',
         'engineer_messages',
         'engineer_message_send',
         'engineer_message_ack',
