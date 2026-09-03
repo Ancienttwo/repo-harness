@@ -1,6 +1,6 @@
 # Task Contract: brc0-authority-freeze-baseline-characterization
 
-> **Status**: Fulfilled
+> **Status**: Active
 > **Plan**: plans/plan-20260903-0954-brc0-authority-freeze-baseline-characterization.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
@@ -94,7 +94,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ## Change Assessment
 
 ```json
-{"protocol":1,"oracles":[{"id":"authority-freeze-digests","kind":"test","paths":["tests/characterization/repair-campaign-authority-freeze.test.ts","tests/fixtures/repair-campaign/authority-freeze-baseline.json"]},{"id":"provider-partial-success-fixtures","kind":"fixture","paths":["tests/fixtures/repair-campaign/batch-complete-10.json","tests/fixtures/repair-campaign/batch-partial-7-of-10.json","tests/fixtures/repair-campaign/batch-duplicate-slot.json","tests/fixtures/repair-campaign/batch-invalid-metadata.json","tests/fixtures/repair-campaign/batch-missing-marker.json","tests/fixtures/repair-campaign/batch-source-drift.json"]},{"id":"protected-capabilities","kind":"fixture","paths":["tests/fixtures/repair-campaign/protected-capabilities.json"]},{"id":"source-behavior-unchanged","kind":"command","paths":["src"]},{"id":"architecture-request","kind":"doc","paths":["docs/architecture/requests/runtime-harness-development-campaign.md","docs/architecture/snapshots/2026-09-03-development-campaign-boundary-declaration.md"]},{"id":"authority-freeze-research","kind":"doc","paths":["docs/researches/20260903-repair-campaign-authority-freeze.md"]}]}
+{"protocol":1,"oracles":[{"id":"authority-freeze-characterization","kind":"deterministic_test","paths":["*"]},{"id":"architecture-queue-readback","kind":"runtime_readback","paths":["docs/architecture/requests/runtime-harness-development-campaign.md","docs/architecture/index.md","docs/architecture/.projection-manifest.json"]},{"id":"codex-external-acceptance","kind":"manual_acceptance","paths":["*"]}]}
 ```
 
 ## Acceptance Policy
