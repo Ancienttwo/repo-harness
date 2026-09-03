@@ -14,7 +14,7 @@
  * the bytes that landed.
  */
 import { createHash } from 'crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, rmdirSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import type { CommandOutcome } from '../../core/state/command-outcome';
 import { projectCanonicalTasks } from '../../core/state/coordination-identity';
@@ -65,6 +65,8 @@ export interface MigrationFileSystem {
   readonly writeText: (absolutePath: string, text: string) => void;
   readonly makeDirectory: (absolutePath: string) => void;
   readonly removeFile: (absolutePath: string) => void;
+  /** Remove a directory only when it is empty; a no-op otherwise. */
+  readonly removeDirectoryIfEmpty: (absolutePath: string) => void;
 }
 
 export const nodeMigrationFileSystem: MigrationFileSystem = Object.freeze({
@@ -73,6 +75,16 @@ export const nodeMigrationFileSystem: MigrationFileSystem = Object.freeze({
   writeText: (absolutePath: string, text: string) => { writeFileSync(absolutePath, text, 'utf-8'); },
   makeDirectory: (absolutePath: string) => { mkdirSync(absolutePath, { recursive: true }); },
   removeFile: (absolutePath: string) => { rmSync(absolutePath, { force: true }); },
+  removeDirectoryIfEmpty: (absolutePath: string) => {
+    // `rmdir` fails on a non-empty directory, which is exactly the guard
+    // wanted: a rollback must never take a directory somebody else filled.
+    try {
+      rmdirSync(absolutePath);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'ENOTEMPTY' && code !== 'ENOENT' && code !== 'EEXIST') throw error;
+    }
+  },
 });
 
 export interface MigrateSprintSchemaDependencies {
@@ -252,19 +264,45 @@ export function migrateSprintSchemaCommand(
   }
 
   /**
-   * Every file this run touches, recorded with the bytes it had first. `null`
-   * means the file did not exist, so the rollback removes it instead of
-   * inventing content -- which is also why the receipt target is refused above
-   * when it already exists: rollback then never deletes somebody else's file.
+   * Everything this run touches, in the order it touched it.
+   *
+   * A file entry records the bytes it had first; `null` means the file did not
+   * exist, so the rollback removes it instead of inventing content -- which is
+   * also why the receipt target is refused above when it already exists:
+   * rollback then never deletes somebody else's file. A directory entry records
+   * a directory this run created, so a rolled-back migration does not leave the
+   * empty receipt directory behind as its only trace.
    */
-  const touched: { readonly path: string; readonly before: string | null }[] = [];
+  type JournalEntry =
+    | { readonly kind: 'file'; readonly path: string; readonly before: string | null }
+    | { readonly kind: 'directory'; readonly path: string };
+  const touched: JournalEntry[] = [];
+
   const writeTracked = (absolutePath: string, text: string): void => {
     touched.push({
+      kind: 'file',
       path: absolutePath,
       before: deps.fs.exists(absolutePath) ? deps.fs.readText(absolutePath) : null,
     });
     deps.fs.writeText(absolutePath, text);
   };
+
+  /**
+   * `makeDirectory` is recursive, so it can create several levels at once. Each
+   * missing ancestor is journalled from the outermost inwards, and the rollback
+   * replays in reverse, so the deepest is removed first and each `rmdir` sees an
+   * already-empty directory.
+   */
+  const makeDirectoryTracked = (absolutePath: string): void => {
+    const missing: string[] = [];
+    for (let current = absolutePath; !deps.fs.exists(current); current = dirname(current)) {
+      missing.unshift(current);
+      if (dirname(current) === current) break;
+    }
+    for (const path of missing) touched.push({ kind: 'directory', path });
+    deps.fs.makeDirectory(absolutePath);
+  };
+
   /**
    * Every entry is attempted, and only then is a failure raised. Stopping at
    * the first unrestorable file would leave the *others* migrated: the case
@@ -276,14 +314,15 @@ export function migrateSprintSchemaCommand(
     const failures: string[] = [];
     for (const entry of [...touched].reverse()) {
       try {
-        if (entry.before === null) deps.fs.removeFile(entry.path);
+        if (entry.kind === 'directory') deps.fs.removeDirectoryIfEmpty(entry.path);
+        else if (entry.before === null) deps.fs.removeFile(entry.path);
         else deps.fs.writeText(entry.path, entry.before);
       } catch (error) {
         failures.push(`${entry.path}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
     if (failures.length > 0) {
-      throw new Error(`could not restore ${failures.length} file(s): ${failures.join('; ')}`);
+      throw new Error(`could not restore ${failures.length} path(s): ${failures.join('; ')}`);
     }
   };
   /** A refusal must always mean "the files are exactly as they were". */
@@ -358,7 +397,7 @@ export function migrateSprintSchemaCommand(
       tasks: Object.freeze(tasks),
     };
 
-    deps.fs.makeDirectory(dirname(receiptAbsolute));
+    makeDirectoryTracked(dirname(receiptAbsolute));
     writeTracked(receiptAbsolute, `${JSON.stringify(receipt, null, 2)}\n`);
 
     return {

@@ -6,7 +6,7 @@
 > **Review**: tasks/reviews/20260902-2101-issue-283-immutable-task-id.review.md
 > **Last Updated**: 2026-09-02 21:01
 > **Lifecycle**: notes
-> **Substantive Change SHA256**: `sha256:ec0673a55c518e52ad26250b226f613f1c3aacc5f31e89f1af21b95fa8b87936`
+> **Substantive Change SHA256**: `sha256:e50cf60ed040a0730e18b81d4d8ac6e23f6309ca580e06e17376a810cc62f68c`
 
 ## Design Decisions
 
@@ -60,10 +60,20 @@
   what did. It attempts *every* entry and only then raises, because the case
   that motivates it (a carrier whose write failed on an unwritable path) is
   exactly the case where the sprint beside it can and must still be put back.
-  The guard is not per-branch review but
+  The journal covers directories too: a receipt directory this run created is
+  removed on rollback when it is empty, so a rolled-back migration leaves no
+  trace at all. The guard is not per-branch review but
   `tests/unit/sprint-schema-migrate.test.ts`'s injected-fault matrix: each
-  filesystem step is failed in turn and each case asserts the same three facts
-  (sprint bytes, carrier bytes, no receipt). A future write added outside the
+  filesystem step is failed in turn -- sprint write, carrier write, post-write
+  sprint re-read, post-write carrier re-read, receipt write, receipt mkdir --
+  and each case asserts the same three facts (sprint bytes, carrier bytes, no
+  receipt). Two details the matrix needs to stay honest: the command is captured
+  rather than asserted inside a `catch` (a `catch` around the assertions
+  swallows the assertion failure and lets an injection that never fired pass as
+  if it had), and the re-read injections are keyed on "after this path was
+  written" rather than on a read count, because the rollback journal reads a
+  file to record its prior bytes and a count would fire during the write instead
+  of during the proof. A future write added outside the
   boundary shows up as a new red row instead of passing review. The pre-fix
   evidence that the matrix bites is `/tmp/283-prefix-atomicity.log`
   (`PRE_FIX_EXIT=1`, "the carrier write fails after the sprint was already
@@ -97,7 +107,10 @@
     exists. That gate runs before any write, which is what lets the rollback
     delete a receipt unconditionally: it can only ever be one this run created.
   - The backlog schema marker is read by scanning the whole preamble and
-    requiring exactly one declaration with the value `2`. Returning on the first
+    requiring exactly one declaration with the value `2`. `sprint_ready_error()`
+    counts over the same pre-`## Backlog` region rather than the whole file, so
+    the gate and the two parsers apply one identical rule and a marker quoted in
+    prose below the table cannot fail a file both parsers accept. Returning on the first
     marker let a second, contradictory one sit unread, so this side could
     project identity from a file the awk authority refuses. Both `backlog_rows`
     and `backlog_schema` in `sprint-backlog.sh` apply the same rule, and

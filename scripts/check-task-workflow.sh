@@ -517,11 +517,24 @@ sprint_ready_error() {
   # from the Task cell, so activating one means every title edit silently
   # deletes a task and creates another. Schema 1 stays readable for archived
   # sprints and for the migration input, never for live execution.
-  local schema_declarations schema_ready
-  schema_declarations="$(grep -Ec '^>[[:space:]]*\*\*Backlog Schema\*\*:' "$file" || true)"
+  # Counted over the pre-'## Backlog' preamble only, because that is the exact
+  # region both parsers read: sprintBacklogSchema() stops at the heading and so
+  # does backlog_rows()'s awk. A whole-file grep would let a marker quoted in
+  # prose below the table fail this gate on a file both parsers accept.
+  local schema_declarations schema_twos schema_ready
+  read -r schema_declarations schema_twos <<<"$(awk '
+    /^## Backlog[[:space:]]*$/ { exit }
+    /^>[[:space:]]*\*\*Backlog Schema\*\*:/ {
+      count++
+      declared = $0
+      sub(/^>[[:space:]]*\*\*Backlog Schema\*\*:[[:space:]]*/, "", declared)
+      gsub(/[[:space:]]+$/, "", declared)
+      if (declared == "2") two++
+    }
+    END { printf "%d %d\n", count + 0, two + 0 }
+  ' "$file")"
   schema_ready=0
-  if [[ "$schema_declarations" -eq 1 ]] \
-    && grep -Eq '^>[[:space:]]*\*\*Backlog Schema\*\*:[[:space:]]*2[[:space:]]*$' "$file"; then
+  if [[ "$schema_declarations" -eq 1 && "$schema_twos" -eq 1 ]]; then
     schema_ready=1
   fi
   if [[ "$schema_ready" -ne 1 ]]; then

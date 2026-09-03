@@ -792,6 +792,78 @@ describe("check-task-workflow sprint validation", () => {
     }
   }, 30_000);
 
+  test("the schema gate counts declarations in the preamble only, like both parsers", () => {
+    const cwd = tmpWorkspace("sprint-check-prose-marker");
+    try {
+      copySprintHelpers(cwd, ["check-task-workflow.sh"]);
+      mkdirSync(join(cwd, "plans/sprints"), { recursive: true });
+      const prose = [
+        "",
+        "## Notes",
+        "",
+        "The migration adds one header line to each sprint:",
+        "",
+        "> **Backlog Schema**: 2",
+        "",
+      ];
+
+      // Quoted in prose below the table: `sprintBacklogSchema()` and the awk
+      // both stop at `## Backlog`, so the gate must not count it either.
+      writeFileSync(
+        join(cwd, "plans/sprints/20260610-0000-prose.sprint.md"),
+        [
+          "# Sprint: Prose",
+          "",
+          "> **Status**: Approved",
+          "> **Backlog Schema**: 2",
+          "",
+          "## PRD",
+          "",
+          "Real problem statement with concrete user outcomes.",
+          "",
+          "## Backlog",
+          "",
+          "| # | ID | Status | Task | Mode | Acceptance | Plan |",
+          "|---|----|--------|------|------|------------|------|",
+          `| 1 | ${fixtureTaskId("task-a")} | [ ] | task-a | contract | unit tests pass | (pending) |`,
+          ...prose,
+        ].join("\n")
+      );
+
+      const ready = run("bash", ["scripts/check-task-workflow.sh", "--strict"], cwd);
+      expect(ready.stdout).not.toContain("backlog schema is declared");
+      expect(ready.stdout).not.toContain("backlog is not schema 2");
+
+      // The mirror case: the only declaration sits below `## Backlog`, so
+      // neither parser sees it and the sprint is still schema 1.
+      writeFileSync(
+        join(cwd, "plans/sprints/20260610-0000-prose.sprint.md"),
+        [
+          "# Sprint: Prose",
+          "",
+          "> **Status**: Approved",
+          "",
+          "## PRD",
+          "",
+          "Real problem statement with concrete user outcomes.",
+          "",
+          "## Backlog",
+          "",
+          "| # | Status | Task | Mode | Acceptance | Plan |",
+          "|---|--------|------|------|------------|------|",
+          "| 1 | [ ] | task-a | contract | unit tests pass | (pending) |",
+          ...prose,
+        ].join("\n")
+      );
+
+      const stillLegacy = run("bash", ["scripts/check-task-workflow.sh", "--strict"], cwd);
+      expect(stillLegacy.status).toBe(1);
+      expect(stillLegacy.stdout).toContain("backlog is not schema 2 and carries no persisted task ids");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test("reports unknown status instead of crashing on quotes in sprint status", () => {
     const cwd = tmpWorkspace("sprint-check-quote");
     try {

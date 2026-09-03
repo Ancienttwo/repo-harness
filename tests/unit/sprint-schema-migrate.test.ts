@@ -12,6 +12,7 @@ import { createHash } from 'crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
+import type { CommandOutcome } from '../../src/core/state/command-outcome';
 import { projectCanonicalTasks } from '../../src/core/state/coordination-identity';
 import { sprintBacklogSchema } from '../../src/core/state/sprint-backlog-rows';
 import { deriveLegacyTaskId, readLegacySprint } from '../../src/core/state/sprint-schema-v1';
@@ -627,6 +628,27 @@ describe('migrate-schema atomicity matrix: every filesystem step fails in turn',
     },
   });
 
+  /**
+   * Fail the first read of `target` that happens after `target` was written.
+   * That is precisely the post-write proof step, and it stays correct however
+   * many times the rollback journal reads the file beforehand to record its
+   * prior bytes.
+   */
+  const failingReadAfterWrite = (target: string) => (real: MigrationFileSystem): MigrationFileSystem => {
+    let written = false;
+    return {
+      ...real,
+      writeText: (path, text) => {
+        real.writeText(path, text);
+        if (path === target) written = true;
+      },
+      readText: (path) => {
+        if (path === target && written) throw new Error(`injected post-write read failure: ${path}`);
+        return real.readText(path);
+      },
+    };
+  };
+
   const injections: readonly Injection[] = [
     {
       name: 'the sprint write fails',
@@ -637,23 +659,15 @@ describe('migrate-schema atomicity matrix: every filesystem step fails in turn',
       wrap: (real, paths) => failingWrite(paths.carrier)(real),
     },
     {
-      // The sprint is read once before the write (to compare against the
-      // canonical bytes) and once after it (the re-read proof). Failing the
-      // second read is a fault inside the post-write window.
-      name: 'the post-write re-read fails',
-      wrap: (real, paths) => {
-        let reads = 0;
-        return {
-          ...real,
-          readText: (path) => {
-            if (path === paths.sprint) {
-              reads += 1;
-              if (reads > 1) throw new Error('injected re-read failure');
-            }
-            return real.readText(path);
-          },
-        };
-      },
+      // Keyed on "after this path was written", not on a read count: the
+      // rollback journal reads a file to record its prior bytes, so counting
+      // reads would fire during the write instead of during the proof.
+      name: 'the post-write sprint re-read fails',
+      wrap: (real, paths) => failingReadAfterWrite(paths.sprint)(real),
+    },
+    {
+      name: 'the post-write carrier re-read fails',
+      wrap: (real, paths) => failingReadAfterWrite(paths.carrier)(real),
     },
     {
       name: 'the receipt write fails',
@@ -688,19 +702,53 @@ describe('migrate-schema atomicity matrix: every filesystem step fails in turn',
       };
 
       // Either a typed refusal or a propagated throw is acceptable; leaving the
-      // tree half migrated is not.
+      // tree half migrated is not. The call is captured rather than asserted
+      // inside a `catch`, because a `catch` around the assertions would swallow
+      // the assertion failure itself and let an injection that never fired pass
+      // as if it had.
+      let outcome: CommandOutcome | null = null;
+      let thrown: unknown = null;
       try {
-        const outcome = migrateSprintSchemaCommand({ sprint: SPRINT_PATH, targetRef: 'main' }, deps);
-        expect(outcome.exitCode).not.toBe(0);
+        outcome = migrateSprintSchemaCommand({ sprint: SPRINT_PATH, targetRef: 'main' }, deps);
       } catch (error) {
-        expect(error).toBeInstanceOf(Error);
+        thrown = error;
       }
+      expect(thrown !== null || (outcome !== null && outcome.exitCode !== 0)).toBe(true);
 
       expect(readFileSync(sprintAbsolute, 'utf-8')).toBe(sprintBefore);
       expect(readFileSync(carrierAbsolute, 'utf-8')).toBe(carrierBefore);
       expect(existsSync(receiptAbsolute)).toBe(false);
     });
   }
+
+  test('a receipt directory this run created is removed when the run rolls back', () => {
+    const root = repoFixture(V1_SPRINT, legacyCarrier());
+    const receipt = 'plans/receipts/nested/migration.json';
+    const receiptAbsolute = join(root, receipt);
+    const createdDirectory = join(root, 'plans/receipts');
+    expect(existsSync(createdDirectory)).toBe(false);
+
+    const real = processMigrationDependencies(root);
+    const deps = {
+      ...real,
+      fs: {
+        ...real.fs,
+        writeText: (path: string, text: string) => {
+          if (path === receiptAbsolute) throw new Error('injected receipt write failure');
+          real.fs.writeText(path, text);
+        },
+      },
+    };
+    expect(() => migrateSprintSchemaCommand({ sprint: SPRINT_PATH, targetRef: 'main', receipt }, deps))
+      .toThrow('injected receipt write failure');
+    // Both levels the run created are gone: a rolled-back migration leaves no
+    // trace at all, not even an empty directory.
+    expect(existsSync(createdDirectory)).toBe(false);
+    expect(existsSync(join(root, 'plans/receipts/nested'))).toBe(false);
+    expect(existsSync(receiptAbsolute)).toBe(false);
+    // The directory the sprint already lived in is untouched.
+    expect(existsSync(join(root, 'plans/sprints'))).toBe(true);
+  });
 
   test('the same fixture migrates cleanly when nothing is injected', () => {
     const root = repoFixture(V1_SPRINT, legacyCarrier());
